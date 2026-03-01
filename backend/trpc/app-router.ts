@@ -34,6 +34,7 @@ import { additionalPaymentsRouter } from "./routes/additional-payments";
 import { externalApisRouter } from "./routes/external-apis";
 import { testingRouter } from "./routes/testing";
 import { envVaultRouter } from "./routes/env-vault";
+import { waitlistRouter } from "./routes/waitlist";
 
 export const appRouter = createTRPCRouter({
   users: usersRouter,
@@ -73,6 +74,7 @@ export const appRouter = createTRPCRouter({
   externalApis: externalApisRouter,
   testing: testingRouter,
   envVault: envVaultRouter,
+  waitlist: waitlistRouter,
 });
 
 export type AppRouter = typeof appRouter;

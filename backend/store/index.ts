@@ -102,6 +102,7 @@ class Store {
   taxInfo: Map<string, TaxInfoRecord> = new Map();
   syncConfig: SyncConfig = SEED_SYNC_CONFIG;
   walletBalances: Map<string, { available: number; pending: number; invested: number }> = new Map();
+  waitlistEntries: Array<{ id: string; firstName: string; lastName: string; email: string; phone: string; country: string; investmentInterest: string; source: string; joinedAt: string }> = [];
   auditLog: Array<{ id: string; action: string; userId: string; details: string; timestamp: string }> = [];
 
   private initialized = false;
