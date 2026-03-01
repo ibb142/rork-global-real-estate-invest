@@ -1,0 +1,236 @@
+import React from 'react';
+import { View, StyleSheet } from 'react-native';
+import { Tabs } from 'expo-router';
+import { LayoutDashboard, Users, ArrowLeftRight, Crown, TrendingUp } from 'lucide-react-native';
+import Colors from '@/constants/colors';
+
+
+
+export default function AdminLayout() {
+  return (
+    <View style={styles.container}>
+    <Tabs
+      screenOptions={{
+        headerShown: false,
+        tabBarActiveTintColor: Colors.primary,
+        tabBarInactiveTintColor: Colors.textSecondary,
+        tabBarStyle: {
+          backgroundColor: Colors.card,
+          borderTopColor: Colors.border,
+          borderTopWidth: 1,
+          paddingTop: 8,
+          height: 85,
+        },
+        tabBarLabelStyle: {
+          fontSize: 11,
+          fontWeight: '600',
+          marginTop: 4,
+        },
+      }}
+    >
+      <Tabs.Screen
+        name="owner-controls"
+        options={{
+          title: 'Owner',
+          tabBarIcon: ({ color, size }) => (
+            <Crown size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="index"
+        options={{
+          title: 'Dashboard',
+          tabBarIcon: ({ color, size }) => (
+            <LayoutDashboard size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="investor-profits"
+        options={{
+          title: 'Profits',
+          tabBarIcon: ({ color, size }) => (
+            <TrendingUp size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="members"
+        options={{
+          title: 'Members',
+          tabBarIcon: ({ color, size }) => (
+            <Users size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="transactions"
+        options={{
+          title: 'Transactions',
+          tabBarIcon: ({ color, size }) => (
+            <ArrowLeftRight size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="properties"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="marketing"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="team"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="fees"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="land-partners"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="engagement"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="broadcast"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="growth"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="influencers"
+        options={{
+          href: null,
+        }}
+      />
+
+      <Tabs.Screen
+        name="banners"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="intro"
+        options={{
+          href: null,
+        }}
+      />
+
+      <Tabs.Screen
+        name="app-docs"
+        options={{
+          href: null,
+        }}
+      />
+
+      <Tabs.Screen
+        name="social-command"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="member"
+        options={{
+          href: null,
+        }}
+      />
+
+
+
+      <Tabs.Screen
+        name="title-companies"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="lender-directory"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="ai-outreach"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="lender-search"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="outreach-analytics"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="email-engine"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="lender-sync"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="ai-video"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="developer-handoff"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="api-keys"
+        options={{
+          href: null,
+        }}
+      />
+    </Tabs>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+
+});

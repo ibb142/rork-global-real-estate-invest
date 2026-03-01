@@ -1,0 +1,992 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IVX Holdings — Own Real Estate. Trade Like Crypto.</title>
+  <meta name="description" content="Fractional ownership in premium real estate worldwide. Start with $1, earn monthly dividends, trade shares 24/7. Join 52,000+ global investors." />
+  <meta property="og:title" content="IVX Holdings — Own Real Estate. Trade Like Crypto." />
+  <meta property="og:description" content="Fractional ownership in premium real estate worldwide. Start with $1, earn monthly dividends." />
+  <meta property="og:image" content="https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=1200&q=80" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --gold: #FFD700;
+      --gold-light: #FFE44D;
+      --gold-dim: rgba(255,215,0,0.1);
+      --gold-border: rgba(255,215,0,0.22);
+      --bg: #0A0A0A;
+      --bg2: #111111;
+      --surface: #181818;
+      --surface2: #222222;
+      --border: #272727;
+      --text: #FFFFFF;
+      --text2: #909090;
+      --text3: #555555;
+      --green: #00C48C;
+      --red: #FF4D4D;
+      --blue: #4A90D9;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ─── NAV ─── */
+    nav {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 200;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 40px;
+      height: 68px;
+      background: rgba(10,10,10,0.88);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border-bottom: 1px solid var(--border);
+      transition: background 0.3s;
+    }
+    .nav-logo {
+      display: flex; align-items: center; gap: 10px;
+      text-decoration: none;
+    }
+    .nav-logo-icon {
+      width: 36px; height: 36px;
+      background: var(--gold);
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 900; font-size: 13px; color: #000;
+      letter-spacing: -0.5px; flex-shrink: 0;
+    }
+    .nav-logo-name {
+      font-size: 14px; font-weight: 800;
+      letter-spacing: 1.8px; color: var(--text);
+    }
+    .nav-links {
+      display: flex; align-items: center; gap: 32px; list-style: none;
+    }
+    .nav-links a {
+      color: var(--text2); text-decoration: none;
+      font-size: 13.5px; font-weight: 500;
+      transition: color 0.2s;
+    }
+    .nav-links a:hover { color: var(--text); }
+    .nav-cta-btn {
+      background: var(--gold) !important;
+      color: #000 !important;
+      font-weight: 700 !important;
+      padding: 9px 20px;
+      border-radius: 10px;
+      transition: background 0.2s, transform 0.15s !important;
+    }
+    .nav-cta-btn:hover { background: var(--gold-light) !important; transform: translateY(-1px); }
+    .nav-hamburger {
+      display: none; cursor: pointer; flex-direction: column; gap: 5px; padding: 4px;
+    }
+    .nav-hamburger span {
+      display: block; width: 22px; height: 2px;
+      background: var(--text2); border-radius: 2px;
+    }
+    @media(max-width: 800px) {
+      nav { padding: 0 20px; }
+      .nav-links { display: none; }
+      .nav-hamburger { display: flex; }
+    }
+
+    /* ─── HERO ─── */
+    .hero {
+      min-height: 100vh;
+      padding: 68px 24px 100px;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      position: relative; overflow: hidden;
+    }
+    .hero-bg-glow {
+      position: absolute; inset: 0; pointer-events: none;
+      background:
+        radial-gradient(ellipse 80% 60% at 50% 0%, rgba(255,215,0,0.07) 0%, transparent 65%),
+        radial-gradient(ellipse 50% 50% at 85% 85%, rgba(0,196,140,0.04) 0%, transparent 55%);
+    }
+    .hero-grid-lines {
+      position: absolute; inset: 0; pointer-events: none;
+      background-image:
+        linear-gradient(rgba(255,215,0,0.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,215,0,0.035) 1px, transparent 1px);
+      background-size: 64px 64px;
+      mask-image: radial-gradient(ellipse 75% 55% at 50% 50%, black 30%, transparent);
+    }
+    .hero-inner {
+      position: relative; z-index: 2;
+      max-width: 860px; width: 100%;
+      text-align: center;
+    }
+    .hero-badge {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: var(--gold-dim);
+      border: 1px solid var(--gold-border);
+      border-radius: 100px;
+      padding: 7px 16px;
+      font-size: 10.5px; font-weight: 700;
+      letter-spacing: 1.8px; color: var(--gold);
+      text-transform: uppercase; margin-bottom: 28px;
+      animation: fadeslide 0.9s ease both;
+    }
+    .live-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--green);
+      animation: glow-pulse 1.8s infinite;
+    }
+    @keyframes glow-pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(0,196,140,0.6); transform: scale(1); }
+      50% { box-shadow: 0 0 0 5px rgba(0,196,140,0); transform: scale(1.3); }
+    }
+    h1.hero-title {
+      font-size: clamp(44px, 7.5vw, 82px);
+      font-weight: 900;
+      letter-spacing: -2.5px;
+      line-height: 1.03;
+      margin-bottom: 24px;
+      animation: fadeslide 0.9s 0.1s ease both;
+    }
+    h1.hero-title .gold { color: var(--gold); }
+    .hero-sub {
+      font-size: clamp(15px, 2vw, 18px);
+      color: var(--text2);
+      line-height: 1.75;
+      max-width: 580px; margin: 0 auto 44px;
+      animation: fadeslide 0.9s 0.2s ease both;
+    }
+    .hero-actions {
+      display: flex; align-items: center; justify-content: center;
+      gap: 12px; flex-wrap: wrap; margin-bottom: 56px;
+      animation: fadeslide 0.9s 0.3s ease both;
+    }
+    .btn-primary {
+      background: var(--gold); color: #000;
+      font-weight: 800; font-size: 15px;
+      padding: 16px 34px; border-radius: 14px;
+      border: none; cursor: pointer; text-decoration: none;
+      display: inline-flex; align-items: center; gap: 8px;
+      transition: transform 0.15s, background 0.2s, box-shadow 0.2s;
+      box-shadow: 0 0 35px rgba(255,215,0,0.22);
+    }
+    .btn-primary:hover {
+      background: var(--gold-light);
+      transform: translateY(-2px);
+      box-shadow: 0 0 50px rgba(255,215,0,0.38);
+    }
+    .btn-outline {
+      background: transparent; color: var(--text2);
+      font-weight: 600; font-size: 15px;
+      padding: 16px 28px; border-radius: 14px;
+      border: 1px solid var(--border); cursor: pointer;
+      text-decoration: none;
+      display: inline-flex; align-items: center; gap: 8px;
+      transition: border-color 0.2s, color 0.2s, transform 0.15s;
+    }
+    .btn-outline:hover { border-color: var(--gold-border); color: var(--text); transform: translateY(-2px); }
+    .hero-stats-row {
+      display: flex; background: var(--surface);
+      border: 1px solid var(--border); border-radius: 20px; overflow: hidden;
+      animation: fadeslide 0.9s 0.4s ease both;
+    }
+    .hstat {
+      flex: 1; padding: 20px 14px; text-align: center;
+      border-right: 1px solid var(--border);
+    }
+    .hstat:last-child { border-right: none; }
+    .hstat-val { font-size: 22px; font-weight: 900; color: var(--gold); margin-bottom: 4px; }
+    .hstat-lbl { font-size: 10px; color: var(--text3); line-height: 1.4; }
+    @keyframes fadeslide {
+      from { opacity: 0; transform: translateY(28px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ─── MARQUEE ─── */
+    .ticker {
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+      background: var(--bg2);
+      padding: 13px 0; overflow: hidden;
+    }
+    .ticker-track {
+      display: flex; gap: 56px; width: max-content;
+      animation: ticker 28s linear infinite;
+    }
+    .ticker-item {
+      display: flex; align-items: center; gap: 8px;
+      white-space: nowrap; font-size: 11.5px;
+      font-weight: 600; color: var(--text3); letter-spacing: 0.5px;
+    }
+    .up { color: var(--green); }
+    .dn { color: var(--red); }
+    @keyframes ticker {
+      from { transform: translateX(0); }
+      to   { transform: translateX(-50%); }
+    }
+
+    /* ─── LAYOUT ─── */
+    section { padding: 96px 24px; }
+    .wrap { max-width: 1100px; margin: 0 auto; }
+    .eyebrow {
+      font-size: 10.5px; font-weight: 700; letter-spacing: 2.2px;
+      color: var(--gold); text-transform: uppercase; margin-bottom: 12px;
+    }
+    .section-h {
+      font-size: clamp(28px, 4vw, 46px);
+      font-weight: 900; letter-spacing: -1.2px; line-height: 1.08; margin-bottom: 16px;
+    }
+    .section-p {
+      font-size: 15.5px; color: var(--text2); line-height: 1.75; max-width: 500px;
+    }
+
+    /* ─── PROPERTIES ─── */
+    .props-grid {
+      display: grid; grid-template-columns: repeat(3,1fr);
+      gap: 18px; margin-top: 48px;
+    }
+    @media(max-width:900px) { .props-grid { grid-template-columns: 1fr 1fr; } }
+    @media(max-width:560px) { .props-grid { grid-template-columns: 1fr; } }
+    .pcard {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 20px; overflow: hidden;
+      transition: transform 0.22s, border-color 0.22s, box-shadow 0.22s;
+    }
+    .pcard:hover { transform: translateY(-5px); border-color: var(--gold-border); box-shadow: 0 16px 50px rgba(0,0,0,0.45); }
+    .pcard-img-wrap { position: relative; }
+    .pcard-img { width:100%; height:178px; object-fit:cover; display:block; }
+    .pbadge {
+      position:absolute; top:12px; left:12px;
+      background: rgba(0,0,0,0.72); border:1px solid var(--gold-border);
+      border-radius:100px; padding:5px 11px;
+      font-size:9.5px; font-weight:700; color:var(--gold); letter-spacing:0.8px;
+      backdrop-filter: blur(8px);
+    }
+    .preturn {
+      position:absolute; top:12px; right:12px;
+      background:rgba(0,196,140,0.14); border:1px solid rgba(0,196,140,0.28);
+      border-radius:100px; padding:5px 11px;
+      font-size:11px; font-weight:800; color:var(--green);
+      backdrop-filter: blur(8px);
+    }
+    .pinfo { padding:18px; }
+    .pname { font-size:14.5px; font-weight:700; margin-bottom:3px; }
+    .ploc { font-size:11px; color:var(--text3); margin-bottom:14px; }
+    .pbar-labels { display:flex; justify-content:space-between; font-size:10px; color:var(--text3); margin-bottom:6px; }
+    .pbar-bg { height:4px; background:var(--surface2); border-radius:100px; overflow:hidden; margin-bottom:14px; }
+    .pbar-fill { height:100%; background:linear-gradient(90deg,var(--gold),var(--gold-light)); border-radius:100px; }
+    .pfooter { display:flex; justify-content:space-between; align-items:center; }
+    .pprice { font-size:13px; font-weight:700; color:var(--gold); }
+    .pprice span { font-size:10px; color:var(--text3); font-weight:500; }
+    .pinvest {
+      background:var(--gold-dim); border:1px solid var(--gold-border);
+      border-radius:9px; padding:7px 14px;
+      font-size:12px; font-weight:700; color:var(--gold);
+      cursor:pointer; text-decoration:none;
+      transition:background 0.18s, color 0.18s;
+    }
+    .pinvest:hover { background:var(--gold); color:#000; }
+
+    /* ─── FEATURES ─── */
+    .features-split {
+      display:grid; grid-template-columns:1fr 1fr;
+      gap:72px; align-items:center;
+    }
+    @media(max-width:800px) { .features-split { grid-template-columns:1fr; gap:48px; } }
+    .feat-list { display:flex; flex-direction:column; gap:14px; margin-top:32px; }
+    .feat-item {
+      display:flex; gap:16px;
+      background:var(--surface); border:1px solid var(--border);
+      border-radius:16px; padding:18px;
+      transition:border-color 0.2s, transform 0.18s;
+    }
+    .feat-item:hover { border-color:var(--gold-border); transform:translateX(5px); }
+    .feat-ico {
+      width:44px; height:44px; flex-shrink:0;
+      border-radius:12px; display:flex; align-items:center;
+      justify-content:center; font-size:20px;
+    }
+    .feat-body h3 { font-size:13.5px; font-weight:700; margin-bottom:4px; }
+    .feat-body p { font-size:12px; color:var(--text2); line-height:1.65; }
+
+    /* Phone mockup */
+    .phone-wrap { display:flex; justify-content:center; position:relative; }
+    .phone-glow {
+      position:absolute; width:320px; height:320px;
+      background:radial-gradient(circle, rgba(255,215,0,0.1), transparent 70%);
+      border-radius:50%; top:50%; left:50%; transform:translate(-50%,-50%);
+      pointer-events:none;
+    }
+    .phone {
+      width:252px;
+      background:var(--surface); border:1.5px solid var(--border);
+      border-radius:42px; overflow:hidden;
+      box-shadow:0 32px 80px rgba(0,0,0,0.65), 0 0 0 1px rgba(255,215,0,0.08);
+      position:relative; z-index:1;
+    }
+    .phone-notch {
+      height:11px; background:var(--surface2);
+      display:flex; align-items:center; justify-content:center;
+    }
+    .phone-notch-bar {
+      width:56px; height:4px; background:var(--border); border-radius:2px;
+    }
+    .phone-screen { background:var(--bg); padding:18px 14px; }
+    .phone-topbar {
+      display:flex; justify-content:space-between; align-items:center; margin-bottom:18px;
+    }
+    .phone-brand { font-size:11px; font-weight:800; letter-spacing:1.2px; color:var(--gold); }
+    .phone-live {
+      display:flex; align-items:center; gap:4px;
+      font-size:8.5px; font-weight:700; color:var(--green); letter-spacing:0.5px;
+    }
+    .phone-live-dot { width:5px; height:5px; border-radius:50%; background:var(--green); animation:glow-pulse 1.8s infinite; }
+    .phone-bal {
+      background:var(--surface); border:1px solid var(--border);
+      border-radius:14px; padding:14px; text-align:center; margin-bottom:10px;
+    }
+    .phone-bal-lbl { font-size:8.5px; color:var(--text3); margin-bottom:3px; letter-spacing:0.5px; }
+    .phone-bal-num { font-size:24px; font-weight:900; }
+    .phone-bal-chg { font-size:10px; font-weight:700; color:var(--green); margin-top:2px; }
+    .phone-chart {
+      height:44px; display:flex; align-items:flex-end;
+      gap:2.5px; margin-bottom:10px;
+    }
+    .phone-bar {
+      flex:1; border-radius:2.5px 2.5px 0 0;
+      background:rgba(255,215,0,0.1); border-top:1.5px solid var(--gold);
+    }
+    .phone-holdings { display:flex; flex-direction:column; gap:7px; }
+    .phone-holding {
+      display:flex; justify-content:space-between; align-items:center;
+      background:var(--surface); border:1px solid var(--border);
+      border-radius:10px; padding:9px 11px;
+    }
+    .ph-name { font-size:9.5px; font-weight:700; }
+    .ph-loc { font-size:7.5px; color:var(--text3); }
+    .ph-val { font-size:9.5px; font-weight:700; color:var(--gold); text-align:right; }
+    .ph-ret { font-size:7.5px; color:var(--green); text-align:right; }
+    .phone-tabs {
+      display:flex; justify-content:space-around;
+      background:var(--surface); border-top:1px solid var(--border);
+      padding:10px 6px;
+    }
+    .ptab { text-align:center; font-size:7.5px; color:var(--text3); }
+    .ptab.active { color:var(--gold); }
+    .ptab-ico { font-size:13px; margin-bottom:1.5px; }
+
+    /* ─── HOW IT WORKS ─── */
+    .steps-grid {
+      display:grid; grid-template-columns:repeat(4,1fr);
+      gap:18px; margin-top:48px;
+    }
+    @media(max-width:800px) { .steps-grid { grid-template-columns:1fr 1fr; } }
+    @media(max-width:480px) { .steps-grid { grid-template-columns:1fr; } }
+    .step-card {
+      background:var(--surface); border:1px solid var(--border);
+      border-radius:20px; padding:26px 20px; text-align:center;
+      transition:border-color 0.22s, transform 0.22s;
+    }
+    .step-card:hover { border-color:var(--gold-border); transform:translateY(-4px); }
+    .step-num {
+      width:38px; height:38px;
+      background:var(--gold-dim); border:1px solid var(--gold-border);
+      border-radius:11px; display:flex; align-items:center;
+      justify-content:center; font-size:14px; font-weight:900;
+      color:var(--gold); margin:0 auto 14px;
+    }
+    .step-ico { font-size:28px; display:block; margin-bottom:10px; }
+    .step-ttl { font-size:13.5px; font-weight:700; margin-bottom:7px; }
+    .step-dsc { font-size:11.5px; color:var(--text2); line-height:1.65; }
+
+    /* ─── TRUST ─── */
+    .trust-bg { background:var(--bg2); border-top:1px solid var(--border); }
+    .trust-grid {
+      display:grid; grid-template-columns:repeat(3,1fr);
+      gap:18px; margin-top:48px;
+    }
+    @media(max-width:760px) { .trust-grid { grid-template-columns:1fr; } }
+    .tcard {
+      background:var(--surface); border:1px solid var(--border);
+      border-radius:20px; padding:28px 22px;
+      transition:border-color 0.22s;
+    }
+    .tcard:hover { border-color:var(--gold-border); }
+    .tcard-ico { font-size:30px; margin-bottom:14px; display:block; }
+    .tcard-ttl { font-size:16px; font-weight:800; margin-bottom:9px; }
+    .tcard-dsc { font-size:12.5px; color:var(--text2); line-height:1.72; }
+    .tcard-tags { display:flex; flex-wrap:wrap; gap:8px; margin-top:14px; }
+    .ttag {
+      font-size:9.5px; font-weight:700;
+      padding:4px 10px;
+      background:var(--gold-dim); border:1px solid var(--gold-border);
+      border-radius:100px; color:var(--gold); letter-spacing:0.5px;
+    }
+
+    /* ─── TESTIMONIALS ─── */
+    .reviews-bg { background:var(--bg); border-top:1px solid var(--border); }
+    .reviews-grid {
+      display:grid; grid-template-columns:repeat(3,1fr);
+      gap:18px; margin-top:48px;
+    }
+    @media(max-width:760px) { .reviews-grid { grid-template-columns:1fr; } }
+    .rcard {
+      background:var(--surface); border:1px solid var(--border);
+      border-radius:20px; padding:24px;
+    }
+    .rcard-stars { color:var(--gold); font-size:13px; letter-spacing:2px; margin-bottom:13px; }
+    .rcard-text { font-size:13.5px; color:var(--text2); line-height:1.72; font-style:italic; margin-bottom:18px; }
+    .rcard-author { display:flex; align-items:center; gap:11px; }
+    .rcard-av {
+      width:36px; height:36px; border-radius:50%;
+      background:var(--gold-dim); border:1px solid var(--gold-border);
+      display:flex; align-items:center; justify-content:center;
+      font-size:13px; font-weight:800; color:var(--gold); flex-shrink:0;
+    }
+    .rcard-name { font-size:12.5px; font-weight:700; }
+    .rcard-role { font-size:11px; color:var(--text3); }
+
+    /* ─── CTA ─── */
+    .cta-section {
+      background:var(--bg); text-align:center;
+      padding:120px 24px; position:relative; overflow:hidden;
+      border-top:1px solid var(--border);
+    }
+    .cta-glow {
+      position:absolute; width:700px; height:500px;
+      background:radial-gradient(ellipse, rgba(255,215,0,0.07), transparent 70%);
+      top:50%; left:50%; transform:translate(-50%,-50%);
+      pointer-events:none;
+    }
+    .cta-inner { position:relative; }
+    .cta-section h2 {
+      font-size:clamp(34px,5.5vw,60px);
+      font-weight:900; letter-spacing:-2px; margin-bottom:18px;
+    }
+    .cta-section h2 span { color:var(--gold); }
+    .cta-section .cta-sub { font-size:17px; color:var(--text2); margin-bottom:42px; }
+    .cta-btns { display:flex; justify-content:center; gap:12px; flex-wrap:wrap; }
+    .app-badges {
+      display:flex; justify-content:center; gap:12px;
+      margin-top:24px; flex-wrap:wrap;
+    }
+    .app-badge {
+      display:flex; align-items:center; gap:11px;
+      background:var(--surface); border:1px solid var(--border);
+      border-radius:13px; padding:11px 20px;
+      text-decoration:none;
+      transition:border-color 0.2s, transform 0.15s;
+    }
+    .app-badge:hover { border-color:var(--gold-border); transform:translateY(-2px); }
+    .app-badge-ico { font-size:22px; }
+    .app-badge-copy small { display:block; font-size:8.5px; color:var(--text3); letter-spacing:0.5px; }
+    .app-badge-copy strong { display:block; font-size:14px; font-weight:700; color:var(--text); }
+
+    /* ─── FOOTER ─── */
+    footer {
+      background:var(--bg2); border-top:1px solid var(--border);
+      padding:64px 24px 32px;
+    }
+    .footer-inner { max-width:1100px; margin:0 auto; }
+    .footer-top {
+      display:grid; grid-template-columns:2fr 1fr 1fr 1fr;
+      gap:52px; margin-bottom:52px;
+    }
+    @media(max-width:800px) { .footer-top { grid-template-columns:1fr 1fr; gap:32px; } }
+    @media(max-width:480px) { .footer-top { grid-template-columns:1fr; } }
+    .footer-brand-desc { font-size:12.5px; color:var(--text3); line-height:1.75; margin:14px 0 20px; max-width:290px; }
+    .footer-socials { display:flex; gap:9px; }
+    .fsoc {
+      width:35px; height:35px;
+      background:var(--surface); border:1px solid var(--border);
+      border-radius:10px; display:flex; align-items:center; justify-content:center;
+      font-size:14px; cursor:pointer; text-decoration:none;
+      transition:border-color 0.2s, transform 0.15s;
+    }
+    .fsoc:hover { border-color:var(--gold-border); transform:translateY(-2px); }
+    .footer-col h4 { font-size:12.5px; font-weight:700; margin-bottom:16px; letter-spacing:0.3px; }
+    .footer-col ul { list-style:none; display:flex; flex-direction:column; gap:10px; }
+    .footer-col ul a { color:var(--text3); text-decoration:none; font-size:12.5px; transition:color 0.2s; }
+    .footer-col ul a:hover { color:var(--text); }
+    .footer-bottom {
+      display:flex; justify-content:space-between; align-items:flex-start;
+      border-top:1px solid var(--border); padding-top:26px;
+      flex-wrap:wrap; gap:14px;
+    }
+    .footer-copy { font-size:11.5px; color:var(--text3); line-height:1.75; max-width:580px; }
+    .footer-legal-links { display:flex; gap:20px; flex-shrink:0; }
+    .footer-legal-links a { font-size:11.5px; color:var(--text3); text-decoration:none; transition:color 0.2s; }
+    .footer-legal-links a:hover { color:var(--text); }
+
+    /* ─── REVEAL ─── */
+    .reveal {
+      opacity:0; transform:translateY(28px);
+      transition:opacity 0.72s ease, transform 0.72s ease;
+    }
+    .reveal.visible { opacity:1; transform:translateY(0); }
+    .reveal-delay-1 { transition-delay:0.08s; }
+    .reveal-delay-2 { transition-delay:0.16s; }
+    .reveal-delay-3 { transition-delay:0.24s; }
+  </style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <a href="#" class="nav-logo">
+    <div class="nav-logo-icon">IVX</div>
+    <span class="nav-logo-name">IVXHOLDINGS</span>
+  </a>
+  <ul class="nav-links">
+    <li><a href="#properties">Properties</a></li>
+    <li><a href="#how-it-works">How It Works</a></li>
+    <li><a href="#trust">Security</a></li>
+    <li><a href="#reviews">Reviews</a></li>
+    <li><a href="#" class="nav-cta-btn">Get Started</a></li>
+  </ul>
+  <div class="nav-hamburger" id="hamburger">
+    <span></span><span></span><span></span>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-bg-glow"></div>
+  <div class="hero-grid-lines"></div>
+  <div class="hero-inner">
+    <div class="hero-badge">
+      <div class="live-dot"></div>
+      Markets Open &nbsp;·&nbsp; Live Trading
+    </div>
+    <h1 class="hero-title">
+      Own Real Estate.<br><span class="gold">Trade Like Crypto.</span>
+    </h1>
+    <p class="hero-sub">
+      Fractional ownership in premium properties worldwide. Start investing with just $1, earn monthly dividends, and trade shares 24/7 on the IVX platform.
+    </p>
+    <div class="hero-actions">
+      <a href="#" class="btn-primary">Start Investing Free &rarr;</a>
+      <a href="#how-it-works" class="btn-outline">How It Works</a>
+    </div>
+    <div class="hero-stats-row">
+      <div class="hstat"><div class="hstat-val">$2.1B</div><div class="hstat-lbl">Assets Under<br>Management</div></div>
+      <div class="hstat"><div class="hstat-val">14.5%</div><div class="hstat-lbl">Avg Annual<br>Return</div></div>
+      <div class="hstat"><div class="hstat-val">52K+</div><div class="hstat-lbl">Global<br>Investors</div></div>
+      <div class="hstat"><div class="hstat-val">$1</div><div class="hstat-lbl">Minimum<br>Investment</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- TICKER -->
+<div class="ticker">
+  <div class="ticker-track">
+    <div class="ticker-item">🏙️ Manhattan Penthouse &nbsp;<span class="up">▲ +18.2%</span></div>
+    <div class="ticker-item">🌴 Miami Beach Villa &nbsp;<span class="up">▲ +12.4%</span></div>
+    <div class="ticker-item">🗼 Paris Apartment &nbsp;<span class="up">▲ +9.8%</span></div>
+    <div class="ticker-item">🌆 Dubai Tower &nbsp;<span class="up">▲ +22.1%</span></div>
+    <div class="ticker-item">🏝️ Maldives Resort &nbsp;<span class="up">▲ +15.6%</span></div>
+    <div class="ticker-item">🌇 London Townhouse &nbsp;<span class="up">▲ +11.3%</span></div>
+    <div class="ticker-item">🏖️ Ibiza Villa &nbsp;<span class="up">▲ +14.7%</span></div>
+    <div class="ticker-item">🌃 Singapore Loft &nbsp;<span class="up">▲ +8.9%</span></div>
+    <div class="ticker-item">🏙️ Manhattan Penthouse &nbsp;<span class="up">▲ +18.2%</span></div>
+    <div class="ticker-item">🌴 Miami Beach Villa &nbsp;<span class="up">▲ +12.4%</span></div>
+    <div class="ticker-item">🗼 Paris Apartment &nbsp;<span class="up">▲ +9.8%</span></div>
+    <div class="ticker-item">🌆 Dubai Tower &nbsp;<span class="up">▲ +22.1%</span></div>
+    <div class="ticker-item">🏝️ Maldives Resort &nbsp;<span class="up">▲ +15.6%</span></div>
+    <div class="ticker-item">🌇 London Townhouse &nbsp;<span class="up">▲ +11.3%</span></div>
+    <div class="ticker-item">🏖️ Ibiza Villa &nbsp;<span class="up">▲ +14.7%</span></div>
+    <div class="ticker-item">🌃 Singapore Loft &nbsp;<span class="up">▲ +8.9%</span></div>
+  </div>
+</div>
+
+<!-- PROPERTIES -->
+<section id="properties">
+  <div class="wrap">
+    <div class="reveal">
+      <p class="eyebrow">Featured Listings</p>
+      <h2 class="section-h">Premium Properties<br>Available Now</h2>
+      <p class="section-p">Handpicked real estate from the world's most desirable locations, fully tokenized for fractional ownership.</p>
+    </div>
+    <div class="props-grid">
+      <div class="pcard reveal reveal-delay-1">
+        <div class="pcard-img-wrap">
+          <img src="https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=600&q=80" alt="Manhattan Penthouse" class="pcard-img" loading="lazy"/>
+          <div class="pbadge">⭐ FEATURED</div>
+          <div class="preturn">▲ +18.2%</div>
+        </div>
+        <div class="pinfo">
+          <div class="pname">Manhattan Penthouse</div>
+          <div class="ploc">📍 New York, USA</div>
+          <div class="pbar-labels"><span>Funded</span><span>87%</span></div>
+          <div class="pbar-bg"><div class="pbar-fill" style="width:87%"></div></div>
+          <div class="pfooter">
+            <div class="pprice">$12.50 <span>/ share</span></div>
+            <a href="#" class="pinvest">Invest Now</a>
+          </div>
+        </div>
+      </div>
+      <div class="pcard reveal reveal-delay-2">
+        <div class="pcard-img-wrap">
+          <img src="https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=600&q=80" alt="Miami Beach Villa" class="pcard-img" loading="lazy"/>
+          <div class="pbadge">🔥 HOT</div>
+          <div class="preturn">▲ +12.4%</div>
+        </div>
+        <div class="pinfo">
+          <div class="pname">Miami Beach Villa</div>
+          <div class="ploc">📍 Miami, USA</div>
+          <div class="pbar-labels"><span>Funded</span><span>64%</span></div>
+          <div class="pbar-bg"><div class="pbar-fill" style="width:64%"></div></div>
+          <div class="pfooter">
+            <div class="pprice">$8.75 <span>/ share</span></div>
+            <a href="#" class="pinvest">Invest Now</a>
+          </div>
+        </div>
+      </div>
+      <div class="pcard reveal reveal-delay-3">
+        <div class="pcard-img-wrap">
+          <img src="https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=600&q=80" alt="Dubai Tower" class="pcard-img" loading="lazy"/>
+          <div class="pbadge">🌟 NEW</div>
+          <div class="preturn">▲ +22.1%</div>
+        </div>
+        <div class="pinfo">
+          <div class="pname">Dubai Tower Suite</div>
+          <div class="ploc">📍 Dubai, UAE</div>
+          <div class="pbar-labels"><span>Funded</span><span>41%</span></div>
+          <div class="pbar-bg"><div class="pbar-fill" style="width:41%"></div></div>
+          <div class="pfooter">
+            <div class="pprice">$15.00 <span>/ share</span></div>
+            <a href="#" class="pinvest">Invest Now</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section style="background:var(--bg2); border-top:1px solid var(--border); border-bottom:1px solid var(--border);">
+  <div class="wrap">
+    <div class="features-split">
+      <div class="reveal">
+        <p class="eyebrow">Platform Features</p>
+        <h2 class="section-h">Built for the<br>Modern Investor</h2>
+        <p class="section-p">Everything you need to build and grow your real estate portfolio — all in one powerful platform.</p>
+        <div class="feat-list">
+          <div class="feat-item">
+            <div class="feat-ico" style="background:rgba(255,215,0,0.1);">📊</div>
+            <div class="feat-body">
+              <h3>Fractional Ownership</h3>
+              <p>Own a piece of premium real estate for as little as $1. Full legal ownership via digital shares.</p>
+            </div>
+          </div>
+          <div class="feat-item">
+            <div class="feat-ico" style="background:rgba(0,196,140,0.1);">📈</div>
+            <div class="feat-body">
+              <h3>24/7 Trading</h3>
+              <p>Buy and sell property shares any time — just like crypto, with real-asset backing and liquidity.</p>
+            </div>
+          </div>
+          <div class="feat-item">
+            <div class="feat-ico" style="background:rgba(74,144,217,0.1);">🛡️</div>
+            <div class="feat-body">
+              <h3>SEC Compliant</h3>
+              <p>Fully regulated with bank-grade security and FDIC-escrow protection on all investor deposits.</p>
+            </div>
+          </div>
+          <div class="feat-item">
+            <div class="feat-ico" style="background:rgba(255,107,107,0.1);">💰</div>
+            <div class="feat-body">
+              <h3>Monthly Dividends</h3>
+              <p>Earn passive rental income paid directly to your wallet every month, automatically.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="phone-wrap reveal">
+        <div class="phone-glow"></div>
+        <div class="phone">
+          <div class="phone-notch"><div class="phone-notch-bar"></div></div>
+          <div class="phone-screen">
+            <div class="phone-topbar">
+              <span class="phone-brand">IVXHOLDINGS</span>
+              <div class="phone-live"><div class="phone-live-dot"></div>LIVE</div>
+            </div>
+            <div class="phone-bal">
+              <div class="phone-bal-lbl">PORTFOLIO VALUE</div>
+              <div class="phone-bal-num">$24,850</div>
+              <div class="phone-bal-chg">▲ +$412.50 today (+1.69%)</div>
+            </div>
+            <div class="phone-chart">
+              <div class="phone-bar" style="height:38%"></div>
+              <div class="phone-bar" style="height:52%"></div>
+              <div class="phone-bar" style="height:44%"></div>
+              <div class="phone-bar" style="height:68%"></div>
+              <div class="phone-bar" style="height:58%"></div>
+              <div class="phone-bar" style="height:78%"></div>
+              <div class="phone-bar" style="height:63%"></div>
+              <div class="phone-bar" style="height:88%; background:rgba(255,215,0,0.22); border-top-color:#FFE44D;"></div>
+              <div class="phone-bar" style="height:100%; background:rgba(255,215,0,0.28); border-top-color:#FFD700;"></div>
+            </div>
+            <div class="phone-holdings">
+              <div class="phone-holding">
+                <div><div class="ph-name">Manhattan Penthouse</div><div class="ph-loc">New York, USA</div></div>
+                <div><div class="ph-val">$12,400</div><div class="ph-ret">▲ +18.2%</div></div>
+              </div>
+              <div class="phone-holding">
+                <div><div class="ph-name">Miami Beach Villa</div><div class="ph-loc">Miami, USA</div></div>
+                <div><div class="ph-val">$8,250</div><div class="ph-ret">▲ +12.4%</div></div>
+              </div>
+              <div class="phone-holding">
+                <div><div class="ph-name">Dubai Tower Suite</div><div class="ph-loc">Dubai, UAE</div></div>
+                <div><div class="ph-val">$4,200</div><div class="ph-ret">▲ +22.1%</div></div>
+              </div>
+            </div>
+          </div>
+          <div class="phone-tabs">
+            <div class="ptab"><div class="ptab-ico">🏠</div>Home</div>
+            <div class="ptab active"><div class="ptab-ico">📊</div>Portfolio</div>
+            <div class="ptab"><div class="ptab-ico">🏙️</div>Market</div>
+            <div class="ptab"><div class="ptab-ico">💬</div>Chat</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- HOW IT WORKS -->
+<section id="how-it-works">
+  <div class="wrap">
+    <div class="reveal" style="text-align:center; max-width:560px; margin:0 auto 0;">
+      <p class="eyebrow">Simple Process</p>
+      <h2 class="section-h">Start in 4 Easy Steps</h2>
+      <p class="section-p" style="margin:0 auto;">From sign-up to your first dividend — everything is fast, secure, and fully digital.</p>
+    </div>
+    <div class="steps-grid">
+      <div class="step-card reveal reveal-delay-1">
+        <div class="step-num">01</div>
+        <span class="step-ico">🪪</span>
+        <div class="step-ttl">Create Account</div>
+        <div class="step-dsc">Sign up in minutes with your email. Complete KYC verification to unlock full access.</div>
+      </div>
+      <div class="step-card reveal reveal-delay-2">
+        <div class="step-num">02</div>
+        <span class="step-ico">💳</span>
+        <div class="step-ttl">Fund Your Wallet</div>
+        <div class="step-dsc">Deposit via bank transfer, card, or wire. Funds are secured in FDIC-insured escrow.</div>
+      </div>
+      <div class="step-card reveal reveal-delay-3">
+        <div class="step-num">03</div>
+        <span class="step-ico">🏙️</span>
+        <div class="step-ttl">Choose Property</div>
+        <div class="step-dsc">Browse premium global listings. Review financials, projected returns, and location data.</div>
+      </div>
+      <div class="step-card reveal">
+        <div class="step-num">04</div>
+        <span class="step-ico">💰</span>
+        <div class="step-ttl">Earn Dividends</div>
+        <div class="step-dsc">Receive monthly rental income. Watch your portfolio grow and trade shares anytime.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- TRUST -->
+<section id="trust" class="trust-bg">
+  <div class="wrap">
+    <div class="reveal" style="text-align:center; max-width:560px; margin:0 auto;">
+      <p class="eyebrow">Trust & Security</p>
+      <h2 class="section-h">Your Investment<br>is Protected</h2>
+      <p class="section-p" style="margin:0 auto;">Built on the highest standards of financial regulation and investor protection.</p>
+    </div>
+    <div class="trust-grid">
+      <div class="tcard reveal reveal-delay-1">
+        <span class="tcard-ico">🏛️</span>
+        <div class="tcard-ttl">SEC Regulated</div>
+        <div class="tcard-dsc">All offerings are SEC-compliant under Regulation A+ and Regulation D, providing full legal protection for every investor.</div>
+        <div class="tcard-tags"><span class="ttag">Reg A+</span><span class="ttag">Reg D</span><span class="ttag">Audited</span></div>
+      </div>
+      <div class="tcard reveal reveal-delay-2">
+        <span class="tcard-ico">🔒</span>
+        <div class="tcard-ttl">Bank-Grade Security</div>
+        <div class="tcard-dsc">256-bit AES encryption, two-factor authentication, and cold storage for all digital assets. Your data and funds are always safe.</div>
+        <div class="tcard-tags"><span class="ttag">256-bit AES</span><span class="ttag">2FA</span><span class="ttag">SOC 2</span></div>
+      </div>
+      <div class="tcard reveal reveal-delay-3">
+        <span class="tcard-ico">🏦</span>
+        <div class="tcard-ttl">FDIC Escrow</div>
+        <div class="tcard-dsc">All investor funds are held in FDIC-insured escrow accounts, completely separate from company operating funds.</div>
+        <div class="tcard-tags"><span class="ttag">FDIC Insured</span><span class="ttag">Escrow</span><span class="ttag">Segregated</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- REVIEWS -->
+<section id="reviews" class="reviews-bg">
+  <div class="wrap">
+    <div class="reveal" style="text-align:center; max-width:560px; margin:0 auto;">
+      <p class="eyebrow">Investor Stories</p>
+      <h2 class="section-h">Trusted by 52,000+<br>Global Investors</h2>
+    </div>
+    <div class="reviews-grid">
+      <div class="rcard reveal reveal-delay-1">
+        <div class="rcard-stars">★★★★★</div>
+        <p class="rcard-text">"IVX Holdings completely changed how I think about investing. I started with $500 in a Manhattan property and now earn monthly dividends. The platform is incredibly intuitive."</p>
+        <div class="rcard-author">
+          <div class="rcard-av">MJ</div>
+          <div><div class="rcard-name">Marcus J.</div><div class="rcard-role">Investor · New York, USA</div></div>
+        </div>
+      </div>
+      <div class="rcard reveal reveal-delay-2">
+        <div class="rcard-stars">★★★★★</div>
+        <p class="rcard-text">"As someone with no prior real estate experience, IVX made it so accessible. $1 to start, clear return data, and I actually understand what I own. A remarkable platform."</p>
+        <div class="rcard-author">
+          <div class="rcard-av">SL</div>
+          <div><div class="rcard-name">Sophie L.</div><div class="rcard-role">Investor · London, UK</div></div>
+        </div>
+      </div>
+      <div class="rcard reveal reveal-delay-3">
+        <div class="rcard-stars">★★★★★</div>
+        <p class="rcard-text">"My portfolio across 6 properties generates consistent 14%+ annual returns. The 24/7 trading is a game-changer — I can rebalance my real estate like stocks."</p>
+        <div class="rcard-author">
+          <div class="rcard-av">AR</div>
+          <div><div class="rcard-name">Ahmed R.</div><div class="rcard-role">Investor · Dubai, UAE</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="cta-section">
+  <div class="cta-glow"></div>
+  <div class="cta-inner">
+    <p class="eyebrow" style="text-align:center; margin-bottom:14px;">Get Started Today</p>
+    <h2>Ready to Own<br><span>Real Estate?</span></h2>
+    <p class="cta-sub">Join 52,000+ investors building wealth through fractional real estate.<br>Start with just $1.</p>
+    <div class="cta-btns">
+      <a href="#" class="btn-primary" style="font-size:16px; padding:18px 38px;">Start Investing Free &rarr;</a>
+      <a href="mailto:invest@ivxholding.com" class="btn-outline" style="font-size:15px; padding:18px 28px;">Talk to Our Team</a>
+    </div>
+    <div class="app-badges">
+      <a href="#" class="app-badge">
+        <span class="app-badge-ico">🍎</span>
+        <div class="app-badge-copy"><small>DOWNLOAD ON THE</small><strong>App Store</strong></div>
+      </a>
+      <a href="#" class="app-badge">
+        <span class="app-badge-ico">▶️</span>
+        <div class="app-badge-copy"><small>GET IT ON</small><strong>Google Play</strong></div>
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="footer-inner">
+    <div class="footer-top">
+      <div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div style="width:34px;height:34px;background:var(--gold);border-radius:10px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:12px;color:#000;">IVX</div>
+          <span style="font-weight:800;font-size:13.5px;letter-spacing:1.8px;">IVXHOLDINGS</span>
+        </div>
+        <p class="footer-brand-desc">Democratizing real estate investment through fractional ownership and 24/7 trading. Available globally from just $1.</p>
+        <div class="footer-socials">
+          <a href="#" class="fsoc">𝕏</a>
+          <a href="#" class="fsoc">in</a>
+          <a href="#" class="fsoc">📘</a>
+          <a href="#" class="fsoc">📸</a>
+        </div>
+      </div>
+      <div class="footer-col">
+        <h4>Platform</h4>
+        <ul>
+          <li><a href="#">Properties</a></li>
+          <li><a href="#">Portfolio</a></li>
+          <li><a href="#">Trading</a></li>
+          <li><a href="#">Dividends</a></li>
+          <li><a href="#">IPX Token</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h4>Company</h4>
+        <ul>
+          <li><a href="#">About Us</a></li>
+          <li><a href="#">Careers</a></li>
+          <li><a href="#">Press</a></li>
+          <li><a href="#">Blog</a></li>
+          <li><a href="#">Contact</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h4>Contact</h4>
+        <ul>
+          <li><a href="mailto:support@ivxholding.com">support@ivxholding.com</a></li>
+          <li><a href="mailto:invest@ivxholding.com">invest@ivxholding.com</a></li>
+          <li><a href="mailto:kyc@ivxholding.com">kyc@ivxholding.com</a></li>
+          <li><a href="mailto:compliance@ivxholding.com">compliance@ivxholding.com</a></li>
+          <li><a href="#">Help Center</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <p class="footer-copy">© 2025 IVX Holdings LLC. All rights reserved. Real estate investments involve risk. Past performance does not guarantee future results. Securities offered through IVX Holdings LLC. Investing involves risk of loss. Please review our full disclosures before investing.</p>
+      <div class="footer-legal-links">
+        <a href="#">Privacy</a>
+        <a href="#">Terms</a>
+        <a href="#">Disclosures</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+  // Scroll reveal
+  const revealEls = document.querySelectorAll('.reveal');
+  const revealObserver = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('visible');
+        revealObserver.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.08, rootMargin: '0px 0px -32px 0px' });
+  revealEls.forEach(el => revealObserver.observe(el));
+
+  // Mobile nav
+  const hamburger = document.getElementById('hamburger');
+  const navLinks = document.querySelector('.nav-links');
+  let navOpen = false;
+  hamburger.addEventListener('click', () => {
+    navOpen = !navOpen;
+    if (navOpen) {
+      navLinks.style.cssText = 'display:flex;flex-direction:column;position:fixed;top:68px;left:0;right:0;background:#111;padding:20px 24px 28px;border-bottom:1px solid #272727;z-index:199;gap:18px;';
+    } else {
+      navLinks.style.display = 'none';
+    }
+  });
+
+  // Close nav on link click
+  navLinks.querySelectorAll('a').forEach(a => {
+    a.addEventListener('click', () => {
+      navOpen = false;
+      navLinks.style.display = 'none';
+    });
+  });
+</script>
+</body>
+</html>
