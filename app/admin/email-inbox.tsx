@@ -263,7 +263,7 @@ export default function EmailInboxScreen() {
         messages: [
           {
             role: 'user',
-            content: `You are an investment analyst for IVX Holdings LLC, a tokenized real estate investment platform in South Florida.
+            content: `You are an investment analyst for IPX Holdings LLC — a full-spectrum real estate investment and wealth-building platform.
 
 Analyze this incoming email and extract the investor's intent. Be concise and structured.
 
@@ -279,9 +279,13 @@ Return a brief analysis covering:
 4. INVESTMENT TYPE: What are they looking for?
 5. TIMELINE: How urgent/what timeframe?
 6. OPPORTUNITY SCORE: Rate 1-10 how strong this lead is
-7. BEST PRODUCT FIT: Which IVX product fits best (tokenized mortgage shares, JV equity, lender program, or referral partner)?
+7. BEST PRODUCT FIT: Which IPX product fits best:
+   - Fractional shares ($1+) | Tokenized mortgages (6-9% yield) | JV equity ($500K+)
+   - IPX Earn (passive yield) | Auto-reinvest | Smart AI investing | Copy investing
+   - Institutional lender program ($3M+) | Broker/referral partner program
+8. NEXT STEP: Best follow-up action for this specific lead
 
-Keep it to 6-8 lines total.`,
+Keep it to 8-10 lines total.`,`
           },
         ],
       });
@@ -306,25 +310,30 @@ Keep it to 6-8 lines total.`,
         messages: [
           {
             role: 'user',
-            content: `You are the investment relations team at IVX Holdings LLC — a tokenized real estate investment platform specializing in South Florida properties.
+            content: `You are the investment relations team at IPX Holdings LLC — a full-spectrum real estate investment platform that gives everyone access to premium real estate wealth.
 
-Write a professional, warm, and persuasive reply to this email. The goal is to:
-1. Acknowledge exactly what they asked
-2. Present the most relevant IVX investment alternatives for their situation
-3. Highlight key benefits (6-9% yields, blockchain-verified ownership, first-lien security, 24/7 liquidity)
-4. For large investors ($500K+): mention the JV opportunity at 20231 SW 51st Ct, Pembroke Pines FL — $10M property, $1.4M JV raise
-5. For new/small investors: explain the tokenized share model starting from $1,000
-6. For lenders: discuss our bridge loan and institutional allocation programs
-7. Include a clear call to action (schedule a call, download the prospectus, etc.)
-8. Sign off as "IVX Holdings Investment Team"
+Write a professional, warm, and persuasive reply to this email. Be personal and specific to their situation. The goal is to:
+1. Acknowledge exactly what they asked — match their tone
+2. Present the most relevant IPX products for their specific situation:
+   - ENTRY LEVEL ($1 – $10K): Fractional tokenized real estate shares from just $1. Earn monthly rental dividends. 24/7 trading on our platform.
+   - RETAIL ($10K – $100K): First-lien secured tokenized mortgages at 6-9% annual yield. Blockchain-verified ownership, FDIC-escrow protection, full transparency.
+   - MID-TIER ($100K – $500K): Diversified tokenized property portfolios. Use our Auto-Reinvest, Smart AI Investing, or Copy Investing tools to maximize returns.
+   - HIGH NET WORTH ($500K – $1.4M): JV equity co-investment alongside IPX in curated South Florida premium properties.
+   - INSTITUTIONAL ($1.4M+): Full JV partnership, lender syndication, white-label investment products, SEC/FinCEN compliant structures.
+   - BROKERS & AGENTS: Revenue-sharing referral partner program — earn on every client you bring.
+   - LENDERS: Bridge loan program, institutional allocation, lender syndication with secured first-lien positions.
+3. Highlight platform strengths relevant to them: IPX Earn passive yield, AI-powered Smart Investing, Copy Investing top performers, Auto-Reinvest compounding, 24/7 secondary market liquidity.
+4. Include a clear, specific call to action (schedule a call, download prospectus, create a free account, etc.)
+5. Sign off as "IPX Holdings Investment Team"
 
-Keep it professional but conversational. 3-5 paragraphs max.
+Do NOT mention specific property addresses unless the person explicitly asked about a property. Focus on the full platform.
+Keep it professional but warm and conversational. 3-5 paragraphs max.
 
 Email to reply to:
 From: ${email.from}
 Subject: ${email.subject}
 Body:
-${email.body}`,
+${email.body}`,`
           },
         ],
       });
