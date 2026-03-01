@@ -285,7 +285,7 @@ Return a brief analysis covering:
    - Institutional lender program ($3M+) | Broker/referral partner program
 8. NEXT STEP: Best follow-up action for this specific lead
 
-Keep it to 8-10 lines total.`,`
+Keep it to 8-10 lines total.`,
           },
         ],
       });
@@ -333,7 +333,7 @@ Email to reply to:
 From: ${email.from}
 Subject: ${email.subject}
 Body:
-${email.body}`,`
+${email.body}`,
           },
         ],
       });
