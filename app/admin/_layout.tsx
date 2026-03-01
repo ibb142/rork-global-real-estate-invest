@@ -223,6 +223,12 @@ export default function AdminLayout() {
           href: null,
         }}
       />
+      <Tabs.Screen
+        name="email-inbox"
+        options={{
+          href: null,
+        }}
+      />
     </Tabs>
     </View>
   );

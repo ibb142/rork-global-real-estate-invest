@@ -87,6 +87,7 @@ const ADMIN_MODULES = [
   { id: 'lead-intelligence', name: 'Lead Intelligence', icon: Brain, iconName: 'Brain', route: '/admin/lead-intelligence', category: 'Marketing' },
   { id: 'viral-growth', name: 'Viral Growth Hub', icon: Flame, iconName: 'Flame', route: '/admin/viral-growth', category: 'Marketing' },
   { id: 'api-keys', name: 'API Keys Vault', icon: KeyRound, iconName: 'KeyRound', route: '/admin/api-keys', category: 'Settings' },
+  { id: 'email-inbox', name: 'AI Email Inbox', icon: Mail, iconName: 'Mail', route: '/admin/email-inbox', category: 'Marketing' },
 ];
 
 export default function AdminDashboard() {
