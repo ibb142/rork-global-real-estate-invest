@@ -215,7 +215,7 @@ function generateAPIListText(): string {
   r += '   IVX HOLDING — FULL API REGISTRATION LIST\n';
   r += '════════════════════════════════════════════\n';
   r += `   Generated: ${date}\n`;
-  r += `   Total: 21 APIs across 9 categories\n`;
+  r += `   Total: 31 APIs across 11 categories\n`;
   r += '════════════════════════════════════════════\n\n';
   let num = 1;
   CATEGORIES.forEach((cat) => {
