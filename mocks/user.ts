@@ -7,7 +7,7 @@ export const currentUser: User = {
   firstName: 'Alexander',
   lastName: 'Sterling',
   avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200',
-  phone: '+1 (555) 123-4567',
+  phone: '+1 (561) 644-3503',
   country: 'United States',
   kycStatus: 'approved',
   eligibilityStatus: 'eligible',
