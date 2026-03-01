@@ -1,0 +1,156 @@
+name: Deploy IVX Holdings API
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - 'server.ts'
+      - 'Dockerfile'
+      - 'package.json'
+      - 'bun.lock'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+      image_tag:
+        description: 'Custom image tag (leave empty for git SHA)'
+        required: false
+        type: string
+
+env:
+  AWS_REGION: us-east-1
+  APP_NAME: ivx-holdings
+  ECS_CLUSTER: ivx-holdings-cluster
+  ECS_SERVICE: ivx-holdings-api-service
+  CONTAINER_NAME: ivx-holdings-api
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build-and-deploy:
+    name: Build & Deploy
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'production' }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set image tag
+        id: tag
+        run: |
+          if [ -n "${{ github.event.inputs.image_tag }}" ]; then
+            echo "tag=${{ github.event.inputs.image_tag }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build Docker image
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          IMAGE_TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          docker build \
+            --platform linux/amd64 \
+            -t $ECR_REGISTRY/${{ env.APP_NAME }}-api:$IMAGE_TAG \
+            -t $ECR_REGISTRY/${{ env.APP_NAME }}-api:latest \
+            .
+
+      - name: Push to ECR
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          IMAGE_TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          docker push $ECR_REGISTRY/${{ env.APP_NAME }}-api:$IMAGE_TAG
+          docker push $ECR_REGISTRY/${{ env.APP_NAME }}-api:latest
+
+      - name: Update ECS task definition
+        id: task-def
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          IMAGE_TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          CURRENT_TASK_DEF=$(aws ecs describe-task-definition \
+            --task-definition ${{ env.APP_NAME }}-api \
+            --query 'taskDefinition' \
+            --output json)
+
+          NEW_TASK_DEF=$(echo $CURRENT_TASK_DEF | python3 -c "
+          import sys, json
+          td = json.load(sys.stdin)
+          for cd in td['containerDefinitions']:
+              if cd['name'] == '${{ env.CONTAINER_NAME }}':
+                  cd['image'] = '$ECR_REGISTRY/${{ env.APP_NAME }}-api:$IMAGE_TAG'
+          for key in ['taskDefinitionArn','revision','status','requiresAttributes','compatibilities','registeredAt','registeredBy']:
+              td.pop(key, None)
+          print(json.dumps(td))
+          ")
+
+          NEW_ARN=$(aws ecs register-task-definition \
+            --cli-input-json "$NEW_TASK_DEF" \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)
+
+          echo "task_def_arn=$NEW_ARN" >> $GITHUB_OUTPUT
+
+      - name: Deploy to ECS
+        run: |
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service ${{ env.ECS_SERVICE }} \
+            --task-definition ${{ steps.task-def.outputs.task_def_arn }} \
+            --force-new-deployment \
+            --output text > /dev/null
+
+      - name: Wait for deployment
+        run: |
+          echo "Waiting for ECS service to stabilize..."
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE }}
+          echo "Deployment complete!"
+
+      - name: Health check
+        if: vars.API_URL != ''
+        run: |
+          sleep 10
+          STATUS=$(curl -sf --max-time 15 "${{ vars.API_URL }}/health" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status','unknown'))" 2>/dev/null || echo "unreachable")
+          echo "Health check: $STATUS"
+          if [ "$STATUS" != "healthy" ]; then
+            echo "::warning::Health check returned: $STATUS"
+          fi
+
+      - name: Deployment summary
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          IMAGE_TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          echo "### Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Item | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "| --- | --- |" >> $GITHUB_STEP_SUMMARY
+          echo "| Image | \`$ECR_REGISTRY/${{ env.APP_NAME }}-api:$IMAGE_TAG\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Task Def | \`${{ steps.task-def.outputs.task_def_arn }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Cluster | \`${{ env.ECS_CLUSTER }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Service | \`${{ env.ECS_SERVICE }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Commit | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
