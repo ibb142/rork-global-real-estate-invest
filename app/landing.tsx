@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { TrendingUp, Shield, Zap, ChevronRight, Globe, Award, BarChart3, ExternalLink, Users, CheckCircle, Mail, Phone, User, ChevronDown } from 'lucide-react-native';
+import { TrendingUp, Shield, Zap, ChevronRight, Globe, Award, BarChart3, ExternalLink, Users, CheckCircle, Mail, Phone, User, ChevronDown, MapPin, DollarSign, Building2, Handshake } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { trpc } from '@/lib/trpc';
 
@@ -61,11 +61,28 @@ const PROPERTY_IMAGES = [
 ];
 
 const INVESTMENT_OPTIONS = [
-  { label: 'Under $1,000', value: 'under_1k' },
-  { label: '$1,000 – $10,000', value: '1k_10k' },
-  { label: '$10,000 – $50,000', value: '10k_50k' },
-  { label: '$50,000+', value: '50k_plus' },
+  { label: 'Under $10,000', value: 'under_10k' },
+  { label: '$10,000 – $100,000', value: '10k_100k' },
+  { label: '$100,000 – $500,000', value: '100k_500k' },
+  { label: '$500,000 – $1.4M (JV)', value: '500k_1_4m' },
+  { label: '$1.4M+ (Full JV Partner)', value: '1_4m_plus' },
 ];
+
+const FEATURED_PROPERTY = {
+  address: '20231 SW 51st Ct',
+  city: 'Pembroke Pines, FL 33332',
+  price: '$10,000,000',
+  jvAmount: '$1,400,000',
+  beds: 5,
+  baths: 6,
+  sqft: '8,200',
+  type: 'Luxury Estate',
+  images: [
+    'https://images.unsplash.com/photo-1613977257363-707ba9348227?w=600&q=80',
+    'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?w=600&q=80',
+    'https://images.unsplash.com/photo-1600566753086-00f18fb6b3ea?w=600&q=80',
+  ],
+};
 
 export default function LandingScreen() {
   const router = useRouter();
@@ -141,6 +158,15 @@ export default function LandingScreen() {
       source: 'landing_page',
     });
   };
+
+  const [propImage, setPropImage] = useState<number>(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setPropImage(prev => (prev + 1) % FEATURED_PROPERTY.images.length);
+    }, 4000);
+    return () => clearInterval(interval);
+  }, []);
 
   const totalMembers = (statsQuery.data?.total ?? 0) + 52000;
 
@@ -435,6 +461,115 @@ export default function LandingScreen() {
                 </Text>
               </View>
             </Animated.View>
+
+            <View style={styles.featuredPropertySection}>
+              <View style={styles.fpHeader}>
+                <View style={styles.fpBadge}>
+                  <MapPin size={12} color="#FF6B6B" />
+                  <Text style={styles.fpBadgeText}>SOUTH FLORIDA EXCLUSIVE</Text>
+                </View>
+                <Text style={styles.fpSectionTitle}>Featured Listing</Text>
+              </View>
+
+              <View style={styles.fpCard}>
+                <View style={styles.fpImageWrap}>
+                  <Image
+                    source={{ uri: FEATURED_PROPERTY.images[propImage] }}
+                    style={styles.fpImage}
+                    resizeMode="cover"
+                  />
+                  <View style={styles.fpImageOverlay} />
+                  <View style={styles.fpTypeBadge}>
+                    <Building2 size={11} color="#FFD700" />
+                    <Text style={styles.fpTypeBadgeText}>{FEATURED_PROPERTY.type}</Text>
+                  </View>
+                  <View style={styles.fpPriceBadge}>
+                    <Text style={styles.fpPriceText}>{FEATURED_PROPERTY.price}</Text>
+                  </View>
+                  <View style={styles.fpDots}>
+                    {FEATURED_PROPERTY.images.map((_, i) => (
+                      <View key={i} style={[styles.dot, i === propImage && styles.dotActive]} />
+                    ))}
+                  </View>
+                </View>
+
+                <View style={styles.fpDetails}>
+                  <View style={styles.fpAddressRow}>
+                    <MapPin size={14} color={Colors.primary} />
+                    <View>
+                      <Text style={styles.fpAddress}>{FEATURED_PROPERTY.address}</Text>
+                      <Text style={styles.fpCity}>{FEATURED_PROPERTY.city}</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.fpStats}>
+                    <View style={styles.fpStat}>
+                      <Text style={styles.fpStatVal}>{FEATURED_PROPERTY.beds}</Text>
+                      <Text style={styles.fpStatLbl}>Beds</Text>
+                    </View>
+                    <View style={styles.fpStatDiv} />
+                    <View style={styles.fpStat}>
+                      <Text style={styles.fpStatVal}>{FEATURED_PROPERTY.baths}</Text>
+                      <Text style={styles.fpStatLbl}>Baths</Text>
+                    </View>
+                    <View style={styles.fpStatDiv} />
+                    <View style={styles.fpStat}>
+                      <Text style={styles.fpStatVal}>{FEATURED_PROPERTY.sqft}</Text>
+                      <Text style={styles.fpStatLbl}>Sq Ft</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.jvBox}>
+                    <View style={styles.jvBoxLeft}>
+                      <Handshake size={18} color="#FFD700" />
+                      <View>
+                        <Text style={styles.jvTitle}>JV Opportunity</Text>
+                        <Text style={styles.jvSubtitle}>Seeking joint venture partner</Text>
+                      </View>
+                    </View>
+                    <View style={styles.jvAmount}>
+                      <Text style={styles.jvAmountLabel}>Min Investment</Text>
+                      <Text style={styles.jvAmountValue}>{FEATURED_PROPERTY.jvAmount}</Text>
+                    </View>
+                  </View>
+
+                  <TouchableOpacity
+                    style={styles.inquireBtn}
+                    activeOpacity={0.85}
+                    onPress={() => {
+                      setSelectedInterest('1_4m_plus');
+                      const el = document as any;
+                      if (el && el.getElementById) {
+                        const form = el.getElementById('investor-form');
+                        if (form) form.scrollIntoView({ behavior: 'smooth' });
+                      }
+                    }}
+                  >
+                    <DollarSign size={15} color={Colors.black} />
+                    <Text style={styles.inquireBtnText}>Inquire as JV Investor</Text>
+                    <ChevronRight size={15} color={Colors.black} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+
+            <View style={styles.partnersSection}>
+              <Text style={styles.partnersSectionTitle}>Our Partners</Text>
+              <TouchableOpacity
+                style={styles.partnerCard}
+                onPress={() => Linking.openURL('https://www.onestopconstructorsinc.com')}
+                activeOpacity={0.8}
+              >
+                <View style={styles.partnerIconWrap}>
+                  <Building2 size={22} color="#FFD700" />
+                </View>
+                <View style={styles.partnerInfo}>
+                  <Text style={styles.partnerName}>One Stop Constructors Inc.</Text>
+                  <Text style={styles.partnerDesc}>Licensed general contractor — South Florida</Text>
+                </View>
+                <ExternalLink size={14} color={Colors.primary} />
+              </TouchableOpacity>
+            </View>
 
             <TouchableOpacity
               style={styles.websiteBanner}
@@ -1012,6 +1147,245 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '800' as const,
     letterSpacing: 0.3,
+  },
+  featuredPropertySection: {
+    marginHorizontal: 20,
+    marginBottom: 28,
+  },
+  fpHeader: {
+    marginBottom: 16,
+  },
+  fpBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#FF6B6B18',
+    borderWidth: 1,
+    borderColor: '#FF6B6B40',
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    alignSelf: 'flex-start',
+    marginBottom: 8,
+  },
+  fpBadgeText: {
+    color: '#FF6B6B',
+    fontSize: 10,
+    fontWeight: '800' as const,
+    letterSpacing: 1.2,
+  },
+  fpSectionTitle: {
+    color: Colors.text,
+    fontSize: 20,
+    fontWeight: '800' as const,
+  },
+  fpCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    overflow: 'hidden',
+  },
+  fpImageWrap: {
+    height: 220,
+    position: 'relative',
+  },
+  fpImage: {
+    width: '100%',
+    height: '100%',
+  },
+  fpImageOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+  },
+  fpTypeBadge: {
+    position: 'absolute',
+    top: 14,
+    left: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#FFD70050',
+  },
+  fpTypeBadgeText: {
+    color: '#FFD700',
+    fontSize: 10,
+    fontWeight: '700' as const,
+    letterSpacing: 0.8,
+  },
+  fpPriceBadge: {
+    position: 'absolute',
+    bottom: 14,
+    right: 14,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.primary + '50',
+  },
+  fpPriceText: {
+    color: Colors.primary,
+    fontSize: 20,
+    fontWeight: '900' as const,
+    letterSpacing: 0.5,
+  },
+  fpDots: {
+    position: 'absolute',
+    bottom: 14,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 5,
+  },
+  fpDetails: {
+    padding: 18,
+    gap: 14,
+  },
+  fpAddressRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  fpAddress: {
+    color: Colors.text,
+    fontSize: 16,
+    fontWeight: '700' as const,
+  },
+  fpCity: {
+    color: Colors.textSecondary,
+    fontSize: 13,
+    marginTop: 2,
+  },
+  fpStats: {
+    flexDirection: 'row',
+    backgroundColor: Colors.backgroundSecondary,
+    borderRadius: 12,
+    padding: 14,
+    alignItems: 'center',
+    justifyContent: 'space-around',
+  },
+  fpStat: {
+    alignItems: 'center',
+  },
+  fpStatVal: {
+    color: Colors.text,
+    fontSize: 18,
+    fontWeight: '800' as const,
+  },
+  fpStatLbl: {
+    color: Colors.textTertiary,
+    fontSize: 11,
+    marginTop: 2,
+  },
+  fpStatDiv: {
+    width: 1,
+    height: 32,
+    backgroundColor: Colors.surfaceBorder,
+  },
+  jvBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FFD70010',
+    borderWidth: 1,
+    borderColor: '#FFD70030',
+    borderRadius: 14,
+    padding: 14,
+  },
+  jvBoxLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+  },
+  jvTitle: {
+    color: Colors.text,
+    fontSize: 14,
+    fontWeight: '700' as const,
+  },
+  jvSubtitle: {
+    color: Colors.textTertiary,
+    fontSize: 11,
+    marginTop: 2,
+  },
+  jvAmount: {
+    alignItems: 'flex-end',
+  },
+  jvAmountLabel: {
+    color: Colors.textTertiary,
+    fontSize: 10,
+    fontWeight: '600' as const,
+  },
+  jvAmountValue: {
+    color: '#FFD700',
+    fontSize: 18,
+    fontWeight: '900' as const,
+  },
+  inquireBtn: {
+    backgroundColor: Colors.primary,
+    borderRadius: 12,
+    paddingVertical: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  inquireBtnText: {
+    color: Colors.black,
+    fontSize: 14,
+    fontWeight: '800' as const,
+    letterSpacing: 0.3,
+  },
+  partnersSection: {
+    marginHorizontal: 20,
+    marginBottom: 24,
+  },
+  partnersSectionTitle: {
+    color: Colors.text,
+    fontSize: 16,
+    fontWeight: '800' as const,
+    marginBottom: 12,
+    letterSpacing: 0.3,
+  },
+  partnerCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    padding: 16,
+  },
+  partnerIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: '#FFD70015',
+    borderWidth: 1,
+    borderColor: '#FFD70030',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  partnerInfo: {
+    flex: 1,
+  },
+  partnerName: {
+    color: Colors.text,
+    fontSize: 14,
+    fontWeight: '700' as const,
+  },
+  partnerDesc: {
+    color: Colors.textTertiary,
+    fontSize: 12,
+    marginTop: 2,
   },
   bottomPad: {
     height: 120,
