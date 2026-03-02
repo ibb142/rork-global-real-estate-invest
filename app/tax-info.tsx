@@ -327,6 +327,6 @@ const styles = StyleSheet.create({
   formStatusText: { color: Colors.textSecondary, fontSize: 13 },
   infoCard: { backgroundColor: Colors.info + '10', borderRadius: 12, padding: 14, borderWidth: 1, borderColor: Colors.info + '20' },
   infoText: { color: Colors.textSecondary, fontSize: 13, lineHeight: 18 },
-  bottomPadding: { height: 40 },
+  bottomPadding: { height: 120 },
   scrollView: { backgroundColor: Colors.background },
 });
