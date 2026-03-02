@@ -39,6 +39,7 @@ interface CompanyInfo {
   state: string;
   zipCode: string;
   email: string;
+  ceoEmail: string;
   phone: string;
   website: string;
 }
@@ -49,6 +50,7 @@ const DEFAULT_INFO: CompanyInfo = {
   state: 'FL',
   zipCode: '33131',
   email: 'support@ivxholding.com',
+  ceoEmail: 'ceo@ivxholding.com',
   phone: '+1 (556) 164-3503',
   website: 'www.ivxholding.com',
 };
@@ -458,7 +460,7 @@ const styles = StyleSheet.create({
   saveBtn: { backgroundColor: Colors.primary, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
   saveBtnDisabled: { opacity: 0.4 },
   saveBtnText: { color: Colors.black, fontWeight: '700' as const, fontSize: 15 },
-  scrollContent: { padding: 20, paddingBottom: 40 },
+  scrollContent: { padding: 20, paddingBottom: 140 },
   brandSection: { marginBottom: 16 },
   logoRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   logo: { width: 48, height: 48, borderRadius: 12 },
@@ -487,6 +489,6 @@ const styles = StyleSheet.create({
   addressRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   legalFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 },
   legalText: { color: Colors.textSecondary, fontSize: 13 },
-  bottomPadding: { height: 40 },
+  bottomPadding: { height: 120 },
   scrollView: { backgroundColor: Colors.background },
 });
