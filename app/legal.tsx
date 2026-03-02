@@ -56,7 +56,7 @@ const COMPANY_EMAIL_CEO = 'ceo@ivxholding.com';
 const COMPANY_EMAIL_LEGAL = 'legal@ivxholding.com';
 const COMPANY_EMAIL_PRIVACY = 'privacy@ivxholding.com';
 const COMPANY_EMAIL_COMPLIANCE = 'compliance@ivxholding.com';
-const COMPANY_PHONE = '+1 (556) 164-3503';
+const COMPANY_PHONE = '+1 (561) 644-3503';
 const COMPANY_WEBSITE = 'www.ivxholding.com';
 
 const LEGAL_DOCUMENTS: LegalDocument[] = [
