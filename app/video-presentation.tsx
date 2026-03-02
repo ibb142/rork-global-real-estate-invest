@@ -234,9 +234,9 @@ const FLOOR_COLORS = [
 ];
 
 const SLIDES: SlideConfig[] = [
-  { id: 'hero', type: 'hero', title: 'IPX HOLDING', subtitle: 'The Future of Real Estate Investment', accentColor: '#FFD700', duration: 5000 },
+  { id: 'hero', type: 'hero', title: 'IVXHOLDINGS HOLDING', subtitle: 'The Future of Real Estate Investment', accentColor: '#FFD700', duration: 5000 },
   { id: 'problem', type: 'pain', title: 'Traditional Real Estate\nis Broken', accentColor: '#FF4D4D', duration: 6500 },
-  { id: 'solution', type: 'hero', title: 'IPX + AI\nChanges Everything', subtitle: 'Crushing every barrier with artificial intelligence', accentColor: '#00C48C', duration: 4500 },
+  { id: 'solution', type: 'hero', title: 'IVXHOLDINGS + AI\nChanges Everything', subtitle: 'Crushing every barrier with artificial intelligence', accentColor: '#00C48C', duration: 4500 },
   { id: 'comparison', type: 'comparison', title: 'Why This Crushes\nTraditional Real Estate', accentColor: '#FFD700', duration: 8000 },
   { id: 'listing', type: 'feature', title: 'AI-Powered Listing', subtitle: 'Replace the 30-60 day process', accentColor: '#4A90D9', duration: 5500, featureValue: '2 min', featureDesc: ['AI scans & structures data', 'Auto-generates listing', 'Instant market placement'], mockupKey: 'marketplace' },
   { id: 'kyc', type: 'feature', title: 'Instant Verification', subtitle: 'AI document scanning & biometrics', accentColor: '#9B59B6', duration: 5500, featureValue: '60 sec', featureDesc: ['Camera ID / passport scan', 'AI data extraction', 'Real-time verification'], mockupKey: 'onboarding' },
@@ -548,14 +548,14 @@ export default function VideoPresentationScreen() {
       console.log('[VideoPresentation] File saved:', fileUri);
       const isAvailable = await Sharing.isAvailableAsync();
       if (isAvailable) {
-        await Sharing.shareAsync(fileUri, { mimeType: image.mimeType, dialogTitle: 'Save IPX 8K Photo' });
+        await Sharing.shareAsync(fileUri, { mimeType: image.mimeType, dialogTitle: 'Save IVXHOLDINGS 8K Photo' });
       } else {
         Alert.alert('Saved', 'Image saved to device.');
       }
     } catch (e) {
       console.error('[VideoPresentation] Download error:', e);
       try {
-        await Share.share({ message: SHARE_MESSAGE, title: 'IPX 8K Image' });
+        await Share.share({ message: SHARE_MESSAGE, title: 'IVXHOLDINGS 8K Image' });
       } catch {
         Alert.alert('Download Error', 'Could not save image. Please try again.');
       }
@@ -564,7 +564,7 @@ export default function VideoPresentationScreen() {
 
   const handleShareImageWhatsApp = useCallback(async (image: GeneratedImage) => {
     triggerHaptic();
-    const waText = '\uD83C\uDFAC Check out this 8K IPX real estate render!\n\n' + APP_SHARE_URL;
+    const waText = '\uD83C\uDFAC Check out this 8K IVXHOLDINGS real estate render!\n\n' + APP_SHARE_URL;
     console.log('[VideoPresentation] Share image platform:', Platform.OS);
     if (Platform.OS === 'web') {
       try {
@@ -576,12 +576,12 @@ export default function VideoPresentationScreen() {
           const blob = new Blob([byteArr], { type: image.mimeType });
           const fileObj = new File([blob], `ipx-8k-${Date.now()}.png`, { type: image.mimeType });
           if (navigator.canShare && navigator.canShare({ files: [fileObj] })) {
-            await navigator.share({ files: [fileObj], title: 'IPX 8K Image', text: waText });
+            await navigator.share({ files: [fileObj], title: 'IVXHOLDINGS 8K Image', text: waText });
             setShareSuccess(true);
             setTimeout(() => setShareSuccess(false), 2500);
             return;
           }
-          await navigator.share({ title: 'IPX 8K Image', text: waText, url: APP_SHARE_URL });
+          await navigator.share({ title: 'IVXHOLDINGS 8K Image', text: waText, url: APP_SHARE_URL });
           setShareSuccess(true);
           setTimeout(() => setShareSuccess(false), 2500);
           return;
@@ -772,7 +772,7 @@ export default function VideoPresentationScreen() {
         await Clipboard.setStringAsync(content);
         Alert.alert('Copied', 'Presentation content copied to clipboard.');
       } else {
-        await Share.share({ message: content, title: 'Download IPX Presentation' });
+        await Share.share({ message: content, title: 'Download IVXHOLDINGS Presentation' });
       }
       setShareSuccess(true);
       setTimeout(() => setShareSuccess(false), 2500);
@@ -1025,7 +1025,7 @@ export default function VideoPresentationScreen() {
           </Animated.View>
           <Animated.View style={[styles.compHeader, { opacity: extraAnim }]}>
             <View style={styles.compHeaderCellLeft}><Text style={styles.compHeaderTextOld}>Traditional</Text></View>
-            <View style={[styles.compHeaderCellRight, { backgroundColor: slide.accentColor + '18' }]}><Text style={[styles.compHeaderTextNew, { color: slide.accentColor }]}>IPX + AI</Text></View>
+            <View style={[styles.compHeaderCellRight, { backgroundColor: slide.accentColor + '18' }]}><Text style={[styles.compHeaderTextNew, { color: slide.accentColor }]}>IVXHOLDINGS + AI</Text></View>
           </Animated.View>
           {COMPARISON_DATA.map((row, i) => (
             <Animated.View key={i} style={[styles.compRow, i % 2 === 0 && styles.compRowAlt, { opacity: itemAnims[i], transform: [{ translateX: itemAnims[i].interpolate({ inputRange: [0, 1], outputRange: [40, 0] }) }] }]}>
@@ -1034,7 +1034,7 @@ export default function VideoPresentationScreen() {
             </Animated.View>
           ))}
           <Animated.View style={[styles.compBadge, { opacity: badgeAnim, transform: [{ translateY: badgeAnim.interpolate({ inputRange: [0, 1], outputRange: [10, 0] }) }] }]}>
-            <Text style={[styles.compBadgeText, { color: slide.accentColor }]}>IPX eliminates every friction point</Text>
+            <Text style={[styles.compBadgeText, { color: slide.accentColor }]}>IVXHOLDINGS eliminates every friction point</Text>
           </Animated.View>
         </View>
       );
@@ -1151,7 +1151,7 @@ export default function VideoPresentationScreen() {
             <Text style={[styles.ecoTitle, { color: slide.accentColor }]}>{slide.title}</Text>
           </Animated.View>
           <Animated.View style={[styles.ecoCenterBadge, { borderColor: slide.accentColor + '50', backgroundColor: slide.accentColor + '10', opacity: extraAnim, transform: [{ scale: extraAnim.interpolate({ inputRange: [0, 1], outputRange: [0.7, 1] }) }] }]}>
-            <Text style={[styles.ecoCenterText, { color: slide.accentColor }]}>IPX</Text>
+            <Text style={[styles.ecoCenterText, { color: slide.accentColor }]}>IVXHOLDINGS</Text>
           </Animated.View>
           <View style={styles.ecoList}>
             {ECO_ITEMS.map((item, i) => (
