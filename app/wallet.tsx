@@ -476,7 +476,7 @@ export default function WalletScreen() {
             </View>
             <View style={styles.earnBannerInfo}>
               <View style={styles.earnBannerTitleRow}>
-                <Text style={styles.earnBannerTitle}>IPX Earn</Text>
+                <Text style={styles.earnBannerTitle}>IVXHOLDINGS Earn</Text>
                 <View style={styles.earnApyTag}>
                   <Percent size={10} color={Colors.black} />
                   <Text style={styles.earnApyTagText}>{`${Math.round(apyRate * 100)}% APY`}</Text>
@@ -485,7 +485,7 @@ export default function WalletScreen() {
               <Text style={styles.earnBannerDesc}>
                 {earnBalance > 0
                   ? `Earning on ${formatNumber(earnBalance)}` 
-                  : `Deposit & earn ${Math.round(apyRate * 100)}% yearly from IPX profits`}
+                  : `Deposit & earn ${Math.round(apyRate * 100)}% yearly from IVXHOLDINGS profits`}
               </Text>
             </View>
           </View>
@@ -502,7 +502,7 @@ export default function WalletScreen() {
           </View>
         </View>
 
-        <View style={{ height: 40 }} />
+        <View style={{ height: 80 }} />
       </ScrollView>
 
       <Modal
