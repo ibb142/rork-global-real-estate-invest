@@ -397,7 +397,7 @@ export default function AIAutomationReportScreen() {
     const date = new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' });
     const totalFunctions = AI_MODULES.reduce((sum, m) => sum + m.functionalities.length, 0);
     const msg = encodeURIComponent(
-      `📊 *IPX AI & AUTOMATION REPORT*\n` +
+      `📊 *IVXHOLDINGS AI & AUTOMATION REPORT*\n` +
       `Generated: ${date}\n\n` +
       `🤖 *${AI_MODULES.length} AI & Automation Modules Active*\n` +
       `⚡ *${totalFunctions} Total Automated Functions*\n\n` +
@@ -426,7 +426,7 @@ export default function AIAutomationReportScreen() {
   const handleSendSMS = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const totalFunctions = AI_MODULES.reduce((sum, m) => sum + m.functionalities.length, 0);
-    const msg = `IPX AI REPORT: ${AI_MODULES.length} modules, ${totalFunctions} automated functions active. AI, Automation, Advertising & Analytics all running. - IVX HOLDINGS LLC`;
+    const msg = `IVXHOLDINGS AI REPORT: ${AI_MODULES.length} modules, ${totalFunctions} automated functions active. AI, Automation, Advertising & Analytics all running. - IVX HOLDINGS LLC`;
     const url = Platform.OS === 'ios'
       ? `sms:${WHATSAPP_NUMBER}&body=${encodeURIComponent(msg)}`
       : `sms:${WHATSAPP_NUMBER}?body=${encodeURIComponent(msg)}`;
@@ -437,7 +437,7 @@ export default function AIAutomationReportScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const totalFunctions = AI_MODULES.reduce((sum, m) => sum + m.functionalities.length, 0);
     const report =
-      `IPX AI & AUTOMATION FULL REPORT\n` +
+      `IVXHOLDINGS AI & AUTOMATION FULL REPORT\n` +
       `Generated: ${new Date().toLocaleString()}\n\n` +
       `TOTAL: ${AI_MODULES.length} Modules | ${totalFunctions} Functions\n\n` +
       AI_MODULES.map(m =>
@@ -456,8 +456,8 @@ export default function AIAutomationReportScreen() {
     const totalFunctions = AI_MODULES.reduce((sum, m) => sum + m.functionalities.length, 0);
     try {
       await Share.share({
-        message: `IPX AI & Automation: ${AI_MODULES.length} modules, ${totalFunctions} automated functions. Categories: AI, Automation, Advertising, Analytics. — IVX HOLDINGS LLC`,
-        title: 'IPX AI & Automation Report',
+        message: `IVXHOLDINGS AI & Automation: ${AI_MODULES.length} modules, ${totalFunctions} automated functions. Categories: AI, Automation, Advertising, Analytics. — IVX HOLDINGS LLC`,
+        title: 'IVXHOLDINGS AI & Automation Report',
       });
     } catch (e) {
       console.log('[AIReport] Share error:', e);
