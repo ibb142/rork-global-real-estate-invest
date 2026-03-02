@@ -17,6 +17,7 @@ import {
   Sparkles,
   Shield,
   TrendingUp,
+  TrendingDown,
   Brain,
   Zap,
   BarChart3,
@@ -34,6 +35,7 @@ import { useTranslation } from '@/lib/i18n-context';
 import { useAnalytics } from '@/lib/analytics-context';
 import PropertyCard from '@/components/PropertyCard';
 import { platformStats } from '@/mocks/competitive-stats';
+import { useGlobalMarkets } from '@/lib/global-markets';
 import { properties as fallbackProperties } from '@/mocks/properties';
 
 const IPX_LOGO = require('@/assets/images/ipx-logo.jpg');
@@ -177,6 +179,123 @@ function WhyIPXSection({ onCompare, onSmart, onTrust, t }: { onCompare: () => vo
     </View>
   );
 }
+
+function GlobalPulseWidget({ router }: { router: ReturnType<typeof useRouter> }) {
+  const { indices, forex, marketSentiment, commodities } = useGlobalMarkets(6000);
+  const sentimentColor = marketSentiment === 'bullish' ? Colors.success : marketSentiment === 'bearish' ? Colors.error : Colors.warning;
+  const sentimentLabel = marketSentiment === 'bullish' ? '🐂 Bull' : marketSentiment === 'bearish' ? '🐻 Bear' : '⚖️ Neutral';
+  const sp500 = indices.find(i => i.symbol === 'S&P 500');
+  const gold = commodities.find(c => c.symbol === 'XAU');
+  const eurusd = forex.find(f => f.symbol === 'EUR/USD');
+  const nikkei = indices.find(i => i.symbol === 'NIKKEI');
+
+  const items = [
+    sp500 && { label: 'S&P 500', value: sp500.value.toLocaleString('en-US', { maximumFractionDigits: 0 }), change: sp500.changePercent, flag: '🇺🇸' },
+    nikkei && { label: 'NIKKEI', value: nikkei.value.toLocaleString('en-US', { maximumFractionDigits: 0 }), change: nikkei.changePercent, flag: '🇯🇵' },
+    gold && { label: 'Gold', value: `${gold.price.toLocaleString('en-US', { maximumFractionDigits: 0 })}`, change: gold.changePercent24h, flag: '🏅' },
+    eurusd && { label: 'EUR/USD', value: eurusd.rate.toFixed(4), change: eurusd.changePercent24h, flag: '🇪🇺' },
+  ].filter(Boolean) as { label: string; value: string; change: number; flag: string }[];
+
+  return (
+    <TouchableOpacity
+      style={gpStyles.wrap}
+      onPress={() => router.push('/global-intelligence' as any)}
+      activeOpacity={0.85}
+    >
+      <View style={gpStyles.header}>
+        <Globe size={13} color={Colors.primary} />
+        <Text style={gpStyles.headerTitle}>Global Market Pulse</Text>
+        <View style={[gpStyles.sentBadge, { backgroundColor: sentimentColor + '20' }]}>
+          <Text style={[gpStyles.sentText, { color: sentimentColor }]}>{sentimentLabel}</Text>
+        </View>
+        <Text style={gpStyles.viewAll}>View All →</Text>
+      </View>
+      <View style={gpStyles.items}>
+        {items.map((item, i) => {
+          const up = item.change >= 0;
+          return (
+            <View key={i} style={gpStyles.item}>
+              <Text style={gpStyles.itemFlag}>{item.flag}</Text>
+              <Text style={gpStyles.itemLabel}>{item.label}</Text>
+              <Text style={gpStyles.itemValue}>{item.value}</Text>
+              {up
+                ? <TrendingUp size={10} color={Colors.success} />
+                : <TrendingDown size={10} color={Colors.error} />}
+              <Text style={[gpStyles.itemChange, { color: up ? Colors.success : Colors.error }]}>
+                {up ? '+' : ''}{item.change.toFixed(2)}%
+              </Text>
+            </View>
+          );
+        })}
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+const gpStyles = StyleSheet.create({
+  wrap: {
+    marginHorizontal: 20,
+    marginBottom: 12,
+    backgroundColor: Colors.surface,
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 10,
+  },
+  headerTitle: {
+    color: Colors.text,
+    fontSize: 12,
+    fontWeight: '700' as const,
+    flex: 1,
+  },
+  sentBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  sentText: {
+    fontSize: 9,
+    fontWeight: '700' as const,
+  },
+  viewAll: {
+    color: Colors.primary,
+    fontSize: 10,
+    fontWeight: '700' as const,
+  },
+  items: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  item: {
+    flex: 1,
+    backgroundColor: Colors.backgroundSecondary,
+    borderRadius: 10,
+    padding: 8,
+    alignItems: 'center',
+    gap: 2,
+  },
+  itemFlag: { fontSize: 14 },
+  itemLabel: {
+    color: Colors.textTertiary,
+    fontSize: 8,
+    fontWeight: '700' as const,
+  },
+  itemValue: {
+    color: Colors.text,
+    fontSize: 10,
+    fontWeight: '800' as const,
+  },
+  itemChange: {
+    fontSize: 9,
+    fontWeight: '700' as const,
+  },
+});
 
 function TrustBadgesRow({ t }: { t: (key: any) => string }) {
   return (
@@ -355,6 +474,8 @@ export default function HomeScreen() {
           </View>
 
           <LiveStatsTicker t={t} />
+
+          <GlobalPulseWidget router={router} />
 
           <View style={styles.featuredSection}>
             <View style={[styles.sectionHeader, { paddingHorizontal: isXs ? 16 : 20 }]}>
@@ -808,7 +929,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   bottomPadding: {
-    height: 40,
+    height: 120,
   },
   scrollView: {
     backgroundColor: Colors.background,
