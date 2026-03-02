@@ -164,7 +164,7 @@ export default function AppDocsScreen() {
         if (canShare) {
           await Sharing.shareAsync(uri, {
             mimeType: 'application/pdf',
-            dialogTitle: 'IPX App Documentation',
+            dialogTitle: 'IVXHOLDINGS App Documentation',
             UTI: 'com.adobe.pdf',
           });
         } else {
@@ -181,7 +181,7 @@ export default function AppDocsScreen() {
 
   const handleShareWhatsApp = useCallback(async () => {
     const content = generateTextReport();
-    const shortSummary = `📱 *IPX App Documentation*\n\n📦 ${totalModules} Modules\n✅ ${totalFeatures} Features\n🟢 ${activeFeatures} Active\n\n_Full report attached_`;
+    const shortSummary = `📱 *IVXHOLDINGS App Documentation*\n\n📦 ${totalModules} Modules\n✅ ${totalFeatures} Features\n🟢 ${activeFeatures} Active\n\n_Full report attached_`;
 
     try {
       if (Platform.OS === 'web') {
@@ -204,7 +204,7 @@ export default function AppDocsScreen() {
 
   const handleShareEmail = useCallback(async () => {
     const content = generateTextReport();
-    const subject = 'IPX App - Complete Functionality Documentation';
+    const subject = 'IVXHOLDINGS App - Complete Functionality Documentation';
     
     try {
       if (Platform.OS === 'web') {
@@ -236,7 +236,7 @@ export default function AppDocsScreen() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `IPX-App-Documentation-${new Date().toISOString().split('T')[0]}.txt`;
+      a.download = `IVXHOLDINGS-App-Documentation-${new Date().toISOString().split('T')[0]}.txt`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -244,7 +244,7 @@ export default function AppDocsScreen() {
       Alert.alert('Downloaded!', 'Text file has been downloaded.');
     } else {
       Share.share({
-        title: 'IPX App Documentation',
+        title: 'IVXHOLDINGS App Documentation',
         message: content,
       });
     }
@@ -260,7 +260,7 @@ export default function AppDocsScreen() {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `IPX-App-Functionality-${new Date().toISOString().split('T')[0]}.xls`;
+        a.download = `IVXHOLDINGS-App-Functionality-${new Date().toISOString().split('T')[0]}.xls`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -269,7 +269,7 @@ export default function AppDocsScreen() {
       } else {
         const csvContent = generateCSVReport();
         await Share.share({
-          title: 'IPX App Functionality - Excel/CSV',
+          title: 'IVXHOLDINGS App Functionality - Excel/CSV',
           message: csvContent,
         });
       }
@@ -284,7 +284,7 @@ export default function AppDocsScreen() {
     const content = generateTextReport();
     try {
       await Share.share({
-        title: 'IPX App - Functionality Documentation',
+        title: 'IVXHOLDINGS App - Functionality Documentation',
         message: content,
       });
     } catch (error) {
