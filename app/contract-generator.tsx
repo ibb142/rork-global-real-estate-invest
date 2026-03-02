@@ -85,7 +85,7 @@ const generateContractNumber = (): string => {
   const m = String(date.getMonth() + 1).padStart(2, '0');
   const d = String(date.getDate()).padStart(2, '0');
   const rand = Math.floor(Math.random() * 9000 + 1000);
-  return `IPX-${y}${m}${d}-${rand}`;
+  return `IVXHOLDINGS-${y}${m}${d}-${rand}`;
 };
 
 const getTodayDate = (): string => {
@@ -150,7 +150,7 @@ export default function ContractGeneratorScreen() {
   const scanPulse = useRef(new Animated.Value(0)).current;
 
   const [brandingAppName, setBrandingAppName] = useState('Global Real Estate Invest');
-  const [brandingCompanyName, setBrandingCompanyName] = useState('IPX Global Investments');
+  const [brandingCompanyName, setBrandingCompanyName] = useState('IVXHOLDINGS Global Investments');
   const [brandingTagline, setBrandingTagline] = useState('');
   const [brandingWebsite, setBrandingWebsite] = useState('');
   const [brandingLogoUri, setBrandingLogoUri] = useState<string | null>(null);
