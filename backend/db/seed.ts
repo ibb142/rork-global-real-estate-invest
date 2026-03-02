@@ -262,7 +262,7 @@ export const SEED_WALLET_BALANCES: Array<{ userId: string; available: number; pe
 ];
 
 export const SEED_TEAM_MEMBERS: TeamMemberRecord[] = [
-  { id: "admin-1", email: "ceo@ipxholding.com", firstName: "IPX", lastName: "CEO", phone: "+1 (561) 644-3503", roleId: "role-ceo", roleType: "ceo", status: "active", lastLogin: new Date().toISOString(), createdAt: "2024-01-01T00:00:00Z" },
+  { id: "admin-1", email: "ceo@ipxholding.com", firstName: "IVXHOLDINGS", lastName: "CEO", phone: "+1 (561) 644-3503", roleId: "role-ceo", roleType: "ceo", status: "active", lastLogin: new Date().toISOString(), createdAt: "2024-01-01T00:00:00Z" },
   { id: "admin-2", email: "operations@ipxholding.com", firstName: "Sarah", lastName: "Martinez", phone: "+1 (555) 234-5678", roleId: "role-manager", roleType: "manager", status: "active", lastLogin: "2025-01-24T16:30:00Z", invitedBy: "admin-1", createdAt: "2024-03-15T10:00:00Z" },
   { id: "admin-3", email: "analyst@ipxholding.com", firstName: "Michael", lastName: "Chen", phone: "+1 (555) 345-6789", roleId: "role-analyst", roleType: "analyst", status: "active", lastLogin: "2025-01-23T11:00:00Z", invitedBy: "admin-1", createdAt: "2024-06-01T09:00:00Z" },
   { id: "admin-4", email: "support@ipxholding.com", firstName: "Emily", lastName: "Johnson", phone: "+1 (555) 456-7890", roleId: "role-support", roleType: "support", status: "active", lastLogin: "2025-01-25T08:45:00Z", invitedBy: "admin-1", createdAt: "2024-08-20T14:00:00Z" },
@@ -329,7 +329,7 @@ export const SEED_NOTIFICATIONS: Record<string, NotificationRecord[]> = {
     { id: "notif-4", type: "kyc", title: "KYC Approved", message: "Your identity verification has been approved. You can now invest!", read: true, createdAt: "2024-01-05T12:00:00Z" },
   ],
   "user-2": [
-    { id: "notif-u2-1", type: "system", title: "Welcome to IPX!", message: "Complete your KYC to start investing.", read: true, createdAt: "2024-02-15T00:00:00Z" },
+    { id: "notif-u2-1", type: "system", title: "Welcome to IVXHOLDINGS!", message: "Complete your KYC to start investing.", read: true, createdAt: "2024-02-15T00:00:00Z" },
   ],
   "user-7": [
     { id: "notif-u7-1", type: "order", title: "Order Filled", message: "Your buy order for 100 shares of Manhattan Office Tower has been filled.", read: false, createdAt: "2025-01-23T11:45:00Z" },
@@ -347,9 +347,9 @@ export const SEED_SUPPORT_TICKETS: SupportTicketRecord[] = [
   {
     id: "ticket-1", userId: "user-1", subject: "Dividend Distribution Question", category: "general", status: "in_progress", priority: "low",
     messages: [
-      { id: "msg-1", senderId: "support-1", senderName: "IPX Support", message: "Hello! Welcome to IPX support. How can I help you today?", timestamp: "2024-12-16T09:00:00Z", isSupport: true, status: "read" },
+      { id: "msg-1", senderId: "support-1", senderName: "IVXHOLDINGS Support", message: "Hello! Welcome to IVXHOLDINGS support. How can I help you today?", timestamp: "2024-12-16T09:00:00Z", isSupport: true, status: "read" },
       { id: "msg-2", senderId: "user-1", senderName: "You", message: "Hi! I have a question about the dividend distribution schedule.", timestamp: "2024-12-16T09:05:00Z", isSupport: false, status: "read" },
-      { id: "msg-3", senderId: "support-1", senderName: "IPX Support", message: "Dividends are distributed quarterly, typically within the first week of each quarter.", timestamp: "2024-12-16T09:07:00Z", isSupport: true, status: "read" },
+      { id: "msg-3", senderId: "support-1", senderName: "IVXHOLDINGS Support", message: "Dividends are distributed quarterly, typically within the first week of each quarter.", timestamp: "2024-12-16T09:07:00Z", isSupport: true, status: "read" },
     ],
     createdAt: "2024-12-16T09:00:00Z", updatedAt: "2024-12-16T09:07:00Z",
   },
@@ -357,7 +357,7 @@ export const SEED_SUPPORT_TICKETS: SupportTicketRecord[] = [
     id: "ticket-2", userId: "user-1", subject: "Withdrawal Processing Time", category: "wallet", status: "resolved", priority: "medium",
     messages: [
       { id: "msg-t2-1", senderId: "user-1", senderName: "You", message: "How long does it take for withdrawals to process?", timestamp: "2024-12-10T14:00:00Z", isSupport: false, status: "read" },
-      { id: "msg-t2-2", senderId: "support-2", senderName: "IPX Support", message: "Withdrawals typically process within 2-3 business days for ACH transfers.", timestamp: "2024-12-10T14:30:00Z", isSupport: true, status: "read" },
+      { id: "msg-t2-2", senderId: "support-2", senderName: "IVXHOLDINGS Support", message: "Withdrawals typically process within 2-3 business days for ACH transfers.", timestamp: "2024-12-10T14:30:00Z", isSupport: true, status: "read" },
     ],
     createdAt: "2024-12-10T14:00:00Z", updatedAt: "2024-12-10T14:30:00Z",
   },
@@ -414,7 +414,7 @@ export const SEED_EARN_PRODUCTS: EarnProductRecord[] = [
 ];
 
 export const SEED_ALERT_SETTINGS: AlertSettings = {
-  ownerPhone: "+1234567890", ownerEmail: "admin@ipxholding.com", ownerName: "IPX Admin",
+  ownerPhone: "+1234567890", ownerEmail: "admin@ipxholding.com", ownerName: "IVXHOLDINGS Admin",
   enableSMS: true, enableWhatsApp: true, enableEmail: true, enablePush: true,
   escalationTimeMinutes: 30, dailyDigestEnabled: true, dailyDigestTime: "08:00",
 };
