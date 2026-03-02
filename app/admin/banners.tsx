@@ -78,7 +78,7 @@ const INITIAL_BANNERS: Banner[] = [
   },
   {
     id: '3',
-    title: 'IPX Token Sale Live',
+    title: 'IVXHOLDINGS Token Sale Live',
     imageUrl: 'https://images.unsplash.com/photo-1639762681485-074b7f938ba0?w=800',
     linkUrl: 'https://ipxholding.com/token',
     linkType: 'external',
@@ -538,7 +538,7 @@ const styles = StyleSheet.create({
   statItemLabel: { color: Colors.textSecondary, fontSize: 13 },
   bannerActions: { flexDirection: 'row', gap: 8, marginTop: 8 },
   actionBtn: { backgroundColor: Colors.primary, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
-  bottomPadding: { height: 40 },
+  bottomPadding: { height: 120 },
   modalOverlay: { flex: 1, backgroundColor: Colors.overlay, justifyContent: 'center', padding: 20 },
   modalContent: { backgroundColor: Colors.surface, borderRadius: 20, padding: 24, maxHeight: '80%' },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
