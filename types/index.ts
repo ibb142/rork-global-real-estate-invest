@@ -36,10 +36,10 @@
  * - TeamMember, AdminRole - Team management
  * - FeeConfiguration, FeeTransaction - Fee management
  * 
- * IPX INVESTMENT MODULE (Lines ~375-526):
+ * IVXHOLDINGS INVESTMENT MODULE (Lines ~375-526):
  * - PropertySubmission - Property listing submissions
  * - PropertyLien, PropertyDebt - Property encumbrances
- * - IPXFeeConfig, IPXTransaction - IPX-specific fees
+ * - IPXFeeConfig, IPXTransaction - IVXHOLDINGS-specific fees
  * - FractionalShare, SharePurchase - Fractional ownership
  * - DocumentScan, DeedVerification - Document verification
  * 
@@ -1373,7 +1373,7 @@ export interface SystemHealth {
 
 // =============================================================================
 // TOKENIZED MORTGAGE & FIRST LIEN STRATEGY TYPES
-// Clean Property Model: Owner brings debt-free property → IPX finances 85% LTV
+// Clean Property Model: Owner brings debt-free property → IVXHOLDINGS finances 85% LTV
 // → First lien mortgage recorded → Mortgage tokenized → 24/7 investor access
 // =============================================================================
 
@@ -1394,12 +1394,12 @@ export interface DebtAcquisitionProperty {
   marketValue: number;
   appraisedValue: number;
 
-  // IPX Tokenized Mortgage (Clean Property Model)
+  // IVXHOLDINGS Tokenized Mortgage (Clean Property Model)
   ltvPercent: number; // 85% of appraised value
   financingAmount: number; // 85% of appraisedValue
   closingCostPercent: number; // Closing costs %
   closingCostAmount: number;
-  ipxFeePercent: number; // IPX origination/service fee %
+  ipxFeePercent: number; // IVXHOLDINGS origination/service fee %
   ipxFeeAmount: number;
   ownerNetProceeds: number; // What the owner actually receives
   mortgageInterestRate: number; // Interest rate on tokenized mortgage
@@ -1413,7 +1413,7 @@ export interface DebtAcquisitionProperty {
   availableTokens: number;
   minTokenPurchase: number;
 
-  // IPX First Lien Position
+  // IVXHOLDINGS First Lien Position
   ipxLienPosition: LienPositionType;
   ipxFirstLienSecured: boolean;
 
