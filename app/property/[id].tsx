@@ -12,7 +12,7 @@ import {
   Share,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import {
   ArrowLeft,
@@ -70,6 +70,7 @@ export default function PropertyDetailScreen() {
   const [isDownloading, setIsDownloading] = useState(false);
   const [isRequestingAppraisal, setIsRequestingAppraisal] = useState(false);
 
+  const insets = useSafeAreaInsets();
   const property = useMemo(() => getPropertyById(id || ''), [id]);
   const marketData = useMemo(() => getMarketDataByPropertyId(id || ''), [id]);
 
@@ -377,19 +378,24 @@ export default function PropertyDetailScreen() {
         <View style={styles.imageSection}>
           <ImageSlider images={property.images} height={320} />
           
-          <SafeAreaView edges={['top']} style={styles.headerOverlay}>
-            <TouchableOpacity style={styles.iconButton} onPress={() => router.back()}>
-              <ArrowLeft size={22} color={Colors.white} />
+          <View style={[styles.imageOverlayBar, { top: Math.max(insets.top, 54) + 8 }]}>
+            <TouchableOpacity
+              style={styles.overlayIconBtn}
+              onPress={() => router.back()}
+              activeOpacity={0.7}
+            >
+              <ArrowLeft size={20} color="#fff" />
             </TouchableOpacity>
-            <View style={styles.headerRight}>
-              <TouchableOpacity style={styles.iconButton} onPress={handleToggleFavorite}>
-                <Heart size={22} color={isFavorite ? Colors.error : Colors.white} fill={isFavorite ? Colors.error : 'transparent'} />
+
+            <View style={styles.overlayRightIcons}>
+              <TouchableOpacity style={styles.overlayIconBtn} onPress={handleToggleFavorite} activeOpacity={0.7}>
+                <Heart size={20} color={isFavorite ? Colors.error : '#fff'} fill={isFavorite ? Colors.error : 'transparent'} />
               </TouchableOpacity>
-              <TouchableOpacity style={styles.iconButton} onPress={handleShare}>
-                <Share2 size={22} color={Colors.white} />
+              <TouchableOpacity style={styles.overlayIconBtn} onPress={handleShare} activeOpacity={0.7}>
+                <Share2 size={20} color="#fff" />
               </TouchableOpacity>
             </View>
-          </SafeAreaView>
+          </View>
 
           <View style={styles.statusOverlay}>
             <View style={[styles.statusBadge, { backgroundColor: property.status === 'live' ? Colors.success : Colors.warning }]}>
@@ -677,7 +683,7 @@ export default function PropertyDetailScreen() {
         </View>
       </ScrollView>
 
-      <SafeAreaView edges={['bottom']} style={styles.investBar}>
+      <View style={[styles.investBar, { paddingBottom: Math.max(insets.bottom, 20) + 8 }]}>
         <View style={styles.investBarContent}>
           <View>
             <Text style={styles.investBarLabel}>Share Price</Text>
@@ -693,7 +699,7 @@ export default function PropertyDetailScreen() {
             </Text>
           </TouchableOpacity>
         </View>
-      </SafeAreaView>
+      </View>
 
       <Modal visible={showInvestModal} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
@@ -1347,13 +1353,13 @@ const styles = StyleSheet.create({
   errorText: { color: Colors.textSecondary, fontSize: 13 },
   backButton: { padding: 8 },
   backButtonText: { color: Colors.text, fontWeight: '600' as const, fontSize: 15 },
-  imageSection: { marginBottom: 16 },
-  headerOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)' },
-  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  iconButton: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 12, alignItems: 'center' },
-  statusOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)' },
-  statusBadge: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
-  statusText: { color: Colors.textSecondary, fontSize: 13 },
+  imageSection: { marginBottom: 16, position: 'relative' as const },
+  imageOverlayBar: { position: 'absolute' as const, left: 16, right: 16, zIndex: 20, flexDirection: 'row' as const, justifyContent: 'space-between' as const, alignItems: 'center' as const },
+  overlayIconBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center' as const, justifyContent: 'center' as const },
+  overlayRightIcons: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 10 },
+  statusOverlay: { position: 'absolute', bottom: 56, left: 16 },
+  statusBadge: { borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 },
+  statusText: { color: Colors.white, fontSize: 11, fontWeight: '700' as const, letterSpacing: 0.5 },
   content: { flex: 1, paddingHorizontal: 20 },
   titleSection: { marginBottom: 16 },
   propertyName: { color: Colors.text, fontSize: 15, fontWeight: '700' as const },
@@ -1396,13 +1402,13 @@ const styles = StyleSheet.create({
   distributionItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 },
   distributionLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
   distributionDate: { color: Colors.textTertiary, fontSize: 12 },
-  distributionAmount: { alignItems: 'flex-end' },
-  bottomPadding: { height: 120 },
-  investBar: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: '#1A1A1A', borderTopWidth: 1, borderTopColor: '#2A2A2A', padding: 16 },
-  investBarContent: { flex: 1, gap: 4 },
-  investBarLabel: { color: Colors.textSecondary, fontSize: 13 },
-  investBarPrice: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: '#1A1A1A', borderTopWidth: 1, borderTopColor: '#2A2A2A', padding: 16 },
-  investButton: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 12, alignItems: 'center' },
+  distributionAmount: { color: Colors.success, fontSize: 14, fontWeight: '600' as const },
+  bottomPadding: { height: 140 },
+  investBar: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: '#1A1A1A', borderTopWidth: 1, borderTopColor: '#2A2A2A', paddingHorizontal: 20, paddingTop: 12 },
+  investBarContent: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  investBarLabel: { color: Colors.textSecondary, fontSize: 12 },
+  investBarPrice: { color: Colors.text, fontSize: 18, fontWeight: '700' as const },
+  investButton: { paddingVertical: 14, paddingHorizontal: 32, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   investButtonDisabled: { opacity: 0.4 },
   investButtonText: { color: Colors.black, fontWeight: '700' as const, fontSize: 15 },
   modalOverlay: { flex: 1, backgroundColor: Colors.overlay, justifyContent: 'center', padding: 20 },
