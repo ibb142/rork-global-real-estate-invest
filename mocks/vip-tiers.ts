@@ -45,7 +45,7 @@ export const VIP_TIERS: VIPTier[] = [
     icon: 'shield',
     perks: [
       'Standard trading fees',
-      'Base APY on IPX Earn',
+      'Base APY on IVXHOLDINGS Earn',
       '$25 referral bonus',
       'Community access',
     ],
