@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import createContextHook from '@nkzw/create-context-hook';
 import { trpc } from '@/lib/trpc';
+import { useAuth } from '@/lib/auth-context';
 
 const EARN_DATA_KEY = '@ipx_earn_data';
 
@@ -62,8 +63,10 @@ export const [EarnProvider, useEarn] = createContextHook(() => {
   const [data, setData] = useState<EarnData>(defaultData);
   const [isLoading, setIsLoading] = useState(true);
 
+  const { isAuthenticated } = useAuth();
+
   const balanceQuery = trpc.wallet.getBalance.useQuery(undefined, {
-    enabled: true,
+    enabled: isAuthenticated,
     retry: 1,
     staleTime: 60000,
   });
@@ -155,7 +158,7 @@ export const [EarnProvider, useEarn] = createContextHook(() => {
       id: `earn-pay-${Date.now()}`,
       amount,
       type: 'deposit',
-      description: `Deposited $${amount.toLocaleString()} to IPX Earn`,
+      description: `Deposited $${amount.toLocaleString()} to IVXHOLDINGS Earn`,
       createdAt: new Date().toISOString(),
     };
 
@@ -188,7 +191,7 @@ export const [EarnProvider, useEarn] = createContextHook(() => {
       id: `earn-pay-${Date.now()}`,
       amount: -amount,
       type: 'withdrawal',
-      description: `Withdrew $${amount.toLocaleString()} from IPX Earn`,
+      description: `Withdrew $${amount.toLocaleString()} from IVXHOLDINGS Earn`,
       createdAt: new Date().toISOString(),
     };
 
