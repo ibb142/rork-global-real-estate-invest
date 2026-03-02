@@ -1,8 +1,8 @@
 import { DebtAcquisitionProperty, DebtTokenPurchase, FirstLienInvestment, DebtAcquisitionStats } from '@/types';
 
 export const IPX_MORTGAGE_STRATEGY = {
-  name: 'IPX Tokenized Mortgage',
-  description: 'Property owners bring clean (debt-free) properties. IPX-LUXURY-HOLDINGS LLC provides 85% LTV financing, records a first lien mortgage, and tokenizes it for investors to purchase 24/7.',
+  name: 'IVXHOLDINGS Tokenized Mortgage',
+  description: 'Property owners bring clean (debt-free) properties. IVXHOLDINGS-LUXURY-HOLDINGS LLC provides 85% LTV financing, records a first lien mortgage, and tokenizes it for investors to purchase 24/7.',
   ltvPercent: 0.85,
   closingCostPercent: 0.03,
   ipxOriginationFee: 0.025,
@@ -52,7 +52,7 @@ export const debtAcquisitionProperties: DebtAcquisitionProperty[] = [
     tokenizationProgress: 70,
     listingDate: '2025-09-01',
     tokenizationDeadline: '2026-03-01',
-    legalDisclosure: 'IPX-LUXURY-HOLDINGS LLC holds first lien mortgage position on this clean-title property. Investors receive tokenized shares of the mortgage with priority secured position. Not a traditional bank loan.',
+    legalDisclosure: 'IVXHOLDINGS-LUXURY-HOLDINGS LLC holds first lien mortgage position on this clean-title property. Investors receive tokenized shares of the mortgage with priority secured position. Not a traditional bank loan.',
     riskFactors: [
       'Property value fluctuation',
       'Interest rate changes',
@@ -99,7 +99,7 @@ export const debtAcquisitionProperties: DebtAcquisitionProperty[] = [
     tokenizationProgress: 0,
     listingDate: '2026-01-15',
     tokenizationDeadline: '2026-07-15',
-    legalDisclosure: 'Clean-title commercial property. IPX-LUXURY-HOLDINGS LLC will record first lien mortgage upon full tokenization. This is a tokenized mortgage, not a traditional bank loan. Available for investment 24/7.',
+    legalDisclosure: 'Clean-title commercial property. IVXHOLDINGS-LUXURY-HOLDINGS LLC will record first lien mortgage upon full tokenization. This is a tokenized mortgage, not a traditional bank loan. Available for investment 24/7.',
     riskFactors: [
       'Commercial vacancy risk',
       'Tenant credit risk',
@@ -146,7 +146,7 @@ export const debtAcquisitionProperties: DebtAcquisitionProperty[] = [
     tokenizationProgress: 60,
     listingDate: '2025-08-01',
     tokenizationDeadline: '2026-02-01',
-    legalDisclosure: 'IPX-LUXURY-HOLDINGS LLC has secured first lien position on this debt-free luxury villa. Investors benefit from priority secured position backed by prime Bel Air real estate.',
+    legalDisclosure: 'IVXHOLDINGS-LUXURY-HOLDINGS LLC has secured first lien position on this debt-free luxury villa. Investors benefit from priority secured position backed by prime Bel Air real estate.',
     riskFactors: [
       'Luxury market volatility',
       'Property value fluctuation',
@@ -193,7 +193,7 @@ export const debtAcquisitionProperties: DebtAcquisitionProperty[] = [
     tokenizationProgress: 30,
     listingDate: '2025-12-01',
     tokenizationDeadline: '2026-06-01',
-    legalDisclosure: 'Ultra-luxury property on Fisher Island. IPX provides 85% financing secured by first lien. Tokenized mortgage available for 24/7 investment. Higher yields reflect premium property segment.',
+    legalDisclosure: 'Ultra-luxury property on Fisher Island. IVXHOLDINGS provides 85% financing secured by first lien. Tokenized mortgage available for 24/7 investment. Higher yields reflect premium property segment.',
     riskFactors: [
       'Ultra-luxury market sensitivity',
       'Seasonal demand fluctuation',
@@ -240,7 +240,7 @@ export const debtAcquisitionProperties: DebtAcquisitionProperty[] = [
     tokenizationProgress: 0,
     listingDate: '2026-02-01',
     tokenizationDeadline: '2026-08-01',
-    legalDisclosure: 'Clean-title luxury desert property. IPX will record first lien upon tokenization. This tokenized mortgage allows fractional investment starting at $1,000. Not a traditional bank loan.',
+    legalDisclosure: 'Clean-title luxury desert property. IVXHOLDINGS will record first lien upon tokenization. This tokenized mortgage allows fractional investment starting at $1,000. Not a traditional bank loan.',
     riskFactors: [
       'Desert climate property risks',
       'Water resource considerations',
