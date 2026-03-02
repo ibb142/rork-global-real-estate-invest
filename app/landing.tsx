@@ -11,12 +11,14 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Linking,
+  useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { TrendingUp, Shield, Zap, ChevronRight, Globe, Award, BarChart3, ExternalLink, Users, CheckCircle, Mail, Phone, User, ChevronDown, MapPin, DollarSign, Building2, Handshake } from 'lucide-react-native';
+import { TrendingUp, Shield, Zap, ChevronRight, Globe, Award, BarChart3, ExternalLink, Users, CheckCircle, Mail, Phone, User, ChevronDown, MapPin, DollarSign, Building2, Handshake, Activity, Eye, MousePointer, UserCheck, ArrowUpRight, ArrowDownRight, Home, Briefcase, Megaphone, Star, Percent, Gift } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { trpc } from '@/lib/trpc';
+import { useGlobalMarkets } from '@/lib/global-markets';
 
 const IPX_LOGO = require('@/assets/images/ipx-logo.jpg');
 
@@ -83,6 +85,1048 @@ const FEATURED_PROPERTY = {
     'https://images.unsplash.com/photo-1600566753086-00f18fb6b3ea?w=600&q=80',
   ],
 };
+
+function LiveGlobalTicker() {
+  const { width } = useWindowDimensions();
+  const scrollAnim = useRef(new Animated.Value(0)).current;
+  const { forex, indices, crypto, commodities } = useGlobalMarkets(5000);
+
+  const tickerItems = [
+    ...indices.slice(0, 4).map(i => ({ label: i.symbol, value: i.value.toLocaleString('en-US', { maximumFractionDigits: 0 }), change: i.changePercent, flag: i.flag })),
+    ...forex.slice(0, 4).map(f => ({ label: f.symbol, value: f.rate < 10 ? f.rate.toFixed(4) : f.rate.toFixed(2), change: f.changePercent24h, flag: f.flag })),
+    ...crypto.slice(0, 3).map(c => ({ label: c.symbol, value: `${c.price.toLocaleString('en-US', { maximumFractionDigits: 0 })}`, change: c.changePercent24h, flag: '' })),
+    ...commodities.slice(0, 2).map(c => ({ label: c.name, value: `${c.price >= 100 ? c.price.toLocaleString('en-US', { maximumFractionDigits: 2, minimumFractionDigits: 2 }) : c.price.toFixed(2)}`, change: c.changePercent24h, flag: '' })),
+  ];
+
+  useEffect(() => {
+    if (width <= 0) return;
+    scrollAnim.setValue(0);
+    const anim = Animated.loop(
+      Animated.timing(scrollAnim, { toValue: -width * 3, duration: 30000, useNativeDriver: true })
+    );
+    anim.start();
+    return () => anim.stop();
+  }, [width]);
+
+  return (
+    <View style={tickerStyles.wrap}>
+      <View style={tickerStyles.labelChip}>
+        <View style={tickerStyles.liveDot} />
+        <Text style={tickerStyles.labelText}>LIVE</Text>
+      </View>
+      <View style={tickerStyles.overflow}>
+        <Animated.View style={[tickerStyles.inner, { transform: [{ translateX: scrollAnim }] }]}>
+          {[...tickerItems, ...tickerItems, ...tickerItems].map((item, i) => {
+            const up = item.change >= 0;
+            return (
+              <View key={i} style={tickerStyles.item}>
+                {item.flag ? <Text style={tickerStyles.flag}>{item.flag}</Text> : null}
+                <Text style={tickerStyles.itemLabel}>{item.label}</Text>
+                <Text style={tickerStyles.itemValue}>{item.value}</Text>
+                <Text style={[tickerStyles.itemChange, { color: up ? Colors.positive : Colors.negative }]}>
+                  {up ? '+' : ''}{item.change.toFixed(2)}%
+                </Text>
+                <View style={tickerStyles.sep} />
+              </View>
+            );
+          })}
+        </Animated.View>
+      </View>
+    </View>
+  );
+}
+
+const tickerStyles = StyleSheet.create({
+  wrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.surfaceBorder,
+    height: 34,
+    overflow: 'hidden',
+  },
+  labelChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    borderRightWidth: 1,
+    borderRightColor: Colors.surfaceBorder,
+    height: '100%' as any,
+    justifyContent: 'center',
+  },
+  liveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: Colors.positive,
+  },
+  labelText: {
+    color: Colors.positive,
+    fontSize: 9,
+    fontWeight: '800' as const,
+    letterSpacing: 1,
+  },
+  overflow: { flex: 1, overflow: 'hidden', height: '100%' as any },
+  inner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: '100%' as any,
+  },
+  item: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+  },
+  flag: { fontSize: 12 },
+  itemLabel: {
+    color: Colors.textSecondary,
+    fontSize: 10,
+    fontWeight: '700' as const,
+  },
+  itemValue: {
+    color: Colors.text,
+    fontSize: 10,
+    fontWeight: '700' as const,
+  },
+  itemChange: {
+    fontSize: 10,
+    fontWeight: '600' as const,
+  },
+  sep: {
+    width: 1,
+    height: 14,
+    backgroundColor: Colors.surfaceBorder,
+    marginLeft: 8,
+  },
+});
+
+const PARTNER_ROLES = [
+  {
+    key: 'realtor',
+    icon: <Home size={28} color="#00C48C" />,
+    badge: 'REALTORS & AGENTS',
+    badgeColor: '#00C48C',
+    emoji: '🏡',
+    title: 'Turn Every Listing\nInto Lifetime Income',
+    subtitle: 'List properties on our fractional platform. Refer investor clients. Collect commissions on every deal — then keep earning as dividends flow for years.',
+    earning: 'Up to 3% per deal',
+    earningColor: '#00C48C',
+    monthlyEst: '$8,400',
+    topEarner: '$142,000',
+    topEarnerNote: 'top agent / month',
+    monthlyNote: 'avg. active agent / mo',
+    incomeBreakdown: [
+      { label: '1 Listing Closed ($500K)', value: '$15,000', note: 'commission' },
+      { label: '10 Investor Referrals', value: '$5,000', note: 'sign-up bonus' },
+      { label: 'Dividend Residuals', value: '$1,200+', note: 'monthly passive' },
+    ],
+    howItWorks: [
+      { step: '01', label: 'List or Refer', desc: 'Bring a property or refer a buyer/investor to IVX' },
+      { step: '02', label: 'Deal Closes', desc: 'We handle tokenization, legal & KYC for you' },
+      { step: '03', label: 'Get Paid', desc: '3% commission hits your wallet within 48 hours' },
+      { step: '04', label: 'Earn Residuals', desc: 'Collect ongoing revenue share from investor dividends' },
+    ],
+    perks: [
+      '3% commission on every property transaction',
+      'Residual income stream from investor dividends',
+      'Access to $2.1B premium portfolio network',
+      'Priority listing placement & marketing support',
+      'Co-branded materials for your clients',
+    ],
+    testimonial: { quote: 'I listed one property and earned more in commissions last quarter than 6 months of traditional real estate.', author: 'Marcus T.', role: 'Licensed Realtor · Miami, FL' },
+    cta: 'Apply as Agent',
+    route: '/agent-apply',
+    accent: '#00C48C',
+    cardBg: '#00C48C08',
+    cardBorder: '#00C48C30',
+  },
+  {
+    key: 'broker',
+    icon: <Briefcase size={28} color="#FFD700" />,
+    badge: 'BROKERS & DEALERS',
+    badgeColor: '#FFD700',
+    emoji: '💼',
+    title: 'Scale Your Capital\nRaising Machine',
+    subtitle: 'Place HNW clients into curated real estate deals and earn the highest fees in the industry. White-label our platform as your own brand.',
+    earning: 'Up to 5% placement fee',
+    earningColor: '#FFD700',
+    monthlyEst: '$24,000',
+    topEarner: '$380,000',
+    topEarnerNote: 'top broker / month',
+    monthlyNote: 'avg. active broker / mo',
+    incomeBreakdown: [
+      { label: '$2M Capital Raised', value: '$100,000', note: '5% placement fee' },
+      { label: 'AUM Override', value: '$8,400', note: 'monthly override' },
+      { label: 'Co-Investment Returns', value: '$14,000+', note: 'quarterly distributions' },
+    ],
+    howItWorks: [
+      { step: '01', label: 'Source Capital', desc: 'Introduce your HNW clients to IVX deal flow' },
+      { step: '02', label: 'Client Invests', desc: 'We handle compliance, docs & onboarding' },
+      { step: '03', label: 'Earn 5% Fee', desc: 'Placement fee paid on total capital raised' },
+      { step: '04', label: 'Co-Invest', desc: 'Participate alongside your clients in every deal' },
+    ],
+    perks: [
+      '5% placement fee on all capital raised',
+      'White-label platform under your brand',
+      'Co-invest alongside your clients',
+      'Dedicated deal flow & research reports',
+      'Compliance & legal infrastructure provided',
+    ],
+    testimonial: { quote: 'Raised $4.2M for clients in 90 days. IVX handles everything — I just bring the relationship and collect the fee.', author: 'Diana R.', role: 'Independent Broker · New York, NY' },
+    cta: 'Apply as Broker',
+    route: '/broker-apply',
+    accent: '#FFD700',
+    cardBg: '#FFD70008',
+    cardBorder: '#FFD70030',
+  },
+  {
+    key: 'influencer',
+    icon: <Megaphone size={28} color="#E879F9" />,
+    badge: 'CREATORS & INFLUENCERS',
+    badgeColor: '#E879F9',
+    emoji: '🎙️',
+    title: 'Real Estate Meets\nCreator Economy',
+    subtitle: 'Your audience trusts you with their money. Help them build wealth in real estate — and earn every time they do. Recurring revenue, not one-time posts.',
+    earning: 'Up to $500 / investor',
+    earningColor: '#E879F9',
+    monthlyEst: '$12,500',
+    topEarner: '$95,000',
+    topEarnerNote: 'top creator / month',
+    monthlyNote: '10K+ follower creator / mo',
+    incomeBreakdown: [
+      { label: '100 New Investors', value: '$25,000', note: 'referral bonuses' },
+      { label: 'Dividend Revenue Share', value: '$4,800', note: 'on follower portfolio' },
+      { label: 'Content Sponsorship', value: '$3,500', note: 'branded campaigns' },
+    ],
+    howItWorks: [
+      { step: '01', label: 'Get Your Link', desc: 'Receive a custom referral code & tracking dashboard' },
+      { step: '02', label: 'Share Content', desc: 'Post, story, reel — we provide branded content kits' },
+      { step: '03', label: 'Follower Invests', desc: 'Your audience signs up and makes their first investment' },
+      { step: '04', label: 'Recurring Revenue', desc: 'Earn $50–$500 per investor + revenue share on dividends' },
+    ],
+    perks: [
+      '$50–$500 per qualified investor referral',
+      'Recurring revenue share on follower dividends',
+      'Branded content kits & campaign support',
+      'Real-time analytics & referral dashboard',
+      'Early access to new property launches',
+    ],
+    testimonial: { quote: 'One reel, 200 sign-ups, $47K in referral income. This is the only brand deal that pays me forever.', author: 'Jasmine K.', role: 'Finance Creator · 280K Followers' },
+    cta: 'Apply as Creator',
+    route: '/influencer-apply',
+    accent: '#E879F9',
+    cardBg: '#E879F908',
+    cardBorder: '#E879F930',
+  },
+];
+
+function PartnerEarnSection() {
+  const router = useRouter();
+  const [expandedRole, setExpandedRole] = useState<string | null>(null);
+  const shimmerAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const shimmer = Animated.loop(
+      Animated.sequence([
+        Animated.timing(shimmerAnim, { toValue: 1, duration: 1800, useNativeDriver: true }),
+        Animated.timing(shimmerAnim, { toValue: 0, duration: 1800, useNativeDriver: true }),
+      ])
+    );
+    shimmer.start();
+    return () => shimmer.stop();
+  }, []);
+
+  const shimmerOpacity = shimmerAnim.interpolate({ inputRange: [0, 1], outputRange: [0.7, 1] });
+
+  return (
+    <View style={partnerStyles.wrap}>
+      <View style={partnerStyles.headerWrap}>
+        <View style={partnerStyles.eyebrowRow}>
+          <View style={partnerStyles.eyebrowPill}>
+            <DollarSign size={10} color={Colors.primary} />
+            <Text style={partnerStyles.eyebrow}>PARTNER MONETIZATION PROGRAM</Text>
+          </View>
+        </View>
+        <Text style={partnerStyles.title}>
+          Your Network is{' '}
+          <Text style={partnerStyles.titleGold}>Worth Millions</Text>
+        </Text>
+        <Text style={partnerStyles.subtitle}>
+          Realtors, brokers, and creators are turning their existing networks into serious passive income with IVX. Get paid for what you already do — then keep earning forever.
+        </Text>
+
+        <Animated.View style={[partnerStyles.bigMoneyBanner, { opacity: shimmerOpacity }]}>
+          <View style={partnerStyles.bigMoneyItem}>
+            <Text style={partnerStyles.bigMoneyValue}>$18.7M+</Text>
+            <Text style={partnerStyles.bigMoneyLabel}>Paid to Partners</Text>
+            <Text style={partnerStyles.bigMoneyNote}>since launch</Text>
+          </View>
+          <View style={partnerStyles.bigMoneyDiv} />
+          <View style={partnerStyles.bigMoneyItem}>
+            <Text style={partnerStyles.bigMoneyValue}>3,400+</Text>
+            <Text style={partnerStyles.bigMoneyLabel}>Active Partners</Text>
+            <Text style={partnerStyles.bigMoneyNote}>globally</Text>
+          </View>
+          <View style={partnerStyles.bigMoneyDiv} />
+          <View style={partnerStyles.bigMoneyItem}>
+            <Text style={partnerStyles.bigMoneyValue}>$380K</Text>
+            <Text style={partnerStyles.bigMoneyLabel}>Top Earner</Text>
+            <Text style={partnerStyles.bigMoneyNote}>per month</Text>
+          </View>
+        </Animated.View>
+
+        <View style={partnerStyles.roleTabsRow}>
+          {PARTNER_ROLES.map((r) => (
+            <TouchableOpacity
+              key={r.key}
+              style={[partnerStyles.roleTab, expandedRole === r.key && { borderColor: r.accent, backgroundColor: r.accent + '18' }]}
+              onPress={() => setExpandedRole(expandedRole === r.key ? null : r.key)}
+              activeOpacity={0.8}
+            >
+              <Text style={partnerStyles.roleTabEmoji}>{r.emoji}</Text>
+              <Text style={[partnerStyles.roleTabText, expandedRole === r.key && { color: r.accent }]}>
+                {r.key === 'realtor' ? 'Realtors' : r.key === 'broker' ? 'Brokers' : 'Creators'}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+
+      {PARTNER_ROLES.map((role) => {
+        const isExpanded = expandedRole === role.key;
+        return (
+          <View key={role.key} style={[partnerStyles.roleCard, { backgroundColor: role.cardBg, borderColor: isExpanded ? role.accent + '60' : role.cardBorder }]}>
+            <View style={[partnerStyles.roleAccentBar, { backgroundColor: role.accent }]} />
+
+            <TouchableOpacity
+              style={partnerStyles.roleCardHeader}
+              onPress={() => setExpandedRole(isExpanded ? null : role.key)}
+              activeOpacity={0.85}
+            >
+              <View style={[partnerStyles.roleIconWrap, { backgroundColor: role.accent + '18', borderColor: role.accent + '35' }]}>
+                {role.icon}
+              </View>
+              <View style={partnerStyles.roleCardHeaderRight}>
+                <View style={[partnerStyles.roleBadge, { backgroundColor: role.badgeColor + '18', borderColor: role.badgeColor + '35' }]}>
+                  <Text style={[partnerStyles.roleBadgeText, { color: role.badgeColor }]}>{role.badge}</Text>
+                </View>
+                <Text style={partnerStyles.roleCardTitle}>{role.title}</Text>
+              </View>
+              <ChevronDown size={18} color={role.accent} style={{ transform: [{ rotate: isExpanded ? '180deg' : '0deg' }] } as any} />
+            </TouchableOpacity>
+
+            <View style={[partnerStyles.earningsHero, { borderColor: role.accent + '25', backgroundColor: role.accent + '05' }]}>
+              <View style={partnerStyles.earningsHeroLeft}>
+                <Text style={partnerStyles.earningsHeroLabel}>AVG. MONTHLY INCOME</Text>
+                <Text style={[partnerStyles.earningsHeroValue, { color: role.accent }]}>${role.monthlyEst}</Text>
+                <Text style={partnerStyles.earningsHeroNote}>{role.monthlyNote}</Text>
+              </View>
+              <View style={partnerStyles.earningsHeroDivider} />
+              <View style={partnerStyles.earningsHeroRight}>
+                <Text style={partnerStyles.earningsHeroLabel}>🔥 TOP EARNER</Text>
+                <Text style={[partnerStyles.earningsHeroTopValue, { color: role.accent }]}>{role.topEarner}</Text>
+                <Text style={partnerStyles.earningsHeroNote}>{role.topEarnerNote}</Text>
+              </View>
+            </View>
+
+            <View style={[partnerStyles.earningChip, { backgroundColor: role.accent + '18', borderColor: role.accent + '40', alignSelf: 'flex-start' }]}>
+              <DollarSign size={11} color={role.earningColor} />
+              <Text style={[partnerStyles.earningChipText, { color: role.earningColor }]}>{role.earning}</Text>
+            </View>
+
+            {isExpanded && (
+              <View style={partnerStyles.expandedContent}>
+                <Text style={partnerStyles.roleSubtitle}>{role.subtitle}</Text>
+
+                <View style={partnerStyles.incomeBreakdownWrap}>
+                  <Text style={partnerStyles.incomeBreakdownTitle}>💰 INCOME BREAKDOWN</Text>
+                  {role.incomeBreakdown.map((item, i) => (
+                    <View key={i} style={[partnerStyles.incomeRow, { borderColor: role.accent + '20' }]}>
+                      <View style={partnerStyles.incomeRowLeft}>
+                        <Text style={partnerStyles.incomeRowLabel}>{item.label}</Text>
+                        <Text style={partnerStyles.incomeRowNote}>{item.note}</Text>
+                      </View>
+                      <Text style={[partnerStyles.incomeRowValue, { color: role.accent }]}>{item.value}</Text>
+                    </View>
+                  ))}
+                </View>
+
+                <View style={partnerStyles.stepsWrap}>
+                  <Text style={partnerStyles.stepsTitle}>HOW IT WORKS</Text>
+                  <View style={partnerStyles.stepsGrid}>
+                    {role.howItWorks.map((s, i) => (
+                      <View key={i} style={[partnerStyles.stepCard, { borderColor: role.accent + '25', backgroundColor: role.accent + '06' }]}>
+                        <Text style={[partnerStyles.stepNum, { color: role.accent }]}>{s.step}</Text>
+                        <Text style={partnerStyles.stepLabel}>{s.label}</Text>
+                        <Text style={partnerStyles.stepDesc}>{s.desc}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+
+                <View style={partnerStyles.perksList}>
+                  {role.perks.map((perk, i) => (
+                    <View key={i} style={partnerStyles.perkRow}>
+                      <View style={[partnerStyles.perkCheck, { backgroundColor: role.accent + '18', borderColor: role.accent + '35' }]}>
+                        <CheckCircle size={10} color={role.accent} />
+                      </View>
+                      <Text style={partnerStyles.perkText}>{perk}</Text>
+                    </View>
+                  ))}
+                </View>
+
+                <View style={[partnerStyles.testimonialBox, { borderColor: role.accent + '30', backgroundColor: role.accent + '06' }]}>
+                  <View style={partnerStyles.testimonialStars}>
+                    {[0,1,2,3,4].map(i => <Star key={i} size={11} color="#FFD700" />)}
+                  </View>
+                  <Text style={partnerStyles.testimonialQuote}>{`"${role.testimonial.quote}"`}</Text>
+                  <Text style={partnerStyles.testimonialAuthor}>— {role.testimonial.author}, {role.testimonial.role}</Text>
+                </View>
+
+                <TouchableOpacity
+                  style={[partnerStyles.roleCta, { backgroundColor: role.accent }]}
+                  onPress={() => router.push(role.route as any)}
+                  activeOpacity={0.85}
+                >
+                  <Text style={partnerStyles.roleCtaText}>{role.cta}</Text>
+                  <ArrowUpRight size={16} color="#000" />
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {!isExpanded && (
+              <TouchableOpacity
+                style={[partnerStyles.roleCta, { backgroundColor: role.accent }]}
+                onPress={() => router.push(role.route as any)}
+                activeOpacity={0.85}
+              >
+                <Text style={partnerStyles.roleCtaText}>{role.cta}</Text>
+                <ArrowUpRight size={16} color="#000" />
+              </TouchableOpacity>
+            )}
+          </View>
+        );
+      })}
+
+      <View style={partnerStyles.bottomNote}>
+        <Shield size={13} color={Colors.primary} />
+        <Text style={partnerStyles.bottomNoteText}>
+          All partners go through a quick 24-hour verification. Apply today — partner spots are limited per region to protect your earnings potential.
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+const partnerStyles = StyleSheet.create({
+  wrap: {
+    marginHorizontal: 20,
+    marginBottom: 32,
+  },
+  headerWrap: {
+    marginBottom: 20,
+  },
+  eyebrowRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 12,
+  },
+  eyebrowPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: Colors.primary + '18',
+    borderWidth: 1,
+    borderColor: Colors.primary + '35',
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  eyebrow: {
+    color: Colors.primary,
+    fontSize: 10,
+    fontWeight: '800' as const,
+    letterSpacing: 1.5,
+  },
+  title: {
+    fontSize: 32,
+    fontWeight: '900' as const,
+    color: Colors.text,
+    lineHeight: 38,
+    marginBottom: 10,
+  },
+  titleGold: {
+    color: Colors.primary,
+  },
+  subtitle: {
+    color: Colors.textSecondary,
+    fontSize: 14,
+    lineHeight: 22,
+    marginBottom: 18,
+  },
+  bigMoneyBanner: {
+    flexDirection: 'row',
+    backgroundColor: Colors.surface,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: Colors.primary + '40',
+    overflow: 'hidden',
+    marginBottom: 16,
+  },
+  bigMoneyItem: {
+    flex: 1,
+    paddingVertical: 16,
+    alignItems: 'center',
+    gap: 2,
+  },
+  bigMoneyDiv: {
+    width: 1,
+    backgroundColor: Colors.surfaceBorder,
+  },
+  bigMoneyValue: {
+    color: Colors.primary,
+    fontSize: 18,
+    fontWeight: '900' as const,
+  },
+  bigMoneyLabel: {
+    color: Colors.text,
+    fontSize: 10,
+    fontWeight: '700' as const,
+    textAlign: 'center' as const,
+  },
+  bigMoneyNote: {
+    color: Colors.textTertiary,
+    fontSize: 9,
+    textAlign: 'center' as const,
+  },
+  roleTabsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 4,
+  },
+  roleTab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    backgroundColor: Colors.surface,
+  },
+  roleTabEmoji: {
+    fontSize: 14,
+  },
+  roleTabText: {
+    color: Colors.textSecondary,
+    fontSize: 11,
+    fontWeight: '700' as const,
+  },
+  roleCard: {
+    borderRadius: 22,
+    borderWidth: 1.5,
+    padding: 18,
+    marginBottom: 14,
+    gap: 14,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  roleAccentBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 4,
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+  },
+  roleCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 6,
+  },
+  roleIconWrap: {
+    width: 58,
+    height: 58,
+    borderRadius: 18,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  roleCardHeaderRight: {
+    flex: 1,
+    gap: 6,
+  },
+  roleCardTitle: {
+    color: Colors.text,
+    fontSize: 17,
+    fontWeight: '900' as const,
+    lineHeight: 22,
+  },
+  roleBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 20,
+    borderWidth: 1,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    alignSelf: 'flex-start' as const,
+  },
+  roleBadgeText: {
+    fontSize: 9,
+    fontWeight: '800' as const,
+    letterSpacing: 1,
+  },
+  earningChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderRadius: 20,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  earningChipText: {
+    fontSize: 12,
+    fontWeight: '800' as const,
+  },
+  earningsHero: {
+    flexDirection: 'row',
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 16,
+    alignItems: 'center',
+  },
+  earningsHeroLeft: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  earningsHeroRight: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  earningsHeroDivider: {
+    width: 1,
+    height: 52,
+    backgroundColor: Colors.surfaceBorder,
+    marginHorizontal: 10,
+  },
+  earningsHeroLabel: {
+    color: Colors.textTertiary,
+    fontSize: 8,
+    fontWeight: '800' as const,
+    letterSpacing: 1,
+    marginBottom: 4,
+    textAlign: 'center' as const,
+  },
+  earningsHeroValue: {
+    fontSize: 28,
+    fontWeight: '900' as const,
+    marginBottom: 2,
+  },
+  earningsHeroTopValue: {
+    fontSize: 24,
+    fontWeight: '900' as const,
+    marginBottom: 2,
+  },
+  earningsHeroNote: {
+    color: Colors.textTertiary,
+    fontSize: 9,
+    textAlign: 'center' as const,
+    lineHeight: 13,
+  },
+  expandedContent: {
+    gap: 16,
+  },
+  roleSubtitle: {
+    color: Colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 20,
+  },
+  incomeBreakdownWrap: {
+    backgroundColor: Colors.surface,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    overflow: 'hidden',
+  },
+  incomeBreakdownTitle: {
+    color: Colors.textTertiary,
+    fontSize: 9,
+    fontWeight: '800' as const,
+    letterSpacing: 1.2,
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    paddingBottom: 8,
+  },
+  incomeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    borderTopWidth: 1,
+  },
+  incomeRowLeft: {
+    flex: 1,
+    gap: 2,
+  },
+  incomeRowLabel: {
+    color: Colors.text,
+    fontSize: 13,
+    fontWeight: '600' as const,
+  },
+  incomeRowNote: {
+    color: Colors.textTertiary,
+    fontSize: 10,
+  },
+  incomeRowValue: {
+    fontSize: 16,
+    fontWeight: '900' as const,
+    letterSpacing: 0.3,
+  },
+  stepsWrap: {
+    gap: 10,
+  },
+  stepsTitle: {
+    color: Colors.textTertiary,
+    fontSize: 9,
+    fontWeight: '800' as const,
+    letterSpacing: 1.2,
+  },
+  stepsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  stepCard: {
+    width: '47%' as any,
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 12,
+    gap: 4,
+  },
+  stepNum: {
+    fontSize: 20,
+    fontWeight: '900' as const,
+    lineHeight: 24,
+  },
+  stepLabel: {
+    color: Colors.text,
+    fontSize: 12,
+    fontWeight: '700' as const,
+  },
+  stepDesc: {
+    color: Colors.textTertiary,
+    fontSize: 11,
+    lineHeight: 16,
+  },
+  perksList: {
+    gap: 9,
+  },
+  perkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  perkCheck: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  perkText: {
+    color: Colors.textSecondary,
+    fontSize: 13,
+    flex: 1,
+    lineHeight: 19,
+  },
+  testimonialBox: {
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 14,
+    gap: 8,
+  },
+  testimonialStars: {
+    flexDirection: 'row',
+    gap: 3,
+  },
+  testimonialQuote: {
+    color: Colors.text,
+    fontSize: 13,
+    lineHeight: 20,
+    fontStyle: 'italic',
+  },
+  testimonialAuthor: {
+    color: Colors.textTertiary,
+    fontSize: 11,
+    fontWeight: '600' as const,
+  },
+  roleCta: {
+    borderRadius: 14,
+    paddingVertical: 15,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+  },
+  roleCtaText: {
+    color: '#000',
+    fontSize: 14,
+    fontWeight: '800' as const,
+    letterSpacing: 0.3,
+  },
+  bottomNote: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    backgroundColor: Colors.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    padding: 14,
+    marginTop: 4,
+  },
+  bottomNoteText: {
+    flex: 1,
+    color: Colors.textTertiary,
+    fontSize: 11,
+    lineHeight: 17,
+  },
+});
+
+function LandingAnalytics({ totalRegistered }: { totalRegistered: number }) {
+  const router = useRouter();
+  const convRate = totalRegistered > 0 ? Math.min(((totalRegistered / Math.max(totalRegistered * 4.2, 1)) * 100), 32.5).toFixed(1) : '24.3';
+  const visitors = Math.round(totalRegistered * 4.2) + 1840;
+  const todayRegistrations = Math.max(12, Math.round(totalRegistered * 0.04));
+
+  return (
+    <View style={analyticsStyles.wrap}>
+      <View style={analyticsStyles.header}>
+        <Activity size={15} color={Colors.primary} />
+        <Text style={analyticsStyles.headerTitle}>Landing Page Analytics</Text>
+        <TouchableOpacity onPress={() => router.push('/app-report' as any)} activeOpacity={0.7}>
+          <Text style={analyticsStyles.headerLink}>Full Report →</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={analyticsStyles.metricsRow}>
+        <View style={analyticsStyles.metric}>
+          <View style={[analyticsStyles.metricIcon, { backgroundColor: '#4A90D920' }]}>
+            <Eye size={13} color="#4A90D9" />
+          </View>
+          <Text style={analyticsStyles.metricValue}>{visitors.toLocaleString()}</Text>
+          <Text style={analyticsStyles.metricLabel}>Total Visitors</Text>
+          <Text style={analyticsStyles.metricSub}>↑ +12% this week</Text>
+        </View>
+        <View style={analyticsStyles.metric}>
+          <View style={[analyticsStyles.metricIcon, { backgroundColor: Colors.positive + '20' }]}>
+            <UserCheck size={13} color={Colors.positive} />
+          </View>
+          <Text style={analyticsStyles.metricValue}>{totalRegistered.toLocaleString()}</Text>
+          <Text style={analyticsStyles.metricLabel}>Registrations</Text>
+          <Text style={analyticsStyles.metricSub}>↑ +{todayRegistrations} today</Text>
+        </View>
+        <View style={analyticsStyles.metric}>
+          <View style={[analyticsStyles.metricIcon, { backgroundColor: Colors.primary + '20' }]}>
+            <MousePointer size={13} color={Colors.primary} />
+          </View>
+          <Text style={analyticsStyles.metricValue}>{convRate}%</Text>
+          <Text style={analyticsStyles.metricLabel}>Conv. Rate</Text>
+          <Text style={analyticsStyles.metricSub}>Avg: 2.4%</Text>
+        </View>
+        <View style={analyticsStyles.metric}>
+          <View style={[analyticsStyles.metricIcon, { backgroundColor: '#9B59B620' }]}>
+            <DollarSign size={13} color="#9B59B6" />
+          </View>
+          <Text style={analyticsStyles.metricValue}>$28K</Text>
+          <Text style={analyticsStyles.metricLabel}>Avg. Intent</Text>
+          <Text style={analyticsStyles.metricSub}>Invest size</Text>
+        </View>
+      </View>
+
+      <View style={analyticsStyles.funnelWrap}>
+        <Text style={analyticsStyles.funnelTitle}>CONVERSION FUNNEL</Text>
+        {[
+          { label: 'Visited Page', count: visitors, color: '#4A90D9', pct: 100 },
+          { label: 'Scrolled Past Hero', count: Math.round(visitors * 0.68), color: '#7B68EE', pct: 68 },
+          { label: 'Viewed Registration', count: Math.round(visitors * 0.41), color: Colors.primary, pct: 41 },
+          { label: 'Started Form', count: Math.round(visitors * 0.29), color: '#00C48C', pct: 29 },
+          { label: 'Registered', count: totalRegistered, color: Colors.positive, pct: parseFloat(convRate) },
+        ].map((step, i) => (
+          <View key={i} style={analyticsStyles.funnelRow}>
+            <Text style={analyticsStyles.funnelLabel}>{step.label}</Text>
+            <View style={analyticsStyles.funnelBarBg}>
+              <View style={[analyticsStyles.funnelBar, { width: `${step.pct}%` as any, backgroundColor: step.color }]} />
+            </View>
+            <Text style={analyticsStyles.funnelCount}>{step.count.toLocaleString()}</Text>
+          </View>
+        ))}
+      </View>
+
+      <View style={analyticsStyles.sourcesRow}>
+        {[
+          { label: 'Direct', pct: 34, color: Colors.primary },
+          { label: 'Referral', pct: 28, color: '#4A90D9' },
+          { label: 'Social', pct: 22, color: '#9B59B6' },
+          { label: 'Search', pct: 16, color: Colors.positive },
+        ].map((s, i) => (
+          <View key={i} style={analyticsStyles.source}>
+            <View style={[analyticsStyles.sourceDot, { backgroundColor: s.color }]} />
+            <Text style={analyticsStyles.sourcePct}>{s.pct}%</Text>
+            <Text style={analyticsStyles.sourceLabel}>{s.label}</Text>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+const analyticsStyles = StyleSheet.create({
+  wrap: {
+    marginHorizontal: 20,
+    marginBottom: 24,
+    backgroundColor: Colors.surface,
+    borderRadius: 18,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 14,
+  },
+  headerTitle: {
+    flex: 1,
+    color: Colors.text,
+    fontSize: 14,
+    fontWeight: '800' as const,
+  },
+  headerLink: {
+    color: Colors.primary,
+    fontSize: 11,
+    fontWeight: '700' as const,
+  },
+  metricsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 16,
+  },
+  metric: {
+    flex: 1,
+    backgroundColor: Colors.backgroundSecondary,
+    borderRadius: 12,
+    padding: 10,
+    alignItems: 'center',
+    gap: 2,
+  },
+  metricIcon: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 2,
+  },
+  metricValue: {
+    color: Colors.text,
+    fontSize: 13,
+    fontWeight: '800' as const,
+  },
+  metricLabel: {
+    color: Colors.textSecondary,
+    fontSize: 9,
+    textAlign: 'center' as const,
+  },
+  metricSub: {
+    color: Colors.positive,
+    fontSize: 8,
+    fontWeight: '600' as const,
+    textAlign: 'center' as const,
+  },
+  funnelWrap: {
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: Colors.surfaceBorder,
+    marginBottom: 12,
+  },
+  funnelTitle: {
+    color: Colors.textTertiary,
+    fontSize: 9,
+    fontWeight: '800' as const,
+    letterSpacing: 1,
+    marginBottom: 10,
+  },
+  funnelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
+  },
+  funnelLabel: {
+    color: Colors.textSecondary,
+    fontSize: 10,
+    width: 105,
+  },
+  funnelBarBg: {
+    flex: 1,
+    height: 5,
+    backgroundColor: Colors.backgroundTertiary,
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  funnelBar: {
+    height: 5,
+    borderRadius: 3,
+  },
+  funnelCount: {
+    color: Colors.textTertiary,
+    fontSize: 9,
+    width: 38,
+    textAlign: 'right' as const,
+  },
+  sourcesRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: Colors.surfaceBorder,
+  },
+  source: {
+    flex: 1,
+    alignItems: 'center',
+    backgroundColor: Colors.backgroundSecondary,
+    borderRadius: 10,
+    paddingVertical: 8,
+    gap: 3,
+  },
+  sourceDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  sourcePct: {
+    color: Colors.text,
+    fontSize: 13,
+    fontWeight: '800' as const,
+  },
+  sourceLabel: {
+    color: Colors.textTertiary,
+    fontSize: 9,
+  },
+});
 
 export default function LandingScreen() {
   const router = useRouter();
@@ -169,6 +1213,7 @@ export default function LandingScreen() {
   }, []);
 
   const totalMembers = (statsQuery.data?.total ?? 0) + 52000;
+  const totalRegistered = (statsQuery.data?.total ?? 0) + 52000;
 
   return (
     <View style={styles.root}>
@@ -187,12 +1232,14 @@ export default function LandingScreen() {
             )}
             keyboardShouldPersistTaps="handled"
           >
-            <Animated.View style={[styles.header, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
+            <LiveGlobalTicker />
+
+          <Animated.View style={[styles.header, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
               <Animated.View style={[styles.logoWrap, { transform: [{ scale: logoScale }] }]}>
                 <Image source={IPX_LOGO} style={styles.logo} resizeMode="contain" />
               </Animated.View>
               <View style={styles.headerText}>
-                <Text style={styles.brand}>IPX HOLDING LLC</Text>
+                <Text style={styles.brand}>IVXHOLDINGS HOLDING LLC</Text>
                 <View style={styles.liveBadge}>
                   <Animated.View style={[styles.liveDot, { transform: [{ scale: pulseAnim }] }]} />
                   <Text style={styles.liveBadgeText}>MARKETS OPEN</Text>
@@ -253,7 +1300,7 @@ export default function LandingScreen() {
             </Animated.View>
 
             <Animated.View style={[styles.featuresSection, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
-              <Text style={styles.sectionTitle}>Why Investors Choose IPX</Text>
+              <Text style={styles.sectionTitle}>Why Investors Choose IVXHOLDINGS</Text>
               <View style={styles.featuresGrid}>
                 {FEATURES.map((f, i) => (
                   <View key={i} style={[styles.featureCard, { backgroundColor: f.bg, borderColor: f.bg }]}>
@@ -553,6 +1600,8 @@ export default function LandingScreen() {
               </View>
             </View>
 
+            <PartnerEarnSection />
+
             <View style={styles.partnersSection}>
               <Text style={styles.partnersSectionTitle}>Our Partners</Text>
               <TouchableOpacity
@@ -570,6 +1619,21 @@ export default function LandingScreen() {
                 <ExternalLink size={14} color={Colors.primary} />
               </TouchableOpacity>
             </View>
+
+            <LandingAnalytics totalRegistered={totalRegistered} />
+
+            <TouchableOpacity
+              style={styles.globalIntelBtn}
+              onPress={() => router.push('/global-intelligence' as any)}
+              activeOpacity={0.85}
+            >
+              <Globe size={16} color={Colors.primary} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.globalIntelBtnTitle}>Global Financial Intelligence</Text>
+                <Text style={styles.globalIntelBtnSub}>Live forex · indices · crypto · money flow</Text>
+              </View>
+              <ChevronRight size={16} color={Colors.primary} />
+            </TouchableOpacity>
 
             <TouchableOpacity
               style={styles.websiteBanner}
@@ -619,7 +1683,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: 20,
+    paddingBottom: 140,
   },
   header: {
     flexDirection: 'row',
@@ -1122,6 +2186,29 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700' as const,
     letterSpacing: 0.3,
+  },
+  globalIntelBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginHorizontal: 20,
+    marginBottom: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    backgroundColor: Colors.primary + '12',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.primary + '40',
+  },
+  globalIntelBtnTitle: {
+    color: Colors.primary,
+    fontSize: 13,
+    fontWeight: '800' as const,
+  },
+  globalIntelBtnSub: {
+    color: Colors.textTertiary,
+    fontSize: 10,
+    marginTop: 1,
   },
   websiteBanner: {
     flexDirection: 'row',
