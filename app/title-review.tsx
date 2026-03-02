@@ -501,7 +501,7 @@ export default function TitleReviewScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
   scrollView: { flex: 1, backgroundColor: Colors.background },
-  scrollContent: { padding: 20, paddingBottom: 40 },
+  scrollContent: { padding: 20, paddingBottom: 140 },
   propertyHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
   propertyIconWrap: { width: 44, height: 44, borderRadius: 14, backgroundColor: Colors.primary + '15', alignItems: 'center', justifyContent: 'center' },
   propertyInfo: { flex: 1 },
