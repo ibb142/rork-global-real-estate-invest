@@ -52,6 +52,7 @@ interface LegalSection {
 const EFFECTIVE_DATE = 'February 1, 2026';
 const COMPANY_NAME = 'IVX HOLDINGS LLC';
 const COMPANY_ADDRESS = '1001 Brickell Bay Drive, Suite 2700, Miami, FL 33131';
+const COMPANY_EMAIL_CEO = 'ceo@ivxholding.com';
 const COMPANY_EMAIL_LEGAL = 'legal@ivxholding.com';
 const COMPANY_EMAIL_PRIVACY = 'privacy@ivxholding.com';
 const COMPANY_EMAIL_COMPLIANCE = 'compliance@ivxholding.com';
@@ -1165,7 +1166,7 @@ const styles = StyleSheet.create({
   headerCenter: { flex: 1, alignItems: 'center' },
   headerTitle: { color: Colors.text, fontSize: 20, fontWeight: '800' as const },
   headerSubtitle: { color: Colors.textSecondary, fontSize: 13, marginTop: 4 },
-  scrollContent: { padding: 20, paddingBottom: 40 },
+  scrollContent: { padding: 20, paddingBottom: 140 },
   legalBanner: { backgroundColor: Colors.surface, borderRadius: 14, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: Colors.surfaceBorder },
   bannerIconRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   bannerIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: Colors.primary + '15', alignItems: 'center', justifyContent: 'center' },
@@ -1205,6 +1206,6 @@ const styles = StyleSheet.create({
   footerContact: { color: Colors.textTertiary, fontSize: 12, textAlign: 'center', marginTop: 2 },
   footerCopyright: { color: Colors.textTertiary, fontSize: 11, textAlign: 'center', marginTop: 8 },
   footerVersion: { color: Colors.textTertiary, fontSize: 10, textAlign: 'center', marginTop: 2 },
-  bottomPadding: { height: 40 },
+  bottomPadding: { height: 120 },
   scrollView: { backgroundColor: Colors.background },
 });
