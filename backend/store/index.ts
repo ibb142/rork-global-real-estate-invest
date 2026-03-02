@@ -131,7 +131,7 @@ class Store {
       }
       this.initialized = true;
     } catch (err) {
-      console.error('[Store] Init error:', err);
+      console.warn('[Store] Init error (falling back to in-memory mode):', (err as Error)?.message || err);
       this.initialized = true;
     }
   }
