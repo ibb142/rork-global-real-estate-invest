@@ -167,7 +167,7 @@ export default function DeveloperHandoffScreen() {
         if (canShare) {
           await Sharing.shareAsync(uri, {
             mimeType: 'application/pdf',
-            dialogTitle: 'IPX Developer Integration Guide',
+            dialogTitle: 'IVXHOLDINGS Developer Integration Guide',
             UTI: 'com.adobe.pdf',
           });
         } else {
@@ -184,7 +184,7 @@ export default function DeveloperHandoffScreen() {
 
   const handleShareWhatsApp = useCallback(async () => {
     const content = generateHandoffTextReport();
-    const summary = `*IPX Developer Integration Guide*\n\n` +
+    const summary = `*IVXHOLDINGS Developer Integration Guide*\n\n` +
       `Total Integrations: ${allItems.length}\n` +
       `Critical: ${criticalCount}\n` +
       `Est. Hours: ${totalHours}h (~${Math.ceil(totalHours / 40)} weeks)\n` +
@@ -212,7 +212,7 @@ export default function DeveloperHandoffScreen() {
 
   const handleShareEmail = useCallback(async () => {
     const content = generateHandoffTextReport();
-    const subject = 'IPX Luxury Holdings - Developer Integration Guide';
+    const subject = 'IVXHOLDINGS Luxury Holdings - Developer Integration Guide';
 
     try {
       if (Platform.OS === 'web') {
@@ -237,7 +237,7 @@ export default function DeveloperHandoffScreen() {
     try {
       const content = generateHandoffTextReport();
       await Share.share({
-        title: 'IPX Developer Integration Guide',
+        title: 'IVXHOLDINGS Developer Integration Guide',
         message: content,
       });
     } catch (error) {
@@ -252,14 +252,14 @@ export default function DeveloperHandoffScreen() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `IPX-Developer-Guide-${new Date().toISOString().split('T')[0]}.txt`;
+      a.download = `IVXHOLDINGS-Developer-Guide-${new Date().toISOString().split('T')[0]}.txt`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } else {
       Share.share({
-        title: 'IPX Developer Integration Guide',
+        title: 'IVXHOLDINGS Developer Integration Guide',
         message: content,
       });
     }
@@ -678,7 +678,7 @@ export default function DeveloperHandoffScreen() {
         </View>
 
         <View style={styles.footer}>
-          <Text style={styles.footerTitle}>IPX Luxury Holdings</Text>
+          <Text style={styles.footerTitle}>IVXHOLDINGS Luxury Holdings</Text>
           <Text style={styles.footerText}>Developer Integration Guide</Text>
           <Text style={styles.footerDate}>Last Updated: {new Date().toLocaleDateString()}</Text>
         </View>
