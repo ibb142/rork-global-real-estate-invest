@@ -122,6 +122,17 @@ async function deploy() {
   }));
   console.log('   ✅ index.html uploaded');
 
+  console.log('\n🖼️  Uploading logo...');
+  const logoBuffer = readFileSync('./assets/images/ivx-logo.png');
+  await s3.send(new PutObjectCommand({
+    Bucket: BUCKET_NAME,
+    Key: 'ivx-logo.png',
+    Body: logoBuffer,
+    ContentType: 'image/png',
+    CacheControl: 'public, max-age=31536000',
+  }));
+  console.log('   ✅ logo uploaded');
+
   const websiteEndpoint = REGION === 'us-east-1'
     ? `${BUCKET_NAME}.s3-website-us-east-1.amazonaws.com`
     : `${BUCKET_NAME}.s3-website-${REGION}.amazonaws.com`;
