@@ -8,7 +8,7 @@ import { getAuthToken, getAuthUserId, getAuthUserRole } from "@/lib/auth-store";
 export const trpc = createTRPCReact<AppRouter>();
 
 const getBaseUrl = () => {
-  return process.env.EXPO_PUBLIC_RORK_API_BASE_URL || 'https://ivxholding.com';
+  return process.env.EXPO_PUBLIC_API_BASE_URL || process.env.EXPO_PUBLIC_RORK_API_BASE_URL || 'https://ivxholding.com';
 };
 
 export const trpcClient = trpc.createClient({
