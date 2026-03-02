@@ -89,7 +89,7 @@ export default function DebtAcquisitionScreen() {
 
     Alert.alert(
       'Confirm Investment',
-      `Invest in ${tokens} mortgage-backed tokens for $${calc.subtotal.toLocaleString()}\n\nIPX Fee (2.5%): $${calc.ipxFee.toLocaleString()}\nNet Investment: $${calc.netInvestment.toLocaleString()}\n\nLien Position: ${calc.lienPosition.toUpperCase()}\nProjected Annual Return: $${calc.projectedAnnualReturn.toFixed(2)}`,
+      `Invest in ${tokens} mortgage-backed tokens for $${calc.subtotal.toLocaleString()}\n\nIVXHOLDINGS Fee (2.5%): ${calc.ipxFee.toLocaleString()}\nNet Investment: $${calc.netInvestment.toLocaleString()}\n\nLien Position: ${calc.lienPosition.toUpperCase()}\nProjected Annual Return: $${calc.projectedAnnualReturn.toFixed(2)}`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -170,7 +170,7 @@ export default function DebtAcquisitionScreen() {
           </View>
           <Text style={styles.heroTitle}>Tokenized First Lien Mortgage</Text>
           <Text style={styles.heroSubtitle}>
-            Property owners bring clean debt-free properties. IPX provides 85% LTV financing, records first lien, and tokenizes the mortgage for 24/7 investor access.
+            Property owners bring clean debt-free properties. IVXHOLDINGS provides 85% LTV financing, records first lien, and tokenizes the mortgage for 24/7 investor access.
           </Text>
 
           <View style={styles.strategyRow}>
@@ -267,11 +267,11 @@ export default function DebtAcquisitionScreen() {
                   <Text style={styles.debtValue}>{formatCurrency(property.appraisedValue)}</Text>
                 </View>
                 <View style={styles.debtRow}>
-                  <Text style={styles.debtLabel}>IPX Financing ({property.ltvPercent}% LTV)</Text>
+                  <Text style={styles.debtLabel}>IVXHOLDINGS Financing ({property.ltvPercent}% LTV)</Text>
                   <Text style={styles.debtValuePrimary}>{formatCurrency(property.financingAmount)}</Text>
                 </View>
                 <View style={styles.debtRow}>
-                  <Text style={styles.debtLabel}>Closing Cost + IPX Fee</Text>
+                  <Text style={styles.debtLabel}>Closing Cost + IVXHOLDINGS Fee</Text>
                   <Text style={styles.debtValueHighlight}>{formatCurrency(property.closingCostAmount + property.ipxFeeAmount)}</Text>
                 </View>
                 <View style={[styles.debtRow, styles.debtRowTotal]}>
@@ -359,7 +359,7 @@ export default function DebtAcquisitionScreen() {
                     </View>
                     <View style={styles.breakdownRow}>
                       <View style={[styles.breakdownDot, { backgroundColor: Colors.info }]} />
-                      <Text style={styles.breakdownLabel}>IPX Fee ({selectedProperty.ipxFeePercent}%)</Text>
+                      <Text style={styles.breakdownLabel}>IVXHOLDINGS Fee ({selectedProperty.ipxFeePercent}%)</Text>
                       <Text style={styles.breakdownValueWarning}>{formatCurrency(selectedProperty.ipxFeeAmount)}</Text>
                     </View>
                     <View style={[styles.breakdownRow, styles.breakdownRowTotal]}>
@@ -391,7 +391,7 @@ export default function DebtAcquisitionScreen() {
                         <Text style={styles.summaryValue}>${tokenCalc.subtotal.toLocaleString()}</Text>
                       </View>
                       <View style={styles.summaryRow}>
-                        <Text style={styles.summaryLabel}>IPX Fee (2.5%)</Text>
+                        <Text style={styles.summaryLabel}>IVXHOLDINGS Fee (2.5%)</Text>
                         <Text style={styles.summaryFee}>${tokenCalc.ipxFee.toLocaleString()}</Text>
                       </View>
                       <View style={[styles.summaryRow, styles.summaryTotal]}>
@@ -481,7 +481,7 @@ export default function DebtAcquisitionScreen() {
                 <View style={styles.infoStepContent}>
                   <Text style={styles.infoStepTitle}>Owner Brings Clean Property</Text>
                   <Text style={styles.infoStepDesc}>
-                    Property owner submits a debt-free (clean title) property to the platform for IPX financing
+                    Property owner submits a debt-free (clean title) property to the platform for IVXHOLDINGS financing
                   </Text>
                 </View>
               </View>
@@ -493,7 +493,7 @@ export default function DebtAcquisitionScreen() {
                 <View style={styles.infoStepContent}>
                   <Text style={styles.infoStepTitle}>85% LTV Financing</Text>
                   <Text style={styles.infoStepDesc}>
-                    IPX appraises the property and provides 85% of the value as financing, minus closing costs and IPX origination fee
+                    IVXHOLDINGS appraises the property and provides 85% of the value as financing, minus closing costs and IVXHOLDINGS origination fee
                   </Text>
                 </View>
               </View>
@@ -505,7 +505,7 @@ export default function DebtAcquisitionScreen() {
                 <View style={styles.infoStepContent}>
                   <Text style={styles.infoStepTitle}>First Lien Recorded</Text>
                   <Text style={styles.infoStepDesc}>
-                    IPX-LUXURY-HOLDINGS LLC records a first lien mortgage on the property — like a bank, but not a traditional loan
+                    IVXHOLDINGS-LUXURY-HOLDINGS LLC records a first lien mortgage on the property — like a bank, but not a traditional loan
                   </Text>
                 </View>
               </View>
@@ -550,7 +550,7 @@ export default function DebtAcquisitionScreen() {
                 </View>
                 <View style={styles.benefitItem}>
                   <CheckCircle size={16} color={Colors.success} />
-                  <Text style={styles.benefitText}>IPX acts like the bank but with tokenized efficiency</Text>
+                  <Text style={styles.benefitText}>IVXHOLDINGS acts like the bank but with tokenized efficiency</Text>
                 </View>
                 <View style={styles.benefitItem}>
                   <CheckCircle size={16} color={Colors.success} />
@@ -866,7 +866,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
   bottomPadding: {
-    height: 40,
+    height: 120,
   },
   modalOverlay: {
     flex: 1,
