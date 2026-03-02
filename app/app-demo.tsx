@@ -118,8 +118,8 @@ const DEMO_SLIDES: DemoSlide[] = [
   },
   {
     id: 'tokenomics',
-    title: 'IPX Token Economy',
-    subtitle: 'Stake IPX tokens for rewards, governance voting, and exclusive tier benefits.',
+    title: 'IVXHOLDINGS Token Economy',
+    subtitle: 'Stake IVXHOLDINGS tokens for rewards, governance voting, and exclusive tier benefits.',
     highlights: ['12.5% APY staking', 'Governance votes', 'VIP tiers'],
     accentColor: '#F39C12',
     Mockup: TokenomicsMockup,
