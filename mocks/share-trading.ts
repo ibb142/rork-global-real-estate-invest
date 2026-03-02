@@ -568,7 +568,7 @@ const computeTotalVolume = (): number => {
 
 export const ipxGlobalIndex: IPXGlobalIndex = {
   name: 'IVX HOLDINGS LLC Index',
-  ticker: 'IPX-GREI',
+  ticker: 'IVXHOLDINGS-GREI',
   currentValue: 148.72,
   change24h: 3.85,
   changePercent24h: 2.66,
