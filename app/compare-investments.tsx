@@ -121,7 +121,7 @@ function ProjectionCalculator() {
   return (
     <View style={styles.calculatorSection}>
       <Text style={styles.calcTitle}>Return Projector</Text>
-      <Text style={styles.calcSubtitle}>See how your money could grow with IPX</Text>
+      <Text style={styles.calcSubtitle}>See how your money could grow with IVXHOLDINGS</Text>
 
       <Text style={styles.calcLabel}>Investment Amount</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.amountScroll}>
@@ -191,7 +191,7 @@ function ProjectionCalculator() {
 
       <View style={styles.disclaimerBox}>
         <Text style={styles.disclaimerText}>
-          Past performance does not guarantee future results. Projections are based on historical IPX returns and are for illustrative purposes only.
+          Past performance does not guarantee future results. Projections are based on historical IVXHOLDINGS returns and are for illustrative purposes only.
         </Text>
       </View>
     </View>
@@ -217,7 +217,7 @@ export default function CompareInvestmentsScreen() {
           <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
             <ArrowLeft size={24} color={Colors.text} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Why IPX Wins</Text>
+          <Text style={styles.headerTitle}>Why IVXHOLDINGS Wins</Text>
           <View style={{ width: 40 }} />
         </View>
 
@@ -244,7 +244,7 @@ export default function CompareInvestmentsScreen() {
             label="Min. Investment"
             icon={<DollarSign size={16} color={Colors.primary} />}
             values={[
-              { asset: 'IPX', value: '$1', highlight: true },
+              { asset: 'IVXHOLDINGS', value: '$1', highlight: true },
               { asset: 'S&P 500', value: '$500' },
               { asset: 'Trad. RE', value: '$50K+' },
             ]}
@@ -253,7 +253,7 @@ export default function CompareInvestmentsScreen() {
             label="Trading Hours"
             icon={<Clock size={16} color={Colors.primary} />}
             values={[
-              { asset: 'IPX', value: '24/7', highlight: true },
+              { asset: 'IVXHOLDINGS', value: '24/7', highlight: true },
               { asset: 'S&P 500', value: '6.5h/day' },
               { asset: 'Trad. RE', value: '3-6 mo.' },
             ]}
@@ -262,7 +262,7 @@ export default function CompareInvestmentsScreen() {
             label="Dividend Yield"
             icon={<BarChart3 size={16} color={Colors.primary} />}
             values={[
-              { asset: 'IPX', value: '7.2%', highlight: true },
+              { asset: 'IVXHOLDINGS', value: '7.2%', highlight: true },
               { asset: 'S&P 500', value: '1.5%' },
               { asset: 'Bonds', value: '4.2%' },
             ]}
@@ -271,14 +271,14 @@ export default function CompareInvestmentsScreen() {
             label="Volatility"
             icon={<TrendingUp size={16} color={Colors.primary} />}
             values={[
-              { asset: 'IPX', value: '8.2%', highlight: true },
+              { asset: 'IVXHOLDINGS', value: '8.2%', highlight: true },
               { asset: 'S&P 500', value: '15.6%' },
               { asset: 'Bitcoin', value: '62.4%' },
             ]}
           />
 
           <View style={styles.advantageSection}>
-            <Text style={styles.sectionTitle}>IPX Exclusive Advantages</Text>
+            <Text style={styles.sectionTitle}>IVXHOLDINGS Exclusive Advantages</Text>
             {[
               { icon: <ShieldCheck size={20} color="#4ECDC4" />, title: 'Asset-Backed', desc: 'Every share is backed by a real, insured property with a first lien' },
               { icon: <Leaf size={20} color="#00C48C" />, title: 'Inflation Hedge', desc: 'Real estate historically rises with inflation, unlike cash or bonds' },
@@ -299,7 +299,7 @@ export default function CompareInvestmentsScreen() {
             <Text style={styles.sectionTitle}>Feature Matrix</Text>
             <View style={styles.matrixHeader}>
               <View style={styles.matrixLabelCell} />
-              <Text style={[styles.matrixHeaderText, { color: Colors.primary }]}>IPX</Text>
+              <Text style={[styles.matrixHeaderText, { color: Colors.primary }]}>IVXHOLDINGS</Text>
               <Text style={styles.matrixHeaderText}>Stocks</Text>
               <Text style={styles.matrixHeaderText}>Bonds</Text>
               <Text style={styles.matrixHeaderText}>Crypto</Text>
@@ -356,7 +356,7 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12 },
   backButton: { padding: 8 },
   headerTitle: { color: Colors.text, fontSize: 20, fontWeight: '800' as const },
-  scrollContent: { padding: 20, paddingBottom: 40 },
+  scrollContent: { padding: 20, paddingBottom: 140 },
   heroCard: { backgroundColor: Colors.surface, borderRadius: 20, padding: 20, marginBottom: 16, borderWidth: 1, borderColor: Colors.surfaceBorder },
   heroIconContainer: { width: 56, height: 56, borderRadius: 18, backgroundColor: Colors.primary + '15', alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
   heroTitle: { color: Colors.text, fontSize: 22, fontWeight: '800' as const, textAlign: 'center', marginBottom: 8 },
@@ -422,6 +422,6 @@ const styles = StyleSheet.create({
   disclaimerText: { color: Colors.textSecondary, fontSize: 13 },
   ctaButton: { backgroundColor: Colors.primary, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
   ctaText: { color: Colors.textSecondary, fontSize: 13 },
-  bottomPadding: { height: 40 },
+  bottomPadding: { height: 120 },
   scrollView: { backgroundColor: Colors.background },
 });
