@@ -38,7 +38,7 @@ import { platformStats } from '@/mocks/competitive-stats';
 import { useGlobalMarkets } from '@/lib/global-markets';
 import { properties as fallbackProperties } from '@/mocks/properties';
 
-const IPX_LOGO = require('@/assets/images/ipx-logo.jpg');
+const IPX_LOGO = require('@/assets/images/ivx-logo.png');
 
 function LiveStatsTicker({ t }: { t: (key: any) => string }) {
   const scrollAnim = useRef(new Animated.Value(0)).current;
@@ -115,13 +115,13 @@ function SocialProofBanner({ t }: { t: (key: any) => string }) {
   );
 }
 
-const QuickActionCard = React.memo(({ icon, title, subtitle, color, onPress }: {
+const QuickActionCard = React.memo(function QuickActionCard({ icon, title, subtitle, color, onPress }: {
   icon: React.ReactNode;
   title: string;
   subtitle: string;
   color: string;
   onPress: () => void;
-}) => (
+}) {return (
   <TouchableOpacity
     style={styles.quickAction}
     onPress={onPress}
@@ -140,7 +140,7 @@ const QuickActionCard = React.memo(({ icon, title, subtitle, color, onPress }: {
       <ChevronRight size={14} color={Colors.textTertiary} />
     </View>
   </TouchableOpacity>
-));
+);});
 
 function WhyIPXSection({ onCompare, onSmart, onTrust, t }: { onCompare: () => void; onSmart: () => void; onTrust: () => void; t: (key: any) => string }) {
   return (
@@ -366,7 +366,7 @@ function InvestorTestimonial({ t }: { t: (key: any) => string }) {
           <Star key={i} size={14} color={Colors.primary} fill={Colors.primary} />
         ))}
       </View>
-      <Text style={styles.testimonialText}>"{t(testimonial.textKey)}"</Text>
+      <Text style={styles.testimonialText}>{`"${t(testimonial.textKey)}"`}</Text>
       <Text style={styles.testimonialAuthor}>{testimonial.name} — {testimonial.location}</Text>
       <View style={styles.testimonialDots}>
         {TESTIMONIAL_KEYS.map((_, i) => (
