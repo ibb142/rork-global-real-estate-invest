@@ -419,5 +419,5 @@ const styles = StyleSheet.create({
   fieldHint: { color: Colors.textTertiary, fontSize: 11, marginTop: 4 },
   cancelButton: { backgroundColor: Colors.surface, borderRadius: 14, paddingVertical: 14, alignItems: 'center', borderWidth: 1, borderColor: Colors.surfaceBorder },
   cancelButtonText: { color: Colors.text, fontWeight: '600' as const, fontSize: 15 },
-  bottomPadding: { height: 40 },
+  bottomPadding: { height: 120 },
 });
