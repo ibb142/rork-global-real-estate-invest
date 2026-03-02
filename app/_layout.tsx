@@ -93,6 +93,7 @@ function RootLayoutNav() {
       <Stack.Screen name="ai-gallery" options={HIDDEN_HEADER} />
       <Stack.Screen name="share-content" options={HIDDEN_HEADER} />
       <Stack.Screen name="developer-breakdown" options={HIDDEN_HEADER} />
+      <Stack.Screen name="global-intelligence" options={HIDDEN_HEADER} />
     </Stack>
   );
 }
