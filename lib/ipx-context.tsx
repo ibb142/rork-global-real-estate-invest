@@ -5,6 +5,7 @@ import { FractionalShare, SharePurchase } from '@/types';
 import { fractionalShares as initialShares, calculateIPXFee } from '@/mocks/ipx-invest';
 import { trpc } from '@/lib/trpc';
 import { getAuthUserId } from '@/lib/auth-store';
+import { useAuth } from '@/lib/auth-context';
 
 const IPX_HOLDINGS_KEY = '@ipx_holdings';
 const IPX_PURCHASES_KEY = '@ipx_purchases';
@@ -30,8 +31,10 @@ export const [IPXProvider, useIPX] = createContextHook(() => {
   const [purchases, setPurchases] = useState<SharePurchase[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
+  const { isAuthenticated } = useAuth();
+
   const portfolioQuery = trpc.wallet.getPortfolio.useQuery(undefined, {
-    enabled: true,
+    enabled: isAuthenticated,
     retry: 1,
     staleTime: 60000,
   });
@@ -42,7 +45,7 @@ export const [IPXProvider, useIPX] = createContextHook(() => {
 
   useEffect(() => {
     if (portfolioQuery.data?.holdings) {
-      console.log('[IPX] Synced portfolio from backend:', portfolioQuery.data.holdings.length, 'holdings');
+      console.log('[IVXHOLDINGS] Synced portfolio from backend:', portfolioQuery.data.holdings.length, 'holdings');
     }
   }, [portfolioQuery.data]);
 
@@ -60,7 +63,7 @@ export const [IPXProvider, useIPX] = createContextHook(() => {
         setPurchases(JSON.parse(purchasesData));
       }
     } catch (error) {
-      console.log('Error loading IPX data:', error);
+      console.log('Error loading IVXHOLDINGS data:', error);
     } finally {
       setIsLoading(false);
     }
@@ -73,7 +76,7 @@ export const [IPXProvider, useIPX] = createContextHook(() => {
         AsyncStorage.setItem(IPX_PURCHASES_KEY, JSON.stringify(newPurchases)),
       ]);
     } catch (error) {
-      console.log('Error saving IPX data:', error);
+      console.log('Error saving IVXHOLDINGS data:', error);
     }
   };
 
@@ -166,7 +169,7 @@ export const [IPXProvider, useIPX] = createContextHook(() => {
     setPurchases(newPurchases);
     await saveData(newHoldings, newPurchases);
 
-    console.log('IPX Purchase successful:', {
+    console.log('IVXHOLDINGS Purchase successful:', {
       property: property.propertyName,
       shares: shareCount,
       total: totalAmount,
