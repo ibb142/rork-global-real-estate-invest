@@ -1060,7 +1060,7 @@ Requirements:
       } else {
         await Share.share({
           url: generatedImage,
-          title: 'IPX Marketing Image',
+          title: 'IVXHOLDINGS Marketing Image',
         });
       }
       console.log('Image shared/downloaded');
@@ -1183,7 +1183,7 @@ Output just the script with timing notes.`;
       } else {
         await Share.share({
           message: generatedVideo.script,
-          title: 'IPX Video Script',
+          title: 'IVXHOLDINGS Video Script',
         });
       }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -2720,7 +2720,7 @@ const styles = StyleSheet.create({
   tabTextActive: { color: Colors.black },
   keyboardAvoid: { flex: 1 },
   content: { flex: 1 },
-  scrollContent: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 40 },
+  scrollContent: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 140 },
   tabContent: {},
   aiStatusCard: { backgroundColor: Colors.surface, borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: Colors.surfaceBorder },
   aiStatusHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
@@ -2873,7 +2873,7 @@ const styles = StyleSheet.create({
   insightHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
   insightTitle: { color: Colors.text, fontSize: 16, fontWeight: '700' as const },
   insightDesc: { color: Colors.textSecondary, fontSize: 13, lineHeight: 18 },
-  bottomPadding: { height: 40 },
+  bottomPadding: { height: 120 },
   modalContainer: { flex: 1, backgroundColor: Colors.background },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: Colors.border },
   modalTitle: { color: Colors.text, fontSize: 18, fontWeight: '800' as const },
