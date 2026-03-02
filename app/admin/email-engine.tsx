@@ -972,7 +972,7 @@ export default function EmailEngineScreen() {
         <View style={styles.comparisonCard}>
           <View style={styles.comparisonHeader}>
             <Zap size={16} color={Colors.primary} />
-            <Text style={styles.comparisonTitle}>Your IPX Email Engine</Text>
+            <Text style={styles.comparisonTitle}>Your IVXHOLDINGS Email Engine</Text>
           </View>
           <View style={styles.comparisonRow}>
             <Text style={styles.comparisonLabel}>20K emails/day</Text>
