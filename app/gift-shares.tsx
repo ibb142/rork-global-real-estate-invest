@@ -452,7 +452,7 @@ export default function GiftSharesScreen() {
             </Animated.View>
 
             <Text style={styles.disclaimer}>
-              Gift shares are transferred instantly. The recipient will receive {deliveryMethod === 'sms' ? 'an SMS' : 'an email'} to create their IPX account and claim the shares. Standard trading fees apply.
+              Gift shares are transferred instantly. The recipient will receive {deliveryMethod === 'sms' ? 'an SMS' : 'an email'} to create their IVXHOLDINGS account and claim the shares. Standard trading fees apply.
             </Text>
 
             <View style={{ height: 40 }} />
