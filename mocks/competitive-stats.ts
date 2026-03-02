@@ -44,7 +44,7 @@ export interface SmartFeature {
 
 export const assetClassComparison: AssetClassPerformance[] = [
   {
-    name: 'IPX Real Estate',
+    name: 'IVXHOLDINGS Real Estate',
     annualReturn: 14.5,
     volatility: 8.2,
     minInvestment: 1,
@@ -207,7 +207,7 @@ export const ownerProtections: OwnerProtection[] = [
     details: [
       'Owner retains 85% equity in the property',
       'Only 12.5% offered to fractional investors',
-      'IPX takes 2.5% as service fee',
+      'IVXHOLDINGS takes 2.5% as service fee',
       'Owner can buy back shares at any time at market price',
     ],
     icon: 'PiggyBank',
@@ -215,7 +215,7 @@ export const ownerProtections: OwnerProtection[] = [
   {
     id: 'op-2',
     title: 'Legal Title Protection',
-    description: 'Your property title remains in your name. IPX holds a mortgage lien, not ownership.',
+    description: 'Your property title remains in your name. IVXHOLDINGS holds a mortgage lien, not ownership.',
     details: [
       'Warranty deed stays in owner\'s name',
       'First lien mortgage recorded (not ownership transfer)',
@@ -244,9 +244,9 @@ export const ownerProtections: OwnerProtection[] = [
     description: 'Multiple exit strategies available. You are never locked in permanently.',
     details: [
       'Buy back fractional shares from the market',
-      'Refinance to pay off the IPX mortgage',
+      'Refinance to pay off the IVXHOLDINGS mortgage',
       'Sell the entire property (investors paid from proceeds)',
-      'Transfer ownership with IPX mortgage assumption',
+      'Transfer ownership with IVXHOLDINGS mortgage assumption',
       'No prepayment penalties after 12 months',
     ],
     icon: 'ArrowRightLeft',
