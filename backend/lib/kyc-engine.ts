@@ -243,7 +243,7 @@ class JumioProvider implements KYCProviderInterface {
         headers: {
           'Authorization': this.getAuthHeader(),
           'Content-Type': 'application/json',
-          'User-Agent': 'IPX-Holding/1.0',
+          'User-Agent': 'IVXHOLDINGS-Holding/1.0',
         },
         body: JSON.stringify({
           customerInternalReference: doc.id,
