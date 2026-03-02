@@ -22,11 +22,11 @@ export const SHAREABLE_CONTENT: ShareableItem[] = [
     id: '1',
     number: 1,
     title: 'Investment Opportunity Announcement',
-    description: 'Showcase IPX fractional real estate investment platform',
+    description: 'Showcase IVXHOLDINGS fractional real estate investment platform',
     type: 'image',
     thumbnail: 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=400&h=400&fit=crop',
     hashtags: ['#RealEstate', '#Investment', '#PassiveIncome', '#IPXHolding'],
-    caption: '🏠 Discover the future of real estate investing! Own a piece of premium properties worldwide with fractional ownership. Start building your wealth today! 💰\n\n📲 Download IPX App: https://ivxholding.com/download',
+    caption: '🏠 Discover the future of real estate investing! Own a piece of premium properties worldwide with fractional ownership. Start building your wealth today! 💰\n\n📲 Download IVXHOLDINGS App: https://ivxholding.com/download',
   },
   {
     id: '2',
@@ -36,7 +36,7 @@ export const SHAREABLE_CONTENT: ShareableItem[] = [
     type: 'image',
     thumbnail: 'https://images.unsplash.com/photo-1579621970563-ebec7560ff3e?w=400&h=400&fit=crop',
     hashtags: ['#Dividends', '#WealthBuilding', '#FinancialFreedom', '#SmartInvesting'],
-    caption: '📈 Monthly dividends, premium properties, zero hassle. This is how modern investors build generational wealth. Ready to join? 💎\n\n📲 Download IPX App: https://ivxholding.com/download',
+    caption: '📈 Monthly dividends, premium properties, zero hassle. This is how modern investors build generational wealth. Ready to join? 💎\n\n📲 Download IVXHOLDINGS App: https://ivxholding.com/download',
   },
   {
     id: '3',
@@ -46,7 +46,7 @@ export const SHAREABLE_CONTENT: ShareableItem[] = [
     type: 'image',
     thumbnail: 'https://images.unsplash.com/photo-1613490493576-7fde63acd811?w=400&h=400&fit=crop',
     hashtags: ['#LuxuryRealEstate', '#PropertyInvestment', '#PremiumHomes', '#InvestSmart'],
-    caption: '🌟 Your gateway to premium real estate is here! Join thousands of smart investors earning passive income from world-class properties. 🚀\n\n📲 Download IPX App: https://ivxholding.com/download',
+    caption: '🌟 Your gateway to premium real estate is here! Join thousands of smart investors earning passive income from world-class properties. 🚀\n\n📲 Download IVXHOLDINGS App: https://ivxholding.com/download',
   },
   {
     id: '4',
@@ -57,18 +57,18 @@ export const SHAREABLE_CONTENT: ShareableItem[] = [
     thumbnail: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=400&h=400&fit=crop',
     duration: '0:45',
     hashtags: ['#HowItWorks', '#FractionalOwnership', '#InvestingMadeEasy', '#Tutorial'],
-    caption: '🎬 Real estate investing made simple! No huge capital needed - start with just $100 and watch your portfolio grow. The future is fractional! 📊\n\n📲 Download IPX App: https://ivxholding.com/download',
+    caption: '🎬 Real estate investing made simple! No huge capital needed - start with just $100 and watch your portfolio grow. The future is fractional! 📊\n\n📲 Download IVXHOLDINGS App: https://ivxholding.com/download',
   },
   {
     id: '5',
     number: 5,
     title: 'Investor Testimonial',
-    description: 'Real success stories from IPX investors',
+    description: 'Real success stories from IVXHOLDINGS investors',
     type: 'video',
     thumbnail: 'https://images.unsplash.com/photo-1556745757-8d76bdb6984b?w=400&h=400&fit=crop',
     duration: '1:20',
-    hashtags: ['#Testimonial', '#InvestorSuccess', '#RealReturns', '#TrustIPX'],
-    caption: '🗣️ "I never thought I could own real estate until I found IPX. Now I earn passive income every month!" - Happy Investor 💚\n\n📲 Download IPX App: https://ivxholding.com/download',
+    hashtags: ['#Testimonial', '#InvestorSuccess', '#RealReturns', '#TrustIVXHOLDINGS'],
+    caption: '🗣️ "I never thought I could own real estate until I found IVXHOLDINGS. Now I earn passive income every month!" - Happy Investor 💚\n\n📲 Download IVXHOLDINGS App: https://ivxholding.com/download',
   },
   {
     id: '6',
@@ -78,7 +78,7 @@ export const SHAREABLE_CONTENT: ShareableItem[] = [
     type: 'image',
     thumbnail: 'https://images.unsplash.com/photo-1521791136064-7986c2920216?w=400&h=400&fit=crop',
     hashtags: ['#ReferralProgram', '#EarnRewards', '#InviteFriends', '#Bonuses'],
-    caption: '🎁 Invite friends, earn rewards! Our referral program gives you bonuses for every friend who joins IPX. Start sharing today! 🤝\n\n📲 Download IPX App: https://ivxholding.com/download',
+    caption: '🎁 Invite friends, earn rewards! Our referral program gives you bonuses for every friend who joins IVXHOLDINGS. Start sharing today! 🤝\n\n📲 Download IVXHOLDINGS App: https://ivxholding.com/download',
   },
   {
     id: '7',
@@ -88,7 +88,7 @@ export const SHAREABLE_CONTENT: ShareableItem[] = [
     type: 'image',
     thumbnail: 'https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=400&h=400&fit=crop',
     hashtags: ['#MarketUpdate', '#PortfolioGrowth', '#WeeklyReturns', '#InvestmentNews'],
-    caption: "📊 This week's performance: +2.3% portfolio growth! Our properties continue to deliver strong returns. Are you invested yet? 📈\n\n📲 Download IPX App: https://ivxholding.com/download",
+    caption: "📊 This week's performance: +2.3% portfolio growth! Our properties continue to deliver strong returns. Are you invested yet? 📈\n\n📲 Download IVXHOLDINGS App: https://ivxholding.com/download",
   },
   {
     id: '8',
@@ -99,14 +99,14 @@ export const SHAREABLE_CONTENT: ShareableItem[] = [
     thumbnail: 'https://images.unsplash.com/photo-1512941937669-90a1b58e7e9c?w=400&h=400&fit=crop',
     duration: '0:30',
     hashtags: ['#DownloadNow', '#MobileApp', '#SpecialOffer', '#StartInvesting'],
-    caption: '📱 Download the IPX app today and get $50 bonus on your first investment! Limited time offer.\n\n🍎 iOS: https://apps.apple.com/app/ipx-holding\n🤖 Android: https://play.google.com/store/apps/details?id=com.ipxholding.app\n🌐 Web: https://ivxholding.com 🔥',
+    caption: '📱 Download the IVXHOLDINGS app today and get $50 bonus on your first investment! Limited time offer.\n\n🍎 iOS: https://apps.apple.com/app/ipx-holding\n🤖 Android: https://play.google.com/store/apps/details?id=com.ipxholding.app\n🌐 Web: https://ivxholding.com 🔥',
   },
 ];
 
 export const generateExportText = (selected: ShareableItem[]): string => {
   if (selected.length === 0) return '';
 
-  let text = '📱 IPX HOLDING - SOCIAL MEDIA CONTENT LIBRARY\n';
+  let text = '📱 IVXHOLDINGS HOLDING - SOCIAL MEDIA CONTENT LIBRARY\n';
   text += '═══════════════════════════════════════\n\n';
   text += `Total Items: ${selected.length}\n`;
   text += `Generated: ${new Date().toLocaleDateString()}\n\n`;
@@ -123,7 +123,7 @@ export const generateExportText = (selected: ShareableItem[]): string => {
 
   text += '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n';
   text += '🌐 Share on: Instagram, Facebook, TikTok, LinkedIn, YouTube, WhatsApp\n\n';
-  text += '📲 DOWNLOAD IPX APP:\n';
+  text += '📲 DOWNLOAD IVXHOLDINGS APP:\n';
   text += `🍎 App Store: ${APP_LINKS.appStore}\n`;
   text += `🤖 Google Play: ${APP_LINKS.playStore}\n`;
   text += `🌐 Website: ${APP_LINKS.website}\n`;
