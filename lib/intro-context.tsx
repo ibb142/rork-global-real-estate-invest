@@ -60,7 +60,7 @@ const DEFAULT_STEPS: OnboardingStep[] = [
   },
   {
     id: '3',
-    title: 'IPX Investments',
+    title: 'IVXHOLDINGS Investments',
     description: 'Access exclusive property investments with professional management and monthly dividends.',
     iconType: 'building',
     features: [
