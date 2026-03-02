@@ -171,7 +171,7 @@ export default function InfluencerApplyScreen() {
           setIsSubmitting(false);
           Alert.alert(
             'Application Submitted!',
-            'Thank you for applying to become an IPX Influencer. Our team will review your application and get back to you within 2-3 business days.',
+            'Thank you for applying to become an IVXHOLDINGS Influencer. Our team will review your application and get back to you within 2-3 business days.',
             [{ text: 'OK', onPress: () => router.back() }]
           );
         },
@@ -179,7 +179,7 @@ export default function InfluencerApplyScreen() {
           setIsSubmitting(false);
           Alert.alert(
             'Application Submitted!',
-            'Thank you for applying to become an IPX Influencer. Our team will review your application and get back to you within 2-3 business days.',
+            'Thank you for applying to become an IVXHOLDINGS Influencer. Our team will review your application and get back to you within 2-3 business days.',
             [{ text: 'OK', onPress: () => router.back() }]
           );
         },
@@ -378,22 +378,22 @@ export default function InfluencerApplyScreen() {
                 <>
                   <Text style={styles.agreementSection}>UNITED STATES TAX AGREEMENT</Text>
                   <Text style={styles.agreementText}>
-                    By participating in the IPX Influencer Program, I acknowledge and agree to the following:
+                    By participating in the IVXHOLDINGS Influencer Program, I acknowledge and agree to the following:
                   </Text>
                   <Text style={styles.agreementText}>
-                    1. <Text style={styles.agreementBold}>Self-Employment Status:</Text> I understand that as an influencer/affiliate, I am considered an independent contractor and NOT an employee of IPX.
+                    1. <Text style={styles.agreementBold}>Self-Employment Status:</Text> I understand that as an influencer/affiliate, I am considered an independent contractor and NOT an employee of IVXHOLDINGS.
                   </Text>
                   <Text style={styles.agreementText}>
-                    2. <Text style={styles.agreementBold}>Tax Responsibility:</Text> I am solely responsible for reporting and paying all applicable federal, state, and local taxes on any commissions, earnings, or income received through the IPX Influencer Program.
+                    2. <Text style={styles.agreementBold}>Tax Responsibility:</Text> I am solely responsible for reporting and paying all applicable federal, state, and local taxes on any commissions, earnings, or income received through the IVXHOLDINGS Influencer Program.
                   </Text>
                   <Text style={styles.agreementText}>
-                    3. <Text style={styles.agreementBold}>1099 Reporting:</Text> I understand that if I earn $600 or more in a calendar year, IPX will issue a Form 1099-NEC reporting my earnings to the IRS.
+                    3. <Text style={styles.agreementBold}>1099 Reporting:</Text> I understand that if I earn $600 or more in a calendar year, IVXHOLDINGS will issue a Form 1099-NEC reporting my earnings to the IRS.
                   </Text>
                   <Text style={styles.agreementText}>
                     4. <Text style={styles.agreementBold}>Estimated Taxes:</Text> I understand that I may be required to make quarterly estimated tax payments to the IRS and/or state tax authorities.
                   </Text>
                   <Text style={styles.agreementText}>
-                    5. <Text style={styles.agreementBold}>No Tax Withholding:</Text> IPX will NOT withhold any taxes from my commission payments. It is my responsibility to set aside funds for tax obligations.
+                    5. <Text style={styles.agreementBold}>No Tax Withholding:</Text> IVXHOLDINGS will NOT withhold any taxes from my commission payments. It is my responsibility to set aside funds for tax obligations.
                   </Text>
                   <Text style={styles.agreementText}>
                     6. <Text style={styles.agreementBold}>Professional Advice:</Text> I am encouraged to consult with a qualified tax professional regarding my tax obligations.
@@ -403,13 +403,13 @@ export default function InfluencerApplyScreen() {
                 <>
                   <Text style={styles.agreementSection}>INTERNATIONAL TAX AGREEMENT</Text>
                   <Text style={styles.agreementText}>
-                    By participating in the IPX Influencer Program from outside the United States, I acknowledge and agree to the following:
+                    By participating in the IVXHOLDINGS Influencer Program from outside the United States, I acknowledge and agree to the following:
                   </Text>
                   <Text style={styles.agreementText}>
                     1. <Text style={styles.agreementBold}>Local Tax Compliance:</Text> I am solely responsible for understanding and complying with all tax laws, regulations, and reporting requirements in my country of residence.
                   </Text>
                   <Text style={styles.agreementText}>
-                    2. <Text style={styles.agreementBold}>Income Declaration:</Text> I agree to properly declare and report all commissions, earnings, or income received through the IPX Influencer Program to the relevant tax authorities in my country.
+                    2. <Text style={styles.agreementBold}>Income Declaration:</Text> I agree to properly declare and report all commissions, earnings, or income received through the IVXHOLDINGS Influencer Program to the relevant tax authorities in my country.
                   </Text>
                   <Text style={styles.agreementText}>
                     3. <Text style={styles.agreementBold}>VAT/GST Obligations:</Text> If applicable in my country, I am responsible for registering for, collecting, and remitting any Value Added Tax (VAT), Goods and Services Tax (GST), or similar consumption taxes.
@@ -424,7 +424,7 @@ export default function InfluencerApplyScreen() {
                     6. <Text style={styles.agreementBold}>Professional Advice:</Text> I am strongly encouraged to consult with a qualified tax professional in my country regarding my tax obligations.
                   </Text>
                   <Text style={styles.agreementText}>
-                    7. <Text style={styles.agreementBold}>IPX Not Liable:</Text> IPX is not responsible for any tax obligations, penalties, or interest that may arise from my participation in the program.
+                    7. <Text style={styles.agreementBold}>IVXHOLDINGS Not Liable:</Text> IVXHOLDINGS is not responsible for any tax obligations, penalties, or interest that may arise from my participation in the program.
                   </Text>
                 </>
               )}
@@ -548,7 +548,7 @@ export default function InfluencerApplyScreen() {
             <View style={styles.benefitsSection}>
               <View style={styles.benefitsHeader}>
                 <Megaphone size={32} color={Colors.primary} />
-                <Text style={styles.benefitsTitle}>IPX Influencer Program</Text>
+                <Text style={styles.benefitsTitle}>IVXHOLDINGS Influencer Program</Text>
               </View>
               <Text style={styles.benefitsSubtitle}>
                 Join our network of content creators and earn while sharing real estate investment opportunities
@@ -659,7 +659,7 @@ const styles = StyleSheet.create({
   submitButton: { backgroundColor: Colors.primary, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
   submitButtonDisabled: { opacity: 0.4 },
   submitButtonText: { color: Colors.black, fontWeight: '700' as const, fontSize: 15 },
-  bottomPadding: { height: 40 },
+  bottomPadding: { height: 120 },
   countryOptions: { gap: 8, marginBottom: 12 },
   countryCard: { backgroundColor: Colors.surface, borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: Colors.surfaceBorder },
   countryCardSelected: { backgroundColor: '#FFD700' + '15', borderColor: '#FFD700' },
