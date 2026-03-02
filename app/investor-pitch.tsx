@@ -77,7 +77,7 @@ interface Slide {
 }
 
 const SLIDES: Slide[] = [
-  { id:'hero',     bg:BG.hero,     type:'hero',     label:'ENTERPRISE PITCH · 2026', title:'IPX HOLDING LLC',                      subtitle:'The World\'s First AI-Powered Fractional Real Estate Empire — Built for $100 Billion AUM',       accent:'#D4AF37' },
+  { id:'hero',     bg:BG.hero,     type:'hero',     label:'ENTERPRISE PITCH · 2026', title:'IVXHOLDINGS HOLDING LLC',                      subtitle:'The World\'s First AI-Powered Fractional Real Estate Empire — Built for $100 Billion AUM',       accent:'#D4AF37' },
   { id:'vision',   bg:BG.vision,   type:'vision',   label:'THE $100B VISION',         title:'Building the Future\nof Real Estate',  subtitle:'A $326 trillion market trapped in the 1980s. We are unlocking it with AI, fractional ownership, and viral growth mechanics.',  accent:'#C0A030' },
   { id:'problem',  bg:BG.problem,  type:'problem',  label:'THE BROKEN SYSTEM',        title:'Real Estate is\nLocked Away',          subtitle:'Millions want to invest. Billions are trapped. We end that today.',                            accent:'#E84545' },
   { id:'owner',    bg:BG.owner,    type:'owner',    label:'PROPERTY OWNER JOURNEY',   title:'Own It.\nAI Manages Everything.',      subtitle:'List in 2 minutes. Collect rent automatically. Never deal with a broker or lawyer again.',      accent:'#00C48C' },
@@ -85,7 +85,7 @@ const SLIDES: Slide[] = [
   { id:'ai',       bg:BG.ai,       type:'ai',       label:'AI PROFIT ENGINE',         title:'AI That Prints\nReturns 24/7',         subtitle:'Autonomous agents handle leasing, compliance, maintenance, and yield optimization around the clock.', accent:'#E91E63' },
   { id:'modules',  bg:BG.modules,  type:'modules',  label:'340+ FEATURES LIVE',       title:'One Platform.\nEvery Feature Built.',  subtitle:'From KYC to VIP — every module is built, tested, and production-ready right now.',               accent:'#FFB300' },
   { id:'market',   bg:BG.market,   type:'market',   label:'MARKET OPPORTUNITY',       title:'$326 Trillion.\nUntouched.',           subtitle:'The largest asset class on Earth — and 74% of it is still manually managed. That changes now.',  accent:'#D4AF37' },
-  { id:'revenue',  bg:BG.revenue,  type:'revenue',  label:'REVENUE MODEL',            title:'7 Revenue\nStreams. All Active.',      subtitle:'Management fees, transaction cuts, VIP memberships, AI tools, referrals, data licensing, and IPX tokens.', accent:'#FF6B35' },
+  { id:'revenue',  bg:BG.revenue,  type:'revenue',  label:'REVENUE MODEL',            title:'7 Revenue\nStreams. All Active.',      subtitle:'Management fees, transaction cuts, VIP memberships, AI tools, referrals, data licensing, and IVXHOLDINGS tokens.', accent:'#FF6B35' },
   { id:'growth',   bg:BG.growth,   type:'growth',   label:'GROWTH TRAJECTORY',        title:'1M Users.\nYear One. Non-Negotiable.',subtitle:'Viral copy-investing, influencer AI, and referral rewards — the same fuel that powered Robinhood and Coinbase.', accent:'#9B59B6' },
   { id:'traction', bg:BG.traction, type:'traction', label:'TRACTION & PROOF',         title:'Already\nBuilt & Live.',              subtitle:'340+ features. Real code. Real users. Not a deck — a deployed platform ready to scale.',         accent:'#00D2FF' },
   { id:'closing',  bg:BG.closing,  type:'closing',  label:'JOIN THE REVOLUTION',      title:'The Moment is\nNow.',                 subtitle:'$100B AUM in 5 years. 100M users. The infrastructure is ready. We need your capital to ignite it.', accent:'#D4AF37' },
@@ -136,7 +136,7 @@ const MODULES = [
   { icon: FileCheck,   label: 'Documents',    color: '#FF6B35' },
   { icon: Globe,       label: 'Copy Invest',  color: '#E91E63' },
   { icon: Target,      label: 'Smart Invest', color: '#9B59B6' },
-  { icon: Flame,       label: 'IPX Earn',     color: '#D4AF37' },
+  { icon: Flame,       label: 'IVXHOLDINGS Earn',     color: '#D4AF37' },
   { icon: PieChart,    label: 'Analytics',    color: '#00C48C' },
   { icon: Rocket,      label: 'Influencer',   color: '#FF6B35' },
   { icon: Trophy,      label: 'Gamification', color: '#FFB300' },
@@ -155,7 +155,7 @@ const REVENUE_STREAMS = [
   { label: 'VIP Memberships',          pct: '$99–$999/mo', icon: Award,            color: '#E91E63',  bar: 0.55 },
   { label: 'AI Listing Fees',          pct: '$49/listing', icon: Sparkles,         color: '#4A90D9',  bar: 0.45 },
   { label: 'Data Licensing (B2B)',     pct: '$500K/yr+',   icon: BarChart3,        color: '#FF6B35',  bar: 0.35 },
-  { label: 'IPX Token Utility',        pct: 'Variable',    icon: CircleDollarSign, color: '#9B59B6',  bar: 0.30 },
+  { label: 'IVXHOLDINGS Token Utility',        pct: 'Variable',    icon: CircleDollarSign, color: '#9B59B6',  bar: 0.30 },
 ];
 
 const GROWTH_PHASES = [
@@ -610,7 +610,7 @@ export default function InvestorPitchScreen() {
           </View>
           <Animated.View style={[s.aiBanner, { opacity: subtitleO, borderColor: slide.accent + '40' }]}>
             <Brain size={16} color={slide.accent} />
-            <Text style={[s.aiBannerText, { color: slide.accent }]}>IPX AI saves owners 40+ hours/month on average</Text>
+            <Text style={[s.aiBannerText, { color: slide.accent }]}>IVXHOLDINGS AI saves owners 40+ hours/month on average</Text>
           </Animated.View>
         </View>
       );
@@ -752,7 +752,7 @@ export default function InvestorPitchScreen() {
             ))}
           </View>
           <Animated.View style={[s.growthBenchmark, { opacity: subtitleO }]}>
-            <Text style={s.growthBenchmarkText}>📈  Robinhood: 1M users Year 1 with no AI.  IPX is built to go 10× faster.</Text>
+            <Text style={s.growthBenchmarkText}>📈  Robinhood: 1M users Year 1 with no AI.  IVXHOLDINGS is built to go 10× faster.</Text>
           </Animated.View>
           <Animated.View style={[s.growthEngines, { opacity: subtitleO }]}>
             {['Copy Investing', 'Influencer AI Engine', 'Viral Referrals', 'Social Sharing'].map((e, i) => (
