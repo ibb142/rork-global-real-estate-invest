@@ -432,7 +432,7 @@ export default function ProfileScreen() {
           >
             <View style={styles.companyHeader}>
               <Image
-                source={{ uri: 'https://pub-e001eb4506b145aa938b5d3badbff6a5.r2.dev/attachments/r6lk4ndaevs3fm6jt10pf' }}
+                source={require('@/assets/images/ivx-logo.png')}
                 style={[styles.companyLogo, { width: isXs ? 40 : 48, height: isXs ? 40 : 48 }]}
                 resizeMode="contain"
               />
@@ -457,7 +457,7 @@ export default function ProfileScreen() {
               </View>
               <View style={styles.companyDetailRow}>
                 <Phone size={isXs ? 14 : 16} color={Colors.textTertiary} />
-                <Text style={[styles.companyDetailText, { fontSize: isXs ? 11 : 13 }]}>+1 (556) 164-3503</Text>
+                <Text style={[styles.companyDetailText, { fontSize: isXs ? 11 : 13 }]}>+1 (561) 644-3503</Text>
               </View>
             </View>
             <Text style={[styles.companyLegal, { fontSize: isXs ? 10 : 11 }]}>
