@@ -9,7 +9,7 @@ import { Alert, AlertRule, AlertSettings, AlertStats, SystemHealth } from '@/typ
 export const mockAlertSettings: AlertSettings = {
   ownerPhone: '+15616443503',
   ownerEmail: 'owner@ipxholding.com',
-  ownerName: 'IPX Owner',
+  ownerName: 'IVXHOLDINGS Owner',
   enableSMS: true,
   enableWhatsApp: true,
   enableEmail: true,
