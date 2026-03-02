@@ -92,7 +92,7 @@ export default function PropertyDetailScreen() {
         { date: '2024-06', value: baseValue * 0.94 },
         { date: '2024-12', value: baseValue },
       ],
-      appraiser: 'IPX Certified Valuations LLC',
+      appraiser: 'IVXHOLDINGS Certified Valuations LLC',
       appraisalMethod: 'Income Capitalization + Sales Comparison',
       confidence: 94,
     };
@@ -110,7 +110,7 @@ export default function PropertyDetailScreen() {
       zoning: property.propertyType === 'commercial' ? 'C-2 Commercial' : property.propertyType === 'residential' ? 'R-3 Residential' : 'MU-1 Mixed Use',
       ownershipHistory: [
         { date: new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString(), owner: 'Previous Holdings LLC', type: 'Sale' },
-        { date: new Date(property.createdAt).toISOString(), owner: 'IPX Property Trust', type: 'Tokenization' },
+        { date: new Date(property.createdAt).toISOString(), owner: 'IVXHOLDINGS Property Trust', type: 'Tokenization' },
       ],
       verification: {
         status: 'verified',
@@ -267,7 +267,7 @@ export default function PropertyDetailScreen() {
       
       const webLink = `https://ipx.app/property/${property.id}`;
       
-      const shareMessage = `🏢 ${property.name}\n📍 ${property.location}, ${property.city}\n\n💰 Share Price: ${property.pricePerShare.toFixed(2)}\n📈 Est. Yield: ${property.yield}%\n💵 Min. Investment: ${property.minInvestment}\n\n🔗 Download IPX and start investing in premium real estate!\n\n${webLink}`;
+      const shareMessage = `🏢 ${property.name}\n📍 ${property.location}, ${property.city}\n\n💰 Share Price: ${property.pricePerShare.toFixed(2)}\n📈 Est. Yield: ${property.yield}%\n💵 Min. Investment: ${property.minInvestment}\n\n🔗 Download IVXHOLDINGS and start investing in premium real estate!\n\n${webLink}`;
       
       const result = await Share.share(
         Platform.OS === 'ios'
@@ -974,7 +974,7 @@ export default function PropertyDetailScreen() {
                         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                         try {
                           await Share.share({
-                            message: `${selectedDocument?.name} - ${property?.name}\n\nView on IPX: https://ipx.app/property/${property?.id}`,
+                            message: `${selectedDocument?.name} - ${property?.name}\n\nView on IVXHOLDINGS: https://ipx.app/property/${property?.id}`,
                           });
                         } catch (error) {
                           console.log('Error sharing document:', error);
@@ -1320,7 +1320,7 @@ export default function PropertyDetailScreen() {
                     onPress={async () => {
                       try {
                         await Share.share({
-                          message: `Property Title: ${titleData.titleNumber}\n${property.name}\n${property.location}, ${property.city}\n\nView on IPX: https://ipx.app/property/${property.id}`,
+                          message: `Property Title: ${titleData.titleNumber}\n${property.name}\n${property.location}, ${property.city}\n\nView on IVXHOLDINGS: https://ipx.app/property/${property.id}`,
                         });
                       } catch (error) {
                         console.log('Error sharing:', error);
@@ -1397,7 +1397,7 @@ const styles = StyleSheet.create({
   distributionLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
   distributionDate: { color: Colors.textTertiary, fontSize: 12 },
   distributionAmount: { alignItems: 'flex-end' },
-  bottomPadding: { height: 40 },
+  bottomPadding: { height: 120 },
   investBar: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: '#1A1A1A', borderTopWidth: 1, borderTopColor: '#2A2A2A', padding: 16 },
   investBarContent: { flex: 1, gap: 4 },
   investBarLabel: { color: Colors.textSecondary, fontSize: 13 },
