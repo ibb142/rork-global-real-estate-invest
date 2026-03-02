@@ -312,8 +312,8 @@ const PROMPT_TEMPLATES: PromptTemplate[] = [
   },
   {
     id: 'ipx-token-staking',
-    label: 'IPX Token & Staking',
-    prompt: 'Photorealistic image of a gleaming golden coin with IPX engraved on it, floating above a smartphone showing a staking dashboard with APY percentages and reward charts, surrounded by smaller floating coins and golden particle effects, dark luxury background with warm gold and amber lighting, cryptocurrency concept photography, 8K ultra-realistic',
+    label: 'IVXHOLDINGS Token & Staking',
+    prompt: 'Photorealistic image of a gleaming golden coin with IVXHOLDINGS engraved on it, floating above a smartphone showing a staking dashboard with APY percentages and reward charts, surrounded by smaller floating coins and golden particle effects, dark luxury background with warm gold and amber lighting, cryptocurrency concept photography, 8K ultra-realistic',
     category: 'Finance',
     icon: <Coins size={18} color="#F1C40F" />,
     color: '#F1C40F',
@@ -491,7 +491,7 @@ export default function AIGalleryScreen() {
         document.body.removeChild(link);
         Alert.alert('Downloaded', 'Image saved to your device.');
       } catch {
-        await Clipboard.setStringAsync(`IPX 8K Image - https://ipxholding.com`);
+        await Clipboard.setStringAsync(`IVXHOLDINGS 8K Image - https://ipxholding.com`);
         Alert.alert('Copied', 'Share link copied to clipboard.');
       }
       return;
@@ -501,7 +501,7 @@ export default function AIGalleryScreen() {
       await FileSystem.writeAsStringAsync(fileUri, img.base64, { encoding: 'base64' });
       const isAvailable = await Sharing.isAvailableAsync();
       if (isAvailable) {
-        await Sharing.shareAsync(fileUri, { mimeType: img.mimeType, dialogTitle: 'Save IPX 8K Image' });
+        await Sharing.shareAsync(fileUri, { mimeType: img.mimeType, dialogTitle: 'Save IVXHOLDINGS 8K Image' });
       } else {
         Alert.alert('Saved', 'Image saved to device.');
       }
@@ -960,6 +960,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: 16,
     paddingTop: 16,
+    paddingBottom: 140,
   },
   quotaCard: {
     backgroundColor: 'rgba(255,215,0,0.05)',
