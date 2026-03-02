@@ -276,6 +276,6 @@ const styles = StyleSheet.create({
   channelLabel: { color: Colors.textSecondary, fontSize: 13 },
   saveButton: { backgroundColor: Colors.primary, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
   saveButtonText: { color: Colors.black, fontWeight: '700' as const, fontSize: 15 },
-  bottomPadding: { height: 40 },
+  bottomPadding: { height: 120 },
   scrollView: { backgroundColor: Colors.background },
 });
