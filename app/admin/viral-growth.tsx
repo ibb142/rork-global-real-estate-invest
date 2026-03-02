@@ -113,7 +113,7 @@ const SHARE_CARDS: ShareCard[] = [
   { id: '2', title: 'Portfolio Milestone', template: 'Just crossed ${amount} in real estate investments 📈\nAll from my phone with @IPXHolding', uses: 876, shares: 634, conversions: 54, active: true },
   { id: '3', title: 'First Investment', template: 'I just bought my first piece of real estate for just ${amount} 🎉\nFractional investing is wild. Try @IPXHolding', uses: 2140, shares: 1820, conversions: 143, active: true },
   { id: '4', title: 'Monthly Dividend', template: 'Received ${amount} in real estate dividends this month 💰\nPassive income hits different. Link: ipxholding.com/join', uses: 543, shares: 421, conversions: 38, active: false },
-  { id: '5', title: 'ROI Showcase', template: 'My IPX portfolio is up {roi}% since I started 🚀\nReal estate investing without the headache.', uses: 312, shares: 248, conversions: 29, active: true },
+  { id: '5', title: 'ROI Showcase', template: 'My IVXHOLDINGS portfolio is up {roi}% since I started 🚀\nReal estate investing without the headache.', uses: 312, shares: 248, conversions: 29, active: true },
 ];
 
 const CAMPAIGNS: Campaign[] = [
@@ -134,12 +134,12 @@ const FOMO_TRIGGERS: FOMOTrigger[] = [
 ];
 
 const CONTENT_ITEMS: ContentItem[] = [
-  { id: '1', type: 'caption', platform: 'Instagram', title: 'First Investment Hook', content: "POV: You just bought a piece of a Miami penthouse for $100 🏙️\n\nFractional real estate is changing who gets to build wealth.\n\nIPX lets you own real property, earn monthly dividends, and sell anytime.\n\nLink in bio 👆\n\n#RealEstateInvesting #PassiveIncome #FractionalRealEstate #WealthBuilding #InvestingForBeginners" },
-  { id: '2', type: 'script', platform: 'TikTok', title: '30-Second Hook Script', content: "Hook (0-3s): \"I make money while I sleep from real estate — and I've never owned a house.\"\n\nBody (3-20s): Show the app. Open portfolio. Show property. Show dividend payment hitting.\n\nCTA (20-30s): \"I started with $100. Link in bio to try IPX — use my code {CODE} for a bonus.\"\n\nMusic: trending finance/luxury sound" },
+  { id: '1', type: 'caption', platform: 'Instagram', title: 'First Investment Hook', content: "POV: You just bought a piece of a Miami penthouse for $100 🏙️\n\nFractional real estate is changing who gets to build wealth.\n\nIVXHOLDINGS lets you own real property, earn monthly dividends, and sell anytime.\n\nLink in bio 👆\n\n#RealEstateInvesting #PassiveIncome #FractionalRealEstate #WealthBuilding #InvestingForBeginners" },
+  { id: '2', type: 'script', platform: 'TikTok', title: '30-Second Hook Script', content: "Hook (0-3s): \"I make money while I sleep from real estate — and I've never owned a house.\"\n\nBody (3-20s): Show the app. Open portfolio. Show property. Show dividend payment hitting.\n\nCTA (20-30s): \"I started with $100. Link in bio to try IVXHOLDINGS — use my code {CODE} for a bonus.\"\n\nMusic: trending finance/luxury sound" },
   { id: '3', type: 'hashtags', platform: 'All', title: 'Niche RE Investor Hashtags', content: "#RealEstateInvesting #FractionalRealEstate #PassiveIncome #WealthBuilding #REITs #PropertyInvestment #FinancialFreedom #InvestingTips #MoneyMindset #DividendInvesting #PortfolioGrowth #RealEstateCrowdfunding #InvestSmart #IPXHolding #BuildWealth" },
   { id: '4', type: 'story', platform: 'Instagram', title: 'Story Sequence (5 slides)', content: "Slide 1: \"Did you know you can own real estate from your phone? 👇\"\nSlide 2: Show app screenshot — property card with address + price\nSlide 3: \"I own 0.3% of THIS building\" + share card graphic\nSlide 4: Monthly dividend screenshot + \"$47 this month 💸\"\nSlide 5: \"Swipe up → Use code {CODE} for bonus shares\"" },
   { id: '5', type: 'caption', platform: 'Twitter/X', title: 'Thread Starter', content: "I invested $500 into real estate from my phone last month.\n\nHere's what happened (thread) 🧵👇" },
-  { id: '6', type: 'script', platform: 'YouTube', title: 'Full Video Script Outline', content: "INTRO (0-30s): Hook — show portfolio value, reveal it's all real estate from phone\n\nPROBLEM (30s-2m): Traditional RE is expensive, hard, requires credit\n\nSOLUTION (2m-5m): Walkthrough IPX app — sign up, browse properties, invest $100\n\nSOCIAL PROOF (5m-7m): Show portfolio, dividends, community size\n\nCTA (7m-8m): Link in description, use code {CODE}\n\nOUTRO: Like + subscribe for monthly portfolio updates" },
+  { id: '6', type: 'script', platform: 'YouTube', title: 'Full Video Script Outline', content: "INTRO (0-30s): Hook — show portfolio value, reveal it's all real estate from phone\n\nPROBLEM (30s-2m): Traditional RE is expensive, hard, requires credit\n\nSOLUTION (2m-5m): Walkthrough IVXHOLDINGS app — sign up, browse properties, invest $100\n\nSOCIAL PROOF (5m-7m): Show portfolio, dividends, community size\n\nCTA (7m-8m): Link in description, use code {CODE}\n\nOUTRO: Like + subscribe for monthly portfolio updates" },
 ];
 
 const VIRAL_LOOPS: ViralLoop[] = [
