@@ -17,7 +17,7 @@ export interface Module {
 }
 
 export const APP_INFO = {
-  name: 'IPX Real Estate Investment Platform',
+  name: 'IVXHOLDINGS Real Estate Investment Platform',
   version: '1.0.0',
   lastUpdated: new Date().toISOString().split('T')[0],
 };
@@ -108,13 +108,13 @@ export const FUNCTIONALITY_REGISTRY: Module[] = [
     ],
   },
   {
-    id: 'ipx', title: 'IPX Token System', icon: 'Crown', color: '#EAB308',
-    description: 'IPX token management and staking',
+    id: 'ipx', title: 'IVXHOLDINGS Token System', icon: 'Crown', color: '#EAB308',
+    description: 'IVXHOLDINGS token management and staking',
     features: [
-      { id: 'ipx-1', name: 'IPX token balance and price tracking', status: 'active', addedDate: '2024-01-01' },
-      { id: 'ipx-2', name: 'Buy/sell IPX tokens', status: 'active', addedDate: '2024-01-01' },
-      { id: 'ipx-3', name: 'IPX staking and rewards', status: 'active', addedDate: '2024-01-01' },
-      { id: 'ipx-4', name: 'IPX governance voting', status: 'active', addedDate: '2024-01-01' },
+      { id: 'ipx-1', name: 'IVXHOLDINGS token balance and price tracking', status: 'active', addedDate: '2024-01-01' },
+      { id: 'ipx-2', name: 'Buy/sell IVXHOLDINGS tokens', status: 'active', addedDate: '2024-01-01' },
+      { id: 'ipx-3', name: 'IVXHOLDINGS staking and rewards', status: 'active', addedDate: '2024-01-01' },
+      { id: 'ipx-4', name: 'IVXHOLDINGS governance voting', status: 'active', addedDate: '2024-01-01' },
     ],
   },
   {
@@ -199,7 +199,7 @@ export function getComingSoonFeatures(): number {
 
 export function generateTextReport(): string {
   const date = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-  let content = `IPX REAL ESTATE INVESTMENT PLATFORM - FUNCTIONALITY REPORT\nGenerated: ${date} | Version: ${APP_INFO.version}\n`;
+  let content = `IVXHOLDINGS REAL ESTATE INVESTMENT PLATFORM - FUNCTIONALITY REPORT\nGenerated: ${date} | Version: ${APP_INFO.version}\n`;
   content += `Modules: ${getTotalModules()} | Features: ${getTotalFeatures()} | Active: ${getActiveFeatures()}\n\n`;
   FUNCTIONALITY_REGISTRY.forEach((module, index) => {
     content += `${index + 1}. ${module.title} (${module.features.length} features)\n`;
@@ -225,7 +225,7 @@ export function generateCSVReport(): string {
 export function generateExcelHTML(): string {
   const date = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
   let html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>table{border-collapse:collapse;width:100%}th,td{border:1px solid #000;padding:8px}th{background:#0066FF;color:white}.module-header{background:#E8F0FE;font-weight:bold}</style></head><body>
-<h1>IPX Real Estate Investment Platform</h1><p>Generated: ${date} | Version: ${APP_INFO.version}</p>
+<h1>IVXHOLDINGS Real Estate Investment Platform</h1><p>Generated: ${date} | Version: ${APP_INFO.version}</p>
 <table><tr><th>#</th><th>Module</th><th>Feature</th><th>Status</th></tr>`;
   let num = 1;
   FUNCTIONALITY_REGISTRY.forEach(module => {
