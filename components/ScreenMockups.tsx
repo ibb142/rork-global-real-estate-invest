@@ -69,10 +69,10 @@ export function IntroMockup() {
       <View style={mockStyles.introScreen}>
         <View style={mockStyles.introLogoWrap}>
           <View style={[mockStyles.introLogo, { backgroundColor: '#FFD700' }]}>
-            <Text style={{ fontSize: 20, fontWeight: '900' as const, color: '#000' }}>IPX</Text>
+            <Text style={{ fontSize: 14, fontWeight: '900' as const, color: '#000' }}>IVX</Text>
           </View>
         </View>
-        <Text style={mockStyles.introTitle}>IPX Real Estate</Text>
+        <Text style={mockStyles.introTitle}>IVXHOLDINGS</Text>
         <Text style={mockStyles.introSub}>Invest in Premium Properties</Text>
         <View style={mockStyles.introMetrics}>
           <View style={mockStyles.introMetric}>
@@ -327,14 +327,14 @@ export function WalletMockup() {
 export function TokenomicsMockup() {
   return (
     <PhoneFrame themeColor="#F39C12">
-      <ScreenHeader title="IPX Token" color="#F39C12" />
+      <ScreenHeader title="IVXHOLDINGS Token" color="#F39C12" />
       <View style={mockStyles.padded}>
         <View style={mockStyles.tokenBalance}>
           <View style={[mockStyles.tokenIcon, { backgroundColor: '#F39C12' }]}>
-            <Text style={{ fontSize: 12, fontWeight: '900' as const, color: '#000' }}>IPX</Text>
+            <Text style={{ fontSize: 10, fontWeight: '900' as const, color: '#000' }}>IVX</Text>
           </View>
           <View>
-            <Text style={{ fontSize: 14, fontWeight: '800' as const, color: Colors.text }}>2,450 IPX</Text>
+            <Text style={{ fontSize: 14, fontWeight: '800' as const, color: Colors.text }}>2,450 IVX</Text>
             <Text style={{ fontSize: 8, color: Colors.textTertiary }}>≈ $1,225.00</Text>
           </View>
         </View>
@@ -468,7 +468,7 @@ export function GrowthMockup() {
         <View style={mockStyles.referralCard}>
           <Text style={{ fontSize: 8, color: Colors.textTertiary }}>YOUR REFERRAL CODE</Text>
           <View style={mockStyles.referralCode}>
-            <Text style={{ fontSize: 12, fontWeight: '800' as const, color: '#FFD700', letterSpacing: 2 }}>IPX-G7K2M</Text>
+            <Text style={{ fontSize: 12, fontWeight: '800' as const, color: '#FFD700', letterSpacing: 2 }}>IVXHOLDINGS-G7K2M</Text>
           </View>
           <Text style={{ fontSize: 7, color: Colors.textTertiary }}>Share & earn up to $500 per referral</Text>
         </View>
@@ -518,7 +518,7 @@ export function ClosingMockup() {
     <PhoneFrame themeColor="#FFD700">
       <View style={mockStyles.closingScreen}>
         <View style={[mockStyles.closingLogo, { backgroundColor: '#FFD700' }]}>
-          <Text style={{ fontSize: 22, fontWeight: '900' as const, color: '#000' }}>IPX</Text>
+          <Text style={{ fontSize: 16, fontWeight: '900' as const, color: '#000' }}>IVX</Text>
         </View>
         <Text style={mockStyles.closingTitle}>Start Building Your{'\n'}Real Estate Empire</Text>
         <Text style={mockStyles.closingSub}>Join thousands of investors already{'\n'}earning passive income</Text>
