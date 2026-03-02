@@ -490,7 +490,7 @@ export const broadcastTemplates: BroadcastTemplate[] = [
     id: 'tpl-4',
     name: 'Dividend Distribution',
     subject: 'Your Dividend Payment Has Been Processed',
-    body: 'Dear {{name}},\n\nGreat news! Your dividend distribution has been processed.\n\nDistribution Details:\n• Amount: ${{amount}}\n• Property: {{property_name}}\n• Period: {{period}}\n\nThe funds have been credited to your IPX wallet. You can reinvest or withdraw at any time.\n\nView your portfolio →\n\nThank you for investing with IVX HOLDINGS!',
+    body: 'Dear {{name}},\n\nGreat news! Your dividend distribution has been processed.\n\nDistribution Details:\n• Amount: ${{amount}}\n• Property: {{property_name}}\n• Period: {{period}}\n\nThe funds have been credited to your IVXHOLDINGS wallet. You can reinvest or withdraw at any time.\n\nView your portfolio →\n\nThank you for investing with IVX HOLDINGS!',
     category: 'update',
   },
   {
@@ -643,7 +643,7 @@ export const teamMembers: TeamMember[] = [
   {
     id: 'admin-1',
     email: 'ceo@ipxholding.com',
-    firstName: 'IPX',
+    firstName: 'IVXHOLDINGS',
     lastName: 'CEO',
     avatar: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=200',
     phone: '+1 (561) 644-3503',
