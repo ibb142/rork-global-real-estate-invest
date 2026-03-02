@@ -89,7 +89,7 @@ const STYLE_OPTIONS: StyleOption[] = [
 ];
 
 const SECTION_CONFIGS = [
-  { id: 'intro', title: 'IPX Real Estate', subtitle: 'The Future of Property Investment', icon: '🏛️', color: '#FFD700' },
+  { id: 'intro', title: 'IVXHOLDINGS Real Estate', subtitle: 'The Future of Property Investment', icon: '🏛️', color: '#FFD700' },
   { id: 'opportunity', title: 'Market Opportunity', subtitle: '$326T Global Real Estate Market', icon: '🌍', color: '#4A90D9' },
   { id: 'platform', title: 'Platform Overview', subtitle: '340+ Features Built-In', icon: '🚀', color: '#00C48C' },
   { id: 'onboarding', title: 'Smart Onboarding', subtitle: 'KYC & Verification', icon: '🛡️', color: '#9B59B6' },
@@ -97,26 +97,26 @@ const SECTION_CONFIGS = [
   { id: 'trading', title: 'Investment Engine', subtitle: 'Fractional Trading', icon: '📈', color: '#FFB800' },
   { id: 'portfolio', title: 'Portfolio Intelligence', subtitle: 'AI-Powered Analytics', icon: '💼', color: '#4A90D9' },
   { id: 'wallet', title: 'Digital Wallet', subtitle: 'Multi-Payment Infrastructure', icon: '💰', color: '#2ECC71' },
-  { id: 'tokenomics', title: 'IPX Token Economy', subtitle: 'Blockchain Rewards', icon: '🪙', color: '#F39C12' },
+  { id: 'tokenomics', title: 'IVXHOLDINGS Token Economy', subtitle: 'Blockchain Rewards', icon: '🪙', color: '#F39C12' },
   { id: 'ai', title: 'AI Suite', subtitle: 'Intelligent Automation', icon: '🤖', color: '#E91E63' },
   { id: 'admin', title: 'Admin Command Center', subtitle: '45+ Management Tools', icon: '👑', color: '#FFD700' },
   { id: 'security', title: 'Enterprise Security', subtitle: 'SEC & GDPR Compliant', icon: '🔐', color: '#607D8B' },
   { id: 'growth', title: 'Growth Engine', subtitle: 'Referrals & Influencers', icon: '📊', color: '#00BCD4' },
   { id: 'metrics', title: 'Key Metrics', subtitle: 'Platform Performance', icon: '⚡', color: '#FF5722' },
-  { id: 'closing', title: 'Invest With IPX', subtitle: 'The Opportunity Is Now', icon: '✨', color: '#FFD700' },
+  { id: 'closing', title: 'Invest With IVXHOLDINGS', subtitle: 'The Opportunity Is Now', icon: '✨', color: '#FFD700' },
 ];
 
 const FALLBACK_NARRATIONS: Record<string, { narration: string; bullets: string[] }> = {
   intro: {
-    narration: 'Welcome to IPX Real Estate, the revolutionary investment platform transforming how the world invests in property. Built with cutting-edge technology and designed for the modern investor, IPX puts institutional-grade real estate opportunities in the palm of your hand.',
+    narration: 'Welcome to IVXHOLDINGS Real Estate, the revolutionary investment platform transforming how the world invests in property. Built with cutting-edge technology and designed for the modern investor, IVXHOLDINGS puts institutional-grade real estate opportunities in the palm of your hand.',
     bullets: ['$326 Trillion global real estate market', 'Fractional ownership from just $100', 'SEC-compliant investment structure', '340+ features across the platform'],
   },
   opportunity: {
-    narration: 'The global real estate market represents the largest asset class in the world at over 326 trillion dollars. Until now, only institutional investors had access to the best opportunities. IPX is democratizing real estate investment through fractional ownership and blockchain technology.',
+    narration: 'The global real estate market represents the largest asset class in the world at over 326 trillion dollars. Until now, only institutional investors had access to the best opportunities. IVXHOLDINGS is democratizing real estate investment through fractional ownership and blockchain technology.',
     bullets: ['Largest asset class globally at $326T', '90% of millionaires built wealth via real estate', 'Only 15% of Americans invest directly', 'Fractional ownership removes all barriers'],
   },
   platform: {
-    narration: 'IPX is a complete investment ecosystem with over 340 features designed to provide a seamless, institutional-grade experience. From AI-powered analytics to automated compliance, every detail has been engineered for excellence.',
+    narration: 'IVXHOLDINGS is a complete investment ecosystem with over 340 features designed to provide a seamless, institutional-grade experience. From AI-powered analytics to automated compliance, every detail has been engineered for excellence.',
     bullets: ['340+ features built and integrated', 'AI-powered investment recommendations', 'Real-time market data and analytics', 'Multi-platform: iOS, Android, and Web'],
   },
   onboarding: {
@@ -128,7 +128,7 @@ const FALLBACK_NARRATIONS: Record<string, { narration: string; bullets: string[]
     bullets: ['Curated, pre-vetted properties', '25+ advanced filter options', 'Interactive property maps', 'Detailed ROI projections per listing'],
   },
   trading: {
-    narration: 'The IPX trading engine enables fractional real estate investment with institutional-grade execution. Place market and limit orders, set up automated investing schedules, and reinvest dividends automatically with our DRIP program.',
+    narration: 'The IVXHOLDINGS trading engine enables fractional real estate investment with institutional-grade execution. Place market and limit orders, set up automated investing schedules, and reinvest dividends automatically with our DRIP program.',
     bullets: ['Fractional shares from $100', 'Market and limit order types', 'Automated recurring investments', 'DRIP dividend reinvestment'],
   },
   portfolio: {
@@ -140,11 +140,11 @@ const FALLBACK_NARRATIONS: Record<string, { narration: string; bullets: string[]
     bullets: ['ACH, wire, and card payments', 'Instant withdrawal processing', 'Complete fee transparency', 'Multi-currency support'],
   },
   tokenomics: {
-    narration: 'The IPX token ecosystem rewards active participants with enhanced yields, governance rights, and exclusive platform benefits. Stake tokens for additional returns, vote on platform decisions, and unlock premium features.',
+    narration: 'The IVXHOLDINGS token ecosystem rewards active participants with enhanced yields, governance rights, and exclusive platform benefits. Stake tokens for additional returns, vote on platform decisions, and unlock premium features.',
     bullets: ['Token staking for enhanced yields', 'Governance voting rights', 'Tiered benefit system', 'Referral bonus multipliers'],
   },
   ai: {
-    narration: 'Our AI suite powers every aspect of the platform. From intelligent chatbots and automated email outreach to AI-generated video presentations and predictive analytics, artificial intelligence is at the core of IPX.',
+    narration: 'Our AI suite powers every aspect of the platform. From intelligent chatbots and automated email outreach to AI-generated video presentations and predictive analytics, artificial intelligence is at the core of IVXHOLDINGS.',
     bullets: ['24/7 AI investment assistant', 'AI-powered email engine', 'Automated video generation', 'Predictive market analytics'],
   },
   admin: {
@@ -152,7 +152,7 @@ const FALLBACK_NARRATIONS: Record<string, { narration: string; bullets: string[]
     bullets: ['45+ admin management tools', 'Real-time transaction monitoring', 'Integrated email marketing engine', 'AI-powered outreach automation'],
   },
   security: {
-    narration: 'IPX employs enterprise-grade security including end-to-end encryption, two-factor authentication, and continuous activity monitoring. Fully SEC-compliant and GDPR-ready, your investments and data are always protected.',
+    narration: 'IVXHOLDINGS employs enterprise-grade security including end-to-end encryption, two-factor authentication, and continuous activity monitoring. Fully SEC-compliant and GDPR-ready, your investments and data are always protected.',
     bullets: ['End-to-end encryption', 'Two-factor authentication', 'SEC and GDPR compliance', 'Continuous threat monitoring'],
   },
   growth: {
@@ -160,11 +160,11 @@ const FALLBACK_NARRATIONS: Record<string, { narration: string; bullets: string[]
     bullets: ['Multi-tier referral program', 'Influencer partnership platform', 'Social media command center', 'Gamified engagement system'],
   },
   metrics: {
-    narration: 'IPX delivers measurable results. Our platform tracks key performance indicators across user acquisition, transaction volume, portfolio growth, and investor satisfaction for continuous improvement and transparency.',
+    narration: 'IVXHOLDINGS delivers measurable results. Our platform tracks key performance indicators across user acquisition, transaction volume, portfolio growth, and investor satisfaction for continuous improvement and transparency.',
     bullets: ['User acquisition and retention', 'Transaction volume growth rate', 'Average portfolio return tracking', 'Net promoter score monitoring'],
   },
   closing: {
-    narration: 'The future of real estate investment is here. IPX combines cutting-edge technology with institutional-grade infrastructure to create the most comprehensive property investment platform ever built. Start building your real estate portfolio today.',
+    narration: 'The future of real estate investment is here. IVXHOLDINGS combines cutting-edge technology with institutional-grade infrastructure to create the most comprehensive property investment platform ever built. Start building your real estate portfolio today.',
     bullets: ['Start investing with just $100', 'Join thousands of active investors', 'Download free on iOS and Android', 'Contact us for partnerships'],
   },
 };
@@ -386,7 +386,7 @@ export default function AIVideoStudio() {
         let bulletPoints: string[] = [];
 
         try {
-          const prompt = `You are writing a narration script for a professional 8K video presentation about IPX Real Estate Investment Platform.\nStyle: ${style.tone}\nSection: "${config.title}" (${config.subtitle})\nWrite a compelling 3-4 sentence narration paragraph (50-70 words) suitable for voice-over.\nThen list exactly 4 key data points as short bullet points (max 8 words each).\nFormat exactly as:\nNARRATION: [your narration]\nBULLETS: [bullet1] | [bullet2] | [bullet3] | [bullet4]`;
+          const prompt = `You are writing a narration script for a professional 8K video presentation about IVXHOLDINGS Real Estate Investment Platform.\nStyle: ${style.tone}\nSection: "${config.title}" (${config.subtitle})\nWrite a compelling 3-4 sentence narration paragraph (50-70 words) suitable for voice-over.\nThen list exactly 4 key data points as short bullet points (max 8 words each).\nFormat exactly as:\nNARRATION: [your narration]\nBULLETS: [bullet1] | [bullet2] | [bullet3] | [bullet4]`;
 
           const result = await generateText(prompt);
           const parts = result.split('BULLETS:');
@@ -514,7 +514,7 @@ export default function AIVideoStudio() {
 
   const previewVoice = useCallback(() => {
     Speech.stop().catch(() => {});
-    Speech.speak('Welcome to IPX Real Estate, the future of property investment.', {
+    Speech.speak('Welcome to IVXHOLDINGS Real Estate, the future of property investment.', {
       rate: voiceSpeed,
       pitch: 1.0,
       language: 'en-US',
@@ -1185,8 +1185,8 @@ const styles = StyleSheet.create({
   headerBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: Colors.primary, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
   headerBadgeText: { color: Colors.black, fontSize: 11, fontWeight: '700' as const },
   scroll: { flex: 1 },
-  scrollContent: { padding: 20, paddingBottom: 40 },
-  bottomPad: { height: 40 },
+  scrollContent: { padding: 20, paddingBottom: 140 },
+  bottomPad: { height: 120 },
   genContainer: { gap: 8 },
   heroArea: { gap: 4 },
   heroGlow: { position: 'absolute', width: 80, height: 80, borderRadius: 40, backgroundColor: Colors.primary + '10' },
