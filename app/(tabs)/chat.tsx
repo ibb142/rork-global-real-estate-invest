@@ -135,7 +135,7 @@ export default function ChatScreen() {
             const aiReply: ChatMessage = {
               id: lastMessage.id,
               senderId: 'ai-support',
-              senderName: 'IPX AI',
+              senderName: 'IVXHOLDINGS AI',
               senderAvatar: 'https://images.unsplash.com/photo-1531746790731-6c087fecd65a?w=200',
               message: textContent,
               timestamp: new Date().toISOString(),
@@ -197,7 +197,7 @@ export default function ChatScreen() {
       const errorReply: ChatMessage = {
         id: `msg-${Date.now() + 1}`,
         senderId: 'ai-support',
-        senderName: 'IPX AI',
+        senderName: 'IVXHOLDINGS AI',
         senderAvatar: 'https://images.unsplash.com/photo-1531746790731-6c087fecd65a?w=200',
         message: "I'm having trouble right now. For immediate assistance, please tap 'Start Live Chat' above to connect with our support team.",
         timestamp: new Date().toISOString(),
@@ -384,7 +384,7 @@ export default function ChatScreen() {
                       const limitMsg: ChatMessage = {
                         id: `msg-limit-${Date.now()}`,
                         senderId: 'ai-support',
-                        senderName: 'IPX AI',
+                        senderName: 'IVXHOLDINGS AI',
                         senderAvatar: 'https://images.unsplash.com/photo-1531746790731-6c087fecd65a?w=200',
                         message: `You have ${openTickets.length} open tickets. Please wait for existing tickets to be resolved before creating new ones. Check the Tickets tab for updates.`,
                         timestamp: new Date().toISOString(),
@@ -415,7 +415,7 @@ export default function ChatScreen() {
                           const confirmMsg: ChatMessage = {
                             id: `msg-ticket-${Date.now()}`,
                             senderId: 'ai-support',
-                            senderName: 'IPX AI',
+                            senderName: 'IVXHOLDINGS AI',
                             senderAvatar: 'https://images.unsplash.com/photo-1531746790731-6c087fecd65a?w=200',
                             message: `Your live chat request has been submitted (Ticket #${data.ticketId?.slice(-6) ?? 'pending'}). Estimated wait time: ${waitTime} minutes. A support agent will be assigned shortly. You can track your ticket in the Tickets tab.`,
                             timestamp: new Date().toISOString(),
@@ -431,7 +431,7 @@ export default function ChatScreen() {
                         const errorMsg: ChatMessage = {
                           id: `msg-error-${Date.now()}`,
                           senderId: 'ai-support',
-                          senderName: 'IPX AI',
+                          senderName: 'IVXHOLDINGS AI',
                           senderAvatar: 'https://images.unsplash.com/photo-1531746790731-6c087fecd65a?w=200',
                           message: 'Sorry, we could not create your support ticket right now. Please try again later or email us at support@ipxholding.com.',
                           timestamp: new Date().toISOString(),
@@ -870,6 +870,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   bottomPadding: {
-    height: 40,
+    height: 120,
   },
 });
