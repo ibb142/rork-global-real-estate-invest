@@ -255,7 +255,7 @@ export default function TrustCenterScreen() {
               <View style={styles.ownerHero}>
                 <Text style={styles.ownerHeroTitle}>Property Owner Bill of Rights</Text>
                 <Text style={styles.ownerHeroSubtitle}>
-                  We built IPX to empower property owners, not take from them. Every protection below is legally binding.
+                  We built IVXHOLDINGS to empower property owners, not take from them. Every protection below is legally binding.
                 </Text>
               </View>
               {ownerProtections.map((protection, index) => (
@@ -292,7 +292,7 @@ const styles = StyleSheet.create({
   sectionTabActive: { backgroundColor: '#FFD700' + '15', borderColor: '#FFD700' },
   sectionTabText: { color: Colors.textSecondary, fontSize: 13, flexShrink: 1 },
   sectionTabTextActive: { color: '#000' },
-  scrollContent: { padding: 20, paddingBottom: 40 },
+  scrollContent: { padding: 20, paddingBottom: 140 },
   categoryFilters: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
   categoryPill: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: Colors.surface, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, borderWidth: 1, borderColor: Colors.surfaceBorder },
   categoryPillActive: { backgroundColor: '#FFD700' + '15', borderColor: '#FFD700' },
@@ -321,6 +321,6 @@ const styles = StyleSheet.create({
   protectionDetails: { gap: 8, marginTop: 8 },
   detailRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
   detailText: { color: Colors.textSecondary, fontSize: 13, flex: 1, lineHeight: 18 },
-  bottomPadding: { height: 40 },
+  bottomPadding: { height: 120 },
   scrollView: { backgroundColor: Colors.background },
 });
