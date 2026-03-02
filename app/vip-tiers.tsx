@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   Animated,
   Dimensions,
+  useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, Stack } from 'expo-router';
@@ -62,6 +63,7 @@ const TIER_GLOW: Record<VIPTierLevel, string> = {
 };
 
 export default function VIPTiersScreen() {
+  const { width: screenWidth } = useWindowDimensions();
   const router = useRouter();
   const fadeIn = useRef(new Animated.Value(0)).current;
   const slideUp = useRef(new Animated.Value(30)).current;
@@ -123,7 +125,7 @@ export default function VIPTiersScreen() {
 
   const shimmerTranslate = shimmerAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [-SCREEN_WIDTH, SCREEN_WIDTH],
+    outputRange: [-screenWidth, screenWidth],
   });
 
   const renderTierIcon = useCallback((tier: VIPTier, size: number, color: string) => {
@@ -588,6 +590,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingTop: 4,
+    paddingBottom: 140,
   },
 
   heroCard: {
