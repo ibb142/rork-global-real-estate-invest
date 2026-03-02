@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Animated, Modal, ScrollView, Dimensions } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, usePathname } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Plus, X, UsersRound, Percent, Image, Play, BookOpen, Radio, Heart, Megaphone, TrendingUp, Star, Zap, KeyRound, Building2, Landmark, Sparkles, Globe, BarChart3, Mail, Video, Code2, Scale } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 
@@ -144,9 +145,19 @@ const fabMenuItems: FABMenuItem[] = [
   },
 ];
 
+const TAB_ROUTES = ['/', '/portfolio', '/market', '/invest', '/chat', '/profile'];
+
 export default function AdminFAB() {
   const [isOpen, setIsOpen] = useState(false);
   const router = useRouter();
+  const pathname = usePathname();
+  const insets = useSafeAreaInsets();
+
+  const isOnTabScreen = TAB_ROUTES.some(route =>
+    pathname === route ||
+    pathname.startsWith('/invest') ||
+    pathname === '/'
+  );
   const rotateAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0)).current;
 
@@ -232,9 +243,9 @@ export default function AdminFAB() {
         </View>
       </Modal>
 
-      {!isOpen && (
+      {!isOpen && isOnTabScreen && (
         <TouchableOpacity
-          style={styles.fab}
+          style={[styles.fab, { bottom: Math.max(insets.bottom + 16, 90) }]}
           onPress={toggleMenu}
           activeOpacity={0.9}
         >
@@ -253,11 +264,11 @@ const ITEM_WIDTH = (SCREEN_WIDTH - 60) / 3;
 const styles = StyleSheet.create({
   fab: {
     position: 'absolute',
-    bottom: 100,
+    bottom: 90,
     right: 20,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     backgroundColor: Colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
