@@ -20,7 +20,7 @@ import Colors from '@/constants/colors';
 import { trpc } from '@/lib/trpc';
 import { useGlobalMarkets } from '@/lib/global-markets';
 
-const IPX_LOGO = require('@/assets/images/ipx-logo.jpg');
+const IPX_LOGO = require('@/assets/images/ivx-logo.png');
 
 const STATS = [
   { value: '$2.1B', label: 'Assets Under\nManagement' },
@@ -1644,6 +1644,16 @@ export default function LandingScreen() {
               <Text style={styles.websiteBannerText}>Visit our website: </Text>
               <Text style={styles.websiteBannerUrl}>www.ivxholding.com</Text>
               <ExternalLink size={13} color={Colors.primary} />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.websiteBanner}
+              onPress={() => Linking.openURL('tel:+15616443503')}
+              activeOpacity={0.8}
+            >
+              <Phone size={16} color={Colors.primary} />
+              <Text style={styles.websiteBannerText}>Call us: </Text>
+              <Text style={styles.websiteBannerUrl}>+1 (561) 644-3503</Text>
             </TouchableOpacity>
 
             <View style={styles.bottomPad} />
