@@ -12,7 +12,7 @@ import {
   Linking,
   Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+
 import { Stack, useRouter } from 'expo-router';
 import {
   Gift,
@@ -49,7 +49,7 @@ const mockUserReferrals: Referral[] = [
     referredName: 'Mike Johnson',
     referredId: 'user-045',
     status: 'invested',
-    referralCode: 'IPX-INVITE',
+    referralCode: 'IVXHOLDINGS-INVITE',
     reward: 50,
     rewardPaid: true,
     signedUpAt: '2025-01-10T14:00:00Z',
@@ -66,7 +66,7 @@ const mockUserReferrals: Referral[] = [
     referredName: 'Sarah Williams',
     referredId: 'user-052',
     status: 'signed_up',
-    referralCode: 'IPX-INVITE',
+    referralCode: 'IVXHOLDINGS-INVITE',
     reward: 50,
     rewardPaid: false,
     signedUpAt: '2025-01-20T16:00:00Z',
@@ -79,7 +79,7 @@ const mockUserReferrals: Referral[] = [
     referrerEmail: 'you@email.com',
     referredEmail: 'tom.brown@email.com',
     status: 'pending',
-    referralCode: 'IPX-INVITE',
+    referralCode: 'IVXHOLDINGS-INVITE',
     reward: 50,
     rewardPaid: false,
     createdAt: '2025-01-24T08:00:00Z',
@@ -98,7 +98,7 @@ export default function ReferralsScreen() {
   const [inviteEmail, setInviteEmail] = useState('');
   const [isSending, setIsSending] = useState(false);
   
-  const referralCode = referralCodeQuery.data?.referralCode ?? 'IPX-INVITE';
+  const referralCode = referralCodeQuery.data?.referralCode ?? 'IVXHOLDINGS-INVITE';
   const referralLink = referralCodeQuery.data?.shareUrl ?? `https://ivxholding.com/join?ref=${referralCode}`;
   
   const appLinks = {
@@ -128,7 +128,7 @@ export default function ReferralsScreen() {
     });
   };
 
-  const shareMessage = `🏠 I'm investing in real estate with IVX HOLDINGS and you should too! Start with just $100 and earn passive income from premium properties.\n\nUse my code ${referralCode} to get started: ${referralLink}\n\n📲 Download IPX App:\n🍎 iOS: ${appLinks.appStore}\n🤖 Android: ${appLinks.playStore}\n🌐 Web: ${appLinks.website}`;
+  const shareMessage = `🏠 I'm investing in real estate with IVX HOLDINGS and you should too! Start with just $100 and earn passive income from premium properties.\n\nUse my code ${referralCode} to get started: ${referralLink}\n\n📲 Download IVXHOLDINGS App:\n🍎 iOS: ${appLinks.appStore}\n🤖 Android: ${appLinks.playStore}\n🌐 Web: ${appLinks.website}`;
 
   const shareViaWhatsApp = useCallback(async () => {
     const encodedMessage = encodeURIComponent(shareMessage);
@@ -246,7 +246,7 @@ export default function ReferralsScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <View style={styles.container}>
       <Stack.Screen 
         options={{ 
           title: 'Refer & Earn',
@@ -440,7 +440,7 @@ export default function ReferralsScreen() {
             </View>
             <Text style={styles.agentTitle}>Become a Real Estate Agent</Text>
             <Text style={styles.agentDesc}>
-              Source properties for IPX and earn 2% commission on every listing. Bring property owners to the platform and get paid.
+              Source properties for IVXHOLDINGS and earn 2% commission on every listing. Bring property owners to the platform and get paid.
             </Text>
             <View style={styles.agentStats}>
               <View style={styles.agentStatItem}>
@@ -478,7 +478,7 @@ export default function ReferralsScreen() {
             </View>
             <Text style={styles.brokerTitle}>Become an Investor Broker</Text>
             <Text style={styles.brokerDesc}>
-              Connect private lenders and individual investors with IPX. Earn 2% commission on every share purchase your referrals make — recurring on all future investments.
+              Connect private lenders and individual investors with IVXHOLDINGS. Earn 2% commission on every share purchase your referrals make — recurring on all future investments.
             </Text>
             <View style={styles.brokerStats}>
               <View style={styles.brokerStatItem}>
@@ -540,7 +540,7 @@ export default function ReferralsScreen() {
 
         <View style={styles.bottomPadding} />
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -594,7 +594,7 @@ const styles = StyleSheet.create({
   statusBadge: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 4, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
   statusText: { color: Colors.textSecondary, fontSize: 12 },
   rewardEarned: { color: '#4CAF50', fontSize: 14, fontWeight: '700' as const },
-  bottomPadding: { height: 40 },
+  bottomPadding: { height: 120 },
   brokerSection: { marginBottom: 16 },
   brokerCard: { backgroundColor: Colors.surface, borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: Colors.surfaceBorder },
   brokerHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
