@@ -281,7 +281,7 @@ export default function SignUpScreen() {
     <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
       <View style={styles.logoContainer}>
         <Image
-          source={{ uri: 'https://pub-e001eb4506b145aa938b5d3badbff6a5.r2.dev/attachments/r6lk4ndaevs3fm6jt10pf' }}
+          source={require('@/assets/images/ivx-logo.png')}
           style={styles.logo}
           resizeMode="contain"
         />
