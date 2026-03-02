@@ -890,7 +890,7 @@ const styles = StyleSheet.create({
   apiKeysBtnIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: '#FF990015', alignItems: 'center', justifyContent: 'center' },
   apiKeysBtnTitle: { color: Colors.text, fontSize: 14, fontWeight: '700' as const },
   apiKeysBtnSub: { color: Colors.textSecondary, fontSize: 12, marginTop: 2 },
-  bottomPadding: { height: 40 },
+  bottomPadding: { height: 120 },
   modalOverlay: { flex: 1, backgroundColor: Colors.overlay, justifyContent: 'center', padding: 20 },
   modalContent: { backgroundColor: Colors.surface, borderRadius: 20, padding: 24, maxHeight: '80%' },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
