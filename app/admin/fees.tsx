@@ -291,7 +291,7 @@ export default function FeesScreen() {
         </View>
         <Text style={styles.returnsValue}>{platformFeeStructure.investorAnnualReturn}%</Text>
         <Text style={styles.returnsLabel}>Annual Return (12 month hold)</Text>
-        <Text style={styles.returnsNote}>Clean returns on IPX-owned properties</Text>
+        <Text style={styles.returnsNote}>Clean returns on IVXHOLDINGS-owned properties</Text>
       </View>
 
       <Text style={styles.sectionTitle}>Revenue by Transaction Type</Text>
@@ -548,7 +548,7 @@ export default function FeesScreen() {
           <ArrowLeft size={22} color={Colors.text} />
         </TouchableOpacity>
         <View>
-          <Text style={styles.title}>IPX Fee Revenue</Text>
+          <Text style={styles.title}>IVXHOLDINGS Fee Revenue</Text>
           <Text style={styles.subtitle}>Transaction fees & profit margin</Text>
         </View>
       </View>
@@ -750,7 +750,7 @@ const styles = StyleSheet.create({
   propertyRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   propertyName: { color: Colors.text, fontSize: 15, fontWeight: '700' as const },
   txDate: { color: Colors.textTertiary, fontSize: 12 },
-  bottomPadding: { height: 40 },
+  bottomPadding: { height: 120 },
   feeStructureCard: { backgroundColor: Colors.surface, borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: Colors.surfaceBorder },
   feeStructureRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   feeStructureLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
