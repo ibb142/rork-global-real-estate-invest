@@ -232,7 +232,7 @@ const INTEGRATIONS: IntegrationItem[] = [
   {
     id: 'blockchain',
     service: 'Blockchain / Token Provider',
-    description: 'IPX token minting, transfers, staking, governance',
+    description: 'IVXHOLDINGS token minting, transfers, staking, governance',
     keys: [
       { name: 'RPC URL', envVar: 'BLOCKCHAIN_RPC_URL', example: 'https://mainnet.infura.io/v3/...', isPublic: false },
       { name: 'Contract Address', envVar: 'IPX_TOKEN_CONTRACT', example: '0x...', isPublic: true },
@@ -309,7 +309,7 @@ export default function AppReportScreen() {
     const report = generateFullReport();
     try {
       await Share.share({
-        title: 'IPX App - Full Functionality & Integration Report',
+        title: 'IVXHOLDINGS App - Full Functionality & Integration Report',
         message: report,
       });
     } catch (err) {
@@ -589,7 +589,7 @@ export default function AppReportScreen() {
 
             <View style={styles.footer}>
               <Text style={styles.footerText}>
-                IPX Real Estate Investment Platform v1.0.0
+                IVXHOLDINGS Real Estate Investment Platform v1.0.0
               </Text>
               <Text style={styles.footerDate}>
                 Report generated: {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
@@ -607,7 +607,7 @@ function generateFullReport(): string {
   let report = '';
 
   report += '================================================================\n';
-  report += '   IPX REAL ESTATE INVESTMENT PLATFORM\n';
+  report += '   IVXHOLDINGS REAL ESTATE INVESTMENT PLATFORM\n';
   report += '   COMPLETE APP REPORT\n';
   report += '================================================================\n\n';
   report += `Generated: ${date}\n`;
@@ -675,7 +675,7 @@ function generateFullReport(): string {
   });
 
   report += '\n================================================================\n';
-  report += `   IPX Real Estate Investment Platform - ${new Date().getFullYear()}\n`;
+  report += `   IVXHOLDINGS Real Estate Investment Platform - ${new Date().getFullYear()}\n`;
   report += '================================================================\n';
 
   return report;
