@@ -521,7 +521,7 @@ export const contentQueue: ContentPost[] = [
   },
   {
     id: 'post-4',
-    content: '🎉 Welcome to the IPX family! New investors joined from 15 countries this week. The global real estate revolution is HERE!',
+    content: '🎉 Welcome to the IVXHOLDINGS family! New investors joined from 15 countries this week. The global real estate revolution is HERE!',
     mediaUrl: 'https://images.unsplash.com/photo-1551836022-d5d88e9218df?w=800',
     platform: ['instagram'],
     status: 'published',
