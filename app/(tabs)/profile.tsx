@@ -452,6 +452,10 @@ export default function ProfileScreen() {
                 <Text style={[styles.companyDetailText, { fontSize: isXs ? 11 : 13 }]}>support@ivxholding.com</Text>
               </View>
               <View style={styles.companyDetailRow}>
+                <Mail size={isXs ? 14 : 16} color={Colors.primary} />
+                <Text style={[styles.companyDetailText, { fontSize: isXs ? 11 : 13 }]}>ceo@ivxholding.com</Text>
+              </View>
+              <View style={styles.companyDetailRow}>
                 <Phone size={isXs ? 14 : 16} color={Colors.textTertiary} />
                 <Text style={[styles.companyDetailText, { fontSize: isXs ? 11 : 13 }]}>+1 (556) 164-3503</Text>
               </View>
@@ -665,7 +669,7 @@ const styles = StyleSheet.create({
     paddingTop: 12,
   },
   bottomPadding: {
-    height: 40,
+    height: 120,
   },
   scrollView: {
     backgroundColor: Colors.background,
