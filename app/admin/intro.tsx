@@ -707,7 +707,7 @@ const styles = StyleSheet.create({
   gradientDot: { width: 8, height: 8, borderRadius: 4 },
   stepActions: { flexDirection: 'row', gap: 6, marginTop: 10 },
   actionBtn: { flex: 1, backgroundColor: Colors.primary, borderRadius: 14, paddingVertical: 12, alignItems: 'center', justifyContent: 'center', minHeight: 44 },
-  bottomPadding: { height: 40 },
+  bottomPadding: { height: 120 },
   modalContainer: { flex: 1, backgroundColor: Colors.overlay, justifyContent: 'center', padding: 20 },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
   modalTitle: { color: Colors.text, fontSize: 20, fontWeight: '800' as const },
