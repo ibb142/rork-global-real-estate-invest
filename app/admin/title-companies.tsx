@@ -611,7 +611,7 @@ const styles = StyleSheet.create({
   tabText: { color: Colors.textSecondary, fontWeight: '600' as const, fontSize: 13 },
   tabTextActive: { color: Colors.black },
   content: { flex: 1, paddingHorizontal: 20 },
-  contentContainer: { padding: 20, paddingBottom: 40 },
+  contentContainer: { padding: 20, paddingBottom: 140 },
   companyCard: { backgroundColor: Colors.surface, borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: Colors.surfaceBorder },
   companyHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
   companyIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: Colors.primary + '15', alignItems: 'center', justifyContent: 'center' },
