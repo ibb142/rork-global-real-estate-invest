@@ -141,7 +141,7 @@ export const supportRouter = createTRPCRouter({
       ticket.messages.push({
         id: store.genId("msg"),
         senderId: ctx.userId || "admin",
-        senderName: "IPX Support",
+        senderName: "IVXHOLDINGS Support",
         message: input.message,
         timestamp: new Date().toISOString(),
         isSupport: true,
