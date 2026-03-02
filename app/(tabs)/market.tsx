@@ -11,7 +11,7 @@ import {
   Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { TrendingUp, TrendingDown, Activity, BarChart3, Clock, Zap, Globe, Shield, Users } from 'lucide-react-native';
+import { TrendingUp, TrendingDown, Activity, BarChart3, Clock, Zap, Globe, ArrowUpRight, ArrowDownRight, ChevronRight } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
@@ -26,8 +26,265 @@ import TradingModal from '@/components/TradingModal';
 import { TimeRange, Property, MarketData, Order } from '@/types';
 import { currentUser as mockUser, holdings as mockHoldings } from '@/mocks/user';
 import { ipxGlobalIndex, tokenizedProperties, getGlobalStats } from '@/mocks/share-trading';
+import { useGlobalMarkets } from '@/lib/global-markets';
 
 type MarketTab = 'all' | 'gainers' | 'losers';
+
+function GlobalMarketsSection({ router }: { router: ReturnType<typeof useRouter> }) {
+  const { forex, indices, crypto, commodities, marketSentiment } = useGlobalMarkets(4000);
+  const sentimentColor = marketSentiment === 'bullish' ? Colors.success : marketSentiment === 'bearish' ? Colors.error : Colors.warning;
+  const sentimentLabel = marketSentiment === 'bullish' ? '🐂 Bullish' : marketSentiment === 'bearish' ? '🐻 Bearish' : '⚖️ Neutral';
+
+  const topForex = forex.slice(0, 4);
+  const topIndices = indices.slice(0, 4);
+
+  return (
+    <View style={gmStyles.wrap}>
+      <View style={gmStyles.header}>
+        <View style={gmStyles.headerLeft}>
+          <Globe size={16} color={Colors.primary} />
+          <Text style={gmStyles.headerTitle}>Global Markets</Text>
+          <View style={[gmStyles.sentimentBadge, { backgroundColor: sentimentColor + '20' }]}>
+            <Text style={[gmStyles.sentimentText, { color: sentimentColor }]}>{sentimentLabel}</Text>
+          </View>
+        </View>
+        <TouchableOpacity
+          style={gmStyles.viewAllBtn}
+          onPress={() => router.push('/global-intelligence' as any)}
+          activeOpacity={0.7}
+        >
+          <Text style={gmStyles.viewAllText}>Full Intelligence</Text>
+          <ChevronRight size={13} color={Colors.primary} />
+        </TouchableOpacity>
+      </View>
+
+      <View style={gmStyles.grid}>
+        <View style={gmStyles.section}>
+          <Text style={gmStyles.sectionLabel}>FOREX</Text>
+          {topForex.map((fx) => {
+            const up = fx.changePercent24h >= 0;
+            return (
+              <View key={fx.symbol} style={gmStyles.row}>
+                <Text style={gmStyles.rowFlag}>{fx.flag}</Text>
+                <Text style={gmStyles.rowSymbol}>{fx.symbol}</Text>
+                <Text style={gmStyles.rowRate}>
+                  {fx.rate < 10 ? fx.rate.toFixed(4) : fx.rate.toFixed(2)}
+                </Text>
+                <View style={[gmStyles.changePill, { backgroundColor: (up ? Colors.success : Colors.error) + '20' }]}>
+                  {up ? <ArrowUpRight size={9} color={Colors.success} /> : <ArrowDownRight size={9} color={Colors.error} />}
+                  <Text style={[gmStyles.changeVal, { color: up ? Colors.success : Colors.error }]}>
+                    {Math.abs(fx.changePercent24h).toFixed(2)}%
+                  </Text>
+                </View>
+              </View>
+            );
+          })}
+        </View>
+
+        <View style={gmStyles.divider} />
+
+        <View style={gmStyles.section}>
+          <Text style={gmStyles.sectionLabel}>INDICES</Text>
+          {topIndices.map((idx) => {
+            const up = idx.changePercent >= 0;
+            return (
+              <View key={idx.symbol} style={gmStyles.row}>
+                <Text style={gmStyles.rowFlag}>{idx.flag}</Text>
+                <Text style={gmStyles.rowSymbol}>{idx.symbol}</Text>
+                <Text style={gmStyles.rowRate}>
+                  {idx.value.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                </Text>
+                <View style={[gmStyles.changePill, { backgroundColor: (up ? Colors.success : Colors.error) + '20' }]}>
+                  {up ? <ArrowUpRight size={9} color={Colors.success} /> : <ArrowDownRight size={9} color={Colors.error} />}
+                  <Text style={[gmStyles.changeVal, { color: up ? Colors.success : Colors.error }]}>
+                    {Math.abs(idx.changePercent).toFixed(2)}%
+                  </Text>
+                </View>
+              </View>
+            );
+          })}
+        </View>
+      </View>
+
+      <View style={gmStyles.commodityRow}>
+        {commodities.slice(0, 3).map((c) => {
+          const up = c.changePercent24h >= 0;
+          return (
+            <View key={c.symbol} style={gmStyles.commodityCard}>
+              <View style={[gmStyles.commodityDot, { backgroundColor: c.color }]} />
+              <Text style={gmStyles.commodityName}>{c.name}</Text>
+              <Text style={gmStyles.commodityPrice}>
+                ${c.price >= 100
+                  ? c.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                  : c.price.toFixed(2)}
+              </Text>
+              <Text style={[gmStyles.commodityChange, { color: up ? Colors.success : Colors.error }]}>
+                {up ? '+' : ''}{c.changePercent24h.toFixed(2)}%
+              </Text>
+            </View>
+          );
+        })}
+      </View>
+
+      <TouchableOpacity
+        style={gmStyles.intelligenceBtn}
+        onPress={() => router.push('/global-intelligence' as any)}
+        activeOpacity={0.85}
+      >
+        <Globe size={15} color={Colors.black} />
+        <Text style={gmStyles.intelligenceBtnText}>Open Global Financial Intelligence</Text>
+        <ChevronRight size={15} color={Colors.black} />
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+const gmStyles = StyleSheet.create({
+  wrap: {
+    marginHorizontal: 20,
+    marginBottom: 16,
+    backgroundColor: Colors.surface,
+    borderRadius: 18,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 14,
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+  },
+  headerTitle: {
+    color: Colors.text,
+    fontSize: 14,
+    fontWeight: '800' as const,
+  },
+  sentimentBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+  },
+  sentimentText: {
+    fontSize: 10,
+    fontWeight: '700' as const,
+  },
+  viewAllBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+  },
+  viewAllText: {
+    color: Colors.primary,
+    fontSize: 11,
+    fontWeight: '700' as const,
+  },
+  grid: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 14,
+  },
+  section: {
+    flex: 1,
+  },
+  sectionLabel: {
+    color: Colors.textTertiary,
+    fontSize: 9,
+    fontWeight: '800' as const,
+    letterSpacing: 1.2,
+    marginBottom: 8,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 5,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.surfaceBorder,
+  },
+  rowFlag: {
+    fontSize: 13,
+  },
+  rowSymbol: {
+    color: Colors.textSecondary,
+    fontSize: 9,
+    fontWeight: '700' as const,
+    flex: 1,
+  },
+  rowRate: {
+    color: Colors.text,
+    fontSize: 10,
+    fontWeight: '700' as const,
+  },
+  changePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 1,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  changeVal: {
+    fontSize: 9,
+    fontWeight: '700' as const,
+  },
+  divider: {
+    width: 1,
+    backgroundColor: Colors.surfaceBorder,
+  },
+  commodityRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 14,
+  },
+  commodityCard: {
+    flex: 1,
+    backgroundColor: Colors.backgroundSecondary,
+    borderRadius: 10,
+    padding: 10,
+    alignItems: 'center',
+    gap: 2,
+  },
+  commodityDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  commodityName: {
+    color: Colors.textTertiary,
+    fontSize: 9,
+    fontWeight: '600' as const,
+  },
+  commodityPrice: {
+    color: Colors.text,
+    fontSize: 11,
+    fontWeight: '800' as const,
+  },
+  commodityChange: {
+    fontSize: 9,
+    fontWeight: '700' as const,
+  },
+  intelligenceBtn: {
+    backgroundColor: Colors.primary,
+    borderRadius: 12,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  intelligenceBtnText: {
+    color: Colors.black,
+    fontSize: 13,
+    fontWeight: '800' as const,
+  },
+});
 
 export default function MarketScreen() {
   const router = useRouter();
@@ -482,6 +739,8 @@ export default function MarketScreen() {
             );
           })()}
 
+          <GlobalMarketsSection router={router} />
+
           <View style={styles.bottomPadding} />
         </ScrollView>
       </SafeAreaView>
@@ -753,7 +1012,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   bottomPadding: {
-    height: 40,
+    height: 120,
   },
   indexBanner: {
     marginHorizontal: 20,
