@@ -1067,7 +1067,7 @@ const styles = StyleSheet.create({
   historyStats: { gap: 4 },
   historyStatText: { color: Colors.textSecondary, fontSize: 13 },
   historyDate: { color: Colors.textTertiary, fontSize: 12 },
-  bottomPadding: { height: 40 },
+  bottomPadding: { height: 120 },
   modalOverlay: { flex: 1, backgroundColor: Colors.overlay, justifyContent: 'center', padding: 20 },
   modalContent: { backgroundColor: Colors.surface, borderRadius: 20, padding: 24, maxHeight: '80%' },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
