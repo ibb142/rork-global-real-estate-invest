@@ -121,11 +121,11 @@ export default function BrokerApplyScreen() {
   ];
 
   const programBenefits = [
-    { icon: <Percent size={18} color={Colors.primary} />, title: '2% Commission', desc: 'On every investor or lender you bring to IPX' },
+    { icon: <Percent size={18} color={Colors.primary} />, title: '2% Commission', desc: 'On every investor or lender you bring to IVXHOLDINGS' },
     { icon: <Clock size={18} color={Colors.positive} />, title: 'Monthly Payouts', desc: 'Automatic commission payments every month' },
     { icon: <TrendingUp size={18} color={Colors.info} />, title: 'Volume Bonuses', desc: 'Higher tiers as your referral volume grows' },
     { icon: <Users size={18} color={Colors.warning} />, title: 'Investor Network', desc: 'Access our global pool of properties for your clients' },
-    { icon: <Award size={18} color="#E040FB" />, title: 'Elite Broker Badge', desc: 'Get recognized as a top-tier IPX broker' },
+    { icon: <Award size={18} color="#E040FB" />, title: 'Elite Broker Badge', desc: 'Get recognized as a top-tier IVXHOLDINGS broker' },
     { icon: <BadgeDollarSign size={18} color={Colors.primary} />, title: 'Recurring Earnings', desc: 'Earn on all future investments from your referrals' },
   ];
 
@@ -211,7 +211,7 @@ export default function BrokerApplyScreen() {
           setIsSubmitting(false);
           Alert.alert(
             'Application Submitted!',
-            'Thank you for applying to the IPX Investor Broker Program. Our partnerships team will review your application and contact you within 3-5 business days.\n\nYou will receive a confirmation email shortly.',
+            'Thank you for applying to the IVXHOLDINGS Investor Broker Program. Our partnerships team will review your application and contact you within 3-5 business days.\n\nYou will receive a confirmation email shortly.',
             [{ text: 'OK', onPress: () => router.back() }]
           );
         },
@@ -219,7 +219,7 @@ export default function BrokerApplyScreen() {
           setIsSubmitting(false);
           Alert.alert(
             'Application Submitted!',
-            'Thank you for applying to the IPX Investor Broker Program. Our partnerships team will review your application and contact you within 3-5 business days.\n\nYou will receive a confirmation email shortly.',
+            'Thank you for applying to the IVXHOLDINGS Investor Broker Program. Our partnerships team will review your application and contact you within 3-5 business days.\n\nYou will receive a confirmation email shortly.',
             [{ text: 'OK', onPress: () => router.back() }]
           );
         },
@@ -515,21 +515,21 @@ export default function BrokerApplyScreen() {
 
           <ScrollView style={styles.agreementScroll} nestedScrollEnabled>
             <View style={styles.agreementBody}>
-              <Text style={styles.agreementSectionTitle}>IPX INVESTOR BROKER PROGRAM TERMS</Text>
+              <Text style={styles.agreementSectionTitle}>IVXHOLDINGS INVESTOR BROKER PROGRAM TERMS</Text>
               <Text style={styles.agreementText}>
-                By joining the IPX Investor Broker Program, I acknowledge and agree:
+                By joining the IVXHOLDINGS Investor Broker Program, I acknowledge and agree:
               </Text>
               <Text style={styles.agreementText}>
                 1. <Text style={styles.agreementBold}>Independent Contractor:</Text> I am an independent contractor, NOT an employee of IVX HOLDINGS LLC. I operate under my own business authority and hold any required licenses independently.
               </Text>
               <Text style={styles.agreementText}>
-                2. <Text style={styles.agreementBold}>2% Commission:</Text> I will earn a 2% commission based on the total investment amount of each private lender or individual investor I successfully refer to the IPX platform who completes a share purchase. Commission is calculated on the first investment and all subsequent investments made by my referred investors.
+                2. <Text style={styles.agreementBold}>2% Commission:</Text> I will earn a 2% commission based on the total investment amount of each private lender or individual investor I successfully refer to the IVXHOLDINGS platform who completes a share purchase. Commission is calculated on the first investment and all subsequent investments made by my referred investors.
               </Text>
               <Text style={styles.agreementText}>
-                3. <Text style={styles.agreementBold}>Investor Sourcing:</Text> My role is to identify and introduce qualified private lenders and individual investors to the IPX platform for purchasing fractional property shares. I must ensure all referrals meet IPX platform requirements.
+                3. <Text style={styles.agreementBold}>Investor Sourcing:</Text> My role is to identify and introduce qualified private lenders and individual investors to the IVXHOLDINGS platform for purchasing fractional property shares. I must ensure all referrals meet IVXHOLDINGS platform requirements.
               </Text>
               <Text style={styles.agreementText}>
-                4. <Text style={styles.agreementBold}>Compliance:</Text> I will comply with all applicable securities laws and regulations. I will not make guarantees about returns or misrepresent IPX investment products. I must disclose my broker relationship to all referred investors.
+                4. <Text style={styles.agreementBold}>Compliance:</Text> I will comply with all applicable securities laws and regulations. I will not make guarantees about returns or misrepresent IVXHOLDINGS investment products. I must disclose my broker relationship to all referred investors.
               </Text>
               <Text style={styles.agreementText}>
                 5. <Text style={styles.agreementBold}>Commission Payment:</Text> Commissions are calculated automatically when referred investors purchase shares. Payments are disbursed monthly via wire transfer or direct deposit, subject to a 30-day holding period.
@@ -545,11 +545,11 @@ export default function BrokerApplyScreen() {
               </Text>
               {formData.country === 'usa' ? (
                 <Text style={styles.agreementText}>
-                  9. <Text style={styles.agreementBold}>Tax Responsibility (US):</Text> I understand that IPX will issue a 1099-NEC if I earn $600+ annually. I am solely responsible for all federal, state, and local tax obligations.
+                  9. <Text style={styles.agreementBold}>Tax Responsibility (US):</Text> I understand that IVXHOLDINGS will issue a 1099-NEC if I earn $600+ annually. I am solely responsible for all federal, state, and local tax obligations.
                 </Text>
               ) : (
                 <Text style={styles.agreementText}>
-                  9. <Text style={styles.agreementBold}>Tax Responsibility (International):</Text> I am responsible for complying with all tax laws in my country. IPX does not withhold taxes on international payments.
+                  9. <Text style={styles.agreementBold}>Tax Responsibility (International):</Text> I am responsible for complying with all tax laws in my country. IVXHOLDINGS does not withhold taxes on international payments.
                 </Text>
               )}
             </View>
@@ -579,7 +579,7 @@ export default function BrokerApplyScreen() {
               {formData.termsAgreement && <CheckCircle size={16} color={Colors.white} />}
             </View>
             <Text style={styles.checkboxLabel}>
-              I have read and agree to the IPX Investor Broker Program terms, including the 2% commission structure, compliance obligations, and investor referral requirements.
+              I have read and agree to the IVXHOLDINGS Investor Broker Program terms, including the 2% commission structure, compliance obligations, and investor referral requirements.
             </Text>
           </TouchableOpacity>
         </View>
@@ -606,10 +606,10 @@ export default function BrokerApplyScreen() {
         </View>
 
         <View style={styles.inputGroup}>
-          <Text style={styles.inputLabel}>Why do you want to join IPX? (Optional)</Text>
+          <Text style={styles.inputLabel}>Why do you want to join IVXHOLDINGS? (Optional)</Text>
           <TextInput
             style={[styles.input, styles.textArea]}
-            placeholder="Tell us about your investor network, deal flow, and why you want to partner with IPX..."
+            placeholder="Tell us about your investor network, deal flow, and why you want to partner with IVXHOLDINGS..."
             placeholderTextColor={Colors.textTertiary}
             multiline
             numberOfLines={4}
@@ -743,7 +743,7 @@ export default function BrokerApplyScreen() {
                   <Text style={styles.heroBadgeText}>EARN 2% PER INVESTOR</Text>
                 </View>
               </View>
-              <Text style={styles.heroTitle}>Bring Investors to IPX</Text>
+              <Text style={styles.heroTitle}>Bring Investors to IVXHOLDINGS</Text>
               <Text style={styles.heroSubtitle}>
                 Connect private lenders and individual investors with premium real estate opportunities. Earn 2% commission on every share purchase your referrals make — recurring on all future investments.
               </Text>
@@ -972,6 +972,6 @@ const styles = StyleSheet.create({
   contactRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   contactButton: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 12, alignItems: 'center' },
   contactButtonText: { color: Colors.black, fontWeight: '700' as const, fontSize: 15 },
-  bottomPadding: { height: 40 },
+  bottomPadding: { height: 120 },
   scrollView: { backgroundColor: Colors.background },
 });
