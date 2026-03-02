@@ -263,7 +263,7 @@ export default function EmailInboxScreen() {
         messages: [
           {
             role: 'user',
-            content: `You are an investment analyst for IPX Holdings LLC — a full-spectrum real estate investment and wealth-building platform.
+            content: `You are an investment analyst for IVXHOLDINGS Holdings LLC — a full-spectrum real estate investment and wealth-building platform.
 
 Analyze this incoming email and extract the investor's intent. Be concise and structured.
 
@@ -279,9 +279,9 @@ Return a brief analysis covering:
 4. INVESTMENT TYPE: What are they looking for?
 5. TIMELINE: How urgent/what timeframe?
 6. OPPORTUNITY SCORE: Rate 1-10 how strong this lead is
-7. BEST PRODUCT FIT: Which IPX product fits best:
+7. BEST PRODUCT FIT: Which IVXHOLDINGS product fits best:
    - Fractional shares ($1+) | Tokenized mortgages (6-9% yield) | JV equity ($500K+)
-   - IPX Earn (passive yield) | Auto-reinvest | Smart AI investing | Copy investing
+   - IVXHOLDINGS Earn (passive yield) | Auto-reinvest | Smart AI investing | Copy investing
    - Institutional lender program ($3M+) | Broker/referral partner program
 8. NEXT STEP: Best follow-up action for this specific lead
 
@@ -310,21 +310,21 @@ Keep it to 8-10 lines total.`,
         messages: [
           {
             role: 'user',
-            content: `You are the investment relations team at IPX Holdings LLC — a full-spectrum real estate investment platform that gives everyone access to premium real estate wealth.
+            content: `You are the investment relations team at IVXHOLDINGS Holdings LLC — a full-spectrum real estate investment platform that gives everyone access to premium real estate wealth.
 
 Write a professional, warm, and persuasive reply to this email. Be personal and specific to their situation. The goal is to:
 1. Acknowledge exactly what they asked — match their tone
-2. Present the most relevant IPX products for their specific situation:
+2. Present the most relevant IVXHOLDINGS products for their specific situation:
    - ENTRY LEVEL ($1 – $10K): Fractional tokenized real estate shares from just $1. Earn monthly rental dividends. 24/7 trading on our platform.
    - RETAIL ($10K – $100K): First-lien secured tokenized mortgages at 6-9% annual yield. Blockchain-verified ownership, FDIC-escrow protection, full transparency.
    - MID-TIER ($100K – $500K): Diversified tokenized property portfolios. Use our Auto-Reinvest, Smart AI Investing, or Copy Investing tools to maximize returns.
-   - HIGH NET WORTH ($500K – $1.4M): JV equity co-investment alongside IPX in curated South Florida premium properties.
+   - HIGH NET WORTH ($500K – $1.4M): JV equity co-investment alongside IVXHOLDINGS in curated South Florida premium properties.
    - INSTITUTIONAL ($1.4M+): Full JV partnership, lender syndication, white-label investment products, SEC/FinCEN compliant structures.
    - BROKERS & AGENTS: Revenue-sharing referral partner program — earn on every client you bring.
    - LENDERS: Bridge loan program, institutional allocation, lender syndication with secured first-lien positions.
-3. Highlight platform strengths relevant to them: IPX Earn passive yield, AI-powered Smart Investing, Copy Investing top performers, Auto-Reinvest compounding, 24/7 secondary market liquidity.
+3. Highlight platform strengths relevant to them: IVXHOLDINGS Earn passive yield, AI-powered Smart Investing, Copy Investing top performers, Auto-Reinvest compounding, 24/7 secondary market liquidity.
 4. Include a clear, specific call to action (schedule a call, download prospectus, create a free account, etc.)
-5. Sign off as "IPX Holdings Investment Team"
+5. Sign off as "IVXHOLDINGS Holdings Investment Team"
 
 Do NOT mention specific property addresses unless the person explicitly asked about a property. Focus on the full platform.
 Keep it professional but warm and conversational. 3-5 paragraphs max.
