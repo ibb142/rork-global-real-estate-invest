@@ -19,7 +19,7 @@ import { Mail, Lock, Eye, EyeOff, ArrowLeft, Shield, ChevronRight } from 'lucide
 import Colors from '@/constants/colors';
 import { useAuth } from '@/lib/auth-context';
 
-const IPX_LOGO = require('@/assets/images/ipx-logo.jpg');
+const IPX_LOGO = require('@/assets/images/ivx-logo.png');
 
 export default function LoginScreen() {
   const router = useRouter();
