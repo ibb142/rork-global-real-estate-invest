@@ -30,7 +30,7 @@ const IPXHoldingCard = memo(function IPXHoldingCard({ holding, onPress }: IPXHol
             {holding.propertyName}
           </Text>
           <View style={styles.ipxBadge}>
-            <Text style={styles.ipxBadgeText}>IPX</Text>
+            <Text style={styles.ipxBadgeText}>IVX</Text>
           </View>
         </View>
         
