@@ -150,7 +150,7 @@ export default function InvestScreen() {
         >
           <View style={styles.feeInfoLeft}>
             <View style={styles.ipxBadge}>
-              <Text style={styles.ipxBadgeText}>IPX</Text>
+              <Text style={styles.ipxBadgeText}>IVXHOLDINGS</Text>
             </View>
             <View>
               <Text style={styles.feeInfoTitle}>{IPX_HOLDING_NAME}</Text>
@@ -664,7 +664,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
   bottomPadding: {
-    height: 40,
+    height: 120,
   },
   modalOverlay: {
     flex: 1,
