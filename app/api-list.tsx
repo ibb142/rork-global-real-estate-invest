@@ -777,7 +777,7 @@ const styles = StyleSheet.create({
   copyText: { color: Colors.primary, fontSize: 13, fontWeight: '700' as const },
 
   scroll: { flex: 1 },
-  scrollContent: { paddingHorizontal: 16, paddingBottom: 40 },
+  scrollContent: { paddingHorizontal: 16, paddingBottom: 140 },
 
   priorityLegend: { flexDirection: 'row', gap: 12, marginBottom: 14, flexWrap: 'wrap' as const },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
