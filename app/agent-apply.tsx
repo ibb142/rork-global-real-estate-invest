@@ -104,7 +104,7 @@ export default function AgentApplyScreen() {
   ];
 
   const programBenefits = [
-    { icon: <Percent size={18} color={Colors.primary} />, title: '2% Commission', desc: 'On every property listing you bring to IPX' },
+    { icon: <Percent size={18} color={Colors.primary} />, title: '2% Commission', desc: 'On every property listing you bring to IVXHOLDINGS' },
     { icon: <Clock size={18} color={Colors.positive} />, title: 'Monthly Payouts', desc: 'Reliable commission payments every month' },
     { icon: <TrendingUp size={18} color={Colors.info} />, title: 'Bonus Tiers', desc: 'Earn more as you bring in more properties' },
     { icon: <Users size={18} color={Colors.warning} />, title: 'Dedicated Support', desc: 'Personal account manager for top agents' },
@@ -194,7 +194,7 @@ export default function AgentApplyScreen() {
           setIsSubmitting(false);
           Alert.alert(
             'Application Submitted!',
-            'Thank you for applying to the IPX Real Estate Agent Program. Our partnerships team will review your application and contact you within 3-5 business days.\n\nYou will receive a confirmation email shortly.',
+            'Thank you for applying to the IVXHOLDINGS Real Estate Agent Program. Our partnerships team will review your application and contact you within 3-5 business days.\n\nYou will receive a confirmation email shortly.',
             [{ text: 'OK', onPress: () => router.back() }]
           );
         },
@@ -202,7 +202,7 @@ export default function AgentApplyScreen() {
           setIsSubmitting(false);
           Alert.alert(
             'Application Submitted!',
-            'Thank you for applying to the IPX Real Estate Agent Program. Our partnerships team will review your application and contact you within 3-5 business days.\n\nYou will receive a confirmation email shortly.',
+            'Thank you for applying to the IVXHOLDINGS Real Estate Agent Program. Our partnerships team will review your application and contact you within 3-5 business days.\n\nYou will receive a confirmation email shortly.',
             [{ text: 'OK', onPress: () => router.back() }]
           );
         },
@@ -460,21 +460,21 @@ export default function AgentApplyScreen() {
 
           <ScrollView style={styles.agreementScroll} nestedScrollEnabled>
             <View style={styles.agreementBody}>
-              <Text style={styles.agreementSectionTitle}>IPX REAL ESTATE AGENT PROGRAM TERMS</Text>
+              <Text style={styles.agreementSectionTitle}>IVXHOLDINGS REAL ESTATE AGENT PROGRAM TERMS</Text>
               <Text style={styles.agreementText}>
-                By joining the IPX Real Estate Agent Program, I acknowledge and agree:
+                By joining the IVXHOLDINGS Real Estate Agent Program, I acknowledge and agree:
               </Text>
               <Text style={styles.agreementText}>
                 1. <Text style={styles.agreementBold}>Independent Contractor:</Text> I am an independent contractor, NOT an employee of IVX HOLDINGS LLC. I operate under my own business authority.
               </Text>
               <Text style={styles.agreementText}>
-                2. <Text style={styles.agreementBold}>2% Commission:</Text> I will earn a 2% commission based on the total listing value of each property I successfully bring to the IPX platform. Commission is paid after the property is verified, approved, and listed.
+                2. <Text style={styles.agreementBold}>2% Commission:</Text> I will earn a 2% commission based on the total listing value of each property I successfully bring to the IVXHOLDINGS platform. Commission is paid after the property is verified, approved, and listed.
               </Text>
               <Text style={styles.agreementText}>
-                3. <Text style={styles.agreementBold}>Property Sourcing:</Text> My role is to identify property owners willing to list their property on IPX for fractional investment. I must ensure properties meet IPX minimum standards.
+                3. <Text style={styles.agreementBold}>Property Sourcing:</Text> My role is to identify property owners willing to list their property on IVXHOLDINGS for fractional investment. I must ensure properties meet IVXHOLDINGS minimum standards.
               </Text>
               <Text style={styles.agreementText}>
-                4. <Text style={styles.agreementBold}>Due Diligence:</Text> I will provide accurate property information and not misrepresent property details. IPX reserves the right to reject any property listing.
+                4. <Text style={styles.agreementBold}>Due Diligence:</Text> I will provide accurate property information and not misrepresent property details. IVXHOLDINGS reserves the right to reject any property listing.
               </Text>
               <Text style={styles.agreementText}>
                 5. <Text style={styles.agreementBold}>Commission Payment:</Text> Commissions are paid monthly via wire transfer or direct deposit. Payments are subject to property listing approval and verification.
@@ -487,11 +487,11 @@ export default function AgentApplyScreen() {
               </Text>
               {formData.country === 'usa' ? (
                 <Text style={styles.agreementText}>
-                  8. <Text style={styles.agreementBold}>Tax Responsibility (US):</Text> I understand that IPX will issue a 1099-NEC if I earn $600+ annually. I am solely responsible for all federal, state, and local tax obligations.
+                  8. <Text style={styles.agreementBold}>Tax Responsibility (US):</Text> I understand that IVXHOLDINGS will issue a 1099-NEC if I earn $600+ annually. I am solely responsible for all federal, state, and local tax obligations.
                 </Text>
               ) : (
                 <Text style={styles.agreementText}>
-                  8. <Text style={styles.agreementBold}>Tax Responsibility (International):</Text> I am responsible for complying with all tax laws in my country. IPX does not withhold taxes on international payments.
+                  8. <Text style={styles.agreementBold}>Tax Responsibility (International):</Text> I am responsible for complying with all tax laws in my country. IVXHOLDINGS does not withhold taxes on international payments.
                 </Text>
               )}
             </View>
@@ -521,7 +521,7 @@ export default function AgentApplyScreen() {
               {formData.termsAgreement && <CheckCircle size={16} color={Colors.white} />}
             </View>
             <Text style={styles.checkboxLabel}>
-              I have read and agree to the IPX Real Estate Agent Program terms, including the 2% commission structure and property sourcing requirements.
+              I have read and agree to the IVXHOLDINGS Real Estate Agent Program terms, including the 2% commission structure and property sourcing requirements.
             </Text>
           </TouchableOpacity>
         </View>
@@ -542,10 +542,10 @@ export default function AgentApplyScreen() {
       </View>
 
       <View style={styles.inputGroup}>
-        <Text style={styles.inputLabel}>Why do you want to join IPX? (Optional)</Text>
+        <Text style={styles.inputLabel}>Why do you want to join IVXHOLDINGS? (Optional)</Text>
         <TextInput
           style={[styles.input, styles.textArea]}
-          placeholder="Tell us what motivates you, your network, and how you plan to source properties for IPX..."
+          placeholder="Tell us what motivates you, your network, and how you plan to source properties for IVXHOLDINGS..."
           placeholderTextColor={Colors.textTertiary}
           multiline
           numberOfLines={4}
@@ -654,7 +654,7 @@ export default function AgentApplyScreen() {
               </View>
               <Text style={styles.heroTitle}>Work With IVX HOLDINGS</Text>
               <Text style={styles.heroSubtitle}>
-                Join our network of real estate professionals. Source properties, bring owners to list on IPX, and earn 2% commission on every deal.
+                Join our network of real estate professionals. Source properties, bring owners to list on IVXHOLDINGS, and earn 2% commission on every deal.
               </Text>
               <View style={styles.benefitsGrid}>
                 {programBenefits.map((benefit, index) => (
@@ -869,6 +869,6 @@ const styles = StyleSheet.create({
   contactRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   contactButton: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 12, alignItems: 'center' },
   contactButtonText: { color: Colors.black, fontWeight: '700' as const, fontSize: 15 },
-  bottomPadding: { height: 40 },
+  bottomPadding: { height: 120 },
   scrollView: { backgroundColor: Colors.background },
 });
