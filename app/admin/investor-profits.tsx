@@ -309,7 +309,7 @@ ${subDivider}
 
 🏠 Rental Income:     ${formatCurrency(summaryStats.totalRental)} (60%)
 📈 Appreciation:      ${formatCurrency(summaryStats.totalAppreciation)} (30%)
-💎 IPX Dividends:     ${formatCurrency(summaryStats.totalDividends)} (10%)
+💎 IVXHOLDINGS Dividends:     ${formatCurrency(summaryStats.totalDividends)} (10%)
 
 ${subDivider}
        TOP INVESTORS DETAIL
@@ -489,7 +489,7 @@ ${divider}
       </div>
       <div class="source-row">
         <div class="source-dot" style="background: #FFD700;"></div>
-        <div class="source-name">IPX Dividends</div>
+        <div class="source-name">IVXHOLDINGS Dividends</div>
         <div class="source-value">${formatCurrency(summaryStats.totalDividends)}</div>
         <div class="source-percent">10%</div>
       </div>
@@ -602,7 +602,7 @@ ${divider}
         }
         URL.revokeObjectURL(url);
       } else {
-        const fileName = `IPX-Investor-Profits-${new Date().toISOString().split('T')[0]}.html`;
+        const fileName = `IVXHOLDINGS-Investor-Profits-${new Date().toISOString().split('T')[0]}.html`;
         const cacheDir = (FileSystem as { cacheDirectory?: string | null }).cacheDirectory || '';
         const filePath = `${cacheDir}${fileName}`;
         await FileSystem.writeAsStringAsync(filePath, htmlContent);
@@ -657,7 +657,7 @@ ${divider}
           setTimeout(() => setCopiedToClipboard(false), 2000);
         }
       } else {
-        const fileName = `IPX-Investor-Profits-${new Date().toISOString().split('T')[0]}.txt`;
+        const fileName = `IVXHOLDINGS-Investor-Profits-${new Date().toISOString().split('T')[0]}.txt`;
         const cacheDir = (FileSystem as { cacheDirectory?: string | null }).cacheDirectory || '';
         const filePath = `${cacheDir}${fileName}`;
         await FileSystem.writeAsStringAsync(filePath, reportText);
@@ -895,7 +895,7 @@ ${divider}
           <View style={styles.sourceRow}>
             <View style={styles.sourceInfo}>
               <View style={[styles.sourceDot, { backgroundColor: Colors.accent }]} />
-              <Text style={styles.sourceLabel}>IPX Dividends</Text>
+              <Text style={styles.sourceLabel}>IVXHOLDINGS Dividends</Text>
             </View>
             <Text style={styles.sourceValue}>{formatCurrency(summaryStats.totalDividends)}</Text>
             <Text style={styles.sourcePercent}>10%</Text>
@@ -1262,7 +1262,7 @@ const styles = StyleSheet.create({
   yieldBox: { backgroundColor: Colors.positive + '15', borderRadius: 8, padding: 8, alignItems: 'center', gap: 2 },
   yieldLabel: { color: Colors.textSecondary, fontSize: 13 },
   yieldValue: { color: Colors.text, fontSize: 14, fontWeight: '600' as const },
-  bottomPadding: { height: 40 },
+  bottomPadding: { height: 120 },
   modalOverlay: { flex: 1, backgroundColor: Colors.overlay, justifyContent: 'center', padding: 20 },
   exportModal: { backgroundColor: Colors.surface, borderRadius: 20, padding: 20, gap: 16, maxHeight: '90%' },
   exportModalHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 4 },
