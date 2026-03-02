@@ -89,7 +89,7 @@ const generateProspectusText = (investment: number): string => {
   const projections = calculateProjections(investment);
   const combined = ANNUAL_YIELD + ANNUAL_APPRECIATION;
   const lines: string[] = [
-    'IPX INVESTOR PROSPECTUS',
+    'IVXHOLDINGS INVESTOR PROSPECTUS',
     `Investment: ${formatCurrency(investment)} | Yield: ${ANNUAL_YIELD}% | Appreciation: ${ANNUAL_APPRECIATION}% | Combined: ${combined.toFixed(1)}%`,
     '',
     'PROFIT PROJECTIONS:',
@@ -110,7 +110,7 @@ export default function InvestorProspectusScreen() {
 
   const handleShare = async (method: 'whatsapp' | 'email' | 'sms' | 'call' | 'general') => {
     const prospectusText = generateProspectusText(selectedAmount);
-    const shortMessage = `📊 IPX Investor Prospectus\n\nInvest ${formatCurrency(selectedAmount)} and earn:\n• ${formatCurrency(projections[5].totalReturn)}/year\n• ${(ANNUAL_YIELD + ANNUAL_APPRECIATION).toFixed(1)}% combined return\n\n24/7 Trading | Fractional Real Estate\n\nContact: +1 (561) 644-3503`;
+    const shortMessage = `📊 IVXHOLDINGS Investor Prospectus\n\nInvest ${formatCurrency(selectedAmount)} and earn:\n• ${formatCurrency(projections[5].totalReturn)}/year\n• ${(ANNUAL_YIELD + ANNUAL_APPRECIATION).toFixed(1)}% combined return\n\n24/7 Trading | Fractional Real Estate\n\nContact: +1 (561) 644-3503`;
 
     try {
       switch (method) {
@@ -125,7 +125,7 @@ export default function InvestorProspectusScreen() {
           break;
         }
         case 'email': {
-          const subject = 'IPX Investor Prospectus - Real Estate Investment Opportunity';
+          const subject = 'IVXHOLDINGS Investor Prospectus - Real Estate Investment Opportunity';
           await Linking.openURL(`mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(prospectusText)}`);
           break;
         }
@@ -140,7 +140,7 @@ export default function InvestorProspectusScreen() {
           await Linking.openURL('tel:+15616443503');
           break;
         case 'general':
-          await Share.share({ message: prospectusText, title: 'IPX Investor Prospectus' });
+          await Share.share({ message: prospectusText, title: 'IVXHOLDINGS Investor Prospectus' });
           break;
       }
     } catch (error) {
@@ -347,7 +347,7 @@ export default function InvestorProspectusScreen() {
                 <Text style={[styles.comparisonCell, styles.comparisonHeaderCell]}>Liquidity</Text>
               </View>
               {[
-                { name: 'IPX Real Estate', rate: '15.7%', liquidity: '24/7', highlight: true },
+                { name: 'IVXHOLDINGS Real Estate', rate: '15.7%', liquidity: '24/7', highlight: true },
                 { name: 'Traditional RE', rate: '8-10%', liquidity: 'Months', highlight: false },
                 { name: 'S&P 500 Avg', rate: '10%', liquidity: 'Market Hrs', highlight: false },
                 { name: 'Bonds', rate: '4-5%', liquidity: 'Varies', highlight: false },
@@ -535,7 +535,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
   },
   scrollContent: {
-    paddingBottom: 40,
+    paddingBottom: 140,
   },
   heroSection: {
     flexDirection: 'row',
