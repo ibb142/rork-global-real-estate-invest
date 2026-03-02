@@ -882,7 +882,7 @@ export default function InfluencersScreen() {
                 <View style={styles.stepNumber}><Text style={styles.stepNumberText}>1</Text></View>
                 <View style={styles.stepContent}>
                   <Text style={styles.stepTitle}>Discovery</Text>
-                  <Text style={styles.stepDescription}>Influencers find IPX through app stores, social media, or existing influencer referrals.</Text>
+                  <Text style={styles.stepDescription}>Influencers find IVXHOLDINGS through app stores, social media, or existing influencer referrals.</Text>
                 </View>
               </View>
 
@@ -1174,7 +1174,7 @@ const styles = StyleSheet.create({
   payButtonText: { color: Colors.black, fontWeight: '700' as const, fontSize: 15 },
   viewDetailsButton: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 12, alignItems: 'center' },
   viewDetailsText: { color: Colors.textSecondary, fontSize: 13 },
-  bottomPadding: { height: 40 },
+  bottomPadding: { height: 120 },
   modalContainer: { flex: 1, backgroundColor: Colors.background },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: Colors.border },
   modalTitle: { color: Colors.text, fontSize: 20, fontWeight: '800' as const },
