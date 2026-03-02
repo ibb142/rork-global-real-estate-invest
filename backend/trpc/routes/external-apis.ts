@@ -344,7 +344,7 @@ export const externalApisRouter = createTRPCRouter({
       const log: SMSLog = {
         id: store.genId("sms"),
         to: input.to,
-        from: TWILIO_PHONE_NUMBER || "IPX",
+        from: TWILIO_PHONE_NUMBER || "IVXHOLDINGS",
         body: input.body,
         channel: input.channel,
         status: result.ok ? "sent" : "failed",
@@ -417,7 +417,7 @@ export const externalApisRouter = createTRPCRouter({
         smsLogs.push({
           id: store.genId("sms"),
           to: recipient.phone,
-          from: TWILIO_PHONE_NUMBER || "IPX",
+          from: TWILIO_PHONE_NUMBER || "IVXHOLDINGS",
           body: recipient.body,
           channel: input.channel,
           status: result.ok ? "sent" : "failed",
