@@ -24,7 +24,7 @@ export const referralsRouter = createTRPCRouter({
     .query(async ({ ctx }) => {
       const userId = ctx.userId!;
       const user = store.getUser(userId);
-      const code = `IPX${(user?.firstName || "USER").toUpperCase().slice(0, 4)}${Math.floor(Math.random() * 100)}`;
+      const code = `IVXHOLDINGS${(user?.firstName || "USER").toUpperCase().slice(0, 4)}${Math.floor(Math.random() * 100)}`;
       return { referralCode: code, shareUrl: `https://ivxholding.com/r/${code}` };
     }),
 
@@ -49,7 +49,7 @@ export const referralsRouter = createTRPCRouter({
         referrerEmail: user?.email || "",
         referredEmail: input.email,
         status: "pending" as const,
-        referralCode: `IPX${Date.now().toString(36).toUpperCase()}`,
+        referralCode: `IVXHOLDINGS${Date.now().toString(36).toUpperCase()}`,
         reward: 0,
         rewardPaid: false,
         createdAt: new Date().toISOString(),
