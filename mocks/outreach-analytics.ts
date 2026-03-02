@@ -294,7 +294,7 @@ export const campaignAnalytics: CampaignAnalytics[] = [
     replyRate: 6.5,
     bounceRate: 4.6,
     avgTimeSpentSeconds: 67,
-    bestPerformingSubject: 'IPX Q1 2026: $48M Raised, 3 New Properties, 8.2% Avg Yield',
+    bestPerformingSubject: 'IVXHOLDINGS Q1 2026: $48M Raised, 3 New Properties, 8.2% Avg Yield',
     peakOpenHour: 8,
     deviceBreakdown: { desktop: 55, mobile: 38, tablet: 7 },
     regionBreakdown: { 'North America': 38, 'Europe': 14, 'Middle East': 8, 'Asia Pacific': 5 },
