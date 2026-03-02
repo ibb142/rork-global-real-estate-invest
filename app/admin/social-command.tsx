@@ -27,7 +27,6 @@ import {
   MessageCircle,
   Calendar,
   CheckCircle,
-  AlertCircle,
   Play,
   Pause,
   RefreshCw,
@@ -54,6 +53,9 @@ import {
   Youtube,
   Search,
   ArrowLeft,
+  MapPin,
+  Clock,
+  Award,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { generateText } from '@rork-ai/toolkit-sdk';
@@ -76,8 +78,20 @@ import {
 } from '@/mocks/social-media';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const CHART_HEIGHT = 110;
+const CARD_WIDTH = (SCREEN_WIDTH - 56) / 2;
 
 type TabType = 'overview' | 'agents' | 'content' | 'analytics' | 'comments';
+
+const GOLD = '#FFD700';
+const GOLD_DIM = 'rgba(255,215,0,0.12)';
+const GOLD_DIM2 = 'rgba(255,215,0,0.06)';
+const GREEN = '#00C48C';
+const RED = '#FF4D4D';
+const BLUE = '#3B82F6';
+const SURFACE = '#141414';
+const SURFACE2 = '#1C1C1C';
+const BORDER = '#2A2A2A';
 
 export default function SocialCommandScreen() {
   const router = useRouter();
@@ -95,147 +109,79 @@ export default function SocialCommandScreen() {
   const [localComments, setLocalComments] = useState(commentThreads);
 
   const pulseAnim = useRef(new Animated.Value(1)).current;
+  const barAnims = useRef(analyticsHistory.map(() => new Animated.Value(0))).current;
 
   useEffect(() => {
     const pulse = Animated.loop(
       Animated.sequence([
-        Animated.timing(pulseAnim, {
-          toValue: 1.2,
-          duration: 1000,
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulseAnim, {
-          toValue: 1,
-          duration: 1000,
-          useNativeDriver: true,
-        }),
+        Animated.timing(pulseAnim, { toValue: 1.4, duration: 900, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: 900, useNativeDriver: true }),
       ])
     );
     pulse.start();
     return () => pulse.stop();
   }, [pulseAnim]);
 
-  const handleTabChange = (tab: TabType) => {
-    if (Platform.OS !== 'web') {
-      Haptics.selectionAsync();
+  useEffect(() => {
+    if (activeTab === 'overview' || activeTab === 'analytics') {
+      barAnims.forEach((anim, i) => {
+        anim.setValue(0);
+        Animated.timing(anim, {
+          toValue: 1,
+          duration: 600,
+          delay: i * 60,
+          useNativeDriver: false,
+        }).start();
+      });
     }
+  }, [activeTab, barAnims]);
+
+  const handleTabChange = (tab: TabType) => {
+    if (Platform.OS !== 'web') Haptics.selectionAsync();
     setActiveTab(tab);
   };
 
   const handleOpenCreateContent = useCallback(() => {
-    if (Platform.OS !== 'web') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    }
+    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setShowCreateContentModal(true);
     setGeneratedContent('');
     setContentTopic('');
-    console.log('[AI Content] Opening Create with AI modal');
   }, []);
 
   const handleGenerateContent = useCallback(async () => {
-    if (Platform.OS !== 'web') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    }
+    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setIsGeneratingContent(true);
     setGeneratedContent('');
-    console.log('[AI Content] Starting content generation');
-    console.log('[AI Content] Platform:', selectedPlatformForContent);
-    console.log('[AI Content] Topic:', contentTopic || '(auto-generate)');
-
     try {
       const topicToUse = contentTopic.trim() || 'real estate investment opportunities with fractional ownership';
-      
-      const prompt = `Create a ${selectedPlatformForContent} post about "${topicToUse}" for IVX HOLDINGS, a real estate investment platform.
-
-Requirements:
-- Engaging and shareable
-- Platform-optimized for ${selectedPlatformForContent}
-- Include emojis
-- Add relevant hashtags
-- Professional but approachable
-- Make it compelling and action-oriented
-- Output ONLY the post content, nothing else`;
-
-      console.log('[AI Content] Calling generateText API...');
+      const prompt = `Create a ${selectedPlatformForContent} post about "${topicToUse}" for IVX HOLDINGS, a real estate investment platform. Requirements: Engaging, platform-optimized, include emojis, add relevant hashtags, professional but approachable. Output ONLY the post content.`;
       const response = await generateText({ messages: [{ role: 'user', content: prompt }] });
-      
-      console.log('[AI Content] Response received, length:', response?.length);
-      
       if (response && typeof response === 'string' && response.trim().length > 0) {
         setGeneratedContent(response.trim());
-        if (Platform.OS !== 'web') {
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        }
-        console.log('[AI Content] Content generated successfully');
-      } else {
-        throw new Error('Empty response from AI');
-      }
-    } catch (error) {
-      console.error('[AI Content] Generation error:', error);
-      const topicToUse = contentTopic.trim() || 'Real Estate Investment';
-      const fallbackContent = `🏠 ${topicToUse}\n\n💰 Invest in premium real estate starting at just $100 with IVX HOLDINGS!\n\n✅ Monthly dividends\n✅ Full transparency\n✅ Diversified portfolio\n✅ No landlord headaches\n\n🔗 Start your investment journey today!\n\n#IPXHolding #RealEstateInvesting #PassiveIncome #FractionalOwnership #WealthBuilding`;
-      setGeneratedContent(fallbackContent);
-      if (Platform.OS !== 'web') {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-      }
-      Alert.alert('Note', 'Using pre-made content template. AI service temporarily unavailable.');
+        if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } else throw new Error('Empty response');
+    } catch {
+      const fallback = `🏠 Real Estate Investment\n\n💰 Invest in premium real estate starting at just $100 with IVX HOLDINGS!\n\n✅ Monthly dividends\n✅ Full transparency\n✅ Diversified portfolio\n\n#IPXHolding #RealEstateInvesting #PassiveIncome`;
+      setGeneratedContent(fallback);
+      if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     } finally {
       setIsGeneratingContent(false);
-      console.log('[AI Content] Generation complete');
     }
   }, [contentTopic, selectedPlatformForContent]);
 
   const handleGenerateCommentResponse = useCallback(async (commentId: string, commentText: string, username: string) => {
-    if (Platform.OS !== 'web') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    }
+    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setGeneratingCommentId(commentId);
-    console.log('[AI Response] Generating response for comment:', commentId);
-
     try {
-      const prompt = `Generate a professional, friendly response to this social media comment from ${username}:
-
-"${commentText}"
-
-Context: You are responding on behalf of IVX HOLDINGS, a real estate investment platform.
-
-Requirements:
-- Be helpful and professional
-- Address their comment directly
-- Keep it concise (2-3 sentences max)
-- Be friendly but professional
-- If it's a question, provide a helpful answer
-- Output ONLY the response, nothing else`;
-
-      console.log('[AI Response] Calling generateText API...');
+      const prompt = `Generate a professional, friendly response to this social media comment from ${username}: "${commentText}". Context: IVX HOLDINGS real estate platform. Be helpful, concise (2-3 sentences). Output ONLY the response.`;
       const response = await generateText({ messages: [{ role: 'user', content: prompt }] });
-      
       if (response && typeof response === 'string' && response.trim().length > 0) {
-        setLocalComments(prev => prev.map(c => 
-          c.id === commentId 
-            ? { ...c, aiResponse: response.trim(), responded: true }
-            : c
-        ));
-        if (Platform.OS !== 'web') {
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        }
-        console.log('[AI Response] Response generated successfully');
-        Alert.alert('Success', 'AI response generated!');
-      } else {
-        throw new Error('Empty response');
-      }
-    } catch (error) {
-      console.error('[AI Response] Generation error:', error);
-      const fallbackResponse = `Thank you for reaching out, ${username}! We appreciate your interest in IVX HOLDINGS. Our team will get back to you shortly with more details. 🏠`;
-      setLocalComments(prev => prev.map(c => 
-        c.id === commentId 
-          ? { ...c, aiResponse: fallbackResponse, responded: true }
-          : c
-      ));
-      if (Platform.OS !== 'web') {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-      }
-      Alert.alert('Note', 'Using template response. AI service temporarily unavailable.');
+        setLocalComments(prev => prev.map(c => c.id === commentId ? { ...c, aiResponse: response.trim(), responded: true } : c));
+        if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } else throw new Error('Empty response');
+    } catch {
+      const fallback = `Thank you for reaching out, ${username}! We appreciate your interest in IVX HOLDINGS. Our team will get back to you shortly. 🏠`;
+      setLocalComments(prev => prev.map(c => c.id === commentId ? { ...c, aiResponse: fallback, responded: true } : c));
     } finally {
       setGeneratingCommentId(null);
     }
@@ -247,245 +193,234 @@ Requirements:
     return num.toString();
   };
 
-  const getPlatformIcon = (platform: string) => {
+  const getPlatformIcon = (platform: string, size = 16) => {
     switch (platform) {
-      case 'instagram': return <Instagram size={16} color="#E4405F" />;
-      case 'facebook': return <Facebook size={16} color="#1877F2" />;
-      case 'linkedin': return <Linkedin size={16} color="#0A66C2" />;
-      case 'tiktok': return <Music size={16} color="#000" />;
-      case 'whatsapp': return <MessageCircle size={16} color="#25D366" />;
-      case 'google-ads': return <Search size={16} color="#4285F4" />;
-      case 'youtube': return <Youtube size={16} color="#FF0000" />;
-      default: return <Globe size={16} color={Colors.textSecondary} />;
+      case 'instagram': return <Instagram size={size} color="#E4405F" />;
+      case 'facebook': return <Facebook size={size} color="#1877F2" />;
+      case 'linkedin': return <Linkedin size={size} color="#0A66C2" />;
+      case 'tiktok': return <Music size={size} color="#fff" />;
+      case 'whatsapp': return <MessageCircle size={size} color="#25D366" />;
+      case 'google-ads': return <Search size={size} color="#4285F4" />;
+      case 'youtube': return <Youtube size={size} color="#FF0000" />;
+      default: return <Globe size={size} color={Colors.textSecondary} />;
     }
   };
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'active': return '#10B981';
-      case 'working': return '#3B82F6';
+      case 'active': return GREEN;
+      case 'working': return BLUE;
       case 'idle': return '#F59E0B';
-      case 'paused': return '#EF4444';
+      case 'paused': return RED;
       default: return Colors.textSecondary;
     }
   };
 
   const getSentimentIcon = (sentiment: string) => {
     switch (sentiment) {
-      case 'positive': return <Smile size={16} color="#10B981" />;
-      case 'negative': return <Frown size={16} color="#EF4444" />;
+      case 'positive': return <Smile size={16} color={GREEN} />;
+      case 'negative': return <Frown size={16} color={RED} />;
       default: return <Meh size={16} color="#F59E0B" />;
     }
   };
 
+  const maxImpressions = Math.max(...analyticsHistory.map(d => d.impressions));
+
   const renderOverviewTab = () => (
     <View style={styles.tabContent}>
-      <View style={styles.liveStatusBar}>
-        <Animated.View style={[styles.liveDot, { transform: [{ scale: pulseAnim }] }]} />
+      <View style={styles.liveBar}>
+        <Animated.View style={[styles.livePulse, { transform: [{ scale: pulseAnim }] }]} />
+        <View style={styles.liveDot} />
         <Text style={styles.liveText}>LIVE</Text>
-        <Text style={styles.liveSubtext}>{getActiveAgentsCount()} AI agents working</Text>
+        <Text style={styles.liveSubtext}>{getActiveAgentsCount()} agents active</Text>
       </View>
 
-      <View style={styles.statsGrid}>
-        <View style={[styles.statCard, styles.statCardLarge]}>
-          <View style={styles.statIconContainer}>
-            <Users size={24} color="#3B82F6" />
-          </View>
-          <Text style={styles.statValue}>{formatNumber(getTotalFollowers())}</Text>
-          <Text style={styles.statLabel}>Total Followers</Text>
-          <View style={styles.statTrend}>
-            <TrendingUp size={14} color="#10B981" />
-            <Text style={styles.statTrendText}>+2.3%</Text>
-          </View>
-        </View>
-
-        <View style={[styles.statCard, styles.statCardLarge]}>
-          <View style={[styles.statIconContainer, { backgroundColor: '#FEF3C7' }]}>
-            <Heart size={24} color="#F59E0B" />
-          </View>
-          <Text style={styles.statValue}>{getAverageEngagement().toFixed(1)}%</Text>
-          <Text style={styles.statLabel}>Avg Engagement</Text>
-          <View style={styles.statTrend}>
-            <TrendingUp size={14} color="#10B981" />
-            <Text style={styles.statTrendText}>+0.5%</Text>
-          </View>
-        </View>
-
-        <View style={styles.statCard}>
-          <Eye size={20} color="#8B5CF6" />
-          <Text style={styles.statValueSmall}>{formatNumber(weeklyPerformance.impressions.current)}</Text>
-          <Text style={styles.statLabelSmall}>Impressions</Text>
-        </View>
-
-        <View style={styles.statCard}>
-          <Target size={20} color="#EC4899" />
-          <Text style={styles.statValueSmall}>{formatNumber(weeklyPerformance.reach.current)}</Text>
-          <Text style={styles.statLabelSmall}>Reach</Text>
-        </View>
-
-        <View style={styles.statCard}>
-          <MessageCircle size={20} color="#10B981" />
-          <Text style={styles.statValueSmall}>{getPendingComments().length}</Text>
-          <Text style={styles.statLabelSmall}>Pending</Text>
-        </View>
-
-        <View style={styles.statCard}>
-          <Zap size={20} color="#F59E0B" />
-          <Text style={styles.statValueSmall}>{contentQueue.filter(c => c.status === 'scheduled' || c.status === 'approved').length}</Text>
-          <Text style={styles.statLabelSmall}>Scheduled</Text>
-        </View>
-      </View>
-
-      <Text style={styles.sectionTitle}>Connected Platforms</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.platformsScroll}>
-        {socialPlatforms.map((platform) => (
-          <TouchableOpacity
-            key={platform.id}
-            style={[styles.platformCard, !platform.connected && styles.platformCardDisconnected]}
-          >
-            <View style={[styles.platformIcon, { backgroundColor: platform.color + '20' }]}>
-              {getPlatformIcon(platform.id)}
+      <View style={styles.heroRow}>
+        <View style={[styles.heroCard, { backgroundColor: GOLD_DIM, borderColor: 'rgba(255,215,0,0.25)' }]}>
+          <View style={styles.heroCardTop}>
+            <View style={[styles.heroIcon, { backgroundColor: 'rgba(255,215,0,0.15)' }]}>
+              <Users size={20} color={GOLD} />
             </View>
-            <Text style={styles.platformName}>{platform.name}</Text>
-            {platform.connected ? (
-              <>
-                <Text style={styles.platformFollowers}>{formatNumber(platform.followers)}</Text>
-                <View style={styles.platformEngagement}>
-                  <Heart size={12} color="#EF4444" />
-                  <Text style={styles.platformEngagementText}>{platform.engagement}%</Text>
-                </View>
-              </>
-            ) : (
-              <TouchableOpacity style={styles.connectButton}>
-                <Text style={styles.connectButtonText}>Connect</Text>
-              </TouchableOpacity>
-            )}
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
+            <View style={[styles.trendChip, { backgroundColor: 'rgba(0,196,140,0.15)' }]}>
+              <TrendingUp size={11} color={GREEN} />
+              <Text style={[styles.trendChipText, { color: GREEN }]}>+2.3%</Text>
+            </View>
+          </View>
+          <Text style={styles.heroValue}>{formatNumber(getTotalFollowers())}</Text>
+          <Text style={styles.heroLabel}>Total Followers</Text>
+        </View>
+        <View style={[styles.heroCard, { backgroundColor: 'rgba(0,196,140,0.08)', borderColor: 'rgba(0,196,140,0.2)' }]}>
+          <View style={styles.heroCardTop}>
+            <View style={[styles.heroIcon, { backgroundColor: 'rgba(0,196,140,0.15)' }]}>
+              <Heart size={20} color={GREEN} />
+            </View>
+            <View style={[styles.trendChip, { backgroundColor: 'rgba(0,196,140,0.15)' }]}>
+              <TrendingUp size={11} color={GREEN} />
+              <Text style={[styles.trendChipText, { color: GREEN }]}>+0.5%</Text>
+            </View>
+          </View>
+          <Text style={styles.heroValue}>{getAverageEngagement().toFixed(1)}%</Text>
+          <Text style={styles.heroLabel}>Avg Engagement</Text>
+        </View>
+      </View>
 
-      <Text style={styles.sectionTitle}>Weekly Performance</Text>
-      <View style={styles.chartContainer}>
-        <View style={styles.chartBars}>
+      <View style={styles.miniStatsRow}>
+        {[
+          { icon: <Eye size={15} color="#8B5CF6" />, value: formatNumber(weeklyPerformance.impressions.current), label: 'Impressions', bg: 'rgba(139,92,246,0.12)' },
+          { icon: <Target size={15} color="#EC4899" />, value: formatNumber(weeklyPerformance.reach.current), label: 'Reach', bg: 'rgba(236,72,153,0.12)' },
+          { icon: <MessageCircle size={15} color={GREEN} />, value: String(getPendingComments().length), label: 'Pending', bg: 'rgba(0,196,140,0.12)' },
+          { icon: <Zap size={15} color={GOLD} />, value: String(contentQueue.filter(c => c.status === 'scheduled' || c.status === 'approved').length), label: 'Queued', bg: GOLD_DIM },
+        ].map((item, i) => (
+          <View key={i} style={[styles.miniCard, { backgroundColor: item.bg }]}>
+            {item.icon}
+            <Text style={styles.miniValue}>{item.value}</Text>
+            <Text style={styles.miniLabel}>{item.label}</Text>
+          </View>
+        ))}
+      </View>
+
+      <Text style={styles.sectionTitle}>Weekly Impressions</Text>
+      <View style={styles.chartCard}>
+        <View style={styles.chartBarsRow}>
           {analyticsHistory.map((day, index) => {
-            const maxImpressions = Math.max(...analyticsHistory.map(d => d.impressions));
-            const height = (day.impressions / maxImpressions) * 100;
+            const barH = barAnims[index].interpolate({
+              inputRange: [0, 1],
+              outputRange: [0, (day.impressions / maxImpressions) * CHART_HEIGHT],
+            });
+            const isLast = index === analyticsHistory.length - 1;
             return (
-              <View key={day.date} style={styles.chartBarContainer}>
-                <View style={[styles.chartBar, { height: `${height}%` }]}>
-                  <View style={[styles.chartBarFill, { backgroundColor: index === analyticsHistory.length - 1 ? '#3B82F6' : '#3B82F620' }]} />
+              <View key={day.date} style={styles.barWrapper}>
+                <View style={styles.barTrack}>
+                  <Animated.View
+                    style={[
+                      styles.barFill,
+                      {
+                        height: barH,
+                        backgroundColor: isLast ? GOLD : 'rgba(255,215,0,0.3)',
+                        borderRadius: 4,
+                      },
+                    ]}
+                  />
                 </View>
-                <Text style={styles.chartLabel}>{day.date.slice(-2)}</Text>
+                <Text style={[styles.barLabel, isLast && { color: GOLD }]}>{day.date.slice(-2)}</Text>
               </View>
             );
           })}
         </View>
-        <View style={styles.chartLegend}>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendDot, { backgroundColor: '#3B82F6' }]} />
-            <Text style={styles.legendText}>Impressions</Text>
-          </View>
+        <View style={styles.chartFooter}>
+          <View style={styles.legendDot} />
+          <Text style={styles.legendText}>Daily Impressions — This Week</Text>
+          <Text style={[styles.legendValue, { color: GOLD }]}>+{weeklyPerformance.impressions.change}%</Text>
         </View>
       </View>
 
-      <Text style={styles.sectionTitle}>Top Performing Content</Text>
-      {contentQueue.filter(c => c.status === 'published').slice(0, 3).map((post) => (
-        <TouchableOpacity key={post.id} style={styles.topContentCard}>
-          {post.mediaUrl && (
-            <Image source={{ uri: post.mediaUrl }} style={styles.topContentImage} />
-          )}
-          <View style={styles.topContentInfo}>
-            <Text style={styles.topContentText} numberOfLines={2}>{post.content}</Text>
-            <View style={styles.topContentStats}>
-              <View style={styles.topContentStat}>
-                <Eye size={14} color={Colors.textSecondary} />
-                <Text style={styles.topContentStatText}>{formatNumber(Math.floor(Math.random() * 100000))}</Text>
+      <Text style={styles.sectionTitle}>Connected Platforms</Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingBottom: 4 }}>
+        {socialPlatforms.filter(p => p.connected).map((platform) => (
+          <View key={platform.id} style={styles.platformChip}>
+            <View style={[styles.platformChipIcon, { backgroundColor: platform.color + '22' }]}>
+              {getPlatformIcon(platform.id, 18)}
+            </View>
+            <Text style={styles.platformChipName}>{platform.name}</Text>
+            <Text style={styles.platformChipFollowers}>{formatNumber(platform.followers)}</Text>
+            <View style={[styles.engBadge, { backgroundColor: 'rgba(0,196,140,0.12)' }]}>
+              <Text style={[styles.engBadgeText, { color: GREEN }]}>{platform.engagement}%</Text>
+            </View>
+          </View>
+        ))}
+      </ScrollView>
+
+      <Text style={[styles.sectionTitle, { marginTop: 20 }]}>Top Performing Posts</Text>
+      {contentQueue.filter(c => c.status === 'published').slice(0, 2).map((post) => (
+        <View key={post.id} style={styles.postCard}>
+          {post.mediaUrl && <Image source={{ uri: post.mediaUrl }} style={styles.postImage} />}
+          <View style={styles.postBody}>
+            <Text style={styles.postText} numberOfLines={2}>{post.content}</Text>
+            <View style={styles.postScores}>
+              <View style={styles.postScore}>
+                <Brain size={12} color="#8B5CF6" />
+                <Text style={styles.postScoreVal}>{post.aiScore}%</Text>
               </View>
-              <View style={styles.topContentStat}>
-                <Heart size={14} color="#EF4444" />
-                <Text style={styles.topContentStatText}>{post.engagementPrediction}%</Text>
+              <View style={styles.postScore}>
+                <Zap size={12} color={GOLD} />
+                <Text style={styles.postScoreVal}>{post.viralPotential}%</Text>
+              </View>
+              <View style={styles.postScore}>
+                <Heart size={12} color={RED} />
+                <Text style={styles.postScoreVal}>{post.engagementPrediction}%</Text>
               </View>
             </View>
           </View>
           <View style={styles.viralBadge}>
-            <Sparkles size={12} color="#F59E0B" />
+            <Sparkles size={11} color={GOLD} />
             <Text style={styles.viralBadgeText}>{post.viralPotential}%</Text>
           </View>
-        </TouchableOpacity>
+        </View>
       ))}
     </View>
   );
 
   const renderAgentsTab = () => {
-    const filteredAgents = agentFilter === 'all' 
-      ? aiAgents 
+    const filteredAgents = agentFilter === 'all'
+      ? aiAgents
       : aiAgents.filter(a => agentFilter === 'active' ? (a.status === 'active' || a.status === 'working') : a.status === 'idle');
 
     return (
       <View style={styles.tabContent}>
-        <View style={styles.agentHeader}>
-          <View style={styles.agentStats}>
-            <View style={styles.agentStatItem}>
-              <Text style={styles.agentStatValue}>{aiAgents.filter(a => a.status === 'working').length}</Text>
-              <Text style={styles.agentStatLabel}>Working</Text>
+        <View style={styles.agentSummaryRow}>
+          {[
+            { label: 'Working', value: aiAgents.filter(a => a.status === 'working').length, color: BLUE },
+            { label: 'Active', value: aiAgents.filter(a => a.status === 'active').length, color: GREEN },
+            { label: 'Idle', value: aiAgents.filter(a => a.status === 'idle').length, color: '#F59E0B' },
+          ].map((s) => (
+            <View key={s.label} style={[styles.summaryPill, { borderColor: s.color + '44' }]}>
+              <Text style={[styles.summaryPillValue, { color: s.color }]}>{s.value}</Text>
+              <Text style={styles.summaryPillLabel}>{s.label}</Text>
             </View>
-            <View style={styles.agentStatItem}>
-              <Text style={styles.agentStatValue}>{aiAgents.filter(a => a.status === 'active').length}</Text>
-              <Text style={styles.agentStatLabel}>Active</Text>
-            </View>
-            <View style={styles.agentStatItem}>
-              <Text style={styles.agentStatValue}>{aiAgents.filter(a => a.status === 'idle').length}</Text>
-              <Text style={styles.agentStatLabel}>Idle</Text>
-            </View>
-          </View>
-          <View style={styles.agentFilters}>
-            {(['all', 'active', 'idle'] as const).map((filter) => (
-              <TouchableOpacity
-                key={filter}
-                style={[styles.filterButton, agentFilter === filter && styles.filterButtonActive]}
-                onPress={() => setAgentFilter(filter)}
-              >
-                <Text style={[styles.filterButtonText, agentFilter === filter && styles.filterButtonTextActive]}>
-                  {filter.charAt(0).toUpperCase() + filter.slice(1)}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+          ))}
+        </View>
+
+        <View style={styles.filterRow}>
+          {(['all', 'active', 'idle'] as const).map((filter) => (
+            <TouchableOpacity
+              key={filter}
+              style={[styles.filterBtn, agentFilter === filter && styles.filterBtnActive]}
+              onPress={() => setAgentFilter(filter)}
+            >
+              <Text style={[styles.filterBtnText, agentFilter === filter && styles.filterBtnTextActive]}>
+                {filter.charAt(0).toUpperCase() + filter.slice(1)}
+              </Text>
+            </TouchableOpacity>
+          ))}
         </View>
 
         {filteredAgents.map((agent) => (
-          <TouchableOpacity
-            key={agent.id}
-            style={styles.agentCard}
-            onPress={() => setSelectedAgent(agent)}
-          >
+          <TouchableOpacity key={agent.id} style={styles.agentCard} onPress={() => setSelectedAgent(agent)}>
             <Image source={{ uri: agent.avatar }} style={styles.agentAvatar} />
             <View style={styles.agentInfo}>
               <View style={styles.agentNameRow}>
                 <Text style={styles.agentName}>{agent.name}</Text>
-                <View style={[styles.agentStatusBadge, { backgroundColor: getStatusColor(agent.status) + '20' }]}>
+                <View style={[styles.statusBadge, { backgroundColor: getStatusColor(agent.status) + '22' }]}>
                   <View style={[styles.statusDot, { backgroundColor: getStatusColor(agent.status) }]} />
-                  <Text style={[styles.agentStatusText, { color: getStatusColor(agent.status) }]}>
-                    {agent.status}
-                  </Text>
+                  <Text style={[styles.statusBadgeText, { color: getStatusColor(agent.status) }]}>{agent.status}</Text>
                 </View>
               </View>
               <Text style={styles.agentRole}>{agent.role}</Text>
-              <View style={styles.agentPlatforms}>
-                {agent.platform.map((p) => (
-                  <View key={p} style={styles.agentPlatformIcon}>
-                    {getPlatformIcon(p)}
+              <View style={styles.agentPlatformRow}>
+                {agent.platform.slice(0, 4).map((p) => (
+                  <View key={p} style={styles.platformDot}>
+                    {getPlatformIcon(p, 12)}
                   </View>
                 ))}
               </View>
             </View>
-            <View style={styles.agentMetrics}>
-              <Text style={styles.agentMetricValue}>{agent.tasksCompleted}</Text>
-              <Text style={styles.agentMetricLabel}>Tasks</Text>
-              <View style={styles.accuracyBar}>
-                <View style={[styles.accuracyFill, { width: `${agent.accuracy}%` }]} />
+            <View style={styles.agentRight}>
+              <Text style={styles.agentTaskNum}>{formatNumber(agent.tasksCompleted)}</Text>
+              <Text style={styles.agentTaskLabel}>tasks</Text>
+              <View style={styles.accBarBg}>
+                <View style={[styles.accBarFill, { width: `${agent.accuracy}%` as any }]} />
               </View>
-              <Text style={styles.accuracyText}>{agent.accuracy}%</Text>
+              <Text style={styles.accText}>{agent.accuracy}%</Text>
             </View>
           </TouchableOpacity>
         ))}
@@ -495,265 +430,255 @@ Requirements:
 
   const renderContentTab = () => (
     <View style={styles.tabContent}>
-      <View style={styles.contentHeader}>
-        <TouchableOpacity style={styles.createContentButton} onPress={handleOpenCreateContent}>
-          <Sparkles size={18} color="#fff" />
-          <Text style={styles.createContentButtonText}>Create with AI</Text>
-        </TouchableOpacity>
-      </View>
+      <TouchableOpacity style={styles.createBtn} onPress={handleOpenCreateContent}>
+        <Sparkles size={18} color="#000" />
+        <Text style={styles.createBtnText}>Create with AI</Text>
+      </TouchableOpacity>
 
-      <View style={styles.contentStatusRow}>
+      <View style={styles.statusCapsuleRow}>
         {['draft', 'reviewing', 'approved', 'scheduled', 'published'].map((status) => {
           const count = contentQueue.filter(c => c.status === status).length;
+          const colors: Record<string, string> = {
+            draft: '#6B7280', reviewing: '#F59E0B', approved: GREEN, scheduled: BLUE, published: GOLD,
+          };
           return (
-            <View key={status} style={styles.contentStatusItem}>
-              <Text style={styles.contentStatusCount}>{count}</Text>
-              <Text style={styles.contentStatusLabel}>{status}</Text>
+            <View key={status} style={[styles.statusCapsule, { borderColor: (colors[status] ?? '#6B7280') + '55' }]}>
+              <Text style={[styles.statusCapsuleCount, { color: colors[status] ?? '#6B7280' }]}>{count}</Text>
+              <Text style={styles.statusCapsuleLabel}>{status}</Text>
             </View>
           );
         })}
       </View>
 
-      {contentQueue.map((post) => (
-        <TouchableOpacity
-          key={post.id}
-          style={styles.contentCard}
-          onPress={() => setSelectedContent(post)}
-        >
-          <View style={styles.contentCardHeader}>
-            <View style={styles.contentPlatforms}>
-              {post.platform.map((p) => (
-                <View key={p} style={styles.contentPlatformIcon}>
-                  {getPlatformIcon(p)}
+      {contentQueue.map((post) => {
+        const statusColors: Record<string, string> = {
+          approved: GREEN, reviewing: '#F59E0B', published: BLUE, rejected: RED, draft: '#6B7280', scheduled: GOLD,
+        };
+        const sc = statusColors[post.status] ?? '#6B7280';
+        return (
+          <TouchableOpacity key={post.id} style={styles.contentCard} onPress={() => setSelectedContent(post)}>
+            <View style={styles.contentCardTop}>
+              <View style={styles.contentPlatformIcons}>
+                {post.platform.slice(0, 3).map((p) => (
+                  <View key={p} style={styles.contentPlatformIcon}>{getPlatformIcon(p, 13)}</View>
+                ))}
+              </View>
+              <View style={[styles.contentStatusPill, { backgroundColor: sc + '22' }]}>
+                <View style={[styles.statusDot, { backgroundColor: sc }]} />
+                <Text style={[styles.contentStatusText, { color: sc }]}>{post.status}</Text>
+              </View>
+            </View>
+            {post.mediaUrl && <Image source={{ uri: post.mediaUrl }} style={styles.contentMedia} />}
+            <Text style={styles.contentText} numberOfLines={2}>{post.content}</Text>
+            <View style={styles.scoreRow}>
+              {[
+                { icon: <Brain size={13} color="#8B5CF6" />, label: 'AI', val: post.aiScore },
+                { icon: <Zap size={13} color={GOLD} />, label: 'Viral', val: post.viralPotential },
+                { icon: <Heart size={13} color={RED} />, label: 'Eng.', val: post.engagementPrediction },
+              ].map((s, i) => (
+                <View key={i} style={styles.scoreItem}>
+                  {s.icon}
+                  <Text style={styles.scoreLabel}>{s.label}</Text>
+                  <Text style={styles.scoreVal}>{s.val}%</Text>
                 </View>
               ))}
             </View>
-            <View style={[
-              styles.contentStatusBadge,
-              { backgroundColor: 
-                post.status === 'approved' ? '#10B98120' :
-                post.status === 'reviewing' ? '#F59E0B20' :
-                post.status === 'published' ? '#3B82F620' :
-                post.status === 'rejected' ? '#EF444420' :
-                '#6B728020'
-              }
-            ]}>
-              <Text style={[
-                styles.contentStatusText,
-                { color: 
-                  post.status === 'approved' ? '#10B981' :
-                  post.status === 'reviewing' ? '#F59E0B' :
-                  post.status === 'published' ? '#3B82F6' :
-                  post.status === 'rejected' ? '#EF4444' :
-                  Colors.textSecondary
-                }
-              ]}>
-                {post.status}
-              </Text>
-            </View>
+            {post.scheduledAt && (
+              <View style={styles.scheduledRow}>
+                <Calendar size={12} color={Colors.textTertiary} />
+                <Text style={styles.scheduledText}>{new Date(post.scheduledAt).toLocaleString()}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+
+  const renderAnalyticsTab = () => {
+    const maxPeak = Math.max(...audienceInsights.peakHours.map(h => h.activity));
+    const maxAge = Math.max(...audienceInsights.ageGroups.map(g => g.percentage));
+
+    return (
+      <View style={styles.tabContent}>
+        <View style={styles.analyticsTopRow}>
+          <View>
+            <Text style={styles.analyticsTitle}>Performance</Text>
+            <Text style={styles.analyticsSubtitle}>Last 30 days</Text>
           </View>
+          <TouchableOpacity style={styles.exportBtn} onPress={() => setShowExportModal(true)}>
+            <Download size={15} color={GOLD} />
+            <Text style={styles.exportBtnText}>Export</Text>
+          </TouchableOpacity>
+        </View>
 
-          {post.mediaUrl && (
-            <Image source={{ uri: post.mediaUrl }} style={styles.contentMedia} />
-          )}
-
-          <Text style={styles.contentText} numberOfLines={3}>{post.content}</Text>
-
-          <View style={styles.contentScores}>
-            <View style={styles.scoreItem}>
-              <Brain size={14} color="#8B5CF6" />
-              <Text style={styles.scoreLabel}>AI Score</Text>
-              <Text style={styles.scoreValue}>{post.aiScore}%</Text>
-            </View>
-            <View style={styles.scoreItem}>
-              <Zap size={14} color="#F59E0B" />
-              <Text style={styles.scoreLabel}>Viral</Text>
-              <Text style={styles.scoreValue}>{post.viralPotential}%</Text>
-            </View>
-            <View style={styles.scoreItem}>
-              <Heart size={14} color="#EF4444" />
-              <Text style={styles.scoreLabel}>Engagement</Text>
-              <Text style={styles.scoreValue}>{post.engagementPrediction}%</Text>
-            </View>
-          </View>
-
-          {post.aiSuggestions.length > 0 && (
-            <View style={styles.suggestionsContainer}>
-              <Text style={styles.suggestionsTitle}>AI Suggestions:</Text>
-              {post.aiSuggestions.slice(0, 2).map((suggestion, index) => (
-                <View key={index} style={styles.suggestionItem}>
-                  <AlertCircle size={12} color="#F59E0B" />
-                  <Text style={styles.suggestionText}>{suggestion}</Text>
+        <View style={styles.metricsGrid}>
+          {campaignMetrics.map((metric) => {
+            const isUp = metric.trend === 'up';
+            const isDown = metric.trend === 'down';
+            const trendColor = isUp ? GREEN : isDown ? RED : '#F59E0B';
+            return (
+              <View key={metric.name} style={styles.metricCard}>
+                <Text style={styles.metricName}>{metric.name}</Text>
+                <Text style={styles.metricValue}>
+                  {metric.name.includes('Rate') ? metric.value.toFixed(1) + '%' :
+                   metric.name.includes('Cost') ? '$' + metric.value.toFixed(2) :
+                   formatNumber(metric.value)}
+                </Text>
+                <View style={styles.metricTrendRow}>
+                  {isUp ? <TrendingUp size={13} color={trendColor} /> : isDown ? <TrendingDown size={13} color={trendColor} /> : <Activity size={13} color={trendColor} />}
+                  <Text style={[styles.metricChange, { color: trendColor }]}>
+                    {metric.change > 0 ? '+' : ''}{metric.change.toFixed(1)}%
+                  </Text>
                 </View>
-              ))}
-            </View>
-          )}
+              </View>
+            );
+          })}
+        </View>
 
-          {post.scheduledAt && (
-            <View style={styles.scheduledInfo}>
-              <Calendar size={14} color={Colors.textSecondary} />
-              <Text style={styles.scheduledText}>
-                Scheduled: {new Date(post.scheduledAt).toLocaleString()}
-              </Text>
-            </View>
-          )}
-        </TouchableOpacity>
-      ))}
-    </View>
-  );
-
-  const renderAnalyticsTab = () => (
-    <View style={styles.tabContent}>
-      <View style={styles.analyticsHeader}>
-        <Text style={styles.analyticsTitle}>Performance Overview</Text>
-        <TouchableOpacity 
-          style={styles.exportButton}
-          onPress={() => setShowExportModal(true)}
-        >
-          <Download size={16} color={Colors.primary} />
-          <Text style={styles.exportButtonText}>Export</Text>
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.metricsGrid}>
-        {campaignMetrics.map((metric) => (
-          <View key={metric.name} style={styles.metricCard}>
-            <Text style={styles.metricName}>{metric.name}</Text>
-            <Text style={styles.metricValue}>
-              {metric.name.includes('Rate') || metric.name.includes('Cost') 
-                ? metric.value.toFixed(1) + (metric.name.includes('Rate') ? '%' : '$')
-                : formatNumber(metric.value)}
-            </Text>
-            <View style={styles.metricTrend}>
-              {metric.trend === 'up' ? (
-                <TrendingUp size={14} color="#10B981" />
-              ) : metric.trend === 'down' ? (
-                <TrendingDown size={14} color="#EF4444" />
-              ) : (
-                <Activity size={14} color="#F59E0B" />
-              )}
-              <Text style={[
-                styles.metricChange,
-                { color: metric.trend === 'up' ? '#10B981' : metric.trend === 'down' ? '#EF4444' : '#F59E0B' }
-              ]}>
-                {metric.change > 0 ? '+' : ''}{metric.change.toFixed(1)}%
-              </Text>
-            </View>
+        <View style={styles.insightBlock}>
+          <View style={styles.insightBlockHeader}>
+            <MapPin size={16} color={GOLD} />
+            <Text style={styles.insightBlockTitle}>Top Countries</Text>
           </View>
-        ))}
-      </View>
+          {audienceInsights.topCountries.map((c, i) => {
+            const barW = (c.percentage / 35) * (SCREEN_WIDTH - 120);
+            const rankColors = ['#FFD700', '#C0C0C0', '#CD7F32', '#9CA3AF', '#9CA3AF'];
+            return (
+              <View key={c.country} style={styles.countryRow}>
+                <View style={[styles.rankBadge, { backgroundColor: (rankColors[i] ?? '#9CA3AF') + '22' }]}>
+                  <Text style={[styles.rankText, { color: rankColors[i] ?? '#9CA3AF' }]}>#{i + 1}</Text>
+                </View>
+                <View style={styles.countryInfo}>
+                  <View style={styles.countryNameRow}>
+                    <Text style={styles.countryName}>{c.country}</Text>
+                    <Text style={[styles.countryPct, { color: i === 0 ? GOLD : Colors.textSecondary }]}>{c.percentage}%</Text>
+                  </View>
+                  <View style={styles.countryBarBg}>
+                    <View style={[styles.countryBarFill, {
+                      width: barW,
+                      backgroundColor: i === 0 ? GOLD : i === 1 ? '#C0C0C0' : 'rgba(255,255,255,0.2)',
+                    }]} />
+                  </View>
+                </View>
+              </View>
+            );
+          })}
+        </View>
 
-      <Text style={styles.sectionTitle}>Audience Insights</Text>
-      
-      <View style={styles.insightCard}>
-        <Text style={styles.insightTitle}>Age Distribution</Text>
-        <View style={styles.ageChart}>
-          {audienceInsights.ageGroups.map((group) => (
-            <View key={group.range} style={styles.ageBar}>
-              <View style={[styles.ageBarFill, { height: `${group.percentage * 2}%` }]} />
-              <Text style={styles.ageLabel}>{group.range}</Text>
-              <Text style={styles.agePercent}>{group.percentage}%</Text>
-            </View>
-          ))}
+        <View style={styles.insightBlock}>
+          <View style={styles.insightBlockHeader}>
+            <Clock size={16} color={GOLD} />
+            <Text style={styles.insightBlockTitle}>Peak Activity Hours</Text>
+          </View>
+          <View style={styles.peakChartRow}>
+            {audienceInsights.peakHours.map((h, i) => {
+              const barH = (h.activity / maxPeak) * 90;
+              const isPeak = h.activity === maxPeak;
+              return (
+                <View key={h.hour} style={styles.peakBarWrapper}>
+                  <Text style={[styles.peakPct, { color: isPeak ? GOLD : Colors.textTertiary }]}>{h.activity}%</Text>
+                  <View style={styles.peakTrack}>
+                    <View style={[styles.peakBarFill, {
+                      height: barH,
+                      backgroundColor: isPeak ? GOLD : 'rgba(255,215,0,0.25)',
+                      borderRadius: 4,
+                    }]} />
+                  </View>
+                  <Text style={[styles.peakHourLabel, { color: isPeak ? GOLD : Colors.textTertiary }]}>{h.hour.replace(' ', '\n')}</Text>
+                </View>
+              );
+            })}
+          </View>
+          <View style={styles.peakNote}>
+            <Zap size={12} color={GOLD} />
+            <Text style={styles.peakNoteText}>Best time to post: 6 PM for maximum reach</Text>
+          </View>
+        </View>
+
+        <View style={styles.insightBlock}>
+          <View style={styles.insightBlockHeader}>
+            <Users size={16} color={GOLD} />
+            <Text style={styles.insightBlockTitle}>Age Distribution</Text>
+          </View>
+          <View style={styles.ageChartRow}>
+            {audienceInsights.ageGroups.map((g, i) => {
+              const barH = (g.percentage / maxAge) * 80;
+              return (
+                <View key={g.range} style={styles.ageBarWrapper}>
+                  <Text style={styles.agePct}>{g.percentage}%</Text>
+                  <View style={styles.ageTrack}>
+                    <View style={[styles.ageBarFill, {
+                      height: barH,
+                      backgroundColor: i === 1 ? GOLD : 'rgba(255,215,0,0.3)',
+                      borderRadius: 4,
+                    }]} />
+                  </View>
+                  <Text style={styles.ageRangeLabel}>{g.range}</Text>
+                </View>
+              );
+            })}
+          </View>
+          <Text style={styles.ageDominant}>Core audience: <Text style={{ color: GOLD }}>25–34 years</Text></Text>
         </View>
       </View>
-
-      <View style={styles.insightCard}>
-        <Text style={styles.insightTitle}>Top Countries</Text>
-        {audienceInsights.topCountries.map((country, index) => (
-          <View key={country.country} style={styles.countryRow}>
-            <Text style={styles.countryRank}>#{index + 1}</Text>
-            <Text style={styles.countryName}>{country.country}</Text>
-            <View style={styles.countryBar}>
-              <View style={[styles.countryBarFill, { width: `${country.percentage * 2.5}%` }]} />
-            </View>
-            <Text style={styles.countryPercent}>{country.percentage}%</Text>
-          </View>
-        ))}
-      </View>
-
-      <View style={styles.insightCard}>
-        <Text style={styles.insightTitle}>Peak Activity Hours</Text>
-        <View style={styles.hoursChart}>
-          {audienceInsights.peakHours.map((hour) => (
-            <View key={hour.hour} style={styles.hourBar}>
-              <View style={[styles.hourBarFill, { height: `${hour.activity}%` }]} />
-              <Text style={styles.hourLabel}>{hour.hour}</Text>
-            </View>
-          ))}
-        </View>
-      </View>
-    </View>
-  );
+    );
+  };
 
   const renderCommentsTab = () => (
     <View style={styles.tabContent}>
-      <View style={styles.commentsHeader}>
-        <View style={styles.commentStats}>
-          <View style={styles.commentStatItem}>
-            <Text style={styles.commentStatValue}>{localComments.length}</Text>
-            <Text style={styles.commentStatLabel}>Total</Text>
+      <View style={styles.commentSummaryRow}>
+        {[
+          { label: 'Total', value: localComments.length, color: Colors.text },
+          { label: 'Pending', value: localComments.filter(c => !c.responded).length, color: '#F59E0B' },
+          { label: 'Replied', value: localComments.filter(c => c.responded).length, color: GREEN },
+        ].map((s) => (
+          <View key={s.label} style={styles.commentStat}>
+            <Text style={[styles.commentStatVal, { color: s.color }]}>{s.value}</Text>
+            <Text style={styles.commentStatLabel}>{s.label}</Text>
           </View>
-          <View style={styles.commentStatItem}>
-            <Text style={[styles.commentStatValue, { color: '#F59E0B' }]}>{localComments.filter(c => !c.responded).length}</Text>
-            <Text style={styles.commentStatLabel}>Pending</Text>
-          </View>
-          <View style={styles.commentStatItem}>
-            <Text style={[styles.commentStatValue, { color: '#10B981' }]}>
-              {localComments.filter(c => c.responded).length}
-            </Text>
-            <Text style={styles.commentStatLabel}>Responded</Text>
-          </View>
-        </View>
+        ))}
       </View>
 
       {localComments.map((comment) => (
         <View key={comment.id} style={styles.commentCard}>
           <View style={styles.commentHeader}>
             <Image source={{ uri: comment.avatar }} style={styles.commentAvatar} />
-            <View style={styles.commentUserInfo}>
+            <View style={{ flex: 1 }}>
               <Text style={styles.commentUsername}>{comment.username}</Text>
               <View style={styles.commentMeta}>
-                {getPlatformIcon(comment.platform)}
-                <Text style={styles.commentTime}>
-                  {new Date(comment.createdAt).toLocaleDateString()}
-                </Text>
+                {getPlatformIcon(comment.platform, 12)}
+                <Text style={styles.commentTime}>{new Date(comment.createdAt).toLocaleDateString()}</Text>
               </View>
             </View>
-            <View style={styles.sentimentBadge}>
-              {getSentimentIcon(comment.sentiment)}
-            </View>
+            <View style={styles.sentimentBadge}>{getSentimentIcon(comment.sentiment)}</View>
           </View>
-
           <Text style={styles.commentText}>{comment.comment}</Text>
-
           {comment.aiResponse ? (
-            <View style={styles.aiResponseContainer}>
-              <View style={styles.aiResponseHeader}>
-                <Bot size={14} color="#3B82F6" />
-                <Text style={styles.aiResponseLabel}>AI Response</Text>
-                <CheckCircle size={14} color="#10B981" />
+            <View style={styles.aiRespBox}>
+              <View style={styles.aiRespHeader}>
+                <Bot size={13} color={BLUE} />
+                <Text style={styles.aiRespLabel}>AI Response</Text>
+                <CheckCircle size={13} color={GREEN} />
               </View>
-              <Text style={styles.aiResponseText}>{comment.aiResponse}</Text>
+              <Text style={styles.aiRespText}>{comment.aiResponse}</Text>
             </View>
           ) : (
-            <View style={styles.pendingResponseContainer}>
-              <TouchableOpacity 
-                style={styles.generateResponseButton}
+            <View style={styles.pendingBox}>
+              <TouchableOpacity
+                style={styles.generateRespBtn}
                 onPress={() => handleGenerateCommentResponse(comment.id, comment.comment, comment.username)}
                 disabled={generatingCommentId === comment.id}
               >
-                {generatingCommentId === comment.id ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <Sparkles size={14} color="#fff" />
-                )}
-                <Text style={styles.generateResponseText}>
+                {generatingCommentId === comment.id
+                  ? <ActivityIndicator size="small" color="#000" />
+                  : <Sparkles size={14} color="#000" />}
+                <Text style={styles.generateRespText}>
                   {generatingCommentId === comment.id ? 'Generating...' : 'Generate AI Response'}
                 </Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.manualResponseButton}>
-                <Text style={styles.manualResponseText}>Reply Manually</Text>
+              <TouchableOpacity style={styles.manualRespBtn}>
+                <Text style={styles.manualRespText}>Reply Manually</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -763,113 +688,63 @@ Requirements:
   );
 
   const renderExportModal = () => (
-    <Modal
-      visible={showExportModal}
-      transparent
-      animationType="fade"
-      onRequestClose={() => setShowExportModal(false)}
-    >
+    <Modal visible={showExportModal} transparent animationType="fade" onRequestClose={() => setShowExportModal(false)}>
       <View style={styles.modalOverlay}>
-        <View style={styles.modalContent}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Export Analytics Report</Text>
-            <TouchableOpacity onPress={() => setShowExportModal(false)}>
-              <X size={24} color={Colors.text} />
+        <View style={styles.modalSheet}>
+          <View style={styles.modalHandle} />
+          <View style={styles.modalTitleRow}>
+            <Text style={styles.modalTitle}>Export Report</Text>
+            <TouchableOpacity onPress={() => setShowExportModal(false)} style={styles.modalCloseBtn}>
+              <X size={20} color={Colors.text} />
             </TouchableOpacity>
           </View>
-
-          <Text style={styles.modalSubtitle}>Choose export format:</Text>
-
-          <TouchableOpacity style={styles.exportOption}>
-            <View style={[styles.exportIconContainer, { backgroundColor: '#EF444420' }]}>
-              <FileText size={24} color="#EF4444" />
-            </View>
-            <View style={styles.exportOptionInfo}>
-              <Text style={styles.exportOptionTitle}>PDF Report</Text>
-              <Text style={styles.exportOptionDesc}>Detailed analytics with charts</Text>
-            </View>
-            <ChevronRight size={20} color={Colors.textSecondary} />
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.exportOption}>
-            <View style={[styles.exportIconContainer, { backgroundColor: '#10B98120' }]}>
-              <BarChart3 size={24} color="#10B981" />
-            </View>
-            <View style={styles.exportOptionInfo}>
-              <Text style={styles.exportOptionTitle}>Excel Spreadsheet</Text>
-              <Text style={styles.exportOptionDesc}>Raw data for analysis</Text>
-            </View>
-            <ChevronRight size={20} color={Colors.textSecondary} />
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.exportOption}>
-            <View style={[styles.exportIconContainer, { backgroundColor: '#25D36620' }]}>
-              <MessageCircle size={24} color="#25D366" />
-            </View>
-            <View style={styles.exportOptionInfo}>
-              <Text style={styles.exportOptionTitle}>Share via WhatsApp</Text>
-              <Text style={styles.exportOptionDesc}>Quick share summary</Text>
-            </View>
-            <ChevronRight size={20} color={Colors.textSecondary} />
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.exportOption}>
-            <View style={[styles.exportIconContainer, { backgroundColor: '#3B82F620' }]}>
-              <Mail size={24} color="#3B82F6" />
-            </View>
-            <View style={styles.exportOptionInfo}>
-              <Text style={styles.exportOptionTitle}>Send via Email</Text>
-              <Text style={styles.exportOptionDesc}>Detailed report to inbox</Text>
-            </View>
-            <ChevronRight size={20} color={Colors.textSecondary} />
-          </TouchableOpacity>
+          {[
+            { icon: <FileText size={22} color="#EF4444" />, bg: 'rgba(239,68,68,0.12)', title: 'PDF Report', desc: 'Full analytics with charts' },
+            { icon: <BarChart3 size={22} color={GREEN} />, bg: 'rgba(0,196,140,0.12)', title: 'Excel Spreadsheet', desc: 'Raw data for deep analysis' },
+            { icon: <MessageCircle size={22} color="#25D366" />, bg: 'rgba(37,211,102,0.12)', title: 'Share via WhatsApp', desc: 'Quick summary share' },
+            { icon: <Mail size={22} color={BLUE} />, bg: 'rgba(59,130,246,0.12)', title: 'Send via Email', desc: 'Detailed report to inbox' },
+          ].map((opt, i) => (
+            <TouchableOpacity key={i} style={styles.exportOption}>
+              <View style={[styles.exportIconBox, { backgroundColor: opt.bg }]}>{opt.icon}</View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.exportOptTitle}>{opt.title}</Text>
+                <Text style={styles.exportOptDesc}>{opt.desc}</Text>
+              </View>
+              <ChevronRight size={18} color={Colors.textTertiary} />
+            </TouchableOpacity>
+          ))}
         </View>
       </View>
     </Modal>
   );
 
   const renderCreateContentModal = () => (
-    <Modal
-      visible={showCreateContentModal}
-      transparent
-      animationType="slide"
-      onRequestClose={() => setShowCreateContentModal(false)}
-    >
-      <KeyboardAvoidingView 
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.modalOverlay}
-      >
-        <View style={styles.createContentModalContent}>
-          <View style={styles.modalHeader}>
+    <Modal visible={showCreateContentModal} transparent animationType="slide" onRequestClose={() => setShowCreateContentModal(false)}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalOverlay}>
+        <View style={styles.createModalSheet}>
+          <View style={styles.modalHandle} />
+          <View style={styles.modalTitleRow}>
             <Text style={styles.modalTitle}>Create with AI</Text>
-            <TouchableOpacity onPress={() => setShowCreateContentModal(false)}>
-              <X size={24} color={Colors.text} />
+            <TouchableOpacity onPress={() => setShowCreateContentModal(false)} style={styles.modalCloseBtn}>
+              <X size={20} color={Colors.text} />
             </TouchableOpacity>
           </View>
-
-          <Text style={styles.createContentLabel}>Select Platform</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.platformSelector}>
-            {['instagram', 'facebook', 'linkedin', 'tiktok', 'twitter'].map((platform) => (
+          <Text style={styles.createLabel}>Platform</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingBottom: 4 }}>
+            {['instagram', 'facebook', 'linkedin', 'tiktok', 'youtube'].map((platform) => (
               <TouchableOpacity
                 key={platform}
-                style={[
-                  styles.platformOption,
-                  selectedPlatformForContent === platform && styles.platformOptionActive
-                ]}
+                style={[styles.platformOpt, selectedPlatformForContent === platform && styles.platformOptActive]}
                 onPress={() => setSelectedPlatformForContent(platform)}
               >
-                {getPlatformIcon(platform)}
-                <Text style={[
-                  styles.platformOptionText,
-                  selectedPlatformForContent === platform && styles.platformOptionTextActive
-                ]}>
+                {getPlatformIcon(platform, 16)}
+                <Text style={[styles.platformOptText, selectedPlatformForContent === platform && { color: GOLD }]}>
                   {platform.charAt(0).toUpperCase() + platform.slice(1)}
                 </Text>
               </TouchableOpacity>
             ))}
           </ScrollView>
-
-          <Text style={styles.createContentLabel}>Topic (Optional)</Text>
+          <Text style={[styles.createLabel, { marginTop: 16 }]}>Topic (Optional)</Text>
           <TextInput
             style={styles.topicInput}
             placeholder="e.g., New property launch, Investment tips..."
@@ -878,59 +753,39 @@ Requirements:
             onChangeText={setContentTopic}
             multiline
           />
-
           <TouchableOpacity
-            style={[
-              styles.generateButton,
-              isGeneratingContent && styles.generateButtonDisabled
-            ]}
+            style={[styles.generateBtn, isGeneratingContent && { opacity: 0.5 }]}
             onPress={handleGenerateContent}
             disabled={isGeneratingContent}
           >
-            {isGeneratingContent ? (
-              <ActivityIndicator size="small" color="#fff" />
-            ) : (
-              <Sparkles size={20} color="#fff" />
-            )}
-            <Text style={styles.generateButtonText}>
-              {isGeneratingContent ? 'Generating...' : 'Generate Content'}
-            </Text>
+            {isGeneratingContent ? <ActivityIndicator size="small" color="#000" /> : <Sparkles size={18} color="#000" />}
+            <Text style={styles.generateBtnText}>{isGeneratingContent ? 'Generating...' : 'Generate Content'}</Text>
           </TouchableOpacity>
-
           {generatedContent ? (
-            <View style={styles.generatedContentContainer}>
-              <View style={styles.generatedContentHeader}>
-                <Brain size={16} color={Colors.primary} />
-                <Text style={styles.generatedContentTitle}>Generated Content</Text>
+            <View style={styles.generatedBox}>
+              <View style={styles.generatedHeader}>
+                <Brain size={15} color={GOLD} />
+                <Text style={styles.generatedTitle}>Generated Content</Text>
               </View>
-              <ScrollView style={styles.generatedContentScroll}>
-                <Text style={styles.generatedContentText}>{generatedContent}</Text>
+              <ScrollView style={{ maxHeight: 140 }}>
+                <Text style={styles.generatedText}>{generatedContent}</Text>
               </ScrollView>
-              <View style={styles.generatedContentActions}>
-                <TouchableOpacity 
-                  style={styles.copyButton}
+              <View style={styles.generatedActions}>
+                <TouchableOpacity
+                  style={styles.copyBtn}
                   onPress={() => {
-                    if (Platform.OS === 'web') {
-                      navigator.clipboard.writeText(generatedContent);
-                    } else {
-                      // Use Clipboard from react-native
-                      Alert.alert('Copied!', 'Content copied to clipboard');
-                    }
-                    if (Platform.OS !== 'web') {
-                      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                    }
+                    if (Platform.OS === 'web') navigator.clipboard.writeText(generatedContent);
+                    else Alert.alert('Copied!', 'Content copied to clipboard');
+                    if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
                   }}
                 >
-                  <Text style={styles.copyButtonText}>Copy to Clipboard</Text>
+                  <Text style={styles.copyBtnText}>Copy</Text>
                 </TouchableOpacity>
-                <TouchableOpacity 
-                  style={styles.scheduleButton}
-                  onPress={() => {
-                    setShowCreateContentModal(false);
-                    Alert.alert('Success', 'Content added to queue!');
-                  }}
+                <TouchableOpacity
+                  style={styles.queueBtn}
+                  onPress={() => { setShowCreateContentModal(false); Alert.alert('Success', 'Content added to queue!'); }}
                 >
-                  <Text style={styles.scheduleButtonText}>Add to Queue</Text>
+                  <Text style={styles.queueBtnText}>Add to Queue</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -941,74 +796,59 @@ Requirements:
   );
 
   const renderAgentModal = () => (
-    <Modal
-      visible={!!selectedAgent}
-      transparent
-      animationType="slide"
-      onRequestClose={() => setSelectedAgent(null)}
-    >
+    <Modal visible={!!selectedAgent} transparent animationType="slide" onRequestClose={() => setSelectedAgent(null)}>
       <View style={styles.modalOverlay}>
-        <View style={styles.agentModalContent}>
+        <View style={styles.agentModalSheet}>
+          <View style={styles.modalHandle} />
           {selectedAgent && (
             <>
-              <View style={styles.agentModalHeader}>
-                <Image source={{ uri: selectedAgent.avatar }} style={styles.agentModalAvatar} />
-                <TouchableOpacity 
-                  style={styles.modalCloseButton}
-                  onPress={() => setSelectedAgent(null)}
-                >
-                  <X size={24} color={Colors.text} />
-                </TouchableOpacity>
-              </View>
-
+              <TouchableOpacity style={styles.agentModalClose} onPress={() => setSelectedAgent(null)}>
+                <X size={20} color={Colors.text} />
+              </TouchableOpacity>
+              <Image source={{ uri: selectedAgent.avatar }} style={styles.agentModalAvatar} />
               <Text style={styles.agentModalName}>{selectedAgent.name}</Text>
               <Text style={styles.agentModalRole}>{selectedAgent.role}</Text>
-
-              <View style={[styles.agentModalStatus, { backgroundColor: getStatusColor(selectedAgent.status) + '20' }]}>
+              <View style={[styles.statusBadge, { backgroundColor: getStatusColor(selectedAgent.status) + '22', alignSelf: 'center', marginVertical: 8 }]}>
                 <View style={[styles.statusDot, { backgroundColor: getStatusColor(selectedAgent.status) }]} />
-                <Text style={[styles.agentModalStatusText, { color: getStatusColor(selectedAgent.status) }]}>
-                  {selectedAgent.status.toUpperCase()}
-                </Text>
+                <Text style={[styles.statusBadgeText, { color: getStatusColor(selectedAgent.status) }]}>{selectedAgent.status.toUpperCase()}</Text>
               </View>
-
               <Text style={styles.agentModalDesc}>{selectedAgent.description}</Text>
-
               <View style={styles.agentModalStats}>
-                <View style={styles.agentModalStatItem}>
-                  <Text style={styles.agentModalStatValue}>{selectedAgent.tasksCompleted}</Text>
-                  <Text style={styles.agentModalStatLabel}>Tasks Completed</Text>
+                <View style={styles.agentModalStat}>
+                  <Award size={16} color={GOLD} />
+                  <Text style={styles.agentModalStatVal}>{selectedAgent.tasksCompleted}</Text>
+                  <Text style={styles.agentModalStatLabel}>Tasks</Text>
                 </View>
-                <View style={styles.agentModalStatItem}>
-                  <Text style={styles.agentModalStatValue}>{selectedAgent.accuracy}%</Text>
+                <View style={[styles.agentModalStat, { borderLeftWidth: 1, borderLeftColor: BORDER }]}>
+                  <Target size={16} color={GREEN} />
+                  <Text style={styles.agentModalStatVal}>{selectedAgent.accuracy}%</Text>
                   <Text style={styles.agentModalStatLabel}>Accuracy</Text>
                 </View>
               </View>
-
-              <Text style={styles.agentModalSection}>Platforms</Text>
+              <Text style={styles.agentModalPlatformTitle}>Platforms</Text>
               <View style={styles.agentModalPlatforms}>
                 {selectedAgent.platform.map((p) => (
-                  <View key={p} style={styles.agentModalPlatformItem}>
-                    {getPlatformIcon(p)}
+                  <View key={p} style={styles.agentModalPlatformChip}>
+                    {getPlatformIcon(p, 14)}
                     <Text style={styles.agentModalPlatformText}>{p}</Text>
                   </View>
                 ))}
               </View>
-
               <View style={styles.agentModalActions}>
                 {selectedAgent.status === 'idle' || selectedAgent.status === 'paused' ? (
-                  <TouchableOpacity style={styles.agentActionButton}>
-                    <Play size={18} color="#fff" />
-                    <Text style={styles.agentActionText}>Activate</Text>
+                  <TouchableOpacity style={styles.agentActionBtn}>
+                    <Play size={16} color="#000" />
+                    <Text style={styles.agentActionBtnText}>Activate</Text>
                   </TouchableOpacity>
                 ) : (
-                  <TouchableOpacity style={[styles.agentActionButton, { backgroundColor: '#F59E0B' }]}>
-                    <Pause size={18} color="#fff" />
-                    <Text style={styles.agentActionText}>Pause</Text>
+                  <TouchableOpacity style={[styles.agentActionBtn, { backgroundColor: '#F59E0B' }]}>
+                    <Pause size={16} color="#000" />
+                    <Text style={styles.agentActionBtnText}>Pause</Text>
                   </TouchableOpacity>
                 )}
-                <TouchableOpacity style={styles.agentSecondaryButton}>
-                  <RefreshCw size={18} color={Colors.primary} />
-                  <Text style={styles.agentSecondaryText}>Retrain</Text>
+                <TouchableOpacity style={styles.agentSecBtn}>
+                  <RefreshCw size={16} color={GOLD} />
+                  <Text style={styles.agentSecBtnText}>Retrain</Text>
                 </TouchableOpacity>
               </View>
             </>
@@ -1018,55 +858,47 @@ Requirements:
     </Modal>
   );
 
+  const tabs = [
+    { id: 'overview' as TabType, label: 'Overview', icon: BarChart3 },
+    { id: 'agents' as TabType, label: 'Agents', icon: Bot },
+    { id: 'content' as TabType, label: 'Content', icon: Sparkles },
+    { id: 'analytics' as TabType, label: 'Analytics', icon: PieChart },
+    { id: 'comments' as TabType, label: 'Comments', icon: MessageCircle },
+  ];
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
-        <View style={styles.headerTop}>
+        <View style={styles.headerRow}>
           <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-            <ArrowLeft size={22} color={Colors.text} />
+            <ArrowLeft size={20} color={Colors.text} />
           </TouchableOpacity>
-          <View style={{ flex: 1 }}>
+          <View style={{ flex: 1, marginLeft: 12 }}>
             <Text style={styles.headerTitle}>AI Social Command</Text>
-            <Text style={styles.headerSubtitle}>Your 24/7 Marketing Team</Text>
+            <Text style={styles.headerSub}>Your 24/7 Marketing Team</Text>
           </View>
-          <TouchableOpacity style={styles.settingsButton}>
-            <Bot size={24} color={Colors.primary} />
-          </TouchableOpacity>
+          <View style={[styles.botBadge]}>
+            <Bot size={18} color={GOLD} />
+          </View>
         </View>
-
-        <ScrollView 
-          horizontal 
-          showsHorizontalScrollIndicator={false}
-          style={styles.tabsContainer}
-        >
-          {[
-            { id: 'overview', label: 'Overview', icon: BarChart3 },
-            { id: 'agents', label: 'AI Agents', icon: Bot },
-            { id: 'content', label: 'Content', icon: Sparkles },
-            { id: 'analytics', label: 'Analytics', icon: PieChart },
-            { id: 'comments', label: 'Comments', icon: MessageCircle },
-          ].map((tab) => (
-            <TouchableOpacity
-              key={tab.id}
-              style={[styles.tab, activeTab === tab.id && styles.tabActive]}
-              onPress={() => handleTabChange(tab.id as TabType)}
-            >
-              <tab.icon 
-                size={18} 
-                color={activeTab === tab.id ? Colors.primary : Colors.textSecondary} 
-              />
-              <Text style={[styles.tabText, activeTab === tab.id && styles.tabTextActive]}>
-                {tab.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabsRow}>
+          {tabs.map((tab) => {
+            const active = activeTab === tab.id;
+            return (
+              <TouchableOpacity
+                key={tab.id}
+                style={[styles.tabChip, active && styles.tabChipActive]}
+                onPress={() => handleTabChange(tab.id)}
+              >
+                <tab.icon size={15} color={active ? '#000' : Colors.textSecondary} />
+                <Text style={[styles.tabChipText, active && styles.tabChipTextActive]}>{tab.label}</Text>
+              </TouchableOpacity>
+            );
+          })}
         </ScrollView>
       </View>
 
-      <ScrollView 
-        style={styles.content}
-        showsVerticalScrollIndicator={false}
-      >
+      <ScrollView style={styles.scrollContent} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
         {activeTab === 'overview' && renderOverviewTab()}
         {activeTab === 'agents' && renderAgentsTab()}
         {activeTab === 'content' && renderContentTab()}
@@ -1082,217 +914,422 @@ Requirements:
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
-  header: { paddingHorizontal: 16, paddingTop: 12, borderBottomWidth: 1, borderBottomColor: Colors.border },
-  backBtn: { width: 38, height: 38, borderRadius: 10, backgroundColor: Colors.card, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: Colors.border },
-  headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  headerTitle: { color: Colors.text, fontSize: 20, fontWeight: '800' as const },
-  headerSubtitle: { color: Colors.textSecondary, fontSize: 13, marginTop: 4 },
-  settingsButton: { padding: 8 },
-  tabsContainer: { paddingVertical: 8 },
-  tab: { paddingVertical: 8, paddingHorizontal: 12, alignItems: 'center', borderRadius: 10, flexDirection: 'row', gap: 6 },
-  tabActive: { backgroundColor: Colors.primary },
-  tabText: { color: Colors.textSecondary, fontWeight: '600' as const, fontSize: 13 },
-  tabTextActive: { color: Colors.black },
-  content: { flex: 1, paddingHorizontal: 20 },
-  tabContent: { flex: 1 },
-  liveStatusBar: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12, backgroundColor: Colors.surface, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, alignSelf: 'flex-start' },
-  liveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.positive },
-  liveText: { color: Colors.positive, fontSize: 11, fontWeight: '700' as const },
+  container: { flex: 1, backgroundColor: '#0A0A0A' },
+  header: {
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 0,
+    borderBottomWidth: 1,
+    borderBottomColor: BORDER,
+    backgroundColor: '#0A0A0A',
+  },
+  headerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 14 },
+  backBtn: {
+    width: 36, height: 36, borderRadius: 10,
+    backgroundColor: SURFACE, borderWidth: 1, borderColor: BORDER,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  headerTitle: { color: '#fff', fontSize: 18, fontWeight: '800' as const, letterSpacing: -0.3 },
+  headerSub: { color: Colors.textTertiary, fontSize: 12, marginTop: 1 },
+  botBadge: {
+    width: 36, height: 36, borderRadius: 10,
+    backgroundColor: GOLD_DIM, borderWidth: 1, borderColor: 'rgba(255,215,0,0.25)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  tabsRow: { flexDirection: 'row', gap: 8, paddingBottom: 12 },
+  tabChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingVertical: 7, paddingHorizontal: 14,
+    borderRadius: 20, backgroundColor: SURFACE,
+    borderWidth: 1, borderColor: BORDER,
+  },
+  tabChipActive: { backgroundColor: GOLD, borderColor: GOLD },
+  tabChipText: { color: Colors.textSecondary, fontSize: 13, fontWeight: '600' as const },
+  tabChipTextActive: { color: '#000', fontWeight: '700' as const },
+  scrollContent: { flex: 1, paddingHorizontal: 16 },
+  tabContent: { paddingTop: 16 },
+
+  liveBar: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    alignSelf: 'flex-start', marginBottom: 16,
+    backgroundColor: 'rgba(0,196,140,0.08)',
+    borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6,
+    borderWidth: 1, borderColor: 'rgba(0,196,140,0.2)',
+  },
+  livePulse: {
+    position: 'absolute', left: 10,
+    width: 10, height: 10, borderRadius: 5,
+    backgroundColor: 'rgba(0,196,140,0.3)',
+  },
+  liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: GREEN },
+  liveText: { color: GREEN, fontSize: 11, fontWeight: '800' as const, letterSpacing: 1 },
   liveSubtext: { color: Colors.textSecondary, fontSize: 12 },
-  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 16 },
-  statCard: { flex: 1, backgroundColor: Colors.surface, borderRadius: 14, padding: 14, alignItems: 'center', gap: 4, borderWidth: 1, borderColor: Colors.surfaceBorder },
-  statCardLarge: { backgroundColor: Colors.primary },
-  statIconContainer: { gap: 8 },
-  statValue: { color: Colors.text, fontSize: 18, fontWeight: '800' as const },
-  statValueSmall: { color: Colors.text, fontSize: 14, fontWeight: '700' as const },
-  statLabel: { color: Colors.textTertiary, fontSize: 11 },
-  statLabelSmall: { color: Colors.textTertiary, fontSize: 10 },
-  statTrend: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  statTrendText: { fontSize: 11, fontWeight: '600' as const },
-  sectionTitle: { color: Colors.text, fontSize: 16, fontWeight: '700' as const, marginBottom: 12 },
-  platformsScroll: { gap: 8 },
-  platformCard: { backgroundColor: Colors.surface, borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: Colors.surfaceBorder },
-  platformCardDisconnected: { gap: 6 },
-  platformIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: Colors.primary + '15', alignItems: 'center', justifyContent: 'center' },
-  platformName: { color: Colors.text, fontSize: 15, fontWeight: '700' as const },
-  platformFollowers: { gap: 6 },
-  platformEngagement: { gap: 6 },
-  platformEngagementText: { color: Colors.textSecondary, fontSize: 13 },
-  connectButton: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 12, alignItems: 'center' },
-  connectButtonText: { color: Colors.black, fontWeight: '700' as const, fontSize: 15 },
-  chartContainer: { gap: 8 },
-  chartBars: { gap: 4 },
-  chartBarContainer: { gap: 8 },
-  chartBar: { gap: 4 },
-  chartBarFill: { gap: 4 },
-  chartLabel: { color: Colors.textSecondary, fontSize: 13 },
-  chartLegend: { gap: 4 },
-  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 },
-  legendDot: { width: 8, height: 8, borderRadius: 4 },
-  legendText: { color: Colors.textSecondary, fontSize: 13 },
-  topContentCard: { backgroundColor: Colors.surface, borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: Colors.surfaceBorder },
-  topContentImage: { width: '100%', height: 180, borderRadius: 12 },
-  topContentInfo: { flex: 1 },
-  topContentText: { color: Colors.textSecondary, fontSize: 13 },
-  topContentStats: { gap: 4 },
-  topContentStat: { gap: 4 },
-  topContentStatText: { color: Colors.textSecondary, fontSize: 13 },
-  viralBadge: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
-  viralBadgeText: { fontSize: 11, fontWeight: '700' as const },
-  agentHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
-  agentStats: { gap: 4 },
-  agentStatItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 },
-  agentStatValue: { color: Colors.text, fontSize: 14, fontWeight: '600' as const },
-  agentStatLabel: { color: Colors.textSecondary, fontSize: 13 },
-  agentFilters: { gap: 4 },
-  filterButton: { backgroundColor: Colors.surface, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, borderWidth: 1, borderColor: Colors.surfaceBorder },
-  filterButtonActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  filterButtonText: { color: Colors.textSecondary, fontSize: 13, fontWeight: '600' as const },
-  filterButtonTextActive: { color: Colors.black },
-  agentCard: { backgroundColor: Colors.surface, borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: Colors.surfaceBorder },
-  agentAvatar: { width: 44, height: 44, borderRadius: 22 },
+
+  heroRow: { flexDirection: 'row', gap: 12, marginBottom: 12 },
+  heroCard: {
+    flex: 1, borderRadius: 18, padding: 16,
+    borderWidth: 1,
+  },
+  heroCardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  heroIcon: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  trendChip: { flexDirection: 'row', alignItems: 'center', gap: 3, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 },
+  trendChipText: { fontSize: 11, fontWeight: '700' as const },
+  heroValue: { color: '#fff', fontSize: 26, fontWeight: '800' as const, letterSpacing: -0.5 },
+  heroLabel: { color: Colors.textSecondary, fontSize: 12, marginTop: 2 },
+
+  miniStatsRow: { flexDirection: 'row', gap: 10, marginBottom: 20 },
+  miniCard: {
+    flex: 1, borderRadius: 14, padding: 12,
+    alignItems: 'center', gap: 4,
+  },
+  miniValue: { color: '#fff', fontSize: 15, fontWeight: '800' as const, marginTop: 4 },
+  miniLabel: { color: Colors.textTertiary, fontSize: 10 },
+
+  sectionTitle: { color: '#fff', fontSize: 15, fontWeight: '700' as const, marginBottom: 12 },
+
+  chartCard: {
+    backgroundColor: SURFACE, borderRadius: 18, padding: 16,
+    borderWidth: 1, borderColor: BORDER, marginBottom: 20,
+  },
+  chartBarsRow: {
+    flexDirection: 'row', alignItems: 'flex-end',
+    height: CHART_HEIGHT, gap: 6,
+  },
+  barWrapper: { flex: 1, alignItems: 'center', height: CHART_HEIGHT },
+  barTrack: {
+    flex: 1, width: '100%', justifyContent: 'flex-end',
+    alignItems: 'center',
+  },
+  barFill: { width: '100%' },
+  barLabel: { color: Colors.textTertiary, fontSize: 11, marginTop: 6 },
+  chartFooter: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12,
+    paddingTop: 12, borderTopWidth: 1, borderTopColor: BORDER,
+  },
+  legendDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: GOLD },
+  legendText: { color: Colors.textSecondary, fontSize: 12, flex: 1 },
+  legendValue: { fontSize: 13, fontWeight: '700' as const },
+
+  platformChip: {
+    backgroundColor: SURFACE2, borderRadius: 16, padding: 14,
+    borderWidth: 1, borderColor: BORDER, alignItems: 'center', gap: 6, minWidth: 100,
+  },
+  platformChipIcon: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  platformChipName: { color: '#fff', fontSize: 12, fontWeight: '600' as const },
+  platformChipFollowers: { color: Colors.textSecondary, fontSize: 11 },
+  engBadge: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2 },
+  engBadgeText: { fontSize: 11, fontWeight: '700' as const },
+
+  postCard: {
+    backgroundColor: SURFACE, borderRadius: 16, overflow: 'hidden',
+    borderWidth: 1, borderColor: BORDER, marginBottom: 12,
+  },
+  postImage: { width: '100%', height: 150 },
+  postBody: { padding: 12 },
+  postText: { color: Colors.textSecondary, fontSize: 13, lineHeight: 18, marginBottom: 10 },
+  postScores: { flexDirection: 'row', gap: 16 },
+  postScore: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  postScoreVal: { color: '#fff', fontSize: 12, fontWeight: '700' as const },
+  viralBadge: {
+    position: 'absolute', top: 10, right: 10,
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: 'rgba(0,0,0,0.7)', borderRadius: 10,
+    paddingHorizontal: 8, paddingVertical: 4,
+    borderWidth: 1, borderColor: 'rgba(255,215,0,0.4)',
+  },
+  viralBadgeText: { color: GOLD, fontSize: 11, fontWeight: '700' as const },
+
+  agentSummaryRow: { flexDirection: 'row', gap: 10, marginBottom: 16 },
+  summaryPill: {
+    flex: 1, borderRadius: 14, paddingVertical: 12, alignItems: 'center',
+    backgroundColor: SURFACE2, borderWidth: 1,
+  },
+  summaryPillValue: { fontSize: 22, fontWeight: '800' as const },
+  summaryPillLabel: { color: Colors.textTertiary, fontSize: 11, marginTop: 2 },
+  filterRow: { flexDirection: 'row', gap: 8, marginBottom: 16 },
+  filterBtn: {
+    paddingHorizontal: 16, paddingVertical: 7, borderRadius: 20,
+    backgroundColor: SURFACE2, borderWidth: 1, borderColor: BORDER,
+  },
+  filterBtnActive: { backgroundColor: GOLD, borderColor: GOLD },
+  filterBtnText: { color: Colors.textSecondary, fontSize: 13, fontWeight: '600' as const },
+  filterBtnTextActive: { color: '#000', fontWeight: '700' as const },
+  agentCard: {
+    backgroundColor: SURFACE, borderRadius: 16, padding: 14,
+    borderWidth: 1, borderColor: BORDER, marginBottom: 10,
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+  },
+  agentAvatar: { width: 46, height: 46, borderRadius: 23, borderWidth: 2, borderColor: BORDER },
   agentInfo: { flex: 1 },
-  agentNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  agentName: { color: Colors.text, fontSize: 15, fontWeight: '700' as const },
-  agentStatusBadge: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
-  statusDot: { width: 8, height: 8, borderRadius: 4 },
-  agentStatusText: { color: Colors.textSecondary, fontSize: 13 },
-  agentRole: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
-  agentPlatforms: { flexDirection: 'row', gap: 4, marginTop: 6 },
-  agentPlatformIcon: { width: 22, height: 22, borderRadius: 6, backgroundColor: Colors.surfaceBorder, alignItems: 'center', justifyContent: 'center' },
-  agentMetrics: { gap: 4 },
-  agentMetricValue: { color: Colors.text, fontSize: 14, fontWeight: '600' as const },
-  agentMetricLabel: { color: Colors.textSecondary, fontSize: 13 },
-  accuracyBar: { gap: 4 },
-  accuracyFill: { gap: 4 },
-  accuracyText: { color: Colors.textSecondary, fontSize: 13 },
-  contentHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
-  createContentButton: { backgroundColor: Colors.primary, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
-  createContentButtonText: { color: Colors.black, fontWeight: '700' as const, fontSize: 15 },
-  contentStatusRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  contentStatusItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 },
-  contentStatusCount: { gap: 4 },
-  contentStatusLabel: { color: Colors.textSecondary, fontSize: 13 },
-  contentCard: { backgroundColor: Colors.surface, borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: Colors.surfaceBorder },
-  contentCardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  contentPlatforms: { gap: 6 },
-  contentPlatformIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: Colors.primary + '15', alignItems: 'center', justifyContent: 'center' },
-  contentStatusBadge: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
-  contentStatusText: { color: Colors.textSecondary, fontSize: 13 },
-  contentMedia: { gap: 4 },
-  contentText: { color: Colors.textSecondary, fontSize: 13 },
-  contentScores: { alignItems: 'center', gap: 4 },
-  scoreItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 },
-  scoreLabel: { color: Colors.textSecondary, fontSize: 13 },
-  scoreValue: { color: Colors.text, fontSize: 14, fontWeight: '600' as const },
-  suggestionsContainer: { gap: 8 },
-  suggestionsTitle: { color: Colors.text, fontSize: 16, fontWeight: '700' as const },
-  suggestionItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 },
-  suggestionText: { color: Colors.textSecondary, fontSize: 13 },
-  scheduledInfo: { flex: 1 },
-  scheduledText: { color: Colors.textSecondary, fontSize: 13 },
-  analyticsHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
-  analyticsTitle: { color: Colors.text, fontSize: 16, fontWeight: '700' as const },
-  exportButton: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 12, alignItems: 'center' },
-  exportButtonText: { color: Colors.black, fontWeight: '700' as const, fontSize: 15 },
-  metricsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  metricCard: { backgroundColor: Colors.surface, borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: Colors.surfaceBorder },
-  metricName: { color: Colors.text, fontSize: 15, fontWeight: '700' as const },
-  metricValue: { color: Colors.text, fontSize: 14, fontWeight: '600' as const },
-  metricTrend: { gap: 4 },
-  metricChange: { gap: 4 },
-  insightCard: { backgroundColor: Colors.surface, borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: Colors.surfaceBorder },
-  insightTitle: { color: Colors.text, fontSize: 16, fontWeight: '700' as const },
-  ageChart: { gap: 4 },
-  ageBar: { gap: 4 },
-  ageBarFill: { gap: 4 },
-  ageLabel: { color: Colors.textSecondary, fontSize: 13 },
-  agePercent: { color: Colors.primary, fontSize: 14, fontWeight: '700' as const },
-  countryRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  countryRank: { gap: 4 },
-  countryName: { color: Colors.text, fontSize: 15, fontWeight: '700' as const },
-  countryBar: { gap: 4 },
-  countryBarFill: { gap: 4 },
-  countryPercent: { color: Colors.primary, fontSize: 14, fontWeight: '700' as const },
-  hoursChart: { gap: 4 },
-  hourBar: { gap: 4 },
-  hourBarFill: { gap: 4 },
-  hourLabel: { color: Colors.textSecondary, fontSize: 13 },
-  commentsHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
-  commentStats: { gap: 4 },
-  commentStatItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 },
-  commentStatValue: { color: Colors.text, fontSize: 14, fontWeight: '600' as const },
-  commentStatLabel: { color: Colors.textSecondary, fontSize: 13 },
-  commentCard: { backgroundColor: Colors.surface, borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: Colors.surfaceBorder },
+  agentNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 3 },
+  agentName: { color: '#fff', fontSize: 14, fontWeight: '700' as const },
+  statusBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3,
+  },
+  statusDot: { width: 6, height: 6, borderRadius: 3 },
+  statusBadgeText: { fontSize: 11, fontWeight: '600' as const },
+  agentRole: { color: Colors.textTertiary, fontSize: 11, marginBottom: 6 },
+  agentPlatformRow: { flexDirection: 'row', gap: 4 },
+  platformDot: {
+    width: 20, height: 20, borderRadius: 6,
+    backgroundColor: SURFACE2, borderWidth: 1, borderColor: BORDER,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  agentRight: { alignItems: 'center', gap: 2 },
+  agentTaskNum: { color: '#fff', fontSize: 16, fontWeight: '800' as const },
+  agentTaskLabel: { color: Colors.textTertiary, fontSize: 10, marginBottom: 4 },
+  accBarBg: { width: 60, height: 4, backgroundColor: BORDER, borderRadius: 2, overflow: 'hidden' },
+  accBarFill: { height: 4, backgroundColor: GOLD, borderRadius: 2 },
+  accText: { color: Colors.textSecondary, fontSize: 10, marginTop: 2 },
+
+  createBtn: {
+    backgroundColor: GOLD, borderRadius: 16, paddingVertical: 14,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 8, marginBottom: 16,
+  },
+  createBtnText: { color: '#000', fontSize: 15, fontWeight: '700' as const },
+  statusCapsuleRow: { flexDirection: 'row', gap: 6, marginBottom: 16, flexWrap: 'wrap' as const },
+  statusCapsule: {
+    borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6,
+    backgroundColor: SURFACE2, borderWidth: 1, alignItems: 'center',
+  },
+  statusCapsuleCount: { fontSize: 16, fontWeight: '800' as const },
+  statusCapsuleLabel: { color: Colors.textTertiary, fontSize: 10 },
+  contentCard: {
+    backgroundColor: SURFACE, borderRadius: 16, padding: 14,
+    borderWidth: 1, borderColor: BORDER, marginBottom: 12,
+  },
+  contentCardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  contentPlatformIcons: { flexDirection: 'row', gap: 6 },
+  contentPlatformIcon: {
+    width: 26, height: 26, borderRadius: 8, backgroundColor: SURFACE2,
+    borderWidth: 1, borderColor: BORDER, alignItems: 'center', justifyContent: 'center',
+  },
+  contentStatusPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3,
+  },
+  contentStatusText: { fontSize: 11, fontWeight: '600' as const },
+  contentMedia: { width: '100%', height: 140, borderRadius: 12, marginBottom: 10 },
+  contentText: { color: Colors.textSecondary, fontSize: 13, lineHeight: 18, marginBottom: 10 },
+  scoreRow: { flexDirection: 'row', gap: 12, marginBottom: 6 },
+  scoreItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  scoreLabel: { color: Colors.textTertiary, fontSize: 11 },
+  scoreVal: { color: '#fff', fontSize: 12, fontWeight: '700' as const },
+  scheduledRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 },
+  scheduledText: { color: Colors.textTertiary, fontSize: 11 },
+
+  analyticsTopRow: {
+    flexDirection: 'row', justifyContent: 'space-between',
+    alignItems: 'center', marginBottom: 16,
+  },
+  analyticsTitle: { color: '#fff', fontSize: 20, fontWeight: '800' as const },
+  analyticsSubtitle: { color: Colors.textTertiary, fontSize: 12, marginTop: 2 },
+  exportBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: GOLD_DIM, borderRadius: 12,
+    paddingHorizontal: 14, paddingVertical: 8,
+    borderWidth: 1, borderColor: 'rgba(255,215,0,0.25)',
+  },
+  exportBtnText: { color: GOLD, fontSize: 13, fontWeight: '700' as const },
+  metricsGrid: { flexDirection: 'row', flexWrap: 'wrap' as const, gap: 10, marginBottom: 20 },
+  metricCard: {
+    width: CARD_WIDTH, backgroundColor: SURFACE,
+    borderRadius: 16, padding: 14,
+    borderWidth: 1, borderColor: BORDER,
+  },
+  metricName: { color: Colors.textTertiary, fontSize: 11, marginBottom: 6 },
+  metricValue: { color: '#fff', fontSize: 20, fontWeight: '800' as const, letterSpacing: -0.3, marginBottom: 6 },
+  metricTrendRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  metricChange: { fontSize: 12, fontWeight: '700' as const },
+
+  insightBlock: {
+    backgroundColor: SURFACE, borderRadius: 18, padding: 16,
+    borderWidth: 1, borderColor: BORDER, marginBottom: 14,
+  },
+  insightBlockHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 },
+  insightBlockTitle: { color: '#fff', fontSize: 15, fontWeight: '700' as const },
+
+  countryRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 },
+  rankBadge: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  rankText: { fontSize: 12, fontWeight: '800' as const },
+  countryInfo: { flex: 1 },
+  countryNameRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
+  countryName: { color: '#fff', fontSize: 14, fontWeight: '600' as const },
+  countryPct: { fontSize: 13, fontWeight: '700' as const },
+  countryBarBg: { height: 5, backgroundColor: BORDER, borderRadius: 3, overflow: 'hidden' },
+  countryBarFill: { height: 5, borderRadius: 3 },
+
+  peakChartRow: {
+    flexDirection: 'row', alignItems: 'flex-end',
+    height: 130, gap: 10, marginBottom: 12,
+  },
+  peakBarWrapper: { flex: 1, alignItems: 'center', gap: 4 },
+  peakPct: { fontSize: 10, fontWeight: '700' as const, marginBottom: 4 },
+  peakTrack: { flex: 1, width: '100%', justifyContent: 'flex-end', alignItems: 'center' },
+  peakBarFill: { width: '80%' },
+  peakHourLabel: { fontSize: 10, textAlign: 'center' as const, lineHeight: 14, marginTop: 4 },
+  peakNote: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: GOLD_DIM2, borderRadius: 10,
+    paddingHorizontal: 12, paddingVertical: 8,
+    borderWidth: 1, borderColor: 'rgba(255,215,0,0.12)',
+  },
+  peakNoteText: { color: Colors.textSecondary, fontSize: 12 },
+
+  ageChartRow: { flexDirection: 'row', alignItems: 'flex-end', height: 110, gap: 8, marginBottom: 10 },
+  ageBarWrapper: { flex: 1, alignItems: 'center' },
+  agePct: { color: Colors.textTertiary, fontSize: 10, marginBottom: 4 },
+  ageTrack: { flex: 1, width: '100%', justifyContent: 'flex-end', alignItems: 'center' },
+  ageBarFill: { width: '80%' },
+  ageRangeLabel: { color: Colors.textTertiary, fontSize: 10, marginTop: 4, textAlign: 'center' as const },
+  ageDominant: { color: Colors.textSecondary, fontSize: 12 },
+
+  commentSummaryRow: {
+    flexDirection: 'row', gap: 12, marginBottom: 16,
+    backgroundColor: SURFACE, borderRadius: 16, padding: 16,
+    borderWidth: 1, borderColor: BORDER,
+  },
+  commentStat: { flex: 1, alignItems: 'center' },
+  commentStatVal: { fontSize: 22, fontWeight: '800' as const },
+  commentStatLabel: { color: Colors.textTertiary, fontSize: 11, marginTop: 2 },
+  commentCard: {
+    backgroundColor: SURFACE, borderRadius: 16, padding: 14,
+    borderWidth: 1, borderColor: BORDER, marginBottom: 12,
+  },
   commentHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
-  commentAvatar: { width: 36, height: 36, borderRadius: 18 },
-  commentUserInfo: { flex: 1 },
-  commentUsername: { color: Colors.text, fontSize: 15, fontWeight: '700' as const },
-  commentMeta: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  commentTime: { color: Colors.textTertiary, fontSize: 12 },
-  sentimentBadge: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
-  commentText: { color: Colors.textSecondary, fontSize: 13 },
-  aiResponseContainer: { gap: 8 },
-  aiResponseHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
-  aiResponseLabel: { color: Colors.textSecondary, fontSize: 13 },
-  aiResponseText: { color: Colors.textSecondary, fontSize: 13 },
-  pendingResponseContainer: { gap: 8 },
-  generateResponseButton: { backgroundColor: Colors.primary, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
-  generateResponseText: { color: Colors.textSecondary, fontSize: 13 },
-  manualResponseButton: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 12, alignItems: 'center' },
-  manualResponseText: { color: Colors.textSecondary, fontSize: 13 },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', paddingHorizontal: 20 },
-  modalContent: { backgroundColor: Colors.surface, borderRadius: 20, padding: 20, maxHeight: '85%' },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  modalTitle: { color: Colors.text, fontSize: 20, fontWeight: '800' as const },
-  modalSubtitle: { color: Colors.text, fontSize: 16, fontWeight: '700' as const },
-  exportOption: { backgroundColor: Colors.surface, borderRadius: 12, padding: 14, borderWidth: 1, borderColor: Colors.surfaceBorder },
-  exportIconContainer: { gap: 8 },
-  exportOptionInfo: { flex: 1 },
-  exportOptionTitle: { color: Colors.text, fontSize: 16, fontWeight: '700' as const },
-  exportOptionDesc: { color: Colors.textSecondary, fontSize: 13, lineHeight: 18 },
-  agentModalContent: { backgroundColor: Colors.surface, borderRadius: 20, padding: 20, maxHeight: '90%' },
-  agentModalHeader: { flexDirection: 'row', justifyContent: 'flex-end', marginBottom: 8 },
-  agentModalAvatar: { width: 80, height: 80, borderRadius: 40, alignSelf: 'center', marginBottom: 12 },
-  modalCloseButton: { padding: 8 },
-  agentModalName: { color: Colors.text, fontSize: 15, fontWeight: '700' as const },
-  agentModalRole: { gap: 4 },
-  agentModalStatus: { gap: 4 },
-  agentModalStatusText: { color: Colors.textSecondary, fontSize: 13 },
-  agentModalDesc: { color: Colors.textSecondary, fontSize: 13, lineHeight: 18 },
-  agentModalStats: { gap: 4 },
-  agentModalStatItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 },
-  agentModalStatValue: { color: Colors.text, fontSize: 14, fontWeight: '600' as const },
-  agentModalStatLabel: { color: Colors.textSecondary, fontSize: 13 },
-  agentModalSection: { marginBottom: 16 },
-  agentModalPlatforms: { gap: 6 },
-  agentModalPlatformItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 },
-  agentModalPlatformText: { color: Colors.textSecondary, fontSize: 13 },
-  agentModalActions: { flexDirection: 'row', gap: 8, marginTop: 8 },
-  agentActionButton: { backgroundColor: Colors.primary, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
-  agentActionText: { color: Colors.textSecondary, fontSize: 13 },
-  agentSecondaryButton: { backgroundColor: Colors.surface, borderRadius: 14, paddingVertical: 14, alignItems: 'center', borderWidth: 1, borderColor: Colors.surfaceBorder },
-  agentSecondaryText: { color: Colors.textSecondary, fontSize: 13 },
-  createContentModalContent: { backgroundColor: Colors.surface, borderRadius: 20, padding: 20, maxHeight: '92%' },
-  createContentLabel: { color: Colors.textSecondary, fontSize: 13 },
-  platformSelector: { gap: 6 },
-  platformOption: { backgroundColor: Colors.surface, borderRadius: 12, padding: 14, borderWidth: 1, borderColor: Colors.surfaceBorder },
-  platformOptionActive: { borderColor: Colors.primary, backgroundColor: Colors.primary + '08' },
-  platformOptionText: { color: Colors.textSecondary, fontSize: 13 },
-  platformOptionTextActive: { color: Colors.primary },
-  topicInput: { backgroundColor: Colors.surface, borderRadius: 12, padding: 14, color: Colors.text, fontSize: 16, borderWidth: 1, borderColor: Colors.surfaceBorder },
-  generateButton: { backgroundColor: Colors.primary, borderRadius: 14, paddingVertical: 14, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 },
-  generateButtonDisabled: { opacity: 0.4 },
-  generateButtonText: { color: Colors.black, fontWeight: '700' as const, fontSize: 15 },
-  generatedContentContainer: { gap: 8 },
-  generatedContentHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
-  generatedContentTitle: { color: Colors.text, fontSize: 16, fontWeight: '700' as const },
-  generatedContentScroll: { gap: 8 },
-  generatedContentText: { color: Colors.textSecondary, fontSize: 13 },
-  generatedContentActions: { flexDirection: 'row', gap: 8, marginTop: 8 },
-  copyButton: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 12, alignItems: 'center' },
-  copyButtonText: { color: Colors.black, fontWeight: '700' as const, fontSize: 15 },
-  scheduleButton: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 12, alignItems: 'center' },
-  scheduleButtonText: { color: Colors.black, fontWeight: '700' as const, fontSize: 15 },
+  commentAvatar: { width: 38, height: 38, borderRadius: 19 },
+  commentUsername: { color: '#fff', fontSize: 14, fontWeight: '700' as const },
+  commentMeta: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 },
+  commentTime: { color: Colors.textTertiary, fontSize: 11 },
+  sentimentBadge: {
+    width: 32, height: 32, borderRadius: 10,
+    backgroundColor: SURFACE2, alignItems: 'center', justifyContent: 'center',
+  },
+  commentText: { color: Colors.textSecondary, fontSize: 13, lineHeight: 18, marginBottom: 12 },
+  aiRespBox: {
+    backgroundColor: 'rgba(59,130,246,0.08)', borderRadius: 12, padding: 12,
+    borderWidth: 1, borderColor: 'rgba(59,130,246,0.2)',
+  },
+  aiRespHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
+  aiRespLabel: { color: BLUE, fontSize: 12, fontWeight: '600' as const, flex: 1 },
+  aiRespText: { color: Colors.textSecondary, fontSize: 13, lineHeight: 18 },
+  pendingBox: { gap: 8 },
+  generateRespBtn: {
+    backgroundColor: GOLD, borderRadius: 12, paddingVertical: 10,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+  },
+  generateRespText: { color: '#000', fontSize: 13, fontWeight: '700' as const },
+  manualRespBtn: { paddingVertical: 8, alignItems: 'center' },
+  manualRespText: { color: Colors.textTertiary, fontSize: 13 },
+
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'flex-end' },
+  modalSheet: {
+    backgroundColor: '#111', borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    padding: 20, paddingBottom: 36,
+  },
+  createModalSheet: {
+    backgroundColor: '#111', borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    padding: 20, paddingBottom: 36, maxHeight: '92%',
+  },
+  agentModalSheet: {
+    backgroundColor: '#111', borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    padding: 20, paddingBottom: 36, maxHeight: '90%',
+  },
+  modalHandle: {
+    width: 40, height: 4, borderRadius: 2, backgroundColor: BORDER,
+    alignSelf: 'center', marginBottom: 16,
+  },
+  modalTitleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  modalTitle: { color: '#fff', fontSize: 20, fontWeight: '800' as const },
+  modalCloseBtn: {
+    width: 32, height: 32, borderRadius: 10, backgroundColor: SURFACE2,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  exportOption: {
+    flexDirection: 'row', alignItems: 'center', gap: 14,
+    backgroundColor: SURFACE2, borderRadius: 14, padding: 14,
+    borderWidth: 1, borderColor: BORDER, marginBottom: 10,
+  },
+  exportIconBox: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  exportOptTitle: { color: '#fff', fontSize: 15, fontWeight: '600' as const },
+  exportOptDesc: { color: Colors.textTertiary, fontSize: 12, marginTop: 2 },
+
+  createLabel: { color: Colors.textSecondary, fontSize: 13, fontWeight: '600' as const, marginBottom: 10 },
+  platformOpt: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: SURFACE2, borderRadius: 12, padding: 10,
+    borderWidth: 1, borderColor: BORDER,
+  },
+  platformOptActive: { borderColor: GOLD, backgroundColor: GOLD_DIM },
+  platformOptText: { color: Colors.textSecondary, fontSize: 12 },
+  topicInput: {
+    backgroundColor: SURFACE2, borderRadius: 14, padding: 14,
+    color: '#fff', fontSize: 14, borderWidth: 1, borderColor: BORDER,
+    minHeight: 70, textAlignVertical: 'top' as const, marginBottom: 14,
+  },
+  generateBtn: {
+    backgroundColor: GOLD, borderRadius: 14, paddingVertical: 14,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 14,
+  },
+  generateBtnText: { color: '#000', fontSize: 15, fontWeight: '700' as const },
+  generatedBox: {
+    backgroundColor: SURFACE2, borderRadius: 14, padding: 14,
+    borderWidth: 1, borderColor: BORDER,
+  },
+  generatedHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
+  generatedTitle: { color: GOLD, fontSize: 13, fontWeight: '700' as const },
+  generatedText: { color: Colors.textSecondary, fontSize: 13, lineHeight: 20 },
+  generatedActions: { flexDirection: 'row', gap: 10, marginTop: 12 },
+  copyBtn: {
+    flex: 1, borderRadius: 12, paddingVertical: 10,
+    alignItems: 'center', backgroundColor: SURFACE,
+    borderWidth: 1, borderColor: BORDER,
+  },
+  copyBtnText: { color: '#fff', fontSize: 13, fontWeight: '600' as const },
+  queueBtn: { flex: 2, borderRadius: 12, paddingVertical: 10, alignItems: 'center', backgroundColor: GOLD },
+  queueBtnText: { color: '#000', fontSize: 13, fontWeight: '700' as const },
+
+  agentModalClose: {
+    alignSelf: 'flex-end', width: 32, height: 32, borderRadius: 10,
+    backgroundColor: SURFACE2, alignItems: 'center', justifyContent: 'center',
+  },
+  agentModalAvatar: {
+    width: 80, height: 80, borderRadius: 40, alignSelf: 'center',
+    marginVertical: 12, borderWidth: 3, borderColor: GOLD_DIM,
+  },
+  agentModalName: { color: '#fff', fontSize: 20, fontWeight: '800' as const, textAlign: 'center' as const },
+  agentModalRole: { color: Colors.textSecondary, fontSize: 13, textAlign: 'center' as const, marginTop: 3 },
+  agentModalDesc: {
+    color: Colors.textTertiary, fontSize: 13, lineHeight: 20,
+    textAlign: 'center' as const, marginVertical: 12,
+  },
+  agentModalStats: {
+    flexDirection: 'row', backgroundColor: SURFACE2, borderRadius: 16,
+    borderWidth: 1, borderColor: BORDER, overflow: 'hidden', marginBottom: 16,
+  },
+  agentModalStat: { flex: 1, alignItems: 'center', gap: 4, padding: 16 },
+  agentModalStatVal: { color: '#fff', fontSize: 20, fontWeight: '800' as const },
+  agentModalStatLabel: { color: Colors.textTertiary, fontSize: 11 },
+  agentModalPlatformTitle: { color: Colors.textSecondary, fontSize: 12, fontWeight: '600' as const, marginBottom: 8 },
+  agentModalPlatforms: { flexDirection: 'row', flexWrap: 'wrap' as const, gap: 8, marginBottom: 20 },
+  agentModalPlatformChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: SURFACE2, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6,
+    borderWidth: 1, borderColor: BORDER,
+  },
+  agentModalPlatformText: { color: Colors.textSecondary, fontSize: 12 },
+  agentModalActions: { flexDirection: 'row', gap: 10 },
+  agentActionBtn: {
+    flex: 1, backgroundColor: GOLD, borderRadius: 14, paddingVertical: 13,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+  },
+  agentActionBtnText: { color: '#000', fontSize: 14, fontWeight: '700' as const },
+  agentSecBtn: {
+    flex: 1, backgroundColor: SURFACE2, borderRadius: 14, paddingVertical: 13,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    borderWidth: 1, borderColor: BORDER,
+  },
+  agentSecBtnText: { color: GOLD, fontSize: 14, fontWeight: '700' as const },
 });
