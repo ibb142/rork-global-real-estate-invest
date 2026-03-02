@@ -7,6 +7,7 @@ import { lenders as mockLenders, getLenderStats as getMockStats } from '@/mocks/
 import { DiscoveredLender } from '@/mocks/lender-discovery';
 import { SECSearchResult } from '@/lib/sec-edgar-service';
 import { trpc } from '@/lib/trpc';
+import { useAuth } from '@/lib/auth-context';
 
 const STORAGE_KEY = 'ipx_imported_lenders';
 
@@ -82,8 +83,10 @@ export const [LenderProvider, useLenders] = createContextHook(() => {
   const [importedLenders, setImportedLenders] = useState<ImportedLenderRecord[]>([]);
   const [backendSynced, setBackendSynced] = useState(false);
 
+  const { isAuthenticated, isAdmin } = useAuth();
+
   const syncConfigQuery = trpc.lenderSync.getSyncConfig.useQuery(undefined, {
-    enabled: true,
+    enabled: isAuthenticated && isAdmin,
     retry: 1,
     staleTime: 300000,
   });
