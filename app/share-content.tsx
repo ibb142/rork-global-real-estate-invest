@@ -24,7 +24,6 @@ import {
   Mail,
   Send,
   Users,
-  UserPlus,
   Link2,
   CheckCircle,
   X,
@@ -100,7 +99,7 @@ const SHAREABLE_CONTENT: ShareableContent[] = [
   {
     id: 'presentation',
     type: 'video',
-    title: 'IPX Video Presentation',
+    title: 'IVXHOLDINGS Video Presentation',
     description: 'Full animated pitch deck with all features',
     icon: <Video size={20} color="#FF6B35" />,
     color: '#FF6B35',
@@ -156,6 +155,8 @@ export default function ShareContentScreen() {
   const [filterRole, setFilterRole] = useState<string | null>(null);
   const [customMessage, setCustomMessage] = useState('');
   const [showSuccess, setShowSuccess] = useState(false);
+  const [queueIndex, setQueueIndex] = useState<number>(-1);
+  const [queueContent, setQueueContent] = useState<ShareableContent | null>(null);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
@@ -181,6 +182,11 @@ export default function ShareContentScreen() {
     return TEAM_MEMBERS.filter(m => m.role === filterRole);
   }, [filterRole]);
 
+  const selectedMemberObjects = useMemo(
+    () => TEAM_MEMBERS.filter(m => selectedMembers.includes(m.id)),
+    [selectedMembers]
+  );
+
   const toggleMember = useCallback((id: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setSelectedMembers(prev =>
@@ -199,62 +205,111 @@ export default function ShareContentScreen() {
     }
   }, [filteredMembers, selectedMembers]);
 
-  const openWhatsApp = useCallback(async (phone: string, message: string) => {
+  const openWhatsApp = useCallback(async (phone: string, message: string): Promise<boolean> => {
     const cleanPhone = phone.replace(/[^0-9]/g, '');
     const encoded = encodeURIComponent(message);
     const waUrl = `https://wa.me/${cleanPhone}?text=${encoded}`;
 
     try {
-      await Linking.openURL(waUrl);
-      logger.shareContent.log('Opened WhatsApp for:', cleanPhone);
+      const canOpen = await Linking.canOpenURL(waUrl);
+      if (canOpen) {
+        await Linking.openURL(waUrl);
+        logger.shareContent.log('Opened WhatsApp for:', cleanPhone);
+        return true;
+      } else {
+        if (Platform.OS !== 'web') {
+          await Share.share({ message });
+        } else {
+          Alert.alert('WhatsApp Not Available', 'Could not open WhatsApp. Make sure it is installed.');
+        }
+        return false;
+      }
     } catch (error) {
       logger.shareContent.error('WhatsApp error:', error);
-      if (Platform.OS !== 'web') {
-        try {
-          await Share.share({ message });
-        } catch (e) {
-          Alert.alert('Unable to Open', 'Could not open WhatsApp. Make sure it is installed.');
-          logger.shareContent.error('Share fallback error:', e);
-        }
-      } else {
-        Alert.alert('Unable to Open', 'Could not open WhatsApp. Make sure it is installed.');
-      }
+      Alert.alert('Unable to Open', 'Could not open WhatsApp. Make sure it is installed.');
+      return false;
     }
   }, []);
 
+  const buildMessage = useCallback((content: ShareableContent, memberFirstName?: string): string => {
+    const greeting = memberFirstName ? `Hi ${memberFirstName}! ` : '';
+    const note = customMessage ? `${greeting}${customMessage}\n\n` : greeting ? `${greeting}` : '';
+    return `${note}${content.shareText}\n\n${content.shareUrl}`;
+  }, [customMessage]);
+
   const shareViaWhatsAppToSelected = useCallback(async (content: ShareableContent) => {
-    if (selectedMembers.length === 0) {
+    if (selectedMemberObjects.length === 0) {
       Alert.alert('No Team Selected', 'Please select at least one team member to share with.');
       return;
     }
 
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-
-    const message = customMessage
-      ? `${customMessage}\n\n${content.shareText}\n\n${content.shareUrl}`
-      : `${content.shareText}\n\n${content.shareUrl}`;
-
-    for (const memberId of selectedMembers) {
-      const member = TEAM_MEMBERS.find(m => m.id === memberId);
-      if (member) {
-        await openWhatsApp(member.phone, message);
-        break;
-      }
+    if (selectedMemberObjects.length === 1) {
+      const member = selectedMemberObjects[0];
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      await openWhatsApp(member.phone, buildMessage(content, member.name.split(' ')[0]));
+      triggerSuccess();
+      logger.shareContent.log('Shared to 1 member:', member.name);
+      return;
     }
 
-    triggerSuccess();
-    logger.shareContent.log('Shared to', selectedMembers.length, 'members');
-  }, [selectedMembers, customMessage, openWhatsApp]);
+    Alert.alert(
+      `Share to ${selectedMemberObjects.length} Members`,
+      `This will open WhatsApp for each member one by one.\n\nStart with ${selectedMemberObjects[0].name.split(' ')[0]}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Start Sharing',
+          onPress: async () => {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            setQueueContent(content);
+            setQueueIndex(0);
+            const member = selectedMemberObjects[0];
+            await openWhatsApp(member.phone, buildMessage(content, member.name.split(' ')[0]));
+            logger.shareContent.log('Queue started, member 1:', member.name);
+          },
+        },
+      ]
+    );
+  }, [selectedMemberObjects, openWhatsApp, buildMessage]);
+
+  useEffect(() => {
+    if (queueIndex < 0 || !queueContent) return;
+    const nextIndex = queueIndex + 1;
+    if (nextIndex >= selectedMemberObjects.length) {
+      triggerSuccess();
+      setQueueIndex(-1);
+      setQueueContent(null);
+      logger.shareContent.log('Queue complete, shared to', selectedMemberObjects.length, 'members');
+      return;
+    }
+
+    const nextMember = selectedMemberObjects[nextIndex];
+    Alert.alert(
+      `Next: ${nextMember.name.split(' ')[0]}`,
+      `Share with ${nextMember.name}?`,
+      [
+        {
+          text: 'Skip',
+          style: 'cancel',
+          onPress: () => setQueueIndex(nextIndex),
+        },
+        {
+          text: 'Open WhatsApp',
+          onPress: async () => {
+            await openWhatsApp(nextMember.phone, buildMessage(queueContent, nextMember.name.split(' ')[0]));
+            setQueueIndex(nextIndex);
+          },
+        },
+      ]
+    );
+  }, [queueIndex]);
 
   const shareToWhatsAppDirect = useCallback(async (member: TeamMember, content: ShareableContent) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    const message = customMessage
-      ? `Hi ${member.name.split(' ')[0]}! ${customMessage}\n\n${content.shareText}\n\n${content.shareUrl}`
-      : `Hi ${member.name.split(' ')[0]}! ${content.shareText}\n\n${content.shareUrl}`;
-
+    const message = buildMessage(content, member.name.split(' ')[0]);
     await openWhatsApp(member.phone, message);
-    logger.shareContent.log('Direct WhatsApp to:', member.name);
-  }, [customMessage, openWhatsApp]);
+    logger.shareContent.log('Direct WhatsApp to:', member.name, 'content:', content.title);
+  }, [buildMessage, openWhatsApp]);
 
   const copyShareLink = useCallback(async (content: ShareableContent) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -267,41 +322,52 @@ export default function ShareContentScreen() {
 
   const shareViaEmail = useCallback(async (content: ShareableContent) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    const recipients = selectedMembers.length > 0
-      ? TEAM_MEMBERS.filter(m => selectedMembers.includes(m.id)).map(m => m.email)
-      : [];
-
+    const recipients = selectedMemberObjects.map(m => m.email);
     const subject = encodeURIComponent(`IVX HOLDINGS: ${content.title}`);
-    const body = encodeURIComponent(`${content.shareText}\n\n${content.shareUrl}`);
+    const bodyText = customMessage
+      ? `${customMessage}\n\n${content.shareText}\n\n${content.shareUrl}`
+      : `${content.shareText}\n\n${content.shareUrl}`;
+    const body = encodeURIComponent(bodyText);
     const to = recipients.join(',');
     const url = `mailto:${to}?subject=${subject}&body=${body}`;
 
     try {
-      await Linking.openURL(url);
-      logger.shareContent.log('Email opened for:', content.title);
+      const canOpen = await Linking.canOpenURL(url);
+      if (canOpen) {
+        await Linking.openURL(url);
+        logger.shareContent.log('Email opened for:', content.title, 'recipients:', recipients.length);
+      } else {
+        Alert.alert('Unable to Open', 'Could not open email client. Please check your email app.');
+      }
     } catch (e) {
       Alert.alert('Unable to Open', 'Could not open email client.');
       logger.shareContent.error('Email error:', e);
     }
-  }, [selectedMembers]);
+  }, [selectedMemberObjects, customMessage]);
 
   const shareViaSMS = useCallback(async (content: ShareableContent) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    const message = encodeURIComponent(`${content.shareText}\n\n${content.shareUrl}`);
+    const messageText = customMessage
+      ? `${customMessage}\n\n${content.shareText}\n\n${content.shareUrl}`
+      : `${content.shareText}\n\n${content.shareUrl}`;
+    const message = encodeURIComponent(messageText);
     const separator = Platform.OS === 'ios' ? '&' : '?';
-    const phones = selectedMembers.length > 0
-      ? TEAM_MEMBERS.filter(m => selectedMembers.includes(m.id)).map(m => m.phone).join(',')
-      : '';
+    const phones = selectedMemberObjects.map(m => m.phone).join(';');
     const url = `sms:${phones}${separator}body=${message}`;
 
     try {
-      await Linking.openURL(url);
-      logger.shareContent.log('SMS opened for:', content.title);
+      const canOpen = await Linking.canOpenURL(url);
+      if (canOpen) {
+        await Linking.openURL(url);
+        logger.shareContent.log('SMS opened for:', content.title, 'recipients:', selectedMemberObjects.length);
+      } else {
+        Alert.alert('Unable to Open', 'Could not open messages app.');
+      }
     } catch (e) {
       Alert.alert('Unable to Open', 'Could not open messages app.');
       logger.shareContent.error('SMS error:', e);
     }
-  }, [selectedMembers]);
+  }, [selectedMemberObjects, customMessage]);
 
   const triggerSuccess = useCallback(() => {
     setShowSuccess(true);
@@ -310,7 +376,62 @@ export default function ShareContentScreen() {
       Animated.delay(1500),
       Animated.timing(successAnim, { toValue: 0, duration: 300, useNativeDriver: true }),
     ]).start(() => setShowSuccess(false));
-  }, []);
+  }, [successAnim]);
+
+  const handleBulkShareWhatsApp = useCallback(async () => {
+    if (selectedMemberObjects.length === 0) {
+      Alert.alert('No Team Selected', 'Please select team members first.');
+      return;
+    }
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    const allText = SHAREABLE_CONTENT.map(c => `📌 ${c.title}\n${c.shareText}\n${c.shareUrl}`).join('\n\n---\n\n');
+    const msg = customMessage ? `${customMessage}\n\n${allText}` : allText;
+
+    if (selectedMemberObjects.length === 1) {
+      const member = selectedMemberObjects[0];
+      await openWhatsApp(member.phone, `Hi ${member.name.split(' ')[0]}!\n\n${msg}`);
+      triggerSuccess();
+      return;
+    }
+
+    Alert.alert(
+      `Send All to ${selectedMemberObjects.length} Members`,
+      `This will open WhatsApp for each member one by one starting with ${selectedMemberObjects[0].name.split(' ')[0]}.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Start',
+          onPress: async () => {
+            const first = selectedMemberObjects[0];
+            await openWhatsApp(first.phone, `Hi ${first.name.split(' ')[0]}!\n\n${msg}`);
+            const syntheticContent: ShareableContent = {
+              id: 'bulk',
+              type: 'document',
+              title: 'All Content',
+              description: '',
+              icon: null,
+              color: '#FFD700',
+              shareUrl: APP_SHARE_URL,
+              shareText: allText,
+            };
+            setQueueContent(syntheticContent);
+            setQueueIndex(0);
+          },
+        },
+      ]
+    );
+  }, [selectedMemberObjects, customMessage, openWhatsApp, triggerSuccess]);
+
+  const handleCopyAll = useCallback(async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    const allText = SHAREABLE_CONTENT.map(c => `📌 ${c.title}\n${c.shareText}\n${c.shareUrl}`).join('\n\n');
+    const msg = customMessage ? `${customMessage}\n\n${allText}` : allText;
+    await Clipboard.setStringAsync(msg);
+    setCopiedId('all');
+    setTimeout(() => setCopiedId(null), 2000);
+    triggerSuccess();
+    logger.shareContent.log('Copied all content to clipboard');
+  }, [customMessage, triggerSuccess]);
 
   const roles = useMemo(() => ['developer', 'investor', 'advisor', 'designer', 'manager'], []);
 
@@ -377,7 +498,7 @@ export default function ShareContentScreen() {
             <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} testID="share-back">
               <ArrowLeft size={22} color={Colors.text} />
             </TouchableOpacity>
-            <View>
+            <View style={styles.headerCenter}>
               <Text style={styles.headerTitle}>Share Hub</Text>
               <Text style={styles.headerSub}>Send to team in seconds</Text>
             </View>
@@ -397,7 +518,7 @@ export default function ShareContentScreen() {
               <View style={styles.sectionHeader}>
                 <Users size={16} color="#FFD700" />
                 <Text style={styles.sectionTitle}>Team Members</Text>
-                <TouchableOpacity onPress={selectAllMembers} style={styles.selectAllBtn}>
+                <TouchableOpacity onPress={selectAllMembers} style={styles.selectAllBtn} testID="select-all-btn">
                   <Text style={styles.selectAllText}>
                     {filteredMembers.every(m => selectedMembers.includes(m.id)) ? 'Deselect All' : 'Select All'}
                   </Text>
@@ -408,6 +529,7 @@ export default function ShareContentScreen() {
                 <TouchableOpacity
                   style={[styles.roleChip, !filterRole && styles.roleChipActive]}
                   onPress={() => { setFilterRole(null); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
+                  testID="filter-all"
                 >
                   <Text style={[styles.roleChipText, !filterRole && styles.roleChipTextActive]}>All</Text>
                 </TouchableOpacity>
@@ -419,6 +541,7 @@ export default function ShareContentScreen() {
                       filterRole === role && { backgroundColor: `${ROLE_COLORS[role]}20`, borderColor: ROLE_COLORS[role] },
                     ]}
                     onPress={() => { setFilterRole(filterRole === role ? null : role); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
+                    testID={`filter-${role}`}
                   >
                     {ROLE_ICONS[role]}
                     <Text style={[styles.roleChipText, filterRole === role && { color: ROLE_COLORS[role] }]}>
@@ -438,8 +561,18 @@ export default function ShareContentScreen() {
                       style={[styles.memberCard, isSelected && { borderColor: roleColor, backgroundColor: `${roleColor}08` }]}
                       onPress={() => toggleMember(member.id)}
                       onLongPress={() => {
-                        const content = SHAREABLE_CONTENT[0];
-                        shareToWhatsAppDirect(member, content);
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+                        Alert.alert(
+                          `Quick Share to ${member.name.split(' ')[0]}`,
+                          'Which content do you want to share?',
+                          [
+                            ...SHAREABLE_CONTENT.map(c => ({
+                              text: c.title,
+                              onPress: () => shareToWhatsAppDirect(member, c),
+                            })),
+                            { text: 'Cancel', style: 'cancel' as const },
+                          ]
+                        );
                       }}
                       testID={`member-${member.id}`}
                     >
@@ -465,9 +598,9 @@ export default function ShareContentScreen() {
               {selectedMembers.length > 0 && (
                 <View style={styles.selectedBar}>
                   <Text style={styles.selectedBarText}>
-                    {selectedMembers.length} selected
+                    {selectedMembers.length} {selectedMembers.length === 1 ? 'member' : 'members'} selected
                   </Text>
-                  <TouchableOpacity onPress={() => setSelectedMembers([])} style={styles.clearBtn}>
+                  <TouchableOpacity onPress={() => setSelectedMembers([])} style={styles.clearBtn} testID="clear-selection">
                     <X size={14} color={Colors.textSecondary} />
                     <Text style={styles.clearBtnText}>Clear</Text>
                   </TouchableOpacity>
@@ -507,18 +640,7 @@ export default function ShareContentScreen() {
               </View>
               <TouchableOpacity
                 style={styles.bulkShareBtn}
-                onPress={() => {
-                  if (selectedMembers.length === 0) {
-                    Alert.alert('No Team Selected', 'Please select team members first.');
-                    return;
-                  }
-                  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                  const allText = SHAREABLE_CONTENT.map(c => `${c.shareText}\n${c.shareUrl}`).join('\n\n---\n\n');
-                  const msg = customMessage ? `${customMessage}\n\n${allText}` : allText;
-                  const member = TEAM_MEMBERS.find(m => selectedMembers.includes(m.id));
-                  if (member) openWhatsApp(member.phone, msg);
-                  triggerSuccess();
-                }}
+                onPress={handleBulkShareWhatsApp}
                 testID="bulk-share-btn"
               >
                 <View style={styles.bulkShareInner}>
@@ -526,7 +648,7 @@ export default function ShareContentScreen() {
                   <View>
                     <Text style={styles.bulkShareTitle}>Send All via WhatsApp</Text>
                     <Text style={styles.bulkShareSub}>
-                      Share everything with {selectedMembers.length > 0 ? `${selectedMembers.length} members` : 'selected team'}
+                      Share everything with {selectedMembers.length > 0 ? `${selectedMembers.length} ${selectedMembers.length === 1 ? 'member' : 'members'}` : 'selected team'}
                     </Text>
                   </View>
                 </View>
@@ -535,15 +657,7 @@ export default function ShareContentScreen() {
 
               <TouchableOpacity
                 style={styles.copyAllBtn}
-                onPress={async () => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                  const allText = SHAREABLE_CONTENT.map(c => `📌 ${c.title}\n${c.shareText}\n${c.shareUrl}`).join('\n\n');
-                  const msg = customMessage ? `${customMessage}\n\n${allText}` : allText;
-                  await Clipboard.setStringAsync(msg);
-                  setCopiedId('all');
-                  setTimeout(() => setCopiedId(null), 2000);
-                  triggerSuccess();
-                }}
+                onPress={handleCopyAll}
                 testID="copy-all-btn"
               >
                 <View style={styles.bulkShareInner}>
@@ -564,7 +678,7 @@ export default function ShareContentScreen() {
             <View style={styles.tipBox}>
               <Clock size={14} color="#FFD700" />
               <Text style={styles.tipText}>
-                Long-press a team member to instantly share the presentation via WhatsApp
+                Long-press a team member to instantly share a specific content piece via WhatsApp
               </Text>
             </View>
 
@@ -573,7 +687,10 @@ export default function ShareContentScreen() {
         </Animated.View>
 
         {showSuccess && (
-          <Animated.View style={[styles.successToast, { opacity: successAnim, transform: [{ scale: successAnim.interpolate({ inputRange: [0, 1], outputRange: [0.8, 1] }) }] }]}>
+          <Animated.View style={[styles.successToast, {
+            opacity: successAnim,
+            transform: [{ scale: successAnim.interpolate({ inputRange: [0, 1], outputRange: [0.8, 1] }) }],
+          }]}>
             <CheckCircle size={20} color="#00C48C" />
             <Text style={styles.successText}>Shared successfully!</Text>
           </Animated.View>
@@ -609,6 +726,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  headerCenter: {
+    flex: 1,
+  },
   headerTitle: {
     fontSize: 20,
     fontWeight: '800' as const,
@@ -621,7 +741,6 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   headerRight: {
-    marginLeft: 'auto',
     width: 40,
     height: 40,
     borderRadius: 12,
@@ -636,6 +755,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: 16,
     paddingTop: 4,
+    paddingBottom: 80,
   },
   section: {
     marginBottom: 24,
