@@ -674,6 +674,6 @@ const styles = StyleSheet.create({
   copyAllText: { color: Colors.textSecondary, fontSize: 13 },
   codeInput: { backgroundColor: Colors.surface, borderRadius: 12, padding: 14, color: Colors.text, fontSize: 16, borderWidth: 1, borderColor: Colors.surfaceBorder },
   disableWarning: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12, backgroundColor: Colors.error + '10', borderRadius: 10, marginBottom: 12 },
-  bottomPadding: { height: 40 },
+  bottomPadding: { height: 120 },
   scrollView: { backgroundColor: Colors.background },
 });
