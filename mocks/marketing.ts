@@ -159,7 +159,7 @@ export const mockAIInsights: AIMarketingInsight[] = [
   {
     id: 'insight-2', type: 'trend', title: 'Rising Interest in REITs Alternatives',
     description: 'Search volume for "REIT alternatives" has increased 65% this month.',
-    actionItems: ['Create comparison content: IPX vs Traditional REITs', 'Target ads to users searching for REIT information'],
+    actionItems: ['Create comparison content: IVXHOLDINGS vs Traditional REITs', 'Target ads to users searching for REIT information'],
     priority: 'high', createdAt: '2025-01-24T14:00:00Z',
   },
   {
