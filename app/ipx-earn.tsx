@@ -130,7 +130,7 @@ export default function IPXEarnScreen() {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         Alert.alert(
           'Deposit Successful',
-          `${formatNumber(numAmount)} has been deposited into your IPX Earn account. You'll start earning ${apyPercent}% APY immediately.`,
+          `${formatNumber(numAmount)} has been deposited into your IVXHOLDINGS Earn account. You'll start earning ${apyPercent}% APY immediately.`,
           [{ text: 'Great!', onPress: () => { setDepositModalVisible(false); setAmount(''); } }]
         );
       } else {
@@ -284,7 +284,7 @@ export default function IPXEarnScreen() {
       <Stack.Screen
         options={{
           headerShown: true,
-          title: 'IPX Earn',
+          title: 'IVXHOLDINGS Earn',
           headerStyle: { backgroundColor: Colors.background },
           headerTintColor: Colors.text,
           headerShadowVisible: false,
@@ -425,17 +425,17 @@ export default function IPXEarnScreen() {
               {
                 icon: <PiggyBank size={22} color={Colors.primary} />,
                 title: 'You Deposit',
-                desc: 'Transfer funds from your wallet into IPX Earn. Min $100.',
+                desc: 'Transfer funds from your wallet into IVXHOLDINGS Earn. Min $100.',
               },
               {
                 icon: <Landmark size={22} color="#00B4D8" />,
-                title: 'IPX Invests',
+                title: 'IVXHOLDINGS Invests',
                 desc: 'IVX HOLDINGS deploys capital into real estate deals & property investments.',
               },
               {
                 icon: <CircleDollarSign size={22} color={Colors.success} />,
                 title: `You Earn ${apyPercent}–${maxApyPercent}% APY`,
-                desc: `IPX shares ${apyPercent}–${maxApyPercent}% annual profit from its margin directly to you, accrued daily. Rate increases as IVX HOLDINGS profits grow.`,
+                desc: `IVXHOLDINGS shares ${apyPercent}–${maxApyPercent}% annual profit from its margin directly to you, accrued daily. Rate increases as IVX HOLDINGS profits grow.`,
               },
               {
                 icon: <Lock size={22} color={Colors.primary} />,
@@ -507,10 +507,10 @@ export default function IPXEarnScreen() {
             <Text style={styles.disclaimerTitle}>Important Disclosure</Text>
           </View>
           <Text style={styles.disclaimerText}>
-            IPX Earn is a profit-sharing program where IVX HOLDINGS shares {apyPercent}–{maxApyPercent}% annual returns from its
-            real estate investment margin. The APY rate starts at 10% and increases up to {maxApyPercent}% as IVX HOLDINGS's
-            quarterly profits grow. Returns are variable and based on IVX HOLDINGS's actual performance —
-            not guaranteed. Your principal is backed by IVX HOLDINGS's real estate portfolio. This is
+            IVXHOLDINGS Earn is a profit-sharing program where IVX HOLDINGS shares {apyPercent}–{maxApyPercent}% annual returns from its
+            real estate investment margin. The APY rate starts at 10% and increases up to {maxApyPercent}% as IVX HOLDINGS&apos;s
+            quarterly profits grow. Returns are variable and based on IVX HOLDINGS&apos;s actual performance —
+            not guaranteed. Your principal is backed by IVX HOLDINGS&apos;s real estate portfolio. This is
             not a bank deposit and is not FDIC insured. Funds can be withdrawn at any time with no penalties.
           </Text>
         </View>
@@ -530,7 +530,7 @@ export default function IPXEarnScreen() {
           </View>
         </View>
 
-        <View style={{ height: 40 }} />
+        <View style={{ height: 160 }} />
       </ScrollView>
 
       {renderModal('deposit')}
@@ -541,7 +541,7 @@ export default function IPXEarnScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
-  scrollContent: { padding: 20, paddingBottom: 40 },
+  scrollContent: { padding: 20, paddingBottom: 140 },
   heroCard: { backgroundColor: Colors.surface, borderRadius: 20, padding: 20, marginBottom: 16, borderWidth: 1, borderColor: Colors.surfaceBorder },
   heroTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   apyBadge: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
