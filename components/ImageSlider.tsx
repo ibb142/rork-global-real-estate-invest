@@ -177,8 +177,8 @@ const styles = StyleSheet.create({
   },
   counter: {
     position: 'absolute',
-    top: 16,
-    right: 16,
+    bottom: 30,
+    right: 12,
   },
   counterBadge: {
     backgroundColor: 'rgba(0, 0, 0, 0.6)',
