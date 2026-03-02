@@ -319,7 +319,7 @@ export default function OnboardingFlow({ visible, onClose, onComplete }: Onboard
                     },
                   ]}
                 >
-                  <Text style={styles.heroBrandName}>IPX HOLDING</Text>
+                  <Text style={styles.heroBrandName}>IVXHOLDINGS</Text>
                   <View style={styles.llcBadge}>
                     <Text style={styles.llcText}>LLC</Text>
                   </View>
