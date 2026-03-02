@@ -51,7 +51,7 @@ const DEFAULT_INFO: CompanyInfo = {
   zipCode: '33131',
   email: 'support@ivxholding.com',
   ceoEmail: 'ceo@ivxholding.com',
-  phone: '+1 (556) 164-3503',
+  phone: '+1 (561) 644-3503',
   website: 'www.ivxholding.com',
 };
 
@@ -281,7 +281,7 @@ export default function CompanyInfoScreen() {
           <Animated.View style={[styles.brandSection, { opacity: fadeAnim }]}>
             <View style={styles.logoRow}>
               <Image
-                source={{ uri: 'https://pub-e001eb4506b145aa938b5d3badbff6a5.r2.dev/attachments/r6lk4ndaevs3fm6jt10pf' }}
+                source={require('@/assets/images/ivx-logo.png')}
                 style={styles.logo}
                 resizeMode="contain"
               />
