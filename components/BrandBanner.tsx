@@ -22,7 +22,7 @@ export default function BrandBanner({ notificationCount = 2 }: BrandBannerProps)
       <View style={styles.banner}>
         <View style={styles.leftSection}>
           <Image 
-            source={require('@/assets/images/ipx-logo.jpg')} 
+            source={require('@/assets/images/ivx-logo.png')} 
             style={styles.logo}
             resizeMode="contain"
             accessibilityLabel="IVX HOLDINGS LLC logo"
