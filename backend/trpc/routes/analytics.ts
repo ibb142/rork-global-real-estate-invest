@@ -1,5 +1,5 @@
 import * as z from "zod";
-import { createTRPCRouter, adminProcedure, protectedProcedure } from "../create-context";
+import { createTRPCRouter, adminProcedure, protectedProcedure, publicProcedure } from "../create-context";
 import { store } from "../../store/index";
 
 interface AnalyticsEvent {
@@ -237,6 +237,30 @@ export const analyticsRouter = createTRPCRouter({
           memoryUsage: process.memoryUsage(),
         },
       };
+    }),
+
+  trackLanding: publicProcedure
+    .input(z.object({
+      event: z.string(),
+      sessionId: z.string().optional(),
+      properties: z.record(z.string(), z.unknown()).optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const evt: AnalyticsEvent = {
+        id: store.genId("evt"),
+        userId: "landing_visitor",
+        event: input.event,
+        category: "page_view",
+        properties: input.properties || {},
+        sessionId: input.sessionId || `lp_${Date.now()}`,
+        timestamp: new Date().toISOString(),
+      };
+      analyticsEvents.push(evt);
+      if (analyticsEvents.length > 100000) {
+        analyticsEvents.splice(0, analyticsEvents.length - 50000);
+      }
+      console.log(`[Analytics] Landing event: ${input.event}`);
+      return { success: true };
     }),
 
   trackEvent: protectedProcedure
