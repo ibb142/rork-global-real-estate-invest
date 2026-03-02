@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { TrendingUp, TrendingDown, Wallet, Building2, ChevronRight, PiggyBank, Percent } from 'lucide-react-native';
+import { TrendingUp, TrendingDown, Wallet, Building2, ChevronRight, PiggyBank, Percent, Globe, DollarSign, Activity } from 'lucide-react-native';
 import Svg, { Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 import Colors from '@/constants/colors';
 import { getResponsiveSize, isCompactScreen, isExtraSmallScreen } from '@/lib/responsive';
@@ -23,10 +23,160 @@ import { useIPX } from '@/lib/ipx-context';
 import { useEarn } from '@/lib/earn-context';
 import { useTranslation } from '@/lib/i18n-context';
 import { useAnalytics } from '@/lib/analytics-context';
+import { useGlobalMarkets } from '@/lib/global-markets';
 
 const CHART_HEIGHT = 120;
 
 type TabType = 'holdings' | 'ipx';
+
+function MacroContextWidget({ router }: { router: ReturnType<typeof useRouter> }) {
+  const { indices, commodities, forex, marketSentiment } = useGlobalMarkets(7000);
+  const sentimentColor = marketSentiment === 'bullish' ? Colors.positive : marketSentiment === 'bearish' ? Colors.negative : Colors.warning;
+  const sp500 = indices.find(i => i.symbol === 'S&P 500');
+  const gold = commodities.find(c => c.symbol === 'XAU');
+  const oil = commodities.find(c => c.symbol === 'WTI');
+  const usd_jpy = forex.find(f => f.symbol === 'USD/JPY');
+
+  const signals = [
+    sp500 && { label: 'S&P 500', detail: `${sp500.changePercent >= 0 ? '+' : ''}${sp500.changePercent.toFixed(2)}%`, impact: sp500.changePercent >= 0 ? 'positive' : 'negative', desc: 'Equity momentum' },
+    gold && { label: 'Gold', detail: `${gold.changePercent24h >= 0 ? '+' : ''}${gold.changePercent24h.toFixed(2)}%`, impact: gold.changePercent24h >= 0 ? 'neutral' : 'positive', desc: 'Safe haven demand' },
+    oil && { label: 'WTI Oil', detail: `${oil.changePercent24h >= 0 ? '+' : ''}${oil.changePercent24h.toFixed(2)}%`, impact: oil.changePercent24h <= 2 ? 'positive' : 'negative', desc: 'Construction cost signal' },
+    usd_jpy && { label: 'USD/JPY', detail: usd_jpy.rate.toFixed(2), impact: 'neutral', desc: 'Global risk appetite' },
+  ].filter(Boolean) as { label: string; detail: string; impact: string; desc: string }[];
+
+  return (
+    <TouchableOpacity
+      style={macroStyles.wrap}
+      onPress={() => router.push('/global-intelligence' as any)}
+      activeOpacity={0.85}
+    >
+      <View style={macroStyles.header}>
+        <Globe size={14} color={Colors.primary} />
+        <Text style={macroStyles.headerTitle}>Macro Market Context</Text>
+        <View style={[macroStyles.sentBadge, { backgroundColor: sentimentColor + '20' }]}>
+          <Activity size={10} color={sentimentColor} />
+          <Text style={[macroStyles.sentText, { color: sentimentColor }]}>
+            {marketSentiment.toUpperCase()}
+          </Text>
+        </View>
+        <ChevronRight size={14} color={Colors.primary} />
+      </View>
+      <Text style={macroStyles.subtext}>
+        Global macro signals affecting your real estate portfolio value
+      </Text>
+      <View style={macroStyles.signals}>
+        {signals.map((s, i) => {
+          const c = s.impact === 'positive' ? Colors.positive : s.impact === 'negative' ? Colors.negative : Colors.warning;
+          return (
+            <View key={i} style={macroStyles.signal}>
+              <View style={[macroStyles.signalDot, { backgroundColor: c }]} />
+              <View style={macroStyles.signalLeft}>
+                <Text style={macroStyles.signalLabel}>{s.label}</Text>
+                <Text style={macroStyles.signalDesc}>{s.desc}</Text>
+              </View>
+              <Text style={[macroStyles.signalDetail, { color: c }]}>{s.detail}</Text>
+            </View>
+          );
+        })}
+      </View>
+      <View style={macroStyles.footer}>
+        <DollarSign size={11} color={Colors.textTertiary} />
+        <Text style={macroStyles.footerText}>
+          IVXHOLDINGS properties are priced against 47 live macro signals
+        </Text>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+const macroStyles = StyleSheet.create({
+  wrap: {
+    marginHorizontal: 20,
+    marginBottom: 8,
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    marginBottom: 6,
+  },
+  headerTitle: {
+    flex: 1,
+    color: Colors.text,
+    fontSize: 13,
+    fontWeight: '700' as const,
+  },
+  sentBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+  },
+  sentText: {
+    fontSize: 9,
+    fontWeight: '800' as const,
+    letterSpacing: 0.5,
+  },
+  subtext: {
+    color: Colors.textTertiary,
+    fontSize: 11,
+    marginBottom: 12,
+    lineHeight: 16,
+  },
+  signals: {
+    gap: 8,
+    marginBottom: 12,
+  },
+  signal: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.surfaceBorder,
+  },
+  signalDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  signalLeft: { flex: 1 },
+  signalLabel: {
+    color: Colors.text,
+    fontSize: 12,
+    fontWeight: '700' as const,
+  },
+  signalDesc: {
+    color: Colors.textTertiary,
+    fontSize: 10,
+  },
+  signalDetail: {
+    fontSize: 13,
+    fontWeight: '800' as const,
+  },
+  footer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: Colors.primary + '10',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  footerText: {
+    color: Colors.textSecondary,
+    fontSize: 10,
+    flex: 1,
+    lineHeight: 15,
+  },
+});
 
 const generatePortfolioHistory = (baseValue: number) => {
   const history = [];
@@ -286,7 +436,7 @@ export default function PortfolioScreen() {
               onPress={() => setActiveTab('ipx')}
             >
               <Text style={[styles.tabText, { fontSize: responsiveStyles.tabText }, activeTab === 'ipx' && styles.tabTextActive]}>
-                IPX ({ipxHoldings.length})
+                IVXHOLDINGS ({ipxHoldings.length})
               </Text>
             </TouchableOpacity>
 
@@ -320,6 +470,8 @@ export default function PortfolioScreen() {
               )}
             </View>
           )}
+
+          <MacroContextWidget router={router} />
 
           <View style={styles.bottomPadding} />
         </ScrollView>
@@ -543,7 +695,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   bottomPadding: {
-    height: 40,
+    height: 120,
   },
   scrollView: {
     backgroundColor: Colors.background,
