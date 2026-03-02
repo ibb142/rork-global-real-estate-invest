@@ -1339,7 +1339,7 @@ const styles = StyleSheet.create({
   reviewDocText: { color: Colors.textSecondary, fontSize: 13 },
   warningCard: { backgroundColor: Colors.warning + '10', borderRadius: 12, padding: 14, flexDirection: 'row', gap: 10, borderWidth: 1, borderColor: Colors.warning + '20' },
   warningText: { color: Colors.textSecondary, fontSize: 13, lineHeight: 18, flex: 1 },
-  bottomPadding: { height: 40 },
+  bottomPadding: { height: 120 },
   footer: { paddingHorizontal: 20, paddingVertical: 14, borderTopWidth: 1, borderTopColor: Colors.surfaceBorder, backgroundColor: Colors.background },
   nextButton: { backgroundColor: Colors.primary, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
   buttonDisabled: { opacity: 0.4 },
