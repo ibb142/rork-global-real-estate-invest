@@ -111,7 +111,7 @@ const PHASES: Phase[] = [
     totalDays: 12,
     tasks: [
       { id: 'a1', task: 'AI Chat Assistant (OpenAI)', description: 'Connect OpenAI API to chat screen. Investment analysis, portfolio insights, property Q&A.', days: 2, hours: 16, priority: 'high', type: 'integration' },
-      { id: 'a2', task: 'IPX Token System (Blockchain)', description: 'Deploy smart contract, connect wallet, real token balance, buy/sell/stake/governance voting.', days: 3, hours: 24, priority: 'medium', type: 'backend' },
+      { id: 'a2', task: 'IVXHOLDINGS Token System (Blockchain)', description: 'Deploy smart contract, connect wallet, real token balance, buy/sell/stake/governance voting.', days: 3, hours: 24, priority: 'medium', type: 'backend' },
       { id: 'a3', task: 'Referral & Rewards System', description: 'Referral code tracking, commission calculation, leaderboard, reward distribution engine.', days: 2, hours: 16, priority: 'medium', type: 'backend' },
       { id: 'a4', task: 'Admin Panel (Live Data)', description: 'Connect all admin screens to live database. KYC approvals, user management, transactions.', days: 2, hours: 16, priority: 'high', type: 'frontend' },
       { id: 'a5', task: 'Auto-Reinvest & DRIP Engine', description: 'Scheduled dividend reinvestment, DRIP configuration per user, cron job setup.', days: 1, hours: 8, priority: 'medium', type: 'backend' },
@@ -176,7 +176,7 @@ function generateReport(): string {
   const date = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
   let r = '';
   r += '════════════════════════════════════════════\n';
-  r += '   IPX PLATFORM — DEVELOPER TASK BREAKDOWN\n';
+  r += '   IVXHOLDINGS PLATFORM — DEVELOPER TASK BREAKDOWN\n';
   r += '════════════════════════════════════════════\n';
   r += `   Generated: ${date}\n`;
   r += `   Total: ${TOTAL_TASKS} tasks | ${TOTAL_DAYS} days | ${TOTAL_HOURS} hours\n`;
@@ -215,7 +215,7 @@ function generateReport(): string {
   });
 
   r += '\n════════════════════════════════════════════\n';
-  r += '   IPX Real Estate Investment Platform\n';
+  r += '   IVXHOLDINGS Real Estate Investment Platform\n';
   r += `   Contact for questions about this breakdown\n`;
   r += '════════════════════════════════════════════\n';
 
@@ -259,7 +259,7 @@ export default function DeveloperBreakdownScreen() {
     const report = generateReport();
     try {
       await Share.share({
-        title: 'IPX Developer Task Breakdown',
+        title: 'IVXHOLDINGS Developer Task Breakdown',
         message: report,
       });
     } catch (err) {
@@ -277,11 +277,11 @@ export default function DeveloperBreakdownScreen() {
       if (canOpen) {
         await Linking.openURL(url);
       } else {
-        await Share.share({ title: 'IPX Developer Task Breakdown', message: report });
+        await Share.share({ title: 'IVXHOLDINGS Developer Task Breakdown', message: report });
       }
     } catch (err) {
       console.log('WhatsApp error:', err);
-      await Share.share({ title: 'IPX Developer Task Breakdown', message: report });
+      await Share.share({ title: 'IVXHOLDINGS Developer Task Breakdown', message: report });
     }
   }, []);
 
@@ -312,7 +312,7 @@ export default function DeveloperBreakdownScreen() {
             </TouchableOpacity>
             <View style={styles.headerCenter}>
               <Text style={styles.headerTitle}>Developer Breakdown</Text>
-              <Text style={styles.headerSub}>IPX Platform — Full Task List</Text>
+              <Text style={styles.headerSub}>IVXHOLDINGS Platform — Full Task List</Text>
             </View>
             <TouchableOpacity onPress={handleShare} style={styles.shareBtn} testID="share-button">
               <Share2 size={20} color={Colors.primary} />
@@ -486,7 +486,7 @@ export default function DeveloperBreakdownScreen() {
             </View>
 
             <View style={styles.footer}>
-              <Text style={styles.footerText}>IPX Real Estate Investment Platform</Text>
+              <Text style={styles.footerText}>IVXHOLDINGS Real Estate Investment Platform</Text>
               <Text style={styles.footerDate}>
                 Breakdown generated {new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
               </Text>
@@ -592,7 +592,7 @@ const styles = StyleSheet.create({
   timelineHintText: { color: Colors.textTertiary, fontSize: 11 },
 
   scroll: { flex: 1 },
-  scrollContent: { paddingHorizontal: 16, paddingBottom: 40 },
+  scrollContent: { paddingHorizontal: 16, paddingBottom: 140 },
 
   phaseCard: {
     backgroundColor: Colors.surface,
