@@ -210,7 +210,7 @@ export default function OnboardingFlow({ visible, onClose, onComplete }: Onboard
             {!isFirstStep && (
               <View style={styles.logoContainer}>
                 <Image
-                  source={require('@/assets/images/ipx-logo.jpg')}
+                  source={require('@/assets/images/ivx-logo.png')}
                   style={styles.logo}
                   resizeMode="contain"
                 />
@@ -298,7 +298,7 @@ export default function OnboardingFlow({ visible, onClose, onComplete }: Onboard
                     ]}
                   >
                     <Image
-                      source={require('@/assets/images/ipx-logo.jpg')}
+                      source={require('@/assets/images/ivx-logo.png')}
                       style={styles.heroLogo}
                       resizeMode="contain"
                     />
