@@ -384,7 +384,7 @@ export default function StatementsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
-  scrollContent: { paddingHorizontal: 16, paddingTop: 16 },
+  scrollContent: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 140 },
 
   roleRow: { flexDirection: 'row', gap: 8, marginBottom: 16 },
   roleTab: {
