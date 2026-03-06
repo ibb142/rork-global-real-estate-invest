@@ -230,6 +230,59 @@ Resources:
         - Key: Project
           Value: IVX-Holdings
 
+  # ─── S3 BUCKET ──────────────────────────────────────────────────────────────
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    Properties:
+      BucketName: !Sub "${AppName}-prod"
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+            BucketKeyEnabled: true
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-temp-uploads
+            Status: Enabled
+            Prefix: temp/
+            ExpirationInDays: 1
+          - Id: transition-old-docs
+            Status: Enabled
+            Prefix: document/
+            Transitions:
+              - StorageClass: STANDARD_IA
+                TransitionInDays: 90
+              - StorageClass: GLACIER
+                TransitionInDays: 365
+          - Id: abort-multipart
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders: ['Authorization', 'Content-Type', 'x-amz-date', 'x-amz-security-token']
+            AllowedMethods: ['GET', 'PUT', 'POST', 'DELETE', 'HEAD']
+            AllowedOrigins:
+              - 'https://ivxholding.com'
+              - 'https://www.ivxholding.com'
+              - 'https://app.ivxholding.com'
+            MaxAge: 3600
+      Tags:
+        - Key: Project
+          Value: IVX-Holdings
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: DataClass
+          Value: confidential
+
   # ─── DYNAMODB ─────────────────────────────────────────────────────────────
   DynamoDBTable:
     Type: AWS::DynamoDB::Table
@@ -649,6 +702,12 @@ Outputs:
     Value: !GetAtt ECSService.Name
     Export:
       Name: !Sub "${AppName}-service-name"
+
+  S3BucketName:
+    Description: S3 bucket for file storage
+    Value: !Ref S3Bucket
+    Export:
+      Name: !Sub "${AppName}-s3-bucket"
 
   DynamoDBTableName:
     Description: DynamoDB table name
