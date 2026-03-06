@@ -17,6 +17,7 @@ import { LenderProvider } from "../lib/lender-context";
 import { IntroProvider, useIntro } from "../lib/intro-context";
 import { I18nProvider } from "../lib/i18n-context";
 import { AnalyticsProvider } from "../lib/analytics-context";
+import { EmailProvider } from "../lib/email-context";
 import OnboardingFlow from "../components/OnboardingFlow";
 import AdminFAB from "../components/AdminFAB";
 import {
@@ -27,7 +28,7 @@ import {
   setBadgeCount,
 } from "../lib/push-notifications";
 
-SplashScreen.preventAutoHideAsync();
+void SplashScreen.preventAutoHideAsync();
 
 const queryClient = new QueryClient(queryClientConfig);
 
@@ -94,6 +95,11 @@ function RootLayoutNav() {
       <Stack.Screen name="share-content" options={HIDDEN_HEADER} />
       <Stack.Screen name="developer-breakdown" options={HIDDEN_HEADER} />
       <Stack.Screen name="global-intelligence" options={HIDDEN_HEADER} />
+      <Stack.Screen name="email" options={HIDDEN_HEADER} />
+      <Stack.Screen name="email-detail" options={HIDDEN_HEADER} />
+      <Stack.Screen name="email-compose" options={{ ...HIDDEN_HEADER, presentation: "modal" }} />
+      <Stack.Screen name="ai-automation-report" options={HIDDEN_HEADER} />
+      <Stack.Screen name="api-list" options={HIDDEN_HEADER} />
     </Stack>
   );
 }
@@ -121,7 +127,7 @@ function PushNotificationHandler() {
       }
     };
 
-    setupPush();
+    void setupPush();
 
     return () => { isMounted = false; };
   }, [isAuthenticated]);
@@ -143,7 +149,7 @@ function PushNotificationHandler() {
         router.push('/notifications' as any);
       }
 
-      setBadgeCount(0);
+      void setBadgeCount(0);
     });
 
     return () => {
@@ -163,7 +169,7 @@ function AppContent() {
   const hasNavigated = useRef(false);
 
   useEffect(() => {
-    SplashScreen.hideAsync();
+    void SplashScreen.hideAsync();
   }, []);
 
   useEffect(() => {
@@ -179,10 +185,10 @@ function AppContent() {
     if (!hasCompletedOnboarding) {
       setShowOnboarding(true);
     }
-  }, [authLoading, introLoading, isAuthenticated, hasCompletedOnboarding]);
+  }, [authLoading, introLoading, isAuthenticated, hasCompletedOnboarding, router]);
 
   const handleOnboardingDismiss = useCallback(() => {
-    completeOnboarding();
+    void completeOnboarding();
     setShowOnboarding(false);
   }, [completeOnboarding]);
 
@@ -215,7 +221,9 @@ export default function RootLayout() {
                   <LenderProvider>
                     <IPXProvider>
                       <EarnProvider>
-                        <AppContent />
+                        <EmailProvider>
+                          <AppContent />
+                        </EmailProvider>
                       </EarnProvider>
                     </IPXProvider>
                   </LenderProvider>
