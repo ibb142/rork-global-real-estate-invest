@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { TrendingUp, Shield, Zap, ChevronRight, Globe, Award, BarChart3, ExternalLink, Users, CheckCircle, Mail, Phone, User, ChevronDown, MapPin, DollarSign, Building2, Handshake, Activity, Eye, MousePointer, UserCheck, ArrowUpRight, ArrowDownRight, Home, Briefcase, Megaphone, Star, Percent, Gift } from 'lucide-react-native';
+import { TrendingUp, Shield, Zap, ChevronRight, Globe, Award, BarChart3, ExternalLink, Users, CheckCircle, Mail, Phone, User, ChevronDown, MapPin, DollarSign, Building2, Handshake, Activity, Eye, MousePointer, UserCheck, ArrowUpRight, Home, Briefcase, Megaphone, Star, Flame, Percent, Rocket, Clock, UserPlus } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { trpc } from '@/lib/trpc';
 import { useGlobalMarkets } from '@/lib/global-markets';
@@ -60,6 +60,49 @@ const PROPERTY_IMAGES = [
   'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=400&q=80',
   'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=400&q=80',
   'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=400&q=80',
+];
+
+const TOP_PROPERTIES = [
+  {
+    id: '1',
+    name: 'Marina Bay Residences',
+    location: 'Dubai Marina, UAE',
+    image: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=600&q=80',
+    pricePerShare: '$52.40',
+    yield: '8.5%',
+    irr: '14.5%',
+    occupancy: '96%',
+    funded: 65,
+    totalRaise: '$5.24M',
+    type: 'Luxury Residential',
+    riskLevel: 'Medium',
+    riskColor: '#FFB800',
+    status: 'LIVE NOW',
+    statusColor: '#00C48C',
+    highlight: 'Highest Yield',
+    highlightColor: '#FFD700',
+    tags: ['Waterfront', 'Fully Leased', 'Monthly Dividends'],
+  },
+  {
+    id: '2',
+    name: 'Manhattan Office Tower',
+    location: '500 Fifth Avenue, New York',
+    image: 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=600&q=80',
+    pricePerShare: '$125.00',
+    yield: '6.8%',
+    irr: '12.2%',
+    occupancy: '92%',
+    funded: 60,
+    totalRaise: '$25M',
+    type: 'Class A Commercial',
+    riskLevel: 'Low',
+    riskColor: '#00C48C',
+    status: 'LIVE NOW',
+    statusColor: '#00C48C',
+    highlight: 'Most Popular',
+    highlightColor: '#4A90D9',
+    tags: ['Fortune 500 Tenants', 'LEED Gold', '10yr Leases'],
+  },
 ];
 
 const INVESTMENT_OPTIONS = [
@@ -1128,6 +1171,134 @@ const analyticsStyles = StyleSheet.create({
   },
 });
 
+const comingSoonStyles = StyleSheet.create({
+  banner: {
+    marginHorizontal: 20,
+    marginBottom: 20,
+    backgroundColor: Colors.surface,
+    borderRadius: 22,
+    borderWidth: 1.5,
+    borderColor: Colors.primary + '40',
+    overflow: 'hidden',
+    padding: 18,
+    gap: 14,
+  },
+  accentBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 4,
+    backgroundColor: Colors.primary,
+  },
+  topRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 4,
+  },
+  livePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: Colors.primary + '18',
+    borderWidth: 1,
+    borderColor: Colors.primary + '40',
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  liveDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: Colors.primary,
+  },
+  liveText: {
+    color: Colors.primary,
+    fontSize: 10,
+    fontWeight: '900' as const,
+    letterSpacing: 1.5,
+  },
+  countdownPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#FF6B6B15',
+    borderWidth: 1,
+    borderColor: '#FF6B6B35',
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  countdownText: {
+    color: '#FF6B6B',
+    fontSize: 10,
+    fontWeight: '800' as const,
+    letterSpacing: 0.5,
+  },
+  content: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 14,
+  },
+  textWrap: {
+    flex: 1,
+    gap: 6,
+  },
+  title: {
+    color: Colors.text,
+    fontSize: 20,
+    fontWeight: '900' as const,
+    lineHeight: 26,
+  },
+  subtitle: {
+    color: Colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 20,
+  },
+  perksRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  perkItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: Colors.backgroundSecondary,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  perkText: {
+    color: Colors.textSecondary,
+    fontSize: 11,
+    fontWeight: '600' as const,
+  },
+  registerBtn: {
+    backgroundColor: Colors.primary,
+    borderRadius: 14,
+    paddingVertical: 15,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  registerBtnText: {
+    color: '#000',
+    fontSize: 15,
+    fontWeight: '800' as const,
+    letterSpacing: 0.3,
+  },
+  disclaimer: {
+    color: Colors.textTertiary,
+    fontSize: 10,
+    textAlign: 'center' as const,
+    letterSpacing: 0.3,
+  },
+});
+
 export default function LandingScreen() {
   const router = useRouter();
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -1148,6 +1319,68 @@ export default function LandingScreen() {
   const [memberPosition, setMemberPosition] = useState<number>(0);
   const [formError, setFormError] = useState<string>('');
 
+  const sessionIdRef = useRef<string>(`lp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`);
+  const scrollDepthRef = useRef<number>(0);
+  const hasTrackedRef = useRef<{ pageView: boolean; scroll25: boolean; scroll50: boolean; scroll75: boolean; scroll100: boolean; formFocus: boolean }>({
+    pageView: false, scroll25: false, scroll50: false, scroll75: false, scroll100: false, formFocus: false,
+  });
+
+  const geoDataRef = useRef<{ city?: string; region?: string; country?: string; countryCode?: string; lat?: number; lng?: number; timezone?: string } | undefined>(undefined);
+
+  useEffect(() => {
+    const fetchGeo = async () => {
+      try {
+        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        geoDataRef.current = { timezone: tz };
+
+        const res = await fetch('https://ipapi.co/json/');
+        if (res.ok) {
+          const data = await res.json();
+          geoDataRef.current = {
+            city: data.city,
+            region: data.region,
+            country: data.country_name,
+            countryCode: data.country_code,
+            lat: data.latitude,
+            lng: data.longitude,
+            timezone: data.timezone || tz,
+          };
+          console.log('[Landing Geo] Location:', geoDataRef.current.city, geoDataRef.current.country);
+        }
+      } catch (err) {
+        console.log('[Landing Geo] Could not fetch location:', err);
+      }
+    };
+    void fetchGeo();
+  }, []);
+
+  const trackMutation = trpc.analytics.trackLanding.useMutation();
+
+  const trackEventRef = useRef((event: string, properties?: Record<string, unknown>) => {
+    console.log('[Landing Track]', event, properties);
+  });
+
+  trackEventRef.current = (event: string, properties?: Record<string, unknown>) => {
+    console.log('[Landing Track]', event, properties);
+    trackMutation.mutate({
+      event,
+      sessionId: sessionIdRef.current,
+      properties: {
+        ...properties,
+        timestamp: new Date().toISOString(),
+        platform: Platform.OS,
+        geoCity: geoDataRef.current?.city,
+        geoRegion: geoDataRef.current?.region,
+        geoCountry: geoDataRef.current?.country,
+      },
+      geo: geoDataRef.current,
+    });
+  };
+
+  const trackEvent = (event: string, properties?: Record<string, unknown>) => {
+    trackEventRef.current(event, properties);
+  };
+
   const statsQuery = trpc.waitlist.getStats.useQuery();
   const joinMutation = trpc.waitlist.join.useMutation({
     onSuccess: (data: { success: boolean; alreadyRegistered: boolean; position: number }) => {
@@ -1163,6 +1396,14 @@ export default function LandingScreen() {
   });
 
   useEffect(() => {
+    if (!hasTrackedRef.current.pageView) {
+      hasTrackedRef.current.pageView = true;
+      trackEvent('landing_page_view', {
+        referrer: Platform.OS === 'web' && typeof document !== 'undefined' ? (document as any).referrer || 'direct' : 'app',
+        userAgent: Platform.OS === 'web' && typeof navigator !== 'undefined' ? navigator.userAgent : Platform.OS,
+      });
+    }
+
     Animated.parallel([
       Animated.timing(fadeAnim, { toValue: 1, duration: 900, useNativeDriver: true }),
       Animated.spring(slideAnim, { toValue: 0, tension: 60, friction: 12, useNativeDriver: true }),
@@ -1192,6 +1433,8 @@ export default function LandingScreen() {
     if (!firstName.trim()) { setFormError('Please enter your first name.'); return; }
     if (!lastName.trim()) { setFormError('Please enter your last name.'); return; }
     if (!email.trim() || !email.includes('@')) { setFormError('Please enter a valid email address.'); return; }
+
+    trackEvent('form_submit', { investmentInterest: selectedInterest });
 
     joinMutation.mutate({
       firstName: firstName.trim(),
@@ -1226,10 +1469,19 @@ export default function LandingScreen() {
             showsVerticalScrollIndicator={false}
             bounces={Platform.OS !== 'web'}
             contentContainerStyle={styles.scrollContent}
-            onScroll={Animated.event(
-              [{ nativeEvent: { contentOffset: { y: scrollAnim } } }],
-              { useNativeDriver: false }
-            )}
+            onScroll={(e: any) => {
+              const y = e.nativeEvent.contentOffset.y;
+              const contentH = e.nativeEvent.contentSize.height;
+              const layoutH = e.nativeEvent.layoutMeasurement.height;
+              const pct = contentH > layoutH ? Math.round((y / (contentH - layoutH)) * 100) : 0;
+              scrollDepthRef.current = pct;
+              if (pct >= 25 && !hasTrackedRef.current.scroll25) { hasTrackedRef.current.scroll25 = true; trackEvent('scroll_25'); }
+              if (pct >= 50 && !hasTrackedRef.current.scroll50) { hasTrackedRef.current.scroll50 = true; trackEvent('scroll_50'); }
+              if (pct >= 75 && !hasTrackedRef.current.scroll75) { hasTrackedRef.current.scroll75 = true; trackEvent('scroll_75'); }
+              if (pct >= 95 && !hasTrackedRef.current.scroll100) { hasTrackedRef.current.scroll100 = true; trackEvent('scroll_100'); }
+              scrollAnim.setValue(y);
+            }}
+            scrollEventThrottle={100}
             keyboardShouldPersistTaps="handled"
           >
             <LiveGlobalTicker />
@@ -1268,6 +1520,60 @@ export default function LandingScreen() {
               </Text>
             </Animated.View>
 
+            <View style={comingSoonStyles.banner}>
+              <View style={comingSoonStyles.accentBar} />
+              <View style={comingSoonStyles.topRow}>
+                <View style={comingSoonStyles.livePill}>
+                  <Animated.View style={[comingSoonStyles.liveDot, { transform: [{ scale: pulseAnim }] }]} />
+                  <Text style={comingSoonStyles.liveText}>COMING SOON</Text>
+                </View>
+                <View style={comingSoonStyles.countdownPill}>
+                  <Clock size={10} color="#FF6B6B" />
+                  <Text style={comingSoonStyles.countdownText}>Limited Spots</Text>
+                </View>
+              </View>
+
+              <View style={comingSoonStyles.content}>
+                <Rocket size={28} color={Colors.primary} />
+                <View style={comingSoonStyles.textWrap}>
+                  <Text style={comingSoonStyles.title}>Real Investment{"\n"}Opportunities Launching</Text>
+                  <Text style={comingSoonStyles.subtitle}>
+                    Be among the first to access premium real estate deals. Register now as a VIP guest to get priority access and exclusive early-bird bonuses.
+                  </Text>
+                </View>
+              </View>
+
+              <View style={comingSoonStyles.perksRow}>
+                {[
+                  { icon: <Shield size={13} color="#00C48C" />, label: 'SEC Compliant Deals' },
+                  { icon: <DollarSign size={13} color="#FFD700" />, label: 'From $1 Entry' },
+                  { icon: <TrendingUp size={13} color="#4A90D9" />, label: 'Monthly Dividends' },
+                ].map((perk, i) => (
+                  <View key={i} style={comingSoonStyles.perkItem}>
+                    {perk.icon}
+                    <Text style={comingSoonStyles.perkText}>{perk.label}</Text>
+                  </View>
+                ))}
+              </View>
+
+              <TouchableOpacity
+                style={comingSoonStyles.registerBtn}
+                activeOpacity={0.85}
+                onPress={() => {
+                  trackEvent('coming_soon_register_tap');
+                  router.push('/signup' as any);
+                }}
+              >
+                <UserPlus size={16} color="#000" />
+                <Text style={comingSoonStyles.registerBtnText}>Register as VIP Guest</Text>
+                <ChevronRight size={16} color="#000" />
+              </TouchableOpacity>
+
+              <Text style={comingSoonStyles.disclaimer}>
+                Free registration · No commitment · Priority access guaranteed
+              </Text>
+            </View>
+
             <Animated.View style={[styles.propertyCarousel, { opacity: fadeAnim }]}>
               <Image
                 source={{ uri: PROPERTY_IMAGES[activeImage] }}
@@ -1298,6 +1604,113 @@ export default function LandingScreen() {
                 </View>
               ))}
             </Animated.View>
+
+            <View style={styles.topPropertiesSection}>
+              <View style={styles.topPropHeader}>
+                <View style={styles.topPropBadge}>
+                  <Flame size={11} color="#FF6B6B" />
+                  <Text style={styles.topPropBadgeText}>TOP INVESTMENT OPPORTUNITIES</Text>
+                </View>
+                <Text style={styles.topPropTitle}>Start Investing Today</Text>
+                <Text style={styles.topPropSubtitle}>Hand-picked properties with proven returns and strong fundamentals</Text>
+              </View>
+
+              {TOP_PROPERTIES.map((prop, idx) => (
+                <View key={prop.id} style={styles.topPropCard}>
+                  <View style={styles.topPropImageWrap}>
+                    <Image source={{ uri: prop.image }} style={styles.topPropImage} resizeMode="cover" />
+                    <View style={styles.topPropImageOverlay} />
+                    <View style={[styles.topPropStatusChip, { backgroundColor: prop.statusColor + '20', borderColor: prop.statusColor + '50' }]}>
+                      <View style={[styles.topPropStatusDot, { backgroundColor: prop.statusColor }]} />
+                      <Text style={[styles.topPropStatusText, { color: prop.statusColor }]}>{prop.status}</Text>
+                    </View>
+                    <View style={[styles.topPropHighlightChip, { backgroundColor: prop.highlightColor + '20', borderColor: prop.highlightColor + '50' }]}>
+                      {idx === 0 ? <Percent size={10} color={prop.highlightColor} /> : <Flame size={10} color={prop.highlightColor} />}
+                      <Text style={[styles.topPropHighlightText, { color: prop.highlightColor }]}>{prop.highlight}</Text>
+                    </View>
+                    <View style={styles.topPropPriceOverlay}>
+                      <Text style={styles.topPropPriceLabel}>Share Price</Text>
+                      <Text style={styles.topPropPriceValue}>{prop.pricePerShare}</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.topPropContent}>
+                    <View style={styles.topPropNameRow}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.topPropName}>{prop.name}</Text>
+                        <View style={styles.topPropLocRow}>
+                          <MapPin size={11} color={Colors.textTertiary} />
+                          <Text style={styles.topPropLoc}>{prop.location}</Text>
+                        </View>
+                      </View>
+                      <View style={[styles.topPropTypeBadge, { backgroundColor: Colors.primary + '15', borderColor: Colors.primary + '30' }]}>
+                        <Building2 size={10} color={Colors.primary} />
+                        <Text style={styles.topPropTypeText}>{prop.type}</Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.topPropMetrics}>
+                      <View style={styles.topPropMetric}>
+                        <Text style={styles.topPropMetricLabel}>Annual Yield</Text>
+                        <Text style={[styles.topPropMetricValue, { color: '#00C48C' }]}>{prop.yield}</Text>
+                      </View>
+                      <View style={styles.topPropMetricDiv} />
+                      <View style={styles.topPropMetric}>
+                        <Text style={styles.topPropMetricLabel}>Target IRR</Text>
+                        <Text style={[styles.topPropMetricValue, { color: Colors.primary }]}>{prop.irr}</Text>
+                      </View>
+                      <View style={styles.topPropMetricDiv} />
+                      <View style={styles.topPropMetric}>
+                        <Text style={styles.topPropMetricLabel}>Occupancy</Text>
+                        <Text style={[styles.topPropMetricValue, { color: '#4A90D9' }]}>{prop.occupancy}</Text>
+                      </View>
+                      <View style={styles.topPropMetricDiv} />
+                      <View style={styles.topPropMetric}>
+                        <Text style={styles.topPropMetricLabel}>Risk</Text>
+                        <Text style={[styles.topPropMetricValue, { color: prop.riskColor }]}>{prop.riskLevel}</Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.topPropFundedWrap}>
+                      <View style={styles.topPropFundedHeader}>
+                        <Text style={styles.topPropFundedLabel}>Funded</Text>
+                        <Text style={styles.topPropFundedPct}>{prop.funded}% of {prop.totalRaise}</Text>
+                      </View>
+                      <View style={styles.topPropFundedBarBg}>
+                        <View style={[styles.topPropFundedBar, { width: `${prop.funded}%` as any }]} />
+                      </View>
+                    </View>
+
+                    <View style={styles.topPropTagsRow}>
+                      {prop.tags.map((tag, ti) => (
+                        <View key={ti} style={styles.topPropTag}>
+                          <CheckCircle size={9} color={Colors.positive} />
+                          <Text style={styles.topPropTagText}>{tag}</Text>
+                        </View>
+                      ))}
+                    </View>
+
+                    <TouchableOpacity
+                      style={styles.topPropInvestBtn}
+                      activeOpacity={0.85}
+                      onPress={() => { trackEvent('top_property_invest', { propertyId: prop.id }); router.push('/signup' as any); }}
+                    >
+                      <Text style={styles.topPropInvestBtnText}>Invest from {prop.pricePerShare}</Text>
+                      <ChevronRight size={16} color={Colors.black} />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))}
+
+              <TouchableOpacity
+                style={styles.topPropViewAll}
+                activeOpacity={0.8}
+                onPress={() => { trackEvent('view_all_properties'); router.push('/signup' as any); }}
+              >
+                <Text style={styles.topPropViewAllText}>View All Properties</Text>
+                <ChevronRight size={14} color={Colors.primary} />
+              </TouchableOpacity>
+            </View>
 
             <Animated.View style={[styles.featuresSection, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
               <Text style={styles.sectionTitle}>Why Investors Choose IVXHOLDINGS</Text>
@@ -1356,6 +1769,7 @@ export default function LandingScreen() {
                         onChangeText={setFirstName}
                         autoCapitalize="words"
                         testID="waitlist-first-name"
+                        onFocus={() => { if (!hasTrackedRef.current.formFocus) { hasTrackedRef.current.formFocus = true; trackEvent('form_focus'); } }}
                       />
                     </View>
                     <View style={[styles.inputWrap, { flex: 1 }]}>
@@ -1666,7 +2080,7 @@ export default function LandingScreen() {
           <TouchableOpacity
             style={styles.ctaPrimary}
             activeOpacity={0.85}
-            onPress={() => router.push('/signup' as any)}
+            onPress={() => { trackEvent('cta_get_started'); router.push('/signup' as any); }}
           >
             <Text style={styles.ctaPrimaryText}>{"Get Started — It's Free"}</Text>
             <ChevronRight size={20} color={Colors.black} />
@@ -1674,7 +2088,7 @@ export default function LandingScreen() {
           <TouchableOpacity
             style={styles.ctaSecondary}
             activeOpacity={0.75}
-            onPress={() => router.push('/login' as any)}
+            onPress={() => { trackEvent('cta_sign_in'); router.push('/login' as any); }}
           >
             <Text style={styles.ctaSecondaryText}>Already have an account? <Text style={styles.ctaSecondaryLink}>Sign In</Text></Text>
           </TouchableOpacity>
@@ -2483,6 +2897,270 @@ const styles = StyleSheet.create({
     color: Colors.textTertiary,
     fontSize: 12,
     marginTop: 2,
+  },
+  topPropertiesSection: {
+    marginHorizontal: 20,
+    marginBottom: 28,
+  },
+  topPropHeader: {
+    marginBottom: 18,
+  },
+  topPropBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#FF6B6B15',
+    borderWidth: 1,
+    borderColor: '#FF6B6B35',
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    alignSelf: 'flex-start' as const,
+    marginBottom: 10,
+  },
+  topPropBadgeText: {
+    color: '#FF6B6B',
+    fontSize: 9,
+    fontWeight: '800' as const,
+    letterSpacing: 1.2,
+  },
+  topPropTitle: {
+    color: Colors.text,
+    fontSize: 24,
+    fontWeight: '900' as const,
+    marginBottom: 6,
+  },
+  topPropSubtitle: {
+    color: Colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  topPropCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: Colors.surfaceBorder,
+    overflow: 'hidden',
+    marginBottom: 16,
+  },
+  topPropImageWrap: {
+    height: 180,
+    position: 'relative' as const,
+  },
+  topPropImage: {
+    width: '100%',
+    height: '100%',
+  },
+  topPropImageOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.25)',
+  },
+  topPropStatusChip: {
+    position: 'absolute' as const,
+    top: 12,
+    left: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  topPropStatusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  topPropStatusText: {
+    fontSize: 9,
+    fontWeight: '800' as const,
+    letterSpacing: 0.8,
+  },
+  topPropHighlightChip: {
+    position: 'absolute' as const,
+    top: 12,
+    right: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  topPropHighlightText: {
+    fontSize: 9,
+    fontWeight: '800' as const,
+    letterSpacing: 0.5,
+  },
+  topPropPriceOverlay: {
+    position: 'absolute' as const,
+    bottom: 12,
+    right: 12,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.primary + '50',
+    alignItems: 'flex-end' as const,
+  },
+  topPropPriceLabel: {
+    color: Colors.textTertiary,
+    fontSize: 9,
+    fontWeight: '600' as const,
+  },
+  topPropPriceValue: {
+    color: Colors.primary,
+    fontSize: 20,
+    fontWeight: '900' as const,
+  },
+  topPropContent: {
+    padding: 16,
+    gap: 14,
+  },
+  topPropNameRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  topPropName: {
+    color: Colors.text,
+    fontSize: 18,
+    fontWeight: '800' as const,
+    marginBottom: 4,
+  },
+  topPropLocRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  topPropLoc: {
+    color: Colors.textTertiary,
+    fontSize: 12,
+  },
+  topPropTypeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  topPropTypeText: {
+    color: Colors.primary,
+    fontSize: 9,
+    fontWeight: '700' as const,
+  },
+  topPropMetrics: {
+    flexDirection: 'row',
+    backgroundColor: Colors.backgroundSecondary,
+    borderRadius: 14,
+    padding: 12,
+    alignItems: 'center',
+  },
+  topPropMetric: {
+    flex: 1,
+    alignItems: 'center' as const,
+    gap: 3,
+  },
+  topPropMetricLabel: {
+    color: Colors.textTertiary,
+    fontSize: 9,
+    fontWeight: '600' as const,
+    textAlign: 'center' as const,
+  },
+  topPropMetricValue: {
+    fontSize: 16,
+    fontWeight: '900' as const,
+  },
+  topPropMetricDiv: {
+    width: 1,
+    height: 28,
+    backgroundColor: Colors.surfaceBorder,
+  },
+  topPropFundedWrap: {
+    gap: 6,
+  },
+  topPropFundedHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  topPropFundedLabel: {
+    color: Colors.textSecondary,
+    fontSize: 11,
+    fontWeight: '700' as const,
+  },
+  topPropFundedPct: {
+    color: Colors.primary,
+    fontSize: 11,
+    fontWeight: '800' as const,
+  },
+  topPropFundedBarBg: {
+    height: 6,
+    backgroundColor: Colors.backgroundTertiary,
+    borderRadius: 3,
+    overflow: 'hidden' as const,
+  },
+  topPropFundedBar: {
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: Colors.primary,
+  },
+  topPropTagsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  topPropTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: Colors.positive + '10',
+    borderWidth: 1,
+    borderColor: Colors.positive + '25',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  topPropTagText: {
+    color: Colors.positive,
+    fontSize: 10,
+    fontWeight: '600' as const,
+  },
+  topPropInvestBtn: {
+    backgroundColor: Colors.primary,
+    borderRadius: 14,
+    paddingVertical: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  topPropInvestBtnText: {
+    color: Colors.black,
+    fontSize: 14,
+    fontWeight: '800' as const,
+    letterSpacing: 0.3,
+  },
+  topPropViewAll: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 14,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: Colors.primary + '40',
+    backgroundColor: Colors.primary + '08',
+  },
+  topPropViewAllText: {
+    color: Colors.primary,
+    fontSize: 13,
+    fontWeight: '700' as const,
   },
   bottomPad: {
     height: 120,
