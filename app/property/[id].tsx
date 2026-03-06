@@ -10,6 +10,9 @@ import {
   Alert,
   Platform,
   Share,
+  KeyboardAvoidingView,
+  Keyboard,
+  TouchableWithoutFeedback,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -702,209 +705,241 @@ export default function PropertyDetailScreen() {
       </View>
 
       <Modal visible={showInvestModal} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Invest in {property.name}</Text>
-              <TouchableOpacity onPress={closeInvestModal}>
-                <X size={24} color={Colors.text} />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.amountSection}>
-              <Text style={styles.amountLabel}>Investment Amount (USD)</Text>
-              <View style={styles.amountInput}>
-                <TouchableOpacity style={styles.amountButton} onPress={() => adjustAmount(-100)}>
-                  <Minus size={20} color={Colors.text} />
-                </TouchableOpacity>
-                <View style={styles.amountInputWrapper}>
-                  <View style={styles.amountDisplayContainer}>
-                    <Text style={styles.currencySymbol}>$</Text>
-                    <TextInput
-                      style={styles.amountTextInput}
-                      value={investAmount}
-                      onChangeText={setInvestAmount}
-                      keyboardType="numeric"
-                      placeholder="0"
-                      placeholderTextColor={Colors.textTertiary}
-                    />
-                  </View>
+        <KeyboardAvoidingView 
+          style={styles.modalOverlay} 
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+            <View style={styles.modalOverlay}>
+              <View style={styles.modalContent}>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>Invest in {property.name}</Text>
+                  <TouchableOpacity onPress={closeInvestModal}>
+                    <X size={24} color={Colors.text} />
+                  </TouchableOpacity>
                 </View>
-                <TouchableOpacity style={styles.amountButton} onPress={() => adjustAmount(100)}>
-                  <Plus size={20} color={Colors.text} />
-                </TouchableOpacity>
-              </View>
-            </View>
 
-            <View style={styles.quickAmounts}>
-              {[100, 500, 1000, 5000].map(amount => (
-                <TouchableOpacity
-                  key={amount}
-                  style={[styles.quickAmountButton, Number(investAmount) === amount && styles.quickAmountButtonActive]}
-                  onPress={() => setInvestAmount(String(amount))}
+                <ScrollView 
+                  showsVerticalScrollIndicator={false} 
+                  keyboardShouldPersistTaps="handled"
+                  bounces={false}
                 >
-                  <Text style={[styles.quickAmountText, Number(investAmount) === amount && styles.quickAmountTextActive]}>
-                    ${amount.toLocaleString()}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+                  <View style={styles.amountSection}>
+                    <Text style={styles.amountLabel}>Investment Amount (USD)</Text>
+                    <View style={styles.amountInputRow}>
+                      <TouchableOpacity style={styles.amountButton} onPress={() => adjustAmount(-100)}>
+                        <Minus size={20} color={Colors.text} />
+                      </TouchableOpacity>
+                      <View style={styles.amountInputWrapper}>
+                        <View style={styles.amountDisplayContainer}>
+                          <Text style={styles.currencySymbol}>$</Text>
+                          <TextInput
+                            style={styles.amountTextInput}
+                            value={investAmount}
+                            onChangeText={setInvestAmount}
+                            keyboardType="numeric"
+                            placeholder="0"
+                            placeholderTextColor={Colors.textTertiary}
+                            returnKeyType="done"
+                            onSubmitEditing={Keyboard.dismiss}
+                          />
+                        </View>
+                      </View>
+                      <TouchableOpacity style={styles.amountButton} onPress={() => adjustAmount(100)}>
+                        <Plus size={20} color={Colors.text} />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
 
-            <View style={styles.summarySection}>
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>Shares</Text>
-                <Text style={styles.summaryValue}>{shares}</Text>
-              </View>
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>Price per share</Text>
-                <Text style={styles.summaryValue}>${property.pricePerShare.toFixed(2)}</Text>
-              </View>
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>Platform fee (1%)</Text>
-                <Text style={styles.summaryValue}>${fees.toFixed(2)}</Text>
-              </View>
-              <View style={styles.summaryDivider} />
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabelBold}>Total</Text>
-                <Text style={styles.summaryValueBold}>${(totalCost + fees).toFixed(2)}</Text>
+                  <View style={styles.quickAmounts}>
+                    {[100, 500, 1000, 5000].map(amount => (
+                      <TouchableOpacity
+                        key={amount}
+                        style={[styles.quickAmountButton, Number(investAmount) === amount && styles.quickAmountButtonActive]}
+                        onPress={() => { Keyboard.dismiss(); setInvestAmount(String(amount)); }}
+                      >
+                        <Text style={[styles.quickAmountText, Number(investAmount) === amount && styles.quickAmountTextActive]}>
+                          ${amount.toLocaleString()}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+
+                  <View style={styles.summarySection}>
+                    <View style={styles.summaryRow}>
+                      <Text style={styles.summaryLabel}>Shares</Text>
+                      <Text style={styles.summaryValue}>{shares}</Text>
+                    </View>
+                    <View style={styles.summaryRow}>
+                      <Text style={styles.summaryLabel}>Price per share</Text>
+                      <Text style={styles.summaryValue}>${property.pricePerShare.toFixed(2)}</Text>
+                    </View>
+                    <View style={styles.summaryRow}>
+                      <Text style={styles.summaryLabel}>Platform fee (1%)</Text>
+                      <Text style={styles.summaryValue}>${fees.toFixed(2)}</Text>
+                    </View>
+                    <View style={styles.summaryDivider} />
+                    <View style={styles.summaryRow}>
+                      <Text style={styles.summaryLabelBold}>Total</Text>
+                      <Text style={styles.summaryValueBold}>${(totalCost + fees).toFixed(2)}</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.walletInfoRow}>
+                    <View style={styles.walletInfoLeft}>
+                      <Info size={16} color={Colors.info} />
+                      <Text style={styles.walletInfoText}>
+                        Wallet balance: ${walletBalance.toLocaleString()}
+                      </Text>
+                    </View>
+                    <TouchableOpacity 
+                      style={styles.addFundsButton}
+                      onPress={() => setShowAddFundsModal(true)}
+                    >
+                      <Plus size={14} color={Colors.black} />
+                      <Text style={styles.addFundsButtonText}>Add Funds</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  <TouchableOpacity style={styles.confirmButton} onPress={handleConfirmInvest}>
+                    <Text style={styles.confirmButtonText}>Confirm Investment</Text>
+                  </TouchableOpacity>
+                  <View style={{ height: 16 }} />
+                </ScrollView>
               </View>
             </View>
-
-            <View style={styles.walletInfoRow}>
-              <View style={styles.walletInfo}>
-                <Info size={16} color={Colors.info} />
-                <Text style={styles.walletInfoText}>
-                  Wallet balance: ${walletBalance.toLocaleString()}
-                </Text>
-              </View>
-              <TouchableOpacity 
-                style={styles.addFundsButton}
-                onPress={() => setShowAddFundsModal(true)}
-              >
-                <Plus size={14} color={Colors.black} />
-                <Text style={styles.addFundsButtonText}>Add Funds</Text>
-              </TouchableOpacity>
-            </View>
-
-            <TouchableOpacity style={styles.confirmButton} onPress={handleConfirmInvest}>
-              <Text style={styles.confirmButtonText}>Confirm Investment</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+          </TouchableWithoutFeedback>
+        </KeyboardAvoidingView>
       </Modal>
 
       <Modal visible={showAddFundsModal} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Add Funds</Text>
-              <TouchableOpacity onPress={closeAddFundsModal}>
-                <X size={24} color={Colors.text} />
-              </TouchableOpacity>
-            </View>
+        <KeyboardAvoidingView 
+          style={styles.modalOverlay} 
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+            <View style={styles.modalOverlay}>
+              <View style={styles.modalContent}>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>Add Funds</Text>
+                  <TouchableOpacity onPress={closeAddFundsModal}>
+                    <X size={24} color={Colors.text} />
+                  </TouchableOpacity>
+                </View>
 
-            <View style={styles.currentBalanceSection}>
-              <Text style={styles.currentBalanceLabel}>Current Balance</Text>
-              <Text style={styles.currentBalanceValue}>${walletBalance.toLocaleString()}</Text>
-            </View>
-
-            <View style={styles.amountSection}>
-              <Text style={styles.amountLabel}>Amount to Add (USD)</Text>
-              <View style={styles.amountInput}>
-                <TouchableOpacity 
-                  style={styles.amountButton} 
-                  onPress={() => {
-                    const current = Number(addFundsAmount) || 0;
-                    setAddFundsAmount(String(Math.max(10, current - 100)));
-                  }}
+                <ScrollView 
+                  showsVerticalScrollIndicator={false} 
+                  keyboardShouldPersistTaps="handled"
+                  bounces={false}
                 >
-                  <Minus size={20} color={Colors.text} />
-                </TouchableOpacity>
-                <View style={styles.amountInputWrapper}>
-                  <View style={styles.amountDisplayContainer}>
-                    <Text style={styles.currencySymbol}>$</Text>
-                    <TextInput
-                      style={styles.amountTextInput}
-                      value={addFundsAmount}
-                      onChangeText={setAddFundsAmount}
-                      keyboardType="numeric"
-                      placeholder="0"
-                      placeholderTextColor={Colors.textTertiary}
-                    />
+                  <View style={styles.currentBalanceSection}>
+                    <Text style={styles.currentBalanceLabel}>Current Balance</Text>
+                    <Text style={styles.currentBalanceValue}>${walletBalance.toLocaleString()}</Text>
                   </View>
-                </View>
-                <TouchableOpacity 
-                  style={styles.amountButton} 
-                  onPress={() => {
-                    const current = Number(addFundsAmount) || 0;
-                    setAddFundsAmount(String(current + 100));
-                  }}
-                >
-                  <Plus size={20} color={Colors.text} />
-                </TouchableOpacity>
+
+                  <View style={styles.amountSection}>
+                    <Text style={styles.amountLabel}>Amount to Add (USD)</Text>
+                    <View style={styles.amountInputRow}>
+                      <TouchableOpacity 
+                        style={styles.amountButton} 
+                        onPress={() => {
+                          const current = Number(addFundsAmount) || 0;
+                          setAddFundsAmount(String(Math.max(10, current - 100)));
+                        }}
+                      >
+                        <Minus size={20} color={Colors.text} />
+                      </TouchableOpacity>
+                      <View style={styles.amountInputWrapper}>
+                        <View style={styles.amountDisplayContainer}>
+                          <Text style={styles.currencySymbol}>$</Text>
+                          <TextInput
+                            style={styles.amountTextInput}
+                            value={addFundsAmount}
+                            onChangeText={setAddFundsAmount}
+                            keyboardType="numeric"
+                            placeholder="0"
+                            placeholderTextColor={Colors.textTertiary}
+                            returnKeyType="done"
+                            onSubmitEditing={Keyboard.dismiss}
+                          />
+                        </View>
+                      </View>
+                      <TouchableOpacity 
+                        style={styles.amountButton} 
+                        onPress={() => {
+                          const current = Number(addFundsAmount) || 0;
+                          setAddFundsAmount(String(current + 100));
+                        }}
+                      >
+                        <Plus size={20} color={Colors.text} />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  <View style={styles.quickAmounts}>
+                    {[100, 500, 1000, 5000].map(amount => (
+                      <TouchableOpacity
+                        key={amount}
+                        style={[styles.quickAmountButton, Number(addFundsAmount) === amount && styles.quickAmountButtonActive]}
+                        onPress={() => { Keyboard.dismiss(); setAddFundsAmount(String(amount)); }}
+                      >
+                        <Text style={[styles.quickAmountText, Number(addFundsAmount) === amount && styles.quickAmountTextActive]}>
+                          ${amount.toLocaleString()}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+
+                  <View style={styles.paymentMethodsSection}>
+                    <Text style={styles.paymentMethodsTitle}>Payment Method</Text>
+                    <TouchableOpacity style={styles.paymentMethodItem}>
+                      <View style={styles.paymentMethodIcon}>
+                        <DollarSign size={18} color={Colors.primary} />
+                      </View>
+                      <View style={styles.paymentMethodInfo}>
+                        <Text style={styles.paymentMethodName}>Bank Transfer</Text>
+                        <Text style={styles.paymentMethodDesc}>ACH • 1-3 business days</Text>
+                      </View>
+                      <View style={styles.paymentMethodSelected} />
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.paymentMethodItem, styles.paymentMethodItemDisabled]}>
+                      <View style={[styles.paymentMethodIcon, { backgroundColor: Colors.backgroundTertiary }]}>
+                        <Building2 size={18} color={Colors.textTertiary} />
+                      </View>
+                      <View style={styles.paymentMethodInfo}>
+                        <Text style={[styles.paymentMethodName, { color: Colors.textTertiary }]}>Wire Transfer</Text>
+                        <Text style={styles.paymentMethodDesc}>Same day • Min $10,000</Text>
+                      </View>
+                    </TouchableOpacity>
+                  </View>
+
+                  <View style={styles.addFundsSummary}>
+                    <View style={styles.summaryRow}>
+                      <Text style={styles.summaryLabel}>Amount</Text>
+                      <Text style={styles.summaryValue}>${Number(addFundsAmount || 0).toLocaleString()}</Text>
+                    </View>
+                    <View style={styles.summaryRow}>
+                      <Text style={styles.summaryLabel}>Fee</Text>
+                      <Text style={[styles.summaryValue, { color: Colors.success }]}>$0.00</Text>
+                    </View>
+                    <View style={styles.summaryDivider} />
+                    <View style={styles.summaryRow}>
+                      <Text style={styles.summaryLabelBold}>New Balance</Text>
+                      <Text style={styles.summaryValueBold}>
+                        ${(walletBalance + Number(addFundsAmount || 0)).toLocaleString()}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <TouchableOpacity style={styles.confirmButton} onPress={handleAddFunds}>
+                    <Text style={styles.confirmButtonText}>Add ${Number(addFundsAmount || 0).toLocaleString()}</Text>
+                  </TouchableOpacity>
+                  <View style={{ height: 16 }} />
+                </ScrollView>
               </View>
             </View>
-
-            <View style={styles.quickAmounts}>
-              {[100, 500, 1000, 5000].map(amount => (
-                <TouchableOpacity
-                  key={amount}
-                  style={[styles.quickAmountButton, Number(addFundsAmount) === amount && styles.quickAmountButtonActive]}
-                  onPress={() => setAddFundsAmount(String(amount))}
-                >
-                  <Text style={[styles.quickAmountText, Number(addFundsAmount) === amount && styles.quickAmountTextActive]}>
-                    ${amount.toLocaleString()}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <View style={styles.paymentMethodsSection}>
-              <Text style={styles.paymentMethodsTitle}>Payment Method</Text>
-              <TouchableOpacity style={styles.paymentMethodItem}>
-                <View style={styles.paymentMethodIcon}>
-                  <DollarSign size={18} color={Colors.primary} />
-                </View>
-                <View style={styles.paymentMethodInfo}>
-                  <Text style={styles.paymentMethodName}>Bank Transfer</Text>
-                  <Text style={styles.paymentMethodDesc}>ACH • 1-3 business days</Text>
-                </View>
-                <View style={styles.paymentMethodSelected} />
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.paymentMethodItem, styles.paymentMethodItemDisabled]}>
-                <View style={[styles.paymentMethodIcon, { backgroundColor: Colors.backgroundTertiary }]}>
-                  <Building2 size={18} color={Colors.textTertiary} />
-                </View>
-                <View style={styles.paymentMethodInfo}>
-                  <Text style={[styles.paymentMethodName, { color: Colors.textTertiary }]}>Wire Transfer</Text>
-                  <Text style={styles.paymentMethodDesc}>Same day • Min $10,000</Text>
-                </View>
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.addFundsSummary}>
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>Amount</Text>
-                <Text style={styles.summaryValue}>${Number(addFundsAmount || 0).toLocaleString()}</Text>
-              </View>
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>Fee</Text>
-                <Text style={[styles.summaryValue, { color: Colors.success }]}>$0.00</Text>
-              </View>
-              <View style={styles.summaryDivider} />
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabelBold}>New Balance</Text>
-                <Text style={styles.summaryValueBold}>
-                  ${(walletBalance + Number(addFundsAmount || 0)).toLocaleString()}
-                </Text>
-              </View>
-            </View>
-
-            <TouchableOpacity style={styles.confirmButton} onPress={handleAddFunds}>
-              <Text style={styles.confirmButtonText}>Add ${Number(addFundsAmount || 0).toLocaleString()}</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+          </TouchableWithoutFeedback>
+        </KeyboardAvoidingView>
       </Modal>
 
       <Modal visible={showDocumentModal} animationType="slide" transparent>
@@ -1403,21 +1438,22 @@ const styles = StyleSheet.create({
   distributionLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
   distributionDate: { color: Colors.textTertiary, fontSize: 12 },
   distributionAmount: { color: Colors.success, fontSize: 14, fontWeight: '600' as const },
-  bottomPadding: { height: 140 },
+  bottomPadding: { height: 180 },
   investBar: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: '#1A1A1A', borderTopWidth: 1, borderTopColor: '#2A2A2A', paddingHorizontal: 20, paddingTop: 12 },
   investBarContent: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   investBarLabel: { color: Colors.textSecondary, fontSize: 12 },
   investBarPrice: { color: Colors.text, fontSize: 18, fontWeight: '700' as const },
-  investButton: { paddingVertical: 14, paddingHorizontal: 32, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  investButton: { paddingVertical: 14, paddingHorizontal: 32, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.primary },
   investButtonDisabled: { opacity: 0.4 },
   investButtonText: { color: Colors.black, fontWeight: '700' as const, fontSize: 15 },
-  modalOverlay: { flex: 1, backgroundColor: Colors.overlay, justifyContent: 'center', padding: 20 },
-  modalContent: { backgroundColor: Colors.surface, borderRadius: 20, padding: 24, maxHeight: '80%' },
+  modalOverlay: { flex: 1, backgroundColor: Colors.overlay, justifyContent: 'flex-end' },
+  modalContent: { backgroundColor: Colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, maxHeight: '85%' },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
   modalTitle: { color: Colors.text, fontSize: 20, fontWeight: '800' as const },
   amountSection: { marginBottom: 16 },
   amountLabel: { color: Colors.text, fontSize: 14, fontWeight: '600' as const, marginBottom: 8 },
   amountInput: { flex: 1, color: Colors.text, fontSize: 24, fontWeight: '700' as const, paddingVertical: 14 },
+  amountInputRow: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 8 },
   amountButton: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, alignItems: 'center' },
   amountInputWrapper: { flex: 1, color: Colors.text, fontSize: 24, fontWeight: '700' as const, paddingVertical: 14 },
   amountDisplayContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surface, borderRadius: 12, borderWidth: 1, borderColor: Colors.surfaceBorder, paddingHorizontal: 14 },
@@ -1435,12 +1471,13 @@ const styles = StyleSheet.create({
   summaryDivider: { width: 1, height: 24, backgroundColor: Colors.surfaceBorder },
   summaryLabelBold: { color: Colors.text, fontSize: 14, fontWeight: '700' as const },
   summaryValueBold: { color: Colors.text, fontSize: 16, fontWeight: '800' as const },
-  walletInfoRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  walletInfoRow: { flexDirection: 'row' as const, alignItems: 'center' as const, justifyContent: 'space-between' as const, marginBottom: 16 },
   walletInfo: { flex: 1 },
-  addFundsButton: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 12, alignItems: 'center' },
-  addFundsButtonText: { color: Colors.black, fontWeight: '700' as const, fontSize: 15 },
+  walletInfoLeft: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 8, flex: 1 },
+  addFundsButton: { flexDirection: 'row' as const, paddingVertical: 10, paddingHorizontal: 16, borderRadius: 12, alignItems: 'center' as const, backgroundColor: Colors.primary, gap: 4 },
+  addFundsButtonText: { color: Colors.black, fontWeight: '700' as const, fontSize: 13 },
   walletInfoText: { color: Colors.textSecondary, fontSize: 13 },
-  confirmButton: { backgroundColor: Colors.primary, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
+  confirmButton: { backgroundColor: Colors.primary, borderRadius: 14, paddingVertical: 16, alignItems: 'center' as const, marginTop: 8 },
   confirmButtonText: { color: Colors.black, fontWeight: '700' as const, fontSize: 15 },
   currentBalanceSection: { marginBottom: 16 },
   currentBalanceLabel: { color: Colors.textSecondary, fontSize: 13 },
@@ -1460,7 +1497,7 @@ const styles = StyleSheet.create({
   appraisalCard: { backgroundColor: Colors.surface, borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: Colors.surfaceBorder },
   appraisalHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
   appraisalIconContainer: { gap: 8 },
-  appraisalHeaderText: { color: Colors.textSecondary, fontSize: 13 },
+  appraisalHeaderText: { flex: 1, gap: 2 },
   appraisalValue: { color: Colors.text, fontSize: 14, fontWeight: '600' as const },
   appraisalLabel: { color: Colors.textSecondary, fontSize: 13 },
   confidenceBadge: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
@@ -1472,7 +1509,7 @@ const styles = StyleSheet.create({
   breakdownValue: { color: Colors.text, fontSize: 14, fontWeight: '600' as const },
   breakdownDivider: { width: 1, height: 24, backgroundColor: Colors.surfaceBorder },
   appraisalMeta: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  metaItem: { color: Colors.textTertiary, fontSize: 12 },
+  metaItem: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 6 },
   metaText: { color: Colors.textSecondary, fontSize: 13 },
   marketComparison: { gap: 8, marginTop: 8 },
   premiumText: { color: Colors.textSecondary, fontSize: 13 },
@@ -1483,7 +1520,7 @@ const styles = StyleSheet.create({
   documentModalContent: { backgroundColor: Colors.surface, borderRadius: 20, padding: 24, maxHeight: '80%' },
   documentModalHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
   documentModalIconContainer: { width: 48, height: 48, borderRadius: 14, backgroundColor: Colors.primary + '15', alignItems: 'center', justifyContent: 'center' },
-  documentModalHeaderText: { color: Colors.textSecondary, fontSize: 13 },
+  documentModalHeaderText: { flex: 1, gap: 4 },
   documentModalSubtitle: { color: Colors.text, fontSize: 16, fontWeight: '700' as const },
   verifiedBadge: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
   verifiedText: { color: Colors.textSecondary, fontSize: 13 },
@@ -1501,7 +1538,7 @@ const styles = StyleSheet.create({
   documentSecondaryText: { color: Colors.textSecondary, fontSize: 13 },
   appraisalModalContent: { backgroundColor: Colors.surface, borderRadius: 20, padding: 24, maxHeight: '85%' },
   appraisalModalHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
-  appraisalModalValue: { color: Colors.text, fontSize: 14, fontWeight: '600' as const },
+  appraisalModalValue: { flex: 1, gap: 4 },
   appraisalModalValueLabel: { color: Colors.textSecondary, fontSize: 13 },
   appraisalModalValueAmount: { color: Colors.text, fontSize: 28, fontWeight: '800' as const, marginTop: 4 },
   appraisalConfidenceCircle: { width: 64, height: 64, borderRadius: 32, backgroundColor: Colors.primary + '15', alignItems: 'center', justifyContent: 'center' },
@@ -1550,7 +1587,7 @@ const styles = StyleSheet.create({
   titleCard: { backgroundColor: Colors.surface, borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: Colors.surfaceBorder },
   titleHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
   titleIconContainer: { gap: 8 },
-  titleHeaderText: { color: Colors.textSecondary, fontSize: 13 },
+  titleHeaderText: { flex: 1, gap: 2 },
   titleNumber: { color: Colors.text, fontSize: 16, fontWeight: '700' as const },
   titleSubtext: { color: Colors.textSecondary, fontSize: 13 },
   copyButton: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 12, alignItems: 'center' },
@@ -1565,7 +1602,7 @@ const styles = StyleSheet.create({
   titleModalContent: { backgroundColor: Colors.surface, borderRadius: 20, padding: 24, maxHeight: '85%' },
   titleModalHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
   titleModalIconContainer: { width: 48, height: 48, borderRadius: 14, backgroundColor: Colors.primary + '15', alignItems: 'center', justifyContent: 'center' },
-  titleModalHeaderText: { color: Colors.textSecondary, fontSize: 13 },
+  titleModalHeaderText: { flex: 1, gap: 4 },
   titleModalNumber: { color: Colors.text, fontSize: 16, fontWeight: '700' as const },
   titleModalStatusBadge: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
   titleModalStatusText: { color: Colors.textSecondary, fontSize: 13 },
