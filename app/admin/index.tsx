@@ -9,6 +9,7 @@ import {
   TextInput,
   Modal,
   useWindowDimensions,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -34,15 +35,10 @@ import {
   Radio,
   BarChart3,
   Star,
-  Sparkles,
   Image,
   Play,
   FileText,
-  Settings,
-  Bell,
   Share2,
-  Wallet,
-  Scale,
   Landmark,
   Globe,
   Send,
@@ -54,7 +50,7 @@ import {
   KeyRound,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
-import { adminStats, getRecentTransactions, getPendingKycMembers } from '@/mocks/admin';
+import { trpc } from '@/lib/trpc';
 
 const ADMIN_MODULES = [
   { id: 'owner-controls', name: 'Owner Controls', icon: Crown, iconName: 'Crown', route: '/admin/owner-controls', category: 'Core' },
@@ -88,23 +84,64 @@ const ADMIN_MODULES = [
   { id: 'viral-growth', name: 'Viral Growth Hub', icon: Flame, iconName: 'Flame', route: '/admin/viral-growth', category: 'Marketing' },
   { id: 'api-keys', name: 'API Keys Vault', icon: KeyRound, iconName: 'KeyRound', route: '/admin/api-keys', category: 'Settings' },
   { id: 'email-inbox', name: 'AI Email Inbox', icon: Mail, iconName: 'Mail', route: '/admin/email-inbox', category: 'Marketing' },
+  { id: 'email-management', name: 'Email Management', icon: Mail, iconName: 'Mail', route: '/admin/email-management', category: 'Core' },
+  { id: 'email-accounts', name: 'Email Accounts', icon: Users, iconName: 'Users', route: '/admin/email-accounts', category: 'Users' },
+  { id: 'landing-analytics', name: 'Landing Analytics', icon: BarChart3, iconName: 'BarChart3', route: '/admin/landing-analytics', category: 'Analytics' },
 ];
 
 export default function AdminDashboard() {
   const router = useRouter();
-  const { width } = useWindowDimensions();
-  const isSmall = width < 375;
-  const [refreshing, setRefreshing] = React.useState(false);
+  const { width: _width } = useWindowDimensions();
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch] = useState(false);
-  const stats = adminStats;
-  const recentTransactions = getRecentTransactions(5);
-  const pendingKyc = getPendingKycMembers();
+
+  const utils = trpc.useUtils();
+
+  const dashboardQuery = trpc.analytics.getDashboard.useQuery(undefined, {
+    staleTime: 1000 * 30,
+    refetchInterval: 1000 * 60,
+  });
+
+  const transactionsQuery = trpc.transactions.list.useQuery({
+    page: 1,
+    limit: 5,
+    sortBy: 'createdAt',
+    sortOrder: 'desc',
+  }, {
+    staleTime: 1000 * 30,
+  });
+
+  const pendingKycQuery = trpc.members.list.useQuery({
+    page: 1,
+    limit: 10,
+    kycStatus: 'pending',
+  }, {
+    staleTime: 1000 * 30,
+  });
+
+  const inReviewKycQuery = trpc.members.list.useQuery({
+    page: 1,
+    limit: 10,
+    kycStatus: 'in_review',
+  }, {
+    staleTime: 1000 * 30,
+  });
+
+  const stats = dashboardQuery.data;
+  const recentTransactions = transactionsQuery.data?.transactions ?? [];
+  const pendingKycMembers = [
+    ...(pendingKycQuery.data?.members ?? []),
+    ...(inReviewKycQuery.data?.members ?? []),
+  ];
+
+  const isLoading = dashboardQuery.isLoading;
+  const refreshing = dashboardQuery.isRefetching || transactionsQuery.isRefetching;
 
   const onRefresh = useCallback(() => {
-    setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 1000);
-  }, []);
+    void utils.analytics.getDashboard.invalidate();
+    void utils.transactions.list.invalidate();
+    void utils.members.list.invalidate();
+  }, [utils]);
 
   const filteredModules = useMemo(() => {
     if (!searchQuery.trim()) return ADMIN_MODULES;
@@ -270,6 +307,13 @@ export default function AdminDashboard() {
           />
         }
       >
+        {isLoading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={Colors.primary} />
+            <Text style={styles.loadingText}>Loading live data...</Text>
+          </View>
+        ) : (
+          <>
         <View style={styles.statsGrid}>
           <TouchableOpacity
             style={styles.statCard}
@@ -278,9 +322,9 @@ export default function AdminDashboard() {
             <View style={[styles.statIcon, { backgroundColor: Colors.primary + '20' }]}>
               <Users size={22} color={Colors.primary} />
             </View>
-            <Text style={styles.statValue}>{stats.totalMembers}</Text>
+            <Text style={styles.statValue}>{stats?.totalMembers ?? 0}</Text>
             <Text style={styles.statLabel}>Total Members</Text>
-            <Text style={styles.statSubtext}>{stats.activeMembers} active</Text>
+            <Text style={styles.statSubtext}>{stats?.activeMembers ?? 0} active</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -290,9 +334,9 @@ export default function AdminDashboard() {
             <View style={[styles.statIcon, { backgroundColor: Colors.accent + '20' }]}>
               <ArrowLeftRight size={22} color={Colors.accent} />
             </View>
-            <Text style={styles.statValue}>{stats.totalTransactions}</Text>
+            <Text style={styles.statValue}>{stats?.totalTransactions ?? 0}</Text>
             <Text style={styles.statLabel}>Transactions</Text>
-            <Text style={styles.statSubtext}>{formatCurrency(stats.totalVolume)} vol</Text>
+            <Text style={styles.statSubtext}>{formatCurrency(stats?.totalVolume ?? 0)} vol</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -302,33 +346,57 @@ export default function AdminDashboard() {
             <View style={[styles.statIcon, { backgroundColor: Colors.positive + '20' }]}>
               <Building2 size={22} color={Colors.positive} />
             </View>
-            <Text style={styles.statValue}>{stats.totalProperties}</Text>
+            <Text style={styles.statValue}>{stats?.totalProperties ?? 0}</Text>
             <Text style={styles.statLabel}>Properties</Text>
-            <Text style={styles.statSubtext}>{stats.liveProperties} live</Text>
+            <Text style={styles.statSubtext}>{stats?.liveProperties ?? 0} live</Text>
           </TouchableOpacity>
 
           <View style={styles.statCard}>
             <View style={[styles.statIcon, { backgroundColor: Colors.warning + '20' }]}>
               <TrendingUp size={22} color={Colors.warning} />
             </View>
-            <Text style={styles.statValue}>{formatCurrency(stats.totalInvested)}</Text>
+            <Text style={styles.statValue}>{formatCurrency(stats?.totalInvested ?? 0)}</Text>
             <Text style={styles.statLabel}>Total Invested</Text>
-            <Text style={styles.statSubtext}>All time</Text>
+            <Text style={styles.statSubtext}>{stats?.trends?.userGrowthRate ?? 0}% user growth</Text>
           </View>
         </View>
 
-        {pendingKyc.length > 0 && (
+        {stats && (
+          <View style={styles.liveMetricsRow}>
+            <View style={styles.liveMetricItem}>
+              <Text style={styles.liveMetricValue}>{formatCurrency(stats.totalDeposits)}</Text>
+              <Text style={styles.liveMetricLabel}>Deposits</Text>
+            </View>
+            <View style={styles.liveMetricDivider} />
+            <View style={styles.liveMetricItem}>
+              <Text style={styles.liveMetricValue}>{formatCurrency(stats.totalWithdrawals)}</Text>
+              <Text style={styles.liveMetricLabel}>Withdrawals</Text>
+            </View>
+            <View style={styles.liveMetricDivider} />
+            <View style={styles.liveMetricItem}>
+              <Text style={styles.liveMetricValue}>{stats.pendingTransactions}</Text>
+              <Text style={styles.liveMetricLabel}>Pending Tx</Text>
+            </View>
+            <View style={styles.liveMetricDivider} />
+            <View style={styles.liveMetricItem}>
+              <Text style={styles.liveMetricValue}>{stats.openSupportTickets}</Text>
+              <Text style={styles.liveMetricLabel}>Open Tickets</Text>
+            </View>
+          </View>
+        )}
+
+        {pendingKycMembers.length > 0 && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <View style={styles.sectionTitleRow}>
                 <Shield size={18} color={Colors.warning} />
-                <Text style={styles.sectionTitle}>Pending KYC ({pendingKyc.length})</Text>
+                <Text style={styles.sectionTitle}>Pending KYC ({pendingKycMembers.length})</Text>
               </View>
               <TouchableOpacity onPress={() => router.push('/admin/members' as any)}>
                 <Text style={styles.seeAll}>See All</Text>
               </TouchableOpacity>
             </View>
-            {pendingKyc.map((member) => (
+            {pendingKycMembers.map((member) => (
               <TouchableOpacity
                 key={member.id}
                 style={styles.kycCard}
@@ -370,12 +438,17 @@ export default function AdminDashboard() {
               <Text style={styles.seeAll}>See All</Text>
             </TouchableOpacity>
           </View>
+          {recentTransactions.length === 0 && (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyStateText}>No transactions yet</Text>
+            </View>
+          )}
           {recentTransactions.map((tx) => (
             <View key={tx.id} style={styles.txCard}>
               <View style={styles.txIcon}>{getTransactionIcon(tx.type)}</View>
               <View style={styles.txInfo}>
-                <Text style={styles.txUser}>{tx.userName}</Text>
-                <Text style={styles.txDesc}>{tx.description}</Text>
+                <Text style={styles.txUser}>{tx.userId}</Text>
+                <Text style={styles.txDesc}>{tx.description || tx.type}</Text>
                 <Text style={styles.txDate}>{formatDate(tx.createdAt)}</Text>
               </View>
               <View style={styles.txAmount}>
@@ -404,6 +477,8 @@ export default function AdminDashboard() {
             </View>
           ))}
         </View>
+          </>
+        )}
 
         <View style={styles.modulesSection}>
           <Text style={styles.modulesSectionTitle}>All Modules</Text>
@@ -443,6 +518,7 @@ export default function AdminDashboard() {
     </SafeAreaView>
   );
 }
+
 
 const styles = StyleSheet.create({
   container: {
@@ -827,5 +903,55 @@ const styles = StyleSheet.create({
   },
   bottomPadding: {
     height: 120,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center' as const,
+    alignItems: 'center' as const,
+    paddingVertical: 60,
+    gap: 12,
+  },
+  loadingText: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    fontWeight: '500' as const,
+  },
+  liveMetricsRow: {
+    flexDirection: 'row' as const,
+    marginHorizontal: 12,
+    marginTop: 4,
+    marginBottom: 8,
+    backgroundColor: Colors.card,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: 14,
+  },
+  liveMetricItem: {
+    flex: 1,
+    alignItems: 'center' as const,
+    gap: 3,
+  },
+  liveMetricValue: {
+    fontSize: 14,
+    fontWeight: '700' as const,
+    color: Colors.text,
+  },
+  liveMetricLabel: {
+    fontSize: 10,
+    color: Colors.textTertiary,
+    textAlign: 'center' as const,
+  },
+  liveMetricDivider: {
+    width: 1,
+    backgroundColor: Colors.border,
+  },
+  emptyState: {
+    paddingVertical: 24,
+    alignItems: 'center' as const,
+  },
+  emptyStateText: {
+    fontSize: 13,
+    color: Colors.textTertiary,
   },
 });
