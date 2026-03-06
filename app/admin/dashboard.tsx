@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   RefreshControl,
   useWindowDimensions,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -27,35 +28,84 @@ import {
   Wallet,
   AlertCircle,
   CheckCircle2,
-  XCircle,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
-import {
-  adminStats,
-  getRecentTransactions,
-  getPendingKycMembers,
-  getRecentActivities,
-  members,
-} from '@/mocks/admin';
+import { trpc } from '@/lib/trpc';
 
 export default function AdminDashboardScreen() {
   const router = useRouter();
   const { width } = useWindowDimensions();
-  const [refreshing, setRefreshing] = useState(false);
 
-  const stats = adminStats;
-  const recentTransactions = getRecentTransactions(6);
-  const pendingKyc = getPendingKycMembers();
-  const recentActivities = getRecentActivities(5);
+  const utils = trpc.useUtils();
 
-  const totalWalletBalance = members.reduce((sum, m) => sum + m.walletBalance, 0);
-  const totalReturns = members.reduce((sum, m) => sum + m.totalReturns, 0);
-  const approvedMembers = members.filter(m => m.kycStatus === 'approved').length;
+  const dashboardQuery = trpc.analytics.getDashboard.useQuery(undefined, {
+    staleTime: 1000 * 30,
+    refetchInterval: 1000 * 60,
+  });
+
+  const kpiQuery = trpc.analytics.getKPIDashboard.useQuery(undefined, {
+    staleTime: 1000 * 60,
+  });
+
+  const systemHealthQuery = trpc.analytics.getSystemHealth.useQuery(undefined, {
+    staleTime: 1000 * 30,
+    refetchInterval: 1000 * 60,
+  });
+
+  const transactionsQuery = trpc.transactions.list.useQuery({
+    page: 1,
+    limit: 6,
+    sortBy: 'createdAt',
+    sortOrder: 'desc',
+  }, {
+    staleTime: 1000 * 30,
+  });
+
+  const pendingKycQuery = trpc.members.list.useQuery({
+    page: 1,
+    limit: 5,
+    kycStatus: 'pending',
+  }, { staleTime: 1000 * 30 });
+
+  const inReviewKycQuery = trpc.members.list.useQuery({
+    page: 1,
+    limit: 5,
+    kycStatus: 'in_review',
+  }, { staleTime: 1000 * 30 });
+
+  const retentionQuery = trpc.analytics.getRetentionMetrics.useQuery(
+    { period: '30d' },
+    { staleTime: 1000 * 60 * 5 }
+  );
+
+  const investmentQuery = trpc.analytics.getInvestmentAnalytics.useQuery(
+    { period: '30d' },
+    { staleTime: 1000 * 60 * 5 }
+  );
+
+  const stats = dashboardQuery.data;
+  const recentTransactions = transactionsQuery.data?.transactions ?? [];
+  const pendingKyc = [
+    ...(pendingKycQuery.data?.members ?? []),
+    ...(inReviewKycQuery.data?.members ?? []),
+  ];
+  const kpis = kpiQuery.data?.kpis ?? [];
+  const health = systemHealthQuery.data;
+  const retention = retentionQuery.data;
+  const investment = investmentQuery.data;
+
+  const isLoading = dashboardQuery.isLoading;
+  const refreshing = dashboardQuery.isRefetching;
 
   const onRefresh = useCallback(() => {
-    setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 1000);
-  }, []);
+    void utils.analytics.getDashboard.invalidate();
+    void utils.analytics.getKPIDashboard.invalidate();
+    void utils.analytics.getSystemHealth.invalidate();
+    void utils.analytics.getRetentionMetrics.invalidate();
+    void utils.analytics.getInvestmentAnalytics.invalidate();
+    void utils.transactions.list.invalidate();
+    void utils.members.list.invalidate();
+  }, [utils]);
 
   const formatCurrency = useCallback((amount: number) => {
     if (amount >= 1000000) {
@@ -97,22 +147,28 @@ export default function AdminDashboardScreen() {
     }
   }, []);
 
-  const getActivityIcon = useCallback((type: string) => {
-    switch (type) {
-      case 'investment':
-        return <TrendingUp size={14} color={Colors.primary} />;
-      case 'kyc_update':
-        return <Shield size={14} color={Colors.warning} />;
-      case 'withdrawal':
-        return <ArrowUpRight size={14} color={Colors.negative} />;
-      case 'login':
-        return <CheckCircle2 size={14} color={Colors.positive} />;
-      default:
-        return <Activity size={14} color={Colors.textSecondary} />;
-    }
-  }, []);
-
   const cardWidth = (width - 48) / 2;
+
+  if (isLoading) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+            <ArrowLeft size={20} color={Colors.text} />
+          </TouchableOpacity>
+          <Text style={styles.title}>Dashboard</Text>
+          <View style={styles.liveIndicator}>
+            <View style={styles.liveDot} />
+            <Text style={styles.liveText}>Live</Text>
+          </View>
+        </View>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={styles.loadingText}>Loading live analytics...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -144,16 +200,16 @@ export default function AdminDashboardScreen() {
               <Wallet size={20} color={Colors.background} />
             </View>
             <Text style={styles.heroLabel}>Total Invested</Text>
-            <Text style={styles.heroValue}>{formatCurrency(stats.totalInvested)}</Text>
+            <Text style={styles.heroValue}>{formatCurrency(stats?.totalInvested ?? 0)}</Text>
             <Text style={styles.heroSub}>Platform-wide AUM</Text>
           </View>
           <View style={[styles.heroCard, { backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border }]}>
             <View style={[styles.heroIcon, { backgroundColor: Colors.positive + '20' }]}>
               <TrendingUp size={20} color={Colors.positive} />
             </View>
-            <Text style={[styles.heroLabel, { color: Colors.textSecondary }]}>Total Returns</Text>
-            <Text style={[styles.heroValue, { color: Colors.positive }]}>{formatCurrency(totalReturns)}</Text>
-            <Text style={styles.heroSub}>Paid to investors</Text>
+            <Text style={[styles.heroLabel, { color: Colors.textSecondary }]}>Volume (30d)</Text>
+            <Text style={[styles.heroValue, { color: Colors.positive }]}>{formatCurrency(stats?.trends?.volumeLast30d ?? 0)}</Text>
+            <Text style={styles.heroSub}>{stats?.trends?.volumeGrowthRate ?? 0}% vs prev</Text>
           </View>
         </View>
 
@@ -165,11 +221,11 @@ export default function AdminDashboardScreen() {
             <View style={[styles.statIconWrap, { backgroundColor: Colors.primary + '20' }]}>
               <Users size={18} color={Colors.primary} />
             </View>
-            <Text style={styles.statVal}>{stats.totalMembers}</Text>
+            <Text style={styles.statVal}>{stats?.totalMembers ?? 0}</Text>
             <Text style={styles.statLbl}>Total Members</Text>
             <View style={styles.statFooter}>
               <View style={styles.statDot} />
-              <Text style={styles.statSub}>{stats.activeMembers} active</Text>
+              <Text style={styles.statSub}>{stats?.activeMembers ?? 0} active</Text>
             </View>
           </TouchableOpacity>
 
@@ -180,10 +236,10 @@ export default function AdminDashboardScreen() {
             <View style={[styles.statIconWrap, { backgroundColor: Colors.accent + '20' }]}>
               <ArrowLeftRight size={18} color={Colors.accent} />
             </View>
-            <Text style={styles.statVal}>{stats.totalTransactions}</Text>
+            <Text style={styles.statVal}>{stats?.totalTransactions ?? 0}</Text>
             <Text style={styles.statLbl}>Transactions</Text>
             <View style={styles.statFooter}>
-              <Text style={styles.statSub}>{formatCurrency(stats.totalVolume)} vol</Text>
+              <Text style={styles.statSub}>{formatCurrency(stats?.totalVolume ?? 0)} vol</Text>
             </View>
           </TouchableOpacity>
 
@@ -194,11 +250,11 @@ export default function AdminDashboardScreen() {
             <View style={[styles.statIconWrap, { backgroundColor: Colors.positive + '20' }]}>
               <Building2 size={18} color={Colors.positive} />
             </View>
-            <Text style={styles.statVal}>{stats.totalProperties}</Text>
+            <Text style={styles.statVal}>{stats?.totalProperties ?? 0}</Text>
             <Text style={styles.statLbl}>Properties</Text>
             <View style={styles.statFooter}>
               <View style={[styles.statDot, { backgroundColor: Colors.positive }]} />
-              <Text style={styles.statSub}>{stats.liveProperties} live</Text>
+              <Text style={styles.statSub}>{stats?.liveProperties ?? 0} live</Text>
             </View>
           </TouchableOpacity>
 
@@ -209,10 +265,10 @@ export default function AdminDashboardScreen() {
             <View style={[styles.statIconWrap, { backgroundColor: Colors.warning + '20' }]}>
               <Shield size={18} color={Colors.warning} />
             </View>
-            <Text style={styles.statVal}>{pendingKyc.length}</Text>
+            <Text style={styles.statVal}>{stats?.pendingKyc ?? 0}</Text>
             <Text style={styles.statLbl}>Pending KYC</Text>
             <View style={styles.statFooter}>
-              <Text style={styles.statSub}>{approvedMembers} verified</Text>
+              <Text style={styles.statSub}>{(stats?.totalMembers ?? 0) - (stats?.pendingKyc ?? 0)} verified</Text>
             </View>
           </TouchableOpacity>
         </View>
@@ -220,22 +276,175 @@ export default function AdminDashboardScreen() {
         <View style={styles.metricsRow}>
           <View style={styles.metricItem}>
             <BarChart3 size={16} color={Colors.primary} />
-            <Text style={styles.metricValue}>{formatCurrency(totalWalletBalance)}</Text>
-            <Text style={styles.metricLabel}>Wallet Balances</Text>
+            <Text style={styles.metricValue}>{formatCurrency(stats?.totalDeposits ?? 0)}</Text>
+            <Text style={styles.metricLabel}>Total Deposits</Text>
           </View>
           <View style={styles.metricDivider} />
           <View style={styles.metricItem}>
-            <CheckCircle2 size={16} color={Colors.positive} />
-            <Text style={styles.metricValue}>{approvedMembers}</Text>
-            <Text style={styles.metricLabel}>KYC Approved</Text>
+            <ArrowUpRight size={16} color={Colors.negative} />
+            <Text style={styles.metricValue}>{formatCurrency(stats?.totalWithdrawals ?? 0)}</Text>
+            <Text style={styles.metricLabel}>Withdrawals</Text>
           </View>
           <View style={styles.metricDivider} />
           <View style={styles.metricItem}>
             <AlertCircle size={16} color={Colors.warning} />
-            <Text style={styles.metricValue}>{pendingKyc.length}</Text>
-            <Text style={styles.metricLabel}>Needs Review</Text>
+            <Text style={styles.metricValue}>{stats?.pendingTransactions ?? 0}</Text>
+            <Text style={styles.metricLabel}>Pending Tx</Text>
           </View>
         </View>
+
+        {kpis.length > 0 && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <View style={styles.sectionTitle}>
+                <Activity size={16} color={Colors.accent} />
+                <Text style={styles.sectionTitleText}>Key Performance Indicators</Text>
+              </View>
+            </View>
+            <View style={styles.kpiGrid}>
+              {kpis.map((kpi, idx) => (
+                <View key={idx} style={styles.kpiCard}>
+                  <Text style={styles.kpiName}>{kpi.name}</Text>
+                  <Text style={styles.kpiValue}>
+                    {kpi.format === 'currency' ? formatCurrency(kpi.value) :
+                     kpi.format === 'percentage' ? `${kpi.value}%` :
+                     kpi.value}
+                  </Text>
+                  {kpi.change !== 0 && (
+                    <View style={[styles.kpiChange, kpi.trend === 'up' ? styles.kpiUp : styles.kpiDown]}>
+                      <Text style={[styles.kpiChangeText, kpi.trend === 'up' ? styles.kpiUpText : styles.kpiDownText]}>
+                        {kpi.change > 0 ? '+' : ''}{kpi.change}%
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
+
+        {health && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <View style={styles.sectionTitle}>
+                <CheckCircle2 size={16} color={Colors.positive} />
+                <Text style={styles.sectionTitleText}>System Health</Text>
+              </View>
+              <View style={[styles.healthBadge, health.status === 'healthy' ? styles.healthGood : styles.healthBad]}>
+                <Text style={styles.healthBadgeText}>{health.status}</Text>
+              </View>
+            </View>
+            <View style={styles.servicesGrid}>
+              {health.services.map((svc, idx) => (
+                <View key={idx} style={styles.serviceRow}>
+                  <View style={[styles.serviceDot, svc.status === 'up' ? styles.serviceUp : styles.serviceDown]} />
+                  <Text style={styles.serviceName}>{svc.name}</Text>
+                  <Text style={styles.serviceTime}>{svc.responseTime}ms</Text>
+                </View>
+              ))}
+            </View>
+            <View style={styles.healthMetrics}>
+              <View style={styles.healthMetricItem}>
+                <Text style={styles.healthMetricVal}>{health.metrics.activeUsers}</Text>
+                <Text style={styles.healthMetricLbl}>Active Users</Text>
+              </View>
+              <View style={styles.healthMetricItem}>
+                <Text style={styles.healthMetricVal}>{health.metrics.transactionsPerHour}</Text>
+                <Text style={styles.healthMetricLbl}>Tx/Hour</Text>
+              </View>
+              <View style={styles.healthMetricItem}>
+                <Text style={styles.healthMetricVal}>{health.metrics.errorRate}%</Text>
+                <Text style={styles.healthMetricLbl}>Error Rate</Text>
+              </View>
+              <View style={styles.healthMetricItem}>
+                <Text style={styles.healthMetricVal}>{health.metrics.avgResponseTime}ms</Text>
+                <Text style={styles.healthMetricLbl}>Avg Response</Text>
+              </View>
+            </View>
+          </View>
+        )}
+
+        {retention && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <View style={styles.sectionTitle}>
+                <Users size={16} color={Colors.primary} />
+                <Text style={styles.sectionTitleText}>Retention & Engagement</Text>
+              </View>
+            </View>
+            <View style={styles.retentionGrid}>
+              <View style={styles.retentionCard}>
+                <Text style={styles.retentionLabel}>Day 1</Text>
+                <Text style={styles.retentionValue}>{retention.retention.day1}%</Text>
+              </View>
+              <View style={styles.retentionCard}>
+                <Text style={styles.retentionLabel}>Day 7</Text>
+                <Text style={styles.retentionValue}>{retention.retention.day7}%</Text>
+              </View>
+              <View style={styles.retentionCard}>
+                <Text style={styles.retentionLabel}>Day 30</Text>
+                <Text style={styles.retentionValue}>{retention.retention.day30}%</Text>
+              </View>
+              <View style={styles.retentionCard}>
+                <Text style={styles.retentionLabel}>DAU/MAU</Text>
+                <Text style={styles.retentionValue}>{retention.engagement.dauMauRatio}%</Text>
+              </View>
+            </View>
+            <View style={styles.churnRow}>
+              <View style={styles.churnItem}>
+                <Text style={styles.churnLabel}>Churned Users</Text>
+                <Text style={[styles.churnValue, { color: Colors.negative }]}>{retention.churn.churnedUsers}</Text>
+              </View>
+              <View style={styles.churnItem}>
+                <Text style={styles.churnLabel}>Churn Rate</Text>
+                <Text style={[styles.churnValue, { color: Colors.negative }]}>{retention.churn.churnRate}%</Text>
+              </View>
+              <View style={styles.churnItem}>
+                <Text style={styles.churnLabel}>At Risk</Text>
+                <Text style={[styles.churnValue, { color: Colors.warning }]}>{retention.churn.atRisk}</Text>
+              </View>
+            </View>
+          </View>
+        )}
+
+        {investment && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <View style={styles.sectionTitle}>
+                <TrendingUp size={16} color={Colors.positive} />
+                <Text style={styles.sectionTitleText}>Investment Analytics (30d)</Text>
+              </View>
+            </View>
+            <View style={styles.investGrid}>
+              <View style={styles.investCard}>
+                <Text style={styles.investLabel}>Total Investments</Text>
+                <Text style={styles.investValue}>{investment.totalInvestments}</Text>
+              </View>
+              <View style={styles.investCard}>
+                <Text style={styles.investLabel}>Volume</Text>
+                <Text style={styles.investValue}>{formatCurrency(investment.totalInvestmentVolume)}</Text>
+              </View>
+              <View style={styles.investCard}>
+                <Text style={styles.investLabel}>Avg Investment</Text>
+                <Text style={styles.investValue}>{formatCurrency(investment.averageInvestment)}</Text>
+              </View>
+              <View style={styles.investCard}>
+                <Text style={styles.investLabel}>Unique Investors</Text>
+                <Text style={styles.investValue}>{investment.uniqueInvestors}</Text>
+              </View>
+              <View style={styles.investCard}>
+                <Text style={styles.investLabel}>Net Flow</Text>
+                <Text style={[styles.investValue, { color: investment.netFlow >= 0 ? Colors.positive : Colors.negative }]}>
+                  {formatCurrency(investment.netFlow)}
+                </Text>
+              </View>
+              <View style={styles.investCard}>
+                <Text style={styles.investLabel}>Dividends Paid</Text>
+                <Text style={styles.investValue}>{formatCurrency(investment.totalDividends)}</Text>
+              </View>
+            </View>
+          </View>
+        )}
 
         {pendingKyc.length > 0 && (
           <View style={styles.section}>
@@ -290,6 +499,11 @@ export default function AdminDashboardScreen() {
               <Text style={styles.seeAll}>See All</Text>
             </TouchableOpacity>
           </View>
+          {recentTransactions.length === 0 && (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyStateText}>No transactions yet</Text>
+            </View>
+          )}
           {recentTransactions.map((tx) => (
             <View key={tx.id} style={styles.txRow}>
               <View style={[styles.txIconWrap, {
@@ -301,8 +515,8 @@ export default function AdminDashboardScreen() {
                 {getTransactionIcon(tx.type)}
               </View>
               <View style={styles.txInfo}>
-                <Text style={styles.txUser} numberOfLines={1}>{tx.userName}</Text>
-                <Text style={styles.txDesc} numberOfLines={1}>{tx.description}</Text>
+                <Text style={styles.txUser} numberOfLines={1}>{tx.userId}</Text>
+                <Text style={styles.txDesc} numberOfLines={1}>{tx.description || tx.type}</Text>
                 <Text style={styles.txDate}>{formatDate(tx.createdAt)}</Text>
               </View>
               <View style={styles.txRight}>
@@ -321,27 +535,6 @@ export default function AdminDashboardScreen() {
                   <Text style={styles.txStatusText}>{tx.status}</Text>
                 </View>
               </View>
-            </View>
-          ))}
-        </View>
-
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <View style={styles.sectionTitle}>
-              <Activity size={16} color={Colors.accent} />
-              <Text style={styles.sectionTitleText}>Recent Activity</Text>
-            </View>
-          </View>
-          {recentActivities.map((act) => (
-            <View key={act.id} style={styles.actRow}>
-              <View style={[styles.actIconWrap, { backgroundColor: Colors.card }]}>
-                {getActivityIcon(act.type)}
-              </View>
-              <View style={styles.actInfo}>
-                <Text style={styles.actMember}>{act.memberName}</Text>
-                <Text style={styles.actDesc} numberOfLines={2}>{act.description}</Text>
-              </View>
-              <Text style={styles.actDate}>{formatDate(act.createdAt)}</Text>
             </View>
           ))}
         </View>
@@ -430,6 +623,17 @@ const styles = StyleSheet.create({
   },
   scroll: {
     flex: 1,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 12,
+  },
+  loadingText: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    fontWeight: '500',
   },
   heroRow: {
     flexDirection: 'row',
@@ -581,6 +785,199 @@ const styles = StyleSheet.create({
     color: Colors.primary,
     fontWeight: '600',
   },
+  kpiGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  kpiCard: {
+    width: '48%' as any,
+    backgroundColor: Colors.card,
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    gap: 4,
+  },
+  kpiName: {
+    fontSize: 11,
+    color: Colors.textSecondary,
+    fontWeight: '500',
+  },
+  kpiValue: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: Colors.text,
+  },
+  kpiChange: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  kpiUp: {
+    backgroundColor: Colors.positive + '20',
+  },
+  kpiDown: {
+    backgroundColor: Colors.negative + '20',
+  },
+  kpiChangeText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  kpiUpText: {
+    color: Colors.positive,
+  },
+  kpiDownText: {
+    color: Colors.negative,
+  },
+  healthBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  healthGood: {
+    backgroundColor: Colors.positive + '20',
+  },
+  healthBad: {
+    backgroundColor: Colors.negative + '20',
+  },
+  healthBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: Colors.positive,
+    textTransform: 'capitalize',
+  },
+  servicesGrid: {
+    backgroundColor: Colors.card,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: 12,
+    gap: 8,
+  },
+  serviceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  serviceDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  serviceUp: {
+    backgroundColor: Colors.positive,
+  },
+  serviceDown: {
+    backgroundColor: Colors.negative,
+  },
+  serviceName: {
+    flex: 1,
+    fontSize: 12,
+    color: Colors.text,
+    fontWeight: '500',
+  },
+  serviceTime: {
+    fontSize: 11,
+    color: Colors.textTertiary,
+    fontWeight: '600',
+  },
+  healthMetrics: {
+    flexDirection: 'row',
+    marginTop: 8,
+    backgroundColor: Colors.card,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: 12,
+  },
+  healthMetricItem: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 2,
+  },
+  healthMetricVal: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.text,
+  },
+  healthMetricLbl: {
+    fontSize: 9,
+    color: Colors.textTertiary,
+    textAlign: 'center',
+  },
+  retentionGrid: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  retentionCard: {
+    flex: 1,
+    backgroundColor: Colors.card,
+    borderRadius: 12,
+    padding: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: Colors.border,
+    gap: 4,
+  },
+  retentionLabel: {
+    fontSize: 10,
+    color: Colors.textSecondary,
+    fontWeight: '600',
+  },
+  retentionValue: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: Colors.primary,
+  },
+  churnRow: {
+    flexDirection: 'row',
+    marginTop: 8,
+    backgroundColor: Colors.card,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: 12,
+    gap: 8,
+  },
+  churnItem: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 2,
+  },
+  churnLabel: {
+    fontSize: 10,
+    color: Colors.textSecondary,
+  },
+  churnValue: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  investGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  investCard: {
+    width: '48%' as any,
+    backgroundColor: Colors.card,
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    gap: 4,
+  },
+  investLabel: {
+    fontSize: 10,
+    color: Colors.textSecondary,
+    fontWeight: '500',
+  },
+  investValue: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: Colors.text,
+  },
   kycRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -697,44 +1094,13 @@ const styles = StyleSheet.create({
     color: Colors.text,
     textTransform: 'capitalize',
   },
-  actRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: Colors.card,
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    gap: 10,
-  },
-  actIconWrap: {
-    width: 30,
-    height: 30,
-    borderRadius: 8,
-    justifyContent: 'center',
+  emptyState: {
+    paddingVertical: 24,
     alignItems: 'center',
-    backgroundColor: Colors.backgroundSecondary,
-    marginTop: 1,
   },
-  actInfo: {
-    flex: 1,
-  },
-  actMember: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: Colors.text,
-    marginBottom: 2,
-  },
-  actDesc: {
-    fontSize: 11,
-    color: Colors.textSecondary,
-    lineHeight: 15,
-  },
-  actDate: {
-    fontSize: 10,
+  emptyStateText: {
+    fontSize: 13,
     color: Colors.textTertiary,
-    marginTop: 2,
   },
   quickLinks: {
     marginTop: 20,
