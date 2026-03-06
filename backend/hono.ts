@@ -5,6 +5,7 @@ import { logger } from "hono/logger";
 import { secureHeaders } from "hono/secure-headers";
 import { timing } from "hono/timing";
 import { compress } from "hono/compress";
+import { requestId } from "hono/request-id";
 
 import { appRouter } from "./trpc/app-router";
 import { createContext } from "./trpc/create-context";
@@ -82,11 +83,14 @@ const rateLimit = (limit: number, windowMs: number) => {
 
 const app = new Hono();
 
+app.use("*", requestId());
 app.use("*", logger());
 app.use("*", timing());
 app.use("*", secureHeaders());
 app.use("*", compress());
-const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+const _IS_PRODUCTION = process.env.NODE_ENV === 'production';
+const APP_VERSION = "1.0.1";
+const START_TIME = Date.now();
 
 const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',')
@@ -119,11 +123,57 @@ app.use(
   }),
 );
 
+app.post("/webhooks/stripe", async (c) => {
+  const signature = c.req.header("stripe-signature") || "";
+  const payload = await c.req.text();
+
+  if (!signature) {
+    console.warn("[Webhook] Stripe webhook missing signature header");
+    return c.json({ error: "Missing stripe-signature header" }, 400);
+  }
+
+  console.log("[Webhook] Received Stripe webhook");
+
+  try {
+    const mockReq = new Request("http://localhost/webhooks/stripe", { method: "POST" });
+    const ctx = await createContext({ req: mockReq, resHeaders: new Headers(), info: {} as any });
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.payments.handleStripeWebhook({ payload, signature });
+    return c.json(result);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    console.error("[Webhook] Stripe webhook processing error:", message);
+    return c.json({ received: false, error: message }, 500);
+  }
+});
+
+app.post("/webhooks/plaid", async (c) => {
+  const body = await c.req.json();
+  console.log("[Webhook] Received Plaid webhook:", body.webhook_type, body.webhook_code);
+
+  try {
+    const mockReq = new Request("http://localhost/webhooks/plaid", { method: "POST" });
+    const ctx = await createContext({ req: mockReq, resHeaders: new Headers(), info: {} as any });
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.payments.handlePlaidWebhook({
+      webhookType: body.webhook_type || "",
+      webhookCode: body.webhook_code || "",
+      itemId: body.item_id,
+      error: body.error,
+    });
+    return c.json(result);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    console.error("[Webhook] Plaid webhook processing error:", message);
+    return c.json({ received: false, error: message }, 500);
+  }
+});
+
 app.get("/", (c) => {
   return c.json({
     status: "ok",
     message: "IVX HOLDINGS API is running",
-    version: "1.0.1",
+    version: APP_VERSION,
     timestamp: new Date().toISOString(),
   });
 });
@@ -132,12 +182,15 @@ app.get("/health", (c) => {
   const mem = process.memoryUsage();
   return c.json({
     status: "healthy",
+    version: APP_VERSION,
     uptime: process.uptime(),
+    startedAt: new Date(START_TIME).toISOString(),
     memory: {
       rss: `${Math.round(mem.rss / 1024 / 1024)}MB`,
       heapUsed: `${Math.round(mem.heapUsed / 1024 / 1024)}MB`,
       heapTotal: `${Math.round(mem.heapTotal / 1024 / 1024)}MB`,
     },
+    environment: process.env.NODE_ENV || "development",
     timestamp: new Date().toISOString(),
   });
 });
@@ -148,7 +201,7 @@ app.get("/readiness", (c) => {
   if (isProduction) {
     return c.json({
       ready: true,
-      version: "1.0.1",
+      version: APP_VERSION,
       timestamp: new Date().toISOString(),
     });
   }
@@ -161,7 +214,7 @@ app.get("/readiness", (c) => {
       configured: envResult.configured.length,
       total: envResult.configured.length + envResult.missing.length,
     },
-    version: "1.0.1",
+    version: APP_VERSION,
     timestamp: new Date().toISOString(),
   });
 });
