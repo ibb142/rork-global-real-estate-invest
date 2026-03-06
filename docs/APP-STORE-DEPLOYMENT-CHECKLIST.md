@@ -90,7 +90,7 @@ Once environment variables are set, code auto-connects to real services.
 | 13 | Choose & provision hosting | 0.5 hr | AWS, Railway, Vercel, or DigitalOcean |
 | 14 | Deploy Hono + tRPC backend | 2 hrs | Build bundle, Docker/PM2, auto-restart |
 | 15 | Configure ALL environment variables on server | 1 hr | JWT_SECRET, DATABASE_URL, all API keys |
-| 16 | Set up SSL/TLS certificates | 0.5 hr | Let's Encrypt or AWS ACM |
+| 16 | ~~Set up SSL/TLS certificates~~ | ✅ Done | Covered by Netlify free SSL |
 | 17 | Configure domain & DNS | 0.5 hr | api.yourdomain.com, CDN for assets |
 | 18 | Set up Stripe webhooks | 1 hr | payment_intent.succeeded/failed, charge.refunded |
 | 19 | Set up Plaid webhooks | 0.5 hr | TRANSACTIONS, AUTH, IDENTITY events |
