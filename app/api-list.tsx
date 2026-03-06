@@ -20,14 +20,12 @@ import {
   Copy,
   CheckCircle2,
   ExternalLink,
-  Lock,
   CreditCard,
   Mail,
   Phone,
   ShieldCheck,
   HardDrive,
   BarChart3,
-  Bell,
   AlertTriangle,
   Zap,
   RefreshCw,
@@ -35,6 +33,8 @@ import {
   WifiOff,
   Clock,
   Activity,
+  Megaphone,
+  TrendingUp,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
@@ -74,13 +74,29 @@ const AUTO_REFRESH_SECONDS = 30;
 
 const CATEGORIES: APICategory[] = [
   {
-    id: 'auth',
-    title: 'Auth / Security',
-    emoji: '🔐',
-    color: '#EF4444',
-    icon: Lock,
+    id: 'ads',
+    title: 'Advertising Platforms',
+    emoji: '📢',
+    color: '#4285F4',
+    icon: Megaphone,
     apis: [
-      { id: 1, name: 'JWT Secret', description: 'Generate your own (min 32 chars, no external registration needed)', url: '', priority: 'must' },
+      { id: 1, name: 'Google Ads API', description: 'Search intent campaigns — target people looking for real estate investment. Need: OAuth 2.0 Client ID/Secret, Developer Token, Customer ID', url: 'https://console.cloud.google.com', checkUrl: 'https://google.com', priority: 'must' },
+      { id: 2, name: 'Meta Marketing API', description: 'Facebook & Instagram ads targeting property owners & investors. Need: App ID, App Secret, Access Token, Ad Account ID, Pixel ID', url: 'https://developers.facebook.com', checkUrl: 'https://facebook.com', priority: 'must' },
+      { id: 3, name: 'TikTok Marketing API', description: 'Short video awareness campaigns. Need: App ID, Secret, Access Token, Advertiser ID, Pixel ID', url: 'https://business-api.tiktok.com', checkUrl: 'https://tiktok.com', priority: 'important' },
+      { id: 4, name: 'LinkedIn Marketing API', description: 'B2B outreach to developers, lenders, brokers. Need: OAuth Client ID/Secret, Access Token, Ad Account ID, Insight Tag', url: 'https://www.linkedin.com/developers', checkUrl: 'https://linkedin.com', priority: 'important' },
+      { id: 5, name: 'WhatsApp Business API', description: 'Retargeting & follow-up messaging. Need: Business Account ID, Phone Number ID, Permanent Access Token, Approved Templates', url: 'https://developers.facebook.com/docs/whatsapp/cloud-api', checkUrl: 'https://facebook.com', priority: 'important' },
+    ],
+  },
+  {
+    id: 'tracking',
+    title: 'Tracking & Analytics',
+    emoji: '📈',
+    color: '#FF6D00',
+    icon: TrendingUp,
+    apis: [
+      { id: 6, name: 'Google Analytics 4', description: 'Track app events, conversions, user behavior analytics', url: 'https://analytics.google.com', checkUrl: 'https://analytics.google.com', priority: 'must' },
+      { id: 7, name: 'Meta Conversions API', description: 'Server-side conversion tracking for Facebook/Instagram ads', url: 'https://developers.facebook.com/docs/marketing-api/conversions-api', checkUrl: 'https://facebook.com', priority: 'important' },
+      { id: 8, name: 'Google Tag Manager', description: 'Manage all tracking pixels and tags in one place', url: 'https://tagmanager.google.com', checkUrl: 'https://tagmanager.google.com', priority: 'important' },
     ],
   },
   {
@@ -90,13 +106,10 @@ const CATEGORIES: APICategory[] = [
     color: '#F59E0B',
     icon: CreditCard,
     apis: [
-      { id: 2, name: 'Stripe', description: 'Card processing, Apple Pay, Google Pay, webhooks, refunds', url: 'https://dashboard.stripe.com/register', checkUrl: 'https://stripe.com', priority: 'must' },
-      { id: 3, name: 'Plaid', description: 'Bank linking, ACH transfers, account verification, balance checks', url: 'https://dashboard.plaid.com/signup', checkUrl: 'https://plaid.com', priority: 'important' },
-      { id: 4, name: 'PayPal', description: 'Alternative payment method, PayPal checkout integration', url: 'https://developer.paypal.com/dashboard', checkUrl: 'https://paypal.com', priority: 'optional' },
-      { id: 5, name: 'Coinbase Commerce', description: 'Crypto payments, Bitcoin/ETH/USDC acceptance', url: 'https://commerce.coinbase.com/signup', checkUrl: 'https://coinbase.com', priority: 'optional' },
-      { id: 6, name: 'Circle', description: 'USDC stablecoin infrastructure, programmable wallets', url: 'https://app.circle.com/signup', checkUrl: 'https://circle.com', priority: 'optional' },
-      { id: 7, name: 'Apple Pay', description: 'In-app Apple Pay, requires Apple Developer account', url: 'https://developer.apple.com/apple-pay', priority: 'important' },
-      { id: 8, name: 'Google Pay', description: 'In-app Google Pay integration for Android users', url: 'https://pay.google.com/business/console', priority: 'important' },
+      { id: 9, name: 'Stripe', description: 'Card processing, Apple Pay, Google Pay, webhooks, refunds', url: 'https://dashboard.stripe.com/register', checkUrl: 'https://stripe.com', priority: 'must' },
+      { id: 10, name: 'Plaid', description: 'Bank linking, ACH transfers, account verification, balance checks', url: 'https://dashboard.plaid.com/signup', checkUrl: 'https://plaid.com', priority: 'important' },
+      { id: 11, name: 'PayPal', description: 'Alternative payment method, PayPal checkout integration', url: 'https://developer.paypal.com/dashboard', checkUrl: 'https://paypal.com', priority: 'optional' },
+      { id: 12, name: 'Coinbase Commerce', description: 'Crypto payments, Bitcoin/ETH/USDC acceptance', url: 'https://commerce.coinbase.com/signup', checkUrl: 'https://coinbase.com', priority: 'optional' },
     ],
   },
   {
@@ -106,18 +119,17 @@ const CATEGORIES: APICategory[] = [
     color: '#8B5CF6',
     icon: Mail,
     apis: [
-      { id: 9, name: 'SendGrid', description: 'Transactional emails, welcome, KYC, receipts, statements', url: 'https://signup.sendgrid.com', checkUrl: 'https://sendgrid.com', priority: 'must' },
-      { id: 10, name: 'Mailgun', description: 'Alternative email provider, bulk emails, email analytics', url: 'https://signup.mailgun.com/new/signup', checkUrl: 'https://mailgun.com', priority: 'optional' },
+      { id: 13, name: 'SendGrid', description: 'Transactional emails, welcome, KYC, receipts, statements', url: 'https://signup.sendgrid.com', checkUrl: 'https://sendgrid.com', priority: 'must' },
     ],
   },
   {
     id: 'sms',
-    title: 'SMS / WhatsApp',
+    title: 'SMS / Messaging',
     emoji: '📱',
     color: '#25D366',
     icon: Phone,
     apis: [
-      { id: 11, name: 'Twilio', description: 'SMS verification, 2FA codes, WhatsApp Business messaging', url: 'https://www.twilio.com/try-twilio', checkUrl: 'https://twilio.com', priority: 'must' },
+      { id: 14, name: 'Twilio', description: 'SMS verification, 2FA codes, programmable messaging', url: 'https://www.twilio.com/try-twilio', checkUrl: 'https://twilio.com', priority: 'must' },
     ],
   },
   {
@@ -127,8 +139,8 @@ const CATEGORIES: APICategory[] = [
     color: '#06B6D4',
     icon: ShieldCheck,
     apis: [
-      { id: 12, name: 'Onfido', description: 'Document verification, face match, biometric checks', url: 'https://onfido.com/signup', checkUrl: 'https://onfido.com', priority: 'important' },
-      { id: 13, name: 'Jumio', description: 'AI-powered identity verification, global document coverage', url: 'https://www.jumio.com/contact-us', checkUrl: 'https://jumio.com', priority: 'important' },
+      { id: 15, name: 'Onfido', description: 'Document verification, face match, biometric checks', url: 'https://onfido.com/signup', checkUrl: 'https://onfido.com', priority: 'important' },
+      { id: 16, name: 'Jumio', description: 'AI-powered identity verification, global document coverage', url: 'https://www.jumio.com/contact-us', checkUrl: 'https://jumio.com', priority: 'important' },
     ],
   },
   {
@@ -138,21 +150,19 @@ const CATEGORIES: APICategory[] = [
     color: '#F97316',
     icon: HardDrive,
     apis: [
-      { id: 14, name: 'Cloudflare R2', description: 'S3-compatible object storage, zero egress fees, CDN included', url: 'https://dash.cloudflare.com/sign-up', checkUrl: 'https://cloudflare.com', priority: 'important' },
-      { id: 15, name: 'AWS S3', description: 'Document storage, KYC files, property images backup', url: 'https://aws.amazon.com/free', checkUrl: 'https://aws.amazon.com', priority: 'important' },
+      { id: 17, name: 'Cloudflare R2', description: 'S3-compatible object storage, zero egress fees, CDN included', url: 'https://dash.cloudflare.com/sign-up', checkUrl: 'https://cloudflare.com', priority: 'important' },
     ],
   },
   {
     id: 'market',
-    title: 'Market Data / External',
+    title: 'Market Data',
     emoji: '📊',
     color: '#10B981',
     icon: BarChart3,
     apis: [
-      { id: 16, name: 'Alpha Vantage', description: 'Stock/REIT market data, price history, financial metrics', url: 'https://www.alphavantage.co/support/#api-key', checkUrl: 'https://alphavantage.co', priority: 'optional' },
-      { id: 17, name: 'ATTOM Property Data', description: 'Real estate property data, valuations, market analytics', url: 'https://api.attomdata.com/signup', priority: 'optional' },
-      { id: 18, name: 'Google Maps', description: 'Property map display, location services, geocoding', url: 'https://console.cloud.google.com', checkUrl: 'https://maps.google.com', priority: 'optional' },
-      { id: 19, name: 'Open Exchange Rates', description: 'Currency conversion, FX rates for international investors', url: 'https://openexchangerates.org/signup', priority: 'optional' },
+      { id: 18, name: 'Alpha Vantage', description: 'Stock/REIT market data, price history, financial metrics', url: 'https://www.alphavantage.co/support/#api-key', checkUrl: 'https://alphavantage.co', priority: 'optional' },
+      { id: 19, name: 'ATTOM Property Data', description: 'Real estate property data, valuations, market analytics', url: 'https://api.attomdata.com/signup', priority: 'optional' },
+      { id: 20, name: 'Google Maps', description: 'Property map display, location services, geocoding', url: 'https://console.cloud.google.com', checkUrl: 'https://maps.google.com', priority: 'optional' },
     ],
   },
   {
@@ -162,17 +172,7 @@ const CATEGORIES: APICategory[] = [
     color: '#EC4899',
     icon: AlertTriangle,
     apis: [
-      { id: 20, name: 'Sentry', description: 'Error tracking, performance monitoring, crash reports', url: 'https://sentry.io/signup', checkUrl: 'https://sentry.io', priority: 'important' },
-    ],
-  },
-  {
-    id: 'push',
-    title: 'Push Notifications',
-    emoji: '📬',
-    color: '#6366F1',
-    icon: Bell,
-    apis: [
-      { id: 21, name: 'Expo Push Notifications', description: 'Free built-in push notifications, no extra registration needed', url: 'https://expo.dev/signup', checkUrl: 'https://expo.dev', priority: 'must' },
+      { id: 21, name: 'Sentry', description: 'Error tracking, performance monitoring, crash reports', url: 'https://sentry.io/signup', checkUrl: 'https://sentry.io', priority: 'important' },
     ],
   },
 ];
@@ -210,12 +210,14 @@ async function pingAPI(api: APIItem): Promise<PingResult> {
 
 function generateAPIListText(): string {
   const date = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  const totalApis = CATEGORIES.reduce((sum, c) => sum + c.apis.length, 0);
   let r = '';
   r += '════════════════════════════════════════════\n';
-  r += '   IVX HOLDING — FULL API REGISTRATION LIST\n';
+  r += '   IVX HOLDING — API REQUIREMENTS LIST\n';
   r += '════════════════════════════════════════════\n';
   r += `   Generated: ${date}\n`;
-  r += `   Total: 31 APIs across 11 categories\n`;
+  r += `   Total: ${totalApis} APIs across ${CATEGORIES.length} categories\n`;
+  r += '   ✅ Completed: JWT, AWS S3, Expo Push\n';
   r += '════════════════════════════════════════════\n\n';
   let num = 1;
   CATEGORIES.forEach((cat) => {
@@ -231,11 +233,17 @@ function generateAPIListText(): string {
     });
     r += '\n';
   });
+  r += '══════════════════════════════════════\nALREADY COMPLETED (REMOVED FROM LIST)\n══════════════════════════════════════\n';
+  r += '✅ JWT Secret — Configured\n';
+  r += '✅ AWS S3 — Credentials set up\n';
+  r += '✅ Expo Push Notifications — Built-in\n';
+  r += '✅ Apple Pay / Google Pay — Via Stripe\n';
+  r += '✅ Mailgun — Using SendGrid instead\n\n';
   r += '══════════════════════════════════════\nPRIORITY SUMMARY\n══════════════════════════════════════\n';
-  r += '🔴 Must Have:   JWT Secret, Stripe, Twilio, SendGrid, Expo Push\n';
-  r += '🟠 Important:   Plaid, Onfido (or Jumio), R2/S3, Sentry, Apple Pay, Google Pay\n';
-  r += '🟡 Optional:    PayPal, Coinbase, Circle, Mailgun, Alpha Vantage, ATTOM, Google Maps, FX Rates\n\n';
-  r += '════════════════════════════════════════════\n   IVX Holding Real Estate Investment Platform\n   Share with your backend developer\n════════════════════════════════════════════\n';
+  r += '🔴 Must Have:   Google Ads, Meta Ads, Stripe, SendGrid, Twilio, GA4\n';
+  r += '🟠 Important:   TikTok Ads, LinkedIn Ads, WhatsApp API, Plaid, Onfido/Jumio, R2, Sentry, Meta Conversions, GTM\n';
+  r += '🟡 Optional:    PayPal, Coinbase, Alpha Vantage, ATTOM, Google Maps\n\n';
+  r += '════════════════════════════════════════════\n   IVX Holding Real Estate Investment Platform\n   Share with your developer team\n════════════════════════════════════════════\n';
   return r;
 }
 
@@ -619,17 +627,21 @@ export default function APIListScreen() {
                 <Zap size={14} color={Colors.primary} />
                 <Text style={styles.summaryTitle}>PRIORITY SUMMARY</Text>
               </View>
+              <View style={styles.completedSection}>
+                <Text style={[styles.summaryLabel, { color: '#00C48C' }]}>✅ Already Completed</Text>
+                <Text style={styles.summaryItems}>JWT Secret · AWS S3 · Expo Push · Apple/Google Pay (via Stripe) · Mailgun (using SendGrid)</Text>
+              </View>
               <View style={styles.summarySection}>
                 <Text style={[styles.summaryLabel, { color: '#EF4444' }]}>🔴 Must Have (Register First)</Text>
-                <Text style={styles.summaryItems}>JWT Secret · Stripe · Twilio · SendGrid · Expo Push</Text>
+                <Text style={styles.summaryItems}>Google Ads · Meta Marketing · Stripe · SendGrid · Twilio · Google Analytics 4</Text>
               </View>
               <View style={styles.summarySection}>
                 <Text style={[styles.summaryLabel, { color: '#F97316' }]}>🟠 Important (Before Launch)</Text>
-                <Text style={styles.summaryItems}>Plaid · Onfido / Jumio · Cloudflare R2 · Sentry · Apple Pay · Google Pay</Text>
+                <Text style={styles.summaryItems}>TikTok Ads · LinkedIn Ads · WhatsApp API · Plaid · Onfido/Jumio · R2 · Sentry · Meta Conversions · GTM</Text>
               </View>
               <View style={styles.summarySection}>
                 <Text style={[styles.summaryLabel, { color: '#EAB308' }]}>🟡 Optional (Post Launch)</Text>
-                <Text style={styles.summaryItems}>PayPal · Coinbase · Circle · Mailgun · Alpha Vantage · ATTOM · Google Maps · FX Rates</Text>
+                <Text style={styles.summaryItems}>PayPal · Coinbase · Alpha Vantage · ATTOM · Google Maps</Text>
               </View>
             </View>
 
@@ -678,7 +690,7 @@ const styles = StyleSheet.create({
   headerCenter: { flex: 1, alignItems: 'center' },
   headerTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   liveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#00C48C' },
-  headerTitle: { color: Colors.text, fontSize: 18, fontWeight: '800' as const },
+  headerTitle: { color: Colors.text, fontSize: 17, fontWeight: '800' as const },
   headerSub: { color: Colors.textTertiary, fontSize: 11, marginTop: 2 },
   refreshBtn: { padding: 8 },
   shareBtn: { padding: 8 },
@@ -850,6 +862,7 @@ const styles = StyleSheet.create({
   },
   summaryTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 },
   summaryTitle: { color: Colors.text, fontSize: 13, fontWeight: '800' as const, letterSpacing: 1 },
+  completedSection: { marginBottom: 12, backgroundColor: '#00C48C12', borderRadius: 10, padding: 10 },
   summarySection: { marginBottom: 12 },
   summaryLabel: { fontSize: 13, fontWeight: '700' as const, marginBottom: 4 },
   summaryItems: { color: Colors.textSecondary, fontSize: 12, lineHeight: 18 },
