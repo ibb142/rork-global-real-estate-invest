@@ -5,15 +5,13 @@
  * Run: node deploy/scripts/aws-full-setup.mjs
  */
 
-import { Route53Client, CreateHostedZoneCommand, ListHostedZonesByNameCommand, ChangeResourceRecordSetsCommand, GetHostedZoneCommand, ListResourceRecordSetsCommand } from "@aws-sdk/client-route-53";
+import { Route53Client, CreateHostedZoneCommand, ListHostedZonesByNameCommand, ChangeResourceRecordSetsCommand, GetHostedZoneCommand } from "@aws-sdk/client-route-53";
 import { ACMClient, RequestCertificateCommand, DescribeCertificateCommand, ListCertificatesCommand } from "@aws-sdk/client-acm";
-import { CloudFormationClient, DescribeStacksCommand, CreateStackCommand, UpdateStackCommand, DescribeStackEventsCommand } from "@aws-sdk/client-cloudformation";
-import { ElasticLoadBalancingV2Client, DescribeLoadBalancersCommand } from "@aws-sdk/client-elastic-load-balancing-v2";
+import { CloudFormationClient, DescribeStacksCommand } from "@aws-sdk/client-cloudformation";
 import { ECRClient, DescribeRepositoriesCommand } from "@aws-sdk/client-ecr";
 import { STSClient, GetCallerIdentityCommand } from "@aws-sdk/client-sts";
-import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
-import { dirname, join } from "path";
+import { dirname } from "path";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -37,7 +35,6 @@ const creds = {
 const route53  = new Route53Client({ ...creds, region: "us-east-1" });
 const acm      = new ACMClient({ ...creds, region: "us-east-1" }); // ACM must be us-east-1 for ALB
 const cf       = new CloudFormationClient(creds);
-const elb      = new ElasticLoadBalancingV2Client(creds);
 const ecr      = new ECRClient(creds);
 
 const GREEN  = "\x1b[32m";
@@ -344,4 +341,4 @@ async function main() {
   }
 }
 
-main();
+void main();
