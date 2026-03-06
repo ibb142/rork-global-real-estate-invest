@@ -1,93 +1,64 @@
 import * as z from "zod";
-import { createTRPCRouter, adminProcedure } from "../create-context";
+import { createTRPCRouter, adminProcedure, publicProcedure } from "../create-context";
+import {
+  sesSendEmail,
+  sesVerifyDomain,
+  sesGetDomainStatus,
+  sesGetSendQuota,
+  sesGetSendStats,
+  sesListIdentities,
+  isSESConfigured,
+} from "../../lib/ses";
 
-const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY;
-const RESEND_API_KEY = process.env.RESEND_API_KEY;
-const EMAIL_FROM = process.env.EMAIL_FROM_ADDRESS || 'noreply@ipxholding.com';
+const EMAIL_FROM = process.env.EMAIL_FROM_ADDRESS || 'noreply@ivxholding.com';
 const EMAIL_FROM_NAME = process.env.EMAIL_FROM_NAME || 'IVX HOLDINGS';
+const DOMAIN = 'ivxholding.com';
 
-const sendEmail = async (
+const sendEmailVia = async (
   to: string,
   subject: string,
   htmlBody: string,
-  textBody?: string
-): Promise<{ success: boolean; messageId?: string; error?: string }> => {
-  if (SENDGRID_API_KEY) {
-    try {
-      const response = await fetch('https://api.sendgrid.com/v3/mail/send', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${SENDGRID_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          personalizations: [{ to: [{ email: to }] }],
-          from: { email: EMAIL_FROM, name: EMAIL_FROM_NAME },
-          subject,
-          content: [
-            ...(textBody ? [{ type: 'text/plain', value: textBody }] : []),
-            { type: 'text/html', value: htmlBody },
-          ],
-        }),
-      });
+  textBody?: string,
+  fromEmail?: string,
+  fromName?: string,
+  cc?: string,
+  bcc?: string,
+  replyTo?: string,
+): Promise<{ success: boolean; messageId?: string; error?: string; provider: string }> => {
+  if (isSESConfigured()) {
+    const toAddresses = to.split(',').map(e => e.trim()).filter(Boolean);
+    const ccAddresses = cc ? cc.split(',').map(e => e.trim()).filter(Boolean) : undefined;
+    const bccAddresses = bcc ? bcc.split(',').map(e => e.trim()).filter(Boolean) : undefined;
+    const replyToAddresses = replyTo ? [replyTo] : undefined;
 
-      if (response.ok || response.status === 202) {
-        const messageId = response.headers.get('x-message-id') || `sg_${Date.now()}`;
-        console.log(`[EmailEngine] SendGrid email sent to ${to}: ${messageId}`);
-        return { success: true, messageId };
-      } else {
-        const errData = await response.text();
-        console.error('[EmailEngine] SendGrid error:', response.status, errData);
-        return { success: false, error: `SendGrid error: ${response.status}` };
-      }
-    } catch (error) {
-      console.error('[EmailEngine] SendGrid request failed:', error);
-      return { success: false, error: 'SendGrid request failed' };
-    }
-  }
+    const result = await sesSendEmail({
+      from: fromEmail || EMAIL_FROM,
+      fromName: fromName || EMAIL_FROM_NAME,
+      to: toAddresses,
+      cc: ccAddresses,
+      bcc: bccAddresses,
+      subject,
+      bodyHtml: htmlBody,
+      bodyText: textBody,
+      replyTo: replyToAddresses,
+    });
 
-  if (RESEND_API_KEY) {
-    try {
-      const response = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${RESEND_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          from: `${EMAIL_FROM_NAME} <${EMAIL_FROM}>`,
-          to: [to],
-          subject,
-          html: htmlBody,
-          text: textBody,
-        }),
-      });
-
-      const data = await response.json();
-      if (response.ok) {
-        console.log(`[EmailEngine] Resend email sent to ${to}: ${data.id}`);
-        return { success: true, messageId: data.id };
-      } else {
-        console.error('[EmailEngine] Resend error:', data);
-        return { success: false, error: data.message || 'Resend error' };
-      }
-    } catch (error) {
-      console.error('[EmailEngine] Resend request failed:', error);
-      return { success: false, error: 'Resend request failed' };
-    }
+    return { ...result, provider: 'aws-ses' };
   }
 
   console.log(`[EmailEngine] No email provider configured. Simulating send to ${to}`);
-  return { success: true, messageId: `sim_${Date.now()}` };
+  return { success: true, messageId: `sim_${Date.now()}`, provider: 'simulated' };
 };
 
-const sendBulkEmails = async (
-  recipients: Array<{ email: string; name?: string }>,
+const _sendBulkEmails = async (
+  recipients: { email: string; name?: string }[],
   subject: string,
   htmlBody: string,
+  fromEmail?: string,
+  fromName?: string,
   batchSize: number = 40,
   delayMs: number = 6000
-): Promise<{ sent: number; failed: number }> => {
+): Promise<{ sent: number; failed: number; provider: string }> => {
   let sent = 0;
   let failed = 0;
 
@@ -98,7 +69,7 @@ const sendBulkEmails = async (
         .replace(/\{\{name\}\}/g, r.name || 'Investor')
         .replace(/\{\{email\}\}/g, r.email);
       const personalizedText = personalizedHtml.replace(/<[^>]*>/g, '');
-      const result = await sendEmail(r.email, subject, personalizedHtml, personalizedText);
+      const result = await sendEmailVia(r.email, subject, personalizedHtml, personalizedText, fromEmail, fromName);
       if (result.success) sent++;
       else failed++;
     });
@@ -111,32 +82,203 @@ const sendBulkEmails = async (
   }
 
   console.log(`[EmailEngine] Bulk send complete: ${sent} sent, ${failed} failed`);
-  return { sent, failed };
+  return { sent, failed, provider: isSESConfigured() ? 'aws-ses' : 'simulated' };
 };
 
 export const emailEngineRouter = createTRPCRouter({
-  getStats: adminProcedure.query(async () => {
-    console.log("[EmailEngine] Fetching engine stats");
+  getStatus: publicProcedure.query(async () => {
+    const configured = isSESConfigured();
+    let domainStatus = { verified: false, status: "unknown" };
+    let quota = { max24HourSend: 0, maxSendRate: 0, sentLast24Hours: 0 };
+
+    if (configured) {
+      [domainStatus, quota] = await Promise.all([
+        sesGetDomainStatus(DOMAIN),
+        sesGetSendQuota(),
+      ]);
+    }
+
     return {
-      totalSentToday: 3744,
-      dailyLimit: 20600,
-      deliveryRate: 97.0,
-      openRate: 39.2,
-      bounceRate: 3.0,
-      spamRate: 0.01,
-      activeSmtpServers: 4,
-      warmingSmtpServers: 1,
-      recipientListSize: 28,
-      cleanRecipients: 28,
-      avgSendSpeed: 720,
-      estimatedCostPerEmail: 0.0001,
-      estimatedDailyCost: 0.37,
-      monthlyProjection: 60,
+      provider: configured ? 'aws-ses' : 'none',
+      configured,
+      domain: DOMAIN,
+      domainVerified: domainStatus.verified,
+      domainStatus: domainStatus.status,
+      quota: {
+        max24HourSend: quota.max24HourSend,
+        maxSendRate: quota.maxSendRate,
+        sentLast24Hours: quota.sentLast24Hours,
+      },
     };
   }),
 
+  getStats: adminProcedure.query(async () => {
+    console.log("[EmailEngine] Fetching engine stats via SES");
+    const configured = isSESConfigured();
+    let quota = { max24HourSend: 200, maxSendRate: 1, sentLast24Hours: 0 };
+    let stats = { dataPoints: [] as { bounces: number; complaints: number; deliveryAttempts: number; rejects: number }[] };
+
+    if (configured) {
+      [quota, stats] = await Promise.all([
+        sesGetSendQuota(),
+        sesGetSendStats(),
+      ]);
+    }
+
+    const totalBounces = stats.dataPoints.reduce((sum, dp) => sum + dp.bounces, 0);
+    const totalDeliveries = stats.dataPoints.reduce((sum, dp) => sum + dp.deliveryAttempts, 0);
+    const totalComplaints = stats.dataPoints.reduce((sum, dp) => sum + dp.complaints, 0);
+
+    return {
+      provider: configured ? 'aws-ses' : 'simulated',
+      totalSentToday: quota.sentLast24Hours,
+      dailyLimit: quota.max24HourSend,
+      maxSendRate: quota.maxSendRate,
+      deliveryRate: totalDeliveries > 0 ? Math.round(((totalDeliveries - totalBounces) / totalDeliveries) * 1000) / 10 : 100,
+      bounceRate: totalDeliveries > 0 ? Math.round((totalBounces / totalDeliveries) * 1000) / 10 : 0,
+      spamRate: totalDeliveries > 0 ? Math.round((totalComplaints / totalDeliveries) * 10000) / 100 : 0,
+      estimatedCostPerEmail: 0.0001,
+      estimatedDailyCost: Math.round(quota.sentLast24Hours * 0.0001 * 100) / 100,
+    };
+  }),
+
+  verifyDomain: adminProcedure
+    .input(z.object({ domain: z.string().default(DOMAIN) }))
+    .mutation(async ({ input }) => {
+      console.log("[EmailEngine] Verifying domain:", input.domain);
+      const result = await sesVerifyDomain(input.domain);
+
+      if (!result.success) {
+        return { success: false, error: result.error };
+      }
+
+      const dnsRecords = [];
+
+      if (result.verificationToken) {
+        dnsRecords.push({
+          type: 'TXT',
+          name: `_amazonses.${input.domain}`,
+          value: result.verificationToken,
+          purpose: 'Domain verification',
+        });
+      }
+
+      if (result.dkimTokens) {
+        for (const token of result.dkimTokens) {
+          dnsRecords.push({
+            type: 'CNAME',
+            name: `${token}._domainkey.${input.domain}`,
+            value: `${token}.dkim.amazonses.com`,
+            purpose: 'DKIM signing',
+          });
+        }
+      }
+
+      dnsRecords.push({
+        type: 'TXT',
+        name: input.domain,
+        value: 'v=spf1 include:amazonses.com ~all',
+        purpose: 'SPF record',
+      });
+
+      dnsRecords.push({
+        type: 'TXT',
+        name: `_dmarc.${input.domain}`,
+        value: 'v=DMARC1; p=quarantine; rua=mailto:admin@ivxholding.com',
+        purpose: 'DMARC policy',
+      });
+
+      return {
+        success: true,
+        dnsRecords,
+        message: `Add these DNS records to ${input.domain} in Spaceship.com, then wait for verification.`,
+      };
+    }),
+
+  checkDomainStatus: adminProcedure
+    .input(z.object({ domain: z.string().default(DOMAIN) }))
+    .query(async ({ input }) => {
+      const status = await sesGetDomainStatus(input.domain);
+      return {
+        domain: input.domain,
+        verified: status.verified,
+        status: status.status,
+      };
+    }),
+
+  listVerifiedDomains: adminProcedure.query(async () => {
+    const result = await sesListIdentities();
+    return { domains: result.identities, error: result.error };
+  }),
+
+  sendEmail: adminProcedure
+    .input(z.object({
+      from: z.string().email(),
+      fromName: z.string().optional(),
+      to: z.string(),
+      cc: z.string().optional(),
+      bcc: z.string().optional(),
+      subject: z.string(),
+      body: z.string(),
+      bodyHtml: z.string().optional(),
+      replyTo: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      console.log("[EmailEngine] Sending email from", input.from, "to", input.to);
+      const htmlBody = input.bodyHtml || `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 20px; color: #1a1a1a; line-height: 1.6;">${input.body.replace(/\n/g, '<br>')}</div>`;
+      const result = await sendEmailVia(
+        input.to,
+        input.subject,
+        htmlBody,
+        input.body,
+        input.from,
+        input.fromName,
+        input.cc,
+        input.bcc,
+        input.replyTo,
+      );
+      return {
+        success: result.success,
+        messageId: result.messageId,
+        provider: result.provider,
+        error: result.error,
+      };
+    }),
+
+  sendTestEmail: adminProcedure
+    .input(z.object({
+      subject: z.string(),
+      body: z.string(),
+      toEmail: z.string().email(),
+      smtpId: z.string(),
+    }))
+    .mutation(async ({ input }) => {
+      console.log("[EmailEngine] Sending test email to:", input.toEmail);
+      const htmlBody = `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 20px; color: #1a1a1a; line-height: 1.6;">${input.body.replace(/\n/g, '<br>')}</div>`;
+      const result = await sendEmailVia(input.toEmail, input.subject, htmlBody, input.body);
+      return { success: result.success, messageId: result.messageId || `msg_${Date.now()}`, provider: result.provider };
+    }),
+
   getSmtpConfigs: adminProcedure.query(async () => {
-    console.log("[EmailEngine] Fetching SMTP configs");
+    console.log("[EmailEngine] Fetching SMTP configs (SES mode)");
+    const configured = isSESConfigured();
+    if (configured) {
+      const quota = await sesGetSendQuota();
+      return {
+        configs: [{
+          id: 'aws-ses',
+          name: 'Amazon SES',
+          host: `email.${process.env.AWS_REGION || 'us-east-1'}.amazonaws.com`,
+          port: 587,
+          fromEmail: EMAIL_FROM,
+          fromName: EMAIL_FROM_NAME,
+          active: true,
+          dailyLimit: quota.max24HourSend,
+          sentToday: quota.sentLast24Hours,
+          maxSendRate: quota.maxSendRate,
+        }],
+      };
+    }
     return { configs: [] };
   }),
 
@@ -151,7 +293,7 @@ export const emailEngineRouter = createTRPCRouter({
       dailyLimit: z.number().min(1).max(50000),
     }))
     .mutation(async ({ input }) => {
-      console.log("[EmailEngine] Adding SMTP config:", input.name);
+      console.log("[EmailEngine] SES is primary — SMTP config stored for reference:", input.name);
       return { success: true, id: `smtp_${Date.now()}` };
     }),
 
@@ -163,8 +305,22 @@ export const emailEngineRouter = createTRPCRouter({
     }),
 
   getDomainHealth: adminProcedure.query(async () => {
-    console.log("[EmailEngine] Fetching domain health");
-    return { domains: [] };
+    console.log("[EmailEngine] Fetching domain health via SES");
+    const [domainStatus, quota] = await Promise.all([
+      sesGetDomainStatus(DOMAIN),
+      sesGetSendQuota(),
+    ]);
+
+    return {
+      domains: [{
+        domain: DOMAIN,
+        verified: domainStatus.verified,
+        status: domainStatus.status,
+        provider: 'aws-ses',
+        dailyLimit: quota.max24HourSend,
+        sentToday: quota.sentLast24Hours,
+      }],
+    };
   }),
 
   getCampaigns: adminProcedure
@@ -195,9 +351,6 @@ export const emailEngineRouter = createTRPCRouter({
     }))
     .mutation(async ({ input }) => {
       console.log("[EmailEngine] Creating campaign:", input.name);
-      console.log("[EmailEngine] SMTP rotation:", input.smtpRotation);
-      console.log("[EmailEngine] Batch size:", input.batchSize);
-      console.log("[EmailEngine] Daily limit:", input.dailyLimit);
       return { success: true, campaignId: `camp_${Date.now()}` };
     }),
 
@@ -205,7 +358,7 @@ export const emailEngineRouter = createTRPCRouter({
     .input(z.object({ campaignId: z.string() }))
     .mutation(async ({ input }) => {
       console.log("[EmailEngine] Starting campaign:", input.campaignId);
-      return { success: true, status: "sending" as const, provider: SENDGRID_API_KEY ? 'sendgrid' : RESEND_API_KEY ? 'resend' : 'simulated' };
+      return { success: true, status: "sending" as const, provider: isSESConfigured() ? 'aws-ses' : 'simulated' };
     }),
 
   pauseCampaign: adminProcedure
@@ -227,20 +380,6 @@ export const emailEngineRouter = createTRPCRouter({
     .mutation(async ({ input }) => {
       console.log("[EmailEngine] Cancelling campaign:", input.campaignId);
       return { success: true };
-    }),
-
-  sendTestEmail: adminProcedure
-    .input(z.object({
-      subject: z.string(),
-      body: z.string(),
-      toEmail: z.string().email(),
-      smtpId: z.string(),
-    }))
-    .mutation(async ({ input }) => {
-      console.log("[EmailEngine] Sending test email to:", input.toEmail);
-      const htmlBody = `<div style="font-family: Arial, sans-serif; padding: 20px;">${input.body.replace(/\n/g, '<br>')}</div>`;
-      const result = await sendEmail(input.toEmail, input.subject, htmlBody, input.body);
-      return { success: result.success, messageId: result.messageId || `msg_${Date.now()}` };
     }),
 
   getRecipients: adminProcedure
@@ -273,14 +412,17 @@ export const emailEngineRouter = createTRPCRouter({
 
   getWarmupStatus: adminProcedure.query(async () => {
     console.log("[EmailEngine] Fetching warmup status");
+    const quota = await sesGetSendQuota();
     return {
-      activeWarmups: 1,
+      activeWarmups: quota.max24HourSend < 50000 ? 1 : 0,
+      currentLimit: quota.max24HourSend,
+      sendRate: quota.maxSendRate,
       warmupSchedule: [
-        { day: 1, limit: 50 },
-        { day: 7, limit: 600 },
-        { day: 14, limit: 4000 },
-        { day: 21, limit: 15000 },
-        { day: 24, limit: 20000 },
+        { day: 1, limit: 200 },
+        { day: 7, limit: 1000 },
+        { day: 14, limit: 10000 },
+        { day: 21, limit: 50000 },
+        { day: 30, limit: 100000 },
       ],
     };
   }),
