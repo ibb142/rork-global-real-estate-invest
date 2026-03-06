@@ -18,8 +18,6 @@ export default function AdminLayout() {
           backgroundColor: Colors.card,
           borderTopColor: Colors.border,
           borderTopWidth: 1,
-          paddingTop: 8,
-          height: 85,
         },
         tabBarLabelStyle: {
           fontSize: 11,
@@ -225,6 +223,48 @@ export default function AdminLayout() {
       />
       <Tabs.Screen
         name="email-inbox"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="email-management"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="email-accounts"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="dashboard"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="lead-intelligence"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="traffic-control"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="viral-growth"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="landing-analytics"
         options={{
           href: null,
         }}
