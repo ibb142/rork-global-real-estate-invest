@@ -1,9 +1,9 @@
-import { httpBatchLink, loggerLink } from "@trpc/client";
+import { httpBatchLink, loggerLink, TRPCClientError } from "@trpc/client";
 import { createTRPCReact } from "@trpc/react-query";
 import superjson from "superjson";
 
 import type { AppRouter } from "@/backend/trpc/app-router";
-import { getAuthToken, getAuthUserId, getAuthUserRole } from "@/lib/auth-store";
+import { getAuthToken } from "@/lib/auth-store";
 
 export const trpc = createTRPCReact<AppRouter>();
 
@@ -38,7 +38,15 @@ export const queryClientConfig = {
     queries: {
       staleTime: 1000 * 60 * 5,
       gcTime: 1000 * 60 * 30,
-      retry: 3,
+      retry: (failureCount: number, error: unknown) => {
+        if (error instanceof TRPCClientError) {
+          const code = error.data?.code;
+          if (code === 'FORBIDDEN' || code === 'UNAUTHORIZED') {
+            return false;
+          }
+        }
+        return failureCount < 3;
+      },
       retryDelay: (attemptIndex: number) => Math.min(1000 * 2 ** attemptIndex, 30000),
       refetchOnWindowFocus: false,
       refetchOnReconnect: true,
