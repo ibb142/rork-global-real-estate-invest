@@ -16,6 +16,7 @@ import Colors from '@/constants/colors';
 import { getResponsiveSize, isCompactScreen, isExtraSmallScreen } from '@/lib/responsive';
 import { holdings, getTotalPortfolioValue, getTotalUnrealizedPnL, currentUser as mockUser } from '@/mocks/user';
 import { trpc } from '@/lib/trpc';
+import { useInstantCache } from '@/lib/use-instant-query';
 import { formatNumber } from '@/lib/formatters';
 import HoldingCard from '@/components/HoldingCard';
 import IPXHoldingCard from '@/components/IPXHoldingCard';
@@ -197,18 +198,27 @@ export default function PortfolioScreen() {
   const [activeTab, setActiveTab] = useState<TabType>('holdings');
   const [refreshing, setRefreshing] = useState(false);
 
-  const balanceQuery = trpc.wallet.getBalance.useQuery();
-  const portfolioQuery = trpc.wallet.getPortfolio.useQuery();
+  const balanceQuery = trpc.wallet.getBalance.useQuery(undefined, {
+    staleTime: 1000 * 60 * 2,
+    placeholderData: (prev) => prev,
+  });
+  const portfolioQuery = trpc.wallet.getPortfolio.useQuery(undefined, {
+    staleTime: 1000 * 60 * 2,
+    placeholderData: (prev) => prev,
+  });
+
+  const cachedBalance = useInstantCache('portfolio_balance', balanceQuery.data, balanceQuery.isSuccess);
+  const _cachedPortfolio = useInstantCache('portfolio_data', portfolioQuery.data, portfolioQuery.isSuccess);
 
   const currentUser = useMemo(() => ({
     ...mockUser,
-    walletBalance: balanceQuery.data?.available ?? mockUser.walletBalance,
-  }), [balanceQuery.data]);
+    walletBalance: cachedBalance?.available ?? mockUser.walletBalance,
+  }), [cachedBalance]);
 
   const { holdings: ipxHoldings, getTotalIPXValue, getTotalIPXPnL, getTotalIPXPnLPercent } = useIPX();
-  const { totalBalance: earnBalance, totalEarnings, apyRate } = useEarn();
+  const { totalBalance: earnBalance, totalEarnings: _totalEarnings, apyRate } = useEarn();
   const { t } = useTranslation();
-  const { trackScreen } = useAnalytics();
+  const { trackScreen: _trackScreen } = useAnalytics();
 
   const screenSize = getResponsiveSize(width);
   const isCompact = isCompactScreen(screenSize);
@@ -276,7 +286,7 @@ export default function PortfolioScreen() {
 
   const onRefresh = () => {
     setRefreshing(true);
-    Promise.all([balanceQuery.refetch(), portfolioQuery.refetch()])
+    void Promise.all([balanceQuery.refetch(), portfolioQuery.refetch()])
       .finally(() => setRefreshing(false));
   };
 
