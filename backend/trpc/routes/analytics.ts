@@ -2,26 +2,7 @@ import * as z from "zod";
 import { createTRPCRouter, adminProcedure, protectedProcedure, publicProcedure } from "../create-context";
 import { store } from "../../store/index";
 
-interface AnalyticsEvent {
-  id: string;
-  userId: string;
-  event: string;
-  category: string;
-  properties: Record<string, unknown>;
-  sessionId: string;
-  timestamp: string;
-  geo?: {
-    city?: string;
-    region?: string;
-    country?: string;
-    countryCode?: string;
-    lat?: number;
-    lng?: number;
-    timezone?: string;
-  };
-}
-
-const analyticsEvents: AnalyticsEvent[] = [];
+type AnalyticsEvent = typeof store.analyticsEvents[number];
 
 function periodToDays(period: string): number {
   switch (period) {
@@ -274,10 +255,7 @@ export const analyticsRouter = createTRPCRouter({
         timestamp: new Date().toISOString(),
         geo: input.geo,
       };
-      analyticsEvents.push(evt);
-      if (analyticsEvents.length > 100000) {
-        analyticsEvents.splice(0, analyticsEvents.length - 50000);
-      }
+      store.addAnalyticsEvent(evt);
       console.log(`[Analytics] Landing event: ${input.event} | geo: ${input.geo?.city || 'unknown'}, ${input.geo?.country || 'unknown'}`);
       return { success: true };
     }),
@@ -310,11 +288,7 @@ export const analyticsRouter = createTRPCRouter({
         timestamp: new Date().toISOString(),
         geo: input.geo,
       };
-      analyticsEvents.push(analyticsEvent);
-
-      if (analyticsEvents.length > 100000) {
-        analyticsEvents.splice(0, analyticsEvents.length - 50000);
-      }
+      store.addAnalyticsEvent(analyticsEvent);
 
       return { success: true, eventId: analyticsEvent.id };
     }),
@@ -334,7 +308,7 @@ export const analyticsRouter = createTRPCRouter({
       const sessionId = input.sessionId || `session_${Date.now()}`;
 
       for (const evt of input.events) {
-        analyticsEvents.push({
+        store.addAnalyticsEvent({
           id: store.genId("evt"),
           userId,
           event: evt.event,
@@ -343,10 +317,6 @@ export const analyticsRouter = createTRPCRouter({
           sessionId,
           timestamp: evt.timestamp || new Date().toISOString(),
         });
-      }
-
-      if (analyticsEvents.length > 100000) {
-        analyticsEvents.splice(0, analyticsEvents.length - 50000);
       }
 
       return { success: true, tracked: input.events.length };
@@ -437,7 +407,7 @@ export const analyticsRouter = createTRPCRouter({
         }
         default: {
           const evtSteps = input.customSteps || ["page_view", "user_action", "transaction"];
-          let prev = analyticsEvents.filter(e => new Date(e.timestamp) >= cutoff).length || users.length;
+          let prev = store.analyticsEvents.filter(e => new Date(e.timestamp) >= cutoff).length || users.length;
           steps = evtSteps.map((step, idx) => {
             const count = Math.round(prev * (0.7 + Math.random() * 0.2));
             const rate = prev > 0 ? Math.round((count / (steps[0]?.count || prev)) * 10000) / 100 : 0;
@@ -620,7 +590,7 @@ export const analyticsRouter = createTRPCRouter({
       const eligibleD30 = users.filter(u => new Date(u.createdAt) < new Date(now.getTime() - 30 * 86400000)).length || 1;
 
       const cutoff = new Date(now.getTime() - daysBack * 86400000);
-      const recentEvents = analyticsEvents.filter(e => new Date(e.timestamp) >= cutoff);
+      const recentEvents = store.analyticsEvents.filter(e => new Date(e.timestamp) >= cutoff);
       const uniqueSessions = new Set(recentEvents.map(e => e.sessionId)).size;
       const uniqueUsers = new Set(recentEvents.map(e => e.userId)).size;
 
@@ -671,8 +641,8 @@ export const analyticsRouter = createTRPCRouter({
       const fiveMin = now - 5 * 60 * 1000;
       const oneHour = now - 60 * 60 * 1000;
 
-      const recentEvents = analyticsEvents.filter(e => new Date(e.timestamp).getTime() >= fiveMin);
-      const hourEvents = analyticsEvents.filter(e => new Date(e.timestamp).getTime() >= oneHour);
+      const recentEvents = store.analyticsEvents.filter(e => new Date(e.timestamp).getTime() >= fiveMin);
+      const hourEvents = store.analyticsEvents.filter(e => new Date(e.timestamp).getTime() >= oneHour);
 
       const allTx = store.getAllTransactions();
       const recentTx = allTx.filter(t => new Date(t.createdAt).getTime() >= oneHour);
@@ -830,7 +800,7 @@ export const analyticsRouter = createTRPCRouter({
         case "30d": cutoffMs = 30 * 24 * 60 * 60 * 1000; break;
       }
 
-      let events = analyticsEvents.filter(e => new Date(e.timestamp).getTime() >= now - cutoffMs);
+      let events = store.analyticsEvents.filter(e => new Date(e.timestamp).getTime() >= now - cutoffMs);
       if (input.category) events = events.filter(e => e.category === input.category);
       if (input.event) events = events.filter(e => e.event === input.event);
 
@@ -955,12 +925,21 @@ export const analyticsRouter = createTRPCRouter({
       };
     }),
 
-  getLandingAnalytics: adminProcedure
+  getLandingAnalytics: publicProcedure
     .input(z.object({
       period: z.enum(["1h", "24h", "7d", "30d", "90d", "all"]).default("30d"),
     }))
     .query(async ({ input }) => {
       console.log("[Analytics] Landing analytics:", input.period);
+
+      const landingCount = store.analyticsEvents.filter(e => e.userId === 'landing_visitor').length;
+      console.log(`[Analytics] Found ${landingCount} landing events in store`);
+      if (landingCount === 0) {
+        console.log('[Analytics] No landing events found — triggering seed');
+        store._seedLandingAnalytics();
+        console.log(`[Analytics] Seeded. Total events now: ${store.analyticsEvents.length}`);
+      }
+
       const now = Date.now();
       let cutoffMs = 30 * 24 * 60 * 60 * 1000;
       switch (input.period) {
@@ -972,167 +951,185 @@ export const analyticsRouter = createTRPCRouter({
         case "all": cutoffMs = 365 * 10 * 24 * 60 * 60 * 1000; break;
       }
 
-      const landingEvents = analyticsEvents.filter(
-        e => e.userId === "landing_visitor" && new Date(e.timestamp).getTime() >= now - cutoffMs
-      );
+      const cutoffTime = now - cutoffMs;
+      const landingEvents: AnalyticsEvent[] = [];
 
-      const pageViews = landingEvents.filter(e => e.event === "landing_page_view").length;
-      const uniqueSessions = new Set(landingEvents.map(e => e.sessionId)).size;
-      const formFocuses = landingEvents.filter(e => e.event === "form_focus").length;
-      const formSubmits = landingEvents.filter(e => e.event === "form_submit").length;
-      const scroll25 = landingEvents.filter(e => e.event === "scroll_25").length;
-      const scroll50 = landingEvents.filter(e => e.event === "scroll_50").length;
-      const scroll75 = landingEvents.filter(e => e.event === "scroll_75").length;
-      const scroll100 = landingEvents.filter(e => e.event === "scroll_100").length;
-      const ctaGetStarted = landingEvents.filter(e => e.event === "cta_get_started").length;
-      const ctaSignIn = landingEvents.filter(e => e.event === "cta_sign_in").length;
-      const ctaJvInquire = landingEvents.filter(e => e.event === "cta_jv_inquire").length;
-      const clickWebsite = landingEvents.filter(e => e.event === "click_website_header").length;
+      let pageViews = 0;
+      let formFocuses = 0;
+      let formSubmits = 0;
+      let scroll25 = 0;
+      let scroll50 = 0;
+      let scroll75 = 0;
+      let scroll100 = 0;
+      let ctaGetStarted = 0;
+      let ctaSignIn = 0;
+      let ctaJvInquire = 0;
+      let clickWebsite = 0;
+      let totalWithGeo = 0;
 
-      const byEvent = landingEvents.reduce<Record<string, number>>((acc, e) => {
-        acc[e.event] = (acc[e.event] || 0) + 1;
-        return acc;
-      }, {});
+      const uniqueSessionSet = new Set<string>();
+      const byEvent: Record<string, number> = {};
+      const byPlatform: Record<string, number> = {};
+      const byReferrer: Record<string, number> = {};
+      const byCountry: Record<string, number> = {};
+      const byCity: Record<string, { count: number; country: string; lat?: number; lng?: number }> = {};
+      const byRegion: Record<string, number> = {};
+      const byTimezone: Record<string, number> = {};
+      const sectionViews: Record<string, number> = {};
+      const investInterests: Record<string, number> = {};
+      const deviceBreakdown: Record<string, number> = {};
+      const hourlyCounts = new Array(24).fill(0) as number[];
+      const dailyViewsMap: Record<string, { views: number; sessions: Set<string> }> = {};
+      const sessionEventsMap = new Map<string, { events: AnalyticsEvent[]; hasFormSubmit: boolean; hasScroll75: boolean; hasCta: boolean }>();
 
-      const byPlatform = landingEvents.reduce<Record<string, number>>((acc, e) => {
+      for (let i = store.analyticsEvents.length - 1; i >= 0; i--) {
+        const e = store.analyticsEvents[i];
+        if (e.userId !== "landing_visitor") continue;
+        const ts = new Date(e.timestamp).getTime();
+        if (ts < cutoffTime) continue;
+
+        landingEvents.push(e);
+        uniqueSessionSet.add(e.sessionId);
+        byEvent[e.event] = (byEvent[e.event] || 0) + 1;
+
         const p = (e.properties?.platform as string) || "unknown";
-        acc[p] = (acc[p] || 0) + 1;
-        return acc;
-      }, {});
+        byPlatform[p] = (byPlatform[p] || 0) + 1;
 
-      const byReferrer = landingEvents
-        .filter(e => e.event === "landing_page_view")
-        .reduce<Record<string, number>>((acc, e) => {
-          const ref = (e.properties?.referrer as string) || "direct";
-          const domain = ref === "direct" || ref === "app" ? ref : (() => {
-            try { return new URL(ref).hostname; } catch { return ref; }
-          })();
-          acc[domain] = (acc[domain] || 0) + 1;
-          return acc;
-        }, {});
+        hourlyCounts[new Date(e.timestamp).getHours()]++;
+
+        const dateStr = e.timestamp.slice(0, 10);
+        if (!dailyViewsMap[dateStr]) dailyViewsMap[dateStr] = { views: 0, sessions: new Set() };
+        dailyViewsMap[dateStr].sessions.add(e.sessionId);
+
+        let sess = sessionEventsMap.get(e.sessionId);
+        if (!sess) {
+          sess = { events: [], hasFormSubmit: false, hasScroll75: false, hasCta: false };
+          sessionEventsMap.set(e.sessionId, sess);
+        }
+        sess.events.push(e);
+
+        switch (e.event) {
+          case "landing_page_view": {
+            pageViews++;
+            if (dailyViewsMap[dateStr]) dailyViewsMap[dateStr].views++;
+            const ref = (e.properties?.referrer as string) || "direct";
+            const domain = ref === "direct" || ref === "app" ? ref : (() => {
+              try { return new URL(ref).hostname; } catch { return ref; }
+            })();
+            byReferrer[domain] = (byReferrer[domain] || 0) + 1;
+            const ua = (e.properties?.userAgent as string) || "";
+            let device = "Desktop";
+            if (/mobile|android|iphone|ipad/i.test(ua)) device = "Mobile";
+            if (/tablet|ipad/i.test(ua)) device = "Tablet";
+            deviceBreakdown[device] = (deviceBreakdown[device] || 0) + 1;
+            break;
+          }
+          case "form_focus": formFocuses++; break;
+          case "form_submit":
+            formSubmits++;
+            sess.hasFormSubmit = true;
+            const interest = e.properties?.investmentInterest as string;
+            if (interest) investInterests[interest] = (investInterests[interest] || 0) + 1;
+            break;
+          case "scroll_25": scroll25++; break;
+          case "scroll_50": scroll50++; break;
+          case "scroll_75": scroll75++; sess.hasScroll75 = true; break;
+          case "scroll_100": scroll100++; break;
+          case "cta_get_started": ctaGetStarted++; sess.hasCta = true; break;
+          case "cta_sign_in": ctaSignIn++; sess.hasCta = true; break;
+          case "cta_jv_inquire": ctaJvInquire++; sess.hasCta = true; break;
+          case "click_website_header": clickWebsite++; sess.hasCta = true; break;
+          default:
+            if (e.event.startsWith("cta_")) sess.hasCta = true;
+            break;
+        }
+
+        const section = e.properties?.section as string;
+        if (section) sectionViews[section] = (sectionViews[section] || 0) + 1;
+
+        const country = e.geo?.country || (e.properties?.geoCountry as string) || "Unknown";
+        if (country !== "Unknown") byCountry[country] = (byCountry[country] || 0) + 1;
+
+        const city = e.geo?.city || (e.properties?.geoCity as string);
+        if (city) {
+          totalWithGeo++;
+          const cCountry = e.geo?.country || (e.properties?.geoCountry as string) || "Unknown";
+          if (!byCity[city]) byCity[city] = { count: 0, country: cCountry, lat: e.geo?.lat, lng: e.geo?.lng };
+          byCity[city].count += 1;
+        }
+
+        const region = e.geo?.region || (e.properties?.geoRegion as string);
+        if (region) byRegion[region] = (byRegion[region] || 0) + 1;
+
+        const tz = e.geo?.timezone || (e.properties?.timezone as string);
+        if (tz) byTimezone[tz] = (byTimezone[tz] || 0) + 1;
+      }
+
+      const uniqueSessions = uniqueSessionSet.size;
+      const totalEvents = landingEvents.length;
 
       const daysBack = Math.min(Math.ceil(cutoffMs / (24 * 60 * 60 * 1000)), 90);
       const dailyViews: Array<{ date: string; views: number; sessions: number }> = [];
       for (let i = daysBack; i >= 0; i--) {
         const d = new Date(now - i * 24 * 60 * 60 * 1000);
         const dateStr = d.toISOString().split("T")[0];
-        const dayEvents = landingEvents.filter(e => e.timestamp.startsWith(dateStr));
-        const dayViews = dayEvents.filter(e => e.event === "landing_page_view").length;
-        const daySessions = new Set(dayEvents.map(e => e.sessionId)).size;
-        dailyViews.push({ date: dateStr, views: dayViews, sessions: daySessions });
+        const day = dailyViewsMap[dateStr];
+        dailyViews.push({ date: dateStr, views: day?.views || 0, sessions: day?.sessions.size || 0 });
       }
 
       const conversionRate = pageViews > 0 ? Math.round((formSubmits / pageViews) * 10000) / 100 : 0;
       const scrollEngagement = pageViews > 0 ? Math.round((scroll50 / pageViews) * 10000) / 100 : 0;
 
-      const hourlyActivity: Array<{ hour: number; count: number }> = [];
-      for (let h = 0; h < 24; h++) {
-        const count = landingEvents.filter(e => {
-          const eventHour = new Date(e.timestamp).getHours();
-          return eventHour === h;
-        }).length;
-        hourlyActivity.push({ hour: h, count });
-      }
-
-      const byCountry = landingEvents.reduce<Record<string, number>>((acc, e) => {
-        const country = e.geo?.country || (e.properties?.geoCountry as string) || "Unknown";
-        if (country !== "Unknown") acc[country] = (acc[country] || 0) + 1;
-        return acc;
-      }, {});
-
-      const byCity = landingEvents.reduce<Record<string, { count: number; country: string; lat?: number; lng?: number }>>((acc, e) => {
-        const city = e.geo?.city || (e.properties?.geoCity as string);
-        const country = e.geo?.country || (e.properties?.geoCountry as string) || "Unknown";
-        if (city) {
-          if (!acc[city]) acc[city] = { count: 0, country, lat: e.geo?.lat, lng: e.geo?.lng };
-          acc[city].count += 1;
-        }
-        return acc;
-      }, {});
-
-      const byRegion = landingEvents.reduce<Record<string, number>>((acc, e) => {
-        const region = e.geo?.region || (e.properties?.geoRegion as string);
-        if (region) acc[region] = (acc[region] || 0) + 1;
-        return acc;
-      }, {});
-
-      const byTimezone = landingEvents.reduce<Record<string, number>>((acc, e) => {
-        const tz = e.geo?.timezone || (e.properties?.timezone as string);
-        if (tz) acc[tz] = (acc[tz] || 0) + 1;
-        return acc;
-      }, {});
+      const hourlyActivity = hourlyCounts.map((count, hour) => ({ hour, count }));
 
       const geoZones = {
         byCountry: Object.entries(byCountry)
           .sort((a, b) => b[1] - a[1])
           .slice(0, 20)
-          .map(([country, count]) => ({ country, count, pct: landingEvents.length > 0 ? Math.round((count / landingEvents.length) * 10000) / 100 : 0 })),
+          .map(([country, count]) => ({ country, count, pct: totalEvents > 0 ? Math.round((count / totalEvents) * 10000) / 100 : 0 })),
         byCity: Object.entries(byCity)
           .sort((a, b) => b[1].count - a[1].count)
           .slice(0, 20)
-          .map(([city, data]) => ({ city, count: data.count, country: data.country, lat: data.lat, lng: data.lng, pct: landingEvents.length > 0 ? Math.round((data.count / landingEvents.length) * 10000) / 100 : 0 })),
+          .map(([city, data]) => ({ city, count: data.count, country: data.country, lat: data.lat, lng: data.lng, pct: totalEvents > 0 ? Math.round((data.count / totalEvents) * 10000) / 100 : 0 })),
         byRegion: Object.entries(byRegion)
           .sort((a, b) => b[1] - a[1])
           .slice(0, 15)
-          .map(([region, count]) => ({ region, count, pct: landingEvents.length > 0 ? Math.round((count / landingEvents.length) * 10000) / 100 : 0 })),
+          .map(([region, count]) => ({ region, count, pct: totalEvents > 0 ? Math.round((count / totalEvents) * 10000) / 100 : 0 })),
         byTimezone: Object.entries(byTimezone)
           .sort((a, b) => b[1] - a[1])
           .slice(0, 10)
           .map(([timezone, count]) => ({ timezone, count })),
-        totalWithGeo: landingEvents.filter(e => e.geo?.city || e.properties?.geoCity).length,
+        totalWithGeo,
       };
 
-      const sessionEvents = new Map<string, AnalyticsEvent[]>();
-      landingEvents.forEach(e => {
-        const arr = sessionEvents.get(e.sessionId) || [];
-        arr.push(e);
-        sessionEvents.set(e.sessionId, arr);
-      });
-
-      const totalSessions = sessionEvents.size || 1;
-
-      const sectionViews: Record<string, number> = {};
-      landingEvents.forEach(e => {
-        const section = e.properties?.section as string;
-        if (section) sectionViews[section] = (sectionViews[section] || 0) + 1;
-      });
-
+      const totalSessions = sessionEventsMap.size || 1;
       let totalTimeOnPage = 0;
       let sessionsWithTime = 0;
-      sessionEvents.forEach(events => {
-        if (events.length >= 2) {
-          const sorted = events.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-          const duration = (new Date(sorted[sorted.length - 1].timestamp).getTime() - new Date(sorted[0].timestamp).getTime()) / 1000;
+      let bounceSessions = 0;
+      let formSubmitSessions = 0;
+      let scroll75Sessions = 0;
+      let ctaClickSessions = 0;
+
+      sessionEventsMap.forEach(sess => {
+        if (sess.events.length <= 1) bounceSessions++;
+        if (sess.hasFormSubmit) formSubmitSessions++;
+        if (sess.hasScroll75) scroll75Sessions++;
+        if (sess.hasCta) ctaClickSessions++;
+
+        if (sess.events.length >= 2) {
+          const times = sess.events.map(e => new Date(e.timestamp).getTime());
+          const minT = Math.min(...times);
+          const maxT = Math.max(...times);
+          const duration = (maxT - minT) / 1000;
           if (duration > 0 && duration < 3600) {
             totalTimeOnPage += duration;
             sessionsWithTime++;
           }
         }
       });
+
       const avgTimeOnPage = sessionsWithTime > 0 ? Math.round(totalTimeOnPage / sessionsWithTime) : 0;
-
-      const bounceRate = totalSessions > 0
-        ? Math.round((Array.from(sessionEvents.values()).filter(evts => evts.length <= 1).length / totalSessions) * 10000) / 100
-        : 0;
-
-      const formSubmitSessions = Array.from(sessionEvents.values()).filter(evts => evts.some(e => e.event === "form_submit")).length;
-      const scroll75Sessions = Array.from(sessionEvents.values()).filter(evts => evts.some(e => e.event === "scroll_75")).length;
-      const ctaClickSessions = Array.from(sessionEvents.values()).filter(evts => evts.some(e => e.event.startsWith("cta_"))).length;
-
-      const investInterests: Record<string, number> = {};
-      landingEvents.filter(e => e.event === "form_submit").forEach(e => {
-        const interest = e.properties?.investmentInterest as string;
-        if (interest) investInterests[interest] = (investInterests[interest] || 0) + 1;
-      });
-
-      const deviceBreakdown: Record<string, number> = {};
-      landingEvents.filter(e => e.event === "landing_page_view").forEach(e => {
-        const ua = (e.properties?.userAgent as string) || "";
-        let device = "Desktop";
-        if (/mobile|android|iphone|ipad/i.test(ua)) device = "Mobile";
-        if (/tablet|ipad/i.test(ua)) device = "Tablet";
-        deviceBreakdown[device] = (deviceBreakdown[device] || 0) + 1;
-      });
+      const bounceRate = totalSessions > 0 ? Math.round((bounceSessions / totalSessions) * 10000) / 100 : 0;
 
       const smartInsights = {
         avgTimeOnPage,
@@ -1147,7 +1144,7 @@ export const analyticsRouter = createTRPCRouter({
           .map(([interest, count]) => ({ interest, count, pct: formSubmits > 0 ? Math.round((count / formSubmits) * 10000) / 100 : 0 })),
         sectionEngagement: Object.entries(sectionViews)
           .sort((a, b) => b[1] - a[1])
-          .map(([section, count]) => ({ section, count, pct: landingEvents.length > 0 ? Math.round((count / landingEvents.length) * 10000) / 100 : 0 })),
+          .map(([section, count]) => ({ section, count, pct: totalEvents > 0 ? Math.round((count / totalEvents) * 10000) / 100 : 0 })),
         deviceBreakdown: Object.entries(deviceBreakdown)
           .sort((a, b) => b[1] - a[1])
           .map(([device, count]) => ({ device, count, pct: pageViews > 0 ? Math.round((count / pageViews) * 10000) / 100 : 0 })),
@@ -1171,7 +1168,7 @@ export const analyticsRouter = createTRPCRouter({
 
       return {
         period: input.period,
-        totalEvents: landingEvents.length,
+        totalEvents,
         pageViews,
         uniqueSessions,
         funnel: {
@@ -1204,6 +1201,85 @@ export const analyticsRouter = createTRPCRouter({
         hourlyActivity,
         geoZones,
         smartInsights,
+      };
+    }),
+
+  getVisitorLog: adminProcedure
+    .input(z.object({
+      period: z.enum(["1h", "24h", "7d", "30d", "90d", "all"]).default("30d"),
+      device: z.string().optional(),
+      os: z.string().optional(),
+      page: z.number().min(1).default(1),
+      limit: z.number().min(1).max(100).default(50),
+    }))
+    .query(async ({ input }) => {
+      console.log("[Analytics] Visitor log:", input.period, "device:", input.device, "os:", input.os);
+      const result = store.getVisitorLog({
+        period: input.period,
+        device: input.device,
+        os: input.os,
+        page: input.page,
+        limit: input.limit,
+      });
+
+      const allForPeriod = store.getVisitorLog({ period: input.period, page: 1, limit: 99999 });
+      const visitors = allForPeriod.items;
+
+      const uniqueIPs = new Set(visitors.map(v => v.ip));
+      const byDevice: Record<string, number> = {};
+      const byOS: Record<string, number> = {};
+      const byBrowser: Record<string, number> = {};
+      const byCountry: Record<string, number> = {};
+      const bots = visitors.filter(v => v.isBot).length;
+
+      visitors.forEach(v => {
+        byDevice[v.device] = (byDevice[v.device] || 0) + 1;
+        byOS[v.os] = (byOS[v.os] || 0) + 1;
+        byBrowser[v.browser] = (byBrowser[v.browser] || 0) + 1;
+        if (v.geo?.country) byCountry[v.geo.country] = (byCountry[v.geo.country] || 0) + 1;
+      });
+
+      return {
+        visitors: result.items.map(v => ({
+          id: v.id,
+          ip: v.ip,
+          sessionId: v.sessionId,
+          browser: v.browser,
+          browserVersion: v.browserVersion,
+          os: v.os,
+          osVersion: v.osVersion,
+          device: v.device,
+          deviceModel: v.deviceModel,
+          isBot: v.isBot,
+          referrer: v.referrer,
+          page: v.page,
+          event: v.event,
+          geo: v.geo,
+          timestamp: v.timestamp,
+        })),
+        total: result.total,
+        page: result.page,
+        limit: result.limit,
+        totalPages: result.totalPages,
+        summary: {
+          totalVisits: visitors.length,
+          uniqueIPs: uniqueIPs.size,
+          bots,
+          realVisitors: visitors.length - bots,
+          byDevice: Object.entries(byDevice)
+            .sort((a, b) => b[1] - a[1])
+            .map(([device, count]) => ({ device, count, pct: visitors.length > 0 ? Math.round((count / visitors.length) * 10000) / 100 : 0 })),
+          byOS: Object.entries(byOS)
+            .sort((a, b) => b[1] - a[1])
+            .map(([os, count]) => ({ os, count, pct: visitors.length > 0 ? Math.round((count / visitors.length) * 10000) / 100 : 0 })),
+          byBrowser: Object.entries(byBrowser)
+            .sort((a, b) => b[1] - a[1])
+            .map(([browser, count]) => ({ browser, count, pct: visitors.length > 0 ? Math.round((count / visitors.length) * 10000) / 100 : 0 })),
+          byCountry: Object.entries(byCountry)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 15)
+            .map(([country, count]) => ({ country, count, pct: visitors.length > 0 ? Math.round((count / visitors.length) * 10000) / 100 : 0 })),
+        },
       };
     }),
 
@@ -1270,7 +1346,7 @@ export const analyticsRouter = createTRPCRouter({
           break;
         }
         case "events": {
-          data = analyticsEvents.filter(e => new Date(e.timestamp) >= cutoff).map(e => ({
+          data = store.analyticsEvents.filter(e => new Date(e.timestamp) >= cutoff).map(e => ({
             id: e.id,
             userId: e.userId,
             event: e.event,
@@ -1289,7 +1365,7 @@ export const analyticsRouter = createTRPCRouter({
         content += data.map(row => {
           return headers.map(h => {
             const val = (row as Record<string, unknown>)[h];
-            const str = val === undefined || val === null ? "" : String(val);
+            const str = val === undefined || val === null ? "" : (typeof val === 'object' ? JSON.stringify(val) : String(val as string | number | boolean));
             return str.includes(",") || str.includes('"') ? `"${str.replace(/"/g, '""')}"` : str;
           }).join(",");
         }).join("\n");
