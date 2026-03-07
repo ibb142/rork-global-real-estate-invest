@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,7 +6,6 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
-  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -34,12 +33,15 @@ import {
   Flame,
   Crosshair,
   Tablet,
+  Wifi,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { trpc } from '@/lib/trpc';
+import { useInstantCache } from '@/lib/use-instant-query';
+import { useAuth } from '@/lib/auth-context';
 
 type PeriodType = '1h' | '24h' | '7d' | '30d' | '90d' | 'all';
-type TabType = 'overview' | 'geo' | 'insights';
+type TabType = 'overview' | 'geo' | 'insights' | 'visitors';
 
 const PERIODS: { label: string; value: PeriodType }[] = [
   { label: '1H', value: '1h' },
@@ -52,8 +54,9 @@ const PERIODS: { label: string; value: PeriodType }[] = [
 
 const TABS: { label: string; value: TabType; icon: React.ReactNode }[] = [
   { label: 'Overview', value: 'overview', icon: <BarChart3 size={14} color={Colors.textSecondary} /> },
+  { label: 'Visitors', value: 'visitors', icon: <Wifi size={14} color={Colors.textSecondary} /> },
   { label: 'Geo Zones', value: 'geo', icon: <MapPin size={14} color={Colors.textSecondary} /> },
-  { label: 'Smart Intel', value: 'insights', icon: <Brain size={14} color={Colors.textSecondary} /> },
+  { label: 'Intel', value: 'insights', icon: <Brain size={14} color={Colors.textSecondary} /> },
 ];
 
 const COUNTRY_FLAGS: Record<string, string> = {
@@ -78,21 +81,67 @@ function formatSeconds(sec: number): string {
 
 export default function LandingAnalyticsScreen() {
   const router = useRouter();
+  const { isAuthenticated, isAdmin, isLoading: authLoading, refreshSession } = useAuth();
   const [period, setPeriod] = useState<PeriodType>('30d');
   const [activeTab, setActiveTab] = useState<TabType>('overview');
+  const [_retryCount, setRetryCount] = useState(0);
+  const [visitorPage, setVisitorPage] = useState<number>(1);
+  const [deviceFilter, setDeviceFilter] = useState<string>('all');
+  const [osFilter, setOsFilter] = useState<string>('all');
+
+
+  useEffect(() => {
+    if (!authLoading && isAuthenticated && !isAdmin) {
+      console.log('[LandingAnalytics] Authenticated but not admin, attempting session refresh...');
+      void refreshSession().then((ok) => {
+        if (ok) {
+          console.log('[LandingAnalytics] Session refreshed, retrying...');
+          setRetryCount(c => c + 1);
+        } else {
+          console.log('[LandingAnalytics] Session refresh failed');
+        }
+      });
+    }
+  }, [authLoading, isAuthenticated, isAdmin, refreshSession]);
 
   const analyticsQuery = trpc.analytics.getLandingAnalytics.useQuery(
     { period },
-    { staleTime: 1000 * 30, refetchInterval: 1000 * 60 }
+    {
+      enabled: !authLoading,
+      staleTime: 0,
+      refetchInterval: 1000 * 3,
+      retry: 3,
+      retryDelay: (attempt) => Math.min(500 * Math.pow(2, attempt), 3000),
+      placeholderData: (prev) => prev,
+    }
   );
+
+  const visitorQuery = trpc.analytics.getVisitorLog.useQuery(
+    { period, device: deviceFilter, os: osFilter, page: visitorPage, limit: 30 },
+    {
+      enabled: !authLoading && activeTab === 'visitors',
+      staleTime: 0,
+      refetchInterval: 1000 * 5,
+      placeholderData: (prev) => prev,
+    }
+  );
+
+  const visitorData = visitorQuery.data;
 
   const utils = trpc.useUtils();
 
-  const onRefresh = useCallback(() => {
+  const onRefresh = useCallback(async () => {
+    void refreshSession().then((refreshed) => {
+      if (refreshed) {
+        console.log('[LandingAnalytics] Token refreshed on manual retry');
+        setRetryCount(prev => prev + 1);
+      }
+    });
     void utils.analytics.getLandingAnalytics.invalidate();
-  }, [utils]);
+    void utils.analytics.getVisitorLog.invalidate();
+  }, [utils, refreshSession]);
 
-  const data = analyticsQuery.data;
+  const data = useInstantCache(`landing_analytics_${period}`, analyticsQuery.data, analyticsQuery.isSuccess);
 
   const funnelSteps = data ? [
     { label: 'Page Views', count: data.funnel.pageViews, color: '#4A90D9', pct: 100 },
@@ -585,6 +634,230 @@ export default function LandingAnalyticsScreen() {
     );
   };
 
+  const renderVisitorsTab = () => {
+    if (!visitorData) {
+      if (visitorQuery.isLoading) {
+        return (
+          <View style={styles.emptyWrap}>
+            <Wifi size={48} color={Colors.primary} />
+            <Text style={styles.emptyTitle}>Loading Visitors...</Text>
+            <Text style={styles.emptySubtitle}>Fetching real-time visitor data with IP, device, and browser info.</Text>
+          </View>
+        );
+      }
+      return (
+        <View style={styles.emptyWrap}>
+          <Wifi size={48} color={Colors.textTertiary} />
+          <Text style={styles.emptyTitle}>No Visitor Data Yet</Text>
+          <Text style={styles.emptySubtitle}>Visitor logs will appear here as people visit your landing page. IP address, device, OS, and browser are captured server-side automatically.</Text>
+        </View>
+      );
+    }
+
+    const { summary, visitors, total, totalPages } = visitorData;
+    const DEVICE_FILTERS = ['all', 'Mobile', 'Desktop', 'Tablet', 'Bot'];
+    const OS_FILTERS = ['all', ...summary.byOS.map(o => o.os)];
+
+    const getDeviceIcon = (device: string) => {
+      switch (device) {
+        case 'Mobile': return <Smartphone size={13} color="#00C48C" />;
+        case 'Tablet': return <Tablet size={13} color="#7B68EE" />;
+        case 'Desktop': return <Monitor size={13} color="#4A90D9" />;
+        case 'Bot': return <Activity size={13} color="#FF6B6B" />;
+        default: return <Globe size={13} color={Colors.textTertiary} />;
+      }
+    };
+
+    const getOSColor = (os: string) => {
+      switch (os) {
+        case 'iOS': case 'iPadOS': case 'macOS': return '#007AFF';
+        case 'Android': return '#3DDC84';
+        case 'Windows': return '#0078D4';
+        case 'Linux': return '#FCC624';
+        default: return Colors.textSecondary;
+      }
+    };
+
+    const formatTime = (ts: string) => {
+      const d = new Date(ts);
+      const now = new Date();
+      const diffMs = now.getTime() - d.getTime();
+      if (diffMs < 60000) return 'Just now';
+      if (diffMs < 3600000) return `${Math.floor(diffMs / 60000)}m ago`;
+      if (diffMs < 86400000) return `${Math.floor(diffMs / 3600000)}h ago`;
+      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    };
+
+    return (
+      <>
+        <View style={vstyles.summaryRow}>
+          <View style={[vstyles.summaryCard, { borderLeftColor: '#4A90D9' }]}>
+            <Wifi size={16} color="#4A90D9" />
+            <Text style={vstyles.summaryValue}>{summary.totalVisits}</Text>
+            <Text style={vstyles.summaryLabel}>Total Visits</Text>
+          </View>
+          <View style={[vstyles.summaryCard, { borderLeftColor: '#00C48C' }]}>
+            <Users size={16} color="#00C48C" />
+            <Text style={vstyles.summaryValue}>{summary.uniqueIPs}</Text>
+            <Text style={vstyles.summaryLabel}>Unique IPs</Text>
+          </View>
+          <View style={[vstyles.summaryCard, { borderLeftColor: '#FF6B6B' }]}>
+            <Activity size={16} color="#FF6B6B" />
+            <Text style={vstyles.summaryValue}>{summary.bots}</Text>
+            <Text style={vstyles.summaryLabel}>Bots</Text>
+          </View>
+        </View>
+
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <Smartphone size={16} color="#00C48C" />
+            <Text style={styles.cardTitle}>Device Breakdown</Text>
+          </View>
+          <View style={vstyles.breakdownGrid}>
+            {summary.byDevice.map((d, i) => (
+              <View key={i} style={[vstyles.breakdownItem, { borderColor: GEO_COLORS[i % GEO_COLORS.length] + '30' }]}>
+                {getDeviceIcon(d.device)}
+                <Text style={vstyles.breakdownCount}>{d.count}</Text>
+                <Text style={vstyles.breakdownLabel}>{d.device}</Text>
+                <Text style={[vstyles.breakdownPct, { color: GEO_COLORS[i % GEO_COLORS.length] }]}>{d.pct}%</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+
+        <View style={styles.rowCards}>
+          <View style={styles.halfCard}>
+            <View style={styles.cardHeader}>
+              <Monitor size={16} color="#7B68EE" />
+              <Text style={styles.cardTitle}>OS</Text>
+            </View>
+            {summary.byOS.map((o, i) => (
+              <View key={i} style={styles.listRow}>
+                <View style={[vstyles.osDot, { backgroundColor: getOSColor(o.os) }]} />
+                <Text style={styles.listLabel} numberOfLines={1}>{o.os}</Text>
+                <Text style={styles.listValue}>{o.count}</Text>
+              </View>
+            ))}
+          </View>
+          <View style={styles.halfCard}>
+            <View style={styles.cardHeader}>
+              <Globe size={16} color="#E879F9" />
+              <Text style={styles.cardTitle}>Browser</Text>
+            </View>
+            {summary.byBrowser.map((b, i) => (
+              <View key={i} style={styles.listRow}>
+                <View style={[vstyles.osDot, { backgroundColor: GEO_COLORS[i % GEO_COLORS.length] }]} />
+                <Text style={styles.listLabel} numberOfLines={1}>{b.browser}</Text>
+                <Text style={styles.listValue}>{b.count}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <Target size={16} color="#FF6B6B" />
+            <Text style={styles.cardTitle}>Filter Visitors</Text>
+          </View>
+          <Text style={vstyles.filterLabel}>Device</Text>
+          <View style={vstyles.filterRow}>
+            {DEVICE_FILTERS.map(d => (
+              <TouchableOpacity
+                key={d}
+                style={[vstyles.filterChip, deviceFilter === d && vstyles.filterChipActive]}
+                onPress={() => { setDeviceFilter(d); setVisitorPage(1); }}
+                activeOpacity={0.7}
+              >
+                <Text style={[vstyles.filterChipText, deviceFilter === d && vstyles.filterChipTextActive]}>
+                  {d === 'all' ? 'All' : d}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          {OS_FILTERS.length > 2 && (
+            <>
+              <Text style={[vstyles.filterLabel, { marginTop: 10 }]}>OS</Text>
+              <View style={vstyles.filterRow}>
+                {OS_FILTERS.slice(0, 6).map(o => (
+                  <TouchableOpacity
+                    key={o}
+                    style={[vstyles.filterChip, osFilter === o && vstyles.filterChipActive]}
+                    onPress={() => { setOsFilter(o); setVisitorPage(1); }}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[vstyles.filterChipText, osFilter === o && vstyles.filterChipTextActive]}>
+                      {o === 'all' ? 'All' : o}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </>
+          )}
+        </View>
+
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <Wifi size={16} color="#4A90D9" />
+            <Text style={styles.cardTitle}>Visitor Log ({total})</Text>
+          </View>
+          {visitors.length === 0 ? (
+            <Text style={styles.noDataText}>No visitors match the current filters.</Text>
+          ) : (
+            visitors.map((v, i) => (
+              <View key={v.id || i} style={vstyles.visitorRow}>
+                <View style={vstyles.visitorIconWrap}>
+                  {getDeviceIcon(v.device)}
+                </View>
+                <View style={vstyles.visitorInfo}>
+                  <View style={vstyles.visitorTopRow}>
+                    <Text style={vstyles.visitorIP} numberOfLines={1}>{v.ip}</Text>
+                    {v.isBot && (
+                      <View style={vstyles.botBadge}>
+                        <Text style={vstyles.botBadgeText}>BOT</Text>
+                      </View>
+                    )}
+                  </View>
+                  <Text style={vstyles.visitorDetail} numberOfLines={1}>
+                    {v.device} {v.os} {v.osVersion ? `${v.osVersion}` : ''} {v.browser} {v.browserVersion ? v.browserVersion.split('.')[0] : ''}
+                  </Text>
+                  <View style={vstyles.visitorMetaRow}>
+                    {v.geo?.country && (
+                      <Text style={vstyles.visitorMeta}>
+                        {COUNTRY_FLAGS[v.geo.country] || ''} {v.geo.city || v.geo.country}
+                      </Text>
+                    )}
+                    <Text style={vstyles.visitorMeta}>{v.event.replace(/_/g, ' ')}</Text>
+                    <Text style={vstyles.visitorTime}>{formatTime(v.timestamp)}</Text>
+                  </View>
+                </View>
+              </View>
+            ))
+          )}
+
+          {totalPages > 1 && (
+            <View style={vstyles.paginationRow}>
+              <TouchableOpacity
+                style={[vstyles.pageBtn, visitorPage <= 1 && vstyles.pageBtnDisabled]}
+                onPress={() => setVisitorPage(p => Math.max(1, p - 1))}
+                disabled={visitorPage <= 1}
+              >
+                <ArrowLeft size={14} color={visitorPage <= 1 ? Colors.textTertiary : Colors.text} />
+              </TouchableOpacity>
+              <Text style={vstyles.pageText}>{visitorPage} / {totalPages}</Text>
+              <TouchableOpacity
+                style={[vstyles.pageBtn, visitorPage >= totalPages && vstyles.pageBtnDisabled]}
+                onPress={() => setVisitorPage(p => Math.min(totalPages, p + 1))}
+                disabled={visitorPage >= totalPages}
+              >
+                <ArrowUpRight size={14} color={visitorPage >= totalPages ? Colors.textTertiary : Colors.text} />
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      </>
+    );
+  };
+
   return (
     <View style={styles.root}>
       <SafeAreaView edges={['top']} style={styles.safe}>
@@ -636,23 +909,40 @@ export default function LandingAnalyticsScreen() {
             ))}
           </View>
 
-          {analyticsQuery.isLoading ? (
-            <View style={styles.loadingWrap}>
-              <ActivityIndicator size="large" color={Colors.primary} />
-              <Text style={styles.loadingText}>Loading analytics...</Text>
-            </View>
-          ) : !data ? (
-            <View style={styles.emptyWrap}>
-              <Activity size={48} color={Colors.textTertiary} />
-              <Text style={styles.emptyTitle}>No Data Yet</Text>
-              <Text style={styles.emptySubtitle}>Landing page tracking will start collecting data from today. Check back soon!</Text>
-            </View>
-          ) : (
+          {activeTab === 'visitors' ? (
+            renderVisitorsTab()
+          ) : data ? (
             <>
               {activeTab === 'overview' && renderOverviewTab()}
               {activeTab === 'geo' && renderGeoTab()}
               {activeTab === 'insights' && renderInsightsTab()}
             </>
+          ) : analyticsQuery.isError ? (
+            <View style={styles.emptyWrap}>
+              <View style={styles.errorIconWrap}>
+                <Activity size={48} color="#FF6B6B" />
+              </View>
+              <Text style={styles.emptyTitle}>Failed to Load</Text>
+              <Text style={styles.emptySubtitle}>
+                {analyticsQuery.error?.message || 'Could not fetch analytics data. Pull down to retry.'}
+              </Text>
+              <TouchableOpacity style={styles.retryBtn} onPress={onRefresh} activeOpacity={0.7}>
+                <RefreshCw size={16} color="#fff" />
+                <Text style={styles.retryBtnText}>Retry</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (analyticsQuery.isLoading || analyticsQuery.isFetching) ? (
+            <View style={styles.emptyWrap}>
+              <Activity size={48} color={Colors.primary} />
+              <Text style={styles.emptyTitle}>Loading Analytics...</Text>
+              <Text style={styles.emptySubtitle}>Fetching real-time landing page data. This may take a moment.</Text>
+            </View>
+          ) : (
+            <View style={styles.emptyWrap}>
+              <Activity size={48} color={Colors.textTertiary} />
+              <Text style={styles.emptyTitle}>No Data Yet</Text>
+              <Text style={styles.emptySubtitle}>Landing page tracking will start collecting data from today. Check back soon!</Text>
+            </View>
           )}
 
           <View style={styles.infoCard}>
@@ -804,6 +1094,30 @@ const styles = StyleSheet.create({
   loadingText: {
     color: Colors.textSecondary,
     fontSize: 14,
+  },
+  errorIconWrap: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: '#FF6B6B15',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  retryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: Colors.primary,
+    borderRadius: 12,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    marginTop: 8,
+  },
+  retryBtnText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700' as const,
   },
   emptyWrap: {
     alignItems: 'center',
@@ -1451,5 +1765,202 @@ const styles = StyleSheet.create({
   devicePct: {
     fontSize: 12,
     fontWeight: '800' as const,
+  },
+  errorActions: {
+    flexDirection: 'row' as const,
+    gap: 10,
+    marginTop: 8,
+    flexWrap: 'wrap' as const,
+    justifyContent: 'center' as const,
+  },
+});
+
+const vstyles = StyleSheet.create({
+  summaryRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 14,
+  },
+  summaryCard: {
+    flex: 1,
+    backgroundColor: Colors.surface,
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    borderLeftWidth: 3,
+    alignItems: 'center',
+    gap: 4,
+  },
+  summaryValue: {
+    fontSize: 20,
+    fontWeight: '900' as const,
+    color: Colors.text,
+  },
+  summaryLabel: {
+    fontSize: 9,
+    fontWeight: '700' as const,
+    color: Colors.textSecondary,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.5,
+  },
+  breakdownGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  breakdownItem: {
+    flex: 1,
+    minWidth: '28%' as any,
+    backgroundColor: Colors.background,
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    gap: 4,
+  },
+  breakdownCount: {
+    fontSize: 18,
+    fontWeight: '900' as const,
+    color: Colors.text,
+  },
+  breakdownLabel: {
+    fontSize: 10,
+    fontWeight: '600' as const,
+    color: Colors.textSecondary,
+  },
+  breakdownPct: {
+    fontSize: 11,
+    fontWeight: '800' as const,
+  },
+  osDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  filterLabel: {
+    fontSize: 11,
+    fontWeight: '700' as const,
+    color: Colors.textSecondary,
+    marginBottom: 6,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.5,
+  },
+  filterRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  filterChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: Colors.background,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+  },
+  filterChipActive: {
+    backgroundColor: Colors.primary + '18',
+    borderColor: Colors.primary + '50',
+  },
+  filterChipText: {
+    fontSize: 11,
+    fontWeight: '600' as const,
+    color: Colors.textSecondary,
+  },
+  filterChipTextActive: {
+    color: Colors.primary,
+    fontWeight: '700' as const,
+  },
+  visitorRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.surfaceBorder + '50',
+  },
+  visitorIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: Colors.backgroundSecondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+  visitorInfo: {
+    flex: 1,
+    gap: 3,
+  },
+  visitorTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  visitorIP: {
+    fontSize: 13,
+    fontWeight: '800' as const,
+    color: Colors.text,
+    fontFamily: undefined,
+  },
+  botBadge: {
+    backgroundColor: '#FF6B6B20',
+    borderRadius: 4,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+  },
+  botBadgeText: {
+    fontSize: 8,
+    fontWeight: '800' as const,
+    color: '#FF6B6B',
+    letterSpacing: 0.5,
+  },
+  visitorDetail: {
+    fontSize: 11,
+    fontWeight: '600' as const,
+    color: Colors.textSecondary,
+  },
+  visitorMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  visitorMeta: {
+    fontSize: 10,
+    color: Colors.textTertiary,
+    fontWeight: '500' as const,
+  },
+  visitorTime: {
+    fontSize: 10,
+    color: Colors.primary,
+    fontWeight: '600' as const,
+  },
+  paginationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 16,
+    marginTop: 14,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: Colors.surfaceBorder,
+  },
+  pageBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: Colors.backgroundSecondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pageBtnDisabled: {
+    opacity: 0.4,
+  },
+  pageText: {
+    fontSize: 13,
+    fontWeight: '700' as const,
+    color: Colors.text,
   },
 });
