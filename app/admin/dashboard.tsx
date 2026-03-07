@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   RefreshControl,
   useWindowDimensions,
-  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -31,6 +30,7 @@ import {
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { trpc } from '@/lib/trpc';
+import { useInstantCache, getInitialCacheData } from '@/lib/use-instant-query';
 
 export default function AdminDashboardScreen() {
   const router = useRouter();
@@ -38,18 +38,36 @@ export default function AdminDashboardScreen() {
 
   const utils = trpc.useUtils();
 
+  const initDash = useMemo(() => getInitialCacheData('db_dashboard'), []);
+  const initTx = useMemo(() => getInitialCacheData('db_transactions'), []);
+  const initPendingKyc = useMemo(() => getInitialCacheData('db_kyc_pending'), []);
+  const initInReviewKyc = useMemo(() => getInitialCacheData('db_kyc_inreview'), []);
+  const initKpi = useMemo(() => getInitialCacheData('db_kpi'), []);
+  const initHealth = useMemo(() => getInitialCacheData('db_health'), []);
+  const initRetention = useMemo(() => getInitialCacheData('db_retention'), []);
+  const initInvestment = useMemo(() => getInitialCacheData('db_investment'), []);
+
   const dashboardQuery = trpc.analytics.getDashboard.useQuery(undefined, {
-    staleTime: 1000 * 30,
-    refetchInterval: 1000 * 60,
+    staleTime: 1000 * 5,
+    refetchInterval: 1000 * 5,
+    placeholderData: (prev) => prev,
+    initialData: initDash as any,
+    initialDataUpdatedAt: initDash ? Date.now() - 1000 * 20 : undefined,
   });
 
   const kpiQuery = trpc.analytics.getKPIDashboard.useQuery(undefined, {
-    staleTime: 1000 * 60,
+    staleTime: 1000 * 30,
+    placeholderData: (prev) => prev,
+    initialData: initKpi as any,
+    initialDataUpdatedAt: initKpi ? Date.now() - 1000 * 20 : undefined,
   });
 
   const systemHealthQuery = trpc.analytics.getSystemHealth.useQuery(undefined, {
-    staleTime: 1000 * 30,
-    refetchInterval: 1000 * 60,
+    staleTime: 1000 * 5,
+    refetchInterval: 1000 * 5,
+    placeholderData: (prev) => prev,
+    initialData: initHealth as any,
+    initialDataUpdatedAt: initHealth ? Date.now() - 1000 * 20 : undefined,
   });
 
   const transactionsQuery = trpc.transactions.list.useQuery({
@@ -59,42 +77,75 @@ export default function AdminDashboardScreen() {
     sortOrder: 'desc',
   }, {
     staleTime: 1000 * 30,
+    placeholderData: (prev) => prev,
+    initialData: initTx as any,
+    initialDataUpdatedAt: initTx ? Date.now() - 1000 * 20 : undefined,
   });
 
   const pendingKycQuery = trpc.members.list.useQuery({
     page: 1,
     limit: 5,
     kycStatus: 'pending',
-  }, { staleTime: 1000 * 30 });
+  }, {
+    staleTime: 1000 * 30,
+    placeholderData: (prev) => prev,
+    initialData: initPendingKyc as any,
+    initialDataUpdatedAt: initPendingKyc ? Date.now() - 1000 * 20 : undefined,
+  });
 
   const inReviewKycQuery = trpc.members.list.useQuery({
     page: 1,
     limit: 5,
     kycStatus: 'in_review',
-  }, { staleTime: 1000 * 30 });
+  }, {
+    staleTime: 1000 * 30,
+    placeholderData: (prev) => prev,
+    initialData: initInReviewKyc as any,
+    initialDataUpdatedAt: initInReviewKyc ? Date.now() - 1000 * 20 : undefined,
+  });
 
   const retentionQuery = trpc.analytics.getRetentionMetrics.useQuery(
     { period: '30d' },
-    { staleTime: 1000 * 60 * 5 }
+    {
+      staleTime: 1000 * 60 * 2,
+      placeholderData: (prev) => prev,
+      initialData: initRetention as any,
+      initialDataUpdatedAt: initRetention ? Date.now() - 1000 * 60 : undefined,
+    }
   );
 
   const investmentQuery = trpc.analytics.getInvestmentAnalytics.useQuery(
     { period: '30d' },
-    { staleTime: 1000 * 60 * 5 }
+    {
+      staleTime: 1000 * 60 * 2,
+      placeholderData: (prev) => prev,
+      initialData: initInvestment as any,
+      initialDataUpdatedAt: initInvestment ? Date.now() - 1000 * 60 : undefined,
+    }
   );
 
-  const stats = dashboardQuery.data;
-  const recentTransactions = transactionsQuery.data?.transactions ?? [];
-  const pendingKyc = [
-    ...(pendingKycQuery.data?.members ?? []),
-    ...(inReviewKycQuery.data?.members ?? []),
-  ];
-  const kpis = kpiQuery.data?.kpis ?? [];
-  const health = systemHealthQuery.data;
-  const retention = retentionQuery.data;
-  const investment = investmentQuery.data;
+  const cachedDash = useInstantCache('db_dashboard', dashboardQuery.data, dashboardQuery.isSuccess);
+  const cachedTx = useInstantCache('db_transactions', transactionsQuery.data, transactionsQuery.isSuccess);
+  const cachedPendingKyc = useInstantCache('db_kyc_pending', pendingKycQuery.data, pendingKycQuery.isSuccess);
+  const cachedInReviewKyc = useInstantCache('db_kyc_inreview', inReviewKycQuery.data, inReviewKycQuery.isSuccess);
+  const cachedKpi = useInstantCache('db_kpi', kpiQuery.data, kpiQuery.isSuccess);
+  const cachedHealth = useInstantCache('db_health', systemHealthQuery.data, systemHealthQuery.isSuccess);
+  const cachedRetention = useInstantCache('db_retention', retentionQuery.data, retentionQuery.isSuccess);
+  const cachedInvestment = useInstantCache('db_investment', investmentQuery.data, investmentQuery.isSuccess);
 
-  const isLoading = dashboardQuery.isLoading;
+  const stats = cachedDash;
+  const recentTransactions = cachedTx?.transactions ?? [];
+  const pendingKyc = [
+    ...(cachedPendingKyc?.members ?? []),
+    ...(cachedInReviewKyc?.members ?? []),
+  ];
+  const kpis = cachedKpi?.kpis ?? [];
+  const health = cachedHealth;
+  const retention = cachedRetention;
+  const investment = cachedInvestment;
+
+  const hasAnyCachedData = !!stats || recentTransactions.length > 0;
+  const statsLoading = dashboardQuery.isLoading && !hasAnyCachedData;
   const refreshing = dashboardQuery.isRefetching;
 
   const onRefresh = useCallback(() => {
@@ -149,26 +200,13 @@ export default function AdminDashboardScreen() {
 
   const cardWidth = (width - 48) / 2;
 
-  if (isLoading) {
-    return (
-      <SafeAreaView style={styles.container} edges={['top']}>
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-            <ArrowLeft size={20} color={Colors.text} />
-          </TouchableOpacity>
-          <Text style={styles.title}>Dashboard</Text>
-          <View style={styles.liveIndicator}>
-            <View style={styles.liveDot} />
-            <Text style={styles.liveText}>Live</Text>
-          </View>
-        </View>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={Colors.primary} />
-          <Text style={styles.loadingText}>Loading live analytics...</Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
+  const SkeletonCard = useCallback(({ w }: { w?: number }) => (
+    <View style={[styles.statCard, w ? { width: w } : { flex: 1 }]}>
+      <View style={[styles.statIconWrap, { backgroundColor: Colors.border }]} />
+      <View style={styles.skeletonLine} />
+      <View style={[styles.skeletonLine, { width: '55%', marginTop: 6 }]} />
+    </View>
+  ), []);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -194,25 +232,45 @@ export default function AdminDashboardScreen() {
           />
         }
       >
-        <View style={styles.heroRow}>
-          <View style={[styles.heroCard, { backgroundColor: Colors.primary }]}>
-            <View style={styles.heroIcon}>
-              <Wallet size={20} color={Colors.background} />
+        {statsLoading ? (
+          <View style={styles.heroRow}>
+            <View style={[styles.heroCard, { backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border }]}>
+              <View style={[styles.skeletonLine, { width: '40%' }]} />
+              <View style={[styles.skeletonLine, { height: 22, marginTop: 10 }]} />
+              <View style={[styles.skeletonLine, { width: '50%', marginTop: 6 }]} />
             </View>
-            <Text style={styles.heroLabel}>Total Invested</Text>
-            <Text style={styles.heroValue}>{formatCurrency(stats?.totalInvested ?? 0)}</Text>
-            <Text style={styles.heroSub}>Platform-wide AUM</Text>
-          </View>
-          <View style={[styles.heroCard, { backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border }]}>
-            <View style={[styles.heroIcon, { backgroundColor: Colors.positive + '20' }]}>
-              <TrendingUp size={20} color={Colors.positive} />
+            <View style={[styles.heroCard, { backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border }]}>
+              <View style={[styles.skeletonLine, { width: '40%' }]} />
+              <View style={[styles.skeletonLine, { height: 22, marginTop: 10 }]} />
+              <View style={[styles.skeletonLine, { width: '50%', marginTop: 6 }]} />
             </View>
-            <Text style={[styles.heroLabel, { color: Colors.textSecondary }]}>Volume (30d)</Text>
-            <Text style={[styles.heroValue, { color: Colors.positive }]}>{formatCurrency(stats?.trends?.volumeLast30d ?? 0)}</Text>
-            <Text style={styles.heroSub}>{stats?.trends?.volumeGrowthRate ?? 0}% vs prev</Text>
           </View>
-        </View>
+        ) : (
+          <View style={styles.heroRow}>
+            <View style={[styles.heroCard, { backgroundColor: Colors.primary }]}>
+              <View style={styles.heroIcon}>
+                <Wallet size={20} color={Colors.background} />
+              </View>
+              <Text style={styles.heroLabel}>Total Invested</Text>
+              <Text style={styles.heroValue}>{formatCurrency(stats?.totalInvested ?? 0)}</Text>
+              <Text style={styles.heroSub}>Platform-wide AUM</Text>
+            </View>
+            <View style={[styles.heroCard, { backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border }]}>
+              <View style={[styles.heroIcon, { backgroundColor: Colors.positive + '20' }]}>
+                <TrendingUp size={20} color={Colors.positive} />
+              </View>
+              <Text style={[styles.heroLabel, { color: Colors.textSecondary }]}>Volume (30d)</Text>
+              <Text style={[styles.heroValue, { color: Colors.positive }]}>{formatCurrency(stats?.trends?.volumeLast30d ?? 0)}</Text>
+              <Text style={styles.heroSub}>{stats?.trends?.volumeGrowthRate ?? 0}% vs prev</Text>
+            </View>
+          </View>
+        )}
 
+        {statsLoading ? (
+          <View style={styles.statsGrid}>
+            {[1,2,3,4].map((i) => <SkeletonCard key={i} w={cardWidth} />)}
+          </View>
+        ) : (
         <View style={styles.statsGrid}>
           <TouchableOpacity
             style={[styles.statCard, { width: cardWidth }]}
@@ -272,6 +330,7 @@ export default function AdminDashboardScreen() {
             </View>
           </TouchableOpacity>
         </View>
+        )}
 
         <View style={styles.metricsRow}>
           <View style={styles.metricItem}>
@@ -1141,5 +1200,12 @@ const styles = StyleSheet.create({
   },
   bottomPad: {
     height: 100,
+  },
+  skeletonLine: {
+    height: 14,
+    borderRadius: 6,
+    backgroundColor: Colors.border,
+    width: '80%',
+    marginTop: 10,
   },
 });
