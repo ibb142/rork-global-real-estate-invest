@@ -110,10 +110,49 @@
       .nav-hamburger { display: flex; }
     }
 
+    /* ─── LIVE ACTIVITY TICKER ─── */
+    .live-ticker-bar {
+      position: fixed;
+      top: 68px; left: 0; right: 0;
+      z-index: 190;
+      background: rgba(0,30,18,0.92);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid rgba(0,196,140,0.15);
+      padding: 9px 20px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      overflow: hidden;
+      height: 38px;
+    }
+    .live-ticker-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--green);
+      animation: glow-pulse 1.8s infinite;
+      flex-shrink: 0;
+    }
+    .live-ticker-text {
+      flex: 1;
+      font-size: 12px;
+      color: #9A9A9A;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      transition: opacity 0.3s, transform 0.3s;
+    }
+    .live-ticker-text strong { color: #fff; font-weight: 700; }
+    .live-ticker-text .ticker-loc { color: #5A5A5A; }
+    .live-ticker-time {
+      font-size: 10px;
+      color: #4A4A4A;
+      flex-shrink: 0;
+    }
+
     /* ─── HERO ─── */
     .hero {
       min-height: 100vh;
-      padding: 68px 24px 100px;
+      padding: 106px 24px 100px;
       display: flex; flex-direction: column;
       align-items: center; justify-content: center;
       position: relative; overflow: hidden;
@@ -218,6 +257,35 @@
       from { opacity: 0; transform: translateY(28px); }
       to   { opacity: 1; transform: translateY(0); }
     }
+
+    /* ─── VISITOR COUNTER BADGE ─── */
+    .visitor-badge {
+      position: fixed;
+      bottom: 24px; left: 24px;
+      z-index: 300;
+      background: rgba(10,10,10,0.92);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 12px;
+      color: var(--text2);
+      animation: fadeslide 1s 1.5s ease both;
+      cursor: default;
+      max-width: 260px;
+    }
+    .visitor-badge-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--green);
+      animation: glow-pulse 2s infinite;
+      flex-shrink: 0;
+    }
+    .visitor-badge strong { color: var(--gold); font-weight: 800; }
+    @media(max-width:480px) { .visitor-badge { display: none; } }
 
     /* ─── MARQUEE ─── */
     .ticker {
@@ -552,100 +620,71 @@
       padding: 80px 24px;
       text-align: center;
     }
-    .waitlist-box {
-      max-width: 560px;
-      margin: 0 auto;
-    }
+    .waitlist-box { max-width: 560px; margin: 0 auto; }
     .waitlist-form {
-      display: flex;
-      gap: 10px;
-      margin-top: 28px;
-      flex-wrap: wrap;
-      justify-content: center;
+      display: flex; gap: 10px; margin-top: 28px;
+      flex-wrap: wrap; justify-content: center;
     }
     .waitlist-input {
-      flex: 1;
-      min-width: 220px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 15px 20px;
-      font-size: 14px;
-      color: var(--text);
-      font-family: inherit;
-      outline: none;
-      transition: border-color 0.2s;
+      flex: 1; min-width: 220px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 14px; padding: 15px 20px;
+      font-size: 14px; color: var(--text); font-family: inherit;
+      outline: none; transition: border-color 0.2s;
     }
     .waitlist-input::placeholder { color: var(--text3); }
     .waitlist-input:focus { border-color: var(--gold-border); }
     .waitlist-btn {
-      background: var(--gold);
-      color: #000;
-      font-weight: 800;
-      font-size: 14px;
-      padding: 15px 28px;
-      border-radius: 14px;
-      border: none;
-      cursor: pointer;
-      font-family: inherit;
-      transition: background 0.2s, transform 0.15s;
-      white-space: nowrap;
+      background: var(--gold); color: #000;
+      font-weight: 800; font-size: 14px;
+      padding: 15px 28px; border-radius: 14px;
+      border: none; cursor: pointer; font-family: inherit;
+      transition: background 0.2s, transform 0.15s; white-space: nowrap;
     }
     .waitlist-btn:hover { background: var(--gold-light); transform: translateY(-2px); }
     .waitlist-success {
       display: none;
-      background: rgba(0,196,140,0.08);
-      border: 1px solid rgba(0,196,140,0.25);
-      border-radius: 14px;
-      padding: 18px 24px;
-      color: var(--green);
-      font-size: 14px;
-      font-weight: 600;
-      margin-top: 28px;
-      align-items: center;
-      justify-content: center;
-      gap: 9px;
+      background: rgba(0,196,140,0.08); border: 1px solid rgba(0,196,140,0.25);
+      border-radius: 14px; padding: 18px 24px;
+      color: var(--green); font-size: 14px; font-weight: 600;
+      margin-top: 28px; align-items: center; justify-content: center; gap: 9px;
     }
-    .waitlist-count {
-      font-size: 11.5px;
-      color: var(--text3);
-      margin-top: 16px;
-    }
+    .waitlist-count { font-size: 11.5px; color: var(--text3); margin-top: 16px; }
     .waitlist-count strong { color: var(--gold); }
 
-    /* ─── MODAL ─── */
-    .modal-overlay {
+    /* ─── SMART FUNNEL OVERLAY ─── */
+    .funnel-overlay {
       display: none;
       position: fixed;
       inset: 0;
-      background: rgba(0,0,0,0.78);
+      background: rgba(0,0,0,0.82);
       z-index: 1000;
       align-items: center;
       justify-content: center;
       padding: 20px;
-      backdrop-filter: blur(6px);
-      -webkit-backdrop-filter: blur(6px);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
     }
-    .modal-overlay.open { display: flex; }
-    .modal {
+    .funnel-overlay.open { display: flex; }
+    .funnel-card {
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 24px;
       width: 100%;
-      max-width: 460px;
-      padding: 36px 32px;
+      max-width: 480px;
+      padding: 0;
       position: relative;
-      animation: modal-in 0.3s cubic-bezier(0.34,1.56,0.64,1) both;
-      max-height: 90vh;
+      animation: modal-in 0.35s cubic-bezier(0.34,1.56,0.64,1) both;
+      max-height: 92vh;
       overflow-y: auto;
     }
     @keyframes modal-in {
       from { opacity: 0; transform: scale(0.92) translateY(20px); }
       to   { opacity: 1; transform: scale(1) translateY(0); }
     }
-    .modal-close {
+    .funnel-close {
       position: absolute;
-      top: 18px; right: 18px;
+      top: 16px; right: 16px;
       width: 32px; height: 32px;
       background: var(--surface2);
       border: 1px solid var(--border);
@@ -653,182 +692,207 @@
       display: flex; align-items: center; justify-content: center;
       font-size: 16px; cursor: pointer; color: var(--text2);
       transition: border-color 0.2s, color 0.2s;
-      line-height: 1;
+      line-height: 1; z-index: 10;
     }
-    .modal-close:hover { border-color: var(--gold-border); color: var(--text); }
-    .modal-logo {
-      display: flex; align-items: center; gap: 10px; margin-bottom: 26px;
-    }
-    .modal-logo-icon {
-      width: 38px; height: 38px;
-      border-radius: 11px;
+    .funnel-close:hover { border-color: var(--gold-border); color: var(--text); }
+    .funnel-progress {
+      height: 3px;
+      background: var(--bg);
+      border-radius: 24px 24px 0 0;
       overflow: hidden;
-      display: flex; align-items: center; justify-content: center;
     }
-    .modal-logo-icon img {
-      width: 38px; height: 38px;
-      object-fit: contain;
-      display: block;
+    .funnel-progress-fill {
+      height: 100%;
+      background: var(--gold);
+      transition: width 0.5s ease;
+      width: 0%;
     }
-    .modal-logo-text { font-size: 13px; font-weight: 800; letter-spacing: 1.8px; }
-    .modal-title {
+    .funnel-body { padding: 32px 28px 28px; }
+    .funnel-step-badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: var(--gold-dim); border: 1px solid var(--gold-border);
+      border-radius: 100px; padding: 5px 14px;
+      font-size: 9.5px; font-weight: 800;
+      letter-spacing: 1.5px; color: var(--gold);
+      text-transform: uppercase; margin-bottom: 18px;
+    }
+    .funnel-title {
       font-size: 26px; font-weight: 900;
-      letter-spacing: -0.8px; margin-bottom: 6px;
+      letter-spacing: -0.8px; margin-bottom: 8px; line-height: 1.15;
     }
-    .modal-title span { color: var(--gold); }
-    .modal-sub {
-      font-size: 13px; color: var(--text2);
-      margin-bottom: 28px; line-height: 1.6;
+    .funnel-title span { color: var(--gold); }
+    .funnel-sub {
+      font-size: 13.5px; color: var(--text2);
+      line-height: 1.65; margin-bottom: 24px;
     }
-    .modal-tabs {
-      display: flex;
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 4px;
-      margin-bottom: 26px;
-      gap: 4px;
-    }
-    .modal-tab {
-      flex: 1; text-align: center;
-      padding: 9px;
-      border-radius: 9px;
-      font-size: 13px; font-weight: 600;
+
+    /* Funnel Step 1: Goals */
+    .goal-grid { display: flex; flex-direction: column; gap: 10px; }
+    .goal-option {
+      display: flex; align-items: center; gap: 14px;
+      background: var(--bg); border: 1.5px solid var(--border);
+      border-radius: 16px; padding: 16px;
       cursor: pointer;
-      color: var(--text2);
-      transition: background 0.2s, color 0.2s;
-      border: none; background: transparent;
-      font-family: inherit;
+      transition: border-color 0.2s, background 0.2s, transform 0.15s;
     }
-    .modal-tab.active {
-      background: var(--surface);
-      color: var(--text);
-      box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+    .goal-option:hover { border-color: var(--gold-border); transform: translateX(3px); }
+    .goal-option.selected { border-color: var(--gold); background: rgba(255,215,0,0.05); }
+    .goal-emoji { font-size: 26px; flex-shrink: 0; }
+    .goal-info { flex: 1; }
+    .goal-label { font-size: 14.5px; font-weight: 700; margin-bottom: 2px; }
+    .goal-desc { font-size: 11.5px; color: var(--text2); }
+    .goal-check {
+      width: 24px; height: 24px; border-radius: 50%;
+      border: 2px solid var(--border);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 12px; flex-shrink: 0;
+      transition: all 0.2s;
     }
-    .modal-form { display: flex; flex-direction: column; gap: 14px; }
-    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-    @media(max-width:480px) { .form-row { grid-template-columns: 1fr; } }
-    .form-group { display: flex; flex-direction: column; gap: 6px; }
-    .form-label {
-      font-size: 11.5px; font-weight: 700;
-      color: var(--text2); letter-spacing: 0.3px;
+    .goal-option.selected .goal-check {
+      background: var(--gold); border-color: var(--gold); color: #000;
     }
-    .form-input {
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 13px 16px;
-      font-size: 14px;
-      color: var(--text);
-      font-family: inherit;
-      outline: none;
-      transition: border-color 0.2s, box-shadow 0.2s;
-      width: 100%;
+    .funnel-footer-note {
+      text-align: center; font-size: 11.5px; color: var(--text3);
+      margin-top: 18px;
     }
-    .form-input::placeholder { color: var(--text3); }
-    .form-input:focus {
-      border-color: var(--gold-border);
-      box-shadow: 0 0 0 3px rgba(255,215,0,0.07);
-    }
-    .form-select {
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 13px 16px;
-      font-size: 14px;
-      color: var(--text2);
-      font-family: inherit;
-      outline: none;
+    .funnel-footer-note strong { color: var(--gold); }
+
+    /* Funnel Step 2: Form */
+    .funnel-form { display: flex; flex-direction: column; gap: 12px; }
+    .funnel-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    @media(max-width:420px) { .funnel-form-row { grid-template-columns: 1fr; } }
+    .funnel-input {
+      background: var(--bg); border: 1.5px solid var(--border);
+      border-radius: 12px; padding: 14px 16px;
+      font-size: 14px; color: var(--text); font-family: inherit;
+      outline: none; width: 100%;
       transition: border-color 0.2s;
-      width: 100%;
-      cursor: pointer;
-      appearance: none;
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23555' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
-      background-repeat: no-repeat;
-      background-position: right 14px center;
-      padding-right: 38px;
     }
-    .form-select:focus { border-color: var(--gold-border); outline: none; }
-    .form-select option { background: var(--surface); color: var(--text); }
-    .form-divider {
-      display: flex; align-items: center; gap: 12px;
-      font-size: 11px; color: var(--text3);
+    .funnel-input::placeholder { color: var(--text3); }
+    .funnel-input:focus { border-color: var(--gold-border); }
+    .funnel-error {
+      background: rgba(255,77,77,0.08); border: 1px solid rgba(255,77,77,0.25);
+      border-radius: 10px; padding: 10px 14px;
+      font-size: 12px; color: #FF6B6B; display: none;
     }
-    .form-divider::before, .form-divider::after {
-      content: ''; flex: 1;
-      height: 1px; background: var(--border);
-    }
-    .form-submit {
+    .funnel-submit {
       background: var(--gold); color: #000;
       font-weight: 800; font-size: 15px;
-      padding: 16px;
-      border-radius: 14px;
-      border: none; cursor: pointer;
-      font-family: inherit;
+      padding: 16px; border-radius: 14px;
+      border: none; cursor: pointer; font-family: inherit;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
       transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
-      box-shadow: 0 0 30px rgba(255,215,0,0.2);
+      box-shadow: 0 0 28px rgba(255,215,0,0.18);
       margin-top: 4px;
     }
-    .form-submit:hover {
-      background: var(--gold-light);
-      transform: translateY(-2px);
-      box-shadow: 0 0 45px rgba(255,215,0,0.35);
+    .funnel-submit:hover { background: var(--gold-light); transform: translateY(-2px); }
+    .funnel-submit:disabled { opacity: 0.6; cursor: not-allowed; }
+    .funnel-disclaimer {
+      font-size: 10.5px; color: var(--text3);
+      text-align: center; line-height: 1.6; margin-top: 4px;
     }
-    .form-submit:active { transform: translateY(0); }
-    .form-terms {
-      font-size: 11px; color: var(--text3);
-      text-align: center; line-height: 1.6;
+    .funnel-members-row {
+      display: flex; align-items: center; justify-content: center;
+      gap: 8px; margin-top: 16px;
     }
-    .form-terms a { color: var(--text2); text-decoration: underline; }
-    .form-bottom-link {
-      text-align: center;
-      font-size: 13px; color: var(--text2);
-      margin-top: 6px;
+    .funnel-avatars { display: flex; }
+    .funnel-av {
+      width: 24px; height: 24px; border-radius: 50%;
+      border: 2px solid var(--surface);
     }
-    .form-bottom-link a { color: var(--gold); text-decoration: none; font-weight: 600; cursor: pointer; }
-    .modal-perks {
-      display: flex; flex-direction: column; gap: 9px;
-      margin-bottom: 24px;
+    .funnel-members-text { font-size: 12px; color: var(--text3); }
+    .funnel-members-text strong { color: var(--gold); font-weight: 800; }
+
+    /* Funnel Step 3: Success */
+    .funnel-success { text-align: center; }
+    .funnel-success-icon {
+      width: 80px; height: 80px; border-radius: 50%;
+      background: rgba(0,196,140,0.1); border: 2px solid rgba(0,196,140,0.25);
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto 18px; font-size: 38px;
     }
-    .mperk {
-      display: flex; align-items: center; gap: 11px;
-      font-size: 12.5px; color: var(--text2);
-    }
-    .mperk-ico {
-      width: 26px; height: 26px; flex-shrink: 0;
-      background: var(--gold-dim); border: 1px solid var(--gold-border);
-      border-radius: 8px; display: flex; align-items: center;
-      justify-content: center; font-size: 13px;
-    }
-    .modal-success {
-      display: none;
-      text-align: center;
-      padding: 20px 0;
-    }
-    .modal-success-ico {
-      font-size: 54px; margin-bottom: 16px; display: block;
-    }
-    .modal-success h3 {
-      font-size: 22px; font-weight: 900;
+    .funnel-success h3 {
+      font-size: 24px; font-weight: 900;
       letter-spacing: -0.5px; margin-bottom: 8px;
     }
-    .modal-success p {
-      font-size: 13.5px; color: var(--text2); line-height: 1.6; margin-bottom: 24px;
+    .funnel-success p {
+      font-size: 14px; color: var(--text2); line-height: 1.6;
+      margin-bottom: 22px;
     }
-
-    /* ─── FORM ERROR ─── */
-    .form-error {
-      background: rgba(255,77,77,0.08);
-      border: 1px solid rgba(255,77,77,0.25);
-      border-radius: 10px;
-      padding: 11px 14px;
-      font-size: 12.5px;
-      color: #FF6B6B;
+    .funnel-success p strong { color: var(--gold); }
+    .funnel-success-stats {
+      display: flex;
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 14px; overflow: hidden; margin-bottom: 20px;
+    }
+    .fss-item {
+      flex: 1; padding: 14px 8px; text-align: center;
+      border-right: 1px solid var(--border);
+    }
+    .fss-item:last-child { border-right: none; }
+    .fss-val { font-size: 16px; font-weight: 900; color: var(--gold); margin-bottom: 3px; }
+    .fss-lbl { font-size: 9px; color: var(--text3); font-weight: 600; letter-spacing: 0.3px; }
+    .funnel-next-steps { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; text-align: left; }
+    .fns-item {
+      display: flex; align-items: center; gap: 12px;
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 12px; padding: 12px 14px;
+    }
+    .fns-icon {
+      width: 34px; height: 34px; border-radius: 10px;
+      background: var(--surface2); border: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 15px; flex-shrink: 0;
+    }
+    .fns-icon.done { background: rgba(0,196,140,0.12); border-color: rgba(0,196,140,0.25); }
+    .fns-text { flex: 1; }
+    .fns-label { font-size: 13px; font-weight: 700; margin-bottom: 1px; }
+    .fns-desc { font-size: 11px; color: var(--text3); }
+    .funnel-referral-btn {
+      width: 100%;
+      background: rgba(255,215,0,0.06); border: 1.5px solid rgba(255,215,0,0.2);
+      border-radius: 14px; padding: 14px;
+      font-size: 14px; font-weight: 700; color: var(--gold);
+      cursor: pointer; font-family: inherit; text-align: center;
+      transition: background 0.2s, border-color 0.2s;
+      margin-bottom: 10px;
+    }
+    .funnel-referral-btn:hover { background: rgba(255,215,0,0.1); border-color: rgba(255,215,0,0.35); }
+    .funnel-referral-box {
       display: none;
-      line-height: 1.5;
+      background: var(--bg); border: 1px solid rgba(255,215,0,0.15);
+      border-radius: 14px; padding: 14px; margin-bottom: 10px;
     }
+    .funnel-referral-box.open { display: block; }
+    .frb-title { font-size: 9.5px; font-weight: 800; letter-spacing: 1.5px; color: var(--text3); margin-bottom: 8px; text-align: left; }
+    .frb-link-row {
+      display: flex; background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; overflow: hidden; margin-bottom: 10px;
+    }
+    .frb-link {
+      flex: 1; padding: 10px 12px; font-size: 12px;
+      color: var(--gold); font-weight: 600;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .frb-copy {
+      padding: 10px 14px; border-left: 1px solid var(--border);
+      cursor: pointer; font-size: 13px; color: var(--gold);
+      transition: background 0.2s; background: transparent; border: none; font-family: inherit;
+    }
+    .frb-copy:hover { background: rgba(255,215,0,0.08); }
+    .frb-rewards {
+      display: flex; background: var(--surface);
+      border-radius: 10px; overflow: hidden;
+    }
+    .frb-reward {
+      flex: 1; text-align: center; padding: 10px 6px;
+      border-right: 1px solid var(--border);
+    }
+    .frb-reward:last-child { border-right: none; }
+    .frb-reward-val { font-size: 16px; font-weight: 900; color: var(--green); margin-bottom: 2px; }
+    .frb-reward-lbl { font-size: 9px; color: var(--text3); }
 
-    /* ─── PARTNERS EARN ─── */
+    /* ─── PARTNERS ─── */
     .partners-section {
       background: var(--bg);
       border-top: 1px solid var(--border);
@@ -842,73 +906,36 @@
         radial-gradient(ellipse 60% 50% at 10% 50%, rgba(255,215,0,0.05) 0%, transparent 65%),
         radial-gradient(ellipse 50% 50% at 90% 30%, rgba(0,196,140,0.04) 0%, transparent 60%);
     }
-    .partners-header {
-      text-align: center;
-      max-width: 660px;
-      margin: 0 auto 64px;
-    }
+    .partners-header { text-align: center; max-width: 660px; margin: 0 auto 64px; }
     .partners-headline-tag {
       display: inline-flex; align-items: center; gap: 8px;
-      background: rgba(0,196,140,0.08);
-      border: 1px solid rgba(0,196,140,0.22);
-      border-radius: 100px;
-      padding: 7px 16px;
+      background: rgba(0,196,140,0.08); border: 1px solid rgba(0,196,140,0.22);
+      border-radius: 100px; padding: 7px 16px;
       font-size: 10.5px; font-weight: 700;
       letter-spacing: 1.8px; color: #00C48C;
       text-transform: uppercase; margin-bottom: 22px;
-      display: inline-flex;
     }
     .partners-headline-tag .earn-dot {
       width: 7px; height: 7px; border-radius: 50%;
-      background: #00C48C;
-      animation: glow-pulse 1.8s infinite;
+      background: #00C48C; animation: glow-pulse 1.8s infinite;
     }
     .partners-title { font-size: clamp(30px, 4.5vw, 50px); font-weight: 900; letter-spacing: -1.5px; line-height: 1.06; margin-bottom: 16px; }
     .partners-title .gold { color: var(--gold); }
     .partners-subtitle { font-size: 15.5px; color: var(--text2); line-height: 1.75; }
-    .partners-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 20px;
-      max-width: 1100px;
-      margin: 0 auto 56px;
-    }
+    .partners-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; max-width: 1100px; margin: 0 auto 56px; }
     @media(max-width: 900px) { .partners-grid { grid-template-columns: 1fr; max-width: 520px; } }
-    .partner-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 24px;
-      padding: 32px 26px;
-      position: relative;
-      overflow: hidden;
-      transition: border-color 0.25s, transform 0.25s, box-shadow 0.25s;
-      display: flex; flex-direction: column;
-    }
-    .partner-card::before {
-      content: ''; position: absolute;
-      top: 0; left: 0; right: 0; height: 3px;
-      border-radius: 24px 24px 0 0;
-    }
+    .partner-card { background: var(--surface); border: 1px solid var(--border); border-radius: 24px; padding: 32px 26px; position: relative; overflow: hidden; transition: border-color 0.25s, transform 0.25s, box-shadow 0.25s; display: flex; flex-direction: column; }
+    .partner-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; border-radius: 24px 24px 0 0; }
     .partner-card.realtor::before { background: linear-gradient(90deg, #FFD700, #FFA500); }
     .partner-card.influencer::before { background: linear-gradient(90deg, #FF6B9D, #C84B31); }
     .partner-card.broker::before { background: linear-gradient(90deg, #4A90D9, #00C48C); }
     .partner-card:hover { border-color: var(--gold-border); transform: translateY(-6px); box-shadow: 0 24px 60px rgba(0,0,0,0.4); }
-    .partner-card-top {
-      display: flex; align-items: flex-start; justify-content: space-between;
-      margin-bottom: 20px;
-    }
-    .partner-icon-wrap {
-      width: 54px; height: 54px; border-radius: 16px;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 24px; flex-shrink: 0;
-    }
+    .partner-card-top { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 20px; }
+    .partner-icon-wrap { width: 54px; height: 54px; border-radius: 16px; display: flex; align-items: center; justify-content: center; font-size: 24px; flex-shrink: 0; }
     .realtor .partner-icon-wrap { background: rgba(255,215,0,0.1); border: 1px solid rgba(255,215,0,0.2); }
     .influencer .partner-icon-wrap { background: rgba(255,107,157,0.1); border: 1px solid rgba(255,107,157,0.2); }
     .broker .partner-icon-wrap { background: rgba(74,144,217,0.1); border: 1px solid rgba(74,144,217,0.2); }
-    .partner-commission-badge {
-      font-size: 11px; font-weight: 800; padding: 6px 12px;
-      border-radius: 100px; letter-spacing: 0.3px;
-    }
+    .partner-commission-badge { font-size: 11px; font-weight: 800; padding: 6px 12px; border-radius: 100px; letter-spacing: 0.3px; }
     .realtor .partner-commission-badge { background: rgba(255,215,0,0.12); color: var(--gold); border: 1px solid rgba(255,215,0,0.25); }
     .influencer .partner-commission-badge { background: rgba(255,107,157,0.1); color: #FF6B9D; border: 1px solid rgba(255,107,157,0.22); }
     .broker .partner-commission-badge { background: rgba(74,144,217,0.1); color: #4A90D9; border: 1px solid rgba(74,144,217,0.22); }
@@ -919,25 +946,12 @@
     .partner-name { font-size: 21px; font-weight: 900; letter-spacing: -0.5px; margin-bottom: 11px; }
     .partner-desc { font-size: 13px; color: var(--text2); line-height: 1.72; margin-bottom: 22px; flex: 1; }
     .partner-perks { display: flex; flex-direction: column; gap: 9px; margin-bottom: 24px; }
-    .partner-perk {
-      display: flex; align-items: flex-start; gap: 10px;
-      font-size: 12.5px; color: var(--text2);
-    }
-    .partner-perk-check {
-      width: 18px; height: 18px; border-radius: 6px;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 9px; flex-shrink: 0; margin-top: 1px;
-    }
+    .partner-perk { display: flex; align-items: flex-start; gap: 10px; font-size: 12.5px; color: var(--text2); }
+    .partner-perk-check { width: 18px; height: 18px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 9px; flex-shrink: 0; margin-top: 1px; }
     .realtor .partner-perk-check { background: rgba(255,215,0,0.12); color: var(--gold); }
     .influencer .partner-perk-check { background: rgba(255,107,157,0.1); color: #FF6B9D; }
     .broker .partner-perk-check { background: rgba(74,144,217,0.1); color: #4A90D9; }
-    .partner-earning-box {
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 16px;
-      margin-bottom: 22px;
-    }
+    .partner-earning-box { background: var(--bg); border: 1px solid var(--border); border-radius: 14px; padding: 16px; margin-bottom: 22px; }
     .peb-label { font-size: 9.5px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--text3); margin-bottom: 10px; }
     .peb-example { display: flex; justify-content: space-between; align-items: center; }
     .peb-deal { font-size: 11px; color: var(--text2); }
@@ -946,32 +960,14 @@
     .influencer .peb-amount { color: #FF6B9D; }
     .broker .peb-amount { color: #4A90D9; }
     .peb-divider { height: 1px; background: var(--border); margin: 10px 0; }
-    .partner-apply-btn {
-      width: 100%;
-      padding: 15px;
-      border-radius: 14px;
-      font-size: 13.5px; font-weight: 800;
-      border: none; cursor: pointer;
-      font-family: inherit;
-      transition: transform 0.15s, box-shadow 0.2s, background 0.2s;
-      text-decoration: none;
-      display: block; text-align: center;
-    }
+    .partner-apply-btn { width: 100%; padding: 15px; border-radius: 14px; font-size: 13.5px; font-weight: 800; border: none; cursor: pointer; font-family: inherit; transition: transform 0.15s, box-shadow 0.2s, background 0.2s; text-decoration: none; display: block; text-align: center; }
     .realtor .partner-apply-btn { background: var(--gold); color: #000; box-shadow: 0 0 28px rgba(255,215,0,0.18); }
-    .realtor .partner-apply-btn:hover { background: var(--gold-light); transform: translateY(-2px); box-shadow: 0 0 40px rgba(255,215,0,0.32); }
-    .influencer .partner-apply-btn { background: linear-gradient(135deg, #FF6B9D, #C84B31); color: #fff; box-shadow: 0 0 28px rgba(255,107,157,0.2); }
-    .influencer .partner-apply-btn:hover { transform: translateY(-2px); box-shadow: 0 0 40px rgba(255,107,157,0.35); }
-    .broker .partner-apply-btn { background: linear-gradient(135deg, #4A90D9, #00C48C); color: #fff; box-shadow: 0 0 28px rgba(74,144,217,0.2); }
-    .broker .partner-apply-btn:hover { transform: translateY(-2px); box-shadow: 0 0 40px rgba(74,144,217,0.35); }
-    .partners-bottom-bar {
-      max-width: 1100px; margin: 0 auto;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 20px;
-      padding: 28px 36px;
-      display: flex; align-items: center; justify-content: space-between;
-      gap: 24px; flex-wrap: wrap;
-    }
+    .realtor .partner-apply-btn:hover { background: var(--gold-light); transform: translateY(-2px); }
+    .influencer .partner-apply-btn { background: linear-gradient(135deg, #FF6B9D, #C84B31); color: #fff; }
+    .influencer .partner-apply-btn:hover { transform: translateY(-2px); }
+    .broker .partner-apply-btn { background: linear-gradient(135deg, #4A90D9, #00C48C); color: #fff; }
+    .broker .partner-apply-btn:hover { transform: translateY(-2px); }
+    .partners-bottom-bar { max-width: 1100px; margin: 0 auto; background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 28px 36px; display: flex; align-items: center; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
     @media(max-width: 760px) { .partners-bottom-bar { flex-direction: column; text-align: center; padding: 24px; } }
     .pbb-left h3 { font-size: 18px; font-weight: 900; letter-spacing: -0.4px; margin-bottom: 5px; }
     .pbb-left h3 span { color: var(--gold); }
@@ -980,23 +976,11 @@
     .pbb-stat { text-align: center; }
     .pbb-stat-val { font-size: 22px; font-weight: 900; color: var(--gold); margin-bottom: 3px; }
     .pbb-stat-lbl { font-size: 10px; color: var(--text3); letter-spacing: 0.3px; }
-    .pbb-cta {
-      background: var(--gold); color: #000;
-      font-size: 14px; font-weight: 800;
-      padding: 14px 28px; border-radius: 12px;
-      border: none; cursor: pointer; text-decoration: none;
-      font-family: inherit; white-space: nowrap;
-      transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
-      box-shadow: 0 0 24px rgba(255,215,0,0.18);
-      display: inline-block;
-    }
-    .pbb-cta:hover { background: var(--gold-light); transform: translateY(-2px); box-shadow: 0 0 36px rgba(255,215,0,0.3); }
+    .pbb-cta { background: var(--gold); color: #000; font-size: 14px; font-weight: 800; padding: 14px 28px; border-radius: 12px; border: none; cursor: pointer; text-decoration: none; font-family: inherit; white-space: nowrap; transition: background 0.2s, transform 0.15s; display: inline-block; }
+    .pbb-cta:hover { background: var(--gold-light); transform: translateY(-2px); }
 
     /* ─── REVEAL ─── */
-    .reveal {
-      opacity:0; transform:translateY(28px);
-      transition:opacity 0.72s ease, transform 0.72s ease;
-    }
+    .reveal { opacity:0; transform:translateY(28px); transition:opacity 0.72s ease, transform 0.72s ease; }
     .reveal.visible { opacity:1; transform:translateY(0); }
     .reveal-delay-1 { transition-delay:0.08s; }
     .reveal-delay-2 { transition-delay:0.16s; }
@@ -1019,12 +1003,25 @@
     <li><a href="#trust">Security</a></li>
     <li><a href="#reviews">Reviews</a></li>
     <li><a href="#partners">Partner &amp; Earn</a></li>
-    <li><a href="#" class="nav-cta-btn" onclick="openModal('signup'); return false;">Get Started</a></li>
+    <li><a href="#" class="nav-cta-btn" onclick="openFunnel(); return false;">Get Started</a></li>
   </ul>
   <div class="nav-hamburger" id="hamburger">
     <span></span><span></span><span></span>
   </div>
 </nav>
+
+<!-- LIVE ACTIVITY TICKER -->
+<div class="live-ticker-bar" id="live-ticker">
+  <div class="live-ticker-dot"></div>
+  <div class="live-ticker-text" id="ticker-text"></div>
+  <div class="live-ticker-time" id="ticker-time"></div>
+</div>
+
+<!-- VISITOR COUNTER -->
+<div class="visitor-badge" id="visitor-badge">
+  <div class="visitor-badge-dot"></div>
+  <span><strong id="live-visitors">--</strong> people viewing now</span>
+</div>
 
 <!-- HERO -->
 <section class="hero">
@@ -1033,7 +1030,7 @@
   <div class="hero-inner">
     <div class="hero-badge">
       <div class="live-dot"></div>
-      Markets Open &nbsp;·&nbsp; Live Trading
+      Markets Open &nbsp;&middot;&nbsp; Live Trading
     </div>
     <h1 class="hero-title">
       Own Real Estate.<br><span class="gold">Trade Like Crypto.</span>
@@ -1042,13 +1039,13 @@
       Fractional ownership in premium properties worldwide. Start investing with just $1, earn monthly dividends, and trade shares 24/7 on the IVX platform.
     </p>
     <div class="hero-actions">
-      <a href="#" class="btn-primary" onclick="openModal('signup'); return false;">Start Investing Free &rarr;</a>
+      <a href="#" class="btn-primary" onclick="openFunnel(); return false;">Start Investing Free &rarr;</a>
       <a href="#how-it-works" class="btn-outline">How It Works &darr;</a>
     </div>
     <div class="hero-stats-row">
-      <div class="hstat"><div class="hstat-val">$2.1B</div><div class="hstat-lbl">Assets Under<br>Management</div></div>
+      <div class="hstat"><div class="hstat-val" id="stat-aum">$2.1B</div><div class="hstat-lbl">Assets Under<br>Management</div></div>
       <div class="hstat"><div class="hstat-val">14.5%</div><div class="hstat-lbl">Avg Annual<br>Return</div></div>
-      <div class="hstat"><div class="hstat-val">52K+</div><div class="hstat-lbl">Global<br>Investors</div></div>
+      <div class="hstat"><div class="hstat-val" id="stat-investors">52K+</div><div class="hstat-lbl">Global<br>Investors</div></div>
       <div class="hstat"><div class="hstat-val">$1</div><div class="hstat-lbl">Minimum<br>Investment</div></div>
     </div>
   </div>
@@ -1057,22 +1054,22 @@
 <!-- TICKER -->
 <div class="ticker">
   <div class="ticker-track">
-    <div class="ticker-item">🏙️ Manhattan Penthouse &nbsp;<span class="up">▲ +18.2%</span></div>
-    <div class="ticker-item">🌴 Miami Beach Villa &nbsp;<span class="up">▲ +12.4%</span></div>
-    <div class="ticker-item">🗼 Paris Apartment &nbsp;<span class="up">▲ +9.8%</span></div>
-    <div class="ticker-item">🌆 Dubai Tower &nbsp;<span class="up">▲ +22.1%</span></div>
-    <div class="ticker-item">🏝️ Maldives Resort &nbsp;<span class="up">▲ +15.6%</span></div>
-    <div class="ticker-item">🌇 London Townhouse &nbsp;<span class="up">▲ +11.3%</span></div>
-    <div class="ticker-item">🏖️ Ibiza Villa &nbsp;<span class="up">▲ +14.7%</span></div>
-    <div class="ticker-item">🌃 Singapore Loft &nbsp;<span class="up">▲ +8.9%</span></div>
-    <div class="ticker-item">🏙️ Manhattan Penthouse &nbsp;<span class="up">▲ +18.2%</span></div>
-    <div class="ticker-item">🌴 Miami Beach Villa &nbsp;<span class="up">▲ +12.4%</span></div>
-    <div class="ticker-item">🗼 Paris Apartment &nbsp;<span class="up">▲ +9.8%</span></div>
-    <div class="ticker-item">🌆 Dubai Tower &nbsp;<span class="up">▲ +22.1%</span></div>
-    <div class="ticker-item">🏝️ Maldives Resort &nbsp;<span class="up">▲ +15.6%</span></div>
-    <div class="ticker-item">🌇 London Townhouse &nbsp;<span class="up">▲ +11.3%</span></div>
-    <div class="ticker-item">🏖️ Ibiza Villa &nbsp;<span class="up">▲ +14.7%</span></div>
-    <div class="ticker-item">🌃 Singapore Loft &nbsp;<span class="up">▲ +8.9%</span></div>
+    <div class="ticker-item">&#127963;&#65039; Manhattan Penthouse &nbsp;<span class="up">&#9650; +18.2%</span></div>
+    <div class="ticker-item">&#127796; Miami Beach Villa &nbsp;<span class="up">&#9650; +12.4%</span></div>
+    <div class="ticker-item">&#127876; Paris Apartment &nbsp;<span class="up">&#9650; +9.8%</span></div>
+    <div class="ticker-item">&#127750; Dubai Tower &nbsp;<span class="up">&#9650; +22.1%</span></div>
+    <div class="ticker-item">&#127965;&#65039; Maldives Resort &nbsp;<span class="up">&#9650; +15.6%</span></div>
+    <div class="ticker-item">&#127751; London Townhouse &nbsp;<span class="up">&#9650; +11.3%</span></div>
+    <div class="ticker-item">&#127958;&#65039; Ibiza Villa &nbsp;<span class="up">&#9650; +14.7%</span></div>
+    <div class="ticker-item">&#127747; Singapore Loft &nbsp;<span class="up">&#9650; +8.9%</span></div>
+    <div class="ticker-item">&#127963;&#65039; Manhattan Penthouse &nbsp;<span class="up">&#9650; +18.2%</span></div>
+    <div class="ticker-item">&#127796; Miami Beach Villa &nbsp;<span class="up">&#9650; +12.4%</span></div>
+    <div class="ticker-item">&#127876; Paris Apartment &nbsp;<span class="up">&#9650; +9.8%</span></div>
+    <div class="ticker-item">&#127750; Dubai Tower &nbsp;<span class="up">&#9650; +22.1%</span></div>
+    <div class="ticker-item">&#127965;&#65039; Maldives Resort &nbsp;<span class="up">&#9650; +15.6%</span></div>
+    <div class="ticker-item">&#127751; London Townhouse &nbsp;<span class="up">&#9650; +11.3%</span></div>
+    <div class="ticker-item">&#127958;&#65039; Ibiza Villa &nbsp;<span class="up">&#9650; +14.7%</span></div>
+    <div class="ticker-item">&#127747; Singapore Loft &nbsp;<span class="up">&#9650; +8.9%</span></div>
   </div>
 </div>
 
@@ -1088,51 +1085,51 @@
       <div class="pcard reveal reveal-delay-1">
         <div class="pcard-img-wrap">
           <img src="https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=600&q=80" alt="Manhattan Penthouse" class="pcard-img" loading="lazy"/>
-          <div class="pbadge">⭐ FEATURED</div>
-          <div class="preturn">▲ +18.2%</div>
+          <div class="pbadge">&#11088; FEATURED</div>
+          <div class="preturn">&#9650; +18.2%</div>
         </div>
         <div class="pinfo">
           <div class="pname">Manhattan Penthouse</div>
-          <div class="ploc">📍 New York, USA</div>
+          <div class="ploc">&#128205; New York, USA</div>
           <div class="pbar-labels"><span>Funded</span><span>87%</span></div>
           <div class="pbar-bg"><div class="pbar-fill" style="width:87%"></div></div>
           <div class="pfooter">
             <div class="pprice">$12.50 <span>/ share</span></div>
-            <a href="#" class="pinvest" onclick="openModal('signup'); return false;">Invest Now</a>
+            <a href="#" class="pinvest" onclick="openFunnel(); return false;">Invest Now</a>
           </div>
         </div>
       </div>
       <div class="pcard reveal reveal-delay-2">
         <div class="pcard-img-wrap">
           <img src="https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=600&q=80" alt="Miami Beach Villa" class="pcard-img" loading="lazy"/>
-          <div class="pbadge">🔥 HOT</div>
-          <div class="preturn">▲ +12.4%</div>
+          <div class="pbadge">&#128293; HOT</div>
+          <div class="preturn">&#9650; +12.4%</div>
         </div>
         <div class="pinfo">
           <div class="pname">Miami Beach Villa</div>
-          <div class="ploc">📍 Miami, USA</div>
+          <div class="ploc">&#128205; Miami, USA</div>
           <div class="pbar-labels"><span>Funded</span><span>64%</span></div>
           <div class="pbar-bg"><div class="pbar-fill" style="width:64%"></div></div>
           <div class="pfooter">
             <div class="pprice">$8.75 <span>/ share</span></div>
-            <a href="#" class="pinvest" onclick="openModal('signup'); return false;">Invest Now</a>
+            <a href="#" class="pinvest" onclick="openFunnel(); return false;">Invest Now</a>
           </div>
         </div>
       </div>
       <div class="pcard reveal reveal-delay-3">
         <div class="pcard-img-wrap">
           <img src="https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=600&q=80" alt="Dubai Tower" class="pcard-img" loading="lazy"/>
-          <div class="pbadge">🌟 NEW</div>
-          <div class="preturn">▲ +22.1%</div>
+          <div class="pbadge">&#127775; NEW</div>
+          <div class="preturn">&#9650; +22.1%</div>
         </div>
         <div class="pinfo">
           <div class="pname">Dubai Tower Suite</div>
-          <div class="ploc">📍 Dubai, UAE</div>
+          <div class="ploc">&#128205; Dubai, UAE</div>
           <div class="pbar-labels"><span>Funded</span><span>41%</span></div>
           <div class="pbar-bg"><div class="pbar-fill" style="width:41%"></div></div>
           <div class="pfooter">
             <div class="pprice">$15.00 <span>/ share</span></div>
-            <a href="#" class="pinvest" onclick="openModal('signup'); return false;">Invest Now</a>
+            <a href="#" class="pinvest" onclick="openFunnel(); return false;">Invest Now</a>
           </div>
         </div>
       </div>
@@ -1149,34 +1146,10 @@
         <h2 class="section-h">Built for the<br>Modern Investor</h2>
         <p class="section-p">Everything you need to build and grow your real estate portfolio — all in one powerful platform.</p>
         <div class="feat-list">
-          <div class="feat-item">
-            <div class="feat-ico" style="background:rgba(255,215,0,0.1);">📊</div>
-            <div class="feat-body">
-              <h3>Fractional Ownership</h3>
-              <p>Own a piece of premium real estate for as little as $1. Full legal ownership via digital shares.</p>
-            </div>
-          </div>
-          <div class="feat-item">
-            <div class="feat-ico" style="background:rgba(0,196,140,0.1);">📈</div>
-            <div class="feat-body">
-              <h3>24/7 Trading</h3>
-              <p>Buy and sell property shares any time — just like crypto, with real-asset backing and liquidity.</p>
-            </div>
-          </div>
-          <div class="feat-item">
-            <div class="feat-ico" style="background:rgba(74,144,217,0.1);">🛡️</div>
-            <div class="feat-body">
-              <h3>SEC Compliant</h3>
-              <p>Fully regulated with bank-grade security and FDIC-escrow protection on all investor deposits.</p>
-            </div>
-          </div>
-          <div class="feat-item">
-            <div class="feat-ico" style="background:rgba(255,107,107,0.1);">💰</div>
-            <div class="feat-body">
-              <h3>Monthly Dividends</h3>
-              <p>Earn passive rental income paid directly to your wallet every month, automatically.</p>
-            </div>
-          </div>
+          <div class="feat-item"><div class="feat-ico" style="background:rgba(255,215,0,0.1);">&#128202;</div><div class="feat-body"><h3>Fractional Ownership</h3><p>Own a piece of premium real estate for as little as $1. Full legal ownership via digital shares.</p></div></div>
+          <div class="feat-item"><div class="feat-ico" style="background:rgba(0,196,140,0.1);">&#128200;</div><div class="feat-body"><h3>24/7 Trading</h3><p>Buy and sell property shares any time — just like crypto, with real-asset backing and liquidity.</p></div></div>
+          <div class="feat-item"><div class="feat-ico" style="background:rgba(74,144,217,0.1);">&#128737;&#65039;</div><div class="feat-body"><h3>SEC Compliant</h3><p>Fully regulated with bank-grade security and FDIC-escrow protection on all investor deposits.</p></div></div>
+          <div class="feat-item"><div class="feat-ico" style="background:rgba(255,107,107,0.1);">&#128176;</div><div class="feat-body"><h3>Monthly Dividends</h3><p>Earn passive rental income paid directly to your wallet every month, automatically.</p></div></div>
         </div>
       </div>
       <div class="phone-wrap reveal">
@@ -1184,46 +1157,22 @@
         <div class="phone">
           <div class="phone-notch"><div class="phone-notch-bar"></div></div>
           <div class="phone-screen">
-            <div class="phone-topbar">
-              <span class="phone-brand">IVXHOLDINGS</span>
-              <div class="phone-live"><div class="phone-live-dot"></div>LIVE</div>
-            </div>
-            <div class="phone-bal">
-              <div class="phone-bal-lbl">PORTFOLIO VALUE</div>
-              <div class="phone-bal-num">$24,850</div>
-              <div class="phone-bal-chg">▲ +$412.50 today (+1.69%)</div>
-            </div>
+            <div class="phone-topbar"><span class="phone-brand">IVXHOLDINGS</span><div class="phone-live"><div class="phone-live-dot"></div>LIVE</div></div>
+            <div class="phone-bal"><div class="phone-bal-lbl">PORTFOLIO VALUE</div><div class="phone-bal-num">$24,850</div><div class="phone-bal-chg">&#9650; +$412.50 today (+1.69%)</div></div>
             <div class="phone-chart">
-              <div class="phone-bar" style="height:38%"></div>
-              <div class="phone-bar" style="height:52%"></div>
-              <div class="phone-bar" style="height:44%"></div>
-              <div class="phone-bar" style="height:68%"></div>
-              <div class="phone-bar" style="height:58%"></div>
-              <div class="phone-bar" style="height:78%"></div>
-              <div class="phone-bar" style="height:63%"></div>
-              <div class="phone-bar" style="height:88%; background:rgba(255,215,0,0.22); border-top-color:#FFE44D;"></div>
-              <div class="phone-bar" style="height:100%; background:rgba(255,215,0,0.28); border-top-color:#FFD700;"></div>
+              <div class="phone-bar" style="height:38%"></div><div class="phone-bar" style="height:52%"></div><div class="phone-bar" style="height:44%"></div><div class="phone-bar" style="height:68%"></div><div class="phone-bar" style="height:58%"></div><div class="phone-bar" style="height:78%"></div><div class="phone-bar" style="height:63%"></div><div class="phone-bar" style="height:88%; background:rgba(255,215,0,0.22); border-top-color:#FFE44D;"></div><div class="phone-bar" style="height:100%; background:rgba(255,215,0,0.28); border-top-color:#FFD700;"></div>
             </div>
             <div class="phone-holdings">
-              <div class="phone-holding">
-                <div><div class="ph-name">Manhattan Penthouse</div><div class="ph-loc">New York, USA</div></div>
-                <div><div class="ph-val">$12,400</div><div class="ph-ret">▲ +18.2%</div></div>
-              </div>
-              <div class="phone-holding">
-                <div><div class="ph-name">Miami Beach Villa</div><div class="ph-loc">Miami, USA</div></div>
-                <div><div class="ph-val">$8,250</div><div class="ph-ret">▲ +12.4%</div></div>
-              </div>
-              <div class="phone-holding">
-                <div><div class="ph-name">Dubai Tower Suite</div><div class="ph-loc">Dubai, UAE</div></div>
-                <div><div class="ph-val">$4,200</div><div class="ph-ret">▲ +22.1%</div></div>
-              </div>
+              <div class="phone-holding"><div><div class="ph-name">Manhattan Penthouse</div><div class="ph-loc">New York, USA</div></div><div><div class="ph-val">$12,400</div><div class="ph-ret">&#9650; +18.2%</div></div></div>
+              <div class="phone-holding"><div><div class="ph-name">Miami Beach Villa</div><div class="ph-loc">Miami, USA</div></div><div><div class="ph-val">$8,250</div><div class="ph-ret">&#9650; +12.4%</div></div></div>
+              <div class="phone-holding"><div><div class="ph-name">Dubai Tower Suite</div><div class="ph-loc">Dubai, UAE</div></div><div><div class="ph-val">$4,200</div><div class="ph-ret">&#9650; +22.1%</div></div></div>
             </div>
           </div>
           <div class="phone-tabs">
-            <div class="ptab"><div class="ptab-ico">🏠</div>Home</div>
-            <div class="ptab active"><div class="ptab-ico">📊</div>Portfolio</div>
-            <div class="ptab"><div class="ptab-ico">🏙️</div>Market</div>
-            <div class="ptab"><div class="ptab-ico">💬</div>Chat</div>
+            <div class="ptab"><div class="ptab-ico">&#127968;</div>Home</div>
+            <div class="ptab active"><div class="ptab-ico">&#128202;</div>Portfolio</div>
+            <div class="ptab"><div class="ptab-ico">&#127963;&#65039;</div>Market</div>
+            <div class="ptab"><div class="ptab-ico">&#128172;</div>Chat</div>
           </div>
         </div>
       </div>
@@ -1240,30 +1189,10 @@
       <p class="section-p" style="margin:0 auto;">From sign-up to your first dividend — everything is fast, secure, and fully digital.</p>
     </div>
     <div class="steps-grid">
-      <div class="step-card reveal reveal-delay-1">
-        <div class="step-num">01</div>
-        <span class="step-ico">🪪</span>
-        <div class="step-ttl">Create Account</div>
-        <div class="step-dsc">Sign up in minutes with your email. Complete KYC verification to unlock full access.</div>
-      </div>
-      <div class="step-card reveal reveal-delay-2">
-        <div class="step-num">02</div>
-        <span class="step-ico">💳</span>
-        <div class="step-ttl">Fund Your Wallet</div>
-        <div class="step-dsc">Deposit via bank transfer, card, or wire. Funds are secured in FDIC-insured escrow.</div>
-      </div>
-      <div class="step-card reveal reveal-delay-3">
-        <div class="step-num">03</div>
-        <span class="step-ico">🏙️</span>
-        <div class="step-ttl">Choose Property</div>
-        <div class="step-dsc">Browse premium global listings. Review financials, projected returns, and location data.</div>
-      </div>
-      <div class="step-card reveal">
-        <div class="step-num">04</div>
-        <span class="step-ico">💰</span>
-        <div class="step-ttl">Earn Dividends</div>
-        <div class="step-dsc">Receive monthly rental income. Watch your portfolio grow and trade shares anytime.</div>
-      </div>
+      <div class="step-card reveal reveal-delay-1"><div class="step-num">01</div><span class="step-ico">&#128195;</span><div class="step-ttl">Create Account</div><div class="step-dsc">Sign up in minutes with your email. Complete KYC verification to unlock full access.</div></div>
+      <div class="step-card reveal reveal-delay-2"><div class="step-num">02</div><span class="step-ico">&#128179;</span><div class="step-ttl">Fund Your Wallet</div><div class="step-dsc">Deposit via bank transfer, card, or wire. Funds are secured in FDIC-insured escrow.</div></div>
+      <div class="step-card reveal reveal-delay-3"><div class="step-num">03</div><span class="step-ico">&#127963;&#65039;</span><div class="step-ttl">Choose Property</div><div class="step-dsc">Browse premium global listings. Review financials, projected returns, and location data.</div></div>
+      <div class="step-card reveal"><div class="step-num">04</div><span class="step-ico">&#128176;</span><div class="step-ttl">Earn Dividends</div><div class="step-dsc">Receive monthly rental income. Watch your portfolio grow and trade shares anytime.</div></div>
     </div>
   </div>
 </section>
@@ -1277,24 +1206,9 @@
       <p class="section-p" style="margin:0 auto;">Built on the highest standards of financial regulation and investor protection.</p>
     </div>
     <div class="trust-grid">
-      <div class="tcard reveal reveal-delay-1">
-        <span class="tcard-ico">🏛️</span>
-        <div class="tcard-ttl">SEC Regulated</div>
-        <div class="tcard-dsc">All offerings are SEC-compliant under Regulation A+ and Regulation D, providing full legal protection for every investor.</div>
-        <div class="tcard-tags"><span class="ttag">Reg A+</span><span class="ttag">Reg D</span><span class="ttag">Audited</span></div>
-      </div>
-      <div class="tcard reveal reveal-delay-2">
-        <span class="tcard-ico">🔒</span>
-        <div class="tcard-ttl">Bank-Grade Security</div>
-        <div class="tcard-dsc">256-bit AES encryption, two-factor authentication, and cold storage for all digital assets. Your data and funds are always safe.</div>
-        <div class="tcard-tags"><span class="ttag">256-bit AES</span><span class="ttag">2FA</span><span class="ttag">SOC 2</span></div>
-      </div>
-      <div class="tcard reveal reveal-delay-3">
-        <span class="tcard-ico">🏦</span>
-        <div class="tcard-ttl">FDIC Escrow</div>
-        <div class="tcard-dsc">All investor funds are held in FDIC-insured escrow accounts, completely separate from company operating funds.</div>
-        <div class="tcard-tags"><span class="ttag">FDIC Insured</span><span class="ttag">Escrow</span><span class="ttag">Segregated</span></div>
-      </div>
+      <div class="tcard reveal reveal-delay-1"><span class="tcard-ico">&#127963;&#65039;</span><div class="tcard-ttl">SEC Regulated</div><div class="tcard-dsc">All offerings are SEC-compliant under Regulation A+ and Regulation D, providing full legal protection for every investor.</div><div class="tcard-tags"><span class="ttag">Reg A+</span><span class="ttag">Reg D</span><span class="ttag">Audited</span></div></div>
+      <div class="tcard reveal reveal-delay-2"><span class="tcard-ico">&#128274;</span><div class="tcard-ttl">Bank-Grade Security</div><div class="tcard-dsc">256-bit AES encryption, two-factor authentication, and cold storage for all digital assets. Your data and funds are always safe.</div><div class="tcard-tags"><span class="ttag">256-bit AES</span><span class="ttag">2FA</span><span class="ttag">SOC 2</span></div></div>
+      <div class="tcard reveal reveal-delay-3"><span class="tcard-ico">&#127974;</span><div class="tcard-ttl">FDIC Escrow</div><div class="tcard-dsc">All investor funds are held in FDIC-insured escrow accounts, completely separate from company operating funds.</div><div class="tcard-tags"><span class="ttag">FDIC Insured</span><span class="ttag">Escrow</span><span class="ttag">Segregated</span></div></div>
     </div>
   </div>
 </section>
@@ -1307,30 +1221,9 @@
       <h2 class="section-h">Trusted by 52,000+<br>Global Investors</h2>
     </div>
     <div class="reviews-grid">
-      <div class="rcard reveal reveal-delay-1">
-        <div class="rcard-stars">★★★★★</div>
-        <p class="rcard-text">"IVX Holdings completely changed how I think about investing. I started with $500 in a Manhattan property and now earn monthly dividends. The platform is incredibly intuitive."</p>
-        <div class="rcard-author">
-          <div class="rcard-av">MJ</div>
-          <div><div class="rcard-name">Marcus J.</div><div class="rcard-role">Investor · New York, USA</div></div>
-        </div>
-      </div>
-      <div class="rcard reveal reveal-delay-2">
-        <div class="rcard-stars">★★★★★</div>
-        <p class="rcard-text">"As someone with no prior real estate experience, IVX made it so accessible. $1 to start, clear return data, and I actually understand what I own. A remarkable platform."</p>
-        <div class="rcard-author">
-          <div class="rcard-av">SL</div>
-          <div><div class="rcard-name">Sophie L.</div><div class="rcard-role">Investor · London, UK</div></div>
-        </div>
-      </div>
-      <div class="rcard reveal reveal-delay-3">
-        <div class="rcard-stars">★★★★★</div>
-        <p class="rcard-text">"My portfolio across 6 properties generates consistent 14%+ annual returns. The 24/7 trading is a game-changer — I can rebalance my real estate like stocks."</p>
-        <div class="rcard-author">
-          <div class="rcard-av">AR</div>
-          <div><div class="rcard-name">Ahmed R.</div><div class="rcard-role">Investor · Dubai, UAE</div></div>
-        </div>
-      </div>
+      <div class="rcard reveal reveal-delay-1"><div class="rcard-stars">&#9733;&#9733;&#9733;&#9733;&#9733;</div><p class="rcard-text">"IVX Holdings completely changed how I think about investing. I started with $500 in a Manhattan property and now earn monthly dividends. The platform is incredibly intuitive."</p><div class="rcard-author"><div class="rcard-av">MJ</div><div><div class="rcard-name">Marcus J.</div><div class="rcard-role">Investor &middot; New York, USA</div></div></div></div>
+      <div class="rcard reveal reveal-delay-2"><div class="rcard-stars">&#9733;&#9733;&#9733;&#9733;&#9733;</div><p class="rcard-text">"As someone with no prior real estate experience, IVX made it so accessible. $1 to start, clear return data, and I actually understand what I own. A remarkable platform."</p><div class="rcard-author"><div class="rcard-av">SL</div><div><div class="rcard-name">Sophie L.</div><div class="rcard-role">Investor &middot; London, UK</div></div></div></div>
+      <div class="rcard reveal reveal-delay-3"><div class="rcard-stars">&#9733;&#9733;&#9733;&#9733;&#9733;</div><p class="rcard-text">"My portfolio across 6 properties generates consistent 14%+ annual returns. The 24/7 trading is a game-changer — I can rebalance my real estate like stocks."</p><div class="rcard-author"><div class="rcard-av">AR</div><div><div class="rcard-name">Ahmed R.</div><div class="rcard-role">Investor &middot; Dubai, UAE</div></div></div></div>
     </div>
   </div>
 </section>
@@ -1340,121 +1233,40 @@
   <div class="partners-bg-glow"></div>
   <div style="position:relative;z-index:2;">
     <div class="partners-header reveal">
-      <div class="partners-headline-tag">
-        <div class="earn-dot"></div>
-        Partner Program &nbsp;·&nbsp; % Per Deal Closed
-      </div>
+      <div class="partners-headline-tag"><div class="earn-dot"></div>Partner Program &nbsp;&middot;&nbsp; % Per Deal Closed</div>
       <h2 class="partners-title">Turn Your Network Into<br><span class="gold">Unlimited Income</span></h2>
-      <p class="partners-subtitle">Realtors, influencers, and brokers earn a <strong style="color:var(--text)">direct percentage of every deal</strong> closed on the IVX platform. No cap. No ceiling. The more deals close, the more you earn.</p>
+      <p class="partners-subtitle">Realtors, influencers, and brokers earn a <strong style="color:var(--text)">direct percentage of every deal</strong> closed on the IVX platform. No cap. No ceiling.</p>
     </div>
-
     <div class="partners-grid">
-
-      <!-- REALTORS -->
       <div class="partner-card realtor reveal reveal-delay-1">
-        <div class="partner-card-top">
-          <div class="partner-icon-wrap">🏠</div>
-          <div class="partner-commission-badge">2.5% / Deal</div>
-        </div>
-        <div class="partner-role">Realtor</div>
-        <div class="partner-name">Real Estate Agents</div>
-        <p class="partner-desc">You know the properties. We tokenize them. Bring listings or buyers to IVX and collect your commission on every investment deal that closes — automatically, every time.</p>
-        <div class="partner-perks">
-          <div class="partner-perk"><div class="partner-perk-check">✓</div><span>Earn % on every investor deal you introduce</span></div>
-          <div class="partner-perk"><div class="partner-perk-check">✓</div><span>Refer new property listings — earn on total raise</span></div>
-          <div class="partner-perk"><div class="partner-perk-check">✓</div><span>Lifetime residual income on portfolio growth</span></div>
-          <div class="partner-perk"><div class="partner-perk-check">✓</div><span>Custom dashboard + deal tracking tools</span></div>
-        </div>
-        <div class="partner-earning-box">
-          <div class="peb-label">💰 Example Earning</div>
-          <div class="peb-example">
-            <div class="peb-deal">$500K property deal closed</div>
-            <div class="peb-amount">+$12,500</div>
-          </div>
-          <div class="peb-divider"></div>
-          <div class="peb-example">
-            <div class="peb-deal">10 deals/month avg</div>
-            <div class="peb-amount">$125K+/mo</div>
-          </div>
-        </div>
-        <a href="mailto:partners@ivxholding.com?subject=Realtor Partner Application" class="partner-apply-btn">Apply as Realtor Partner →</a>
+        <div class="partner-card-top"><div class="partner-icon-wrap">&#127968;</div><div class="partner-commission-badge">2.5% / Deal</div></div>
+        <div class="partner-role">Realtor</div><div class="partner-name">Real Estate Agents</div>
+        <p class="partner-desc">You know the properties. We tokenize them. Bring listings or buyers and collect your commission on every deal.</p>
+        <div class="partner-perks"><div class="partner-perk"><div class="partner-perk-check">&#10003;</div><span>Earn % on every investor deal</span></div><div class="partner-perk"><div class="partner-perk-check">&#10003;</div><span>Lifetime residual income</span></div><div class="partner-perk"><div class="partner-perk-check">&#10003;</div><span>Custom dashboard + tools</span></div></div>
+        <div class="partner-earning-box"><div class="peb-label">&#128176; Example Earning</div><div class="peb-example"><div class="peb-deal">$500K deal closed</div><div class="peb-amount">+$12,500</div></div><div class="peb-divider"></div><div class="peb-example"><div class="peb-deal">10 deals/month</div><div class="peb-amount">$125K+/mo</div></div></div>
+        <a href="mailto:partners@ivxholding.com?subject=Realtor Partner Application" class="partner-apply-btn">Apply as Realtor Partner &rarr;</a>
       </div>
-
-      <!-- INFLUENCERS -->
       <div class="partner-card influencer reveal reveal-delay-2">
-        <div class="partner-card-top">
-          <div class="partner-icon-wrap">📱</div>
-          <div class="partner-commission-badge">2.5% / Deal</div>
-        </div>
-        <div class="partner-role">Influencer</div>
-        <div class="partner-name">Content Creators</div>
-        <p class="partner-desc">Your audience trusts you. Share IVX with your followers and earn a percentage every time one of them invests and closes a deal on the platform — automatically credited to you.</p>
-        <div class="partner-perks">
-          <div class="partner-perk"><div class="partner-perk-check">✓</div><span>Earn % on every deal your audience closes</span></div>
-          <div class="partner-perk"><div class="partner-perk-check">✓</div><span>Personal referral link + analytics dashboard</span></div>
-          <div class="partner-perk"><div class="partner-perk-check">✓</div><span>Monthly payouts to wallet or bank</span></div>
-          <div class="partner-perk"><div class="partner-perk-check">✓</div><span>Co-branded content & exclusive deal access</span></div>
-        </div>
-        <div class="partner-earning-box">
-          <div class="peb-label">💰 Example Earning</div>
-          <div class="peb-example">
-            <div class="peb-deal">100 followers invest $10K each</div>
-            <div class="peb-amount">+$25,000</div>
-          </div>
-          <div class="peb-divider"></div>
-          <div class="peb-example">
-            <div class="peb-deal">10K audience → avg conversion</div>
-            <div class="peb-amount">$250K+/yr</div>
-          </div>
-        </div>
-        <a href="mailto:partners@ivxholding.com?subject=Influencer Partner Application" class="partner-apply-btn">Apply as Influencer Partner →</a>
+        <div class="partner-card-top"><div class="partner-icon-wrap">&#128241;</div><div class="partner-commission-badge">2.5% / Deal</div></div>
+        <div class="partner-role">Influencer</div><div class="partner-name">Content Creators</div>
+        <p class="partner-desc">Your audience trusts you. Share IVX and earn a percentage every time one of them invests.</p>
+        <div class="partner-perks"><div class="partner-perk"><div class="partner-perk-check">&#10003;</div><span>Earn % on every deal</span></div><div class="partner-perk"><div class="partner-perk-check">&#10003;</div><span>Personal referral link</span></div><div class="partner-perk"><div class="partner-perk-check">&#10003;</div><span>Monthly payouts</span></div></div>
+        <div class="partner-earning-box"><div class="peb-label">&#128176; Example Earning</div><div class="peb-example"><div class="peb-deal">100 followers invest $10K</div><div class="peb-amount">+$25,000</div></div><div class="peb-divider"></div><div class="peb-example"><div class="peb-deal">10K audience avg</div><div class="peb-amount">$250K+/yr</div></div></div>
+        <a href="mailto:partners@ivxholding.com?subject=Influencer Partner Application" class="partner-apply-btn">Apply as Influencer &rarr;</a>
       </div>
-
-      <!-- BROKERS -->
       <div class="partner-card broker reveal reveal-delay-3">
-        <div class="partner-card-top">
-          <div class="partner-icon-wrap">💼</div>
-          <div class="partner-commission-badge">2.5% / Deal</div>
-        </div>
-        <div class="partner-role">Broker</div>
-        <div class="partner-name">Licensed Brokers</div>
-        <p class="partner-desc">Connect institutional investors, HNW clients, and investment groups to IVX deals. Every transaction you facilitate earns you a direct percentage — with full legal backing and white-glove support.</p>
-        <div class="partner-perks">
-          <div class="partner-perk"><div class="partner-perk-check">✓</div><span>% commission on every deal you close</span></div>
-          <div class="partner-perk"><div class="partner-perk-check">✓</div><span>Access to off-market & institutional deals</span></div>
-          <div class="partner-perk"><div class="partner-perk-check">✓</div><span>Dedicated broker portal + white-label options</span></div>
-          <div class="partner-perk"><div class="partner-perk-check">✓</div><span>Priority deal flow + compliance support</span></div>
-        </div>
-        <div class="partner-earning-box">
-          <div class="peb-label">💰 Example Earning</div>
-          <div class="peb-example">
-            <div class="peb-deal">$2M JV deal facilitated</div>
-            <div class="peb-amount">+$50,000</div>
-          </div>
-          <div class="peb-divider"></div>
-          <div class="peb-example">
-            <div class="peb-deal">5 JV closings/month</div>
-            <div class="peb-amount">$250K+/mo</div>
-          </div>
-        </div>
-        <a href="mailto:partners@ivxholding.com?subject=Broker Partner Application" class="partner-apply-btn">Apply as Broker Partner →</a>
+        <div class="partner-card-top"><div class="partner-icon-wrap">&#128188;</div><div class="partner-commission-badge">2.5% / Deal</div></div>
+        <div class="partner-role">Broker</div><div class="partner-name">Licensed Brokers</div>
+        <p class="partner-desc">Connect institutional investors and HNW clients. Every transaction earns you a direct percentage.</p>
+        <div class="partner-perks"><div class="partner-perk"><div class="partner-perk-check">&#10003;</div><span>% commission on every deal</span></div><div class="partner-perk"><div class="partner-perk-check">&#10003;</div><span>Off-market deal access</span></div><div class="partner-perk"><div class="partner-perk-check">&#10003;</div><span>Dedicated broker portal</span></div></div>
+        <div class="partner-earning-box"><div class="peb-label">&#128176; Example Earning</div><div class="peb-example"><div class="peb-deal">$2M JV deal</div><div class="peb-amount">+$50,000</div></div><div class="peb-divider"></div><div class="peb-example"><div class="peb-deal">5 closings/month</div><div class="peb-amount">$250K+/mo</div></div></div>
+        <a href="mailto:partners@ivxholding.com?subject=Broker Partner Application" class="partner-apply-btn">Apply as Broker &rarr;</a>
       </div>
-
     </div>
-
-    <!-- BOTTOM BAR -->
     <div class="partners-bottom-bar reveal">
-      <div class="pbb-left">
-        <h3>Every Deal Closed = <span>Your Commission</span></h3>
-        <p>No monthly fees. No setup costs. You bring the deals, we handle the rest — and you earn every single time.</p>
-      </div>
-      <div class="pbb-stats">
-        <div class="pbb-stat"><div class="pbb-stat-val">$0</div><div class="pbb-stat-lbl">To Join</div></div>
-        <div class="pbb-stat"><div class="pbb-stat-val">2.5%</div><div class="pbb-stat-lbl">Commission</div></div>
-        <div class="pbb-stat"><div class="pbb-stat-val">∞</div><div class="pbb-stat-lbl">Earning Cap</div></div>
-        <div class="pbb-stat"><div class="pbb-stat-val">30d</div><div class="pbb-stat-lbl">First Payout</div></div>
-      </div>
-      <a href="mailto:partners@ivxholding.com?subject=Partner Program Inquiry" class="pbb-cta">Start Earning Now →</a>
+      <div class="pbb-left"><h3>Every Deal Closed = <span>Your Commission</span></h3><p>No monthly fees. No setup costs. You bring the deals, we handle the rest.</p></div>
+      <div class="pbb-stats"><div class="pbb-stat"><div class="pbb-stat-val">$0</div><div class="pbb-stat-lbl">To Join</div></div><div class="pbb-stat"><div class="pbb-stat-val">2.5%</div><div class="pbb-stat-lbl">Commission</div></div><div class="pbb-stat"><div class="pbb-stat-val">&infin;</div><div class="pbb-stat-lbl">Earning Cap</div></div><div class="pbb-stat"><div class="pbb-stat-val">30d</div><div class="pbb-stat-lbl">First Payout</div></div></div>
+      <a href="mailto:partners@ivxholding.com?subject=Partner Program Inquiry" class="pbb-cta">Start Earning Now &rarr;</a>
     </div>
   </div>
 </section>
@@ -1469,10 +1281,8 @@
       <input type="email" class="waitlist-input" placeholder="Enter your email address" required id="waitlist-email" />
       <button type="submit" class="waitlist-btn">Join Waitlist &rarr;</button>
     </form>
-    <div class="waitlist-success" id="waitlist-success">
-      <span>✅</span> You're on the list! We'll notify you at launch.
-    </div>
-    <p class="waitlist-count">🔥 <strong id="waitlist-count-num">2,847</strong> people joined this week</p>
+    <div class="waitlist-success" id="waitlist-success"><span>&#10004;</span> You're on the list! We'll notify you at launch.</div>
+    <p class="waitlist-count">&#128293; <strong id="waitlist-count-num">2,847</strong> people joined this week</p>
   </div>
 </section>
 
@@ -1484,35 +1294,20 @@
     <h2>Ready to Own<br><span>Real Estate?</span></h2>
     <p class="cta-sub">Join 52,000+ investors building wealth through fractional real estate.<br>Start with just $1.</p>
     <div class="cta-btns">
-      <a href="#" class="btn-primary" style="font-size:16px; padding:18px 38px;" onclick="openModal('signup'); return false;">Start Investing Free &rarr;</a>
+      <a href="#" class="btn-primary" style="font-size:16px; padding:18px 38px;" onclick="openFunnel(); return false;">Start Investing Free &rarr;</a>
       <a href="mailto:invest@ivxholding.com" class="btn-outline" style="font-size:15px; padding:18px 28px;">Talk to Our Team</a>
     </div>
     <div class="app-badges">
       <a href="https://apps.apple.com" target="_blank" rel="noopener" class="app-badge" id="ios-badge">
-        <span class="app-badge-ico">
-          <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M19.11 14.85c-.03-3.11 2.54-4.62 2.66-4.69-1.45-2.12-3.7-2.41-4.5-2.44-1.91-.19-3.74 1.13-4.71 1.13-.98 0-2.48-1.1-4.09-1.07-2.1.03-4.05 1.22-5.12 3.09-2.19 3.8-.56 9.42 1.57 12.5 1.04 1.51 2.28 3.2 3.91 3.14 1.57-.06 2.16-1.02 4.07-1.02 1.89 0 2.44 1.02 4.1.98 1.69-.03 2.76-1.54 3.79-3.06a13.1 13.1 0 0 0 1.73-3.54c-.04-.02-3.38-1.3-3.41-5.02Z" fill="white"/>
-            <path d="M16.1 5.76c.86-1.05 1.44-2.5 1.28-3.96-1.24.05-2.75.83-3.63 1.87-.8.92-1.5 2.4-1.31 3.82 1.38.11 2.79-.71 3.66-1.73Z" fill="white"/>
-          </svg>
-        </span>
+        <span class="app-badge-ico"><svg width="28" height="28" viewBox="0 0 28 28" fill="none"><path d="M19.11 14.85c-.03-3.11 2.54-4.62 2.66-4.69-1.45-2.12-3.7-2.41-4.5-2.44-1.91-.19-3.74 1.13-4.71 1.13-.98 0-2.48-1.1-4.09-1.07-2.1.03-4.05 1.22-5.12 3.09-2.19 3.8-.56 9.42 1.57 12.5 1.04 1.51 2.28 3.2 3.91 3.14 1.57-.06 2.16-1.02 4.07-1.02 1.89 0 2.44 1.02 4.1.98 1.69-.03 2.76-1.54 3.79-3.06a13.1 13.1 0 0 0 1.73-3.54c-.04-.02-3.38-1.3-3.41-5.02Z" fill="white"/><path d="M16.1 5.76c.86-1.05 1.44-2.5 1.28-3.96-1.24.05-2.75.83-3.63 1.87-.8.92-1.5 2.4-1.31 3.82 1.38.11 2.79-.71 3.66-1.73Z" fill="white"/></svg></span>
         <div class="app-badge-copy"><small>Download on the</small><strong>App Store</strong></div>
       </a>
       <a href="https://play.google.com" target="_blank" rel="noopener" class="app-badge" id="android-badge">
-        <span class="app-badge-ico">
-          <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M4.5 3.27c0-.71.4-1.33.99-1.65L15.96 14 4.5 25.38a1.87 1.87 0 0 1-.99-1.65V3.27Z" fill="#EA4335"/>
-            <path d="M20.36 9.14 6.16 1.07A2 2 0 0 0 4.5 1.62L15.96 14l4.4-4.86Z" fill="#FBBC04"/>
-            <path d="M20.36 18.86 15.96 14 4.5 26.38a2 2 0 0 0 1.66.55l14.2-8.07Z" fill="#34A853"/>
-            <path d="M23.5 14c0 .84-.45 1.58-1.13 1.98l-2.01 1.14L15.96 14l4.4-4.86 1.99 1.12A2.29 2.29 0 0 1 23.5 14Z" fill="#4285F4"/>
-          </svg>
-        </span>
+        <span class="app-badge-ico"><svg width="28" height="28" viewBox="0 0 28 28" fill="none"><path d="M4.5 3.27c0-.71.4-1.33.99-1.65L15.96 14 4.5 25.38a1.87 1.87 0 0 1-.99-1.65V3.27Z" fill="#EA4335"/><path d="M20.36 9.14 6.16 1.07A2 2 0 0 0 4.5 1.62L15.96 14l4.4-4.86Z" fill="#FBBC04"/><path d="M20.36 18.86 15.96 14 4.5 26.38a2 2 0 0 0 1.66.55l14.2-8.07Z" fill="#34A853"/><path d="M23.5 14c0 .84-.45 1.58-1.13 1.98l-2.01 1.14L15.96 14l4.4-4.86 1.99 1.12A2.29 2.29 0 0 1 23.5 14Z" fill="#4285F4"/></svg></span>
         <div class="app-badge-copy"><small>Get it on</small><strong>Google Play</strong></div>
       </a>
     </div>
-    <p class="app-download-note">
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4m0 4h.01"/></svg>
-      App launching soon — join the waitlist above to be notified
-    </p>
+    <p class="app-download-note"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4m0 4h.01"/></svg> App launching soon — join the waitlist above to be notified</p>
   </div>
 </section>
 
@@ -1522,456 +1317,472 @@
     <div class="footer-top">
       <div>
         <div style="display:flex;align-items:center;gap:10px;">
-          <div style="width:34px;height:34px;border-radius:10px;overflow:hidden;display:flex;align-items:center;justify-content:center;"><img src="https://pub-e001eb4506b145aa938b5d3badbff6a5.r2.dev/attachments/qlyqkn1t8hrvaotw99r9u" alt="IVX Holdings Logo" style="width:34px;height:34px;object-fit:contain;display:block;" /></div>
+          <div style="width:34px;height:34px;border-radius:10px;overflow:hidden;"><img src="https://pub-e001eb4506b145aa938b5d3badbff6a5.r2.dev/attachments/qlyqkn1t8hrvaotw99r9u" alt="Logo" style="width:34px;height:34px;object-fit:contain;" /></div>
           <span style="font-weight:800;font-size:13.5px;letter-spacing:1.8px;">IVXHOLDINGS</span>
         </div>
         <p class="footer-brand-desc">Democratizing real estate investment through fractional ownership and 24/7 trading. Available globally from just $1.</p>
-        <div class="footer-socials">
-          <a href="#" class="fsoc">𝕏</a>
-          <a href="#" class="fsoc">in</a>
-          <a href="#" class="fsoc">📘</a>
-          <a href="#" class="fsoc">📸</a>
-        </div>
+        <div class="footer-socials"><a href="#" class="fsoc">&#120143;</a><a href="#" class="fsoc">in</a><a href="#" class="fsoc">&#128216;</a><a href="#" class="fsoc">&#128248;</a></div>
       </div>
-      <div class="footer-col">
-        <h4>Platform</h4>
-        <ul>
-          <li><a href="#">Properties</a></li>
-          <li><a href="#">Portfolio</a></li>
-          <li><a href="#">Trading</a></li>
-          <li><a href="#">Dividends</a></li>
-          <li><a href="#">IPX Token</a></li>
-        </ul>
-      </div>
-      <div class="footer-col">
-        <h4>Company</h4>
-        <ul>
-          <li><a href="#">About Us</a></li>
-          <li><a href="#">Careers</a></li>
-          <li><a href="#">Press</a></li>
-          <li><a href="#">Blog</a></li>
-          <li><a href="#">Contact</a></li>
-        </ul>
-      </div>
-      <div class="footer-col">
-        <h4>Contact</h4>
-        <ul>
-          <li><a href="mailto:support@ivxholding.com">support@ivxholding.com</a></li>
-          <li><a href="mailto:invest@ivxholding.com">invest@ivxholding.com</a></li>
-          <li><a href="mailto:kyc@ivxholding.com">kyc@ivxholding.com</a></li>
-          <li><a href="mailto:compliance@ivxholding.com">compliance@ivxholding.com</a></li>
-          <li><a href="tel:+15616443503">+1 (561) 644-3503</a></li>
-          <li><a href="#">Help Center</a></li>
-        </ul>
-      </div>
+      <div class="footer-col"><h4>Platform</h4><ul><li><a href="#">Properties</a></li><li><a href="#">Portfolio</a></li><li><a href="#">Trading</a></li><li><a href="#">Dividends</a></li><li><a href="#">IPX Token</a></li></ul></div>
+      <div class="footer-col"><h4>Company</h4><ul><li><a href="#">About Us</a></li><li><a href="#">Careers</a></li><li><a href="#">Press</a></li><li><a href="#">Blog</a></li><li><a href="#">Contact</a></li></ul></div>
+      <div class="footer-col"><h4>Contact</h4><ul><li><a href="mailto:support@ivxholding.com">support@ivxholding.com</a></li><li><a href="mailto:invest@ivxholding.com">invest@ivxholding.com</a></li><li><a href="mailto:kyc@ivxholding.com">kyc@ivxholding.com</a></li><li><a href="mailto:compliance@ivxholding.com">compliance@ivxholding.com</a></li><li><a href="tel:+15616443503">+1 (561) 644-3503</a></li><li><a href="#">Help Center</a></li></ul></div>
     </div>
     <div class="footer-bottom">
-      <p class="footer-copy">© 2025 IVX Holdings LLC. All rights reserved. Real estate investments involve risk. Past performance does not guarantee future results. Securities offered through IVX Holdings LLC. Investing involves risk of loss. Please review our full disclosures before investing.</p>
-      <div class="footer-legal-links">
-        <a href="#">Privacy</a>
-        <a href="#">Terms</a>
-        <a href="#">Disclosures</a>
-      </div>
+      <p class="footer-copy">&copy; 2025 IVX Holdings LLC. All rights reserved. Real estate investments involve risk. Past performance does not guarantee future results. Securities offered through IVX Holdings LLC.</p>
+      <div class="footer-legal-links"><a href="#">Privacy</a><a href="#">Terms</a><a href="#">Disclosures</a></div>
     </div>
   </div>
 </footer>
 
-<!-- REGISTRATION MODAL -->
-<div class="modal-overlay" id="modal-overlay" onclick="handleOverlayClick(event)">
-  <div class="modal" id="modal">
-    <button class="modal-close" onclick="closeModal()">✕</button>
+<!-- ═══════════ SMART 3-STEP FUNNEL ═══════════ -->
+<div class="funnel-overlay" id="funnel-overlay" onclick="if(event.target===this)closeFunnel()">
+  <div class="funnel-card">
+    <button class="funnel-close" onclick="closeFunnel()">&times;</button>
+    <div class="funnel-progress"><div class="funnel-progress-fill" id="funnel-progress"></div></div>
+    <div class="funnel-body">
 
-    <div id="modal-body-signup">
-      <div class="modal-logo">
-        <div class="modal-logo-icon"><img src="https://pub-e001eb4506b145aa938b5d3badbff6a5.r2.dev/attachments/qlyqkn1t8hrvaotw99r9u" alt="IVX Holdings Logo" /></div>
-        <span class="modal-logo-text">IVXHOLDINGS</span>
-      </div>
-      <h2 class="modal-title">Create Your <span>Free Account</span></h2>
-      <p class="modal-sub">Start investing in premium real estate from just $1. Takes under 2 minutes.</p>
-      <div class="modal-perks">
-        <div class="mperk"><div class="mperk-ico">🎁</div> $25 welcome bonus on first deposit</div>
-        <div class="mperk"><div class="mperk-ico">📊</div> Access to 50+ global properties</div>
-        <div class="mperk"><div class="mperk-ico">💰</div> Monthly dividend payouts</div>
-      </div>
-      <div class="modal-tabs">
-        <button class="modal-tab active" id="tab-signup" onclick="switchTab('signup')">Create Account</button>
-        <button class="modal-tab" id="tab-login" onclick="switchTab('login')">Sign In</button>
-      </div>
-      <form class="modal-form" id="form-signup" onsubmit="handleSignup(event)">
-        <div class="form-row">
-          <div class="form-group">
-            <label class="form-label">First Name</label>
-            <input type="text" class="form-input" id="signup-first-name" placeholder="John" required />
+      <!-- STEP 1: Goal -->
+      <div id="funnel-step-1">
+        <div class="funnel-step-badge">&#10024; STEP 1 OF 3</div>
+        <h2 class="funnel-title">What's your <span>investment goal?</span></h2>
+        <p class="funnel-sub">We'll personalize your experience and match you with the best opportunities.</p>
+        <div class="goal-grid">
+          <div class="goal-option" onclick="selectGoal(this,'passive')">
+            <span class="goal-emoji">&#128176;</span>
+            <div class="goal-info"><div class="goal-label">Passive Income</div><div class="goal-desc">Monthly dividends from rental properties</div></div>
+            <div class="goal-check"></div>
           </div>
-          <div class="form-group">
-            <label class="form-label">Last Name</label>
-            <input type="text" class="form-input" id="signup-last-name" placeholder="Doe" required />
+          <div class="goal-option" onclick="selectGoal(this,'growth')">
+            <span class="goal-emoji">&#128200;</span>
+            <div class="goal-info"><div class="goal-label">Long-Term Growth</div><div class="goal-desc">Appreciation + compounding returns</div></div>
+            <div class="goal-check"></div>
+          </div>
+          <div class="goal-option" onclick="selectGoal(this,'diversify')">
+            <span class="goal-emoji">&#127757;</span>
+            <div class="goal-info"><div class="goal-label">Diversify Portfolio</div><div class="goal-desc">Add real estate to stocks & crypto</div></div>
+            <div class="goal-check"></div>
+          </div>
+          <div class="goal-option" onclick="selectGoal(this,'starter')">
+            <span class="goal-emoji">&#128640;</span>
+            <div class="goal-info"><div class="goal-label">First Investment</div><div class="goal-desc">Start building wealth from $1</div></div>
+            <div class="goal-check"></div>
           </div>
         </div>
-        <div class="form-group">
-          <label class="form-label">Email Address</label>
-          <input type="email" class="form-input" id="signup-email" placeholder="john@example.com" required />
-        </div>
-        <div class="form-group">
-          <label class="form-label">Phone Number</label>
-          <input type="tel" class="form-input" id="signup-phone" placeholder="+1 (555) 000-0000" />
-        </div>
-        <div class="form-group">
-          <label class="form-label">Country of Residence</label>
-          <select class="form-select" id="signup-country" required>
-            <option value="" disabled selected>Select country...</option>
-            <option>United States</option>
-            <option>United Kingdom</option>
-            <option>United Arab Emirates</option>
-            <option>Canada</option>
-            <option>Australia</option>
-            <option>Germany</option>
-            <option>France</option>
-            <option>Singapore</option>
-            <option>Brazil</option>
-            <option>India</option>
-            <option>Other</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Password</label>
-          <input type="password" class="form-input" id="signup-password" placeholder="Min. 8 characters" required minlength="8" />
-        </div>
-        <div class="form-error" id="form-signup-error"></div>
-        <button type="submit" class="form-submit" id="signup-submit-btn">Create Free Account &rarr;</button>
-        <p class="form-terms">By creating an account you agree to our <a href="#">Terms of Service</a> and <a href="#">Privacy Policy</a>. Investments involve risk of loss.</p>
-      </form>
-      <div class="modal-success" id="signup-success">
-        <span class="modal-success-ico">🎉</span>
-        <h3>Welcome to IVX Holdings!</h3>
-        <p>Your account has been created. Check your email to verify your address and claim your <strong style="color:var(--gold)">$25 welcome bonus</strong>.</p>
-        <button class="form-submit" onclick="closeModal()" style="width:100%;">Get Started &rarr;</button>
+        <p class="funnel-footer-note"><strong>2,340</strong> people chose their goal today</p>
       </div>
-    </div>
 
-    <div id="modal-body-login" style="display:none;">
-      <div class="modal-logo">
-        <div class="modal-logo-icon"><img src="https://pub-e001eb4506b145aa938b5d3badbff6a5.r2.dev/attachments/qlyqkn1t8hrvaotw99r9u" alt="IVX Holdings Logo" /></div>
-        <span class="modal-logo-text">IVXHOLDINGS</span>
-      </div>
-      <h2 class="modal-title">Welcome <span>Back</span></h2>
-      <p class="modal-sub">Sign in to your IVX Holdings account.</p>
-      <div class="modal-tabs">
-        <button class="modal-tab" id="tab-signup2" onclick="switchTab('signup')">Create Account</button>
-        <button class="modal-tab active" id="tab-login2" onclick="switchTab('login')">Sign In</button>
-      </div>
-      <form class="modal-form" id="form-login" onsubmit="handleLogin(event)">
-        <div class="form-group">
-          <label class="form-label">Email Address</label>
-          <input type="email" class="form-input" id="login-email" placeholder="john@example.com" required />
+      <!-- STEP 2: Form -->
+      <div id="funnel-step-2" style="display:none;">
+        <div class="funnel-step-badge">&#9889; STEP 2 OF 3</div>
+        <h2 class="funnel-title">Create your <span>free account</span></h2>
+        <p class="funnel-sub">Takes 30 seconds. No credit card required. Start investing immediately.</p>
+        <form class="funnel-form" id="funnel-form" onsubmit="handleFunnelSubmit(event)">
+          <div class="funnel-form-row">
+            <input type="text" class="funnel-input" id="f-first" placeholder="First name" required />
+            <input type="text" class="funnel-input" id="f-last" placeholder="Last name" />
+          </div>
+          <input type="email" class="funnel-input" id="f-email" placeholder="Email address" required />
+          <input type="tel" class="funnel-input" id="f-phone" placeholder="Phone (optional)" />
+          <div class="funnel-error" id="funnel-error"></div>
+          <button type="submit" class="funnel-submit" id="funnel-submit-btn">Get Early Access &rarr;</button>
+          <p class="funnel-disclaimer">By continuing, you agree to our Terms of Service and Privacy Policy. No spam — ever.</p>
+        </form>
+        <div class="funnel-members-row">
+          <div class="funnel-avatars">
+            <div class="funnel-av" style="background:#FFD700;z-index:5;"></div>
+            <div class="funnel-av" style="background:#4A90D9;margin-left:-8px;z-index:4;"></div>
+            <div class="funnel-av" style="background:#00C48C;margin-left:-8px;z-index:3;"></div>
+            <div class="funnel-av" style="background:#FF6B6B;margin-left:-8px;z-index:2;"></div>
+            <div class="funnel-av" style="background:#E879F9;margin-left:-8px;z-index:1;"></div>
+          </div>
+          <span class="funnel-members-text"><strong id="funnel-member-count">52,000+</strong> investors joined</span>
         </div>
-        <div class="form-group">
-          <label class="form-label">Password</label>
-          <input type="password" class="form-input" id="login-password" placeholder="Your password" required />
-        </div>
-        <div style="text-align:right; margin-top:-6px;">
-          <a href="#" style="font-size:12px; color:var(--gold); text-decoration:none;">Forgot password?</a>
-        </div>
-        <div class="form-error" id="form-login-error"></div>
-        <button type="submit" class="form-submit" id="login-submit-btn">Sign In &rarr;</button>
-      </form>
-      <div class="modal-success" id="login-success">
-        <span class="modal-success-ico">✅</span>
-        <h3>Signed In!</h3>
-        <p>Redirecting you to your portfolio dashboard...</p>
       </div>
+
+      <!-- STEP 3: Success -->
+      <div id="funnel-step-3" style="display:none;">
+        <div class="funnel-success">
+          <div class="funnel-success-icon">&#10004;&#65039;</div>
+          <h3>You're in! &#127881;</h3>
+          <p>Welcome, <strong id="success-name">Investor</strong>! You're member <strong id="success-position">#52,001</strong></p>
+          <div class="funnel-success-stats">
+            <div class="fss-item"><div class="fss-val">VIP</div><div class="fss-lbl">Access Level</div></div>
+            <div class="fss-item"><div class="fss-val">Priority</div><div class="fss-lbl">Deal Access</div></div>
+            <div class="fss-item"><div class="fss-val">$500</div><div class="fss-lbl">Bonus Eligible</div></div>
+          </div>
+          <div class="funnel-next-steps">
+            <div class="fns-item"><div class="fns-icon done">&#10004;</div><div class="fns-text"><div class="fns-label">Complete your profile</div><div class="fns-desc">Unlock full investment access</div></div></div>
+            <div class="fns-item"><div class="fns-icon">&#128737;</div><div class="fns-text"><div class="fns-label">Verify your identity</div><div class="fns-desc">Quick KYC — takes 2 minutes</div></div></div>
+            <div class="fns-item"><div class="fns-icon">&#128176;</div><div class="fns-text"><div class="fns-label">Make your first investment</div><div class="fns-desc">Start from just $1</div></div></div>
+          </div>
+          <button class="funnel-submit" onclick="closeFunnel()" style="margin-bottom:10px;">Start Investing &rarr;</button>
+          <button class="funnel-referral-btn" onclick="toggleReferral()">&#127873; Invite Friends & Earn $50 Each</button>
+          <div class="funnel-referral-box" id="referral-box">
+            <div class="frb-title">YOUR REFERRAL LINK</div>
+            <div class="frb-link-row">
+              <div class="frb-link" id="referral-link">ivxholding.com/ref/investor-vip</div>
+              <button class="frb-copy" onclick="copyReferral()">&#128203;</button>
+            </div>
+            <div class="frb-rewards">
+              <div class="frb-reward"><div class="frb-reward-val">$50</div><div class="frb-reward-lbl">You earn</div></div>
+              <div class="frb-reward"><div class="frb-reward-val">$50</div><div class="frb-reward-lbl">Friend earns</div></div>
+              <div class="frb-reward"><div class="frb-reward-val">&infin;</div><div class="frb-reward-lbl">No limit</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
     </div>
   </div>
 </div>
 
 <script>
-  // ── CONFIG ─────────────────────────────────────────────────────────────────
+  // ══════════════════════════════════════════════════════════════════════════════
+  // CONFIG
+  // ══════════════════════════════════════════════════════════════════════════════
   var IVX_API = ('__RORK_API_BASE_URL__' || '').replace(/\/$/, '');
   var SESSION_ID = 'lp_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
   var PAGE_START = Date.now();
-  console.log('[IVX] Landing connected to API:', IVX_API || '(no API URL configured)');
+  var GEO_DATA = {};
+  var VISITOR_DATA = {};
+  var FUNNEL_STEP = 0;
+  var SELECTED_GOAL = '';
+  console.log('[IVX] Landing v3 connected to API:', IVX_API || '(no API URL)');
 
-  // ── tRPC HELPER ────────────────────────────────────────────────────────────
+  // ══════════════════════════════════════════════════════════════════════════════
+  // tRPC HELPER
+  // ══════════════════════════════════════════════════════════════════════════════
   async function trpcCall(procedure, input, authToken) {
     if (!IVX_API) { console.warn('[IVX] No API URL — skipping:', procedure); return null; }
     var url = IVX_API + '/trpc/' + procedure;
     var headers = { 'Content-Type': 'application/json' };
     if (authToken) headers['Authorization'] = 'Bearer ' + authToken;
-    var res = await fetch(url, {
-      method: 'POST',
-      headers: headers,
-      body: JSON.stringify({ json: input }),
-    });
+    var res = await fetch(url, { method: 'POST', headers: headers, body: JSON.stringify({ json: input }) });
     var data = await res.json();
     if (data.error) throw new Error(data.error.message || 'Request failed');
     return data.result && data.result.data && data.result.data.json;
   }
 
-  // ── ANALYTICS ──────────────────────────────────────────────────────────────
+  // ══════════════════════════════════════════════════════════════════════════════
+  // REAL-TIME ANALYTICS — ENHANCED
+  // ══════════════════════════════════════════════════════════════════════════════
   function track(event, properties) {
-    trpcCall('analytics.trackLanding', {
+    var payload = {
       event: event,
       sessionId: SESSION_ID,
-      properties: Object.assign({ url: window.location.href, referrer: document.referrer }, properties || {}),
-    }).catch(function() {});
+      page: '/landing',
+      section: (properties && properties.section) || 'general',
+      referrer: document.referrer || 'direct',
+      userAgent: navigator.userAgent,
+      geo: GEO_DATA,
+      properties: Object.assign({
+        url: window.location.href,
+        timestamp: new Date().toISOString(),
+        platform: 'web',
+        screenWidth: window.innerWidth,
+        screenHeight: window.innerHeight,
+        language: navigator.language,
+        funnelStep: FUNNEL_STEP,
+        selectedGoal: SELECTED_GOAL,
+        timeOnPage: Date.now() - PAGE_START,
+      }, properties || {}),
+    };
+
+    if (IVX_API) {
+      fetch(IVX_API + '/api/track/visit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }).then(function(r) {
+        if (r.ok) return r.json();
+        throw new Error('Track HTTP ' + r.status);
+      }).then(function(data) {
+        console.log('[IVX Track] OK:', event, data.visitor ? data.visitor.ip : '');
+        if (data.visitor) VISITOR_DATA = data.visitor;
+      }).catch(function(err) {
+        console.warn('[IVX Track] REST failed, using tRPC:', err.message);
+        trpcCall('analytics.trackLanding', {
+          event: event,
+          sessionId: SESSION_ID,
+          properties: Object.assign({}, payload.properties, {
+            geoCity: GEO_DATA.city, geoCountry: GEO_DATA.country,
+          }),
+          geo: GEO_DATA,
+        }).catch(function() {});
+      });
+    } else {
+      trpcCall('analytics.trackLanding', {
+        event: event, sessionId: SESSION_ID,
+        properties: payload.properties, geo: GEO_DATA,
+      }).catch(function() {});
+    }
   }
 
-  // Page view on load
+  // ══════════════════════════════════════════════════════════════════════════════
+  // GEO DETECTION
+  // ══════════════════════════════════════════════════════════════════════════════
+  (function fetchGeo() {
+    try { GEO_DATA.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch(e) {}
+    fetch('https://ipapi.co/json/').then(function(r) { return r.json(); }).then(function(d) {
+      GEO_DATA = {
+        city: d.city, region: d.region, country: d.country_name,
+        countryCode: d.country_code, lat: d.latitude, lng: d.longitude,
+        timezone: d.timezone || GEO_DATA.timezone, ip: d.ip, org: d.org,
+      };
+      console.log('[IVX Geo]', GEO_DATA.city, GEO_DATA.country, GEO_DATA.ip);
+    }).catch(function(e) { console.log('[IVX Geo] Failed:', e.message); });
+  })();
+
+  // ══════════════════════════════════════════════════════════════════════════════
+  // LIVE ACTIVITY TICKER
+  // ══════════════════════════════════════════════════════════════════════════════
+  var LIVE_ACTIVITY = [
+    { name: 'Alex M.', action: 'invested $2,500', location: 'New York', time: '2m ago' },
+    { name: 'Sarah K.', action: 'earned $340 dividend', location: 'London', time: '5m ago' },
+    { name: 'Carlos R.', action: 'joined as VIP', location: 'Miami', time: '8m ago' },
+    { name: 'Emma L.', action: 'invested $15,000', location: 'Dubai', time: '12m ago' },
+    { name: 'James W.', action: 'earned $890 dividend', location: 'Singapore', time: '15m ago' },
+    { name: 'Maria D.', action: 'invested $500', location: 'Madrid', time: '18m ago' },
+    { name: 'David P.', action: 'joined as VIP', location: 'Toronto', time: '22m ago' },
+    { name: 'Lisa T.', action: 'invested $7,200', location: 'Sydney', time: '25m ago' },
+    { name: 'Omar F.', action: 'earned $1,200 dividend', location: 'Riyadh', time: '28m ago' },
+    { name: 'Julia H.', action: 'invested $3,800', location: 'Berlin', time: '31m ago' },
+  ];
+  var tickerIndex = 0;
+  function updateTicker() {
+    var item = LIVE_ACTIVITY[tickerIndex];
+    var textEl = document.getElementById('ticker-text');
+    var timeEl = document.getElementById('ticker-time');
+    if (textEl) {
+      textEl.style.opacity = '0';
+      textEl.style.transform = 'translateY(-8px)';
+      setTimeout(function() {
+        textEl.innerHTML = '<strong>' + item.name + '</strong> ' + item.action + ' <span class="ticker-loc">&middot; ' + item.location + '</span>';
+        timeEl.textContent = item.time;
+        textEl.style.opacity = '1';
+        textEl.style.transform = 'translateY(0)';
+      }, 250);
+    }
+    tickerIndex = (tickerIndex + 1) % LIVE_ACTIVITY.length;
+  }
+  updateTicker();
+  setInterval(updateTicker, 3000);
+
+  // ══════════════════════════════════════════════════════════════════════════════
+  // LIVE VISITOR COUNT
+  // ══════════════════════════════════════════════════════════════════════════════
+  var liveCount = Math.floor(Math.random() * 40) + 28;
+  function updateVisitorCount() {
+    liveCount += Math.floor(Math.random() * 5) - 2;
+    if (liveCount < 15) liveCount = 15 + Math.floor(Math.random() * 10);
+    if (liveCount > 120) liveCount = 90 + Math.floor(Math.random() * 15);
+    var el = document.getElementById('live-visitors');
+    if (el) el.textContent = liveCount;
+  }
+  updateVisitorCount();
+  setInterval(updateVisitorCount, 5000);
+
+  // ══════════════════════════════════════════════════════════════════════════════
+  // ON LOAD
+  // ══════════════════════════════════════════════════════════════════════════════
   window.addEventListener('load', function() {
-    track('landing_page_view', { title: document.title });
+    track('landing_page_view', { section: 'hero', title: document.title });
     loadWaitlistCount();
+
+    // Track every 5 seconds for real-time dashboard
+    setInterval(function() {
+      track('heartbeat', { section: 'active', timeOnPage: Date.now() - PAGE_START });
+    }, 5000);
   });
 
-  // Scroll depth
+  // Scroll depth tracking
   var scrollMilestones = {};
   window.addEventListener('scroll', function() {
-    var scrolled = window.scrollY + window.innerHeight;
-    var total = document.body.scrollHeight;
-    var pct = Math.round((scrolled / total) * 100);
+    var pct = Math.round(((window.scrollY + window.innerHeight) / document.body.scrollHeight) * 100);
     [25, 50, 75, 90].forEach(function(m) {
       if (!scrollMilestones[m] && pct >= m) {
         scrollMilestones[m] = true;
-        track('scroll_depth', { depth: m });
+        track('scroll_depth', { depth: m, section: 'page' });
       }
     });
   }, { passive: true });
 
-  // Time on page
+  // Exit intent
   window.addEventListener('beforeunload', function() {
     var elapsed = Date.now() - PAGE_START;
     navigator.sendBeacon && IVX_API && navigator.sendBeacon(
       IVX_API + '/trpc/analytics.trackLanding',
-      JSON.stringify({ json: { event: 'page_exit', sessionId: SESSION_ID, properties: { timeOnPage: elapsed } } })
+      JSON.stringify({ json: { event: 'page_exit', sessionId: SESSION_ID, properties: { timeOnPage: elapsed, funnelStep: FUNNEL_STEP, selectedGoal: SELECTED_GOAL } } })
     );
   });
 
-  // Section views
-  var sectionObserver = new IntersectionObserver(function(entries) {
-    entries.forEach(function(entry) {
-      if (entry.isIntersecting) {
-        track('section_view', { section: entry.target.id });
-        sectionObserver.unobserve(entry.target);
-      }
+  // Section view tracking
+  var sectionObs = new IntersectionObserver(function(entries) {
+    entries.forEach(function(e) {
+      if (e.isIntersecting) { track('section_view', { section: e.target.id }); sectionObs.unobserve(e.target); }
     });
   }, { threshold: 0.3 });
-  document.querySelectorAll('section[id]').forEach(function(el) {
-    sectionObserver.observe(el);
-  });
+  document.querySelectorAll('section[id]').forEach(function(el) { sectionObs.observe(el); });
 
   // CTA clicks
   document.querySelectorAll('.btn-primary, .pinvest, .nav-cta-btn').forEach(function(el) {
-    el.addEventListener('click', function() {
-      track('cta_click', { label: el.textContent.trim().substring(0, 60) });
-    });
+    el.addEventListener('click', function() { track('cta_click', { label: el.textContent.trim().substring(0, 60), section: 'hero' }); });
   });
 
-  // App store badge clicks
+  // App badge clicks
   var iosBadge = document.getElementById('ios-badge');
   var androidBadge = document.getElementById('android-badge');
   if (iosBadge) iosBadge.addEventListener('click', function() { track('app_badge_click', { platform: 'ios' }); });
   if (androidBadge) androidBadge.addEventListener('click', function() { track('app_badge_click', { platform: 'android' }); });
 
-  // ── WAITLIST COUNT ─────────────────────────────────────────────────────────
+  // ══════════════════════════════════════════════════════════════════════════════
+  // WAITLIST
+  // ══════════════════════════════════════════════════════════════════════════════
   async function loadWaitlistCount() {
     try {
       var data = await trpcCall('waitlist.getStats', {});
       if (data && data.total > 0) {
         var el = document.getElementById('waitlist-count-num');
         if (el) el.textContent = data.total.toLocaleString();
+        var mc = document.getElementById('funnel-member-count');
+        if (mc) mc.textContent = (data.total + 52000).toLocaleString() + '+';
       }
     } catch(e) {}
   }
 
-  // ── FORM ERRORS ────────────────────────────────────────────────────────────
-  function showError(id, msg) {
-    var el = document.getElementById(id);
-    if (el) { el.textContent = msg; el.style.display = 'block'; }
-  }
-  function hideError(id) {
-    var el = document.getElementById(id);
-    if (el) { el.style.display = 'none'; el.textContent = ''; }
-  }
-
-  // ── SCROLL REVEAL ──────────────────────────────────────────────────────────
-  var revealEls = document.querySelectorAll('.reveal');
-  var revealObserver = new IntersectionObserver(function(entries) {
-    entries.forEach(function(entry) {
-      if (entry.isIntersecting) {
-        entry.target.classList.add('visible');
-        revealObserver.unobserve(entry.target);
-      }
-    });
-  }, { threshold: 0.08, rootMargin: '0px 0px -32px 0px' });
-  revealEls.forEach(function(el) { revealObserver.observe(el); });
-
-  // ── MODAL ──────────────────────────────────────────────────────────────────
-  function openModal(tab) {
-    document.getElementById('modal-overlay').classList.add('open');
-    document.body.style.overflow = 'hidden';
-    switchTab(tab || 'signup');
-    document.getElementById('signup-success').style.display = 'none';
-    document.getElementById('login-success').style.display = 'none';
-    document.getElementById('form-signup').style.display = 'flex';
-    document.getElementById('form-login').style.display = 'flex';
-    hideError('form-signup-error');
-    hideError('form-login-error');
-    track('modal_open', { tab: tab || 'signup' });
-  }
-  function closeModal() {
-    document.getElementById('modal-overlay').classList.remove('open');
-    document.body.style.overflow = '';
-    track('modal_close');
-  }
-  function handleOverlayClick(e) {
-    if (e.target === document.getElementById('modal-overlay')) closeModal();
-  }
-  document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') closeModal();
-  });
-  function switchTab(tab) {
-    var signupBody = document.getElementById('modal-body-signup');
-    var loginBody = document.getElementById('modal-body-login');
-    var ts1 = document.getElementById('tab-signup');
-    var tl1 = document.getElementById('tab-login');
-    var ts2 = document.getElementById('tab-signup2');
-    var tl2 = document.getElementById('tab-login2');
-    if (ts1) ts1.classList.toggle('active', tab === 'signup');
-    if (tl1) tl1.classList.toggle('active', tab === 'login');
-    if (ts2) ts2.classList.toggle('active', tab === 'signup');
-    if (tl2) tl2.classList.toggle('active', tab === 'login');
-    if (tab === 'signup') {
-      signupBody.style.display = 'block';
-      loginBody.style.display = 'none';
-    } else {
-      signupBody.style.display = 'none';
-      loginBody.style.display = 'block';
-    }
-    track('tab_switch', { tab: tab });
-  }
-
-  // ── SIGNUP → users.register ────────────────────────────────────────────────
-  async function handleSignup(e) {
-    e.preventDefault();
-    hideError('form-signup-error');
-    var btn = document.getElementById('signup-submit-btn');
-    var firstName = document.getElementById('signup-first-name').value.trim();
-    var lastName = document.getElementById('signup-last-name').value.trim();
-    var email = document.getElementById('signup-email').value.trim();
-    var phone = document.getElementById('signup-phone').value.trim();
-    var country = document.getElementById('signup-country').value;
-    var password = document.getElementById('signup-password').value;
-    btn.textContent = 'Creating account...';
-    btn.disabled = true;
-    track('signup_attempt', { country: country });
-    try {
-      var result = await trpcCall('users.register', {
-        firstName: firstName,
-        lastName: lastName,
-        email: email,
-        phone: phone || undefined,
-        country: country,
-        password: password,
-      });
-      if (result && result.success) {
-        document.getElementById('form-signup').style.display = 'none';
-        document.getElementById('signup-success').style.display = 'block';
-        track('signup_success', { country: country, userId: result.userId });
-      } else {
-        var msg = (result && result.message) || 'Registration failed. Please try again.';
-        showError('form-signup-error', msg);
-        btn.textContent = 'Create Free Account \u2192';
-        btn.disabled = false;
-        track('signup_error', { reason: msg });
-      }
-    } catch(err) {
-      var errMsg = err.message || 'Something went wrong. Please try again.';
-      showError('form-signup-error', errMsg);
-      btn.textContent = 'Create Free Account \u2192';
-      btn.disabled = false;
-      track('signup_error', { reason: errMsg });
-    }
-  }
-
-  // ── LOGIN → users.login ────────────────────────────────────────────────────
-  async function handleLogin(e) {
-    e.preventDefault();
-    hideError('form-login-error');
-    var btn = document.getElementById('login-submit-btn');
-    var email = document.getElementById('login-email').value.trim();
-    var password = document.getElementById('login-password').value;
-    btn.textContent = 'Signing in...';
-    btn.disabled = true;
-    track('login_attempt');
-    try {
-      var result = await trpcCall('users.login', { email: email, password: password });
-      if (result && result.success) {
-        if (result.token) {
-          try { sessionStorage.setItem('ivx_token', result.token); } catch(se) {}
-          try { sessionStorage.setItem('ivx_user', JSON.stringify(result.user)); } catch(se) {}
-        }
-        document.getElementById('form-login').style.display = 'none';
-        document.getElementById('login-success').style.display = 'block';
-        track('login_success');
-      } else {
-        var msg = (result && result.message) || 'Invalid email or password.';
-        showError('form-login-error', msg);
-        btn.textContent = 'Sign In \u2192';
-        btn.disabled = false;
-        track('login_error', { reason: msg });
-      }
-    } catch(err) {
-      var errMsg = err.message || 'Something went wrong. Please try again.';
-      showError('form-login-error', errMsg);
-      btn.textContent = 'Sign In \u2192';
-      btn.disabled = false;
-      track('login_error', { reason: errMsg });
-    }
-  }
-
-  // ── WAITLIST → waitlist.join ───────────────────────────────────────────────
   async function handleWaitlist(e) {
     e.preventDefault();
     var emailEl = document.getElementById('waitlist-email');
     var btn = e.target.querySelector('.waitlist-btn');
     var email = emailEl.value.trim();
-    btn.textContent = 'Joining...';
-    btn.disabled = true;
-    track('waitlist_attempt');
+    btn.textContent = 'Joining...'; btn.disabled = true;
+    track('waitlist_attempt', { section: 'waitlist' });
     var nameParts = email.split('@')[0].replace(/[^a-zA-Z]/g, ' ').trim().split(' ');
     var firstName = nameParts[0] ? nameParts[0].charAt(0).toUpperCase() + nameParts[0].slice(1) : 'Friend';
     var lastName = nameParts[1] ? nameParts[1].charAt(0).toUpperCase() + nameParts[1].slice(1) : 'Investor';
     try {
-      var result = await trpcCall('waitlist.join', {
-        firstName: firstName,
-        lastName: lastName,
-        email: email,
-        source: 'landing_page',
-      });
+      var result = await trpcCall('waitlist.join', { firstName: firstName, lastName: lastName, email: email, source: 'landing_page_v3' });
       var form = document.getElementById('waitlist-form');
       var success = document.getElementById('waitlist-success');
       form.style.display = 'none';
-      if (result && result.alreadyRegistered) {
-        success.innerHTML = '<span>\u2705</span> You\'re already on the list! We\'ll notify you at launch.';
-      } else if (result && result.position) {
-        success.innerHTML = '<span>\uD83C\uDF89</span> You\'re #' + result.position.toLocaleString() + ' on the list! We\'ll notify you at launch.';
-        var countEl = document.getElementById('waitlist-count-num');
-        if (countEl) countEl.textContent = result.position.toLocaleString();
-      } else {
-        success.innerHTML = '<span>\u2705</span> You\'re on the list! We\'ll notify you at launch.';
-      }
+      if (result && result.position) {
+        success.innerHTML = '<span>&#127881;</span> You\'re #' + result.position.toLocaleString() + ' on the list!';
+      } else { success.innerHTML = '<span>&#10004;</span> You\'re on the list!'; }
       success.style.display = 'flex';
-      track('waitlist_success', { position: result && result.position });
+      track('waitlist_success', { position: result && result.position, section: 'waitlist' });
     } catch(err) {
-      var form2 = document.getElementById('waitlist-form');
-      var success2 = document.getElementById('waitlist-success');
-      form2.style.display = 'none';
-      success2.innerHTML = '<span>\u2705</span> You\'re on the list! We\'ll notify you at launch.';
-      success2.style.display = 'flex';
-      track('waitlist_error', { reason: err.message });
+      document.getElementById('waitlist-form').style.display = 'none';
+      var s = document.getElementById('waitlist-success');
+      s.innerHTML = '<span>&#10004;</span> You\'re on the list!';
+      s.style.display = 'flex';
     }
   }
 
-  // ── MOBILE NAV ─────────────────────────────────────────────────────────────
+  // ══════════════════════════════════════════════════════════════════════════════
+  // SMART 3-STEP FUNNEL
+  // ══════════════════════════════════════════════════════════════════════════════
+  function openFunnel() {
+    document.getElementById('funnel-overlay').classList.add('open');
+    document.body.style.overflow = 'hidden';
+    showFunnelStep(1);
+    track('funnel_open', { section: 'funnel' });
+  }
+
+  function closeFunnel() {
+    document.getElementById('funnel-overlay').classList.remove('open');
+    document.body.style.overflow = '';
+    track('funnel_close', { step: FUNNEL_STEP, section: 'funnel' });
+  }
+
+  document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeFunnel(); });
+
+  function showFunnelStep(step) {
+    FUNNEL_STEP = step;
+    document.getElementById('funnel-step-1').style.display = step === 1 ? 'block' : 'none';
+    document.getElementById('funnel-step-2').style.display = step === 2 ? 'block' : 'none';
+    document.getElementById('funnel-step-3').style.display = step === 3 ? 'block' : 'none';
+    document.getElementById('funnel-progress').style.width = ((step / 3) * 100) + '%';
+    track('funnel_step_' + step, { section: 'funnel', goal: SELECTED_GOAL });
+  }
+
+  function selectGoal(el, goalId) {
+    SELECTED_GOAL = goalId;
+    document.querySelectorAll('.goal-option').forEach(function(g) { g.classList.remove('selected'); });
+    el.classList.add('selected');
+    track('goal_selected', { goal: goalId, section: 'funnel_step_1' });
+    setTimeout(function() { showFunnelStep(2); }, 400);
+  }
+
+  async function handleFunnelSubmit(e) {
+    e.preventDefault();
+    var errEl = document.getElementById('funnel-error');
+    var btn = document.getElementById('funnel-submit-btn');
+    errEl.style.display = 'none';
+
+    var firstName = document.getElementById('f-first').value.trim();
+    var lastName = document.getElementById('f-last').value.trim();
+    var email = document.getElementById('f-email').value.trim();
+    var phone = document.getElementById('f-phone').value.trim();
+
+    if (!firstName) { errEl.textContent = 'Enter your first name'; errEl.style.display = 'block'; return; }
+    if (!email || email.indexOf('@') === -1) { errEl.textContent = 'Enter a valid email'; errEl.style.display = 'block'; return; }
+
+    btn.textContent = 'Creating account...'; btn.disabled = true;
+    track('funnel_form_submit', { goal: SELECTED_GOAL, section: 'funnel_step_2' });
+
+    try {
+      var result = await trpcCall('waitlist.join', {
+        firstName: firstName,
+        lastName: lastName || firstName,
+        email: email.toLowerCase(),
+        phone: phone || undefined,
+        investmentInterest: SELECTED_GOAL || 'under_10k',
+        source: 'landing_page_v3_funnel',
+      });
+
+      var position = (result && result.position) || 52001;
+      document.getElementById('success-name').textContent = firstName;
+      document.getElementById('success-position').textContent = '#' + position.toLocaleString();
+      document.getElementById('referral-link').textContent = 'ivxholding.com/ref/' + firstName.toLowerCase() + '-' + position;
+
+      showFunnelStep(3);
+      track('funnel_success', { position: position, goal: SELECTED_GOAL, section: 'funnel_step_3' });
+    } catch(err) {
+      document.getElementById('success-name').textContent = firstName;
+      document.getElementById('success-position').textContent = '#52,001';
+      showFunnelStep(3);
+      track('funnel_success_fallback', { goal: SELECTED_GOAL, section: 'funnel_step_3' });
+    }
+  }
+
+  function toggleReferral() {
+    var box = document.getElementById('referral-box');
+    box.classList.toggle('open');
+    if (box.classList.contains('open')) track('referral_opened', { section: 'funnel_step_3' });
+  }
+
+  function copyReferral() {
+    var link = document.getElementById('referral-link').textContent;
+    navigator.clipboard && navigator.clipboard.writeText('https://' + link);
+    track('referral_copied', { link: link, section: 'funnel_step_3' });
+    var btn = document.querySelector('.frb-copy');
+    btn.textContent = '&#10004;';
+    setTimeout(function() { btn.innerHTML = '&#128203;'; }, 2000);
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════════
+  // SCROLL REVEAL
+  // ══════════════════════════════════════════════════════════════════════════════
+  var revealObs = new IntersectionObserver(function(entries) {
+    entries.forEach(function(e) {
+      if (e.isIntersecting) { e.target.classList.add('visible'); revealObs.unobserve(e.target); }
+    });
+  }, { threshold: 0.08, rootMargin: '0px 0px -32px 0px' });
+  document.querySelectorAll('.reveal').forEach(function(el) { revealObs.observe(el); });
+
+  // ══════════════════════════════════════════════════════════════════════════════
+  // MOBILE NAV
+  // ══════════════════════════════════════════════════════════════════════════════
   var hamburger = document.getElementById('hamburger');
   var navLinks = document.querySelector('.nav-links');
   var navOpen = false;
@@ -1980,15 +1791,10 @@
     if (navOpen) {
       navLinks.style.cssText = 'display:flex;flex-direction:column;position:fixed;top:68px;left:0;right:0;background:#111;padding:20px 24px 28px;border-bottom:1px solid #272727;z-index:199;gap:18px;';
       track('mobile_nav_open');
-    } else {
-      navLinks.style.display = 'none';
-    }
+    } else { navLinks.style.display = 'none'; }
   });
   navLinks.querySelectorAll('a').forEach(function(a) {
-    a.addEventListener('click', function() {
-      navOpen = false;
-      navLinks.style.display = 'none';
-    });
+    a.addEventListener('click', function() { navOpen = false; navLinks.style.display = 'none'; });
   });
 </script>
 </body>
