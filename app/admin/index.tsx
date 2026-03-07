@@ -9,7 +9,6 @@ import {
   TextInput,
   Modal,
   useWindowDimensions,
-  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -51,6 +50,7 @@ import {
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { trpc } from '@/lib/trpc';
+import { useInstantCache, getInitialCacheData } from '@/lib/use-instant-query';
 
 const ADMIN_MODULES = [
   { id: 'owner-controls', name: 'Owner Controls', icon: Crown, iconName: 'Crown', route: '/admin/owner-controls', category: 'Core' },
@@ -95,11 +95,20 @@ export default function AdminDashboard() {
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch] = useState(false);
 
+
   const utils = trpc.useUtils();
 
+  const cachedDashInit = useMemo(() => getInitialCacheData('admin_dashboard'), []);
+  const cachedTxInit = useMemo(() => getInitialCacheData('admin_transactions'), []);
+  const cachedPendingInit = useMemo(() => getInitialCacheData('admin_kyc_pending'), []);
+  const cachedInReviewInit = useMemo(() => getInitialCacheData('admin_kyc_inreview'), []);
+
   const dashboardQuery = trpc.analytics.getDashboard.useQuery(undefined, {
-    staleTime: 1000 * 30,
-    refetchInterval: 1000 * 60,
+    staleTime: 1000 * 5,
+    refetchInterval: 1000 * 5,
+    placeholderData: (prev) => prev,
+    initialData: cachedDashInit as any,
+    initialDataUpdatedAt: cachedDashInit ? Date.now() - 1000 * 20 : undefined,
   });
 
   const transactionsQuery = trpc.transactions.list.useQuery({
@@ -109,6 +118,9 @@ export default function AdminDashboard() {
     sortOrder: 'desc',
   }, {
     staleTime: 1000 * 30,
+    placeholderData: (prev) => prev,
+    initialData: cachedTxInit as any,
+    initialDataUpdatedAt: cachedTxInit ? Date.now() - 1000 * 20 : undefined,
   });
 
   const pendingKycQuery = trpc.members.list.useQuery({
@@ -117,6 +129,9 @@ export default function AdminDashboard() {
     kycStatus: 'pending',
   }, {
     staleTime: 1000 * 30,
+    placeholderData: (prev) => prev,
+    initialData: cachedPendingInit as any,
+    initialDataUpdatedAt: cachedPendingInit ? Date.now() - 1000 * 20 : undefined,
   });
 
   const inReviewKycQuery = trpc.members.list.useQuery({
@@ -125,17 +140,26 @@ export default function AdminDashboard() {
     kycStatus: 'in_review',
   }, {
     staleTime: 1000 * 30,
+    placeholderData: (prev) => prev,
+    initialData: cachedInReviewInit as any,
+    initialDataUpdatedAt: cachedInReviewInit ? Date.now() - 1000 * 20 : undefined,
   });
 
-  const stats = dashboardQuery.data;
-  const recentTransactions = transactionsQuery.data?.transactions ?? [];
+  const cachedDashboard = useInstantCache('admin_dashboard', dashboardQuery.data, dashboardQuery.isSuccess);
+  const cachedTransactions = useInstantCache('admin_transactions', transactionsQuery.data, transactionsQuery.isSuccess);
+  const cachedPendingKyc = useInstantCache('admin_kyc_pending', pendingKycQuery.data, pendingKycQuery.isSuccess);
+  const cachedInReviewKyc = useInstantCache('admin_kyc_inreview', inReviewKycQuery.data, inReviewKycQuery.isSuccess);
+
+  const stats = cachedDashboard;
+  const recentTransactions = cachedTransactions?.transactions ?? [];
   const pendingKycMembers = [
-    ...(pendingKycQuery.data?.members ?? []),
-    ...(inReviewKycQuery.data?.members ?? []),
+    ...(cachedPendingKyc?.members ?? []),
+    ...(cachedInReviewKyc?.members ?? []),
   ];
 
-  const isLoading = dashboardQuery.isLoading;
   const refreshing = dashboardQuery.isRefetching || transactionsQuery.isRefetching;
+
+
 
   const onRefresh = useCallback(() => {
     void utils.analytics.getDashboard.invalidate();
@@ -307,13 +331,6 @@ export default function AdminDashboard() {
           />
         }
       >
-        {isLoading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={Colors.primary} />
-            <Text style={styles.loadingText}>Loading live data...</Text>
-          </View>
-        ) : (
-          <>
         <View style={styles.statsGrid}>
           <TouchableOpacity
             style={styles.statCard}
@@ -477,8 +494,6 @@ export default function AdminDashboard() {
             </View>
           ))}
         </View>
-          </>
-        )}
 
         <View style={styles.modulesSection}>
           <Text style={styles.modulesSectionTitle}>All Modules</Text>
@@ -904,18 +919,7 @@ const styles = StyleSheet.create({
   bottomPadding: {
     height: 120,
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center' as const,
-    alignItems: 'center' as const,
-    paddingVertical: 60,
-    gap: 12,
-  },
-  loadingText: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-    fontWeight: '500' as const,
-  },
+
   liveMetricsRow: {
     flexDirection: 'row' as const,
     marginHorizontal: 12,
