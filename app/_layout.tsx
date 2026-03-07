@@ -27,8 +27,10 @@ import {
   addNotificationResponseListener,
   setBadgeCount,
 } from "../lib/push-notifications";
+import { ensureCacheReady } from "../lib/instant-cache";
 
 void SplashScreen.preventAutoHideAsync();
+void ensureCacheReady();
 
 const queryClient = new QueryClient(queryClientConfig);
 
