@@ -43,7 +43,7 @@ export function getAuthUserRole(): string {
   return _userRole || 'investor';
 }
 
-const ADMIN_ROLES = ['owner', 'ceo', 'staff'] as const;
+const ADMIN_ROLES = ['owner', 'ceo', 'staff', 'manager', 'analyst'] as const;
 export type AdminRole = typeof ADMIN_ROLES[number];
 export type UserRole = AdminRole | 'investor';
 
