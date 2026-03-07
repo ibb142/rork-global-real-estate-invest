@@ -15,6 +15,7 @@ import { store } from "./store/index";
 import { captureError, logSentryStatus } from "./lib/sentry";
 import { runStagingChecklist } from "./lib/staging-checklist";
 import { runAWSProductionSetup, getAWSSetupStatus, getIAMPolicyDocument, PROD_BUCKET_NAME, PROD_REGION } from "./lib/aws-setup";
+import { parseUserAgent, getClientIP } from "./lib/ua-parser";
 
 logEnvStatus();
 logSentryStatus();
@@ -122,6 +123,110 @@ app.use(
     createContext,
   }),
 );
+
+app.post("/track/visit", async (c) => {
+  try {
+    const body = await c.req.json();
+    const headers = c.req.raw.headers;
+    const ip = getClientIP(headers);
+    const rawUA = headers.get('user-agent') || body.userAgent || '';
+    const parsed = parseUserAgent(rawUA);
+    const refHeader = headers.get('referer') || headers.get('referrer') || '';
+
+    const entry = {
+      id: `vis_${Date.now()}_${Math.random().toString(36).substr(2, 8)}`,
+      sessionId: body.sessionId || `s_${Date.now()}`,
+      ip,
+      userAgent: rawUA,
+      browser: parsed.browser,
+      browserVersion: parsed.browserVersion,
+      os: parsed.os,
+      osVersion: parsed.osVersion,
+      device: parsed.device,
+      deviceModel: parsed.deviceModel,
+      isBot: parsed.isBot,
+      referrer: body.referrer || refHeader || 'direct',
+      page: body.page || '/landing',
+      event: body.event || 'page_view',
+      geo: body.geo || undefined,
+      timestamp: new Date().toISOString(),
+    };
+
+    store.addVisitorLog(entry);
+
+    const evt = {
+      id: store.genId('evt'),
+      userId: 'landing_visitor',
+      event: body.event || 'landing_page_view',
+      category: 'page_view' as const,
+      properties: {
+        platform: parsed.device === 'Desktop' ? 'web' : parsed.os === 'iOS' || parsed.os === 'iPadOS' ? 'ios' : parsed.os === 'Android' ? 'android' : 'web',
+        referrer: entry.referrer,
+        userAgent: rawUA,
+        ip,
+        browser: parsed.browser,
+        os: parsed.os,
+        device: parsed.device,
+        section: body.section || 'hero',
+        ...body.properties,
+      },
+      sessionId: entry.sessionId,
+      timestamp: entry.timestamp,
+      geo: body.geo,
+    };
+    store.addAnalyticsEvent(evt);
+
+    console.log(`[Track] ${ip} | ${parsed.device} ${parsed.os} ${parsed.browser} | ${entry.event} | ${body.geo?.city || 'unknown'}, ${body.geo?.country || 'unknown'}`);
+
+    return c.json({
+      success: true,
+      visitor: {
+        ip,
+        device: parsed.device,
+        os: parsed.os,
+        browser: parsed.browser,
+      },
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    console.error('[Track] Error:', message);
+    return c.json({ success: false, error: message }, 500);
+  }
+});
+
+app.get("/track/pixel", async (c) => {
+  const headers = c.req.raw.headers;
+  const ip = getClientIP(headers);
+  const rawUA = headers.get('user-agent') || '';
+  const parsed = parseUserAgent(rawUA);
+  const refHeader = headers.get('referer') || headers.get('referrer') || '';
+
+  const entry = {
+    id: `vis_${Date.now()}_${Math.random().toString(36).substr(2, 8)}`,
+    sessionId: `pixel_${Date.now()}`,
+    ip,
+    userAgent: rawUA,
+    browser: parsed.browser,
+    browserVersion: parsed.browserVersion,
+    os: parsed.os,
+    osVersion: parsed.osVersion,
+    device: parsed.device,
+    deviceModel: parsed.deviceModel,
+    isBot: parsed.isBot,
+    referrer: refHeader || 'direct',
+    page: '/landing',
+    event: 'pixel_load',
+    timestamp: new Date().toISOString(),
+  };
+
+  store.addVisitorLog(entry);
+  console.log(`[Pixel] ${ip} | ${parsed.device} ${parsed.os} ${parsed.browser}`);
+
+  c.header('Content-Type', 'image/gif');
+  c.header('Cache-Control', 'no-store, no-cache, must-revalidate');
+  const pixel = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');
+  return c.body(pixel);
+});
 
 app.post("/webhooks/stripe", async (c) => {
   const signature = c.req.header("stripe-signature") || "";
