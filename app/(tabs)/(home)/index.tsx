@@ -31,6 +31,7 @@ import { useRouter } from 'expo-router';
 import Colors from '@/constants/colors';
 import { getResponsiveSize, isCompactScreen, isExtraSmallScreen } from '@/lib/responsive';
 import { trpc } from '@/lib/trpc';
+import { useInstantCache } from '@/lib/use-instant-query';
 import { useTranslation } from '@/lib/i18n-context';
 import { useAnalytics } from '@/lib/analytics-context';
 import PropertyCard from '@/components/PropertyCard';
@@ -382,7 +383,7 @@ export default function HomeScreen() {
   const { width } = useWindowDimensions();
   const [refreshing, setRefreshing] = useState(false);
   const { t } = useTranslation();
-  const { trackScreen, trackAction } = useAnalytics();
+  const { trackScreen } = useAnalytics();
   const screenSize = getResponsiveSize(width);
   const isCompact = isCompactScreen(screenSize);
   const isXs = isExtraSmallScreen(screenSize);
@@ -393,6 +394,8 @@ export default function HomeScreen() {
 
   const propertiesQuery = trpc.properties.list.useQuery({ page: 1, limit: 20 }, {
     retry: 1,
+    staleTime: 1000 * 60 * 2,
+    placeholderData: (prev) => prev,
     meta: { skipGlobalErrorHandler: true },
   });
   const unreadQuery = trpc.notifications.getUnreadCount.useQuery(undefined, {
@@ -400,19 +403,23 @@ export default function HomeScreen() {
     refetchOnWindowFocus: false,
     refetchOnMount: false,
     staleTime: 1000 * 60 * 10,
+    placeholderData: (prev) => prev,
     meta: { skipGlobalErrorHandler: true },
   });
 
-  const rawProperties = (propertiesQuery.data?.properties as typeof fallbackProperties | undefined) ?? fallbackProperties;
+  const cachedProperties = useInstantCache('home_properties', propertiesQuery.data, propertiesQuery.isSuccess);
+  const cachedUnread = useInstantCache('home_unread', unreadQuery.data, unreadQuery.isSuccess);
+
+  const rawProperties = (cachedProperties?.properties as typeof fallbackProperties | undefined) ?? fallbackProperties;
   const properties = Array.isArray(rawProperties) ? rawProperties : fallbackProperties;
-  const unreadNotifications = unreadQuery.data?.count ?? 3;
+  const unreadNotifications = cachedUnread?.count ?? 3;
 
   const featuredProperties = useMemo(() => (properties ?? []).filter((p: { status?: string }) => (p?.status ?? '').toLowerCase() === 'live').slice(0, 3), [properties]);
   const comingSoonProperties = useMemo(() => (properties ?? []).filter((p: { status?: string }) => (p?.status ?? '').toLowerCase() === 'coming_soon').slice(0, 2), [properties]);
 
   const onRefresh = () => {
     setRefreshing(true);
-    Promise.all([propertiesQuery.refetch(), unreadQuery.refetch()])
+    void Promise.all([propertiesQuery.refetch(), unreadQuery.refetch()])
       .finally(() => setRefreshing(false));
   };
 
