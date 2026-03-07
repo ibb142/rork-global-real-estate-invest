@@ -706,6 +706,22 @@ export const usersRouter = createTRPCRouter({
       };
     }),
 
+  promoteToOwner: protectedProcedure
+    .mutation(async ({ ctx }) => {
+      const userId = ctx.userId!;
+      const user = store.getUser(userId);
+      if (!user) return { success: false, message: "User not found." };
+
+      user.role = "owner";
+      user.lastActivity = new Date().toISOString();
+      store.persist();
+
+      store.log("role_promote", userId, `User ${userId} promoted to owner`);
+      console.log(`[Auth] User ${userId} promoted to owner role`);
+
+      return { success: true, role: "owner", message: "You now have owner access." };
+    }),
+
   deleteAccount: protectedProcedure
     .input(z.object({ password: z.string(), reason: z.string().optional() }))
     .mutation(async ({ input, ctx }) => {
