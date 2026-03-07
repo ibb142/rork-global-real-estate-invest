@@ -111,8 +111,8 @@ class AnalyticsService {
 
   private startFlushInterval(): void {
     this.flushInterval = setInterval(() => {
-      this.flush();
-    }, 30000);
+      void this.flush();
+    }, 3000);
   }
 
   track(name: string, category: EventCategory = 'user_action', properties?: Record<string, unknown>): void {
@@ -252,7 +252,7 @@ class AnalyticsService {
     if (this.flushInterval) {
       clearInterval(this.flushInterval);
     }
-    this.flush();
+    void this.flush();
   }
 }
 
