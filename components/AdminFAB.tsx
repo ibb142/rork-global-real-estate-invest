@@ -1,9 +1,10 @@
-import React, { useState, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Animated, Modal, ScrollView, Dimensions } from 'react-native';
+import React, { useState, useRef, useCallback } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Animated, Modal, ScrollView, Dimensions, Alert, ActivityIndicator } from 'react-native';
 import { useRouter, usePathname } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Plus, X, UsersRound, Percent, Image, Play, BookOpen, Radio, Heart, Megaphone, TrendingUp, Star, Zap, KeyRound, Building2, Landmark, Sparkles, Globe, BarChart3, Mail, Video, Code2, Scale } from 'lucide-react-native';
+import { Plus, X, UsersRound, Percent, Image, Play, BookOpen, Radio, Heart, Megaphone, TrendingUp, Star, Zap, KeyRound, Building2, Landmark, Sparkles, Globe, BarChart3, Mail, Video, Code2, Scale, ShieldCheck } from 'lucide-react-native';
 import Colors from '@/constants/colors';
+import { useAuth } from '@/lib/auth-context';
 
 
 
@@ -152,6 +153,18 @@ export default function AdminFAB() {
   const router = useRouter();
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
+  const { isAdmin, isAuthenticated, activateOwnerAccess, activatingOwner } = useAuth();
+
+  const handleActivateOwner = useCallback(async () => {
+    const result = await activateOwnerAccess();
+    if (result.success) {
+      Alert.alert('Owner Access Activated', 'You now have full admin access. All admin features are unlocked.');
+    } else {
+      Alert.alert('Error', result.message || 'Failed to activate owner access');
+    }
+  }, [activateOwnerAccess]);
+
+  if (!isAuthenticated) return null;
 
   const isOnTabScreen = TAB_ROUTES.some(route =>
     pathname === route ||
@@ -215,6 +228,23 @@ export default function AdminFAB() {
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
           >
+            {!isAdmin && (
+              <TouchableOpacity
+                style={styles.activateOwnerButton}
+                onPress={handleActivateOwner}
+                activeOpacity={0.8}
+                disabled={activatingOwner}
+              >
+                {activatingOwner ? (
+                  <ActivityIndicator size="small" color={Colors.background} />
+                ) : (
+                  <ShieldCheck size={20} color={Colors.background} />
+                )}
+                <Text style={styles.activateOwnerText}>
+                  {activatingOwner ? 'Activating...' : 'Activate Owner Access'}
+                </Text>
+              </TouchableOpacity>
+            )}
             <View style={styles.menuContainer}>
               {fabMenuItems.map((item) => (
                 <TouchableOpacity
@@ -360,6 +390,22 @@ const styles = StyleSheet.create({
   closeText: {
     fontSize: 16,
     fontWeight: '600' as const,
+    color: Colors.background,
+  },
+  activateOwnerButton: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    backgroundColor: '#00C853',
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 14,
+    marginBottom: 16,
+    gap: 10,
+  },
+  activateOwnerText: {
+    fontSize: 15,
+    fontWeight: '700' as const,
     color: Colors.background,
   },
 });
