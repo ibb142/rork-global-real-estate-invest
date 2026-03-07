@@ -1,7 +1,7 @@
 import createContextHook from '@nkzw/create-context-hook';
 import { useState, useEffect, useCallback } from 'react';
 import { trpc } from './trpc';
-import { persistAuth, loadStoredAuth, clearStoredAuth, isAdminRole, getRefreshToken, setAuthToken } from './auth-store';
+import { persistAuth, loadStoredAuth, clearStoredAuth, isAdminRole, getRefreshToken, getAuthToken, setAuthToken } from './auth-store';
 
 interface AuthUser {
   id: string;
@@ -38,6 +38,8 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     enabled: isAuthenticated,
     retry: 1,
   });
+
+  const promoteMutation = trpc.users.promoteToOwner.useMutation();
 
   useEffect(() => {
     (async () => {
@@ -214,6 +216,31 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     console.log('[Auth] Logged out');
   }, [isAuthenticated, logoutMutation]);
 
+  const activateOwnerAccess = useCallback(async () => {
+    try {
+      const result = await promoteMutation.mutateAsync();
+      if (result.success && result.role) {
+        setUserRole(result.role);
+        if (user) {
+          setUser({ ...user, role: result.role });
+        }
+        await persistAuth({
+          token: getAuthToken() || '',
+          refreshToken: getRefreshToken() || '',
+          userId: user?.id || '',
+          userRole: result.role,
+        });
+        void profileQuery.refetch();
+        console.log('[Auth] Owner access activated');
+        return { success: true, message: result.message };
+      }
+      return { success: false, message: result.message || 'Failed to activate' };
+    } catch (error: any) {
+      console.error('[Auth] Promote error:', error);
+      return { success: false, message: error?.message || 'Failed to activate owner access' };
+    }
+  }, [promoteMutation, user, profileQuery]);
+
   return {
     user,
     isAuthenticated,
@@ -227,6 +254,8 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     cancelTwoFactor,
     requiresTwoFactor,
     refreshSession,
+    activateOwnerAccess,
+    activatingOwner: promoteMutation.isPending,
     loginLoading: loginMutation.isPending,
     registerLoading: registerMutation.isPending,
     verify2FALoading: verify2FAMutation.isPending,
