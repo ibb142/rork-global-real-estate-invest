@@ -172,6 +172,39 @@ class Store {
   }> = [];
   liveSessions: Map<string, LiveSession> = new Map();
 
+  aiLearnings: Array<{
+    id: string;
+    type: 'pattern' | 'anomaly' | 'prediction' | 'recommendation' | 'trend';
+    category: string;
+    title: string;
+    description: string;
+    confidence: number;
+    impact: 'critical' | 'high' | 'medium' | 'low';
+    dataPoints: number;
+    metadata: Record<string, unknown>;
+    learnedAt: string;
+    expiresAt: string;
+    isActive: boolean;
+  }> = [];
+
+  aiMemory: {
+    totalPatternsLearned: number;
+    totalDataPointsProcessed: number;
+    lastLearningCycle: string;
+    learningCycles: number;
+    knownPatterns: Record<string, { count: number; lastSeen: string; confidence: number }>;
+    behaviorBaselines: Record<string, { avg: number; min: number; max: number; stdDev: number; samples: number }>;
+    predictedTrends: Array<{ metric: string; direction: 'up' | 'down' | 'stable'; confidence: number; predictedAt: string }>;
+  } = {
+    totalPatternsLearned: 0,
+    totalDataPointsProcessed: 0,
+    lastLearningCycle: new Date().toISOString(),
+    learningCycles: 0,
+    knownPatterns: {},
+    behaviorBaselines: {},
+    predictedTrends: [],
+  };
+
   private initialized = false;
 
   constructor() {
@@ -593,6 +626,31 @@ class Store {
     if (dynamoDB.isAvailable) {
       dynamoDB.put('analyticsEvents', evt.id, evt).catch(err =>
         console.error('[Store] Analytics event persist error:', err)
+      );
+    }
+    this.aiMemory.totalDataPointsProcessed++;
+  }
+
+  addAILearning(learning: Store['aiLearnings'][number]): void {
+    this.aiLearnings.push(learning);
+    this.aiMemory.totalPatternsLearned++;
+    this.aiMemory.lastLearningCycle = new Date().toISOString();
+    if (this.aiLearnings.length > 5000) {
+      this.aiLearnings = this.aiLearnings.filter(l => l.isActive).slice(-2500);
+    }
+    console.log(`[AI Brain] New learning: ${learning.type} — ${learning.title} (confidence: ${learning.confidence}%)`);
+    if (dynamoDB.isAvailable) {
+      dynamoDB.put('aiLearnings', learning.id, learning).catch(err =>
+        console.error('[Store] AI learning persist error:', err)
+      );
+    }
+  }
+
+  updateAIMemory(updates: Partial<Store['aiMemory']>): void {
+    Object.assign(this.aiMemory, updates);
+    if (dynamoDB.isAvailable) {
+      dynamoDB.put('aiMemory', 'main', this.aiMemory).catch(err =>
+        console.error('[Store] AI memory persist error:', err)
       );
     }
   }
