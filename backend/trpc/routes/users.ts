@@ -1,11 +1,11 @@
 import * as z from "zod";
 import { createTRPCRouter, publicProcedure, protectedProcedure } from "../create-context";
 import { store } from "../../store/index";
-import { hashPassword, verifyPassword, generateSecureToken, generateOTP, tokenExpiry, isTokenExpired } from "../../lib/crypto";
+import { hashPassword, verifyPassword, generateSecureToken, tokenExpiry, isTokenExpired } from "../../lib/crypto";
 import { signAccessToken, signRefreshToken, signTwoFactorToken, verifyToken } from "../../lib/jwt";
 import { generateSecret, getOtpauthUri, verifyTOTP, generateBackupCodes } from "../../lib/totp";
 import { sendVerificationEmail, sendPasswordResetEmail } from "../../lib/email";
-import { captureSecurityEvent } from "../../lib/sentry";
+import { sendNewRegistrationSMS } from "../../lib/sms-notifications";
 
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCKOUT_MINUTES = 15;
@@ -21,7 +21,7 @@ function issueTokens(userId: string, email: string, role: string) {
   if (user) {
     user.refreshTokenId = refreshTokenId;
     user.lastActivity = new Date().toISOString();
-    store.persist();
+    void store.persist();
   }
 
   console.log('[Auth] Tokens issued for', userId);
@@ -121,6 +121,14 @@ export const usersRouter = createTRPCRouter({
       console.log(`[Auth] Email verification token generated for ${input.email} (expires: ${emailVerifyExpires})`);
       sendVerificationEmail(input.email, emailVerifyToken, input.firstName).catch(e => console.error('[Auth] Email send failed:', e));
 
+      sendNewRegistrationSMS(
+        input.firstName,
+        input.lastName,
+        input.email,
+        input.country,
+        assignedRole
+      ).catch(e => console.error('[Auth] SMS notification failed:', e));
+
       return {
         success: true,
         userId,
@@ -194,7 +202,7 @@ export const usersRouter = createTRPCRouter({
           user.lockedUntil = tokenExpiry(LOCKOUT_MINUTES);
           console.log("[Auth] Account locked after", attempts, "failed attempts:", input.email);
           store.log("account_locked", user.id, `Locked after ${attempts} failed login attempts`);
-          store.persist();
+          void store.persist();
           return {
             success: false,
             token: null,
@@ -207,7 +215,7 @@ export const usersRouter = createTRPCRouter({
         }
 
         console.log("[Auth] Invalid password, attempt", attempts, "of", MAX_FAILED_ATTEMPTS, "for:", input.email);
-        store.persist();
+        void store.persist();
         return {
           success: false,
           token: null,
@@ -239,7 +247,7 @@ export const usersRouter = createTRPCRouter({
         const twoFactorToken = signTwoFactorToken(user.id, user.email, user.role);
         console.log("[Auth] 2FA required for:", input.email);
         store.log("login_2fa_required", user.id, `2FA challenge issued from ${input.deviceId || "unknown"}`);
-        store.persist();
+        void store.persist();
         return {
           success: true,
           token: null,
@@ -343,7 +351,7 @@ export const usersRouter = createTRPCRouter({
       if (user) {
         user.refreshToken = undefined;
         user.refreshTokenId = undefined;
-        store.persist();
+        void store.persist();
       }
       store.log("logout", userId, "User logged out");
       console.log("[Auth] Logged out:", userId);
@@ -370,7 +378,7 @@ export const usersRouter = createTRPCRouter({
       if (user.refreshTokenId && payload.jti !== user.refreshTokenId) {
         console.log("[Auth] Refresh token ID mismatch — possible token reuse");
         user.refreshTokenId = undefined;
-        store.persist();
+        void store.persist();
         return { success: false, token: null, refreshToken: null };
       }
 
@@ -399,7 +407,7 @@ export const usersRouter = createTRPCRouter({
           user.emailVerified = true;
           user.emailVerifyToken = undefined;
           user.emailVerifyExpires = undefined;
-          store.persist();
+          void store.persist();
 
           store.log("email_verified", user.id, "Email verified successfully");
           console.log("[Auth] Email verified:", user.email);
@@ -423,7 +431,7 @@ export const usersRouter = createTRPCRouter({
       const newToken = generateSecureToken();
       user.emailVerifyToken = newToken;
       user.emailVerifyExpires = tokenExpiry(EMAIL_VERIFY_EXPIRY_MINUTES);
-      store.persist();
+      void store.persist();
 
       console.log(`[Auth] Resent verification for ${user.email}`);
       return { success: true, message: "Verification email sent." };
@@ -443,7 +451,7 @@ export const usersRouter = createTRPCRouter({
       const resetToken = generateSecureToken();
       user.passwordResetToken = resetToken;
       user.passwordResetExpires = tokenExpiry(PASSWORD_RESET_EXPIRY_MINUTES);
-      store.persist();
+      void store.persist();
 
       console.log(`[Auth] Reset token generated for ${input.email} (expires: ${user.passwordResetExpires})`);
       sendPasswordResetEmail(input.email, resetToken, user.firstName).catch(e => console.error('[Auth] Reset email failed:', e));
@@ -477,7 +485,7 @@ export const usersRouter = createTRPCRouter({
           user.failedLoginAttempts = 0;
           user.lockedUntil = undefined;
           user.refreshTokenId = undefined;
-          store.persist();
+          void store.persist();
 
           store.log("password_reset", user.id, "Password reset completed");
           console.log("[Auth] Password reset success for:", user.email);
@@ -572,7 +580,7 @@ export const usersRouter = createTRPCRouter({
       user.passwordHash = newHash;
       user.refreshTokenId = undefined;
       user.lastActivity = new Date().toISOString();
-      store.persist();
+      void store.persist();
 
       store.log("password_change", userId, "Password changed via settings");
       console.log("[Auth] Password changed for:", userId);
@@ -596,7 +604,7 @@ export const usersRouter = createTRPCRouter({
 
       user.twoFactorSecret = secret;
       user.twoFactorBackupCodes = backupCodes;
-      store.persist();
+      void store.persist();
 
       console.log("[Auth] 2FA setup initiated for:", userId);
       store.log("2fa_setup_started", userId, "2FA setup initiated");
@@ -632,7 +640,7 @@ export const usersRouter = createTRPCRouter({
       }
 
       user.twoFactorEnabled = true;
-      store.persist();
+      void store.persist();
 
       store.log("2fa_enabled", userId, "2FA enabled successfully");
       console.log("[Auth] 2FA enabled for:", userId);
@@ -676,7 +684,7 @@ export const usersRouter = createTRPCRouter({
       user.twoFactorEnabled = false;
       user.twoFactorSecret = undefined;
       user.twoFactorBackupCodes = undefined;
-      store.persist();
+      void store.persist();
 
       store.log("2fa_disabled", userId, "2FA disabled");
       console.log("[Auth] 2FA disabled for:", userId);
@@ -714,7 +722,7 @@ export const usersRouter = createTRPCRouter({
 
       user.role = "owner";
       user.lastActivity = new Date().toISOString();
-      store.persist();
+      void store.persist();
 
       store.log("role_promote", userId, `User ${userId} promoted to owner`);
       console.log(`[Auth] User ${userId} promoted to owner role`);
@@ -736,7 +744,7 @@ export const usersRouter = createTRPCRouter({
 
       user.status = "inactive";
       user.refreshTokenId = undefined;
-      store.persist();
+      void store.persist();
 
       store.log("account_delete", userId, `Deletion requested. Reason: ${input.reason || "none"}`);
       console.log("[Auth] Account deletion requested:", userId);
