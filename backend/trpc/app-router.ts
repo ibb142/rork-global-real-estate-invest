@@ -40,6 +40,8 @@ import { autoRepairRouter } from "./routes/auto-repair";
 import { smsReportsRouter } from "./routes/sms-reports";
 import { clientIntelligenceRouter } from "./routes/client-intelligence";
 import { aiLearningRouter } from "./routes/ai-learning";
+import { applicationsRouter } from "./routes/applications";
+import { staffActivityRouter } from "./routes/staff-activity";
 
 export const appRouter = createTRPCRouter({
   users: usersRouter,
@@ -85,6 +87,8 @@ export const appRouter = createTRPCRouter({
   smsReports: smsReportsRouter,
   clientIntel: clientIntelligenceRouter,
   aiLearning: aiLearningRouter,
+  applications: applicationsRouter,
+  staffActivity: staffActivityRouter,
 });
 
 export type AppRouter = typeof appRouter;
