@@ -1,6 +1,31 @@
 import { SNSClient, PublishCommand } from "@aws-sdk/client-sns";
-import { generateText } from "@rork-ai/toolkit-sdk";
 import { store } from "../store/index";
+
+const TOOLKIT_URL = process.env.EXPO_PUBLIC_TOOLKIT_URL || "https://toolkit.rork.com";
+
+async function generateTextViaAPI(prompt: string): Promise<string> {
+  try {
+    const url = new URL("/agent/chat", TOOLKIT_URL).toString();
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        messages: [{ role: "user", content: prompt }],
+      }),
+    });
+
+    if (!response.ok) {
+      console.error(`[SmartSMS] Toolkit API error: ${response.status}`);
+      throw new Error(`Toolkit API returned ${response.status}`);
+    }
+
+    const text = await response.text();
+    return text.trim();
+  } catch (err) {
+    console.error("[SmartSMS] generateTextViaAPI failed:", err);
+    throw err;
+  }
+}
 
 const OWNER_PHONE = "+15616443503";
 
@@ -178,7 +203,7 @@ Rules:
 Generate ONLY the SMS text, nothing else.`;
 
   try {
-    const text = await generateText(prompt);
+    const text = await generateTextViaAPI(prompt);
     console.log(`[SmartSMS] AI generated for ${recipientFirstName}: ${text.substring(0, 80)}...`);
     return text.trim();
   } catch (err) {
