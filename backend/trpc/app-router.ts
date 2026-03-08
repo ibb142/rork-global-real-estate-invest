@@ -35,6 +35,10 @@ import { externalApisRouter } from "./routes/external-apis";
 import { testingRouter } from "./routes/testing";
 import { envVaultRouter } from "./routes/env-vault";
 import { waitlistRouter } from "./routes/waitlist";
+import { engagementIntelligenceRouter } from "./routes/engagement-intelligence";
+import { autoRepairRouter } from "./routes/auto-repair";
+import { smsReportsRouter } from "./routes/sms-reports";
+import { clientIntelligenceRouter } from "./routes/client-intelligence";
 
 export const appRouter = createTRPCRouter({
   users: usersRouter,
@@ -75,6 +79,10 @@ export const appRouter = createTRPCRouter({
   testing: testingRouter,
   envVault: envVaultRouter,
   waitlist: waitlistRouter,
+  engagementIntel: engagementIntelligenceRouter,
+  autoRepair: autoRepairRouter,
+  smsReports: smsReportsRouter,
+  clientIntel: clientIntelligenceRouter,
 });
 
 export type AppRouter = typeof appRouter;
