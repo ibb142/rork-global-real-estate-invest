@@ -19,10 +19,7 @@ const ENV_SCHEMA: EnvVar[] = [
   { name: "PAYPAL_ENV", required: false, category: "payments", description: "PayPal environment (sandbox/production)" },
   { name: "COINBASE_COMMERCE_API_KEY", required: false, category: "payments", description: "Coinbase Commerce API key" },
   { name: "CIRCLE_API_KEY", required: false, category: "payments", description: "Circle USDC API key" },
-  { name: "TWILIO_ACCOUNT_SID", required: false, category: "communications", description: "Twilio account SID" },
-  { name: "TWILIO_AUTH_TOKEN", required: false, category: "communications", description: "Twilio auth token" },
-  { name: "TWILIO_PHONE_NUMBER", required: false, category: "communications", description: "Twilio phone number" },
-  { name: "TWILIO_WHATSAPP_NUMBER", required: false, category: "communications", description: "Twilio WhatsApp number" },
+
   { name: "SENDGRID_API_KEY", required: false, category: "communications", description: "SendGrid API key" },
   { name: "SENDGRID_FROM_EMAIL", required: false, category: "communications", description: "SendGrid sender email" },
   { name: "MAILGUN_API_KEY", required: false, category: "communications", description: "Mailgun API key" },
@@ -93,8 +90,8 @@ export function validateEnv(): EnvValidationResult {
     warnings.push("WARNING: No email provider configured — emails will be logged only");
   }
 
-  if (!process.env.TWILIO_ACCOUNT_SID) {
-    warnings.push("WARNING: Twilio not configured — SMS/WhatsApp will be logged only");
+  if (!process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY) {
+    warnings.push("WARNING: AWS SNS not configured — SMS will be logged only");
   }
 
   const totalVars = ENV_SCHEMA.length;
