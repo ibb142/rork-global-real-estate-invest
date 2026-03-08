@@ -103,7 +103,9 @@ const generateTrades = (propertyId: string, basePrice: number): ShareTrade[] => 
   return trades;
 };
 
-export const tokenizedProperties: TokenizedProperty[] = [
+export const tokenizedProperties: TokenizedProperty[] = [];
+
+const _SAMPLE_PROPERTIES: TokenizedProperty[] = [
   {
     id: 'tp-1',
     name: 'Coral Gables Estate',
@@ -490,28 +492,7 @@ export const tokenizedProperties: TokenizedProperty[] = [
   },
 ];
 
-export const mockUserHoldings: UserShareHolding[] = [
-  {
-    propertyId: 'tp-1',
-    shares: 5000,
-    avgCost: 1.02,
-    currentPrice: 1.18,
-    totalInvested: 5100,
-    currentValue: 5900,
-    profit: 800,
-    profitPercent: 15.69,
-  },
-  {
-    propertyId: 'tp-2',
-    shares: 2000,
-    avgCost: 1.10,
-    currentPrice: 1.32,
-    totalInvested: 2200,
-    currentValue: 2640,
-    profit: 440,
-    profitPercent: 20.0,
-  },
-];
+export const mockUserHoldings: UserShareHolding[] = [];
 
 export const SHARE_TRADING_CONFIG = {
   initialPrice: 1.00,
@@ -542,7 +523,7 @@ export interface IPXGlobalIndex {
   history: { time: string; value: number }[];
 }
 
-const generateIndexHistory = (): { time: string; value: number }[] => {
+const _generateIndexHistory = (): { time: string; value: number }[] => {
   const data: { time: string; value: number }[] = [];
   let value = 100;
   const now = new Date();
@@ -558,30 +539,30 @@ const generateIndexHistory = (): { time: string; value: number }[] => {
   return data;
 };
 
-const computeTotalMarketCap = (): number => {
+const _computeTotalMarketCap = (): number => {
   return tokenizedProperties.reduce((sum, p) => sum + p.marketCap, 0);
 };
 
-const computeTotalVolume = (): number => {
+const _computeTotalVolume = (): number => {
   return tokenizedProperties.reduce((sum, p) => sum + p.volume24h, 0);
 };
 
 export const ipxGlobalIndex: IPXGlobalIndex = {
   name: 'IVX HOLDINGS LLC Index',
   ticker: 'IVXHOLDINGS-GREI',
-  currentValue: 148.72,
-  change24h: 3.85,
-  changePercent24h: 2.66,
-  high24h: 150.10,
-  low24h: 143.20,
-  totalMarketCap: computeTotalMarketCap(),
-  totalVolume24h: computeTotalVolume(),
-  totalProperties: tokenizedProperties.length,
-  totalInvestors: 47832,
-  countriesActive: 9,
-  allTimeHigh: 152.40,
-  allTimeHighDate: '2026-02-14T00:00:00Z',
-  history: generateIndexHistory(),
+  currentValue: 0,
+  change24h: 0,
+  changePercent24h: 0,
+  high24h: 0,
+  low24h: 0,
+  totalMarketCap: 0,
+  totalVolume24h: 0,
+  totalProperties: 0,
+  totalInvestors: 0,
+  countriesActive: 0,
+  allTimeHigh: 0,
+  allTimeHighDate: '',
+  history: [],
 };
 
 export const getGlobalStats = () => {
