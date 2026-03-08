@@ -139,8 +139,8 @@ echo ""
 # ─── SECRETS MANAGER ─────────────────────────────────────────
 echo -e "${BLUE}[Secrets Manager]${NC}"
 if command -v aws >/dev/null 2>&1 && aws sts get-caller-identity >/dev/null 2>&1; then
-  REQUIRED_SECRETS=("jwt-secret")
-  OPTIONAL_SECRETS=("stripe-secret-key" "stripe-webhook-secret" "sendgrid-api-key" "twilio-account-sid" "twilio-auth-token")
+  REQUIRED_SECRETS=("jwt-secret" "aws-access-key-id" "aws-secret-access-key" "aws-region" "aws-s3-bucket")
+  OPTIONAL_SECRETS=("stripe-secret-key" "stripe-publishable-key" "stripe-webhook-secret" "sendgrid-api-key" "sendgrid-from-email" "twilio-account-sid" "twilio-auth-token" "twilio-phone-number" "plaid-client-id" "plaid-secret" "plaid-env" "onfido-api-key" "sentry-dsn")
 
   for secret in "${REQUIRED_SECRETS[@]}"; do
     SECRET_ID="${APP_NAME}/${secret}"
