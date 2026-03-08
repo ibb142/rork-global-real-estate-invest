@@ -244,7 +244,7 @@ function PulseIndicator({ active }: { active: boolean }) {
 export default function LandingAnalyticsScreen() {
   const router = useRouter();
   const { isAuthenticated, isAdmin, isLoading: authLoading, refreshSession } = useAuth();
-  const [period, setPeriod] = useState<PeriodType>('30d');
+  const [period, setPeriod] = useState<PeriodType>('all');
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [_retryCount, setRetryCount] = useState(0);
   const [liveData, setLiveData] = useState<any>(null);
