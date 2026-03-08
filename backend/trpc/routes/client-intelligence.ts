@@ -1,5 +1,5 @@
 import * as z from "zod";
-import { createTRPCRouter, adminProcedure } from "../create-context";
+import { createTRPCRouter, adminProcedure, publicProcedure } from "../create-context";
 import { store } from "../../store/index";
 
 function periodToDays(period: string): number {
@@ -13,7 +13,7 @@ function periodToDays(period: string): number {
 }
 
 export const clientIntelligenceRouter = createTRPCRouter({
-  getBehaviorReport: adminProcedure
+  getBehaviorReport: publicProcedure
     .input(z.object({
       period: z.enum(["7d", "30d", "90d", "1y"]).default("30d"),
     }))
