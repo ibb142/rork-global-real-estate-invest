@@ -4,7 +4,7 @@
   "requiresCompatibilities": ["FARGATE"],
   "cpu": "512",
   "memory": "1024",
-  "executionRoleArn": "arn:aws:iam::ACCOUNT_ID:role/ecsTaskExecutionRole",
+  "executionRoleArn": "arn:aws:iam::ACCOUNT_ID:role/ivx-holdings-ecs-execution-role",
   "taskRoleArn": "arn:aws:iam::ACCOUNT_ID:role/ivx-holdings-task-role",
   "containerDefinitions": [
     {
@@ -22,7 +22,8 @@
         { "name": "NODE_ENV", "value": "production" },
         { "name": "PORT", "value": "3000" },
         { "name": "HOST", "value": "0.0.0.0" },
-        { "name": "ALLOWED_ORIGINS", "value": "https://ivxholding.com,https://www.ivxholding.com,https://app.ivxholding.com" }
+        { "name": "ALLOWED_ORIGINS", "value": "https://ivxholding.com,https://www.ivxholding.com,https://app.ivxholding.com" },
+        { "name": "STORAGE_PROVIDER", "value": "s3" }
       ],
       "secrets": [
         {
@@ -50,6 +51,10 @@
           "valueFrom": "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:ivx-holdings/stripe-secret-key"
         },
         {
+          "name": "STRIPE_PUBLISHABLE_KEY",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:ivx-holdings/stripe-publishable-key"
+        },
+        {
           "name": "STRIPE_WEBHOOK_SECRET",
           "valueFrom": "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:ivx-holdings/stripe-webhook-secret"
         },
@@ -58,12 +63,40 @@
           "valueFrom": "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:ivx-holdings/sendgrid-api-key"
         },
         {
+          "name": "SENDGRID_FROM_EMAIL",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:ivx-holdings/sendgrid-from-email"
+        },
+        {
           "name": "TWILIO_ACCOUNT_SID",
           "valueFrom": "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:ivx-holdings/twilio-account-sid"
         },
         {
           "name": "TWILIO_AUTH_TOKEN",
           "valueFrom": "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:ivx-holdings/twilio-auth-token"
+        },
+        {
+          "name": "TWILIO_PHONE_NUMBER",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:ivx-holdings/twilio-phone-number"
+        },
+        {
+          "name": "PLAID_CLIENT_ID",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:ivx-holdings/plaid-client-id"
+        },
+        {
+          "name": "PLAID_SECRET",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:ivx-holdings/plaid-secret"
+        },
+        {
+          "name": "PLAID_ENV",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:ivx-holdings/plaid-env"
+        },
+        {
+          "name": "ONFIDO_API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:ivx-holdings/onfido-api-key"
+        },
+        {
+          "name": "SENTRY_DSN",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:ivx-holdings/sentry-dsn"
         }
       ],
       "logConfiguration": {
