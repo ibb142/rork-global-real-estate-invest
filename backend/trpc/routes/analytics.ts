@@ -1378,4 +1378,390 @@ export const analyticsRouter = createTRPCRouter({
         content,
       };
     }),
+
+  getAIVisitorIntelligence: adminProcedure
+    .input(z.object({
+      period: z.enum(["1h", "24h", "7d", "30d", "90d", "all"]).default("30d"),
+    }))
+    .query(async ({ input }) => {
+      console.log("[AI Intel] Generating visitor intelligence for period:", input.period);
+
+      const now = Date.now();
+      let cutoffMs = 30 * 24 * 60 * 60 * 1000;
+      switch (input.period) {
+        case "1h": cutoffMs = 60 * 60 * 1000; break;
+        case "24h": cutoffMs = 24 * 60 * 60 * 1000; break;
+        case "7d": cutoffMs = 7 * 24 * 60 * 60 * 1000; break;
+        case "30d": cutoffMs = 30 * 24 * 60 * 60 * 1000; break;
+        case "90d": cutoffMs = 90 * 24 * 60 * 60 * 1000; break;
+        case "all": cutoffMs = 365 * 10 * 24 * 60 * 60 * 1000; break;
+      }
+      const cutoffTime = now - cutoffMs;
+
+      const events = store.analyticsEvents.filter(
+        e => new Date(e.timestamp).getTime() >= cutoffTime
+      );
+      const landingEvents = events.filter(e => e.userId === "landing_visitor");
+      const appEvents = events.filter(e => e.userId !== "landing_visitor");
+
+      const sessionMap = new Map<string, {
+        events: AnalyticsEvent[];
+        firstSeen: number;
+        lastSeen: number;
+        geo?: AnalyticsEvent["geo"];
+        device: string;
+        hasFormSubmit: boolean;
+        hasCta: boolean;
+        hasScroll75: boolean;
+        engagementScore: number;
+      }>();
+
+      landingEvents.forEach(e => {
+        let sess = sessionMap.get(e.sessionId);
+        if (!sess) {
+          sess = {
+            events: [],
+            firstSeen: new Date(e.timestamp).getTime(),
+            lastSeen: new Date(e.timestamp).getTime(),
+            geo: e.geo,
+            device: (e.properties?.device as string) || "Unknown",
+            hasFormSubmit: false,
+            hasCta: false,
+            hasScroll75: false,
+            engagementScore: 0,
+          };
+          sessionMap.set(e.sessionId, sess);
+        }
+        sess.events.push(e);
+        const ts = new Date(e.timestamp).getTime();
+        if (ts < sess.firstSeen) sess.firstSeen = ts;
+        if (ts > sess.lastSeen) sess.lastSeen = ts;
+        if (!sess.geo && e.geo) sess.geo = e.geo;
+
+        if (e.event === "form_submit") sess.hasFormSubmit = true;
+        if (e.event.startsWith("cta_")) sess.hasCta = true;
+        if (e.event === "scroll_75" || e.event === "scroll_100") sess.hasScroll75 = true;
+      });
+
+      sessionMap.forEach(sess => {
+        let score = 0;
+        score += Math.min(sess.events.length * 5, 25);
+        const duration = (sess.lastSeen - sess.firstSeen) / 1000;
+        score += Math.min(Math.floor(duration / 10), 25);
+        if (sess.hasScroll75) score += 15;
+        if (sess.hasCta) score += 15;
+        if (sess.hasFormSubmit) score += 20;
+        sess.engagementScore = Math.min(score, 100);
+      });
+
+      const highIntentVisitors = Array.from(sessionMap.entries())
+        .filter(([, s]) => s.engagementScore >= 60)
+        .sort((a, b) => b[1].engagementScore - a[1].engagementScore)
+        .slice(0, 20)
+        .map(([sid, s]) => ({
+          sessionId: sid,
+          engagementScore: s.engagementScore,
+          eventCount: s.events.length,
+          duration: Math.round((s.lastSeen - s.firstSeen) / 1000),
+          geo: s.geo,
+          device: s.device,
+          hasFormSubmit: s.hasFormSubmit,
+          hasCta: s.hasCta,
+          hasScroll75: s.hasScroll75,
+          firstSeen: new Date(s.firstSeen).toISOString(),
+          lastSeen: new Date(s.lastSeen).toISOString(),
+          intent: s.hasFormSubmit ? "hot_lead" as const : s.hasCta ? "warm" as const : s.hasScroll75 ? "interested" as const : "browsing" as const,
+        }));
+
+      const recentVisitors = Array.from(sessionMap.entries())
+        .sort((a, b) => b[1].lastSeen - a[1].lastSeen)
+        .slice(0, 30)
+        .map(([sid, s]) => ({
+          sessionId: sid,
+          engagementScore: s.engagementScore,
+          eventCount: s.events.length,
+          duration: Math.round((s.lastSeen - s.firstSeen) / 1000),
+          geo: s.geo,
+          device: s.device,
+          hasFormSubmit: s.hasFormSubmit,
+          hasCta: s.hasCta,
+          firstSeen: new Date(s.firstSeen).toISOString(),
+          lastSeen: new Date(s.lastSeen).toISOString(),
+          intent: s.hasFormSubmit ? "hot_lead" as const : s.hasCta ? "warm" as const : s.hasScroll75 ? "interested" as const : "browsing" as const,
+        }));
+
+      const hourlyHeatmap = new Array(24).fill(0) as number[];
+      const dayOfWeekMap = new Array(7).fill(0) as number[];
+      const sourceMap: Record<string, { count: number; conversions: number }> = {};
+      const countryMap: Record<string, { visits: number; conversions: number; avgScore: number; scores: number[] }> = {};
+
+      landingEvents.forEach(e => {
+        const d = new Date(e.timestamp);
+        hourlyHeatmap[d.getHours()]++;
+        dayOfWeekMap[d.getDay()]++;
+
+        const ref = (e.properties?.referrer as string) || "direct";
+        const src = ref === "direct" || ref === "app" ? ref : (() => {
+          try { return new URL(ref).hostname; } catch { return ref; }
+        })();
+        if (!sourceMap[src]) sourceMap[src] = { count: 0, conversions: 0 };
+        sourceMap[src].count++;
+        if (e.event === "form_submit") sourceMap[src].conversions++;
+
+        const country = e.geo?.country || "Unknown";
+        if (!countryMap[country]) countryMap[country] = { visits: 0, conversions: 0, avgScore: 0, scores: [] };
+        countryMap[country].visits++;
+        if (e.event === "form_submit") countryMap[country].conversions++;
+      });
+
+      sessionMap.forEach(sess => {
+        const country = sess.geo?.country || "Unknown";
+        if (countryMap[country]) countryMap[country].scores.push(sess.engagementScore);
+      });
+
+      Object.values(countryMap).forEach(c => {
+        c.avgScore = c.scores.length > 0 ? Math.round(c.scores.reduce((a, b) => a + b, 0) / c.scores.length) : 0;
+      });
+
+      const totalSessions = sessionMap.size;
+      const hotLeads = Array.from(sessionMap.values()).filter(s => s.hasFormSubmit).length;
+      const warmLeads = Array.from(sessionMap.values()).filter(s => s.hasCta && !s.hasFormSubmit).length;
+      const engagedVisitors = Array.from(sessionMap.values()).filter(s => s.engagementScore >= 40).length;
+      const bouncedVisitors = Array.from(sessionMap.values()).filter(s => s.events.length <= 1).length;
+      const avgEngagement = totalSessions > 0
+        ? Math.round(Array.from(sessionMap.values()).reduce((sum, s) => sum + s.engagementScore, 0) / totalSessions)
+        : 0;
+
+      const peakHour = hourlyHeatmap.indexOf(Math.max(...hourlyHeatmap));
+      const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+      const peakDay = dayNames[dayOfWeekMap.indexOf(Math.max(...dayOfWeekMap))];
+
+      const topSources = Object.entries(sourceMap)
+        .sort((a, b) => b[1].count - a[1].count)
+        .slice(0, 10)
+        .map(([source, data]) => ({
+          source,
+          visits: data.count,
+          conversions: data.conversions,
+          conversionRate: data.count > 0 ? Math.round((data.conversions / data.count) * 10000) / 100 : 0,
+        }));
+
+      const topCountries = Object.entries(countryMap)
+        .filter(([c]) => c !== "Unknown")
+        .sort((a, b) => b[1].visits - a[1].visits)
+        .slice(0, 15)
+        .map(([country, data]) => ({
+          country,
+          visits: data.visits,
+          conversions: data.conversions,
+          avgEngagement: data.avgScore,
+          conversionRate: data.visits > 0 ? Math.round((data.conversions / data.visits) * 10000) / 100 : 0,
+        }));
+
+      const aiInsights: string[] = [];
+
+      if (totalSessions === 0) {
+        aiInsights.push("No visitor data yet. Once your landing page starts receiving traffic, AI will analyze visitor behavior patterns, identify high-value leads, and provide actionable intelligence.");
+      } else {
+        if (hotLeads > 0) {
+          aiInsights.push(`${hotLeads} hot lead${hotLeads > 1 ? "s" : ""} detected — ${hotLeads > 1 ? "these visitors" : "this visitor"} completed your investment form. Priority follow-up recommended within 24 hours.`);
+        }
+        if (warmLeads > 0) {
+          aiInsights.push(`${warmLeads} warm lead${warmLeads > 1 ? "s" : ""} clicked CTA buttons but didn't complete the form. Consider retargeting with personalized email.`);
+        }
+        if (avgEngagement < 30) {
+          aiInsights.push(`Average engagement score is ${avgEngagement}/100 — visitors are leaving early. Consider improving hero section messaging or page load speed.`);
+        } else if (avgEngagement >= 60) {
+          aiInsights.push(`Strong engagement score of ${avgEngagement}/100 — visitors are deeply exploring your offering.`);
+        }
+        const bounceRate = totalSessions > 0 ? Math.round((bouncedVisitors / totalSessions) * 100) : 0;
+        if (bounceRate > 60) {
+          aiInsights.push(`High bounce rate of ${bounceRate}%. Many visitors leave after viewing only one page. Test different headlines or add above-the-fold social proof.`);
+        }
+        if (peakHour >= 0) {
+          aiInsights.push(`Peak traffic at ${peakHour}:00 on ${peakDay}s. Schedule marketing campaigns and social posts around this time for maximum impact.`);
+        }
+        if (topSources.length > 0 && topSources[0].conversionRate > 0) {
+          aiInsights.push(`Best converting source: ${topSources[0].source} (${topSources[0].conversionRate}% conversion). Increase ad spend on this channel.`);
+        }
+        if (topCountries.length > 0) {
+          const topCountry = topCountries[0];
+          aiInsights.push(`Top market: ${topCountry.country} with ${topCountry.visits} visits and ${topCountry.avgEngagement}/100 avg engagement. Consider localized content for this audience.`);
+        }
+      }
+
+      const liveSessions = store.getLiveSessions();
+      const activeNow = liveSessions.filter(s => now - new Date(s.lastSeen).getTime() < 60000);
+
+      return {
+        period: input.period,
+        summary: {
+          totalSessions,
+          totalEvents: landingEvents.length,
+          appEvents: appEvents.length,
+          hotLeads,
+          warmLeads,
+          engagedVisitors,
+          bouncedVisitors,
+          avgEngagement,
+          conversionRate: totalSessions > 0 ? Math.round((hotLeads / totalSessions) * 10000) / 100 : 0,
+        },
+        liveNow: {
+          activeVisitors: activeNow.length,
+          sessions: activeNow.map(s => ({
+            sessionId: s.sessionId,
+            device: s.device,
+            os: s.os,
+            browser: s.browser,
+            geo: s.geo,
+            currentStep: s.currentStep,
+            sessionDuration: s.sessionDuration,
+            activeTime: s.activeTime,
+            lastSeen: s.lastSeen,
+          })),
+        },
+        highIntentVisitors,
+        recentVisitors,
+        patterns: {
+          hourlyHeatmap: hourlyHeatmap.map((count, hour) => ({ hour, count })),
+          dayOfWeek: dayOfWeekMap.map((count, day) => ({ day: dayNames[day], count })),
+          peakHour,
+          peakDay,
+        },
+        topSources,
+        topCountries,
+        aiInsights,
+        lastUpdated: new Date().toISOString(),
+      };
+    }),
+
+  getVisitorAlerts: adminProcedure
+    .query(async () => {
+      console.log("[AI Intel] Checking visitor alerts");
+      const now = Date.now();
+      const fiveMin = now - 5 * 60 * 1000;
+      const oneHour = now - 60 * 60 * 1000;
+
+      const recentEvents = store.analyticsEvents.filter(
+        e => e.userId === "landing_visitor" && new Date(e.timestamp).getTime() >= fiveMin
+      );
+      const hourEvents = store.analyticsEvents.filter(
+        e => e.userId === "landing_visitor" && new Date(e.timestamp).getTime() >= oneHour
+      );
+
+      const liveSessions = store.getLiveSessions();
+      const activeNow = liveSessions.filter(s => now - new Date(s.lastSeen).getTime() < 60000);
+
+      const alerts: Array<{
+        id: string;
+        type: "hot_lead" | "traffic_spike" | "new_country" | "high_engagement" | "live_visitor";
+        severity: "critical" | "high" | "medium" | "info";
+        title: string;
+        message: string;
+        timestamp: string;
+        data?: Record<string, unknown>;
+      }> = [];
+
+      const recentFormSubmits = recentEvents.filter(e => e.event === "form_submit");
+      recentFormSubmits.forEach(e => {
+        alerts.push({
+          id: `alert_${e.id}`,
+          type: "hot_lead",
+          severity: "critical",
+          title: "New Hot Lead!",
+          message: `A visitor from ${e.geo?.city || "unknown city"}, ${e.geo?.country || "unknown"} just submitted the investment form.`,
+          timestamp: e.timestamp,
+          data: {
+            sessionId: e.sessionId,
+            city: e.geo?.city,
+            country: e.geo?.country,
+            interest: e.properties?.investmentInterest,
+          },
+        });
+      });
+
+      if (activeNow.length >= 3) {
+        alerts.push({
+          id: `alert_traffic_${now}`,
+          type: "traffic_spike",
+          severity: "high",
+          title: "Traffic Spike!",
+          message: `${activeNow.length} visitors are browsing your landing page right now.`,
+          timestamp: new Date().toISOString(),
+          data: { activeCount: activeNow.length },
+        });
+      }
+
+      activeNow.forEach(s => {
+        alerts.push({
+          id: `alert_live_${s.sessionId}`,
+          type: "live_visitor",
+          severity: "info",
+          title: "Live Visitor",
+          message: `${s.device} user from ${s.geo?.city || "unknown"}, ${s.geo?.country || "unknown"} — on step ${s.currentStep}, active ${s.activeTime}s`,
+          timestamp: s.lastSeen,
+          data: {
+            sessionId: s.sessionId,
+            device: s.device,
+            os: s.os,
+            browser: s.browser,
+            geo: s.geo,
+            step: s.currentStep,
+            duration: s.sessionDuration,
+          },
+        });
+      });
+
+      const recentHighEngagement = recentEvents.filter(e => {
+        const rawScore = e.properties?.engagementScore;
+        const score = typeof rawScore === 'number' ? rawScore : typeof rawScore === 'string' ? parseInt(rawScore, 10) : 0;
+        return score >= 70;
+      });
+      if (recentHighEngagement.length > 0) {
+        alerts.push({
+          id: `alert_engage_${now}`,
+          type: "high_engagement",
+          severity: "medium",
+          title: "High Engagement Detected",
+          message: `${recentHighEngagement.length} visitor${recentHighEngagement.length > 1 ? "s" : ""} showing strong interest in the last 5 minutes.`,
+          timestamp: new Date().toISOString(),
+        });
+      }
+
+      const countries = new Set<string>();
+      hourEvents.forEach(e => {
+        if (e.geo?.country) countries.add(e.geo.country);
+      });
+
+      const allTimeCountries = new Set<string>();
+      store.analyticsEvents
+        .filter(e => e.userId === "landing_visitor" && new Date(e.timestamp).getTime() < oneHour)
+        .forEach(e => { if (e.geo?.country) allTimeCountries.add(e.geo.country); });
+
+      countries.forEach(c => {
+        if (!allTimeCountries.has(c)) {
+          alerts.push({
+            id: `alert_country_${c}_${now}`,
+            type: "new_country",
+            severity: "medium",
+            title: "New Market Detected!",
+            message: `First-time visitor from ${c}. Consider adding localized content for this market.`,
+            timestamp: new Date().toISOString(),
+            data: { country: c },
+          });
+        }
+      });
+
+      alerts.sort((a, b) => {
+        const sevOrder = { critical: 0, high: 1, medium: 2, info: 3 };
+        return sevOrder[a.severity] - sevOrder[b.severity] || new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+      });
+
+      return {
+        alerts: alerts.slice(0, 50),
+        activeVisitors: activeNow.length,
+        totalAlertsLastHour: alerts.length,
+        timestamp: new Date().toISOString(),
+      };
+    }),
 });
