@@ -108,6 +108,7 @@ function RootLayoutNav() {
       <Stack.Screen name="sms-reports" options={HIDDEN_HEADER} />
       <Stack.Screen name="activation-center" options={HIDDEN_HEADER} />
       <Stack.Screen name="client-intelligence" options={HIDDEN_HEADER} />
+      <Stack.Screen name="analytics-report" options={HIDDEN_HEADER} />
     </Stack>
   );
 }
