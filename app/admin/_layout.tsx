@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, StyleSheet } from 'react-native';
 import { Tabs } from 'expo-router';
-import { LayoutDashboard, Users, ArrowLeftRight, Crown, TrendingUp } from 'lucide-react-native';
+import { LayoutDashboard, Users, ArrowLeftRight, Crown, TrendingUp, FileText } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 
 
@@ -68,6 +68,15 @@ export default function AdminLayout() {
           title: 'Transactions',
           tabBarIcon: ({ color, size }) => (
             <ArrowLeftRight size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="applications"
+        options={{
+          title: 'Applications',
+          tabBarIcon: ({ color, size }) => (
+            <FileText size={size} color={color} />
           ),
         }}
       />
@@ -277,6 +286,18 @@ export default function AdminLayout() {
       />
       <Tabs.Screen
         name="visitor-intelligence"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="staff-activity"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="retargeting"
         options={{
           href: null,
         }}
