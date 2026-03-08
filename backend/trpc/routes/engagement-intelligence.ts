@@ -32,203 +32,84 @@ interface RetargetingCampaign {
   createdAt: string;
 }
 
-const audienceSegments: AudienceSegment[] = [
-  {
-    id: 'seg_high_intent',
-    name: 'High Intent Visitors',
-    description: 'Visitors who reached Step 2+ in funnel, scrolled 75%+, or spent 60s+ on page',
-    criteria: { funnelStep: '>=2', scrollDepth: '>=75', timeOnPage: '>=60s' },
-    size: 4820,
-    platforms: ['meta', 'google', 'tiktok'],
-    status: 'active',
-    lastSynced: new Date(Date.now() - 3600000).toISOString(),
-    conversionRate: 12.4,
-    costPerAcquisition: 8.50,
-  },
-  {
-    id: 'seg_abandoned_funnel',
-    name: 'Abandoned Funnel',
-    description: 'Started signup funnel but did not complete — warm leads for retargeting',
-    criteria: { funnelStep: '>=1', completed: false },
-    size: 8340,
-    platforms: ['meta', 'google'],
-    status: 'active',
-    lastSynced: new Date(Date.now() - 7200000).toISOString(),
-    conversionRate: 8.7,
-    costPerAcquisition: 12.30,
-  },
-  {
-    id: 'seg_property_browsers',
-    name: 'Property Browsers',
-    description: 'Viewed properties section, clicked invest buttons, or scrolled to listings',
-    criteria: { viewedProperties: true, scrollDepth: '>=25' },
-    size: 12600,
-    platforms: ['meta', 'google', 'tiktok', 'linkedin'],
-    status: 'active',
-    lastSynced: new Date(Date.now() - 1800000).toISOString(),
-    conversionRate: 6.2,
-    costPerAcquisition: 15.80,
-  },
-  {
-    id: 'seg_return_visitors',
-    name: 'Return Visitors',
-    description: 'Visited 2+ times in 7 days — strong purchase intent signal',
-    criteria: { visitCount: '>=2', window: '7d' },
-    size: 2150,
-    platforms: ['meta', 'google'],
-    status: 'active',
-    lastSynced: new Date(Date.now() - 900000).toISOString(),
-    conversionRate: 18.9,
-    costPerAcquisition: 5.20,
-  },
-  {
-    id: 'seg_geo_premium',
-    name: 'Premium Geo Markets',
-    description: 'Visitors from high-value markets: US, UAE, UK, Singapore, Switzerland',
-    criteria: { countries: ['US', 'AE', 'GB', 'SG', 'CH'] },
-    size: 9400,
-    platforms: ['meta', 'google', 'linkedin'],
-    status: 'active',
-    lastSynced: new Date(Date.now() - 5400000).toISOString(),
-    conversionRate: 9.8,
-    costPerAcquisition: 11.40,
-  },
-  {
-    id: 'seg_lookalike_investors',
-    name: 'Lookalike — Active Investors',
-    description: '1% lookalike of users who deposited $1000+ based on behavioral signals',
-    criteria: { type: 'lookalike', source: 'deposited_1000+', percentage: 1 },
-    size: 2800000,
-    platforms: ['meta', 'tiktok'],
-    status: 'syncing',
-    lastSynced: new Date(Date.now() - 86400000).toISOString(),
-    conversionRate: 2.1,
-    costPerAcquisition: 28.50,
-  },
-  {
-    id: 'seg_social_referrals',
-    name: 'Social Media Referrals',
-    description: 'Visitors from Instagram, TikTok, Twitter — social-first audience',
-    criteria: { referrer: ['instagram.com', 'tiktok.com', 'twitter.com', 'facebook.com'] },
-    size: 6200,
-    platforms: ['meta', 'tiktok', 'twitter'],
-    status: 'active',
-    lastSynced: new Date(Date.now() - 2700000).toISOString(),
-    conversionRate: 7.5,
-    costPerAcquisition: 14.20,
-  },
-  {
-    id: 'seg_mobile_users',
-    name: 'Mobile App Prospects',
-    description: 'Mobile visitors who spent 30s+ — prime for app install campaigns',
-    criteria: { device: 'Mobile', timeOnPage: '>=30s' },
-    size: 15400,
-    platforms: ['meta', 'google', 'tiktok'],
-    status: 'active',
-    lastSynced: new Date(Date.now() - 4500000).toISOString(),
-    conversionRate: 4.8,
-    costPerAcquisition: 3.50,
-  },
-];
+function buildAudienceSegmentsFromStore(): AudienceSegment[] {
+  const landingEvents = store.analyticsEvents.filter(e => e.userId === 'landing_visitor');
+  const sessions = new Map<string, typeof store.analyticsEvents>();
+  landingEvents.forEach(e => {
+    if (!sessions.has(e.sessionId)) sessions.set(e.sessionId, []);
+    sessions.get(e.sessionId)!.push(e);
+  });
 
-const retargetingCampaigns: RetargetingCampaign[] = [
-  {
-    id: 'camp_meta_high_intent',
-    name: 'Meta — High Intent Retarget',
-    platform: 'meta',
-    audienceSegment: 'seg_high_intent',
-    status: 'active',
-    budget: 5000,
-    spent: 3420,
-    impressions: 284000,
-    clicks: 8520,
-    conversions: 412,
-    ctr: 3.0,
-    cpc: 0.40,
-    roas: 8.4,
-    createdAt: new Date(Date.now() - 14 * 86400000).toISOString(),
-  },
-  {
-    id: 'camp_google_abandoned',
-    name: 'Google — Abandoned Funnel Recovery',
-    platform: 'google',
-    audienceSegment: 'seg_abandoned_funnel',
-    status: 'active',
-    budget: 3000,
-    spent: 1850,
-    impressions: 156000,
-    clicks: 4680,
-    conversions: 198,
-    ctr: 3.0,
-    cpc: 0.40,
-    roas: 6.2,
-    createdAt: new Date(Date.now() - 10 * 86400000).toISOString(),
-  },
-  {
-    id: 'camp_tiktok_awareness',
-    name: 'TikTok — Property Showcase',
-    platform: 'tiktok',
-    audienceSegment: 'seg_social_referrals',
-    status: 'active',
-    budget: 2000,
-    spent: 980,
-    impressions: 520000,
-    clicks: 15600,
-    conversions: 312,
-    ctr: 3.0,
-    cpc: 0.06,
-    roas: 4.8,
-    createdAt: new Date(Date.now() - 7 * 86400000).toISOString(),
-  },
-  {
-    id: 'camp_meta_lookalike',
-    name: 'Meta — Lookalike Investor Acquisition',
-    platform: 'meta',
-    audienceSegment: 'seg_lookalike_investors',
-    status: 'active',
-    budget: 8000,
-    spent: 5200,
-    impressions: 890000,
-    clicks: 17800,
-    conversions: 534,
-    ctr: 2.0,
-    cpc: 0.29,
-    roas: 5.1,
-    createdAt: new Date(Date.now() - 21 * 86400000).toISOString(),
-  },
-  {
-    id: 'camp_google_search',
-    name: 'Google — Real Estate Investing Keywords',
-    platform: 'google',
-    audienceSegment: 'seg_property_browsers',
-    status: 'active',
-    budget: 6000,
-    spent: 4100,
-    impressions: 342000,
-    clicks: 10260,
-    conversions: 308,
-    ctr: 3.0,
-    cpc: 0.40,
-    roas: 7.3,
-    createdAt: new Date(Date.now() - 18 * 86400000).toISOString(),
-  },
-  {
-    id: 'camp_linkedin_hnw',
-    name: 'LinkedIn — HNW Investor Targeting',
-    platform: 'linkedin',
-    audienceSegment: 'seg_geo_premium',
-    status: 'active',
-    budget: 4000,
-    spent: 2800,
-    impressions: 98000,
-    clicks: 2940,
-    conversions: 147,
-    ctr: 3.0,
-    cpc: 0.95,
-    roas: 9.8,
-    createdAt: new Date(Date.now() - 12 * 86400000).toISOString(),
-  },
-];
+  const totalSessions = sessions.size;
+  if (totalSessions === 0) return [];
+
+  let highIntent = 0;
+  let abandoned = 0;
+  let scrolled = 0;
+  let _returnVisitors = 0;
+  let mobileSessions = 0;
+  const countrySet = new Set<string>();
+  const referrerSet = new Set<string>();
+
+  sessions.forEach((events) => {
+    const score = computeVisitorScore(events);
+    const hasForm = events.some(e => e.event === 'form_submit');
+    const hasCta = events.some(e => e.event.startsWith('cta_'));
+    const hasScroll = events.some(e => e.event === 'scroll_75' || e.event === 'scroll_100');
+    const ua = (events[0]?.properties?.userAgent as string) || '';
+    const isMobile = /iPhone|Android|Mobile/i.test(ua);
+    const ref = (events[0]?.properties?.referrer as string) || 'direct';
+    const country = events[0]?.geo?.country || 'Unknown';
+
+    if (score >= 50) highIntent++;
+    if (hasCta && !hasForm) abandoned++;
+    if (hasScroll) scrolled++;
+    if (isMobile) mobileSessions++;
+    if (country !== 'Unknown') countrySet.add(country);
+    if (ref !== 'direct') referrerSet.add(ref);
+  });
+
+  const segments: AudienceSegment[] = [];
+  if (highIntent > 0) {
+    segments.push({
+      id: 'seg_high_intent', name: 'High Intent Visitors',
+      description: 'Visitors who scored 50+ on engagement (deep scroll, CTA clicks, form submits)',
+      criteria: { minScore: 50 }, size: highIntent, platforms: ['meta', 'google'],
+      status: 'active', lastSynced: new Date().toISOString(),
+      conversionRate: 0, costPerAcquisition: 0,
+    });
+  }
+  if (abandoned > 0) {
+    segments.push({
+      id: 'seg_abandoned_funnel', name: 'Abandoned Funnel',
+      description: 'Clicked CTA but did not submit form',
+      criteria: { hasCta: true, hasForm: false }, size: abandoned, platforms: ['meta', 'google'],
+      status: 'active', lastSynced: new Date().toISOString(),
+      conversionRate: 0, costPerAcquisition: 0,
+    });
+  }
+  if (scrolled > 0) {
+    segments.push({
+      id: 'seg_deep_scrollers', name: 'Deep Scrollers',
+      description: 'Scrolled 75%+ of the page',
+      criteria: { scrollDepth: '>=75' }, size: scrolled, platforms: ['meta', 'google'],
+      status: 'active', lastSynced: new Date().toISOString(),
+      conversionRate: 0, costPerAcquisition: 0,
+    });
+  }
+  if (mobileSessions > 0) {
+    segments.push({
+      id: 'seg_mobile_users', name: 'Mobile Visitors',
+      description: 'Visitors on mobile devices',
+      criteria: { device: 'Mobile' }, size: mobileSessions, platforms: ['meta', 'google'],
+      status: 'active', lastSynced: new Date().toISOString(),
+      conversionRate: 0, costPerAcquisition: 0,
+    });
+  }
+  return segments;
+}
+
+const retargetingCampaigns: RetargetingCampaign[] = [];
 
 function computeVisitorScore(events: typeof store.analyticsEvents): number {
   let score = 0;
@@ -263,6 +144,7 @@ export const engagementIntelligenceRouter = createTRPCRouter({
     .query(async () => {
       console.log("[EngagementIntel] Fetching retargeting dashboard");
 
+      const audienceSegments = buildAudienceSegmentsFromStore();
       const totalSpend = retargetingCampaigns.reduce((s, c) => s + c.spent, 0);
       const totalImpressions = retargetingCampaigns.reduce((s, c) => s + c.impressions, 0);
       const totalClicks = retargetingCampaigns.reduce((s, c) => s + c.clicks, 0);
@@ -308,6 +190,7 @@ export const engagementIntelligenceRouter = createTRPCRouter({
   getAudienceSegments: adminProcedure
     .query(async () => {
       console.log("[EngagementIntel] Fetching audience segments");
+      const audienceSegments = buildAudienceSegmentsFromStore();
 
       const landingEvents = store.analyticsEvents.filter(e => e.userId === 'landing_visitor');
       const sessions = new Map<string, typeof store.analyticsEvents>();
@@ -361,49 +244,14 @@ export const engagementIntelligenceRouter = createTRPCRouter({
     .query(async () => {
       console.log("[EngagementIntel] Fetching search discovery data");
 
-      const searchKeywords = [
-        { keyword: 'fractional real estate investing', volume: 18100, position: 3, ctr: 12.4, impressions: 45000, clicks: 5580 },
-        { keyword: 'invest in real estate with $1', volume: 8400, position: 5, ctr: 8.2, impressions: 21000, clicks: 1722 },
-        { keyword: 'real estate tokenization platform', volume: 3600, position: 2, ctr: 18.6, impressions: 9000, clicks: 1674 },
-        { keyword: 'monthly dividend real estate', volume: 12200, position: 7, ctr: 5.1, impressions: 30500, clicks: 1556 },
-        { keyword: 'buy property shares online', volume: 6800, position: 4, ctr: 9.8, impressions: 17000, clicks: 1666 },
-        { keyword: 'IVX Holdings review', volume: 2100, position: 1, ctr: 32.5, impressions: 5250, clicks: 1706 },
-        { keyword: 'real estate crowdfunding 2026', volume: 14500, position: 6, ctr: 6.3, impressions: 36250, clicks: 2284 },
-        { keyword: 'passive income from property', volume: 22000, position: 9, ctr: 3.2, impressions: 55000, clicks: 1760 },
-        { keyword: 'best real estate investment app', volume: 9200, position: 8, ctr: 4.5, impressions: 23000, clicks: 1035 },
-        { keyword: 'Dubai property investment fractional', volume: 4300, position: 1, ctr: 28.4, impressions: 10750, clicks: 3053 },
-      ];
-
-      const seoPages = [
-        { url: '/landing', title: 'IVX Holdings — Own Real Estate, Trade Like Crypto', indexStatus: 'indexed', impressions: 89000, clicks: 12400, avgPosition: 4.2 },
-        { url: '/properties/manhattan-penthouse', title: 'Manhattan Penthouse — Fractional Investment', indexStatus: 'indexed', impressions: 12000, clicks: 1800, avgPosition: 5.8 },
-        { url: '/properties/miami-beach-villa', title: 'Miami Beach Villa — Invest from $8.75', indexStatus: 'indexed', impressions: 8500, clicks: 1200, avgPosition: 7.1 },
-        { url: '/properties/dubai-tower', title: 'Dubai Tower Suite — 22% Returns', indexStatus: 'indexed', impressions: 15000, clicks: 3200, avgPosition: 3.4 },
-        { url: '/how-it-works', title: 'How Fractional Real Estate Works — IVX', indexStatus: 'indexed', impressions: 6800, clicks: 980, avgPosition: 8.2 },
-        { url: '/blog/real-estate-vs-crypto', title: 'Real Estate vs Crypto: Which is Better?', indexStatus: 'indexed', impressions: 23000, clicks: 4600, avgPosition: 2.8 },
-        { url: '/blog/passive-income-guide', title: 'Complete Guide to Passive Income 2026', indexStatus: 'indexed', impressions: 18500, clicks: 3700, avgPosition: 3.1 },
-      ];
-
-      const organicTrafficTrend = Array.from({ length: 30 }, (_, i) => {
-        const date = new Date(Date.now() - (29 - i) * 86400000);
-        const base = 300 + i * 12;
-        return {
-          date: date.toISOString().split('T')[0],
-          organic: base + Math.floor(Math.random() * 100),
-          paid: Math.floor(base * 0.4 + Math.random() * 60),
-          social: Math.floor(base * 0.25 + Math.random() * 40),
-          direct: Math.floor(base * 0.15 + Math.random() * 30),
-        };
-      });
-
       return {
-        searchKeywords,
-        seoPages,
-        organicTrafficTrend,
-        totalOrganicClicks: searchKeywords.reduce((s, k) => s + k.clicks, 0),
-        totalImpressions: searchKeywords.reduce((s, k) => s + k.impressions, 0),
-        avgPosition: Math.round(searchKeywords.reduce((s, k) => s + k.position, 0) / searchKeywords.length * 10) / 10,
-        indexedPages: seoPages.filter(p => p.indexStatus === 'indexed').length,
+        searchKeywords: [],
+        seoPages: [],
+        organicTrafficTrend: [],
+        totalOrganicClicks: 0,
+        totalImpressions: 0,
+        avgPosition: 0,
+        indexedPages: 0,
       };
     }),
 
@@ -412,69 +260,13 @@ export const engagementIntelligenceRouter = createTRPCRouter({
       console.log("[EngagementIntel] Fetching ad pixel status");
 
       return {
-        pixels: [
-          {
-            platform: 'Meta (Facebook)',
-            pixelId: 'IVX_META_PIXEL',
-            status: 'active',
-            eventsTracked: ['PageView', 'ViewContent', 'Lead', 'CompleteRegistration', 'InitiateCheckout'],
-            lastEventAt: new Date(Date.now() - 120000).toISOString(),
-            totalEvents24h: 3420,
-            matchRate: 78.5,
-            audiencesSynced: 5,
-            conversionAPI: true,
-          },
-          {
-            platform: 'Google Ads',
-            pixelId: 'IVX_GOOGLE_TAG',
-            status: 'active',
-            eventsTracked: ['page_view', 'generate_lead', 'sign_up', 'view_item', 'begin_checkout'],
-            lastEventAt: new Date(Date.now() - 90000).toISOString(),
-            totalEvents24h: 2890,
-            matchRate: 82.3,
-            audiencesSynced: 4,
-            conversionAPI: true,
-          },
-          {
-            platform: 'TikTok',
-            pixelId: 'IVX_TIKTOK_PIXEL',
-            status: 'active',
-            eventsTracked: ['PageView', 'ViewContent', 'ClickButton', 'SubmitForm', 'CompleteRegistration'],
-            lastEventAt: new Date(Date.now() - 240000).toISOString(),
-            totalEvents24h: 1560,
-            matchRate: 65.8,
-            audiencesSynced: 3,
-            conversionAPI: false,
-          },
-          {
-            platform: 'LinkedIn Insight',
-            pixelId: 'IVX_LINKEDIN_TAG',
-            status: 'active',
-            eventsTracked: ['PageView', 'Conversion'],
-            lastEventAt: new Date(Date.now() - 600000).toISOString(),
-            totalEvents24h: 420,
-            matchRate: 71.2,
-            audiencesSynced: 2,
-            conversionAPI: false,
-          },
-          {
-            platform: 'Twitter (X)',
-            pixelId: 'IVX_TWITTER_PIXEL',
-            status: 'active',
-            eventsTracked: ['PageView', 'Lead', 'SignUp'],
-            lastEventAt: new Date(Date.now() - 1800000).toISOString(),
-            totalEvents24h: 280,
-            matchRate: 58.4,
-            audiencesSynced: 1,
-            conversionAPI: false,
-          },
-        ],
+        pixels: [],
         serverSideTracking: {
-          enabled: true,
-          provider: 'IVX Conversion API',
-          endpoints: ['/track/visit', '/track/heartbeat', '/track/pixel'],
-          eventsProcessed24h: 8570,
-          deduplicationRate: 94.2,
+          enabled: false,
+          provider: 'Not configured',
+          endpoints: [],
+          eventsProcessed24h: 0,
+          deduplicationRate: 0,
         },
       };
     }),
@@ -556,98 +348,13 @@ export const engagementIntelligenceRouter = createTRPCRouter({
       console.log("[EngagementIntel] Fetching re-engagement triggers");
 
       return {
-        triggers: [
-          {
-            id: 'trigger_abandoned_funnel_1h',
-            name: 'Abandoned Funnel — 1 Hour',
-            description: 'Send retargeting ad 1 hour after user abandons signup funnel',
-            type: 'retargeting_ad',
-            platform: 'meta',
-            delay: '1h',
-            audience: 'seg_abandoned_funnel',
-            status: 'active',
-            fired24h: 142,
-            conversionRate: 8.4,
-          },
-          {
-            id: 'trigger_property_view_6h',
-            name: 'Property Interest — 6 Hours',
-            description: 'Show property-specific ad after viewing listings for 30s+',
-            type: 'retargeting_ad',
-            platform: 'meta',
-            delay: '6h',
-            audience: 'seg_property_browsers',
-            status: 'active',
-            fired24h: 320,
-            conversionRate: 5.2,
-          },
-          {
-            id: 'trigger_return_visitor_push',
-            name: 'Return Visitor — Browser Push',
-            description: 'Send push notification when return visitor is detected',
-            type: 'push_notification',
-            platform: 'browser',
-            delay: 'immediate',
-            audience: 'seg_return_visitors',
-            status: 'active',
-            fired24h: 89,
-            conversionRate: 12.8,
-          },
-          {
-            id: 'trigger_email_drip_24h',
-            name: 'Welcome Email — 24 Hours',
-            description: 'Start email drip sequence for new waitlist signups',
-            type: 'email',
-            platform: 'email',
-            delay: '24h',
-            audience: 'waitlist_signups',
-            status: 'active',
-            fired24h: 56,
-            conversionRate: 15.3,
-          },
-          {
-            id: 'trigger_scroll_exit_intent',
-            name: 'Exit Intent — Special Offer',
-            description: 'Show $25 bonus offer when user moves to close tab',
-            type: 'popup',
-            platform: 'website',
-            delay: 'exit_intent',
-            audience: 'all_visitors',
-            status: 'active',
-            fired24h: 890,
-            conversionRate: 3.1,
-          },
-          {
-            id: 'trigger_google_rlsa',
-            name: 'Google RLSA — Search Retarget',
-            description: 'Bid higher on search keywords when visitor returns via Google',
-            type: 'search_retarget',
-            platform: 'google',
-            delay: 'on_search',
-            audience: 'seg_high_intent',
-            status: 'active',
-            fired24h: 245,
-            conversionRate: 18.6,
-          },
-          {
-            id: 'trigger_social_proof_48h',
-            name: 'Social Proof — 48 Hours',
-            description: 'Show "X people from your city invested" ad after 48h',
-            type: 'retargeting_ad',
-            platform: 'meta',
-            delay: '48h',
-            audience: 'seg_geo_premium',
-            status: 'active',
-            fired24h: 178,
-            conversionRate: 7.9,
-          },
-        ],
+        triggers: [],
         automationStats: {
-          totalTriggersFired24h: 1920,
-          totalConversions24h: 168,
-          overallConversionRate: 8.75,
-          topPerforming: 'trigger_google_rlsa',
-          revenue24h: 8400,
+          totalTriggersFired24h: 0,
+          totalConversions24h: 0,
+          overallConversionRate: 0,
+          topPerforming: '',
+          revenue24h: 0,
         },
       };
     }),
@@ -705,18 +412,31 @@ export const engagementIntelligenceRouter = createTRPCRouter({
     .query(async ({ input }) => {
       console.log("[EngagementIntel] UTM analytics:", input.period);
 
-      const utmSources = [
-        { source: 'google', medium: 'cpc', campaign: 'real_estate_investing', sessions: 3420, conversions: 308, revenue: 15400, cpa: 12.30, roas: 7.3 },
-        { source: 'meta', medium: 'paid_social', campaign: 'high_intent_retarget', sessions: 2840, conversions: 412, revenue: 20600, cpa: 8.50, roas: 8.4 },
-        { source: 'tiktok', medium: 'paid_social', campaign: 'property_showcase', sessions: 1560, conversions: 312, revenue: 15600, cpa: 6.30, roas: 4.8 },
-        { source: 'linkedin', medium: 'paid_social', campaign: 'hnw_targeting', sessions: 940, conversions: 147, revenue: 14700, cpa: 19.05, roas: 9.8 },
-        { source: 'google', medium: 'organic', campaign: '(not set)', sessions: 8900, conversions: 890, revenue: 44500, cpa: 0, roas: 0 },
-        { source: 'instagram', medium: 'social', campaign: '(not set)', sessions: 2100, conversions: 168, revenue: 8400, cpa: 0, roas: 0 },
-        { source: 'twitter', medium: 'social', campaign: '(not set)', sessions: 780, conversions: 62, revenue: 3100, cpa: 0, roas: 0 },
-        { source: 'direct', medium: '(none)', campaign: '(not set)', sessions: 5400, conversions: 432, revenue: 21600, cpa: 0, roas: 0 },
-        { source: 'reddit', medium: 'social', campaign: '(not set)', sessions: 650, conversions: 52, revenue: 2600, cpa: 0, roas: 0 },
-        { source: 'email', medium: 'email', campaign: 'welcome_drip', sessions: 420, conversions: 84, revenue: 4200, cpa: 2.10, roas: 22.5 },
-      ];
+      const landingEvents = store.analyticsEvents.filter(
+        e => e.userId === 'landing_visitor' && new Date(e.timestamp) >= new Date(Date.now() - (input.period === '7d' ? 7 : input.period === '90d' ? 90 : 30) * 86400000)
+      );
+
+      const utmMap: Record<string, { sessions: Set<string>; conversions: number }> = {};
+      landingEvents.forEach(e => {
+        const src = (e.properties?.utmSource as string) || (e.properties?.referrer as string) || 'direct';
+        const medium = (e.properties?.utmMedium as string) || '(none)';
+        const key = `${src}|${medium}`;
+        if (!utmMap[key]) utmMap[key] = { sessions: new Set(), conversions: 0 };
+        utmMap[key].sessions.add(e.sessionId);
+        if (e.event === 'form_submit') utmMap[key].conversions++;
+      });
+
+      const utmSources = Object.entries(utmMap)
+        .map(([key, data]) => {
+          const [source, medium] = key.split('|');
+          return {
+            source, medium, campaign: '(not set)',
+            sessions: data.sessions.size, conversions: data.conversions,
+            revenue: 0, cpa: 0, roas: 0,
+          };
+        })
+        .sort((a, b) => b.sessions - a.sessions)
+        .slice(0, 15);
 
       return {
         period: input.period,
@@ -724,14 +444,14 @@ export const engagementIntelligenceRouter = createTRPCRouter({
         totals: {
           sessions: utmSources.reduce((s, u) => s + u.sessions, 0),
           conversions: utmSources.reduce((s, u) => s + u.conversions, 0),
-          revenue: utmSources.reduce((s, u) => s + u.revenue, 0),
-          paidSpend: 18350,
-          organicValue: utmSources.filter(u => u.cpa === 0).reduce((s, u) => s + u.revenue, 0),
+          revenue: 0,
+          paidSpend: 0,
+          organicValue: 0,
         },
         attribution: {
-          firstTouch: { topSource: 'google/organic', conversions: 890 },
-          lastTouch: { topSource: 'meta/paid_social', conversions: 412 },
-          multiTouch: { avgTouchpoints: 2.8, topPath: 'google → meta → direct' },
+          firstTouch: { topSource: utmSources[0]?.source || 'none', conversions: utmSources[0]?.conversions || 0 },
+          lastTouch: { topSource: utmSources[0]?.source || 'none', conversions: utmSources[0]?.conversions || 0 },
+          multiTouch: { avgTouchpoints: 0, topPath: '' },
         },
       };
     }),
