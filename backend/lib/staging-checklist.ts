@@ -1,4 +1,4 @@
-import { validateEnv } from "./env";
+
 
 export interface StagingCheckResult {
   ready: boolean;
@@ -63,11 +63,11 @@ export function runStagingChecklist(): StagingCheckResult {
     checks.push({ name: 'Email Provider', status: 'warn', message: 'Not configured — emails will be logged only' });
   }
 
-  const hasSMS = process.env.TWILIO_ACCOUNT_SID;
+  const hasSMS = process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY;
   if (hasSMS) {
-    checks.push({ name: 'SMS Provider', status: 'pass', message: 'Twilio configured' });
+    checks.push({ name: 'SMS Provider', status: 'pass', message: 'AWS SNS configured' });
   } else {
-    checks.push({ name: 'SMS Provider', status: 'warn', message: 'Not configured — SMS will be logged only' });
+    checks.push({ name: 'SMS Provider', status: 'warn', message: 'AWS SNS not configured — SMS will be logged only' });
   }
 
   const hasStorage = process.env.STORAGE_PROVIDER;
