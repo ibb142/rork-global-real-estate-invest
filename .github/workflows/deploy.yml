@@ -23,6 +23,11 @@ on:
         description: 'Custom image tag (leave empty for git SHA)'
         required: false
         type: string
+      skip_health_check:
+        description: 'Skip post-deploy health check'
+        required: false
+        default: false
+        type: boolean
 
 env:
   AWS_REGION: us-east-1
@@ -36,10 +41,44 @@ permissions:
   contents: read
 
 jobs:
+  validate:
+    name: Pre-deploy Validation
+    runs-on: ubuntu-latest
+    outputs:
+      should_deploy: ${{ steps.check.outputs.should_deploy }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate Dockerfile
+        run: |
+          if [ ! -f Dockerfile ]; then
+            echo "::error::Dockerfile not found"
+            exit 1
+          fi
+          if [ ! -f server.ts ]; then
+            echo "::error::server.ts not found"
+            exit 1
+          fi
+          if [ ! -f package.json ]; then
+            echo "::error::package.json not found"
+            exit 1
+          fi
+          echo "All required files present"
+
+      - name: Check deployment readiness
+        id: check
+        run: echo "should_deploy=true" >> $GITHUB_OUTPUT
+
   build-and-deploy:
     name: Build & Deploy
+    needs: validate
+    if: needs.validate.outputs.should_deploy == 'true'
     runs-on: ubuntu-latest
     environment: ${{ github.event.inputs.environment || 'production' }}
+    concurrency:
+      group: deploy-${{ github.event.inputs.environment || 'production' }}
+      cancel-in-progress: false
 
     steps:
       - name: Checkout code
@@ -51,6 +90,24 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
+
+      - name: Verify AWS authentication
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          echo "AWS Account: $ACCOUNT_ID"
+          echo "account_id=$ACCOUNT_ID" >> $GITHUB_ENV
+
+      - name: Check ECS cluster exists
+        run: |
+          CLUSTER_STATUS=$(aws ecs describe-clusters \
+            --clusters ${{ env.ECS_CLUSTER }} \
+            --query 'clusters[0].status' \
+            --output text 2>/dev/null || echo "NOT_FOUND")
+          if [ "$CLUSTER_STATUS" = "NOT_FOUND" ] || [ "$CLUSTER_STATUS" = "None" ]; then
+            echo "::error::ECS cluster '${{ env.ECS_CLUSTER }}' not found. Run infrastructure setup first."
+            exit 1
+          fi
+          echo "ECS cluster status: $CLUSTER_STATUS"
 
       - name: Login to Amazon ECR
         id: ecr-login
@@ -65,24 +122,31 @@ jobs:
             echo "tag=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_OUTPUT
           fi
 
-      - name: Build Docker image
-        env:
-          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
-          IMAGE_TAG: ${{ steps.tag.outputs.tag }}
-        run: |
-          docker build \
-            --platform linux/amd64 \
-            -t $ECR_REGISTRY/${{ env.APP_NAME }}-api:$IMAGE_TAG \
-            -t $ECR_REGISTRY/${{ env.APP_NAME }}-api:latest \
-            .
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-      - name: Push to ECR
-        env:
-          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
-          IMAGE_TAG: ${{ steps.tag.outputs.tag }}
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64
+          tags: |
+            ${{ steps.ecr-login.outputs.registry }}/${{ env.APP_NAME }}-api:${{ steps.tag.outputs.tag }}
+            ${{ steps.ecr-login.outputs.registry }}/${{ env.APP_NAME }}-api:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Save current task definition for rollback
+        id: current
         run: |
-          docker push $ECR_REGISTRY/${{ env.APP_NAME }}-api:$IMAGE_TAG
-          docker push $ECR_REGISTRY/${{ env.APP_NAME }}-api:latest
+          CURRENT_TD=$(aws ecs describe-services \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE }} \
+            --query 'services[0].taskDefinition' \
+            --output text 2>/dev/null || echo "")
+          echo "task_def=$CURRENT_TD" >> $GITHUB_OUTPUT
+          echo "Current task definition: $CURRENT_TD"
 
       - name: Update ECS task definition
         id: task-def
@@ -112,6 +176,7 @@ jobs:
             --output text)
 
           echo "task_def_arn=$NEW_ARN" >> $GITHUB_OUTPUT
+          echo "New task definition: $NEW_ARN"
 
       - name: Deploy to ECS
         run: |
@@ -121,36 +186,78 @@ jobs:
             --task-definition ${{ steps.task-def.outputs.task_def_arn }} \
             --force-new-deployment \
             --output text > /dev/null
+          echo "Deployment triggered"
 
-      - name: Wait for deployment
+      - name: Wait for deployment to stabilize
+        id: wait
+        timeout-minutes: 10
         run: |
-          echo "Waiting for ECS service to stabilize..."
-          aws ecs wait services-stable \
+          echo "Waiting for ECS service to stabilize (timeout: 10 min)..."
+          if aws ecs wait services-stable \
             --cluster ${{ env.ECS_CLUSTER }} \
-            --services ${{ env.ECS_SERVICE }}
-          echo "Deployment complete!"
-
-      - name: Health check
-        if: vars.API_URL != ''
-        run: |
-          sleep 10
-          STATUS=$(curl -sf --max-time 15 "${{ vars.API_URL }}/health" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status','unknown'))" 2>/dev/null || echo "unreachable")
-          echo "Health check: $STATUS"
-          if [ "$STATUS" != "healthy" ]; then
-            echo "::warning::Health check returned: $STATUS"
+            --services ${{ env.ECS_SERVICE }}; then
+            echo "stable=true" >> $GITHUB_OUTPUT
+            echo "Service is stable!"
+          else
+            echo "stable=false" >> $GITHUB_OUTPUT
+            echo "::warning::Service did not stabilize within timeout"
           fi
 
+      - name: Rollback on failure
+        if: failure() && steps.current.outputs.task_def != ''
+        run: |
+          echo "::error::Deployment failed — rolling back to ${{ steps.current.outputs.task_def }}"
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service ${{ env.ECS_SERVICE }} \
+            --task-definition ${{ steps.current.outputs.task_def }} \
+            --force-new-deployment \
+            --output text > /dev/null
+          echo "Rollback triggered. Waiting for stabilization..."
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE }} || true
+          echo "Rollback complete"
+
+      - name: Health check
+        if: success() && github.event.inputs.skip_health_check != 'true'
+        run: |
+          API_URL="${{ vars.API_URL }}"
+          if [ -z "$API_URL" ]; then
+            echo "API_URL not set in environment variables — skipping health check"
+            exit 0
+          fi
+
+          echo "Running health check against $API_URL..."
+          RETRIES=0
+          MAX_RETRIES=6
+          while [ "$RETRIES" -lt "$MAX_RETRIES" ]; do
+            sleep 10
+            STATUS=$(curl -sf --max-time 15 "$API_URL/health" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status','unknown'))" 2>/dev/null || echo "unreachable")
+            echo "Attempt $((RETRIES+1))/$MAX_RETRIES: $STATUS"
+            if [ "$STATUS" = "healthy" ]; then
+              echo "API is healthy!"
+              exit 0
+            fi
+            RETRIES=$((RETRIES + 1))
+          done
+          echo "::warning::Health check did not return 'healthy' after $MAX_RETRIES attempts (last: $STATUS)"
+
       - name: Deployment summary
+        if: always()
         env:
           ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
           IMAGE_TAG: ${{ steps.tag.outputs.tag }}
         run: |
-          echo "### Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "### 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Item | Value |" >> $GITHUB_STEP_SUMMARY
           echo "| --- | --- |" >> $GITHUB_STEP_SUMMARY
+          echo "| Environment | \`${{ github.event.inputs.environment || 'production' }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| Image | \`$ECR_REGISTRY/${{ env.APP_NAME }}-api:$IMAGE_TAG\` |" >> $GITHUB_STEP_SUMMARY
           echo "| Task Def | \`${{ steps.task-def.outputs.task_def_arn }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| Cluster | \`${{ env.ECS_CLUSTER }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| Service | \`${{ env.ECS_SERVICE }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| Commit | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Triggered by | \`${{ github.actor }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Stable | \`${{ steps.wait.outputs.stable || 'unknown' }}\` |" >> $GITHUB_STEP_SUMMARY
