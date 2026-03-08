@@ -48,10 +48,12 @@ import {
   Flame,
   KeyRound,
   ShieldCheck,
+  Zap,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { trpc } from '@/lib/trpc';
 import { useInstantCache, getInitialCacheData } from '@/lib/use-instant-query';
+import { adminTeamMembers } from '@/mocks/team';
 
 const ADMIN_MODULES = [
   { id: 'owner-controls', name: 'Owner Controls', icon: Crown, iconName: 'Crown', route: '/admin/owner-controls', category: 'Core' },
@@ -88,6 +90,7 @@ const ADMIN_MODULES = [
   { id: 'email-management', name: 'Email Management', icon: Mail, iconName: 'Mail', route: '/admin/email-management', category: 'Core' },
   { id: 'email-accounts', name: 'Email Accounts', icon: Users, iconName: 'Users', route: '/admin/email-accounts', category: 'Users' },
   { id: 'landing-analytics', name: 'Landing Analytics', icon: BarChart3, iconName: 'BarChart3', route: '/admin/landing-analytics', category: 'Analytics' },
+  { id: 'system-monitor', name: '24/7 Command Center', icon: ShieldCheck, iconName: 'ShieldCheck', route: '/admin/system-monitor', category: 'Core' },
   { id: 'authenticator', name: 'Authenticator', icon: ShieldCheck, iconName: 'ShieldCheck', route: '/authenticator', category: 'Settings' },
 ];
 
@@ -333,6 +336,59 @@ export default function AdminDashboard() {
           />
         }
       >
+        <TouchableOpacity
+          style={styles.activationCenterCard}
+          onPress={() => router.push('/activation-center' as any)}
+          activeOpacity={0.8}
+        >
+          <View style={styles.acLeft}>
+            <View style={styles.acIconWrap}>
+              <Zap size={20} color={Colors.primary} />
+            </View>
+            <View>
+              <View style={styles.acLiveRow}>
+                <View style={styles.acLiveDot} />
+                <Text style={styles.acLiveText}>ALL SYSTEMS LIVE</Text>
+              </View>
+              <Text style={styles.acTitle}>Activation Center</Text>
+              <Text style={styles.acSub}>AI working 24/7 · 9 channels active</Text>
+            </View>
+          </View>
+          <ChevronRight size={20} color={Colors.textSecondary} />
+        </TouchableOpacity>
+
+        <View style={styles.adminTeamSection}>
+          <View style={styles.adminTeamHeader}>
+            <Users size={16} color={Colors.primary} />
+            <Text style={styles.adminTeamTitle}>Team Members</Text>
+            <View style={styles.adminTeamBadge}>
+              <View style={styles.adminTeamDot} />
+              <Text style={styles.adminTeamBadgeText}>ONLINE</Text>
+            </View>
+          </View>
+          <View style={styles.adminTeamList}>
+            {adminTeamMembers.map((member) => (
+              <View key={member.id} style={styles.adminTeamCard}>
+                <View style={[styles.adminTeamAvatar, { backgroundColor: member.avatarColor }]}>
+                  <Text style={styles.adminTeamAvatarText}>{member.avatarInitials}</Text>
+                  <View style={[styles.adminTeamStatusDot, member.status === 'active' ? styles.adminTeamStatusActive : styles.adminTeamStatusAway]} />
+                </View>
+                <Text style={styles.adminTeamName} numberOfLines={1}>{member.name}</Text>
+                <View style={[styles.adminTeamRoleBadge, { backgroundColor: member.avatarColor + '20' }]}>
+                  <Text style={[styles.adminTeamRoleText, { color: member.avatarColor }]} numberOfLines={1}>{member.role}</Text>
+                </View>
+                {member.email ? (
+                  <View style={styles.adminTeamContactRow}>
+                    <View style={styles.adminTeamContactIcon}>
+                      <Mail size={10} color={Colors.textTertiary} />
+                    </View>
+                  </View>
+                ) : null}
+              </View>
+            ))}
+          </View>
+        </View>
+
         <View style={styles.statsGrid}>
           <TouchableOpacity
             style={styles.statCard}
@@ -959,5 +1015,172 @@ const styles = StyleSheet.create({
   emptyStateText: {
     fontSize: 13,
     color: Colors.textTertiary,
+  },
+  activationCenterCard: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'space-between' as const,
+    marginHorizontal: 12,
+    marginTop: 12,
+    marginBottom: 8,
+    backgroundColor: Colors.card,
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: Colors.primary + '30',
+  },
+  acLeft: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 12,
+    flex: 1,
+  },
+  acIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: Colors.primary + '20',
+    justifyContent: 'center' as const,
+    alignItems: 'center' as const,
+  },
+  acLiveRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 5,
+    marginBottom: 2,
+  },
+  acLiveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: Colors.positive,
+  },
+  acLiveText: {
+    fontSize: 10,
+    fontWeight: '700' as const,
+    color: Colors.positive,
+    letterSpacing: 0.5,
+  },
+  acTitle: {
+    fontSize: 15,
+    fontWeight: '700' as const,
+    color: Colors.text,
+  },
+  acSub: {
+    fontSize: 11,
+    color: Colors.textTertiary,
+    marginTop: 1,
+  },
+  adminTeamSection: {
+    marginHorizontal: 12,
+    marginBottom: 8,
+    backgroundColor: Colors.card,
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: Colors.primary + '25',
+  },
+  adminTeamHeader: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 6,
+    marginBottom: 12,
+  },
+  adminTeamTitle: {
+    fontSize: 15,
+    fontWeight: '700' as const,
+    color: Colors.text,
+    flex: 1,
+  },
+  adminTeamBadge: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 4,
+    backgroundColor: Colors.positive + '15',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  adminTeamDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: Colors.positive,
+  },
+  adminTeamBadgeText: {
+    fontSize: 9,
+    fontWeight: '700' as const,
+    color: Colors.positive,
+    letterSpacing: 0.5,
+  },
+  adminTeamList: {
+    flexDirection: 'row' as const,
+    gap: 10,
+  },
+  adminTeamCard: {
+    flex: 1,
+    alignItems: 'center' as const,
+    backgroundColor: Colors.background,
+    borderRadius: 12,
+    padding: 12,
+  },
+  adminTeamAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center' as const,
+    alignItems: 'center' as const,
+    marginBottom: 8,
+  },
+  adminTeamAvatarText: {
+    fontSize: 16,
+    fontWeight: '700' as const,
+    color: '#000',
+  },
+  adminTeamStatusDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    position: 'absolute' as const,
+    bottom: 0,
+    right: 0,
+    borderWidth: 2,
+    borderColor: Colors.background,
+  },
+  adminTeamStatusActive: {
+    backgroundColor: Colors.positive,
+  },
+  adminTeamStatusAway: {
+    backgroundColor: Colors.warning,
+  },
+  adminTeamName: {
+    fontSize: 12,
+    fontWeight: '600' as const,
+    color: Colors.text,
+    textAlign: 'center' as const,
+    marginBottom: 4,
+  },
+  adminTeamRoleBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  adminTeamRoleText: {
+    fontSize: 9,
+    fontWeight: '600' as const,
+    textAlign: 'center' as const,
+  },
+  adminTeamContactRow: {
+    flexDirection: 'row' as const,
+    gap: 6,
+    marginTop: 6,
+  },
+  adminTeamContactIcon: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: Colors.card,
+    justifyContent: 'center' as const,
+    alignItems: 'center' as const,
   },
 });
