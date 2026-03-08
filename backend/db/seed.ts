@@ -191,219 +191,31 @@ export const SEED_MARKET_DATA: MarketDataRecord[] = [
   { propertyId: "6", lastPrice: 68.00, change24h: -0.45, changePercent24h: -0.66, volume24h: 98000, high24h: 69.00, low24h: 67.50, ...generateOrderBook(68.00) },
 ];
 
-export const SEED_USERS: UserRecord[] = [
-  {
-    id: "user-1", email: "investor@example.com", firstName: "Alexander", lastName: "Sterling",
-    avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200",
-    phone: "+1 (555) 123-4567", country: "United States", role: "owner", kycStatus: "approved", eligibilityStatus: "eligible",
-    walletBalance: 25430.5, totalInvested: 48750.0, totalReturns: 6234.8, createdAt: "2024-01-01T00:00:00Z",
-    passwordHash: "hashed_password", status: "active", lastActivity: new Date().toISOString(),
-  },
-  {
-    id: "user-2", email: "maria.johnson@example.com", firstName: "Maria", lastName: "Johnson",
-    avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200",
-    phone: "+1 (555) 234-5678", country: "United States", role: "investor", kycStatus: "approved", eligibilityStatus: "eligible",
-    walletBalance: 15200.0, totalInvested: 32500.0, totalReturns: 4120.5, createdAt: "2024-02-15T00:00:00Z",
-    passwordHash: "hashed_password", status: "active", lastActivity: "2025-01-23T10:15:00Z",
-  },
-  {
-    id: "user-3", email: "james.chen@example.com", firstName: "James", lastName: "Chen",
-    avatar: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200",
-    phone: "+65 9123 4567", country: "Singapore", role: "investor", kycStatus: "in_review", eligibilityStatus: "pending",
-    walletBalance: 50000.0, totalInvested: 0, totalReturns: 0, createdAt: "2025-01-20T00:00:00Z",
-    passwordHash: "hashed_password", status: "active", lastActivity: "2025-01-20T09:00:00Z",
-  },
-  {
-    id: "user-4", email: "sarah.williams@example.com", firstName: "Sarah", lastName: "Williams",
-    avatar: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=200",
-    phone: "+44 20 7946 0958", country: "United Kingdom", role: "investor", kycStatus: "approved", eligibilityStatus: "eligible",
-    walletBalance: 8750.25, totalInvested: 67800.0, totalReturns: 8945.3, createdAt: "2023-11-10T00:00:00Z",
-    passwordHash: "hashed_password", status: "active", lastActivity: "2025-01-24T16:45:00Z",
-  },
-  {
-    id: "user-5", email: "michael.brown@example.com", firstName: "Michael", lastName: "Brown",
-    avatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200",
-    phone: "+1 (555) 345-6789", country: "Canada", role: "investor", kycStatus: "pending", eligibilityStatus: "pending",
-    walletBalance: 0, totalInvested: 0, totalReturns: 0, createdAt: "2025-01-22T00:00:00Z",
-    passwordHash: "hashed_password", status: "inactive", lastActivity: "2025-01-22T11:30:00Z",
-  },
-  {
-    id: "user-6", email: "emma.davis@example.com", firstName: "Emma", lastName: "Davis",
-    avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200",
-    phone: "+61 2 9876 5432", country: "Australia", role: "investor", kycStatus: "rejected", eligibilityStatus: "restricted",
-    walletBalance: 5000.0, totalInvested: 0, totalReturns: 0, createdAt: "2025-01-15T00:00:00Z",
-    passwordHash: "hashed_password", status: "suspended", lastActivity: "2025-01-18T08:20:00Z",
-  },
-  {
-    id: "user-7", email: "david.lee@example.com", firstName: "David", lastName: "Lee",
-    avatar: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=200",
-    phone: "+852 9876 5432", country: "Hong Kong", role: "investor", kycStatus: "approved", eligibilityStatus: "eligible",
-    walletBalance: 125000.0, totalInvested: 250000.0, totalReturns: 32500.0, createdAt: "2023-06-20T00:00:00Z",
-    passwordHash: "hashed_password", status: "active", lastActivity: "2025-01-24T18:00:00Z",
-  },
-  {
-    id: "user-8", email: "sophie.martin@example.com", firstName: "Sophie", lastName: "Martin",
-    avatar: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=200",
-    phone: "+33 1 23 45 67 89", country: "France", role: "investor", kycStatus: "approved", eligibilityStatus: "eligible",
-    walletBalance: 42300.75, totalInvested: 89500.0, totalReturns: 11234.6, createdAt: "2023-09-05T00:00:00Z",
-    passwordHash: "hashed_password", status: "active", lastActivity: "2025-01-23T14:20:00Z",
-  },
-];
+export const SEED_USERS: UserRecord[] = [];
 
-export const SEED_WALLET_BALANCES: Array<{ userId: string; available: number; pending: number; invested: number }> = [
-  { userId: "user-1", available: 25430.5, pending: 0, invested: 48750 },
-  { userId: "user-2", available: 15200, pending: 0, invested: 32500 },
-  { userId: "user-3", available: 50000, pending: 0, invested: 0 },
-  { userId: "user-4", available: 8750.25, pending: 0, invested: 67800 },
-  { userId: "user-5", available: 0, pending: 0, invested: 0 },
-  { userId: "user-6", available: 5000, pending: 0, invested: 0 },
-  { userId: "user-7", available: 125000, pending: 0, invested: 250000 },
-  { userId: "user-8", available: 42300.75, pending: 0, invested: 89500 },
-];
+export const SEED_WALLET_BALANCES: Array<{ userId: string; available: number; pending: number; invested: number }> = [];
 
 export const SEED_TEAM_MEMBERS: TeamMemberRecord[] = [
-  { id: "admin-1", email: "ceo@ipxholding.com", firstName: "IVXHOLDINGS", lastName: "CEO", phone: "+1 (561) 644-3503", roleId: "role-ceo", roleType: "ceo", status: "active", lastLogin: new Date().toISOString(), createdAt: "2024-01-01T00:00:00Z" },
-  { id: "admin-2", email: "operations@ipxholding.com", firstName: "Sarah", lastName: "Martinez", phone: "+1 (555) 234-5678", roleId: "role-manager", roleType: "manager", status: "active", lastLogin: "2025-01-24T16:30:00Z", invitedBy: "admin-1", createdAt: "2024-03-15T10:00:00Z" },
-  { id: "admin-3", email: "analyst@ipxholding.com", firstName: "Michael", lastName: "Chen", phone: "+1 (555) 345-6789", roleId: "role-analyst", roleType: "analyst", status: "active", lastLogin: "2025-01-23T11:00:00Z", invitedBy: "admin-1", createdAt: "2024-06-01T09:00:00Z" },
-  { id: "admin-4", email: "support@ipxholding.com", firstName: "Emily", lastName: "Johnson", phone: "+1 (555) 456-7890", roleId: "role-support", roleType: "support", status: "active", lastLogin: "2025-01-25T08:45:00Z", invitedBy: "admin-1", createdAt: "2024-08-20T14:00:00Z" },
-  { id: "admin-5", email: "newemployee@ipxholding.com", firstName: "James", lastName: "Wilson", roleId: "role-viewer", roleType: "viewer", status: "invited", invitedBy: "admin-1", createdAt: "2025-01-20T10:00:00Z" },
+  { id: "admin-1", email: "ceo@ivxholding.com", firstName: "Ivan", lastName: "Perez", phone: "+1 (561) 644-3503", roleId: "role-ceo", roleType: "ceo", status: "active", lastLogin: new Date().toISOString(), createdAt: "2024-01-01T00:00:00Z" },
+  { id: "admin-km", email: "kimberly@ivxholding.com", firstName: "Kimberly", lastName: "Perez", roleId: "role-manager", roleType: "manager", status: "active", lastLogin: new Date().toISOString(), invitedBy: "admin-1", createdAt: "2024-03-15T10:00:00Z" },
+  { id: "admin-sh", email: "sharon@ivxholding.com", firstName: "Sharon", lastName: "", roleId: "role-manager", roleType: "manager", status: "active", lastLogin: new Date().toISOString(), invitedBy: "admin-1", createdAt: "2024-03-15T10:00:00Z" },
 ];
 
-export const SEED_HOLDINGS: Record<string, HoldingRecord[]> = {
-  "user-1": [
-    { id: "holding-1", propertyId: "1", shares: 250, avgCostBasis: 48.5, currentValue: 13100, totalReturn: 975, totalReturnPercent: 8.04, unrealizedPnL: 975, unrealizedPnLPercent: 8.04, purchaseDate: "2024-03-15T00:00:00Z" },
-    { id: "holding-2", propertyId: "2", shares: 120, avgCostBasis: 118, currentValue: 15000, totalReturn: 840, totalReturnPercent: 5.93, unrealizedPnL: 840, unrealizedPnLPercent: 5.93, purchaseDate: "2024-04-20T00:00:00Z" },
-    { id: "holding-3", propertyId: "3", shares: 180, avgCostBasis: 72, currentValue: 14130, totalReturn: 1170, totalReturnPercent: 9.03, unrealizedPnL: 1170, unrealizedPnLPercent: 9.03, purchaseDate: "2023-08-10T00:00:00Z" },
-    { id: "holding-4", propertyId: "5", shares: 35, avgCostBasis: 175, currentValue: 6475, totalReturn: 350, totalReturnPercent: 5.71, unrealizedPnL: 350, unrealizedPnLPercent: 5.71, purchaseDate: "2024-06-05T00:00:00Z" },
-  ],
-  "user-2": [
-    { id: "h-u2-1", propertyId: "3", shares: 100, avgCostBasis: 78.5, currentValue: 7850, totalReturn: 0, totalReturnPercent: 0, unrealizedPnL: 0, unrealizedPnLPercent: 0, purchaseDate: "2025-01-21T15:30:00Z" },
-  ],
-  "user-4": [
-    { id: "h-u4-1", propertyId: "1", shares: 300, avgCostBasis: 50, currentValue: 15720, totalReturn: 720, totalReturnPercent: 4.8, unrealizedPnL: 720, unrealizedPnLPercent: 4.8, purchaseDate: "2024-02-01T00:00:00Z" },
-    { id: "h-u4-2", propertyId: "5", shares: 50, avgCostBasis: 180, currentValue: 9250, totalReturn: 250, totalReturnPercent: 2.78, unrealizedPnL: 250, unrealizedPnLPercent: 2.78, purchaseDate: "2024-06-15T00:00:00Z" },
-  ],
-  "user-7": [
-    { id: "h-u7-1", propertyId: "2", shares: 100, avgCostBasis: 125, currentValue: 12500, totalReturn: 0, totalReturnPercent: 0, unrealizedPnL: 0, unrealizedPnLPercent: 0, purchaseDate: "2025-01-23T11:45:00Z" },
-    { id: "h-u7-2", propertyId: "1", shares: 500, avgCostBasis: 49, currentValue: 26200, totalReturn: 1700, totalReturnPercent: 6.94, unrealizedPnL: 1700, unrealizedPnLPercent: 6.94, purchaseDate: "2023-08-01T00:00:00Z" },
-    { id: "h-u7-3", propertyId: "5", shares: 200, avgCostBasis: 178, currentValue: 37000, totalReturn: 1400, totalReturnPercent: 3.93, unrealizedPnL: 1400, unrealizedPnLPercent: 3.93, purchaseDate: "2024-03-10T00:00:00Z" },
-  ],
-  "user-8": [
-    { id: "h-u8-1", propertyId: "2", shares: 200, avgCostBasis: 120, currentValue: 25000, totalReturn: 1000, totalReturnPercent: 4.17, unrealizedPnL: 1000, unrealizedPnLPercent: 4.17, purchaseDate: "2024-01-15T00:00:00Z" },
-    { id: "h-u8-2", propertyId: "6", shares: 150, avgCostBasis: 65, currentValue: 10200, totalReturn: 450, totalReturnPercent: 4.62, unrealizedPnL: 450, unrealizedPnLPercent: 4.62, purchaseDate: "2024-05-01T00:00:00Z" },
-  ],
-};
+export const SEED_HOLDINGS: Record<string, HoldingRecord[]> = {};
 
-export const SEED_TRANSACTIONS: Record<string, TransactionRecord[]> = {
-  "user-1": [
-    { id: "tx-1", type: "deposit", amount: 10000, status: "completed", description: "Bank Transfer Deposit", createdAt: "2024-12-15T10:30:00Z" },
-    { id: "tx-2", type: "buy", amount: -5240, status: "completed", description: "Bought 100 shares", propertyId: "1", propertyName: "Marina Bay Residences", createdAt: "2024-12-14T14:22:00Z" },
-    { id: "tx-3", type: "dividend", amount: 156.75, status: "completed", description: "Q4 2024 Distribution", propertyId: "1", propertyName: "Marina Bay Residences", createdAt: "2024-12-01T00:00:00Z" },
-    { id: "tx-4", type: "buy", amount: -3750, status: "completed", description: "Bought 30 shares", propertyId: "2", propertyName: "Manhattan Office Tower", createdAt: "2024-11-28T09:15:00Z" },
-    { id: "tx-5", type: "dividend", amount: 102, status: "completed", description: "Q4 2024 Distribution", propertyId: "2", propertyName: "Manhattan Office Tower", createdAt: "2024-12-01T00:00:00Z" },
-    { id: "tx-6", type: "withdrawal", amount: -2000, status: "completed", description: "Bank Transfer Withdrawal", createdAt: "2024-11-20T16:45:00Z" },
-    { id: "tx-7", type: "deposit", amount: 15000, status: "completed", description: "Wire Transfer Deposit", createdAt: "2024-11-15T11:00:00Z" },
-  ],
-  "user-2": [
-    { id: "tx-u2-1", type: "deposit", amount: 15000, status: "completed", description: "Credit Card Deposit", createdAt: "2025-01-21T13:15:00Z" },
-    { id: "tx-u2-2", type: "buy", amount: -7850, status: "completed", description: "Bought 100 shares", propertyId: "3", propertyName: "London Luxury Flats", createdAt: "2025-01-21T15:30:00Z" },
-  ],
-  "user-4": [
-    { id: "tx-u4-1", type: "withdrawal", amount: -2500, status: "pending", description: "Bank Transfer Withdrawal", createdAt: "2025-01-22T16:30:00Z" },
-    { id: "tx-u4-2", type: "dividend", amount: 425.5, status: "completed", description: "Q4 2024 Distribution", propertyId: "1", propertyName: "Marina Bay Residences", createdAt: "2025-01-01T00:00:00Z" },
-  ],
-  "user-7": [
-    { id: "tx-u7-1", type: "deposit", amount: 50000, status: "completed", description: "Wire Transfer Deposit", createdAt: "2025-01-23T09:00:00Z" },
-    { id: "tx-u7-2", type: "buy", amount: -12500, status: "completed", description: "Bought 100 shares", propertyId: "2", propertyName: "Manhattan Office Tower", createdAt: "2025-01-23T11:45:00Z" },
-  ],
-  "user-8": [
-    { id: "tx-u8-1", type: "sell", amount: 3400, status: "completed", description: "Sold 50 shares", propertyId: "6", propertyName: "Tokyo Mixed-Use Tower", createdAt: "2025-01-20T10:00:00Z" },
-  ],
-};
+export const SEED_TRANSACTIONS: Record<string, TransactionRecord[]> = {};
 
-export const SEED_NOTIFICATIONS: Record<string, NotificationRecord[]> = {
-  "user-1": [
-    { id: "notif-1", type: "dividend", title: "Dividend Received", message: "You received $156.75 from Marina Bay Residences Q4 distribution.", read: false, createdAt: "2024-12-01T00:00:00Z" },
-    { id: "notif-2", type: "order", title: "Order Filled", message: "Your buy order for 75 shares of Tokyo Mixed-Use Tower has been filled.", read: true, createdAt: "2024-12-15T14:30:05Z" },
-    { id: "notif-3", type: "system", title: "New Property Available", message: "Singapore Tech Hub is now open for investment. Check it out!", read: false, createdAt: "2024-12-10T09:00:00Z" },
-    { id: "notif-4", type: "kyc", title: "KYC Approved", message: "Your identity verification has been approved. You can now invest!", read: true, createdAt: "2024-01-05T12:00:00Z" },
-  ],
-  "user-2": [
-    { id: "notif-u2-1", type: "system", title: "Welcome to IVXHOLDINGS!", message: "Complete your KYC to start investing.", read: true, createdAt: "2024-02-15T00:00:00Z" },
-  ],
-  "user-7": [
-    { id: "notif-u7-1", type: "order", title: "Order Filled", message: "Your buy order for 100 shares of Manhattan Office Tower has been filled.", read: false, createdAt: "2025-01-23T11:45:00Z" },
-  ],
-};
+export const SEED_NOTIFICATIONS: Record<string, NotificationRecord[]> = {};
 
-export const SEED_REFERRALS: ReferralRecord[] = [
-  { id: "ref-1", referrerId: "user-1", referrerName: "Alexander Sterling", referrerEmail: "investor@example.com", referredEmail: "mike.johnson@email.com", referredName: "Mike Johnson", referredId: "user-045", status: "invested", referralCode: "IPXUSER25", reward: 50, rewardPaid: true, signedUpAt: "2025-01-10T14:00:00Z", investedAt: "2025-01-15T10:00:00Z", investmentAmount: 5000, createdAt: "2025-01-09T10:00:00Z" },
-  { id: "ref-2", referrerId: "user-1", referrerName: "Alexander Sterling", referrerEmail: "investor@example.com", referredEmail: "sarah.w@email.com", referredName: "Sarah Wilson", status: "signed_up", referralCode: "IPXUSER25", reward: 25, rewardPaid: false, signedUpAt: "2025-01-20T09:00:00Z", createdAt: "2025-01-18T15:00:00Z" },
-  { id: "ref-3", referrerId: "user-1", referrerName: "Alexander Sterling", referrerEmail: "investor@example.com", referredEmail: "david.k@email.com", status: "pending", referralCode: "IPXUSER25", reward: 0, rewardPaid: false, createdAt: "2025-02-01T11:00:00Z" },
-  { id: "ref-4", referrerId: "user-7", referrerName: "David Lee", referrerEmail: "david.lee@example.com", referredEmail: "test@email.com", referredName: "Test User", status: "signed_up", referralCode: "IPXDAVID", reward: 50, rewardPaid: false, signedUpAt: "2025-01-22T12:00:00Z", createdAt: "2025-01-20T08:00:00Z" },
-];
+export const SEED_REFERRALS: ReferralRecord[] = [];
 
-export const SEED_SUPPORT_TICKETS: SupportTicketRecord[] = [
-  {
-    id: "ticket-1", userId: "user-1", subject: "Dividend Distribution Question", category: "general", status: "in_progress", priority: "low",
-    messages: [
-      { id: "msg-1", senderId: "support-1", senderName: "IVXHOLDINGS Support", message: "Hello! Welcome to IVXHOLDINGS support. How can I help you today?", timestamp: "2024-12-16T09:00:00Z", isSupport: true, status: "read" },
-      { id: "msg-2", senderId: "user-1", senderName: "You", message: "Hi! I have a question about the dividend distribution schedule.", timestamp: "2024-12-16T09:05:00Z", isSupport: false, status: "read" },
-      { id: "msg-3", senderId: "support-1", senderName: "IVXHOLDINGS Support", message: "Dividends are distributed quarterly, typically within the first week of each quarter.", timestamp: "2024-12-16T09:07:00Z", isSupport: true, status: "read" },
-    ],
-    createdAt: "2024-12-16T09:00:00Z", updatedAt: "2024-12-16T09:07:00Z",
-  },
-  {
-    id: "ticket-2", userId: "user-1", subject: "Withdrawal Processing Time", category: "wallet", status: "resolved", priority: "medium",
-    messages: [
-      { id: "msg-t2-1", senderId: "user-1", senderName: "You", message: "How long does it take for withdrawals to process?", timestamp: "2024-12-10T14:00:00Z", isSupport: false, status: "read" },
-      { id: "msg-t2-2", senderId: "support-2", senderName: "IVXHOLDINGS Support", message: "Withdrawals typically process within 2-3 business days for ACH transfers.", timestamp: "2024-12-10T14:30:00Z", isSupport: true, status: "read" },
-    ],
-    createdAt: "2024-12-10T14:00:00Z", updatedAt: "2024-12-10T14:30:00Z",
-  },
-];
+export const SEED_SUPPORT_TICKETS: SupportTicketRecord[] = [];
 
-export const SEED_PROPERTY_SUBMISSIONS: PropertySubmissionRecord[] = [
-  {
-    id: "sub-1", ownerId: "owner-1", ownerName: "Michael Thompson", ownerEmail: "michael.t@email.com",
-    propertyAddress: "1425 Ocean Drive", city: "Miami Beach", state: "FL", zipCode: "33139", country: "USA",
-    propertyType: "residential", estimatedValue: 4500000, verifiedValue: 4200000, deedNumber: "FL-2024-892341",
-    status: "listed", lienStatus: "clear", debtStatus: "none", totalDebt: 0, totalLiens: 0,
-    images: ["https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=800"],
-    description: "Stunning oceanfront luxury residence with 5 bedrooms.",
-    submittedAt: "2025-01-01T00:00:00Z", verifiedAt: "2025-01-10T00:00:00Z",
-  },
-  {
-    id: "sub-2", ownerId: "owner-2", ownerName: "Sarah Williams", ownerEmail: "sarah.w@email.com",
-    propertyAddress: "890 Commerce Street", city: "Dallas", state: "TX", zipCode: "75201", country: "USA",
-    propertyType: "commercial", estimatedValue: 12000000, verifiedValue: 11500000, deedNumber: "TX-2024-156723",
-    status: "approved", lienStatus: "has_liens", debtStatus: "active", totalDebt: 850000, totalLiens: 150000,
-    images: ["https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=800"],
-    description: "Prime commercial office building in downtown Dallas.",
-    submittedAt: "2025-01-05T00:00:00Z", verifiedAt: "2025-01-18T00:00:00Z",
-  },
-];
+export const SEED_PROPERTY_SUBMISSIONS: PropertySubmissionRecord[] = [];
 
-export const SEED_BROADCASTS: BroadcastRecord[] = [
-  {
-    id: "bc-1", subject: "January Newsletter: Market Updates", body: "Dear Investors, Here is your January update...",
-    channels: ["email", "push"], recipientFilter: "all", recipientCount: 8, batchSize: 100,
-    status: "completed", progress: 100, sentCount: 8, failedCount: 0, createdAt: "2025-01-20T09:45:00Z",
-  },
-  {
-    id: "bc-2", subject: "New Property Alert: Marina Bay Residences", body: "Exciting new investment opportunity...",
-    channels: ["email", "sms", "push"], recipientFilter: "active", recipientCount: 6, batchSize: 50,
-    status: "completed", progress: 100, sentCount: 6, failedCount: 0, createdAt: "2025-01-18T13:30:00Z",
-  },
-];
+export const SEED_BROADCASTS: BroadcastRecord[] = [];
 
-export const SEED_VIP_TIERS: Record<string, VipTierRecord> = {
-  "user-1": {
-    userId: "user-1", tier: "gold", points: 15200, totalPointsEarned: 22500,
-    currentBenefits: ["Reduced fees", "Priority support", "Early access", "Quarterly reports"],
-    nextTier: "platinum", pointsToNextTier: 4800, memberSince: "2024-01-01T00:00:00Z", lastTierUpdate: "2024-09-15T00:00:00Z",
-  },
-};
+export const SEED_VIP_TIERS: Record<string, VipTierRecord> = {};
 
 export const SEED_EARN_PRODUCTS: EarnProductRecord[] = [
   { id: "earn-1", name: "Flexible Savings", description: "Earn daily interest with no lock-up", apy: 4.5, minAmount: 100, maxAmount: 500000, lockPeriodDays: 0, category: "savings", status: "active", totalDeposited: 2500000, capacity: 10000000 },
