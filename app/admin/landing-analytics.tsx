@@ -38,6 +38,10 @@ import {
   Radio,
   PieChart,
   Layers,
+  Sparkles,
+  AlertTriangle,
+  TrendingDown,
+  Lightbulb,
 } from 'lucide-react-native';
 import { trpc } from '@/lib/trpc';
 import { useInstantCache } from '@/lib/use-instant-query';
@@ -45,7 +49,7 @@ import { useAuth } from '@/lib/auth-context';
 import { getAuthToken } from '@/lib/auth-store';
 
 type PeriodType = '1h' | '24h' | '7d' | '30d' | '90d' | 'all';
-type TabType = 'overview' | 'funnel' | 'geo' | 'insights' | 'live';
+type TabType = 'overview' | 'funnel' | 'geo' | 'insights' | 'live' | 'brain';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
@@ -64,7 +68,23 @@ const TABS: { label: string; value: TabType; icon: React.ReactNode }[] = [
   { label: 'Geo', value: 'geo', icon: <MapPin size={14} color="#97A0AF" /> },
   { label: 'Intel', value: 'insights', icon: <Brain size={14} color="#97A0AF" /> },
   { label: 'Live', value: 'live', icon: <Radio size={14} color="#E53935" /> },
+  { label: 'AI Brain', value: 'brain', icon: <Sparkles size={14} color="#FFB800" /> },
 ];
+
+const IMPACT_STYLES: Record<string, { bg: string; text: string; label: string }> = {
+  critical: { bg: '#FF4D4D18', text: '#FF4D4D', label: 'CRITICAL' },
+  high: { bg: '#FFB80018', text: '#FFB800', label: 'HIGH' },
+  medium: { bg: '#4A90D918', text: '#4A90D9', label: 'MEDIUM' },
+  low: { bg: '#00C48C18', text: '#00C48C', label: 'LOW' },
+};
+
+const TYPE_ICONS: Record<string, { icon: React.ReactNode; color: string; label: string }> = {
+  pattern: { icon: <Activity size={14} color="#7B68EE" />, color: '#7B68EE', label: 'Pattern' },
+  anomaly: { icon: <AlertTriangle size={14} color="#FF4D4D" />, color: '#FF4D4D', label: 'Anomaly' },
+  prediction: { icon: <TrendingUp size={14} color="#00C48C" />, color: '#00C48C', label: 'Prediction' },
+  recommendation: { icon: <Lightbulb size={14} color="#FFB800" />, color: '#FFB800', label: 'Recommendation' },
+  trend: { icon: <TrendingDown size={14} color="#4A90D9" />, color: '#4A90D9', label: 'Trend' },
+};
 
 const COUNTRY_FLAGS: Record<string, string> = {
   'United States': '🇺🇸', 'United Kingdom': '🇬🇧', 'Canada': '🇨🇦', 'Germany': '🇩🇪',
@@ -834,6 +854,254 @@ export default function LandingAnalyticsScreen() {
     );
   };
 
+  const brainQuery = trpc.aiLearning.getAIBrainStatus.useQuery(undefined, {
+    enabled: activeTab === 'brain',
+    staleTime: 10000,
+    refetchInterval: activeTab === 'brain' ? 15000 : false,
+  });
+
+  const learnMutation = trpc.aiLearning.runLearningCycle.useMutation({
+    onSuccess: () => {
+      void utils.aiLearning.getAIBrainStatus.invalidate();
+    },
+  });
+
+  const renderBrainTab = () => {
+    const brain = brainQuery.data;
+
+    if (brainQuery.isLoading && !brain) {
+      return (
+        <View style={s.emptyWrap}>
+          <Sparkles size={48} color="#FFB800" />
+          <Text style={s.emptyTitle}>Loading AI Brain...</Text>
+          <Text style={s.emptySubtitle}>Connecting to the self-learning engine.</Text>
+        </View>
+      );
+    }
+
+    if (!brain) {
+      return (
+        <View style={s.emptyWrap}>
+          <Sparkles size={48} color="#97A0AF" />
+          <Text style={s.emptyTitle}>AI Brain Offline</Text>
+          <Text style={s.emptySubtitle}>Run a learning cycle to activate the AI engine.</Text>
+          <TouchableOpacity
+            style={[s.retryBtn, { backgroundColor: '#FFB800' }]}
+            onPress={() => learnMutation.mutate({ period })}
+          >
+            <Sparkles size={14} color="#000" />
+            <Text style={s.retryBtnText}>Train AI</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    const mem = brain.memory;
+    const stats = brain.stats;
+
+    return (
+      <>
+        <View style={s.brainHero}>
+          <View style={s.brainPulseOuter}>
+            <View style={[s.brainPulseInner, { backgroundColor: brain.status === 'active' ? '#00C48C' : '#FFB800' }]} />
+          </View>
+          <Text style={s.brainStatus}>
+            {brain.status === 'active' ? 'AI Brain Active' : 'Learning Mode'}
+          </Text>
+          <Text style={s.brainCycles}>
+            {mem.learningCycles} learning cycles completed
+          </Text>
+        </View>
+
+        <View style={s.brainKpiRow}>
+          {[
+            { value: stats.activeLearnings, label: 'Active', color: '#00C48C' },
+            { value: mem.totalDataPointsProcessed, label: 'Data Points', color: '#4A90D9' },
+            { value: stats.avgConfidence, label: 'Confidence', color: '#FFB800', suffix: '%' },
+          ].map((kpi, i) => (
+            <View key={i} style={[s.brainKpiCard, { borderTopColor: kpi.color }]}>
+              <Text style={[s.brainKpiValue, { color: kpi.color }]}>
+                {kpi.value.toLocaleString()}{kpi.suffix || ''}
+              </Text>
+              <Text style={s.brainKpiLabel}>{kpi.label}</Text>
+            </View>
+          ))}
+        </View>
+
+        <TouchableOpacity
+          style={s.trainBtn}
+          onPress={() => learnMutation.mutate({ period })}
+          disabled={learnMutation.isPending}
+          activeOpacity={0.7}
+        >
+          <Sparkles size={16} color="#000" />
+          <Text style={s.trainBtnText}>
+            {learnMutation.isPending ? 'Training...' : 'Run Learning Cycle'}
+          </Text>
+          {learnMutation.data && (
+            <View style={s.trainBadge}>
+              <Text style={s.trainBadgeText}>+{learnMutation.data.newLearnings}</Text>
+            </View>
+          )}
+        </TouchableOpacity>
+
+        {stats.byType && Object.keys(stats.byType).length > 0 && (
+          <View style={s.card}>
+            <View style={s.cardHeader}>
+              <Activity size={16} color="#7B68EE" />
+              <Text style={s.cardTitle}>Learning Types</Text>
+            </View>
+            {Object.entries(stats.byType).map(([type, count], _i) => {
+              const typeInfo = TYPE_ICONS[type] || { icon: <Activity size={14} color="#97A0AF" />, color: '#97A0AF', label: type };
+              const maxCount = Math.max(...Object.values(stats.byType as Record<string, number>), 1);
+              return (
+                <View key={type} style={s.brainTypeRow}>
+                  <View style={[s.brainTypeIcon, { backgroundColor: typeInfo.color + '15' }]}>
+                    {typeInfo.icon}
+                  </View>
+                  <View style={s.brainTypeInfo}>
+                    <Text style={s.brainTypeLabel}>{typeInfo.label}</Text>
+                    <View style={s.brainTypeBarBg}>
+                      <View style={[s.brainTypeBarFill, {
+                        width: `${Math.max(((count as number) / maxCount) * 100, 5)}%` as any,
+                        backgroundColor: typeInfo.color,
+                      }]} />
+                    </View>
+                  </View>
+                  <Text style={[s.brainTypeCount, { color: typeInfo.color }]}>{count as number}</Text>
+                </View>
+              );
+            })}
+          </View>
+        )}
+
+        {brain.activeAnomalies.length > 0 && (
+          <View style={s.card}>
+            <View style={s.cardHeader}>
+              <AlertTriangle size={16} color="#FF4D4D" />
+              <Text style={s.cardTitle}>Active Anomalies</Text>
+            </View>
+            {brain.activeAnomalies.map((anomaly) => (
+              <View key={anomaly.id} style={s.brainInsightRow}>
+                <View style={[s.brainInsightDot, { backgroundColor: '#FF4D4D' }]} />
+                <View style={s.brainInsightInfo}>
+                  <Text style={s.brainInsightTitle} numberOfLines={2}>{anomaly.title}</Text>
+                  <Text style={s.brainInsightDesc} numberOfLines={3}>{anomaly.description}</Text>
+                  <View style={s.brainInsightMeta}>
+                    <View style={[s.brainConfBadge, { backgroundColor: IMPACT_STYLES[anomaly.impact]?.bg || '#eee' }]}>
+                      <Text style={[s.brainConfText, { color: IMPACT_STYLES[anomaly.impact]?.text || '#999' }]}>
+                        {IMPACT_STYLES[anomaly.impact]?.label || anomaly.impact}
+                      </Text>
+                    </View>
+                    <Text style={s.brainConfPct}>{anomaly.confidence}% conf.</Text>
+                  </View>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {brain.activePredictions.length > 0 && (
+          <View style={s.card}>
+            <View style={s.cardHeader}>
+              <TrendingUp size={16} color="#00C48C" />
+              <Text style={s.cardTitle}>Predictions</Text>
+            </View>
+            {brain.activePredictions.map((pred) => (
+              <View key={pred.id} style={s.brainInsightRow}>
+                <View style={[s.brainInsightDot, { backgroundColor: '#00C48C' }]} />
+                <View style={s.brainInsightInfo}>
+                  <Text style={s.brainInsightTitle} numberOfLines={2}>{pred.title}</Text>
+                  <Text style={s.brainInsightDesc} numberOfLines={3}>{pred.description}</Text>
+                  <Text style={s.brainConfPct}>{pred.confidence}% confidence</Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {brain.topRecommendations.length > 0 && (
+          <View style={s.card}>
+            <View style={s.cardHeader}>
+              <Lightbulb size={16} color="#FFB800" />
+              <Text style={s.cardTitle}>Smart Recommendations</Text>
+            </View>
+            {brain.topRecommendations.map((rec, i) => (
+              <View key={rec.id} style={s.brainRecRow}>
+                <View style={[s.brainRecNum, { backgroundColor: IMPACT_STYLES[rec.impact]?.bg || '#eee' }]}>
+                  <Text style={[s.brainRecNumText, { color: IMPACT_STYLES[rec.impact]?.text || '#999' }]}>
+                    {i + 1}
+                  </Text>
+                </View>
+                <View style={s.brainRecInfo}>
+                  <Text style={s.brainRecTitle} numberOfLines={2}>{rec.title}</Text>
+                  <Text style={s.brainRecDesc} numberOfLines={3}>{rec.description}</Text>
+                  <View style={s.brainInsightMeta}>
+                    <View style={[s.brainConfBadge, { backgroundColor: IMPACT_STYLES[rec.impact]?.bg || '#eee' }]}>
+                      <Text style={[s.brainConfText, { color: IMPACT_STYLES[rec.impact]?.text || '#999' }]}>
+                        {IMPACT_STYLES[rec.impact]?.label || rec.impact}
+                      </Text>
+                    </View>
+                    <Text style={s.brainConfPct}>{rec.confidence}% conf.</Text>
+                  </View>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {brain.recentLearnings.length > 0 && (
+          <View style={s.card}>
+            <View style={s.cardHeader}>
+              <Brain size={16} color="#7B68EE" />
+              <Text style={s.cardTitle}>Recent Learnings</Text>
+              <Text style={s.cardSubtitle}>{brain.recentLearnings.length} active</Text>
+            </View>
+            {brain.recentLearnings.slice(0, 15).map((learning) => {
+              const typeInfo = TYPE_ICONS[learning.type] || { icon: <Activity size={14} color="#97A0AF" />, color: '#97A0AF', label: learning.type };
+              return (
+                <View key={learning.id} style={s.brainLearningRow}>
+                  <View style={[s.brainLearningIcon, { backgroundColor: typeInfo.color + '15' }]}>
+                    {typeInfo.icon}
+                  </View>
+                  <View style={s.brainLearningInfo}>
+                    <Text style={s.brainLearningTitle} numberOfLines={1}>{learning.title}</Text>
+                    <View style={s.brainLearningMetaRow}>
+                      <Text style={[s.brainLearningType, { color: typeInfo.color }]}>{typeInfo.label}</Text>
+                      <Text style={s.brainLearningConf}>{learning.confidence}%</Text>
+                      <Text style={s.brainLearningPts}>{learning.dataPoints} pts</Text>
+                    </View>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        )}
+
+        {brain.baselines && Object.keys(brain.baselines).length > 0 && (
+          <View style={s.card}>
+            <View style={s.cardHeader}>
+              <BarChart3 size={16} color="#4A90D9" />
+              <Text style={s.cardTitle}>Behavior Baselines</Text>
+            </View>
+            {Object.entries(brain.baselines).map(([key, baseline]) => (
+              <View key={key} style={s.brainBaselineRow}>
+                <Text style={s.brainBaselineLabel}>{key.replace(/_/g, ' ')}</Text>
+                <View style={s.brainBaselineValues}>
+                  <Text style={s.brainBaselineAvg}>avg: {Math.round((baseline as any).avg)}</Text>
+                  <Text style={s.brainBaselineRange}>
+                    {Math.round((baseline as any).min)}-{Math.round((baseline as any).max)}
+                  </Text>
+                  <Text style={s.brainBaselineSamples}>{(baseline as any).samples} samples</Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
+      </>
+    );
+  };
+
   const renderLiveTab = () => {
     if (liveLoading && !liveData && !liveError) {
       return (
@@ -1051,6 +1319,8 @@ export default function LandingAnalyticsScreen() {
 
           {activeTab === 'live' ? (
             renderLiveTab()
+          ) : activeTab === 'brain' ? (
+            renderBrainTab()
           ) : data ? (
             <>
               {activeTab === 'overview' && renderOverviewTab()}
@@ -1288,4 +1558,61 @@ const s = StyleSheet.create({
   errorIcon: { width: 72, height: 72, borderRadius: 36, backgroundColor: '#FFEBEE', alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
   retryBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: SS_BLUE, borderRadius: 12, paddingHorizontal: 20, paddingVertical: 10, marginTop: 8 },
   retryBtnText: { fontSize: 13, fontWeight: '700' as const, color: '#FFFFFF' },
+
+  brainHero: { backgroundColor: '#FFFFFF', borderRadius: 20, padding: 28, borderWidth: 1, borderColor: '#E0E5EC', marginBottom: 16, alignItems: 'center', gap: 10 },
+  brainPulseOuter: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#00C48C18', alignItems: 'center', justifyContent: 'center' },
+  brainPulseInner: { width: 20, height: 20, borderRadius: 10 },
+  brainStatus: { fontSize: 22, fontWeight: '900' as const, color: '#1B2A3D', letterSpacing: -0.3 },
+  brainCycles: { fontSize: 12, fontWeight: '600' as const, color: '#97A0AF' },
+
+  brainKpiRow: { flexDirection: 'row', gap: 10, marginBottom: 14 },
+  brainKpiCard: { flex: 1, backgroundColor: '#FFFFFF', borderRadius: 14, padding: 14, borderWidth: 1, borderColor: '#E0E5EC', borderTopWidth: 3, alignItems: 'center', gap: 4 },
+  brainKpiValue: { fontSize: 20, fontWeight: '900' as const },
+  brainKpiLabel: { fontSize: 10, fontWeight: '600' as const, color: '#5E6C84', textTransform: 'uppercase' as const, letterSpacing: 0.5 },
+
+  trainBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#FFB800', borderRadius: 14, paddingVertical: 14, marginBottom: 16 },
+  trainBtnText: { fontSize: 14, fontWeight: '800' as const, color: '#000' },
+  trainBadge: { backgroundColor: '#00000020', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2 },
+  trainBadgeText: { fontSize: 11, fontWeight: '800' as const, color: '#000' },
+
+  brainTypeRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
+  brainTypeIcon: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  brainTypeInfo: { flex: 1, gap: 4 },
+  brainTypeLabel: { fontSize: 12, fontWeight: '700' as const, color: '#1B2A3D', textTransform: 'capitalize' as const },
+  brainTypeBarBg: { height: 4, backgroundColor: '#EDF0F5', borderRadius: 2, overflow: 'hidden' },
+  brainTypeBarFill: { height: 4, borderRadius: 2 },
+  brainTypeCount: { fontSize: 14, fontWeight: '900' as const, width: 30, textAlign: 'right' as const },
+
+  brainInsightRow: { flexDirection: 'row', gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#EDF0F5' },
+  brainInsightDot: { width: 8, height: 8, borderRadius: 4, marginTop: 6 },
+  brainInsightInfo: { flex: 1, gap: 4 },
+  brainInsightTitle: { fontSize: 13, fontWeight: '700' as const, color: '#1B2A3D', lineHeight: 18 },
+  brainInsightDesc: { fontSize: 11, fontWeight: '500' as const, color: '#5E6C84', lineHeight: 16 },
+  brainInsightMeta: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 },
+  brainConfBadge: { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 2 },
+  brainConfText: { fontSize: 9, fontWeight: '800' as const, letterSpacing: 0.3 },
+  brainConfPct: { fontSize: 10, fontWeight: '600' as const, color: '#97A0AF' },
+
+  brainRecRow: { flexDirection: 'row', gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#EDF0F5' },
+  brainRecNum: { width: 28, height: 28, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
+  brainRecNumText: { fontSize: 12, fontWeight: '900' as const },
+  brainRecInfo: { flex: 1, gap: 4 },
+  brainRecTitle: { fontSize: 13, fontWeight: '700' as const, color: '#1B2A3D', lineHeight: 18 },
+  brainRecDesc: { fontSize: 11, fontWeight: '500' as const, color: '#5E6C84', lineHeight: 16 },
+
+  brainLearningRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#EDF0F5' },
+  brainLearningIcon: { width: 28, height: 28, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  brainLearningInfo: { flex: 1, gap: 2 },
+  brainLearningTitle: { fontSize: 12, fontWeight: '600' as const, color: '#1B2A3D' },
+  brainLearningMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  brainLearningType: { fontSize: 10, fontWeight: '700' as const },
+  brainLearningConf: { fontSize: 10, fontWeight: '600' as const, color: '#97A0AF' },
+  brainLearningPts: { fontSize: 10, fontWeight: '500' as const, color: '#C0C7D3' },
+
+  brainBaselineRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#EDF0F5' },
+  brainBaselineLabel: { fontSize: 12, fontWeight: '700' as const, color: '#1B2A3D', textTransform: 'capitalize' as const, flex: 1 },
+  brainBaselineValues: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  brainBaselineAvg: { fontSize: 11, fontWeight: '700' as const, color: '#4A90D9' },
+  brainBaselineRange: { fontSize: 10, fontWeight: '500' as const, color: '#97A0AF' },
+  brainBaselineSamples: { fontSize: 10, fontWeight: '500' as const, color: '#C0C7D3' },
 });
