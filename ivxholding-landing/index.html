@@ -1756,7 +1756,13 @@
   // ══════════════════════════════════════════════════════════════════════════════
   // CONFIG
   // ══════════════════════════════════════════════════════════════════════════════
-  var IVX_API = ('__RORK_API_BASE_URL__' || 'https://dev-rqxi3m9itducccpmouse7.rorktest.dev').replace(/\/$/, '');
+  var _rawApiUrl = '__RORK_API_BASE_URL__';
+  var _resolvedApi = (_rawApiUrl.indexOf('__RORK_') === 0 ? '' : _rawApiUrl || '').replace(/\/$/, '');
+  var IVX_API = _resolvedApi || 'https://dev-rqxi3m9itducccpmouse7.rorktest.dev';
+  var IVX_API_FALLBACKS = [
+    IVX_API,
+    'https://dev-rqxi3m9itducccpmouse7.rorktest.dev',
+  ].filter(function(v, i, a) { return v && a.indexOf(v) === i; });
   var SESSION_ID = 'lp_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
   var PAGE_START = Date.now();
   var GEO_DATA = {};
@@ -1767,8 +1773,11 @@
   var AD_CLICK_IDS = {};
   var ENGAGEMENT_SCORE = 0;
   var VISIT_COUNT = 1;
-  console.log('[IVX] Landing v4 — Engagement Intelligence Engine');
-  console.log('[IVX] API:', IVX_API || '(no API URL)');
+  var TRACK_FAILURES = 0;
+  var TRACK_SUCCESS = 0;
+  console.log('[IVX] Landing v5 — Live Tracking Engine');
+  console.log('[IVX] API:', IVX_API);
+  console.log('[IVX] Fallbacks:', IVX_API_FALLBACKS);
 
   // ══════════════════════════════════════════════════════════════════════════════
   // UTM & AD CLICK ID CAPTURE
@@ -1900,20 +1909,37 @@
   // ══════════════════════════════════════════════════════════════════════════════
   // tRPC HELPER
   // ══════════════════════════════════════════════════════════════════════════════
-  async function trpcCall(procedure, input, authToken) {
-    if (!IVX_API) { console.warn('[IVX] No API URL — skipping:', procedure); return null; }
-    var url = IVX_API + '/trpc/' + procedure;
+  function trpcCall(procedure, input, authToken) {
+    if (!IVX_API) { console.warn('[IVX] No API URL — skipping:', procedure); return Promise.resolve(null); }
+    var url = IVX_API + '/api/trpc/' + procedure;
     var headers = { 'Content-Type': 'application/json' };
     if (authToken) headers['Authorization'] = 'Bearer ' + authToken;
-    var res = await fetch(url, { method: 'POST', headers: headers, body: JSON.stringify({ json: input }) });
-    var data = await res.json();
-    if (data.error) throw new Error(data.error.message || 'Request failed');
-    return data.result && data.result.data && data.result.data.json;
+    return fetch(url, { method: 'POST', headers: headers, body: JSON.stringify({ json: input }) })
+      .then(function(res) { return res.json(); })
+      .then(function(data) {
+        if (data.error) throw new Error((data.error.json && data.error.json.message) || data.error.message || 'Request failed');
+        return data.result && data.result.data && data.result.data.json;
+      });
   }
 
   // ══════════════════════════════════════════════════════════════════════════════
   // REAL-TIME ANALYTICS — ENHANCED + AD PLATFORM SYNC
   // ══════════════════════════════════════════════════════════════════════════════
+  function fetchWithRetry(url, options, retries) {
+    retries = retries || 0;
+    return fetch(url, options).then(function(r) {
+      if (r.ok) return r.json();
+      throw new Error('HTTP ' + r.status);
+    }).catch(function(err) {
+      if (retries < 2) {
+        return new Promise(function(resolve) {
+          setTimeout(function() { resolve(fetchWithRetry(url, options, retries + 1)); }, 1000 * (retries + 1));
+        });
+      }
+      throw err;
+    });
+  }
+
   function track(event, properties) {
     var payload = {
       event: event,
@@ -1932,7 +1958,7 @@
         language: navigator.language,
         funnelStep: FUNNEL_STEP,
         selectedGoal: SELECTED_GOAL,
-        timeOnPage: Date.now() - PAGE_START,
+        timeOnPage: Math.round((Date.now() - PAGE_START) / 1000),
         engagementScore: ENGAGEMENT_SCORE,
         visitCount: VISIT_COUNT,
         utmSource: UTM_DATA.source,
@@ -1946,34 +1972,28 @@
       }, properties || {}),
     };
 
-    if (IVX_API) {
-      fetch(IVX_API + '/track/visit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      }).then(function(r) {
-        if (r.ok) return r.json();
-        throw new Error('Track HTTP ' + r.status);
-      }).then(function(data) {
-        console.log('[IVX Track] OK:', event, data.visitor ? data.visitor.ip : '');
-        if (data.visitor) VISITOR_DATA = data.visitor;
-      }).catch(function(err) {
-        console.warn('[IVX Track] REST failed, using tRPC:', err.message);
-        trpcCall('analytics.trackLanding', {
-          event: event,
-          sessionId: SESSION_ID,
-          properties: Object.assign({}, payload.properties, {
-            geoCity: GEO_DATA.city, geoCountry: GEO_DATA.country,
-          }),
-          geo: GEO_DATA,
-        }).catch(function() {});
-      });
-    } else {
+    trpcCall('analytics.trackVisit', {
+      event: event,
+      sessionId: SESSION_ID,
+      page: '/landing',
+      section: payload.section,
+      referrer: document.referrer || 'direct',
+      userAgent: navigator.userAgent,
+      properties: payload.properties,
+      geo: GEO_DATA,
+    }).then(function(data) {
+      TRACK_SUCCESS++;
+      if (data && data.visitor) VISITOR_DATA = data.visitor;
+      console.log('[IVX Track] OK via tRPC:', event, '(success #' + TRACK_SUCCESS + ')');
+    }).catch(function(err) {
+      TRACK_FAILURES++;
+      console.warn('[IVX Track] tRPC failed for:', event, err.message, '(failures:', TRACK_FAILURES, ')');
       trpcCall('analytics.trackLanding', {
         event: event, sessionId: SESSION_ID,
-        properties: payload.properties, geo: GEO_DATA,
-      }).catch(function() {});
-    }
+        properties: Object.assign({}, payload.properties, { geoCity: GEO_DATA.city, geoCountry: GEO_DATA.country }),
+        geo: GEO_DATA,
+      }).catch(function() { console.error('[IVX Track] All tracking failed for:', event); });
+    });
   }
 
   // ══════════════════════════════════════════════════════════════════════════════
@@ -2043,18 +2063,55 @@
   // ══════════════════════════════════════════════════════════════════════════════
   // ON LOAD
   // ══════════════════════════════════════════════════════════════════════════════
-  window.addEventListener('load', function() {
+  // ══════════════════════════════════════════════════════════════════════════════
+  // INSTANT TRACKING — fires within 1-2s of page display
+  // ══════════════════════════════════════════════════════════════════════════════
+  function sendHeartbeat() {
+    trpcCall('analytics.trackHeartbeat', {
+      sessionId: SESSION_ID,
+      userAgent: navigator.userAgent,
+      properties: {
+        currentStep: FUNNEL_STEP,
+        sessionDuration: Math.round((Date.now() - PAGE_START) / 1000),
+        activeTime: Math.round((Date.now() - PAGE_START) / 1000),
+        engagementScore: ENGAGEMENT_SCORE,
+      },
+      geo: GEO_DATA,
+    }).then(function() {
+      console.log('[IVX HB] OK via tRPC');
+    }).catch(function(err) {
+      console.warn('[IVX HB] Failed:', err.message);
+    });
+  }
+
+  (function instantTrack() {
     track('landing_page_view', { section: 'hero', title: document.title });
     fireAdEvent('page_view', { content_name: 'IVX Landing Page' });
     addScore('page_view', 5);
+    sendHeartbeat();
+    console.log('[IVX] Instant track fired at', Date.now() - PAGE_START, 'ms');
+    setTimeout(function() {
+      track('landing_page_view_retry', { section: 'hero', title: document.title, retry: true });
+      sendHeartbeat();
+      console.log('[IVX] Retry track at', Date.now() - PAGE_START, 'ms');
+    }, 3000);
+  })();
+
+  window.addEventListener('load', function() {
     loadWaitlistCount();
 
-    // Track every 15 seconds for real-time dashboard (was 5s, optimized)
+    // Send another heartbeat on full load so geo is likely resolved
+    sendHeartbeat();
+
+    setInterval(function() {
+      sendHeartbeat();
+    }, 5000);
     setInterval(function() {
       track('heartbeat', { section: 'active', timeOnPage: Date.now() - PAGE_START, engagementScore: ENGAGEMENT_SCORE });
     }, 15000);
 
-    // Time-on-page engagement scoring
+    // Time-on-page engagement scoring — add 5s milestone
+    setTimeout(function() { addScore('time_5s', 3); track('visitor_engaged_5s', { section: 'hero', timeOnPage: 5000 }); sendHeartbeat(); }, 5000);
     setTimeout(function() { addScore('time_30s', 5); }, 30000);
     setTimeout(function() { addScore('time_60s', 10); }, 60000);
     setTimeout(function() { addScore('time_120s', 10); }, 120000);
@@ -2072,11 +2129,11 @@
   var scrollMilestones = {};
   window.addEventListener('scroll', function() {
     var pct = Math.round(((window.scrollY + window.innerHeight) / document.body.scrollHeight) * 100);
-    [25, 50, 75, 90].forEach(function(m) {
+    [25, 50, 75, 100].forEach(function(m) {
       if (!scrollMilestones[m] && pct >= m) {
         scrollMilestones[m] = true;
-        track('scroll_depth', { depth: m, section: 'page' });
-        var scrollScores = { 25: 5, 50: 10, 75: 15, 90: 10 };
+        track('scroll_' + m, { depth: m, section: 'page', scrollDepthPercent: m });
+        var scrollScores = { 25: 5, 50: 10, 75: 15, 100: 10 };
         addScore('scroll_' + m, scrollScores[m]);
         if (m === 50) fireAdEvent('view_content', { content_name: 'Scrolled 50%', category: 'engagement' });
       }
@@ -2086,10 +2143,10 @@
   // Exit intent
   window.addEventListener('beforeunload', function() {
     var elapsed = Date.now() - PAGE_START;
-    navigator.sendBeacon && IVX_API && navigator.sendBeacon(
-      IVX_API + '/trpc/analytics.trackLanding',
-      JSON.stringify({ json: { event: 'page_exit', sessionId: SESSION_ID, properties: { timeOnPage: elapsed, funnelStep: FUNNEL_STEP, selectedGoal: SELECTED_GOAL } } })
-    );
+    if (navigator.sendBeacon && IVX_API) {
+      var blob = new Blob([JSON.stringify({ json: { event: 'page_exit', sessionId: SESSION_ID, geo: GEO_DATA, userAgent: navigator.userAgent, properties: { timeOnPage: Math.round(elapsed / 1000), funnelStep: FUNNEL_STEP, selectedGoal: SELECTED_GOAL, engagementScore: ENGAGEMENT_SCORE } } })], { type: 'application/json' });
+      navigator.sendBeacon(IVX_API + '/api/trpc/analytics.trackVisit', blob);
+    }
   });
 
   // Section view tracking
@@ -2233,34 +2290,30 @@
       fireAdEvent('lead', { content_name: 'Waitlist Signup', value: 50, category: 'conversion' });
       fireAdEvent('complete_registration', { content_name: 'IVX Account', value: 50 });
 
-      // Server-side conversion tracking
+      // Server-side conversion tracking via tRPC
       if (IVX_API) {
-        fetch(IVX_API + '/track/visit', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            event: 'conversion_complete_registration',
-            sessionId: SESSION_ID,
-            page: '/landing',
-            section: 'funnel_step_3',
-            referrer: document.referrer || 'direct',
-            userAgent: navigator.userAgent,
-            geo: GEO_DATA,
-            properties: {
-              conversionType: 'signup',
-              value: 50,
-              currency: 'USD',
-              goal: SELECTED_GOAL,
-              engagementScore: ENGAGEMENT_SCORE,
-              utmSource: UTM_DATA.source,
-              utmMedium: UTM_DATA.medium,
-              utmCampaign: UTM_DATA.campaign,
-              fbclid: AD_CLICK_IDS.fbclid,
-              gclid: AD_CLICK_IDS.gclid,
-              ttclid: AD_CLICK_IDS.ttclid,
-              visitCount: VISIT_COUNT,
-            },
-          }),
+        trpcCall('analytics.trackVisit', {
+          event: 'conversion_complete_registration',
+          sessionId: SESSION_ID,
+          page: '/landing',
+          section: 'funnel_step_3',
+          referrer: document.referrer || 'direct',
+          userAgent: navigator.userAgent,
+          geo: GEO_DATA,
+          properties: {
+            conversionType: 'signup',
+            value: 50,
+            currency: 'USD',
+            goal: SELECTED_GOAL,
+            engagementScore: ENGAGEMENT_SCORE,
+            utmSource: UTM_DATA.source,
+            utmMedium: UTM_DATA.medium,
+            utmCampaign: UTM_DATA.campaign,
+            fbclid: AD_CLICK_IDS.fbclid,
+            gclid: AD_CLICK_IDS.gclid,
+            ttclid: AD_CLICK_IDS.ttclid,
+            visitCount: VISIT_COUNT,
+          },
         }).catch(function() {});
       }
 
@@ -2383,31 +2436,27 @@
 
       // Also track as a specific partner application event
       if (IVX_API) {
-        fetch(IVX_API + '/track/visit', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            event: 'partner_application',
-            sessionId: SESSION_ID,
-            page: '/landing',
-            section: 'partners',
-            referrer: document.referrer || 'direct',
-            userAgent: navigator.userAgent,
-            geo: GEO_DATA,
-            properties: {
-              role: role,
-              roleName: config.roleName,
-              firstName: firstName,
-              lastName: lastName,
-              email: email,
-              phone: phone,
-              company: company,
-              license: license,
-              experience: experience,
-              timestamp: new Date().toISOString(),
-              engagementScore: ENGAGEMENT_SCORE,
-            },
-          }),
+        trpcCall('analytics.trackVisit', {
+          event: 'partner_application',
+          sessionId: SESSION_ID,
+          page: '/landing',
+          section: 'partners',
+          referrer: document.referrer || 'direct',
+          userAgent: navigator.userAgent,
+          geo: GEO_DATA,
+          properties: {
+            role: role,
+            roleName: config.roleName,
+            firstName: firstName,
+            lastName: lastName,
+            email: email,
+            phone: phone,
+            company: company,
+            license: license,
+            experience: experience,
+            timestamp: new Date().toISOString(),
+            engagementScore: ENGAGEMENT_SCORE,
+          },
         }).catch(function() {});
       }
 
