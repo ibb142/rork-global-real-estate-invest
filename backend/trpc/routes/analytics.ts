@@ -933,12 +933,7 @@ export const analyticsRouter = createTRPCRouter({
       console.log("[Analytics] Landing analytics:", input.period);
 
       const landingCount = store.analyticsEvents.filter(e => e.userId === 'landing_visitor').length;
-      console.log(`[Analytics] Found ${landingCount} landing events in store`);
-      if (landingCount === 0) {
-        console.log('[Analytics] No landing events found — triggering seed');
-        store._seedLandingAnalytics();
-        console.log(`[Analytics] Seeded. Total events now: ${store.analyticsEvents.length}`);
-      }
+      console.log(`[Analytics] Found ${landingCount} real landing events in store`);
 
       const now = Date.now();
       let cutoffMs = 30 * 24 * 60 * 60 * 1000;
