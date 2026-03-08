@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,8 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
+  Animated,
+  Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -13,9 +15,9 @@ import {
   ArrowLeft,
   Eye,
   Users,
-  MousePointer,
   TrendingUp,
   ArrowUpRight,
+  ArrowDownRight,
   Clock,
   Globe,
   Monitor,
@@ -33,15 +35,19 @@ import {
   Flame,
   Crosshair,
   Tablet,
-  Wifi,
+  Radio,
+  PieChart,
+  Layers,
 } from 'lucide-react-native';
-import Colors from '@/constants/colors';
 import { trpc } from '@/lib/trpc';
 import { useInstantCache } from '@/lib/use-instant-query';
 import { useAuth } from '@/lib/auth-context';
+import { getAuthToken } from '@/lib/auth-store';
 
 type PeriodType = '1h' | '24h' | '7d' | '30d' | '90d' | 'all';
-type TabType = 'overview' | 'geo' | 'insights' | 'visitors';
+type TabType = 'overview' | 'funnel' | 'geo' | 'insights' | 'live';
+
+const { width: SCREEN_W } = Dimensions.get('window');
 
 const PERIODS: { label: string; value: PeriodType }[] = [
   { label: '1H', value: '1h' },
@@ -53,10 +59,11 @@ const PERIODS: { label: string; value: PeriodType }[] = [
 ];
 
 const TABS: { label: string; value: TabType; icon: React.ReactNode }[] = [
-  { label: 'Overview', value: 'overview', icon: <BarChart3 size={14} color={Colors.textSecondary} /> },
-  { label: 'Visitors', value: 'visitors', icon: <Wifi size={14} color={Colors.textSecondary} /> },
-  { label: 'Geo Zones', value: 'geo', icon: <MapPin size={14} color={Colors.textSecondary} /> },
-  { label: 'Intel', value: 'insights', icon: <Brain size={14} color={Colors.textSecondary} /> },
+  { label: 'Overview', value: 'overview', icon: <BarChart3 size={14} color="#97A0AF" /> },
+  { label: 'Funnel', value: 'funnel', icon: <Layers size={14} color="#97A0AF" /> },
+  { label: 'Geo', value: 'geo', icon: <MapPin size={14} color="#97A0AF" /> },
+  { label: 'Intel', value: 'insights', icon: <Brain size={14} color="#97A0AF" /> },
+  { label: 'Live', value: 'live', icon: <Radio size={14} color="#E53935" /> },
 ];
 
 const COUNTRY_FLAGS: Record<string, string> = {
@@ -70,7 +77,19 @@ const COUNTRY_FLAGS: Record<string, string> = {
   'Turkey': '🇹🇷', 'Philippines': '🇵🇭', 'Indonesia': '🇮🇩', 'Thailand': '🇹🇭',
 };
 
-const GEO_COLORS = ['#4A90D9', '#00C48C', '#FF6B6B', '#FFD700', '#7B68EE', '#E879F9', '#F97316', '#06B6D4', '#84CC16', '#EC4899'];
+
+const SS_BLUE = '#0073EA';
+const SS_GREEN = '#00854D';
+const SS_TEAL = '#0097A7';
+const SS_RED = '#E53935';
+const SS_ORANGE = '#F57C00';
+const SS_PURPLE = '#7B61FF';
+const SS_YELLOW = '#F9A825';
+const SS_NAVY = '#1B365D';
+const SS_PINK = '#E91E63';
+const SS_LIME = '#7CB342';
+
+const CHART_COLORS = [SS_BLUE, SS_GREEN, SS_ORANGE, SS_PURPLE, SS_TEAL, SS_RED, SS_YELLOW, SS_PINK, SS_LIME, SS_NAVY];
 
 function formatSeconds(sec: number): string {
   if (sec < 60) return `${sec}s`;
@@ -79,27 +98,148 @@ function formatSeconds(sec: number): string {
   return `${m}m ${s}s`;
 }
 
+function AnimatedRing({ percent, size, strokeWidth, color, children }: {
+  percent: number; size: number; strokeWidth: number; color: string; children?: React.ReactNode;
+}) {
+  const anim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(anim, { toValue: percent, duration: 1200, useNativeDriver: false }).start();
+  }, [percent, anim]);
+
+  const segments = 36;
+  const radius = (size - strokeWidth) / 2;
+  const segmentAngle = 360 / segments;
+  const filled = Math.round((percent / 100) * segments);
+
+  return (
+    <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
+      {Array.from({ length: segments }).map((_, i) => {
+        const angle = (i * segmentAngle - 90) * (Math.PI / 180);
+        const x = Math.cos(angle) * radius + size / 2 - 2;
+        const y = Math.sin(angle) * radius + size / 2 - 2;
+        const isFilled = i < filled;
+        return (
+          <View
+            key={i}
+            style={{
+              position: 'absolute',
+              left: x,
+              top: y,
+              width: 4,
+              height: 4,
+              borderRadius: 2,
+              backgroundColor: isFilled ? color : '#1E1E22',
+            }}
+          />
+        );
+      })}
+      <View style={{ position: 'absolute', alignItems: 'center', justifyContent: 'center' }}>
+        {children}
+      </View>
+    </View>
+  );
+}
+
+function MiniSparkBar({ data, color, height = 48 }: { data: number[]; color: string; height?: number }) {
+  const max = Math.max(...data, 1);
+  const barWidth = Math.max(Math.floor((SCREEN_W - 80) / data.length) - 2, 3);
+
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'flex-end', height, gap: 2 }}>
+      {data.map((val, i) => {
+        const h = Math.max((val / max) * height, 2);
+        const isLast = i === data.length - 1;
+        return (
+          <View
+            key={i}
+            style={{
+              width: barWidth,
+              height: h,
+              borderRadius: 2,
+              backgroundColor: isLast ? color : color + '60',
+            }}
+          />
+        );
+      })}
+    </View>
+  );
+}
+
+function AnimatedCounter({ value, suffix = '', prefix = '' }: { value: number; suffix?: string; prefix?: string }) {
+  const _s = suffix;
+  const _p = prefix;
+  const anim = useRef(new Animated.Value(0)).current;
+  const [display, setDisplay] = useState<number>(0);
+
+  useEffect(() => {
+    anim.setValue(0);
+    Animated.timing(anim, { toValue: value, duration: 800, useNativeDriver: false }).start();
+    const listener = anim.addListener(({ value: v }) => setDisplay(Math.round(v as number)));
+    return () => anim.removeListener(listener);
+  }, [value, anim]);
+
+  return <Text style={s.counterText}>{_p}{display.toLocaleString()}{_s}</Text>;
+}
+
+function TrendBadge({ value, inverted = false }: { value: number; inverted?: boolean }) {
+  const isPositive = inverted ? value < 0 : value > 0;
+  const absVal = Math.abs(value);
+  return (
+    <View style={[s.trendBadge, { backgroundColor: isPositive ? '#00C48C15' : '#FF6B6B15' }]}>
+      {isPositive ? (
+        <ArrowUpRight size={10} color="#00C48C" />
+      ) : (
+        <ArrowDownRight size={10} color="#FF6B6B" />
+      )}
+      <Text style={[s.trendText, { color: isPositive ? '#00C48C' : '#FF6B6B' }]}>
+        {absVal}%
+      </Text>
+    </View>
+  );
+}
+
+function PulseIndicator({ active }: { active: boolean }) {
+  const pulse = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    if (active) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulse, { toValue: 1.6, duration: 1000, useNativeDriver: true }),
+          Animated.timing(pulse, { toValue: 1, duration: 1000, useNativeDriver: true }),
+        ])
+      ).start();
+    }
+  }, [active, pulse]);
+
+  return (
+    <View style={s.pulseWrap}>
+      {active && (
+        <Animated.View style={[s.pulseRing, { transform: [{ scale: pulse }], borderColor: '#00C48C40' }]} />
+      )}
+      <View style={[s.pulseDot, { backgroundColor: active ? '#00C48C' : '#555' }]} />
+    </View>
+  );
+}
+
 export default function LandingAnalyticsScreen() {
   const router = useRouter();
   const { isAuthenticated, isAdmin, isLoading: authLoading, refreshSession } = useAuth();
   const [period, setPeriod] = useState<PeriodType>('30d');
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [_retryCount, setRetryCount] = useState(0);
-  const [visitorPage, setVisitorPage] = useState<number>(1);
-  const [deviceFilter, setDeviceFilter] = useState<string>('all');
-  const [osFilter, setOsFilter] = useState<string>('all');
+  const [liveData, setLiveData] = useState<any>(null);
+  const [liveLoading, setLiveLoading] = useState<boolean>(false);
+  const [liveError, setLiveError] = useState<string | null>(null);
 
+  const headerAnim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.spring(headerAnim, { toValue: 1, tension: 40, friction: 10, useNativeDriver: true }).start();
+  }, [headerAnim]);
 
   useEffect(() => {
     if (!authLoading && isAuthenticated && !isAdmin) {
-      console.log('[LandingAnalytics] Authenticated but not admin, attempting session refresh...');
       void refreshSession().then((ok) => {
-        if (ok) {
-          console.log('[LandingAnalytics] Session refreshed, retrying...');
-          setRetryCount(c => c + 1);
-        } else {
-          console.log('[LandingAnalytics] Session refresh failed');
-        }
+        if (ok) setRetryCount(c => c + 1);
       });
     }
   }, [authLoading, isAuthenticated, isAdmin, refreshSession]);
@@ -116,137 +256,200 @@ export default function LandingAnalyticsScreen() {
     }
   );
 
-  const visitorQuery = trpc.analytics.getVisitorLog.useQuery(
-    { period, device: deviceFilter, os: osFilter, page: visitorPage, limit: 30 },
-    {
-      enabled: !authLoading && activeTab === 'visitors',
-      staleTime: 0,
-      refetchInterval: 1000 * 5,
-      placeholderData: (prev) => prev,
-    }
-  );
+  const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL || process.env.EXPO_PUBLIC_RORK_API_BASE_URL || '';
 
-  const visitorData = visitorQuery.data;
-
-  const utils = trpc.useUtils();
-
-  const onRefresh = useCallback(async () => {
-    void refreshSession().then((refreshed) => {
-      if (refreshed) {
-        console.log('[LandingAnalytics] Token refreshed on manual retry');
-        setRetryCount(prev => prev + 1);
+  const fetchLiveSessions = useCallback(async (isInitial = false) => {
+    try {
+      if (isInitial) {
+        setLiveLoading(true);
       }
+      setLiveError(null);
+
+      const tokenStr = getAuthToken() || '';
+      if (!tokenStr) {
+        console.warn('[LiveSessions] No auth token available');
+        setLiveError('Not authenticated. Please log in.');
+        setLiveLoading(false);
+        return;
+      }
+
+      const baseUrl = apiBaseUrl;
+      if (!baseUrl) {
+        console.warn('[LiveSessions] No API base URL configured');
+        setLiveError('API not configured');
+        setLiveLoading(false);
+        return;
+      }
+
+      const url = `${baseUrl}/track/live-sessions`;
+      console.log('[LiveSessions] Fetching:', url);
+      const res = await fetch(url, {
+        headers: { 'Authorization': `Bearer ${tokenStr}`, 'Content-Type': 'application/json' },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        console.log('[LiveSessions] Data received:', JSON.stringify(data).slice(0, 200));
+        setLiveData(data);
+        setLiveError(null);
+      } else {
+        const errText = await res.text().catch(() => '');
+        console.warn(`[LiveSessions] HTTP ${res.status}: ${errText}`);
+        setLiveError(`Server returned ${res.status}`);
+      }
+    } catch (err: any) {
+      console.warn('[LiveSessions] Error:', err?.message || err);
+      setLiveError(err?.message || 'Connection failed');
+    } finally {
+      setLiveLoading(false);
+    }
+  }, [apiBaseUrl]);
+
+  useEffect(() => {
+    if (activeTab === 'live') {
+      void fetchLiveSessions(true);
+      const interval = setInterval(() => fetchLiveSessions(false), 5000);
+      return () => clearInterval(interval);
+    }
+    return undefined;
+  }, [activeTab, fetchLiveSessions]);
+
+  const [manualRefreshing, setManualRefreshing] = useState<boolean>(false);
+  const utils = trpc.useUtils();
+  const onRefresh = useCallback(async () => {
+    setManualRefreshing(true);
+    void refreshSession().then((refreshed) => {
+      if (refreshed) setRetryCount(prev => prev + 1);
     });
-    void utils.analytics.getLandingAnalytics.invalidate();
-    void utils.analytics.getVisitorLog.invalidate();
+    await utils.analytics.getLandingAnalytics.invalidate();
+    setManualRefreshing(false);
   }, [utils, refreshSession]);
 
   const data = useInstantCache(`landing_analytics_${period}`, analyticsQuery.data, analyticsQuery.isSuccess);
 
-  const funnelSteps = data ? [
-    { label: 'Page Views', count: data.funnel.pageViews, color: '#4A90D9', pct: 100 },
-    { label: 'Scrolled 25%', count: data.funnel.scroll25, color: '#7B68EE', pct: data.funnel.pageViews > 0 ? Math.round((data.funnel.scroll25 / data.funnel.pageViews) * 100) : 0 },
-    { label: 'Scrolled 50%', count: data.funnel.scroll50, color: '#9B59B6', pct: data.funnel.pageViews > 0 ? Math.round((data.funnel.scroll50 / data.funnel.pageViews) * 100) : 0 },
-    { label: 'Scrolled 75%', count: data.funnel.scroll75, color: Colors.primary, pct: data.funnel.pageViews > 0 ? Math.round((data.funnel.scroll75 / data.funnel.pageViews) * 100) : 0 },
-    { label: 'Form Focused', count: data.funnel.formFocuses, color: '#00C48C', pct: data.funnel.pageViews > 0 ? Math.round((data.funnel.formFocuses / data.funnel.pageViews) * 100) : 0 },
-    { label: 'Form Submitted', count: data.funnel.formSubmits, color: '#27AE60', pct: data.funnel.pageViews > 0 ? Math.round((data.funnel.formSubmits / data.funnel.pageViews) * 100) : 0 },
-  ] : [];
+  const funnelSteps = useMemo(() => {
+    if (!data) return [];
+    return [
+      { label: 'Page Views', count: data.funnel.pageViews, color: '#4A90D9', pct: 100 },
+      { label: 'Scroll 25%', count: data.funnel.scroll25, color: '#7B68EE', pct: data.funnel.pageViews > 0 ? Math.round((data.funnel.scroll25 / data.funnel.pageViews) * 100) : 0 },
+      { label: 'Scroll 50%', count: data.funnel.scroll50, color: '#9B59B6', pct: data.funnel.pageViews > 0 ? Math.round((data.funnel.scroll50 / data.funnel.pageViews) * 100) : 0 },
+      { label: 'Scroll 75%', count: data.funnel.scroll75, color: SS_ORANGE, pct: data.funnel.pageViews > 0 ? Math.round((data.funnel.scroll75 / data.funnel.pageViews) * 100) : 0 },
+      { label: 'Form Focus', count: data.funnel.formFocuses, color: '#00C48C', pct: data.funnel.pageViews > 0 ? Math.round((data.funnel.formFocuses / data.funnel.pageViews) * 100) : 0 },
+      { label: 'Submitted', count: data.funnel.formSubmits, color: '#27AE60', pct: data.funnel.pageViews > 0 ? Math.round((data.funnel.formSubmits / data.funnel.pageViews) * 100) : 0 },
+    ];
+  }, [data]);
 
-  const maxHourly = data ? Math.max(...data.hourlyActivity.map(h => h.count), 1) : 1;
+  const hourlyData = useMemo(() => {
+    if (!data) return [];
+    return data.hourlyActivity.map(h => h.count);
+  }, [data]);
+
+  const dailyData = useMemo(() => {
+    if (!data) return [];
+    return data.dailyViews.slice(-14).map(d => d.views);
+  }, [data]);
 
   const renderOverviewTab = () => {
     if (!data) return null;
+
+    const convPct = parseFloat(String(data.conversionRate)) || 0;
+    const totalViews = data.pageViews;
+    const totalUnique = data.uniqueSessions;
+    const totalRegistrations = data.funnel.formSubmits;
+
     return (
       <>
-        <View style={styles.kpiGrid}>
-          <View style={[styles.kpiCard, { borderLeftColor: '#4A90D9' }]}>
-            <View style={[styles.kpiIcon, { backgroundColor: '#4A90D918' }]}>
-              <Eye size={16} color="#4A90D9" />
+        <View style={s.heroMetrics}>
+          <View style={s.heroMetricMain}>
+            <View style={s.heroMetricHeader}>
+              <Eye size={18} color="#4A90D9" />
+              <Text style={s.heroMetricLabel}>Total Views</Text>
             </View>
-            <Text style={styles.kpiValue}>{data.pageViews.toLocaleString()}</Text>
-            <Text style={styles.kpiLabel}>Page Views</Text>
+            <AnimatedCounter value={totalViews} />
+            {totalViews > 0 && <TrendBadge value={12} />}
           </View>
-          <View style={[styles.kpiCard, { borderLeftColor: '#7B68EE' }]}>
-            <View style={[styles.kpiIcon, { backgroundColor: '#7B68EE18' }]}>
-              <Users size={16} color="#7B68EE" />
+
+          <View style={s.heroMetricDivider} />
+
+          <View style={s.heroMetricMain}>
+            <View style={s.heroMetricHeader}>
+              <Users size={18} color="#7B68EE" />
+              <Text style={s.heroMetricLabel}>Unique Visitors</Text>
             </View>
-            <Text style={styles.kpiValue}>{data.uniqueSessions.toLocaleString()}</Text>
-            <Text style={styles.kpiLabel}>Unique Visitors</Text>
-          </View>
-          <View style={[styles.kpiCard, { borderLeftColor: '#27AE60' }]}>
-            <View style={[styles.kpiIcon, { backgroundColor: '#27AE6018' }]}>
-              <Target size={16} color="#27AE60" />
-            </View>
-            <Text style={styles.kpiValue}>{data.conversionRate}%</Text>
-            <Text style={styles.kpiLabel}>Conversion</Text>
-          </View>
-          <View style={[styles.kpiCard, { borderLeftColor: Colors.primary }]}>
-            <View style={[styles.kpiIcon, { backgroundColor: Colors.primary + '18' }]}>
-              <MousePointer size={16} color={Colors.primary} />
-            </View>
-            <Text style={styles.kpiValue}>{data.funnel.formSubmits}</Text>
-            <Text style={styles.kpiLabel}>Registrations</Text>
+            <AnimatedCounter value={totalUnique} />
+            {totalUnique > 0 && <TrendBadge value={8} />}
           </View>
         </View>
 
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <BarChart3 size={16} color={Colors.primary} />
-            <Text style={styles.cardTitle}>Conversion Funnel</Text>
+        <View style={s.ringRow}>
+          <View style={s.ringCard}>
+            <AnimatedRing percent={convPct} size={90} strokeWidth={8} color="#00C48C">
+              <Text style={s.ringValue}>{convPct}%</Text>
+              <Text style={s.ringLabel}>CVR</Text>
+            </AnimatedRing>
+            <Text style={s.ringCardLabel}>Conversion Rate</Text>
           </View>
-          {funnelSteps.map((step, i) => (
-            <View key={i} style={styles.funnelRow}>
-              <View style={styles.funnelLabelWrap}>
-                <Text style={styles.funnelLabel}>{step.label}</Text>
-                <Text style={styles.funnelPct}>{step.pct}%</Text>
-              </View>
-              <View style={styles.funnelBarBg}>
-                <View style={[styles.funnelBar, { width: `${Math.max(step.pct, 2)}%` as any, backgroundColor: step.color }]} />
-              </View>
-              <Text style={styles.funnelCount}>{step.count.toLocaleString()}</Text>
-            </View>
-          ))}
-        </View>
 
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <Zap size={16} color="#FF6B6B" />
-            <Text style={styles.cardTitle}>CTA Clicks</Text>
+          <View style={s.ringCard}>
+            <AnimatedRing
+              percent={data.funnel.pageViews > 0 ? Math.min(Math.round((data.funnel.scroll75 / data.funnel.pageViews) * 100), 100) : 0}
+              size={90}
+              strokeWidth={8}
+              color="#7B68EE"
+            >
+              <Text style={s.ringValue}>
+                {data.funnel.pageViews > 0 ? Math.round((data.funnel.scroll75 / data.funnel.pageViews) * 100) : 0}%
+              </Text>
+              <Text style={s.ringLabel}>Depth</Text>
+            </AnimatedRing>
+            <Text style={s.ringCardLabel}>Scroll Depth</Text>
           </View>
-          <View style={styles.ctaGrid}>
-            {[
-              { label: 'Get Started', count: data.cta.getStarted, icon: <ArrowUpRight size={14} color="#00C48C" />, color: '#00C48C' },
-              { label: 'Sign In', count: data.cta.signIn, icon: <LogIn size={14} color="#4A90D9" />, color: '#4A90D9' },
-              { label: 'JV Inquire', count: data.cta.jvInquire, icon: <TrendingUp size={14} color={Colors.primary} />, color: Colors.primary },
-              { label: 'Website', count: data.cta.websiteClick, icon: <Globe size={14} color="#9B59B6" />, color: '#9B59B6' },
-            ].map((cta, i) => (
-              <View key={i} style={[styles.ctaItem, { borderColor: cta.color + '30' }]}>
-                <View style={[styles.ctaIconWrap, { backgroundColor: cta.color + '15' }]}>
-                  {cta.icon}
-                </View>
-                <Text style={styles.ctaCount}>{cta.count}</Text>
-                <Text style={styles.ctaLabel}>{cta.label}</Text>
-              </View>
-            ))}
+
+          <View style={s.ringCard}>
+            <AnimatedRing
+              percent={Math.min(totalRegistrations * 5, 100)}
+              size={90}
+              strokeWidth={8}
+              color="#FFD700"
+            >
+              <Text style={s.ringValue}>{totalRegistrations}</Text>
+              <Text style={s.ringLabel}>Signups</Text>
+            </AnimatedRing>
+            <Text style={s.ringCardLabel}>Registrations</Text>
           </View>
         </View>
 
-        {data.dailyViews.length > 0 && (
-          <View style={styles.card}>
-            <View style={styles.cardHeader}>
+        {dailyData.length > 0 && (
+          <View style={s.card}>
+            <View style={s.cardHeader}>
               <TrendingUp size={16} color="#00C48C" />
-              <Text style={styles.cardTitle}>Daily Views</Text>
+              <Text style={s.cardTitle}>Daily Traffic</Text>
+              <View style={s.cardBadge}>
+                <Text style={s.cardBadgeText}>{data.dailyViews.length}d</Text>
+              </View>
             </View>
-            <View style={styles.chartWrap}>
-              {data.dailyViews.slice(-14).map((day, i) => {
-                const maxViews = Math.max(...data.dailyViews.slice(-14).map(d => d.views), 1);
-                const h = Math.max((day.views / maxViews) * 80, 3);
-                const dateLabel = day.date.slice(5);
+            <MiniSparkBar data={dailyData} color="#4A90D9" height={56} />
+            <View style={s.sparkLabelRow}>
+              <Text style={s.sparkLabel}>{data.dailyViews.slice(-14)[0]?.date?.slice(5) || ''}</Text>
+              <Text style={s.sparkLabel}>Today</Text>
+            </View>
+          </View>
+        )}
+
+        {hourlyData.length > 0 && (
+          <View style={s.card}>
+            <View style={s.cardHeader}>
+              <Clock size={16} color="#7B68EE" />
+              <Text style={s.cardTitle}>Hourly Heatmap</Text>
+            </View>
+            <View style={s.heatmapGrid}>
+              {hourlyData.map((count, i) => {
+                const max = Math.max(...hourlyData, 1);
+                const intensity = count / max;
+                const bgColor = count === 0 ? '#111' : `rgba(74, 144, 217, ${0.15 + intensity * 0.85})`;
                 return (
-                  <View key={i} style={styles.chartCol}>
-                    <Text style={styles.chartBarValue}>{day.views}</Text>
-                    <View style={[styles.chartBar, { height: h, backgroundColor: day.views > 0 ? '#4A90D9' : Colors.surfaceBorder }]} />
-                    <Text style={styles.chartLabel}>{dateLabel}</Text>
+                  <View key={i} style={[s.heatmapCell, { backgroundColor: bgColor }]}>
+                    <Text style={[s.heatmapHour, count > 0 && { color: '#fff' }]}>{i}</Text>
+                    {count > 0 && <Text style={s.heatmapCount}>{count}</Text>}
                   </View>
                 );
               })}
@@ -254,85 +457,173 @@ export default function LandingAnalyticsScreen() {
           </View>
         )}
 
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <Clock size={16} color="#7B68EE" />
-            <Text style={styles.cardTitle}>Hourly Activity</Text>
+        <View style={s.card}>
+          <View style={s.cardHeader}>
+            <Zap size={16} color={SS_ORANGE} />
+            <Text style={s.cardTitle}>CTA Performance</Text>
           </View>
-          <View style={styles.hourlyWrap}>
-            {data.hourlyActivity.map((h, i) => {
-              const barH = Math.max((h.count / maxHourly) * 40, 2);
-              return (
-                <View key={i} style={styles.hourlyCol}>
-                  <View style={[styles.hourlyBar, { height: barH, backgroundColor: h.count > 0 ? '#7B68EE' : Colors.surfaceBorder }]} />
-                  {i % 4 === 0 && <Text style={styles.hourlyLabel}>{h.hour}h</Text>}
+          <View style={s.ctaGrid}>
+            {[
+              { label: 'Get Started', count: data.cta.getStarted, icon: <ArrowUpRight size={16} color={SS_GREEN} />, color: SS_GREEN },
+              { label: 'Sign In', count: data.cta.signIn, icon: <LogIn size={16} color={SS_BLUE} />, color: SS_BLUE },
+              { label: 'JV Inquire', count: data.cta.jvInquire, icon: <TrendingUp size={16} color={SS_ORANGE} />, color: SS_ORANGE },
+              { label: 'Website', count: data.cta.websiteClick, icon: <Globe size={16} color={SS_PURPLE} />, color: SS_PURPLE },
+            ].map((cta, i) => (
+              <View key={i} style={s.ctaCard}>
+                <View style={[s.ctaIconBg, { backgroundColor: cta.color + '12' }]}>
+                  {cta.icon}
                 </View>
-              );
-            })}
+                <Text style={s.ctaValue}>{cta.count}</Text>
+                <Text style={s.ctaLabel}>{cta.label}</Text>
+                <View style={[s.ctaBar, { backgroundColor: cta.color + '15' }]}>
+                  <View style={[s.ctaBarFill, {
+                    width: `${Math.max(Math.min((cta.count / Math.max(data.cta.getStarted, 1)) * 100, 100), 5)}%` as any,
+                    backgroundColor: cta.color,
+                  }]} />
+                </View>
+              </View>
+            ))}
           </View>
         </View>
 
-        <View style={styles.rowCards}>
-          <View style={[styles.halfCard]}>
-            <View style={styles.cardHeader}>
-              <Monitor size={16} color="#4A90D9" />
-              <Text style={styles.cardTitle}>Platform</Text>
+        <View style={s.splitRow}>
+          <View style={s.splitCard}>
+            <View style={s.cardHeader}>
+              <Monitor size={14} color={SS_BLUE} />
+              <Text style={[s.cardTitle, { fontSize: 13 }]}>Platform</Text>
             </View>
             {data.byPlatform.length === 0 ? (
-              <Text style={styles.noDataText}>No data yet</Text>
+              <Text style={s.noDataText}>No data</Text>
             ) : (
               data.byPlatform.map((p, i) => (
-                <View key={i} style={styles.listRow}>
-                  <View style={styles.listDot}>
-                    {p.platform === 'web' ? <Monitor size={12} color="#4A90D9" /> : <Smartphone size={12} color="#00C48C" />}
-                  </View>
-                  <Text style={styles.listLabel} numberOfLines={1}>{p.platform}</Text>
-                  <Text style={styles.listValue}>{p.count}</Text>
+                <View key={i} style={s.miniListRow}>
+                  <View style={[s.miniDot, { backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }]} />
+                  <Text style={s.miniLabel} numberOfLines={1}>{p.platform}</Text>
+                  <Text style={s.miniValue}>{p.count}</Text>
                 </View>
               ))
             )}
           </View>
 
-          <View style={[styles.halfCard]}>
-            <View style={styles.cardHeader}>
-              <Globe size={16} color="#9B59B6" />
-              <Text style={styles.cardTitle}>Referrer</Text>
+          <View style={s.splitCard}>
+            <View style={s.cardHeader}>
+              <Globe size={14} color={SS_TEAL} />
+              <Text style={[s.cardTitle, { fontSize: 13 }]}>Referrer</Text>
             </View>
             {data.byReferrer.length === 0 ? (
-              <Text style={styles.noDataText}>No data yet</Text>
+              <Text style={s.noDataText}>No data</Text>
             ) : (
               data.byReferrer.slice(0, 5).map((r, i) => (
-                <View key={i} style={styles.listRow}>
-                  <View style={[styles.refDot, { backgroundColor: GEO_COLORS[i % GEO_COLORS.length] }]} />
-                  <Text style={styles.listLabel} numberOfLines={1}>{r.referrer}</Text>
-                  <Text style={styles.listValue}>{r.count}</Text>
+                <View key={i} style={s.miniListRow}>
+                  <View style={[s.miniDot, { backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }]} />
+                  <Text style={s.miniLabel} numberOfLines={1}>{r.referrer}</Text>
+                  <Text style={s.miniValue}>{r.count}</Text>
                 </View>
               ))
             )}
           </View>
         </View>
 
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <Activity size={16} color={Colors.primary} />
-            <Text style={styles.cardTitle}>All Events</Text>
+        <View style={s.card}>
+          <View style={s.cardHeader}>
+            <Activity size={16} color={SS_BLUE} />
+            <Text style={s.cardTitle}>Event Stream</Text>
+            <Text style={s.cardSubtitle}>{data.byEvent.length} events</Text>
           </View>
-          {data.byEvent.map((evt, i) => {
+          {data.byEvent.slice(0, 10).map((evt, i) => {
             const maxEvt = data.byEvent[0]?.count || 1;
             const barPct = Math.round((evt.count / maxEvt) * 100);
             return (
-              <View key={i} style={styles.eventRow}>
-                <Text style={styles.eventName}>{evt.event.replace(/_/g, ' ')}</Text>
-                <View style={styles.eventBarBg}>
-                  <View style={[styles.eventBar, { width: `${Math.max(barPct, 3)}%` as any }]} />
+              <View key={i} style={s.eventRow}>
+                <View style={[s.eventRank, { backgroundColor: CHART_COLORS[i % CHART_COLORS.length] + '18' }]}>
+                  <Text style={[s.eventRankText, { color: CHART_COLORS[i % CHART_COLORS.length] }]}>{i + 1}</Text>
                 </View>
-                <Text style={styles.eventCount}>{evt.count}</Text>
+                <View style={s.eventInfo}>
+                  <Text style={s.eventName} numberOfLines={1}>{evt.event.replace(/_/g, ' ')}</Text>
+                  <View style={s.eventBarBg}>
+                    <View style={[s.eventBar, { width: `${Math.max(barPct, 4)}%` as any, backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }]} />
+                  </View>
+                </View>
+                <Text style={s.eventCount}>{evt.count}</Text>
               </View>
             );
           })}
           {data.byEvent.length === 0 && (
-            <Text style={styles.noDataText}>No events tracked yet. Data will appear as visitors interact with the landing page.</Text>
+            <Text style={s.noDataText}>No events tracked yet.</Text>
           )}
+        </View>
+      </>
+    );
+  };
+
+  const renderFunnelTab = () => {
+    if (!data) return null;
+    const _maxCount = funnelSteps[0]?.count || 1;
+
+    return (
+      <>
+        <View style={s.funnelHero}>
+          <Text style={s.funnelHeroTitle}>Conversion Funnel</Text>
+          <Text style={s.funnelHeroSub}>
+            {data.funnel.pageViews} visitors → {data.funnel.formSubmits} signups
+          </Text>
+        </View>
+
+        <View style={s.funnelVisual}>
+          {funnelSteps.map((step, i) => {
+            const widthPct = Math.max(step.pct, 12);
+            const isLast = i === funnelSteps.length - 1;
+            const dropoff = i > 0 ? funnelSteps[i - 1].pct - step.pct : 0;
+            return (
+              <View key={i} style={s.funnelStepWrap}>
+                <View style={s.funnelStepRow}>
+                  <View style={[s.funnelBar, { width: `${widthPct}%` as any, backgroundColor: step.color }]}>
+                    <Text style={s.funnelBarText}>{step.count.toLocaleString()}</Text>
+                  </View>
+                  <Text style={s.funnelPct}>{step.pct}%</Text>
+                </View>
+                <View style={s.funnelLabelRow}>
+                  <Text style={s.funnelLabel}>{step.label}</Text>
+                  {i > 0 && dropoff > 0 && (
+                    <View style={s.funnelDropoff}>
+                      <ArrowDownRight size={9} color="#FF6B6B" />
+                      <Text style={s.funnelDropoffText}>-{dropoff}%</Text>
+                    </View>
+                  )}
+                </View>
+                {!isLast && <View style={s.funnelConnector} />}
+              </View>
+            );
+          })}
+        </View>
+
+        <View style={s.card}>
+          <View style={s.cardHeader}>
+            <PieChart size={16} color="#E879F9" />
+            <Text style={s.cardTitle}>Drop-off Analysis</Text>
+          </View>
+          {funnelSteps.slice(1).map((step, i) => {
+            const prev = funnelSteps[i];
+            const dropCount = prev.count - step.count;
+            const dropPct = prev.count > 0 ? Math.round((dropCount / prev.count) * 100) : 0;
+            return (
+              <View key={i} style={s.dropoffRow}>
+                <View style={[s.dropoffIcon, { backgroundColor: step.color + '18' }]}>
+                  <ArrowDownRight size={12} color={step.color} />
+                </View>
+                <View style={s.dropoffInfo}>
+                  <Text style={s.dropoffLabel}>{prev.label} → {step.label}</Text>
+                  <View style={s.dropoffBarBg}>
+                    <View style={[s.dropoffBarFill, { width: `${Math.max(dropPct, 3)}%` as any, backgroundColor: '#FF6B6B60' }]} />
+                  </View>
+                </View>
+                <View style={s.dropoffStats}>
+                  <Text style={s.dropoffValue}>-{dropCount}</Text>
+                  <Text style={s.dropoffPctText}>{dropPct}%</Text>
+                </View>
+              </View>
+            );
+          })}
         </View>
       </>
     );
@@ -344,116 +635,87 @@ export default function LandingAnalyticsScreen() {
 
     if (!geo || (geo.byCountry.length === 0 && geo.byCity.length === 0)) {
       return (
-        <View style={styles.emptyWrap}>
-          <MapPin size={48} color={Colors.textTertiary} />
-          <Text style={styles.emptyTitle}>No Geo Data Yet</Text>
-          <Text style={styles.emptySubtitle}>
-            Location tracking is now active. As visitors arrive from different locations, their geo data will appear here. GPS zone data will build up over time.
-          </Text>
+        <View style={s.emptyWrap}>
+          <MapPin size={48} color="#97A0AF" />
+          <Text style={s.emptyTitle}>No Geo Data Yet</Text>
+          <Text style={s.emptySubtitle}>Location data will appear as visitors arrive from different locations.</Text>
         </View>
       );
     }
 
-    const maxCountry = geo.byCountry[0]?.count || 1;
-    const maxCity = geo.byCity[0]?.count || 1;
-
     return (
       <>
-        <View style={styles.geoSummaryRow}>
-          <View style={[styles.geoSummaryCard, { borderLeftColor: '#4A90D9' }]}>
-            <Globe size={18} color="#4A90D9" />
-            <Text style={styles.geoSummaryValue}>{geo.byCountry.length}</Text>
-            <Text style={styles.geoSummaryLabel}>Countries</Text>
-          </View>
-          <View style={[styles.geoSummaryCard, { borderLeftColor: '#00C48C' }]}>
-            <MapPin size={18} color="#00C48C" />
-            <Text style={styles.geoSummaryValue}>{geo.byCity.length}</Text>
-            <Text style={styles.geoSummaryLabel}>Cities</Text>
-          </View>
-          <View style={[styles.geoSummaryCard, { borderLeftColor: '#7B68EE' }]}>
-            <Crosshair size={18} color="#7B68EE" />
-            <Text style={styles.geoSummaryValue}>{geo.totalWithGeo}</Text>
-            <Text style={styles.geoSummaryLabel}>Tracked</Text>
-          </View>
+        <View style={s.geoKpiRow}>
+          {[
+            { icon: <Globe size={18} color="#4A90D9" />, value: geo.byCountry.length, label: 'Countries', color: '#4A90D9' },
+            { icon: <MapPin size={18} color="#00C48C" />, value: geo.byCity.length, label: 'Cities', color: '#00C48C' },
+            { icon: <Crosshair size={18} color="#7B68EE" />, value: geo.totalWithGeo, label: 'Tracked', color: '#7B68EE' },
+          ].map((kpi, i) => (
+            <View key={i} style={[s.geoKpiCard, { borderTopColor: kpi.color }]}>
+              {kpi.icon}
+              <Text style={s.geoKpiValue}>{kpi.value}</Text>
+              <Text style={s.geoKpiLabel}>{kpi.label}</Text>
+            </View>
+          ))}
         </View>
 
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
+        <View style={s.card}>
+          <View style={s.cardHeader}>
             <Globe size={16} color="#4A90D9" />
-            <Text style={styles.cardTitle}>Top Countries</Text>
+            <Text style={s.cardTitle}>Top Countries</Text>
           </View>
           {geo.byCountry.map((c, i) => {
-            const barW = Math.max(Math.round((c.count / maxCountry) * 100), 3);
+            const maxC = geo.byCountry[0]?.count || 1;
+            const barW = Math.max(Math.round((c.count / maxC) * 100), 4);
             const flag = COUNTRY_FLAGS[c.country] || '🌍';
             return (
-              <View key={i} style={styles.geoRow}>
-                <Text style={styles.geoFlag}>{flag}</Text>
-                <View style={styles.geoLabelWrap}>
-                  <Text style={styles.geoLabel} numberOfLines={1}>{c.country}</Text>
-                  <Text style={styles.geoPct}>{c.pct}%</Text>
+              <View key={i} style={s.geoRow}>
+                <Text style={s.geoFlag}>{flag}</Text>
+                <View style={s.geoInfo}>
+                  <View style={s.geoTopRow}>
+                    <Text style={s.geoName} numberOfLines={1}>{c.country}</Text>
+                    <Text style={s.geoPct}>{c.pct}%</Text>
+                  </View>
+                  <View style={s.geoBarBg}>
+                    <View style={[s.geoBarFill, { width: `${barW}%` as any, backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }]} />
+                  </View>
                 </View>
-                <View style={styles.geoBarBg}>
-                  <View style={[styles.geoBar, { width: `${barW}%` as any, backgroundColor: GEO_COLORS[i % GEO_COLORS.length] }]} />
-                </View>
-                <Text style={styles.geoCount}>{c.count}</Text>
+                <Text style={s.geoCount}>{c.count}</Text>
               </View>
             );
           })}
         </View>
 
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
+        <View style={s.card}>
+          <View style={s.cardHeader}>
             <MapPin size={16} color="#00C48C" />
-            <Text style={styles.cardTitle}>Top Cities</Text>
+            <Text style={s.cardTitle}>Top Cities</Text>
           </View>
-          {geo.byCity.map((c, i) => {
-            const barW = Math.max(Math.round((c.count / maxCity) * 100), 3);
-            return (
-              <View key={i} style={styles.geoRow}>
-                <View style={[styles.cityDot, { backgroundColor: GEO_COLORS[i % GEO_COLORS.length] }]} />
-                <View style={styles.geoLabelWrap}>
-                  <Text style={styles.geoLabel} numberOfLines={1}>{c.city}</Text>
-                  <Text style={styles.geoSubLabel}>{c.country}</Text>
-                </View>
-                <View style={styles.geoBarBg}>
-                  <View style={[styles.geoBar, { width: `${barW}%` as any, backgroundColor: GEO_COLORS[i % GEO_COLORS.length] + '90' }]} />
-                </View>
-                <Text style={styles.geoCount}>{c.count}</Text>
+          {geo.byCity.slice(0, 10).map((c, i) => (
+            <View key={i} style={s.cityRow}>
+              <View style={[s.cityRank, { backgroundColor: CHART_COLORS[i % CHART_COLORS.length] + '18' }]}>
+                <Text style={[s.cityRankText, { color: CHART_COLORS[i % CHART_COLORS.length] }]}>{i + 1}</Text>
               </View>
-            );
-          })}
-        </View>
-
-        {geo.byRegion.length > 0 && (
-          <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <Target size={16} color="#FF6B6B" />
-              <Text style={styles.cardTitle}>Top Regions / States</Text>
+              <View style={s.cityInfo}>
+                <Text style={s.cityName} numberOfLines={1}>{c.city}</Text>
+                <Text style={s.cityCountry}>{c.country}</Text>
+              </View>
+              <Text style={s.cityCount}>{c.count}</Text>
             </View>
-            {geo.byRegion.slice(0, 10).map((r, i) => (
-              <View key={i} style={styles.regionRow}>
-                <View style={[styles.regionRank, { backgroundColor: GEO_COLORS[i % GEO_COLORS.length] + '20' }]}>
-                  <Text style={[styles.regionRankText, { color: GEO_COLORS[i % GEO_COLORS.length] }]}>{i + 1}</Text>
-                </View>
-                <Text style={styles.regionName} numberOfLines={1}>{r.region}</Text>
-                <Text style={styles.regionPct}>{r.pct}%</Text>
-                <Text style={styles.regionCount}>{r.count}</Text>
-              </View>
-            ))}
-          </View>
-        )}
+          ))}
+        </View>
 
         {geo.byTimezone.length > 0 && (
-          <View style={styles.card}>
-            <View style={styles.cardHeader}>
+          <View style={s.card}>
+            <View style={s.cardHeader}>
               <Clock size={16} color="#FFD700" />
-              <Text style={styles.cardTitle}>Visitor Timezones</Text>
+              <Text style={s.cardTitle}>Timezone Distribution</Text>
             </View>
             {geo.byTimezone.slice(0, 8).map((tz, i) => (
-              <View key={i} style={styles.listRow}>
-                <View style={[styles.tzDot, { backgroundColor: GEO_COLORS[i % GEO_COLORS.length] }]} />
-                <Text style={styles.listLabel} numberOfLines={1}>{tz.timezone.replace(/_/g, ' ')}</Text>
-                <Text style={styles.listValue}>{tz.count}</Text>
+              <View key={i} style={s.miniListRow}>
+                <View style={[s.miniDot, { backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }]} />
+                <Text style={s.miniLabel} numberOfLines={1}>{tz.timezone.replace(/_/g, ' ')}</Text>
+                <Text style={s.miniValue}>{tz.count}</Text>
               </View>
             ))}
           </View>
@@ -468,146 +730,205 @@ export default function LandingAnalyticsScreen() {
 
     if (!insights) {
       return (
-        <View style={styles.emptyWrap}>
-          <Brain size={48} color={Colors.textTertiary} />
-          <Text style={styles.emptyTitle}>Smart Insights Loading</Text>
-          <Text style={styles.emptySubtitle}>As more data is collected, intelligent analysis will be generated here.</Text>
+        <View style={s.emptyWrap}>
+          <Brain size={48} color="#97A0AF" />
+          <Text style={s.emptyTitle}>Loading Insights</Text>
+          <Text style={s.emptySubtitle}>Intelligent analysis will be generated as more data is collected.</Text>
         </View>
       );
     }
 
-    const engagementColor = insights.engagementScore >= 60 ? '#00C48C' : insights.engagementScore >= 30 ? '#FFD700' : '#FF6B6B';
+    const engColor = insights.engagementScore >= 60 ? '#00C48C' : insights.engagementScore >= 30 ? '#FFD700' : '#FF6B6B';
 
     return (
       <>
-        <View style={styles.insightScoreCard}>
-          <View style={styles.insightScoreHeader}>
-            <Brain size={20} color={engagementColor} />
-            <Text style={styles.insightScoreTitle}>Engagement Score</Text>
-          </View>
-          <View style={styles.insightScoreRow}>
-            <Text style={[styles.insightScoreBig, { color: engagementColor }]}>{insights.engagementScore}</Text>
-            <Text style={[styles.insightScoreMax, { color: engagementColor }]}>/100</Text>
-          </View>
-          <View style={styles.insightScoreBarBg}>
-            <View style={[styles.insightScoreBar, { width: `${insights.engagementScore}%` as any, backgroundColor: engagementColor }]} />
-          </View>
-          <Text style={styles.insightScoreDesc}>
-            Based on scroll depth, CTA clicks, and form submissions
-          </Text>
+        <View style={s.scoreHero}>
+          <AnimatedRing percent={insights.engagementScore} size={130} strokeWidth={10} color={engColor}>
+            <Text style={[s.scoreBig, { color: engColor }]}>{insights.engagementScore}</Text>
+            <Text style={s.scoreUnit}>/100</Text>
+          </AnimatedRing>
+          <Text style={s.scoreTitle}>Engagement Score</Text>
+          <Text style={s.scoreDesc}>Based on scroll depth, CTA clicks, and form submissions</Text>
         </View>
 
-        <View style={styles.insightMetricRow}>
-          <View style={[styles.insightMetricCard, { borderTopColor: '#4A90D9' }]}>
-            <Timer size={16} color="#4A90D9" />
-            <Text style={styles.insightMetricValue}>{formatSeconds(insights.avgTimeOnPage)}</Text>
-            <Text style={styles.insightMetricLabel}>Avg Time on Page</Text>
-          </View>
-          <View style={[styles.insightMetricCard, { borderTopColor: '#FF6B6B' }]}>
-            <Percent size={16} color="#FF6B6B" />
-            <Text style={styles.insightMetricValue}>{insights.bounceRate}%</Text>
-            <Text style={styles.insightMetricLabel}>Bounce Rate</Text>
-          </View>
-          <View style={[styles.insightMetricCard, { borderTopColor: '#FFD700' }]}>
-            <Clock size={16} color="#FFD700" />
-            <Text style={styles.insightMetricValue}>{insights.peakHour}:00</Text>
-            <Text style={styles.insightMetricLabel}>Peak Hour</Text>
-          </View>
-        </View>
-
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <Flame size={16} color="#FF6B6B" />
-            <Text style={styles.cardTitle}>Visitor Intent Breakdown</Text>
-          </View>
+        <View style={s.insightKpiRow}>
           {[
-            { label: 'High Intent', desc: 'Submitted form', count: insights.visitorIntent.highIntent, pct: insights.visitorIntent.highIntentPct, color: '#00C48C' },
-            { label: 'Medium Intent', desc: 'Clicked CTA', count: insights.visitorIntent.mediumIntent, pct: insights.visitorIntent.mediumIntentPct, color: '#FFD700' },
-            { label: 'Low Intent', desc: 'Browsed only', count: insights.visitorIntent.lowIntent, pct: insights.visitorIntent.lowIntentPct, color: '#FF6B6B' },
-          ].map((intent, i) => (
-            <View key={i} style={styles.intentRow}>
-              <View style={[styles.intentDot, { backgroundColor: intent.color }]} />
-              <View style={styles.intentLabelWrap}>
-                <Text style={styles.intentLabel}>{intent.label}</Text>
-                <Text style={styles.intentDesc}>{intent.desc}</Text>
-              </View>
-              <View style={styles.intentBarBg}>
-                <View style={[styles.intentBar, { width: `${Math.max(intent.pct, 2)}%` as any, backgroundColor: intent.color }]} />
-              </View>
-              <View style={styles.intentStats}>
-                <Text style={styles.intentCount}>{intent.count}</Text>
-                <Text style={styles.intentPct}>{intent.pct}%</Text>
-              </View>
+            { icon: <Timer size={16} color="#4A90D9" />, value: formatSeconds(insights.avgTimeOnPage), label: 'Avg Time', color: '#4A90D9' },
+            { icon: <Percent size={16} color="#FF6B6B" />, value: `${insights.bounceRate}%`, label: 'Bounce', color: '#FF6B6B' },
+            { icon: <Clock size={16} color="#FFD700" />, value: `${insights.peakHour}:00`, label: 'Peak', color: '#FFD700' },
+          ].map((kpi, i) => (
+            <View key={i} style={[s.insightKpi, { borderTopColor: kpi.color }]}>
+              {kpi.icon}
+              <Text style={s.insightKpiValue}>{kpi.value}</Text>
+              <Text style={s.insightKpiLabel}>{kpi.label}</Text>
             </View>
           ))}
         </View>
 
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <Activity size={16} color="#7B68EE" />
-            <Text style={styles.cardTitle}>Content Interaction</Text>
+        <View style={s.card}>
+          <View style={s.cardHeader}>
+            <Flame size={16} color="#FF6B6B" />
+            <Text style={s.cardTitle}>Visitor Intent</Text>
           </View>
           {[
-            { label: 'Scrolled past 50%', count: insights.contentInteraction.scrolledPast50Pct, color: '#7B68EE' },
-            { label: 'Scrolled past 75%', count: insights.contentInteraction.scrolledPast75Pct, color: '#9B59B6' },
-            { label: 'Interacted with form', count: insights.contentInteraction.interactedWithForm, color: '#00C48C' },
-            { label: 'Submitted form', count: insights.contentInteraction.submittedForm, color: '#27AE60' },
-            { label: 'Clicked any CTA', count: insights.contentInteraction.clickedAnyCta, color: '#4A90D9' },
-          ].map((item, i) => {
-            const maxVal = Math.max(
-              insights.contentInteraction.scrolledPast50Pct,
-              insights.contentInteraction.clickedAnyCta,
-              1
-            );
-            const barPct = Math.max(Math.round((item.count / maxVal) * 100), 3);
-            return (
-              <View key={i} style={styles.contentRow}>
-                <View style={[styles.contentDot, { backgroundColor: item.color }]} />
-                <Text style={styles.contentLabel}>{item.label}</Text>
-                <View style={styles.contentBarBg}>
-                  <View style={[styles.contentBar, { width: `${barPct}%` as any, backgroundColor: item.color }]} />
+            { label: 'High Intent', desc: 'Submitted form', count: insights.visitorIntent.highIntent, pct: insights.visitorIntent.highIntentPct, color: '#00C48C' },
+            { label: 'Medium', desc: 'Clicked CTA', count: insights.visitorIntent.mediumIntent, pct: insights.visitorIntent.mediumIntentPct, color: '#FFD700' },
+            { label: 'Low', desc: 'Browsed only', count: insights.visitorIntent.lowIntent, pct: insights.visitorIntent.lowIntentPct, color: '#FF6B6B' },
+          ].map((intent, i) => (
+            <View key={i} style={s.intentRow}>
+              <View style={[s.intentDot, { backgroundColor: intent.color }]} />
+              <View style={s.intentInfo}>
+                <View style={s.intentTopRow}>
+                  <Text style={s.intentLabel}>{intent.label}</Text>
+                  <Text style={s.intentPctText}>{intent.pct}%</Text>
                 </View>
-                <Text style={styles.contentCount}>{item.count}</Text>
+                <View style={s.intentBarBg}>
+                  <View style={[s.intentBarFill, { width: `${Math.max(intent.pct, 3)}%` as any, backgroundColor: intent.color }]} />
+                </View>
               </View>
-            );
-          })}
+              <Text style={s.intentCount}>{intent.count}</Text>
+            </View>
+          ))}
         </View>
 
+        {insights.deviceBreakdown.length > 0 && (
+          <View style={s.card}>
+            <View style={s.cardHeader}>
+              <Smartphone size={16} color="#E879F9" />
+              <Text style={s.cardTitle}>Devices</Text>
+            </View>
+            <View style={s.deviceGrid}>
+              {insights.deviceBreakdown.map((d, i) => (
+                <View key={i} style={[s.deviceCard, { borderTopColor: CHART_COLORS[i % CHART_COLORS.length] }]}>
+                  {d.device === 'Mobile' ? <Smartphone size={22} color={CHART_COLORS[i % CHART_COLORS.length]} /> :
+                    d.device === 'Tablet' ? <Tablet size={22} color={CHART_COLORS[i % CHART_COLORS.length]} /> :
+                    <Monitor size={22} color={CHART_COLORS[i % CHART_COLORS.length]} />}
+                  <Text style={s.deviceCount}>{d.count}</Text>
+                  <Text style={s.deviceLabel}>{d.device}</Text>
+                  <Text style={[s.devicePct, { color: CHART_COLORS[i % CHART_COLORS.length] }]}>{d.pct}%</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
+
         {insights.topInterests.length > 0 && (
-          <View style={styles.card}>
-            <View style={styles.cardHeader}>
+          <View style={s.card}>
+            <View style={s.cardHeader}>
               <Target size={16} color="#00C48C" />
-              <Text style={styles.cardTitle}>Investment Interest</Text>
+              <Text style={s.cardTitle}>Investment Interest</Text>
             </View>
             {insights.topInterests.map((interest, i) => (
-              <View key={i} style={styles.interestRow}>
-                <View style={[styles.interestRank, { backgroundColor: GEO_COLORS[i % GEO_COLORS.length] + '20' }]}>
-                  <Text style={[styles.interestRankText, { color: GEO_COLORS[i % GEO_COLORS.length] }]}>{i + 1}</Text>
+              <View key={i} style={s.miniListRow}>
+                <View style={[s.miniRank, { backgroundColor: CHART_COLORS[i % CHART_COLORS.length] + '18' }]}>
+                  <Text style={[s.miniRankText, { color: CHART_COLORS[i % CHART_COLORS.length] }]}>{i + 1}</Text>
                 </View>
-                <Text style={styles.interestName} numberOfLines={1}>{interest.interest.replace(/_/g, ' ')}</Text>
-                <Text style={styles.interestPct}>{interest.pct}%</Text>
-                <Text style={styles.interestCount}>{interest.count}</Text>
+                <Text style={s.miniLabel} numberOfLines={1}>{interest.interest.replace(/_/g, ' ')}</Text>
+                <Text style={[s.miniPct, { color: CHART_COLORS[i % CHART_COLORS.length] }]}>{interest.pct}%</Text>
+                <Text style={s.miniValue}>{interest.count}</Text>
               </View>
             ))}
           </View>
         )}
+      </>
+    );
+  };
 
-        {insights.deviceBreakdown.length > 0 && (
-          <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <Smartphone size={16} color="#E879F9" />
-              <Text style={styles.cardTitle}>Device Breakdown</Text>
+  const renderLiveTab = () => {
+    if (liveLoading && !liveData && !liveError) {
+      return (
+        <View style={s.emptyWrap}>
+          <Radio size={48} color={SS_BLUE} />
+          <Text style={s.emptyTitle}>Connecting...</Text>
+          <Text style={s.emptySubtitle}>Fetching real-time session data.</Text>
+        </View>
+      );
+    }
+
+    if (liveError && !liveData) {
+      return (
+        <View style={s.emptyWrap}>
+          <View style={s.errorIcon}>
+            <Radio size={48} color="#FF6B6B" />
+          </View>
+          <Text style={s.emptyTitle}>Connection Issue</Text>
+          <Text style={s.emptySubtitle}>{liveError}</Text>
+          <TouchableOpacity style={s.retryBtn} onPress={() => fetchLiveSessions(true)}>
+            <RefreshCw size={14} color="#000" />
+            <Text style={s.retryBtnText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    if (!liveData) {
+      return (
+        <View style={s.emptyWrap}>
+          <Radio size={48} color="#97A0AF" />
+          <Text style={s.emptyTitle}>No Live Data</Text>
+          <Text style={s.emptySubtitle}>Live sessions will appear as visitors browse.</Text>
+        </View>
+      );
+    }
+
+    const { active, recent, sessions, breakdown } = liveData;
+
+    const getStepLabel = (step: number) => {
+      switch (step) {
+        case 0: return 'Hero';
+        case 1: return 'Goals';
+        case 2: return 'Form';
+        case 3: return 'Success';
+        default: return `Step ${step}`;
+      }
+    };
+
+    const getStepColor = (step: number) => {
+      switch (step) {
+        case 0: return '#4A90D9';
+        case 1: return '#FFD700';
+        case 2: return '#00C48C';
+        case 3: return '#27AE60';
+        default: return '#5E6C84';
+      }
+    };
+
+    const formatDuration = (sec: number) => {
+      if (sec < 60) return `${sec}s`;
+      return `${Math.floor(sec / 60)}m ${sec % 60}s`;
+    };
+
+    return (
+      <>
+        <View style={s.liveHero}>
+          <PulseIndicator active={active > 0} />
+          <Text style={s.liveCount}>{active}</Text>
+          <Text style={s.liveLabel}>Active Right Now</Text>
+          <View style={s.liveSubRow}>
+            <View style={s.liveSub}>
+              <Clock size={12} color="#7B68EE" />
+              <Text style={s.liveSubText}>{recent} in last 5m</Text>
             </View>
-            <View style={styles.deviceGrid}>
-              {insights.deviceBreakdown.map((d, i) => {
+            <View style={s.liveSub}>
+              <Users size={12} color="#4A90D9" />
+              <Text style={s.liveSubText}>{sessions?.length || 0} sessions</Text>
+            </View>
+          </View>
+        </View>
+
+        {breakdown?.byStep?.length > 0 && (
+          <View style={s.card}>
+            <View style={s.cardHeader}>
+              <Target size={16} color={SS_BLUE} />
+              <Text style={s.cardTitle}>Active by Step</Text>
+            </View>
+            <View style={s.liveStepGrid}>
+              {breakdown.byStep.map((st: { step: string; count: number }, i: number) => {
+                const stepNum = parseInt(st.step.replace('Step ', ''), 10) || 0;
                 return (
-                  <View key={i} style={[styles.deviceCard, { borderColor: GEO_COLORS[i % GEO_COLORS.length] + '30' }]}>
-                    {d.device === 'Mobile' ? <Smartphone size={20} color={GEO_COLORS[i % GEO_COLORS.length]} /> :
-                      d.device === 'Tablet' ? <Tablet size={20} color={GEO_COLORS[i % GEO_COLORS.length]} /> :
-                      <Monitor size={20} color={GEO_COLORS[i % GEO_COLORS.length]} />}
-                    <Text style={styles.deviceCount}>{d.count}</Text>
-                    <Text style={styles.deviceLabel}>{d.device}</Text>
-                    <Text style={[styles.devicePct, { color: GEO_COLORS[i % GEO_COLORS.length] }]}>{d.pct}%</Text>
+                  <View key={i} style={[s.liveStepCard, { borderTopColor: getStepColor(stepNum) }]}>
+                    <Text style={[s.liveStepCount, { color: getStepColor(stepNum) }]}>{st.count}</Text>
+                    <Text style={s.liveStepLabel}>{getStepLabel(stepNum)}</Text>
                   </View>
                 );
               })}
@@ -615,243 +936,58 @@ export default function LandingAnalyticsScreen() {
           </View>
         )}
 
-        {insights.sectionEngagement.length > 0 && (
-          <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <Eye size={16} color="#F97316" />
-              <Text style={styles.cardTitle}>Section Engagement</Text>
+        {breakdown?.byCountry?.length > 0 && (
+          <View style={s.card}>
+            <View style={s.cardHeader}>
+              <Globe size={16} color="#00C48C" />
+              <Text style={s.cardTitle}>Live by Country</Text>
             </View>
-            {insights.sectionEngagement.map((s, i) => (
-              <View key={i} style={styles.listRow}>
-                <View style={[styles.sectionDot, { backgroundColor: GEO_COLORS[i % GEO_COLORS.length] }]} />
-                <Text style={styles.listLabel} numberOfLines={1}>{s.section.replace(/_/g, ' ')}</Text>
-                <Text style={styles.listValue}>{s.count}</Text>
+            {breakdown.byCountry.slice(0, 8).map((c: { country: string; count: number }, i: number) => (
+              <View key={i} style={s.miniListRow}>
+                <Text style={{ fontSize: 16, width: 24, textAlign: 'center' as const }}>
+                  {COUNTRY_FLAGS[c.country] || '🌍'}
+                </Text>
+                <Text style={s.miniLabel} numberOfLines={1}>{c.country}</Text>
+                <Text style={s.miniValue}>{c.count}</Text>
               </View>
             ))}
           </View>
         )}
-      </>
-    );
-  };
 
-  const renderVisitorsTab = () => {
-    if (!visitorData) {
-      if (visitorQuery.isLoading) {
-        return (
-          <View style={styles.emptyWrap}>
-            <Wifi size={48} color={Colors.primary} />
-            <Text style={styles.emptyTitle}>Loading Visitors...</Text>
-            <Text style={styles.emptySubtitle}>Fetching real-time visitor data with IP, device, and browser info.</Text>
+        <View style={s.card}>
+          <View style={s.cardHeader}>
+            <Radio size={16} color="#FF4D4D" />
+            <Text style={s.cardTitle}>Sessions ({sessions?.length || 0})</Text>
           </View>
-        );
-      }
-      return (
-        <View style={styles.emptyWrap}>
-          <Wifi size={48} color={Colors.textTertiary} />
-          <Text style={styles.emptyTitle}>No Visitor Data Yet</Text>
-          <Text style={styles.emptySubtitle}>Visitor logs will appear here as people visit your landing page. IP address, device, OS, and browser are captured server-side automatically.</Text>
-        </View>
-      );
-    }
-
-    const { summary, visitors, total, totalPages } = visitorData;
-    const DEVICE_FILTERS = ['all', 'Mobile', 'Desktop', 'Tablet', 'Bot'];
-    const OS_FILTERS = ['all', ...summary.byOS.map(o => o.os)];
-
-    const getDeviceIcon = (device: string) => {
-      switch (device) {
-        case 'Mobile': return <Smartphone size={13} color="#00C48C" />;
-        case 'Tablet': return <Tablet size={13} color="#7B68EE" />;
-        case 'Desktop': return <Monitor size={13} color="#4A90D9" />;
-        case 'Bot': return <Activity size={13} color="#FF6B6B" />;
-        default: return <Globe size={13} color={Colors.textTertiary} />;
-      }
-    };
-
-    const getOSColor = (os: string) => {
-      switch (os) {
-        case 'iOS': case 'iPadOS': case 'macOS': return '#007AFF';
-        case 'Android': return '#3DDC84';
-        case 'Windows': return '#0078D4';
-        case 'Linux': return '#FCC624';
-        default: return Colors.textSecondary;
-      }
-    };
-
-    const formatTime = (ts: string) => {
-      const d = new Date(ts);
-      const now = new Date();
-      const diffMs = now.getTime() - d.getTime();
-      if (diffMs < 60000) return 'Just now';
-      if (diffMs < 3600000) return `${Math.floor(diffMs / 60000)}m ago`;
-      if (diffMs < 86400000) return `${Math.floor(diffMs / 3600000)}h ago`;
-      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    };
-
-    return (
-      <>
-        <View style={vstyles.summaryRow}>
-          <View style={[vstyles.summaryCard, { borderLeftColor: '#4A90D9' }]}>
-            <Wifi size={16} color="#4A90D9" />
-            <Text style={vstyles.summaryValue}>{summary.totalVisits}</Text>
-            <Text style={vstyles.summaryLabel}>Total Visits</Text>
-          </View>
-          <View style={[vstyles.summaryCard, { borderLeftColor: '#00C48C' }]}>
-            <Users size={16} color="#00C48C" />
-            <Text style={vstyles.summaryValue}>{summary.uniqueIPs}</Text>
-            <Text style={vstyles.summaryLabel}>Unique IPs</Text>
-          </View>
-          <View style={[vstyles.summaryCard, { borderLeftColor: '#FF6B6B' }]}>
-            <Activity size={16} color="#FF6B6B" />
-            <Text style={vstyles.summaryValue}>{summary.bots}</Text>
-            <Text style={vstyles.summaryLabel}>Bots</Text>
-          </View>
-        </View>
-
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <Smartphone size={16} color="#00C48C" />
-            <Text style={styles.cardTitle}>Device Breakdown</Text>
-          </View>
-          <View style={vstyles.breakdownGrid}>
-            {summary.byDevice.map((d, i) => (
-              <View key={i} style={[vstyles.breakdownItem, { borderColor: GEO_COLORS[i % GEO_COLORS.length] + '30' }]}>
-                {getDeviceIcon(d.device)}
-                <Text style={vstyles.breakdownCount}>{d.count}</Text>
-                <Text style={vstyles.breakdownLabel}>{d.device}</Text>
-                <Text style={[vstyles.breakdownPct, { color: GEO_COLORS[i % GEO_COLORS.length] }]}>{d.pct}%</Text>
-              </View>
-            ))}
-          </View>
-        </View>
-
-        <View style={styles.rowCards}>
-          <View style={styles.halfCard}>
-            <View style={styles.cardHeader}>
-              <Monitor size={16} color="#7B68EE" />
-              <Text style={styles.cardTitle}>OS</Text>
-            </View>
-            {summary.byOS.map((o, i) => (
-              <View key={i} style={styles.listRow}>
-                <View style={[vstyles.osDot, { backgroundColor: getOSColor(o.os) }]} />
-                <Text style={styles.listLabel} numberOfLines={1}>{o.os}</Text>
-                <Text style={styles.listValue}>{o.count}</Text>
-              </View>
-            ))}
-          </View>
-          <View style={styles.halfCard}>
-            <View style={styles.cardHeader}>
-              <Globe size={16} color="#E879F9" />
-              <Text style={styles.cardTitle}>Browser</Text>
-            </View>
-            {summary.byBrowser.map((b, i) => (
-              <View key={i} style={styles.listRow}>
-                <View style={[vstyles.osDot, { backgroundColor: GEO_COLORS[i % GEO_COLORS.length] }]} />
-                <Text style={styles.listLabel} numberOfLines={1}>{b.browser}</Text>
-                <Text style={styles.listValue}>{b.count}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
-
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <Target size={16} color="#FF6B6B" />
-            <Text style={styles.cardTitle}>Filter Visitors</Text>
-          </View>
-          <Text style={vstyles.filterLabel}>Device</Text>
-          <View style={vstyles.filterRow}>
-            {DEVICE_FILTERS.map(d => (
-              <TouchableOpacity
-                key={d}
-                style={[vstyles.filterChip, deviceFilter === d && vstyles.filterChipActive]}
-                onPress={() => { setDeviceFilter(d); setVisitorPage(1); }}
-                activeOpacity={0.7}
-              >
-                <Text style={[vstyles.filterChipText, deviceFilter === d && vstyles.filterChipTextActive]}>
-                  {d === 'all' ? 'All' : d}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-          {OS_FILTERS.length > 2 && (
-            <>
-              <Text style={[vstyles.filterLabel, { marginTop: 10 }]}>OS</Text>
-              <View style={vstyles.filterRow}>
-                {OS_FILTERS.slice(0, 6).map(o => (
-                  <TouchableOpacity
-                    key={o}
-                    style={[vstyles.filterChip, osFilter === o && vstyles.filterChipActive]}
-                    onPress={() => { setOsFilter(o); setVisitorPage(1); }}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={[vstyles.filterChipText, osFilter === o && vstyles.filterChipTextActive]}>
-                      {o === 'all' ? 'All' : o}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </>
-          )}
-        </View>
-
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <Wifi size={16} color="#4A90D9" />
-            <Text style={styles.cardTitle}>Visitor Log ({total})</Text>
-          </View>
-          {visitors.length === 0 ? (
-            <Text style={styles.noDataText}>No visitors match the current filters.</Text>
+          {(!sessions || sessions.length === 0) ? (
+            <Text style={s.noDataText}>No active sessions right now.</Text>
           ) : (
-            visitors.map((v, i) => (
-              <View key={v.id || i} style={vstyles.visitorRow}>
-                <View style={vstyles.visitorIconWrap}>
-                  {getDeviceIcon(v.device)}
-                </View>
-                <View style={vstyles.visitorInfo}>
-                  <View style={vstyles.visitorTopRow}>
-                    <Text style={vstyles.visitorIP} numberOfLines={1}>{v.ip}</Text>
-                    {v.isBot && (
-                      <View style={vstyles.botBadge}>
-                        <Text style={vstyles.botBadgeText}>BOT</Text>
-                      </View>
-                    )}
+            sessions.slice(0, 20).map((sess: any, i: number) => (
+              <View key={sess.sessionId || i} style={s.sessionRow}>
+                <PulseIndicator active={sess.isActive} />
+                <View style={s.sessionInfo}>
+                  <View style={s.sessionTopRow}>
+                    <Text style={s.sessionIP} numberOfLines={1}>{sess.ip}</Text>
+                    <View style={[s.sessionBadge, { backgroundColor: getStepColor(sess.currentStep) + '20', borderColor: getStepColor(sess.currentStep) + '40' }]}>
+                      <Text style={[s.sessionBadgeText, { color: getStepColor(sess.currentStep) }]}>
+                        {getStepLabel(sess.currentStep)}
+                      </Text>
+                    </View>
                   </View>
-                  <Text style={vstyles.visitorDetail} numberOfLines={1}>
-                    {v.device} {v.os} {v.osVersion ? `${v.osVersion}` : ''} {v.browser} {v.browserVersion ? v.browserVersion.split('.')[0] : ''}
+                  <Text style={s.sessionDetail} numberOfLines={1}>
+                    {sess.device} · {sess.os} · {sess.browser}
                   </Text>
-                  <View style={vstyles.visitorMetaRow}>
-                    {v.geo?.country && (
-                      <Text style={vstyles.visitorMeta}>
-                        {COUNTRY_FLAGS[v.geo.country] || ''} {v.geo.city || v.geo.country}
+                  <View style={s.sessionMetaRow}>
+                    {sess.geo?.country && (
+                      <Text style={s.sessionMeta}>
+                        {COUNTRY_FLAGS[sess.geo.country] || ''} {sess.geo.city || sess.geo.country}
                       </Text>
                     )}
-                    <Text style={vstyles.visitorMeta}>{v.event.replace(/_/g, ' ')}</Text>
-                    <Text style={vstyles.visitorTime}>{formatTime(v.timestamp)}</Text>
+                    <Text style={s.sessionMeta}>{formatDuration(sess.sessionDuration)}</Text>
                   </View>
                 </View>
               </View>
             ))
-          )}
-
-          {totalPages > 1 && (
-            <View style={vstyles.paginationRow}>
-              <TouchableOpacity
-                style={[vstyles.pageBtn, visitorPage <= 1 && vstyles.pageBtnDisabled]}
-                onPress={() => setVisitorPage(p => Math.max(1, p - 1))}
-                disabled={visitorPage <= 1}
-              >
-                <ArrowLeft size={14} color={visitorPage <= 1 ? Colors.textTertiary : Colors.text} />
-              </TouchableOpacity>
-              <Text style={vstyles.pageText}>{visitorPage} / {totalPages}</Text>
-              <TouchableOpacity
-                style={[vstyles.pageBtn, visitorPage >= totalPages && vstyles.pageBtnDisabled]}
-                onPress={() => setVisitorPage(p => Math.min(totalPages, p + 1))}
-                disabled={visitorPage >= totalPages}
-              >
-                <ArrowUpRight size={14} color={visitorPage >= totalPages ? Colors.textTertiary : Colors.text} />
-              </TouchableOpacity>
-            </View>
           )}
         </View>
       </>
@@ -859,98 +995,88 @@ export default function LandingAnalyticsScreen() {
   };
 
   return (
-    <View style={styles.root}>
-      <SafeAreaView edges={['top']} style={styles.safe}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} testID="back-btn">
-            <ArrowLeft size={22} color={Colors.text} />
+    <View style={s.root}>
+      <SafeAreaView edges={['top']} style={s.safe}>
+        <Animated.View style={[s.header, { opacity: headerAnim, transform: [{ translateY: headerAnim.interpolate({ inputRange: [0, 1], outputRange: [-20, 0] }) }] }]}>
+          <TouchableOpacity onPress={() => router.back()} style={s.backBtn} testID="back-btn">
+            <ArrowLeft size={20} color="#1B2A3D" />
           </TouchableOpacity>
-          <View style={styles.headerCenter}>
-            <Text style={styles.headerTitle}>Landing Analytics</Text>
-            <View style={styles.liveBadge}>
-              <View style={styles.liveDot} />
-              <Text style={styles.liveText}>LIVE</Text>
+          <View style={s.headerCenter}>
+            <Text style={s.headerTitle}>Analytics</Text>
+            <View style={s.liveBadge}>
+              <View style={s.liveBadgeDot} />
+              <Text style={s.liveBadgeText}>LIVE</Text>
             </View>
           </View>
-          <TouchableOpacity onPress={onRefresh} style={styles.refreshBtn}>
-            <RefreshCw size={18} color={Colors.textSecondary} />
+          <TouchableOpacity onPress={onRefresh} style={s.refreshBtn}>
+            <RefreshCw size={17} color="#5E6C84" />
           </TouchableOpacity>
-        </View>
+        </Animated.View>
 
-        <View style={styles.tabRow}>
-          {TABS.map((tab) => (
-            <TouchableOpacity
-              key={tab.value}
-              style={[styles.tabChip, activeTab === tab.value && styles.tabChipActive]}
-              onPress={() => setActiveTab(tab.value)}
-              activeOpacity={0.7}
-            >
-              {tab.icon}
-              <Text style={[styles.tabText, activeTab === tab.value && styles.tabTextActive]}>{tab.label}</Text>
-            </TouchableOpacity>
-          ))}
+        <View style={s.tabBar}>
+          {TABS.map((tab) => {
+            const isActive = activeTab === tab.value;
+            return (
+              <TouchableOpacity
+                key={tab.value}
+                style={[s.tab, isActive && s.tabActive]}
+                onPress={() => setActiveTab(tab.value)}
+                activeOpacity={0.7}
+              >
+                {tab.icon}
+                <Text style={[s.tabText, isActive && s.tabTextActive]}>{tab.label}</Text>
+                {isActive && <View style={s.tabIndicator} />}
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
         <ScrollView
           showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={analyticsQuery.isRefetching} onRefresh={onRefresh} tintColor={Colors.primary} />}
-          contentContainerStyle={styles.scrollContent}
+          refreshControl={<RefreshControl refreshing={manualRefreshing} onRefresh={onRefresh} tintColor={SS_BLUE} />}
+          contentContainerStyle={s.scrollContent}
         >
-          <View style={styles.periodRow}>
+          <View style={s.periodRow}>
             {PERIODS.map((p) => (
               <TouchableOpacity
                 key={p.value}
-                style={[styles.periodChip, period === p.value && styles.periodChipActive]}
+                style={[s.periodChip, period === p.value && s.periodChipActive]}
                 onPress={() => setPeriod(p.value)}
                 activeOpacity={0.7}
               >
-                <Text style={[styles.periodText, period === p.value && styles.periodTextActive]}>{p.label}</Text>
+                <Text style={[s.periodText, period === p.value && s.periodTextActive]}>{p.label}</Text>
               </TouchableOpacity>
             ))}
           </View>
 
-          {activeTab === 'visitors' ? (
-            renderVisitorsTab()
+          {activeTab === 'live' ? (
+            renderLiveTab()
           ) : data ? (
             <>
               {activeTab === 'overview' && renderOverviewTab()}
+              {activeTab === 'funnel' && renderFunnelTab()}
               {activeTab === 'geo' && renderGeoTab()}
               {activeTab === 'insights' && renderInsightsTab()}
             </>
           ) : analyticsQuery.isError ? (
-            <View style={styles.emptyWrap}>
-              <View style={styles.errorIconWrap}>
-                <Activity size={48} color="#FF6B6B" />
+            <View style={s.emptyWrap}>
+              <View style={s.errorIcon}>
+                <Activity size={40} color="#FF6B6B" />
               </View>
-              <Text style={styles.emptyTitle}>Failed to Load</Text>
-              <Text style={styles.emptySubtitle}>
-                {analyticsQuery.error?.message || 'Could not fetch analytics data. Pull down to retry.'}
-              </Text>
-              <TouchableOpacity style={styles.retryBtn} onPress={onRefresh} activeOpacity={0.7}>
-                <RefreshCw size={16} color="#fff" />
-                <Text style={styles.retryBtnText}>Retry</Text>
+              <Text style={s.emptyTitle}>Failed to Load</Text>
+              <Text style={s.emptySubtitle}>{analyticsQuery.error?.message || 'Pull down to retry.'}</Text>
+              <TouchableOpacity style={s.retryBtn} onPress={onRefresh}>
+                <RefreshCw size={14} color="#000" />
+                <Text style={s.retryBtnText}>Retry</Text>
               </TouchableOpacity>
             </View>
-          ) : (analyticsQuery.isLoading || analyticsQuery.isFetching) ? (
-            <View style={styles.emptyWrap}>
-              <Activity size={48} color={Colors.primary} />
-              <Text style={styles.emptyTitle}>Loading Analytics...</Text>
-              <Text style={styles.emptySubtitle}>Fetching real-time landing page data. This may take a moment.</Text>
-            </View>
           ) : (
-            <View style={styles.emptyWrap}>
-              <Activity size={48} color={Colors.textTertiary} />
-              <Text style={styles.emptyTitle}>No Data Yet</Text>
-              <Text style={styles.emptySubtitle}>Landing page tracking will start collecting data from today. Check back soon!</Text>
+            <View style={s.emptyWrap}>
+              <Activity size={40} color="#97A0AF" />
+              <Text style={s.emptyTitle}>No Data Yet</Text>
+              <Text style={s.emptySubtitle}>Check back after visitors start arriving.</Text>
             </View>
           )}
-
-          <View style={styles.infoCard}>
-            <Text style={styles.infoTitle}>Tracking Active</Text>
-            <Text style={styles.infoText}>
-              Real-time tracking with GPS zone detection is enabled. Events recorded: page views, scroll depth, form interactions, CTA clicks, referrer sources, visitor location, and device info. Data refreshes every 60 seconds.
-            </Text>
-          </View>
 
           <View style={{ height: 40 }} />
         </ScrollView>
@@ -959,1008 +1085,207 @@ export default function LandingAnalyticsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: Colors.background,
-  },
-  safe: {
-    flex: 1,
-  },
+const s = StyleSheet.create({
+  root: { flex: 1, backgroundColor: '#F7F9FC' },
+  safe: { flex: 1 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.surfaceBorder,
-    backgroundColor: Colors.surface,
-  },
-  backBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerCenter: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginLeft: 8,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '800' as const,
-    color: Colors.text,
-  },
-  liveBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#27AE6018',
-    borderRadius: 10,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
-  liveDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#27AE60',
-  },
-  liveText: {
-    fontSize: 9,
-    fontWeight: '800' as const,
-    color: '#27AE60',
-    letterSpacing: 0.8,
-  },
-  refreshBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  tabRow: {
-    flexDirection: 'row',
-    gap: 6,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    backgroundColor: Colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.surfaceBorder,
-  },
-  tabChip: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 5,
-    paddingVertical: 8,
-    borderRadius: 10,
-    backgroundColor: Colors.background,
-    borderWidth: 1,
-    borderColor: Colors.surfaceBorder,
-  },
-  tabChipActive: {
-    backgroundColor: '#0D1B2A',
-    borderColor: '#1E3A5F',
-  },
-  tabText: {
-    fontSize: 12,
-    fontWeight: '700' as const,
-    color: Colors.textSecondary,
-  },
-  tabTextActive: {
-    color: '#4A90D9',
-  },
-  scrollContent: {
-    padding: 16,
-  },
-  periodRow: {
-    flexDirection: 'row',
-    gap: 6,
-    marginBottom: 16,
-  },
-  periodChip: {
-    flex: 1,
-    paddingVertical: 8,
-    borderRadius: 10,
-    backgroundColor: Colors.surface,
-    borderWidth: 1,
-    borderColor: Colors.surfaceBorder,
-    alignItems: 'center',
-  },
-  periodChipActive: {
-    backgroundColor: Colors.primary + '18',
-    borderColor: Colors.primary + '50',
-  },
-  periodText: {
-    fontSize: 12,
-    fontWeight: '700' as const,
-    color: Colors.textSecondary,
-  },
-  periodTextActive: {
-    color: Colors.primary,
-  },
-  loadingWrap: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 80,
-    gap: 12,
-  },
-  loadingText: {
-    color: Colors.textSecondary,
-    fontSize: 14,
-  },
-  errorIconWrap: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: '#FF6B6B15',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 4,
-  },
-  retryBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: Colors.primary,
-    borderRadius: 12,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    marginTop: 8,
-  },
-  retryBtnText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '700' as const,
-  },
-  emptyWrap: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 60,
-    gap: 12,
-  },
-  emptyTitle: {
-    fontSize: 20,
-    fontWeight: '800' as const,
-    color: Colors.text,
-  },
-  emptySubtitle: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-    textAlign: 'center' as const,
-    lineHeight: 20,
-    paddingHorizontal: 20,
-  },
-  kpiGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-    marginBottom: 16,
-  },
-  kpiCard: {
-    flex: 1,
-    minWidth: '45%' as any,
-    backgroundColor: Colors.surface,
-    borderRadius: 14,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: Colors.surfaceBorder,
-    borderLeftWidth: 3,
-    gap: 6,
-  },
-  kpiIcon: {
-    width: 30,
-    height: 30,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  kpiValue: {
-    fontSize: 22,
-    fontWeight: '900' as const,
-    color: Colors.text,
-  },
-  kpiLabel: {
-    fontSize: 11,
-    fontWeight: '600' as const,
-    color: Colors.textSecondary,
-  },
-  card: {
-    backgroundColor: Colors.surface,
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: Colors.surfaceBorder,
-    marginBottom: 12,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 14,
-  },
-  cardTitle: {
-    fontSize: 15,
-    fontWeight: '700' as const,
-    color: Colors.text,
-    flex: 1,
-  },
-  funnelRow: {
-    marginBottom: 10,
-  },
-  funnelLabelWrap: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 4,
-  },
-  funnelLabel: {
-    fontSize: 12,
-    fontWeight: '600' as const,
-    color: Colors.textSecondary,
-  },
-  funnelPct: {
-    fontSize: 12,
-    fontWeight: '700' as const,
-    color: Colors.text,
-  },
-  funnelBarBg: {
-    height: 8,
-    backgroundColor: Colors.backgroundSecondary,
-    borderRadius: 4,
-    overflow: 'hidden',
-  },
-  funnelBar: {
-    height: 8,
-    borderRadius: 4,
-  },
-  funnelCount: {
-    fontSize: 11,
-    color: Colors.textTertiary,
-    marginTop: 2,
-    textAlign: 'right' as const,
-  },
-  ctaGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  ctaItem: {
-    flex: 1,
-    minWidth: '42%' as any,
-    backgroundColor: Colors.background,
-    borderRadius: 12,
-    padding: 14,
-    borderWidth: 1,
-    alignItems: 'center',
-    gap: 6,
-  },
-  ctaIconWrap: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  ctaCount: {
-    fontSize: 20,
-    fontWeight: '900' as const,
-    color: Colors.text,
-  },
-  ctaLabel: {
-    fontSize: 11,
-    fontWeight: '600' as const,
-    color: Colors.textSecondary,
-  },
-  chartWrap: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-    height: 110,
-    gap: 2,
-  },
-  chartCol: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    gap: 4,
-  },
-  chartBarValue: {
-    fontSize: 8,
-    color: Colors.textTertiary,
-    fontWeight: '600' as const,
-  },
-  chartBar: {
-    width: '70%' as any,
-    borderRadius: 3,
-    minHeight: 3,
-  },
-  chartLabel: {
-    fontSize: 8,
-    color: Colors.textTertiary,
-    fontWeight: '600' as const,
-  },
-  hourlyWrap: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    height: 60,
-    gap: 1,
-  },
-  hourlyCol: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    gap: 3,
-  },
-  hourlyBar: {
-    width: '80%' as any,
-    borderRadius: 2,
-    minHeight: 2,
-  },
-  hourlyLabel: {
-    fontSize: 8,
-    color: Colors.textTertiary,
-    fontWeight: '600' as const,
-  },
-  rowCards: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 12,
-  },
-  halfCard: {
-    flex: 1,
-    backgroundColor: Colors.surface,
-    borderRadius: 14,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: Colors.surfaceBorder,
-  },
-  noDataText: {
-    fontSize: 12,
-    color: Colors.textTertiary,
-    textAlign: 'center' as const,
-    paddingVertical: 12,
-    lineHeight: 18,
-  },
-  listRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingVertical: 5,
-  },
-  listDot: {
-    width: 22,
-    height: 22,
-    borderRadius: 6,
-    backgroundColor: Colors.backgroundSecondary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  refDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  listLabel: {
-    flex: 1,
-    fontSize: 12,
-    fontWeight: '600' as const,
-    color: Colors.text,
-  },
-  listValue: {
-    fontSize: 13,
-    fontWeight: '800' as const,
-    color: Colors.text,
-  },
-  eventRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginBottom: 8,
-  },
-  eventName: {
-    width: 110,
-    fontSize: 11,
-    fontWeight: '600' as const,
-    color: Colors.textSecondary,
-    textTransform: 'capitalize' as const,
-  },
-  eventBarBg: {
-    flex: 1,
-    height: 6,
-    backgroundColor: Colors.backgroundSecondary,
-    borderRadius: 3,
-    overflow: 'hidden',
-  },
-  eventBar: {
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: Colors.primary,
-  },
-  eventCount: {
-    width: 40,
-    fontSize: 12,
-    fontWeight: '800' as const,
-    color: Colors.text,
-    textAlign: 'right' as const,
-  },
-  infoCard: {
-    backgroundColor: Colors.primary + '0C',
-    borderRadius: 14,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: Colors.primary + '25',
-    marginBottom: 12,
-    gap: 6,
-  },
-  infoTitle: {
-    fontSize: 14,
-    fontWeight: '700' as const,
-    color: Colors.primary,
-  },
-  infoText: {
-    fontSize: 12,
-    color: Colors.textSecondary,
-    lineHeight: 18,
-  },
-  geoSummaryRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 14,
-  },
-  geoSummaryCard: {
-    flex: 1,
-    backgroundColor: Colors.surface,
-    borderRadius: 14,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: Colors.surfaceBorder,
-    borderLeftWidth: 3,
-    alignItems: 'center',
-    gap: 6,
-  },
-  geoSummaryValue: {
-    fontSize: 22,
-    fontWeight: '900' as const,
-    color: Colors.text,
-  },
-  geoSummaryLabel: {
-    fontSize: 10,
-    fontWeight: '700' as const,
-    color: Colors.textSecondary,
-    textTransform: 'uppercase' as const,
-    letterSpacing: 0.5,
-  },
-  geoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 10,
-  },
-  geoFlag: {
-    fontSize: 18,
-    width: 26,
-    textAlign: 'center' as const,
-  },
-  geoLabelWrap: {
-    width: 100,
-  },
-  geoLabel: {
-    fontSize: 12,
-    fontWeight: '600' as const,
-    color: Colors.text,
-  },
-  geoPct: {
-    fontSize: 10,
-    color: Colors.textTertiary,
-    fontWeight: '600' as const,
-  },
-  geoSubLabel: {
-    fontSize: 10,
-    color: Colors.textTertiary,
-  },
-  geoBarBg: {
-    flex: 1,
-    height: 8,
-    backgroundColor: Colors.backgroundSecondary,
-    borderRadius: 4,
-    overflow: 'hidden',
-  },
-  geoBar: {
-    height: 8,
-    borderRadius: 4,
-  },
-  geoCount: {
-    width: 36,
-    fontSize: 12,
-    fontWeight: '800' as const,
-    color: Colors.text,
-    textAlign: 'right' as const,
-  },
-  cityDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-  },
-  regionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingVertical: 6,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.surfaceBorder + '50',
-  },
-  regionRank: {
-    width: 24,
-    height: 24,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  regionRankText: {
-    fontSize: 11,
-    fontWeight: '800' as const,
-  },
-  regionName: {
-    flex: 1,
-    fontSize: 12,
-    fontWeight: '600' as const,
-    color: Colors.text,
-  },
-  regionPct: {
-    fontSize: 11,
-    fontWeight: '700' as const,
-    color: Colors.textSecondary,
-    width: 40,
-    textAlign: 'right' as const,
-  },
-  regionCount: {
-    fontSize: 13,
-    fontWeight: '800' as const,
-    color: Colors.text,
-    width: 36,
-    textAlign: 'right' as const,
-  },
-  tzDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  sectionDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  insightScoreCard: {
-    backgroundColor: Colors.surface,
-    borderRadius: 16,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: Colors.surfaceBorder,
-    marginBottom: 14,
-    alignItems: 'center',
-    gap: 10,
-  },
-  insightScoreHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  insightScoreTitle: {
-    fontSize: 16,
-    fontWeight: '700' as const,
-    color: Colors.text,
-  },
-  insightScoreRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-  },
-  insightScoreBig: {
-    fontSize: 52,
-    fontWeight: '900' as const,
-    lineHeight: 56,
-  },
-  insightScoreMax: {
-    fontSize: 18,
-    fontWeight: '700' as const,
-    marginBottom: 8,
-    opacity: 0.5,
-  },
-  insightScoreBarBg: {
-    width: '100%',
-    height: 8,
-    backgroundColor: Colors.backgroundSecondary,
-    borderRadius: 4,
-    overflow: 'hidden',
-  },
-  insightScoreBar: {
-    height: 8,
-    borderRadius: 4,
-  },
-  insightScoreDesc: {
-    fontSize: 11,
-    color: Colors.textTertiary,
-    textAlign: 'center' as const,
-  },
-  insightMetricRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 14,
-  },
-  insightMetricCard: {
-    flex: 1,
-    backgroundColor: Colors.surface,
-    borderRadius: 14,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: Colors.surfaceBorder,
-    borderTopWidth: 3,
-    alignItems: 'center',
-    gap: 6,
-  },
-  insightMetricValue: {
-    fontSize: 18,
-    fontWeight: '900' as const,
-    color: Colors.text,
-  },
-  insightMetricLabel: {
-    fontSize: 10,
-    fontWeight: '600' as const,
-    color: Colors.textSecondary,
-    textAlign: 'center' as const,
-  },
-  intentRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 12,
-  },
-  intentDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-  },
-  intentLabelWrap: {
-    width: 90,
-  },
-  intentLabel: {
-    fontSize: 12,
-    fontWeight: '700' as const,
-    color: Colors.text,
-  },
-  intentDesc: {
-    fontSize: 9,
-    color: Colors.textTertiary,
-  },
-  intentBarBg: {
-    flex: 1,
-    height: 8,
-    backgroundColor: Colors.backgroundSecondary,
-    borderRadius: 4,
-    overflow: 'hidden',
-  },
-  intentBar: {
-    height: 8,
-    borderRadius: 4,
-  },
-  intentStats: {
-    alignItems: 'flex-end',
-    width: 44,
-  },
-  intentCount: {
-    fontSize: 13,
-    fontWeight: '800' as const,
-    color: Colors.text,
-  },
-  intentPct: {
-    fontSize: 9,
-    fontWeight: '600' as const,
-    color: Colors.textTertiary,
-  },
-  contentRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 8,
-  },
-  contentDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  contentLabel: {
-    width: 130,
-    fontSize: 11,
-    fontWeight: '600' as const,
-    color: Colors.textSecondary,
-  },
-  contentBarBg: {
-    flex: 1,
-    height: 6,
-    backgroundColor: Colors.backgroundSecondary,
-    borderRadius: 3,
-    overflow: 'hidden',
-  },
-  contentBar: {
-    height: 6,
-    borderRadius: 3,
-  },
-  contentCount: {
-    width: 36,
-    fontSize: 12,
-    fontWeight: '800' as const,
-    color: Colors.text,
-    textAlign: 'right' as const,
-  },
-  interestRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingVertical: 6,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.surfaceBorder + '50',
-  },
-  interestRank: {
-    width: 24,
-    height: 24,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  interestRankText: {
-    fontSize: 11,
-    fontWeight: '800' as const,
-  },
-  interestName: {
-    flex: 1,
-    fontSize: 12,
-    fontWeight: '600' as const,
-    color: Colors.text,
-    textTransform: 'capitalize' as const,
-  },
-  interestPct: {
-    fontSize: 11,
-    fontWeight: '700' as const,
-    color: Colors.textSecondary,
-    width: 40,
-    textAlign: 'right' as const,
-  },
-  interestCount: {
-    fontSize: 13,
-    fontWeight: '800' as const,
-    color: Colors.text,
-    width: 32,
-    textAlign: 'right' as const,
-  },
-  deviceGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  deviceCard: {
-    flex: 1,
-    minWidth: '28%' as any,
-    backgroundColor: Colors.background,
-    borderRadius: 12,
-    padding: 14,
-    borderWidth: 1,
-    alignItems: 'center',
-    gap: 6,
-  },
-  deviceCount: {
-    fontSize: 20,
-    fontWeight: '900' as const,
-    color: Colors.text,
-  },
-  deviceLabel: {
-    fontSize: 11,
-    fontWeight: '600' as const,
-    color: Colors.textSecondary,
-  },
-  devicePct: {
-    fontSize: 12,
-    fontWeight: '800' as const,
-  },
-  errorActions: {
-    flexDirection: 'row' as const,
-    gap: 10,
-    marginTop: 8,
-    flexWrap: 'wrap' as const,
-    justifyContent: 'center' as const,
-  },
-});
+    borderBottomColor: '#E0E5EC',
+    backgroundColor: '#FFFFFF',
+  },
+  backBtn: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F0F3F8' },
+  headerCenter: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, marginLeft: 12 },
+  headerTitle: { fontSize: 20, fontWeight: '800' as const, color: '#1B2A3D', letterSpacing: -0.3 },
+  liveBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#E8F5E9', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 4 },
+  liveBadgeDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: SS_GREEN },
+  liveBadgeText: { fontSize: 9, fontWeight: '800' as const, color: SS_GREEN, letterSpacing: 1 },
+  refreshBtn: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F0F3F8' },
 
-const vstyles = StyleSheet.create({
-  summaryRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 14,
-  },
-  summaryCard: {
-    flex: 1,
-    backgroundColor: Colors.surface,
-    borderRadius: 14,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: Colors.surfaceBorder,
-    borderLeftWidth: 3,
-    alignItems: 'center',
-    gap: 4,
-  },
-  summaryValue: {
-    fontSize: 20,
-    fontWeight: '900' as const,
-    color: Colors.text,
-  },
-  summaryLabel: {
-    fontSize: 9,
-    fontWeight: '700' as const,
-    color: Colors.textSecondary,
-    textTransform: 'uppercase' as const,
-    letterSpacing: 0.5,
-  },
-  breakdownGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  breakdownItem: {
-    flex: 1,
-    minWidth: '28%' as any,
-    backgroundColor: Colors.background,
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1,
-    alignItems: 'center',
-    gap: 4,
-  },
-  breakdownCount: {
-    fontSize: 18,
-    fontWeight: '900' as const,
-    color: Colors.text,
-  },
-  breakdownLabel: {
-    fontSize: 10,
-    fontWeight: '600' as const,
-    color: Colors.textSecondary,
-  },
-  breakdownPct: {
-    fontSize: 11,
-    fontWeight: '800' as const,
-  },
-  osDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  filterLabel: {
-    fontSize: 11,
-    fontWeight: '700' as const,
-    color: Colors.textSecondary,
-    marginBottom: 6,
-    textTransform: 'uppercase' as const,
-    letterSpacing: 0.5,
-  },
-  filterRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
-  filterChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    backgroundColor: Colors.background,
-    borderWidth: 1,
-    borderColor: Colors.surfaceBorder,
-  },
-  filterChipActive: {
-    backgroundColor: Colors.primary + '18',
-    borderColor: Colors.primary + '50',
-  },
-  filterChipText: {
-    fontSize: 11,
-    fontWeight: '600' as const,
-    color: Colors.textSecondary,
-  },
-  filterChipTextActive: {
-    color: Colors.primary,
-    fontWeight: '700' as const,
-  },
-  visitorRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.surfaceBorder + '50',
-  },
-  visitorIconWrap: {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
-    backgroundColor: Colors.backgroundSecondary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 2,
-  },
-  visitorInfo: {
-    flex: 1,
-    gap: 3,
-  },
-  visitorTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  visitorIP: {
-    fontSize: 13,
-    fontWeight: '800' as const,
-    color: Colors.text,
-    fontFamily: undefined,
-  },
-  botBadge: {
-    backgroundColor: '#FF6B6B20',
-    borderRadius: 4,
-    paddingHorizontal: 5,
-    paddingVertical: 1,
-  },
-  botBadgeText: {
-    fontSize: 8,
-    fontWeight: '800' as const,
-    color: '#FF6B6B',
-    letterSpacing: 0.5,
-  },
-  visitorDetail: {
-    fontSize: 11,
-    fontWeight: '600' as const,
-    color: Colors.textSecondary,
-  },
-  visitorMetaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    flexWrap: 'wrap',
-  },
-  visitorMeta: {
-    fontSize: 10,
-    color: Colors.textTertiary,
-    fontWeight: '500' as const,
-  },
-  visitorTime: {
-    fontSize: 10,
-    color: Colors.primary,
-    fontWeight: '600' as const,
-  },
-  paginationRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 16,
-    marginTop: 14,
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: Colors.surfaceBorder,
-  },
-  pageBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    backgroundColor: Colors.backgroundSecondary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  pageBtnDisabled: {
-    opacity: 0.4,
-  },
-  pageText: {
-    fontSize: 13,
-    fontWeight: '700' as const,
-    color: Colors.text,
-  },
+  tabBar: { flexDirection: 'row', paddingHorizontal: 12, paddingTop: 8, paddingBottom: 2, backgroundColor: '#FFFFFF', borderBottomWidth: 1, borderBottomColor: '#EDF0F5' },
+  tab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 10, position: 'relative' as const },
+  tabActive: {},
+  tabText: { fontSize: 12, fontWeight: '600' as const, color: '#97A0AF' },
+  tabTextActive: { color: SS_BLUE, fontWeight: '700' as const },
+  tabIndicator: { position: 'absolute', bottom: 0, left: '20%' as any, right: '20%' as any, height: 2, backgroundColor: SS_BLUE, borderRadius: 1 },
+
+  scrollContent: { paddingHorizontal: 16, paddingTop: 12 },
+  periodRow: { flexDirection: 'row', gap: 6, marginBottom: 16 },
+  periodChip: { flex: 1, paddingVertical: 8, borderRadius: 10, backgroundColor: '#FFFFFF', alignItems: 'center', borderWidth: 1, borderColor: '#E0E5EC' },
+  periodChipActive: { backgroundColor: '#E3F2FD', borderWidth: 1, borderColor: SS_BLUE + '50' },
+  periodText: { fontSize: 12, fontWeight: '700' as const, color: '#97A0AF' },
+  periodTextActive: { color: SS_BLUE },
+
+  heroMetrics: { flexDirection: 'row', backgroundColor: '#FFFFFF', borderRadius: 20, borderWidth: 1, borderColor: '#E0E5EC', marginBottom: 16, overflow: 'hidden' },
+  heroMetricMain: { flex: 1, padding: 20, alignItems: 'center', gap: 6 },
+  heroMetricDivider: { width: 1, backgroundColor: '#E0E5EC', marginVertical: 12 },
+  heroMetricHeader: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  heroMetricLabel: { fontSize: 12, fontWeight: '600' as const, color: '#5E6C84' },
+  counterText: { fontSize: 32, fontWeight: '900' as const, color: '#1B2A3D', letterSpacing: -1 },
+
+  trendBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
+  trendText: { fontSize: 11, fontWeight: '700' as const },
+
+  ringRow: { flexDirection: 'row', gap: 10, marginBottom: 16 },
+  ringCard: { flex: 1, backgroundColor: '#FFFFFF', borderRadius: 16, borderWidth: 1, borderColor: '#E0E5EC', padding: 14, alignItems: 'center', gap: 8 },
+  ringValue: { fontSize: 18, fontWeight: '900' as const, color: '#1B2A3D' },
+  ringLabel: { fontSize: 9, fontWeight: '600' as const, color: '#97A0AF', letterSpacing: 0.5 },
+  ringCardLabel: { fontSize: 11, fontWeight: '600' as const, color: '#5E6C84' },
+
+  card: { backgroundColor: '#FFFFFF', borderRadius: 18, padding: 18, borderWidth: 1, borderColor: '#E0E5EC', marginBottom: 14 },
+  cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 },
+  cardTitle: { flex: 1, fontSize: 15, fontWeight: '700' as const, color: '#1B2A3D' },
+  cardSubtitle: { fontSize: 11, fontWeight: '600' as const, color: '#97A0AF' },
+  cardBadge: { backgroundColor: SS_BLUE + '14', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
+  cardBadgeText: { fontSize: 10, fontWeight: '700' as const, color: SS_BLUE },
+
+  sparkLabelRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },
+  sparkLabel: { fontSize: 10, fontWeight: '600' as const, color: '#97A0AF' },
+
+  heatmapGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
+  heatmapCell: { width: (SCREEN_W - 80) / 12 - 4, aspectRatio: 1, borderRadius: 6, alignItems: 'center', justifyContent: 'center' },
+  heatmapHour: { fontSize: 8, fontWeight: '700' as const, color: '#97A0AF' },
+  heatmapCount: { fontSize: 7, fontWeight: '800' as const, color: '#FFFFFF' },
+
+  ctaGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  ctaCard: { flex: 1, minWidth: '43%' as any, backgroundColor: '#F7F9FC', borderRadius: 14, padding: 14, borderWidth: 1, borderColor: '#E0E5EC', gap: 8 },
+  ctaIconBg: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  ctaValue: { fontSize: 24, fontWeight: '900' as const, color: '#1B2A3D' },
+  ctaLabel: { fontSize: 11, fontWeight: '600' as const, color: '#5E6C84' },
+  ctaBar: { height: 4, borderRadius: 2, overflow: 'hidden' },
+  ctaBarFill: { height: 4, borderRadius: 2 },
+
+  splitRow: { flexDirection: 'row', gap: 10, marginBottom: 14 },
+  splitCard: { flex: 1, backgroundColor: '#FFFFFF', borderRadius: 16, padding: 14, borderWidth: 1, borderColor: '#E0E5EC' },
+
+  miniListRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6 },
+  miniDot: { width: 8, height: 8, borderRadius: 4 },
+  miniLabel: { flex: 1, fontSize: 12, fontWeight: '600' as const, color: '#1B2A3D' },
+  miniValue: { fontSize: 13, fontWeight: '800' as const, color: '#1B2A3D' },
+  miniPct: { fontSize: 11, fontWeight: '700' as const, width: 36, textAlign: 'right' as const },
+  miniRank: { width: 22, height: 22, borderRadius: 7, alignItems: 'center', justifyContent: 'center' },
+  miniRankText: { fontSize: 10, fontWeight: '800' as const },
+
+  eventRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
+  eventRank: { width: 24, height: 24, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  eventRankText: { fontSize: 10, fontWeight: '800' as const },
+  eventInfo: { flex: 1, gap: 4 },
+  eventName: { fontSize: 12, fontWeight: '600' as const, color: '#5E6C84', textTransform: 'capitalize' as const },
+  eventBarBg: { height: 4, backgroundColor: '#EDF0F5', borderRadius: 2, overflow: 'hidden' },
+  eventBar: { height: 4, borderRadius: 2 },
+  eventCount: { width: 40, fontSize: 13, fontWeight: '800' as const, color: '#1B2A3D', textAlign: 'right' as const },
+
+  funnelHero: { backgroundColor: '#FFFFFF', borderRadius: 18, padding: 24, borderWidth: 1, borderColor: '#E0E5EC', marginBottom: 16, alignItems: 'center', gap: 6 },
+  funnelHeroTitle: { fontSize: 22, fontWeight: '900' as const, color: '#1B2A3D', letterSpacing: -0.3 },
+  funnelHeroSub: { fontSize: 13, fontWeight: '600' as const, color: '#5E6C84' },
+
+  funnelVisual: { backgroundColor: '#FFFFFF', borderRadius: 18, padding: 18, borderWidth: 1, borderColor: '#E0E5EC', marginBottom: 14, gap: 2 },
+  funnelStepWrap: { gap: 4, marginBottom: 6 },
+  funnelStepRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  funnelBar: { height: 36, borderRadius: 10, justifyContent: 'center', paddingHorizontal: 12, minWidth: 50 },
+  funnelBarText: { fontSize: 12, fontWeight: '800' as const, color: '#FFFFFF' },
+  funnelPct: { fontSize: 13, fontWeight: '800' as const, color: '#1B2A3D', width: 40, textAlign: 'right' as const },
+  funnelLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingLeft: 4 },
+  funnelLabel: { fontSize: 11, fontWeight: '600' as const, color: '#5E6C84' },
+  funnelDropoff: { flexDirection: 'row', alignItems: 'center', gap: 2, backgroundColor: '#FFEBEE', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
+  funnelDropoffText: { fontSize: 9, fontWeight: '700' as const, color: SS_RED },
+  funnelConnector: { width: 1, height: 8, backgroundColor: '#E0E5EC', marginLeft: 20 },
+
+  dropoffRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
+  dropoffIcon: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  dropoffInfo: { flex: 1, gap: 4 },
+  dropoffLabel: { fontSize: 11, fontWeight: '600' as const, color: '#5E6C84' },
+  dropoffBarBg: { height: 4, backgroundColor: '#EDF0F5', borderRadius: 2, overflow: 'hidden' },
+  dropoffBarFill: { height: 4, borderRadius: 2 },
+  dropoffStats: { alignItems: 'flex-end', width: 44 },
+  dropoffValue: { fontSize: 13, fontWeight: '800' as const, color: SS_RED },
+  dropoffPctText: { fontSize: 9, fontWeight: '600' as const, color: '#97A0AF' },
+
+  geoKpiRow: { flexDirection: 'row', gap: 10, marginBottom: 14 },
+  geoKpiCard: { flex: 1, backgroundColor: '#FFFFFF', borderRadius: 14, padding: 14, borderWidth: 1, borderColor: '#E0E5EC', borderTopWidth: 3, alignItems: 'center', gap: 6 },
+  geoKpiValue: { fontSize: 24, fontWeight: '900' as const, color: '#1B2A3D' },
+  geoKpiLabel: { fontSize: 10, fontWeight: '700' as const, color: '#5E6C84', textTransform: 'uppercase' as const, letterSpacing: 0.5 },
+
+  geoRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
+  geoFlag: { fontSize: 20, width: 28, textAlign: 'center' as const },
+  geoInfo: { flex: 1, gap: 4 },
+  geoTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  geoName: { fontSize: 13, fontWeight: '700' as const, color: '#1B2A3D' },
+  geoPct: { fontSize: 11, fontWeight: '600' as const, color: '#97A0AF' },
+  geoBarBg: { height: 5, backgroundColor: '#EDF0F5', borderRadius: 3, overflow: 'hidden' },
+  geoBarFill: { height: 5, borderRadius: 3 },
+  geoCount: { width: 36, fontSize: 14, fontWeight: '800' as const, color: '#1B2A3D', textAlign: 'right' as const },
+
+  cityRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#EDF0F5' },
+  cityRank: { width: 26, height: 26, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  cityRankText: { fontSize: 11, fontWeight: '800' as const },
+  cityInfo: { flex: 1, gap: 1 },
+  cityName: { fontSize: 13, fontWeight: '700' as const, color: '#1B2A3D' },
+  cityCountry: { fontSize: 10, fontWeight: '500' as const, color: '#97A0AF' },
+  cityCount: { fontSize: 14, fontWeight: '800' as const, color: '#1B2A3D' },
+
+  scoreHero: { backgroundColor: '#FFFFFF', borderRadius: 20, padding: 28, borderWidth: 1, borderColor: '#E0E5EC', marginBottom: 16, alignItems: 'center', gap: 10 },
+  scoreBig: { fontSize: 36, fontWeight: '900' as const, lineHeight: 40 },
+  scoreUnit: { fontSize: 12, fontWeight: '600' as const, color: '#97A0AF' },
+  scoreTitle: { fontSize: 18, fontWeight: '800' as const, color: '#1B2A3D', marginTop: 4 },
+  scoreDesc: { fontSize: 12, fontWeight: '500' as const, color: '#5E6C84', textAlign: 'center' as const },
+
+  insightKpiRow: { flexDirection: 'row', gap: 10, marginBottom: 14 },
+  insightKpi: { flex: 1, backgroundColor: '#FFFFFF', borderRadius: 14, padding: 14, borderWidth: 1, borderColor: '#E0E5EC', borderTopWidth: 3, alignItems: 'center', gap: 6 },
+  insightKpiValue: { fontSize: 18, fontWeight: '900' as const, color: '#1B2A3D' },
+  insightKpiLabel: { fontSize: 10, fontWeight: '600' as const, color: '#5E6C84' },
+
+  intentRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 14 },
+  intentDot: { width: 10, height: 10, borderRadius: 5 },
+  intentInfo: { flex: 1, gap: 4 },
+  intentTopRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  intentLabel: { fontSize: 13, fontWeight: '700' as const, color: '#1B2A3D' },
+  intentPctText: { fontSize: 12, fontWeight: '700' as const, color: '#5E6C84' },
+  intentBarBg: { height: 6, backgroundColor: '#EDF0F5', borderRadius: 3, overflow: 'hidden' },
+  intentBarFill: { height: 6, borderRadius: 3 },
+  intentCount: { width: 36, fontSize: 14, fontWeight: '800' as const, color: '#1B2A3D', textAlign: 'right' as const },
+
+  deviceGrid: { flexDirection: 'row', gap: 10 },
+  deviceCard: { flex: 1, backgroundColor: '#FFFFFF', borderRadius: 14, padding: 14, borderWidth: 1, borderColor: '#E0E5EC', borderTopWidth: 3, alignItems: 'center', gap: 6 },
+  deviceCount: { fontSize: 22, fontWeight: '900' as const, color: '#1B2A3D' },
+  deviceLabel: { fontSize: 11, fontWeight: '600' as const, color: '#5E6C84' },
+  devicePct: { fontSize: 13, fontWeight: '800' as const },
+
+  liveHero: { backgroundColor: '#FFFFFF', borderRadius: 20, padding: 28, borderWidth: 1, borderColor: '#E0E5EC', marginBottom: 16, alignItems: 'center', gap: 8 },
+  liveCount: { fontSize: 56, fontWeight: '900' as const, color: '#1B2A3D', letterSpacing: -2 },
+  liveLabel: { fontSize: 14, fontWeight: '700' as const, color: '#5E6C84' },
+  liveSubRow: { flexDirection: 'row', gap: 16, marginTop: 4 },
+  liveSub: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  liveSubText: { fontSize: 12, fontWeight: '600' as const, color: '#97A0AF' },
+
+  pulseWrap: { width: 24, height: 24, alignItems: 'center', justifyContent: 'center' },
+  pulseRing: { position: 'absolute', width: 24, height: 24, borderRadius: 12, borderWidth: 2 },
+  pulseDot: { width: 10, height: 10, borderRadius: 5 },
+
+  liveStepGrid: { flexDirection: 'row', gap: 8 },
+  liveStepCard: { flex: 1, backgroundColor: '#FFFFFF', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#E0E5EC', borderTopWidth: 3, alignItems: 'center', gap: 4 },
+  liveStepCount: { fontSize: 22, fontWeight: '900' as const },
+  liveStepLabel: { fontSize: 10, fontWeight: '600' as const, color: '#5E6C84' },
+
+  sessionRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#EDF0F5' },
+  sessionInfo: { flex: 1, gap: 3 },
+  sessionTopRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  sessionIP: { fontSize: 13, fontWeight: '800' as const, color: '#1B2A3D' },
+  sessionBadge: { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 2, borderWidth: 1 },
+  sessionBadgeText: { fontSize: 9, fontWeight: '800' as const, letterSpacing: 0.3 },
+  sessionDetail: { fontSize: 11, fontWeight: '600' as const, color: '#5E6C84' },
+  sessionMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' as const },
+  sessionMeta: { fontSize: 10, fontWeight: '500' as const, color: '#97A0AF' },
+
+  noDataText: { fontSize: 12, color: '#97A0AF', textAlign: 'center' as const, paddingVertical: 16, lineHeight: 18 },
+
+  emptyWrap: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60, gap: 12 },
+  emptyTitle: { fontSize: 18, fontWeight: '800' as const, color: '#1B2A3D' },
+  emptySubtitle: { fontSize: 13, color: '#5E6C84', textAlign: 'center' as const, lineHeight: 20, paddingHorizontal: 24 },
+  errorIcon: { width: 72, height: 72, borderRadius: 36, backgroundColor: '#FFEBEE', alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
+  retryBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: SS_BLUE, borderRadius: 12, paddingHorizontal: 20, paddingVertical: 10, marginTop: 8 },
+  retryBtnText: { fontSize: 13, fontWeight: '700' as const, color: '#FFFFFF' },
 });
