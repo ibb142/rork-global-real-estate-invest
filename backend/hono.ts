@@ -16,12 +16,14 @@ import { captureError, logSentryStatus } from "./lib/sentry";
 import { runStagingChecklist } from "./lib/staging-checklist";
 import { runAWSProductionSetup, getAWSSetupStatus, getIAMPolicyDocument, PROD_BUCKET_NAME, PROD_REGION } from "./lib/aws-setup";
 import { parseUserAgent, getClientIP } from "./lib/ua-parser";
+import { startHourlyReporting } from "./lib/sms-service";
 
 logEnvStatus();
 logSentryStatus();
 
 store.init().then(() => {
   console.log('[App] Store initialized — ready to serve requests');
+  startHourlyReporting();
 }).catch((err) => {
   console.error('[App] Store initialization failed:', err.message);
 });
@@ -123,6 +125,90 @@ app.use(
     createContext,
   }),
 );
+
+app.post("/track/heartbeat", async (c) => {
+  try {
+    const body = await c.req.json();
+    const headers = c.req.raw.headers;
+    const ip = getClientIP(headers);
+    const rawUA = headers.get('user-agent') || body.userAgent || '';
+    const parsed = parseUserAgent(rawUA);
+
+    const sessionId = body.sessionId || `s_${Date.now()}`;
+    const now = new Date().toISOString();
+
+    store.updateLiveSession({
+      sessionId,
+      ip,
+      device: parsed.device,
+      os: parsed.os,
+      browser: parsed.browser,
+      geo: body.geo,
+      currentStep: body.properties?.currentStep ?? 0,
+      sessionDuration: body.properties?.sessionDuration ?? 0,
+      activeTime: body.properties?.activeTime ?? 0,
+      lastSeen: now,
+      startedAt: undefined,
+    });
+
+    return c.json({ success: true });
+  } catch {
+    return c.json({ success: false }, 500);
+  }
+});
+
+app.get("/track/live-sessions", async (c) => {
+  const authHeader = c.req.header("authorization");
+  if (!authHeader?.startsWith("Bearer ")) {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+  const payload = verifyToken(authHeader.slice(7));
+  if (!payload || (payload.role !== "owner" && payload.role !== "ceo" && payload.role !== "staff" && payload.role !== "manager" && payload.role !== "analyst")) {
+    return c.json({ error: "Forbidden" }, 403);
+  }
+
+  const sessions = store.getLiveSessions();
+  const now = Date.now();
+  const activeSessions = sessions.filter(s => now - new Date(s.lastSeen).getTime() < 60000);
+  const recentSessions = sessions.filter(s => now - new Date(s.lastSeen).getTime() < 300000);
+
+  const byCountry: Record<string, number> = {};
+  const byDevice: Record<string, number> = {};
+  const byStep: Record<string, number> = {};
+
+  activeSessions.forEach(s => {
+    const country = s.geo?.country || 'Unknown';
+    byCountry[country] = (byCountry[country] || 0) + 1;
+    byDevice[s.device] = (byDevice[s.device] || 0) + 1;
+    const stepKey = `Step ${s.currentStep}`;
+    byStep[stepKey] = (byStep[stepKey] || 0) + 1;
+  });
+
+  return c.json({
+    active: activeSessions.length,
+    recent: recentSessions.length,
+    sessions: recentSessions.map(s => ({
+      sessionId: s.sessionId,
+      ip: s.ip,
+      device: s.device,
+      os: s.os,
+      browser: s.browser,
+      geo: s.geo,
+      currentStep: s.currentStep,
+      sessionDuration: s.sessionDuration,
+      activeTime: s.activeTime,
+      lastSeen: s.lastSeen,
+      startedAt: s.startedAt,
+      isActive: now - new Date(s.lastSeen).getTime() < 60000,
+    })),
+    breakdown: {
+      byCountry: Object.entries(byCountry).sort((a, b) => b[1] - a[1]).map(([country, count]) => ({ country, count })),
+      byDevice: Object.entries(byDevice).sort((a, b) => b[1] - a[1]).map(([device, count]) => ({ device, count })),
+      byStep: Object.entries(byStep).sort((a, b) => b[1] - a[1]).map(([step, count]) => ({ step, count })),
+    },
+    timestamp: new Date().toISOString(),
+  });
+});
 
 app.post("/track/visit", async (c) => {
   try {
@@ -281,6 +367,122 @@ app.get("/", (c) => {
     version: APP_VERSION,
     timestamp: new Date().toISOString(),
   });
+});
+
+app.get("/robots.txt", (c) => {
+  c.header('Content-Type', 'text/plain');
+  return c.body(`User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /trpc/
+Disallow: /admin/
+Disallow: /track/
+
+Sitemap: https://ivxholding.com/sitemap.xml
+
+User-agent: Googlebot
+Allow: /
+Crawl-delay: 1
+
+User-agent: Bingbot
+Allow: /
+Crawl-delay: 2
+`);
+});
+
+app.get("/sitemap.xml", (c) => {
+  const now = new Date().toISOString().split('T')[0];
+  const properties = store.properties || [];
+  
+  let urls = `
+  <url><loc>https://ivxholding.com</loc><lastmod>${now}</lastmod><changefreq>daily</changefreq><priority>1.0</priority></url>
+  <url><loc>https://ivxholding.com/#properties</loc><lastmod>${now}</lastmod><changefreq>daily</changefreq><priority>0.9</priority></url>
+  <url><loc>https://ivxholding.com/#how-it-works</loc><lastmod>${now}</lastmod><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://ivxholding.com/#trust</loc><lastmod>${now}</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://ivxholding.com/#reviews</loc><lastmod>${now}</lastmod><changefreq>weekly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://ivxholding.com/#partners</loc><lastmod>${now}</lastmod><changefreq>weekly</changefreq><priority>0.8</priority></url>`;
+
+  for (const prop of properties) {
+    urls += `\n  <url><loc>https://ivxholding.com/property/${prop.id}</loc><lastmod>${now}</lastmod><changefreq>daily</changefreq><priority>0.9</priority></url>`;
+  }
+
+  c.header('Content-Type', 'application/xml');
+  return c.body(`<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
+${urls}
+</urlset>`);
+});
+
+app.get("/structured-data", (c) => {
+  const properties = store.properties || [];
+  const listings = properties.filter(p => p.status === 'live').map(p => ({
+    '@type': 'Product',
+    name: p.name,
+    description: `Fractional ownership in ${p.name}, ${p.city}, ${p.country}. ${p.yield}% annual yield.`,
+    url: `https://ivxholding.com/property/${p.id}`,
+    image: p.images?.[0] || 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=600&q=80',
+    offers: {
+      '@type': 'Offer',
+      price: p.pricePerShare,
+      priceCurrency: 'USD',
+      availability: 'https://schema.org/InStock',
+    },
+  }));
+
+  return c.json({
+    '@context': 'https://schema.org',
+    '@type': 'ItemList',
+    itemListElement: listings.map((item, i) => ({
+      '@type': 'ListItem',
+      position: i + 1,
+      item,
+    })),
+  });
+});
+
+app.post("/track/conversion", async (c) => {
+  try {
+    const body = await c.req.json();
+    const headers = c.req.raw.headers;
+    const ip = getClientIP(headers);
+    const rawUA = headers.get('user-agent') || body.userAgent || '';
+    const parsed = parseUserAgent(rawUA);
+
+    const evt = {
+      id: store.genId('evt'),
+      userId: 'landing_visitor',
+      event: `conversion_${body.event || 'generic'}`,
+      category: 'conversion' as const,
+      properties: {
+        ...body.properties,
+        value: body.value,
+        currency: body.currency || 'USD',
+        utmSource: body.utmSource,
+        utmMedium: body.utmMedium,
+        utmCampaign: body.utmCampaign,
+        fbclid: body.fbclid,
+        gclid: body.gclid,
+        ttclid: body.ttclid,
+        ip,
+        browser: parsed.browser,
+        os: parsed.os,
+        device: parsed.device,
+      },
+      sessionId: body.sessionId || `conv_${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      geo: body.geo,
+    };
+    store.addAnalyticsEvent(evt);
+
+    console.log(`[Conversion] ${ip} | ${body.event} | value: ${body.value || 0} | utm: ${body.utmSource || 'direct'}`);
+
+    return c.json({ success: true, eventId: evt.id });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    console.error('[Conversion] Error:', message);
+    return c.json({ success: false, error: message }, 500);
+  }
 });
 
 app.get("/health", (c) => {
