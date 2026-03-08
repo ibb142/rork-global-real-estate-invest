@@ -5,11 +5,6 @@ FROM base AS deps
 COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile --production
 
-FROM base AS builder
-COPY package.json bun.lock ./
-RUN bun install --frozen-lockfile
-COPY . .
-
 FROM base AS runner
 WORKDIR /app
 
@@ -21,9 +16,10 @@ RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 honojs
 
 COPY --from=deps --chown=honojs:nodejs /app/node_modules ./node_modules
+COPY --chown=honojs:nodejs package.json ./package.json
+COPY --chown=honojs:nodejs tsconfig.json ./tsconfig.json
 COPY --chown=honojs:nodejs backend ./backend
 COPY --chown=honojs:nodejs server.ts ./server.ts
-COPY --chown=honojs:nodejs tsconfig.json ./tsconfig.json
 
 USER honojs
 
