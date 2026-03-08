@@ -10,6 +10,10 @@ import {
   TextInput,
   KeyboardAvoidingView,
   useWindowDimensions,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
+  AppState,
+  AppStateStatus,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -121,9 +125,15 @@ export default function LandingScreen() {
 
   const sessionIdRef = useRef<string>(`lp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`);
   const geoDataRef = useRef<{ city?: string; region?: string; country?: string; countryCode?: string; lat?: number; lng?: number; timezone?: string } | undefined>(undefined);
-  const hasTrackedRef = useRef<{ pageView: boolean; step1: boolean; step2: boolean; step3: boolean }>({
+  const hasTrackedRef = useRef<{ pageView: boolean; step1: boolean; step2: boolean; step3: boolean; scroll25: boolean; scroll50: boolean; scroll75: boolean; scroll100: boolean }>({
     pageView: false, step1: false, step2: false, step3: false,
+    scroll25: false, scroll50: false, scroll75: false, scroll100: false,
   });
+  const sessionStartRef = useRef<number>(Date.now());
+  const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const visibilityStartRef = useRef<number>(Date.now());
+  const totalVisibleTimeRef = useRef<number>(0);
+  const isVisibleRef = useRef<boolean>(true);
 
   const trackMutation = trpc.analytics.trackLanding.useMutation();
   const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL || process.env.EXPO_PUBLIC_RORK_API_BASE_URL || 'https://ivxholding.com';
@@ -150,7 +160,7 @@ export default function LandingScreen() {
       },
     };
 
-    fetch(`${apiBaseUrl}/api/track/visit`, {
+    fetch(`${apiBaseUrl}/track/visit`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(trackPayload),
@@ -179,6 +189,133 @@ export default function LandingScreen() {
   const trackEvent = useCallback((event: string, properties?: Record<string, unknown>) => {
     trackEventRef.current(event, properties);
   }, []);
+
+  const sendHeartbeat = useCallback(() => {
+    const now = Date.now();
+    const sessionDuration = Math.round((now - sessionStartRef.current) / 1000);
+    if (isVisibleRef.current) {
+      totalVisibleTimeRef.current += now - visibilityStartRef.current;
+      visibilityStartRef.current = now;
+    }
+    const activeTime = Math.round(totalVisibleTimeRef.current / 1000);
+
+    const payload = {
+      event: 'heartbeat',
+      sessionId: sessionIdRef.current,
+      page: '/landing',
+      section: `step_${step}`,
+      referrer: Platform.OS === 'web' && typeof document !== 'undefined' ? (document as any).referrer || 'direct' : 'app',
+      userAgent: Platform.OS === 'web' && typeof navigator !== 'undefined' ? navigator.userAgent : Platform.OS,
+      geo: geoDataRef.current,
+      properties: {
+        sessionDuration,
+        activeTime,
+        currentStep: step,
+        platform: Platform.OS,
+        timestamp: new Date().toISOString(),
+      },
+    };
+
+    fetch(`${apiBaseUrl}/track/heartbeat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }).catch(() => {});
+  }, [step, apiBaseUrl]);
+
+  useEffect(() => {
+    heartbeatRef.current = setInterval(sendHeartbeat, 15000);
+    return () => {
+      if (heartbeatRef.current) clearInterval(heartbeatRef.current);
+    };
+  }, [sendHeartbeat]);
+
+  useEffect(() => {
+    if (Platform.OS === 'web' && typeof document !== 'undefined') {
+      const handleVisChange = () => {
+        const now = Date.now();
+        if (document.hidden) {
+          if (isVisibleRef.current) {
+            totalVisibleTimeRef.current += now - visibilityStartRef.current;
+            isVisibleRef.current = false;
+            trackEvent('tab_hidden', { section: `step_${step}`, sessionDuration: Math.round((now - sessionStartRef.current) / 1000) });
+          }
+        } else {
+          if (!isVisibleRef.current) {
+            visibilityStartRef.current = now;
+            isVisibleRef.current = true;
+            trackEvent('tab_visible', { section: `step_${step}`, sessionDuration: Math.round((now - sessionStartRef.current) / 1000) });
+          }
+        }
+      };
+      document.addEventListener('visibilitychange', handleVisChange);
+      return () => document.removeEventListener('visibilitychange', handleVisChange);
+    } else {
+      const sub = AppState.addEventListener('change', (state: AppStateStatus) => {
+        const now = Date.now();
+        if (state === 'active') {
+          visibilityStartRef.current = now;
+          isVisibleRef.current = true;
+        } else if (state === 'background' || state === 'inactive') {
+          if (isVisibleRef.current) {
+            totalVisibleTimeRef.current += now - visibilityStartRef.current;
+            isVisibleRef.current = false;
+          }
+        }
+      });
+      return () => sub.remove();
+    }
+  }, [step, trackEvent]);
+
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      const now = Date.now();
+      const sessionDuration = Math.round((now - sessionStartRef.current) / 1000);
+      if (isVisibleRef.current) {
+        totalVisibleTimeRef.current += now - visibilityStartRef.current;
+      }
+      const activeTime = Math.round(totalVisibleTimeRef.current / 1000);
+      const payload = JSON.stringify({
+        event: 'session_end',
+        sessionId: sessionIdRef.current,
+        page: '/landing',
+        properties: { sessionDuration, activeTime, finalStep: step, platform: Platform.OS },
+        geo: geoDataRef.current,
+      });
+      if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.sendBeacon) {
+        navigator.sendBeacon(`${apiBaseUrl}/track/visit`, payload);
+      }
+    };
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      window.addEventListener('beforeunload', handleBeforeUnload);
+      return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+    }
+    return undefined;
+  }, [step, apiBaseUrl]);
+
+  const handleScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+    const scrollHeight = contentSize.height - layoutMeasurement.height;
+    if (scrollHeight <= 0) return;
+    const pct = Math.round((contentOffset.y / scrollHeight) * 100);
+
+    if (pct >= 25 && !hasTrackedRef.current.scroll25) {
+      hasTrackedRef.current.scroll25 = true;
+      trackEvent('scroll_25', { section: 'properties', scrollPercent: 25 });
+    }
+    if (pct >= 50 && !hasTrackedRef.current.scroll50) {
+      hasTrackedRef.current.scroll50 = true;
+      trackEvent('scroll_50', { section: 'how_it_works', scrollPercent: 50 });
+    }
+    if (pct >= 75 && !hasTrackedRef.current.scroll75) {
+      hasTrackedRef.current.scroll75 = true;
+      trackEvent('scroll_75', { section: 'testimonials', scrollPercent: 75 });
+    }
+    if (pct >= 95 && !hasTrackedRef.current.scroll100) {
+      hasTrackedRef.current.scroll100 = true;
+      trackEvent('scroll_100', { section: 'footer', scrollPercent: 100 });
+    }
+  }, [trackEvent]);
 
   const statsQuery = trpc.waitlist.getStats.useQuery();
   const joinMutation = trpc.waitlist.join.useMutation({
@@ -670,6 +807,8 @@ export default function LandingScreen() {
             contentContainerStyle={s.scrollContent}
             keyboardShouldPersistTaps="handled"
             style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}
+            onScroll={step === 0 ? handleScroll : undefined}
+            scrollEventThrottle={200}
           >
             {step === 0 && renderStep0()}
             {step === 1 && renderStep1()}
