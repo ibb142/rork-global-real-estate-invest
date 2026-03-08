@@ -118,11 +118,11 @@ export const assetClassComparison: AssetClassPerformance[] = [
 ];
 
 export const platformStats: PlatformStat[] = [
-  { label: 'Total Investors', value: '47,832', subtext: 'Across 94 countries' },
-  { label: 'Properties Tokenized', value: '$2.1B+', subtext: '284 properties globally' },
-  { label: 'Avg. Annual Return', value: '14.5%', subtext: 'Since inception' },
-  { label: 'Dividends Paid', value: '$89.2M', subtext: 'Quarterly distributions' },
-  { label: 'Investor Satisfaction', value: '4.9/5.0', subtext: '12,400+ reviews' },
+  { label: 'Total Investors', value: 'Growing', subtext: 'Global community' },
+  { label: 'Properties Listed', value: '6', subtext: 'Premium global assets' },
+  { label: 'Target Return', value: '8-14%', subtext: 'Annual yield range' },
+  { label: 'Distributions', value: 'Quarterly', subtext: 'Automatic payouts' },
+  { label: 'Platform', value: '24/7', subtext: 'Always available' },
   { label: 'Uptime', value: '99.99%', subtext: 'Zero trading downtime' },
 ];
 
@@ -353,13 +353,10 @@ export const returnProjections = {
 };
 
 export const globalPresence = [
-  { country: 'United States', properties: 84, totalValue: '$620M' },
-  { country: 'UAE', properties: 42, totalValue: '$380M' },
-  { country: 'United Kingdom', properties: 36, totalValue: '$290M' },
-  { country: 'Japan', properties: 28, totalValue: '$185M' },
-  { country: 'Singapore', properties: 24, totalValue: '$210M' },
-  { country: 'France', properties: 22, totalValue: '$175M' },
-  { country: 'Australia', properties: 18, totalValue: '$120M' },
-  { country: 'Monaco', properties: 8, totalValue: '$95M' },
-  { country: 'China', properties: 22, totalValue: '$145M' },
+  { country: 'United States', properties: 1, totalValue: '$25M' },
+  { country: 'UAE', properties: 1, totalValue: '$5.2M' },
+  { country: 'United Kingdom', properties: 1, totalValue: '$11.8M' },
+  { country: 'Japan', properties: 1, totalValue: '$12.2M' },
+  { country: 'Singapore', properties: 1, totalValue: '$11.4M' },
+  { country: 'France', properties: 1, totalValue: '$14.8M' },
 ];
