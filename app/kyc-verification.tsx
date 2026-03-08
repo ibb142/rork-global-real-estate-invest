@@ -14,6 +14,7 @@ import {
   Modal,
   FlatList,
   Animated,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -297,9 +298,9 @@ export default function KYCVerificationScreen() {
       };
 
       if (type === 'selfie') {
-        submitSelfieToBackend(assetUri);
+        void submitSelfieToBackend(assetUri);
       } else {
-        uploadDocumentToBackend(docTypeMap[type] || type, assetUri);
+        void uploadDocumentToBackend(docTypeMap[type] || type, assetUri);
       }
 
       setTimeout(() => {
@@ -352,13 +353,13 @@ export default function KYCVerificationScreen() {
           return;
         }
         setCurrentStep('verification');
-        startFullVerification();
+        void startFullVerification();
         break;
       case 'verification':
         setCurrentStep('review');
         break;
       case 'review':
-        submitKYC();
+        void submitKYC();
         break;
     }
   };
@@ -510,7 +511,7 @@ export default function KYCVerificationScreen() {
   };
 
   const renderPersonalInfoStep = () => (
-    <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+    <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
       <View style={styles.stepHeader}>
         <View style={styles.stepIcon}>
           <User size={24} color={Colors.primary} />
@@ -738,7 +739,7 @@ export default function KYCVerificationScreen() {
   };
 
   const renderDocumentsStep = () => (
-    <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+    <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
       <View style={styles.stepHeader}>
         <View style={styles.stepIcon}>
           <FileText size={24} color={Colors.primary} />
@@ -802,7 +803,7 @@ export default function KYCVerificationScreen() {
   );
 
   const renderSelfieStep = () => (
-    <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+    <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
       <View style={styles.stepHeader}>
         <View style={styles.stepIcon}>
           <Camera size={24} color={Colors.primary} />
@@ -859,7 +860,7 @@ export default function KYCVerificationScreen() {
   );
 
   const renderLivenessStep = () => (
-    <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+    <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
       <View style={styles.stepHeader}>
         <View style={styles.stepIcon}>
           <ScanFace size={24} color={Colors.primary} />
@@ -946,7 +947,7 @@ export default function KYCVerificationScreen() {
   );
 
   const renderVerificationStep = () => (
-    <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+    <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
       <View style={styles.stepHeader}>
         <View style={styles.stepIcon}>
           <Database size={24} color={Colors.primary} />
@@ -1042,7 +1043,7 @@ export default function KYCVerificationScreen() {
   };
 
   const renderReviewStep = () => (
-    <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+    <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
       <View style={styles.stepHeader}>
         <View style={[styles.stepIcon, { backgroundColor: (verificationResult?.success ? Colors.success : Colors.warning) + '20' }]}>
           {verificationResult?.success ? (
@@ -1210,64 +1211,69 @@ export default function KYCVerificationScreen() {
       </Modal>
 
       <SafeAreaView style={styles.safeArea}>
-        <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => {
-              if (currentStep === 'personal') {
-                router.back();
-              } else if (currentStep === 'documents') {
-                setCurrentStep('personal');
-              } else if (currentStep === 'selfie') {
-                setCurrentStep('documents');
-              } else if (currentStep === 'liveness') {
-                setCurrentStep('selfie');
-              } else if (currentStep === 'verification') {
-                setCurrentStep('liveness');
-              } else {
-                setCurrentStep('verification');
-              }
-            }}
-          >
-            <ArrowLeft size={24} color={Colors.text} />
-          </TouchableOpacity>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <View style={styles.header}>
+            <TouchableOpacity
+              style={styles.backButton}
+              onPress={() => {
+                if (currentStep === 'personal') {
+                  router.back();
+                } else if (currentStep === 'documents') {
+                  setCurrentStep('personal');
+                } else if (currentStep === 'selfie') {
+                  setCurrentStep('documents');
+                } else if (currentStep === 'liveness') {
+                  setCurrentStep('selfie');
+                } else if (currentStep === 'verification') {
+                  setCurrentStep('liveness');
+                } else {
+                  setCurrentStep('verification');
+                }
+              }}
+            >
+              <ArrowLeft size={24} color={Colors.text} />
+            </TouchableOpacity>
 
-          <Text style={styles.headerTitle}>KYC Verification</Text>
+            <Text style={styles.headerTitle}>KYC Verification</Text>
 
-          <Text style={styles.stepIndicator}>
-            Step {getStepNumber(currentStep)}/{getTotalSteps()}
-          </Text>
-        </View>
+            <Text style={styles.stepIndicator}>
+              Step {getStepNumber(currentStep)}/{getTotalSteps()}
+            </Text>
+          </View>
 
-        <View style={styles.progressBar}>
-          <View style={[styles.progressFill, { width: `${(getStepNumber(currentStep) / getTotalSteps()) * 100}%` }]} />
-        </View>
+          <View style={styles.progressBar}>
+            <View style={[styles.progressFill, { width: `${(getStepNumber(currentStep) / getTotalSteps()) * 100}%` }]} />
+          </View>
 
-        {currentStep === 'personal' && renderPersonalInfoStep()}
-        {currentStep === 'documents' && renderDocumentsStep()}
-        {currentStep === 'selfie' && renderSelfieStep()}
-        {currentStep === 'liveness' && renderLivenessStep()}
-        {currentStep === 'verification' && renderVerificationStep()}
-        {currentStep === 'review' && renderReviewStep()}
+          {currentStep === 'personal' && renderPersonalInfoStep()}
+          {currentStep === 'documents' && renderDocumentsStep()}
+          {currentStep === 'selfie' && renderSelfieStep()}
+          {currentStep === 'liveness' && renderLivenessStep()}
+          {currentStep === 'verification' && renderVerificationStep()}
+          {currentStep === 'review' && renderReviewStep()}
 
-        <View style={styles.footer}>
-          <TouchableOpacity
-            style={[styles.nextButton, isLoading && styles.buttonDisabled]}
-            onPress={handleNextStep}
-            disabled={isLoading}
-          >
-            {isLoading ? (
-              <ActivityIndicator color={Colors.background} />
-            ) : (
-              <>
-                <Text style={styles.nextButtonText}>
-                  {currentStep === 'review' ? 'Submit KYC' : currentStep === 'liveness' ? 'Run Verification' : 'Continue'}
-                </Text>
-                <ChevronRight size={20} color={Colors.background} />
-              </>
-            )}
-          </TouchableOpacity>
-        </View>
+          <View style={styles.footer}>
+            <TouchableOpacity
+              style={[styles.nextButton, isLoading && styles.buttonDisabled]}
+              onPress={handleNextStep}
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <ActivityIndicator color={Colors.background} />
+              ) : (
+                <>
+                  <Text style={styles.nextButtonText}>
+                    {currentStep === 'review' ? 'Submit KYC' : currentStep === 'liveness' ? 'Run Verification' : 'Continue'}
+                  </Text>
+                  <ChevronRight size={20} color={Colors.background} />
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
       </SafeAreaView>
     </View>
   );
