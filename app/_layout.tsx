@@ -102,6 +102,7 @@ function RootLayoutNav() {
       <Stack.Screen name="email-compose" options={{ ...HIDDEN_HEADER, presentation: "modal" }} />
       <Stack.Screen name="ai-automation-report" options={HIDDEN_HEADER} />
       <Stack.Screen name="api-list" options={HIDDEN_HEADER} />
+      <Stack.Screen name="authenticator" options={HIDDEN_HEADER} />
     </Stack>
   );
 }
