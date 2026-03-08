@@ -47,6 +47,7 @@ import {
   Brain,
   Flame,
   KeyRound,
+  ShieldCheck,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { trpc } from '@/lib/trpc';
@@ -87,6 +88,7 @@ const ADMIN_MODULES = [
   { id: 'email-management', name: 'Email Management', icon: Mail, iconName: 'Mail', route: '/admin/email-management', category: 'Core' },
   { id: 'email-accounts', name: 'Email Accounts', icon: Users, iconName: 'Users', route: '/admin/email-accounts', category: 'Users' },
   { id: 'landing-analytics', name: 'Landing Analytics', icon: BarChart3, iconName: 'BarChart3', route: '/admin/landing-analytics', category: 'Analytics' },
+  { id: 'authenticator', name: 'Authenticator', icon: ShieldCheck, iconName: 'ShieldCheck', route: '/authenticator', category: 'Settings' },
 ];
 
 export default function AdminDashboard() {
