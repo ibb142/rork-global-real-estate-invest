@@ -102,21 +102,21 @@ export const MODULE_HEALTH_DATA: ModuleHealth[] = [
 ];
 
 export const GROWTH_CHANNELS: GrowthChannel[] = [
-  { id: 'organic-search', name: 'Google / SEO', icon: 'Search', currentUsers: 12400, projectedUsers: 890000, conversionRate: 3.2, costPerAcquisition: 0, roi: Infinity, status: 'active', trend: 'up', monthlyGrowthRate: 34 },
-  { id: 'instagram', name: 'Instagram', icon: 'Camera', currentUsers: 8900, projectedUsers: 15000000, conversionRate: 1.8, costPerAcquisition: 2.40, roi: 420, status: 'active', trend: 'up', monthlyGrowthRate: 48 },
-  { id: 'tiktok', name: 'TikTok', icon: 'Video', currentUsers: 4200, projectedUsers: 25000000, conversionRate: 2.1, costPerAcquisition: 1.10, roi: 680, status: 'active', trend: 'up', monthlyGrowthRate: 72 },
-  { id: 'youtube', name: 'YouTube', icon: 'Play', currentUsers: 3100, projectedUsers: 8000000, conversionRate: 4.5, costPerAcquisition: 3.80, roi: 310, status: 'active', trend: 'up', monthlyGrowthRate: 28 },
-  { id: 'facebook', name: 'Facebook / Meta Ads', icon: 'Users', currentUsers: 6700, projectedUsers: 12000000, conversionRate: 2.4, costPerAcquisition: 4.20, roi: 280, status: 'active', trend: 'stable', monthlyGrowthRate: 18 },
-  { id: 'twitter-x', name: 'X (Twitter)', icon: 'MessageCircle', currentUsers: 2100, projectedUsers: 5000000, conversionRate: 1.2, costPerAcquisition: 1.80, roi: 190, status: 'active', trend: 'up', monthlyGrowthRate: 22 },
-  { id: 'linkedin', name: 'LinkedIn', icon: 'Briefcase', currentUsers: 1800, projectedUsers: 3000000, conversionRate: 5.8, costPerAcquisition: 8.50, roi: 520, status: 'active', trend: 'up', monthlyGrowthRate: 15 },
-  { id: 'referral', name: 'Referral Program', icon: 'Gift', currentUsers: 5400, projectedUsers: 20000000, conversionRate: 12.5, costPerAcquisition: 0.50, roi: 1840, status: 'active', trend: 'up', monthlyGrowthRate: 56 },
-  { id: 'influencer', name: 'Influencer Network', icon: 'Star', currentUsers: 3800, projectedUsers: 18000000, conversionRate: 6.2, costPerAcquisition: 1.90, roi: 750, status: 'active', trend: 'up', monthlyGrowthRate: 42 },
-  { id: 'email-marketing', name: 'Email Campaigns', icon: 'Mail', currentUsers: 9200, projectedUsers: 4000000, conversionRate: 8.4, costPerAcquisition: 0.30, roi: 2200, status: 'active', trend: 'stable', monthlyGrowthRate: 12 },
-  { id: 'app-store', name: 'App Store / Play Store', icon: 'Smartphone', currentUsers: 2400, projectedUsers: 10000000, conversionRate: 7.1, costPerAcquisition: 2.10, roi: 540, status: 'optimizing', trend: 'up', monthlyGrowthRate: 38 },
-  { id: 'partnerships', name: 'JV / Strategic Partners', icon: 'Handshake', currentUsers: 890, projectedUsers: 6000000, conversionRate: 18.4, costPerAcquisition: 0, roi: Infinity, status: 'active', trend: 'up', monthlyGrowthRate: 65 },
-  { id: 'podcast', name: 'Podcast / Audio', icon: 'Headphones', currentUsers: 450, projectedUsers: 2000000, conversionRate: 9.2, costPerAcquisition: 5.00, roi: 380, status: 'planned', trend: 'stable', monthlyGrowthRate: 0 },
-  { id: 'whatsapp', name: 'WhatsApp Groups', icon: 'MessageSquare', currentUsers: 1200, projectedUsers: 8000000, conversionRate: 14.8, costPerAcquisition: 0.10, roi: 3400, status: 'active', trend: 'up', monthlyGrowthRate: 88 },
-  { id: 'telegram', name: 'Telegram Communities', icon: 'Send', currentUsers: 980, projectedUsers: 5000000, conversionRate: 11.2, costPerAcquisition: 0.15, roi: 2800, status: 'active', trend: 'up', monthlyGrowthRate: 75 },
+  { id: 'organic-search', name: 'Google / SEO', icon: 'Search', currentUsers: 0, projectedUsers: 890000, conversionRate: 0, costPerAcquisition: 0, roi: 0, status: 'planned', trend: 'stable', monthlyGrowthRate: 0 },
+  { id: 'instagram', name: 'Instagram', icon: 'Camera', currentUsers: 0, projectedUsers: 15000000, conversionRate: 0, costPerAcquisition: 0, roi: 0, status: 'planned', trend: 'stable', monthlyGrowthRate: 0 },
+  { id: 'tiktok', name: 'TikTok', icon: 'Video', currentUsers: 0, projectedUsers: 25000000, conversionRate: 0, costPerAcquisition: 0, roi: 0, status: 'planned', trend: 'stable', monthlyGrowthRate: 0 },
+  { id: 'youtube', name: 'YouTube', icon: 'Play', currentUsers: 0, projectedUsers: 8000000, conversionRate: 0, costPerAcquisition: 0, roi: 0, status: 'planned', trend: 'stable', monthlyGrowthRate: 0 },
+  { id: 'facebook', name: 'Facebook / Meta Ads', icon: 'Users', currentUsers: 0, projectedUsers: 12000000, conversionRate: 0, costPerAcquisition: 0, roi: 0, status: 'planned', trend: 'stable', monthlyGrowthRate: 0 },
+  { id: 'twitter-x', name: 'X (Twitter)', icon: 'MessageCircle', currentUsers: 0, projectedUsers: 5000000, conversionRate: 0, costPerAcquisition: 0, roi: 0, status: 'planned', trend: 'stable', monthlyGrowthRate: 0 },
+  { id: 'linkedin', name: 'LinkedIn', icon: 'Briefcase', currentUsers: 0, projectedUsers: 3000000, conversionRate: 0, costPerAcquisition: 0, roi: 0, status: 'planned', trend: 'stable', monthlyGrowthRate: 0 },
+  { id: 'referral', name: 'Referral Program', icon: 'Gift', currentUsers: 0, projectedUsers: 20000000, conversionRate: 0, costPerAcquisition: 0, roi: 0, status: 'planned', trend: 'stable', monthlyGrowthRate: 0 },
+  { id: 'influencer', name: 'Influencer Network', icon: 'Star', currentUsers: 0, projectedUsers: 18000000, conversionRate: 0, costPerAcquisition: 0, roi: 0, status: 'planned', trend: 'stable', monthlyGrowthRate: 0 },
+  { id: 'email-marketing', name: 'Email Campaigns', icon: 'Mail', currentUsers: 0, projectedUsers: 4000000, conversionRate: 0, costPerAcquisition: 0, roi: 0, status: 'planned', trend: 'stable', monthlyGrowthRate: 0 },
+  { id: 'app-store', name: 'App Store / Play Store', icon: 'Smartphone', currentUsers: 0, projectedUsers: 10000000, conversionRate: 0, costPerAcquisition: 0, roi: 0, status: 'planned', trend: 'stable', monthlyGrowthRate: 0 },
+  { id: 'partnerships', name: 'JV / Strategic Partners', icon: 'Handshake', currentUsers: 0, projectedUsers: 6000000, conversionRate: 0, costPerAcquisition: 0, roi: 0, status: 'planned', trend: 'stable', monthlyGrowthRate: 0 },
+  { id: 'podcast', name: 'Podcast / Audio', icon: 'Headphones', currentUsers: 0, projectedUsers: 2000000, conversionRate: 0, costPerAcquisition: 0, roi: 0, status: 'planned', trend: 'stable', monthlyGrowthRate: 0 },
+  { id: 'whatsapp', name: 'WhatsApp Groups', icon: 'MessageSquare', currentUsers: 0, projectedUsers: 8000000, conversionRate: 0, costPerAcquisition: 0, roi: 0, status: 'planned', trend: 'stable', monthlyGrowthRate: 0 },
+  { id: 'telegram', name: 'Telegram Communities', icon: 'Send', currentUsers: 0, projectedUsers: 5000000, conversionRate: 0, costPerAcquisition: 0, roi: 0, status: 'planned', trend: 'stable', monthlyGrowthRate: 0 },
 ];
 
 export const GROWTH_MILESTONES: GrowthMilestone[] = [
