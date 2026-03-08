@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -17,16 +17,17 @@ import {
   Sparkles,
   Shield,
   TrendingUp,
-  TrendingDown,
   Brain,
   Zap,
   BarChart3,
-  Globe,
   Users,
   Award,
   Star,
   CheckCircle2,
-  Rocket,
+  MapPin,
+  ArrowUpRight,
+  Wallet,
+  Lock,
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import Colors from '@/constants/colors';
@@ -35,85 +36,246 @@ import { trpc } from '@/lib/trpc';
 import { useInstantCache } from '@/lib/use-instant-query';
 import { useTranslation } from '@/lib/i18n-context';
 import { useAnalytics } from '@/lib/analytics-context';
+import { useIPX } from '@/lib/ipx-context';
+import { useAuth } from '@/lib/auth-context';
 import PropertyCard from '@/components/PropertyCard';
-import { platformStats } from '@/mocks/competitive-stats';
-import { useGlobalMarkets } from '@/lib/global-markets';
+import { formatCurrency } from '@/lib/formatters';
 import { properties as fallbackProperties } from '@/mocks/properties';
-import { leadershipTeam } from '@/mocks/team';
-import { Crown, Phone, Mail } from 'lucide-react-native';
+import { SAMPLE_JV_AGREEMENTS, JVAgreement } from '@/mocks/jv-agreements';
 
 const IPX_LOGO = require('@/assets/images/ivx-logo.png');
 
-function LiveStatsTicker({ t }: { t: (key: any) => string }) {
-  const scrollAnim = useRef(new Animated.Value(0)).current;
-  const { width } = useWindowDimensions();
+function PortfolioSnapshot({ router }: { router: ReturnType<typeof useRouter> }) {
+  const { holdings, getTotalIPXValue, getTotalIPXPnL, getTotalIPXPnLPercent } = useIPX();
+  const { isAuthenticated } = useAuth();
+  const scaleAnim = useRef(new Animated.Value(0.97)).current;
+  const opacityAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    if (width <= 0) return;
-    scrollAnim.setValue(0);
-    const animation = Animated.loop(
-      Animated.timing(scrollAnim, {
-        toValue: -width * 2,
-        duration: 25000,
-        useNativeDriver: true,
-      })
-    );
-    animation.start();
-    return () => animation.stop();
-  }, [width, scrollAnim]);
+    Animated.parallel([
+      Animated.spring(scaleAnim, { toValue: 1, friction: 8, tension: 40, useNativeDriver: true }),
+      Animated.timing(opacityAnim, { toValue: 1, duration: 400, useNativeDriver: true }),
+    ]).start();
+  }, [scaleAnim, opacityAnim]);
 
-  const translatedStats = useMemo(() => {
-    const labelKeys = ['totalInvestors', 'propertiesTokenized', 'avgAnnualReturn', 'dividendsPaid'] as const;
-    return platformStats.slice(0, 4).map((stat, i) => ({
-      ...stat,
-      label: t(labelKeys[i]),
-    }));
-  }, [t]);
+  const hasHoldings = holdings.length > 0 && isAuthenticated;
+  const totalValue = getTotalIPXValue;
+  const totalPnL = getTotalIPXPnL;
+  const pnlPercent = getTotalIPXPnLPercent;
+  const isPositive = totalPnL >= 0;
+
+  if (!isAuthenticated) {
+    return (
+      <Animated.View style={[psStyles.container, psStyles.ctaContainer, { opacity: opacityAnim, transform: [{ scale: scaleAnim }] }]}>
+        <View style={psStyles.ctaLeft}>
+          <View style={psStyles.ctaIconWrap}>
+            <Wallet size={22} color={Colors.primary} />
+          </View>
+          <View style={psStyles.ctaTextWrap}>
+            <Text style={psStyles.ctaTitle}>Start Investing Today</Text>
+            <Text style={psStyles.ctaSubtitle}>From $1 — Own real estate globally</Text>
+          </View>
+        </View>
+        <TouchableOpacity
+          style={psStyles.ctaButton}
+          onPress={() => router.push('/signup' as any)}
+          activeOpacity={0.8}
+          testID="portfolio-cta-signup"
+        >
+          <Text style={psStyles.ctaButtonText}>Get Started</Text>
+          <ArrowUpRight size={14} color={Colors.black} />
+        </TouchableOpacity>
+      </Animated.View>
+    );
+  }
+
+  if (!hasHoldings) {
+    return (
+      <Animated.View style={[psStyles.container, psStyles.ctaContainer, { opacity: opacityAnim, transform: [{ scale: scaleAnim }] }]}>
+        <View style={psStyles.ctaLeft}>
+          <View style={psStyles.ctaIconWrap}>
+            <TrendingUp size={22} color={Colors.success} />
+          </View>
+          <View style={psStyles.ctaTextWrap}>
+            <Text style={psStyles.ctaTitle}>Build Your Portfolio</Text>
+            <Text style={psStyles.ctaSubtitle}>Browse properties and start earning</Text>
+          </View>
+        </View>
+        <TouchableOpacity
+          style={psStyles.ctaButton}
+          onPress={() => router.push('/(tabs)/market' as any)}
+          activeOpacity={0.8}
+          testID="portfolio-cta-invest"
+        >
+          <Text style={psStyles.ctaButtonText}>Explore</Text>
+          <ArrowUpRight size={14} color={Colors.black} />
+        </TouchableOpacity>
+      </Animated.View>
+    );
+  }
 
   return (
-    <View style={styles.tickerContainer}>
-      <View style={styles.tickerInner}>
-        <Animated.View style={[styles.tickerScroll, { transform: [{ translateX: scrollAnim }] }]}>
-          {[...translatedStats, ...translatedStats, ...translatedStats].map((stat, i) => (
-            <View key={i} style={styles.tickerItem}>
-              <Text style={styles.tickerValue}>{stat.value}</Text>
-              <Text style={styles.tickerLabel}>{stat.label}</Text>
-            </View>
-          ))}
-        </Animated.View>
-      </View>
-    </View>
+    <Animated.View style={[psStyles.container, { opacity: opacityAnim, transform: [{ scale: scaleAnim }] }]}>
+      <TouchableOpacity
+        style={psStyles.portfolioCard}
+        onPress={() => router.push('/(tabs)/portfolio' as any)}
+        activeOpacity={0.85}
+        testID="portfolio-snapshot"
+      >
+        <View style={psStyles.portfolioHeader}>
+          <Text style={psStyles.portfolioLabel}>Your Portfolio</Text>
+          <View style={psStyles.holdingsCount}>
+            <Text style={psStyles.holdingsCountText}>{holdings.length} {holdings.length === 1 ? 'property' : 'properties'}</Text>
+          </View>
+        </View>
+        <Text style={psStyles.portfolioValue}>{formatCurrency(totalValue)}</Text>
+        <View style={psStyles.pnlRow}>
+          <View style={[psStyles.pnlBadge, { backgroundColor: isPositive ? Colors.success + '18' : Colors.error + '18' }]}>
+            <TrendingUp size={12} color={isPositive ? Colors.success : Colors.error} />
+            <Text style={[psStyles.pnlText, { color: isPositive ? Colors.success : Colors.error }]}>
+              {isPositive ? '+' : ''}{formatCurrency(totalPnL)} ({pnlPercent.toFixed(2)}%)
+            </Text>
+          </View>
+          <Text style={psStyles.pnlLabel}>All time</Text>
+        </View>
+      </TouchableOpacity>
+    </Animated.View>
   );
 }
 
-function SocialProofBanner({ t, liveCount }: { t: (key: any) => string; liveCount: number }) {
-  const pulseAnim = useRef(new Animated.Value(1)).current;
+const psStyles = StyleSheet.create({
+  container: {
+    paddingHorizontal: 20,
+    marginBottom: 20,
+  },
+  ctaContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: Colors.primary + '30',
+    paddingHorizontal: 16,
+    marginHorizontal: 0,
+  },
+  ctaLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  ctaIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: Colors.primary + '15',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ctaTextWrap: {
+    flex: 1,
+  },
+  ctaTitle: {
+    color: Colors.text,
+    fontSize: 15,
+    fontWeight: '700' as const,
+  },
+  ctaSubtitle: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    marginTop: 2,
+  },
+  ctaButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  ctaButtonText: {
+    color: Colors.black,
+    fontSize: 13,
+    fontWeight: '700' as const,
+  },
+  portfolioCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+  },
+  portfolioHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  portfolioLabel: {
+    color: Colors.textSecondary,
+    fontSize: 13,
+    fontWeight: '600' as const,
+  },
+  holdingsCount: {
+    backgroundColor: Colors.primary + '15',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  holdingsCountText: {
+    color: Colors.primary,
+    fontSize: 11,
+    fontWeight: '700' as const,
+  },
+  portfolioValue: {
+    color: Colors.text,
+    fontSize: 32,
+    fontWeight: '800' as const,
+    letterSpacing: -1,
+    marginBottom: 8,
+  },
+  pnlRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  pnlBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  pnlText: {
+    fontSize: 13,
+    fontWeight: '700' as const,
+  },
+  pnlLabel: {
+    color: Colors.textTertiary,
+    fontSize: 12,
+  },
+});
 
-  useEffect(() => {
-    const animation = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 0.6, duration: 800, useNativeDriver: true }),
-        Animated.timing(pulseAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
-      ])
-    );
-    animation.start();
-    return () => animation.stop();
-  }, [pulseAnim]);
-
+function InlineTrustBadges({ t }: { t: (key: any) => string }) {
   return (
-    <View style={styles.socialProofRow}>
-      <View style={styles.socialProofItem}>
-        <Animated.View style={[styles.liveDot, { opacity: pulseAnim }]} />
-        <Text style={styles.socialProofText}>
-          <Text style={styles.socialProofBold}>{liveCount > 0 ? liveCount.toLocaleString() : 'LIVE'}</Text> {liveCount > 0 ? t('investorsOnline') : 'Platform Active'}
-        </Text>
-      </View>
-      <View style={styles.socialProofDivider} />
-      <View style={styles.socialProofItem}>
+    <View style={styles.inlineTrustRow}>
+      <View style={styles.inlineTrustBadge}>
         <Shield size={12} color={Colors.success} />
-        <Text style={styles.socialProofText}>
-          <Text style={styles.socialProofBold}>SEC</Text> Compliant
-        </Text>
+        <Text style={styles.inlineTrustText}>{t('secCompliant')}</Text>
+      </View>
+      <View style={styles.inlineTrustDot} />
+      <View style={styles.inlineTrustBadge}>
+        <CheckCircle2 size={12} color={Colors.success} />
+        <Text style={styles.inlineTrustText}>{t('fdicEscrow')}</Text>
+      </View>
+      <View style={styles.inlineTrustDot} />
+      <View style={styles.inlineTrustBadge}>
+        <Award size={12} color={Colors.success} />
+        <Text style={styles.inlineTrustText}>{t('audited')}</Text>
       </View>
     </View>
   );
@@ -125,26 +287,250 @@ const QuickActionCard = React.memo(function QuickActionCard({ icon, title, subti
   subtitle: string;
   color: string;
   onPress: () => void;
-}) {return (
-  <TouchableOpacity
-    style={styles.quickAction}
-    onPress={onPress}
-    activeOpacity={0.7}
-    accessible={true}
-    accessibilityRole="button"
-    accessibilityLabel={`${title}, ${subtitle}`}
-    accessibilityHint="Opens details"
-  >
-    <View style={[styles.quickActionIcon, { backgroundColor: color + '15' }]}>
-      {icon}
-    </View>
-    <Text style={styles.quickActionTitle}>{title}</Text>
-    <Text style={styles.quickActionSubtitle} numberOfLines={2}>{subtitle}</Text>
-    <View style={styles.quickActionArrow}>
-      <ChevronRight size={14} color={Colors.textTertiary} />
-    </View>
-  </TouchableOpacity>
-);});
+}) {
+  return (
+    <TouchableOpacity
+      style={styles.quickAction}
+      onPress={onPress}
+      activeOpacity={0.7}
+      accessible={true}
+      accessibilityRole="button"
+      accessibilityLabel={`${title}, ${subtitle}`}
+      accessibilityHint="Opens details"
+    >
+      <View style={[styles.quickActionIcon, { backgroundColor: color + '15' }]}>
+        {icon}
+      </View>
+      <Text style={styles.quickActionTitle}>{title}</Text>
+      <Text style={styles.quickActionSubtitle} numberOfLines={2}>{subtitle}</Text>
+      <View style={styles.quickActionArrow}>
+        <ChevronRight size={14} color={Colors.textTertiary} />
+      </View>
+    </TouchableOpacity>
+  );
+});
+
+const JV_STATUS_CONFIG: Record<string, { label: string; color: string }> = {
+  draft: { label: 'Draft', color: '#9A9A9A' },
+  pending_review: { label: 'Pending', color: '#FFB800' },
+  active: { label: 'Active', color: '#00C48C' },
+  completed: { label: 'Completed', color: '#4A90D9' },
+  expired: { label: 'Expired', color: '#FF4D4D' },
+};
+
+class JVErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean }> {
+  state = { hasError: false };
+  static getDerivedStateFromError() { return { hasError: true }; }
+  componentDidCatch(error: any) { console.log('[JV Section] Error caught:', error); }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <View style={{ padding: 20 }}>
+          <Text style={{ color: Colors.textSecondary, textAlign: 'center' }}>JV section temporarily unavailable</Text>
+        </View>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+const JVPropertyCard = React.memo(function JVPropertyCard({ agreement, onPress }: { agreement: JVAgreement; onPress: () => void }) {
+  const status = JV_STATUS_CONFIG[agreement.status] ?? JV_STATUS_CONFIG.draft;
+  const partnerCount = agreement.partners?.length ?? 0;
+  const totalFormatted = agreement.totalInvestment >= 1000000
+    ? `${(agreement.totalInvestment / 1000000).toFixed(1)}M`
+    : `${(agreement.totalInvestment / 1000).toFixed(0)}K`;
+
+  return (
+    <TouchableOpacity
+      style={jvStyles.card}
+      onPress={onPress}
+      activeOpacity={0.7}
+      testID={`jv-card-${agreement.id}`}
+    >
+      <View style={jvStyles.cardHeader}>
+        <View style={jvStyles.iconWrap}>
+          <Users size={18} color={Colors.primary} />
+        </View>
+        <View style={[jvStyles.statusBadge, { backgroundColor: status.color + '20' }]}>
+          <View style={[jvStyles.statusDot, { backgroundColor: status.color }]} />
+          <Text style={[jvStyles.statusText, { color: status.color }]}>{status.label}</Text>
+        </View>
+      </View>
+
+      <Text style={jvStyles.cardTitle} numberOfLines={1}>{agreement.projectName}</Text>
+      <Text style={jvStyles.cardSubtitle} numberOfLines={1}>{agreement.title}</Text>
+
+      {agreement.propertyAddress ? (
+        <View style={jvStyles.addressRow}>
+          <MapPin size={10} color={Colors.textTertiary} />
+          <Text style={jvStyles.addressText} numberOfLines={1}>{agreement.propertyAddress}</Text>
+        </View>
+      ) : null}
+
+      <View style={jvStyles.metricsRow}>
+        <View style={jvStyles.metric}>
+          <Text style={jvStyles.metricValue}>${totalFormatted}</Text>
+          <Text style={jvStyles.metricLabel}>Investment</Text>
+        </View>
+        <View style={jvStyles.metricDivider} />
+        <View style={jvStyles.metric}>
+          <Text style={[jvStyles.metricValue, { color: Colors.success }]}>{agreement.expectedROI}%</Text>
+          <Text style={jvStyles.metricLabel}>ROI</Text>
+        </View>
+        <View style={jvStyles.metricDivider} />
+        <View style={jvStyles.metric}>
+          <Text style={jvStyles.metricValue}>{partnerCount}</Text>
+          <Text style={jvStyles.metricLabel}>Partners</Text>
+        </View>
+      </View>
+
+      <View style={jvStyles.partnersPreview}>
+        {(agreement.partners ?? []).slice(0, 3).map((p, i) => (
+          <View key={p.id} style={[jvStyles.partnerChip, i > 0 ? { marginLeft: -6 } : undefined]}>
+            <Text style={jvStyles.partnerInitial}>{p.name.charAt(0)}</Text>
+          </View>
+        ))}
+        {partnerCount > 3 ? (
+          <Text style={jvStyles.morePartners}>+{partnerCount - 3}</Text>
+        ) : null}
+        <View style={{ flex: 1 }} />
+        <Text style={jvStyles.typeLabel}>{(agreement.type ?? '').replace('_', ' ').toUpperCase()}</Text>
+      </View>
+    </TouchableOpacity>
+  );
+});
+
+const jvStyles = StyleSheet.create({
+  section: {
+    marginBottom: 20,
+  },
+  card: {
+    width: 260,
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
+    padding: 16,
+    marginRight: 12,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  iconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: Colors.primary + '15',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  statusText: {
+    fontSize: 10,
+    fontWeight: '700' as const,
+  },
+  cardTitle: {
+    color: Colors.text,
+    fontSize: 15,
+    fontWeight: '700' as const,
+    marginBottom: 2,
+  },
+  cardSubtitle: {
+    color: Colors.textTertiary,
+    fontSize: 11,
+    marginBottom: 8,
+  },
+  addressRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 10,
+  },
+  addressText: {
+    color: Colors.textTertiary,
+    fontSize: 10,
+    flex: 1,
+  },
+  metricsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.backgroundSecondary,
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 10,
+  },
+  metric: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  metricValue: {
+    color: Colors.text,
+    fontSize: 13,
+    fontWeight: '800' as const,
+  },
+  metricLabel: {
+    color: Colors.textTertiary,
+    fontSize: 8,
+    fontWeight: '600' as const,
+    marginTop: 2,
+  },
+  metricDivider: {
+    width: 1,
+    height: 20,
+    backgroundColor: Colors.surfaceBorder,
+  },
+  partnersPreview: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  partnerChip: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: Colors.primary + '30',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: Colors.surface,
+  },
+  partnerInitial: {
+    color: Colors.primary,
+    fontSize: 10,
+    fontWeight: '800' as const,
+  },
+  morePartners: {
+    color: Colors.textTertiary,
+    fontSize: 10,
+    fontWeight: '600' as const,
+    marginLeft: 4,
+  },
+  typeLabel: {
+    color: Colors.textTertiary,
+    fontSize: 8,
+    fontWeight: '700' as const,
+    letterSpacing: 0.5,
+    backgroundColor: Colors.backgroundSecondary,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+});
 
 function WhyIPXSection({ onCompare, onSmart, onTrust, t }: { onCompare: () => void; onSmart: () => void; onTrust: () => void; t: (key: any) => string }) {
   return (
@@ -152,191 +538,35 @@ function WhyIPXSection({ onCompare, onSmart, onTrust, t }: { onCompare: () => vo
       <Text style={styles.whySectionTitle}>{t('whyChooseUs')}</Text>
       <View style={styles.quickActionsGrid}>
         <QuickActionCard
-          icon={<BarChart3 size={20} color="#4ECDC4" />}
-          title={t('beatsSnP')}
-          subtitle={t('beatsSnPDesc')}
-          color="#4ECDC4"
-          onPress={onCompare}
-        />
-        <QuickActionCard
           icon={<Brain size={20} color={Colors.primary} />}
-          title={t('aiPowered')}
-          subtitle={t('aiPoweredDesc')}
+          title="AI Investing"
+          subtitle="Smart analysis picks the best deals for you"
           color={Colors.primary}
           onPress={onSmart}
         />
         <QuickActionCard
-          icon={<Shield size={20} color="#45B7D1" />}
-          title={t('bankGradeSecurity')}
-          subtitle={t('bankGradeSecurityDesc')}
+          icon={<Lock size={20} color="#45B7D1" />}
+          title="Secure Escrow"
+          subtitle="FDIC-insured escrow protects every dollar"
           color="#45B7D1"
           onPress={onTrust}
         />
         <QuickActionCard
+          icon={<BarChart3 size={20} color="#4ECDC4" />}
+          title="Beating Markets"
+          subtitle="14.5% avg returns vs 10% S&P 500"
+          color="#4ECDC4"
+          onPress={onCompare}
+        />
+        <QuickActionCard
           icon={<Zap size={20} color="#FF6B6B" />}
-          title={t('trading247')}
-          subtitle={t('trading247Desc')}
+          title="Instant Liquidity"
+          subtitle="Trade shares 24/7 — no lockup periods"
           color="#FF6B6B"
           onPress={onCompare}
         />
       </View>
     </View>
-  );
-}
-
-function GlobalPulseWidget({ router }: { router: ReturnType<typeof useRouter> }) {
-  const { indices, forex, marketSentiment, commodities } = useGlobalMarkets(6000);
-  const sentimentColor = marketSentiment === 'bullish' ? Colors.success : marketSentiment === 'bearish' ? Colors.error : Colors.warning;
-  const sentimentLabel = marketSentiment === 'bullish' ? '🐂 Bull' : marketSentiment === 'bearish' ? '🐻 Bear' : '⚖️ Neutral';
-  const sp500 = indices.find(i => i.symbol === 'S&P 500');
-  const gold = commodities.find(c => c.symbol === 'XAU');
-  const eurusd = forex.find(f => f.symbol === 'EUR/USD');
-  const nikkei = indices.find(i => i.symbol === 'NIKKEI');
-
-  const items = [
-    sp500 && { label: 'S&P 500', value: sp500.value.toLocaleString('en-US', { maximumFractionDigits: 0 }), change: sp500.changePercent, flag: '🇺🇸' },
-    nikkei && { label: 'NIKKEI', value: nikkei.value.toLocaleString('en-US', { maximumFractionDigits: 0 }), change: nikkei.changePercent, flag: '🇯🇵' },
-    gold && { label: 'Gold', value: `${gold.price.toLocaleString('en-US', { maximumFractionDigits: 0 })}`, change: gold.changePercent24h, flag: '🏅' },
-    eurusd && { label: 'EUR/USD', value: eurusd.rate.toFixed(4), change: eurusd.changePercent24h, flag: '🇪🇺' },
-  ].filter(Boolean) as { label: string; value: string; change: number; flag: string }[];
-
-  return (
-    <TouchableOpacity
-      style={gpStyles.wrap}
-      onPress={() => router.push('/global-intelligence' as any)}
-      activeOpacity={0.85}
-    >
-      <View style={gpStyles.header}>
-        <Globe size={13} color={Colors.primary} />
-        <Text style={gpStyles.headerTitle}>Global Market Pulse</Text>
-        <View style={[gpStyles.sentBadge, { backgroundColor: sentimentColor + '20' }]}>
-          <Text style={[gpStyles.sentText, { color: sentimentColor }]}>{sentimentLabel}</Text>
-        </View>
-        <Text style={gpStyles.viewAll}>View All →</Text>
-      </View>
-      <View style={gpStyles.items}>
-        {items.map((item, i) => {
-          const up = item.change >= 0;
-          return (
-            <View key={i} style={gpStyles.item}>
-              <Text style={gpStyles.itemFlag}>{item.flag}</Text>
-              <Text style={gpStyles.itemLabel}>{item.label}</Text>
-              <Text style={gpStyles.itemValue}>{item.value}</Text>
-              {up
-                ? <TrendingUp size={10} color={Colors.success} />
-                : <TrendingDown size={10} color={Colors.error} />}
-              <Text style={[gpStyles.itemChange, { color: up ? Colors.success : Colors.error }]}>
-                {up ? '+' : ''}{item.change.toFixed(2)}%
-              </Text>
-            </View>
-          );
-        })}
-      </View>
-    </TouchableOpacity>
-  );
-}
-
-const gpStyles = StyleSheet.create({
-  wrap: {
-    marginHorizontal: 20,
-    marginBottom: 12,
-    backgroundColor: Colors.surface,
-    borderRadius: 14,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: Colors.surfaceBorder,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 10,
-  },
-  headerTitle: {
-    color: Colors.text,
-    fontSize: 12,
-    fontWeight: '700' as const,
-    flex: 1,
-  },
-  sentBadge: {
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: 8,
-  },
-  sentText: {
-    fontSize: 9,
-    fontWeight: '700' as const,
-  },
-  viewAll: {
-    color: Colors.primary,
-    fontSize: 10,
-    fontWeight: '700' as const,
-  },
-  items: {
-    flexDirection: 'row',
-    gap: 6,
-  },
-  item: {
-    flex: 1,
-    backgroundColor: Colors.backgroundSecondary,
-    borderRadius: 10,
-    padding: 8,
-    alignItems: 'center',
-    gap: 2,
-  },
-  itemFlag: { fontSize: 14 },
-  itemLabel: {
-    color: Colors.textTertiary,
-    fontSize: 8,
-    fontWeight: '700' as const,
-  },
-  itemValue: {
-    color: Colors.text,
-    fontSize: 10,
-    fontWeight: '800' as const,
-  },
-  itemChange: {
-    fontSize: 9,
-    fontWeight: '700' as const,
-  },
-});
-
-function TrustBadgesRow({ t }: { t: (key: any) => string }) {
-  return (
-    <View style={styles.trustBadgesContainer}>
-      <View style={styles.trustBadge}>
-        <Shield size={14} color={Colors.success} />
-        <Text style={styles.trustBadgeText}>{t('secCompliant')}</Text>
-      </View>
-      <View style={styles.trustBadge}>
-        <CheckCircle2 size={14} color={Colors.success} />
-        <Text style={styles.trustBadgeText}>{t('fdicEscrow')}</Text>
-      </View>
-      <View style={styles.trustBadge}>
-        <Award size={14} color={Colors.success} />
-        <Text style={styles.trustBadgeText}>{t('audited')}</Text>
-      </View>
-    </View>
-  );
-}
-
-function PerformanceBanner({ onPress, t }: { onPress: () => void; t: (key: any) => string }) {
-  return (
-    <TouchableOpacity style={styles.performanceBanner} onPress={onPress} activeOpacity={0.8}>
-      <View style={styles.performanceLeft}>
-        <View style={styles.performanceIconContainer}>
-          <TrendingUp size={18} color={Colors.success} />
-        </View>
-        <View>
-          <Text style={styles.performanceTitle}>{t('ipxIndex')}</Text>
-          <Text style={styles.performanceSubtitle}>{t('realTimePerformance')}</Text>
-        </View>
-      </View>
-      <View style={styles.performanceRight}>
-        <Text style={styles.performanceValue}>Compare</Text>
-        <Text style={styles.performanceLabel}>{t('ytdReturn')}</Text>
-      </View>
-    </TouchableOpacity>
   );
 }
 
@@ -347,7 +577,6 @@ const TESTIMONIAL_KEYS = [
 ];
 
 function InvestorTestimonial({ t }: { t: (key: any) => string }) {
-
   const [current, setCurrent] = useState(0);
 
   useEffect(() => {
@@ -380,283 +609,6 @@ function InvestorTestimonial({ t }: { t: (key: any) => string }) {
     </View>
   );
 }
-
-function LeadershipTeamSection() {
-  const scaleAnims = useRef(leadershipTeam.map(() => new Animated.Value(0))).current;
-
-  useEffect(() => {
-    const animations = leadershipTeam.map((_, i) =>
-      Animated.spring(scaleAnims[i], {
-        toValue: 1,
-        delay: i * 120,
-        tension: 60,
-        friction: 8,
-        useNativeDriver: true,
-      })
-    );
-    Animated.stagger(120, animations).start();
-  }, [scaleAnims]);
-
-  return (
-    <View style={ltStyles.wrap}>
-      <View style={ltStyles.header}>
-        <Crown size={15} color={Colors.primary} />
-        <Text style={ltStyles.headerTitle}>Leadership Team</Text>
-        <View style={ltStyles.liveBadge}>
-          <View style={ltStyles.liveDotSmall} />
-          <Text style={ltStyles.liveLabel}>ONLINE</Text>
-        </View>
-      </View>
-      <View style={ltStyles.members}>
-        {leadershipTeam.map((member, i) => (
-          <Animated.View
-            key={member.id}
-            style={[
-              ltStyles.memberCard,
-              { transform: [{ scale: scaleAnims[i] }] },
-            ]}
-          >
-            <View style={[ltStyles.avatar, { backgroundColor: member.avatarColor }]}>
-              <Text style={ltStyles.avatarText}>{member.avatarInitials}</Text>
-              <View style={[ltStyles.statusDot, member.status === 'active' ? ltStyles.statusActive : ltStyles.statusAway]} />
-            </View>
-            <Text style={ltStyles.memberName} numberOfLines={1}>{member.name}</Text>
-            <View style={[ltStyles.roleBadge, { backgroundColor: member.avatarColor + '20' }]}>
-              <Text style={[ltStyles.roleText, { color: member.avatarColor }]} numberOfLines={1}>{member.role}</Text>
-            </View>
-            <View style={ltStyles.contactRow}>
-              {member.phone ? (
-                <View style={ltStyles.contactIcon}>
-                  <Phone size={10} color={Colors.textTertiary} />
-                </View>
-              ) : null}
-              {member.email ? (
-                <View style={ltStyles.contactIcon}>
-                  <Mail size={10} color={Colors.textTertiary} />
-                </View>
-              ) : null}
-            </View>
-          </Animated.View>
-        ))}
-      </View>
-    </View>
-  );
-}
-
-const ltStyles = StyleSheet.create({
-  wrap: {
-    marginHorizontal: 20,
-    marginBottom: 12,
-    backgroundColor: Colors.surface,
-    borderRadius: 16,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: Colors.primary + '25',
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 14,
-  },
-  headerTitle: {
-    color: Colors.text,
-    fontSize: 13,
-    fontWeight: '700' as const,
-    flex: 1,
-  },
-  liveBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#00C48C15',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-  },
-  liveDotSmall: {
-    width: 5,
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: '#00C48C',
-  },
-  liveLabel: {
-    color: '#00C48C',
-    fontSize: 8,
-    fontWeight: '800' as const,
-    letterSpacing: 1,
-  },
-  members: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  memberCard: {
-    flex: 1,
-    alignItems: 'center',
-    backgroundColor: Colors.backgroundSecondary,
-    borderRadius: 14,
-    paddingVertical: 14,
-    paddingHorizontal: 6,
-  },
-  avatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 8,
-    position: 'relative' as const,
-  },
-  avatarText: {
-    color: '#000',
-    fontSize: 16,
-    fontWeight: '800' as const,
-  },
-  statusDot: {
-    position: 'absolute' as const,
-    bottom: 1,
-    right: 1,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    borderWidth: 2,
-    borderColor: Colors.backgroundSecondary,
-  },
-  statusActive: {
-    backgroundColor: '#00C48C',
-  },
-  statusAway: {
-    backgroundColor: Colors.warning,
-  },
-  memberName: {
-    color: Colors.text,
-    fontSize: 11,
-    fontWeight: '700' as const,
-    textAlign: 'center' as const,
-    marginBottom: 4,
-  },
-  roleBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
-    marginBottom: 6,
-  },
-  roleText: {
-    fontSize: 8,
-    fontWeight: '700' as const,
-    textAlign: 'center' as const,
-  },
-  contactRow: {
-    flexDirection: 'row',
-    gap: 6,
-  },
-  contactIcon: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: Colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});
-
-function ActivationWidget({ onPress }: { onPress: () => void }) {
-  const pulseRef = useRef(new Animated.Value(1)).current;
-
-  useEffect(() => {
-    const anim = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseRef, { toValue: 0.4, duration: 800, useNativeDriver: true }),
-        Animated.timing(pulseRef, { toValue: 1, duration: 800, useNativeDriver: true }),
-      ])
-    );
-    anim.start();
-    return () => anim.stop();
-  }, [pulseRef]);
-
-  return (
-    <TouchableOpacity
-      style={awStyles.wrap}
-      onPress={onPress}
-      activeOpacity={0.8}
-      testID="activation-widget"
-    >
-      <View style={awStyles.left}>
-        <View style={awStyles.iconWrap}>
-          <Rocket size={18} color={Colors.primary} />
-        </View>
-        <View style={awStyles.info}>
-          <View style={awStyles.liveRow}>
-            <Animated.View style={[awStyles.liveDot, { opacity: pulseRef }]} />
-            <Text style={awStyles.liveText}>ALL SYSTEMS LIVE</Text>
-          </View>
-          <Text style={awStyles.title}>Activation Center</Text>
-          <Text style={awStyles.subtitle}>AI working 24/7 · 9 channels active</Text>
-        </View>
-      </View>
-      <ChevronRight size={16} color={Colors.textTertiary} />
-    </TouchableOpacity>
-  );
-}
-
-const awStyles = StyleSheet.create({
-  wrap: {
-    marginHorizontal: 20,
-    marginBottom: 12,
-    backgroundColor: '#0A0E0C',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#00C48C30',
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  left: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  iconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: Colors.primary + '15',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  info: {
-    flex: 1,
-    gap: 2,
-  },
-  liveRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-  },
-  liveDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#00C48C',
-  },
-  liveText: {
-    color: '#00C48C',
-    fontSize: 8,
-    fontWeight: '800' as const,
-    letterSpacing: 1.5,
-  },
-  title: {
-    color: Colors.text,
-    fontSize: 14,
-    fontWeight: '700' as const,
-  },
-  subtitle: {
-    color: Colors.textTertiary,
-    fontSize: 11,
-  },
-});
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -697,11 +649,11 @@ export default function HomeScreen() {
   const featuredProperties = useMemo(() => (properties ?? []).filter((p: { status?: string }) => (p?.status ?? '').toLowerCase() === 'live').slice(0, 3), [properties]);
   const comingSoonProperties = useMemo(() => (properties ?? []).filter((p: { status?: string }) => (p?.status ?? '').toLowerCase() === 'coming_soon').slice(0, 2), [properties]);
 
-  const onRefresh = () => {
+  const onRefresh = useCallback(() => {
     setRefreshing(true);
     void Promise.all([propertiesQuery.refetch(), unreadQuery.refetch()])
       .finally(() => setRefreshing(false));
-  };
+  }, [propertiesQuery, unreadQuery]);
 
   return (
     <View style={styles.container}>
@@ -745,29 +697,17 @@ export default function HomeScreen() {
             />
           }
         >
+          {/* 1. Tagline + Inline Trust */}
           <View style={[styles.welcomeSection, { paddingHorizontal: isXs ? 16 : 20 }]}>
             <Text style={[styles.welcomeText, { fontSize: isXs ? 22 : isCompact ? 24 : 28 }]}>{t('ownRealEstate')}</Text>
             <Text style={[styles.welcomeHighlight, { fontSize: isXs ? 22 : isCompact ? 24 : 28 }]}>{t('tradeLikeCrypto')}</Text>
-            <Text style={[styles.welcomeSubtext, { fontSize: isXs ? 12 : 14 }]}>
-              {t('homeSubtext')}
-            </Text>
+            <InlineTrustBadges t={t} />
           </View>
 
-          <ActivationWidget onPress={() => router.push('/activation-center' as any)} />
+          {/* 2. Portfolio Snapshot / CTA */}
+          <PortfolioSnapshot router={router} />
 
-          <LeadershipTeamSection />
-
-          <SocialProofBanner t={t} liveCount={0} />
-          <TrustBadgesRow t={t} />
-
-          <View style={{ paddingHorizontal: isXs ? 16 : 20, marginBottom: 20 }}>
-            <PerformanceBanner onPress={() => router.push('/compare-investments' as any)} t={t} />
-          </View>
-
-          <LiveStatsTicker t={t} />
-
-          <GlobalPulseWidget router={router} />
-
+          {/* 3. Featured Properties — your product, front and center */}
           <View style={styles.featuredSection}>
             <View style={[styles.sectionHeader, { paddingHorizontal: isXs ? 16 : 20 }]}>
               <View style={styles.sectionTitleContainer}>
@@ -796,6 +736,40 @@ export default function HomeScreen() {
             </ScrollView>
           </View>
 
+          {/* 4. JV Deals */}
+          <JVErrorBoundary>
+            <View style={jvStyles.section}>
+              <View style={[styles.sectionHeader, { paddingHorizontal: isXs ? 16 : 20 }]}>
+                <View style={styles.sectionTitleContainer}>
+                  <Users size={isXs ? 16 : 18} color={Colors.primary} />
+                  <Text style={[styles.sectionTitle, { fontSize: isXs ? 16 : 18 }]}>JV Deals</Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.seeAllButton}
+                  onPress={() => router.push('/jv-agreement' as any)}
+                  testID="see-all-jv"
+                >
+                  <Text style={[styles.seeAllText, { fontSize: isXs ? 12 : 14 }]}>See All</Text>
+                  <ChevronRight size={isXs ? 14 : 16} color={Colors.primary} />
+                </TouchableOpacity>
+              </View>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ paddingHorizontal: isXs ? 16 : 20 }}
+              >
+                {SAMPLE_JV_AGREEMENTS.map(jv => (
+                  <JVPropertyCard
+                    key={jv.id}
+                    agreement={jv}
+                    onPress={() => router.push('/jv-agreement' as any)}
+                  />
+                ))}
+              </ScrollView>
+            </View>
+          </JVErrorBoundary>
+
+          {/* 5. Why IVX — 4 compelling cards */}
           <View style={{ paddingHorizontal: isXs ? 16 : 20 }}>
             <WhyIPXSection
               onCompare={() => router.push('/compare-investments' as any)}
@@ -805,10 +779,12 @@ export default function HomeScreen() {
             />
           </View>
 
+          {/* 6. Testimonials */}
           <View style={{ paddingHorizontal: isXs ? 16 : 20, marginBottom: 20 }}>
             <InvestorTestimonial t={t} />
           </View>
 
+          {/* 7. Coming Soon */}
           {comingSoonProperties.length > 0 && (
             <View style={[styles.comingSoonSection, { paddingHorizontal: isXs ? 16 : 20 }]}>
               <View style={styles.sectionHeader}>
@@ -820,6 +796,7 @@ export default function HomeScreen() {
             </View>
           )}
 
+          {/* 8. Owner CTA */}
           <View style={{ paddingHorizontal: isXs ? 16 : 20, marginBottom: 20 }}>
             <TouchableOpacity
               style={styles.ownerCTA}
@@ -896,7 +873,7 @@ const styles = StyleSheet.create({
   },
   welcomeSection: {
     paddingTop: 8,
-    paddingBottom: 16,
+    paddingBottom: 8,
   },
   welcomeText: {
     fontWeight: '800' as const,
@@ -908,147 +885,28 @@ const styles = StyleSheet.create({
     color: Colors.primary,
     lineHeight: 32,
   },
-  welcomeSubtext: {
-    color: Colors.textSecondary,
-    marginTop: 8,
-    lineHeight: 20,
-  },
-  socialProofRow: {
+  inlineTrustRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    gap: 12,
-    flexWrap: 'wrap',
-  },
-  socialProofItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    marginTop: 10,
     gap: 6,
-    flexShrink: 1,
-  },
-  liveDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: Colors.success,
-  },
-  socialProofText: {
-    color: Colors.textSecondary,
-    fontSize: 12,
-    flexShrink: 1,
-  },
-  socialProofBold: {
-    color: Colors.text,
-    fontWeight: '700' as const,
-  },
-  socialProofDivider: {
-    width: 1,
-    height: 16,
-    backgroundColor: Colors.surfaceBorder,
-  },
-  trustBadgesContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 10,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    marginBottom: 8,
     flexWrap: 'wrap',
   },
-  trustBadge: {
+  inlineTrustBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    flexShrink: 1,
   },
-  trustBadgeText: {
+  inlineTrustText: {
     color: Colors.textSecondary,
     fontSize: 11,
     fontWeight: '600' as const,
-    flexShrink: 1,
   },
-  performanceBanner: {
-    backgroundColor: Colors.surface,
-    borderRadius: 16,
-    padding: 16,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: Colors.surfaceBorder,
-  },
-  performanceLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    flex: 1,
-    minWidth: 0,
-  },
-  performanceIconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: Colors.success + '15',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  performanceTitle: {
-    color: Colors.text,
-    fontSize: 14,
-    fontWeight: '700' as const,
-    flexShrink: 1,
-  },
-  performanceSubtitle: {
-    color: Colors.textTertiary,
-    fontSize: 12,
-    marginTop: 2,
-    flexShrink: 1,
-  },
-  performanceRight: {
-    alignItems: 'flex-end',
-  },
-  performanceValue: {
-    color: Colors.success,
-    fontSize: 20,
-    fontWeight: '800' as const,
-  },
-  performanceLabel: {
-    color: Colors.textTertiary,
-    fontSize: 11,
-    marginTop: 2,
-  },
-  tickerContainer: {
-    height: 56,
-    overflow: 'hidden',
-    marginBottom: 16,
-    backgroundColor: Colors.surface,
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: Colors.surfaceBorder,
-  },
-  tickerInner: {
-    flex: 1,
-    justifyContent: 'center',
-  },
-  tickerScroll: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  tickerItem: {
-    paddingHorizontal: 20,
-    alignItems: 'center',
-  },
-  tickerValue: {
-    color: Colors.primary,
-    fontSize: 16,
-    fontWeight: '800' as const,
-  },
-  tickerLabel: {
-    color: Colors.textTertiary,
-    fontSize: 10,
-    marginTop: 2,
+  inlineTrustDot: {
+    width: 3,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: Colors.textTertiary,
   },
   comingSoonSection: {
     marginBottom: 20,
