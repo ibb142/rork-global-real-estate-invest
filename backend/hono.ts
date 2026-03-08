@@ -486,6 +486,45 @@ app.post("/track/conversion", async (c) => {
   }
 });
 
+app.get("/track/diagnostics", (c) => {
+  const allUsers = store.getAllUsers();
+  const waitlist = store.waitlistEntries || [];
+  const landingEvents = store.analyticsEvents.filter(e => e.userId === 'landing_visitor');
+  const liveSessions = store.getLiveSessions();
+  const now = Date.now();
+  const activeSessions = liveSessions.filter(s => now - new Date(s.lastSeen).getTime() < 60000);
+  const visitorLogCount = store.visitorLog?.length || 0;
+
+  const last5minEvents = landingEvents.filter(e => new Date(e.timestamp).getTime() >= now - 300000);
+  const lastHourEvents = landingEvents.filter(e => new Date(e.timestamp).getTime() >= now - 3600000);
+
+  console.log(`[Diagnostics] Users: ${allUsers.length}, Waitlist: ${waitlist.length}, Landing events: ${landingEvents.length}, Visitor logs: ${visitorLogCount}, Live: ${activeSessions.length}`);
+
+  return c.json({
+    status: "ok",
+    store: {
+      users: allUsers.length,
+      waitlistEntries: waitlist.length,
+      totalLeads: allUsers.length + waitlist.length,
+      properties: store.properties.length,
+      totalAnalyticsEvents: store.analyticsEvents.length,
+      landingEvents: landingEvents.length,
+      visitorLogs: visitorLogCount,
+      liveSessions: liveSessions.length,
+      activeLiveSessions: activeSessions.length,
+    },
+    recentActivity: {
+      eventsLast5min: last5minEvents.length,
+      eventsLastHour: lastHourEvents.length,
+      lastEvent: landingEvents.length > 0 ? landingEvents[landingEvents.length - 1].timestamp : null,
+      lastEventType: landingEvents.length > 0 ? landingEvents[landingEvents.length - 1].event : null,
+    },
+    storeReady: store.isReady,
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString(),
+  });
+});
+
 app.get("/health", (c) => {
   const mem = process.memoryUsage();
   return c.json({
