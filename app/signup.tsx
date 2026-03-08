@@ -42,11 +42,11 @@ type Step = 'register' | 'verify_email' | 'verify_phone' | 'complete';
 export default function SignUpScreen() {
   const router = useRouter();
   const { register: authRegister } = useAuth();
-  const { trackScreen, trackAction, trackConversion } = useAnalytics();
+  const { trackScreen, trackConversion } = useAnalytics();
 
   React.useEffect(() => {
     trackScreen('Signup');
-  }, []);
+  }, [trackScreen]);
   const [currentStep, setCurrentStep] = useState<Step>('register');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -278,7 +278,7 @@ export default function SignUpScreen() {
   };
 
   const renderRegisterForm = () => (
-    <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+    <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
       <View style={styles.logoContainer}>
         <Image
           source={require('@/assets/images/ivx-logo.png')}
