@@ -30,6 +30,7 @@ import {
   CircleDollarSign,
   ArrowLeft,
   Key,
+  Eye,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { properties } from '@/mocks/properties';
@@ -185,6 +186,20 @@ export default function OwnerControlsScreen() {
         <Crown size={24} color="#FFD700" />
         <Text style={styles.ownerBadgeText}>Owner Dashboard</Text>
       </View>
+
+      <TouchableOpacity
+        style={styles.staffActivityLink}
+        onPress={() => router.push('/admin/staff-activity')}
+      >
+        <View style={[styles.revenueIcon, { backgroundColor: '#9B59B6' + '20' }]}>
+          <Eye size={20} color="#9B59B6" />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.staffActivityTitle}>Staff Activity Tracker</Text>
+          <Text style={styles.staffActivityDesc}>See what your staff views & does</Text>
+        </View>
+        <ChevronRight size={18} color={Colors.textTertiary} />
+      </TouchableOpacity>
 
       <View style={styles.heroCard}>
         <View style={styles.heroHeader}>
@@ -907,4 +922,7 @@ const styles = StyleSheet.create({
   switchHint: { color: Colors.textTertiary, fontSize: 12, marginTop: 2 },
   saveBtn: { backgroundColor: Colors.primary, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
   saveBtnText: { color: Colors.black, fontWeight: '700' as const, fontSize: 15 },
+  staffActivityLink: { flexDirection: 'row' as const, alignItems: 'center', backgroundColor: Colors.surface, borderRadius: 14, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: '#9B59B630', gap: 14 },
+  staffActivityTitle: { color: Colors.text, fontSize: 14, fontWeight: '700' as const },
+  staffActivityDesc: { color: Colors.textSecondary, fontSize: 12, marginTop: 2 },
 });
