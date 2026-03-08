@@ -38,6 +38,7 @@ import {
   Brain,
   Code2,
   Rocket,
+  BarChart3,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { getResponsiveSize, isCompactScreen, isExtraSmallScreen } from '@/lib/responsive';
@@ -234,6 +235,13 @@ export default function ProfileScreen() {
           <View style={styles.section}>
             <Text style={[styles.sectionTitle, { paddingHorizontal: isXs ? 16 : 20, fontSize: isXs ? 12 : 14 }]}>{t('documentsReports')}</Text>
             <View style={[styles.menuGroup, { marginHorizontal: isXs ? 16 : 20 }]}>
+              <MenuItem
+                icon={<BarChart3 size={isXs ? 18 : 20} color={'#4A90D9'} />}
+                title="Analytics Report"
+                subtitle="Real-time traffic & insights"
+                onPress={() => router.push('/analytics-report' as any)}
+                isCompact={isCompact}
+              />
               <MenuItem
                 icon={<PieChart size={isXs ? 18 : 20} color={Colors.success} />}
                 title={t('investorProspectus')}
