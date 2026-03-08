@@ -275,6 +275,12 @@ export default function AdminLayout() {
           href: null,
         }}
       />
+      <Tabs.Screen
+        name="visitor-intelligence"
+        options={{
+          href: null,
+        }}
+      />
     </Tabs>
     </View>
   );
