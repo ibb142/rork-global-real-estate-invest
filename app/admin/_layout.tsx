@@ -269,6 +269,12 @@ export default function AdminLayout() {
           href: null,
         }}
       />
+      <Tabs.Screen
+        name="system-monitor"
+        options={{
+          href: null,
+        }}
+      />
     </Tabs>
     </View>
   );
