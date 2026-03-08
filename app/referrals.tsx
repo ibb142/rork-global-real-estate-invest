@@ -50,7 +50,7 @@ const mockUserReferrals: Referral[] = [
     referredId: 'user-045',
     status: 'invested',
     referralCode: 'IVXHOLDINGS-INVITE',
-    reward: 50,
+    reward: 25,
     rewardPaid: true,
     signedUpAt: '2025-01-10T14:00:00Z',
     investedAt: '2025-01-15T10:00:00Z',
@@ -67,7 +67,7 @@ const mockUserReferrals: Referral[] = [
     referredId: 'user-052',
     status: 'signed_up',
     referralCode: 'IVXHOLDINGS-INVITE',
-    reward: 50,
+    reward: 25,
     rewardPaid: false,
     signedUpAt: '2025-01-20T16:00:00Z',
     createdAt: '2025-01-18T11:00:00Z',
@@ -80,7 +80,7 @@ const mockUserReferrals: Referral[] = [
     referredEmail: 'tom.brown@email.com',
     status: 'pending',
     referralCode: 'IVXHOLDINGS-INVITE',
-    reward: 50,
+    reward: 25,
     rewardPaid: false,
     createdAt: '2025-01-24T08:00:00Z',
   },
@@ -128,7 +128,7 @@ export default function ReferralsScreen() {
     });
   };
 
-  const shareMessage = `🏠 I'm investing in real estate with IVX HOLDINGS and you should too! Start with just $100 and earn passive income from premium properties.\n\nUse my code ${referralCode} to get started: ${referralLink}\n\n📲 Download IVXHOLDINGS App:\n🍎 iOS: ${appLinks.appStore}\n🤖 Android: ${appLinks.playStore}\n🌐 Web: ${appLinks.website}`;
+  const shareMessage = `🏠 I'm investing in real estate with IVX HOLDINGS and you should too! Start with just $100 and earn passive income from premium properties.\n\n🎁 Sign up with my code and we BOTH get $25 in FREE project shares!\n\nUse my code ${referralCode} to get started: ${referralLink}\n\n📲 Download IVXHOLDINGS App:\n🍎 iOS: ${appLinks.appStore}\n🤖 Android: ${appLinks.playStore}\n🌐 Web: ${appLinks.website}`;
 
   const shareViaWhatsApp = useCallback(async () => {
     const encodedMessage = encodeURIComponent(shareMessage);
@@ -214,7 +214,7 @@ export default function ReferralsScreen() {
           logger.referrals.log('Invite sent:', data);
           Alert.alert('Invitation Sent!', `An invitation has been sent to ${inviteEmail}`);
           setInviteEmail('');
-          referralsQuery.refetch();
+          void referralsQuery.refetch();
         },
         onError: (error) => {
           console.error('[Referrals] Invite error:', error);
@@ -261,9 +261,9 @@ export default function ReferralsScreen() {
           <View style={styles.heroIconContainer}>
             <Gift size={32} color="#fff" />
           </View>
-          <Text style={styles.heroTitle}>Invite Friends, Earn Rewards</Text>
+          <Text style={styles.heroTitle}>Invite Friends, Earn Shares</Text>
           <Text style={styles.heroSubtitle}>
-            Share IVX HOLDINGS with friends and earn $50 for each friend who invests
+            Share IVX HOLDINGS with friends and earn $25 in shares on any of our projects for each friend who invests
           </Text>
         </View>
 
@@ -271,13 +271,13 @@ export default function ReferralsScreen() {
           <View style={styles.statItem}>
             <DollarSign size={20} color={Colors.positive} />
             <Text style={styles.statValue}>{formatCurrency(totalEarned)}</Text>
-            <Text style={styles.statLabel}>Total Earned</Text>
+            <Text style={styles.statLabel}>Shares Earned</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
             <Clock size={20} color={Colors.warning} />
             <Text style={styles.statValue}>{formatCurrency(pendingRewards)}</Text>
-            <Text style={styles.statLabel}>Pending</Text>
+            <Text style={styles.statLabel}>Pending Shares</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
@@ -395,8 +395,8 @@ export default function ReferralsScreen() {
               <Text style={styles.stepNumberText}>3</Text>
             </View>
             <View style={styles.stepContent}>
-              <Text style={styles.stepTitle}>Both Earn Rewards</Text>
-              <Text style={styles.stepDescription}>You get $50 when they make their first investment</Text>
+              <Text style={styles.stepTitle}>Both Earn Shares</Text>
+              <Text style={styles.stepDescription}>You both receive $25 in shares on any IVX project when they make their first investment</Text>
             </View>
           </View>
         </View>
@@ -420,7 +420,7 @@ export default function ReferralsScreen() {
                     </Text>
                   </View>
                   {referral.rewardPaid && (
-                    <Text style={styles.rewardEarned}>+{formatCurrency(referral.reward)}</Text>
+                    <Text style={styles.rewardEarned}>+{formatCurrency(referral.reward)} shares</Text>
                   )}
                 </View>
               </View>
