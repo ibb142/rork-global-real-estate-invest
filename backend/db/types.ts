@@ -831,6 +831,51 @@ export interface SyncConfig {
   autoImportToDirectory: boolean;
 }
 
+export interface BrokerApplicationRecord {
+  id: string;
+  type: "broker";
+  userId: string;
+  fullName: string;
+  email: string;
+  phone: string;
+  city: string;
+  state: string;
+  country: string;
+  experienceLevel: string;
+  specialization: string;
+  firmName: string;
+  licenseType: string;
+  licenseNumber: string;
+  motivation: string;
+  status: string;
+  createdAt: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
+  reviewNotes?: string;
+}
+
+export interface AgentApplicationRecord {
+  id: string;
+  type: "agent";
+  userId: string;
+  fullName: string;
+  email: string;
+  phone: string;
+  city: string;
+  state: string;
+  country: string;
+  experienceLevel: string;
+  specialization: string;
+  brokerage: string;
+  licenseNumber: string;
+  motivation: string;
+  status: string;
+  createdAt: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
+  reviewNotes?: string;
+}
+
 export interface AuditLogEntry {
   id: string;
   action: string;
