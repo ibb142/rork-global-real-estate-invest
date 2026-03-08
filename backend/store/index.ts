@@ -58,6 +58,8 @@ import type {
   TaxInfoRecord,
   AlertSettings,
   SyncConfig,
+  BrokerApplicationRecord,
+  AgentApplicationRecord,
 } from '../db/types';
 
 interface LiveSession {
@@ -100,6 +102,8 @@ class Store {
   landPartnerDeals: LandPartnerDealRecord[] = [];
   influencers: InfluencerRecord[] = [];
   influencerApplications: InfluencerApplicationRecord[] = [];
+  brokerApplications: BrokerApplicationRecord[] = [];
+  agentApplications: AgentApplicationRecord[] = [];
   supportTickets: SupportTicketRecord[] = [];
   savedPaymentMethods: Map<string, SavedPaymentMethod[]> = new Map();
   deviceRegistrations: DeviceRegistration[] = [];
@@ -273,7 +277,7 @@ class Store {
       influencers, influencerApplications, supportTickets, fractionalShares,
       titleCompanies, documentSubmissions, alertRules, alerts, debtAcquisitions,
       syncedLenders, syncJobs, copyInvestingProfiles, copyFollows, giftShares,
-      earnPositions, earnProds, taxDocuments, deviceRegistrations, analyticsEventsData,
+      earnPositions, earnProds, taxDocuments, deviceRegistrations, analyticsEventsData, waitlistData,
       alertCfg, syncCfg,
       holdingsRows, transactionsRows, notificationsRows, ordersRows, bankAccountsRows, savedPaymentMethodsRows,
     ] = await Promise.all([
@@ -311,6 +315,7 @@ class Store {
       dynamoDB.getAll<TaxDocumentRecord>('taxDocuments'),
       dynamoDB.getAll<DeviceRegistration>('deviceRegistrations'),
       dynamoDB.getAll<Store['analyticsEvents'][number]>('analyticsEvents'),
+      dynamoDB.getAll<Store['waitlistEntries'][number]>('waitlistEntries'),
       dynamoDB.getConfig<AlertSettings>('alertSettings'),
       dynamoDB.getConfig<SyncConfig>('syncConfig'),
       dynamoDB.getAllUserEntities<HoldingRecord>('holdings'),
@@ -399,6 +404,10 @@ class Store {
       this.analyticsEvents = analyticsEventsData;
       console.log(`[Store] Loaded ${analyticsEventsData.length} real analytics events from DynamoDB`);
     }
+    if (waitlistData.length > 0) {
+      this.waitlistEntries = waitlistData;
+      console.log(`[Store] Loaded ${waitlistData.length} waitlist entries from DynamoDB`);
+    }
 
     const mapUserRows = <T>(rows: Array<{ userId: string; id: string; data: T }>, map: Map<string, T[]>) => {
       map.clear();
@@ -484,6 +493,8 @@ class Store {
         ['landPartnerDeals', this.landPartnerDeals],
         ['influencers', this.influencers],
         ['influencerApplications', this.influencerApplications],
+        ['brokerApplications', this.brokerApplications],
+        ['agentApplications', this.agentApplications],
         ['supportTickets', this.supportTickets],
         ['fractionalShares', this.fractionalShares],
         ['titleCompanies', this.titleCompanies],
@@ -501,6 +512,7 @@ class Store {
         ['taxDocuments', this.taxDocuments],
         ['deviceRegistrations', this.deviceRegistrations as any],
         ['analyticsEvents', this.analyticsEvents as any],
+        ['waitlistEntries', this.waitlistEntries as any],
       ];
 
       await Promise.all(
