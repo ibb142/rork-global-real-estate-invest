@@ -60,6 +60,28 @@ import type {
   SyncConfig,
 } from '../db/types';
 
+interface LiveSession {
+  sessionId: string;
+  ip: string;
+  device: string;
+  os: string;
+  browser: string;
+  geo?: {
+    city?: string;
+    region?: string;
+    country?: string;
+    countryCode?: string;
+    lat?: number;
+    lng?: number;
+    timezone?: string;
+  };
+  currentStep: number;
+  sessionDuration: number;
+  activeTime: number;
+  lastSeen: string;
+  startedAt: string;
+}
+
 class Store {
   properties: PropertyRecord[] = [];
   users: Map<string, UserRecord> = new Map();
@@ -148,6 +170,7 @@ class Store {
       timezone?: string;
     };
   }> = [];
+  liveSessions: Map<string, LiveSession> = new Map();
 
   private initialized = false;
 
@@ -203,129 +226,11 @@ class Store {
     for (const [userId, txs] of Object.entries(SEED_TRANSACTIONS)) this.transactions.set(userId, [...txs]);
     for (const [userId, holds] of Object.entries(SEED_HOLDINGS)) this.holdings.set(userId, [...holds]);
     for (const [userId, notifs] of Object.entries(SEED_NOTIFICATIONS)) this.notifications.set(userId, [...notifs]);
-    this._seedLandingAnalytics();
-    console.log(`[Store] Seed applied: ${this.properties.length} properties, ${this.users.size} users, ${this.analyticsEvents.length} analytics events`);
+    console.log(`[Store] Seed applied: ${this.properties.length} properties, ${this.users.size} users (real data mode)`);
   }
 
   _seedLandingAnalytics(): void {
-    this.analyticsEvents = this.analyticsEvents.filter(e => e.userId !== 'landing_visitor');
-    const now = Date.now();
-    let evtCounter = 0;
-    const countries = [
-      { country: 'United States', countryCode: 'US', cities: ['New York', 'Miami', 'Los Angeles', 'Houston', 'Chicago'], regions: ['New York', 'Florida', 'California', 'Texas', 'Illinois'], tz: 'America/New_York' },
-      { country: 'United Kingdom', countryCode: 'GB', cities: ['London', 'Manchester', 'Birmingham'], regions: ['England', 'Greater London'], tz: 'Europe/London' },
-      { country: 'Canada', countryCode: 'CA', cities: ['Toronto', 'Vancouver', 'Montreal'], regions: ['Ontario', 'British Columbia'], tz: 'America/Toronto' },
-      { country: 'Germany', countryCode: 'DE', cities: ['Berlin', 'Munich', 'Frankfurt'], regions: ['Berlin', 'Bavaria'], tz: 'Europe/Berlin' },
-      { country: 'UAE', countryCode: 'AE', cities: ['Dubai', 'Abu Dhabi'], regions: ['Dubai', 'Abu Dhabi'], tz: 'Asia/Dubai' },
-      { country: 'Australia', countryCode: 'AU', cities: ['Sydney', 'Melbourne'], regions: ['New South Wales', 'Victoria'], tz: 'Australia/Sydney' },
-      { country: 'Singapore', countryCode: 'SG', cities: ['Singapore'], regions: ['Central Region'], tz: 'Asia/Singapore' },
-      { country: 'Brazil', countryCode: 'BR', cities: ['São Paulo', 'Rio de Janeiro'], regions: ['São Paulo', 'Rio de Janeiro'], tz: 'America/Sao_Paulo' },
-      { country: 'India', countryCode: 'IN', cities: ['Mumbai', 'Bangalore', 'Delhi'], regions: ['Maharashtra', 'Karnataka'], tz: 'Asia/Kolkata' },
-      { country: 'Mexico', countryCode: 'MX', cities: ['Mexico City', 'Monterrey'], regions: ['CDMX', 'Nuevo León'], tz: 'America/Mexico_City' },
-    ];
-    const referrers = ['direct', 'google.com', 'linkedin.com', 'twitter.com', 'instagram.com', 'facebook.com', 'reddit.com', 'app'];
-    const userAgents = [
-      'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)',
-      'Mozilla/5.0 (Linux; Android 14; Pixel 8)',
-      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)',
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-      'Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X)',
-    ];
-    const interests = ['residential', 'commercial', 'mixed_use', 'industrial', 'hospitality', 'land'];
-    const sections = ['hero', 'properties', 'how_it_works', 'benefits', 'testimonials', 'faq', 'footer'];
-
-    const pick = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
-    const makeId = () => `evt_seed_${++evtCounter}`;
-
-    for (let dayOffset = 89; dayOffset >= 0; dayOffset--) {
-      const baseTime = now - dayOffset * 86400000;
-      const sessionsPerDay = dayOffset < 7 ? 12 + Math.floor(Math.random() * 18)
-        : dayOffset < 30 ? 6 + Math.floor(Math.random() * 12)
-        : 2 + Math.floor(Math.random() * 8);
-
-      for (let s = 0; s < sessionsPerDay; s++) {
-        const sessionId = `lp_seed_${dayOffset}_${s}`;
-        const hourOffset = Math.floor(Math.random() * 86400000);
-        const sessionStart = baseTime + hourOffset;
-        const geo = pick(countries);
-        const city = pick(geo.cities);
-        const region = pick(geo.regions);
-        const ua = pick(userAgents);
-        const ref = pick(referrers);
-        const geoObj = {
-          city,
-          region,
-          country: geo.country,
-          countryCode: geo.countryCode,
-          lat: 25 + Math.random() * 30,
-          lng: -120 + Math.random() * 200,
-          timezone: geo.tz,
-        };
-
-        this.analyticsEvents.push({
-          id: makeId(), userId: 'landing_visitor', event: 'landing_page_view',
-          category: 'page_view', sessionId, timestamp: new Date(sessionStart).toISOString(),
-          geo: geoObj,
-          properties: { platform: 'web', referrer: ref, userAgent: ua, section: 'hero' },
-        });
-
-        if (Math.random() < 0.75) {
-          this.analyticsEvents.push({
-            id: makeId(), userId: 'landing_visitor', event: 'scroll_25',
-            category: 'page_view', sessionId, timestamp: new Date(sessionStart + 8000 + Math.random() * 5000).toISOString(),
-            geo: geoObj, properties: { platform: 'web', section: 'properties' },
-          });
-        }
-        if (Math.random() < 0.55) {
-          this.analyticsEvents.push({
-            id: makeId(), userId: 'landing_visitor', event: 'scroll_50',
-            category: 'page_view', sessionId, timestamp: new Date(sessionStart + 15000 + Math.random() * 8000).toISOString(),
-            geo: geoObj, properties: { platform: 'web', section: 'how_it_works' },
-          });
-        }
-        if (Math.random() < 0.35) {
-          this.analyticsEvents.push({
-            id: makeId(), userId: 'landing_visitor', event: 'scroll_75',
-            category: 'page_view', sessionId, timestamp: new Date(sessionStart + 25000 + Math.random() * 10000).toISOString(),
-            geo: geoObj, properties: { platform: 'web', section: 'testimonials' },
-          });
-        }
-        if (Math.random() < 0.15) {
-          this.analyticsEvents.push({
-            id: makeId(), userId: 'landing_visitor', event: 'scroll_100',
-            category: 'page_view', sessionId, timestamp: new Date(sessionStart + 40000 + Math.random() * 10000).toISOString(),
-            geo: geoObj, properties: { platform: 'web', section: 'footer' },
-          });
-        }
-
-        if (Math.random() < 0.3) {
-          const ctaEvents = ['cta_get_started', 'cta_sign_in', 'cta_jv_inquire', 'click_website_header'];
-          this.analyticsEvents.push({
-            id: makeId(), userId: 'landing_visitor', event: pick(ctaEvents),
-            category: 'page_view', sessionId, timestamp: new Date(sessionStart + 20000 + Math.random() * 15000).toISOString(),
-            geo: geoObj, properties: { platform: 'web', section: pick(sections) },
-          });
-        }
-
-        if (Math.random() < 0.2) {
-          this.analyticsEvents.push({
-            id: makeId(), userId: 'landing_visitor', event: 'form_focus',
-            category: 'page_view', sessionId, timestamp: new Date(sessionStart + 30000 + Math.random() * 10000).toISOString(),
-            geo: geoObj, properties: { platform: 'web', section: 'hero' },
-          });
-
-          if (Math.random() < 0.5) {
-            this.analyticsEvents.push({
-              id: makeId(), userId: 'landing_visitor', event: 'form_submit',
-              category: 'page_view', sessionId, timestamp: new Date(sessionStart + 45000 + Math.random() * 15000).toISOString(),
-              geo: geoObj, properties: { platform: 'web', section: 'hero', investmentInterest: pick(interests) },
-            });
-          }
-        }
-      }
-    }
-
-    console.log(`[Store] Seeded ${this.analyticsEvents.length} landing analytics events`);
+    console.log('[Store] Real data mode — no fake analytics seeded');
   }
 
   private async _loadFromDynamo(): Promise<void> {
@@ -458,20 +363,8 @@ class Store {
     if (alertCfg) this.alertSettings = alertCfg;
     if (syncCfg) this.syncConfig = syncCfg;
     if (analyticsEventsData.length > 0) {
-      const now = Date.now();
-      const recentCutoff = now - 7 * 86400000;
-      const hasRecentLandingEvents = analyticsEventsData.some(
-        e => e.userId === 'landing_visitor' && new Date(e.timestamp).getTime() > recentCutoff
-      );
-      if (hasRecentLandingEvents) {
-        this.analyticsEvents = analyticsEventsData;
-        console.log(`[Store] Loaded ${analyticsEventsData.length} analytics events from DynamoDB (has recent data)`);
-      } else {
-        const nonLandingEvents = analyticsEventsData.filter(e => e.userId !== 'landing_visitor');
-        this._seedLandingAnalytics();
-        this.analyticsEvents = [...this.analyticsEvents, ...nonLandingEvents];
-        console.log(`[Store] DynamoDB analytics stale — re-seeded ${this.analyticsEvents.length} landing events, kept ${nonLandingEvents.length} other events`);
-      }
+      this.analyticsEvents = analyticsEventsData;
+      console.log(`[Store] Loaded ${analyticsEventsData.length} real analytics events from DynamoDB`);
     }
 
     const mapUserRows = <T>(rows: Array<{ userId: string; id: string; data: T }>, map: Map<string, T[]>) => {
@@ -715,6 +608,35 @@ class Store {
         console.error('[Store] Visitor log persist error:', err)
       );
     }
+  }
+
+  updateLiveSession(session: Omit<LiveSession, 'startedAt'> & { startedAt: string | undefined }): void {
+    const existing = this.liveSessions.get(session.sessionId);
+    const now = new Date().toISOString();
+    this.liveSessions.set(session.sessionId, {
+      sessionId: session.sessionId,
+      ip: session.ip,
+      device: session.device,
+      os: session.os,
+      browser: session.browser,
+      geo: session.geo,
+      currentStep: session.currentStep,
+      sessionDuration: session.sessionDuration,
+      activeTime: session.activeTime,
+      lastSeen: session.lastSeen || now,
+      startedAt: existing?.startedAt || now,
+    });
+    if (this.liveSessions.size > 10000) {
+      const cutoff = Date.now() - 600000;
+      for (const [key, val] of this.liveSessions) {
+        if (new Date(val.lastSeen).getTime() < cutoff) this.liveSessions.delete(key);
+      }
+    }
+  }
+
+  getLiveSessions(): LiveSession[] {
+    return Array.from(this.liveSessions.values())
+      .sort((a, b) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime());
   }
 
   getVisitorLog(options?: { period?: string; device?: string; os?: string; page?: number; limit?: number }): { items: Store['visitorLog'][number][]; total: number; page: number; limit: number; totalPages: number } {
