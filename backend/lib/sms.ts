@@ -3,11 +3,6 @@ import { SNSClient, PublishCommand } from "@aws-sdk/client-sns";
 const AWS_REGION = process.env.AWS_REGION || "us-east-1";
 const AWS_ACCESS_KEY_ID = process.env.AWS_ACCESS_KEY_ID;
 const AWS_SECRET_ACCESS_KEY = process.env.AWS_SECRET_ACCESS_KEY;
-
-const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
-const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
-const TWILIO_PHONE_NUMBER = process.env.TWILIO_PHONE_NUMBER;
-const TWILIO_WHATSAPP_NUMBER = process.env.TWILIO_WHATSAPP_NUMBER;
 const APP_NAME = "IVX HOLDINGS";
 
 const isSNSConfigured = !!(AWS_ACCESS_KEY_ID && AWS_SECRET_ACCESS_KEY);
@@ -23,7 +18,7 @@ if (isSNSConfigured) {
   });
   console.log(`[SMS] AWS SNS configured: region=${AWS_REGION}`);
 } else {
-  console.log("[SMS] AWS SNS not configured — will use fallback providers");
+  console.log("[SMS] AWS SNS not configured — SMS will be logged to console");
 }
 
 interface SMSOptions {
@@ -34,16 +29,13 @@ interface SMSOptions {
 
 interface SMSResult {
   success: boolean;
-  provider: "sns" | "twilio" | "console";
+  provider: "sns" | "console";
   messageId?: string;
   error?: string;
 }
 
 async function sendViaSNS(options: SMSOptions): Promise<SMSResult> {
-  if (!snsClient) return { success: false, provider: "sns", error: "Not configured" };
-  if (options.channel === "whatsapp") {
-    return { success: false, provider: "sns", error: "WhatsApp not supported by SNS" };
-  }
+  if (!snsClient) return { success: false, provider: "sns", error: "AWS SNS not configured" };
 
   try {
     const command = new PublishCommand({
@@ -71,59 +63,14 @@ async function sendViaSNS(options: SMSOptions): Promise<SMSResult> {
   }
 }
 
-async function sendViaTwilio(options: SMSOptions): Promise<SMSResult> {
-  if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !TWILIO_PHONE_NUMBER) {
-    return { success: false, provider: "twilio", error: "Not configured" };
-  }
-
-  const from =
-    options.channel === "whatsapp"
-      ? `whatsapp:${TWILIO_WHATSAPP_NUMBER || TWILIO_PHONE_NUMBER}`
-      : TWILIO_PHONE_NUMBER;
-
-  const to = options.channel === "whatsapp" ? `whatsapp:${options.to}` : options.to;
-
-  try {
-    const response = await fetch(
-      `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Basic ${Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString("base64")}`,
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: new URLSearchParams({ To: to, From: from, Body: options.body }),
-      }
-    );
-
-    if (response.ok) {
-      const data = (await response.json()) as { sid?: string };
-      console.log(`[SMS] Twilio sent to ${options.to} via ${options.channel || "sms"} (${data.sid})`);
-      return { success: true, provider: "twilio", messageId: data.sid };
-    }
-
-    const errorBody = await response.text();
-    console.error(`[SMS] Twilio error (${response.status}):`, errorBody);
-    return { success: false, provider: "twilio", error: `Status ${response.status}` };
-  } catch (error) {
-    console.error("[SMS] Twilio request failed:", error);
-    return { success: false, provider: "twilio", error: String(error) };
-  }
-}
-
 export async function sendSMS(options: SMSOptions): Promise<SMSResult> {
-  if (isSNSConfigured && options.channel !== "whatsapp") {
+  if (isSNSConfigured) {
     const result = await sendViaSNS(options);
     if (result.success) return result;
-    console.warn("[SMS] AWS SNS failed, trying Twilio fallback");
+    console.warn("[SMS] AWS SNS failed, falling back to console log");
   }
 
-  if (TWILIO_ACCOUNT_SID) {
-    const result = await sendViaTwilio(options);
-    if (result.success) return result;
-  }
-
-  console.log(`[SMS] [CONSOLE-ONLY] To: ${options.to} | Channel: ${options.channel || "sms"} | Body: ${options.body}`);
+  console.log(`[SMS] [CONSOLE-LOG] To: ${options.to} | Channel: ${options.channel || "sms"} | Body: ${options.body}`);
   return { success: true, provider: "console", messageId: `console_${Date.now()}` };
 }
 
