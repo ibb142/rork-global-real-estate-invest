@@ -103,6 +103,11 @@ function RootLayoutNav() {
       <Stack.Screen name="ai-automation-report" options={HIDDEN_HEADER} />
       <Stack.Screen name="api-list" options={HIDDEN_HEADER} />
       <Stack.Screen name="authenticator" options={HIDDEN_HEADER} />
+      <Stack.Screen name="auto-repair" options={HIDDEN_HEADER} />
+      <Stack.Screen name="viral-growth" options={HIDDEN_HEADER} />
+      <Stack.Screen name="sms-reports" options={HIDDEN_HEADER} />
+      <Stack.Screen name="activation-center" options={HIDDEN_HEADER} />
+      <Stack.Screen name="client-intelligence" options={HIDDEN_HEADER} />
     </Stack>
   );
 }
