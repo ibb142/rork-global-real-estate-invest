@@ -89,6 +89,7 @@ const ADMIN_MODULES = [
   { id: 'email-inbox', name: 'AI Email Inbox', icon: Mail, iconName: 'Mail', route: '/admin/email-inbox', category: 'Marketing' },
   { id: 'email-management', name: 'Email Management', icon: Mail, iconName: 'Mail', route: '/admin/email-management', category: 'Core' },
   { id: 'email-accounts', name: 'Email Accounts', icon: Users, iconName: 'Users', route: '/admin/email-accounts', category: 'Users' },
+  { id: 'visitor-intelligence', name: 'AI Visitor Intelligence', icon: Brain, iconName: 'Brain', route: '/admin/visitor-intelligence', category: 'Analytics' },
   { id: 'landing-analytics', name: 'Landing Analytics', icon: BarChart3, iconName: 'BarChart3', route: '/admin/landing-analytics', category: 'Analytics' },
   { id: 'system-monitor', name: '24/7 Command Center', icon: ShieldCheck, iconName: 'ShieldCheck', route: '/admin/system-monitor', category: 'Core' },
   { id: 'authenticator', name: 'Authenticator', icon: ShieldCheck, iconName: 'ShieldCheck', route: '/authenticator', category: 'Settings' },
