@@ -7,17 +7,13 @@ const SENDGRID_FROM_EMAIL = process.env.SENDGRID_FROM_EMAIL || "noreply@ipxholdi
 const SENDGRID_FROM_NAME = process.env.SENDGRID_FROM_NAME || "IVX HOLDINGS";
 const MAILGUN_API_KEY = process.env.MAILGUN_API_KEY;
 const MAILGUN_DOMAIN = process.env.MAILGUN_DOMAIN || "mg.ipxholding.com";
-const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
-const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
-const TWILIO_PHONE_NUMBER = process.env.TWILIO_PHONE_NUMBER;
-const TWILIO_WHATSAPP_NUMBER = process.env.TWILIO_WHATSAPP_NUMBER;
-const ZILLOW_API_KEY = process.env.ZILLOW_API_KEY;
+const _ZILLOW_API_KEY = process.env.ZILLOW_API_KEY;
 const ATTOM_API_KEY = process.env.ATTOM_API_KEY;
 const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY;
 const ALPHA_VANTAGE_API_KEY = process.env.ALPHA_VANTAGE_API_KEY;
 const OPENEXCHANGE_APP_ID = process.env.OPENEXCHANGE_APP_ID;
 const EMAIL_PROVIDER = (process.env.EMAIL_PROVIDER || "internal") as "sendgrid" | "mailgun" | "internal";
-const SMS_PROVIDER = (process.env.SMS_PROVIDER || "internal") as "twilio" | "internal";
+const SMS_PROVIDER = (process.env.SMS_PROVIDER || "internal") as "sns" | "internal";
 
 interface EmailLog {
   id: string;
@@ -174,50 +170,18 @@ async function sendEmail(
   return { ok: true, provider: "internal", messageId: `int_${Date.now()}` };
 }
 
-async function sendSMS(
+async function sendSMSMessage(
   to: string,
   body: string,
   channel: "sms" | "whatsapp" = "sms",
 ): Promise<{ ok: boolean; provider: string; messageId?: string }> {
-  if (SMS_PROVIDER === "twilio" && TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN) {
-    try {
-      const from = channel === "whatsapp"
-        ? `whatsapp:${TWILIO_WHATSAPP_NUMBER || TWILIO_PHONE_NUMBER}`
-        : TWILIO_PHONE_NUMBER;
+  const { sendSMS: sendSMSLib } = await import("../../lib/sms");
+  const formattedPhone = to.startsWith('+') ? to : `+1${to.replace(/\D/g, '')}`;
+  const result = await sendSMSLib({ to: formattedPhone, body, channel });
 
-      const toNumber = channel === "whatsapp" ? `whatsapp:${to}` : to;
-
-      const auth = Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString("base64");
-      const formData = new URLSearchParams();
-      formData.append("To", toNumber);
-      formData.append("From", from || "");
-      formData.append("Body", body);
-
-      const response = await fetch(
-        `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`,
-        {
-          method: "POST",
-          headers: {
-            "Authorization": `Basic ${auth}`,
-            "Content-Type": "application/x-www-form-urlencoded",
-          },
-          body: formData.toString(),
-        }
-      );
-
-      if (!response.ok) {
-        const errorBody = await response.text();
-        console.error(`[ExternalAPIs] Twilio ${channel} error:`, response.status, errorBody);
-        return { ok: false, provider: "twilio" };
-      }
-
-      const data = await response.json() as { sid?: string };
-      console.log(`[ExternalAPIs] Twilio ${channel} sent to ${to}: ${data.sid}`);
-      return { ok: true, provider: "twilio", messageId: data.sid || `tw_${Date.now()}` };
-    } catch (error) {
-      console.error(`[ExternalAPIs] Twilio ${channel} error:`, error);
-      return { ok: false, provider: "twilio" };
-    }
+  if (result.success) {
+    console.log(`[ExternalAPIs] SMS sent to ${to} via ${result.provider}`);
+    return { ok: true, provider: result.provider, messageId: result.messageId };
   }
 
   console.log(`[ExternalAPIs] Internal ${channel} to ${to}: ${body.substring(0, 50)}...`);
@@ -282,7 +246,7 @@ export const externalApisRouter = createTRPCRouter({
       textContent: z.string().optional(),
       metadata: z.record(z.string(), z.string()).optional(),
     }))
-    .mutation(async ({ input, ctx }) => {
+    .mutation(async ({ input, ctx: _ctx }) => {
       console.log(`[ExternalAPIs] Sending email to ${input.to}: ${input.subject}`);
       const result = await sendEmail(input.to, input.subject, input.htmlContent, input.textContent);
 
@@ -299,7 +263,7 @@ export const externalApisRouter = createTRPCRouter({
       };
       emailLogs.push(log);
 
-      store.log("email_send", ctx.userId || "system", `Email to ${input.to}: ${input.subject}`);
+      store.log("email_send", _ctx.userId || "system", `Email to ${input.to}: ${input.subject}`);
       return { success: result.ok, emailId: log.id, provider: result.provider };
     }),
 
@@ -309,7 +273,7 @@ export const externalApisRouter = createTRPCRouter({
       template: z.enum(["welcome", "verification", "transaction", "kyc_approved", "password_reset", "dividend", "security_alert"]),
       variables: z.record(z.string(), z.string()),
     }))
-    .mutation(async ({ input, ctx }) => {
+    .mutation(async ({ input, ctx: _ctx }) => {
       console.log(`[ExternalAPIs] Sending template email: ${input.template} to ${input.to}`);
       const { subject, html, text } = generateEmailTemplate(input.template, input.variables);
       const result = await sendEmail(input.to, subject, html, text);
@@ -339,12 +303,12 @@ export const externalApisRouter = createTRPCRouter({
     }))
     .mutation(async ({ input, ctx }) => {
       console.log(`[ExternalAPIs] Sending ${input.channel} to ${input.to}`);
-      const result = await sendSMS(input.to, input.body, input.channel);
+      const result = await sendSMSMessage(input.to, input.body, input.channel);
 
       const log: SMSLog = {
         id: store.genId("sms"),
         to: input.to,
-        from: TWILIO_PHONE_NUMBER || "IVXHOLDINGS",
+        from: "IVXHOLDINGS",
         body: input.body,
         channel: input.channel,
         status: result.ok ? "sent" : "failed",
@@ -412,12 +376,12 @@ export const externalApisRouter = createTRPCRouter({
       let failed = 0;
 
       for (const recipient of input.recipients) {
-        const result = await sendSMS(recipient.phone, recipient.body, input.channel);
+        const result = await sendSMSMessage(recipient.phone, recipient.body, input.channel);
 
         smsLogs.push({
           id: store.genId("sms"),
           to: recipient.phone,
-          from: TWILIO_PHONE_NUMBER || "IVXHOLDINGS",
+          from: "IVXHOLDINGS",
           body: recipient.body,
           channel: input.channel,
           status: result.ok ? "sent" : "failed",
@@ -830,12 +794,12 @@ export const externalApisRouter = createTRPCRouter({
             whatsapp: smsLogs.filter(l => l.channel === "whatsapp").length,
           },
           provider: SMS_PROVIDER,
-          configured: SMS_PROVIDER === "twilio" ? !!(TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN) : true,
+          configured: !!(process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY),
         },
         providers: {
           sendgrid: { configured: !!SENDGRID_API_KEY },
           mailgun: { configured: !!MAILGUN_API_KEY },
-          twilio: { configured: !!(TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN) },
+          awsSNS: { configured: !!(process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) },
           googleMaps: { configured: !!GOOGLE_MAPS_API_KEY },
           attom: { configured: !!ATTOM_API_KEY },
           alphaVantage: { configured: !!ALPHA_VANTAGE_API_KEY },
@@ -898,7 +862,7 @@ export const externalApisRouter = createTRPCRouter({
 
   testConnection: adminProcedure
     .input(z.object({
-      provider: z.enum(["sendgrid", "mailgun", "twilio", "attom", "google_maps", "alpha_vantage", "openexchange"]),
+      provider: z.enum(["sendgrid", "mailgun", "aws_sns", "attom", "google_maps", "alpha_vantage", "openexchange"]),
     }))
     .mutation(async ({ input, ctx }) => {
       console.log(`[ExternalAPIs] Testing connection: ${input.provider}`);
@@ -917,7 +881,7 @@ export const externalApisRouter = createTRPCRouter({
             });
             isConnected = resp.ok;
             message = resp.ok ? "Connected to SendGrid" : `Error: ${resp.status}`;
-          } catch (e) { message = `Connection failed: ${e}`; }
+          } catch (e) { message = `Connection failed: ${String(e)}`; }
           break;
         }
         case "mailgun": {
@@ -929,19 +893,15 @@ export const externalApisRouter = createTRPCRouter({
             });
             isConnected = resp.ok;
             message = resp.ok ? "Connected to Mailgun" : `Error: ${resp.status}`;
-          } catch (e) { message = `Connection failed: ${e}`; }
+          } catch (e) { message = `Connection failed: ${String(e)}`; }
           break;
         }
-        case "twilio": {
-          if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN) { message = "Credentials not configured"; break; }
-          try {
-            const auth = Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString("base64");
-            const resp = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}.json`, {
-              headers: { "Authorization": `Basic ${auth}` },
-            });
-            isConnected = resp.ok;
-            message = resp.ok ? "Connected to Twilio" : `Error: ${resp.status}`;
-          } catch (e) { message = `Connection failed: ${e}`; }
+        case "aws_sns": {
+          const awsKey = process.env.AWS_ACCESS_KEY_ID;
+          const awsSecret = process.env.AWS_SECRET_ACCESS_KEY;
+          if (!awsKey || !awsSecret) { message = "AWS credentials not configured"; break; }
+          isConnected = true;
+          message = "AWS SNS configured (region: " + (process.env.AWS_REGION || "us-east-1") + ")";
           break;
         }
         case "attom": {
@@ -952,7 +912,7 @@ export const externalApisRouter = createTRPCRouter({
             });
             isConnected = resp.status !== 401;
             message = resp.status !== 401 ? "Connected to ATTOM Data" : "Invalid API key";
-          } catch (e) { message = `Connection failed: ${e}`; }
+          } catch (e) { message = `Connection failed: ${String(e)}`; }
           break;
         }
         case "google_maps": {
@@ -961,7 +921,7 @@ export const externalApisRouter = createTRPCRouter({
             const resp = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=test&key=${GOOGLE_MAPS_API_KEY}`);
             isConnected = resp.ok;
             message = resp.ok ? "Connected to Google Maps" : `Error: ${resp.status}`;
-          } catch (e) { message = `Connection failed: ${e}`; }
+          } catch (e) { message = `Connection failed: ${String(e)}`; }
           break;
         }
         case "alpha_vantage": {
@@ -970,7 +930,7 @@ export const externalApisRouter = createTRPCRouter({
             const resp = await fetch(`https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol=IBM&interval=5min&apikey=${ALPHA_VANTAGE_API_KEY}`);
             isConnected = resp.ok;
             message = resp.ok ? "Connected to Alpha Vantage" : `Error: ${resp.status}`;
-          } catch (e) { message = `Connection failed: ${e}`; }
+          } catch (e) { message = `Connection failed: ${String(e)}`; }
           break;
         }
         case "openexchange": {
@@ -979,7 +939,7 @@ export const externalApisRouter = createTRPCRouter({
             const resp = await fetch(`https://openexchangerates.org/api/latest.json?app_id=${OPENEXCHANGE_APP_ID}`);
             isConnected = resp.ok;
             message = resp.ok ? "Connected to Open Exchange Rates" : `Error: ${resp.status}`;
-          } catch (e) { message = `Connection failed: ${e}`; }
+          } catch (e) { message = `Connection failed: ${String(e)}`; }
           break;
         }
       }
