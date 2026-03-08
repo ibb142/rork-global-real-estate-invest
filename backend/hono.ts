@@ -20,6 +20,7 @@ import { startHourlyReporting } from "./lib/sms-service";
 
 logEnvStatus();
 logSentryStatus();
+console.log('[App] Backend v1.0.2 — toolkit-sdk removed from backend');
 
 store.init().then(() => {
   console.log('[App] Store initialized — ready to serve requests');
