@@ -53,7 +53,7 @@ import {
   TouchableOpacity,
   Image,
 } from 'react-native';
-import { MapPin, TrendingUp, Building2 } from 'lucide-react-native';
+import { MapPin, TrendingUp, Building2, Brain } from 'lucide-react-native';
 import { useRouter, Href } from 'expo-router';
 import { Property } from '@/types';
 import Colors from '@/constants/colors';
@@ -65,6 +65,25 @@ interface PropertyCardProps {
   property: Property;
   variant?: 'full' | 'compact';
   isCompact?: boolean;
+}
+
+function computeAIScore(property: Property): { score: number; label: string; color: string } {
+  const yieldVal = property.yield ?? 0;
+  const irrVal = property.irr ?? 0;
+  const occupancy = property.occupancy ?? 0;
+  const funded = property.targetRaise ? ((property.currentRaise ?? 0) / property.targetRaise) * 100 : 0;
+
+  let score = 0;
+  score += Math.min(yieldVal * 4, 30);
+  score += Math.min(irrVal * 2, 25);
+  score += Math.min(occupancy * 0.3, 25);
+  score += Math.min(funded * 0.2, 20);
+  score = Math.min(99, Math.max(40, Math.round(score)));
+
+  if (score >= 85) return { score, label: 'Strong Buy', color: '#00C48C' };
+  if (score >= 70) return { score, label: 'Buy', color: '#4ECDC4' };
+  if (score >= 55) return { score, label: 'Hold', color: '#FFB800' };
+  return { score, label: 'Watch', color: '#FF6B6B' };
 }
 
 const PROPERTY_TYPE_MAP: Record<string, TranslationKeys> = {
@@ -113,6 +132,8 @@ const PropertyCard = memo(function PropertyCard({ property, variant = 'full', is
     return key ? t(key) : (property?.propertyType ?? '');
   }, [property?.propertyType, t]);
 
+  const aiScore = useMemo(() => computeAIScore(property), [property]);
+
   if (variant === 'compact') {
     return (
       <TouchableOpacity
@@ -125,11 +146,17 @@ const PropertyCard = memo(function PropertyCard({ property, variant = 'full', is
         accessibilityHint="Opens property details"
         testID={`property-card-compact-${property.id}`}
       >
-        <Image
-          source={{ uri: (property.images && property.images[0]) || 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=400' }}
-          style={[styles.compactImage, { height: isXs ? 85 : 100 }]}
-          accessibilityLabel={`Photo of ${property.name}`}
-        />
+        <View>
+          <Image
+            source={{ uri: (property.images && property.images[0]) || 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=400' }}
+            style={[styles.compactImage, { height: isXs ? 85 : 100 }]}
+            accessibilityLabel={`Photo of ${property.name}`}
+          />
+          <View style={[styles.aiScoreBadgeCompact, { backgroundColor: aiScore.color }]}>
+            <Brain size={8} color={Colors.black} />
+            <Text style={styles.aiScoreTextCompact}>{aiScore.score}</Text>
+          </View>
+        </View>
         <View style={[styles.compactContent, { padding: isXs ? 8 : 10 }]}>
           <Text style={[styles.compactName, { fontSize: isXs ? 13 : 15 }]} numberOfLines={1}>
             {property.name}
@@ -162,6 +189,11 @@ const PropertyCard = memo(function PropertyCard({ property, variant = 'full', is
         <ImageSlider images={Array.isArray(property.images) && property.images.length > 0 ? property.images : ['https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800']} height={isXs ? 200 : 240} />
         <View style={[styles.statusBadge, { backgroundColor: statusBadge.color }]}>
           <Text style={styles.statusText}>{statusBadge.text}</Text>
+        </View>
+        <View style={[styles.aiScoreBadgeFull, { backgroundColor: aiScore.color }]}>
+          <Brain size={11} color={Colors.black} />
+          <Text style={styles.aiScoreTextFull}>{aiScore.score}</Text>
+          <Text style={styles.aiScoreLabelFull}>{aiScore.label}</Text>
         </View>
       </View>
 
@@ -369,6 +401,44 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.textTertiary,
     textAlign: 'right',
+  },
+  aiScoreBadgeCompact: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  aiScoreTextCompact: {
+    color: Colors.black,
+    fontSize: 9,
+    fontWeight: '800' as const,
+  },
+  aiScoreBadgeFull: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  aiScoreTextFull: {
+    color: Colors.black,
+    fontSize: 13,
+    fontWeight: '800' as const,
+  },
+  aiScoreLabelFull: {
+    color: Colors.black,
+    fontSize: 10,
+    fontWeight: '700' as const,
+    opacity: 0.8,
   },
   compactContainer: {
     width: 160,
