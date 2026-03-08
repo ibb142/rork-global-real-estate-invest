@@ -1,11 +1,54 @@
-import { useEffect, useCallback, useState } from 'react';
+import { useEffect, useCallback, useState, useRef, useMemo } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
 import createContextHook from '@nkzw/create-context-hook';
-import { analytics, AnalyticsStats, EventCategory } from './analytics';
+import { analytics, AnalyticsStats, EventCategory, AnalyticsEvent } from './analytics';
+import { trpc } from './trpc';
+
+const SYNC_BATCH_SIZE = 20;
+const SYNC_INTERVAL_MS = 30000;
 
 export const [AnalyticsProvider, useAnalytics] = createContextHook(() => {
   const [isReady, setIsReady] = useState(false);
   const [stats, setStats] = useState<AnalyticsStats | null>(null);
+  const pendingSync = useRef<AnalyticsEvent[]>([]);
+  const syncTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const syncMutation = trpc.aiLearning.syncAppEvents.useMutation({
+    onSuccess: (data) => {
+      if (data.shouldTriggerLearning) {
+        console.log('[Analytics] Backend suggests running AI learning cycle');
+      }
+    },
+    onError: (err) => {
+      console.warn('[Analytics] Sync failed:', err.message);
+    },
+  });
+
+  const flushToBackend = useCallback(() => {
+    if (pendingSync.current.length === 0 || syncMutation.isPending) return;
+
+    const batch = pendingSync.current.splice(0, SYNC_BATCH_SIZE);
+    if (batch.length === 0) return;
+
+    console.log(`[Analytics] Syncing ${batch.length} events to backend`);
+    syncMutation.mutate({
+      events: batch.map(evt => ({
+        name: evt.name,
+        category: evt.category,
+        properties: evt.properties as Record<string, string> | undefined,
+        timestamp: evt.timestamp,
+        sessionId: evt.sessionId,
+        platform: evt.platform,
+      })),
+    });
+  }, [syncMutation]);
+
+  const _queueForSync = useCallback((event: AnalyticsEvent) => {
+    pendingSync.current.push(event);
+    if (pendingSync.current.length >= SYNC_BATCH_SIZE) {
+      flushToBackend();
+    }
+  }, [flushToBackend]);
 
   useEffect(() => {
     const init = async () => {
@@ -13,23 +56,30 @@ export const [AnalyticsProvider, useAnalytics] = createContextHook(() => {
       setIsReady(true);
       analytics.track('app_launch', 'engagement');
     };
-    init();
+    void init();
+
+    syncTimer.current = setInterval(() => {
+      flushToBackend();
+    }, SYNC_INTERVAL_MS);
 
     const handleAppStateChange = (state: AppStateStatus) => {
       if (state === 'active') {
         analytics.track('app_foreground', 'engagement');
       } else if (state === 'background') {
         analytics.track('app_background', 'engagement');
-        analytics.flush();
+        void analytics.flush();
+        flushToBackend();
       }
     };
 
     const subscription = AppState.addEventListener('change', handleAppStateChange);
     return () => {
       subscription.remove();
+      if (syncTimer.current) clearInterval(syncTimer.current);
+      flushToBackend();
       analytics.destroy();
     };
-  }, []);
+  }, [flushToBackend]);
 
   const trackEvent = useCallback((name: string, category: EventCategory = 'user_action', properties?: Record<string, unknown>) => {
     analytics.track(name, category, properties);
@@ -74,7 +124,10 @@ export const [AnalyticsProvider, useAnalytics] = createContextHook(() => {
     setStats(null);
   }, []);
 
-  return {
+  const sessionId = analytics.getSessionId();
+  const sessionDuration = useCallback(() => analytics.getSessionDuration(), []);
+
+  return useMemo(() => ({
     isReady,
     stats,
     trackEvent,
@@ -87,9 +140,9 @@ export const [AnalyticsProvider, useAnalytics] = createContextHook(() => {
     refreshStats,
     getPerformanceSummary,
     clearAnalyticsData,
-    sessionId: analytics.getSessionId(),
-    sessionDuration: analytics.getSessionDuration,
-  };
+    sessionId,
+    sessionDuration,
+  }), [isReady, stats, trackEvent, trackScreen, trackAction, trackTransaction, trackError, trackConversion, startTimer, refreshStats, getPerformanceSummary, clearAnalyticsData, sessionId, sessionDuration]);
 });
 
 export default AnalyticsProvider;
