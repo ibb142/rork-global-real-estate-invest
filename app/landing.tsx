@@ -21,7 +21,8 @@ import {
   TrendingUp, Shield, ChevronRight, Award,
   Users, CheckCircle, Mail, Phone, User,
   DollarSign, Zap, ArrowRight, Sparkles,
-  Lock, Eye, Copy, Gift,
+  Lock, Eye, Copy, Gift, Handshake,
+  Scale, Globe, FileText,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { trpc } from '@/lib/trpc';
@@ -136,7 +137,7 @@ export default function LandingScreen() {
   const isVisibleRef = useRef<boolean>(true);
 
   const trackMutation = trpc.analytics.trackLanding.useMutation();
-  const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL || process.env.EXPO_PUBLIC_RORK_API_BASE_URL || 'https://ivxholding.com';
+  const apiBaseUrl = process.env.EXPO_PUBLIC_RORK_API_BASE_URL || process.env.EXPO_PUBLIC_API_BASE_URL || '';
 
   const trackEventRef = useRef((event: string, properties?: Record<string, unknown>) => {
     console.log('[Landing Track]', event, properties);
@@ -505,6 +506,58 @@ export default function LandingScreen() {
             </View>
           ))}
         </View>
+
+        <TouchableOpacity
+          style={s.jvSection}
+          onPress={() => { trackEvent('jv_agreement_click'); router.push('/jv-agreement' as any); }}
+          activeOpacity={0.85}
+          testID="landing-jv-agreement"
+        >
+          <View style={s.jvSectionHeader}>
+            <View style={s.jvIconRow}>
+              <Handshake size={22} color="#FFD700" />
+              <View style={s.jvLiveBadge}>
+                <Text style={s.jvLiveBadgeText}>NEW</Text>
+              </View>
+            </View>
+            <ChevronRight size={18} color={Colors.primary} />
+          </View>
+          <Text style={s.jvSectionTitle}>Joint Venture Agreements</Text>
+          <Text style={s.jvSectionSubtitle}>
+            Partner with global investors. Create secure JV deals with institutional-grade legal protection.
+          </Text>
+          <View style={s.jvStatsRow}>
+            <View style={s.jvStatItem}>
+              <DollarSign size={12} color="#00C48C" />
+              <Text style={s.jvStatValue}>$25M+</Text>
+              <Text style={s.jvStatLabel}>JV Deals</Text>
+            </View>
+            <View style={s.jvStatDivider} />
+            <View style={s.jvStatItem}>
+              <Globe size={12} color="#4A90D9" />
+              <Text style={s.jvStatValue}>12+</Text>
+              <Text style={s.jvStatLabel}>Countries</Text>
+            </View>
+            <View style={s.jvStatDivider} />
+            <View style={s.jvStatItem}>
+              <Scale size={12} color="#E879F9" />
+              <Text style={s.jvStatValue}>100%</Text>
+              <Text style={s.jvStatLabel}>Protected</Text>
+            </View>
+          </View>
+          <View style={s.jvFeaturesRow}>
+            {[
+              { icon: <FileText size={11} color="#FFD700" />, label: 'Smart Contracts' },
+              { icon: <Shield size={11} color="#00C48C" />, label: 'Legal Shield' },
+              { icon: <Users size={11} color="#4A90D9" />, label: 'Multi-Partner' },
+            ].map((feat, i) => (
+              <View key={i} style={s.jvFeatureChip}>
+                {feat.icon}
+                <Text style={s.jvFeatureText}>{feat.label}</Text>
+              </View>
+            ))}
+          </View>
+        </TouchableOpacity>
       </View>
     </Animated.View>
   );
@@ -1523,5 +1576,98 @@ const s = StyleSheet.create({
     fontWeight: '700' as const,
   },
 
-
+  jvSection: {
+    backgroundColor: '#0D0D0F',
+    borderRadius: 18,
+    padding: 20,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,215,0,0.15)',
+  },
+  jvSectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  jvIconRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  jvLiveBadge: {
+    backgroundColor: '#FFD70025',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  jvLiveBadgeText: {
+    color: '#FFD700',
+    fontSize: 9,
+    fontWeight: '800' as const,
+    letterSpacing: 1,
+  },
+  jvSectionTitle: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '800' as const,
+    marginBottom: 6,
+  },
+  jvSectionSubtitle: {
+    color: '#7A7A7A',
+    fontSize: 13,
+    lineHeight: 19,
+    marginBottom: 16,
+  },
+  jvStatsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0A0A0C',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#1E1E22',
+    overflow: 'hidden',
+    marginBottom: 14,
+  },
+  jvStatItem: {
+    flex: 1,
+    paddingVertical: 12,
+    alignItems: 'center',
+    gap: 3,
+  },
+  jvStatValue: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '800' as const,
+  },
+  jvStatLabel: {
+    color: '#5A5A5A',
+    fontSize: 9,
+    fontWeight: '600' as const,
+  },
+  jvStatDivider: {
+    width: 1,
+    height: 28,
+    backgroundColor: '#1E1E22',
+  },
+  jvFeaturesRow: {
+    flexDirection: 'row',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  jvFeatureChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#14141A',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderWidth: 1,
+    borderColor: '#1E1E22',
+  },
+  jvFeatureText: {
+    color: '#7A7A7A',
+    fontSize: 10,
+    fontWeight: '600' as const,
+  },
 });
