@@ -37,13 +37,13 @@ import {
   Scale,
   Brain,
   Code2,
+  Rocket,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { getResponsiveSize, isCompactScreen, isExtraSmallScreen } from '@/lib/responsive';
 import { currentUser as mockUser } from '@/mocks/user';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/lib/auth-context';
-import { trpc } from '@/lib/trpc';
 import { useTranslation, useI18n } from '@/lib/i18n-context';
 import { useAnalytics } from '@/lib/analytics-context';
 
@@ -92,7 +92,7 @@ export default function ProfileScreen() {
   const { logout, profileData } = useAuth();
   const { t } = useTranslation();
   const { currentLanguage } = useI18n();
-  const { trackScreen, trackAction } = useAnalytics();
+  const { trackAction } = useAnalytics();
 
   const currentUser = useMemo(() => ({
     ...mockUser,
@@ -120,7 +120,7 @@ export default function ProfileScreen() {
       t('signOutConfirm'),
       [
         { text: t('cancel'), style: 'cancel' },
-        { text: t('signOut'), style: 'destructive', onPress: () => { trackAction('logout'); logout(); } },
+        { text: t('signOut'), style: 'destructive', onPress: () => { trackAction('logout'); void logout(); } },
       ]
     );
   };
@@ -329,6 +329,13 @@ export default function ProfileScreen() {
           <View style={styles.section}>
             <Text style={[styles.sectionTitle, { paddingHorizontal: isXs ? 16 : 20, fontSize: isXs ? 12 : 14 }]}>{t('rewardsOpportunities')}</Text>
             <View style={[styles.menuGroup, { marginHorizontal: isXs ? 16 : 20 }]}>
+              <MenuItem
+                icon={<Rocket size={isXs ? 18 : 20} color={'#FF6B6B'} />}
+                title='Viral Growth Engine'
+                subtitle='24/7 growth machine · $25 share rewards'
+                onPress={() => router.push('/viral-growth' as any)}
+                isCompact={isCompact}
+              />
               <MenuItem
                 icon={<Gift size={isXs ? 18 : 20} color={Colors.positive} />}
                 title={t('referralsEarnings')}
