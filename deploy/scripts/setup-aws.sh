@@ -102,10 +102,18 @@ create_secret "aws-secret-access-key"   "AWS secret access key"         "${AWS_S
 create_secret "aws-region"              "AWS region"                    "$AWS_REGION"
 create_secret "aws-s3-bucket"           "S3 bucket name"                "${APP_NAME}-prod"
 create_secret "stripe-secret-key"       "Stripe secret key"             ""
+create_secret "stripe-publishable-key" "Stripe publishable key"        ""
 create_secret "stripe-webhook-secret"   "Stripe webhook signing secret" ""
 create_secret "sendgrid-api-key"        "SendGrid API key"              ""
+create_secret "sendgrid-from-email"     "SendGrid sender email"         "noreply@ivxholding.com"
 create_secret "twilio-account-sid"      "Twilio account SID"            ""
 create_secret "twilio-auth-token"       "Twilio auth token"             ""
+create_secret "twilio-phone-number"     "Twilio phone number"           ""
+create_secret "plaid-client-id"         "Plaid client ID"               ""
+create_secret "plaid-secret"            "Plaid secret key"              ""
+create_secret "plaid-env"               "Plaid environment"             "production"
+create_secret "onfido-api-key"          "Onfido KYC API key"            ""
+create_secret "sentry-dsn"              "Sentry DSN for error tracking" ""
 
 ok "All secrets created"
 
