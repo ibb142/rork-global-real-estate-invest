@@ -35,7 +35,6 @@ import {
 } from 'lucide-react-native';
 import { trpc } from '@/lib/trpc';
 import { useInstantCache } from '@/lib/use-instant-query';
-import { useAuth } from '@/lib/auth-context';
 import Colors from '@/constants/colors';
 
 type PeriodType = '1h' | '24h' | '7d' | '30d' | '90d' | 'all';
@@ -137,8 +136,7 @@ function HeatmapBar({ data, maxVal }: { data: Array<{ hour: number; count: numbe
 
 export default function VisitorIntelligenceScreen() {
   const router = useRouter();
-  const { isAuthenticated, isAdmin, isLoading: authLoading, refreshSession } = useAuth();
-  const [period, setPeriod] = useState<PeriodType>('30d');
+  const [period, setPeriod] = useState<PeriodType>('all');
   const [activeTab, setActiveTab] = useState<TabType>('overview');
 
   const headerAnim = useRef(new Animated.Value(0)).current;
@@ -146,28 +144,22 @@ export default function VisitorIntelligenceScreen() {
     Animated.spring(headerAnim, { toValue: 1, tension: 40, friction: 10, useNativeDriver: true }).start();
   }, [headerAnim]);
 
-  useEffect(() => {
-    if (!authLoading && isAuthenticated && !isAdmin) {
-      void refreshSession();
-    }
-  }, [authLoading, isAuthenticated, isAdmin, refreshSession]);
-
   const intelQuery = trpc.analytics.getAIVisitorIntelligence.useQuery(
     { period },
     {
-      enabled: !authLoading,
       staleTime: 0,
-      refetchInterval: 5000,
+      refetchInterval: 10000,
       retry: 3,
+      retryDelay: (attempt) => Math.min(500 * Math.pow(2, attempt), 3000),
       placeholderData: (prev) => prev,
     }
   );
 
   const alertsQuery = trpc.analytics.getVisitorAlerts.useQuery(undefined, {
-    enabled: !authLoading,
     staleTime: 0,
-    refetchInterval: 5000,
-    retry: 2,
+    refetchInterval: 10000,
+    retry: 3,
+    retryDelay: (attempt) => Math.min(500 * Math.pow(2, attempt), 3000),
   });
 
   const data = useInstantCache(`visitor_intel_${period}`, intelQuery.data, intelQuery.isSuccess);
