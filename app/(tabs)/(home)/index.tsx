@@ -26,6 +26,7 @@ import {
   Award,
   Star,
   CheckCircle2,
+  Rocket,
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import Colors from '@/constants/colors';
@@ -38,6 +39,8 @@ import PropertyCard from '@/components/PropertyCard';
 import { platformStats } from '@/mocks/competitive-stats';
 import { useGlobalMarkets } from '@/lib/global-markets';
 import { properties as fallbackProperties } from '@/mocks/properties';
+import { leadershipTeam } from '@/mocks/team';
+import { Crown, Phone, Mail } from 'lucide-react-native';
 
 const IPX_LOGO = require('@/assets/images/ivx-logo.png');
 
@@ -57,7 +60,7 @@ function LiveStatsTicker({ t }: { t: (key: any) => string }) {
     );
     animation.start();
     return () => animation.stop();
-  }, [width]);
+  }, [width, scrollAnim]);
 
   const translatedStats = useMemo(() => {
     const labelKeys = ['totalInvestors', 'propertiesTokenized', 'avgAnnualReturn', 'dividendsPaid'] as const;
@@ -83,7 +86,7 @@ function LiveStatsTicker({ t }: { t: (key: any) => string }) {
   );
 }
 
-function SocialProofBanner({ t }: { t: (key: any) => string }) {
+function SocialProofBanner({ t, liveCount }: { t: (key: any) => string; liveCount: number }) {
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
@@ -95,21 +98,21 @@ function SocialProofBanner({ t }: { t: (key: any) => string }) {
     );
     animation.start();
     return () => animation.stop();
-  }, []);
+  }, [pulseAnim]);
 
   return (
     <View style={styles.socialProofRow}>
       <View style={styles.socialProofItem}>
         <Animated.View style={[styles.liveDot, { opacity: pulseAnim }]} />
         <Text style={styles.socialProofText}>
-          <Text style={styles.socialProofBold}>2,847</Text> {t('investorsOnline')}
+          <Text style={styles.socialProofBold}>{liveCount > 0 ? liveCount.toLocaleString() : 'LIVE'}</Text> {liveCount > 0 ? t('investorsOnline') : 'Platform Active'}
         </Text>
       </View>
       <View style={styles.socialProofDivider} />
       <View style={styles.socialProofItem}>
-        <Star size={12} color={Colors.primary} />
+        <Shield size={12} color={Colors.success} />
         <Text style={styles.socialProofText}>
-          <Text style={styles.socialProofBold}>4.9</Text> App Store
+          <Text style={styles.socialProofBold}>SEC</Text> Compliant
         </Text>
       </View>
     </View>
@@ -330,7 +333,7 @@ function PerformanceBanner({ onPress, t }: { onPress: () => void; t: (key: any) 
         </View>
       </View>
       <View style={styles.performanceRight}>
-        <Text style={styles.performanceValue}>+14.5%</Text>
+        <Text style={styles.performanceValue}>Compare</Text>
         <Text style={styles.performanceLabel}>{t('ytdReturn')}</Text>
       </View>
     </TouchableOpacity>
@@ -378,6 +381,283 @@ function InvestorTestimonial({ t }: { t: (key: any) => string }) {
   );
 }
 
+function LeadershipTeamSection() {
+  const scaleAnims = useRef(leadershipTeam.map(() => new Animated.Value(0))).current;
+
+  useEffect(() => {
+    const animations = leadershipTeam.map((_, i) =>
+      Animated.spring(scaleAnims[i], {
+        toValue: 1,
+        delay: i * 120,
+        tension: 60,
+        friction: 8,
+        useNativeDriver: true,
+      })
+    );
+    Animated.stagger(120, animations).start();
+  }, [scaleAnims]);
+
+  return (
+    <View style={ltStyles.wrap}>
+      <View style={ltStyles.header}>
+        <Crown size={15} color={Colors.primary} />
+        <Text style={ltStyles.headerTitle}>Leadership Team</Text>
+        <View style={ltStyles.liveBadge}>
+          <View style={ltStyles.liveDotSmall} />
+          <Text style={ltStyles.liveLabel}>ONLINE</Text>
+        </View>
+      </View>
+      <View style={ltStyles.members}>
+        {leadershipTeam.map((member, i) => (
+          <Animated.View
+            key={member.id}
+            style={[
+              ltStyles.memberCard,
+              { transform: [{ scale: scaleAnims[i] }] },
+            ]}
+          >
+            <View style={[ltStyles.avatar, { backgroundColor: member.avatarColor }]}>
+              <Text style={ltStyles.avatarText}>{member.avatarInitials}</Text>
+              <View style={[ltStyles.statusDot, member.status === 'active' ? ltStyles.statusActive : ltStyles.statusAway]} />
+            </View>
+            <Text style={ltStyles.memberName} numberOfLines={1}>{member.name}</Text>
+            <View style={[ltStyles.roleBadge, { backgroundColor: member.avatarColor + '20' }]}>
+              <Text style={[ltStyles.roleText, { color: member.avatarColor }]} numberOfLines={1}>{member.role}</Text>
+            </View>
+            <View style={ltStyles.contactRow}>
+              {member.phone ? (
+                <View style={ltStyles.contactIcon}>
+                  <Phone size={10} color={Colors.textTertiary} />
+                </View>
+              ) : null}
+              {member.email ? (
+                <View style={ltStyles.contactIcon}>
+                  <Mail size={10} color={Colors.textTertiary} />
+                </View>
+              ) : null}
+            </View>
+          </Animated.View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+const ltStyles = StyleSheet.create({
+  wrap: {
+    marginHorizontal: 20,
+    marginBottom: 12,
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: Colors.primary + '25',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 14,
+  },
+  headerTitle: {
+    color: Colors.text,
+    fontSize: 13,
+    fontWeight: '700' as const,
+    flex: 1,
+  },
+  liveBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#00C48C15',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  liveDotSmall: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: '#00C48C',
+  },
+  liveLabel: {
+    color: '#00C48C',
+    fontSize: 8,
+    fontWeight: '800' as const,
+    letterSpacing: 1,
+  },
+  members: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  memberCard: {
+    flex: 1,
+    alignItems: 'center',
+    backgroundColor: Colors.backgroundSecondary,
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 6,
+  },
+  avatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+    position: 'relative' as const,
+  },
+  avatarText: {
+    color: '#000',
+    fontSize: 16,
+    fontWeight: '800' as const,
+  },
+  statusDot: {
+    position: 'absolute' as const,
+    bottom: 1,
+    right: 1,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: Colors.backgroundSecondary,
+  },
+  statusActive: {
+    backgroundColor: '#00C48C',
+  },
+  statusAway: {
+    backgroundColor: Colors.warning,
+  },
+  memberName: {
+    color: Colors.text,
+    fontSize: 11,
+    fontWeight: '700' as const,
+    textAlign: 'center' as const,
+    marginBottom: 4,
+  },
+  roleBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    marginBottom: 6,
+  },
+  roleText: {
+    fontSize: 8,
+    fontWeight: '700' as const,
+    textAlign: 'center' as const,
+  },
+  contactRow: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  contactIcon: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: Colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});
+
+function ActivationWidget({ onPress }: { onPress: () => void }) {
+  const pulseRef = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    const anim = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseRef, { toValue: 0.4, duration: 800, useNativeDriver: true }),
+        Animated.timing(pulseRef, { toValue: 1, duration: 800, useNativeDriver: true }),
+      ])
+    );
+    anim.start();
+    return () => anim.stop();
+  }, [pulseRef]);
+
+  return (
+    <TouchableOpacity
+      style={awStyles.wrap}
+      onPress={onPress}
+      activeOpacity={0.8}
+      testID="activation-widget"
+    >
+      <View style={awStyles.left}>
+        <View style={awStyles.iconWrap}>
+          <Rocket size={18} color={Colors.primary} />
+        </View>
+        <View style={awStyles.info}>
+          <View style={awStyles.liveRow}>
+            <Animated.View style={[awStyles.liveDot, { opacity: pulseRef }]} />
+            <Text style={awStyles.liveText}>ALL SYSTEMS LIVE</Text>
+          </View>
+          <Text style={awStyles.title}>Activation Center</Text>
+          <Text style={awStyles.subtitle}>AI working 24/7 · 9 channels active</Text>
+        </View>
+      </View>
+      <ChevronRight size={16} color={Colors.textTertiary} />
+    </TouchableOpacity>
+  );
+}
+
+const awStyles = StyleSheet.create({
+  wrap: {
+    marginHorizontal: 20,
+    marginBottom: 12,
+    backgroundColor: '#0A0E0C',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#00C48C30',
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  left: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  iconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: Colors.primary + '15',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  info: {
+    flex: 1,
+    gap: 2,
+  },
+  liveRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  liveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#00C48C',
+  },
+  liveText: {
+    color: '#00C48C',
+    fontSize: 8,
+    fontWeight: '800' as const,
+    letterSpacing: 1.5,
+  },
+  title: {
+    color: Colors.text,
+    fontSize: 14,
+    fontWeight: '700' as const,
+  },
+  subtitle: {
+    color: Colors.textTertiary,
+    fontSize: 11,
+  },
+});
+
 export default function HomeScreen() {
   const router = useRouter();
   const { width } = useWindowDimensions();
@@ -390,7 +670,7 @@ export default function HomeScreen() {
 
   useEffect(() => {
     trackScreen('Home');
-  }, []);
+  }, [trackScreen]);
 
   const propertiesQuery = trpc.properties.list.useQuery({ page: 1, limit: 20 }, {
     retry: 1,
@@ -473,7 +753,11 @@ export default function HomeScreen() {
             </Text>
           </View>
 
-          <SocialProofBanner t={t} />
+          <ActivationWidget onPress={() => router.push('/activation-center' as any)} />
+
+          <LeadershipTeamSection />
+
+          <SocialProofBanner t={t} liveCount={0} />
           <TrustBadgesRow t={t} />
 
           <View style={{ paddingHorizontal: isXs ? 16 : 20, marginBottom: 20 }}>
