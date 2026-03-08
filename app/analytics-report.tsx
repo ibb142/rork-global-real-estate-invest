@@ -43,8 +43,6 @@ import {
 import Colors from '@/constants/colors';
 import { trpc } from '@/lib/trpc';
 import { useInstantCache } from '@/lib/use-instant-query';
-import { useAuth } from '@/lib/auth-context';
-import { getAuthToken } from '@/lib/auth-store';
 
 type PeriodType = '1h' | '24h' | '7d' | '30d' | '90d' | 'all';
 type TabType = 'overview' | 'funnel' | 'geo' | 'insights' | 'live';
@@ -181,22 +179,7 @@ function AnimatedCounter({ value, suffix = '', prefix = '' }: { value: number; s
   return <Text style={s.counterText}>{prefix}{display.toLocaleString()}{suffix}</Text>;
 }
 
-function TrendBadge({ value, inverted = false }: { value: number; inverted?: boolean }) {
-  const isPositive = inverted ? value < 0 : value > 0;
-  const absVal = Math.abs(value);
-  return (
-    <View style={[s.trendBadge, { backgroundColor: isPositive ? GREEN + '18' : RED + '18' }]}>
-      {isPositive ? (
-        <ArrowUpRight size={10} color={GREEN} />
-      ) : (
-        <ArrowDownRight size={10} color={RED} />
-      )}
-      <Text style={[s.trendText, { color: isPositive ? GREEN : RED }]}>
-        {absVal}%
-      </Text>
-    </View>
-  );
-}
+
 
 function PulseIndicator({ active }: { active: boolean }) {
   const pulse = useRef(new Animated.Value(1)).current;
@@ -223,101 +206,68 @@ function PulseIndicator({ active }: { active: boolean }) {
 
 export default function AnalyticsReportScreen() {
   const router = useRouter();
-  const { isAuthenticated, isLoading: authLoading, refreshSession } = useAuth();
-  const [period, setPeriod] = useState<PeriodType>('30d');
+  const [period, setPeriod] = useState<PeriodType>('all');
   const [activeTab, setActiveTab] = useState<TabType>('overview');
-  const [_retryCount, setRetryCount] = useState(0);
-  const [liveData, setLiveData] = useState<any>(null);
-  const [liveLoading, setLiveLoading] = useState<boolean>(false);
-  const [liveError, setLiveError] = useState<string | null>(null);
 
   const headerAnim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.spring(headerAnim, { toValue: 1, tension: 40, friction: 10, useNativeDriver: true }).start();
   }, [headerAnim]);
 
-  useEffect(() => {
-    if (!authLoading && isAuthenticated) {
-      void refreshSession().then((ok) => {
-        if (ok) setRetryCount(c => c + 1);
-      });
-    }
-  }, [authLoading, isAuthenticated, refreshSession]);
-
   const analyticsQuery = trpc.analytics.getLandingAnalytics.useQuery(
     { period },
     {
-      enabled: !authLoading,
       staleTime: 0,
-      refetchInterval: 1000 * 5,
-      retry: 3,
-      retryDelay: (attempt) => Math.min(500 * Math.pow(2, attempt), 3000),
+      refetchInterval: activeTab === 'live' ? 5000 : 1000 * 8,
+      retry: 5,
+      retryDelay: (attempt) => Math.min(500 * Math.pow(2, attempt), 5000),
       placeholderData: (prev) => prev,
+      gcTime: 1000 * 60 * 10,
     }
   );
 
-  const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL || process.env.EXPO_PUBLIC_RORK_API_BASE_URL || '';
-
-  const fetchLiveSessions = useCallback(async (isInitial = false) => {
-    try {
-      if (isInitial) setLiveLoading(true);
-      setLiveError(null);
-      const tokenStr = getAuthToken() || '';
-      if (!tokenStr) {
-        setLiveError('Not authenticated. Please log in.');
-        setLiveLoading(false);
-        return;
-      }
-      const baseUrl = apiBaseUrl;
-      if (!baseUrl) {
-        setLiveError('API not configured');
-        setLiveLoading(false);
-        return;
-      }
-      const url = `${baseUrl}/track/live-sessions`;
-      console.log('[AnalyticsReport] Fetching live:', url);
-      const res = await fetch(url, {
-        headers: { 'Authorization': `Bearer ${tokenStr}`, 'Content-Type': 'application/json' },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        console.log('[AnalyticsReport] Live data:', JSON.stringify(data).slice(0, 200));
-        setLiveData(data);
-        setLiveError(null);
-      } else {
-        const errText = await res.text().catch(() => '');
-        console.warn(`[AnalyticsReport] HTTP ${res.status}: ${errText}`);
-        setLiveError(`Server returned ${res.status}`);
-      }
-    } catch (err: any) {
-      console.warn('[AnalyticsReport] Live error:', err?.message || err);
-      setLiveError(err?.message || 'Connection failed');
-    } finally {
-      setLiveLoading(false);
-    }
-  }, [apiBaseUrl]);
-
   useEffect(() => {
-    if (activeTab === 'live') {
-      void fetchLiveSessions(true);
-      const interval = setInterval(() => fetchLiveSessions(false), 5000);
-      return () => clearInterval(interval);
+    if (analyticsQuery.data) {
+      console.log('[Analytics] Data received:', {
+        period,
+        pageViews: analyticsQuery.data.pageViews,
+        uniqueSessions: analyticsQuery.data.uniqueSessions,
+        totalEvents: analyticsQuery.data.totalEvents,
+        funnel: analyticsQuery.data.funnel,
+        liveActive: analyticsQuery.data.liveData?.active ?? 0,
+        liveSessions: analyticsQuery.data.liveData?.sessions?.length ?? 0,
+      });
     }
-    return undefined;
-  }, [activeTab, fetchLiveSessions]);
+    if (analyticsQuery.error) {
+      console.error('[Analytics] Query error:', analyticsQuery.error.message);
+    }
+  }, [analyticsQuery.data, analyticsQuery.error, period]);
 
   const [manualRefreshing, setManualRefreshing] = useState<boolean>(false);
   const utils = trpc.useUtils();
   const onRefresh = useCallback(async () => {
     setManualRefreshing(true);
-    void refreshSession().then((refreshed) => {
-      if (refreshed) setRetryCount(prev => prev + 1);
-    });
     await utils.analytics.getLandingAnalytics.invalidate();
     setManualRefreshing(false);
-  }, [utils, refreshSession]);
+  }, [utils]);
 
-  const data = useInstantCache(`analytics_report_${period}`, analyticsQuery.data, analyticsQuery.isSuccess);
+  const rawData = useInstantCache(`analytics_report_${period}`, analyticsQuery.data, analyticsQuery.isSuccess);
+  const data = useMemo(() => {
+    if (rawData && rawData.pageViews === 0 && rawData.uniqueSessions === 0 && rawData.totalEvents === 0) {
+      console.log('[Analytics] Received empty data, checking if query has better data...');
+      if (analyticsQuery.data && (analyticsQuery.data.pageViews > 0 || analyticsQuery.data.uniqueSessions > 0)) {
+        return analyticsQuery.data;
+      }
+    }
+    return rawData;
+  }, [rawData, analyticsQuery.data]);
+
+  const liveData = useMemo(() => {
+    if (data?.liveData) return data.liveData;
+    return null;
+  }, [data]);
+  const liveLoading = analyticsQuery.isLoading && !data;
+  const liveError: string | null = null;
 
   const funnelSteps = useMemo(() => {
     if (!data) return [];
@@ -357,7 +307,6 @@ export default function AnalyticsReportScreen() {
               <Text style={s.heroMetricLabel}>Total Views</Text>
             </View>
             <AnimatedCounter value={totalViews} />
-            {totalViews > 0 && <TrendBadge value={12} />}
           </View>
           <View style={s.heroMetricDivider} />
           <View style={s.heroMetricMain}>
@@ -366,7 +315,6 @@ export default function AnalyticsReportScreen() {
               <Text style={s.heroMetricLabel}>Unique Visitors</Text>
             </View>
             <AnimatedCounter value={totalUnique} />
-            {totalUnique > 0 && <TrendBadge value={8} />}
           </View>
         </View>
 
@@ -831,28 +779,27 @@ export default function AnalyticsReportScreen() {
       );
     }
 
-    if (liveError && !liveData) {
-      return (
-        <View style={s.emptyWrap}>
-          <View style={s.errorIcon}>
-            <Radio size={48} color={RED} />
-          </View>
-          <Text style={s.emptyTitle}>Connection Issue</Text>
-          <Text style={s.emptySubtitle}>{liveError}</Text>
-          <TouchableOpacity style={s.retryBtn} onPress={() => fetchLiveSessions(true)}>
-            <RefreshCw size={14} color="#000" />
-            <Text style={s.retryBtnText}>Retry</Text>
-          </TouchableOpacity>
-        </View>
-      );
-    }
-
     if (!liveData) {
+      if (analyticsQuery.isError) {
+        return (
+          <View style={s.emptyWrap}>
+            <View style={s.errorIcon}>
+              <Radio size={48} color={RED} />
+            </View>
+            <Text style={s.emptyTitle}>Connection Issue</Text>
+            <Text style={s.emptySubtitle}>{analyticsQuery.error?.message || 'Unable to fetch live data'}</Text>
+            <TouchableOpacity style={s.retryBtn} onPress={onRefresh}>
+              <RefreshCw size={14} color="#000" />
+              <Text style={s.retryBtnText}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        );
+      }
       return (
         <View style={s.emptyWrap}>
           <Radio size={48} color={Colors.textTertiary} />
           <Text style={s.emptyTitle}>No Live Data</Text>
-          <Text style={s.emptySubtitle}>Live sessions will appear as visitors browse.</Text>
+          <Text style={s.emptySubtitle}>Live sessions will appear as visitors browse your landing page.</Text>
         </View>
       );
     }
