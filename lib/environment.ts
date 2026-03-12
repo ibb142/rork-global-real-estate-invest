@@ -24,7 +24,7 @@ export interface EnvironmentConfig {
 
 const developmentConfig: EnvironmentConfig = {
   name: 'development',
-  apiBaseUrl: process.env.EXPO_PUBLIC_RORK_API_BASE_URL || 'http://localhost:3000',
+  apiBaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL || process.env.EXPO_PUBLIC_API_BASE_URL || 'http://localhost:3000',
   enableDebugLogging: true,
   enableAnalytics: false,
   enableCrashReporting: false,
@@ -46,7 +46,7 @@ const developmentConfig: EnvironmentConfig = {
 
 const stagingConfig: EnvironmentConfig = {
   name: 'staging',
-  apiBaseUrl: process.env.EXPO_PUBLIC_STAGING_API_URL || process.env.EXPO_PUBLIC_RORK_API_BASE_URL || '',
+  apiBaseUrl: process.env.EXPO_PUBLIC_STAGING_API_URL || 'https://staging.ivxholding.com',
   enableDebugLogging: true,
   enableAnalytics: true,
   enableCrashReporting: true,
@@ -68,7 +68,7 @@ const stagingConfig: EnvironmentConfig = {
 
 const productionConfig: EnvironmentConfig = {
   name: 'production',
-  apiBaseUrl: process.env.EXPO_PUBLIC_PRODUCTION_API_URL || process.env.EXPO_PUBLIC_RORK_API_BASE_URL || '',
+  apiBaseUrl: process.env.EXPO_PUBLIC_PRODUCTION_API_URL || 'https://ivxholding.com',
   enableDebugLogging: false,
   enableAnalytics: true,
   enableCrashReporting: true,
