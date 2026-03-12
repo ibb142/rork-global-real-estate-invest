@@ -647,7 +647,7 @@ const styles = StyleSheet.create({
   roleListItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 },
   roleListItemActive: { backgroundColor: '#FFD700' + '15', borderColor: '#FFD700' },
   roleListItemContent: { flex: 1, gap: 4 },
-  roleListItemText: { color: Colors.textSecondary, fontSize: 13 },
+  roleListItemText: { flex: 1 },
   roleListItemName: { color: Colors.text, fontSize: 15, fontWeight: '700' as const },
   roleListItemDesc: { color: Colors.textSecondary, fontSize: 13, lineHeight: 18 },
   saveRoleButton: { backgroundColor: Colors.primary, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
