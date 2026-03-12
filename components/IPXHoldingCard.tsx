@@ -43,7 +43,7 @@ const IPXHoldingCard = memo(function IPXHoldingCard({ holding, onPress }: IPXHol
             {holding.shares.toLocaleString()} shares
           </Text>
           <Text style={[styles.avgCost, isCompact && styles.avgCostCompact]}>
-            Avg: ${holding.avgCostBasis.toFixed(2)}
+            Avg: {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(holding.avgCostBasis)}
           </Text>
         </View>
         
@@ -51,7 +51,7 @@ const IPXHoldingCard = memo(function IPXHoldingCard({ holding, onPress }: IPXHol
           <View style={styles.valueContainer}>
             <Text style={[styles.valueLabel, isCompact && styles.valueLabelCompact]}>Current Value</Text>
             <Text style={[styles.value, isCompact && styles.valueCompact]}>
-              ${holding.currentValue.toLocaleString()}
+              {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(holding.currentValue)}
             </Text>
           </View>
           
@@ -79,7 +79,7 @@ const IPXHoldingCard = memo(function IPXHoldingCard({ holding, onPress }: IPXHol
               isCompact && styles.pnlAmountCompact, 
               { color: isPositive ? Colors.success : Colors.error }
             ]}>
-              {isPositive ? '+' : ''}${Math.abs(holding.unrealizedPnL).toLocaleString()}
+              {isPositive ? '+' : ''}{new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Math.abs(holding.unrealizedPnL))}
             </Text>
           </View>
         </View>
