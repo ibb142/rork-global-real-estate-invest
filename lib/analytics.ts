@@ -1,10 +1,13 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import logger from './logger';
 import { Platform } from 'react-native';
+import { supabase } from './supabase';
+import { getAuthUserId } from './auth-store';
 
 const ANALYTICS_STORAGE_KEY = '@ipx_analytics';
 const SESSION_STORAGE_KEY = '@ipx_session';
 const MAX_STORED_EVENTS = 1000;
+const SUPABASE_BATCH_SIZE = 50;
 
 export type EventCategory =
   | 'navigation'
@@ -53,9 +56,11 @@ class AnalyticsService {
   private sessionId: string;
   private sessionStartTime: number;
   private eventQueue: AnalyticsEvent[] = [];
+  private supabasePendingQueue: AnalyticsEvent[] = [];
   private performanceMetrics: PerformanceMetric[] = [];
   private isInitialized = false;
   private flushInterval: ReturnType<typeof setInterval> | null = null;
+  private syncInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor() {
     this.sessionId = this.generateId();
@@ -67,6 +72,7 @@ class AnalyticsService {
     try {
       await this.loadSession();
       this.startFlushInterval();
+      this.startSupabaseSyncInterval();
       this.isInitialized = true;
       logger.analytics.log('Initialized successfully');
     } catch (error) {
@@ -115,6 +121,47 @@ class AnalyticsService {
     }, 3000);
   }
 
+  private startSupabaseSyncInterval(): void {
+    this.syncInterval = setInterval(() => {
+      void this.syncToSupabase();
+    }, 30000);
+  }
+
+  private async syncToSupabase(): Promise<void> {
+    if (this.supabasePendingQueue.length === 0) return;
+
+    const userId = getAuthUserId();
+    if (!userId) return;
+
+    const batch = this.supabasePendingQueue.splice(0, SUPABASE_BATCH_SIZE);
+    if (batch.length === 0) return;
+
+    try {
+      const rows = batch.map(event => ({
+        id: event.id,
+        user_id: userId,
+        name: event.name,
+        category: event.category,
+        properties: event.properties ? JSON.stringify(event.properties) : null,
+        timestamp: new Date(event.timestamp).toISOString(),
+        session_id: event.sessionId,
+        platform: event.platform,
+      }));
+
+      const { error } = await supabase.from('analytics_events').insert(rows);
+
+      if (error) {
+        this.supabasePendingQueue.unshift(...batch);
+        console.log('[Analytics] Supabase sync failed, re-queued:', error.message);
+      } else {
+        console.log(`[Analytics] Synced ${batch.length} events to Supabase`);
+      }
+    } catch (error) {
+      this.supabasePendingQueue.unshift(...batch);
+      console.log('[Analytics] Supabase sync error:', error);
+    }
+  }
+
   track(name: string, category: EventCategory = 'user_action', properties?: Record<string, unknown>): void {
     const event: AnalyticsEvent = {
       id: this.generateId(),
@@ -127,6 +174,7 @@ class AnalyticsService {
     };
 
     this.eventQueue.push(event);
+    this.supabasePendingQueue.push(event);
 
     if (this.eventQueue.length > MAX_STORED_EVENTS) {
       this.eventQueue = this.eventQueue.slice(-MAX_STORED_EVENTS);
@@ -194,9 +242,53 @@ class AnalyticsService {
   }
 
   async getStats(): Promise<AnalyticsStats> {
+    const userId = getAuthUserId();
+
+    if (userId) {
+      try {
+        const { data, error } = await supabase
+          .from('analytics_events')
+          .select('*')
+          .eq('user_id', userId)
+          .order('timestamp', { ascending: false })
+          .limit(500);
+
+        if (!error && data && data.length > 0) {
+          console.log('[Analytics] Stats from Supabase:', data.length, 'events');
+          const eventCounts: Record<string, number> = {};
+          let errorCount = 0;
+          let conversionCount = 0;
+          const sessions = new Set<string>();
+
+          for (const event of data) {
+            eventCounts[event.name] = (eventCounts[event.name] || 0) + 1;
+            sessions.add(event.session_id);
+            if (event.category === 'error') errorCount++;
+            if (event.category === 'conversion') conversionCount++;
+          }
+
+          const topEvents = Object.entries(eventCounts)
+            .map(([name, count]) => ({ name, count }))
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 10);
+
+          return {
+            totalEvents: data.length,
+            totalSessions: sessions.size,
+            averageSessionDuration: 0,
+            topEvents,
+            errorRate: data.length > 0 ? (errorCount / data.length) * 100 : 0,
+            conversionEvents: conversionCount,
+          };
+        }
+      } catch (error) {
+        console.log('[Analytics] Supabase stats failed, using local:', error);
+      }
+    }
+
     try {
-      const data = await AsyncStorage.getItem(ANALYTICS_STORAGE_KEY);
-      const events: AnalyticsEvent[] = data ? JSON.parse(data) : [];
+      const localData = await AsyncStorage.getItem(ANALYTICS_STORAGE_KEY);
+      const events: AnalyticsEvent[] = localData ? JSON.parse(localData) : [];
 
       const eventCounts: Record<string, number> = {};
       let errorCount = 0;
@@ -233,6 +325,7 @@ class AnalyticsService {
     try {
       await AsyncStorage.multiRemove([ANALYTICS_STORAGE_KEY, SESSION_STORAGE_KEY]);
       this.eventQueue = [];
+      this.supabasePendingQueue = [];
       this.performanceMetrics = [];
       logger.analytics.log('Data cleared');
     } catch (error) {
@@ -252,7 +345,11 @@ class AnalyticsService {
     if (this.flushInterval) {
       clearInterval(this.flushInterval);
     }
+    if (this.syncInterval) {
+      clearInterval(this.syncInterval);
+    }
     void this.flush();
+    void this.syncToSupabase();
   }
 }
 
