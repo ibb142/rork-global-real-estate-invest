@@ -1198,7 +1198,7 @@ const styles = StyleSheet.create({
   codeCard: { backgroundColor: Colors.surface, borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: Colors.surfaceBorder },
   codeCardRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   codeCardLabel: { color: Colors.textSecondary, fontSize: 13 },
-  codeCardValue: { color: Colors.text, fontSize: 14, fontWeight: '600' as const },
+  codeCardValue: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 6 },
   codeCardCode: { gap: 4 },
   showQRButton: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 12, alignItems: 'center' },
   showQRText: { color: Colors.textSecondary, fontSize: 13 },
