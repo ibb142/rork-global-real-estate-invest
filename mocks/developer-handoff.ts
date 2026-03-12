@@ -45,8 +45,8 @@ export const DEVELOPER_HANDOFF_CATEGORIES: IntegrationCategory[] = [
         envVariables: [
           { name: 'DATABASE_URL', description: 'PostgreSQL connection string', example: 'postgresql://user:pass@host:5432/ipx_db', required: true },
         ],
-        endpoints: ['All tRPC routes'], docsUrl: 'https://supabase.com/docs',
-        notes: 'Current backend uses in-memory store. Must migrate to PostgreSQL.', estimatedHours: 12,
+        endpoints: ['Supabase client queries'], docsUrl: 'https://supabase.com/docs',
+        notes: 'Backend uses Supabase PostgreSQL with Row Level Security.', estimatedHours: 12,
       },
       {
         id: 'db-3', name: 'File Storage', provider: 'AWS S3 / Cloudflare R2',
@@ -97,7 +97,7 @@ export const DEVELOPER_HANDOFF_CATEGORIES: IntegrationCategory[] = [
           { name: 'STRIPE_WEBHOOK_SECRET', description: 'Stripe webhook signing secret', example: 'whsec_...', required: true },
         ],
         endpoints: ['payments.createPaymentIntent', 'payments.processCardPayment'], docsUrl: 'https://stripe.com/docs',
-        notes: 'Backend route ready at backend/trpc/routes/payments.ts.', estimatedHours: 8,
+        notes: 'Payment processing via Supabase Edge Functions.', estimatedHours: 8,
       },
       {
         id: 'pay-2', name: 'Plaid', provider: 'Plaid',
