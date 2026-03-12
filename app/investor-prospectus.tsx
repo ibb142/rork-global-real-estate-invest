@@ -15,7 +15,6 @@ import { router } from 'expo-router';
 import {
   ArrowLeft,
   TrendingUp,
-  DollarSign,
   Calendar,
   PieChart,
   Building2,
@@ -79,10 +78,12 @@ const calculateProjections = (investment: number): ProfitProjection[] => {
   ];
 };
 
+import { formatCurrencyWithDecimals } from '@/lib/formatters';
+
 const formatCurrency = (amount: number): string => {
-  if (amount < 0.01) return `$${amount.toFixed(4)}`;
-  if (amount < 1) return `$${amount.toFixed(3)}`;
-  return `$${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  if (amount < 0.01) return `${amount.toFixed(4)}`;
+  if (amount < 1) return `${amount.toFixed(3)}`;
+  return formatCurrencyWithDecimals(amount);
 };
 
 const generateProspectusText = (investment: number): string => {
@@ -258,7 +259,7 @@ export default function InvestorProspectusScreen() {
                     onPress={() => setSelectedAmount(amount)}
                   >
                     <Text style={[styles.amountText, selectedAmount === amount && styles.amountTextActive]}>
-                      ${amount.toLocaleString()}
+                      {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(amount)}
                     </Text>
                   </TouchableOpacity>
                 ))}
