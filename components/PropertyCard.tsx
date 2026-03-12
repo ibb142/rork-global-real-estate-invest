@@ -53,13 +53,16 @@ import {
   TouchableOpacity,
   Image,
 } from 'react-native';
-import { MapPin, TrendingUp, Building2, Brain } from 'lucide-react-native';
+import { MapPin, TrendingUp, Building2, Brain, ImageOff, Zap } from 'lucide-react-native';
+import * as Haptics from 'expo-haptics';
 import { useRouter, Href } from 'expo-router';
 import { Property } from '@/types';
 import Colors from '@/constants/colors';
 import { useTranslation } from '@/lib/i18n-context';
+import { formatCurrencyWithDecimals, formatCurrencyCompact } from '@/lib/formatters';
 import { TranslationKeys } from '@/constants/translations';
 import ImageSlider from './ImageSlider';
+import { usePropertyImages } from '@/lib/use-property-images';
 
 interface PropertyCardProps {
   property: Property;
@@ -102,6 +105,7 @@ const PropertyCard = memo(function PropertyCard({ property, variant = 'full', is
   const isXs = isCompact;
   const router = useRouter();
   const { t } = useTranslation();
+  const { images: storedImages } = usePropertyImages(property.id, property.images ?? []);
 
   const handlePress = useCallback(() => {
     router.push(`/property/${property.id}` as Href);
@@ -142,16 +146,22 @@ const PropertyCard = memo(function PropertyCard({ property, variant = 'full', is
         activeOpacity={0.8}
         accessible={true}
         accessibilityRole="button"
-        accessibilityLabel={`${property.name} in ${property.city}, ${property.pricePerShare.toFixed(2)} dollars per share, ${property.yield}% yield`}
+        accessibilityLabel={`${property.name} in ${property.city}, ${formatCurrencyWithDecimals(property.pricePerShare)} per share, ${property.yield}% yield`}
         accessibilityHint="Opens property details"
         testID={`property-card-compact-${property.id}`}
       >
         <View>
-          <Image
-            source={{ uri: (property.images && property.images[0]) || 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=400' }}
-            style={[styles.compactImage, { height: isXs ? 85 : 100 }]}
-            accessibilityLabel={`Photo of ${property.name}`}
-          />
+          {storedImages && storedImages[0] ? (
+            <Image
+              source={{ uri: storedImages[0] }}
+              style={[styles.compactImage, { height: isXs ? 85 : 100 }]}
+              accessibilityLabel={`Photo of ${property.name}`}
+            />
+          ) : (
+            <View style={[styles.compactImage, styles.compactImagePlaceholder, { height: isXs ? 85 : 100 }]}>
+              <ImageOff size={18} color={Colors.textTertiary} />
+            </View>
+          )}
           <View style={[styles.aiScoreBadgeCompact, { backgroundColor: aiScore.color }]}>
             <Brain size={8} color={Colors.black} />
             <Text style={styles.aiScoreTextCompact}>{aiScore.score}</Text>
@@ -166,9 +176,24 @@ const PropertyCard = memo(function PropertyCard({ property, variant = 'full', is
             <Text style={[styles.compactLocationText, { fontSize: isXs ? 10 : 11 }]}>{property.city}</Text>
           </View>
           <View style={styles.compactStats}>
-            <Text style={[styles.compactPrice, { fontSize: isXs ? 12 : 14 }]}>${property.pricePerShare.toFixed(2)}</Text>
+            <Text style={[styles.compactPrice, { fontSize: isXs ? 12 : 14 }]}>{formatCurrencyWithDecimals(property.pricePerShare)}</Text>
             <Text style={[styles.compactYield, { fontSize: isXs ? 10 : 11 }]}>{property.yield}% {t('yield')}</Text>
           </View>
+          {property.status === 'live' && (
+            <TouchableOpacity
+              style={styles.compactBuyBtn}
+              onPress={(e) => {
+                e.stopPropagation?.();
+                void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                router.push({ pathname: '/buy-shares', params: { propertyId: property.id } } as any);
+              }}
+              activeOpacity={0.8}
+              testID={`compact-buy-${property.id}`}
+            >
+              <Zap size={11} color="#000" />
+              <Text style={styles.compactBuyBtnText}>Buy</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </TouchableOpacity>
     );
@@ -181,12 +206,12 @@ const PropertyCard = memo(function PropertyCard({ property, variant = 'full', is
       activeOpacity={0.95}
       accessible={true}
       accessibilityRole="button"
-      accessibilityLabel={`${property.name}, ${property.propertyType} in ${property.city}, ${property.country}. ${property.pricePerShare.toFixed(2)} dollars per share, ${property.yield}% yield, ${property.irr}% IRR, ${fundedPercent}% funded`}
+      accessibilityLabel={`${property.name}, ${property.propertyType} in ${property.city}, ${property.country}. ${formatCurrencyWithDecimals(property.pricePerShare)} per share, ${property.yield}% yield, ${property.irr}% IRR, ${fundedPercent}% funded`}
       accessibilityHint="Opens property details"
       testID={`property-card-${property.id}`}
     >
       <View style={styles.imageWrapper}>
-        <ImageSlider images={Array.isArray(property.images) && property.images.length > 0 ? property.images : ['https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800']} height={isXs ? 200 : 240} />
+        <ImageSlider images={Array.isArray(storedImages) ? storedImages : []} height={isXs ? 200 : 240} />
         <View style={[styles.statusBadge, { backgroundColor: statusBadge.color }]}>
           <Text style={styles.statusText}>{statusBadge.text}</Text>
         </View>
@@ -213,7 +238,7 @@ const PropertyCard = memo(function PropertyCard({ property, variant = 'full', is
 
         <View style={[styles.statsRow, { paddingVertical: isXs ? 10 : 12 }]}>
           <View style={styles.stat}>
-            <Text style={[styles.statValue, { fontSize: isXs ? 14 : 16 }]}>${property.pricePerShare.toFixed(2)}</Text>
+            <Text style={[styles.statValue, { fontSize: isXs ? 14 : 16 }]}>{formatCurrencyWithDecimals(property.pricePerShare)}</Text>
             <Text style={[styles.statLabel, { fontSize: isXs ? 10 : 11 }]}>{t('perShare')}</Text>
           </View>
           <View style={styles.statDivider} />
@@ -241,7 +266,7 @@ const PropertyCard = memo(function PropertyCard({ property, variant = 'full', is
         <View style={styles.progressSection}>
           <View style={styles.progressHeader}>
             <Text style={styles.progressLabel}>
-              ${((property?.currentRaise ?? 0) / 1000000).toFixed(2)}M {t('raised')}
+              {formatCurrencyCompact(property?.currentRaise ?? 0)} {t('raised')}
             </Text>
             <Text style={styles.progressPercent}>{fundedPercent}%</Text>
           </View>
@@ -255,9 +280,27 @@ const PropertyCard = memo(function PropertyCard({ property, variant = 'full', is
             <View style={[styles.progressFill, { width: `${Math.min(fundedPercent, 100)}%` }]} />
           </View>
           <Text style={styles.targetText}>
-            {t('target')}: ${((property?.targetRaise ?? 0) / 1000000).toFixed(2)}M
+            {t('target')}: {formatCurrencyCompact(property?.targetRaise ?? 0)}
           </Text>
         </View>
+
+        {property.status === 'live' && (
+          <View style={styles.buyBtnRow}>
+            <TouchableOpacity
+              style={styles.buySharesBtn}
+              onPress={(e) => {
+                e.stopPropagation?.();
+                void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+                router.push({ pathname: '/buy-shares', params: { propertyId: property.id } } as any);
+              }}
+              activeOpacity={0.85}
+              testID={`buy-shares-${property.id}`}
+            >
+              <Zap size={16} color="#000" />
+              <Text style={styles.buySharesBtnText}>Buy Shares — {formatCurrencyWithDecimals(property.pricePerShare)}/share</Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
     </TouchableOpacity>
   );
@@ -402,6 +445,23 @@ const styles = StyleSheet.create({
     color: Colors.textTertiary,
     textAlign: 'right',
   },
+  buyBtnRow: {
+    marginTop: 14,
+  },
+  buySharesBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: Colors.primary,
+    borderRadius: 12,
+    paddingVertical: 14,
+  },
+  buySharesBtnText: {
+    color: '#000',
+    fontSize: 15,
+    fontWeight: '800' as const,
+  },
   aiScoreBadgeCompact: {
     position: 'absolute',
     top: 6,
@@ -453,6 +513,13 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 100,
   },
+  compactImagePlaceholder: {
+    backgroundColor: Colors.surface,
+    justifyContent: 'center' as const,
+    alignItems: 'center' as const,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.surfaceBorder,
+  },
   compactContent: {
     padding: 10,
   },
@@ -476,6 +543,21 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 6,
+  },
+  compactBuyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    backgroundColor: Colors.primary,
+    borderRadius: 8,
+    paddingVertical: 7,
+  },
+  compactBuyBtnText: {
+    color: '#000',
+    fontSize: 12,
+    fontWeight: '800' as const,
   },
   compactPrice: {
     fontSize: 14,
