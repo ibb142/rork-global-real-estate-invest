@@ -1,12 +1,24 @@
 export interface JVPartner {
   id: string;
   name: string;
-  role: 'lead' | 'co-investor' | 'silent' | 'managing';
+  role: 'lp' | 'silent' | 'co_investor';
   contribution: number;
   equityShare: number;
   avatar?: string;
   location: string;
   verified: boolean;
+}
+
+export interface PoolTier {
+  id: string;
+  label: string;
+  type: 'jv_direct' | 'token_shares' | 'private_lending' | 'open';
+  targetAmount: number;
+  minInvestment: number;
+  maxInvestors?: number;
+  currentRaised: number;
+  investorCount: number;
+  status: 'open' | 'closed' | 'filled';
 }
 
 export interface JVAgreement {
@@ -19,9 +31,11 @@ export interface JVAgreement {
   currency: string;
   partners: JVPartner[];
   profitSplit: { partnerId: string; percentage: number }[];
+  poolTiers?: PoolTier[];
   startDate: string;
   endDate: string;
   createdAt: string;
+  updatedAt?: string;
   propertyAddress?: string;
   expectedROI: number;
   distributionFrequency: 'monthly' | 'quarterly' | 'annually' | 'at_exit';
@@ -34,13 +48,17 @@ export interface JVAgreement {
   performanceFee: number;
   minimumHoldPeriod: number;
   description: string;
+  photos?: string[];
+  published?: boolean;
+  publishedAt?: string | null;
+  createdBy?: string;
 }
 
 export const JV_AGREEMENT_TYPES = [
   { id: 'equity_split', label: 'Equity Split', icon: '📊', desc: 'Partners share ownership proportional to contribution', color: '#4A90D9' },
   { id: 'profit_sharing', label: 'Profit Sharing', icon: '💰', desc: 'Fixed returns based on profit distribution schedule', color: '#00C48C' },
   { id: 'hybrid', label: 'Hybrid Structure', icon: '🔄', desc: 'Combined equity + profit sharing arrangement', color: '#E879F9' },
-  { id: 'development', label: 'Development JV', icon: '🏗️', desc: 'Joint development with milestone-based payouts', color: '#FFD700' },
+  { id: 'development', label: 'Development JV', icon: '📋', desc: 'Joint development with milestone-based payouts', color: '#FFD700' },
 ] as const;
 
 export const EXIT_STRATEGIES = [
