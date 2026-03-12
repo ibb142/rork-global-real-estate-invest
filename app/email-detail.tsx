@@ -101,13 +101,13 @@ export default function EmailDetailScreen() {
 
   const handleReply = useCallback(() => {
     if (!email) return;
-    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (Platform.OS !== 'web') void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     router.push(`/email-compose?replyTo=${email.id}` as any);
   }, [email, router]);
 
   const handleForward = useCallback(() => {
     if (!email) return;
-    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (Platform.OS !== 'web') void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     router.push(`/email-compose?forwardFrom=${email.id}` as any);
   }, [email, router]);
 
@@ -134,25 +134,25 @@ export default function EmailDetailScreen() {
 
   const handleArchive = useCallback(() => {
     if (!email) return;
-    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    if (Platform.OS !== 'web') void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     moveToFolder(email.id, 'archive');
     router.back();
   }, [email, moveToFolder, router]);
 
   const handleToggleStar = useCallback(() => {
     if (!email) return;
-    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (Platform.OS !== 'web') void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     toggleStar(email.id);
   }, [email, toggleStar]);
 
   const handleToggleFlag = useCallback(() => {
     if (!email) return;
-    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (Platform.OS !== 'web') void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     toggleFlag(email.id);
   }, [email, toggleFlag]);
 
   const handleDownloadAttachment = useCallback((att: EmailAttachment) => {
-    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (Platform.OS !== 'web') void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     Alert.alert('Download', `"${att.name}" would be saved to your device.`);
   }, []);
 
@@ -281,7 +281,7 @@ export default function EmailDetailScreen() {
             <View style={styles.detailsSection}>
               <View style={styles.detailRow}>
                 <Text style={styles.detailLabel}>From:</Text>
-                <Text style={styles.detailValue}>{email.from.name} &lt;{email.from.email}&gt;</Text>
+                <Text style={styles.detailValue}>{email.from.name} {'<'}{email.from.email}{'>'}</Text>
               </View>
               <View style={styles.detailRow}>
                 <Text style={styles.detailLabel}>To:</Text>
