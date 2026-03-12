@@ -2,7 +2,7 @@ import { Platform, LogBox } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
-import { trpcClient } from './trpc';
+import { supabase } from './supabase';
 import { getAuthToken } from './auth-store';
 import logger from './logger';
 
@@ -102,11 +102,27 @@ export async function registerTokenWithBackend(token: string): Promise<boolean> 
 
   try {
     const platform = Platform.OS === 'ios' ? 'ios' : Platform.OS === 'android' ? 'android' : 'web';
-    await trpcClient.notifications.registerDevice.mutate({
-      token,
-      platform: platform as 'ios' | 'android' | 'web',
-    });
-    logger.push.log('Token registered with backend');
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      logger.push.log('No Supabase user - skipping token registration');
+      return false;
+    }
+
+    const { error } = await supabase
+      .from('push_tokens')
+      .upsert({
+        user_id: user.id,
+        token,
+        platform,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'user_id,token' });
+
+    if (error) {
+      logger.push.log('Token registration note:', error.message);
+      return false;
+    }
+
+    logger.push.log('Token registered with Supabase');
     return true;
   } catch (error) {
     logger.push.error('Backend registration error:', error);
@@ -116,8 +132,17 @@ export async function registerTokenWithBackend(token: string): Promise<boolean> 
 
 export async function unregisterTokenFromBackend(token: string): Promise<boolean> {
   try {
-    await trpcClient.notifications.unregisterDevice.mutate({ token });
-    logger.push.log('Token unregistered from backend');
+    const { error } = await supabase
+      .from('push_tokens')
+      .delete()
+      .eq('token', token);
+
+    if (error) {
+      logger.push.log('Token unregister note:', error.message);
+      return false;
+    }
+
+    logger.push.log('Token unregistered from Supabase');
     return true;
   } catch (error) {
     logger.push.error('Backend unregister error:', error);
