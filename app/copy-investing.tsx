@@ -19,11 +19,10 @@ import {
   Eye,
   BarChart3,
   Building2,
-  Star,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { topInvestors, TopInvestor } from '@/mocks/social-portfolios';
-import { formatNumber } from '@/lib/formatters';
+import { formatCurrencyWithDecimals } from '@/lib/formatters';
 
 type SortOption = 'return' | 'followers' | 'holdings';
 type RiskFilter = 'all' | 'conservative' | 'moderate' | 'aggressive';
@@ -50,7 +49,7 @@ export default function CopyInvestingScreen() {
         useNativeDriver: true,
       }).start();
     });
-  }, []);
+  }, [fadeAnims]);
 
   const sortedInvestors = useMemo(() => {
     let filtered = [...topInvestors];
@@ -176,7 +175,7 @@ export default function CopyInvestingScreen() {
               <View style={styles.perfItem}>
                 <Text style={styles.perfLabel}>Total P&L</Text>
                 <Text style={[styles.perfValue, { color: Colors.success }]}>
-                  ${formatNumber(investor.totalReturn)}
+                  {formatCurrencyWithDecimals(investor.totalReturn)}
                 </Text>
               </View>
             </View>
