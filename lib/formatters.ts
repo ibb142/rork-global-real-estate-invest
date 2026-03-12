@@ -32,6 +32,26 @@ export const formatCompactNumber = (value: number): string => {
   return value.toString();
 };
 
+export const formatCurrencyCompact = (amount: number): string => {
+  if (amount >= 1000000) return `${(amount / 1000000).toFixed(2)}M`;
+  if (amount >= 1000) return `${new Intl.NumberFormat('en-US').format(Math.round(amount))}`;
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount);
+};
+
+export const formatDollar = (amount: number): string => {
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount);
+};
+
+export const formatDollarWhole = (amount: number): string => {
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(amount);
+};
+
+export const formatDollarCompact = (amount: number): string => {
+  if (amount >= 1000000) return `${(amount / 1000000).toFixed(2)}M`;
+  if (amount >= 1000) return `${new Intl.NumberFormat('en-US').format(Math.round(amount))}`;
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount);
+};
+
 export const formatDate = (dateString: string): string => {
   const date = new Date(dateString);
   return date.toLocaleDateString('en-US', {
