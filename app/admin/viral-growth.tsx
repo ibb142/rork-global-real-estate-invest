@@ -446,7 +446,7 @@ export default function ViralGrowthHub() {
             <View style={styles.campaignBudgetBar}>
               <View style={[styles.campaignBudgetFill, { width: `${Math.min((campaign.spent / campaign.budget) * 100, 100)}%` as any, backgroundColor: campaign.spent >= campaign.budget ? Colors.negative : Colors.primary }]} />
             </View>
-            <Text style={styles.campaignBudgetText}>${campaign.spent}/${campaign.budget}</Text>
+            <Text style={styles.campaignBudgetText}>${new Intl.NumberFormat('en-US').format(campaign.spent)}/${new Intl.NumberFormat('en-US').format(campaign.budget)}</Text>
           </View>
 
           <View style={styles.campaignCodeRow}>
