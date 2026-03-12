@@ -39,6 +39,7 @@ import { ipxFeeConfigs, IPX_HOLDING_NAME, calculateIPXFee } from '@/mocks/ipx-in
 import { generateObject } from '@rork-ai/toolkit-sdk';
 import { z } from 'zod';
 import { DocumentVerificationStatus } from '@/types';
+import { formatDollar } from '@/lib/formatters';
 
 type PropertyType = 'residential' | 'commercial' | 'mixed' | 'industrial' | 'land';
 type IDType = 'drivers_license' | 'passport' | 'national_id';
@@ -411,7 +412,7 @@ export default function SubmitPropertyScreen() {
 
     Alert.alert(
       'Confirm Submission',
-      `Property: ${formData.propertyAddress}\nEstimated Value: $${estimatedValue.toLocaleString()}\n\n${IPX_HOLDING_NAME} Fees:\n• Verification Fee: $${verificationFee.toLocaleString()}\n• Listing Fee (on approval): $${listingFee.toLocaleString()}\n\nDocuments Verified:\n✓ Property Deed\n✓ Owner ID\n\nProceed with submission?`,
+      `Property: ${formData.propertyAddress}\nEstimated Value: ${formatDollar(estimatedValue)}\n\n${IPX_HOLDING_NAME} Fees:\n• Verification Fee: ${formatDollar(verificationFee)}\n• Listing Fee (on approval): ${formatDollar(listingFee)}\n\nDocuments Verified:\n✓ Property Deed\n✓ Owner ID\n\nProceed with submission?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -832,12 +833,12 @@ export default function SubmitPropertyScreen() {
 
           <View style={styles.summaryItem}>
             <Text style={styles.summaryLabel}>Estimated Value</Text>
-            <Text style={styles.summaryValue}>${estimatedValue.toLocaleString()}</Text>
+            <Text style={styles.summaryValue}>{formatDollar(estimatedValue)}</Text>
           </View>
 
           <View style={styles.summaryItem}>
             <Text style={styles.summaryLabel}>Listing Value (85%)</Text>
-            <Text style={styles.summaryValue}>${listingValue.toLocaleString()}</Text>
+            <Text style={styles.summaryValue}>{formatDollar(listingValue)}</Text>
           </View>
 
           <View style={styles.summaryDivider} />
@@ -850,7 +851,7 @@ export default function SubmitPropertyScreen() {
                 <Text style={styles.feeLabel}>Verification Fee ({verificationFee?.percentage}%)</Text>
                 <Text style={styles.feeHint}>Due upon submission</Text>
               </View>
-              <Text style={styles.feeAmount}>${verificationFeeAmount.toLocaleString()}</Text>
+              <Text style={styles.feeAmount}>{formatDollar(verificationFeeAmount)}</Text>
             </View>
 
             <View style={styles.feeRow}>
@@ -858,7 +859,7 @@ export default function SubmitPropertyScreen() {
                 <Text style={styles.feeLabel}>Listing Fee ({listingFee?.percentage}%)</Text>
                 <Text style={styles.feeHint}>Due upon approval & listing</Text>
               </View>
-              <Text style={styles.feeAmount}>${listingFeeAmount.toLocaleString()}</Text>
+              <Text style={styles.feeAmount}>{formatDollar(listingFeeAmount)}</Text>
             </View>
           </View>
         </View>
