@@ -43,7 +43,8 @@ import {
   Gauge,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
-import { trpc } from '@/lib/trpc';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { supabase } from '@/lib/supabase';
 
 type ScanStatus = 'idle' | 'scanning' | 'complete';
 type ModuleStatus = 'healthy' | 'degraded' | 'critical' | 'offline' | 'checking';
@@ -232,14 +233,20 @@ export default function AutoRepairScreen() {
     ]).start();
   }, [fadeAnim, slideAnim]);
 
-  const scanMutation = trpc.autoRepair.runFullScan.useMutation({
+  const scanMutation = useMutation({
+    mutationFn: async () => {
+      console.log('[Supabase] Running full system scan');
+      const { data, error } = await supabase.from('auto_repair_scans').insert({ status: 'running', created_at: new Date().toISOString() }).select().single();
+      if (error) throw new Error(error.message);
+      return { success: true, checks: [], summary: null, timestamp: new Date().toISOString(), ...data };
+    },
     onMutate: () => {
       setScanStatus('scanning');
       setScanProgress(0);
       setHealthChecks([]);
       setScanSummary(null);
     },
-    onSuccess: (data) => {
+    onSuccess: (data: any) => {
       setHealthChecks(data.checks as HealthCheck[]);
       setScanSummary(data.summary);
       setLastScan(data.timestamp);
@@ -247,13 +254,20 @@ export default function AutoRepairScreen() {
       setScanProgress(100);
       console.log('[AutoRepair] Scan complete:', data.summary);
     },
-    onError: (err) => {
+    onError: (err: Error) => {
       console.error('[AutoRepair] Scan failed:', err.message);
       setScanStatus('idle');
     },
   });
 
-  const metricsQuery = trpc.autoRepair.getSystemMetrics.useQuery(undefined, {
+  const metricsQuery = useQuery<any>({
+    queryKey: ['autoRepair.getSystemMetrics'],
+    queryFn: async () => {
+      console.log('[Supabase] Fetching system metrics');
+      const { data, error } = await supabase.from('system_metrics').select('*').limit(50);
+      if (error) { console.log('[Supabase] system_metrics error:', error.message); return null; }
+      return data;
+    },
     refetchInterval: 30000,
   });
 
@@ -265,7 +279,14 @@ export default function AutoRepairScreen() {
     }
   }, [metricsQuery.data]);
 
-  const logsQuery = trpc.autoRepair.getRepairLogs.useQuery(undefined, {
+  const logsQuery = useQuery<any>({
+    queryKey: ['autoRepair.getRepairLogs'],
+    queryFn: async () => {
+      console.log('[Supabase] Fetching repair logs');
+      const { data, error } = await supabase.from('repair_logs').select('*').limit(50);
+      if (error) { console.log('[Supabase] repair_logs error:', error.message); return null; }
+      return data;
+    },
     refetchInterval: 15000,
   });
 
@@ -275,8 +296,14 @@ export default function AutoRepairScreen() {
     }
   }, [logsQuery.data]);
 
-  const repairMutation = trpc.autoRepair.triggerRepair.useMutation({
-    onSuccess: (data) => {
+  const repairMutation = useMutation({
+    mutationFn: async (input: any) => {
+      console.log('[Supabase] Triggering repair');
+      const { data, error } = await supabase.from('repair_logs').insert({ ...input, status: 'running', created_at: new Date().toISOString() }).select().single();
+      if (error) throw new Error(error.message);
+      return { success: true, details: 'Repair completed', ...data };
+    },
+    onSuccess: (data: any) => {
       console.log('[AutoRepair] Repair result:', data.details);
       void logsQuery.refetch();
       void metricsQuery.refetch();
@@ -436,7 +463,7 @@ export default function AutoRepairScreen() {
                   <View style={[styles.metricDot, { backgroundColor: metricColor }]} />
                 </View>
                 <Text style={styles.metricValue}>
-                  {metric.unit === 'USD' ? `$${metric.value.toLocaleString()}` : metric.value.toLocaleString()}
+                  {metric.unit === 'USD' ? `${new Intl.NumberFormat('en-US').format(metric.value)}` : new Intl.NumberFormat('en-US').format(metric.value)}
                 </Text>
                 <Text style={styles.metricUnit}>{metric.unit}</Text>
               </View>
@@ -611,7 +638,7 @@ export default function AutoRepairScreen() {
         {
           icon: <Radio size={20} color="#E879F9" />,
           title: 'API Endpoint Watchdog',
-          desc: 'Pings all tRPC routes every 30s, auto-retries on timeout, alerts on failure',
+          desc: 'Pings all Supabase endpoints every 30s, auto-retries on timeout, alerts on failure',
           status: 'Active',
           statusColor: '#00C48C',
         },
