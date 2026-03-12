@@ -61,7 +61,7 @@ import {
   getRiskColor,
   getStatusColor,
 } from '@/lib/verification-service';
-import { trpcClient } from '@/lib/trpc';
+import { supabase } from '@/lib/supabase';
 
 type KYCStep = 'personal' | 'documents' | 'selfie' | 'liveness' | 'verification' | 'review';
 type DocumentStatus = 'pending' | 'uploading' | 'uploaded' | 'verified' | 'rejected';
@@ -174,21 +174,23 @@ export default function KYCVerificationScreen() {
   const submitPersonalInfoToBackend = async () => {
     try {
       logger.kyc.log('Submitting personal info to backend...');
-      await trpcClient.kyc.submitPersonalInfo.mutate({
-        firstName: personalInfo.firstName,
-        lastName: personalInfo.lastName,
-        dateOfBirth: personalInfo.dateOfBirth,
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+      await supabase.from('kyc_verifications').upsert({
+        user_id: user.id,
+        first_name: personalInfo.firstName,
+        last_name: personalInfo.lastName,
+        date_of_birth: personalInfo.dateOfBirth,
         nationality: personalInfo.nationality,
-        nationalityCode: personalInfo.nationalityCode,
-        taxId: personalInfo.taxId,
-      });
-      await trpcClient.kyc.submitAddress.mutate({
+        nationality_code: personalInfo.nationalityCode,
+        tax_id: personalInfo.taxId,
         street: personalInfo.address,
         city: personalInfo.city,
         state: personalInfo.state,
-        postalCode: personalInfo.zipCode,
+        postal_code: personalInfo.zipCode,
         country: personalInfo.country,
-        countryCode: personalInfo.countryCode,
+        country_code: personalInfo.countryCode,
+        updated_at: new Date().toISOString(),
       });
       logger.kyc.log('Personal info + address submitted to backend');
     } catch (error) {
@@ -199,10 +201,14 @@ export default function KYCVerificationScreen() {
   const uploadDocumentToBackend = async (type: string, uri: string) => {
     try {
       logger.kyc.log(`Uploading ${type} to backend...`);
-      await trpcClient.kyc.uploadDocument.mutate({
-        documentType: type as any,
-        documentUrl: uri,
-        issuingCountry: personalInfo.countryCode,
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+      await supabase.from('kyc_documents').insert({
+        user_id: user.id,
+        document_type: type,
+        document_url: uri,
+        issuing_country: personalInfo.countryCode,
+        created_at: new Date().toISOString(),
       });
       logger.kyc.log(`${type} uploaded to backend`);
     } catch (error) {
@@ -213,7 +219,14 @@ export default function KYCVerificationScreen() {
   const submitSelfieToBackend = async (uri: string) => {
     try {
       logger.kyc.log('Submitting selfie to backend...');
-      await trpcClient.kyc.submitSelfie.mutate({ selfieUrl: uri });
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+      await supabase.from('kyc_documents').insert({
+        user_id: user.id,
+        document_type: 'selfie',
+        document_url: uri,
+        created_at: new Date().toISOString(),
+      });
       logger.kyc.log('Selfie submitted to backend');
     } catch (error) {
       console.error('[KYC] Selfie submit error (non-blocking):', error);
@@ -369,7 +382,13 @@ export default function KYCVerificationScreen() {
     logger.kyc.log('Submitting final KYC:', { personalInfo, documents: Object.keys(documents), verificationResult: !!verificationResult });
 
     try {
-      await trpcClient.kyc.submitForReview.mutate();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        await supabase.from('kyc_verifications').update({
+          status: 'submitted',
+          submitted_at: new Date().toISOString(),
+        }).eq('user_id', user.id);
+      }
       logger.kyc.log('Submitted to backend for review');
     } catch (error) {
       console.error('[KYC] Submit for review error:', error);
