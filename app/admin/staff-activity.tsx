@@ -30,7 +30,8 @@ import {
   X,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
-import { trpc } from '@/lib/trpc';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { supabase } from '@/lib/supabase';
 
 const ACTION_ICONS: Record<string, { icon: typeof Eye; color: string }> = {
   view: { icon: Eye, color: Colors.accent },
@@ -92,28 +93,48 @@ export default function StaffActivityScreen() {
   const [showFilters, setShowFilters] = useState(false);
   const [filterStaffId, setFilterStaffId] = useState<string | undefined>(undefined);
 
-  const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
 
-  const summaryQuery = trpc.staffActivity.getStaffSummary.useQuery(undefined, {
+  const summaryQuery = useQuery<{ staff: any[]; totalActionsToday: number; totalActionsWeek: number; totalStaff: number; sectionBreakdown: Record<string, number> } | null>({
+    queryKey: ['staffActivity.getStaffSummary'],
+    queryFn: async () => {
+      console.log('[Supabase] Fetching staff summary');
+      const { data, error } = await supabase.from('staff_activity').select('*').limit(50);
+      if (error) { console.log('[Supabase] staff_activity error:', error.message); return null; }
+      return {
+        staff: data ?? [],
+        totalActionsToday: 0,
+        totalActionsWeek: 0,
+        totalStaff: data?.length ?? 0,
+        sectionBreakdown: {},
+      };
+    },
     staleTime: 30000,
   });
 
-  const logsQuery = trpc.staffActivity.getActivityLog.useQuery({
-    page,
-    limit: 50,
-    staffId: filterStaffId,
-    action: searchQuery || undefined,
-  }, {
+  const logsQuery = useQuery<{ logs: any[]; total: number; totalPages: number; page: number } | null>({
+    queryKey: ['staffActivity.getActivityLog', { page, limit: 50, staffId: filterStaffId, action: searchQuery || undefined }],
+    queryFn: async () => {
+      console.log('[Supabase] Fetching activity log');
+      const { data, error } = await supabase.from('staff_activity_log').select('*').limit(50);
+      if (error) { console.log('[Supabase] staff_activity_log error:', error.message); return null; }
+      return {
+        logs: data ?? [],
+        total: data?.length ?? 0,
+        totalPages: 1,
+        page: 1,
+      };
+    },
     staleTime: 15000,
   });
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     void Promise.all([
-      utils.staffActivity.getStaffSummary.invalidate(),
-      utils.staffActivity.getActivityLog.invalidate(),
+      queryClient.invalidateQueries({ queryKey: ['staffActivity.getStaffSummary'] }),
+      queryClient.invalidateQueries({ queryKey: ['staffActivity.getActivityLog'] }),
     ]).finally(() => setRefreshing(false));
-  }, [utils]);
+  }, [queryClient]);
 
   const summary = summaryQuery.data;
   const logs = logsQuery.data;
@@ -198,7 +219,7 @@ export default function StaffActivityScreen() {
 
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Staff Members</Text>
-              {filteredStaff.map((member) => (
+              {filteredStaff.map((member: any) => (
                 <TouchableOpacity
                   key={member.id}
                   style={[
@@ -216,7 +237,7 @@ export default function StaffActivityScreen() {
                 >
                   <View style={styles.staffAvatar}>
                     <Text style={styles.staffAvatarText}>
-                      {member.name.split(' ').map(n => n[0]).join('').toUpperCase()}
+                      {member.name.split(' ').map((n: string) => n[0]).join('').toUpperCase()}
                     </Text>
                   </View>
                   <View style={{ flex: 1 }}>
@@ -266,18 +287,18 @@ export default function StaffActivityScreen() {
                 <Text style={styles.sectionTitle}>Most Accessed Sections (7d)</Text>
                 <View style={styles.sectionBreakdownCard}>
                   {Object.entries(summary.sectionBreakdown)
-                    .sort((a, b) => b[1] - a[1])
+                    .sort((a: [string, unknown], b: [string, unknown]) => (b[1] as number) - (a[1] as number))
                     .slice(0, 8)
-                    .map(([section, count], _idx) => {
-                      const maxCount = Math.max(...Object.values(summary.sectionBreakdown));
-                      const width = maxCount > 0 ? (count / maxCount) * 100 : 0;
+                    .map(([section, count]: [string, unknown], _idx: number) => {
+                      const maxCount = Math.max(...Object.values(summary.sectionBreakdown).map((v: unknown) => v as number));
+                      const width = maxCount > 0 ? ((count as number) / maxCount) * 100 : 0;
                       return (
                         <View key={section} style={styles.breakdownRow}>
                           <Text style={styles.breakdownLabel} numberOfLines={1}>{section}</Text>
                           <View style={styles.breakdownBarBg}>
                             <View style={[styles.breakdownBar, { width: `${width}%` }]} />
                           </View>
-                          <Text style={styles.breakdownCount}>{count}</Text>
+                          <Text style={styles.breakdownCount}>{String(count)}</Text>
                         </View>
                       );
                     })}
@@ -331,7 +352,7 @@ export default function StaffActivityScreen() {
             <ActivityIndicator size="small" color={Colors.primary} style={{ marginVertical: 20 }} />
           )}
 
-          {logs?.logs.map((log) => {
+          {logs?.logs.map((log: any) => {
             const meta = getActionMeta(log.action);
             const IconComp = meta.icon;
             const isExpanded = expandedLog === log.id;
