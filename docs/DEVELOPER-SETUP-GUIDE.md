@@ -68,7 +68,7 @@ Create this file at the project root:
       "distribution": "internal",
       "env": {
         "EXPO_PUBLIC_APP_ENV": "development",
-        "EXPO_PUBLIC_RORK_API_BASE_URL": "http://localhost:3000"
+        "EXPO_PUBLIC_API_BASE_URL": "http://localhost:3000"
       },
       "ios": { "simulator": true },
       "android": { "buildType": "apk" }
@@ -134,7 +134,7 @@ EXPO_PUBLIC_APP_ENV=production
 # API
 EXPO_PUBLIC_PRODUCTION_API_URL=https://api.ipxholding.com
 EXPO_PUBLIC_STAGING_API_URL=https://staging-api.ipxholding.com
-EXPO_PUBLIC_RORK_API_BASE_URL=http://localhost:3000
+EXPO_PUBLIC_API_BASE_URL=http://localhost:3000
 
 # Stripe
 STRIPE_SECRET_KEY=sk_live_...
