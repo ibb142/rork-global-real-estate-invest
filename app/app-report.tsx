@@ -739,7 +739,7 @@ const styles = StyleSheet.create({
   keyExample: { gap: 4 },
   noKeysRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   noKeysText: { color: Colors.textSecondary, fontSize: 13 },
-  noteBox: { color: Colors.textSecondary, fontSize: 13, lineHeight: 18 },
+  noteBox: { backgroundColor: Colors.surface, borderRadius: 10, padding: 12, marginTop: 8 },
   noteText: { color: Colors.textSecondary, fontSize: 13, lineHeight: 18 },
   instructionCard: { backgroundColor: Colors.surface, borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: Colors.surfaceBorder },
   instructionTitle: { color: Colors.text, fontSize: 16, fontWeight: '700' as const },
