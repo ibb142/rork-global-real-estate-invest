@@ -63,10 +63,10 @@ import {
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 const formatCurrency = (amount: number): string => {
-  if (amount >= 1000000000) return `$${(amount / 1000000000).toFixed(1)}B`;
-  if (amount >= 1000000) return `$${(amount / 1000000).toFixed(1)}M`;
-  if (amount >= 1000) return `$${(amount / 1000).toFixed(0)}K`;
-  return `$${amount.toFixed(0)}`;
+  if (amount >= 1000000000) return `${(amount / 1000000000).toFixed(1)}B`;
+  if (amount >= 1000000) return `${(amount / 1000000).toFixed(1)}M`;
+  if (amount >= 1000) return `${new Intl.NumberFormat('en-US').format(Math.round(amount))}`;
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount);
 };
 
 const formatTime = (seconds: number): string => {
@@ -594,13 +594,13 @@ export default function OutreachAnalyticsScreen() {
       <View style={styles.costTotalCard}>
         <View style={styles.costTotalRow}>
           <Text style={styles.costTotalLabel}>Total Monthly Cost</Text>
-          <Text style={styles.costTotalValue}>${costBreakdown.total}/mo</Text>
+          <Text style={styles.costTotalValue}>${new Intl.NumberFormat('en-US').format(costBreakdown.total)}/mo</Text>
         </View>
         <View style={styles.costBudgetBar}>
           <View style={[styles.costBudgetBarFill, { width: `${costBreakdown.budgetUsedPercent}%` }]} />
         </View>
         <Text style={styles.costBudgetText}>
-          {costBreakdown.budgetUsedPercent}% of ${costBreakdown.monthlyBudget} budget used
+          {costBreakdown.budgetUsedPercent}% of ${new Intl.NumberFormat('en-US').format(costBreakdown.monthlyBudget)} budget used
         </Text>
       </View>
 
@@ -609,13 +609,13 @@ export default function OutreachAnalyticsScreen() {
         <View style={styles.costEffGrid}>
           <View style={styles.costEffItem}>
             <DollarSign size={20} color={Colors.primary} />
-            <Text style={styles.costEffValue}>${costBreakdown.costPerLead.toFixed(2)}</Text>
+            <Text style={styles.costEffValue}>${new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(costBreakdown.costPerLead)}</Text>
             <Text style={styles.costEffLabel}>Per Lead</Text>
           </View>
           <View style={styles.costEffDivider} />
           <View style={styles.costEffItem}>
             <MessageSquare size={20} color={Colors.success} />
-            <Text style={styles.costEffValue}>${costBreakdown.costPerReply.toFixed(2)}</Text>
+            <Text style={styles.costEffValue}>${new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(costBreakdown.costPerReply)}</Text>
             <Text style={styles.costEffLabel}>Per Reply</Text>
           </View>
           <View style={styles.costEffDivider} />
@@ -635,7 +635,7 @@ export default function OutreachAnalyticsScreen() {
         <View style={styles.costROIGrid}>
           <View style={styles.costROIItem}>
             <Text style={styles.costROILabel}>Total Spent</Text>
-            <Text style={styles.costROIValue}>${costBreakdown.total}</Text>
+            <Text style={styles.costROIValue}>${new Intl.NumberFormat('en-US').format(costBreakdown.total)}</Text>
           </View>
           <View style={styles.costROIItem}>
             <Text style={styles.costROILabel}>Pipeline Generated</Text>
@@ -768,7 +768,7 @@ const styles = StyleSheet.create({
   timeCardRight: { alignItems: 'flex-end' },
   timeCardValue: { color: Colors.text, fontSize: 14, fontWeight: '600' as const },
   timeCardMeta: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  timeCardMetaItem: { color: Colors.textTertiary, fontSize: 12 },
+  timeCardMetaItem: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 4 },
   timeCardMetaLabel: { color: Colors.textSecondary, fontSize: 13 },
   timeCardMetaValue: { color: Colors.text, fontSize: 14, fontWeight: '600' as const },
   scrollBar: { gap: 4 },
