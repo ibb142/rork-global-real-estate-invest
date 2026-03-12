@@ -43,13 +43,15 @@ import {
   TrendingDown,
   Lightbulb,
 } from 'lucide-react-native';
-import { trpc } from '@/lib/trpc';
-import { useInstantCache } from '@/lib/use-instant-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
-import { getAuthToken } from '@/lib/auth-store';
+import { fetchRawEvents, computeAnalytics } from '@/lib/analytics-compute';
 
 type PeriodType = '1h' | '24h' | '7d' | '30d' | '90d' | 'all';
 type TabType = 'overview' | 'funnel' | 'geo' | 'insights' | 'live' | 'brain';
+
+
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
@@ -246,10 +248,9 @@ export default function LandingAnalyticsScreen() {
   const { isAuthenticated, isAdmin, isLoading: authLoading, refreshSession } = useAuth();
   const [period, setPeriod] = useState<PeriodType>('all');
   const [activeTab, setActiveTab] = useState<TabType>('overview');
-  const [_retryCount, setRetryCount] = useState(0);
-  const [liveData, setLiveData] = useState<any>(null);
-  const [liveLoading, setLiveLoading] = useState<boolean>(false);
-  const [liveError, setLiveError] = useState<string | null>(null);
+  const [directData, setDirectData] = useState<any>(null);
+  const [_isConnected, setIsConnected] = useState<boolean>(false);
+  const [_fetchCount, setFetchCount] = useState<number>(0);
 
   const headerAnim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
@@ -258,93 +259,100 @@ export default function LandingAnalyticsScreen() {
 
   useEffect(() => {
     if (!authLoading && isAuthenticated && !isAdmin) {
-      void refreshSession().then((ok) => {
-        if (ok) setRetryCount(c => c + 1);
-      });
+      void refreshSession();
     }
   }, [authLoading, isAuthenticated, isAdmin, refreshSession]);
 
-  const analyticsQuery = trpc.analytics.getLandingAnalytics.useQuery(
-    { period },
-    {
-      enabled: !authLoading,
-      staleTime: 0,
-      refetchInterval: 1000 * 3,
-      retry: 3,
-      retryDelay: (attempt) => Math.min(500 * Math.pow(2, attempt), 3000),
-      placeholderData: (prev) => prev,
-    }
-  );
-
-  const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL || process.env.EXPO_PUBLIC_RORK_API_BASE_URL || '';
-
-  const fetchLiveSessions = useCallback(async (isInitial = false) => {
-    try {
-      if (isInitial) {
-        setLiveLoading(true);
+  const analyticsQuery = useQuery<any>({
+    queryKey: ['analytics.getLandingAnalytics', { period }],
+    queryFn: async () => {
+      try {
+        const rawEvents = await fetchRawEvents(period);
+        const computed = computeAnalytics(rawEvents, period);
+        console.log('[Admin Analytics] Computed:', computed.pageViews, 'views,', computed.uniqueSessions, 'sessions');
+        setDirectData(computed);
+        setIsConnected(true);
+        setFetchCount(prev => prev + 1);
+        return computed;
+      } catch {
+        const empty = computeAnalytics([], period);
+        setDirectData(empty);
+        setIsConnected(false);
+        return empty;
       }
-      setLiveError(null);
-
-      const tokenStr = getAuthToken() || '';
-      if (!tokenStr) {
-        console.warn('[LiveSessions] No auth token available');
-        setLiveError('Not authenticated. Please log in.');
-        setLiveLoading(false);
-        return;
-      }
-
-      const baseUrl = apiBaseUrl;
-      if (!baseUrl) {
-        console.warn('[LiveSessions] No API base URL configured');
-        setLiveError('API not configured');
-        setLiveLoading(false);
-        return;
-      }
-
-      const url = `${baseUrl}/track/live-sessions`;
-      console.log('[LiveSessions] Fetching:', url);
-      const res = await fetch(url, {
-        headers: { 'Authorization': `Bearer ${tokenStr}`, 'Content-Type': 'application/json' },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        console.log('[LiveSessions] Data received:', JSON.stringify(data).slice(0, 200));
-        setLiveData(data);
-        setLiveError(null);
-      } else {
-        const errText = await res.text().catch(() => '');
-        console.warn(`[LiveSessions] HTTP ${res.status}: ${errText}`);
-        setLiveError(`Server returned ${res.status}`);
-      }
-    } catch (err: any) {
-      console.warn('[LiveSessions] Error:', err?.message || err);
-      setLiveError(err?.message || 'Connection failed');
-    } finally {
-      setLiveLoading(false);
-    }
-  }, [apiBaseUrl]);
-
-  useEffect(() => {
-    if (activeTab === 'live') {
-      void fetchLiveSessions(true);
-      const interval = setInterval(() => fetchLiveSessions(false), 5000);
-      return () => clearInterval(interval);
-    }
-    return undefined;
-  }, [activeTab, fetchLiveSessions]);
+    },
+    staleTime: 0,
+    refetchInterval: activeTab === 'live' ? 8000 : 15000,
+    retry: 0,
+    gcTime: 0,
+    refetchOnMount: true,
+    throwOnError: false,
+  });
 
   const [manualRefreshing, setManualRefreshing] = useState<boolean>(false);
-  const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
   const onRefresh = useCallback(async () => {
     setManualRefreshing(true);
-    void refreshSession().then((refreshed) => {
-      if (refreshed) setRetryCount(prev => prev + 1);
-    });
-    await utils.analytics.getLandingAnalytics.invalidate();
+    await queryClient.invalidateQueries({ queryKey: ['analytics.getLandingAnalytics'] });
     setManualRefreshing(false);
-  }, [utils, refreshSession]);
+  }, [queryClient]);
 
-  const data = useInstantCache(`landing_analytics_${period}`, analyticsQuery.data, analyticsQuery.isSuccess);
+  const rawData = useMemo(() => {
+    if (directData && (directData.pageViews > 0 || directData.totalLeads > 0)) {
+      return directData;
+    }
+    if (analyticsQuery.data) return analyticsQuery.data;
+    if (directData) return directData;
+    return undefined;
+  }, [directData, analyticsQuery.data]);
+
+  const data = useMemo(() => {
+    if (!rawData) return undefined;
+    const defaultFunnel = { pageViews: 0, scroll25: 0, scroll50: 0, scroll75: 0, formFocuses: 0, formSubmits: 0 };
+    const defaultCta = { getStarted: 0, signIn: 0, jvInquire: 0, websiteClick: 0 };
+    return {
+      ...rawData,
+      pageViews: rawData.pageViews ?? 0,
+      uniqueSessions: rawData.uniqueSessions ?? 0,
+      conversionRate: rawData.conversionRate ?? 0,
+      totalLeads: rawData.totalLeads ?? 0,
+      funnel: rawData.funnel ? { ...defaultFunnel, ...rawData.funnel } : defaultFunnel,
+      cta: rawData.cta ? { ...defaultCta, ...rawData.cta } : defaultCta,
+      hourlyActivity: rawData.hourlyActivity ?? [],
+      dailyViews: rawData.dailyViews ?? [],
+      byPlatform: rawData.byPlatform ?? [],
+      byReferrer: rawData.byReferrer ?? [],
+      byEvent: rawData.byEvent ?? [],
+      geoZones: rawData.geoZones ? {
+        byCountry: rawData.geoZones.byCountry ?? [],
+        byCity: rawData.geoZones.byCity ?? [],
+        byTimezone: rawData.geoZones.byTimezone ?? [],
+        totalWithGeo: rawData.geoZones.totalWithGeo ?? 0,
+        ...rawData.geoZones,
+      } : { byCountry: [], byCity: [], byTimezone: [], totalWithGeo: 0 },
+      smartInsights: rawData.smartInsights ? {
+        engagementScore: rawData.smartInsights.engagementScore ?? 0,
+        avgTimeOnPage: rawData.smartInsights.avgTimeOnPage ?? 0,
+        bounceRate: rawData.smartInsights.bounceRate ?? 0,
+        peakHour: rawData.smartInsights.peakHour ?? 0,
+        visitorIntent: rawData.smartInsights.visitorIntent ? {
+          highIntent: 0, highIntentPct: 0, mediumIntent: 0, mediumIntentPct: 0, lowIntent: 0, lowIntentPct: 0,
+          ...rawData.smartInsights.visitorIntent,
+        } : { highIntent: 0, highIntentPct: 0, mediumIntent: 0, mediumIntentPct: 0, lowIntent: 0, lowIntentPct: 0 },
+        deviceBreakdown: rawData.smartInsights.deviceBreakdown ?? [],
+        topInterests: rawData.smartInsights.topInterests ?? [],
+        ...rawData.smartInsights,
+      } : null,
+      liveData: rawData.liveData ?? null,
+    };
+  }, [rawData]);
+
+  const liveData = useMemo(() => {
+    if (data?.liveData) return data.liveData;
+    return null;
+  }, [data]);
+  const liveLoading = analyticsQuery.isLoading && !data;
+  const liveError: string | null = analyticsQuery.isError ? (analyticsQuery.error?.message || 'Unable to fetch data') : null;
 
   const funnelSteps = useMemo(() => {
     if (!data) return [];
@@ -360,12 +368,12 @@ export default function LandingAnalyticsScreen() {
 
   const hourlyData = useMemo(() => {
     if (!data) return [];
-    return data.hourlyActivity.map(h => h.count);
+    return data.hourlyActivity.map((h: { hour: number; count: number }) => h.count);
   }, [data]);
 
   const dailyData = useMemo(() => {
     if (!data) return [];
-    return data.dailyViews.slice(-14).map(d => d.views);
+    return data.dailyViews.slice(-14).map((d: { date: string; views: number; sessions: number }) => d.views);
   }, [data]);
 
   const renderOverviewTab = () => {
@@ -462,7 +470,7 @@ export default function LandingAnalyticsScreen() {
               <Text style={s.cardTitle}>Hourly Heatmap</Text>
             </View>
             <View style={s.heatmapGrid}>
-              {hourlyData.map((count, i) => {
+              {hourlyData.map((count: number, i: number) => {
                 const max = Math.max(...hourlyData, 1);
                 const intensity = count / max;
                 const bgColor = count === 0 ? '#111' : `rgba(74, 144, 217, ${0.15 + intensity * 0.85})`;
@@ -515,7 +523,7 @@ export default function LandingAnalyticsScreen() {
             {data.byPlatform.length === 0 ? (
               <Text style={s.noDataText}>No data</Text>
             ) : (
-              data.byPlatform.map((p, i) => (
+              data.byPlatform.map((p: { platform: string; count: number }, i: number) => (
                 <View key={i} style={s.miniListRow}>
                   <View style={[s.miniDot, { backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }]} />
                   <Text style={s.miniLabel} numberOfLines={1}>{p.platform}</Text>
@@ -533,7 +541,7 @@ export default function LandingAnalyticsScreen() {
             {data.byReferrer.length === 0 ? (
               <Text style={s.noDataText}>No data</Text>
             ) : (
-              data.byReferrer.slice(0, 5).map((r, i) => (
+              data.byReferrer.slice(0, 5).map((r: { referrer: string; count: number }, i: number) => (
                 <View key={i} style={s.miniListRow}>
                   <View style={[s.miniDot, { backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }]} />
                   <Text style={s.miniLabel} numberOfLines={1}>{r.referrer}</Text>
@@ -550,7 +558,7 @@ export default function LandingAnalyticsScreen() {
             <Text style={s.cardTitle}>Event Stream</Text>
             <Text style={s.cardSubtitle}>{data.byEvent.length} events</Text>
           </View>
-          {data.byEvent.slice(0, 10).map((evt, i) => {
+          {data.byEvent.slice(0, 10).map((evt: { event: string; count: number }, i: number) => {
             const maxEvt = data.byEvent[0]?.count || 1;
             const barPct = Math.round((evt.count / maxEvt) * 100);
             return (
@@ -684,7 +692,7 @@ export default function LandingAnalyticsScreen() {
             <Globe size={16} color="#4A90D9" />
             <Text style={s.cardTitle}>Top Countries</Text>
           </View>
-          {geo.byCountry.map((c, i) => {
+          {geo.byCountry.map((c: { country: string; count: number; pct: number }, i: number) => {
             const maxC = geo.byCountry[0]?.count || 1;
             const barW = Math.max(Math.round((c.count / maxC) * 100), 4);
             const flag = COUNTRY_FLAGS[c.country] || '🌍';
@@ -711,7 +719,7 @@ export default function LandingAnalyticsScreen() {
             <MapPin size={16} color="#00C48C" />
             <Text style={s.cardTitle}>Top Cities</Text>
           </View>
-          {geo.byCity.slice(0, 10).map((c, i) => (
+          {geo.byCity.slice(0, 10).map((c: { city: string; count: number; country: string }, i: number) => (
             <View key={i} style={s.cityRow}>
               <View style={[s.cityRank, { backgroundColor: CHART_COLORS[i % CHART_COLORS.length] + '18' }]}>
                 <Text style={[s.cityRankText, { color: CHART_COLORS[i % CHART_COLORS.length] }]}>{i + 1}</Text>
@@ -731,7 +739,7 @@ export default function LandingAnalyticsScreen() {
               <Clock size={16} color="#FFD700" />
               <Text style={s.cardTitle}>Timezone Distribution</Text>
             </View>
-            {geo.byTimezone.slice(0, 8).map((tz, i) => (
+            {geo.byTimezone.slice(0, 8).map((tz: { timezone: string; count: number }, i: number) => (
               <View key={i} style={s.miniListRow}>
                 <View style={[s.miniDot, { backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }]} />
                 <Text style={s.miniLabel} numberOfLines={1}>{tz.timezone.replace(/_/g, ' ')}</Text>
@@ -818,7 +826,7 @@ export default function LandingAnalyticsScreen() {
               <Text style={s.cardTitle}>Devices</Text>
             </View>
             <View style={s.deviceGrid}>
-              {insights.deviceBreakdown.map((d, i) => (
+              {insights.deviceBreakdown.map((d: { device: string; count: number; pct: number }, i: number) => (
                 <View key={i} style={[s.deviceCard, { borderTopColor: CHART_COLORS[i % CHART_COLORS.length] }]}>
                   {d.device === 'Mobile' ? <Smartphone size={22} color={CHART_COLORS[i % CHART_COLORS.length]} /> :
                     d.device === 'Tablet' ? <Tablet size={22} color={CHART_COLORS[i % CHART_COLORS.length]} /> :
@@ -838,7 +846,7 @@ export default function LandingAnalyticsScreen() {
               <Target size={16} color="#00C48C" />
               <Text style={s.cardTitle}>Investment Interest</Text>
             </View>
-            {insights.topInterests.map((interest, i) => (
+            {insights.topInterests.map((interest: { interest: string; count: number; pct: number }, i: number) => (
               <View key={i} style={s.miniListRow}>
                 <View style={[s.miniRank, { backgroundColor: CHART_COLORS[i % CHART_COLORS.length] + '18' }]}>
                   <Text style={[s.miniRankText, { color: CHART_COLORS[i % CHART_COLORS.length] }]}>{i + 1}</Text>
@@ -854,15 +862,28 @@ export default function LandingAnalyticsScreen() {
     );
   };
 
-  const brainQuery = trpc.aiLearning.getAIBrainStatus.useQuery(undefined, {
+  const brainQuery = useQuery<any>({
+    queryKey: ['aiLearning.getAIBrainStatus'],
+    queryFn: async () => {
+      console.log('[Supabase] Fetching AI brain status');
+      const { data, error } = await supabase.from('ai_brain_status').select('*').limit(50);
+      if (error) { console.log('[Supabase] ai_brain_status error:', error.message); return null; }
+      return data && data.length > 0 ? data[0] : null;
+    },
     enabled: activeTab === 'brain',
     staleTime: 10000,
     refetchInterval: activeTab === 'brain' ? 15000 : false,
   });
 
-  const learnMutation = trpc.aiLearning.runLearningCycle.useMutation({
+  const learnMutation = useMutation({
+    mutationFn: async (input: { period: string }) => {
+      console.log('[Supabase] Running learning cycle');
+      const { data, error } = await supabase.from('ai_brain_status').insert({ period: input.period, status: 'learning', created_at: new Date().toISOString() }).select().single();
+      if (error) throw new Error(error.message);
+      return { success: true, ...data };
+    },
     onSuccess: () => {
-      void utils.aiLearning.getAIBrainStatus.invalidate();
+      void queryClient.invalidateQueries({ queryKey: ['aiLearning.getAIBrainStatus'] });
     },
   });
 
@@ -981,7 +1002,7 @@ export default function LandingAnalyticsScreen() {
               <AlertTriangle size={16} color="#FF4D4D" />
               <Text style={s.cardTitle}>Active Anomalies</Text>
             </View>
-            {brain.activeAnomalies.map((anomaly) => (
+            {brain.activeAnomalies.map((anomaly: any) => (
               <View key={anomaly.id} style={s.brainInsightRow}>
                 <View style={[s.brainInsightDot, { backgroundColor: '#FF4D4D' }]} />
                 <View style={s.brainInsightInfo}>
@@ -1007,7 +1028,7 @@ export default function LandingAnalyticsScreen() {
               <TrendingUp size={16} color="#00C48C" />
               <Text style={s.cardTitle}>Predictions</Text>
             </View>
-            {brain.activePredictions.map((pred) => (
+            {brain.activePredictions.map((pred: any) => (
               <View key={pred.id} style={s.brainInsightRow}>
                 <View style={[s.brainInsightDot, { backgroundColor: '#00C48C' }]} />
                 <View style={s.brainInsightInfo}>
@@ -1026,7 +1047,7 @@ export default function LandingAnalyticsScreen() {
               <Lightbulb size={16} color="#FFB800" />
               <Text style={s.cardTitle}>Smart Recommendations</Text>
             </View>
-            {brain.topRecommendations.map((rec, i) => (
+            {brain.topRecommendations.map((rec: any, i: number) => (
               <View key={rec.id} style={s.brainRecRow}>
                 <View style={[s.brainRecNum, { backgroundColor: IMPACT_STYLES[rec.impact]?.bg || '#eee' }]}>
                   <Text style={[s.brainRecNumText, { color: IMPACT_STYLES[rec.impact]?.text || '#999' }]}>
@@ -1057,7 +1078,7 @@ export default function LandingAnalyticsScreen() {
               <Text style={s.cardTitle}>Recent Learnings</Text>
               <Text style={s.cardSubtitle}>{brain.recentLearnings.length} active</Text>
             </View>
-            {brain.recentLearnings.slice(0, 15).map((learning) => {
+            {brain.recentLearnings.slice(0, 15).map((learning: any) => {
               const typeInfo = TYPE_ICONS[learning.type] || { icon: <Activity size={14} color="#97A0AF" />, color: '#97A0AF', label: learning.type };
               return (
                 <View key={learning.id} style={s.brainLearningRow}>
@@ -1103,7 +1124,7 @@ export default function LandingAnalyticsScreen() {
   };
 
   const renderLiveTab = () => {
-    if (liveLoading && !liveData && !liveError) {
+    if (liveLoading && !liveData) {
       return (
         <View style={s.emptyWrap}>
           <Radio size={48} color={SS_BLUE} />
@@ -1113,28 +1134,27 @@ export default function LandingAnalyticsScreen() {
       );
     }
 
-    if (liveError && !liveData) {
-      return (
-        <View style={s.emptyWrap}>
-          <View style={s.errorIcon}>
-            <Radio size={48} color="#FF6B6B" />
-          </View>
-          <Text style={s.emptyTitle}>Connection Issue</Text>
-          <Text style={s.emptySubtitle}>{liveError}</Text>
-          <TouchableOpacity style={s.retryBtn} onPress={() => fetchLiveSessions(true)}>
-            <RefreshCw size={14} color="#000" />
-            <Text style={s.retryBtnText}>Retry</Text>
-          </TouchableOpacity>
-        </View>
-      );
-    }
-
     if (!liveData) {
+      if (analyticsQuery.isError) {
+        return (
+          <View style={s.emptyWrap}>
+            <View style={s.errorIcon}>
+              <Radio size={48} color="#FF6B6B" />
+            </View>
+            <Text style={s.emptyTitle}>Connection Issue</Text>
+            <Text style={s.emptySubtitle}>{liveError || 'Unable to fetch live data'}</Text>
+            <TouchableOpacity style={s.retryBtn} onPress={onRefresh}>
+              <RefreshCw size={14} color="#000" />
+              <Text style={s.retryBtnText}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        );
+      }
       return (
         <View style={s.emptyWrap}>
-          <Radio size={48} color="#97A0AF" />
-          <Text style={s.emptyTitle}>No Live Data</Text>
-          <Text style={s.emptySubtitle}>Live sessions will appear as visitors browse.</Text>
+          <PulseIndicator active={false} />
+          <Text style={s.emptyTitle}>No Active Sessions</Text>
+          <Text style={s.emptySubtitle}>Live sessions will appear as visitors browse your landing page. Data refreshes every 4 seconds.</Text>
         </View>
       );
     }
