@@ -302,6 +302,12 @@ export default function AdminLayout() {
           href: null,
         }}
       />
+      <Tabs.Screen
+        name="jv-deals"
+        options={{
+          href: null,
+        }}
+      />
     </Tabs>
     </View>
   );
