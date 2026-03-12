@@ -651,7 +651,7 @@ const styles = StyleSheet.create({
   modalTitle: { color: Colors.text, fontSize: 20, fontWeight: '800' as const },
   modalScroll: { maxHeight: 400 },
   modalSectionTitle: { color: Colors.text, fontSize: 16, fontWeight: '700' as const, marginBottom: 10 },
-  noteBox: { color: Colors.textSecondary, fontSize: 13, lineHeight: 18 },
+  noteBox: { flexDirection: 'row' as const, alignItems: 'flex-start' as const, gap: 8, padding: 12, backgroundColor: Colors.surface, borderRadius: 10 },
   noteBoxText: { color: Colors.textSecondary, fontSize: 13 },
   selectItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 },
   selectItemActive: { backgroundColor: '#FFD700' + '15', borderColor: '#FFD700' },
