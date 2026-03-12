@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,7 +7,10 @@ import {
   TouchableOpacity,
   RefreshControl,
   Modal,
+  Image,
   useWindowDimensions,
+  ActivityIndicator,
+  Animated,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import {
@@ -28,7 +31,15 @@ import {
   FileText,
   Eye,
   Star,
+  Globe,
+  ArrowRight,
+  Scale,
+  Coins,
+  Landmark,
+  ImageIcon,
+  Zap,
 } from 'lucide-react-native';
+import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
 import { formatCurrency } from '@/lib/formatters';
 import {
@@ -38,6 +49,10 @@ import {
 } from '@/mocks/ipx-invest';
 import { useIPX } from '@/lib/ipx-context';
 import { useTranslation } from '@/lib/i18n-context';
+import { useQuery } from '@tanstack/react-query';
+import { fetchJVDeals } from '@/lib/jv-storage';
+import QuickBuyModal from '@/components/QuickBuyModal';
+
 
 export default function InvestScreen() {
   const router = useRouter();
@@ -46,13 +61,71 @@ export default function InvestScreen() {
   const { t } = useTranslation();
   const [refreshing, setRefreshing] = useState(false);
   const [showFeeInfo, setShowFeeInfo] = useState(false);
+  const [quickBuyVisible, setQuickBuyVisible] = useState(false);
+  const [quickBuyDeal, setQuickBuyDeal] = useState<{
+    id: string;
+    title: string;
+    projectName: string;
+    totalInvestment: number;
+    expectedROI: number;
+    photo?: string;
+    propertyAddress?: string;
+    type?: string;
+    minInvestment?: number;
+  } | null>(null);
 
-  const isXs = width < 340;
+  const openQuickBuy = useCallback((deal: any) => {
+    const photos = Array.isArray(deal.photos) ? deal.photos.filter((p: unknown) => typeof p === 'string' && (p as string).startsWith('http')) : [];
+    setQuickBuyDeal({
+      id: deal.id,
+      title: deal.title,
+      projectName: deal.projectName,
+      totalInvestment: deal.totalInvestment,
+      expectedROI: deal.expectedROI,
+      photo: photos.length > 0 ? photos[0] : undefined,
+      propertyAddress: deal.propertyAddress,
+      type: deal.type,
+      minInvestment: 50,
+    });
+    setQuickBuyVisible(true);
+  }, []);
+
+  const publishedDealsQuery = useQuery({
+    queryKey: ['jv-deals', 'published-list'],
+    queryFn: async () => {
+      console.log('[Invest] Fetching published JV deals...');
+      const result = await fetchJVDeals({ published: true });
+      console.log('[Invest] Fetched', result.deals?.length || 0, 'published deals');
+      return { deals: result.deals || [] };
+    },
+    retry: 2,
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnWindowFocus: true,
+    refetchOnMount: 'always' as const,
+    refetchInterval: 10000,
+    networkMode: 'always' as const,
+  });
+
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    const pulse = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1.4, duration: 800, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
+      ])
+    );
+    pulse.start();
+    return () => pulse.stop();
+  }, [pulseAnim]);
+
+  const _isXs = width < 340;
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 1500);
-  }, []);
+    void publishedDealsQuery.refetch().finally(() => setRefreshing(false));
+  }, [publishedDealsQuery]);
 
   const transactionFee = ipxFeeConfigs.find(f => f.feeType === 'transaction');
 
@@ -274,6 +347,190 @@ export default function InvestScreen() {
           </TouchableOpacity>
         </View>
 
+        {publishedDealsQuery.isLoading && (
+          <View style={styles.jvLoadingWrap}>
+            <ActivityIndicator size="small" color={Colors.primary} />
+            <Text style={styles.jvLoadingText}>Loading live JV deals...</Text>
+          </View>
+        )}
+
+        {publishedDealsQuery.data && publishedDealsQuery.data.deals.length > 0 && (
+          <View style={styles.liveJvSection}>
+            <View style={styles.liveJvHeader}>
+              <View style={styles.liveJvTitleRow}>
+                <Handshake size={20} color="#FFD700" />
+                <Text style={styles.liveJvSectionTitle}>Live JV Deals</Text>
+              </View>
+              <View style={styles.liveJvBadge}>
+                <Animated.View style={[styles.liveJvPulse, { transform: [{ scale: pulseAnim }] }]} />
+                <Text style={styles.liveJvBadgeText}>{publishedDealsQuery.data.deals.length} LIVE</Text>
+              </View>
+            </View>
+            <Text style={styles.liveJvSubtitle}>Published joint ventures with photos — open for tokenized investment now.</Text>
+
+            {publishedDealsQuery.data.deals.map((deal) => {
+              const typeLabels: Record<string, string> = {
+                equity_split: '📊 Equity Split',
+                profit_sharing: '💰 Profit Sharing',
+                hybrid: '🔄 Hybrid',
+                development: '🏗️ Development JV',
+              };
+              const photos: string[] = Array.isArray(deal.photos) ? deal.photos.filter((p: unknown) => typeof p === 'string' && (p as string).startsWith('http')) : [];
+              const partnerCount = Array.isArray(deal.partners) ? deal.partners.length : (deal.partners ?? 0);
+              return (
+                <View key={deal.id} style={styles.liveJvCard}>
+                  {photos.length > 0 && (
+                    <View style={styles.liveJvGallery}>
+                      <ScrollView
+                        horizontal
+                        pagingEnabled
+                        showsHorizontalScrollIndicator={false}
+                        style={styles.liveJvGalleryScroll}
+                      >
+                        {photos.map((uri: string, idx: number) => (
+                          <Image
+                            key={`photo-${deal.id}-${idx}`}
+                            source={{ uri }}
+                            style={[styles.liveJvImage, { width }]}
+                            resizeMode="cover"
+                          />
+                        ))}
+                      </ScrollView>
+                      {photos.length > 1 && (
+                        <View style={styles.liveJvPhotoDots}>
+                          {photos.map((_: string, idx: number) => (
+                            <View key={idx} style={[styles.liveJvPhotoDot, idx === 0 && styles.liveJvPhotoDotActive]} />
+                          ))}
+                        </View>
+                      )}
+                      <View style={styles.liveJvPhotoCount}>
+                        <ImageIcon size={10} color="#fff" />
+                        <Text style={styles.liveJvPhotoCountText}>{photos.length}</Text>
+                      </View>
+                      <View style={styles.liveJvLiveBadgeOverlay}>
+                        <Animated.View style={[styles.liveJvLiveDotAnim, { transform: [{ scale: pulseAnim }] }]} />
+                        <Text style={styles.liveJvLiveBadgeOverlayText}>LIVE</Text>
+                      </View>
+                    </View>
+                  )}
+                  {photos.length === 0 && (
+                    <View style={styles.liveJvNoPhoto}>
+                      <ImageIcon size={32} color={Colors.textTertiary} />
+                      <Text style={styles.liveJvNoPhotoText}>No photos yet</Text>
+                    </View>
+                  )}
+                  <View style={styles.liveJvContent}>
+                    <View style={styles.liveJvTopRow}>
+                      <View style={styles.liveJvTypeBadge}>
+                        <Text style={styles.liveJvTypeText}>{typeLabels[deal.type] || deal.type}</Text>
+                      </View>
+                      <View style={styles.liveJvRoiBadge}>
+                        <TrendingUp size={10} color="#00C48C" />
+                        <Text style={styles.liveJvRoiText}>{deal.expectedROI}% ROI</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.liveJvTitle}>{deal.title}</Text>
+                    <Text style={styles.liveJvProject}>{deal.projectName}</Text>
+                    {deal.propertyAddress ? (
+                      <View style={styles.liveJvLocationRow}>
+                        <Globe size={11} color={Colors.textTertiary} />
+                        <Text style={styles.liveJvLocation} numberOfLines={1}>{deal.propertyAddress}</Text>
+                      </View>
+                    ) : null}
+                    <View style={styles.liveJvMetrics}>
+                      <View style={styles.liveJvMetric}>
+                        <Text style={styles.liveJvMetricValue}>{formatCurrency(deal.totalInvestment, true)}</Text>
+                        <Text style={styles.liveJvMetricLabel}>Investment</Text>
+                      </View>
+                      <View style={styles.liveJvMetricDivider} />
+                      <View style={styles.liveJvMetric}>
+                        <Text style={[styles.liveJvMetricValue, { color: '#00C48C' }]}>{deal.expectedROI}%</Text>
+                        <Text style={styles.liveJvMetricLabel}>Expected ROI</Text>
+                      </View>
+                      <View style={styles.liveJvMetricDivider} />
+                      <View style={styles.liveJvMetric}>
+                        <Text style={styles.liveJvMetricValue}>{partnerCount}</Text>
+                        <Text style={styles.liveJvMetricLabel}>Partners</Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.liveJvPoolRow}>
+                      <TouchableOpacity
+                        style={styles.liveJvPoolOption}
+                        onPress={() => {
+                          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                          router.push(`/jv-invest?jvId=${deal.id}` as any);
+                        }}
+                        activeOpacity={0.85}
+                      >
+                        <View style={[styles.liveJvPoolIcon, { backgroundColor: '#00C48C18' }]}>
+                          <Landmark size={16} color="#00C48C" />
+                        </View>
+                        <View style={styles.liveJvPoolTextWrap}>
+                          <Text style={styles.liveJvPoolTitle}>JV Direct</Text>
+                          <Text style={styles.liveJvPoolDesc}>Equity partner</Text>
+                        </View>
+                        <ArrowRight size={14} color="#00C48C" />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.liveJvPoolOption}
+                        onPress={() => {
+                          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                          router.push(`/jv-invest?jvId=${deal.id}` as any);
+                        }}
+                        activeOpacity={0.85}
+                      >
+                        <View style={[styles.liveJvPoolIcon, { backgroundColor: '#FFD70018' }]}>
+                          <Coins size={16} color="#FFD700" />
+                        </View>
+                        <View style={styles.liveJvPoolTextWrap}>
+                          <Text style={styles.liveJvPoolTitle}>Token Shares</Text>
+                          <Text style={styles.liveJvPoolDesc}>From $50</Text>
+                        </View>
+                        <ArrowRight size={14} color="#FFD700" />
+                      </TouchableOpacity>
+                    </View>
+
+                    <View style={styles.liveJvActions}>
+                      <TouchableOpacity
+                        style={styles.liveJvQuickBuyBtn}
+                        onPress={() => {
+                          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+                          openQuickBuy(deal);
+                        }}
+                        activeOpacity={0.85}
+                        testID={`invest-quick-buy-${deal.id}`}
+                      >
+                        <Zap size={14} color="#000" />
+                        <Text style={styles.liveJvQuickBuyBtnText}>Quick Buy</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.liveJvViewBtn}
+                        onPress={() => router.push(`/jv-invest?jvId=${deal.id}` as any)}
+                        activeOpacity={0.85}
+                        testID={`invest-jv-${deal.id}`}
+                      >
+                        <Eye size={14} color={Colors.primary} />
+                        <Text style={styles.liveJvViewBtnText}>Full Details</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </View>
+              );
+            })}
+
+            <TouchableOpacity
+              style={styles.liveJvAllBtn}
+              onPress={() => router.push('/jv-agreement' as any)}
+              activeOpacity={0.85}
+            >
+              <Scale size={16} color={Colors.primary} />
+              <Text style={styles.liveJvAllBtnText}>View All JV Agreements</Text>
+              <ChevronRight size={16} color={Colors.primary} />
+            </TouchableOpacity>
+          </View>
+        )}
+
         <View style={styles.bottomPadding} />
       </ScrollView>
 
@@ -312,6 +569,15 @@ export default function InvestScreen() {
           </View>
         </TouchableOpacity>
       </Modal>
+
+      <QuickBuyModal
+        visible={quickBuyVisible}
+        onClose={() => setQuickBuyVisible(false)}
+        deal={quickBuyDeal}
+        onNavigateToFullInvest={(dealId) => {
+          router.push({ pathname: '/jv-invest', params: { jvId: dealId } } as any);
+        }}
+      />
     </View>
   );
 }
@@ -786,5 +1052,342 @@ const styles = StyleSheet.create({
     color: Colors.primary,
     fontWeight: '600' as const,
     fontSize: 14,
+  },
+  jvLoadingWrap: {
+    alignItems: 'center',
+    paddingVertical: 24,
+    gap: 10,
+    marginHorizontal: 20,
+  },
+  jvLoadingText: {
+    color: Colors.textTertiary,
+    fontSize: 13,
+  },
+  liveJvSection: {
+    marginHorizontal: 20,
+    marginBottom: 16,
+  },
+  liveJvHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  liveJvTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  liveJvSectionTitle: {
+    color: Colors.text,
+    fontSize: 18,
+    fontWeight: '800' as const,
+  },
+  liveJvBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#00C48C20',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  liveJvPulse: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: '#00C48C',
+  },
+  liveJvGallery: {
+    position: 'relative' as const,
+    height: 200,
+    overflow: 'hidden',
+  },
+  liveJvGalleryScroll: {
+    height: 200,
+  },
+  liveJvPhotoDots: {
+    position: 'absolute' as const,
+    bottom: 10,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 5,
+  },
+  liveJvPhotoDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(255,255,255,0.35)',
+  },
+  liveJvPhotoDotActive: {
+    width: 18,
+    backgroundColor: Colors.primary,
+    borderRadius: 3,
+  },
+  liveJvPhotoCount: {
+    position: 'absolute' as const,
+    top: 10,
+    right: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  liveJvPhotoCountText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '700' as const,
+  },
+  liveJvLiveBadgeOverlay: {
+    position: 'absolute' as const,
+    top: 10,
+    left: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(0,196,140,0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(0,196,140,0.4)',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  liveJvLiveDotAnim: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#00C48C',
+  },
+  liveJvLiveBadgeOverlayText: {
+    color: '#00C48C',
+    fontSize: 9,
+    fontWeight: '900' as const,
+    letterSpacing: 1.5,
+  },
+  liveJvNoPhoto: {
+    height: 120,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.backgroundSecondary,
+    gap: 6,
+  },
+  liveJvNoPhotoText: {
+    color: Colors.textTertiary,
+    fontSize: 12,
+  },
+  liveJvPoolRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+  },
+  liveJvPoolOption: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: Colors.backgroundSecondary,
+    borderRadius: 12,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+  },
+  liveJvPoolIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  liveJvPoolTextWrap: {
+    flex: 1,
+  },
+  liveJvPoolTitle: {
+    color: Colors.text,
+    fontSize: 12,
+    fontWeight: '700' as const,
+  },
+  liveJvPoolDesc: {
+    color: Colors.textTertiary,
+    fontSize: 10,
+  },
+  liveJvBadgeText: {
+    color: '#00C48C',
+    fontSize: 11,
+    fontWeight: '800' as const,
+    letterSpacing: 0.5,
+  },
+  liveJvSubtitle: {
+    color: Colors.textTertiary,
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 14,
+  },
+  liveJvCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    overflow: 'hidden',
+    marginBottom: 14,
+  },
+  liveJvImage: {
+    height: 200,
+    backgroundColor: Colors.backgroundSecondary,
+  },
+  liveJvContent: {
+    padding: 16,
+  },
+  liveJvTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  liveJvTypeBadge: {
+    backgroundColor: '#FFD70015',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  liveJvTypeText: {
+    color: '#FFD700',
+    fontSize: 11,
+    fontWeight: '700' as const,
+  },
+  liveJvRoiBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#00C48C15',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  liveJvRoiText: {
+    color: '#00C48C',
+    fontSize: 11,
+    fontWeight: '700' as const,
+  },
+  liveJvTitle: {
+    color: Colors.text,
+    fontSize: 17,
+    fontWeight: '800' as const,
+    marginBottom: 3,
+  },
+  liveJvProject: {
+    color: Colors.textSecondary,
+    fontSize: 13,
+    marginBottom: 8,
+  },
+  liveJvLocationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 12,
+  },
+  liveJvLocation: {
+    color: Colors.textTertiary,
+    fontSize: 12,
+    flex: 1,
+  },
+  liveJvMetrics: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.backgroundSecondary,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 14,
+  },
+  liveJvMetric: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  liveJvMetricValue: {
+    color: Colors.text,
+    fontSize: 14,
+    fontWeight: '800' as const,
+  },
+  liveJvMetricLabel: {
+    color: Colors.textTertiary,
+    fontSize: 10,
+    marginTop: 3,
+  },
+  liveJvMetricDivider: {
+    width: 1,
+    height: 28,
+    backgroundColor: Colors.surfaceBorder,
+  },
+  liveJvActions: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  liveJvViewBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    backgroundColor: Colors.backgroundSecondary,
+  },
+  liveJvViewBtnText: {
+    color: Colors.primary,
+    fontSize: 13,
+    fontWeight: '700' as const,
+  },
+  liveJvInvestBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: Colors.primary,
+  },
+  liveJvInvestBtnText: {
+    color: '#000',
+    fontSize: 13,
+    fontWeight: '800' as const,
+  },
+  liveJvQuickBuyBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: Colors.primary,
+  },
+  liveJvQuickBuyBtnText: {
+    color: '#000',
+    fontSize: 13,
+    fontWeight: '800' as const,
+  },
+  liveJvAllBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.primary + '40',
+    borderStyle: 'dashed',
+    marginTop: 4,
+  },
+  liveJvAllBtnText: {
+    color: Colors.primary,
+    fontSize: 14,
+    fontWeight: '700' as const,
   },
 });
