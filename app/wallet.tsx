@@ -35,18 +35,19 @@ import {
   Banknote,
   ArrowLeft,
   Clock,
-  TrendingUp,
   Timer,
   CircleDollarSign,
-  Bolt,
   Star,
 } from 'lucide-react-native';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
 import { currentUser as mockUser, transactions as mockTransactions } from '@/mocks/user';
-import { trpc } from '@/lib/trpc';
-import { formatNumber, formatAmountInput, parseAmountInput } from '@/lib/formatters';
+import { useWalletBalance, useTransactions } from '@/lib/data-hooks';
+import { supabase } from '@/lib/supabase';
+import { getAuthUserId } from '@/lib/auth-store';
+import { useQueryClient } from '@tanstack/react-query';
+import { formatNumber, formatCurrencyWithDecimals, formatAmountInput, parseAmountInput } from '@/lib/formatters';
 import { paymentService, PaymentMethodType, PaymentResult, WithdrawalResult } from '@/lib/payment-service';
 import CardInputForm, { CardData } from '@/components/CardInputForm';
 import BankLinkForm, { BankData } from '@/components/BankLinkForm';
@@ -58,25 +59,75 @@ import { useAnalytics } from '@/lib/analytics-context';
 export default function WalletScreen() {
   const router = useRouter();
   const { totalBalance: earnBalance, apyRate } = useEarn();
-  const { trackScreen, trackTransaction } = useAnalytics();
+  const { trackScreen, trackTransaction: trackAnalyticsTx } = useAnalytics();
+  const queryClient = useQueryClient();
 
   React.useEffect(() => {
     trackScreen('Wallet');
-  }, []);
+  }, [trackScreen]);
 
-  const balanceQuery = trpc.wallet.getBalance.useQuery();
-  const txQuery = trpc.wallet.getTransactionHistory.useQuery({ page: 1, limit: 30 });
+  const recordTransactionToSupabase = React.useCallback(async (
+    type: 'deposit' | 'withdrawal',
+    amount: number,
+    fee: number,
+    method: string,
+    status: string,
+    transactionId: string
+  ) => {
+    const userId = getAuthUserId();
+    if (!userId) return;
+    try {
+      await supabase.from('transactions').insert({
+        id: transactionId,
+        user_id: userId,
+        type,
+        amount,
+        fee,
+        net_amount: amount - fee,
+        payment_method: method,
+        status,
+        description: `${type === 'deposit' ? 'Deposit' : 'Withdrawal'} via ${method}`,
+        created_at: new Date().toISOString(),
+      });
+
+      if (type === 'deposit' && status === 'succeeded') {
+        await supabase.rpc('increment_wallet_balance', { p_user_id: userId, p_amount: amount - fee }).then(res => {
+          if (res.error) {
+            console.log('[Wallet] RPC not available, updating directly');
+            void supabase.from('wallets').upsert({
+              user_id: userId,
+              available: amount - fee,
+              updated_at: new Date().toISOString(),
+            });
+          }
+        });
+      }
+
+      void queryClient.invalidateQueries({ queryKey: ['wallet-balance'] });
+      void queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      trackAnalyticsTx(type === 'deposit' ? 'deposit' : 'withdraw', amount, 'USD', { method, fee });
+      console.log('[Wallet] Transaction recorded to Supabase:', transactionId);
+    } catch (error) {
+      console.log('[Wallet] Supabase transaction record failed:', error);
+    }
+  }, [queryClient, trackAnalyticsTx]);
+
+  const { balance: walletBalance, isFromAPI: balanceFromAPI } = useWalletBalance();
+  const { transactions: txData } = useTransactions(1, 30);
 
   const currentUser = useMemo(() => {
-    const balance = balanceQuery.data?.available ?? mockUser.walletBalance;
-    logger.wallet.log('Balance source:', balanceQuery.data ? 'backend' : 'local', balance);
+    const balance = walletBalance.available;
+    logger.wallet.log('Balance source:', balanceFromAPI ? 'supabase' : 'local', balance);
     return { ...mockUser, walletBalance: balance };
-  }, [balanceQuery.data]);
+  }, [walletBalance, balanceFromAPI]);
   const transactions = useMemo(() => {
-    const txData = txQuery.data?.transactions ?? mockTransactions;
-    logger.wallet.log('Transactions source:', txQuery.data ? 'backend' : 'local', txData.length);
-    return txData as typeof mockTransactions;
-  }, [txQuery.data]);
+    if (txData && txData.length > 0) {
+      logger.wallet.log('Transactions source: supabase', txData.length);
+      return txData as typeof mockTransactions;
+    }
+    logger.wallet.log('Transactions source: local', mockTransactions.length);
+    return mockTransactions;
+  }, [txData]);
 
   const [addFundsModalVisible, setAddFundsModalVisible] = useState(false);
   const [fundAmount, setFundAmount] = useState('');
@@ -98,7 +149,7 @@ export default function WalletScreen() {
   const availablePaymentMethods = useMemo(() => paymentService.getAvailablePaymentMethods(), []);
   const availableWithdrawMethods = useMemo(() => paymentService.getAvailableWithdrawalMethods(), []);
 
-  const getPaymentMethodIcon = useCallback((type: PaymentMethodType | string) => {
+  const getPaymentMethodIcon = useCallback((type: string) => {
     switch (type) {
       case 'fednow': return Zap;
       case 'rtp': return Zap;
@@ -128,11 +179,11 @@ export default function WalletScreen() {
     }
   }, []);
 
-  const isInstantMethod = useCallback((type: PaymentMethodType | string) => {
+  const isInstantMethod = useCallback((type: string) => {
     return ['fednow', 'rtp', 'usdc'].includes(type);
   }, []);
 
-  const isFreeMethod = useCallback((type: PaymentMethodType | string) => {
+  const isFreeMethod = useCallback((type: string) => {
     return ['fednow', 'same_day_ach', 'bank_transfer'].includes(type);
   }, []);
 
@@ -198,7 +249,7 @@ export default function WalletScreen() {
 
   const copyToClipboard = useCallback(async (text: string) => {
     await Clipboard.setStringAsync(text);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     Alert.alert('Copied', 'Reference copied to clipboard');
   }, []);
 
@@ -218,7 +269,7 @@ export default function WalletScreen() {
       return;
     }
     setIsProcessing(true);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     try {
       logger.wallet.log('Processing payment:', { amount, method: selectedPaymentMethod });
       let result;
@@ -231,13 +282,21 @@ export default function WalletScreen() {
       setPaymentResult(result);
       setShowResult(true);
       if (result.success) {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        void recordTransactionToSupabase(
+          'deposit',
+          amount,
+          result.fee,
+          selectedPaymentMethod,
+          result.status,
+          result.transactionId
+        );
       } else {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       }
     } catch (error) {
       console.error('[Wallet] Payment error:', error);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Alert.alert('Payment Failed', 'An unexpected error occurred. Please try again.');
     } finally {
       setIsProcessing(false);
@@ -258,7 +317,7 @@ export default function WalletScreen() {
 
   const handleSelectPaymentMethod = (method: PaymentMethodType) => {
     setSelectedPaymentMethod(method);
-    Haptics.selectionAsync();
+    void Haptics.selectionAsync();
     if (method === 'card') {
       setPaymentStep('input');
     } else if (method === 'bank_transfer' || method === 'same_day_ach') {
@@ -298,7 +357,7 @@ export default function WalletScreen() {
       return;
     }
     setIsWithdrawing(true);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     try {
       logger.wallet.log('Processing withdrawal:', { amount, method: selectedWithdrawMethod });
       const result = await paymentService.processWithdrawal(amount, selectedWithdrawMethod);
@@ -306,13 +365,21 @@ export default function WalletScreen() {
       setWithdrawResult(result);
       setShowWithdrawResult(true);
       if (result.success) {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        void recordTransactionToSupabase(
+          'withdrawal',
+          amount,
+          result.fee,
+          selectedWithdrawMethod,
+          result.status,
+          result.withdrawalId
+        );
       } else {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       }
     } catch (error) {
       console.error('[Wallet] Withdrawal error:', error);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Alert.alert('Withdrawal Failed', 'An unexpected error occurred. Please try again.');
     } finally {
       setIsWithdrawing(false);
@@ -532,7 +599,7 @@ export default function WalletScreen() {
               </TouchableOpacity>
             </View>
 
-            {!showResult && !balanceQuery.data && (
+            {!showResult && !balanceFromAPI && (
               <View style={styles.testModeBanner}>
                 <TestTube2 size={16} color={Colors.warning} />
                 <Text style={styles.testModeText}>Demo Mode - Connect payment provider for live transactions</Text>
@@ -574,13 +641,13 @@ export default function WalletScreen() {
                       {paymentResult.fee > 0 && (
                         <View style={styles.resultRow}>
                           <Text style={styles.resultLabel}>Fee</Text>
-                          <Text style={styles.resultValue}>${paymentResult.fee.toFixed(2)}</Text>
+                          <Text style={styles.resultValue}>{formatCurrencyWithDecimals(paymentResult.fee)}</Text>
                         </View>
                       )}
                       <View style={styles.resultRow}>
                         <Text style={styles.resultLabel}>Net Amount</Text>
                         <Text style={[styles.resultValue, { color: Colors.success, fontWeight: '700' as const }]}>
-                          ${paymentResult.netAmount.toFixed(2)}
+                          {formatCurrencyWithDecimals(paymentResult.netAmount)}
                         </Text>
                       </View>
                     </View>
@@ -874,12 +941,12 @@ export default function WalletScreen() {
                     {calculatedFee > 0 && (
                       <View style={styles.feeRow}>
                         <Text style={styles.feeLabel}>Processing Fee</Text>
-                        <Text style={[styles.feeValue, { color: Colors.error }]}>-${calculatedFee.toFixed(2)}</Text>
+                        <Text style={[styles.feeValue, { color: Colors.error }]}>-{formatCurrencyWithDecimals(calculatedFee)}</Text>
                       </View>
                     )}
                     <View style={[styles.feeRow, styles.feeRowTotal]}>
                       <Text style={styles.feeLabelTotal}>You will receive</Text>
-                      <Text style={styles.feeValueTotal}>${netAmount.toFixed(2)}</Text>
+                      <Text style={styles.feeValueTotal}>{formatCurrencyWithDecimals(netAmount)}</Text>
                     </View>
                   </View>
                 )}
@@ -904,7 +971,7 @@ export default function WalletScreen() {
                          selectedPaymentMethod === 'google_pay' ? 'Pay with Google Pay' :
                          selectedPaymentMethod === 'paypal' ? 'Continue to PayPal' :
                          selectedPaymentMethod === 'wire' ? 'Get Wire Instructions' :
-                         `Add ${fundAmount ? '$' + parseFloat(fundAmount).toLocaleString() : '$0'}`}
+                         `Add ${fundAmount ? formatCurrencyWithDecimals(parseFloat(fundAmount)) : '$0.00'}`}
                       </Text>
                     )}
                   </TouchableOpacity>
@@ -975,13 +1042,13 @@ export default function WalletScreen() {
                     {withdrawResult.fee > 0 && (
                       <View style={styles.resultRow}>
                         <Text style={styles.resultLabel}>Fee</Text>
-                        <Text style={styles.resultValue}>${withdrawResult.fee.toFixed(2)}</Text>
+                        <Text style={styles.resultValue}>{formatCurrencyWithDecimals(withdrawResult.fee)}</Text>
                       </View>
                     )}
                     <View style={styles.resultRow}>
                       <Text style={styles.resultLabel}>You will Receive</Text>
                       <Text style={[styles.resultValue, { color: Colors.success, fontWeight: '700' as const }]}>
-                        ${withdrawResult.netAmount.toFixed(2)}
+                        {formatCurrencyWithDecimals(withdrawResult.netAmount)}
                       </Text>
                     </View>
                     {withdrawResult.estimatedArrival && (
@@ -1055,7 +1122,7 @@ export default function WalletScreen() {
                         ]}
                         onPress={() => {
                           setSelectedWithdrawMethod(method.type);
-                          Haptics.selectionAsync();
+                          void Haptics.selectionAsync();
                         }}
                         disabled={isWithdrawing}
                       >
@@ -1093,12 +1160,12 @@ export default function WalletScreen() {
                     {withdrawFee > 0 && (
                       <View style={styles.feeRow}>
                         <Text style={styles.feeLabel}>Processing Fee</Text>
-                        <Text style={[styles.feeValue, { color: Colors.error }]}>-${withdrawFee.toFixed(2)}</Text>
+                        <Text style={[styles.feeValue, { color: Colors.error }]}>-{formatCurrencyWithDecimals(withdrawFee)}</Text>
                       </View>
                     )}
                     <View style={[styles.feeRow, styles.feeRowTotal]}>
                       <Text style={styles.feeLabelTotal}>You will Receive</Text>
-                      <Text style={styles.feeValueTotal}>${withdrawNetAmount.toFixed(2)}</Text>
+                      <Text style={styles.feeValueTotal}>{formatCurrencyWithDecimals(withdrawNetAmount)}</Text>
                     </View>
                   </View>
                 )}
@@ -1118,7 +1185,7 @@ export default function WalletScreen() {
                     </View>
                   ) : (
                     <Text style={styles.withdrawConfirmText}>
-                      Withdraw ${withdrawAmount ? parseFloat(withdrawAmount).toLocaleString() : '0'}
+                      Withdraw {withdrawAmount ? formatCurrencyWithDecimals(parseFloat(withdrawAmount)) : '$0.00'}
                     </Text>
                   )}
                 </TouchableOpacity>
@@ -1174,8 +1241,7 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: '800' as const,
     marginBottom: 20,
-    adjustsFontSizeToFit: true,
-    numberOfLines: 1,
+
   },
   actionRow: {
     flexDirection: 'row',
