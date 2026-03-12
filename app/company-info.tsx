@@ -464,7 +464,7 @@ const styles = StyleSheet.create({
   brandSection: { marginBottom: 16 },
   logoRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   logo: { width: 48, height: 48, borderRadius: 12 },
-  brandText: { color: Colors.textSecondary, fontSize: 13 },
+  brandText: { flex: 1 },
   brandName: { color: Colors.text, fontSize: 15, fontWeight: '700' as const },
   brandTagline: { gap: 4 },
   brandDivider: { width: 1, height: 24, backgroundColor: Colors.surfaceBorder },
