@@ -181,6 +181,9 @@
   s.parentNode.insertBefore(b,s);})(window.lintrk);
   </script>
 
+  <!-- Supabase JS CDN for live deal fetching -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
@@ -1255,6 +1258,167 @@
     }
     .partner-close:hover { border-color: var(--gold-border); color: var(--text); }
 
+    /* ─── LIVE JV DEALS ─── */
+    .live-deals-section {
+      padding: 80px 24px 0;
+    }
+    .live-deals-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 12px; flex-wrap: wrap; gap: 12px;
+    }
+    .live-deals-title-row {
+      display: flex; align-items: center; gap: 10px;
+    }
+    .live-deals-title {
+      font-size: clamp(22px, 3.5vw, 32px); font-weight: 900;
+      letter-spacing: -0.8px;
+    }
+    .live-deals-badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: rgba(0,196,140,0.1); border: 1px solid rgba(0,196,140,0.25);
+      border-radius: 100px; padding: 5px 14px;
+      font-size: 10px; font-weight: 800; letter-spacing: 1.2px;
+      color: var(--green);
+    }
+    .live-deals-pulse {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--green); animation: glow-pulse 1.8s infinite;
+    }
+    .live-deals-sub {
+      font-size: 14px; color: var(--text2); margin-bottom: 32px; line-height: 1.65;
+    }
+    .live-deals-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 20px; margin-bottom: 48px;
+    }
+    @media(max-width:400px) { .live-deals-grid { grid-template-columns: 1fr; } }
+    .live-deal-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 20px; overflow: hidden;
+      transition: transform 0.22s, border-color 0.22s, box-shadow 0.22s;
+    }
+    .live-deal-card:hover {
+      transform: translateY(-5px); border-color: var(--gold-border);
+      box-shadow: 0 16px 50px rgba(0,0,0,0.45);
+    }
+    .live-deal-gallery {
+      position: relative; width: 100%; height: 200px; overflow: hidden;
+      background: var(--bg2);
+    }
+    .live-deal-gallery img {
+      width: 100%; height: 200px; object-fit: cover; display: block;
+    }
+    .live-deal-no-photo {
+      width: 100%; height: 160px; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 8px;
+      background: var(--bg2); color: var(--text3); font-size: 12px;
+    }
+    .live-deal-overlay-badge {
+      position: absolute; top: 12px; left: 12px;
+      display: flex; align-items: center; gap: 5px;
+      background: rgba(0,0,0,0.72); border: 1px solid rgba(0,196,140,0.35);
+      border-radius: 100px; padding: 4px 10px;
+      font-size: 9px; font-weight: 700; color: var(--green);
+      letter-spacing: 0.8px; backdrop-filter: blur(8px);
+    }
+    .live-deal-overlay-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--green); animation: glow-pulse 1.8s infinite;
+    }
+    .live-deal-roi-badge {
+      position: absolute; top: 12px; right: 12px;
+      background: rgba(0,196,140,0.14); border: 1px solid rgba(0,196,140,0.28);
+      border-radius: 100px; padding: 4px 10px;
+      font-size: 11px; font-weight: 800; color: var(--green);
+      backdrop-filter: blur(8px);
+    }
+    .live-deal-photo-count {
+      position: absolute; bottom: 10px; right: 10px;
+      background: rgba(0,0,0,0.7); border-radius: 8px; padding: 3px 8px;
+      font-size: 10px; color: #fff; font-weight: 600;
+      backdrop-filter: blur(6px); display: flex; align-items: center; gap: 4px;
+    }
+    .live-deal-content { padding: 18px; }
+    .live-deal-type-badge {
+      display: inline-block; background: var(--gold-dim);
+      border: 1px solid var(--gold-border); border-radius: 8px;
+      padding: 3px 10px; font-size: 10px; font-weight: 700;
+      color: var(--gold); margin-bottom: 10px;
+    }
+    .live-deal-title {
+      font-size: 17px; font-weight: 800; margin-bottom: 3px;
+      letter-spacing: -0.3px;
+    }
+    .live-deal-project {
+      font-size: 12px; color: var(--text2); margin-bottom: 6px;
+    }
+    .live-deal-location {
+      display: flex; align-items: center; gap: 5px;
+      font-size: 11px; color: var(--text3); margin-bottom: 10px;
+    }
+    .live-deal-desc {
+      font-size: 12px; color: var(--text2); line-height: 1.6;
+      margin-bottom: 14px;
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .live-deal-metrics {
+      display: flex; background: var(--bg); border: 1px solid var(--border);
+      border-radius: 12px; overflow: hidden; margin-bottom: 14px;
+    }
+    .live-deal-metric {
+      flex: 1; padding: 10px 8px; text-align: center;
+    }
+    .live-deal-metric-val {
+      font-size: 14px; font-weight: 800; margin-bottom: 2px;
+    }
+    .live-deal-metric-lbl {
+      font-size: 9px; color: var(--text3); letter-spacing: 0.3px;
+    }
+    .live-deal-metric-div {
+      width: 1px; background: var(--border); align-self: stretch;
+    }
+    .live-deal-footer {
+      display: flex; align-items: center; gap: 8px;
+      flex-wrap: wrap; margin-bottom: 12px;
+    }
+    .live-deal-live-badge {
+      display: flex; align-items: center; gap: 4px;
+      background: rgba(0,196,140,0.1); border: 1px solid rgba(0,196,140,0.22);
+      border-radius: 100px; padding: 3px 10px;
+      font-size: 9px; font-weight: 700; color: var(--green);
+      letter-spacing: 0.5px;
+    }
+    .live-deal-chip {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 8px; padding: 3px 9px;
+      font-size: 9.5px; color: var(--text3); font-weight: 600;
+    }
+    .live-deal-invest-btn {
+      width: 100%; display: flex; align-items: center;
+      justify-content: center; gap: 8px;
+      background: var(--gold); color: #000;
+      font-weight: 800; font-size: 13.5px;
+      padding: 13px; border-radius: 12px;
+      border: none; cursor: pointer; font-family: inherit;
+      transition: background 0.2s, transform 0.15s;
+      box-shadow: 0 0 24px rgba(255,215,0,0.15);
+    }
+    .live-deal-invest-btn:hover {
+      background: var(--gold-light); transform: translateY(-2px);
+    }
+    .live-deals-loading {
+      text-align: center; padding: 40px 20px;
+      color: var(--text3); font-size: 13px;
+    }
+    .live-deals-loading .spinner {
+      width: 28px; height: 28px; border: 3px solid var(--border);
+      border-top-color: var(--gold); border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 12px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
     /* ─── REVEAL ─── */
     .reveal { opacity:0; transform:translateY(28px); transition:opacity 0.72s ease, transform 0.72s ease; }
     .reveal.visible { opacity:1; transform:translateY(0); }
@@ -1348,6 +1512,28 @@
     <div class="ticker-item">&#127747; Singapore Loft &nbsp;<span class="up">&#9650; +8.9%</span></div>
   </div>
 </div>
+
+<!-- LIVE JV DEALS (Dynamic from Supabase) -->
+<section id="live-deals" class="live-deals-section" style="display:none;">
+  <div class="wrap">
+    <div class="live-deals-header reveal">
+      <div class="live-deals-title-row">
+        <span style="font-size:22px;">&#127760;</span>
+        <h2 class="live-deals-title">Live Investment Opportunities</h2>
+      </div>
+      <div class="live-deals-badge">
+        <div class="live-deals-pulse"></div>
+        <span id="live-deals-count">0 LIVE</span>
+      </div>
+    </div>
+    <p class="live-deals-sub reveal">Published JV deals with real photos — purchase tokenized shares or join as JV partner.</p>
+    <div class="live-deals-grid" id="live-deals-grid"></div>
+    <div class="live-deals-loading" id="live-deals-loading">
+      <div class="spinner"></div>
+      Loading live deals...
+    </div>
+  </div>
+</section>
 
 <!-- PROPERTIES -->
 <section id="properties">
@@ -1756,6 +1942,8 @@
   // ══════════════════════════════════════════════════════════════════════════════
   // CONFIG
   // ══════════════════════════════════════════════════════════════════════════════
+  var SUPABASE_URL = '__IVX_SUPABASE_URL__';
+  var SUPABASE_ANON_KEY = '__IVX_SUPABASE_ANON_KEY__';
   var _rawApiUrl = '__IVX_API_BASE_URL__';
   var _resolvedApi = (_rawApiUrl.indexOf('__IVX_') === 0 ? '' : _rawApiUrl || '').replace(/\/$/, '');
   var IVX_API = _resolvedApi || 'https://ivxholding.com';
@@ -2496,6 +2684,122 @@
     btn.textContent = '&#10004;';
     setTimeout(function() { btn.innerHTML = '&#128203;'; }, 2000);
   }
+
+  // ══════════════════════════════════════════════════════════════════════════════
+  // LIVE JV DEALS — SUPABASE REAL-TIME
+  // ══════════════════════════════════════════════════════════════════════════════
+  (function loadLiveDeals() {
+    var sbUrl = (SUPABASE_URL.indexOf('__IVX_') === 0) ? '' : SUPABASE_URL;
+    var sbKey = (SUPABASE_ANON_KEY.indexOf('__IVX_') === 0) ? '' : SUPABASE_ANON_KEY;
+    if (!sbUrl || !sbKey) {
+      console.log('[IVX Deals] Supabase not configured — skipping live deals');
+      var loadEl = document.getElementById('live-deals-loading');
+      if (loadEl) loadEl.style.display = 'none';
+      return;
+    }
+    console.log('[IVX Deals] Supabase configured — fetching published deals...');
+    var sb = window.supabase.createClient(sbUrl, sbKey);
+
+    function formatCurrency(num) {
+      if (!num || isNaN(num)) return '\x240';
+      num = Number(num);
+      if (num >= 1e6) return '\x24' + (num / 1e6).toFixed(1) + 'M';
+      if (num >= 1e3) return '\x24' + (num / 1e3).toFixed(0) + 'K';
+      return '\x24' + num.toLocaleString();
+    }
+
+    function renderDeals(deals) {
+      var section = document.getElementById('live-deals');
+      var grid = document.getElementById('live-deals-grid');
+      var loadEl = document.getElementById('live-deals-loading');
+      var countEl = document.getElementById('live-deals-count');
+      if (loadEl) loadEl.style.display = 'none';
+      if (!deals || deals.length === 0) {
+        if (section) section.style.display = 'none';
+        return;
+      }
+      if (section) section.style.display = 'block';
+      if (countEl) countEl.textContent = deals.length + ' LIVE';
+      grid.innerHTML = '';
+      var typeLabels = {
+        equity_split: '\uD83D\uDCCA Equity Split',
+        profit_sharing: '\uD83D\uDCB0 Profit Sharing',
+        hybrid: '\uD83D\uDD04 Hybrid',
+        development: '\uD83C\uDFD7\uFE0F Development JV'
+      };
+      deals.forEach(function(deal) {
+        var photos = [];
+        if (Array.isArray(deal.photos)) {
+          photos = deal.photos.filter(function(p) {
+            return typeof p === 'string' && (p.startsWith('http'));
+          });
+        }
+        var card = document.createElement('div');
+        card.className = 'live-deal-card reveal visible';
+        var galleryHtml = '';
+        if (photos.length > 0) {
+          galleryHtml = '<div class="live-deal-gallery">' +
+            '<img src="' + photos[0] + '" alt="' + (deal.title || 'Deal') + '" loading="lazy" onerror="this.style.display=\'none\'" />' +
+            '<div class="live-deal-overlay-badge"><div class="live-deal-overlay-dot"></div>LIVE</div>' +
+            '<div class="live-deal-roi-badge">\u25B2 +' + (deal.expectedROI || 0) + '%</div>' +
+            (photos.length > 1 ? '<div class="live-deal-photo-count">\uD83D\uDDBC ' + photos.length + '</div>' : '') +
+            '</div>';
+        } else {
+          galleryHtml = '<div class="live-deal-no-photo"><span style="font-size:28px;">\uD83D\uDDBC</span><span>Photos coming soon</span></div>';
+        }
+        var partners = Array.isArray(deal.partners) ? deal.partners.length : (typeof deal.partners === 'number' ? deal.partners : 0);
+        card.innerHTML = galleryHtml +
+          '<div class="live-deal-content">' +
+            '<div class="live-deal-type-badge">' + (typeLabels[deal.type] || deal.type || 'JV Deal') + '</div>' +
+            '<div class="live-deal-title">' + (deal.title || 'Untitled') + '</div>' +
+            '<div class="live-deal-project">' + (deal.projectName || '') + '</div>' +
+            (deal.propertyAddress ? '<div class="live-deal-location">\uD83D\uDCCD ' + deal.propertyAddress + '</div>' : '') +
+            (deal.description ? '<div class="live-deal-desc">' + deal.description + '</div>' : '') +
+            '<div class="live-deal-metrics">' +
+              '<div class="live-deal-metric"><div class="live-deal-metric-val">' + formatCurrency(deal.totalInvestment) + '</div><div class="live-deal-metric-lbl">Investment</div></div>' +
+              '<div class="live-deal-metric-div"></div>' +
+              '<div class="live-deal-metric"><div class="live-deal-metric-val" style="color:var(--green);">' + (deal.expectedROI || 0) + '%</div><div class="live-deal-metric-lbl">Expected ROI</div></div>' +
+              '<div class="live-deal-metric-div"></div>' +
+              '<div class="live-deal-metric"><div class="live-deal-metric-val">' + partners + '</div><div class="live-deal-metric-lbl">Partners</div></div>' +
+            '</div>' +
+            '<div class="live-deal-footer">' +
+              '<div class="live-deal-live-badge"><div class="live-deals-pulse"></div>LIVE</div>' +
+              (deal.distributionFrequency ? '<div class="live-deal-chip">' + deal.distributionFrequency + '</div>' : '') +
+              (deal.exitStrategy ? '<div class="live-deal-chip">' + deal.exitStrategy + '</div>' : '') +
+            '</div>' +
+            '<button class="live-deal-invest-btn" onclick="openFunnel()">\u26A1 Buy Tokenized Shares Now \u2192</button>' +
+          '</div>';
+        grid.appendChild(card);
+      });
+      console.log('[IVX Deals] Rendered', deals.length, 'live deals');
+    }
+
+    function fetchDeals() {
+      sb.from('jv_deals')
+        .select('*')
+        .eq('published', true)
+        .order('createdAt', { ascending: false })
+        .then(function(result) {
+          if (result.error) {
+            console.warn('[IVX Deals] Fetch error:', result.error.message);
+            var loadEl = document.getElementById('live-deals-loading');
+            if (loadEl) loadEl.style.display = 'none';
+            return;
+          }
+          renderDeals(result.data || []);
+        })
+        .catch(function(err) {
+          console.warn('[IVX Deals] Exception:', err.message);
+          var loadEl = document.getElementById('live-deals-loading');
+          if (loadEl) loadEl.style.display = 'none';
+        });
+    }
+
+    // Initial fetch
+    fetchDeals();
+    // Re-fetch every 5 seconds for real-time updates
+    setInterval(fetchDeals, 5000);
+  })();
 
   // ══════════════════════════════════════════════════════════════════════════════
   // SCROLL REVEAL
