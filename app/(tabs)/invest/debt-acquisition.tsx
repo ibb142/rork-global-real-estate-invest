@@ -19,7 +19,6 @@ import {
   TrendingUp,
   DollarSign,
   Percent,
-  Building2,
   ChevronRight,
   X,
   AlertTriangle,
@@ -27,17 +26,15 @@ import {
   Lock,
   Info,
   Clock,
-  Banknote,
-  Home,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import {
   debtAcquisitionProperties,
   debtAcquisitionStats,
-  IPX_MORTGAGE_STRATEGY,
   calculateTokenization,
 } from '@/mocks/debt-acquisition';
 import { DebtAcquisitionProperty } from '@/types';
+import { formatDollar, formatCurrencyWithDecimals } from '@/lib/formatters';
 
 type FilterType = 'all' | 'available' | 'tokenizing' | 'first_lien_secured';
 
@@ -65,7 +62,7 @@ export default function DebtAcquisitionScreen() {
   });
 
   const handleInvest = (property: DebtAcquisitionProperty) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setSelectedProperty(property);
     setTokenAmount('');
     setAcceptedDisclosure(false);
@@ -89,7 +86,7 @@ export default function DebtAcquisitionScreen() {
 
     Alert.alert(
       'Confirm Investment',
-      `Invest in ${tokens} mortgage-backed tokens for $${calc.subtotal.toLocaleString()}\n\nIVXHOLDINGS Fee (2.5%): ${calc.ipxFee.toLocaleString()}\nNet Investment: $${calc.netInvestment.toLocaleString()}\n\nLien Position: ${calc.lienPosition.toUpperCase()}\nProjected Annual Return: $${calc.projectedAnnualReturn.toFixed(2)}`,
+      `Invest in ${tokens} mortgage-backed tokens for ${formatDollar(calc.subtotal)}\n\nIVXHOLDINGS Fee (2.5%): ${formatDollar(calc.ipxFee)}\nNet Investment: ${formatDollar(calc.netInvestment)}\n\nLien Position: ${calc.lienPosition.toUpperCase()}\nProjected Annual Return: ${formatCurrencyWithDecimals(calc.projectedAnnualReturn)}`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -112,12 +109,12 @@ export default function DebtAcquisitionScreen() {
 
   const formatCurrency = (value: number) => {
     if (value >= 1000000) {
-      return `$${(value / 1000000).toFixed(1)}M`;
+      return `${(value / 1000000).toFixed(1)}M`;
     }
     if (value >= 1000) {
-      return `$${(value / 1000).toFixed(0)}K`;
+      return `${new Intl.NumberFormat('en-US').format(Math.round(value))}`;
     }
-    return `$${value.toFixed(0)}`;
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
   };
 
   const getStatusColor = (status: DebtAcquisitionProperty['status']) => {
@@ -245,7 +242,13 @@ export default function DebtAcquisitionScreen() {
             onPress={() => handleInvest(property)}
             activeOpacity={0.9}
           >
-            <Image source={{ uri: property.images[0] }} style={styles.propertyImage} />
+            {property.images && property.images[0] ? (
+              <Image source={{ uri: property.images[0] }} style={styles.propertyImage} />
+            ) : (
+              <View style={[styles.propertyImage, styles.propertyImagePlaceholder]}>
+                <Text style={styles.propertyImagePlaceholderText}>{property.name?.charAt(0) ?? 'P'}</Text>
+              </View>
+            )}
 
             <View style={styles.propertyBadges}>
               <View style={[styles.statusBadge, { backgroundColor: getStatusColor(property.status) }]}>
@@ -304,7 +307,7 @@ export default function DebtAcquisitionScreen() {
                   <Text style={styles.metricLabel}>DSCR</Text>
                 </View>
                 <View style={styles.metricItem}>
-                  <Text style={styles.metricValue}>${property.pricePerToken}</Text>
+                  <Text style={styles.metricValue}>{formatDollar(property.pricePerToken)}</Text>
                   <Text style={styles.metricLabel}>Per Token</Text>
                 </View>
               </View>
@@ -380,7 +383,7 @@ export default function DebtAcquisitionScreen() {
                       onChangeText={setTokenAmount}
                     />
                     <Text style={styles.availableText}>
-                      {selectedProperty.availableTokens.toLocaleString()} tokens available @ ${selectedProperty.pricePerToken} each
+                      {selectedProperty.availableTokens.toLocaleString()} tokens available @ {formatDollar(selectedProperty.pricePerToken)} each
                     </Text>
                   </View>
 
@@ -388,15 +391,15 @@ export default function DebtAcquisitionScreen() {
                     <View style={styles.summarySection}>
                       <View style={styles.summaryRow}>
                         <Text style={styles.summaryLabel}>Subtotal</Text>
-                        <Text style={styles.summaryValue}>${tokenCalc.subtotal.toLocaleString()}</Text>
+                        <Text style={styles.summaryValue}>{formatDollar(tokenCalc.subtotal)}</Text>
                       </View>
                       <View style={styles.summaryRow}>
                         <Text style={styles.summaryLabel}>IVXHOLDINGS Fee (2.5%)</Text>
-                        <Text style={styles.summaryFee}>${tokenCalc.ipxFee.toLocaleString()}</Text>
+                        <Text style={styles.summaryFee}>{formatDollar(tokenCalc.ipxFee)}</Text>
                       </View>
                       <View style={[styles.summaryRow, styles.summaryTotal]}>
                         <Text style={styles.summaryTotalLabel}>Net Investment</Text>
-                        <Text style={styles.summaryTotalValue}>${tokenCalc.netInvestment.toLocaleString()}</Text>
+                        <Text style={styles.summaryTotalValue}>{formatDollar(tokenCalc.netInvestment)}</Text>
                       </View>
                       <View style={styles.summaryRow}>
                         <Text style={styles.summaryLabel}>Ownership</Text>
@@ -404,7 +407,7 @@ export default function DebtAcquisitionScreen() {
                       </View>
                       <View style={styles.summaryRow}>
                         <Text style={styles.summaryLabel}>Projected Annual Return</Text>
-                        <Text style={styles.summaryValueGreen}>${tokenCalc.projectedAnnualReturn.toFixed(2)}</Text>
+                        <Text style={styles.summaryValueGreen}>{formatCurrencyWithDecimals(tokenCalc.projectedAnnualReturn)}</Text>
                       </View>
                       <View style={styles.summaryRow}>
                         <Text style={styles.summaryLabel}>Lien Position</Text>
@@ -1219,5 +1222,17 @@ const styles = StyleSheet.create({
     fontSize: 13,
     flex: 1,
     lineHeight: 18,
+  },
+  propertyImagePlaceholder: {
+    backgroundColor: Colors.backgroundTertiary,
+    justifyContent: 'center' as const,
+    alignItems: 'center' as const,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+  },
+  propertyImagePlaceholderText: {
+    color: Colors.textTertiary,
+    fontSize: 18,
+    fontWeight: '700' as const,
   },
 });
