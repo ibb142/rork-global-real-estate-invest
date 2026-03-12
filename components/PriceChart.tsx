@@ -232,7 +232,7 @@ export default function PriceChart({
         <View style={styles.volumeSection}>
           <Text style={styles.volumeLabel}>24h Volume</Text>
           <Text style={styles.volumeValue}>
-            ${(filteredData[filteredData.length - 1]?.volume || 0).toLocaleString()}
+            ${new Intl.NumberFormat('en-US').format(filteredData[filteredData.length - 1]?.volume || 0)}
           </Text>
         </View>
       )}
