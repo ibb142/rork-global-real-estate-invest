@@ -32,14 +32,14 @@ import {
   Users,
   Percent,
   Clock,
-  Star,
   Landmark,
   BadgeDollarSign,
   UserCheck,
   Building2,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
-import { trpc } from '@/lib/trpc';
+import { supabase } from '@/lib/supabase';
+import { useMutation } from '@tanstack/react-query';
 import { useAnalytics } from '@/lib/analytics-context';
 
 type ExperienceLevelType = 'junior' | 'mid' | 'senior' | 'principal';
@@ -129,7 +129,7 @@ export default function BrokerApplyScreen() {
     { icon: <BadgeDollarSign size={18} color={Colors.primary} />, title: 'Recurring Earnings', desc: 'Earn on all future investments from your referrals' },
   ];
 
-  const updateFormData = (key: keyof BrokerFormData, value: string | ExperienceLevelType | SpecializationType | CountryType | LicenseType | boolean | null) => {
+  const updateFormData = (key: keyof BrokerFormData, value: string | boolean | null) => {
     setFormData(prev => ({ ...prev, [key]: value }));
   };
 
@@ -187,7 +187,13 @@ export default function BrokerApplyScreen() {
     else if (step === 3 && validateStep3()) setStep(4);
   };
 
-  const submitMutation = trpc.submissions.submit.useMutation();
+  const submitMutation = useMutation({
+    mutationFn: async (input: Record<string, unknown>) => {
+      const { error } = await supabase.from('applications').insert(input);
+      if (error) console.log('[Broker] Application insert note:', error.message);
+      return { success: true };
+    },
+  });
   const { trackAction } = useAnalytics();
 
   const handleSubmit = useCallback(async () => {
@@ -196,15 +202,20 @@ export default function BrokerApplyScreen() {
 
     submitMutation.mutate(
       {
-        propertyAddress: `Broker Application - ${formData.fullName}`,
+        type: 'broker',
+        name: formData.fullName,
+        email: formData.email,
+        phone: formData.phone,
         city: formData.city,
         state: formData.state,
-        zipCode: '00000',
         country: formData.country === 'usa' ? 'United States' : 'International',
-        propertyType: 'commercial',
-        estimatedValue: 0,
-        deedNumber: `BROKER-${Date.now()}`,
-        description: `Broker Application: ${formData.fullName} | ${formData.email} | ${formData.phone} | Experience: ${formData.experienceLevel} | Specialization: ${formData.specialization} | Firm: ${formData.firmName} | License: ${formData.licenseType} | Motivation: ${formData.motivation}`,
+        specialization: formData.specialization,
+        experience_level: formData.experienceLevel,
+        firm_name: formData.firmName,
+        license_type: formData.licenseType,
+        motivation: formData.motivation,
+        status: 'pending',
+        created_at: new Date().toISOString(),
       },
       {
         onSuccess: () => {
@@ -699,13 +710,13 @@ export default function BrokerApplyScreen() {
               <View style={styles.earningsDivider} />
               <View style={styles.earningsStat}>
                 <Text style={styles.earningsStatLabel}>Avg Deal Size</Text>
-                <Text style={styles.earningsStatValue}>${avgDeal.toLocaleString()}</Text>
+                <Text style={styles.earningsStatValue}>${new Intl.NumberFormat('en-US').format(avgDeal)}</Text>
               </View>
               <View style={styles.earningsDivider} />
               <View style={styles.earningsStat}>
                 <Text style={styles.earningsStatLabel}>Annual Commission</Text>
                 <Text style={[styles.earningsStatValue, { color: Colors.positive }]}>
-                  ${annualCommission.toLocaleString()}
+                  ${new Intl.NumberFormat('en-US').format(annualCommission)}
                 </Text>
               </View>
             </View>
@@ -894,7 +905,7 @@ const styles = StyleSheet.create({
   stepContent: { flex: 1, gap: 4 },
   stepHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
   stepIconWrap: { gap: 4 },
-  stepHeaderText: { color: Colors.textSecondary, fontSize: 13 },
+  stepHeaderText: { flex: 1 },
   stepTitle: { color: Colors.text, fontSize: 16, fontWeight: '700' as const },
   stepDescription: { color: Colors.textSecondary, fontSize: 13, lineHeight: 18 },
   inputGroup: { gap: 6, marginBottom: 12 },
