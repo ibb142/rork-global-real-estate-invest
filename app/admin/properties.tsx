@@ -25,6 +25,7 @@ import {
 import Colors from '@/constants/colors';
 import { properties } from '@/mocks/properties';
 import { Property } from '@/types';
+import { formatCurrencyWithDecimals } from '@/lib/formatters';
 
 type FilterType = 'all' | 'live' | 'coming_soon' | 'funded' | 'closed';
 
@@ -447,7 +448,7 @@ export default function PropertiesScreen() {
                 <View style={styles.propStat}>
                   <Text style={styles.propStatLabel}>Price/Share</Text>
                   <Text style={styles.propStatValue}>
-                    ${property.pricePerShare.toFixed(2)}
+                    {formatCurrencyWithDecimals(property.pricePerShare)}
                   </Text>
                 </View>
                 <View style={styles.propStat}>
