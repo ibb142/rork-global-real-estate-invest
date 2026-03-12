@@ -16,22 +16,24 @@ import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
 import { getResponsiveSize, isCompactScreen, isExtraSmallScreen } from '@/lib/responsive';
-import { properties as mockProperties } from '@/mocks/properties';
-import { marketData as mockMarketData } from '@/mocks/market';
-import { trpc } from '@/lib/trpc';
+import { properties as fallbackProperties } from '@/mocks/properties';
+import { marketData as fallbackMarketData } from '@/mocks/market';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { supabase } from '@/lib/supabase';
 import { useTranslation } from '@/lib/i18n-context';
 import { useAnalytics } from '@/lib/analytics-context';
 import PriceChart from '@/components/PriceChart';
 import TradingModal from '@/components/TradingModal';
 import { TimeRange, Property, MarketData, Order } from '@/types';
-import { currentUser as mockUser, holdings as mockHoldings } from '@/mocks/user';
+import { useAuth } from '@/lib/auth-context';
 import { ipxGlobalIndex, tokenizedProperties, getGlobalStats } from '@/mocks/share-trading';
 import { useGlobalMarkets } from '@/lib/global-markets';
+import { formatCurrencyWithDecimals, formatCurrencyCompact } from '@/lib/formatters';
 
 type MarketTab = 'all' | 'gainers' | 'losers';
 
 function GlobalMarketsSection({ router }: { router: ReturnType<typeof useRouter> }) {
-  const { forex, indices, crypto, commodities, marketSentiment } = useGlobalMarkets(4000);
+  const { forex, indices, crypto: _crypto, commodities, marketSentiment } = useGlobalMarkets(4000);
   const sentimentColor = marketSentiment === 'bullish' ? Colors.success : marketSentiment === 'bearish' ? Colors.error : Colors.warning;
   const sentimentLabel = marketSentiment === 'bullish' ? '🐂 Bullish' : marketSentiment === 'bearish' ? '🐻 Bearish' : '⚖️ Neutral';
 
@@ -114,9 +116,7 @@ function GlobalMarketsSection({ router }: { router: ReturnType<typeof useRouter>
               <View style={[gmStyles.commodityDot, { backgroundColor: c.color }]} />
               <Text style={gmStyles.commodityName}>{c.name}</Text>
               <Text style={gmStyles.commodityPrice}>
-                ${c.price >= 100
-                  ? c.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-                  : c.price.toFixed(2)}
+                {formatCurrencyWithDecimals(c.price)}
               </Text>
               <Text style={[gmStyles.commodityChange, { color: up ? Colors.success : Colors.error }]}>
                 {up ? '+' : ''}{c.changePercent24h.toFixed(2)}%
@@ -297,20 +297,30 @@ export default function MarketScreen() {
   const [selectedTradeProperty, setSelectedTradeProperty] = useState<Property | null>(null);
   const [selectedTradeMarket, setSelectedTradeMarket] = useState<MarketData | null>(null);
   const [tradeType, setTradeType] = useState<'buy' | 'sell'>('buy');
-  const [liveMarketData, setLiveMarketData] = useState(mockMarketData);
+  const [liveMarketData, setLiveMarketData] = useState(fallbackMarketData);
   const [liveIndexValue, setLiveIndexValue] = useState(ipxGlobalIndex.currentValue);
   const [liveIndexChange, setLiveIndexChange] = useState(ipxGlobalIndex.changePercent24h);
   
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const globalStats = useMemo(() => getGlobalStats(), []);
   const { t } = useTranslation();
-  const { trackScreen, trackAction, trackTransaction } = useAnalytics();
+  const { trackScreen, trackAction: _trackAction, trackTransaction } = useAnalytics();
 
   useEffect(() => {
     trackScreen('Market');
-  }, []);
+  }, [trackScreen]);
 
-  const properties = mockProperties;
+  const propertiesQuery = useQuery({
+    queryKey: ['properties', 'market'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('properties').select('*').limit(50);
+      if (error) throw error;
+      return { properties: data || [] };
+    },
+    staleTime: 1000 * 60 * 2,
+  });
+  const rawProperties = (propertiesQuery.data?.properties as typeof fallbackProperties | undefined) ?? fallbackProperties;
+  const properties = Array.isArray(rawProperties) ? rawProperties : fallbackProperties;
 
   useEffect(() => {
     const pulse = Animated.loop(
@@ -405,31 +415,57 @@ export default function MarketScreen() {
       default:
         return list.sort((a, b) => b.market.volume24h - a.market.volume24h);
     }
-  }, [activeTab, liveMarketData]);
+  }, [activeTab, liveMarketData, properties]);
 
   const selectedProperty = useMemo(() => {
     if (!selectedPropertyId) return null;
     return properties.find(p => p.id === selectedPropertyId);
-  }, [selectedPropertyId]);
+  }, [selectedPropertyId, properties]);
 
-  const allMarketQuery = trpc.market.getAllMarketData.useQuery();
-  const globalIndexQuery = trpc.market.getGlobalIndex.useQuery();
-  const topMoversQuery = trpc.market.getTopMovers.useQuery();
-  const balanceQuery = trpc.wallet.getBalance.useQuery();
+  const { isAuthenticated } = useAuth();
 
-  const currentUser = useMemo(() => ({
-    ...mockUser,
-    walletBalance: balanceQuery.data?.available ?? mockUser.walletBalance,
-  }), [balanceQuery.data]);
+  const allMarketQuery = useQuery({
+    queryKey: ['market', 'all'],
+    queryFn: async () => {
+      const { data } = await supabase.from('market_data').select('*');
+      return data || null;
+    },
+  });
+  const globalIndexQuery = useQuery({
+    queryKey: ['market', 'global-index'],
+    queryFn: async () => {
+      const { data } = await supabase.from('market_index').select('*').single();
+      return data || null;
+    },
+  });
+  const topMoversQuery = useQuery({
+    queryKey: ['market', 'top-movers'],
+    queryFn: async () => {
+      const { data } = await supabase.from('market_data').select('*').order('change_percent_24h', { ascending: false }).limit(10);
+      return data || null;
+    },
+  });
+  const balanceQuery = useQuery({
+    queryKey: ['wallet-balance', 'market'],
+    queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return null;
+      const { data } = await supabase.from('wallets').select('*').eq('user_id', user.id).single();
+      return data || null;
+    },
+    enabled: isAuthenticated,
+  });
+
+  const userWalletBalance = balanceQuery.data?.available ?? 0;
 
   useEffect(() => {
     if (allMarketQuery.data) {
       const raw = allMarketQuery.data as unknown;
       if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
-        const backendData = raw as Record<string, typeof mockMarketData[string]>;
+        const backendData = raw as Record<string, typeof fallbackMarketData[string]>;
         const keys = Object.keys(backendData).filter(k => k !== 'markets');
         if (keys.length > 0) {
-          const filtered: Record<string, typeof mockMarketData[string]> = {};
+          const filtered: Record<string, typeof fallbackMarketData[string]> = {};
           keys.forEach(k => { if (backendData[k]?.lastPrice) filtered[k] = backendData[k]; });
           if (Object.keys(filtered).length > 0) {
             setLiveMarketData(prev => ({ ...prev, ...filtered }));
@@ -450,11 +486,12 @@ export default function MarketScreen() {
 
   const onRefresh = () => {
     setRefreshing(true);
-    Promise.all([
+    void Promise.all([
       allMarketQuery.refetch(),
       globalIndexQuery.refetch(),
       topMoversQuery.refetch(),
       balanceQuery.refetch(),
+      propertiesQuery.refetch(),
     ]).finally(() => setRefreshing(false));
   };
 
@@ -467,13 +504,19 @@ export default function MarketScreen() {
     setSelectedTradeMarket(market);
     setTradeType(type);
     setTradingModalVisible(true);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   };
 
-  const placeMutation = trpc.market.placeOrder.useMutation({
+  const placeMutation = useMutation({
+    mutationFn: async (params: { propertyId: string; type: string; shares: number; price: number; orderType?: string }) => {
+      const { data: { user } } = await supabase.auth.getUser();
+      const { data, error } = await supabase.from('orders').insert({ ...params, user_id: user?.id }).select().single();
+      if (error) throw error;
+      return data;
+    },
     onSuccess: () => {
-      allMarketQuery.refetch();
-      balanceQuery.refetch();
+      void allMarketQuery.refetch();
+      void balanceQuery.refetch();
     },
   });
 
@@ -489,9 +532,8 @@ export default function MarketScreen() {
     });
   };
 
-  const getUserShares = (propertyId: string): number => {
-    const holding = mockHoldings.find(h => h.propertyId === propertyId);
-    return holding?.shares || 0;
+  const getUserShares = (_propertyId: string): number => {
+    return 0;
   };
 
   return (
@@ -530,7 +572,7 @@ export default function MarketScreen() {
                   <Text style={styles.indexTickerText}>{ipxGlobalIndex.ticker}</Text>
                   <Text style={styles.indexSubLabel}>{t('realEstateIndex')}</Text>
                 </View>
-                <Text style={styles.indexBigValue}>${liveIndexValue.toFixed(2)}</Text>
+                <Text style={styles.indexBigValue}>{formatCurrencyWithDecimals(liveIndexValue)}</Text>
               </View>
               <View style={styles.indexBannerRight}>
                 <View style={[
@@ -542,12 +584,12 @@ export default function MarketScreen() {
                     {liveIndexChange >= 0 ? '+' : ''}{liveIndexChange.toFixed(2)}%
                   </Text>
                 </View>
-                <Text style={styles.indexBannerAth}>ATH ${ipxGlobalIndex.allTimeHigh.toFixed(2)}</Text>
+                <Text style={styles.indexBannerAth}>ATH {formatCurrencyWithDecimals(ipxGlobalIndex.allTimeHigh)}</Text>
               </View>
             </View>
             <View style={styles.indexBannerStats}>
               <View style={styles.indexBannerStat}>
-                <Text style={styles.indexBannerStatValue}>${(globalStats.totalMarketCap / 1000000).toFixed(1)}M</Text>
+                <Text style={styles.indexBannerStatValue}>{formatCurrencyCompact(globalStats.totalMarketCap)}</Text>
                 <Text style={styles.indexBannerStatLabel}>{t('totalMarketCap')}</Text>
               </View>
               <View style={styles.indexBannerStatDivider} />
@@ -572,7 +614,7 @@ export default function MarketScreen() {
             <View style={[styles.statCard, { padding: responsiveStyles.statPadding }]}>
               <BarChart3 size={isCompact ? 16 : 20} color={Colors.primary} />
               <Text style={[styles.statValue, { fontSize: responsiveStyles.statValue }]}>
-                ${(totalVolume / 1000000).toFixed(isXs ? 1 : 2)}M
+                {formatCurrencyCompact(totalVolume)}
               </Text>
               <Text style={[styles.statLabel, { fontSize: responsiveStyles.statLabel }]}>{t('volume24h')}</Text>
             </View>
@@ -635,18 +677,35 @@ export default function MarketScreen() {
                   onLongPress={() => router.push(`/property/${property.id}` as any)}
                 >
                   <View style={[styles.propertyCell, { flex: isCompact ? 1.5 : 2 }]}>
-                    <Image 
-                      source={{ uri: property.images[0] }} 
-                      style={[
-                        styles.propertyImage, 
-                        { 
-                          width: responsiveStyles.propertyImage, 
-                          height: responsiveStyles.propertyImage,
-                          borderRadius: isXs ? 4 : isCompact ? 6 : 8,
-                          marginRight: isXs ? 6 : isCompact ? 8 : 10,
-                        }
-                      ]} 
-                    />
+                    {property.images && property.images[0] ? (
+                      <Image 
+                        source={{ uri: property.images[0] }} 
+                        style={[
+                          styles.propertyImage, 
+                          { 
+                            width: responsiveStyles.propertyImage, 
+                            height: responsiveStyles.propertyImage,
+                            borderRadius: isXs ? 4 : isCompact ? 6 : 8,
+                            marginRight: isXs ? 6 : isCompact ? 8 : 10,
+                          }
+                        ]} 
+                      />
+                    ) : (
+                      <View 
+                        style={[
+                          styles.propertyImage, 
+                          styles.propertyImagePlaceholder,
+                          { 
+                            width: responsiveStyles.propertyImage, 
+                            height: responsiveStyles.propertyImage,
+                            borderRadius: isXs ? 4 : isCompact ? 6 : 8,
+                            marginRight: isXs ? 6 : isCompact ? 8 : 10,
+                          }
+                        ]}
+                      >
+                        <Text style={styles.propertyImagePlaceholderText}>{property.name?.charAt(0) ?? 'P'}</Text>
+                      </View>
+                    )}
                     <View style={styles.propertyInfo}>
                       <Text style={[styles.propertyName, { fontSize: responsiveStyles.propertyName }]} numberOfLines={1}>
                         {property.name}
@@ -658,7 +717,7 @@ export default function MarketScreen() {
                   </View>
                   <View style={[styles.priceCell, { minWidth: responsiveStyles.cellMinWidth }]}>
                     <Text style={[styles.priceText, { fontSize: responsiveStyles.priceText }]}>
-                      ${market.lastPrice.toFixed(isCompact ? 0 : 2)}
+                      {formatCurrencyWithDecimals(market.lastPrice)}
                     </Text>
                   </View>
                   <View style={[styles.changeCell, { minWidth: responsiveStyles.cellMinWidth }]}>
@@ -678,7 +737,7 @@ export default function MarketScreen() {
                   {!isCompact && (
                     <View style={[styles.volumeCell, { minWidth: responsiveStyles.volumeCellWidth }]}>
                       <Text style={[styles.volumeText, { fontSize: responsiveStyles.volumeText }]}>
-                        ${(market.volume24h / 1000).toFixed(0)}K
+                        {formatCurrencyCompact(market.volume24h)}
                       </Text>
                     </View>
                   )}
@@ -716,7 +775,7 @@ export default function MarketScreen() {
                   {bids.map((bid, index) => (
                     <View key={`bid-${index}`} style={styles.orderBookRow}>
                       <Text style={[styles.orderBookPrice, { color: Colors.success }]}>
-                        ${(bid?.price ?? 0).toFixed(2)}
+                        {formatCurrencyWithDecimals(bid?.price ?? 0)}
                       </Text>
                       <Text style={styles.orderBookShares}>{bid?.shares ?? 0}</Text>
                     </View>
@@ -728,7 +787,7 @@ export default function MarketScreen() {
                   {asks.map((ask, index) => (
                     <View key={`ask-${index}`} style={styles.orderBookRow}>
                       <Text style={[styles.orderBookPrice, { color: Colors.error }]}>
-                        ${(ask?.price ?? 0).toFixed(2)}
+                        {formatCurrencyWithDecimals(ask?.price ?? 0)}
                       </Text>
                       <Text style={styles.orderBookShares}>{ask?.shares ?? 0}</Text>
                     </View>
@@ -751,7 +810,7 @@ export default function MarketScreen() {
         property={selectedTradeProperty}
         marketData={selectedTradeMarket}
         initialType={tradeType}
-        userBalance={currentUser.walletBalance}
+        userBalance={userWalletBalance}
         userShares={selectedTradeProperty ? getUserShares(selectedTradeProperty.id) : 0}
         onTradeComplete={handleTradeComplete}
       />
@@ -1108,5 +1167,17 @@ const styles = StyleSheet.create({
   },
   scrollView: {
     backgroundColor: Colors.background,
+  },
+  propertyImagePlaceholder: {
+    backgroundColor: Colors.backgroundTertiary,
+    justifyContent: 'center' as const,
+    alignItems: 'center' as const,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+  },
+  propertyImagePlaceholderText: {
+    color: Colors.textTertiary,
+    fontSize: 14,
+    fontWeight: '700' as const,
   },
 });
