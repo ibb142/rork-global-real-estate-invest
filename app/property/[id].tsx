@@ -50,11 +50,15 @@ import {
 import * as Clipboard from 'expo-clipboard';
 import { PropertyDocument, TimeRange } from '@/types';
 import Colors from '@/constants/colors';
+import { formatCurrencyWithDecimals, formatCurrencyCompact, formatDollar } from '@/lib/formatters';
 import { getPropertyById } from '@/mocks/properties';
 import { getMarketDataByPropertyId } from '@/mocks/market';
 import { currentUser } from '@/mocks/user';
 import ImageSlider from '@/components/ImageSlider';
 import PriceChart from '@/components/PriceChart';
+import { usePropertyImages } from '@/lib/use-property-images';
+import { showImagePickerOptions } from '@/lib/image-picker-utils';
+import { Camera } from 'lucide-react-native';
 
 export default function PropertyDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -76,6 +80,33 @@ export default function PropertyDetailScreen() {
   const insets = useSafeAreaInsets();
   const property = useMemo(() => getPropertyById(id || ''), [id]);
   const marketData = useMemo(() => getMarketDataByPropertyId(id || ''), [id]);
+
+  const { images: propertyImages } = usePropertyImages(
+    id || '',
+    property?.images ?? []
+  );
+
+  const handleUploadImages = useCallback(() => {
+    if (!property) return;
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    showImagePickerOptions(
+      {
+        entityType: 'property',
+        entityId: property.id,
+        uploadedBy: currentUser.id,
+        allowsMultiple: true,
+        quality: 0.9,
+      },
+      (storedImages) => {
+        console.log('[PropertyDetail] Uploaded', storedImages.length, 'images for property', property.id);
+        Alert.alert(
+          'Images Saved',
+          `${storedImages.length} image(s) have been permanently saved to this property. They will never be replaced.`,
+          [{ text: 'OK' }]
+        );
+      }
+    );
+  }, [property]);
 
   const appraisalData = useMemo(() => {
     if (!property) return null;
@@ -163,12 +194,10 @@ export default function PropertyDetailScreen() {
   const openAppraisalModal = useCallback(() => setShowAppraisalModal(true), []);
 
   const handleInvest = useCallback(() => {
-    if (!property || property.status !== 'live') {
-      Alert.alert('Not Available', 'This property is not currently open for investment.');
-      return;
-    }
-    setShowInvestModal(true);
-  }, [property]);
+    if (!property) return;
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    router.push({ pathname: '/buy-shares', params: { propertyId: property.id } } as any);
+  }, [property, router]);
 
   const handleConfirmInvest = useCallback(() => {
     if (!property) return;
@@ -183,17 +212,17 @@ export default function PropertyDetailScreen() {
       );
       return;
     }
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setShowInvestModal(false);
     Alert.alert(
       'Investment Successful!',
-      `You have successfully invested ${totalCost.toFixed(2)} in ${property.name} (${shares} shares).`,
+      `You have successfully invested ${formatCurrencyWithDecimals(totalCost)} in ${property.name} (${shares} shares).`,
       [{ text: 'View Portfolio', onPress: () => router.push('/portfolio' as any) }]
     );
   }, [totalCost, fees, walletBalance, property, shares, router]);
 
   const adjustAmount = useCallback((delta: number) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setInvestAmount(prev => {
       const current = Number(prev) || 0;
       const newAmount = Math.max(1, current + delta);
@@ -207,32 +236,32 @@ export default function PropertyDetailScreen() {
       Alert.alert('Minimum Amount', 'Minimum deposit amount is $10');
       return;
     }
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setWalletBalance(prev => prev + amount);
     setShowAddFundsModal(false);
     Alert.alert(
       'Funds Added!',
-      `${amount.toLocaleString()} has been added to your wallet.`
+      `${formatCurrencyWithDecimals(amount)} has been added to your wallet.`
     );
   }, [addFundsAmount]);
 
   const handleToggleFavorite = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setIsFavorite(prev => !prev);
   }, []);
 
   const handleDocumentPress = useCallback((doc: PropertyDocument) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setSelectedDocument(doc);
     setShowDocumentModal(true);
   }, []);
 
   const handleDownloadDocument = useCallback(async (docName: string) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setIsDownloading(true);
     setTimeout(() => {
       setIsDownloading(false);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert('Download Complete', `${docName} has been downloaded to your device.`);
     }, 800);
   }, []);
@@ -240,17 +269,17 @@ export default function PropertyDetailScreen() {
   const handleCopyTitleNumber = useCallback(async () => {
     if (titleData?.titleNumber) {
       await Clipboard.setStringAsync(titleData.titleNumber);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert('Copied', 'Title number copied to clipboard');
     }
   }, [titleData?.titleNumber]);
 
   const handleRequestAppraisal = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setIsRequestingAppraisal(true);
     setTimeout(() => {
       setIsRequestingAppraisal(false);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert(
         'Request Submitted',
         'Your request for a new appraisal has been submitted. You will be notified when the updated report is available.',
@@ -260,18 +289,18 @@ export default function PropertyDetailScreen() {
   }, []);
 
   const handleViewTitleDetails = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setShowTitleModal(true);
   }, []);
 
   const handleShare = useCallback(async () => {
     if (!property) return;
     try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       
       const webLink = `https://ipx.app/property/${property.id}`;
       
-      const shareMessage = `🏢 ${property.name}\n📍 ${property.location}, ${property.city}\n\n💰 Share Price: ${property.pricePerShare.toFixed(2)}\n📈 Est. Yield: ${property.yield}%\n💵 Min. Investment: ${property.minInvestment}\n\n🔗 Download IVXHOLDINGS and start investing in premium real estate!\n\n${webLink}`;
+      const shareMessage = `🏢 ${property.name}\n📍 ${property.location}, ${property.city}\n\n💰 Share Price: ${formatCurrencyWithDecimals(property.pricePerShare)}\n📈 Est. Yield: ${property.yield}%\n💵 Min. Investment: ${formatDollar(property.minInvestment)}\n\n🔗 Download IVXHOLDINGS and start investing in premium real estate!\n\n${webLink}`;
       
       const result = await Share.share(
         Platform.OS === 'ios'
@@ -331,8 +360,8 @@ export default function PropertyDetailScreen() {
           title: 'Appraisal Report',
           subtitle: 'Independent property valuation',
           details: [
-            { label: 'Appraised Value', value: `${(property.pricePerShare * property.totalShares / 1000000).toFixed(2)}M` },
-            { label: 'Price Per Share', value: `${property.pricePerShare.toFixed(2)}` },
+            { label: 'Appraised Value', value: formatCurrencyCompact(property.pricePerShare * property.totalShares) },
+            { label: 'Price Per Share', value: formatCurrencyWithDecimals(property.pricePerShare) },
             { label: 'Appraisal Date', value: appraisalData ? new Date(appraisalData.lastAppraisalDate).toLocaleDateString() : 'N/A' },
             { label: 'Next Review', value: appraisalData ? new Date(appraisalData.nextAppraisalDate).toLocaleDateString() : 'N/A' },
             { label: 'Valuation Method', value: appraisalData?.appraisalMethod || 'N/A' },
@@ -350,7 +379,7 @@ export default function PropertyDetailScreen() {
           details: [
             { label: 'Policy Number', value: `INS-${property.id.padStart(8, '0')}` },
             { label: 'Coverage Type', value: 'Comprehensive Property' },
-            { label: 'Coverage Amount', value: `${(property.pricePerShare * property.totalShares * 1.2 / 1000000).toFixed(2)}M` },
+            { label: 'Coverage Amount', value: formatCurrencyCompact(property.pricePerShare * property.totalShares * 1.2) },
             { label: 'Insurer', value: 'Lloyd\'s of London' },
             { label: 'Policy Start', value: new Date(property.createdAt).toLocaleDateString() },
             { label: 'Policy End', value: new Date(property.closingDate).toLocaleDateString() },
@@ -379,7 +408,7 @@ export default function PropertyDetailScreen() {
       
       <ScrollView showsVerticalScrollIndicator={false} bounces={false} style={styles.mainScrollView}>
         <View style={styles.imageSection}>
-          <ImageSlider images={property.images} height={320} />
+          <ImageSlider images={propertyImages} height={320} />
           
           <View style={[styles.imageOverlayBar, { top: Math.max(insets.top, 54) + 8 }]}>
             <TouchableOpacity
@@ -391,6 +420,9 @@ export default function PropertyDetailScreen() {
             </TouchableOpacity>
 
             <View style={styles.overlayRightIcons}>
+              <TouchableOpacity style={styles.overlayIconBtn} onPress={handleUploadImages} activeOpacity={0.7}>
+                <Camera size={20} color="#fff" />
+              </TouchableOpacity>
               <TouchableOpacity style={styles.overlayIconBtn} onPress={handleToggleFavorite} activeOpacity={0.7}>
                 <Heart size={20} color={isFavorite ? Colors.error : '#fff'} fill={isFavorite ? Colors.error : 'transparent'} />
               </TouchableOpacity>
@@ -419,7 +451,7 @@ export default function PropertyDetailScreen() {
           <View style={styles.priceSection}>
             <View style={styles.priceMain}>
               <Text style={styles.priceLabel}>Share Price</Text>
-              <Text style={styles.priceValue}>${property.pricePerShare.toFixed(2)}</Text>
+              <Text style={styles.priceValue}>{formatCurrencyWithDecimals(property.pricePerShare)}</Text>
               {marketData && (
                 <View style={[styles.changeBadge, { backgroundColor: marketData.changePercent24h >= 0 ? Colors.success + '20' : Colors.error + '20' }]}>
                   <Text style={[styles.changeText, { color: marketData.changePercent24h >= 0 ? Colors.success : Colors.error }]}>
@@ -430,7 +462,7 @@ export default function PropertyDetailScreen() {
             </View>
             <View style={styles.minInvest}>
               <Text style={styles.minInvestLabel}>Min. Investment</Text>
-              <Text style={styles.minInvestValue}>${property.minInvestment}</Text>
+              <Text style={styles.minInvestValue}>{formatDollar(property.minInvestment)}</Text>
             </View>
           </View>
 
@@ -467,11 +499,11 @@ export default function PropertyDetailScreen() {
             </View>
             <View style={styles.progressStats}>
               <View>
-                <Text style={styles.progressStatValue}>${(property.currentRaise / 1000000).toFixed(2)}M</Text>
+                <Text style={styles.progressStatValue}>{formatCurrencyCompact(property.currentRaise)}</Text>
                 <Text style={styles.progressStatLabel}>Raised</Text>
               </View>
               <View style={styles.progressStatRight}>
-                <Text style={styles.progressStatValue}>${(property.targetRaise / 1000000).toFixed(2)}M</Text>
+                <Text style={styles.progressStatValue}>{formatCurrencyCompact(property.targetRaise)}</Text>
                 <Text style={styles.progressStatLabel}>Target</Text>
               </View>
             </View>
@@ -530,7 +562,7 @@ export default function PropertyDetailScreen() {
                     </View>
                     <View style={styles.appraisalHeaderText}>
                       <Text style={styles.appraisalValue}>
-                        ${(appraisalData.currentValue / 1000000).toFixed(2)}M
+                        {formatCurrencyCompact(appraisalData.currentValue)}
                       </Text>
                       <Text style={styles.appraisalLabel}>Current Valuation</Text>
                     </View>
@@ -544,21 +576,21 @@ export default function PropertyDetailScreen() {
                     <View style={styles.breakdownItem}>
                       <Text style={styles.breakdownLabel}>Land Value</Text>
                       <Text style={styles.breakdownValue}>
-                        ${(appraisalData.landValue / 1000000).toFixed(2)}M
+                        {formatCurrencyCompact(appraisalData.landValue)}
                       </Text>
                     </View>
                     <View style={styles.breakdownDivider} />
                     <View style={styles.breakdownItem}>
                       <Text style={styles.breakdownLabel}>Building</Text>
                       <Text style={styles.breakdownValue}>
-                        ${(appraisalData.buildingValue / 1000000).toFixed(2)}M
+                        {formatCurrencyCompact(appraisalData.buildingValue)}
                       </Text>
                     </View>
                     <View style={styles.breakdownDivider} />
                     <View style={styles.breakdownItem}>
                       <Text style={styles.breakdownLabel}>Improvements</Text>
                       <Text style={styles.breakdownValue}>
-                        ${(appraisalData.improvementsValue / 1000000).toFixed(2)}M
+                        {formatCurrencyCompact(appraisalData.improvementsValue)}
                       </Text>
                     </View>
                   </View>
@@ -676,7 +708,7 @@ export default function PropertyDetailScreen() {
                       {new Date(dist.date).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
                     </Text>
                   </View>
-                  <Text style={styles.distributionAmount}>${dist.amount.toFixed(2)}/share</Text>
+                  <Text style={styles.distributionAmount}>{formatCurrencyWithDecimals(dist.amount)}/share</Text>
                 </View>
               ))}
             </View>
@@ -690,16 +722,13 @@ export default function PropertyDetailScreen() {
         <View style={styles.investBarContent}>
           <View>
             <Text style={styles.investBarLabel}>Share Price</Text>
-            <Text style={styles.investBarPrice}>${property.pricePerShare.toFixed(2)}</Text>
+            <Text style={styles.investBarPrice}>{formatCurrencyWithDecimals(property.pricePerShare)}</Text>
           </View>
           <TouchableOpacity
-            style={[styles.investButton, property.status !== 'live' && styles.investButtonDisabled]}
+            style={styles.investButton}
             onPress={handleInvest}
-            disabled={property.status !== 'live'}
           >
-            <Text style={styles.investButtonText}>
-              {property.status === 'live' ? 'Invest Now' : property.status === 'coming_soon' ? 'Coming Soon' : 'Fully Funded'}
-            </Text>
+            <Text style={styles.investButtonText}>Buy Shares</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -759,7 +788,7 @@ export default function PropertyDetailScreen() {
                         onPress={() => { Keyboard.dismiss(); setInvestAmount(String(amount)); }}
                       >
                         <Text style={[styles.quickAmountText, Number(investAmount) === amount && styles.quickAmountTextActive]}>
-                          ${amount.toLocaleString()}
+                          {formatDollar(amount)}
                         </Text>
                       </TouchableOpacity>
                     ))}
@@ -772,16 +801,16 @@ export default function PropertyDetailScreen() {
                     </View>
                     <View style={styles.summaryRow}>
                       <Text style={styles.summaryLabel}>Price per share</Text>
-                      <Text style={styles.summaryValue}>${property.pricePerShare.toFixed(2)}</Text>
+                      <Text style={styles.summaryValue}>{formatCurrencyWithDecimals(property.pricePerShare)}</Text>
                     </View>
                     <View style={styles.summaryRow}>
                       <Text style={styles.summaryLabel}>Platform fee (1%)</Text>
-                      <Text style={styles.summaryValue}>${fees.toFixed(2)}</Text>
+                      <Text style={styles.summaryValue}>{formatCurrencyWithDecimals(fees)}</Text>
                     </View>
                     <View style={styles.summaryDivider} />
                     <View style={styles.summaryRow}>
                       <Text style={styles.summaryLabelBold}>Total</Text>
-                      <Text style={styles.summaryValueBold}>${(totalCost + fees).toFixed(2)}</Text>
+                      <Text style={styles.summaryValueBold}>{formatCurrencyWithDecimals(totalCost + fees)}</Text>
                     </View>
                   </View>
 
@@ -789,7 +818,7 @@ export default function PropertyDetailScreen() {
                     <View style={styles.walletInfoLeft}>
                       <Info size={16} color={Colors.info} />
                       <Text style={styles.walletInfoText}>
-                        Wallet balance: ${walletBalance.toLocaleString()}
+                        Wallet balance: {formatDollar(walletBalance)}
                       </Text>
                     </View>
                     <TouchableOpacity 
@@ -834,7 +863,7 @@ export default function PropertyDetailScreen() {
                 >
                   <View style={styles.currentBalanceSection}>
                     <Text style={styles.currentBalanceLabel}>Current Balance</Text>
-                    <Text style={styles.currentBalanceValue}>${walletBalance.toLocaleString()}</Text>
+                    <Text style={styles.currentBalanceValue}>{formatDollar(walletBalance)}</Text>
                   </View>
 
                   <View style={styles.amountSection}>
@@ -884,7 +913,7 @@ export default function PropertyDetailScreen() {
                         onPress={() => { Keyboard.dismiss(); setAddFundsAmount(String(amount)); }}
                       >
                         <Text style={[styles.quickAmountText, Number(addFundsAmount) === amount && styles.quickAmountTextActive]}>
-                          ${amount.toLocaleString()}
+                          {formatDollar(amount)}
                         </Text>
                       </TouchableOpacity>
                     ))}
@@ -916,7 +945,7 @@ export default function PropertyDetailScreen() {
                   <View style={styles.addFundsSummary}>
                     <View style={styles.summaryRow}>
                       <Text style={styles.summaryLabel}>Amount</Text>
-                      <Text style={styles.summaryValue}>${Number(addFundsAmount || 0).toLocaleString()}</Text>
+                      <Text style={styles.summaryValue}>{formatDollar(Number(addFundsAmount || 0))}</Text>
                     </View>
                     <View style={styles.summaryRow}>
                       <Text style={styles.summaryLabel}>Fee</Text>
@@ -926,13 +955,13 @@ export default function PropertyDetailScreen() {
                     <View style={styles.summaryRow}>
                       <Text style={styles.summaryLabelBold}>New Balance</Text>
                       <Text style={styles.summaryValueBold}>
-                        ${(walletBalance + Number(addFundsAmount || 0)).toLocaleString()}
+                        {formatDollar(walletBalance + Number(addFundsAmount || 0))}
                       </Text>
                     </View>
                   </View>
 
                   <TouchableOpacity style={styles.confirmButton} onPress={handleAddFunds}>
-                    <Text style={styles.confirmButtonText}>Add ${Number(addFundsAmount || 0).toLocaleString()}</Text>
+                    <Text style={styles.confirmButtonText}>Add {formatDollar(Number(addFundsAmount || 0))}</Text>
                   </TouchableOpacity>
                   <View style={{ height: 16 }} />
                 </ScrollView>
@@ -1002,7 +1031,7 @@ export default function PropertyDetailScreen() {
                     <TouchableOpacity 
                       style={styles.documentSecondaryButton}
                       onPress={() => {
-                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                         Alert.alert('Preview', 'Document preview will open in a new window.');
                       }}
                     >
@@ -1012,7 +1041,7 @@ export default function PropertyDetailScreen() {
                     <TouchableOpacity 
                       style={styles.documentSecondaryButton}
                       onPress={async () => {
-                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                         try {
                           await Share.share({
                             message: `${selectedDocument?.name} - ${property?.name}\n\nView on IVXHOLDINGS: https://ipx.app/property/${property?.id}`,
@@ -1049,7 +1078,7 @@ export default function PropertyDetailScreen() {
                   <View style={styles.appraisalModalValue}>
                     <Text style={styles.appraisalModalValueLabel}>Total Appraised Value</Text>
                     <Text style={styles.appraisalModalValueAmount}>
-                      ${(appraisalData.currentValue / 1000000).toFixed(2)}M
+                      {formatCurrencyCompact(appraisalData.currentValue)}
                     </Text>
                   </View>
                   <View style={styles.appraisalConfidenceCircle}>
@@ -1067,7 +1096,7 @@ export default function PropertyDetailScreen() {
                         <Text style={styles.valueBreakdownLabel}>Land Value</Text>
                       </View>
                       <Text style={styles.valueBreakdownAmount}>
-                        ${(appraisalData.landValue / 1000000).toFixed(2)}M
+                        {formatCurrencyCompact(appraisalData.landValue)}
                       </Text>
                       <Text style={styles.valueBreakdownPercent}>35%</Text>
                     </View>
@@ -1077,7 +1106,7 @@ export default function PropertyDetailScreen() {
                         <Text style={styles.valueBreakdownLabel}>Building Value</Text>
                       </View>
                       <Text style={styles.valueBreakdownAmount}>
-                        ${(appraisalData.buildingValue / 1000000).toFixed(2)}M
+                        {formatCurrencyCompact(appraisalData.buildingValue)}
                       </Text>
                       <Text style={styles.valueBreakdownPercent}>55%</Text>
                     </View>
@@ -1087,7 +1116,7 @@ export default function PropertyDetailScreen() {
                         <Text style={styles.valueBreakdownLabel}>Improvements</Text>
                       </View>
                       <Text style={styles.valueBreakdownAmount}>
-                        ${(appraisalData.improvementsValue / 1000000).toFixed(2)}M
+                        {formatCurrencyCompact(appraisalData.improvementsValue)}
                       </Text>
                       <Text style={styles.valueBreakdownPercent}>10%</Text>
                     </View>
@@ -1100,7 +1129,7 @@ export default function PropertyDetailScreen() {
                     <View style={styles.marketComparisonRow}>
                       <Text style={styles.marketComparisonLabel}>Area Average</Text>
                       <Text style={styles.marketComparisonValue}>
-                        ${(appraisalData.marketComparison.areaAverage / 1000000).toFixed(2)}M
+                        {formatCurrencyCompact(appraisalData.marketComparison.areaAverage)}
                       </Text>
                     </View>
                     <View style={styles.marketComparisonRow}>
@@ -1127,7 +1156,7 @@ export default function PropertyDetailScreen() {
                             ]} 
                           />
                         </View>
-                        <Text style={styles.historyValue}>${(item.value / 1000000).toFixed(2)}M</Text>
+                        <Text style={styles.historyValue}>{formatCurrencyCompact(item.value)}</Text>
                       </View>
                     ))}
                   </View>
@@ -1173,7 +1202,7 @@ export default function PropertyDetailScreen() {
                           <Text style={styles.comparableDistance}>{comp.distance} away</Text>
                         </View>
                         <View style={styles.comparableValues}>
-                          <Text style={styles.comparableValue}>${(comp.value / 1000000).toFixed(2)}M</Text>
+                          <Text style={styles.comparableValue}>{formatCurrencyCompact(comp.value)}</Text>
                           <Text style={styles.comparableSqft}>{comp.sqft}</Text>
                         </View>
                       </View>
