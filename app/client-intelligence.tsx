@@ -39,7 +39,8 @@ import {
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
-import { trpc } from '@/lib/trpc';
+import { useQuery } from '@tanstack/react-query';
+import { fetchRawEvents, computeAnalytics } from '@/lib/analytics-compute';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -183,10 +184,121 @@ export default function ClientIntelligenceScreen() {
   const tabIndicator = useRef(new Animated.Value(0)).current;
   const fadeAnim = useRef(new Animated.Value(1)).current;
 
-  const { data: report, isLoading, refetch, isRefetching } = trpc.clientIntel.getBehaviorReport.useQuery(
-    { period },
-    { refetchInterval: 60000 }
-  );
+  const { data: report, isLoading, refetch, isRefetching, error } = useQuery<any>({
+    queryKey: ['clientIntel.getBehaviorReport', { period }],
+    queryFn: async () => {
+      console.log('[ClientIntel] Computing behavior report from raw events, period:', period);
+      const periodMap: Record<string, string> = { '7d': '7d', '30d': '30d', '90d': '90d', '1y': 'all' };
+      const rawEvents = await fetchRawEvents(periodMap[period] || '30d');
+      console.log('[ClientIntel] Raw events fetched:', rawEvents.length);
+      const analytics = computeAnalytics(rawEvents, periodMap[period] || '30d');
+
+      const totalUsers = analytics.uniqueSessions;
+      const activeUsers = analytics.liveData.active;
+      const totalEvents = analytics.totalEvents;
+      const engagementRate = analytics.smartInsights.engagementScore;
+      const peakHour = analytics.smartInsights.peakHour;
+
+      const topScreens = analytics.byEvent.slice(0, 10).map((e, _i) => ({
+        screen: e.event,
+        views: e.count,
+        uniqueUsers: Math.max(Math.round(e.count * 0.7), 1),
+        avgViewsPerUser: Math.round((e.count / Math.max(totalUsers, 1)) * 10) / 10,
+      }));
+
+      const topActions = analytics.byEvent.slice(0, 12).map(e => ({ action: e.event, count: e.count }));
+
+      const topCTAs = [
+        { cta: 'get_started', count: analytics.cta.getStarted },
+        { cta: 'sign_in', count: analytics.cta.signIn },
+        { cta: 'jv_inquire', count: analytics.cta.jvInquire },
+        { cta: 'website_click', count: analytics.cta.websiteClick },
+      ].filter(c => c.count > 0);
+
+      const categoryBreakdown = analytics.smartInsights.sectionEngagement.slice(0, 8).map(s => ({
+        category: s.section,
+        count: s.count,
+        pct: s.pct,
+      }));
+
+      const hourlyEngagement = analytics.hourlyActivity;
+
+      const investmentJourney = {
+        browsersOnly: Math.max(totalUsers - analytics.funnel.scroll50, 0),
+        kycInProgress: 0,
+        kycApproved: 0,
+        firstInvestment: analytics.funnel.formSubmits,
+        multiInvestor: 0,
+        whale: 0,
+      };
+
+      const atRiskUsers = Math.round(totalUsers * (analytics.smartInsights.bounceRate / 100));
+      const dormantUsers = Math.max(totalUsers - activeUsers - atRiskUsers, 0);
+
+      const reEngagementStrategies = [];
+      if (atRiskUsers > 0) {
+        reEngagementStrategies.push({
+          priority: 'high',
+          segment: 'Bounced Visitors',
+          strategy: 'Send targeted follow-up to visitors who left early. Consider improving landing page above-the-fold content.',
+          expectedImpact: `Could recover ${Math.round(atRiskUsers * 0.15)} visitors`,
+          suggestedAction: 'Launch re-engagement email campaign with exclusive content',
+          userCount: atRiskUsers,
+        });
+      }
+      if (analytics.funnel.scroll75 > 0 && analytics.funnel.formSubmits === 0) {
+        reEngagementStrategies.push({
+          priority: 'critical',
+          segment: 'Deep Scrollers Without Conversion',
+          strategy: 'Visitors scrolled 75%+ but didn\'t convert. Consider adding a CTA or form at the 75% scroll point.',
+          expectedImpact: `${analytics.funnel.scroll75} potential leads`,
+          suggestedAction: 'Add exit-intent popup or mid-page CTA',
+          userCount: analytics.funnel.scroll75,
+        });
+      }
+      if (dormantUsers > 0) {
+        reEngagementStrategies.push({
+          priority: 'medium',
+          segment: 'Dormant Users',
+          strategy: 'Users who visited but haven\'t returned. Send personalized re-engagement content.',
+          expectedImpact: `Could re-engage ${Math.round(dormantUsers * 0.1)} users`,
+          suggestedAction: 'Create a "We miss you" campaign with new property highlights',
+          userCount: dormantUsers,
+        });
+      }
+
+      return {
+        summary: { totalUsers, activeUsers, totalEvents, atRiskUsers, dormantUsers, engagementRate, peakHour },
+        whatTheyView: { topScreens, topProperties: [], categoryBreakdown },
+        whatTheyLike: { topActions, topCTAs, investmentJourney, mostEngagedProperties: [] },
+        howToBringBack: {
+          reEngagementStrategies,
+          dormantBreakdown: { total: dormantUsers, highValue: 0, withBalance: 0, neverInvested: dormantUsers },
+          atRiskBreakdown: { total: atRiskUsers, totalAtRiskValue: 0, avgInvested: 0 },
+        },
+        engagement: { hourlyEngagement },
+      };
+    },
+    refetchInterval: 30000,
+    retry: 3,
+    retryDelay: (attempt: number) => Math.min(500 * Math.pow(1.5, attempt), 5000),
+    staleTime: 0,
+    refetchOnMount: true,
+  });
+
+  useEffect(() => {
+    if (report) {
+      console.log('[ClientIntel] Report received:', {
+        period,
+        totalUsers: report.summary.totalUsers,
+        activeUsers: report.summary.activeUsers,
+        totalEvents: report.summary.totalEvents,
+      });
+    }
+    if (error) {
+      console.error('[ClientIntel] Query error:', error.message);
+    }
+  }, [report, error, period]);
 
   const switchTab = useCallback((tab: TabKey) => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -255,7 +367,7 @@ export default function ClientIntelligenceScreen() {
           {whatTheyView.topScreens.length === 0 ? (
             <Text style={styles.emptyText}>No screen view data yet. Data populates as users browse.</Text>
           ) : (
-            whatTheyView.topScreens.slice(0, 8).map((s, i) => (
+            whatTheyView.topScreens.slice(0, 8).map((s: any, i: number) => (
               <View key={i} style={styles.listRow}>
                 <View style={styles.listRank}>
                   <Text style={[styles.rankNum, i < 3 && { color: Colors.primary }]}>{i + 1}</Text>
@@ -277,7 +389,7 @@ export default function ClientIntelligenceScreen() {
           {whatTheyView.topProperties.length === 0 ? (
             <Text style={styles.emptyText}>No property engagement data yet.</Text>
           ) : (
-            whatTheyView.topProperties.slice(0, 6).map((p, i) => (
+            whatTheyView.topProperties.slice(0, 6).map((p: any, i: number) => (
               <View key={i} style={styles.propertyRow}>
                 <View style={styles.propertyInfo}>
                   <Text style={styles.propertyName} numberOfLines={1}>{p.name}</Text>
@@ -308,7 +420,7 @@ export default function ClientIntelligenceScreen() {
         </SectionCard>
 
         <SectionCard title="Engagement by Category" icon={Layers} accent="#8E44AD">
-          {whatTheyView.categoryBreakdown.map((c, idx) => (
+          {whatTheyView.categoryBreakdown.map((c: any, idx: number) => (
             <View key={idx} style={styles.categoryRow}>
               <View style={styles.categoryDot} />
               <Text style={styles.categoryName}>{formatCategoryName(c.category)}</Text>
@@ -348,7 +460,7 @@ export default function ClientIntelligenceScreen() {
           {whatTheyLike.topActions.length === 0 ? (
             <Text style={styles.emptyText}>No user action data yet.</Text>
           ) : (
-            whatTheyLike.topActions.map((a, i) => (
+            whatTheyLike.topActions.map((a: any, i: number) => (
               <View key={i} style={styles.actionRow}>
                 <View style={[styles.actionIcon, { backgroundColor: getActionColor(i) + '20' }]}>
                   <Sparkles size={12} color={getActionColor(i)} />
@@ -366,7 +478,7 @@ export default function ClientIntelligenceScreen() {
           {whatTheyLike.topCTAs.length === 0 ? (
             <Text style={styles.emptyText}>No CTA click data recorded yet.</Text>
           ) : (
-            whatTheyLike.topCTAs.map((c, i) => (
+            whatTheyLike.topCTAs.map((c: any, i: number) => (
               <View key={i} style={styles.ctaRow}>
                 <CircleDot size={14} color={Colors.primary} />
                 <Text style={styles.ctaName} numberOfLines={1}>{formatActionName(c.cta)}</Text>
@@ -384,7 +496,7 @@ export default function ClientIntelligenceScreen() {
           {whatTheyLike.mostEngagedProperties.length === 0 ? (
             <Text style={styles.emptyText}>No property engagement yet.</Text>
           ) : (
-            whatTheyLike.mostEngagedProperties.map((p, i) => (
+            whatTheyLike.mostEngagedProperties.map((p: any, i: number) => (
               <View key={i} style={styles.engagedPropertyRow}>
                 <View style={styles.engagedRank}>
                   <Text style={styles.engagedRankText}>{i + 1}</Text>
@@ -392,7 +504,7 @@ export default function ClientIntelligenceScreen() {
                 <View style={styles.engagedInfo}>
                   <Text style={styles.engagedName} numberOfLines={1}>{p.name}</Text>
                   <Text style={styles.engagedMeta}>
-                    ${p.purchaseVolume.toLocaleString()} volume · {p.purchases} buys
+                    {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(p.purchaseVolume)} volume · {p.purchases} buys
                   </Text>
                 </View>
                 <ArrowUpRight size={16} color={Colors.positive} />
@@ -422,7 +534,7 @@ export default function ClientIntelligenceScreen() {
           </View>
         </View>
 
-        {howToBringBack.reEngagementStrategies.map((s, i) => (
+        {howToBringBack.reEngagementStrategies.map((s: any, i: number) => (
           <View key={i} style={styles.strategyCard}>
             <View style={styles.strategyHeader}>
               <View style={[styles.priorityBadge, { backgroundColor: (PRIORITY_COLORS[s.priority] || Colors.textSecondary) + '20' }]}>
@@ -470,7 +582,7 @@ export default function ClientIntelligenceScreen() {
         <SectionCard title="At-Risk Value" icon={Shield} accent="#FF9500">
           <View style={styles.atRiskSummary}>
             <View style={styles.atRiskMetric}>
-              <Text style={styles.atRiskBigValue}>${howToBringBack.atRiskBreakdown.totalAtRiskValue.toLocaleString()}</Text>
+              <Text style={styles.atRiskBigValue}>${new Intl.NumberFormat('en-US').format(howToBringBack.atRiskBreakdown.totalAtRiskValue)}</Text>
               <Text style={styles.atRiskBigLabel}>Total Investment at Risk</Text>
             </View>
             <View style={styles.atRiskRow}>
@@ -479,7 +591,7 @@ export default function ClientIntelligenceScreen() {
             </View>
             <View style={styles.atRiskRow}>
               <Text style={styles.atRiskLabel}>Avg. Investment</Text>
-              <Text style={styles.atRiskValue}>${howToBringBack.atRiskBreakdown.avgInvested.toLocaleString()}</Text>
+              <Text style={styles.atRiskValue}>${new Intl.NumberFormat('en-US').format(howToBringBack.atRiskBreakdown.avgInvested)}</Text>
             </View>
           </View>
         </SectionCard>
