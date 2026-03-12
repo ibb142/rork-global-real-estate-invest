@@ -487,12 +487,12 @@ export default function EmailEngineScreen() {
           <DollarSign size={20} color={Colors.success} />
           <View>
             <Text style={styles.costBannerTitle}>Today's Cost</Text>
-            <Text style={styles.costBannerValue}>${stats.estimatedDailyCost.toFixed(2)}</Text>
+            <Text style={styles.costBannerValue}>${new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(stats.estimatedDailyCost)}</Text>
           </View>
         </View>
         <View style={styles.costBannerRight}>
           <Text style={styles.costBannerLabel}>Monthly Est.</Text>
-          <Text style={styles.costBannerMonthly}>${stats.monthlyProjection.toFixed(0)}/mo</Text>
+          <Text style={styles.costBannerMonthly}>${new Intl.NumberFormat('en-US').format(Math.round(stats.monthlyProjection))}/mo</Text>
         </View>
         <View style={styles.costBannerRight}>
           <Text style={styles.costBannerLabel}>Per Email</Text>
