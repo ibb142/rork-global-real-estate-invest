@@ -1,21 +1,32 @@
 import { useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/lib/supabase';
 import logger from './logger';
-import { trpc } from '@/lib/trpc';
 import { properties as mockProperties } from '@/mocks/properties';
 import { currentUser as mockUser, holdings as mockHoldings, notifications as mockNotifications } from '@/mocks/user';
 import { marketData as mockMarketData } from '@/mocks/market';
 import type { Property, MarketData, Holding, Notification } from '@/types';
 
 export function useProperties() {
-  const query = trpc.properties.list.useQuery(
-    { page: 1, limit: 50 },
-    { retry: 1, staleTime: 1000 * 60 * 5 },
-  );
+  const query = useQuery({
+    queryKey: ['properties'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('properties')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(50);
+      if (error) throw error;
+      return data;
+    },
+    retry: 1,
+    staleTime: 1000 * 60 * 5,
+  });
 
   const properties: Property[] = useMemo(() => {
-    if (query.data && (query.data as any).properties && Array.isArray((query.data as any).properties)) {
-      logger.dataHooks.log('Properties loaded from API:', (query.data as any).properties.length);
-      return (query.data as any).properties as Property[];
+    if (query.data && Array.isArray(query.data) && query.data.length > 0) {
+      logger.dataHooks.log('Properties loaded from Supabase:', query.data.length);
+      return query.data as unknown as Property[];
     }
     return mockProperties;
   }, [query.data]);
@@ -25,19 +36,29 @@ export function useProperties() {
     isLoading: query.isLoading,
     isError: query.isError,
     refetch: query.refetch,
-    isFromAPI: !!query.data,
+    isFromAPI: !!(query.data && query.data.length > 0),
   };
 }
 
 export function useProperty(propertyId: string) {
-  const query = trpc.properties.getById.useQuery(
-    { id: propertyId },
-    { retry: 1, enabled: !!propertyId },
-  );
+  const query = useQuery({
+    queryKey: ['property', propertyId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('properties')
+        .select('*')
+        .eq('id', propertyId)
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    retry: 1,
+    enabled: !!propertyId,
+  });
 
   const property: Property | null = useMemo(() => {
     if (query.data) {
-      logger.dataHooks.log('Property loaded from API:', propertyId);
+      logger.dataHooks.log('Property loaded from Supabase:', propertyId);
       return query.data as unknown as Property;
     }
     return mockProperties.find(p => p.id === propertyId) || null;
@@ -53,17 +74,26 @@ export function useProperty(propertyId: string) {
 }
 
 export function useMarketData() {
-  const query = trpc.market.getAllMarketData.useQuery(undefined, {
+  const query = useQuery({
+    queryKey: ['market-data'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('market_data')
+        .select('*');
+      if (error) throw error;
+      return data;
+    },
     retry: 1,
     staleTime: 1000 * 60,
   });
 
   const marketData: Record<string, MarketData> = useMemo(() => {
-    if (query.data && (query.data as any).markets) {
-      logger.dataHooks.log('Market data loaded from API');
-      const markets = (query.data as any).markets as Array<MarketData & { propertyId: string }>;
+    if (query.data && query.data.length > 0) {
+      logger.dataHooks.log('Market data loaded from Supabase');
       const map: Record<string, MarketData> = {};
-      markets.forEach(m => { map[m.propertyId] = m; });
+      (query.data as Array<MarketData & { propertyId: string }>).forEach(m => {
+        map[m.propertyId] = m;
+      });
       return map;
     }
     return mockMarketData;
@@ -74,16 +104,55 @@ export function useMarketData() {
     isLoading: query.isLoading,
     isError: query.isError,
     refetch: query.refetch,
-    isFromAPI: !!query.data,
+    isFromAPI: !!(query.data && query.data.length > 0),
   };
 }
 
 export function useCurrentUser() {
-  const profileQuery = trpc.users.getProfile.useQuery(undefined, {
+  const profileQuery = useQuery({
+    queryKey: ['user-profile'],
+    queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return null;
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+
+      const meta = user.user_metadata || {};
+      return {
+        id: user.id,
+        email: user.email || '',
+        firstName: profile?.first_name || meta.firstName || '',
+        lastName: profile?.last_name || meta.lastName || '',
+        kycStatus: profile?.kyc_status || meta.kycStatus || 'pending',
+        country: profile?.country || meta.country || '',
+        phone: profile?.phone || meta.phone || '',
+        avatar: profile?.avatar || meta.avatar || '',
+        totalInvested: profile?.total_invested || 0,
+        totalReturns: profile?.total_returns || 0,
+      };
+    },
     retry: 1,
     staleTime: 1000 * 60 * 5,
   });
-  const balanceQuery = trpc.wallet.getBalance.useQuery(undefined, {
+
+  const balanceQuery = useQuery({
+    queryKey: ['wallet-balance'],
+    queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return null;
+
+      const { data } = await supabase
+        .from('wallets')
+        .select('*')
+        .eq('user_id', user.id)
+        .single();
+
+      return data;
+    },
     retry: 1,
     staleTime: 1000 * 60,
   });
@@ -96,16 +165,16 @@ export function useCurrentUser() {
       firstName: profileQuery.data.firstName,
       lastName: profileQuery.data.lastName,
       kycStatus: profileQuery.data.kycStatus,
-      country: (profileQuery.data as any).country || mockUser.country,
-      phone: (profileQuery.data as any).phone || mockUser.phone,
-      avatar: (profileQuery.data as any).avatar || mockUser.avatar,
-      totalInvested: (profileQuery.data as any).totalInvested ?? mockUser.totalInvested,
-      totalReturns: (profileQuery.data as any).totalReturns ?? mockUser.totalReturns,
+      country: profileQuery.data.country || mockUser.country,
+      phone: profileQuery.data.phone || mockUser.phone,
+      avatar: profileQuery.data.avatar || mockUser.avatar,
+      totalInvested: profileQuery.data.totalInvested ?? mockUser.totalInvested,
+      totalReturns: profileQuery.data.totalReturns ?? mockUser.totalReturns,
     } : mockUser;
 
     return {
       ...base,
-      walletBalance: balanceQuery.data?.available ?? base.walletBalance,
+      walletBalance: (balanceQuery.data as any)?.available ?? base.walletBalance,
     };
   }, [profileQuery.data, balanceQuery.data]);
 
@@ -114,23 +183,35 @@ export function useCurrentUser() {
     isLoading: profileQuery.isLoading || balanceQuery.isLoading,
     isError: profileQuery.isError,
     refetch: () => {
-      profileQuery.refetch();
-      balanceQuery.refetch();
+      void profileQuery.refetch();
+      void balanceQuery.refetch();
     },
     isFromAPI: !!profileQuery.data,
   };
 }
 
 export function useHoldings() {
-  const query = trpc.wallet.getPortfolio.useQuery(undefined, {
+  const query = useQuery({
+    queryKey: ['holdings'],
+    queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return [];
+
+      const { data, error } = await supabase
+        .from('holdings')
+        .select('*')
+        .eq('user_id', user.id);
+      if (error) throw error;
+      return data || [];
+    },
     retry: 1,
     staleTime: 1000 * 60 * 2,
   });
 
   const holdings: Holding[] = useMemo(() => {
-    if (query.data && Array.isArray((query.data as any).holdings)) {
-      logger.dataHooks.log('Holdings loaded from API');
-      return (query.data as any).holdings as Holding[];
+    if (query.data && Array.isArray(query.data) && query.data.length > 0) {
+      logger.dataHooks.log('Holdings loaded from Supabase');
+      return query.data as unknown as Holding[];
     }
     return mockHoldings;
   }, [query.data]);
@@ -150,27 +231,40 @@ export function useHoldings() {
     isLoading: query.isLoading,
     isError: query.isError,
     refetch: query.refetch,
-    isFromAPI: !!query.data,
+    isFromAPI: !!(query.data && query.data.length > 0),
   };
 }
 
 export function useNotifications() {
-  const query = trpc.notifications.list.useQuery(
-    { page: 1, limit: 50 },
-    { retry: 1, staleTime: 1000 * 60 },
-  );
+  const query = useQuery({
+    queryKey: ['notifications'],
+    queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return [];
+
+      const { data, error } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(50);
+      if (error) throw error;
+      return data || [];
+    },
+    retry: 1,
+    staleTime: 1000 * 60,
+  });
 
   const notifications: Notification[] = useMemo(() => {
-    if (query.data && (query.data as any).notifications) {
-      const items = (query.data as any).notifications as Array<Record<string, unknown>>;
-      logger.dataHooks.log('Notifications loaded from API:', items.length);
-      return items.map(n => ({
+    if (query.data && Array.isArray(query.data) && query.data.length > 0) {
+      logger.dataHooks.log('Notifications loaded from Supabase:', query.data.length);
+      return query.data.map((n: any) => ({
         id: n.id as string,
         type: n.type as Notification['type'],
         title: n.title as string,
         message: n.message as string,
         read: n.read as boolean,
-        createdAt: n.createdAt as string,
+        createdAt: n.created_at as string,
       }));
     }
     return mockNotifications;
@@ -186,21 +280,34 @@ export function useNotifications() {
     isLoading: query.isLoading,
     isError: query.isError,
     refetch: query.refetch,
-    isFromAPI: !!query.data,
+    isFromAPI: !!(query.data && query.data.length > 0),
   };
 }
 
 export function useWalletBalance() {
-  const query = trpc.wallet.getBalance.useQuery(undefined, {
+  const query = useQuery({
+    queryKey: ['wallet-balance'],
+    queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return null;
+
+      const { data } = await supabase
+        .from('wallets')
+        .select('*')
+        .eq('user_id', user.id)
+        .single();
+
+      return data;
+    },
     retry: 1,
     staleTime: 1000 * 30,
   });
 
   const balance = useMemo(() => ({
-    available: query.data?.available ?? mockUser.walletBalance,
-    pending: query.data?.pending ?? 0,
-    invested: query.data?.invested ?? mockUser.totalInvested,
-    total: query.data?.total ?? (mockUser.walletBalance + mockUser.totalInvested),
+    available: (query.data as any)?.available ?? mockUser.walletBalance,
+    pending: (query.data as any)?.pending ?? 0,
+    invested: (query.data as any)?.invested ?? mockUser.totalInvested,
+    total: (query.data as any)?.total ?? (mockUser.walletBalance + mockUser.totalInvested),
   }), [query.data]);
 
   return {
@@ -213,14 +320,32 @@ export function useWalletBalance() {
 }
 
 export function useTransactions(page: number = 1, limit: number = 20) {
-  const query = trpc.wallet.getTransactionHistory.useQuery(
-    { page, limit },
-    { retry: 1, staleTime: 1000 * 60 },
-  );
+  const query = useQuery({
+    queryKey: ['transactions', page, limit],
+    queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return { transactions: [], total: 0 };
+
+      const from = (page - 1) * limit;
+      const to = from + limit - 1;
+
+      const { data, error, count } = await supabase
+        .from('transactions')
+        .select('*', { count: 'exact' })
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .range(from, to);
+
+      if (error) throw error;
+      return { transactions: data || [], total: count || 0 };
+    },
+    retry: 1,
+    staleTime: 1000 * 60,
+  });
 
   return {
-    transactions: (query.data as any)?.transactions || [],
-    total: (query.data as any)?.total || 0,
+    transactions: query.data?.transactions || [],
+    total: query.data?.total || 0,
     isLoading: query.isLoading,
     isError: query.isError,
     refetch: query.refetch,
