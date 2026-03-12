@@ -70,7 +70,7 @@ const HoldingCard = memo(function HoldingCard({ holding }: HoldingCardProps) {
       activeOpacity={0.8}
       accessible={true}
       accessibilityRole="button"
-      accessibilityLabel={`${holding.property.name}, ${holding.shares} shares, current value ${holding.currentValue.toLocaleString()} dollars, ${isPositive ? 'up' : 'down'} ${Math.abs(holding.unrealizedPnLPercent).toFixed(1)} percent`}
+      accessibilityLabel={`${holding.property.name}, ${holding.shares} shares, current value ${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(holding.currentValue)}, ${isPositive ? 'up' : 'down'} ${Math.abs(holding.unrealizedPnLPercent).toFixed(1)} percent`}
       accessibilityHint="Opens property details"
       testID={`holding-card-${holding.propertyId}`}
     >
@@ -89,7 +89,7 @@ const HoldingCard = memo(function HoldingCard({ holding }: HoldingCardProps) {
         <View style={styles.footer}>
           <View style={styles.valueContainer}>
             <Text style={[styles.valueLabel, isCompact && styles.valueLabelCompact]}>Current Value</Text>
-            <Text style={[styles.value, isCompact && styles.valueCompact]}>${holding.currentValue.toLocaleString()}</Text>
+            <Text style={[styles.value, isCompact && styles.valueCompact]}>{new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(holding.currentValue)}</Text>
           </View>
           
           <View style={styles.pnlContainer}>
@@ -104,7 +104,7 @@ const HoldingCard = memo(function HoldingCard({ holding }: HoldingCardProps) {
               </Text>
             </View>
             <Text style={[styles.pnlAmount, isCompact && styles.pnlAmountCompact, { color: isPositive ? Colors.success : Colors.error }]}>
-              {isPositive ? '+' : ''}${Math.abs(holding.unrealizedPnL).toLocaleString()}
+              {isPositive ? '+' : ''}{new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Math.abs(holding.unrealizedPnL))}
             </Text>
           </View>
         </View>
