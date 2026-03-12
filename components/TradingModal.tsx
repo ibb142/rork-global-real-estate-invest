@@ -9,7 +9,6 @@ import {
   ScrollView,
   ActivityIndicator,
   Animated,
-  Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { X, TrendingUp, TrendingDown, Clock, Zap, Shield, AlertCircle, CheckCircle, Info } from 'lucide-react-native';
@@ -88,7 +87,7 @@ export default function TradingModal({
     }, 2000);
 
     return () => clearInterval(interval);
-  }, [visible, marketData]);
+  }, [visible, marketData, priceFlashAnim]);
 
   useEffect(() => {
     if (!visible) return;
@@ -142,7 +141,7 @@ export default function TradingModal({
   const handleQuickAmount = (percent: number) => {
     const amount = Math.floor(maxShares * percent);
     setShares(amount.toString());
-    Haptics.selectionAsync();
+    void Haptics.selectionAsync();
   };
 
   const handleTrade = async () => {
@@ -155,7 +154,7 @@ export default function TradingModal({
     if (!property || !marketData) return;
 
     setIsProcessing(true);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     try {
       await new Promise(resolve => setTimeout(resolve, 1500 + Math.random() * 1000));
@@ -180,16 +179,16 @@ export default function TradingModal({
         };
 
         setTradeResult({ success: true, order });
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         onTradeComplete(order);
       } else {
         setTradeResult({ success: false, error: 'Order rejected. Please try again.' });
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       }
     } catch (error) {
       console.error('[Trading] Error:', error);
       setTradeResult({ success: false, error: 'Network error. Please try again.' });
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     } finally {
       setIsProcessing(false);
     }
@@ -390,13 +389,13 @@ export default function TradingModal({
               <View style={styles.tradeTypeContainer}>
                 <TouchableOpacity
                   style={[styles.tradeTypeButton, tradeType === 'buy' && styles.tradeTypeBuy]}
-                  onPress={() => { setTradeType('buy'); Haptics.selectionAsync(); }}
+                  onPress={() => { setTradeType('buy'); void Haptics.selectionAsync(); }}
                 >
                   <Text style={[styles.tradeTypeText, tradeType === 'buy' && styles.tradeTypeTextActive]}>Buy</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.tradeTypeButton, tradeType === 'sell' && styles.tradeTypeSell]}
-                  onPress={() => { setTradeType('sell'); Haptics.selectionAsync(); }}
+                  onPress={() => { setTradeType('sell'); void Haptics.selectionAsync(); }}
                 >
                   <Text style={[styles.tradeTypeText, tradeType === 'sell' && styles.tradeTypeTextActive]}>Sell</Text>
                 </TouchableOpacity>
@@ -405,14 +404,14 @@ export default function TradingModal({
               <View style={styles.orderTypeContainer}>
                 <TouchableOpacity
                   style={[styles.orderTypeButton, orderType === 'market' && styles.orderTypeActive]}
-                  onPress={() => { setOrderType('market'); Haptics.selectionAsync(); }}
+                  onPress={() => { setOrderType('market'); void Haptics.selectionAsync(); }}
                 >
                   <Zap size={16} color={orderType === 'market' ? Colors.primary : Colors.textTertiary} />
                   <Text style={[styles.orderTypeText, orderType === 'market' && styles.orderTypeTextActive]}>Market</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.orderTypeButton, orderType === 'limit' && styles.orderTypeActive]}
-                  onPress={() => { setOrderType('limit'); setLimitPrice(displayPrice.toFixed(2)); Haptics.selectionAsync(); }}
+                  onPress={() => { setOrderType('limit'); setLimitPrice(displayPrice.toFixed(2)); void Haptics.selectionAsync(); }}
                 >
                   <Shield size={16} color={orderType === 'limit' ? Colors.primary : Colors.textTertiary} />
                   <Text style={[styles.orderTypeText, orderType === 'limit' && styles.orderTypeTextActive]}>Limit</Text>
@@ -517,7 +516,7 @@ export default function TradingModal({
               <View style={styles.taxDisclaimer}>
                 <AlertCircle size={12} color={Colors.warning} />
                 <Text style={styles.taxDisclaimerText}>
-                  By trading, you agree that you are solely responsible for all applicable taxes in your jurisdiction. This includes capital gains, income taxes, and any other tax obligations required by your country&apos;s regulations.
+                  By trading, you agree that you are solely responsible for all applicable taxes in your jurisdiction. This includes capital gains, income taxes, and any other tax obligations required by your country's regulations.
                 </Text>
               </View>
             </ScrollView>
