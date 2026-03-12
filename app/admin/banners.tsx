@@ -530,7 +530,7 @@ const styles = StyleSheet.create({
   bannerContent: { flex: 1, gap: 4 },
   bannerTitle: { color: Colors.text, fontSize: 16, fontWeight: '700' as const },
   bannerMeta: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  metaItem: { color: Colors.textTertiary, fontSize: 12 },
+  metaItem: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 4 },
   metaText: { color: Colors.textSecondary, fontSize: 13 },
   bannerStats: { flexDirection: 'row', gap: 8, marginTop: 10 },
   statItem: { flex: 1, backgroundColor: Colors.surface, borderRadius: 14, padding: 14, alignItems: 'center', gap: 4, borderWidth: 1, borderColor: Colors.surfaceBorder },
