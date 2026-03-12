@@ -12,7 +12,6 @@ import {
   Platform,
 } from 'react-native';
 import {
-  Shield,
   Lock,
   Smartphone,
   Fingerprint,
@@ -30,7 +29,8 @@ import * as Haptics from 'expo-haptics';
 import * as Clipboard from 'expo-clipboard';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Colors from '@/constants/colors';
-import { trpc } from '@/lib/trpc';
+import { supabase } from '@/lib/supabase';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAnalytics } from '@/lib/analytics-context';
 
 interface LoginSession {
@@ -59,13 +59,45 @@ const createCurrentSession = (): LoginSession => ({
 
 export default function SecuritySettingsScreen() {
   const { trackAction } = useAnalytics();
-  const changePasswordMutation = trpc.users.changePassword.useMutation();
-  const enable2FAMutation = trpc.users.enable2FA.useMutation();
-  const confirm2FAMutation = trpc.users.confirm2FA.useMutation();
-  const disable2FAMutation = trpc.users.disable2FA.useMutation();
+  const queryClient = useQueryClient();
 
-  const profileQuery = trpc.users.getProfile.useQuery();
-  const twoFAEnabled = (profileQuery.data as any)?.twoFactorEnabled ?? false;
+  const changePasswordMutation = useMutation({
+    mutationFn: async (input: { currentPassword: string; newPassword: string }) => {
+      const { error } = await supabase.auth.updateUser({ password: input.newPassword });
+      if (error) return { success: false, message: error.message };
+      return { success: true, message: 'Password updated' };
+    },
+  });
+
+  const enable2FAMutation = useMutation({
+    mutationFn: async () => {
+      console.log('[Security] 2FA enable requested - not yet supported via Supabase MFA');
+      return { success: false, message: '2FA setup requires Supabase MFA configuration', secret: '', backupCodes: [] as string[] };
+    },
+  });
+
+  const confirm2FAMutation = useMutation({
+    mutationFn: async (_input: { code: string }) => {
+      return { success: false, message: '2FA confirmation requires Supabase MFA configuration' };
+    },
+  });
+
+  const disable2FAMutation = useMutation({
+    mutationFn: async (_input: { password: string; code: string }) => {
+      return { success: false, message: '2FA disable requires Supabase MFA configuration' };
+    },
+  });
+
+  const profileQuery = useQuery({
+    queryKey: ['security-profile'],
+    queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return null;
+      return { twoFactorEnabled: false };
+    },
+    retry: 1,
+  });
+  const twoFAEnabled = profileQuery.data?.twoFactorEnabled ?? false;
 
   const [biometricEnabled, setBiometricEnabled] = useState(false);
   const [sessions, setSessions] = useState<LoginSession[]>([createCurrentSession()]);
@@ -107,12 +139,12 @@ export default function SecuritySettingsScreen() {
         console.error('[Security] Load prefs error:', e);
       }
     };
-    loadPrefs();
+    void loadPrefs();
   }, []);
 
   const handleToggleBiometric = useCallback(async (val: boolean) => {
     setBiometricEnabled(val);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     trackAction('biometric_toggled', { enabled: val });
     await AsyncStorage.setItem('@ipx_biometric_pref', JSON.stringify(val));
   }, [trackAction]);
@@ -149,7 +181,7 @@ export default function SecuritySettingsScreen() {
       {
         onSuccess: (data) => {
           if (data.success) {
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             trackAction('password_changed');
             Alert.alert('Password Updated', 'Your password has been changed successfully.');
             setShowChangePassword(false);
@@ -177,7 +209,7 @@ export default function SecuritySettingsScreen() {
             setSetupBackupCodes(data.backupCodes || []);
             setSetupVerifyCode('');
             setShowSetup2FA(true);
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
           } else {
             Alert.alert('Error', (data as any).message || 'Failed to start 2FA setup.');
           }
@@ -204,9 +236,9 @@ export default function SecuritySettingsScreen() {
       {
         onSuccess: (data) => {
           if (data.success) {
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             trackAction('2fa_enabled');
-            profileQuery.refetch();
+            void queryClient.invalidateQueries({ queryKey: ['security-profile'] });
             setShowSetup2FA(false);
             Alert.alert('2FA Enabled', 'Two-factor authentication is now active on your account.');
           } else {
@@ -218,7 +250,7 @@ export default function SecuritySettingsScreen() {
         },
       }
     );
-  }, [setupVerifyCode, confirm2FAMutation, trackAction, profileQuery]);
+  }, [setupVerifyCode, confirm2FAMutation, trackAction, queryClient]);
 
   const handleDisable2FA = useCallback(() => {
     if (!disablePassword) {
@@ -234,9 +266,9 @@ export default function SecuritySettingsScreen() {
       {
         onSuccess: (data) => {
           if (data.success) {
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             trackAction('2fa_disabled');
-            profileQuery.refetch();
+            void queryClient.invalidateQueries({ queryKey: ['security-profile'] });
             setShowDisable2FA(false);
             Alert.alert('2FA Disabled', 'Two-factor authentication has been removed.');
           } else {
@@ -248,11 +280,11 @@ export default function SecuritySettingsScreen() {
         },
       }
     );
-  }, [disablePassword, disableCode, disable2FAMutation, trackAction, profileQuery]);
+  }, [disablePassword, disableCode, disable2FAMutation, trackAction, queryClient]);
 
   const copyToClipboard = useCallback(async (text: string) => {
     await Clipboard.setStringAsync(text);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     Alert.alert('Copied', 'Copied to clipboard.');
   }, []);
 
@@ -276,9 +308,9 @@ export default function SecuritySettingsScreen() {
           onPress: () => {
             const updated = sessions.filter(s => s.id !== session.id);
             setSessions(updated);
-            persistSessions(updated);
+            void persistSessions(updated);
             trackAction('session_revoked', { device: session.device });
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           },
         },
       ]
