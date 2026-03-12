@@ -266,7 +266,7 @@ function ViralChannelsList() {
               <View style={s.channelStats}>
                 <Text style={s.channelStat}>{ch.usersAcquired.toLocaleString()} users</Text>
                 <Text style={s.channelStat}>{ch.conversionRate}% conv.</Text>
-                <Text style={s.channelStat}>${ch.costPerAcquisition.toFixed(2)} CPA</Text>
+                <Text style={s.channelStat}>${new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(ch.costPerAcquisition)} CPA</Text>
               </View>
             </View>
           </View>
