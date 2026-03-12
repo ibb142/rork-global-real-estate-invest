@@ -8,6 +8,7 @@ import {
   RefreshControl,
   Animated,
   Dimensions,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -39,13 +40,119 @@ import {
   PieChart,
   Layers,
   Sparkles,
+  Wifi,
+  WifiOff,
+  AlertTriangle,
+  UserPlus,
+  UserCheck,
+  Share2,
+  Gauge,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
-import { trpc } from '@/lib/trpc';
-import { useInstantCache } from '@/lib/use-instant-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { fetchRawEvents, computeAnalytics } from '@/lib/analytics-compute';
+import type { TrendDelta, AcquisitionChannel, SessionQuality } from '@/lib/analytics-compute';
+
 
 type PeriodType = '1h' | '24h' | '7d' | '30d' | '90d' | 'all';
-type TabType = 'overview' | 'funnel' | 'geo' | 'insights' | 'live';
+type TabType = 'overview' | 'acquisition' | 'funnel' | 'geo' | 'insights' | 'live';
+
+interface AnalyticsData {
+  period: string;
+  totalLeads: number;
+  registeredUsers: number;
+  waitlistLeads: number;
+  totalEvents: number;
+  pageViews: number;
+  uniqueSessions: number;
+  funnel: {
+    pageViews: number;
+    scroll25: number;
+    scroll50: number;
+    scroll75: number;
+    scroll100: number;
+    formFocuses: number;
+    formSubmits: number;
+  };
+  cta: {
+    getStarted: number;
+    signIn: number;
+    jvInquire: number;
+    websiteClick: number;
+  };
+  conversionRate: number;
+  scrollEngagement: number;
+  byEvent: Array<{ event: string; count: number }>;
+  byPlatform: Array<{ platform: string; count: number }>;
+  byReferrer: Array<{ referrer: string; count: number }>;
+  dailyViews: Array<{ date: string; views: number; sessions: number }>;
+  hourlyActivity: Array<{ hour: number; count: number }>;
+  geoZones: {
+    byCountry: Array<{ country: string; count: number; pct: number }>;
+    byCity: Array<{ city: string; count: number; country: string; lat?: number; lng?: number; pct: number }>;
+    byRegion: Array<{ region: string; count: number; pct: number }>;
+    byTimezone: Array<{ timezone: string; count: number }>;
+    totalWithGeo: number;
+  };
+  smartInsights: {
+    avgTimeOnPage: number;
+    bounceRate: number;
+    engagementScore: number;
+    topInterests: Array<{ interest: string; count: number; pct: number }>;
+    sectionEngagement: Array<{ section: string; count: number; pct: number }>;
+    deviceBreakdown: Array<{ device: string; count: number; pct: number }>;
+    peakHour: number;
+    contentInteraction: {
+      scrolledPast50Pct: number;
+      scrolledPast75Pct: number;
+      interactedWithForm: number;
+      submittedForm: number;
+      clickedAnyCta: number;
+    };
+    visitorIntent: {
+      highIntent: number;
+      mediumIntent: number;
+      lowIntent: number;
+      highIntentPct: number;
+      mediumIntentPct: number;
+      lowIntentPct: number;
+    };
+  };
+  liveData: {
+    active: number;
+    recent: number;
+    sessions: Array<{
+      sessionId: string;
+      ip: string;
+      device: string;
+      os: string;
+      browser: string;
+      geo?: { city?: string; country?: string; region?: string };
+      currentStep: number;
+      sessionDuration: number;
+      activeTime: number;
+      lastSeen: string;
+      startedAt: string;
+      isActive: boolean;
+    }>;
+    breakdown: {
+      byCountry: Array<{ country: string; count: number }>;
+      byDevice: Array<{ device: string; count: number }>;
+      byStep: Array<{ step: string; count: number }>;
+    };
+    timestamp: string;
+  };
+  trends: {
+    pageViews: TrendDelta;
+    sessions: TrendDelta;
+    leads: TrendDelta;
+    conversionRate: TrendDelta;
+    bounceRate: TrendDelta;
+    avgDuration: TrendDelta;
+  };
+  acquisition: AcquisitionChannel[];
+  sessionQuality: SessionQuality;
+}
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
@@ -60,6 +167,7 @@ const PERIODS: { label: string; value: PeriodType }[] = [
 
 const TABS: { label: string; value: TabType; icon: React.ReactNode }[] = [
   { label: 'Overview', value: 'overview', icon: <BarChart3 size={14} color={Colors.textTertiary} /> },
+  { label: 'Acquire', value: 'acquisition', icon: <Share2 size={14} color={Colors.textTertiary} /> },
   { label: 'Funnel', value: 'funnel', icon: <Layers size={14} color={Colors.textTertiary} /> },
   { label: 'Geo', value: 'geo', icon: <MapPin size={14} color={Colors.textTertiary} /> },
   { label: 'Intel', value: 'insights', icon: <Brain size={14} color={Colors.textTertiary} /> },
@@ -91,6 +199,10 @@ const LIME = '#7CB342';
 
 const CHART_COLORS = [BLUE, GREEN, ORANGE, PURPLE, TEAL, RED, YELLOW, PINK, LIME, NAVY];
 
+function getApiBaseUrl(): string {
+  return process.env.EXPO_PUBLIC_SUPABASE_URL || process.env.EXPO_PUBLIC_API_BASE_URL || 'https://ivxholding.com';
+}
+
 function formatSeconds(sec: number): string {
   if (sec < 60) return `${sec}s`;
   const m = Math.floor(sec / 60);
@@ -101,11 +213,6 @@ function formatSeconds(sec: number): string {
 function AnimatedRing({ percent, size, strokeWidth, color, children }: {
   percent: number; size: number; strokeWidth: number; color: string; children?: React.ReactNode;
 }) {
-  const anim = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    Animated.timing(anim, { toValue: percent, duration: 1200, useNativeDriver: false }).start();
-  }, [percent, anim]);
-
   const segments = 36;
   const radius = (size - strokeWidth) / 2;
   const segmentAngle = 360 / segments;
@@ -179,8 +286,6 @@ function AnimatedCounter({ value, suffix = '', prefix = '' }: { value: number; s
   return <Text style={s.counterText}>{prefix}{display.toLocaleString()}{suffix}</Text>;
 }
 
-
-
 function PulseIndicator({ active }: { active: boolean }) {
   const pulse = useRef(new Animated.Value(1)).current;
   useEffect(() => {
@@ -208,66 +313,65 @@ export default function AnalyticsReportScreen() {
   const router = useRouter();
   const [period, setPeriod] = useState<PeriodType>('all');
   const [activeTab, setActiveTab] = useState<TabType>('overview');
+  const [manualRefreshing, setManualRefreshing] = useState<boolean>(false);
+  const [fetchCount, setFetchCount] = useState<number>(0);
 
   const headerAnim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.spring(headerAnim, { toValue: 1, tension: 40, friction: 10, useNativeDriver: true }).start();
   }, [headerAnim]);
 
-  const analyticsQuery = trpc.analytics.getLandingAnalytics.useQuery(
-    { period },
-    {
-      staleTime: 0,
-      refetchInterval: activeTab === 'live' ? 5000 : 1000 * 8,
-      retry: 5,
-      retryDelay: (attempt) => Math.min(500 * Math.pow(2, attempt), 5000),
-      placeholderData: (prev) => prev,
-      gcTime: 1000 * 60 * 10,
-    }
-  );
+  const pollInterval = activeTab === 'live' ? 5000 : 10000;
+
+  const analyticsQuery = useQuery<AnalyticsData | null>({
+    queryKey: ['analytics.getLandingAnalytics', { period }],
+    queryFn: async () => {
+      console.log('[Analytics] Computing from raw landing_analytics events, period:', period);
+      const rawEvents = await fetchRawEvents(period);
+      console.log('[Analytics] Raw events fetched:', rawEvents.length);
+      if (rawEvents.length === 0) {
+        return computeAnalytics([], period) as unknown as AnalyticsData;
+      }
+      const computed = computeAnalytics(rawEvents, period);
+      console.log('[Analytics] Computed:', computed.pageViews, 'views,', computed.uniqueSessions, 'sessions,', computed.totalLeads, 'leads');
+      return computed as unknown as AnalyticsData;
+    },
+    staleTime: 0,
+    gcTime: 0,
+    refetchInterval: pollInterval,
+    networkMode: 'always',
+    retry: 3,
+    retryDelay: (attempt: number) => Math.min(500 * Math.pow(1.5, attempt), 5000),
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
+  });
+
+  const data = analyticsQuery.data as AnalyticsData | undefined ?? null;
+  const isLoading = analyticsQuery.isLoading && !analyticsQuery.data;
+  const _isFetching = analyticsQuery.isFetching;
+  const isError = analyticsQuery.isError && !data;
+  const errorMsg = analyticsQuery.error?.message || 'Failed to load analytics';
+  const isConnected = !!data || analyticsQuery.isSuccess;
+  const lastUpdated = analyticsQuery.dataUpdatedAt ? new Date(analyticsQuery.dataUpdatedAt).toLocaleTimeString() : '';
 
   useEffect(() => {
-    if (analyticsQuery.data) {
-      console.log('[Analytics] Data received:', {
-        period,
-        pageViews: analyticsQuery.data.pageViews,
-        uniqueSessions: analyticsQuery.data.uniqueSessions,
-        totalEvents: analyticsQuery.data.totalEvents,
-        funnel: analyticsQuery.data.funnel,
-        liveActive: analyticsQuery.data.liveData?.active ?? 0,
-        liveSessions: analyticsQuery.data.liveData?.sessions?.length ?? 0,
-      });
+    if (analyticsQuery.isSuccess && analyticsQuery.data) {
+      setFetchCount(prev => prev + 1);
+      console.log(`[Analytics] Supabase data loaded: ${analyticsQuery.data.totalLeads} leads, ${analyticsQuery.data.pageViews} views, ${analyticsQuery.data.uniqueSessions} sessions`);
     }
-    if (analyticsQuery.error) {
-      console.error('[Analytics] Query error:', analyticsQuery.error.message);
+    if (analyticsQuery.isError) {
+      console.error('[Analytics] Supabase error:', analyticsQuery.error?.message);
     }
-  }, [analyticsQuery.data, analyticsQuery.error, period]);
+  }, [analyticsQuery.isSuccess, analyticsQuery.data, analyticsQuery.isError, analyticsQuery.error]);
 
-  const [manualRefreshing, setManualRefreshing] = useState<boolean>(false);
-  const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
   const onRefresh = useCallback(async () => {
     setManualRefreshing(true);
-    await utils.analytics.getLandingAnalytics.invalidate();
+    await queryClient.invalidateQueries({ queryKey: ['analytics.getLandingAnalytics'] });
     setManualRefreshing(false);
-  }, [utils]);
+  }, [queryClient]);
 
-  const rawData = useInstantCache(`analytics_report_${period}`, analyticsQuery.data, analyticsQuery.isSuccess);
-  const data = useMemo(() => {
-    if (rawData && rawData.pageViews === 0 && rawData.uniqueSessions === 0 && rawData.totalEvents === 0) {
-      console.log('[Analytics] Received empty data, checking if query has better data...');
-      if (analyticsQuery.data && (analyticsQuery.data.pageViews > 0 || analyticsQuery.data.uniqueSessions > 0)) {
-        return analyticsQuery.data;
-      }
-    }
-    return rawData;
-  }, [rawData, analyticsQuery.data]);
-
-  const liveData = useMemo(() => {
-    if (data?.liveData) return data.liveData;
-    return null;
-  }, [data]);
-  const liveLoading = analyticsQuery.isLoading && !data;
-  const liveError: string | null = null;
+  const liveData = useMemo(() => data?.liveData ?? null, [data]);
 
   const funnelSteps = useMemo(() => {
     if (!data) return [];
@@ -283,13 +387,51 @@ export default function AnalyticsReportScreen() {
 
   const hourlyData = useMemo(() => {
     if (!data) return [];
-    return data.hourlyActivity.map((h: any) => h.count);
+    return data.hourlyActivity.map(h => h.count);
   }, [data]);
 
   const dailyData = useMemo(() => {
     if (!data) return [];
-    return data.dailyViews.slice(-14).map((d: any) => d.views);
+    return data.dailyViews.slice(-14).map(d => d.views);
   }, [data]);
+
+  const hasNoRealData = data && data.pageViews === 0 && data.uniqueSessions === 0 && data.totalLeads === 0;
+
+  const renderDiagnosticPanel = () => {
+    if (!hasNoRealData) return null;
+    return (
+      <View style={s.diagnosticCard}>
+        <View style={s.diagnosticHeader}>
+          <AlertTriangle size={18} color="#FFB800" />
+          <Text style={s.diagnosticTitle}>No Data Yet</Text>
+        </View>
+        <Text style={s.diagnosticDesc}>
+          Analytics computes from real landing page events stored in Supabase. No demo/mock data is shown.
+        </Text>
+        <View style={s.diagnosticGrid}>
+          <View style={s.diagnosticRow}>
+            <Text style={s.diagnosticLabel}>Database</Text>
+            <View style={[s.diagnosticBadge, { backgroundColor: '#00C48C20' }]}>
+              <Text style={[s.diagnosticBadgeText, { color: '#00C48C' }]}>Supabase Connected</Text>
+            </View>
+          </View>
+          <View style={s.diagnosticRow}>
+            <Text style={s.diagnosticLabel}>Events Found</Text>
+            <Text style={s.diagnosticValue}>0</Text>
+          </View>
+          <View style={s.diagnosticRow}>
+            <Text style={s.diagnosticLabel}>Period</Text>
+            <Text style={s.diagnosticValue}>{period}</Text>
+          </View>
+        </View>
+        <View style={s.diagnosticInfo}>
+          <Text style={s.diagnosticInfoText}>
+            Visit the landing page to generate tracking events. Data will appear here in real-time as visitors interact with your page.
+          </Text>
+        </View>
+      </View>
+    );
+  };
 
   const renderOverviewTab = () => {
     if (!data) return null;
@@ -297,14 +439,42 @@ export default function AnalyticsReportScreen() {
     const totalViews = data.pageViews;
     const totalUnique = data.uniqueSessions;
     const totalRegistrations = data.funnel.formSubmits;
+    const totalLeads = data.totalLeads ?? totalRegistrations;
+    const registeredUsers = data.registeredUsers ?? 0;
+    const waitlistLeads = data.waitlistLeads ?? 0;
 
     return (
       <>
+        <View style={s.leadsHero}>
+          <View style={s.leadsHeroIconWrap}>
+            <Users size={28} color="#fff" />
+          </View>
+          <View style={s.leadsHeroContent}>
+            <Text style={s.leadsHeroLabel}>TOTAL LEADS</Text>
+            <AnimatedCounter value={totalLeads} />
+          </View>
+          <View style={s.leadsBreakdown}>
+            <View style={s.leadsBreakdownItem}>
+              <View style={[s.leadsBreakdownDot, { backgroundColor: GREEN }]} />
+              <Text style={s.leadsBreakdownText}>{registeredUsers} Registered</Text>
+            </View>
+            <View style={s.leadsBreakdownItem}>
+              <View style={[s.leadsBreakdownDot, { backgroundColor: ORANGE }]} />
+              <Text style={s.leadsBreakdownText}>{waitlistLeads} Waitlist</Text>
+            </View>
+          </View>
+          <View style={s.leadsLiveBadge}>
+            <View style={s.leadsLiveDot} />
+            <Text style={s.leadsLiveText}>Real-time</Text>
+          </View>
+        </View>
+
         <View style={s.heroMetrics}>
           <View style={s.heroMetricMain}>
             <View style={s.heroMetricHeader}>
               <Eye size={18} color={BLUE} />
               <Text style={s.heroMetricLabel}>Total Views</Text>
+              {renderTrendBadge(data.trends?.pageViews)}
             </View>
             <AnimatedCounter value={totalViews} />
           </View>
@@ -312,7 +482,8 @@ export default function AnalyticsReportScreen() {
           <View style={s.heroMetricMain}>
             <View style={s.heroMetricHeader}>
               <Users size={18} color={PURPLE} />
-              <Text style={s.heroMetricLabel}>Unique Visitors</Text>
+              <Text style={s.heroMetricLabel}>Visitors</Text>
+              {renderTrendBadge(data.trends?.sessions)}
             </View>
             <AnimatedCounter value={totalUnique} />
           </View>
@@ -431,7 +602,7 @@ export default function AnalyticsReportScreen() {
             {data.byPlatform.length === 0 ? (
               <Text style={s.noDataText}>No data</Text>
             ) : (
-              data.byPlatform.map((p: any, i: number) => (
+              data.byPlatform.map((p, i) => (
                 <View key={i} style={s.miniListRow}>
                   <View style={[s.miniDot, { backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }]} />
                   <Text style={s.miniLabel} numberOfLines={1}>{p.platform}</Text>
@@ -448,7 +619,7 @@ export default function AnalyticsReportScreen() {
             {data.byReferrer.length === 0 ? (
               <Text style={s.noDataText}>No data</Text>
             ) : (
-              data.byReferrer.slice(0, 5).map((r: any, i: number) => (
+              data.byReferrer.slice(0, 5).map((r, i) => (
                 <View key={i} style={s.miniListRow}>
                   <View style={[s.miniDot, { backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }]} />
                   <Text style={s.miniLabel} numberOfLines={1}>{r.referrer}</Text>
@@ -465,7 +636,7 @@ export default function AnalyticsReportScreen() {
             <Text style={s.cardTitle}>Event Stream</Text>
             <Text style={s.cardSubtitle}>{data.byEvent.length} events</Text>
           </View>
-          {data.byEvent.slice(0, 10).map((evt: any, i: number) => {
+          {data.byEvent.slice(0, 10).map((evt, i) => {
             const maxEvt = data.byEvent[0]?.count || 1;
             const barPct = Math.round((evt.count / maxEvt) * 100);
             return (
@@ -486,6 +657,155 @@ export default function AnalyticsReportScreen() {
           {data.byEvent.length === 0 && (
             <Text style={s.noDataText}>No events tracked yet.</Text>
           )}
+        </View>
+      </>
+    );
+  };
+
+  const renderTrendBadge = (trend: TrendDelta | undefined, invertColor?: boolean) => {
+    if (!trend || trend.direction === 'flat') return null;
+    const isUp = trend.direction === 'up';
+    const color = invertColor ? (isUp ? RED : GREEN) : (isUp ? GREEN : RED);
+    return (
+      <View style={[s.trendBadge, { backgroundColor: color + '14' }]}>
+        {isUp ? <ArrowUpRight size={10} color={color} /> : <ArrowDownRight size={10} color={color} />}
+        <Text style={[s.trendBadgeText, { color }]}>{trend.pct}%</Text>
+      </View>
+    );
+  };
+
+  const renderAcquisitionTab = () => {
+    if (!data) return null;
+    const acq = data.acquisition ?? [];
+    const sq = data.sessionQuality;
+
+    return (
+      <>
+        {sq && (
+          <View style={s.card}>
+            <View style={s.cardHeader}>
+              <Gauge size={16} color={TEAL} />
+              <Text style={s.cardTitle}>Session Quality</Text>
+            </View>
+            <View style={s.sqGrid}>
+              <View style={s.sqItem}>
+                <Text style={s.sqValue}>{sq.avgPagesPerSession}</Text>
+                <Text style={s.sqLabel}>Events / Session</Text>
+              </View>
+              <View style={s.sqItem}>
+                <Text style={s.sqValue}>{formatSeconds(sq.avgSessionDuration)}</Text>
+                <Text style={s.sqLabel}>Avg Duration</Text>
+              </View>
+              <View style={s.sqItem}>
+                <Text style={[s.sqValue, { color: GREEN }]}>{sq.engagedSessionsPct}%</Text>
+                <Text style={s.sqLabel}>Engaged</Text>
+              </View>
+            </View>
+          </View>
+        )}
+
+        {sq && (
+          <View style={s.card}>
+            <View style={s.cardHeader}>
+              <Users size={16} color={PURPLE} />
+              <Text style={s.cardTitle}>New vs Returning</Text>
+            </View>
+            <View style={s.nvrRow}>
+              <View style={s.nvrBlock}>
+                <View style={[s.nvrIconWrap, { backgroundColor: BLUE + '18' }]}>
+                  <UserPlus size={18} color={BLUE} />
+                </View>
+                <Text style={s.nvrValue}>{sq.newVsReturning.new}</Text>
+                <Text style={s.nvrLabel}>New</Text>
+                <Text style={[s.nvrPct, { color: BLUE }]}>{sq.newVsReturning.newPct}%</Text>
+              </View>
+              <View style={s.nvrDivider} />
+              <View style={s.nvrBlock}>
+                <View style={[s.nvrIconWrap, { backgroundColor: GREEN + '18' }]}>
+                  <UserCheck size={18} color={GREEN} />
+                </View>
+                <Text style={s.nvrValue}>{sq.newVsReturning.returning}</Text>
+                <Text style={s.nvrLabel}>Returning</Text>
+                <Text style={[s.nvrPct, { color: GREEN }]}>{sq.newVsReturning.returningPct}%</Text>
+              </View>
+            </View>
+            <View style={s.nvrBarWrap}>
+              <View style={[s.nvrBarNew, { flex: Math.max(sq.newVsReturning.newPct, 1) }]} />
+              <View style={[s.nvrBarReturn, { flex: Math.max(sq.newVsReturning.returningPct, 1) }]} />
+            </View>
+          </View>
+        )}
+
+        <View style={s.card}>
+          <View style={s.cardHeader}>
+            <Share2 size={16} color={BLUE} />
+            <Text style={s.cardTitle}>Acquisition Channels</Text>
+            <Text style={s.cardSubtitle}>{acq.length} channels</Text>
+          </View>
+          {acq.length === 0 ? (
+            <Text style={s.noDataText}>No acquisition data yet.</Text>
+          ) : (
+            acq.map((ch, i) => {
+              const maxSess = acq[0]?.sessions || 1;
+              const barW = Math.max(Math.round((ch.sessions / maxSess) * 100), 5);
+              return (
+                <View key={i} style={s.acqRow}>
+                  <View style={[s.acqDot, { backgroundColor: ch.color }]} />
+                  <View style={s.acqInfo}>
+                    <View style={s.acqTopRow}>
+                      <Text style={s.acqName}>{ch.channel}</Text>
+                      <Text style={s.acqPct}>{ch.pct}%</Text>
+                    </View>
+                    <View style={s.acqBarBg}>
+                      <View style={[s.acqBarFill, { width: `${barW}%` as any, backgroundColor: ch.color }]} />
+                    </View>
+                    <View style={s.acqMetaRow}>
+                      <Text style={s.acqMeta}>{ch.sessions} sessions</Text>
+                      <Text style={s.acqMeta}>{ch.leads} leads</Text>
+                      <Text style={[s.acqMeta, ch.conversionRate > 0 && { color: GREEN }]}>{ch.conversionRate}% CVR</Text>
+                    </View>
+                  </View>
+                </View>
+              );
+            })
+          )}
+        </View>
+
+        <View style={s.splitRow}>
+          <View style={s.splitCard}>
+            <View style={s.cardHeader}>
+              <Monitor size={14} color={BLUE} />
+              <Text style={[s.cardTitle, { fontSize: 13 }]}>Platform</Text>
+            </View>
+            {data.byPlatform.length === 0 ? (
+              <Text style={s.noDataText}>No data</Text>
+            ) : (
+              data.byPlatform.map((p, i) => (
+                <View key={i} style={s.miniListRow}>
+                  <View style={[s.miniDot, { backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }]} />
+                  <Text style={s.miniLabel} numberOfLines={1}>{p.platform}</Text>
+                  <Text style={s.miniValue}>{p.count}</Text>
+                </View>
+              ))
+            )}
+          </View>
+          <View style={s.splitCard}>
+            <View style={s.cardHeader}>
+              <Globe size={14} color={TEAL} />
+              <Text style={[s.cardTitle, { fontSize: 13 }]}>Referrer</Text>
+            </View>
+            {data.byReferrer.length === 0 ? (
+              <Text style={s.noDataText}>No data</Text>
+            ) : (
+              data.byReferrer.slice(0, 5).map((r, i) => (
+                <View key={i} style={s.miniListRow}>
+                  <View style={[s.miniDot, { backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }]} />
+                  <Text style={s.miniLabel} numberOfLines={1}>{r.referrer}</Text>
+                  <Text style={s.miniValue}>{r.count}</Text>
+                </View>
+              ))
+            )}
+          </View>
         </View>
       </>
     );
@@ -598,7 +918,7 @@ export default function AnalyticsReportScreen() {
             <Globe size={16} color={BLUE} />
             <Text style={s.cardTitle}>Top Countries</Text>
           </View>
-          {geo.byCountry.map((c: any, i: number) => {
+          {geo.byCountry.map((c, i) => {
             const maxC = geo.byCountry[0]?.count || 1;
             const barW = Math.max(Math.round((c.count / maxC) * 100), 4);
             const flag = COUNTRY_FLAGS[c.country] || '🌍';
@@ -625,7 +945,7 @@ export default function AnalyticsReportScreen() {
             <MapPin size={16} color={GREEN} />
             <Text style={s.cardTitle}>Top Cities</Text>
           </View>
-          {geo.byCity.slice(0, 10).map((c: any, i: number) => (
+          {geo.byCity.slice(0, 10).map((c, i) => (
             <View key={i} style={s.cityRow}>
               <View style={[s.cityRank, { backgroundColor: CHART_COLORS[i % CHART_COLORS.length] + '18' }]}>
                 <Text style={[s.cityRankText, { color: CHART_COLORS[i % CHART_COLORS.length] }]}>{i + 1}</Text>
@@ -645,7 +965,7 @@ export default function AnalyticsReportScreen() {
               <Clock size={16} color={ACCENT} />
               <Text style={s.cardTitle}>Timezone Distribution</Text>
             </View>
-            {geo.byTimezone.slice(0, 8).map((tz: any, i: number) => (
+            {geo.byTimezone.slice(0, 8).map((tz, i) => (
               <View key={i} style={s.miniListRow}>
                 <View style={[s.miniDot, { backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }]} />
                 <Text style={s.miniLabel} numberOfLines={1}>{tz.timezone.replace(/_/g, ' ')}</Text>
@@ -732,7 +1052,7 @@ export default function AnalyticsReportScreen() {
               <Text style={s.cardTitle}>Devices</Text>
             </View>
             <View style={s.deviceGrid}>
-              {insights.deviceBreakdown.map((d: any, i: number) => (
+              {insights.deviceBreakdown.map((d, i) => (
                 <View key={i} style={[s.deviceCard, { borderTopColor: CHART_COLORS[i % CHART_COLORS.length] }]}>
                   {d.device === 'Mobile' ? <Smartphone size={22} color={CHART_COLORS[i % CHART_COLORS.length]} /> :
                     d.device === 'Tablet' ? <Tablet size={22} color={CHART_COLORS[i % CHART_COLORS.length]} /> :
@@ -752,7 +1072,7 @@ export default function AnalyticsReportScreen() {
               <Target size={16} color={GREEN} />
               <Text style={s.cardTitle}>Investment Interest</Text>
             </View>
-            {insights.topInterests.map((interest: any, i: number) => (
+            {insights.topInterests.map((interest, i) => (
               <View key={i} style={s.miniListRow}>
                 <View style={[s.miniRank, { backgroundColor: CHART_COLORS[i % CHART_COLORS.length] + '18' }]}>
                   <Text style={[s.miniRankText, { color: CHART_COLORS[i % CHART_COLORS.length] }]}>{i + 1}</Text>
@@ -769,7 +1089,7 @@ export default function AnalyticsReportScreen() {
   };
 
   const renderLiveTab = () => {
-    if (liveLoading && !liveData && !liveError) {
+    if (isLoading && !liveData) {
       return (
         <View style={s.emptyWrap}>
           <Radio size={48} color={BLUE} />
@@ -780,26 +1100,17 @@ export default function AnalyticsReportScreen() {
     }
 
     if (!liveData) {
-      if (analyticsQuery.isError) {
-        return (
-          <View style={s.emptyWrap}>
-            <View style={s.errorIcon}>
-              <Radio size={48} color={RED} />
-            </View>
-            <Text style={s.emptyTitle}>Connection Issue</Text>
-            <Text style={s.emptySubtitle}>{analyticsQuery.error?.message || 'Unable to fetch live data'}</Text>
-            <TouchableOpacity style={s.retryBtn} onPress={onRefresh}>
-              <RefreshCw size={14} color="#000" />
-              <Text style={s.retryBtnText}>Retry</Text>
-            </TouchableOpacity>
-          </View>
-        );
-      }
       return (
         <View style={s.emptyWrap}>
-          <Radio size={48} color={Colors.textTertiary} />
-          <Text style={s.emptyTitle}>No Live Data</Text>
-          <Text style={s.emptySubtitle}>Live sessions will appear as visitors browse your landing page.</Text>
+          <View style={s.liveEmptyIcon}>
+            <Radio size={44} color={BLUE} />
+          </View>
+          <Text style={s.emptyTitle}>No Active Sessions</Text>
+          <Text style={s.emptySubtitle}>Live visitor sessions will appear here in real-time when someone visits your landing page.</Text>
+          <TouchableOpacity style={s.retryBtn} onPress={onRefresh}>
+            <RefreshCw size={14} color="#000" />
+            <Text style={s.retryBtnText}>Refresh</Text>
+          </TouchableOpacity>
         </View>
       );
     }
@@ -856,7 +1167,7 @@ export default function AnalyticsReportScreen() {
               <Text style={s.cardTitle}>Active by Step</Text>
             </View>
             <View style={s.liveStepGrid}>
-              {breakdown.byStep.map((st: { step: string; count: number }, i: number) => {
+              {breakdown.byStep.map((st, i) => {
                 const stepNum = parseInt(st.step.replace('Step ', ''), 10) || 0;
                 return (
                   <View key={i} style={[s.liveStepCard, { borderTopColor: getStepColor(stepNum) }]}>
@@ -875,7 +1186,7 @@ export default function AnalyticsReportScreen() {
               <Globe size={16} color={GREEN} />
               <Text style={s.cardTitle}>Live by Country</Text>
             </View>
-            {breakdown.byCountry.slice(0, 8).map((c: { country: string; count: number }, i: number) => (
+            {breakdown.byCountry.slice(0, 8).map((c, i) => (
               <View key={i} style={s.miniListRow}>
                 <Text style={{ fontSize: 16, width: 24, textAlign: 'center' as const }}>
                   {COUNTRY_FLAGS[c.country] || '🌍'}
@@ -895,7 +1206,7 @@ export default function AnalyticsReportScreen() {
           {(!sessions || sessions.length === 0) ? (
             <Text style={s.noDataText}>No active sessions right now.</Text>
           ) : (
-            sessions.slice(0, 20).map((sess: any, i: number) => (
+            sessions.slice(0, 20).map((sess, i) => (
               <View key={sess.sessionId || i} style={s.sessionRow}>
                 <PulseIndicator active={sess.isActive} />
                 <View style={s.sessionInfo}>
@@ -936,15 +1247,26 @@ export default function AnalyticsReportScreen() {
           </TouchableOpacity>
           <View style={s.headerCenter}>
             <Text style={s.headerTitle}>Analytics</Text>
-            <View style={s.liveBadge}>
-              <View style={s.liveBadgeDot} />
-              <Text style={s.liveBadgeText}>LIVE</Text>
+            <View style={[s.connectionBadge, { backgroundColor: isConnected ? GREEN + '18' : RED + '18' }]}>
+              {isConnected ? <Wifi size={10} color={GREEN} /> : <WifiOff size={10} color={RED} />}
+              <Text style={[s.connectionText, { color: isConnected ? GREEN : RED }]}>
+                {isConnected ? 'LIVE' : 'OFFLINE'}
+              </Text>
             </View>
           </View>
           <TouchableOpacity onPress={onRefresh} style={s.refreshBtn} testID="analytics-refresh-btn">
             <RefreshCw size={17} color={Colors.textSecondary} />
           </TouchableOpacity>
         </Animated.View>
+
+        {lastUpdated ? (
+          <View style={s.statusBar}>
+            <Text style={s.statusText}>Updated {lastUpdated} · {fetchCount} syncs</Text>
+            {data && (
+              <Text style={s.statusLeads}>{data.totalLeads} leads · {data.pageViews} views</Text>
+            )}
+          </View>
+        ) : null}
 
         <View style={s.tabBar}>
           {TABS.map((tab) => {
@@ -988,28 +1310,31 @@ export default function AnalyticsReportScreen() {
             renderLiveTab()
           ) : data ? (
             <>
+              {renderDiagnosticPanel()}
               {activeTab === 'overview' && renderOverviewTab()}
+              {activeTab === 'acquisition' && renderAcquisitionTab()}
               {activeTab === 'funnel' && renderFunnelTab()}
               {activeTab === 'geo' && renderGeoTab()}
               {activeTab === 'insights' && renderInsightsTab()}
             </>
-          ) : analyticsQuery.isError ? (
+          ) : isError ? (
             <View style={s.emptyWrap}>
               <View style={s.errorIcon}>
                 <Activity size={40} color={RED} />
               </View>
-              <Text style={s.emptyTitle}>Failed to Load</Text>
-              <Text style={s.emptySubtitle}>{analyticsQuery.error?.message || 'Pull down to retry.'}</Text>
+              <Text style={s.emptyTitle}>Connection Issue</Text>
+              <Text style={s.emptySubtitle}>{errorMsg || 'Could not reach analytics server. Pull down to retry.'}</Text>
+              <Text style={s.debugText}>Server: {getApiBaseUrl()}</Text>
               <TouchableOpacity style={s.retryBtn} onPress={onRefresh}>
                 <RefreshCw size={14} color="#000" />
-                <Text style={s.retryBtnText}>Retry</Text>
+                <Text style={s.retryBtnText}>Retry Now</Text>
               </TouchableOpacity>
             </View>
           ) : (
             <View style={s.emptyWrap}>
               <Sparkles size={40} color={Colors.textTertiary} />
               <Text style={s.emptyTitle}>Loading Analytics...</Text>
-              <Text style={s.emptySubtitle}>Fetching your real-time data.</Text>
+              <Text style={s.emptySubtitle}>Connecting to {getApiBaseUrl()}</Text>
             </View>
           )}
 
@@ -1035,11 +1360,21 @@ const s = StyleSheet.create({
   backBtn: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.backgroundSecondary },
   headerCenter: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, marginLeft: 12 },
   headerTitle: { fontSize: 20, fontWeight: '800' as const, color: Colors.text, letterSpacing: -0.3 },
-  liveBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: GREEN + '18', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 4 },
-  liveBadgeDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: GREEN },
-  liveBadgeText: { fontSize: 9, fontWeight: '800' as const, color: GREEN, letterSpacing: 1 },
+  connectionBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 4 },
+  connectionText: { fontSize: 9, fontWeight: '800' as const, letterSpacing: 1 },
   refreshBtn: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.backgroundSecondary },
-
+  statusBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    backgroundColor: Colors.backgroundSecondary,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.surfaceBorder,
+  },
+  statusText: { fontSize: 10, fontWeight: '600' as const, color: Colors.textTertiary },
+  statusLeads: { fontSize: 10, fontWeight: '700' as const, color: GREEN },
   tabBar: { flexDirection: 'row', paddingHorizontal: 12, paddingTop: 8, paddingBottom: 2, backgroundColor: Colors.surface, borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder },
   tab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 10, position: 'relative' as const },
   tabActive: {},
@@ -1054,15 +1389,83 @@ const s = StyleSheet.create({
   periodText: { fontSize: 12, fontWeight: '700' as const, color: Colors.textTertiary },
   periodTextActive: { color: ACCENT },
 
+  leadsHero: {
+    backgroundColor: '#0A1628',
+    borderRadius: 22,
+    padding: 22,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#1B365D',
+    gap: 12,
+  },
+  leadsHeroIconWrap: {
+    position: 'absolute',
+    top: 18,
+    right: 18,
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: '#1B365D',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  leadsHeroContent: { gap: 2 },
+  leadsHeroLabel: {
+    fontSize: 11,
+    fontWeight: '800' as const,
+    color: '#4A90D9',
+    letterSpacing: 1.5,
+  },
+  leadsBreakdown: {
+    flexDirection: 'row',
+    gap: 16,
+    marginTop: 2,
+  },
+  leadsBreakdownItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  leadsBreakdownDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  leadsBreakdownText: {
+    fontSize: 12,
+    fontWeight: '600' as const,
+    color: '#8BA4C4',
+  },
+  leadsLiveBadge: {
+    position: 'absolute',
+    bottom: 18,
+    right: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#00C48C18',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  leadsLiveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#00C48C',
+  },
+  leadsLiveText: {
+    fontSize: 10,
+    fontWeight: '700' as const,
+    color: '#00C48C',
+    letterSpacing: 0.3,
+  },
   heroMetrics: { flexDirection: 'row', backgroundColor: Colors.surface, borderRadius: 20, borderWidth: 1, borderColor: Colors.surfaceBorder, marginBottom: 16, overflow: 'hidden' },
   heroMetricMain: { flex: 1, padding: 20, alignItems: 'center', gap: 6 },
   heroMetricDivider: { width: 1, backgroundColor: Colors.surfaceBorder, marginVertical: 12 },
   heroMetricHeader: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   heroMetricLabel: { fontSize: 12, fontWeight: '600' as const, color: Colors.textSecondary },
   counterText: { fontSize: 32, fontWeight: '900' as const, color: Colors.text, letterSpacing: -1 },
-
-  trendBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
-  trendText: { fontSize: 11, fontWeight: '700' as const },
 
   ringRow: { flexDirection: 'row', gap: 10, marginBottom: 16 },
   ringCard: { flex: 1, backgroundColor: Colors.surface, borderRadius: 16, borderWidth: 1, borderColor: Colors.surfaceBorder, padding: 14, alignItems: 'center', gap: 8 },
@@ -1074,8 +1477,8 @@ const s = StyleSheet.create({
   cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 },
   cardTitle: { flex: 1, fontSize: 15, fontWeight: '700' as const, color: Colors.text },
   cardSubtitle: { fontSize: 11, fontWeight: '600' as const, color: Colors.textTertiary },
-  cardBadge: { backgroundColor: BLUE + '18', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
-  cardBadgeText: { fontSize: 10, fontWeight: '700' as const, color: BLUE },
+  cardBadge: { backgroundColor: '#4A90D918', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
+  cardBadgeText: { fontSize: 10, fontWeight: '700' as const, color: '#4A90D9' },
 
   sparkLabelRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },
   sparkLabel: { fontSize: 10, fontWeight: '600' as const, color: Colors.textTertiary },
@@ -1125,8 +1528,8 @@ const s = StyleSheet.create({
   funnelPct: { fontSize: 13, fontWeight: '800' as const, color: Colors.text, width: 40, textAlign: 'right' as const },
   funnelLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingLeft: 4 },
   funnelLabel: { fontSize: 11, fontWeight: '600' as const, color: Colors.textSecondary },
-  funnelDropoff: { flexDirection: 'row', alignItems: 'center', gap: 2, backgroundColor: RED + '18', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
-  funnelDropoffText: { fontSize: 9, fontWeight: '700' as const, color: RED },
+  funnelDropoff: { flexDirection: 'row', alignItems: 'center', gap: 2, backgroundColor: '#E5393518', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
+  funnelDropoffText: { fontSize: 9, fontWeight: '700' as const, color: '#E53935' },
   funnelConnector: { width: 1, height: 8, backgroundColor: Colors.surfaceBorder, marginLeft: 20 },
 
   dropoffRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
@@ -1136,7 +1539,7 @@ const s = StyleSheet.create({
   dropoffBarBg: { height: 4, backgroundColor: Colors.backgroundSecondary, borderRadius: 2, overflow: 'hidden' },
   dropoffBarFill: { height: 4, borderRadius: 2 },
   dropoffStats: { alignItems: 'flex-end', width: 44 },
-  dropoffValue: { fontSize: 13, fontWeight: '800' as const, color: RED },
+  dropoffValue: { fontSize: 13, fontWeight: '800' as const, color: '#E53935' },
   dropoffPctText: { fontSize: 9, fontWeight: '600' as const, color: Colors.textTertiary },
 
   geoKpiRow: { flexDirection: 'row', gap: 10, marginBottom: 14 },
@@ -1212,7 +1615,7 @@ const s = StyleSheet.create({
   sessionBadge: { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 2, borderWidth: 1 },
   sessionBadgeText: { fontSize: 9, fontWeight: '800' as const, letterSpacing: 0.3 },
   sessionDetail: { fontSize: 11, fontWeight: '600' as const, color: Colors.textSecondary },
-  sessionMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' as const },
+  sessionMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' },
   sessionMeta: { fontSize: 10, fontWeight: '500' as const, color: Colors.textTertiary },
 
   noDataText: { fontSize: 12, color: Colors.textTertiary, textAlign: 'center' as const, paddingVertical: 16, lineHeight: 18 },
@@ -1220,7 +1623,66 @@ const s = StyleSheet.create({
   emptyWrap: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60, gap: 12 },
   emptyTitle: { fontSize: 18, fontWeight: '800' as const, color: Colors.text },
   emptySubtitle: { fontSize: 13, color: Colors.textSecondary, textAlign: 'center' as const, lineHeight: 20, paddingHorizontal: 24 },
-  errorIcon: { width: 72, height: 72, borderRadius: 36, backgroundColor: RED + '18', alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
+  debugText: { fontSize: 10, color: Colors.textTertiary, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
+  errorIcon: { width: 72, height: 72, borderRadius: 36, backgroundColor: '#E5393518', alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
+  liveEmptyIcon: { width: 72, height: 72, borderRadius: 36, backgroundColor: '#4A90D915', alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
   retryBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: ACCENT, borderRadius: 12, paddingHorizontal: 20, paddingVertical: 10, marginTop: 8 },
   retryBtnText: { fontSize: 13, fontWeight: '700' as const, color: '#000' },
+
+  diagnosticCard: {
+    backgroundColor: '#FFB80008', borderRadius: 14, padding: 16,
+    borderWidth: 1, borderColor: '#FFB80030', marginBottom: 16,
+  },
+  diagnosticHeader: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 8, marginBottom: 8 },
+  diagnosticTitle: { fontSize: 15, fontWeight: '700' as const, color: '#FFB800' },
+  diagnosticDesc: { fontSize: 12, color: Colors.textSecondary, marginBottom: 12, lineHeight: 18 },
+  diagnosticGrid: { gap: 8 },
+  diagnosticRow: {
+    flexDirection: 'row' as const, justifyContent: 'space-between' as const, alignItems: 'center' as const,
+    paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder,
+  },
+  diagnosticLabel: { fontSize: 12, color: Colors.textSecondary, fontWeight: '500' as const },
+  diagnosticValue: { fontSize: 13, color: Colors.text, fontWeight: '700' as const },
+  diagnosticBadge: { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
+  diagnosticBadgeText: { fontSize: 11, fontWeight: '700' as const },
+  diagnosticWarning: {
+    backgroundColor: '#FF4D4D10', borderRadius: 8, padding: 10, marginTop: 12,
+    borderWidth: 1, borderColor: '#FF4D4D20',
+  },
+  diagnosticWarningText: { fontSize: 11, color: '#FF6B6B', lineHeight: 16 },
+  diagnosticInfo: {
+    backgroundColor: '#4A90D910', borderRadius: 8, padding: 10, marginTop: 12,
+    borderWidth: 1, borderColor: '#4A90D920',
+  },
+  diagnosticInfoText: { fontSize: 11, color: '#6AADEE', lineHeight: 16 },
+
+  trendBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
+  trendBadgeText: { fontSize: 10, fontWeight: '700' as const },
+
+  sqGrid: { flexDirection: 'row', gap: 10 },
+  sqItem: { flex: 1, backgroundColor: Colors.backgroundSecondary, borderRadius: 12, padding: 14, alignItems: 'center', gap: 4, borderWidth: 1, borderColor: Colors.surfaceBorder },
+  sqValue: { fontSize: 20, fontWeight: '900' as const, color: Colors.text },
+  sqLabel: { fontSize: 10, fontWeight: '600' as const, color: Colors.textSecondary, textAlign: 'center' as const },
+
+  nvrRow: { flexDirection: 'row', gap: 12, marginBottom: 14 },
+  nvrBlock: { flex: 1, alignItems: 'center', gap: 6 },
+  nvrIconWrap: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  nvrValue: { fontSize: 26, fontWeight: '900' as const, color: Colors.text },
+  nvrLabel: { fontSize: 12, fontWeight: '600' as const, color: Colors.textSecondary },
+  nvrPct: { fontSize: 14, fontWeight: '800' as const },
+  nvrDivider: { width: 1, backgroundColor: Colors.surfaceBorder, marginVertical: 8 },
+  nvrBarWrap: { flexDirection: 'row', height: 8, borderRadius: 4, overflow: 'hidden', gap: 2 },
+  nvrBarNew: { backgroundColor: BLUE, borderRadius: 4 },
+  nvrBarReturn: { backgroundColor: GREEN, borderRadius: 4 },
+
+  acqRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 14 },
+  acqDot: { width: 10, height: 10, borderRadius: 5, marginTop: 4 },
+  acqInfo: { flex: 1, gap: 4 },
+  acqTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  acqName: { fontSize: 14, fontWeight: '700' as const, color: Colors.text },
+  acqPct: { fontSize: 12, fontWeight: '700' as const, color: Colors.textSecondary },
+  acqBarBg: { height: 5, backgroundColor: Colors.backgroundSecondary, borderRadius: 3, overflow: 'hidden' },
+  acqBarFill: { height: 5, borderRadius: 3 },
+  acqMetaRow: { flexDirection: 'row', gap: 12 },
+  acqMeta: { fontSize: 10, fontWeight: '600' as const, color: Colors.textTertiary },
 });
