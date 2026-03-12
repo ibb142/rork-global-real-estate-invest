@@ -8,7 +8,6 @@ import {
   TouchableOpacity,
   Switch,
   Animated,
-  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, Stack } from 'expo-router';
@@ -20,12 +19,11 @@ import {
   Check,
   Info,
   DollarSign,
-  Percent,
   Calendar,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { holdings } from '@/mocks/user';
-import { formatNumber } from '@/lib/formatters';
+import { formatCurrencyWithDecimals } from '@/lib/formatters';
 
 interface DRIPSetting {
   propertyId: string;
@@ -64,7 +62,7 @@ export default function AutoReinvestScreen() {
         useNativeDriver: true,
       }).start();
     });
-  }, []);
+  }, [slideAnims]);
 
   const toggleGlobalDRIP = useCallback((value: boolean) => {
     Animated.sequence([
@@ -80,7 +78,7 @@ export default function AutoReinvestScreen() {
     } else {
       logger.drip.log('Global auto-reinvest disabled');
     }
-  }, []);
+  }, [pulseAnim]);
 
   const togglePropertyDRIP = useCallback((propertyId: string, value: boolean) => {
     setDripSettings(prev => {
@@ -88,7 +86,6 @@ export default function AutoReinvestScreen() {
         s.propertyId === propertyId ? { ...s, enabled: value } : s
       );
       const allEnabled = updated.every(s => s.enabled);
-      const anyEnabled = updated.some(s => s.enabled);
       setGlobalDRIP(allEnabled);
       return updated;
     });
@@ -152,7 +149,7 @@ export default function AutoReinvestScreen() {
           <View style={styles.statsRow}>
             <View style={styles.statCard}>
               <DollarSign size={16} color={Colors.primary} />
-              <Text style={styles.statValue}>${formatNumber(totalReinvestValue)}</Text>
+              <Text style={styles.statValue}>{formatCurrencyWithDecimals(totalReinvestValue)}</Text>
               <Text style={styles.statLabel}>Next Reinvest</Text>
             </View>
             <View style={styles.statCard}>
@@ -213,11 +210,11 @@ export default function AutoReinvestScreen() {
               <View style={styles.holdingDetails}>
                 <View style={styles.holdingDetail}>
                   <Text style={styles.holdingDetailLabel}>Est. Dividend</Text>
-                  <Text style={styles.holdingDetailValue}>${formatNumber(setting.estimatedDividend)}</Text>
+                  <Text style={styles.holdingDetailValue}>{formatCurrencyWithDecimals(setting.estimatedDividend)}</Text>
                 </View>
                 <View style={styles.holdingDetail}>
                   <Text style={styles.holdingDetailLabel}>Price/Share</Text>
-                  <Text style={styles.holdingDetailValue}>${formatNumber(setting.pricePerShare)}</Text>
+                  <Text style={styles.holdingDetailValue}>{formatCurrencyWithDecimals(setting.pricePerShare)}</Text>
                 </View>
                 <View style={styles.holdingDetail}>
                   <Text style={styles.holdingDetailLabel}>New Shares</Text>
@@ -231,7 +228,7 @@ export default function AutoReinvestScreen() {
                 <View style={styles.enabledBadge}>
                   <Check size={12} color={Colors.success} />
                   <Text style={styles.enabledBadgeText}>
-                    Auto-reinvesting ${formatNumber(setting.estimatedDividend)} on next payout
+                    Auto-reinvesting {formatCurrencyWithDecimals(setting.estimatedDividend)} on next payout
                   </Text>
                 </View>
               )}
@@ -247,7 +244,7 @@ export default function AutoReinvestScreen() {
               <View style={styles.projectionItem}>
                 <Text style={styles.projectionLabel}>Total Dividends</Text>
                 <Text style={styles.projectionValue}>
-                  ${formatNumber(totalEstimatedDividend * 4)}
+                  {formatCurrencyWithDecimals(totalEstimatedDividend * 4)}
                 </Text>
               </View>
               <View style={styles.projectionItem}>
@@ -259,7 +256,7 @@ export default function AutoReinvestScreen() {
               <View style={styles.projectionItem}>
                 <Text style={styles.projectionLabel}>Compound Value</Text>
                 <Text style={[styles.projectionValue, { color: Colors.success }]}>
-                  +${formatNumber(totalEstimatedDividend * 4 * 1.08)}
+                  +{formatCurrencyWithDecimals(totalEstimatedDividend * 4 * 1.08)}
                 </Text>
               </View>
             </View>
