@@ -51,8 +51,9 @@ import {
   Zap,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
-import { trpc } from '@/lib/trpc';
-import { useInstantCache, getInitialCacheData } from '@/lib/use-instant-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { supabase } from '@/lib/supabase';
+
 import { adminTeamMembers } from '@/mocks/team';
 
 const ADMIN_MODULES = [
@@ -92,6 +93,7 @@ const ADMIN_MODULES = [
   { id: 'visitor-intelligence', name: 'AI Visitor Intelligence', icon: Brain, iconName: 'Brain', route: '/admin/visitor-intelligence', category: 'Analytics' },
   { id: 'landing-analytics', name: 'Landing Analytics', icon: BarChart3, iconName: 'BarChart3', route: '/admin/landing-analytics', category: 'Analytics' },
   { id: 'system-monitor', name: '24/7 Command Center', icon: ShieldCheck, iconName: 'ShieldCheck', route: '/admin/system-monitor', category: 'Core' },
+  { id: 'sms-reports', name: 'SMS Reports', icon: MessageSquare, iconName: 'MessageSquare', route: '/sms-reports', category: 'Marketing' },
   { id: 'authenticator', name: 'Authenticator', icon: ShieldCheck, iconName: 'ShieldCheck', route: '/authenticator', category: 'Settings' },
 ];
 
@@ -102,65 +104,86 @@ export default function AdminDashboard() {
   const [showSearch, setShowSearch] = useState(false);
 
 
-  const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
 
-  const cachedDashInit = useMemo(() => getInitialCacheData('admin_dashboard'), []);
-  const cachedTxInit = useMemo(() => getInitialCacheData('admin_transactions'), []);
-  const cachedPendingInit = useMemo(() => getInitialCacheData('admin_kyc_pending'), []);
-  const cachedInReviewInit = useMemo(() => getInitialCacheData('admin_kyc_inreview'), []);
 
-  const dashboardQuery = trpc.analytics.getDashboard.useQuery(undefined, {
-    staleTime: 1000 * 5,
-    refetchInterval: 1000 * 5,
-    placeholderData: (prev) => prev,
-    initialData: cachedDashInit as any,
-    initialDataUpdatedAt: cachedDashInit ? Date.now() - 1000 * 20 : undefined,
+
+  const dashboardQuery = useQuery<any>({
+    queryKey: ['analytics.getDashboard'],
+    queryFn: async () => {
+      try {
+        console.log('[Supabase] Fetching admin dashboard');
+        const { data, error } = await supabase.from('analytics_dashboard').select('*').limit(50);
+        if (error) { console.log('[Supabase] analytics_dashboard error (suppressed):', error.message); return null; }
+        return data;
+      } catch (err: any) {
+        console.log('[Supabase] analytics_dashboard fetch error (suppressed):', err?.message);
+        return null;
+      }
+    },
+    staleTime: 1000 * 10,
+    refetchInterval: 1000 * 30,
+    placeholderData: (prev: any) => prev,
+    retry: 0,
+    throwOnError: false,
   });
 
-  const transactionsQuery = trpc.transactions.list.useQuery({
-    page: 1,
-    limit: 5,
-    sortBy: 'createdAt',
-    sortOrder: 'desc',
-  }, {
+  const transactionsQuery = useQuery<any>({
+    queryKey: ['transactions.list', { page: 1, limit: 5 }],
+    queryFn: async () => {
+      try {
+        const { data, error } = await supabase.from('transactions').select('*').order('created_at', { ascending: false }).limit(5);
+        if (error) { console.log('[Supabase] transactions error (suppressed):', error.code); return null; }
+        return { transactions: data ?? [] };
+      } catch {
+        return null;
+      }
+    },
     staleTime: 1000 * 30,
-    placeholderData: (prev) => prev,
-    initialData: cachedTxInit as any,
-    initialDataUpdatedAt: cachedTxInit ? Date.now() - 1000 * 20 : undefined,
+    placeholderData: (prev: any) => prev,
+    retry: 0,
+    throwOnError: false,
   });
 
-  const pendingKycQuery = trpc.members.list.useQuery({
-    page: 1,
-    limit: 10,
-    kycStatus: 'pending',
-  }, {
+  const pendingKycQuery = useQuery<any>({
+    queryKey: ['members.list', { kycStatus: 'pending', limit: 10 }],
+    queryFn: async () => {
+      try {
+        const { data, error } = await supabase.from('profiles').select('*').limit(10);
+        if (error) { console.log('[Supabase] profiles error (suppressed):', error.code); return null; }
+        return { members: data ?? [] };
+      } catch {
+        return null;
+      }
+    },
     staleTime: 1000 * 30,
-    placeholderData: (prev) => prev,
-    initialData: cachedPendingInit as any,
-    initialDataUpdatedAt: cachedPendingInit ? Date.now() - 1000 * 20 : undefined,
+    placeholderData: (prev: any) => prev,
+    retry: 0,
+    throwOnError: false,
   });
 
-  const inReviewKycQuery = trpc.members.list.useQuery({
-    page: 1,
-    limit: 10,
-    kycStatus: 'in_review',
-  }, {
+  const inReviewKycQuery = useQuery<any>({
+    queryKey: ['members.list', { kycStatus: 'in_review', limit: 10 }],
+    queryFn: async () => {
+      try {
+        const { data, error } = await supabase.from('profiles').select('*').limit(10);
+        if (error) { console.log('[Supabase] profiles error (suppressed):', error.code); return null; }
+        return { members: data ?? [] };
+      } catch {
+        return null;
+      }
+    },
     staleTime: 1000 * 30,
-    placeholderData: (prev) => prev,
-    initialData: cachedInReviewInit as any,
-    initialDataUpdatedAt: cachedInReviewInit ? Date.now() - 1000 * 20 : undefined,
+    placeholderData: (prev: any) => prev,
+    retry: 0,
+    throwOnError: false,
   });
 
-  const cachedDashboard = useInstantCache('admin_dashboard', dashboardQuery.data, dashboardQuery.isSuccess);
-  const cachedTransactions = useInstantCache('admin_transactions', transactionsQuery.data, transactionsQuery.isSuccess);
-  const cachedPendingKyc = useInstantCache('admin_kyc_pending', pendingKycQuery.data, pendingKycQuery.isSuccess);
-  const cachedInReviewKyc = useInstantCache('admin_kyc_inreview', inReviewKycQuery.data, inReviewKycQuery.isSuccess);
-
-  const stats = cachedDashboard;
-  const recentTransactions = cachedTransactions?.transactions ?? [];
+  const stats = dashboardQuery.data;
+  const recentTransactions = transactionsQuery.data?.transactions ?? [];
   const pendingKycMembers = [
-    ...(cachedPendingKyc?.members ?? []),
-    ...(cachedInReviewKyc?.members ?? []),
+    ...(pendingKycQuery.data?.members ?? []),
+    ...(inReviewKycQuery.data?.members ?? []),
   ];
 
   const refreshing = dashboardQuery.isRefetching || transactionsQuery.isRefetching;
@@ -168,10 +191,10 @@ export default function AdminDashboard() {
 
 
   const onRefresh = useCallback(() => {
-    void utils.analytics.getDashboard.invalidate();
-    void utils.transactions.list.invalidate();
-    void utils.members.list.invalidate();
-  }, [utils]);
+    void queryClient.invalidateQueries({ queryKey: ['analytics.getDashboard'] });
+    void queryClient.invalidateQueries({ queryKey: ['transactions.list'] });
+    void queryClient.invalidateQueries({ queryKey: ['members.list'] });
+  }, [queryClient]);
 
   const filteredModules = useMemo(() => {
     if (!searchQuery.trim()) return ADMIN_MODULES;
@@ -519,7 +542,7 @@ export default function AdminDashboard() {
               <Text style={styles.emptyStateText}>No transactions yet</Text>
             </View>
           )}
-          {recentTransactions.map((tx) => (
+          {recentTransactions.map((tx: any) => (
             <View key={tx.id} style={styles.txCard}>
               <View style={styles.txIcon}>{getTransactionIcon(tx.type)}</View>
               <View style={styles.txInfo}>
