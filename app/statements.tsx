@@ -109,10 +109,10 @@ const ROLE_CONFIG = {
   },
 };
 
+import { formatCurrencyWithDecimals } from '@/lib/formatters';
+
 function fmt(n: number) {
-  if (n >= 1000000) return `$${(n / 1000000).toFixed(1)}M`;
-  if (n >= 1000) return `$${(n / 1000).toFixed(1)}K`;
-  return `$${n.toLocaleString()}`;
+  return formatCurrencyWithDecimals(n);
 }
 
 function StatementCard({ statement, onDownload }: { statement: Statement; onDownload: (s: Statement) => void }) {
@@ -210,7 +210,7 @@ function StatementCard({ statement, onDownload }: { statement: Statement; onDown
     <View style={styles.card}>
       <TouchableOpacity
         style={styles.cardHeader}
-        onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setExpanded(e => !e); }}
+        onPress={() => { void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setExpanded(e => !e); }}
         activeOpacity={0.8}
       >
         <View style={[styles.cardIconBox, { backgroundColor: typeColor + '18' }]}>
@@ -292,7 +292,7 @@ export default function StatementsScreen() {
   }, [activeRole]);
 
   const handleDownload = (statement: Statement) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     Alert.alert(
       'Download Statement',
       `${statement.period} statement will be sent to your registered email.`,
@@ -322,7 +322,7 @@ export default function StatementsScreen() {
               <TouchableOpacity
                 key={role}
                 style={[styles.roleTab, active && { borderColor: cfg.color, backgroundColor: cfg.color + '14' }]}
-                onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setActiveRole(role); setFilterType('all'); }}
+                onPress={() => { void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setActiveRole(role); setFilterType('all'); }}
                 activeOpacity={0.8}
               >
                 <Icon size={16} color={active ? cfg.color : Colors.textTertiary} />
