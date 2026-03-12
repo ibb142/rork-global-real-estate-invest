@@ -1,7 +1,8 @@
 import createContextHook from '@nkzw/create-context-hook';
-import { useState, useEffect, useCallback } from 'react';
-import { trpc } from './trpc';
-import { persistAuth, loadStoredAuth, clearStoredAuth, isAdminRole, getRefreshToken, getAuthToken, setAuthToken } from './auth-store';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { supabase } from './supabase';
+import { persistAuth, loadStoredAuth, clearStoredAuth, isAdminRole } from './auth-store';
+import type { Session } from '@supabase/supabase-js';
 
 interface AuthUser {
   id: string;
@@ -12,6 +13,9 @@ interface AuthUser {
   role: string;
   emailVerified?: boolean;
   twoFactorEnabled?: boolean;
+  phone?: string;
+  country?: string;
+  avatar?: string;
 }
 
 interface LoginResult {
@@ -26,130 +30,109 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   const [isLoading, setIsLoading] = useState(true);
   const [userRole, setUserRole] = useState<string>('investor');
   const [requiresTwoFactor, setRequiresTwoFactor] = useState(false);
-  const [twoFactorToken, setTwoFactorToken] = useState<string | null>(null);
+  const [loginLoading, setLoginLoading] = useState(false);
+  const [registerLoading, setRegisterLoading] = useState(false);
 
-  const loginMutation = trpc.users.login.useMutation();
-  const registerMutation = trpc.users.register.useMutation();
-  const logoutMutation = trpc.users.logout.useMutation();
-  const verify2FAMutation = trpc.users.verify2FA.useMutation();
-  const refreshTokenMutation = trpc.users.refreshToken.useMutation();
+  const handleSession = useCallback(async (session: Session) => {
+    const supaUser = session.user;
+    const meta = supaUser.user_metadata || {};
+    const role = meta.role || 'investor';
 
-  const profileQuery = trpc.users.getProfile.useQuery(undefined, {
-    enabled: isAuthenticated,
-    retry: 1,
-  });
+    const authUser: AuthUser = {
+      id: supaUser.id,
+      email: supaUser.email || '',
+      firstName: meta.firstName || meta.first_name || '',
+      lastName: meta.lastName || meta.last_name || '',
+      kycStatus: meta.kycStatus || 'pending',
+      role,
+      emailVerified: !!supaUser.email_confirmed_at,
+      twoFactorEnabled: false,
+    };
 
-  const promoteMutation = trpc.users.promoteToOwner.useMutation();
+    setUser(authUser);
+    setUserRole(role);
+    setIsAuthenticated(true);
+
+    await persistAuth({
+      token: session.access_token,
+      refreshToken: session.refresh_token || '',
+      userId: supaUser.id,
+      userRole: role,
+    });
+
+    console.log('[Auth] Session set for:', supaUser.id);
+  }, []);
 
   useEffect(() => {
-    (async () => {
+    const initAuth = async () => {
       try {
-        const stored = await loadStoredAuth();
-        if (stored.token && stored.userId) {
-          setIsAuthenticated(true);
-          if (stored.userRole) setUserRole(stored.userRole);
-          console.log('[Auth] Session restored for:', stored.userId);
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+          await handleSession(session);
+        } else {
+          const stored = await loadStoredAuth();
+          if (stored.token && stored.userId) {
+            setIsAuthenticated(true);
+            if (stored.userRole) setUserRole(stored.userRole);
+            console.log('[Auth] Session restored from store for:', stored.userId);
+          }
         }
       } catch (e) {
-        console.log('[Auth] Restore failed:', e);
+        console.log('[Auth] Init error:', e);
       } finally {
         setIsLoading(false);
       }
-    })();
-  }, []);
+    };
 
-  useEffect(() => {
-    if (profileQuery.data) {
-      const role = (profileQuery.data as any).role || userRole;
-      setUser({
-        id: profileQuery.data.id,
-        email: profileQuery.data.email,
-        firstName: profileQuery.data.firstName,
-        lastName: profileQuery.data.lastName,
-        kycStatus: profileQuery.data.kycStatus,
-        role,
-        emailVerified: (profileQuery.data as any).emailVerified,
-        twoFactorEnabled: (profileQuery.data as any).twoFactorEnabled,
-      });
-      setUserRole(role);
-    }
-  }, [profileQuery.data]);
+    void initAuth();
 
-  const handleAuthSuccess = useCallback(async (token: string, refreshToken: string, userData: any) => {
-    const role = userData.role || 'investor';
-    await persistAuth({
-      token,
-      refreshToken,
-      userId: userData.id,
-      userRole: role,
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      console.log('[Auth] State changed:', _event);
+      if (session) {
+        await handleSession(session);
+      } else if (_event === 'SIGNED_OUT') {
+        setUser(null);
+        setIsAuthenticated(false);
+        setUserRole('investor');
+        await clearStoredAuth();
+      }
     });
-    setUser({
-      id: userData.id,
-      email: userData.email,
-      firstName: userData.firstName,
-      lastName: userData.lastName,
-      kycStatus: userData.kycStatus,
-      role,
-      emailVerified: userData.emailVerified,
-      twoFactorEnabled: userData.twoFactorEnabled,
-    });
-    setUserRole(role);
-    setIsAuthenticated(true);
-    setRequiresTwoFactor(false);
-    setTwoFactorToken(null);
-    console.log('[Auth] Auth success for:', userData.id);
-  }, []);
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [handleSession]);
 
   const login = useCallback(async (email: string, password: string): Promise<LoginResult> => {
+    setLoginLoading(true);
     try {
-      const result = await loginMutation.mutateAsync({ email, password });
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
-      if (result.requiresTwoFactor && result.twoFactorToken) {
-        setTwoFactorToken(result.twoFactorToken);
-        setRequiresTwoFactor(true);
-        console.log('[Auth] 2FA required for login');
-        return { success: true, requiresTwoFactor: true, message: 'Enter your 2FA code' };
+      if (error) {
+        console.error('[Auth] Login error:', error.message);
+        return { success: false, message: error.message };
       }
 
-      if (result.success && result.token && result.user) {
-        await handleAuthSuccess(result.token, result.refreshToken || '', result.user);
+      if (data.session) {
+        await handleSession(data.session);
         return { success: true, message: 'Login successful' };
       }
 
-      return { success: false, message: (result as any).message || 'Invalid credentials' };
+      return { success: false, message: 'Login failed' };
     } catch (error: any) {
-      console.error('[Auth] Login error:', error);
+      console.error('[Auth] Login exception:', error);
       return { success: false, message: error?.message || 'Login failed' };
+    } finally {
+      setLoginLoading(false);
     }
-  }, [loginMutation, handleAuthSuccess]);
+  }, [handleSession]);
 
-  const verify2FA = useCallback(async (code: string): Promise<LoginResult> => {
-    if (!twoFactorToken) {
-      return { success: false, message: 'No 2FA session active' };
-    }
-
-    try {
-      const result = await verify2FAMutation.mutateAsync({
-        twoFactorToken,
-        code,
-      });
-
-      if (result.success && result.token && result.user) {
-        await handleAuthSuccess(result.token, result.refreshToken || '', result.user);
-        return { success: true, message: 'Login successful' };
-      }
-
-      return { success: false, message: result.message || 'Invalid code' };
-    } catch (error: any) {
-      console.error('[Auth] 2FA verify error:', error);
-      return { success: false, message: error?.message || '2FA verification failed' };
-    }
-  }, [twoFactorToken, verify2FAMutation, handleAuthSuccess]);
+  const verify2FA = useCallback(async (_code: string): Promise<LoginResult> => {
+    return { success: false, message: '2FA not yet configured with Supabase' };
+  }, []);
 
   const cancelTwoFactor = useCallback(() => {
     setRequiresTwoFactor(false);
-    setTwoFactorToken(null);
-    console.log('[Auth] 2FA cancelled');
   }, []);
 
   const register = useCallback(async (data: {
@@ -161,87 +144,130 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     country: string;
     referralCode?: string;
   }) => {
+    setRegisterLoading(true);
     try {
-      const result = await registerMutation.mutateAsync(data);
-      if (result.success) {
-        return { success: true, message: result.message || 'Registration successful. Please verify your email to log in.' };
+      const { data: authData, error } = await supabase.auth.signUp({
+        email: data.email,
+        password: data.password,
+        options: {
+          data: {
+            firstName: data.firstName,
+            lastName: data.lastName,
+            phone: data.phone || '',
+            country: data.country,
+            referralCode: data.referralCode || '',
+            role: 'investor',
+            kycStatus: 'pending',
+          },
+        },
+      });
+
+      if (error) {
+        console.error('[Auth] Register error:', error.message);
+        return { success: false, message: error.message };
       }
-      return { success: false, message: result.message || 'Registration failed' };
-    } catch (error) {
-      console.error('[Auth] Register error:', error);
+
+      if (authData.user) {
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .upsert({
+            id: authData.user.id,
+            email: data.email,
+            first_name: data.firstName,
+            last_name: data.lastName,
+            phone: data.phone || '',
+            country: data.country,
+            referral_code: data.referralCode || '',
+            role: 'investor',
+            kyc_status: 'pending',
+            created_at: new Date().toISOString(),
+          });
+
+        if (profileError) {
+          console.log('[Auth] Profile insert note:', profileError.message);
+        }
+
+        console.log('[Auth] Registration successful for:', authData.user.id);
+        return { success: true, message: 'Registration successful. Please check your email to verify.' };
+      }
+
       return { success: false, message: 'Registration failed' };
+    } catch (error: any) {
+      console.error('[Auth] Register exception:', error);
+      return { success: false, message: error?.message || 'Registration failed' };
+    } finally {
+      setRegisterLoading(false);
     }
-  }, [registerMutation, login]);
+  }, []);
 
   const refreshSession = useCallback(async (): Promise<boolean> => {
-    const storedRefresh = getRefreshToken();
-    if (!storedRefresh) {
-      console.log('[Auth] No refresh token available');
-      return false;
-    }
-
     try {
-      const result = await refreshTokenMutation.mutateAsync({ refreshToken: storedRefresh });
-      if (result.success && result.token && result.refreshToken) {
-        setAuthToken(result.token);
-        await persistAuth({
-          token: result.token,
-          refreshToken: result.refreshToken,
-          userId: user?.id || '',
-          userRole,
-        });
+      const { data, error } = await supabase.auth.refreshSession();
+      if (error) {
+        console.log('[Auth] Refresh failed:', error.message);
+        return false;
+      }
+      if (data.session) {
+        await handleSession(data.session);
         console.log('[Auth] Session refreshed');
         return true;
       }
-      console.log('[Auth] Refresh failed');
       return false;
     } catch (error) {
       console.error('[Auth] Refresh error:', error);
       return false;
     }
-  }, [refreshTokenMutation, user, userRole]);
+  }, [handleSession]);
 
   const logout = useCallback(async () => {
     try {
-      if (isAuthenticated) await logoutMutation.mutateAsync();
+      await supabase.auth.signOut();
     } catch (e) {
-      console.log('[Auth] Logout API error:', e);
+      console.log('[Auth] Logout error:', e);
     }
     await clearStoredAuth();
     setUser(null);
     setIsAuthenticated(false);
     setUserRole('investor');
     setRequiresTwoFactor(false);
-    setTwoFactorToken(null);
     console.log('[Auth] Logged out');
-  }, [isAuthenticated, logoutMutation]);
+  }, []);
 
   const activateOwnerAccess = useCallback(async () => {
     try {
-      const result = await promoteMutation.mutateAsync();
-      if (result.success && result.role) {
-        setUserRole(result.role);
-        if (user) {
-          setUser({ ...user, role: result.role });
-        }
-        await persistAuth({
-          token: getAuthToken() || '',
-          refreshToken: getRefreshToken() || '',
-          userId: user?.id || '',
-          userRole: result.role,
-        });
-        void profileQuery.refetch();
-        console.log('[Auth] Owner access activated');
-        return { success: true, message: result.message };
+      const newRole = 'owner';
+      setUserRole(newRole);
+      if (user) {
+        setUser({ ...user, role: newRole });
       }
-      return { success: false, message: result.message || 'Failed to activate' };
+
+      const { error } = await supabase.auth.updateUser({
+        data: { role: newRole },
+      });
+
+      if (error) {
+        console.error('[Auth] Owner access error:', error.message);
+        return { success: false, message: error.message };
+      }
+
+      console.log('[Auth] Owner access activated');
+      return { success: true, message: 'Owner access activated' };
     } catch (error: any) {
       console.error('[Auth] Promote error:', error);
       return { success: false, message: error?.message || 'Failed to activate owner access' };
     }
-  }, [promoteMutation, user, profileQuery]);
+  }, [user]);
 
-  return {
+  const ownerDirectAccess = useCallback(async (): Promise<LoginResult> => {
+    return { success: false, message: 'Owner direct access not available' };
+  }, []);
+
+  const refetchProfile = useCallback(async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session) await handleSession(session);
+  }, [handleSession]);
+
+  return useMemo(() => ({
     user,
     isAuthenticated,
     isLoading,
@@ -255,11 +281,18 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     requiresTwoFactor,
     refreshSession,
     activateOwnerAccess,
-    activatingOwner: promoteMutation.isPending,
-    loginLoading: loginMutation.isPending,
-    registerLoading: registerMutation.isPending,
-    verify2FALoading: verify2FAMutation.isPending,
-    profileData: profileQuery.data,
-    refetchProfile: profileQuery.refetch,
-  };
+    activatingOwner: false,
+    ownerDirectAccess,
+    ownerAccessLoading: false,
+    loginLoading,
+    registerLoading,
+    verify2FALoading: false,
+    profileData: user,
+    refetchProfile,
+  }), [
+    user, isAuthenticated, isLoading, userRole, login, register, logout,
+    verify2FA, cancelTwoFactor, requiresTwoFactor, refreshSession,
+    activateOwnerAccess, ownerDirectAccess, loginLoading, registerLoading,
+    refetchProfile,
+  ]);
 });
