@@ -104,13 +104,13 @@ async function deploy() {
   console.log('   ✅ www redirect configured');
 
   console.log('\n📤 Uploading index.html...');
-  const apiBaseUrl = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || '').trim().replace(/\/$/, '');
+  const apiBaseUrl = (process.env.EXPO_PUBLIC_API_BASE_URL || 'https://ivxholding.com').trim().replace(/\/$/, '');
   let html = readFileSync('./ivxholding-landing/index.html', 'utf-8');
-  html = html.replace(/__RORK_API_BASE_URL__/g, apiBaseUrl);
+  html = html.replace(/__IVX_API_BASE_URL__/g, apiBaseUrl);
   if (apiBaseUrl) {
     console.log(`   🔗 API URL injected: ${apiBaseUrl}`);
   } else {
-    console.warn('   ⚠️  EXPO_PUBLIC_RORK_API_BASE_URL not set');
+    console.warn('   ⚠️  EXPO_PUBLIC_API_BASE_URL not set');
   }
 
   await s3.send(new PutObjectCommand({
