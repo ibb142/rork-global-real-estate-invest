@@ -56,11 +56,11 @@ import { useLenders } from '@/lib/lender-context';
 import { searchSECEdgar, SECSearchResult } from '@/lib/sec-edgar-service';
 
 const formatCurrency = (amount: number): string => {
-  if (amount >= 1000000000000) return `$${(amount / 1000000000000).toFixed(1)}T`;
-  if (amount >= 1000000000) return `$${(amount / 1000000000).toFixed(1)}B`;
-  if (amount >= 1000000) return `$${(amount / 1000000).toFixed(1)}M`;
-  if (amount >= 1000) return `$${(amount / 1000).toFixed(0)}K`;
-  return `$${amount.toFixed(0)}`;
+  if (amount >= 1000000000000) return `${(amount / 1000000000000).toFixed(1)}T`;
+  if (amount >= 1000000000) return `${(amount / 1000000000).toFixed(1)}B`;
+  if (amount >= 1000000) return `${(amount / 1000000).toFixed(1)}M`;
+  if (amount >= 1000) return `${new Intl.NumberFormat('en-US').format(Math.round(amount))}`;
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(amount);
 };
 
 const SOURCE_LABELS: Record<string, { label: string; color: string }> = {
