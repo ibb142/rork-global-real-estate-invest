@@ -7,7 +7,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { StatusBar } from "expo-status-bar";
 
 import Colors from "../constants/colors";
-import { trpc, trpcClient, queryClientConfig } from "../lib/trpc";
+import { queryClientConfig } from "../lib/query-config";
 import logger from "../lib/logger";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { IPXProvider } from "../lib/ipx-context";
@@ -18,6 +18,7 @@ import { IntroProvider, useIntro } from "../lib/intro-context";
 import { I18nProvider } from "../lib/i18n-context";
 import { AnalyticsProvider } from "../lib/analytics-context";
 import { EmailProvider } from "../lib/email-context";
+import { ImageStorageProvider } from "../lib/image-context";
 import OnboardingFlow from "../components/OnboardingFlow";
 import AdminFAB from "../components/AdminFAB";
 import {
@@ -27,10 +28,7 @@ import {
   addNotificationResponseListener,
   setBadgeCount,
 } from "../lib/push-notifications";
-import { ensureCacheReady } from "../lib/instant-cache";
-
 void SplashScreen.preventAutoHideAsync();
-void ensureCacheReady();
 
 const queryClient = new QueryClient(queryClientConfig);
 
@@ -110,6 +108,8 @@ function RootLayoutNav() {
       <Stack.Screen name="client-intelligence" options={HIDDEN_HEADER} />
       <Stack.Screen name="analytics-report" options={HIDDEN_HEADER} />
       <Stack.Screen name="jv-agreement" options={HIDDEN_HEADER} />
+      <Stack.Screen name="buy-shares" options={HIDDEN_HEADER} />
+      <Stack.Screen name="jv-invest" options={HIDDEN_HEADER} />
     </Stack>
   );
 }
@@ -222,27 +222,27 @@ function AppContent() {
 export default function RootLayout() {
   return (
     <ErrorBoundary>
-      <trpc.Provider client={trpcClient} queryClient={queryClient}>
-        <QueryClientProvider client={queryClient}>
-          <I18nProvider>
-            <AuthProvider>
-              <AnalyticsProvider>
-                <IntroProvider>
-                  <LenderProvider>
-                    <IPXProvider>
-                      <EarnProvider>
-                        <EmailProvider>
+      <QueryClientProvider client={queryClient}>
+        <I18nProvider>
+          <AuthProvider>
+            <AnalyticsProvider>
+              <IntroProvider>
+                <LenderProvider>
+                  <IPXProvider>
+                    <EarnProvider>
+                      <EmailProvider>
+                        <ImageStorageProvider>
                           <AppContent />
-                        </EmailProvider>
-                      </EarnProvider>
-                    </IPXProvider>
-                  </LenderProvider>
-                </IntroProvider>
-              </AnalyticsProvider>
-            </AuthProvider>
-          </I18nProvider>
-        </QueryClientProvider>
-      </trpc.Provider>
+                        </ImageStorageProvider>
+                      </EmailProvider>
+                    </EarnProvider>
+                  </IPXProvider>
+                </LenderProvider>
+              </IntroProvider>
+            </AnalyticsProvider>
+          </AuthProvider>
+        </I18nProvider>
+      </QueryClientProvider>
     </ErrorBoundary>
   );
 }
