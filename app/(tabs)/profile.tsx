@@ -27,6 +27,7 @@ import {
   Phone,
   MapPin,
   Gift,
+  MessageSquare,
   PieChart,
   BookOpen,
   Briefcase,
@@ -42,11 +43,13 @@ import {
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { getResponsiveSize, isCompactScreen, isExtraSmallScreen } from '@/lib/responsive';
-import { currentUser as mockUser } from '@/mocks/user';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/lib/supabase';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/lib/auth-context';
 import { useTranslation, useI18n } from '@/lib/i18n-context';
 import { useAnalytics } from '@/lib/analytics-context';
+import { formatDollar } from '@/lib/formatters';
 
 interface MenuItemProps {
   icon: React.ReactNode;
@@ -95,21 +98,34 @@ export default function ProfileScreen() {
   const { currentLanguage } = useI18n();
   const { trackAction } = useAnalytics();
 
-  const currentUser = useMemo(() => ({
-    ...mockUser,
-    ...(profileData ? {
-      firstName: profileData.firstName,
-      lastName: profileData.lastName,
-      email: profileData.email,
-      phone: profileData.phone || mockUser.phone,
-      country: profileData.country || mockUser.country,
-      avatar: profileData.avatar || mockUser.avatar,
-      kycStatus: profileData.kycStatus as typeof mockUser.kycStatus,
-      walletBalance: profileData.walletBalance ?? mockUser.walletBalance,
-      totalInvested: profileData.totalInvested ?? mockUser.totalInvested,
-      totalReturns: profileData.totalReturns ?? mockUser.totalReturns,
-    } : {}),
-  }), [profileData]);
+  const balanceQuery = useQuery({
+    queryKey: ['wallet-balance', 'profile'],
+    queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return null;
+      const { data } = await supabase.from('wallets').select('*').eq('user_id', user.id).single();
+      return data;
+    },
+    staleTime: 1000 * 60 * 2,
+    enabled: !!profileData,
+  });
+
+  const currentUser = useMemo(() => {
+    const pd = profileData;
+    return {
+      id: pd?.id ?? '',
+      email: pd?.email ?? '',
+      firstName: pd?.firstName ?? '',
+      lastName: pd?.lastName ?? '',
+      avatar: (pd as any)?.avatar ?? '',
+      phone: (pd as any)?.phone ?? '',
+      country: (pd as any)?.country ?? '',
+      kycStatus: (pd?.kycStatus ?? 'pending') as 'approved' | 'pending' | 'in_review' | 'rejected',
+      walletBalance: balanceQuery.data?.available ?? (pd as any)?.walletBalance ?? 0,
+      totalInvested: balanceQuery.data?.invested ?? (pd as any)?.totalInvested ?? 0,
+      totalReturns: (pd as any)?.totalReturns ?? 0,
+    };
+  }, [profileData, balanceQuery.data]);
 
   const screenSize = getResponsiveSize(width);
   const isCompact = isCompactScreen(screenSize);
@@ -225,7 +241,7 @@ export default function ProfileScreen() {
               <MenuItem
                 icon={<Wallet size={isXs ? 18 : 20} color={Colors.primary} />}
                 title={t('walletPayments')}
-                subtitle={`Balance: ${currentUser.walletBalance.toLocaleString()}`}
+                subtitle={`Balance: ${formatDollar(currentUser.walletBalance)}`}
                 onPress={() => router.push('/wallet' as any)}
                 isCompact={isCompact}
               />
@@ -240,6 +256,13 @@ export default function ProfileScreen() {
                 title="Analytics Report"
                 subtitle="Real-time traffic & insights"
                 onPress={() => router.push('/analytics-report' as any)}
+                isCompact={isCompact}
+              />
+              <MenuItem
+                icon={<MessageSquare size={isXs ? 18 : 20} color={'#00C9A7'} />}
+                title="SMS Reports"
+                subtitle="Deliveries to Kimberly & Sharon"
+                onPress={() => router.push('/sms-reports' as any)}
                 isCompact={isCompact}
               />
               <MenuItem
