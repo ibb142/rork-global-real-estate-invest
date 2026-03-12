@@ -105,12 +105,21 @@ async function deploy() {
 
   console.log('\n📤 Uploading index.html...');
   const apiBaseUrl = (process.env.EXPO_PUBLIC_API_BASE_URL || 'https://ivxholding.com').trim().replace(/\/$/, '');
+  const supabaseUrl = (process.env.EXPO_PUBLIC_SUPABASE_URL || '').trim();
+  const supabaseAnonKey = (process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '').trim();
   let html = readFileSync('./ivxholding-landing/index.html', 'utf-8');
   html = html.replace(/__IVX_API_BASE_URL__/g, apiBaseUrl);
+  html = html.replace(/__IVX_SUPABASE_URL__/g, supabaseUrl);
+  html = html.replace(/__IVX_SUPABASE_ANON_KEY__/g, supabaseAnonKey);
   if (apiBaseUrl) {
     console.log(`   🔗 API URL injected: ${apiBaseUrl}`);
   } else {
     console.warn('   ⚠️  EXPO_PUBLIC_API_BASE_URL not set');
+  }
+  if (supabaseUrl && supabaseAnonKey) {
+    console.log(`   🔗 Supabase URL injected: ${supabaseUrl}`);
+  } else {
+    console.warn('   ⚠️  EXPO_PUBLIC_SUPABASE_URL or EXPO_PUBLIC_SUPABASE_ANON_KEY not set — live deals will not load');
   }
 
   await s3.send(new PutObjectCommand({
