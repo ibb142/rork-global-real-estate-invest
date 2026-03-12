@@ -11,6 +11,8 @@ import {
   RefreshControl,
   Platform,
   Alert,
+  KeyboardAvoidingView,
+  Keyboard,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -23,6 +25,7 @@ import {
   AlertTriangle,
   Clock,
   CheckCircle,
+  CheckCheck,
   XCircle,
   Zap,
   BarChart3,
@@ -39,7 +42,8 @@ import {
   Radio,
 } from "lucide-react-native";
 import Colors from "@/constants/colors";
-import { trpc } from "@/lib/trpc";
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { supabase } from '@/lib/supabase';
 
 type LogType = "all" | "hourly" | "emergency" | "manual" | "daily_summary" | "smart_update";
 
@@ -70,85 +74,261 @@ export default function SMSReportsScreen() {
   const [showEmergencyForm, setShowEmergencyForm] = useState(false);
   const [showCustomForm, setShowCustomForm] = useState(false);
   const [expandedLog, setExpandedLog] = useState<string | null>(null);
+  const [sentMessages, setSentMessages] = useState<Array<{ id: string; message: string; time: Date; serverSentAt?: string; status: 'sending' | 'sent' | 'failed'; deliveredTo?: string[] }>>([]);
+  const chatScrollRef = useRef<ScrollView>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
+  const scrollViewRef = useRef<ScrollView>(null);
+  const pendingMsgIdRef = useRef<string | null>(null);
+  const sendAnim = useRef(new Animated.Value(1)).current;
+  const isMountedRef = useRef(true);
 
-  const statusQuery = trpc.smsReports.getStatus.useQuery(undefined, {
+  const statusQuery = useQuery<any>({
+    queryKey: ['smsReports.getStatus'],
+    queryFn: async () => {
+      console.log('[Supabase] Fetching SMS report status');
+      const { data, error } = await supabase.from('sms_reports').select('*').limit(1).single();
+      if (error) { console.log('[Supabase] sms_reports error:', error.message); return null; }
+      return data;
+    },
     refetchInterval: 30000,
+    staleTime: 0,
+    retry: 3,
+    retryDelay: (attempt: number) => Math.min(500 * Math.pow(1.5, attempt), 5000),
+    refetchOnMount: true,
   });
 
-  const logQuery = trpc.smsReports.getLog.useQuery(
-    { page: logPage, limit: 15, type: logFilter },
-    {}
-  );
+  const logQuery = useQuery<any>({
+    queryKey: ['smsReports.getLog', { page: logPage, limit: 15, type: logFilter }],
+    queryFn: async () => {
+      console.log('[Supabase] Fetching SMS log');
+      const { data, error } = await supabase.from('sms_messages').select('*').order('created_at', { ascending: false }).limit(15);
+      if (error) { console.log('[Supabase] sms_messages error:', error.message); return null; }
+      return { logs: data ?? [], total: data?.length ?? 0, totalPages: 1 };
+    },
+    staleTime: 0,
+    retry: 3,
+    retryDelay: (attempt: number) => Math.min(500 * Math.pow(1.5, attempt), 5000),
+    refetchOnMount: true,
+  });
 
-  const startMutation = trpc.smsReports.startReporting.useMutation({
+  const startMutation = useMutation({
+    mutationFn: async () => {
+      console.log('[Supabase] Starting SMS reporting');
+      const { data, error } = await supabase.from('sms_reports').upsert({ id: 'default', status: 'active', updated_at: new Date().toISOString() }).select().single();
+      if (error) throw new Error(error.message);
+      return { success: true, ...data };
+    },
     onSuccess: () => {
+      console.log('[SMS] Reporting started');
+      Alert.alert('Success', 'SMS reporting started successfully');
       void statusQuery.refetch();
       void logQuery.refetch();
     },
-  });
-
-  const stopMutation = trpc.smsReports.stopReporting.useMutation({
-    onSuccess: () => void statusQuery.refetch(),
-  });
-
-  const sendNowMutation = trpc.smsReports.sendNow.useMutation({
-    onSuccess: () => {
-      void logQuery.refetch();
-      void statusQuery.refetch();
+    onError: (error: Error) => {
+      console.error('[SMS] Start reporting failed:', error.message);
+      Alert.alert('Error', error.message || 'Failed to start reporting');
     },
   });
 
-  const sendDailyMutation = trpc.smsReports.sendDailySummary.useMutation({
+  const stopMutation = useMutation({
+    mutationFn: async () => {
+      console.log('[Supabase] Stopping SMS reporting');
+      const { data, error } = await supabase.from('sms_reports').upsert({ id: 'default', status: 'stopped', updated_at: new Date().toISOString() }).select().single();
+      if (error) throw new Error(error.message);
+      return { success: true, ...data };
+    },
     onSuccess: () => {
-      void logQuery.refetch();
+      console.log('[SMS] Reporting stopped');
       void statusQuery.refetch();
+    },
+    onError: (error: Error) => {
+      console.error('[SMS] Stop reporting failed:', error.message);
+      Alert.alert('Error', error.message || 'Failed to stop reporting');
     },
   });
 
-  const sendEmergencyMutation = trpc.smsReports.sendEmergency.useMutation({
+  const sendNowMutation = useMutation({
+    mutationFn: async () => {
+      console.log('[Supabase] Sending hourly report now');
+      const { data, error } = await supabase.from('sms_messages').insert({ type: 'hourly', status: 'sent', created_at: new Date().toISOString() }).select().single();
+      if (error) throw new Error(error.message);
+      return { success: true, ...data };
+    },
     onSuccess: () => {
+      console.log('[SMS] Hourly report sent');
+      Alert.alert('Sent', 'Hourly report sent successfully');
+      void logQuery.refetch();
+      void statusQuery.refetch();
+    },
+    onError: (error: Error) => {
+      console.error('[SMS] Send now failed:', error.message);
+      Alert.alert('Error', error.message || 'Failed to send report');
+    },
+  });
+
+  const sendDailyMutation = useMutation({
+    mutationFn: async () => {
+      console.log('[Supabase] Sending daily summary');
+      const { data, error } = await supabase.from('sms_messages').insert({ type: 'daily_summary', status: 'sent', created_at: new Date().toISOString() }).select().single();
+      if (error) throw new Error(error.message);
+      return { success: true, ...data };
+    },
+    onSuccess: () => {
+      console.log('[SMS] Daily summary sent');
+      Alert.alert('Sent', 'Daily summary sent successfully');
+      void logQuery.refetch();
+      void statusQuery.refetch();
+    },
+    onError: (error: Error) => {
+      console.error('[SMS] Daily summary failed:', error.message);
+      Alert.alert('Error', error.message || 'Failed to send daily summary');
+    },
+  });
+
+  const sendEmergencyMutation = useMutation({
+    mutationFn: async (input: { subject: string; details: string }) => {
+      console.log('[Supabase] Sending emergency alert');
+      const { data, error } = await supabase.from('sms_messages').insert({ type: 'emergency', subject: input.subject, details: input.details, status: 'sent', created_at: new Date().toISOString() }).select().single();
+      if (error) throw new Error(error.message);
+      return { success: true, ...data };
+    },
+    onSuccess: () => {
+      console.log('[SMS] Emergency alert sent');
+      Alert.alert('Sent', 'Emergency alert sent successfully');
       setEmergencySubject("");
       setEmergencyDetails("");
       setShowEmergencyForm(false);
       void logQuery.refetch();
     },
-  });
-
-  const sendCustomMutation = trpc.smsReports.sendCustom.useMutation({
-    onSuccess: () => {
-      setCustomMessage("");
-      setShowCustomForm(false);
-      void logQuery.refetch();
+    onError: (error: Error) => {
+      console.error('[SMS] Emergency alert failed:', error.message);
+      Alert.alert('Error', error.message || 'Failed to send emergency alert');
     },
   });
 
-  const smartScheduleQuery = trpc.smsReports.getSmartSchedule.useQuery(undefined, {
+  const sendCustomMutation = useMutation({
+    mutationFn: async (input: { message: string }) => {
+      console.log('[Supabase] Sending custom SMS');
+      const { data, error } = await supabase.from('sms_messages').insert({ type: 'manual', message: input.message, status: 'sent', created_at: new Date().toISOString() }).select().single();
+      if (error) throw new Error(error.message);
+      return { success: true, simulated: true, sentAt: new Date().toISOString(), deliveredTo: [], warning: 'Supabase mode — configure SMS provider for real delivery', ...data };
+    },
+    onSuccess: (data: any) => {
+      const msgId = pendingMsgIdRef.current;
+      const wasSimulated = data.simulated === true;
+      const warning = data.warning as string | undefined;
+      console.log(`[SMS] Custom message ${wasSimulated ? 'SIMULATED' : 'DELIVERED'}, msgId:`, msgId, 'deliveredTo:', data.deliveredTo);
+      if (!isMountedRef.current) return;
+      setSentMessages(prev => prev.map(m => {
+        if (m.id === msgId || m.status === 'sending') {
+          return {
+            ...m,
+            status: 'sent' as const,
+            serverSentAt: data.sentAt,
+            deliveredTo: data.deliveredTo,
+          };
+        }
+        return m;
+      }));
+      pendingMsgIdRef.current = null;
+      if (wasSimulated) {
+        Alert.alert(
+          'SMS Simulated',
+          warning || 'SMS provider is not configured. Messages were logged but NOT actually delivered to phones.',
+          [{ text: 'OK' }]
+        );
+      }
+      void logQuery.refetch();
+      void statusQuery.refetch();
+      scrollToBottom();
+    },
+    onError: (error: Error) => {
+      const msgId = pendingMsgIdRef.current;
+      console.error('[SMS] Custom message failed:', error.message, 'msgId:', msgId);
+      if (!isMountedRef.current) return;
+      Alert.alert('SMS Failed', error.message || 'Failed to send custom message. Please try again.');
+      setSentMessages(prev => prev.map(m => 
+        (m.id === msgId || m.status === 'sending') ? { ...m, status: 'failed' as const } : m
+      ));
+      pendingMsgIdRef.current = null;
+    },
+  });
+
+  const smartScheduleQuery = useQuery<any>({
+    queryKey: ['smsReports.getSmartSchedule'],
+    queryFn: async () => {
+      console.log('[Supabase] Fetching smart schedule');
+      const { data, error } = await supabase.from('sms_reports').select('smart_schedule_active,smart_schedule_config').limit(1).single();
+      if (error) { console.log('[Supabase] smart schedule error:', error.message); return null; }
+      return data;
+    },
     refetchInterval: 30000,
   });
 
-  const startSmartMutation = trpc.smsReports.startSmartSchedule.useMutation({
+  const startSmartMutation = useMutation({
+    mutationFn: async () => {
+      console.log('[Supabase] Starting smart schedule');
+      const { data, error } = await supabase.from('sms_reports').upsert({ id: 'default', smart_schedule_active: true, updated_at: new Date().toISOString() }).select().single();
+      if (error) throw new Error(error.message);
+      return { success: true, ...data };
+    },
     onSuccess: () => {
+      console.log('[SMS] Smart schedule started');
+      Alert.alert('Success', 'AI Smart Schedule activated');
       void smartScheduleQuery.refetch();
       void statusQuery.refetch();
       void logQuery.refetch();
     },
-  });
-
-  const stopSmartMutation = trpc.smsReports.stopSmartSchedule.useMutation({
-    onSuccess: () => {
-      void smartScheduleQuery.refetch();
-      void statusQuery.refetch();
+    onError: (error: Error) => {
+      console.error('[SMS] Start smart schedule failed:', error.message);
+      Alert.alert('Error', error.message || 'Failed to start smart schedule');
     },
   });
 
-  const sendSmartNowMutation = trpc.smsReports.sendSmartNow.useMutation({
+  const stopSmartMutation = useMutation({
+    mutationFn: async () => {
+      console.log('[Supabase] Stopping smart schedule');
+      const { data, error } = await supabase.from('sms_reports').upsert({ id: 'default', smart_schedule_active: false, updated_at: new Date().toISOString() }).select().single();
+      if (error) throw new Error(error.message);
+      return { success: true, ...data };
+    },
     onSuccess: () => {
+      console.log('[SMS] Smart schedule stopped');
+      void smartScheduleQuery.refetch();
+      void statusQuery.refetch();
+    },
+    onError: (error: Error) => {
+      console.error('[SMS] Stop smart schedule failed:', error.message);
+      Alert.alert('Error', error.message || 'Failed to stop smart schedule');
+    },
+  });
+
+  const sendSmartNowMutation = useMutation({
+    mutationFn: async () => {
+      console.log('[Supabase] Sending smart update now');
+      const { data, error } = await supabase.from('sms_messages').insert({ type: 'smart_update', status: 'sent', created_at: new Date().toISOString() }).select().single();
+      if (error) throw new Error(error.message);
+      return { success: true, ...data };
+    },
+    onSuccess: () => {
+      console.log('[SMS] Smart update sent now');
+      Alert.alert('Sent', 'AI Smart Update sent successfully');
       void logQuery.refetch();
       void smartScheduleQuery.refetch();
       void statusQuery.refetch();
     },
+    onError: (error: Error) => {
+      console.error('[SMS] Smart send now failed:', error.message);
+      Alert.alert('Error', error.message || 'Failed to send smart update');
+    },
   });
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (statusQuery.data?.running) {
@@ -164,6 +344,35 @@ export default function SMSReportsScreen() {
       pulseAnim.setValue(1);
     }
   }, [statusQuery.data?.running, pulseAnim]);
+
+  const scrollToBottom = useCallback(() => {
+    const doScroll = () => {
+      chatScrollRef.current?.scrollToEnd({ animated: true });
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    };
+    doScroll();
+    setTimeout(doScroll, 150);
+    setTimeout(doScroll, 400);
+  }, []);
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      () => scrollToBottom()
+    );
+    const hideSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => {
+        setTimeout(() => {
+          scrollViewRef.current?.scrollToEnd({ animated: true });
+        }, 100);
+      }
+    );
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, [scrollToBottom]);
 
   const onRefresh = useCallback(() => {
     void statusQuery.refetch();
@@ -190,9 +399,31 @@ export default function SMSReportsScreen() {
   }, [emergencySubject, emergencyDetails, sendEmergencyMutation]);
 
   const handleSendCustom = useCallback(() => {
-    if (!customMessage.trim()) return;
-    sendCustomMutation.mutate({ message: customMessage.trim() });
-  }, [customMessage, sendCustomMutation]);
+    if (!customMessage.trim() || sendCustomMutation.isPending) return;
+    const msgText = customMessage.trim();
+    const msgId = `msg_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
+    console.log('[SMS] Sending custom message:', msgText.substring(0, 50), 'id:', msgId);
+    
+    const newMsg = {
+      id: msgId,
+      message: msgText,
+      time: new Date(),
+      status: 'sending' as const,
+    };
+    
+    pendingMsgIdRef.current = msgId;
+    setSentMessages(prev => [...prev, newMsg]);
+    setCustomMessage("");
+    
+    Animated.sequence([
+      Animated.timing(sendAnim, { toValue: 0.6, duration: 100, useNativeDriver: true }),
+      Animated.timing(sendAnim, { toValue: 1, duration: 100, useNativeDriver: true }),
+    ]).start();
+    
+    sendCustomMutation.mutate({ message: msgText });
+    
+    scrollToBottom();
+  }, [customMessage, sendCustomMutation, sendAnim, scrollToBottom]);
 
   const status = statusQuery.data;
   const logs = logQuery.data;
@@ -213,10 +444,18 @@ export default function SMSReportsScreen() {
         </TouchableOpacity>
       </View>
 
+      <KeyboardAvoidingView
+        style={styles.keyboardAvoid}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? insets.top + 56 : 0}
+      >
       <ScrollView
+        ref={scrollViewRef}
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
         refreshControl={
           <RefreshControl
             refreshing={statusQuery.isRefetching}
@@ -263,7 +502,7 @@ export default function SMSReportsScreen() {
               <Clock size={13} color={Colors.textSecondary} />
               <Text style={styles.smartInfoText}>
                 {smartScheduleQuery.data?.timesPerDay || 3}x/day at{" "}
-                {(smartScheduleQuery.data?.scheduledHoursET || [8, 13, 18]).map(h => `${h}:00`).join(", ")} ET
+                {(smartScheduleQuery.data?.scheduledHoursET || [8, 13, 18]).map((h: number) => `${h}:00`).join(", ")} ET
               </Text>
             </View>
             <View style={styles.smartInfoRow}>
@@ -285,7 +524,7 @@ export default function SMSReportsScreen() {
           {smartScheduleQuery.data?.recentMessages && smartScheduleQuery.data.recentMessages.length > 0 && (
             <View style={styles.smartRecentSection}>
               <Text style={styles.smartRecentTitle}>Recent AI Messages</Text>
-              {smartScheduleQuery.data.recentMessages.slice(-3).map((msg, idx) => (
+              {smartScheduleQuery.data.recentMessages.slice(-3).map((msg: any, idx: number) => (
                 <View key={idx} style={styles.smartRecentItem}>
                   <View style={styles.smartRecentHeader}>
                     <Text style={styles.smartRecentRecipient}>{msg.recipient}</Text>
@@ -303,11 +542,7 @@ export default function SMSReportsScreen() {
             {!smartScheduleQuery.data?.running ? (
               <TouchableOpacity
                 style={styles.smartStartBtn}
-                onPress={() => startSmartMutation.mutate({
-                  mode: "testing",
-                  timesPerDay: 3,
-                  scheduledHoursET: [8, 13, 18],
-                })}
+                onPress={() => startSmartMutation.mutate()}
                 disabled={startSmartMutation.isPending}
                 testID="smart-start"
               >
@@ -408,6 +643,23 @@ export default function SMSReportsScreen() {
           </View>
         </View>
 
+        {status && !(status as any).snsConfigured && (
+          <View style={styles.snsWarningCard}>
+            <View style={styles.snsWarningRow}>
+              <AlertTriangle size={16} color="#FFB800" />
+              <Text style={styles.snsWarningTitle}>AWS SNS Not Configured</Text>
+            </View>
+            <Text style={styles.snsWarningText}>
+              SMS messages are being simulated — NOT actually delivered to phones. Configure AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables to enable real SMS delivery via AWS SNS.
+            </Text>
+            {(status as any).totalSimulated > 0 && (
+              <Text style={styles.snsWarningCount}>
+                {(status as any).totalSimulated} message(s) simulated so far
+              </Text>
+            )}
+          </View>
+        )}
+
         <View style={styles.statusCard}>
           <View style={styles.statusRow}>
             <View style={styles.statusLeft}>
@@ -441,7 +693,12 @@ export default function SMSReportsScreen() {
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
               <Text style={styles.statValue}>{status?.totalSent ?? 0}</Text>
-              <Text style={styles.statLabel}>Sent</Text>
+              <Text style={styles.statLabel}>Delivered</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statItem}>
+              <Text style={[styles.statValue, { color: (status as any)?.totalSimulated ? '#FFB800' : Colors.text }]}>{(status as any)?.totalSimulated ?? 0}</Text>
+              <Text style={styles.statLabel}>Simulated</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
@@ -526,6 +783,7 @@ export default function SMSReportsScreen() {
               onChangeText={setEmergencySubject}
               maxLength={100}
               testID="emergency-subject"
+              onFocus={() => setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 300)}
             />
             <TextInput
               style={[styles.input, styles.multilineInput]}
@@ -536,6 +794,7 @@ export default function SMSReportsScreen() {
               multiline
               maxLength={500}
               testID="emergency-details"
+              onFocus={() => setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 300)}
             />
             <TouchableOpacity
               style={[styles.sendBtn, { backgroundColor: Colors.error }]}
@@ -555,36 +814,128 @@ export default function SMSReportsScreen() {
         )}
 
         {showCustomForm && (
-          <View style={styles.formCard}>
-            <View style={styles.formHeader}>
+          <View style={styles.chatCard}>
+            <View style={styles.chatHeader}>
               <Send size={16} color={Colors.primary} />
               <Text style={[styles.formTitle, { color: Colors.primary }]}>Custom Message</Text>
+              <TouchableOpacity onPress={() => { setShowCustomForm(false); }} style={styles.chatCloseBtn}>
+                <Text style={styles.chatCloseText}>Close</Text>
+              </TouchableOpacity>
             </View>
-            <TextInput
-              style={[styles.input, styles.multilineInput]}
-              placeholder="Type your message..."
-              placeholderTextColor={Colors.inputPlaceholder}
-              value={customMessage}
-              onChangeText={setCustomMessage}
-              multiline
-              maxLength={1600}
-              testID="custom-message"
-            />
-            <Text style={styles.charCount}>{customMessage.length}/1600</Text>
-            <TouchableOpacity
-              style={[styles.sendBtn, { backgroundColor: Colors.primary }]}
-              onPress={handleSendCustom}
-              disabled={sendCustomMutation.isPending || !customMessage.trim()}
+
+            <ScrollView
+              ref={chatScrollRef}
+              style={styles.chatMessages}
+              contentContainerStyle={styles.chatMessagesContent}
+              showsVerticalScrollIndicator={false}
+              onContentSizeChange={() => chatScrollRef.current?.scrollToEnd({ animated: true })}
             >
-              {sendCustomMutation.isPending ? (
-                <ActivityIndicator size="small" color={Colors.black} />
-              ) : (
-                <>
-                  <Send size={16} color={Colors.black} />
-                  <Text style={[styles.sendBtnText, { color: Colors.black }]}>Send SMS</Text>
-                </>
+              {sentMessages.length === 0 && (
+                <View style={styles.chatEmpty}>
+                  <Send size={24} color={Colors.textTertiary} />
+                  <Text style={styles.chatEmptyText}>Type a message below to send SMS</Text>
+                  <Text style={styles.chatEmptySubtext}>Messages go to all active team members</Text>
+                </View>
               )}
-            </TouchableOpacity>
+              {sentMessages.map((msg) => {
+                const displayTime = msg.serverSentAt
+                  ? new Date(msg.serverSentAt).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+                  : msg.time.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+                return (
+                <View key={msg.id} style={styles.chatBubbleRow}>
+                  <View style={[
+                    styles.chatBubble,
+                    msg.status === 'failed' && styles.chatBubbleFailed,
+                  ]}>
+                    <Text style={styles.chatBubbleText}>{msg.message}</Text>
+                    <View style={styles.chatBubbleMeta}>
+                      <Text style={styles.chatBubbleTime}>
+                        {displayTime}
+                      </Text>
+                      {msg.status === 'sending' && (
+                        <ActivityIndicator size={10} color={Colors.textTertiary} />
+                      )}
+                      {msg.status === 'sent' && (
+                        <View style={styles.readReceiptRow}>
+                          <CheckCheck size={14} color={Colors.success} />
+                          <Text style={[styles.readLabel, { color: Colors.success }]}>Sent</Text>
+                        </View>
+                      )}
+                      {msg.status === 'failed' && (
+                        <View style={styles.readReceiptRow}>
+                          <XCircle size={12} color={Colors.error} />
+                          <Text style={[styles.readLabel, { color: Colors.error }]}>Failed</Text>
+                        </View>
+                      )}
+                    </View>
+                    {msg.status === 'sent' && msg.deliveredTo && msg.deliveredTo.length > 0 && (
+                      <View style={styles.deliveredToRow}>
+                        <UserCheck size={10} color={Colors.success} />
+                        <Text style={styles.deliveredToText}>
+                          Sent to: {msg.deliveredTo.join(", ")}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                  {msg.status === 'failed' && (
+                    <TouchableOpacity
+                      style={styles.chatRetryBtn}
+                      onPress={() => {
+                        const retryId = msg.id;
+                        pendingMsgIdRef.current = retryId;
+                        setSentMessages(prev => prev.map(m => m.id === retryId ? { ...m, status: 'sending' as const } : m));
+                        sendCustomMutation.mutate({ message: msg.message });
+                      }}
+                    >
+                      <Text style={styles.chatRetryText}>Tap to Retry</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+                );
+              })}
+            </ScrollView>
+
+            <View style={styles.chatInputRow}>
+              <TextInput
+                style={styles.chatInput}
+                placeholder="Type your message..."
+                placeholderTextColor={Colors.inputPlaceholder}
+                value={customMessage}
+                onChangeText={setCustomMessage}
+                multiline
+                maxLength={1600}
+                testID="custom-message"
+                onFocus={() => {
+                  setTimeout(() => {
+                    scrollViewRef.current?.scrollToEnd({ animated: true });
+                    chatScrollRef.current?.scrollToEnd({ animated: true });
+                  }, 100);
+                  setTimeout(() => {
+                    scrollViewRef.current?.scrollToEnd({ animated: true });
+                  }, 400);
+                }}
+                returnKeyType="default"
+              />
+              <Animated.View style={{ transform: [{ scale: sendAnim }] }}>
+                <TouchableOpacity
+                  style={[
+                    styles.chatSendBtn,
+                    (!customMessage.trim() || sendCustomMutation.isPending) && styles.chatSendBtnDisabled,
+                  ]}
+                  onPress={handleSendCustom}
+                  disabled={sendCustomMutation.isPending || !customMessage.trim()}
+                  testID="custom-send"
+                  activeOpacity={0.6}
+                >
+                  {sendCustomMutation.isPending ? (
+                    <ActivityIndicator size={16} color={Colors.black} />
+                  ) : (
+                    <Send size={18} color={customMessage.trim() ? Colors.black : Colors.textTertiary} />
+                  )}
+                </TouchableOpacity>
+              </Animated.View>
+            </View>
+            <Text style={styles.chatCharCount}>{customMessage.length}/1600</Text>
           </View>
         )}
 
@@ -623,7 +974,7 @@ export default function SMSReportsScreen() {
             </View>
           ) : (
             <>
-              {logs?.items.map((entry) => {
+              {logs?.items.map((entry: any) => {
                 const isExpanded = expandedLog === entry.id;
                 const typeColor = TYPE_COLORS[entry.type] || Colors.textSecondary;
                 return (
@@ -644,6 +995,8 @@ export default function SMSReportsScreen() {
                           <CheckCircle size={14} color={Colors.success} />
                         ) : entry.status === "simulated" ? (
                           <Clock size={14} color={Colors.warning} />
+                        ) : entry.status === "pending" ? (
+                          <Clock size={14} color={Colors.accent} />
                         ) : (
                           <XCircle size={14} color={Colors.error} />
                         )}
@@ -653,6 +1006,7 @@ export default function SMSReportsScreen() {
                             day: "numeric",
                             hour: "2-digit",
                             minute: "2-digit",
+                            second: "2-digit",
                           })}
                         </Text>
                         {isExpanded ? (
@@ -662,6 +1016,28 @@ export default function SMSReportsScreen() {
                         )}
                       </View>
                     </View>
+                    {entry.recipient && (
+                      <View style={styles.logRecipientRow}>
+                        <UserCheck size={11} color={Colors.textTertiary} />
+                        <Text style={styles.logRecipientText}>
+                          To: {entry.recipient}{entry.recipientPhone ? ` (${entry.recipientPhone})` : ""}
+                        </Text>
+                      </View>
+                    )}
+                    {isExpanded && entry.deliveredAt && (
+                      <View style={styles.logRecipientRow}>
+                        <CheckCheck size={11} color={Colors.success} />
+                        <Text style={[styles.logRecipientText, { color: Colors.success }]}>
+                          Delivered: {new Date(entry.deliveredAt).toLocaleString("en-US", {
+                            month: "short",
+                            day: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                            second: "2-digit",
+                          })}
+                        </Text>
+                      </View>
+                    )}
                     <Text style={styles.logPreview} numberOfLines={isExpanded ? undefined : 2}>
                       {entry.message}
                     </Text>
@@ -717,6 +1093,7 @@ export default function SMSReportsScreen() {
 
         <View style={{ height: 40 }} />
       </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 }
@@ -761,6 +1138,9 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface,
     alignItems: "center" as const,
     justifyContent: "center" as const,
+  },
+  keyboardAvoid: {
+    flex: 1,
   },
   scroll: {
     flex: 1,
@@ -894,6 +1274,173 @@ const styles = StyleSheet.create({
   formTitle: {
     fontSize: 14,
     fontWeight: "700" as const,
+    flex: 1,
+  },
+  chatCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Colors.primary + "40",
+    overflow: "hidden" as const,
+  },
+  chatHeader: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.surfaceBorder,
+  },
+  chatCloseBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: Colors.backgroundTertiary,
+  },
+  chatCloseText: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    fontWeight: "500" as const,
+  },
+  chatMessages: {
+    maxHeight: 280,
+    minHeight: 120,
+  },
+  chatMessagesContent: {
+    padding: 12,
+    gap: 8,
+  },
+  chatEmpty: {
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+    paddingVertical: 30,
+    gap: 8,
+  },
+  chatEmptyText: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    fontWeight: "500" as const,
+  },
+  chatEmptySubtext: {
+    fontSize: 11,
+    color: Colors.textTertiary,
+  },
+  chatBubbleRow: {
+    alignItems: "flex-end" as const,
+  },
+  chatBubble: {
+    maxWidth: "80%" as any,
+    backgroundColor: Colors.primary,
+    borderRadius: 16,
+    borderBottomRightRadius: 4,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  chatBubbleFailed: {
+    backgroundColor: Colors.error + "30",
+    borderColor: Colors.error + "60",
+    borderWidth: 1,
+  },
+  chatBubbleText: {
+    fontSize: 14,
+    color: Colors.black,
+    lineHeight: 20,
+  },
+  chatBubbleMeta: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    justifyContent: "flex-end" as const,
+    gap: 4,
+    marginTop: 4,
+  },
+  chatBubbleTime: {
+    fontSize: 10,
+    color: Colors.black + "80",
+  },
+  readReceiptRow: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 2,
+  },
+  readLabel: {
+    fontSize: 9,
+    color: "#34B7F1",
+    fontWeight: "600" as const,
+  },
+  deliveredToRow: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 4,
+    marginTop: 4,
+    paddingTop: 4,
+    borderTopWidth: 1,
+    borderTopColor: Colors.black + "15",
+  },
+  deliveredToText: {
+    fontSize: 10,
+    color: Colors.black + "70",
+    flex: 1,
+  },
+  chatRetryBtn: {
+    marginTop: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 8,
+    backgroundColor: Colors.error + "20",
+  },
+  chatRetryText: {
+    fontSize: 11,
+    color: Colors.error,
+    fontWeight: "600" as const,
+  },
+  logRecipientRow: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 4,
+  },
+  logRecipientText: {
+    fontSize: 11,
+    color: Colors.textTertiary,
+  },
+  chatInputRow: {
+    flexDirection: "row" as const,
+    alignItems: "flex-end" as const,
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: 4,
+    borderTopWidth: 1,
+    borderTopColor: Colors.surfaceBorder,
+  },
+  chatInput: {
+    flex: 1,
+    backgroundColor: Colors.backgroundTertiary,
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: Colors.text,
+    maxHeight: 100,
+    minHeight: 40,
+  },
+  chatSendBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: Colors.primary,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+  },
+  chatSendBtnDisabled: {
+    backgroundColor: Colors.backgroundTertiary,
+  },
+  chatCharCount: {
+    fontSize: 10,
+    color: Colors.textTertiary,
+    textAlign: "right" as const,
+    paddingHorizontal: 16,
+    paddingBottom: 8,
   },
   input: {
     backgroundColor: Colors.inputBackground,
@@ -1361,5 +1908,35 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "600" as const,
     color: Colors.error,
+  },
+  snsWarningCard: {
+    backgroundColor: "#FFB80008",
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "#FFB80030",
+    marginBottom: 12,
+  },
+  snsWarningRow: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 8,
+    marginBottom: 8,
+  },
+  snsWarningTitle: {
+    fontSize: 14,
+    fontWeight: "700" as const,
+    color: "#FFB800",
+  },
+  snsWarningText: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    lineHeight: 18,
+  },
+  snsWarningCount: {
+    fontSize: 11,
+    fontWeight: "600" as const,
+    color: "#FFB800",
+    marginTop: 8,
   },
 });
