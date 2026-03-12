@@ -144,7 +144,7 @@ const SHAREABLE_CONTENT: ShareableContent[] = [
     icon: <FileText size={20} color="#9B59B6" />,
     color: '#9B59B6',
     shareUrl: `${APP_SHARE_URL}/report`,
-    shareText: '📋 IVX HOLDINGS Development Report — Full-stack AI platform with 100+ features. React Native + Expo + tRPC architecture.',
+    shareText: '📋 IVX HOLDINGS Development Report — Full-stack AI platform with 100+ features. React Native + Expo + Supabase architecture.',
   },
 ];
 
