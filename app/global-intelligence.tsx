@@ -33,7 +33,6 @@ import {
   formatMarketCap,
   MONEY_FLOW_NODES,
   ECONOMIC_INDICATORS,
-  GLOBAL_STATS,
   ForexRate,
   GlobalIndex,
   CryptoAsset,
@@ -76,7 +75,7 @@ function ForexRow({ item, index }: { item: ForexRate; index: number }) {
       ]).start();
       prevRate.current = item.rate;
     }
-  }, [item.rate]);
+  }, [item.rate, flashAnim]);
 
   const bgColor = flashAnim.interpolate({
     inputRange: [0, 1],
@@ -154,9 +153,7 @@ function CommodityRow({ item, index }: { item: Commodity; index: number }) {
       </View>
       <View style={styles.dataRowRight}>
         <Text style={styles.dataRowPrice}>
-          {item.price >= 100
-            ? `$${item.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-            : `$${item.price.toFixed(3)}`}
+          {`${new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: item.price >= 100 ? 2 : 3 }).format(item.price)}`}
         </Text>
         <ChangeTag value={item.changePercent24h} />
       </View>
@@ -166,7 +163,7 @@ function CommodityRow({ item, index }: { item: Commodity; index: number }) {
 
 export default function GlobalIntelligenceScreen() {
   const router = useRouter();
-  const { width } = useWindowDimensions();
+  const _dimensions = useWindowDimensions();
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [refreshing, setRefreshing] = useState(false);
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -185,7 +182,7 @@ export default function GlobalIntelligenceScreen() {
     );
     pulse.start();
     return () => pulse.stop();
-  }, []);
+  }, [fadeAnim, pulseAnim]);
 
   const sentimentColor = marketSentiment === 'bullish' ? Colors.positive : marketSentiment === 'bearish' ? Colors.negative : Colors.warning;
   const sentimentLabel = marketSentiment === 'bullish' ? '🐂 BULL MARKET' : marketSentiment === 'bearish' ? '🐻 BEAR MARKET' : '⚖️ NEUTRAL';
@@ -194,7 +191,7 @@ export default function GlobalIntelligenceScreen() {
   const losers = useMemo(() => indices.filter(i => i.changePercent < 0).length, [indices]);
 
   const handleRefresh = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setRefreshing(true);
     setTimeout(() => setRefreshing(false), 1200);
   };
@@ -205,7 +202,7 @@ export default function GlobalIntelligenceScreen() {
         <TouchableOpacity
           key={tab.key}
           style={[styles.tab, activeTab === tab.key && styles.tabActive]}
-          onPress={() => { setActiveTab(tab.key); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
+          onPress={() => { setActiveTab(tab.key); void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
           activeOpacity={0.7}
         >
           <Text style={[styles.tabText, activeTab === tab.key && styles.tabTextActive]}>{tab.label}</Text>
@@ -419,7 +416,7 @@ export default function GlobalIntelligenceScreen() {
                 <Text style={styles.sectionTitle}>Global Capital Flow</Text>
                 <Text style={styles.sectionSubtitle}>Real-time allocation of institutional capital across global financial centers</Text>
 
-                {MONEY_FLOW_NODES.map((node, i) => (
+                {MONEY_FLOW_NODES.map((node, _i) => (
                   <View key={node.country} style={styles.flowRow}>
                     <View style={styles.flowLeft}>
                       <Text style={styles.flowFlag}>{node.flag}</Text>
@@ -437,7 +434,7 @@ export default function GlobalIntelligenceScreen() {
                       <Text style={[styles.flowDirection, { color: node.direction === 'inflow' ? Colors.positive : Colors.negative }]}>
                         {node.direction === 'inflow' ? '▲' : '▼'} {node.percentage}%
                       </Text>
-                      <Text style={styles.flowVolume}>${node.volume.toLocaleString()}B</Text>
+                      <Text style={styles.flowVolume}>${new Intl.NumberFormat('en-US').format(node.volume)}B</Text>
                     </View>
                   </View>
                 ))}
@@ -492,6 +489,13 @@ export default function GlobalIntelligenceScreen() {
               </View>
             </>
           )}
+
+          <View style={styles.simulatedBanner}>
+            <Activity size={14} color={Colors.warning} />
+            <Text style={styles.simulatedText}>
+              Simulated market data for reference only. Not connected to live market feeds.
+            </Text>
+          </View>
 
           <View style={styles.lastUpdate}>
             <RefreshCw size={11} color={Colors.textTertiary} />
@@ -1010,6 +1014,25 @@ const styles = StyleSheet.create({
   lastUpdateText: {
     color: Colors.textTertiary,
     fontSize: 10,
+  },
+  simulatedBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginHorizontal: 16,
+    marginBottom: 12,
+    backgroundColor: Colors.warning + '15',
+    borderWidth: 1,
+    borderColor: Colors.warning + '30',
+    borderRadius: 10,
+    padding: 12,
+  },
+  simulatedText: {
+    flex: 1,
+    color: Colors.warning,
+    fontSize: 11,
+    fontWeight: '600' as const,
+    lineHeight: 16,
   },
   bottomPad: { height: 30 },
 });
