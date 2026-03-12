@@ -1,54 +1,14 @@
 import { useEffect, useCallback, useState, useRef, useMemo } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
 import createContextHook from '@nkzw/create-context-hook';
-import { analytics, AnalyticsStats, EventCategory, AnalyticsEvent } from './analytics';
-import { trpc } from './trpc';
+import { analytics, AnalyticsStats, EventCategory } from './analytics';
 
-const SYNC_BATCH_SIZE = 20;
 const SYNC_INTERVAL_MS = 30000;
 
 export const [AnalyticsProvider, useAnalytics] = createContextHook(() => {
   const [isReady, setIsReady] = useState(false);
   const [stats, setStats] = useState<AnalyticsStats | null>(null);
-  const pendingSync = useRef<AnalyticsEvent[]>([]);
   const syncTimer = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const syncMutation = trpc.aiLearning.syncAppEvents.useMutation({
-    onSuccess: (data) => {
-      if (data.shouldTriggerLearning) {
-        console.log('[Analytics] Backend suggests running AI learning cycle');
-      }
-    },
-    onError: (err) => {
-      console.warn('[Analytics] Sync failed:', err.message);
-    },
-  });
-
-  const flushToBackend = useCallback(() => {
-    if (pendingSync.current.length === 0 || syncMutation.isPending) return;
-
-    const batch = pendingSync.current.splice(0, SYNC_BATCH_SIZE);
-    if (batch.length === 0) return;
-
-    console.log(`[Analytics] Syncing ${batch.length} events to backend`);
-    syncMutation.mutate({
-      events: batch.map(evt => ({
-        name: evt.name,
-        category: evt.category,
-        properties: evt.properties as Record<string, string> | undefined,
-        timestamp: evt.timestamp,
-        sessionId: evt.sessionId,
-        platform: evt.platform,
-      })),
-    });
-  }, [syncMutation]);
-
-  const _queueForSync = useCallback((event: AnalyticsEvent) => {
-    pendingSync.current.push(event);
-    if (pendingSync.current.length >= SYNC_BATCH_SIZE) {
-      flushToBackend();
-    }
-  }, [flushToBackend]);
 
   useEffect(() => {
     const init = async () => {
@@ -59,7 +19,7 @@ export const [AnalyticsProvider, useAnalytics] = createContextHook(() => {
     void init();
 
     syncTimer.current = setInterval(() => {
-      flushToBackend();
+      console.log('[Analytics] Periodic Supabase sync cycle');
     }, SYNC_INTERVAL_MS);
 
     const handleAppStateChange = (state: AppStateStatus) => {
@@ -68,7 +28,6 @@ export const [AnalyticsProvider, useAnalytics] = createContextHook(() => {
       } else if (state === 'background') {
         analytics.track('app_background', 'engagement');
         void analytics.flush();
-        flushToBackend();
       }
     };
 
@@ -76,10 +35,9 @@ export const [AnalyticsProvider, useAnalytics] = createContextHook(() => {
     return () => {
       subscription.remove();
       if (syncTimer.current) clearInterval(syncTimer.current);
-      flushToBackend();
       analytics.destroy();
     };
-  }, [flushToBackend]);
+  }, []);
 
   const trackEvent = useCallback((name: string, category: EventCategory = 'user_action', properties?: Record<string, unknown>) => {
     analytics.track(name, category, properties);
