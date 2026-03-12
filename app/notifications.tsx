@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -9,47 +9,56 @@ import {
 } from 'react-native';
 import { Bell, TrendingUp, Shield, AlertCircle, CheckCircle, ChevronRight } from 'lucide-react-native';
 import Colors from '@/constants/colors';
-import { Notification } from '@/types';
-import { trpc } from '@/lib/trpc';
+
 import { useNotifications as useNotificationHook } from '@/lib/data-hooks';
+import { supabase } from '@/lib/supabase';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 export default function NotificationsScreen() {
-  const notificationsQuery = trpc.notifications.list.useQuery({ page: 1, limit: 50 });
-  const markAsReadMutation = trpc.notifications.markAsRead.useMutation();
-  const markAllAsReadMutation = trpc.notifications.markAllAsRead.useMutation();
+  const { notifications, refetch } = useNotificationHook();
   const [refreshing, setRefreshing] = useState(false);
+  const queryClient = useQueryClient();
 
-  const { notifications: fallbackNotifications } = useNotificationHook();
+  const markAsReadMutation = useMutation({
+    mutationFn: async (notificationId: string) => {
+      const { error } = await supabase
+        .from('notifications')
+        .update({ read: true })
+        .eq('id', notificationId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['notifications'] });
+    },
+  });
 
-  const notifications = useMemo<Notification[]>(() => {
-    if (notificationsQuery.data?.notifications) {
-      return notificationsQuery.data.notifications.map(n => ({
-        id: n.id,
-        type: n.type as Notification['type'],
-        title: n.title,
-        message: n.message,
-        read: n.read,
-        createdAt: n.createdAt,
-      }));
-    }
-    return fallbackNotifications;
-  }, [notificationsQuery.data, fallbackNotifications]);
+  const markAllAsReadMutation = useMutation({
+    mutationFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { error } = await supabase
+        .from('notifications')
+        .update({ read: true })
+        .eq('user_id', user.id)
+        .eq('read', false);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['notifications'] });
+    },
+  });
 
   const onRefresh = () => {
     setRefreshing(true);
-    notificationsQuery.refetch().finally(() => setRefreshing(false));
+    void refetch().finally(() => setRefreshing(false));
   };
 
   const markAsRead = (id: string) => {
-    markAsReadMutation.mutate({ notificationId: id }, {
-      onSuccess: () => notificationsQuery.refetch(),
-    });
+    markAsReadMutation.mutate(id);
   };
 
   const markAllAsRead = () => {
-    markAllAsReadMutation.mutate(undefined, {
-      onSuccess: () => notificationsQuery.refetch(),
-    });
+    markAllAsReadMutation.mutate();
   };
 
   const getNotificationIcon = (type: string) => {
@@ -116,7 +125,7 @@ export default function NotificationsScreen() {
             <Bell size={48} color={Colors.textTertiary} />
             <Text style={styles.emptyStateText}>No notifications yet</Text>
             <Text style={styles.emptyStateSubtext}>
-              You&apos;ll receive updates about your investments here
+              You'll receive updates about your investments here
             </Text>
           </View>
         ) : (
