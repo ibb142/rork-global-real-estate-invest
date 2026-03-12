@@ -31,10 +31,16 @@ import {
   ArrowLeft,
   Key,
   Eye,
+  MessageSquare,
+  Trash2,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { fetchJVDeals, deleteJVDeal, deleteAllJVDeals } from '@/lib/jv-storage';
+
 import { properties } from '@/mocks/properties';
 import { feeConfigurations, getFeeStats, members, adminTransactions } from '@/mocks/admin';
+
 import { Property, FeeConfiguration } from '@/types';
 
 interface PlatformSettings {
@@ -52,6 +58,20 @@ interface PropertyControl extends Property {
   tradingPaused: boolean;
   priceAdjustment: number;
   ownerShare: number;
+}
+
+interface JVDealControl {
+  id: string;
+  name: string;
+  location: string;
+  type: string;
+  totalInvestment: number;
+  currentRaised: number;
+  targetAmount: number;
+  expectedROI: number;
+  status: string;
+  ownerShare: number;
+  tradingPaused: boolean;
 }
 
 export default function OwnerControlsScreen() {
@@ -98,6 +118,49 @@ export default function OwnerControlsScreen() {
     }));
   }, []);
 
+  const jvQuery = useQuery<any>({
+    queryKey: ['jvAgreements.list'],
+    queryFn: async () => {
+      console.log('[JV-Storage] Fetching JV deals for owner controls');
+      const result = await fetchJVDeals({ limit: 50 });
+      return { deals: result.deals ?? [] };
+    },
+    refetchOnWindowFocus: true,
+    staleTime: 0,
+  });
+
+  const jvDealControls: JVDealControl[] = useMemo(() => {
+    const deals = (jvQuery.data?.deals ?? []) as Array<{
+      id: string;
+      projectName: string;
+      propertyAddress?: string;
+      type: string;
+      totalInvestment: number;
+      expectedROI: number;
+      status: string;
+      partners: Array<{ equityShare: number }>;
+      poolTiers?: Array<{ targetAmount: number; currentRaised: number }>;
+    }>;
+    console.log('[Owner Controls] Real JV deals from backend:', deals.length, deals.map(d => `${d.id}: ${d.projectName}`));
+    return deals.map((jv) => {
+      const totalTarget = jv.poolTiers?.reduce((sum, t) => sum + t.targetAmount, 0) ?? jv.totalInvestment;
+      const totalRaised = jv.poolTiers?.reduce((sum, t) => sum + t.currentRaised, 0) ?? 0;
+      return {
+        id: jv.id,
+        name: jv.projectName,
+        location: jv.propertyAddress ?? '',
+        type: jv.type,
+        totalInvestment: jv.totalInvestment,
+        currentRaised: totalRaised,
+        targetAmount: totalTarget,
+        expectedROI: jv.expectedROI,
+        status: jv.status,
+        ownerShare: jv.partners?.[0]?.equityShare ?? 0,
+        tradingPaused: false,
+      };
+    });
+  }, [jvQuery.data]);
+
   const totalRevenue = useMemo(() => {
     const feeRevenue = feeStats.totalFeesCollected;
     const propertyCommissions = properties.reduce((sum, p) => {
@@ -115,7 +178,21 @@ export default function OwnerControlsScreen() {
       style: 'currency',
       currency: 'USD',
       minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
     }).format(amount);
+  };
+
+  const formatPrice = (amount: number) => {
+    return `${new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount)}`;
+  };
+
+  const safePercent = (part: number, total: number): string => {
+    const p = Number(part) || 0;
+    const t = Number(total) || 0;
+    if (t === 0) return '0.0';
+    const result = (p / t) * 100;
+    if (!isFinite(result) || isNaN(result)) return '0.0';
+    return result.toFixed(1);
   };
 
   const openEditFeeModal = (fee: FeeConfiguration) => {
@@ -201,6 +278,35 @@ export default function OwnerControlsScreen() {
         <ChevronRight size={18} color={Colors.textTertiary} />
       </TouchableOpacity>
 
+      <TouchableOpacity
+        style={[styles.staffActivityLink, { borderColor: '#2ECC7130' }]}
+        onPress={() => router.push('/sms-reports' as any)}
+      >
+        <View style={[styles.revenueIcon, { backgroundColor: '#2ECC71' + '20' }]}>
+          <MessageSquare size={20} color="#2ECC71" />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.staffActivityTitle}>SMS Reports</Text>
+          <Text style={styles.staffActivityDesc}>SMS deliveries for Kimberly, Sharon & more</Text>
+        </View>
+        <ChevronRight size={18} color={Colors.textTertiary} />
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={[styles.staffActivityLink, { borderColor: '#FFB80030' }]}
+        onPress={() => router.push('/admin/jv-deals' as any)}
+        testID="admin-jv-deals-link"
+      >
+        <View style={[styles.revenueIcon, { backgroundColor: '#FFB800' + '20' }]}>  
+          <Building2 size={20} color="#FFB800" />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.staffActivityTitle}>JV Deal Management</Text>
+          <Text style={styles.staffActivityDesc}>Edit, publish & manage JV deals</Text>
+        </View>
+        <ChevronRight size={18} color={Colors.textTertiary} />
+      </TouchableOpacity>
+
       <View style={styles.heroCard}>
         <View style={styles.heroHeader}>
           <Text style={styles.heroLabel}>Total Platform Revenue</Text>
@@ -259,7 +365,7 @@ export default function OwnerControlsScreen() {
           <View style={styles.breakdownRight}>
             <Text style={styles.breakdownValue}>{formatCurrency(feeStats.feesByType.buy)}</Text>
             <Text style={styles.breakdownPercent}>
-              {((feeStats.feesByType.buy / feeStats.totalFeesCollected) * 100).toFixed(1)}%
+              {safePercent(feeStats.feesByType.buy, feeStats.totalFeesCollected)}%
             </Text>
           </View>
         </View>
@@ -271,7 +377,7 @@ export default function OwnerControlsScreen() {
           <View style={styles.breakdownRight}>
             <Text style={styles.breakdownValue}>{formatCurrency(feeStats.feesByType.sell)}</Text>
             <Text style={styles.breakdownPercent}>
-              {((feeStats.feesByType.sell / feeStats.totalFeesCollected) * 100).toFixed(1)}%
+              {safePercent(feeStats.feesByType.sell, feeStats.totalFeesCollected)}%
             </Text>
           </View>
         </View>
@@ -283,7 +389,7 @@ export default function OwnerControlsScreen() {
           <View style={styles.breakdownRight}>
             <Text style={styles.breakdownValue}>{formatCurrency(feeStats.feesByType.withdrawal)}</Text>
             <Text style={styles.breakdownPercent}>
-              {((feeStats.feesByType.withdrawal / feeStats.totalFeesCollected) * 100).toFixed(1)}%
+              {safePercent(feeStats.feesByType.withdrawal, feeStats.totalFeesCollected)}%
             </Text>
           </View>
         </View>
@@ -295,7 +401,7 @@ export default function OwnerControlsScreen() {
           <View style={styles.breakdownRight}>
             <Text style={styles.breakdownValue}>{formatCurrency(totalRevenue - feeStats.totalFeesCollected)}</Text>
             <Text style={styles.breakdownPercent}>
-              {(((totalRevenue - feeStats.totalFeesCollected) / totalRevenue) * 100).toFixed(1)}%
+              {safePercent(totalRevenue - feeStats.totalFeesCollected, totalRevenue)}%
             </Text>
           </View>
         </View>
@@ -323,6 +429,97 @@ export default function OwnerControlsScreen() {
     </ScrollView>
   );
 
+  const queryClient = useQueryClient();
+
+  const deleteJVMutation = useMutation({
+    mutationFn: async (input: { id: string }) => {
+      console.log('[JV-Storage] Deleting JV deal:', input.id);
+      const { error } = await deleteJVDeal(input.id);
+      if (error) throw error;
+      return { success: true, deletedTitle: 'Deal' };
+    },
+    onSuccess: (data: any) => {
+      console.log('[Owner Controls] JV deal deleted:', data);
+      void queryClient.invalidateQueries({ queryKey: ['jvAgreements.list'] });
+      Alert.alert('Success', `JV deal "${data.deletedTitle}" permanently deleted.`);
+    },
+    onError: (err: Error) => {
+      console.error('[Owner Controls] Delete JV error:', err);
+      Alert.alert('Error', 'Failed to delete deal: ' + (err.message || 'Unknown error'));
+    },
+  });
+
+  const purgeAllJVMutation = useMutation({
+    mutationFn: async () => {
+      console.log('[JV-Storage] Purging all JV deals');
+      const { error, count } = await deleteAllJVDeals();
+      if (error) throw error;
+      return { success: true, purged: count ?? 0 };
+    },
+    onSuccess: (data: any) => {
+      console.log('[Owner Controls] All JV deals purged:', data);
+      void queryClient.invalidateQueries({ queryKey: ['jvAgreements.list'] });
+      Alert.alert('Success', `All ${data.purged} JV deals permanently deleted.`);
+    },
+    onError: (err: Error) => {
+      console.error('[Owner Controls] Purge all JV error:', err);
+      Alert.alert('Error', 'Failed to purge deals: ' + (err.message || 'Unknown error'));
+    },
+  });
+
+  const handleDeleteJVDeal = (deal: JVDealControl) => {
+    Alert.alert(
+      'Delete JV Deal',
+      `Permanently delete "${deal.name}"?\n\nID: ${deal.id}\n\nThis action cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete Forever',
+          style: 'destructive',
+          onPress: () => {
+            console.log('[Owner Controls] Deleting JV deal:', deal.id, deal.name);
+            deleteJVMutation.mutate({ id: deal.id });
+          },
+        },
+      ]
+    );
+  };
+
+  const handlePurgeAllJV = () => {
+    Alert.alert(
+      'PURGE ALL JV DEALS',
+      `This will permanently delete ALL ${jvDealControls.length} JV deals from the database. This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'DELETE ALL',
+          style: 'destructive',
+          onPress: () => {
+            console.log('[Owner Controls] Purging ALL JV deals');
+            purgeAllJVMutation.mutate();
+          },
+        },
+      ]
+    );
+  };
+
+  const handleToggleJVTrading = (deal: JVDealControl) => {
+    const action = deal.tradingPaused ? 'resume' : 'pause';
+    Alert.alert(
+      `${action.charAt(0).toUpperCase() + action.slice(1)} Investing`,
+      `Are you sure you want to ${action} investing for ${deal.name}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Confirm',
+          onPress: () => {
+            Alert.alert('Success', `Investing ${action}d for ${deal.name}`);
+          },
+        },
+      ]
+    );
+  };
+
   const renderProperties = () => (
     <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
       <View style={styles.infoCard}>
@@ -332,6 +529,122 @@ export default function OwnerControlsScreen() {
         </Text>
       </View>
 
+      {jvDealControls.length > 0 && (
+        <>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 }}>
+            <Text style={styles.sectionTitle}>JV Deals ({jvDealControls.length})</Text>
+            <TouchableOpacity
+              style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#FF4D4D15', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, gap: 4 }}
+              onPress={handlePurgeAllJV}
+              testID="owner-jv-purge-all"
+            >
+              <Trash2 size={14} color="#FF4D4D" />
+              <Text style={{ color: '#FF4D4D', fontSize: 12, fontWeight: '700' as const }}>Delete All</Text>
+            </TouchableOpacity>
+          </View>
+          {jvDealControls.map((deal) => (
+            <View key={deal.id} style={[styles.propertyControlCard, { borderColor: '#FFB80030' }]}>
+              <View style={styles.propertyHeader}>
+                <View style={styles.propertyInfo}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <Text style={styles.propertyName}>{deal.name}</Text>
+                    <View style={{ backgroundColor: '#FFB80020', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 }}>
+                      <Text style={{ color: '#FFB800', fontSize: 10, fontWeight: '700' as const }}>JV</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.propertyLocation}>{deal.location}</Text>
+                </View>
+                <View style={[
+                  styles.tradingBadge,
+                  { backgroundColor: deal.status === 'active' ? Colors.positive + '20' : Colors.textSecondary + '20' }
+                ]}>
+                  {deal.status === 'active' ? (
+                    <Unlock size={12} color={Colors.positive} />
+                  ) : (
+                    <Lock size={12} color={Colors.textSecondary} />
+                  )}
+                  <Text style={[
+                    styles.tradingBadgeText,
+                    { color: deal.status === 'active' ? Colors.positive : Colors.textSecondary }
+                  ]}>
+                    {deal.status === 'active' ? 'Active' : deal.status}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.propertyStats}>
+                <View style={styles.propertyStat}>
+                  <Text style={styles.propertyStatLabel}>Total Investment</Text>
+                  <Text style={styles.propertyStatValue}>{formatCurrency(deal.totalInvestment)}</Text>
+                </View>
+                <View style={styles.propertyStat}>
+                  <Text style={styles.propertyStatLabel}>Funded</Text>
+                  <Text style={styles.propertyStatValue}>
+                    {deal.targetAmount > 0 ? Math.round((deal.currentRaised / deal.targetAmount) * 100) : 0}%
+                  </Text>
+                </View>
+                <View style={styles.propertyStat}>
+                  <Text style={styles.propertyStatLabel}>Your Share</Text>
+                  <Text style={[styles.propertyStatValue, { color: '#FFB800' }]}>
+                    {deal.ownerShare}%
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.propertyRevenue}>
+                <Text style={styles.propertyRevenueLabel}>Expected ROI</Text>
+                <Text style={[styles.propertyRevenueValue, { color: Colors.positive }]}>
+                  {deal.expectedROI}%
+                </Text>
+              </View>
+
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 }}>
+                <Text style={{ color: Colors.textSecondary, fontSize: 12 }}>Raised: {formatCurrency(deal.currentRaised)}</Text>
+                <Text style={{ color: Colors.textSecondary, fontSize: 12 }}>Target: {formatCurrency(deal.targetAmount)}</Text>
+              </View>
+
+              <View style={styles.propertyActions}>
+                <TouchableOpacity
+                  style={[
+                    styles.actionBtn,
+                    { backgroundColor: deal.tradingPaused ? Colors.positive + '15' : Colors.negative + '15' }
+                  ]}
+                  onPress={() => handleToggleJVTrading(deal)}
+                >
+                  {deal.tradingPaused ? (
+                    <>
+                      <Unlock size={16} color={Colors.positive} />
+                      <Text style={[styles.actionBtnText, { color: Colors.positive }]}>Resume</Text>
+                    </>
+                  ) : (
+                    <>
+                      <Lock size={16} color={Colors.negative} />
+                      <Text style={[styles.actionBtnText, { color: Colors.negative }]}>Pause</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.actionBtn, { backgroundColor: '#FFB800' + '15' }]}
+                  onPress={() => router.push('/admin/jv-deals' as any)}
+                >
+                  <Edit3 size={16} color="#FFB800" />
+                  <Text style={[styles.actionBtnText, { color: '#FFB800' }]}>Manage</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.actionBtn, { backgroundColor: '#FF4D4D' + '15' }]}
+                  onPress={() => handleDeleteJVDeal(deal)}
+                  testID={`owner-jv-delete-${deal.id}`}
+                >
+                  <Trash2 size={16} color="#FF4D4D" />
+                  <Text style={[styles.actionBtnText, { color: '#FF4D4D' }]}>Delete</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ))}
+        </>
+      )}
+
+      <Text style={[styles.sectionTitle, { marginTop: 12 }]}>Token Properties</Text>
       {propertyControls.map((property) => (
         <View key={property.id} style={styles.propertyControlCard}>
           <View style={styles.propertyHeader}>
@@ -360,7 +673,7 @@ export default function OwnerControlsScreen() {
           <View style={styles.propertyStats}>
             <View style={styles.propertyStat}>
               <Text style={styles.propertyStatLabel}>Price/Share</Text>
-              <Text style={styles.propertyStatValue}>${property.pricePerShare.toFixed(2)}</Text>
+              <Text style={styles.propertyStatValue}>{formatPrice(property.pricePerShare)}</Text>
             </View>
             <View style={styles.propertyStat}>
               <Text style={styles.propertyStatLabel}>Funded</Text>
