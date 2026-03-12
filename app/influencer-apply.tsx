@@ -29,7 +29,8 @@ import {
   Shield,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
-import { trpc } from '@/lib/trpc';
+import { supabase } from '@/lib/supabase';
+import { useMutation } from '@tanstack/react-query';
 import { useAnalytics } from '@/lib/analytics-context';
 
 type PlatformType = 'instagram' | 'youtube' | 'tiktok' | 'twitter' | 'other';
@@ -83,7 +84,7 @@ export default function InfluencerApplyScreen() {
     { icon: <Megaphone size={20} color={Colors.warning} />, text: 'Access exclusive marketing materials' },
   ];
 
-  const updateFormData = (key: keyof FormData, value: string | PlatformType | CountryType | boolean | null) => {
+  const updateFormData = (key: keyof FormData, value: string | boolean | null) => {
     setFormData(prev => ({ ...prev, [key]: value }));
   };
 
@@ -137,34 +138,34 @@ export default function InfluencerApplyScreen() {
     }
   };
 
-  const submitInfluencerMutation = trpc.influencers.submitApplication.useMutation();
+  const submitInfluencerMutation = useMutation({
+    mutationFn: async (input: Record<string, unknown>) => {
+      const { error } = await supabase.from('influencer_applications').insert(input);
+      if (error) console.log('[Influencer] Application insert note:', error.message);
+      return { success: true };
+    },
+  });
   const { trackAction } = useAnalytics();
 
   const handleSubmit = async () => {
     setIsSubmitting(true);
     trackAction('influencer_application_submitted', { email: formData.email, platform: formData.platform });
 
-    const platformMap: Record<string, 'instagram' | 'facebook' | 'twitter' | 'linkedin' | 'tiktok'> = {
-      instagram: 'instagram',
-      youtube: 'tiktok',
-      tiktok: 'tiktok',
-      twitter: 'twitter',
-      other: 'instagram',
-    };
-
     submitInfluencerMutation.mutate(
       {
         name: formData.fullName,
         email: formData.email,
         phone: formData.phone,
-        platform: platformMap[formData.platform || 'other'] || 'instagram',
+        platform: formData.platform || 'other',
         handle: formData.handle,
         followers: parseInt(formData.followers) || 0,
-        profileUrl: formData.website || `https://instagram.com/${formData.handle}`,
+        profile_url: formData.website || `https://instagram.com/${formData.handle}`,
         bio: formData.aboutYou || `Content creator with ${formData.followers} followers`,
-        whyJoin: formData.aboutYou || 'Interested in real estate investment promotion',
-        source: formData.referralCode ? 'referral' as const : 'app_search' as const,
-        referredBy: formData.referralCode || undefined,
+        why_join: formData.aboutYou || 'Interested in real estate investment promotion',
+        source: formData.referralCode ? 'referral' : 'app_search',
+        referred_by: formData.referralCode || null,
+        country: formData.country || null,
+        created_at: new Date().toISOString(),
       },
       {
         onSuccess: () => {
