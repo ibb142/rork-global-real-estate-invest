@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback } from 'react';
 import {
   View,
   Text,
@@ -27,111 +27,146 @@ import {
   Wallet,
   AlertCircle,
   CheckCircle2,
+  Zap,
+  Mail,
+  Phone,
+  Globe,
+  Target,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
-import { trpc } from '@/lib/trpc';
-import { useInstantCache, getInitialCacheData } from '@/lib/use-instant-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { supabase } from '@/lib/supabase';
+
 
 export default function AdminDashboardScreen() {
   const router = useRouter();
   const { width } = useWindowDimensions();
 
-  const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
 
-  const initDash = useMemo(() => getInitialCacheData('db_dashboard'), []);
-  const initTx = useMemo(() => getInitialCacheData('db_transactions'), []);
-  const initPendingKyc = useMemo(() => getInitialCacheData('db_kyc_pending'), []);
-  const initInReviewKyc = useMemo(() => getInitialCacheData('db_kyc_inreview'), []);
-  const initKpi = useMemo(() => getInitialCacheData('db_kpi'), []);
-  const initHealth = useMemo(() => getInitialCacheData('db_health'), []);
-  const initRetention = useMemo(() => getInitialCacheData('db_retention'), []);
-  const initInvestment = useMemo(() => getInitialCacheData('db_investment'), []);
 
-  const dashboardQuery = trpc.analytics.getDashboard.useQuery(undefined, {
+
+  const dashboardQuery = useQuery<any>({
+    queryKey: ['analytics.getDashboard'],
+    queryFn: async () => {
+      console.log('[Supabase] Fetching analytics dashboard');
+      const { data, error } = await supabase.from('analytics_dashboard').select('*').limit(50);
+      if (error) { console.log('[Supabase] analytics_dashboard error:', error.message); return null; }
+      return data;
+    },
     staleTime: 1000 * 5,
     refetchInterval: 1000 * 5,
-    placeholderData: (prev) => prev,
-    initialData: initDash as any,
-    initialDataUpdatedAt: initDash ? Date.now() - 1000 * 20 : undefined,
+    placeholderData: (prev: any) => prev,
   });
 
-  const kpiQuery = trpc.analytics.getKPIDashboard.useQuery(undefined, {
+  const kpiQuery = useQuery<any>({
+    queryKey: ['analytics.getKPIDashboard'],
+    queryFn: async () => {
+      console.log('[Supabase] Fetching KPI dashboard');
+      const { data, error } = await supabase.from('analytics_kpi').select('*').limit(50);
+      if (error) { console.log('[Supabase] analytics_kpi error:', error.message); return null; }
+      return data;
+    },
     staleTime: 1000 * 30,
-    placeholderData: (prev) => prev,
-    initialData: initKpi as any,
-    initialDataUpdatedAt: initKpi ? Date.now() - 1000 * 20 : undefined,
+    placeholderData: (prev: any) => prev,
   });
 
-  const systemHealthQuery = trpc.analytics.getSystemHealth.useQuery(undefined, {
+  const systemHealthQuery = useQuery<any>({
+    queryKey: ['analytics.getSystemHealth'],
+    queryFn: async () => {
+      console.log('[Supabase] Fetching system health');
+      const { data, error } = await supabase.from('system_health').select('*').limit(50);
+      if (error) { console.log('[Supabase] system_health error:', error.message); return null; }
+      return data;
+    },
     staleTime: 1000 * 5,
     refetchInterval: 1000 * 5,
-    placeholderData: (prev) => prev,
-    initialData: initHealth as any,
-    initialDataUpdatedAt: initHealth ? Date.now() - 1000 * 20 : undefined,
+    placeholderData: (prev: any) => prev,
   });
 
-  const transactionsQuery = trpc.transactions.list.useQuery({
-    page: 1,
-    limit: 6,
-    sortBy: 'createdAt',
-    sortOrder: 'desc',
-  }, {
+  const transactionsQuery = useQuery<any>({
+    queryKey: ['transactions.list', { page: 1, limit: 6 }],
+    queryFn: async () => {
+      console.log('[Supabase] Fetching transactions');
+      const { data, error } = await supabase.from('transactions').select('*').order('created_at', { ascending: false }).limit(6);
+      if (error) { console.log('[Supabase] transactions error:', error.message); return null; }
+      return { transactions: data ?? [] };
+    },
     staleTime: 1000 * 30,
-    placeholderData: (prev) => prev,
-    initialData: initTx as any,
-    initialDataUpdatedAt: initTx ? Date.now() - 1000 * 20 : undefined,
+    placeholderData: (prev: any) => prev,
   });
 
-  const pendingKycQuery = trpc.members.list.useQuery({
-    page: 1,
-    limit: 5,
-    kycStatus: 'pending',
-  }, {
+  const pendingKycQuery = useQuery<any>({
+    queryKey: ['members.list', { kycStatus: 'pending', limit: 5 }],
+    queryFn: async () => {
+      console.log('[Supabase] Fetching pending KYC members');
+      const { data, error } = await supabase.from('profiles').select('*').limit(5);
+      if (error) { console.log('[Supabase] profiles pending error:', error.message); return null; }
+      return { members: data ?? [] };
+    },
     staleTime: 1000 * 30,
-    placeholderData: (prev) => prev,
-    initialData: initPendingKyc as any,
-    initialDataUpdatedAt: initPendingKyc ? Date.now() - 1000 * 20 : undefined,
+    placeholderData: (prev: any) => prev,
   });
 
-  const inReviewKycQuery = trpc.members.list.useQuery({
-    page: 1,
-    limit: 5,
-    kycStatus: 'in_review',
-  }, {
+  const inReviewKycQuery = useQuery<any>({
+    queryKey: ['members.list', { kycStatus: 'in_review', limit: 5 }],
+    queryFn: async () => {
+      console.log('[Supabase] Fetching in-review KYC members');
+      const { data, error } = await supabase.from('profiles').select('*').limit(5);
+      if (error) { console.log('[Supabase] profiles in_review error:', error.message); return null; }
+      return { members: data ?? [] };
+    },
     staleTime: 1000 * 30,
-    placeholderData: (prev) => prev,
-    initialData: initInReviewKyc as any,
-    initialDataUpdatedAt: initInReviewKyc ? Date.now() - 1000 * 20 : undefined,
+    placeholderData: (prev: any) => prev,
   });
 
-  const retentionQuery = trpc.analytics.getRetentionMetrics.useQuery(
-    { period: '30d' },
-    {
-      staleTime: 1000 * 60 * 2,
-      placeholderData: (prev) => prev,
-      initialData: initRetention as any,
-      initialDataUpdatedAt: initRetention ? Date.now() - 1000 * 60 : undefined,
-    }
-  );
+  const retentionQuery = useQuery<any>({
+    queryKey: ['analytics.getRetentionMetrics', { period: '30d' }],
+    queryFn: async () => {
+      console.log('[Supabase] Fetching retention metrics');
+      const { data, error } = await supabase.from('analytics_retention').select('*').limit(50);
+      if (error) { console.log('[Supabase] analytics_retention error:', error.message); return null; }
+      return data;
+    },
+    staleTime: 1000 * 60 * 2,
+    placeholderData: (prev: any) => prev,
+  });
 
-  const investmentQuery = trpc.analytics.getInvestmentAnalytics.useQuery(
-    { period: '30d' },
-    {
-      staleTime: 1000 * 60 * 2,
-      placeholderData: (prev) => prev,
-      initialData: initInvestment as any,
-      initialDataUpdatedAt: initInvestment ? Date.now() - 1000 * 60 : undefined,
-    }
-  );
+  const investmentQuery = useQuery<any>({
+    queryKey: ['analytics.getInvestmentAnalytics', { period: '30d' }],
+    queryFn: async () => {
+      console.log('[Supabase] Fetching investment analytics');
+      const { data, error } = await supabase.from('analytics_investments').select('*').limit(50);
+      if (error) { console.log('[Supabase] analytics_investments error:', error.message); return null; }
+      return data;
+    },
+    staleTime: 1000 * 60 * 2,
+    placeholderData: (prev: any) => prev,
+  });
 
-  const cachedDash = useInstantCache('db_dashboard', dashboardQuery.data, dashboardQuery.isSuccess);
-  const cachedTx = useInstantCache('db_transactions', transactionsQuery.data, transactionsQuery.isSuccess);
-  const cachedPendingKyc = useInstantCache('db_kyc_pending', pendingKycQuery.data, pendingKycQuery.isSuccess);
-  const cachedInReviewKyc = useInstantCache('db_kyc_inreview', inReviewKycQuery.data, inReviewKycQuery.isSuccess);
-  const cachedKpi = useInstantCache('db_kpi', kpiQuery.data, kpiQuery.isSuccess);
-  const cachedHealth = useInstantCache('db_health', systemHealthQuery.data, systemHealthQuery.isSuccess);
-  const cachedRetention = useInstantCache('db_retention', retentionQuery.data, retentionQuery.isSuccess);
-  const cachedInvestment = useInstantCache('db_investment', investmentQuery.data, investmentQuery.isSuccess);
+  const cachedDash = dashboardQuery.data;
+  const cachedTx = transactionsQuery.data;
+  const cachedPendingKyc = pendingKycQuery.data;
+  const cachedInReviewKyc = inReviewKycQuery.data;
+  const cachedKpi = kpiQuery.data;
+  const cachedHealth = systemHealthQuery.data;
+  const cachedRetention = retentionQuery.data;
+  const cachedInvestment = investmentQuery.data;
+
+  const leadsQuery = useQuery<any>({
+    queryKey: ['analytics.getAllSignups', { page: 1, limit: 10, type: 'all' }],
+    queryFn: async () => {
+      console.log('[Supabase] Fetching signups for dashboard');
+      const { data, error } = await supabase.from('signups').select('*').order('created_at', { ascending: false }).limit(10);
+      if (error) { console.log('[Supabase] signups error:', error.message); return null; }
+      return { signups: data ?? [], stats: null };
+    },
+    staleTime: 1000 * 10,
+    refetchInterval: 1000 * 15,
+  });
+
+  const leadsStats = leadsQuery.data?.stats;
+  const recentLeads = leadsQuery.data?.signups ?? [];
 
   const stats = cachedDash;
   const recentTransactions = cachedTx?.transactions ?? [];
@@ -149,27 +184,27 @@ export default function AdminDashboardScreen() {
   const refreshing = dashboardQuery.isRefetching;
 
   const onRefresh = useCallback(() => {
-    void utils.analytics.getDashboard.invalidate();
-    void utils.analytics.getKPIDashboard.invalidate();
-    void utils.analytics.getSystemHealth.invalidate();
-    void utils.analytics.getRetentionMetrics.invalidate();
-    void utils.analytics.getInvestmentAnalytics.invalidate();
-    void utils.transactions.list.invalidate();
-    void utils.members.list.invalidate();
-  }, [utils]);
+    void queryClient.invalidateQueries({ queryKey: ['analytics.getDashboard'] });
+    void queryClient.invalidateQueries({ queryKey: ['analytics.getKPIDashboard'] });
+    void queryClient.invalidateQueries({ queryKey: ['analytics.getSystemHealth'] });
+    void queryClient.invalidateQueries({ queryKey: ['analytics.getRetentionMetrics'] });
+    void queryClient.invalidateQueries({ queryKey: ['analytics.getInvestmentAnalytics'] });
+    void queryClient.invalidateQueries({ queryKey: ['transactions.list'] });
+    void queryClient.invalidateQueries({ queryKey: ['members.list'] });
+  }, [queryClient]);
 
   const formatCurrency = useCallback((amount: number) => {
     if (amount >= 1000000) {
-      return `$${(amount / 1000000).toFixed(2)}M`;
+      return `${(amount / 1000000).toFixed(2)}M`;
     }
     if (amount >= 1000) {
-      return `$${(amount / 1000).toFixed(1)}K`;
+      return `${new Intl.NumberFormat('en-US').format(Math.round(amount))}`;
     }
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: 'USD',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
     }).format(amount);
   }, []);
 
@@ -361,7 +396,7 @@ export default function AdminDashboardScreen() {
               </View>
             </View>
             <View style={styles.kpiGrid}>
-              {kpis.map((kpi, idx) => (
+              {kpis.map((kpi: any, idx: number) => (
                 <View key={idx} style={styles.kpiCard}>
                   <Text style={styles.kpiName}>{kpi.name}</Text>
                   <Text style={styles.kpiValue}>
@@ -394,7 +429,7 @@ export default function AdminDashboardScreen() {
               </View>
             </View>
             <View style={styles.servicesGrid}>
-              {health.services.map((svc, idx) => (
+              {health.services.map((svc: any, idx: number) => (
                 <View key={idx} style={styles.serviceRow}>
                   <View style={[styles.serviceDot, svc.status === 'up' ? styles.serviceUp : styles.serviceDown]} />
                   <Text style={styles.serviceName}>{svc.name}</Text>
@@ -563,7 +598,7 @@ export default function AdminDashboardScreen() {
               <Text style={styles.emptyStateText}>No transactions yet</Text>
             </View>
           )}
-          {recentTransactions.map((tx) => (
+          {recentTransactions.map((tx: any) => (
             <View key={tx.id} style={styles.txRow}>
               <View style={[styles.txIconWrap, {
                 backgroundColor: tx.type === 'deposit' ? Colors.positive + '15'
@@ -598,14 +633,107 @@ export default function AdminDashboardScreen() {
           ))}
         </View>
 
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionTitle}>
+              <Target size={16} color="#E91E63" />
+              <Text style={styles.sectionTitleText}>Lead Intelligence</Text>
+              {leadsStats && (
+                <View style={[styles.badge, { backgroundColor: '#E91E6325' }]}>
+                  <Text style={[styles.badgeText, { color: '#E91E63' }]}>{leadsStats.totalSignups}</Text>
+                </View>
+              )}
+            </View>
+            <TouchableOpacity onPress={() => router.push('/admin/lead-intelligence' as any)}>
+              <Text style={styles.seeAll}>View All</Text>
+            </TouchableOpacity>
+          </View>
+
+          <TouchableOpacity
+            style={styles.leadsHeroCard}
+            onPress={() => router.push('/admin/lead-intelligence' as any)}
+            activeOpacity={0.85}
+          >
+            <View style={styles.leadsHeroTop}>
+              <View style={styles.leadsHeroIconWrap}>
+                <Zap size={22} color="#fff" />
+              </View>
+              <View style={styles.leadsHeroInfo}>
+                <Text style={styles.leadsHeroLabel}>TOTAL LEADS</Text>
+                <Text style={styles.leadsHeroValue}>{leadsStats?.totalSignups ?? '—'}</Text>
+              </View>
+              <View style={styles.leadsHeroBreakdown}>
+                <View style={styles.leadsHeroBreakdownItem}>
+                  <View style={[styles.leadsHeroDot, { backgroundColor: '#00C48C' }]} />
+                  <Text style={styles.leadsHeroBreakdownText}>{leadsStats?.totalUsers ?? 0} Registered</Text>
+                </View>
+                <View style={styles.leadsHeroBreakdownItem}>
+                  <View style={[styles.leadsHeroDot, { backgroundColor: '#F57C00' }]} />
+                  <Text style={styles.leadsHeroBreakdownText}>{leadsStats?.totalWaitlist ?? 0} Waitlist</Text>
+                </View>
+              </View>
+            </View>
+            <View style={styles.leadsKpiRow}>
+              <View style={styles.leadsKpiItem}>
+                <Mail size={12} color="#4A90D9" />
+                <Text style={styles.leadsKpiValue}>{leadsStats?.withEmail ?? 0}</Text>
+                <Text style={styles.leadsKpiLabel}>Emails</Text>
+              </View>
+              <View style={styles.leadsKpiDivider} />
+              <View style={styles.leadsKpiItem}>
+                <Phone size={12} color="#00C48C" />
+                <Text style={styles.leadsKpiValue}>{leadsStats?.withPhone ?? 0}</Text>
+                <Text style={styles.leadsKpiLabel}>Phones</Text>
+              </View>
+              <View style={styles.leadsKpiDivider} />
+              <View style={styles.leadsKpiItem}>
+                <Globe size={12} color="#7B61FF" />
+                <Text style={styles.leadsKpiValue}>{leadsStats?.byCountry?.length ?? 0}</Text>
+                <Text style={styles.leadsKpiLabel}>Countries</Text>
+              </View>
+            </View>
+          </TouchableOpacity>
+
+          {recentLeads.length > 0 && (
+            <View style={styles.recentLeadsList}>
+              {recentLeads.slice(0, 5).map((lead: any) => (
+                <View key={lead.id} style={styles.recentLeadRow}>
+                  <View style={[styles.recentLeadAvatar, { backgroundColor: lead.type === 'user' ? '#00C48C18' : '#F57C0018' }]}>
+                    <Text style={[styles.recentLeadInitials, { color: lead.type === 'user' ? '#00C48C' : '#F57C00' }]}>
+                      {lead.firstName?.charAt(0) ?? ''}{lead.lastName?.charAt(0) ?? ''}
+                    </Text>
+                  </View>
+                  <View style={styles.recentLeadInfo}>
+                    <Text style={styles.recentLeadName} numberOfLines={1}>{lead.firstName} {lead.lastName}</Text>
+                    <Text style={styles.recentLeadEmail} numberOfLines={1}>{lead.email}</Text>
+                  </View>
+                  <View style={[styles.recentLeadTypeBadge, { backgroundColor: lead.type === 'user' ? '#00C48C18' : '#F57C0018' }]}>
+                    <Text style={[styles.recentLeadTypeText, { color: lead.type === 'user' ? '#00C48C' : '#F57C00' }]}>
+                      {lead.type === 'user' ? 'Registered' : 'Waitlist'}
+                    </Text>
+                  </View>
+                </View>
+              ))}
+              <TouchableOpacity
+                style={styles.viewAllLeadsBtn}
+                onPress={() => router.push('/admin/lead-intelligence' as any)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.viewAllLeadsBtnText}>Open Lead Intelligence</Text>
+                <ChevronRight size={14} color="#E91E63" />
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+
         <View style={styles.quickLinks}>
           <Text style={styles.quickLinksTitle}>Quick Actions</Text>
           <View style={styles.quickGrid}>
             {[
+              { label: 'Leads', route: '/admin/lead-intelligence', icon: Target, color: '#E91E63' },
               { label: 'Members', route: '/admin/members', icon: Users, color: Colors.primary },
               { label: 'Transactions', route: '/admin/transactions', icon: ArrowLeftRight, color: Colors.accent },
               { label: 'Properties', route: '/admin/properties', icon: Building2, color: Colors.positive },
-              { label: 'Profits', route: '/admin/investor-profits', icon: DollarSign, color: Colors.warning },
             ].map((item) => {
               const Icon = item.icon;
               return (
@@ -1197,6 +1325,149 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: Colors.textSecondary,
     textAlign: 'center',
+  },
+  leadsHeroCard: {
+    backgroundColor: '#1B1040',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E91E6320',
+  },
+  leadsHeroTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 14,
+  },
+  leadsHeroIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 13,
+    backgroundColor: '#E91E6330',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  leadsHeroInfo: {
+    flex: 1,
+  },
+  leadsHeroLabel: {
+    fontSize: 10,
+    fontWeight: '700' as const,
+    color: 'rgba(255,255,255,0.5)',
+    letterSpacing: 1,
+  },
+  leadsHeroValue: {
+    fontSize: 32,
+    fontWeight: '900' as const,
+    color: '#fff',
+    marginTop: 1,
+  },
+  leadsHeroBreakdown: {
+    gap: 5,
+  },
+  leadsHeroBreakdownItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  leadsHeroDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+  },
+  leadsHeroBreakdownText: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.7)',
+    fontWeight: '600' as const,
+  },
+  leadsKpiRow: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderRadius: 12,
+    paddingVertical: 12,
+  },
+  leadsKpiItem: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 3,
+  },
+  leadsKpiValue: {
+    fontSize: 16,
+    fontWeight: '800' as const,
+    color: '#fff',
+  },
+  leadsKpiLabel: {
+    fontSize: 9,
+    color: 'rgba(255,255,255,0.45)',
+    fontWeight: '600' as const,
+  },
+  leadsKpiDivider: {
+    width: 1,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+  },
+  recentLeadsList: {
+    marginTop: 10,
+    gap: 6,
+  },
+  recentLeadRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.card,
+    borderRadius: 12,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    gap: 10,
+  },
+  recentLeadAvatar: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  recentLeadInitials: {
+    fontSize: 12,
+    fontWeight: '800' as const,
+  },
+  recentLeadInfo: {
+    flex: 1,
+  },
+  recentLeadName: {
+    fontSize: 13,
+    fontWeight: '600' as const,
+    color: Colors.text,
+  },
+  recentLeadEmail: {
+    fontSize: 11,
+    color: Colors.textSecondary,
+    marginTop: 1,
+  },
+  recentLeadTypeBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  recentLeadTypeText: {
+    fontSize: 9,
+    fontWeight: '700' as const,
+  },
+  viewAllLeadsBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    backgroundColor: '#E91E6310',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E91E6320',
+    marginTop: 4,
+  },
+  viewAllLeadsBtnText: {
+    fontSize: 13,
+    fontWeight: '700' as const,
+    color: '#E91E63',
   },
   bottomPad: {
     height: 100,
