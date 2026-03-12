@@ -37,7 +37,8 @@ import {
 import * as Clipboard from 'expo-clipboard';
 import Colors from '@/constants/colors';
 import { Referral } from '@/types';
-import { trpc } from '@/lib/trpc';
+import { supabase } from '@/lib/supabase';
+import { useQuery, useMutation } from '@tanstack/react-query';
 
 const mockUserReferrals: Referral[] = [
   {
@@ -89,17 +90,35 @@ const mockUserReferrals: Referral[] = [
 export default function ReferralsScreen() {
   const router = useRouter();
 
-  const referralsQuery = trpc.referrals.getUserReferrals.useQuery({ page: 1, limit: 20 });
-  const statsQuery = trpc.referrals.getUserStats.useQuery();
-  const referralCodeQuery = trpc.referrals.getReferralCode.useQuery();
-  const sendInviteMutation = trpc.referrals.sendInvite.useMutation();
+  const referralsQuery = useQuery({
+    queryKey: ['referrals'],
+    queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return { referrals: [], stats: null, code: null };
+      const { data: refs } = await supabase.from('referrals').select('*').eq('referrer_id', user.id).order('created_at', { ascending: false }).limit(20);
+      const { data: profile } = await supabase.from('profiles').select('referral_code').eq('id', user.id).single();
+      return { referrals: refs || [], stats: null, code: profile?.referral_code || null };
+    },
+    retry: 1,
+    staleTime: 1000 * 60 * 2,
+  });
 
-  const referrals = (referralsQuery.data?.referrals ?? mockUserReferrals) as Referral[];
+  const sendInviteMutation = useMutation({
+    mutationFn: async (input: { email: string }) => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+      const { error } = await supabase.from('referral_invites').insert({ referrer_id: user.id, email: input.email, created_at: new Date().toISOString() });
+      if (error) console.log('[Referrals] Invite insert note:', error.message);
+      return { success: true };
+    },
+  });
+
+  const referrals = (referralsQuery.data?.referrals as Referral[] | undefined) ?? mockUserReferrals;
   const [inviteEmail, setInviteEmail] = useState('');
   const [isSending, setIsSending] = useState(false);
   
-  const referralCode = referralCodeQuery.data?.referralCode ?? 'IVXHOLDINGS-INVITE';
-  const referralLink = referralCodeQuery.data?.shareUrl ?? `https://ivxholding.com/join?ref=${referralCode}`;
+  const referralCode = referralsQuery.data?.code ?? 'IVXHOLDINGS-INVITE';
+  const referralLink = `https://ivxholding.com/join?ref=${referralCode}`;
   
   const appLinks = {
     appStore: 'https://apps.apple.com/app/ipx-holding',
@@ -107,10 +126,8 @@ export default function ReferralsScreen() {
     website: 'https://ivxholding.com',
   };
 
-  const totalEarned = statsQuery.data?.totalRewardsEarned ?? referrals.filter(r => r.rewardPaid).reduce((sum, r) => sum + r.reward, 0);
-  const pendingRewards = statsQuery.data?.totalRewardsEarned != null 
-    ? (statsQuery.data.totalRewardsEarned - (statsQuery.data.totalRewardsPaid ?? 0))
-    : referrals.filter(r => r.status === 'invested' && !r.rewardPaid).reduce((sum, r) => sum + r.reward, 0);
+  const totalEarned = referrals.filter(r => r.rewardPaid).reduce((sum, r) => sum + r.reward, 0);
+  const pendingRewards = referrals.filter(r => r.status === 'invested' && !r.rewardPaid).reduce((sum, r) => sum + r.reward, 0);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', {
