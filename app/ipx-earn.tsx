@@ -22,21 +22,18 @@ import {
   TrendingUp,
   Shield,
   Clock,
-  ChevronRight,
   Zap,
   PiggyBank,
   CircleDollarSign,
   BarChart3,
   Info,
-  CheckCircle,
   Landmark,
-  ArrowRight,
   Lock,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
 import { useEarn, PROFIT_TIERS } from '@/lib/earn-context';
-import { formatNumber, formatAmountInput, parseAmountInput } from '@/lib/formatters';
+import { formatCurrencyWithDecimals, formatAmountInput, parseAmountInput } from '@/lib/formatters';
 
 export default function IPXEarnScreen() {
   const {
@@ -99,7 +96,7 @@ export default function IPXEarnScreen() {
     );
     pulse.start();
     return () => pulse.stop();
-  }, []);
+  }, [fadeAnim, pulseAnim, slideAnim]);
 
   useEffect(() => {
     Animated.timing(progressBarWidth, {
@@ -107,7 +104,7 @@ export default function IPXEarnScreen() {
       duration: 1000,
       useNativeDriver: false,
     }).start();
-  }, [quarterProgress]);
+  }, [quarterProgress, progressBarWidth]);
 
   const displayAmount = amount ? formatAmountInput(amount) : '';
   const quickAmounts = [500, 1000, 2500, 5000];
@@ -123,18 +120,18 @@ export default function IPXEarnScreen() {
       return;
     }
     setIsProcessing(true);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     try {
       const result = await deposit(numAmount);
       if (result.success) {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         Alert.alert(
           'Deposit Successful',
-          `${formatNumber(numAmount)} has been deposited into your IVXHOLDINGS Earn account. You'll start earning ${apyPercent}% APY immediately.`,
+          `${formatCurrencyWithDecimals(numAmount)} has been deposited into your IVXHOLDINGS Earn account. You'll start earning ${apyPercent}% APY immediately.`,
           [{ text: 'Great!', onPress: () => { setDepositModalVisible(false); setAmount(''); } }]
         );
       } else {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
         Alert.alert('Deposit Failed', result.error || 'Something went wrong');
       }
     } catch (error) {
@@ -143,7 +140,7 @@ export default function IPXEarnScreen() {
     } finally {
       setIsProcessing(false);
     }
-  }, [amount, deposit]);
+  }, [amount, deposit, apyPercent]);
 
   const handleWithdraw = useCallback(async () => {
     const numAmount = parseFloat(amount);
@@ -152,18 +149,18 @@ export default function IPXEarnScreen() {
       return;
     }
     setIsProcessing(true);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     try {
       const result = await withdraw(numAmount);
       if (result.success) {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         Alert.alert(
           'Withdrawal Successful',
-          `$${formatNumber(numAmount)} has been withdrawn to your wallet.`,
+          `${formatCurrencyWithDecimals(numAmount)} has been withdrawn to your wallet.`,
           [{ text: 'Done', onPress: () => { setWithdrawModalVisible(false); setAmount(''); } }]
         );
       } else {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
         Alert.alert('Withdrawal Failed', result.error || 'Something went wrong');
       }
     } catch (error) {
@@ -185,7 +182,7 @@ export default function IPXEarnScreen() {
     const isDeposit = type === 'deposit';
     const visible = isDeposit ? depositModalVisible : withdrawModalVisible;
     const onClose = () => {
-      isDeposit ? setDepositModalVisible(false) : setWithdrawModalVisible(false);
+      if (isDeposit) { setDepositModalVisible(false); } else { setWithdrawModalVisible(false); }
       setAmount('');
     };
 
@@ -206,7 +203,7 @@ export default function IPXEarnScreen() {
             {!isDeposit && (
               <View style={styles.availableBanner}>
                 <Text style={styles.availableLabel}>Available Balance</Text>
-                <Text style={styles.availableValue}>${formatNumber(totalBalance)}</Text>
+                <Text style={styles.availableValue}>{formatCurrencyWithDecimals(totalBalance)}</Text>
               </View>
             )}
 
@@ -234,7 +231,7 @@ export default function IPXEarnScreen() {
                     disabled={isProcessing}
                   >
                     <Text style={[styles.quickAmountText, amount === qa.toString() && styles.quickAmountTextActive]}>
-                      ${formatNumber(qa)}
+                      {formatCurrencyWithDecimals(qa)}
                     </Text>
                   </TouchableOpacity>
                 ))}
@@ -243,7 +240,7 @@ export default function IPXEarnScreen() {
                 <View style={styles.projectionBox}>
                   <TrendingUp size={16} color={Colors.success} />
                   <Text style={styles.projectionText}>
-                    Projected yearly earnings: <Text style={styles.projectionAmount}>${formatNumber(parseFloat(amount) * apyRate)}</Text>
+                    Projected yearly earnings: <Text style={styles.projectionAmount}>{formatCurrencyWithDecimals(parseFloat(amount) * apyRate)}</Text>
                   </Text>
                 </View>
               )}
@@ -269,7 +266,7 @@ export default function IPXEarnScreen() {
                 <ActivityIndicator size="small" color={isDeposit ? Colors.black : Colors.text} />
               ) : (
                 <Text style={[styles.actionButtonText, isDeposit ? styles.depositActionText : styles.withdrawActionText]}>
-                  {isDeposit ? 'Deposit & Start Earning' : `Withdraw $${amount ? formatNumber(parseFloat(amount)) : '0'}`}
+                  {isDeposit ? 'Deposit & Start Earning' : `Withdraw ${amount ? formatCurrencyWithDecimals(parseFloat(amount)) : '$0.00'}`}
                 </Text>
               )}
             </TouchableOpacity>
@@ -307,18 +304,18 @@ export default function IPXEarnScreen() {
           </View>
 
           <Text style={styles.heroLabel}>Your Earn Balance</Text>
-          <Text style={styles.heroBalance}>${formatNumber(totalBalance)}</Text>
+          <Text style={styles.heroBalance}>{formatCurrencyWithDecimals(totalBalance)}</Text>
 
           <View style={styles.heroBreakdown}>
             <View style={styles.breakdownItem}>
               <Text style={styles.breakdownLabel}>Deposited</Text>
-              <Text style={styles.breakdownValue}>${formatNumber(totalDeposited)}</Text>
+              <Text style={styles.breakdownValue}>{formatCurrencyWithDecimals(totalDeposited)}</Text>
             </View>
             <View style={styles.breakdownDivider} />
             <View style={styles.breakdownItem}>
               <Text style={styles.breakdownLabel}>Earned</Text>
               <Text style={[styles.breakdownValue, { color: Colors.success }]}>
-                +${formatNumber(totalEarnings)}
+                +{formatCurrencyWithDecimals(totalEarnings)}
               </Text>
             </View>
           </View>
@@ -374,8 +371,8 @@ export default function IPXEarnScreen() {
               />
             </View>
             <Text style={styles.tierProgressInfo}>
-              Q1 Profit: ${formatNumber(currentQuarterProfit)}
-              {nextTier ? ` · ${formatNumber(nextTier.minProfit)} for next tier` : ' · Max tier reached!'}
+              Q1 Profit: {formatCurrencyWithDecimals(currentQuarterProfit)}
+              {nextTier ? ` · ${formatCurrencyWithDecimals(nextTier.minProfit)} for next tier` : ' · Max tier reached!'}
             </Text>
           </View>
 
@@ -407,14 +404,14 @@ export default function IPXEarnScreen() {
               <Clock size={18} color="#00B4D8" />
             </View>
             <Text style={styles.projLabel}>Monthly</Text>
-            <Text style={styles.projValue}>${formatNumber(projectedMonthly)}</Text>
+            <Text style={styles.projValue}>{formatCurrencyWithDecimals(projectedMonthly)}</Text>
           </View>
           <View style={styles.projCard}>
             <View style={[styles.projIconWrap, { backgroundColor: Colors.success + '20' }]}>
               <BarChart3 size={18} color={Colors.success} />
             </View>
             <Text style={styles.projLabel}>Yearly</Text>
-            <Text style={styles.projValue}>${formatNumber(projectedYearly)}</Text>
+            <Text style={styles.projValue}>{formatCurrencyWithDecimals(projectedYearly)}</Text>
           </View>
         </View>
 
@@ -494,7 +491,7 @@ export default function IPXEarnScreen() {
                   styles.activityAmount,
                   { color: payout.amount >= 0 ? Colors.success : Colors.error },
                 ]}>
-                  {payout.amount >= 0 ? '+' : ''}${formatNumber(Math.abs(payout.amount))}
+                  {payout.amount >= 0 ? '+' : ''}{formatCurrencyWithDecimals(Math.abs(payout.amount))}
                 </Text>
               </View>
             ))
@@ -508,9 +505,9 @@ export default function IPXEarnScreen() {
           </View>
           <Text style={styles.disclaimerText}>
             IVXHOLDINGS Earn is a profit-sharing program where IVX HOLDINGS shares {apyPercent}–{maxApyPercent}% annual returns from its
-            real estate investment margin. The APY rate starts at 10% and increases up to {maxApyPercent}% as IVX HOLDINGS&apos;s
-            quarterly profits grow. Returns are variable and based on IVX HOLDINGS&apos;s actual performance —
-            not guaranteed. Your principal is backed by IVX HOLDINGS&apos;s real estate portfolio. This is
+            real estate investment margin. The APY rate starts at 10% and increases up to {maxApyPercent}% as IVX HOLDINGS's
+            quarterly profits grow. Returns are variable and based on IVX HOLDINGS's actual performance —
+            not guaranteed. Your principal is backed by IVX HOLDINGS's real estate portfolio. This is
             not a bank deposit and is not FDIC insured. Funds can be withdrawn at any time with no penalties.
           </Text>
         </View>
