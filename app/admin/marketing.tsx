@@ -2756,7 +2756,7 @@ const styles = StyleSheet.create({
   aiInsightBox: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, backgroundColor: Colors.backgroundSecondary, borderRadius: 8, padding: 10, marginTop: 8 },
   aiInsightText: { flex: 1, color: Colors.textSecondary, fontSize: 13, lineHeight: 18 },
   userMeta: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  userMetaItem: { color: Colors.textTertiary, fontSize: 12 },
+  userMetaItem: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 4 },
   userMetaText: { color: Colors.textSecondary, fontSize: 13 },
   userActions: { flexDirection: 'row', gap: 8, marginTop: 8 },
   actionChip: { backgroundColor: Colors.surface, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: Colors.surfaceBorder },
