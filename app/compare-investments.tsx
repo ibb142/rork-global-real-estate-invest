@@ -6,7 +6,6 @@ import {
   ScrollView,
   TouchableOpacity,
   Animated,
-  useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -31,7 +30,8 @@ import {
   returnProjections,
   AssetClassPerformance,
 } from '@/mocks/competitive-stats';
-import { getResponsiveSize, isExtraSmallScreen } from '@/lib/responsive';
+
+import { formatCurrencyWithDecimals } from '@/lib/formatters';
 
 function ReturnBar({ asset, maxReturn }: { asset: AssetClassPerformance; maxReturn: number }) {
   const widthAnim = useRef(new Animated.Value(0)).current;
@@ -44,7 +44,7 @@ function ReturnBar({ asset, maxReturn }: { asset: AssetClassPerformance; maxRetu
       delay: 200,
       useNativeDriver: false,
     }).start();
-  }, [barWidth]);
+  }, [barWidth, widthAnim]);
 
   const animatedWidth = widthAnim.interpolate({
     inputRange: [0, 100],
@@ -132,7 +132,7 @@ function ProjectionCalculator() {
             onPress={() => setAmount(a)}
           >
             <Text style={[styles.amountPillText, amount === a && styles.amountPillTextActive]}>
-              ${a.toLocaleString()}
+              {formatCurrencyWithDecimals(a)}
             </Text>
           </TouchableOpacity>
         ))}
@@ -155,16 +155,16 @@ function ProjectionCalculator() {
       <View style={styles.projectionCards}>
         <View style={styles.projCard}>
           <Text style={styles.projLabel}>5 Years</Text>
-          <Text style={styles.projValue}>${fiveYearValue.toLocaleString()}</Text>
+          <Text style={styles.projValue}>{formatCurrencyWithDecimals(fiveYearValue)}</Text>
           <Text style={[styles.projGain, { color: Colors.success }]}>
-            +${(fiveYearValue - amount).toLocaleString()} ({((fiveYearValue - amount) / amount * 100).toFixed(0)}%)
+            +{formatCurrencyWithDecimals(fiveYearValue - amount)} ({((fiveYearValue - amount) / amount * 100).toFixed(0)}%)
           </Text>
         </View>
         <View style={[styles.projCard, styles.projCardHighlight]}>
           <Text style={[styles.projLabel, { color: Colors.primary }]}>10 Years</Text>
-          <Text style={styles.projValue}>${tenYearValue.toLocaleString()}</Text>
+          <Text style={styles.projValue}>{formatCurrencyWithDecimals(tenYearValue)}</Text>
           <Text style={[styles.projGain, { color: Colors.success }]}>
-            +${(tenYearValue - amount).toLocaleString()} ({((tenYearValue - amount) / amount * 100).toFixed(0)}%)
+            +{formatCurrencyWithDecimals(tenYearValue - amount)} ({((tenYearValue - amount) / amount * 100).toFixed(0)}%)
           </Text>
         </View>
       </View>
@@ -184,7 +184,7 @@ function ProjectionCalculator() {
                 ]}
               />
             </View>
-            <Text style={styles.yearValue}>${yr.value.toLocaleString()}</Text>
+            <Text style={styles.yearValue}>{formatCurrencyWithDecimals(yr.value)}</Text>
           </View>
         ))}
       </View>
@@ -200,14 +200,7 @@ function ProjectionCalculator() {
 
 export default function CompareInvestmentsScreen() {
   const router = useRouter();
-  const { width } = useWindowDimensions();
-  const screenSize = getResponsiveSize(width);
-  const isXs = isExtraSmallScreen(screenSize);
-
   const maxReturn = Math.max(...assetClassComparison.map(a => a.annualReturn));
-  const ipx = assetClassComparison[0];
-  const sp500 = assetClassComparison[1];
-  const bonds = assetClassComparison[2];
 
   return (
     <View style={styles.container}>
@@ -364,7 +357,7 @@ const styles = StyleSheet.create({
   sectionTitle: { color: Colors.text, fontSize: 16, fontWeight: '700' as const, marginBottom: 12 },
   barsContainer: { gap: 8 },
   barRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  barLabel: { color: Colors.textSecondary, fontSize: 13 },
+  barLabel: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 6, minWidth: 100 },
   barDot: { width: 8, height: 8, borderRadius: 4 },
   barName: { color: Colors.text, fontSize: 15, fontWeight: '700' as const },
   barTrack: { flex: 1, height: 8, borderRadius: 4, backgroundColor: Colors.surfaceBorder, overflow: 'hidden' as const },
