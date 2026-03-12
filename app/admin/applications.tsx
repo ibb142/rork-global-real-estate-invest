@@ -27,7 +27,8 @@ import {
   Filter,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
-import { trpc } from '@/lib/trpc';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { supabase } from '@/lib/supabase';
 
 type FilterType = 'all' | 'broker' | 'agent' | 'influencer';
 type StatusFilter = 'all' | 'pending' | 'approved' | 'rejected';
@@ -53,16 +54,49 @@ export default function ApplicationsScreen() {
   const [typeFilter, setTypeFilter] = useState<FilterType>('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
 
-  const statsQuery = trpc.applications.getStats.useQuery(undefined, {
+  const statsQuery = useQuery<{ totalApplications: number; pendingApplications: number; brokerApplications: number; brokerPending: number; agentApplications: number; agentPending: number; influencerApplications: number; influencerPending: number; totalMembers: number } | null>({
+    queryKey: ['applications.getStats'],
+    queryFn: async () => {
+      console.log('[Supabase] Fetching application stats');
+      const { data, error } = await supabase.from('applications').select('*').limit(200);
+      if (error) { console.log('[Supabase] applications stats error:', error.message); return null; }
+      const apps = data ?? [];
+      return {
+        totalApplications: apps.length,
+        pendingApplications: apps.filter((a: any) => a.status === 'pending').length,
+        brokerApplications: apps.filter((a: any) => a.type === 'broker').length,
+        brokerPending: apps.filter((a: any) => a.type === 'broker' && a.status === 'pending').length,
+        agentApplications: apps.filter((a: any) => a.type === 'agent').length,
+        agentPending: apps.filter((a: any) => a.type === 'agent' && a.status === 'pending').length,
+        influencerApplications: apps.filter((a: any) => a.type === 'influencer').length,
+        influencerPending: apps.filter((a: any) => a.type === 'influencer' && a.status === 'pending').length,
+        totalMembers: 0,
+      };
+    },
     staleTime: 30000,
   });
 
-  const applicationsQuery = trpc.applications.listAll.useQuery(
-    { page: 1, limit: 100, type: typeFilter, status: statusFilter },
-    { staleTime: 15000 }
-  );
+  const applicationsQuery = useQuery({
+    queryKey: ['applications.listAll', { page: 1, limit: 100, type: typeFilter, status: statusFilter }],
+    queryFn: async () => {
+      console.log('[Supabase] Fetching applications list');
+      let query = supabase.from('applications').select('*').limit(100);
+      if (typeFilter !== 'all') query = query.eq('type', typeFilter);
+      if (statusFilter !== 'all') query = query.eq('status', statusFilter);
+      const { data, error } = await query;
+      if (error) { console.log('[Supabase] applications list error:', error.message); return null; }
+      return { applications: data ?? [] };
+    },
+    staleTime: 15000,
+  });
 
-  const reviewMutation = trpc.applications.reviewApplication.useMutation({
+  const reviewMutation = useMutation({
+    mutationFn: async (input: { id: string; type: string; decision: string }) => {
+      console.log('[Supabase] Reviewing application:', input.id, input.decision);
+      const { data, error } = await supabase.from('applications').update({ status: input.decision, reviewed_at: new Date().toISOString() }).eq('id', input.id).select().single();
+      if (error) return { success: false, message: error.message };
+      return { success: true, ...data };
+    },
     onSuccess: () => {
       void applicationsQuery.refetch();
       void statsQuery.refetch();
