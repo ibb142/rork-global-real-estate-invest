@@ -14,11 +14,10 @@ import { TrendingUp, TrendingDown, Wallet, Building2, ChevronRight, PiggyBank, P
 import Svg, { Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 import Colors from '@/constants/colors';
 import { getResponsiveSize, isCompactScreen, isExtraSmallScreen } from '@/lib/responsive';
-import { holdings, getTotalPortfolioValue, getTotalUnrealizedPnL, currentUser as mockUser } from '@/mocks/user';
-import { trpc } from '@/lib/trpc';
-import { useInstantCache } from '@/lib/use-instant-query';
-import { formatNumber } from '@/lib/formatters';
-import HoldingCard from '@/components/HoldingCard';
+import { useAuth } from '@/lib/auth-context';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/lib/supabase';
+import { formatCurrencyWithDecimals } from '@/lib/formatters';
 import IPXHoldingCard from '@/components/IPXHoldingCard';
 import { useIPX } from '@/lib/ipx-context';
 import { useEarn } from '@/lib/earn-context';
@@ -198,22 +197,33 @@ export default function PortfolioScreen() {
   const [activeTab, setActiveTab] = useState<TabType>('holdings');
   const [refreshing, setRefreshing] = useState(false);
 
-  const balanceQuery = trpc.wallet.getBalance.useQuery(undefined, {
+  const { isAuthenticated } = useAuth();
+
+  const balanceQuery = useQuery({
+    queryKey: ['wallet-balance', 'portfolio'],
+    queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return null;
+      const { data } = await supabase.from('wallets').select('*').eq('user_id', user.id).single();
+      return data;
+    },
     staleTime: 1000 * 60 * 2,
-    placeholderData: (prev) => prev,
+    enabled: isAuthenticated,
   });
-  const portfolioQuery = trpc.wallet.getPortfolio.useQuery(undefined, {
+  const portfolioQuery = useQuery({
+    queryKey: ['portfolio', 'holdings'],
+    queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return null;
+      const { data } = await supabase.from('holdings').select('*').eq('user_id', user.id);
+      return { holdings: data || [] };
+    },
     staleTime: 1000 * 60 * 2,
-    placeholderData: (prev) => prev,
+    enabled: isAuthenticated,
   });
 
-  const cachedBalance = useInstantCache('portfolio_balance', balanceQuery.data, balanceQuery.isSuccess);
-  const _cachedPortfolio = useInstantCache('portfolio_data', portfolioQuery.data, portfolioQuery.isSuccess);
-
-  const currentUser = useMemo(() => ({
-    ...mockUser,
-    walletBalance: cachedBalance?.available ?? mockUser.walletBalance,
-  }), [cachedBalance]);
+  const walletBalance = (balanceQuery.data as any)?.available ?? 0;
+  const totalInvestedBackend = (balanceQuery.data as any)?.invested ?? 0;
 
   const { holdings: ipxHoldings, getTotalIPXValue, getTotalIPXPnL, getTotalIPXPnLPercent } = useIPX();
   const { totalBalance: earnBalance, totalEarnings: _totalEarnings, apyRate } = useEarn();
@@ -241,12 +251,9 @@ export default function PortfolioScreen() {
     cardMargin: isXs ? 12 : 20,
   }), [isCompact, isXs]);
 
-  const tradHoldingsValue = getTotalPortfolioValue();
-  const tradUnrealizedPnL = getTotalUnrealizedPnL();
-
-  const totalPortfolioValue = tradHoldingsValue + getTotalIPXValue;
-  const totalUnrealizedPnL = tradUnrealizedPnL + getTotalIPXPnL;
-  const totalInvested = holdings.reduce((sum, h) => sum + (h.shares * h.avgCostBasis), 0) +
+  const totalPortfolioValue = totalInvestedBackend + getTotalIPXValue;
+  const totalUnrealizedPnL = getTotalIPXPnL;
+  const totalInvested = totalInvestedBackend +
     ipxHoldings.reduce((sum, h) => sum + h.totalInvested, 0);
   const totalUnrealizedPnLPercent = totalInvested > 0 ? ((totalPortfolioValue - totalInvested) / totalInvested) * 100 : 0;
 
@@ -332,11 +339,11 @@ export default function PortfolioScreen() {
             </View>
 
             <Text style={[styles.portfolioValue, { fontSize: responsiveStyles.portfolioValue }]}>
-              ${formatNumber(totalPortfolioValue)}
+              {formatCurrencyWithDecimals(totalPortfolioValue)}
             </Text>
 
             <Text style={[styles.pnlText, { fontSize: responsiveStyles.pnlText, color: isPositive ? Colors.success : Colors.error }]}>
-              {isPositive ? '+' : ''}${formatNumber(Math.abs(totalUnrealizedPnL))} {t('allTime').toLowerCase()}
+              {isPositive ? '+' : ''}{formatCurrencyWithDecimals(Math.abs(totalUnrealizedPnL))} {t('allTime').toLowerCase()}
             </Text>
 
             <View style={styles.chartContainer}>
@@ -369,7 +376,7 @@ export default function PortfolioScreen() {
                 </View>
                 <View>
                   <Text style={styles.ipxSummaryLabel}>{t('ipxHoldings')}</Text>
-                  <Text style={styles.ipxSummaryValue}>${formatNumber(getTotalIPXValue)}</Text>
+                  <Text style={styles.ipxSummaryValue}>{formatCurrencyWithDecimals(getTotalIPXValue)}</Text>
                 </View>
               </View>
               <View style={[
@@ -396,7 +403,7 @@ export default function PortfolioScreen() {
               <View>
                 <Text style={[styles.walletLabel, { fontSize: responsiveStyles.walletLabel }]}>{t('availableBalance')}</Text>
                 <Text style={[styles.walletValue, { fontSize: responsiveStyles.walletValue }]}>
-                  ${formatNumber(currentUser.walletBalance)}
+                  {formatCurrencyWithDecimals(walletBalance)}
                 </Text>
               </View>
             </View>
@@ -422,7 +429,7 @@ export default function PortfolioScreen() {
                   </View>
                 </View>
                 <Text style={[styles.walletValue, { fontSize: responsiveStyles.walletValue }]}>
-                  ${formatNumber(earnBalance)}
+                  {formatCurrencyWithDecimals(earnBalance)}
                 </Text>
               </View>
             </View>
@@ -438,7 +445,7 @@ export default function PortfolioScreen() {
               onPress={() => setActiveTab('holdings')}
             >
               <Text style={[styles.tabText, { fontSize: responsiveStyles.tabText }, activeTab === 'holdings' && styles.tabTextActive]}>
-                {t('holdings')} ({holdings.length})
+                {t('holdings')} ({ipxHoldings.length})
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -454,14 +461,22 @@ export default function PortfolioScreen() {
 
           {activeTab === 'holdings' ? (
             <View style={[styles.holdingsSection, { paddingHorizontal: responsiveStyles.cardMargin }]}>
-              {holdings.length === 0 ? (
+              {ipxHoldings.length === 0 ? (
                 <View style={styles.emptyState}>
+                  <Building2 size={48} color={Colors.textTertiary} />
                   <Text style={styles.emptyStateText}>{t('noHoldings')}</Text>
                   <Text style={styles.emptyStateSubtext}>{t('startInvesting')}</Text>
+                  <TouchableOpacity
+                    style={styles.emptyStateCta}
+                    onPress={() => router.push('/(tabs)/market' as any)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.emptyStateCtaText}>Browse Properties</Text>
+                  </TouchableOpacity>
                 </View>
               ) : (
-                holdings.map(holding => (
-                  <HoldingCard key={holding.id} holding={holding} />
+                ipxHoldings.map(holding => (
+                  <IPXHoldingCard key={holding.id} holding={holding} />
                 ))
               )}
             </View>
@@ -703,6 +718,18 @@ const styles = StyleSheet.create({
   emptyStateSubtext: {
     color: Colors.textTertiary,
     fontSize: 14,
+  },
+  emptyStateCta: {
+    marginTop: 12,
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  emptyStateCtaText: {
+    color: Colors.black,
+    fontSize: 14,
+    fontWeight: '700' as const,
   },
   bottomPadding: {
     height: 120,
