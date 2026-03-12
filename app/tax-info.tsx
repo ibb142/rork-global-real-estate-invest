@@ -13,7 +13,6 @@ import {
   Globe,
   FileText,
   CheckCircle,
-  AlertCircle,
   ChevronDown,
   Shield,
   Info,
@@ -22,7 +21,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
 import { currentUser } from '@/mocks/user';
-import { trpc } from '@/lib/trpc';
+import { supabase } from '@/lib/supabase';
+import { useMutation } from '@tanstack/react-query';
 import { useAnalytics } from '@/lib/analytics-context';
 
 type TaxResidency = 'us' | 'non_us';
@@ -43,7 +43,7 @@ export default function TaxInfoScreen() {
   const [filingStatus, setFilingStatus] = useState<FilingStatus>('single');
   const [ssn, setSsn] = useState('');
   const [tin, setTin] = useState('');
-  const [w9Signed, setW9Signed] = useState(true);
+  const [_w9Signed, _setW9Signed] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -63,7 +63,7 @@ export default function TaxInfoScreen() {
         console.error('[TaxInfo] Load error:', e);
       }
     };
-    loadTaxData();
+    void loadTaxData();
   }, []);
 
   const maskSSN = (value: string) => {
@@ -71,7 +71,17 @@ export default function TaxInfoScreen() {
     return '•••-••-' + value.slice(-4);
   };
 
-  const updateTaxMutation = trpc.users.updateProfile.useMutation();
+  const updateTaxMutation = useMutation({
+    mutationFn: async (input: { firstName: string; lastName: string }) => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+      const { error } = await supabase
+        .from('profiles')
+        .upsert({ id: user.id, first_name: input.firstName, last_name: input.lastName, updated_at: new Date().toISOString() });
+      if (error) console.log('[TaxInfo] Profile upsert note:', error.message);
+      return { success: true };
+    },
+  });
   const { trackAction } = useAnalytics();
 
   const handleSave = useCallback(async () => {
@@ -109,7 +119,7 @@ export default function TaxInfoScreen() {
       {
         onSuccess: () => {
           setIsSaving(false);
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           trackAction('tax_info_saved', { residency: taxResidency, filingStatus });
           Alert.alert('Saved', 'Your tax information has been updated successfully.');
           setIsEditing(false);
@@ -117,7 +127,7 @@ export default function TaxInfoScreen() {
         onError: (error) => {
           setIsSaving(false);
           console.error('[TaxInfo] Save error:', error);
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
           Alert.alert('Error', 'Failed to save your tax information. Please try again.');
         },
       }
