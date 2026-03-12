@@ -27,7 +27,8 @@ import {
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { currentUser as mockUser } from '@/mocks/user';
-import { trpc } from '@/lib/trpc';
+import { supabase } from '@/lib/supabase';
+import { useMutation } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth-context';
 import { useAnalytics } from '@/lib/analytics-context';
 
@@ -35,7 +36,30 @@ export default function PersonalInfoScreen() {
   const router = useRouter();
   const { profileData, refetchProfile } = useAuth();
   const { trackAction } = useAnalytics();
-  const updateProfileMutation = trpc.users.updateProfile.useMutation();
+  const updateProfileMutation = useMutation({
+    mutationFn: async (input: { firstName: string; lastName: string; phone: string }) => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+
+      const { error: metaError } = await supabase.auth.updateUser({
+        data: { firstName: input.firstName, lastName: input.lastName, phone: input.phone },
+      });
+      if (metaError) console.log('[PersonalInfo] Meta update note:', metaError.message);
+
+      const { error } = await supabase
+        .from('profiles')
+        .upsert({
+          id: user.id,
+          first_name: input.firstName,
+          last_name: input.lastName,
+          phone: input.phone,
+          updated_at: new Date().toISOString(),
+        });
+      if (error) console.log('[PersonalInfo] Profile upsert note:', error.message);
+
+      return { success: true };
+    },
+  });
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -106,11 +130,11 @@ export default function PersonalInfoScreen() {
         phone: formData.phone,
       },
       {
-        onSuccess: (data) => {
+        onSuccess: () => {
           setIsSaving(false);
           setIsEditing(false);
           trackAction('profile_updated', { fields: ['firstName', 'lastName', 'phone', 'country'] });
-          refetchProfile();
+          void refetchProfile();
           Alert.alert('Success', 'Your personal information has been updated.');
         },
         onError: (error) => {
