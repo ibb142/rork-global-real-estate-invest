@@ -20,7 +20,8 @@ import Colors from '@/constants/colors';
 import { useTranslation } from '@/lib/i18n-context';
 import { getResponsiveSize, isExtraSmallScreen } from '@/lib/responsive';
 import { supportMessages, quickReplies, supportTickets as mockTickets } from '@/mocks/chat';
-import { trpc } from '@/lib/trpc';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { supabase } from '@/lib/supabase';
 import { ChatMessage } from '@/types';
 import ChatBubble from '@/components/ChatBubble';
 import { useRorkAgent, createRorkTool } from '@rork-ai/toolkit-sdk';
@@ -45,7 +46,7 @@ Key features:
 Be friendly and professional. Keep responses brief (2-3 sentences max for quick chat).`;
 
 export default function ChatScreen() {
-  const router = useRouter();
+  const _router = useRouter();
   const { width, height } = useWindowDimensions();
   const [viewMode, setViewMode] = useState<ViewMode>('chat');
   const [messages, setMessages] = useState<ChatMessage[]>(supportMessages);
@@ -56,8 +57,23 @@ export default function ChatScreen() {
   const scrollViewRef = useRef<ScrollView>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
-  const ticketsQuery = trpc.support.getUserTickets.useQuery({ page: 1, limit: 20 });
-  const createTicketMutation = trpc.support.createTicket.useMutation();
+  const ticketsQuery = useQuery({
+    queryKey: ['support-tickets'],
+    queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return { tickets: [] };
+      const { data } = await supabase.from('support_tickets').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(20);
+      return { tickets: data || [] };
+    },
+  });
+  const createTicketMutation = useMutation({
+    mutationFn: async (params: { subject: string; category: string; message: string }) => {
+      const { data: { user } } = await supabase.auth.getUser();
+      const { data, error } = await supabase.from('support_tickets').insert({ ...params, user_id: user?.id, status: 'open' }).select().single();
+      if (error) throw error;
+      return data;
+    },
+  });
 
   const supportTickets = useMemo(() => {
     if (ticketsQuery.data?.tickets && Array.isArray(ticketsQuery.data.tickets)) {
@@ -136,7 +152,7 @@ export default function ChatScreen() {
               id: lastMessage.id,
               senderId: 'ai-support',
               senderName: 'IVXHOLDINGS AI',
-              senderAvatar: 'https://images.unsplash.com/photo-1531746790731-6c087fecd65a?w=200',
+              senderAvatar: '',
               message: textContent,
               timestamp: new Date().toISOString(),
               isSupport: true,
@@ -190,7 +206,7 @@ export default function ChatScreen() {
 
     try {
       const fullPrompt = `${AI_SYSTEM_PROMPT}\n\nUser: ${userText}`;
-      await sendAiMessage(fullPrompt);
+      sendAiMessage(fullPrompt);
     } catch (error) {
       console.error('AI error:', error);
       setIsAiTyping(false);
@@ -198,7 +214,7 @@ export default function ChatScreen() {
         id: `msg-${Date.now() + 1}`,
         senderId: 'ai-support',
         senderName: 'IVXHOLDINGS AI',
-        senderAvatar: 'https://images.unsplash.com/photo-1531746790731-6c087fecd65a?w=200',
+        senderAvatar: '',
         message: "I'm having trouble right now. For immediate assistance, please tap 'Start Live Chat' above to connect with our support team.",
         timestamp: new Date().toISOString(),
         isSupport: true,
@@ -221,8 +237,8 @@ export default function ChatScreen() {
       onSuccess: (data) => {
         if (data.success) {
           console.log('[Chat] Ticket created:', data.ticketId, 'category:', category);
-          ticketsQuery.refetch();
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          void ticketsQuery.refetch();
+          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           Alert.alert('Ticket Created', `Your ${subject} ticket has been submitted. We'll respond within 24 hours.`);
         }
       },
@@ -385,7 +401,7 @@ export default function ChatScreen() {
                         id: `msg-limit-${Date.now()}`,
                         senderId: 'ai-support',
                         senderName: 'IVXHOLDINGS AI',
-                        senderAvatar: 'https://images.unsplash.com/photo-1531746790731-6c087fecd65a?w=200',
+                        senderAvatar: '',
                         message: `You have ${openTickets.length} open tickets. Please wait for existing tickets to be resolved before creating new ones. Check the Tickets tab for updates.`,
                         timestamp: new Date().toISOString(),
                         isSupport: true,
@@ -410,13 +426,13 @@ export default function ChatScreen() {
                       onSuccess: (data) => {
                         if (data.success) {
                           console.log('[Chat] Live chat ticket created:', data.ticketId);
-                          ticketsQuery.refetch();
+                          void ticketsQuery.refetch();
                           const waitTime = openTickets.length === 0 ? '5-10' : `${10 + openTickets.length * 5}-${15 + openTickets.length * 5}`;
                           const confirmMsg: ChatMessage = {
                             id: `msg-ticket-${Date.now()}`,
                             senderId: 'ai-support',
                             senderName: 'IVXHOLDINGS AI',
-                            senderAvatar: 'https://images.unsplash.com/photo-1531746790731-6c087fecd65a?w=200',
+                            senderAvatar: '',
                             message: `Your live chat request has been submitted (Ticket #${data.ticketId?.slice(-6) ?? 'pending'}). Estimated wait time: ${waitTime} minutes. A support agent will be assigned shortly. You can track your ticket in the Tickets tab.`,
                             timestamp: new Date().toISOString(),
                             isSupport: true,
@@ -432,7 +448,7 @@ export default function ChatScreen() {
                           id: `msg-error-${Date.now()}`,
                           senderId: 'ai-support',
                           senderName: 'IVXHOLDINGS AI',
-                          senderAvatar: 'https://images.unsplash.com/photo-1531746790731-6c087fecd65a?w=200',
+                          senderAvatar: '',
                           message: 'Sorry, we could not create your support ticket right now. Please try again later or email us at support@ipxholding.com.',
                           timestamp: new Date().toISOString(),
                           isSupport: true,
