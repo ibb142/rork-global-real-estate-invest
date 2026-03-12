@@ -2,12 +2,12 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import createContextHook from '@nkzw/create-context-hook';
-import { Lender, LenderCategory, LenderStatus } from '@/types';
-import { lenders as mockLenders, getLenderStats as getMockStats } from '@/mocks/lenders';
+import { Lender, LenderStatus } from '@/types';
+import { lenders as mockLenders } from '@/mocks/lenders';
 import { DiscoveredLender } from '@/mocks/lender-discovery';
 import { SECSearchResult } from '@/lib/sec-edgar-service';
-import { trpc } from '@/lib/trpc';
-import { useAuth } from '@/lib/auth-context';
+import { supabase } from '@/lib/supabase';
+import { getAuthUserId } from '@/lib/auth-store';
 
 const STORAGE_KEY = 'ipx_imported_lenders';
 
@@ -78,36 +78,107 @@ function secResultToLender(s: SECSearchResult): Lender {
   };
 }
 
+function lenderToSupabaseRow(lender: Lender, source: string, userId: string) {
+  return {
+    id: lender.id,
+    user_id: userId,
+    name: lender.name,
+    type: lender.type,
+    category: lender.category,
+    contact_name: lender.contactName,
+    contact_title: lender.contactTitle,
+    email: lender.email,
+    phone: lender.phone,
+    website: lender.website || '',
+    address: lender.address,
+    city: lender.city,
+    state: lender.state,
+    country: lender.country,
+    description: lender.description,
+    aum: lender.aum,
+    min_investment: lender.minInvestment,
+    max_investment: lender.maxInvestment,
+    preferred_property_types: lender.preferredPropertyTypes,
+    preferred_regions: lender.preferredRegions,
+    interest_rate: lender.interestRate,
+    status: lender.status,
+    total_invested: lender.totalInvested,
+    properties_invested: lender.propertiesInvested,
+    rating: lender.rating,
+    tags: lender.tags,
+    source,
+    imported_at: new Date().toISOString(),
+    created_at: lender.createdAt,
+  };
+}
+
+function supabaseRowToRecord(row: any): ImportedLenderRecord {
+  return {
+    lender: {
+      id: row.id,
+      name: row.name,
+      type: row.type,
+      category: row.category,
+      contactName: row.contact_name,
+      contactTitle: row.contact_title,
+      email: row.email,
+      phone: row.phone,
+      website: row.website,
+      address: row.address,
+      city: row.city,
+      state: row.state,
+      country: row.country,
+      description: row.description,
+      aum: row.aum,
+      minInvestment: row.min_investment,
+      maxInvestment: row.max_investment,
+      preferredPropertyTypes: row.preferred_property_types || [],
+      preferredRegions: row.preferred_regions || [],
+      interestRate: row.interest_rate,
+      status: row.status,
+      totalInvested: row.total_invested || 0,
+      propertiesInvested: row.properties_invested || 0,
+      rating: row.rating || 3,
+      tags: row.tags || [],
+      createdAt: row.created_at,
+    },
+    source: row.source || 'discovery',
+    importedAt: row.imported_at || row.created_at,
+  };
+}
+
 export const [LenderProvider, useLenders] = createContextHook(() => {
   const queryClient = useQueryClient();
   const [importedLenders, setImportedLenders] = useState<ImportedLenderRecord[]>([]);
-  const [backendSynced, setBackendSynced] = useState(false);
-
-  const { isAuthenticated, isAdmin } = useAuth();
-
-  const syncConfigQuery = trpc.lenderSync.getSyncConfig.useQuery(undefined, {
-    enabled: isAuthenticated && isAdmin,
-    retry: 1,
-    staleTime: 300000,
-  });
-
-  useEffect(() => {
-    if (syncConfigQuery.data) {
-      setBackendSynced(true);
-      console.log('[LenderContext] Backend sync config loaded, auto-sync:', syncConfigQuery.data.autoSyncEnabled);
-    } else if (syncConfigQuery.error) {
-      console.log('[LenderContext] Backend not available, using local data only');
-    }
-  }, [syncConfigQuery.data, syncConfigQuery.error]);
 
   const storedQuery = useQuery({
     queryKey: ['imported-lenders'],
     queryFn: async () => {
+      const userId = getAuthUserId();
+
+      if (userId) {
+        try {
+          const { data, error } = await supabase
+            .from('imported_lenders')
+            .select('*')
+            .eq('user_id', userId);
+
+          if (!error && data && data.length > 0) {
+            console.log('[LenderContext] Loaded', data.length, 'lenders from Supabase');
+            const records = data.map(supabaseRowToRecord);
+            await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(records));
+            return records;
+          }
+        } catch (e) {
+          console.log('[LenderContext] Supabase fetch failed:', e);
+        }
+      }
+
       try {
         const stored = await AsyncStorage.getItem(STORAGE_KEY);
         if (stored) {
           const parsed = JSON.parse(stored) as ImportedLenderRecord[];
-          console.log('[LenderContext] Loaded', parsed.length, 'imported lenders from storage');
+          console.log('[LenderContext] Loaded', parsed.length, 'imported lenders from local');
           return parsed;
         }
       } catch (e) {
@@ -115,6 +186,7 @@ export const [LenderProvider, useLenders] = createContextHook(() => {
       }
       return [] as ImportedLenderRecord[];
     },
+    staleTime: 1000 * 60 * 5,
   });
 
   useEffect(() => {
@@ -129,9 +201,20 @@ export const [LenderProvider, useLenders] = createContextHook(() => {
       return records;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['imported-lenders'] });
+      void queryClient.invalidateQueries({ queryKey: ['imported-lenders'] });
     },
   });
+
+  const saveToSupabase = useCallback(async (lender: Lender, source: string) => {
+    const userId = getAuthUserId();
+    if (!userId) return;
+    try {
+      await supabase.from('imported_lenders').upsert(lenderToSupabaseRow(lender, source, userId));
+      console.log('[LenderContext] Saved lender to Supabase:', lender.name);
+    } catch (e) {
+      console.log('[LenderContext] Supabase save failed:', e);
+    }
+  }, []);
 
   const allLenders = useMemo(() => {
     const imported = importedLenders.map(r => r.lender);
@@ -158,9 +241,10 @@ export const [LenderProvider, useLenders] = createContextHook(() => {
     const updated = [...importedLenders, record];
     setImportedLenders(updated);
     saveMutation.mutate(updated);
+    void saveToSupabase(lender, 'discovery');
     console.log('[LenderContext] Imported discovered lender:', discovered.name);
     return true;
-  }, [importedLenders, saveMutation]);
+  }, [importedLenders, saveMutation, saveToSupabase]);
 
   const importSECLender = useCallback((secResult: SECSearchResult) => {
     const exists = importedLenders.some(
@@ -180,9 +264,10 @@ export const [LenderProvider, useLenders] = createContextHook(() => {
     const updated = [...importedLenders, record];
     setImportedLenders(updated);
     saveMutation.mutate(updated);
+    void saveToSupabase(lender, 'sec_edgar');
     console.log('[LenderContext] Imported SEC lender:', secResult.name);
     return true;
-  }, [importedLenders, saveMutation]);
+  }, [importedLenders, saveMutation, saveToSupabase]);
 
   const importMultipleDiscovered = useCallback((lenders: DiscoveredLender[]) => {
     let count = 0;
@@ -192,11 +277,13 @@ export const [LenderProvider, useLenders] = createContextHook(() => {
     for (const d of lenders) {
       if (existingNames.has(d.name.toLowerCase())) continue;
       existingNames.add(d.name.toLowerCase());
+      const lender = discoveredToLender(d);
       newRecords.push({
-        lender: discoveredToLender(d),
+        lender,
         source: 'discovery',
         importedAt: new Date().toISOString(),
       });
+      void saveToSupabase(lender, 'discovery');
       count++;
     }
 
@@ -207,7 +294,7 @@ export const [LenderProvider, useLenders] = createContextHook(() => {
       console.log('[LenderContext] Bulk imported', count, 'discovered lenders');
     }
     return count;
-  }, [importedLenders, saveMutation]);
+  }, [importedLenders, saveMutation, saveToSupabase]);
 
   const importMultipleSEC = useCallback((results: SECSearchResult[]) => {
     let count = 0;
@@ -217,11 +304,13 @@ export const [LenderProvider, useLenders] = createContextHook(() => {
     for (const s of results) {
       if (existingNames.has(s.name.toLowerCase())) continue;
       existingNames.add(s.name.toLowerCase());
+      const lender = secResultToLender(s);
       newRecords.push({
-        lender: secResultToLender(s),
+        lender,
         source: 'sec_edgar',
         importedAt: new Date().toISOString(),
       });
+      void saveToSupabase(lender, 'sec_edgar');
       count++;
     }
 
@@ -232,7 +321,7 @@ export const [LenderProvider, useLenders] = createContextHook(() => {
       console.log('[LenderContext] Bulk imported', count, 'SEC lenders');
     }
     return count;
-  }, [importedLenders, saveMutation]);
+  }, [importedLenders, saveMutation, saveToSupabase]);
 
   const isImported = useCallback((name: string) => {
     return importedLenders.some(r => r.lender.name.toLowerCase() === name.toLowerCase()) ||
@@ -259,16 +348,16 @@ export const [LenderProvider, useLenders] = createContextHook(() => {
     };
   }, [allLenders, importedLenders]);
 
-  return {
+  return useMemo(() => ({
     allLenders,
     importedLenders,
     stats,
     isLoading: storedQuery.isLoading,
-    backendSynced,
+    backendSynced: true,
     importDiscoveredLender,
     importSECLender,
     importMultipleDiscovered,
     importMultipleSEC,
     isImported,
-  };
+  }), [allLenders, importedLenders, stats, storedQuery.isLoading, importDiscoveredLender, importSECLender, importMultipleDiscovered, importMultipleSEC, isImported]);
 });
