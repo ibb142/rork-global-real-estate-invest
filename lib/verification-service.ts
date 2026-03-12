@@ -1,4 +1,4 @@
-import { trpcClient } from '@/lib/trpc';
+import { supabase } from '@/lib/supabase';
 import logger from './logger';
 
 export interface VerificationResult {
@@ -47,50 +47,53 @@ export interface SanctionsDatabase {
   lastUpdated: string;
 }
 
-export async function performLivenessDetection(selfieUrl?: string): Promise<LivenessResult> {
+export async function performLivenessDetection(_selfieUrl?: string): Promise<LivenessResult> {
   logger.verification.log('Starting liveness detection...');
 
   try {
-    const result = await trpcClient.kyc.performLiveness.mutate({
-      selfieUrl: selfieUrl || 'local://selfie',
+    const { data, error } = await supabase.functions.invoke('kyc-liveness', {
+      body: { selfieUrl: _selfieUrl || 'local://selfie' },
     });
 
-    logger.verification.log(`Liveness result: live=${result.isLive} confidence=${result.confidence}`);
-
-    return {
-      isLive: result.isLive,
-      confidence: result.confidence,
-      challenges: (result.challenges || []).map((c: { type: string; completed: boolean }) => ({
-        type: c.type as LivenessChallenge['type'],
-        completed: c.completed,
-      })),
-    };
+    if (!error && data?.isLive !== undefined) {
+      logger.verification.log(`Liveness result: live=${data.isLive} confidence=${data.confidence}`);
+      return {
+        isLive: data.isLive,
+        confidence: data.confidence,
+        challenges: (data.challenges || []).map((c: { type: string; completed: boolean }) => ({
+          type: c.type as LivenessChallenge['type'],
+          completed: c.completed,
+        })),
+      };
+    }
   } catch (error) {
-    console.error('[VerificationService] Liveness API error, using fallback:', error);
-    return fallbackLiveness();
+    console.log('[VerificationService] Liveness edge function not available, using fallback:', error);
   }
+
+  return fallbackLiveness();
 }
 
 export async function performFaceMatch(selfieUri: string, documentUri: string): Promise<FaceMatchResult> {
   logger.verification.log('Face match:', selfieUri, documentUri);
 
   try {
-    const result = await trpcClient.kyc.performFaceMatch.mutate({
-      selfieUrl: selfieUri,
-      documentUrl: documentUri,
+    const { data, error } = await supabase.functions.invoke('kyc-face-match', {
+      body: { selfieUrl: selfieUri, documentUrl: documentUri },
     });
 
-    logger.verification.log(`Face match: match=${result.isMatch} similarity=${result.similarity}`);
-
-    return {
-      isMatch: result.isMatch,
-      similarity: result.similarity,
-      confidence: result.confidence,
-    };
+    if (!error && data?.isMatch !== undefined) {
+      logger.verification.log(`Face match: match=${data.isMatch} similarity=${data.similarity}`);
+      return {
+        isMatch: data.isMatch,
+        similarity: data.similarity,
+        confidence: data.confidence,
+      };
+    }
   } catch (error) {
-    console.error('[VerificationService] Face match API error, using fallback:', error);
-    return fallbackFaceMatch();
+    console.log('[VerificationService] Face match edge function not available, using fallback:', error);
   }
+
+  return fallbackFaceMatch();
 }
 
 export async function performSanctionsCheck(
@@ -103,25 +106,29 @@ export async function performSanctionsCheck(
   logger.verification.log('Sanctions check:', firstName, lastName);
 
   try {
-    const result = await trpcClient.kyc.performSanctionsCheck.mutate();
+    const { data, error } = await supabase.functions.invoke('kyc-sanctions-check', {
+      body: { firstName, lastName },
+    });
 
-    logger.verification.log(`Sanctions: clean=${result.isClean} risk=${result.riskScore} hits=${result.hitCount}`);
-
-    return {
-      isClean: result.isClean,
-      matchFound: result.hitCount > 0,
-      databases: result.databases.map((d: { name: string; checked: boolean; matchFound: boolean; lastUpdated: string }) => ({
-        name: d.name,
-        checked: d.checked,
-        matchFound: d.matchFound,
-        lastUpdated: d.lastUpdated,
-      })),
-      riskScore: result.riskScore,
-    };
+    if (!error && data?.isClean !== undefined) {
+      logger.verification.log(`Sanctions: clean=${data.isClean} risk=${data.riskScore}`);
+      return {
+        isClean: data.isClean,
+        matchFound: (data.hitCount || 0) > 0,
+        databases: (data.databases || []).map((d: { name: string; checked: boolean; matchFound: boolean; lastUpdated: string }) => ({
+          name: d.name,
+          checked: d.checked,
+          matchFound: d.matchFound,
+          lastUpdated: d.lastUpdated,
+        })),
+        riskScore: data.riskScore,
+      };
+    }
   } catch (error) {
-    console.error('[VerificationService] Sanctions API error, using fallback:', error);
-    return fallbackSanctions();
+    console.log('[VerificationService] Sanctions edge function not available, using fallback:', error);
   }
+
+  return fallbackSanctions();
 }
 
 export async function performDocumentVerification(
@@ -133,7 +140,7 @@ export async function performDocumentVerification(
   return {
     name: 'Document Authenticity',
     status: 'passed',
-    details: 'Document verified via backend verification engine',
+    details: 'Document verified via verification engine',
     score: 0.95,
   };
 }
@@ -148,35 +155,40 @@ export async function performFullVerification(params: {
   passportNumber: string;
   taxId: string;
 }): Promise<VerificationResult> {
-  logger.verification.log('Starting full verification via backend...');
+  logger.verification.log('Starting full verification...');
 
   try {
-    const result = await trpcClient.kyc.runFullVerification.mutate();
+    const { data, error } = await supabase.functions.invoke('kyc-full-verification', {
+      body: params,
+    });
 
-    logger.verification.log(`Full verification: status=${result.overallStatus} score=${result.overallScore}`);
+    if (!error && data?.overallStatus) {
+      logger.verification.log(`Full verification: status=${data.overallStatus} score=${data.overallScore}`);
 
-    const checks: VerificationCheck[] = result.checks.map((c: { name: string; status: string; details: string; score: number }) => ({
-      name: c.name,
-      status: c.status as VerificationCheck['status'],
-      details: c.details,
-      score: c.score,
-    }));
+      const checks: VerificationCheck[] = (data.checks || []).map((c: { name: string; status: string; details: string; score: number }) => ({
+        name: c.name,
+        status: c.status as VerificationCheck['status'],
+        details: c.details,
+        score: c.score,
+      }));
 
-    const riskLevel = result.riskLevel === 'critical' ? 'high' : result.riskLevel as 'low' | 'medium' | 'high';
+      const riskLevel = data.riskLevel === 'critical' ? 'high' : data.riskLevel as 'low' | 'medium' | 'high';
 
-    return {
-      success: result.overallStatus === 'passed',
-      score: result.overallScore,
-      checks,
-      riskLevel,
-      message: result.message || (result.overallStatus === 'passed'
-        ? 'All verification checks passed successfully'
-        : 'Some verification checks require attention'),
-    };
+      return {
+        success: data.overallStatus === 'passed',
+        score: data.overallScore,
+        checks,
+        riskLevel,
+        message: data.message || (data.overallStatus === 'passed'
+          ? 'All verification checks passed successfully'
+          : 'Some verification checks require attention'),
+      };
+    }
   } catch (error) {
-    console.error('[VerificationService] Full verification API error, using fallback:', error);
-    return fallbackFullVerification(params);
+    console.log('[VerificationService] Full verification edge function not available, using fallback:', error);
   }
+
+  return fallbackFullVerification(params);
 }
 
 function fallbackLiveness(): LivenessResult {
@@ -218,7 +230,7 @@ function fallbackSanctions(): SanctionsCheckResult {
   };
 }
 
-async function fallbackFullVerification(params: {
+async function fallbackFullVerification(_params: {
   selfieUri: string;
   documentUri: string;
   firstName: string;
@@ -230,7 +242,7 @@ async function fallbackFullVerification(params: {
 }): Promise<VerificationResult> {
   const checks: VerificationCheck[] = [];
 
-  const livenessResult = await fallbackLiveness();
+  const livenessResult = fallbackLiveness();
   checks.push({
     name: 'Liveness Detection',
     status: livenessResult.isLive ? 'passed' : 'failed',
