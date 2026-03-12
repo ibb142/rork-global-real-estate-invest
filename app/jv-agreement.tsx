@@ -11,9 +11,18 @@ import {
   Animated,
   KeyboardAvoidingView,
   Linking,
+  Image,
+  Dimensions,
+  Modal,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
+  ActivityIndicator,
 } from 'react-native';
+import * as FileSystem from 'expo-file-system/legacy';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as ImagePicker from 'expo-image-picker';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Stack, useRouter } from 'expo-router';
+import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
 import {
   ChevronLeft,
   ChevronRight,
@@ -37,38 +46,46 @@ import {
   Sparkles,
   MapPin,
   UserCheck,
-  FileCheck,
+
   Gavel,
+  ImageIcon,
+  Camera,
+  X,
+  Edit3,
 } from 'lucide-react-native';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
+import { Globe } from 'lucide-react-native';
 
 import Colors from '@/constants/colors';
+import { fetchJVDeals, upsertJVDeal, updateJVDeal, deleteJVDeal, safeSupabaseInsert } from '@/lib/jv-storage';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { formatAmountInput, parseAmountInput } from '@/lib/formatters';
 import {
   JVAgreement,
   JVPartner,
+  PoolTier,
   JV_AGREEMENT_TYPES,
   EXIT_STRATEGIES,
   DISTRIBUTION_FREQUENCIES,
-  SAMPLE_JV_AGREEMENTS,
   JV_CLAUSES,
 } from '@/mocks/jv-agreements';
 
-type ScreenMode = 'list' | 'create' | 'detail' | 'preview';
+type ScreenMode = 'list' | 'create' | 'detail' | 'preview' | 'edit';
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
-  draft: { label: 'Draft', color: '#9A9A9A', bg: '#9A9A9A20' },
+  active: { label: 'Live', color: '#00C48C', bg: '#00C48C20' },
   pending_review: { label: 'Pending Review', color: '#FFB800', bg: '#FFB80020' },
-  active: { label: 'Active', color: '#00C48C', bg: '#00C48C20' },
   completed: { label: 'Completed', color: '#4A90D9', bg: '#4A90D920' },
   expired: { label: 'Expired', color: '#FF4D4D', bg: '#FF4D4D20' },
 };
 
-const ROLE_CONFIG: Record<string, { label: string; color: string }> = {
-  lead: { label: 'Lead Partner', color: '#FFD700' },
-  'co-investor': { label: 'Co-Investor', color: '#4A90D9' },
-  silent: { label: 'Silent Partner', color: '#9A9A9A' },
-  managing: { label: 'Managing Partner', color: '#00C48C' },
+const DEFAULT_STATUS = STATUS_CONFIG.active;
+
+const ROLE_CONFIG: Record<string, { label: string; color: string; description: string }> = {
+  lp: { label: 'LP (Limited Partner)', color: '#4A90D9', description: 'Contributes capital, limited liability, no management authority' },
+  silent: { label: 'Silent Partner', color: '#9A9A9A', description: 'Invests capital only, no involvement in operations or decisions' },
+  co_investor: { label: 'Co-Investor', color: '#E879F9', description: 'Co-invests alongside lead, no management authority, shares returns' },
 };
 
 function generateJVNumber(): string {
@@ -79,16 +96,24 @@ function generateJVNumber(): string {
   return `JV-${y}${m}-${rand}`;
 }
 
-function formatCurrency(amount: number, currency: string): string {
-  return `${currency} ${amount.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+function formatCurrency(amount: number): string {
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount);
 }
+
+
+const POOL_TIER_TYPES: { id: PoolTier['type']; label: string; icon: string; color: string }[] = [
+  { id: 'jv_direct', label: 'JV Investment', icon: '🏛️', color: '#00C48C' },
+  { id: 'token_shares', label: 'Token Shares', icon: '🪙', color: '#FFD700' },
+  { id: 'private_lending', label: 'Private Lending', icon: '🏦', color: '#4A90D9' },
+  { id: 'open', label: 'Open Pool', icon: '🌐', color: '#E879F9' },
+];
 
 function generateJVContractHTML(agreement: JVAgreement): string {
   const partnersHTML = agreement.partners.map((p, i) => `
     <tr>
       <td style="padding:10px 14px;border-bottom:1px solid #2a2a2a;color:#fff;">${i + 1}. ${p.name}</td>
       <td style="padding:10px 14px;border-bottom:1px solid #2a2a2a;color:#FFD700;font-weight:700;">${ROLE_CONFIG[p.role]?.label || p.role}</td>
-      <td style="padding:10px 14px;border-bottom:1px solid #2a2a2a;color:#00C48C;font-weight:700;">${formatCurrency(p.contribution, agreement.currency)}</td>
+      <td style="padding:10px 14px;border-bottom:1px solid #2a2a2a;color:#00C48C;font-weight:700;">${formatCurrency(p.contribution)}</td>
       <td style="padding:10px 14px;border-bottom:1px solid #2a2a2a;color:#4A90D9;font-weight:700;">${p.equityShare}%</td>
       <td style="padding:10px 14px;border-bottom:1px solid #2a2a2a;color:#9a9a9a;">${p.location}</td>
     </tr>
@@ -155,7 +180,7 @@ function generateJVContractHTML(agreement: JVAgreement): string {
     <div class="info-grid">
       <div class="info-item"><div class="info-label">Project</div><div class="info-value">${agreement.projectName}</div></div>
       <div class="info-item"><div class="info-label">Type</div><div class="info-value gold">${JV_AGREEMENT_TYPES.find(t => t.id === agreement.type)?.label || agreement.type}</div></div>
-      <div class="info-item"><div class="info-label">Total Investment</div><div class="info-value green">${formatCurrency(agreement.totalInvestment, agreement.currency)}</div></div>
+      <div class="info-item"><div class="info-label">Total Investment</div><div class="info-value green">${formatCurrency(agreement.totalInvestment)}</div></div>
       <div class="info-item"><div class="info-label">Expected ROI</div><div class="info-value green">${agreement.expectedROI}%</div></div>
       <div class="info-item"><div class="info-label">Start Date</div><div class="info-value">${agreement.startDate}</div></div>
       <div class="info-item"><div class="info-label">End Date</div><div class="info-value">${agreement.endDate}</div></div>
@@ -229,13 +254,139 @@ function generateJVContractHTML(agreement: JVAgreement): string {
 
 export default function JVAgreementScreen() {
   const router = useRouter();
+  const { editId } = useLocalSearchParams<{ editId?: string }>();
   const scrollRef = useRef<ScrollView>(null);
+  const editIdHandledRef = useRef<string | null>(null);
 
   const [mode, setMode] = useState<ScreenMode>('list');
-  const [agreements, setAgreements] = useState<JVAgreement[]>(SAMPLE_JV_AGREEMENTS);
+  const [agreements, setAgreements] = useState<JVAgreement[]>([]);
   const [selectedAgreement, setSelectedAgreement] = useState<JVAgreement | null>(null);
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [activeFilter, setActiveFilter] = useState<string>('all');
+  const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [isPublishing, setIsPublishing] = useState<boolean>(false);
+  const [isDeletingId, setIsDeletingId] = useState<string | null>(null);
+
+
+  const JV_STORAGE_KEY = 'ivx_jv_agreements';
+
+  const persistLocal = useCallback(async (_deals: JVAgreement[]) => {
+    console.log('[JV] Local cache disabled — backend is single source of truth');
+  }, []);
+
+  const cleanRef = useRef(false);
+  useEffect(() => {
+    if (cleanRef.current) return;
+    cleanRef.current = true;
+    const runCleanup = async () => {
+      try {
+        await AsyncStorage.removeItem(JV_STORAGE_KEY);
+        console.log('[JV] Cleared legacy AsyncStorage JV cache');
+      } catch (err) {
+        console.log('[JV] Cleanup error:', err);
+      }
+    };
+    void runCleanup();
+  }, []);
+
+  const backendDealsQuery = useQuery({
+    queryKey: ['jv-agreements'],
+    queryFn: async () => {
+      const result = await fetchJVDeals();
+      return result;
+    },
+    retry: 3,
+    retryDelay: (attempt: number) => Math.min(500 * Math.pow(1.5, attempt), 5000),
+    refetchOnWindowFocus: true,
+    refetchOnMount: 'always' as const,
+    staleTime: 0,
+    gcTime: 0,
+    networkMode: 'always' as const,
+  });
+
+  useEffect(() => {
+    if (backendDealsQuery.data) {
+      console.log('[JV] Fetched deals from backend:', backendDealsQuery.data.total);
+      if (backendDealsQuery.data.deals && backendDealsQuery.data.deals.length >= 0) {
+        const backendDeals: JVAgreement[] = backendDealsQuery.data.deals.map((d: any) => ({
+          id: d.id,
+          title: d.title,
+          projectName: d.projectName,
+          status: d.status || 'active',
+          type: d.type || 'equity_split',
+          totalInvestment: d.totalInvestment || 0,
+          currency: d.currency || 'USD',
+          partners: d.partners || [],
+          profitSplit: d.profitSplit || [],
+          poolTiers: d.poolTiers,
+          startDate: d.startDate || '',
+          endDate: d.endDate || '',
+          createdAt: d.createdAt || '',
+          updatedAt: d.updatedAt,
+          propertyAddress: d.propertyAddress,
+          expectedROI: d.expectedROI || 0,
+          distributionFrequency: d.distributionFrequency || 'quarterly',
+          exitStrategy: d.exitStrategy || '',
+          governingLaw: d.governingLaw || '',
+          disputeResolution: d.disputeResolution || '',
+          confidentialityPeriod: d.confidentialityPeriod || 60,
+          nonCompetePeriod: d.nonCompetePeriod || 24,
+          managementFee: d.managementFee || 2,
+          performanceFee: d.performanceFee || 20,
+          minimumHoldPeriod: d.minimumHoldPeriod || 12,
+          description: d.description || '',
+          photos: Array.isArray(d.photos) && d.photos.length > 0 ? d.photos : undefined,
+          published: d.published ?? false,
+          publishedAt: d.publishedAt ?? null,
+        }));
+        setAgreements(backendDeals);
+        void persistLocal(backendDeals);
+        console.log('[JV] Synced', backendDeals.length, 'deals from backend to local state, photos:', backendDeals.filter(d => d.photos && d.photos.length > 0).length, 'deals with photos');
+      }
+    }
+  }, [backendDealsQuery.data, persistLocal]);
+
+  useEffect(() => {
+    if (backendDealsQuery.error) {
+      console.log('[JV] Backend fetch error:', backendDealsQuery.error.message);
+    }
+  }, [backendDealsQuery.error]);
+
+  const queryClient = useQueryClient();
+
+  const handleDeleteDeal = useCallback(async (dealId: string, dealTitle: string) => {
+    Alert.alert(
+      'Delete JV Deal',
+      `Permanently delete "${dealTitle}"?\n\nThis cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete Forever',
+          style: 'destructive',
+          onPress: async () => {
+            setIsDeletingId(dealId);
+            console.log('[JV] Deleting deal via Supabase:', dealId, dealTitle);
+            try {
+              const { error: sbErr } = await deleteJVDeal(dealId);
+              if (sbErr) throw sbErr;
+              setAgreements(prev => prev.filter(a => a.id !== dealId));
+              void queryClient.invalidateQueries({ queryKey: ['jv-agreements'] });
+              void queryClient.invalidateQueries({ queryKey: ['published-jv-deals'] });
+              void queryClient.invalidateQueries({ queryKey: ['jv-deals'] });
+              Alert.alert('Deleted', `"${dealTitle}" has been permanently deleted.`);
+            } catch (err) {
+              console.error('[JV] Supabase delete error:', err);
+              Alert.alert('Error', 'Could not delete deal. Please try again.');
+            } finally {
+              setIsDeletingId(null);
+            }
+          },
+        },
+      ]
+    );
+  }, [queryClient]);
+
+
 
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     overview: true,
@@ -244,12 +395,20 @@ export default function JVAgreementScreen() {
     fees: false,
     legal: false,
     clauses: false,
+    photos_section: true,
+    pool_tiers: true,
   });
 
   const [formTitle, setFormTitle] = useState<string>('');
   const [formProjectName, setFormProjectName] = useState<string>('');
   const [formType, setFormType] = useState<string>('equity_split');
   const [formTotalInvestment, setFormTotalInvestment] = useState<string>('');
+
+  const formTitleRef = useRef<string>('');
+  const formProjectNameRef = useRef<string>('');
+  const formTotalInvestmentRef = useRef<string>('');
+  const editingAgreementIdRef = useRef<string | null>(null);
+  const formPhotosRef = useRef<string[]>([]);
   const [formCurrency, setFormCurrency] = useState<string>('USD');
   const [formDescription, setFormDescription] = useState<string>('');
   const [formPropertyAddress, setFormPropertyAddress] = useState<string>('');
@@ -267,8 +426,26 @@ export default function JVAgreementScreen() {
   const [formEndDate, setFormEndDate] = useState<string>('');
 
   const [partners, setPartners] = useState<JVPartner[]>([
-    { id: 'new-p1', name: 'IVX Holdings LLC', role: 'lead', contribution: 0, equityShare: 50, location: 'New York, USA', verified: true },
+    { id: 'new-p1', name: 'IVX Holdings LLC', role: 'lp', contribution: 0, equityShare: 50, location: 'New York, USA', verified: true },
   ]);
+
+  const [formPoolTiers, setFormPoolTiers] = useState<PoolTier[]>([
+    { id: 'pool-jv', label: 'JV Investment', type: 'jv_direct', targetAmount: 1000000, minInvestment: 100, currentRaised: 0, investorCount: 0, status: 'open' },
+    { id: 'pool-tokens', label: 'Token Shares', type: 'token_shares', targetAmount: 400000, minInvestment: 50, currentRaised: 0, investorCount: 0, status: 'open' },
+  ]);
+
+  const [editingAgreementId, setEditingAgreementId] = useState<string | null>(null);
+
+  const [formPhotos, setFormPhotos] = useState<string[]>([]);
+
+  useEffect(() => { formTitleRef.current = formTitle; }, [formTitle]);
+  useEffect(() => { formProjectNameRef.current = formProjectName; }, [formProjectName]);
+  useEffect(() => { formTotalInvestmentRef.current = formTotalInvestment; }, [formTotalInvestment]);
+  useEffect(() => { editingAgreementIdRef.current = editingAgreementId; }, [editingAgreementId]);
+  useEffect(() => { formPhotosRef.current = formPhotos; }, [formPhotos]);
+  const [galleryIndex, setGalleryIndex] = useState<number>(0);
+  const [fullscreenPhoto, setFullscreenPhoto] = useState<string | null>(null);
+  const screenWidth = Dimensions.get('window').width;
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
@@ -309,7 +486,7 @@ export default function JVAgreementScreen() {
     setPartners(prev => [...prev, {
       id: newId,
       name: '',
-      role: 'co-investor',
+      role: 'lp',
       contribution: 0,
       equityShare: 0,
       location: '',
@@ -327,6 +504,28 @@ export default function JVAgreementScreen() {
 
   const updatePartner = useCallback((index: number, field: keyof JVPartner, value: string | number) => {
     setPartners(prev => prev.map((p, i) => i === index ? { ...p, [field]: value } : p));
+  }, []);
+
+  const addPoolTier = useCallback(() => {
+    const newId = `tier-${formPoolTiers.length + 1}-${Date.now()}`;
+    setFormPoolTiers(prev => [...prev, {
+      id: newId,
+      label: '',
+      type: 'open' as const,
+      targetAmount: 0,
+      minInvestment: 0,
+      currentRaised: 0,
+      investorCount: 0,
+      status: 'open' as const,
+    }]);
+  }, [formPoolTiers.length]);
+
+  const removePoolTier = useCallback((index: number) => {
+    setFormPoolTiers(prev => prev.filter((_, i) => i !== index));
+  }, []);
+
+  const updatePoolTier = useCallback((index: number, field: keyof PoolTier, value: string | number) => {
+    setFormPoolTiers(prev => prev.map((t, i) => i === index ? { ...t, [field]: value } : t));
   }, []);
 
   const resetForm = useCallback(() => {
@@ -352,38 +551,666 @@ export default function JVAgreementScreen() {
     setPartners([{
       id: 'new-p1',
       name: 'IVX Holdings LLC',
-      role: 'lead',
+      role: 'lp',
       contribution: 0,
       equityShare: 50,
       location: 'New York, USA',
       verified: true,
     }]);
+    setFormPoolTiers([
+      { id: 'pool-jv', label: 'JV Investment', type: 'jv_direct', targetAmount: 1000000, minInvestment: 100, currentRaised: 0, investorCount: 0, status: 'open' },
+      { id: 'pool-tokens', label: 'Token Shares', type: 'token_shares', targetAmount: 400000, minInvestment: 50, currentRaised: 0, investorCount: 0, status: 'open' },
+    ]);
+    setFormPhotos([]);
+    setEditingAgreementId(null);
   }, []);
 
-  const handleCreateAgreement = useCallback(() => {
-    if (!formTitle.trim() || !formProjectName.trim() || !formTotalInvestment.trim()) {
-      Alert.alert('Required Fields', 'Please fill in the agreement title, project name, and total investment.');
+  const loadAgreementForEdit = useCallback((agreement: JVAgreement) => {
+    setEditingAgreementId(agreement.id);
+    setFormTitle(agreement.title);
+    setFormProjectName(agreement.projectName);
+    setFormType(agreement.type);
+    setFormTotalInvestment(String(agreement.totalInvestment));
+    setFormCurrency(agreement.currency);
+    setFormDescription(agreement.description);
+    setFormPropertyAddress(agreement.propertyAddress || '');
+    setFormExpectedROI(String(agreement.expectedROI));
+    setFormDistribution(agreement.distributionFrequency);
+    setFormExitStrategy(agreement.exitStrategy);
+    setFormGoverningLaw(agreement.governingLaw);
+    setFormDisputeResolution(agreement.disputeResolution);
+    setFormConfidentiality(String(agreement.confidentialityPeriod));
+    setFormNonCompete(String(agreement.nonCompetePeriod));
+    setFormManagementFee(String(agreement.managementFee));
+    setFormPerformanceFee(String(agreement.performanceFee));
+    setFormMinHold(String(agreement.minimumHoldPeriod));
+    setFormStartDate(agreement.startDate);
+    setFormEndDate(agreement.endDate);
+    setPartners(agreement.partners.map(p => ({ ...p })));
+    setFormPoolTiers(agreement.poolTiers ? agreement.poolTiers.map(t => ({ ...t })) : []);
+    setFormPhotos(agreement.photos ? [...agreement.photos] : []);
+    setExpandedSections({ overview: true, partners: true, terms: false, fees: false, legal: false, clauses: false, photos_section: true, pool_tiers: true });
+    setMode('edit');
+    scrollRef.current?.scrollTo({ y: 0, animated: true });
+    console.log('[JV] Loaded agreement for editing:', agreement.id);
+  }, []);
+
+  useEffect(() => {
+    if (!editId || editIdHandledRef.current === editId) return;
+    if (!backendDealsQuery.data?.deals || backendDealsQuery.data.deals.length === 0) return;
+    const dealToEdit = agreements.find(a => a.id === editId);
+    if (dealToEdit) {
+      editIdHandledRef.current = editId;
+      console.log('[JV] Auto-loading deal for edit from editId param:', editId);
+      loadAgreementForEdit(dealToEdit);
+    }
+  }, [editId, agreements, backendDealsQuery.data, loadAgreementForEdit]);
+
+  const pickPhotos = useCallback(async () => {
+    try {
+      const remaining = 8 - formPhotos.length;
+      if (remaining <= 0) {
+        Alert.alert('Limit Reached', 'Maximum 8 photos allowed per project.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsMultipleSelection: true,
+        selectionLimit: remaining,
+        quality: 0.5,
+        exif: false,
+      });
+      if (!result.canceled && result.assets) {
+        const newUris = result.assets.map(a => a.uri);
+        setFormPhotos(prev => {
+          const combined = [...prev, ...newUris];
+          return combined.slice(0, 8);
+        });
+        console.log('[JV] Photos picked:', newUris.length);
+      }
+    } catch (error) {
+      console.log('[JV] Photo pick error:', error);
+      Alert.alert('Error', 'Failed to pick photos.');
+    }
+  }, [formPhotos]);
+
+  const takePhoto = useCallback(async () => {
+    if (formPhotos.length >= 8) {
+      Alert.alert('Limit Reached', 'Maximum 8 photos allowed per project.');
       return;
     }
+    try {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Required', 'Camera access is needed to take photos.');
+        return;
+      }
+      const result = await ImagePicker.launchCameraAsync({
+        quality: 0.5,
+        allowsEditing: false,
+        exif: false,
+      });
+      if (!result.canceled && result.assets) {
+        setFormPhotos(prev => [...prev, result.assets[0].uri].slice(0, 8));
+        console.log('[JV] Photo taken');
+      }
+    } catch (error) {
+      console.log('[JV] Camera error:', error);
+      Alert.alert('Error', 'Failed to take photo.');
+    }
+  }, [formPhotos]);
 
-    const totalEquity = partners.reduce((sum, p) => sum + p.equityShare, 0);
-    if (totalEquity !== 100) {
-      Alert.alert('Equity Error', `Total equity must equal 100%. Currently: ${totalEquity}%`);
-      return;
+  const removePhoto = useCallback((index: number) => {
+    setFormPhotos(prev => prev.filter((_, i) => i !== index));
+  }, []);
+
+  const [isUploadingPhotos, setIsUploadingPhotos] = useState<boolean>(false);
+  const [uploadProgress, setUploadProgress] = useState<string>('');
+
+  const uploadPhotoMutation = useMemo(() => ({
+    mutateAsync: async (input: { dealId: string; photoBase64: string; mimeType: string; index: number }) => {
+      console.log('[JV] Uploading photo for deal:', input.dealId, 'index:', input.index);
+      try {
+        const { data } = await safeSupabaseInsert('jv_deal_photos', {
+          deal_id: input.dealId,
+          photo_data: input.photoBase64.substring(0, 500),
+          mime_type: input.mimeType,
+          photo_index: input.index,
+          created_at: new Date().toISOString(),
+        });
+        if (data) {
+          console.log('[JV] Photo uploaded successfully');
+          return { photoUrl: (data as any)?.photo_url || null };
+        }
+        console.log('[JV] Photo stored inline with deal data (no photo table)');
+        return { photoUrl: null };
+      } catch (err) {
+        console.log('[JV] Photo upload skipped:', (err as Error)?.message);
+        return { photoUrl: null };
+      }
+    },
+  }), []);
+
+  const convertPhotoToBase64 = useCallback(async (uri: string): Promise<{ base64: string; mimeType: string } | null> => {
+    try {
+      if (uri.startsWith('data:image/')) {
+        const mimeMatch = uri.match(/^data:(image\/[^;]+);/);
+        return { base64: uri, mimeType: mimeMatch ? mimeMatch[1] : 'image/jpeg' };
+      }
+
+      if (Platform.OS === 'web') {
+        const response = await fetch(uri);
+        const blob = await response.blob();
+        const mimeType = blob.type || 'image/jpeg';
+
+        const MAX_WEB_KB = 120;
+        const needsCompress = blob.size > MAX_WEB_KB * 1024;
+        console.log('[JV] Web photo:', (blob.size / 1024).toFixed(0), 'KB, needsCompress:', needsCompress);
+
+        try {
+          const bitmap = await createImageBitmap(blob);
+          const maxDim = needsCompress ? 700 : 800;
+          let w = bitmap.width;
+          let h = bitmap.height;
+          if (w > maxDim || h > maxDim) {
+            const ratio = Math.min(maxDim / w, maxDim / h);
+            w = Math.round(w * ratio);
+            h = Math.round(h * ratio);
+          }
+          const canvas = new OffscreenCanvas(w, h);
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(bitmap, 0, 0, w, h);
+            const quality = blob.size > 2 * 1024 * 1024 ? 0.25 : blob.size > 500 * 1024 ? 0.35 : 0.45;
+            const compressedBlob = await canvas.convertToBlob({ type: 'image/jpeg', quality });
+            const base64 = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result as string);
+              reader.onerror = reject;
+              reader.readAsDataURL(compressedBlob);
+            });
+            console.log('[JV] Compressed photo from', (blob.size / 1024).toFixed(0), 'KB to', (compressedBlob.size / 1024).toFixed(0), 'KB, dims:', w, 'x', h);
+            return { base64, mimeType: 'image/jpeg' };
+          }
+        } catch (compressErr) {
+          console.warn('[JV] Web compression failed, using raw:', (compressErr as Error)?.message);
+        }
+
+        const base64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+        return { base64, mimeType };
+      }
+
+      const fileInfo = await FileSystem.getInfoAsync(uri);
+      if (!fileInfo.exists) {
+        console.log('[JV] Photo file not found:', uri);
+        return null;
+      }
+      const fileSizeMB = (fileInfo as any).size ? ((fileInfo as any).size / 1024 / 1024) : 0;
+      console.log('[JV] Native photo size:', fileSizeMB.toFixed(1), 'MB');
+
+      const base64Raw = await FileSystem.readAsStringAsync(uri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      let mimeType = 'image/jpeg';
+      if (uri.toLowerCase().includes('.png')) mimeType = 'image/png';
+      else if (uri.toLowerCase().includes('.webp')) mimeType = 'image/webp';
+
+      return { base64: `data:${mimeType};base64,${base64Raw}`, mimeType };
+    } catch (err) {
+      console.error('[JV] convertPhotoToBase64 error:', (err as Error)?.message);
+      return null;
+    }
+  }, []);
+
+  const _uploadAllPhotos = useCallback(async (dealId: string, photos: string[]): Promise<string[]> => {
+    const uploadedUrls: string[] = [];
+    const isLocal = (p: string) => p.startsWith('file://') || p.startsWith('content://') || p.startsWith('blob:') || p.startsWith('data:image/');
+    const localPhotos = photos.filter(p => isLocal(p));
+    const remotePhotos = photos.filter(p => !isLocal(p));
+
+    uploadedUrls.push(...remotePhotos);
+
+    if (localPhotos.length === 0) {
+      console.log('[JV] No local photos to upload, using', remotePhotos.length, 'existing URLs');
+      return uploadedUrls;
     }
 
-    const newAgreement: JVAgreement = {
-      id: generateJVNumber(),
+    setIsUploadingPhotos(true);
+    let uploadFailed = 0;
+    console.log('[JV] Uploading', localPhotos.length, 'local photos for deal:', dealId);
+
+    for (let i = 0; i < localPhotos.length; i++) {
+      const uri = localPhotos[i];
+      setUploadProgress(`Uploading photo ${i + 1} of ${localPhotos.length}...`);
+
+      try {
+        const converted = await convertPhotoToBase64(uri);
+        if (!converted || !converted.base64 || converted.base64.length === 0) {
+          console.log('[JV] Photo', i + 1, 'conversion failed, skipping');
+          uploadFailed++;
+          continue;
+        }
+
+        const payloadSizeMB = converted.base64.length / 1024 / 1024;
+        console.log('[JV] Photo', i + 1, 'payload size:', payloadSizeMB.toFixed(1), 'MB, mimeType:', converted.mimeType);
+
+        if (payloadSizeMB > 8) {
+          console.warn('[JV] Photo', i + 1, 'too large even after compression:', payloadSizeMB.toFixed(1), 'MB — skipping');
+          uploadFailed++;
+          continue;
+        }
+
+        const result = await uploadPhotoMutation.mutateAsync({
+          dealId,
+          photoBase64: converted.base64,
+          mimeType: converted.mimeType,
+          index: i,
+        });
+
+        if (result.photoUrl) {
+          uploadedUrls.push(result.photoUrl);
+          console.log('[JV] Photo', i + 1, 'uploaded OK:', result.photoUrl.substring(0, 80));
+        } else {
+          console.warn('[JV] Photo', i + 1, 'upload returned no URL');
+          uploadFailed++;
+        }
+      } catch (err) {
+        console.error('[JV] Failed to upload photo', i + 1, ':', (err as Error)?.message);
+        uploadFailed++;
+      }
+    }
+
+    setIsUploadingPhotos(false);
+    setUploadProgress('');
+    console.log('[JV] Upload complete:', uploadedUrls.length, 'photos total,', uploadFailed, 'failed');
+
+    if (uploadFailed > 0 && uploadedUrls.length === remotePhotos.length) {
+      Alert.alert(
+        'Photo Upload Issue',
+        `${uploadFailed} photo(s) could not be uploaded. The deal was saved but some photos are missing. Try re-editing and uploading them again.`,
+        [{ text: 'OK' }]
+      );
+    }
+
+    return uploadedUrls;
+  }, [uploadPhotoMutation, convertPhotoToBase64]);
+
+  const saveAndPublishMutation = useMemo(() => ({
+    mutateAsync: async (payload: Record<string, unknown>) => {
+      console.log('[JV] saveAndPublish via jv-storage');
+      const { data, error } = await upsertJVDeal({
+        ...payload,
+        published: true,
+        publishedAt: new Date().toISOString(),
+      });
+      if (error) {
+        console.error('[JV] saveAndPublish ERROR:', error.message);
+        throw error;
+      }
+      console.log('[JV] saveAndPublish success — id:', (data as any)?.id);
+      void queryClient.invalidateQueries({ queryKey: ['jv-agreements'] });
+      void queryClient.invalidateQueries({ queryKey: ['published-jv-deals'] });
+      void queryClient.invalidateQueries({ queryKey: ['jv-deals'] });
+      return data as Record<string, unknown>;
+    },
+  }), [queryClient]);
+
+  const saveMutation = useMemo(() => ({
+    mutateAsync: async (payload: Record<string, unknown>) => {
+      console.log('[JV] save via jv-storage');
+      const { data, error } = await upsertJVDeal(payload);
+      if (error) {
+        console.error('[JV] save ERROR:', error.message);
+        throw error;
+      }
+      console.log('[JV] Saved to backend:', (data as any)?.id);
+      void queryClient.invalidateQueries({ queryKey: ['jv-agreements'] });
+      void queryClient.invalidateQueries({ queryKey: ['jv-deals'] });
+      return data as Record<string, unknown>;
+    },
+  }), [queryClient]);
+
+  const _updateMutation = useMemo(() => ({
+    mutateAsync: async (payload: Record<string, unknown>) => {
+      const { id, data: nestedData, ...flatRest } = payload;
+      const updatePayload = (nestedData && typeof nestedData === 'object' && !Array.isArray(nestedData))
+        ? nestedData as Record<string, unknown>
+        : flatRest;
+      console.log('[JV] update via jv-storage, id:', id, 'payload keys:', Object.keys(updatePayload).join(','));
+      const { data, error } = await updateJVDeal(id as string, updatePayload);
+      if (error) {
+        console.error('[JV] update ERROR:', error.message);
+        throw error;
+      }
+      console.log('[JV] Updated on backend:', (data as any)?.id);
+      void queryClient.invalidateQueries({ queryKey: ['jv-agreements'] });
+      void queryClient.invalidateQueries({ queryKey: ['published-jv-deals'] });
+      void queryClient.invalidateQueries({ queryKey: ['jv-deals'] });
+      return data as Record<string, unknown>;
+    },
+  }), [queryClient]);
+
+  const _publishMutation = useMemo(() => ({
+    mutateAsync: async (payload: { id: string }) => {
+      console.log('[JV] publish via jv-storage, id:', payload.id);
+      const { data, error } = await updateJVDeal(payload.id, {
+        published: true,
+        publishedAt: new Date().toISOString(),
+      });
+      if (error) {
+        console.error('[JV] publish ERROR:', error.message);
+        throw error;
+      }
+      console.log('[JV] Published:', (data as any)?.id);
+      void queryClient.invalidateQueries({ queryKey: ['jv-agreements'] });
+      void queryClient.invalidateQueries({ queryKey: ['published-jv-deals'] });
+      void queryClient.invalidateQueries({ queryKey: ['jv-deals'] });
+      return data as Record<string, unknown>;
+    },
+  }), [queryClient]);
+
+  const _unpublishMutation = useMemo(() => ({
+    mutateAsync: async (payload: { id: string }) => {
+      console.log('[JV] unpublish via jv-storage, id:', payload.id);
+      const { error } = await updateJVDeal(payload.id, {
+        published: false,
+      });
+      if (error) {
+        console.error('[JV] unpublish ERROR:', error.message);
+        throw error;
+      }
+      console.log('[JV] Unpublished');
+      return { success: true };
+    },
+  }), []);
+
+  const buildJVPayload = useCallback((agreement: JVAgreement, skipLocalPhotos = false) => {
+    const safePartners = Array.isArray(agreement.partners) ? agreement.partners : [];
+    const safeProfitSplit = Array.isArray(agreement.profitSplit) ? agreement.profitSplit : [];
+    const rawPhotos = Array.isArray(agreement.photos) ? agreement.photos : [];
+    const isHostedUrl = (p: string) => typeof p === 'string' && p.length > 0 && (p.startsWith('https://') || p.startsWith('http://')) && !p.startsWith('blob:');
+    const safePhotos = skipLocalPhotos ? rawPhotos.filter(isHostedUrl) : rawPhotos.filter(p => isHostedUrl(p) || (typeof p === 'string' && p.startsWith('data:image/')));
+    const safePoolTiers = Array.isArray(agreement.poolTiers) ? agreement.poolTiers : [];
+    console.log('[JV] buildJVPayload — photos raw:', rawPhotos.length, 'safe (remote URLs):', safePhotos.length, 'skipLocalPhotos:', skipLocalPhotos);
+
+    const today = new Date().toISOString().split('T')[0];
+    const threeYearsLater = new Date(Date.now() + 365 * 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+    const validRoles = ['lp', 'silent', 'co_investor'] as const;
+    const validTypes = ['equity_split', 'profit_sharing', 'hybrid', 'development'] as const;
+    const validFreqs = ['monthly', 'quarterly', 'annually', 'at_exit'] as const;
+    const validTierTypes = ['jv_direct', 'token_shares', 'private_lending', 'open', 'tokenized', 'single_investor', 'institutional', 'custom'] as const;
+    type ValidTierType = typeof validTierTypes[number];
+    const validTierStatuses = ['open', 'closed', 'filled'] as const;
+
+    const payload: any = {
+      title: String(agreement.title || 'Untitled Deal').trim(),
+      projectName: String(agreement.projectName || 'Untitled Project').trim(),
+      type: validTypes.includes(agreement.type as any) ? agreement.type : 'equity_split',
+      totalInvestment: Number(agreement.totalInvestment) || 0,
+      currency: agreement.currency || 'USD',
+      partners: safePartners.map(p => ({
+        id: String(p?.id || `p-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`),
+        name: String(p?.name || 'Partner').trim(),
+        role: (validRoles.includes(p?.role as any) ? p.role : 'lp') as 'lp' | 'silent' | 'co_investor',
+        contribution: Number(p?.contribution) || 0,
+        equityShare: Number(p?.equityShare) || 0,
+        location: String(p?.location || ''),
+        verified: Boolean(p?.verified),
+      })),
+      profitSplit: safeProfitSplit.map(ps => ({
+        partnerId: String(ps?.partnerId || ''),
+        percentage: Number(ps?.percentage) || 0,
+      })),
+      startDate: agreement.startDate || today,
+      endDate: agreement.endDate || threeYearsLater,
+      propertyAddress: agreement.propertyAddress || undefined,
+      expectedROI: Number(agreement.expectedROI) || 15,
+      distributionFrequency: (validFreqs.includes(agreement.distributionFrequency as any) ? agreement.distributionFrequency : 'quarterly') as 'monthly' | 'quarterly' | 'annually' | 'at_exit',
+      exitStrategy: agreement.exitStrategy || 'Sale of Property',
+      governingLaw: agreement.governingLaw || 'State of New York, USA',
+      disputeResolution: agreement.disputeResolution || 'Arbitration \u2014 JAMS',
+      confidentialityPeriod: Number(agreement.confidentialityPeriod) || 60,
+      nonCompetePeriod: Number(agreement.nonCompetePeriod) || 24,
+      managementFee: Number(agreement.managementFee) || 2,
+      performanceFee: Number(agreement.performanceFee) || 20,
+      minimumHoldPeriod: Number(agreement.minimumHoldPeriod) || 12,
+      description: String(agreement.description || ''),
+    };
+
+    payload.photos = safePhotos.length > 0 ? safePhotos : [];
+    console.log('[JV] buildJVPayload — photos:', safePhotos.length, 'in payload, skipLocalPhotos:', skipLocalPhotos);
+
+    if (safePoolTiers.length > 0) {
+      payload.poolTiers = safePoolTiers.map(t => ({
+        id: String(t?.id || `tier-${Date.now()}`),
+        label: String(t?.label || ''),
+        type: (validTierTypes.includes(t?.type as any) ? t.type : 'open') as ValidTierType,
+        targetAmount: Number(t?.targetAmount) || 0,
+        minInvestment: Number(t?.minInvestment) || 0,
+        maxInvestors: t?.maxInvestors ? Number(t.maxInvestors) : undefined,
+        currentRaised: Number(t?.currentRaised) || 0,
+        investorCount: Number(t?.investorCount) || 0,
+        status: (validTierStatuses.includes(t?.status as any) ? t.status : 'open') as 'open' | 'closed' | 'filled',
+      }));
+    }
+
+    return payload;
+  }, []);
+
+  const isExistingBackendId = useCallback((id: string): boolean => {
+    if (id.startsWith('JV-')) return false;
+    if (id.startsWith('jv_') || id.startsWith('jv-')) return true;
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    return uuidRegex.test(id);
+  }, []);
+
+  const handleSaveAndPublish = useCallback(async (agreement: JVAgreement, existingBackendId?: string, _localPhotosToUpload?: string[]) => {
+    setIsPublishing(true);
+    let backendId: string | null = null;
+    let errorMsg: string | null = null;
+
+    const isUpdate = existingBackendId || isExistingBackendId(agreement.id);
+    const idToUpdate = existingBackendId || agreement.id;
+
+    const processedPhotos: string[] = [];
+    if (agreement.photos && agreement.photos.length > 0) {
+      for (const photo of agreement.photos) {
+        const isRemote = (photo.startsWith('https://') || photo.startsWith('http://')) && !photo.startsWith('blob:');
+        const isDataUri = photo.startsWith('data:image/');
+        if (isRemote || isDataUri) {
+          processedPhotos.push(photo);
+        } else {
+          try {
+            const converted = await convertPhotoToBase64(photo);
+            if (converted?.base64) {
+              processedPhotos.push(converted.base64);
+              console.log('[JV] Converted photo in publish, size:', (converted.base64.length / 1024).toFixed(0), 'KB');
+            }
+          } catch (convErr) {
+            console.warn('[JV] Photo conversion in publish failed:', (convErr as Error)?.message);
+          }
+        }
+      }
+    }
+    const agreementWithPhotos: JVAgreement = { ...agreement, photos: processedPhotos.length > 0 ? processedPhotos : undefined };
+
+    try {
+      const payload = buildJVPayload(agreementWithPhotos, false);
+      console.log('[JV] saveAndPublish — mode:', isUpdate ? 'UPDATE' : 'CREATE', 'for:', agreement.title);
+      console.log('[JV] saveAndPublish — payload keys:', Object.keys(payload).join(', '));
+      console.log('[JV] saveAndPublish — partners:', (payload.partners || []).length, 'photos in payload:', (payload.photos || []).length, 'poolTiers:', (payload.poolTiers || []).length);
+
+      if (isUpdate) {
+        console.log('[JV] Updating + publishing existing agreement in single call:', idToUpdate);
+        console.log('[JV] Photos in payload:', (payload.photos || []).length, 'photo sizes:', (payload.photos || []).map((p: string) => `${(p.length / 1024).toFixed(0)}KB`).join(', '));
+        const { data: updateData, error: updateErr } = await updateJVDeal(idToUpdate, {
+          ...payload,
+          published: true,
+          publishedAt: new Date().toISOString(),
+        });
+        if (updateErr) {
+          console.error('[JV] Combined update+publish ERROR:', updateErr.message);
+          throw updateErr;
+        }
+        backendId = (updateData as any)?.id || idToUpdate;
+        console.log('[JV] Updated & Published in single call — LIVE:', backendId, 'photos saved:', ((updateData as any)?.photos || []).length);
+      } else {
+        console.log('[JV] Creating new agreement via saveAndPublish');
+        console.log('[JV] Photos in payload:', (payload.photos || []).length, 'photo sizes:', (payload.photos || []).map((p: string) => `${(p.length / 1024).toFixed(0)}KB`).join(', '));
+        const result = await saveAndPublishMutation.mutateAsync(payload);
+        console.log('[JV] saveAndPublish — result:', JSON.stringify(result).substring(0, 300));
+
+        if (result?.id) {
+          backendId = typeof result.id === 'string' ? result.id : JSON.stringify(result.id);
+          console.log('[JV] saveAndPublish — LIVE with id:', backendId, 'photos saved:', ((result as any)?.photos || []).length);
+        } else {
+          errorMsg = 'Server returned no ID. Please try again.';
+          console.error('[JV] saveAndPublish — no id returned');
+        }
+      }
+    } catch (err: any) {
+      const errMessage = err?.message || '';
+      const errData = err?.data?.message || err?.shape?.message || '';
+      errorMsg = errMessage || errData || 'Network error — please check your connection and try again.';
+      console.error('[JV] saveAndPublish — CATCH error:', errMessage || errData);
+      try {
+        console.error('[JV] saveAndPublish — full error:', JSON.stringify(err, Object.getOwnPropertyNames(err)).substring(0, 1000));
+      } catch {
+        console.error('[JV] saveAndPublish — error (not serializable):', String(err));
+      }
+    }
+
+    const didPublish = backendId !== null;
+
+    setAgreements(prev => {
+      const updated = prev.map(a =>
+        a.id === agreement.id
+          ? {
+              ...a,
+              id: backendId || agreement.id,
+              ...(didPublish
+                ? { status: 'active' as JVAgreement['status'], published: true, publishedAt: new Date().toISOString() }
+                : {}),
+            }
+          : a
+      );
+      return updated;
+    });
+
+    try {
+      await backendDealsQuery.refetch();
+      void queryClient.invalidateQueries({ queryKey: ['jv-agreements'] });
+      void queryClient.invalidateQueries({ queryKey: ['published-jv-deals'] });
+      void queryClient.invalidateQueries({ queryKey: ['jv-deals'] });
+      console.log('[JV] Invalidated all JV queries after publish, didPublish:', didPublish);
+    } catch (refetchErr) {
+      console.warn('[JV] Refetch after publish failed:', (refetchErr as Error)?.message);
+    }
+    if (selectedAgreement?.id === agreement.id && didPublish) {
+      const refetched = backendDealsQuery.data?.deals?.find(d => d.id === (backendId || agreement.id));
+      const finalPhotos = refetched?.photos || agreement.photos;
+      setSelectedAgreement({ ...agreement, id: backendId || agreement.id, status: 'active', published: true, publishedAt: new Date().toISOString(), photos: finalPhotos });
+    }
+
+    setIsPublishing(false);
+    setIsSaving(false);
+
+    if (didPublish) {
+      Alert.alert(
+        'Published — LIVE!',
+        `"${agreement.title}" is now LIVE on your landing page and invest module in real time.\n\nInvestors worldwide can see this deal and start investing immediately.`,
+        [
+          {
+            text: 'View on Landing',
+            style: 'default',
+            onPress: () => router.push('/landing' as any),
+          },
+          {
+            text: 'Go to Invest',
+            onPress: () => router.push('/(tabs)/invest' as any),
+          },
+          { text: 'Stay Here', style: 'cancel' },
+        ]
+      );
+    } else {
+      Alert.alert(
+        'Publish Failed',
+        `Could not publish "${agreement.title}" right now.\n\nError: ${errorMsg || 'Unknown error'}\n\nPlease try again.`,
+        [
+          { text: 'Retry', style: 'default', onPress: () => void handleSaveAndPublish(agreement, existingBackendId) },
+          { text: 'Cancel', style: 'cancel' },
+        ]
+      );
+    }
+  }, [saveAndPublishMutation, isExistingBackendId, selectedAgreement, backendDealsQuery, buildJVPayload, router, queryClient, convertPhotoToBase64]);
+
+  const _handleSaveDraft = useCallback(async (agreement: JVAgreement) => {
+    setIsSaving(true);
+    let backendId: string | null = null;
+    try {
+      const payload = buildJVPayload(agreement);
+      console.log('[JV] Save draft - sending payload:', agreement.title);
+
+      const saveResult = await saveMutation.mutateAsync(payload);
+      console.log('[JV] Draft save result:', JSON.stringify(saveResult).substring(0, 300));
+
+      if (saveResult?.id) {
+        backendId = typeof saveResult.id === 'string' ? saveResult.id : JSON.stringify(saveResult.id);
+        console.log('[JV] Saved draft to backend successfully:', backendId);
+      }
+    } catch (err: any) {
+      console.error('[JV] Draft save error:', err?.message || err);
+    }
+
+    setAgreements(prev => {
+      const updated = prev.map(a =>
+        a.id === agreement.id ? { ...a, id: backendId || agreement.id } : a
+      );
+      void persistLocal(updated);
+      return updated;
+    });
+
+    if (backendId) {
+      try {
+        void backendDealsQuery.refetch();
+        void queryClient.invalidateQueries({ queryKey: ['jv-agreements'] });
+        void queryClient.invalidateQueries({ queryKey: ['published-jv-deals'] });
+        void queryClient.invalidateQueries({ queryKey: ['jv-deals'] });
+      } catch { /* ignore */ }
+    }
+
+    setIsSaving(false);
+
+    Alert.alert(
+      backendId ? 'Saved to Server' : 'Save Failed',
+      backendId
+        ? `"${agreement.title}" has been saved to your account.`
+        : `Could not save "${agreement.title}". Please check your connection and try again.`,
+      [{ text: 'OK' }]
+    );
+  }, [saveMutation, backendDealsQuery, buildJVPayload, persistLocal, queryClient]);
+
+  const buildAgreementFromForm = useCallback((): JVAgreement => {
+    return {
+      id: editingAgreementId || generateJVNumber(),
       title: formTitle.trim(),
       projectName: formProjectName.trim(),
-      status: 'draft',
+      status: 'active' as const,
       type: formType as JVAgreement['type'],
-      totalInvestment: parseFloat(formTotalInvestment) || 0,
+      totalInvestment: parseFloat(parseAmountInput(formTotalInvestment)) || 0,
       currency: formCurrency,
       partners: partners.map(p => ({ ...p })),
       profitSplit: partners.map(p => ({ partnerId: p.id, percentage: p.equityShare })),
+      photos: formPhotos.length > 0 ? [...formPhotos] : undefined,
+      poolTiers: formPoolTiers.length > 0 ? formPoolTiers.map(t => ({ ...t })) : undefined,
       startDate: formStartDate,
-      endDate: formEndDate || new Date(new Date(formStartDate).getTime() + 365 * 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      endDate: formEndDate || (() => { try { const d = new Date(formStartDate); if (isNaN(d.getTime())) return new Date(Date.now() + 365 * 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]; return new Date(d.getTime() + 365 * 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]; } catch { return new Date(Date.now() + 365 * 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]; } })(),
       createdAt: new Date().toISOString().split('T')[0],
       propertyAddress: formPropertyAddress.trim() || undefined,
       expectedROI: parseFloat(formExpectedROI) || 15,
@@ -398,12 +1225,67 @@ export default function JVAgreementScreen() {
       minimumHoldPeriod: parseInt(formMinHold) || 12,
       description: formDescription.trim(),
     };
+  }, [formTitle, formProjectName, formTotalInvestment, formCurrency, formType, formDescription, formPropertyAddress, formExpectedROI, formDistribution, formExitStrategy, formGoverningLaw, formDisputeResolution, formConfidentiality, formNonCompete, formManagementFee, formPerformanceFee, formMinHold, formStartDate, formEndDate, partners, formPhotos, formPoolTiers, editingAgreementId]);
 
-    setAgreements(prev => [newAgreement, ...prev]);
-    resetForm();
+  const handleCreateAndPublish = useCallback(async () => {
+    const currentTitle = formTitleRef.current;
+    const currentProjectName = formProjectNameRef.current;
+    const currentTotalInvestment = formTotalInvestmentRef.current;
+    const currentEditingId = editingAgreementIdRef.current;
+    const currentPhotos = formPhotosRef.current;
+
+    console.log('[JV] handleCreateAndPublish — title:', JSON.stringify(currentTitle), 'project:', JSON.stringify(currentProjectName), 'investment:', JSON.stringify(currentTotalInvestment));
+
+    const missing: string[] = [];
+    if (!currentTitle.trim()) missing.push('Agreement Title');
+    if (!currentProjectName.trim()) missing.push('Project Name');
+    if (!currentTotalInvestment.trim()) missing.push('Total Investment');
+    if (missing.length > 0) {
+      Alert.alert('Required Fields', `Please fill in: ${missing.join(', ')}`);
+      return;
+    }
+
+    setIsPublishing(true);
+
+    const processedPhotos: string[] = [];
+    for (const photo of currentPhotos) {
+      const isRemote = (photo.startsWith('https://') || photo.startsWith('http://')) && !photo.startsWith('blob:');
+      const isDataUri = photo.startsWith('data:image/');
+      if (isRemote) {
+        processedPhotos.push(photo);
+      } else if (isDataUri) {
+        processedPhotos.push(photo);
+      } else {
+        try {
+          const converted = await convertPhotoToBase64(photo);
+          if (converted?.base64) {
+            processedPhotos.push(converted.base64);
+            console.log('[JV] Converted local photo to base64, size:', (converted.base64.length / 1024).toFixed(0), 'KB');
+          }
+        } catch (err) {
+          console.warn('[JV] Photo conversion failed:', (err as Error)?.message);
+        }
+      }
+    }
+    console.log('[JV] Photos converted:', processedPhotos.length, 'of', formPhotos.length);
+
+    const newAgreement = buildAgreementFromForm();
+    newAgreement.photos = processedPhotos.length > 0 ? processedPhotos : undefined;
+    const existingId = currentEditingId && isExistingBackendId(currentEditingId) ? currentEditingId : undefined;
+
+    console.log('[JV] handleCreateAndPublish — editing:', currentEditingId, 'existingBackendId:', existingId, 'photos:', processedPhotos.length);
+
+    if (currentEditingId) {
+      setAgreements(prev => prev.map(a => a.id === currentEditingId ? newAgreement : a));
+    } else {
+      setAgreements(prev => [newAgreement, ...prev]);
+    }
+
     setMode('list');
-    Alert.alert('JV Agreement Created', `"${newAgreement.title}" has been created as a draft.`);
-  }, [formTitle, formProjectName, formTotalInvestment, formCurrency, formType, formDescription, formPropertyAddress, formExpectedROI, formDistribution, formExitStrategy, formGoverningLaw, formDisputeResolution, formConfidentiality, formNonCompete, formManagementFee, formPerformanceFee, formMinHold, formStartDate, formEndDate, partners, resetForm]);
+    scrollRef.current?.scrollTo({ y: 0, animated: true });
+    await handleSaveAndPublish(newAgreement, existingId);
+    resetForm();
+  }, [buildAgreementFromForm, isExistingBackendId, resetForm, handleSaveAndPublish, convertPhotoToBase64, formPhotos.length]);
 
   const handleExportPDF = useCallback(async (agreement: JVAgreement) => {
     setIsGenerating(true);
@@ -450,7 +1332,7 @@ export default function JVAgreementScreen() {
   const handleShareWhatsApp = useCallback(async (agreement: JVAgreement) => {
     const msg = `IVXHOLDINGS — Joint Venture Agreement\n\n` +
       `Project: ${agreement.title}\n` +
-      `Total Investment: ${formatCurrency(agreement.totalInvestment, agreement.currency)}\n` +
+      `Total Investment: ${formatCurrency(agreement.totalInvestment)}\n` +
       `Expected ROI: ${agreement.expectedROI}%\n` +
       `Partners: ${agreement.partners.length}\n` +
       `Type: ${JV_AGREEMENT_TYPES.find(t => t.id === agreement.type)?.label}\n\n` +
@@ -505,7 +1387,7 @@ export default function JVAgreementScreen() {
         <View style={[st.statIconWrap, { backgroundColor: '#FFD70015' }]}>
           <DollarSign size={18} color="#FFD700" />
         </View>
-        <Text style={st.statValue}>${(totalPortfolioValue / 1000000).toFixed(1)}M</Text>
+        <Text style={st.statValue} numberOfLines={1} adjustsFontSizeToFit>{formatCurrency(totalPortfolioValue)}</Text>
         <Text style={st.statLabel}>Portfolio Value</Text>
       </View>
       <View style={st.statCard}>
@@ -529,8 +1411,7 @@ export default function JVAgreementScreen() {
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={st.filtersRow}>
       {[
         { id: 'all', label: 'All' },
-        { id: 'active', label: 'Active' },
-        { id: 'draft', label: 'Drafts' },
+        { id: 'active', label: 'Live' },
         { id: 'pending_review', label: 'Pending' },
         { id: 'completed', label: 'Completed' },
       ].map(f => (
@@ -547,63 +1428,162 @@ export default function JVAgreementScreen() {
   );
 
   const renderAgreementCard = (agreement: JVAgreement) => {
-    const statusCfg = STATUS_CONFIG[agreement.status] || STATUS_CONFIG.draft;
+    const statusCfg = STATUS_CONFIG[agreement.status] || DEFAULT_STATUS;
     const typeCfg = JV_AGREEMENT_TYPES.find(t => t.id === agreement.type);
+    const validPhotos = agreement.photos?.filter((p: string) => typeof p === 'string' && (p.startsWith('http') || p.startsWith('data:image/'))) || [];
 
     return (
       <TouchableOpacity
         key={agreement.id}
-        style={st.agreementCard}
+        style={st.igCard}
         onPress={() => { setSelectedAgreement(agreement); setMode('detail'); }}
-        activeOpacity={0.8}
+        activeOpacity={0.9}
         testID={`jv-card-${agreement.id}`}
       >
-        <View style={st.cardTopRow}>
-          <View style={[st.statusBadge, { backgroundColor: statusCfg.bg }]}>
-            <View style={[st.statusDot, { backgroundColor: statusCfg.color }]} />
-            <Text style={[st.statusText, { color: statusCfg.color }]}>{statusCfg.label}</Text>
+        {validPhotos.length > 0 ? (
+          <View style={st.igCardGalleryWrap}>
+            <ScrollView
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              style={st.igCardGalleryScroll}
+            >
+              {validPhotos.map((uri: string, idx: number) => (
+                <Image
+                  key={`card-photo-${agreement.id}-${idx}`}
+                  source={{ uri }}
+                  style={[st.igCardImage, { width: screenWidth - 40 }]}
+                  resizeMode="cover"
+                />
+              ))}
+            </ScrollView>
+            <View style={st.igCardOverlayTop}>
+              <View style={[st.statusBadge, { backgroundColor: statusCfg.bg }]}>
+                <View style={[st.statusDot, { backgroundColor: statusCfg.color }]} />
+                <Text style={[st.statusText, { color: statusCfg.color }]}>{statusCfg.label}</Text>
+              </View>
+              <View style={st.igCardPhotoCount}>
+                <ImageIcon size={10} color="#fff" />
+                <Text style={st.igCardPhotoCountText}>{validPhotos.length}</Text>
+              </View>
+            </View>
+            {agreement.published && (
+              <View style={st.igCardLiveBadge}>
+                <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: '#00C48C' }} />
+                <Text style={{ color: '#00C48C', fontSize: 9, fontWeight: '800' as const, letterSpacing: 0.8 }}>LIVE</Text>
+              </View>
+            )}
+            {validPhotos.length > 1 && (
+              <View style={st.igCardDots}>
+                {validPhotos.map((_: string, idx: number) => (
+                  <View key={idx} style={[st.igCardDot, idx === 0 && st.igCardDotActive]} />
+                ))}
+              </View>
+            )}
           </View>
-          <Text style={st.cardType}>{typeCfg?.icon} {typeCfg?.label}</Text>
-        </View>
-
-        <Text style={st.cardTitle}>{agreement.title}</Text>
-        <Text style={st.cardProject}>{agreement.projectName}</Text>
-
-        {agreement.propertyAddress && (
-          <View style={st.cardLocationRow}>
-            <MapPin size={12} color={Colors.textTertiary} />
-            <Text style={st.cardLocation} numberOfLines={1}>{agreement.propertyAddress}</Text>
+        ) : (
+          <View style={st.igCardNoPhoto}>
+            <ImageIcon size={32} color="#3A3A3A" />
+            <Text style={st.igCardNoPhotoText}>No photos yet</Text>
+            <View style={st.igCardOverlayTop}>
+              <View style={[st.statusBadge, { backgroundColor: statusCfg.bg }]}>
+                <View style={[st.statusDot, { backgroundColor: statusCfg.color }]} />
+                <Text style={[st.statusText, { color: statusCfg.color }]}>{statusCfg.label}</Text>
+              </View>
+            </View>
+            {agreement.published && (
+              <View style={st.igCardLiveBadge}>
+                <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: '#00C48C' }} />
+                <Text style={{ color: '#00C48C', fontSize: 9, fontWeight: '800' as const, letterSpacing: 0.8 }}>LIVE</Text>
+              </View>
+            )}
           </View>
         )}
 
-        <View style={st.cardMetricsRow}>
-          <View style={st.cardMetric}>
-            <Text style={st.cardMetricValue}>{formatCurrency(agreement.totalInvestment, agreement.currency)}</Text>
-            <Text style={st.cardMetricLabel}>Investment</Text>
-          </View>
-          <View style={st.cardMetricDivider} />
-          <View style={st.cardMetric}>
-            <Text style={[st.cardMetricValue, { color: '#00C48C' }]}>{agreement.expectedROI}%</Text>
-            <Text style={st.cardMetricLabel}>Expected ROI</Text>
-          </View>
-          <View style={st.cardMetricDivider} />
-          <View style={st.cardMetric}>
-            <Text style={st.cardMetricValue}>{agreement.partners.length}</Text>
-            <Text style={st.cardMetricLabel}>Partners</Text>
-          </View>
-        </View>
-
-        <View style={st.cardPartnersRow}>
-          {agreement.partners.slice(0, 3).map((p, i) => (
-            <View key={p.id} style={[st.partnerAvatarSmall, { backgroundColor: ROLE_CONFIG[p.role]?.color || '#666', marginLeft: i > 0 ? -8 : 0, zIndex: 3 - i }]}>
-              <Text style={st.partnerAvatarText}>{p.name.charAt(0)}</Text>
+        <View style={st.igCardBody}>
+          <View style={st.igCardHeaderRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={st.igCardTitle}>{agreement.title}</Text>
+              <Text style={st.igCardProject}>{agreement.projectName}</Text>
             </View>
-          ))}
-          {agreement.partners.length > 3 && (
-            <Text style={st.morePartners}>+{agreement.partners.length - 3}</Text>
-          )}
-          <View style={{ flex: 1 }} />
-          <ChevronRight size={16} color={Colors.textTertiary} />
+            <View style={st.igCardTypeBadge}>
+              <Text style={st.igCardTypeText}>{typeCfg?.icon} {typeCfg?.label}</Text>
+            </View>
+          </View>
+
+          {agreement.propertyAddress ? (
+            <View style={st.igCardLocationRow}>
+              <MapPin size={12} color="#5A5A5A" />
+              <Text style={st.igCardLocation} numberOfLines={1}>{agreement.propertyAddress}</Text>
+            </View>
+          ) : null}
+
+          <View style={st.igCardMetrics}>
+            <View style={st.igCardMetric}>
+              <DollarSign size={14} color="#FFD700" />
+              <Text style={st.igCardMetricValue} numberOfLines={1} adjustsFontSizeToFit>{formatCurrency(agreement.totalInvestment)}</Text>
+              <Text style={st.igCardMetricLabel}>Total Investment</Text>
+            </View>
+            <View style={st.igCardMetricDivider} />
+            <View style={st.igCardMetric}>
+              <TrendingUp size={14} color="#00C48C" />
+              <Text style={[st.igCardMetricValue, { color: '#00C48C' }]}>{agreement.expectedROI}%</Text>
+              <Text style={st.igCardMetricLabel}>Expected ROI</Text>
+            </View>
+            <View style={st.igCardMetricDivider} />
+            <View style={st.igCardMetric}>
+              <Users size={14} color="#4A90D9" />
+              <Text style={st.igCardMetricValue}>{agreement.partners.length}</Text>
+              <Text style={st.igCardMetricLabel}>Partners</Text>
+            </View>
+          </View>
+
+          <View style={st.igCardFooter}>
+            <View style={st.igCardAvatars}>
+              {agreement.partners.slice(0, 3).map((p, i) => (
+                <View key={p.id} style={[st.partnerAvatarSmall, { backgroundColor: ROLE_CONFIG[p.role]?.color || '#666', marginLeft: i > 0 ? -8 : 0, zIndex: 3 - i }]}>
+                  <Text style={st.partnerAvatarText}>{p.name.charAt(0)}</Text>
+                </View>
+              ))}
+              {agreement.partners.length > 3 && (
+                <Text style={st.morePartners}>+{agreement.partners.length - 3}</Text>
+              )}
+            </View>
+            <View style={st.igCardActions}>
+              {!agreement.published && (
+                <>
+                  <TouchableOpacity
+                    style={st.editCardBtn}
+                    onPress={() => loadAgreementForEdit(agreement)}
+                    activeOpacity={0.7}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Edit3 size={14} color={Colors.primary} />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[st.editCardBtn, { backgroundColor: '#FF4D4D15', marginLeft: 6 }]}
+                    onPress={() => { void handleDeleteDeal(agreement.id, agreement.title); }}
+                    activeOpacity={0.7}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    testID={`jv-delete-${agreement.id}`}
+                    disabled={isDeletingId === agreement.id}
+                  >
+                    {isDeletingId === agreement.id ? (
+                      <ActivityIndicator size="small" color="#FF4D4D" />
+                    ) : (
+                      <Trash2 size={14} color="#FF4D4D" />
+                    )}
+                  </TouchableOpacity>
+                </>
+              )}
+              {agreement.published && (
+                <View style={{ backgroundColor: '#00C48C15', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, marginRight: 4 }}>
+                  <Text style={{ color: '#00C48C', fontSize: 10, fontWeight: '700' as const }}>Admin Only</Text>
+                </View>
+              )}
+              <ChevronRight size={16} color={Colors.textTertiary} style={{ marginLeft: 4 }} />
+            </View>
+          </View>
         </View>
       </TouchableOpacity>
     );
@@ -624,21 +1604,30 @@ export default function JVAgreementScreen() {
       {renderPortfolioStats()}
       {renderFilters()}
 
-      <TouchableOpacity
-        style={st.createBtn}
-        onPress={() => { resetForm(); setMode('create'); }}
-        activeOpacity={0.85}
-        testID="jv-create-new"
-      >
-        <Plus size={20} color="#000" />
-        <Text style={st.createBtnText}>Create New JV Agreement</Text>
-      </TouchableOpacity>
+      <View style={{ flexDirection: 'row', gap: 10, marginTop: 16 }}>
+        <TouchableOpacity
+          style={[st.createBtn, { flex: 1, marginTop: 0 }]}
+          onPress={() => { resetForm(); setMode('create'); }}
+          activeOpacity={0.85}
+          testID="jv-create-new"
+        >
+          <Plus size={20} color="#000" />
+          <Text style={st.createBtnText}>Create New</Text>
+        </TouchableOpacity>
+      </View>
+
+      {agreements.some(a => a.published) && (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12, backgroundColor: '#1A1A2E', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#2A2A3E' }}>
+          <Shield size={16} color="#FFD700" />
+          <Text style={{ color: '#9A9A9A', fontSize: 12, flex: 1 }}>Live deals can only be edited or deleted from the <Text style={{ color: '#FFD700', fontWeight: '700' as const }}>Admin Panel</Text>.</Text>
+        </View>
+      )}
 
       {filteredAgreements.length === 0 ? (
         <View style={st.emptyState}>
           <Briefcase size={48} color={Colors.textTertiary} />
           <Text style={st.emptyTitle}>No Agreements Found</Text>
-          <Text style={st.emptySubtitle}>Create your first JV agreement to get started</Text>
+          <Text style={st.emptySubtitle}>{activeFilter !== 'all' ? `No ${activeFilter} agreements. Try "All" filter.` : 'Create your first JV agreement to get started'}</Text>
         </View>
       ) : (
         filteredAgreements.map(renderAgreementCard)
@@ -649,26 +1638,80 @@ export default function JVAgreementScreen() {
   const renderDetailMode = () => {
     if (!selectedAgreement) return null;
     const ag = selectedAgreement;
-    const statusCfg = STATUS_CONFIG[ag.status] || STATUS_CONFIG.draft;
+    const statusCfg = STATUS_CONFIG[ag.status] || DEFAULT_STATUS;
     const typeCfg = JV_AGREEMENT_TYPES.find(t => t.id === ag.type);
 
     return (
       <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
-        <View style={st.detailHero}>
-          <View style={st.detailHeroTop}>
-            <View style={[st.statusBadge, { backgroundColor: statusCfg.bg }]}>
-              <View style={[st.statusDot, { backgroundColor: statusCfg.color }]} />
-              <Text style={[st.statusText, { color: statusCfg.color }]}>{statusCfg.label}</Text>
+        {ag.photos && ag.photos.length > 0 && (
+          <View style={st.igGalleryContainer}>
+            <ScrollView
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              onMomentumScrollEnd={(e: NativeSyntheticEvent<NativeScrollEvent>) => {
+                const idx = Math.round(e.nativeEvent.contentOffset.x / screenWidth);
+                setGalleryIndex(idx);
+              }}
+              style={st.igGalleryScroll}
+            >
+              {ag.photos.map((uri, i) => (
+                <TouchableOpacity
+                  key={`gallery-${i}`}
+                  activeOpacity={0.95}
+                  onPress={() => setFullscreenPhoto(uri)}
+                >
+                  <Image
+                    source={{ uri }}
+                    style={[st.igGalleryImage, { width: screenWidth }]}
+                    resizeMode="cover"
+                  />
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            <View style={st.igGalleryOverlay}>
+              <View style={[st.statusBadge, { backgroundColor: statusCfg.bg }]}>
+                <View style={[st.statusDot, { backgroundColor: statusCfg.color }]} />
+                <Text style={[st.statusText, { color: statusCfg.color }]}>{statusCfg.label}</Text>
+              </View>
+              <View style={st.igGalleryCounter}>
+                <ImageIcon size={12} color="#fff" />
+                <Text style={st.igGalleryCounterText}>{galleryIndex + 1}/{ag.photos.length}</Text>
+              </View>
             </View>
-            <Text style={st.detailType}>{typeCfg?.icon} {typeCfg?.label}</Text>
+            <View style={st.igGalleryDots}>
+              {ag.photos.map((_, i) => (
+                <View
+                  key={`dot-${i}`}
+                  style={[st.igGalleryDot, galleryIndex === i && st.igGalleryDotActive]}
+                />
+              ))}
+            </View>
           </View>
+        )}
+
+        <View style={st.detailHero}>
+          {!(ag.photos && ag.photos.length > 0) && (
+            <View style={st.detailHeroTop}>
+              <View style={[st.statusBadge, { backgroundColor: statusCfg.bg }]}>
+                <View style={[st.statusDot, { backgroundColor: statusCfg.color }]} />
+                <Text style={[st.statusText, { color: statusCfg.color }]}>{statusCfg.label}</Text>
+              </View>
+              <Text style={st.detailType}>{typeCfg?.icon} {typeCfg?.label}</Text>
+            </View>
+          )}
+          {ag.photos && ag.photos.length > 0 && (
+            <View style={st.detailHeroTopInline}>
+              <Text style={st.detailType}>{typeCfg?.icon} {typeCfg?.label}</Text>
+            </View>
+          )}
           <Text style={st.detailTitle}>{ag.title}</Text>
           <Text style={st.detailProject}>{ag.projectName}</Text>
 
           <View style={st.detailMetrics}>
             <View style={st.detailMetricItem}>
               <DollarSign size={16} color="#FFD700" />
-              <Text style={st.detailMetricValue}>{formatCurrency(ag.totalInvestment, ag.currency)}</Text>
+              <Text style={st.detailMetricValue}>{formatCurrency(ag.totalInvestment)}</Text>
               <Text style={st.detailMetricLabel}>Total Investment</Text>
             </View>
             <View style={st.detailMetricItem}>
@@ -683,6 +1726,118 @@ export default function JVAgreementScreen() {
             </View>
           </View>
         </View>
+
+        {ag.poolTiers && ag.poolTiers.length > 0 && (
+          <View style={st.formCard}>
+            <View style={st.poolTableHeader}>
+              <View style={st.poolTableHeaderLeft}>
+                <View style={[st.sectionIcon, { backgroundColor: '#FFD70015' }]}>
+                  <PieChart size={18} color="#FFD700" />
+                </View>
+                <Text style={st.sectionHeaderTitle}>Pool Investment Table</Text>
+              </View>
+              <View style={st.poolTotalBadge}>
+                <Text style={st.poolTotalLabel}>Total Raise</Text>
+                <Text style={st.poolTotalValue}>{formatCurrency(ag.poolTiers.reduce((s, t) => s + t.targetAmount, 0))}</Text>
+              </View>
+            </View>
+
+            <View style={st.poolTiersContainer}>
+              {ag.poolTiers.map((tier) => {
+                const tierCfg = POOL_TIER_TYPES.find(t => t.id === tier.type);
+                const fillPct = tier.targetAmount > 0 ? Math.min((tier.currentRaised / tier.targetAmount) * 100, 100) : 0;
+                return (
+                  <View key={tier.id} style={st.poolTierCard}>
+                    <View style={st.poolTierHeaderRow}>
+                      <View style={st.poolTierLabelRow}>
+                        <Text style={st.poolTierIcon}>{tierCfg?.icon || '\u2699\ufe0f'}</Text>
+                        <View>
+                          <Text style={st.poolTierLabel}>{tier.label || tierCfg?.label}</Text>
+                          <Text style={[st.poolTierType, { color: tierCfg?.color || '#999' }]}>{tierCfg?.label}</Text>
+                        </View>
+                      </View>
+                      <View style={[st.poolTierStatusBadge, {
+                        backgroundColor: tier.status === 'open' ? '#00C48C20' : tier.status === 'filled' ? '#FFD70020' : '#FF4D4D20'
+                      }]}>
+                        <View style={[st.poolTierStatusDot, {
+                          backgroundColor: tier.status === 'open' ? '#00C48C' : tier.status === 'filled' ? '#FFD700' : '#FF4D4D'
+                        }]} />
+                        <Text style={[st.poolTierStatusText, {
+                          color: tier.status === 'open' ? '#00C48C' : tier.status === 'filled' ? '#FFD700' : '#FF4D4D'
+                        }]}>{tier.status === 'open' ? 'Open' : tier.status === 'filled' ? 'Filled' : 'Closed'}</Text>
+                      </View>
+                    </View>
+
+                    <View style={st.poolTierAmountRow}>
+                      <Text style={st.poolTierTargetLabel}>Target</Text>
+                      <Text style={st.poolTierTargetValue}>{formatCurrency(tier.targetAmount)}</Text>
+                    </View>
+
+                    <View style={st.poolTierProgressWrap}>
+                      <View style={[st.poolTierProgressBar, { width: `${fillPct}%` as any, backgroundColor: tierCfg?.color || '#FFD700' }]} />
+                    </View>
+                    <View style={st.poolTierProgressLabels}>
+                      <Text style={st.poolTierRaised}>{formatCurrency(tier.currentRaised)} raised</Text>
+                      <Text style={st.poolTierPct}>{fillPct.toFixed(0)}%</Text>
+                    </View>
+
+                    <View style={st.poolTierInfoGrid}>
+                      <View style={st.poolTierInfoItem}>
+                        <Text style={st.poolTierInfoLabel}>Min Investment</Text>
+                        <Text style={st.poolTierInfoValue}>{formatCurrency(tier.minInvestment)}</Text>
+                      </View>
+                      <View style={st.poolTierInfoDivider} />
+                      <View style={st.poolTierInfoItem}>
+                        <Text style={st.poolTierInfoLabel}>Max Investors</Text>
+                        <Text style={st.poolTierInfoValue}>{tier.maxInvestors ? tier.maxInvestors : 'Unlimited'}</Text>
+                      </View>
+                      <View style={st.poolTierInfoDivider} />
+                      <View style={st.poolTierInfoItem}>
+                        <Text style={st.poolTierInfoLabel}>Investors</Text>
+                        <Text style={st.poolTierInfoValue}>{tier.investorCount}</Text>
+                      </View>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+        )}
+
+        {!ag.published ? (
+          <>
+            <TouchableOpacity
+              style={st.editDetailBtn}
+              onPress={() => loadAgreementForEdit(ag)}
+              activeOpacity={0.85}
+              testID="jv-detail-edit"
+            >
+              <Edit3 size={18} color="#000" />
+              <Text style={st.editDetailBtnText}>Edit This Deal</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={st.publishDetailBtn}
+              onPress={() => handleSaveAndPublish(ag)}
+              activeOpacity={0.85}
+              disabled={isSaving || isPublishing}
+              testID="jv-detail-publish"
+            >
+              <Globe size={18} color="#fff" />
+              <Text style={st.publishDetailBtnText}>
+                {isSaving ? 'Saving...' : isPublishing ? 'Publishing...' : 'Save & Publish to Landing Page'}
+              </Text>
+            </TouchableOpacity>
+          </>
+        ) : (
+          <View style={{ backgroundColor: '#1A1A2E', borderRadius: 14, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: '#FFD70030', alignItems: 'center' }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+              <Shield size={18} color="#FFD700" />
+              <Text style={{ color: '#FFD700', fontSize: 15, fontWeight: '700' as const }}>Published & Live</Text>
+            </View>
+            <Text style={{ color: '#9A9A9A', fontSize: 12, textAlign: 'center', lineHeight: 18 }}>This deal is live. To edit or delete, go to the Admin Panel → JV Deal Management.</Text>
+          </View>
+        )}
 
         <View style={st.detailActions}>
           <TouchableOpacity style={st.actionBtn} onPress={() => handlePreview(ag)} activeOpacity={0.7}>
@@ -756,7 +1911,7 @@ export default function JVAgreementScreen() {
                     <View style={st.partnerMetrics}>
                       <View style={st.partnerMetricItem}>
                         <Text style={st.partnerMetricLabel}>Contribution</Text>
-                        <Text style={[st.partnerMetricValue, { color: '#00C48C' }]}>{formatCurrency(p.contribution, ag.currency)}</Text>
+                        <Text style={[st.partnerMetricValue, { color: '#00C48C' }]}>{formatCurrency(p.contribution)}</Text>
                       </View>
                       <View style={st.partnerMetricItem}>
                         <Text style={st.partnerMetricLabel}>Equity Share</Text>
@@ -859,8 +2014,8 @@ export default function JVAgreementScreen() {
     <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
       <View style={st.createHero}>
         <Sparkles size={28} color="#FFD700" />
-        <Text style={st.createHeroTitle}>New JV Agreement</Text>
-        <Text style={st.createHeroSubtitle}>Create a professionally structured joint venture agreement with full legal protection.</Text>
+        <Text style={st.createHeroTitle}>{editingAgreementId ? 'Edit JV Agreement' : 'New JV Agreement'}</Text>
+        <Text style={st.createHeroSubtitle}>{editingAgreementId ? 'Update your joint venture agreement details below.' : 'Create a professionally structured joint venture agreement with full legal protection.'}</Text>
       </View>
 
       <View style={st.formCard}>
@@ -895,7 +2050,7 @@ export default function JVAgreementScreen() {
 
             <View style={st.rowInputs}>
               <View style={{ flex: 1 }}>
-                {renderInput('Total Investment', formTotalInvestment, setFormTotalInvestment, { keyboardType: 'numeric', placeholder: '5,000,000' })}
+                {renderInput('Total Investment ($)', formTotalInvestment ? formatAmountInput(formTotalInvestment) : '', (v) => setFormTotalInvestment(parseAmountInput(v)), { keyboardType: 'numeric', placeholder: '5,000,000' })}
               </View>
               <View style={{ width: 100 }}>
                 {renderInput('Currency', formCurrency, setFormCurrency)}
@@ -976,7 +2131,7 @@ export default function JVAgreementScreen() {
 
                 <View style={st.rowInputs}>
                   <View style={{ flex: 1 }}>
-                    {renderInput('Contribution', String(partner.contribution || ''), (v) => updatePartner(index, 'contribution', parseFloat(v) || 0), { keyboardType: 'numeric' })}
+                    {renderInput('Contribution ($)', partner.contribution ? formatAmountInput(String(partner.contribution)) : '', (v) => updatePartner(index, 'contribution', parseFloat(parseAmountInput(v)) || 0), { keyboardType: 'numeric' })}
                   </View>
                   <View style={{ width: 100 }}>
                     {renderInput('Equity %', String(partner.equityShare || ''), (v) => updatePartner(index, 'equityShare', parseFloat(v) || 0), { keyboardType: 'numeric' })}
@@ -997,9 +2152,125 @@ export default function JVAgreementScreen() {
                 {partners.reduce((s, p) => s + p.equityShare, 0)}%
               </Text>
               {partners.reduce((s, p) => s + p.equityShare, 0) !== 100 && (
-                <Text style={st.equityWarning}>Must equal 100%</Text>
+                <Text style={st.equityWarning}>{partners.reduce((s, p) => s + p.equityShare, 0) > 100 ? 'Exceeds 100% — review equity split' : `${100 - partners.reduce((s, p) => s + p.equityShare, 0)}% unallocated — add more partners or adjust`}</Text>
               )}
             </View>
+          </View>
+        )}
+      </View>
+
+      <View style={st.formCard}>
+        {renderSectionHeader('photos_section', 'Project Photos', <Camera size={18} color="#FF9500" />)}
+        {expandedSections.photos_section && (
+          <View style={st.sectionContent}>
+            <Text style={st.photoHint}>Upload up to 8 high-quality photos to showcase your project to investors</Text>
+
+            {formPhotos.length > 0 && (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={st.photoPreviewScroll}>
+                {formPhotos.map((uri, i) => {
+                  const isLocal = uri.startsWith('file://') || uri.startsWith('content://') || uri.startsWith('blob:') || uri.startsWith('data:image/');
+                  return (
+                    <View key={`photo-${i}`} style={st.photoPreviewItem}>
+                      <Image source={{ uri }} style={st.photoPreviewImage} />
+                      <TouchableOpacity
+                        style={st.photoRemoveBtn}
+                        onPress={() => removePhoto(i)}
+                        activeOpacity={0.7}
+                      >
+                        <X size={14} color="#fff" />
+                      </TouchableOpacity>
+                      <View style={[st.photoIndexBadge, isLocal ? { backgroundColor: '#FF9500' } : { backgroundColor: '#00C48C' }]}>
+                        <Text style={st.photoIndexText}>{isLocal ? '↑' : '✓'}</Text>
+                      </View>
+                    </View>
+                  );
+                })}
+              </ScrollView>
+            )}
+
+            <View style={st.photoUploadRow}>
+              <TouchableOpacity style={st.photoUploadBtn} onPress={pickPhotos} activeOpacity={0.7}>
+                <ImageIcon size={20} color={Colors.primary} />
+                <Text style={st.photoUploadBtnText}>Gallery</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={st.photoUploadBtn} onPress={takePhoto} activeOpacity={0.7}>
+                <Camera size={20} color="#FF9500" />
+                <Text style={[st.photoUploadBtnText, { color: '#FF9500' }]}>Camera</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={st.photoCount}>{formPhotos.length}/8 photos added</Text>
+          </View>
+        )}
+      </View>
+
+      <View style={st.formCard}>
+        {renderSectionHeader('pool_tiers', 'Pool Investment Table', <PieChart size={18} color="#FFD700" />)}
+        {expandedSections.pool_tiers && (
+          <View style={st.sectionContent}>
+            <Text style={st.photoHint}>Define investment tiers for your deal. Investors select a pool to participate in.</Text>
+
+            <View style={st.poolFormSummary}>
+              <View style={st.poolFormSummaryRow}>
+                <Text style={st.poolFormSummaryLabel}>Total Raise Target</Text>
+                <Text style={st.poolFormSummaryValue}>{formatCurrency(formPoolTiers.reduce((s, t) => s + t.targetAmount, 0))}</Text>
+              </View>
+              <View style={st.poolFormSummaryDivider} />
+              <View style={st.poolFormSummaryRow}>
+                <Text style={st.poolFormSummaryLabel}>Tiers</Text>
+                <Text style={st.poolFormSummaryValue}>{formPoolTiers.length}</Text>
+              </View>
+            </View>
+
+            {formPoolTiers.map((tier, index) => {
+              const tierCfg = POOL_TIER_TYPES.find(t => t.id === tier.type);
+              return (
+                <View key={tier.id} style={[st.poolTierFormCard, { borderLeftColor: tierCfg?.color || '#666' }]}>
+                  <View style={st.partnerFormHeader}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <Text style={{ fontSize: 20 }}>{tierCfg?.icon || '\u2699\ufe0f'}</Text>
+                      <Text style={[st.partnerFormTitle, { color: tierCfg?.color || Colors.primary }]}>Tier {index + 1}</Text>
+                    </View>
+                    {formPoolTiers.length > 1 && (
+                      <TouchableOpacity onPress={() => removePoolTier(index)} activeOpacity={0.7}>
+                        <Trash2 size={18} color={Colors.error} />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+
+                  {renderInput('Tier Label', tier.label, (v) => updatePoolTier(index, 'label', v), { placeholder: 'e.g. Tokenized Pool' })}
+
+                  <Text style={st.inputLabel}>Investment Type</Text>
+                  <View style={st.chipRow}>
+                    {POOL_TIER_TYPES.map(pt => (
+                      <TouchableOpacity
+                        key={pt.id}
+                        style={[st.chip, tier.type === pt.id && { borderColor: pt.color, backgroundColor: pt.color + '20' }]}
+                        onPress={() => updatePoolTier(index, 'type', pt.id)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={[st.chipText, tier.type === pt.id && { color: pt.color }]}>{pt.icon} {pt.label}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+
+                  <View style={st.rowInputs}>
+                    <View style={{ flex: 1 }}>
+                      {renderInput('Target Amount ($)', tier.targetAmount ? formatAmountInput(String(tier.targetAmount)) : '', (v) => updatePoolTier(index, 'targetAmount', parseFloat(parseAmountInput(v)) || 0), { keyboardType: 'numeric', placeholder: '400,000' })}
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      {renderInput('Min Investment ($)', tier.minInvestment ? formatAmountInput(String(tier.minInvestment)) : '', (v) => updatePoolTier(index, 'minInvestment', parseFloat(parseAmountInput(v)) || 0), { keyboardType: 'numeric', placeholder: '1,000' })}
+                    </View>
+                  </View>
+
+                  {renderInput('Max Investors (optional)', String(tier.maxInvestors || ''), (v) => updatePoolTier(index, 'maxInvestors', v === '' ? 0 : (parseInt(v) || 0)), { keyboardType: 'numeric', placeholder: 'Leave empty for unlimited' })}
+                </View>
+              );
+            })}
+
+            <TouchableOpacity style={st.addPartnerBtn} onPress={addPoolTier} activeOpacity={0.7}>
+              <Plus size={18} color={Colors.primary} />
+              <Text style={st.addPartnerText}>Add Investment Tier</Text>
+            </TouchableOpacity>
           </View>
         )}
       </View>
@@ -1056,34 +2327,75 @@ export default function JVAgreementScreen() {
         )}
       </View>
 
+      {isUploadingPhotos && (
+        <View style={st.uploadProgressBar}>
+          <ActivityIndicator size="small" color={Colors.primary} />
+          <Text style={st.uploadProgressText}>{uploadProgress || 'Uploading photos...'}</Text>
+        </View>
+      )}
+
       <TouchableOpacity
-        style={st.submitBtn}
-        onPress={handleCreateAgreement}
+        style={st.publishBtn}
+        onPress={handleCreateAndPublish}
         activeOpacity={0.85}
-        testID="jv-submit"
+        testID="jv-publish"
+        disabled={isPublishing || isSaving || isUploadingPhotos}
       >
-        <FileCheck size={20} color="#000" />
-        <Text style={st.submitBtnText}>Create JV Agreement</Text>
+        <Globe size={20} color="#fff" />
+        <Text style={st.publishBtnText}>{isUploadingPhotos ? uploadProgress : isSaving ? 'Saving...' : isPublishing ? 'Publishing...' : editingAgreementId ? 'Update & Publish' : 'Save & Publish'}</Text>
       </TouchableOpacity>
     </Animated.View>
   );
 
   const getBackHandler = () => {
-    if (mode === 'detail' || mode === 'create') {
-      return () => setMode('list');
+    if (mode === 'detail' || mode === 'create' || mode === 'edit') {
+      return () => { resetForm(); setMode('list'); };
     }
     return () => router.back();
   };
 
   const getHeaderTitle = () => {
     if (mode === 'create') return 'New JV Agreement';
+    if (mode === 'edit') return 'Edit JV Agreement';
     if (mode === 'detail' && selectedAgreement) return selectedAgreement.title;
     return 'JV Agreements';
+  };
+
+  const renderFullscreenViewer = () => {
+    if (!fullscreenPhoto) return null;
+    const photos = selectedAgreement?.photos || [];
+    const currentIdx = photos.indexOf(fullscreenPhoto);
+    return (
+      <Modal visible={!!fullscreenPhoto} transparent animationType="fade" onRequestClose={() => setFullscreenPhoto(null)}>
+        <View style={st.fullscreenOverlay}>
+          <TouchableOpacity style={st.fullscreenClose} onPress={() => setFullscreenPhoto(null)} activeOpacity={0.7}>
+            <X size={24} color="#fff" />
+          </TouchableOpacity>
+          <Image source={{ uri: fullscreenPhoto }} style={st.fullscreenImage} resizeMode="contain" />
+          {currentIdx >= 0 && (
+            <View style={st.fullscreenNav}>
+              {currentIdx > 0 && (
+                <TouchableOpacity style={st.fullscreenArrow} onPress={() => setFullscreenPhoto(photos[currentIdx - 1])} activeOpacity={0.7}>
+                  <ChevronLeft size={28} color="#fff" />
+                </TouchableOpacity>
+              )}
+              <Text style={st.fullscreenCounter}>{currentIdx + 1} / {photos.length}</Text>
+              {currentIdx < photos.length - 1 && (
+                <TouchableOpacity style={st.fullscreenArrow} onPress={() => setFullscreenPhoto(photos[currentIdx + 1])} activeOpacity={0.7}>
+                  <ChevronRight size={28} color="#fff" />
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+        </View>
+      </Modal>
+    );
   };
 
   return (
     <View style={st.container}>
       <Stack.Screen options={{ headerShown: false }} />
+      {renderFullscreenViewer()}
       <SafeAreaView edges={['top']} style={st.safeArea}>
         <View style={st.header}>
           <TouchableOpacity style={st.backBtn} onPress={getBackHandler()} activeOpacity={0.7}>
@@ -1105,7 +2417,7 @@ export default function JVAgreementScreen() {
           >
             {mode === 'list' && renderListMode()}
             {mode === 'detail' && renderDetailMode()}
-            {mode === 'create' && renderCreateMode()}
+            {(mode === 'create' || mode === 'edit') && renderCreateMode()}
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -1148,6 +2460,35 @@ const st = StyleSheet.create({
   emptySubtitle: { color: Colors.textTertiary, fontSize: 13 },
 
   agreementCard: { backgroundColor: Colors.surface, borderRadius: 18, padding: 20, marginBottom: 14, borderWidth: 1, borderColor: Colors.surfaceBorder },
+  igCard: { backgroundColor: Colors.surface, borderRadius: 18, marginBottom: 16, borderWidth: 1, borderColor: Colors.surfaceBorder, overflow: 'hidden' as const },
+  igCardGalleryWrap: { position: 'relative' as const, height: 280, overflow: 'hidden' as const, backgroundColor: '#000' },
+  igCardGalleryScroll: { height: 280 },
+  igCardImage: { height: 280, backgroundColor: Colors.backgroundSecondary },
+  igCardOverlayTop: { position: 'absolute' as const, top: 12, left: 12, right: 12, flexDirection: 'row' as const, justifyContent: 'space-between' as const, alignItems: 'center' as const, zIndex: 2 },
+  igCardPhotoCount: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 4, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 4 },
+  igCardPhotoCountText: { color: '#fff', fontSize: 10, fontWeight: '700' as const },
+  igCardLiveBadge: { position: 'absolute' as const, top: 12, right: 12, flexDirection: 'row' as const, alignItems: 'center' as const, gap: 4, backgroundColor: '#00C48C18', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 4, borderWidth: 1, borderColor: '#00C48C30', zIndex: 3 },
+  igCardDots: { position: 'absolute' as const, bottom: 12, left: 0, right: 0, flexDirection: 'row' as const, justifyContent: 'center' as const, gap: 5, zIndex: 2 },
+  igCardDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.35)' },
+  igCardDotActive: { width: 18, backgroundColor: '#fff', borderRadius: 3 },
+  igCardNoPhoto: { height: 160, alignItems: 'center' as const, justifyContent: 'center' as const, backgroundColor: '#0A0A0C', gap: 6, position: 'relative' as const },
+  igCardNoPhotoText: { color: '#3A3A3A', fontSize: 12 },
+  igCardBody: { padding: 16, gap: 12 },
+  igCardHeaderRow: { flexDirection: 'row' as const, alignItems: 'flex-start' as const, gap: 10 },
+  igCardTitle: { color: Colors.text, fontSize: 18, fontWeight: '800' as const, marginBottom: 2 },
+  igCardProject: { color: Colors.textSecondary, fontSize: 13 },
+  igCardTypeBadge: { backgroundColor: Colors.backgroundSecondary, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 5, borderWidth: 1, borderColor: Colors.surfaceBorder },
+  igCardTypeText: { color: Colors.textTertiary, fontSize: 11, fontWeight: '600' as const },
+  igCardLocationRow: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 5 },
+  igCardLocation: { color: '#5A5A5A', fontSize: 12, flex: 1 },
+  igCardMetrics: { flexDirection: 'row' as const, alignItems: 'center' as const, backgroundColor: Colors.backgroundSecondary, borderRadius: 14, padding: 14 },
+  igCardMetric: { flex: 1, alignItems: 'center' as const, gap: 4 },
+  igCardMetricValue: { color: Colors.text, fontSize: 14, fontWeight: '800' as const },
+  igCardMetricLabel: { color: Colors.textTertiary, fontSize: 9, marginTop: 1 },
+  igCardMetricDivider: { width: 1, height: 34, backgroundColor: Colors.surfaceBorder },
+  igCardFooter: { flexDirection: 'row' as const, alignItems: 'center' as const, justifyContent: 'space-between' as const },
+  igCardAvatars: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 6 },
+  igCardActions: { flexDirection: 'row' as const, alignItems: 'center' as const },
   cardTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   statusBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 },
   statusDot: { width: 6, height: 6, borderRadius: 3 },
@@ -1254,6 +2595,95 @@ const st = StyleSheet.create({
   createHeroTitle: { color: Colors.text, fontSize: 22, fontWeight: '900' as const },
   createHeroSubtitle: { color: Colors.textSecondary, fontSize: 13, textAlign: 'center' as const, lineHeight: 20, paddingHorizontal: 20 },
 
-  submitBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: Colors.primary, borderRadius: 16, paddingVertical: 18, marginTop: 20, marginBottom: 40 },
+  submitBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: Colors.primary, borderRadius: 16, paddingVertical: 18, marginTop: 20 },
   submitBtnText: { color: '#000', fontSize: 16, fontWeight: '800' as const },
+  uploadProgressBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: Colors.primary + '15', borderRadius: 12, padding: 14, marginBottom: 12 },
+  uploadProgressText: { color: Colors.primary, fontSize: 14, fontWeight: '600' as const },
+  publishBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: '#00C48C', borderRadius: 16, paddingVertical: 18, marginTop: 12, marginBottom: 40 },
+  publishBtnText: { color: '#fff', fontSize: 16, fontWeight: '800' as const },
+  editDetailBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: Colors.primary, borderRadius: 16, paddingVertical: 16, marginTop: 14 },
+  editDetailBtnText: { color: '#000', fontSize: 15, fontWeight: '800' as const },
+  publishDetailBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: '#00C48C', borderRadius: 16, paddingVertical: 16, marginTop: 10 },
+  publishDetailBtnText: { color: '#fff', fontSize: 15, fontWeight: '800' as const },
+  editCardBtn: { width: 32, height: 32, borderRadius: 10, backgroundColor: Colors.primary + '15', alignItems: 'center', justifyContent: 'center', marginRight: 8 },
+
+  cardPhotoStrip: { flexDirection: 'row', gap: 6, marginBottom: 12, alignItems: 'center' },
+  cardPhotoThumb: { width: 52, height: 52, borderRadius: 10, backgroundColor: Colors.backgroundSecondary },
+  cardPhotoMore: { width: 52, height: 52, borderRadius: 10, backgroundColor: Colors.backgroundSecondary, alignItems: 'center', justifyContent: 'center' },
+  cardPhotoMoreText: { color: Colors.textSecondary, fontSize: 13, fontWeight: '700' as const },
+
+  galleryContainer: { marginTop: 14, borderRadius: 16, overflow: 'hidden', backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.surfaceBorder, position: 'relative' as const },
+  galleryScroll: { borderRadius: 16 },
+  galleryImage: { height: 280, backgroundColor: Colors.backgroundSecondary },
+  galleryDots: { flexDirection: 'row', justifyContent: 'center', gap: 6, paddingVertical: 10 },
+  galleryDot: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: Colors.surfaceBorder },
+  galleryDotActive: { backgroundColor: Colors.primary, width: 20 },
+  galleryCounter: { position: 'absolute', top: 12, right: 12, flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 5 },
+  galleryCounterText: { color: '#fff', fontSize: 11, fontWeight: '700' as const },
+
+  igGalleryContainer: { marginHorizontal: -20, marginTop: -16, marginBottom: 4, position: 'relative' as const, backgroundColor: '#000' },
+  igGalleryScroll: {},
+  igGalleryImage: { height: 380, backgroundColor: Colors.backgroundSecondary },
+  igGalleryOverlay: { position: 'absolute', top: 14, left: 14, right: 14, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', zIndex: 2 },
+  igGalleryCounter: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 5 },
+  igGalleryCounterText: { color: '#fff', fontSize: 11, fontWeight: '700' as const },
+  igGalleryDots: { flexDirection: 'row', justifyContent: 'center', gap: 6, paddingVertical: 12, backgroundColor: 'transparent', position: 'absolute', bottom: 0, left: 0, right: 0 },
+  igGalleryDot: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: 'rgba(255,255,255,0.4)' },
+  igGalleryDotActive: { backgroundColor: '#fff', width: 20 },
+  detailHeroTopInline: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', marginBottom: 4 },
+
+  photoHint: { color: Colors.textTertiary, fontSize: 12, lineHeight: 18, marginBottom: 14 },
+  photoPreviewScroll: { marginBottom: 14 },
+  photoPreviewItem: { width: 110, height: 110, borderRadius: 14, marginRight: 10, position: 'relative' as const },
+  photoPreviewImage: { width: 110, height: 110, borderRadius: 14, backgroundColor: Colors.backgroundSecondary },
+  photoRemoveBtn: { position: 'absolute', top: 6, right: 6, width: 26, height: 26, borderRadius: 13, backgroundColor: 'rgba(255,60,60,0.9)', alignItems: 'center', justifyContent: 'center' },
+  photoIndexBadge: { position: 'absolute', bottom: 6, left: 6, width: 22, height: 22, borderRadius: 11, backgroundColor: 'rgba(0,0,0,0.7)', alignItems: 'center', justifyContent: 'center' },
+  photoIndexText: { color: '#fff', fontSize: 10, fontWeight: '800' as const },
+  photoUploadRow: { flexDirection: 'row', gap: 10 },
+  photoUploadBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, borderRadius: 12, borderWidth: 1.5, borderColor: Colors.surfaceBorder, borderStyle: 'dashed' as const, backgroundColor: Colors.backgroundSecondary },
+  photoUploadBtnText: { color: Colors.primary, fontSize: 13, fontWeight: '700' as const },
+  photoCount: { color: Colors.textTertiary, fontSize: 11, textAlign: 'center' as const, marginTop: 10 },
+
+  fullscreenOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.95)', justifyContent: 'center', alignItems: 'center' },
+  fullscreenClose: { position: 'absolute', top: 60, right: 20, width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center', zIndex: 10 },
+  fullscreenImage: { width: '100%' as any, height: '70%' as any },
+  fullscreenNav: { flexDirection: 'row', alignItems: 'center', gap: 30, marginTop: 20 },
+  fullscreenArrow: { width: 48, height: 48, borderRadius: 24, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center' },
+  fullscreenCounter: { color: '#fff', fontSize: 15, fontWeight: '700' as const },
+
+  poolTableHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16 },
+  poolTableHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  poolTotalBadge: { backgroundColor: '#FFD70012', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 6, alignItems: 'flex-end' as const },
+  poolTotalLabel: { color: Colors.textTertiary, fontSize: 9, textTransform: 'uppercase' as const, letterSpacing: 0.5 },
+  poolTotalValue: { color: '#FFD700', fontSize: 16, fontWeight: '900' as const },
+  poolTiersContainer: { paddingHorizontal: 16, paddingBottom: 16, gap: 12 },
+  poolTierCard: { backgroundColor: Colors.backgroundSecondary, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: Colors.surfaceBorder },
+  poolTierHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  poolTierLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  poolTierIcon: { fontSize: 24 },
+  poolTierLabel: { color: Colors.text, fontSize: 15, fontWeight: '700' as const },
+  poolTierType: { fontSize: 11, fontWeight: '600' as const, marginTop: 2 },
+  poolTierStatusBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 },
+  poolTierStatusDot: { width: 6, height: 6, borderRadius: 3 },
+  poolTierStatusText: { fontSize: 11, fontWeight: '700' as const },
+  poolTierAmountRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  poolTierTargetLabel: { color: Colors.textTertiary, fontSize: 11, textTransform: 'uppercase' as const, letterSpacing: 0.5 },
+  poolTierTargetValue: { color: Colors.text, fontSize: 20, fontWeight: '900' as const },
+  poolTierProgressWrap: { height: 8, backgroundColor: Colors.surface, borderRadius: 4, overflow: 'hidden', marginBottom: 6 },
+  poolTierProgressBar: { height: 8, borderRadius: 4 },
+  poolTierProgressLabels: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },
+  poolTierRaised: { color: Colors.textTertiary, fontSize: 11 },
+  poolTierPct: { color: Colors.textSecondary, fontSize: 11, fontWeight: '700' as const },
+  poolTierInfoGrid: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surface, borderRadius: 10, padding: 10 },
+  poolTierInfoItem: { flex: 1, alignItems: 'center' as const },
+  poolTierInfoLabel: { color: Colors.textTertiary, fontSize: 9, textTransform: 'uppercase' as const, letterSpacing: 0.3, marginBottom: 3 },
+  poolTierInfoValue: { color: Colors.text, fontSize: 13, fontWeight: '800' as const },
+  poolTierInfoDivider: { width: 1, height: 28, backgroundColor: Colors.surfaceBorder },
+  poolFormSummary: { backgroundColor: Colors.backgroundSecondary, borderRadius: 14, padding: 14, marginBottom: 14, flexDirection: 'row', alignItems: 'center' },
+  poolFormSummaryRow: { flex: 1, alignItems: 'center' as const },
+  poolFormSummaryLabel: { color: Colors.textTertiary, fontSize: 10, textTransform: 'uppercase' as const, letterSpacing: 0.5, marginBottom: 3 },
+  poolFormSummaryValue: { color: '#FFD700', fontSize: 18, fontWeight: '900' as const },
+  poolFormSummaryDivider: { width: 1, height: 32, backgroundColor: Colors.surfaceBorder },
+  poolTierFormCard: { backgroundColor: Colors.backgroundSecondary, borderRadius: 14, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: Colors.surfaceBorder, borderLeftWidth: 3 },
 });
+
