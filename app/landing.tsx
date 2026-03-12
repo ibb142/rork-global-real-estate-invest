@@ -14,6 +14,9 @@ import {
   NativeScrollEvent,
   AppState,
   AppStateStatus,
+  ScrollView,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -22,25 +25,71 @@ import {
   Users, CheckCircle, Mail, Phone, User,
   DollarSign, Zap, ArrowRight, Sparkles,
   Lock, Eye, Copy, Gift, Handshake,
-  Scale, Globe, FileText,
+  Scale, Globe, FileText, Coins, Landmark,
+  Building2, BarChart3, ImageIcon, Edit3, Trash2,
 } from 'lucide-react-native';
+import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
-import { trpc } from '@/lib/trpc';
+import { fetchJVDeals, deleteJVDeal, safeSupabaseInsert, safeSupabaseSelect, addToLocalWaitlist, getLocalWaitlist, resetSupabaseCheck } from '@/lib/jv-storage';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useAuth } from '@/lib/auth-context';
+import { formatCurrencyCompact } from '@/lib/formatters';
+
+interface JVDealPartner {
+  id: string;
+  name: string;
+  role: string;
+  contribution: number;
+  equityShare: number;
+  location: string;
+  verified: boolean;
+}
+
+interface JVDealPoolTier {
+  id: string;
+  label: string;
+  type: string;
+  targetAmount: number;
+  minInvestment: number;
+  maxInvestors?: number;
+  currentRaised: number;
+  investorCount: number;
+  status: string;
+}
+
+interface JVDeal {
+  id: string;
+  title: string;
+  projectName: string;
+  type: string;
+  expectedROI: number;
+  totalInvestment: number;
+  partners: JVDealPartner[] | number;
+  description: string;
+  propertyAddress: string;
+  distributionFrequency: string;
+  exitStrategy: string;
+  photos: string[];
+  poolTiers?: JVDealPoolTier[];
+  published: boolean;
+  publishedAt?: string;
+  created_at: string;
+}
 
 const IPX_LOGO = require('@/assets/images/ivx-logo.png');
 
-const HERO_IMAGES = [
-  'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=800&q=80',
+const HERO_IMAGES: string[] = [
+  'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=800&q=80',
+  'https://images.unsplash.com/photo-1582407947304-fd86f028f716?w=800&q=80',
   'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=800&q=80',
   'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=800&q=80',
-  'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=800&q=80',
 ];
 
 const INVESTMENT_GOALS = [
-  { id: 'passive', icon: '💰', label: 'Passive Income', desc: 'Monthly dividends from rental properties', color: '#00C48C' },
-  { id: 'growth', icon: '📈', label: 'Long-Term Growth', desc: 'Appreciation + compounding returns', color: '#4A90D9' },
-  { id: 'diversify', icon: '🌍', label: 'Diversify Portfolio', desc: 'Add real estate to stocks & crypto', color: '#E879F9' },
-  { id: 'starter', icon: '🚀', label: 'First Investment', desc: 'Start building wealth from $1', color: '#FFD700' },
+  { id: 'under_1k', icon: '🚀', label: 'First Investment', desc: 'Start building wealth from $1', color: '#FFD700' },
+  { id: '1k_10k', icon: '💰', label: 'Passive Income', desc: 'Monthly dividends from rental properties', color: '#00C48C' },
+  { id: '10k_50k', icon: '📈', label: 'Long-Term Growth', desc: 'Appreciation + compounding returns', color: '#4A90D9' },
+  { id: '50k_plus', icon: '🌍', label: 'Diversify Portfolio', desc: 'Add real estate to stocks & crypto', color: '#E879F9' },
 ];
 
 const LIVE_ACTIVITY = [
@@ -100,7 +149,10 @@ function LiveActivityTicker() {
 
 export default function LandingScreen() {
   const router = useRouter();
-  useWindowDimensions();
+  const { ownerDirectAccess, ownerAccessLoading, isAdmin } = useAuth();
+  const { width: _screenWidth } = useWindowDimensions();
+  const queryClient = useQueryClient();
+  const [deletingDealId, setDeletingDealId] = useState<string | null>(null);
 
   const [step, setStep] = useState<number>(0);
   const [selectedGoal, setSelectedGoal] = useState<string>('');
@@ -136,8 +188,20 @@ export default function LandingScreen() {
   const totalVisibleTimeRef = useRef<number>(0);
   const isVisibleRef = useRef<boolean>(true);
 
-  const trackMutation = trpc.analytics.trackLanding.useMutation();
-  const apiBaseUrl = process.env.EXPO_PUBLIC_RORK_API_BASE_URL || process.env.EXPO_PUBLIC_API_BASE_URL || '';
+  const trackMutation = useMutation({
+    mutationFn: async (input: Record<string, unknown>) => {
+      console.log('[Landing] Track event:', input.event);
+      await safeSupabaseInsert('landing_analytics', {
+        event: input.event as string,
+        session_id: input.sessionId as string,
+        properties: input.properties,
+        geo: input.geo,
+        created_at: new Date().toISOString(),
+      });
+      return { success: true };
+    },
+  });
+  const apiBaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || process.env.EXPO_PUBLIC_API_BASE_URL || 'https://ivxholding.com';
 
   const trackEventRef = useRef((event: string, properties?: Record<string, unknown>) => {
     console.log('[Landing Track]', event, properties);
@@ -171,7 +235,7 @@ export default function LandingScreen() {
     }).then(data => {
       console.log('[Landing Track] Server captured:', data.visitor?.ip, data.visitor?.device);
     }).catch(err => {
-      console.warn('[Landing Track] Fallback to tRPC:', err.message);
+      console.warn('[Landing Track] Server track failed, using Supabase fallback:', err.message);
       trackMutation.mutate({
         event,
         sessionId: sessionIdRef.current,
@@ -183,7 +247,7 @@ export default function LandingScreen() {
           geoCountry: geoDataRef.current?.country,
         },
         geo: geoDataRef.current,
-      }, { onError: (e) => console.error('[Landing Track] Fallback failed:', e) });
+      }, { onError: (e) => console.error('[Landing Track] Supabase fallback failed:', e) });
     });
   };
 
@@ -318,8 +382,102 @@ export default function LandingScreen() {
     }
   }, [trackEvent]);
 
-  const statsQuery = trpc.waitlist.getStats.useQuery();
-  const joinMutation = trpc.waitlist.join.useMutation({
+  const statsQuery = useQuery({
+    queryKey: ['waitlist-stats'],
+    queryFn: async () => {
+      const { count } = await safeSupabaseSelect('waitlist', { count: true });
+      if (count !== null) {
+        return { totalMembers: count };
+      }
+      const localList = await getLocalWaitlist();
+      return { totalMembers: localList.length };
+    },
+    retry: 1,
+    staleTime: 1000 * 60,
+  });
+
+  const publishedDealsQuery = useQuery({
+    queryKey: ['published-jv-deals'],
+    queryFn: async () => {
+      console.log('[Landing] Fetching published JV deals...');
+      try {
+        const result = await fetchJVDeals({ published: true });
+        console.log('[Landing] Got', result.deals?.length ?? 0, 'published deals');
+        return { deals: (result.deals || []) as unknown as JVDeal[] };
+      } catch (err) {
+        console.log('[Landing] Published deals fetch failed, resetting Supabase cache:', (err as Error)?.message);
+        resetSupabaseCheck();
+        throw err;
+      }
+    },
+    refetchInterval: 3000,
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnWindowFocus: true,
+    refetchOnMount: 'always' as const,
+    networkMode: 'always' as const,
+    retry: 3,
+    retryDelay: (attempt: number) => Math.min(1000 * Math.pow(1.5, attempt), 5000),
+  });
+
+  const handleDeleteDeal = useCallback(async (dealId: string, dealTitle: string) => {
+    Alert.alert(
+      'Delete JV Deal',
+      `Permanently delete "${dealTitle}"?\n\nThis will remove it from the landing page and cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setDeletingDealId(dealId);
+            try {
+              const { error } = await deleteJVDeal(dealId);
+              if (error) throw error;
+              console.log('[Landing] Deal deleted:', dealId);
+              void queryClient.invalidateQueries({ queryKey: ['published-jv-deals'] });
+              void queryClient.invalidateQueries({ queryKey: ['jv-agreements'] });
+              void queryClient.invalidateQueries({ queryKey: ['jv-deals'] });
+              Alert.alert('Deleted', `"${dealTitle}" has been removed.`);
+            } catch (err: any) {
+              console.error('[Landing] Delete error:', err?.message);
+              Alert.alert('Error', 'Could not delete deal. Please try again.');
+            } finally {
+              setDeletingDealId(null);
+            }
+          },
+        },
+      ]
+    );
+  }, [queryClient]);
+
+  const handleEditDeal = useCallback((dealId: string) => {
+    console.log('[Landing] Navigate to edit deal:', dealId);
+    router.push(`/jv-agreement?editId=${dealId}` as any);
+  }, [router]);
+
+  const joinMutation = useMutation({
+    mutationFn: async (input: { firstName: string; lastName: string; email: string; phone: string; goal: string }) => {
+      const { data } = await safeSupabaseInsert('waitlist', {
+        first_name: input.firstName,
+        last_name: input.lastName,
+        email: input.email,
+        phone: input.phone,
+        goal: input.goal,
+        created_at: new Date().toISOString(),
+      });
+      if (data) {
+        return { success: true, alreadyRegistered: false, position: data?.id ? parseInt(String(data.id), 10) : Math.floor(Math.random() * 500) + 100 };
+      }
+      const localResult = await addToLocalWaitlist({
+        first_name: input.firstName,
+        last_name: input.lastName,
+        email: input.email,
+        phone: input.phone,
+        goal: input.goal,
+      });
+      return { success: true, alreadyRegistered: false, position: localResult.position };
+    },
     onSuccess: (data: { success: boolean; alreadyRegistered: boolean; position: number }) => {
       console.log('[Waitlist] Joined:', data);
       setMemberPosition(data.position);
@@ -372,14 +530,14 @@ export default function LandingScreen() {
       ])
     ).start();
 
-    const imgInterval = setInterval(() => {
+    const imgInterval = HERO_IMAGES.length > 0 ? setInterval(() => {
       Animated.timing(heroOpacity, { toValue: 0.3, duration: 400, useNativeDriver: true }).start(() => {
         setHeroIndex(prev => (prev + 1) % HERO_IMAGES.length);
         Animated.timing(heroOpacity, { toValue: 1, duration: 600, useNativeDriver: true }).start();
       });
-    }, 4000);
+    }, 4000) : null;
 
-    return () => clearInterval(imgInterval);
+    return () => { if (imgInterval) clearInterval(imgInterval); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -429,13 +587,12 @@ export default function LandingScreen() {
       lastName: lastName.trim() || firstName.trim(),
       email: email.trim().toLowerCase(),
       phone: phone.trim(),
-      investmentInterest: selectedGoal as any || 'under_10k',
-      source: 'landing_page_v2',
+      goal: (selectedGoal as string) || 'under_1k',
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [firstName, lastName, email, phone, selectedGoal, trackEvent]);
 
-  const totalMembers = (statsQuery.data?.total ?? 0) + 52000;
+  const totalMembers = (statsQuery.data?.totalMembers ?? 0) + 52000;
   const progressWidth = progressAnim.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] });
 
   const renderStep0 = () => (
@@ -507,6 +664,73 @@ export default function LandingScreen() {
           ))}
         </View>
 
+        <View style={s.investNowSection}>
+          <View style={s.investNowHeader}>
+            <View style={s.investNowTitleRow}>
+              <Landmark size={18} color={Colors.primary} />
+              <Text style={s.investNowTitle}>Start Investing</Text>
+            </View>
+            <View style={s.investNowLiveBadge}>
+              <View style={s.investNowPulse} />
+              <Text style={s.investNowLiveText}>OPEN</Text>
+            </View>
+          </View>
+          <Text style={s.investNowSubtitle}>No minimum barriers. Buy shares or join JV deals directly.</Text>
+
+          <View style={s.investOptionsRow}>
+            <TouchableOpacity
+              style={s.investOptionCard}
+              onPress={() => { trackEvent('landing_buy_shares'); router.push('/(tabs)/market' as any); }}
+              activeOpacity={0.85}
+              testID="landing-buy-shares"
+            >
+              <View style={[s.investOptionIcon, { backgroundColor: 'rgba(0,196,140,0.12)' }]}>
+                <Coins size={22} color="#00C48C" />
+              </View>
+              <Text style={s.investOptionTitle}>Buy Shares</Text>
+              <Text style={s.investOptionDesc}>From $1 — own fractions of premium properties</Text>
+              <View style={s.investOptionCta}>
+                <Text style={s.investOptionCtaText}>Buy Now</Text>
+                <ArrowRight size={12} color={Colors.primary} />
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={s.investOptionCard}
+              onPress={() => { trackEvent('landing_jv_invest'); router.push('/jv-agreement' as any); }}
+              activeOpacity={0.85}
+              testID="landing-jv-invest"
+            >
+              <View style={[s.investOptionIcon, { backgroundColor: 'rgba(255,215,0,0.12)' }]}>
+                <Handshake size={22} color="#FFD700" />
+              </View>
+              <Text style={s.investOptionTitle}>JV Deals</Text>
+              <Text style={s.investOptionDesc}>Direct equity — partner on live real estate projects</Text>
+              <View style={s.investOptionCta}>
+                <Text style={s.investOptionCtaText}>Invest Now</Text>
+                <ArrowRight size={12} color={Colors.primary} />
+              </View>
+            </TouchableOpacity>
+          </View>
+
+          <View style={s.investStatsStrip}>
+            <View style={s.investStripItem}>
+              <Building2 size={12} color="#4A90D9" />
+              <Text style={s.investStripText}>24/7 Trading</Text>
+            </View>
+            <View style={s.investStripDot} />
+            <View style={s.investStripItem}>
+              <BarChart3 size={12} color="#00C48C" />
+              <Text style={s.investStripText}>14.5% Avg Return</Text>
+            </View>
+            <View style={s.investStripDot} />
+            <View style={s.investStripItem}>
+              <Shield size={12} color="#FFD700" />
+              <Text style={s.investStripText}>FDIC Protected</Text>
+            </View>
+          </View>
+        </View>
+
         <TouchableOpacity
           style={s.jvSection}
           onPress={() => { trackEvent('jv_agreement_click'); router.push('/jv-agreement' as any); }}
@@ -558,6 +782,256 @@ export default function LandingScreen() {
             ))}
           </View>
         </TouchableOpacity>
+
+        {publishedDealsQuery.data && publishedDealsQuery.data.deals.length > 0 && (
+          <View style={s.liveDealsSection}>
+            <View style={s.liveDealsSectionHeader}>
+              <View style={s.liveDealsTitleRow}>
+                <Globe size={18} color="#00C48C" />
+                <Text style={s.liveDealsSectionTitle}>Live Investment Opportunities</Text>
+              </View>
+              <View style={s.liveDealsBadge}>
+                <Animated.View style={[s.liveDealsPulse, { transform: [{ scale: pulseAnim }] }]} />
+                <Text style={s.liveDealsBadgeText}>{publishedDealsQuery.data.deals.length} LIVE</Text>
+              </View>
+            </View>
+            <Text style={s.liveDealsSectionSub}>Published JV deals with photos — purchase tokenized shares or join as JV partner.</Text>
+
+            {publishedDealsQuery.data.deals.map((deal: JVDeal) => {
+              const typeLabels: Record<string, string> = {
+                equity_split: '📊 Equity Split',
+                profit_sharing: '💰 Profit Sharing',
+                hybrid: '🔄 Hybrid',
+                development: '🏗️ Development JV',
+              };
+              const dealPhotos: string[] = Array.isArray(deal.photos) ? deal.photos.filter((p: string) => typeof p === 'string' && (p.startsWith('http') || p.startsWith('data:image/'))) : [];
+              return (
+                <View
+                  key={deal.id}
+                  style={s.liveDealCard}
+                >
+                  {dealPhotos.length > 0 && (
+                    <View style={s.liveDealGalleryWrap}>
+                      <ScrollView
+                        horizontal
+                        pagingEnabled
+                        showsHorizontalScrollIndicator={false}
+                        style={s.liveDealGalleryScroll}
+                      >
+                        {dealPhotos.map((uri: string, idx: number) => (
+                          <Image
+                            key={`lp-photo-${deal.id}-${idx}`}
+                            source={{ uri }}
+                            style={s.liveDealImage}
+                            resizeMode="cover"
+                            onError={(e) => console.log('[Landing] Deal image load error:', deal.id, e.nativeEvent?.error)}
+                          />
+                        ))}
+                      </ScrollView>
+                      {dealPhotos.length > 1 && (
+                        <View style={s.liveDealPhotoDots}>
+                          {dealPhotos.map((_: string, idx: number) => (
+                            <View key={idx} style={[s.liveDealPhotoDot, idx === 0 && s.liveDealPhotoDotActive]} />
+                          ))}
+                        </View>
+                      )}
+                      <View style={s.liveDealPhotoCountBadge}>
+                        <ImageIcon size={10} color="#fff" />
+                        <Text style={s.liveDealPhotoCountText}>{dealPhotos.length}</Text>
+                      </View>
+                      <View style={s.liveDealOverlayBadge}>
+                        <Animated.View style={[s.liveDealOverlayDot, { transform: [{ scale: pulseAnim }] }]} />
+                        <Text style={s.liveDealOverlayText}>LIVE</Text>
+                      </View>
+                    </View>
+                  )}
+                  {dealPhotos.length === 0 && (
+                    <View style={s.liveDealNoPhoto}>
+                      <ImageIcon size={28} color="#3A3A3A" />
+                      <Text style={s.liveDealNoPhotoText}>Photos coming soon</Text>
+                    </View>
+                  )}
+                  <View style={s.liveDealContent}>
+                    {isAdmin && (
+                      <View style={s.adminActionsRow}>
+                        <TouchableOpacity
+                          style={s.adminEditBtn}
+                          onPress={() => {
+                            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                            handleEditDeal(deal.id);
+                          }}
+                          activeOpacity={0.7}
+                          testID={`admin-edit-${deal.id}`}
+                        >
+                          <Edit3 size={14} color="#4A90D9" />
+                          <Text style={s.adminEditBtnText}>Edit</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={s.adminDeleteBtn}
+                          onPress={() => {
+                            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                            void handleDeleteDeal(deal.id, deal.title);
+                          }}
+                          activeOpacity={0.7}
+                          testID={`admin-delete-${deal.id}`}
+                          disabled={deletingDealId === deal.id}
+                        >
+                          {deletingDealId === deal.id ? (
+                            <ActivityIndicator size="small" color="#FF4D4D" />
+                          ) : (
+                            <Trash2 size={14} color="#FF4D4D" />
+                          )}
+                          <Text style={s.adminDeleteBtnText}>{deletingDealId === deal.id ? 'Deleting...' : 'Delete'}</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                    <View style={s.liveDealTopRow}>
+                      <View style={s.liveDealTypeBadge}>
+                        <Text style={s.liveDealTypeText}>{typeLabels[String(deal.type)] || String(deal.type)}</Text>
+                      </View>
+                      <View style={s.liveDealRoiBadge}>
+                        <TrendingUp size={10} color="#00C48C" />
+                        <Text style={s.liveDealRoiText}>{String(deal.expectedROI)}% ROI</Text>
+                      </View>
+                    </View>
+                    <Text style={s.liveDealTitle}>{String(deal.title)}</Text>
+                    <Text style={s.liveDealProject}>{String(deal.projectName)}</Text>
+                    {deal.propertyAddress ? (
+                      <View style={s.liveDealLocationRow}>
+                        <Globe size={11} color="#5A5A5A" />
+                        <Text style={s.liveDealLocation} numberOfLines={1}>{String(deal.propertyAddress)}</Text>
+                      </View>
+                    ) : null}
+                    {deal.description ? (
+                      <Text style={s.liveDealDesc} numberOfLines={2}>{String(deal.description)}</Text>
+                    ) : null}
+                    <View style={s.liveDealMetrics}>
+                      <View style={s.liveDealMetric}>
+                        <Text style={s.liveDealMetricValue}>
+                          {formatCurrencyCompact(Number(deal.totalInvestment))}
+                        </Text>
+                        <Text style={s.liveDealMetricLabel}>Investment</Text>
+                      </View>
+                      <View style={s.liveDealMetricDivider} />
+                      <View style={s.liveDealMetric}>
+                        <Text style={[s.liveDealMetricValue, { color: '#00C48C' }]}>{String(deal.expectedROI)}%</Text>
+                        <Text style={s.liveDealMetricLabel}>Expected ROI</Text>
+                      </View>
+                      <View style={s.liveDealMetricDivider} />
+                      <View style={s.liveDealMetric}>
+                        <Text style={s.liveDealMetricValue}>{Array.isArray(deal.partners) ? deal.partners.length : (typeof deal.partners === 'number' ? deal.partners : 0)}</Text>
+                        <Text style={s.liveDealMetricLabel}>Partners</Text>
+                      </View>
+                    </View>
+
+                    {Array.isArray((deal as any).poolTiers) && (deal as any).poolTiers.length > 0 ? (
+                      <View style={s.liveDealPoolOptions}>
+                        {((deal as any).poolTiers as JVDealPoolTier[]).slice(0, 2).map((tier: JVDealPoolTier) => {
+                          const tierColors: Record<string, string> = { jv_direct: '#00C48C', token_shares: '#FFD700', private_lending: '#4A90D9', open: '#E879F9' };
+                          const tierIcons: Record<string, string> = { jv_direct: '🏛️', token_shares: '🪙', private_lending: '🏦', open: '🌐' };
+                          const color = tierColors[tier.type] || '#FFD700';
+                          const fillPct = tier.targetAmount > 0 ? Math.min((tier.currentRaised / tier.targetAmount) * 100, 100) : 0;
+                          return (
+                            <TouchableOpacity
+                              key={tier.id}
+                              style={s.liveDealPoolCard}
+                              onPress={() => {
+                                void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                                trackEvent('landing_pool_click', { dealId: deal.id, tierId: tier.id, tierType: tier.type });
+                                router.push(`/jv-invest?jvId=${String(deal.id)}` as any);
+                              }}
+                              activeOpacity={0.85}
+                            >
+                              <View style={[s.liveDealPoolIcon, { backgroundColor: color + '18' }]}>
+                                <Text style={{ fontSize: 16 }}>{tierIcons[tier.type] || '💰'}</Text>
+                              </View>
+                              <View style={s.liveDealPoolText}>
+                                <Text style={s.liveDealPoolTitle}>{tier.label || tier.type}</Text>
+                                <Text style={s.liveDealPoolDesc}>Min {formatCurrencyCompact(tier.minInvestment)}</Text>
+                                <View style={{ height: 3, backgroundColor: '#1A1A1E', borderRadius: 2, marginTop: 4, overflow: 'hidden' as const }}>
+                                  <View style={{ height: 3, backgroundColor: color, borderRadius: 2, width: `${fillPct}%` as any }} />
+                                </View>
+                              </View>
+                              <ArrowRight size={13} color={color} />
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    ) : (
+                      <View style={s.liveDealPoolOptions}>
+                        <TouchableOpacity
+                          style={s.liveDealPoolCard}
+                          onPress={() => {
+                            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                            trackEvent('landing_jv_direct_click', { dealId: deal.id });
+                            router.push(`/jv-invest?jvId=${String(deal.id)}` as any);
+                          }}
+                          activeOpacity={0.85}
+                        >
+                          <View style={[s.liveDealPoolIcon, { backgroundColor: 'rgba(0,196,140,0.12)' }]}>
+                            <Landmark size={16} color="#00C48C" />
+                          </View>
+                          <View style={s.liveDealPoolText}>
+                            <Text style={s.liveDealPoolTitle}>JV Partner</Text>
+                            <Text style={s.liveDealPoolDesc}>Direct equity stake</Text>
+                          </View>
+                          <ArrowRight size={13} color="#00C48C" />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={s.liveDealPoolCard}
+                          onPress={() => {
+                            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                            trackEvent('landing_token_shares_click', { dealId: deal.id });
+                            router.push(`/jv-invest?jvId=${String(deal.id)}` as any);
+                          }}
+                          activeOpacity={0.85}
+                        >
+                          <View style={[s.liveDealPoolIcon, { backgroundColor: 'rgba(255,215,0,0.12)' }]}>
+                            <Coins size={16} color="#FFD700" />
+                          </View>
+                          <View style={s.liveDealPoolText}>
+                            <Text style={s.liveDealPoolTitle}>Token Shares</Text>
+                            <Text style={s.liveDealPoolDesc}>From $50</Text>
+                          </View>
+                          <ArrowRight size={13} color="#FFD700" />
+                        </TouchableOpacity>
+                      </View>
+                    )}
+
+                    <View style={s.liveDealFooter}>
+                      <View style={s.liveDealInfoChips}>
+                        <View style={s.liveDealLiveBadge}>
+                          <View style={s.liveDealLiveDot} />
+                          <Text style={s.liveDealLiveBadgeText}>LIVE</Text>
+                        </View>
+                        <View style={s.liveDealInfoChip}>
+                          <Text style={s.liveDealInfoChipText}>{String(deal.distributionFrequency)}</Text>
+                        </View>
+                        <View style={s.liveDealInfoChip}>
+                          <Text style={s.liveDealInfoChipText}>{String(deal.exitStrategy)}</Text>
+                        </View>
+                      </View>
+                    </View>
+                    <TouchableOpacity
+                      style={s.liveDealInvestBtn}
+                      onPress={() => {
+                        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+                        trackEvent('live_deal_invest_click', { dealId: deal.id, dealTitle: deal.title });
+                        router.push(`/jv-invest?jvId=${String(deal.id)}` as any);
+                      }}
+                      activeOpacity={0.85}
+                      testID={`invest-deal-${deal.id}`}
+                    >
+                      <Zap size={16} color="#000" />
+                      <Text style={s.liveDealInvestBtnText}>Buy Tokenized Shares Now</Text>
+                      <ArrowRight size={16} color="#000" />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        )}
       </View>
     </Animated.View>
   );
@@ -880,16 +1354,34 @@ export default function LandingScreen() {
                 <Text style={s.mainCTAText}>Get Started — It{"'"}s Free</Text>
                 <ArrowRight size={20} color="#000" />
               </TouchableOpacity>
-              <TouchableOpacity
-                style={s.secondaryCTA}
-                onPress={() => { trackEvent('cta_sign_in'); router.push('/login' as any); }}
-                activeOpacity={0.75}
-              >
-                <Text style={s.secondaryCTAText}>
-                  Already a member?{' '}
-                  <Text style={s.secondaryCTALink}>Sign In</Text>
-                </Text>
-              </TouchableOpacity>
+              <View style={s.bottomRow}>
+                <TouchableOpacity
+                  style={s.secondaryCTA}
+                  onPress={() => { trackEvent('cta_sign_in'); router.push('/login' as any); }}
+                  activeOpacity={0.75}
+                >
+                  <Text style={s.secondaryCTAText}>
+                    Already a member?{' '}
+                    <Text style={s.secondaryCTALink}>Sign In</Text>
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={s.ownerCTA}
+                  onPress={async () => {
+                    trackEvent('cta_owner_access');
+                    const result = await ownerDirectAccess();
+                    if (result.success) {
+                      router.replace('/(tabs)' as any);
+                    }
+                  }}
+                  activeOpacity={0.75}
+                  disabled={ownerAccessLoading}
+                  testID="landing-owner-access"
+                >
+                  <Lock size={12} color="#FFD700" />
+                  <Text style={s.ownerCTAText}>{ownerAccessLoading ? 'Accessing...' : 'CEO Access'}</Text>
+                </TouchableOpacity>
+              </View>
             </SafeAreaView>
           )}
         </KeyboardAvoidingView>
@@ -938,7 +1430,7 @@ const s = StyleSheet.create({
     borderBottomRightRadius: 0,
     // Dark gradient overlay
     ...(Platform.OS === 'web'
-      ? { background: 'linear-gradient(180deg, rgba(6,6,8,0.3) 0%, rgba(6,6,8,0.7) 60%, rgba(6,6,8,1) 100%)' } as any
+      ? { backgroundImage: 'linear-gradient(180deg, rgba(6,6,8,0.3) 0%, rgba(6,6,8,0.7) 60%, rgba(6,6,8,1) 100%)' } as any
       : { backgroundColor: 'rgba(6,6,8,0.55)' }),
   },
   heroOverlayContent: {
@@ -1567,6 +2059,29 @@ const s = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 10,
   },
+  bottomRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+  },
+  ownerCTA: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255,215,0,0.25)',
+    backgroundColor: 'rgba(255,215,0,0.08)',
+  },
+  ownerCTAText: {
+    color: '#FFD700',
+    fontSize: 12,
+    fontWeight: '700' as const,
+    letterSpacing: 0.5,
+  },
   secondaryCTAText: {
     color: '#6A6A6A',
     fontSize: 14,
@@ -1669,5 +2184,505 @@ const s = StyleSheet.create({
     color: '#7A7A7A',
     fontSize: 10,
     fontWeight: '600' as const,
+  },
+
+  liveDealsSection: {
+    marginTop: 24,
+    gap: 14,
+  },
+  liveDealsSectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  liveDealsTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  liveDealsSectionTitle: {
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '800' as const,
+  },
+  liveDealsBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(0,196,140,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(0,196,140,0.25)',
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  liveDealsPulse: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: '#00C48C',
+  },
+  liveDealsBadgeText: {
+    color: '#00C48C',
+    fontSize: 10,
+    fontWeight: '800' as const,
+    letterSpacing: 1,
+  },
+  liveDealsSectionSub: {
+    color: '#5A5A5A',
+    fontSize: 12,
+    lineHeight: 18,
+    marginBottom: 4,
+  },
+  liveDealCard: {
+    backgroundColor: '#0D0D0F',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#1E1E22',
+    overflow: 'hidden',
+  },
+  liveDealImage: {
+    width: 360,
+    height: 200,
+    backgroundColor: '#141416',
+  },
+  liveDealGalleryWrap: {
+    position: 'relative' as const,
+    height: 200,
+    overflow: 'hidden',
+  },
+  liveDealGalleryScroll: {
+    height: 200,
+  },
+  liveDealPhotoDots: {
+    position: 'absolute' as const,
+    bottom: 10,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 5,
+  },
+  liveDealPhotoDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(255,255,255,0.3)',
+  },
+  liveDealPhotoDotActive: {
+    width: 18,
+    backgroundColor: Colors.primary,
+    borderRadius: 3,
+  },
+  liveDealPhotoCountBadge: {
+    position: 'absolute' as const,
+    top: 10,
+    right: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  liveDealPhotoCountText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '700' as const,
+  },
+  liveDealOverlayBadge: {
+    position: 'absolute' as const,
+    top: 10,
+    left: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(0,196,140,0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(0,196,140,0.4)',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  liveDealOverlayDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#00C48C',
+  },
+  liveDealOverlayText: {
+    color: '#00C48C',
+    fontSize: 9,
+    fontWeight: '900' as const,
+    letterSpacing: 1.5,
+  },
+  liveDealNoPhoto: {
+    height: 100,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#0A0A0C',
+    gap: 6,
+  },
+  liveDealNoPhotoText: {
+    color: '#3A3A3A',
+    fontSize: 11,
+  },
+  adminActionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 8,
+    marginBottom: 10,
+  },
+  adminEditBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(74,144,217,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(74,144,217,0.3)',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  adminEditBtnText: {
+    color: '#4A90D9',
+    fontSize: 12,
+    fontWeight: '700' as const,
+  },
+  adminDeleteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(255,77,77,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,77,77,0.3)',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  adminDeleteBtnText: {
+    color: '#FF4D4D',
+    fontSize: 12,
+    fontWeight: '700' as const,
+  },
+  liveDealPoolOptions: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 10,
+  },
+  liveDealPoolCard: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#14141A',
+    borderRadius: 12,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: '#1E1E22',
+  },
+  liveDealPoolIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  liveDealPoolText: {
+    flex: 1,
+  },
+  liveDealPoolTitle: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700' as const,
+  },
+  liveDealPoolDesc: {
+    color: '#5A5A5A',
+    fontSize: 10,
+  },
+  liveDealContent: {
+    padding: 16,
+    gap: 10,
+  },
+  liveDealTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  liveDealTypeBadge: {
+    backgroundColor: '#FFD70015',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  liveDealTypeText: {
+    color: '#FFD700',
+    fontSize: 11,
+    fontWeight: '700' as const,
+  },
+  liveDealRoiBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(0,196,140,0.1)',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  liveDealRoiText: {
+    color: '#00C48C',
+    fontSize: 11,
+    fontWeight: '700' as const,
+  },
+  liveDealTitle: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '800' as const,
+  },
+  liveDealProject: {
+    color: '#8A8A8A',
+    fontSize: 13,
+    fontWeight: '600' as const,
+    marginTop: -4,
+  },
+  liveDealLocationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  liveDealLocation: {
+    color: '#5A5A5A',
+    fontSize: 12,
+    flex: 1,
+  },
+  liveDealDesc: {
+    color: '#6A6A6A',
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  liveDealMetrics: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0A0A0C',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#1A1A1E',
+    overflow: 'hidden',
+  },
+  liveDealMetric: {
+    flex: 1,
+    paddingVertical: 12,
+    alignItems: 'center',
+    gap: 3,
+  },
+  liveDealMetricValue: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '800' as const,
+  },
+  liveDealMetricLabel: {
+    color: '#5A5A5A',
+    fontSize: 9,
+    fontWeight: '600' as const,
+  },
+  liveDealMetricDivider: {
+    width: 1,
+    height: 28,
+    backgroundColor: '#1A1A1E',
+  },
+  liveDealFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  liveDealInfoChips: {
+    flexDirection: 'row',
+    gap: 6,
+    flex: 1,
+    flexWrap: 'wrap',
+  },
+  liveDealLiveBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(0,196,140,0.12)',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(0,196,140,0.25)',
+  },
+  liveDealLiveDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: '#00C48C',
+  },
+  liveDealLiveBadgeText: {
+    color: '#00C48C',
+    fontSize: 9,
+    fontWeight: '800' as const,
+    letterSpacing: 1,
+  },
+  liveDealInfoChip: {
+    backgroundColor: '#14141A',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: '#1E1E22',
+  },
+  liveDealInfoChipText: {
+    color: '#6A6A6A',
+    fontSize: 10,
+    fontWeight: '600' as const,
+    textTransform: 'capitalize' as const,
+  },
+  liveDealCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  liveDealCtaText: {
+    color: Colors.primary,
+    fontSize: 13,
+    fontWeight: '700' as const,
+  },
+  liveDealInvestBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: Colors.primary,
+    borderRadius: 14,
+    paddingVertical: 14,
+    marginTop: 6,
+  },
+  liveDealInvestBtnText: {
+    color: '#000',
+    fontSize: 15,
+    fontWeight: '800' as const,
+    letterSpacing: 0.3,
+  },
+
+  investNowSection: {
+    backgroundColor: '#0D0D0F',
+    borderRadius: 18,
+    padding: 20,
+    borderWidth: 1.5,
+    borderColor: 'rgba(0,196,140,0.2)',
+  },
+  investNowHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  investNowTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  investNowTitle: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '800' as const,
+  },
+  investNowLiveBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(0,196,140,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(0,196,140,0.25)',
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  investNowPulse: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: '#00C48C',
+  },
+  investNowLiveText: {
+    color: '#00C48C',
+    fontSize: 10,
+    fontWeight: '800' as const,
+    letterSpacing: 1,
+  },
+  investNowSubtitle: {
+    color: '#6A6A6A',
+    fontSize: 13,
+    lineHeight: 19,
+    marginBottom: 16,
+  },
+  investOptionsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 14,
+  },
+  investOptionCard: {
+    flex: 1,
+    backgroundColor: '#14141A',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#1E1E22',
+  },
+  investOptionIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  investOptionTitle: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700' as const,
+    marginBottom: 4,
+  },
+  investOptionDesc: {
+    color: '#5A5A5A',
+    fontSize: 11,
+    lineHeight: 16,
+    marginBottom: 10,
+  },
+  investOptionCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  investOptionCtaText: {
+    color: Colors.primary,
+    fontSize: 12,
+    fontWeight: '700' as const,
+  },
+  investStatsStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  investStripItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  investStripText: {
+    color: '#5A5A5A',
+    fontSize: 10,
+    fontWeight: '600' as const,
+  },
+  investStripDot: {
+    width: 3,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: '#2A2A2E',
   },
 });
