@@ -11,7 +11,7 @@ import {
 import {
   Bell,
   Mail,
-  Smartphone,
+
   MessageSquare,
   TrendingUp,
   Shield,
@@ -21,7 +21,8 @@ import {
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
-import { trpc } from '@/lib/trpc';
+import { supabase } from '@/lib/supabase';
+import { useMutation } from '@tanstack/react-query';
 import { useAnalytics } from '@/lib/analytics-context';
 
 interface NotificationSetting {
@@ -88,7 +89,7 @@ export default function NotificationSettingsScreen() {
   const [masterSms, setMasterSms] = useState(false);
 
   const toggleSetting = (id: string, channel: 'push' | 'email' | 'sms') => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setSettings(prev =>
       prev.map(s =>
         s.id === id ? { ...s, [channel]: !s[channel] } : s
@@ -96,8 +97,26 @@ export default function NotificationSettingsScreen() {
     );
   };
 
-  const updatePrefsMutation = trpc.users.updateNotificationSettings.useMutation();
   const { trackAction } = useAnalytics();
+
+  const updatePrefsMutation = useMutation({
+    mutationFn: async (prefs: { email: Record<string, boolean>; push: Record<string, boolean> }) => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+      const { error } = await supabase
+        .from('notification_preferences')
+        .upsert({
+          user_id: user.id,
+          email_prefs: prefs.email,
+          push_prefs: prefs.push,
+          updated_at: new Date().toISOString(),
+        });
+      if (error) {
+        console.log('[NotificationSettings] Supabase upsert note:', error.message);
+      }
+      return { success: true };
+    },
+  });
 
   const handleSave = () => {
     const emailPrefs = {
@@ -117,13 +136,13 @@ export default function NotificationSettingsScreen() {
       { email: emailPrefs, push: pushPrefs },
       {
         onSuccess: () => {
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           trackAction('notification_prefs_saved');
           Alert.alert('Saved', 'Your notification preferences have been updated.');
         },
         onError: (error) => {
           console.error('[NotificationSettings] Save error:', error);
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
           Alert.alert('Error', 'Failed to save your notification preferences. Please try again.');
         },
       }
@@ -148,7 +167,7 @@ export default function NotificationSettingsScreen() {
               </View>
               <Switch
                 value={masterPush}
-                onValueChange={(val) => { setMasterPush(val); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
+                onValueChange={(val) => { setMasterPush(val); void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
                 trackColor={{ false: Colors.backgroundTertiary, true: Colors.primary + '50' }}
                 thumbColor={masterPush ? Colors.primary : Colors.textTertiary}
               />
@@ -166,7 +185,7 @@ export default function NotificationSettingsScreen() {
               </View>
               <Switch
                 value={masterEmail}
-                onValueChange={(val) => { setMasterEmail(val); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
+                onValueChange={(val) => { setMasterEmail(val); void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
                 trackColor={{ false: Colors.backgroundTertiary, true: Colors.info + '50' }}
                 thumbColor={masterEmail ? Colors.info : Colors.textTertiary}
               />
@@ -184,7 +203,7 @@ export default function NotificationSettingsScreen() {
               </View>
               <Switch
                 value={masterSms}
-                onValueChange={(val) => { setMasterSms(val); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
+                onValueChange={(val) => { setMasterSms(val); void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
                 trackColor={{ false: Colors.backgroundTertiary, true: Colors.success + '50' }}
                 thumbColor={masterSms ? Colors.success : Colors.textTertiary}
               />
