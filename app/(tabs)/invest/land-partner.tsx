@@ -385,7 +385,7 @@ Also provide 3-4 actionable insights about the local market.`,
     <View style={styles.stepContent}>
       <Text style={styles.stepTitle}>Choose Your Partnership Type</Text>
       <Text style={styles.stepSubtitle}>
-        Select how you&apos;d like to partner with us on your land development
+        Select how you'd like to partner with us on your land development
       </Text>
 
       <TouchableOpacity
@@ -882,7 +882,7 @@ Also provide 3-4 actionable insights about the local market.`,
           <View style={styles.documentInfo}>
             <Text style={styles.documentTitle}>Government ID *</Text>
             <Text style={styles.documentSubtitle}>
-              Driver&apos;s license, passport, or national ID
+              Driver's license, passport, or national ID
             </Text>
           </View>
         </View>
@@ -1331,7 +1331,7 @@ Also provide 3-4 actionable insights about the local market.`,
                         </View>
                         <View style={styles.compCardDetail}>
                           <DollarSign size={12} color={Colors.textTertiary} />
-                          <Text style={styles.compCardDetailText}>${comp.pricePerSqft.toFixed(0)}/sf</Text>
+                          <Text style={styles.compCardDetailText}>${new Intl.NumberFormat('en-US').format(Math.round(comp.pricePerSqft))}/sf</Text>
                         </View>
                       </View>
                       <Text style={styles.compCardSource}>Source: {comp.source}</Text>
