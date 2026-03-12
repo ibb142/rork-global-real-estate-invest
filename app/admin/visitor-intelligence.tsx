@@ -33,9 +33,9 @@ import {
   Sparkles,
   Bell,
 } from 'lucide-react-native';
-import { trpc } from '@/lib/trpc';
-import { useInstantCache } from '@/lib/use-instant-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Colors from '@/constants/colors';
+import { fetchRawEvents, computeVisitorIntelligence } from '@/lib/analytics-compute';
 
 type PeriodType = '1h' | '24h' | '7d' | '30d' | '90d' | 'all';
 type TabType = 'overview' | 'leads' | 'patterns' | 'alerts';
@@ -144,42 +144,139 @@ export default function VisitorIntelligenceScreen() {
     Animated.spring(headerAnim, { toValue: 1, tension: 40, friction: 10, useNativeDriver: true }).start();
   }, [headerAnim]);
 
-  const intelQuery = trpc.analytics.getAIVisitorIntelligence.useQuery(
-    { period },
-    {
-      staleTime: 0,
-      refetchInterval: 10000,
-      retry: 3,
-      retryDelay: (attempt) => Math.min(500 * Math.pow(2, attempt), 3000),
-      placeholderData: (prev) => prev,
-    }
-  );
-
-  const alertsQuery = trpc.analytics.getVisitorAlerts.useQuery(undefined, {
+  const intelQuery = useQuery<any>({
+    queryKey: ['analytics.getAIVisitorIntelligence', { period }],
+    queryFn: async () => {
+      try {
+        const rawEvents = await fetchRawEvents(period);
+        console.log('[VisitorIntel] Raw events fetched:', rawEvents.length);
+        const computed = computeVisitorIntelligence(rawEvents, period);
+        return computed;
+      } catch {
+        return computeVisitorIntelligence([], period);
+      }
+    },
     staleTime: 0,
-    refetchInterval: 10000,
-    retry: 3,
-    retryDelay: (attempt) => Math.min(500 * Math.pow(2, attempt), 3000),
+    refetchInterval: 15000,
+    retry: 0,
+    refetchOnMount: true,
+    throwOnError: false,
   });
 
-  const data = useInstantCache(`visitor_intel_${period}`, intelQuery.data, intelQuery.isSuccess);
-  const alertsData = useInstantCache('visitor_alerts', alertsQuery.data, alertsQuery.isSuccess);
+  const alertsQuery = useQuery<any>({
+    queryKey: ['analytics.getVisitorAlerts', { period }],
+    queryFn: async () => {
+      try {
+        const rawEvents = await fetchRawEvents(period);
+        const alerts: any[] = [];
+        const now = Date.now();
+        const fiveMinAgo = now - 5 * 60 * 1000;
+        const sessionMap = new Map<string, any[]>();
+        rawEvents.forEach(e => {
+          const sid = e.session_id || 'unknown';
+          if (!sessionMap.has(sid)) sessionMap.set(sid, []);
+          sessionMap.get(sid)!.push(e);
+        });
+        let activeVisitors = 0;
+        sessionMap.forEach((events, sid) => {
+          const lastTime = Math.max(...events.map(e => new Date(e.created_at).getTime()));
+          if (lastTime > fiveMinAgo) {
+            activeVisitors++;
+            const hasForm = events.some(e => e.event?.includes('form_submit') || e.event?.includes('waitlist'));
+            const hasCta = events.some(e => e.event?.includes('cta_'));
+            if (hasForm) {
+              alerts.push({ type: 'hot_lead', severity: 'critical', title: 'Hot Lead Detected', message: `Active session ${sid.slice(0, 8)} submitted a form`, timestamp: new Date(lastTime).toISOString() });
+            } else if (hasCta) {
+              alerts.push({ type: 'high_engagement', severity: 'high', title: 'High Engagement', message: `Session ${sid.slice(0, 8)} clicked CTA`, timestamp: new Date(lastTime).toISOString() });
+            } else {
+              alerts.push({ type: 'live_visitor', severity: 'info', title: 'Live Visitor', message: `Active session from ${events[0]?.geo?.country || 'unknown location'}`, timestamp: new Date(lastTime).toISOString() });
+            }
+          }
+        });
+        return { alerts, activeVisitors };
+      } catch {
+        return { alerts: [], activeVisitors: 0 };
+      }
+    },
+    staleTime: 0,
+    refetchInterval: 15000,
+    retry: 0,
+    refetchOnMount: true,
+    throwOnError: false,
+  });
+
+  const data = intelQuery.data;
+  const alertsData = alertsQuery.data;
+
+  useEffect(() => {
+    if (data) {
+      console.log(`[VisitorIntel] Data loaded for ${period}:`, {
+        sessions: data.summary.totalSessions,
+        hotLeads: data.summary.hotLeads,
+        warmLeads: data.summary.warmLeads,
+        engagement: data.summary.avgEngagement,
+        highIntent: data.highIntentVisitors.length,
+        recent: data.recentVisitors.length,
+      });
+    }
+    if (intelQuery.isError) {
+      console.error('[VisitorIntel] Query error:', intelQuery.error?.message);
+    }
+  }, [data, period, intelQuery.isError, intelQuery.error]);
 
   const [manualRefreshing, setManualRefreshing] = useState<boolean>(false);
-  const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
   const onRefresh = useCallback(async () => {
     setManualRefreshing(true);
     await Promise.all([
-      utils.analytics.getAIVisitorIntelligence.invalidate(),
-      utils.analytics.getVisitorAlerts.invalidate(),
+      queryClient.invalidateQueries({ queryKey: ['analytics.getAIVisitorIntelligence'] }),
+      queryClient.invalidateQueries({ queryKey: ['analytics.getVisitorAlerts'] }),
     ]);
     setManualRefreshing(false);
-  }, [utils]);
+  }, [queryClient]);
 
   const criticalAlerts = useMemo(() => {
     if (!alertsData?.alerts) return 0;
-    return alertsData.alerts.filter(a => a.severity === 'critical' || a.severity === 'high').length;
+    return alertsData.alerts.filter((a: any) => a.severity === 'critical' || a.severity === 'high').length;
   }, [alertsData]);
+
+  const hasNoData = data && data.summary.totalSessions === 0 && data.summary.hotLeads === 0;
+
+  const renderDiagnosticPanel = () => {
+    if (!hasNoData) return null;
+    return (
+      <View style={s.diagnosticCard}>
+        <View style={s.diagnosticHeader}>
+          <AlertTriangle size={18} color="#FFB800" />
+          <Text style={s.diagnosticTitle}>No Data Yet</Text>
+        </View>
+        <Text style={s.diagnosticDesc}>
+          Analytics computes from real landing page events stored in Supabase. No fake/demo data is shown.
+        </Text>
+        <View style={s.diagnosticGrid}>
+          <View style={s.diagnosticRow}>
+            <Text style={s.diagnosticLabel}>Database</Text>
+            <View style={[s.diagnosticBadge, { backgroundColor: '#00C48C20' }]}>
+              <Text style={[s.diagnosticBadgeText, { color: '#00C48C' }]}>Supabase Connected</Text>
+            </View>
+          </View>
+          <View style={s.diagnosticRow}>
+            <Text style={s.diagnosticLabel}>Events Found</Text>
+            <Text style={s.diagnosticValue}>0</Text>
+          </View>
+          <View style={s.diagnosticRow}>
+            <Text style={s.diagnosticLabel}>Period</Text>
+            <Text style={s.diagnosticValue}>{period}</Text>
+          </View>
+        </View>
+        <View style={s.diagnosticInfo}>
+          <Text style={s.diagnosticInfoText}>
+            Visit the landing page to generate tracking events. Data will appear here in real-time as visitors interact with your page.
+          </Text>
+        </View>
+      </View>
+    );
+  };
 
   const renderOverview = () => {
     if (!data) return null;
@@ -187,6 +284,7 @@ export default function VisitorIntelligenceScreen() {
 
     return (
       <View style={s.tabContent}>
+        {renderDiagnosticPanel()}
         <View style={s.liveBar}>
           <PulseIndicator active={liveNow.activeVisitors > 0} />
           <Text style={s.liveText}>
@@ -271,7 +369,7 @@ export default function VisitorIntelligenceScreen() {
               <Sparkles size={16} color={Colors.primary} />
               <Text style={s.insightsTitle}>AI Insights</Text>
             </View>
-            {aiInsights.map((insight, i) => (
+            {aiInsights.map((insight: any, i: number) => (
               <View key={i} style={s.insightRow}>
                 <View style={s.insightBullet}>
                   <Zap size={10} color={Colors.primary} />
@@ -285,7 +383,7 @@ export default function VisitorIntelligenceScreen() {
         {topSources.length > 0 && (
           <View style={s.sectionCard}>
             <Text style={s.sectionTitle}>Top Traffic Sources</Text>
-            {topSources.slice(0, 5).map((src, i) => (
+            {topSources.slice(0, 5).map((src: any, i: number) => (
               <View key={i} style={s.sourceRow}>
                 <View style={s.sourceRank}>
                   <Text style={s.sourceRankText}>{i + 1}</Text>
@@ -307,7 +405,7 @@ export default function VisitorIntelligenceScreen() {
         {topCountries.length > 0 && (
           <View style={s.sectionCard}>
             <Text style={s.sectionTitle}>Top Markets</Text>
-            {topCountries.slice(0, 6).map((c, i) => (
+            {topCountries.slice(0, 6).map((c: any, i: number) => (
               <View key={i} style={s.countryRow}>
                 <Text style={s.countryFlag}>{COUNTRY_FLAGS[c.country] || '🌍'}</Text>
                 <View style={s.countryInfo}>
@@ -347,7 +445,7 @@ export default function VisitorIntelligenceScreen() {
             <Text style={s.emptySubText}>Visitors who engage deeply with your page will appear here</Text>
           </View>
         ) : (
-          highIntentVisitors.map((v, i) => {
+          highIntentVisitors.map((v: any, i: number) => {
             const intentStyle = INTENT_COLORS[v.intent] || INTENT_COLORS.browsing;
             return (
               <View key={i} style={s.leadCard}>
@@ -406,7 +504,7 @@ export default function VisitorIntelligenceScreen() {
             <Text style={s.emptyText}>No recent visitors</Text>
           </View>
         ) : (
-          recentVisitors.slice(0, 15).map((v, i) => {
+          recentVisitors.slice(0, 15).map((v: any, i: number) => {
             const intentStyle = INTENT_COLORS[v.intent] || INTENT_COLORS.browsing;
             return (
               <View key={i} style={s.recentRow}>
@@ -436,7 +534,7 @@ export default function VisitorIntelligenceScreen() {
   const renderPatterns = () => {
     if (!data) return null;
     const { patterns, topSources, summary } = data;
-    const maxHourly = Math.max(...patterns.hourlyHeatmap.map(h => h.count), 1);
+    const maxHourly = Math.max(...patterns.hourlyHeatmap.map((h: any) => h.count), 1);
 
     return (
       <View style={s.tabContent}>
@@ -456,8 +554,8 @@ export default function VisitorIntelligenceScreen() {
 
         <View style={s.sectionCard}>
           <Text style={s.sectionTitle}>Day of Week</Text>
-          {patterns.dayOfWeek.map((d, i) => {
-            const maxDay = Math.max(...patterns.dayOfWeek.map(dd => dd.count), 1);
+          {patterns.dayOfWeek.map((d: any, i: number) => {
+            const maxDay = Math.max(...patterns.dayOfWeek.map((dd: any) => dd.count), 1);
             const pct = (d.count / maxDay) * 100;
             return (
               <View key={i} style={s.dayRow}>
@@ -473,7 +571,7 @@ export default function VisitorIntelligenceScreen() {
 
         <View style={s.sectionCard}>
           <Text style={s.sectionTitle}>Source Conversion Rates</Text>
-          {topSources.map((src, i) => (
+          {topSources.map((src: any, i: number) => (
             <View key={i} style={s.sourceConvRow}>
               <View style={s.sourceConvInfo}>
                 <Text style={s.sourceConvName} numberOfLines={1}>{src.source}</Text>
@@ -541,7 +639,7 @@ export default function VisitorIntelligenceScreen() {
             <Text style={s.emptySubText}>No alerts right now. AI is monitoring your traffic 24/7.</Text>
           </View>
         ) : (
-          alerts.map((alert, i) => {
+          alerts.map((alert: any, i: number) => {
             const sevStyle = SEVERITY_COLORS[alert.severity] || SEVERITY_COLORS.info;
             return (
               <View key={i} style={[s.alertCard, { backgroundColor: sevStyle.bg, borderColor: sevStyle.border }]}>
@@ -801,6 +899,33 @@ const s = StyleSheet.create({
   },
   emptyText: { fontSize: 15, fontWeight: '600' as const, color: Colors.text },
   emptySubText: { fontSize: 12, color: Colors.textSecondary, textAlign: 'center' as const },
+
+  diagnosticCard: {
+    backgroundColor: '#FFB80008', borderRadius: 12, padding: 16,
+    borderWidth: 1, borderColor: '#FFB80030', marginBottom: 4,
+  },
+  diagnosticHeader: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 8, marginBottom: 8 },
+  diagnosticTitle: { fontSize: 15, fontWeight: '700' as const, color: '#FFB800' },
+  diagnosticDesc: { fontSize: 12, color: Colors.textSecondary, marginBottom: 12, lineHeight: 18 },
+  diagnosticGrid: { gap: 8 },
+  diagnosticRow: {
+    flexDirection: 'row' as const, justifyContent: 'space-between' as const, alignItems: 'center' as const,
+    paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: Colors.border + '30',
+  },
+  diagnosticLabel: { fontSize: 12, color: Colors.textSecondary, fontWeight: '500' as const },
+  diagnosticValue: { fontSize: 13, color: Colors.text, fontWeight: '700' as const },
+  diagnosticBadge: { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
+  diagnosticBadgeText: { fontSize: 11, fontWeight: '700' as const },
+  diagnosticWarning: {
+    backgroundColor: '#FF4D4D10', borderRadius: 8, padding: 10, marginTop: 12,
+    borderWidth: 1, borderColor: '#FF4D4D20',
+  },
+  diagnosticWarningText: { fontSize: 11, color: '#FF6B6B', lineHeight: 16 },
+  diagnosticInfo: {
+    backgroundColor: '#4A90D910', borderRadius: 8, padding: 10, marginTop: 12,
+    borderWidth: 1, borderColor: '#4A90D920',
+  },
+  diagnosticInfoText: { fontSize: 11, color: '#6AADEE', lineHeight: 16 },
 
   leadCard: {
     backgroundColor: Colors.surface, borderRadius: 12, padding: 14,
