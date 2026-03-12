@@ -29,9 +29,8 @@ import {
   MessageSquare,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
-import { properties } from '@/mocks/properties';
 import { holdings } from '@/mocks/user';
-import { formatNumber } from '@/lib/formatters';
+import { formatCurrencyWithDecimals } from '@/lib/formatters';
 
 type DeliveryMethod = 'email' | 'sms';
 
@@ -146,7 +145,7 @@ export default function GiftSharesScreen() {
 
     Alert.alert(
       'Send Gift',
-      `Send ${shares} shares of ${selectedProp?.name} (${formatNumber(totalValue)}) to ${recipientName} via ${deliveryMethod === 'sms' ? 'SMS' : 'email'}?`,
+      `Send ${shares} shares of ${selectedProp?.name} (${formatCurrencyWithDecimals(totalValue)}) to ${recipientName} via ${deliveryMethod === 'sms' ? 'SMS' : 'email'}?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -169,7 +168,7 @@ export default function GiftSharesScreen() {
         },
       ]
     );
-  }, [selectedProperty, shareCount, recipientName, recipientEmail, recipientPhone, deliveryMethod, selectedOccasion, selectedProp, totalValue]);
+  }, [selectedProperty, shareCount, recipientName, recipientEmail, recipientPhone, deliveryMethod, selectedOccasion, selectedProp, totalValue, scaleAnim, successAnim]);
 
   if (giftSent) {
     return (
@@ -197,7 +196,7 @@ export default function GiftSharesScreen() {
               <View style={styles.successRow}>
                 <Text style={styles.successLabel}>Value</Text>
                 <Text style={[styles.successValue, { color: Colors.success }]}>
-                  ${formatNumber(totalValue)}
+                  {formatCurrencyWithDecimals(totalValue)}
                 </Text>
               </View>
               <View style={styles.successRow}>
@@ -276,7 +275,7 @@ export default function GiftSharesScreen() {
                   <View style={{ flex: 1 }}>
                     <Text style={styles.selectedPropName}>{selectedProp.name}</Text>
                     <Text style={styles.selectedPropShares}>
-                      {selectedProp.shares} shares available · ${formatNumber(selectedProp.pricePerShare)}/share
+                      {selectedProp.shares} shares available · {formatCurrencyWithDecimals(selectedProp.pricePerShare)}/share
                     </Text>
                   </View>
                 </View>
@@ -304,7 +303,7 @@ export default function GiftSharesScreen() {
                     <View style={{ flex: 1 }}>
                       <Text style={styles.propertyOptionName}>{prop.name}</Text>
                       <Text style={styles.propertyOptionDetail}>
-                        {prop.shares} shares · ${formatNumber(prop.pricePerShare)}/share
+                        {prop.shares} shares · {formatCurrencyWithDecimals(prop.pricePerShare)}/share
                       </Text>
                     </View>
                     {selectedProperty === prop.id && <Check size={16} color={Colors.primary} />}
@@ -325,7 +324,7 @@ export default function GiftSharesScreen() {
               />
               {totalValue > 0 && (
                 <View style={styles.valueTag}>
-                  <Text style={styles.valueTagText}>${formatNumber(totalValue)}</Text>
+                  <Text style={styles.valueTagText}>{formatCurrencyWithDecimals(totalValue)}</Text>
                 </View>
               )}
             </View>
@@ -446,7 +445,7 @@ export default function GiftSharesScreen() {
               >
                 <Send size={18} color={Colors.black} />
                 <Text style={styles.sendButtonText}>
-                  Send Gift{totalValue > 0 ? ` ($${formatNumber(totalValue)})` : ''}
+                  Send Gift{totalValue > 0 ? ` (${formatCurrencyWithDecimals(totalValue)})` : ''}
                 </Text>
               </TouchableOpacity>
             </Animated.View>
