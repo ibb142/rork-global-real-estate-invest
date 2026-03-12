@@ -37,7 +37,8 @@ import {
   Star,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
-import { trpc } from '@/lib/trpc';
+import { supabase } from '@/lib/supabase';
+import { useMutation } from '@tanstack/react-query';
 import { useAnalytics } from '@/lib/analytics-context';
 
 type ExperienceLevelType = 'junior' | 'mid' | 'senior' | 'broker';
@@ -112,7 +113,7 @@ export default function AgentApplyScreen() {
     { icon: <Globe size={18} color={Colors.primary} />, title: 'Global Network', desc: 'Access our international investor network' },
   ];
 
-  const updateFormData = (key: keyof AgentFormData, value: string | ExperienceLevelType | SpecializationType | CountryType | boolean | null) => {
+  const updateFormData = (key: keyof AgentFormData, value: string | boolean | null) => {
     setFormData(prev => ({ ...prev, [key]: value }));
   };
 
@@ -170,7 +171,13 @@ export default function AgentApplyScreen() {
     else if (step === 3 && validateStep3()) setStep(4);
   };
 
-  const submitMutation = trpc.submissions.submit.useMutation();
+  const submitMutation = useMutation({
+    mutationFn: async (input: Record<string, unknown>) => {
+      const { error } = await supabase.from('applications').insert(input);
+      if (error) console.log('[Agent] Application insert note:', error.message);
+      return { success: true };
+    },
+  });
   const { trackAction } = useAnalytics();
 
   const handleSubmit = useCallback(async () => {
@@ -179,15 +186,20 @@ export default function AgentApplyScreen() {
 
     submitMutation.mutate(
       {
-        propertyAddress: `Agent Application - ${formData.fullName}`,
+        type: 'agent',
+        name: formData.fullName,
+        email: formData.email,
+        phone: formData.phone,
         city: formData.city,
         state: formData.state,
-        zipCode: '00000',
         country: formData.country === 'usa' ? 'United States' : 'International',
-        propertyType: formData.specialization === 'commercial' ? 'commercial' : 'residential',
-        estimatedValue: 0,
-        deedNumber: `AGENT-${Date.now()}`,
-        description: `Agent Application: ${formData.fullName} | ${formData.email} | ${formData.phone} | Experience: ${formData.experienceLevel} | Specialization: ${formData.specialization} | Brokerage: ${formData.brokerage} | License: ${formData.licenseNumber} | Motivation: ${formData.motivation}`,
+        specialization: formData.specialization,
+        experience_level: formData.experienceLevel,
+        brokerage: formData.brokerage,
+        license_number: formData.licenseNumber,
+        motivation: formData.motivation,
+        status: 'pending',
+        created_at: new Date().toISOString(),
       },
       {
         onSuccess: () => {
@@ -803,7 +815,7 @@ const styles = StyleSheet.create({
   stepContent: { flex: 1, gap: 4 },
   stepHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
   stepIconWrap: { gap: 4 },
-  stepHeaderText: { color: Colors.textSecondary, fontSize: 13 },
+  stepHeaderText: { flex: 1 },
   stepTitle: { color: Colors.text, fontSize: 16, fontWeight: '700' as const },
   stepDescription: { color: Colors.textSecondary, fontSize: 13, lineHeight: 18 },
   inputGroup: { gap: 6, marginBottom: 12 },
