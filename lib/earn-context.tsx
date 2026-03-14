@@ -4,8 +4,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import createContextHook from '@nkzw/create-context-hook';
 import { supabase } from '@/lib/supabase';
 import { getAuthUserId } from '@/lib/auth-store';
+import { scopedKey } from '@/lib/project-storage';
 
-const EARN_DATA_KEY = '@ipx_earn_data';
+const EARN_DATA_KEY = scopedKey('earn_data');
 
 export interface EarnDeposit {
   id: string;
