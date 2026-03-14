@@ -8,8 +8,9 @@ import { DiscoveredLender } from '@/mocks/lender-discovery';
 import { SECSearchResult } from '@/lib/sec-edgar-service';
 import { supabase } from '@/lib/supabase';
 import { getAuthUserId } from '@/lib/auth-store';
+import { scopedKey } from '@/lib/project-storage';
 
-const STORAGE_KEY = 'ipx_imported_lenders';
+const STORAGE_KEY = scopedKey('imported_lenders');
 
 interface ImportedLenderRecord {
   lender: Lender;
