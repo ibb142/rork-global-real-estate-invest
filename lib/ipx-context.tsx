@@ -6,9 +6,10 @@ import { FractionalShare, SharePurchase } from '@/types';
 import { fractionalShares as initialShares, calculateIPXFee } from '@/mocks/ipx-invest';
 import { getAuthUserId } from '@/lib/auth-store';
 import { supabase } from '@/lib/supabase';
+import { scopedKey } from '@/lib/project-storage';
 
-const IPX_HOLDINGS_KEY = '@ipx_holdings';
-const IPX_PURCHASES_KEY = '@ipx_purchases';
+const IPX_HOLDINGS_KEY = scopedKey('ipx_holdings');
+const IPX_PURCHASES_KEY = scopedKey('ipx_purchases');
 
 export interface IPXHolding {
   id: string;
