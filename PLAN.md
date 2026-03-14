@@ -1,114 +1,206 @@
-# Fix JV Deal Deletion — Bulletproof Delete System
+# JV Deals — Real-time from Database Only
 
-## Problem
-Previous delete attempts used tRPC mutations that weren't reliably reaching the backend. Deals kept reappearing because deletions weren't persisting to DynamoDB.
+## Current Setup
 
-## Fix (Completed)
-- [x] **Direct REST endpoints** added to Hono backend (`/api/jv/purge-all`, `/api/jv/:id`, `/api/jv/list`) — bypasses tRPC entirely
-- [x] **Delete button on each JV card** — trash icon on every deal card in the JV Agreements page
-- [x] **"Delete All" button** — red purge button right next to "Create New" on JV Agreements list
-- [x] **Dual-method deletion** — tries REST first, falls back to tRPC if REST fails
-- [x] **Instant UI update** — removes deal from local state immediately after backend confirms
-- [x] **Owner Controls** already uses real backend data via tRPC (was fixed previously)
+All JV deals (including Casa Rosario) are managed exclusively through the **Admin Panel**.
 
----
+- [x] Removed hardcoded `casa-rosario-001` fallback from jv-storage.ts
+- [x] Removed auto-seed logic from app startup (_layout.tsx)
+- [x] Removed fallback injection from landing.tsx
+- [x] Removed fallback injection from home/index.tsx
+- [x] Removed destructive startup cleanup that was deleting real user deals on every app launch
+- [x] Fixed photo parsing: handles string JSON, arrays, null, and filters invalid entries
+- [x] Fixed pool_tiers mapping from Supabase snake_case to camelCase
+- [x] Only real deals created via Admin Panel appear in app and landing page
 
-# Fix JV Photos Not Saving & Publishing Live
+## Delete Protection (NEVER delete without admin authorization)
 
-## Problems Found (Deep Audit)
-1. **Photos lost during save** — `buildJVPayload` with `skipPhotos=true` excluded ALL photos (including already-uploaded remote URLs) from save payload
-2. **Backend data URI fallback too small** — 0.3MB limit meant most phone photos failed without S3
-3. **Web compression threshold too high** — only compressed photos >5MB; photos 0.3-5MB failed backend limit
-4. **Remote photos not preserved** — `handleCreateAndPublish` set `agreement.photos` to only remote URLs or undefined, losing context for the upload flow
-5. **Landing page stale data** — `refetchInterval: 30000` and no `staleTime: 0` meant published deals didn't appear immediately
+- [x] Added soft-delete (archive) — deals are archived instead of permanently deleted
+- [x] Added restore functionality — archived deals can be restored to active status
+- [x] Added "Archived" filter tab in Admin JV Deals
+- [x] Permanent delete requires typing the exact project name to confirm
+- [x] Disabled `deleteJVDealsByProjectName()` — bulk delete by name is blocked
+- [x] Disabled `deleteAllJVDeals()` — bulk delete all is blocked
+- [x] No code anywhere in the app auto-deletes deals on startup or navigation
 
-## Fixes Applied
-- [x] **`buildJVPayload`** — renamed `skipPhotos` to `skipLocalPhotos`; now ALWAYS includes remote/uploaded photo URLs in payload regardless of local upload status
-- [x] **`handleSaveAndPublish`** — simplified photo flow: remote photos always in initial payload, local photos uploaded after save then merged via update
-- [x] **`handleCreateAndPublish`** — fixed photo classification so local photos are properly separated and passed to upload flow
-- [x] **Backend `uploadDealPhoto`** — increased data URI fallback limit from 0.3MB to 2.0MB so photos work without S3
-- [x] **Web photo compression** — lowered threshold from 5MB to 800KB; all web photos >800KB now compressed to JPEG with quality 0.4-0.55
-- [x] **Landing page query** — `staleTime: 0`, `refetchOnMount: 'always'`, `refetchInterval: 15000` for real-time published deal display
-- [x] **Invest tab** — already correctly displays published deals with photos (verified)
+## Trash Bin System (v2 — March 2026)
 
----
+- [x] `deleteJVDeal()` now moves deals to trash (soft-delete) instead of permanent delete
+- [x] All deleted deals are saved to a local trash backup (AsyncStorage) for recovery
+- [x] Trashed deals in Supabase get status='trashed' + published=false
+- [x] New `fetchTrashDeals()` — retrieves all trashed deals from Supabase + local backup
+- [x] New `restoreFromTrash()` — restores deals from trash back to active status
+- [x] New `permanentlyDeleteJVDeal()` — ONLY available in Admin Trash Bin, requires typing project name
+- [x] Created **Admin > Trash Bin** page (`app/admin/trash-bin.tsx`) with restore + permanent delete
+- [x] Removed ALL delete buttons from `jv-agreement.tsx` (non-admin page)
+- [x] Removed ALL delete buttons from `landing.tsx` (non-admin page)
+- [x] Replaced delete with archive in `owner-controls.tsx`
+- [x] Removed "Purge All" / "Delete All" button from owner-controls
+- [x] Added Trash Bin link in owner-controls for easy access
+- [x] Admin JV Deals permanent delete now uses `permanentlyDeleteJVDeal()` (only for already-archived deals)
+- [x] One-time auto-restore for Casa ROSARIO if it was deleted
+- [x] Casa ROSARIO auto-create DISABLED — no hardcoded deals plan
 
-# Fix JV Photos/Deals Not Saving, Analytics Report, SMS Delivery (March 2026)
+## Performance Fixes (March 2026)
 
-## 1. JV Module — Photos and Deals Not Saving
+- [x] #81 — Unified cache key `published-jv-deals` between home and landing (no more double-fetching)
+- [x] #57/59/82/102 — Removed triple polling: realtime only does fallback when explicitly enabled, removed refetchInterval from both pages
+- [x] #79/103 — Created shared `lib/parse-deal.ts` with single `parseDeal()` function used by both home and landing
+- [x] #64/104 — Consistent partners parsing via `getPartnersArray()` / `getPartnerCount()` — handles string JSON, array, number
+- [x] #72 — JV card in home now navigates to specific deal (`/jv-invest?jvId=X`) instead of deal list
+- [x] #110 — Added `LandingDealsErrorBoundary` around live deals section on landing page
+- [x] #87 — Removed `runSupabaseDiagnostics()` from every landing page load (was inserting test rows)
+- [x] #95 — Fixed hardcoded 360px image width on landing page deals — now uses 100% width
+- [x] #40/105 — Disabled `restoreCasaRosarioIfNeeded()` auto-create — contradicts no hardcoded deals plan
+- [x] Fully removed `restoreCasaRosarioIfNeeded()` call from home screen queryFn
+- [x] Removed hardcoded Casa Rosario fallback + `ensureCasaRosario()` from landing HTML
+- [x] Removed `CASA_ROSARIO_ORIGINAL_PHOTOS` constant and restore logic from jv-storage.ts
+- [x] Removed Casa Rosario seed INSERT from supabase-patch-jv-deals.sql
 
-### Root Causes
-1. **Photo classification bug** — `handleCreateAndPublish` classified `data:image/` URIs (from web compression) as "remote" but `uploadAllPhotos` treated them as "local" needing upload, causing an inconsistency where photos were neither uploaded nor included in the save payload
-2. **`buildJVPayload` filter too broad** — `isRemoteUrl` included `data:image/` URIs as safe photos, but these are base64 strings that shouldn't be persisted directly as photo URLs
-3. **Empty deal list not synced** — when `backendDealsQuery.data.deals` returned an empty array (`length === 0`), `setAgreements` was skipped, so after deleting all deals the list wouldn't clear
+## Photo Protection System (March 2026)
+
+- [x] `protectPhotos()` guard in `updateJVDeal()` — if update sends empty photos, fetches existing from DB and preserves them
+- [x] `protectPhotos()` guard in `upsertJVDeal()` — same protection for upsert operations
+- [x] Local storage upsert also checks for existing photos before allowing clear
+- [x] Fixed `jv-agreement.tsx` `buildJVPayload()` — no longer sends `photos: []` when form has no photos (was the root cause of photo deletion)
+- [x] `recoverPhotosForDeal()` — tries to recover photos from trash backup and local storage
+- [x] `adminRestorePhotos()` — admin-only function to manually add/restore photo URLs to a deal
+- [x] Admin JV Deals page now shows photo count per deal with camera icon button
+- [x] Admin can auto-recover photos from backups or manually paste photo URLs
+- [x] Photo Restore Modal in Admin Panel for pasting URLs
+- [x] `removePhoto()` in `jv-agreement.tsx` now blocked for non-admin users editing existing deals
+- [x] `protectPhotos()` now blocks photo REDUCTION (not just clearing) — if incoming photos < existing photos, update is rejected unless `adminOverride: true`
+- [x] `upsertJVDeal()` and `updateJVDeal()` accept `{ adminOverride: true }` option — only admin callers pass it
+- [x] Admin JV Deals page passes `adminOverride: true` on all update operations
+- [x] Restore Casa ROSARIO 8 original photos — auto-restore on home screen load if photos missing
+- [x] `removePhoto()` completely blocked for ALL existing deals (even admin) — must use Admin Panel photo management
+- [x] Remove button hidden in UI for existing deal photos
+- [x] `protectPhotos()` rewritten with cleaner audit logging and absolute block on reduction/clearing
+
+## Real-time Admin → Landing Page Sync Fixes (March 2026)
+
+### Bugs Found in Audit
+- [x] `useJVRealtime('landing-jv-deals', false)` — fallback polling was DISABLED on landing page, so if Supabase Realtime failed to connect, the landing page NEVER got updates
+- [x] No `refetchInterval` on published deals query — after staleTime expired, no automatic refetch happened
+- [x] Realtime channel name included `Date.now()` suffix — every reconnect created a new channel instead of reusing, causing subscription leaks
+- [x] `invalidateAllJVQueries()` only invalidated but didn't force refetch — stale cache could persist
+- [x] Admin mutations manually listed query keys to invalidate — inconsistent and missing some keys
 
 ### Fixes Applied
-- [x] **`handleCreateAndPublish`** — unified photo classification: `isNeedsUpload` now includes `data:image/` URIs alongside `file://`, `content://`, `blob:` — all go through the upload pipeline
-- [x] **`buildJVPayload`** — `skipLocalPhotos=true` now only includes hosted URLs (`https://`, `http://`), excluding `data:image/` base64 strings; `skipLocalPhotos=false` still includes data URIs for fallback
-- [x] **Backend deal list sync** — changed condition from `deals.length > 0` to `deals.length >= 0` so empty arrays properly clear the local state
+- [x] **jv-realtime.ts**: Stable channel name (removed `Date.now()` suffix) — reuses same channel on reconnect
+- [x] **jv-realtime.ts**: `invalidateAllJVQueries()` now also calls `refetchQueries()` for `published-jv-deals` and `jvAgreements.list` — forces immediate data refresh
+- [x] **jv-realtime.ts**: Fallback polling stays active as safety net even when realtime connects (slower 30s interval)
+- [x] **jv-realtime.ts**: Increased max retries from 5 to 8, handles `CLOSED` status
+- [x] **jv-realtime.ts**: Added `useForceJVRefresh()` hook for manual force-refresh
+- [x] **landing.tsx**: Changed `useJVRealtime('landing-jv-deals', false)` → `true` — enables fallback polling
+- [x] **landing.tsx**: Added `refetchInterval: 12000` — auto-refetch every 12s as safety net
+- [x] **landing.tsx**: Reduced `staleTime` from 10s to 5s, `gcTime` from 30s to 15s
+- [x] **admin/jv-deals.tsx**: All mutations now use centralized `invalidateAllJVQueries()` instead of manual key lists
 
-## 2. Analytics Report Not Working
+### Red Items Fixed (Follow-up Audit)
+- [x] 🔴→✅ **Cross-tab invalidation**: Added `BroadcastChannel` API to `jv-realtime.ts` — when admin publishes/deletes in one browser tab, landing page in another tab receives instant notification and refetches
+- [x] 🔴→✅ **checkSupabaseTable() failure cache too long (10s)**: Reduced failure cache TTL from 10s to 2s in `jv-storage.ts` — if Supabase check fails, retries in 2s instead of waiting 10s
+- [x] 🔴→✅ **Supabase Realtime not enabled on jv_deals table**: Added SQL to `supabase-patch-jv-deals.sql` — `ALTER PUBLICATION supabase_realtime ADD TABLE jv_deals` — **USER MUST RUN THIS IN SUPABASE SQL EDITOR**
 
-### Root Causes
-1. **`placeholderData: (prev) => prev`** masked loading/error states — when the query had stale data from a previous period, switching periods showed old data instead of a loading indicator
-2. **Stale data not cleared** — `gcTime` was default (5 min), so old query results persisted and masked "no data" states
-3. **Connection detection too narrow** — `isConnected` only checked `isSuccess`, not whether data was actually present
+### Deep Audit Fix (March 2026 — Round 2)
+- [x] 🔴→✅ **Supabase client missing realtime config**: Added `realtime: { params: { eventsPerSecond: 10 } }` to `lib/supabase.ts` — ensures realtime channels connect properly
+- [x] 🔴→✅ **Admin page had NO useJVRealtime**: Admin only broadcasted changes but never listened — added `useJVRealtime('admin-jv-deals', true)` so admin sees external changes too
+- [x] 🔴→✅ **Home page fallback polling DISABLED**: `useJVRealtime('home-jv-deals', false)` → changed to `true` + added `refetchInterval: 15000` — home now auto-refreshes
+- [x] 🔴→✅ **BroadcastChannel singleton leaked**: Never cleaned up on unmount → added ref counting, `bc.close()` when last listener unmounts
+- [x] 🔴→✅ **No visibility-based reconnect**: After phone sleep/tab switch, realtime went stale → added `visibilitychange` (web) + `AppState` (native) listeners that force refetch + reconnect on focus
+- [x] 🔴→✅ **jv-storage.ts failure cache still slow**: Reduced `SUPABASE_FAILURE_CACHE_TTL` from 2s to 1.5s, `SUPABASE_CACHE_TTL` from 10s to 8s, `TABLE_CACHE_TTL` from 15s to 10s
 
-### Fixes Applied
-- [x] **Removed `placeholderData`** — analytics now shows loading state when switching periods instead of stale data
-- [x] **Added `gcTime: 0`** — query cache is cleared immediately so stale data doesn't persist
-- [x] **Added `refetchOnMount: 'always'`** and `refetchOnWindowFocus: true` — data refreshes on every screen visit
-- [x] **Added `networkMode: 'always'`** — queries fire even when React Query thinks the network is down
-- [x] **Improved diagnostic query** — `staleTime: 10000`, `refetchInterval: 15000`, `refetchOnMount: 'always'` for faster diagnostic data
-- [x] **Fixed `isConnected`** — now checks `!!data || analyticsQuery.isSuccess` for more accurate connection status
-- [x] **Fixed `isLoading`** — only shows loading when there's no existing data (`isLoading && !data`)
+## How it works now
+- All deals come from Supabase (or local storage fallback)
+- No hardcoded deals — what you create in Admin is what shows
+- Landing page syncs via 4 layers: (1) Supabase Realtime subscription, (2) fallback polling every 8-25s, (3) refetchInterval every 12s, (4) visibility-based reconnect on tab/app focus
+- Home page syncs via same 4 layers with refetchInterval every 15s
+- Admin page now ALSO listens to realtime changes (was only broadcasting before)
+- Admin changes trigger Supabase UPDATE/DELETE → Realtime delivers event to ALL pages → queries auto-refetch
+- Cross-tab sync via BroadcastChannel — admin tab broadcasts, landing/home tabs receive and refetch instantly
+- Edit, publish, unpublish, or archive any deal from Admin Panel
+- **Deleting a deal moves it to Trash** — never permanently deleted without admin authorization
+- Trash Bin in Admin lets you restore or permanently delete (requires typing project name)
+- Non-admin pages (JV Agreement, Landing) have NO delete buttons at all
+- Photos, partners, and poolTiers are robustly parsed from any format (string JSON, array, null)
+- **Photo Protection**: No code can clear or reduce photos from a deal — the storage layer automatically preserves existing photos if an update tries to send fewer photos (unless admin override is used)
+- Admin Panel has photo recovery tools: auto-recover from backups or manually add URLs
+- No startup code interferes with user-created deals
+- All hardcoded Casa Rosario code has been fully removed (no fallbacks, no auto-create, no auto-restore)
+- `removePhoto()` is completely disabled for existing deals — no one can remove photos through the JV Agreement form
+- Photo removal is ONLY possible through Admin Panel > JV Deals > Photo Management with `adminOverride: true`
 
-## 3. SMS Messages Not Being Delivered
+## Fake Data Purge & Project-Scoped Storage Isolation (March 2026)
 
-### Root Causes
-1. **Simulated mode returns `success: true`** — when `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` are missing, `sendToPhone` returned `{ success: true }` with status "simulated" — the frontend treated this as successful delivery
-2. **No distinction between simulated and sent** — `getReportingStatus` counted "simulated" messages in `totalSent`, and the frontend showed them as delivered
-3. **No user-facing warning** — the frontend had no indication that AWS SNS wasn't configured and messages weren't actually reaching phones
+### Fake Data Removal
+- [x] Removed ALL fake properties from `mocks/properties.ts` — empty array, only real admin-created data
+- [x] Removed ALL fake market data from `mocks/market.ts` — empty record, only real API data
+- [x] Removed ALL fake debt acquisition properties + token purchases + first lien investments from `mocks/debt-acquisition.ts`
+- [x] Removed ALL fake tokenized properties + sample trades from `mocks/share-trading.ts`
+- [x] Removed fake admin stats counts (totalProperties: 6, liveProperties: 4) from `mocks/admin.ts` — now zero
+- [x] Updated `lib/data-hooks.ts` — no longer falls back to fake mock data; returns empty arrays when Supabase has no data
+- [x] Removed `mockUser` dependency from `useCurrentUser()` — replaced with `DEFAULT_USER` object (no more mock imports)
+- [x] Removed `mockHoldings` fallback from `useHoldings()` — returns `[]` when Supabase has no data
+- [x] Removed `mockNotifications` fallback from `useNotifications()` — returns `[]` when Supabase has no data
+- [x] Removed `mockUser.walletBalance` fallback from `useWalletBalance()` — returns `0` when Supabase has no data
 
-### Fixes Applied
-- [x] **Backend `sendToPhone`** — now returns `{ success: true, simulated: true }` with clear error message when AWS credentials are missing
-- [x] **Backend `sendSMS`** — tracks `allSimulated` flag across all recipients; returns `simulated: true` and a warning message when all sends were simulated
-- [x] **Backend `getReportingStatus`** — added `snsConfigured` boolean, separated `totalSent` (actually delivered) from `totalSimulated` (logged but not sent)
-- [x] **tRPC `sendCustom`** — now returns `simulated` flag and `warning` message to frontend
-- [x] **Frontend SMS warning card** — shows prominent yellow warning banner when `snsConfigured === false`, explaining that messages are being simulated
-- [x] **Frontend stats** — now shows three columns: "Delivered", "Simulated", "Failed" instead of grouping simulated with sent
-- [x] **Frontend alert on simulated send** — when a custom message is simulated, an Alert pops up explaining that AWS SNS needs to be configured for real delivery
+### Project-Scoped Storage Isolation (Instagram-style)
+- [x] Created `lib/project-storage.ts` — core isolation system
+  - Every AsyncStorage key is prefixed with project ID (`@ivx_p_{PROJECT_ID}::`)
+  - User-scoped keys add user ID (`@ivx_p_{PROJECT_ID}_u_{USER_ID}::`)
+  - `validateKeyOwnership()` — blocks cross-project access at the storage layer
+  - `auditStorageKeys()` — detects foreign keys from other projects
+  - `cleanForeignKeys()` — removes any data from other projects
+  - `runStorageIntegrityCheck()` — full health check on startup
+  - `migrateUnscopedKey()` — safely migrates old unscoped keys to new format
+- [x] Updated `lib/jv-storage.ts` — JV deals, waitlist, and trash all use project-scoped keys
+- [x] Updated `lib/image-storage.ts` — image registry uses project-scoped keys
+- [x] Updated `lib/email-context.tsx` — email storage + active account use project-scoped keys
+- [x] Updated `lib/ipx-context.tsx` — IPX holdings + purchases use project-scoped keys
+- [x] Updated `lib/earn-context.tsx` — earn data uses project-scoped keys
+- [x] Updated `lib/lender-context.tsx` — imported lenders use project-scoped keys
+- [x] Updated `lib/i18n-context.tsx` — language preference uses project-scoped keys
+- [x] Updated `lib/intro-context.tsx` — onboarding steps + completion flag use project-scoped keys
+- [x] Updated `lib/analytics.ts` — analytics events + session use project-scoped keys
+- [x] Added startup integrity check in `app/_layout.tsx` — on every app launch:
+  - Runs `runStorageIntegrityCheck()` to verify project isolation
+  - Runs `auditStorageKeys()` to detect foreign data
+  - Auto-cleans foreign keys from other projects via `cleanForeignKeys()`
 
----
+### How Project Isolation Works
+- Similar to how Instagram keeps each account's data separate
+- Each project has a unique `EXPO_PUBLIC_PROJECT_ID` that namespaces ALL local storage
+- No project can read, write, or delete another project's data
+- Cross-project access is blocked at the storage layer with error logging
+- On app startup, any leaked foreign data is automatically detected and cleaned
+- Supabase queries are already scoped by authenticated user — this adds client-side isolation on top
+- Image registry, JV deals, waitlist, and trash are all project-isolated
+- The system prevents bugs where one project's pictures/info could appear in another project
+- ALL contexts now use project-scoped storage: JV deals, images, emails, IPX holdings, earn data, lenders, language, onboarding, analytics
 
-# Fix JV Photos Not Saving + Admin Edit/Delete on Landing Page (March 2026)
+## Go-Live Fixes (March 2026)
 
-## Problems
-1. **Photos not saving after publish** — base64 photos too large (800KB+ threshold), two-step update+publish lost photo data between calls
-2. **No admin edit/delete on Landing page** — published deals had no management controls
-3. **Landing page not real-time enough** — 8s refetch interval too slow
-4. **No way to edit deals from Landing page** — investors/owners couldn't manage published deals
+### App Code Fixes
+- [x] **#62** — `lib/analytics.ts`: Analytics table silent fail → added table existence verification with max 3 attempts, clear warning when `analytics_events` table missing, drops queue instead of infinite re-queue
+- [x] **#65** — `lib/email-context.tsx`: Email edge function error handling → `sendEmail()` now returns `deliveryStatus: 'sent' | 'queued_locally'` with clear warnings when edge function is not deployed
+- [x] **#104** — `lib/environment.ts`: Hardcoded fallback URLs → staging/production configs now fall back to `EXPO_PUBLIC_SUPABASE_URL` before hardcoded domain
+- [x] **#57** — `lib/push-notifications.ts`: Push token registration → detects missing `push_tokens` table with clear warning message instead of generic error
 
-## Fixes Applied
-- [x] **Aggressive photo compression** — lowered web threshold from 800KB to 120KB; ALL photos now compressed via OffscreenCanvas (not just large ones); quality 0.25-0.45 based on size; max 700-800px dimensions
-- [x] **Single save+publish call** — replaced two-step update→publish flow with single `supabase.from('jv_deals').update({...payload, published: true})` call to prevent photos being lost between calls
-- [x] **Always include photos in payload** — `buildJVPayload` now always sets `payload.photos` (empty array if none) instead of conditionally omitting
-- [x] **Admin edit/delete on Landing page** — added Edit and Delete buttons on each live deal card (visible to admin/authenticated users)
-- [x] **Delete mutation on Landing** — direct Supabase delete with query invalidation and confirmation dialog
-- [x] **Edit navigation from Landing** — Edit button navigates to `/jv-agreement?editId=<dealId>` which auto-loads the deal in edit mode
-- [x] **editId query param support** — `jv-agreement.tsx` reads `editId` from URL params and auto-opens the matching deal in edit mode when data loads
-- [x] **Faster real-time** — reduced Landing page refetchInterval from 8000ms to 4000ms
-- [x] **Photo size logging** — added detailed logging of photo sizes in payload during save/publish for debugging
+### Infrastructure Files Created
+- [x] **#107** — `deploy/aws/s3-config.ts`: S3 bucket configuration with prefix structure, file type validation, CloudFront CDN config
+- [x] **#107** — `deploy/aws/s3-bucket-policy.json`: S3 bucket policy with CloudFront OAI access, deny unencrypted transport, deny public access
+- [x] **#107** — `deploy/aws/cloudfront-config.json`: CloudFront distribution config with cache behaviors for images/documents, TLS 1.2, HTTP/2+3
+- [x] **#109** — `deploy/.env.production`: Production env file generated from template with TODO markers for all required credentials
+- [x] `supabase-go-live-verify.sql`: Comprehensive verification script — checks all 13 tables, RLS, realtime publication, policies, indexes, auth trigger
 
----
+### Deferred to Next Phase
+- [ ] **#12** — 2FA verification (stub only)
+- [ ] **#13** — Owner direct access (stub only)
 
-# Fix Edit/Delete Permissions — Admin-Only for Live Deals (March 2026)
-
-## Problems
-1. **Landing page edit/delete visible to all users** — condition was `isAdmin || isAuthenticated`, so any logged-in user could see edit/delete buttons on live deals
-2. **Admin panel query invalidation incomplete** — admin JV deals page only invalidated `['jvAgreements.list']`, so changes from admin didn't propagate to landing page or JV module
-
-## Fixes Applied
-- [x] **Landing page edit/delete admin-only** — changed condition from `(isAdmin || isAuthenticated)` to `isAdmin` only
-- [x] **Admin panel query sync** — all mutations (publish, unpublish, update, delete) now invalidate `['jvAgreements.list']`, `['jv-agreements']`, `['published-jv-deals']`, and `['jv-deals']` so changes propagate across all screens in real time
-- [x] **JV module already correct** — published deals show "Admin Only" badge, no edit/delete; unpublished deals still editable from JV module
+### Manual Steps Required (Not Code)
+- Run `supabase-master-setup.sql` in Supabase SQL Editor (creates all 13 tables + RLS + realtime)
+- Run `supabase-go-live-verify.sql` to confirm everything is ready
+- Deploy `send-email` Supabase Edge Function for real email delivery
+- Configure DNS for `ivxholding.com` / `staging.ivxholding.com` / `api.ivxholding.com`
+- Provision SSL certs into `deploy/nginx/ssl/`
+- Fill in `deploy/.env.production` with real credentials (search for TODO)
