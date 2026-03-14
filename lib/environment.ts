@@ -46,7 +46,7 @@ const developmentConfig: EnvironmentConfig = {
 
 const stagingConfig: EnvironmentConfig = {
   name: 'staging',
-  apiBaseUrl: process.env.EXPO_PUBLIC_STAGING_API_URL || 'https://staging.ivxholding.com',
+  apiBaseUrl: process.env.EXPO_PUBLIC_STAGING_API_URL || process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://staging.ivxholding.com',
   enableDebugLogging: true,
   enableAnalytics: true,
   enableCrashReporting: true,
@@ -68,7 +68,7 @@ const stagingConfig: EnvironmentConfig = {
 
 const productionConfig: EnvironmentConfig = {
   name: 'production',
-  apiBaseUrl: process.env.EXPO_PUBLIC_PRODUCTION_API_URL || 'https://ivxholding.com',
+  apiBaseUrl: process.env.EXPO_PUBLIC_PRODUCTION_API_URL || process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://ivxholding.com',
   enableDebugLogging: false,
   enableAnalytics: true,
   enableCrashReporting: true,
