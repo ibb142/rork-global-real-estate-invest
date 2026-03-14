@@ -12,6 +12,9 @@ import {
   TextInput,
   Keyboard,
   TouchableWithoutFeedback,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import {
   X,
@@ -25,14 +28,23 @@ import {
   CheckCircle,
   Lock,
   AlertCircle,
+  Mail,
+  User,
+  Eye,
+  EyeOff,
+  ArrowLeft,
+  Globe,
+  Phone,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
 import { formatCurrencyWithDecimals, formatCurrencyCompact } from '@/lib/formatters';
 import { purchaseJVInvestment } from '@/lib/investment-service';
 import { useQueryClient } from '@tanstack/react-query';
+import { useAuth } from '@/lib/auth-context';
 
 type InvestType = 'jv' | 'shares';
+type ModalStep = 'select' | 'confirm' | 'processing' | 'success' | 'auth' | 'auth_login';
 
 interface QuickBuyDeal {
   id: string;
@@ -57,15 +69,26 @@ const JV_AMOUNTS = [25000, 50000, 75000, 100000, 150000, 250000];
 const SHARES_AMOUNTS = [100, 500, 1000, 5000, 10000, 25000];
 
 export default function QuickBuyModal({ visible, onClose, deal, onNavigateToFullInvest }: QuickBuyModalProps) {
+  const { isAuthenticated, register, login, registerLoading, loginLoading } = useAuth();
   const [selectedAmount, setSelectedAmount] = useState<number>(1000);
   const [customAmount, setCustomAmount] = useState('');
-  const [investType, setInvestType] = useState<InvestType>('jv');
-  const [step, setStep] = useState<'select' | 'confirm' | 'processing' | 'success'>('select');
+  const [investType, setInvestType] = useState<InvestType>('shares');
+  const [step, setStep] = useState<ModalStep>('select');
   const [purchaseError, setPurchaseError] = useState<string | null>(null);
   const [confirmationNumber, setConfirmationNumber] = useState('');
   const slideAnim = useRef(new Animated.Value(0)).current;
   const successScale = useRef(new Animated.Value(0)).current;
   const queryClient = useQueryClient();
+
+  const [authFirstName, setAuthFirstName] = useState('');
+  const [authLastName, setAuthLastName] = useState('');
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPhone, setAuthPhone] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authCountry, setAuthCountry] = useState('US');
+  const [showPassword, setShowPassword] = useState(false);
+  const [authError, setAuthError] = useState('');
+  const [pendingInvest, setPendingInvest] = useState(false);
 
   const activeAmounts = investType === 'jv' ? JV_AMOUNTS : SHARES_AMOUNTS;
   const minAmount = investType === 'jv' ? 25000 : (deal?.minInvestment ?? 50);
@@ -73,11 +96,12 @@ export default function QuickBuyModal({ visible, onClose, deal, onNavigateToFull
   useEffect(() => {
     if (visible) {
       setStep('select');
-      setSelectedAmount(25000);
+      setSelectedAmount(investType === 'jv' ? 25000 : 1000);
       setCustomAmount('');
-      setInvestType('jv');
       setPurchaseError(null);
       setConfirmationNumber('');
+      setAuthError('');
+      setPendingInvest(false);
       successScale.setValue(0);
       Animated.spring(slideAnim, {
         toValue: 1,
@@ -92,7 +116,20 @@ export default function QuickBuyModal({ visible, onClose, deal, onNavigateToFull
         useNativeDriver: true,
       }).start();
     }
-  }, [visible, slideAnim, successScale]);
+  }, [visible, slideAnim, successScale, investType]);
+
+  useEffect(() => {
+    if (isAuthenticated && pendingInvest && step === 'auth') {
+      console.log('[QuickBuy] Auth completed, proceeding to confirm');
+      setPendingInvest(false);
+      setStep('confirm');
+    }
+    if (isAuthenticated && pendingInvest && step === 'auth_login') {
+      console.log('[QuickBuy] Login completed, proceeding to confirm');
+      setPendingInvest(false);
+      setStep('confirm');
+    }
+  }, [isAuthenticated, pendingInvest, step]);
 
   const handleSelectAmount = useCallback((amount: number) => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -120,8 +157,59 @@ export default function QuickBuyModal({ visible, onClose, deal, onNavigateToFull
       return;
     }
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+    if (!isAuthenticated) {
+      console.log('[QuickBuy] User not authenticated, showing signup');
+      setPendingInvest(true);
+      setStep('auth');
+      return;
+    }
+
     setStep('confirm');
-  }, [deal, selectedAmount, minAmount, investType]);
+  }, [deal, selectedAmount, minAmount, investType, isAuthenticated]);
+
+  const handleSignup = useCallback(async () => {
+    setAuthError('');
+    if (!authFirstName.trim()) { setAuthError('First name is required'); return; }
+    if (!authEmail.trim() || !authEmail.includes('@')) { setAuthError('Valid email is required'); return; }
+    if (!authPassword.trim() || authPassword.length < 6) { setAuthError('Password must be at least 6 characters'); return; }
+
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    console.log('[QuickBuy] Registering user inline:', authEmail);
+
+    const result = await register({
+      email: authEmail.trim().toLowerCase(),
+      password: authPassword,
+      firstName: authFirstName.trim(),
+      lastName: authLastName.trim() || authFirstName.trim(),
+      phone: authPhone.trim(),
+      country: authCountry,
+    });
+
+    if (result.success) {
+      console.log('[QuickBuy] Registration successful, will proceed to invest');
+      setPendingInvest(true);
+    } else {
+      setAuthError(result.message || 'Registration failed. Try again.');
+    }
+  }, [authFirstName, authLastName, authEmail, authPassword, authPhone, authCountry, register]);
+
+  const handleLogin = useCallback(async () => {
+    setAuthError('');
+    if (!authEmail.trim() || !authEmail.includes('@')) { setAuthError('Valid email is required'); return; }
+    if (!authPassword.trim()) { setAuthError('Password is required'); return; }
+
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    console.log('[QuickBuy] Logging in user inline:', authEmail);
+
+    const result = await login(authEmail.trim().toLowerCase(), authPassword);
+    if (result.success) {
+      console.log('[QuickBuy] Login successful, will proceed to invest');
+      setPendingInvest(true);
+    } else {
+      setAuthError(result.message || 'Login failed. Check your credentials.');
+    }
+  }, [authEmail, authPassword, login]);
 
   const handleConfirmPurchase = useCallback(async () => {
     if (!deal) return;
@@ -188,6 +276,12 @@ export default function QuickBuyModal({ visible, onClose, deal, onNavigateToFull
     setTimeout(() => onNavigateToFullInvest(deal.id), 300);
   }, [deal, onClose, onNavigateToFullInvest]);
 
+  const goBackFromAuth = useCallback(() => {
+    setPendingInvest(false);
+    setAuthError('');
+    setStep('select');
+  }, []);
+
   if (!deal) return null;
 
   const translateY = slideAnim.interpolate({
@@ -203,233 +297,503 @@ export default function QuickBuyModal({ visible, onClose, deal, onNavigateToFull
       onRequestClose={onClose}
     >
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-        <View style={modalStyles.overlay}>
-          <TouchableOpacity style={modalStyles.backdropTouch} activeOpacity={1} onPress={onClose} />
-          <Animated.View style={[modalStyles.sheet, { transform: [{ translateY }] }]}>
-            <View style={modalStyles.handle} />
+        <View style={ms.overlay}>
+          <TouchableOpacity style={ms.backdropTouch} activeOpacity={1} onPress={onClose} />
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={ms.kavWrap}
+          >
+            <Animated.View style={[ms.sheet, { transform: [{ translateY }] }]}>
+              <View style={ms.handle} />
 
-            <View style={modalStyles.headerRow}>
-              <Text style={modalStyles.headerTitle}>
-                {step === 'select' ? 'Quick Invest' : step === 'confirm' ? 'Confirm' : step === 'success' ? 'Done!' : 'Processing'}
-              </Text>
-              <TouchableOpacity style={modalStyles.closeBtn} onPress={onClose}>
-                <X size={20} color={Colors.textSecondary} />
-              </TouchableOpacity>
-            </View>
-
-            <View style={modalStyles.dealRow}>
-              {deal.photo ? (
-                <Image source={{ uri: deal.photo }} style={modalStyles.dealThumb} />
-              ) : (
-                <View style={[modalStyles.dealThumb, modalStyles.dealThumbPlaceholder]}>
-                  <Landmark size={20} color={Colors.primary} />
+              <View style={ms.headerRow}>
+                <View style={ms.headerLeft}>
+                  {(step === 'auth' || step === 'auth_login') && (
+                    <TouchableOpacity style={ms.headerBackBtn} onPress={goBackFromAuth}>
+                      <ArrowLeft size={18} color={Colors.textSecondary} />
+                    </TouchableOpacity>
+                  )}
+                  <Text style={ms.headerTitle}>
+                    {step === 'select' ? 'Quick Invest' : step === 'confirm' ? 'Confirm' : step === 'success' ? 'Done!' : step === 'auth' ? 'Create Account' : step === 'auth_login' ? 'Sign In' : 'Processing'}
+                  </Text>
                 </View>
-              )}
-              <View style={modalStyles.dealInfo}>
-                <Text style={modalStyles.dealName} numberOfLines={1}>{deal.projectName}</Text>
-                {deal.propertyAddress ? (
-                  <View style={modalStyles.dealAddressRow}>
-                    <MapPin size={10} color={Colors.textTertiary} />
-                    <Text style={modalStyles.dealAddress} numberOfLines={1}>{deal.propertyAddress}</Text>
-                  </View>
-                ) : null}
-                <View style={modalStyles.dealMetaRow}>
-                  <Text style={modalStyles.dealInvestment}>{formatCurrencyCompact(deal.totalInvestment)}</Text>
-                  <View style={modalStyles.dealRoiBadge}>
-                    <TrendingUp size={10} color="#00C48C" />
-                    <Text style={modalStyles.dealRoi}>{deal.expectedROI}% ROI</Text>
-                  </View>
-                </View>
+                <TouchableOpacity style={ms.closeBtn} onPress={onClose}>
+                  <X size={20} color={Colors.textSecondary} />
+                </TouchableOpacity>
               </View>
-            </View>
 
-            {step === 'select' && (
-              <>
-                <View style={modalStyles.typeRow}>
-                  <TouchableOpacity
-                    style={[modalStyles.typeBtn, investType === 'jv' && modalStyles.typeBtnActive]}
-                    onPress={() => { void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setInvestType('jv'); setSelectedAmount(25000); setCustomAmount(''); }}
-                  >
-                    <Landmark size={16} color={investType === 'jv' ? '#00C48C' : Colors.textTertiary} />
-                    <Text style={[modalStyles.typeBtnText, investType === 'jv' && modalStyles.typeBtnTextActive]}>JV Direct</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[modalStyles.typeBtn, investType === 'shares' && modalStyles.typeBtnActive]}
-                    onPress={() => { void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setInvestType('shares'); setSelectedAmount(1000); setCustomAmount(''); }}
-                  >
-                    <Coins size={16} color={investType === 'shares' ? Colors.primary : Colors.textTertiary} />
-                    <Text style={[modalStyles.typeBtnText, investType === 'shares' && modalStyles.typeBtnTextActive]}>Token Shares</Text>
-                  </TouchableOpacity>
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                bounces={false}
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={ms.scrollContent}
+              >
+                <View style={ms.dealRow}>
+                  {deal.photo ? (
+                    <Image source={{ uri: deal.photo }} style={ms.dealThumb} />
+                  ) : (
+                    <View style={[ms.dealThumb, ms.dealThumbPlaceholder]}>
+                      <Landmark size={20} color={Colors.primary} />
+                    </View>
+                  )}
+                  <View style={ms.dealInfo}>
+                    <Text style={ms.dealName} numberOfLines={1}>{deal.projectName}</Text>
+                    {deal.propertyAddress ? (
+                      <View style={ms.dealAddressRow}>
+                        <MapPin size={10} color={Colors.textTertiary} />
+                        <Text style={ms.dealAddress} numberOfLines={1}>{deal.propertyAddress}</Text>
+                      </View>
+                    ) : null}
+                    <View style={ms.dealMetaRow}>
+                      <Text style={ms.dealInvestment}>{formatCurrencyCompact(deal.totalInvestment)}</Text>
+                      <View style={ms.dealRoiBadge}>
+                        <TrendingUp size={10} color="#00C48C" />
+                        <Text style={ms.dealRoi}>{deal.expectedROI}% ROI</Text>
+                      </View>
+                    </View>
+                  </View>
                 </View>
 
-                <Text style={modalStyles.amountLabel}>{investType === 'jv' ? `Select Amount (Min $25K)` : 'Select Amount'}</Text>
-                <View style={modalStyles.amountsGrid}>
-                  {activeAmounts.map(amt => (
+                {step === 'select' && (
+                  <>
+                    <View style={ms.typeRow}>
+                      <TouchableOpacity
+                        style={[ms.typeBtn, investType === 'jv' && ms.typeBtnActive]}
+                        onPress={() => { void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setInvestType('jv'); setSelectedAmount(25000); setCustomAmount(''); }}
+                      >
+                        <Landmark size={16} color={investType === 'jv' ? '#00C48C' : Colors.textTertiary} />
+                        <Text style={[ms.typeBtnText, investType === 'jv' && ms.typeBtnTextActive]}>JV Direct</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[ms.typeBtn, investType === 'shares' && ms.typeBtnActive]}
+                        onPress={() => { void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setInvestType('shares'); setSelectedAmount(1000); setCustomAmount(''); }}
+                      >
+                        <Coins size={16} color={investType === 'shares' ? Colors.primary : Colors.textTertiary} />
+                        <Text style={[ms.typeBtnText, investType === 'shares' && ms.typeBtnTextActive]}>Token Shares</Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    <Text style={ms.amountLabel}>{investType === 'jv' ? `Select Amount (Min $25K)` : 'Select Amount'}</Text>
+                    <View style={ms.amountsGrid}>
+                      {activeAmounts.map(amt => (
+                        <TouchableOpacity
+                          key={amt}
+                          style={[ms.amountChip, selectedAmount === amt && !customAmount && ms.amountChipActive]}
+                          onPress={() => handleSelectAmount(amt)}
+                        >
+                          <Text style={[ms.amountChipText, selectedAmount === amt && !customAmount && ms.amountChipTextActive]}>
+                            {amt >= 1000 ? `$${(amt / 1000)}K` : `$${amt}`}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+
+                    <View style={ms.customInputRow}>
+                      <Text style={ms.customPrefix}>$</Text>
+                      <TextInput
+                        style={ms.customInput}
+                        value={customAmount}
+                        onChangeText={handleCustomAmountChange}
+                        placeholder="Custom amount"
+                        placeholderTextColor={Colors.textTertiary}
+                        keyboardType="numeric"
+                        returnKeyType="done"
+                        onSubmitEditing={Keyboard.dismiss}
+                      />
+                    </View>
+
+                    <View style={ms.previewRow}>
+                      <View style={ms.previewItem}>
+                        <Text style={ms.previewLabel}>You Invest</Text>
+                        <Text style={ms.previewValue}>{formatCurrencyWithDecimals(selectedAmount)}</Text>
+                      </View>
+                      <View style={ms.previewDivider} />
+                      <View style={ms.previewItem}>
+                        <Text style={ms.previewLabel}>Ownership</Text>
+                        <Text style={[ms.previewValue, { color: Colors.primary }]}>{equityPercent.toFixed(2)}%</Text>
+                      </View>
+                      <View style={ms.previewDivider} />
+                      <View style={ms.previewItem}>
+                        <Text style={ms.previewLabel}>Est. Return</Text>
+                        <Text style={[ms.previewValue, { color: '#00C48C' }]}>{formatCurrencyCompact(estimatedReturn)}</Text>
+                      </View>
+                    </View>
+
                     <TouchableOpacity
-                      key={amt}
-                      style={[modalStyles.amountChip, selectedAmount === amt && !customAmount && modalStyles.amountChipActive]}
-                      onPress={() => handleSelectAmount(amt)}
+                      style={[ms.ctaBtn, selectedAmount < minAmount && ms.ctaBtnDisabled]}
+                      onPress={handleContinue}
+                      disabled={selectedAmount < minAmount}
+                      testID="quick-buy-continue"
                     >
-                      <Text style={[modalStyles.amountChipText, selectedAmount === amt && !customAmount && modalStyles.amountChipTextActive]}>
-                        {amt >= 1000 ? `$${(amt / 1000)}K` : `$${amt}`}
+                      <Zap size={18} color="#000" />
+                      <Text style={ms.ctaBtnText}>
+                        {isAuthenticated ? `Continue — ${formatCurrencyWithDecimals(selectedAmount)}` : `Invest — ${formatCurrencyWithDecimals(selectedAmount)}`}
                       </Text>
                     </TouchableOpacity>
-                  ))}
-                </View>
 
-                <View style={modalStyles.customInputRow}>
-                  <Text style={modalStyles.customPrefix}>$</Text>
-                  <TextInput
-                    style={modalStyles.customInput}
-                    value={customAmount}
-                    onChangeText={handleCustomAmountChange}
-                    placeholder="Custom amount"
-                    placeholderTextColor={Colors.textTertiary}
-                    keyboardType="numeric"
-                    returnKeyType="done"
-                    onSubmitEditing={Keyboard.dismiss}
-                  />
-                </View>
+                    {!isAuthenticated && (
+                      <View style={ms.authNoteBanner}>
+                        <Lock size={13} color="#FFD700" />
+                        <Text style={ms.authNoteText}>Quick signup required to invest — takes 30 seconds</Text>
+                      </View>
+                    )}
 
-                <View style={modalStyles.previewRow}>
-                  <View style={modalStyles.previewItem}>
-                    <Text style={modalStyles.previewLabel}>You Invest</Text>
-                    <Text style={modalStyles.previewValue}>{formatCurrencyWithDecimals(selectedAmount)}</Text>
-                  </View>
-                  <View style={modalStyles.previewDivider} />
-                  <View style={modalStyles.previewItem}>
-                    <Text style={modalStyles.previewLabel}>Ownership</Text>
-                    <Text style={[modalStyles.previewValue, { color: Colors.primary }]}>{equityPercent.toFixed(2)}%</Text>
-                  </View>
-                  <View style={modalStyles.previewDivider} />
-                  <View style={modalStyles.previewItem}>
-                    <Text style={modalStyles.previewLabel}>Est. Return</Text>
-                    <Text style={[modalStyles.previewValue, { color: '#00C48C' }]}>{formatCurrencyCompact(estimatedReturn)}</Text>
-                  </View>
-                </View>
+                    <TouchableOpacity style={ms.fullFlowBtn} onPress={handleGoToFullInvest}>
+                      <Text style={ms.fullFlowText}>View Full Details</Text>
+                      <ChevronRight size={14} color={Colors.primary} />
+                    </TouchableOpacity>
+                  </>
+                )}
 
-                <TouchableOpacity
-                  style={[modalStyles.ctaBtn, selectedAmount < minAmount && modalStyles.ctaBtnDisabled]}
-                  onPress={handleContinue}
-                  disabled={selectedAmount < minAmount}
-                  testID="quick-buy-continue"
-                >
-                  <Zap size={18} color="#000" />
-                  <Text style={modalStyles.ctaBtnText}>Continue — {formatCurrencyWithDecimals(selectedAmount)}</Text>
-                </TouchableOpacity>
+                {step === 'auth' && (
+                  <>
+                    <View style={ms.authHeader}>
+                      <View style={ms.authBadge}>
+                        <Zap size={12} color="#FFD700" />
+                        <Text style={ms.authBadgeText}>QUICK SIGNUP TO INVEST</Text>
+                      </View>
+                      <Text style={ms.authSubtitle}>
+                        Create your free account to invest {formatCurrencyWithDecimals(selectedAmount)} in {deal.projectName}
+                      </Text>
+                    </View>
 
-                <TouchableOpacity style={modalStyles.fullFlowBtn} onPress={handleGoToFullInvest}>
-                  <Text style={modalStyles.fullFlowText}>View Full Details</Text>
-                  <ChevronRight size={14} color={Colors.primary} />
-                </TouchableOpacity>
-              </>
-            )}
+                    <View style={ms.authForm}>
+                      <View style={ms.authInputRow}>
+                        <View style={[ms.authInput, { flex: 1 }]}>
+                          <User size={15} color={Colors.textTertiary} />
+                          <TextInput
+                            style={ms.authInputText}
+                            placeholder="First name"
+                            placeholderTextColor={Colors.textTertiary}
+                            value={authFirstName}
+                            onChangeText={setAuthFirstName}
+                            autoCapitalize="words"
+                            testID="qb-first-name"
+                          />
+                        </View>
+                        <View style={[ms.authInput, { flex: 1 }]}>
+                          <User size={15} color={Colors.textTertiary} />
+                          <TextInput
+                            style={ms.authInputText}
+                            placeholder="Last name"
+                            placeholderTextColor={Colors.textTertiary}
+                            value={authLastName}
+                            onChangeText={setAuthLastName}
+                            autoCapitalize="words"
+                            testID="qb-last-name"
+                          />
+                        </View>
+                      </View>
 
-            {step === 'confirm' && (
-              <>
-                <View style={modalStyles.confirmCard}>
-                  <View style={modalStyles.confirmRow}>
-                    <Text style={modalStyles.confirmLabel}>Investment Type</Text>
-                    <Text style={modalStyles.confirmValue}>{investType === 'jv' ? 'JV Direct' : 'Token Shares'}</Text>
-                  </View>
-                  <View style={modalStyles.confirmRow}>
-                    <Text style={modalStyles.confirmLabel}>Amount</Text>
-                    <Text style={modalStyles.confirmValueBold}>{formatCurrencyWithDecimals(selectedAmount)}</Text>
-                  </View>
-                  <View style={modalStyles.confirmRow}>
-                    <Text style={modalStyles.confirmLabel}>Ownership</Text>
-                    <Text style={modalStyles.confirmValue}>{equityPercent.toFixed(2)}%</Text>
-                  </View>
-                  <View style={modalStyles.confirmRow}>
-                    <Text style={modalStyles.confirmLabel}>Expected ROI</Text>
-                    <Text style={[modalStyles.confirmValue, { color: '#00C48C' }]}>{deal.expectedROI}%</Text>
-                  </View>
-                  <View style={modalStyles.confirmRow}>
-                    <Text style={modalStyles.confirmLabel}>Est. Annual Return</Text>
-                    <Text style={[modalStyles.confirmValue, { color: '#00C48C' }]}>{formatCurrencyWithDecimals(estimatedReturn)}</Text>
-                  </View>
-                  <View style={modalStyles.confirmDivider} />
-                  <View style={modalStyles.confirmRow}>
-                    <Text style={modalStyles.confirmLabelBold}>Total Due</Text>
-                    <Text style={modalStyles.confirmValueTotal}>{formatCurrencyWithDecimals(selectedAmount)}</Text>
-                  </View>
-                </View>
+                      <View style={ms.authInput}>
+                        <Mail size={15} color={Colors.textTertiary} />
+                        <TextInput
+                          style={ms.authInputText}
+                          placeholder="Email address"
+                          placeholderTextColor={Colors.textTertiary}
+                          value={authEmail}
+                          onChangeText={setAuthEmail}
+                          keyboardType="email-address"
+                          autoCapitalize="none"
+                          autoCorrect={false}
+                          testID="qb-email"
+                        />
+                      </View>
 
-                {purchaseError && (
-                  <View style={modalStyles.errorBanner}>
-                    <AlertCircle size={14} color="#FF4444" />
-                    <Text style={modalStyles.errorBannerText}>{purchaseError}</Text>
+                      <View style={ms.authInput}>
+                        <Phone size={15} color={Colors.textTertiary} />
+                        <TextInput
+                          style={ms.authInputText}
+                          placeholder="Phone (optional)"
+                          placeholderTextColor={Colors.textTertiary}
+                          value={authPhone}
+                          onChangeText={setAuthPhone}
+                          keyboardType="phone-pad"
+                          testID="qb-phone"
+                        />
+                      </View>
+
+                      <View style={ms.authInput}>
+                        <Lock size={15} color={Colors.textTertiary} />
+                        <TextInput
+                          style={ms.authInputText}
+                          placeholder="Create password"
+                          placeholderTextColor={Colors.textTertiary}
+                          value={authPassword}
+                          onChangeText={setAuthPassword}
+                          secureTextEntry={!showPassword}
+                          testID="qb-password"
+                        />
+                        <TouchableOpacity onPress={() => setShowPassword(p => !p)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                          {showPassword ? <EyeOff size={16} color={Colors.textTertiary} /> : <Eye size={16} color={Colors.textTertiary} />}
+                        </TouchableOpacity>
+                      </View>
+
+                      <View style={ms.authInput}>
+                        <Globe size={15} color={Colors.textTertiary} />
+                        <TextInput
+                          style={ms.authInputText}
+                          placeholder="Country (e.g. US)"
+                          placeholderTextColor={Colors.textTertiary}
+                          value={authCountry}
+                          onChangeText={setAuthCountry}
+                          autoCapitalize="characters"
+                          testID="qb-country"
+                        />
+                      </View>
+
+                      {authError ? (
+                        <View style={ms.authErrorRow}>
+                          <AlertCircle size={13} color="#FF4444" />
+                          <Text style={ms.authErrorText}>{authError}</Text>
+                        </View>
+                      ) : null}
+
+                      <TouchableOpacity
+                        style={[ms.ctaBtn, registerLoading && ms.ctaBtnDisabled]}
+                        onPress={handleSignup}
+                        disabled={registerLoading}
+                        testID="qb-signup-btn"
+                      >
+                        {registerLoading ? (
+                          <ActivityIndicator size="small" color="#000" />
+                        ) : (
+                          <Shield size={16} color="#000" />
+                        )}
+                        <Text style={ms.ctaBtnText}>
+                          {registerLoading ? 'Creating Account...' : 'Create Account & Invest'}
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={ms.switchAuthBtn}
+                        onPress={() => { setAuthError(''); setStep('auth_login'); }}
+                      >
+                        <Text style={ms.switchAuthText}>
+                          Already have an account? <Text style={ms.switchAuthLink}>Sign In</Text>
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    <View style={ms.authTrustRow}>
+                      <View style={ms.authTrustItem}>
+                        <Shield size={12} color="#00C48C" />
+                        <Text style={ms.authTrustText}>Bank-grade encryption</Text>
+                      </View>
+                      <View style={ms.authTrustItem}>
+                        <Lock size={12} color="#4A90D9" />
+                        <Text style={ms.authTrustText}>FDIC escrow</Text>
+                      </View>
+                    </View>
+                  </>
+                )}
+
+                {step === 'auth_login' && (
+                  <>
+                    <View style={ms.authHeader}>
+                      <View style={ms.authBadge}>
+                        <Lock size={12} color="#4A90D9" />
+                        <Text style={[ms.authBadgeText, { color: '#4A90D9' }]}>SIGN IN TO INVEST</Text>
+                      </View>
+                      <Text style={ms.authSubtitle}>
+                        Log in to invest {formatCurrencyWithDecimals(selectedAmount)} in {deal.projectName}
+                      </Text>
+                    </View>
+
+                    <View style={ms.authForm}>
+                      <View style={ms.authInput}>
+                        <Mail size={15} color={Colors.textTertiary} />
+                        <TextInput
+                          style={ms.authInputText}
+                          placeholder="Email address"
+                          placeholderTextColor={Colors.textTertiary}
+                          value={authEmail}
+                          onChangeText={setAuthEmail}
+                          keyboardType="email-address"
+                          autoCapitalize="none"
+                          autoCorrect={false}
+                          testID="qb-login-email"
+                        />
+                      </View>
+
+                      <View style={ms.authInput}>
+                        <Lock size={15} color={Colors.textTertiary} />
+                        <TextInput
+                          style={ms.authInputText}
+                          placeholder="Password"
+                          placeholderTextColor={Colors.textTertiary}
+                          value={authPassword}
+                          onChangeText={setAuthPassword}
+                          secureTextEntry={!showPassword}
+                          testID="qb-login-password"
+                        />
+                        <TouchableOpacity onPress={() => setShowPassword(p => !p)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                          {showPassword ? <EyeOff size={16} color={Colors.textTertiary} /> : <Eye size={16} color={Colors.textTertiary} />}
+                        </TouchableOpacity>
+                      </View>
+
+                      {authError ? (
+                        <View style={ms.authErrorRow}>
+                          <AlertCircle size={13} color="#FF4444" />
+                          <Text style={ms.authErrorText}>{authError}</Text>
+                        </View>
+                      ) : null}
+
+                      <TouchableOpacity
+                        style={[ms.ctaBtn, loginLoading && ms.ctaBtnDisabled]}
+                        onPress={handleLogin}
+                        disabled={loginLoading}
+                        testID="qb-login-btn"
+                      >
+                        {loginLoading ? (
+                          <ActivityIndicator size="small" color="#000" />
+                        ) : (
+                          <Lock size={16} color="#000" />
+                        )}
+                        <Text style={ms.ctaBtnText}>
+                          {loginLoading ? 'Signing In...' : 'Sign In & Invest'}
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={ms.switchAuthBtn}
+                        onPress={() => { setAuthError(''); setStep('auth'); }}
+                      >
+                        <Text style={ms.switchAuthText}>
+                          New investor? <Text style={ms.switchAuthLink}>Create Account</Text>
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </>
+                )}
+
+                {step === 'confirm' && (
+                  <>
+                    <View style={ms.confirmCard}>
+                      <View style={ms.confirmRow}>
+                        <Text style={ms.confirmLabel}>Investment Type</Text>
+                        <Text style={ms.confirmValue}>{investType === 'jv' ? 'JV Direct' : 'Token Shares'}</Text>
+                      </View>
+                      <View style={ms.confirmRow}>
+                        <Text style={ms.confirmLabel}>Amount</Text>
+                        <Text style={ms.confirmValueBold}>{formatCurrencyWithDecimals(selectedAmount)}</Text>
+                      </View>
+                      <View style={ms.confirmRow}>
+                        <Text style={ms.confirmLabel}>Ownership</Text>
+                        <Text style={ms.confirmValue}>{equityPercent.toFixed(2)}%</Text>
+                      </View>
+                      <View style={ms.confirmRow}>
+                        <Text style={ms.confirmLabel}>Expected ROI</Text>
+                        <Text style={[ms.confirmValue, { color: '#00C48C' }]}>{deal.expectedROI}%</Text>
+                      </View>
+                      <View style={ms.confirmRow}>
+                        <Text style={ms.confirmLabel}>Est. Annual Return</Text>
+                        <Text style={[ms.confirmValue, { color: '#00C48C' }]}>{formatCurrencyWithDecimals(estimatedReturn)}</Text>
+                      </View>
+                      <View style={ms.confirmRow}>
+                        <Text style={ms.confirmLabel}>Payment</Text>
+                        <Text style={ms.confirmValue}>Bank Transfer (ACH)</Text>
+                      </View>
+                      <View style={ms.confirmDivider} />
+                      <View style={ms.confirmRow}>
+                        <Text style={ms.confirmLabelBold}>Total Due</Text>
+                        <Text style={ms.confirmValueTotal}>{formatCurrencyWithDecimals(selectedAmount)}</Text>
+                      </View>
+                    </View>
+
+                    {purchaseError && (
+                      <View style={ms.errorBanner}>
+                        <AlertCircle size={14} color="#FF4444" />
+                        <Text style={ms.errorBannerText}>{purchaseError}</Text>
+                      </View>
+                    )}
+
+                    <View style={ms.securityRow}>
+                      <Shield size={14} color={Colors.info} />
+                      <Text style={ms.securityText}>Protected by FDIC-insured escrow</Text>
+                    </View>
+
+                    <TouchableOpacity
+                      style={ms.ctaBtn}
+                      onPress={handleConfirmPurchase}
+                      testID="quick-buy-confirm"
+                    >
+                      <Lock size={16} color="#000" />
+                      <Text style={ms.ctaBtnText}>Confirm Purchase</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity style={ms.backBtn} onPress={() => setStep('select')}>
+                      <Text style={ms.backBtnText}>Go Back</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
+
+                {step === 'processing' && (
+                  <View style={ms.processingWrap}>
+                    <ActivityIndicator size="large" color={Colors.primary} />
+                    <Text style={ms.processingText}>Processing your investment...</Text>
+                    <Text style={ms.processingSubtext}>Securing your position in {deal.projectName}</Text>
                   </View>
                 )}
 
-                <View style={modalStyles.securityRow}>
-                  <Shield size={14} color={Colors.info} />
-                  <Text style={modalStyles.securityText}>Protected by FDIC-insured escrow</Text>
-                </View>
+                {step === 'success' && (
+                  <Animated.View style={[ms.successWrap, { transform: [{ scale: successScale }] }]}>
+                    <View style={ms.successCircle}>
+                      <CheckCircle size={48} color="#00C48C" />
+                    </View>
+                    <Text style={ms.successTitle}>Investment Confirmed!</Text>
+                    <Text style={ms.successSubtext}>
+                      You invested {formatCurrencyWithDecimals(selectedAmount)} in {deal.projectName}
+                    </Text>
 
-                <TouchableOpacity
-                  style={modalStyles.ctaBtn}
-                  onPress={handleConfirmPurchase}
-                  testID="quick-buy-confirm"
-                >
-                  <Lock size={16} color="#000" />
-                  <Text style={modalStyles.ctaBtnText}>Confirm Purchase</Text>
-                </TouchableOpacity>
+                    <View style={ms.successStats}>
+                      <View style={ms.successStatItem}>
+                        <Text style={ms.successStatValue}>{formatCurrencyWithDecimals(selectedAmount)}</Text>
+                        <Text style={ms.successStatLabel}>Invested</Text>
+                      </View>
+                      <View style={ms.successStatDivider} />
+                      <View style={ms.successStatItem}>
+                        <Text style={[ms.successStatValue, { color: '#00C48C' }]}>{equityPercent.toFixed(2)}%</Text>
+                        <Text style={ms.successStatLabel}>Ownership</Text>
+                      </View>
+                      <View style={ms.successStatDivider} />
+                      <View style={ms.successStatItem}>
+                        <Text style={[ms.successStatValue, { color: Colors.primary }]}>{confirmationNumber || `INV-${Date.now().toString(36).slice(-5).toUpperCase()}`}</Text>
+                        <Text style={ms.successStatLabel}>Ref #</Text>
+                      </View>
+                    </View>
 
-                <TouchableOpacity style={modalStyles.backBtn} onPress={() => setStep('select')}>
-                  <Text style={modalStyles.backBtnText}>Go Back</Text>
-                </TouchableOpacity>
-              </>
-            )}
+                    <View style={ms.successNextSteps}>
+                      <Text style={ms.successNextTitle}>NEXT STEPS</Text>
+                      <View style={ms.successNextItem}>
+                        <CheckCircle size={14} color="#00C48C" />
+                        <Text style={ms.successNextText}>Confirmation email sent to your inbox</Text>
+                      </View>
+                      <View style={ms.successNextItem}>
+                        <Shield size={14} color="#4A90D9" />
+                        <Text style={ms.successNextText}>Complete KYC verification for full access</Text>
+                      </View>
+                      <View style={ms.successNextItem}>
+                        <TrendingUp size={14} color="#FFD700" />
+                        <Text style={ms.successNextText}>Track your investment in the portfolio tab</Text>
+                      </View>
+                    </View>
 
-            {step === 'processing' && (
-              <View style={modalStyles.processingWrap}>
-                <ActivityIndicator size="large" color={Colors.primary} />
-                <Text style={modalStyles.processingText}>Processing your investment...</Text>
-                <Text style={modalStyles.processingSubtext}>Securing your position in {deal.projectName}</Text>
-              </View>
-            )}
-
-            {step === 'success' && (
-              <Animated.View style={[modalStyles.successWrap, { transform: [{ scale: successScale }] }]}>
-                <View style={modalStyles.successCircle}>
-                  <CheckCircle size={48} color="#00C48C" />
-                </View>
-                <Text style={modalStyles.successTitle}>Investment Confirmed!</Text>
-                <Text style={modalStyles.successSubtext}>
-                  You invested {formatCurrencyWithDecimals(selectedAmount)} in {deal.projectName}
-                </Text>
-
-                <View style={modalStyles.successStats}>
-                  <View style={modalStyles.successStatItem}>
-                    <Text style={modalStyles.successStatValue}>{formatCurrencyWithDecimals(selectedAmount)}</Text>
-                    <Text style={modalStyles.successStatLabel}>Invested</Text>
-                  </View>
-                  <View style={modalStyles.successStatDivider} />
-                  <View style={modalStyles.successStatItem}>
-                    <Text style={[modalStyles.successStatValue, { color: '#00C48C' }]}>{equityPercent.toFixed(2)}%</Text>
-                    <Text style={modalStyles.successStatLabel}>Ownership</Text>
-                  </View>
-                  <View style={modalStyles.successStatDivider} />
-                  <View style={modalStyles.successStatItem}>
-                    <Text style={[modalStyles.successStatValue, { color: Colors.primary }]}>{confirmationNumber || `INV-${Date.now().toString(36).slice(-5).toUpperCase()}`}</Text>
-                    <Text style={modalStyles.successStatLabel}>Ref #</Text>
-                  </View>
-                </View>
-
-                <TouchableOpacity style={modalStyles.ctaBtn} onPress={onClose}>
-                  <Text style={modalStyles.ctaBtnText}>Done</Text>
-                </TouchableOpacity>
-              </Animated.View>
-            )}
-          </Animated.View>
+                    <TouchableOpacity style={ms.ctaBtn} onPress={onClose}>
+                      <Text style={ms.ctaBtnText}>Done</Text>
+                    </TouchableOpacity>
+                  </Animated.View>
+                )}
+              </ScrollView>
+            </Animated.View>
+          </KeyboardAvoidingView>
         </View>
       </TouchableWithoutFeedback>
     </Modal>
   );
 }
 
-const modalStyles = StyleSheet.create({
+const ms = StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.65)',
@@ -438,6 +802,9 @@ const modalStyles = StyleSheet.create({
   backdropTouch: {
     flex: 1,
   },
+  kavWrap: {
+    justifyContent: 'flex-end',
+  },
   sheet: {
     backgroundColor: Colors.background,
     borderTopLeftRadius: 24,
@@ -445,6 +812,9 @@ const modalStyles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 34,
     maxHeight: '92%',
+  },
+  scrollContent: {
+    paddingBottom: 20,
   },
   handle: {
     width: 40,
@@ -460,6 +830,20 @@ const modalStyles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 16,
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+  },
+  headerBackBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: Colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   headerTitle: {
     fontSize: 20,
@@ -675,6 +1059,24 @@ const modalStyles = StyleSheet.create({
     fontWeight: '800' as const,
     color: '#000',
   },
+  authNoteBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(255,215,0,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,215,0,0.2)',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 8,
+  },
+  authNoteText: {
+    fontSize: 12,
+    color: '#C4A84D',
+    fontWeight: '600' as const,
+    flex: 1,
+  },
   fullFlowBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -687,6 +1089,99 @@ const modalStyles = StyleSheet.create({
     fontWeight: '600' as const,
     color: Colors.primary,
   },
+
+  authHeader: {
+    gap: 8,
+    marginBottom: 16,
+  },
+  authBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(255,215,0,0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,215,0,0.25)',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    alignSelf: 'flex-start' as const,
+  },
+  authBadgeText: {
+    fontSize: 10,
+    fontWeight: '800' as const,
+    color: '#FFD700',
+    letterSpacing: 1,
+  },
+  authSubtitle: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    lineHeight: 20,
+  },
+  authForm: {
+    gap: 12,
+    marginBottom: 16,
+  },
+  authInputRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  authInput: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: Colors.surface,
+    borderWidth: 1.5,
+    borderColor: Colors.surfaceBorder,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    height: 50,
+  },
+  authInputText: {
+    flex: 1,
+    color: Colors.text,
+    fontSize: 15,
+    height: 50,
+  },
+  authErrorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 2,
+  },
+  authErrorText: {
+    fontSize: 12,
+    color: '#FF6B6B',
+    fontWeight: '600' as const,
+    flex: 1,
+  },
+  switchAuthBtn: {
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  switchAuthText: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+  },
+  switchAuthLink: {
+    color: Colors.primary,
+    fontWeight: '700' as const,
+  },
+  authTrustRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 16,
+  },
+  authTrustItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  authTrustText: {
+    fontSize: 11,
+    color: Colors.textTertiary,
+    fontWeight: '600' as const,
+  },
+
   confirmCard: {
     backgroundColor: Colors.surface,
     borderRadius: 16,
@@ -780,7 +1275,7 @@ const modalStyles = StyleSheet.create({
   processingSubtext: {
     fontSize: 14,
     color: Colors.textSecondary,
-    textAlign: 'center',
+    textAlign: 'center' as const,
   },
   successWrap: {
     alignItems: 'center',
@@ -804,7 +1299,7 @@ const modalStyles = StyleSheet.create({
   successSubtext: {
     fontSize: 14,
     color: Colors.textSecondary,
-    textAlign: 'center',
+    textAlign: 'center' as const,
     marginBottom: 20,
     lineHeight: 20,
   },
@@ -816,7 +1311,7 @@ const modalStyles = StyleSheet.create({
     padding: 14,
     borderWidth: 1,
     borderColor: Colors.surfaceBorder,
-    marginBottom: 20,
+    marginBottom: 16,
     width: '100%',
   },
   successStatItem: {
@@ -838,5 +1333,32 @@ const modalStyles = StyleSheet.create({
     width: 1,
     height: 28,
     backgroundColor: Colors.surfaceBorder,
+  },
+  successNextSteps: {
+    width: '100%',
+    backgroundColor: Colors.surface,
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    marginBottom: 20,
+    gap: 10,
+  },
+  successNextTitle: {
+    fontSize: 10,
+    fontWeight: '800' as const,
+    color: Colors.textTertiary,
+    letterSpacing: 1.2,
+    marginBottom: 4,
+  },
+  successNextItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  successNextText: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    flex: 1,
   },
 });
