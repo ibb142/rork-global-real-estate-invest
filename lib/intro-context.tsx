@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import createContextHook from '@nkzw/create-context-hook';
+import { scopedKey } from '@/lib/project-storage';
 
 export interface OnboardingFeature {
   id: string;
@@ -20,8 +21,8 @@ export interface OnboardingStep {
   order: number;
 }
 
-const STORAGE_KEY = 'ipx_intro_steps';
-const ONBOARDING_COMPLETED_KEY = 'ipx_onboarding_completed';
+const STORAGE_KEY = scopedKey('intro_steps');
+const ONBOARDING_COMPLETED_KEY = scopedKey('onboarding_completed');
 
 const DEFAULT_STEPS: OnboardingStep[] = [
   {
@@ -151,8 +152,8 @@ export const [IntroProvider, useIntro] = createContextHook(() => {
   const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(true);
 
   useEffect(() => {
-    loadSteps();
-    checkOnboardingStatus();
+    void loadSteps();
+    void checkOnboardingStatus();
   }, []);
 
   const loadSteps = async () => {
@@ -191,21 +192,21 @@ export const [IntroProvider, useIntro] = createContextHook(() => {
 
   const addStep = useCallback((step: OnboardingStep) => {
     const newSteps = [...steps, { ...step, order: steps.length }];
-    saveSteps(newSteps);
+    void saveSteps(newSteps);
   }, [steps, saveSteps]);
 
   const updateStep = useCallback((stepId: string, updates: Partial<OnboardingStep>) => {
     const newSteps = steps.map(s => 
       s.id === stepId ? { ...s, ...updates } : s
     );
-    saveSteps(newSteps);
+    void saveSteps(newSteps);
   }, [steps, saveSteps]);
 
   const deleteStep = useCallback((stepId: string) => {
     const newSteps = steps
       .filter(s => s.id !== stepId)
       .map((s, index) => ({ ...s, order: index }));
-    saveSteps(newSteps);
+    void saveSteps(newSteps);
   }, [steps, saveSteps]);
 
   const reorderSteps = useCallback((fromIndex: number, toIndex: number) => {
@@ -213,7 +214,7 @@ export const [IntroProvider, useIntro] = createContextHook(() => {
     const [removed] = newSteps.splice(fromIndex, 1);
     newSteps.splice(toIndex, 0, removed);
     const reordered = newSteps.map((s, index) => ({ ...s, order: index }));
-    saveSteps(reordered);
+    void saveSteps(reordered);
   }, [steps, saveSteps]);
 
   const moveStep = useCallback((stepId: string, direction: 'up' | 'down') => {
@@ -228,7 +229,7 @@ export const [IntroProvider, useIntro] = createContextHook(() => {
     const newSteps = steps.map(s => 
       s.id === stepId ? { ...s, isActive: !s.isActive } : s
     );
-    saveSteps(newSteps);
+    void saveSteps(newSteps);
   }, [steps, saveSteps]);
 
   const duplicateStep = useCallback((stepId: string) => {
@@ -271,7 +272,7 @@ export const [IntroProvider, useIntro] = createContextHook(() => {
     [steps]
   );
 
-  return {
+  return useMemo(() => ({
     steps,
     activeSteps,
     isLoading,
@@ -287,5 +288,9 @@ export const [IntroProvider, useIntro] = createContextHook(() => {
     resetToDefaults,
     completeOnboarding,
     resetOnboarding,
-  };
+  }), [
+    steps, activeSteps, isLoading, hasCompletedOnboarding, saveSteps,
+    addStep, updateStep, deleteStep, reorderSteps, moveStep,
+    toggleStepActive, duplicateStep, resetToDefaults, completeOnboarding, resetOnboarding,
+  ]);
 });
