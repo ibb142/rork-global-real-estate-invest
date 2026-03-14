@@ -2,8 +2,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import { supabase } from './supabase';
 import { getAuthUserId } from './auth-store';
+import { scopedKey } from './project-storage';
 
-const IMAGE_REGISTRY_KEY = '@ivx_image_registry';
+const IMAGE_REGISTRY_KEY = scopedKey('image_registry');
+
 
 export interface StoredImage {
   id: string;
