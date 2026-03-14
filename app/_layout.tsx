@@ -9,6 +9,10 @@ import { StatusBar } from "expo-status-bar";
 import Colors from "../constants/colors";
 import { queryClientConfig } from "../lib/query-config";
 import logger from "../lib/logger";
+import { runStorageIntegrityCheck, cleanForeignKeys, auditStorageKeys } from "../lib/project-storage";
+import { purgeAllPublishedDeals } from "../lib/jv-storage";
+
+
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { IPXProvider } from "../lib/ipx-context";
 import { AuthProvider, useAuth } from "../lib/auth-context";
@@ -180,6 +184,30 @@ function AppContent() {
 
   useEffect(() => {
     void SplashScreen.hideAsync();
+
+    const runStartupChecks = async () => {
+      try {
+        const integrity = await runStorageIntegrityCheck();
+        console.log('[App] Storage integrity:', integrity.passed ? 'PASSED' : 'FAILED', '| project:', integrity.projectId);
+        if (integrity.issues.length > 0) {
+          console.warn('[App] Storage issues:', integrity.issues);
+        }
+        const audit = await auditStorageKeys();
+        if (audit.foreignKeys.length > 0) {
+          console.warn('[App] Found', audit.foreignKeys.length, 'foreign keys from other projects — cleaning...');
+          const cleaned = await cleanForeignKeys();
+          console.log('[App] Cleaned', cleaned, 'foreign keys');
+        }
+
+        const purgeResult = await purgeAllPublishedDeals();
+        if (purgeResult.deleted > 0 || purgeResult.localCleared > 0) {
+          console.log('[App] JV purge v3 complete — deleted:', purgeResult.deleted, '| local cleared:', purgeResult.localCleared);
+        }
+      } catch (err) {
+        console.log('[App] Startup storage check error:', (err as Error)?.message);
+      }
+    };
+    void runStartupChecks();
   }, []);
 
   useEffect(() => {
