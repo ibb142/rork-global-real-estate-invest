@@ -10,8 +10,8 @@ export const adminStats: AdminStats = {
   pendingKyc: 0,
   totalTransactions: 0,
   totalVolume: 0,
-  totalProperties: 6,
-  liveProperties: 4,
+  totalProperties: 0,
+  liveProperties: 0,
   totalInvested: 0,
 };
 
