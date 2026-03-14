@@ -32,7 +32,9 @@ import {
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { fetchJVDeals, updateJVDeal, deleteJVDeal } from '@/lib/jv-storage';
+import { fetchJVDeals, updateJVDeal, archiveJVDeal, restoreJVDeal, permanentlyDeleteJVDeal, recoverPhotosForDeal, adminRestorePhotos } from '@/lib/jv-storage';
+import { invalidateAllJVQueries, useJVRealtime } from '@/lib/jv-realtime';
+import { Shield, ArchiveRestore, Archive, ImagePlus, Camera } from 'lucide-react-native';
 import { formatCurrency } from '@/lib/formatters';
 
 type JVDealType = 'equity_split' | 'profit_sharing' | 'hybrid' | 'development';
@@ -75,6 +77,7 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }
   active: { label: 'Active', color: '#00C48C', bg: '#00C48C18' },
   completed: { label: 'Completed', color: '#4A90D9', bg: '#4A90D918' },
   expired: { label: 'Expired', color: '#FF4D4D', bg: '#FF4D4D18' },
+  archived: { label: 'Archived', color: '#A855F7', bg: '#A855F718' },
 };
 
 const TYPE_LABELS: Record<string, string> = {
@@ -91,6 +94,12 @@ export default function AdminJVDealsScreen() {
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [selectedDeal, setSelectedDeal] = useState<JVDeal | null>(null);
+  const [deleteConfirmVisible, setDeleteConfirmVisible] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<JVDeal | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [photoRestoreTarget, setPhotoRestoreTarget] = useState<JVDeal | null>(null);
+  const [photoRestoreModalVisible, setPhotoRestoreModalVisible] = useState(false);
+  const [photoUrls, setPhotoUrls] = useState('');
   const [editForm, setEditForm] = useState({
     title: '',
     projectName: '',
@@ -109,6 +118,8 @@ export default function AdminJVDealsScreen() {
 
   const queryClient = useQueryClient();
 
+  useJVRealtime('admin-jv-deals', true);
+
   const jvQuery = useQuery<any>({
     queryKey: ['jvAgreements.list'],
     queryFn: async () => {
@@ -123,16 +134,13 @@ export default function AdminJVDealsScreen() {
   const publishMutation = useMutation({
     mutationFn: async (input: { id: string }) => {
       console.log('[JV-Storage] Publishing JV deal:', input.id);
-      const { data, error } = await updateJVDeal(input.id, { published: true, publishedAt: new Date().toISOString() });
+      const { data, error } = await updateJVDeal(input.id, { published: true, publishedAt: new Date().toISOString() }, { adminOverride: true });
       if (error) throw error;
       return { success: true, ...data };
     },
     onSuccess: () => {
       console.log('[Admin JV] Published successfully');
-      void queryClient.invalidateQueries({ queryKey: ['jvAgreements.list'] });
-      void queryClient.invalidateQueries({ queryKey: ['jv-agreements'] });
-      void queryClient.invalidateQueries({ queryKey: ['published-jv-deals'] });
-      void queryClient.invalidateQueries({ queryKey: ['jv-deals'] });
+      invalidateAllJVQueries(queryClient);
       Alert.alert('Success', 'Deal published and now visible to investors.');
     },
     onError: (err: Error) => {
@@ -144,16 +152,13 @@ export default function AdminJVDealsScreen() {
   const unpublishMutation = useMutation({
     mutationFn: async (input: { id: string }) => {
       console.log('[JV-Storage] Unpublishing JV deal:', input.id);
-      const { data, error } = await updateJVDeal(input.id, { published: false, publishedAt: null });
+      const { data, error } = await updateJVDeal(input.id, { published: false, publishedAt: null }, { adminOverride: true });
       if (error) throw error;
       return { success: true, ...data };
     },
     onSuccess: () => {
       console.log('[Admin JV] Unpublished successfully');
-      void queryClient.invalidateQueries({ queryKey: ['jvAgreements.list'] });
-      void queryClient.invalidateQueries({ queryKey: ['jv-agreements'] });
-      void queryClient.invalidateQueries({ queryKey: ['published-jv-deals'] });
-      void queryClient.invalidateQueries({ queryKey: ['jv-deals'] });
+      invalidateAllJVQueries(queryClient);
       Alert.alert('Success', 'Deal unpublished.');
     },
     onError: (err: Error) => {
@@ -165,16 +170,13 @@ export default function AdminJVDealsScreen() {
   const updateMutation = useMutation({
     mutationFn: async (input: { id: string; data: Record<string, unknown> }) => {
       console.log('[JV-Storage] Updating JV deal:', input.id);
-      const { data, error } = await updateJVDeal(input.id, input.data);
+      const { data, error } = await updateJVDeal(input.id, input.data, { adminOverride: true });
       if (error) throw error;
       return { success: true, ...data };
     },
     onSuccess: () => {
       console.log('[Admin JV] Updated successfully');
-      void queryClient.invalidateQueries({ queryKey: ['jvAgreements.list'] });
-      void queryClient.invalidateQueries({ queryKey: ['jv-agreements'] });
-      void queryClient.invalidateQueries({ queryKey: ['published-jv-deals'] });
-      void queryClient.invalidateQueries({ queryKey: ['jv-deals'] });
+      invalidateAllJVQueries(queryClient);
       setEditModalVisible(false);
       setSelectedDeal(null);
       Alert.alert('Success', 'Deal updated successfully.');
@@ -185,20 +187,95 @@ export default function AdminJVDealsScreen() {
     },
   });
 
+  const archiveMutation = useMutation({
+    mutationFn: async (input: { id: string }) => {
+      console.log('[Admin JV] Archiving deal:', input.id);
+      const { data, error } = await archiveJVDeal(input.id);
+      if (error) throw error;
+      return { success: true, ...data };
+    },
+    onSuccess: () => {
+      console.log('[Admin JV] Archived successfully');
+      invalidateAllJVQueries(queryClient);
+      Alert.alert('Archived', 'Deal has been archived. You can restore it anytime.');
+    },
+    onError: (err: Error) => {
+      console.error('[Admin JV] Archive error:', err);
+      Alert.alert('Error', 'Failed to archive deal.');
+    },
+  });
+
+  const restoreMutation = useMutation({
+    mutationFn: async (input: { id: string }) => {
+      console.log('[Admin JV] Restoring deal:', input.id);
+      const { data, error } = await restoreJVDeal(input.id);
+      if (error) throw error;
+      return { success: true, ...data };
+    },
+    onSuccess: () => {
+      console.log('[Admin JV] Restored successfully');
+      invalidateAllJVQueries(queryClient);
+      Alert.alert('Restored', 'Deal has been restored and is now active.');
+    },
+    onError: (err: Error) => {
+      console.error('[Admin JV] Restore error:', err);
+      Alert.alert('Error', 'Failed to restore deal.');
+    },
+  });
+
+  const photoRecoverMutation = useMutation({
+    mutationFn: async (input: { id: string }) => {
+      console.log('[Admin JV] Attempting photo recovery for:', input.id);
+      return await recoverPhotosForDeal(input.id);
+    },
+    onSuccess: (result) => {
+      if (result.recovered) {
+        Alert.alert('Photos Recovered', `Found and restored ${result.photoCount} photo(s) from ${result.source}.`);
+        invalidateAllJVQueries(queryClient);
+      } else {
+        Alert.alert('No Photos Found', 'No backup photos were found. You can manually add photo URLs using the "Add Photos" option.');
+      }
+    },
+    onError: (err: Error) => {
+      Alert.alert('Error', 'Photo recovery failed: ' + err.message);
+    },
+  });
+
+  const photoRestoreMutation = useMutation({
+    mutationFn: async (input: { id: string; photos: string[] }) => {
+      console.log('[Admin JV] Manual photo restore for:', input.id, 'photos:', input.photos.length);
+      return await adminRestorePhotos(input.id, input.photos);
+    },
+    onSuccess: (result) => {
+      if (result.success) {
+        Alert.alert('Photos Restored', 'Photos have been successfully added to the deal.');
+        setPhotoRestoreModalVisible(false);
+        setPhotoRestoreTarget(null);
+        setPhotoUrls('');
+        invalidateAllJVQueries(queryClient);
+      } else {
+        Alert.alert('Error', result.error || 'Failed to restore photos.');
+      }
+    },
+    onError: (err: Error) => {
+      Alert.alert('Error', 'Photo restore failed: ' + err.message);
+    },
+  });
+
   const deleteMutation = useMutation({
     mutationFn: async (input: { id: string }) => {
-      console.log('[JV-Storage] Deleting JV deal:', input.id);
-      const { error } = await deleteJVDeal(input.id);
+      console.log('[Admin JV] PERMANENT DELETE deal:', input.id);
+      const { error } = await permanentlyDeleteJVDeal(input.id);
       if (error) throw error;
       return { success: true };
     },
     onSuccess: () => {
-      console.log('[Admin JV] Deleted successfully');
-      void queryClient.invalidateQueries({ queryKey: ['jvAgreements.list'] });
-      void queryClient.invalidateQueries({ queryKey: ['jv-agreements'] });
-      void queryClient.invalidateQueries({ queryKey: ['published-jv-deals'] });
-      void queryClient.invalidateQueries({ queryKey: ['jv-deals'] });
-      Alert.alert('Success', 'Deal deleted.');
+      console.log('[Admin JV] Permanently deleted — forcing all query refresh');
+      setDeleteConfirmVisible(false);
+      setDeleteTarget(null);
+      setDeleteConfirmText('');
+      invalidateAllJVQueries(queryClient);
+      Alert.alert('Permanently Deleted', 'Deal has been permanently removed. This cannot be undone.');
     },
     onError: (err: Error) => {
       console.error('[Admin JV] Delete error:', err);
@@ -305,16 +382,43 @@ export default function AdminJVDealsScreen() {
     }
   }, [publishMutation, unpublishMutation]);
 
-  const handleDelete = useCallback((deal: JVDeal) => {
+  const handleArchive = useCallback((deal: JVDeal) => {
     Alert.alert(
-      'Delete Deal',
-      `Permanently delete "${deal.projectName}"? This cannot be undone.`,
+      'Archive Deal',
+      `Archive "${deal.projectName}"? It will be hidden but can be restored later.`,
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Delete', style: 'destructive', onPress: () => deleteMutation.mutate({ id: deal.id }) },
+        { text: 'Archive', style: 'destructive', onPress: () => archiveMutation.mutate({ id: deal.id }) },
       ]
     );
-  }, [deleteMutation]);
+  }, [archiveMutation]);
+
+  const handleRestore = useCallback((deal: JVDeal) => {
+    Alert.alert(
+      'Restore Deal',
+      `Restore "${deal.projectName}" from archive?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Restore', onPress: () => restoreMutation.mutate({ id: deal.id }) },
+      ]
+    );
+  }, [restoreMutation]);
+
+  const handlePermanentDelete = useCallback((deal: JVDeal) => {
+    setDeleteTarget(deal);
+    setDeleteConfirmText('');
+    setDeleteConfirmVisible(true);
+  }, []);
+
+  const confirmPermanentDelete = useCallback(() => {
+    if (!deleteTarget) return;
+    const requiredText = deleteTarget.projectName.trim().toUpperCase();
+    if (deleteConfirmText.trim().toUpperCase() !== requiredText) {
+      Alert.alert('Confirmation Failed', `You must type "${deleteTarget.projectName}" exactly to confirm deletion.`);
+      return;
+    }
+    deleteMutation.mutate({ id: deleteTarget.id });
+  }, [deleteTarget, deleteConfirmText, deleteMutation]);
 
   const FILTER_OPTIONS = [
     { id: 'all', label: 'All' },
@@ -322,6 +426,7 @@ export default function AdminJVDealsScreen() {
     { id: 'unpublished', label: 'Unpublished' },
     { id: 'active', label: 'Active' },
     { id: 'draft', label: 'Draft' },
+    { id: 'archived', label: 'Archived' },
   ];
 
   return (
@@ -466,31 +571,80 @@ export default function AdminJVDealsScreen() {
                   </View>
 
                   <View style={styles.dealActions}>
-                    <TouchableOpacity
-                      style={[styles.actionBtn, styles.editBtn]}
-                      onPress={() => openEditModal(deal)}
-                      testID={`admin-jv-edit-${deal.id}`}
-                    >
-                      <Edit3 size={14} color={Colors.primary} />
-                      <Text style={[styles.actionBtnText, { color: Colors.primary }]}>Edit</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.actionBtn, deal.published ? styles.unpublishBtn : styles.publishBtn]}
-                      onPress={() => handleTogglePublish(deal)}
-                      testID={`admin-jv-toggle-${deal.id}`}
-                    >
-                      {deal.published ? <EyeOff size={14} color="#FF6B6B" /> : <Eye size={14} color="#00C48C" />}
-                      <Text style={[styles.actionBtnText, { color: deal.published ? '#FF6B6B' : '#00C48C' }]}>
-                        {deal.published ? 'Unpublish' : 'Publish'}
-                      </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.actionBtn, styles.deleteBtn]}
-                      onPress={() => handleDelete(deal)}
-                      testID={`admin-jv-delete-${deal.id}`}
-                    >
-                      <Trash2 size={14} color="#FF4D4D" />
-                    </TouchableOpacity>
+                    {deal.status === 'archived' ? (
+                      <>
+                        <TouchableOpacity
+                          style={[styles.actionBtn, styles.restoreBtn]}
+                          onPress={() => handleRestore(deal)}
+                          testID={`admin-jv-restore-${deal.id}`}
+                        >
+                          <ArchiveRestore size={14} color="#00C48C" />
+                          <Text style={[styles.actionBtnText, { color: '#00C48C' }]}>Restore</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.actionBtn, styles.permDeleteBtn]}
+                          onPress={() => handlePermanentDelete(deal)}
+                          testID={`admin-jv-permdelete-${deal.id}`}
+                        >
+                          <Trash2 size={14} color="#FF4D4D" />
+                          <Text style={[styles.actionBtnText, { color: '#FF4D4D' }]}>Delete Forever</Text>
+                        </TouchableOpacity>
+                      </>
+                    ) : (
+                      <>
+                        <TouchableOpacity
+                          style={[styles.actionBtn, styles.editBtn]}
+                          onPress={() => openEditModal(deal)}
+                          testID={`admin-jv-edit-${deal.id}`}
+                        >
+                          <Edit3 size={14} color={Colors.primary} />
+                          <Text style={[styles.actionBtnText, { color: Colors.primary }]}>Edit</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.actionBtn, deal.published ? styles.unpublishBtn : styles.publishBtn]}
+                          onPress={() => handleTogglePublish(deal)}
+                          testID={`admin-jv-toggle-${deal.id}`}
+                        >
+                          {deal.published ? <EyeOff size={14} color="#FF6B6B" /> : <Eye size={14} color="#00C48C" />}
+                          <Text style={[styles.actionBtnText, { color: deal.published ? '#FF6B6B' : '#00C48C' }]}>
+                            {deal.published ? 'Unpublish' : 'Publish'}
+                          </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.actionBtn, styles.photoBtn]}
+                          onPress={() => {
+                            const photoCount = Array.isArray(deal.photos) ? deal.photos.length : 0;
+                            if (photoCount === 0) {
+                              Alert.alert(
+                                'Photos Missing',
+                                `"${deal.projectName}" has no photos. What would you like to do?`,
+                                [
+                                  { text: 'Cancel', style: 'cancel' },
+                                  { text: 'Auto-Recover', onPress: () => photoRecoverMutation.mutate({ id: deal.id }) },
+                                  { text: 'Add URLs', onPress: () => { setPhotoRestoreTarget(deal); setPhotoUrls(''); setPhotoRestoreModalVisible(true); } },
+                                ]
+                              );
+                            } else {
+                              Alert.alert('Photos', `"${deal.projectName}" has ${photoCount} photo(s).`, [
+                                { text: 'OK' },
+                                { text: 'Add More', onPress: () => { setPhotoRestoreTarget(deal); setPhotoUrls(''); setPhotoRestoreModalVisible(true); } },
+                              ]);
+                            }
+                          }}
+                          testID={`admin-jv-photos-${deal.id}`}
+                        >
+                          <Camera size={14} color="#4A90D9" />
+                          <Text style={[styles.actionBtnText, { color: '#4A90D9' }]}>{Array.isArray(deal.photos) ? deal.photos.length : 0}</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.actionBtn, styles.archiveBtn]}
+                          onPress={() => handleArchive(deal)}
+                          testID={`admin-jv-archive-${deal.id}`}
+                        >
+                          <Archive size={14} color="#FFB800" />
+                        </TouchableOpacity>
+                      </>
+                    )}
                   </View>
                 </View>
               );
@@ -500,6 +654,118 @@ export default function AdminJVDealsScreen() {
           <View style={{ height: 100 }} />
         </ScrollView>
       </SafeAreaView>
+
+      {/* Delete Confirmation Modal */}
+      <Modal visible={deleteConfirmVisible} animationType="fade" transparent>
+        <View style={styles.deleteOverlay}>
+          <View style={styles.deleteModal}>
+            <View style={styles.deleteIconWrap}>
+              <Shield size={32} color="#FF4D4D" />
+            </View>
+            <Text style={styles.deleteModalTitle}>Admin Authorization Required</Text>
+            <Text style={styles.deleteModalSubtitle}>
+              To permanently delete this deal, type the project name below:
+            </Text>
+            <Text style={styles.deleteModalDealName}>
+              {deleteTarget?.projectName || ''}
+            </Text>
+            <TextInput
+              style={styles.deleteConfirmInput}
+              value={deleteConfirmText}
+              onChangeText={setDeleteConfirmText}
+              placeholder={`Type "${deleteTarget?.projectName || ''}" to confirm`}
+              placeholderTextColor={Colors.textTertiary}
+              autoCapitalize="none"
+              testID="delete-confirm-input"
+            />
+            <View style={styles.deleteModalActions}>
+              <TouchableOpacity
+                style={styles.deleteModalCancel}
+                onPress={() => {
+                  setDeleteConfirmVisible(false);
+                  setDeleteTarget(null);
+                  setDeleteConfirmText('');
+                }}
+              >
+                <Text style={styles.deleteModalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.deleteModalConfirm,
+                  deleteConfirmText.trim().toUpperCase() !== (deleteTarget?.projectName || '').trim().toUpperCase() && styles.deleteModalConfirmDisabled,
+                ]}
+                onPress={confirmPermanentDelete}
+                disabled={deleteMutation.isPending || deleteConfirmText.trim().toUpperCase() !== (deleteTarget?.projectName || '').trim().toUpperCase()}
+              >
+                {deleteMutation.isPending ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.deleteModalConfirmText}>Delete Forever</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Photo Restore Modal */}
+      <Modal visible={photoRestoreModalVisible} animationType="fade" transparent>
+        <View style={styles.deleteOverlay}>
+          <View style={styles.deleteModal}>
+            <View style={[styles.deleteIconWrap, { backgroundColor: '#4A90D915' }]}>
+              <ImagePlus size={32} color="#4A90D9" />
+            </View>
+            <Text style={styles.deleteModalTitle}>Restore / Add Photos</Text>
+            <Text style={styles.deleteModalSubtitle}>
+              Paste photo URLs below (one per line) to add to "{photoRestoreTarget?.projectName}".
+            </Text>
+            <TextInput
+              style={[styles.deleteConfirmInput, { textAlign: 'left' as const, minHeight: 120, borderColor: '#4A90D940' }]}
+              value={photoUrls}
+              onChangeText={setPhotoUrls}
+              placeholder={"https://example.com/photo1.jpg\nhttps://example.com/photo2.jpg"}
+              placeholderTextColor={Colors.textTertiary}
+              multiline
+              numberOfLines={6}
+              textAlignVertical="top"
+              testID="photo-urls-input"
+            />
+            <View style={styles.deleteModalActions}>
+              <TouchableOpacity
+                style={styles.deleteModalCancel}
+                onPress={() => {
+                  setPhotoRestoreModalVisible(false);
+                  setPhotoRestoreTarget(null);
+                  setPhotoUrls('');
+                }}
+              >
+                <Text style={styles.deleteModalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.deleteModalConfirm, { backgroundColor: '#4A90D9' }]}
+                onPress={() => {
+                  if (!photoRestoreTarget) return;
+                  const urls = photoUrls.split('\n').map(u => u.trim()).filter(u => u.startsWith('http') && u.length > 10);
+                  if (urls.length === 0) {
+                    Alert.alert('Invalid', 'Please enter at least one valid photo URL starting with http.');
+                    return;
+                  }
+                  const existingPhotos = Array.isArray(photoRestoreTarget.photos) ? photoRestoreTarget.photos : [];
+                  const allPhotos = [...existingPhotos, ...urls];
+                  photoRestoreMutation.mutate({ id: photoRestoreTarget.id, photos: allPhotos });
+                }}
+                disabled={photoRestoreMutation.isPending}
+              >
+                {photoRestoreMutation.isPending ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.deleteModalConfirmText}>Restore Photos</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* Edit Modal */}
       <Modal visible={editModalVisible} animationType="slide" presentationStyle="pageSheet">
@@ -934,10 +1200,117 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
   },
-  deleteBtn: {
+  archiveBtn: {
+    borderColor: '#FFB80040',
+    backgroundColor: '#FFB80010',
+    paddingHorizontal: 10,
+  },
+  photoBtn: {
+    borderColor: '#4A90D940',
+    backgroundColor: '#4A90D910',
+    paddingHorizontal: 8,
+  },
+  restoreBtn: {
+    borderColor: '#00C48C40',
+    backgroundColor: '#00C48C10',
+    flex: 1,
+    justifyContent: 'center' as const,
+  },
+  permDeleteBtn: {
     borderColor: '#FF4D4D40',
     backgroundColor: '#FF4D4D10',
-    paddingHorizontal: 10,
+    flex: 1,
+    justifyContent: 'center' as const,
+  },
+  deleteOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center' as const,
+    alignItems: 'center' as const,
+    padding: 24,
+  },
+  deleteModal: {
+    backgroundColor: Colors.surface,
+    borderRadius: 20,
+    padding: 24,
+    width: '100%' as const,
+    maxWidth: 400,
+    borderWidth: 1,
+    borderColor: '#FF4D4D30',
+  },
+  deleteIconWrap: {
+    alignSelf: 'center' as const,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#FF4D4D15',
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    marginBottom: 16,
+  },
+  deleteModalTitle: {
+    color: Colors.text,
+    fontSize: 18,
+    fontWeight: '700' as const,
+    textAlign: 'center' as const,
+    marginBottom: 8,
+  },
+  deleteModalSubtitle: {
+    color: Colors.textSecondary,
+    fontSize: 13,
+    textAlign: 'center' as const,
+    lineHeight: 18,
+    marginBottom: 12,
+  },
+  deleteModalDealName: {
+    color: '#FF4D4D',
+    fontSize: 16,
+    fontWeight: '800' as const,
+    textAlign: 'center' as const,
+    marginBottom: 16,
+    letterSpacing: 0.5,
+  },
+  deleteConfirmInput: {
+    backgroundColor: Colors.backgroundSecondary,
+    borderRadius: 12,
+    padding: 14,
+    color: Colors.text,
+    fontSize: 14,
+    borderWidth: 1,
+    borderColor: '#FF4D4D40',
+    textAlign: 'center' as const,
+    marginBottom: 20,
+  },
+  deleteModalActions: {
+    flexDirection: 'row' as const,
+    gap: 12,
+  },
+  deleteModalCancel: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    backgroundColor: Colors.backgroundSecondary,
+    alignItems: 'center' as const,
+  },
+  deleteModalCancelText: {
+    color: Colors.text,
+    fontSize: 14,
+    fontWeight: '600' as const,
+  },
+  deleteModalConfirm: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    backgroundColor: '#FF4D4D',
+    alignItems: 'center' as const,
+  },
+  deleteModalConfirmDisabled: {
+    opacity: 0.4,
+  },
+  deleteModalConfirmText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700' as const,
   },
   modalSafe: {
     flex: 1,
