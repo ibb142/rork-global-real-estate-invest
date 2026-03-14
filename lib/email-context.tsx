@@ -5,9 +5,10 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { EmailMessage, EmailFolder, ComposeEmailData } from '@/types/email';
 import { EMAIL_ACCOUNTS, MOCK_EMAILS } from '@/mocks/emails';
 import { supabase } from '@/lib/supabase';
+import { scopedKey } from '@/lib/project-storage';
 
-const STORAGE_KEY = 'ivx_emails';
-const ACTIVE_ACCOUNT_KEY = 'ivx_active_email_account';
+const STORAGE_KEY = scopedKey('emails');
+const ACTIVE_ACCOUNT_KEY = scopedKey('active_email_account');
 
 export const [EmailProvider, useEmail] = createContextHook(() => {
   const [activeAccountId, setActiveAccountId] = useState<string>('admin');
@@ -150,7 +151,7 @@ export const [EmailProvider, useEmail] = createContextHook(() => {
     });
   }, [persistEmails]);
 
-  const sendEmail = useCallback(async (data: ComposeEmailData): Promise<{ success: boolean; messageId?: string; error?: string }> => {
+  const sendEmail = useCallback(async (data: ComposeEmailData): Promise<{ success: boolean; messageId?: string; error?: string; deliveryStatus: 'sent' | 'queued_locally' }> => {
     const hasAttachments = (data.attachments && data.attachments.length > 0) || false;
     const newEmail: EmailMessage = {
       id: `sent-${Date.now()}`,
@@ -190,20 +191,20 @@ export const [EmailProvider, useEmail] = createContextHook(() => {
       });
 
       if (error) {
-        console.log('[Email] Edge function not available, email saved locally:', error.message);
-        return { success: true, messageId: newEmail.id };
+        console.warn('[Email] Edge function not available — email saved locally only. Deploy send-email edge function for real delivery. Error:', error.message);
+        return { success: true, messageId: newEmail.id, deliveryStatus: 'queued_locally' };
       }
 
       if (result?.success) {
-        console.log('[Email] Send success. MessageId:', result.messageId);
-        return { success: true, messageId: result.messageId ?? undefined };
+        console.log('[Email] Delivered successfully. MessageId:', result.messageId);
+        return { success: true, messageId: result.messageId ?? undefined, deliveryStatus: 'sent' };
       } else {
-        console.log('[Email] Send noted, saved locally');
-        return { success: true, messageId: newEmail.id };
+        console.warn('[Email] Edge function returned non-success. Email saved locally.');
+        return { success: true, messageId: newEmail.id, deliveryStatus: 'queued_locally' };
       }
     } catch (err: any) {
-      console.log('[Email] Send error, saved locally:', err?.message || err);
-      return { success: true, messageId: newEmail.id };
+      console.warn('[Email] Send failed — email saved locally only:', err?.message || err);
+      return { success: true, messageId: newEmail.id, deliveryStatus: 'queued_locally' };
     }
   }, [activeAccountId, activeAccount, persistEmails]);
 
