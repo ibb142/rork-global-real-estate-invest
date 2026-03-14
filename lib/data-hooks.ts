@@ -2,10 +2,23 @@ import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import logger from './logger';
-import { properties as mockProperties } from '@/mocks/properties';
-import { currentUser as mockUser, holdings as mockHoldings, notifications as mockNotifications } from '@/mocks/user';
-import { marketData as mockMarketData } from '@/mocks/market';
 import type { Property, MarketData, Holding, Notification } from '@/types';
+
+const DEFAULT_USER = {
+  id: '',
+  email: '',
+  firstName: '',
+  lastName: '',
+  kycStatus: 'pending' as const,
+  country: '',
+  phone: '',
+  avatar: '',
+  totalInvested: 0,
+  totalReturns: 0,
+  walletBalance: 0,
+  referralCode: '',
+  vipTier: 'standard' as const,
+};
 
 export function useProperties() {
   const query = useQuery({
@@ -28,7 +41,7 @@ export function useProperties() {
       logger.dataHooks.log('Properties loaded from Supabase:', query.data.length);
       return query.data as unknown as Property[];
     }
-    return mockProperties;
+    return [];
   }, [query.data]);
 
   return {
@@ -61,7 +74,7 @@ export function useProperty(propertyId: string) {
       logger.dataHooks.log('Property loaded from Supabase:', propertyId);
       return query.data as unknown as Property;
     }
-    return mockProperties.find(p => p.id === propertyId) || null;
+    return null;
   }, [query.data, propertyId]);
 
   return {
@@ -96,7 +109,7 @@ export function useMarketData() {
       });
       return map;
     }
-    return mockMarketData;
+    return {};
   }, [query.data]);
 
   return {
@@ -159,22 +172,22 @@ export function useCurrentUser() {
 
   const user = useMemo(() => {
     const base = profileQuery.data ? {
-      ...mockUser,
+      ...DEFAULT_USER,
       id: profileQuery.data.id,
       email: profileQuery.data.email,
       firstName: profileQuery.data.firstName,
       lastName: profileQuery.data.lastName,
       kycStatus: profileQuery.data.kycStatus,
-      country: profileQuery.data.country || mockUser.country,
-      phone: profileQuery.data.phone || mockUser.phone,
-      avatar: profileQuery.data.avatar || mockUser.avatar,
-      totalInvested: profileQuery.data.totalInvested ?? mockUser.totalInvested,
-      totalReturns: profileQuery.data.totalReturns ?? mockUser.totalReturns,
-    } : mockUser;
+      country: profileQuery.data.country || '',
+      phone: profileQuery.data.phone || '',
+      avatar: profileQuery.data.avatar || '',
+      totalInvested: profileQuery.data.totalInvested ?? 0,
+      totalReturns: profileQuery.data.totalReturns ?? 0,
+    } : DEFAULT_USER;
 
     return {
       ...base,
-      walletBalance: (balanceQuery.data as any)?.available ?? base.walletBalance,
+      walletBalance: (balanceQuery.data as any)?.available ?? 0,
     };
   }, [profileQuery.data, balanceQuery.data]);
 
@@ -213,7 +226,7 @@ export function useHoldings() {
       logger.dataHooks.log('Holdings loaded from Supabase');
       return query.data as unknown as Holding[];
     }
-    return mockHoldings;
+    return [];
   }, [query.data]);
 
   const totalValue = useMemo(() => {
@@ -267,7 +280,7 @@ export function useNotifications() {
         createdAt: n.created_at as string,
       }));
     }
-    return mockNotifications;
+    return [];
   }, [query.data]);
 
   const unreadCount = useMemo(() => {
@@ -304,10 +317,10 @@ export function useWalletBalance() {
   });
 
   const balance = useMemo(() => ({
-    available: (query.data as any)?.available ?? mockUser.walletBalance,
+    available: (query.data as any)?.available ?? 0,
     pending: (query.data as any)?.pending ?? 0,
-    invested: (query.data as any)?.invested ?? mockUser.totalInvested,
-    total: (query.data as any)?.total ?? (mockUser.walletBalance + mockUser.totalInvested),
+    invested: (query.data as any)?.invested ?? 0,
+    total: (query.data as any)?.total ?? 0,
   }), [query.data]);
 
   return {
