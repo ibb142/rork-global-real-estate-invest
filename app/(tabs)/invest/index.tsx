@@ -51,6 +51,7 @@ import { useIPX } from '@/lib/ipx-context';
 import { useTranslation } from '@/lib/i18n-context';
 import { useQuery } from '@tanstack/react-query';
 import { fetchJVDeals } from '@/lib/jv-storage';
+import { useJVRealtime } from '@/lib/jv-realtime';
 import QuickBuyModal from '@/components/QuickBuyModal';
 
 
@@ -59,6 +60,7 @@ export default function InvestScreen() {
   const { width } = useWindowDimensions();
   const { fractionalShares } = useIPX();
   const { t } = useTranslation();
+  useJVRealtime('invest-jv-deals');
   const [refreshing, setRefreshing] = useState(false);
   const [showFeeInfo, setShowFeeInfo] = useState(false);
   const [quickBuyVisible, setQuickBuyVisible] = useState(false);
@@ -375,8 +377,10 @@ export default function InvestScreen() {
                 hybrid: '🔄 Hybrid',
                 development: '🏗️ Development JV',
               };
-              const photos: string[] = Array.isArray(deal.photos) ? deal.photos.filter((p: unknown) => typeof p === 'string' && (p as string).startsWith('http')) : [];
-              const partnerCount = Array.isArray(deal.partners) ? deal.partners.length : (deal.partners ?? 0);
+              const rawPhotos = Array.isArray(deal.photos) ? deal.photos : (typeof deal.photos === 'string' ? (() => { try { const p = JSON.parse(deal.photos); return Array.isArray(p) ? p : []; } catch { return []; } })() : []);
+              const photos: string[] = rawPhotos.filter((p: unknown) => typeof p === 'string' && (p as string).startsWith('http'));
+              const rawPartners = Array.isArray(deal.partners) ? deal.partners : (typeof deal.partners === 'string' ? (() => { try { const p = JSON.parse(deal.partners as string); return Array.isArray(p) ? p : []; } catch { return []; } })() : []);
+              const partnerCount = rawPartners.length;
               return (
                 <View key={deal.id} style={styles.liveJvCard}>
                   {photos.length > 0 && (
