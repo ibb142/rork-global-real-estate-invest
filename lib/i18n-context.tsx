@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import createContextHook from '@nkzw/create-context-hook';
 import { translations, TranslationKeys } from '@/constants/translations';
 import { extendedTranslations } from '@/constants/translations-extended';
+import { scopedKey } from '@/lib/project-storage';
 
 export type LanguageCode = 
   | 'en' | 'zh' | 'hi' | 'es' | 'fr' | 'ar' | 'bn' | 'pt' | 'ru' | 'ja'
@@ -49,7 +50,7 @@ export const SUPPORTED_LANGUAGES: Language[] = [
   { code: 'ms', name: 'Malay', nativeName: 'Bahasa Melayu' },
 ];
 
-const STORAGE_KEY = 'ipx_language';
+const STORAGE_KEY = scopedKey('language');
 
 export const [I18nProvider, useI18n] = createContextHook(() => {
   const [language, setLanguageState] = useState<LanguageCode>('en');
@@ -68,7 +69,7 @@ export const [I18nProvider, useI18n] = createContextHook(() => {
         setIsLoading(false);
       }
     };
-    loadLanguage();
+    void loadLanguage();
   }, []);
 
   const setLanguage = useCallback(async (code: LanguageCode) => {
@@ -101,7 +102,7 @@ export const [I18nProvider, useI18n] = createContextHook(() => {
 
   const isRTL = currentLanguage.rtl || false;
 
-  return {
+  return useMemo(() => ({
     language,
     setLanguage,
     t,
@@ -109,7 +110,7 @@ export const [I18nProvider, useI18n] = createContextHook(() => {
     isRTL,
     isLoading,
     languages: SUPPORTED_LANGUAGES,
-  };
+  }), [language, setLanguage, t, currentLanguage, isRTL, isLoading]);
 });
 
 const fallbackT = (key: string) => key;
