@@ -58,7 +58,8 @@ import * as Sharing from 'expo-sharing';
 import { Globe } from 'lucide-react-native';
 
 import Colors from '@/constants/colors';
-import { fetchJVDeals, upsertJVDeal, updateJVDeal, deleteJVDeal, safeSupabaseInsert } from '@/lib/jv-storage';
+import { useAuth } from '@/lib/auth-context';
+import { fetchJVDeals, upsertJVDeal, updateJVDeal, safeSupabaseInsert } from '@/lib/jv-storage';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatAmountInput, parseAmountInput } from '@/lib/formatters';
 import {
@@ -100,6 +101,38 @@ function formatCurrency(amount: number): string {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount);
 }
 
+function safePartners(partners: unknown): JVPartner[] {
+  if (Array.isArray(partners)) return partners;
+  if (typeof partners === 'string') {
+    try { const parsed = JSON.parse(partners); if (Array.isArray(parsed)) return parsed; } catch {}
+  }
+  return [];
+}
+
+function safeProfitSplit(profitSplit: unknown): { partnerId: string; percentage: number }[] {
+  if (Array.isArray(profitSplit)) return profitSplit;
+  if (typeof profitSplit === 'string') {
+    try { const parsed = JSON.parse(profitSplit); if (Array.isArray(parsed)) return parsed; } catch {}
+  }
+  return [];
+}
+
+function safePoolTiers(poolTiers: unknown): PoolTier[] {
+  if (Array.isArray(poolTiers)) return poolTiers;
+  if (typeof poolTiers === 'string') {
+    try { const parsed = JSON.parse(poolTiers); if (Array.isArray(parsed)) return parsed; } catch {}
+  }
+  return [];
+}
+
+function safePhotos(photos: unknown): string[] {
+  if (Array.isArray(photos)) return photos.filter((p: unknown) => typeof p === 'string' && p.length > 0);
+  if (typeof photos === 'string') {
+    try { const parsed = JSON.parse(photos); if (Array.isArray(parsed)) return parsed.filter((p: unknown) => typeof p === 'string'); } catch {}
+  }
+  return [];
+}
+
 
 const POOL_TIER_TYPES: { id: PoolTier['type']; label: string; icon: string; color: string }[] = [
   { id: 'jv_direct', label: 'JV Investment', icon: '🏛️', color: '#00C48C' },
@@ -109,7 +142,8 @@ const POOL_TIER_TYPES: { id: PoolTier['type']; label: string; icon: string; colo
 ];
 
 function generateJVContractHTML(agreement: JVAgreement): string {
-  const partnersHTML = agreement.partners.map((p, i) => `
+  const partners = safePartners(agreement.partners);
+  const partnersHTML = partners.map((p, i) => `
     <tr>
       <td style="padding:10px 14px;border-bottom:1px solid #2a2a2a;color:#fff;">${i + 1}. ${p.name}</td>
       <td style="padding:10px 14px;border-bottom:1px solid #2a2a2a;color:#FFD700;font-weight:700;">${ROLE_CONFIG[p.role]?.label || p.role}</td>
@@ -126,8 +160,8 @@ function generateJVContractHTML(agreement: JVAgreement): string {
     </div>
   `).join('');
 
-  const profitSplitHTML = agreement.profitSplit.map(ps => {
-    const partner = agreement.partners.find(p => p.id === ps.partnerId);
+  const profitSplitHTML = safeProfitSplit(agreement.profitSplit).map(ps => {
+    const partner = partners.find(p => p.id === ps.partnerId);
     return `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #1a1a1a;">
       <span style="color:#fff;">${partner?.name || 'Unknown'}</span>
       <span style="color:#00C48C;font-weight:700;">${ps.percentage}%</span>
@@ -232,7 +266,7 @@ function generateJVContractHTML(agreement: JVAgreement): string {
   <div class="signature-section">
     <div class="section-title">Signatures</div>
     <div class="sig-grid">
-      ${agreement.partners.map(p => `
+      ${partners.map(p => `
         <div class="sig-box">
           <div style="color:#FFD700;font-weight:700;margin-bottom:4px;">${ROLE_CONFIG[p.role]?.label || p.role}</div>
           <div class="sig-line"></div>
@@ -265,7 +299,7 @@ export default function JVAgreementScreen() {
   const [activeFilter, setActiveFilter] = useState<string>('all');
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [isPublishing, setIsPublishing] = useState<boolean>(false);
-  const [isDeletingId, setIsDeletingId] = useState<string | null>(null);
+
 
 
   const JV_STORAGE_KEY = 'ivx_jv_agreements';
@@ -316,9 +350,9 @@ export default function JVAgreementScreen() {
           type: d.type || 'equity_split',
           totalInvestment: d.totalInvestment || 0,
           currency: d.currency || 'USD',
-          partners: d.partners || [],
-          profitSplit: d.profitSplit || [],
-          poolTiers: d.poolTiers,
+          partners: safePartners(d.partners),
+          profitSplit: safeProfitSplit(d.profitSplit),
+          poolTiers: safePoolTiers(d.poolTiers),
           startDate: d.startDate || '',
           endDate: d.endDate || '',
           createdAt: d.createdAt || '',
@@ -335,7 +369,7 @@ export default function JVAgreementScreen() {
           performanceFee: d.performanceFee || 20,
           minimumHoldPeriod: d.minimumHoldPeriod || 12,
           description: d.description || '',
-          photos: Array.isArray(d.photos) && d.photos.length > 0 ? d.photos : undefined,
+          photos: safePhotos(d.photos).length > 0 ? safePhotos(d.photos) : undefined,
           published: d.published ?? false,
           publishedAt: d.publishedAt ?? null,
         }));
@@ -354,37 +388,7 @@ export default function JVAgreementScreen() {
 
   const queryClient = useQueryClient();
 
-  const handleDeleteDeal = useCallback(async (dealId: string, dealTitle: string) => {
-    Alert.alert(
-      'Delete JV Deal',
-      `Permanently delete "${dealTitle}"?\n\nThis cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete Forever',
-          style: 'destructive',
-          onPress: async () => {
-            setIsDeletingId(dealId);
-            console.log('[JV] Deleting deal via Supabase:', dealId, dealTitle);
-            try {
-              const { error: sbErr } = await deleteJVDeal(dealId);
-              if (sbErr) throw sbErr;
-              setAgreements(prev => prev.filter(a => a.id !== dealId));
-              void queryClient.invalidateQueries({ queryKey: ['jv-agreements'] });
-              void queryClient.invalidateQueries({ queryKey: ['published-jv-deals'] });
-              void queryClient.invalidateQueries({ queryKey: ['jv-deals'] });
-              Alert.alert('Deleted', `"${dealTitle}" has been permanently deleted.`);
-            } catch (err) {
-              console.error('[JV] Supabase delete error:', err);
-              Alert.alert('Error', 'Could not delete deal. Please try again.');
-            } finally {
-              setIsDeletingId(null);
-            }
-          },
-        },
-      ]
-    );
-  }, [queryClient]);
+
 
 
 
@@ -586,9 +590,9 @@ export default function JVAgreementScreen() {
     setFormMinHold(String(agreement.minimumHoldPeriod));
     setFormStartDate(agreement.startDate);
     setFormEndDate(agreement.endDate);
-    setPartners(agreement.partners.map(p => ({ ...p })));
-    setFormPoolTiers(agreement.poolTiers ? agreement.poolTiers.map(t => ({ ...t })) : []);
-    setFormPhotos(agreement.photos ? [...agreement.photos] : []);
+    setPartners(safePartners(agreement.partners).map(p => ({ ...p })));
+    setFormPoolTiers(safePoolTiers(agreement.poolTiers).map(t => ({ ...t })));
+    setFormPhotos(safePhotos(agreement.photos));
     setExpandedSections({ overview: true, partners: true, terms: false, fees: false, legal: false, clauses: false, photos_section: true, pool_tiers: true });
     setMode('edit');
     scrollRef.current?.scrollTo({ y: 0, animated: true });
@@ -660,9 +664,21 @@ export default function JVAgreementScreen() {
     }
   }, [formPhotos]);
 
+  const { isAdmin } = useAuth();
+
   const removePhoto = useCallback((index: number) => {
+    if (editingAgreementId) {
+      console.log('[JV] ❌ BLOCKED: Photo removal from existing deal is DISABLED. Deal:', editingAgreementId, 'isAdmin:', isAdmin, 'index:', index);
+      Alert.alert(
+        'Photo Removal Blocked',
+        'Photos cannot be removed from existing deals through this screen. Use the Admin Panel > JV Deals > Photo Management to manage photos safely.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+    console.log('[JV] removePhoto — new deal (no editingId), index:', index);
     setFormPhotos(prev => prev.filter((_, i) => i !== index));
-  }, []);
+  }, [isAdmin, editingAgreementId]);
 
   const [isUploadingPhotos, setIsUploadingPhotos] = useState<boolean>(false);
   const [uploadProgress, setUploadProgress] = useState<string>('');
@@ -703,13 +719,13 @@ export default function JVAgreementScreen() {
         const blob = await response.blob();
         const mimeType = blob.type || 'image/jpeg';
 
-        const MAX_WEB_KB = 120;
+        const MAX_WEB_KB = 60;
         const needsCompress = blob.size > MAX_WEB_KB * 1024;
         console.log('[JV] Web photo:', (blob.size / 1024).toFixed(0), 'KB, needsCompress:', needsCompress);
 
         try {
           const bitmap = await createImageBitmap(blob);
-          const maxDim = needsCompress ? 700 : 800;
+          const maxDim = 500;
           let w = bitmap.width;
           let h = bitmap.height;
           if (w > maxDim || h > maxDim) {
@@ -721,7 +737,7 @@ export default function JVAgreementScreen() {
           const ctx = canvas.getContext('2d');
           if (ctx) {
             ctx.drawImage(bitmap, 0, 0, w, h);
-            const quality = blob.size > 2 * 1024 * 1024 ? 0.25 : blob.size > 500 * 1024 ? 0.35 : 0.45;
+            const quality = 0.3;
             const compressedBlob = await canvas.convertToBlob({ type: 'image/jpeg', quality });
             const base64 = await new Promise<string>((resolve, reject) => {
               const reader = new FileReader();
@@ -730,6 +746,22 @@ export default function JVAgreementScreen() {
               reader.readAsDataURL(compressedBlob);
             });
             console.log('[JV] Compressed photo from', (blob.size / 1024).toFixed(0), 'KB to', (compressedBlob.size / 1024).toFixed(0), 'KB, dims:', w, 'x', h);
+            if (compressedBlob.size > 80 * 1024) {
+              const tinyCanvas = new OffscreenCanvas(Math.round(w * 0.6), Math.round(h * 0.6));
+              const tinyCtx = tinyCanvas.getContext('2d');
+              if (tinyCtx) {
+                tinyCtx.drawImage(bitmap, 0, 0, Math.round(w * 0.6), Math.round(h * 0.6));
+                const tinyBlob = await tinyCanvas.convertToBlob({ type: 'image/jpeg', quality: 0.2 });
+                const tinyBase64 = await new Promise<string>((resolve, reject) => {
+                  const reader = new FileReader();
+                  reader.onloadend = () => resolve(reader.result as string);
+                  reader.onerror = reject;
+                  reader.readAsDataURL(tinyBlob);
+                });
+                console.log('[JV] Extra compressed to', (tinyBlob.size / 1024).toFixed(0), 'KB');
+                return { base64: tinyBase64, mimeType: 'image/jpeg' };
+              }
+            }
             return { base64, mimeType: 'image/jpeg' };
           }
         } catch (compressErr) {
@@ -930,13 +962,13 @@ export default function JVAgreementScreen() {
   }), []);
 
   const buildJVPayload = useCallback((agreement: JVAgreement, skipLocalPhotos = false) => {
-    const safePartners = Array.isArray(agreement.partners) ? agreement.partners : [];
-    const safeProfitSplit = Array.isArray(agreement.profitSplit) ? agreement.profitSplit : [];
-    const rawPhotos = Array.isArray(agreement.photos) ? agreement.photos : [];
+    const payloadPartners = safePartners(agreement.partners);
+    const payloadProfitSplit = safeProfitSplit(agreement.profitSplit) as { partnerId: string; percentage: number }[];
+    const rawPhotos: string[] = safePhotos(agreement.photos);
     const isHostedUrl = (p: string) => typeof p === 'string' && p.length > 0 && (p.startsWith('https://') || p.startsWith('http://')) && !p.startsWith('blob:');
-    const safePhotos = skipLocalPhotos ? rawPhotos.filter(isHostedUrl) : rawPhotos.filter(p => isHostedUrl(p) || (typeof p === 'string' && p.startsWith('data:image/')));
-    const safePoolTiers = Array.isArray(agreement.poolTiers) ? agreement.poolTiers : [];
-    console.log('[JV] buildJVPayload — photos raw:', rawPhotos.length, 'safe (remote URLs):', safePhotos.length, 'skipLocalPhotos:', skipLocalPhotos);
+    const filteredPhotos: string[] = skipLocalPhotos ? rawPhotos.filter(isHostedUrl) : rawPhotos.filter((p: string) => isHostedUrl(p) || (typeof p === 'string' && p.startsWith('data:image/')));
+    const safePoolTiersArr = safePoolTiers(agreement.poolTiers);
+    console.log('[JV] buildJVPayload — photos raw:', rawPhotos.length, 'safe (remote URLs):', filteredPhotos.length, 'skipLocalPhotos:', skipLocalPhotos);
 
     const today = new Date().toISOString().split('T')[0];
     const threeYearsLater = new Date(Date.now() + 365 * 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
@@ -954,7 +986,7 @@ export default function JVAgreementScreen() {
       type: validTypes.includes(agreement.type as any) ? agreement.type : 'equity_split',
       totalInvestment: Number(agreement.totalInvestment) || 0,
       currency: agreement.currency || 'USD',
-      partners: safePartners.map(p => ({
+      partners: payloadPartners.map(p => ({
         id: String(p?.id || `p-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`),
         name: String(p?.name || 'Partner').trim(),
         role: (validRoles.includes(p?.role as any) ? p.role : 'lp') as 'lp' | 'silent' | 'co_investor',
@@ -963,7 +995,7 @@ export default function JVAgreementScreen() {
         location: String(p?.location || ''),
         verified: Boolean(p?.verified),
       })),
-      profitSplit: safeProfitSplit.map(ps => ({
+      profitSplit: payloadProfitSplit.map((ps: { partnerId: string; percentage: number }) => ({
         partnerId: String(ps?.partnerId || ''),
         percentage: Number(ps?.percentage) || 0,
       })),
@@ -983,11 +1015,13 @@ export default function JVAgreementScreen() {
       description: String(agreement.description || ''),
     };
 
-    payload.photos = safePhotos.length > 0 ? safePhotos : [];
-    console.log('[JV] buildJVPayload — photos:', safePhotos.length, 'in payload, skipLocalPhotos:', skipLocalPhotos);
+    if (filteredPhotos.length > 0) {
+      payload.photos = filteredPhotos;
+    }
+    console.log('[JV] buildJVPayload — photos:', filteredPhotos.length, 'in payload, skipLocalPhotos:', skipLocalPhotos);
 
-    if (safePoolTiers.length > 0) {
-      payload.poolTiers = safePoolTiers.map(t => ({
+    if (safePoolTiersArr.length > 0) {
+      payload.poolTiers = safePoolTiersArr.map(t => ({
         id: String(t?.id || `tier-${Date.now()}`),
         label: String(t?.label || ''),
         type: (validTierTypes.includes(t?.type as any) ? t.type : 'open') as ValidTierType,
@@ -1019,8 +1053,9 @@ export default function JVAgreementScreen() {
     const idToUpdate = existingBackendId || agreement.id;
 
     const processedPhotos: string[] = [];
-    if (agreement.photos && agreement.photos.length > 0) {
-      for (const photo of agreement.photos) {
+    const publishPhotos = safePhotos(agreement.photos);
+    if (publishPhotos.length > 0) {
+      for (const photo of publishPhotos) {
         const isRemote = (photo.startsWith('https://') || photo.startsWith('http://')) && !photo.startsWith('blob:');
         const isDataUri = photo.startsWith('data:image/');
         if (isRemote || isDataUri) {
@@ -1038,7 +1073,7 @@ export default function JVAgreementScreen() {
         }
       }
     }
-    const agreementWithPhotos: JVAgreement = { ...agreement, photos: processedPhotos.length > 0 ? processedPhotos : undefined };
+    const agreementWithPhotos: JVAgreement = { ...agreement, partners: safePartners(agreement.partners), profitSplit: safeProfitSplit(agreement.profitSplit) as any, poolTiers: safePoolTiers(agreement.poolTiers), photos: processedPhotos.length > 0 ? processedPhotos : undefined };
 
     try {
       const payload = buildJVPayload(agreementWithPhotos, false);
@@ -1114,8 +1149,18 @@ export default function JVAgreementScreen() {
     }
     if (selectedAgreement?.id === agreement.id && didPublish) {
       const refetched = backendDealsQuery.data?.deals?.find(d => d.id === (backendId || agreement.id));
-      const finalPhotos = refetched?.photos || agreement.photos;
-      setSelectedAgreement({ ...agreement, id: backendId || agreement.id, status: 'active', published: true, publishedAt: new Date().toISOString(), photos: finalPhotos });
+      const finalPhotos = safePhotos(refetched?.photos).length > 0 ? safePhotos(refetched?.photos) : safePhotos(agreement.photos);
+      setSelectedAgreement({
+        ...agreement,
+        id: backendId || agreement.id,
+        status: 'active',
+        published: true,
+        publishedAt: new Date().toISOString(),
+        photos: finalPhotos,
+        partners: safePartners(agreement.partners),
+        profitSplit: safeProfitSplit(agreement.profitSplit) as any,
+        poolTiers: safePoolTiers(agreement.poolTiers),
+      });
     }
 
     setIsPublishing(false);
@@ -1334,9 +1379,9 @@ export default function JVAgreementScreen() {
       `Project: ${agreement.title}\n` +
       `Total Investment: ${formatCurrency(agreement.totalInvestment)}\n` +
       `Expected ROI: ${agreement.expectedROI}%\n` +
-      `Partners: ${agreement.partners.length}\n` +
+      `Partners: ${safePartners(agreement.partners).length}\n` +
       `Type: ${JV_AGREEMENT_TYPES.find(t => t.id === agreement.type)?.label}\n\n` +
-      `Partners:\n${agreement.partners.map(p => `- ${p.name} (${p.equityShare}% equity)`).join('\n')}\n\n` +
+      `Partners:\n${safePartners(agreement.partners).map(p => `- ${p.name} (${p.equityShare}% equity)`).join('\n')}\n\n` +
       `Status: ${STATUS_CONFIG[agreement.status]?.label || agreement.status}\n` +
       `Distribution: ${agreement.distributionFrequency}\n` +
       `Exit Strategy: ${agreement.exitStrategy}`;
@@ -1430,13 +1475,23 @@ export default function JVAgreementScreen() {
   const renderAgreementCard = (agreement: JVAgreement) => {
     const statusCfg = STATUS_CONFIG[agreement.status] || DEFAULT_STATUS;
     const typeCfg = JV_AGREEMENT_TYPES.find(t => t.id === agreement.type);
-    const validPhotos = agreement.photos?.filter((p: string) => typeof p === 'string' && (p.startsWith('http') || p.startsWith('data:image/'))) || [];
+    const validPhotos = safePhotos(agreement.photos).filter((p: string) => typeof p === 'string' && (p.startsWith('http') || p.startsWith('data:image/')));
 
     return (
       <TouchableOpacity
         key={agreement.id}
         style={st.igCard}
-        onPress={() => { setSelectedAgreement(agreement); setMode('detail'); }}
+        onPress={() => {
+          const safeAg: JVAgreement = {
+            ...agreement,
+            partners: safePartners(agreement.partners),
+            profitSplit: safeProfitSplit(agreement.profitSplit) as any,
+            poolTiers: safePoolTiers(agreement.poolTiers),
+            photos: safePhotos(agreement.photos).length > 0 ? safePhotos(agreement.photos) : undefined,
+          };
+          setSelectedAgreement(safeAg);
+          setMode('detail');
+        }}
         activeOpacity={0.9}
         testID={`jv-card-${agreement.id}`}
       >
@@ -1533,20 +1588,20 @@ export default function JVAgreementScreen() {
             <View style={st.igCardMetricDivider} />
             <View style={st.igCardMetric}>
               <Users size={14} color="#4A90D9" />
-              <Text style={st.igCardMetricValue}>{agreement.partners.length}</Text>
+              <Text style={st.igCardMetricValue}>{safePartners(agreement.partners).length}</Text>
               <Text style={st.igCardMetricLabel}>Partners</Text>
             </View>
           </View>
 
           <View style={st.igCardFooter}>
             <View style={st.igCardAvatars}>
-              {agreement.partners.slice(0, 3).map((p, i) => (
+              {safePartners(agreement.partners).slice(0, 3).map((p, i) => (
                 <View key={p.id} style={[st.partnerAvatarSmall, { backgroundColor: ROLE_CONFIG[p.role]?.color || '#666', marginLeft: i > 0 ? -8 : 0, zIndex: 3 - i }]}>
                   <Text style={st.partnerAvatarText}>{p.name.charAt(0)}</Text>
                 </View>
               ))}
-              {agreement.partners.length > 3 && (
-                <Text style={st.morePartners}>+{agreement.partners.length - 3}</Text>
+              {safePartners(agreement.partners).length > 3 && (
+                <Text style={st.morePartners}>+{safePartners(agreement.partners).length - 3}</Text>
               )}
             </View>
             <View style={st.igCardActions}>
@@ -1560,20 +1615,7 @@ export default function JVAgreementScreen() {
                   >
                     <Edit3 size={14} color={Colors.primary} />
                   </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[st.editCardBtn, { backgroundColor: '#FF4D4D15', marginLeft: 6 }]}
-                    onPress={() => { void handleDeleteDeal(agreement.id, agreement.title); }}
-                    activeOpacity={0.7}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    testID={`jv-delete-${agreement.id}`}
-                    disabled={isDeletingId === agreement.id}
-                  >
-                    {isDeletingId === agreement.id ? (
-                      <ActivityIndicator size="small" color="#FF4D4D" />
-                    ) : (
-                      <Trash2 size={14} color="#FF4D4D" />
-                    )}
-                  </TouchableOpacity>
+
                 </>
               )}
               {agreement.published && (
@@ -1640,10 +1682,12 @@ export default function JVAgreementScreen() {
     const ag = selectedAgreement;
     const statusCfg = STATUS_CONFIG[ag.status] || DEFAULT_STATUS;
     const typeCfg = JV_AGREEMENT_TYPES.find(t => t.id === ag.type);
+    const agPhotos = safePhotos(ag.photos);
+    const agPoolTiers = safePoolTiers(ag.poolTiers);
 
     return (
       <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
-        {ag.photos && ag.photos.length > 0 && (
+        {agPhotos.length > 0 && (
           <View style={st.igGalleryContainer}>
             <ScrollView
               horizontal
@@ -1655,7 +1699,7 @@ export default function JVAgreementScreen() {
               }}
               style={st.igGalleryScroll}
             >
-              {ag.photos.map((uri, i) => (
+              {agPhotos.map((uri, i) => (
                 <TouchableOpacity
                   key={`gallery-${i}`}
                   activeOpacity={0.95}
@@ -1676,11 +1720,11 @@ export default function JVAgreementScreen() {
               </View>
               <View style={st.igGalleryCounter}>
                 <ImageIcon size={12} color="#fff" />
-                <Text style={st.igGalleryCounterText}>{galleryIndex + 1}/{ag.photos.length}</Text>
+                <Text style={st.igGalleryCounterText}>{galleryIndex + 1}/{agPhotos.length}</Text>
               </View>
             </View>
             <View style={st.igGalleryDots}>
-              {ag.photos.map((_, i) => (
+              {agPhotos.map((_: string, i: number) => (
                 <View
                   key={`dot-${i}`}
                   style={[st.igGalleryDot, galleryIndex === i && st.igGalleryDotActive]}
@@ -1691,7 +1735,7 @@ export default function JVAgreementScreen() {
         )}
 
         <View style={st.detailHero}>
-          {!(ag.photos && ag.photos.length > 0) && (
+          {agPhotos.length === 0 && (
             <View style={st.detailHeroTop}>
               <View style={[st.statusBadge, { backgroundColor: statusCfg.bg }]}>
                 <View style={[st.statusDot, { backgroundColor: statusCfg.color }]} />
@@ -1700,7 +1744,7 @@ export default function JVAgreementScreen() {
               <Text style={st.detailType}>{typeCfg?.icon} {typeCfg?.label}</Text>
             </View>
           )}
-          {ag.photos && ag.photos.length > 0 && (
+          {agPhotos.length > 0 && (
             <View style={st.detailHeroTopInline}>
               <Text style={st.detailType}>{typeCfg?.icon} {typeCfg?.label}</Text>
             </View>
@@ -1721,13 +1765,13 @@ export default function JVAgreementScreen() {
             </View>
             <View style={st.detailMetricItem}>
               <Users size={16} color="#4A90D9" />
-              <Text style={st.detailMetricValue}>{ag.partners.length}</Text>
+              <Text style={st.detailMetricValue}>{safePartners(ag.partners).length}</Text>
               <Text style={st.detailMetricLabel}>Partners</Text>
             </View>
           </View>
         </View>
 
-        {ag.poolTiers && ag.poolTiers.length > 0 && (
+        {agPoolTiers.length > 0 && (
           <View style={st.formCard}>
             <View style={st.poolTableHeader}>
               <View style={st.poolTableHeaderLeft}>
@@ -1738,12 +1782,12 @@ export default function JVAgreementScreen() {
               </View>
               <View style={st.poolTotalBadge}>
                 <Text style={st.poolTotalLabel}>Total Raise</Text>
-                <Text style={st.poolTotalValue}>{formatCurrency(ag.poolTiers.reduce((s, t) => s + t.targetAmount, 0))}</Text>
+                <Text style={st.poolTotalValue}>{formatCurrency(agPoolTiers.reduce((s: number, t: PoolTier) => s + t.targetAmount, 0))}</Text>
               </View>
             </View>
 
             <View style={st.poolTiersContainer}>
-              {ag.poolTiers.map((tier) => {
+              {agPoolTiers.map((tier: PoolTier) => {
                 const tierCfg = POOL_TIER_TYPES.find(t => t.id === tier.type);
                 const fillPct = tier.targetAmount > 0 ? Math.min((tier.currentRaised / tier.targetAmount) * 100, 100) : 0;
                 return (
@@ -1892,7 +1936,7 @@ export default function JVAgreementScreen() {
           {renderSectionHeader('partners', 'Partners & Capital Structure', <Users size={18} color="#4A90D9" />)}
           {expandedSections.partners && (
             <View style={st.sectionContent}>
-              {ag.partners.map((p) => {
+              {safePartners(ag.partners).map((p) => {
                 const roleCfg = ROLE_CONFIG[p.role] || ROLE_CONFIG.silent;
                 return (
                   <View key={p.id} style={st.partnerCard}>
@@ -1928,8 +1972,8 @@ export default function JVAgreementScreen() {
 
               <View style={st.profitSplitCard}>
                 <Text style={st.profitSplitTitle}>Profit Distribution</Text>
-                {ag.profitSplit.map(ps => {
-                  const partner = ag.partners.find(p => p.id === ps.partnerId);
+                {safeProfitSplit(ag.profitSplit).map(ps => {
+                  const partner = safePartners(ag.partners).find(p => p.id === ps.partnerId);
                   return (
                     <View key={ps.partnerId} style={st.profitSplitRow}>
                       <Text style={st.profitSplitName}>{partner?.name || 'Unknown'}</Text>
@@ -2172,13 +2216,15 @@ export default function JVAgreementScreen() {
                   return (
                     <View key={`photo-${i}`} style={st.photoPreviewItem}>
                       <Image source={{ uri }} style={st.photoPreviewImage} />
-                      <TouchableOpacity
-                        style={st.photoRemoveBtn}
-                        onPress={() => removePhoto(i)}
-                        activeOpacity={0.7}
-                      >
-                        <X size={14} color="#fff" />
-                      </TouchableOpacity>
+                      {!editingAgreementId && (
+                        <TouchableOpacity
+                          style={st.photoRemoveBtn}
+                          onPress={() => removePhoto(i)}
+                          activeOpacity={0.7}
+                        >
+                          <X size={14} color="#fff" />
+                        </TouchableOpacity>
+                      )}
                       <View style={[st.photoIndexBadge, isLocal ? { backgroundColor: '#FF9500' } : { backgroundColor: '#00C48C' }]}>
                         <Text style={st.photoIndexText}>{isLocal ? '↑' : '✓'}</Text>
                       </View>
@@ -2363,7 +2409,7 @@ export default function JVAgreementScreen() {
 
   const renderFullscreenViewer = () => {
     if (!fullscreenPhoto) return null;
-    const photos = selectedAgreement?.photos || [];
+    const photos = safePhotos(selectedAgreement?.photos);
     const currentIdx = photos.indexOf(fullscreenPhoto);
     return (
       <Modal visible={!!fullscreenPhoto} transparent animationType="fade" onRequestClose={() => setFullscreenPhoto(null)}>
