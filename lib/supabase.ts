@@ -42,6 +42,13 @@ if (supabaseUrl && supabaseAnonKey) {
       persistSession: true,
       detectSessionInUrl: Platform.OS === 'web',
     },
+    realtime: {
+      params: {
+        eventsPerSecond: 10,
+      },
+      heartbeatIntervalMs: 15000,
+      reconnectAfterMs: (tries: number) => Math.min(1000 * Math.pow(1.5, tries), 15000),
+    },
   });
 } else {
   console.warn('[Supabase]', SUPABASE_NOT_CONFIGURED_MESSAGE);
