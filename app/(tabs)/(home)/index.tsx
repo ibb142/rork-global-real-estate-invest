@@ -9,6 +9,9 @@ import {
   RefreshControl,
   Animated,
   useWindowDimensions,
+  FlatList,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -40,7 +43,9 @@ import Colors from '@/constants/colors';
 import { getResponsiveSize, isCompactScreen, isExtraSmallScreen } from '@/lib/responsive';
 import { useQuery } from '@tanstack/react-query';
 import { fetchJVDeals } from '@/lib/jv-storage';
+import { parseDeal as sharedParseDeal, QUERY_KEY_PUBLISHED_JV_DEALS } from '@/lib/parse-deal';
 import { supabase } from '@/lib/supabase';
+import { useJVRealtime } from '@/lib/jv-realtime';
 import { useTranslation } from '@/lib/i18n-context';
 import { useAnalytics } from '@/lib/analytics-context';
 import { useIPX } from '@/lib/ipx-context';
@@ -344,17 +349,79 @@ class JVErrorBoundary extends React.Component<{ children: React.ReactNode }, { h
   }
 }
 
+const JVPhotoSlider = React.memo(function JVPhotoSlider({ photos, status }: { photos: string[]; status: { label: string; color: string } }) {
+  const [activeIndex, setActiveIndex] = useState<number>(0);
+  const CARD_WIDTH = 280;
+
+  const handleScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const offsetX = e.nativeEvent.contentOffset.x;
+    const index = Math.round(offsetX / CARD_WIDTH);
+    setActiveIndex(index);
+  }, []);
+
+  const renderPhoto = useCallback(({ item }: { item: string }) => (
+    <Image source={{ uri: item }} style={{ width: CARD_WIDTH, height: 160 }} resizeMode="cover" />
+  ), []);
+
+  const keyExtractor = useCallback((item: string, index: number) => `photo-${index}`, []);
+
+  return (
+    <View style={jvStyles.imageWrap}>
+      <FlatList
+        data={photos}
+        renderItem={renderPhoto}
+        keyExtractor={keyExtractor}
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
+        bounces={false}
+        style={{ width: CARD_WIDTH, height: 160 }}
+        getItemLayout={(_, index) => ({ length: CARD_WIDTH, offset: CARD_WIDTH * index, index })}
+      />
+      <View style={jvStyles.imageOverlay} />
+      <View style={jvStyles.imageBadgeRow}>
+        <View style={[jvStyles.statusBadge, { backgroundColor: status.color + '22' }]}>
+          <View style={[jvStyles.statusDot, { backgroundColor: status.color }]} />
+          <Text style={[jvStyles.statusText, { color: status.color }]}>{status.label}</Text>
+        </View>
+        {photos.length > 1 ? (
+          <View style={jvStyles.photoCountBadge}>
+            <Text style={jvStyles.photoCountText}>{activeIndex + 1}/{photos.length}</Text>
+          </View>
+        ) : null}
+      </View>
+      {photos.length > 1 ? (
+        <View style={jvStyles.dotsRow}>
+          {photos.map((_, i) => (
+            <View
+              key={`dot-${i}`}
+              style={[
+                jvStyles.dot,
+                i === activeIndex ? jvStyles.dotActive : jvStyles.dotInactive,
+              ]}
+            />
+          ))}
+        </View>
+      ) : null}
+    </View>
+  );
+});
+
 const JVPropertyCard = React.memo(function JVPropertyCard({ agreement, onPress, onInvest, onQuickBuy }: { agreement: JVAgreement; onPress: () => void; onInvest?: () => void; onQuickBuy?: () => void }) {
   if (!agreement || !agreement.id) {
     console.warn('[JVPropertyCard] Invalid agreement data, skipping render');
     return null;
   }
   const status = JV_STATUS_CONFIG[agreement.status] ?? JV_STATUS_CONFIG.draft;
-  const partners = Array.isArray(agreement.partners) ? agreement.partners : [];
-  const partnerCount = partners.length;
+  const partnersRaw = agreement.partners;
+  const partners = Array.isArray(partnersRaw) ? partnersRaw : (typeof partnersRaw === 'string' ? (() => { try { const p = JSON.parse(partnersRaw); return Array.isArray(p) ? p : []; } catch { return []; } })() : []);
+  const partnerCount = typeof partnersRaw === 'number' ? partnersRaw : partners.length;
   const totalFormatted = formatCurrencyCompact(agreement.totalInvestment ?? 0);
-  const photos = Array.isArray(agreement.photos) ? agreement.photos : [];
-  const heroPhoto = photos.length > 0 ? photos[0] : null;
+  const photosRaw = agreement.photos;
+  const photos = Array.isArray(photosRaw) ? photosRaw : (typeof photosRaw === 'string' ? (() => { try { const p = JSON.parse(photosRaw as string); return Array.isArray(p) ? p : []; } catch { return []; } })() : []);
+  const validPhotos = photos.filter((p: string) => typeof p === 'string' && p.length > 5 && p.startsWith('http'));
 
   return (
     <TouchableOpacity
@@ -363,22 +430,8 @@ const JVPropertyCard = React.memo(function JVPropertyCard({ agreement, onPress, 
       activeOpacity={0.7}
       testID={`jv-card-${agreement.id}`}
     >
-      {heroPhoto ? (
-        <View style={jvStyles.imageWrap}>
-          <Image source={{ uri: heroPhoto }} style={jvStyles.heroImage} resizeMode="cover" />
-          <View style={jvStyles.imageOverlay} />
-          <View style={jvStyles.imageBadgeRow}>
-            <View style={[jvStyles.statusBadge, { backgroundColor: status.color + '22' }]}>
-              <View style={[jvStyles.statusDot, { backgroundColor: status.color }]} />
-              <Text style={[jvStyles.statusText, { color: status.color }]}>{status.label}</Text>
-            </View>
-            {photos.length > 1 ? (
-              <View style={jvStyles.photoCountBadge}>
-                <Text style={jvStyles.photoCountText}>{photos.length} photos</Text>
-              </View>
-            ) : null}
-          </View>
-        </View>
+      {validPhotos.length > 0 ? (
+        <JVPhotoSlider photos={validPhotos} status={status} />
       ) : (
         <View style={jvStyles.cardHeaderNoImage}>
           <View style={jvStyles.iconWrap}>
@@ -476,12 +529,36 @@ const jvStyles = StyleSheet.create({
   },
   imageWrap: {
     width: '100%',
-    height: 140,
+    height: 160,
     position: 'relative' as const,
   },
   heroImage: {
     width: '100%',
     height: '100%',
+  },
+  dotsRow: {
+    position: 'absolute' as const,
+    bottom: 8,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 5,
+  },
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  dotActive: {
+    backgroundColor: '#FFFFFF',
+    width: 18,
+    height: 6,
+    borderRadius: 3,
+  },
+  dotInactive: {
+    backgroundColor: 'rgba(255,255,255,0.4)',
   },
   imageOverlay: {
     position: 'absolute' as const,
@@ -1061,53 +1138,49 @@ export default function HomeScreen() {
   const isCompact = isCompactScreen(screenSize);
   const isXs = isExtraSmallScreen(screenSize);
 
+  useJVRealtime('home-jv-deals', true);
+
   useEffect(() => {
     trackScreen('Home');
   }, [trackScreen]);
 
-
-
   const jvDealsQuery = useQuery({
-    queryKey: ['jv-deals', 'published'],
+    queryKey: [...QUERY_KEY_PUBLISHED_JV_DEALS],
     queryFn: async () => {
       const result = await fetchJVDeals({ published: true });
-      return { deals: result.deals || [] };
+      return { deals: (result.deals || []).map((d: any) => sharedParseDeal(d)) };
     },
     retry: 2,
-    staleTime: 0,
-    gcTime: 0,
+    staleTime: 5000,
+    gcTime: 15000,
     refetchOnMount: 'always' as const,
     refetchOnWindowFocus: true,
-    refetchInterval: 8000,
-    networkMode: 'always' as const,
+    refetchInterval: 15000,
+    refetchIntervalInBackground: false,
   });
 
   const jvDealsLoading = jvDealsQuery.isLoading;
   const jvDeals = useMemo(() => {
     try {
       const rawDeals = jvDealsQuery.data?.deals;
-      const backendDeals = (Array.isArray(rawDeals) ? rawDeals : []) as JVAgreement[];
+      const backendDeals = (Array.isArray(rawDeals) ? rawDeals : []) as unknown as JVAgreement[];
       console.log('[Home JV] Backend deals:', backendDeals.length, 'Query status:', jvDealsQuery.status);
 
       const validBackendDeals = backendDeals.filter(d => d && d.id && d.title && d.projectName);
 
-      if (validBackendDeals.length === 0 && jvDealsQuery.isLoading) {
-        return [];
-      }
-
-      console.log('[Home JV] Using backend deals only, Count:', validBackendDeals.length);
-
-      return validBackendDeals.map(deal => ({
+      const mapped = validBackendDeals.map(deal => ({
         ...deal,
-        photos: (deal.photos && deal.photos.length > 0) ? deal.photos : [],
-        partners: Array.isArray(deal.partners) ? deal.partners : [],
+        partners: (deal.partners as any),
         profitSplit: Array.isArray(deal.profitSplit) ? deal.profitSplit : [],
-      }));
+      })) as JVAgreement[];
+
+      console.log('[Home JV] Using backend deals, Count:', mapped.length);
+      return mapped;
     } catch (err) {
       console.error('[Home JV] Error processing deals:', err);
       return [];
     }
-  }, [jvDealsQuery.data, jvDealsQuery.status, jvDealsQuery.isLoading]);
+  }, [jvDealsQuery.data, jvDealsQuery.status]);
 
   const propertiesQuery = useQuery({
     queryKey: ['properties', 'home'],
@@ -1290,7 +1363,7 @@ export default function HomeScreen() {
                     <JVPropertyCard
                       key={deal.id}
                       agreement={deal}
-                      onPress={() => router.push('/jv-agreement' as any)}
+                      onPress={() => router.push({ pathname: '/jv-invest', params: { jvId: deal.id } } as any)}
                       onInvest={() => router.push({ pathname: '/jv-invest', params: { jvId: deal.id } } as any)}
                       onQuickBuy={() => openQuickBuy(deal)}
                     />
