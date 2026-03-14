@@ -359,11 +359,14 @@ CREATE INDEX IF NOT EXISTS idx_push_tokens_user ON push_tokens(user_id);
 CREATE TABLE IF NOT EXISTS jv_deals (
   id text PRIMARY KEY,
   title text,
+  "projectName" text,
+  type text,
   description text,
   partner_name text,
   partner_email text,
   partner_phone text,
   partner_type text,
+  "propertyAddress" text,
   property_address text,
   city text,
   state text,
@@ -373,6 +376,8 @@ CREATE TABLE IF NOT EXISTS jv_deals (
   lot_size_unit text,
   zoning text,
   property_type text,
+  "totalInvestment" numeric DEFAULT 0,
+  "expectedROI" numeric DEFAULT 0,
   estimated_value numeric,
   appraised_value numeric,
   cash_payment_percent numeric,
@@ -382,8 +387,13 @@ CREATE TABLE IF NOT EXISTS jv_deals (
   term_months integer,
   cash_payment_amount numeric,
   collateral_amount numeric,
+  "distributionFrequency" text,
+  "exitStrategy" text,
+  partners jsonb,
+  "poolTiers" jsonb,
   status text DEFAULT 'draft',
   published boolean DEFAULT false,
+  "publishedAt" timestamptz,
   photos jsonb DEFAULT '[]'::jsonb,
   documents jsonb DEFAULT '[]'::jsonb,
   notes text,
@@ -401,20 +411,20 @@ CREATE TABLE IF NOT EXISTS jv_deals (
 
 ALTER TABLE jv_deals ENABLE ROW LEVEL SECURITY;
 
-DO $$ BEGIN
+DO $ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'jv_deals_select_all' AND tablename = 'jv_deals') THEN
     CREATE POLICY jv_deals_select_all ON jv_deals FOR SELECT USING (true);
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'jv_deals_insert_auth' AND tablename = 'jv_deals') THEN
-    CREATE POLICY jv_deals_insert_auth ON jv_deals FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'jv_deals_insert_all' AND tablename = 'jv_deals') THEN
+    CREATE POLICY jv_deals_insert_all ON jv_deals FOR INSERT WITH CHECK (true);
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'jv_deals_update_auth' AND tablename = 'jv_deals') THEN
-    CREATE POLICY jv_deals_update_auth ON jv_deals FOR UPDATE USING (auth.uid() IS NOT NULL);
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'jv_deals_update_all' AND tablename = 'jv_deals') THEN
+    CREATE POLICY jv_deals_update_all ON jv_deals FOR UPDATE USING (true);
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'jv_deals_delete_auth' AND tablename = 'jv_deals') THEN
     CREATE POLICY jv_deals_delete_auth ON jv_deals FOR DELETE USING (auth.uid() IS NOT NULL);
   END IF;
-END $$;
+END $;
 
 CREATE INDEX IF NOT EXISTS idx_jv_deals_published ON jv_deals(published);
 CREATE INDEX IF NOT EXISTS idx_jv_deals_status ON jv_deals(status);
