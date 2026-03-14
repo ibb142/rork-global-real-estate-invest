@@ -118,7 +118,11 @@ export async function registerTokenWithBackend(token: string): Promise<boolean> 
       }, { onConflict: 'user_id,token' });
 
     if (error) {
-      logger.push.log('Token registration note:', error.message);
+      if (error.message?.includes('does not exist') || error.code === '42P01' || error.message?.includes('relation')) {
+        logger.push.warn('push_tokens table does not exist in Supabase. Push token saved locally only. Run supabase-master-setup.sql to create the table.');
+      } else {
+        logger.push.log('Token registration note:', error.message);
+      }
       return false;
     }
 
