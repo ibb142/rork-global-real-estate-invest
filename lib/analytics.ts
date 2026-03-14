@@ -3,9 +3,10 @@ import logger from './logger';
 import { Platform } from 'react-native';
 import { supabase } from './supabase';
 import { getAuthUserId } from './auth-store';
+import { scopedKey } from './project-storage';
 
-const ANALYTICS_STORAGE_KEY = '@ipx_analytics';
-const SESSION_STORAGE_KEY = '@ipx_session';
+const ANALYTICS_STORAGE_KEY = scopedKey('analytics');
+const SESSION_STORAGE_KEY = scopedKey('session');
 const MAX_STORED_EVENTS = 1000;
 const SUPABASE_BATCH_SIZE = 50;
 
@@ -61,6 +62,10 @@ class AnalyticsService {
   private isInitialized = false;
   private flushInterval: ReturnType<typeof setInterval> | null = null;
   private syncInterval: ReturnType<typeof setInterval> | null = null;
+  private supabaseTableVerified = false;
+  private supabaseTableMissing = false;
+  private tableCheckAttempts = 0;
+  private readonly MAX_TABLE_CHECK_ATTEMPTS = 3;
 
   constructor() {
     this.sessionId = this.generateId();
@@ -127,11 +132,45 @@ class AnalyticsService {
     }, 30000);
   }
 
+  private async verifySupabaseTable(): Promise<boolean> {
+    if (this.supabaseTableVerified) return true;
+    if (this.supabaseTableMissing) return false;
+    if (this.tableCheckAttempts >= this.MAX_TABLE_CHECK_ATTEMPTS) {
+      this.supabaseTableMissing = true;
+      console.warn('[Analytics] analytics_events table not found after max attempts. Events will be stored locally only. Run the master SQL setup in Supabase to create the table.');
+      return false;
+    }
+
+    this.tableCheckAttempts++;
+    try {
+      const { error } = await supabase.from('analytics_events').select('id').limit(1);
+      if (error) {
+        if (error.message?.includes('does not exist') || error.code === '42P01' || error.message?.includes('relation')) {
+          this.supabaseTableMissing = true;
+          console.warn('[Analytics] analytics_events table does not exist in Supabase. Events stored locally only. Create the table using supabase-master-setup.sql.');
+          return false;
+        }
+        console.log('[Analytics] Table check error (may be RLS):', error.message);
+        return true;
+      }
+      this.supabaseTableVerified = true;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   private async syncToSupabase(): Promise<void> {
     if (this.supabasePendingQueue.length === 0) return;
 
     const userId = getAuthUserId();
     if (!userId) return;
+
+    const tableExists = await this.verifySupabaseTable();
+    if (!tableExists) {
+      this.supabasePendingQueue = [];
+      return;
+    }
 
     const batch = this.supabasePendingQueue.splice(0, SUPABASE_BATCH_SIZE);
     if (batch.length === 0) return;
@@ -151,6 +190,12 @@ class AnalyticsService {
       const { error } = await supabase.from('analytics_events').insert(rows);
 
       if (error) {
+        if (error.message?.includes('does not exist') || error.code === '42P01') {
+          this.supabaseTableMissing = true;
+          console.warn('[Analytics] analytics_events table missing. Dropping queued events. Run supabase-master-setup.sql.');
+          this.supabasePendingQueue = [];
+          return;
+        }
         this.supabasePendingQueue.unshift(...batch);
         console.log('[Analytics] Supabase sync failed, re-queued:', error.message);
       } else {
