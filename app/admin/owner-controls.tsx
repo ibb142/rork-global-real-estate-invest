@@ -36,7 +36,7 @@ import {
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { fetchJVDeals, deleteJVDeal, deleteAllJVDeals } from '@/lib/jv-storage';
+import { fetchJVDeals, archiveJVDeal } from '@/lib/jv-storage';
 
 import { properties } from '@/mocks/properties';
 import { feeConfigurations, getFeeStats, members, adminTransactions } from '@/mocks/admin';
@@ -431,72 +431,40 @@ export default function OwnerControlsScreen() {
 
   const queryClient = useQueryClient();
 
-  const deleteJVMutation = useMutation({
+  const archiveJVMutation = useMutation({
     mutationFn: async (input: { id: string }) => {
-      console.log('[JV-Storage] Deleting JV deal:', input.id);
-      const { error } = await deleteJVDeal(input.id);
+      console.log('[Owner Controls] Archiving JV deal:', input.id);
+      const { data, error } = await archiveJVDeal(input.id);
       if (error) throw error;
-      return { success: true, deletedTitle: 'Deal' };
+      return { success: true, ...data };
     },
-    onSuccess: (data: any) => {
-      console.log('[Owner Controls] JV deal deleted:', data);
+    onSuccess: () => {
+      console.log('[Owner Controls] JV deal archived');
       void queryClient.invalidateQueries({ queryKey: ['jvAgreements.list'] });
-      Alert.alert('Success', `JV deal "${data.deletedTitle}" permanently deleted.`);
+      void queryClient.invalidateQueries({ queryKey: ['jv-agreements'] });
+      void queryClient.invalidateQueries({ queryKey: ['published-jv-deals'] });
+      Alert.alert('Archived', 'Deal archived. You can restore it from Admin > Trash Bin.');
     },
     onError: (err: Error) => {
-      console.error('[Owner Controls] Delete JV error:', err);
-      Alert.alert('Error', 'Failed to delete deal: ' + (err.message || 'Unknown error'));
+      console.error('[Owner Controls] Archive JV error:', err);
+      Alert.alert('Error', 'Failed to archive deal: ' + (err.message || 'Unknown error'));
     },
   });
 
-  const purgeAllJVMutation = useMutation({
-    mutationFn: async () => {
-      console.log('[JV-Storage] Purging all JV deals');
-      const { error, count } = await deleteAllJVDeals();
-      if (error) throw error;
-      return { success: true, purged: count ?? 0 };
-    },
-    onSuccess: (data: any) => {
-      console.log('[Owner Controls] All JV deals purged:', data);
-      void queryClient.invalidateQueries({ queryKey: ['jvAgreements.list'] });
-      Alert.alert('Success', `All ${data.purged} JV deals permanently deleted.`);
-    },
-    onError: (err: Error) => {
-      console.error('[Owner Controls] Purge all JV error:', err);
-      Alert.alert('Error', 'Failed to purge deals: ' + (err.message || 'Unknown error'));
-    },
-  });
 
-  const handleDeleteJVDeal = (deal: JVDealControl) => {
+
+  const handleArchiveJVDeal = (deal: JVDealControl) => {
     Alert.alert(
-      'Delete JV Deal',
-      `Permanently delete "${deal.name}"?\n\nID: ${deal.id}\n\nThis action cannot be undone.`,
+      'Archive JV Deal',
+      `Archive "${deal.name}"?\n\nIt will be hidden but can be restored from Admin > Trash Bin.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Delete Forever',
+          text: 'Archive',
           style: 'destructive',
           onPress: () => {
-            console.log('[Owner Controls] Deleting JV deal:', deal.id, deal.name);
-            deleteJVMutation.mutate({ id: deal.id });
-          },
-        },
-      ]
-    );
-  };
-
-  const handlePurgeAllJV = () => {
-    Alert.alert(
-      'PURGE ALL JV DEALS',
-      `This will permanently delete ALL ${jvDealControls.length} JV deals from the database. This cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'DELETE ALL',
-          style: 'destructive',
-          onPress: () => {
-            console.log('[Owner Controls] Purging ALL JV deals');
-            purgeAllJVMutation.mutate();
+            console.log('[Owner Controls] Archiving JV deal:', deal.id, deal.name);
+            archiveJVMutation.mutate({ id: deal.id });
           },
         },
       ]
@@ -534,12 +502,12 @@ export default function OwnerControlsScreen() {
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 }}>
             <Text style={styles.sectionTitle}>JV Deals ({jvDealControls.length})</Text>
             <TouchableOpacity
-              style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#FF4D4D15', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, gap: 4 }}
-              onPress={handlePurgeAllJV}
-              testID="owner-jv-purge-all"
+              style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#4A90D915', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, gap: 4 }}
+              onPress={() => router.push('/admin/trash-bin' as any)}
+              testID="owner-jv-trash-bin"
             >
-              <Trash2 size={14} color="#FF4D4D" />
-              <Text style={{ color: '#FF4D4D', fontSize: 12, fontWeight: '700' as const }}>Delete All</Text>
+              <Trash2 size={14} color="#4A90D9" />
+              <Text style={{ color: '#4A90D9', fontSize: 12, fontWeight: '700' as const }}>Trash Bin</Text>
             </TouchableOpacity>
           </View>
           {jvDealControls.map((deal) => (
@@ -631,12 +599,12 @@ export default function OwnerControlsScreen() {
                   <Text style={[styles.actionBtnText, { color: '#FFB800' }]}>Manage</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[styles.actionBtn, { backgroundColor: '#FF4D4D' + '15' }]}
-                  onPress={() => handleDeleteJVDeal(deal)}
-                  testID={`owner-jv-delete-${deal.id}`}
+                  style={[styles.actionBtn, { backgroundColor: '#FFB80015' }]}
+                  onPress={() => handleArchiveJVDeal(deal)}
+                  testID={`owner-jv-archive-${deal.id}`}
                 >
-                  <Trash2 size={16} color="#FF4D4D" />
-                  <Text style={[styles.actionBtnText, { color: '#FF4D4D' }]}>Delete</Text>
+                  <Trash2 size={16} color="#FFB800" />
+                  <Text style={[styles.actionBtnText, { color: '#FFB800' }]}>Archive</Text>
                 </TouchableOpacity>
               </View>
             </View>
