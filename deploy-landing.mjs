@@ -107,10 +107,12 @@ async function deploy() {
   const apiBaseUrl = (process.env.EXPO_PUBLIC_API_BASE_URL || 'https://ivxholding.com').trim().replace(/\/$/, '');
   const supabaseUrl = (process.env.EXPO_PUBLIC_SUPABASE_URL || '').trim();
   const supabaseAnonKey = (process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '').trim();
+  const appUrl = (process.env.EXPO_PUBLIC_APP_URL || process.env.EXPO_PUBLIC_RORK_API_BASE_URL || '').trim().replace(/\/$/, '');
   let html = readFileSync('./ivxholding-landing/index.html', 'utf-8');
   html = html.replace(/__IVX_API_BASE_URL__/g, apiBaseUrl);
   html = html.replace(/__IVX_SUPABASE_URL__/g, supabaseUrl);
   html = html.replace(/__IVX_SUPABASE_ANON_KEY__/g, supabaseAnonKey);
+  html = html.replace(/__IVX_APP_URL__/g, appUrl);
   if (apiBaseUrl) {
     console.log(`   🔗 API URL injected: ${apiBaseUrl}`);
   } else {
@@ -120,6 +122,11 @@ async function deploy() {
     console.log(`   🔗 Supabase URL injected: ${supabaseUrl}`);
   } else {
     console.warn('   ⚠️  EXPO_PUBLIC_SUPABASE_URL or EXPO_PUBLIC_SUPABASE_ANON_KEY not set — live deals will not load');
+  }
+  if (appUrl) {
+    console.log(`   🔗 App URL injected: ${appUrl}`);
+  } else {
+    console.warn('   ⚠️  App URL not set — invest buttons will open waitlist funnel instead of app');
   }
 
   await s3.send(new PutObjectCommand({
