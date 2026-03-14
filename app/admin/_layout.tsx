@@ -308,6 +308,12 @@ export default function AdminLayout() {
           href: null,
         }}
       />
+      <Tabs.Screen
+        name="trash-bin"
+        options={{
+          href: null,
+        }}
+      />
     </Tabs>
     </View>
   );
