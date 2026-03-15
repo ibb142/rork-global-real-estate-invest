@@ -268,7 +268,7 @@ export default function AutoRepairScreen() {
       if (error) { console.log('[Supabase] system_metrics error:', error.message); return null; }
       return data;
     },
-    refetchInterval: 30000,
+    refetchInterval: 3000,
   });
 
   useEffect(() => {
@@ -287,7 +287,7 @@ export default function AutoRepairScreen() {
       if (error) { console.log('[Supabase] repair_logs error:', error.message); return null; }
       return data;
     },
-    refetchInterval: 15000,
+    refetchInterval: 3000,
   });
 
   useEffect(() => {
