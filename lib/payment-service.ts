@@ -1175,7 +1175,7 @@ class PaymentService {
           return this.createErrorResult(amount, paymentMethodType, 'Payment method not supported');
       }
     } catch (error) {
-      console.error('[PaymentService] Payment processing error:', error);
+      console.log('[PaymentService] Payment processing error:', (error as Error)?.message);
       return this.createErrorResult(
         amount,
         paymentMethodType,
