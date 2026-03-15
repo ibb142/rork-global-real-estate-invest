@@ -1,7 +1,7 @@
 import createContextHook from '@nkzw/create-context-hook';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from './supabase';
-import { persistAuth, loadStoredAuth, clearStoredAuth, isAdminRole } from './auth-store';
+import { persistAuth, loadStoredAuth, clearStoredAuth, isAdminRole, setAuthCredentials, getAuthToken, getRefreshToken, getAuthUserId } from './auth-store';
 import type { Session } from '@supabase/supabase-js';
 
 interface AuthUser {
@@ -78,7 +78,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
           }
         }
       } catch (e) {
-        console.log('[Auth] Init error:', e);
+        console.log('[Auth] Init error:', (e as Error)?.message);
       } finally {
         setIsLoading(false);
       }
@@ -86,20 +86,26 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
 
     void initAuth();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      console.log('[Auth] State changed:', _event);
-      if (session) {
-        await handleSession(session);
-      } else if (_event === 'SIGNED_OUT') {
-        setUser(null);
-        setIsAuthenticated(false);
-        setUserRole('investor');
-        await clearStoredAuth();
-      }
-    });
+    let subscription: { unsubscribe: () => void } | null = null;
+    try {
+      const result = supabase.auth.onAuthStateChange(async (_event, session) => {
+        console.log('[Auth] State changed:', _event);
+        if (session) {
+          await handleSession(session);
+        } else if (_event === 'SIGNED_OUT') {
+          setUser(null);
+          setIsAuthenticated(false);
+          setUserRole('investor');
+          await clearStoredAuth();
+        }
+      });
+      subscription = result?.data?.subscription ?? null;
+    } catch (e) {
+      console.log('[Auth] onAuthStateChange setup error:', (e as Error)?.message);
+    }
 
     return () => {
-      subscription.unsubscribe();
+      try { subscription?.unsubscribe(); } catch {}
     };
   }, [handleSession]);
 
@@ -241,6 +247,14 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         setUser({ ...user, role: newRole });
       }
 
+      setAuthCredentials(
+        getAuthToken(),
+        getAuthUserId() || user?.id || null,
+        newRole,
+        getRefreshToken(),
+      );
+      console.log('[Auth] Auth store updated with role:', newRole);
+
       const { error } = await supabase.auth.updateUser({
         data: { role: newRole },
       });
@@ -250,7 +264,17 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         return { success: false, message: error.message };
       }
 
-      console.log('[Auth] Owner access activated');
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        await persistAuth({
+          token: session.access_token,
+          refreshToken: session.refresh_token || '',
+          userId: session.user.id,
+          userRole: newRole,
+        });
+      }
+
+      console.log('[Auth] Owner access activated and persisted');
       return { success: true, message: 'Owner access activated' };
     } catch (error: any) {
       console.error('[Auth] Promote error:', error);
