@@ -1,10 +1,18 @@
 import { Platform, LogBox } from 'react-native';
 import * as Notifications from 'expo-notifications';
-import * as Device from 'expo-device';
 import Constants from 'expo-constants';
 import { supabase } from './supabase';
 import { getAuthToken } from './auth-store';
 import logger from './logger';
+
+let Device: { isDevice: boolean } | null = null;
+if (Platform.OS !== 'web') {
+  try {
+    Device = require('expo-device') as { isDevice: boolean };
+  } catch {
+    logger.push.warn('expo-device not available');
+  }
+}
 
 LogBox.ignoreLogs(['expo-notifications: Android Push notificati']);
 
@@ -30,7 +38,7 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
     return null;
   }
 
-  if (!Device.isDevice) {
+  if (!Device?.isDevice) {
     logger.push.log('Not a physical device - push notifications require a real device');
     return null;
   }
