@@ -50,8 +50,9 @@ import {
 import { useIPX } from '@/lib/ipx-context';
 import { useTranslation } from '@/lib/i18n-context';
 import { useQuery } from '@tanstack/react-query';
-import { fetchJVDeals } from '@/lib/jv-storage';
+import { fetchJVDeals, clearLocalDealCache, resetSupabaseCheck } from '@/lib/jv-storage';
 import { useJVRealtime } from '@/lib/jv-realtime';
+import { parseDeal as sharedParseDeal, QUERY_KEY_PUBLISHED_JV_DEALS, filterValidPhotos } from '@/lib/parse-deal';
 import QuickBuyModal from '@/components/QuickBuyModal';
 
 
@@ -77,7 +78,7 @@ export default function InvestScreen() {
   } | null>(null);
 
   const openQuickBuy = useCallback((deal: any) => {
-    const photos = Array.isArray(deal.photos) ? deal.photos.filter((p: unknown) => typeof p === 'string' && (p as string).startsWith('http')) : [];
+    const photos = filterValidPhotos(deal.photos);
     setQuickBuyDeal({
       id: deal.id,
       title: deal.title,
@@ -93,20 +94,35 @@ export default function InvestScreen() {
   }, []);
 
   const publishedDealsQuery = useQuery({
-    queryKey: ['jv-deals', 'published-list'],
+    queryKey: [...QUERY_KEY_PUBLISHED_JV_DEALS],
     queryFn: async () => {
       console.log('[Invest] Fetching published JV deals...');
+      resetSupabaseCheck();
       const result = await fetchJVDeals({ published: true });
-      console.log('[Invest] Fetched', result.deals?.length || 0, 'published deals');
-      return { deals: result.deals || [] };
+      const parsed = (result.deals || []).map((d: any) => sharedParseDeal(d));
+      console.log('[Invest] Fetched', parsed.length, 'published deals (source: Supabase or local)');
+
+      if (parsed.length === 0) {
+        console.log('[Invest] No published deals found — trying unfiltered fetch for explicitly published active deals');
+        const allResult = await fetchJVDeals({});
+        const allActive = (allResult.deals || [])
+          .filter((d: any) => d.status === 'active' && d.published === true)
+          .map((d: any) => sharedParseDeal(d));
+        if (allActive.length > 0) {
+          console.log('[Invest] Found', allActive.length, 'published active deals from unfiltered fetch');
+          return { deals: allActive };
+        }
+      }
+
+      return { deals: parsed };
     },
-    retry: 2,
-    staleTime: 0,
-    gcTime: 0,
+    retry: 1,
+    retryDelay: 1000,
+    staleTime: 5000,
+    gcTime: 1000 * 60 * 3,
     refetchOnWindowFocus: true,
     refetchOnMount: 'always' as const,
-    refetchInterval: 10000,
-    networkMode: 'always' as const,
+    refetchInterval: 5000,
   });
 
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -124,9 +140,14 @@ export default function InvestScreen() {
 
   const _isXs = width < 340;
 
-  const onRefresh = useCallback(() => {
+  const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    void publishedDealsQuery.refetch().finally(() => setRefreshing(false));
+    try {
+      await clearLocalDealCache();
+      await publishedDealsQuery.refetch();
+    } finally {
+      setRefreshing(false);
+    }
   }, [publishedDealsQuery]);
 
   const transactionFee = ipxFeeConfigs.find(f => f.feeType === 'transaction');
@@ -377,8 +398,7 @@ export default function InvestScreen() {
                 hybrid: '🔄 Hybrid',
                 development: '🏗️ Development JV',
               };
-              const rawPhotos = Array.isArray(deal.photos) ? deal.photos : (typeof deal.photos === 'string' ? (() => { try { const p = JSON.parse(deal.photos); return Array.isArray(p) ? p : []; } catch { return []; } })() : []);
-              const photos: string[] = rawPhotos.filter((p: unknown) => typeof p === 'string' && (p as string).startsWith('http'));
+              const photos: string[] = filterValidPhotos(deal.photos);
               const rawPartners = Array.isArray(deal.partners) ? deal.partners : (typeof deal.partners === 'string' ? (() => { try { const p = JSON.parse(deal.partners as string); return Array.isArray(p) ? p : []; } catch { return []; } })() : []);
               const partnerCount = rawPartners.length;
               return (
