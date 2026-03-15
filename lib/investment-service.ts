@@ -1,4 +1,6 @@
 import { supabase } from './supabase';
+import { logAudit } from '@/lib/audit-trail';
+import type { WalletRow, HoldingRow, ProfileRow } from '@/types/database';
 
 export interface InvestmentRequest {
   propertyId: string;
@@ -42,7 +44,8 @@ async function ensureWalletExists(userId: string): Promise<number> {
     .single();
 
   if (wallet) {
-    return (wallet as any).available ?? 0;
+    const typedWallet = wallet as unknown as WalletRow;
+    return typedWallet.available ?? 0;
   }
 
   const { error: insertError } = await supabase
@@ -57,9 +60,63 @@ async function ensureWalletExists(userId: string): Promise<number> {
     });
 
   if (insertError) {
-    console.error('[InvestmentService] Failed to create wallet:', insertError);
+    console.log('[InvestmentService] Failed to create wallet:', insertError?.message);
   }
   return 0;
+}
+
+async function atomicWalletDebit(userId: string, amount: number): Promise<{ success: boolean; error?: string }> {
+  const { data: currentWallet, error: fetchErr } = await supabase
+    .from('wallets')
+    .select('available, invested, updated_at')
+    .eq('user_id', userId)
+    .single();
+
+  if (fetchErr || !currentWallet) {
+    return { success: false, error: 'Could not read wallet balance' };
+  }
+
+  const typed = currentWallet as unknown as WalletRow;
+  if (typed.available < amount) {
+    return { success: false, error: `Insufficient balance: $${typed.available.toFixed(2)} available, $${amount.toFixed(2)} required` };
+  }
+
+  const newAvailable = Math.max(0, typed.available - amount);
+  const newInvested = (typed.invested ?? 0) + amount;
+
+  const { error: updateErr } = await supabase
+    .from('wallets')
+    .update({
+      available: newAvailable,
+      invested: newInvested,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('user_id', userId)
+    .eq('available', typed.available);
+
+  if (updateErr) {
+    console.log('[InvestmentService] Atomic wallet debit failed:', updateErr?.message);
+    return { success: false, error: 'Wallet update failed — possible concurrent modification. Please retry.' };
+  }
+
+  console.log('[InvestmentService] Atomic wallet debit SUCCESS:', amount, '| new available:', newAvailable, '| new invested:', newInvested);
+  return { success: true };
+}
+
+async function rollbackTransaction(transactionId: string): Promise<void> {
+  try {
+    const { error } = await supabase
+      .from('transactions')
+      .update({ status: 'failed', description: 'Rolled back due to downstream failure' })
+      .eq('id', transactionId);
+    if (error) {
+      console.log('[InvestmentService] Rollback transaction failed:', error?.message);
+    } else {
+      console.log('[InvestmentService] Transaction rolled back:', transactionId);
+    }
+  } catch (err) {
+    console.log('[InvestmentService] Rollback exception:', (err as Error)?.message);
+  }
 }
 
 export async function purchaseShares(request: InvestmentRequest): Promise<InvestmentResult> {
@@ -102,6 +159,20 @@ export async function purchaseShares(request: InvestmentRequest): Promise<Invest
       };
     }
 
+    if (request.paymentMethod === 'wallet') {
+      const debitResult = await atomicWalletDebit(user.id, request.totalCost);
+      if (!debitResult.success) {
+        return {
+          success: false,
+          transactionId: '',
+          holdingId: '',
+          confirmationNumber: '',
+          message: debitResult.error || 'Wallet debit failed.',
+          error: 'wallet_debit_failed',
+        };
+      }
+    }
+
     const { error: txError } = await supabase
       .from('transactions')
       .insert({
@@ -117,7 +188,7 @@ export async function purchaseShares(request: InvestmentRequest): Promise<Invest
       });
 
     if (txError) {
-      console.error('[InvestmentService] Transaction insert failed:', txError);
+      console.log('[InvestmentService] Transaction insert failed:', txError?.message);
       return {
         success: false,
         transactionId: '',
@@ -136,8 +207,11 @@ export async function purchaseShares(request: InvestmentRequest): Promise<Invest
       .eq('property_id', request.propertyId)
       .single();
 
+    let finalHoldingId = holdingId;
+
     if (existingHolding) {
-      const existing = existingHolding as any;
+      const existing = existingHolding as unknown as HoldingRow;
+      finalHoldingId = existing.id;
       const newShares = (existing.shares || 0) + request.shares;
       const oldCostBasis = (existing.avg_cost_basis || 0) * (existing.shares || 0);
       const newCostBasis = (oldCostBasis + request.subtotal) / newShares;
@@ -157,10 +231,18 @@ export async function purchaseShares(request: InvestmentRequest): Promise<Invest
         .eq('id', existing.id);
 
       if (updateError) {
-        console.error('[InvestmentService] Holding update failed:', updateError);
-      } else {
-        console.log('[InvestmentService] Holding updated:', existing.id);
+        console.log('[InvestmentService] Holding update failed:', updateError?.message);
+        await rollbackTransaction(transactionId);
+        return {
+          success: false,
+          transactionId: '',
+          holdingId: '',
+          confirmationNumber: '',
+          message: 'Failed to update holding. Transaction has been rolled back.',
+          error: updateError.message,
+        };
       }
+      console.log('[InvestmentService] Holding updated:', existing.id);
     } else {
       const { error: holdError } = await supabase
         .from('holdings')
@@ -180,31 +262,22 @@ export async function purchaseShares(request: InvestmentRequest): Promise<Invest
         });
 
       if (holdError) {
-        console.error('[InvestmentService] Holding insert failed:', holdError);
-      } else {
-        console.log('[InvestmentService] New holding created:', holdingId);
+        console.log('[InvestmentService] Holding insert failed:', holdError?.message);
+        await rollbackTransaction(transactionId);
+        return {
+          success: false,
+          transactionId: '',
+          holdingId: '',
+          confirmationNumber: '',
+          message: 'Failed to create holding. Transaction has been rolled back.',
+          error: holdError.message,
+        };
       }
-    }
-
-    if (request.paymentMethod === 'wallet') {
-      const { error: walletError } = await supabase
-        .from('wallets')
-        .update({
-          available: Math.max(0, walletBalance - request.totalCost),
-          invested: (walletBalance > 0 ? request.totalCost : 0),
-          updated_at: new Date().toISOString(),
-        })
-        .eq('user_id', user.id);
-
-      if (walletError) {
-        console.error('[InvestmentService] Wallet update failed:', walletError);
-      } else {
-        console.log('[InvestmentService] Wallet debited:', request.totalCost);
-      }
+      console.log('[InvestmentService] New holding created:', holdingId);
     }
 
     if (request.platformFee > 0) {
-      await supabase
+      const { error: feeError } = await supabase
         .from('transactions')
         .insert({
           id: `fee_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
@@ -217,10 +290,14 @@ export async function purchaseShares(request: InvestmentRequest): Promise<Invest
           property_name: request.propertyName,
           created_at: new Date().toISOString(),
         });
-      console.log('[InvestmentService] Platform fee recorded:', request.platformFee);
+      if (feeError) {
+        console.log('[InvestmentService] Platform fee insert failed (non-critical):', feeError?.message);
+      } else {
+        console.log('[InvestmentService] Platform fee recorded:', request.platformFee);
+      }
     }
 
-    await supabase
+    const { error: notifError } = await supabase
       .from('notifications')
       .insert({
         id: `notif_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
@@ -231,11 +308,22 @@ export async function purchaseShares(request: InvestmentRequest): Promise<Invest
         read: false,
         created_at: new Date().toISOString(),
       });
+    if (notifError) {
+      console.log('[InvestmentService] Notification insert failed (non-critical):', notifError.message);
+    }
+
+    const { data: currentProfile } = await supabase
+      .from('profiles')
+      .select('total_invested')
+      .eq('id', user.id)
+      .single();
+    const typedProfile = currentProfile as unknown as ProfileRow | null;
+    const existingTotalInvested = typedProfile?.total_invested ?? 0;
 
     const { error: profileError } = await supabase
       .from('profiles')
       .update({
-        total_invested: walletBalance > 0 ? request.totalCost : 0,
+        total_invested: existingTotalInvested + request.totalCost,
         updated_at: new Date().toISOString(),
       })
       .eq('id', user.id);
@@ -246,16 +334,51 @@ export async function purchaseShares(request: InvestmentRequest): Promise<Invest
 
     console.log('[InvestmentService] Purchase completed successfully:', confirmationNumber);
 
+    try {
+      await logAudit({
+        entityType: 'transaction',
+        entityId: transactionId,
+        entityTitle: `Purchase: ${request.shares} shares of ${request.propertyName}`,
+        action: 'PURCHASE',
+        source: 'app',
+        details: {
+          propertyId: request.propertyId,
+          propertyName: request.propertyName,
+          shares: request.shares,
+          totalCost: request.totalCost,
+          paymentMethod: request.paymentMethod,
+          investmentType: request.investmentType,
+          confirmationNumber,
+          holdingId: finalHoldingId,
+        },
+      });
+
+      await logAudit({
+        entityType: 'holding',
+        entityId: finalHoldingId,
+        entityTitle: `Holding: ${request.propertyName}`,
+        action: existingHolding ? 'UPDATE' : 'CREATE',
+        source: 'app',
+        details: {
+          shares: request.shares,
+          totalCost: request.totalCost,
+          transactionId,
+        },
+      });
+    } catch (auditErr) {
+      console.log('[InvestmentService] Audit log failed (non-critical):', (auditErr as Error)?.message);
+    }
+
     return {
       success: true,
       transactionId,
-      holdingId: existingHolding ? (existingHolding as any).id : holdingId,
+      holdingId: finalHoldingId,
       confirmationNumber,
       message: `Successfully purchased ${request.shares} shares of ${request.propertyName}.`,
     };
 
   } catch (error) {
-    console.error('[InvestmentService] Unexpected error:', error);
+    console.log('[InvestmentService] Unexpected error:', (error as Error)?.message);
     return {
       success: false,
       transactionId: '',
@@ -314,6 +437,20 @@ export async function purchaseJVInvestment(params: {
       };
     }
 
+    if (params.paymentMethod === 'wallet') {
+      const debitResult = await atomicWalletDebit(user.id, params.amount);
+      if (!debitResult.success) {
+        return {
+          success: false,
+          transactionId: '',
+          holdingId: '',
+          confirmationNumber: '',
+          message: debitResult.error || 'Wallet debit failed.',
+          error: 'wallet_debit_failed',
+        };
+      }
+    }
+
     const investType = params.investmentPool === 'jv_direct' ? 'JV Direct Investment' : 'Token Shares';
 
     const { error: txError } = await supabase
@@ -331,7 +468,7 @@ export async function purchaseJVInvestment(params: {
       });
 
     if (txError) {
-      console.error('[InvestmentService] JV transaction insert failed:', txError);
+      console.log('[InvestmentService] JV transaction insert failed:', txError?.message);
       return {
         success: false,
         transactionId: '',
@@ -343,43 +480,83 @@ export async function purchaseJVInvestment(params: {
     }
     console.log('[InvestmentService] JV transaction recorded:', transactionId);
 
-    const { error: holdError } = await supabase
+    const { data: existingJVHolding } = await supabase
       .from('holdings')
-      .insert({
-        id: holdingId,
-        user_id: user.id,
-        property_id: params.jvDealId,
-        shares: params.investmentPool === 'token_shares' ? Math.floor(params.amount / 10) : 1,
-        avg_cost_basis: params.amount,
-        current_value: params.amount,
-        total_return: 0,
-        total_return_percent: 0,
-        unrealized_pnl: 0,
-        unrealized_pnl_percent: 0,
-        purchase_date: new Date().toISOString(),
-        created_at: new Date().toISOString(),
-      });
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('property_id', params.jvDealId)
+      .single();
 
-    if (holdError) {
-      console.error('[InvestmentService] JV holding insert failed:', holdError);
+    let finalHoldingId = holdingId;
+
+    if (existingJVHolding) {
+      const existing = existingJVHolding as unknown as HoldingRow;
+      finalHoldingId = existing.id;
+      const newShares = (existing.shares || 0) + (params.investmentPool === 'token_shares' ? Math.floor(params.amount / 10) : 1);
+      const newValue = (existing.current_value || 0) + params.amount;
+      const oldCostBasis = (existing.avg_cost_basis || 0) * (existing.shares || 0);
+      const newCostBasis = newShares > 0 ? (oldCostBasis + params.amount) / newShares : params.amount;
+
+      const { error: updateError } = await supabase
+        .from('holdings')
+        .update({
+          shares: newShares,
+          avg_cost_basis: Math.round(newCostBasis * 100) / 100,
+          current_value: Math.round(newValue * 100) / 100,
+          total_return: 0,
+          total_return_percent: 0,
+          unrealized_pnl: 0,
+          unrealized_pnl_percent: 0,
+        })
+        .eq('id', existing.id);
+
+      if (updateError) {
+        console.log('[InvestmentService] JV holding update failed:', updateError?.message);
+        await rollbackTransaction(transactionId);
+        return {
+          success: false,
+          transactionId: '',
+          holdingId: '',
+          confirmationNumber: '',
+          message: 'Failed to update JV holding. Transaction rolled back.',
+          error: updateError.message,
+        };
+      }
+      console.log('[InvestmentService] JV holding updated (added to existing):', existing.id, '| new shares:', newShares, '| new value:', newValue);
     } else {
+      const { error: holdError } = await supabase
+        .from('holdings')
+        .insert({
+          id: holdingId,
+          user_id: user.id,
+          property_id: params.jvDealId,
+          shares: params.investmentPool === 'token_shares' ? Math.floor(params.amount / 10) : 1,
+          avg_cost_basis: params.amount,
+          current_value: params.amount,
+          total_return: 0,
+          total_return_percent: 0,
+          unrealized_pnl: 0,
+          unrealized_pnl_percent: 0,
+          purchase_date: new Date().toISOString(),
+          created_at: new Date().toISOString(),
+        });
+
+      if (holdError) {
+        console.log('[InvestmentService] JV holding insert failed:', holdError?.message);
+        await rollbackTransaction(transactionId);
+        return {
+          success: false,
+          transactionId: '',
+          holdingId: '',
+          confirmationNumber: '',
+          message: 'Failed to create JV holding. Transaction rolled back.',
+          error: holdError.message,
+        };
+      }
       console.log('[InvestmentService] JV holding created:', holdingId);
     }
 
-    if (params.paymentMethod === 'wallet') {
-      await supabase
-        .from('wallets')
-        .update({
-          available: Math.max(0, walletBalance - params.amount),
-          invested: params.amount,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('user_id', user.id);
-
-      console.log('[InvestmentService] Wallet debited for JV:', params.amount);
-    }
-
-    await supabase
+    const { error: notifError } = await supabase
       .from('notifications')
       .insert({
         id: `notif_jv_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
@@ -390,19 +567,58 @@ export async function purchaseJVInvestment(params: {
         read: false,
         created_at: new Date().toISOString(),
       });
+    if (notifError) {
+      console.log('[InvestmentService] JV notification failed (non-critical):', notifError.message);
+    }
 
     console.log('[InvestmentService] JV purchase completed:', confirmationNumber);
+
+    try {
+      await logAudit({
+        entityType: 'transaction',
+        entityId: transactionId,
+        entityTitle: `JV Investment: ${params.jvProjectName}`,
+        action: 'PURCHASE',
+        source: 'app',
+        details: {
+          jvDealId: params.jvDealId,
+          jvTitle: params.jvTitle,
+          jvProjectName: params.jvProjectName,
+          amount: params.amount,
+          equityPercent: params.equityPercent,
+          expectedROI: params.expectedROI,
+          investmentPool: params.investmentPool,
+          paymentMethod: params.paymentMethod,
+          confirmationNumber,
+        },
+      });
+
+      await logAudit({
+        entityType: 'holding',
+        entityId: finalHoldingId,
+        entityTitle: `JV Holding: ${params.jvProjectName}`,
+        action: existingJVHolding ? 'UPDATE' : 'CREATE',
+        source: 'app',
+        details: {
+          jvDealId: params.jvDealId,
+          amount: params.amount,
+          transactionId,
+        },
+      });
+    } catch (auditErr) {
+      console.log('[InvestmentService] JV audit log failed (non-critical):', (auditErr as Error)?.message);
+    }
 
     return {
       success: true,
       transactionId,
-      holdingId,
+      holdingId: finalHoldingId,
       confirmationNumber,
-      message: `Successfully invested $${params.amount.toLocaleString()} in ${params.jvProjectName}.`,
+      message: `Successfully invested ${params.amount.toLocaleString()} in ${params.jvProjectName}.`,
     };
 
   } catch (error) {
-    console.error('[InvestmentService] JV investment error:', error);
+    console.log('[InvestmentService] JV investment error:', (error as Error)?.message);
     return {
       success: false,
       transactionId: '',
