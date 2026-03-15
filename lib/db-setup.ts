@@ -532,13 +532,13 @@ serve(async (req: Request) => {
     }
 
     const errorBody = await res.text();
-    console.error("[send-email] SendGrid error:", res.status, errorBody);
+    console.log("[send-email] SendGrid error:", res.status, errorBody);
     return new Response(JSON.stringify({ error: "SendGrid error", status: res.status }), {
       status: 502,
       headers: { "Content-Type": "application/json" },
     });
   } catch (err) {
-    console.error("[send-email] Error:", err);
+    console.log("[send-email] Error:", err);
     return new Response(JSON.stringify({ error: "Internal error" }), {
       status: 500,
       headers: { "Content-Type": "application/json" },
