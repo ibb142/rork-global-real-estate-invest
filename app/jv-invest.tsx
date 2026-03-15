@@ -46,7 +46,7 @@ import { formatCurrencyWithDecimals } from '@/lib/formatters';
 import { JV_AGREEMENT_TYPES, JVAgreement } from '@/mocks/jv-agreements';
 import { fetchJVDealById } from '@/lib/jv-storage';
 import { supabase } from '@/lib/supabase';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { purchaseJVInvestment } from '@/lib/investment-service';
 
 type PaymentMethod = 'wallet' | 'bank' | 'wire';
@@ -84,15 +84,19 @@ export default function JVInvestScreen() {
     queryKey: ['jv-deal', jvId],
     queryFn: async () => {
       if (!jvId) return null;
+      console.log('[JVInvest] Fetching deal:', jvId);
       const data = await fetchJVDealById(jvId);
       if (!data) {
         console.log('[JVInvest] Deal not found:', jvId);
         return null;
       }
+      console.log('[JVInvest] Deal loaded:', data.title || data.projectName);
       return data as unknown as JVAgreement;
     },
     enabled: !!jvId,
-    retry: 2,
+    retry: 1,
+    retryDelay: 1000,
+    staleTime: 5000,
   });
   const jv = jvQuery.data as JVAgreement | null | undefined;
 
@@ -104,7 +108,7 @@ export default function JVInvestScreen() {
   const [selectedPool, setSelectedPool] = useState<InvestmentPool>('jv_direct');
   const [investAmount, setInvestAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('bank');
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [step, setStep] = useState<'pool' | 'amount' | 'review' | 'success'>('pool');
   const [agreedToTerms, setAgreedToTerms] = useState(false);
 
@@ -118,7 +122,7 @@ export default function JVInvestScreen() {
     },
     staleTime: 1000 * 60,
   });
-  const walletBalance = (balanceQuery.data as any)?.available ?? 0;
+  const walletBalance = (balanceQuery.data as Record<string, number> | null)?.available ?? 0;
   const successAnim = useRef(new Animated.Value(0)).current;
   const checkScale = useRef(new Animated.Value(0)).current;
 
@@ -177,6 +181,22 @@ export default function JVInvestScreen() {
   const queryClient = useQueryClient();
   const [confirmationNum, setConfirmationNum] = useState('');
 
+  const investMutation = useMutation({
+    mutationFn: async (params: {
+      jvDealId: string;
+      jvTitle: string;
+      jvProjectName: string;
+      investmentPool: 'jv_direct' | 'token_shares';
+      amount: number;
+      equityPercent: number;
+      expectedROI: number;
+      paymentMethod: PaymentMethod;
+    }) => {
+      console.log('[JVInvest] Submitting real JV purchase to Supabase...');
+      return purchaseJVInvestment(params);
+    },
+  });
+
   const handleConfirmInvestment = useCallback(async () => {
     if (!agreedToTerms) {
       Alert.alert('Agreement Required', 'Please agree to the terms before proceeding.');
@@ -192,8 +212,7 @@ export default function JVInvestScreen() {
     setIsProcessing(true);
 
     try {
-      console.log('[JVInvest] Submitting real JV purchase to Supabase...');
-      const result = await purchaseJVInvestment({
+      const result = await investMutation.mutateAsync({
         jvDealId: jv.id || jvId || '',
         jvTitle: jv.title,
         jvProjectName: jv.projectName,
@@ -231,7 +250,7 @@ export default function JVInvestScreen() {
     } finally {
       setIsProcessing(false);
     }
-  }, [agreedToTerms, paymentMethod, walletBalance, totalCost, jv, jvId, selectedPool, amount, equityPercent, successAnim, checkScale, queryClient]);
+  }, [agreedToTerms, paymentMethod, walletBalance, totalCost, jv, jvId, selectedPool, amount, equityPercent, successAnim, checkScale, queryClient, investMutation]);
 
   const handleAmountChange = useCallback((text: string) => {
     const clean = text.replace(/[^0-9]/g, '');
@@ -261,7 +280,7 @@ export default function JVInvestScreen() {
 
   const poolLabel = selectedPool === 'jv_direct' ? 'JV Investment' : 'Token Shares';
 
-  if (jvQuery.isLoading) {
+  if (jvQuery.isLoading && !jvQuery.data) {
     return (
       <View style={styles.container}>
         <Stack.Screen options={{ headerShown: false }} />
@@ -273,14 +292,17 @@ export default function JVInvestScreen() {
     );
   }
 
-  if (!jv && !jvQuery.isLoading) {
+  if (jvQuery.isError || (!jv && !jvQuery.isLoading)) {
     return (
       <View style={styles.container}>
         <Stack.Screen options={{ headerShown: false }} />
         <View style={styles.errorWrap}>
-          <Text style={styles.errorText}>Deal not found</Text>
-          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-            <Text style={styles.backBtnText}>Go Back</Text>
+          <Text style={styles.errorText}>{jvQuery.isError ? 'Failed to load deal' : 'Deal not found'}</Text>
+          <TouchableOpacity style={styles.backBtn} onPress={() => jvQuery.refetch()}>
+            <Text style={styles.backBtnText}>Retry</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.backBtn, { marginTop: 8, backgroundColor: 'transparent', borderWidth: 1, borderColor: Colors.border }]} onPress={() => router.back()}>
+            <Text style={[styles.backBtnText, { color: Colors.textSecondary }]}>Go Back</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -292,7 +314,10 @@ export default function JVInvestScreen() {
       <View style={styles.container}>
         <Stack.Screen options={{ headerShown: false }} />
         <View style={styles.errorWrap}>
-          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={styles.errorText}>Deal not available</Text>
+          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+            <Text style={styles.backBtnText}>Go Back</Text>
+          </TouchableOpacity>
         </View>
       </View>
     );
@@ -378,13 +403,14 @@ export default function JVInvestScreen() {
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
           <ScrollView
             style={styles.scrollView}
+            contentContainerStyle={{ paddingBottom: 20 }}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
-            bounces={false}
+            bounces={true}
           >
             <View style={styles.dealBanner}>
               <Image
-                source={jv.photos?.[0] ? { uri: jv.photos[0] } : require('@/assets/images/ivx-logo.png')}
+                source={jv.photos?.[0] && (jv.photos[0].startsWith('http') || jv.photos[0].startsWith('data:image/')) ? { uri: jv.photos[0] } : require('@/assets/images/ivx-logo.png')}
                 style={styles.dealThumb}
               />
               <View style={styles.dealBannerInfo}>
@@ -724,13 +750,13 @@ export default function JVInvestScreen() {
               </>
             )}
 
-            <View style={{ height: 140 }} />
+            <View style={{ height: 200 + insets.bottom }} />
           </ScrollView>
         </TouchableWithoutFeedback>
       </KeyboardAvoidingView>
 
       {(step === 'pool' || step === 'amount' || step === 'review') && (
-        <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 16) + 8 }]}>
+        <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 20) + 16 }]}>
           {step === 'pool' ? (
             <TouchableOpacity
               style={styles.ctaButton}
