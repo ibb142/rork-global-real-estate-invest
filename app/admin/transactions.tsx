@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,8 @@ import {
   TouchableOpacity,
   TextInput,
   useWindowDimensions,
+  RefreshControl,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -19,6 +21,8 @@ import {
   ArrowLeft,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/lib/supabase';
 import { adminTransactions, adminStats } from '@/mocks/admin';
 import { AdminTransaction } from '@/types';
 
@@ -32,9 +36,54 @@ export default function TransactionsScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<FilterType>('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [refreshing, setRefreshing] = useState(false);
+
+  const txQuery = useQuery({
+    queryKey: ['admin-transactions'],
+    queryFn: async () => {
+      console.log('[Admin Transactions] Fetching from Supabase...');
+      const { data, error, count } = await supabase
+        .from('transactions')
+        .select('*', { count: 'exact' })
+        .order('created_at', { ascending: false })
+        .limit(200);
+      if (error) {
+        console.log('[Admin Transactions] Supabase error:', error.message, '— falling back to mock');
+        return { transactions: null, count: null };
+      }
+      console.log('[Admin Transactions] Fetched', data?.length, 'transactions from Supabase');
+      return { transactions: data, count };
+    },
+    staleTime: 1000 * 30,
+    retry: 1,
+  });
+
+  const useRealData = !!(txQuery.data?.transactions && txQuery.data.transactions.length > 0);
+
+  const realTransactions: AdminTransaction[] = useMemo(() => {
+    if (!txQuery.data?.transactions) return [];
+    return txQuery.data.transactions.map((row: any) => ({
+      id: row.id || `tx_${Math.random().toString(36).substring(2, 8)}`,
+      type: (row.type || 'buy') as AdminTransaction['type'],
+      amount: row.amount || 0,
+      status: (row.status || 'completed') as AdminTransaction['status'],
+      userId: row.user_id || '',
+      userName: row.user_name || row.property_name || 'User',
+      userEmail: row.user_email || '',
+      description: row.description || '',
+      propertyName: row.property_name || '',
+      createdAt: row.created_at || new Date().toISOString(),
+    }));
+  }, [txQuery.data]);
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    void txQuery.refetch().finally(() => setRefreshing(false));
+  }, [txQuery]);
 
   const filteredTransactions = useMemo(() => {
-    let result = adminTransactions;
+    const source: AdminTransaction[] = useRealData ? realTransactions : adminTransactions;
+    let result = source;
 
     if (typeFilter !== 'all') {
       result = result.filter((tx) => tx.type === typeFilter);
@@ -58,7 +107,7 @@ export default function TransactionsScreen() {
     return result.sort(
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
-  }, [typeFilter, statusFilter, searchQuery]);
+  }, [typeFilter, statusFilter, searchQuery, useRealData, realTransactions]);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -140,11 +189,15 @@ export default function TransactionsScreen() {
         <View style={styles.statsRow}>
           <View style={styles.statBox}>
             <Text style={styles.statLabel}>Total Volume</Text>
-            <Text style={styles.statValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>{formatCurrency(adminStats.totalVolume)}</Text>
+            <Text style={styles.statValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>{formatCurrency(useRealData ? totalVolume : adminStats.totalVolume)}</Text>
           </View>
           <View style={styles.statBox}>
             <Text style={styles.statLabel}>Count</Text>
-            <Text style={styles.statValue}>{adminStats.totalTransactions}</Text>
+            <Text style={styles.statValue}>{useRealData ? filteredTransactions.length : adminStats.totalTransactions}</Text>
+          </View>
+          <View style={styles.statBox}>
+            <Text style={styles.statLabel}>Source</Text>
+            <Text style={[styles.statValue, { color: useRealData ? Colors.positive : Colors.warning, fontSize: 11 }]}>{useRealData ? 'LIVE' : 'DEMO'}</Text>
           </View>
         </View>
       </View>
@@ -234,7 +287,19 @@ export default function TransactionsScreen() {
         </Text>
       </View>
 
-      <ScrollView style={styles.list} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.list}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />
+        }
+      >
+        {txQuery.isLoading && (
+          <View style={{ alignItems: 'center' as const, paddingVertical: 40 }}>
+            <ActivityIndicator size="large" color={Colors.primary} />
+            <Text style={{ color: Colors.textSecondary, marginTop: 12, fontSize: 13 }}>Loading transactions...</Text>
+          </View>
+        )}
         {filteredTransactions.map((tx) => {
           const statusStyle = getStatusStyle(tx.status);
           return (
