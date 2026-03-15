@@ -46,7 +46,6 @@ import {
   Sparkles,
   MapPin,
   UserCheck,
-
   Gavel,
   ImageIcon,
   Camera,
@@ -59,8 +58,10 @@ import { Globe } from 'lucide-react-native';
 
 import Colors from '@/constants/colors';
 import { useAuth } from '@/lib/auth-context';
-import { fetchJVDeals, upsertJVDeal, updateJVDeal, safeSupabaseInsert } from '@/lib/jv-storage';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { fetchJVDeals, upsertJVDeal, updateJVDeal, safeSupabaseInsert, resetSupabaseCheck } from '@/lib/jv-storage';
+import { invalidateAllJVQueries } from '@/lib/jv-realtime';
+import { syncToLandingPage } from '@/lib/landing-sync';
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { formatAmountInput, parseAmountInput } from '@/lib/formatters';
 import {
   JVAgreement,
@@ -71,6 +72,16 @@ import {
   DISTRIBUTION_FREQUENCIES,
   JV_CLAUSES,
 } from '@/mocks/jv-agreements';
+import {
+  safePartners,
+  safeProfitSplit,
+  safePoolTiers,
+  safePhotos,
+  formatJVCurrency as formatCurrency,
+  calculateDefaultEndDate,
+  generateJVNumber,
+  isExistingBackendId,
+} from '@/lib/jv-utils';
 
 type ScreenMode = 'list' | 'create' | 'detail' | 'preview' | 'edit';
 
@@ -88,50 +99,6 @@ const ROLE_CONFIG: Record<string, { label: string; color: string; description: s
   silent: { label: 'Silent Partner', color: '#9A9A9A', description: 'Invests capital only, no involvement in operations or decisions' },
   co_investor: { label: 'Co-Investor', color: '#E879F9', description: 'Co-invests alongside lead, no management authority, shares returns' },
 };
-
-function generateJVNumber(): string {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const rand = Math.floor(Math.random() * 9000 + 1000);
-  return `JV-${y}${m}-${rand}`;
-}
-
-function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount);
-}
-
-function safePartners(partners: unknown): JVPartner[] {
-  if (Array.isArray(partners)) return partners;
-  if (typeof partners === 'string') {
-    try { const parsed = JSON.parse(partners); if (Array.isArray(parsed)) return parsed; } catch {}
-  }
-  return [];
-}
-
-function safeProfitSplit(profitSplit: unknown): { partnerId: string; percentage: number }[] {
-  if (Array.isArray(profitSplit)) return profitSplit;
-  if (typeof profitSplit === 'string') {
-    try { const parsed = JSON.parse(profitSplit); if (Array.isArray(parsed)) return parsed; } catch {}
-  }
-  return [];
-}
-
-function safePoolTiers(poolTiers: unknown): PoolTier[] {
-  if (Array.isArray(poolTiers)) return poolTiers;
-  if (typeof poolTiers === 'string') {
-    try { const parsed = JSON.parse(poolTiers); if (Array.isArray(parsed)) return parsed; } catch {}
-  }
-  return [];
-}
-
-function safePhotos(photos: unknown): string[] {
-  if (Array.isArray(photos)) return photos.filter((p: unknown) => typeof p === 'string' && p.length > 0);
-  if (typeof photos === 'string') {
-    try { const parsed = JSON.parse(photos); if (Array.isArray(parsed)) return parsed.filter((p: unknown) => typeof p === 'string'); } catch {}
-  }
-  return [];
-}
 
 
 const POOL_TIER_TYPES: { id: PoolTier['type']; label: string; icon: string; color: string }[] = [
@@ -300,42 +267,40 @@ export default function JVAgreementScreen() {
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [isPublishing, setIsPublishing] = useState<boolean>(false);
 
-
-
-  const JV_STORAGE_KEY = 'ivx_jv_agreements';
-
-  const persistLocal = useCallback(async (_deals: JVAgreement[]) => {
-    console.log('[JV] Local cache disabled — backend is single source of truth');
+  const persistLocal = useCallback(async (deals: JVAgreement[]) => {
+    try {
+      const json = JSON.stringify(deals);
+      await Promise.all([
+        AsyncStorage.setItem('ivx_jv_agreements_cache', json),
+        AsyncStorage.setItem(`@ivx_p_${process.env.EXPO_PUBLIC_PROJECT_ID || 'default'}::jv_deals_v2`, json),
+      ]);
+      console.log('[JV] Persisted', deals.length, 'deals to BOTH cache keys (backup + primary)');
+    } catch (err) {
+      console.log('[JV] Local persist error:', (err as Error)?.message);
+    }
   }, []);
 
   const cleanRef = useRef(false);
   useEffect(() => {
     if (cleanRef.current) return;
     cleanRef.current = true;
-    const runCleanup = async () => {
-      try {
-        await AsyncStorage.removeItem(JV_STORAGE_KEY);
-        console.log('[JV] Cleared legacy AsyncStorage JV cache');
-      } catch (err) {
-        console.log('[JV] Cleanup error:', err);
-      }
-    };
-    void runCleanup();
+    console.log('[JV] Local cache preserved as backup (no longer cleared on mount)');
   }, []);
 
   const backendDealsQuery = useQuery({
-    queryKey: ['jv-agreements'],
+    queryKey: ['jvAgreements.list'],
     queryFn: async () => {
+      console.log('[JV] Fetching all JV deals for agreements screen (Platform:', Platform.OS, ')...');
       const result = await fetchJVDeals();
+      console.log('[JV] fetchJVDeals returned', result.deals.length, 'deals, total:', result.total);
       return result;
     },
-    retry: 3,
-    retryDelay: (attempt: number) => Math.min(500 * Math.pow(1.5, attempt), 5000),
+    retry: 1,
+    retryDelay: 1000,
     refetchOnWindowFocus: true,
     refetchOnMount: 'always' as const,
-    staleTime: 0,
-    gcTime: 0,
-    networkMode: 'always' as const,
+    staleTime: 1000 * 5,
+    gcTime: 1000 * 60 * 5,
   });
 
   useEffect(() => {
@@ -373,7 +338,27 @@ export default function JVAgreementScreen() {
           published: d.published ?? false,
           publishedAt: d.publishedAt ?? null,
         }));
-        setAgreements(backendDeals);
+        const seenIds = new Set<string>();
+        const dedupedDeals = backendDeals.filter(d => {
+          if (seenIds.has(d.id)) {
+            console.log('[JV] ⚠️ DEDUP: Removing duplicate deal from backend data:', d.id, d.title);
+            return false;
+          }
+          const s = d.status as string;
+          if (s === 'trashed' || s === 'archived' || s === 'permanently_deleted') {
+            console.log('[JV] Filtering out deleted deal:', d.id, d.title, 'status:', s);
+            return false;
+          }
+          seenIds.add(d.id);
+          return true;
+        });
+        if (dedupedDeals.length !== backendDeals.length) {
+          console.log('[JV] ⚠️ Removed', backendDeals.length - dedupedDeals.length, 'duplicate deals from backend response');
+        }
+        setAgreements(() => {
+          console.log('[JV] Setting', dedupedDeals.length, 'deals from backend (deduped, source of truth)');
+          return dedupedDeals;
+        });
         void persistLocal(backendDeals);
         console.log('[JV] Synced', backendDeals.length, 'deals from backend to local state, photos:', backendDeals.filter(d => d.photos && d.photos.length > 0).length, 'deals with photos');
       }
@@ -387,10 +372,6 @@ export default function JVAgreementScreen() {
   }, [backendDealsQuery.error]);
 
   const queryClient = useQueryClient();
-
-
-
-
 
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     overview: true,
@@ -685,17 +666,17 @@ export default function JVAgreementScreen() {
 
   const uploadPhotoMutation = useMemo(() => ({
     mutateAsync: async (input: { dealId: string; photoBase64: string; mimeType: string; index: number }) => {
-      console.log('[JV] Uploading photo for deal:', input.dealId, 'index:', input.index);
+      console.log('[JV] Uploading photo for deal:', input.dealId, 'index:', input.index, 'base64 size:', (input.photoBase64.length / 1024).toFixed(0), 'KB');
       try {
         const { data } = await safeSupabaseInsert('jv_deal_photos', {
           deal_id: input.dealId,
-          photo_data: input.photoBase64.substring(0, 500),
+          photo_data: input.photoBase64,
           mime_type: input.mimeType,
           photo_index: input.index,
           created_at: new Date().toISOString(),
         });
         if (data) {
-          console.log('[JV] Photo uploaded successfully');
+          console.log('[JV] Photo uploaded successfully to jv_deal_photos table');
           return { photoUrl: (data as any)?.photo_url || null };
         }
         console.log('[JV] Photo stored inline with deal data (no photo table)');
@@ -872,8 +853,8 @@ export default function JVAgreementScreen() {
     return uploadedUrls;
   }, [uploadPhotoMutation, convertPhotoToBase64]);
 
-  const saveAndPublishMutation = useMemo(() => ({
-    mutateAsync: async (payload: Record<string, unknown>) => {
+  const saveAndPublishMutation = useMutation({
+    mutationFn: async (payload: Record<string, unknown>) => {
       console.log('[JV] saveAndPublish via jv-storage');
       const { data, error } = await upsertJVDeal({
         ...payload,
@@ -884,82 +865,23 @@ export default function JVAgreementScreen() {
         console.error('[JV] saveAndPublish ERROR:', error.message);
         throw error;
       }
-      console.log('[JV] saveAndPublish success — id:', (data as any)?.id);
-      void queryClient.invalidateQueries({ queryKey: ['jv-agreements'] });
-      void queryClient.invalidateQueries({ queryKey: ['published-jv-deals'] });
-      void queryClient.invalidateQueries({ queryKey: ['jv-deals'] });
+      console.log('[JV] saveAndPublish success — id:', (data as Record<string, unknown>)?.id);
       return data as Record<string, unknown>;
     },
-  }), [queryClient]);
+  });
 
-  const saveMutation = useMemo(() => ({
-    mutateAsync: async (payload: Record<string, unknown>) => {
+  const saveMutation = useMutation({
+    mutationFn: async (payload: Record<string, unknown>) => {
       console.log('[JV] save via jv-storage');
       const { data, error } = await upsertJVDeal(payload);
       if (error) {
         console.error('[JV] save ERROR:', error.message);
         throw error;
       }
-      console.log('[JV] Saved to backend:', (data as any)?.id);
-      void queryClient.invalidateQueries({ queryKey: ['jv-agreements'] });
-      void queryClient.invalidateQueries({ queryKey: ['jv-deals'] });
+      console.log('[JV] Saved to backend:', (data as Record<string, unknown>)?.id);
       return data as Record<string, unknown>;
     },
-  }), [queryClient]);
-
-  const _updateMutation = useMemo(() => ({
-    mutateAsync: async (payload: Record<string, unknown>) => {
-      const { id, data: nestedData, ...flatRest } = payload;
-      const updatePayload = (nestedData && typeof nestedData === 'object' && !Array.isArray(nestedData))
-        ? nestedData as Record<string, unknown>
-        : flatRest;
-      console.log('[JV] update via jv-storage, id:', id, 'payload keys:', Object.keys(updatePayload).join(','));
-      const { data, error } = await updateJVDeal(id as string, updatePayload);
-      if (error) {
-        console.error('[JV] update ERROR:', error.message);
-        throw error;
-      }
-      console.log('[JV] Updated on backend:', (data as any)?.id);
-      void queryClient.invalidateQueries({ queryKey: ['jv-agreements'] });
-      void queryClient.invalidateQueries({ queryKey: ['published-jv-deals'] });
-      void queryClient.invalidateQueries({ queryKey: ['jv-deals'] });
-      return data as Record<string, unknown>;
-    },
-  }), [queryClient]);
-
-  const _publishMutation = useMemo(() => ({
-    mutateAsync: async (payload: { id: string }) => {
-      console.log('[JV] publish via jv-storage, id:', payload.id);
-      const { data, error } = await updateJVDeal(payload.id, {
-        published: true,
-        publishedAt: new Date().toISOString(),
-      });
-      if (error) {
-        console.error('[JV] publish ERROR:', error.message);
-        throw error;
-      }
-      console.log('[JV] Published:', (data as any)?.id);
-      void queryClient.invalidateQueries({ queryKey: ['jv-agreements'] });
-      void queryClient.invalidateQueries({ queryKey: ['published-jv-deals'] });
-      void queryClient.invalidateQueries({ queryKey: ['jv-deals'] });
-      return data as Record<string, unknown>;
-    },
-  }), [queryClient]);
-
-  const _unpublishMutation = useMemo(() => ({
-    mutateAsync: async (payload: { id: string }) => {
-      console.log('[JV] unpublish via jv-storage, id:', payload.id);
-      const { error } = await updateJVDeal(payload.id, {
-        published: false,
-      });
-      if (error) {
-        console.error('[JV] unpublish ERROR:', error.message);
-        throw error;
-      }
-      console.log('[JV] Unpublished');
-      return { success: true };
-    },
-  }), []);
+  });
 
   const buildJVPayload = useCallback((agreement: JVAgreement, skipLocalPhotos = false) => {
     const payloadPartners = safePartners(agreement.partners);
@@ -981,6 +903,7 @@ export default function JVAgreementScreen() {
     const validTierStatuses = ['open', 'closed', 'filled'] as const;
 
     const payload: any = {
+      id: agreement.id || undefined,
       title: String(agreement.title || 'Untitled Deal').trim(),
       projectName: String(agreement.projectName || 'Untitled Project').trim(),
       type: validTypes.includes(agreement.type as any) ? agreement.type : 'equity_split',
@@ -1037,12 +960,7 @@ export default function JVAgreementScreen() {
     return payload;
   }, []);
 
-  const isExistingBackendId = useCallback((id: string): boolean => {
-    if (id.startsWith('JV-')) return false;
-    if (id.startsWith('jv_') || id.startsWith('jv-')) return true;
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    return uuidRegex.test(id);
-  }, []);
+
 
   const handleSaveAndPublish = useCallback(async (agreement: JVAgreement, existingBackendId?: string, _localPhotosToUpload?: string[]) => {
     setIsPublishing(true);
@@ -1139,10 +1057,9 @@ export default function JVAgreementScreen() {
     });
 
     try {
+      resetSupabaseCheck();
+      invalidateAllJVQueries(queryClient);
       await backendDealsQuery.refetch();
-      void queryClient.invalidateQueries({ queryKey: ['jv-agreements'] });
-      void queryClient.invalidateQueries({ queryKey: ['published-jv-deals'] });
-      void queryClient.invalidateQueries({ queryKey: ['jv-deals'] });
       console.log('[JV] Invalidated all JV queries after publish, didPublish:', didPublish);
     } catch (refetchErr) {
       console.warn('[JV] Refetch after publish failed:', (refetchErr as Error)?.message);
@@ -1167,17 +1084,24 @@ export default function JVAgreementScreen() {
     setIsSaving(false);
 
     if (didPublish) {
+      try {
+        console.log('[JV] Triggering landing page sync after publish...');
+        const syncResult = await syncToLandingPage();
+        console.log('[JV] Landing sync result:', syncResult.success, 'synced:', syncResult.syncedDeals, 'errors:', syncResult.errors.length);
+        if (syncResult.errors.length > 0) {
+          console.warn('[JV] Landing sync had errors:', syncResult.errors.join('; '));
+        }
+      } catch (syncErr) {
+        console.warn('[JV] Landing sync failed (non-blocking):', (syncErr as Error)?.message);
+      }
+
       Alert.alert(
         'Published — LIVE!',
         `"${agreement.title}" is now LIVE on your landing page and invest module in real time.\n\nInvestors worldwide can see this deal and start investing immediately.`,
         [
           {
-            text: 'View on Landing',
-            style: 'default',
-            onPress: () => router.push('/landing' as any),
-          },
-          {
             text: 'Go to Invest',
+            style: 'default',
             onPress: () => router.push('/(tabs)/invest' as any),
           },
           { text: 'Stay Here', style: 'cancel' },
@@ -1193,7 +1117,7 @@ export default function JVAgreementScreen() {
         ]
       );
     }
-  }, [saveAndPublishMutation, isExistingBackendId, selectedAgreement, backendDealsQuery, buildJVPayload, router, queryClient, convertPhotoToBase64]);
+  }, [saveAndPublishMutation, selectedAgreement, backendDealsQuery, buildJVPayload, router, queryClient, convertPhotoToBase64]);
 
   const _handleSaveDraft = useCallback(async (agreement: JVAgreement) => {
     setIsSaving(true);
@@ -1223,10 +1147,9 @@ export default function JVAgreementScreen() {
 
     if (backendId) {
       try {
+        resetSupabaseCheck();
+        invalidateAllJVQueries(queryClient);
         void backendDealsQuery.refetch();
-        void queryClient.invalidateQueries({ queryKey: ['jv-agreements'] });
-        void queryClient.invalidateQueries({ queryKey: ['published-jv-deals'] });
-        void queryClient.invalidateQueries({ queryKey: ['jv-deals'] });
       } catch { /* ignore */ }
     }
 
@@ -1255,7 +1178,7 @@ export default function JVAgreementScreen() {
       photos: formPhotos.length > 0 ? [...formPhotos] : undefined,
       poolTiers: formPoolTiers.length > 0 ? formPoolTiers.map(t => ({ ...t })) : undefined,
       startDate: formStartDate,
-      endDate: formEndDate || (() => { try { const d = new Date(formStartDate); if (isNaN(d.getTime())) return new Date(Date.now() + 365 * 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]; return new Date(d.getTime() + 365 * 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]; } catch { return new Date(Date.now() + 365 * 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]; } })(),
+      endDate: formEndDate || calculateDefaultEndDate(formStartDate),
       createdAt: new Date().toISOString().split('T')[0],
       propertyAddress: formPropertyAddress.trim() || undefined,
       expectedROI: parseFloat(formExpectedROI) || 15,
@@ -1272,7 +1195,15 @@ export default function JVAgreementScreen() {
     };
   }, [formTitle, formProjectName, formTotalInvestment, formCurrency, formType, formDescription, formPropertyAddress, formExpectedROI, formDistribution, formExitStrategy, formGoverningLaw, formDisputeResolution, formConfidentiality, formNonCompete, formManagementFee, formPerformanceFee, formMinHold, formStartDate, formEndDate, partners, formPhotos, formPoolTiers, editingAgreementId]);
 
+  const publishLockRef = useRef<boolean>(false);
+
   const handleCreateAndPublish = useCallback(async () => {
+    if (publishLockRef.current || isPublishing || isSaving) {
+      console.log('[JV] handleCreateAndPublish BLOCKED — already in progress (lock:', publishLockRef.current, 'publishing:', isPublishing, 'saving:', isSaving, ')');
+      return;
+    }
+    publishLockRef.current = true;
+
     const currentTitle = formTitleRef.current;
     const currentProjectName = formProjectNameRef.current;
     const currentTotalInvestment = formTotalInvestmentRef.current;
@@ -1287,6 +1218,7 @@ export default function JVAgreementScreen() {
     if (!currentTotalInvestment.trim()) missing.push('Total Investment');
     if (missing.length > 0) {
       Alert.alert('Required Fields', `Please fill in: ${missing.join(', ')}`);
+      publishLockRef.current = false;
       return;
     }
 
@@ -1328,9 +1260,17 @@ export default function JVAgreementScreen() {
 
     setMode('list');
     scrollRef.current?.scrollTo({ y: 0, animated: true });
-    await handleSaveAndPublish(newAgreement, existingId);
+
+    try {
+      await handleSaveAndPublish(newAgreement, existingId);
+    } catch (err) {
+      console.error('[JV] handleCreateAndPublish save error:', (err as Error)?.message);
+    } finally {
+      publishLockRef.current = false;
+    }
+
     resetForm();
-  }, [buildAgreementFromForm, isExistingBackendId, resetForm, handleSaveAndPublish, convertPhotoToBase64, formPhotos.length]);
+  }, [buildAgreementFromForm, resetForm, handleSaveAndPublish, convertPhotoToBase64, formPhotos.length, isPublishing, isSaving]);
 
   const handleExportPDF = useCallback(async (agreement: JVAgreement) => {
     setIsGenerating(true);
