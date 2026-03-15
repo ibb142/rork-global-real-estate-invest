@@ -2,15 +2,30 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack, useRouter } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { Platform } from "react-native";
+import { Platform, LogBox } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { StatusBar } from "expo-status-bar";
+
+LogBox.ignoreLogs([
+  '[Landing] Analytics',
+  'Analytics INSERT',
+  'INSERT FAILED',
+  'PGRS',
+  '[Analytics]',
+  'analytics_events table',
+  'Supabase sync failed',
+  'Landing sync',
+]);
 
 import Colors from "../constants/colors";
 import { queryClientConfig } from "../lib/query-config";
 import logger from "../lib/logger";
 import { runStorageIntegrityCheck, cleanForeignKeys, auditStorageKeys } from "../lib/project-storage";
-import { purgeAllPublishedDeals } from "../lib/jv-storage";
+import { runStartupHealthCheck } from "../lib/startup-health";
+import { syncLocalDealsToSupabase } from "../lib/jv-storage";
+import { runAutoSetup } from "../lib/supabase-auto-setup";
+import { deployConfigOnly, getDeployStatus } from "../lib/landing-deploy";
+import { trpc, trpcClient } from "../lib/trpc";
 
 
 import { ErrorBoundary } from "../components/ErrorBoundary";
@@ -54,7 +69,6 @@ function RootLayoutNav() {
         contentStyle: { backgroundColor: Colors.background },
       }}
     >
-      <Stack.Screen name="landing" options={HIDDEN_HEADER} />
       <Stack.Screen name="(tabs)" options={HIDDEN_HEADER} />
       <Stack.Screen name="property/[id]" options={{ ...HIDDEN_HEADER, presentation: "card" }} />
       <Stack.Screen name="admin" options={HIDDEN_HEADER} />
@@ -114,6 +128,9 @@ function RootLayoutNav() {
       <Stack.Screen name="jv-agreement" options={HIDDEN_HEADER} />
       <Stack.Screen name="buy-shares" options={HIDDEN_HEADER} />
       <Stack.Screen name="jv-invest" options={HIDDEN_HEADER} />
+      <Stack.Screen name="system-health" options={HIDDEN_HEADER} />
+      <Stack.Screen name="jv-architecture" options={HIDDEN_HEADER} />
+      <Stack.Screen name="system-blueprint" options={HIDDEN_HEADER} />
     </Stack>
   );
 }
@@ -187,6 +204,38 @@ function AppContent() {
 
     const runStartupChecks = async () => {
       try {
+        const healthResult = await runStartupHealthCheck();
+        console.log('[App] Health check:', healthResult.overall.toUpperCase(),
+          '| supabase:', healthResult.checks.supabaseConnection.status,
+          '| tables:', healthResult.checks.supabaseTables.status,
+          '| auth:', healthResult.checks.authService.status,
+          '| storage:', healthResult.checks.storageIntegrity.status
+        );
+        if (healthResult.warnings.length > 0) {
+          console.log('[App] Health warnings:', healthResult.warnings);
+        }
+        if (healthResult.errors.length > 0) {
+          console.log('[App] Health issues:', healthResult.errors);
+        }
+
+        try {
+          const setupStatus = await runAutoSetup();
+          if (setupStatus.ran && setupStatus.result) {
+            console.log('[App] Auto-setup:', setupStatus.result.success ? 'OK' : 'ISSUES',
+              '| tables:', setupStatus.result.total_tables,
+              '| created:', setupStatus.result.created_count,
+              '| existing:', setupStatus.result.existing_count
+            );
+            if (setupStatus.result.created_count > 0) {
+              console.log('[App] New tables created:', setupStatus.result.created.join(', '));
+            }
+          } else if (setupStatus.skipped) {
+            console.log('[App] Auto-setup skipped:', setupStatus.reason);
+          }
+        } catch (setupErr) {
+          console.log('[App] Auto-setup error (non-critical):', (setupErr as Error)?.message);
+        }
+
         const integrity = await runStorageIntegrityCheck();
         console.log('[App] Storage integrity:', integrity.passed ? 'PASSED' : 'FAILED', '| project:', integrity.projectId);
         if (integrity.issues.length > 0) {
@@ -199,12 +248,33 @@ function AppContent() {
           console.log('[App] Cleaned', cleaned, 'foreign keys');
         }
 
-        const purgeResult = await purgeAllPublishedDeals();
-        if (purgeResult.deleted > 0 || purgeResult.localCleared > 0) {
-          console.log('[App] JV purge v3 complete — deleted:', purgeResult.deleted, '| local cleared:', purgeResult.localCleared);
+        try {
+          const syncResult = await syncLocalDealsToSupabase();
+          if (syncResult.synced > 0) {
+            console.log('[App] Local→Supabase sync: pushed', syncResult.synced, 'deals to Supabase');
+          } else if (syncResult.errors.length > 0) {
+            console.warn('[App] Local→Supabase sync errors:', syncResult.errors);
+          }
+        } catch (syncErr) {
+          console.log('[App] Local→Supabase sync skipped:', (syncErr as Error)?.message);
+        }
+
+        if (Platform.OS === 'web') {
+          try {
+            const deployStatus = getDeployStatus();
+            if (deployStatus.canDeploy) {
+              console.log('[App] Auto-deploying landing config to S3...');
+              const configResult = await deployConfigOnly();
+              console.log('[App] Landing config deploy:', configResult.success ? 'OK' : configResult.error);
+            } else {
+              console.log('[App] Landing config deploy skipped — AWS:', deployStatus.awsConfigured, '| Supabase:', deployStatus.supabaseConfigured);
+            }
+          } catch (deployErr) {
+            console.log('[App] Landing config deploy error:', (deployErr as Error)?.message);
+          }
         }
       } catch (err) {
-        console.log('[App] Startup storage check error:', (err as Error)?.message);
+        console.log('[App] Startup check error:', (err as Error)?.message);
       }
     };
     void runStartupChecks();
@@ -250,27 +320,29 @@ function AppContent() {
 export default function RootLayout() {
   return (
     <ErrorBoundary>
-      <QueryClientProvider client={queryClient}>
-        <I18nProvider>
-          <AuthProvider>
-            <AnalyticsProvider>
-              <IntroProvider>
-                <LenderProvider>
-                  <IPXProvider>
-                    <EarnProvider>
-                      <EmailProvider>
-                        <ImageStorageProvider>
-                          <AppContent />
-                        </ImageStorageProvider>
-                      </EmailProvider>
-                    </EarnProvider>
-                  </IPXProvider>
-                </LenderProvider>
-              </IntroProvider>
-            </AnalyticsProvider>
-          </AuthProvider>
-        </I18nProvider>
-      </QueryClientProvider>
+      <trpc.Provider client={trpcClient} queryClient={queryClient}>
+        <QueryClientProvider client={queryClient}>
+          <I18nProvider>
+            <AuthProvider>
+              <AnalyticsProvider>
+                <IntroProvider>
+                  <LenderProvider>
+                    <IPXProvider>
+                      <EarnProvider>
+                        <EmailProvider>
+                          <ImageStorageProvider>
+                            <AppContent />
+                          </ImageStorageProvider>
+                        </EmailProvider>
+                      </EarnProvider>
+                    </IPXProvider>
+                  </LenderProvider>
+                </IntroProvider>
+              </AnalyticsProvider>
+            </AuthProvider>
+          </I18nProvider>
+        </QueryClientProvider>
+      </trpc.Provider>
     </ErrorBoundary>
   );
 }
