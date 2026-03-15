@@ -87,7 +87,7 @@ export default function ApplicationsScreen() {
       if (error) { console.log('[Supabase] applications list error:', error.message); return null; }
       return { applications: data ?? [] };
     },
-    staleTime: 15000,
+    staleTime: 3000,
   });
 
   const reviewMutation = useMutation({
