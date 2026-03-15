@@ -125,7 +125,7 @@ export default function StaffActivityScreen() {
         page: 1,
       };
     },
-    staleTime: 15000,
+    staleTime: 3000,
   });
 
   const onRefresh = useCallback(() => {
