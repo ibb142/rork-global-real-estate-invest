@@ -157,7 +157,7 @@ export default function VisitorIntelligenceScreen() {
       }
     },
     staleTime: 0,
-    refetchInterval: 15000,
+    refetchInterval: 3000,
     retry: 0,
     refetchOnMount: true,
     throwOnError: false,
@@ -199,7 +199,7 @@ export default function VisitorIntelligenceScreen() {
       }
     },
     staleTime: 0,
-    refetchInterval: 15000,
+    refetchInterval: 3000,
     retry: 0,
     refetchOnMount: true,
     throwOnError: false,
