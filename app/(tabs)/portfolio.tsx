@@ -226,7 +226,7 @@ export default function PortfolioScreen() {
   const totalInvestedBackend = (balanceQuery.data as any)?.invested ?? 0;
 
   const { holdings: ipxHoldings, getTotalIPXValue, getTotalIPXPnL, getTotalIPXPnLPercent } = useIPX();
-  const { totalBalance: earnBalance, totalEarnings: _totalEarnings, apyRate } = useEarn();
+  const { totalBalance: earnBalance, apyRate } = useEarn();
   const { t } = useTranslation();
   const { trackScreen: _trackScreen } = useAnalytics();
 
