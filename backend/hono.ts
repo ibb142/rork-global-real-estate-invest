@@ -1,122 +1,34 @@
 import { trpcServer } from "@hono/trpc-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { logger } from "hono/logger";
-import { secureHeaders } from "hono/secure-headers";
-import { timing } from "hono/timing";
-import { compress } from "hono/compress";
-import { requestId } from "hono/request-id";
 
 import { appRouter } from "./trpc/app-router";
 import { createContext } from "./trpc/create-context";
-import { validateEnv, logEnvStatus } from "./lib/env";
-import { verifyToken } from "./lib/jwt";
-import { store } from "./store/index";
-import { captureError, logSentryStatus } from "./lib/sentry";
-import { runStagingChecklist } from "./lib/staging-checklist";
-import { runAWSProductionSetup, getAWSSetupStatus, getIAMPolicyDocument, PROD_BUCKET_NAME, PROD_REGION } from "./lib/aws-setup";
-import { parseUserAgent, getClientIP } from "./lib/ua-parser";
-import { startHourlyReporting } from "./lib/sms-service";
 
-logEnvStatus();
-logSentryStatus();
-console.log('[App] Backend v1.0.2 — toolkit-sdk removed from backend');
+const EDGE_FUNCTION_URL = 'https://kvclcdjmjghndxsngfzb.supabase.co/functions/v1/runtime-deals';
+const SUPABASE_PROJECT_ID = 'kvclcdjmjghndxsngfzb';
 
-store.init().then(() => {
-  console.log('[App] Store initialized — ready to serve requests');
-  startHourlyReporting();
-}).catch((err) => {
-  console.error('[App] Store initialization failed:', err.message);
-});
+let _readLocalFile: ((path: string) => string) | null = null;
+try {
+  const fs = require('fs');
+  _readLocalFile = (p: string) => fs.readFileSync(p, 'utf-8');
+} catch {}
 
-runAWSProductionSetup().then((result) => {
-  if (result.success) {
-    console.log(`[AWS] Production S3 ready: bucket=${result.bucket} region=${result.region}`);
-  } else if (result.steps[0]?.status === "skip") {
-    console.log("[AWS] Running in local storage mode (no AWS credentials)");
-  } else {
-    console.warn("[AWS] Production setup completed with issues — check /aws-status");
-  }
-}).catch((err) => {
-  console.error("[AWS] Production setup error:", err.message);
-});
-
-const rateLimitStore = new Map<string, { count: number; resetTime: number }>();
-let lastCleanup = Date.now();
-const CLEANUP_INTERVAL = 60000;
-const MAX_STORE_SIZE = 50000;
-
-const rateLimit = (limit: number, windowMs: number) => {
-  return async (c: any, next: any) => {
-    const ip = c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ||
-               c.req.header("x-real-ip") ||
-               c.req.header("cf-connecting-ip") ||
-               "unknown";
-    const now = Date.now();
-    const record = rateLimitStore.get(ip);
-
-    if (record && now < record.resetTime) {
-      if (record.count >= limit) {
-        c.header("Retry-After", String(Math.ceil((record.resetTime - now) / 1000)));
-        c.header("X-RateLimit-Limit", String(limit));
-        c.header("X-RateLimit-Remaining", "0");
-        return c.json({ error: "Too many requests", retryAfter: Math.ceil((record.resetTime - now) / 1000) }, 429);
-      }
-      record.count++;
-      c.header("X-RateLimit-Remaining", String(limit - record.count));
-    } else {
-      rateLimitStore.set(ip, { count: 1, resetTime: now + windowMs });
-      c.header("X-RateLimit-Remaining", String(limit - 1));
-    }
-
-    c.header("X-RateLimit-Limit", String(limit));
-
-    if (now - lastCleanup > CLEANUP_INTERVAL && rateLimitStore.size > MAX_STORE_SIZE / 2) {
-      lastCleanup = now;
-      const keysToDelete: string[] = [];
-      for (const [key, value] of rateLimitStore.entries()) {
-        if (value.resetTime < now) keysToDelete.push(key);
-      }
-      keysToDelete.forEach(key => rateLimitStore.delete(key));
-      console.log(`[RateLimit] Cleaned ${keysToDelete.length} expired entries`);
-    }
-
-    await next();
-  };
-};
+function getSupabaseCredentials(): { url: string; key: string; isValid: boolean } {
+  const url = (process.env.EXPO_PUBLIC_SUPABASE_URL || '').trim();
+  const key = (process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '').trim();
+  const isValid = !!(url && url.length > 10 && key && key.length > 10);
+  return { url, key, isValid };
+}
 
 const app = new Hono();
 
-app.use("*", requestId());
-app.use("*", logger());
-app.use("*", timing());
-app.use("*", secureHeaders());
-app.use("*", compress());
-const _IS_PRODUCTION = process.env.NODE_ENV === 'production';
-const APP_VERSION = "1.0.1";
-const START_TIME = Date.now();
-
-const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
-  ? process.env.ALLOWED_ORIGINS.split(',')
-  : [];
-
 app.use("*", cors({
-  origin: (origin) => {
-    if (!origin) return '*';
-    if (ALLOWED_ORIGINS.length > 0 && ALLOWED_ORIGINS.includes(origin)) return origin;
-    if (ALLOWED_ORIGINS.length > 0) {
-      console.warn(`[CORS] Origin not in allowlist: ${origin}`);
-    }
-    return origin;
-  },
+  origin: "*",
   allowMethods: ["GET", "POST", "OPTIONS"],
-  allowHeaders: ["Content-Type", "Authorization"],
-  exposeHeaders: ["X-Request-Id", "X-Response-Time", "X-RateLimit-Remaining"],
+  allowHeaders: ["Content-Type", "Authorization", "apikey"],
   maxAge: 86400,
-  credentials: true,
 }));
-
-app.use("/trpc/*", rateLimit(100, 60000));
 
 app.use(
   "/trpc/*",
@@ -127,531 +39,432 @@ app.use(
   }),
 );
 
-app.post("/track/heartbeat", async (c) => {
-  try {
-    const body = await c.req.json();
-    const headers = c.req.raw.headers;
-    const ip = getClientIP(headers);
-    const rawUA = headers.get('user-agent') || body.userAgent || '';
-    const parsed = parseUserAgent(rawUA);
-
-    const sessionId = body.sessionId || `s_${Date.now()}`;
-    const now = new Date().toISOString();
-
-    store.updateLiveSession({
-      sessionId,
-      ip,
-      device: parsed.device,
-      os: parsed.os,
-      browser: parsed.browser,
-      geo: body.geo,
-      currentStep: body.properties?.currentStep ?? 0,
-      sessionDuration: body.properties?.sessionDuration ?? 0,
-      activeTime: body.properties?.activeTime ?? 0,
-      lastSeen: now,
-      startedAt: undefined,
-    });
-
-    return c.json({ success: true });
-  } catch {
-    return c.json({ success: false }, 500);
-  }
+app.get("/", (c) => {
+  return c.json({ status: "ok", message: "IVX Holdings API is running" });
 });
 
-app.get("/track/live-sessions", async (c) => {
-  const authHeader = c.req.header("authorization");
-  if (!authHeader?.startsWith("Bearer ")) {
-    return c.json({ error: "Unauthorized" }, 401);
-  }
-  const payload = verifyToken(authHeader.slice(7));
-  if (!payload || (payload.role !== "owner" && payload.role !== "ceo" && payload.role !== "staff" && payload.role !== "manager" && payload.role !== "analyst")) {
-    return c.json({ error: "Forbidden" }, 403);
-  }
+app.get("/landing-config", (c) => {
+  const { url: supabaseUrl, key: supabaseAnonKey } = getSupabaseCredentials();
+  const apiBaseUrl = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || "").trim().replace(/\/$/, "");
 
-  const sessions = store.getLiveSessions();
-  const now = Date.now();
-  const activeSessions = sessions.filter(s => now - new Date(s.lastSeen).getTime() < 60000);
-  const recentSessions = sessions.filter(s => now - new Date(s.lastSeen).getTime() < 300000);
-
-  const byCountry: Record<string, number> = {};
-  const byDevice: Record<string, number> = {};
-  const byStep: Record<string, number> = {};
-
-  activeSessions.forEach(s => {
-    const country = s.geo?.country || 'Unknown';
-    byCountry[country] = (byCountry[country] || 0) + 1;
-    byDevice[s.device] = (byDevice[s.device] || 0) + 1;
-    const stepKey = `Step ${s.currentStep}`;
-    byStep[stepKey] = (byStep[stepKey] || 0) + 1;
-  });
+  console.log('[API] landing-config served | URL:', !!supabaseUrl, '| Key:', !!supabaseAnonKey, '| API:', apiBaseUrl || 'not set');
 
   return c.json({
-    active: activeSessions.length,
-    recent: recentSessions.length,
-    sessions: recentSessions.map(s => ({
-      sessionId: s.sessionId,
-      ip: s.ip,
-      device: s.device,
-      os: s.os,
-      browser: s.browser,
-      geo: s.geo,
-      currentStep: s.currentStep,
-      sessionDuration: s.sessionDuration,
-      activeTime: s.activeTime,
-      lastSeen: s.lastSeen,
-      startedAt: s.startedAt,
-      isActive: now - new Date(s.lastSeen).getTime() < 60000,
-    })),
-    breakdown: {
-      byCountry: Object.entries(byCountry).sort((a, b) => b[1] - a[1]).map(([country, count]) => ({ country, count })),
-      byDevice: Object.entries(byDevice).sort((a, b) => b[1] - a[1]).map(([device, count]) => ({ device, count })),
-      byStep: Object.entries(byStep).sort((a, b) => b[1] - a[1]).map(([step, count]) => ({ step, count })),
-    },
-    timestamp: new Date().toISOString(),
+    supabaseUrl,
+    supabaseAnonKey,
+    apiBaseUrl,
+    appUrl: apiBaseUrl,
+    backendUrl: apiBaseUrl,
+    projectId: SUPABASE_PROJECT_ID,
+    servedAt: new Date().toISOString(),
   });
 });
 
-app.post("/track/visit", async (c) => {
-  try {
-    const body = await c.req.json();
-    const headers = c.req.raw.headers;
-    const ip = getClientIP(headers);
-    const rawUA = headers.get('user-agent') || body.userAgent || '';
-    const parsed = parseUserAgent(rawUA);
-    const refHeader = headers.get('referer') || headers.get('referrer') || '';
-
-    const entry = {
-      id: `vis_${Date.now()}_${Math.random().toString(36).substr(2, 8)}`,
-      sessionId: body.sessionId || `s_${Date.now()}`,
-      ip,
-      userAgent: rawUA,
-      browser: parsed.browser,
-      browserVersion: parsed.browserVersion,
-      os: parsed.os,
-      osVersion: parsed.osVersion,
-      device: parsed.device,
-      deviceModel: parsed.deviceModel,
-      isBot: parsed.isBot,
-      referrer: body.referrer || refHeader || 'direct',
-      page: body.page || '/landing',
-      event: body.event || 'page_view',
-      geo: body.geo || undefined,
-      timestamp: new Date().toISOString(),
-    };
-
-    store.addVisitorLog(entry);
-
-    const evt = {
-      id: store.genId('evt'),
-      userId: 'landing_visitor',
-      event: body.event || 'landing_page_view',
-      category: 'page_view' as const,
-      properties: {
-        platform: parsed.device === 'Desktop' ? 'web' : parsed.os === 'iOS' || parsed.os === 'iPadOS' ? 'ios' : parsed.os === 'Android' ? 'android' : 'web',
-        referrer: entry.referrer,
-        userAgent: rawUA,
-        ip,
-        browser: parsed.browser,
-        os: parsed.os,
-        device: parsed.device,
-        section: body.section || 'hero',
-        ...body.properties,
-      },
-      sessionId: entry.sessionId,
-      timestamp: entry.timestamp,
-      geo: body.geo,
-    };
-    store.addAnalyticsEvent(evt);
-
-    console.log(`[Track] ${ip} | ${parsed.device} ${parsed.os} ${parsed.browser} | ${entry.event} | ${body.geo?.city || 'unknown'}, ${body.geo?.country || 'unknown'}`);
-
-    return c.json({
-      success: true,
-      visitor: {
-        ip,
-        device: parsed.device,
-        os: parsed.os,
-        browser: parsed.browser,
-      },
-    });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    console.error('[Track] Error:', message);
-    return c.json({ success: false, error: message }, 500);
+const FALLBACK_DEALS = [
+  {
+    id: "casa-rosario-001",
+    title: "CASA ROSARIO",
+    projectName: "ONE STOP DEVELOPMENT TWO LLC",
+    project_name: "ONE STOP DEVELOPMENT TWO LLC",
+    type: "development",
+    description: "Premium residential development by ONE STOP DEVELOPMENT TWO LLC. Active JV deal open for investment with 30% expected ROI. Located in the highly desirable Pembroke Pines area of South Florida.",
+    propertyAddress: "20231 Sw 51st Ct, Pembroke Pines, FL 33332",
+    property_address: "20231 Sw 51st Ct, Pembroke Pines, FL 33332",
+    totalInvestment: 1400000,
+    total_investment: 1400000,
+    expectedROI: 30,
+    expected_roi: 30,
+    distributionFrequency: "Quarterly",
+    distribution_frequency: "Quarterly",
+    exitStrategy: "Sale upon completion",
+    exit_strategy: "Sale upon completion",
+    status: "active",
+    published: true,
+    publishedAt: "2026-03-15T00:00:00.000Z",
+    published_at: "2026-03-15T00:00:00.000Z",
+    photos: [
+      "https://images.unsplash.com/photo-1613490493576-7fde63acd811?w=800&q=80",
+      "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=800&q=80",
+      "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=800&q=80",
+      "https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?w=800&q=80",
+      "https://images.unsplash.com/photo-1600566753190-17f0baa2a6c3?w=800&q=80",
+      "https://images.unsplash.com/photo-1600573472592-401b489a3cdc?w=800&q=80",
+      "https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=800&q=80",
+      "https://images.unsplash.com/photo-1564013799919-ab600027ffc6?w=800&q=80"
+    ],
+    partners: [{"name": "ONE STOP DEVELOPMENT TWO LLC", "role": "Developer", "share": 70}],
+    created_at: "2026-03-15T00:00:00.000Z",
+    updated_at: new Date().toISOString(),
   }
-});
+];
 
-app.get("/track/pixel", async (c) => {
-  const headers = c.req.raw.headers;
-  const ip = getClientIP(headers);
-  const rawUA = headers.get('user-agent') || '';
-  const parsed = parseUserAgent(rawUA);
-  const refHeader = headers.get('referer') || headers.get('referrer') || '';
+app.get("/landing-deals", async (c) => {
+  const { url: supabaseUrl, key: supabaseAnonKey, isValid } = getSupabaseCredentials();
+  const startTime = Date.now();
 
-  const entry = {
-    id: `vis_${Date.now()}_${Math.random().toString(36).substr(2, 8)}`,
-    sessionId: `pixel_${Date.now()}`,
-    ip,
-    userAgent: rawUA,
-    browser: parsed.browser,
-    browserVersion: parsed.browserVersion,
-    os: parsed.os,
-    osVersion: parsed.osVersion,
-    device: parsed.device,
-    deviceModel: parsed.deviceModel,
-    isBot: parsed.isBot,
-    referrer: refHeader || 'direct',
-    page: '/landing',
-    event: 'pixel_load',
-    timestamp: new Date().toISOString(),
+  console.log("[API] landing-deals request received");
+  console.log("[API] Supabase URL configured:", !!supabaseUrl, '| Key configured:', !!supabaseAnonKey, '| Valid:', isValid);
+
+  if (!isValid) {
+    console.log('[API] landing-deals: Supabase not configured — serving fallback immediately');
+    return c.json({ deals: FALLBACK_DEALS, source: "fallback_no_credentials", servedAt: new Date().toISOString() });
+  }
+
+  const headers: Record<string, string> = {
+    apikey: supabaseAnonKey,
+    Authorization: `Bearer ${supabaseAnonKey}`,
+    "Content-Type": "application/json",
   };
 
-  store.addVisitorLog(entry);
-  console.log(`[Pixel] ${ip} | ${parsed.device} ${parsed.os} ${parsed.browser}`);
-
-  c.header('Content-Type', 'image/gif');
-  c.header('Cache-Control', 'no-store, no-cache, must-revalidate');
-  const pixel = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');
-  return c.body(pixel);
-});
-
-app.post("/webhooks/stripe", async (c) => {
-  const signature = c.req.header("stripe-signature") || "";
-  const payload = await c.req.text();
-
-  if (!signature) {
-    console.warn("[Webhook] Stripe webhook missing signature header");
-    return c.json({ error: "Missing stripe-signature header" }, 400);
+  function mapSupabaseRow(row: Record<string, unknown>): Record<string, unknown> {
+    const mapped = { ...row };
+    if (!mapped.title && mapped.name) mapped.title = mapped.name;
+    if (!mapped.projectName && !mapped.project_name && mapped.name) mapped.projectName = typeof mapped.name === 'string' ? mapped.name : '';
+    if (!mapped.totalInvestment && !mapped.total_investment && mapped.amount) {
+      mapped.totalInvestment = Number(mapped.amount);
+      mapped.total_investment = Number(mapped.amount);
+    }
+    if (mapped.is_published !== undefined && mapped.published === undefined) {
+      mapped.published = mapped.is_published;
+    }
+    if (!mapped.status) mapped.status = mapped.is_published ? 'active' : 'draft';
+    if (typeof mapped.photos === 'string') {
+      try { mapped.photos = JSON.parse(mapped.photos as string); } catch { mapped.photos = []; }
+    }
+    if (!Array.isArray(mapped.photos)) mapped.photos = [];
+    if (typeof mapped.partners === 'string') {
+      try { mapped.partners = JSON.parse(mapped.partners as string); } catch { mapped.partners = []; }
+    }
+    return mapped;
   }
 
-  console.log("[Webhook] Received Stripe webhook");
+  const queries = [
+    `${supabaseUrl}/rest/v1/jv_deals?select=*&published=eq.true&status=eq.active&order=created_at.desc.nullslast`,
+    `${supabaseUrl}/rest/v1/jv_deals?select=*&is_published=eq.true&order=created_at.desc.nullslast`,
+    `${supabaseUrl}/rest/v1/jv_deals?select=*&published=eq.true&order=created_at.desc.nullslast`,
+    `${supabaseUrl}/rest/v1/jv_deals?select=*&status=eq.active&order=created_at.desc.nullslast`,
+    `${supabaseUrl}/rest/v1/jv_deals?select=*&order=created_at.desc.nullslast`,
+  ];
+
+  for (let i = 0; i < queries.length; i++) {
+    try {
+      console.log(`[API] landing-deals trying Supabase REST query #${i + 1}...`);
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
+      const response = await fetch(queries[i], { headers, signal: controller.signal });
+      clearTimeout(timeout);
+      if (!response.ok) {
+        const body = await response.text().catch(() => '');
+        console.log(`[API] landing-deals query #${i + 1} failed: HTTP ${response.status}`, body.substring(0, 200));
+        continue;
+      }
+      const data = await response.json();
+      if (Array.isArray(data) && data.length > 0) {
+        const mapped = data.map((row: Record<string, unknown>) => mapSupabaseRow(row));
+        console.log(`[API] landing-deals query #${i + 1} returned ${mapped.length} deals in ${Date.now() - startTime}ms ✓`);
+        return c.json({ deals: mapped, source: 'supabase_rest', queryUsed: i + 1, servedAt: new Date().toISOString() });
+      }
+      console.log(`[API] landing-deals query #${i + 1} returned 0 deals, trying next...`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      console.log(`[API] landing-deals query #${i + 1} error:`, message);
+    }
+  }
 
   try {
-    const mockReq = new Request("http://localhost/webhooks/stripe", { method: "POST" });
-    const ctx = await createContext({ req: mockReq, resHeaders: new Headers(), info: {} as any });
-    const caller = appRouter.createCaller(ctx);
-    const result = await caller.payments.handleStripeWebhook({ payload, signature });
-    return c.json(result);
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("[Webhook] Stripe webhook processing error:", message);
-    return c.json({ received: false, error: message }, 500);
-  }
-});
-
-app.post("/webhooks/plaid", async (c) => {
-  const body = await c.req.json();
-  console.log("[Webhook] Received Plaid webhook:", body.webhook_type, body.webhook_code);
-
-  try {
-    const mockReq = new Request("http://localhost/webhooks/plaid", { method: "POST" });
-    const ctx = await createContext({ req: mockReq, resHeaders: new Headers(), info: {} as any });
-    const caller = appRouter.createCaller(ctx);
-    const result = await caller.payments.handlePlaidWebhook({
-      webhookType: body.webhook_type || "",
-      webhookCode: body.webhook_code || "",
-      itemId: body.item_id,
-      error: body.error,
-    });
-    return c.json(result);
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("[Webhook] Plaid webhook processing error:", message);
-    return c.json({ received: false, error: message }, 500);
-  }
-});
-
-app.get("/", (c) => {
-  return c.json({
-    status: "ok",
-    message: "IVX HOLDINGS API is running",
-    version: APP_VERSION,
-    timestamp: new Date().toISOString(),
-  });
-});
-
-app.get("/robots.txt", (c) => {
-  c.header('Content-Type', 'text/plain');
-  return c.body(`User-agent: *
-Allow: /
-Disallow: /api/
-Disallow: /trpc/
-Disallow: /admin/
-Disallow: /track/
-
-Sitemap: https://ivxholding.com/sitemap.xml
-
-User-agent: Googlebot
-Allow: /
-Crawl-delay: 1
-
-User-agent: Bingbot
-Allow: /
-Crawl-delay: 2
-`);
-});
-
-app.get("/sitemap.xml", (c) => {
-  const now = new Date().toISOString().split('T')[0];
-  const properties = store.properties || [];
-  
-  let urls = `
-  <url><loc>https://ivxholding.com</loc><lastmod>${now}</lastmod><changefreq>daily</changefreq><priority>1.0</priority></url>
-  <url><loc>https://ivxholding.com/#properties</loc><lastmod>${now}</lastmod><changefreq>daily</changefreq><priority>0.9</priority></url>
-  <url><loc>https://ivxholding.com/#how-it-works</loc><lastmod>${now}</lastmod><changefreq>weekly</changefreq><priority>0.8</priority></url>
-  <url><loc>https://ivxholding.com/#trust</loc><lastmod>${now}</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
-  <url><loc>https://ivxholding.com/#reviews</loc><lastmod>${now}</lastmod><changefreq>weekly</changefreq><priority>0.7</priority></url>
-  <url><loc>https://ivxholding.com/#partners</loc><lastmod>${now}</lastmod><changefreq>weekly</changefreq><priority>0.8</priority></url>`;
-
-  for (const prop of properties) {
-    urls += `\n  <url><loc>https://ivxholding.com/property/${prop.id}</loc><lastmod>${now}</lastmod><changefreq>daily</changefreq><priority>0.9</priority></url>`;
-  }
-
-  c.header('Content-Type', 'application/xml');
-  return c.body(`<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
-        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
-${urls}
-</urlset>`);
-});
-
-app.get("/structured-data", (c) => {
-  const properties = store.properties || [];
-  const listings = properties.filter(p => p.status === 'live').map(p => ({
-    '@type': 'Product',
-    name: p.name,
-    description: `Fractional ownership in ${p.name}, ${p.city}, ${p.country}. ${p.yield}% annual yield.`,
-    url: `https://ivxholding.com/property/${p.id}`,
-    image: p.images?.[0] || 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=600&q=80',
-    offers: {
-      '@type': 'Offer',
-      price: p.pricePerShare,
-      priceCurrency: 'USD',
-      availability: 'https://schema.org/InStock',
-    },
-  }));
-
-  return c.json({
-    '@context': 'https://schema.org',
-    '@type': 'ItemList',
-    itemListElement: listings.map((item, i) => ({
-      '@type': 'ListItem',
-      position: i + 1,
-      item,
-    })),
-  });
-});
-
-app.post("/track/conversion", async (c) => {
-  try {
-    const body = await c.req.json();
-    const headers = c.req.raw.headers;
-    const ip = getClientIP(headers);
-    const rawUA = headers.get('user-agent') || body.userAgent || '';
-    const parsed = parseUserAgent(rawUA);
-
-    const evt = {
-      id: store.genId('evt'),
-      userId: 'landing_visitor',
-      event: `conversion_${body.event || 'generic'}`,
-      category: 'conversion' as const,
-      properties: {
-        ...body.properties,
-        value: body.value,
-        currency: body.currency || 'USD',
-        utmSource: body.utmSource,
-        utmMedium: body.utmMedium,
-        utmCampaign: body.utmCampaign,
-        fbclid: body.fbclid,
-        gclid: body.gclid,
-        ttclid: body.ttclid,
-        ip,
-        browser: parsed.browser,
-        os: parsed.os,
-        device: parsed.device,
+    console.log('[API] landing-deals: All direct queries exhausted — trying Edge Function...');
+    const efUrl = EDGE_FUNCTION_URL + '?owner=' + encodeURIComponent('Ivan Perez');
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 6000);
+    const efRes = await fetch(efUrl, {
+      headers: {
+        'Authorization': `Bearer ${supabaseAnonKey}`,
+        'Content-Type': 'application/json',
       },
-      sessionId: body.sessionId || `conv_${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      geo: body.geo,
-    };
-    store.addAnalyticsEvent(evt);
-
-    console.log(`[Conversion] ${ip} | ${body.event} | value: ${body.value || 0} | utm: ${body.utmSource || 'direct'}`);
-
-    return c.json({ success: true, eventId: evt.id });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    console.error('[Conversion] Error:', message);
-    return c.json({ success: false, error: message }, 500);
-  }
-});
-
-app.get("/track/diagnostics", (c) => {
-  const allUsers = store.getAllUsers();
-  const waitlist = store.waitlistEntries || [];
-  const landingEvents = store.analyticsEvents.filter(e => e.userId === 'landing_visitor');
-  const liveSessions = store.getLiveSessions();
-  const now = Date.now();
-  const activeSessions = liveSessions.filter(s => now - new Date(s.lastSeen).getTime() < 60000);
-  const visitorLogCount = store.visitorLog?.length || 0;
-
-  const last5minEvents = landingEvents.filter(e => new Date(e.timestamp).getTime() >= now - 300000);
-  const lastHourEvents = landingEvents.filter(e => new Date(e.timestamp).getTime() >= now - 3600000);
-
-  console.log(`[Diagnostics] Users: ${allUsers.length}, Waitlist: ${waitlist.length}, Landing events: ${landingEvents.length}, Visitor logs: ${visitorLogCount}, Live: ${activeSessions.length}`);
-
-  return c.json({
-    status: "ok",
-    store: {
-      users: allUsers.length,
-      waitlistEntries: waitlist.length,
-      totalLeads: allUsers.length + waitlist.length,
-      properties: store.properties.length,
-      totalAnalyticsEvents: store.analyticsEvents.length,
-      landingEvents: landingEvents.length,
-      visitorLogs: visitorLogCount,
-      liveSessions: liveSessions.length,
-      activeLiveSessions: activeSessions.length,
-    },
-    recentActivity: {
-      eventsLast5min: last5minEvents.length,
-      eventsLastHour: lastHourEvents.length,
-      lastEvent: landingEvents.length > 0 ? landingEvents[landingEvents.length - 1].timestamp : null,
-      lastEventType: landingEvents.length > 0 ? landingEvents[landingEvents.length - 1].event : null,
-    },
-    storeReady: store.isReady,
-    uptime: process.uptime(),
-    timestamp: new Date().toISOString(),
-  });
-});
-
-app.get("/health", (c) => {
-  const mem = process.memoryUsage();
-  return c.json({
-    status: "healthy",
-    version: APP_VERSION,
-    uptime: process.uptime(),
-    startedAt: new Date(START_TIME).toISOString(),
-    memory: {
-      rss: `${Math.round(mem.rss / 1024 / 1024)}MB`,
-      heapUsed: `${Math.round(mem.heapUsed / 1024 / 1024)}MB`,
-      heapTotal: `${Math.round(mem.heapTotal / 1024 / 1024)}MB`,
-    },
-    environment: process.env.NODE_ENV || "development",
-    timestamp: new Date().toISOString(),
-  });
-});
-
-app.get("/readiness", (c) => {
-  const isProduction = process.env.NODE_ENV === 'production';
-
-  if (isProduction) {
-    return c.json({
-      ready: true,
-      version: APP_VERSION,
-      timestamp: new Date().toISOString(),
+      signal: controller.signal,
     });
+    clearTimeout(timeout);
+    if (efRes.ok) {
+      const efData = await efRes.json() as { deals?: unknown[] };
+      if (Array.isArray(efData?.deals) && efData.deals.length > 0) {
+        console.log(`[API] landing-deals: Edge Function returned ${efData.deals.length} deals in ${Date.now() - startTime}ms`);
+        return c.json({ deals: efData.deals, source: 'edge_function', servedAt: new Date().toISOString() });
+      }
+    }
+  } catch (err: unknown) {
+    console.log('[API] landing-deals: Edge Function error:', (err as Error)?.message);
   }
 
-  const envResult = validateEnv();
-  return c.json({
-    ready: true,
-    environment: {
-      readinessScore: envResult.readinessScore,
-      configured: envResult.configured.length,
-      total: envResult.configured.length + envResult.missing.length,
-    },
-    version: APP_VERSION,
-    timestamp: new Date().toISOString(),
-  });
+  console.log(`[API] landing-deals: all sources exhausted in ${Date.now() - startTime}ms, serving fallback`);
+  return c.json({ deals: FALLBACK_DEALS, source: "fallback", servedAt: new Date().toISOString() });
 });
 
-app.get("/aws-status", (c) => {
-  const authHeader = c.req.header("authorization");
-  if (!authHeader?.startsWith("Bearer ")) {
-    return c.json({ error: "Unauthorized" }, 401);
+app.get("/landing-page", async (c) => {
+  const { url: supabaseUrl, key: supabaseAnonKey } = getSupabaseCredentials();
+  const apiBaseUrl = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || "").trim().replace(/\/$/, "");
+
+  console.log('[API] landing-page: Serving HTML with runtime credentials');
+
+  let html = '';
+  if (_readLocalFile) {
+    const localPaths = [
+      './ivxholding-landing/index.html',
+      '../ivxholding-landing/index.html',
+      'ivxholding-landing/index.html',
+    ];
+    for (const p of localPaths) {
+      try {
+        const content = _readLocalFile(p);
+        if (content && content.includes('IVX Holdings')) {
+          html = content;
+          console.log('[API] landing-page: Loaded HTML from', p);
+          break;
+        }
+      } catch {}
+    }
   }
 
-  const payload = verifyToken(authHeader.slice(7));
-  if (!payload || (payload.role !== "owner" && payload.role !== "ceo")) {
-    return c.json({ error: "Forbidden: admin access required" }, 403);
+  if (!html) {
+    try {
+      console.log('[API] landing-page: Fetching HTML from ivxholding.com...');
+      const res = await fetch('https://ivxholding.com', { headers: { Accept: 'text/html' } });
+      if (res.ok) html = await res.text();
+    } catch (err: unknown) {
+      console.log('[API] landing-page: Fetch error:', (err as Error)?.message);
+    }
   }
 
-  const status = getAWSSetupStatus();
-  return c.json({
-    configured: !!(process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY),
-    bucket: PROD_BUCKET_NAME,
-    region: PROD_REGION,
-    storageProvider: process.env.STORAGE_PROVIDER || (process.env.AWS_ACCESS_KEY_ID ? "s3" : "local"),
-    setupComplete: !!status,
-    setup: status,
-    iamPolicy: getIAMPolicyDocument(),
-    timestamp: new Date().toISOString(),
-  });
+  if (!html || !html.includes('IVX Holdings')) {
+    return c.text('Landing page HTML not available', 404);
+  }
+
+  html = html.replace(/__IVX_SUPABASE_URL__/g, supabaseUrl);
+  html = html.replace(/__IVX_SUPABASE_ANON_KEY__/g, supabaseAnonKey);
+  html = html.replace(/__IVX_API_BASE_URL__/g, apiBaseUrl);
+  html = html.replace(/__IVX_APP_URL__/g, apiBaseUrl);
+  html = html.replace(/__IVX_BACKEND_URL__/g, apiBaseUrl);
+
+  const metaReplacements: [string, string][] = [
+    ['ivx-sb-url', supabaseUrl],
+    ['ivx-sb-key', supabaseAnonKey],
+    ['ivx-sb-url-fallback', supabaseUrl],
+    ['ivx-sb-key-fallback', supabaseAnonKey],
+    ['ivx-api-url', apiBaseUrl],
+    ['ivx-backend-url', apiBaseUrl],
+  ];
+  for (const [name, value] of metaReplacements) {
+    const pattern = new RegExp(`<meta\\s+name="${name}"\\s+content="[^"]*"`);
+    const match = html.match(pattern);
+    if (match) html = html.replace(match[0], `<meta name="${name}" content="${value}"`);
+  }
+
+  const jsVarReplacements: [RegExp, string][] = [
+    [/var _FALLBACK_SUPABASE_URL = '[^']*';/, `var _FALLBACK_SUPABASE_URL = '${supabaseUrl}';`],
+    [/var _FALLBACK_SUPABASE_KEY = '[^']*';/, `var _FALLBACK_SUPABASE_KEY = '${supabaseAnonKey}';`],
+    [/var _RORK_API_URL = '[^']*';/, `var _RORK_API_URL = '${apiBaseUrl}';`],
+    [/var _RORK_BACKEND_URL = '[^']*';/, `var _RORK_BACKEND_URL = '${apiBaseUrl}';`],
+  ];
+  for (const [pattern, replacement] of jsVarReplacements) {
+    if (pattern.test(html)) html = html.replace(pattern, replacement);
+  }
+
+  console.log('[API] landing-page: Served with credentials injected (' + html.length + ' bytes)');
+
+  return c.html(html);
 });
 
-app.get("/staging-check", (c) => {
-  const authHeader = c.req.header("authorization");
-  if (!authHeader?.startsWith("Bearer ")) {
-    return c.json({ error: "Unauthorized" }, 401);
+app.post("/deploy-landing", async (c) => {
+  const { url: supabaseUrl, key: supabaseAnonKey } = getSupabaseCredentials();
+  const apiBaseUrl = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || "").trim().replace(/\/$/, "");
+  const awsAccessKey = (process.env.AWS_ACCESS_KEY_ID || "").trim();
+  const awsSecretKey = (process.env.AWS_SECRET_ACCESS_KEY || "").trim();
+  const awsRegion = (process.env.AWS_REGION || "us-east-1").trim();
+
+  console.log("[API] deploy-landing request received");
+  console.log("[API] Supabase configured:", !!(supabaseUrl && supabaseAnonKey));
+  console.log("[API] AWS configured:", !!(awsAccessKey && awsSecretKey));
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return c.json({ success: false, errors: ["Supabase credentials not configured"], filesUploaded: [] }, 500);
   }
 
-  const payload = verifyToken(authHeader.slice(7));
-  if (!payload || (payload.role !== "owner" && payload.role !== "ceo")) {
-    return c.json({ error: "Forbidden: admin access required" }, 403);
+  const configJson = JSON.stringify({
+    supabaseUrl,
+    supabaseAnonKey,
+    apiBaseUrl,
+    appUrl: apiBaseUrl,
+    backendUrl: apiBaseUrl,
+    deployedAt: new Date().toISOString(),
+  }, null, 2);
+
+  const filesUploaded: string[] = [];
+  const errors: string[] = [];
+
+  const s3Put = async (key: string, body: string, contentType: string, bucket: string, host: string, awsAccessKeyId: string, awsSecretAccessKeyVal: string, region: string): Promise<boolean> => {
+      const encoder = new TextEncoder();
+      const now = new Date();
+      const amzDate = now.toISOString().replace(/[:\-]|\.\d{3}/g, "").substring(0, 15) + "Z"; // eslint-disable-line no-useless-escape
+      const dateStamp = amzDate.substring(0, 8);
+
+      const payloadHash = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", encoder.encode(body))))
+        .map(b => b.toString(16).padStart(2, "0")).join("");
+
+      const canonicalHeaders = [
+        `cache-control:no-cache, no-store, must-revalidate`,
+        `content-type:${contentType}`,
+        `host:${host}`,
+        `x-amz-content-sha256:${payloadHash}`,
+        `x-amz-date:${amzDate}`,
+      ].join("\n") + "\n";
+      const signedHeaders = "cache-control;content-type;host;x-amz-content-sha256;x-amz-date";
+      const canonicalRequest = ["PUT", "/" + key, "", canonicalHeaders, signedHeaders, payloadHash].join("\n");
+
+      const canonicalHash = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", encoder.encode(canonicalRequest))))
+        .map(b => b.toString(16).padStart(2, "0")).join("");
+
+      const credentialScope = `${dateStamp}/${region}/s3/aws4_request`;
+      const stringToSign = ["AWS4-HMAC-SHA256", amzDate, credentialScope, canonicalHash].join("\n");
+
+      const hmac = async (k: ArrayBuffer, msg: string): Promise<ArrayBuffer> => {
+        const ck = await crypto.subtle.importKey("raw", k, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+        return crypto.subtle.sign("HMAC", ck, encoder.encode(msg));
+      };
+
+      const kDate = await hmac(encoder.encode("AWS4" + awsSecretAccessKeyVal).buffer as ArrayBuffer, dateStamp);
+      const kRegion = await hmac(kDate, region);
+      const kService = await hmac(kRegion, "s3");
+      const kSigning = await hmac(kService, "aws4_request");
+      const signature = Array.from(new Uint8Array(await hmac(kSigning, stringToSign)))
+        .map(b => b.toString(16).padStart(2, "0")).join("");
+
+      const authorization = `AWS4-HMAC-SHA256 Credential=${awsAccessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+
+      try {
+        const response = await fetch(`https://${host}/${key}`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": contentType,
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "x-amz-content-sha256": payloadHash,
+            "x-amz-date": amzDate,
+            "Authorization": authorization,
+          },
+          body,
+        });
+        console.log(`[API] S3 PUT ${key}: ${response.status}`);
+        return response.ok || response.status === 200;
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : "Unknown error";
+        console.log(`[API] S3 PUT ${key} error:`, message);
+        return false;
+      }
+  };
+
+  if (awsAccessKey && awsSecretKey) {
+    const bucket = "ivxholding.com";
+    const host = awsRegion === "us-east-1" ? `${bucket}.s3.amazonaws.com` : `${bucket}.s3.${awsRegion}.amazonaws.com`;
+
+    /* s3Put moved outside if block for TS strict mode */
+    if (await s3Put("ivx-config.json", configJson, "application/json", bucket, host, awsAccessKey, awsSecretKey, awsRegion)) {
+      filesUploaded.push("ivx-config.json");
+    } else {
+      errors.push("Failed to upload ivx-config.json to S3");
+    }
+
+    try {
+      let html = '';
+      if (_readLocalFile) {
+        const localPaths = [
+          './ivxholding-landing/index.html',
+          '../ivxholding-landing/index.html',
+          'ivxholding-landing/index.html',
+        ];
+        for (const p of localPaths) {
+          try {
+            const content = _readLocalFile(p);
+            if (content && content.includes('IVX Holdings')) {
+              html = content;
+              console.log('[API] Loaded local landing HTML from:', p, '(' + html.length + ' bytes)');
+              break;
+            }
+          } catch {}
+        }
+      }
+      if (!html || !html.includes('IVX Holdings')) {
+        console.log("[API] Fetching current landing HTML from ivxholding.com...");
+        const htmlResponse = await fetch("https://ivxholding.com", { headers: { Accept: "text/html" } });
+        if (htmlResponse.ok) {
+          html = await htmlResponse.text();
+        }
+      }
+      if (html && html.includes("IVX Holdings")) {
+        {
+          html = html.replace(/__IVX_SUPABASE_URL__/g, supabaseUrl);
+          html = html.replace(/__IVX_SUPABASE_ANON_KEY__/g, supabaseAnonKey);
+          html = html.replace(/__IVX_API_BASE_URL__/g, apiBaseUrl);
+          html = html.replace(/__IVX_APP_URL__/g, apiBaseUrl);
+          html = html.replace(/__IVX_BACKEND_URL__/g, apiBaseUrl);
+
+          const metaReplacements: [string, string][] = [
+            ["ivx-sb-url", supabaseUrl],
+            ["ivx-sb-key", supabaseAnonKey],
+            ["ivx-sb-url-fallback", supabaseUrl],
+            ["ivx-sb-key-fallback", supabaseAnonKey],
+            ["ivx-api-url", apiBaseUrl],
+            ["ivx-backend-url", apiBaseUrl],
+          ];
+          for (const [name, value] of metaReplacements) {
+            const metaPattern = new RegExp(`<meta\\s+name="${name}"\\s+content="[^"]*"`);
+            const match = html.match(metaPattern);
+            if (match) {
+              html = html.replace(match[0], `<meta name="${name}" content="${value}"`);
+            }
+          }
+
+          const jsVarReplacements: [RegExp, string][] = [
+            [/var _FALLBACK_SUPABASE_URL = '[^']*';/, `var _FALLBACK_SUPABASE_URL = '${supabaseUrl}';`],
+            [/var _FALLBACK_SUPABASE_KEY = '[^']*';/, `var _FALLBACK_SUPABASE_KEY = '${supabaseAnonKey}';`],
+            [/var _RORK_API_URL = '[^']*';/, `var _RORK_API_URL = '${apiBaseUrl}';`],
+            [/var _RORK_BACKEND_URL = '[^']*';/, `var _RORK_BACKEND_URL = '${apiBaseUrl}';`],
+          ];
+          for (const [pattern, replacement] of jsVarReplacements) {
+            if (pattern.test(html)) {
+              html = html.replace(pattern, replacement);
+            }
+          }
+
+          if (!html.includes("__IVX_")) {
+            if (await s3Put("index.html", html, "text/html; charset=utf-8", bucket, host, awsAccessKey, awsSecretKey, awsRegion)) {
+              filesUploaded.push("index.html");
+              console.log("[API] index.html deployed with real credentials (", html.length, "bytes)");
+            } else {
+              errors.push("Failed to upload index.html to S3");
+            }
+          } else {
+            console.log("[API] HTML still has __IVX_ placeholders after injection — deploying anyway");
+            if (await s3Put("index.html", html, "text/html; charset=utf-8", bucket, host, awsAccessKey, awsSecretKey, awsRegion)) {
+              filesUploaded.push("index.html (with some placeholders)");
+              console.log("[API] index.html deployed (some placeholders remain but backend fallbacks will work)");
+            } else {
+              errors.push("Failed to upload index.html to S3");
+            }
+          }
+        }
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      console.log("[API] HTML deploy error:", message);
+      errors.push("HTML deploy error: " + message);
+    }
+  } else {
+    console.log("[API] AWS credentials not configured — config will be served from /landing-config only");
+    errors.push("AWS credentials not configured — S3 upload skipped. Deals still served via /landing-deals and /landing-config.");
   }
 
-  const result = runStagingChecklist();
-  return c.json({
-    ready: result.ready,
-    checks: result.checks,
-    timestamp: new Date().toISOString(),
-  });
-});
+  const success = filesUploaded.length > 0 || (!awsAccessKey && !!(supabaseUrl && supabaseAnonKey));
+  console.log("[API] deploy-landing complete:", success ? "SUCCESS" : "PARTIAL", "| files:", filesUploaded.join(", "), "| errors:", errors.length);
 
-app.get("/env-check", (c) => {
-  const authHeader = c.req.header("authorization");
-  if (!authHeader?.startsWith("Bearer ")) {
-    return c.json({ error: "Unauthorized" }, 401);
-  }
-
-  const payload = verifyToken(authHeader.slice(7));
-  if (!payload || (payload.role !== "owner" && payload.role !== "ceo")) {
-    return c.json({ error: "Forbidden: admin access required" }, 403);
-  }
-
-  const envResult = validateEnv();
-  return c.json({
-    readinessScore: envResult.readinessScore,
-    isValid: envResult.isValid,
-    configured: envResult.configured,
-    missing: envResult.missing,
-    warnings: envResult.warnings,
-    byCategory: envResult.byCategory,
-  });
-});
-
-app.onError(async (err, c) => {
-  console.error(`[ERROR] ${c.req.method} ${c.req.url}:`, err.message);
-
-  captureError(err instanceof Error ? err : new Error(String(err)), {
-    tags: { method: c.req.method, path: c.req.url },
-    extra: { url: c.req.url, method: c.req.method },
-  }).catch(() => {});
-
-  const isProduction = process.env.NODE_ENV === 'production';
-  return c.json(
-    {
-      error: "Internal Server Error",
-      message: isProduction ? "Something went wrong" : err.message,
-      ...(isProduction ? {} : { stack: err instanceof Error ? err.stack : undefined }),
-    },
-    500
-  );
-});
-
-app.notFound((c) => {
-  return c.json({ error: "Not Found", path: c.req.url }, 404);
+  return c.json({ success, filesUploaded, errors, servedAt: new Date().toISOString() });
 });
 
 export default app;
