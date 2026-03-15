@@ -103,7 +103,7 @@ export default function SignUpScreen() {
     return re.test(phone);
   };
 
-  const handleRegister = () => {
+  const handleRegister = async () => {
     if (!formData.firstName || !formData.lastName) {
       Alert.alert('Missing Information', 'Please enter your first and last name.');
       return;
@@ -130,24 +130,32 @@ export default function SignUpScreen() {
     }
 
     setIsLoading(true);
-    authRegister({
-      email: formData.email,
-      password: formData.password,
-      firstName: formData.firstName,
-      lastName: formData.lastName,
-      phone: formData.phone ? `${formData.dialCode}${formData.phone}` : undefined,
-      country: formData.country,
-    }).then((result) => {
+    try {
+      const result = await authRegister({
+        email: formData.email,
+        password: formData.password,
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        phone: formData.phone ? `${formData.dialCode}${formData.phone}` : undefined,
+        country: formData.country,
+      });
+
       logger.signup.log('Register result:', result);
-      trackConversion('signup_completed', 0, { country: formData.country });
-      setCurrentStep('verify_email');
-      startResendTimer();
-    }).catch((error) => {
-      console.error('[Signup] Register error:', error);
-      Alert.alert('Error', 'Registration failed. Please try again.');
-    }).finally(() => {
+
+      if (result.success) {
+        trackConversion('signup_completed', 0, { country: formData.country });
+        setCurrentStep('verify_email');
+        startResendTimer();
+      } else {
+        console.error('[Signup] Register failed:', result.message);
+        Alert.alert('Registration Failed', result.message || 'Could not create account. Please try again.');
+      }
+    } catch (error: any) {
+      console.error('[Signup] Register exception:', error);
+      Alert.alert('Error', error?.message || 'Registration failed. Please try again.');
+    } finally {
       setIsLoading(false);
-    });
+    }
   };
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
