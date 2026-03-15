@@ -5,7 +5,7 @@ export const queryClientConfig = {
       gcTime: 1000 * 60 * 30,
       retry: (failureCount: number) => failureCount < 3,
       retryDelay: (attemptIndex: number) => Math.min(1000 * 2 ** attemptIndex, 30000),
-      refetchOnWindowFocus: false,
+      refetchOnWindowFocus: true,
       refetchOnReconnect: true,
       networkMode: "always" as const,
       throwOnError: false,
