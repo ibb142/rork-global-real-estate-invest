@@ -69,7 +69,7 @@ export default function TrashBinScreen() {
   const restoreMutation = useMutation({
     mutationFn: async (input: { id: string }) => {
       console.log('[Trash Bin] Restoring deal:', input.id);
-      const { data, error } = await restoreFromTrash(input.id);
+      const { data, error } = await restoreFromTrash(input.id, { adminOverride: true });
       if (error) throw error;
       return { success: true, ...data };
     },
@@ -87,7 +87,7 @@ export default function TrashBinScreen() {
   const permanentDeleteMutation = useMutation({
     mutationFn: async (input: { id: string }) => {
       console.log('[Trash Bin] PERMANENT DELETE:', input.id);
-      const { error } = await permanentlyDeleteJVDeal(input.id);
+      const { error } = await permanentlyDeleteJVDeal(input.id, { adminOverride: true });
       if (error) throw error;
       return { success: true };
     },
