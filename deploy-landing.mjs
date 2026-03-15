@@ -104,15 +104,52 @@ async function deploy() {
   console.log('   ✅ www redirect configured');
 
   console.log('\n📤 Uploading index.html...');
-  const apiBaseUrl = (process.env.EXPO_PUBLIC_API_BASE_URL || 'https://ivxholding.com').trim().replace(/\/$/, '');
-  const supabaseUrl = (process.env.EXPO_PUBLIC_SUPABASE_URL || '').trim();
-  const supabaseAnonKey = (process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '').trim();
-  const appUrl = (process.env.EXPO_PUBLIC_APP_URL || process.env.EXPO_PUBLIC_RORK_API_BASE_URL || '').trim().replace(/\/$/, '');
+  const apiBaseUrl = (
+    process.env.EXPO_PUBLIC_API_BASE_URL ||
+    process.env.EXPO_PUBLIC_RORK_API_BASE_URL ||
+    'https://ivxholding.com'
+  ).trim().replace(/\/$/, '');
+  const supabaseUrl = (
+    process.env.EXPO_PUBLIC_SUPABASE_URL ||
+    process.env.SUPABASE_URL ||
+    ''
+  ).trim();
+  const supabaseAnonKey = (
+    process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ||
+    process.env.SUPABASE_ANON_KEY ||
+    ''
+  ).trim();
+  const appUrl = (
+    process.env.EXPO_PUBLIC_APP_URL ||
+    process.env.EXPO_PUBLIC_RORK_API_BASE_URL ||
+    ''
+  ).trim().replace(/\/$/, '');
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    console.error('\n❌ CRITICAL: Supabase credentials are MISSING!');
+    console.error('   EXPO_PUBLIC_SUPABASE_URL =', supabaseUrl || '(empty)');
+    console.error('   EXPO_PUBLIC_SUPABASE_ANON_KEY =', supabaseAnonKey ? '(set)' : '(empty)');
+    console.error('\n   Without these, live deals will NOT load on the landing page.');
+    console.error('   Set them before deploying:');
+    console.error('     EXPO_PUBLIC_SUPABASE_URL="https://xxx.supabase.co" \\');
+    console.error('     EXPO_PUBLIC_SUPABASE_ANON_KEY="eyJ..." \\');
+    console.error('     node deploy-landing.mjs');
+    console.error('');
+    console.error('   Continuing deploy WITHOUT Supabase — deals section will try API fallback.');
+    console.error('');
+  }
+
+  const backendUrl = (
+    process.env.EXPO_PUBLIC_RORK_API_BASE_URL ||
+    ''
+  ).trim().replace(/\/$/, '');
+
   let html = readFileSync('./ivxholding-landing/index.html', 'utf-8');
   html = html.replace(/__IVX_API_BASE_URL__/g, apiBaseUrl);
   html = html.replace(/__IVX_SUPABASE_URL__/g, supabaseUrl);
   html = html.replace(/__IVX_SUPABASE_ANON_KEY__/g, supabaseAnonKey);
   html = html.replace(/__IVX_APP_URL__/g, appUrl);
+  html = html.replace(/__IVX_BACKEND_URL__/g, backendUrl);
   if (apiBaseUrl) {
     console.log(`   🔗 API URL injected: ${apiBaseUrl}`);
   } else {
@@ -137,6 +174,24 @@ async function deploy() {
     CacheControl: 'no-cache, no-store, must-revalidate',
   }));
   console.log('   ✅ index.html uploaded');
+
+  console.log('\n📤 Uploading ivx-config.json (Supabase credentials for fallback)...');
+  const configJson = JSON.stringify({
+    supabaseUrl: supabaseUrl || '',
+    supabaseAnonKey: supabaseAnonKey || '',
+    apiBaseUrl: apiBaseUrl || '',
+    appUrl: appUrl || '',
+    backendUrl: backendUrl || '',
+    deployedAt: new Date().toISOString(),
+  });
+  await s3.send(new PutObjectCommand({
+    Bucket: BUCKET_NAME,
+    Key: 'ivx-config.json',
+    Body: configJson,
+    ContentType: 'application/json',
+    CacheControl: 'no-cache, no-store, must-revalidate',
+  }));
+  console.log('   ✅ ivx-config.json uploaded');
 
   console.log('\n🖼️  Uploading logo...');
   const logoBuffer = readFileSync('./assets/images/ivx-logo.png');
