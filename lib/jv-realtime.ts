@@ -1,12 +1,39 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import { Platform, AppState, AppStateStatus } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
+import { syncToLandingPage } from '@/lib/landing-sync';
+import { resetSupabaseCheck, clearLocalDealCache } from '@/lib/jv-storage';
+
+export type RealtimeStatus = 'live' | 'polling' | 'offline';
 
 const JV_QUERY_KEY_PREFIX = 'jv-deals';
 const PUBLISHED_QUERY_KEY = 'published-jv-deals';
 const AGREEMENTS_QUERY_KEY = 'jv-agreements';
 const BROADCAST_CHANNEL_NAME = 'jv-deals-cross-tab';
+
+let _landingSyncTimeout: ReturnType<typeof setTimeout> | null = null;
+let _lastLandingSyncTimestamp = 0;
+const LANDING_SYNC_DEBOUNCE = 3000;
+
+function triggerLandingSync() {
+  const now = Date.now();
+  if (now - _lastLandingSyncTimestamp < LANDING_SYNC_DEBOUNCE) {
+    return;
+  }
+  if (_landingSyncTimeout) clearTimeout(_landingSyncTimeout);
+  _landingSyncTimeout = setTimeout(async () => {
+    _lastLandingSyncTimestamp = Date.now();
+    try {
+      const result = await syncToLandingPage();
+      if (result.syncedDeals > 0) {
+        console.log('[JV-Realtime] Landing sync complete:', result.syncedDeals, 'deals synced');
+      }
+    } catch (err) {
+      console.log('[JV-Realtime] Landing sync failed:', (err as Error)?.message);
+    }
+  }, 1000);
+}
 
 let _broadcastChannel: BroadcastChannel | null = null;
 let _broadcastListenerCount = 0;
@@ -14,15 +41,25 @@ let _tableVerified = false;
 let _tableVerifyTimestamp = 0;
 const TABLE_VERIFY_TTL = 30000;
 
+function isSupabaseConfigured(): boolean {
+  const url = (process.env.EXPO_PUBLIC_SUPABASE_URL || '').trim();
+  const key = (process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '').trim();
+  return !!(url && key);
+}
+
 async function verifyTableExists(): Promise<boolean> {
+  if (!isSupabaseConfigured()) {
+    console.log('[JV-Realtime] Supabase not configured — skipping table verify');
+    return false;
+  }
   const now = Date.now();
   if (_tableVerified && (now - _tableVerifyTimestamp) < TABLE_VERIFY_TTL) return true;
   try {
     const { error } = await supabase.from('jv_deals').select('id').limit(1);
     if (error) {
       const msg = (error.message || '').toLowerCase();
-      if (msg.includes('could not find the table') || msg.includes('schema cache')) {
-        console.log('[JV-Realtime] ⚠️ jv_deals table NOT found in Supabase — run supabase-full-setup.sql');
+      if (msg.includes('could not find the table') || msg.includes('schema cache') || msg.includes('not_configured')) {
+        console.log('[JV-Realtime] jv_deals table NOT found — run supabase-full-setup.sql');
         _tableVerified = false;
         _tableVerifyTimestamp = now;
         return false;
@@ -30,7 +67,7 @@ async function verifyTableExists(): Promise<boolean> {
     }
     _tableVerified = true;
     _tableVerifyTimestamp = now;
-    console.log('[JV-Realtime] ✅ jv_deals table verified in Supabase');
+    console.log('[JV-Realtime] jv_deals table verified in Supabase');
     return true;
   } catch (e) {
     console.log('[JV-Realtime] Table verify failed:', (e as Error)?.message);
@@ -73,30 +110,45 @@ function notifyCrossTabs(action: string) {
 }
 
 export function invalidateAllJVQueries(queryClient: ReturnType<typeof useQueryClient>, broadcastToOtherTabs: boolean = true) {
-  console.log('[JV-Realtime] 🔄 Invalidating ALL JV query keys + forcing refetch');
+  console.log('[JV-Realtime] 🔄 Invalidating ALL JV query keys + clearing local cache + forcing refetch');
+
+  resetSupabaseCheck();
+
+  void clearLocalDealCache().then(() => {
+    console.log('[JV-Realtime] Local deal cache cleared before refetch');
+  }).catch(() => {});
+
+  void queryClient.invalidateQueries({ queryKey: ['jvAgreements.list'] });
   void queryClient.invalidateQueries({ queryKey: [JV_QUERY_KEY_PREFIX] });
   void queryClient.invalidateQueries({ queryKey: [PUBLISHED_QUERY_KEY] });
   void queryClient.invalidateQueries({ queryKey: [AGREEMENTS_QUERY_KEY] });
-  void queryClient.invalidateQueries({ queryKey: ['jvAgreements.list'] });
+  void queryClient.invalidateQueries({ queryKey: ['jv-deals', 'published-list'] });
+  void queryClient.invalidateQueries({ queryKey: ['jv-deal'] });
+  void queryClient.invalidateQueries({ queryKey: ['properties'] });
+  void queryClient.invalidateQueries({ queryKey: ['properties', 'home'] });
+  void queryClient.invalidateQueries({ queryKey: ['properties', 'market'] });
+  void queryClient.invalidateQueries({ queryKey: ['entity-images'] });
   void queryClient.invalidateQueries({
     predicate: (query) => {
       const key = query.queryKey;
       if (!Array.isArray(key)) return false;
       const first = String(key[0] ?? '');
-      return first.includes('jv') || first.includes('published-jv');
+      return first.includes('jv') || first.includes('published-jv') || first.includes('propert');
     },
   });
 
-  void queryClient.refetchQueries({ queryKey: [PUBLISHED_QUERY_KEY] });
   void queryClient.refetchQueries({ queryKey: ['jvAgreements.list'] });
+  void queryClient.refetchQueries({ queryKey: [PUBLISHED_QUERY_KEY] });
   void queryClient.refetchQueries({ queryKey: [JV_QUERY_KEY_PREFIX] });
+  void queryClient.refetchQueries({ queryKey: ['jv-deals', 'published-list'] });
+  void queryClient.refetchQueries({ queryKey: ['properties', 'home'] });
 
   if (broadcastToOtherTabs) {
     notifyCrossTabs('invalidateAll');
   }
 }
 
-export function useJVRealtime(channelName: string = 'jv-deals-sync', enableFallbackPolling: boolean = true) {
+export function useJVRealtime(channelName: string = 'jv-deals-sync', enableFallbackPolling: boolean = true): { status: RealtimeStatus; lastEventAt: number } {
   const queryClient = useQueryClient();
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const fallbackIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -105,8 +157,11 @@ export function useJVRealtime(channelName: string = 'jv-deals-sync', enableFallb
   const destroyedRef = useRef<boolean>(false);
   const tableCheckDoneRef = useRef<boolean>(false);
   const maxRetries = 12;
-  const FALLBACK_POLL_INTERVAL = 6000;
-  const CONNECTED_POLL_INTERVAL = 20000;
+  const [status, setStatus] = useState<RealtimeStatus>('offline');
+  const [lastEventAt, setLastEventAt] = useState<number>(0);
+  const FALLBACK_POLL_INTERVAL = 3000;
+  const CONNECTED_POLL_INTERVAL = 3000;
+  const _pollSyncRef = useRef<number>(0);
 
   useEffect(() => {
     destroyedRef.current = false;
@@ -133,16 +188,31 @@ export function useJVRealtime(channelName: string = 'jv-deals-sync', enableFallb
 
       try {
         if (channelRef.current) {
-          void supabase.removeChannel(channelRef.current);
+          try { void supabase.removeChannel(channelRef.current); } catch {}
           channelRef.current = null;
+        }
+
+        if (!isSupabaseConfigured()) {
+          console.log(`[JV-Realtime:${channelName}] Supabase not configured — using fallback polling only`);
+          resetFallbackPolling(FALLBACK_POLL_INTERVAL);
+          return;
         }
 
         const channel = supabase
           .channel(channelName)
           .on('postgres_changes', { event: '*', schema: 'public', table: 'jv_deals' }, (payload) => {
-            console.log(`[JV-Realtime:${channelName}] ⚡ Change detected:`, payload.eventType, '| new:', (payload.new as any)?.id, '| old:', (payload.old as any)?.id);
+            const newRecord = payload.new as Record<string, unknown> | undefined;
+            const oldRecord = payload.old as Record<string, unknown> | undefined;
+            console.log(`[JV-Realtime:${channelName}] ⚡ Change detected:`, payload.eventType, '| new:', newRecord?.id, '| old:', oldRecord?.id);
             retryCountRef.current = 0;
+            setLastEventAt(Date.now());
+            resetSupabaseCheck();
             invalidateAllJVQueries(queryClient);
+
+            if (newRecord?.published === true || oldRecord?.published === true) {
+              console.log(`[JV-Realtime:${channelName}] 🌐 Published deal changed — triggering landing sync`);
+              triggerLandingSync();
+            }
           })
           .subscribe((status) => {
             if (destroyedRef.current) return;
@@ -150,15 +220,17 @@ export function useJVRealtime(channelName: string = 'jv-deals-sync', enableFallb
             if (status === 'SUBSCRIBED') {
               realtimeConnectedRef.current = true;
               retryCountRef.current = 0;
+              setStatus('live');
               console.log(`[JV-Realtime:${channelName}] ✅ Realtime connected — events will fire on jv_deals changes`);
               resetFallbackPolling(CONNECTED_POLL_INTERVAL);
             } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
               realtimeConnectedRef.current = false;
+              setStatus('polling');
               console.log(`[JV-Realtime:${channelName}] ❌ Realtime failed (${status}), retry ${retryCountRef.current}/${maxRetries}`);
               resetFallbackPolling(FALLBACK_POLL_INTERVAL);
               if (retryCountRef.current < maxRetries) {
                 retryCountRef.current++;
-                const delay = Math.min(1500 * Math.pow(1.4, retryCountRef.current), 15000);
+                const delay = Math.min(1500 * Math.pow(1.4, retryCountRef.current), 3000);
                 console.log(`[JV-Realtime:${channelName}] Will retry realtime in ${Math.round(delay)}ms`);
                 setTimeout(() => { if (!destroyedRef.current) void connectChannel(); }, delay);
               } else {
@@ -166,6 +238,7 @@ export function useJVRealtime(channelName: string = 'jv-deals-sync', enableFallb
               }
             } else if (status === 'CLOSED') {
               realtimeConnectedRef.current = false;
+              setStatus('polling');
               console.log(`[JV-Realtime:${channelName}] Channel closed — restarting fallback polling`);
               resetFallbackPolling(FALLBACK_POLL_INTERVAL);
               if (retryCountRef.current < maxRetries) {
@@ -189,11 +262,13 @@ export function useJVRealtime(channelName: string = 'jv-deals-sync', enableFallb
         fallbackIntervalRef.current = null;
       }
       if (!enableFallbackPolling) return;
-      console.log(`[JV-Realtime:${channelName}] 🔄 Fallback polling active (every ${interval / 1000}s)`);
       fallbackIntervalRef.current = setInterval(() => {
         if (!destroyedRef.current) {
-          console.log(`[JV-Realtime:${channelName}] 🔄 Poll tick — refetching (rt: ${realtimeConnectedRef.current})`);
           invalidateAllJVQueries(queryClient, false);
+          _pollSyncRef.current++;
+          if (_pollSyncRef.current % 5 === 0) {
+            triggerLandingSync();
+          }
         }
       }, interval);
     }
@@ -225,6 +300,7 @@ export function useJVRealtime(channelName: string = 'jv-deals-sync', enableFallb
       visibilityHandler = () => {
         if (!document.hidden && !destroyedRef.current) {
           console.log(`[JV-Realtime:${channelName}] 👁️ Tab visible — force refetch + reconnect`);
+          resetSupabaseCheck();
           invalidateAllJVQueries(queryClient, false);
           if (!realtimeConnectedRef.current && retryCountRef.current < maxRetries) {
             retryCountRef.current = 0;
@@ -238,6 +314,7 @@ export function useJVRealtime(channelName: string = 'jv-deals-sync', enableFallb
       appStateSubscription = AppState.addEventListener('change', (state: AppStateStatus) => {
         if (state === 'active' && !destroyedRef.current) {
           console.log(`[JV-Realtime:${channelName}] 📱 App active — force refetch + reconnect`);
+          resetSupabaseCheck();
           invalidateAllJVQueries(queryClient, false);
           if (!realtimeConnectedRef.current && retryCountRef.current < maxRetries) {
             retryCountRef.current = 0;
@@ -275,6 +352,8 @@ export function useJVRealtime(channelName: string = 'jv-deals-sync', enableFallb
       }
     };
   }, [queryClient, channelName, enableFallbackPolling]);
+
+  return { status, lastEventAt };
 }
 
 export function useForceJVRefresh() {
