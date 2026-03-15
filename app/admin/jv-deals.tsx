@@ -10,6 +10,8 @@ import {
   Alert,
   RefreshControl,
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -29,15 +31,32 @@ import {
   Search,
   Globe,
   FileText,
+  Shield,
+  ArchiveRestore,
+  Archive,
+  ImagePlus,
+  Camera,
+  AlertTriangle,
+  Sprout,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { fetchJVDeals, updateJVDeal, archiveJVDeal, restoreJVDeal, permanentlyDeleteJVDeal, recoverPhotosForDeal, adminRestorePhotos } from '@/lib/jv-storage';
+import { fetchJVDeals, updateJVDeal, archiveJVDeal, restoreJVDeal, permanentlyDeleteJVDeal, recoverPhotosForDeal, adminRestorePhotos, resetSupabaseCheck, upsertJVDeal } from '@/lib/jv-storage';
 import { invalidateAllJVQueries, useJVRealtime } from '@/lib/jv-realtime';
-import { Shield, ArchiveRestore, Archive, ImagePlus, Camera } from 'lucide-react-native';
 import { formatCurrency } from '@/lib/formatters';
+import { syncToLandingPage } from '@/lib/landing-sync';
 
 type JVDealType = 'equity_split' | 'profit_sharing' | 'hybrid' | 'development';
+
+interface JVPartner {
+  id: string;
+  name: string;
+  role: string;
+  contribution: number;
+  equityShare: number;
+  location: string;
+  verified: boolean;
+}
 
 interface JVDeal {
   id: string;
@@ -52,7 +71,7 @@ interface JVDeal {
   expectedROI: number;
   propertyAddress?: string;
   description: string;
-  partners: Array<{ id: string; name: string; role: string; contribution: number; equityShare: number; location: string; verified: boolean }>;
+  partners: JVPartner[];
   profitSplit: Array<{ partnerId: string; percentage: number }>;
   startDate: string;
   endDate: string;
@@ -71,6 +90,26 @@ interface JVDeal {
   createdBy: string;
 }
 
+interface JVQueryData {
+  deals: JVDeal[];
+}
+
+interface EditFormState {
+  title: string;
+  projectName: string;
+  type: JVDealType;
+  totalInvestment: string;
+  expectedROI: string;
+  propertyAddress: string;
+  description: string;
+  distributionFrequency: string;
+  exitStrategy: string;
+  governingLaw: string;
+  managementFee: string;
+  performanceFee: string;
+  minimumHoldPeriod: string;
+}
+
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
   draft: { label: 'Draft', color: '#9A9A9A', bg: '#9A9A9A18' },
   pending_review: { label: 'Pending', color: '#FFB800', bg: '#FFB80018' },
@@ -87,48 +126,66 @@ const TYPE_LABELS: Record<string, string> = {
   development: 'Development',
 };
 
+const FILTER_OPTIONS = [
+  { id: 'all', label: 'All' },
+  { id: 'published', label: 'Published' },
+  { id: 'unpublished', label: 'Unpublished' },
+  { id: 'active', label: 'Active' },
+  { id: 'draft', label: 'Draft' },
+  { id: 'archived', label: 'Archived' },
+] as const;
+
+const DEAL_TYPES: JVDealType[] = ['equity_split', 'profit_sharing', 'hybrid', 'development'];
+
+const DEFAULT_EDIT_FORM: EditFormState = {
+  title: '',
+  projectName: '',
+  type: 'equity_split',
+  totalInvestment: '',
+  expectedROI: '',
+  propertyAddress: '',
+  description: '',
+  distributionFrequency: 'quarterly',
+  exitStrategy: 'Sale of Property',
+  governingLaw: 'State of New York, USA',
+  managementFee: '',
+  performanceFee: '',
+  minimumHoldPeriod: '',
+};
+
 export default function AdminJVDealsScreen() {
   const router = useRouter();
-  const [refreshing, setRefreshing] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [refreshing, setRefreshing] = useState<boolean>(false);
+  const [searchQuery, setSearchQuery] = useState<string>('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
-  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [editModalVisible, setEditModalVisible] = useState<boolean>(false);
   const [selectedDeal, setSelectedDeal] = useState<JVDeal | null>(null);
-  const [deleteConfirmVisible, setDeleteConfirmVisible] = useState(false);
+  const [deleteConfirmVisible, setDeleteConfirmVisible] = useState<boolean>(false);
   const [deleteTarget, setDeleteTarget] = useState<JVDeal | null>(null);
-  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deleteConfirmText, setDeleteConfirmText] = useState<string>('');
   const [photoRestoreTarget, setPhotoRestoreTarget] = useState<JVDeal | null>(null);
-  const [photoRestoreModalVisible, setPhotoRestoreModalVisible] = useState(false);
-  const [photoUrls, setPhotoUrls] = useState('');
-  const [editForm, setEditForm] = useState({
-    title: '',
-    projectName: '',
-    type: 'equity_split' as JVDealType,
-    totalInvestment: '',
-    expectedROI: '',
-    propertyAddress: '',
-    description: '',
-    distributionFrequency: 'quarterly',
-    exitStrategy: 'Sale of Property',
-    governingLaw: 'State of New York, USA',
-    managementFee: '',
-    performanceFee: '',
-    minimumHoldPeriod: '',
-  });
+  const [photoRestoreModalVisible, setPhotoRestoreModalVisible] = useState<boolean>(false);
+  const [photoUrls, setPhotoUrls] = useState<string>('');
+  const [editForm, setEditForm] = useState<EditFormState>(DEFAULT_EDIT_FORM);
 
   const queryClient = useQueryClient();
 
   useJVRealtime('admin-jv-deals', true);
 
-  const jvQuery = useQuery<any>({
+  const jvQuery = useQuery<JVQueryData>({
     queryKey: ['jvAgreements.list'],
     queryFn: async () => {
-      console.log('[JV-Storage] Fetching JV deals');
-      const result = await fetchJVDeals({ limit: 50 });
-      return { deals: result.deals ?? [] };
+      console.log('[Admin JV] Fetching JV deals...');
+      const result = await fetchJVDeals({ limit: 100 });
+      console.log('[Admin JV] Fetched', result.deals?.length ?? 0, 'deals, total:', result.total);
+      return { deals: (result.deals ?? []) as JVDeal[] };
     },
-    retry: 2,
-    staleTime: 1000 * 15,
+    retry: 1,
+    retryDelay: 1000,
+    staleTime: 1000 * 10,
+    refetchOnWindowFocus: true,
+    refetchOnMount: 'always',
+    gcTime: 1000 * 60 * 5,
   });
 
   const publishMutation = useMutation({
@@ -139,13 +196,20 @@ export default function AdminJVDealsScreen() {
       return { success: true, ...data };
     },
     onSuccess: () => {
-      console.log('[Admin JV] Published successfully');
+      console.log('[Admin JV] Published successfully — resetting cache + triggering landing sync');
+      resetSupabaseCheck();
       invalidateAllJVQueries(queryClient);
+      void queryClient.refetchQueries({ queryKey: ['published-jv-deals'] });
+      syncToLandingPage().then(result => {
+        console.log('[Admin JV] Landing sync after publish:', result.success, 'synced:', result.syncedDeals);
+      }).catch(err => {
+        console.log('[Admin JV] Landing sync after publish failed (non-critical):', err);
+      });
       Alert.alert('Success', 'Deal published and now visible to investors.');
     },
     onError: (err: Error) => {
       console.error('[Admin JV] Publish error:', err);
-      Alert.alert('Error', 'Failed to publish deal.');
+      Alert.alert('Error', 'Failed to publish deal: ' + err.message);
     },
   });
 
@@ -157,13 +221,20 @@ export default function AdminJVDealsScreen() {
       return { success: true, ...data };
     },
     onSuccess: () => {
-      console.log('[Admin JV] Unpublished successfully');
+      console.log('[Admin JV] Unpublished successfully — resetting cache + triggering landing sync');
+      resetSupabaseCheck();
       invalidateAllJVQueries(queryClient);
+      void queryClient.refetchQueries({ queryKey: ['published-jv-deals'] });
+      syncToLandingPage().then(result => {
+        console.log('[Admin JV] Landing sync after unpublish:', result.success, 'synced:', result.syncedDeals);
+      }).catch(err => {
+        console.log('[Admin JV] Landing sync after unpublish failed (non-critical):', err);
+      });
       Alert.alert('Success', 'Deal unpublished.');
     },
     onError: (err: Error) => {
       console.error('[Admin JV] Unpublish error:', err);
-      Alert.alert('Error', 'Failed to unpublish deal.');
+      Alert.alert('Error', 'Failed to unpublish deal: ' + err.message);
     },
   });
 
@@ -183,14 +254,14 @@ export default function AdminJVDealsScreen() {
     },
     onError: (err: Error) => {
       console.error('[Admin JV] Update error:', err);
-      Alert.alert('Error', 'Failed to update deal.');
+      Alert.alert('Error', 'Failed to update deal: ' + err.message);
     },
   });
 
   const archiveMutation = useMutation({
     mutationFn: async (input: { id: string }) => {
       console.log('[Admin JV] Archiving deal:', input.id);
-      const { data, error } = await archiveJVDeal(input.id);
+      const { data, error } = await archiveJVDeal(input.id, { adminOverride: true });
       if (error) throw error;
       return { success: true, ...data };
     },
@@ -201,14 +272,14 @@ export default function AdminJVDealsScreen() {
     },
     onError: (err: Error) => {
       console.error('[Admin JV] Archive error:', err);
-      Alert.alert('Error', 'Failed to archive deal.');
+      Alert.alert('Error', 'Failed to archive deal: ' + err.message);
     },
   });
 
   const restoreMutation = useMutation({
     mutationFn: async (input: { id: string }) => {
       console.log('[Admin JV] Restoring deal:', input.id);
-      const { data, error } = await restoreJVDeal(input.id);
+      const { data, error } = await restoreJVDeal(input.id, { adminOverride: true });
       if (error) throw error;
       return { success: true, ...data };
     },
@@ -219,7 +290,7 @@ export default function AdminJVDealsScreen() {
     },
     onError: (err: Error) => {
       console.error('[Admin JV] Restore error:', err);
-      Alert.alert('Error', 'Failed to restore deal.');
+      Alert.alert('Error', 'Failed to restore deal: ' + err.message);
     },
   });
 
@@ -265,26 +336,31 @@ export default function AdminJVDealsScreen() {
   const deleteMutation = useMutation({
     mutationFn: async (input: { id: string }) => {
       console.log('[Admin JV] PERMANENT DELETE deal:', input.id);
-      const { error } = await permanentlyDeleteJVDeal(input.id);
+      const { error } = await permanentlyDeleteJVDeal(input.id, { adminOverride: true });
       if (error) throw error;
       return { success: true };
     },
-    onSuccess: () => {
-      console.log('[Admin JV] Permanently deleted — forcing all query refresh');
+    onSuccess: async () => {
+      console.log('[Admin JV] Permanently deleted — forcing full cache reset + refetch');
       setDeleteConfirmVisible(false);
       setDeleteTarget(null);
       setDeleteConfirmText('');
+      resetSupabaseCheck();
+      await queryClient.resetQueries({ queryKey: ['jvAgreements.list'] });
       invalidateAllJVQueries(queryClient);
       Alert.alert('Permanently Deleted', 'Deal has been permanently removed. This cannot be undone.');
     },
     onError: (err: Error) => {
       console.error('[Admin JV] Delete error:', err);
-      Alert.alert('Error', 'Failed to delete deal.');
+      setDeleteConfirmVisible(false);
+      setDeleteTarget(null);
+      setDeleteConfirmText('');
+      Alert.alert('Delete Failed', err.message);
     },
   });
 
-  const deals = useMemo(() => {
-    const raw = (jvQuery.data?.deals ?? []) as JVDeal[];
+  const deals = useMemo((): JVDeal[] => {
+    const raw: JVDeal[] = jvQuery.data?.deals ?? [];
     let filtered = raw;
     if (filterStatus !== 'all') {
       if (filterStatus === 'published') {
@@ -307,7 +383,7 @@ export default function AdminJVDealsScreen() {
   }, [jvQuery.data, filterStatus, searchQuery]);
 
   const stats = useMemo(() => {
-    const all = (jvQuery.data?.deals ?? []) as JVDeal[];
+    const all: JVDeal[] = jvQuery.data?.deals ?? [];
     return {
       total: all.length,
       published: all.filter(d => d.published).length,
@@ -315,6 +391,60 @@ export default function AdminJVDealsScreen() {
       totalInvestment: all.reduce((sum, d) => sum + (d.totalInvestment || 0), 0),
     };
   }, [jvQuery.data]);
+
+  const seedMutation = useMutation({
+    mutationFn: async () => {
+      console.log('[Admin JV] Auto-seeding Casa Rosario deal to Supabase...');
+      const now = new Date().toISOString();
+      const seedPayload: Record<string, unknown> = {
+        id: 'casa-rosario-001',
+        title: 'CASA ROSARIO',
+        projectName: 'ONE STOP DEVELOPMENT TWO LLC',
+        type: 'development',
+        status: 'active',
+        published: true,
+        publishedAt: now,
+        totalInvestment: 1400000,
+        currency: 'USD',
+        expectedROI: 30,
+        propertyAddress: '20231 Sw 51st Ct, Pembroke Pines, FL 33332',
+        description: 'Premium residential development by ONE STOP DEVELOPMENT TWO LLC. Active JV deal open for investment with 30% expected ROI. Located in the highly desirable Pembroke Pines area of South Florida.',
+        distributionFrequency: 'quarterly',
+        exitStrategy: 'Sale upon completion',
+        governingLaw: 'State of Florida, USA',
+        disputeResolution: 'Arbitration in Miami-Dade County',
+        confidentialityPeriod: 24,
+        nonCompetePeriod: 12,
+        managementFee: 2,
+        performanceFee: 20,
+        minimumHoldPeriod: 12,
+        partners: [{ id: 'dev-001', name: 'ONE STOP DEVELOPMENT TWO LLC', role: 'Developer', contribution: 980000, equityShare: 70, location: 'Pembroke Pines, FL', verified: true }],
+        profitSplit: [{ partnerId: 'dev-001', percentage: 70 }],
+        photos: [],
+        startDate: '2025-01-15',
+        endDate: '2027-01-15',
+        createdAt: now,
+        updatedAt: now,
+        createdBy: 'admin-seed',
+      };
+      const { data, error } = await upsertJVDeal(seedPayload, { adminOverride: true });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      console.log('[Admin JV] Seed successful — refreshing all queries');
+      resetSupabaseCheck();
+      invalidateAllJVQueries(queryClient);
+      syncToLandingPage().then(r => console.log('[Admin JV] Landing sync after seed:', r.success)).catch(() => {});
+      Alert.alert('Seeded!', 'Casa Rosario deal has been inserted and published. It will appear on the landing page in real-time.');
+    },
+    onError: (err: Error) => {
+      console.error('[Admin JV] Seed error:', err);
+      Alert.alert('Seed Failed', err.message);
+    },
+  });
+
+  const isAnyMutating = publishMutation.isPending || unpublishMutation.isPending || archiveMutation.isPending || restoreMutation.isPending || seedMutation.isPending;
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -358,7 +488,7 @@ export default function AdminJVDealsScreen() {
         expectedROI: Number(editForm.expectedROI) || 15,
         propertyAddress: editForm.propertyAddress.trim() || undefined,
         description: editForm.description.trim(),
-        distributionFrequency: editForm.distributionFrequency as any,
+        distributionFrequency: editForm.distributionFrequency,
         exitStrategy: editForm.exitStrategy,
         governingLaw: editForm.governingLaw,
         managementFee: Number(editForm.managementFee) || 2,
@@ -420,60 +550,112 @@ export default function AdminJVDealsScreen() {
     deleteMutation.mutate({ id: deleteTarget.id });
   }, [deleteTarget, deleteConfirmText, deleteMutation]);
 
-  const FILTER_OPTIONS = [
-    { id: 'all', label: 'All' },
-    { id: 'published', label: 'Published' },
-    { id: 'unpublished', label: 'Unpublished' },
-    { id: 'active', label: 'Active' },
-    { id: 'draft', label: 'Draft' },
-    { id: 'archived', label: 'Archived' },
-  ];
+  const handlePhotoAction = useCallback((deal: JVDeal) => {
+    const photoCount = Array.isArray(deal.photos) ? deal.photos.length : 0;
+    if (photoCount === 0) {
+      Alert.alert(
+        'Photos Missing',
+        `"${deal.projectName}" has no photos. What would you like to do?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Auto-Recover', onPress: () => photoRecoverMutation.mutate({ id: deal.id }) },
+          { text: 'Add URLs', onPress: () => { setPhotoRestoreTarget(deal); setPhotoUrls(''); setPhotoRestoreModalVisible(true); } },
+        ]
+      );
+    } else {
+      Alert.alert('Photos', `"${deal.projectName}" has ${photoCount} photo(s).`, [
+        { text: 'OK' },
+        { text: 'Add More', onPress: () => { setPhotoRestoreTarget(deal); setPhotoUrls(''); setPhotoRestoreModalVisible(true); } },
+      ]);
+    }
+  }, [photoRecoverMutation]);
+
+  const handleSubmitPhotoUrls = useCallback(() => {
+    if (!photoRestoreTarget) return;
+    const urls = photoUrls
+      .split('\n')
+      .map(u => u.trim())
+      .filter(u => u.startsWith('http') && u.length > 10 && (u.includes('.jpg') || u.includes('.jpeg') || u.includes('.png') || u.includes('.webp') || u.includes('.gif') || u.includes('image') || u.includes('photo')));
+    if (urls.length === 0) {
+      Alert.alert('Invalid', 'Please enter at least one valid photo URL (http/https, must be an image link).');
+      return;
+    }
+    const existingPhotos = Array.isArray(photoRestoreTarget.photos) ? photoRestoreTarget.photos : [];
+    const allPhotos = [...existingPhotos, ...urls];
+    photoRestoreMutation.mutate({ id: photoRestoreTarget.id, photos: allPhotos });
+  }, [photoRestoreTarget, photoUrls, photoRestoreMutation]);
+
+  const deleteConfirmMatch = deleteConfirmText.trim().toUpperCase() === (deleteTarget?.projectName || '').trim().toUpperCase();
 
   return (
     <View style={styles.container}>
       <SafeAreaView edges={['top']} style={styles.safeArea}>
         <View style={styles.header}>
-          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} testID="jv-deals-back">
+          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} testID="jv-deals-back" accessibilityLabel="Go back">
             <ArrowLeft size={22} color={Colors.text} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>JV Deal Management</Text>
-          <TouchableOpacity
-            style={styles.createBtn}
-            onPress={() => router.push('/jv-agreement' as any)}
-            testID="jv-create-deal"
-          >
-            <Plus size={18} color="#000" />
-          </TouchableOpacity>
+          <View style={styles.headerActions}>
+            <TouchableOpacity
+              style={styles.seedBtn}
+              onPress={() => {
+                Alert.alert(
+                  'Auto-Seed Deals',
+                  'This will insert the Casa Rosario deal into your Supabase database and publish it to the landing page. Continue?',
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Seed Now', onPress: () => seedMutation.mutate() },
+                  ]
+                );
+              }}
+              disabled={seedMutation.isPending}
+              testID="jv-seed-deals"
+              accessibilityLabel="Auto-seed deals"
+            >
+              {seedMutation.isPending ? (
+                <ActivityIndicator size="small" color="#00C48C" />
+              ) : (
+                <Sprout size={18} color="#00C48C" />
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.createBtn}
+              onPress={() => router.push('/jv-agreement')}
+              testID="jv-create-deal"
+              accessibilityLabel="Create new deal"
+            >
+              <Plus size={18} color="#000" />
+            </TouchableOpacity>
+          </View>
         </View>
 
         <ScrollView
           style={styles.scrollView}
           showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />
           }
         >
-          {/* Stats Row */}
           <View style={styles.statsRow}>
             <View style={styles.statCard}>
               <Text style={styles.statValue}>{stats.total}</Text>
               <Text style={styles.statLabel}>Total</Text>
             </View>
             <View style={styles.statCard}>
-              <Text style={[styles.statValue, { color: '#00C48C' }]}>{stats.published}</Text>
+              <Text style={[styles.statValue, styles.statValueGreen]}>{stats.published}</Text>
               <Text style={styles.statLabel}>Published</Text>
             </View>
             <View style={styles.statCard}>
-              <Text style={[styles.statValue, { color: Colors.primary }]}>{stats.active}</Text>
+              <Text style={[styles.statValue, styles.statValuePrimary]}>{stats.active}</Text>
               <Text style={styles.statLabel}>Active</Text>
             </View>
             <View style={styles.statCard}>
-              <Text style={[styles.statValue, { color: '#FFB800' }]}>{formatCurrency(stats.totalInvestment)}</Text>
+              <Text style={[styles.statValue, styles.statValueYellow]}>{formatCurrency(stats.totalInvestment)}</Text>
               <Text style={styles.statLabel}>Total Value</Text>
             </View>
           </View>
 
-          {/* Search */}
           <View style={styles.searchWrap}>
             <Search size={16} color={Colors.textTertiary} />
             <TextInput
@@ -486,7 +668,6 @@ export default function AdminJVDealsScreen() {
             />
           </View>
 
-          {/* Filters */}
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filtersRow}>
             {FILTER_OPTIONS.map(opt => (
               <TouchableOpacity
@@ -501,11 +682,19 @@ export default function AdminJVDealsScreen() {
             ))}
           </ScrollView>
 
-          {/* Deals List */}
           {jvQuery.isLoading ? (
             <View style={styles.loadingWrap}>
               <ActivityIndicator size="large" color={Colors.primary} />
               <Text style={styles.loadingText}>Loading deals...</Text>
+            </View>
+          ) : jvQuery.isError ? (
+            <View style={styles.errorWrap}>
+              <AlertTriangle size={40} color="#FF4D4D" />
+              <Text style={styles.errorTitle}>Failed to load deals</Text>
+              <Text style={styles.errorSubtitle}>{jvQuery.error?.message || 'Unknown error occurred'}</Text>
+              <TouchableOpacity style={styles.retryBtn} onPress={onRefresh} testID="jv-retry">
+                <Text style={styles.retryBtnText}>Tap to Retry</Text>
+              </TouchableOpacity>
             </View>
           ) : deals.length === 0 ? (
             <View style={styles.emptyWrap}>
@@ -518,6 +707,7 @@ export default function AdminJVDealsScreen() {
           ) : (
             deals.map(deal => {
               const status = STATUS_CONFIG[deal.status] ?? STATUS_CONFIG.draft;
+              const photoCount = Array.isArray(deal.photos) ? deal.photos.length : 0;
               return (
                 <View key={deal.id} style={styles.dealCard} testID={`admin-jv-${deal.id}`}>
                   <View style={styles.dealHeader}>
@@ -531,14 +721,14 @@ export default function AdminJVDealsScreen() {
                         <Text style={[styles.statusText, { color: status.color }]}>{status.label}</Text>
                       </View>
                       {deal.published ? (
-                        <View style={[styles.pubBadge, { backgroundColor: '#00C48C18' }]}>
+                        <View style={[styles.pubBadge, styles.pubBadgeLive]}>
                           <Eye size={10} color="#00C48C" />
-                          <Text style={[styles.pubBadgeText, { color: '#00C48C' }]}>Live</Text>
+                          <Text style={[styles.pubBadgeText, styles.pubBadgeTextLive]}>Live</Text>
                         </View>
                       ) : (
-                        <View style={[styles.pubBadge, { backgroundColor: '#9A9A9A18' }]}>
+                        <View style={[styles.pubBadge, styles.pubBadgeHidden]}>
                           <EyeOff size={10} color="#9A9A9A" />
-                          <Text style={[styles.pubBadgeText, { color: '#9A9A9A' }]}>Hidden</Text>
+                          <Text style={[styles.pubBadgeText, styles.pubBadgeTextHidden]}>Hidden</Text>
                         </View>
                       )}
                     </View>
@@ -576,18 +766,22 @@ export default function AdminJVDealsScreen() {
                         <TouchableOpacity
                           style={[styles.actionBtn, styles.restoreBtn]}
                           onPress={() => handleRestore(deal)}
+                          disabled={isAnyMutating}
                           testID={`admin-jv-restore-${deal.id}`}
+                          accessibilityLabel={`Restore ${deal.projectName}`}
                         >
                           <ArchiveRestore size={14} color="#00C48C" />
-                          <Text style={[styles.actionBtnText, { color: '#00C48C' }]}>Restore</Text>
+                          <Text style={[styles.actionBtnText, styles.actionBtnTextGreen]}>Restore</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
                           style={[styles.actionBtn, styles.permDeleteBtn]}
                           onPress={() => handlePermanentDelete(deal)}
+                          disabled={isAnyMutating}
                           testID={`admin-jv-permdelete-${deal.id}`}
+                          accessibilityLabel={`Permanently delete ${deal.projectName}`}
                         >
                           <Trash2 size={14} color="#FF4D4D" />
-                          <Text style={[styles.actionBtnText, { color: '#FF4D4D' }]}>Delete Forever</Text>
+                          <Text style={[styles.actionBtnText, styles.actionBtnTextRed]}>Delete Forever</Text>
                         </TouchableOpacity>
                       </>
                     ) : (
@@ -595,51 +789,41 @@ export default function AdminJVDealsScreen() {
                         <TouchableOpacity
                           style={[styles.actionBtn, styles.editBtn]}
                           onPress={() => openEditModal(deal)}
+                          disabled={isAnyMutating}
                           testID={`admin-jv-edit-${deal.id}`}
+                          accessibilityLabel={`Edit ${deal.projectName}`}
                         >
                           <Edit3 size={14} color={Colors.primary} />
-                          <Text style={[styles.actionBtnText, { color: Colors.primary }]}>Edit</Text>
+                          <Text style={[styles.actionBtnText, styles.actionBtnTextPrimary]}>Edit</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
                           style={[styles.actionBtn, deal.published ? styles.unpublishBtn : styles.publishBtn]}
                           onPress={() => handleTogglePublish(deal)}
+                          disabled={isAnyMutating}
                           testID={`admin-jv-toggle-${deal.id}`}
+                          accessibilityLabel={deal.published ? `Unpublish ${deal.projectName}` : `Publish ${deal.projectName}`}
                         >
                           {deal.published ? <EyeOff size={14} color="#FF6B6B" /> : <Eye size={14} color="#00C48C" />}
-                          <Text style={[styles.actionBtnText, { color: deal.published ? '#FF6B6B' : '#00C48C' }]}>
+                          <Text style={[styles.actionBtnText, deal.published ? styles.actionBtnTextDanger : styles.actionBtnTextGreen]}>
                             {deal.published ? 'Unpublish' : 'Publish'}
                           </Text>
                         </TouchableOpacity>
                         <TouchableOpacity
                           style={[styles.actionBtn, styles.photoBtn]}
-                          onPress={() => {
-                            const photoCount = Array.isArray(deal.photos) ? deal.photos.length : 0;
-                            if (photoCount === 0) {
-                              Alert.alert(
-                                'Photos Missing',
-                                `"${deal.projectName}" has no photos. What would you like to do?`,
-                                [
-                                  { text: 'Cancel', style: 'cancel' },
-                                  { text: 'Auto-Recover', onPress: () => photoRecoverMutation.mutate({ id: deal.id }) },
-                                  { text: 'Add URLs', onPress: () => { setPhotoRestoreTarget(deal); setPhotoUrls(''); setPhotoRestoreModalVisible(true); } },
-                                ]
-                              );
-                            } else {
-                              Alert.alert('Photos', `"${deal.projectName}" has ${photoCount} photo(s).`, [
-                                { text: 'OK' },
-                                { text: 'Add More', onPress: () => { setPhotoRestoreTarget(deal); setPhotoUrls(''); setPhotoRestoreModalVisible(true); } },
-                              ]);
-                            }
-                          }}
+                          onPress={() => handlePhotoAction(deal)}
+                          disabled={isAnyMutating}
                           testID={`admin-jv-photos-${deal.id}`}
+                          accessibilityLabel={`Photos for ${deal.projectName}`}
                         >
                           <Camera size={14} color="#4A90D9" />
-                          <Text style={[styles.actionBtnText, { color: '#4A90D9' }]}>{Array.isArray(deal.photos) ? deal.photos.length : 0}</Text>
+                          <Text style={[styles.actionBtnText, styles.actionBtnTextBlue]}>{photoCount}</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
                           style={[styles.actionBtn, styles.archiveBtn]}
                           onPress={() => handleArchive(deal)}
+                          disabled={isAnyMutating}
                           testID={`admin-jv-archive-${deal.id}`}
+                          accessibilityLabel={`Archive ${deal.projectName}`}
                         >
                           <Archive size={14} color="#FFB800" />
                         </TouchableOpacity>
@@ -651,11 +835,10 @@ export default function AdminJVDealsScreen() {
             })
           )}
 
-          <View style={{ height: 100 }} />
+          <View style={styles.bottomSpacer} />
         </ScrollView>
       </SafeAreaView>
 
-      {/* Delete Confirmation Modal */}
       <Modal visible={deleteConfirmVisible} animationType="fade" transparent>
         <View style={styles.deleteOverlay}>
           <View style={styles.deleteModal}>
@@ -675,7 +858,7 @@ export default function AdminJVDealsScreen() {
               onChangeText={setDeleteConfirmText}
               placeholder={`Type "${deleteTarget?.projectName || ''}" to confirm`}
               placeholderTextColor={Colors.textTertiary}
-              autoCapitalize="none"
+              autoCapitalize="sentences"
               testID="delete-confirm-input"
             />
             <View style={styles.deleteModalActions}>
@@ -686,16 +869,18 @@ export default function AdminJVDealsScreen() {
                   setDeleteTarget(null);
                   setDeleteConfirmText('');
                 }}
+                testID="delete-cancel-btn"
               >
                 <Text style={styles.deleteModalCancelText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[
                   styles.deleteModalConfirm,
-                  deleteConfirmText.trim().toUpperCase() !== (deleteTarget?.projectName || '').trim().toUpperCase() && styles.deleteModalConfirmDisabled,
+                  !deleteConfirmMatch && styles.deleteModalConfirmDisabled,
                 ]}
                 onPress={confirmPermanentDelete}
-                disabled={deleteMutation.isPending || deleteConfirmText.trim().toUpperCase() !== (deleteTarget?.projectName || '').trim().toUpperCase()}
+                disabled={deleteMutation.isPending || !deleteConfirmMatch}
+                testID="delete-confirm-btn"
               >
                 {deleteMutation.isPending ? (
                   <ActivityIndicator size="small" color="#fff" />
@@ -708,11 +893,10 @@ export default function AdminJVDealsScreen() {
         </View>
       </Modal>
 
-      {/* Photo Restore Modal */}
       <Modal visible={photoRestoreModalVisible} animationType="fade" transparent>
         <View style={styles.deleteOverlay}>
           <View style={styles.deleteModal}>
-            <View style={[styles.deleteIconWrap, { backgroundColor: '#4A90D915' }]}>
+            <View style={[styles.deleteIconWrap, styles.photoIconWrap]}>
               <ImagePlus size={32} color="#4A90D9" />
             </View>
             <Text style={styles.deleteModalTitle}>Restore / Add Photos</Text>
@@ -720,7 +904,7 @@ export default function AdminJVDealsScreen() {
               Paste photo URLs below (one per line) to add to "{photoRestoreTarget?.projectName}".
             </Text>
             <TextInput
-              style={[styles.deleteConfirmInput, { textAlign: 'left' as const, minHeight: 120, borderColor: '#4A90D940' }]}
+              style={[styles.deleteConfirmInput, styles.photoUrlsInput]}
               value={photoUrls}
               onChangeText={setPhotoUrls}
               placeholder={"https://example.com/photo1.jpg\nhttps://example.com/photo2.jpg"}
@@ -738,23 +922,15 @@ export default function AdminJVDealsScreen() {
                   setPhotoRestoreTarget(null);
                   setPhotoUrls('');
                 }}
+                testID="photo-cancel-btn"
               >
                 <Text style={styles.deleteModalCancelText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.deleteModalConfirm, { backgroundColor: '#4A90D9' }]}
-                onPress={() => {
-                  if (!photoRestoreTarget) return;
-                  const urls = photoUrls.split('\n').map(u => u.trim()).filter(u => u.startsWith('http') && u.length > 10);
-                  if (urls.length === 0) {
-                    Alert.alert('Invalid', 'Please enter at least one valid photo URL starting with http.');
-                    return;
-                  }
-                  const existingPhotos = Array.isArray(photoRestoreTarget.photos) ? photoRestoreTarget.photos : [];
-                  const allPhotos = [...existingPhotos, ...urls];
-                  photoRestoreMutation.mutate({ id: photoRestoreTarget.id, photos: allPhotos });
-                }}
+                style={[styles.deleteModalConfirm, styles.photoConfirmBtn]}
+                onPress={handleSubmitPhotoUrls}
                 disabled={photoRestoreMutation.isPending}
+                testID="photo-restore-btn"
               >
                 {photoRestoreMutation.isPending ? (
                   <ActivityIndicator size="small" color="#fff" />
@@ -767,11 +943,10 @@ export default function AdminJVDealsScreen() {
         </View>
       </Modal>
 
-      {/* Edit Modal */}
       <Modal visible={editModalVisible} animationType="slide" presentationStyle="pageSheet">
         <SafeAreaView style={styles.modalSafe}>
           <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => { setEditModalVisible(false); setSelectedDeal(null); }}>
+            <TouchableOpacity onPress={() => { setEditModalVisible(false); setSelectedDeal(null); }} testID="edit-close-btn" accessibilityLabel="Close edit modal">
               <X size={24} color={Colors.text} />
             </TouchableOpacity>
             <Text style={styles.modalTitle}>Edit Deal</Text>
@@ -779,6 +954,8 @@ export default function AdminJVDealsScreen() {
               onPress={handleSaveEdit}
               disabled={updateMutation.isPending}
               style={styles.modalSaveBtn}
+              testID="edit-save-btn"
+              accessibilityLabel="Save deal changes"
             >
               {updateMutation.isPending ? (
                 <ActivityIndicator size="small" color="#000" />
@@ -791,142 +968,153 @@ export default function AdminJVDealsScreen() {
             </TouchableOpacity>
           </View>
 
-          <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
-            <Text style={styles.fieldLabel}>Project Name</Text>
-            <TextInput
-              style={styles.fieldInput}
-              value={editForm.projectName}
-              onChangeText={(v) => setEditForm(f => ({ ...f, projectName: v }))}
-              placeholder="e.g. Casa Rosario"
-              placeholderTextColor={Colors.textTertiary}
-              testID="edit-project-name"
-            />
+          <KeyboardAvoidingView
+            style={styles.keyboardAvoid}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            keyboardVerticalOffset={0}
+          >
+            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+              <Text style={styles.fieldLabel}>Project Name</Text>
+              <TextInput
+                style={styles.fieldInput}
+                value={editForm.projectName}
+                onChangeText={(v) => setEditForm(f => ({ ...f, projectName: v }))}
+                placeholder="e.g. Casa Rosario"
+                placeholderTextColor={Colors.textTertiary}
+                testID="edit-project-name"
+              />
 
-            <Text style={styles.fieldLabel}>Title</Text>
-            <TextInput
-              style={styles.fieldInput}
-              value={editForm.title}
-              onChangeText={(v) => setEditForm(f => ({ ...f, title: v }))}
-              placeholder="e.g. Casa Rosario — Luxury Villa Development"
-              placeholderTextColor={Colors.textTertiary}
-              testID="edit-title"
-            />
+              <Text style={styles.fieldLabel}>Title</Text>
+              <TextInput
+                style={styles.fieldInput}
+                value={editForm.title}
+                onChangeText={(v) => setEditForm(f => ({ ...f, title: v }))}
+                placeholder="e.g. Casa Rosario — Luxury Villa Development"
+                placeholderTextColor={Colors.textTertiary}
+                testID="edit-title"
+              />
 
-            <Text style={styles.fieldLabel}>Deal Type</Text>
-            <View style={styles.typeRow}>
-              {(['equity_split', 'profit_sharing', 'hybrid', 'development'] as JVDealType[]).map(t => (
-                <TouchableOpacity
-                  key={t}
-                  style={[styles.typeChip, editForm.type === t && styles.typeChipActive]}
-                  onPress={() => setEditForm(f => ({ ...f, type: t }))}
-                >
-                  <Text style={[styles.typeChipText, editForm.type === t && styles.typeChipTextActive]}>
-                    {TYPE_LABELS[t]}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <Text style={styles.fieldLabel}>Total Investment ($)</Text>
-            <TextInput
-              style={styles.fieldInput}
-              value={editForm.totalInvestment}
-              onChangeText={(v) => setEditForm(f => ({ ...f, totalInvestment: v }))}
-              keyboardType="numeric"
-              placeholder="2500000"
-              placeholderTextColor={Colors.textTertiary}
-              testID="edit-investment"
-            />
-
-            <Text style={styles.fieldLabel}>Expected ROI (%)</Text>
-            <TextInput
-              style={styles.fieldInput}
-              value={editForm.expectedROI}
-              onChangeText={(v) => setEditForm(f => ({ ...f, expectedROI: v }))}
-              keyboardType="numeric"
-              placeholder="22"
-              placeholderTextColor={Colors.textTertiary}
-              testID="edit-roi"
-            />
-
-            <Text style={styles.fieldLabel}>Property Address</Text>
-            <TextInput
-              style={styles.fieldInput}
-              value={editForm.propertyAddress}
-              onChangeText={(v) => setEditForm(f => ({ ...f, propertyAddress: v }))}
-              placeholder="Punta Cana, Dominican Republic"
-              placeholderTextColor={Colors.textTertiary}
-              testID="edit-address"
-            />
-
-            <Text style={styles.fieldLabel}>Description</Text>
-            <TextInput
-              style={[styles.fieldInput, styles.fieldTextarea]}
-              value={editForm.description}
-              onChangeText={(v) => setEditForm(f => ({ ...f, description: v }))}
-              placeholder="Deal description..."
-              placeholderTextColor={Colors.textTertiary}
-              multiline
-              numberOfLines={4}
-              textAlignVertical="top"
-              testID="edit-description"
-            />
-
-            <Text style={styles.fieldLabel}>Exit Strategy</Text>
-            <TextInput
-              style={styles.fieldInput}
-              value={editForm.exitStrategy}
-              onChangeText={(v) => setEditForm(f => ({ ...f, exitStrategy: v }))}
-              placeholder="Sale of Property"
-              placeholderTextColor={Colors.textTertiary}
-            />
-
-            <Text style={styles.fieldLabel}>Governing Law</Text>
-            <TextInput
-              style={styles.fieldInput}
-              value={editForm.governingLaw}
-              onChangeText={(v) => setEditForm(f => ({ ...f, governingLaw: v }))}
-              placeholder="State of New York, USA"
-              placeholderTextColor={Colors.textTertiary}
-            />
-
-            <View style={styles.fieldRow}>
-              <View style={styles.fieldHalf}>
-                <Text style={styles.fieldLabel}>Mgmt Fee (%)</Text>
-                <TextInput
-                  style={styles.fieldInput}
-                  value={editForm.managementFee}
-                  onChangeText={(v) => setEditForm(f => ({ ...f, managementFee: v }))}
-                  keyboardType="numeric"
-                  placeholder="2"
-                  placeholderTextColor={Colors.textTertiary}
-                />
+              <Text style={styles.fieldLabel}>Deal Type</Text>
+              <View style={styles.typeRow}>
+                {DEAL_TYPES.map(t => (
+                  <TouchableOpacity
+                    key={t}
+                    style={[styles.typeChip, editForm.type === t && styles.typeChipActive]}
+                    onPress={() => setEditForm(f => ({ ...f, type: t }))}
+                  >
+                    <Text style={[styles.typeChipText, editForm.type === t && styles.typeChipTextActive]}>
+                      {TYPE_LABELS[t]}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
               </View>
-              <View style={styles.fieldHalf}>
-                <Text style={styles.fieldLabel}>Perf Fee (%)</Text>
-                <TextInput
-                  style={styles.fieldInput}
-                  value={editForm.performanceFee}
-                  onChangeText={(v) => setEditForm(f => ({ ...f, performanceFee: v }))}
-                  keyboardType="numeric"
-                  placeholder="20"
-                  placeholderTextColor={Colors.textTertiary}
-                />
+
+              <Text style={styles.fieldLabel}>Total Investment ($)</Text>
+              <TextInput
+                style={styles.fieldInput}
+                value={editForm.totalInvestment}
+                onChangeText={(v) => setEditForm(f => ({ ...f, totalInvestment: v }))}
+                keyboardType="numeric"
+                placeholder="2500000"
+                placeholderTextColor={Colors.textTertiary}
+                testID="edit-investment"
+              />
+
+              <Text style={styles.fieldLabel}>Expected ROI (%)</Text>
+              <TextInput
+                style={styles.fieldInput}
+                value={editForm.expectedROI}
+                onChangeText={(v) => setEditForm(f => ({ ...f, expectedROI: v }))}
+                keyboardType="numeric"
+                placeholder="22"
+                placeholderTextColor={Colors.textTertiary}
+                testID="edit-roi"
+              />
+
+              <Text style={styles.fieldLabel}>Property Address</Text>
+              <TextInput
+                style={styles.fieldInput}
+                value={editForm.propertyAddress}
+                onChangeText={(v) => setEditForm(f => ({ ...f, propertyAddress: v }))}
+                placeholder="Punta Cana, Dominican Republic"
+                placeholderTextColor={Colors.textTertiary}
+                testID="edit-address"
+              />
+
+              <Text style={styles.fieldLabel}>Description</Text>
+              <TextInput
+                style={[styles.fieldInput, styles.fieldTextarea]}
+                value={editForm.description}
+                onChangeText={(v) => setEditForm(f => ({ ...f, description: v }))}
+                placeholder="Deal description..."
+                placeholderTextColor={Colors.textTertiary}
+                multiline
+                numberOfLines={4}
+                textAlignVertical="top"
+                testID="edit-description"
+              />
+
+              <Text style={styles.fieldLabel}>Exit Strategy</Text>
+              <TextInput
+                style={styles.fieldInput}
+                value={editForm.exitStrategy}
+                onChangeText={(v) => setEditForm(f => ({ ...f, exitStrategy: v }))}
+                placeholder="Sale of Property"
+                placeholderTextColor={Colors.textTertiary}
+                testID="edit-exit-strategy"
+              />
+
+              <Text style={styles.fieldLabel}>Governing Law</Text>
+              <TextInput
+                style={styles.fieldInput}
+                value={editForm.governingLaw}
+                onChangeText={(v) => setEditForm(f => ({ ...f, governingLaw: v }))}
+                placeholder="State of New York, USA"
+                placeholderTextColor={Colors.textTertiary}
+                testID="edit-governing-law"
+              />
+
+              <View style={styles.fieldRow}>
+                <View style={styles.fieldHalf}>
+                  <Text style={styles.fieldLabel}>Mgmt Fee (%)</Text>
+                  <TextInput
+                    style={styles.fieldInput}
+                    value={editForm.managementFee}
+                    onChangeText={(v) => setEditForm(f => ({ ...f, managementFee: v }))}
+                    keyboardType="numeric"
+                    placeholder="2"
+                    placeholderTextColor={Colors.textTertiary}
+                    testID="edit-mgmt-fee"
+                  />
+                </View>
+                <View style={styles.fieldHalf}>
+                  <Text style={styles.fieldLabel}>Perf Fee (%)</Text>
+                  <TextInput
+                    style={styles.fieldInput}
+                    value={editForm.performanceFee}
+                    onChangeText={(v) => setEditForm(f => ({ ...f, performanceFee: v }))}
+                    keyboardType="numeric"
+                    placeholder="20"
+                    placeholderTextColor={Colors.textTertiary}
+                    testID="edit-perf-fee"
+                  />
+                </View>
               </View>
-            </View>
 
-            <Text style={styles.fieldLabel}>Min Hold Period (months)</Text>
-            <TextInput
-              style={styles.fieldInput}
-              value={editForm.minimumHoldPeriod}
-              onChangeText={(v) => setEditForm(f => ({ ...f, minimumHoldPeriod: v }))}
-              keyboardType="numeric"
-              placeholder="12"
-              placeholderTextColor={Colors.textTertiary}
-            />
+              <Text style={styles.fieldLabel}>Min Hold Period (months)</Text>
+              <TextInput
+                style={styles.fieldInput}
+                value={editForm.minimumHoldPeriod}
+                onChangeText={(v) => setEditForm(f => ({ ...f, minimumHoldPeriod: v }))}
+                keyboardType="numeric"
+                placeholder="12"
+                placeholderTextColor={Colors.textTertiary}
+                testID="edit-hold-period"
+              />
 
-            <View style={{ height: 60 }} />
-          </ScrollView>
+              <View style={styles.modalBottomSpacer} />
+            </ScrollView>
+          </KeyboardAvoidingView>
         </SafeAreaView>
       </Modal>
     </View>
@@ -963,6 +1151,21 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '700' as const,
   },
+  headerActions: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+  },
+  seedBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: '#00C48C18',
+    borderWidth: 1,
+    borderColor: '#00C48C40',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   createBtn: {
     width: 40,
     height: 40,
@@ -993,6 +1196,15 @@ const styles = StyleSheet.create({
     color: Colors.text,
     fontSize: 15,
     fontWeight: '800' as const,
+  },
+  statValueGreen: {
+    color: '#00C48C',
+  },
+  statValuePrimary: {
+    color: Colors.primary,
+  },
+  statValueYellow: {
+    color: '#FFB800',
   },
   statLabel: {
     color: Colors.textTertiary,
@@ -1054,6 +1266,38 @@ const styles = StyleSheet.create({
   loadingText: {
     color: Colors.textSecondary,
     fontSize: 14,
+  },
+  errorWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+    gap: 8,
+  },
+  errorTitle: {
+    color: '#FF4D4D',
+    fontSize: 16,
+    fontWeight: '700' as const,
+    marginTop: 8,
+  },
+  errorSubtitle: {
+    color: Colors.textSecondary,
+    fontSize: 13,
+    textAlign: 'center',
+    paddingHorizontal: 32,
+  },
+  retryBtn: {
+    marginTop: 12,
+    backgroundColor: Colors.primary + '20',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.primary,
+  },
+  retryBtnText: {
+    color: Colors.primary,
+    fontSize: 13,
+    fontWeight: '600' as const,
   },
   emptyWrap: {
     alignItems: 'center',
@@ -1131,9 +1375,21 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
     borderRadius: 8,
   },
+  pubBadgeLive: {
+    backgroundColor: '#00C48C18',
+  },
+  pubBadgeHidden: {
+    backgroundColor: '#9A9A9A18',
+  },
   pubBadgeText: {
     fontSize: 9,
     fontWeight: '700' as const,
+  },
+  pubBadgeTextLive: {
+    color: '#00C48C',
+  },
+  pubBadgeTextHidden: {
+    color: '#9A9A9A',
   },
   addressRow: {
     flexDirection: 'row',
@@ -1182,6 +1438,21 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600' as const,
   },
+  actionBtnTextPrimary: {
+    color: Colors.primary,
+  },
+  actionBtnTextGreen: {
+    color: '#00C48C',
+  },
+  actionBtnTextRed: {
+    color: '#FF4D4D',
+  },
+  actionBtnTextDanger: {
+    color: '#FF6B6B',
+  },
+  actionBtnTextBlue: {
+    color: '#4A90D9',
+  },
   editBtn: {
     borderColor: Colors.primary + '40',
     backgroundColor: Colors.primary + '10',
@@ -1222,6 +1493,9 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center' as const,
   },
+  bottomSpacer: {
+    height: 100,
+  },
   deleteOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.7)',
@@ -1247,6 +1521,9 @@ const styles = StyleSheet.create({
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
     marginBottom: 16,
+  },
+  photoIconWrap: {
+    backgroundColor: '#4A90D915',
   },
   deleteModalTitle: {
     color: Colors.text,
@@ -1281,6 +1558,11 @@ const styles = StyleSheet.create({
     textAlign: 'center' as const,
     marginBottom: 20,
   },
+  photoUrlsInput: {
+    textAlign: 'left' as const,
+    minHeight: 120,
+    borderColor: '#4A90D940',
+  },
   deleteModalActions: {
     flexDirection: 'row' as const,
     gap: 12,
@@ -1311,6 +1593,9 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 14,
     fontWeight: '700' as const,
+  },
+  photoConfirmBtn: {
+    backgroundColor: '#4A90D9',
   },
   modalSafe: {
     flex: 1,
@@ -1343,6 +1628,9 @@ const styles = StyleSheet.create({
     color: '#000',
     fontSize: 13,
     fontWeight: '700' as const,
+  },
+  keyboardAvoid: {
+    flex: 1,
   },
   modalBody: {
     flex: 1,
@@ -1398,5 +1686,8 @@ const styles = StyleSheet.create({
   },
   typeChipTextActive: {
     color: Colors.primary,
+  },
+  modalBottomSpacer: {
+    height: 60,
   },
 });
