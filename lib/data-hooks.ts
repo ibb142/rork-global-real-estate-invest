@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import logger from './logger';
 import type { Property, MarketData, Holding, Notification } from '@/types';
+import type { WalletRow } from '@/types/database';
 
 const DEFAULT_USER = {
   id: '',
@@ -187,7 +188,7 @@ export function useCurrentUser() {
 
     return {
       ...base,
-      walletBalance: (balanceQuery.data as any)?.available ?? 0,
+      walletBalance: (balanceQuery.data as unknown as WalletRow | null)?.available ?? 0,
     };
   }, [profileQuery.data, balanceQuery.data]);
 
@@ -316,12 +317,15 @@ export function useWalletBalance() {
     staleTime: 1000 * 30,
   });
 
-  const balance = useMemo(() => ({
-    available: (query.data as any)?.available ?? 0,
-    pending: (query.data as any)?.pending ?? 0,
-    invested: (query.data as any)?.invested ?? 0,
-    total: (query.data as any)?.total ?? 0,
-  }), [query.data]);
+  const balance = useMemo(() => {
+    const wallet = query.data as unknown as WalletRow | null;
+    return {
+      available: wallet?.available ?? 0,
+      pending: wallet?.pending ?? 0,
+      invested: wallet?.invested ?? 0,
+      total: wallet?.total ?? 0,
+    };
+  }, [query.data]);
 
   return {
     balance,
