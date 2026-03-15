@@ -81,7 +81,7 @@ class AnalyticsService {
       this.isInitialized = true;
       logger.analytics.log('Initialized successfully');
     } catch (error) {
-      console.error('[Analytics] Initialization error:', error);
+      console.log('[Analytics] Initialization error:', (error as Error)?.message);
     }
   }
 
@@ -101,7 +101,7 @@ class AnalyticsService {
         }
       }
     } catch (error) {
-      console.error('[Analytics] Load session error:', error);
+      console.log('[Analytics] Load session error:', (error as Error)?.message);
     }
   }
 
@@ -116,7 +116,7 @@ class AnalyticsService {
       };
       await AsyncStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
     } catch (error) {
-      console.error('[Analytics] Save session error:', error);
+      console.log('[Analytics] Save session error:', (error as Error)?.message);
     }
   }
 
@@ -137,7 +137,7 @@ class AnalyticsService {
     if (this.supabaseTableMissing) return false;
     if (this.tableCheckAttempts >= this.MAX_TABLE_CHECK_ATTEMPTS) {
       this.supabaseTableMissing = true;
-      console.warn('[Analytics] analytics_events table not found after max attempts. Events will be stored locally only. Run the master SQL setup in Supabase to create the table.');
+      console.log('[Analytics] analytics_events table not found after max attempts. Events will be stored locally only.');
       return false;
     }
 
@@ -147,7 +147,7 @@ class AnalyticsService {
       if (error) {
         if (error.message?.includes('does not exist') || error.code === '42P01' || error.message?.includes('relation')) {
           this.supabaseTableMissing = true;
-          console.warn('[Analytics] analytics_events table does not exist in Supabase. Events stored locally only. Create the table using supabase-master-setup.sql.');
+          console.log('[Analytics] analytics_events table does not exist in Supabase. Events stored locally only.');
           return false;
         }
         console.log('[Analytics] Table check error (may be RLS):', error.message);
@@ -192,7 +192,7 @@ class AnalyticsService {
       if (error) {
         if (error.message?.includes('does not exist') || error.code === '42P01') {
           this.supabaseTableMissing = true;
-          console.warn('[Analytics] analytics_events table missing. Dropping queued events. Run supabase-master-setup.sql.');
+          console.log('[Analytics] analytics_events table missing. Dropping queued events.');
           this.supabasePendingQueue = [];
           return;
         }
@@ -282,7 +282,7 @@ class AnalyticsService {
       await this.saveSession();
       this.eventQueue = [];
     } catch (error) {
-      console.error('[Analytics] Flush error:', error);
+      console.log('[Analytics] Flush error:', (error as Error)?.message);
     }
   }
 
@@ -361,7 +361,7 @@ class AnalyticsService {
         conversionEvents: conversionCount,
       };
     } catch (error) {
-      console.error('[Analytics] Get stats error:', error);
+      console.log('[Analytics] Get stats error:', (error as Error)?.message);
       return { totalEvents: 0, totalSessions: 0, averageSessionDuration: 0, topEvents: [], errorRate: 0, conversionEvents: 0 };
     }
   }
@@ -374,7 +374,7 @@ class AnalyticsService {
       this.performanceMetrics = [];
       logger.analytics.log('Data cleared');
     } catch (error) {
-      console.error('[Analytics] Clear data error:', error);
+      console.log('[Analytics] Clear data error:', (error as Error)?.message);
     }
   }
 
