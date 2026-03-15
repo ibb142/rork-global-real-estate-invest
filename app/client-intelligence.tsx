@@ -279,9 +279,9 @@ export default function ClientIntelligenceScreen() {
         engagement: { hourlyEngagement },
       };
     },
-    refetchInterval: 30000,
-    retry: 3,
-    retryDelay: (attempt: number) => Math.min(500 * Math.pow(1.5, attempt), 5000),
+    refetchInterval: 3000,
+    retry: 1,
+    retryDelay: 1000,
     staleTime: 0,
     refetchOnMount: true,
   });
