@@ -27,20 +27,20 @@ export default function AdminLayout() {
       }}
     >
       <Tabs.Screen
-        name="owner-controls"
-        options={{
-          title: 'Owner',
-          tabBarIcon: ({ color, size }) => (
-            <Crown size={size} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
         name="index"
         options={{
           title: 'Dashboard',
           tabBarIcon: ({ color, size }) => (
             <LayoutDashboard size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="owner-controls"
+        options={{
+          title: 'Owner',
+          tabBarIcon: ({ color, size }) => (
+            <Crown size={size} color={color} />
           ),
         }}
       />
@@ -310,6 +310,24 @@ export default function AdminLayout() {
       />
       <Tabs.Screen
         name="trash-bin"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="system-map"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="audit-log"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="data-recovery"
         options={{
           href: null,
         }}
