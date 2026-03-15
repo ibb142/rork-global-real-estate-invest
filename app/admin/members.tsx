@@ -64,7 +64,7 @@ export default function MembersScreen() {
       if (error) { console.log('[Supabase] profiles error:', error.message); return null; }
       return { members: data ?? [], total: data?.length ?? 0 };
     },
-    staleTime: 15000,
+    staleTime: 3000,
   });
 
   const statsQuery = useQuery<{ totalMembers: number; activeMembers: number; pendingKyc: number; newMembersToday: number; newMembersThisWeek: number; newMembersThisMonth: number } | null>({
