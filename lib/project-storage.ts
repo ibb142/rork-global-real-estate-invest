@@ -55,7 +55,7 @@ export function validateKeyOwnership(key: string): { valid: boolean; reason?: st
   }
 
   if (keyProjectId !== PROJECT_ID) {
-    console.error(
+    console.warn(
       '[ProjectStorage] CROSS-PROJECT ACCESS BLOCKED — key project:',
       keyProjectId,
       '| current project:',
@@ -74,13 +74,13 @@ export async function scopedGetItem(baseKey: string, scope: 'project' | 'user' =
   const key = scopedKey(baseKey, scope);
   const ownership = validateKeyOwnership(key);
   if (!ownership.valid) {
-    console.error('[ProjectStorage] GET blocked:', ownership.reason);
+    console.warn('[ProjectStorage] GET blocked:', ownership.reason);
     return null;
   }
   try {
     return await AsyncStorage.getItem(key);
   } catch (err) {
-    console.error('[ProjectStorage] GET error:', (err as Error)?.message);
+    console.log('[ProjectStorage] GET error:', (err as Error)?.message);
     return null;
   }
 }
@@ -89,14 +89,14 @@ export async function scopedSetItem(baseKey: string, value: string, scope: 'proj
   const key = scopedKey(baseKey, scope);
   const ownership = validateKeyOwnership(key);
   if (!ownership.valid) {
-    console.error('[ProjectStorage] SET blocked:', ownership.reason);
+    console.warn('[ProjectStorage] SET blocked:', ownership.reason);
     return;
   }
   try {
     await AsyncStorage.setItem(key, value);
     console.log('[ProjectStorage] SET success:', baseKey, '| scope:', scope);
   } catch (err) {
-    console.error('[ProjectStorage] SET error:', (err as Error)?.message);
+    console.log('[ProjectStorage] SET error:', (err as Error)?.message);
   }
 }
 
@@ -104,14 +104,14 @@ export async function scopedRemoveItem(baseKey: string, scope: 'project' | 'user
   const key = scopedKey(baseKey, scope);
   const ownership = validateKeyOwnership(key);
   if (!ownership.valid) {
-    console.error('[ProjectStorage] REMOVE blocked:', ownership.reason);
+    console.warn('[ProjectStorage] REMOVE blocked:', ownership.reason);
     return;
   }
   try {
     await AsyncStorage.removeItem(key);
     console.log('[ProjectStorage] REMOVE success:', baseKey);
   } catch (err) {
-    console.error('[ProjectStorage] REMOVE error:', (err as Error)?.message);
+    console.log('[ProjectStorage] REMOVE error:', (err as Error)?.message);
   }
 }
 
@@ -121,7 +121,7 @@ export async function scopedGetJSON<T>(baseKey: string, scope: 'project' | 'user
   try {
     return JSON.parse(raw) as T;
   } catch {
-    console.error('[ProjectStorage] JSON parse error for key:', baseKey);
+    console.log('[ProjectStorage] JSON parse error for key:', baseKey);
     return null;
   }
 }
@@ -130,7 +130,7 @@ export async function scopedSetJSON<T>(baseKey: string, value: T, scope: 'projec
   try {
     await scopedSetItem(baseKey, JSON.stringify(value), scope);
   } catch (err) {
-    console.error('[ProjectStorage] JSON stringify error for key:', baseKey, (err as Error)?.message);
+    console.log('[ProjectStorage] JSON stringify error for key:', baseKey, (err as Error)?.message);
   }
 }
 
@@ -150,7 +150,7 @@ export async function migrateUnscopedKey(oldKey: string, baseKey: string, scope:
     console.log('[ProjectStorage] Migrated key:', oldKey, '->', newKey);
     return true;
   } catch (err) {
-    console.error('[ProjectStorage] Migration error:', (err as Error)?.message);
+    console.log('[ProjectStorage] Migration error:', (err as Error)?.message);
     return false;
   }
 }
@@ -193,7 +193,7 @@ export async function auditStorageKeys(): Promise<{
       unscopedKeys,
     };
   } catch (err) {
-    console.error('[ProjectStorage] Audit error:', (err as Error)?.message);
+    console.log('[ProjectStorage] Audit error:', (err as Error)?.message);
     return { totalKeys: 0, ownedKeys: 0, foreignKeys: [], unscopedKeys: [] };
   }
 }
@@ -208,7 +208,7 @@ export async function cleanForeignKeys(): Promise<number> {
       cleaned++;
       console.log('[ProjectStorage] Cleaned foreign key:', key);
     } catch (err) {
-      console.error('[ProjectStorage] Failed to clean foreign key:', key, (err as Error)?.message);
+      console.log('[ProjectStorage] Failed to clean foreign key:', key, (err as Error)?.message);
     }
   }
 
