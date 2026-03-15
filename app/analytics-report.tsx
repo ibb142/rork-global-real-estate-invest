@@ -340,8 +340,8 @@ export default function AnalyticsReportScreen() {
     gcTime: 0,
     refetchInterval: pollInterval,
     networkMode: 'always',
-    retry: 3,
-    retryDelay: (attempt: number) => Math.min(500 * Math.pow(1.5, attempt), 5000),
+    retry: 1,
+    retryDelay: 1000,
     refetchOnMount: true,
     refetchOnWindowFocus: true,
   });
