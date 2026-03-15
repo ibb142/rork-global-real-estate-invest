@@ -177,9 +177,9 @@ export default function LeadIntelligence() {
       };
     },
     staleTime: 5000,
-    refetchInterval: 15000,
-    retry: 3,
-    retryDelay: (attempt: number) => Math.min(1000 * 2 ** attempt, 5000),
+    refetchInterval: 3000,
+    retry: 1,
+    retryDelay: 1000,
   });
 
   React.useEffect(() => {
