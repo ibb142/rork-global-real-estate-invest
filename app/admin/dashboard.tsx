@@ -162,7 +162,7 @@ export default function AdminDashboardScreen() {
       return { signups: data ?? [], stats: null };
     },
     staleTime: 1000 * 10,
-    refetchInterval: 1000 * 15,
+    refetchInterval: 1000 * 3,
   });
 
   const leadsStats = leadsQuery.data?.stats;
