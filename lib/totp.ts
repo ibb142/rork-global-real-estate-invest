@@ -173,7 +173,8 @@ export function parseOtpAuthUri(uri: string): { issuer: string; account: string;
     console.log('[TOTP] First 20 chars:', JSON.stringify(trimmed.substring(0, 20)));
 
     trimmed = trimmed.replace(/^\s+|\s+$/g, '');
-    trimmed = trimmed.replace(/[\x00-\x1f]/g, '');
+    // eslint-disable-next-line no-control-regex
+    trimmed = trimmed.replace(/[\u0000-\u001f]/g, '');
 
     const otpauthMatch = trimmed.match(/otpauth:\/\//i);
     if (!otpauthMatch) {
@@ -267,7 +268,7 @@ export function parseOtpAuthUri(uri: string): { issuer: string; account: string;
 
     return { issuer: issuer || account || 'Unknown', account: account || issuer || 'Unknown', secret };
   } catch (e) {
-    console.error('[TOTP] Parse error:', e);
+    console.log('[TOTP] Parse error:', (e as Error)?.message);
     return null;
   }
 }
