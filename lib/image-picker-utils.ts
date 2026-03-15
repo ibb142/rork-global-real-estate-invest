@@ -74,7 +74,7 @@ export async function pickImagesFromLibrary(
     console.log('[ImagePicker] Stored', storedImages.length, 'images permanently');
     return storedImages;
   } catch (err) {
-    console.error('[ImagePicker] Error picking images:', err);
+    console.log('[ImagePicker] Error picking images:', (err as Error)?.message);
     Alert.alert('Error', 'Failed to select images. Please try again.');
     return [];
   }
@@ -115,7 +115,7 @@ export async function takePhotoWithCamera(
     console.log('[ImagePicker] Stored camera photo permanently:', storedImage.id);
     return storedImage;
   } catch (err) {
-    console.error('[ImagePicker] Error taking photo:', err);
+    console.log('[ImagePicker] Error taking photo:', (err as Error)?.message);
     Alert.alert('Error', 'Failed to capture photo. Please try again.');
     return null;
   }
