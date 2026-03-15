@@ -40,7 +40,7 @@ async function getRegistry(): Promise<ImageRegistry> {
       return JSON.parse(raw) as ImageRegistry;
     }
   } catch (err) {
-    console.error('[ImageStorage] Failed to load registry:', err);
+    console.log('[ImageStorage] Failed to load registry:', (err as Error)?.message);
   }
   return {};
 }
@@ -50,7 +50,7 @@ async function saveRegistry(registry: ImageRegistry): Promise<void> {
     await AsyncStorage.setItem(IMAGE_REGISTRY_KEY, JSON.stringify(registry));
     console.log('[ImageStorage] Registry saved successfully');
   } catch (err) {
-    console.error('[ImageStorage] Failed to save registry:', err);
+    console.log('[ImageStorage] Failed to save registry:', (err as Error)?.message);
   }
 }
 
@@ -129,7 +129,7 @@ async function copyToLocalStorage(sourceUri: string, imageId: string): Promise<s
       return destUri;
     }
   } catch (err) {
-    console.error('[ImageStorage] Failed to copy image, using original URI:', err);
+    console.log('[ImageStorage] Failed to copy image, using original URI:', (err as Error)?.message);
     return sourceUri;
   }
 }
@@ -253,7 +253,7 @@ export async function removeImage(imageId: string): Promise<boolean> {
           try {
             await LegacyFS.deleteAsync(image.uri, { idempotent: true });
           } catch (err) {
-            console.error('[ImageStorage] Failed to delete file:', err);
+            console.log('[ImageStorage] Failed to delete file:', (err as Error)?.message);
           }
         }
       }
@@ -362,7 +362,7 @@ export async function clearAllImages(): Promise<void> {
           await LegacyFS.deleteAsync(dir, { idempotent: true });
         }
       } catch (err) {
-        console.error('[ImageStorage] Failed to clear image directory:', err);
+        console.log('[ImageStorage] Failed to clear image directory:', (err as Error)?.message);
       }
     }
   }
