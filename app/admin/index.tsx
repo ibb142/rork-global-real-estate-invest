@@ -49,6 +49,7 @@ import {
   KeyRound,
   ShieldCheck,
   Zap,
+  Network,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -57,45 +58,50 @@ import { supabase } from '@/lib/supabase';
 import { adminTeamMembers } from '@/mocks/team';
 
 const ADMIN_MODULES = [
-  { id: 'owner-controls', name: 'Owner Controls', icon: Crown, iconName: 'Crown', route: '/admin/owner-controls', category: 'Core' },
-  { id: 'dashboard', name: 'Dashboard', icon: TrendingUp, iconName: 'TrendingUp', route: '/admin/dashboard', category: 'Core' },
-  { id: 'investor-profits', name: 'Investor Profits', icon: DollarSign, iconName: 'DollarSign', route: '/admin/investor-profits', category: 'Finance' },
-  { id: 'members', name: 'Members', icon: Users, iconName: 'Users', route: '/admin/members', category: 'Users' },
-  { id: 'transactions', name: 'Transactions', icon: ArrowLeftRight, iconName: 'ArrowLeftRight', route: '/admin/transactions', category: 'Finance' },
-  { id: 'properties', name: 'Properties', icon: Building2, iconName: 'Building2', route: '/admin/properties', category: 'Assets' },
-  { id: 'marketing', name: 'Marketing', icon: Megaphone, iconName: 'Megaphone', route: '/admin/marketing', category: 'Marketing' },
-  { id: 'team', name: 'Team Management', icon: UserPlus, iconName: 'UserPlus', route: '/admin/team', category: 'Users' },
-  { id: 'fees', name: 'Fees & Pricing', icon: Percent, iconName: 'Percent', route: '/admin/fees', category: 'Finance' },
-  { id: 'land-partners', name: 'Land Partners', icon: Handshake, iconName: 'Handshake', route: '/admin/land-partners', category: 'Partners' },
-  { id: 'engagement', name: 'User Engagement', icon: MessageSquare, iconName: 'MessageSquare', route: '/admin/engagement', category: 'Marketing' },
-  { id: 'broadcast', name: 'Alerts & Broadcast', icon: Radio, iconName: 'Radio', route: '/admin/broadcast', category: 'Marketing' },
-  { id: 'growth', name: 'Growth Analytics', icon: BarChart3, iconName: 'BarChart3', route: '/admin/growth', category: 'Analytics' },
-  { id: 'influencers', name: 'Influencers', icon: Star, iconName: 'Star', route: '/admin/influencers', category: 'Marketing' },
+  { id: 'system-map', name: 'System Blueprint', icon: Network, iconName: 'Network', route: '/admin/system-map', category: 'Core', keywords: 'blueprint system map architecture live health network diagram' },
+  { id: 'owner-controls', name: 'Owner Controls', icon: Crown, iconName: 'Crown', route: '/admin/owner-controls', category: 'Core', keywords: '' },
+  { id: 'dashboard', name: 'Dashboard', icon: TrendingUp, iconName: 'TrendingUp', route: '/admin/dashboard', category: 'Core', keywords: '' },
+  { id: 'system-monitor', name: '24/7 Command Center', icon: ShieldCheck, iconName: 'ShieldCheck', route: '/admin/system-monitor', category: 'Core', keywords: 'monitor command center' },
+  { id: 'system-health', name: 'Live System Health', icon: ShieldCheck, iconName: 'ShieldCheck', route: '/system-health', category: 'Core', keywords: 'health live status' },
+  { id: 'email-management', name: 'Email Management', icon: Mail, iconName: 'Mail', route: '/admin/email-management', category: 'Core', keywords: '' },
+  { id: 'investor-profits', name: 'Investor Profits', icon: DollarSign, iconName: 'DollarSign', route: '/admin/investor-profits', category: 'Finance', keywords: '' },
+  { id: 'members', name: 'Members', icon: Users, iconName: 'Users', route: '/admin/members', category: 'Users', keywords: '' },
+  { id: 'transactions', name: 'Transactions', icon: ArrowLeftRight, iconName: 'ArrowLeftRight', route: '/admin/transactions', category: 'Finance', keywords: '' },
+  { id: 'properties', name: 'Properties', icon: Building2, iconName: 'Building2', route: '/admin/properties', category: 'Assets', keywords: '' },
+  { id: 'marketing', name: 'Marketing', icon: Megaphone, iconName: 'Megaphone', route: '/admin/marketing', category: 'Marketing', keywords: '' },
+  { id: 'team', name: 'Team Management', icon: UserPlus, iconName: 'UserPlus', route: '/admin/team', category: 'Users', keywords: '' },
+  { id: 'fees', name: 'Fees & Pricing', icon: Percent, iconName: 'Percent', route: '/admin/fees', category: 'Finance', keywords: '' },
+  { id: 'land-partners', name: 'Land Partners', icon: Handshake, iconName: 'Handshake', route: '/admin/land-partners', category: 'Partners', keywords: '' },
+  { id: 'engagement', name: 'User Engagement', icon: MessageSquare, iconName: 'MessageSquare', route: '/admin/engagement', category: 'Marketing', keywords: '' },
+  { id: 'broadcast', name: 'Alerts & Broadcast', icon: Radio, iconName: 'Radio', route: '/admin/broadcast', category: 'Marketing', keywords: '' },
+  { id: 'growth', name: 'Growth Analytics', icon: BarChart3, iconName: 'BarChart3', route: '/admin/growth', category: 'Analytics', keywords: '' },
+  { id: 'influencers', name: 'Influencers', icon: Star, iconName: 'Star', route: '/admin/influencers', category: 'Marketing', keywords: '' },
+  { id: 'banners', name: 'Banners', icon: Image, iconName: 'Image', route: '/admin/banners', category: 'Marketing', keywords: '' },
+  { id: 'intro', name: 'Intro Screens', icon: Play, iconName: 'Play', route: '/admin/intro', category: 'Settings', keywords: '' },
+  { id: 'app-docs', name: 'Docs, API & Legal', icon: FileText, iconName: 'FileText', route: '/admin/app-docs', category: 'Resources', keywords: '' },
+  { id: 'social-command', name: 'Social & Content', icon: Share2, iconName: 'Share2', route: '/admin/social-command', category: 'Marketing', keywords: '' },
+  { id: 'lender-directory', name: 'Lender Directory', icon: Landmark, iconName: 'Landmark', route: '/admin/lender-directory', category: 'Lenders', keywords: '' },
+  { id: 'lender-search', name: 'Lender Discovery', icon: Globe, iconName: 'Globe', route: '/admin/lender-search', category: 'Lenders', keywords: '' },
+  { id: 'ai-outreach', name: 'AI Outreach', icon: Send, iconName: 'Send', route: '/admin/ai-outreach', category: 'Lenders', keywords: '' },
+  { id: 'lender-sync', name: 'Lender Auto-Sync', icon: Database, iconName: 'Database', route: '/admin/lender-sync', category: 'Lenders', keywords: '' },
+  { id: 'email-engine', name: 'Email Engine', icon: Mail, iconName: 'Mail', route: '/admin/email-engine', category: 'Lenders', keywords: '' },
+  { id: 'ai-video', name: 'AI Video Studio', icon: Play, iconName: 'Play', route: '/admin/ai-video', category: 'AI Tools', keywords: '' },
+  { id: 'traffic-control', name: 'Traffic Control', icon: Crosshair, iconName: 'Crosshair', route: '/admin/traffic-control', category: 'Marketing', keywords: '' },
+  { id: 'lead-intelligence', name: 'Lead Intelligence', icon: Brain, iconName: 'Brain', route: '/admin/lead-intelligence', category: 'Marketing', keywords: '' },
+  { id: 'viral-growth', name: 'Viral Growth Hub', icon: Flame, iconName: 'Flame', route: '/admin/viral-growth', category: 'Marketing', keywords: '' },
+  { id: 'api-keys', name: 'API Keys Vault', icon: KeyRound, iconName: 'KeyRound', route: '/admin/api-keys', category: 'Settings', keywords: '' },
+  { id: 'email-inbox', name: 'AI Email Inbox', icon: Mail, iconName: 'Mail', route: '/admin/email-inbox', category: 'Marketing', keywords: '' },
+  { id: 'email-accounts', name: 'Email Accounts', icon: Users, iconName: 'Users', route: '/admin/email-accounts', category: 'Users', keywords: '' },
+  { id: 'visitor-intelligence', name: 'AI Visitor Intelligence', icon: Brain, iconName: 'Brain', route: '/admin/visitor-intelligence', category: 'Analytics', keywords: '' },
 
-  { id: 'banners', name: 'Banners', icon: Image, iconName: 'Image', route: '/admin/banners', category: 'Marketing' },
-  { id: 'intro', name: 'Intro Screens', icon: Play, iconName: 'Play', route: '/admin/intro', category: 'Settings' },
-  { id: 'app-docs', name: 'Docs, API & Legal', icon: FileText, iconName: 'FileText', route: '/admin/app-docs', category: 'Resources' },
-
-  { id: 'social-command', name: 'Social & Content', icon: Share2, iconName: 'Share2', route: '/admin/social-command', category: 'Marketing' },
-  { id: 'lender-directory', name: 'Lender Directory', icon: Landmark, iconName: 'Landmark', route: '/admin/lender-directory', category: 'Lenders' },
-  { id: 'lender-search', name: 'Lender Discovery', icon: Globe, iconName: 'Globe', route: '/admin/lender-search', category: 'Lenders' },
-  { id: 'ai-outreach', name: 'AI Outreach', icon: Send, iconName: 'Send', route: '/admin/ai-outreach', category: 'Lenders' },
-  { id: 'lender-sync', name: 'Lender Auto-Sync', icon: Database, iconName: 'Database', route: '/admin/lender-sync', category: 'Lenders' },
-  { id: 'email-engine', name: 'Email Engine', icon: Mail, iconName: 'Mail', route: '/admin/email-engine', category: 'Lenders' },
-  { id: 'ai-video', name: 'AI Video Studio', icon: Play, iconName: 'Play', route: '/admin/ai-video', category: 'AI Tools' },
-  { id: 'traffic-control', name: 'Traffic Control', icon: Crosshair, iconName: 'Crosshair', route: '/admin/traffic-control', category: 'Marketing' },
-  { id: 'lead-intelligence', name: 'Lead Intelligence', icon: Brain, iconName: 'Brain', route: '/admin/lead-intelligence', category: 'Marketing' },
-  { id: 'viral-growth', name: 'Viral Growth Hub', icon: Flame, iconName: 'Flame', route: '/admin/viral-growth', category: 'Marketing' },
-  { id: 'api-keys', name: 'API Keys Vault', icon: KeyRound, iconName: 'KeyRound', route: '/admin/api-keys', category: 'Settings' },
-  { id: 'email-inbox', name: 'AI Email Inbox', icon: Mail, iconName: 'Mail', route: '/admin/email-inbox', category: 'Marketing' },
-  { id: 'email-management', name: 'Email Management', icon: Mail, iconName: 'Mail', route: '/admin/email-management', category: 'Core' },
-  { id: 'email-accounts', name: 'Email Accounts', icon: Users, iconName: 'Users', route: '/admin/email-accounts', category: 'Users' },
-  { id: 'visitor-intelligence', name: 'AI Visitor Intelligence', icon: Brain, iconName: 'Brain', route: '/admin/visitor-intelligence', category: 'Analytics' },
-  { id: 'landing-analytics', name: 'Landing Analytics', icon: BarChart3, iconName: 'BarChart3', route: '/admin/landing-analytics', category: 'Analytics' },
-  { id: 'system-monitor', name: '24/7 Command Center', icon: ShieldCheck, iconName: 'ShieldCheck', route: '/admin/system-monitor', category: 'Core' },
-  { id: 'sms-reports', name: 'SMS Reports', icon: MessageSquare, iconName: 'MessageSquare', route: '/sms-reports', category: 'Marketing' },
-  { id: 'authenticator', name: 'Authenticator', icon: ShieldCheck, iconName: 'ShieldCheck', route: '/authenticator', category: 'Settings' },
+  { id: 'landing-analytics', name: 'Landing Analytics', icon: BarChart3, iconName: 'BarChart3', route: '/admin/landing-analytics', category: 'Analytics', keywords: '' },
+  { id: 'sms-reports', name: 'SMS Reports', icon: MessageSquare, iconName: 'MessageSquare', route: '/sms-reports', category: 'Marketing', keywords: '' },
+  { id: 'authenticator', name: 'Authenticator', icon: ShieldCheck, iconName: 'ShieldCheck', route: '/authenticator', category: 'Settings', keywords: '' },
+  { id: 'audit-log', name: 'Audit Trail', icon: Shield, iconName: 'Shield', route: '/admin/audit-log', category: 'Core', keywords: 'audit trail log history records tracking delete restore' },
+  { id: 'data-recovery', name: 'Data Recovery', icon: Database, iconName: 'Database', route: '/admin/data-recovery', category: 'Core', keywords: 'recovery backup restore deleted data snapshot' },
 ];
+
+console.log('[Admin] v5 ADMIN_MODULES loaded:', ADMIN_MODULES.length, 'modules — timestamp:', Date.now());
 
 export default function AdminDashboard() {
   const router = useRouter();
@@ -122,7 +128,7 @@ export default function AdminDashboard() {
       }
     },
     staleTime: 1000 * 10,
-    refetchInterval: 1000 * 30,
+    refetchInterval: 1000 * 3,
     placeholderData: (prev: any) => prev,
     retry: 0,
     throwOnError: false,
@@ -199,13 +205,16 @@ export default function AdminDashboard() {
   const filteredModules = useMemo(() => {
     if (!searchQuery.trim()) return ADMIN_MODULES;
     const query = searchQuery.toLowerCase();
-    return ADMIN_MODULES.filter(
+    const results = ADMIN_MODULES.filter(
       (module) =>
         module.name.toLowerCase().includes(query) ||
         module.category.toLowerCase().includes(query) ||
         module.iconName.toLowerCase().includes(query) ||
-        module.id.toLowerCase().includes(query)
+        module.id.toLowerCase().includes(query) ||
+        (module.keywords && module.keywords.toLowerCase().includes(query))
     );
+    console.log('[Admin Search]', query, '→', results.length, 'results', results.map(m => m.name));
+    return results;
   }, [searchQuery]);
 
   const groupedModules = useMemo(() => {
@@ -252,6 +261,8 @@ export default function AdminDashboard() {
         return <DollarSign size={16} color={Colors.textSecondary} />;
     }
   }, []);
+
+  console.log('[Admin] Rendering admin dashboard — deploy card should appear');
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -309,6 +320,25 @@ export default function AdminDashboard() {
           </View>
 
           <ScrollView style={styles.searchResults} showsVerticalScrollIndicator={false}>
+            <TouchableOpacity
+              style={styles.blueprintSearchCard}
+              onPress={() => {
+                setShowSearch(false);
+                setSearchQuery('');
+                router.push('/admin/system-map' as any);
+              }}
+              testID="search-system-blueprint"
+            >
+              <View style={styles.blueprintSearchIcon}>
+                <Network size={22} color="#062218" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.blueprintSearchTitle}>System Blueprint</Text>
+                <Text style={styles.blueprintSearchSub}>Live architecture · Data flows · Health</Text>
+              </View>
+              <ChevronRight size={18} color="#00E676" />
+            </TouchableOpacity>
+
             {Object.entries(groupedModules).map(([category, modules]) => (
               <View key={category} style={styles.categorySection}>
                 <Text style={styles.categoryTitle}>{category}</Text>
@@ -337,7 +367,7 @@ export default function AdminDashboard() {
                 })}
               </View>
             ))}
-            {filteredModules.length === 0 && (
+            {filteredModules.length === 0 && searchQuery.length > 0 && !searchQuery.toLowerCase().includes('blueprint') && !searchQuery.toLowerCase().includes('system') && (
               <View style={styles.noResults}>
                 <Search size={48} color={Colors.textTertiary} />
                 <Text style={styles.noResultsText}>No modules found</Text>
@@ -360,6 +390,8 @@ export default function AdminDashboard() {
           />
         }
       >
+
+
         <TouchableOpacity
           style={styles.activationCenterCard}
           onPress={() => router.push('/activation-center' as any)}
@@ -379,6 +411,48 @@ export default function AdminDashboard() {
             </View>
           </View>
           <ChevronRight size={20} color={Colors.textSecondary} />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={() => router.push('/admin/system-map' as any)}
+          activeOpacity={0.7}
+          testID="admin-system-blueprint-btn"
+          style={{
+            flexDirection: 'row' as const,
+            alignItems: 'center' as const,
+            justifyContent: 'space-between' as const,
+            marginHorizontal: 12,
+            marginTop: 4,
+            marginBottom: 10,
+            backgroundColor: '#062218',
+            borderRadius: 16,
+            padding: 16,
+            borderWidth: 2,
+            borderColor: '#00E676',
+            height: 82,
+          }}
+        >
+          <View style={{ flexDirection: 'row' as const, alignItems: 'center' as const, gap: 12, flex: 1 }}>
+            <View style={{
+              width: 50,
+              height: 50,
+              borderRadius: 13,
+              backgroundColor: '#00E676',
+              justifyContent: 'center' as const,
+              alignItems: 'center' as const,
+            }}>
+              <Zap size={26} color="#062218" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: 'row' as const, alignItems: 'center' as const, gap: 5, marginBottom: 3 }}>
+                <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: '#00E676' }} />
+                <Text style={{ fontSize: 10, fontWeight: '700' as const, color: '#00E676', letterSpacing: 0.5 }}>SYSTEM LIVE</Text>
+              </View>
+              <Text style={{ fontSize: 17, fontWeight: '800' as const, color: '#FFFFFF' }}>System Blueprint</Text>
+              <Text style={{ fontSize: 11, color: '#8B9CB6', marginTop: 2 }}>Live architecture · Data flows · Health</Text>
+            </View>
+          </View>
+          <ChevronRight size={20} color="#00E676" />
         </TouchableOpacity>
 
         <View style={styles.adminTeamSection}>
@@ -1095,6 +1169,90 @@ const styles = StyleSheet.create({
     color: Colors.textTertiary,
     marginTop: 1,
   },
+  systemBlueprintCard: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'space-between' as const,
+    marginHorizontal: 12,
+    marginBottom: 10,
+    backgroundColor: '#0A1A26',
+    borderRadius: 16,
+    padding: 18,
+    borderWidth: 2,
+    borderColor: '#00E676',
+    minHeight: 80,
+  },
+  sbLeft: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 12,
+    flex: 1,
+  },
+  sbIconWrap: {
+    width: 54,
+    height: 54,
+    borderRadius: 14,
+    backgroundColor: '#00E676',
+    justifyContent: 'center' as const,
+    alignItems: 'center' as const,
+    shadowColor: '#00E676',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.6,
+    shadowRadius: 12,
+    elevation: 10,
+  },
+  sbLiveRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 5,
+    marginBottom: 2,
+  },
+  sbLiveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#00E676',
+  },
+  sbLiveLabel: {
+    fontSize: 10,
+    fontWeight: '700' as const,
+    color: '#00E676',
+    letterSpacing: 0.5,
+  },
+  sbTextWrap: {
+    flex: 1,
+  },
+  sbTitle: {
+    fontSize: 17,
+    fontWeight: '800' as const,
+    color: '#fff',
+    letterSpacing: 0.3,
+  },
+  sbSub: {
+    fontSize: 11,
+    color: '#8B9CB6',
+    marginTop: 3,
+  },
+  sbRight: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 8,
+  },
+  sbBadge: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 4,
+    backgroundColor: '#00C48C20',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  sbBadgeText: {
+    fontSize: 10,
+    fontWeight: '700' as const,
+    color: '#00C48C',
+    letterSpacing: 0.5,
+  },
   adminTeamSection: {
     marginHorizontal: 12,
     marginBottom: 8,
@@ -1204,6 +1362,238 @@ const styles = StyleSheet.create({
     height: 22,
     borderRadius: 11,
     backgroundColor: Colors.card,
+    justifyContent: 'center' as const,
+    alignItems: 'center' as const,
+  },
+  blueprintBtn: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'space-between' as const,
+    backgroundColor: '#0A1A26',
+    borderRadius: 16,
+    padding: 18,
+    borderWidth: 2,
+    borderColor: '#00E676',
+    minHeight: 84,
+  },
+  blueprintLeft: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 12,
+    flex: 1,
+  },
+  blueprintIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 14,
+    backgroundColor: '#00E676',
+    justifyContent: 'center' as const,
+    alignItems: 'center' as const,
+  },
+  blueprintTextWrap: {
+    flex: 1,
+  },
+  blueprintLiveRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 5,
+    marginBottom: 2,
+  },
+  blueprintLiveDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: '#00E676',
+  },
+  blueprintLiveLabel: {
+    fontSize: 10,
+    fontWeight: '700' as const,
+    color: '#00E676',
+    letterSpacing: 0.5,
+  },
+  blueprintTitle: {
+    fontSize: 18,
+    fontWeight: '800' as const,
+    color: '#FFFFFF',
+    letterSpacing: 0.3,
+  },
+  blueprintSub: {
+    fontSize: 11,
+    color: '#8B9CB6',
+    marginTop: 3,
+  },
+  blueprintRight: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 8,
+  },
+  blueprintBadge: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 4,
+    backgroundColor: '#00E67620',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  blueprintBadgeText: {
+    fontSize: 10,
+    fontWeight: '700' as const,
+    color: '#00E676',
+    letterSpacing: 0.5,
+  },
+  blueprintSearchCard: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    backgroundColor: '#062218',
+    borderRadius: 14,
+    padding: 14,
+    marginTop: 16,
+    marginBottom: 8,
+    borderWidth: 2,
+    borderColor: '#00E676',
+    gap: 12,
+  },
+  blueprintSearchIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: '#00E676',
+    justifyContent: 'center' as const,
+    alignItems: 'center' as const,
+  },
+  blueprintSearchTitle: {
+    fontSize: 16,
+    fontWeight: '700' as const,
+    color: '#FFFFFF',
+  },
+  blueprintSearchSub: {
+    fontSize: 11,
+    color: '#8B9CB6',
+    marginTop: 2,
+  },
+  deployLandingCard: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'space-between' as const,
+    marginHorizontal: 12,
+    marginTop: 4,
+    marginBottom: 10,
+    backgroundColor: '#2A0A0A',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 2,
+    borderColor: '#FF3B30',
+    minHeight: 82,
+  },
+  deployLandingInner: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 12,
+    flex: 1,
+  },
+  deployLandingIcon: {
+    width: 50,
+    height: 50,
+    borderRadius: 13,
+    backgroundColor: '#FF3B30',
+    justifyContent: 'center' as const,
+    alignItems: 'center' as const,
+  },
+  deployLandingBadgeRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 5,
+    marginBottom: 3,
+  },
+  deployLandingDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: '#FF3B30',
+  },
+  deployLandingBadgeText: {
+    fontSize: 10,
+    fontWeight: '700' as const,
+    color: '#FF3B30',
+    letterSpacing: 0.5,
+  },
+  deployLandingTitle: {
+    fontSize: 17,
+    fontWeight: '800' as const,
+    color: '#FFFFFF',
+  },
+  deployLandingSub: {
+    fontSize: 11,
+    color: '#8B9CB6',
+    marginTop: 2,
+  },
+  deployCardOuter: {
+    marginHorizontal: 12,
+    marginTop: 14,
+    marginBottom: 10,
+  },
+  deployCard: {
+    backgroundColor: '#FF3B30',
+    borderRadius: 18,
+    padding: 18,
+    minHeight: 88,
+    shadowColor: '#FF3B30',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.5,
+    shadowRadius: 16,
+    elevation: 12,
+  },
+  deployCardRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 14,
+  },
+  deployCardIcon: {
+    width: 54,
+    height: 54,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    justifyContent: 'center' as const,
+    alignItems: 'center' as const,
+  },
+  deployCardText: {
+    flex: 1,
+  },
+  deployCardBadgeRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 6,
+    marginBottom: 4,
+  },
+  deployCardDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#FFFFFF',
+  },
+  deployCardBadge: {
+    fontSize: 11,
+    fontWeight: '800' as const,
+    color: '#FFFFFF',
+    letterSpacing: 1,
+  },
+  deployCardTitle: {
+    fontSize: 20,
+    fontWeight: '900' as const,
+    color: '#FFFFFF',
+  },
+  deployCardSub: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.75)',
+    marginTop: 3,
+    fontWeight: '500' as const,
+  },
+  deployCardArrow: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.2)',
     justifyContent: 'center' as const,
     alignItems: 'center' as const,
   },
