@@ -282,7 +282,7 @@ export default function LandingAnalyticsScreen() {
       }
     },
     staleTime: 0,
-    refetchInterval: activeTab === 'live' ? 8000 : 15000,
+    refetchInterval: activeTab === 'live' ? 3000 : 3000,
     retry: 0,
     gcTime: 0,
     refetchOnMount: true,
@@ -872,7 +872,7 @@ export default function LandingAnalyticsScreen() {
     },
     enabled: activeTab === 'brain',
     staleTime: 10000,
-    refetchInterval: activeTab === 'brain' ? 15000 : false,
+    refetchInterval: activeTab === 'brain' ? 3000 : false,
   });
 
   const learnMutation = useMutation({
