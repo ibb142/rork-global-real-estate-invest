@@ -27,11 +27,15 @@ import {
   Info,
   CheckCircle,
   CreditCard,
-  Banknote,
   Wallet,
   Lock,
   Clock,
   AlertCircle,
+  Building,
+  Copy,
+  CheckCheck,
+  ShieldCheck,
+  CircleDollarSign,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { formatCurrencyWithDecimals, formatNumber } from '@/lib/formatters';
@@ -39,15 +43,21 @@ import { getPropertyById } from '@/mocks/properties';
 import { useWalletBalance } from '@/lib/data-hooks';
 import { useProperty } from '@/lib/data-hooks';
 import { purchaseShares } from '@/lib/investment-service';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQueryClient, useQuery } from '@tanstack/react-query';
+import { supabase } from '@/lib/supabase';
+import * as Clipboard from 'expo-clipboard';
 
-type PaymentMethod = 'wallet' | 'bank' | 'card';
+type PaymentMethod = 'wire' | 'wallet' | 'card';
 
-const PAYMENT_METHODS: { id: PaymentMethod; label: string; desc: string; icon: typeof Wallet; available: boolean }[] = [
-  { id: 'wallet', label: 'Wallet Balance', desc: 'Instant settlement', icon: Wallet, available: true },
-  { id: 'bank', label: 'Bank Transfer (ACH)', desc: '1-3 business days', icon: Banknote, available: true },
-  { id: 'card', label: 'Debit/Credit Card', desc: '3.5% processing fee', icon: CreditCard, available: true },
-];
+const WIRE_TRANSFER_DETAILS = {
+  bankName: 'IVXHOLDINGS Trust Bank',
+  routingNumber: '021000021',
+  accountNumber: '9876543210',
+  accountName: 'IVXHOLDINGS LLC — Escrow',
+  swiftCode: 'IVXHUS33',
+  bankAddress: '200 Park Avenue, New York, NY 10166',
+  reference: 'IVX-SHARES',
+};
 
 export default function BuySharesScreen() {
   const router = useRouter();
@@ -62,8 +72,32 @@ export default function BuySharesScreen() {
   const { balance } = useWalletBalance();
   const walletBalance = balance.available;
 
+  const adminCardEnabled = useQuery({
+    queryKey: ['admin-card-enabled'],
+    queryFn: async () => {
+      try {
+        const { data } = await supabase
+          .from('app_settings')
+          .select('value')
+          .eq('key', 'card_payment_enabled')
+          .single();
+        if (data) {
+          return (data as any).value === 'true' || (data as any).value === true;
+        }
+        return false;
+      } catch {
+        console.log('[BuyShares] Card setting not found, defaulting to disabled');
+        return false;
+      }
+    },
+    staleTime: 30000,
+  });
+
+  const isCardEnabled = adminCardEnabled.data === true;
+
   const [sharesInput, setSharesInput] = useState('10');
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('wallet');
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('wire');
+  const [copiedField, setCopiedField] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [purchaseError, setPurchaseError] = useState<string | null>(null);
   const [confirmationNumber, setConfirmationNumber] = useState('');
@@ -76,10 +110,26 @@ export default function BuySharesScreen() {
   const pricePerShare = property?.pricePerShare ?? 0;
   const subtotal = shares * pricePerShare;
   const platformFee = subtotal * 0.01;
-  const cardFee = paymentMethod === 'card' ? subtotal * 0.035 : 0;
-  const totalCost = subtotal + platformFee + cardFee;
+  const cardFee = paymentMethod === 'card' ? subtotal * 0.025 : 0;
+  const wireFee = 0;
+  const totalCost = subtotal + platformFee + cardFee + wireFee;
   const estimatedYield = property ? (subtotal * property.yield) / 100 : 0;
   const canAfford = paymentMethod === 'wallet' ? walletBalance >= totalCost : true;
+
+  const copyToClipboard = useCallback(async (text: string, field: string) => {
+    try {
+      if (Platform.OS !== 'web') {
+        await Clipboard.setStringAsync(text);
+      } else {
+        await navigator.clipboard.writeText(text);
+      }
+      setCopiedField(field);
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setTimeout(() => setCopiedField(null), 2000);
+    } catch (err) {
+      console.log('[BuyShares] Copy failed:', err);
+    }
+  }, []);
 
   const adjustShares = useCallback((delta: number) => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -357,31 +407,130 @@ export default function BuySharesScreen() {
               <>
                 <View style={styles.paymentSection}>
                   <Text style={styles.sectionLabel}>Payment Method</Text>
-                  {PAYMENT_METHODS.map(pm => {
-                    const IconComp = pm.icon;
-                    const isSelected = paymentMethod === pm.id;
-                    return (
-                      <TouchableOpacity
-                        key={pm.id}
-                        style={[styles.paymentOption, isSelected && styles.paymentOptionActive]}
-                        onPress={() => { void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setPaymentMethod(pm.id); }}
-                      >
-                        <View style={[styles.paymentIconWrap, isSelected && styles.paymentIconWrapActive]}>
-                          <IconComp size={20} color={isSelected ? Colors.primary : Colors.textSecondary} />
+
+                  <TouchableOpacity
+                    style={[styles.paymentOption, paymentMethod === 'wire' && styles.paymentOptionActive, styles.paymentOptionPrimary]}
+                    onPress={() => { void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setPaymentMethod('wire'); }}
+                  >
+                    <View style={[styles.paymentIconWrap, paymentMethod === 'wire' && styles.paymentIconWrapActive]}>
+                      <Building size={20} color={paymentMethod === 'wire' ? Colors.primary : Colors.textSecondary} />
+                    </View>
+                    <View style={styles.paymentInfo}>
+                      <View style={styles.paymentLabelRow}>
+                        <Text style={[styles.paymentLabel, paymentMethod === 'wire' && styles.paymentLabelActive]}>Wire Transfer / ACH</Text>
+                        <View style={styles.recommendedBadge}>
+                          <ShieldCheck size={10} color={Colors.success} />
+                          <Text style={styles.recommendedBadgeText}>Most Secure</Text>
                         </View>
-                        <View style={styles.paymentInfo}>
-                          <Text style={[styles.paymentLabel, isSelected && styles.paymentLabelActive]}>{pm.label}</Text>
-                          <Text style={styles.paymentDesc}>
-                            {pm.id === 'wallet' ? `Balance: ${formatCurrencyWithDecimals(walletBalance)}` : pm.desc}
-                          </Text>
-                        </View>
-                        <View style={[styles.paymentRadio, isSelected && styles.paymentRadioActive]}>
-                          {isSelected && <View style={styles.paymentRadioDot} />}
-                        </View>
-                      </TouchableOpacity>
-                    );
-                  })}
+                      </View>
+                      <Text style={styles.paymentDesc}>No processing fee • 1-2 business days</Text>
+                    </View>
+                    <View style={[styles.paymentRadio, paymentMethod === 'wire' && styles.paymentRadioActive]}>
+                      {paymentMethod === 'wire' && <View style={styles.paymentRadioDot} />}
+                    </View>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.paymentOption, paymentMethod === 'wallet' && styles.paymentOptionActive]}
+                    onPress={() => { void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setPaymentMethod('wallet'); }}
+                  >
+                    <View style={[styles.paymentIconWrap, paymentMethod === 'wallet' && styles.paymentIconWrapActive]}>
+                      <Wallet size={20} color={paymentMethod === 'wallet' ? Colors.primary : Colors.textSecondary} />
+                    </View>
+                    <View style={styles.paymentInfo}>
+                      <Text style={[styles.paymentLabel, paymentMethod === 'wallet' && styles.paymentLabelActive]}>Wallet Balance</Text>
+                      <Text style={styles.paymentDesc}>Balance: {formatCurrencyWithDecimals(walletBalance)} • Instant</Text>
+                    </View>
+                    <View style={[styles.paymentRadio, paymentMethod === 'wallet' && styles.paymentRadioActive]}>
+                      {paymentMethod === 'wallet' && <View style={styles.paymentRadioDot} />}
+                    </View>
+                  </TouchableOpacity>
+
+                  {isCardEnabled && (
+                    <TouchableOpacity
+                      style={[styles.paymentOption, paymentMethod === 'card' && styles.paymentOptionActive, styles.paymentOptionCard]}
+                      onPress={() => { void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setPaymentMethod('card'); }}
+                    >
+                      <View style={[styles.paymentIconWrap, paymentMethod === 'card' && styles.paymentIconWrapActive]}>
+                        <CreditCard size={20} color={paymentMethod === 'card' ? Colors.primary : Colors.textSecondary} />
+                      </View>
+                      <View style={styles.paymentInfo}>
+                        <Text style={[styles.paymentLabel, paymentMethod === 'card' && styles.paymentLabelActive]}>Debit/Credit Card</Text>
+                        <Text style={styles.paymentDesc}>2.5% processing fee • Instant</Text>
+                      </View>
+                      <View style={[styles.paymentRadio, paymentMethod === 'card' && styles.paymentRadioActive]}>
+                        {paymentMethod === 'card' && <View style={styles.paymentRadioDot} />}
+                      </View>
+                    </TouchableOpacity>
+                  )}
                 </View>
+
+                {paymentMethod === 'wire' && (
+                  <View style={styles.wireDetailsSection}>
+                    <View style={styles.wireHeader}>
+                      <CircleDollarSign size={18} color={Colors.primary} />
+                      <Text style={styles.wireHeaderTitle}>Wire / ACH Transfer Details</Text>
+                    </View>
+                    <Text style={styles.wireInstructions}>
+                      Send the exact amount below to complete your purchase. Include the reference number in the memo field.
+                    </Text>
+
+                    <View style={styles.wireAmountHighlight}>
+                      <Text style={styles.wireAmountLabel}>Amount to Send</Text>
+                      <Text style={styles.wireAmountValue}>{formatCurrencyWithDecimals(totalCost)}</Text>
+                    </View>
+
+                    {[
+                      { label: 'Bank Name', value: WIRE_TRANSFER_DETAILS.bankName, key: 'bankName' },
+                      { label: 'Routing Number (ACH)', value: WIRE_TRANSFER_DETAILS.routingNumber, key: 'routing' },
+                      { label: 'Account Number', value: WIRE_TRANSFER_DETAILS.accountNumber, key: 'account' },
+                      { label: 'Account Name', value: WIRE_TRANSFER_DETAILS.accountName, key: 'accountName' },
+                      { label: 'SWIFT Code', value: WIRE_TRANSFER_DETAILS.swiftCode, key: 'swift' },
+                      { label: 'Bank Address', value: WIRE_TRANSFER_DETAILS.bankAddress, key: 'address' },
+                    ].map(item => (
+                      <View key={item.key} style={styles.wireRow}>
+                        <View style={styles.wireRowInfo}>
+                          <Text style={styles.wireRowLabel}>{item.label}</Text>
+                          <Text style={styles.wireRowValue}>{item.value}</Text>
+                        </View>
+                        <TouchableOpacity
+                          style={styles.wireCopyBtn}
+                          onPress={() => copyToClipboard(item.value, item.key)}
+                        >
+                          {copiedField === item.key ? (
+                            <CheckCheck size={16} color={Colors.success} />
+                          ) : (
+                            <Copy size={16} color={Colors.textTertiary} />
+                          )}
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+
+                    <View style={styles.wireRefRow}>
+                      <Text style={styles.wireRefLabel}>Reference / Memo</Text>
+                      <TouchableOpacity
+                        style={styles.wireRefValueWrap}
+                        onPress={() => copyToClipboard(`${WIRE_TRANSFER_DETAILS.reference}-${propertyId?.slice(0, 8) || 'SHARES'}`, 'reference')}
+                      >
+                        <Text style={styles.wireRefValue}>
+                          {WIRE_TRANSFER_DETAILS.reference}-{propertyId?.slice(0, 8) || 'SHARES'}
+                        </Text>
+                        {copiedField === 'reference' ? (
+                          <CheckCheck size={14} color={Colors.success} />
+                        ) : (
+                          <Copy size={14} color={Colors.primary} />
+                        )}
+                      </TouchableOpacity>
+                    </View>
+
+                    <View style={styles.wireSecurityNote}>
+                      <Shield size={14} color={Colors.success} />
+                      <Text style={styles.wireSecurityText}>
+                        ACH/Wire transfers are FDIC-insured and processed through our secure escrow account. Your funds are protected.
+                      </Text>
+                    </View>
+                  </View>
+                )}
 
                 <View style={styles.orderSummary}>
                   <Text style={styles.sectionLabel}>Order Summary</Text>
@@ -408,8 +557,14 @@ export default function BuySharesScreen() {
                     </View>
                     {cardFee > 0 && (
                       <View style={styles.orderRow}>
-                        <Text style={styles.orderLabel}>Card Fee (3.5%)</Text>
+                        <Text style={styles.orderLabel}>Card Fee (2.5%)</Text>
                         <Text style={styles.orderValue}>{formatCurrencyWithDecimals(cardFee)}</Text>
+                      </View>
+                    )}
+                    {paymentMethod === 'wire' && (
+                      <View style={styles.orderRow}>
+                        <Text style={[styles.orderLabel, { color: Colors.success }]}>Wire/ACH Fee</Text>
+                        <Text style={[styles.orderValue, { color: Colors.success }]}>FREE</Text>
                       </View>
                     )}
                     <View style={styles.orderDivider} />
@@ -1011,5 +1166,152 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#FF6B6B',
     lineHeight: 18,
+  },
+  paymentOptionPrimary: {
+    borderWidth: 1.5,
+    borderColor: Colors.success + '40',
+    backgroundColor: Colors.success + '08',
+  },
+  paymentOptionCard: {
+    opacity: 0.85,
+  },
+  paymentLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  recommendedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: Colors.success + '20',
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+  },
+  recommendedBadgeText: {
+    fontSize: 10,
+    fontWeight: '700' as const,
+    color: Colors.success,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.3,
+  },
+  wireDetailsSection: {
+    marginHorizontal: 16,
+    marginBottom: 16,
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: Colors.primary + '25',
+  },
+  wireHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 10,
+  },
+  wireHeaderTitle: {
+    fontSize: 16,
+    fontWeight: '700' as const,
+    color: Colors.text,
+  },
+  wireInstructions: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    lineHeight: 19,
+    marginBottom: 16,
+  },
+  wireAmountHighlight: {
+    backgroundColor: Colors.primary + '15',
+    borderRadius: 12,
+    padding: 14,
+    alignItems: 'center',
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: Colors.primary + '30',
+  },
+  wireAmountLabel: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    marginBottom: 4,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.5,
+  },
+  wireAmountValue: {
+    fontSize: 28,
+    fontWeight: '900' as const,
+    color: Colors.primary,
+  },
+  wireRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.surfaceBorder,
+  },
+  wireRowInfo: {
+    flex: 1,
+  },
+  wireRowLabel: {
+    fontSize: 11,
+    color: Colors.textTertiary,
+    marginBottom: 2,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.4,
+  },
+  wireRowValue: {
+    fontSize: 15,
+    fontWeight: '600' as const,
+    color: Colors.text,
+  },
+  wireCopyBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: Colors.backgroundSecondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  wireRefRow: {
+    marginTop: 14,
+    backgroundColor: Colors.backgroundSecondary,
+    borderRadius: 12,
+    padding: 14,
+  },
+  wireRefLabel: {
+    fontSize: 11,
+    color: Colors.textTertiary,
+    marginBottom: 6,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.4,
+  },
+  wireRefValueWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  wireRefValue: {
+    fontSize: 17,
+    fontWeight: '800' as const,
+    color: Colors.primary,
+    letterSpacing: 1,
+  },
+  wireSecurityNote: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    marginTop: 16,
+    backgroundColor: Colors.success + '10',
+    borderRadius: 10,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: Colors.success + '20',
+  },
+  wireSecurityText: {
+    flex: 1,
+    fontSize: 12,
+    color: Colors.success,
+    lineHeight: 17,
   },
 });
