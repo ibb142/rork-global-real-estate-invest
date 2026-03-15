@@ -49,11 +49,28 @@ function safeJsonParse(val: unknown, fallback: unknown = []): unknown {
   return val;
 }
 
+const PLACEHOLDER_DOMAINS = [
+  'picsum.photos',
+  'via.placeholder.com',
+  'placehold.co',
+  'placekitten.com',
+  'loremflickr.com',
+];
+
+function isPlaceholderPhoto(url: string): boolean {
+  try {
+    const lower = url.toLowerCase();
+    return PLACEHOLDER_DOMAINS.some(domain => lower.includes(domain));
+  } catch {
+    return false;
+  }
+}
+
 export function parseDeal(d: Record<string, unknown>): ParsedJVDeal {
   let photos = safeJsonParse(d.photos, []);
   if (!Array.isArray(photos)) photos = [];
   photos = (photos as string[]).filter(
-    (p: string) => typeof p === 'string' && p.length > 5 && (p.startsWith('http') || p.startsWith('data:image/'))
+    (p: string) => typeof p === 'string' && p.length > 5 && (p.startsWith('http') || p.startsWith('data:image/')) && !isPlaceholderPhoto(p)
   );
 
   let partners = safeJsonParse(d.partners, []);
@@ -112,6 +129,25 @@ export function getPartnersArray(partners: ParsedJVDealPartner[] | number): Pars
 export function getPoolTiersArray(deal: ParsedJVDeal): ParsedJVDealPoolTier[] {
   if (Array.isArray(deal.poolTiers)) return deal.poolTiers;
   return [];
+}
+
+export function isValidPhoto(p: unknown): boolean {
+  if (typeof p !== 'string' || p.length < 6) return false;
+  if (isPlaceholderPhoto(p)) return false;
+  if (p.startsWith('http://') || p.startsWith('https://')) return true;
+  if (p.startsWith('data:image/')) return true;
+  return false;
+}
+
+export function filterValidPhotos(raw: unknown): string[] {
+  if (!raw) return [];
+  let arr: unknown[] = [];
+  if (Array.isArray(raw)) {
+    arr = raw;
+  } else if (typeof raw === 'string') {
+    try { const parsed = JSON.parse(raw); arr = Array.isArray(parsed) ? parsed : []; } catch { arr = []; }
+  }
+  return arr.filter(isValidPhoto) as string[];
 }
 
 export const QUERY_KEY_PUBLISHED_JV_DEALS = ['published-jv-deals'] as const;
