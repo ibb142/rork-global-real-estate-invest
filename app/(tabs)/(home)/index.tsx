@@ -42,8 +42,8 @@ import { useRouter } from 'expo-router';
 import Colors from '@/constants/colors';
 import { getResponsiveSize, isCompactScreen, isExtraSmallScreen } from '@/lib/responsive';
 import { useQuery } from '@tanstack/react-query';
-import { fetchJVDeals } from '@/lib/jv-storage';
-import { parseDeal as sharedParseDeal, QUERY_KEY_PUBLISHED_JV_DEALS } from '@/lib/parse-deal';
+import { fetchJVDeals, clearLocalDealCache } from '@/lib/jv-storage';
+import { parseDeal as sharedParseDeal, QUERY_KEY_PUBLISHED_JV_DEALS, isValidPhoto } from '@/lib/parse-deal';
 import { supabase } from '@/lib/supabase';
 import { useJVRealtime } from '@/lib/jv-realtime';
 import { useTranslation } from '@/lib/i18n-context';
@@ -56,7 +56,10 @@ import { formatCurrency, formatCurrencyCompact } from '@/lib/formatters';
 import { properties as fallbackProperties } from '@/mocks/properties';
 import { JVAgreement } from '@/mocks/jv-agreements';
 
+
 const IPX_LOGO = require('@/assets/images/ivx-logo.png');
+
+
 
 
 
@@ -349,24 +352,24 @@ class JVErrorBoundary extends React.Component<{ children: React.ReactNode }, { h
   }
 }
 
-const JVPhotoSlider = React.memo(function JVPhotoSlider({ photos, status }: { photos: string[]; status: { label: string; color: string } }) {
+const IGPhotoSlider = React.memo(function IGPhotoSlider({ photos, cardWidth }: { photos: string[]; cardWidth: number }) {
   const [activeIndex, setActiveIndex] = useState<number>(0);
-  const CARD_WIDTH = 280;
+  const IMG_HEIGHT = cardWidth;
 
   const handleScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const offsetX = e.nativeEvent.contentOffset.x;
-    const index = Math.round(offsetX / CARD_WIDTH);
+    const index = Math.round(offsetX / cardWidth);
     setActiveIndex(index);
-  }, []);
+  }, [cardWidth]);
 
   const renderPhoto = useCallback(({ item }: { item: string }) => (
-    <Image source={{ uri: item }} style={{ width: CARD_WIDTH, height: 160 }} resizeMode="cover" />
-  ), []);
+    <Image source={{ uri: item }} style={{ width: cardWidth, height: IMG_HEIGHT }} resizeMode="cover" />
+  ), [cardWidth, IMG_HEIGHT]);
 
-  const keyExtractor = useCallback((item: string, index: number) => `photo-${index}`, []);
+  const keyExtractor = useCallback((_item: string, index: number) => `ig-photo-${index}`, []);
 
   return (
-    <View style={jvStyles.imageWrap}>
+    <View style={{ width: cardWidth, height: IMG_HEIGHT, position: 'relative' as const }}>
       <FlatList
         data={photos}
         renderItem={renderPhoto}
@@ -377,39 +380,27 @@ const JVPhotoSlider = React.memo(function JVPhotoSlider({ photos, status }: { ph
         onScroll={handleScroll}
         scrollEventThrottle={16}
         bounces={false}
-        style={{ width: CARD_WIDTH, height: 160 }}
-        getItemLayout={(_, index) => ({ length: CARD_WIDTH, offset: CARD_WIDTH * index, index })}
+        style={{ width: cardWidth, height: IMG_HEIGHT }}
+        getItemLayout={(_, index) => ({ length: cardWidth, offset: cardWidth * index, index })}
       />
-      <View style={jvStyles.imageOverlay} />
-      <View style={jvStyles.imageBadgeRow}>
-        <View style={[jvStyles.statusBadge, { backgroundColor: status.color + '22' }]}>
-          <View style={[jvStyles.statusDot, { backgroundColor: status.color }]} />
-          <Text style={[jvStyles.statusText, { color: status.color }]}>{status.label}</Text>
-        </View>
-        {photos.length > 1 ? (
-          <View style={jvStyles.photoCountBadge}>
-            <Text style={jvStyles.photoCountText}>{activeIndex + 1}/{photos.length}</Text>
-          </View>
-        ) : null}
-      </View>
-      {photos.length > 1 ? (
-        <View style={jvStyles.dotsRow}>
+      {photos.length > 1 && (
+        <View style={igStyles.dotsRow}>
           {photos.map((_, i) => (
             <View
-              key={`dot-${i}`}
+              key={`ig-dot-${i}`}
               style={[
-                jvStyles.dot,
-                i === activeIndex ? jvStyles.dotActive : jvStyles.dotInactive,
+                igStyles.dot,
+                i === activeIndex ? igStyles.dotActive : igStyles.dotInactive,
               ]}
             />
           ))}
         </View>
-      ) : null}
+      )}
     </View>
   );
 });
 
-const JVPropertyCard = React.memo(function JVPropertyCard({ agreement, onPress, onInvest, onQuickBuy }: { agreement: JVAgreement; onPress: () => void; onInvest?: () => void; onQuickBuy?: () => void }) {
+const JVPropertyCard = React.memo(function JVPropertyCard({ agreement, onPress, onInvest, onQuickBuy, cardWidth }: { agreement: JVAgreement; onPress: () => void; onInvest?: () => void; onQuickBuy?: () => void; cardWidth: number }) {
   if (!agreement || !agreement.id) {
     console.warn('[JVPropertyCard] Invalid agreement data, skipping render');
     return null;
@@ -421,124 +412,169 @@ const JVPropertyCard = React.memo(function JVPropertyCard({ agreement, onPress, 
   const totalFormatted = formatCurrencyCompact(agreement.totalInvestment ?? 0);
   const photosRaw = agreement.photos;
   const photos = Array.isArray(photosRaw) ? photosRaw : (typeof photosRaw === 'string' ? (() => { try { const p = JSON.parse(photosRaw as string); return Array.isArray(p) ? p : []; } catch { return []; } })() : []);
-  const validPhotos = photos.filter((p: string) => typeof p === 'string' && p.length > 5 && p.startsWith('http'));
+  const validPhotos = photos.filter(isValidPhoto);
+  const hasRealPhotos = validPhotos.length > 0;
 
   return (
-    <TouchableOpacity
-      style={jvStyles.card}
-      onPress={onPress}
-      activeOpacity={0.7}
-      testID={`jv-card-${agreement.id}`}
-    >
-      {validPhotos.length > 0 ? (
-        <JVPhotoSlider photos={validPhotos} status={status} />
-      ) : (
-        <View style={jvStyles.cardHeaderNoImage}>
-          <View style={jvStyles.iconWrap}>
-            <Users size={18} color={Colors.primary} />
-          </View>
-          <View style={[jvStyles.statusBadge, { backgroundColor: status.color + '22' }]}>
-            <View style={[jvStyles.statusDot, { backgroundColor: status.color }]} />
-            <Text style={[jvStyles.statusText, { color: status.color }]}>{status.label}</Text>
-          </View>
-        </View>
-      )}
-
-      <View style={jvStyles.cardBody}>
-        <Text style={jvStyles.cardTitle} numberOfLines={1}>{agreement.projectName}</Text>
-        <Text style={jvStyles.cardSubtitle} numberOfLines={1}>{agreement.title}</Text>
-
-        {agreement.propertyAddress ? (
-          <View style={jvStyles.addressRow}>
-            <MapPin size={10} color={Colors.textTertiary} />
-            <Text style={jvStyles.addressText} numberOfLines={1}>{agreement.propertyAddress}</Text>
-          </View>
-        ) : null}
-
-        <View style={jvStyles.metricsRow}>
-          <View style={jvStyles.metric}>
-            <Text style={jvStyles.metricValue}>{totalFormatted}</Text>
-            <Text style={jvStyles.metricLabel}>Investment</Text>
-          </View>
-          <View style={jvStyles.metricDivider} />
-          <View style={jvStyles.metric}>
-            <Text style={[jvStyles.metricValue, { color: Colors.success }]}>{agreement.expectedROI}%</Text>
-            <Text style={jvStyles.metricLabel}>ROI</Text>
-          </View>
-          <View style={jvStyles.metricDivider} />
-          <View style={jvStyles.metric}>
-            <Text style={jvStyles.metricValue}>{partnerCount}</Text>
-            <Text style={jvStyles.metricLabel}>Partners</Text>
-          </View>
-        </View>
-
-        <View style={jvStyles.partnersPreview}>
-          {partners.slice(0, 3).map((p, i) => (
-            <View key={p.id || `partner-${i}`} style={[jvStyles.partnerChip, i > 0 ? { marginLeft: -6 } : undefined]}>
-              <Text style={jvStyles.partnerInitial}>{(p.name || 'P').charAt(0)}</Text>
+    <View style={[igStyles.card, { width: cardWidth }]} testID={`jv-card-${agreement.id}`}>
+      <TouchableOpacity onPress={onPress} activeOpacity={0.95}>
+        <View style={igStyles.cardHeader}>
+          <View style={igStyles.headerLeft}>
+            <View style={igStyles.avatarWrap}>
+              <Landmark size={14} color={Colors.primary} />
             </View>
-          ))}
-          {partnerCount > 3 ? (
-            <Text style={jvStyles.morePartners}>+{partnerCount - 3}</Text>
-          ) : null}
-          <View style={{ flex: 1 }} />
-          <Text style={jvStyles.typeLabel}>{(agreement.type ?? '').replace('_', ' ').toUpperCase()}</Text>
+            <View>
+              <Text style={igStyles.headerName} numberOfLines={1}>{agreement.projectName}</Text>
+              {agreement.propertyAddress ? (
+                <View style={igStyles.headerLocationRow}>
+                  <MapPin size={9} color={Colors.textTertiary} />
+                  <Text style={igStyles.headerLocation} numberOfLines={1}>{agreement.propertyAddress}</Text>
+                </View>
+              ) : null}
+            </View>
+          </View>
+          <View style={[igStyles.statusPill, { backgroundColor: status.color + '20' }]}>
+            <View style={[igStyles.statusDotSmall, { backgroundColor: status.color }]} />
+            <Text style={[igStyles.statusPillText, { color: status.color }]}>{status.label}</Text>
+          </View>
         </View>
 
-        <View style={jvStyles.investBtnRow}>
+        {hasRealPhotos ? (
+          <IGPhotoSlider photos={validPhotos} cardWidth={cardWidth} />
+        ) : (
+          <View style={igStyles.noPhotoPlaceholder}>
+            <View style={igStyles.noPhotoIconWrap}>
+              <Landmark size={32} color={Colors.primary} />
+            </View>
+            <Text style={igStyles.noPhotoTitle}>{agreement.projectName}</Text>
+            {agreement.description ? (
+              <Text style={igStyles.noPhotoDesc} numberOfLines={3}>{agreement.description}</Text>
+            ) : (
+              <Text style={igStyles.noPhotoDesc}>Investment opportunity — {formatCurrencyCompact(agreement.totalInvestment ?? 0)} · {agreement.expectedROI}% ROI</Text>
+            )}
+          </View>
+        )}
+      </TouchableOpacity>
+
+      <View style={igStyles.cardActions}>
+        <View style={igStyles.statsBar}>
+          <View style={igStyles.statItem}>
+            <Text style={igStyles.statVal}>{totalFormatted}</Text>
+            <Text style={igStyles.statLbl}>Investment</Text>
+          </View>
+          <View style={igStyles.statSep} />
+          <View style={igStyles.statItem}>
+            <Text style={[igStyles.statVal, { color: Colors.success }]}>{agreement.expectedROI}%</Text>
+            <Text style={igStyles.statLbl}>ROI</Text>
+          </View>
+          <View style={igStyles.statSep} />
+          <View style={igStyles.statItem}>
+            <Text style={igStyles.statVal}>{partnerCount}</Text>
+            <Text style={igStyles.statLbl}>Partners</Text>
+          </View>
+        </View>
+
+        <View style={igStyles.captionRow}>
+          <Text style={igStyles.captionTitle} numberOfLines={1}>{agreement.title}</Text>
+          <Text style={igStyles.captionType}>{(agreement.type ?? '').replace('_', ' ').toUpperCase()}</Text>
+        </View>
+
+        <View style={igStyles.btnRow}>
           {onQuickBuy && (
             <TouchableOpacity
-              style={jvStyles.quickBuyBtn}
+              style={igStyles.buyBtn}
               onPress={() => { onQuickBuy(); }}
               activeOpacity={0.8}
               testID={`jv-quick-buy-${agreement.id}`}
             >
-              <Zap size={13} color="#000" />
-              <Text style={jvStyles.quickBuyBtnText}>Buy Now</Text>
+              <Zap size={14} color="#000" />
+              <Text style={igStyles.buyBtnText}>Buy Now</Text>
             </TouchableOpacity>
           )}
           {onInvest && (
             <TouchableOpacity
-              style={jvStyles.detailsBtn}
+              style={igStyles.investBtn}
               onPress={() => { onInvest(); }}
               activeOpacity={0.8}
               testID={`jv-invest-${agreement.id}`}
             >
               <DollarSign size={14} color={Colors.primary} />
-              <Text style={jvStyles.detailsBtnText}>Invest</Text>
+              <Text style={igStyles.investBtnText}>Invest</Text>
             </TouchableOpacity>
           )}
         </View>
       </View>
-    </TouchableOpacity>
+    </View>
   );
 });
 
-const jvStyles = StyleSheet.create({
-  section: {
-    marginBottom: 20,
-  },
+const igStyles = StyleSheet.create({
   card: {
-    width: 280,
     backgroundColor: Colors.surface,
-    borderRadius: 16,
-    marginRight: 12,
-    borderWidth: 1,
-    borderColor: Colors.surfaceBorder,
+    borderRadius: 2,
+    marginBottom: 16,
     overflow: 'hidden' as const,
+    borderWidth: 0,
   },
-  imageWrap: {
-    width: '100%',
-    height: 160,
-    position: 'relative' as const,
+  cardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
   },
-  heroImage: {
-    width: '100%',
-    height: '100%',
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+  },
+  avatarWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: Colors.primary + '18',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: Colors.primary + '40',
+  },
+  headerName: {
+    color: Colors.text,
+    fontSize: 14,
+    fontWeight: '700' as const,
+  },
+  headerLocationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    marginTop: 1,
+  },
+  headerLocation: {
+    color: Colors.textTertiary,
+    fontSize: 11,
+    maxWidth: 180,
+  },
+  statusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 10,
+  },
+  statusDotSmall: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  statusPillText: {
+    fontSize: 10,
+    fontWeight: '700' as const,
   },
   dotsRow: {
     position: 'absolute' as const,
-    bottom: 8,
+    bottom: 10,
     left: 0,
     right: 0,
     flexDirection: 'row',
@@ -553,155 +589,61 @@ const jvStyles = StyleSheet.create({
   },
   dotActive: {
     backgroundColor: '#FFFFFF',
-    width: 18,
+    width: 20,
     height: 6,
     borderRadius: 3,
   },
   dotInactive: {
     backgroundColor: 'rgba(255,255,255,0.4)',
   },
-  imageOverlay: {
-    position: 'absolute' as const,
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 50,
-    backgroundColor: 'transparent',
-  },
-  imageBadgeRow: {
-    position: 'absolute' as const,
-    top: 10,
-    left: 10,
-    right: 10,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  photoCountBadge: {
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-  },
-  photoCountText: {
-    color: '#FFFFFF',
-    fontSize: 9,
-    fontWeight: '600' as const,
-  },
-  cardBody: {
-    padding: 14,
-  },
-  cardHeaderNoImage: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+  cardActions: {
     paddingHorizontal: 14,
-    paddingTop: 14,
-    marginBottom: 4,
+    paddingVertical: 12,
   },
-  iconWrap: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    backgroundColor: Colors.primary + '15',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  statusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-  },
-  statusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  statusText: {
-    fontSize: 10,
-    fontWeight: '700' as const,
-  },
-  cardTitle: {
-    color: Colors.text,
-    fontSize: 15,
-    fontWeight: '700' as const,
-    marginBottom: 2,
-  },
-  cardSubtitle: {
-    color: Colors.textTertiary,
-    fontSize: 11,
-    marginBottom: 8,
-  },
-  addressRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginBottom: 10,
-  },
-  addressText: {
-    color: Colors.textTertiary,
-    fontSize: 10,
-    flex: 1,
-  },
-  metricsRow: {
+  statsBar: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: Colors.backgroundSecondary,
     borderRadius: 10,
-    padding: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 4,
     marginBottom: 10,
   },
-  metric: {
+  statItem: {
     flex: 1,
     alignItems: 'center',
   },
-  metricValue: {
+  statVal: {
     color: Colors.text,
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '800' as const,
   },
-  metricLabel: {
+  statLbl: {
     color: Colors.textTertiary,
-    fontSize: 8,
+    fontSize: 9,
     fontWeight: '600' as const,
     marginTop: 2,
   },
-  metricDivider: {
+  statSep: {
     width: 1,
-    height: 20,
+    height: 22,
     backgroundColor: Colors.surfaceBorder,
   },
-  partnersPreview: {
+  captionRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
   },
-  partnerChip: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: Colors.primary + '30',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: Colors.surface,
+  captionTitle: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    flex: 1,
+    marginRight: 8,
   },
-  partnerInitial: {
-    color: Colors.primary,
-    fontSize: 10,
-    fontWeight: '800' as const,
-  },
-  morePartners: {
+  captionType: {
     color: Colors.textTertiary,
-    fontSize: 10,
-    fontWeight: '600' as const,
-    marginLeft: 4,
-  },
-  typeLabel: {
-    color: Colors.textTertiary,
-    fontSize: 8,
+    fontSize: 9,
     fontWeight: '700' as const,
     letterSpacing: 0.5,
     backgroundColor: Colors.backgroundSecondary,
@@ -709,42 +651,78 @@ const jvStyles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: 4,
   },
-  investBtnRow: {
+  btnRow: {
     flexDirection: 'row',
     gap: 8,
-    marginTop: 10,
   },
-  quickBuyBtn: {
+  buyBtn: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 5,
+    gap: 6,
     backgroundColor: Colors.primary,
     borderRadius: 10,
-    paddingVertical: 10,
+    paddingVertical: 11,
   },
-  quickBuyBtnText: {
+  buyBtnText: {
     color: '#000000',
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '800' as const,
   },
-  detailsBtn: {
+  investBtn: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 5,
-    backgroundColor: Colors.surface,
+    gap: 6,
+    backgroundColor: 'transparent',
     borderRadius: 10,
-    paddingVertical: 10,
+    paddingVertical: 11,
     borderWidth: 1,
     borderColor: Colors.primary + '40',
   },
-  detailsBtnText: {
+  investBtnText: {
     color: Colors.primary,
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '700' as const,
+  },
+  noPhotoPlaceholder: {
+    width: '100%' as any,
+    paddingVertical: 32,
+    paddingHorizontal: 20,
+    backgroundColor: Colors.backgroundSecondary,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+  },
+  noPhotoIconWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: Colors.primary + '15',
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    marginBottom: 12,
+  },
+  noPhotoTitle: {
+    color: Colors.text,
+    fontSize: 16,
+    fontWeight: '700' as const,
+    textAlign: 'center' as const,
+    marginBottom: 6,
+  },
+  noPhotoDesc: {
+    color: Colors.textSecondary,
+    fontSize: 13,
+    textAlign: 'center' as const,
+    lineHeight: 18,
+    maxWidth: 280,
+  },
+});
+
+const jvStyles = StyleSheet.create({
+  section: {
+    marginBottom: 20,
   },
 });
 
@@ -1147,16 +1125,32 @@ export default function HomeScreen() {
   const jvDealsQuery = useQuery({
     queryKey: [...QUERY_KEY_PUBLISHED_JV_DEALS],
     queryFn: async () => {
+      console.log('[Home] Fetching published JV deals...');
       const result = await fetchJVDeals({ published: true });
-      return { deals: (result.deals || []).map((d: any) => sharedParseDeal(d)) };
+      const parsed = (result.deals || []).map((d: any) => sharedParseDeal(d));
+      console.log('[Home] Fetched', parsed.length, 'published deals (source: Supabase or local)');
+
+      if (parsed.length === 0) {
+        console.log('[Home] No published deals found — trying unfiltered fetch for explicitly published active deals');
+        const allResult = await fetchJVDeals({});
+        const allActive = (allResult.deals || [])
+          .filter((d: any) => d.status === 'active' && d.published === true)
+          .map((d: any) => sharedParseDeal(d));
+        if (allActive.length > 0) {
+          console.log('[Home] Found', allActive.length, 'published active deals from unfiltered fetch');
+          return { deals: allActive };
+        }
+      }
+
+      return { deals: parsed };
     },
-    retry: 2,
+    retry: 1,
+    retryDelay: 1000,
     staleTime: 5000,
-    gcTime: 15000,
+    gcTime: 1000 * 60 * 3,
     refetchOnMount: 'always' as const,
     refetchOnWindowFocus: true,
-    refetchInterval: 15000,
-    refetchIntervalInBackground: false,
+    refetchInterval: 5000,
   });
 
   const jvDealsLoading = jvDealsQuery.isLoading;
@@ -1166,13 +1160,21 @@ export default function HomeScreen() {
       const backendDeals = (Array.isArray(rawDeals) ? rawDeals : []) as unknown as JVAgreement[];
       console.log('[Home JV] Backend deals:', backendDeals.length, 'Query status:', jvDealsQuery.status);
 
-      const validBackendDeals = backendDeals.filter(d => d && d.id && d.title && d.projectName);
+      const validBackendDeals = backendDeals.filter(d => {
+        if (!d || !d.id || !d.title || !d.projectName) return false;
+        const s = d.status as string;
+        if (s === 'trashed' || s === 'archived' || s === 'permanently_deleted') return false;
+        return true;
+      });
 
-      const mapped = validBackendDeals.map(deal => ({
-        ...deal,
-        partners: (deal.partners as any),
-        profitSplit: Array.isArray(deal.profitSplit) ? deal.profitSplit : [],
-      })) as JVAgreement[];
+      const mapped = validBackendDeals.map(deal => {
+        const base = {
+          ...deal,
+          partners: (deal.partners as any),
+          profitSplit: Array.isArray(deal.profitSplit) ? deal.profitSplit : [],
+        };
+        return base;
+      }) as JVAgreement[];
 
       console.log('[Home JV] Using backend deals, Count:', mapped.length);
       return mapped;
@@ -1214,10 +1216,22 @@ export default function HomeScreen() {
   const featuredProperties = useMemo(() => (properties ?? []).filter((p: { status?: string }) => (p?.status ?? '').toLowerCase() === 'live').slice(0, 3), [properties]);
   const comingSoonProperties = useMemo(() => (properties ?? []).filter((p: { status?: string }) => (p?.status ?? '').toLowerCase() === 'coming_soon').slice(0, 2), [properties]);
 
-  const onRefresh = useCallback(() => {
+  const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    void Promise.all([propertiesQuery.refetch(), unreadQuery.refetch(), jvDealsQuery.refetch()])
-      .finally(() => setRefreshing(false));
+    try {
+      await clearLocalDealCache();
+      console.log('[Home] Cleared ALL local caches before refresh — forcing fresh Supabase fetch');
+      await Promise.all([
+        propertiesQuery.refetch(),
+        unreadQuery.refetch(),
+        jvDealsQuery.refetch(),
+      ]);
+      console.log('[Home] Pull-to-refresh complete — data is fresh from Supabase');
+    } catch (err) {
+      console.log('[Home] Refresh error:', (err as Error)?.message);
+    } finally {
+      setRefreshing(false);
+    }
   }, [propertiesQuery, unreadQuery, jvDealsQuery]);
 
   const openQuickBuy = useCallback((deal: JVAgreement) => {
@@ -1326,7 +1340,7 @@ export default function HomeScreen() {
             </ScrollView>
           </View>
 
-          {/* 4. JV Deals */}
+          {/* 4. JV Deals — Instagram-style feed */}
           <JVErrorBoundary>
             <View style={jvStyles.section}>
               <View style={[styles.sectionHeader, { paddingHorizontal: isXs ? 16 : 20 }]}>
@@ -1344,9 +1358,9 @@ export default function HomeScreen() {
                 </TouchableOpacity>
               </View>
               {jvDealsLoading ? (
-                <View style={{ paddingHorizontal: isXs ? 16 : 20, flexDirection: 'row', gap: 12 }}>
+                <View style={{ paddingHorizontal: isXs ? 16 : 20 }}>
                   {[1, 2].map(i => (
-                    <View key={i} style={{ width: 280, height: 220, backgroundColor: Colors.surface, borderRadius: 16, borderWidth: 1, borderColor: Colors.surfaceBorder }} />
+                    <View key={i} style={{ width: '100%', height: 300, backgroundColor: Colors.surface, borderRadius: 2, marginBottom: 16 }} />
                   ))}
                 </View>
               ) : jvDeals.length === 0 ? (
@@ -1354,21 +1368,18 @@ export default function HomeScreen() {
                   <Text style={{ color: Colors.textSecondary, fontSize: 14 }}>No JV deals available yet</Text>
                 </View>
               ) : (
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={{ paddingHorizontal: isXs ? 16 : 20 }}
-                >
+                <View style={{ paddingHorizontal: isXs ? 16 : 20 }}>
                   {jvDeals.map(deal => (
                     <JVPropertyCard
                       key={deal.id}
                       agreement={deal}
+                      cardWidth={width - (isXs ? 32 : 40)}
                       onPress={() => router.push({ pathname: '/jv-invest', params: { jvId: deal.id } } as any)}
                       onInvest={() => router.push({ pathname: '/jv-invest', params: { jvId: deal.id } } as any)}
                       onQuickBuy={() => openQuickBuy(deal)}
                     />
                   ))}
-                </ScrollView>
+                </View>
               )}
             </View>
           </JVErrorBoundary>
