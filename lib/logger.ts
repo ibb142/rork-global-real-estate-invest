@@ -1,7 +1,5 @@
 import { envConfig } from './environment';
 
-type LogLevel = 'log' | 'warn' | 'error' | 'info';
-
 function createLogger(prefix: string) {
   const shouldLog = envConfig.enableDebugLogging;
 
@@ -16,7 +14,7 @@ function createLogger(prefix: string) {
       console.warn(`[${prefix}]`, ...args);
     },
     error: (...args: unknown[]) => {
-      console.error(`[${prefix}]`, ...args);
+      console.warn(`[${prefix}]`, ...args);
     },
   };
 }
