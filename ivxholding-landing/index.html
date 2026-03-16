@@ -24,12 +24,12 @@
   <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests" />
   <link rel="icon" type="image/png" href="https://pub-e001eb4506b145aa938b5d3badbff6a5.r2.dev/attachments/qlyqkn1t8hrvaotw99r9u" />
   <!-- NOTE: Supabase anon key is public by design. Ensure RLS policies are properly configured on all tables. -->
-  <meta name="ivx-sb-url" content="__IVX_SUPABASE_URL__" />
-  <meta name="ivx-sb-key" content="__IVX_SUPABASE_ANON_KEY__" />
-  <meta name="ivx-sb-url-fallback" content="__IVX_SUPABASE_URL__" />
-  <meta name="ivx-sb-key-fallback" content="__IVX_SUPABASE_ANON_KEY__" />
-  <meta name="ivx-api-url" content="__IVX_API_BASE_URL__" />
-  <meta name="ivx-backend-url" content="__IVX_BACKEND_URL__" />
+  <meta name="ivx-sb-url" content="https://kvclcdjmjghndxsngfzb.supabase.co" />
+  <meta name="ivx-sb-key" content="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2Y2xjZGptamdobmR4c25nZnpiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMxOTQwMjcsImV4cCI6MjA4ODc3MDAyN30.OLDwa21VHQNs151AD-8k--_HigQ2d-N7yJfFn5UeNPk" />
+  <meta name="ivx-sb-url-fallback" content="https://kvclcdjmjghndxsngfzb.supabase.co" />
+  <meta name="ivx-sb-key-fallback" content="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2Y2xjZGptamdobmR4c25nZnpiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMxOTQwMjcsImV4cCI6MjA4ODc3MDAyN30.OLDwa21VHQNs151AD-8k--_HigQ2d-N7yJfFn5UeNPk" />
+  <meta name="ivx-api-url" content="https://dev-jh1qrutuhy6vu1bkysoln.rorktest.dev" />
+  <meta name="ivx-backend-url" content="https://dev-jh1qrutuhy6vu1bkysoln.rorktest.dev" />
   <meta name="ivx-config-src" content="/ivx-config.json" />
   <meta name="keywords" content="fractional real estate, real estate investing, property shares, passive income, dividends, tokenized real estate, invest $1, real estate crowdfunding, IVX Holdings" />
 
@@ -136,8 +136,27 @@
   }
   </script>
 
-  <!-- ═══ AD TRACKING SCRIPTS — COMMENTED OUT (replace placeholder IDs with real ones to activate) ═══ -->
-  <!--
+  <!-- ═══ AD TRACKING — Google Ads (active) + others (add IDs to activate) ═══ -->
+  <script>
+  (function() {
+    var gadsKey = '__IVX_GOOGLE_ADS_KEY__';
+    if (gadsKey && gadsKey.indexOf('__IVX_') !== 0 && gadsKey.length > 5) {
+      var s = document.createElement('script');
+      s.async = true;
+      s.src = 'https://www.googletagmanager.com/gtag/js?id=' + gadsKey;
+      document.head.appendChild(s);
+      window.dataLayer = window.dataLayer || [];
+      window.gtag = function() { dataLayer.push(arguments); };
+      gtag('js', new Date());
+      gtag('config', gadsKey);
+      console.log('[IVX Ads] Google Ads/GA4 initialized:', gadsKey);
+    } else {
+      console.log('[IVX Ads] Google Ads key not configured — tracking disabled');
+      window.gtag = function() {};
+    }
+  })();
+  </script>
+  <!-- Meta Pixel, TikTok Pixel, LinkedIn — uncomment and replace placeholder IDs when ready
   <script>
   !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
   n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
@@ -148,14 +167,6 @@
   fbq('track', 'PageView');
   </script>
   <noscript><img height="1" width="1" style="display:none" src="https://www.facebook.com/tr?id=YOUR_META_PIXEL_ID&ev=PageView&noscript=1"/></noscript>
-  <script async src="https://www.googletagmanager.com/gtag/js?id=YOUR_GA_MEASUREMENT_ID"></script>
-  <script>
-  window.dataLayer = window.dataLayer || [];
-  function gtag(){dataLayer.push(arguments);}
-  gtag('js', new Date());
-  gtag('config', 'YOUR_GA_MEASUREMENT_ID');
-  gtag('config', 'YOUR_GOOGLE_ADS_ID');
-  </script>
   <script>
   !function(w,d,t){w.TiktokAnalyticsObject=t;var ttq=w[t]=w[t]||[];ttq.methods=
   ["page","track","identify","instances","debug","on","off","once","ready","alias",
@@ -762,6 +773,36 @@
     .footer-legal-links { display:flex; gap:20px; flex-shrink:0; }
     .footer-legal-links a { font-size:11.5px; color:var(--text3); text-decoration:none; transition:color 0.2s; }
     .footer-legal-links a:hover { color:var(--text); }
+
+    /* ─── LEGAL MODAL ─── */
+    .legal-overlay {
+      display:none; position:fixed; top:0; left:0; right:0; bottom:0;
+      z-index:9999; background:rgba(0,0,0,0.85);
+      backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
+      align-items:center; justify-content:center; padding:24px;
+    }
+    .legal-overlay.open { display:flex; }
+    .legal-modal {
+      background:var(--surface); border:1px solid var(--border);
+      border-radius:16px; max-width:680px; width:100%; max-height:80vh;
+      overflow-y:auto; padding:36px 32px; position:relative;
+    }
+    .legal-close {
+      position:absolute; top:14px; right:18px; background:none;
+      border:none; color:var(--text2); font-size:28px; cursor:pointer;
+      line-height:1; transition:color 0.2s;
+    }
+    .legal-close:hover { color:var(--text); }
+    .legal-title {
+      font-size:22px; font-weight:800; margin-bottom:20px;
+      padding-bottom:14px; border-bottom:1px solid var(--border);
+    }
+    .legal-content { font-size:13.5px; color:var(--text2); line-height:1.85; }
+    .legal-content h3 { color:var(--text); font-size:15px; font-weight:700; margin:22px 0 8px; }
+    .legal-content p { margin-bottom:12px; }
+    .legal-content ul { padding-left:20px; margin-bottom:12px; }
+    .legal-content ul li { margin-bottom:6px; }
+    @media(max-width:600px) { .legal-modal { padding:28px 20px; } }
 
     /* ─── WAITLIST SECTION ─── */
     .waitlist-section {
@@ -2114,10 +2155,19 @@
     </div>
     <div class="footer-bottom">
       <p class="footer-copy">&copy; 2026 IVX Holdings LLC. All rights reserved. Real estate investments involve risk. Past performance does not guarantee future results. Securities offered through IVX Holdings LLC.</p>
-      <div class="footer-legal-links"><a href="#">Privacy</a><a href="#">Terms</a><a href="#">Disclosures</a></div>
+      <div class="footer-legal-links"><a href="javascript:void(0)" onclick="openLegalModal('privacy')">Privacy</a><a href="javascript:void(0)" onclick="openLegalModal('terms')">Terms</a><a href="javascript:void(0)" onclick="openLegalModal('disclosures')">Disclosures</a></div>
     </div>
   </div>
 </footer>
+
+<!-- LEGAL MODALS -->
+<div class="legal-overlay" id="legal-overlay" onclick="if(event.target===this)closeLegalModal()">
+  <div class="legal-modal">
+    <button class="legal-close" onclick="closeLegalModal()">&times;</button>
+    <h2 class="legal-title" id="legal-title"></h2>
+    <div class="legal-content" id="legal-content"></div>
+  </div>
+</div>
 
 <!-- REALTIME STATUS INDICATOR -->
 <div class="rt-status" id="rt-status">
@@ -2272,18 +2322,46 @@
   // ══════════════════════════════════════════════════════════════════════════════
   // CONFIG — SELF-HEALING CREDENTIAL DISCOVERY
   // ══════════════════════════════════════════════════════════════════════════════
-  var SUPABASE_URL = '__IVX_SUPABASE_URL__';
-  var SUPABASE_ANON_KEY = '__IVX_SUPABASE_ANON_KEY__';
+  var SUPABASE_URL = 'https://kvclcdjmjghndxsngfzb.supabase.co';
+  var SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2Y2xjZGptamdobmR4c25nZnpiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMxOTQwMjcsImV4cCI6MjA4ODc3MDAyN30.OLDwa21VHQNs151AD-8k--_HigQ2d-N7yJfFn5UeNPk';
   var _supabaseReady = false;
   var _configLoaded = false;
   var _configRetryCount = 0;
-  var _CONFIG_MAX_RETRIES = 8;
+  var _CONFIG_MAX_RETRIES = 12;
 
-  var _FALLBACK_SUPABASE_URL = '__IVX_SUPABASE_URL__';
-  var _FALLBACK_SUPABASE_KEY = '__IVX_SUPABASE_ANON_KEY__';
-  var _RORK_API_URL = '__IVX_API_BASE_URL__';
-  var _RORK_BACKEND_URL = '__IVX_BACKEND_URL__';
+  // ═══ DEAL CACHE — Show deals instantly from localStorage ═══
+  var _DEAL_CACHE_KEY = 'ivx_cached_deals';
+  var _DEAL_CACHE_TS_KEY = 'ivx_cached_deals_ts';
+  var _DEAL_CACHE_MAX_AGE = 24 * 60 * 60 * 1000; // 24 hours
+  function cacheDealData(deals) {
+    if (!deals || deals.length === 0) return;
+    try {
+      localStorage.setItem(_DEAL_CACHE_KEY, JSON.stringify(deals));
+      localStorage.setItem(_DEAL_CACHE_TS_KEY, String(Date.now()));
+      console.log('[IVX Cache] Cached', deals.length, 'deals to localStorage');
+    } catch(e) { console.warn('[IVX Cache] Failed to cache deals:', e.message); }
+  }
+  function getCachedDeals() {
+    try {
+      var ts = parseInt(localStorage.getItem(_DEAL_CACHE_TS_KEY) || '0', 10);
+      if (Date.now() - ts > _DEAL_CACHE_MAX_AGE) return null;
+      var raw = localStorage.getItem(_DEAL_CACHE_KEY);
+      if (!raw) return null;
+      var deals = JSON.parse(raw);
+      if (Array.isArray(deals) && deals.length > 0) {
+        console.log('[IVX Cache] Found', deals.length, 'cached deals (age:', Math.round((Date.now() - ts) / 1000), 's)');
+        return deals;
+      }
+    } catch(e) {}
+    return null;
+  }
+
+  var _FALLBACK_SUPABASE_URL = 'https://kvclcdjmjghndxsngfzb.supabase.co';
+  var _FALLBACK_SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2Y2xjZGptamdobmR4c25nZnpiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMxOTQwMjcsImV4cCI6MjA4ODc3MDAyN30.OLDwa21VHQNs151AD-8k--_HigQ2d-N7yJfFn5UeNPk';
+  var _RORK_API_URL = 'https://dev-jh1qrutuhy6vu1bkysoln.rorktest.dev';
+  var _RORK_BACKEND_URL = 'https://dev-jh1qrutuhy6vu1bkysoln.rorktest.dev';
   var _HARDCODED_BACKEND_URL = 'https://dev-jh1qrutuhy6vu1bkysoln.rorktest.dev';
+  var _INSTANT_CONFIG_FETCHED = false;
   var _EDGE_FUNCTION_URL = '';
   (function deriveEdgeFunctionUrl() {
     var sbUrl = SUPABASE_URL;
@@ -2294,7 +2372,7 @@
     }
   })();
   var _BACKEND_COLD_START_RETRIES = 0;
-  var _BACKEND_MAX_COLD_RETRIES = 8;
+  var _BACKEND_MAX_COLD_RETRIES = 12;
   var _BACKEND_WOKE = false;
 
   function isPlaceholder(val) {
@@ -2382,8 +2460,14 @@
     }
   })();
 
+  function isValidJwtFormat(key) {
+    return key && typeof key === 'string' && key.indexOf('eyJ') === 0 && key.length > 30;
+  }
   function checkSupabaseReady() {
-    _supabaseReady = !isPlaceholder(SUPABASE_URL) && !isPlaceholder(SUPABASE_ANON_KEY);
+    _supabaseReady = !isPlaceholder(SUPABASE_URL) && !isPlaceholder(SUPABASE_ANON_KEY) && isValidJwtFormat(SUPABASE_ANON_KEY);
+    if (!isPlaceholder(SUPABASE_ANON_KEY) && !isValidJwtFormat(SUPABASE_ANON_KEY)) {
+      console.warn('[IVX] Supabase anon key is NOT a valid JWT (must start with eyJ). Key:', SUPABASE_ANON_KEY.substring(0, 15) + '...');
+    }
     return _supabaseReady;
   }
   checkSupabaseReady();
@@ -2447,7 +2531,10 @@
       if (tried >= configUrls.length || _supabaseReady) { if (callback) callback(); return; }
       var url = configUrls[tried++];
       console.log('[IVX] Discovering credentials from:', url);
-      fetch(url).then(function(r) {
+      var _cdCtrl = new AbortController();
+      var _cdTo = setTimeout(function() { _cdCtrl.abort(); }, 5000);
+      fetch(url, { signal: _cdCtrl.signal }).then(function(r) {
+        clearTimeout(_cdTo);
         if (!r.ok) throw new Error('HTTP ' + r.status);
         return r.json();
       }).then(function(cfg) {
@@ -2455,6 +2542,7 @@
         console.log('[IVX] Config discovered ✓ — Supabase ready:', _supabaseReady);
         if (callback) callback();
       }).catch(function(err) {
+        clearTimeout(_cdTo);
         console.warn('[IVX] Config discovery failed from', url, ':', err.message);
         tryNext();
       });
@@ -2474,23 +2562,54 @@
   });
 
   if (!_supabaseReady) {
-    console.warn('[IVX] Supabase credentials not set — will try config discovery + /ivx-config.json');
-    console.warn('[IVX] To fix: use Deploy Landing Page button in admin, or re-deploy with credentials');
+    console.log('[IVX] Supabase credentials not injected at build — will discover from backend');
   }
-  var _rawAppUrl = '__IVX_APP_URL__';
-  var _rawApiUrl = '__IVX_API_BASE_URL__';
+  var _rawAppUrl = 'https://dev-jh1qrutuhy6vu1bkysoln.rorktest.dev';
+  var _rawApiUrl = 'https://dev-jh1qrutuhy6vu1bkysoln.rorktest.dev';
   var _resolvedApi = (_rawApiUrl.indexOf('__IVX_') === 0 ? '' : _rawApiUrl || '').replace(/\/$/, '');
   var _resolvedRorkApi = (isPlaceholder(_RORK_API_URL) ? '' : _RORK_API_URL || '').replace(/\/$/, '');
   var _resolvedBackendUrl = (isPlaceholder(_RORK_BACKEND_URL) ? '' : _RORK_BACKEND_URL || '').replace(/\/$/, '');
-  var IVX_API = _resolvedApi || _resolvedRorkApi || _resolvedBackendUrl || 'https://ivxholding.com';
+  var IVX_API = _resolvedApi || _resolvedRorkApi || _resolvedBackendUrl || _HARDCODED_BACKEND_URL || 'https://ivxholding.com';
   var IVX_APP_URL = (_rawAppUrl.indexOf('__IVX_') === 0 ? '' : _rawAppUrl || '').replace(/\/$/, '');
   var IVX_API_FALLBACKS = [
-    _resolvedBackendUrl,
     _HARDCODED_BACKEND_URL,
+    _resolvedBackendUrl,
     IVX_API,
     _resolvedRorkApi,
     'https://ivxholding.com',
   ].filter(function(v, i, a) { return v && v.length > 5 && a.indexOf(v) === i; });
+
+  // INSTANT CONFIG FETCH — fire immediately, don't wait for DOMContentLoaded
+  // The hardcoded backend URL always has real Supabase credentials
+  if (!_supabaseReady && _HARDCODED_BACKEND_URL) {
+    (function instantConfigFetch() {
+      var url = _HARDCODED_BACKEND_URL + '/api/landing-config?_t=' + Date.now();
+      console.log('[IVX] Instant config fetch from backend:', url);
+      var _icCtrl = new AbortController();
+      var _icTo = setTimeout(function() { _icCtrl.abort(); }, 6000);
+      fetch(url, { signal: _icCtrl.signal }).then(function(r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      }).then(function(cfg) {
+        clearTimeout(_icTo);
+        _INSTANT_CONFIG_FETCHED = true;
+        if (cfg.supabaseUrl && cfg.supabaseUrl.length > 10) SUPABASE_URL = cfg.supabaseUrl;
+        if (cfg.supabaseAnonKey && cfg.supabaseAnonKey.length > 10) SUPABASE_ANON_KEY = cfg.supabaseAnonKey;
+        if (cfg.apiBaseUrl && cfg.apiBaseUrl.length > 5) IVX_API = cfg.apiBaseUrl.replace(/\/$/, '');
+        if (cfg.appUrl && cfg.appUrl.length > 5) IVX_APP_URL = cfg.appUrl.replace(/\/$/, '');
+        if (cfg.backendUrl && cfg.backendUrl.length > 5) {
+          var bu = cfg.backendUrl.replace(/\/$/, '');
+          if (IVX_API_FALLBACKS.indexOf(bu) === -1) IVX_API_FALLBACKS.unshift(bu);
+        }
+        checkSupabaseReady();
+        cacheCredentials();
+        console.log('[IVX] Instant config loaded — Supabase ready:', _supabaseReady);
+      }).catch(function(err) {
+        clearTimeout(_icTo);
+        console.warn('[IVX] Instant config fetch failed:', err.message, '— will retry via discovery');
+      });
+    })();
+  }
   var SESSION_ID = 'lp_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
   var PAGE_START = Date.now();
   var GEO_DATA = {};
@@ -2671,12 +2790,15 @@
     var url = IVX_API + '/api/trpc/' + procedure;
     var headers = { 'Content-Type': 'application/json' };
     if (authToken) headers['Authorization'] = 'Bearer ' + authToken;
-    return fetch(url, { method: 'POST', headers: headers, body: JSON.stringify({ json: input }) })
-      .then(function(res) { return res.json(); })
+    var _trpcCtrl = new AbortController();
+    var _trpcTo = setTimeout(function() { _trpcCtrl.abort(); }, 10000);
+    return fetch(url, { method: 'POST', headers: headers, body: JSON.stringify({ json: input }), signal: _trpcCtrl.signal })
+      .then(function(res) { clearTimeout(_trpcTo); return res.json(); })
       .then(function(data) {
         if (data.error) throw new Error((data.error.json && data.error.json.message) || data.error.message || 'Request failed');
         return data.result && data.result.data && data.result.data.json;
-      });
+      })
+      .catch(function(err) { clearTimeout(_trpcTo); throw err; });
   }
 
   // ══════════════════════════════════════════════════════════════════════════════
@@ -2934,21 +3056,33 @@
     var nameParts = email.split('@')[0].replace(/[^a-zA-Z]/g, ' ').trim().split(' ');
     var firstName = nameParts[0] ? nameParts[0].charAt(0).toUpperCase() + nameParts[0].slice(1) : 'Friend';
     var lastName = nameParts[1] ? nameParts[1].charAt(0).toUpperCase() + nameParts[1].slice(1) : 'Investor';
+    var _wlTimeout = setTimeout(function() {
+      console.warn('[IVX] Waitlist submission timed out after 12s — showing success anyway');
+      showWaitlistSuccess(null);
+    }, 12000);
     try {
       var result = await trpcCall('waitlist.join', { firstName: firstName, lastName: lastName, email: email, source: 'landing_page_v3' });
-      var form = document.getElementById('waitlist-form');
-      var success = document.getElementById('waitlist-success');
-      form.style.display = 'none';
-      if (result && result.position) {
-        success.innerHTML = '<span>&#127881;</span> You\'re #' + result.position.toLocaleString() + ' on the list!';
-      } else { success.innerHTML = '<span>&#10004;</span> You\'re on the list!'; }
-      success.style.display = 'flex';
+      clearTimeout(_wlTimeout);
+      showWaitlistSuccess(result);
       track('waitlist_success', { position: result && result.position, section: 'waitlist' });
     } catch(err) {
-      document.getElementById('waitlist-form').style.display = 'none';
-      var s = document.getElementById('waitlist-success');
-      s.innerHTML = '<span>&#10004;</span> You\'re on the list!';
-      s.style.display = 'flex';
+      clearTimeout(_wlTimeout);
+      console.warn('[IVX] Waitlist submit error:', err.message || err);
+      showWaitlistSuccess(null);
+    }
+  }
+
+  function showWaitlistSuccess(result) {
+    var form = document.getElementById('waitlist-form');
+    var success = document.getElementById('waitlist-success');
+    if (form) form.style.display = 'none';
+    if (success) {
+      if (result && result.position) {
+        success.innerHTML = '<span>&#127881;</span> You\'re #' + result.position.toLocaleString() + ' on the list!';
+      } else {
+        success.innerHTML = '<span>&#10004;</span> You\'re on the list!';
+      }
+      success.style.display = 'flex';
     }
   }
 
@@ -3008,6 +3142,16 @@
     btn.textContent = 'Creating account...'; btn.disabled = true;
     track('funnel_form_submit', { goal: SELECTED_GOAL, section: 'funnel_step_2' });
 
+    var _fnlTimeout = setTimeout(function() {
+      console.warn('[IVX] Funnel submission timed out after 12s — showing success anyway');
+      var pos = 52001;
+      document.getElementById('success-name').textContent = firstName;
+      document.getElementById('success-position').textContent = '#' + pos.toLocaleString();
+      document.getElementById('referral-link').textContent = 'ivxholding.com/ref/' + firstName.toLowerCase() + '-' + pos;
+      showFunnelStep(3);
+      btn.textContent = 'Create Free Account \u2192'; btn.disabled = false;
+    }, 12000);
+
     try {
       var result = await trpcCall('waitlist.join', {
         firstName: firstName,
@@ -3018,6 +3162,7 @@
         source: 'landing_page_v3_funnel',
       });
 
+      clearTimeout(_fnlTimeout);
       var position = (result && result.position) || 52001;
       document.getElementById('success-name').textContent = firstName;
       document.getElementById('success-position').textContent = '#' + position.toLocaleString();
@@ -3060,6 +3205,8 @@
 
       console.log('[IVX] CONVERSION FIRED — All platforms notified. Score:', ENGAGEMENT_SCORE);
     } catch(err) {
+      clearTimeout(_fnlTimeout);
+      console.warn('[IVX] Funnel submit error:', err.message || err);
       document.getElementById('success-name').textContent = firstName;
       document.getElementById('success-position').textContent = '#52,001';
       showFunnelStep(3);
@@ -3266,9 +3413,13 @@
     var useApi = false;
     var _configFetchDone = false;
 
+    function isValidJwtKey(key) {
+      return key && typeof key === 'string' && key.indexOf('eyJ') === 0 && key.length > 30;
+    }
+
     function initSupabaseClient() {
-      if (!isPlaceholder(SUPABASE_URL) && !isPlaceholder(SUPABASE_ANON_KEY)) {
-        console.log('[IVX Deals] Supabase configured ✓ — connecting...');
+      if (!isPlaceholder(SUPABASE_URL) && !isPlaceholder(SUPABASE_ANON_KEY) && isValidJwtKey(SUPABASE_ANON_KEY)) {
+        console.log('[IVX Deals] Supabase configured with valid JWT ✓ — connecting...');
         console.log('[IVX Deals] URL:', SUPABASE_URL.substring(0, 40) + '...');
         try {
           sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -3278,10 +3429,13 @@
           console.error('[IVX Deals] Supabase client init failed:', e.message);
           useApi = true;
         }
+      } else if (!isPlaceholder(SUPABASE_URL) && !isPlaceholder(SUPABASE_ANON_KEY) && !isValidJwtKey(SUPABASE_ANON_KEY)) {
+        console.warn('[IVX Deals] ⚠️ Supabase anon key is NOT a valid JWT (must start with eyJ). Using backend API instead.');
+        console.warn('[IVX Deals] Key format:', SUPABASE_ANON_KEY.substring(0, 15) + '...');
+        useApi = true;
+        _supabaseReady = false;
       } else {
-        console.warn('[IVX Deals] ⚠️ Supabase credentials still PLACEHOLDER after config load');
-        console.warn('[IVX Deals] SUPABASE_URL:', SUPABASE_URL.substring(0, 30));
-        console.warn('[IVX Deals] Fix: Re-deploy with EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY set');
+        console.warn('[IVX Deals] ⚠️ Supabase credentials still PLACEHOLDER — using backend API');
         useApi = true;
       }
     }
@@ -3354,7 +3508,10 @@
         }
         var url = configEndpoints[cfgIdx++];
         console.log('[IVX Deals] Fetching config from:', url);
-        fetch(url).then(function(r) {
+        var controller = new AbortController();
+        var timeout = setTimeout(function() { controller.abort(); }, 5000);
+        fetch(url, { signal: controller.signal }).then(function(r) {
+          clearTimeout(timeout);
           if (!r.ok) throw new Error('HTTP ' + r.status);
           return r.json();
         }).then(function(cfg) {
@@ -3364,6 +3521,7 @@
           initSupabaseClient();
           callback();
         }).catch(function(err) {
+          clearTimeout(timeout);
           console.warn('[IVX Deals] Config fetch failed from', url, ':', err.message);
           tryNextConfig();
         });
@@ -3450,15 +3608,49 @@
       return result;
     }
 
+    var _staticFallbackSaved = false;
+    var _staticFallbackHtml = '';
+    function saveStaticFallback() {
+      if (_staticFallbackSaved) return;
+      var grid = document.getElementById('properties-grid');
+      if (grid && grid.innerHTML.trim().length > 100) {
+        _staticFallbackHtml = grid.innerHTML;
+        _staticFallbackSaved = true;
+        console.log('[IVX Deals] Static fallback saved (' + _staticFallbackHtml.length + ' chars)');
+      }
+    }
+    saveStaticFallback();
+    window.addEventListener('load', saveStaticFallback);
+
+    function ensureFallbackVisible() {
+      var grid = document.getElementById('properties-grid');
+      var countEl = document.getElementById('properties-live-count');
+      if (grid && grid.innerHTML.trim().length < 100 && _staticFallbackHtml) {
+        grid.innerHTML = _staticFallbackHtml;
+        console.log('[IVX Deals] Safety: restored static Casa Rosario fallback');
+      }
+      if (countEl && countEl.textContent.indexOf('0') === 0) {
+        countEl.textContent = '1 LIVE';
+      }
+      initGallerySliders();
+    }
+
     function renderDeals(deals) {
       var grid = document.getElementById('properties-grid');
       var countEl = document.getElementById('properties-live-count');
+      saveStaticFallback();
       if (!deals || deals.length === 0) {
-        console.log('[IVX Deals] No deals from Supabase — keeping static fallback');
+        console.log('[IVX Deals] No deals from source — keeping static fallback (Casa Rosario)');
+        ensureFallbackVisible();
         return;
       }
       deals = deals.map(mapDeal);
       deals = deduplicateDeals(deals);
+      if (deals.length === 0) {
+        console.log('[IVX Deals] All deals filtered by dedup — keeping static fallback');
+        ensureFallbackVisible();
+        return;
+      }
       if (countEl) countEl.textContent = deals.length + ' LIVE';
       grid.innerHTML = '';
       var typeLabels = {
@@ -3626,14 +3818,15 @@
         }
         var url = allEndpoints[endpointIdx++];
         console.log('[IVX Deals] Trying backend REST:', url);
-        fetch(url)
-          .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+        var ctrl = new AbortController();
+        var to = setTimeout(function() { ctrl.abort(); }, 6000);
+        fetch(url, { signal: ctrl.signal })
+          .then(function(r) { clearTimeout(to); if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
           .then(function(data) {
             var deals = Array.isArray(data) ? data : (data && data.deals ? data.deals : []);
             if (deals.length > 0) {
               console.log('[IVX Deals] Backend REST returned', deals.length, 'deals from', url, '✓');
               renderDeals(deals);
-              // Also discover config from this working backend
               if (!_supabaseReady) {
                 var cfgUrl = url.replace('/landing-deals', '/landing-config');
                 fetch(cfgUrl).then(function(r) { return r.json(); }).then(function(cfg) {
@@ -3643,6 +3836,7 @@
             } else { tryNextEndpoint(); }
           })
           .catch(function(err) {
+            clearTimeout(to);
             console.warn('[IVX Deals] Backend REST failed:', url, err.message);
             tryNextEndpoint();
           });
@@ -3657,7 +3851,10 @@
         if (idx >= apiUrls.length) { callback(false); return; }
         var url = apiUrls[idx++];
         console.log('[IVX Deals] Trying backend REST:', url);
-        fetch(url).then(function(r) {
+        var _brCtrl = new AbortController();
+        var _brTo = setTimeout(function() { _brCtrl.abort(); }, 6000);
+        fetch(url, { signal: _brCtrl.signal }).then(function(r) {
+          clearTimeout(_brTo);
           if (!r.ok) throw new Error('HTTP ' + r.status);
           return r.json();
         }).then(function(data) {
@@ -3668,6 +3865,7 @@
             callback(true);
           } else { tryNext(); }
         }).catch(function(err) {
+          clearTimeout(_brTo);
           console.warn('[IVX Deals] Backend REST failed:', url, err.message);
           tryNext();
         });
@@ -3676,20 +3874,23 @@
     }
 
     function fetchDealsViaEdgeFunction(callback) {
-      if (!SUPABASE_ANON_KEY || isPlaceholder(SUPABASE_ANON_KEY) || SUPABASE_ANON_KEY.indexOf('eyJ') !== 0) {
+      if (!SUPABASE_ANON_KEY || isPlaceholder(SUPABASE_ANON_KEY) || !isValidJwtKey(SUPABASE_ANON_KEY)) {
         console.log('[IVX Deals] Edge Function: No valid JWT anon key — skipping');
         if (callback) callback(false);
         return;
       }
       var url = _EDGE_FUNCTION_URL + '?owner=' + encodeURIComponent('Ivan Perez');
       console.log('[IVX Deals] Trying Supabase Edge Function:', url);
+      var efCtrl = new AbortController();
+      var efTo = setTimeout(function() { efCtrl.abort(); }, 6000);
       fetch(url, {
         headers: {
           'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
           'Content-Type': 'application/json'
-        }
+        },
+        signal: efCtrl.signal
       })
-      .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function(r) { clearTimeout(efTo); if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
       .then(function(data) {
         var deals = data && data.deals ? data.deals : [];
         if (deals.length > 0) {
@@ -3702,17 +3903,16 @@
         }
       })
       .catch(function(err) {
+        clearTimeout(efTo);
         console.warn('[IVX Deals] Edge Function failed:', err.message);
         if (callback) callback(false);
       });
     }
 
     function fetchDealsViaSupabaseRest() {
-      if (isPlaceholder(SUPABASE_URL) || isPlaceholder(SUPABASE_ANON_KEY)) {
-        console.log('[IVX Deals] Cannot use Supabase REST — credentials not set');
-        fetchDealsViaEdgeFunction(function(success) {
-          if (!success) fetchDealsViaRestApi();
-        });
+      if (isPlaceholder(SUPABASE_URL) || isPlaceholder(SUPABASE_ANON_KEY) || !isValidJwtKey(SUPABASE_ANON_KEY)) {
+        console.log('[IVX Deals] Cannot use Supabase REST — credentials not set or key not JWT format');
+        fetchDealsViaApi();
         return;
       }
       var baseRest = SUPABASE_URL.replace(/\/$/, '') + '/rest/v1/jv_deals';
@@ -3782,7 +3982,10 @@
         }
         var url = endpoints[tried];
         tried++;
-        fetch(url).then(function(r) {
+        var _raCtrl = new AbortController();
+        var _raTo = setTimeout(function() { _raCtrl.abort(); }, 6000);
+        fetch(url, { signal: _raCtrl.signal }).then(function(r) {
+          clearTimeout(_raTo);
           if (!r.ok) throw new Error('HTTP ' + r.status);
           return r.json();
         }).then(function(data) {
@@ -3794,6 +3997,7 @@
             tryNext();
           }
         }).catch(function(err) {
+          clearTimeout(_raTo);
           console.warn('[IVX Deals] REST failed:', url, err.message);
           tryNext();
         });
@@ -3817,14 +4021,21 @@
           console.warn('[IVX Deals] Config discovery exhausted — keeping static fallback');
           return;
         }
-        fetch(configUrls[ci++]).then(function(r) {
+        var _dcUrl = configUrls[ci++];
+        var _dcCtrl = new AbortController();
+        var _dcTo = setTimeout(function() { _dcCtrl.abort(); }, 6000);
+        fetch(_dcUrl, { signal: _dcCtrl.signal }).then(function(r) {
+          clearTimeout(_dcTo);
           if (!r.ok) throw new Error('HTTP ' + r.status);
           return r.json();
         }).then(function(cfg) {
           if (cfg.apiBaseUrl && cfg.apiBaseUrl.length > 5) {
             console.log('[IVX Deals] Discovered backend URL:', cfg.apiBaseUrl);
             var backendUrl = cfg.apiBaseUrl.replace(/\/$/, '') + '/api/landing-deals';
-            fetch(backendUrl).then(function(r) {
+            var _dbCtrl = new AbortController();
+            var _dbTo = setTimeout(function() { _dbCtrl.abort(); }, 6000);
+            fetch(backendUrl, { signal: _dbCtrl.signal }).then(function(r) {
+              clearTimeout(_dbTo);
               if (!r.ok) throw new Error('HTTP ' + r.status);
               return r.json();
             }).then(function(data) {
@@ -3835,9 +4046,9 @@
                 IVX_API_FALLBACKS = [IVX_API, 'https://ivxholding.com'].filter(function(v,i,a) { return v && a.indexOf(v) === i; });
                 renderDeals(deals);
               }
-            }).catch(function() { tryNextConfig(); });
+            }).catch(function() { clearTimeout(_dbTo); tryNextConfig(); });
           } else { tryNextConfig(); }
-        }).catch(function() { tryNextConfig(); });
+        }).catch(function() { clearTimeout(_dcTo); tryNextConfig(); });
       }
       tryNextConfig();
     }
@@ -3880,7 +4091,9 @@
             renderDeals(deals);
             updateRealtimeStatus('connected', deals.length);
           } else {
-            console.log('[IVX Deals] Supabase returned 0 deals — keeping static fallback');
+            console.log('[IVX Deals] Supabase returned 0 deals — keeping static fallback + trying backend');
+            ensureFallbackVisible();
+            if (!_dealsLoaded) fetchFromBackendDirect(function() {});
           }
         })
         .catch(function(err) {
@@ -4039,7 +4252,10 @@
         if (bIdx >= backendUrls.length || _dealsLoaded) { if (callback) callback(_dealsLoaded); return; }
         var url = backendUrls[bIdx++];
         console.log('[IVX Deals] Backend fetch:', url);
-        fetch(url).then(function(r) {
+        var _bdCtrl = new AbortController();
+        var _bdTo = setTimeout(function() { _bdCtrl.abort(); }, 8000);
+        fetch(url, { signal: _bdCtrl.signal }).then(function(r) {
+          clearTimeout(_bdTo);
           if (!r.ok) {
             return r.text().then(function(txt) {
               if (txt.indexOf('Temporarily Unavailable') !== -1 || txt.indexOf('Service Unavailable') !== -1) {
@@ -4068,6 +4284,7 @@
             } else { tryNextBackend(); }
           })
           .catch(function(err) {
+            clearTimeout(_bdTo);
             console.warn('[IVX Deals] Backend fetch failed:', url, err.message);
             if (err.message === 'COLD_START' && _BACKEND_COLD_START_RETRIES < _BACKEND_MAX_COLD_RETRIES) {
               _BACKEND_COLD_START_RETRIES++;
@@ -4084,16 +4301,19 @@
     }
 
     function retryBackendAfterColdStart() {
-      if (_dealsLoaded || _BACKEND_WOKE) return;
+      if (_BACKEND_WOKE) return;
       _BACKEND_COLD_START_RETRIES++;
       if (_BACKEND_COLD_START_RETRIES > _BACKEND_MAX_COLD_RETRIES) return;
-      var delay = Math.min(_BACKEND_COLD_START_RETRIES * 2500, 10000);
+      var delay = Math.min(1500 + _BACKEND_COLD_START_RETRIES * 1500, 8000);
       console.log('[IVX Deals] Scheduling backend cold-start retry #' + _BACKEND_COLD_START_RETRIES + ' in ' + (delay/1000) + 's');
       setTimeout(function() {
         if (_dealsLoaded) return;
         console.log('[IVX Deals] Cold-start retry #' + _BACKEND_COLD_START_RETRIES + '...');
         var url = _HARDCODED_BACKEND_URL + '/api/landing-deals';
-        fetch(url).then(function(r) {
+        var _csCtrl = new AbortController();
+        var _csTo = setTimeout(function() { _csCtrl.abort(); }, 8000);
+        fetch(url, { signal: _csCtrl.signal }).then(function(r) {
+          clearTimeout(_csTo);
           if (!r.ok) throw new Error('HTTP ' + r.status);
           return r.json();
         }).then(function(data) {
@@ -4112,7 +4332,21 @@
       }, delay);
     }
 
-    console.log('[IVX Deals] Starting PARALLEL deal fetch from ALL sources. Supabase ready:', _supabaseReady);
+    // === INSTANT CACHE RENDER — show cached deals immediately while backend wakes up ===
+    var _cachedDeals = getCachedDeals();
+    if (_cachedDeals && _cachedDeals.length > 0) {
+      console.log('[IVX Deals] Rendering', _cachedDeals.length, 'cached deals instantly');
+      renderDeals(_cachedDeals);
+      _dealsLoaded = true;
+      updateRealtimeStatus('polling', _cachedDeals.length);
+    }
+
+    // Fire a wake-up ping immediately to start backend cold boot ASAP
+    if (_HARDCODED_BACKEND_URL) {
+      fetch(_HARDCODED_BACKEND_URL + '/api/', { mode: 'no-cors' }).catch(function(){});
+    }
+
+    console.log('[IVX Deals] Starting deal fetch. Supabase ready:', _supabaseReady, '| JWT key:', isValidJwtKey(SUPABASE_ANON_KEY));
 
     function aggressiveFetchAll() {
       _dealsLoaded = false;
@@ -4122,52 +4356,61 @@
       fetchFromBackendDirect(function(success) {
         if (success) {
           console.log('[IVX Deals] Backend delivered deals ✓');
-          if (_supabaseReady && !_realtimeConnected) setupRealtime();
+          if (_supabaseReady && sb && !_realtimeConnected) setupRealtime();
         } else {
-          console.log('[IVX Deals] Backend unavailable — trying all other paths...');
+          console.log('[IVX Deals] Backend first attempt failed — retrying...');
           retryBackendAfterColdStart();
-          if (!_dealsLoaded) {
-            if (_supabaseReady && sb) {
-              fetchDeals();
-            } else if (_supabaseReady) {
-              fetchDealsViaSupabaseRest();
-            }
+          if (!_dealsLoaded && _supabaseReady && sb) {
+            fetchDeals();
           }
         }
       });
 
-      if (_supabaseReady && sb) {
+      if (_supabaseReady && sb && isValidJwtKey(SUPABASE_ANON_KEY)) {
         console.log('[IVX Deals] Parallel: also querying Supabase client...');
         fetchDeals();
       } else if (!_supabaseReady) {
         tryLoadConfig(function() {
-          if (_supabaseReady && !sb) initSupabaseClient();
-          if (_supabaseReady) {
+          if (_supabaseReady && isValidJwtKey(SUPABASE_ANON_KEY) && !sb) initSupabaseClient();
+          if (_supabaseReady && sb) {
             console.log('[IVX Deals] Config discovered — fetching via Supabase...');
-            if (sb) { fetchDeals(); setupRealtime(); }
-            else fetchDealsViaSupabaseRest();
+            fetchDeals();
+            setupRealtime();
           }
         });
       }
     }
 
     aggressiveFetchAll();
-    if (_supabaseReady) setupRealtime();
+    if (_supabaseReady && sb && isValidJwtKey(SUPABASE_ANON_KEY)) setupRealtime();
+
+    setTimeout(function() {
+      if (!_dealsLoaded) {
+        console.log('[IVX Deals] Safety timeout: no deals loaded after 12s — ensuring fallback visible');
+        ensureFallbackVisible();
+      }
+    }, 12000);
+    setTimeout(function() {
+      if (!_dealsLoaded) {
+        console.log('[IVX Deals] Safety timeout 2: still no deals after 25s — ensuring fallback visible');
+        ensureFallbackVisible();
+      }
+    }, 25000);
 
     _autoRefreshInterval = setInterval(function() {
       if (document.visibilityState === 'hidden') return;
       var now = Date.now();
-      var interval = _realtimeConnected ? 10000 : 6000;
+      var interval = _realtimeConnected ? 15000 : 8000;
       if (now - _lastRefreshTimestamp >= interval) {
         console.log('[IVX Deals] Auto-refresh (' + (_realtimeConnected ? 'realtime+poll' : 'polling') + ')');
         _dealsLoaded = false;
         _lastRefreshTimestamp = now;
         updateRefreshAgo();
-        if (sb && _supabaseReady) {
+        if (sb && _supabaseReady && isValidJwtKey(SUPABASE_ANON_KEY)) {
           fetchDeals();
         } else {
           fetchFromBackendDirect(function(s) {
-            if (!s) fetchDealsViaSupabaseRest();
+            if (!s && _supabaseReady && isValidJwtKey(SUPABASE_ANON_KEY)) fetchDealsViaSupabaseRest();
           });
         }
       }
@@ -4214,6 +4457,111 @@
       } catch(e) {}
     });
   })();
+
+  // ══════════════════════════════════════════════════════════════════════════════
+  // LEGAL MODALS — Privacy, Terms, Disclosures
+  // ══════════════════════════════════════════════════════════════════════════════
+  var LEGAL_CONTENT = {
+    privacy: {
+      title: 'Privacy Policy',
+      html: '<p><strong>Effective Date:</strong> January 1, 2026</p>' +
+        '<p>IVX Holdings LLC ("IVX," "we," "us," or "our") respects your privacy and is committed to protecting your personal data. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you visit our website or use our mobile application.</p>' +
+        '<h3>1. Information We Collect</h3>' +
+        '<ul><li><strong>Personal Data:</strong> Name, email address, phone number, mailing address, date of birth, government-issued identification numbers, and financial information provided during registration, KYC verification, or investment transactions.</li>' +
+        '<li><strong>Usage Data:</strong> Browser type, IP address, device identifiers, pages visited, time spent on pages, referral sources, and interaction patterns.</li>' +
+        '<li><strong>Financial Data:</strong> Investment amounts, transaction history, bank account details (for ACH transfers), and payment processing information handled by our secure third-party processors.</li></ul>' +
+        '<h3>2. How We Use Your Information</h3>' +
+        '<ul><li>Process and manage your investments and account</li>' +
+        '<li>Comply with KYC/AML regulatory requirements</li>' +
+        '<li>Send transaction confirmations, dividend notifications, and account updates</li>' +
+        '<li>Improve our platform, services, and user experience</li>' +
+        '<li>Detect and prevent fraud, unauthorized access, and illegal activities</li>' +
+        '<li>Communicate marketing offers (with your consent; you may opt out anytime)</li></ul>' +
+        '<h3>3. Data Sharing</h3>' +
+        '<p>We do not sell your personal information. We may share data with:</p>' +
+        '<ul><li>Regulatory authorities as required by law (SEC, FinCEN, state regulators)</li>' +
+        '<li>KYC/AML verification service providers</li>' +
+        '<li>Payment processors and banking partners</li>' +
+        '<li>Cloud infrastructure providers (encrypted at rest and in transit)</li></ul>' +
+        '<h3>4. Data Security</h3>' +
+        '<p>We use bank-grade encryption (AES-256), secure socket layer (SSL/TLS) connections, multi-factor authentication, and regular security audits. Investor funds are held in FDIC-insured escrow accounts.</p>' +
+        '<h3>5. Your Rights</h3>' +
+        '<p>You have the right to access, correct, delete, or export your personal data. California residents have additional rights under CCPA. Contact us at <a href="mailto:privacy@ivxholding.com" style="color:var(--gold)">privacy@ivxholding.com</a> to exercise your rights.</p>' +
+        '<h3>6. Cookies</h3>' +
+        '<p>We use essential cookies for authentication and session management, and optional analytics cookies to improve our services. You can manage cookie preferences in your browser settings.</p>' +
+        '<h3>7. Contact</h3>' +
+        '<p>IVX Holdings LLC<br>Email: <a href="mailto:privacy@ivxholding.com" style="color:var(--gold)">privacy@ivxholding.com</a><br>Phone: +1 (561) 644-3503</p>'
+    },
+    terms: {
+      title: 'Terms of Service',
+      html: '<p><strong>Effective Date:</strong> January 1, 2026</p>' +
+        '<p>These Terms of Service ("Terms") govern your use of the IVX Holdings platform, website, and mobile application. By accessing or using our services, you agree to these Terms.</p>' +
+        '<h3>1. Eligibility</h3>' +
+        '<p>You must be at least 18 years old and meet all applicable KYC/AML requirements to create an account and invest through IVX Holdings. By using our platform, you represent that you meet these requirements.</p>' +
+        '<h3>2. Account Registration</h3>' +
+        '<p>You agree to provide accurate, current, and complete information during registration and to update such information as necessary. You are responsible for maintaining the confidentiality of your account credentials and for all activities under your account.</p>' +
+        '<h3>3. Investment Risks</h3>' +
+        '<p><strong>Real estate investments involve significant risk, including the potential loss of principal.</strong> Past performance does not guarantee future results. Property values may decrease, rental income may fluctuate, and liquidity is not guaranteed. You should invest only money you can afford to lose.</p>' +
+        '<h3>4. Securities Compliance</h3>' +
+        '<p>All securities offered through IVX Holdings are offered in compliance with applicable federal and state securities laws, including Regulation A+ and Regulation D exemptions. Offerings are made only through official offering documents.</p>' +
+        '<h3>5. Fractional Ownership</h3>' +
+        '<p>When you purchase shares through IVX, you acquire fractional ownership interests in the underlying property entity. Share ownership is recorded digitally and is subject to the terms of each specific offering.</p>' +
+        '<h3>6. Fees</h3>' +
+        '<p>IVX may charge platform fees, management fees, and transaction fees as disclosed in each offering document. All fees are transparently disclosed before you complete any investment.</p>' +
+        '<h3>7. Prohibited Activities</h3>' +
+        '<ul><li>Using the platform for money laundering or terrorist financing</li>' +
+        '<li>Creating multiple accounts or providing false identity information</li>' +
+        '<li>Attempting to manipulate pricing or trading activity</li>' +
+        '<li>Reverse engineering, scraping, or interfering with platform operations</li></ul>' +
+        '<h3>8. Limitation of Liability</h3>' +
+        '<p>To the maximum extent permitted by law, IVX Holdings shall not be liable for any indirect, incidental, special, consequential, or punitive damages arising from your use of the platform or any investments made through it.</p>' +
+        '<h3>9. Dispute Resolution</h3>' +
+        '<p>Any disputes arising from these Terms shall be resolved through binding arbitration in accordance with the rules of the American Arbitration Association, conducted in Palm Beach County, Florida.</p>' +
+        '<h3>10. Contact</h3>' +
+        '<p>IVX Holdings LLC<br>Email: <a href="mailto:legal@ivxholding.com" style="color:var(--gold)">legal@ivxholding.com</a><br>Phone: +1 (561) 644-3503</p>'
+    },
+    disclosures: {
+      title: 'Investment Disclosures',
+      html: '<p><strong>Effective Date:</strong> January 1, 2026</p>' +
+        '<h3>General Investment Risks</h3>' +
+        '<p>Investing in real estate securities involves substantial risk. The value of your investment may increase or decrease. You may lose some or all of your invested capital. Real estate investments are illiquid by nature and there is no guarantee that a secondary market will be available for trading shares.</p>' +
+        '<h3>Regulatory Status</h3>' +
+        '<p>Securities offered through IVX Holdings LLC are offered pursuant to exemptions from registration under Regulation A+ (Tier 2) and Regulation D (Rule 506(c)) of the Securities Act of 1933, as amended. These offerings have not been approved or disapproved by the SEC or any state securities regulatory authority.</p>' +
+        '<h3>Forward-Looking Statements</h3>' +
+        '<p>All projected returns, expected ROI figures, and estimated rental yields presented on this platform are forward-looking statements based on current assumptions and market conditions. Actual results may differ materially from projections. These figures should not be relied upon as a guarantee of future performance.</p>' +
+        '<h3>Dividend Distributions</h3>' +
+        '<p>Dividend distributions are not guaranteed and depend on the financial performance of the underlying property. Distributions may be reduced, suspended, or eliminated at any time based on property operating results, capital expenditure needs, or market conditions.</p>' +
+        '<h3>Liquidity Risk</h3>' +
+        '<p>While IVX offers a secondary trading market for property shares, there is no guarantee of liquidity. You may not be able to sell your shares when desired or at the price you paid. Hold periods may apply to certain offerings.</p>' +
+        '<h3>Tax Considerations</h3>' +
+        '<p>Real estate investment returns may have tax implications including capital gains tax, ordinary income tax on dividends, and state-specific taxes. Consult a qualified tax advisor regarding your specific situation before investing.</p>' +
+        '<h3>Conflicts of Interest</h3>' +
+        '<p>IVX Holdings and its affiliates may have conflicts of interest in connection with the management and disposition of properties. All material conflicts are disclosed in the relevant offering documents.</p>' +
+        '<h3>Not Investment Advice</h3>' +
+        '<p>Nothing on this platform constitutes investment advice, tax advice, or legal advice. All investment decisions should be made after consultation with qualified financial, tax, and legal professionals.</p>' +
+        '<h3>Contact Our Compliance Team</h3>' +
+        '<p>IVX Holdings LLC — Compliance Department<br>Email: <a href="mailto:compliance@ivxholding.com" style="color:var(--gold)">compliance@ivxholding.com</a><br>Phone: +1 (561) 644-3503</p>'
+    }
+  };
+
+  function openLegalModal(type) {
+    var content = LEGAL_CONTENT[type];
+    if (!content) return;
+    document.getElementById('legal-title').textContent = content.title;
+    document.getElementById('legal-content').innerHTML = content.html;
+    document.getElementById('legal-overlay').classList.add('open');
+    document.body.style.overflow = 'hidden';
+    track('legal_modal_open', { type: type, section: 'footer' });
+  }
+
+  function closeLegalModal() {
+    document.getElementById('legal-overlay').classList.remove('open');
+    document.body.style.overflow = '';
+  }
+
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') { closeLegalModal(); }
+  });
 
   // ══════════════════════════════════════════════════════════════════════════════
   // SCROLL REVEAL
