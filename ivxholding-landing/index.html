@@ -1812,21 +1812,12 @@
     <div class="live-deals-grid" id="properties-grid">
       <!-- DEAL 1: Casa Rosario — Real Deal from Supabase (static fallback with 8 photos) -->
       <div class="live-deal-card reveal visible" id="casa-rosario-fallback">
-        <div class="live-deal-gallery" style="position:relative;">
-          <div class="cr-slider" id="cr-slider" style="display:flex;overflow-x:auto;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;scrollbar-width:none;">
-            <img src="https://images.unsplash.com/photo-1613490493576-7fde63acd811?w=800&q=80" alt="Casa Rosario 1" loading="lazy" style="min-width:100%;scroll-snap-align:start;" />
-            <img src="https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=800&q=80" alt="Casa Rosario 2" loading="lazy" style="min-width:100%;scroll-snap-align:start;" />
-            <img src="https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=800&q=80" alt="Casa Rosario 3" loading="lazy" style="min-width:100%;scroll-snap-align:start;" />
-            <img src="https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?w=800&q=80" alt="Casa Rosario 4" loading="lazy" style="min-width:100%;scroll-snap-align:start;" />
-            <img src="https://images.unsplash.com/photo-1600566753190-17f0baa2a6c3?w=800&q=80" alt="Casa Rosario 5" loading="lazy" style="min-width:100%;scroll-snap-align:start;" />
-            <img src="https://images.unsplash.com/photo-1600573472592-401b489a3cdc?w=800&q=80" alt="Casa Rosario 6" loading="lazy" style="min-width:100%;scroll-snap-align:start;" />
-            <img src="https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=800&q=80" alt="Casa Rosario 7" loading="lazy" style="min-width:100%;scroll-snap-align:start;" />
-            <img src="https://images.unsplash.com/photo-1564013799919-ab600027ffc6?w=800&q=80" alt="Casa Rosario 8" loading="lazy" style="min-width:100%;scroll-snap-align:start;" />
-          </div>
-          <div class="live-deal-overlay-badge"><div class="live-deal-overlay-dot"></div>LIVE</div>
-          <div class="live-deal-roi-badge">&#9650; +30%</div>
-          <div class="live-deal-photo-count">&#128444; 8 photos</div>
-          <div class="cr-dots" id="cr-dots" style="position:absolute;bottom:10px;left:50%;transform:translateX(-50%);display:flex;gap:5px;z-index:5;"></div>
+        <div class="live-deal-no-photo" style="height:200px;background:linear-gradient(135deg, #1A1200 0%, #0D0D0D 50%, #111 100%);border-bottom:1px solid var(--border);">
+          <div style="width:64px;height:64px;border-radius:16px;background:var(--gold-dim);border:1px solid var(--gold-border);display:flex;align-items:center;justify-content:center;font-size:28px;">&#127959;&#65039;</div>
+          <span style="font-size:13px;font-weight:700;color:var(--gold);letter-spacing:0.5px;">CASA ROSARIO</span>
+          <span style="font-size:10px;color:var(--text3);">Upload photos in the app to display here</span>
+          <div class="live-deal-overlay-badge" style="position:absolute;top:12px;left:12px;"><div class="live-deal-overlay-dot"></div>LIVE</div>
+          <div class="live-deal-roi-badge" style="position:absolute;top:12px;right:12px;">&#9650; +30%</div>
         </div>
         <div class="live-deal-content">
           <div class="live-deal-type-badge">&#127959;&#65039; Development JV</div>
@@ -3571,7 +3562,7 @@
         exitStrategy: d.exitStrategy || d.exit_strategy || '',
         partners: rawPartners,
         photos: rawPhotos,
-        published: d.published !== undefined ? d.published : (d.status === 'active'),
+        published: d.published !== undefined ? d.published : (d.is_published !== undefined ? d.is_published : false),
         publishedAt: d.publishedAt || d.published_at || '',
         created_at: d.created_at || d.createdAt || '',
         poolTiers: rawPoolTiers,
@@ -3919,9 +3910,7 @@
       var restHeaders = { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=representation' };
 
       var queryChain = [
-        baseRest + '?select=*&published=eq.true&status=eq.active&order=created_at.desc.nullslast',
-        baseRest + '?select=*&published=eq.true&order=created_at.desc.nullslast',
-        baseRest + '?select=*&status=eq.active&order=created_at.desc.nullslast',
+        baseRest + '?select=*&is_published=eq.true&order=created_at.desc.nullslast',
         baseRest + '?select=*&order=created_at.desc.nullslast'
       ];
       var qIdx = 0;
@@ -4070,7 +4059,7 @@
             sb.from('jv_deals').select('*').then(function(r2) {
               if (r2.error) { useApi = true; fetchDealsViaSupabaseRest(); return; }
               var allDeals = r2.data || [];
-              var deals = allDeals.filter(function(d) { return d.published === true || d.status === 'active'; });
+              var deals = allDeals.filter(function(d) { return d.is_published === true || d.published === true; });
               if (deals.length === 0) deals = allDeals;
               if (deals.length > 0) renderDeals(deals);
             }).catch(function() { useApi = true; fetchDealsViaSupabaseRest(); });
@@ -4078,7 +4067,7 @@
           }
           var allDeals = result.data || [];
           var deals = allDeals.filter(function(d) {
-            return d.published === true || d.status === 'active';
+            return d.is_published === true || d.published === true;
           });
           if (deals.length === 0) deals = allDeals;
           var newHash = JSON.stringify(deals.map(function(d) { return d.id + ':' + (d.updated_at || d.created_at); }));
@@ -4209,18 +4198,18 @@
       _autoRefreshInterval = setInterval(function() {
         if (document.visibilityState === 'hidden') return;
         var now = Date.now();
-        var interval = _realtimeConnected ? 15000 : 10000;
+        var interval = _realtimeConnected ? 5000 : 4000;
         if (now - _lastForceRefreshTime >= interval) {
           _lastForceRefreshTime = now;
           console.log('[IVX Deals] Auto-refresh (' + (_realtimeConnected ? 'realtime' : 'polling') + ')');
           autoRefreshDeals();
         }
-      }, 5000);
+      }, 3000);
 
       document.addEventListener('visibilitychange', function() {
         if (document.visibilityState === 'visible') {
           var elapsed = Date.now() - _lastRefreshTimestamp;
-          if (elapsed > 8000) {
+          if (elapsed > 3000) {
             console.log('[IVX Deals] Tab visible — auto-refreshing (was hidden ' + Math.round(elapsed/1000) + 's)');
             autoRefreshDeals();
           }
@@ -4229,7 +4218,7 @@
 
       window.addEventListener('focus', function() {
         var elapsed = Date.now() - _lastRefreshTimestamp;
-        if (elapsed > 12000) {
+        if (elapsed > 4000) {
           console.log('[IVX Deals] Window focus — auto-refreshing');
           autoRefreshDeals();
         }
@@ -4400,7 +4389,7 @@
     _autoRefreshInterval = setInterval(function() {
       if (document.visibilityState === 'hidden') return;
       var now = Date.now();
-      var interval = _realtimeConnected ? 15000 : 8000;
+      var interval = _realtimeConnected ? 5000 : 4000;
       if (now - _lastRefreshTimestamp >= interval) {
         console.log('[IVX Deals] Auto-refresh (' + (_realtimeConnected ? 'realtime+poll' : 'polling') + ')');
         _dealsLoaded = false;
@@ -4419,7 +4408,7 @@
     document.addEventListener('visibilitychange', function() {
       if (document.visibilityState === 'visible') {
         var elapsed = Date.now() - _lastRefreshTimestamp;
-        if (elapsed > 4000) {
+        if (elapsed > 3000) {
           console.log('[IVX Deals] Tab visible — instant refresh');
           aggressiveFetchAll();
         }
@@ -4428,7 +4417,7 @@
 
     window.addEventListener('focus', function() {
       var elapsed = Date.now() - _lastRefreshTimestamp;
-      if (elapsed > 6000) {
+      if (elapsed > 3000) {
         console.log('[IVX Deals] Window focus — refreshing');
         aggressiveFetchAll();
       }
