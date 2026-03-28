@@ -13,10 +13,15 @@ const IGNORE = new Set([
 
 const IGNORE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.mp4', '.mov']);
 
+const IGNORE_FILES = new Set([
+  '.env', '.env.production', '.env.staging', '.env.local',
+  '.env.development', 'rork-eslint.config.js',
+]);
+
 function getAllFiles(dir, base = dir, files = []) {
   const entries = readdirSync(dir);
   for (const entry of entries) {
-    if (IGNORE.has(entry)) continue;
+    if (IGNORE.has(entry) || IGNORE_FILES.has(entry)) continue;
     const full = join(dir, entry);
     const rel = relative(base, full);
     const stat = statSync(full);
@@ -49,11 +54,6 @@ async function githubFetch(path, options = {}) {
   }
   if (res.status === 404) return null;
   return res.json();
-}
-
-async function getFileSha(path) {
-  const data = await githubFetch(`/repos/${REPO}/contents/${path}?ref=${BRANCH}`);
-  return data?.sha ?? null;
 }
 
 async function upsertFile(path, content, sha) {
