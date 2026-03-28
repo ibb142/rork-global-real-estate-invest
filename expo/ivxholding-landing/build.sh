@@ -8,7 +8,7 @@ if [ -f "index.html" ]; then
   SUPABASE_KEY="${EXPO_PUBLIC_SUPABASE_ANON_KEY:-}"
   API_URL="${EXPO_PUBLIC_API_BASE_URL:-https://ivxholding.com}"
   APP_URL="${EXPO_PUBLIC_APP_URL:-${EXPO_PUBLIC_RORK_API_BASE_URL:-}}"
-  BACKEND_URL="${EXPO_PUBLIC_RORK_API_BASE_URL:-https://dev-jh1qrutuhy6vu1bkysoln.rorktest.dev}"
+  BACKEND_URL="${EXPO_PUBLIC_RORK_API_BASE_URL:-https://api.ivxholding.com}"
 
   echo "[IVX Build] Backend URL: ${BACKEND_URL}"
   echo "[IVX Build] Supabase URL set: $([ -n "$SUPABASE_URL" ] && echo 'YES' || echo 'NO')"
@@ -44,8 +44,18 @@ if [ -f "index.html" ]; then
     sed -i "s|__IVX_GOOGLE_ADS_KEY__|${GADS_KEY}|g" index.html
     echo "[IVX Build] Google Ads key injected"
   else
+    sed -i "s|__IVX_GOOGLE_ADS_KEY__||g" index.html
     echo "[IVX Build] EXPO_PUBLIC_GOOGLE_ADS_API_KEY not set — Google Ads tracking disabled"
   fi
+
+  # Inject ad pixel IDs
+  META_PID="${META_PIXEL_ID:-}"
+  TIKTOK_PID="${TIKTOK_PIXEL_ID:-}"
+  LINKEDIN_PID="${LINKEDIN_PARTNER_ID:-}"
+  sed -i "s|__IVX_META_PIXEL_ID__|${META_PID}|g" index.html
+  sed -i "s|__IVX_TIKTOK_PIXEL_ID__|${TIKTOK_PID}|g" index.html
+  sed -i "s|__IVX_LINKEDIN_PARTNER_ID__|${LINKEDIN_PID}|g" index.html
+  echo "[IVX Build] Ad pixel IDs injected (Meta: $([ -n "$META_PID" ] && echo 'YES' || echo 'NO'), TikTok: $([ -n "$TIKTOK_PID" ] && echo 'YES' || echo 'NO'), LinkedIn: $([ -n "$LINKEDIN_PID" ] && echo 'YES' || echo 'NO'))"
 
   sed -i "s|var _HARDCODED_BACKEND_URL = '[^']*';|var _HARDCODED_BACKEND_URL = '${BACKEND_URL}';|g" index.html
 
