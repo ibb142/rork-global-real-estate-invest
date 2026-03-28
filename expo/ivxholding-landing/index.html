@@ -27,13 +27,16 @@
   <link rel="apple-touch-icon" sizes="180x180" href="https://ivxholding.com/favicon.png" />
   <link rel="shortcut icon" href="https://ivxholding.com/favicon.png" />
   <!-- NOTE: Supabase anon key is public by design. Ensure RLS policies are properly configured on all tables. -->
-  <meta name="ivx-sb-url" content="https://kvclcdjmjghndxsngfzb.supabase.co" />
-  <meta name="ivx-sb-key" content="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2Y2xjZGptamdobmR4c25nZnpiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMxOTQwMjcsImV4cCI6MjA4ODc3MDAyN30.OLDwa21VHQNs151AD-8k--_HigQ2d-N7yJfFn5UeNPk" />
-  <meta name="ivx-sb-url-fallback" content="https://kvclcdjmjghndxsngfzb.supabase.co" />
-  <meta name="ivx-sb-key-fallback" content="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2Y2xjZGptamdobmR4c25nZnpiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMxOTQwMjcsImV4cCI6MjA4ODc3MDAyN30.OLDwa21VHQNs151AD-8k--_HigQ2d-N7yJfFn5UeNPk" />
-  <meta name="ivx-api-url" content="https://ivxholding.com" />
-  <meta name="ivx-backend-url" content="https://dev-jh1qrutuhy6vu1bkysoln.rorktest.dev" />
+  <meta name="ivx-sb-url" content="__IVX_SUPABASE_URL__" />
+  <meta name="ivx-sb-key" content="__IVX_SUPABASE_ANON_KEY__" />
+  <meta name="ivx-sb-url-fallback" content="__IVX_SUPABASE_URL__" />
+  <meta name="ivx-sb-key-fallback" content="__IVX_SUPABASE_ANON_KEY__" />
+  <meta name="ivx-api-url" content="__IVX_API_BASE_URL__" />
+  <meta name="ivx-backend-url" content="__IVX_BACKEND_URL__" />
   <meta name="ivx-gads-key" content="__IVX_GOOGLE_ADS_KEY__" />
+  <meta name="ivx-meta-pixel-id" content="__IVX_META_PIXEL_ID__" />
+  <meta name="ivx-tiktok-pixel-id" content="__IVX_TIKTOK_PIXEL_ID__" />
+  <meta name="ivx-linkedin-partner-id" content="__IVX_LINKEDIN_PARTNER_ID__" />
   <meta name="ivx-config-src" content="/ivx-config.json" />
   <meta name="keywords" content="fractional real estate, real estate investing, property shares, passive income, dividends, tokenized real estate, invest $1, real estate crowdfunding, IVX Holdings" />
 
@@ -160,43 +163,75 @@
     }
   })();
   </script>
-  <!-- Meta Pixel, TikTok Pixel, LinkedIn — uncomment and replace placeholder IDs when ready
+  <!-- Meta Pixel — reads ID from meta tag, only loads if a real ID is set -->
   <script>
-  !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
-  n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
-  n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
-  t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,
-  document,'script','https://connect.facebook.net/en_US/fbevents.js');
-  fbq('init', 'YOUR_META_PIXEL_ID');
-  fbq('track', 'PageView');
+  (function() {
+    var metaPixelMeta = document.querySelector('meta[name="ivx-meta-pixel-id"]');
+    var metaPixelId = metaPixelMeta ? metaPixelMeta.content : '';
+    if (metaPixelId && metaPixelId.indexOf('__IVX_') !== 0 && metaPixelId.length > 5) {
+      !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+      n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
+      n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
+      t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,
+      document,'script','https://connect.facebook.net/en_US/fbevents.js');
+      fbq('init', metaPixelId);
+      fbq('track', 'PageView');
+      console.log('[IVX Ads] Meta Pixel initialized:', metaPixelId);
+      var noscriptImg = document.createElement('img');
+      noscriptImg.height = 1; noscriptImg.width = 1;
+      noscriptImg.style.display = 'none';
+      noscriptImg.src = 'https://www.facebook.com/tr?id=' + metaPixelId + '&ev=PageView&noscript=1';
+      document.body.appendChild(noscriptImg);
+    } else {
+      console.log('[IVX Ads] Meta Pixel ID not configured — skipping');
+      window.fbq = function() {};
+    }
+  })();
   </script>
-  <noscript><img height="1" width="1" style="display:none" src="https://www.facebook.com/tr?id=YOUR_META_PIXEL_ID&ev=PageView&noscript=1"/></noscript>
+  <!-- TikTok Pixel — reads ID from meta tag, only loads if a real ID is set -->
   <script>
-  !function(w,d,t){w.TiktokAnalyticsObject=t;var ttq=w[t]=w[t]||[];ttq.methods=
-  ["page","track","identify","instances","debug","on","off","once","ready","alias",
-  "group","enableCookie","disableCookie"],ttq.setAndDefer=function(t,e){t[e]=function(){
-  t._q.push([e].concat(Array.prototype.slice.call(arguments,0)))}};for(var i=0;
-  i<ttq.methods.length;i++)ttq.setAndDefer(ttq,ttq.methods[i]);ttq.instance=function(t){
-  for(var e=ttq._i[t]||[],n=0;n<ttq.methods.length;n++)ttq.setAndDefer(e,ttq.methods[n]);
-  return e};ttq.load=function(e,n){var i="https://analytics.tiktok.com/i18n/pixel/events.js";
-  ttq._i=ttq._i||{},ttq._i[e]=[],ttq._i[e]._u=i,ttq._t=ttq._t||{},ttq._t[e]=+new Date,
-  ttq._o=ttq._o||{},ttq._o[e]=n||{};var o=document.createElement("script");o.type="text/javascript",
-  o.async=!0,o.src=i+"?sdkid="+e+"&lib="+t;var a=document.getElementsByTagName("script")[0];
-  a.parentNode.insertBefore(o,a)};ttq.load('YOUR_TIKTOK_PIXEL_ID');ttq.page();
-  }(window,document,'ttq');
+  (function() {
+    var ttPixelMeta = document.querySelector('meta[name="ivx-tiktok-pixel-id"]');
+    var ttPixelId = ttPixelMeta ? ttPixelMeta.content : '';
+    if (ttPixelId && ttPixelId.indexOf('__IVX_') !== 0 && ttPixelId.length > 5) {
+      !function(w,d,t){w.TiktokAnalyticsObject=t;var ttq=w[t]=w[t]||[];ttq.methods=
+      ["page","track","identify","instances","debug","on","off","once","ready","alias",
+      "group","enableCookie","disableCookie"],ttq.setAndDefer=function(t,e){t[e]=function(){
+      t._q.push([e].concat(Array.prototype.slice.call(arguments,0)))}};for(var i=0;
+      i<ttq.methods.length;i++)ttq.setAndDefer(ttq,ttq.methods[i]);ttq.instance=function(t){
+      for(var e=ttq._i[t]||[],n=0;n<ttq.methods.length;n++)ttq.setAndDefer(e,ttq.methods[n]);
+      return e};ttq.load=function(e,n){var i="https://analytics.tiktok.com/i18n/pixel/events.js";
+      ttq._i=ttq._i||{},ttq._i[e]=[],ttq._i[e]._u=i,ttq._t=ttq._t||{},ttq._t[e]=+new Date,
+      ttq._o=ttq._o||{},ttq._o[e]=n||{};var o=document.createElement("script");o.type="text/javascript",
+      o.async=!0,o.src=i+"?sdkid="+e+"&lib="+t;var a=document.getElementsByTagName("script")[0];
+      a.parentNode.insertBefore(o,a)};ttq.load(ttPixelId);ttq.page();
+      }(window,document,'ttq');
+      console.log('[IVX Ads] TikTok Pixel initialized:', ttPixelId);
+    } else {
+      console.log('[IVX Ads] TikTok Pixel ID not configured — skipping');
+    }
+  })();
   </script>
-  <script type="text/javascript">
-  _linkedin_partner_id="YOUR_LINKEDIN_ID";window._linkedin_data_partner_ids=
-  window._linkedin_data_partner_ids||[];window._linkedin_data_partner_ids.push(_linkedin_partner_id);
+  <!-- LinkedIn Insight Tag — reads ID from meta tag, only loads if a real ID is set -->
+  <script>
+  (function() {
+    var liMeta = document.querySelector('meta[name="ivx-linkedin-partner-id"]');
+    var liId = liMeta ? liMeta.content : '';
+    if (liId && liId.indexOf('__IVX_') !== 0 && liId.length > 3) {
+      _linkedin_partner_id = liId;
+      window._linkedin_data_partner_ids = window._linkedin_data_partner_ids || [];
+      window._linkedin_data_partner_ids.push(_linkedin_partner_id);
+      (function(l){if(!l){window.lintrk=function(a,b){window.lintrk.q.push([a,b])};
+      window.lintrk.q=[]}var s=document.getElementsByTagName("script")[0];
+      var b=document.createElement("script");b.type="text/javascript";b.async=true;
+      b.src="https://snap.licdn.com/li.lms-analytics/insight.min.js";
+      s.parentNode.insertBefore(b,s);})(window.lintrk);
+      console.log('[IVX Ads] LinkedIn Insight Tag initialized:', liId);
+    } else {
+      console.log('[IVX Ads] LinkedIn Partner ID not configured — skipping');
+    }
+  })();
   </script>
-  <script type="text/javascript">
-  (function(l){if(!l){window.lintrk=function(a,b){window.lintrk.q.push([a,b])};
-  window.lintrk.q=[]}var s=document.getElementsByTagName("script")[0];
-  var b=document.createElement("script");b.type="text/javascript";b.async=true;
-  b.src="https://snap.licdn.com/li.lms-analytics/insight.min.js";
-  s.parentNode.insertBefore(b,s);})(window.lintrk);
-  </script>
-  -->
 
   <!-- Supabase JS CDN for live deal fetching -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
@@ -1699,7 +1734,40 @@
     }
 
     /* ─── REALTIME STATUS (removed) ─── */
-    .rt-status, .rt-status.visible, .rt-status.live, .rt-status.connected, .rt-status.polling, .rt-status.error, .rt-status.disconnected { display: none !important; }
+    .rt-status, .rt-status.visible, .rt-status.live, .rt-status.connected, .rt-status.polling, .rt-status.error, .rt-status.disconnected { display: none !important; visibility: hidden !important; opacity: 0 !important; pointer-events: none !important; width: 0 !important; height: 0 !important; overflow: hidden !important; position: absolute !important; left: -9999px !important; top: -9999px !important; }
+
+    /* ─── NUCLEAR: Kill ALL floating debug/status widgets (Supabase SDK, analytics, etc.) ─── */
+    [class*="supabase"]:not(script):not(link):not(meta),
+    [class*="sb-"]:not(script):not(link):not(meta),
+    [class*="realtime"]:not(script):not(link):not(meta),
+    [id*="supabase"]:not(script):not(link):not(meta),
+    [id*="sb-"]:not(script):not(link):not(meta),
+    [class*="debug-pill"], [class*="status-pill"], [class*="connection-pill"],
+    [class*="analytics-fab"], [class*="float-btn"], [class*="debug-fab"],
+    [class*="dev-tool"], [class*="devtool"], [class*="debug-panel"], [class*="dev-panel"],
+    [class*="sb-debug"], [class*="sb-status"], [class*="sb-pill"],
+    [class*="Realtime"], [class*="realtime-"], [id*="realtime"],
+    [class*="channel-"], [class*="presence-"],
+    [data-supabase], [data-sb], [data-realtime],
+    div[style*="position: fixed"][style*="z-index: 9"]:not(.invest-overlay):not(.cookie-banner):not(nav):not(.legal-overlay):not(.funnel-overlay):not(.live-ticker-bar):not(.app-banner),
+    div[style*="position:fixed"][style*="z-index:9"]:not(.invest-overlay):not(.cookie-banner):not(nav):not(.legal-overlay):not(.funnel-overlay):not(.live-ticker-bar):not(.app-banner),
+    div[style*="position: fixed"][style*="z-index: 1"]:not(.invest-overlay):not(.cookie-banner):not(nav):not(.legal-overlay):not(.funnel-overlay):not(.live-ticker-bar):not(.app-banner):not(.partner-overlay),
+    div[style*="position:fixed"][style*="z-index:1"]:not(.invest-overlay):not(.cookie-banner):not(nav):not(.legal-overlay):not(.funnel-overlay):not(.live-ticker-bar):not(.app-banner):not(.partner-overlay),
+    div[style*="position: fixed"][style*="border-radius: 50%"],
+    div[style*="position:fixed"][style*="border-radius:50%"],
+    div[style*="position: fixed"][style*="border-radius: 9999"],
+    div[style*="position:fixed"][style*="border-radius:9999"] {
+      display: none !important;
+      visibility: hidden !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
+      width: 0 !important;
+      height: 0 !important;
+      overflow: hidden !important;
+      position: absolute !important;
+      left: -9999px !important;
+      top: -9999px !important;
+    }
 
     /* ─── INVEST MODAL ─── */
     .invest-overlay {
@@ -2877,8 +2945,8 @@
   // ══════════════════════════════════════════════════════════════════════════════
   // CONFIG — SELF-HEALING CREDENTIAL DISCOVERY
   // ══════════════════════════════════════════════════════════════════════════════
-  var SUPABASE_URL = 'https://kvclcdjmjghndxsngfzb.supabase.co';
-  var SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2Y2xjZGptamdobmR4c25nZnpiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMxOTQwMjcsImV4cCI6MjA4ODc3MDAyN30.OLDwa21VHQNs151AD-8k--_HigQ2d-N7yJfFn5UeNPk';
+  var SUPABASE_URL = '__IVX_SUPABASE_URL__';
+  var SUPABASE_ANON_KEY = '__IVX_SUPABASE_ANON_KEY__';
   var _supabaseReady = false;
   var _configLoaded = false;
   var _configRetryCount = 0;
@@ -2911,11 +2979,11 @@
     return null;
   }
 
-  var _FALLBACK_SUPABASE_URL = 'https://kvclcdjmjghndxsngfzb.supabase.co';
-  var _FALLBACK_SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2Y2xjZGptamdobmR4c25nZnpiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMxOTQwMjcsImV4cCI6MjA4ODc3MDAyN30.OLDwa21VHQNs151AD-8k--_HigQ2d-N7yJfFn5UeNPk';
-  var _RORK_API_URL = 'https://ivxholding.com';
-  var _RORK_BACKEND_URL = 'https://dev-jh1qrutuhy6vu1bkysoln.rorktest.dev';
-  var _HARDCODED_BACKEND_URL = 'https://dev-jh1qrutuhy6vu1bkysoln.rorktest.dev';
+  var _FALLBACK_SUPABASE_URL = '__IVX_SUPABASE_URL__';
+  var _FALLBACK_SUPABASE_KEY = '__IVX_SUPABASE_ANON_KEY__';
+  var _RORK_API_URL = '__IVX_API_BASE_URL__';
+  var _RORK_BACKEND_URL = '__IVX_BACKEND_URL__';
+  var _HARDCODED_BACKEND_URL = '__IVX_BACKEND_URL__';
   var _INSTANT_CONFIG_FETCHED = false;
   var _EDGE_FUNCTION_URL = '';
   (function deriveEdgeFunctionUrl() {
@@ -2923,7 +2991,7 @@
     if (!isPlaceholder(sbUrl)) {
       _EDGE_FUNCTION_URL = sbUrl.replace(/\/+$/, '') + '/functions/v1/runtime-deals';
     } else {
-      _EDGE_FUNCTION_URL = 'https://kvclcdjmjghndxsngfzb.supabase.co/functions/v1/runtime-deals';
+      _EDGE_FUNCTION_URL = '';
     }
   })();
   var _BACKEND_COLD_START_RETRIES = 0;
@@ -3123,8 +3191,8 @@
   if (!_supabaseReady) {
     console.log('[IVX] Supabase credentials not injected at build — will discover from backend');
   }
-  var _rawAppUrl = 'https://dev-jh1qrutuhy6vu1bkysoln.rorktest.dev';
-  var _rawApiUrl = 'https://dev-jh1qrutuhy6vu1bkysoln.rorktest.dev';
+  var _rawAppUrl = '__IVX_APP_URL__';
+  var _rawApiUrl = '__IVX_BACKEND_URL__';
   var _resolvedApi = (_rawApiUrl.indexOf('__IVX_') === 0 ? '' : _rawApiUrl || '').replace(/\/$/, '');
   var _resolvedRorkApi = (isPlaceholder(_RORK_API_URL) ? '' : _RORK_API_URL || '').replace(/\/$/, '');
   var _resolvedBackendUrl = (isPlaceholder(_RORK_BACKEND_URL) ? '' : _RORK_BACKEND_URL || '').replace(/\/$/, '');
@@ -3182,16 +3250,7 @@
   var TRACK_FAILURES = 0;
   var TRACK_SUCCESS = 0;
   var _rtStatusTimeout = null;
-  function updateRealtimeStatus(status, dealCount) {
-    return;
-    }
-    if (_rtStatusTimeout) clearTimeout(_rtStatusTimeout);
-    if (status === 'connected') {
-      _rtStatusTimeout = setTimeout(function() {
-        el.classList.remove('visible');
-      }, 12000);
-    }
-  }
+  function updateRealtimeStatus(status, dealCount) { return; }
 
   console.log('[IVX] Landing v7 — Live Tracking Engine + Realtime');
   console.log('[IVX] API:', IVX_API);
@@ -5790,6 +5849,113 @@
     document.getElementById('cookie-banner').classList.remove('visible');
     track('cookie_consent', { type: 'essential_only' });
   }
+
+  (function killFloatingDebugWidgets() {
+    var SAFE_IDS = ['cookie-banner', 'invest-overlay', 'funnel-overlay', 'legal-overlay', 'partner-overlay'];
+    var SAFE_CLASSES = ['cookie-banner', 'invest-overlay', 'funnel-overlay', 'legal-overlay', 'partner-overlay',
+                        'nav-links', 'mobile-open', 'live-ticker', 'app-banner', 'hero', 'live-deals'];
+    var SAFE_TAGS = ['nav', 'script', 'link', 'meta', 'style', 'head'];
+
+    function isSafe(el) {
+      if (!el || !el.tagName) return true;
+      var tag = el.tagName.toLowerCase();
+      if (SAFE_TAGS.indexOf(tag) !== -1) return true;
+      var id = el.id || '';
+      var cls = (typeof el.className === 'string') ? el.className : '';
+      for (var i = 0; i < SAFE_IDS.length; i++) {
+        if (id.indexOf(SAFE_IDS[i]) !== -1) return true;
+      }
+      for (var j = 0; j < SAFE_CLASSES.length; j++) {
+        if (cls.indexOf(SAFE_CLASSES[j]) !== -1) return true;
+      }
+      if (el.closest && (el.closest('nav') || el.closest('section') || el.closest('footer') ||
+          el.closest('.hero') || el.closest('.live-deals-section') || el.closest('.cookie-banner') ||
+          el.closest('.invest-overlay') || el.closest('.funnel-overlay') || el.closest('.legal-overlay') ||
+          el.closest('.partner-overlay') || el.closest('.app-banner'))) return true;
+      return false;
+    }
+
+    function nukeElement(el) {
+      if (!el || !el.parentNode) return;
+      try { el.parentNode.removeChild(el); } catch(e) {
+        try { el.style.cssText = 'display:none!important;visibility:hidden!important;opacity:0!important;width:0!important;height:0!important;position:absolute!important;left:-9999px!important;top:-9999px!important;pointer-events:none!important;'; } catch(e2) {}
+      }
+    }
+
+    function removeFloaters() {
+      var dangerSelectors = [
+        '[class*="supabase"]', '[class*="sb-"]', '[class*="realtime"]',
+        '[id*="supabase"]', '[id*="sb-"]', '[id*="realtime"]',
+        '[class*="debug"]', '[class*="devtool"]', '[class*="analytics-fab"]',
+        '[class*="status-pill"]', '[class*="connection-pill"]', '[class*="float-btn"]',
+        '[class*="Realtime"]', '[class*="channel-"]', '[class*="presence-"]',
+        '[data-supabase]', '[data-sb]', '[data-realtime]',
+        '.rt-status'
+      ];
+      dangerSelectors.forEach(function(sel) {
+        try {
+          document.querySelectorAll(sel).forEach(function(el) {
+            if (SAFE_TAGS.indexOf(el.tagName.toLowerCase()) !== -1) return;
+            if (isSafe(el)) return;
+            nukeElement(el);
+          });
+        } catch(e) {}
+      });
+
+      try {
+        var allEls = document.body.querySelectorAll('*');
+        allEls.forEach(function(el) {
+          try {
+            var cs = window.getComputedStyle(el);
+            if (cs.position !== 'fixed' && cs.position !== 'sticky') return;
+            if (isSafe(el)) return;
+            var tag = el.tagName.toLowerCase();
+            if (tag === 'nav') return;
+            var z = parseInt(cs.zIndex, 10) || 0;
+            var rect = el.getBoundingClientRect();
+            if (z >= 900 && rect.width < 300 && rect.height < 300 && rect.width > 0) {
+              console.log('[IVX] Nuking floating widget:', tag, el.id, el.className, 'z:', z, 'size:', rect.width + 'x' + rect.height);
+              nukeElement(el);
+              return;
+            }
+            if (rect.width < 80 && rect.height < 80 && rect.width > 10 && rect.height > 10) {
+              var style = el.getAttribute('style') || '';
+              if (style.indexOf('border-radius') !== -1 || cs.borderRadius.indexOf('50%') !== -1 || parseInt(cs.borderRadius) > 20) {
+                console.log('[IVX] Nuking floating circle widget:', tag, el.id, el.className);
+                nukeElement(el);
+                return;
+              }
+            }
+            if (rect.width < 250 && rect.height < 60 && rect.width > 50 && (rect.bottom > window.innerHeight - 120)) {
+              var text = (el.textContent || '').toLowerCase();
+              if (text.indexOf('supabase') !== -1 || text.indexOf('connected') !== -1 || text.indexOf('realtime') !== -1 || text.indexOf('deals') !== -1 || text.indexOf('debug') !== -1 || text.indexOf('status') !== -1) {
+                console.log('[IVX] Nuking status pill:', tag, el.id, el.className, 'text:', text.substring(0, 50));
+                nukeElement(el);
+                return;
+              }
+            }
+          } catch(e) {}
+        });
+      } catch(e) {}
+    }
+
+    removeFloaters();
+    var intervals = [200, 500, 1000, 2000, 3000, 5000, 8000, 12000, 20000];
+    intervals.forEach(function(ms) { setTimeout(removeFloaters, ms); });
+    setInterval(removeFloaters, 15000);
+
+    var observer = new MutationObserver(function(mutations) {
+      var shouldClean = false;
+      for (var i = 0; i < mutations.length; i++) {
+        if (mutations[i].addedNodes.length > 0) { shouldClean = true; break; }
+      }
+      if (shouldClean) {
+        setTimeout(removeFloaters, 50);
+        setTimeout(removeFloaters, 300);
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+  })();
 </script>
 </body>
 </html>
