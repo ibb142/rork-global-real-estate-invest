@@ -6,6 +6,9 @@ const API_BASE_URL = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || process.env.E
 const APP_URL = (process.env.EXPO_PUBLIC_APP_URL || process.env.EXPO_PUBLIC_RORK_API_BASE_URL || '').trim().replace(/\/$/, '');
 const BACKEND_URL = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || '').trim().replace(/\/$/, '');
 const GOOGLE_ADS_KEY = (process.env.EXPO_PUBLIC_GOOGLE_ADS_API_KEY || '').trim();
+const META_PIXEL_ID = (process.env.META_PIXEL_ID || '').trim();
+const TIKTOK_PIXEL_ID = (process.env.TIKTOK_PIXEL_ID || '').trim();
+const LINKEDIN_PARTNER_ID = (process.env.LINKEDIN_PARTNER_ID || '').trim();
 
 console.log('🔨 Building IVX Holdings landing page with credentials...');
 console.log('   Supabase URL:', SUPABASE_URL ? SUPABASE_URL.substring(0, 40) + '...' : '❌ NOT SET');
@@ -13,6 +16,10 @@ console.log('   Supabase Key:', SUPABASE_ANON_KEY ? SUPABASE_ANON_KEY.substring(
 console.log('   API Base URL:', API_BASE_URL || '(default)');
 console.log('   App URL:', APP_URL || '(not set)');
 console.log('   Backend URL:', BACKEND_URL || '(not set)');
+console.log('   Google Ads Key:', GOOGLE_ADS_KEY ? GOOGLE_ADS_KEY.substring(0, 15) + '...' : '(not set)');
+console.log('   Meta Pixel ID:', META_PIXEL_ID || '(not set)');
+console.log('   TikTok Pixel ID:', TIKTOK_PIXEL_ID || '(not set)');
+console.log('   LinkedIn Partner ID:', LINKEDIN_PARTNER_ID || '(not set)');
 
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   console.warn('\n⚠️  Supabase credentials not found in env vars.');
@@ -29,6 +36,9 @@ html = html.replace(/__IVX_API_BASE_URL__/g, API_BASE_URL);
 html = html.replace(/__IVX_APP_URL__/g, APP_URL);
 html = html.replace(/__IVX_BACKEND_URL__/g, BACKEND_URL);
 html = html.replace(/__IVX_GOOGLE_ADS_KEY__/g, GOOGLE_ADS_KEY);
+html = html.replace(/__IVX_META_PIXEL_ID__/g, META_PIXEL_ID);
+html = html.replace(/__IVX_TIKTOK_PIXEL_ID__/g, TIKTOK_PIXEL_ID);
+html = html.replace(/__IVX_LINKEDIN_PARTNER_ID__/g, LINKEDIN_PARTNER_ID);
 
 // Also inject into JS variables and meta tags directly
 html = html.replace(/var _FALLBACK_SUPABASE_URL = '[^']*';/, `var _FALLBACK_SUPABASE_URL = '${SUPABASE_URL}';`);
@@ -43,9 +53,13 @@ html = html.replace(/<meta\s+name="ivx-sb-url-fallback"\s+content="[^"]*"/, `<me
 html = html.replace(/<meta\s+name="ivx-sb-key-fallback"\s+content="[^"]*"/, `<meta name="ivx-sb-key-fallback" content="${SUPABASE_ANON_KEY}"`);
 html = html.replace(/<meta\s+name="ivx-api-url"\s+content="[^"]*"/, `<meta name="ivx-api-url" content="${API_BASE_URL}"`);
 html = html.replace(/<meta\s+name="ivx-backend-url"\s+content="[^"]*"/, `<meta name="ivx-backend-url" content="${BACKEND_URL}"`);
+html = html.replace(/<meta\s+name="ivx-gads-key"\s+content="[^"]*"/, `<meta name="ivx-gads-key" content="${GOOGLE_ADS_KEY}"`);
+html = html.replace(/<meta\s+name="ivx-meta-pixel-id"\s+content="[^"]*"/, `<meta name="ivx-meta-pixel-id" content="${META_PIXEL_ID}"`);
+html = html.replace(/<meta\s+name="ivx-tiktok-pixel-id"\s+content="[^"]*"/, `<meta name="ivx-tiktok-pixel-id" content="${TIKTOK_PIXEL_ID}"`);
+html = html.replace(/<meta\s+name="ivx-linkedin-partner-id"\s+content="[^"]*"/, `<meta name="ivx-linkedin-partner-id" content="${LINKEDIN_PARTNER_ID}"`);
 
 
-console.log('   Injected credentials into JS vars + meta tags');
+console.log('   Injected credentials + ad pixel IDs into JS vars + meta tags');
 
 const distDir = './ivxholding-landing/dist';
 if (!existsSync(distDir)) {
