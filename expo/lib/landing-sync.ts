@@ -37,8 +37,8 @@ export interface PublishedDealPayload {
   displayOrder: number;
 }
 
-const LANDING_SYNC_ENDPOINT = process.env.EXPO_PUBLIC_RORK_API_BASE_URL
-  ? `${process.env.EXPO_PUBLIC_RORK_API_BASE_URL}/api/landing-sync`
+const LANDING_SYNC_ENDPOINT = process.env.EXPO_PUBLIC_API_BASE_URL
+  ? `${process.env.EXPO_PUBLIC_API_BASE_URL}/api/landing-sync`
   : null;
 
 function isSupabaseConfigured(): boolean {
@@ -48,7 +48,7 @@ function isSupabaseConfigured(): boolean {
 }
 
 async function fetchPublishedDealsViaBackend(): Promise<PublishedDealPayload[]> {
-  const backendUrl = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || '').trim().replace(/\/$/, '');
+  const backendUrl = (process.env.EXPO_PUBLIC_API_BASE_URL || '').trim().replace(/\/$/, '');
   if (!backendUrl) {
     console.log('[LandingSync] No backend URL — cannot fetch published deals');
     return [];
@@ -239,7 +239,7 @@ async function tryAutoDeployToS3(): Promise<void> {
 }
 
 async function tryDeployViaBackend(): Promise<void> {
-  const backendUrl = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || '').trim().replace(/\/$/, '');
+  const backendUrl = (process.env.EXPO_PUBLIC_API_BASE_URL || '').trim().replace(/\/$/, '');
   if (!backendUrl) {
     console.log('[LandingSync] No backend URL — cannot deploy from native platform');
     return;

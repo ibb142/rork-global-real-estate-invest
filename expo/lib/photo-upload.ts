@@ -39,7 +39,7 @@ interface QueuedUpload {
 }
 
 function getApiBaseUrl(): string {
-  return (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || '').trim().replace(/\/$/, '');
+  return (process.env.EXPO_PUBLIC_API_BASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL || '').trim().replace(/\/$/, '');
 }
 
 function generateFilePath(dealId: string, index: number, ext: string): string {

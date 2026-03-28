@@ -1,0 +1,42 @@
+name: IVX Holdings — Sync Health Check
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+jobs:
+  health-check:
+    name: API & Sync Health
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check API health
+        run: |
+          API_URL="https://api.ivxholding.com"
+          echo "Checking $API_URL/health..."
+          RESPONSE=$(curl -sf --max-time 15 "$API_URL/health" 2>/dev/null || echo '{"status":"unreachable"}')
+          echo "Response: $RESPONSE"
+          STATUS=$(echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status','unknown'))" 2>/dev/null || echo "parse_error")
+          echo "Status: $STATUS"
+          if [ "$STATUS" != "healthy" ]; then
+            echo "::warning::API health check returned: $STATUS"
+          fi
+
+      - uses: actions/checkout@v4
+
+      - name: Verify repo structure
+        run: |
+          echo "Checking critical files..."
+          MISSING=0
+          for f in expo/package.json expo/app.json expo/Dockerfile expo/docker-compose.prod.yml; do
+            if [ ! -f "$f" ]; then
+              echo "::error::Missing critical file: $f"
+              MISSING=$((MISSING + 1))
+            else
+              echo "OK: $f"
+            fi
+          done
+          if [ "$MISSING" -gt 0 ]; then
+            echo "::warning::$MISSING critical files missing"
+          fi
+          echo "Total files in expo/: $(find expo -type f | wc -l)"

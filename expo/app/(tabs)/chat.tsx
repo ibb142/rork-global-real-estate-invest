@@ -24,8 +24,7 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { ChatMessage } from '@/types';
 import ChatBubble from '@/components/ChatBubble';
-import { useRorkAgent, createRorkTool } from '@rork-ai/toolkit-sdk';
-import { z } from 'zod';
+import { useLocalAgent } from '@/lib/ai-service';
 
 type ViewMode = 'chat' | 'tickets';
 type ConnectionStatus = 'connecting' | 'connected' | 'waiting';
@@ -114,17 +113,7 @@ export default function ChatScreen() {
   const isXs = isExtraSmallScreen(screenSize);
   const { t } = useTranslation();
 
-  const { messages: aiMessages, sendMessage: sendAiMessage } = useRorkAgent({
-    tools: {
-      getHelp: createRorkTool({
-        description: 'Get help information about IVX HOLDINGS',
-        zodSchema: z.object({
-          topic: z.string().optional().describe('Topic to get help about'),
-        }),
-        execute: () => 'Help information provided',
-      }),
-    },
-  });
+  const { messages: aiMessages, sendMessage: sendAiMessage } = useLocalAgent();
 
   useEffect(() => {
     scrollViewRef.current?.scrollToEnd({ animated: true });

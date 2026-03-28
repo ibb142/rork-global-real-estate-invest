@@ -29,7 +29,7 @@ import {
   Zap,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
-import { generateText } from '@rork-ai/toolkit-sdk';
+import { generateText } from '@/lib/ai-service';
 
 interface InvestorIntent {
   budget?: string;

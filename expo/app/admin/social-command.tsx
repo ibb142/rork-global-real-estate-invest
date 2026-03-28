@@ -58,7 +58,7 @@ import {
   Award,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
-import { generateText } from '@rork-ai/toolkit-sdk';
+import { generateText } from '@/lib/ai-service';
 import * as Haptics from 'expo-haptics';
 import {
   socialPlatforms,

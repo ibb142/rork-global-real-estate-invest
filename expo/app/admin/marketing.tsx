@@ -69,7 +69,7 @@ import {
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
-import { generateText } from '@rork-ai/toolkit-sdk';
+import { generateText } from '@/lib/ai-service';
 import {
   getInactiveMembers,
   getEngagementStats,
@@ -903,112 +903,19 @@ Requirements:
       };
       console.log('Request body:', JSON.stringify(requestBody));
 
-      const response = await fetch('https://toolkit.rork.com/images/generate/', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: JSON.stringify(requestBody),
-        signal: controller.signal,
-      });
-
+      const { generateImage: aiGenImg } = await import('@/lib/ai-service');
       clearTimeout(timeoutId);
-      console.log('Response status:', response.status);
-      console.log('Response headers:', response.headers);
-
-      const responseText = await response.text();
-      console.log('Response text length:', responseText.length);
-      console.log('Response preview:', responseText.substring(0, 300));
-
-      if (!response.ok) {
-        console.error('API error response:', responseText);
-        let errorMessage = `Server error: ${response.status}`;
-        try {
-          const errorJson = JSON.parse(responseText);
-          if (errorJson.error) errorMessage = errorJson.error;
-          if (errorJson.message) errorMessage = errorJson.message;
-        } catch {
-          if (responseText.length > 0 && responseText.length < 200) {
-            errorMessage = responseText;
-          }
-        }
-        throw new Error(errorMessage);
-      }
-
-      if (!responseText || responseText.trim().length === 0) {
-        throw new Error('Empty response from server. Please try again.');
-      }
-      
-      let data;
-      try {
-        data = JSON.parse(responseText);
-      } catch {
-        console.error('Failed to parse response:', responseText.substring(0, 500));
-        throw new Error('Server returned invalid data. Please try again.');
-      }
-      
-      console.log('Response data received, keys:', Object.keys(data || {}));
-      console.log('Full response structure:', JSON.stringify(data).substring(0, 1000));
-      
-      if (data?.error) {
-        console.error('API returned error:', data.error);
-        throw new Error(data.error);
-      }
-      
-      if (data?.message && !data?.image && !data?.url && !data?.imageUrl) {
-        console.error('API returned message without image:', data.message);
-        throw new Error(data.message);
-      }
-
-      if (!data || typeof data !== 'object') {
-        throw new Error('Invalid response format from server.');
-      }
+      const imgResult = await aiGenImg(requestBody.prompt, requestBody.size);
 
       let imageUri = '';
 
-      // Handle different response formats
-      if (data.url) {
-        // Direct URL response
-        console.log('Using direct URL:', data.url);
-        imageUri = data.url;
-      } else if (data.imageUrl) {
-        // imageUrl field
-        console.log('Using imageUrl:', data.imageUrl);
-        imageUri = data.imageUrl;
-      } else if (data.image) {
-        console.log('Image object keys:', Object.keys(data.image));
-        
-        if (data.image.url) {
-          // Image object with URL
-          console.log('Using image.url:', data.image.url);
-          imageUri = data.image.url;
-        } else if (data.image.base64Data) {
-          // Image object with base64
-          const mimeType = data.image.mimeType || 'image/png';
-          console.log('Using base64 data with mimeType:', mimeType);
-          imageUri = `data:${mimeType};base64,${data.image.base64Data}`;
-        } else if (data.image.data) {
-          // Image object with data field
-          const mimeType = data.image.mimeType || 'image/png';
-          console.log('Using image.data with mimeType:', mimeType);
-          imageUri = `data:${mimeType};base64,${data.image.data}`;
-        } else if (typeof data.image === 'string') {
-          // Image is a string (URL or base64)
-          console.log('Image is string, length:', data.image.length);
-          if (data.image.startsWith('http')) {
-            imageUri = data.image;
-          } else if (data.image.startsWith('data:')) {
-            imageUri = data.image;
-          } else {
-            // Assume it's base64 without prefix
-            imageUri = `data:image/png;base64,${data.image}`;
-          }
-        }
+      if (imgResult?.base64Data) {
+        imageUri = `data:${imgResult.mimeType};base64,${imgResult.base64Data}`;
+        console.log('Image generated via AI service');
       }
 
       if (!imageUri) {
-        console.error('Could not extract image from response:', JSON.stringify(data).substring(0, 500));
+        console.error('Could not extract image from AI service');
         throw new Error('No image data received. Please try again.');
       }
 

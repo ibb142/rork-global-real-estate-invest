@@ -319,7 +319,7 @@ function injectAppBanner(html: string): string {
 }
 
 function injectCredentials(html: string, supabaseUrl: string, supabaseAnonKey: string, apiBaseUrl: string, appUrl: string): string {
-  const backendUrl = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || apiBaseUrl || '').trim().replace(/\/$/, '');
+  const backendUrl = (process.env.EXPO_PUBLIC_API_BASE_URL || apiBaseUrl || '').trim().replace(/\/$/, '');
   let result = injectAppBanner(html);
   result = result.replace(/__IVX_SUPABASE_URL__/g, supabaseUrl);
   result = result.replace(/__IVX_SUPABASE_ANON_KEY__/g, supabaseAnonKey);
@@ -398,8 +398,8 @@ export async function deployLandingPage(): Promise<DeployResult> {
     return { success: false, filesUploaded: [], errors: ['Supabase credentials not configured'], timestamp };
   }
 
-  const apiBaseUrl = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || 'https://ivxholding.com').trim().replace(/\/$/, '');
-  const appUrl = (process.env.EXPO_PUBLIC_APP_URL || process.env.EXPO_PUBLIC_RORK_API_BASE_URL || '').trim().replace(/\/$/, '');
+  const apiBaseUrl = (process.env.EXPO_PUBLIC_API_BASE_URL || 'https://ivxholding.com').trim().replace(/\/$/, '');
+  const appUrl = (process.env.EXPO_PUBLIC_APP_URL || 'https://ivxholding.com').trim().replace(/\/$/, '');
   const bucket = 'ivxholding.com';
 
   console.log('[LandingDeploy] 🚀 Starting landing page deploy...');
@@ -407,7 +407,7 @@ export async function deployLandingPage(): Promise<DeployResult> {
   console.log('[LandingDeploy] Bucket:', bucket);
   console.log('[LandingDeploy] Supabase URL:', sb.url.substring(0, 40));
 
-  const backendUrlForConfig = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || apiBaseUrl || '').trim().replace(/\/$/, '');
+  const backendUrlForConfig = (process.env.EXPO_PUBLIC_API_BASE_URL || apiBaseUrl || '').trim().replace(/\/$/, '');
   const configJson = JSON.stringify({
     supabaseUrl: sb.url,
     supabaseAnonKey: sb.anonKey,
@@ -490,10 +490,10 @@ export async function deployConfigOnly(): Promise<{ success: boolean; error?: st
     return { success: false, error: 'Supabase credentials not configured' };
   }
 
-  const apiBaseUrl = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || 'https://ivxholding.com').trim().replace(/\/$/, '');
-  const appUrl = (process.env.EXPO_PUBLIC_APP_URL || process.env.EXPO_PUBLIC_RORK_API_BASE_URL || '').trim().replace(/\/$/, '');
+  const apiBaseUrl = (process.env.EXPO_PUBLIC_API_BASE_URL || 'https://ivxholding.com').trim().replace(/\/$/, '');
+  const appUrl = (process.env.EXPO_PUBLIC_APP_URL || 'https://ivxholding.com').trim().replace(/\/$/, '');
 
-  const backendUrlForConfigOnly = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || apiBaseUrl || '').trim().replace(/\/$/, '');
+  const backendUrlForConfigOnly = (process.env.EXPO_PUBLIC_API_BASE_URL || apiBaseUrl || '').trim().replace(/\/$/, '');
   const configJson = JSON.stringify({
     supabaseUrl: sb.url,
     supabaseAnonKey: sb.anonKey,
@@ -552,8 +552,8 @@ export async function deployConfigOnly(): Promise<{ success: boolean; error?: st
 export function getDeployStatus(): { awsConfigured: boolean; supabaseConfigured: boolean; canDeploy: boolean } {
   const aws = getAwsCredentials();
   const sb = getSupabaseCredentials();
-  const backendUrl = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || '').trim();
-  const canDeployViaBackend = !!(sb.configured && backendUrl);
+  const apiUrl = (process.env.EXPO_PUBLIC_API_BASE_URL || '').trim();
+  const canDeployViaBackend = !!(sb.configured && apiUrl);
   return {
     awsConfigured: aws.configured,
     supabaseConfigured: sb.configured,
@@ -562,9 +562,9 @@ export function getDeployStatus(): { awsConfigured: boolean; supabaseConfigured:
 }
 
 async function deployViaBackendApi(timestamp: string): Promise<DeployResult> {
-  const backendUrl = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || '').trim().replace(/\/$/, '');
+  const backendUrl = (process.env.EXPO_PUBLIC_API_BASE_URL || '').trim().replace(/\/$/, '');
   if (!backendUrl) {
-    return { success: false, filesUploaded: [], errors: ['No backend URL configured (EXPO_PUBLIC_RORK_API_BASE_URL)'], timestamp };
+    return { success: false, filesUploaded: [], errors: ['No API base URL configured (EXPO_PUBLIC_API_BASE_URL)'], timestamp };
   }
 
   try {
@@ -596,7 +596,7 @@ async function deployViaBackendApi(timestamp: string): Promise<DeployResult> {
 }
 
 async function deployConfigViaBackendApi(): Promise<{ success: boolean; error?: string }> {
-  const backendUrl = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || '').trim().replace(/\/$/, '');
+  const backendUrl = (process.env.EXPO_PUBLIC_API_BASE_URL || '').trim().replace(/\/$/, '');
   if (!backendUrl) {
     return { success: false, error: 'No backend URL configured' };
   }

@@ -33,9 +33,9 @@ if (Platform.OS !== 'web') {
 }
 
 function getApiBase(): string {
-  const base = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || '').trim().replace(/\/$/, '');
+  const base = (process.env.EXPO_PUBLIC_API_BASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL || '').trim().replace(/\/$/, '');
   if (!base) {
-    console.warn('[Email] EXPO_PUBLIC_RORK_API_BASE_URL not configured — emails will be saved locally only');
+    console.warn('[Email] API base URL not configured — emails will be saved locally only');
   }
   return base;
 }

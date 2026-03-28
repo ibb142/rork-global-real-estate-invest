@@ -419,27 +419,16 @@ export default function AIGalleryScreen() {
     console.log('[AIGallery] Generating image with prompt:', template.label);
 
     try {
-      const response = await fetch('https://toolkit.rork.com/images/generate/', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: template.prompt,
-          size: '1024x1024',
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Generation failed: ${response.status}`);
-      }
-
-      const data = await response.json();
+      const { generateImage: aiGenImage } = await import('@/lib/ai-service');
+      const imgResult = await aiGenImage(template.prompt, '1024x1024');
+      if (!imgResult) throw new Error('Image generation unavailable');
       console.log('[AIGallery] Image generated successfully');
 
       const newImage: GeneratedImage = {
         id: `img_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
         prompt: template.label,
-        base64: data.image.base64Data,
-        mimeType: data.image.mimeType,
+        base64: imgResult.base64Data,
+        mimeType: imgResult.mimeType,
         createdAt: new Date().toISOString(),
         category: template.category,
       };

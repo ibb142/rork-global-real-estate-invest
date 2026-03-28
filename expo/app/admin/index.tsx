@@ -65,6 +65,7 @@ import {
   PieChart,
   MapPin,
   Send,
+  Sliders,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -125,6 +126,8 @@ const ADMIN_MODULES = [
   { id: 'growth', name: 'Growth Analytics', icon: BarChart3, route: '/admin/growth', category: 'Analytics', keywords: 'growth analytics metrics kpi' },
   { id: 'analytics-report', name: 'Analytics Report', icon: PieChart, route: '/analytics-report', category: 'Analytics', keywords: 'analytics report google real time dashboard live visitors' },
   { id: 'landing-analytics', name: 'Landing Analytics', icon: Globe, route: '/admin/landing-analytics', category: 'Analytics', keywords: 'landing page analytics visitors traffic website' },
+  { id: 'landing-control', name: 'Landing Control', icon: Sliders, route: '/admin/landing-control', category: 'Core', keywords: 'landing page control sections modules visibility public live deploy content admin toggle screens' },
+  { id: 'feature-control', name: 'Feature Control', icon: Zap, route: '/admin/feature-control', category: 'Core', keywords: 'feature control toggle on off live modules functionality enable disable admin master switch real time' },
   { id: 'outreach-analytics', name: 'Outreach Analytics', icon: FileBarChart, route: '/admin/outreach-analytics', category: 'Analytics', keywords: 'outreach analytics campaigns performance' },
   { id: 'engagement', name: 'Engagement', icon: Target, route: '/admin/engagement', category: 'Analytics', keywords: 'engagement retention users active' },
   { id: 'visitor-intelligence', name: 'Visitor Intelligence', icon: Eye, route: '/admin/visitor-intelligence', category: 'Analytics', keywords: 'visitor intelligence tracking behavior heatmap' },

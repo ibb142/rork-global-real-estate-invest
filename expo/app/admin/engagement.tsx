@@ -40,7 +40,7 @@ import Colors from '@/constants/colors';
 import { MemberEngagementStats, MemberActivity } from '@/types';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
-import { generateText } from '@rork-ai/toolkit-sdk';
+import { generateText } from '@/lib/ai-service';
 
 const formatCurrency = (amount: number) => {
   return new Intl.NumberFormat('en-US', {

@@ -54,12 +54,12 @@ import {
 } from 'lucide-react-native';
 import { useMutation } from '@tanstack/react-query';
 import Colors from '@/constants/colors';
-import { generateText } from '@rork-ai/toolkit-sdk';
+import { generateText, generateImage as aiGenerateImage } from '@/lib/ai-service';
 import { SCREEN_MOCKUP_MAP } from '@/components/ScreenMockups';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const WAVE_BAR_COUNT = 5;
-const IMAGE_GENERATION_URL = 'https://toolkit.rork.com/images/generate/';
+
 
 interface PresentationSlide {
   id: string;
@@ -410,16 +410,9 @@ export default function AIVideoStudio() {
         let imageUrl: string | null = null;
         try {
           const imagePrompt = `Professional cinematic 8K screenshot for "${config.title}" of a luxury real estate fintech app. Dark theme, gold (#FFD700) accent. Sleek mobile UI showing ${config.subtitle}. Ultra premium, dark background, sharp details, high-end fintech aesthetic.`;
-          const response = await fetch(IMAGE_GENERATION_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ prompt: imagePrompt, size: '1792x1024' }),
-          });
-          if (response.ok) {
-            const data = await response.json();
-            if (data?.image?.base64Data) {
-              imageUrl = `data:${data.image.mimeType};base64,${data.image.base64Data}`;
-            }
+          const imgResult = await aiGenerateImage(imagePrompt, '1792x1024');
+          if (imgResult?.base64Data) {
+            imageUrl = `data:${imgResult.mimeType};base64,${imgResult.base64Data}`;
           }
         } catch (err) {
           console.log(`[AIVideo] Image gen skipped for ${config.id}`, err);
@@ -544,18 +537,13 @@ export default function AIVideoStudio() {
     setActivePhotoId(template.id);
     console.log('[AIVideo] Generating photo:', template.label);
     try {
-      const response = await fetch('https://toolkit.rork.com/images/generate/', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: template.prompt, size: '1024x1024' }),
-      });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const data = await response.json();
+      const imageResult = await aiGenerateImage(template.prompt, '1024x1024');
+      if (!imageResult) throw new Error('Image generation unavailable');
       const newPhoto: PhotoItem = {
         id: `p_${Date.now()}`,
         label: template.label,
-        base64: data.image.base64Data,
-        mimeType: data.image.mimeType,
+        base64: imageResult.base64Data,
+        mimeType: imageResult.mimeType,
         createdAt: new Date().toISOString(),
       };
       const newCount = photoCount + 1;

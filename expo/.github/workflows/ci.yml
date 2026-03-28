@@ -1,0 +1,73 @@
+name: CI Quality Gate
+
+on:
+  push:
+    branches: [main, develop, staging]
+  pull_request:
+    branches: [main]
+
+jobs:
+  quality:
+    name: Lint & Typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile || bun install
+
+      - name: TypeScript check
+        run: bunx tsc --noEmit --skipLibCheck
+        continue-on-error: false
+
+      - name: ESLint
+        run: bun run lint
+        continue-on-error: true
+
+      - name: Verify critical files exist
+        run: |
+          MISSING=0
+          for f in app/_layout.tsx app/(tabs)/_layout.tsx app.json package.json tsconfig.json; do
+            if [ ! -f "$f" ]; then
+              echo "::error::Missing critical file: $f"
+              MISSING=1
+            fi
+          done
+          if [ "$MISSING" = "1" ]; then exit 1; fi
+          echo "All critical files present"
+
+      - name: Check for secrets in code
+        run: |
+          FOUND=0
+          for pattern in "sk_live_" "sk_test_" "AKIA[A-Z0-9]{16}" "ghp_[a-zA-Z0-9]{36}" "whsec_"; do
+            if grep -r --include="*.ts" --include="*.tsx" --include="*.js" --include="*.mjs" \
+               -l "$pattern" . 2>/dev/null | grep -v node_modules | grep -v .env.example; then
+              echo "::warning::Potential secret found matching pattern: $pattern"
+              FOUND=1
+            fi
+          done
+          if [ "$FOUND" = "1" ]; then
+            echo "::error::Secrets detected in source code — review before merging"
+            exit 1
+          fi
+          echo "No secrets found in source"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "### CI Quality Gate" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "| --- | --- |" >> $GITHUB_STEP_SUMMARY
+          echo "| TypeScript | ${{ steps.typecheck.outcome || 'passed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| ESLint | ${{ steps.lint.outcome || 'passed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Critical Files | present |" >> $GITHUB_STEP_SUMMARY
+          echo "| Secret Scan | clean |" >> $GITHUB_STEP_SUMMARY

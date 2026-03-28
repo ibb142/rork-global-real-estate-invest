@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { generateText } from '@rork-ai/toolkit-sdk';
+import { generateText } from '@/lib/ai-service';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   View,

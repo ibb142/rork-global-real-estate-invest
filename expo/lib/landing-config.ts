@@ -20,8 +20,8 @@ export function getSupabaseCredentials(): { url: string; anonKey: string; config
 
 export function generateLandingConfig(): LandingConfig {
   const { url, anonKey } = getSupabaseCredentials();
-  const apiBaseUrl = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || '').trim().replace(/\/$/, '');
-  const appUrl = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || '').trim().replace(/\/$/, '');
+  const apiBaseUrl = (process.env.EXPO_PUBLIC_API_BASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL || '').trim().replace(/\/$/, '');
+  const appUrl = (process.env.EXPO_PUBLIC_APP_URL || process.env.EXPO_PUBLIC_SUPABASE_URL || '').trim().replace(/\/$/, '');
 
   return {
     supabaseUrl: url,

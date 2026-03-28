@@ -1,0 +1,321 @@
+name: Master Pipeline
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      skip_ci:
+        description: 'Skip CI checks'
+        required: false
+        default: false
+        type: boolean
+      deploy_api:
+        description: 'Deploy API to AWS ECS'
+        required: false
+        default: true
+        type: boolean
+      deploy_landing:
+        description: 'Deploy landing page to S3'
+        required: false
+        default: true
+        type: boolean
+
+env:
+  AWS_REGION: us-east-1
+  APP_NAME: ivx-holdings
+  ECS_CLUSTER: ivx-holdings-cluster
+  ECS_SERVICE: ivx-holdings-api-service
+  CONTAINER_NAME: ivx-holdings-api
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  # ──────────────────────────────────────────
+  # Stage 1: Quality Gate
+  # ──────────────────────────────────────────
+  ci:
+    name: Quality Gate
+    if: github.event.inputs.skip_ci != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - run: bun install --frozen-lockfile || bun install
+
+      - name: TypeScript check
+        run: bunx tsc --noEmit --skipLibCheck
+
+      - name: Secret scan
+        run: |
+          for pattern in "sk_live_" "AKIA[A-Z0-9]{16}" "ghp_[a-zA-Z0-9]{36}"; do
+            if grep -r --include="*.ts" --include="*.tsx" --include="*.js" \
+               -l "$pattern" . 2>/dev/null | grep -v node_modules | grep -v .env.example; then
+              echo "::error::Secret pattern found: $pattern"
+              exit 1
+            fi
+          done
+
+  # ──────────────────────────────────────────
+  # Stage 2: Detect what changed
+  # ──────────────────────────────────────────
+  detect-changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      api_changed: ${{ steps.changes.outputs.api }}
+      landing_changed: ${{ steps.changes.outputs.landing }}
+      app_changed: ${{ steps.changes.outputs.app }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Check changed paths
+        id: changes
+        run: |
+          CHANGED=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || echo "")
+          
+          API=false
+          LANDING=false
+          APP=false
+          
+          echo "$CHANGED" | grep -qE "^(backend/|server\.ts|Dockerfile|docker-compose)" && API=true
+          echo "$CHANGED" | grep -qE "^(ivxholding-landing/|deploy-landing|build-landing)" && LANDING=true
+          echo "$CHANGED" | grep -qE "^(app/|components/|lib/|constants/|types/|mocks/)" && APP=true
+          
+          echo "api=$API" >> $GITHUB_OUTPUT
+          echo "landing=$LANDING" >> $GITHUB_OUTPUT
+          echo "app=$APP" >> $GITHUB_OUTPUT
+          
+          echo "API changed: $API"
+          echo "Landing changed: $LANDING"
+          echo "App changed: $APP"
+
+  # ──────────────────────────────────────────
+  # Stage 3a: Deploy API to AWS ECS
+  # ──────────────────────────────────────────
+  deploy-api:
+    name: Deploy API
+    needs: [ci, detect-changes]
+    if: |
+      always() &&
+      (needs.ci.result == 'success' || needs.ci.result == 'skipped') &&
+      (needs.detect-changes.outputs.api_changed == 'true' || github.event.inputs.deploy_api == 'true')
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency:
+      group: deploy-api-production
+      cancel-in-progress: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set image tag
+        id: tag
+        run: echo "tag=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_OUTPUT
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64
+          tags: |
+            ${{ steps.ecr-login.outputs.registry }}/${{ env.APP_NAME }}-api:${{ steps.tag.outputs.tag }}
+            ${{ steps.ecr-login.outputs.registry }}/${{ env.APP_NAME }}-api:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Save current task definition for rollback
+        id: current
+        run: |
+          CURRENT_TD=$(aws ecs describe-services \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE }} \
+            --query 'services[0].taskDefinition' \
+            --output text 2>/dev/null || echo "")
+          echo "task_def=$CURRENT_TD" >> $GITHUB_OUTPUT
+
+      - name: Update ECS task definition
+        id: task-def
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          IMAGE_TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          CURRENT_TASK_DEF=$(aws ecs describe-task-definition \
+            --task-definition ${{ env.APP_NAME }}-api \
+            --query 'taskDefinition' \
+            --output json)
+
+          NEW_TASK_DEF=$(echo $CURRENT_TASK_DEF | python3 -c "
+          import sys, json
+          td = json.load(sys.stdin)
+          for cd in td['containerDefinitions']:
+              if cd['name'] == '${{ env.CONTAINER_NAME }}':
+                  cd['image'] = '$ECR_REGISTRY/${{ env.APP_NAME }}-api:$IMAGE_TAG'
+          for key in ['taskDefinitionArn','revision','status','requiresAttributes','compatibilities','registeredAt','registeredBy']:
+              td.pop(key, None)
+          print(json.dumps(td))
+          ")
+
+          NEW_ARN=$(aws ecs register-task-definition \
+            --cli-input-json "$NEW_TASK_DEF" \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)
+          echo "task_def_arn=$NEW_ARN" >> $GITHUB_OUTPUT
+
+      - name: Deploy to ECS
+        run: |
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service ${{ env.ECS_SERVICE }} \
+            --task-definition ${{ steps.task-def.outputs.task_def_arn }} \
+            --force-new-deployment \
+            --output text > /dev/null
+
+      - name: Wait for deployment to stabilize
+        timeout-minutes: 10
+        run: |
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE }}
+
+      - name: Health check
+        run: |
+          API_URL="${{ vars.API_URL }}"
+          if [ -z "$API_URL" ]; then exit 0; fi
+          RETRIES=0
+          while [ "$RETRIES" -lt 6 ]; do
+            sleep 10
+            STATUS=$(curl -sf --max-time 15 "$API_URL/health" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status','unknown'))" 2>/dev/null || echo "unreachable")
+            if [ "$STATUS" = "healthy" ]; then echo "API healthy"; exit 0; fi
+            RETRIES=$((RETRIES + 1))
+          done
+          echo "::warning::Health check did not pass after 6 attempts"
+
+      - name: Rollback on failure
+        if: failure() && steps.current.outputs.task_def != ''
+        run: |
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service ${{ env.ECS_SERVICE }} \
+            --task-definition ${{ steps.current.outputs.task_def }} \
+            --force-new-deployment \
+            --output text > /dev/null
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE }} || true
+
+  # ──────────────────────────────────────────
+  # Stage 3b: Deploy Landing Page to S3
+  # ──────────────────────────────────────────
+  deploy-landing:
+    name: Deploy Landing
+    needs: [ci, detect-changes]
+    if: |
+      always() &&
+      (needs.ci.result == 'success' || needs.ci.result == 'skipped') &&
+      (needs.detect-changes.outputs.landing_changed == 'true' || github.event.inputs.deploy_landing == 'true')
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Inject env vars
+        run: |
+          sed -i "s|__IVX_SUPABASE_URL__|${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}|g" ivxholding-landing/index.html
+          sed -i "s|__IVX_SUPABASE_ANON_KEY__|${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}|g" ivxholding-landing/index.html
+          sed -i "s|__IVX_API_BASE_URL__|https://ivxholding.com|g" ivxholding-landing/index.html
+          sed -i "s|__IVX_APP_URL__|${{ secrets.EXPO_PUBLIC_RORK_API_BASE_URL }}|g" ivxholding-landing/index.html
+          sed -i "s|__IVX_BACKEND_URL__|https://api.ivxholding.com|g" ivxholding-landing/index.html
+          sed -i "s|__IVX_GOOGLE_ADS_KEY__|${{ secrets.EXPO_PUBLIC_GOOGLE_ADS_API_KEY }}|g" ivxholding-landing/index.html
+          sed -i "s|__IVX_META_PIXEL_ID__|${{ secrets.META_PIXEL_ID }}|g" ivxholding-landing/index.html
+          sed -i "s|__IVX_TIKTOK_PIXEL_ID__|${{ secrets.TIKTOK_PIXEL_ID }}|g" ivxholding-landing/index.html
+          sed -i "s|__IVX_LINKEDIN_PARTNER_ID__|${{ secrets.LINKEDIN_PARTNER_ID }}|g" ivxholding-landing/index.html
+
+      - name: Upload to S3
+        run: |
+          aws s3 cp ivxholding-landing/index.html s3://ivxholding.com/index.html \
+            --content-type "text/html; charset=utf-8" \
+            --cache-control "no-cache, no-store, must-revalidate"
+
+      - name: Upload assets
+        run: |
+          for asset in ivx-logo.png ivx-og-image.jpg ivx-favicon.png; do
+            if [ -f "assets/images/$asset" ]; then
+              CT="image/png"
+              [[ "$asset" == *.jpg ]] && CT="image/jpeg"
+              aws s3 cp "assets/images/$asset" "s3://ivxholding.com/$asset" \
+                --content-type "$CT" --cache-control "public, max-age=86400"
+            fi
+          done
+
+      - name: Invalidate CloudFront
+        continue-on-error: true
+        run: |
+          DIST_ID=$(aws cloudfront list-distributions \
+            --query "DistributionList.Items[?contains(Aliases.Items,'ivxholding.com')].Id" \
+            --output text 2>/dev/null | head -1)
+          if [ -n "$DIST_ID" ] && [ "$DIST_ID" != "None" ]; then
+            aws cloudfront create-invalidation --distribution-id "$DIST_ID" --paths "/*" > /dev/null
+          fi
+
+  # ──────────────────────────────────────────
+  # Stage 4: Pipeline Summary
+  # ──────────────────────────────────────────
+  summary:
+    name: Pipeline Summary
+    needs: [ci, detect-changes, deploy-api, deploy-landing]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate summary
+        run: |
+          echo "### IVX Holdings — Pipeline Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Stage | Result |" >> $GITHUB_STEP_SUMMARY
+          echo "| --- | --- |" >> $GITHUB_STEP_SUMMARY
+          echo "| CI Quality Gate | \`${{ needs.ci.result }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| API Deploy | \`${{ needs.deploy-api.result }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Landing Deploy | \`${{ needs.deploy-landing.result }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Changes | Detected |" >> $GITHUB_STEP_SUMMARY
+          echo "| --- | --- |" >> $GITHUB_STEP_SUMMARY
+          echo "| API | \`${{ needs.detect-changes.outputs.api_changed }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Landing | \`${{ needs.detect-changes.outputs.landing_changed }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| App | \`${{ needs.detect-changes.outputs.app_changed }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Commit: \`${{ github.sha }}\` by \`${{ github.actor }}\`" >> $GITHUB_STEP_SUMMARY
+
+      - name: Notify on failure
+        if: needs.deploy-api.result == 'failure' || needs.deploy-landing.result == 'failure'
+        run: |
+          echo "::error::One or more deployments failed — check the pipeline summary above"

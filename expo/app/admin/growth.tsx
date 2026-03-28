@@ -67,7 +67,7 @@ import {
   TrendingTopic,
   AIMarketingInsight,
 } from '@/types';
-import { generateText } from '@rork-ai/toolkit-sdk';
+import { generateText } from '@/lib/ai-service';
 
 type TabType = 'overview' | 'content' | 'campaigns' | 'referrals' | 'insights';
 

@@ -499,7 +499,7 @@ const ARCH_SECTIONS: ArchSection[] = [
     subtitle: 'Expo Notifications + APNs (iOS) + FCM (Android) — lib/push-notifications.ts',
     items: [
       { label: 'Setup File', value: 'lib/push-notifications.ts — all notification logic here' },
-      { label: 'Registration Flow', value: '1. Request permission → 2. Get Expo push token → 3. POST to trpc.notifications.registerDevice', note: 'Triggered on login from PushNotificationHandler in app/_layout.tsx' },
+      { label: 'Registration Flow', value: '1. Request permission → 2. Get Expo push token → 3. Save token to Supabase push_tokens table', note: 'Triggered on login from PushNotificationHandler in app/_layout.tsx' },
       { label: 'Android: default', value: 'General alerts — MAX importance, vibration pattern [0,250,250,250]' },
       { label: 'Android: investments', value: 'Trade confirms, dividend paid, property updates — HIGH importance' },
       { label: 'Android: security', value: 'Login from new device, suspicious activity — MAX importance' },

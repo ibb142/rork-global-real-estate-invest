@@ -50,7 +50,7 @@ function calculateIPXFee(amount: number, feeTypeOrPercent: string | number): num
   }
   return Math.round((amount * feeTypeOrPercent / 100) * 100) / 100;
 }
-import { generateObject } from '@rork-ai/toolkit-sdk';
+import { generateObject } from '@/lib/ai-service';
 import { z } from 'zod';
 import { DocumentVerificationStatus } from '@/types';
 import { formatDollar } from '@/lib/formatters';

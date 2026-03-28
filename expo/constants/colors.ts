@@ -1,52 +1,34 @@
+const tintColorLight = "#2f95dc";
+
 export default {
-  primary: '#FFD700',
-  primaryLight: '#FFE44D',
-  primaryDark: '#CCB000',
-
-  background: '#0A0A0A',
-  backgroundSecondary: '#141414',
-  backgroundTertiary: '#1E1E1E',
-
-  surface: '#1A1A1A',
-  surfaceLight: '#252525',
-  surfaceBorder: '#2A2A2A',
-
-  card: '#1A1A1A',
-  border: '#2A2A2A',
-
-  positive: '#00C48C',
-  negative: '#FF4D4D',
-  accent: '#4A90D9',
-
-  text: '#FFFFFF',
-  textSecondary: '#9A9A9A',
-  textTertiary: '#6A6A6A',
-
-  success: '#00C48C',
-  successLight: '#E8FFF6',
-
-  error: '#FF4D4D',
-  errorLight: '#FFE8E8',
-
-  warning: '#FFB800',
-  warningLight: '#FFF8E0',
-
-  info: '#4A90D9',
-  infoLight: '#E8F4FF',
-
-  chartGreen: '#00C48C',
-  chartRed: '#FF4D4D',
-  chartLine: '#FFD700',
-
-  tabBar: '#0F0F0F',
-  tabBarBorder: '#1A1A1A',
-
-  inputBackground: '#1A1A1A',
-  inputBorder: '#2A2A2A',
-  inputPlaceholder: '#6A6A6A',
-
-  overlay: 'rgba(0, 0, 0, 0.7)',
-
-  white: '#FFFFFF',
-  black: '#000000',
+  text: "#F8FAFC",
+  textSecondary: "#94A3B8",
+  textTertiary: "#64748B",
+  background: "#0F172A",
+  card: "#1E293B",
+  border: "#334155",
+  primary: "#3B82F6",
+  accent: "#8B5CF6",
+  success: "#22C55E",
+  warning: "#F59E0B",
+  error: "#EF4444",
+  positive: "#10B981",
+  surface: "#1E293B",
+  surfaceBorder: "#334155",
+  black: "#000000",
+  backgroundTertiary: "#0F172A",
+  backgroundSecondary: "#1A2332",
+  info: "#3B82F6",
+  overlay: "rgba(0, 0, 0, 0.6)",
+  surfaceLight: "#253348",
+  negative: "#EF4444",
+  white: "#FFFFFF",
+  inputPlaceholder: "#64748B",
+  light: {
+    text: "#000",
+    background: "#fff",
+    tint: tintColorLight,
+    tabIconDefault: "#ccc",
+    tabIconSelected: tintColorLight,
+  },
 };

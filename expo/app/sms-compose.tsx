@@ -210,7 +210,7 @@ export default function SMSComposeScreen() {
 
   const sendSmsMutation = useMutation({
     mutationFn: async (payload: { phoneNumber: string; message: string; senderId: string }) => {
-      const apiBase = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || '').trim().replace(/\/$/, '');
+      const apiBase = (process.env.EXPO_PUBLIC_API_BASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL || '').trim().replace(/\/$/, '');
       if (!apiBase) {
         throw new Error('API base URL not configured.');
       }

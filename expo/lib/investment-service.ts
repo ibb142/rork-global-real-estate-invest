@@ -2,7 +2,9 @@ import { supabase } from './supabase';
 import { logAudit } from '@/lib/audit-trail';
 import type { WalletRow, HoldingRow, ProfileRow } from '@/types/database';
 
-const API_BASE_URL = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || '').trim().replace(/\/$/, '');
+import { getApiBaseUrl } from '@/lib/api-base';
+
+const API_BASE_URL = getApiBaseUrl();
 
 export interface InvestmentRequest {
   propertyId: string;

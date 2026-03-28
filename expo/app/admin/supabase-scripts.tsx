@@ -44,7 +44,7 @@ import { supabase } from '@/lib/supabase';
 
 console.log('[Supabase Scripts] Loaded version:', SCRIPTS_VERSION, '— Scripts count:', SQL_SCRIPTS.length);
 
-const API_BASE = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || '').trim().replace(/\/$/, '');
+const API_BASE = (process.env.EXPO_PUBLIC_API_BASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL || '').trim().replace(/\/$/, '');
 
 type DeployStatus = 'idle' | 'deploying' | 'success' | 'error' | 'bootstrap_required';
 

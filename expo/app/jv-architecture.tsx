@@ -144,7 +144,7 @@ const CONNECTIONS: ConnectionPoint[] = [
     label: 'External POST',
     protocol: 'HTTPS POST (fetch)',
     status: 'warning',
-    riskNote: 'Requires EXPO_PUBLIC_RORK_API_BASE_URL. Falls back to Supabase table if API fails.',
+    riskNote: 'Requires EXPO_PUBLIC_API_BASE_URL. Falls back to Supabase table if API fails.',
     dataFlow: 'JSON payload of all published deals sent to /api/landing-sync',
   },
   {

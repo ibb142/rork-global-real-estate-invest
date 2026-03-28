@@ -166,6 +166,15 @@ export const FUNCTIONALITY_REGISTRY: Module[] = [
     ],
   },
   {
+    id: 'floating_analytics', title: 'Floating Analytics Icon', icon: 'BarChart3', color: '#D4AF37',
+    description: 'Pulsing golden BarChart3 floating button (bottom-right) — navigates to analytics report',
+    features: [
+      { id: 'fab-visible', name: 'Show Floating Analytics Button', status: 'active', addedDate: '2024-06-01' },
+      { id: 'fab-pulse', name: 'Pulse Glow Animation', status: 'active', addedDate: '2024-06-01' },
+      { id: 'fab-navigate', name: 'Navigate to Analytics Report on Tap', status: 'active', addedDate: '2024-06-01' },
+    ],
+  },
+  {
     id: 'uiux', title: 'UI/UX Features', icon: 'Palette', color: '#D946EF',
     description: 'User interface and experience',
     features: [

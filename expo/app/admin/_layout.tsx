@@ -352,6 +352,18 @@ export default function AdminLayout() {
           href: null,
         }}
       />
+      <Tabs.Screen
+        name="landing-control"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="feature-control"
+        options={{
+          href: null,
+        }}
+      />
     </Tabs>
     </View>
   );

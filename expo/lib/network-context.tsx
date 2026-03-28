@@ -1,11 +1,19 @@
 import createContextHook from '@nkzw/create-context-hook';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Platform, AppState, AppStateStatus } from 'react-native';
+import {
+  type BackendStatus,
+  subscribeHealth,
+  startHealthMonitor,
+  stopHealthMonitor,
+  runFullHealthCheck,
+} from './api-resilience';
 
 interface NetworkState {
   isConnected: boolean;
   isInternetReachable: boolean;
   lastChecked: number;
+  supabaseStatus: BackendStatus;
 }
 
 async function checkConnectivity(): Promise<boolean> {
@@ -28,16 +36,38 @@ export const [NetworkProvider, useNetwork] = createContextHook(() => {
     isConnected: true,
     isInternetReachable: true,
     lastChecked: Date.now(),
+    supabaseStatus: 'unknown',
   });
 
   const check = useCallback(async () => {
     const reachable = await checkConnectivity();
-    setState({
+    setState(prev => ({
+      ...prev,
       isConnected: reachable,
       isInternetReachable: reachable,
       lastChecked: Date.now(),
-    });
+    }));
     console.log('[Network] Connectivity check:', reachable ? 'online' : 'offline');
+
+    if (reachable) {
+      void runFullHealthCheck();
+    }
+  }, []);
+
+  useEffect(() => {
+    startHealthMonitor();
+
+    const unsub = subscribeHealth((health) => {
+      setState(prev => ({
+        ...prev,
+        supabaseStatus: health.supabaseStatus,
+      }));
+    });
+
+    return () => {
+      unsub();
+      stopHealthMonitor();
+    };
   }, []);
 
   useEffect(() => {
@@ -80,6 +110,8 @@ export const [NetworkProvider, useNetwork] = createContextHook(() => {
     isInternetReachable: state.isInternetReachable,
     isOffline: !state.isConnected,
     lastChecked: state.lastChecked,
+    supabaseStatus: state.supabaseStatus,
+    isFullyOperational: state.supabaseStatus === 'online' && state.isConnected,
     refresh: check,
   }), [state, check]);
 });

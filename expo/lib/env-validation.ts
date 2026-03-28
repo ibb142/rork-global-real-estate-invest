@@ -7,15 +7,10 @@ interface EnvVar {
 const ENV_VARS: EnvVar[] = [
   { name: 'EXPO_PUBLIC_SUPABASE_URL', required: true, isPublic: true },
   { name: 'EXPO_PUBLIC_SUPABASE_ANON_KEY', required: true, isPublic: true },
-  { name: 'EXPO_PUBLIC_RORK_API_BASE_URL', required: false, isPublic: true },
-  { name: 'EXPO_PUBLIC_RORK_AUTH_URL', required: false, isPublic: true },
-  { name: 'EXPO_PUBLIC_PROJECT_ID', required: false, isPublic: true },
-  { name: 'EXPO_PUBLIC_TEAM_ID', required: false, isPublic: true },
-  { name: 'EXPO_PUBLIC_TOOLKIT_URL', required: false, isPublic: true },
-  { name: 'EXPO_PUBLIC_RORK_DB_ENDPOINT', required: false, isPublic: true },
-  { name: 'EXPO_PUBLIC_RORK_DB_NAMESPACE', required: false, isPublic: true },
-  { name: 'EXPO_PUBLIC_RORK_DB_TOKEN', required: false, isPublic: true },
-  { name: 'EXPO_PUBLIC_RORK_APP_KEY', required: false, isPublic: true },
+  { name: 'EXPO_PUBLIC_API_BASE_URL', required: false, isPublic: true },
+  { name: 'AWS_ACCESS_KEY_ID', required: false, isPublic: false },
+  { name: 'AWS_SECRET_ACCESS_KEY', required: false, isPublic: false },
+  { name: 'AWS_REGION', required: false, isPublic: false },
   { name: 'EXPO_PUBLIC_GOOGLE_ADS_API_KEY', required: false, isPublic: true },
 ];
 
@@ -83,15 +78,6 @@ export function checkDependencyCompatibility(): DepCompatWarning[] {
       warnings.push({
         package: 'react-native-web',
         issue: `v${rnWebVersion} may have issues with React 19. Monitor for hydration warnings on web.`,
-        severity: 'warn',
-      });
-    }
-
-    const zodVersion = deps['zod'] || '';
-    if (zodVersion.includes('^4') || zodVersion.includes('4.')) {
-      warnings.push({
-        package: 'zod',
-        issue: `Zod v4 (${zodVersion}) is new. Some tRPC versions may expect Zod v3. Test schema validation thoroughly.`,
         severity: 'warn',
       });
     }
