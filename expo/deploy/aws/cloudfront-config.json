@@ -1,0 +1,69 @@
+{
+  "Comment": "IVX Holdings Landing Page — HTTPS via CloudFront",
+  "Origins": {
+    "Items": [
+      {
+        "Id": "S3-Website-ivxholding",
+        "DomainName": "ivxholding.com.s3-website-us-east-1.amazonaws.com",
+        "CustomOriginConfig": {
+          "HTTPPort": 80,
+          "HTTPSPort": 443,
+          "OriginProtocolPolicy": "http-only",
+          "OriginSslProtocols": {
+            "Quantity": 1,
+            "Items": ["TLSv1.2"]
+          }
+        }
+      }
+    ],
+    "Quantity": 1
+  },
+  "DefaultCacheBehavior": {
+    "TargetOriginId": "S3-Website-ivxholding",
+    "ViewerProtocolPolicy": "redirect-to-https",
+    "AllowedMethods": ["GET", "HEAD", "OPTIONS"],
+    "CachedMethods": ["GET", "HEAD"],
+    "Compress": true,
+    "CachePolicyId": "658327ea-f89d-4fab-a63d-7e88639e58f6",
+    "MinTTL": 0,
+    "DefaultTTL": 300,
+    "MaxTTL": 86400
+  },
+  "CustomErrorResponses": {
+    "Items": [
+      {
+        "ErrorCode": 404,
+        "ResponseCode": 200,
+        "ResponsePagePath": "/index.html",
+        "ErrorCachingMinTTL": 60
+      },
+      {
+        "ErrorCode": 403,
+        "ResponseCode": 200,
+        "ResponsePagePath": "/index.html",
+        "ErrorCachingMinTTL": 60
+      }
+    ],
+    "Quantity": 2
+  },
+  "ViewerCertificate": {
+    "ACMCertificateArn": "${ACM_CERTIFICATE_ARN}",
+    "SSLSupportMethod": "sni-only",
+    "MinimumProtocolVersion": "TLSv1.2_2021",
+    "CloudFrontDefaultCertificate": false
+  },
+  "Aliases": {
+    "Items": ["ivxholding.com", "www.ivxholding.com"],
+    "Quantity": 2
+  },
+  "DefaultRootObject": "index.html",
+  "HttpVersion": "http2and3",
+  "PriceClass": "PriceClass_100",
+  "Enabled": true,
+  "Restrictions": {
+    "GeoRestriction": {
+      "RestrictionType": "none",
+      "Quantity": 0
+    }
+  }
+}
