@@ -1855,6 +1855,26 @@ DELETE FROM storage.objects WHERE bucket_id = 'deal-photos';
 DELETE FROM storage.buckets WHERE id = 'deal-photos';
 
 -- Database is now CLEAN. Run supabase-master.sql to rebuild.`
+  },
+  {
+    id: 'sql_remove_floating_analytics',
+    fileName: 'remove-floating-analytics.sql',
+    title: 'FIX: Remove Floating Analytics Icons from Landing Page (delete from storage)',
+    category: 'Fix & Patch',
+    lineCount: 42,
+    version: 'v1.1',
+    updatedAt: '2026-03-28',
+    content: `-- =============================================================================\n-- IVXHOLDINGS — REMOVE FLOATING ANALYTICS ICONS FROM LANDING PAGE\n-- =============================================================================\n-- This script removes any floating analytics icon files from Supabase Storage\n-- and cleans up related entries. Run this to stop the icons from showing\n-- on your public landing page.\n-- Safe to run multiple times.\n-- =============================================================================\n\n-- 1. Delete analytics-related files from landing-page storage bucket\nDELETE FROM storage.objects\nWHERE bucket_id = 'landing-page'\n  AND (name LIKE '%analytics%' OR name LIKE '%floating%' OR name LIKE '%icon%analytics%');\n\n-- 2. Delete any JS/CSS files that inject floating widgets\nDELETE FROM storage.objects\nWHERE bucket_id = 'landing-page'\n  AND (name LIKE '%widget%' OR name LIKE '%fab%' OR name LIKE '%float%');\n\n-- 3. Verify remaining files in landing-page bucket\nSELECT name, created_at, (metadata->>'size')::int as size_bytes\nFROM storage.objects\nWHERE bucket_id = 'landing-page'\nORDER BY created_at DESC;\n\n-- 4. If icons are embedded in index.html, replace it:\n-- Go to Supabase Dashboard > Storage > landing-page bucket\n-- Delete the old index.html\n-- Upload the new clean index.html from your project\n\n-- 5. Clean up any analytics widget config from app_config\nDELETE FROM app_config\nWHERE key IN ('landing_floating_icons', 'analytics_widget_config', 'floating_analytics');\n\n-- 6. Verify app_config is clean\nSELECT key, value FROM app_config\nWHERE key LIKE '%float%' OR key LIKE '%widget%' OR key LIKE '%analytics_icon%';\n\n-- =============================================================================\n-- DONE! Floating analytics icons removed from storage and config.\n-- If icons were embedded in index.html, re-upload the clean version.\n-- =============================================================================`
+  },
+  {
+    id: 'sql_landing_page_redeploy',
+    fileName: 'landing-page-redeploy.sql',
+    title: 'FIX: Clean & Re-deploy Landing Page (reset storage bucket)',
+    category: 'Fix & Patch',
+    lineCount: 35,
+    version: 'v1.0',
+    updatedAt: '2026-03-28',
+    content: `-- =============================================================================\n-- IVXHOLDINGS — CLEAN & RE-DEPLOY LANDING PAGE\n-- =============================================================================\n-- Use this to fully reset the landing-page storage bucket.\n-- After running, re-upload your clean index.html.\n-- WARNING: This deletes ALL files in the landing-page bucket.\n-- =============================================================================\n\n-- 1. Delete ALL files in the landing-page bucket (full reset)\nDELETE FROM storage.objects\nWHERE bucket_id = 'landing-page';\n\n-- 2. Ensure the bucket exists with correct config\nINSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)\nVALUES (\n  'landing-page', 'landing-page', true, 10485760,\n  ARRAY['text/html','text/css','application/javascript','image/png','image/jpeg','image/svg+xml','image/webp','application/json']\n)\nON CONFLICT (id) DO UPDATE SET\n  public = true,\n  file_size_limit = 10485760,\n  allowed_mime_types = ARRAY['text/html','text/css','application/javascript','image/png','image/jpeg','image/svg+xml','image/webp','application/json'];\n\n-- 3. Ensure public read policy\nDROP POLICY IF EXISTS "landing_page_select" ON storage.objects;\nCREATE POLICY "landing_page_select" ON storage.objects FOR SELECT\n  USING (bucket_id = 'landing-page');\n\nDROP POLICY IF EXISTS "landing_page_insert" ON storage.objects;\nCREATE POLICY "landing_page_insert" ON storage.objects FOR INSERT\n  WITH CHECK (bucket_id = 'landing-page');\n\n-- 4. Verify bucket is empty and ready\nSELECT count(*) as remaining_files FROM storage.objects WHERE bucket_id = 'landing-page';\n\n-- =============================================================================\n-- DONE! Bucket is clean. Now upload your new index.html via:\n-- Supabase Dashboard > Storage > landing-page > Upload\n-- =============================================================================`
   }
 ];
 
@@ -1903,4 +1923,4 @@ SELECT ivx_exec_sql('SELECT 1');`
 });
 
 export const SQL_CATEGORIES = Array.from(new Set(SQL_SCRIPTS.map(s => s.category)));
-export const SCRIPTS_VERSION = 'v1.6-20260323';
+export const SCRIPTS_VERSION = 'v1.7-20260328';
