@@ -149,12 +149,24 @@ async function deploy() {
     ''
   ).trim().replace(/\/$/, '');
 
+  const googleAdsKey = (
+    process.env.EXPO_PUBLIC_GOOGLE_ADS_API_KEY ||
+    ''
+  ).trim();
+  const metaPixelId = (process.env.META_PIXEL_ID || '').trim();
+  const tiktokPixelId = (process.env.TIKTOK_PIXEL_ID || '').trim();
+  const linkedinPartnerId = (process.env.LINKEDIN_PARTNER_ID || '').trim();
+
   let html = readFileSync('./ivxholding-landing/index.html', 'utf-8');
   html = html.replace(/__IVX_API_BASE_URL__/g, apiBaseUrl);
   html = html.replace(/__IVX_SUPABASE_URL__/g, supabaseUrl);
   html = html.replace(/__IVX_SUPABASE_ANON_KEY__/g, supabaseAnonKey);
   html = html.replace(/__IVX_APP_URL__/g, appUrl);
   html = html.replace(/__IVX_BACKEND_URL__/g, backendUrl);
+  html = html.replace(/__IVX_GOOGLE_ADS_KEY__/g, googleAdsKey);
+  html = html.replace(/__IVX_META_PIXEL_ID__/g, metaPixelId);
+  html = html.replace(/__IVX_TIKTOK_PIXEL_ID__/g, tiktokPixelId);
+  html = html.replace(/__IVX_LINKEDIN_PARTNER_ID__/g, linkedinPartnerId);
   if (apiBaseUrl) {
     console.log(`   🔗 API URL injected: ${apiBaseUrl}`);
   } else {
