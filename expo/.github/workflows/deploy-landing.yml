@@ -6,6 +6,7 @@ on:
     paths:
       - 'ivxholding-landing/**'
       - 'deploy-landing.mjs'
+      - 'build-landing.mjs'
   workflow_dispatch:
 
 jobs:
@@ -30,18 +31,98 @@ jobs:
           sed -i "s|__IVX_SUPABASE_ANON_KEY__|${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}|g" ivxholding-landing/index.html
           sed -i "s|__IVX_API_BASE_URL__|https://ivxholding.com|g" ivxholding-landing/index.html
           sed -i "s|__IVX_APP_URL__|${{ secrets.EXPO_PUBLIC_RORK_API_BASE_URL }}|g" ivxholding-landing/index.html
+          sed -i "s|__IVX_BACKEND_URL__|https://api.ivxholding.com|g" ivxholding-landing/index.html
+          sed -i "s|__IVX_GOOGLE_ADS_KEY__|${{ secrets.EXPO_PUBLIC_GOOGLE_ADS_API_KEY }}|g" ivxholding-landing/index.html
+          sed -i "s|__IVX_META_PIXEL_ID__|${{ secrets.META_PIXEL_ID }}|g" ivxholding-landing/index.html
+          sed -i "s|__IVX_TIKTOK_PIXEL_ID__|${{ secrets.TIKTOK_PIXEL_ID }}|g" ivxholding-landing/index.html
+          sed -i "s|__IVX_LINKEDIN_PARTNER_ID__|${{ secrets.LINKEDIN_PARTNER_ID }}|g" ivxholding-landing/index.html
+          echo "All placeholders injected"
 
-      - name: Upload to S3
+      - name: Generate config.json
+        run: |
+          cat > /tmp/ivx-config.json << EOF
+          {
+            "supabaseUrl": "${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}",
+            "supabaseAnonKey": "${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}",
+            "apiBaseUrl": "https://ivxholding.com",
+            "appUrl": "${{ secrets.EXPO_PUBLIC_RORK_API_BASE_URL }}",
+            "backendUrl": "https://api.ivxholding.com",
+            "configEndpoint": "https://api.ivxholding.com/api/landing-config",
+            "dealsEndpoint": "https://api.ivxholding.com/api/landing-deals",
+            "deployedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          EOF
+
+      - name: Upload index.html to S3
         run: |
           aws s3 cp ivxholding-landing/index.html s3://ivxholding.com/index.html \
             --content-type "text/html; charset=utf-8" \
             --cache-control "no-cache, no-store, must-revalidate"
-          
+
+      - name: Upload config.json to S3
+        run: |
+          aws s3 cp /tmp/ivx-config.json s3://ivxholding.com/ivx-config.json \
+            --content-type "application/json" \
+            --cache-control "no-cache, no-store, must-revalidate"
+
+      - name: Upload logo to S3
+        run: |
           if [ -f assets/images/ivx-logo.png ]; then
             aws s3 cp assets/images/ivx-logo.png s3://ivxholding.com/ivx-logo.png \
               --content-type "image/png" \
               --cache-control "public, max-age=31536000"
+            echo "Logo uploaded"
+          else
+            echo "Logo file not found — skipping"
           fi
-          
-          echo "Deployment complete!"
-          echo "Site: http://ivxholding.com.s3-website-us-east-1.amazonaws.com"
+
+      - name: Upload OG image to S3
+        run: |
+          if [ -f assets/images/ivx-og-image.jpg ]; then
+            aws s3 cp assets/images/ivx-og-image.jpg s3://ivxholding.com/ivx-og-image.jpg \
+              --content-type "image/jpeg" \
+              --cache-control "public, max-age=86400"
+            echo "OG image uploaded"
+          else
+            echo "OG image not found — skipping"
+          fi
+
+      - name: Upload favicon to S3
+        run: |
+          if [ -f assets/images/ivx-favicon.png ]; then
+            aws s3 cp assets/images/ivx-favicon.png s3://ivxholding.com/favicon.png \
+              --content-type "image/png" \
+              --cache-control "public, max-age=86400"
+            echo "Favicon uploaded"
+          else
+            echo "Favicon not found — skipping"
+          fi
+
+      - name: Invalidate CloudFront cache
+        continue-on-error: true
+        run: |
+          DIST_ID=$(aws cloudfront list-distributions \
+            --query "DistributionList.Items[?contains(Aliases.Items,'ivxholding.com')].Id" \
+            --output text 2>/dev/null | head -1)
+          if [ -n "$DIST_ID" ] && [ "$DIST_ID" != "None" ]; then
+            aws cloudfront create-invalidation \
+              --distribution-id "$DIST_ID" \
+              --paths "/*" > /dev/null
+            echo "CloudFront invalidation triggered for distribution: $DIST_ID"
+          else
+            echo "No CloudFront distribution found — skipping invalidation"
+          fi
+
+      - name: Deployment summary
+        run: |
+          echo "### Landing Page Deployed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Asset | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "| --- | --- |" >> $GITHUB_STEP_SUMMARY
+          echo "| index.html | Uploaded |" >> $GITHUB_STEP_SUMMARY
+          echo "| ivx-config.json | Uploaded |" >> $GITHUB_STEP_SUMMARY
+          echo "| ivx-logo.png | $([ -f assets/images/ivx-logo.png ] && echo 'Uploaded' || echo 'Skipped') |" >> $GITHUB_STEP_SUMMARY
+          echo "| ivx-og-image.jpg | $([ -f assets/images/ivx-og-image.jpg ] && echo 'Uploaded' || echo 'Skipped') |" >> $GITHUB_STEP_SUMMARY
+          echo "| favicon.png | $([ -f assets/images/ivx-favicon.png ] && echo 'Uploaded' || echo 'Skipped') |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Site: https://ivxholding.com" >> $GITHUB_STEP_SUMMARY
