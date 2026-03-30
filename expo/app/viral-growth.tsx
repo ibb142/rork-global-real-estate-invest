@@ -243,7 +243,7 @@ function ViralChannelsList() {
       <View style={s.channelHeader}>
         <Globe size={16} color={Colors.primary} />
         <Text style={s.channelTitle}>Acquisition Channels</Text>
-        <Text style={s.channelTotal}>{totalUsers.toLocaleString()} users</Text>
+        <Text style={s.channelTotal}>{new Intl.NumberFormat('en-US').format(totalUsers)} users</Text>
       </View>
 
       {viralChannels.map((ch) => {
@@ -264,7 +264,7 @@ function ViralChannelsList() {
                 <View style={[s.channelBarFill, { width: `${pct}%` as any, backgroundColor: ch.color }]} />
               </View>
               <View style={s.channelStats}>
-                <Text style={s.channelStat}>{ch.usersAcquired.toLocaleString()} users</Text>
+                <Text style={s.channelStat}>{new Intl.NumberFormat('en-US').format(ch.usersAcquired)} users</Text>
                 <Text style={s.channelStat}>{ch.conversionRate}% conv.</Text>
                 <Text style={s.channelStat}>${new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(ch.costPerAcquisition)} CPA</Text>
               </View>

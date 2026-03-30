@@ -878,7 +878,7 @@ class PaymentService {
     const domesticInstructions: BankTransferInstructions = {
       bankName: 'JPMorgan Chase Bank, N.A.',
       accountName: 'IVX HOLDINGS LLC',
-      accountNumber: '9876543210',
+      accountNumber: '9,876,543,210',
       routingNumber: '021000021',
       swiftCode: 'CHASUS33',
       reference,
@@ -916,7 +916,7 @@ class PaymentService {
     const internationalInstructions: BankTransferInstructions = {
       bankName: 'JPMorgan Chase Bank, N.A.',
       accountName: 'IVX HOLDINGS LLC',
-      accountNumber: '9876543210',
+      accountNumber: '9,876,543,210',
       routingNumber: '021000021',
       swiftCode: 'CHASUS33XXX',
       iban: 'US12 0210 0002 1987 6543 210',

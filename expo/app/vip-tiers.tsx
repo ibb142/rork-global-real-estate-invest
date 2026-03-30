@@ -291,7 +291,7 @@ export default function VIPTiersScreen() {
                 <View style={styles.heroStatDivider} />
                 <View style={styles.heroStatBox}>
                   <Gift size={14} color="#FF8C00" />
-                  <Text style={styles.heroStatValue}>${currentTier.referralBonus}</Text>
+                  <Text style={styles.heroStatValue}>${formatNumber(currentTier.referralBonus)}</Text>
                   <Text style={styles.heroStatLabel}>Refer</Text>
                 </View>
               </View>

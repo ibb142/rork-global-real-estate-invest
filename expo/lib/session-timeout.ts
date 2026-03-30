@@ -43,7 +43,7 @@ export function startSessionMonitor(onTimeout: () => void): () => void {
 
   _activityInterval = setInterval(() => {
     void saveActivity();
-  }, 60000);
+  }, 120000);
 
   console.log('[Session] Monitor started — timeout:', SESSION_TIMEOUT_MS / 60000, 'minutes');
 

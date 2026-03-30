@@ -304,7 +304,7 @@ export default function VisitorIntelligenceScreen() {
             <View style={s.kpiIconWrap}>
               <Eye size={16} color="#4A90D9" />
             </View>
-            <Text style={s.kpiValue}>{summary.totalSessions.toLocaleString()}</Text>
+            <Text style={s.kpiValue}>{new Intl.NumberFormat('en-US').format(summary.totalSessions)}</Text>
             <Text style={s.kpiLabel}>Sessions</Text>
           </View>
           <View style={[s.kpiCard, { borderLeftColor: '#FF4D4D', borderLeftWidth: 3 }]}>
@@ -358,7 +358,7 @@ export default function VisitorIntelligenceScreen() {
             </View>
             <View style={s.engagementItem}>
               <View style={[s.engagementDot, { backgroundColor: '#4A90D9' }]} />
-              <Text style={s.engagementItemText}>Events: {summary.totalEvents.toLocaleString()}</Text>
+              <Text style={s.engagementItemText}>Events: {new Intl.NumberFormat('en-US').format(summary.totalEvents)}</Text>
             </View>
           </View>
         </View>

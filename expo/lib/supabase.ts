@@ -5,6 +5,30 @@ import { Platform } from 'react-native';
 const supabaseUrl = (process.env.EXPO_PUBLIC_SUPABASE_URL || '').trim();
 const supabaseAnonKey = (process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '').trim();
 
+function isHostedSupabase(url: string): boolean {
+  try {
+    return new URL(url).hostname.includes('.supabase.co');
+  } catch {
+    return false;
+  }
+}
+
+function getEffectiveUrl(url: string): string {
+  if (!url) return url;
+  try {
+    const parsed = new URL(url);
+    if (!parsed.hostname.includes('.supabase.co')) {
+      console.log('[Supabase] Self-hosted instance detected:', parsed.hostname);
+    } else {
+      console.log('[Supabase] Hosted instance:', parsed.hostname);
+    }
+  } catch {}
+  return url;
+}
+
+const effectiveUrl = getEffectiveUrl(supabaseUrl);
+const isSelfHosted = !isHostedSupabase(supabaseUrl);
+
 export const SUPABASE_NOT_CONFIGURED_MESSAGE =
   'Supabase URL is required. Add EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY to your environment variables. Restart the dev server after changing env.';
 
@@ -35,21 +59,45 @@ const ExpoSecureStoreAdapter = {
 
 let _client: SupabaseClient | null = null;
 if (supabaseUrl && supabaseAnonKey) {
-  _client = createClient(supabaseUrl, supabaseAnonKey, {
+  _client = createClient(effectiveUrl, supabaseAnonKey, {
     auth: {
       storage: ExpoSecureStoreAdapter,
       autoRefreshToken: true,
       persistSession: true,
       detectSessionInUrl: Platform.OS === 'web',
+      flowType: 'pkce',
+    },
+    db: {
+      schema: 'public',
+    },
+    global: {
+      headers: {
+        ...(isSelfHosted ? {} : { 'x-connection-pool': 'true' }),
+        'x-client-info': `ivx-app/${Platform.OS}`,
+      },
+      fetch: (url: RequestInfo | URL, options?: RequestInit) => {
+        const controller = new AbortController();
+        const timeoutMs = isSelfHosted ? 20000 : 15000;
+        const timeout = setTimeout(() => controller.abort(), timeoutMs);
+        return fetch(url, {
+          ...options,
+          signal: controller.signal,
+        }).finally(() => clearTimeout(timeout));
+      },
     },
     realtime: {
       params: {
-        eventsPerSecond: 10,
+        eventsPerSecond: isSelfHosted ? 5 : 2,
       },
-      heartbeatIntervalMs: 5000,
-      reconnectAfterMs: (tries: number) => Math.min(1000 * Math.pow(1.5, tries), 5000),
+      heartbeatIntervalMs: isSelfHosted ? 30000 : 45000,
+      reconnectAfterMs: (tries: number) => {
+        const baseDelay = Math.min(3000 * Math.pow(2, tries), 60000);
+        const jitter = Math.random() * 2000;
+        return baseDelay + jitter;
+      },
     },
   });
+  console.log(`[Supabase] Client initialized (${isSelfHosted ? 'self-hosted' : 'hosted+pooler'}), ${isSelfHosted ? 5 : 2} events/sec`);
 } else {
   console.warn('[Supabase]', SUPABASE_NOT_CONFIGURED_MESSAGE);
 }
@@ -123,6 +171,10 @@ const _noopClient = {
 
 export function isSupabaseConfigured(): boolean {
   return !!_client;
+}
+
+export function isSelfHostedSupabase(): boolean {
+  return isSelfHosted;
 }
 
 export const supabase: SupabaseClient = _client ?? _noopClient;

@@ -149,7 +149,7 @@ const ADMIN_MODULES = [
   { id: 'ai-automation-report', name: 'AI Automation Report', icon: Bot, route: '/ai-automation-report', category: 'AI & Intelligence', keywords: 'ai automation report status tasks agents' },
   { id: 'ai-gallery', name: 'AI Gallery', icon: Image, route: '/ai-gallery', category: 'AI & Intelligence', keywords: 'ai gallery generated images assets creative' },
   { id: 'lead-intelligence', name: 'Lead Intelligence', icon: Brain, route: '/admin/lead-intelligence', category: 'AI & Intelligence', keywords: 'lead intelligence scoring qualification prospects' },
-  { id: 'client-intelligence', name: 'Client Intelligence', icon: Brain, route: '/client-intelligence', category: 'AI & Intelligence', keywords: 'client intelligence crm insights behavior' },
+
   { id: 'global-intelligence', name: 'Global Intelligence', icon: Globe, route: '/global-intelligence', category: 'AI & Intelligence', keywords: 'global intelligence market world data trends' },
 
   { id: 'email-management', name: 'Email Management', icon: Mail, route: '/admin/email-management', category: 'Email', keywords: 'email management templates campaigns' },

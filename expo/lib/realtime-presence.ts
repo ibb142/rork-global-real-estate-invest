@@ -3,10 +3,16 @@ import { AppState, Platform } from 'react-native';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
-const PRESENCE_CHANNEL = 'ivx-presence-v1';
-const HEARTBEAT_INTERVAL = 6_000;
-const BROADCAST_INTERVAL = 15_000;
-const PRESENCE_STALE_THRESHOLD = 45_000;
+const PRESENCE_CHANNEL_PREFIX = 'ivx-presence-v3-';
+const NUM_SHARDS = 10;
+const BROADCAST_INTERVAL = 90_000;
+const PRESENCE_STALE_THRESHOLD = 180_000;
+const PRESENCE_CLEANUP_INTERVAL = 120_000;
+const MAX_PRESENCE_AGE = 300_000;
+const TRACKER_POLL_INTERVAL = 60_000;
+const AGGREGATE_DEBOUNCE = 5_000;
+const MAX_TRACKER_SHARDS = 5;
+const TRACKER_SHARD_ROTATION_INTERVAL = 60_000;
 
 export interface PresenceUser {
   sessionId: string;
@@ -47,6 +53,20 @@ const EMPTY_STATE: LivePresenceState = {
   lastSync: '',
 };
 
+function getShardIndex(sessionId: string): number {
+  let hash = 0;
+  for (let i = 0; i < sessionId.length; i++) {
+    const char = sessionId.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash |= 0;
+  }
+  return Math.abs(hash) % NUM_SHARDS;
+}
+
+function getShardChannelName(shardIndex: number): string {
+  return `${PRESENCE_CHANNEL_PREFIX}${shardIndex}`;
+}
+
 function aggregatePresence(presences: PresenceUser[]): LivePresenceState {
   const countryMap = new Map<string, number>();
   const deviceMap = new Map<string, number>();
@@ -60,7 +80,6 @@ function aggregatePresence(presences: PresenceUser[]): LivePresenceState {
     if (!p.sessionId) continue;
     const lastSeenTs = new Date(p.lastSeen || p.online_at).getTime();
     if (now - lastSeenTs > PRESENCE_STALE_THRESHOLD) {
-      console.log('[PresenceMgr] Filtering stale user:', p.sessionId, 'last seen', Math.round((now - lastSeenTs) / 1000), 's ago');
       continue;
     }
     const existing = uniqueMap.get(p.sessionId);
@@ -107,162 +126,225 @@ function aggregatePresence(presences: PresenceUser[]): LivePresenceState {
 type PresenceListener = (state: LivePresenceState) => void;
 
 class PresenceManager {
-  private channel: RealtimeChannel | null = null;
+  private broadcastChannel: RealtimeChannel | null = null;
+  private trackerChannels: RealtimeChannel[] = [];
   private isSubscribed = false;
   private isSubscribing = false;
+  private isBroadcasting = false;
   private listeners = new Set<PresenceListener>();
   private broadcastData: PresenceUser | null = null;
   private broadcastInterval: ReturnType<typeof setInterval> | null = null;
   private pollInterval: ReturnType<typeof setInterval> | null = null;
   private appStateSub: { remove: () => void } | null = null;
   private lastState: LivePresenceState = EMPTY_STATE;
-  private subscribePromise: Promise<void> | null = null;
+  private cleanupInterval: ReturnType<typeof setInterval> | null = null;
+  private staleSessionCount = 0;
+  private totalPresenceSyncs = 0;
+  private aggregateDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private broadcastShardIndex = -1;
 
-  private ensureChannel(): RealtimeChannel | null {
+  private getOrCreateBroadcastChannel(sessionId: string): RealtimeChannel | null {
     if (!isSupabaseConfigured()) {
       console.log('[PresenceMgr] Supabase not configured');
       return null;
     }
 
-    if (this.channel) return this.channel;
+    this.broadcastShardIndex = getShardIndex(sessionId);
+    const channelName = getShardChannelName(this.broadcastShardIndex);
 
-    const presenceKey = this.broadcastData?.sessionId || ('tracker-' + Math.random().toString(36).slice(2, 8));
+    if (this.broadcastChannel) return this.broadcastChannel;
 
-    this.channel = supabase.channel(PRESENCE_CHANNEL, {
-      config: { presence: { key: presenceKey } },
+    this.broadcastChannel = supabase.channel(channelName, {
+      config: { presence: { key: sessionId } },
     });
 
-    console.log('[PresenceMgr] Channel created with key:', presenceKey);
-    return this.channel;
+    console.log('[PresenceMgr] Broadcast channel created on shard:', this.broadcastShardIndex, 'key:', sessionId);
+    return this.broadcastChannel;
   }
 
-  private syncPresence() {
-    if (!this.channel) return;
-    try {
-      const presenceState = this.channel.presenceState();
-      const allUsers: PresenceUser[] = [];
+  private syncAllShards() {
+    const allUsers: PresenceUser[] = [];
 
-      for (const key of Object.keys(presenceState)) {
-        const entries = presenceState[key];
-        if (Array.isArray(entries)) {
-          for (const entry of entries) {
-            const user = entry as unknown as PresenceUser;
-            if (user && user.sessionId) {
-              allUsers.push(user);
+    for (const channel of this.trackerChannels) {
+      try {
+        const presenceState = channel.presenceState();
+        for (const key of Object.keys(presenceState)) {
+          const entries = presenceState[key];
+          if (Array.isArray(entries)) {
+            for (const entry of entries) {
+              const user = entry as unknown as PresenceUser;
+              if (user && user.sessionId) {
+                allUsers.push(user);
+              }
             }
           }
         }
+      } catch (err) {
+        console.log('[PresenceMgr] Shard sync error:', (err as Error)?.message);
       }
-
-      const aggregated = aggregatePresence(allUsers);
-      this.lastState = aggregated;
-
-      console.log(`[PresenceMgr] Synced: ${aggregated.totalOnline} online (${aggregated.landingOnline} landing, ${aggregated.appOnline} app)`);
-
-      for (const listener of this.listeners) {
-        try { listener(aggregated); } catch {}
-      }
-    } catch (err) {
-      console.log('[PresenceMgr] Sync error:', (err as Error)?.message);
     }
-  }
 
-  private async subscribe(): Promise<void> {
-    if (this.isSubscribed || this.isSubscribing) return;
-
-    const channel = this.ensureChannel();
-    if (!channel) return;
-
-    this.isSubscribing = true;
-
-    return new Promise<void>((resolve) => {
-      channel
-        .on('presence', { event: 'sync' }, () => {
-          console.log('[PresenceMgr] Presence sync event');
-          this.syncPresence();
-        })
-        .on('presence', { event: 'join' }, ({ key, newPresences }) => {
-          console.log('[PresenceMgr] Join:', key, newPresences?.length, 'new');
-          this.syncPresence();
-        })
-        .on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
-          console.log('[PresenceMgr] Leave:', key, leftPresences?.length, 'left');
-          this.syncPresence();
-        })
-        .subscribe(async (status) => {
-          console.log('[PresenceMgr] Channel status:', status);
-          if (status === 'SUBSCRIBED') {
-            this.isSubscribed = true;
-            this.isSubscribing = false;
-
-            if (this.broadcastData) {
-              try {
-                await channel.track({
-                  ...this.broadcastData,
-                  lastSeen: new Date().toISOString(),
-                  online_at: new Date().toISOString(),
-                });
-                console.log('[PresenceMgr] Initial presence tracked for:', this.broadcastData.sessionId);
-              } catch (err) {
-                console.log('[PresenceMgr] Initial track error:', (err as Error)?.message);
+    if (this.broadcastChannel && !this.trackerChannels.includes(this.broadcastChannel)) {
+      try {
+        const presenceState = this.broadcastChannel.presenceState();
+        for (const key of Object.keys(presenceState)) {
+          const entries = presenceState[key];
+          if (Array.isArray(entries)) {
+            for (const entry of entries) {
+              const user = entry as unknown as PresenceUser;
+              if (user && user.sessionId) {
+                allUsers.push(user);
               }
             }
-
-            this.startPolling();
-            this.syncPresence();
-            resolve();
-          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-            this.isSubscribed = false;
-            this.isSubscribing = false;
-            console.log('[PresenceMgr] Channel error/timeout — will retry in 3s');
-            this.lastState = { ...EMPTY_STATE, isConnected: false };
-            for (const listener of this.listeners) {
-              try { listener(this.lastState); } catch {}
-            }
-            setTimeout(() => { void this.reconnect(); }, 3000);
-            resolve();
-          } else if (status === 'CLOSED') {
-            this.isSubscribed = false;
-            this.isSubscribing = false;
-            console.log('[PresenceMgr] Channel closed — will retry in 2s');
-            setTimeout(() => { void this.reconnect(); }, 2000);
-            resolve();
           }
-        });
-    });
+        }
+      } catch {}
+    }
+
+    const aggregated = aggregatePresence(allUsers);
+    this.totalPresenceSyncs++;
+    this.lastState = aggregated;
+
+    console.log(`[PresenceMgr] Synced ${NUM_SHARDS} shards: ${aggregated.totalOnline} online (${aggregated.landingOnline} landing, ${aggregated.appOnline} app) | syncs: ${this.totalPresenceSyncs}`);
+
+    for (const listener of this.listeners) {
+      try { listener(aggregated); } catch {}
+    }
   }
 
-  private async reconnect() {
-    console.log('[PresenceMgr] Reconnecting...');
-    this.cleanup(true);
-    await this.subscribe();
-    if (this.isSubscribed && this.broadcastData && this.channel) {
-      try {
-        await this.channel.track({
-          ...this.broadcastData,
-          lastSeen: new Date().toISOString(),
-          online_at: new Date().toISOString(),
-        });
-        console.log('[PresenceMgr] Reconnect track successful');
-      } catch (err) {
-        console.log('[PresenceMgr] Reconnect track failed:', (err as Error)?.message);
+  private debouncedSync() {
+    if (this.aggregateDebounceTimer) clearTimeout(this.aggregateDebounceTimer);
+    this.aggregateDebounceTimer = setTimeout(() => {
+      this.syncAllShards();
+    }, AGGREGATE_DEBOUNCE);
+  }
+
+  private startCleanupInterval() {
+    if (this.cleanupInterval) clearInterval(this.cleanupInterval);
+    this.cleanupInterval = setInterval(() => {
+      this.runStaleCleanup();
+    }, PRESENCE_CLEANUP_INTERVAL);
+  }
+
+  private runStaleCleanup() {
+    if (!this.lastState.isConnected || this.lastState.users.length === 0) return;
+
+    const now = Date.now();
+    const beforeCount = this.lastState.users.length;
+    const freshUsers = this.lastState.users.filter(u => {
+      const lastSeenTs = new Date(u.lastSeen || u.online_at).getTime();
+      const age = now - lastSeenTs;
+      if (isNaN(lastSeenTs) || age > MAX_PRESENCE_AGE) {
+        return false;
+      }
+      return true;
+    });
+
+    if (freshUsers.length < beforeCount) {
+      const removed = beforeCount - freshUsers.length;
+      this.staleSessionCount += removed;
+      console.log('[PresenceMgr] Cleanup removed', removed, 'stale sessions. Total stale:', this.staleSessionCount);
+
+      const updatedState = aggregatePresence(freshUsers);
+      this.lastState = updatedState;
+      for (const listener of this.listeners) {
+        try { listener(updatedState); } catch {}
       }
     }
+  }
+
+  private trackerShardOffset = 0;
+  private trackerRotationInterval: ReturnType<typeof setInterval> | null = null;
+
+  private async subscribeTrackerToAllShards(): Promise<void> {
+    if (this.isSubscribed || this.isSubscribing) return;
+    if (!isSupabaseConfigured()) return;
+
+    this.isSubscribing = true;
+    await this.subscribeTrackerBatch(0);
+
+    this.isSubscribed = true;
+    this.isSubscribing = false;
+    this.startPolling();
+    this.startCleanupInterval();
+    this.startTrackerRotation();
+
+    setTimeout(() => {
+      this.syncAllShards();
+    }, 4000);
+
+    console.log('[PresenceMgr] Tracker subscribed to first', MAX_TRACKER_SHARDS, 'of', NUM_SHARDS, 'shards (rotating)');
+  }
+
+  private async subscribeTrackerBatch(offset: number): Promise<void> {
+    for (const ch of this.trackerChannels) {
+      if (ch !== this.broadcastChannel) {
+        try { void supabase.removeChannel(ch); } catch {}
+      }
+    }
+    this.trackerChannels = [];
+
+    let subscribedCount = 0;
+    const shardsToSubscribe: number[] = [];
+    for (let j = 0; j < MAX_TRACKER_SHARDS; j++) {
+      shardsToSubscribe.push((offset + j) % NUM_SHARDS);
+    }
+
+    if (this.broadcastChannel && this.broadcastShardIndex >= 0 && !shardsToSubscribe.includes(this.broadcastShardIndex)) {
+      this.trackerChannels.push(this.broadcastChannel);
+    }
+
+    for (const i of shardsToSubscribe) {
+      if (this.broadcastChannel && this.broadcastShardIndex === i) {
+        this.trackerChannels.push(this.broadcastChannel);
+        subscribedCount++;
+        continue;
+      }
+
+      const channelName = getShardChannelName(i);
+      const channel = supabase.channel(channelName + '-tracker-' + Math.random().toString(36).slice(2, 5), {
+        config: { presence: { key: 'tracker-' + Math.random().toString(36).slice(2, 6) } },
+      });
+
+      channel
+        .on('presence', { event: 'sync' }, () => {
+          this.debouncedSync();
+        })
+        .subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+            subscribedCount++;
+            console.log('[PresenceMgr] Tracker shard', i, 'subscribed (', subscribedCount, '/', MAX_TRACKER_SHARDS, ')');
+          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            console.log('[PresenceMgr] Tracker shard', i, 'error:', status);
+          }
+        });
+
+      this.trackerChannels.push(channel);
+    }
+  }
+
+  private startTrackerRotation() {
+    if (this.trackerRotationInterval) clearInterval(this.trackerRotationInterval);
+    this.trackerRotationInterval = setInterval(() => {
+      this.trackerShardOffset = (this.trackerShardOffset + MAX_TRACKER_SHARDS) % NUM_SHARDS;
+      console.log('[PresenceMgr] Rotating tracker to shards starting at:', this.trackerShardOffset);
+      void this.subscribeTrackerBatch(this.trackerShardOffset);
+    }, TRACKER_SHARD_ROTATION_INTERVAL);
   }
 
   private startPolling() {
     if (this.pollInterval) clearInterval(this.pollInterval);
     this.pollInterval = setInterval(() => {
-      this.syncPresence();
-    }, HEARTBEAT_INTERVAL);
+      this.syncAllShards();
+    }, TRACKER_POLL_INTERVAL);
 
     if (this.appStateSub) this.appStateSub.remove();
     this.appStateSub = AppState.addEventListener('change', (nextState) => {
       if (nextState === 'active') {
         console.log('[PresenceMgr] App became active — syncing');
-        this.syncPresence();
-        if (this.broadcastData && this.channel && this.isSubscribed) {
-          void this.channel.track({
+        this.syncAllShards();
+        if (this.broadcastData && this.broadcastChannel && this.isBroadcasting) {
+          void this.broadcastChannel.track({
             ...this.broadcastData,
             lastSeen: new Date().toISOString(),
             online_at: new Date().toISOString(),
@@ -275,9 +357,9 @@ class PresenceManager {
   private startBroadcastHeartbeat() {
     if (this.broadcastInterval) clearInterval(this.broadcastInterval);
     this.broadcastInterval = setInterval(async () => {
-      if (!this.broadcastData || !this.channel || !this.isSubscribed) return;
+      if (!this.broadcastData || !this.broadcastChannel || !this.isBroadcasting) return;
       try {
-        await this.channel.track({
+        await this.broadcastChannel.track({
           ...this.broadcastData,
           lastSeen: new Date().toISOString(),
           online_at: new Date().toISOString(),
@@ -296,27 +378,67 @@ class PresenceManager {
       lastSeen: now,
       online_at: now,
     };
-    console.log('[PresenceMgr] Broadcasting as:', data.sessionId, 'source:', data.source);
+    console.log('[PresenceMgr] Broadcasting as:', data.sessionId, 'source:', data.source, 'shard:', getShardIndex(data.sessionId));
 
-    if (!this.subscribePromise) {
-      this.subscribePromise = this.subscribe();
-    }
-    await this.subscribePromise;
+    const channel = this.getOrCreateBroadcastChannel(data.sessionId);
+    if (!channel) return;
 
-    if (this.isSubscribed && this.channel) {
-      try {
-        await this.channel.track({
-          ...this.broadcastData,
-          lastSeen: new Date().toISOString(),
-          online_at: new Date().toISOString(),
+    return new Promise<void>((resolve) => {
+      channel
+        .on('presence', { event: 'sync' }, () => {
+          this.debouncedSync();
+        })
+        .subscribe(async (status) => {
+          console.log('[PresenceMgr] Broadcast channel status:', status);
+          if (status === 'SUBSCRIBED') {
+            this.isBroadcasting = true;
+            try {
+              await channel.track({
+                ...this.broadcastData!,
+                lastSeen: new Date().toISOString(),
+                online_at: new Date().toISOString(),
+              });
+              console.log('[PresenceMgr] Initial presence tracked for:', data.sessionId);
+            } catch (err) {
+              console.log('[PresenceMgr] Initial track error:', (err as Error)?.message);
+            }
+            this.startBroadcastHeartbeat();
+            resolve();
+          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            this.isBroadcasting = false;
+            console.log('[PresenceMgr] Broadcast channel error:', status);
+            setTimeout(() => { void this.reconnectBroadcast(); }, 5000);
+            resolve();
+          } else if (status === 'CLOSED') {
+            this.isBroadcasting = false;
+            setTimeout(() => { void this.reconnectBroadcast(); }, 3000);
+            resolve();
+          }
         });
-        console.log('[PresenceMgr] Presence tracked successfully');
-      } catch (err) {
-        console.log('[PresenceMgr] Track error:', (err as Error)?.message);
-      }
-    }
+    });
+  }
 
-    this.startBroadcastHeartbeat();
+  private async reconnectBroadcast() {
+    if (!this.broadcastData) return;
+    console.log('[PresenceMgr] Reconnecting broadcast...');
+    if (this.broadcastChannel) {
+      try { void supabase.removeChannel(this.broadcastChannel); } catch {}
+      this.broadcastChannel = null;
+    }
+    const data = this.broadcastData;
+    this.broadcastData = null;
+    this.isBroadcasting = false;
+    await this.startBroadcasting({
+      sessionId: data.sessionId,
+      source: data.source,
+      device: data.device,
+      os: data.os,
+      browser: data.browser,
+      geo: data.geo,
+      currentStep: data.currentStep,
+      page: data.page,
+      engagementScore: data.engagementScore,
+    });
   }
 
   async startTracking(listener: PresenceListener): Promise<() => void> {
@@ -327,14 +449,10 @@ class PresenceManager {
       listener(this.lastState);
     }
 
-    if (!this.subscribePromise) {
-      this.subscribePromise = this.subscribe();
-    }
-    await this.subscribePromise;
+    await this.subscribeTrackerToAllShards();
 
     if (this.isSubscribed) {
       listener({ ...this.lastState, isConnected: true });
-      this.syncPresence();
     }
 
     return () => {
@@ -346,8 +464,8 @@ class PresenceManager {
   updatePage(page: string) {
     if (this.broadcastData) {
       this.broadcastData = { ...this.broadcastData, page };
-      if (this.channel && this.isSubscribed) {
-        void this.channel.track({
+      if (this.broadcastChannel && this.isBroadcasting) {
+        void this.broadcastChannel.track({
           ...this.broadcastData,
           lastSeen: new Date().toISOString(),
           online_at: new Date().toISOString(),
@@ -361,10 +479,11 @@ class PresenceManager {
       clearInterval(this.broadcastInterval);
       this.broadcastInterval = null;
     }
-    if (this.channel && this.isSubscribed) {
-      try { void this.channel.untrack(); } catch {}
+    if (this.broadcastChannel && this.isBroadcasting) {
+      try { void this.broadcastChannel.untrack(); } catch {}
     }
     this.broadcastData = null;
+    this.isBroadcasting = false;
     console.log('[PresenceMgr] Broadcasting stopped');
   }
 
@@ -372,7 +491,27 @@ class PresenceManager {
     return this.lastState;
   }
 
-  private cleanup(removeChannel = true) {
+  getPresenceHealth(): { totalSyncs: number; staleRemoved: number; currentOnline: number; shardCount: number } {
+    return {
+      totalSyncs: this.totalPresenceSyncs,
+      staleRemoved: this.staleSessionCount,
+      currentOnline: this.lastState.totalOnline,
+      shardCount: NUM_SHARDS,
+    };
+  }
+
+  destroy() {
+    this.stopBroadcasting();
+    this.listeners.clear();
+
+    if (this.aggregateDebounceTimer) {
+      clearTimeout(this.aggregateDebounceTimer);
+      this.aggregateDebounceTimer = null;
+    }
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = null;
+    }
     if (this.pollInterval) {
       clearInterval(this.pollInterval);
       this.pollInterval = null;
@@ -381,19 +520,26 @@ class PresenceManager {
       this.appStateSub.remove();
       this.appStateSub = null;
     }
-    if (removeChannel && this.channel) {
-      try { void supabase.removeChannel(this.channel); } catch {}
-      this.channel = null;
+
+    if (this.trackerRotationInterval) {
+      clearInterval(this.trackerRotationInterval);
+      this.trackerRotationInterval = null;
     }
+
+    if (this.broadcastChannel) {
+      try { void supabase.removeChannel(this.broadcastChannel); } catch {}
+      this.broadcastChannel = null;
+    }
+    for (const ch of this.trackerChannels) {
+      if (ch !== this.broadcastChannel) {
+        try { void supabase.removeChannel(ch); } catch {}
+      }
+    }
+    this.trackerChannels = [];
+
     this.isSubscribed = false;
     this.isSubscribing = false;
-    this.subscribePromise = null;
-  }
-
-  destroy() {
-    this.stopBroadcasting();
-    this.listeners.clear();
-    this.cleanup(true);
+    this.isBroadcasting = false;
     this.lastState = EMPTY_STATE;
     console.log('[PresenceMgr] Destroyed');
   }

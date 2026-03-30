@@ -1,3 +1,43 @@
+export interface DealTrustInfo {
+  llcName: string;
+  builderName: string;
+  builderWebsite?: string;
+  minInvestment: number;
+  timelineMin: number;
+  timelineMax: number;
+  timelineUnit: 'months' | 'years';
+  legalStructure: string;
+  insuranceCoverage: boolean;
+  titleVerified: boolean;
+  permitStatus: 'approved' | 'pending' | 'not_required';
+  escrowProtected: boolean;
+  thirdPartyAudit: boolean;
+  licenseNumber?: string;
+  yearEstablished?: number;
+  completedProjects?: number;
+  totalDeliveredValue?: number;
+  investorProtections: string[];
+  riskFactors: string[];
+  keyMilestones: DealMilestone[];
+  documents: DealDocument[];
+}
+
+export interface DealMilestone {
+  id: string;
+  title: string;
+  date: string;
+  status: 'completed' | 'in_progress' | 'upcoming';
+  description?: string;
+}
+
+export interface DealDocument {
+  id: string;
+  name: string;
+  type: 'llc_filing' | 'permit' | 'insurance' | 'title' | 'appraisal' | 'prospectus' | 'agreement' | 'other';
+  verified: boolean;
+  url?: string;
+}
+
 export interface ParsedJVDeal {
   id: string;
   title: string;
@@ -16,6 +56,10 @@ export interface ParsedJVDeal {
   publishedAt?: string;
   created_at: string;
   status?: string;
+  trustInfo?: DealTrustInfo;
+  city?: string;
+  state?: string;
+  country?: string;
   [key: string]: unknown;
 }
 
@@ -105,13 +149,22 @@ export function parseDeal(d: Record<string, unknown>): ParsedJVDeal {
 
   const projectName = (d.projectName || d.project_name || '') as string;
 
+  let trustInfo = safeJsonParse(d.trustInfo ?? d.trust_info, undefined);
+  if (trustInfo !== undefined && typeof trustInfo !== 'object') {
+    trustInfo = undefined;
+  }
+
   return {
     ...d,
     photos: photos as string[],
     partners: partners as ParsedJVDealPartner[] | number,
     poolTiers: poolTiers as ParsedJVDealPoolTier[] | undefined,
+    trustInfo: trustInfo as DealTrustInfo | undefined,
     projectName,
     propertyAddress: (d.propertyAddress || d.property_address || '') as string,
+    city: (d.city || '') as string,
+    state: (d.state || '') as string,
+    country: (d.country || '') as string,
     totalInvestment: Number(d.totalInvestment || d.total_investment || 0),
     expectedROI: Number(d.expectedROI || d.expected_roi || 0),
     distributionFrequency: (d.distributionFrequency || d.distribution_frequency || '') as string,
@@ -169,3 +222,75 @@ export function filterValidPhotos(raw: unknown): string[] {
 }
 
 export const QUERY_KEY_PUBLISHED_JV_DEALS = ['published-jv-deals'] as const;
+
+import { useQuery } from '@tanstack/react-query';
+import { resetSupabaseCheck } from '@/lib/jv-storage';
+import { fetchCanonicalDeals, invalidateCanonicalCache, canonicalCardToParsedDeal } from '@/lib/canonical-deals';
+
+export interface UsePublishedJVDealsResult {
+  deals: ParsedJVDeal[];
+  isLoading: boolean;
+  isError: boolean;
+  refetch: () => Promise<unknown>;
+}
+
+const SHARED_FETCH_TIMEOUT_MS = 10000;
+
+let _lastManualReset = 0;
+
+export function triggerManualJVRefresh(): void {
+  _lastManualReset = Date.now();
+  resetSupabaseCheck();
+  invalidateCanonicalCache();
+  console.log('[SharedJVFetch] Manual refresh triggered — canonical + Supabase cache reset');
+}
+
+async function fetchPublishedJVDealsShared(): Promise<{ deals: ParsedJVDeal[] }> {
+  const now = Date.now();
+  const isManualRefresh = (now - _lastManualReset) < 2000;
+  console.log('[SharedJVFetch] Fetching via CANONICAL DEALS API (single source of truth) | manual:', isManualRefresh);
+
+  const timeout = new Promise<{ deals: ParsedJVDeal[] }>((resolve) =>
+    setTimeout(() => {
+      console.log('[SharedJVFetch] Fetch timed out after', SHARED_FETCH_TIMEOUT_MS, 'ms');
+      resolve({ deals: [] });
+    }, SHARED_FETCH_TIMEOUT_MS)
+  );
+
+  const fetchPromise = (async (): Promise<{ deals: ParsedJVDeal[] }> => {
+    const canonicalResult = await fetchCanonicalDeals(isManualRefresh);
+    const parsed = canonicalResult.deals.map(card => canonicalCardToParsedDeal(card));
+    console.log('[SharedJVFetch] Canonical source:', canonicalResult.source, '| deals:', parsed.length);
+    return { deals: parsed };
+  })();
+
+  const result = await Promise.race([fetchPromise, timeout]);
+
+  console.log('[SharedJVFetch] Final deal count:', result.deals.length, '| order:', result.deals.map(d => `${d.projectName}`).join(', '));
+  return result;
+}
+
+export function usePublishedJVDeals(): UsePublishedJVDealsResult {
+  const query = useQuery({
+    queryKey: [...QUERY_KEY_PUBLISHED_JV_DEALS],
+    queryFn: fetchPublishedJVDealsShared,
+    retry: 2,
+    retryDelay: (attempt: number) => Math.min(1000 * Math.pow(2, attempt), 8000),
+    staleTime: 1000 * 60 * 2,
+    gcTime: 1000 * 60 * 10,
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
+    refetchInterval: false,
+    placeholderData: { deals: [] as ParsedJVDeal[] },
+  });
+
+  const deals = query.data?.deals ?? [];
+  const isLoading = query.isPending && !query.isPlaceholderData;
+
+  return {
+    deals,
+    isLoading,
+    isError: query.isError,
+    refetch: query.refetch,
+  };
+}

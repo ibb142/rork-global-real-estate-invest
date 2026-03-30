@@ -17,7 +17,7 @@ export function getSupabaseRestUrl(): string {
 }
 
 export function getApiBaseUrl(): string {
-  const custom = (process.env.EXPO_PUBLIC_API_BASE_URL || '').trim().replace(/\/$/, '');
+  const custom = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || process.env.EXPO_PUBLIC_API_BASE_URL || '').trim().replace(/\/$/, '');
   if (custom) return custom;
 
   if (_supabaseUrl) {

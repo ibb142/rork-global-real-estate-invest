@@ -16,6 +16,9 @@ import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
 import { Property, MarketData, Order } from '@/types';
 import { formatNumber, formatAmountInput, parseAmountInput } from '@/lib/formatters';
+import { sellShares } from '@/lib/investment-service';
+import { supabase } from '@/lib/supabase';
+import { useQueryClient } from '@tanstack/react-query';
 
 interface TradingModalProps {
   visible: boolean;
@@ -50,6 +53,7 @@ export default function TradingModal({
   const [tradeResult, setTradeResult] = useState<{ success: boolean; order?: Order; error?: string } | null>(null);
   
   const insets = useSafeAreaInsets();
+  const queryClient = useQueryClient();
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const priceFlashAnim = useRef(new Animated.Value(0)).current;
   const [displayPrice, setDisplayPrice] = useState(marketData?.lastPrice || 0);
@@ -157,16 +161,78 @@ export default function TradingModal({
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     try {
-      await new Promise(resolve => setTimeout(resolve, 1500 + Math.random() * 1000));
+      if (tradeType === 'sell') {
+        console.log('[Trading] Executing real sell via Supabase...');
+        const result = await sellShares({
+          holdingId: '',
+          propertyId: property.id,
+          propertyName: property.name,
+          shares: sharesNum,
+          pricePerShare: currentPrice,
+          subtotal,
+          platformFee: fee,
+          netProceeds: total,
+          sellType: 'instant',
+        });
 
-      const success = Math.random() > 0.05;
+        if (result.success) {
+          const order: Order = {
+            id: result.transactionId || `order-${Date.now()}`,
+            propertyId: property.id,
+            property: property,
+            type: 'sell',
+            orderType: orderType,
+            status: 'filled',
+            shares: sharesNum,
+            filledShares: sharesNum,
+            price: currentPrice,
+            total: total,
+            fees: fee,
+            createdAt: new Date().toISOString(),
+            filledAt: new Date().toISOString(),
+          };
+          setTradeResult({ success: true, order });
+          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          onTradeComplete(order);
+          void queryClient.invalidateQueries({ queryKey: ['wallet-balance'] });
+          void queryClient.invalidateQueries({ queryKey: ['holdings'] });
+          void queryClient.invalidateQueries({ queryKey: ['portfolio'] });
+          void queryClient.invalidateQueries({ queryKey: ['transactions'] });
+        } else {
+          setTradeResult({ success: false, error: result.message });
+          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        }
+      } else {
+        console.log('[Trading] Executing buy order...');
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          setTradeResult({ success: false, error: 'Please log in to trade.' });
+          return;
+        }
 
-      if (success) {
+        const { data: orderData, error: orderError } = await supabase.from('orders').insert({
+          user_id: user.id,
+          property_id: property.id,
+          type: 'buy',
+          order_type: orderType,
+          shares: sharesNum,
+          price: currentPrice,
+          total: total,
+          fees: fee,
+          status: orderType === 'market' ? 'filled' : 'open',
+          created_at: new Date().toISOString(),
+          filled_at: orderType === 'market' ? new Date().toISOString() : null,
+        }).select().single();
+
+        if (orderError) {
+          console.log('[Trading] Order insert failed:', orderError?.message);
+        }
+
         const order: Order = {
-          id: `order-${Date.now()}`,
+          id: (orderData as any)?.id || `order-${Date.now()}`,
           propertyId: property.id,
           property: property,
-          type: tradeType,
+          type: 'buy',
           orderType: orderType,
           status: orderType === 'market' ? 'filled' : 'open',
           shares: sharesNum,
@@ -181,9 +247,8 @@ export default function TradingModal({
         setTradeResult({ success: true, order });
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         onTradeComplete(order);
-      } else {
-        setTradeResult({ success: false, error: 'Order rejected. Please try again.' });
-        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        void queryClient.invalidateQueries({ queryKey: ['wallet-balance'] });
+        void queryClient.invalidateQueries({ queryKey: ['holdings'] });
       }
     } catch (error) {
       console.error('[Trading] Error:', error);

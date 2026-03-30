@@ -385,7 +385,7 @@ function CheckCard({ check, expanded, onToggle }: { check: HealthCheck; expanded
             {check.linesOfCode !== undefined && check.linesOfCode > 0 && (
               <View style={styles.checkDetailRow}>
                 <Text style={styles.checkDetailLabel}>Lines of Code</Text>
-                <Text style={styles.checkDetailValue}>{check.linesOfCode.toLocaleString()}</Text>
+                <Text style={styles.checkDetailValue}>{new Intl.NumberFormat('en-US').format(check.linesOfCode)}</Text>
               </View>
             )}
             {check.details && (

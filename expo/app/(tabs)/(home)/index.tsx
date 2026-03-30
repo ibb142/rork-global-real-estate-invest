@@ -34,7 +34,6 @@ import {
   ArrowUpRight,
   Wallet,
   Lock,
-  DollarSign,
   Landmark,
   Coins,
   ArrowRight,
@@ -45,8 +44,7 @@ import { useRouter } from 'expo-router';
 import Colors from '@/constants/colors';
 import { getResponsiveSize, isCompactScreen, isExtraSmallScreen } from '@/lib/responsive';
 import { useQuery } from '@tanstack/react-query';
-import { fetchJVDeals, resetSupabaseCheck } from '@/lib/jv-storage';
-import { parseDeal as sharedParseDeal, QUERY_KEY_PUBLISHED_JV_DEALS, isValidPhoto } from '@/lib/parse-deal';
+import { isValidPhoto, usePublishedJVDeals, triggerManualJVRefresh } from '@/lib/parse-deal';
 import { getFallbackPhotosForDeal } from '@/constants/deal-photos';
 import { supabase } from '@/lib/supabase';
 import { useJVRealtime, usePublicationWatchdog } from '@/lib/jv-realtime';
@@ -58,6 +56,7 @@ import PropertyCard from '@/components/PropertyCard';
 import QuickBuyModal from '@/components/QuickBuyModal';
 import { formatCurrency, formatCurrencyCompact } from '@/lib/formatters';
 import type { JVAgreement } from '@/types/jv';
+import { CANONICAL_MIN_INVESTMENT } from '@/lib/published-deal-card-model';
 
 
 
@@ -437,26 +436,40 @@ const IGPhotoSlider = React.memo(function IGPhotoSlider({ photos, cardWidth }: {
 
 const JVPropertyCard = React.memo(function JVPropertyCard({ agreement, onPress, onInvest, onQuickBuy, cardWidth }: { agreement: JVAgreement; onPress: () => void; onInvest?: () => void; onQuickBuy?: () => void; cardWidth: number }) {
   if (!agreement || !agreement.id) {
-    console.warn('[JVPropertyCard] Invalid agreement data, skipping render');
-    return null;
+    console.warn('[JVPropertyCard] Invalid agreement data, rendering placeholder');
+    return (
+      <View style={[igStyles.card, { width: cardWidth }]} testID="jv-card-placeholder">
+        <View style={igStyles.noPhotoPlaceholder}>
+          <View style={igStyles.noPhotoIconWrap}>
+            <Landmark size={32} color={Colors.primary} />
+          </View>
+          <Text style={igStyles.noPhotoTitle}>Deal Loading...</Text>
+          <Text style={igStyles.noPhotoDesc}>Investment details are being fetched</Text>
+        </View>
+      </View>
+    );
   }
 
   const status = (agreement.status ? JV_STATUS_CONFIG[agreement.status] : undefined) ?? JV_STATUS_CONFIG.draft ?? { label: 'Draft', color: Colors.textSecondary };
 
-  let partnerCount = 0;
-  try {
-    const partnersRaw = agreement.partners;
-    if (typeof partnersRaw === 'number') {
-      partnerCount = partnersRaw;
-    } else if (Array.isArray(partnersRaw)) {
-      partnerCount = partnersRaw.length;
-    } else if (typeof partnersRaw === 'string') {
-      const parsed = JSON.parse(partnersRaw);
-      partnerCount = Array.isArray(parsed) ? parsed.length : 0;
-    }
-  } catch { partnerCount = 0; }
-
   const totalFormatted = formatCurrencyCompact(agreement.totalInvestment ?? 0);
+  const agreementAny = agreement as unknown as Record<string, unknown>;
+  const rawTrust = agreementAny.trustInfo ?? agreementAny.trust_info;
+  let trustData: Record<string, unknown> = {};
+  if (rawTrust && typeof rawTrust === 'object') {
+    trustData = rawTrust as Record<string, unknown>;
+  } else if (typeof rawTrust === 'string') {
+    try { trustData = JSON.parse(rawTrust); } catch { trustData = {}; }
+  }
+  const tMin = trustData.timelineMin as number | undefined;
+  const tMax = trustData.timelineMax as number | undefined;
+  const tUnit = (trustData.timelineUnit as string) === 'years' ? 'yr' : 'mo';
+  const timeline = (tMin && tMax) ? `${tMin}\u2013${tMax} ${tUnit}` : (tMax ? `${tMax} ${tUnit}` : '14\u201324 mo');
+
+  let developerName = agreement.projectName || 'IVX Holdings LLC';
+  if (developerName && !developerName.toUpperCase().includes('LLC') && !developerName.toUpperCase().includes('INC')) {
+    developerName = developerName + ' LLC';
+  }
 
   let validPhotos: string[] = [];
   try {
@@ -535,9 +548,18 @@ const JVPropertyCard = React.memo(function JVPropertyCard({ agreement, onPress, 
           </View>
           <View style={igStyles.statSep} />
           <View style={igStyles.statItem}>
-            <Text style={igStyles.statVal}>{partnerCount}</Text>
-            <Text style={igStyles.statLbl}>Partners</Text>
+            <Text style={igStyles.statVal}>{timeline}</Text>
+            <Text style={igStyles.statLbl}>Timeline</Text>
           </View>
+        </View>
+
+        <View style={igStyles.developerRow}>
+          <View style={igStyles.developerIconWrap}>
+            <Landmark size={11} color={Colors.primary} />
+          </View>
+          <Text style={igStyles.developerText} numberOfLines={1}>
+            Developed by <Text style={igStyles.developerName}>{developerName}</Text>
+          </Text>
         </View>
 
         <View style={igStyles.captionRow}>
@@ -546,28 +568,26 @@ const JVPropertyCard = React.memo(function JVPropertyCard({ agreement, onPress, 
         </View>
 
         <View style={igStyles.btnRow}>
-          {onQuickBuy ? (
-            <TouchableOpacity
-              style={igStyles.buyBtn}
-              onPress={() => { onQuickBuy(); }}
-              activeOpacity={0.8}
-              testID={`jv-quick-buy-${agreement.id}`}
-            >
-              <Zap size={14} color="#000" />
-              <Text style={igStyles.buyBtnText}>Buy Now</Text>
-            </TouchableOpacity>
-          ) : null}
-          {onInvest ? (
-            <TouchableOpacity
-              style={igStyles.investBtn}
-              onPress={() => { onInvest(); }}
-              activeOpacity={0.8}
-              testID={`jv-invest-${agreement.id}`}
-            >
-              <DollarSign size={14} color={Colors.primary} />
-              <Text style={igStyles.investBtnText}>Invest</Text>
-            </TouchableOpacity>
-          ) : null}
+          <TouchableOpacity
+            style={igStyles.detailsBtn}
+            onPress={onPress}
+            activeOpacity={0.8}
+            testID={`jv-details-${agreement.id}`}
+          >
+            <Text style={igStyles.detailsBtnText}>Details</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={igStyles.investNowBtn}
+            onPress={() => { if (onQuickBuy) onQuickBuy(); else if (onInvest) onInvest(); }}
+            activeOpacity={0.8}
+            testID={`jv-invest-now-${agreement.id}`}
+          >
+            <Text style={igStyles.investNowBtnText}>Invest Now</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={igStyles.minInvestRow}>
+          <Text style={igStyles.minInvestText}>Invest from <Text style={igStyles.minInvestBold}>${CANONICAL_MIN_INVESTMENT}</Text></Text>
         </View>
       </View>
     </View>
@@ -734,41 +754,79 @@ const igStyles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: 4,
   },
+  developerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 10,
+    paddingHorizontal: 2,
+  },
+  developerIconWrap: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: Colors.primary + '15',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  developerText: {
+    color: Colors.textTertiary,
+    fontSize: 12,
+    flex: 1,
+  },
+  developerName: {
+    color: Colors.text,
+    fontWeight: '700' as const,
+  },
   btnRow: {
     flexDirection: 'row',
     gap: 8,
   },
-  buyBtn: {
+  detailsBtn: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
+    backgroundColor: Colors.backgroundSecondary,
+    borderRadius: 10,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+  },
+  detailsBtnText: {
+    color: Colors.text,
+    fontSize: 14,
+    fontWeight: '700' as const,
+  },
+  investNowBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: Colors.primary,
     borderRadius: 10,
-    paddingVertical: 11,
+    paddingVertical: 12,
   },
-  buyBtnText: {
+  investNowBtnText: {
     color: '#000000',
     fontSize: 14,
     fontWeight: '800' as const,
   },
-  investBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    backgroundColor: 'transparent',
+  minInvestRow: {
+    marginTop: 10,
+    backgroundColor: Colors.backgroundSecondary,
     borderRadius: 10,
-    paddingVertical: 11,
-    borderWidth: 1,
-    borderColor: Colors.primary + '40',
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    alignItems: 'center',
   },
-  investBtnText: {
-    color: Colors.primary,
-    fontSize: 14,
-    fontWeight: '700' as const,
+  minInvestText: {
+    color: Colors.textTertiary,
+    fontSize: 12,
+  },
+  minInvestBold: {
+    color: Colors.text,
+    fontWeight: '800' as const,
   },
   noPhotoPlaceholder: {
     width: '100%' as any,
@@ -1226,7 +1284,7 @@ function WhyIPXSection({ onCompare, onSmart, onTrust, t }: { onCompare: () => vo
         <QuickActionCard
           icon={<Lock size={20} color="#45B7D1" />}
           title="Secure Escrow"
-          subtitle="FDIC-insured escrow protects every dollar"
+          subtitle="Escrow-protected funds on every investment"
           color="#45B7D1"
           onPress={onTrust}
         />
@@ -1313,6 +1371,7 @@ export default function HomeScreen() {
     propertyAddress?: string;
     type?: string;
     minInvestment?: number;
+    propertyMarketValue?: number;
   } | null>(null);
   const { t } = useTranslation();
   const { trackScreen } = useAnalytics();
@@ -1327,69 +1386,14 @@ export default function HomeScreen() {
     trackScreen('Home');
   }, [trackScreen]);
 
-  const jvDealsQuery = useQuery({
-    queryKey: [...QUERY_KEY_PUBLISHED_JV_DEALS],
-    queryFn: async () => {
-      console.log('[Home] Fetching published JV deals from Supabase...');
-      try {
-        const fetchWithTimeout = async (filters: { published?: boolean; limit?: number; forceReset?: boolean }, timeoutMs: number) => {
-          const timeout = new Promise<{ deals: any[]; total: number }>((resolve) =>
-            setTimeout(() => {
-              console.log('[Home] JV fetch timed out after', timeoutMs, 'ms');
-              resolve({ deals: [], total: 0 });
-            }, timeoutMs)
-          );
-          return Promise.race([fetchJVDeals(filters), timeout]);
-        };
+  const publishedJV = usePublishedJVDeals();
 
-        const result = await fetchWithTimeout({ published: true }, 8000);
-        const parsed = (result.deals || []).map((d: any) => sharedParseDeal(d));
-        console.log('[Home] Fetched', parsed.length, 'published deals from Supabase');
-
-        if (parsed.length > 0) {
-          return { deals: parsed };
-        }
-
-        console.log('[Home] No published deals — trying unfiltered fetch...');
-        const allResult = await fetchWithTimeout({}, 6000);
-        const allDeals = (allResult.deals || []).map((d: any) => sharedParseDeal(d));
-        const allActive = allDeals.filter((d: any) => {
-          const isPublished = d.published === true || d.published === 'true';
-          const isActive = d.status === 'active' || d.status === 'pending_review';
-          return isPublished || isActive;
-        });
-
-        if (allActive.length > 0) {
-          console.log('[Home] Found', allActive.length, 'active/published deals from unfiltered fetch');
-          return { deals: allActive };
-        }
-        if (allDeals.length > 0) {
-          console.log('[Home] Showing all', allDeals.length, 'non-trashed deals as fallback');
-          return { deals: allDeals };
-        }
-
-        return { deals: [] };
-      } catch (err) {
-        console.error('[Home] JV deals fetch error:', (err as Error)?.message);
-        return { deals: [] };
-      }
-    },
-    retry: 3,
-    retryDelay: (attempt: number) => Math.min(1000 * Math.pow(1.5, attempt), 3000),
-    staleTime: 1000 * 15,
-    gcTime: 1000 * 60 * 5,
-    refetchOnMount: 'always' as const,
-    refetchOnWindowFocus: true,
-    refetchInterval: 15000,
-    placeholderData: { deals: [] },
-  });
-
-  const jvDealsLoading = jvDealsQuery.isPending && !jvDealsQuery.isPlaceholderData;
+  const jvDealsLoading = publishedJV.isLoading;
   const jvDeals = useMemo(() => {
     try {
-      const rawDeals = jvDealsQuery.data?.deals;
+      const rawDeals = publishedJV.deals;
       const backendDeals = (Array.isArray(rawDeals) ? rawDeals : []) as unknown as JVAgreement[];
-      console.log('[Home JV] Backend deals:', backendDeals.length, 'Query status:', jvDealsQuery.status);
+      console.log('[Home JV] Shared hook deals:', backendDeals.length);
 
       const validBackendDeals = backendDeals.filter(d => {
         if (!d || !d.id) return false;
@@ -1411,17 +1415,17 @@ export default function HomeScreen() {
       }) as JVAgreement[];
 
       if (mapped.length > 0) {
-        console.log('[Home JV] Using backend deals, Count:', mapped.length);
+        console.log('[Home JV] Using shared deals, Count:', mapped.length);
         return mapped;
       }
 
-      console.log('[Home JV] No backend deals found');
+      console.log('[Home JV] No deals found from shared hook');
       return [];
     } catch (err) {
       console.error('[Home JV] Error processing deals:', err);
       return [];
     }
-  }, [jvDealsQuery.data, jvDealsQuery.status]);
+  }, [publishedJV.deals]);
 
   const propertiesQuery = useQuery({
     queryKey: ['properties', 'home'],
@@ -1464,12 +1468,12 @@ export default function HomeScreen() {
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      resetSupabaseCheck();
-      console.log('[Home] Resetting Supabase check cache (local deals preserved as backup)');
+      triggerManualJVRefresh();
+      console.log('[Home] Manual refresh triggered — Supabase cache reset for fresh data');
       await Promise.all([
         propertiesQuery.refetch(),
         unreadQuery.refetch(),
-        jvDealsQuery.refetch(),
+        publishedJV.refetch(),
       ]);
       console.log('[Home] Pull-to-refresh complete — data is fresh from Supabase');
     } catch (err) {
@@ -1477,10 +1481,15 @@ export default function HomeScreen() {
     } finally {
       setRefreshing(false);
     }
-  }, [propertiesQuery, unreadQuery, jvDealsQuery]);
+  }, [propertiesQuery, unreadQuery, publishedJV]);
 
   const openQuickBuy = useCallback((deal: JVAgreement) => {
     const photos = Array.isArray(deal.photos) ? deal.photos : [];
+    const rawDeal = deal as unknown as Record<string, unknown>;
+    const marketVal = typeof rawDeal.property_market_value === 'number' ? rawDeal.property_market_value
+      : typeof rawDeal.propertyMarketValue === 'number' ? rawDeal.propertyMarketValue
+      : typeof rawDeal.market_value === 'number' ? rawDeal.market_value
+      : undefined;
     setQuickBuyDeal({
       id: deal.id,
       title: deal.title,
@@ -1490,7 +1499,8 @@ export default function HomeScreen() {
       photo: photos.length > 0 ? photos[0] : undefined,
       propertyAddress: deal.propertyAddress,
       type: deal.type,
-      minInvestment: 50,
+      minInvestment: 25000,
+      propertyMarketValue: marketVal as number | undefined,
     });
     setQuickBuyVisible(true);
   }, []);

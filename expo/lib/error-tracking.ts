@@ -1,8 +1,11 @@
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { supabase, isSupabaseConfigured } from './supabase';
 
 const ERROR_LOG_KEY = '@ivx_error_log';
 const MAX_ERRORS = 100;
+const SUPABASE_SYNC_INTERVAL = 120_000;
+const MAX_SYNC_BATCH = 50;
 
 interface ErrorEntry {
   id: string;
@@ -18,6 +21,9 @@ interface ErrorEntry {
 class ErrorTracker {
   private buffer: ErrorEntry[] = [];
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
+  private syncTimer: ReturnType<typeof setInterval> | null = null;
+  private pendingSyncQueue: ErrorEntry[] = [];
+  private syncFailures = 0;
 
   async init() {
     try {
@@ -41,6 +47,56 @@ class ErrorTracker {
     }
 
     console.log('[ErrorTracker] Initialized for platform:', Platform.OS);
+    this.startSupabaseSync();
+  }
+
+  private startSupabaseSync() {
+    if (this.syncTimer) clearInterval(this.syncTimer);
+    this.syncTimer = setInterval(() => {
+      void this.syncToSupabase();
+    }, SUPABASE_SYNC_INTERVAL);
+  }
+
+  private async syncToSupabase() {
+    if (!isSupabaseConfigured() || this.pendingSyncQueue.length === 0) return;
+
+    const batch = this.pendingSyncQueue.splice(0, MAX_SYNC_BATCH);
+    try {
+      const rows = batch.map(e => ({
+        id: e.id,
+        message: e.message,
+        stack: e.stack?.slice(0, 500),
+        platform: e.platform,
+        severity: e.severity,
+        metadata: e.metadata ? JSON.stringify(e.metadata) : null,
+        screen: e.screen || null,
+        created_at: e.timestamp,
+      }));
+
+      const { error } = await supabase.from('error_logs').insert(rows);
+      if (error) {
+        if (error.code === '42P01' || error.message?.includes('does not exist')) {
+          console.log('[ErrorTracker] error_logs table does not exist — errors stored locally only');
+          this.pendingSyncQueue.unshift(...batch);
+          if (this.syncTimer) { clearInterval(this.syncTimer); this.syncTimer = null; }
+          return;
+        }
+        this.syncFailures++;
+        if (this.syncFailures <= 3) {
+          this.pendingSyncQueue.unshift(...batch);
+        }
+        console.log('[ErrorTracker] Supabase sync failed:', error.message);
+      } else {
+        this.syncFailures = 0;
+        console.log('[ErrorTracker] Synced', batch.length, 'errors to Supabase');
+      }
+    } catch (err) {
+      this.syncFailures++;
+      if (this.syncFailures <= 3) {
+        this.pendingSyncQueue.unshift(...batch);
+      }
+      console.log('[ErrorTracker] Supabase sync error:', (err as Error)?.message);
+    }
   }
 
   captureError(
@@ -61,8 +117,12 @@ class ErrorTracker {
     };
 
     this.buffer.push(entry);
+    this.pendingSyncQueue.push(entry);
     if (this.buffer.length > MAX_ERRORS) {
       this.buffer = this.buffer.slice(-MAX_ERRORS);
+    }
+    if (this.pendingSyncQueue.length > MAX_ERRORS * 2) {
+      this.pendingSyncQueue = this.pendingSyncQueue.slice(-MAX_ERRORS);
     }
 
     console.log(`[ErrorTracker] ${severity.toUpperCase()}: ${err.message}`);

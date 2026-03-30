@@ -52,7 +52,7 @@ type PaymentMethod = 'wire' | 'wallet' | 'card';
 const WIRE_TRANSFER_DETAILS = {
   bankName: 'IVXHOLDINGS Trust Bank',
   routingNumber: '021000021',
-  accountNumber: '9876543210',
+  accountNumber: '9,876,543,210',
   accountName: 'IVXHOLDINGS LLC — Escrow',
   swiftCode: 'IVXHUS33',
   bankAddress: '200 Park Avenue, New York, NY 10166',
@@ -388,7 +388,7 @@ export default function BuySharesScreen() {
                 <View style={styles.infoCard}>
                   <View style={styles.infoRow}>
                     <Shield size={16} color={Colors.info} />
-                    <Text style={styles.infoText}>Your investment is protected by FDIC-insured escrow</Text>
+                    <Text style={styles.infoText}>Your investment is protected by escrow-secured funds</Text>
                   </View>
                   <View style={styles.infoRow}>
                     <Lock size={16} color={Colors.primary} />

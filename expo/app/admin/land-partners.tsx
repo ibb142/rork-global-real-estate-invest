@@ -389,7 +389,7 @@ export default function LandPartnersScreen() {
                     <Building2 size={16} color={Colors.textSecondary} />
                     <Text style={styles.detailLabel}>Lot Size:</Text>
                     <Text style={styles.detailValue}>
-                      {selectedDeal.lotSize.toLocaleString()} {selectedDeal.lotSizeUnit === 'sqft' ? 'sq ft' : 'acres'}
+                      {new Intl.NumberFormat('en-US').format(selectedDeal.lotSize)} {selectedDeal.lotSizeUnit === 'sqft' ? 'sq ft' : 'acres'}
                     </Text>
                   </View>
                   <View style={styles.detailRow}>

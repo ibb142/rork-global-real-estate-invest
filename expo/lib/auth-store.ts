@@ -1,35 +1,41 @@
 import * as SecureStore from 'expo-secure-store';
 import logger from './logger';
+import { isAdminRole as _isAdminRole } from './auth-helpers';
+import type { AdminRole, UserRole } from './auth-helpers';
 
-let _token: string | null = null;
-let _refreshToken: string | null = null;
+export type { AdminRole, UserRole };
+export const isAdminRole = _isAdminRole;
+
 let _userId: string | null = null;
 let _userRole: string | null = null;
 
 const KEYS = {
-  TOKEN: 'ipx_auth_token',
-  REFRESH_TOKEN: 'ipx_refresh_token',
   USER_ID: 'ipx_user_id',
   USER_ROLE: 'ipx_user_role',
 } as const;
 
-export function setAuthCredentials(token: string | null, userId: string | null, userRole: string | null, refreshToken?: string | null) {
-  _token = token;
+export function setAuthCredentials(
+  _token: string | null,
+  userId: string | null,
+  userRole: string | null,
+  _refreshToken?: string | null,
+) {
   _userId = userId;
   _userRole = userRole;
-  if (refreshToken !== undefined) _refreshToken = refreshToken;
 }
 
 export function getAuthToken(): string | null {
-  return _token;
+  console.warn('[AuthStore] getAuthToken() is deprecated — use supabase.auth.getSession() instead');
+  return null;
 }
 
 export function getRefreshToken(): string | null {
-  return _refreshToken;
+  console.warn('[AuthStore] getRefreshToken() is deprecated — use supabase.auth.getSession() instead');
+  return null;
 }
 
-export function setAuthToken(token: string) {
-  _token = token;
+export function setAuthToken(_token: string) {
+  console.warn('[AuthStore] setAuthToken() is deprecated — Supabase manages tokens');
 }
 
 export function getAuthUserId(): string | null {
@@ -43,29 +49,20 @@ export function getAuthUserRole(): string {
   return _userRole || 'investor';
 }
 
-const ADMIN_ROLES = ['owner', 'ceo', 'staff', 'manager', 'analyst'] as const;
-export type AdminRole = typeof ADMIN_ROLES[number];
-export type UserRole = AdminRole | 'investor';
-
-export function isAdminRole(role: string | null): boolean {
-  return ADMIN_ROLES.includes(role as AdminRole);
-}
-
 export async function persistAuth(data: {
   token: string;
   refreshToken: string;
   userId: string;
   userRole: string;
 }): Promise<void> {
-  setAuthCredentials(data.token, data.userId, data.userRole, data.refreshToken);
+  _userId = data.userId;
+  _userRole = data.userRole;
   try {
     await Promise.all([
-      SecureStore.setItemAsync(KEYS.TOKEN, data.token),
-      SecureStore.setItemAsync(KEYS.REFRESH_TOKEN, data.refreshToken),
       SecureStore.setItemAsync(KEYS.USER_ID, data.userId),
       SecureStore.setItemAsync(KEYS.USER_ROLE, data.userRole),
     ]);
-    logger.authStore.log('Auth persisted');
+    logger.authStore.log('Auth persisted for:', data.userId);
   } catch (error) {
     logger.authStore.error('Persist error:', error);
   }
@@ -78,17 +75,16 @@ export async function loadStoredAuth(): Promise<{
   userRole: string | null;
 }> {
   try {
-    const [token, refreshToken, userId, userRole] = await Promise.all([
-      SecureStore.getItemAsync(KEYS.TOKEN),
-      SecureStore.getItemAsync(KEYS.REFRESH_TOKEN),
+    const [userId, userRole] = await Promise.all([
       SecureStore.getItemAsync(KEYS.USER_ID),
       SecureStore.getItemAsync(KEYS.USER_ROLE),
     ]);
-    if (token && userId) {
-      setAuthCredentials(token, userId, userRole, refreshToken);
-      logger.authStore.log('Session restored for:', userId);
+    if (userId) {
+      _userId = userId;
+      _userRole = userRole;
+      logger.authStore.log('Stored auth loaded for:', userId);
     }
-    return { token, refreshToken, userId, userRole };
+    return { token: null, refreshToken: null, userId, userRole };
   } catch (error) {
     logger.authStore.error('Load error:', error);
     return { token: null, refreshToken: null, userId: null, userRole: null };
@@ -96,13 +92,14 @@ export async function loadStoredAuth(): Promise<{
 }
 
 export async function clearStoredAuth(): Promise<void> {
-  setAuthCredentials(null, null, null, null);
+  _userId = null;
+  _userRole = null;
   try {
     await Promise.all([
-      SecureStore.deleteItemAsync(KEYS.TOKEN),
-      SecureStore.deleteItemAsync(KEYS.REFRESH_TOKEN),
       SecureStore.deleteItemAsync(KEYS.USER_ID),
       SecureStore.deleteItemAsync(KEYS.USER_ROLE),
+      SecureStore.deleteItemAsync('ipx_auth_token').catch(() => {}),
+      SecureStore.deleteItemAsync('ipx_refresh_token').catch(() => {}),
     ]);
     logger.authStore.log('Auth cleared');
   } catch (error) {

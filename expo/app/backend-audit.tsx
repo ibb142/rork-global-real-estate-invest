@@ -382,8 +382,8 @@ async function runFullAudit(): Promise<AuditCategory[]> {
       category: 'email',
       name: 'Email Local Storage',
       status: 'pass',
-      message: 'Emails persist in AsyncStorage with mock data fallback',
-      details: 'Uses MOCK_EMAILS as initial data. Sent/draft emails stored locally.',
+      message: 'Emails persist in AsyncStorage — backend-first, no mock fallback',
+      details: 'Inbox loads from backend API first. Cache used only as fallback when backend returns 0. Mock data removed from production flow. All emails tagged with source label.',
       severity: 'info',
     },
     {

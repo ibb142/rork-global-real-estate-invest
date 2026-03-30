@@ -1242,7 +1242,7 @@ Also provide 3-4 actionable insights about the local market.`,
                   <Text style={styles.compSubjectLabel}>Subject Property</Text>
                   <Text style={styles.compSubjectAddress}>{compResults.subjectProperty.address}</Text>
                   <Text style={styles.compSubjectDetails}>
-                    {compResults.subjectProperty.city}, {compResults.subjectProperty.state} • {compResults.subjectProperty.lotSize.toLocaleString()} {compResults.subjectProperty.lotSizeUnit}
+                    {compResults.subjectProperty.city}, {compResults.subjectProperty.state} • {new Intl.NumberFormat('en-US').format(compResults.subjectProperty.lotSize)} {compResults.subjectProperty.lotSizeUnit}
                   </Text>
                 </View>
 
@@ -1323,7 +1323,7 @@ Also provide 3-4 actionable insights about the local market.`,
                         </View>
                         <View style={styles.compCardDetail}>
                           <MapPin size={12} color={Colors.textTertiary} />
-                          <Text style={styles.compCardDetailText}>{comp.lotSize.toLocaleString()} {comp.lotSizeUnit}</Text>
+                          <Text style={styles.compCardDetailText}>{new Intl.NumberFormat('en-US').format(comp.lotSize)} {comp.lotSizeUnit}</Text>
                         </View>
                         <View style={styles.compCardDetail}>
                           <Calendar size={12} color={Colors.textTertiary} />

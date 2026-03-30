@@ -2,8 +2,8 @@ import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import createContextHook from '@nkzw/create-context-hook';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { EmailMessage, EmailFolder, ComposeEmailData } from '@/types/email';
-import { EMAIL_ACCOUNTS, MOCK_EMAILS } from '@/mocks/emails';
+import { EmailMessage, EmailFolder, ComposeEmailData, EmailSource } from '@/types/email';
+import { EMAIL_ACCOUNTS } from '@/mocks/emails';
 import { scopedKey } from '@/lib/project-storage';
 import { getAuthToken } from '@/lib/auth-store';
 import { Platform } from 'react-native';
@@ -33,16 +33,18 @@ if (Platform.OS !== 'web') {
 }
 
 function getApiBase(): string {
-  const base = (process.env.EXPO_PUBLIC_API_BASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL || '').trim().replace(/\/$/, '');
+  const base = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || process.env.EXPO_PUBLIC_API_BASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL || '').trim().replace(/\/$/, '');
   if (!base) {
     console.warn('[Email] API base URL not configured — emails will be saved locally only');
   }
   return base;
 }
 
-const STORAGE_KEY = scopedKey('emails');
+const STORAGE_KEY = scopedKey('emails_v3');
 const ACTIVE_ACCOUNT_KEY = scopedKey('active_email_account');
-const EMAIL_CACHE_CLEARED_KEY = scopedKey('emails_cache_cleared_v2');
+const CACHE_MIGRATION_KEY = scopedKey('emails_cache_migration_v3');
+
+export type InboxStatus = 'loading' | 'ready' | 'error' | 'no_backend' | 'no_auth' | 'not_configured';
 
 export interface SesStatus {
   configured: boolean;
@@ -163,36 +165,91 @@ async function syncEmailAction(emailId: string, action: string, folder?: string)
   }
 }
 
-async function fetchEmailsFromBackend(accountId: string, folder: string): Promise<EmailMessage[] | null> {
+function tagEmailSource(emails: EmailMessage[], source: EmailSource): EmailMessage[] {
+  return emails.map(e => ({ ...e, source: e.source || source }));
+}
+
+async function fetchEmailsFromBackend(accountId: string, folder: string): Promise<{ emails: EmailMessage[]; source: EmailSource } | null> {
   const API_BASE = getApiBase();
-  if (!API_BASE) return null;
+  if (!API_BASE) {
+    console.log('[Email] FETCH SKIPPED — no API_BASE configured');
+    return null;
+  }
+
+  const { headers, hasToken } = getAuthHeaders();
+  if (!hasToken) {
+    console.log('[Email] FETCH SKIPPED — no auth token');
+    return null;
+  }
+
   try {
-    const { headers } = getAuthHeaders();
     const res = await fetch(`${API_BASE}/api/emails?accountId=${encodeURIComponent(accountId)}&folder=${encodeURIComponent(folder)}&limit=100`, {
       headers,
     });
-    const data = await res.json() as { success: boolean; emails: EmailMessage[] };
-    if (data.success && Array.isArray(data.emails) && data.emails.length > 0) {
-      console.log(`[Email] Fetched ${data.emails.length} emails from backend for ${accountId}/${folder}`);
-      return data.emails;
+
+    if (!res.ok) {
+      console.log(`[Email] Backend returned ${res.status} for email fetch`);
+      return null;
     }
+
+    const data = await res.json() as { success: boolean; emails: EmailMessage[]; source?: string };
+
+    if (data.success && Array.isArray(data.emails)) {
+      const backendSource: EmailSource = (data.source as EmailSource) || 'backend';
+      const tagged = tagEmailSource(data.emails, backendSource);
+      console.log(`[Email] FETCHED ${tagged.length} emails from backend | source=${backendSource} | account=${accountId} | folder=${folder}`);
+      return { emails: tagged, source: backendSource };
+    }
+
+    console.log('[Email] Backend returned success=false or no emails array');
     return null;
   } catch (err: unknown) {
-    console.log('[Email] Backend fetch failed:', (err as Error)?.message);
+    console.log('[Email] Backend fetch FAILED:', (err as Error)?.message);
     return null;
+  }
+}
+
+async function runCacheMigration(): Promise<void> {
+  try {
+    const migrated = await AsyncStorage.getItem(CACHE_MIGRATION_KEY);
+    if (migrated) return;
+
+    console.log('[Email] Running cache migration v3 — clearing all stale email caches');
+
+    const allKeys = await AsyncStorage.getAllKeys();
+    const staleKeys = allKeys.filter(k =>
+      k.includes('::emails') && !k.includes('emails_v3') && !k.includes('cache_migration')
+    );
+
+    if (staleKeys.length > 0) {
+      await AsyncStorage.multiRemove(staleKeys);
+      console.log('[Email] Cleared', staleKeys.length, 'stale email cache keys:', staleKeys);
+    }
+
+    await AsyncStorage.setItem(CACHE_MIGRATION_KEY, JSON.stringify({
+      migratedAt: new Date().toISOString(),
+      clearedKeys: staleKeys,
+    }));
+
+    console.log('[Email] Cache migration v3 complete');
+  } catch (err) {
+    console.log('[Email] Cache migration error:', (err as Error)?.message);
   }
 }
 
 export const [EmailProvider, useEmail] = createContextHook(() => {
   const [activeAccountId, setActiveAccountId] = useState<string>('admin');
-  const [emails, setEmails] = useState<EmailMessage[]>(MOCK_EMAILS);
+  const [emails, setEmails] = useState<EmailMessage[]>([]);
   const [selectedFolder, setSelectedFolder] = useState<EmailFolder>('inbox');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [sesStatus, setSesStatus] = useState<SesStatus>({ configured: false, status: 'unchecked' });
+  const [inboxStatus, setInboxStatus] = useState<InboxStatus>('loading');
+  const [lastFetchSource, setLastFetchSource] = useState<EmailSource | null>(null);
+  const [backendError, setBackendError] = useState<string | null>(null);
   const queryClient = useQueryClient();
-  const hasFetchedBackend = useRef(false);
+  const initialLoadDone = useRef(false);
 
-  const emailQueryKeys = useMemo(() => [['emails', 'stored'], ['ses-status']], []);
+  const emailQueryKeys = useMemo(() => [['emails', 'backend'], ['ses-status']], []);
   useRealtimeTable('emails', emailQueryKeys);
 
   const sesStatusQuery = useQuery({
@@ -209,73 +266,125 @@ export const [EmailProvider, useEmail] = createContextHook(() => {
     }
   }, [sesStatusQuery.data]);
 
-  const loadStoredData = useQuery({
-    queryKey: ['emails', 'stored'],
+  const backendEmailsQuery = useQuery({
+    queryKey: ['emails', 'backend', activeAccountId],
     queryFn: async () => {
-      try {
-        const cacheCleared = await AsyncStorage.getItem(EMAIL_CACHE_CLEARED_KEY);
-        if (!cacheCleared) {
-          console.log('[Email] Clearing old cached emails to remove stale data');
-          await AsyncStorage.removeItem(STORAGE_KEY);
-          await AsyncStorage.setItem(EMAIL_CACHE_CLEARED_KEY, new Date().toISOString());
-          return { emails: [] as EmailMessage[], activeAccountId: 'admin' };
-        }
-        const [storedEmails, storedAccount] = await Promise.all([
-          AsyncStorage.getItem(STORAGE_KEY),
-          AsyncStorage.getItem(ACTIVE_ACCOUNT_KEY),
-        ]);
-        return {
-          emails: storedEmails ? JSON.parse(storedEmails) as EmailMessage[] : [],
-          activeAccountId: storedAccount || 'admin',
-        };
-      } catch {
-        return { emails: [] as EmailMessage[], activeAccountId: 'admin' };
+      await runCacheMigration();
+
+      const API_BASE = getApiBase();
+      if (!API_BASE) {
+        console.log('[Email] STATUS: no_backend — API_BASE not configured');
+        setInboxStatus('no_backend');
+        setBackendError('Email backend not configured');
+        return { emails: [] as EmailMessage[], source: 'unknown' as EmailSource, fromCache: false };
       }
+
+      const { hasToken } = getAuthHeaders();
+      if (!hasToken) {
+        console.log('[Email] STATUS: no_auth — missing auth token');
+        setInboxStatus('no_auth');
+        setBackendError('Please log in to access inbox');
+        return { emails: [] as EmailMessage[], source: 'unknown' as EmailSource, fromCache: false };
+      }
+
+      const result = await fetchEmailsFromBackend(activeAccountId, 'all');
+
+      if (result && result.emails.length > 0) {
+        console.log(`[Email] STATUS: ready — ${result.emails.length} emails from source=${result.source}`);
+        setInboxStatus('ready');
+        setLastFetchSource(result.source);
+        setBackendError(null);
+
+        try {
+          const MAX_CACHE = 500;
+          const toCache = result.emails.length > MAX_CACHE
+            ? result.emails.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, MAX_CACHE)
+            : result.emails;
+          await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(toCache));
+          console.log('[Email] Cached', toCache.length, 'verified backend emails');
+        } catch {}
+
+        return { emails: result.emails, source: result.source, fromCache: false };
+      }
+
+      console.log('[Email] Backend returned 0 emails — trying cache as fallback');
+      try {
+        const cached = await AsyncStorage.getItem(STORAGE_KEY);
+        if (cached) {
+          const parsedCache = JSON.parse(cached) as EmailMessage[];
+          const taggedCache = tagEmailSource(parsedCache, 'cache');
+          if (taggedCache.length > 0) {
+            console.log(`[Email] STATUS: ready (cache fallback) — ${taggedCache.length} cached emails`);
+            setInboxStatus('ready');
+            setLastFetchSource('cache');
+            setBackendError(null);
+            return { emails: taggedCache, source: 'cache' as EmailSource, fromCache: true };
+          }
+        }
+      } catch {}
+
+      console.log('[Email] STATUS: ready — inbox is empty (no backend emails, no cache)');
+      setInboxStatus('ready');
+      setLastFetchSource('backend');
+      setBackendError(null);
+      return { emails: [] as EmailMessage[], source: 'backend' as EmailSource, fromCache: false };
     },
+    staleTime: 30_000,
+    refetchInterval: 60_000,
   });
 
   useEffect(() => {
-    if (loadStoredData.data) {
-      setEmails(loadStoredData.data.emails);
-      setActiveAccountId(loadStoredData.data.activeAccountId);
+    if (backendEmailsQuery.error) {
+      console.log('[Email] STATUS: error —', (backendEmailsQuery.error as Error)?.message);
+      setInboxStatus('error');
+      setBackendError((backendEmailsQuery.error as Error)?.message || 'Failed to load emails');
     }
-  }, [loadStoredData.data]);
+  }, [backendEmailsQuery.error]);
 
   useEffect(() => {
-    if (hasFetchedBackend.current || !loadStoredData.data) return;
-    hasFetchedBackend.current = true;
+    if (!backendEmailsQuery.data || initialLoadDone.current) return;
+    initialLoadDone.current = true;
 
-    const mergeBackendEmails = async () => {
-      try {
-        const backendEmails = await fetchEmailsFromBackend(loadStoredData.data.activeAccountId, 'all');
-        if (backendEmails && backendEmails.length > 0) {
-          setEmails(prev => {
-            const existingIds = new Set(prev.map(e => e.id));
-            const newEmails = backendEmails.filter(e => !existingIds.has(e.id));
-            if (newEmails.length === 0) return prev;
-            console.log('[Email] Merged', newEmails.length, 'new emails from backend');
-            const merged = [...prev, ...newEmails];
-            void AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(merged)).catch(() => {});
-            return merged;
-          });
-        }
-      } catch (err: unknown) {
-        console.log('[Email] Backend merge failed:', (err as Error)?.message);
+    const backendEmails = backendEmailsQuery.data.emails;
+    setEmails(prev => {
+      const localOnly = prev.filter(e => e.source === 'local-draft' || e.source === 'local-sent');
+      const localIds = new Set(localOnly.map(e => e.id));
+      const nonDuplicate = backendEmails.filter(e => !localIds.has(e.id));
+      const merged = [...nonDuplicate, ...localOnly];
+      console.log(`[Email] Initial load — backend=${nonDuplicate.length} local=${localOnly.length} total=${merged.length}`);
+      return merged;
+    });
+  }, [backendEmailsQuery.data]);
+
+  useEffect(() => {
+    if (!backendEmailsQuery.data || !initialLoadDone.current) return;
+
+    const backendEmails = backendEmailsQuery.data.emails;
+    setEmails(prev => {
+      const localOnly = prev.filter(e => e.source === 'local-draft' || e.source === 'local-sent');
+      const localIds = new Set(localOnly.map(e => e.id));
+      const nonDuplicate = backendEmails.filter(e => !localIds.has(e.id));
+      const merged = [...nonDuplicate, ...localOnly];
+
+      if (merged.length === prev.length && merged.every((e, i) => e.id === prev[i]?.id)) {
+        return prev;
       }
-    };
 
-    void mergeBackendEmails();
-  }, [loadStoredData.data]);
+      console.log(`[Email] Refresh merge — backend=${nonDuplicate.length} local=${localOnly.length} total=${merged.length}`);
+      return merged;
+    });
+  }, [backendEmailsQuery.data]);
 
   const persistEmails = useCallback(async (updated: EmailMessage[]) => {
     try {
+      const verifiedOnly = updated.filter(e => e.source !== 'cache' || e.source === undefined);
       const MAX_STORED_EMAILS = 500;
-      const toStore = updated.length > MAX_STORED_EMAILS
-        ? updated.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, MAX_STORED_EMAILS)
-        : updated;
+      const toStore = verifiedOnly.length > MAX_STORED_EMAILS
+        ? verifiedOnly.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, MAX_STORED_EMAILS)
+        : verifiedOnly;
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(toStore));
     } catch (e) {
-      console.log('Failed to persist emails:', e);
+      console.log('[Email] Failed to persist emails:', e);
     }
   }, []);
 
@@ -288,6 +397,8 @@ export const [EmailProvider, useEmail] = createContextHook(() => {
       setActiveAccountId(accountId);
       setSelectedFolder('inbox');
       setSearchQuery('');
+      initialLoadDone.current = false;
+      void queryClient.invalidateQueries({ queryKey: ['emails', 'backend', accountId] });
     },
   });
 
@@ -408,6 +519,7 @@ export const [EmailProvider, useEmail] = createContextHook(() => {
       isFlagged: false,
       hasAttachments,
       attachments: data.attachments,
+      source: 'local-sent',
     };
 
     setEmails(prev => {
@@ -521,6 +633,7 @@ export const [EmailProvider, useEmail] = createContextHook(() => {
           console.log(`[Email] AWS SES response (attempt ${attempt + 1}):`, JSON.stringify(result));
 
           if (result.success) {
+            setEmails(prev => prev.map(e => e.id === newEmail.id ? { ...e, source: 'backend' as EmailSource } : e));
             void storeEmailToBackend(newEmail, result.messageId);
             console.log('[Email] Delivered via AWS SES. MessageId:', result.messageId, 'Provider:', result.provider);
             return { success: true, messageId: result.messageId ?? undefined, deliveryStatus: 'sent' as const };
@@ -586,6 +699,7 @@ export const [EmailProvider, useEmail] = createContextHook(() => {
       isFlagged: false,
       hasAttachments,
       attachments: data.attachments,
+      source: 'local-draft',
     };
     setEmails(prev => {
       const updated = [...prev, draft];
@@ -615,28 +729,32 @@ export const [EmailProvider, useEmail] = createContextHook(() => {
 
   const refreshEmails = useCallback(async (): Promise<boolean> => {
     try {
-      const backendEmails = await fetchEmailsFromBackend(activeAccountId, 'all');
-      if (backendEmails && backendEmails.length > 0) {
-        setEmails(prev => {
-          const existingIds = new Set(prev.map(e => e.id));
-          const newEmails = backendEmails.filter(e => !existingIds.has(e.id));
-          if (newEmails.length === 0) return prev;
-          console.log('[Email] Refresh: merged', newEmails.length, 'new emails');
-          const merged = [...prev, ...newEmails];
-          void persistEmails(merged);
-          return merged;
-        });
-        return true;
-      }
-      return false;
+      initialLoadDone.current = false;
+      await queryClient.invalidateQueries({ queryKey: ['emails', 'backend', activeAccountId] });
+      return true;
     } catch {
       return false;
     }
-  }, [activeAccountId, persistEmails]);
+  }, [activeAccountId, queryClient]);
 
   const checkSesStatus = useCallback(async () => {
     void queryClient.invalidateQueries({ queryKey: ['ses-status'] });
   }, [queryClient]);
+
+  const sourceStats = useMemo(() => {
+    const stats: Record<string, number> = {};
+    for (const e of emails) {
+      const src = e.source || 'unknown';
+      stats[src] = (stats[src] || 0) + 1;
+    }
+    return stats;
+  }, [emails]);
+
+  useEffect(() => {
+    if (emails.length > 0) {
+      console.log('[Email] SOURCE STATS:', JSON.stringify(sourceStats), '| total:', emails.length, '| lastFetch:', lastFetchSource);
+    }
+  }, [sourceStats, emails.length, lastFetchSource]);
 
   return useMemo(() => ({
     accounts,
@@ -661,16 +779,21 @@ export const [EmailProvider, useEmail] = createContextHook(() => {
     markAllAsRead,
     getEmailById,
     totalUnread,
-    isLoading: loadStoredData.isLoading,
+    isLoading: backendEmailsQuery.isLoading,
     sesStatus,
     checkSesStatus,
     refreshEmails,
+    inboxStatus,
+    lastFetchSource,
+    backendError,
+    sourceStats,
   }), [
     accounts, accountsWithUnread, activeAccount, activeAccountId,
     switchAccountMutation.mutate, filteredEmails, emails, selectedFolder,
     setSelectedFolder, searchQuery, setSearchQuery, folderCounts,
     markAsRead, toggleStar, toggleFlag, moveToFolder, deleteEmail,
     sendEmail, saveDraft, markAllAsRead, getEmailById, totalUnread,
-    loadStoredData.isLoading, sesStatus, checkSesStatus, refreshEmails,
+    backendEmailsQuery.isLoading, sesStatus, checkSesStatus, refreshEmails,
+    inboxStatus, lastFetchSource, backendError, sourceStats,
   ]);
 });

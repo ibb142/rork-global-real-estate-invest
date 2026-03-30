@@ -506,7 +506,7 @@ export default function TrafficControlCenter() {
 
       <View style={styles.utmStats}>
         <View style={styles.utmStat}>
-          <Text style={styles.utmStatValue}>{UTM_LINKS.reduce((a, l) => a + l.clicks, 0).toLocaleString()}</Text>
+          <Text style={styles.utmStatValue}>{new Intl.NumberFormat('en-US').format(UTM_LINKS.reduce((a, l) => a + l.clicks, 0))}</Text>
           <Text style={styles.utmStatLabel}>Total Clicks</Text>
         </View>
         <View style={styles.utmStatDivider} />
@@ -549,7 +549,7 @@ export default function TrafficControlCenter() {
           <View style={styles.utmMetrics}>
             <View style={styles.utmMetric}>
               <MousePointer size={12} color={Colors.textTertiary} />
-              <Text style={styles.utmMetricText}>{link.clicks.toLocaleString()} clicks</Text>
+              <Text style={styles.utmMetricText}>{new Intl.NumberFormat('en-US').format(link.clicks)} clicks</Text>
             </View>
             <View style={styles.utmMetric}>
               <Target size={12} color={Colors.positive} />

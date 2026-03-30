@@ -402,7 +402,7 @@ export default function DebtAcquisitionScreen() {
                       onChangeText={setTokenAmount}
                     />
                     <Text style={styles.availableText}>
-                      {selectedProperty.availableTokens.toLocaleString()} tokens available @ {formatDollar(selectedProperty.pricePerToken)} each
+                      {new Intl.NumberFormat('en-US').format(selectedProperty.availableTokens)} tokens available @ {formatDollar(selectedProperty.pricePerToken)} each
                     </Text>
                   </View>
 

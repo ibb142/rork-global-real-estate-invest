@@ -1,14 +1,61 @@
 /**
  * landing-sync.ts — Syncs published deals to the landing page.
  *
- * NOTE: This file is in lib/ because it's imported by app screens.
- * It uses landing-deploy.ts for actual S3 uploads.
- * Not a standalone deploy script — it's an in-app feature.
+ * CANONICAL SOURCE: jv_deals table (Supabase) is the single source of truth.
+ * Both app and landing page consume the same data through the shared card model.
+ * landing_deals table is auto-derived and read-only.
+ *
+ * P0-2 FIX: Deploy is now backend-only. This file only syncs data to
+ * the landing_deals table and triggers backend deploy via API.
  */
-import { Platform } from 'react-native';
 import { supabase } from '@/lib/supabase';
 import { logAudit } from '@/lib/audit-trail';
-import { deployLandingPage, deployConfigOnly, getDeployStatus } from '@/lib/landing-deploy';
+import { deployLandingPage, getDeployStatus } from '@/lib/landing-deploy';
+import {
+  mapDealToCardModel,
+  CANONICAL_DISTRIBUTION_LABEL,
+  type PublishedDealCardModel,
+} from '@/lib/published-deal-card-model';
+import { fetchCanonicalDeals } from '@/lib/canonical-deals';
+
+async function _getSyncAuthHeaders(): Promise<Record<string, string>> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'apikey': process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '',
+  };
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.access_token) {
+      const expiresAt = session.expires_at ? session.expires_at * 1000 : 0;
+      const isExpiringSoon = expiresAt > 0 && (expiresAt - Date.now()) < 120000;
+
+      if (isExpiringSoon && session.refresh_token) {
+        console.log('[LandingSync] Token expiring soon — refreshing...');
+        const { data: refreshed } = await supabase.auth.refreshSession();
+        if (refreshed?.session?.access_token) {
+          headers['Authorization'] = `Bearer ${refreshed.session.access_token}`;
+          console.log('[LandingSync] Refreshed token attached');
+        } else {
+          headers['Authorization'] = `Bearer ${session.access_token}`;
+        }
+      } else {
+        headers['Authorization'] = `Bearer ${session.access_token}`;
+      }
+    } else {
+      console.log('[LandingSync] No session — attempting refresh...');
+      const { data: refreshed } = await supabase.auth.refreshSession();
+      if (refreshed?.session?.access_token) {
+        headers['Authorization'] = `Bearer ${refreshed.session.access_token}`;
+        console.log('[LandingSync] Recovered session via refresh');
+      } else {
+        headers['Authorization'] = `Bearer ${process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || ''}`;
+      }
+    }
+  } catch {
+    headers['Authorization'] = `Bearer ${process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || ''}`;
+  }
+  return headers;
+}
 
 export interface LandingSyncResult {
   success: boolean;
@@ -35,10 +82,13 @@ export interface PublishedDealPayload {
   publishedAt: string;
   updatedAt: string;
   displayOrder: number;
+  trustInfo?: Record<string, unknown>;
+  cardModel?: PublishedDealCardModel;
 }
 
-const LANDING_SYNC_ENDPOINT = process.env.EXPO_PUBLIC_API_BASE_URL
-  ? `${process.env.EXPO_PUBLIC_API_BASE_URL}/api/landing-sync`
+const _landingSyncBase = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || process.env.EXPO_PUBLIC_API_BASE_URL || '').trim().replace(/\/$/, '');
+const LANDING_SYNC_ENDPOINT = _landingSyncBase
+  ? `${_landingSyncBase}/api/landing-sync`
   : null;
 
 function isSupabaseConfigured(): boolean {
@@ -48,223 +98,200 @@ function isSupabaseConfigured(): boolean {
 }
 
 async function fetchPublishedDealsViaBackend(): Promise<PublishedDealPayload[]> {
-  const backendUrl = (process.env.EXPO_PUBLIC_API_BASE_URL || '').trim().replace(/\/$/, '');
+  const backendUrl = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || process.env.EXPO_PUBLIC_API_BASE_URL || '').trim().replace(/\/$/, '');
   if (!backendUrl) {
     console.log('[LandingSync] No backend URL — cannot fetch published deals');
     return [];
   }
   try {
-    console.log('[LandingSync] Fetching published deals from backend:', backendUrl + '/api/landing-deals');
+    console.log('[LandingSync] Fetching published deals from backend:', backendUrl + '/api/published-jv-deals');
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);
-    const response = await fetch(backendUrl + '/api/landing-deals', { signal: controller.signal });
+    const authHeaders = await _getSyncAuthHeaders();
+    let response = await fetch(backendUrl + '/api/published-jv-deals', { headers: authHeaders, signal: controller.signal }).catch(() => null);
+    if (!response || !response.ok) {
+      console.log('[LandingSync] /api/published-jv-deals failed, falling back to /api/landing-deals');
+      const controller2 = new AbortController();
+      const timeout2 = setTimeout(() => controller2.abort(), 8000);
+      response = await fetch(backendUrl + '/api/landing-deals', { headers: authHeaders, signal: controller2.signal });
+      clearTimeout(timeout2);
+    }
     clearTimeout(timeout);
-    if (!response.ok) {
-      console.log('[LandingSync] Backend fetch failed:', response.status);
+    if (!response || !response.ok) {
+      console.log('[LandingSync] Backend fetch failed:', response?.status);
       return [];
     }
     const result = await response.json();
     const deals = Array.isArray(result) ? result : (result?.deals || []);
     console.log('[LandingSync] Backend returned', deals.length, 'deals');
-    return deals.map((row: Record<string, unknown>) => {
-      let photosRaw: unknown[] = [];
-      if (typeof row.photos === 'string') {
-        try { const parsed = JSON.parse(row.photos as string); photosRaw = Array.isArray(parsed) ? parsed : []; } catch { photosRaw = []; }
-      } else if (Array.isArray(row.photos)) {
-        photosRaw = row.photos;
-      }
-      const photos: string[] = photosRaw.filter(
-        (p: unknown) => typeof p === 'string' && (p as string).length > 5 && ((p as string).startsWith('http') || (p as string).startsWith('data:image/'))
-      ) as string[];
-      return {
-        id: (row.id as string) || '',
-        title: (row.title as string) || '',
-        projectName: (row.projectName as string) || (row.project_name as string) || '',
-        description: (row.description as string) || '',
-        propertyAddress: (row.propertyAddress as string) || (row.property_address as string) || '',
-        city: (row.city as string) || '',
-        state: (row.state as string) || '',
-        country: (row.country as string) || '',
-        totalInvestment: (row.totalInvestment as number) || (row.total_investment as number) || 0,
-        expectedROI: (row.expectedROI as number) || (row.expected_roi as number) || 0,
-        status: (row.status as string) || 'active',
-        photos,
-        distributionFrequency: (row.distributionFrequency as string) || (row.distribution_frequency as string) || '',
-        exitStrategy: (row.exitStrategy as string) || (row.exit_strategy as string) || '',
-        publishedAt: (row.publishedAt as string) || (row.published_at as string) || '',
-        updatedAt: (row.updatedAt as string) || (row.updated_at as string) || new Date().toISOString(),
-        displayOrder: (row.displayOrder as number) ?? (row.display_order as number) ?? 999,
-      };
+    const mapped = deals.map((row: Record<string, unknown>) => mapRowToPayload(row));
+    mapped.sort((a: PublishedDealPayload, b: PublishedDealPayload) => {
+      if (a.displayOrder !== b.displayOrder) return a.displayOrder - b.displayOrder;
+      return (b.publishedAt || '').localeCompare(a.publishedAt || '');
     });
+    return mapped;
   } catch (err) {
     console.log('[LandingSync] Backend fetch exception:', (err as Error)?.message);
     return [];
   }
 }
 
+function mapRowToPayload(row: Record<string, unknown>): PublishedDealPayload {
+  let photosRaw: unknown[] = [];
+  if (typeof row.photos === 'string') {
+    try { const parsed = JSON.parse(row.photos as string); photosRaw = Array.isArray(parsed) ? parsed : []; } catch { photosRaw = []; }
+  } else if (Array.isArray(row.photos)) {
+    photosRaw = row.photos;
+  }
+  const photos: string[] = photosRaw.filter(
+    (p: unknown) => typeof p === 'string' && (p as string).length > 5 && ((p as string).startsWith('http') || (p as string).startsWith('data:image/'))
+  ) as string[];
+
+  let trustInfo: Record<string, unknown> | undefined;
+  const rawTrust = row.trustInfo ?? row.trust_info;
+  if (rawTrust) {
+    if (typeof rawTrust === 'string') {
+      try { trustInfo = JSON.parse(rawTrust); } catch { trustInfo = undefined; }
+    } else if (typeof rawTrust === 'object') {
+      trustInfo = rawTrust as Record<string, unknown>;
+    }
+  }
+
+  const payload: PublishedDealPayload = {
+    id: (row.id as string) || '',
+    title: (row.title as string) || '',
+    projectName: (row.projectName as string) || (row.project_name as string) || '',
+    description: (row.description as string) || '',
+    propertyAddress: (row.propertyAddress as string) || (row.property_address as string) || '',
+    city: (row.city as string) || '',
+    state: (row.state as string) || '',
+    country: (row.country as string) || '',
+    totalInvestment: (row.totalInvestment as number) || (row.total_investment as number) || 0,
+    expectedROI: (row.expectedROI as number) || (row.expected_roi as number) || 0,
+    status: (row.status as string) || 'active',
+    photos,
+    distributionFrequency: CANONICAL_DISTRIBUTION_LABEL,
+    exitStrategy: (row.exitStrategy as string) || (row.exit_strategy as string) || 'Sale upon completion',
+    publishedAt: (row.publishedAt as string) || (row.published_at as string) || '',
+    updatedAt: (row.updatedAt as string) || (row.updated_at as string) || new Date().toISOString(),
+    displayOrder: (row.displayOrder as number) ?? (row.display_order as number) ?? 999,
+    trustInfo,
+  };
+
+  payload.cardModel = mapDealToCardModel(row);
+
+  return payload;
+}
+
 async function fetchPublishedDeals(): Promise<PublishedDealPayload[]> {
+  console.log('[LandingSync] Fetching via CANONICAL DEALS API (single source of truth)...');
+  try {
+    const canonicalResult = await fetchCanonicalDeals(true);
+    if (canonicalResult.deals.length === 0) {
+      console.log('[LandingSync] Canonical API returned 0 deals (source:', canonicalResult.source, ')');
+      return [];
+    }
+
+    console.log('[LandingSync] Canonical API returned', canonicalResult.deals.length, 'deals (source:', canonicalResult.source, ')');
+    const mapped = canonicalResult.deals.map((card) => cardModelToPayload(card));
+    for (const deal of mapped) {
+      console.log('[LandingSync] Deal:', deal.id, '|', deal.projectName || deal.title, '| display_order:', deal.displayOrder);
+    }
+    return mapped;
+  } catch (err) {
+    console.log('[LandingSync] Canonical fetch failed:', (err as Error)?.message, '— falling back to direct Supabase');
+    return fetchPublishedDealsDirectFallback();
+  }
+}
+
+function cardModelToPayload(card: PublishedDealCardModel): PublishedDealPayload {
+  return {
+    id: card.id,
+    title: card.title,
+    projectName: card.developerName,
+    description: card.descriptionShort,
+    propertyAddress: card.addressFull,
+    city: card.city,
+    state: card.state,
+    country: card.country,
+    totalInvestment: card.totalInvestment,
+    expectedROI: card.expectedROI,
+    status: card.status,
+    photos: card.photos,
+    distributionFrequency: card.distributionFrequency,
+    exitStrategy: card.exitStrategy,
+    publishedAt: card.publishedAt,
+    updatedAt: card.publishedAt,
+    displayOrder: card.displayOrder,
+    cardModel: card,
+  };
+}
+
+async function fetchPublishedDealsDirectFallback(): Promise<PublishedDealPayload[]> {
   if (!isSupabaseConfigured()) {
-    console.log('[LandingSync] Supabase not configured — trying backend API for published deals');
+    console.log('[LandingSync] Supabase not configured — trying backend API');
     return fetchPublishedDealsViaBackend();
   }
 
   try {
-    let data: Record<string, unknown>[] | null = null;
-    let error: { message: string; code?: string } | null = null;
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
-
-    const result1 = await supabase
+    const result = await supabase
       .from('jv_deals')
       .select('*')
       .eq('published', true)
-      .eq('status', 'active')
+      .in('status', ['active', 'published', 'live'])
       .order('display_order', { ascending: true, nullsFirst: false })
       .order('created_at', { ascending: false });
 
-    clearTimeout(timeout);
-
-    if (result1.error) {
-      console.log('[LandingSync] Query with published+active filter failed:', result1.error.message, '— trying published only');
-      const result1b = await supabase
-        .from('jv_deals')
-        .select('*')
-        .eq('published', true)
-        .order('display_order', { ascending: true, nullsFirst: false })
-        .order('created_at', { ascending: false });
-
-      if (result1b.error) {
-        console.log('[LandingSync] Published-only query also failed:', result1b.error.message, '— trying all deals');
-        const result2 = await supabase
-          .from('jv_deals')
-          .select('*');
-
-        data = result2.data as Record<string, unknown>[] | null;
-        error = result2.error;
-      } else {
-        data = result1b.data as Record<string, unknown>[] | null;
-        error = null;
-      }
-    } else {
-      data = result1.data as Record<string, unknown>[] | null;
-      error = null;
+    if (result.error) {
+      console.log('[LandingSync] Direct fallback query error:', result.error.message);
+      return fetchPublishedDealsViaBackend();
     }
 
-    if (error) {
-      console.log('[LandingSync] Supabase fetch error:', error.message);
-      return [];
-    }
+    const data = result.data as Record<string, unknown>[] | null;
+    if (!data || data.length === 0) return [];
 
-    if (!data || data.length === 0) {
-      return [];
-    }
-
-    console.log('[LandingSync] Found', data.length, 'published deals');
-
-    return data.map((row: Record<string, unknown>) => {
-      let photosRaw: unknown[] = [];
-      if (typeof row.photos === 'string') {
-        try { const parsed = JSON.parse(row.photos as string); photosRaw = Array.isArray(parsed) ? parsed : []; } catch { photosRaw = []; }
-      } else if (Array.isArray(row.photos)) {
-        photosRaw = row.photos;
-      }
-      const photos: string[] = photosRaw.filter(
-        (p: unknown) => typeof p === 'string' && (p as string).length > 5 && ((p as string).startsWith('http') || (p as string).startsWith('data:image/'))
-      ) as string[];
-
-      return {
-        id: row.id as string,
-        title: (row.title as string) || '',
-        projectName: (row.projectName as string) || (row.project_name as string) || '',
-        description: (row.description as string) || '',
-        propertyAddress: (row.propertyAddress as string) || (row.property_address as string) || '',
-        city: (row.city as string) || '',
-        state: (row.state as string) || '',
-        country: (row.country as string) || '',
-        totalInvestment: (row.totalInvestment as number) || (row.total_investment as number) || 0,
-        expectedROI: (row.expectedROI as number) || (row.expected_roi as number) || 0,
-        status: (row.status as string) || 'active',
-        photos,
-        distributionFrequency: (row.distributionFrequency as string) || (row.distribution_frequency as string) || '',
-        exitStrategy: (row.exitStrategy as string) || (row.exit_strategy as string) || '',
-        publishedAt: (row.publishedAt as string) || (row.published_at as string) || '',
-        updatedAt: (row.updatedAt as string) || (row.updated_at as string) || new Date().toISOString(),
-        displayOrder: (row.displayOrder as number) ?? (row.display_order as number) ?? 999,
-      };
+    const mapped = data.map(mapRowToPayload);
+    mapped.sort((a, b) => {
+      if (a.displayOrder !== b.displayOrder) return a.displayOrder - b.displayOrder;
+      return (b.publishedAt || '').localeCompare(a.publishedAt || '');
     });
+    return mapped;
   } catch (err) {
-    console.log('[LandingSync] Fetch exception:', (err as Error)?.message);
+    console.log('[LandingSync] Direct fallback exception:', (err as Error)?.message);
     return [];
   }
 }
 
 let _lastDeployTimestamp = 0;
-const DEPLOY_COOLDOWN = 15000;
+let _lastSyncTimestamp: string | null = null;
+let _lastDeployError: string | null = null;
+const DEPLOY_COOLDOWN = 5000;
 
-async function tryAutoDeployToS3(): Promise<void> {
-  if (Platform.OS !== 'web') {
-    console.log('[LandingSync] Native platform — triggering deploy via backend API...');
-    await tryDeployViaBackend();
-    return;
-  }
+async function triggerBackendDeploy(): Promise<void> {
   const now = Date.now();
   if (now - _lastDeployTimestamp < DEPLOY_COOLDOWN) {
-    console.log('[LandingSync] S3 deploy cooldown active, skipping');
+    console.log('[LandingSync] Deploy cooldown active, skipping');
     return;
   }
   const status = getDeployStatus();
   if (!status.canDeploy) {
-    console.log('[LandingSync] Cannot auto-deploy: AWS configured:', status.awsConfigured, '| Supabase configured:', status.supabaseConfigured);
+    console.log('[LandingSync] Cannot deploy: backend not configured');
     return;
   }
   _lastDeployTimestamp = now;
   try {
-    console.log('[LandingSync] Auto-deploying full landing page to S3 (includes updated HTML)...');
+    console.log('[LandingSync] Triggering backend deploy...');
     const result = await deployLandingPage();
     if (result.success) {
-      console.log('[LandingSync] S3 full deploy SUCCESS — files:', result.filesUploaded.join(', '));
+      console.log('[LandingSync] Backend deploy SUCCESS — files:', result.filesUploaded.join(', '));
+      _lastDeployError = null;
     } else {
-      console.log('[LandingSync] S3 full deploy had issues, trying config only...', result.errors.join('; '));
-      const configResult = await deployConfigOnly();
-      if (configResult.success) {
-        console.log('[LandingSync] S3 config-only deploy SUCCESS');
-      } else {
-        console.log('[LandingSync] S3 config deploy also failed:', configResult.error);
-      }
+      console.log('[LandingSync] Backend deploy failed:', result.errors.join('; '));
+      _lastDeployError = result.errors.join('; ') || 'Deploy failed';
     }
   } catch (err) {
-    console.log('[LandingSync] S3 deploy error:', (err as Error)?.message);
-  }
-}
-
-async function tryDeployViaBackend(): Promise<void> {
-  const backendUrl = (process.env.EXPO_PUBLIC_API_BASE_URL || '').trim().replace(/\/$/, '');
-  if (!backendUrl) {
-    console.log('[LandingSync] No backend URL — cannot deploy from native platform');
-    return;
-  }
-  const now = Date.now();
-  if (now - _lastDeployTimestamp < DEPLOY_COOLDOWN) {
-    console.log('[LandingSync] Backend deploy cooldown active, skipping');
-    return;
-  }
-  _lastDeployTimestamp = now;
-  try {
-    console.log('[LandingSync] Triggering deploy via backend:', backendUrl + '/api/deploy-landing');
-    const response = await fetch(backendUrl + '/api/deploy-landing', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ timestamp: new Date().toISOString(), source: 'auto-sync' }),
-    });
-    if (response.ok) {
-      const result = await response.json();
-      console.log('[LandingSync] Backend deploy result:', result.success ? 'SUCCESS' : 'FAILED', '| files:', (result.filesUploaded || []).join(', '));
-    } else {
-      console.log('[LandingSync] Backend deploy HTTP error:', response.status);
-    }
-  } catch (err) {
-    console.log('[LandingSync] Backend deploy error:', (err as Error)?.message);
+    console.log('[LandingSync] Deploy error:', (err as Error)?.message);
+    _lastDeployError = (err as Error)?.message || 'Deploy error';
   }
 }
 
@@ -273,68 +300,64 @@ export async function syncToLandingPage(): Promise<LandingSyncResult> {
 
   try {
     const deals = await fetchPublishedDeals();
+    _lastSyncTimestamp = timestamp;
 
     if (deals.length === 0) {
       return { success: true, syncedDeals: 0, errors: [], timestamp };
     }
 
+    console.log('[LandingSync] Syncing', deals.length, 'deals to landing_deals table + triggering deploy...');
+
+    const tableResult = await syncToSupabaseLandingTable(deals, timestamp);
+
     try {
-      await tryAutoDeployToS3();
-      console.log('[LandingSync] Auto-deploy completed');
+      await triggerBackendDeploy();
+      console.log('[LandingSync] Backend deploy triggered after table sync');
     } catch (deployErr) {
-      console.log('[LandingSync] Auto-deploy failed (non-blocking):', (deployErr as Error)?.message);
+      console.log('[LandingSync] Backend deploy trigger failed (non-blocking):', (deployErr as Error)?.message);
     }
 
-    if (!LANDING_SYNC_ENDPOINT) {
-      return await syncToSupabaseLandingTable(deals, timestamp);
+    if (LANDING_SYNC_ENDPOINT) {
+      try {
+        const syncHeaders = await _getSyncAuthHeaders();
+        const response = await fetch(LANDING_SYNC_ENDPOINT, {
+          method: 'POST',
+          headers: syncHeaders,
+          body: JSON.stringify({
+            deals,
+            syncedAt: timestamp,
+            source: 'ivx-app',
+          }),
+        });
+
+        if (response.ok) {
+          console.log('[LandingSync] API sync also succeeded —', deals.length, 'deals');
+        } else {
+          console.log('[LandingSync] API sync failed (non-blocking):', response.status);
+        }
+      } catch (fetchErr) {
+        console.log('[LandingSync] API sync exception (non-blocking):', (fetchErr as Error)?.message);
+      }
     }
 
     try {
-      const response = await fetch(LANDING_SYNC_ENDPOINT, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || ''}`,
+      await logAudit({
+        entityType: 'system',
+        entityId: `landing-sync-${Date.now()}`,
+        entityTitle: `Landing page sync: ${deals.length} deals`,
+        action: 'SYSTEM_EVENT',
+        source: 'system',
+        details: {
+          dealCount: deals.length,
+          dealIds: deals.map(d => d.id),
+          syncedToTable: tableResult.syncedDeals,
         },
-        body: JSON.stringify({
-          deals,
-          syncedAt: timestamp,
-          source: 'ivx-app',
-        }),
       });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.log('[LandingSync] API error:', response.status, errorText);
-        console.log('[LandingSync] Falling back to Supabase landing_deals table');
-        return await syncToSupabaseLandingTable(deals, timestamp);
-      }
-
-      console.log('[LandingSync] API sync SUCCESS —', deals.length, 'deals synced');
-
-      try {
-        await logAudit({
-          entityType: 'system',
-          entityId: `landing-sync-${Date.now()}`,
-          entityTitle: `Landing page sync: ${deals.length} deals`,
-          action: 'SYSTEM_EVENT',
-          source: 'system',
-          details: {
-            dealCount: deals.length,
-            dealIds: deals.map(d => d.id),
-            endpoint: 'external_api',
-          },
-        });
-      } catch (auditErr) {
-        console.log('[LandingSync] Audit log failed (non-critical):', auditErr);
-      }
-
-      return { success: true, syncedDeals: deals.length, errors: [], timestamp };
-    } catch (fetchErr) {
-      console.log('[LandingSync] API fetch failed:', (fetchErr as Error)?.message);
-      console.log('[LandingSync] Falling back to Supabase landing_deals table');
-      return await syncToSupabaseLandingTable(deals, timestamp);
+    } catch (auditErr) {
+      console.log('[LandingSync] Audit log failed (non-critical):', auditErr);
     }
+
+    return tableResult;
   } catch (err) {
     console.log('[LandingSync] Sync exception:', (err as Error)?.message);
     return { success: false, syncedDeals: 0, errors: [(err as Error)?.message || 'Unknown error'], timestamp };
@@ -342,13 +365,13 @@ export async function syncToLandingPage(): Promise<LandingSyncResult> {
 }
 
 export async function fullDeployToLanding(): Promise<{ success: boolean; filesUploaded: string[]; errors: string[] }> {
-  console.log('[LandingSync] Full landing page deploy requested...');
+  console.log('[LandingSync] Full landing page deploy requested (backend-only)...');
   try {
     const result = await deployLandingPage();
-    console.log('[LandingSync] Full deploy result:', result.success, '| files:', result.filesUploaded.join(', '));
+    console.log('[LandingSync] Backend deploy result:', result.success, '| files:', result.filesUploaded.join(', '));
     return { success: result.success, filesUploaded: result.filesUploaded, errors: result.errors };
   } catch (err) {
-    console.log('[LandingSync] Full deploy error:', (err as Error)?.message);
+    console.log('[LandingSync] Backend deploy error:', (err as Error)?.message);
     return { success: false, filesUploaded: [], errors: [(err as Error)?.message || 'Deploy failed'] };
   }
 }
@@ -356,6 +379,8 @@ export async function fullDeployToLanding(): Promise<{ success: boolean; filesUp
 async function syncToSupabaseLandingTable(deals: PublishedDealPayload[], timestamp: string): Promise<LandingSyncResult> {
   const errors: string[] = [];
   let syncedCount = 0;
+
+  console.log('[LandingSync] landing_deals is a READ-ONLY derived cache. Only this sync function writes to it.');
 
   let tableExists = true;
   try {
@@ -381,6 +406,25 @@ async function syncToSupabaseLandingTable(deals: PublishedDealPayload[], timesta
     };
   }
 
+  const liveDealIds = new Set(deals.map(d => d.id));
+
+  try {
+    const { data: existingLanding } = await supabase.from('landing_deals').select('id');
+    if (existingLanding && Array.isArray(existingLanding)) {
+      const staleIds = existingLanding
+        .map((r: { id: string }) => r.id)
+        .filter((id: string) => !liveDealIds.has(id));
+      if (staleIds.length > 0) {
+        console.log('[LandingSync] Removing', staleIds.length, 'stale deals from landing_deals:', staleIds.join(', '));
+        for (const staleId of staleIds) {
+          await supabase.from('landing_deals').delete().eq('id', staleId);
+        }
+      }
+    }
+  } catch (cleanupErr) {
+    console.log('[LandingSync] Stale cleanup failed (non-critical):', (cleanupErr as Error)?.message);
+  }
+
   for (const deal of deals) {
     try {
       const { error } = await supabase
@@ -403,6 +447,7 @@ async function syncToSupabaseLandingTable(deals: PublishedDealPayload[], timesta
           published_at: deal.publishedAt,
           updated_at: deal.updatedAt,
           display_order: deal.displayOrder ?? 999,
+          trust_info: deal.trustInfo ? JSON.stringify(deal.trustInfo) : null,
           synced_at: timestamp,
         });
 
@@ -475,12 +520,12 @@ export async function syncSingleDealToLanding(dealId: string): Promise<{ success
     const result = await syncToLandingPage();
 
     if (result.success) {
-      console.log('[LandingSync] Sync succeeded, triggering auto-deploy...');
+      console.log('[LandingSync] Sync succeeded, triggering backend deploy...');
       try {
-        await tryAutoDeployToS3();
-        console.log('[LandingSync] Auto-deploy triggered after single deal sync');
+        await triggerBackendDeploy();
+        console.log('[LandingSync] Backend deploy triggered after single deal sync');
       } catch (deployErr) {
-        console.log('[LandingSync] Auto-deploy after sync failed (non-blocking):', (deployErr as Error)?.message);
+        console.log('[LandingSync] Backend deploy after sync failed (non-blocking):', (deployErr as Error)?.message);
       }
     }
 
@@ -496,8 +541,8 @@ export async function triggerAutoDeployAfterPublish(dealId: string): Promise<voi
     const syncResult = await syncToLandingPage();
     console.log('[LandingSync] Post-publish sync:', syncResult.success, 'deals:', syncResult.syncedDeals);
     if (syncResult.success) {
-      await tryAutoDeployToS3();
-      console.log('[LandingSync] Post-publish deploy completed');
+      await triggerBackendDeploy();
+      console.log('[LandingSync] Post-publish backend deploy triggered');
     }
   } catch (err) {
     console.log('[LandingSync] Post-publish auto-deploy error:', (err as Error)?.message);
@@ -508,7 +553,10 @@ export async function getLandingSyncStatus(): Promise<{
   lastSync: string | null;
   publishedDealsCount: number;
   landingDealsCount: number;
+  canonicalApiCount: number;
   inSync: boolean;
+  lastDeployTime: string | null;
+  lastDeployError: string | null;
 }> {
   let publishedCount = 0;
   let landingCount = 0;
@@ -518,7 +566,7 @@ export async function getLandingSyncStatus(): Promise<{
       .from('jv_deals')
       .select('id', { count: 'exact', head: true })
       .eq('published', true)
-      .eq('status', 'active');
+      .in('status', ['active', 'published', 'live']);
     publishedCount = pubCount ?? 0;
   } catch {
     console.log('[LandingSync] Could not count published deals');
@@ -533,10 +581,34 @@ export async function getLandingSyncStatus(): Promise<{
     console.log('[LandingSync] Could not count landing deals (table may not exist)');
   }
 
+  const inSync = publishedCount === landingCount;
+  if (!inSync) {
+    console.warn('[LandingSync] ⚠️ OUT OF SYNC: jv_deals published:', publishedCount, '| landing_deals:', landingCount);
+  }
+
   return {
-    lastSync: null,
+    lastSync: _lastSyncTimestamp || null,
     publishedDealsCount: publishedCount,
     landingDealsCount: landingCount,
-    inSync: publishedCount === landingCount,
+    canonicalApiCount: publishedCount,
+    inSync,
+    lastDeployTime: _lastDeployTimestamp > 0 ? new Date(_lastDeployTimestamp).toISOString() : null,
+    lastDeployError: _lastDeployError,
   };
+}
+
+export async function fetchCanonicalPublishedDeals(): Promise<PublishedDealCardModel[]> {
+  const deals = await fetchPublishedDeals();
+  return deals.map(d => d.cardModel || mapDealToCardModel(d as unknown as Record<string, unknown>));
+}
+
+export function validateSyncIntegrity(publishedCount: number, landingCount: number): {
+  valid: boolean;
+  errors: string[];
+} {
+  const errors: string[] = [];
+  if (publishedCount !== landingCount) {
+    errors.push(`Count mismatch: jv_deals has ${publishedCount} published, landing_deals has ${landingCount}`);
+  }
+  return { valid: errors.length === 0, errors };
 }

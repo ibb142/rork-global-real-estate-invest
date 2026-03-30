@@ -16,6 +16,20 @@ interface RealtimeSubscriptionConfig {
   onPayload?: (payload: RealtimePostgresChangesPayload<Record<string, unknown>>) => void;
 }
 
+const INVALIDATION_THROTTLE = 3_000;
+const _lastInvalidation = new Map<string, number>();
+
+function throttledInvalidate(queryClient: QueryClient, keys: string[][]) {
+  const now = Date.now();
+  for (const key of keys) {
+    const keyStr = JSON.stringify(key);
+    const last = _lastInvalidation.get(keyStr) ?? 0;
+    if (now - last < INVALIDATION_THROTTLE) continue;
+    _lastInvalidation.set(keyStr, now);
+    void queryClient.invalidateQueries({ queryKey: key });
+  }
+}
+
 function setupChannels(
   configs: RealtimeSubscriptionConfig[],
   queryClient: QueryClient,
@@ -43,9 +57,7 @@ function setupChannels(
 
           console.log(`[Realtime] ${config.table} ${payload.eventType}`, payload.new ? (payload.new as any).id : '');
 
-          for (const key of config.queryKeys) {
-            void queryClient.invalidateQueries({ queryKey: key });
-          }
+          throttledInvalidate(queryClient, config.queryKeys);
 
           if (config.onPayload) {
             try {
@@ -86,15 +98,24 @@ export function useRealtimeSubscription(configs: RealtimeSubscriptionConfig[]) {
 
     setupChannels(configs, queryClient, channelsRef, activeRef);
 
+    let lastForeground = Date.now();
     const handleAppState = (nextState: AppStateStatus) => {
       if (nextState === 'active') {
+        const elapsed = Date.now() - lastForeground;
+        lastForeground = Date.now();
+        if (elapsed < 10000) {
+          console.log('[Realtime] App foregrounded too quickly — skipping resubscribe');
+          return;
+        }
         console.log('[Realtime] App foregrounded — resubscribing');
         setupChannels(configs, queryClient, channelsRef, activeRef);
-        for (const config of configs) {
-          for (const key of config.queryKeys) {
-            void queryClient.invalidateQueries({ queryKey: key });
-          }
+        throttledInvalidate(queryClient, configs.flatMap(c => c.queryKeys));
+      } else if (nextState === 'background') {
+        console.log('[Realtime] App backgrounded — unsubscribing to save connections');
+        for (const ch of channelsRef.current) {
+          try { void supabase.removeChannel(ch); } catch {}
         }
+        channelsRef.current = [];
       }
     };
 

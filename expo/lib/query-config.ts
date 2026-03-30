@@ -1,20 +1,30 @@
 export const queryClientConfig = {
   defaultOptions: {
     queries: {
-      staleTime: 1000 * 30,
-      gcTime: 1000 * 60 * 15,
+      staleTime: 1000 * 60 * 5,
+      gcTime: 1000 * 60 * 60,
       retry: (failureCount: number) => failureCount < 2,
-      retryDelay: (attemptIndex: number) => Math.min(800 * 2 ** attemptIndex, 4000),
-      refetchOnWindowFocus: true,
+      retryDelay: (attemptIndex: number) => {
+        const base = Math.min(2000 * 2 ** attemptIndex, 30000);
+        const jitter = Math.random() * 1000;
+        return base + jitter;
+      },
+      refetchOnWindowFocus: false,
       refetchOnReconnect: true,
-      networkMode: "always" as const,
+      networkMode: "online" as const,
       throwOnError: false,
       refetchOnError: false,
+      refetchInterval: false as const,
+      structuralSharing: true,
     },
     mutations: {
-      retry: 1,
-      retryDelay: 800,
-      networkMode: "always" as const,
+      retry: 2,
+      retryDelay: (attemptIndex: number) => {
+        const base = Math.min(2000 * 2 ** attemptIndex, 15000);
+        const jitter = Math.random() * 500;
+        return base + jitter;
+      },
+      networkMode: "online" as const,
       throwOnError: false,
     },
   },

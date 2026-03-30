@@ -20,7 +20,7 @@ export function getSupabaseCredentials(): { url: string; anonKey: string; config
 
 export function generateLandingConfig(): LandingConfig {
   const { url, anonKey } = getSupabaseCredentials();
-  const apiBaseUrl = (process.env.EXPO_PUBLIC_API_BASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL || '').trim().replace(/\/$/, '');
+  const apiBaseUrl = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || process.env.EXPO_PUBLIC_API_BASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL || '').trim().replace(/\/$/, '');
   const appUrl = (process.env.EXPO_PUBLIC_APP_URL || process.env.EXPO_PUBLIC_SUPABASE_URL || '').trim().replace(/\/$/, '');
 
   return {
@@ -32,32 +32,20 @@ export function generateLandingConfig(): LandingConfig {
   };
 }
 
+/**
+ * @deprecated Deploy commands should be generated server-side only.
+ * This function no longer emits real AWS credentials.
+ */
 export function generateDeployCommand(): string {
-  const { url, anonKey } = getSupabaseCredentials();
-  if (!url || !anonKey) {
-    return '# Supabase credentials not configured in project settings\n# Add EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY first';
-  }
-
-  return [
-    `EXPO_PUBLIC_SUPABASE_URL="${url}" \\`,
-    `EXPO_PUBLIC_SUPABASE_ANON_KEY="${anonKey}" \\`,
-    `AWS_ACCESS_KEY_ID="YOUR_AWS_KEY" \\`,
-    `AWS_SECRET_ACCESS_KEY="YOUR_AWS_SECRET" \\`,
-    `AWS_REGION="us-east-1" \\`,
-    `node deploy-landing.mjs`,
-  ].join('\n');
+  return '# Deploy is handled via backend CI/CD pipeline.\n# Do not run deploy commands from the client app.\n# Use the admin panel to trigger deploys via the backend API.';
 }
 
-export function generateDeployCommandFull(awsKey: string, awsSecret: string, awsRegion: string = 'us-east-1'): string {
-  const { url, anonKey } = getSupabaseCredentials();
-  return [
-    `EXPO_PUBLIC_SUPABASE_URL="${url}" \\`,
-    `EXPO_PUBLIC_SUPABASE_ANON_KEY="${anonKey}" \\`,
-    `AWS_ACCESS_KEY_ID="${awsKey}" \\`,
-    `AWS_SECRET_ACCESS_KEY="${awsSecret}" \\`,
-    `AWS_REGION="${awsRegion}" \\`,
-    `node deploy-landing.mjs`,
-  ].join('\n');
+/**
+ * @deprecated Deploy is backend-only. This function is a no-op.
+ */
+export function generateDeployCommandFull(_awsKey: string, _awsSecret: string, _awsRegion: string = 'us-east-1'): string {
+  console.warn('[LandingConfig] generateDeployCommandFull is deprecated. Deploy is backend-only.');
+  return '# Deploy is handled via backend CI/CD pipeline only.';
 }
 
 export async function pushConfigToSupabase(): Promise<{ success: boolean; error?: string }> {
@@ -108,5 +96,5 @@ export function generateConfigJson(): string {
 export function getLandingPageSupabaseFetchUrl(): string {
   const { url, anonKey } = getSupabaseCredentials();
   if (!url || !anonKey) return '';
-  return `${url}/rest/v1/jv_deals?select=*&published=eq.true&status=eq.active&order=display_order.asc.nullslast,created_at.desc&apikey=${anonKey}`;
+  return `${url}/rest/v1/jv_deals?select=*&published=eq.true&status=in.(active,published,live)&order=display_order.asc.nullslast,created_at.desc.nullslast&apikey=${anonKey}`;
 }

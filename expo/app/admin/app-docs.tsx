@@ -145,21 +145,20 @@ export default function AppDocsScreen() {
     setIsGeneratingPDF(true);
     try {
       const html = generateExcelHTML();
-      const { uri } = await Print.printToFileAsync({
-        html,
-        base64: false,
-      });
-      
-      console.log('PDF generated at:', uri);
       
       if (Platform.OS === 'web') {
         const printWindow = window.open('', '_blank');
         if (printWindow) {
           printWindow.document.write(html);
           printWindow.document.close();
-          printWindow.print();
+          setTimeout(() => printWindow.print(), 500);
         }
       } else {
+        const { uri } = await Print.printToFileAsync({
+          html,
+          base64: false,
+        });
+        console.log('PDF generated at:', uri);
         const canShare = await Sharing.isAvailableAsync();
         if (canShare) {
           await Sharing.shareAsync(uri, {
@@ -243,7 +242,7 @@ export default function AppDocsScreen() {
       URL.revokeObjectURL(url);
       Alert.alert('Downloaded!', 'Text file has been downloaded.');
     } else {
-      Share.share({
+      void Share.share({
         title: 'IVXHOLDINGS App Documentation',
         message: content,
       });

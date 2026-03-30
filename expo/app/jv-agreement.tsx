@@ -124,7 +124,7 @@ const ROLE_CONFIG: Record<string, { label: string; color: string; description: s
 
 const POOL_TIER_TYPES: { id: PoolTier['type']; label: string; icon: string; color: string }[] = [
   { id: 'jv_direct', label: 'JV Investment', icon: '🏛️', color: '#00C48C' },
-  { id: 'token_shares', label: 'Token Shares', icon: '🪙', color: '#FFD700' },
+
   { id: 'private_lending', label: 'Private Lending', icon: '🏦', color: '#4A90D9' },
   { id: 'open', label: 'Open Pool', icon: '🌐', color: '#E879F9' },
 ];
@@ -465,7 +465,6 @@ export default function JVAgreementScreen() {
 
   const [formPoolTiers, setFormPoolTiers] = useState<PoolTier[]>([
     { id: 'pool-jv', label: 'JV Investment', type: 'jv_direct', targetAmount: 1000000, minInvestment: 100, currentRaised: 0, investorCount: 0, status: 'open' },
-    { id: 'pool-tokens', label: 'Token Shares', type: 'token_shares', targetAmount: 400000, minInvestment: 50, currentRaised: 0, investorCount: 0, status: 'open' },
   ]);
 
   const [editingAgreementId, setEditingAgreementId] = useState<string | null>(null);
@@ -593,7 +592,7 @@ export default function JVAgreementScreen() {
     }]);
     setFormPoolTiers([
       { id: 'pool-jv', label: 'JV Investment', type: 'jv_direct', targetAmount: 1000000, minInvestment: 100, currentRaised: 0, investorCount: 0, status: 'open' },
-      { id: 'pool-tokens', label: 'Token Shares', type: 'token_shares', targetAmount: 400000, minInvestment: 50, currentRaised: 0, investorCount: 0, status: 'open' },
+
     ]);
     setFormPhotos([]);
     setEditingAgreementId(null);
@@ -604,11 +603,11 @@ export default function JVAgreementScreen() {
     setFormTitle(agreement.title);
     setFormProjectName(agreement.projectName);
     setFormType(agreement.type);
-    setFormTotalInvestment(String(agreement.totalInvestment));
+    setFormTotalInvestment(agreement.totalInvestment ? formatAmountInput(String(agreement.totalInvestment)) : '');
     setFormCurrency(agreement.currency);
     setFormDescription(agreement.description);
     setFormPropertyAddress(agreement.propertyAddress || '');
-    setFormExpectedROI(String(agreement.expectedROI));
+    setFormExpectedROI(agreement.expectedROI ? String(agreement.expectedROI) : '');
     setFormDistribution(agreement.distributionFrequency);
     setFormExitStrategy(agreement.exitStrategy);
     setFormGoverningLaw(agreement.governingLaw);
@@ -1087,7 +1086,7 @@ export default function JVAgreementScreen() {
       resetSupabaseCheck();
       invalidateAllJVQueries(queryClient);
       await backendDealsQuery.refetch();
-      console.log('[JV] Invalidated all JV queries after publish, didPublish:', didPublish);
+      console.log('[JV] Invalidated all JV queries after publish/save, didPublish:', didPublish);
 
       if (didPublish && backendId) {
         const verifyId = backendId;

@@ -43,10 +43,7 @@ import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
 
-import { useWalletBalance, useTransactions } from '@/lib/data-hooks';
-import { supabase } from '@/lib/supabase';
-import { getAuthUserId } from '@/lib/auth-store';
-import { useQueryClient } from '@tanstack/react-query';
+import { useWallet } from '@/lib/wallet-context';
 import { formatNumber, formatCurrencyWithDecimals, formatAmountInput, parseAmountInput } from '@/lib/formatters';
 import { paymentService, PaymentMethodType, PaymentResult, WithdrawalResult } from '@/lib/payment-service';
 import CardInputForm, { CardData } from '@/components/CardInputForm';
@@ -60,74 +57,34 @@ export default function WalletScreen() {
   const router = useRouter();
   const { totalBalance: earnBalance, apyRate } = useEarn();
   const { trackScreen, trackTransaction: trackAnalyticsTx } = useAnalytics();
-  const queryClient = useQueryClient();
 
   React.useEffect(() => {
     trackScreen('Wallet');
   }, [trackScreen]);
 
-  const recordTransactionToSupabase = React.useCallback(async (
-    type: 'deposit' | 'withdrawal',
-    amount: number,
-    fee: number,
-    method: string,
-    status: string,
-    transactionId: string
-  ) => {
-    const userId = getAuthUserId();
-    if (!userId) return;
-    try {
-      await supabase.from('transactions').insert({
-        id: transactionId,
-        user_id: userId,
-        type,
-        amount,
-        fee,
-        net_amount: amount - fee,
-        payment_method: method,
-        status,
-        description: `${type === 'deposit' ? 'Deposit' : 'Withdrawal'} via ${method}`,
-        created_at: new Date().toISOString(),
-      });
-
-      if (type === 'deposit' && status === 'succeeded') {
-        await supabase.rpc('increment_wallet_balance', { p_user_id: userId, p_amount: amount - fee }).then(res => {
-          if (res.error) {
-            console.log('[Wallet] RPC not available, updating directly');
-            void supabase.from('wallets').upsert({
-              user_id: userId,
-              available: amount - fee,
-              updated_at: new Date().toISOString(),
-            });
-          }
-        });
-      }
-
-      void queryClient.invalidateQueries({ queryKey: ['wallet-balance'] });
-      void queryClient.invalidateQueries({ queryKey: ['transactions'] });
-      trackAnalyticsTx(type === 'deposit' ? 'deposit' : 'withdraw', amount, 'USD', { method, fee });
-      console.log('[Wallet] Transaction recorded to Supabase:', transactionId);
-    } catch (error) {
-      console.log('[Wallet] Supabase transaction record failed:', error);
-    }
-  }, [queryClient, trackAnalyticsTx]);
-
-  const { balance: walletBalance, isFromAPI: balanceFromAPI } = useWalletBalance();
-  const { transactions: txData } = useTransactions(1, 30);
+  const {
+    available: walletAvailable,
+    deposit: walletDeposit,
+    withdraw: walletWithdraw,
+    depositWithdrawTransactions: walletTxHistory,
+    isFromAPI: balanceFromAPI,
+  } = useWallet();
 
   const currentUser = useMemo(() => {
-    const balance = walletBalance.available;
-    logger.wallet.log('Balance source:', balanceFromAPI ? 'supabase' : 'local', balance);
-    return { walletBalance: balance };
-  }, [walletBalance, balanceFromAPI]);
+    logger.wallet.log('Balance source:', balanceFromAPI ? 'supabase' : 'local', walletAvailable);
+    return { walletBalance: walletAvailable };
+  }, [walletAvailable, balanceFromAPI]);
+
   const transactions = useMemo(() => {
-    if (txData && txData.length > 0) {
-      logger.wallet.log('Transactions source: supabase', txData.length);
-      return txData;
-    }
-    logger.wallet.log('Transactions source: empty');
-    return [] as { id: string; type: string; amount: number; status: string; description: string; createdAt: string }[];
-  }, [txData]);
+    return walletTxHistory.map(tx => ({
+      id: tx.id,
+      type: tx.type,
+      amount: tx.direction === 'debit' ? -tx.amount : tx.amount,
+      status: tx.status,
+      description: tx.description,
+      createdAt: tx.created_at,
+    }));
+  }, [walletTxHistory]);
 
   const [addFundsModalVisible, setAddFundsModalVisible] = useState(false);
   const [fundAmount, setFundAmount] = useState('');
@@ -283,14 +240,8 @@ export default function WalletScreen() {
       setShowResult(true);
       if (result.success) {
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        void recordTransactionToSupabase(
-          'deposit',
-          amount,
-          result.fee,
-          selectedPaymentMethod,
-          result.status,
-          result.transactionId
-        );
+        void walletDeposit(amount, result.fee, selectedPaymentMethod, result.transactionId);
+        trackAnalyticsTx('deposit', amount, 'USD', { method: selectedPaymentMethod, fee: result.fee });
       } else {
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       }
@@ -366,14 +317,8 @@ export default function WalletScreen() {
       setShowWithdrawResult(true);
       if (result.success) {
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        void recordTransactionToSupabase(
-          'withdrawal',
-          amount,
-          result.fee,
-          selectedWithdrawMethod,
-          result.status,
-          result.withdrawalId
-        );
+        void walletWithdraw(amount, result.fee, selectedWithdrawMethod, result.withdrawalId);
+        trackAnalyticsTx('withdraw', amount, 'USD', { method: selectedWithdrawMethod, fee: result.fee });
       } else {
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       }

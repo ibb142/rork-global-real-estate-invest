@@ -6,7 +6,6 @@ import {
   ScrollView,
   TouchableOpacity,
   Platform,
-  Alert,
   ActivityIndicator,
   Animated,
 } from 'react-native';
@@ -15,165 +14,120 @@ import { useRouter } from 'expo-router';
 import {
   ArrowLeft,
   Database,
-  Copy,
-  Check,
+  CheckCircle,
+  XCircle,
+  RefreshCw,
+  Zap,
+  Shield,
+  Table2,
+  HardDrive,
+  Radio,
+  Settings,
+  AlertTriangle,
+  Clock,
+  Server,
   ChevronDown,
   ChevronUp,
-  Shield,
-  Wrench,
-  Table2,
-  Rocket,
-  CheckCircle,
-  FileCode,
-  CopyCheck,
-  AlertTriangle,
-  Zap,
-  Play,
-  RefreshCw,
-  Clock,
-  BarChart3,
-  Lock,
-  HardDrive,
 } from 'lucide-react-native';
-import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
-import { SQL_SCRIPTS, SQL_CATEGORIES, SCRIPTS_VERSION } from '@/mocks/supabase-scripts';
-import type { SqlScript } from '@/mocks/supabase-scripts';
 import { supabase } from '@/lib/supabase';
 
-console.log('[Supabase Scripts] Loaded version:', SCRIPTS_VERSION, '— Scripts count:', SQL_SCRIPTS.length);
+console.log('[Supabase Status] Live dashboard loaded');
 
-const API_BASE = (process.env.EXPO_PUBLIC_API_BASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL || '').trim().replace(/\/$/, '');
+type CheckStatus = 'pending' | 'checking' | 'ok' | 'missing' | 'error';
 
-type DeployStatus = 'idle' | 'deploying' | 'success' | 'error' | 'bootstrap_required';
-
-interface DeployState {
-  [scriptId: string]: { status: DeployStatus; message?: string };
+interface TableCheck {
+  name: string;
+  status: CheckStatus;
+  rowCount?: number;
+  hasRls?: boolean;
 }
 
-const CATEGORY_CONFIG: Record<string, { icon: React.ElementType; color: string }> = {
-  'Bootstrap': { icon: Lock, color: '#FF6D00' },
-  'Analytics': { icon: BarChart3, color: '#00BCD4' },
-  'Setup': { icon: Rocket, color: '#00E676' },
-  'Fix & Patch': { icon: Wrench, color: '#FF9800' },
-  'Tables & Data': { icon: Table2, color: '#42A5F5' },
-  'Security': { icon: Shield, color: '#EF5350' },
-  'Verify': { icon: CheckCircle, color: '#AB47BC' },
-  'Emergency': { icon: AlertTriangle, color: '#FF1744' },
-  'Storage': { icon: HardDrive, color: '#FF9800' },
-  'Other': { icon: FileCode, color: Colors.primary },
-};
-
-async function getAuthToken(): Promise<string | null> {
-  try {
-    const session = await supabase.auth.getSession();
-    return session?.data?.session?.access_token ?? null;
-  } catch {
-    return null;
-  }
+interface FunctionCheck {
+  name: string;
+  status: CheckStatus;
 }
 
-async function deploySqlToBackend(script: SqlScript, token: string): Promise<{ success: boolean; error?: string; method?: string }> {
-  if (!API_BASE) {
-    return { success: false, error: 'API base URL not configured' };
-  }
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 30000);
-
-  try {
-    console.log(`[Deploy] Sending script: ${script.fileName} (${script.content.length} chars)`);
-    const response = await fetch(`${API_BASE}/deploy-sql`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        sql: script.content,
-        scriptId: script.id,
-        scriptName: script.title,
-      }),
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-
-    const data = await response.json();
-    console.log(`[Deploy] Response for ${script.fileName}:`, response.status, JSON.stringify(data).substring(0, 200));
-
-    if (data.success) {
-      return { success: true, method: data.method };
-    }
-
-    if (data.error === 'BOOTSTRAP_REQUIRED') {
-      return { success: false, error: 'BOOTSTRAP_REQUIRED' };
-    }
-
-    return { success: false, error: data.error || data.message || `HTTP ${response.status}` };
-  } catch (err) {
-    clearTimeout(timeout);
-    const msg = (err as Error)?.message || 'Unknown error';
-    if (msg.includes('abort')) {
-      return { success: false, error: 'Request timed out (30s)' };
-    }
-    return { success: false, error: msg };
-  }
+interface BucketCheck {
+  name: string;
+  status: CheckStatus;
+  isPublic?: boolean;
 }
 
-async function checkDeployReady(token: string): Promise<{ ready: boolean; reason: string }> {
-  if (!API_BASE) return { ready: false, reason: 'no_api_url' };
-  try {
-    const response = await fetch(`${API_BASE}/deploy-sql-check`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-      },
-    });
-    return await response.json();
-  } catch {
-    return { ready: false, reason: 'fetch_error' };
-  }
+interface RealtimeCheck {
+  table: string;
+  status: CheckStatus;
 }
 
-export default function SupabaseScriptsPage() {
+interface SectionState {
+  tables: boolean;
+  functions: boolean;
+  storage: boolean;
+  realtime: boolean;
+  config: boolean;
+}
+
+const ALL_TABLES = [
+  'jv_deals', 'landing_deals', 'audit_trail', 'waitlist',
+  'profiles', 'wallets', 'holdings', 'transactions', 'notifications',
+  'analytics_events', 'analytics_dashboard', 'analytics_kpi',
+  'analytics_retention', 'analytics_investments',
+  'system_health', 'system_metrics', 'staff_activity', 'staff_activity_log',
+  'signups', 'applications', 'ai_brain_status',
+  'auto_repair_scans', 'repair_logs',
+  'ipx_holdings', 'ipx_purchases',
+  'earn_accounts', 'earn_deposits', 'earn_payouts',
+  'kyc_verifications', 'kyc_documents',
+  'referrals', 'referral_invites',
+  'sms_reports', 'sms_messages',
+  'lender_sync_stats', 'lender_sync_config', 'synced_lenders',
+  'lender_sync_jobs', 'imported_lenders',
+  'orders', 'support_tickets', 'influencer_applications', 'push_tokens',
+  'properties', 'market_data', 'market_index',
+  'image_registry', 'app_config', 'landing_analytics',
+  'retargeting_dashboard', 'audience_segments', 'ad_pixels',
+  'utm_analytics', 'search_discovery', 're_engagement_triggers',
+  'engagement_scoring', 'emails',
+  'visitor_sessions', 'realtime_snapshots',
+  'image_backups', 'image_health_reports',
+];
+
+const ALL_FUNCTIONS = [
+  'is_admin', 'is_owner_of', 'get_user_role', 'verify_admin_access',
+  'ensure_deal_photos_bucket', 'increment_sms_counter',
+  'update_updated_at', 'update_updated_at_column', 'increment_jv_version',
+  'upsert_visitor_session', 'mark_inactive_sessions', 'save_realtime_snapshot',
+  'ivx_exec_sql',
+];
+
+const REALTIME_TABLES = ['jv_deals', 'landing_deals', 'waitlist', 'notifications', 'transactions', 'landing_analytics', 'visitor_sessions', 'analytics_events'];
+const STORAGE_BUCKETS = ['deal-photos', 'landing-page'];
+
+export default function SupabaseStatusPage() {
   const router = useRouter();
-  const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const [copiedAll, setCopiedAll] = useState(false);
-  const [deployState, setDeployState] = useState<DeployState>({});
-  const [deployAllRunning, setDeployAllRunning] = useState(false);
-  const [deployAllProgress, setDeployAllProgress] = useState<{ done: number; total: number; errors: number }>({ done: 0, total: 0, errors: 0 });
-  const [isBootstrapReady, setIsBootstrapReady] = useState<boolean | null>(null);
-  const [checkingBootstrap, setCheckingBootstrap] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [lastScanAt, setLastScanAt] = useState<string | null>(null);
+  const [tables, setTables] = useState<TableCheck[]>([]);
+  const [functions, setFunctions] = useState<FunctionCheck[]>([]);
+  const [buckets, setBuckets] = useState<BucketCheck[]>([]);
+  const [realtimeChecks, setRealtimeChecks] = useState<RealtimeCheck[]>([]);
+  const [configOk, setConfigOk] = useState<boolean | null>(null);
+  const [expandedSections, setExpandedSections] = useState<SectionState>({
+    tables: false,
+    functions: false,
+    storage: false,
+    realtime: false,
+    config: false,
+  });
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
-  const checkBootstrapStatus = useCallback(async () => {
-    setCheckingBootstrap(true);
-    const token = await getAuthToken();
-    if (!token) {
-      setIsBootstrapReady(false);
-      setCheckingBootstrap(false);
-      return;
-    }
-    const result = await checkDeployReady(token);
-    console.log('[Bootstrap Check]', result);
-    setIsBootstrapReady(result.ready);
-    setCheckingBootstrap(false);
-  }, []);
-
   useEffect(() => {
-    void checkBootstrapStatus();
-  }, [checkBootstrapStatus]);
-
-  useEffect(() => {
-    if (deployAllRunning) {
+    if (scanning) {
       const loop = Animated.loop(
         Animated.sequence([
-          Animated.timing(pulseAnim, { toValue: 0.6, duration: 600, useNativeDriver: true }),
-          Animated.timing(pulseAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 0.5, duration: 500, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
         ])
       );
       loop.start();
@@ -181,162 +135,144 @@ export default function SupabaseScriptsPage() {
     } else {
       pulseAnim.setValue(1);
     }
-  }, [deployAllRunning, pulseAnim]);
+  }, [scanning, pulseAnim]);
 
-  const filteredScripts = useMemo(() => {
-    if (!selectedCategory) return SQL_SCRIPTS;
-    return SQL_SCRIPTS.filter(s => s.category === selectedCategory);
-  }, [selectedCategory]);
-
-  const groupedScripts = useMemo(() => {
-    const groups: Record<string, SqlScript[]> = {};
-    filteredScripts.forEach(s => {
-      if (!groups[s.category]) groups[s.category] = [];
-      groups[s.category]!.push(s);
-    });
-    return groups;
-  }, [filteredScripts]);
-
-  const handleCopy = useCallback(async (script: SqlScript) => {
-    try {
-      await Clipboard.setStringAsync(script.content);
-      setCopiedId(script.id);
-      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      console.log('[SQL Scripts] Copied:', script.fileName, '—', script.lineCount, 'lines');
-      setTimeout(() => setCopiedId(null), 2500);
-    } catch (err) {
-      console.log('[SQL Scripts] Copy error:', err);
-      Alert.alert('Copy Failed', 'Could not copy to clipboard.');
-    }
-  }, []);
-
-  const toggleExpand = useCallback((id: string) => {
-    setExpandedId(prev => prev === id ? null : id);
-  }, []);
-
-  const handleCopyAll = useCallback(async () => {
-    try {
-      const allContent = SQL_SCRIPTS.map(s =>
-        `-- ============================================================\n-- ${s.title}\n-- File: ${s.fileName} (${s.lineCount} lines)\n-- ============================================================\n\n${s.content}`
-      ).join('\n\n\n');
-      await Clipboard.setStringAsync(allContent);
-      setCopiedAll(true);
-      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      console.log('[SQL Scripts] Copied ALL', SQL_SCRIPTS.length, 'scripts');
-      setTimeout(() => setCopiedAll(false), 3000);
-    } catch (err) {
-      console.log('[SQL Scripts] Copy All error:', err);
-      Alert.alert('Copy Failed', 'Could not copy all scripts.');
-    }
-  }, []);
-
-  const handleDeploy = useCallback(async (script: SqlScript) => {
-    const token = await getAuthToken();
-    if (!token) {
-      Alert.alert('Auth Required', 'Please log in to deploy scripts.');
-      return;
-    }
-
-    setDeployState(prev => ({ ...prev, [script.id]: { status: 'deploying' } }));
+  const runFullScan = useCallback(async () => {
+    if (scanning) return;
+    setScanning(true);
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    console.log('[Supabase Status] Starting full scan...');
 
-    const result = await deploySqlToBackend(script, token);
+    const tableResults: TableCheck[] = [];
+    const functionResults: FunctionCheck[] = [];
+    const bucketResults: BucketCheck[] = [];
+    const realtimeResults: RealtimeCheck[] = [];
 
-    if (result.success) {
-      setDeployState(prev => ({ ...prev, [script.id]: { status: 'success', message: `Deployed via ${result.method}` } }));
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      console.log(`[Deploy] SUCCESS: ${script.fileName}`);
-
-      if (script.id === 'sql_bootstrap_exec') {
-        setIsBootstrapReady(true);
+    const checkTable = async (name: string): Promise<TableCheck> => {
+      try {
+        const { count, error } = await supabase.from(name).select('*', { count: 'exact', head: true });
+        if (error) {
+          const msg = (error.message || '').toLowerCase();
+          if (msg.includes('does not exist') || msg.includes('could not find') || msg.includes('relation')) {
+            return { name, status: 'missing' };
+          }
+          return { name, status: 'ok', rowCount: 0 };
+        }
+        return { name, status: 'ok', rowCount: count ?? 0 };
+      } catch {
+        return { name, status: 'error' };
       }
+    };
 
-      setTimeout(() => {
-        setDeployState(prev => ({ ...prev, [script.id]: { status: 'idle' } }));
-      }, 4000);
-    } else {
-      if (result.error === 'BOOTSTRAP_REQUIRED') {
-        setDeployState(prev => ({ ...prev, [script.id]: { status: 'bootstrap_required', message: 'Run Bootstrap first' } }));
-        setIsBootstrapReady(false);
-      } else {
-        setDeployState(prev => ({ ...prev, [script.id]: { status: 'error', message: result.error } }));
-      }
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      console.log(`[Deploy] FAILED: ${script.fileName} — ${result.error}`);
+    const batchSize = 8;
+    for (let i = 0; i < ALL_TABLES.length; i += batchSize) {
+      const batch = ALL_TABLES.slice(i, i + batchSize);
+      const results = await Promise.all(batch.map(checkTable));
+      tableResults.push(...results);
+      setTables([...tableResults]);
     }
+
+    for (const fname of ALL_FUNCTIONS) {
+      try {
+        const { error } = await supabase.rpc(fname === 'is_admin' ? 'verify_admin_access' : fname === 'verify_admin_access' ? 'verify_admin_access' : fname, fname === 'increment_sms_counter' ? { counter_name: 'test' } : undefined);
+        if (error) {
+          const msg = (error.message || '').toLowerCase();
+          if (msg.includes('does not exist') || msg.includes('could not find the function')) {
+            functionResults.push({ name: fname, status: 'missing' });
+          } else {
+            functionResults.push({ name: fname, status: 'ok' });
+          }
+        } else {
+          functionResults.push({ name: fname, status: 'ok' });
+        }
+      } catch {
+        functionResults.push({ name: fname, status: 'error' });
+      }
+    }
+    setFunctions([...functionResults]);
+
+    for (const bucket of STORAGE_BUCKETS) {
+      try {
+        const { error } = await supabase.storage.from(bucket).list('', { limit: 1 });
+        if (error) {
+          const msg = (error.message || '').toLowerCase();
+          if (msg.includes('not found') || msg.includes('does not exist')) {
+            bucketResults.push({ name: bucket, status: 'missing' });
+          } else {
+            bucketResults.push({ name: bucket, status: 'ok' });
+          }
+        } else {
+          bucketResults.push({ name: bucket, status: 'ok' });
+        }
+      } catch {
+        bucketResults.push({ name: bucket, status: 'error' });
+      }
+    }
+    setBuckets([...bucketResults]);
+
+    for (const table of REALTIME_TABLES) {
+      const tableCheck = tableResults.find(t => t.name === table);
+      if (tableCheck?.status === 'ok') {
+        realtimeResults.push({ table, status: 'ok' });
+      } else {
+        realtimeResults.push({ table, status: tableCheck?.status === 'missing' ? 'missing' : 'error' });
+      }
+    }
+    setRealtimeChecks([...realtimeResults]);
+
+    try {
+      const { data, error } = await supabase.from('app_config').select('key').eq('key', 'admin_roles').single();
+      setConfigOk(!error && !!data);
+    } catch {
+      setConfigOk(false);
+    }
+
+    setLastScanAt(new Date().toLocaleTimeString());
+    setScanning(false);
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    console.log('[Supabase Status] Scan complete');
+  }, [scanning]);
+
+  useEffect(() => {
+    void runFullScan();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleDeployAll = useCallback(async () => {
-    const token = await getAuthToken();
-    if (!token) {
-      Alert.alert('Auth Required', 'Please log in to deploy scripts.');
-      return;
+  const toggleSection = useCallback((section: keyof SectionState) => {
+    setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
+  }, []);
+
+  const stats = useMemo(() => {
+    const tablesOk = tables.filter(t => t.status === 'ok').length;
+    const tablesMissing = tables.filter(t => t.status === 'missing').length;
+    const functionsOk = functions.filter(f => f.status === 'ok').length;
+    const functionsMissing = functions.filter(f => f.status === 'missing').length;
+    const bucketsOk = buckets.filter(b => b.status === 'ok').length;
+    const bucketsMissing = buckets.filter(b => b.status === 'missing').length;
+    const allOk = tablesMissing === 0 && functionsMissing === 0 && bucketsMissing === 0 && configOk !== false;
+    const totalChecks = tables.length + functions.length + buckets.length + (configOk !== null ? 1 : 0);
+    const passedChecks = tablesOk + functionsOk + bucketsOk + (configOk ? 1 : 0);
+    return { tablesOk, tablesMissing, functionsOk, functionsMissing, bucketsOk, bucketsMissing, allOk, totalChecks, passedChecks };
+  }, [tables, functions, buckets, configOk]);
+
+  const healthPercent = stats.totalChecks > 0 ? Math.round((stats.passedChecks / stats.totalChecks) * 100) : 0;
+
+  const renderStatusIcon = (status: CheckStatus, size: number = 14) => {
+    switch (status) {
+      case 'ok': return <CheckCircle size={size} color="#00E676" />;
+      case 'missing': return <XCircle size={size} color="#FF5252" />;
+      case 'error': return <AlertTriangle size={size} color="#FF9800" />;
+      case 'checking': return <ActivityIndicator size="small" color={Colors.primary} />;
+      default: return <Clock size={size} color={Colors.textTertiary} />;
     }
+  };
 
-    if (!isBootstrapReady) {
-      Alert.alert(
-        'Bootstrap Required',
-        'The ivx_exec_sql function is not deployed yet. Please copy the Bootstrap script, paste it in Supabase SQL Editor, and run it first.',
-        [{ text: 'OK' }]
-      );
-      return;
-    }
-
-    Alert.alert(
-      'Deploy All Scripts',
-      `This will deploy ${SQL_SCRIPTS.length} scripts to your Supabase database. Continue?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Deploy All',
-          style: 'default',
-          onPress: async () => {
-            setDeployAllRunning(true);
-            setDeployAllProgress({ done: 0, total: SQL_SCRIPTS.length, errors: 0 });
-            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-
-            let errors = 0;
-            for (let i = 0; i < SQL_SCRIPTS.length; i++) {
-              const script = SQL_SCRIPTS[i]!;
-              if (script.id === 'sql_bootstrap_exec') {
-                setDeployAllProgress(prev => ({ ...prev, done: prev.done + 1 }));
-                setDeployState(prev => ({ ...prev, [script.id]: { status: 'success', message: 'Already active' } }));
-                continue;
-              }
-
-              setDeployState(prev => ({ ...prev, [script.id]: { status: 'deploying' } }));
-              const result = await deploySqlToBackend(script, token);
-
-              if (result.success) {
-                setDeployState(prev => ({ ...prev, [script.id]: { status: 'success' } }));
-              } else {
-                errors++;
-                setDeployState(prev => ({ ...prev, [script.id]: { status: 'error', message: result.error } }));
-              }
-              setDeployAllProgress(prev => ({ ...prev, done: prev.done + 1, errors }));
-            }
-
-            setDeployAllRunning(false);
-            if (errors === 0) {
-              void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-              Alert.alert('Deploy Complete', `All ${SQL_SCRIPTS.length} scripts deployed successfully!`);
-            } else {
-              void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-              Alert.alert('Deploy Finished', `${SQL_SCRIPTS.length - errors} succeeded, ${errors} failed. Check individual scripts for details.`);
-            }
-
-            setTimeout(() => {
-              setDeployState({});
-            }, 6000);
-          },
-        },
-      ]
-    );
-  }, [isBootstrapReady]);
-
-  const deployedCount = useMemo(() => {
-    return Object.values(deployState).filter(s => s.status === 'success').length;
-  }, [deployState]);
+  const getHealthColor = () => {
+    if (healthPercent >= 95) return '#00E676';
+    if (healthPercent >= 75) return '#FFB800';
+    if (healthPercent >= 50) return '#FF9800';
+    return '#FF5252';
+  };
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -346,269 +282,216 @@ export default function SupabaseScriptsPage() {
         </TouchableOpacity>
         <View style={styles.headerCenter}>
           <Database size={20} color={Colors.primary} />
-          <Text style={styles.headerTitle}>Supabase SQL</Text>
+          <Text style={styles.headerTitle}>Supabase Live</Text>
         </View>
-        <View style={styles.headerBadge}>
-          <Text style={styles.headerBadgeText}>{SQL_SCRIPTS.length}</Text>
-        </View>
-      </View>
-
-      {isBootstrapReady === false && !checkingBootstrap && (
-        <View style={styles.bootstrapBanner}>
-          <AlertTriangle size={16} color="#FF6D00" />
-          <View style={styles.bootstrapBannerContent}>
-            <Text style={styles.bootstrapBannerTitle}>Bootstrap Required</Text>
-            <Text style={styles.bootstrapBannerText}>
-              Copy the Bootstrap script below, paste in Supabase SQL Editor, and run it once. After that, all scripts auto-deploy.
-            </Text>
-          </View>
-        </View>
-      )}
-
-      {isBootstrapReady === true && (
-        <View style={styles.readyBanner}>
-          <Zap size={16} color="#00E676" />
-          <Text style={styles.readyBannerText}>Auto-Deploy Ready</Text>
-          <TouchableOpacity onPress={checkBootstrapStatus} style={styles.refreshBtn}>
-            <RefreshCw size={14} color={Colors.textSecondary} />
-          </TouchableOpacity>
-        </View>
-      )}
-
-      <View style={styles.actionRow}>
         <TouchableOpacity
-          style={[styles.actionBtn, styles.copyAllBtnStyle, copiedAll && styles.actionBtnDone]}
-          onPress={handleCopyAll}
-          activeOpacity={0.7}
-          testID="copy-all-scripts"
+          onPress={runFullScan}
+          style={[styles.refreshHeaderBtn, scanning && styles.refreshHeaderBtnActive]}
+          disabled={scanning}
+          testID="refresh-scan"
         >
-          {copiedAll ? <CopyCheck size={16} color="#062218" /> : <Copy size={16} color="#062218" />}
-          <Text style={styles.actionBtnText}>{copiedAll ? 'Copied!' : 'Copy All'}</Text>
+          <RefreshCw size={18} color={scanning ? Colors.textTertiary : Colors.primary} />
         </TouchableOpacity>
-
-        <Animated.View style={{ flex: 1, opacity: pulseAnim }}>
-          <TouchableOpacity
-            style={[
-              styles.actionBtn,
-              styles.deployAllBtnStyle,
-              deployAllRunning && styles.deployAllRunning,
-              !isBootstrapReady && styles.actionBtnDisabled,
-            ]}
-            onPress={handleDeployAll}
-            activeOpacity={0.7}
-            disabled={deployAllRunning || !isBootstrapReady}
-            testID="deploy-all-scripts"
-          >
-            {deployAllRunning ? (
-              <>
-                <ActivityIndicator size="small" color="#062218" />
-                <Text style={styles.actionBtnText}>
-                  {deployAllProgress.done}/{deployAllProgress.total}
-                </Text>
-              </>
-            ) : (
-              <>
-                <Rocket size={16} color={!isBootstrapReady ? Colors.textTertiary : '#062218'} />
-                <Text style={[styles.actionBtnText, !isBootstrapReady && { color: Colors.textTertiary }]}>
-                  Deploy All
-                </Text>
-              </>
-            )}
-          </TouchableOpacity>
-        </Animated.View>
-      </View>
-
-      {deployAllRunning && (
-        <View style={styles.progressBar}>
-          <View
-            style={[
-              styles.progressFill,
-              { width: `${deployAllProgress.total > 0 ? (deployAllProgress.done / deployAllProgress.total) * 100 : 0}%` },
-              deployAllProgress.errors > 0 && styles.progressFillError,
-            ]}
-          />
-        </View>
-      )}
-
-      <View style={styles.filterRow}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterContent}>
-          <TouchableOpacity
-            style={[styles.filterChip, !selectedCategory && styles.filterChipActive]}
-            onPress={() => setSelectedCategory(null)}
-          >
-            <Text style={[styles.filterChipText, !selectedCategory && styles.filterChipTextActive]}>All</Text>
-          </TouchableOpacity>
-          {SQL_CATEGORIES.map(cat => {
-            const config = CATEGORY_CONFIG[cat] ?? CATEGORY_CONFIG['Other']!;
-            const isActive = selectedCategory === cat;
-            return (
-              <TouchableOpacity
-                key={cat}
-                style={[styles.filterChip, isActive && { backgroundColor: config.color + '25', borderColor: config.color }]}
-                onPress={() => setSelectedCategory(isActive ? null : cat)}
-              >
-                <Text style={[styles.filterChipText, isActive && { color: config.color }]}>{cat}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {Object.entries(groupedScripts).map(([category, scripts]) => {
-          const config = CATEGORY_CONFIG[category] ?? CATEGORY_CONFIG['Other']!;
-          const CatIcon = config.icon;
-          return (
-            <View key={category} style={styles.categorySection}>
-              <View style={styles.categoryHeader}>
-                <View style={[styles.categoryIconWrap, { backgroundColor: config.color + '20' }]}>
-                  <CatIcon size={16} color={config.color} />
-                </View>
-                <Text style={styles.categoryTitle}>{category}</Text>
-                <View style={styles.categoryCount}>
-                  <Text style={styles.categoryCountText}>{scripts.length}</Text>
-                </View>
-              </View>
-
-              {scripts.map(script => {
-                const isCopied = copiedId === script.id;
-                const isExpanded = expandedId === script.id;
-                const scriptDeploy = deployState[script.id];
-                const deployStatus = scriptDeploy?.status ?? 'idle';
-                const isBootstrap = script.id === 'sql_bootstrap_exec';
-
-                return (
-                  <View
-                    key={script.id}
-                    style={[
-                      styles.scriptCard,
-                      deployStatus === 'success' && styles.scriptCardSuccess,
-                      deployStatus === 'error' && styles.scriptCardError,
-                      isBootstrap && styles.scriptCardBootstrap,
-                    ]}
-                  >
-                    <View style={styles.scriptTop}>
-                      <View style={styles.scriptInfo}>
-                        <Text style={styles.scriptTitle} numberOfLines={2}>{script.title}</Text>
-                        <Text style={styles.scriptFileName}>{script.fileName}</Text>
-                        <View style={styles.scriptMeta}>
-                          <Text style={styles.scriptLines}>{script.lineCount} lines</Text>
-                          {script.version && (
-                            <View style={styles.versionBadge}>
-                              <Text style={styles.versionText}>{script.version}</Text>
-                            </View>
-                          )}
-                          {script.updatedAt && (
-                            <View style={styles.dateBadge}>
-                              <Clock size={10} color={Colors.textTertiary} />
-                              <Text style={styles.dateText}>{script.updatedAt}</Text>
-                            </View>
-                          )}
-                        </View>
-                        {deployStatus === 'error' && scriptDeploy?.message && (
-                          <Text style={styles.deployErrorText} numberOfLines={2}>{scriptDeploy.message}</Text>
-                        )}
-                        {deployStatus === 'success' && (
-                          <Text style={styles.deploySuccessText}>Deployed successfully</Text>
-                        )}
-                      </View>
-                      <View style={styles.btnColumn}>
-                        <TouchableOpacity
-                          style={[styles.smallBtn, styles.copySmallBtn, isCopied && styles.copySmallBtnDone]}
-                          onPress={() => handleCopy(script)}
-                          activeOpacity={0.7}
-                          testID={`copy-${script.id}`}
-                        >
-                          {isCopied ? <Check size={14} color="#062218" /> : <Copy size={14} color="#062218" />}
-                          <Text style={styles.smallBtnText}>{isCopied ? 'Copied' : 'Copy'}</Text>
-                        </TouchableOpacity>
-
-                        {isBootstrap ? (
-                          <TouchableOpacity
-                            style={[
-                              styles.smallBtn,
-                              styles.deploySmallBtn,
-                              deployStatus === 'deploying' && styles.deploySmallBtnActive,
-                              deployStatus === 'success' && styles.deploySmallBtnSuccess,
-                            ]}
-                            onPress={() => handleCopy(script)}
-                            activeOpacity={0.7}
-                          >
-                            <Copy size={14} color={Colors.text} />
-                            <Text style={[styles.smallBtnText, { color: Colors.text }]}>Manual</Text>
-                          </TouchableOpacity>
-                        ) : (
-                          <TouchableOpacity
-                            style={[
-                              styles.smallBtn,
-                              styles.deploySmallBtn,
-                              deployStatus === 'deploying' && styles.deploySmallBtnActive,
-                              deployStatus === 'success' && styles.deploySmallBtnSuccess,
-                              deployStatus === 'error' && styles.deploySmallBtnError,
-                              !isBootstrapReady && styles.deploySmallBtnDisabled,
-                            ]}
-                            onPress={() => handleDeploy(script)}
-                            activeOpacity={0.7}
-                            disabled={deployStatus === 'deploying' || !isBootstrapReady}
-                            testID={`deploy-${script.id}`}
-                          >
-                            {deployStatus === 'deploying' ? (
-                              <ActivityIndicator size="small" color="#00E676" />
-                            ) : deployStatus === 'success' ? (
-                              <>
-                                <CheckCircle size={14} color="#00E676" />
-                                <Text style={[styles.smallBtnText, { color: '#00E676' }]}>Done</Text>
-                              </>
-                            ) : deployStatus === 'error' ? (
-                              <>
-                                <AlertTriangle size={14} color="#FF5252" />
-                                <Text style={[styles.smallBtnText, { color: '#FF5252' }]}>Retry</Text>
-                              </>
-                            ) : (
-                              <>
-                                <Play size={14} color={!isBootstrapReady ? Colors.textTertiary : '#00E676'} />
-                                <Text style={[styles.smallBtnText, { color: !isBootstrapReady ? Colors.textTertiary : '#00E676' }]}>Deploy</Text>
-                              </>
-                            )}
-                          </TouchableOpacity>
-                        )}
-                      </View>
-                    </View>
-
-                    <TouchableOpacity
-                      style={styles.expandBtn}
-                      onPress={() => toggleExpand(script.id)}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={styles.expandBtnText}>{isExpanded ? 'Hide SQL' : 'Preview SQL'}</Text>
-                      {isExpanded ? (
-                        <ChevronUp size={14} color={Colors.textSecondary} />
-                      ) : (
-                        <ChevronDown size={14} color={Colors.textSecondary} />
-                      )}
-                    </TouchableOpacity>
-
-                    {isExpanded && (
-                      <View style={styles.previewWrap}>
-                        <ScrollView horizontal showsHorizontalScrollIndicator={true} style={styles.previewScroll}>
-                          <Text style={styles.previewText} selectable>
-                            {script.content}
-                          </Text>
-                        </ScrollView>
-                      </View>
-                    )}
-                  </View>
-                );
-              })}
+        <Animated.View style={[styles.healthCard, { opacity: scanning ? pulseAnim : 1 }]}>
+          <View style={styles.healthTop}>
+            <View style={[styles.healthRing, { borderColor: getHealthColor() }]}>
+              <Text style={[styles.healthPercent, { color: getHealthColor() }]}>{healthPercent}%</Text>
             </View>
-          );
-        })}
+            <View style={styles.healthInfo}>
+              <Text style={styles.healthLabel}>Database Health</Text>
+              <Text style={[styles.healthStatus, { color: getHealthColor() }]}>
+                {scanning ? 'Scanning...' : stats.allOk ? 'All Systems Operational' : `${stats.passedChecks}/${stats.totalChecks} checks passed`}
+              </Text>
+              {lastScanAt && (
+                <Text style={styles.healthTimestamp}>Last scan: {lastScanAt}</Text>
+              )}
+            </View>
+          </View>
 
-        <View style={styles.versionFooter}>
-          <Text style={styles.versionFooterText}>Scripts {SCRIPTS_VERSION}</Text>
-          {deployedCount > 0 && (
-            <Text style={styles.versionFooterDeployed}>{deployedCount} deployed this session</Text>
-          )}
+          <View style={styles.healthGrid}>
+            <View style={styles.healthStat}>
+              <Table2 size={14} color="#42A5F5" />
+              <Text style={styles.healthStatValue}>{stats.tablesOk}/{ALL_TABLES.length}</Text>
+              <Text style={styles.healthStatLabel}>Tables</Text>
+            </View>
+            <View style={styles.healthStat}>
+              <Settings size={14} color="#AB47BC" />
+              <Text style={styles.healthStatValue}>{stats.functionsOk}/{ALL_FUNCTIONS.length}</Text>
+              <Text style={styles.healthStatLabel}>Functions</Text>
+            </View>
+            <View style={styles.healthStat}>
+              <HardDrive size={14} color="#FF9800" />
+              <Text style={styles.healthStatValue}>{stats.bucketsOk}/{STORAGE_BUCKETS.length}</Text>
+              <Text style={styles.healthStatLabel}>Buckets</Text>
+            </View>
+            <View style={styles.healthStat}>
+              <Shield size={14} color={configOk ? '#00E676' : '#FF5252'} />
+              <Text style={styles.healthStatValue}>{configOk ? 'OK' : '—'}</Text>
+              <Text style={styles.healthStatLabel}>Config</Text>
+            </View>
+          </View>
+        </Animated.View>
+
+        {stats.allOk && !scanning && tables.length > 0 && (
+          <View style={styles.allGoodBanner}>
+            <Zap size={16} color="#00E676" />
+            <Text style={styles.allGoodText}>Everything is deployed and running on Supabase</Text>
+          </View>
+        )}
+
+        {stats.tablesMissing > 0 && !scanning && (
+          <View style={styles.warningBanner}>
+            <AlertTriangle size={16} color="#FF9800" />
+            <View style={styles.warningContent}>
+              <Text style={styles.warningTitle}>{stats.tablesMissing} Missing Tables</Text>
+              <Text style={styles.warningText}>
+                Run the master SQL script in Supabase SQL Editor to create missing tables.
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {/* TABLES SECTION */}
+        <TouchableOpacity style={styles.sectionHeader} onPress={() => toggleSection('tables')} activeOpacity={0.7}>
+          <View style={[styles.sectionIconWrap, { backgroundColor: '#42A5F520' }]}>
+            <Table2 size={16} color="#42A5F5" />
+          </View>
+          <Text style={styles.sectionTitle}>Tables</Text>
+          <View style={styles.sectionBadge}>
+            <Text style={[styles.sectionBadgeText, { color: stats.tablesMissing > 0 ? '#FF5252' : '#00E676' }]}>
+              {stats.tablesOk}/{ALL_TABLES.length}
+            </Text>
+          </View>
+          {expandedSections.tables ? <ChevronUp size={16} color={Colors.textSecondary} /> : <ChevronDown size={16} color={Colors.textSecondary} />}
+        </TouchableOpacity>
+        {expandedSections.tables && (
+          <View style={styles.sectionContent}>
+            {tables.map(t => (
+              <View key={t.name} style={styles.checkRow}>
+                {renderStatusIcon(t.status)}
+                <Text style={[styles.checkName, t.status === 'missing' && styles.checkNameMissing]}>{t.name}</Text>
+                {t.status === 'ok' && t.rowCount !== undefined && (
+                  <Text style={styles.checkMeta}>{t.rowCount} rows</Text>
+                )}
+              </View>
+            ))}
+            {tables.length === 0 && scanning && (
+              <View style={styles.scanningRow}>
+                <ActivityIndicator size="small" color={Colors.primary} />
+                <Text style={styles.scanningText}>Scanning tables...</Text>
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* FUNCTIONS SECTION */}
+        <TouchableOpacity style={styles.sectionHeader} onPress={() => toggleSection('functions')} activeOpacity={0.7}>
+          <View style={[styles.sectionIconWrap, { backgroundColor: '#AB47BC20' }]}>
+            <Settings size={16} color="#AB47BC" />
+          </View>
+          <Text style={styles.sectionTitle}>Functions & RPCs</Text>
+          <View style={styles.sectionBadge}>
+            <Text style={[styles.sectionBadgeText, { color: stats.functionsMissing > 0 ? '#FF5252' : '#00E676' }]}>
+              {stats.functionsOk}/{ALL_FUNCTIONS.length}
+            </Text>
+          </View>
+          {expandedSections.functions ? <ChevronUp size={16} color={Colors.textSecondary} /> : <ChevronDown size={16} color={Colors.textSecondary} />}
+        </TouchableOpacity>
+        {expandedSections.functions && (
+          <View style={styles.sectionContent}>
+            {functions.map(f => (
+              <View key={f.name} style={styles.checkRow}>
+                {renderStatusIcon(f.status)}
+                <Text style={[styles.checkName, f.status === 'missing' && styles.checkNameMissing]}>{f.name}()</Text>
+              </View>
+            ))}
+            {functions.length === 0 && scanning && (
+              <View style={styles.scanningRow}>
+                <ActivityIndicator size="small" color={Colors.primary} />
+                <Text style={styles.scanningText}>Checking functions...</Text>
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* STORAGE SECTION */}
+        <TouchableOpacity style={styles.sectionHeader} onPress={() => toggleSection('storage')} activeOpacity={0.7}>
+          <View style={[styles.sectionIconWrap, { backgroundColor: '#FF980020' }]}>
+            <HardDrive size={16} color="#FF9800" />
+          </View>
+          <Text style={styles.sectionTitle}>Storage Buckets</Text>
+          <View style={styles.sectionBadge}>
+            <Text style={[styles.sectionBadgeText, { color: stats.bucketsMissing > 0 ? '#FF5252' : '#00E676' }]}>
+              {stats.bucketsOk}/{STORAGE_BUCKETS.length}
+            </Text>
+          </View>
+          {expandedSections.storage ? <ChevronUp size={16} color={Colors.textSecondary} /> : <ChevronDown size={16} color={Colors.textSecondary} />}
+        </TouchableOpacity>
+        {expandedSections.storage && (
+          <View style={styles.sectionContent}>
+            {buckets.map(b => (
+              <View key={b.name} style={styles.checkRow}>
+                {renderStatusIcon(b.status)}
+                <Text style={[styles.checkName, b.status === 'missing' && styles.checkNameMissing]}>{b.name}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {/* REALTIME SECTION */}
+        <TouchableOpacity style={styles.sectionHeader} onPress={() => toggleSection('realtime')} activeOpacity={0.7}>
+          <View style={[styles.sectionIconWrap, { backgroundColor: '#00BCD420' }]}>
+            <Radio size={16} color="#00BCD4" />
+          </View>
+          <Text style={styles.sectionTitle}>Realtime Tables</Text>
+          <View style={styles.sectionBadge}>
+            <Text style={[styles.sectionBadgeText, { color: '#00BCD4' }]}>
+              {realtimeChecks.filter(r => r.status === 'ok').length}/{REALTIME_TABLES.length}
+            </Text>
+          </View>
+          {expandedSections.realtime ? <ChevronUp size={16} color={Colors.textSecondary} /> : <ChevronDown size={16} color={Colors.textSecondary} />}
+        </TouchableOpacity>
+        {expandedSections.realtime && (
+          <View style={styles.sectionContent}>
+            {realtimeChecks.map(r => (
+              <View key={r.table} style={styles.checkRow}>
+                {renderStatusIcon(r.status)}
+                <Text style={[styles.checkName, r.status === 'missing' && styles.checkNameMissing]}>{r.table}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {/* CONFIG SECTION */}
+        <TouchableOpacity style={styles.sectionHeader} onPress={() => toggleSection('config')} activeOpacity={0.7}>
+          <View style={[styles.sectionIconWrap, { backgroundColor: '#00E67620' }]}>
+            <Shield size={16} color="#00E676" />
+          </View>
+          <Text style={styles.sectionTitle}>App Config</Text>
+          <View style={styles.sectionBadge}>
+            <Text style={[styles.sectionBadgeText, { color: configOk ? '#00E676' : configOk === false ? '#FF5252' : Colors.textTertiary }]}>
+              {configOk ? 'OK' : configOk === false ? 'MISS' : '—'}
+            </Text>
+          </View>
+          {expandedSections.config ? <ChevronUp size={16} color={Colors.textSecondary} /> : <ChevronDown size={16} color={Colors.textSecondary} />}
+        </TouchableOpacity>
+        {expandedSections.config && (
+          <View style={styles.sectionContent}>
+            <View style={styles.checkRow}>
+              {renderStatusIcon(configOk ? 'ok' : configOk === false ? 'missing' : 'pending')}
+              <Text style={styles.checkName}>admin_roles config</Text>
+            </View>
+          </View>
+        )}
+
+        <View style={styles.footer}>
+          <Server size={14} color={Colors.textTertiary} />
+          <Text style={styles.footerText}>
+            Live from Supabase — no local scripts needed
+          </Text>
         </View>
 
         <View style={{ height: 120 }} />
@@ -650,352 +533,214 @@ const styles = StyleSheet.create({
     fontWeight: '700' as const,
     color: Colors.text,
   },
-  headerBadge: {
-    backgroundColor: Colors.primary + '20',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+  refreshHeaderBtn: {
+    width: 38,
+    height: 38,
     borderRadius: 10,
-  },
-  headerBadgeText: {
-    fontSize: 13,
-    fontWeight: '700' as const,
-    color: Colors.primary,
-  },
-  bootstrapBanner: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
-    marginHorizontal: 16,
-    marginTop: 12,
-    padding: 14,
-    backgroundColor: '#1A0E00',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#FF6D00' + '40',
-  },
-  bootstrapBannerContent: {
-    flex: 1,
-  },
-  bootstrapBannerTitle: {
-    fontSize: 13,
-    fontWeight: '700' as const,
-    color: '#FF6D00',
-    marginBottom: 4,
-  },
-  bootstrapBannerText: {
-    fontSize: 12,
-    color: '#B87A3D',
-    lineHeight: 18,
-  },
-  readyBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginHorizontal: 16,
-    marginTop: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    backgroundColor: '#0D2818',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#00E676' + '30',
-  },
-  readyBannerText: {
-    flex: 1,
-    fontSize: 13,
-    fontWeight: '600' as const,
-    color: '#00E676',
-  },
-  refreshBtn: {
-    padding: 4,
-  },
-  actionRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginHorizontal: 16,
-    marginTop: 12,
-    marginBottom: 8,
-  },
-  actionBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
+    backgroundColor: Colors.card,
     justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 13,
-    borderRadius: 12,
-  },
-  copyAllBtnStyle: {
-    backgroundColor: Colors.primary,
-  },
-  deployAllBtnStyle: {
-    backgroundColor: '#00E676',
-  },
-  deployAllRunning: {
-    backgroundColor: '#00E676' + '80',
-  },
-  actionBtnDone: {
-    backgroundColor: '#00E676',
-  },
-  actionBtnDisabled: {
-    backgroundColor: Colors.card,
+    alignItems: 'center',
     borderWidth: 1,
     borderColor: Colors.border,
   },
-  actionBtnText: {
-    fontSize: 14,
-    fontWeight: '700' as const,
-    color: '#062218',
-  },
-  progressBar: {
-    height: 3,
-    backgroundColor: Colors.border,
-    marginHorizontal: 16,
-    borderRadius: 2,
-    overflow: 'hidden',
-    marginBottom: 4,
-  },
-  progressFill: {
-    height: '100%',
-    backgroundColor: '#00E676',
-    borderRadius: 2,
-  },
-  progressFillError: {
-    backgroundColor: '#FF9800',
-  },
-  filterRow: {
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-  },
-  filterContent: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    gap: 8,
-  },
-  filterChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 20,
-    backgroundColor: Colors.card,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  filterChipActive: {
-    backgroundColor: Colors.primary + '25',
-    borderColor: Colors.primary,
-  },
-  filterChipText: {
-    fontSize: 13,
-    fontWeight: '600' as const,
-    color: Colors.textSecondary,
-  },
-  filterChipTextActive: {
-    color: Colors.primary,
+  refreshHeaderBtnActive: {
+    borderColor: Colors.primary + '40',
   },
   content: {
     flex: 1,
   },
-  categorySection: {
-    marginTop: 16,
-    paddingHorizontal: 16,
+  healthCard: {
+    margin: 16,
+    padding: 18,
+    backgroundColor: Colors.card,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
-  categoryHeader: {
+  healthTop: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginBottom: 10,
+    gap: 16,
+    marginBottom: 18,
   },
-  categoryIconWrap: {
-    width: 30,
-    height: 30,
-    borderRadius: 8,
+  healthRing: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    borderWidth: 4,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: Colors.background,
   },
-  categoryTitle: {
+  healthPercent: {
+    fontSize: 18,
+    fontWeight: '800' as const,
+  },
+  healthInfo: {
+    flex: 1,
+    gap: 3,
+  },
+  healthLabel: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    fontWeight: '500' as const,
+  },
+  healthStatus: {
+    fontSize: 15,
+    fontWeight: '700' as const,
+  },
+  healthTimestamp: {
+    fontSize: 11,
+    color: Colors.textTertiary,
+    marginTop: 2,
+  },
+  healthGrid: {
+    flexDirection: 'row',
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+    paddingTop: 14,
+  },
+  healthStat: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 4,
+  },
+  healthStatValue: {
     fontSize: 14,
     fontWeight: '700' as const,
     color: Colors.text,
-    flex: 1,
+  },
+  healthStatLabel: {
+    fontSize: 10,
+    color: Colors.textTertiary,
     textTransform: 'uppercase' as const,
     letterSpacing: 0.5,
   },
-  categoryCount: {
-    backgroundColor: Colors.card,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 8,
-  },
-  categoryCountText: {
-    fontSize: 11,
-    fontWeight: '600' as const,
-    color: Colors.textSecondary,
-  },
-  scriptCard: {
-    backgroundColor: Colors.card,
-    borderRadius: 14,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    overflow: 'hidden',
-  },
-  scriptCardSuccess: {
-    borderColor: '#00E676' + '60',
-  },
-  scriptCardError: {
-    borderColor: '#FF5252' + '60',
-  },
-  scriptCardBootstrap: {
-    borderColor: '#FF6D00' + '60',
-    borderWidth: 2,
-  },
-  scriptTop: {
+  allGoodBanner: {
     flexDirection: 'row',
-    padding: 14,
+    alignItems: 'center',
     gap: 10,
-  },
-  scriptInfo: {
-    flex: 1,
-    gap: 4,
-  },
-  scriptTitle: {
-    fontSize: 14,
-    fontWeight: '600' as const,
-    color: Colors.text,
-    lineHeight: 20,
-  },
-  scriptFileName: {
-    fontSize: 11,
-    color: Colors.primary,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-  },
-  scriptLines: {
-    fontSize: 11,
-    color: Colors.textTertiary,
-  },
-  scriptMeta: {
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-    gap: 8,
-    flexWrap: 'wrap' as const,
-  },
-  versionBadge: {
-    backgroundColor: '#00E676' + '20',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  versionText: {
-    fontSize: 10,
-    fontWeight: '700' as const,
-    color: '#00E676',
-  },
-  dateBadge: {
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-    gap: 3,
-  },
-  dateText: {
-    fontSize: 10,
-    color: Colors.textTertiary,
-  },
-  deployErrorText: {
-    fontSize: 11,
-    color: '#FF5252',
-    marginTop: 4,
-  },
-  deploySuccessText: {
-    fontSize: 11,
-    color: '#00E676',
-    marginTop: 4,
-  },
-  btnColumn: {
-    gap: 6,
-    alignItems: 'stretch',
-  },
-  smallBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    minWidth: 80,
-    justifyContent: 'center',
-  },
-  copySmallBtn: {
-    backgroundColor: Colors.primary,
-  },
-  copySmallBtnDone: {
-    backgroundColor: '#00E676',
-  },
-  deploySmallBtn: {
+    marginHorizontal: 16,
+    marginBottom: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
     backgroundColor: '#0D2818',
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#00E676' + '40',
+    borderColor: '#00E67630',
   },
-  deploySmallBtnActive: {
-    backgroundColor: '#0D2818',
-    borderColor: '#00E676',
-  },
-  deploySmallBtnSuccess: {
-    backgroundColor: '#0D2818',
-    borderColor: '#00E676',
-  },
-  deploySmallBtnError: {
-    backgroundColor: '#1A0808',
-    borderColor: '#FF5252' + '40',
-  },
-  deploySmallBtnDisabled: {
-    backgroundColor: Colors.card,
-    borderColor: Colors.border,
-  },
-  smallBtnText: {
-    fontSize: 12,
+  allGoodText: {
+    flex: 1,
+    fontSize: 13,
     fontWeight: '600' as const,
-    color: '#062218',
+    color: '#00E676',
   },
-  expandBtn: {
+  warningBanner: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 10,
-    borderTopWidth: 1,
-    borderTopColor: Colors.border,
+    alignItems: 'flex-start',
+    gap: 10,
+    marginHorizontal: 16,
+    marginBottom: 12,
+    padding: 14,
+    backgroundColor: '#1A0E00',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#FF980040',
   },
-  expandBtnText: {
+  warningContent: {
+    flex: 1,
+  },
+  warningTitle: {
+    fontSize: 13,
+    fontWeight: '700' as const,
+    color: '#FF9800',
+    marginBottom: 4,
+  },
+  warningText: {
     fontSize: 12,
-    fontWeight: '600' as const,
-    color: Colors.textSecondary,
-  },
-  previewWrap: {
-    backgroundColor: '#0D0D0D',
-    maxHeight: 300,
-    borderTopWidth: 1,
-    borderTopColor: Colors.border,
-  },
-  previewScroll: {
-    padding: 12,
-  },
-  previewText: {
-    fontSize: 11,
-    color: '#8BC34A',
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    color: '#B87A3D',
     lineHeight: 18,
   },
-  versionFooter: {
+  sectionHeader: {
+    flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 20,
-    gap: 4,
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
   },
-  versionFooterText: {
+  sectionIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  sectionTitle: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '700' as const,
+    color: Colors.text,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.5,
+  },
+  sectionBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    backgroundColor: Colors.card,
+  },
+  sectionBadgeText: {
+    fontSize: 12,
+    fontWeight: '700' as const,
+  },
+  sectionContent: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: Colors.card,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  checkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 7,
+  },
+  checkName: {
+    flex: 1,
+    fontSize: 13,
+    color: Colors.text,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  checkNameMissing: {
+    color: '#FF5252',
+  },
+  checkMeta: {
     fontSize: 11,
     color: Colors.textTertiary,
   },
-  versionFooterDeployed: {
+  scanningRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 12,
+    justifyContent: 'center',
+  },
+  scanningText: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+  },
+  footer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 24,
+  },
+  footerText: {
     fontSize: 11,
-    color: '#00E676',
-    fontWeight: '600' as const,
+    color: Colors.textTertiary,
   },
 });

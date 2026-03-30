@@ -27,15 +27,15 @@ Parameters:
 Mappings:
   EnvConfig:
     production:
+      Cpu: "1024"
+      Memory: "2048"
+      MinCapacity: 4
+      MaxCapacity: 40
+    staging:
       Cpu: "512"
       Memory: "1024"
       MinCapacity: 2
-      MaxCapacity: 10
-    staging:
-      Cpu: "256"
-      Memory: "512"
-      MinCapacity: 1
-      MaxCapacity: 3
+      MaxCapacity: 8
 
 Resources:
 
@@ -493,10 +493,17 @@ Resources:
       VpcId: !Ref VPC
       TargetType: ip
       HealthCheckPath: /health
-      HealthCheckIntervalSeconds: 30
-      HealthCheckTimeoutSeconds: 10
+      HealthCheckIntervalSeconds: 15
+      HealthCheckTimeoutSeconds: 5
       HealthyThresholdCount: 2
       UnhealthyThresholdCount: 3
+      Matcher:
+        HttpCode: 200
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: "30"
+        - Key: slow_start.duration_seconds
+          Value: "60"
       Tags:
         - Key: Project
           Value: IVX-Holdings
@@ -641,11 +648,11 @@ Resources:
       PolicyType: TargetTrackingScaling
       ScalingTargetId: !Ref ScalableTarget
       TargetTrackingScalingPolicyConfiguration:
-        TargetValue: 70.0
+        TargetValue: 60.0
         PredefinedMetricSpecification:
           PredefinedMetricType: ECSServiceAverageCPUUtilization
-        ScaleInCooldown: 300
-        ScaleOutCooldown: 60
+        ScaleInCooldown: 120
+        ScaleOutCooldown: 30
 
   ScalingPolicyMemory:
     Type: AWS::ApplicationAutoScaling::ScalingPolicy
@@ -654,11 +661,25 @@ Resources:
       PolicyType: TargetTrackingScaling
       ScalingTargetId: !Ref ScalableTarget
       TargetTrackingScalingPolicyConfiguration:
-        TargetValue: 80.0
+        TargetValue: 70.0
         PredefinedMetricSpecification:
           PredefinedMetricType: ECSServiceAverageMemoryUtilization
-        ScaleInCooldown: 300
-        ScaleOutCooldown: 60
+        ScaleInCooldown: 120
+        ScaleOutCooldown: 30
+
+  ScalingPolicyRequests:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: !Sub "${AppName}-request-scaling"
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref ScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 1000.0
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ALBRequestCountPerTarget
+          ResourceLabel: !Sub "${ApplicationLoadBalancer.LoadBalancerFullName}/${TargetGroup.TargetGroupFullName}"
+        ScaleInCooldown: 120
+        ScaleOutCooldown: 30
 
   # ─── CLOUDWATCH ALARMS ────────────────────────────────────────────────────
   HighErrorRateAlarm:
@@ -674,7 +695,41 @@ Resources:
       Statistic: Sum
       Period: 60
       EvaluationPeriods: 2
-      Threshold: 10
+      Threshold: 50
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+  HighLatencyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${AppName}-high-latency"
+      AlarmDescription: "ALB p99 latency > 2s"
+      MetricName: TargetResponseTime
+      Namespace: AWS/ApplicationELB
+      Dimensions:
+        - Name: LoadBalancer
+          Value: !GetAtt ApplicationLoadBalancer.LoadBalancerFullName
+      ExtendedStatistic: p99
+      Period: 60
+      EvaluationPeriods: 3
+      Threshold: 2.0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+  HighConcurrencyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${AppName}-high-concurrency"
+      AlarmDescription: "Active connections > 15000"
+      MetricName: ActiveConnectionCount
+      Namespace: AWS/ApplicationELB
+      Dimensions:
+        - Name: LoadBalancer
+          Value: !GetAtt ApplicationLoadBalancer.LoadBalancerFullName
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 2
+      Threshold: 15000
       ComparisonOperator: GreaterThanThreshold
       TreatMissingData: notBreaching
 

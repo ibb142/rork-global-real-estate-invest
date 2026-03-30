@@ -72,7 +72,7 @@ const GLOBAL_STATS = {
   mobileUsers: '6.8B',
   internetUsers: '5.4B',
   socialMediaUsers: '4.9B',
-  targetMarket: '2.1B',
+  targetMarket: 'Global',
   investorPool: '$450T',
 };
 
@@ -162,7 +162,7 @@ function LiveCounter() {
 
   return (
     <Animated.Text style={[styles.liveCounterValue, { transform: [{ scale: scaleAnim }] }]}>
-      {count.toLocaleString()}
+      {new Intl.NumberFormat('en-US').format(count)}
     </Animated.Text>
   );
 }
@@ -493,7 +493,7 @@ export default function ActivationCenterScreen() {
             <View style={styles.missionProgressBar}>
               <View style={[styles.missionProgressFill, { width: '0.05%' }]} />
             </View>
-            <Text style={styles.missionProgressText}>52K / 100M investors</Text>
+            <Text style={styles.missionProgressText}>Growing investor community</Text>
           </View>
         </View>
       </Animated.ScrollView>

@@ -15,25 +15,25 @@ const BROADCAST_CHANNEL_NAME = 'jv-deals-cross-tab';
 
 let _landingSyncTimeout: ReturnType<typeof setTimeout> | null = null;
 let _lastLandingSyncTimestamp = 0;
-const LANDING_SYNC_DEBOUNCE = 5000;
+const LANDING_SYNC_DEBOUNCE = 1000;
 
-function triggerLandingSync() {
+function triggerLandingSync(immediate: boolean = false) {
   const now = Date.now();
   if (now - _lastLandingSyncTimestamp < LANDING_SYNC_DEBOUNCE) {
+    console.log('[JV-Realtime] Landing sync debounced, skipping');
     return;
   }
   if (_landingSyncTimeout) clearTimeout(_landingSyncTimeout);
+  const delay = immediate ? 100 : 500;
   _landingSyncTimeout = setTimeout(async () => {
     _lastLandingSyncTimestamp = Date.now();
     try {
       const result = await syncToLandingPage();
-      if (result.syncedDeals > 0) {
-        console.log('[JV-Realtime] Landing sync complete:', result.syncedDeals, 'deals synced');
-      }
+      console.log('[JV-Realtime] Landing sync complete:', result.syncedDeals, 'deals synced, success:', result.success);
     } catch (err) {
       console.log('[JV-Realtime] Landing sync failed:', (err as Error)?.message);
     }
-  }, 1000);
+  }, delay);
 }
 
 let _broadcastChannel: BroadcastChannel | null = null;
@@ -143,7 +143,9 @@ export function invalidateAllJVQueries(queryClient: ReturnType<typeof useQueryCl
     void queryClient.refetchQueries({ queryKey: ['properties', 'home'], type: 'all' });
     void queryClient.refetchQueries({ queryKey: ['jvAgreements.list'], type: 'all' });
     console.log('[JV-Realtime] Forced refetch triggered for all JV queries');
-  }, 200);
+  }, 100);
+
+  triggerLandingSync();
 
   if (broadcastToOtherTabs) {
     notifyCrossTabs('invalidateAll');
@@ -164,8 +166,8 @@ export function useJVRealtime(channelName: string = 'jv-deals-sync', enableFallb
   const maxRetries = 15;
   const [status, setStatus] = useState<RealtimeStatus>('offline');
   const [lastEventAt, setLastEventAt] = useState<number>(0);
-  const FALLBACK_POLL_INTERVAL = 15000;
-  const CONNECTED_POLL_INTERVAL = 30000;
+  const FALLBACK_POLL_INTERVAL = 60000;
+  const CONNECTED_POLL_INTERVAL = 120000;
   const _pollSyncRef = useRef<number>(0);
 
   useEffect(() => {
@@ -216,8 +218,8 @@ export function useJVRealtime(channelName: string = 'jv-deals-sync', enableFallb
             invalidateAllJVQueries(queryClient);
 
             if (newRecord?.published === true || oldRecord?.published === true) {
-              console.log(`[JV-Realtime:${channelName}] Published deal changed — triggering landing sync`);
-              triggerLandingSync();
+              console.log(`[JV-Realtime:${channelName}] Published deal changed — triggering IMMEDIATE landing sync`);
+              triggerLandingSync(true);
             }
           })
           .subscribe((subscriptionStatus) => {
@@ -360,12 +362,12 @@ export function useJVRealtime(channelName: string = 'jv-deals-sync', enableFallb
       fallbackIntervalRef.current = setInterval(() => {
         if (!destroyedRef.current) {
           _pollSyncRef.current++;
-          if (_pollSyncRef.current % 3 === 0) {
-            console.log(`[JV-Realtime:${channelName}] Poll tick #${_pollSyncRef.current} — soft invalidate (no forced refetch)`);
+          if (_pollSyncRef.current % 2 === 0) {
+            console.log(`[JV-Realtime:${channelName}] Poll tick #${_pollSyncRef.current} — soft invalidate (active queries only)`);
             void queryClient.invalidateQueries({ queryKey: [PUBLISHED_QUERY_KEY], refetchType: 'active' });
-            void queryClient.invalidateQueries({ queryKey: [JV_QUERY_KEY_PREFIX], refetchType: 'active' });
           }
-          if (_pollSyncRef.current % 20 === 0) {
+          if (_pollSyncRef.current % 10 === 0) {
+            console.log(`[JV-Realtime:${channelName}] Periodic landing sync (every 10th poll)`);
             triggerLandingSync();
           }
         }

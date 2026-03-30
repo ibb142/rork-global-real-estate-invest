@@ -364,6 +364,18 @@ export default function AdminLayout() {
           href: null,
         }}
       />
+      <Tabs.Screen
+        name="sync-diagnostics"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="landing-submissions"
+        options={{
+          href: null,
+        }}
+      />
     </Tabs>
     </View>
   );

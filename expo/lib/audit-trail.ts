@@ -17,7 +17,8 @@ export type AuditEntityType =
   | 'notification'
   | 'application'
   | 'auth'
-  | 'system';
+  | 'system'
+  | 'landing_submission';
 
 export type AuditAction =
   | 'CREATE'

@@ -264,7 +264,7 @@ function ModuleCard({ module, index }: { module: SystemModule; index: number }) 
             {module.linesOfCode > 0 && (
               <View style={styles.detailRow}>
                 <Text style={styles.detailLabel}>Lines of Code</Text>
-                <Text style={styles.detailValue}>{module.linesOfCode.toLocaleString()}</Text>
+                <Text style={styles.detailValue}>{new Intl.NumberFormat('en-US').format(module.linesOfCode)}</Text>
               </View>
             )}
           </View>

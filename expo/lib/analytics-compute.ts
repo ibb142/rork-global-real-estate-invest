@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
-import { analytics as analyticsService } from '@/lib/analytics';
+
+export type EventSource = 'landing' | 'app' | 'unknown';
 
 export interface RawEvent {
   id?: string;
@@ -8,6 +9,30 @@ export interface RawEvent {
   properties?: Record<string, unknown>;
   geo?: { city?: string; region?: string; country?: string; countryCode?: string; lat?: number; lng?: number; timezone?: string };
   created_at: string;
+  _source?: EventSource;
+  _environment?: string;
+}
+
+export interface EventValidationResult {
+  valid: boolean;
+  reason?: string;
+}
+
+function validateRawEvent(event: RawEvent): EventValidationResult {
+  if (!event.event || typeof event.event !== 'string') {
+    return { valid: false, reason: 'missing event name' };
+  }
+  if (!event.session_id || typeof event.session_id !== 'string') {
+    return { valid: false, reason: 'missing session_id' };
+  }
+  if (!event.created_at || typeof event.created_at !== 'string') {
+    return { valid: false, reason: 'missing created_at' };
+  }
+  const ts = new Date(event.created_at).getTime();
+  if (isNaN(ts)) {
+    return { valid: false, reason: 'invalid created_at timestamp' };
+  }
+  return { valid: true };
 }
 
 export interface TrendDelta {
@@ -201,13 +226,161 @@ function detectDevice(props: Record<string, unknown> | undefined): string {
   return 'Desktop';
 }
 
-async function fetchLandingEvents(cutoff: Date, period: string): Promise<RawEvent[]> {
+async function getAuthToken(): Promise<string | null> {
   try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.access_token) {
+      const exp = session.expires_at;
+      const now = Math.floor(Date.now() / 1000);
+      if (exp && now >= exp - 60) {
+        console.log('[Analytics] Token near expiry, refreshing session...');
+        const { data: refreshed } = await supabase.auth.refreshSession();
+        if (refreshed?.session?.access_token) {
+          console.log('[Analytics] Session refreshed successfully');
+          return refreshed.session.access_token;
+        }
+      }
+      return session.access_token;
+    }
+    console.log('[Analytics] No session found, attempting refresh...');
+    const { data: refreshed } = await supabase.auth.refreshSession();
+    if (refreshed?.session?.access_token) {
+      console.log('[Analytics] Session restored via refresh');
+      return refreshed.session.access_token;
+    }
+    return null;
+  } catch (err) {
+    console.log('[Analytics] getAuthToken error:', (err as Error)?.message);
+    return null;
+  }
+}
+
+async function fetchViaRestApi(table: string, columns: string, cutoff: Date | null, limit: number = 5000): Promise<Record<string, unknown>[] | null> {
+  const supabaseUrl = (process.env.EXPO_PUBLIC_SUPABASE_URL || '').trim();
+  const supabaseKey = (process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '').trim();
+  if (!supabaseUrl || !supabaseKey) return null;
+
+  try {
+    let token = await getAuthToken();
+    let url = `${supabaseUrl}/rest/v1/${table}?select=${encodeURIComponent(columns)}&order=created_at.desc&limit=${limit}`;
+    if (cutoff) {
+      url += `&created_at=gte.${cutoff.toISOString()}`;
+    }
+
+    const headers: Record<string, string> = {
+      'apikey': supabaseKey,
+      'Content-Type': 'application/json',
+      'Prefer': 'return=representation',
+    };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    } else {
+      headers['Authorization'] = `Bearer ${supabaseKey}`;
+    }
+
+    console.log(`[Analytics] REST API fetch: ${table}`);
+    const resp = await fetch(url, { method: 'GET', headers });
+
+    if (!resp.ok) {
+      const body = await resp.text();
+      console.error(`[Analytics] REST API ${table} error ${resp.status}:`, body);
+      if (resp.status === 404 || body.includes('does not exist')) {
+        console.warn(`[Analytics] Table ${table} does not exist`);
+        return null;
+      }
+      if (resp.status === 401 || resp.status === 403) {
+        console.log(`[Analytics] RLS/Auth blocking ${table} (${resp.status}). Refreshing session and retrying...`);
+        try {
+          const { data: refreshed } = await supabase.auth.refreshSession();
+          if (refreshed?.session?.access_token) {
+            token = refreshed.session.access_token;
+            const retryHeaders: Record<string, string> = {
+              'apikey': supabaseKey,
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+              'Prefer': 'return=representation',
+            };
+            console.log(`[Analytics] REST API retry with refreshed JWT for ${table}`);
+            const retryResp = await fetch(url, { method: 'GET', headers: retryHeaders });
+            if (retryResp.ok) {
+              const retryData = await retryResp.json();
+              console.log(`[Analytics] REST API ${table} retry success: ${Array.isArray(retryData) ? retryData.length : 0} rows`);
+              return Array.isArray(retryData) ? retryData : null;
+            }
+            console.error(`[Analytics] REST API ${table} retry also failed: ${retryResp.status}`);
+          }
+        } catch (refreshErr) {
+          console.error(`[Analytics] Session refresh during REST fallback failed:`, (refreshErr as Error)?.message);
+        }
+        const anonHeaders: Record<string, string> = {
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${supabaseKey}`,
+          'Content-Type': 'application/json',
+        };
+        const anonResp = await fetch(url, { method: 'GET', headers: anonHeaders });
+        if (anonResp.ok) {
+          const anonData = await anonResp.json();
+          console.log(`[Analytics] REST API ${table} anon fallback: ${Array.isArray(anonData) ? anonData.length : 0} rows`);
+          return Array.isArray(anonData) ? anonData : null;
+        }
+        console.error(`[Analytics] REST API ${table} anon fallback also failed: ${anonResp.status}`);
+        return null;
+      }
+      return null;
+    }
+
+    const data = await resp.json();
+    console.log(`[Analytics] REST API ${table}: ${Array.isArray(data) ? data.length : 0} rows`);
+    return Array.isArray(data) ? data : null;
+  } catch (err) {
+    console.error(`[Analytics] REST API ${table} exception:`, (err as Error)?.message);
+    return null;
+  }
+}
+
+function mapLandingRow(row: Record<string, unknown>): RawEvent {
+  const id = typeof row.id === 'number' ? String(row.id) : (typeof row.id === 'string' ? row.id : '');
+  const event = typeof row.event === 'string' ? row.event : 'unknown';
+  const sessionId = typeof row.session_id === 'string' ? row.session_id : 'unknown';
+  const createdAt = typeof row.created_at === 'string' ? row.created_at : new Date().toISOString();
+
+  let parsedProps: Record<string, unknown> = {};
+  if (typeof row.properties === 'string') {
+    try { parsedProps = JSON.parse(row.properties); } catch { parsedProps = {}; }
+  } else if (row.properties && typeof row.properties === 'object') {
+    parsedProps = row.properties as Record<string, unknown>;
+  }
+
+  let parsedGeo: RawEvent['geo'] = undefined;
+  if (typeof row.geo === 'string') {
+    try { parsedGeo = JSON.parse(row.geo); } catch { parsedGeo = undefined; }
+  } else if (row.geo && typeof row.geo === 'object') {
+    parsedGeo = row.geo as RawEvent['geo'];
+  }
+
+  parsedProps.platform = parsedProps.platform || 'web';
+  parsedProps.source = 'landing';
+
+  return {
+    id,
+    event,
+    session_id: sessionId,
+    properties: parsedProps,
+    geo: parsedGeo,
+    created_at: createdAt,
+    _source: 'landing',
+  };
+}
+
+async function fetchLandingEvents(cutoff: Date, period: string): Promise<RawEvent[]> {
+  const columns = 'id,event,session_id,properties,geo,created_at';
+  try {
+    console.log('[Analytics] Fetching landing_analytics — period:', period, 'cutoff:', period !== 'all' ? cutoff.toISOString() : 'none');
     let query = supabase
       .from('landing_analytics')
-      .select('*')
+      .select(columns)
       .order('created_at', { ascending: false })
-      .limit(2000);
+      .limit(50000);
 
     if (period !== 'all') {
       query = query.gte('created_at', cutoff.toISOString());
@@ -217,60 +390,93 @@ async function fetchLandingEvents(cutoff: Date, period: string): Promise<RawEven
 
     if (error) {
       if (error.code === '42P01' || error.message?.includes('does not exist')) {
-        console.log('[Analytics] landing_analytics table does not exist — skipping');
+        console.warn('[Analytics] landing_analytics table does not exist');
         return [];
       }
-      console.log('[Analytics] landing_analytics query error:', error.code, error.message);
+      console.error('[Analytics] landing_analytics query error:', error.code, error.message);
+      console.log('[Analytics] Trying REST API fallback for landing_analytics...');
+      const restData = await fetchViaRestApi('landing_analytics', columns, period !== 'all' ? cutoff : null, 50000);
+      if (restData && restData.length > 0) {
+        console.log('[Analytics] REST API fallback success: landing_analytics:', restData.length, 'events');
+        return restData.map(mapLandingRow);
+      }
       return [];
     }
 
-    console.log('[Analytics] landing_analytics:', data?.length ?? 0, 'events');
+    const landingCount = data?.length ?? 0;
+    console.log('[Analytics] landing_analytics (client):', landingCount, 'events');
 
-    return (data ?? []).map((row: Record<string, unknown>) => {
-      const id = typeof row.id === 'number' ? String(row.id) : (typeof row.id === 'string' ? row.id : '');
-      const event = typeof row.event === 'string' ? row.event : 'unknown';
-      const sessionId = typeof row.session_id === 'string' ? row.session_id : 'unknown';
-      const createdAt = typeof row.created_at === 'string' ? row.created_at : new Date().toISOString();
+    if (landingCount === 0) {
+      console.log('[Analytics] Supabase client returned 0 landing events — possible RLS block. Trying REST API fallback...');
+      const restData = await fetchViaRestApi('landing_analytics', columns, period !== 'all' ? cutoff : null, 50000);
+      if (restData && restData.length > 0) {
+        console.log('[Analytics] REST API fallback success: landing_analytics:', restData.length, 'events');
+        return restData.map(mapLandingRow);
+      }
+      console.log('[Analytics] REST API also returned 0 — table may genuinely be empty or RLS blocks all access');
 
-      let parsedProps: Record<string, unknown> = {};
-      if (typeof row.properties === 'string') {
-        try { parsedProps = JSON.parse(row.properties); } catch { parsedProps = {}; }
-      } else if (row.properties && typeof row.properties === 'object') {
-        parsedProps = row.properties as Record<string, unknown>;
+      const { count: rowCount, error: countErr } = await supabase
+        .from('landing_analytics')
+        .select('*', { count: 'exact', head: true });
+      if (!countErr && rowCount !== null) {
+        console.log('[Analytics] landing_analytics total row count (via count):', rowCount);
+        if (rowCount > 0) {
+          console.error('[Analytics] CONFIRMED: landing_analytics has', rowCount, 'rows but RLS is blocking SELECT. Fix RLS policies in Supabase.');
+        }
+      } else if (countErr) {
+        console.log('[Analytics] landing_analytics count check error:', countErr.message);
       }
 
-      let parsedGeo: RawEvent['geo'] = undefined;
-      if (typeof row.geo === 'string') {
-        try { parsedGeo = JSON.parse(row.geo); } catch { parsedGeo = undefined; }
-      } else if (row.geo && typeof row.geo === 'object') {
-        parsedGeo = row.geo as RawEvent['geo'];
-      }
+      return [];
+    }
 
-      parsedProps.platform = parsedProps.platform || 'web';
-      parsedProps.source = 'landing';
+    if (landingCount >= 50000) {
+      console.warn('[Analytics] landing_analytics hit 50000 limit for period:', period);
+    }
 
-      return {
-        id,
-        event,
-        session_id: sessionId,
-        properties: parsedProps,
-        geo: parsedGeo,
-        created_at: createdAt,
-      };
-    }) as RawEvent[];
+    return (data ?? []).map(mapLandingRow);
   } catch (err) {
     console.log('[Analytics] landing_analytics fetch failed:', (err as Error)?.message);
+    console.log('[Analytics] Trying REST API fallback...');
+    const restData = await fetchViaRestApi('landing_analytics', columns, period !== 'all' ? cutoff : null);
+    if (restData && restData.length > 0) {
+      return restData.map(mapLandingRow);
+    }
     return [];
   }
+}
+
+function mapAppRow(row: Record<string, unknown>): RawEvent {
+  const id = typeof row.id === 'string' ? row.id : typeof row.id === 'number' ? String(row.id) : '';
+  const eventName = typeof row.event === 'string' ? row.event : 'unknown';
+  const sessionId = typeof row.session_id === 'string' ? row.session_id : 'unknown';
+  const createdAt = typeof row.created_at === 'string' ? row.created_at : new Date().toISOString();
+  let parsedProps: Record<string, unknown> = {};
+  if (typeof row.properties === 'string') {
+    try { parsedProps = JSON.parse(row.properties); } catch { parsedProps = {}; }
+  } else if (row.properties && typeof row.properties === 'object') {
+    parsedProps = row.properties as Record<string, unknown>;
+  }
+  const platform = typeof parsedProps.platform === 'string' ? parsedProps.platform : 'unknown';
+  return {
+    id,
+    event: eventName,
+    session_id: sessionId,
+    properties: { ...parsedProps, platform, source: 'app' },
+    created_at: createdAt,
+    _source: 'app',
+  };
 }
 
 async function fetchAppEvents(cutoff: Date, period: string): Promise<RawEvent[]> {
+  const columns = 'id,event,session_id,user_id,properties,created_at';
   try {
+    console.log('[Analytics] Fetching analytics_events — period:', period, 'cutoff:', period !== 'all' ? cutoff.toISOString() : 'none');
     let query = supabase
       .from('analytics_events')
-      .select('*')
+      .select(columns)
       .order('created_at', { ascending: false })
-      .limit(2000);
+      .limit(50000);
 
     if (period !== 'all') {
       query = query.gte('created_at', cutoff.toISOString());
@@ -279,62 +485,60 @@ async function fetchAppEvents(cutoff: Date, period: string): Promise<RawEvent[]>
     const { data, error } = await query;
 
     if (error) {
-      console.log('[Analytics] analytics_events query error:', error.code, error.message);
       if (error.code === '42P01' || error.message?.includes('does not exist')) {
-        console.log('[Analytics] analytics_events table does not exist — skipping');
+        console.warn('[Analytics] analytics_events table does not exist');
         return [];
+      }
+      console.error('[Analytics] analytics_events query error:', error.code, error.message);
+      console.log('[Analytics] Trying REST API fallback for analytics_events...');
+      const restData = await fetchViaRestApi('analytics_events', columns, period !== 'all' ? cutoff : null, 50000);
+      if (restData && restData.length > 0) {
+        console.log('[Analytics] REST API fallback success: analytics_events:', restData.length, 'events');
+        return restData.map(mapAppRow);
       }
       return [];
     }
 
-    console.log('[Analytics] analytics_events:', data?.length ?? 0, 'events');
+    const appCount = data?.length ?? 0;
+    console.log('[Analytics] analytics_events (client):', appCount, 'events');
 
-    return (data ?? []).map((row: Record<string, unknown>) => {
-      const id = typeof row.id === 'string' ? row.id : typeof row.id === 'number' ? String(row.id) : '';
-      const name = typeof row.name === 'string' ? row.name : (typeof row.event === 'string' ? row.event : 'unknown');
-      const category = typeof row.category === 'string' ? row.category : '';
-      const sessionId = typeof row.session_id === 'string' ? row.session_id : 'unknown';
-      const timestamp = typeof row.timestamp === 'string' ? row.timestamp : (typeof row.created_at === 'string' ? row.created_at : new Date().toISOString());
-      let parsedProps: Record<string, unknown> = {};
-      if (typeof row.properties === 'string') {
-        try { parsedProps = JSON.parse(row.properties); } catch { parsedProps = {}; }
-      } else if (row.properties && typeof row.properties === 'object') {
-        parsedProps = row.properties as Record<string, unknown>;
+    if (appCount === 0) {
+      console.log('[Analytics] Supabase client returned 0 app events — possible RLS block. Trying REST API fallback...');
+      const restData = await fetchViaRestApi('analytics_events', columns, period !== 'all' ? cutoff : null, 50000);
+      if (restData && restData.length > 0) {
+        console.log('[Analytics] REST API fallback success: analytics_events:', restData.length, 'events');
+        return restData.map(mapAppRow);
       }
-      return {
-        id,
-        event: name || category || 'unknown',
-        session_id: sessionId,
-        properties: { ...parsedProps, platform: row.platform, source: 'app' },
-        created_at: timestamp,
-      };
-    }) as RawEvent[];
+
+      const { count: rowCount, error: countErr } = await supabase
+        .from('analytics_events')
+        .select('*', { count: 'exact', head: true });
+      if (!countErr && rowCount !== null) {
+        console.log('[Analytics] analytics_events total row count:', rowCount);
+        if (rowCount > 0) {
+          console.error('[Analytics] CONFIRMED: analytics_events has', rowCount, 'rows but RLS is blocking SELECT.');
+        }
+      }
+
+      return [];
+    }
+
+    if (appCount >= 50000) {
+      console.warn('[Analytics] analytics_events hit 50000 limit for period:', period);
+    }
+
+    return (data ?? []).map(mapAppRow);
   } catch (err) {
     console.log('[Analytics] analytics_events fetch failed:', (err as Error)?.message);
+    const restData = await fetchViaRestApi('analytics_events', columns, period !== 'all' ? cutoff : null, 50000);
+    if (restData && restData.length > 0) {
+      return restData.map(mapAppRow);
+    }
     return [];
   }
 }
 
-async function fetchLocalEvents(cutoff: Date, period: string): Promise<RawEvent[]> {
-  try {
-    const localEvents = await analyticsService.getAllLocalEvents();
-    console.log('[Analytics] Local events loaded:', localEvents.length);
 
-    const cutoffMs = period === 'all' ? 0 : cutoff.getTime();
-    const filtered = localEvents.filter(e => e.timestamp >= cutoffMs);
-
-    return filtered.map(e => ({
-      id: e.id,
-      event: e.name || e.category || 'unknown',
-      session_id: e.sessionId,
-      properties: { ...e.properties, platform: e.platform, source: 'app' },
-      created_at: new Date(e.timestamp).toISOString(),
-    }));
-  } catch (err) {
-    console.log('[Analytics] Local events fetch failed:', (err as Error)?.message);
-    return [];
-  }
-}
 
 async function fetchWaitlistCount(): Promise<number> {
   try {
@@ -382,52 +586,114 @@ export async function fetchExtraCounts(): Promise<ExtraCounts> {
   return { waitlistCount, registeredUserCount };
 }
 
-export async function fetchRawEvents(period: string): Promise<RawEvent[]> {
-  const cutoff = getPeriodCutoff(period);
+export interface FetchMetrics {
+  landingCount: number;
+  appCount: number;
+  totalCount: number;
+  validCount: number;
+  invalidCount: number;
+  duplicateCount: number;
+  invalidReasons: string[];
+}
 
+export type AnalyticsSource = 'all' | 'landing' | 'app';
+
+export async function fetchRawEvents(period: string, source: AnalyticsSource = 'all'): Promise<RawEvent[]> {
+  const cutoff = getPeriodCutoff(period);
   const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl) {
+    console.error('[Analytics] BLOCKER: No EXPO_PUBLIC_SUPABASE_URL configured. Dashboard will show 0.');
+    return [];
+  }
+
+  if (!supabaseKey) {
+    console.error('[Analytics] BLOCKER: No EXPO_PUBLIC_SUPABASE_ANON_KEY configured. Dashboard will show 0.');
+    return [];
+  }
+
+  let token = await getAuthToken();
+  if (!token) {
+    console.log('[Analytics] No auth token — forcing session refresh before fetch...');
+    try {
+      const { data: refreshed } = await supabase.auth.refreshSession();
+      token = refreshed?.session?.access_token ?? null;
+      if (token) {
+        console.log('[Analytics] Session refreshed — got valid JWT');
+      } else {
+        console.warn('[Analytics] WARNING: No auth token available. landing_analytics SELECT requires is_admin() which needs auth.uid(). Dashboard will likely show 0.');
+      }
+    } catch (refreshErr) {
+      console.warn('[Analytics] Session refresh failed:', (refreshErr as Error)?.message);
+    }
+  }
+  console.log('[Analytics] fetchRawEvents — period:', period, 'source:', source, 'auth:', token ? 'jwt' : 'anon', 'supabaseUrl:', supabaseUrl?.substring(0, 40));
 
   let landingEvents: RawEvent[] = [];
   let appEvents: RawEvent[] = [];
 
-  if (supabaseUrl) {
+  if (source === 'all') {
     [landingEvents, appEvents] = await Promise.all([
       fetchLandingEvents(cutoff, period),
       fetchAppEvents(cutoff, period),
     ]);
-  } else {
-    console.log('[Analytics] No Supabase URL configured, using local only');
+  } else if (source === 'landing') {
+    landingEvents = await fetchLandingEvents(cutoff, period);
+  } else if (source === 'app') {
+    appEvents = await fetchAppEvents(cutoff, period);
   }
 
-  const supabaseTotal = landingEvents.length + appEvents.length;
+  const merged = [...landingEvents, ...appEvents];
 
-  let localEvents: RawEvent[] = [];
-  if (supabaseTotal === 0) {
-    localEvents = await fetchLocalEvents(cutoff, period);
-    console.log('[Analytics] Supabase returned 0 events, using', localEvents.length, 'local events as fallback');
-  } else {
-    localEvents = await fetchLocalEvents(cutoff, period);
-    const supabaseKeys = new Set<string>();
-    for (const e of [...landingEvents, ...appEvents]) {
-      if (e.id) supabaseKeys.add(e.id);
-      const dedupKey = `${e.session_id}|${e.event}|${e.created_at?.substring(0, 19)}`;
-      supabaseKeys.add(dedupKey);
+  const dedupMap = new Map<string, RawEvent>();
+  let duplicateCount = 0;
+  let invalidCount = 0;
+  const invalidReasons: string[] = [];
+
+  for (const e of merged) {
+    const validation = validateRawEvent(e);
+    if (!validation.valid) {
+      invalidCount++;
+      if (invalidReasons.length < 10) {
+        invalidReasons.push(`${e.event || 'unknown'}: ${validation.reason}`);
+      }
+      continue;
     }
-    localEvents = localEvents.filter(e => {
-      if (e.id && supabaseKeys.has(e.id)) return false;
-      const dedupKey = `${e.session_id}|${e.event}|${e.created_at?.substring(0, 19)}`;
-      if (supabaseKeys.has(dedupKey)) return false;
-      return true;
-    });
-    console.log('[Analytics] Merging', localEvents.length, 'unique local events with Supabase data');
+
+    const dedupKey = e.id || `${e.session_id}|${e.event}|${e.created_at?.substring(0, 19)}`;
+    if (dedupMap.has(dedupKey)) {
+      duplicateCount++;
+      continue;
+    }
+    dedupMap.set(dedupKey, e);
   }
 
-  const merged = [...landingEvents, ...appEvents, ...localEvents];
-  merged.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  const deduped = Array.from(dedupMap.values());
+  deduped.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
-  console.log('[Analytics] Total merged events:', merged.length, '(landing:', landingEvents.length, ', app:', appEvents.length, ', local:', localEvents.length, ')');
+  const metrics: FetchMetrics = {
+    landingCount: landingEvents.length,
+    appCount: appEvents.length,
+    totalCount: merged.length,
+    validCount: deduped.length,
+    invalidCount,
+    duplicateCount,
+    invalidReasons,
+  };
 
-  return merged;
+  if (metrics.totalCount > 0 || !token) {
+    console.log('[Analytics] Fetch metrics:', JSON.stringify(metrics));
+  }
+
+  if (invalidCount > 0) {
+    console.warn('[Analytics] Dropped', invalidCount, 'invalid events:', invalidReasons.slice(0, 5).join('; '));
+  }
+  if (duplicateCount > 0) {
+    console.log('[Analytics] Deduped', duplicateCount, 'duplicate events');
+  }
+
+  return deduped;
 }
 
 function sumEventCounts(eventCounts: Map<string, number>, names: string[]): number {

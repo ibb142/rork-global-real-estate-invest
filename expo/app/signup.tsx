@@ -36,6 +36,7 @@ import Colors from '@/constants/colors';
 import { COUNTRIES, Country } from '@/constants/countries';
 import { useAuth } from '@/lib/auth-context';
 import { useAnalytics } from '@/lib/analytics-context';
+import { validateEmail, validatePassword, validatePhone } from '@/lib/auth-helpers';
 
 type Step = 'register' | 'verify_email' | 'verify_phone' | 'complete';
 
@@ -86,22 +87,7 @@ export default function SignUpScreen() {
     setFormData(prev => ({ ...prev, [key]: value }));
   };
 
-  const validateEmail = (email: string) => {
-    const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return re.test(email);
-  };
 
-  const validatePassword = (password: string) => {
-    if (password.length < 8) return false;
-    if (!/[A-Z]/.test(password)) return false;
-    if (!/[0-9]/.test(password)) return false;
-    return true;
-  };
-
-  const validatePhone = (phone: string) => {
-    const re = /^\+?[\d\s-()]{10,}$/;
-    return re.test(phone);
-  };
 
   const handleRegister = async () => {
     if (!formData.firstName || !formData.lastName) {
@@ -112,8 +98,9 @@ export default function SignUpScreen() {
       Alert.alert('Invalid Email', 'Please enter a valid email address.');
       return;
     }
-    if (!validatePassword(formData.password)) {
-      Alert.alert('Weak Password', 'Password must be at least 8 characters with at least 1 uppercase letter and 1 number.');
+    const pwResult = validatePassword(formData.password);
+    if (!pwResult.valid) {
+      Alert.alert('Weak Password', pwResult.reason || 'Password does not meet requirements.');
       return;
     }
     if (formData.password !== formData.confirmPassword) {

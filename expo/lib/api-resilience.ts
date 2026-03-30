@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { performanceMonitor } from '@/lib/performance-monitor';
 
 export type BackendStatus = 'online' | 'degraded' | 'offline' | 'unknown';
 
@@ -8,10 +9,37 @@ interface HealthState {
   consecutiveSupabaseFailures: number;
 }
 
+interface RateLimitEntry {
+  count: number;
+  windowStart: number;
+}
+
 const CACHE_PREFIX = 'ipx_cache_';
-const HEALTH_CHECK_INTERVAL = 30_000;
-const SUPABASE_TIMEOUT = 5_000;
+const HEALTH_CHECK_INTERVAL = 180_000;
+const SUPABASE_TIMEOUT = 10_000;
 const MAX_CACHE_AGE = 1000 * 60 * 60 * 24;
+const REQUEST_DEDUP_WINDOW = 2_000;
+const RATE_LIMIT_WINDOW = 60_000;
+const DEFAULT_RATE_LIMIT = 30;
+
+const _rateLimitMap = new Map<string, RateLimitEntry>();
+
+const _pendingRequests = new Map<string, { promise: Promise<unknown>; timestamp: number }>();
+
+export function deduplicatedFetch<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const now = Date.now();
+  const existing = _pendingRequests.get(key);
+  if (existing && now - existing.timestamp < REQUEST_DEDUP_WINDOW) {
+    console.log('[Resilience] Dedup hit for:', key);
+    return existing.promise as Promise<T>;
+  }
+
+  const promise = fn().finally(() => {
+    setTimeout(() => _pendingRequests.delete(key), REQUEST_DEDUP_WINDOW);
+  });
+  _pendingRequests.set(key, { promise, timestamp: now });
+  return promise;
+}
 
 let _state: HealthState = {
   supabaseStatus: 'unknown',
@@ -47,6 +75,11 @@ export async function checkSupabaseHealth(): Promise<BackendStatus> {
     return 'offline';
   }
 
+  const timeSinceLast = Date.now() - _state.lastSupabaseCheck;
+  if (timeSinceLast < 30_000 && _state.supabaseStatus === 'online') {
+    return _state.supabaseStatus;
+  }
+
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), SUPABASE_TIMEOUT);
@@ -64,7 +97,7 @@ export async function checkSupabaseHealth(): Promise<BackendStatus> {
     _state.consecutiveSupabaseFailures = 0;
   } catch {
     _state.consecutiveSupabaseFailures++;
-    _state.supabaseStatus = _state.consecutiveSupabaseFailures >= 2 ? 'offline' : 'degraded';
+    _state.supabaseStatus = _state.consecutiveSupabaseFailures >= 3 ? 'offline' : 'degraded';
   }
 
   _state.lastSupabaseCheck = Date.now();
@@ -141,14 +174,52 @@ export async function clearCache(): Promise<void> {
   }
 }
 
+export function checkRateLimit(key: string, maxRequests: number = DEFAULT_RATE_LIMIT): boolean {
+  const now = Date.now();
+  const entry = _rateLimitMap.get(key);
+
+  if (!entry || now - entry.windowStart > RATE_LIMIT_WINDOW) {
+    _rateLimitMap.set(key, { count: 1, windowStart: now });
+    return true;
+  }
+
+  if (entry.count >= maxRequests) {
+    console.log(`[Resilience] Rate limit hit for ${key}: ${entry.count}/${maxRequests} in window`);
+    return false;
+  }
+
+  entry.count++;
+  return true;
+}
+
+export function getRateLimitStats(): Record<string, { count: number; remaining: number; windowMs: number }> {
+  const now = Date.now();
+  const stats: Record<string, { count: number; remaining: number; windowMs: number }> = {};
+
+  for (const [key, entry] of _rateLimitMap.entries()) {
+    const windowRemaining = Math.max(0, RATE_LIMIT_WINDOW - (now - entry.windowStart));
+    stats[key] = {
+      count: entry.count,
+      remaining: Math.max(0, DEFAULT_RATE_LIMIT - entry.count),
+      windowMs: windowRemaining,
+    };
+  }
+  return stats;
+}
+
 export async function resilientFetch<T>(
   primaryFn: () => Promise<T>,
   fallbackFn?: () => Promise<T>,
   cacheKey?: string,
 ): Promise<{ data: T; source: 'primary' | 'fallback' | 'cache' }> {
+  const timerName = cacheKey ? `resilient_fetch_${cacheKey}` : `resilient_fetch_${Date.now()}`;
+  performanceMonitor.startTimer(timerName);
+
   try {
     const data = await primaryFn();
+    const latency = performanceMonitor.endTimer(timerName, { source: 'primary' });
     if (cacheKey) {
+      performanceMonitor.recordApiLatency(cacheKey, latency);
       void cacheData(cacheKey, data);
     }
     return { data, source: 'primary' };
@@ -158,7 +229,9 @@ export async function resilientFetch<T>(
     if (fallbackFn) {
       try {
         const data = await fallbackFn();
+        const latency = performanceMonitor.endTimer(timerName, { source: 'fallback' });
         if (cacheKey) {
+          performanceMonitor.recordApiLatency(cacheKey, latency);
           void cacheData(cacheKey, data);
         }
         return { data, source: 'fallback' };
@@ -170,11 +243,13 @@ export async function resilientFetch<T>(
     if (cacheKey) {
       const cached = await getCachedData<T>(cacheKey);
       if (cached) {
+        performanceMonitor.endTimer(timerName, { source: 'cache' });
         console.log(`[Resilience] Serving from cache (age: ${Math.round(cached.age / 1000)}s)`);
         return { data: cached.data, source: 'cache' };
       }
     }
 
+    performanceMonitor.endTimer(timerName, { source: 'error' });
     throw primaryErr;
   }
 }

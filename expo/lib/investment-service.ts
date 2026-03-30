@@ -404,6 +404,444 @@ export async function purchaseShares(request: InvestmentRequest): Promise<Invest
   }
 }
 
+export interface SellRequest {
+  holdingId: string;
+  propertyId: string;
+  propertyName: string;
+  shares: number;
+  pricePerShare: number;
+  subtotal: number;
+  platformFee: number;
+  netProceeds: number;
+  sellType: 'instant' | 'resale_listing';
+  askPrice?: number;
+}
+
+export interface ResaleListing {
+  id: string;
+  seller_id: string;
+  seller_name: string;
+  property_id: string;
+  property_name: string;
+  shares: number;
+  ask_price_per_share: number;
+  original_cost_basis: number;
+  total_ask: number;
+  status: 'active' | 'sold' | 'cancelled' | 'expired';
+  created_at: string;
+  expires_at: string;
+}
+
+export async function sellShares(request: SellRequest): Promise<InvestmentResult> {
+  const confirmationNumber = `IVX-SELL-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+  const transactionId = `sell_txn_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+
+  console.log('[InvestmentService] Starting sell:', {
+    holdingId: request.holdingId,
+    propertyId: request.propertyId,
+    shares: request.shares,
+    sellType: request.sellType,
+  });
+
+  try {
+    const user = await getAuthUser();
+    if (!user) {
+      return {
+        success: false,
+        transactionId: '',
+        holdingId: '',
+        confirmationNumber: '',
+        message: 'Please log in to sell shares.',
+        error: 'not_authenticated',
+      };
+    }
+
+    const { data: holdingData, error: holdingErr } = await supabase
+      .from('holdings')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('property_id', request.propertyId)
+      .single();
+
+    if (holdingErr || !holdingData) {
+      console.log('[InvestmentService] Holding not found:', holdingErr?.message);
+      return {
+        success: false,
+        transactionId: '',
+        holdingId: '',
+        confirmationNumber: '',
+        message: 'You do not own shares in this property.',
+        error: 'no_holding',
+      };
+    }
+
+    const holding = holdingData as unknown as HoldingRow;
+    if (holding.shares < request.shares) {
+      return {
+        success: false,
+        transactionId: '',
+        holdingId: '',
+        confirmationNumber: '',
+        message: `You only own ${holding.shares} shares. Cannot sell ${request.shares}.`,
+        error: 'insufficient_shares',
+      };
+    }
+
+    if (request.sellType === 'resale_listing') {
+      const listingId = `listing_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + 30);
+
+      const { error: listingErr } = await supabase
+        .from('resale_listings')
+        .insert({
+          id: listingId,
+          seller_id: user.id,
+          property_id: request.propertyId,
+          property_name: request.propertyName,
+          shares: request.shares,
+          ask_price_per_share: request.askPrice ?? request.pricePerShare,
+          original_cost_basis: holding.avg_cost_basis,
+          total_ask: request.shares * (request.askPrice ?? request.pricePerShare),
+          status: 'active',
+          created_at: new Date().toISOString(),
+          expires_at: expiresAt.toISOString(),
+        });
+
+      if (listingErr) {
+        console.log('[InvestmentService] Resale listing insert failed:', listingErr?.message);
+        return {
+          success: false,
+          transactionId: '',
+          holdingId: '',
+          confirmationNumber: '',
+          message: 'Failed to create resale listing. Please try again.',
+          error: listingErr.message,
+        };
+      }
+
+      const { error: notifErr } = await supabase
+        .from('notifications')
+        .insert({
+          id: `notif_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          user_id: user.id,
+          type: 'transaction',
+          title: 'Shares Listed for Resale',
+          message: `${request.shares} shares of ${request.propertyName} listed at ${(request.askPrice ?? request.pricePerShare).toFixed(2)}/share. Listing expires in 30 days.`,
+          read: false,
+          created_at: new Date().toISOString(),
+        });
+      if (notifErr) console.log('[InvestmentService] Notification insert failed (non-critical):', notifErr.message);
+
+      try {
+        await logAudit({
+          entityType: 'holding',
+          entityId: holding.id,
+          entityTitle: `Resale Listing: ${request.propertyName}`,
+          action: 'CREATE',
+          source: 'app',
+          details: {
+            listingId,
+            shares: request.shares,
+            askPrice: request.askPrice ?? request.pricePerShare,
+            confirmationNumber,
+          },
+        });
+      } catch (auditErr) {
+        console.log('[InvestmentService] Audit failed (non-critical):', (auditErr as Error)?.message);
+      }
+
+      console.log('[InvestmentService] Resale listing created:', listingId);
+      return {
+        success: true,
+        transactionId: listingId,
+        holdingId: holding.id,
+        confirmationNumber,
+        message: `${request.shares} shares listed for resale at ${(request.askPrice ?? request.pricePerShare).toFixed(2)}/share.`,
+      };
+    }
+
+    const remainingShares = holding.shares - request.shares;
+
+    if (remainingShares === 0) {
+      const { error: delErr } = await supabase
+        .from('holdings')
+        .delete()
+        .eq('id', holding.id);
+      if (delErr) {
+        console.log('[InvestmentService] Holding delete failed:', delErr?.message);
+        return {
+          success: false,
+          transactionId: '',
+          holdingId: '',
+          confirmationNumber: '',
+          message: 'Failed to update holding. Please try again.',
+          error: delErr.message,
+        };
+      }
+    } else {
+      const newCurrentValue = remainingShares * request.pricePerShare;
+      const { error: updateErr } = await supabase
+        .from('holdings')
+        .update({
+          shares: remainingShares,
+          current_value: Math.round(newCurrentValue * 100) / 100,
+          total_return: Math.round((newCurrentValue - (holding.avg_cost_basis * remainingShares)) * 100) / 100,
+          total_return_percent: holding.avg_cost_basis > 0
+            ? Math.round(((request.pricePerShare - holding.avg_cost_basis) / holding.avg_cost_basis) * 10000) / 100
+            : 0,
+          unrealized_pnl: Math.round((newCurrentValue - (holding.avg_cost_basis * remainingShares)) * 100) / 100,
+          unrealized_pnl_percent: holding.avg_cost_basis > 0
+            ? Math.round(((request.pricePerShare - holding.avg_cost_basis) / holding.avg_cost_basis) * 10000) / 100
+            : 0,
+        })
+        .eq('id', holding.id);
+
+      if (updateErr) {
+        console.log('[InvestmentService] Holding update failed:', updateErr?.message);
+        return {
+          success: false,
+          transactionId: '',
+          holdingId: '',
+          confirmationNumber: '',
+          message: 'Failed to update holding. Please try again.',
+          error: updateErr.message,
+        };
+      }
+    }
+
+    const { error: txError } = await supabase
+      .from('transactions')
+      .insert({
+        id: transactionId,
+        user_id: user.id,
+        type: 'sell',
+        amount: request.netProceeds,
+        status: 'completed',
+        description: `Sold ${request.shares} shares of ${request.propertyName} — Net: ${request.netProceeds.toFixed(2)} — Confirmation: ${confirmationNumber}`,
+        property_id: request.propertyId,
+        property_name: request.propertyName,
+        created_at: new Date().toISOString(),
+      });
+
+    if (txError) {
+      console.log('[InvestmentService] Sell transaction insert failed:', txError?.message);
+    }
+
+    const { data: currentWallet } = await supabase
+      .from('wallets')
+      .select('available, invested')
+      .eq('user_id', user.id)
+      .single();
+
+    if (currentWallet) {
+      const typed = currentWallet as unknown as WalletRow;
+      const investedReduction = request.shares * holding.avg_cost_basis;
+      const { error: walletErr } = await supabase
+        .from('wallets')
+        .update({
+          available: (typed.available ?? 0) + request.netProceeds,
+          invested: Math.max(0, (typed.invested ?? 0) - investedReduction),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('user_id', user.id);
+
+      if (walletErr) {
+        console.log('[InvestmentService] Wallet credit failed:', walletErr?.message);
+      } else {
+        console.log('[InvestmentService] Wallet credited:', request.netProceeds);
+      }
+    }
+
+    const { error: notifError } = await supabase
+      .from('notifications')
+      .insert({
+        id: `notif_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        user_id: user.id,
+        type: 'transaction',
+        title: 'Shares Sold',
+        message: `You sold ${request.shares} shares of ${request.propertyName} for ${request.netProceeds.toFixed(2)}. Confirmation: ${confirmationNumber}`,
+        read: false,
+        created_at: new Date().toISOString(),
+      });
+    if (notifError) console.log('[InvestmentService] Notification insert failed (non-critical):', notifError.message);
+
+    try {
+      await logAudit({
+        entityType: 'transaction',
+        entityId: transactionId,
+        entityTitle: `Sell: ${request.shares} shares of ${request.propertyName}`,
+        action: 'PURCHASE',
+        source: 'app',
+        details: {
+          propertyId: request.propertyId,
+          shares: request.shares,
+          netProceeds: request.netProceeds,
+          platformFee: request.platformFee,
+          confirmationNumber,
+        },
+      });
+    } catch (auditErr) {
+      console.log('[InvestmentService] Audit failed (non-critical):', (auditErr as Error)?.message);
+    }
+
+    console.log('[InvestmentService] Sell completed:', confirmationNumber);
+    return {
+      success: true,
+      transactionId,
+      holdingId: holding.id,
+      confirmationNumber,
+      message: `Successfully sold ${request.shares} shares of ${request.propertyName}. ${request.netProceeds.toFixed(2)} credited to your wallet.`,
+    };
+
+  } catch (error) {
+    console.log('[InvestmentService] Sell error:', (error as Error)?.message);
+    return {
+      success: false,
+      transactionId: '',
+      holdingId: '',
+      confirmationNumber: '',
+      message: error instanceof Error ? error.message : 'An unexpected error occurred.',
+      error: 'unknown',
+    };
+  }
+}
+
+export async function buyResaleListing(listingId: string): Promise<InvestmentResult> {
+  const confirmationNumber = `IVX-RESALE-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+
+  try {
+    const user = await getAuthUser();
+    if (!user) {
+      return { success: false, transactionId: '', holdingId: '', confirmationNumber: '', message: 'Please log in.', error: 'not_authenticated' };
+    }
+
+    const { data: listing, error: listErr } = await supabase
+      .from('resale_listings')
+      .select('*')
+      .eq('id', listingId)
+      .eq('status', 'active')
+      .single();
+
+    if (listErr || !listing) {
+      return { success: false, transactionId: '', holdingId: '', confirmationNumber: '', message: 'Listing not found or no longer available.', error: 'listing_not_found' };
+    }
+
+    const typedListing = listing as unknown as ResaleListing;
+    if (typedListing.seller_id === user.id) {
+      return { success: false, transactionId: '', holdingId: '', confirmationNumber: '', message: 'You cannot buy your own listing.', error: 'own_listing' };
+    }
+
+    const totalCost = typedListing.total_ask;
+    const platformFee = totalCost * 0.01;
+    const totalWithFee = totalCost + platformFee;
+
+    const debitResult = await atomicWalletDebit(user.id, totalWithFee);
+    if (!debitResult.success) {
+      return { success: false, transactionId: '', holdingId: '', confirmationNumber: '', message: debitResult.error || 'Insufficient funds.', error: 'insufficient_funds' };
+    }
+
+    const result = await purchaseShares({
+      propertyId: typedListing.property_id,
+      propertyName: typedListing.property_name,
+      shares: typedListing.shares,
+      pricePerShare: typedListing.ask_price_per_share,
+      subtotal: totalCost,
+      platformFee,
+      paymentFee: 0,
+      totalCost: totalWithFee,
+      paymentMethod: 'wallet',
+      investmentType: 'property_shares',
+    });
+
+    if (!result.success) return result;
+
+    await supabase
+      .from('resale_listings')
+      .update({ status: 'sold' })
+      .eq('id', listingId);
+
+    const sellerNetProceeds = totalCost * 0.99;
+    const { data: sellerWallet } = await supabase
+      .from('wallets')
+      .select('available, invested')
+      .eq('user_id', typedListing.seller_id)
+      .single();
+
+    if (sellerWallet) {
+      const sw = sellerWallet as unknown as WalletRow;
+      await supabase
+        .from('wallets')
+        .update({
+          available: (sw.available ?? 0) + sellerNetProceeds,
+          invested: Math.max(0, (sw.invested ?? 0) - (typedListing.original_cost_basis * typedListing.shares)),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('user_id', typedListing.seller_id);
+    }
+
+    const { data: sellerHolding } = await supabase
+      .from('holdings')
+      .select('*')
+      .eq('user_id', typedListing.seller_id)
+      .eq('property_id', typedListing.property_id)
+      .single();
+
+    if (sellerHolding) {
+      const sh = sellerHolding as unknown as HoldingRow;
+      const remaining = sh.shares - typedListing.shares;
+      if (remaining <= 0) {
+        await supabase.from('holdings').delete().eq('id', sh.id);
+      } else {
+        await supabase.from('holdings').update({ shares: remaining, current_value: remaining * typedListing.ask_price_per_share }).eq('id', sh.id);
+      }
+    }
+
+    await supabase.from('notifications').insert({
+      id: `notif_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      user_id: typedListing.seller_id,
+      type: 'transaction',
+      title: 'Shares Sold on Marketplace',
+      message: `Your ${typedListing.shares} shares of ${typedListing.property_name} were purchased. ${sellerNetProceeds.toFixed(2)} credited to your wallet.`,
+      read: false,
+      created_at: new Date().toISOString(),
+    });
+
+    console.log('[InvestmentService] Resale purchase completed:', confirmationNumber);
+    return {
+      ...result,
+      confirmationNumber,
+      message: `Purchased ${typedListing.shares} shares of ${typedListing.property_name} from secondary market.`,
+    };
+  } catch (error) {
+    console.log('[InvestmentService] Resale buy error:', (error as Error)?.message);
+    return { success: false, transactionId: '', holdingId: '', confirmationNumber: '', message: 'Failed to complete resale purchase.', error: 'unknown' };
+  }
+}
+
+export async function cancelResaleListing(listingId: string): Promise<{ success: boolean; message: string }> {
+  try {
+    const user = await getAuthUser();
+    if (!user) return { success: false, message: 'Please log in.' };
+
+    const { error } = await supabase
+      .from('resale_listings')
+      .update({ status: 'cancelled' })
+      .eq('id', listingId)
+      .eq('seller_id', user.id);
+
+    if (error) {
+      console.log('[InvestmentService] Cancel listing failed:', error?.message);
+      return { success: false, message: 'Failed to cancel listing.' };
+    }
+
+    console.log('[InvestmentService] Listing cancelled:', listingId);
+    return { success: true, message: 'Listing cancelled successfully.' };
+  } catch {
+    return { success: false, message: 'An error occurred.' };
+  }
+}
+
 export async function purchaseJVInvestment(params: {
   jvDealId: string;
   jvTitle: string;

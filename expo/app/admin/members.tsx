@@ -130,7 +130,23 @@ export default function MembersScreen() {
   });
 
   const members = useMemo(() => {
-    const items = membersQuery.data?.members ?? [];
+    const rawItems = membersQuery.data?.members ?? [];
+    const items: MemberItem[] = rawItems.map((m: any) => ({
+      id: m.id || '',
+      email: m.email || '',
+      firstName: m.first_name || m.firstName || '',
+      lastName: m.last_name || m.lastName || '',
+      phone: m.phone || '',
+      country: m.country || '',
+      kycStatus: m.kyc_status || m.kycStatus || 'pending',
+      status: m.status || 'active',
+      walletBalance: Number(m.wallet_balance || m.walletBalance || 0),
+      totalInvested: Number(m.total_invested || m.totalInvested || 0),
+      holdings: Number(m.holdings || 0),
+      totalTransactions: Number(m.total_transactions || m.totalTransactions || 0),
+      lastActivity: m.last_activity || m.lastActivity || m.updated_at || '',
+      createdAt: m.created_at || m.createdAt || '',
+    }));
     let result = items;
 
     if (filter === 'active') {
@@ -268,7 +284,7 @@ export default function MembersScreen() {
                 { color: getKycStatusColor(member.kycStatus) },
               ]}
             >
-              KYC: {member.kycStatus.replace('_', ' ')}
+              KYC: {(member.kycStatus || 'pending').replace('_', ' ')}
             </Text>
           </View>
           <View

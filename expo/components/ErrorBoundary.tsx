@@ -1,113 +1,81 @@
-/**
- * =============================================================================
- * ERROR BOUNDARY COMPONENT - components/ErrorBoundary.tsx
- * =============================================================================
- * 
- * React Error Boundary for catching and handling JavaScript errors in the
- * component tree. Prevents the entire app from crashing on errors.
- * 
- * FEATURES:
- * ---------
- * - Catches errors in child component tree
- * - Shows user-friendly error message
- * - Displays error details in development mode (__DEV__)
- * - Provides "Try Again" button to reset and retry
- * - Supports custom fallback UI via props
- * 
- * PROPS:
- * ------
- * - children: ReactNode - Components to wrap
- * - fallback?: ReactNode - Custom UI to show on error (optional)
- * 
- * USAGE:
- * ------
- * // Wrap your app or sections of the app
- * <ErrorBoundary>
- *   <YourComponent />
- * </ErrorBoundary>
- * 
- * // With custom fallback
- * <ErrorBoundary fallback={<CustomErrorScreen />}>
- *   <YourComponent />
- * </ErrorBoundary>
- * 
- * LOGGING:
- * --------
- * Errors are logged to console with '[ErrorBoundary]' prefix:
- * - Error message
- * - Component stack trace (for debugging)
- * 
- * @see app/_layout.tsx - Used at root level
- * =============================================================================
- */
-
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { AlertTriangle, RefreshCw } from 'lucide-react-native';
 import Colors from '@/constants/colors';
+import { errorTracker } from '@/lib/error-tracking';
 
-interface Props {
+interface ErrorBoundaryProps {
   children: ReactNode;
-  fallback?: ReactNode;
+  fallbackTitle?: string;
+  onReset?: () => void;
 }
 
-interface State {
+interface ErrorBoundaryState {
   hasError: boolean;
   error: Error | null;
-  errorInfo: ErrorInfo | null;
+  errorInfo: string;
 }
 
-export class ErrorBoundary extends Component<Props, State> {
-  constructor(props: Props) {
+export default class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
     super(props);
-    this.state = { hasError: false, error: null, errorInfo: null };
+    this.state = { hasError: false, error: null, errorInfo: '' };
   }
 
-  static getDerivedStateFromError(error: Error): Partial<State> {
+  static getDerivedStateFromError(error: Error): Partial<ErrorBoundaryState> {
     return { hasError: true, error };
   }
 
-  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    const errorInfo = info.componentStack?.slice(0, 500) || '';
     this.setState({ errorInfo });
-    console.error('[ErrorBoundary] Caught error:', error.message);
-    console.error('[ErrorBoundary] Component stack:', errorInfo.componentStack);
+
+    console.log('[ErrorBoundary] Caught render error:', error.message);
+    console.log('[ErrorBoundary] Component stack:', errorInfo);
+
+    try {
+      errorTracker.captureError(error, 'fatal', {
+        source: 'ErrorBoundary',
+        componentStack: errorInfo.slice(0, 200),
+      });
+    } catch {
+      console.log('[ErrorBoundary] Failed to report error to tracker');
+    }
   }
 
-  handleRetry = () => {
-    this.setState({ hasError: false, error: null, errorInfo: null });
+  handleReset = () => {
+    this.setState({ hasError: false, error: null, errorInfo: '' });
+    this.props.onReset?.();
   };
 
   render() {
     if (this.state.hasError) {
-      if (this.props.fallback) {
-        return this.props.fallback;
-      }
-
       return (
         <View style={styles.container}>
-          <View style={styles.content}>
-            <View style={styles.iconContainer}>
-              <AlertTriangle size={48} color={Colors.error} />
+          <View style={styles.card}>
+            <View style={styles.iconWrap}>
+              <AlertTriangle size={32} color="#FF6B6B" />
             </View>
-            <Text style={styles.title}>Something went wrong</Text>
-            <Text style={styles.message}>
-              We are sorry, but something unexpected happened. Please try again.
+            <Text style={styles.title}>
+              {this.props.fallbackTitle || 'Something went wrong'}
             </Text>
-            
-            {__DEV__ && this.state.error && (
-              <ScrollView style={styles.errorDetails} showsVerticalScrollIndicator={false}>
-                <Text style={styles.errorText}>{this.state.error.toString()}</Text>
-                {this.state.errorInfo && (
-                  <Text style={styles.stackText}>
-                    {this.state.errorInfo.componentStack}
-                  </Text>
-                )}
+            <Text style={styles.message}>
+              {this.state.error?.message || 'An unexpected error occurred'}
+            </Text>
+            {this.state.errorInfo ? (
+              <ScrollView style={styles.stackScroll} horizontal={false}>
+                <Text style={styles.stack} numberOfLines={6}>
+                  {this.state.errorInfo.trim()}
+                </Text>
               </ScrollView>
-            )}
-
-            <TouchableOpacity style={styles.retryButton} onPress={this.handleRetry}>
-              <RefreshCw size={20} color={Colors.black} />
-              <Text style={styles.retryText}>Try Again</Text>
+            ) : null}
+            <TouchableOpacity
+              style={styles.resetBtn}
+              onPress={this.handleReset}
+              activeOpacity={0.8}
+            >
+              <RefreshCw size={16} color="#000" />
+              <Text style={styles.resetBtnText}>Try Again</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -126,66 +94,65 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 24,
   },
-  content: {
-    alignItems: 'center',
+  card: {
+    backgroundColor: Colors.surface,
+    borderRadius: 20,
+    padding: 28,
+    width: '100%',
     maxWidth: 400,
-  },
-  iconContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: Colors.errorLight,
-    justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+  },
+  iconWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: 20,
+    backgroundColor: '#FF6B6B15',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
   },
   title: {
-    fontSize: 24,
-    fontWeight: '700' as const,
     color: Colors.text,
-    marginBottom: 12,
+    fontSize: 20,
+    fontWeight: '800' as const,
     textAlign: 'center',
+    marginBottom: 8,
   },
   message: {
-    fontSize: 16,
     color: Colors.textSecondary,
+    fontSize: 14,
     textAlign: 'center',
-    lineHeight: 24,
-    marginBottom: 24,
+    lineHeight: 20,
+    marginBottom: 16,
   },
-  errorDetails: {
-    maxHeight: 150,
-    backgroundColor: Colors.surface,
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 24,
+  stackScroll: {
+    maxHeight: 100,
     width: '100%',
+    marginBottom: 16,
+    backgroundColor: Colors.backgroundSecondary,
+    borderRadius: 10,
+    padding: 10,
   },
-  errorText: {
-    fontSize: 12,
-    color: Colors.error,
-    fontFamily: 'monospace',
-  },
-  stackText: {
-    fontSize: 10,
+  stack: {
     color: Colors.textTertiary,
+    fontSize: 11,
     fontFamily: 'monospace',
-    marginTop: 8,
+    lineHeight: 16,
   },
-  retryButton: {
+  resetBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.primary,
-    paddingVertical: 14,
-    paddingHorizontal: 28,
-    borderRadius: 12,
     gap: 8,
+    backgroundColor: Colors.primary,
+    borderRadius: 12,
+    paddingHorizontal: 24,
+    paddingVertical: 14,
   },
-  retryText: {
-    fontSize: 16,
-    fontWeight: '600' as const,
-    color: Colors.black,
+  resetBtnText: {
+    color: '#000',
+    fontSize: 15,
+    fontWeight: '700' as const,
   },
 });
-
-export default ErrorBoundary;

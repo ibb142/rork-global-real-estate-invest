@@ -1,10 +1,12 @@
 import createContextHook from '@nkzw/create-context-hook';
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { supabase } from './supabase';
-import { persistAuth, loadStoredAuth, clearStoredAuth, isAdminRole, setAuthCredentials, getAuthToken, getRefreshToken, getAuthUserId } from './auth-store';
+import { persistAuth, loadStoredAuth, clearStoredAuth, setAuthCredentials } from './auth-store';
+import { isAdminRole, normalizeRole } from './auth-helpers';
+import { startSessionMonitor } from './session-timeout';
 import type { Session } from '@supabase/supabase-js';
 
-interface AuthUser {
+export interface AuthUser {
   id: string;
   email: string;
   firstName: string;
@@ -32,6 +34,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   const [requiresTwoFactor, setRequiresTwoFactor] = useState(false);
   const [loginLoading, setLoginLoading] = useState(false);
   const [registerLoading, setRegisterLoading] = useState(false);
+  const sessionMonitorCleanup = useRef<(() => void) | null>(null);
 
   const fetchProfileRole = useCallback(async (userId: string): Promise<string> => {
     try {
@@ -51,12 +54,44 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     return 'investor';
   }, []);
 
+  const doLogout = useCallback(async () => {
+    try {
+      await supabase.auth.signOut();
+    } catch (e) {
+      console.log('[Auth] Logout error:', e);
+    }
+    await clearStoredAuth();
+    setUser(null);
+    setIsAuthenticated(false);
+    setUserRole('investor');
+    setRequiresTwoFactor(false);
+    if (sessionMonitorCleanup.current) {
+      sessionMonitorCleanup.current();
+      sessionMonitorCleanup.current = null;
+    }
+    console.log('[Auth] Logged out');
+  }, []);
+
+  const startMonitor = useCallback(() => {
+    if (sessionMonitorCleanup.current) {
+      sessionMonitorCleanup.current();
+    }
+    sessionMonitorCleanup.current = startSessionMonitor(() => {
+      console.log('[Auth] Session timed out — logging out');
+      void doLogout();
+    });
+  }, [doLogout]);
+
   const handleSession = useCallback(async (session: Session) => {
     const supaUser = session.user;
     const meta = supaUser.user_metadata || {};
 
     const dbRole = await fetchProfileRole(supaUser.id);
-    const role = dbRole || meta.role || 'investor';
+    const role = normalizeRole(dbRole);
+
+    if (!dbRole) {
+      console.warn('[Auth] No server role found for user:', supaUser.id, '— defaulting to investor. JWT metadata role is NOT trusted for authorization.');
+    }
 
     const authUser: AuthUser = {
       id: supaUser.id,
@@ -80,8 +115,9 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       userRole: role,
     });
 
+    startMonitor();
     console.log('[Auth] Session set for:', supaUser.id, 'role:', role);
-  }, [fetchProfileRole]);
+  }, [fetchProfileRole, startMonitor]);
 
   useEffect(() => {
     const initAuth = async () => {
@@ -91,10 +127,16 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
           await handleSession(session);
         } else {
           const stored = await loadStoredAuth();
-          if (stored.token && stored.userId) {
-            setIsAuthenticated(true);
-            if (stored.userRole) setUserRole(stored.userRole);
-            console.log('[Auth] Session restored from store for:', stored.userId);
+          if (stored.userId) {
+            setAuthCredentials(null, stored.userId, stored.userRole);
+            const refreshResult = await supabase.auth.refreshSession();
+            if (refreshResult.data.session) {
+              await handleSession(refreshResult.data.session);
+              console.log('[Auth] Session restored via refresh for:', stored.userId);
+            } else {
+              console.log('[Auth] Stored userId found but session refresh failed — clearing');
+              await clearStoredAuth();
+            }
           }
         }
       } catch (e) {
@@ -117,6 +159,10 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
           setIsAuthenticated(false);
           setUserRole('investor');
           await clearStoredAuth();
+          if (sessionMonitorCleanup.current) {
+            sessionMonitorCleanup.current();
+            sessionMonitorCleanup.current = null;
+          }
         }
       });
       subscription = result?.data?.subscription ?? null;
@@ -126,6 +172,10 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
 
     return () => {
       try { subscription?.unsubscribe(); } catch {}
+      if (sessionMonitorCleanup.current) {
+        sessionMonitorCleanup.current();
+        sessionMonitorCleanup.current = null;
+      }
     };
   }, [handleSession]);
 
@@ -262,24 +312,16 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     }
   }, [handleSession]);
 
-  const logout = useCallback(async () => {
-    try {
-      await supabase.auth.signOut();
-    } catch (e) {
-      console.log('[Auth] Logout error:', e);
-    }
-    await clearStoredAuth();
-    setUser(null);
-    setIsAuthenticated(false);
-    setUserRole('investor');
-    setRequiresTwoFactor(false);
-    console.log('[Auth] Logged out');
-  }, []);
-
   const activateOwnerAccess = useCallback(async () => {
     try {
       if (!user?.id) {
         return { success: false, message: 'Not authenticated' };
+      }
+
+      const { data: { session: currentSession } } = await supabase.auth.getSession();
+      if (!currentSession) {
+        console.error('[Auth] activateOwnerAccess: No active Supabase session. Cannot verify admin role without valid session.');
+        return { success: false, message: 'No active session. Please log in again.' };
       }
 
       const { data: profile, error: profileErr } = await supabase
@@ -289,41 +331,34 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         .single();
 
       if (profileErr) {
-        console.error('[Auth] Could not verify role from server:', profileErr.message);
-        return { success: false, message: 'Could not verify role from server' };
+        console.error('[Auth] SECURITY: Could not verify role from server:', profileErr.message);
+        return { success: false, message: 'Server role verification failed. Admin access requires database confirmation.' };
       }
 
-      const serverRole = profile?.role || 'investor';
+      const serverRole = normalizeRole(profile?.role);
       if (!isAdminRole(serverRole)) {
-        console.warn('[Auth] activateOwnerAccess DENIED — server role is:', serverRole);
+        console.warn('[Auth] activateOwnerAccess DENIED — server role is:', serverRole, 'for user:', user.id);
         return { success: false, message: `Access denied. Your server role is: ${serverRole}` };
       }
 
       setUserRole(serverRole);
-      setUser({ ...user, role: serverRole });
+      setUser(prev => prev ? { ...prev, role: serverRole } : prev);
 
-      setAuthCredentials(
-        getAuthToken(),
-        getAuthUserId() || user.id,
-        serverRole,
-        getRefreshToken(),
-      );
+      setAuthCredentials(null, user.id, serverRole);
 
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        await persistAuth({
-          token: session.access_token,
-          refreshToken: session.refresh_token || '',
-          userId: session.user.id,
-          userRole: serverRole,
-        });
-      }
+      await persistAuth({
+        token: currentSession.access_token,
+        refreshToken: currentSession.refresh_token || '',
+        userId: currentSession.user.id,
+        userRole: serverRole,
+      });
 
       console.log('[Auth] Owner access verified from server and activated. Role:', serverRole);
       return { success: true, message: `Access activated with role: ${serverRole}` };
-    } catch (error: any) {
-      console.error('[Auth] Promote error:', error);
-      return { success: false, message: error?.message || 'Failed to activate owner access' };
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Failed to activate owner access';
+      console.error('[Auth] Promote error:', msg);
+      return { success: false, message: msg };
     }
   }, [user]);
 
@@ -346,9 +381,10 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     isLoading,
     isAdmin: isAdminRole(userRole),
     userRole,
+    userId: user?.id ?? null,
     login,
     register,
-    logout,
+    logout: doLogout,
     verify2FA,
     cancelTwoFactor,
     requiresTwoFactor,
@@ -363,7 +399,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     profileData: user,
     refetchProfile,
   }), [
-    user, isAuthenticated, isLoading, userRole, login, register, logout,
+    user, isAuthenticated, isLoading, userRole, login, register, doLogout,
     verify2FA, cancelTwoFactor, requiresTwoFactor, refreshSession,
     activateOwnerAccess, ownerDirectAccess, loginLoading, registerLoading,
     refetchProfile,

@@ -500,7 +500,7 @@ export default function InfluencerApplyScreen() {
         <View style={styles.summaryRow}>
           <Text style={styles.summaryLabel}>Followers:</Text>
           <Text style={styles.summaryValue}>
-            {formData.followers ? parseInt(formData.followers).toLocaleString() : '-'}
+            {formData.followers ? new Intl.NumberFormat('en-US').format(parseInt(formData.followers)) : '-'}
           </Text>
         </View>
         <View style={styles.summaryRow}>

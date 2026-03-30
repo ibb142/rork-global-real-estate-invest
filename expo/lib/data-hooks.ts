@@ -27,14 +27,15 @@ export function useProperties() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('properties')
-        .select('*')
+        .select('id,name,location,city,country,image,share_price,total_shares,available_shares,annual_yield,occupancy_rate,type,status,created_at')
         .order('created_at', { ascending: false })
-        .limit(50);
+        .limit(30);
       if (error) throw error;
       return data;
     },
     retry: 1,
-    staleTime: 1000 * 60 * 5,
+    staleTime: 1000 * 60 * 10,
+    gcTime: 1000 * 60 * 60,
   });
 
   const properties: Property[] = useMemo(() => {
@@ -87,13 +88,14 @@ export function useProperty(propertyId: string) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('properties')
-        .select('*')
+        .select('id,name,location,city,country,image,share_price,total_shares,available_shares,annual_yield,occupancy_rate,type,status,created_at')
         .eq('id', propertyId)
         .single();
       if (error) throw error;
       return data;
     },
     retry: 1,
+    staleTime: 1000 * 60 * 10,
     enabled: !!propertyId,
   });
 
@@ -148,12 +150,14 @@ export function useMarketData() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('market_data')
-        .select('*');
+        .select('id,metric,value,change_percent')
+        .limit(100);
       if (error) throw error;
       return data;
     },
     retry: 1,
-    staleTime: 1000 * 60,
+    staleTime: 1000 * 60 * 5,
+    gcTime: 1000 * 60 * 30,
   });
 
   const marketData: Record<string, MarketData> = useMemo(() => {
@@ -197,7 +201,7 @@ export function useCurrentUser() {
 
       const { data: profile } = await supabase
         .from('profiles')
-        .select('*')
+        .select('id,first_name,last_name,email,kyc_status,country,phone,avatar,total_invested,total_returns,role')
         .eq('id', user.id)
         .single();
 
@@ -216,7 +220,8 @@ export function useCurrentUser() {
       };
     },
     retry: 1,
-    staleTime: 1000 * 60 * 5,
+    staleTime: 1000 * 60 * 10,
+    gcTime: 1000 * 60 * 60,
   });
 
   const balanceQuery = useQuery({
@@ -227,14 +232,14 @@ export function useCurrentUser() {
 
       const { data } = await supabase
         .from('wallets')
-        .select('*')
+        .select('available,pending,invested,total,currency')
         .eq('user_id', user.id)
         .single();
 
       return data;
     },
     retry: 1,
-    staleTime: 1000 * 60,
+    staleTime: 1000 * 60 * 3,
   });
 
   const user = useMemo(() => {
@@ -279,13 +284,15 @@ export function useHoldings() {
 
       const { data, error } = await supabase
         .from('holdings')
-        .select('*')
-        .eq('user_id', user.id);
+        .select('id,property_id,shares,avg_cost_basis,current_value,total_return,total_return_percent,unrealized_pnl,unrealized_pnl_percent,purchase_date,created_at')
+        .eq('user_id', user.id)
+        .limit(100);
       if (error) throw error;
       return data || [];
     },
     retry: 1,
-    staleTime: 1000 * 60 * 2,
+    staleTime: 1000 * 60 * 5,
+    gcTime: 1000 * 60 * 30,
   });
 
   const holdings: Holding[] = useMemo(() => {
@@ -363,15 +370,16 @@ export function useNotifications() {
 
       const { data, error } = await supabase
         .from('notifications')
-        .select('*')
+        .select('id,type,title,message,read,created_at')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
-        .limit(50);
+        .limit(30);
       if (error) throw error;
       return data || [];
     },
     retry: 1,
-    staleTime: 1000 * 60,
+    staleTime: 1000 * 60 * 3,
+    gcTime: 1000 * 60 * 15,
   });
 
   const notifications: Notification[] = useMemo(() => {
@@ -412,14 +420,14 @@ export function useWalletBalance() {
 
       const { data } = await supabase
         .from('wallets')
-        .select('*')
+        .select('available,pending,invested,total,currency')
         .eq('user_id', user.id)
         .single();
 
       return data;
     },
     retry: 1,
-    staleTime: 1000 * 30,
+    staleTime: 1000 * 60 * 3,
   });
 
   const balance = useMemo(() => {
@@ -453,7 +461,7 @@ export function useTransactions(page: number = 1, limit: number = 20) {
 
       const { data, error, count } = await supabase
         .from('transactions')
-        .select('*', { count: 'exact' })
+        .select('id,type,amount,currency,status,property_id,created_at', { count: 'exact' })
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
         .range(from, to);
@@ -462,7 +470,8 @@ export function useTransactions(page: number = 1, limit: number = 20) {
       return { transactions: data || [], total: count || 0 };
     },
     retry: 1,
-    staleTime: 1000 * 60,
+    staleTime: 1000 * 60 * 3,
+    gcTime: 1000 * 60 * 15,
   });
 
   return {

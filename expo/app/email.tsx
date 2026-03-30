@@ -201,6 +201,11 @@ export default function EmailScreen() {
     markAllAsRead,
     sesStatus,
     refreshEmails,
+    isLoading,
+    inboxStatus,
+    lastFetchSource,
+    backendError,
+    sourceStats: _sourceStats,
   } = useEmail();
 
   const [showDrawer, setShowDrawer] = useState(false);
@@ -379,6 +384,24 @@ export default function EmailScreen() {
           </ScrollView>
         </View>
 
+        {lastFetchSource === 'cache' && (
+          <View style={styles.sourceWarningBar}>
+            <CircleAlert size={13} color="#E67E22" strokeWidth={2} />
+            <Text style={styles.sourceWarningText}>Showing cached data — pull to refresh</Text>
+          </View>
+        )}
+
+        {(inboxStatus === 'error' || inboxStatus === 'no_backend' || inboxStatus === 'no_auth') && (
+          <View style={styles.inboxErrorBar}>
+            <CircleAlert size={13} color={Colors.error} strokeWidth={2} />
+            <Text style={styles.inboxErrorText}>
+              {inboxStatus === 'no_auth' ? 'Please log in to access real inbox' :
+               inboxStatus === 'no_backend' ? 'Email integration not configured' :
+               backendError || 'Inbox unavailable'}
+            </Text>
+          </View>
+        )}
+
         <FlatList
           data={emails}
           renderItem={renderEmail}
@@ -395,15 +418,43 @@ export default function EmailScreen() {
           }
           ListEmptyComponent={
             <View style={styles.emptyState}>
-              <Mail size={48} color={Colors.textTertiary} strokeWidth={1.2} />
-              <Text style={styles.emptyTitle}>
-                {searchQuery ? 'No results found' : 'No emails here'}
-              </Text>
-              <Text style={styles.emptySubtitle}>
-                {searchQuery
-                  ? `No emails matching "${searchQuery}"`
-                  : `Your ${currentFolderLabel.toLowerCase()} is empty`}
-              </Text>
+              {isLoading ? (
+                <>
+                  <Mail size={48} color={Colors.textTertiary} strokeWidth={1.2} />
+                  <Text style={styles.emptyTitle}>Loading inbox...</Text>
+                  <Text style={styles.emptySubtitle}>Connecting to mail server</Text>
+                </>
+              ) : inboxStatus === 'no_auth' ? (
+                <>
+                  <CircleAlert size={48} color={Colors.warning} strokeWidth={1.2} />
+                  <Text style={styles.emptyTitle}>Authentication required</Text>
+                  <Text style={styles.emptySubtitle}>Please log in to access your inbox</Text>
+                </>
+              ) : inboxStatus === 'no_backend' ? (
+                <>
+                  <CircleAlert size={48} color={Colors.textTertiary} strokeWidth={1.2} />
+                  <Text style={styles.emptyTitle}>Email not configured</Text>
+                  <Text style={styles.emptySubtitle}>Email backend integration is not set up</Text>
+                </>
+              ) : inboxStatus === 'error' ? (
+                <>
+                  <CircleAlert size={48} color={Colors.error} strokeWidth={1.2} />
+                  <Text style={styles.emptyTitle}>Inbox unavailable</Text>
+                  <Text style={styles.emptySubtitle}>{backendError || 'Could not connect to mail server'}</Text>
+                </>
+              ) : (
+                <>
+                  <Mail size={48} color={Colors.textTertiary} strokeWidth={1.2} />
+                  <Text style={styles.emptyTitle}>
+                    {searchQuery ? 'No results found' : 'No emails here'}
+                  </Text>
+                  <Text style={styles.emptySubtitle}>
+                    {searchQuery
+                      ? `No emails matching "${searchQuery}"`
+                      : `Your ${currentFolderLabel.toLowerCase()} is empty`}
+                  </Text>
+                </>
+              )}
             </View>
           }
         />
@@ -835,6 +886,36 @@ const styles = StyleSheet.create({
     color: Colors.textTertiary,
     textAlign: 'center' as const,
     paddingHorizontal: 40,
+  },
+  sourceWarningBar: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    gap: 6,
+    backgroundColor: 'rgba(230,126,34,0.08)',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(230,126,34,0.2)',
+  },
+  sourceWarningText: {
+    fontSize: 11,
+    fontWeight: '500' as const,
+    color: '#E67E22',
+  },
+  inboxErrorBar: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    gap: 6,
+    backgroundColor: 'rgba(231,76,60,0.06)',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(231,76,60,0.15)',
+  },
+  inboxErrorText: {
+    fontSize: 12,
+    fontWeight: '500' as const,
+    color: Colors.error,
   },
   drawerOverlay: {
     ...StyleSheet.absoluteFillObject,

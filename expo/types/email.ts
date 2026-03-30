@@ -8,6 +8,8 @@ export interface EmailAccount {
   unreadCount: number;
 }
 
+export type EmailSource = 'backend' | 'ses-inbound' | 'gmail' | 'supabase' | 'local-draft' | 'local-sent' | 'cache' | 'unknown';
+
 export interface EmailMessage {
   id: string;
   accountId: string;
@@ -28,6 +30,7 @@ export interface EmailMessage {
   replyTo?: string;
   labels?: string[];
   priority?: 'low' | 'normal' | 'high';
+  source?: EmailSource;
 }
 
 export interface EmailContact {

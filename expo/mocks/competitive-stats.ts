@@ -165,7 +165,7 @@ export const trustFeatures: TrustFeature[] = [
   {
     id: 'tf-6',
     title: 'Escrow Protection',
-    description: 'All investor funds held in FDIC-insured escrow accounts at JPMorgan Chase until property closes.',
+    description: 'All investor funds held in escrow-protected accounts at major banking institutions until property closes.',
     icon: 'Vault',
     category: 'financial',
   },

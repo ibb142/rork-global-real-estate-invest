@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -30,6 +30,7 @@ import {
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { generateText } from '@/lib/ai-service';
+import { getAuthToken } from '@/lib/auth-store';
 
 interface InvestorIntent {
   budget?: string;
@@ -56,131 +57,54 @@ interface InboxEmail {
   status: 'new' | 'ai_replied' | 'manual_replied' | 'archived';
 }
 
-const MOCK_EMAILS: InboxEmail[] = [
-  {
-    id: 'e1',
-    from: 'Michael Torres',
-    fromEmail: 'mtorres@peninsulacap.com',
-    subject: 'Interested in tokenized real estate — South Florida',
-    body: `Hello,
+async function fetchAdminInboxEmails(): Promise<InboxEmail[]> {
+  const API_BASE = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || process.env.EXPO_PUBLIC_API_BASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL || '').trim().replace(/\/$/, '');
+  if (!API_BASE) {
+    console.log('[AdminInbox] No API_BASE configured — cannot fetch emails');
+    return [];
+  }
 
-I came across IVX Holdings while researching tokenized real estate investment platforms. I'm a private investor based in Miami and I'm very interested in what you're offering.
+  const token = getAuthToken();
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
 
-I have around $500K that I'd like to deploy into real estate over the next 6 months. I'm particularly interested in South Florida properties, preferably with a yield above 7%. 
+  try {
+    const res = await fetch(`${API_BASE}/api/emails?accountId=admin&folder=all&limit=100`, { headers });
+    if (!res.ok) {
+      console.log('[AdminInbox] Backend returned', res.status);
+      return [];
+    }
+    const data = await res.json() as { success: boolean; emails: Array<Record<string, unknown>> };
+    if (!data.success || !Array.isArray(data.emails)) return [];
 
-Could you send me more information about your current offerings and the minimum investment requirements?
+    console.log(`[AdminInbox] Fetched ${data.emails.length} real emails from backend`);
+    return data.emails.map((e: Record<string, unknown>, i: number) => ({
+      id: (e.id as string) || `be-${i}`,
+      from: (e.fromName as string) || (e.from as any)?.name || 'Unknown',
+      fromEmail: (e.fromEmail as string) || (e.from as any)?.email || '',
+      subject: (e.subject as string) || '(No Subject)',
+      body: (e.body as string) || '',
+      receivedAt: (e.date as string) || new Date().toISOString(),
+      isRead: (e.isRead as boolean) ?? false,
+      isStarred: (e.isStarred as boolean) ?? false,
+      tag: inferTag((e.subject as string) || '', (e.body as string) || ''),
+      status: 'new' as const,
+    }));
+  } catch (err) {
+    console.log('[AdminInbox] Fetch failed:', (err as Error)?.message);
+    return [];
+  }
+}
 
-Best,
-Michael Torres
-Peninsula Capital Partners`,
-    receivedAt: new Date(Date.now() - 1800000).toISOString(),
-    isRead: false,
-    isStarred: true,
-    tag: 'investor',
-    status: 'new',
-  },
-  {
-    id: 'e2',
-    from: 'Sandra Wealth',
-    fromEmail: 'sandra@wealthprivate.com',
-    subject: 'JV opportunity for Pembroke Pines development',
-    body: `Good morning,
+function inferTag(subject: string, body: string): InboxEmail['tag'] {
+  const text = `${subject} ${body}`.toLowerCase();
+  if (text.includes('joint venture') || text.includes('jv ') || text.includes('co-invest')) return 'jv';
+  if (text.includes('bridge') || text.includes('lend') || text.includes('loan') || text.includes('financing')) return 'lender';
+  if (text.includes('buy') || text.includes('purchase') || text.includes('acquire')) return 'buyer';
+  if (text.includes('invest') || text.includes('allocat') || text.includes('capital') || text.includes('yield')) return 'investor';
+  return 'general';
+}
 
-We represent a group of accredited investors looking to participate in a joint venture for a Pembroke Pines development project. Our group can bring $1.2M to $1.8M in equity, and we're looking for a deal sponsor with strong South Florida track record.
-
-We understand IVX Holdings has a property at or near Pembroke Pines. Can we schedule a call this week to discuss a potential JV structure?
-
-Regards,
-Sandra Wealth
-Wealth Private Investments LLC`,
-    receivedAt: new Date(Date.now() - 5400000).toISOString(),
-    isRead: false,
-    isStarred: false,
-    tag: 'jv',
-    status: 'new',
-  },
-  {
-    id: 'e3',
-    from: 'Robert Chen',
-    fromEmail: 'rchen@pacificbridge.io',
-    subject: 'Bridge financing inquiry — tokenized mortgage',
-    body: `Hi IVX Holdings team,
-
-I'm reaching out on behalf of Pacific Bridge Capital. We specialize in providing bridge loans to real estate operators in the Florida market.
-
-I noticed your platform focuses on tokenized first-lien mortgages and would like to explore whether there's an opportunity to work together. We have $5M-$10M available for the right deal.
-
-What's the best way to discuss this further?
-
-Robert Chen
-Pacific Bridge Capital`,
-    receivedAt: new Date(Date.now() - 10800000).toISOString(),
-    isRead: true,
-    isStarred: false,
-    tag: 'lender',
-    status: 'new',
-  },
-  {
-    id: 'e4',
-    from: 'Jennifer Alvarez',
-    fromEmail: 'jalvarez@gmail.com',
-    subject: 'How to invest in your platform?',
-    body: `Hello,
-
-I found your app on Instagram and I'm very interested in real estate investing but I'm new to this. I have about $25,000 saved that I want to invest in something more than just stocks.
-
-Can you explain how your platform works? Is there a minimum to start? How safe is it? I'm in Boca Raton, FL.
-
-Thank you!
-Jennifer`,
-    receivedAt: new Date(Date.now() - 21600000).toISOString(),
-    isRead: true,
-    isStarred: false,
-    tag: 'investor',
-    status: 'new',
-  },
-  {
-    id: 'e5',
-    from: 'David Ruiz',
-    fromEmail: 'druiz@sunstaterealty.com',
-    subject: 'Property referral partnership',
-    body: `Hello IVX team,
-
-I'm a licensed real estate broker in Florida with over 200 active investor clients. I've been following your tokenized real estate platform and I believe there's a strong opportunity for a referral partnership.
-
-I can bring qualified buyers and investors to your platform. What kind of commission structure or referral program do you offer? I'd love to set up a formal partnership agreement.
-
-David Ruiz
-Sun State Realty
-License: BK3456789`,
-    receivedAt: new Date(Date.now() - 36000000).toISOString(),
-    isRead: true,
-    isStarred: true,
-    tag: 'general',
-    status: 'new',
-  },
-  {
-    id: 'e6',
-    from: 'Atlas Family Office',
-    fromEmail: 'investments@atlasfamilyoffice.com',
-    subject: 'Institutional allocation — $3M tokenized RE',
-    body: `Dear IVX Holdings,
-
-The Atlas Family Office manages $45M in assets for a multi-generational family based in Palm Beach. We are currently reviewing our real estate allocation and have identified tokenized real estate as a target category.
-
-We are prepared to allocate $3M initially with potential to increase to $8M by Q3 2026, provided due diligence is satisfactory.
-
-Please send your investor deck, SEC/legal compliance documentation, and your most recent audited financials. We will schedule a formal call with our CIO once materials are reviewed.
-
-Investment Committee
-Atlas Family Office`,
-    receivedAt: new Date(Date.now() - 86400000).toISOString(),
-    isRead: false,
-    isStarred: true,
-    tag: 'investor',
-    status: 'new',
-  },
-];
 
 const TAG_COLORS: Record<string, string> = {
   investor: Colors.primary,
@@ -207,7 +131,9 @@ const STATUS_COLORS: Record<string, string> = {
 
 export default function EmailInboxScreen() {
   const router = useRouter();
-  const [emails, setEmails] = useState<InboxEmail[]>(MOCK_EMAILS);
+  const [emails, setEmails] = useState<InboxEmail[]>([]);
+  const [loadingEmails, setLoadingEmails] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedEmail, setSelectedEmail] = useState<InboxEmail | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterTag, setFilterTag] = useState<string>('all');
@@ -216,6 +142,30 @@ export default function EmailInboxScreen() {
   const [composeSubject, setComposeSubject] = useState('');
   const [composeBody, setComposeBody] = useState('');
   const [sendingReply, setSendingReply] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoadingEmails(true);
+    setLoadError(null);
+    console.log('[AdminInbox] Loading real emails from backend...');
+    fetchAdminInboxEmails()
+      .then(fetched => {
+        if (cancelled) return;
+        setEmails(fetched);
+        setLoadingEmails(false);
+        console.log(`[AdminInbox] Loaded ${fetched.length} real emails`);
+        if (fetched.length === 0) {
+          setLoadError('No emails from backend. Inbox is empty or backend not configured.');
+        }
+      })
+      .catch(err => {
+        if (cancelled) return;
+        setLoadingEmails(false);
+        setLoadError((err as Error)?.message || 'Failed to load emails');
+        console.log('[AdminInbox] Load error:', (err as Error)?.message);
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   const unreadCount = useMemo(() => emails.filter(e => !e.isRead).length, [emails]);
   const newCount = useMemo(() => emails.filter(e => e.status === 'new').length, [emails]);
@@ -400,7 +350,13 @@ ${email.body}`,
         </View>
         <TouchableOpacity
           style={styles.refreshBtn}
-          onPress={() => Alert.alert('Inbox', 'Syncing emails...')}
+          onPress={() => {
+            setLoadingEmails(true);
+            setLoadError(null);
+            fetchAdminInboxEmails()
+              .then(fetched => { setEmails(fetched); setLoadingEmails(false); })
+              .catch(err => { setLoadingEmails(false); setLoadError((err as Error)?.message || 'Refresh failed'); });
+          }}
         >
           <RefreshCw size={20} color={Colors.primary} />
         </TouchableOpacity>
@@ -501,7 +457,20 @@ ${email.body}`,
             </View>
           </TouchableOpacity>
         ))}
-        {filteredEmails.length === 0 && (
+        {loadingEmails && filteredEmails.length === 0 && (
+          <View style={styles.emptyState}>
+            <ActivityIndicator size="large" color={Colors.primary} />
+            <Text style={styles.emptyText}>Loading real emails...</Text>
+          </View>
+        )}
+        {!loadingEmails && loadError && filteredEmails.length === 0 && (
+          <View style={styles.emptyState}>
+            <Inbox size={44} color={Colors.error} />
+            <Text style={[styles.emptyText, { color: Colors.error }]}>{loadError}</Text>
+            <Text style={[styles.emptyText, { fontSize: 12, marginTop: 4 }]}>Pull down or tap refresh to retry</Text>
+          </View>
+        )}
+        {!loadingEmails && !loadError && filteredEmails.length === 0 && (
           <View style={styles.emptyState}>
             <Inbox size={44} color={Colors.textTertiary} />
             <Text style={styles.emptyText}>No emails found</Text>

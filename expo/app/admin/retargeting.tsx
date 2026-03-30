@@ -66,7 +66,7 @@ const PLATFORM_LABELS: Record<string, string> = {
 function formatCurrency(val: number): string {
   if (val >= 1000000) return (val / 1000000).toFixed(1) + 'M';
   if (val >= 1000) return (val / 1000).toFixed(1) + 'K';
-  return val.toLocaleString();
+  return new Intl.NumberFormat('en-US').format(val);
 }
 
 const s = StyleSheet.create({
@@ -263,7 +263,7 @@ const s = StyleSheet.create({
 function formatNumber(val: number): string {
   if (val >= 1000000) return (val / 1000000).toFixed(1) + 'M';
   if (val >= 1000) return (val / 1000).toFixed(1) + 'K';
-  return val.toLocaleString();
+  return new Intl.NumberFormat('en-US').format(val);
 }
 
 export default function RetargetingDashboard() {

@@ -61,8 +61,78 @@ import Colors from '@/constants/colors';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import '@/lib/landing-deploy';
+import '@/lib/landing-sync';
+import {
+  getAutoDeployConfig,
+  setAutoDeployConfig,
+  manualDeploy,
+  triggerAutoDeploy,
+  getAutoDeployLogs,
+  clearAutoDeployLogs,
+  type AutoDeployConfig,
+  type AutoDeployLogEntry,
+} from '@/lib/auto-deploy';
 
-const STORAGE_KEY = 'landing_page_controls_v2';
+const STORAGE_KEY = 'landing_page_controls_v3';
+
+const SECTION_ICON_MAP: Record<string, React.ComponentType<any>> = {
+  'hero': Layout,
+  'value-prop': Star,
+  'how-it-works': Layers,
+  'properties': MapPin,
+  'roi-calculator': TrendingUp,
+  'testimonials': MessageSquare,
+  'stats': BarChart3,
+  'team': Users,
+  'jv-deals': Briefcase,
+  'video-section': Video,
+  'faq': FileText,
+  'newsletter': Mail,
+  'cta-banner': Megaphone,
+  'social-proof': Shield,
+  'footer': Globe,
+  'contact': Phone,
+  'blog-preview': FileText,
+  'gallery': Image,
+};
+
+const MODULE_ICON_MAP: Record<string, React.ComponentType<any>> = {
+  'home': Layout,
+  'market': TrendingUp,
+  'portfolio': BarChart3,
+  'chat': MessageSquare,
+  'invest': DollarSign,
+  'jv-invest': Briefcase,
+  'buy-shares': DollarSign,
+  'debt-acquisition': Target,
+  'land-partner': MapPin,
+  'wallet': DollarSign,
+  'referrals': Share2,
+  'profile': Users,
+  'signup': Users,
+  'login': Lock,
+  'kyc': Shield,
+  'vip-tiers': Crown,
+  'notifications': Radio,
+  'app-guide': FileText,
+  'company-info': Globe,
+  'trust-center': Shield,
+};
+
+function restoreSectionIcons(sections: LandingSection[]): LandingSection[] {
+  return sections.map(s => ({
+    ...s,
+    icon: SECTION_ICON_MAP[s.id] || DEFAULT_SECTIONS.find(d => d.id === s.id)?.icon || Globe,
+  }));
+}
+
+function restoreModuleIcons(modules: AppModule[]): AppModule[] {
+  return modules.map(m => ({
+    ...m,
+    icon: MODULE_ICON_MAP[m.id] || DEFAULT_MODULES.find(d => d.id === m.id)?.icon || Globe,
+  }));
+}
 
 type TabType = 'sections' | 'modules' | 'content' | 'deploy';
 
@@ -229,6 +299,14 @@ export default function LandingControlScreen() {
   const [isDeploying, setIsDeploying] = useState(false);
   const [maintenanceMode, setMaintenanceMode] = useState(false);
   const [landingEnabled, setLandingEnabled] = useState(true);
+  const [autoDeployConfig, setAutoDeployConfigState] = useState<AutoDeployConfig>({
+    enabled: false,
+    deployOnSave: true,
+    deployOnDealPublish: true,
+    deployOnContentChange: true,
+  });
+  const [autoDeployLogs, setAutoDeployLogs] = useState<AutoDeployLogEntry[]>([]);
+  const [autoDeployLoading, setAutoDeployLoading] = useState(false);
 
   const [deployLogs, setDeployLogs] = useState<DeployLog[]>([
     { id: '1', timestamp: new Date(Date.now() - 3600000).toISOString(), action: 'Sections updated', status: 'success', changes: 3, user: 'Owner' },
@@ -241,6 +319,47 @@ export default function LandingControlScreen() {
     Animated.spring(headerAnim, { toValue: 1, tension: 50, friction: 10, useNativeDriver: true }).start();
   }, [headerAnim]);
 
+  useEffect(() => {
+    let mounted = true;
+    const loadAutoDeployState = async () => {
+      try {
+        const config = await getAutoDeployConfig();
+        const logs = await getAutoDeployLogs();
+        if (mounted) {
+          setAutoDeployConfigState(config);
+          setAutoDeployLogs(logs);
+          console.log('[LandingControl] Auto-deploy config loaded:', JSON.stringify(config));
+        }
+      } catch (err) {
+        console.log('[LandingControl] Failed to load auto-deploy config:', err);
+      }
+    };
+    void loadAutoDeployState();
+    return () => { mounted = false; };
+  }, []);
+
+  const toggleAutoDeployOption = useCallback(async (key: keyof AutoDeployConfig, value: boolean) => {
+    try {
+      const updated = await setAutoDeployConfig({ [key]: value });
+      setAutoDeployConfigState(updated);
+      console.log(`[LandingControl] Auto-deploy ${key} set to ${value}`);
+      if (Platform.OS !== 'web') {
+        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      }
+    } catch (err) {
+      console.log('[LandingControl] Failed to update auto-deploy config:', err);
+    }
+  }, []);
+
+  const refreshAutoDeployLogs = useCallback(async () => {
+    try {
+      const logs = await getAutoDeployLogs();
+      setAutoDeployLogs(logs);
+    } catch (err) {
+      console.log('[LandingControl] Failed to refresh auto-deploy logs:', err);
+    }
+  }, []);
+
   const savedStateQuery = useQuery({
     queryKey: ['landing-control-state'],
     queryFn: async () => {
@@ -249,8 +368,12 @@ export default function LandingControlScreen() {
         if (stored) {
           const parsed = JSON.parse(stored);
           console.log('[LandingControl] Loaded saved state');
-          if (parsed.sections) setSections(parsed.sections);
-          if (parsed.modules) setModules(parsed.modules);
+          if (parsed.sections && Array.isArray(parsed.sections)) {
+            setSections(restoreSectionIcons(parsed.sections));
+          }
+          if (parsed.modules && Array.isArray(parsed.modules)) {
+            setModules(restoreModuleIcons(parsed.modules));
+          }
           if (parsed.contentBlocks) setContentBlocks(parsed.contentBlocks);
           if (typeof parsed.landingEnabled === 'boolean') setLandingEnabled(parsed.landingEnabled);
           if (typeof parsed.maintenanceMode === 'boolean') setMaintenanceMode(parsed.maintenanceMode);
@@ -266,7 +389,9 @@ export default function LandingControlScreen() {
 
   const saveMutation = useMutation({
     mutationFn: async () => {
-      const state = { sections, modules, contentBlocks, landingEnabled, maintenanceMode, savedAt: new Date().toISOString() };
+      const sectionsToSave = sections.map(({ icon: _icon, ...rest }) => rest);
+      const modulesToSave = modules.map(({ icon: _icon, ...rest }) => rest);
+      const state = { sections: sectionsToSave, modules: modulesToSave, contentBlocks, landingEnabled, maintenanceMode, savedAt: new Date().toISOString() };
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 
       try {
@@ -286,10 +411,38 @@ export default function LandingControlScreen() {
 
       return state;
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       setHasUnsavedChanges(false);
       if (Platform.OS !== 'web') {
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+      const config = await getAutoDeployConfig();
+      if (config.enabled && config.deployOnSave) {
+        console.log('[LandingControl] Auto-deploy on save triggered');
+        setAutoDeployLoading(true);
+        try {
+          const result = await triggerAutoDeploy('save', false);
+          if (result) {
+            console.log('[LandingControl] Auto-deploy result:', result.status);
+            const newLog: DeployLog = {
+              id: result.id,
+              timestamp: result.timestamp,
+              action: `Auto-deploy on save (${result.filesUploaded.length} files)`,
+              status: result.status === 'success' ? 'success' : 'failed',
+              changes: result.syncedDeals + result.filesUploaded.length,
+              user: 'Auto',
+            };
+            setDeployLogs(prev => [newLog, ...prev]);
+            await refreshAutoDeployLogs();
+            if (result.status === 'success') {
+              Alert.alert('Auto-Deploy Complete', `Landing page deployed automatically.\nDeals synced: ${result.syncedDeals}`);
+            }
+          }
+        } catch (err) {
+          console.log('[LandingControl] Auto-deploy after save failed:', (err as Error)?.message);
+        } finally {
+          setAutoDeployLoading(false);
+        }
       }
     },
   });
@@ -297,30 +450,78 @@ export default function LandingControlScreen() {
   const deployMutation = useMutation({
     mutationFn: async () => {
       setIsDeploying(true);
+      console.log('[LandingControl] Starting deploy via auto-deploy service...');
+
       await saveMutation.mutateAsync();
-      await new Promise(resolve => setTimeout(resolve, 1500));
+
+      const result = await manualDeploy();
+      await refreshAutoDeployLogs();
 
       const newLog: DeployLog = {
-        id: Date.now().toString(),
-        timestamp: new Date().toISOString(),
-        action: 'Full deploy',
-        status: 'success',
-        changes: sections.filter(s => s.enabled).length + modules.filter(m => m.enabled).length,
+        id: result.id,
+        timestamp: result.timestamp,
+        action: `Full deploy (${result.filesUploaded.length} files)`,
+        status: result.status === 'success' ? 'success' : 'failed',
+        changes: result.syncedDeals + result.filesUploaded.length,
         user: 'Owner',
       };
       setDeployLogs(prev => [newLog, ...prev]);
       setIsDeploying(false);
-      return newLog;
+
+      if (result.status === 'failed' && result.errors.length > 0) {
+        throw new Error(result.errors.join('; '));
+      }
+
+      return result;
     },
-    onSuccess: () => {
-      Alert.alert('Deployed', 'Landing page configuration deployed successfully.');
+    onSuccess: (data) => {
+      const files = data.filesUploaded.join(', ') || 'none';
+      Alert.alert(
+        'Deploy Complete',
+        `Landing page deployed.\n\nFiles: ${files}\nDeals synced: ${data.syncedDeals}\nDuration: ${(data.durationMs / 1000).toFixed(1)}s`
+      );
       if (Platform.OS !== 'web') {
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
     },
-    onError: () => {
+    onError: (err) => {
       setIsDeploying(false);
-      Alert.alert('Error', 'Deployment failed. Please try again.');
+      const msg = (err as Error)?.message || 'Unknown error';
+      console.log('[LandingControl] Deploy FAILED:', msg);
+      const isAuthError = msg.toLowerCase().includes('session') || msg.toLowerCase().includes('log out') || msg.toLowerCase().includes('auth');
+      if (isAuthError) {
+        Alert.alert(
+          'Session Issue',
+          'Your session may have expired. Would you like to refresh and retry?',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Refresh & Retry',
+              onPress: async () => {
+                try {
+                  console.log('[LandingControl] Refreshing session before retry...');
+                  const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession();
+                  if (refreshed?.session?.access_token) {
+                    console.log('[LandingControl] Session refreshed — retrying deploy');
+                    setTimeout(() => deployMutation.mutate(), 300);
+                  } else {
+                    console.log('[LandingControl] Refresh failed:', refreshErr?.message);
+                    Alert.alert('Re-login Required', 'Please log out from your Profile, log back in, then retry.');
+                  }
+                } catch (refreshError) {
+                  console.log('[LandingControl] Refresh exception:', (refreshError as Error)?.message);
+                  Alert.alert('Re-login Required', 'Please log out from your Profile, log back in, then retry.');
+                }
+              },
+            },
+          ]
+        );
+      } else {
+        Alert.alert('Deploy Failed', msg);
+      }
+      if (Platform.OS !== 'web') {
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      }
     },
   });
 
@@ -687,14 +888,14 @@ export default function LandingControlScreen() {
               >
                 <View style={styles.contentLeft}>
                   <Text style={styles.contentLabel}>{block.label}</Text>
-                  <Text style={styles.contentValue} numberOfLines={1}>
-                    {block.type === 'color' ? (
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                        <View style={{ width: 14, height: 14, borderRadius: 3, backgroundColor: block.value }} />
-                        <Text style={styles.contentValue}>{block.value}</Text>
-                      </View>
-                    ) : block.value}
-                  </Text>
+                  {block.type === 'color' ? (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <View style={{ width: 14, height: 14, borderRadius: 3, backgroundColor: block.value }} />
+                      <Text style={styles.contentValue}>{block.value}</Text>
+                    </View>
+                  ) : (
+                    <Text style={styles.contentValue} numberOfLines={1}>{block.value}</Text>
+                  )}
                 </View>
                 <Edit3 size={14} color={Colors.textTertiary} />
               </TouchableOpacity>
@@ -705,101 +906,237 @@ export default function LandingControlScreen() {
     );
   };
 
-  const renderDeployTab = () => (
-    <>
-      <TouchableOpacity
-        style={[styles.deployBtn, isDeploying && styles.deployBtnDisabled]}
-        onPress={() => {
-          Alert.alert('Deploy Changes', 'Push all changes to the live landing page?', [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Deploy Now', onPress: () => deployMutation.mutate() },
-          ]);
-        }}
-        disabled={isDeploying}
-        activeOpacity={0.7}
-      >
-        {isDeploying ? (
-          <RefreshCw size={20} color="#062218" />
-        ) : (
-          <Zap size={20} color="#062218" />
-        )}
-        <Text style={styles.deployBtnText}>
-          {isDeploying ? 'Deploying...' : 'Deploy to Live'}
-        </Text>
-        {hasUnsavedChanges && !isDeploying && (
-          <View style={styles.deployChangeBadge}>
-            <Text style={styles.deployChangeBadgeText}>CHANGES</Text>
-          </View>
-        )}
-      </TouchableOpacity>
+  const renderDeployTab = () => {
+    const lastAutoDeploy = autoDeployLogs.length > 0 ? autoDeployLogs[0] : null;
+    const deployActive = isDeploying || autoDeployLoading;
 
-      <TouchableOpacity
-        style={styles.saveBtn}
-        onPress={() => saveMutation.mutate()}
-        disabled={saveMutation.isPending}
-        activeOpacity={0.7}
-      >
-        <Save size={16} color="#FFD700" />
-        <Text style={styles.saveBtnText}>
-          {saveMutation.isPending ? 'Saving...' : 'Save Draft'}
-        </Text>
-      </TouchableOpacity>
-
-      <View style={styles.deploySummary}>
-        <Text style={styles.deploySummaryTitle}>Current Configuration</Text>
-        <View style={styles.deploySummaryRow}>
-          <Text style={styles.deploySummaryLabel}>Landing Status</Text>
-          <View style={[styles.deploySummaryBadge, { backgroundColor: landingEnabled ? '#00C48C18' : '#FF6B6B18' }]}>
-            <Text style={[styles.deploySummaryBadgeText, { color: landingEnabled ? '#00C48C' : '#FF6B6B' }]}>
-              {landingEnabled ? 'LIVE' : 'OFFLINE'}
-            </Text>
-          </View>
-        </View>
-        <View style={styles.deploySummaryRow}>
-          <Text style={styles.deploySummaryLabel}>Maintenance Mode</Text>
-          <View style={[styles.deploySummaryBadge, { backgroundColor: maintenanceMode ? '#FFB80018' : '#33333380' }]}>
-            <Text style={[styles.deploySummaryBadgeText, { color: maintenanceMode ? '#FFB800' : '#666' }]}>
-              {maintenanceMode ? 'ON' : 'OFF'}
-            </Text>
-          </View>
-        </View>
-        <View style={styles.deploySummaryRow}>
-          <Text style={styles.deploySummaryLabel}>Active Sections</Text>
-          <Text style={styles.deploySummaryValue}>{enabledSections} / {sections.length}</Text>
-        </View>
-        <View style={styles.deploySummaryRow}>
-          <Text style={styles.deploySummaryLabel}>Active Modules</Text>
-          <Text style={styles.deploySummaryValue}>{enabledModules} / {modules.length}</Text>
-        </View>
-        <View style={styles.deploySummaryRow}>
-          <Text style={styles.deploySummaryLabel}>Public Modules</Text>
-          <Text style={styles.deploySummaryValue}>{publicModules}</Text>
-        </View>
-        <View style={styles.deploySummaryRow}>
-          <Text style={styles.deploySummaryLabel}>Content Fields</Text>
-          <Text style={styles.deploySummaryValue}>{contentBlocks.length}</Text>
-        </View>
-      </View>
-
-      <View style={styles.deployLogSection}>
-        <Text style={styles.deployLogTitle}>Deploy History</Text>
-        {deployLogs.map(log => (
-          <View key={log.id} style={styles.deployLogRow}>
-            <View style={[styles.deployLogDot, { backgroundColor: log.status === 'success' ? '#00C48C' : log.status === 'failed' ? '#FF6B6B' : '#FFB800' }]} />
-            <View style={styles.deployLogInfo}>
-              <Text style={styles.deployLogAction}>{log.action}</Text>
-              <Text style={styles.deployLogMeta}>{formatDate(log.timestamp)} · {log.changes} changes · {log.user}</Text>
+    return (
+      <>
+        <View style={styles.autoDeployCard}>
+          <View style={styles.autoDeployHeader}>
+            <View style={styles.autoDeployHeaderLeft}>
+              <PulseDot active={autoDeployConfig.enabled} color="#00C48C" />
+              <View>
+                <Text style={styles.autoDeployTitle}>Auto-Deploy</Text>
+                <Text style={styles.autoDeploySubtitle}>
+                  {autoDeployConfig.enabled ? 'Deploys automatically on every save' : 'Manual deploy only'}
+                </Text>
+              </View>
             </View>
-            <View style={[styles.deployLogStatus, { backgroundColor: (log.status === 'success' ? '#00C48C' : '#FF6B6B') + '15' }]}>
-              <Text style={[styles.deployLogStatusText, { color: log.status === 'success' ? '#00C48C' : '#FF6B6B' }]}>
-                {log.status.toUpperCase()}
+            <Switch
+              value={autoDeployConfig.enabled}
+              onValueChange={(val) => void toggleAutoDeployOption('enabled', val)}
+              trackColor={{ false: '#333', true: '#00C48C60' }}
+              thumbColor={autoDeployConfig.enabled ? '#00C48C' : '#666'}
+            />
+          </View>
+
+          {autoDeployConfig.enabled && (
+            <View style={styles.autoDeployOptions}>
+              <View style={styles.autoDeployOptionRow}>
+                <View style={styles.autoDeployOptionLeft}>
+                  <Save size={14} color="#4A90D9" />
+                  <Text style={styles.autoDeployOptionLabel}>Deploy on Save</Text>
+                </View>
+                <Switch
+                  value={autoDeployConfig.deployOnSave}
+                  onValueChange={(val) => void toggleAutoDeployOption('deployOnSave', val)}
+                  trackColor={{ false: '#222', true: '#4A90D960' }}
+                  thumbColor={autoDeployConfig.deployOnSave ? '#4A90D9' : '#555'}
+                />
+              </View>
+              <View style={styles.autoDeployOptionRow}>
+                <View style={styles.autoDeployOptionLeft}>
+                  <Briefcase size={14} color="#FFD700" />
+                  <Text style={styles.autoDeployOptionLabel}>Deploy on Deal Publish</Text>
+                </View>
+                <Switch
+                  value={autoDeployConfig.deployOnDealPublish}
+                  onValueChange={(val) => void toggleAutoDeployOption('deployOnDealPublish', val)}
+                  trackColor={{ false: '#222', true: '#FFD70060' }}
+                  thumbColor={autoDeployConfig.deployOnDealPublish ? '#FFD700' : '#555'}
+                />
+              </View>
+              <View style={styles.autoDeployOptionRow}>
+                <View style={styles.autoDeployOptionLeft}>
+                  <Type size={14} color="#7B68EE" />
+                  <Text style={styles.autoDeployOptionLabel}>Deploy on Content Change</Text>
+                </View>
+                <Switch
+                  value={autoDeployConfig.deployOnContentChange}
+                  onValueChange={(val) => void toggleAutoDeployOption('deployOnContentChange', val)}
+                  trackColor={{ false: '#222', true: '#7B68EE60' }}
+                  thumbColor={autoDeployConfig.deployOnContentChange ? '#7B68EE' : '#555'}
+                />
+              </View>
+            </View>
+          )}
+
+          {lastAutoDeploy && (
+            <View style={styles.autoDeployLastRun}>
+              <View style={[styles.autoDeployLastDot, { backgroundColor: lastAutoDeploy.status === 'success' ? '#00C48C' : '#FF6B6B' }]} />
+              <Text style={styles.autoDeployLastText}>
+                Last: {lastAutoDeploy.trigger} · {formatDate(lastAutoDeploy.timestamp)} · {(lastAutoDeploy.durationMs / 1000).toFixed(1)}s
+              </Text>
+              <View style={[styles.autoDeployLastBadge, { backgroundColor: (lastAutoDeploy.status === 'success' ? '#00C48C' : '#FF6B6B') + '18' }]}>
+                <Text style={[styles.autoDeployLastBadgeText, { color: lastAutoDeploy.status === 'success' ? '#00C48C' : '#FF6B6B' }]}>
+                  {lastAutoDeploy.status.toUpperCase()}
+                </Text>
+              </View>
+            </View>
+          )}
+
+          {autoDeployLoading && (
+            <View style={styles.autoDeployRunning}>
+              <RefreshCw size={14} color="#FFD700" />
+              <Text style={styles.autoDeployRunningText}>Auto-deploying...</Text>
+            </View>
+          )}
+        </View>
+
+        <TouchableOpacity
+          style={[styles.deployBtn, deployActive && styles.deployBtnDisabled]}
+          onPress={() => {
+            Alert.alert('Deploy Changes', 'Push all changes to the live landing page?', [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Deploy Now', onPress: () => deployMutation.mutate() },
+            ]);
+          }}
+          disabled={deployActive}
+          activeOpacity={0.7}
+        >
+          {deployActive ? (
+            <RefreshCw size={20} color="#062218" />
+          ) : (
+            <Zap size={20} color="#062218" />
+          )}
+          <Text style={styles.deployBtnText}>
+            {deployActive ? 'Deploying...' : 'Deploy to Live'}
+          </Text>
+          {hasUnsavedChanges && !deployActive && (
+            <View style={styles.deployChangeBadge}>
+              <Text style={styles.deployChangeBadgeText}>CHANGES</Text>
+            </View>
+          )}
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.saveBtn}
+          onPress={() => saveMutation.mutate()}
+          disabled={saveMutation.isPending}
+          activeOpacity={0.7}
+        >
+          <Save size={16} color="#FFD700" />
+          <Text style={styles.saveBtnText}>
+            {saveMutation.isPending ? 'Saving...' : (autoDeployConfig.enabled ? 'Save & Auto-Deploy' : 'Save Draft')}
+          </Text>
+          {autoDeployConfig.enabled && (
+            <View style={styles.autoDeployBadgeInline}>
+              <Zap size={10} color="#00C48C" />
+            </View>
+          )}
+        </TouchableOpacity>
+
+        <View style={styles.deploySummary}>
+          <Text style={styles.deploySummaryTitle}>Current Configuration</Text>
+          <View style={styles.deploySummaryRow}>
+            <Text style={styles.deploySummaryLabel}>Landing Status</Text>
+            <View style={[styles.deploySummaryBadge, { backgroundColor: landingEnabled ? '#00C48C18' : '#FF6B6B18' }]}>
+              <Text style={[styles.deploySummaryBadgeText, { color: landingEnabled ? '#00C48C' : '#FF6B6B' }]}>
+                {landingEnabled ? 'LIVE' : 'OFFLINE'}
               </Text>
             </View>
           </View>
-        ))}
-      </View>
-    </>
-  );
+          <View style={styles.deploySummaryRow}>
+            <Text style={styles.deploySummaryLabel}>Auto-Deploy</Text>
+            <View style={[styles.deploySummaryBadge, { backgroundColor: autoDeployConfig.enabled ? '#00C48C18' : '#33333380' }]}>
+              <Text style={[styles.deploySummaryBadgeText, { color: autoDeployConfig.enabled ? '#00C48C' : '#666' }]}>
+                {autoDeployConfig.enabled ? 'ON' : 'OFF'}
+              </Text>
+            </View>
+          </View>
+          <View style={styles.deploySummaryRow}>
+            <Text style={styles.deploySummaryLabel}>Maintenance Mode</Text>
+            <View style={[styles.deploySummaryBadge, { backgroundColor: maintenanceMode ? '#FFB80018' : '#33333380' }]}>
+              <Text style={[styles.deploySummaryBadgeText, { color: maintenanceMode ? '#FFB800' : '#666' }]}>
+                {maintenanceMode ? 'ON' : 'OFF'}
+              </Text>
+            </View>
+          </View>
+          <View style={styles.deploySummaryRow}>
+            <Text style={styles.deploySummaryLabel}>Active Sections</Text>
+            <Text style={styles.deploySummaryValue}>{enabledSections} / {sections.length}</Text>
+          </View>
+          <View style={styles.deploySummaryRow}>
+            <Text style={styles.deploySummaryLabel}>Active Modules</Text>
+            <Text style={styles.deploySummaryValue}>{enabledModules} / {modules.length}</Text>
+          </View>
+          <View style={styles.deploySummaryRow}>
+            <Text style={styles.deploySummaryLabel}>Public Modules</Text>
+            <Text style={styles.deploySummaryValue}>{publicModules}</Text>
+          </View>
+          <View style={styles.deploySummaryRow}>
+            <Text style={styles.deploySummaryLabel}>Content Fields</Text>
+            <Text style={styles.deploySummaryValue}>{contentBlocks.length}</Text>
+          </View>
+        </View>
+
+        {autoDeployLogs.length > 0 && (
+          <View style={styles.deployLogSection}>
+            <View style={styles.autoDeployLogHeader}>
+              <Text style={styles.deployLogTitle}>Auto-Deploy History</Text>
+              <TouchableOpacity
+                onPress={() => {
+                  Alert.alert('Clear Logs', 'Clear all auto-deploy history?', [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Clear', style: 'destructive', onPress: async () => {
+                      await clearAutoDeployLogs();
+                      setAutoDeployLogs([]);
+                    }},
+                  ]);
+                }}
+                style={styles.clearLogsBtn}
+              >
+                <Text style={styles.clearLogsBtnText}>Clear</Text>
+              </TouchableOpacity>
+            </View>
+            {autoDeployLogs.slice(0, 10).map(log => (
+              <View key={log.id} style={styles.deployLogRow}>
+                <View style={[styles.deployLogDot, { backgroundColor: log.status === 'success' ? '#00C48C' : log.status === 'failed' ? '#FF6B6B' : '#FFB800' }]} />
+                <View style={styles.deployLogInfo}>
+                  <Text style={styles.deployLogAction}>{log.trigger} · {log.syncedDeals} deals</Text>
+                  <Text style={styles.deployLogMeta}>{formatDate(log.timestamp)} · {(log.durationMs / 1000).toFixed(1)}s{log.errors.length > 0 ? ` · ${log.errors.length} errors` : ''}</Text>
+                </View>
+                <View style={[styles.deployLogStatus, { backgroundColor: (log.status === 'success' ? '#00C48C' : '#FF6B6B') + '15' }]}>
+                  <Text style={[styles.deployLogStatusText, { color: log.status === 'success' ? '#00C48C' : '#FF6B6B' }]}>
+                    {log.status.toUpperCase()}
+                  </Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
+
+        <View style={styles.deployLogSection}>
+          <Text style={styles.deployLogTitle}>Manual Deploy History</Text>
+          {deployLogs.map(log => (
+            <View key={log.id} style={styles.deployLogRow}>
+              <View style={[styles.deployLogDot, { backgroundColor: log.status === 'success' ? '#00C48C' : log.status === 'failed' ? '#FF6B6B' : '#FFB800' }]} />
+              <View style={styles.deployLogInfo}>
+                <Text style={styles.deployLogAction}>{log.action}</Text>
+                <Text style={styles.deployLogMeta}>{formatDate(log.timestamp)} · {log.changes} changes · {log.user}</Text>
+              </View>
+              <View style={[styles.deployLogStatus, { backgroundColor: (log.status === 'success' ? '#00C48C' : '#FF6B6B') + '15' }]}>
+                <Text style={[styles.deployLogStatusText, { color: log.status === 'success' ? '#00C48C' : '#FF6B6B' }]}>
+                  {log.status.toUpperCase()}
+                </Text>
+              </View>
+            </View>
+          ))}
+        </View>
+      </>
+    );
+  };
 
   const TABS: { key: TabType; label: string; icon: React.ComponentType<any> }[] = [
     { key: 'sections', label: 'Sections', icon: Layers },
@@ -1453,6 +1790,124 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: '800' as const,
     letterSpacing: 0.5,
+  },
+  autoDeployCard: {
+    backgroundColor: '#0E1A14',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 14,
+    borderWidth: 1.5,
+    borderColor: '#00C48C25',
+  },
+  autoDeployHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  autoDeployHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  autoDeployTitle: {
+    fontSize: 15,
+    fontWeight: '800' as const,
+    color: Colors.text,
+  },
+  autoDeploySubtitle: {
+    fontSize: 11,
+    color: Colors.textTertiary,
+    marginTop: 1,
+  },
+  autoDeployOptions: {
+    marginTop: 14,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#1A2E22',
+    gap: 10,
+  },
+  autoDeployOptionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  autoDeployOptionLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  autoDeployOptionLabel: {
+    fontSize: 13,
+    fontWeight: '600' as const,
+    color: Colors.textSecondary,
+  },
+  autoDeployLastRun: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#1A2E22',
+  },
+  autoDeployLastDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  autoDeployLastText: {
+    flex: 1,
+    fontSize: 11,
+    color: Colors.textTertiary,
+  },
+  autoDeployLastBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 5,
+  },
+  autoDeployLastBadgeText: {
+    fontSize: 9,
+    fontWeight: '800' as const,
+    letterSpacing: 0.5,
+  },
+  autoDeployRunning: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#1A2E22',
+  },
+  autoDeployRunningText: {
+    fontSize: 12,
+    fontWeight: '600' as const,
+    color: '#FFD700',
+  },
+  autoDeployBadgeInline: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#00C48C18',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  autoDeployLogHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  clearLogsBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: '#FF6B6B12',
+  },
+  clearLogsBtnText: {
+    fontSize: 11,
+    fontWeight: '700' as const,
+    color: '#FF6B6B',
   },
   unsavedBar: {
     position: 'absolute',

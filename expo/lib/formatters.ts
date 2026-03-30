@@ -1,8 +1,9 @@
 export const formatCurrency = (amount: number, compact = false): string => {
   if (compact) {
-    if (amount >= 1000000) return `$${(amount / 1000000).toFixed(2)}M`;
-    if (amount >= 1000) return `$${(amount / 1000).toFixed(1)}K`;
-    return `$${amount.toFixed(2)}`;
+    if (amount >= 1000000000) return `${(amount / 1000000000).toFixed(2)}B`;
+    if (amount >= 1000000) return `${(amount / 1000000).toFixed(2)}M`;
+    if (amount >= 1000) return `${(amount / 1000).toFixed(1)}K`;
+    return `${amount.toFixed(2)}`;
   }
 
   return new Intl.NumberFormat('en-US', {
@@ -27,12 +28,14 @@ export const formatNumber = (value: number): string => {
 };
 
 export const formatCompactNumber = (value: number): string => {
+  if (value >= 1000000000) return `${(value / 1000000000).toFixed(1)}B`;
   if (value >= 1000000) return `${(value / 1000000).toFixed(1)}M`;
   if (value >= 1000) return `${(value / 1000).toFixed(1)}K`;
-  return value.toString();
+  return new Intl.NumberFormat('en-US').format(value);
 };
 
 export const formatCurrencyCompact = (amount: number): string => {
+  if (amount >= 1000000000) return `${(amount / 1000000000).toFixed(2)}B`;
   if (amount >= 1000000) return `${(amount / 1000000).toFixed(2)}M`;
   if (amount >= 1000) return `${new Intl.NumberFormat('en-US').format(Math.round(amount))}`;
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount);
@@ -47,6 +50,7 @@ export const formatDollarWhole = (amount: number): string => {
 };
 
 export const formatDollarCompact = (amount: number): string => {
+  if (amount >= 1000000000) return `${(amount / 1000000000).toFixed(2)}B`;
   if (amount >= 1000000) return `${(amount / 1000000).toFixed(2)}M`;
   if (amount >= 1000) return `${new Intl.NumberFormat('en-US').format(Math.round(amount))}`;
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount);

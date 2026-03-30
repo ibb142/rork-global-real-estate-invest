@@ -44,14 +44,234 @@ import {
   Lightbulb,
 } from 'lucide-react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase } from '@/lib/supabase';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
-import { fetchRawEvents, computeAnalytics } from '@/lib/analytics-compute';
 import { usePresenceTracker } from '@/lib/realtime-presence';
+
+type EventSource = 'landing' | 'app' | 'unknown';
+
+interface RawEvent {
+  id?: string;
+  event: string;
+  session_id: string;
+  properties?: Record<string, unknown>;
+  geo?: { city?: string; region?: string; country?: string; countryCode?: string; lat?: number; lng?: number; timezone?: string };
+  created_at: string;
+  _source?: EventSource;
+}
+
+let _computeModule: typeof import('@/lib/analytics-compute') | null = null;
+async function getComputeModule() {
+  if (_computeModule) return _computeModule;
+  try {
+    _computeModule = await import('@/lib/analytics-compute');
+    return _computeModule;
+  } catch (err) {
+    console.error('[Analytics] Failed to load analytics-compute module:', (err as Error)?.message);
+    return null;
+  }
+}
+
+interface ComputedAnalytics {
+  period: string;
+  totalLeads: number;
+  registeredUsers: number;
+  waitlistLeads: number;
+  totalEvents: number;
+  pageViews: number;
+  uniqueSessions: number;
+  funnel: { pageViews: number; scroll25: number; scroll50: number; scroll75: number; scroll100: number; formFocuses: number; formSubmits: number };
+  cta: { getStarted: number; signIn: number; jvInquire: number; websiteClick: number };
+  conversionRate: number;
+  scrollEngagement: number;
+  byEvent: Array<{ event: string; count: number }>;
+  byPlatform: Array<{ platform: string; count: number }>;
+  byReferrer: Array<{ referrer: string; count: number }>;
+  dailyViews: Array<{ date: string; views: number; sessions: number }>;
+  hourlyActivity: Array<{ hour: number; count: number }>;
+  geoZones: {
+    byCountry: Array<{ country: string; count: number; pct: number }>;
+    byCity: Array<{ city: string; count: number; country: string; lat?: number; lng?: number; pct: number }>;
+    byRegion: Array<{ region: string; count: number; pct: number }>;
+    byTimezone: Array<{ timezone: string; count: number }>;
+    totalWithGeo: number;
+  };
+  smartInsights: {
+    avgTimeOnPage: number;
+    bounceRate: number;
+    engagementScore: number;
+    topInterests: Array<{ interest: string; count: number; pct: number }>;
+    sectionEngagement: Array<{ section: string; count: number; pct: number }>;
+    deviceBreakdown: Array<{ device: string; count: number; pct: number }>;
+    peakHour: number;
+    contentInteraction: { scrolledPast50Pct: number; scrolledPast75Pct: number; interactedWithForm: number; submittedForm: number; clickedAnyCta: number };
+    visitorIntent: { highIntent: number; mediumIntent: number; lowIntent: number; highIntentPct: number; mediumIntentPct: number; lowIntentPct: number };
+  } | null;
+  liveData: {
+    active: number;
+    recent: number;
+    sessions: Array<{ sessionId: string; ip: string; device: string; os: string; browser: string; geo?: { city?: string; country?: string; region?: string }; currentStep: number; sessionDuration: number; activeTime: number; lastSeen: string; startedAt: string; isActive: boolean }>;
+    breakdown: { byCountry: Array<{ country: string; count: number }>; byDevice: Array<{ device: string; count: number }>; byStep: Array<{ step: string; count: number }> };
+    timestamp: string;
+  } | null;
+  trends?: {
+    pageViews: { value: number; pct: number; direction: 'up' | 'down' | 'flat' };
+    sessions: { value: number; pct: number; direction: 'up' | 'down' | 'flat' };
+    leads: { value: number; pct: number; direction: 'up' | 'down' | 'flat' };
+    conversionRate: { value: number; pct: number; direction: 'up' | 'down' | 'flat' };
+    bounceRate: { value: number; pct: number; direction: 'up' | 'down' | 'flat' };
+    avgDuration: { value: number; pct: number; direction: 'up' | 'down' | 'flat' };
+  };
+  acquisition?: Array<{ channel: string; sessions: number; leads: number; conversionRate: number; pct: number; color: string }>;
+  sessionQuality?: { avgPagesPerSession: number; avgSessionDuration: number; engagedSessionsPct: number; newVsReturning: { new: number; returning: number; newPct: number; returningPct: number } };
+}
+
+function getPeriodCutoff(period: string): Date {
+  const now = new Date();
+  switch (period) {
+    case '1h': return new Date(now.getTime() - 60 * 60 * 1000);
+    case '24h': return new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    case '7d': return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    case '30d': return new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    case '90d': return new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+    default: return new Date(0);
+  }
+}
+
+function buildFallbackAnalytics(events: RawEvent[], period: string): ComputedAnalytics {
+  const sessionMap = new Map<string, RawEvent[]>();
+  events.forEach(e => {
+    const sid = e.session_id || 'unknown';
+    if (!sessionMap.has(sid)) sessionMap.set(sid, []);
+    sessionMap.get(sid)!.push(e);
+  });
+  const uniqueSessions = sessionMap.size;
+  const totalEvents = events.length;
+  const eventCounts = new Map<string, number>();
+  events.forEach(e => { eventCounts.set(e.event, (eventCounts.get(e.event) || 0) + 1); });
+  const pageViews = (eventCounts.get('page_view') || 0) + (eventCounts.get('pageview') || 0) + (eventCounts.get('landing_page_view') || 0) + (eventCounts.get('landing_view') || 0) + (eventCounts.get('screen_view') || 0) || uniqueSessions;
+  const formSubmits = (eventCounts.get('form_submit') || 0) + (eventCounts.get('form_submitted') || 0) + (eventCounts.get('waitlist_join') || 0) + (eventCounts.get('waitlist_success') || 0);
+  const byEvent = Array.from(eventCounts.entries()).map(([event, count]) => ({ event, count })).sort((a, b) => b.count - a.count);
+  const dailyMap = new Map<string, { views: number; sessions: Set<string> }>();
+  events.forEach(e => {
+    const date = e.created_at?.split('T')[0] || 'unknown';
+    if (!dailyMap.has(date)) dailyMap.set(date, { views: 0, sessions: new Set() });
+    const d = dailyMap.get(date)!;
+    d.views++;
+    d.sessions.add(e.session_id || 'unknown');
+  });
+  const dailyViews = Array.from(dailyMap.entries()).map(([date, d]) => ({ date, views: d.views, sessions: d.sessions.size })).sort((a, b) => a.date.localeCompare(b.date));
+  const hourlyMap = new Map<number, number>();
+  for (let h = 0; h < 24; h++) hourlyMap.set(h, 0);
+  events.forEach(e => { const hour = new Date(e.created_at).getHours(); hourlyMap.set(hour, (hourlyMap.get(hour) || 0) + 1); });
+  const hourlyActivity = Array.from(hourlyMap.entries()).map(([hour, count]) => ({ hour, count })).sort((a, b) => a.hour - b.hour);
+  const countryMap = new Map<string, number>();
+  let totalWithGeo = 0;
+  events.forEach(e => {
+    if (e.geo?.country) { totalWithGeo++; countryMap.set(e.geo.country, (countryMap.get(e.geo.country) || 0) + 1); }
+  });
+  const byCountry = Array.from(countryMap.entries()).map(([country, count]) => ({ country, count, pct: totalWithGeo > 0 ? Math.round((count / totalWithGeo) * 100) : 0 })).sort((a, b) => b.count - a.count);
+  return {
+    period, totalLeads: formSubmits, registeredUsers: 0, waitlistLeads: 0, totalEvents, pageViews, uniqueSessions,
+    funnel: { pageViews, scroll25: 0, scroll50: 0, scroll75: 0, scroll100: 0, formFocuses: 0, formSubmits },
+    cta: { getStarted: 0, signIn: 0, jvInquire: 0, websiteClick: 0 },
+    conversionRate: pageViews > 0 ? parseFloat(((formSubmits / pageViews) * 100).toFixed(1)) : 0,
+    scrollEngagement: 0, byEvent, byPlatform: [], byReferrer: [], dailyViews, hourlyActivity,
+    geoZones: { byCountry, byCity: [], byRegion: [], byTimezone: [], totalWithGeo },
+    smartInsights: null, liveData: null,
+  };
+}
+
+async function directSupabaseFetch(period: string): Promise<{ events: RawEvent[]; landingCount: number; appCount: number }> {
+  const cutoff = getPeriodCutoff(period);
+  let landingEvents: RawEvent[] = [];
+  let appEvents: RawEvent[] = [];
+
+  try {
+    let landingQuery = supabase.from('landing_analytics').select('id,event,session_id,properties,geo,created_at').order('created_at', { ascending: false }).limit(10000);
+    if (period !== 'all') landingQuery = landingQuery.gte('created_at', cutoff.toISOString());
+    const { data: landingData, error: landingErr } = await landingQuery;
+    if (!landingErr && landingData) {
+      landingEvents = landingData.map((row: Record<string, unknown>) => {
+        let props: Record<string, unknown> = {};
+        if (typeof row.properties === 'string') { try { props = JSON.parse(row.properties); } catch {} }
+        else if (row.properties && typeof row.properties === 'object') props = row.properties as Record<string, unknown>;
+        let geo: RawEvent['geo'] = undefined;
+        if (typeof row.geo === 'string') { try { geo = JSON.parse(row.geo); } catch {} }
+        else if (row.geo && typeof row.geo === 'object') geo = row.geo as RawEvent['geo'];
+        const rowId = typeof row.id === 'string' ? row.id : typeof row.id === 'number' ? String(row.id) : '';
+        const rowEvent = typeof row.event === 'string' ? row.event : 'unknown';
+        const rowSessionId = typeof row.session_id === 'string' ? row.session_id : 'unknown';
+        const rowCreatedAt = typeof row.created_at === 'string' ? row.created_at : new Date().toISOString();
+        return { id: rowId, event: rowEvent, session_id: rowSessionId, properties: { ...props, platform: props.platform || 'web', source: 'landing' }, geo, created_at: rowCreatedAt, _source: 'landing' as EventSource };
+      });
+    } else if (landingErr) {
+      console.log('[Analytics Fallback] landing_analytics error:', landingErr.message);
+    }
+  } catch (err) {
+    console.log('[Analytics Fallback] landing_analytics exception:', (err as Error)?.message);
+  }
+
+  try {
+    let appQuery = supabase.from('analytics_events').select('id,event,session_id,properties,created_at').order('created_at', { ascending: false }).limit(10000);
+    if (period !== 'all') appQuery = appQuery.gte('created_at', cutoff.toISOString());
+    const { data: appData, error: appErr } = await appQuery;
+    if (!appErr && appData) {
+      appEvents = appData.map((row: Record<string, unknown>) => {
+        let props: Record<string, unknown> = {};
+        if (typeof row.properties === 'string') { try { props = JSON.parse(row.properties); } catch {} }
+        else if (row.properties && typeof row.properties === 'object') props = row.properties as Record<string, unknown>;
+        const rowId = typeof row.id === 'string' ? row.id : typeof row.id === 'number' ? String(row.id) : '';
+        const rowEvent = typeof row.event === 'string' ? row.event : 'unknown';
+        const rowSessionId = typeof row.session_id === 'string' ? row.session_id : 'unknown';
+        const rowCreatedAt = typeof row.created_at === 'string' ? row.created_at : new Date().toISOString();
+        return { id: rowId, event: rowEvent, session_id: rowSessionId, properties: { ...props, source: 'app' }, created_at: rowCreatedAt, _source: 'app' as EventSource };
+      });
+    } else if (appErr) {
+      console.log('[Analytics Fallback] analytics_events error:', appErr.message);
+    }
+  } catch (err) {
+    console.log('[Analytics Fallback] analytics_events exception:', (err as Error)?.message);
+  }
+
+  const all = [...landingEvents, ...appEvents].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  return { events: all, landingCount: landingEvents.length, appCount: appEvents.length };
+}
+
+async function fetchExtraCountsDirect(): Promise<{ waitlistCount: number; registeredUserCount: number }> {
+  let waitlistCount = 0;
+  let registeredUserCount = 0;
+  try {
+    const { count: wc, error: we } = await supabase.from('waitlist').select('*', { count: 'exact', head: true });
+    if (!we && wc !== null) waitlistCount = wc;
+  } catch {}
+  try {
+    const { count: rc, error: re } = await supabase.from('profiles').select('*', { count: 'exact', head: true });
+    if (!re && rc !== null) registeredUserCount = rc;
+  } catch {}
+  return { waitlistCount, registeredUserCount };
+}
 import { Wifi, WifiOff } from 'lucide-react-native';
 
 type PeriodType = '1h' | '24h' | '7d' | '30d' | '90d' | 'all';
 type TabType = 'overview' | 'funnel' | 'geo' | 'insights' | 'live' | 'brain';
+
+interface AIBrainAnomaly { id: string; title: string; description: string; impact: string; confidence: number }
+interface AIBrainPrediction { id: string; title: string; description: string; confidence: number }
+interface AIBrainRecommendation { id: string; title: string; description: string; impact: string; confidence: number }
+interface AIBrainLearning { id: string; title: string; type: string; confidence: number; dataPoints: number }
+interface AIBrainBaseline { avg: number; min: number; max: number; samples: number }
+interface AIBrainData {
+  status: string;
+  memory: { learningCycles: number; totalDataPointsProcessed: number };
+  stats: { activeLearnings: number; avgConfidence: number; byType: Record<string, number> };
+  activeAnomalies?: AIBrainAnomaly[];
+  activePredictions?: AIBrainPrediction[];
+  topRecommendations?: AIBrainRecommendation[];
+  recentLearnings?: AIBrainLearning[];
+  baselines?: Record<string, AIBrainBaseline>;
+  newLearnings?: number;
+}
 
 
 
@@ -190,8 +410,6 @@ function MiniSparkBar({ data, color, height = 48 }: { data: number[]; color: str
 }
 
 function AnimatedCounter({ value, suffix = '', prefix = '' }: { value: number; suffix?: string; prefix?: string }) {
-  const _s = suffix;
-  const _p = prefix;
   const anim = useRef(new Animated.Value(0)).current;
   const [display, setDisplay] = useState<number>(0);
 
@@ -202,7 +420,7 @@ function AnimatedCounter({ value, suffix = '', prefix = '' }: { value: number; s
     return () => anim.removeListener(listener);
   }, [value, anim]);
 
-  return <Text style={s.counterText}>{_p}{display.toLocaleString()}{_s}</Text>;
+  return <Text style={s.counterText}>{prefix}{new Intl.NumberFormat('en-US').format(display)}{suffix}</Text>;
 }
 
 function TrendBadge({ value, inverted = false }: { value: number; inverted?: boolean }) {
@@ -250,9 +468,18 @@ export default function LandingAnalyticsScreen() {
   const { isAuthenticated, isAdmin, isLoading: authLoading, refreshSession } = useAuth();
   const [period, setPeriod] = useState<PeriodType>('all');
   const [activeTab, setActiveTab] = useState<TabType>('overview');
-  const [directData, setDirectData] = useState<any>(null);
-  const [_isConnected, setIsConnected] = useState<boolean>(false);
-  const [_fetchCount, setFetchCount] = useState<number>(0);
+  const [directData, setDirectData] = useState<ComputedAnalytics | null>(null);
+  const [, setIsConnected] = useState<boolean>(false);
+  const [, setFetchCount] = useState<number>(0);
+  const [diagnostics, setDiagnostics] = useState<{
+    supabaseUrl: string;
+    authState: string;
+    userId: string | null;
+    landingCount: number;
+    appCount: number;
+    error: string | null;
+    lastFetch: string;
+  } | null>(null);
 
   const presenceState = usePresenceTracker();
 
@@ -267,28 +494,110 @@ export default function LandingAnalyticsScreen() {
     }
   }, [authLoading, isAuthenticated, isAdmin, refreshSession]);
 
-  const analyticsQuery = useQuery<any>({
-    queryKey: ['analytics.getLandingAnalytics', { period }],
+  const analyticsQuery = useQuery<ComputedAnalytics>({
+    queryKey: ['admin.analytics.report', { period }],
     queryFn: async () => {
-      try {
-        const rawEvents = await fetchRawEvents(period);
-        const computed = computeAnalytics(rawEvents, period);
-        console.log('[Admin Analytics] Computed:', computed.pageViews, 'views,', computed.uniqueSessions, 'sessions');
-        setDirectData(computed);
-        setIsConnected(true);
-        setFetchCount(prev => prev + 1);
-        return computed;
-      } catch {
-        const empty = computeAnalytics([], period);
-        setDirectData(empty);
-        setIsConnected(false);
-        return empty;
+      const sbUrl = (process.env.EXPO_PUBLIC_SUPABASE_URL || '').trim();
+      let authState = 'unknown';
+      let userId: string | null = null;
+
+      if (!isSupabaseConfigured()) {
+        console.error('[Admin Analytics] Supabase not configured');
+        setDiagnostics({ supabaseUrl: 'NOT SET', authState: 'none', userId: null, landingCount: 0, appCount: 0, error: 'Supabase not configured. Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY.', lastFetch: new Date().toISOString() });
+        return buildFallbackAnalytics([], period);
       }
+
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        authState = session ? 'authenticated' : 'anonymous';
+        userId = session?.user?.id ?? null;
+        if (!session) {
+          console.log('[Admin Analytics] No session, attempting refresh...');
+          const { data: refreshed } = await supabase.auth.refreshSession();
+          if (refreshed?.session) {
+            authState = 'authenticated (refreshed)';
+            userId = refreshed.session.user?.id ?? null;
+          }
+        }
+        console.log('[Admin Analytics] Auth:', authState, '| User:', userId?.substring(0, 8) ?? 'none');
+      } catch (authErr) {
+        authState = 'error';
+        console.error('[Admin Analytics] Auth check failed:', (authErr as Error)?.message);
+      }
+
+      let computed: ComputedAnalytics | null = null;
+      let landingCount = 0;
+      let appCount = 0;
+      let fetchError: string | null = null;
+
+      const mod = await getComputeModule();
+      if (mod) {
+        try {
+          console.log('[Admin Analytics] Using analytics-compute module for period:', period);
+          const rawEvents = await mod.fetchRawEvents(period);
+          landingCount = rawEvents.filter(e => e._source === 'landing').length;
+          appCount = rawEvents.filter(e => e._source === 'app').length;
+          console.log('[Admin Analytics] Raw events:', rawEvents.length, '(landing:', landingCount, ', app:', appCount, ')');
+
+          computed = mod.computeAnalytics(rawEvents, period) as unknown as ComputedAnalytics;
+
+          const extras = await mod.fetchExtraCounts();
+          if (extras.registeredUserCount > 0) computed.registeredUsers = extras.registeredUserCount;
+          if (extras.waitlistCount > 0) computed.waitlistLeads = extras.waitlistCount;
+          computed.totalLeads = computed.registeredUsers + computed.waitlistLeads;
+        } catch (err) {
+          fetchError = (err as Error)?.message ?? 'Unknown error';
+          console.error('[Admin Analytics] Compute module error:', fetchError);
+          computed = null;
+        }
+      } else {
+        console.log('[Admin Analytics] Compute module unavailable, using direct Supabase fallback');
+      }
+
+      if (!computed) {
+        try {
+          console.log('[Admin Analytics] Direct Supabase fallback for period:', period);
+          const result = await directSupabaseFetch(period);
+          landingCount = result.landingCount;
+          appCount = result.appCount;
+          console.log('[Admin Analytics] Direct fetch:', result.events.length, 'events (landing:', landingCount, ', app:', appCount, ')');
+
+          computed = buildFallbackAnalytics(result.events, period);
+
+          const extras = await fetchExtraCountsDirect();
+          if (extras.registeredUserCount > 0) computed.registeredUsers = extras.registeredUserCount;
+          if (extras.waitlistCount > 0) computed.waitlistLeads = extras.waitlistCount;
+          computed.totalLeads = computed.registeredUsers + computed.waitlistLeads;
+          fetchError = null;
+        } catch (directErr) {
+          fetchError = (directErr as Error)?.message ?? 'Direct fetch failed';
+          console.error('[Admin Analytics] Direct fallback also failed:', fetchError);
+          computed = buildFallbackAnalytics([], period);
+        }
+      }
+
+      const totalEvents = landingCount + appCount;
+      setDiagnostics({
+        supabaseUrl: sbUrl?.substring(0, 50) || 'NOT SET',
+        authState,
+        userId,
+        landingCount,
+        appCount,
+        error: fetchError || (totalEvents === 0 ? 'No events found. Tables may be empty or RLS is blocking access.' : null),
+        lastFetch: new Date().toISOString(),
+      });
+
+      console.log('[Admin Analytics] Final:', computed.pageViews, 'views,', computed.uniqueSessions, 'sessions, leads:', computed.totalLeads);
+      setDirectData(computed);
+      setIsConnected(totalEvents > 0);
+      setFetchCount(prev => prev + 1);
+      return computed;
     },
-    staleTime: 0,
-    refetchInterval: activeTab === 'live' ? 3000 : 3000,
-    retry: 0,
-    gcTime: 0,
+    staleTime: 5000,
+    refetchInterval: activeTab === 'live' ? 8000 : 30000,
+    retry: 2,
+    retryDelay: (attempt) => Math.min(1000 * Math.pow(2, attempt), 10000),
+    gcTime: 15000,
     refetchOnMount: true,
     throwOnError: false,
   });
@@ -297,7 +606,7 @@ export default function LandingAnalyticsScreen() {
   const queryClient = useQueryClient();
   const onRefresh = useCallback(async () => {
     setManualRefreshing(true);
-    await queryClient.invalidateQueries({ queryKey: ['analytics.getLandingAnalytics'] });
+    await queryClient.invalidateQueries({ queryKey: ['admin.analytics.report'] });
     setManualRefreshing(false);
   }, [queryClient]);
 
@@ -328,24 +637,23 @@ export default function LandingAnalyticsScreen() {
       byReferrer: rawData.byReferrer ?? [],
       byEvent: rawData.byEvent ?? [],
       geoZones: rawData.geoZones ? {
+        ...rawData.geoZones,
         byCountry: rawData.geoZones.byCountry ?? [],
         byCity: rawData.geoZones.byCity ?? [],
         byTimezone: rawData.geoZones.byTimezone ?? [],
         totalWithGeo: rawData.geoZones.totalWithGeo ?? 0,
-        ...rawData.geoZones,
-      } : { byCountry: [], byCity: [], byTimezone: [], totalWithGeo: 0 },
+      } : { byCountry: [] as ComputedAnalytics['geoZones']['byCountry'], byCity: [] as ComputedAnalytics['geoZones']['byCity'], byTimezone: [] as ComputedAnalytics['geoZones']['byTimezone'], totalWithGeo: 0, byRegion: [] as ComputedAnalytics['geoZones']['byRegion'] },
       smartInsights: rawData.smartInsights ? {
+        ...rawData.smartInsights,
         engagementScore: rawData.smartInsights.engagementScore ?? 0,
         avgTimeOnPage: rawData.smartInsights.avgTimeOnPage ?? 0,
         bounceRate: rawData.smartInsights.bounceRate ?? 0,
         peakHour: rawData.smartInsights.peakHour ?? 0,
-        visitorIntent: rawData.smartInsights.visitorIntent ? {
+        visitorIntent: rawData.smartInsights.visitorIntent ?? {
           highIntent: 0, highIntentPct: 0, mediumIntent: 0, mediumIntentPct: 0, lowIntent: 0, lowIntentPct: 0,
-          ...rawData.smartInsights.visitorIntent,
-        } : { highIntent: 0, highIntentPct: 0, mediumIntent: 0, mediumIntentPct: 0, lowIntent: 0, lowIntentPct: 0 },
+        },
         deviceBreakdown: rawData.smartInsights.deviceBreakdown ?? [],
         topInterests: rawData.smartInsights.topInterests ?? [],
-        ...rawData.smartInsights,
       } : null,
       liveData: rawData.liveData ?? null,
     };
@@ -380,6 +688,44 @@ export default function LandingAnalyticsScreen() {
     return data.dailyViews.slice(-14).map((d: { date: string; views: number; sessions: number }) => d.views);
   }, [data]);
 
+  const renderDiagnostics = () => {
+    if (!diagnostics) return null;
+    const hasIssue = diagnostics.error || (diagnostics.landingCount === 0 && diagnostics.appCount === 0);
+    if (!hasIssue) return null;
+
+    const isEmptyTables = diagnostics.landingCount === 0 && diagnostics.appCount === 0 && !diagnostics.error;
+    const borderColor = diagnostics.error ? '#FF6B6B' : '#FFB800';
+
+    return (
+      <View style={[s.card, { borderLeftWidth: 3, borderLeftColor: borderColor }]}>
+        <View style={s.cardHeader}>
+          <AlertTriangle size={16} color={borderColor} />
+          <Text style={s.cardTitle}>Analytics Status</Text>
+        </View>
+        <View style={{ gap: 6, paddingHorizontal: 4 }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+            <Text style={{ color: '#97A0AF', fontSize: 11 }}>Auth: {diagnostics.authState}</Text>
+            <Text style={{ color: '#97A0AF', fontSize: 11 }}>Events: {diagnostics.landingCount + diagnostics.appCount}</Text>
+          </View>
+          {diagnostics.error && (
+            <View style={{ backgroundColor: '#FF6B6B12', borderRadius: 8, padding: 10, marginTop: 4 }}>
+              <Text style={{ color: '#FF6B6B', fontSize: 11, fontWeight: '600' as const, lineHeight: 16 }}>
+                {diagnostics.error.length > 120 ? diagnostics.error.substring(0, 120) + '...' : diagnostics.error}
+              </Text>
+            </View>
+          )}
+          {isEmptyTables && (
+            <View style={{ backgroundColor: '#FFB80012', borderRadius: 8, padding: 10, marginTop: 4 }}>
+              <Text style={{ color: '#FFB800', fontSize: 11, fontWeight: '600' as const }}>No analytics events found</Text>
+              <Text style={{ color: '#FFB800', fontSize: 10, marginTop: 4, lineHeight: 15 }}>• Ensure landing_analytics and analytics_events tables exist{"\n"}• Check RLS policies allow admin SELECT{"\n"}• Deploy landing page with analytics tracking</Text>
+            </View>
+          )}
+          <Text style={{ color: '#C0C7D3', fontSize: 9, marginTop: 2 }}>Updated: {new Date(diagnostics.lastFetch).toLocaleTimeString()}</Text>
+        </View>
+      </View>
+    );
+  };
+
   const renderOverviewTab = () => {
     if (!data) return null;
 
@@ -390,6 +736,7 @@ export default function LandingAnalyticsScreen() {
 
     return (
       <>
+        {renderDiagnostics()}
         <View style={s.heroMetrics}>
           <View style={s.heroMetricMain}>
             <View style={s.heroMetricHeader}>
@@ -590,9 +937,7 @@ export default function LandingAnalyticsScreen() {
 
   const renderFunnelTab = () => {
     if (!data) return null;
-    const _maxCount = funnelSteps[0]?.count || 1;
-
-    return (
+      return (
       <>
         <View style={s.funnelHero}>
           <Text style={s.funnelHeroTitle}>Conversion Funnel</Text>
@@ -611,7 +956,7 @@ export default function LandingAnalyticsScreen() {
               <View key={i} style={s.funnelStepWrap}>
                 <View style={s.funnelStepRow}>
                   <View style={[s.funnelBar, { width: `${widthPct}%` as any, backgroundColor: step.color }]}>
-                    <Text style={s.funnelBarText}>{step.count.toLocaleString()}</Text>
+                    <Text style={s.funnelBarText}>{new Intl.NumberFormat('en-US').format(step.count)}</Text>
                   </View>
                   <Text style={s.funnelPct}>{step.pct}%</Text>
                 </View>
@@ -868,7 +1213,7 @@ export default function LandingAnalyticsScreen() {
     );
   };
 
-  const brainQuery = useQuery<any>({
+  const brainQuery = useQuery<AIBrainData>({
     queryKey: ['aiLearning.getAIBrainStatus'],
     queryFn: async () => {
       console.log('[Supabase] Fetching AI brain status');
@@ -958,7 +1303,7 @@ export default function LandingAnalyticsScreen() {
           ].map((kpi, i) => (
             <View key={i} style={[s.brainKpiCard, { borderTopColor: kpi.color }]}>
               <Text style={[s.brainKpiValue, { color: kpi.color }]}>
-                {kpi.value.toLocaleString()}{kpi.suffix || ''}
+                {new Intl.NumberFormat('en-US').format(kpi.value)}{kpi.suffix || ''}
               </Text>
               <Text style={s.brainKpiLabel}>{kpi.label}</Text>
             </View>
@@ -1012,13 +1357,13 @@ export default function LandingAnalyticsScreen() {
           </View>
         )}
 
-        {brain.activeAnomalies.length > 0 && (
+        {(brain.activeAnomalies ?? []).length > 0 && (
           <View style={s.card}>
             <View style={s.cardHeader}>
               <AlertTriangle size={16} color="#FF4D4D" />
               <Text style={s.cardTitle}>Active Anomalies</Text>
             </View>
-            {brain.activeAnomalies.map((anomaly: any) => (
+            {(brain.activeAnomalies ?? []).map((anomaly) => (
               <View key={anomaly.id} style={s.brainInsightRow}>
                 <View style={[s.brainInsightDot, { backgroundColor: '#FF4D4D' }]} />
                 <View style={s.brainInsightInfo}>
@@ -1038,13 +1383,13 @@ export default function LandingAnalyticsScreen() {
           </View>
         )}
 
-        {brain.activePredictions.length > 0 && (
+        {(brain.activePredictions ?? []).length > 0 && (
           <View style={s.card}>
             <View style={s.cardHeader}>
               <TrendingUp size={16} color="#00C48C" />
               <Text style={s.cardTitle}>Predictions</Text>
             </View>
-            {brain.activePredictions.map((pred: any) => (
+            {(brain.activePredictions ?? []).map((pred) => (
               <View key={pred.id} style={s.brainInsightRow}>
                 <View style={[s.brainInsightDot, { backgroundColor: '#00C48C' }]} />
                 <View style={s.brainInsightInfo}>
@@ -1057,13 +1402,13 @@ export default function LandingAnalyticsScreen() {
           </View>
         )}
 
-        {brain.topRecommendations.length > 0 && (
+        {(brain.topRecommendations ?? []).length > 0 && (
           <View style={s.card}>
             <View style={s.cardHeader}>
               <Lightbulb size={16} color="#FFB800" />
               <Text style={s.cardTitle}>Smart Recommendations</Text>
             </View>
-            {brain.topRecommendations.map((rec: any, i: number) => (
+            {(brain.topRecommendations ?? []).map((rec, i) => (
               <View key={rec.id} style={s.brainRecRow}>
                 <View style={[s.brainRecNum, { backgroundColor: IMPACT_STYLES[rec.impact]?.bg || '#eee' }]}>
                   <Text style={[s.brainRecNumText, { color: IMPACT_STYLES[rec.impact]?.text || '#999' }]}>
@@ -1087,14 +1432,14 @@ export default function LandingAnalyticsScreen() {
           </View>
         )}
 
-        {brain.recentLearnings.length > 0 && (
+        {(brain.recentLearnings ?? []).length > 0 && (
           <View style={s.card}>
             <View style={s.cardHeader}>
               <Brain size={16} color="#7B68EE" />
               <Text style={s.cardTitle}>Recent Learnings</Text>
-              <Text style={s.cardSubtitle}>{brain.recentLearnings.length} active</Text>
+              <Text style={s.cardSubtitle}>{(brain.recentLearnings ?? []).length} active</Text>
             </View>
-            {brain.recentLearnings.slice(0, 15).map((learning: any) => {
+            {(brain.recentLearnings ?? []).slice(0, 15).map((learning) => {
               const typeInfo = TYPE_ICONS[learning.type] || { icon: <Activity size={14} color="#97A0AF" />, color: '#97A0AF', label: learning.type };
               return (
                 <View key={learning.id} style={s.brainLearningRow}>
@@ -1115,7 +1460,7 @@ export default function LandingAnalyticsScreen() {
           </View>
         )}
 
-        {brain.baselines && Object.keys(brain.baselines).length > 0 && (
+        {(brain.baselines != null) && Object.keys(brain.baselines).length > 0 && (
           <View style={s.card}>
             <View style={s.cardHeader}>
               <BarChart3 size={16} color="#4A90D9" />
@@ -1125,11 +1470,11 @@ export default function LandingAnalyticsScreen() {
               <View key={key} style={s.brainBaselineRow}>
                 <Text style={s.brainBaselineLabel}>{key.replace(/_/g, ' ')}</Text>
                 <View style={s.brainBaselineValues}>
-                  <Text style={s.brainBaselineAvg}>avg: {Math.round((baseline as any).avg)}</Text>
+                  <Text style={s.brainBaselineAvg}>avg: {Math.round(baseline.avg)}</Text>
                   <Text style={s.brainBaselineRange}>
-                    {Math.round((baseline as any).min)}-{Math.round((baseline as any).max)}
+                    {Math.round(baseline.min)}-{Math.round(baseline.max)}
                   </Text>
-                  <Text style={s.brainBaselineSamples}>{(baseline as any).samples} samples</Text>
+                  <Text style={s.brainBaselineSamples}>{baseline.samples} samples</Text>
                 </View>
               </View>
             ))}
@@ -1306,7 +1651,7 @@ export default function LandingAnalyticsScreen() {
           </View>
         )}
 
-        {!hasPresence && breakdown?.byStep?.length > 0 && (
+        {!hasPresence && (breakdown?.byStep?.length ?? 0) > 0 && breakdown?.byStep && (
           <View style={s.card}>
             <View style={s.cardHeader}>
               <Target size={16} color={SS_BLUE} />
@@ -1354,15 +1699,17 @@ export default function LandingAnalyticsScreen() {
           {(!sessions || sessions.length === 0) ? (
             <Text style={s.noDataText}>No active sessions right now.</Text>
           ) : (
-            sessions.slice(0, 20).map((sess: any, i: number) => (
+            sessions.slice(0, 20).map((sess, i) => {
+              const sessSource = 'source' in sess ? (sess as Record<string, unknown>).source as string | undefined : undefined;
+              return (
               <View key={sess.sessionId || i} style={s.sessionRow}>
                 <PulseIndicator active={sess.isActive ?? true} />
                 <View style={s.sessionInfo}>
                   <View style={s.sessionTopRow}>
-                    {hasPresence && sess.source && (
-                      <View style={[s.sessionBadge, { backgroundColor: (sess.source === 'landing' ? SS_TEAL : SS_PURPLE) + '18', borderColor: (sess.source === 'landing' ? SS_TEAL : SS_PURPLE) + '40' }]}>
-                        <Text style={[s.sessionBadgeText, { color: sess.source === 'landing' ? SS_TEAL : SS_PURPLE }]}>
-                          {sess.source === 'landing' ? 'LANDING' : 'APP'}
+                    {hasPresence && sessSource && (
+                      <View style={[s.sessionBadge, { backgroundColor: (sessSource === 'landing' ? SS_TEAL : SS_PURPLE) + '18', borderColor: (sessSource === 'landing' ? SS_TEAL : SS_PURPLE) + '40' }]}>
+                        <Text style={[s.sessionBadgeText, { color: sessSource === 'landing' ? SS_TEAL : SS_PURPLE }]}>
+                          {sessSource === 'landing' ? 'LANDING' : 'APP'}
                         </Text>
                       </View>
                     )}
@@ -1390,7 +1737,8 @@ export default function LandingAnalyticsScreen() {
                   </View>
                 </View>
               </View>
-            ))
+            );
+            })
           )}
         </View>
       </>

@@ -22,7 +22,7 @@ import {
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { topInvestors, TopInvestor } from '@/mocks/social-portfolios';
-import { formatCurrencyWithDecimals } from '@/lib/formatters';
+import { formatCurrencyWithDecimals, formatNumber } from '@/lib/formatters';
 
 type SortOption = 'return' | 'followers' | 'holdings';
 type RiskFilter = 'all' | 'conservative' | 'moderate' | 'aggressive';
@@ -115,7 +115,7 @@ export default function CopyInvestingScreen() {
         <View style={styles.investorStats}>
           <View style={styles.investorStat}>
             <Users size={12} color={Colors.textTertiary} />
-            <Text style={styles.investorStatText}>{investor.followerCount.toLocaleString()}</Text>
+            <Text style={styles.investorStatText}>{formatNumber(investor.followerCount)}</Text>
           </View>
           <View style={styles.investorStat}>
             <Building2 size={12} color={Colors.textTertiary} />
@@ -229,7 +229,7 @@ export default function CopyInvestingScreen() {
             <View style={styles.overviewStat}>
               <Shield size={16} color={Colors.info} />
               <Text style={styles.overviewValue}>
-                {topInvestors.reduce((sum, i) => sum + i.followerCount, 0).toLocaleString()}
+                {formatNumber(topInvestors.reduce((sum, i) => sum + i.followerCount, 0))}
               </Text>
               <Text style={styles.overviewLabel}>Followers</Text>
             </View>

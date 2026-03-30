@@ -11,7 +11,7 @@ import {
   Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { TrendingUp, TrendingDown, Activity, BarChart3, Clock, Zap, Globe, ArrowUpRight, ArrowDownRight, ChevronRight } from 'lucide-react-native';
+import { TrendingUp, TrendingDown, Activity, BarChart3, Clock, Zap, Globe, ArrowUpRight, ArrowDownRight, ChevronRight, Tag, ShoppingCart } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
@@ -25,7 +25,8 @@ import TradingModal from '@/components/TradingModal';
 import { TimeRange, Property, MarketData, Order } from '@/types';
 import { useAuth } from '@/lib/auth-context';
 import { useGlobalMarkets } from '@/lib/global-markets';
-import { formatCurrencyWithDecimals, formatCurrencyCompact } from '@/lib/formatters';
+import { formatCurrencyWithDecimals, formatCurrencyCompact, formatNumber } from '@/lib/formatters';
+import type { ResaleListing } from '@/lib/investment-service';
 
 type MarketTab = 'all' | 'gainers' | 'losers';
 
@@ -280,6 +281,191 @@ const gmStyles = StyleSheet.create({
     color: Colors.black,
     fontSize: 13,
     fontWeight: '800' as const,
+  },
+});
+
+function ResaleMarketplaceSection({ router }: { router: ReturnType<typeof useRouter> }) {
+  const resaleQuery = useQuery({
+    queryKey: ['resale-listings', 'active'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('resale_listings')
+        .select('*')
+        .eq('status', 'active')
+        .order('created_at', { ascending: false })
+        .limit(5);
+      if (error) {
+        console.log('[Market] Resale listings fetch error:', error.message);
+        return [];
+      }
+      return (data || []) as ResaleListing[];
+    },
+    staleTime: 1000 * 30,
+  });
+
+  const listings = resaleQuery.data ?? [];
+  if (listings.length === 0) return null;
+
+  return (
+    <View style={rsStyles.wrap}>
+      <View style={rsStyles.header}>
+        <View style={rsStyles.headerLeft}>
+          <Tag size={16} color={Colors.primary} />
+          <Text style={rsStyles.headerTitle}>Secondary Market</Text>
+          <View style={rsStyles.countBadge}>
+            <Text style={rsStyles.countText}>{listings.length}</Text>
+          </View>
+        </View>
+        <TouchableOpacity
+          style={rsStyles.viewAllBtn}
+          onPress={() => router.push('/resale-marketplace' as any)}
+          activeOpacity={0.7}
+        >
+          <Text style={rsStyles.viewAllText}>View All</Text>
+          <ChevronRight size={13} color={Colors.primary} />
+        </TouchableOpacity>
+      </View>
+      <Text style={rsStyles.subtext}>
+        Buy shares from other investors at their listed prices
+      </Text>
+      {listings.map((listing: ResaleListing) => (
+        <TouchableOpacity
+          key={listing.id}
+          style={rsStyles.listingCard}
+          onPress={() => router.push(`/resale-marketplace?listingId=${listing.id}` as any)}
+          activeOpacity={0.8}
+        >
+          <View style={rsStyles.listingLeft}>
+            <ShoppingCart size={16} color={Colors.primary} />
+            <View style={rsStyles.listingInfo}>
+              <Text style={rsStyles.listingName} numberOfLines={1}>{listing.property_name}</Text>
+              <Text style={rsStyles.listingMeta}>
+                {formatNumber(listing.shares)} shares @ {formatCurrencyWithDecimals(listing.ask_price_per_share)}
+              </Text>
+            </View>
+          </View>
+          <View style={rsStyles.listingRight}>
+            <Text style={rsStyles.listingTotal}>{formatCurrencyCompact(listing.total_ask)}</Text>
+            {listing.ask_price_per_share > listing.original_cost_basis ? (
+              <View style={[rsStyles.premiumBadge, { backgroundColor: Colors.error + '20' }]}>
+                <Text style={[rsStyles.premiumText, { color: Colors.error }]}>
+                  +{((listing.ask_price_per_share - listing.original_cost_basis) / listing.original_cost_basis * 100).toFixed(1)}%
+                </Text>
+              </View>
+            ) : (
+              <View style={[rsStyles.premiumBadge, { backgroundColor: Colors.success + '20' }]}>
+                <Text style={[rsStyles.premiumText, { color: Colors.success }]}>
+                  {((listing.ask_price_per_share - listing.original_cost_basis) / listing.original_cost_basis * 100).toFixed(1)}%
+                </Text>
+              </View>
+            )}
+          </View>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+}
+
+const rsStyles = StyleSheet.create({
+  wrap: {
+    marginHorizontal: 20,
+    marginBottom: 16,
+    backgroundColor: Colors.surface,
+    borderRadius: 18,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: Colors.primary + '20',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+  },
+  headerTitle: {
+    color: Colors.text,
+    fontSize: 14,
+    fontWeight: '800' as const,
+  },
+  countBadge: {
+    backgroundColor: Colors.primary,
+    borderRadius: 10,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+  },
+  countText: {
+    color: Colors.black,
+    fontSize: 10,
+    fontWeight: '800' as const,
+  },
+  viewAllBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+  },
+  viewAllText: {
+    color: Colors.primary,
+    fontSize: 11,
+    fontWeight: '700' as const,
+  },
+  subtext: {
+    color: Colors.textTertiary,
+    fontSize: 11,
+    marginBottom: 12,
+    lineHeight: 16,
+  },
+  listingCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.surfaceBorder,
+  },
+  listingLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+    minWidth: 0,
+  },
+  listingInfo: {
+    flex: 1,
+    minWidth: 0,
+  },
+  listingName: {
+    color: Colors.text,
+    fontSize: 13,
+    fontWeight: '700' as const,
+  },
+  listingMeta: {
+    color: Colors.textTertiary,
+    fontSize: 10,
+    marginTop: 2,
+  },
+  listingRight: {
+    alignItems: 'flex-end',
+    gap: 3,
+  },
+  listingTotal: {
+    color: Colors.text,
+    fontSize: 13,
+    fontWeight: '700' as const,
+  },
+  premiumBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  premiumText: {
+    fontSize: 10,
+    fontWeight: '700' as const,
   },
 });
 
@@ -804,6 +990,8 @@ export default function MarketScreen() {
             </View>
             );
           })()}
+
+          <ResaleMarketplaceSection router={router} />
 
           <GlobalMarketsSection router={router} />
 

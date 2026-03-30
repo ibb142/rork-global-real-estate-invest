@@ -19,6 +19,7 @@ import { Mail, Lock, Eye, EyeOff, ArrowLeft, Shield, ChevronRight } from 'lucide
 import Colors from '@/constants/colors';
 import { useAuth } from '@/lib/auth-context';
 import { checkAuthRateLimit, recordAuthAttempt, getRateLimitMessage } from '@/lib/auth-rate-limiter';
+import { validateEmail, sanitizeEmail } from '@/lib/auth-helpers';
 
 const IPX_LOGO = require('@/assets/images/ivx-logo.png');
 
@@ -61,13 +62,18 @@ export default function LoginScreen() {
       shake();
       return;
     }
+    if (!validateEmail(email.trim())) {
+      Alert.alert('Invalid Email', 'Please enter a valid email address.');
+      shake();
+      return;
+    }
     if (!password) {
       Alert.alert('Missing Password', 'Please enter your password.');
       shake();
       return;
     }
 
-    const identifier = email.trim().toLowerCase();
+    const identifier = sanitizeEmail(email);
     const rateCheck = checkAuthRateLimit(identifier);
     if (!rateCheck.allowed) {
       shake();
@@ -283,7 +289,7 @@ export default function LoginScreen() {
 
             <Animated.View style={[styles.securityRow, { opacity: fadeAnim }]}>
               <Shield size={13} color={Colors.textTertiary} />
-              <Text style={styles.securityText}>Bank-grade encryption · SEC compliant · FDIC escrow</Text>
+              <Text style={styles.securityText}>Bank-grade encryption · Escrow protected · Regulated structure</Text>
             </Animated.View>
           </ScrollView>
         </KeyboardAvoidingView>

@@ -1,9 +1,10 @@
-import React, { useEffect, useRef, useCallback, useMemo } from 'react';
+import { useEffect, useRef, useCallback, useMemo } from 'react';
 import { analytics } from './analytics';
 import { usePathname } from 'expo-router';
 import type { EventCategory } from './analytics';
+import createContextHook from '@nkzw/create-context-hook';
 
-interface AnalyticsHook {
+export interface AnalyticsHook {
   trackScreen: (screenName: string, params?: Record<string, unknown>) => void;
   trackAction: (action: string, details?: Record<string, unknown>) => void;
   trackTransaction: (type: 'buy' | 'sell' | 'deposit' | 'withdraw', amount: number, currency: string, details?: Record<string, unknown>) => void;
@@ -12,9 +13,7 @@ interface AnalyticsHook {
   track: (name: string, category?: EventCategory, properties?: Record<string, unknown>) => void;
 }
 
-const AnalyticsContext = React.createContext<AnalyticsHook | null>(null);
-
-export function AnalyticsProvider({ children }: { children: React.ReactNode }) {
+export const [AnalyticsProvider, useAnalytics] = createContextHook<AnalyticsHook>(() => {
   const pathname = usePathname();
   const initializedRef = useRef(false);
   const lastPathnameRef = useRef<string>('');
@@ -65,7 +64,7 @@ export function AnalyticsProvider({ children }: { children: React.ReactNode }) {
     analytics.track(name, category, properties);
   }, []);
 
-  const value = useMemo<AnalyticsHook>(() => ({
+  return useMemo<AnalyticsHook>(() => ({
     trackScreen,
     trackAction,
     trackTransaction,
@@ -73,39 +72,6 @@ export function AnalyticsProvider({ children }: { children: React.ReactNode }) {
     trackError,
     track,
   }), [trackScreen, trackAction, trackTransaction, trackConversion, trackError, track]);
-
-  return (
-    <AnalyticsContext.Provider value={value}>
-      {children}
-    </AnalyticsContext.Provider>
-  );
-}
-
-export function useAnalytics(): AnalyticsHook {
-  const ctx = React.useContext(AnalyticsContext);
-  if (!ctx) {
-    return {
-      trackScreen: (screenName: string, params?: Record<string, unknown>) => {
-        analytics.trackScreenView(screenName, params);
-      },
-      trackAction: (action: string, details?: Record<string, unknown>) => {
-        analytics.trackUserAction(action, details);
-      },
-      trackTransaction: (type: 'buy' | 'sell' | 'deposit' | 'withdraw', amount: number, currency: string, details?: Record<string, unknown>) => {
-        analytics.trackTransaction(type, amount, currency, details);
-      },
-      trackConversion: (conversionType: string, value?: number, details?: Record<string, unknown>) => {
-        analytics.trackConversion(conversionType, value, details);
-      },
-      trackError: (errorName: string, errorMessage: string, stack?: string, context?: Record<string, unknown>) => {
-        analytics.trackError(errorName, errorMessage, stack, context);
-      },
-      track: (name: string, category?: EventCategory, properties?: Record<string, unknown>) => {
-        analytics.track(name, category, properties);
-      },
-    };
-  }
-  return ctx;
-}
+});
 
 export default AnalyticsProvider;

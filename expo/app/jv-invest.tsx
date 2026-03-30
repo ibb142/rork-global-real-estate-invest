@@ -36,22 +36,22 @@ import {
   FileText,
   Handshake,
   BarChart3,
-  Coins,
   Landmark,
   UserPlus,
   ChevronRight,
   LogIn,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
-import { formatCurrencyWithDecimals } from '@/lib/formatters';
-import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { formatCurrencyWithDecimals, formatNumber, formatAmountInput } from '@/lib/formatters';
+import { supabase } from '@/lib/supabase';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { purchaseJVInvestment } from '@/lib/investment-service';
+import { fetchJVDealById } from '@/lib/jv-storage';
 import type { PoolTier } from '@/types/jv';
 
 
 type PaymentMethod = 'wallet' | 'bank' | 'wire';
-type InvestmentPool = 'jv_direct' | 'token_shares';
+type InvestmentPool = 'jv_direct';
 type Step = 'pool' | 'amount' | 'review' | 'success';
 
 interface DealData {
@@ -85,41 +85,7 @@ interface DealData {
   partners: Array<{ name: string; role: string; share: number }>;
 }
 
-const FALLBACK_DEALS: Record<string, Record<string, unknown>> = {
-  'casa-rosario-001': {
-    id: 'casa-rosario-001',
-    title: 'CASA ROSARIO',
-    project_name: 'ONE STOP DEVELOPMENT TWO LLC',
-    type: 'development',
-    description: 'Premium residential development by ONE STOP DEVELOPMENT TWO LLC. Active JV deal open for qualified and individual investors. Fractional ownership via tokenized shares or direct JV partnership.',
-    property_address: '20231 Sw 51st Ct, Pembroke Pines, FL 33332',
-    city: 'Pembroke Pines',
-    state: 'FL',
-    country: 'USA',
-    total_investment: 1400000,
-    expected_roi: 30,
-    management_fee: 2,
-    performance_fee: 20,
-    minimum_hold_period: 12,
-    distribution_frequency: 'Quarterly',
-    exit_strategy: 'Sale upon completion',
-    start_date: '2026-01-01',
-    end_date: '2028-01-01',
-    governing_law: 'State of Florida',
-    dispute_resolution: 'Binding Arbitration',
-    confidentiality_period: '24',
-    non_compete_period: '12',
-    profit_split: '70/30 Developer/Investor',
-    status: 'active',
-    published: true,
-    partners: [{ name: 'ONE STOP DEVELOPMENT TWO LLC', role: 'Developer / Managing Partner', share: 70 }],
-    pool_tiers: [
-      { id: 'casa-jv-direct', label: 'JV Direct Investment', type: 'jv_direct', targetAmount: 980000, minInvestment: 1000, currentRaised: 0, investorCount: 0, status: 'open' },
-      { id: 'casa-token-shares', label: 'Token Shares', type: 'token_shares', targetAmount: 420000, minInvestment: 50, currentRaised: 0, investorCount: 0, status: 'open' },
-    ],
-    photos: [],
-  },
-};
+
 
 function parseJsonField(val: unknown, fallback: unknown = []): unknown {
   if (val === null || val === undefined) return fallback;
@@ -161,18 +127,8 @@ function mapRowToDeal(row: Record<string, unknown>): DealData {
         id: 'default-jv',
         label: 'JV Direct Investment',
         type: 'jv_direct' as const,
-        targetAmount: total * 0.7,
+        targetAmount: total,
         minInvestment: 1000,
-        currentRaised: 0,
-        investorCount: 0,
-        status: 'open' as const,
-      },
-      {
-        id: 'default-token',
-        label: 'Token Shares',
-        type: 'token_shares' as const,
-        targetAmount: total * 0.3,
-        minInvestment: 50,
         currentRaised: 0,
         investorCount: 0,
         status: 'open' as const,
@@ -227,12 +183,7 @@ const POOL_CONFIG: Record<InvestmentPool, { label: string; desc: string; icon: t
     icon: Landmark,
     color: '#00C48C',
   },
-  token_shares: {
-    label: 'Token Shares',
-    desc: 'Fractional ownership via tokenized shares',
-    icon: Coins,
-    color: '#FFD700',
-  },
+
 };
 
 export default function JVInvestScreen() {
@@ -271,40 +222,26 @@ export default function JVInvestScreen() {
     queryKey: ['jv-invest-deal', jvId],
     queryFn: async (): Promise<DealData> => {
       if (!jvId) throw new Error('No deal ID provided');
-      console.log('[JVInvest] Fetching deal from Supabase:', jvId);
+      console.log('[JVInvest] Fetching deal via jv-storage (Supabase + local cache):', jvId);
 
-      if (isSupabaseConfigured()) {
-        try {
-          const { data, error } = await supabase
-            .from('jv_deals')
-            .select('*')
-            .eq('id', jvId)
-            .single();
-
-          if (!error && data) {
-            const row = data as Record<string, unknown>;
-            if (row.title || row.project_name || row.total_investment) {
-              console.log('[JVInvest] Deal loaded from Supabase:', row.title);
-              return mapRowToDeal(row);
-            }
-            console.log('[JVInvest] Supabase returned incomplete row, using fallback');
-          } else {
-            console.log('[JVInvest] Supabase error or no data:', error?.message);
+      try {
+        const row = await fetchJVDealById(jvId);
+        if (row) {
+          const mapped = mapRowToDeal(row as Record<string, unknown>);
+          if (mapped.title || mapped.projectName || mapped.totalInvestment) {
+            console.log('[JVInvest] Deal loaded:', mapped.title, '| source: jv-storage');
+            return mapped;
           }
-        } catch (e) {
-          console.log('[JVInvest] Supabase fetch exception:', (e as Error)?.message);
+          console.log('[JVInvest] Row returned but incomplete — trying fallback');
+        } else {
+          console.log('[JVInvest] fetchJVDealById returned null for:', jvId);
         }
-      } else {
-        console.log('[JVInvest] Supabase not configured');
+      } catch (e) {
+        console.log('[JVInvest] fetchJVDealById exception:', (e as Error)?.message);
       }
 
-      const fallback = FALLBACK_DEALS[jvId];
-      if (fallback) {
-        console.log('[JVInvest] Using fallback deal data for:', jvId);
-        return mapRowToDeal(fallback);
-      }
-
-      throw new Error('Deal not found');
+      console.log('[JVInvest] Deal not found in Supabase or local cache:', jvId);
+      throw new Error('Deal not found. It may need to be published from the admin panel.');
     },
     enabled: !!jvId,
     retry: 2,
@@ -341,10 +278,12 @@ export default function JVInvestScreen() {
   }, [openPools, selectedPool]);
 
   const amount = useMemo(() => parseFloat(investAmount.replace(/,/g, '')) || 0, [investAmount]);
-  const managementFee = deal ? amount * ((deal.managementFee) / 100) : 0;
   const estimatedReturn = deal ? amount * ((deal.expectedROI) / 100) : 0;
   const poolRemaining = selectedPoolData ? selectedPoolData.targetAmount - selectedPoolData.currentRaised : (deal?.totalInvestment ?? 0);
-  const equityPercent = deal && deal.totalInvestment > 0 ? (amount / deal.totalInvestment) * 100 : 0;
+  const ownershipBase = deal?.totalInvestment ?? 0;
+  const equityPercent = ownershipBase > 0 ? Math.min((amount / ownershipBase) * 100, 100) : 0;
+  const estimatedProfit = estimatedReturn;
+  const estimatedTotalPayout = amount + estimatedProfit;
   const minInvestment = selectedPoolData?.minInvestment ?? 50;
 
   const totalRaised = useMemo(() => {
@@ -404,7 +343,7 @@ export default function JVInvestScreen() {
     const clean = text.replace(/[^0-9]/g, '');
     if (clean === '') { setInvestAmount(''); return; }
     const num = parseInt(clean, 10);
-    setInvestAmount(num.toLocaleString('en-US'));
+    setInvestAmount(formatAmountInput(String(num)));
   }, []);
 
   const handleSelectPool = useCallback((pool: InvestmentPool) => {
@@ -817,10 +756,10 @@ export default function JVInvestScreen() {
                     <TouchableOpacity
                       key={qty}
                       style={[styles.quickBtn, amount === qty && styles.quickBtnActive]}
-                      onPress={() => { Keyboard.dismiss(); setInvestAmount(qty.toLocaleString('en-US')); }}
+                      onPress={() => { Keyboard.dismiss(); setInvestAmount(formatAmountInput(String(qty))); }}
                     >
                       <Text style={[styles.quickBtnText, amount === qty && styles.quickBtnTextActive]}>
-                        {qty >= 1000 ? `$${(qty / 1000).toFixed(0)}K` : `$${qty}`}
+                        {qty >= 1000 ? `${formatNumber(qty)}` : `${qty}`}
                       </Text>
                     </TouchableOpacity>
                   ))}
@@ -828,7 +767,7 @@ export default function JVInvestScreen() {
 
                 <View style={styles.summaryCard}>
                   <View style={styles.summaryRow}>
-                    <Text style={styles.summaryLabel}>Investment</Text>
+                    <Text style={styles.summaryLabel}>Investment Amount</Text>
                     <Text style={styles.summaryValue}>{formatCurrencyWithDecimals(amount)}</Text>
                   </View>
                   <View style={styles.summaryRow}>
@@ -836,20 +775,24 @@ export default function JVInvestScreen() {
                     <Text style={[styles.summaryValue, { color: Colors.primary }]}>{equityPercent.toFixed(2)}%</Text>
                   </View>
                   <View style={styles.summaryRow}>
-                    <Text style={styles.summaryLabel}>Mgmt Fee ({deal.managementFee}%/yr)</Text>
-                    <Text style={styles.summaryValue}>{formatCurrencyWithDecimals(managementFee)}/yr</Text>
+                    <Text style={styles.summaryLabel}>Projected ROI</Text>
+                    <Text style={[styles.summaryValue, { color: Colors.success }]}>{deal.expectedROI}%</Text>
                   </View>
                   <View style={styles.summaryDivider} />
                   <View style={styles.summaryRow}>
-                    <Text style={styles.summaryBoldLabel}>Est. Return ({deal.expectedROI}%)</Text>
-                    <Text style={[styles.summaryBoldValue, { color: Colors.success }]}>{formatCurrencyWithDecimals(estimatedReturn)}</Text>
+                    <Text style={styles.summaryBoldLabel}>Estimated Profit</Text>
+                    <Text style={[styles.summaryBoldValue, { color: Colors.success }]}>{formatCurrencyWithDecimals(estimatedProfit)}</Text>
+                  </View>
+                  <View style={styles.summaryRow}>
+                    <Text style={styles.summaryBoldLabel}>Estimated Total Payout</Text>
+                    <Text style={[styles.summaryBoldValue, { color: Colors.primary }]}>{formatCurrencyWithDecimals(estimatedTotalPayout)}</Text>
                   </View>
                 </View>
 
                 <View style={styles.protectionCard}>
                   {[
                     { icon: Shield, text: 'Protected by JV Operating Agreement', color: Colors.info },
-                    { icon: Lock, text: 'Funds held in FDIC-insured escrow', color: Colors.primary },
+                    { icon: Lock, text: 'Funds held in escrow-protected accounts', color: Colors.primary },
                     { icon: FileText, text: `Governed by ${deal.governingLaw}`, color: Colors.success },
                   ].map((item, idx) => {
                     const PIcon = item.icon;
@@ -898,9 +841,10 @@ export default function JVInvestScreen() {
                   {[
                     { label: 'Deal', value: deal.title },
                     { label: 'Type', value: poolLabel },
-                    { label: 'Amount', value: formatCurrencyWithDecimals(amount) },
-                    { label: 'Ownership', value: `${equityPercent.toFixed(2)}%` },
-                    { label: 'Expected ROI', value: `${deal.expectedROI}%`, color: Colors.success },
+                    { label: 'Investment Amount', value: formatCurrencyWithDecimals(amount) },
+                    { label: 'Ownership Share', value: `${equityPercent.toFixed(2)}%`, color: Colors.primary },
+                    { label: 'Projected ROI', value: `${deal.expectedROI}%`, color: Colors.success },
+                    { label: 'Estimated Profit', value: formatCurrencyWithDecimals(estimatedProfit), color: Colors.success },
                     { label: 'Distribution', value: capitalize(deal.distributionFrequency) },
                     { label: 'Min Hold', value: `${deal.minimumHoldPeriod} months` },
                   ].map((item, idx) => (
@@ -911,8 +855,8 @@ export default function JVInvestScreen() {
                   ))}
                   <View style={styles.reviewDivider} />
                   <View style={styles.reviewRow}>
-                    <Text style={styles.reviewBoldLabel}>Total</Text>
-                    <Text style={styles.reviewBoldValue}>{formatCurrencyWithDecimals(amount)}</Text>
+                    <Text style={styles.reviewBoldLabel}>Estimated Total Payout</Text>
+                    <Text style={styles.reviewBoldValue}>{formatCurrencyWithDecimals(estimatedTotalPayout)}</Text>
                   </View>
                 </View>
 

@@ -10,13 +10,14 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { TrendingUp, TrendingDown, Wallet, Building2, ChevronRight, PiggyBank, Percent, Globe, DollarSign, Activity } from 'lucide-react-native';
+import { TrendingUp, TrendingDown, Wallet, Building2, ChevronRight, PiggyBank, Percent, Globe, DollarSign, Activity, Tag, ShoppingCart } from 'lucide-react-native';
 import Svg, { Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 import Colors from '@/constants/colors';
 import { getResponsiveSize, isCompactScreen, isExtraSmallScreen } from '@/lib/responsive';
 import { useAuth } from '@/lib/auth-context';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
+import { useWallet } from '@/lib/wallet-context';
 import { formatCurrencyWithDecimals } from '@/lib/formatters';
 import IPXHoldingCard from '@/components/IPXHoldingCard';
 import { useIPX } from '@/lib/ipx-context';
@@ -24,6 +25,8 @@ import { useEarn } from '@/lib/earn-context';
 import { useTranslation } from '@/lib/i18n-context';
 import { useAnalytics } from '@/lib/analytics-context';
 import { useGlobalMarkets } from '@/lib/global-markets';
+import type { ResaleListing } from '@/lib/investment-service';
+import { formatNumber } from '@/lib/formatters';
 
 const CHART_HEIGHT = 120;
 
@@ -178,6 +181,121 @@ const macroStyles = StyleSheet.create({
   },
 });
 
+function MyResaleListingsWidget({ router }: { router: ReturnType<typeof useRouter> }) {
+  const { isAuthenticated } = useAuth();
+  const myListingsQuery = useQuery({
+    queryKey: ['resale-listings', 'mine-portfolio'],
+    queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return [];
+      const { data, error } = await supabase
+        .from('resale_listings')
+        .select('*')
+        .eq('seller_id', user.id)
+        .eq('status', 'active')
+        .order('created_at', { ascending: false });
+      if (error) return [];
+      return (data || []) as ResaleListing[];
+    },
+    enabled: isAuthenticated,
+    staleTime: 1000 * 30,
+  });
+
+  const listings = myListingsQuery.data ?? [];
+  if (listings.length === 0) return null;
+
+  return (
+    <TouchableOpacity
+      style={resaleStyles.wrap}
+      onPress={() => router.push('/resale-marketplace' as any)}
+      activeOpacity={0.85}
+    >
+      <View style={resaleStyles.header}>
+        <Tag size={14} color={Colors.primary} />
+        <Text style={resaleStyles.headerTitle}>Your Resale Listings</Text>
+        <View style={resaleStyles.countBadge}>
+          <Text style={resaleStyles.countText}>{listings.length}</Text>
+        </View>
+        <ChevronRight size={14} color={Colors.primary} />
+      </View>
+      {listings.map((listing: ResaleListing) => (
+        <View key={listing.id} style={resaleStyles.row}>
+          <ShoppingCart size={13} color={Colors.textTertiary} />
+          <View style={resaleStyles.rowInfo}>
+            <Text style={resaleStyles.rowName} numberOfLines={1}>{listing.property_name}</Text>
+            <Text style={resaleStyles.rowMeta}>
+              {formatNumber(listing.shares)} shares @ {formatCurrencyWithDecimals(listing.ask_price_per_share)}
+            </Text>
+          </View>
+          <Text style={resaleStyles.rowTotal}>{formatCurrencyWithDecimals(listing.total_ask)}</Text>
+        </View>
+      ))}
+    </TouchableOpacity>
+  );
+}
+
+const resaleStyles = StyleSheet.create({
+  wrap: {
+    marginHorizontal: 20,
+    marginBottom: 8,
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: Colors.primary + '20',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    marginBottom: 8,
+  },
+  headerTitle: {
+    flex: 1,
+    color: Colors.text,
+    fontSize: 13,
+    fontWeight: '700' as const,
+  },
+  countBadge: {
+    backgroundColor: Colors.primary,
+    borderRadius: 10,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+  },
+  countText: {
+    color: Colors.black,
+    fontSize: 10,
+    fontWeight: '800' as const,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 6,
+    borderTopWidth: 1,
+    borderTopColor: Colors.surfaceBorder,
+  },
+  rowInfo: {
+    flex: 1,
+    minWidth: 0,
+  },
+  rowName: {
+    color: Colors.text,
+    fontSize: 12,
+    fontWeight: '600' as const,
+  },
+  rowMeta: {
+    color: Colors.textTertiary,
+    fontSize: 10,
+    marginTop: 1,
+  },
+  rowTotal: {
+    color: Colors.primary,
+    fontSize: 13,
+    fontWeight: '700' as const,
+  },
+});
+
 const generatePortfolioHistory = (baseValue: number) => {
   const history = [];
   let value = baseValue * 0.85;
@@ -198,18 +316,8 @@ export default function PortfolioScreen() {
   const [refreshing, setRefreshing] = useState(false);
 
   const { isAuthenticated } = useAuth();
+  const { available: walletBalance, invested: totalInvestedBackend, refreshWallet } = useWallet();
 
-  const balanceQuery = useQuery({
-    queryKey: ['wallet-balance', 'portfolio'],
-    queryFn: async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return null;
-      const { data } = await supabase.from('wallets').select('*').eq('user_id', user.id).single();
-      return data;
-    },
-    staleTime: 1000 * 60 * 2,
-    enabled: isAuthenticated,
-  });
   const portfolioQuery = useQuery({
     queryKey: ['portfolio', 'holdings'],
     queryFn: async () => {
@@ -221,9 +329,6 @@ export default function PortfolioScreen() {
     staleTime: 1000 * 60 * 2,
     enabled: isAuthenticated,
   });
-
-  const walletBalance = (balanceQuery.data as any)?.available ?? 0;
-  const totalInvestedBackend = (balanceQuery.data as any)?.invested ?? 0;
 
   const { holdings: ipxHoldings, getTotalIPXValue, getTotalIPXPnL, getTotalIPXPnLPercent } = useIPX();
   const { totalBalance: earnBalance, apyRate } = useEarn();
@@ -294,7 +399,8 @@ export default function PortfolioScreen() {
 
   const onRefresh = () => {
     setRefreshing(true);
-    void Promise.all([balanceQuery.refetch(), portfolioQuery.refetch()])
+    refreshWallet();
+    void portfolioQuery.refetch()
       .finally(() => setRefreshing(false));
   };
 
@@ -496,6 +602,8 @@ export default function PortfolioScreen() {
               )}
             </View>
           )}
+
+          <MyResaleListingsWidget router={router} />
 
           <MacroContextWidget router={router} />
 

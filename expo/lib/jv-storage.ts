@@ -142,8 +142,8 @@ function _queuePhotoRestore(dealId: string, photos: string[]): void {
 
 let _supabaseAvailable: boolean | null = null;
 let _supabaseCheckTimestamp: number = 0;
-const SUPABASE_CACHE_TTL = 45000;
-const SUPABASE_FAILURE_CACHE_TTL = 3000;
+const SUPABASE_CACHE_TTL = 30000;
+const SUPABASE_FAILURE_CACHE_TTL = 5000;
 const _tableCache: Record<string, boolean> = {};
 const _tableCacheTimestamps: Record<string, number> = {};
 const TABLE_CACHE_TTL = 30000;
@@ -410,7 +410,7 @@ function mapSupabaseRowToCamelCase(row: any): any {
     propertyAddress: row.propertyAddress || row.property_address || '',
     totalInvestment: row.totalInvestment || row.total_investment || 0,
     expectedROI: row.expectedROI || row.expected_roi || 0,
-    distributionFrequency: row.distributionFrequency || row.distribution_frequency || 'quarterly',
+    distributionFrequency: row.distributionFrequency || row.distribution_frequency || 'Monthly',
     exitStrategy: row.exitStrategy || row.exit_strategy || 'Sale upon completion',
     publishedAt: row.publishedAt || row.published_at || '',
     createdAt: row.createdAt || row.created_at || '',
@@ -469,6 +469,7 @@ const VALID_COLUMNS = new Set([
   'currency', 'profit_split', 'start_date', 'end_date',
   'governing_law', 'dispute_resolution', 'confidentiality_period',
   'non_compete_period', 'management_fee', 'performance_fee', 'minimum_hold_period', 'display_order',
+  'trust_info', 'trustInfo',
   'projectName', 'propertyAddress', 'totalInvestment', 'expectedROI',
   'distributionFrequency', 'exitStrategy', 'poolTiers', 'publishedAt',
   'createdAt', 'updatedAt', 'profitSplit', 'startDate', 'endDate',
@@ -681,7 +682,7 @@ async function _fetchJVDealsInternal(filters?: { published?: boolean; limit?: nu
   }
 
   try {
-    const backendUrl = (process.env.EXPO_PUBLIC_API_BASE_URL || '').trim().replace(/\/$/, '');
+    const backendUrl = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || process.env.EXPO_PUBLIC_API_BASE_URL || '').trim().replace(/\/$/, '');
     if (backendUrl) {
       console.log('[JV-Storage] Local storage empty — trying backend API fallback:', backendUrl + '/api/landing-deals');
       const controller = new AbortController();
@@ -1154,21 +1155,28 @@ export async function updateJVDeal(id: string, updates: Record<string, unknown>,
 }
 
 export async function updateDealDisplayOrders(orders: Array<{ id: string; displayOrder: number }>): Promise<{ success: boolean; error?: string }> {
-  console.log('[JV-Storage] Updating display orders for', orders.length, 'deals');
+  const sequential = orders
+    .sort((a, b) => a.displayOrder - b.displayOrder)
+    .map((o, idx) => ({ id: o.id, displayOrder: idx + 1 }));
+
+  console.log('[JV-Storage] Updating display orders (sequential 1..n) for', sequential.length, 'deals:', sequential.map(o => `${o.id.slice(0, 8)}→${o.displayOrder}`).join(', '));
   const useSupabase = await checkSupabaseTable();
+  let supabaseOk = false;
 
   if (useSupabase) {
     try {
-      for (const { id, displayOrder } of orders) {
+      const now = new Date().toISOString();
+      for (const { id, displayOrder } of sequential) {
         const { error } = await supabase.from('jv_deals').update({
           display_order: displayOrder,
-          updated_at: new Date().toISOString(),
+          updated_at: now,
         }).eq('id', id);
         if (error) {
           console.log('[JV-Storage] Failed to update display_order for', id, ':', error.message);
         }
       }
-      console.log('[JV-Storage] Display orders updated in Supabase for', orders.length, 'deals');
+      supabaseOk = true;
+      console.log('[JV-Storage] Display orders updated in Supabase for', sequential.length, 'deals (sequential 1..n)');
     } catch (err) {
       console.log('[JV-Storage] Supabase display order update error:', (err as Error)?.message);
     }
@@ -1176,7 +1184,7 @@ export async function updateDealDisplayOrders(orders: Array<{ id: string; displa
 
   try {
     const deals = await getLocalDeals();
-    for (const { id, displayOrder } of orders) {
+    for (const { id, displayOrder } of sequential) {
       const idx = deals.findIndex((d: any) => d.id === id);
       if (idx >= 0) {
         deals[idx] = { ...deals[idx], displayOrder, display_order: displayOrder };
@@ -1188,7 +1196,7 @@ export async function updateDealDisplayOrders(orders: Array<{ id: string; displa
     console.log('[JV-Storage] Local display order update error:', (err as Error)?.message);
   }
 
-  return { success: true };
+  return { success: supabaseOk || !useSupabase };
 }
 
 export async function verifyPublishPipeline(dealId: string): Promise<{ supabaseOk: boolean; photosCount: number; backendOk: boolean; errors: string[] }> {
@@ -1216,7 +1224,7 @@ export async function verifyPublishPipeline(dealId: string): Promise<{ supabaseO
   }
 
   try {
-    const backendUrl = (process.env.EXPO_PUBLIC_API_BASE_URL || '').trim().replace(/\/$/, '');
+    const backendUrl = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || process.env.EXPO_PUBLIC_API_BASE_URL || '').trim().replace(/\/$/, '');
     if (backendUrl) {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 6000);
@@ -1238,7 +1246,7 @@ export async function verifyPublishPipeline(dealId: string): Promise<{ supabaseO
         errors.push(`Backend /landing-deals HTTP ${res.status}`);
       }
     } else {
-      errors.push('No API base URL configured (EXPO_PUBLIC_API_BASE_URL)');
+      errors.push('No API base URL configured (EXPO_PUBLIC_RORK_API_BASE_URL)');
     }
   } catch (err) {
     errors.push(`Backend check failed: ${(err as Error)?.message}`);

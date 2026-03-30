@@ -75,7 +75,7 @@ export const [NetworkProvider, useNetwork] = createContextHook(() => {
 
     const interval = setInterval(() => {
       void check();
-    }, 30000);
+    }, 180000);
 
     const handleAppState = (nextState: AppStateStatus) => {
       if (nextState === 'active') {

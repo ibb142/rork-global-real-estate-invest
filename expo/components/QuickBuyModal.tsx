@@ -24,7 +24,7 @@ import {
   ChevronRight,
   MapPin,
   Landmark,
-  Coins,
+  Layers,
   CheckCircle,
   Lock,
   AlertCircle,
@@ -38,12 +38,12 @@ import {
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
-import { formatCurrencyWithDecimals, formatCurrencyCompact } from '@/lib/formatters';
+import { formatCurrencyWithDecimals, formatCurrencyCompact, formatNumber } from '@/lib/formatters';
 import { purchaseJVInvestment } from '@/lib/investment-service';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth-context';
 
-type InvestType = 'jv' | 'shares';
+type InvestType = 'jv' | 'fractional';
 type ModalStep = 'select' | 'confirm' | 'processing' | 'success' | 'auth' | 'auth_login';
 
 interface QuickBuyDeal {
@@ -56,6 +56,7 @@ interface QuickBuyDeal {
   propertyAddress?: string;
   type?: string;
   minInvestment?: number;
+  propertyMarketValue?: number;
 }
 
 interface QuickBuyModalProps {
@@ -66,13 +67,13 @@ interface QuickBuyModalProps {
 }
 
 const JV_AMOUNTS = [25000, 50000, 75000, 100000, 150000, 250000];
-const SHARES_AMOUNTS = [100, 500, 1000, 5000, 10000, 25000];
+const FRACTIONAL_AMOUNTS = [100, 500, 1000, 5000, 10000, 25000];
 
 export default function QuickBuyModal({ visible, onClose, deal, onNavigateToFullInvest }: QuickBuyModalProps) {
   const { isAuthenticated, register, login, registerLoading, loginLoading } = useAuth();
-  const [selectedAmount, setSelectedAmount] = useState<number>(1000);
+  const [selectedAmount, setSelectedAmount] = useState<number>(25000);
   const [customAmount, setCustomAmount] = useState('');
-  const [investType, setInvestType] = useState<InvestType>('shares');
+  const [investType, setInvestType] = useState<InvestType>('jv');
   const [step, setStep] = useState<ModalStep>('select');
   const [purchaseError, setPurchaseError] = useState<string | null>(null);
   const [confirmationNumber, setConfirmationNumber] = useState('');
@@ -90,13 +91,25 @@ export default function QuickBuyModal({ visible, onClose, deal, onNavigateToFull
   const [authError, setAuthError] = useState('');
   const [pendingInvest, setPendingInvest] = useState(false);
 
-  const activeAmounts = investType === 'jv' ? JV_AMOUNTS : SHARES_AMOUNTS;
-  const minAmount = investType === 'jv' ? 25000 : (deal?.minInvestment ?? 50);
+  const activeAmounts = investType === 'jv' ? JV_AMOUNTS : FRACTIONAL_AMOUNTS;
+  const minAmount = investType === 'jv' ? 25000 : 100;
+
+  const handleSwitchType = useCallback((type: InvestType) => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setInvestType(type);
+    setCustomAmount('');
+    if (type === 'jv') {
+      setSelectedAmount(25000);
+    } else {
+      setSelectedAmount(100);
+    }
+  }, []);
 
   useEffect(() => {
     if (visible) {
       setStep('select');
-      setSelectedAmount(investType === 'jv' ? 25000 : 1000);
+      setInvestType('jv');
+      setSelectedAmount(25000);
       setCustomAmount('');
       setPurchaseError(null);
       setConfirmationNumber('');
@@ -116,7 +129,7 @@ export default function QuickBuyModal({ visible, onClose, deal, onNavigateToFull
         useNativeDriver: true,
       }).start();
     }
-  }, [visible, slideAnim, successScale, investType]);
+  }, [visible, slideAnim, successScale]);
 
   useEffect(() => {
     if (isAuthenticated && pendingInvest && step === 'auth') {
@@ -139,21 +152,21 @@ export default function QuickBuyModal({ visible, onClose, deal, onNavigateToFull
 
   const handleCustomAmountChange = useCallback((text: string) => {
     const clean = text.replace(/[^0-9]/g, '');
-    setCustomAmount(clean);
+    const formatted = clean.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    setCustomAmount(formatted);
     if (clean) {
       setSelectedAmount(parseInt(clean, 10));
     }
   }, []);
 
-  const equityPercent = deal ? (selectedAmount / deal.totalInvestment) * 100 : 0;
+  const ownershipBase = deal ? deal.totalInvestment : 0;
+  const equityPercent = ownershipBase > 0 ? Math.min((selectedAmount / ownershipBase) * 100, 100) : 0;
   const estimatedReturn = deal ? selectedAmount * (deal.expectedROI / 100) : 0;
 
   const handleContinue = useCallback(() => {
     if (!deal) return;
     if (selectedAmount < minAmount) {
-      Alert.alert('Minimum Investment', investType === 'jv'
-        ? `JV Direct minimum investment is $25,000`
-        : `Minimum investment is ${formatCurrencyWithDecimals(deal.minInvestment ?? 50)}`);
+      Alert.alert('Minimum Investment', investType === 'jv' ? 'JV Direct minimum investment is $25,000' : 'Fractional minimum investment is $100');
       return;
     }
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -166,7 +179,7 @@ export default function QuickBuyModal({ visible, onClose, deal, onNavigateToFull
     }
 
     setStep('confirm');
-  }, [deal, selectedAmount, minAmount, investType, isAuthenticated]);
+  }, [deal, selectedAmount, minAmount, isAuthenticated, investType]);
 
   const handleSignup = useCallback(async () => {
     setAuthError('');
@@ -224,7 +237,8 @@ export default function QuickBuyModal({ visible, onClose, deal, onNavigateToFull
         type: investType,
       });
 
-      const eqPct = deal.totalInvestment > 0 ? (selectedAmount / deal.totalInvestment) * 100 : 0;
+      const eqBase = deal.propertyMarketValue && deal.propertyMarketValue > 0 ? deal.propertyMarketValue : deal.totalInvestment;
+      const eqPct = eqBase > 0 ? Math.min((selectedAmount / eqBase) * 100, 100) : 0;
 
       const result = await purchaseJVInvestment({
         jvDealId: deal.id,
@@ -359,21 +373,31 @@ export default function QuickBuyModal({ visible, onClose, deal, onNavigateToFull
                     <View style={ms.typeRow}>
                       <TouchableOpacity
                         style={[ms.typeBtn, investType === 'jv' && ms.typeBtnActive]}
-                        onPress={() => { void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setInvestType('jv'); setSelectedAmount(25000); setCustomAmount(''); }}
+                        onPress={() => handleSwitchType('jv')}
+                        activeOpacity={0.7}
                       >
                         <Landmark size={16} color={investType === 'jv' ? '#00C48C' : Colors.textTertiary} />
                         <Text style={[ms.typeBtnText, investType === 'jv' && ms.typeBtnTextActive]}>JV Direct</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
-                        style={[ms.typeBtn, investType === 'shares' && ms.typeBtnActive]}
-                        onPress={() => { void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setInvestType('shares'); setSelectedAmount(1000); setCustomAmount(''); }}
+                        style={[ms.typeBtn, investType === 'fractional' && ms.typeBtnActiveFractional]}
+                        onPress={() => handleSwitchType('fractional')}
+                        activeOpacity={0.7}
                       >
-                        <Coins size={16} color={investType === 'shares' ? Colors.primary : Colors.textTertiary} />
-                        <Text style={[ms.typeBtnText, investType === 'shares' && ms.typeBtnTextActive]}>Token Shares</Text>
+                        <Layers size={16} color={investType === 'fractional' ? '#FFD700' : Colors.textTertiary} />
+                        <Text style={[ms.typeBtnText, investType === 'fractional' && ms.typeBtnTextActive]}>Fractional</Text>
                       </TouchableOpacity>
                     </View>
 
-                    <Text style={ms.amountLabel}>{investType === 'jv' ? `Select Amount (Min $25K)` : 'Select Amount'}</Text>
+                    {deal.propertyMarketValue && deal.propertyMarketValue > 0 ? (
+                      <View style={ms.marketValueNote}>
+                        <Text style={ms.marketValueNoteText}>Property Value: {formatCurrencyCompact(deal.propertyMarketValue)}</Text>
+                      </View>
+                    ) : null}
+
+                    <Text style={ms.amountLabel}>
+                      {investType === 'jv' ? 'Select Amount (Min $25K)' : 'Select Amount (Min $100)'}
+                    </Text>
                     <View style={ms.amountsGrid}>
                       {activeAmounts.map(amt => (
                         <TouchableOpacity
@@ -382,7 +406,7 @@ export default function QuickBuyModal({ visible, onClose, deal, onNavigateToFull
                           onPress={() => handleSelectAmount(amt)}
                         >
                           <Text style={[ms.amountChipText, selectedAmount === amt && !customAmount && ms.amountChipTextActive]}>
-                            {amt >= 1000 ? `$${(amt / 1000)}K` : `$${amt}`}
+                            {amt >= 1000000 ? `${(amt / 1000000)}M` : amt >= 1000 ? `${formatNumber(amt / 1000)}K` : `${formatNumber(amt)}`}
                           </Text>
                         </TouchableOpacity>
                       ))}
@@ -582,7 +606,7 @@ export default function QuickBuyModal({ visible, onClose, deal, onNavigateToFull
                       </View>
                       <View style={ms.authTrustItem}>
                         <Lock size={12} color="#4A90D9" />
-                        <Text style={ms.authTrustText}>FDIC escrow</Text>
+                        <Text style={ms.authTrustText}>Escrow protected</Text>
                       </View>
                     </View>
                   </>
@@ -672,7 +696,7 @@ export default function QuickBuyModal({ visible, onClose, deal, onNavigateToFull
                     <View style={ms.confirmCard}>
                       <View style={ms.confirmRow}>
                         <Text style={ms.confirmLabel}>Investment Type</Text>
-                        <Text style={ms.confirmValue}>{investType === 'jv' ? 'JV Direct' : 'Token Shares'}</Text>
+                        <Text style={ms.confirmValue}>{investType === 'jv' ? 'JV Direct' : 'Fractional'}</Text>
                       </View>
                       <View style={ms.confirmRow}>
                         <Text style={ms.confirmLabel}>Amount</Text>
@@ -687,8 +711,12 @@ export default function QuickBuyModal({ visible, onClose, deal, onNavigateToFull
                         <Text style={[ms.confirmValue, { color: '#00C48C' }]}>{deal.expectedROI}%</Text>
                       </View>
                       <View style={ms.confirmRow}>
-                        <Text style={ms.confirmLabel}>Est. Annual Return</Text>
+                        <Text style={ms.confirmLabel}>Estimated Profit</Text>
                         <Text style={[ms.confirmValue, { color: '#00C48C' }]}>{formatCurrencyWithDecimals(estimatedReturn)}</Text>
+                      </View>
+                      <View style={ms.confirmRow}>
+                        <Text style={ms.confirmLabel}>Estimated Total Payout</Text>
+                        <Text style={[ms.confirmValue, { color: Colors.primary }]}>{formatCurrencyWithDecimals(selectedAmount + estimatedReturn)}</Text>
                       </View>
                       <View style={ms.confirmRow}>
                         <Text style={ms.confirmLabel}>Payment</Text>
@@ -710,7 +738,7 @@ export default function QuickBuyModal({ visible, onClose, deal, onNavigateToFull
 
                     <View style={ms.securityRow}>
                       <Shield size={14} color={Colors.info} />
-                      <Text style={ms.securityText}>Protected by FDIC-insured escrow</Text>
+                      <Text style={ms.securityText}>Protected by escrow-secured funds</Text>
                     </View>
 
                     <TouchableOpacity
@@ -941,8 +969,12 @@ const ms = StyleSheet.create({
     borderColor: Colors.surfaceBorder,
   },
   typeBtnActive: {
-    borderColor: Colors.primary,
-    backgroundColor: Colors.primary + '0A',
+    borderColor: '#00C48C',
+    backgroundColor: '#00C48C' + '0A',
+  },
+  typeBtnActiveFractional: {
+    borderColor: '#FFD700',
+    backgroundColor: '#FFD700' + '0A',
   },
   typeBtnText: {
     fontSize: 14,
@@ -1360,5 +1392,20 @@ const ms = StyleSheet.create({
     fontSize: 13,
     color: Colors.textSecondary,
     flex: 1,
+  },
+  marketValueNote: {
+    backgroundColor: Colors.surface,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+  },
+  marketValueNoteText: {
+    fontSize: 12,
+    fontWeight: '600' as const,
+    color: Colors.textSecondary,
+    textAlign: 'center' as const,
   },
 });

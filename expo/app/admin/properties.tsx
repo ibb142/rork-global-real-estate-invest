@@ -24,7 +24,7 @@ import {
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { Property } from '@/types';
-import { formatCurrencyWithDecimals } from '@/lib/formatters';
+import { formatCurrencyWithDecimals, formatAmountInput, parseAmountInput } from '@/lib/formatters';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 
@@ -122,13 +122,13 @@ export default function PropertiesScreen() {
     let result = properties;
 
     if (filter !== 'all') {
-      result = result.filter((p) => p.status === filter);
+      result = result.filter((p: Property) => p.status === filter);
     }
 
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       result = result.filter(
-        (p) =>
+        (p: Property) =>
           p.name.toLowerCase().includes(query) ||
           p.city.toLowerCase().includes(query) ||
           p.country.toLowerCase().includes(query)
@@ -196,8 +196,8 @@ export default function PropertiesScreen() {
       location: property.location,
       city: property.city,
       country: property.country,
-      pricePerShare: property.pricePerShare.toString(),
-      totalShares: property.totalShares.toString(),
+      pricePerShare: formatAmountInput(String(property.pricePerShare)),
+      totalShares: formatAmountInput(String(property.totalShares)),
       yield: property.yield.toString(),
       propertyType: property.propertyType,
       status: property.status,
@@ -234,12 +234,12 @@ export default function PropertiesScreen() {
       supabase.from('properties').update({
         name: formData.name,
         location: formData.location || formData.city,
-        share_price: parseFloat(formData.pricePerShare) || 0,
-        total_shares: parseInt(formData.totalShares) || 1000,
+        share_price: parseFloat(parseAmountInput(formData.pricePerShare)) || 0,
+        total_shares: parseInt(parseAmountInput(formData.totalShares)) || 1000,
         annual_yield: parseFloat(formData.yield) || 0,
         type: formData.propertyType,
         status: formData.status === 'live' ? 'active' : formData.status,
-      }).eq('id', editingProperty.id).then(({ error }) => {
+      }).eq('id', editingProperty.id).then(({ error }: { error: any }) => {
         if (error) { Alert.alert('Error', error.message); return; }
         void queryClient.invalidateQueries({ queryKey: ['admin-properties'] });
         Alert.alert('Success', 'Property updated');
@@ -249,8 +249,8 @@ export default function PropertiesScreen() {
       addPropertyMutation.mutate({
         name: formData.name,
         location: formData.location || formData.city,
-        share_price: parseFloat(formData.pricePerShare) || 0,
-        total_shares: parseInt(formData.totalShares) || 1000,
+        share_price: parseFloat(parseAmountInput(formData.pricePerShare)) || 0,
+        total_shares: parseInt(parseAmountInput(formData.totalShares)) || 1000,
         annual_yield: parseFloat(formData.yield) || 0,
         type: formData.propertyType,
         status: formData.status === 'live' ? 'active' : formData.status,
@@ -502,7 +502,7 @@ export default function PropertiesScreen() {
       </ScrollView>
 
       <ScrollView style={styles.list} showsVerticalScrollIndicator={false}>
-        {filteredProperties.map((property) => (
+        {filteredProperties.map((property: Property) => (
           <View key={property.id} style={styles.propertyCard}>
             <Image
               source={{ uri: property.images[0] }}

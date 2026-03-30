@@ -60,16 +60,16 @@ export default function TransactionsScreen() {
   const allTransactions: AdminTransaction[] = useMemo(() => {
     if (!txQuery.data?.transactions) return [];
     return txQuery.data.transactions.map((row: any) => ({
-      id: row.id || `tx_${Math.random().toString(36).substring(2, 8)}`,
-      type: (row.type || 'buy') as AdminTransaction['type'],
-      amount: row.amount || 0,
-      status: (row.status || 'completed') as AdminTransaction['status'],
-      userId: row.user_id || '',
-      userName: row.user_name || row.property_name || 'User',
-      userEmail: row.user_email || '',
-      description: row.description || '',
-      propertyName: row.property_name || '',
-      createdAt: row.created_at || new Date().toISOString(),
+      id: row?.id || `tx_${Math.random().toString(36).substring(2, 8)}`,
+      type: (row?.type || 'buy') as AdminTransaction['type'],
+      amount: Number(row?.amount) || 0,
+      status: (row?.status || 'completed') as AdminTransaction['status'],
+      userId: row?.user_id || '',
+      userName: row?.user_name || row?.property_name || 'User',
+      userEmail: row?.user_email || '',
+      description: row?.description || '',
+      propertyName: row?.property_name || '',
+      createdAt: row?.created_at || new Date().toISOString(),
     }));
   }, [txQuery.data]);
 

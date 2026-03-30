@@ -512,7 +512,7 @@ export default function OutreachAnalyticsScreen() {
             </View>
             <View style={styles.campaignROI}>
               <Text style={styles.campaignROILabel}>ROI</Text>
-              <Text style={styles.campaignROIValue}>{campaign.estimatedROI.toLocaleString()}%</Text>
+              <Text style={styles.campaignROIValue}>{new Intl.NumberFormat('en-US').format(campaign.estimatedROI)}%</Text>
             </View>
           </View>
 

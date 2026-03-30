@@ -50,7 +50,7 @@ import {
 import * as Clipboard from 'expo-clipboard';
 import { PropertyDocument, TimeRange } from '@/types';
 import Colors from '@/constants/colors';
-import { formatCurrencyWithDecimals, formatCurrencyCompact, formatDollar } from '@/lib/formatters';
+import { formatCurrencyWithDecimals, formatCurrencyCompact, formatDollar, formatNumber } from '@/lib/formatters';
 import { useProperty, useMarketData, useWalletBalance, useCurrentUser } from '@/lib/data-hooks';
 import ImageSlider from '@/components/ImageSlider';
 import PriceChart from '@/components/PriceChart';
@@ -354,8 +354,8 @@ export default function PropertyDetailScreen() {
             { label: 'Title Number', value: titleData?.titleNumber || 'N/A' },
             { label: 'Registration Date', value: new Date(property.createdAt).toLocaleDateString() },
             { label: 'Title Status', value: 'Clear - No Encumbrances' },
-            { label: 'Ownership Type', value: 'Fractional (Tokenized)' },
-            { label: 'Total Shares', value: property.totalShares.toLocaleString() },
+            { label: 'Ownership Type', value: 'Fractional (Developed by LLC)' },
+            { label: 'Total Shares', value: formatNumber(property.totalShares) },
           ],
           status: 'verified',
         };

@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   RefreshControl,
   Modal,
-  Image,
   useWindowDimensions,
   ActivityIndicator,
   Animated,
@@ -31,15 +30,8 @@ import {
   FileText,
   Eye,
   Star,
-  Globe,
-  ArrowRight,
   Scale,
-  Coins,
-  Landmark,
-  ImageIcon,
-  Zap,
 } from 'lucide-react-native';
-import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
 import { formatCurrency } from '@/lib/formatters';
 const IPX_HOLDING_NAME = 'IVX HOLDINGS LLC';
@@ -54,12 +46,13 @@ const ipxProfitStats = {
 };
 import { useIPX } from '@/lib/ipx-context';
 import { useTranslation } from '@/lib/i18n-context';
-import { useQuery } from '@tanstack/react-query';
-import { fetchJVDeals, resetSupabaseCheck } from '@/lib/jv-storage';
 import { useJVRealtime } from '@/lib/jv-realtime';
-import { parseDeal as sharedParseDeal, QUERY_KEY_PUBLISHED_JV_DEALS, filterValidPhotos } from '@/lib/parse-deal';
+import { filterValidPhotos, usePublishedJVDeals, triggerManualJVRefresh } from '@/lib/parse-deal';
+import type { ParsedJVDeal } from '@/lib/parse-deal';
 import { getFallbackPhotosForDeal } from '@/constants/deal-photos';
 import QuickBuyModal from '@/components/QuickBuyModal';
+import TrustDealCard from '@/components/TrustDealCard';
+import { CANONICAL_MIN_INVESTMENT } from '@/lib/published-deal-card-model';
 
 
 
@@ -69,6 +62,7 @@ export default function InvestScreen() {
   const { fractionalShares } = useIPX();
   const { t } = useTranslation();
   useJVRealtime('invest-jv-deals');
+  const publishedJV = usePublishedJVDeals();
   const [refreshing, setRefreshing] = useState(false);
   const [galleryWidth, setGalleryWidth] = useState<number>(width - 42);
   const [showFeeInfo, setShowFeeInfo] = useState(false);
@@ -83,6 +77,7 @@ export default function InvestScreen() {
     propertyAddress?: string;
     type?: string;
     minInvestment?: number;
+    propertyMarketValue?: number;
   } | null>(null);
 
   const openQuickBuy = useCallback((deal: any) => {
@@ -91,6 +86,10 @@ export default function InvestScreen() {
       photos = getFallbackPhotosForDeal(deal);
       console.log('[Invest] QuickBuy fallback photos applied:', photos.length);
     }
+    const marketVal = typeof deal.property_market_value === 'number' ? deal.property_market_value
+      : typeof deal.propertyMarketValue === 'number' ? deal.propertyMarketValue
+      : typeof deal.market_value === 'number' ? deal.market_value
+      : undefined;
     setQuickBuyDeal({
       id: deal.id,
       title: deal.title,
@@ -100,42 +99,17 @@ export default function InvestScreen() {
       photo: photos.length > 0 ? photos[0] : undefined,
       propertyAddress: deal.propertyAddress,
       type: deal.type,
-      minInvestment: 50,
+      minInvestment: CANONICAL_MIN_INVESTMENT,
+      propertyMarketValue: marketVal,
     });
     setQuickBuyVisible(true);
   }, []);
 
-  const publishedDealsQuery = useQuery({
-    queryKey: [...QUERY_KEY_PUBLISHED_JV_DEALS],
-    queryFn: async () => {
-      console.log('[Invest] Fetching published JV deals...');
-      const result = await fetchJVDeals({ published: true });
-      const parsed = (result.deals || []).map((d: any) => sharedParseDeal(d));
-      console.log('[Invest] Fetched', parsed.length, 'published deals (source: Supabase or local)');
-
-      if (parsed.length === 0) {
-        console.log('[Invest] No published deals found — trying unfiltered fetch for explicitly published active deals');
-        const allResult = await fetchJVDeals({});
-        const allActive = (allResult.deals || [])
-          .filter((d: any) => d.status === 'active' && d.published === true)
-          .map((d: any) => sharedParseDeal(d));
-        if (allActive.length > 0) {
-          console.log('[Invest] Found', allActive.length, 'active/published deals from unfiltered fetch');
-          return { deals: allActive };
-        }
-      }
-
-      console.log('[Invest] Final deal count:', parsed.length);
-      return { deals: parsed };
-    },
-    retry: 3,
-    retryDelay: (attempt: number) => Math.min(800 * Math.pow(1.5, attempt), 4000),
-    staleTime: 1000 * 20,
-    gcTime: 1000 * 60 * 5,
-    refetchOnWindowFocus: true,
-    refetchOnMount: 'always' as const,
-    refetchInterval: 30000,
-  });
+  const publishedDealsData = {
+    data: { deals: publishedJV.deals },
+    isLoading: publishedJV.isLoading,
+    refetch: publishedJV.refetch,
+  };
 
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
@@ -155,12 +129,12 @@ export default function InvestScreen() {
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      resetSupabaseCheck();
-      await publishedDealsQuery.refetch();
+      triggerManualJVRefresh();
+      await publishedJV.refetch();
     } finally {
       setRefreshing(false);
     }
-  }, [publishedDealsQuery]);
+  }, [publishedJV]);
 
   const transactionFee = ipxFeeConfigs.find(f => f.feeType === 'transaction');
 
@@ -382,14 +356,14 @@ export default function InvestScreen() {
           </TouchableOpacity>
         </View>
 
-        {publishedDealsQuery.isLoading && (
+        {publishedDealsData.isLoading && (
           <View style={styles.jvLoadingWrap}>
             <ActivityIndicator size="small" color={Colors.primary} />
             <Text style={styles.jvLoadingText}>Loading live JV deals...</Text>
           </View>
         )}
 
-        {publishedDealsQuery.data && publishedDealsQuery.data.deals.length > 0 && (
+        {publishedDealsData.data && publishedDealsData.data.deals.length > 0 && (
           <View style={styles.liveJvSection}>
             <View style={styles.liveJvHeader}>
               <View style={styles.liveJvTitleRow}>
@@ -398,172 +372,31 @@ export default function InvestScreen() {
               </View>
               <View style={styles.liveJvBadge}>
                 <Animated.View style={[styles.liveJvPulse, { transform: [{ scale: pulseAnim }] }]} />
-                <Text style={styles.liveJvBadgeText}>{publishedDealsQuery.data.deals.length} LIVE</Text>
+                <Text style={styles.liveJvBadgeText}>{publishedDealsData.data.deals.length} LIVE</Text>
               </View>
             </View>
-            <Text style={styles.liveJvSubtitle}>Published joint ventures with photos — open for tokenized investment now.</Text>
+            <Text style={styles.liveJvSubtitle}>Published joint ventures with photos — open for fractional investment now.</Text>
 
-            {publishedDealsQuery.data.deals.map((deal) => {
-              const typeLabels: Record<string, string> = {
-                equity_split: '📊 Equity Split',
-                profit_sharing: '💰 Profit Sharing',
-                hybrid: '🔄 Hybrid',
-                development: '🏗️ Development JV',
-              };
-              let photos: string[] = filterValidPhotos(deal.photos);
-              if (photos.length === 0) {
-                photos = getFallbackPhotosForDeal(deal);
-                if (photos.length > 0) console.log('[Invest] Fallback photos for', deal.projectName || deal.title, ':', photos.length);
-              }
-              const rawPartners = Array.isArray(deal.partners) ? deal.partners : (typeof deal.partners === 'string' ? (() => { try { const p = JSON.parse(deal.partners as string); return Array.isArray(p) ? p : []; } catch { return []; } })() : []);
-              const partnerCount = rawPartners.length;
-              return (
-                <View key={deal.id} style={styles.liveJvCard}>
-                  {photos.length > 0 && (
-                    <View
-                      style={styles.liveJvGallery}
-                      onLayout={(e) => {
-                        const w = e.nativeEvent.layout.width;
-                        if (w > 0 && w !== galleryWidth) setGalleryWidth(w);
-                      }}
-                    >
-                      <ScrollView
-                        horizontal
-                        pagingEnabled
-                        showsHorizontalScrollIndicator={false}
-                        style={styles.liveJvGalleryScroll}
-                      >
-                        {photos.map((uri: string, idx: number) => (
-                          <Image
-                            key={`photo-${deal.id}-${idx}`}
-                            source={{ uri }}
-                            style={[styles.liveJvImage, { width: galleryWidth }]}
-                            resizeMode="cover"
-                          />
-                        ))}
-                      </ScrollView>
-                      {photos.length > 1 && (
-                        <View style={styles.liveJvPhotoDots}>
-                          {photos.map((_: string, idx: number) => (
-                            <View key={idx} style={[styles.liveJvPhotoDot, idx === 0 && styles.liveJvPhotoDotActive]} />
-                          ))}
-                        </View>
-                      )}
-                      <View style={styles.liveJvPhotoCount}>
-                        <ImageIcon size={10} color="#fff" />
-                        <Text style={styles.liveJvPhotoCountText}>{photos.length}</Text>
-                      </View>
-                      <View style={styles.liveJvLiveBadgeOverlay}>
-                        <Animated.View style={[styles.liveJvLiveDotAnim, { transform: [{ scale: pulseAnim }] }]} />
-                        <Text style={styles.liveJvLiveBadgeOverlayText}>LIVE</Text>
-                      </View>
-                    </View>
-                  )}
-                  {photos.length === 0 && (
-                    <View style={styles.liveJvNoPhoto}>
-                      <ImageIcon size={32} color={Colors.textTertiary} />
-                      <Text style={styles.liveJvNoPhotoText}>No photos yet</Text>
-                    </View>
-                  )}
-                  <View style={styles.liveJvContent}>
-                    <View style={styles.liveJvTopRow}>
-                      <View style={styles.liveJvTypeBadge}>
-                        <Text style={styles.liveJvTypeText}>{typeLabels[deal.type] || deal.type}</Text>
-                      </View>
-                      <View style={styles.liveJvRoiBadge}>
-                        <TrendingUp size={10} color="#00C48C" />
-                        <Text style={styles.liveJvRoiText}>{deal.expectedROI}% ROI</Text>
-                      </View>
-                    </View>
-                    <Text style={styles.liveJvTitle}>{deal.title}</Text>
-                    <Text style={styles.liveJvProject}>{deal.projectName}</Text>
-                    {deal.propertyAddress ? (
-                      <View style={styles.liveJvLocationRow}>
-                        <Globe size={11} color={Colors.textTertiary} />
-                        <Text style={styles.liveJvLocation} numberOfLines={1}>{deal.propertyAddress}</Text>
-                      </View>
-                    ) : null}
-                    <View style={styles.liveJvMetrics}>
-                      <View style={styles.liveJvMetric}>
-                        <Text style={styles.liveJvMetricValue}>{formatCurrency(deal.totalInvestment, true)}</Text>
-                        <Text style={styles.liveJvMetricLabel}>Investment</Text>
-                      </View>
-                      <View style={styles.liveJvMetricDivider} />
-                      <View style={styles.liveJvMetric}>
-                        <Text style={[styles.liveJvMetricValue, { color: '#00C48C' }]}>{deal.expectedROI}%</Text>
-                        <Text style={styles.liveJvMetricLabel}>Expected ROI</Text>
-                      </View>
-                      <View style={styles.liveJvMetricDivider} />
-                      <View style={styles.liveJvMetric}>
-                        <Text style={styles.liveJvMetricValue}>{partnerCount}</Text>
-                        <Text style={styles.liveJvMetricLabel}>Partners</Text>
-                      </View>
-                    </View>
-
-                    <View style={styles.liveJvPoolRow}>
-                      <TouchableOpacity
-                        style={styles.liveJvPoolOption}
-                        onPress={() => {
-                          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                          router.push(`/jv-invest?jvId=${deal.id}` as any);
-                        }}
-                        activeOpacity={0.85}
-                      >
-                        <View style={[styles.liveJvPoolIcon, { backgroundColor: '#00C48C18' }]}>
-                          <Landmark size={16} color="#00C48C" />
-                        </View>
-                        <View style={styles.liveJvPoolTextWrap}>
-                          <Text style={styles.liveJvPoolTitle}>JV Direct</Text>
-                          <Text style={styles.liveJvPoolDesc}>Equity partner</Text>
-                        </View>
-                        <ArrowRight size={14} color="#00C48C" />
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={styles.liveJvPoolOption}
-                        onPress={() => {
-                          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                          router.push(`/jv-invest?jvId=${deal.id}` as any);
-                        }}
-                        activeOpacity={0.85}
-                      >
-                        <View style={[styles.liveJvPoolIcon, { backgroundColor: '#FFD70018' }]}>
-                          <Coins size={16} color="#FFD700" />
-                        </View>
-                        <View style={styles.liveJvPoolTextWrap}>
-                          <Text style={styles.liveJvPoolTitle}>Token Shares</Text>
-                          <Text style={styles.liveJvPoolDesc}>From $50</Text>
-                        </View>
-                        <ArrowRight size={14} color="#FFD700" />
-                      </TouchableOpacity>
-                    </View>
-
-                    <View style={styles.liveJvActions}>
-                      <TouchableOpacity
-                        style={styles.liveJvQuickBuyBtn}
-                        onPress={() => {
-                          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-                          openQuickBuy(deal);
-                        }}
-                        activeOpacity={0.85}
-                        testID={`invest-quick-buy-${deal.id}`}
-                      >
-                        <Zap size={14} color="#000" />
-                        <Text style={styles.liveJvQuickBuyBtnText}>Quick Buy</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={styles.liveJvViewBtn}
-                        onPress={() => router.push(`/jv-invest?jvId=${deal.id}` as any)}
-                        activeOpacity={0.85}
-                        testID={`invest-jv-${deal.id}`}
-                      >
-                        <Eye size={14} color={Colors.primary} />
-                        <Text style={styles.liveJvViewBtnText}>Full Details</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                </View>
-              );
-            })}
+            {publishedDealsData.data.deals.map((deal) => (
+              <View
+                key={deal.id}
+                onLayout={(e) => {
+                  const w = e.nativeEvent.layout.width;
+                  if (w > 0 && w !== galleryWidth) setGalleryWidth(w);
+                }}
+              >
+                <TrustDealCard
+                  deal={deal as ParsedJVDeal}
+                  galleryWidth={galleryWidth}
+                  onInvestNow={(d) => {
+                    openQuickBuy(d);
+                  }}
+                  onViewDetails={(d) => {
+                    router.push(`/jv-invest?jvId=${d.id}` as any);
+                  }}
+                />
+              </View>
+            ))}
 
             <TouchableOpacity
               style={styles.liveJvAllBtn}

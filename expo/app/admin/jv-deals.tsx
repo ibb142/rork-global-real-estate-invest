@@ -56,10 +56,11 @@ import { uploadDealPhotosParallel } from '@/lib/photo-upload';
 import { fetchPhotosFromStorageBucket } from '@/constants/deal-photos';
 import { prefetchImages } from '@/components/CachedImage';
 import { invalidateAllJVQueries, useJVRealtime } from '@/lib/jv-realtime';
-import { formatCurrency } from '@/lib/formatters';
+import { formatCurrency, parseAmountInput, formatAmountInput } from '@/lib/formatters';
 import { syncToLandingPage } from '@/lib/landing-sync';
+import { triggerAutoDeploy } from '@/lib/auto-deploy';
 
-type JVDealType = 'equity_split' | 'profit_sharing' | 'hybrid' | 'development';
+type JVDealType = 'equity_split' | 'profit_sharing' | 'hybrid' | 'development' | 'new_construction' | 'existing_complete' | 'rehab_construction';
 
 interface JVPartner {
   id: string;
@@ -121,6 +122,17 @@ interface EditFormState {
   managementFee: string;
   performanceFee: string;
   minimumHoldPeriod: string;
+  llcName: string;
+  builderName: string;
+  minInvestment: string;
+  timelineMin: string;
+  timelineMax: string;
+  titleVerified: boolean;
+  insuranceCoverage: boolean;
+  escrowProtected: boolean;
+  permitApproved: boolean;
+  yearEstablished: string;
+  completedProjects: string;
 }
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
@@ -137,6 +149,9 @@ const TYPE_LABELS: Record<string, string> = {
   profit_sharing: 'Profit Sharing',
   hybrid: 'Hybrid',
   development: 'Development',
+  new_construction: 'New Construction',
+  existing_complete: 'Existing (Investor Ready)',
+  rehab_construction: 'Rehab Construction',
 };
 
 const FILTER_OPTIONS = [
@@ -148,7 +163,7 @@ const FILTER_OPTIONS = [
   { id: 'archived', label: 'Archived' },
 ] as const;
 
-const DEAL_TYPES: JVDealType[] = ['equity_split', 'profit_sharing', 'hybrid', 'development'];
+const DEAL_TYPES: JVDealType[] = ['equity_split', 'profit_sharing', 'hybrid', 'development', 'new_construction', 'existing_complete', 'rehab_construction'];
 
 const DEFAULT_EDIT_FORM: EditFormState = {
   title: '',
@@ -164,6 +179,17 @@ const DEFAULT_EDIT_FORM: EditFormState = {
   managementFee: '',
   performanceFee: '',
   minimumHoldPeriod: '',
+  llcName: '',
+  builderName: '',
+  minInvestment: '50',
+  timelineMin: '14',
+  timelineMax: '24',
+  titleVerified: true,
+  insuranceCoverage: true,
+  escrowProtected: true,
+  permitApproved: true,
+  yearEstablished: '',
+  completedProjects: '',
 };
 
 export default function AdminJVDealsScreen() {
@@ -189,6 +215,8 @@ export default function AdminJVDealsScreen() {
   const [reorderMode, setReorderMode] = useState<boolean>(false);
   const [reorderDirty, setReorderDirty] = useState<boolean>(false);
   const [localOrder, setLocalOrder] = useState<string[]>([]);
+  const [positionInputDealId, setPositionInputDealId] = useState<string | null>(null);
+  const [positionInputValue, setPositionInputValue] = useState<string>('');
 
   const queryClient = useQueryClient();
 
@@ -197,9 +225,8 @@ export default function AdminJVDealsScreen() {
   const jvQuery = useQuery<JVQueryData>({
     queryKey: ['jvAgreements.list'],
     queryFn: async () => {
-      console.log('[Admin JV] Fetching JV deals (forceReset)...');
-      resetSupabaseCheck();
-      const result = await fetchJVDeals({ limit: 100, forceReset: true });
+      console.log('[Admin JV] Fetching JV deals...');
+      const result = await fetchJVDeals({ limit: 100 });
       const deals = (result.deals ?? []) as JVDeal[];
       console.log('[Admin JV] Fetched', deals.length, 'deals, total:', result.total);
 
@@ -245,14 +272,22 @@ export default function AdminJVDealsScreen() {
       return { success: true, ...data };
     },
     onSuccess: () => {
-      console.log('[Admin JV] Published successfully — resetting cache + triggering landing sync');
+      console.log('[Admin JV] Published successfully — resetting cache + triggering auto-deploy');
       resetSupabaseCheck();
       invalidateAllJVQueries(queryClient);
       void queryClient.refetchQueries({ queryKey: ['published-jv-deals'] });
-      syncToLandingPage().then(result => {
-        console.log('[Admin JV] Landing sync after publish:', result.success, 'synced:', result.syncedDeals);
+      triggerAutoDeploy('deal_publish').then(result => {
+        if (result) {
+          console.log('[Admin JV] Auto-deploy after publish:', result.status, 'deals:', result.syncedDeals);
+        } else {
+          syncToLandingPage().then(r => {
+            console.log('[Admin JV] Landing sync after publish (auto-deploy off):', r.success);
+          }).catch(err => {
+            console.log('[Admin JV] Landing sync after publish failed:', err);
+          });
+        }
       }).catch(err => {
-        console.log('[Admin JV] Landing sync after publish failed (non-critical):', err);
+        console.log('[Admin JV] Auto-deploy after publish failed:', err);
       });
       Alert.alert('Success', 'Deal published and now visible to investors.');
     },
@@ -270,14 +305,22 @@ export default function AdminJVDealsScreen() {
       return { success: true, ...data };
     },
     onSuccess: () => {
-      console.log('[Admin JV] Unpublished successfully — resetting cache + triggering landing sync');
+      console.log('[Admin JV] Unpublished successfully — resetting cache + triggering auto-deploy');
       resetSupabaseCheck();
       invalidateAllJVQueries(queryClient);
       void queryClient.refetchQueries({ queryKey: ['published-jv-deals'] });
-      syncToLandingPage().then(result => {
-        console.log('[Admin JV] Landing sync after unpublish:', result.success, 'synced:', result.syncedDeals);
+      triggerAutoDeploy('deal_unpublish').then(result => {
+        if (result) {
+          console.log('[Admin JV] Auto-deploy after unpublish:', result.status, 'deals:', result.syncedDeals);
+        } else {
+          syncToLandingPage().then(r => {
+            console.log('[Admin JV] Landing sync after unpublish (auto-deploy off):', r.success);
+          }).catch(err => {
+            console.log('[Admin JV] Landing sync after unpublish failed:', err);
+          });
+        }
       }).catch(err => {
-        console.log('[Admin JV] Landing sync after unpublish failed (non-critical):', err);
+        console.log('[Admin JV] Auto-deploy after unpublish failed:', err);
       });
       Alert.alert('Success', 'Deal unpublished.');
     },
@@ -295,11 +338,16 @@ export default function AdminJVDealsScreen() {
       return { success: true, ...data };
     },
     onSuccess: () => {
-      console.log('[Admin JV] Updated successfully');
+      console.log('[Admin JV] Updated successfully — triggering landing sync');
+      resetSupabaseCheck();
       invalidateAllJVQueries(queryClient);
       setEditModalVisible(false);
       setSelectedDeal(null);
-      Alert.alert('Success', 'Deal updated successfully.');
+      syncToLandingPage().then(result => {
+        console.log('[Admin JV] Landing sync after update:', result.success, 'synced:', result.syncedDeals);
+      }).catch(err => {
+        console.log('[Admin JV] Landing sync after update failed (non-critical):', err);
+      });
     },
     onError: (err: Error) => {
       console.error('[Admin JV] Update error:', err);
@@ -315,8 +363,12 @@ export default function AdminJVDealsScreen() {
       return { success: true, ...data };
     },
     onSuccess: () => {
-      console.log('[Admin JV] Archived successfully');
+      console.log('[Admin JV] Archived successfully — triggering landing sync');
+      resetSupabaseCheck();
       invalidateAllJVQueries(queryClient);
+      syncToLandingPage().then(result => {
+        console.log('[Admin JV] Landing sync after archive:', result.success, 'synced:', result.syncedDeals);
+      }).catch(() => {});
       Alert.alert('Archived', 'Deal has been archived. You can restore it anytime.');
     },
     onError: (err: Error) => {
@@ -333,8 +385,12 @@ export default function AdminJVDealsScreen() {
       return { success: true, ...data };
     },
     onSuccess: () => {
-      console.log('[Admin JV] Restored successfully');
+      console.log('[Admin JV] Restored successfully — triggering landing sync');
+      resetSupabaseCheck();
       invalidateAllJVQueries(queryClient);
+      syncToLandingPage().then(result => {
+        console.log('[Admin JV] Landing sync after restore:', result.success, 'synced:', result.syncedDeals);
+      }).catch(() => {});
       Alert.alert('Restored', 'Deal has been restored and is now active.');
     },
     onError: (err: Error) => {
@@ -457,14 +513,19 @@ export default function AdminJVDealsScreen() {
       return result;
     },
     onSuccess: () => {
-      console.log('[Admin JV] Display order saved successfully');
+      console.log('[Admin JV] Display order saved successfully — triggering full landing sync + deploy');
       setReorderDirty(false);
       setReorderMode(false);
       setLocalOrder([]);
       resetSupabaseCheck();
       invalidateAllJVQueries(queryClient);
-      syncToLandingPage().catch(() => {});
-      Alert.alert('Order Saved', 'Deal display order updated. Changes are now live.');
+      void queryClient.refetchQueries({ queryKey: ['published-jv-deals'] });
+      syncToLandingPage().then(result => {
+        console.log('[Admin JV] Landing sync after reorder:', result.success, 'synced:', result.syncedDeals);
+      }).catch(err => {
+        console.log('[Admin JV] Landing sync after reorder failed:', err);
+      });
+      Alert.alert('Order Saved', 'Deal display order updated. Changes are now live on landing.');
     },
     onError: (err: Error) => {
       console.error('[Admin JV] Reorder error:', err);
@@ -482,11 +543,19 @@ export default function AdminJVDealsScreen() {
   const openEditModal = useCallback((deal: JVDeal) => {
     setSelectedDeal(deal);
     setEditPhotos(Array.isArray(deal.photos) ? [...deal.photos] : []);
+    const dealAny = deal as unknown as Record<string, unknown>;
+    const rawTrust = dealAny.trustInfo ?? dealAny.trust_info;
+    let trustData: Record<string, unknown> = {};
+    if (rawTrust && typeof rawTrust === 'object') {
+      trustData = rawTrust as Record<string, unknown>;
+    } else if (typeof rawTrust === 'string') {
+      try { trustData = JSON.parse(rawTrust); } catch { trustData = {}; }
+    }
     setEditForm({
       title: deal.title,
       projectName: deal.projectName,
       type: deal.type,
-      totalInvestment: String(deal.totalInvestment),
+      totalInvestment: deal.totalInvestment ? formatAmountInput(String(deal.totalInvestment)) : '0',
       expectedROI: String(deal.expectedROI),
       propertyAddress: deal.propertyAddress || '',
       description: deal.description || '',
@@ -496,6 +565,17 @@ export default function AdminJVDealsScreen() {
       managementFee: String(deal.managementFee || 2),
       performanceFee: String(deal.performanceFee || 20),
       minimumHoldPeriod: String(deal.minimumHoldPeriod || 12),
+      llcName: (trustData.llcName as string) || '',
+      builderName: (trustData.builderName as string) || '',
+      minInvestment: formatAmountInput(String((trustData.minInvestment as number) || 50)),
+      timelineMin: String((trustData.timelineMin as number) || 14),
+      timelineMax: String((trustData.timelineMax as number) || 24),
+      titleVerified: (trustData.titleVerified as boolean) ?? true,
+      insuranceCoverage: (trustData.insuranceCoverage as boolean) ?? true,
+      escrowProtected: (trustData.escrowProtected as boolean) ?? true,
+      permitApproved: trustData.permitStatus ? (trustData.permitStatus as string) === 'approved' : true,
+      yearEstablished: String((trustData.yearEstablished as number) || ''),
+      completedProjects: String((trustData.completedProjects as number) || ''),
     });
     setEditModalVisible(true);
   }, []);
@@ -506,24 +586,67 @@ export default function AdminJVDealsScreen() {
       Alert.alert('Validation', 'Title and Project Name are required.');
       return;
     }
-    console.log('[Admin JV] Saving edit for:', selectedDeal.id, 'photos:', editPhotos.length);
+    const parsedInvestment = Number(parseAmountInput(editForm.totalInvestment)) || 0;
+    const parsedMinInvestment = Number(parseAmountInput(editForm.minInvestment)) || 50;
+    const parsedTimelineMin = Number(parseAmountInput(editForm.timelineMin));
+    const parsedTimelineMax = Number(parseAmountInput(editForm.timelineMax));
+    const safeTimelineMin = isNaN(parsedTimelineMin) ? 14 : parsedTimelineMin;
+    const safeTimelineMax = isNaN(parsedTimelineMax) ? 24 : parsedTimelineMax;
+    const parsedROI = Number(parseAmountInput(editForm.expectedROI)) || 15;
+    console.log('[Admin JV] Saving edit for:', selectedDeal.id, 'investment:', parsedInvestment, 'timeline:', safeTimelineMin, '-', safeTimelineMax, 'photos:', editPhotos.length);
+    const trustInfo = {
+      llcName: editForm.llcName.trim() || editForm.projectName.trim(),
+      builderName: editForm.builderName.trim() || 'IVX Development',
+      minInvestment: parsedMinInvestment,
+      timelineMin: safeTimelineMin,
+      timelineMax: safeTimelineMax,
+      timelineUnit: 'months',
+      legalStructure: 'LLC Joint Venture',
+      insuranceCoverage: editForm.insuranceCoverage,
+      titleVerified: editForm.titleVerified,
+      permitStatus: editForm.permitApproved ? 'approved' : 'pending',
+      escrowProtected: editForm.escrowProtected,
+      thirdPartyAudit: false,
+      yearEstablished: Number(editForm.yearEstablished) || undefined,
+      completedProjects: Number(editForm.completedProjects) || undefined,
+      investorProtections: [
+        editForm.titleVerified ? 'Title insurance verified' : '',
+        editForm.insuranceCoverage ? 'Full insurance coverage' : '',
+        editForm.escrowProtected ? 'Escrow-protected funds' : '',
+        'LLC-backed investment structure',
+      ].filter(Boolean),
+      riskFactors: [],
+      keyMilestones: [],
+      documents: [],
+    };
     updateMutation.mutate({
       id: selectedDeal.id,
       data: {
         title: editForm.title.trim(),
         projectName: editForm.projectName.trim(),
         type: editForm.type,
-        totalInvestment: Number(editForm.totalInvestment) || 0,
-        expectedROI: Number(editForm.expectedROI) || 15,
+        totalInvestment: parsedInvestment,
+        expectedROI: parsedROI,
         propertyAddress: editForm.propertyAddress.trim() || undefined,
         description: editForm.description.trim(),
         distributionFrequency: editForm.distributionFrequency,
         exitStrategy: editForm.exitStrategy,
         governingLaw: editForm.governingLaw,
-        managementFee: Number(editForm.managementFee) || 2,
-        performanceFee: Number(editForm.performanceFee) || 20,
-        minimumHoldPeriod: Number(editForm.minimumHoldPeriod) || 12,
+        managementFee: Number(parseAmountInput(editForm.managementFee)) || 2,
+        performanceFee: Number(parseAmountInput(editForm.performanceFee)) || 20,
+        minimumHoldPeriod: Number(parseAmountInput(editForm.minimumHoldPeriod)) || 12,
         photos: editPhotos,
+        trust_info: JSON.stringify(trustInfo),
+      },
+    },
+    {
+      onSuccess: () => {
+        const investStr = formatAmountInput(String(parsedInvestment));
+        const timelineStr = `${safeTimelineMin}–${safeTimelineMax} mo`;
+        Alert.alert(
+          'Deal Saved',
+          `"${editForm.projectName.trim()}" updated.\n\nInvestment: ${investStr}\nROI: ${parsedROI}%\nTimeline: ${timelineStr}\nMin Investment: ${formatAmountInput(String(parsedMinInvestment))}\nPhotos: ${editPhotos.length}`
+        );
       },
     });
   }, [selectedDeal, editForm, editPhotos, updateMutation]);
@@ -792,6 +915,37 @@ export default function AdminJVDealsScreen() {
     reorderMutation.mutate(orders);
   }, [deals, reorderMutation]);
 
+  const moveToPosition = useCallback((dealId: string, targetPos: number) => {
+    const currentIds = deals.map(d => d.id);
+    const currentIdx = currentIds.indexOf(dealId);
+    if (currentIdx === -1) return;
+    const clampedPos = Math.max(1, Math.min(targetPos, currentIds.length));
+    const targetIdx = clampedPos - 1;
+    if (targetIdx === currentIdx) return;
+    const newOrder = [...currentIds];
+    newOrder.splice(currentIdx, 1);
+    newOrder.splice(targetIdx, 0, dealId);
+    const orders = newOrder.map((id, i) => ({ id, displayOrder: i + 1 }));
+    console.log('[Admin JV] Move', dealId, 'from position', currentIdx + 1, 'to', clampedPos, '→ saving');
+    setPositionInputDealId(null);
+    setPositionInputValue('');
+    reorderMutation.mutate(orders);
+  }, [deals, reorderMutation]);
+
+  const openPositionInput = useCallback((dealId: string, currentPos: number) => {
+    setPositionInputDealId(dealId);
+    setPositionInputValue(String(currentPos));
+  }, []);
+
+  const handlePositionSubmit = useCallback((dealId: string) => {
+    const num = parseInt(positionInputValue, 10);
+    if (isNaN(num) || num < 1) {
+      Alert.alert('Invalid', 'Enter a valid position number (1 or higher).');
+      return;
+    }
+    moveToPosition(dealId, num);
+  }, [positionInputValue, moveToPosition]);
+
   const deleteConfirmMatch = deleteConfirmText.trim().toUpperCase() === (deleteTarget?.projectName || '').trim().toUpperCase();
 
   return (
@@ -1041,7 +1195,38 @@ export default function AdminJVDealsScreen() {
                       >
                         <ChevronUp size={18} color={isFirst ? Colors.textTertiary : '#00C48C'} />
                       </TouchableOpacity>
-                      <Text style={styles.inlinePositionText}>#{dealIndex + 1}</Text>
+                      {positionInputDealId === deal.id ? (
+                        <View style={styles.positionInputWrap}>
+                          <TextInput
+                            style={styles.positionInput}
+                            value={positionInputValue}
+                            onChangeText={setPositionInputValue}
+                            keyboardType="number-pad"
+                            autoFocus
+                            selectTextOnFocus
+                            returnKeyType="done"
+                            onSubmitEditing={() => handlePositionSubmit(deal.id)}
+                            onBlur={() => { setPositionInputDealId(null); setPositionInputValue(''); }}
+                            testID={`jv-position-input-${deal.id}`}
+                          />
+                          <TouchableOpacity
+                            style={styles.positionGoBtn}
+                            onPress={() => handlePositionSubmit(deal.id)}
+                            testID={`jv-position-go-${deal.id}`}
+                          >
+                            <Check size={12} color="#fff" />
+                          </TouchableOpacity>
+                        </View>
+                      ) : (
+                        <TouchableOpacity
+                          style={styles.positionBadgeTap}
+                          onPress={() => openPositionInput(deal.id, dealIndex + 1)}
+                          testID={`jv-position-tap-${deal.id}`}
+                          accessibilityLabel={`Set position for ${deal.projectName}`}
+                        >
+                          <Text style={styles.inlinePositionText}>#{dealIndex + 1}</Text>
+                        </TouchableOpacity>
+                      )}
                       <TouchableOpacity
                         style={[styles.inlineArrowBtn, isLast && styles.inlineArrowBtnDisabled]}
                         onPress={() => quickMoveDeal(deal.id, 'down')}
@@ -1447,6 +1632,133 @@ export default function AdminJVDealsScreen() {
                 placeholderTextColor={Colors.textTertiary}
                 testID="edit-hold-period"
               />
+
+              <View style={styles.trustSectionHeader}>
+                <Shield size={16} color="#00C48C" />
+                <Text style={styles.trustSectionTitle}>Investor Trust Info</Text>
+              </View>
+
+              <Text style={styles.fieldLabel}>LLC Name</Text>
+              <TextInput
+                style={styles.fieldInput}
+                value={editForm.llcName}
+                onChangeText={(v) => setEditForm(f => ({ ...f, llcName: v }))}
+                placeholder="e.g. ONE STOP DEVELOPMENT TWO LLC"
+                placeholderTextColor={Colors.textTertiary}
+                testID="edit-llc-name"
+              />
+
+              <Text style={styles.fieldLabel}>Builder / Developer Name</Text>
+              <TextInput
+                style={styles.fieldInput}
+                value={editForm.builderName}
+                onChangeText={(v) => setEditForm(f => ({ ...f, builderName: v }))}
+                placeholder="e.g. One Stop Development"
+                placeholderTextColor={Colors.textTertiary}
+                testID="edit-builder-name"
+              />
+
+              <View style={styles.fieldRow}>
+                <View style={styles.fieldHalf}>
+                  <Text style={styles.fieldLabel}>Min Investment ($)</Text>
+                  <TextInput
+                    style={styles.fieldInput}
+                    value={editForm.minInvestment}
+                    onChangeText={(v) => setEditForm(f => ({ ...f, minInvestment: v }))}
+                    keyboardType="numeric"
+                    placeholder="50"
+                    placeholderTextColor={Colors.textTertiary}
+                    testID="edit-min-invest"
+                  />
+                </View>
+                <View style={styles.fieldHalf}>
+                  <Text style={styles.fieldLabel}>Completed Projects</Text>
+                  <TextInput
+                    style={styles.fieldInput}
+                    value={editForm.completedProjects}
+                    onChangeText={(v) => setEditForm(f => ({ ...f, completedProjects: v }))}
+                    keyboardType="numeric"
+                    placeholder="5"
+                    placeholderTextColor={Colors.textTertiary}
+                    testID="edit-completed-projects"
+                  />
+                </View>
+              </View>
+
+              <View style={styles.fieldRow}>
+                <View style={styles.fieldHalf}>
+                  <Text style={styles.fieldLabel}>Timeline Min (mo)</Text>
+                  <TextInput
+                    style={styles.fieldInput}
+                    value={editForm.timelineMin}
+                    onChangeText={(v) => setEditForm(f => ({ ...f, timelineMin: v }))}
+                    keyboardType="numeric"
+                    placeholder="14"
+                    placeholderTextColor={Colors.textTertiary}
+                    testID="edit-timeline-min"
+                  />
+                </View>
+                <View style={styles.fieldHalf}>
+                  <Text style={styles.fieldLabel}>Timeline Max (mo)</Text>
+                  <TextInput
+                    style={styles.fieldInput}
+                    value={editForm.timelineMax}
+                    onChangeText={(v) => setEditForm(f => ({ ...f, timelineMax: v }))}
+                    keyboardType="numeric"
+                    placeholder="24"
+                    placeholderTextColor={Colors.textTertiary}
+                    testID="edit-timeline-max"
+                  />
+                </View>
+              </View>
+
+              <View style={styles.fieldRow}>
+                <View style={styles.fieldHalf}>
+                  <Text style={styles.fieldLabel}>Year Established</Text>
+                  <TextInput
+                    style={styles.fieldInput}
+                    value={editForm.yearEstablished}
+                    onChangeText={(v) => setEditForm(f => ({ ...f, yearEstablished: v }))}
+                    keyboardType="numeric"
+                    placeholder="2020"
+                    placeholderTextColor={Colors.textTertiary}
+                    testID="edit-year-est"
+                  />
+                </View>
+                <View style={styles.fieldHalf} />
+              </View>
+
+              <Text style={[styles.fieldLabel, { marginTop: 8 }]}>Verification Badges</Text>
+              <View style={styles.trustToggles}>
+                <TouchableOpacity
+                  style={[styles.trustToggle, editForm.titleVerified && styles.trustToggleActive]}
+                  onPress={() => setEditForm(f => ({ ...f, titleVerified: !f.titleVerified }))}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.trustToggleText, editForm.titleVerified && styles.trustToggleTextActive]}>Title Verified</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.trustToggle, editForm.insuranceCoverage && styles.trustToggleActive]}
+                  onPress={() => setEditForm(f => ({ ...f, insuranceCoverage: !f.insuranceCoverage }))}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.trustToggleText, editForm.insuranceCoverage && styles.trustToggleTextActive]}>Insured</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.trustToggle, editForm.escrowProtected && styles.trustToggleActive]}
+                  onPress={() => setEditForm(f => ({ ...f, escrowProtected: !f.escrowProtected }))}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.trustToggleText, editForm.escrowProtected && styles.trustToggleTextActive]}>Escrow</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.trustToggle, editForm.permitApproved && styles.trustToggleActive]}
+                  onPress={() => setEditForm(f => ({ ...f, permitApproved: !f.permitApproved }))}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.trustToggleText, editForm.permitApproved && styles.trustToggleTextActive]}>Permitted</Text>
+                </TouchableOpacity>
+              </View>
 
               <View style={styles.photoSectionHeader}>
                 <Text style={styles.fieldLabel}>Photos</Text>
@@ -2404,5 +2716,81 @@ const styles = StyleSheet.create({
     fontWeight: '700' as const,
     minWidth: 24,
     textAlign: 'center' as const,
+  },
+  positionInputWrap: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 3,
+  },
+  positionInput: {
+    width: 36,
+    height: 28,
+    borderRadius: 6,
+    backgroundColor: Colors.surface,
+    borderWidth: 1.5,
+    borderColor: Colors.primary,
+    color: Colors.text,
+    fontSize: 12,
+    fontWeight: '700' as const,
+    textAlign: 'center' as const,
+    paddingVertical: 0,
+    paddingHorizontal: 4,
+  },
+  positionGoBtn: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    backgroundColor: '#00C48C',
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+  },
+  positionBadgeTap: {
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+  },
+  trustSectionHeader: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 8,
+    marginTop: 20,
+    marginBottom: 12,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: Colors.surfaceBorder,
+  },
+  trustSectionTitle: {
+    color: '#00C48C',
+    fontSize: 15,
+    fontWeight: '700' as const,
+  },
+  trustToggles: {
+    flexDirection: 'row' as const,
+    flexWrap: 'wrap' as const,
+    gap: 8,
+    marginBottom: 16,
+  },
+  trustToggle: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: Colors.surfaceBorder,
+    backgroundColor: Colors.surface,
+  },
+  trustToggleActive: {
+    borderColor: '#00C48C',
+    backgroundColor: '#00C48C18',
+  },
+  trustToggleText: {
+    color: Colors.textTertiary,
+    fontSize: 12,
+    fontWeight: '600' as const,
+  },
+  trustToggleTextActive: {
+    color: '#00C48C',
   },
 });

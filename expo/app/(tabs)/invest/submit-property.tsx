@@ -176,7 +176,7 @@ export default function SubmitPropertyScreen() {
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
       allowsEditing: true,
       aspect: [16, 9],
       quality: 0.9,
@@ -216,7 +216,7 @@ export default function SubmitPropertyScreen() {
           text: 'Take Photo',
           onPress: async () => {
             const result = await ImagePicker.launchCameraAsync({
-              mediaTypes: ImagePicker.MediaTypeOptions.Images,
+              mediaTypes: ['images'],
               allowsEditing: true,
               aspect: [4, 3],
               quality: 0.9,
@@ -230,7 +230,7 @@ export default function SubmitPropertyScreen() {
           text: 'Choose from Library',
           onPress: async () => {
             const result = await ImagePicker.launchImageLibraryAsync({
-              mediaTypes: ImagePicker.MediaTypeOptions.Images,
+              mediaTypes: ['images'],
               allowsEditing: true,
               aspect: [4, 3],
               quality: 0.9,
