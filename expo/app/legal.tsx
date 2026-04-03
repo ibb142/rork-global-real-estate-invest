@@ -6,7 +6,6 @@ import {
   ScrollView,
   TouchableOpacity,
   Animated,
-  Linking,
   Platform,
   Alert,
 } from 'react-native';
@@ -29,7 +28,6 @@ import {
   Banknote,
   Globe,
   Mail,
-  Search,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 
@@ -52,12 +50,12 @@ interface LegalSection {
 const EFFECTIVE_DATE = 'February 1, 2026';
 const COMPANY_NAME = 'IVX HOLDINGS LLC';
 const COMPANY_ADDRESS = '1001 Brickell Bay Drive, Suite 2700, Miami, FL 33131';
-const COMPANY_EMAIL_CEO = 'ceo@ivxholding.com';
+
 const COMPANY_EMAIL_LEGAL = 'legal@ivxholding.com';
 const COMPANY_EMAIL_PRIVACY = 'privacy@ivxholding.com';
 const COMPANY_EMAIL_COMPLIANCE = 'compliance@ivxholding.com';
 const COMPANY_PHONE = '+1 (561) 644-3503';
-const COMPANY_WEBSITE = 'www.ivxholding.com';
+
 
 const LEGAL_DOCUMENTS: LegalDocument[] = [
   {
@@ -872,6 +870,177 @@ You agree not to contest the validity or enforceability of any electronically si
     ],
   },
   {
+    id: 'investment-disclosure',
+    title: 'Investment Disclosure',
+    subtitle: 'Offering structure, fees & conflicts',
+    icon: <Banknote size={22} color="#10B981" />,
+    accentColor: '#10B981',
+    lastUpdated: EFFECTIVE_DATE,
+    version: '2.0',
+    sections: [
+      {
+        heading: '1. Nature of Offerings',
+        content: `IMPORTANT: ALL INVESTMENTS OFFERED THROUGH THE ${COMPANY_NAME.toUpperCase()} PLATFORM ARE SPECULATIVE AND INVOLVE A HIGH DEGREE OF RISK. YOU SHOULD NOT INVEST ANY FUNDS THAT YOU CANNOT AFFORD TO LOSE ENTIRELY.
+
+${COMPANY_NAME} facilitates fractional real estate investments through special purpose entities ("SPEs"). Each property is held by a separate SPE, and investors purchase fractional ownership interests ("Shares") in the SPE, not direct ownership of the underlying real estate.
+
+Offerings may be conducted under one or more of the following regulatory frameworks:
+
+(a) Regulation D (Rule 506(b)): Private placements available to accredited investors and up to 35 sophisticated non-accredited investors, without general solicitation.
+
+(b) Regulation D (Rule 506(c)): Private placements with general solicitation permitted, available exclusively to verified accredited investors.
+
+(c) Regulation A+ (Tier 2): Qualified offerings of up to $75 million per year, available to both accredited and non-accredited investors, subject to SEC qualification and ongoing reporting.
+
+(d) Regulation CF: Crowdfunding offerings subject to aggregate annual limits per issuer and per-investor investment limits based on income and net worth.
+
+The specific exemption applicable to each Offering is disclosed in the Offering Documents. Shares have not been, and will not be, registered under the Securities Act of 1933, as amended, and may not be resold except in compliance with applicable securities laws.`,
+      },
+      {
+        heading: '2. Fee Disclosure',
+        content: `${COMPANY_NAME} charges the following fees in connection with investments made through the Platform. All fees are disclosed prior to each investment and are detailed in the applicable Offering Documents.
+
+(a) ACQUISITION & ORIGINATION FEES:
+  • Acquisition fee: 1.0% – 3.0% of property purchase price (one-time)
+  • Due diligence costs: Passed through at cost
+  • Legal and structuring costs: Passed through at cost
+
+(b) ONGOING MANAGEMENT FEES:
+  • Asset management fee: 1.0% – 2.5% per annum of gross asset value
+  • Property management fee: 6.0% – 10.0% of gross rental income (paid to third-party manager)
+  • Administrative fee: 0.25% – 0.50% per annum
+
+(c) TRANSACTION FEES:
+  • Primary market purchase: 1.0% – 2.0% of transaction amount
+  • Secondary market sale: 1.0% of transaction amount (charged to both buyer and seller)
+  • Wire transfer: $25 per domestic wire; $50 per international wire
+  • ACH transfer: Free for deposits; $5 for withdrawals
+
+(d) DISPOSITION FEES:
+  • Disposition fee: 1.0% – 2.0% of gross sale price upon property sale
+  • Carried interest / performance fee: 20% of profits above an 8% preferred return hurdle (where applicable)
+
+(e) EARLY REDEMPTION:
+  • Redemption within 12 months of purchase: 3.0% penalty
+  • Redemption between 12–24 months: 1.5% penalty
+  • Redemption after 24 months: No penalty (subject to liquidity availability)
+
+Fees are subject to change with 30 days' written notice. The fee schedule applicable at the time of your investment governs your investment.`,
+      },
+      {
+        heading: '3. Conflicts of Interest',
+        content: `${COMPANY_NAME} and its affiliates, officers, directors, and employees may have interests that conflict with those of investors. Material conflicts include:
+
+(a) COMPENSATION CONFLICTS:
+  • ${COMPANY_NAME} earns fees from the acquisition, management, and disposition of properties, creating an incentive to acquire and hold properties regardless of whether it is in investors' best interests.
+  • Performance fees create an incentive to take on higher-risk investments to generate higher returns.
+
+(b) VALUATION CONFLICTS:
+  • ${COMPANY_NAME} may be involved in setting or influencing property valuations, which affect fee calculations and reported investor returns. Independent third-party appraisals are obtained to mitigate this conflict.
+
+(c) ALLOCATION CONFLICTS:
+  • When multiple investment opportunities are available, ${COMPANY_NAME} must decide how to allocate opportunities among various offerings. We maintain allocation policies designed to ensure fair treatment of all investors.
+
+(d) RELATED PARTY TRANSACTIONS:
+  • ${COMPANY_NAME} or its affiliates may provide property management, construction management, or other services to SPEs, for which they receive fees. All related party transactions are disclosed in the applicable Offering Documents and are conducted at arm's length.
+
+(e) MULTIPLE ROLES:
+  • ${COMPANY_NAME} may serve simultaneously as the platform operator, asset manager, and managing member of SPEs, which creates inherent conflicts between its duties to investors and its own economic interests.
+
+MITIGATION MEASURES:
+  • Independent property appraisals for all acquisitions
+  • Annual audits by independent accounting firms
+  • Quarterly reporting to investors
+  • Independent board oversight
+  • Written conflict of interest policies
+  • Disclosure of all material conflicts in Offering Documents`,
+      },
+      {
+        heading: '4. Forward-Looking Statements',
+        content: `THE PLATFORM AND OFFERING DOCUMENTS MAY CONTAIN FORWARD-LOOKING STATEMENTS, INCLUDING PROJECTIONS OF RENTAL INCOME, PROPERTY APPRECIATION, OCCUPANCY RATES, CAP RATES, INTERNAL RATES OF RETURN (IRR), AND OTHER FINANCIAL METRICS.
+
+FORWARD-LOOKING STATEMENTS ARE IDENTIFIED BY WORDS SUCH AS "EXPECTS," "ANTICIPATES," "PROJECTS," "ESTIMATES," "BELIEVES," "INTENDS," "PLANS," "MAY," "WILL," "SHOULD," AND SIMILAR EXPRESSIONS.
+
+THESE STATEMENTS ARE BASED ON CURRENT EXPECTATIONS AND ASSUMPTIONS THAT ARE SUBJECT TO RISKS AND UNCERTAINTIES. ACTUAL RESULTS MAY DIFFER MATERIALLY FROM THOSE PROJECTED. FACTORS THAT COULD CAUSE ACTUAL RESULTS TO DIFFER INCLUDE:
+
+• Changes in real estate market conditions
+• Changes in interest rates and credit markets
+• Tenant defaults, vacancies, and lease terminations
+• Changes in tax laws, zoning regulations, or environmental laws
+• Natural disasters, pandemics, or other force majeure events
+• Construction delays, cost overruns, or permitting issues
+• General economic conditions and recession risk
+• Changes in the competitive landscape
+• Regulatory changes affecting securities offerings
+• Failure to achieve projected occupancy or rental rates
+
+${COMPANY_NAME.toUpperCase()} DOES NOT UNDERTAKE ANY OBLIGATION TO UPDATE OR REVISE FORWARD-LOOKING STATEMENTS, WHETHER AS A RESULT OF NEW INFORMATION, FUTURE EVENTS, OR OTHERWISE.
+
+PAST PERFORMANCE IS NOT INDICATIVE OF FUTURE RESULTS. ANY HISTORICAL RETURNS, EXPECTED RETURNS, OR PROBABILITY PROJECTIONS MAY NOT REFLECT ACTUAL FUTURE PERFORMANCE.`,
+      },
+      {
+        heading: '5. Investor Suitability',
+        content: `Investing in real estate securities through the Platform may not be suitable for all investors. Before investing, you should consider:
+
+(a) FINANCIAL SITUATION:
+  • Your current income, net worth, and liquid assets
+  • Your existing investment portfolio and diversification
+  • Your ability to bear the loss of your entire investment
+  • Your need for liquidity (real estate investments are generally illiquid)
+
+(b) INVESTMENT OBJECTIVES:
+  • Your investment time horizon (minimum recommended: 3-5 years)
+  • Your desired risk/return profile
+  • Your need for current income vs. capital appreciation
+  • Your tax situation and the tax implications of real estate investments
+
+(c) EXPERIENCE:
+  • Your experience with real estate investments
+  • Your understanding of fractional ownership structures
+  • Your familiarity with securities regulations and restrictions
+  • Your ability to evaluate offering documents and risk factors
+
+(d) INVESTMENT LIMITS:
+  For non-accredited investors in Regulation A+ and Regulation CF offerings, federal securities laws limit the amount you may invest:
+  • Regulation A+: No more than 10% of the greater of your annual income or net worth
+  • Regulation CF: Investment limits based on your annual income and net worth as defined in SEC rules
+
+${COMPANY_NAME} does not provide personalized investment advice. The availability of an investment on the Platform does not constitute a recommendation. You should consult with your own financial, tax, and legal advisors before making any investment decision.
+
+Contact: ${COMPANY_EMAIL_COMPLIANCE}`,
+      },
+      {
+        heading: '6. FINRA & Broker-Dealer Disclosures',
+        content: `${COMPANY_NAME} is not currently registered as a broker-dealer with the U.S. Securities and Exchange Commission ("SEC") or the Financial Industry Regulatory Authority ("FINRA").
+
+Securities offered through the Platform are offered directly by the issuing SPEs under applicable exemptions from broker-dealer registration. ${COMPANY_NAME} acts as a technology platform facilitating the offer and sale of securities.
+
+If ${COMPANY_NAME} determines that broker-dealer registration is required or advisable, it will either:
+(a) Register as a broker-dealer with the SEC and become a member of FINRA; or
+(b) Engage a registered broker-dealer to facilitate offerings on the Platform.
+
+Any changes to ${COMPANY_NAME}'s regulatory status will be disclosed to investors promptly.
+
+INVESTOR PROTECTION NOTICE:
+• Investments are NOT insured by the FDIC or any government agency
+• Investments are NOT guaranteed by any bank or financial institution
+• Investments MAY LOSE VALUE, including total loss of principal
+• The secondary market for Shares is limited and NOT guaranteed
+• There is NO public trading market for the securities offered
+
+For regulatory inquiries or complaints:
+${COMPANY_NAME} Compliance Department
+${COMPANY_ADDRESS}
+Email: ${COMPANY_EMAIL_COMPLIANCE}
+Phone: ${COMPANY_PHONE}
+
+You may also contact:
+SEC Office of Investor Education and Advocacy: (800) 732-0330
+FINRA Investor Complaint Center: www.finra.org/investors/have-problem`,
+      },
+    ],
+  },
+  {
     id: 'acceptable-use',
     title: 'Acceptable Use Policy',
     subtitle: 'Platform usage rules & restrictions',
@@ -926,7 +1095,7 @@ function DocumentCard({
       duration: 350,
       useNativeDriver: true,
     }).start();
-  }, []);
+  }, [fadeAnim]);
 
   const toggleSection = useCallback((index: number) => {
     setExpandedSections(prev => {
@@ -1032,7 +1201,7 @@ function DocumentCard({
 export default function LegalScreen() {
   const router = useRouter();
   const [expandedDoc, setExpandedDoc] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
+
 
   const toggleDocument = useCallback((id: string) => {
     setExpandedDoc(prev => (prev === id ? null : id));

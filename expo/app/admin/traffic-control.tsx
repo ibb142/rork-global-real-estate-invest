@@ -245,9 +245,8 @@ export default function TrafficControlCenter() {
 
   const copyUTM = useCallback(async (link: UTMLink) => {
     try {
-      if (Platform.OS === 'web') {
-        await navigator.clipboard.writeText(link.url);
-      }
+      const { safeSetString: safeCopy } = await import('@/lib/safe-clipboard');
+      await safeCopy(link.url);
       setCopiedId(link.id);
       setTimeout(() => setCopiedId(null), 2000);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);

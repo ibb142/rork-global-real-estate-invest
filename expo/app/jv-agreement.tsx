@@ -68,7 +68,7 @@ import type { JVAgreement, JVPartner, PoolTier } from '@/types/jv';
 
 const JV_AGREEMENT_TYPES = [
   { id: 'equity_split', label: 'Equity Split', icon: '📊', desc: 'Partners share ownership proportional to contribution', color: '#4A90D9' },
-  { id: 'profit_sharing', label: 'Profit Sharing', icon: '💰', desc: 'Fixed returns based on profit distribution schedule', color: '#00C48C' },
+  { id: 'profit_sharing', label: 'Profit Sharing', icon: '💰', desc: 'Fixed returns based on profit distribution schedule', color: '#22C55E' },
   { id: 'hybrid', label: 'Hybrid Structure', icon: '🔄', desc: 'Combined equity + profit sharing arrangement', color: '#E879F9' },
   { id: 'development', label: 'Development JV', icon: '📋', desc: 'Joint development with milestone-based payouts', color: '#FFD700' },
 ] as const;
@@ -107,7 +107,7 @@ import {
 type ScreenMode = 'list' | 'create' | 'detail' | 'preview' | 'edit';
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
-  active: { label: 'Live', color: '#00C48C', bg: '#00C48C20' },
+  active: { label: 'Live', color: '#22C55E', bg: '#22C55E20' },
   pending_review: { label: 'Pending Review', color: '#FFB800', bg: '#FFB80020' },
   completed: { label: 'Completed', color: '#4A90D9', bg: '#4A90D920' },
   expired: { label: 'Expired', color: '#FF4D4D', bg: '#FF4D4D20' },
@@ -123,7 +123,7 @@ const ROLE_CONFIG: Record<string, { label: string; color: string; description: s
 
 
 const POOL_TIER_TYPES: { id: PoolTier['type']; label: string; icon: string; color: string }[] = [
-  { id: 'jv_direct', label: 'JV Investment', icon: '🏛️', color: '#00C48C' },
+  { id: 'jv_direct', label: 'JV Investment', icon: '🏛️', color: '#22C55E' },
 
   { id: 'private_lending', label: 'Private Lending', icon: '🏦', color: '#4A90D9' },
   { id: 'open', label: 'Open Pool', icon: '🌐', color: '#E879F9' },
@@ -135,7 +135,7 @@ function generateJVContractHTML(agreement: JVAgreement): string {
     <tr>
       <td style="padding:10px 14px;border-bottom:1px solid #2a2a2a;color:#fff;">${i + 1}. ${p.name}</td>
       <td style="padding:10px 14px;border-bottom:1px solid #2a2a2a;color:#FFD700;font-weight:700;">${ROLE_CONFIG[p.role]?.label || p.role}</td>
-      <td style="padding:10px 14px;border-bottom:1px solid #2a2a2a;color:#00C48C;font-weight:700;">${formatCurrency(p.contribution)}</td>
+      <td style="padding:10px 14px;border-bottom:1px solid #2a2a2a;color:#22C55E;font-weight:700;">${formatCurrency(p.contribution)}</td>
       <td style="padding:10px 14px;border-bottom:1px solid #2a2a2a;color:#4A90D9;font-weight:700;">${p.equityShare}%</td>
       <td style="padding:10px 14px;border-bottom:1px solid #2a2a2a;color:#9a9a9a;">${p.location}</td>
     </tr>
@@ -152,7 +152,7 @@ function generateJVContractHTML(agreement: JVAgreement): string {
     const partner = partners.find(p => p.id === ps.partnerId);
     return `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #1a1a1a;">
       <span style="color:#fff;">${partner?.name || 'Unknown'}</span>
-      <span style="color:#00C48C;font-weight:700;">${ps.percentage}%</span>
+      <span style="color:#22C55E;font-weight:700;">${ps.percentage}%</span>
     </div>`;
   }).join('');
 
@@ -177,7 +177,7 @@ function generateJVContractHTML(agreement: JVAgreement): string {
     .info-label { color: #6a6a6a; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
     .info-value { color: #fff; font-size: 16px; font-weight: 700; }
     .info-value.gold { color: #FFD700; }
-    .info-value.green { color: #00C48C; }
+    .info-value.green { color: #22C55E; }
     table { width: 100%; border-collapse: collapse; background: #141414; border-radius: 10px; overflow: hidden; }
     th { background: #1a1a1a; color: #FFD700; padding: 12px 14px; text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; }
     .signature-section { margin-top: 40px; padding-top: 30px; border-top: 2px solid #2a2a2a; }
@@ -1420,8 +1420,8 @@ export default function JVAgreementScreen() {
         <Text style={st.statLabel}>Portfolio Value</Text>
       </View>
       <View style={st.statCard}>
-        <View style={[st.statIconWrap, { backgroundColor: '#00C48C15' }]}>
-          <Handshake size={18} color="#00C48C" />
+        <View style={[st.statIconWrap, { backgroundColor: '#22C55E15' }]}>
+          <Handshake size={18} color="#22C55E" />
         </View>
         <Text style={st.statValue}>{activeDeals}</Text>
         <Text style={st.statLabel}>Active Deals</Text>
@@ -1513,8 +1513,8 @@ export default function JVAgreementScreen() {
             </View>
             {agreement.published && (
               <View style={st.igCardLiveBadge}>
-                <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: '#00C48C' }} />
-                <Text style={{ color: '#00C48C', fontSize: 9, fontWeight: '800' as const, letterSpacing: 0.8 }}>LIVE</Text>
+                <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: '#22C55E' }} />
+                <Text style={{ color: '#22C55E', fontSize: 9, fontWeight: '800' as const, letterSpacing: 0.8 }}>LIVE</Text>
               </View>
             )}
             {validPhotos.length > 1 && (
@@ -1537,8 +1537,8 @@ export default function JVAgreementScreen() {
             </View>
             {agreement.published && (
               <View style={st.igCardLiveBadge}>
-                <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: '#00C48C' }} />
-                <Text style={{ color: '#00C48C', fontSize: 9, fontWeight: '800' as const, letterSpacing: 0.8 }}>LIVE</Text>
+                <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: '#22C55E' }} />
+                <Text style={{ color: '#22C55E', fontSize: 9, fontWeight: '800' as const, letterSpacing: 0.8 }}>LIVE</Text>
               </View>
             )}
           </View>
@@ -1570,8 +1570,8 @@ export default function JVAgreementScreen() {
             </View>
             <View style={st.igCardMetricDivider} />
             <View style={st.igCardMetric}>
-              <TrendingUp size={14} color="#00C48C" />
-              <Text style={[st.igCardMetricValue, { color: '#00C48C' }]}>{agreement.expectedROI}%</Text>
+              <TrendingUp size={14} color="#22C55E" />
+              <Text style={[st.igCardMetricValue, { color: '#22C55E' }]}>{agreement.expectedROI}%</Text>
               <Text style={st.igCardMetricLabel}>Expected ROI</Text>
             </View>
             <View style={st.igCardMetricDivider} />
@@ -1608,8 +1608,8 @@ export default function JVAgreementScreen() {
                 </>
               )}
               {agreement.published && (
-                <View style={{ backgroundColor: '#00C48C15', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, marginRight: 4 }}>
-                  <Text style={{ color: '#00C48C', fontSize: 10, fontWeight: '700' as const }}>Admin Only</Text>
+                <View style={{ backgroundColor: '#22C55E15', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, marginRight: 4 }}>
+                  <Text style={{ color: '#22C55E', fontSize: 10, fontWeight: '700' as const }}>Admin Only</Text>
                 </View>
               )}
               <ChevronRight size={16} color={Colors.textTertiary} style={{ marginLeft: 4 }} />
@@ -1625,7 +1625,7 @@ export default function JVAgreementScreen() {
       <View style={st.heroCard}>
         <View style={st.heroIconRow}>
           <Handshake size={28} color="#FFD700" />
-          <Shield size={22} color="#00C48C" />
+          <Shield size={22} color="#22C55E" />
           <Scale size={22} color="#4A90D9" />
         </View>
         <Text style={st.heroTitle}>Joint Venture Agreements</Text>
@@ -1788,8 +1788,8 @@ export default function JVAgreementScreen() {
               <Text style={st.detailMetricLabel}>Total Investment</Text>
             </View>
             <View style={st.detailMetricItem}>
-              <TrendingUp size={16} color="#00C48C" />
-              <Text style={[st.detailMetricValue, { color: '#00C48C' }]}>{ag.expectedROI}%</Text>
+              <TrendingUp size={16} color="#22C55E" />
+              <Text style={[st.detailMetricValue, { color: '#22C55E' }]}>{ag.expectedROI}%</Text>
               <Text style={st.detailMetricLabel}>Expected ROI</Text>
             </View>
             <View style={st.detailMetricItem}>
@@ -1830,13 +1830,13 @@ export default function JVAgreementScreen() {
                         </View>
                       </View>
                       <View style={[st.poolTierStatusBadge, {
-                        backgroundColor: tier.status === 'open' ? '#00C48C20' : tier.status === 'filled' ? '#FFD70020' : '#FF4D4D20'
+                        backgroundColor: tier.status === 'open' ? '#22C55E20' : tier.status === 'filled' ? '#FFD70020' : '#FF4D4D20'
                       }]}>
                         <View style={[st.poolTierStatusDot, {
-                          backgroundColor: tier.status === 'open' ? '#00C48C' : tier.status === 'filled' ? '#FFD700' : '#FF4D4D'
+                          backgroundColor: tier.status === 'open' ? '#22C55E' : tier.status === 'filled' ? '#FFD700' : '#FF4D4D'
                         }]} />
                         <Text style={[st.poolTierStatusText, {
-                          color: tier.status === 'open' ? '#00C48C' : tier.status === 'filled' ? '#FFD700' : '#FF4D4D'
+                          color: tier.status === 'open' ? '#22C55E' : tier.status === 'filled' ? '#FFD700' : '#FF4D4D'
                         }]}>{tier.status === 'open' ? 'Open' : tier.status === 'filled' ? 'Filled' : 'Closed'}</Text>
                       </View>
                     </View>
@@ -1918,8 +1918,8 @@ export default function JVAgreementScreen() {
             <Text style={st.actionBtnText}>Preview</Text>
           </TouchableOpacity>
           <TouchableOpacity style={st.actionBtn} onPress={() => handleExportPDF(ag)} activeOpacity={0.7} disabled={isGenerating}>
-            <Download size={16} color="#00C48C" />
-            <Text style={[st.actionBtnText, { color: '#00C48C' }]}>{isGenerating ? 'Generating...' : 'Export PDF'}</Text>
+            <Download size={16} color="#22C55E" />
+            <Text style={[st.actionBtnText, { color: '#22C55E' }]}>{isGenerating ? 'Generating...' : 'Export PDF'}</Text>
           </TouchableOpacity>
           <TouchableOpacity style={st.actionBtn} onPress={() => handleShareWhatsApp(ag)} activeOpacity={0.7}>
             <MessageCircle size={16} color="#25D366" />
@@ -1979,12 +1979,12 @@ export default function JVAgreementScreen() {
                           <Text style={[st.partnerRoleText, { color: roleCfg.color }]}>{roleCfg.label}</Text>
                         </View>
                       </View>
-                      {p.verified && <UserCheck size={16} color="#00C48C" />}
+                      {p.verified && <UserCheck size={16} color="#22C55E" />}
                     </View>
                     <View style={st.partnerMetrics}>
                       <View style={st.partnerMetricItem}>
                         <Text style={st.partnerMetricLabel}>Contribution</Text>
-                        <Text style={[st.partnerMetricValue, { color: '#00C48C' }]}>{formatCurrency(p.contribution)}</Text>
+                        <Text style={[st.partnerMetricValue, { color: '#22C55E' }]}>{formatCurrency(p.contribution)}</Text>
                       </View>
                       <View style={st.partnerMetricItem}>
                         <Text style={st.partnerMetricLabel}>Equity Share</Text>
@@ -2221,7 +2221,7 @@ export default function JVAgreementScreen() {
 
             <View style={st.equitySummary}>
               <Text style={st.equitySummaryLabel}>Total Equity Allocated</Text>
-              <Text style={[st.equitySummaryValue, { color: partners.reduce((s, p) => s + p.equityShare, 0) === 100 ? '#00C48C' : '#FF4D4D' }]}>
+              <Text style={[st.equitySummaryValue, { color: partners.reduce((s, p) => s + p.equityShare, 0) === 100 ? '#22C55E' : '#FF4D4D' }]}>
                 {partners.reduce((s, p) => s + p.equityShare, 0)}%
               </Text>
               {partners.reduce((s, p) => s + p.equityShare, 0) !== 100 && (
@@ -2254,7 +2254,7 @@ export default function JVAgreementScreen() {
                           <X size={14} color="#fff" />
                         </TouchableOpacity>
                       )}
-                      <View style={[st.photoIndexBadge, isLocal ? { backgroundColor: '#FF9500' } : { backgroundColor: '#00C48C' }]}>
+                      <View style={[st.photoIndexBadge, isLocal ? { backgroundColor: '#FF9500' } : { backgroundColor: '#22C55E' }]}>
                         <Text style={st.photoIndexText}>{isLocal ? '↑' : '✓'}</Text>
                       </View>
                     </View>
@@ -2392,7 +2392,7 @@ export default function JVAgreementScreen() {
             {Object.entries(JV_CLAUSES).map(([key, clause]) => (
               <View key={key} style={st.clauseCard}>
                 <View style={st.clauseHeader}>
-                  <CheckCircle size={14} color="#00C48C" />
+                  <CheckCircle size={14} color="#22C55E" />
                   <Text style={st.clauseTitle}>{clause.title}</Text>
                 </View>
                 <Text style={st.clauseDesc}>{clause.description}</Text>
@@ -2542,7 +2542,7 @@ const st = StyleSheet.create({
   igCardOverlayTop: { position: 'absolute' as const, top: 12, left: 12, right: 12, flexDirection: 'row' as const, justifyContent: 'space-between' as const, alignItems: 'center' as const, zIndex: 2 },
   igCardPhotoCount: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 4, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 4 },
   igCardPhotoCountText: { color: '#fff', fontSize: 10, fontWeight: '700' as const },
-  igCardLiveBadge: { position: 'absolute' as const, top: 12, right: 12, flexDirection: 'row' as const, alignItems: 'center' as const, gap: 4, backgroundColor: '#00C48C18', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 4, borderWidth: 1, borderColor: '#00C48C30', zIndex: 3 },
+  igCardLiveBadge: { position: 'absolute' as const, top: 12, right: 12, flexDirection: 'row' as const, alignItems: 'center' as const, gap: 4, backgroundColor: '#22C55E18', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 4, borderWidth: 1, borderColor: '#22C55E30', zIndex: 3 },
   igCardDots: { position: 'absolute' as const, bottom: 12, left: 0, right: 0, flexDirection: 'row' as const, justifyContent: 'center' as const, gap: 5, zIndex: 2 },
   igCardDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.35)' },
   igCardDotActive: { width: 18, backgroundColor: '#fff', borderRadius: 3 },
@@ -2674,11 +2674,11 @@ const st = StyleSheet.create({
   submitBtnText: { color: '#000', fontSize: 16, fontWeight: '800' as const },
   uploadProgressBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: Colors.primary + '15', borderRadius: 12, padding: 14, marginBottom: 12 },
   uploadProgressText: { color: Colors.primary, fontSize: 14, fontWeight: '600' as const },
-  publishBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: '#00C48C', borderRadius: 16, paddingVertical: 18, marginTop: 12, marginBottom: 40 },
+  publishBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: '#22C55E', borderRadius: 16, paddingVertical: 18, marginTop: 12, marginBottom: 40 },
   publishBtnText: { color: '#fff', fontSize: 16, fontWeight: '800' as const },
   editDetailBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: Colors.primary, borderRadius: 16, paddingVertical: 16, marginTop: 14 },
   editDetailBtnText: { color: '#000', fontSize: 15, fontWeight: '800' as const },
-  publishDetailBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: '#00C48C', borderRadius: 16, paddingVertical: 16, marginTop: 10 },
+  publishDetailBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: '#22C55E', borderRadius: 16, paddingVertical: 16, marginTop: 10 },
   publishDetailBtnText: { color: '#fff', fontSize: 15, fontWeight: '800' as const },
   editCardBtn: { width: 32, height: 32, borderRadius: 10, backgroundColor: Colors.primary + '15', alignItems: 'center', justifyContent: 'center', marginRight: 8 },
 

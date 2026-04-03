@@ -206,7 +206,7 @@ export default function SyncDiagnosticsScreen() {
 
   const getStatusIcon = (level: StatusLevel) => {
     switch (level) {
-      case 'green': return <CheckCircle2 size={16} color="#00C48C" />;
+      case 'green': return <CheckCircle2 size={16} color="#22C55E" />;
       case 'yellow': return <AlertTriangle size={16} color="#FFD700" />;
       case 'red': return <XCircle size={16} color="#FF4D4D" />;
     }
@@ -239,7 +239,7 @@ export default function SyncDiagnosticsScreen() {
           {item.detail ? <Text style={styles.diagDetail}>{item.detail}</Text> : null}
         </View>
       </View>
-      <Text style={[styles.diagValue, { color: item.status === 'red' ? '#FF4D4D' : item.status === 'green' ? '#00C48C' : Colors.text }]}>{item.value}</Text>
+      <Text style={[styles.diagValue, { color: item.status === 'red' ? '#FF4D4D' : item.status === 'green' ? '#22C55E' : Colors.text }]}>{item.value}</Text>
     </View>
   );
 
@@ -272,7 +272,7 @@ export default function SyncDiagnosticsScreen() {
         <View style={[styles.overallCard, { backgroundColor: getStatusBg(overallStatus), borderColor: getStatusBorder(overallStatus) }]}>
           <View style={styles.overallRow}>
             {overallStatus === 'green' ? (
-              <Shield size={28} color="#00C48C" />
+              <Shield size={28} color="#22C55E" />
             ) : overallStatus === 'yellow' ? (
               <AlertTriangle size={28} color="#FFD700" />
             ) : (
@@ -316,7 +316,7 @@ export default function SyncDiagnosticsScreen() {
 
         {forceSyncMutation.isSuccess ? (
           <View style={styles.syncResult}>
-            <CheckCircle2 size={14} color="#00C48C" />
+            <CheckCircle2 size={14} color="#22C55E" />
             <Text style={styles.syncResultText}>
               Sync completed: {forceSyncMutation.data?.syncedDeals} deals synced
               {forceSyncMutation.data?.errors.length ? ` (${forceSyncMutation.data.errors.length} errors)` : ''}
@@ -353,14 +353,14 @@ export default function SyncDiagnosticsScreen() {
         <View style={styles.perfCard}>
           <View style={styles.perfRow}>
             <Text style={styles.perfLabel}>Cache Hit Rate</Text>
-            <Text style={[styles.perfValue, { color: cacheStats.cacheHitRate > 50 ? '#00C48C' : '#FFD700' }]}>
+            <Text style={[styles.perfValue, { color: cacheStats.cacheHitRate > 50 ? '#22C55E' : '#FFD700' }]}>
               {cacheStats.cacheHitRate}%
             </Text>
           </View>
           <View style={styles.perfRow}>
             <Text style={styles.perfLabel}>Last Fetch Latency</Text>
             <Text style={[styles.perfValue, {
-              color: (cacheStats.lastFetchLatencyMs ?? 0) < 500 ? '#00C48C' :
+              color: (cacheStats.lastFetchLatencyMs ?? 0) < 500 ? '#22C55E' :
                      (cacheStats.lastFetchLatencyMs ?? 0) < 2000 ? '#FFD700' : '#FF4D4D'
             }]}>
               {cacheStats.lastFetchLatencyMs != null ? `${cacheStats.lastFetchLatencyMs}ms` : 'N/A'}
@@ -388,7 +388,7 @@ export default function SyncDiagnosticsScreen() {
           </View>
           <View style={styles.perfRow}>
             <Text style={styles.perfLabel}>Memory Warnings</Text>
-            <Text style={[styles.perfValue, { color: perfSummary.memoryWarnings > 0 ? '#FF4D4D' : '#00C48C' }]}>
+            <Text style={[styles.perfValue, { color: perfSummary.memoryWarnings > 0 ? '#FF4D4D' : '#22C55E' }]}>
               {perfSummary.memoryWarnings}
             </Text>
           </View>
@@ -419,7 +419,7 @@ export default function SyncDiagnosticsScreen() {
           <Text style={styles.claimCardTitle}>Approved Disclaimers</Text>
           {CANONICAL_CLAIMS.disclaimers.map((d, i) => (
             <View key={`disc-${i}`} style={styles.claimRow}>
-              <CheckCircle2 size={14} color="#00C48C" />
+              <CheckCircle2 size={14} color="#22C55E" />
               <Text style={styles.claimApprovedText}>{d}</Text>
             </View>
           ))}
@@ -430,12 +430,12 @@ export default function SyncDiagnosticsScreen() {
           {claimChecks.map((check, i) => (
             <View key={`check-${i}`} style={styles.claimRow}>
               {check.valid ? (
-                <CheckCircle2 size={14} color="#00C48C" />
+                <CheckCircle2 size={14} color="#22C55E" />
               ) : (
                 <XCircle size={14} color="#FF4D4D" />
               )}
               <View style={styles.claimTextWrap}>
-                <Text style={[styles.claimCheckText, { color: check.valid ? '#00C48C' : '#FF4D4D' }]}>
+                <Text style={[styles.claimCheckText, { color: check.valid ? '#22C55E' : '#FF4D4D' }]}>
                   {check.claim}
                 </Text>
                 {check.reason ? <Text style={styles.claimReasonText}>{check.reason}</Text> : null}
@@ -598,7 +598,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(0,196,140,0.2)',
   },
   syncResultText: {
-    color: '#00C48C',
+    color: '#22C55E',
     fontSize: 13,
     fontWeight: '600' as const,
     flex: 1,
@@ -709,7 +709,7 @@ const styles = StyleSheet.create({
     textDecorationLine: 'line-through',
   },
   claimApprovedText: {
-    color: '#00C48C',
+    color: '#22C55E',
     fontSize: 12,
     flex: 1,
   },

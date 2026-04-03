@@ -74,6 +74,7 @@ export interface PublishedDealPayload {
   state: string;
   country: string;
   totalInvestment: number;
+  propertyValue: number;
   expectedROI: number;
   status: string;
   photos: string[];
@@ -167,6 +168,7 @@ function mapRowToPayload(row: Record<string, unknown>): PublishedDealPayload {
     state: (row.state as string) || '',
     country: (row.country as string) || '',
     totalInvestment: (row.totalInvestment as number) || (row.total_investment as number) || 0,
+    propertyValue: (row.propertyValue as number) || (row.property_value as number) || (row.estimated_value as number) || 0,
     expectedROI: (row.expectedROI as number) || (row.expected_roi as number) || 0,
     status: (row.status as string) || 'active',
     photos,
@@ -215,6 +217,7 @@ function cardModelToPayload(card: PublishedDealCardModel): PublishedDealPayload 
     state: card.state,
     country: card.country,
     totalInvestment: card.totalInvestment,
+    propertyValue: card.propertyValue || 0,
     expectedROI: card.expectedROI,
     status: card.status,
     photos: card.photos,
@@ -267,6 +270,64 @@ let _lastSyncTimestamp: string | null = null;
 let _lastDeployError: string | null = null;
 const DEPLOY_COOLDOWN = 5000;
 
+async function generateStaticDealsJson(deals: PublishedDealPayload[], timestamp: string): Promise<void> {
+  if (!isSupabaseConfigured()) return;
+  try {
+    const staticPayload = {
+      deals: deals.map(d => ({
+        id: d.id,
+        title: d.title,
+        projectName: d.projectName,
+        description: d.description,
+        propertyAddress: d.propertyAddress,
+        city: d.city,
+        state: d.state,
+        country: d.country,
+        totalInvestment: d.totalInvestment,
+        propertyValue: d.propertyValue,
+        expectedROI: d.expectedROI,
+        status: d.status,
+        photos: d.photos,
+        distributionFrequency: d.distributionFrequency,
+        exitStrategy: d.exitStrategy,
+        displayOrder: d.displayOrder,
+        trustInfo: d.trustInfo,
+        cardModel: d.cardModel,
+      })),
+      generatedAt: timestamp,
+      count: deals.length,
+      ttl: 300,
+    };
+
+    const { error } = await supabase
+      .from('landing_page_config')
+      .upsert({
+        id: 'deals_cache',
+        deployed_at: timestamp,
+        deploy_status: 'cached',
+        updated_at: timestamp,
+        details: JSON.stringify(staticPayload),
+      });
+
+    if (error) {
+      const msg = (error.message || '').toLowerCase();
+      if (msg.includes('does not exist') || msg.includes('schema cache') || msg.includes('could not find')) {
+        console.log('[LandingSync] landing_page_config table not found — skipping deals cache');
+        return;
+      }
+      if (msg.includes('details')) {
+        console.log('[LandingSync] deals_cache column missing — skipping (non-critical)');
+        return;
+      }
+      console.log('[LandingSync] Deals cache upsert error:', error.message);
+    } else {
+      console.log('[LandingSync] Static deals.json cached in landing_page_config —', deals.length, 'deals, TTL 5min');
+    }
+  } catch (err) {
+    console.log('[LandingSync] Static deals cache exception:', (err as Error)?.message);
+  }
+}
+
 async function triggerBackendDeploy(): Promise<void> {
   const now = Date.now();
   if (now - _lastDeployTimestamp < DEPLOY_COOLDOWN) {
@@ -309,6 +370,12 @@ export async function syncToLandingPage(): Promise<LandingSyncResult> {
     console.log('[LandingSync] Syncing', deals.length, 'deals to landing_deals table + triggering deploy...');
 
     const tableResult = await syncToSupabaseLandingTable(deals, timestamp);
+
+    try {
+      await generateStaticDealsJson(deals, timestamp);
+    } catch (cacheErr) {
+      console.log('[LandingSync] Static deals.json cache failed (non-blocking):', (cacheErr as Error)?.message);
+    }
 
     try {
       await triggerBackendDeploy();
@@ -439,6 +506,7 @@ async function syncToSupabaseLandingTable(deals: PublishedDealPayload[], timesta
           state: deal.state,
           country: deal.country,
           total_investment: deal.totalInvestment,
+          property_value: deal.propertyValue || 0,
           expected_roi: deal.expectedROI,
           status: deal.status,
           photos: JSON.stringify(deal.photos),
@@ -519,15 +587,7 @@ export async function syncSingleDealToLanding(dealId: string): Promise<{ success
 
     const result = await syncToLandingPage();
 
-    if (result.success) {
-      console.log('[LandingSync] Sync succeeded, triggering backend deploy...');
-      try {
-        await triggerBackendDeploy();
-        console.log('[LandingSync] Backend deploy triggered after single deal sync');
-      } catch (deployErr) {
-        console.log('[LandingSync] Backend deploy after sync failed (non-blocking):', (deployErr as Error)?.message);
-      }
-    }
+    console.log('[LandingSync] Single deal sync complete — deploy already triggered inside syncToLandingPage, skipping duplicate');
 
     return { success: result.success, error: result.errors.join('; ') || undefined };
   } catch (err) {
@@ -539,11 +599,7 @@ export async function triggerAutoDeployAfterPublish(dealId: string): Promise<voi
   console.log('[LandingSync] Auto-deploy triggered after publish for deal:', dealId);
   try {
     const syncResult = await syncToLandingPage();
-    console.log('[LandingSync] Post-publish sync:', syncResult.success, 'deals:', syncResult.syncedDeals);
-    if (syncResult.success) {
-      await triggerBackendDeploy();
-      console.log('[LandingSync] Post-publish backend deploy triggered');
-    }
+    console.log('[LandingSync] Post-publish sync:', syncResult.success, 'deals:', syncResult.syncedDeals, '— deploy already triggered inside syncToLandingPage, skipping duplicate');
   } catch (err) {
     console.log('[LandingSync] Post-publish auto-deploy error:', (err as Error)?.message);
   }

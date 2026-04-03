@@ -45,6 +45,7 @@ import * as FileSystem from 'expo-file-system';
 import Colors from '@/constants/colors';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
+import { formatCurrencyWithDecimals as _fmtCurrDec } from '@/lib/formatters';
 
 interface InvestorProfit {
   id: string;
@@ -238,14 +239,7 @@ export default function InvestorProfitsScreen() {
     void Promise.all([profilesQuery.refetch(), propertiesQuery.refetch()]).finally(() => setRefreshing(false));
   }, [profilesQuery, propertiesQuery]);
 
-  const formatCurrency = useCallback((amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(amount);
-  }, []);
+  const formatCurrency = useCallback((amount: number) => _fmtCurrDec(amount), []);
 
   const formatDate = useCallback((dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {

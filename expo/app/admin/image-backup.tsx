@@ -123,7 +123,7 @@ export default function ImageBackupScreen() {
 
   const getHealthColor = (status: string) => {
     switch (status) {
-      case 'healthy': return '#00C48C';
+      case 'healthy': return '#22C55E';
       case 'degraded': return '#FFB800';
       case 'broken': return '#FF4757';
       case 'recovered': return '#4ECDC4';
@@ -172,9 +172,9 @@ export default function ImageBackupScreen() {
             </>
           ) : stats && stats.totalTracked > 0 ? (
             <>
-              <ShieldCheck size={28} color="#00C48C" />
+              <ShieldCheck size={28} color="#22C55E" />
               <View style={styles.statusTextWrap}>
-                <Text style={[styles.statusTitle, { color: '#00C48C' }]}>All Images Protected</Text>
+                <Text style={[styles.statusTitle, { color: '#22C55E' }]}>All Images Protected</Text>
                 <Text style={styles.statusSub}>{stats.totalTracked} images tracked with backup</Text>
               </View>
             </>
@@ -247,7 +247,7 @@ export default function ImageBackupScreen() {
           <View style={styles.sectionBody}>
             <View style={styles.statGrid}>
               <StatCard label="Total Tracked" value={stats.totalTracked} color="#FFD700" />
-              <StatCard label="Healthy" value={stats.healthyCount} color="#00C48C" />
+              <StatCard label="Healthy" value={stats.healthyCount} color="#22C55E" />
               <StatCard label="Degraded" value={stats.degradedCount} color="#FFB800" />
               <StatCard label="Broken" value={stats.brokenCount} color="#FF4757" />
               <StatCard label="Unknown" value={stats.unknownCount} color="#666" />
@@ -280,7 +280,7 @@ export default function ImageBackupScreen() {
                 </View>
                 <View style={styles.reportBarContainer}>
                   {report.healthyCount > 0 && (
-                    <View style={[styles.reportBar, { flex: report.healthyCount, backgroundColor: '#00C48C' }]} />
+                    <View style={[styles.reportBar, { flex: report.healthyCount, backgroundColor: '#22C55E' }]} />
                   )}
                   {report.degradedCount > 0 && (
                     <View style={[styles.reportBar, { flex: report.degradedCount, backgroundColor: '#FFB800' }]} />
@@ -293,7 +293,7 @@ export default function ImageBackupScreen() {
                   )}
                 </View>
                 <View style={styles.reportLegend}>
-                  <LegendItem color="#00C48C" label={`Healthy (${report.healthyCount})`} />
+                  <LegendItem color="#22C55E" label={`Healthy (${report.healthyCount})`} />
                   <LegendItem color="#FFB800" label={`Degraded (${report.degradedCount})`} />
                   <LegendItem color="#FF4757" label={`Broken (${report.brokenCount})`} />
                   <LegendItem color="#4ECDC4" label={`Recovered (${report.recoveredCount})`} />
@@ -341,7 +341,7 @@ export default function ImageBackupScreen() {
           <View style={styles.sectionBody}>
             {brokenImages.length === 0 ? (
               <View style={styles.emptyState}>
-                <CheckCircle2 size={32} color="#00C48C" />
+                <CheckCircle2 size={32} color="#22C55E" />
                 <Text style={styles.emptyStateText}>No broken images detected</Text>
               </View>
             ) : (

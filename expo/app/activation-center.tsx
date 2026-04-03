@@ -77,20 +77,20 @@ const GLOBAL_STATS = {
 };
 
 const SYSTEM_MODULES: SystemModule[] = [
-  { id: 'landing', name: 'Landing Page', status: 'live', uptime: '99.99%', requests: '24/7', color: '#00C48C', icon: <Monitor size={16} color="#00C48C" /> },
-  { id: 'api', name: 'Backend API', status: 'live', uptime: '99.99%', requests: '24/7', color: '#00C48C', icon: <Zap size={16} color="#00C48C" /> },
-  { id: 'analytics', name: 'AI Analytics', status: 'live', uptime: '99.99%', requests: '24/7', color: '#00C48C', icon: <BrainCircuit size={16} color="#00C48C" /> },
-  { id: 'sms', name: 'SMS Reports', status: 'live', uptime: '99.99%', requests: 'Hourly', color: '#00C48C', icon: <MessageCircle size={16} color="#00C48C" /> },
-  { id: 'email', name: 'Email Engine', status: 'live', uptime: '99.99%', requests: '24/7', color: '#00C48C', icon: <Mail size={16} color="#00C48C" /> },
-  { id: 'autorepair', name: 'Auto-Repair AI', status: 'live', uptime: '99.99%', requests: 'Scanning', color: '#00C48C', icon: <Shield size={16} color="#00C48C" /> },
-  { id: 'growth', name: 'Viral Growth Engine', status: 'live', uptime: '99.99%', requests: '24/7', color: '#00C48C', icon: <Rocket size={16} color="#00C48C" /> },
-  { id: 'referral', name: 'Referral System', status: 'live', uptime: '99.99%', requests: 'Active', color: '#00C48C', icon: <Users size={16} color="#00C48C" /> },
+  { id: 'landing', name: 'Landing Page', status: 'live', uptime: '99.99%', requests: '24/7', color: '#22C55E', icon: <Monitor size={16} color="#22C55E" /> },
+  { id: 'api', name: 'Backend API', status: 'live', uptime: '99.99%', requests: '24/7', color: '#22C55E', icon: <Zap size={16} color="#22C55E" /> },
+  { id: 'analytics', name: 'AI Analytics', status: 'live', uptime: '99.99%', requests: '24/7', color: '#22C55E', icon: <BrainCircuit size={16} color="#22C55E" /> },
+  { id: 'sms', name: 'SMS Reports', status: 'live', uptime: '99.99%', requests: 'Hourly', color: '#22C55E', icon: <MessageCircle size={16} color="#22C55E" /> },
+  { id: 'email', name: 'Email Engine', status: 'live', uptime: '99.99%', requests: '24/7', color: '#22C55E', icon: <Mail size={16} color="#22C55E" /> },
+  { id: 'autorepair', name: 'Auto-Repair AI', status: 'live', uptime: '99.99%', requests: 'Scanning', color: '#22C55E', icon: <Shield size={16} color="#22C55E" /> },
+  { id: 'growth', name: 'Viral Growth Engine', status: 'live', uptime: '99.99%', requests: '24/7', color: '#22C55E', icon: <Rocket size={16} color="#22C55E" /> },
+  { id: 'referral', name: 'Referral System', status: 'live', uptime: '99.99%', requests: 'Active', color: '#22C55E', icon: <Users size={16} color="#22C55E" /> },
 ];
 
 const CHANNELS: ChannelStatus[] = [
   { id: 'web', name: 'Website / Landing', status: 'active', reach: '5.4B', leads: 0, icon: <Globe size={16} color="#4A90D9" />, color: '#4A90D9' },
   { id: 'ios', name: 'iOS App', status: 'active', reach: '1.5B', leads: 0, icon: <Smartphone size={16} color="#FFFFFF" />, color: '#FFFFFF' },
-  { id: 'android', name: 'Android App', status: 'active', reach: '3.3B', leads: 0, icon: <Smartphone size={16} color="#00C48C" />, color: '#00C48C' },
+  { id: 'android', name: 'Android App', status: 'active', reach: '3.3B', leads: 0, icon: <Smartphone size={16} color="#22C55E" />, color: '#22C55E' },
   { id: 'instagram', name: 'Instagram Ads', status: 'connected', reach: '2.0B', leads: 0, icon: <Eye size={16} color="#E1306C" />, color: '#E1306C' },
   { id: 'google', name: 'Google / SEO', status: 'connected', reach: '4.3B', leads: 0, icon: <Target size={16} color="#4285F4" />, color: '#4285F4' },
   { id: 'tiktok', name: 'TikTok', status: 'connected', reach: '1.5B', leads: 0, icon: <Play size={16} color="#00F2EA" />, color: '#00F2EA' },
@@ -103,7 +103,7 @@ const REVENUE_STREAMS: RevenueStream[] = [
   { id: 'shares', label: 'Share Sales', amount: '$0', trend: 0, color: Colors.primary },
   { id: 'fees', label: 'Platform Fees', amount: '$0', trend: 0, color: '#4A90D9' },
   { id: 'referrals', label: 'Referral Growth', amount: '$0', trend: 0, color: '#E879F9' },
-  { id: 'premium', label: 'VIP Memberships', amount: '$0', trend: 0, color: '#00C48C' },
+  { id: 'premium', label: 'VIP Memberships', amount: '$0', trend: 0, color: '#22C55E' },
 ];
 
 function PulsingDot({ color, size = 8 }: { color: string; size?: number }) {
@@ -181,7 +181,7 @@ function GlobalReachMeter() {
   const regions = useMemo(() => [
     { name: 'Americas', pop: '1.0B', pct: 0.15, color: '#FFD700' },
     { name: 'Europe', pop: '0.7B', pct: 0.10, color: '#4A90D9' },
-    { name: 'Asia Pacific', pop: '4.3B', pct: 0.63, color: '#00C48C' },
+    { name: 'Asia Pacific', pop: '4.3B', pct: 0.63, color: '#22C55E' },
     { name: 'Middle East', pop: '0.4B', pct: 0.06, color: '#E879F9' },
     { name: 'Africa', pop: '0.4B', pct: 0.06, color: '#FF6B6B' },
   ], []);
@@ -319,7 +319,7 @@ export default function ActivationCenterScreen() {
         </TouchableOpacity>
         <View style={styles.headerCenter}>
           <View style={styles.headerLiveRow}>
-            <PulsingDot color="#00C48C" size={6} />
+            <PulsingDot color="#22C55E" size={6} />
             <Text style={styles.headerLiveText}>ALL SYSTEMS LIVE</Text>
           </View>
           <Text style={styles.headerTitle}>Activation Center</Text>
@@ -358,7 +358,7 @@ export default function ActivationCenterScreen() {
             <View style={styles.heroStatDivider} />
             <View style={styles.heroStat}>
               <Text style={styles.heroStatLabel}>AI Status</Text>
-              <Text style={[styles.heroStatValue, { color: '#00C48C' }]}>Active</Text>
+              <Text style={[styles.heroStatValue, { color: '#22C55E' }]}>Active</Text>
             </View>
           </View>
         </View>
@@ -407,9 +407,9 @@ export default function ActivationCenterScreen() {
               <Text style={styles.channelName}>{ch.name}</Text>
               <Text style={styles.channelReach}>Reach: {ch.reach} users</Text>
             </View>
-            <View style={[styles.channelStatusBadge, { backgroundColor: ch.status === 'active' ? '#00C48C15' : '#FFD70015' }]}>
-              <View style={[styles.channelStatusDot, { backgroundColor: ch.status === 'active' ? '#00C48C' : '#FFD700' }]} />
-              <Text style={[styles.channelStatusText, { color: ch.status === 'active' ? '#00C48C' : '#FFD700' }]}>
+            <View style={[styles.channelStatusBadge, { backgroundColor: ch.status === 'active' ? '#22C55E15' : '#FFD70015' }]}>
+              <View style={[styles.channelStatusDot, { backgroundColor: ch.status === 'active' ? '#22C55E' : '#FFD700' }]} />
+              <Text style={[styles.channelStatusText, { color: ch.status === 'active' ? '#22C55E' : '#FFD700' }]}>
                 {ch.status === 'active' ? 'LIVE' : 'READY'}
               </Text>
             </View>
@@ -428,7 +428,7 @@ export default function ActivationCenterScreen() {
               <Text style={styles.revenueLabel}>{stream.label}</Text>
               <Text style={styles.revenueAmount}>{stream.amount}</Text>
               <View style={styles.revenueReadyBadge}>
-                <CheckCircle size={10} color="#00C48C" />
+                <CheckCircle size={10} color="#22C55E" />
                 <Text style={styles.revenueReadyText}>Ready</Text>
               </View>
             </View>
@@ -443,18 +443,18 @@ export default function ActivationCenterScreen() {
         <View style={styles.aiTasksList}>
           {[
             { task: 'Monitoring all landing page visitors', status: 'active', icon: <Eye size={14} color="#4A90D9" /> },
-            { task: 'Tracking every click, scroll & conversion', status: 'active', icon: <Target size={14} color="#00C48C" /> },
+            { task: 'Tracking every click, scroll & conversion', status: 'active', icon: <Target size={14} color="#22C55E" /> },
             { task: 'Sending SMS reports to your phone', status: 'active', icon: <MessageCircle size={14} color="#E879F9" /> },
             { task: 'Auto-repairing bugs & issues', status: 'active', icon: <Shield size={14} color="#FFD700" /> },
             { task: 'Analyzing global market intelligence', status: 'active', icon: <Globe size={14} color="#4285F4" /> },
-            { task: 'Optimizing for investor conversions', status: 'active', icon: <TrendingUp size={14} color="#00C48C" /> },
+            { task: 'Optimizing for investor conversions', status: 'active', icon: <TrendingUp size={14} color="#22C55E" /> },
             { task: 'Managing referral & viral growth', status: 'active', icon: <Flame size={14} color="#FF6B6B" /> },
             { task: 'Alerting Kimberly & Sharon on leads', status: 'active', icon: <Users size={14} color="#E1306C" /> },
           ].map((item, i) => (
             <View key={i} style={styles.aiTaskRow}>
               <View style={styles.aiTaskIconWrap}>{item.icon}</View>
               <Text style={styles.aiTaskText}>{item.task}</Text>
-              <PulsingDot color="#00C48C" size={4} />
+              <PulsingDot color="#22C55E" size={4} />
             </View>
           ))}
         </View>
@@ -468,7 +468,7 @@ export default function ActivationCenterScreen() {
           {[
             { label: 'Share Landing', icon: <Share2 size={18} color={Colors.primary} />, action: handleShare },
             { label: 'View Reports', icon: <BarChart3 size={18} color="#4A90D9" />, action: () => handleNavigate('/sms-reports') },
-            { label: 'Growth Engine', icon: <Rocket size={18} color="#00C48C" />, action: () => handleNavigate('/viral-growth') },
+            { label: 'Growth Engine', icon: <Rocket size={18} color="#22C55E" />, action: () => handleNavigate('/viral-growth') },
             { label: 'AI Automation', icon: <BrainCircuit size={18} color="#E879F9" />, action: () => handleNavigate('/ai-automation-report') },
             { label: 'Auto Repair', icon: <Shield size={18} color="#FFD700" />, action: () => handleNavigate('/auto-repair') },
             { label: 'Email Team', icon: <Mail size={18} color="#FF6B6B" />, action: () => handleNavigate('/email') },
@@ -532,7 +532,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   headerLiveText: {
-    color: '#00C48C',
+    color: '#22C55E',
     fontSize: 9,
     fontWeight: '800' as const,
     letterSpacing: 2,
@@ -558,7 +558,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#0A0E0C',
     borderRadius: 24,
     borderWidth: 1,
-    borderColor: '#00C48C30',
+    borderColor: '#22C55E30',
     padding: 24,
     alignItems: 'center',
     overflow: 'hidden',
@@ -569,7 +569,7 @@ const styles = StyleSheet.create({
     width: 200,
     height: 200,
     borderRadius: 100,
-    backgroundColor: '#00C48C08',
+    backgroundColor: '#22C55E08',
   },
   heroIconWrap: {
     width: 64,
@@ -711,15 +711,15 @@ const styles = StyleSheet.create({
     fontWeight: '600' as const,
   },
   allLiveBadge: {
-    backgroundColor: '#00C48C15',
+    backgroundColor: '#22C55E15',
     borderRadius: 10,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderWidth: 1,
-    borderColor: '#00C48C30',
+    borderColor: '#22C55E30',
   },
   allLiveText: {
-    color: '#00C48C',
+    color: '#22C55E',
     fontSize: 9,
     fontWeight: '800' as const,
     letterSpacing: 1,
@@ -920,7 +920,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   revenueReadyText: {
-    color: '#00C48C',
+    color: '#22C55E',
     fontSize: 10,
     fontWeight: '700' as const,
   },

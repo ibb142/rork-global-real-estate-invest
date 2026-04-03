@@ -376,6 +376,12 @@ export default function AdminLayout() {
           href: null,
         }}
       />
+      <Tabs.Screen
+        name="deploy-waitlist"
+        options={{
+          href: null,
+        }}
+      />
     </Tabs>
     </View>
   );

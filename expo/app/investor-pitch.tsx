@@ -80,7 +80,7 @@ const SLIDES: Slide[] = [
   { id:'hero',     bg:BG.hero,     type:'hero',     label:'ENTERPRISE PITCH · 2026', title:'IVXHOLDINGS HOLDING LLC',                      subtitle:'The World\'s First AI-Powered Fractional Real Estate Empire — Built for $100 Billion AUM',       accent:'#D4AF37' },
   { id:'vision',   bg:BG.vision,   type:'vision',   label:'THE $100B VISION',         title:'Building the Future\nof Real Estate',  subtitle:'A $326 trillion market trapped in the 1980s. We are unlocking it with AI, fractional ownership, and viral growth mechanics.',  accent:'#C0A030' },
   { id:'problem',  bg:BG.problem,  type:'problem',  label:'THE BROKEN SYSTEM',        title:'Real Estate is\nLocked Away',          subtitle:'Millions want to invest. Billions are trapped. We end that today.',                            accent:'#E84545' },
-  { id:'owner',    bg:BG.owner,    type:'owner',    label:'PROPERTY OWNER JOURNEY',   title:'Own It.\nAI Manages Everything.',      subtitle:'List in 2 minutes. Collect rent automatically. Never deal with a broker or lawyer again.',      accent:'#00C48C' },
+  { id:'owner',    bg:BG.owner,    type:'owner',    label:'PROPERTY OWNER JOURNEY',   title:'Own It.\nAI Manages Everything.',      subtitle:'List in 2 minutes. Collect rent automatically. Never deal with a broker or lawyer again.',      accent:'#22C55E' },
   { id:'investor', bg:BG.investor, type:'investor', label:'INVESTOR JOURNEY',         title:'From $10\nto $10 Million.',            subtitle:'Invest in any property, anywhere, starting at $10. Daily liquidity. Zero lock-up. Full AI portfolio management.', accent:'#4A90D9' },
   { id:'ai',       bg:BG.ai,       type:'ai',       label:'AI PROFIT ENGINE',         title:'AI That Prints\nReturns 24/7',         subtitle:'Autonomous agents handle leasing, compliance, maintenance, and yield optimization around the clock.', accent:'#E91E63' },
   { id:'modules',  bg:BG.modules,  type:'modules',  label:'340+ FEATURES LIVE',       title:'One Platform.\nEvery Feature Built.',  subtitle:'From KYC to VIP — every module is built, tested, and production-ready right now.',               accent:'#FFB300' },
@@ -101,7 +101,7 @@ const PROBLEM_POINTS = [
 ];
 
 const OWNER_STEPS = [
-  { step:'01', title:'List in 2 Minutes',    desc:'AI scans documents, generates listing, and deploys to marketplace instantly.',   color:'#00C48C', icon: Home },
+  { step:'01', title:'List in 2 Minutes',    desc:'AI scans documents, generates listing, and deploys to marketplace instantly.',   color:'#22C55E', icon: Home },
   { step:'02', title:'AI Finds Investors',   desc:'Smart matching engine connects your property with thousands of ready investors.', color:'#4A90D9', icon: Users },
   { step:'03', title:'Auto Rent Collection', desc:'AI handles lease signing, payments, maintenance requests, and compliance.',       color:'#FFB300', icon: CircleDollarSign },
   { step:'04', title:'Monthly Distributions',desc:'Rental income distributed automatically to all fractional owners on schedule.',   color:'#E91E63', icon: BadgeDollarSign },
@@ -109,14 +109,14 @@ const OWNER_STEPS = [
 
 const INVESTOR_STEPS = [
   { step:'01', title:'Open Account (60 sec)', desc:'KYC via AI in 60 seconds. Bank account linked. Portfolio live.',                  color:'#4A90D9', icon: FileCheck },
-  { step:'02', title:'Browse Marketplace',    desc:'25+ filters. Side-by-side comparison. AI Trust Score on every property.',        color:'#00C48C', icon: Eye },
+  { step:'02', title:'Browse Marketplace',    desc:'25+ filters. Side-by-side comparison. AI Trust Score on every property.',        color:'#22C55E', icon: Eye },
   { step:'03', title:'Invest from $10',       desc:'Fractional shares. Instant diversification. No lock-up period.',                 color:'#FFB300', icon: DollarSign },
   { step:'04', title:'AI Grows Portfolio',    desc:'Copy top investors. Auto-reinvest. Smart rebalancing. 24/7 monitoring.',          color:'#E91E63', icon: TrendingUp },
 ];
 
 const AI_ENGINES = [
   { icon: Cpu,         label: 'Smart Leasing',   value: '2 min',  desc: 'Full AI lease generated',      color: '#E91E63' },
-  { icon: TrendingUp,  label: 'Yield Optimizer', value: '+18%',   desc: 'Average return boost',          color: '#00C48C' },
+  { icon: TrendingUp,  label: 'Yield Optimizer', value: '+18%',   desc: 'Average return boost',          color: '#22C55E' },
   { icon: Users,       label: 'Tenant AI',        value: '99%',    desc: 'Match accuracy rate',           color: '#4A90D9' },
   { icon: Zap,         label: 'Auto Collect',     value: '24/7',   desc: 'Autonomous rent engine',        color: '#FFB300' },
   { icon: Shield,      label: 'Legal Shield',     value: 'AI',     desc: 'Contracts & dispute AI',        color: '#9B59B6' },
@@ -125,33 +125,33 @@ const AI_ENGINES = [
 
 const MODULES = [
   { icon: Building2,   label: 'Marketplace',  color: '#D4AF37' },
-  { icon: BarChart3,   label: 'Portfolio',    color: '#00C48C' },
+  { icon: BarChart3,   label: 'Portfolio',    color: '#22C55E' },
   { icon: Wallet,      label: 'Wallet',       color: '#4A90D9' },
   { icon: Brain,       label: 'AI Chat',      color: '#E91E63' },
   { icon: Shield,      label: 'KYC / AML',   color: '#FF6B35' },
   { icon: Users,       label: 'Referrals',    color: '#9B59B6' },
   { icon: Award,       label: 'VIP Tiers',    color: '#D4AF37' },
   { icon: Layers,      label: 'Admin',        color: '#4A90D9' },
-  { icon: Lock,        label: 'Security',     color: '#00C48C' },
+  { icon: Lock,        label: 'Security',     color: '#22C55E' },
   { icon: FileCheck,   label: 'Documents',    color: '#FF6B35' },
   { icon: Globe,       label: 'Copy Invest',  color: '#E91E63' },
   { icon: Target,      label: 'Smart Invest', color: '#9B59B6' },
   { icon: Flame,       label: 'IVXHOLDINGS Earn',     color: '#D4AF37' },
-  { icon: PieChart,    label: 'Analytics',    color: '#00C48C' },
+  { icon: PieChart,    label: 'Analytics',    color: '#22C55E' },
   { icon: Rocket,      label: 'Influencer',   color: '#FF6B35' },
   { icon: Trophy,      label: 'Gamification', color: '#FFB300' },
 ];
 
 const MARKET_STATS = [
   { label: 'Global Real Estate Market',   value: '$326T', bar: 0.95, color: '#D4AF37' },
-  { label: 'Wealth Created via RE',       value: '90%',   bar: 0.90, color: '#00C48C' },
+  { label: 'Wealth Created via RE',       value: '90%',   bar: 0.90, color: '#22C55E' },
   { label: 'Annual Market Growth Rate',   value: '+8.2%', bar: 0.60, color: '#4A90D9' },
   { label: 'Properties Undigitized',      value: '74%',   bar: 0.74, color: '#E84545' },
 ];
 
 const REVENUE_STREAMS = [
   { label: 'Property Management Fees', pct: '1–3% AUM',    icon: Building2,        color: '#D4AF37',  bar: 0.80 },
-  { label: 'Transaction Commissions',  pct: '0.5–1.5%',    icon: DollarSign,       color: '#00C48C',  bar: 0.65 },
+  { label: 'Transaction Commissions',  pct: '0.5–1.5%',    icon: DollarSign,       color: '#22C55E',  bar: 0.65 },
   { label: 'VIP Memberships',          pct: '$99–$999/mo', icon: Award,            color: '#E91E63',  bar: 0.55 },
   { label: 'AI Listing Fees',          pct: '$49/listing', icon: Sparkles,         color: '#4A90D9',  bar: 0.45 },
   { label: 'Data Licensing (B2B)',     pct: '$500K/yr+',   icon: BarChart3,        color: '#FF6B35',  bar: 0.35 },
@@ -160,14 +160,14 @@ const REVENUE_STREAMS = [
 
 const GROWTH_PHASES = [
   { phase: 'Q1',  target: '10K',  label: 'Private Beta',  color: '#4A90D9', h: 30  },
-  { phase: 'Q2',  target: '100K', label: 'Public Launch', color: '#00C48C', h: 60  },
+  { phase: 'Q2',  target: '100K', label: 'Public Launch', color: '#22C55E', h: 60  },
   { phase: 'Q3',  target: '500K', label: 'Series A',      color: '#FFB300', h: 100 },
   { phase: 'Q4',  target: '1M+',  label: 'Target',        color: '#D4AF37', h: 140 },
 ];
 
 const TRACTION_ITEMS = [
   { value: '340+',  label: 'Features Built',      color: '#D4AF37',  icon: CheckCircle2 },
-  { value: '18',    label: 'Platform Modules',    color: '#00C48C',  icon: Layers },
+  { value: '18',    label: 'Platform Modules',    color: '#22C55E',  icon: Layers },
   { value: '$10',   label: 'Min Investment',       color: '#4A90D9',  icon: DollarSign },
   { value: '60 sec',label: 'KYC Completion',      color: '#E91E63',  icon: Zap },
   { value: '2 min', label: 'Property Listing',    color: '#FF6B35',  icon: Building2 },
@@ -447,7 +447,7 @@ export default function InvestorPitchScreen() {
           <View style={s.visionCards}>
             {[
               { v:'$326T', l:'Total Market', sub:'Largest asset class on Earth', color:'#D4AF37' },
-              { v:'100M',  l:'User Target',  sub:'Users served within 5 years',  color:'#00C48C' },
+              { v:'100M',  l:'User Target',  sub:'Users served within 5 years',  color:'#22C55E' },
               { v:'$100B', l:'AUM Goal',     sub:'Assets under management',       color:'#4A90D9' },
               { v:'340+',  l:'Features',     sub:'Built and live today',           color:'#E91E63' },
             ].map((item, i) => (
@@ -489,7 +489,7 @@ export default function InvestorPitchScreen() {
                   <Text style={s.problemEmoji}>{p.icon}</Text>
                   <Text style={s.problemText}>{p.text}</Text>
                 </View>
-                <View style={[s.problemFix, { borderColor: '#00C48C40' }]}>
+                <View style={[s.problemFix, { borderColor: '#22C55E40' }]}>
                   <Text style={s.problemFixText}>{p.fix}</Text>
                 </View>
               </Animated.View>
@@ -643,7 +643,7 @@ export default function InvestorPitchScreen() {
             })}
           </View>
           <Animated.View style={[s.moduleBadge, { opacity: subtitleO }]}>
-            <CheckCircle2 size={14} color="#00C48C" />
+            <CheckCircle2 size={14} color="#22C55E" />
             <Text style={s.moduleBadgeText}>All modules built, tested, production-ready. Zero technical debt.</Text>
           </Animated.View>
         </View>
@@ -716,7 +716,7 @@ export default function InvestorPitchScreen() {
             })}
           </View>
           <Animated.View style={[s.revenueSummary, { opacity: subtitleO }]}>
-            <ArrowUpRight size={16} color="#00C48C" />
+            <ArrowUpRight size={16} color="#22C55E" />
             <Text style={s.revenueSummaryText}>Projected Year 1 Revenue: $8.5M+ across all streams</Text>
           </Animated.View>
         </View>
@@ -822,7 +822,7 @@ export default function InvestorPitchScreen() {
           <Animated.View style={[s.closingStatsRow, { opacity: subtitleO }]}>
             {[
               { v:'340+',  l:'Features Live',    color:'#D4AF37' },
-              { v:'$100B', l:'AUM Goal',          color:'#00C48C' },
+              { v:'$100B', l:'AUM Goal',          color:'#22C55E' },
               { v:'100M',  l:'User Target',       color:'#4A90D9' },
               { v:'$10',   l:'Minimum Invest',    color:'#E91E63' },
             ].map((item, i) => (
@@ -968,7 +968,7 @@ const s = StyleSheet.create({
   problemEmoji: { fontSize: 18 },
   problemText:  { fontSize: 12, color: 'rgba(255,255,255,0.75)', fontWeight: '600' as const, flex: 1 },
   problemFix:   { backgroundColor: 'rgba(0,196,140,0.12)', borderRadius: 8, borderWidth: 1, paddingHorizontal: 9, paddingVertical: 4 },
-  problemFixText:{ fontSize: 11, fontWeight: '800' as const, color: '#00C48C' },
+  problemFixText:{ fontSize: 11, fontWeight: '800' as const, color: '#22C55E' },
 
   stepsContainer:{ gap: 10, paddingBottom: 20 },
   stepCard:     { flexDirection: 'row', alignItems: 'flex-start', backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 14, borderWidth: 1, padding: 12, gap: 12, overflow: 'hidden' },
@@ -997,7 +997,7 @@ const s = StyleSheet.create({
   moduleIconBg: { width: 48, height: 48, borderRadius: 13, justifyContent: 'center', alignItems: 'center', borderWidth: 1 },
   moduleLabel:  { fontSize: 9, fontWeight: '700' as const, textAlign: 'center' as const, letterSpacing: 0.2 },
   moduleBadge:  { flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: 'rgba(0,196,140,0.1)', borderRadius: 10, padding: 9 },
-  moduleBadgeText:{ fontSize: 11, color: '#00C48C', fontWeight: '700' as const, flex: 1 },
+  moduleBadgeText:{ fontSize: 11, color: '#22C55E', fontWeight: '700' as const, flex: 1 },
 
   statsWrap:    { flex: 1, justifyContent: 'center', gap: 8 },
   statsList:    { gap: 10 },
@@ -1017,7 +1017,7 @@ const s = StyleSheet.create({
   revenueBarFill:{ height: '100%', borderRadius: 2 },
   revenuePct:   { fontSize: 11, fontWeight: '800' as const, minWidth: 68, textAlign: 'right' as const },
   revenueSummary:{ flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: 'rgba(0,196,140,0.1)', borderRadius: 10, padding: 10, marginTop: 4 },
-  revenueSummaryText:{ fontSize: 12, color: '#00C48C', fontWeight: '700' as const, flex: 1 },
+  revenueSummaryText:{ fontSize: 12, color: '#22C55E', fontWeight: '700' as const, flex: 1 },
 
   growthWrap:   { flex: 1, justifyContent: 'center', gap: 8 },
   growthChart:  { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'flex-end', paddingVertical: 12, gap: 6 },

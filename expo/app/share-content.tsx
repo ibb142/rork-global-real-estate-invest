@@ -80,7 +80,7 @@ const TEAM_MEMBERS: TeamMember[] = [
 const ROLE_COLORS: Record<string, string> = {
   developer: '#4A90D9',
   investor: '#FFD700',
-  advisor: '#00C48C',
+  advisor: '#22C55E',
   designer: '#E91E63',
   manager: '#9B59B6',
 };
@@ -88,7 +88,7 @@ const ROLE_COLORS: Record<string, string> = {
 const ROLE_ICONS: Record<string, React.ReactNode> = {
   developer: <Code size={12} color="#4A90D9" />,
   investor: <Briefcase size={12} color="#FFD700" />,
-  advisor: <Globe size={12} color="#00C48C" />,
+  advisor: <Globe size={12} color="#22C55E" />,
   designer: <Sparkles size={12} color="#E91E63" />,
   manager: <Building2 size={12} color="#9B59B6" />,
 };
@@ -121,8 +121,8 @@ const SHAREABLE_CONTENT: ShareableContent[] = [
     type: 'document',
     title: 'Investor Prospectus',
     description: 'Complete investment overview & projections',
-    icon: <FileText size={20} color="#00C48C" />,
-    color: '#00C48C',
+    icon: <FileText size={20} color="#22C55E" />,
+    color: '#22C55E',
     shareUrl: `${APP_SHARE_URL}/prospectus`,
     shareText: '📊 IVX HOLDINGS Investor Prospectus — $326T global real estate market. Fractional investing from $10. AI-managed portfolio. 9.8% avg annual returns.',
   },
@@ -481,7 +481,7 @@ export default function ShareContentScreen() {
           testID={`share-copy-${content.id}`}
         >
           {copiedId === content.id ? (
-            <CheckCircle size={16} color="#00C48C" />
+            <CheckCircle size={16} color="#22C55E" />
           ) : (
             <Copy size={16} color={Colors.text} />
           )}
@@ -662,7 +662,7 @@ export default function ShareContentScreen() {
               >
                 <View style={styles.bulkShareInner}>
                   {copiedId === 'all' ? (
-                    <CheckCircle size={22} color="#00C48C" />
+                    <CheckCircle size={22} color="#22C55E" />
                   ) : (
                     <Link2 size={22} color={Colors.text} />
                   )}
@@ -691,7 +691,7 @@ export default function ShareContentScreen() {
             opacity: successAnim,
             transform: [{ scale: successAnim.interpolate({ inputRange: [0, 1], outputRange: [0.8, 1] }) }],
           }]}>
-            <CheckCircle size={20} color="#00C48C" />
+            <CheckCircle size={20} color="#22C55E" />
             <Text style={styles.successText}>Shared successfully!</Text>
           </Animated.View>
         )}
@@ -1041,6 +1041,6 @@ const styles = StyleSheet.create({
   successText: {
     fontSize: 14,
     fontWeight: '700' as const,
-    color: '#00C48C',
+    color: '#22C55E',
   },
 });

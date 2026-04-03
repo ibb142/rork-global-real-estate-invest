@@ -76,7 +76,7 @@ const INTEREST_COLORS: Record<string, string> = {
   '1k_10k': '#0097A7',
   '10k_50k': '#F57C00',
   '50k_plus': '#E91E63',
-  'active_investor': '#00C48C',
+  'active_investor': '#22C55E',
   'registered': '#9E9E9E',
 };
 
@@ -115,19 +115,19 @@ function formatDate(dateStr: string): string {
 }
 
 function getTypeBadge(type: string): { label: string; color: string; bg: string } {
-  if (type === 'user') return { label: 'Registered', color: '#00C48C', bg: '#00C48C18' };
+  if (type === 'user') return { label: 'Registered', color: '#22C55E', bg: '#22C55E18' };
   return { label: 'Waitlist', color: '#F57C00', bg: '#F57C0018' };
 }
 
 function getStatusColor(status: string): string {
-  if (status === 'active') return '#00C48C';
+  if (status === 'active') return '#22C55E';
   if (status === 'waitlist') return '#F57C00';
   if (status === 'suspended') return '#E53935';
   return Colors.textTertiary;
 }
 
 function getKycBadge(kyc: string): { label: string; color: string } {
-  if (kyc === 'approved') return { label: 'Verified', color: '#00C48C' };
+  if (kyc === 'approved') return { label: 'Verified', color: '#22C55E' };
   if (kyc === 'in_review') return { label: 'In Review', color: '#F9A825' };
   if (kyc === 'pending') return { label: 'Pending', color: Colors.textTertiary };
   if (kyc === 'rejected') return { label: 'Rejected', color: '#E53935' };
@@ -269,7 +269,7 @@ export default function LeadIntelligence() {
             <Mail size={10} color="#4A90D9" />
             <Text style={styles.tableEmail} numberOfLines={1}>{signup.email}</Text>
             {copiedId === `email-${signup.id}` ? (
-              <Check size={10} color="#00C48C" />
+              <Check size={10} color="#22C55E" />
             ) : (
               <Copy size={10} color={Colors.textTertiary} />
             )}
@@ -279,10 +279,10 @@ export default function LeadIntelligence() {
               style={styles.tableCopyRow}
               onPress={() => copyToClipboard(signup.phone, `phone-${signup.id}`)}
             >
-              <Phone size={10} color="#00C48C" />
+              <Phone size={10} color="#22C55E" />
               <Text style={styles.tablePhone} numberOfLines={1}>{signup.phone}</Text>
               {copiedId === `phone-${signup.id}` ? (
-                <Check size={10} color="#00C48C" />
+                <Check size={10} color="#22C55E" />
               ) : (
                 <Copy size={10} color={Colors.textTertiary} />
               )}
@@ -357,7 +357,7 @@ export default function LeadIntelligence() {
           </View>
           <View style={styles.heroBreakdownCol}>
             <View style={styles.heroBreakdownItem}>
-              <View style={[styles.heroBreakdownDot, { backgroundColor: '#00C48C' }]} />
+              <View style={[styles.heroBreakdownDot, { backgroundColor: '#22C55E' }]} />
               <Text style={styles.heroBreakdownText}>{stats?.totalUsers ?? 0} Registered</Text>
             </View>
             <View style={styles.heroBreakdownItem}>
@@ -373,8 +373,8 @@ export default function LeadIntelligence() {
             <Text style={styles.kpiValue}>{leadsWithEmail}</Text>
             <Text style={styles.kpiLabel}>With Email</Text>
           </View>
-          <View style={[styles.kpiCard, { borderLeftColor: '#00C48C' }]}>
-            <Phone size={14} color="#00C48C" />
+          <View style={[styles.kpiCard, { borderLeftColor: '#22C55E' }]}>
+            <Phone size={14} color="#22C55E" />
             <Text style={styles.kpiValue}>{leadsWithPhone}</Text>
             <Text style={styles.kpiLabel}>With Phone</Text>
           </View>
@@ -439,7 +439,7 @@ export default function LeadIntelligence() {
                         styles.breakdownBarFill,
                         {
                           width: `${Math.round((c.count / (stats.totalSignups || 1)) * 100)}%` as any,
-                          backgroundColor: i === 0 ? '#4A90D9' : i === 1 ? '#0097A7' : '#00C48C',
+                          backgroundColor: i === 0 ? '#4A90D9' : i === 1 ? '#0097A7' : '#22C55E',
                         },
                       ]}
                     />
@@ -577,7 +577,7 @@ export default function LeadIntelligence() {
                   </View>
                   {signup.phone ? (
                     <View style={styles.contactPreview}>
-                      <Phone size={10} color="#00C48C" />
+                      <Phone size={10} color="#22C55E" />
                       <Text style={styles.contactPreviewText}>{signup.phone}</Text>
                     </View>
                   ) : null}
@@ -628,7 +628,7 @@ export default function LeadIntelligence() {
                           onPress={() => copyToClipboard(signup.email, `detail-email-${signup.id}`)}
                         >
                           {copiedId === `detail-email-${signup.id}` ? (
-                            <Check size={12} color="#00C48C" />
+                            <Check size={12} color="#22C55E" />
                           ) : (
                             <Copy size={12} color={Colors.textTertiary} />
                           )}
@@ -636,8 +636,8 @@ export default function LeadIntelligence() {
                       </View>
                       {signup.phone ? (
                         <View style={styles.contactFullRow}>
-                          <View style={[styles.contactIconWrap, { backgroundColor: '#00C48C18' }]}>
-                            <Phone size={13} color="#00C48C" />
+                          <View style={[styles.contactIconWrap, { backgroundColor: '#22C55E18' }]}>
+                            <Phone size={13} color="#22C55E" />
                           </View>
                           <View style={styles.contactFullInfo}>
                             <Text style={styles.contactFullLabel}>Phone / Cell</Text>
@@ -648,7 +648,7 @@ export default function LeadIntelligence() {
                             onPress={() => copyToClipboard(signup.phone, `detail-phone-${signup.id}`)}
                           >
                             {copiedId === `detail-phone-${signup.id}` ? (
-                              <Check size={12} color="#00C48C" />
+                              <Check size={12} color="#22C55E" />
                             ) : (
                               <Copy size={12} color={Colors.textTertiary} />
                             )}
@@ -997,7 +997,7 @@ const styles = StyleSheet.create({
   tableTypeText: { fontSize: 8, fontWeight: '700' as const },
   tableCopyRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   tableEmail: { fontSize: 10, color: '#4A90D9', flex: 1 },
-  tablePhone: { fontSize: 10, color: '#00C48C', flex: 1 },
+  tablePhone: { fontSize: 10, color: '#22C55E', flex: 1 },
   tableNoPhone: { fontSize: 10, color: Colors.textTertiary, fontStyle: 'italic' as const },
   tableCountry: { fontSize: 10, fontWeight: '600' as const, color: Colors.text },
   tableInterest: { fontSize: 9, color: Colors.textSecondary },

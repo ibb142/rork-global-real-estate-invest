@@ -40,7 +40,7 @@ export default function LandingSubmissionsScreen() {
 
   const submissionsQuery = useQuery({
     queryKey: ['landing-submissions'],
-    queryFn: fetchLandingSubmissions,
+    queryFn: () => fetchLandingSubmissions(0, 500),
     staleTime: 10000,
   });
 

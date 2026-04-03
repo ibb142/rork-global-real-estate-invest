@@ -115,7 +115,7 @@ const AI_MODULES: AIModule[] = [
     category: 'automation',
     status: 'active',
     icon: RefreshCw,
-    color: '#00C48C',
+    color: '#22C55E',
     description: 'Automatically reinvests dividends into more property shares for compound growth',
     functionalities: [
       'Global DRIP on/off toggle for all holdings',
@@ -240,7 +240,7 @@ const AI_MODULES: AIModule[] = [
     category: 'analytics',
     status: 'active',
     icon: TrendingUp,
-    color: '#00C48C',
+    color: '#22C55E',
     description: 'Auto-calculates profit projections for any investment amount',
     functionalities: [
       'Real-time ROI projections (hourly to 10-year)',
@@ -339,7 +339,7 @@ const AI_MODULES: AIModule[] = [
 
 const CATEGORY_COLORS: Record<string, string> = {
   ai: '#A855F7',
-  automation: '#00C48C',
+  automation: '#22C55E',
   advertising: '#FF6B35',
   analytics: '#4A90D9',
 };
@@ -704,7 +704,7 @@ export default function AIAutomationReportScreen() {
                 <Text style={styles.summaryLabel}>AI Modules</Text>
               </View>
               <View style={styles.summaryItem}>
-                <Text style={[styles.summaryNum, { color: '#00C48C' }]}>{AI_MODULES.filter(m => m.category === 'automation').length}</Text>
+                <Text style={[styles.summaryNum, { color: '#22C55E' }]}>{AI_MODULES.filter(m => m.category === 'automation').length}</Text>
                 <Text style={styles.summaryLabel}>Automation</Text>
               </View>
               <View style={styles.summaryItem}>

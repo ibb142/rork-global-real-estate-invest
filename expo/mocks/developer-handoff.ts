@@ -85,7 +85,7 @@ export const DEVELOPER_HANDOFF_CATEGORIES: IntegrationCategory[] = [
     id: 'payments',
     title: 'Payment Processing',
     icon: 'CreditCard',
-    color: '#10B981',
+    color: '#22C55E',
     items: [
       {
         id: 'pay-1', name: 'Stripe', provider: 'Stripe',
@@ -257,7 +257,7 @@ export function generateHandoffHtmlReport(): string {
     switch (p) { case 'critical': return '#DC2626'; case 'high': return '#F59E0B'; case 'medium': return '#3B82F6'; default: return '#6B7280'; }
   };
   const statusColor = (s: string) => {
-    switch (s) { case 'ready': return '#10B981'; case 'mock_only': return '#F59E0B'; case 'in_progress': return '#3B82F6'; default: return '#6B7280'; }
+    switch (s) { case 'ready': return '#22C55E'; case 'mock_only': return '#F59E0B'; case 'in_progress': return '#3B82F6'; default: return '#6B7280'; }
   };
   let html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>IVXHOLDINGS Developer Guide</title>
 <style>body{font-family:system-ui;background:#0A0A0A;color:#fff;padding:40px}.header{text-align:center;margin-bottom:40px;border-bottom:2px solid #FFD700;padding-bottom:30px}h1{color:#FFD700}.stats{display:flex;gap:16px;margin-bottom:30px;flex-wrap:wrap}.stat{flex:1;min-width:120px;background:#1A1A1A;border:1px solid #2A2A2A;border-radius:12px;padding:16px;text-align:center}.stat-num{font-size:28px;font-weight:700;color:#FFD700}.stat-label{font-size:12px;color:#9A9A9A}.item{background:#1A1A1A;border:1px solid #2A2A2A;border-radius:12px;padding:20px;margin-bottom:12px}.badge{display:inline-block;padding:3px 10px;border-radius:6px;font-size:11px;font-weight:600;color:#fff;margin-right:4px}.env-item{font-family:monospace;font-size:12px;color:#FFD700}</style></head><body>

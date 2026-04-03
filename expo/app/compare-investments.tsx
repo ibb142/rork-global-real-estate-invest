@@ -274,7 +274,7 @@ export default function CompareInvestmentsScreen() {
             <Text style={styles.sectionTitle}>IVXHOLDINGS Exclusive Advantages</Text>
             {[
               { icon: <ShieldCheck size={20} color="#4ECDC4" />, title: 'Asset-Backed', desc: 'Every share is backed by a real, insured property with a first lien' },
-              { icon: <Leaf size={20} color="#00C48C" />, title: 'Inflation Hedge', desc: 'Real estate historically rises with inflation, unlike cash or bonds' },
+              { icon: <Leaf size={20} color="#22C55E" />, title: 'Inflation Hedge', desc: 'Real estate historically rises with inflation, unlike cash or bonds' },
               { icon: <Target size={20} color={Colors.primary} />, title: 'Dual Income', desc: 'Earn from price appreciation AND quarterly rental dividends' },
               { icon: <Clock size={20} color="#45B7D1" />, title: 'Instant Liquidity', desc: 'Sell your shares in seconds, 24/7 — no 3-month escrow wait' },
             ].map((item, i) => (

@@ -27,6 +27,7 @@ import {
   Users,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
+import { formatCurrency as _fmtCurr } from '@/lib/formatters';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 
@@ -212,14 +213,7 @@ export default function MembersScreen() {
     );
   }, [kycMutation, suspendMutation, updateMutation]);
 
-  const formatCurrency = useCallback((amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(amount);
-  }, []);
+  const formatCurrency = useCallback((amount: number) => _fmtCurr(amount), []);
 
   const formatDate = useCallback((dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {

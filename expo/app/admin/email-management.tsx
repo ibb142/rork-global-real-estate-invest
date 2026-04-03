@@ -87,7 +87,7 @@ interface ActivityLogEntry {
 
 const ACCESS_LEVEL_CONFIG: Record<AccessLevel, { label: string; color: string; desc: string }> = {
   read: { label: 'Read Only', color: '#4A90D9', desc: 'View emails only' },
-  send: { label: 'Read & Send', color: '#00C48C', desc: 'View & compose emails' },
+  send: { label: 'Read & Send', color: '#22C55E', desc: 'View & compose emails' },
   manage: { label: 'Full Access', color: '#FFD700', desc: 'Full control, settings, delete' },
 };
 

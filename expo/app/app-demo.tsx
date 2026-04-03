@@ -73,7 +73,7 @@ const DEMO_SLIDES: DemoSlide[] = [
     title: 'Platform Overview',
     subtitle: '340+ features across marketplace, analytics, wallet, AI, security, and admin.',
     highlights: ['Cross-platform', 'AI-powered', '340+ features'],
-    accentColor: '#00C48C',
+    accentColor: '#22C55E',
     Mockup: PlatformMockup,
   },
   {

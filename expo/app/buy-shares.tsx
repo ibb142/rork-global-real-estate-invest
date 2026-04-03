@@ -39,6 +39,8 @@ import {
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { formatCurrencyWithDecimals, formatNumber } from '@/lib/formatters';
+import { useInvestmentGuard } from '@/hooks/useInvestmentGuard';
+import InvestorDisclosure from '@/components/InvestorDisclosure';
 
 import { useWalletBalance } from '@/lib/data-hooks';
 import { useProperty } from '@/lib/data-hooks';
@@ -50,12 +52,12 @@ import * as Clipboard from 'expo-clipboard';
 type PaymentMethod = 'wire' | 'wallet' | 'card';
 
 const WIRE_TRANSFER_DETAILS = {
-  bankName: 'IVXHOLDINGS Trust Bank',
-  routingNumber: '021000021',
-  accountNumber: '9,876,543,210',
+  bankName: '[PENDING CONFIGURATION - Contact admin@ivxholdings.com]',
+  routingNumber: '[Pending configuration]',
+  accountNumber: '[Wire details pending - Real bank account will be configured before launch]',
   accountName: 'IVXHOLDINGS LLC — Escrow',
-  swiftCode: 'IVXHUS33',
-  bankAddress: '200 Park Avenue, New York, NY 10166',
+  swiftCode: '[Pending]',
+  bankAddress: '[Bank address pending configuration]',
   reference: 'IVX-SHARES',
 };
 
@@ -64,6 +66,7 @@ export default function BuySharesScreen() {
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
   const { propertyId } = useLocalSearchParams<{ propertyId: string }>();
+  const { canInvest, checkAndProceed } = useInvestmentGuard();
 
   const { property: supabaseProperty } = useProperty(propertyId || '1');
   const property = supabaseProperty;
@@ -147,16 +150,23 @@ export default function BuySharesScreen() {
       Alert.alert('Not Available', 'This property is not currently open for investment.');
       return;
     }
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setStep('review');
-  }, [shares, property]);
+    checkAndProceed(() => {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      setStep('review');
+    });
+  }, [shares, property, checkAndProceed]);
 
   const handleConfirmPurchase = useCallback(async () => {
+    if (!canInvest) {
+      checkAndProceed(() => {});
+      return;
+    }
     if (!canAfford && paymentMethod === 'wallet') {
       Alert.alert('Insufficient Funds', 'Your wallet balance is not enough. Try bank transfer or card.');
       return;
     }
     if (!property) return;
+
 
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     setIsProcessing(true);
@@ -207,7 +217,7 @@ export default function BuySharesScreen() {
     } finally {
       setIsProcessing(false);
     }
-  }, [canAfford, paymentMethod, property, shares, pricePerShare, subtotal, platformFee, cardFee, totalCost, successAnim, checkScale, queryClient]);
+  }, [canInvest, checkAndProceed, canAfford, paymentMethod, property, shares, pricePerShare, subtotal, platformFee, cardFee, totalCost, successAnim, checkScale, queryClient]);
 
   if (!property) {
     return (
@@ -589,6 +599,8 @@ export default function BuySharesScreen() {
                 </View>
               </>
             )}
+
+            <InvestorDisclosure compact />
 
             <View style={{ height: 140 }} />
           </ScrollView>

@@ -42,15 +42,9 @@ import { Lender, LenderOutreach, OutreachType } from '@/types';
 import { lenders, lenderOutreachHistory, outreachCampaigns, getLenderStats } from '@/mocks/lenders';
 import { discoveredLenders } from '@/mocks/lender-discovery';
 import { properties } from '@/mocks/properties';
+import { formatCurrencyCompact } from '@/lib/formatters';
 
-
-const formatCurrency = (amount: number): string => {
-  if (amount >= 1000000000000) return `${(amount / 1000000000000).toFixed(1)}T`;
-  if (amount >= 1000000000) return `${(amount / 1000000000).toFixed(1)}B`;
-  if (amount >= 1000000) return `${(amount / 1000000).toFixed(1)}M`;
-  if (amount >= 1000) return `${new Intl.NumberFormat('en-US').format(Math.round(amount))}`;
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(amount);
-};
+const formatCurrency = (amount: number): string => formatCurrencyCompact(amount);
 
 const OUTREACH_STATUS_COLORS: Record<string, string> = {
   draft: Colors.textTertiary,

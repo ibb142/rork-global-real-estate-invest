@@ -47,6 +47,7 @@ import {
   Sparkles,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
+import { formatCurrency as _fmtCurr } from '@/lib/formatters';
 import { LandPartnerFormData, DocumentScan, LandPartnerCalculation, CompSearchResult } from '@/types';
 
 const DEAL_TERMS = {
@@ -127,14 +128,7 @@ export default function LandPartnerScreen() {
     };
   }, [formData.estimatedValue]);
 
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(value);
-  };
+  const formatCurrency = (value: number) => _fmtCurr(value);
 
   const pickDocument = async (type: 'deed' | 'id') => {
     try {

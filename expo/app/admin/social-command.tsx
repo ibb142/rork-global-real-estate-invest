@@ -86,7 +86,7 @@ type TabType = 'overview' | 'agents' | 'content' | 'analytics' | 'comments';
 const GOLD = '#FFD700';
 const GOLD_DIM = 'rgba(255,215,0,0.12)';
 const GOLD_DIM2 = 'rgba(255,215,0,0.06)';
-const GREEN = '#00C48C';
+const GREEN = '#22C55E';
 const RED = '#FF4D4D';
 const BLUE = '#3B82F6';
 const SURFACE = '#141414';
@@ -773,10 +773,10 @@ export default function SocialCommandScreen() {
               <View style={styles.generatedActions}>
                 <TouchableOpacity
                   style={styles.copyBtn}
-                  onPress={() => {
-                    if (Platform.OS === 'web') navigator.clipboard.writeText(generatedContent);
-                    else Alert.alert('Copied!', 'Content copied to clipboard');
-                    if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                  onPress={async () => {
+                    try { const { safeSetString } = await import('@/lib/safe-clipboard'); await safeSetString(generatedContent); } catch {}
+                    Alert.alert('Copied!', 'Content copied to clipboard');
+                    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
                   }}
                 >
                   <Text style={styles.copyBtnText}>Copy</Text>

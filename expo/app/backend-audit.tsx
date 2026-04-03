@@ -58,7 +58,7 @@ interface AuditCategory {
 }
 
 const STATUS_COLORS: Record<AuditStatus, string> = {
-  pass: '#10B981',
+  pass: '#22C55E',
   fail: '#EF4444',
   warn: '#F59E0B',
   info: '#6366F1',
@@ -912,8 +912,8 @@ export default function BackendAuditScreen() {
           <>
             <View style={styles.summaryCard}>
               <View style={styles.summaryRow}>
-                <View style={[styles.summaryBox, { backgroundColor: '#10B98115' }]}>
-                  <CheckCircle size={22} color="#10B981" />
+                <View style={[styles.summaryBox, { backgroundColor: '#22C55E15' }]}>
+                  <CheckCircle size={22} color="#22C55E" />
                   <Text style={styles.summaryCount}>{totalPass}</Text>
                   <Text style={styles.summaryLabel}>Passed</Text>
                 </View>
@@ -929,7 +929,7 @@ export default function BackendAuditScreen() {
                 </View>
               </View>
               <View style={styles.progressBarContainer}>
-                <View style={[styles.progressSegment, { flex: totalPass, backgroundColor: '#10B981' }]} />
+                <View style={[styles.progressSegment, { flex: totalPass, backgroundColor: '#22C55E' }]} />
                 <View style={[styles.progressSegment, { flex: totalWarn, backgroundColor: '#F59E0B' }]} />
                 <View style={[styles.progressSegment, { flex: totalFail, backgroundColor: '#EF4444' }]} />
               </View>
@@ -982,7 +982,7 @@ export default function BackendAuditScreen() {
 
             <View style={styles.passSection}>
               <View style={styles.passHeader}>
-                <CheckCircle size={18} color="#10B981" />
+                <CheckCircle size={18} color="#22C55E" />
                 <Text style={styles.passTitle}>Working Correctly ({totalPass})</Text>
               </View>
               {categories.flatMap(c => c.items.filter(i => i.status === 'pass')).map((item, idx) => (
@@ -1019,8 +1019,8 @@ export default function BackendAuditScreen() {
                     <View style={styles.categoryRight}>
                       <View style={styles.categoryBadges}>
                         {catPass > 0 && (
-                          <View style={[styles.catBadge, { backgroundColor: '#10B98120' }]}>
-                            <Text style={[styles.catBadgeText, { color: '#10B981' }]}>{catPass}</Text>
+                          <View style={[styles.catBadge, { backgroundColor: '#22C55E20' }]}>
+                            <Text style={[styles.catBadgeText, { color: '#22C55E' }]}>{catPass}</Text>
                           </View>
                         )}
                         {catWarn > 0 && (
@@ -1055,22 +1055,22 @@ export default function BackendAuditScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0A0E17',
+    backgroundColor: '#000000',
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 14,
-    backgroundColor: '#111827',
+    backgroundColor: '#1A1A1A',
     borderBottomWidth: 1,
-    borderBottomColor: '#1F2937',
+    borderBottomColor: '#2A2A2A',
   },
   backButton: {
     width: 38,
     height: 38,
     borderRadius: 10,
-    backgroundColor: '#1F2937',
+    backgroundColor: '#2A2A2A',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1120,12 +1120,12 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   summaryCard: {
-    backgroundColor: '#111827',
+    backgroundColor: '#1A1A1A',
     borderRadius: 16,
     padding: 20,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#1F2937',
+    borderColor: '#2A2A2A',
   },
   summaryRow: {
     flexDirection: 'row',
@@ -1141,7 +1141,7 @@ const styles = StyleSheet.create({
   summaryCount: {
     fontSize: 28,
     fontWeight: '800' as const,
-    color: '#10B981',
+    color: '#22C55E',
   },
   summaryLabel: {
     fontSize: 12,
@@ -1154,7 +1154,7 @@ const styles = StyleSheet.create({
     borderRadius: 3,
     overflow: 'hidden',
     marginTop: 16,
-    backgroundColor: '#1F2937',
+    backgroundColor: '#2A2A2A',
   },
   progressSegment: {
     height: '100%',
@@ -1270,7 +1270,7 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 20,
     borderWidth: 1,
-    borderColor: '#10B98140',
+    borderColor: '#22C55E40',
   },
   passHeader: {
     flexDirection: 'row',
@@ -1281,19 +1281,19 @@ const styles = StyleSheet.create({
   passTitle: {
     fontSize: 16,
     fontWeight: '700' as const,
-    color: '#10B981',
+    color: '#22C55E',
   },
   passItem: {
     flexDirection: 'row',
     paddingVertical: 6,
     borderTopWidth: 1,
-    borderTopColor: '#10B98120',
+    borderTopColor: '#22C55E20',
     alignItems: 'flex-start',
   },
   passIndex: {
     fontSize: 13,
     fontWeight: '700' as const,
-    color: '#10B981',
+    color: '#22C55E',
     width: 24,
     marginTop: 2,
   },
@@ -1307,7 +1307,7 @@ const styles = StyleSheet.create({
   },
   passMessage: {
     fontSize: 12,
-    color: '#10B981',
+    color: '#22C55E',
     marginTop: 2,
   },
   sectionDividerText: {
@@ -1320,11 +1320,11 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   categoryCard: {
-    backgroundColor: '#111827',
+    backgroundColor: '#1A1A1A',
     borderRadius: 14,
     marginBottom: 10,
     borderWidth: 1,
-    borderColor: '#1F2937',
+    borderColor: '#2A2A2A',
     overflow: 'hidden',
   },
   categoryHeader: {
@@ -1366,12 +1366,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 12,
     borderTopWidth: 1,
-    borderTopColor: '#1F2937',
+    borderTopColor: '#2A2A2A',
   },
   auditItem: {
     paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: '#1F293770',
+    borderBottomColor: '#2A2A2A70',
   },
   auditItemHeader: {
     flexDirection: 'row',
@@ -1398,7 +1398,7 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
   latencyBadge: {
-    backgroundColor: '#1F2937',
+    backgroundColor: '#2A2A2A',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 6,

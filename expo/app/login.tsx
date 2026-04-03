@@ -229,7 +229,29 @@ export default function LoginScreen() {
               <View style={styles.fieldGroup}>
                 <View style={styles.fieldLabelRow}>
                   <Text style={styles.fieldLabel}>Password</Text>
-                  <TouchableOpacity onPress={() => Alert.alert('Reset Password', 'Password reset functionality coming soon.')}>
+                  <TouchableOpacity onPress={async () => {
+                    if (!email.trim()) {
+                      Alert.alert('Enter Email', 'Please enter your email address first, then tap Forgot.');
+                      return;
+                    }
+                    if (!validateEmail(email.trim())) {
+                      Alert.alert('Invalid Email', 'Please enter a valid email address.');
+                      return;
+                    }
+                    try {
+                      const { supabase } = await import('@/lib/supabase');
+                      const { error } = await supabase.auth.resetPasswordForEmail(sanitizeEmail(email), {
+                        redirectTo: 'https://ivxholding.com/reset-password',
+                      });
+                      if (error) {
+                        Alert.alert('Error', error.message);
+                      } else {
+                        Alert.alert('Check Your Email', 'We sent a password reset link to ' + email.trim() + '. Please check your inbox and spam folder.');
+                      }
+                    } catch (e: any) {
+                      Alert.alert('Error', e?.message || 'Could not send reset email. Please try again.');
+                    }
+                  }}>
                     <Text style={styles.forgotLink}>Forgot?</Text>
                   </TouchableOpacity>
                 </View>

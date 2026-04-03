@@ -163,7 +163,11 @@ async function executeDeploy(trigger: AutoDeployLogEntry['trigger']): Promise<Au
   }
 
   entry.durationMs = Date.now() - startTime;
-  await appendDeployLog(entry);
+  if (entry.status === 'failed' && entry.syncedDeals === 0 && entry.filesUploaded.length === 0) {
+    console.log(`[AutoDeploy] Skipping log for empty failed deploy (trigger: ${trigger}, errors: ${entry.errors.join('; ')})`);
+  } else {
+    await appendDeployLog(entry);
+  }
   console.log(`[AutoDeploy] Deploy finished in ${entry.durationMs}ms — status: ${entry.status}`);
   return entry;
 }

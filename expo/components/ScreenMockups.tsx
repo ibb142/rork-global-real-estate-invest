@@ -81,7 +81,7 @@ export function IntroMockup() {
           </View>
           <View style={mockStyles.introMetricDivider} />
           <View style={mockStyles.introMetric}>
-            <Text style={[mockStyles.introMetricVal, { color: '#00C48C' }]}>340+</Text>
+            <Text style={[mockStyles.introMetricVal, { color: '#22C55E' }]}>340+</Text>
             <Text style={mockStyles.introMetricLbl}>Features</Text>
           </View>
           <View style={mockStyles.introMetricDivider} />
@@ -113,7 +113,7 @@ export function OpportunityMockup() {
         </View>
         <MiniRow label="Millionaires via RE" value="90%" color="#FFD700" />
         <MiniRow label="Americans investing" value="15%" color="#FF4D4D" />
-        <MiniRow label="Annual growth rate" value="+8.2%" color="#00C48C" />
+        <MiniRow label="Annual growth rate" value="+8.2%" color="#22C55E" />
         <MiniRow label="Barrier removed" value="Yes" color="#4A90D9" />
       </View>
     </PhoneFrame>
@@ -122,8 +122,8 @@ export function OpportunityMockup() {
 
 export function PlatformMockup() {
   return (
-    <PhoneFrame themeColor="#00C48C">
-      <ScreenHeader title="Platform Overview" color="#00C48C" />
+    <PhoneFrame themeColor="#22C55E">
+      <ScreenHeader title="Platform Overview" color="#22C55E" />
       <View style={mockStyles.padded}>
         <View style={mockStyles.featureGrid}>
           {[
@@ -137,16 +137,16 @@ export function PlatformMockup() {
             <View key={i} style={mockStyles.featureGridItem}>
               <Text style={{ fontSize: 14 }}>{f.icon}</Text>
               <Text style={{ fontSize: 7, color: Colors.text, fontWeight: '600' as const }}>{f.label}</Text>
-              <Text style={{ fontSize: 7, color: '#00C48C' }}>{f.count}</Text>
+              <Text style={{ fontSize: 7, color: '#22C55E' }}>{f.count}</Text>
             </View>
           ))}
         </View>
         <View style={mockStyles.totalFeatBar}>
           <Text style={{ fontSize: 8, color: Colors.textSecondary }}>Total Features</Text>
-          <Text style={{ fontSize: 14, fontWeight: '800' as const, color: '#00C48C' }}>340+</Text>
+          <Text style={{ fontSize: 14, fontWeight: '800' as const, color: '#22C55E' }}>340+</Text>
         </View>
-        <MiniBar pct={85} color="#00C48C" />
-        <MiniRow label="iOS + Android + Web" value="✓" color="#00C48C" />
+        <MiniBar pct={85} color="#22C55E" />
+        <MiniRow label="iOS + Android + Web" value="✓" color="#22C55E" />
         <MiniRow label="SEC Compliant" value="✓" color="#FFD700" />
       </View>
     </PhoneFrame>
@@ -168,7 +168,7 @@ export function OnboardingMockup() {
             <View key={i} style={mockStyles.kycStep}>
               <View style={[
                 mockStyles.kycStepCircle,
-                s.status === 'done' ? { backgroundColor: '#00C48C' } :
+                s.status === 'done' ? { backgroundColor: '#22C55E' } :
                 s.status === 'active' ? { backgroundColor: '#9B59B6' } :
                 { backgroundColor: Colors.backgroundTertiary }
               ]}>
@@ -177,7 +177,7 @@ export function OnboardingMockup() {
                 </Text>
               </View>
               <Text style={[mockStyles.kycStepLabel, s.status === 'active' && { color: '#9B59B6' }]}>{s.label}</Text>
-              {i < 3 && <View style={[mockStyles.kycLine, s.status === 'done' && { backgroundColor: '#00C48C' }]} />}
+              {i < 3 && <View style={[mockStyles.kycLine, s.status === 'done' && { backgroundColor: '#22C55E' }]} />}
             </View>
           ))}
         </View>
@@ -220,7 +220,7 @@ export function MarketplaceMockup() {
               <Text style={{ fontSize: 7, color: Colors.textTertiary }}>{p.loc}</Text>
               <View style={{ flexDirection: 'row' as const, justifyContent: 'space-between' as const }}>
                 <Text style={{ fontSize: 8, fontWeight: '700' as const, color: '#FFD700' }}>{p.price}</Text>
-                <Text style={{ fontSize: 8, fontWeight: '600' as const, color: '#00C48C' }}>{p.roi}</Text>
+                <Text style={{ fontSize: 8, fontWeight: '600' as const, color: '#22C55E' }}>{p.roi}</Text>
               </View>
               <MiniBar pct={p.pct} color="#FF6B6B" />
             </View>
@@ -238,11 +238,11 @@ export function TradingMockup() {
       <View style={mockStyles.padded}>
         <View style={mockStyles.tradeHeader}>
           <Text style={{ fontSize: 12, fontWeight: '800' as const, color: Colors.text }}>Sunset Tower</Text>
-          <Text style={{ fontSize: 10, fontWeight: '700' as const, color: '#00C48C' }}>$24.50 / share</Text>
+          <Text style={{ fontSize: 10, fontWeight: '700' as const, color: '#22C55E' }}>$24.50 / share</Text>
         </View>
         <View style={mockStyles.miniChartLine}>
           {[40, 45, 42, 50, 55, 48, 60, 65, 58, 70, 72, 78].map((h, i) => (
-            <View key={i} style={[mockStyles.chartBarItem, { height: h * 0.5, backgroundColor: '#00C48C' + (i > 8 ? 'FF' : '60') }]} />
+            <View key={i} style={[mockStyles.chartBarItem, { height: h * 0.5, backgroundColor: '#22C55E' + (i > 8 ? 'FF' : '60') }]} />
           ))}
         </View>
         <View style={mockStyles.tradeTypes}>
@@ -261,7 +261,7 @@ export function TradingMockup() {
           <Text style={{ fontSize: 14, fontWeight: '800' as const, color: Colors.text }}>$500.00</Text>
           <Text style={{ fontSize: 7, color: Colors.textTertiary }}>≈ 20.4 shares</Text>
         </View>
-        <MiniBtn label="Buy Shares" color="#00C48C" filled />
+        <MiniBtn label="Buy Shares" color="#22C55E" filled />
       </View>
     </PhoneFrame>
   );
@@ -275,19 +275,19 @@ export function PortfolioMockup() {
         <View style={mockStyles.portfolioTotal}>
           <Text style={{ fontSize: 8, color: Colors.textTertiary }}>TOTAL VALUE</Text>
           <Text style={{ fontSize: 18, fontWeight: '900' as const, color: Colors.text }}>$47,832</Text>
-          <Text style={{ fontSize: 9, fontWeight: '600' as const, color: '#00C48C' }}>+$3,241 (7.2%) ↑</Text>
+          <Text style={{ fontSize: 9, fontWeight: '600' as const, color: '#22C55E' }}>+$3,241 (7.2%) ↑</Text>
         </View>
         <View style={mockStyles.donutChart}>
           <View style={[mockStyles.donutSegment, { backgroundColor: '#FFD700', transform: [{ rotate: '0deg' }] }]} />
           <View style={[mockStyles.donutSegment, { backgroundColor: '#4A90D9', transform: [{ rotate: '120deg' }] }]} />
-          <View style={[mockStyles.donutSegment, { backgroundColor: '#00C48C', transform: [{ rotate: '240deg' }] }]} />
+          <View style={[mockStyles.donutSegment, { backgroundColor: '#22C55E', transform: [{ rotate: '240deg' }] }]} />
           <View style={mockStyles.donutCenter}>
             <Text style={{ fontSize: 7, color: Colors.textTertiary }}>3 Assets</Text>
           </View>
         </View>
         <MiniRow label="Sunset Tower" value="+12.8%" color="#FFD700" />
         <MiniRow label="Harbor View" value="+9.4%" color="#4A90D9" />
-        <MiniRow label="Palm Gardens" value="+5.1%" color="#00C48C" />
+        <MiniRow label="Palm Gardens" value="+5.1%" color="#22C55E" />
       </View>
     </PhoneFrame>
   );
@@ -315,7 +315,7 @@ export function WalletMockup() {
             </View>
           ))}
         </View>
-        <MiniRow label="Deposit" value="+ $5,000" color="#00C48C" />
+        <MiniRow label="Deposit" value="+ $5,000" color="#22C55E" />
         <MiniRow label="Investment" value="- $2,500" color="#FF4D4D" />
         <MiniRow label="Dividend" value="+ $180" color="#FFD700" />
         <MiniBtn label="Add Funds" color="#2ECC71" filled />
@@ -346,7 +346,7 @@ export function TokenomicsMockup() {
         </View>
         <MiniRow label="Governance Votes" value="Active" color="#F39C12" />
         <MiniRow label="Tier Status" value="Gold" color="#FFD700" />
-        <MiniRow label="Referral Bonus" value="2.5x" color="#00C48C" />
+        <MiniRow label="Referral Bonus" value="2.5x" color="#22C55E" />
       </View>
     </PhoneFrame>
   );
@@ -400,7 +400,7 @@ export function AdminMockup() {
         <View style={mockStyles.adminStats}>
           {[
             { label: 'Users', value: '12.4K', color: '#4A90D9' },
-            { label: 'Revenue', value: '$2.1M', color: '#00C48C' },
+            { label: 'Revenue', value: '$2.1M', color: '#22C55E' },
             { label: 'Trades', value: '8,432', color: '#FFD700' },
           ].map((s, i) => (
             <View key={i} style={mockStyles.adminStatItem}>
@@ -424,7 +424,7 @@ export function AdminMockup() {
             </View>
           ))}
         </View>
-        <MiniRow label="Active Sessions" value="1,247" color="#00C48C" />
+        <MiniRow label="Active Sessions" value="1,247" color="#22C55E" />
         <MiniRow label="Pending KYC" value="38" color="#FFB800" />
       </View>
     </PhoneFrame>
@@ -437,17 +437,17 @@ export function SecurityMockup() {
       <ScreenHeader title="Security Center" color="#607D8B" />
       <View style={mockStyles.padded}>
         <View style={mockStyles.securityScore}>
-          <View style={[mockStyles.shieldIcon, { borderColor: '#00C48C' }]}>
+          <View style={[mockStyles.shieldIcon, { borderColor: '#22C55E' }]}>
             <Text style={{ fontSize: 14 }}>🛡️</Text>
           </View>
-          <Text style={{ fontSize: 10, fontWeight: '700' as const, color: '#00C48C' }}>Security Score: 98/100</Text>
+          <Text style={{ fontSize: 10, fontWeight: '700' as const, color: '#22C55E' }}>Security Score: 98/100</Text>
         </View>
         {[
-          { label: 'End-to-End Encryption', status: 'Active', color: '#00C48C' },
-          { label: 'Two-Factor Auth', status: 'Enabled', color: '#00C48C' },
+          { label: 'End-to-End Encryption', status: 'Active', color: '#22C55E' },
+          { label: 'Two-Factor Auth', status: 'Enabled', color: '#22C55E' },
           { label: 'SEC Compliance', status: 'Verified', color: '#FFD700' },
           { label: 'GDPR Ready', status: 'Compliant', color: '#4A90D9' },
-          { label: 'Threat Monitoring', status: '24/7', color: '#00C48C' },
+          { label: 'Threat Monitoring', status: '24/7', color: '#22C55E' },
         ].map((s, i) => (
           <View key={i} style={mockStyles.securityItem}>
             <View style={[mockStyles.securityDot, { backgroundColor: s.color }]} />
@@ -478,7 +478,7 @@ export function GrowthMockup() {
         </View>
         <MiniRow label="Tier 1 Referrals" value="18" color="#00BCD4" />
         <MiniRow label="Tier 2 Referrals" value="6" color="#4A90D9" />
-        <MiniRow label="Influencer Status" value="Active" color="#00C48C" />
+        <MiniRow label="Influencer Status" value="Active" color="#22C55E" />
       </View>
     </PhoneFrame>
   );
@@ -491,7 +491,7 @@ export function MetricsMockup() {
       <View style={mockStyles.padded}>
         <View style={mockStyles.metricsGrid}>
           {[
-            { label: 'User Growth', value: '+32%', color: '#00C48C' },
+            { label: 'User Growth', value: '+32%', color: '#22C55E' },
             { label: 'Txn Volume', value: '$4.2M', color: '#FFD700' },
             { label: 'Avg Return', value: '9.8%', color: '#4A90D9' },
             { label: 'NPS Score', value: '72', color: '#FF5722' },
@@ -1092,7 +1092,7 @@ const mockStyles = StyleSheet.create({
     borderWidth: 2,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#00C48C' + '10',
+    backgroundColor: '#22C55E' + '10',
   },
   securityItem: {
     flexDirection: 'row',

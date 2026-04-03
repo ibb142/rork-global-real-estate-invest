@@ -69,7 +69,7 @@ const SEVERITY_COLORS: Record<string, { bg: string; text: string; border: string
   critical: { bg: '#FF4D4D15', text: '#FF4D4D', border: '#FF4D4D40' },
   high: { bg: '#FFB80015', text: '#FFB800', border: '#FFB80040' },
   medium: { bg: '#4A90D915', text: '#4A90D9', border: '#4A90D940' },
-  info: { bg: '#00C48C15', text: '#00C48C', border: '#00C48C40' },
+  info: { bg: '#22C55E15', text: '#22C55E', border: '#22C55E40' },
 };
 
 const COUNTRY_FLAGS: Record<string, string> = {
@@ -86,7 +86,7 @@ function formatDuration(sec: number): string {
   return s > 0 ? `${m}m ${s}s` : `${m}m`;
 }
 
-function PulseIndicator({ active, color = '#00C48C' }: { active: boolean; color?: string }) {
+function PulseIndicator({ active, color = '#22C55E' }: { active: boolean; color?: string }) {
   const pulse = useRef(new Animated.Value(1)).current;
   useEffect(() => {
     if (active) {
@@ -256,8 +256,8 @@ export default function VisitorIntelligenceScreen() {
         <View style={s.diagnosticGrid}>
           <View style={s.diagnosticRow}>
             <Text style={s.diagnosticLabel}>Database</Text>
-            <View style={[s.diagnosticBadge, { backgroundColor: '#00C48C20' }]}>
-              <Text style={[s.diagnosticBadgeText, { color: '#00C48C' }]}>Supabase Connected</Text>
+            <View style={[s.diagnosticBadge, { backgroundColor: '#22C55E20' }]}>
+              <Text style={[s.diagnosticBadgeText, { color: '#22C55E' }]}>Supabase Connected</Text>
             </View>
           </View>
           <View style={s.diagnosticRow}>
@@ -321,9 +321,9 @@ export default function VisitorIntelligenceScreen() {
             <Text style={s.kpiValue}>{summary.warmLeads}</Text>
             <Text style={s.kpiLabel}>Warm Leads</Text>
           </View>
-          <View style={[s.kpiCard, { borderLeftColor: '#00C48C', borderLeftWidth: 3 }]}>
+          <View style={[s.kpiCard, { borderLeftColor: '#22C55E', borderLeftWidth: 3 }]}>
             <View style={s.kpiIconWrap}>
-              <TrendingUp size={16} color="#00C48C" />
+              <TrendingUp size={16} color="#22C55E" />
             </View>
             <Text style={s.kpiValue}>{summary.conversionRate}%</Text>
             <Text style={s.kpiLabel}>Conversion</Text>
@@ -341,7 +341,7 @@ export default function VisitorIntelligenceScreen() {
                 s.engagementBarFill,
                 {
                   width: `${Math.min(summary.avgEngagement, 100)}%` as any,
-                  backgroundColor: summary.avgEngagement >= 60 ? '#00C48C' : summary.avgEngagement >= 30 ? '#FFB800' : '#FF4D4D',
+                  backgroundColor: summary.avgEngagement >= 60 ? '#22C55E' : summary.avgEngagement >= 30 ? '#FFB800' : '#FF4D4D',
                 },
               ]} />
             </View>
@@ -349,7 +349,7 @@ export default function VisitorIntelligenceScreen() {
           </View>
           <View style={s.engagementBreakdown}>
             <View style={s.engagementItem}>
-              <View style={[s.engagementDot, { backgroundColor: '#00C48C' }]} />
+              <View style={[s.engagementDot, { backgroundColor: '#22C55E' }]} />
               <Text style={s.engagementItemText}>Engaged: {summary.engagedVisitors}</Text>
             </View>
             <View style={s.engagementItem}>
@@ -419,7 +419,7 @@ export default function VisitorIntelligenceScreen() {
                 </View>
                 <View style={s.countryEngBadge}>
                   <Text style={[s.countryEngText, {
-                    color: c.avgEngagement >= 60 ? '#00C48C' : c.avgEngagement >= 30 ? '#FFB800' : '#9A9A9A',
+                    color: c.avgEngagement >= 60 ? '#22C55E' : c.avgEngagement >= 30 ? '#FFB800' : '#9A9A9A',
                   }]}>{c.avgEngagement}</Text>
                   <Text style={s.countryEngLabel}>score</Text>
                 </View>
@@ -580,7 +580,7 @@ export default function VisitorIntelligenceScreen() {
               <View style={s.sourceConvBarWrap}>
                 <View style={[s.sourceConvBarFill, {
                   width: `${Math.min(src.conversionRate * 5, 100)}%` as any,
-                  backgroundColor: src.conversionRate > 5 ? '#00C48C' : src.conversionRate > 2 ? '#FFB800' : '#4A90D9',
+                  backgroundColor: src.conversionRate > 5 ? '#22C55E' : src.conversionRate > 2 ? '#FFB800' : '#4A90D9',
                 }]} />
               </View>
               <Text style={s.sourceConvRate}>{src.conversionRate}%</Text>
@@ -595,7 +595,7 @@ export default function VisitorIntelligenceScreen() {
             <Text style={s.patternKpiLabel}>Peak Hour</Text>
           </View>
           <View style={s.patternKpi}>
-            <Globe size={18} color="#00C48C" />
+            <Globe size={18} color="#22C55E" />
             <Text style={s.patternKpiValue}>{patterns.peakDay?.slice(0, 3)}</Text>
             <Text style={s.patternKpiLabel}>Peak Day</Text>
           </View>
@@ -622,7 +622,7 @@ export default function VisitorIntelligenceScreen() {
       <View style={s.tabContent}>
         <View style={s.alertSummary}>
           <View style={s.alertSummaryLeft}>
-            <PulseIndicator active={activeVisitors > 0} color={activeVisitors > 0 ? '#00C48C' : '#555'} />
+            <PulseIndicator active={activeVisitors > 0} color={activeVisitors > 0 ? '#22C55E' : '#555'} />
             <Text style={s.alertSummaryText}>
               {activeVisitors > 0 ? `${activeVisitors} active now` : 'No active visitors'}
             </Text>
@@ -817,9 +817,9 @@ const s = StyleSheet.create({
   },
   liveText: { flex: 1, fontSize: 13, fontWeight: '600' as const, color: Colors.text },
   liveBadge: {
-    backgroundColor: '#00C48C20', borderRadius: 4, paddingHorizontal: 8, paddingVertical: 2,
+    backgroundColor: '#22C55E20', borderRadius: 4, paddingHorizontal: 8, paddingVertical: 2,
   },
-  liveBadgeText: { fontSize: 10, fontWeight: '800' as const, color: '#00C48C', letterSpacing: 1 },
+  liveBadgeText: { fontSize: 10, fontWeight: '800' as const, color: '#22C55E', letterSpacing: 1 },
 
   kpiGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   kpiCard: {
@@ -875,8 +875,8 @@ const s = StyleSheet.create({
   sourceInfo: { flex: 1 },
   sourceName: { fontSize: 13, fontWeight: '600' as const, color: Colors.text },
   sourceVisits: { fontSize: 11, color: Colors.textSecondary },
-  sourceConvBadge: { backgroundColor: '#00C48C15', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
-  sourceConvText: { fontSize: 11, fontWeight: '700' as const, color: '#00C48C' },
+  sourceConvBadge: { backgroundColor: '#22C55E15', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
+  sourceConvText: { fontSize: 11, fontWeight: '700' as const, color: '#22C55E' },
 
   countryRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8,
@@ -887,7 +887,7 @@ const s = StyleSheet.create({
   countryName: { fontSize: 13, fontWeight: '600' as const, color: Colors.text },
   countryStats: { flexDirection: 'row', gap: 6 },
   countryStatText: { fontSize: 11, color: Colors.textSecondary },
-  countryConvText: { fontSize: 11, color: '#00C48C' },
+  countryConvText: { fontSize: 11, color: '#22C55E' },
   countryEngBadge: { alignItems: 'center' },
   countryEngText: { fontSize: 16, fontWeight: '800' as const },
   countryEngLabel: { fontSize: 9, color: Colors.textTertiary },

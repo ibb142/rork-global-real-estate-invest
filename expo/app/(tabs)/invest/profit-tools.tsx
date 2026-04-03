@@ -54,8 +54,8 @@ interface ProfitTool {
 const TOOLS: ProfitTool[] = [
   {
     id: 1,
-    iconBg: '#00C48C20',
-    accentColor: '#00C48C',
+    iconBg: '#22C55E20',
+    accentColor: '#22C55E',
     title: 'Private Mortgage Lending',
     subtitle: 'Lend directly against real estate with 1st lien protection',
     stats: [
@@ -192,8 +192,8 @@ const TOOLS: ProfitTool[] = [
   },
   {
     id: 7,
-    iconBg: '#00C48C20',
-    accentColor: '#00C48C',
+    iconBg: '#22C55E20',
+    accentColor: '#22C55E',
     title: 'Auto-Reinvestment Engine',
     subtitle: 'Compound your returns automatically — set and forget',
     stats: [
@@ -285,20 +285,20 @@ const TOOLS: ProfitTool[] = [
 ];
 
 const TOOL_ICONS: Record<number, React.ReactNode> = {
-  1: <Building2 size={26} color="#00C48C" />,
+  1: <Building2 size={26} color="#22C55E" />,
   2: <Layers size={26} color="#FFD700" />,
   3: <DollarSign size={26} color="#4A90D9" />,
   4: <Handshake size={26} color="#FFD700" />,
   5: <Home size={26} color="#4ECDC4" />,
   6: <Zap size={26} color="#FF6B35" />,
-  7: <RefreshCw size={26} color="#00C48C" />,
+  7: <RefreshCw size={26} color="#22C55E" />,
   8: <Copy size={26} color="#A78BFA" />,
   9: <TrendingUp size={26} color="#FFD700" />,
   10: <Brain size={26} color="#F59E0B" />,
 };
 
 const AUDIENCE_COLORS = {
-  lender: { bg: '#00C48C20', text: '#00C48C', label: 'Private Lender' },
+  lender: { bg: '#22C55E20', text: '#22C55E', label: 'Private Lender' },
   investor: { bg: '#FFD70020', text: '#FFD700', label: 'Regular Investor' },
   both: { bg: '#4A90D920', text: '#4A90D9', label: 'Lender & Investor' },
 };

@@ -8,6 +8,7 @@ export interface PublishedDealCardModel {
   addressFull: string;
   descriptionShort: string;
   totalInvestment: number;
+  propertyValue: number;
   expectedROI: number;
   timeline: string;
   partnersCount: number;
@@ -25,6 +26,7 @@ export interface PublishedDealCardModel {
   country: string;
   trustVerified: boolean;
   trustIndicators: string[];
+  rawTrustInfo?: DealTrustInfo;
 }
 
 export const CANONICAL_MIN_INVESTMENT = 50;
@@ -160,7 +162,22 @@ function extractTimeline(deal: {
       return `${trustInfo.timelineMax} ${unit}`;
     }
   }
-  return '14\u201324 mo';
+  return '';
+}
+
+function extractRawTrustInfo(deal: Record<string, unknown>): DealTrustInfo | undefined {
+  if (deal.trustInfo && typeof deal.trustInfo === 'object') {
+    return deal.trustInfo as DealTrustInfo;
+  }
+  if (deal.trust_info) {
+    if (typeof deal.trust_info === 'string') {
+      try { return JSON.parse(deal.trust_info) as DealTrustInfo; } catch { return undefined; }
+    }
+    if (typeof deal.trust_info === 'object') {
+      return deal.trust_info as unknown as DealTrustInfo;
+    }
+  }
+  return undefined;
 }
 
 function extractBadges(deal: Record<string, unknown>): string[] {
@@ -231,6 +248,7 @@ export function mapDealToCardModel(deal: Record<string, unknown>): PublishedDeal
     addressFull: str(deal.propertyAddress) || str(deal.property_address),
     descriptionShort: descShort,
     totalInvestment: Number(deal.totalInvestment || deal.total_investment || 0),
+    propertyValue: Number(deal.propertyValue || deal.property_value || deal.estimated_value || 0),
     expectedROI: Number(deal.expectedROI || deal.expected_roi || 0),
     timeline: extractTimeline(deal as any),
     partnersCount: getPartnersCount(deal.partners),
@@ -248,6 +266,7 @@ export function mapDealToCardModel(deal: Record<string, unknown>): PublishedDeal
     country: str(deal.country),
     trustVerified: extractTrustIndicators(deal).length >= 3,
     trustIndicators: extractTrustIndicators(deal),
+    rawTrustInfo: extractRawTrustInfo(deal),
   };
 }
 
@@ -279,7 +298,7 @@ export function mapParsedDealToCardModel(deal: ParsedJVDeal): PublishedDealCardM
 export function generateLandingDealHtml(card: PublishedDealCardModel): string {
   const photoHtml = card.photos.length > 0
     ? card.photos.map(p => `<img src="${escapeHtml(p)}" alt="${escapeHtml(card.title)}" loading="lazy" />`).join('')
-    : `<div class="live-deal-no-photo"><span>🏗️</span><span>Photos coming soon</span></div>`;
+    : `<div class="live-deal-no-photo"><span>\u{1F3D7}\u{FE0F}</span><span>Photos coming soon</span></div>`;
 
   const hasGallery = card.photos.length > 1;
   const galleryDotsHtml = hasGallery
@@ -292,16 +311,16 @@ export function generateLandingDealHtml(card: PublishedDealCardModel): string {
 
   const verifiedCount = card.trustIndicators.length;
   const verifiedBadge = verifiedCount >= 3
-    ? `<div class="live-deal-verified-badge"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#00C48C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg> VERIFIED</div>`
+    ? `<div class="live-deal-verified-badge"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#22C55E" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg> VERIFIED</div>`
     : '';
 
   const trustBadgesHtml = card.trustIndicators.map(ind => {
     const config: Record<string, { label: string; icon: string }> = {
-      title_verified: { label: 'Title Verified', icon: '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#00C48C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>' },
+      title_verified: { label: 'Title Verified', icon: '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#22C55E" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>' },
       insured: { label: 'Insured', icon: '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#4A90D9" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>' },
       escrow: { label: 'Escrow', icon: '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#FFD700" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>' },
-      permitted: { label: 'Permitted', icon: '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#00C48C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>' },
-      audited: { label: 'Audited', icon: '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#00C48C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>' },
+      permitted: { label: 'Permitted', icon: '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#22C55E" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>' },
+      audited: { label: 'Audited', icon: '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#22C55E" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>' },
     };
     const c = config[ind];
     if (!c) return '';
@@ -346,8 +365,8 @@ export function generateLandingDealHtml(card: PublishedDealCardModel): string {
           ${trustBadgesHtml}
         </div>
         <div class="live-deal-actions">
-          <button class="live-deal-details-btn" onclick="openInvestModal('${escapeHtml(card.id)}','${escapeJs(card.title)}',${card.totalInvestment},${card.expectedROI},'${escapeJs(card.addressShort)}')">Details</button>
-          <button class="live-deal-invest-btn" onclick="openInvestModal('${escapeHtml(card.id)}','${escapeJs(card.title)}',${card.totalInvestment},${card.expectedROI},'${escapeJs(card.addressShort)}')">Invest Now</button>
+          <button class="live-deal-details-btn" onclick="openInvestModal('${escapeHtml(card.id)}','${escapeJs(card.title)}',${card.totalInvestment},${card.expectedROI},'${escapeJs(card.addressShort)}',${card.propertyValue || 0})">Details</button>
+          <button class="live-deal-invest-btn" onclick="openInvestModal('${escapeHtml(card.id)}','${escapeJs(card.title)}',${card.totalInvestment},${card.expectedROI},'${escapeJs(card.addressShort)}',${card.propertyValue || 0})">Invest Now</button>
         </div>
         <div class="live-deal-min-invest">Invest from <strong>${card.minInvestment}</strong></div>
       </div>
@@ -374,20 +393,22 @@ function formatCompact(n: number): string {
 }
 
 export function generateLandingInvestModalJs(supabaseUrl: string, supabaseAnonKey: string): string {
+  const d = '$';
   return `
 <script>
 var _activeDeal = null;
 var _supabaseUrl = '${supabaseUrl}';
 var _supabaseAnonKey = '${supabaseAnonKey}';
 
-function openInvestModal(dealId, dealTitle, totalInvestment, expectedRoi, address) {
-  console.log('[Landing] openInvestModal called:', dealId, dealTitle, totalInvestment, expectedRoi, address);
+function openInvestModal(dealId, dealTitle, totalInvestment, expectedRoi, address, propertyValue) {
+  console.log('[Landing] openInvestModal called:', dealId, dealTitle, totalInvestment, expectedRoi, address, 'propertyValue:', propertyValue);
   _activeDeal = {
     deal_id: dealId,
     deal_name: dealTitle,
     total_investment: totalInvestment,
     expected_roi: expectedRoi,
-    address: address
+    address: address,
+    property_value: propertyValue || 0
   };
   var modal = document.getElementById('ivx-invest-modal');
   if (!modal) { console.error('[Landing] invest modal element not found'); return; }
@@ -396,35 +417,7 @@ function openInvestModal(dealId, dealTitle, totalInvestment, expectedRoi, addres
   var addrEl = modal.querySelector('.invest-modal-address');
   if (addrEl) addrEl.textContent = address || '';
   var investEl = modal.querySelector('.invest-modal-total');
-  if (investEl) investEl.textContent = '
-  return {
-    id: card.id,
-    title: card.title,
-    developer_name: card.developerName,
-    address_short: card.addressShort,
-    address_full: card.addressFull,
-    description_short: card.descriptionShort,
-    total_investment: card.totalInvestment,
-    expected_roi: card.expectedROI,
-    timeline: card.timeline,
-    partners_count: card.partnersCount,
-    badges: card.badges,
-    min_investment: card.minInvestment,
-    photos: card.photos,
-    deal_type: card.dealType,
-    status: card.status,
-    exit_strategy: card.exitStrategy,
-    distribution_frequency: card.distributionFrequency,
-    published_at: card.publishedAt,
-    display_order: card.displayOrder,
-    city: card.city,
-    state: card.state,
-    country: card.country,
-    trust_verified: card.trustVerified,
-    trust_indicators: card.trustIndicators,
-  };
-}
- + Number(totalInvestment || 0).toLocaleString();
+  if (investEl) investEl.textContent = '${d}' + Number(totalInvestment || 0).toLocaleString();
   var roiEl = modal.querySelector('.invest-modal-roi');
   if (roiEl) roiEl.textContent = (expectedRoi || 0) + '% ROI';
   updateOwnershipCalc();
@@ -441,72 +434,16 @@ function updateOwnershipCalc() {
   var amountInput = document.getElementById('invest-amount-input');
   if (!amountInput || !_activeDeal) return;
   var amount = parseFloat(amountInput.value.replace(/[^0-9.]/g, '')) || 0;
-  var total = _activeDeal.total_investment || 1;
-  var ownership = (amount / total) * 100;
+  var propVal = _activeDeal.property_value || _activeDeal.total_investment || 1;
+  var ownership = (amount / propVal) * 100;
   var roi = _activeDeal.expected_roi || 0;
   var profit = amount * (roi / 100);
   var ownerEl = document.getElementById('invest-ownership');
   if (ownerEl) ownerEl.textContent = ownership.toFixed(2) + '%';
   var profitEl = document.getElementById('invest-profit');
-  if (profitEl) profitEl.textContent = '
-  return {
-    id: card.id,
-    title: card.title,
-    developer_name: card.developerName,
-    address_short: card.addressShort,
-    address_full: card.addressFull,
-    description_short: card.descriptionShort,
-    total_investment: card.totalInvestment,
-    expected_roi: card.expectedROI,
-    timeline: card.timeline,
-    partners_count: card.partnersCount,
-    badges: card.badges,
-    min_investment: card.minInvestment,
-    photos: card.photos,
-    deal_type: card.dealType,
-    status: card.status,
-    exit_strategy: card.exitStrategy,
-    distribution_frequency: card.distributionFrequency,
-    published_at: card.publishedAt,
-    display_order: card.displayOrder,
-    city: card.city,
-    state: card.state,
-    country: card.country,
-    trust_verified: card.trustVerified,
-    trust_indicators: card.trustIndicators,
-  };
-}
- + profit.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  if (profitEl) profitEl.textContent = '${d}' + profit.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
   var payoutEl = document.getElementById('invest-payout');
-  if (payoutEl) payoutEl.textContent = '
-  return {
-    id: card.id,
-    title: card.title,
-    developer_name: card.developerName,
-    address_short: card.addressShort,
-    address_full: card.addressFull,
-    description_short: card.descriptionShort,
-    total_investment: card.totalInvestment,
-    expected_roi: card.expectedROI,
-    timeline: card.timeline,
-    partners_count: card.partnersCount,
-    badges: card.badges,
-    min_investment: card.minInvestment,
-    photos: card.photos,
-    deal_type: card.dealType,
-    status: card.status,
-    exit_strategy: card.exitStrategy,
-    distribution_frequency: card.distributionFrequency,
-    published_at: card.publishedAt,
-    display_order: card.displayOrder,
-    city: card.city,
-    state: card.state,
-    country: card.country,
-    trust_verified: card.trustVerified,
-    trust_indicators: card.trustIndicators,
-  };
-}
- + (amount + profit).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  if (payoutEl) payoutEl.textContent = '${d}' + (amount + profit).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
 }
 
 function submitLandingInvestment() {
@@ -522,8 +459,8 @@ function submitLandingInvestment() {
     alert('Please fill in your name, email, and investment amount.');
     return;
   }
-  var total = _activeDeal.total_investment || 1;
-  var ownership = (amount / total) * 100;
+  var propVal = _activeDeal.property_value || _activeDeal.total_investment || 1;
+  var ownership = (amount / propVal) * 100;
   var payload = {
     source: 'landing_page',
     deal_id: _activeDeal.deal_id,
@@ -573,38 +510,10 @@ function showInvestSuccess(payload) {
   if (content) {
     content.innerHTML = '<div style="text-align:center;padding:40px 20px">' +
       '<div style="font-size:48px;margin-bottom:16px">\u2705</div>' +
-      '<h3 style="color:#00C48C;margin-bottom:8px">Investment Submitted</h3>' +
-      '<p style="color:#999;margin-bottom:16px">Your investment of 
-  return {
-    id: card.id,
-    title: card.title,
-    developer_name: card.developerName,
-    address_short: card.addressShort,
-    address_full: card.addressFull,
-    description_short: card.descriptionShort,
-    total_investment: card.totalInvestment,
-    expected_roi: card.expectedROI,
-    timeline: card.timeline,
-    partners_count: card.partnersCount,
-    badges: card.badges,
-    min_investment: card.minInvestment,
-    photos: card.photos,
-    deal_type: card.dealType,
-    status: card.status,
-    exit_strategy: card.exitStrategy,
-    distribution_frequency: card.distributionFrequency,
-    published_at: card.publishedAt,
-    display_order: card.displayOrder,
-    city: card.city,
-    state: card.state,
-    country: card.country,
-    trust_verified: card.trustVerified,
-    trust_indicators: card.trustIndicators,
-  };
-}
- + payload.investment_amount.toLocaleString() + ' in ' + (payload.deal_name || 'this deal') + ' has been submitted for review.</p>' +
+      '<h3 style="color:#22C55E;margin-bottom:8px">Investment Submitted</h3>' +
+      '<p style="color:#999;margin-bottom:16px">Your investment of ${d}' + payload.investment_amount.toLocaleString() + ' in ' + (payload.deal_name || 'this deal') + ' has been submitted for review.</p>' +
       '<p style="color:#666;font-size:13px">We will contact you at ' + payload.email + ' to finalize your investment.</p>' +
-      '<button onclick="closeInvestModal()" style="margin-top:24px;padding:12px 32px;background:#00C48C;color:#000;border:none;border-radius:12px;font-weight:700;cursor:pointer">Done</button>' +
+      '<button onclick="closeInvestModal()" style="margin-top:24px;padding:12px 32px;background:#22C55E;color:#000;border:none;border-radius:12px;font-weight:700;cursor:pointer">Done</button>' +
       '</div>';
   }
 }
@@ -668,6 +577,7 @@ export function generateCanonicalDealJson(card: PublishedDealCardModel): Record<
     address_full: card.addressFull,
     description_short: card.descriptionShort,
     total_investment: card.totalInvestment,
+    property_value: card.propertyValue || 0,
     expected_roi: card.expectedROI,
     timeline: card.timeline,
     partners_count: card.partnersCount,

@@ -82,13 +82,13 @@ interface SystemMetric {
 }
 
 const MODULE_ICONS: Record<string, React.ReactNode> = {
-  database: <Database size={18} color="#00C48C" />,
+  database: <Database size={18} color="#22C55E" />,
   auth: <Lock size={18} color="#4A90D9" />,
   transactions: <CreditCard size={18} color="#FFD700" />,
   properties: <Building2 size={18} color="#E879F9" />,
   notifications: <Bell size={18} color="#FF9F43" />,
   analytics: <BarChart3 size={18} color="#00D2FF" />,
-  wallet: <Wallet size={18} color="#00C48C" />,
+  wallet: <Wallet size={18} color="#22C55E" />,
   kyc: <UserCheck size={18} color="#4A90D9" />,
   email: <Mail size={18} color="#FF6B6B" />,
   referrals: <Users size={18} color="#A78BFA" />,
@@ -97,7 +97,7 @@ const MODULE_ICONS: Record<string, React.ReactNode> = {
 };
 
 const STATUS_CONFIG = {
-  healthy: { color: '#00C48C', bg: 'rgba(0,196,140,0.12)', label: 'Healthy' },
+  healthy: { color: '#22C55E', bg: 'rgba(0,196,140,0.12)', label: 'Healthy' },
   degraded: { color: '#FFB800', bg: 'rgba(255,184,0,0.12)', label: 'Degraded' },
   critical: { color: '#FF4D4D', bg: 'rgba(255,77,77,0.12)', label: 'Critical' },
   offline: { color: '#6A6A6A', bg: 'rgba(106,106,106,0.12)', label: 'Offline' },
@@ -395,7 +395,7 @@ export default function AutoRepairScreen() {
         {scanSummary && scanStatus === 'complete' && (
           <View style={styles.summaryRow}>
             <View style={styles.summaryItem}>
-              <Text style={[styles.summaryValue, { color: '#00C48C' }]}>{scanSummary.healthy}</Text>
+              <Text style={[styles.summaryValue, { color: '#22C55E' }]}>{scanSummary.healthy}</Text>
               <Text style={styles.summaryLabel}>Healthy</Text>
             </View>
             <View style={styles.summaryDivider} />
@@ -455,7 +455,7 @@ export default function AutoRepairScreen() {
           {metrics.map((metric, idx) => {
             const metricColor =
               metric.status === 'critical' ? '#FF4D4D' :
-              metric.status === 'warning' ? '#FFB800' : '#00C48C';
+              metric.status === 'warning' ? '#FFB800' : '#22C55E';
             return (
               <View key={idx} style={styles.metricCard}>
                 <View style={styles.metricTop}>
@@ -581,7 +581,7 @@ export default function AutoRepairScreen() {
         {repairLogs.slice(0, 10).map((log) => {
           const sevCfg = SEVERITY_CONFIG[log.severity] || SEVERITY_CONFIG.low;
           const resultColor =
-            log.result === 'success' ? '#00C48C' :
+            log.result === 'success' ? '#22C55E' :
             log.result === 'failed' ? '#FF4D4D' : '#FFB800';
 
           return (
@@ -615,46 +615,46 @@ export default function AutoRepairScreen() {
       </View>
       {[
         {
-          icon: <Database size={20} color="#00C48C" />,
+          icon: <Database size={20} color="#22C55E" />,
           title: 'Data Integrity Monitor',
           desc: 'Validates all records, detects corruption, auto-fixes schema mismatches',
           status: 'Active',
-          statusColor: '#00C48C',
+          statusColor: '#22C55E',
         },
         {
           icon: <CreditCard size={20} color="#FFD700" />,
           title: 'Stuck Transaction Recovery',
           desc: 'Finds pending transactions older than 24h and auto-resolves or flags them',
           status: 'Active',
-          statusColor: '#00C48C',
+          statusColor: '#22C55E',
         },
         {
           icon: <Globe size={20} color="#4A90D9" />,
           title: 'Landing Page Health',
           desc: 'Monitors render time, asset loading, form submissions, and API connectivity',
           status: 'Active',
-          statusColor: '#00C48C',
+          statusColor: '#22C55E',
         },
         {
           icon: <Radio size={20} color="#E879F9" />,
           title: 'API Endpoint Watchdog',
           desc: 'Pings all Supabase endpoints every 30s, auto-retries on timeout, alerts on failure',
           status: 'Active',
-          statusColor: '#00C48C',
+          statusColor: '#22C55E',
         },
         {
           icon: <Lock size={20} color="#FF9F43" />,
           title: 'Auth Service Guard',
           desc: 'Monitors JWT validation, token refresh cycles, and session integrity',
           status: 'Active',
-          statusColor: '#00C48C',
+          statusColor: '#22C55E',
         },
         {
           icon: <Bell size={20} color="#FF6B6B" />,
           title: 'Alert & Escalation Engine',
           desc: 'Critical issues trigger instant alerts to CEO via email, SMS, and push',
           status: 'Active',
-          statusColor: '#00C48C',
+          statusColor: '#22C55E',
         },
       ].map((feature, idx) => (
         <View key={idx} style={styles.featureCard}>
@@ -688,7 +688,7 @@ export default function AutoRepairScreen() {
             <Text style={styles.headerSubtitle}>24/7 Health Monitor & Self-Healing</Text>
           </View>
           <View style={styles.liveBadge}>
-            <PulsingDot color="#00C48C" />
+            <PulsingDot color="#22C55E" />
             <Text style={styles.liveText}>LIVE</Text>
           </View>
         </View>
@@ -767,7 +767,7 @@ const styles = StyleSheet.create({
   liveText: {
     fontSize: 11,
     fontWeight: '700' as const,
-    color: '#00C48C',
+    color: '#22C55E',
     letterSpacing: 0.5,
   },
   scroll: {
@@ -840,7 +840,7 @@ const styles = StyleSheet.create({
   progressBarInner: {
     height: '100%',
     borderRadius: 3,
-    backgroundColor: '#00C48C',
+    backgroundColor: '#22C55E',
   },
   summaryRow: {
     flexDirection: 'row',
@@ -876,7 +876,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: '#00C48C',
+    backgroundColor: '#22C55E',
     borderRadius: 12,
     paddingVertical: 14,
   },

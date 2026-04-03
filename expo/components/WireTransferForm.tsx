@@ -24,7 +24,7 @@ import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
 import { BankTransferInstructions } from '@/lib/payment-service';
-import { formatNumber } from '@/lib/formatters';
+import { formatNumber, formatCurrencyWithDecimals } from '@/lib/formatters';
 
 interface WireTransferFormProps {
   amount: number;
@@ -99,7 +99,7 @@ export default function WireTransferForm({
       <View style={styles.feeNotice}>
         <AlertTriangle size={16} color={Colors.warning} />
         <Text style={styles.feeNoticeText}>
-          Wire transfer fee: ${fee.toFixed(2)} • Minimum amount: $1,000
+          Wire transfer fee: {formatCurrencyWithDecimals(fee)} • Minimum amount: $1,000
           {wireType === 'international' && '\nAdditional correspondent bank fees may apply'}
         </Text>
       </View>
@@ -107,15 +107,15 @@ export default function WireTransferForm({
       <View style={styles.summaryCard}>
         <View style={styles.summaryRow}>
           <Text style={styles.summaryLabel}>Transfer Amount</Text>
-          <Text style={styles.summaryValue}>${formatNumber(amount)}</Text>
+          <Text style={styles.summaryValue}>{formatCurrencyWithDecimals(amount)}</Text>
         </View>
         <View style={styles.summaryRow}>
           <Text style={styles.summaryLabel}>Processing Fee</Text>
-          <Text style={[styles.summaryValue, { color: Colors.error }]}>-${fee.toFixed(2)}</Text>
+          <Text style={[styles.summaryValue, { color: Colors.error }]}>-{formatCurrencyWithDecimals(fee)}</Text>
         </View>
         <View style={[styles.summaryRow, styles.summaryRowTotal]}>
           <Text style={styles.summaryLabelTotal}>You Will Receive</Text>
-          <Text style={styles.summaryValueTotal}>${formatNumber(amount - fee)}</Text>
+          <Text style={styles.summaryValueTotal}>{formatCurrencyWithDecimals(amount - fee)}</Text>
         </View>
       </View>
     </View>
@@ -133,7 +133,7 @@ export function WireInstructionsDisplay({ instructions, amount }: WireInstructio
 
   const copyToClipboard = useCallback(async (text: string, label: string) => {
     await Clipboard.setStringAsync(text);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     Alert.alert('Copied', `${label} copied to clipboard`);
   }, []);
 
@@ -164,11 +164,11 @@ ${instructions.beneficiaryAddress?.line2 || ''}
 ${instructions.beneficiaryAddress?.city}, ${instructions.beneficiaryAddress?.state} ${instructions.beneficiaryAddress?.postalCode}
 ${instructions.beneficiaryAddress?.country}
 
-Amount: $${formatNumber(amount)}
+Amount: ${formatNumber(amount)}
     `.trim();
 
     await Clipboard.setStringAsync(details);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     Alert.alert('Copied', 'All wire transfer details copied to clipboard');
   }, [instructions, amount]);
 

@@ -198,19 +198,94 @@ export default function KYCVerificationScreen() {
     }
   };
 
+  const uploadToSupabaseStorage = async (uri: string, userId: string, docType: string): Promise<string> => {
+    const KYC_BUCKET = 'kyc-documents';
+    const timestamp = Date.now();
+    const rand = Math.random().toString(36).substring(2, 8);
+    const ext = uri.toLowerCase().includes('.png') ? 'png' : 'jpg';
+    const filePath = `${userId}/${docType}_${timestamp}_${rand}.${ext}`;
+
+    try {
+      if (Platform.OS === 'web') {
+        const response = await fetch(uri);
+        const blob = await response.blob();
+        const { error: uploadError } = await supabase.storage
+          .from(KYC_BUCKET)
+          .upload(filePath, blob, { contentType: `image/${ext}`, upsert: true });
+
+        if (uploadError) {
+          if (uploadError.message?.includes('Bucket not found') || uploadError.message?.includes('not found')) {
+            logger.kyc.log('KYC bucket not found, creating...');
+            await supabase.storage.createBucket(KYC_BUCKET, {
+              public: false,
+              fileSizeLimit: 10 * 1024 * 1024,
+              allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
+            });
+            const { error: retryError } = await supabase.storage
+              .from(KYC_BUCKET)
+              .upload(filePath, blob, { contentType: `image/${ext}`, upsert: true });
+            if (retryError) throw retryError;
+          } else {
+            throw uploadError;
+          }
+        }
+      } else {
+        const FileSystem = require('expo-file-system/legacy');
+        const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+        const raw = atob(base64);
+        const arr = new Uint8Array(raw.length);
+        for (let i = 0; i < raw.length; i++) {
+          arr[i] = raw.charCodeAt(i);
+        }
+        const blob = new Blob([arr], { type: `image/${ext}` });
+
+        const { error: uploadError } = await supabase.storage
+          .from(KYC_BUCKET)
+          .upload(filePath, blob, { contentType: `image/${ext}`, upsert: true });
+
+        if (uploadError) {
+          if (uploadError.message?.includes('Bucket not found') || uploadError.message?.includes('not found')) {
+            logger.kyc.log('KYC bucket not found, creating...');
+            await supabase.storage.createBucket(KYC_BUCKET, {
+              public: false,
+              fileSizeLimit: 10 * 1024 * 1024,
+              allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
+            });
+            const { error: retryError } = await supabase.storage
+              .from(KYC_BUCKET)
+              .upload(filePath, blob, { contentType: `image/${ext}`, upsert: true });
+            if (retryError) throw retryError;
+          } else {
+            throw uploadError;
+          }
+        }
+      }
+
+      const { data: urlData } = supabase.storage.from(KYC_BUCKET).getPublicUrl(filePath);
+      logger.kyc.log(`KYC doc uploaded to storage: ${filePath}`);
+      return urlData?.publicUrl || filePath;
+    } catch (err) {
+      logger.kyc.log(`KYC storage upload failed (${docType}): ${(err as Error)?.message} — falling back to URI`);
+      return uri;
+    }
+  };
+
   const uploadDocumentToBackend = async (type: string, uri: string) => {
     try {
       logger.kyc.log(`Uploading ${type} to backend...`);
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
+
+      const storageUrl = await uploadToSupabaseStorage(uri, user.id, type);
+
       await supabase.from('kyc_documents').insert({
         user_id: user.id,
         document_type: type,
-        document_url: uri,
+        document_url: storageUrl,
         issuing_country: personalInfo.countryCode,
         created_at: new Date().toISOString(),
       });
-      logger.kyc.log(`${type} uploaded to backend`);
+      logger.kyc.log(`${type} uploaded to backend (storage URL: ${storageUrl.substring(0, 60)}...)`);
     } catch (error) {
       console.error(`[KYC] Document upload error (non-blocking):`, error);
     }
@@ -221,13 +296,16 @@ export default function KYCVerificationScreen() {
       logger.kyc.log('Submitting selfie to backend...');
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
+
+      const storageUrl = await uploadToSupabaseStorage(uri, user.id, 'selfie');
+
       await supabase.from('kyc_documents').insert({
         user_id: user.id,
         document_type: 'selfie',
-        document_url: uri,
+        document_url: storageUrl,
         created_at: new Date().toISOString(),
       });
-      logger.kyc.log('Selfie submitted to backend');
+      logger.kyc.log(`Selfie submitted to backend (storage URL: ${storageUrl.substring(0, 60)}...)`);
     } catch (error) {
       console.error('[KYC] Selfie submit error (non-blocking):', error);
     }
@@ -381,21 +459,31 @@ export default function KYCVerificationScreen() {
     setIsLoading(true);
     logger.kyc.log('Submitting final KYC:', { personalInfo, documents: Object.keys(documents), verificationResult: !!verificationResult });
 
+    const isApproved = verificationResult?.success;
+    const newKycStatus = isApproved ? 'approved' : 'in_review';
+
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         await supabase.from('kyc_verifications').update({
           status: 'submitted',
+          verification_score: verificationResult?.score ?? null,
+          risk_level: verificationResult?.riskLevel ?? null,
+          verification_passed: isApproved ?? false,
           submitted_at: new Date().toISOString(),
         }).eq('user_id', user.id);
+
+        await supabase.from('profiles').update({
+          kyc_status: newKycStatus,
+        }).eq('id', user.id);
+
+        logger.kyc.log('KYC submitted + profile kyc_status synced to:', newKycStatus);
       }
-      logger.kyc.log('Submitted to backend for review');
     } catch (error) {
       console.error('[KYC] Submit for review error:', error);
     }
 
     setIsLoading(false);
-    const isApproved = verificationResult?.success;
     Alert.alert(
       isApproved ? 'KYC Approved' : 'KYC Submitted for Review',
       isApproved 
@@ -1304,135 +1392,135 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12 },
   backButton: { padding: 8 },
   headerTitle: { color: Colors.text, fontSize: 20, fontWeight: '800' as const },
-  stepIndicator: { width: 4, borderRadius: 2 },
-  progressBar: { height: 6, borderRadius: 3, backgroundColor: Colors.surfaceBorder },
-  progressFill: { height: 6, borderRadius: 3, backgroundColor: Colors.primary },
-  scrollView: { flex: 1, backgroundColor: Colors.background },
-  stepHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
-  stepIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: Colors.primary + '15', alignItems: 'center', justifyContent: 'center' },
-  stepTitle: { color: Colors.text, fontSize: 16, fontWeight: '700' as const },
-  stepSubtitle: { color: Colors.text, fontSize: 16, fontWeight: '700' as const },
+  stepIndicator: { color: Colors.textSecondary, fontSize: 13, fontWeight: '600' as const },
+  progressBar: { height: 4, backgroundColor: Colors.surfaceBorder, marginHorizontal: 16 },
+  progressFill: { height: 4, borderRadius: 2, backgroundColor: Colors.primary },
+  scrollView: { flex: 1, paddingHorizontal: 20 },
+  stepHeader: { alignItems: 'center', paddingTop: 24, paddingBottom: 16, gap: 8 },
+  stepIcon: { width: 56, height: 56, borderRadius: 16, backgroundColor: Colors.primary + '15', alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
+  stepTitle: { color: Colors.text, fontSize: 22, fontWeight: '800' as const, textAlign: 'center' as const },
+  stepSubtitle: { color: Colors.textSecondary, fontSize: 14, fontWeight: '400' as const, textAlign: 'center' as const, lineHeight: 20 },
   formSection: { marginBottom: 16 },
-  inputGroup: { gap: 6, marginBottom: 12 },
+  inputGroup: { gap: 4, marginBottom: 14 },
   inputRow: { flexDirection: 'row', gap: 12 },
-  inputLabel: { color: Colors.text, fontSize: 14, fontWeight: '600' as const, marginBottom: 6 },
+  inputLabel: { color: Colors.textSecondary, fontSize: 13, fontWeight: '600' as const, marginBottom: 4, textTransform: 'uppercase' as const, letterSpacing: 0.5 },
   input: { backgroundColor: Colors.surface, borderRadius: 12, padding: 14, color: Colors.text, fontSize: 16, borderWidth: 1, borderColor: Colors.surfaceBorder },
-  inputWithIcon: { flexDirection: 'row', alignItems: 'center' },
-  inputIconText: { color: Colors.textTertiary, fontSize: 14 },
-  inputHint: { color: Colors.textTertiary, fontSize: 12, marginTop: 4 },
-  idTypeSelector: { marginBottom: 12 },
-  idTypeOptions: { gap: 8 },
-  idTypeOption: { backgroundColor: Colors.surface, borderRadius: 12, padding: 14, borderWidth: 1, borderColor: Colors.surfaceBorder },
-  idTypeOptionActive: { borderColor: Colors.primary, backgroundColor: Colors.primary + '08' },
-  idTypeOptionText: { color: Colors.textSecondary, fontSize: 13 },
+  inputWithIcon: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surface, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, borderWidth: 1, borderColor: Colors.surfaceBorder, gap: 10 },
+  inputIconText: { flex: 1, color: Colors.text, fontSize: 16 },
+  inputHint: { color: Colors.textTertiary, fontSize: 11, marginTop: 4 },
+  idTypeSelector: { marginBottom: 16 },
+  idTypeOptions: { flexDirection: 'row', gap: 8 },
+  idTypeOption: { flex: 1, backgroundColor: Colors.surface, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 10, borderWidth: 1, borderColor: Colors.surfaceBorder, alignItems: 'center' as const },
+  idTypeOptionActive: { borderColor: Colors.primary, backgroundColor: Colors.primary + '12' },
+  idTypeOptionText: { color: Colors.textSecondary, fontSize: 12, fontWeight: '600' as const, textAlign: 'center' as const },
   idTypeOptionTextActive: { color: Colors.primary },
-  documentCard: { backgroundColor: Colors.surface, borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: Colors.surfaceBorder },
-  documentHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
+  documentCard: { backgroundColor: Colors.surface, borderRadius: 16, padding: 16, marginBottom: 14, borderWidth: 1, borderColor: Colors.surfaceBorder },
+  documentHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
   documentIconContainer: { width: 44, height: 44, borderRadius: 14, backgroundColor: Colors.primary + '15', alignItems: 'center', justifyContent: 'center' },
   documentInfo: { flex: 1 },
   documentTitle: { color: Colors.text, fontSize: 16, fontWeight: '700' as const },
-  documentDescription: { color: Colors.textSecondary, fontSize: 13, lineHeight: 18 },
-  documentStatusBadge: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
-  uploadButton: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 12, alignItems: 'center' },
-  uploadButtonText: { color: Colors.black, fontWeight: '700' as const, fontSize: 15 },
-  uploadButtonHint: { color: Colors.textTertiary, fontSize: 11, marginTop: 4, textAlign: 'center' as const },
-  documentPreviewContainer: { gap: 8 },
-  documentPreview: { gap: 8 },
-  uploadingOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)' },
-  uploadingText: { color: Colors.textSecondary, fontSize: 13 },
-  removeDocumentButton: { backgroundColor: Colors.error + '15', borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
-  infoCard: { backgroundColor: Colors.info + '10', borderRadius: 12, padding: 14, borderWidth: 1, borderColor: Colors.info + '20' },
-  infoCardText: { color: Colors.textSecondary, fontSize: 13, lineHeight: 18 },
-  selfieInstructions: { gap: 8, marginBottom: 12 },
-  instructionRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  instructionText: { color: Colors.textSecondary, fontSize: 13 },
-  selfieButton: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 12, alignItems: 'center' },
-  selfieIconContainer: { width: 44, height: 44, borderRadius: 14, backgroundColor: Colors.primary + '15', alignItems: 'center', justifyContent: 'center' },
-  selfieButtonText: { color: Colors.black, fontWeight: '700' as const, fontSize: 15 },
-  selfieButtonHint: { color: Colors.textTertiary, fontSize: 11, marginTop: 4, textAlign: 'center' as const },
-  selfiePreviewContainer: { gap: 8 },
-  selfiePreview: { gap: 8 },
-  retakeButton: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 12, alignItems: 'center' },
-  retakeButtonText: { color: Colors.black, fontWeight: '700' as const, fontSize: 15 },
-  reviewSection: { marginBottom: 16 },
-  reviewSectionTitle: { color: Colors.text, fontSize: 16, fontWeight: '700' as const },
-  reviewCard: { backgroundColor: Colors.surface, borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: Colors.surfaceBorder },
-  reviewRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  documentDescription: { color: Colors.textSecondary, fontSize: 13, lineHeight: 18, marginTop: 2 },
+  documentStatusBadge: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  uploadButton: { backgroundColor: Colors.primary + '10', borderWidth: 1, borderColor: Colors.primary + '30', borderStyle: 'dashed' as const, borderRadius: 14, paddingVertical: 28, alignItems: 'center', gap: 8 },
+  uploadButtonText: { color: Colors.primary, fontWeight: '700' as const, fontSize: 15 },
+  uploadButtonHint: { color: Colors.textTertiary, fontSize: 11, textAlign: 'center' as const },
+  documentPreviewContainer: { borderRadius: 12, overflow: 'hidden' as const, position: 'relative' as const },
+  documentPreview: { width: '100%', height: 180, borderRadius: 12 },
+  uploadingOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center', borderRadius: 12 },
+  uploadingText: { color: Colors.white, fontSize: 13, marginTop: 8 },
+  removeDocumentButton: { position: 'absolute' as const, top: 8, right: 8, width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center' },
+  infoCard: { flexDirection: 'row', backgroundColor: Colors.info + '10', borderRadius: 12, padding: 14, gap: 10, borderWidth: 1, borderColor: Colors.info + '20', marginTop: 8 },
+  infoCardText: { flex: 1, color: Colors.textSecondary, fontSize: 13, lineHeight: 18 },
+  selfieInstructions: { backgroundColor: Colors.surface, borderRadius: 14, padding: 16, gap: 12, marginBottom: 16, borderWidth: 1, borderColor: Colors.surfaceBorder },
+  instructionRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  instructionText: { color: Colors.textSecondary, fontSize: 14 },
+  selfieButton: { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.surfaceBorder, borderRadius: 20, paddingVertical: 40, alignItems: 'center', gap: 12 },
+  selfieIconContainer: { width: 80, height: 80, borderRadius: 40, backgroundColor: Colors.primary + '15', alignItems: 'center', justifyContent: 'center' },
+  selfieButtonText: { color: Colors.text, fontWeight: '700' as const, fontSize: 17 },
+  selfieButtonHint: { color: Colors.textTertiary, fontSize: 12 },
+  selfiePreviewContainer: { alignItems: 'center', gap: 16 },
+  selfiePreview: { width: 200, height: 200, borderRadius: 100, borderWidth: 3, borderColor: Colors.primary },
+  retakeButton: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 12, paddingHorizontal: 20, borderRadius: 12, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.surfaceBorder },
+  retakeButtonText: { color: Colors.primary, fontWeight: '600' as const, fontSize: 15 },
+  reviewSection: { marginBottom: 20 },
+  reviewSectionTitle: { color: Colors.text, fontSize: 16, fontWeight: '700' as const, marginBottom: 10 },
+  reviewCard: { backgroundColor: Colors.surface, borderRadius: 16, padding: 4, borderWidth: 1, borderColor: Colors.surfaceBorder },
+  reviewRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 14, borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder },
   reviewLabel: { color: Colors.textSecondary, fontSize: 13 },
-  reviewValue: { color: Colors.text, fontSize: 14, fontWeight: '600' as const },
-  reviewDocRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  reviewDocText: { color: Colors.textSecondary, fontSize: 13 },
-  warningCard: { backgroundColor: Colors.warning + '10', borderRadius: 12, padding: 14, flexDirection: 'row', gap: 10, borderWidth: 1, borderColor: Colors.warning + '20' },
+  reviewValue: { color: Colors.text, fontSize: 14, fontWeight: '600' as const, textAlign: 'right' as const, flex: 1, marginLeft: 12 },
+  reviewDocRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, paddingHorizontal: 14, borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder },
+  reviewDocText: { flex: 1, color: Colors.text, fontSize: 14 },
+  warningCard: { backgroundColor: Colors.warning + '10', borderRadius: 12, padding: 14, flexDirection: 'row', gap: 10, borderWidth: 1, borderColor: Colors.warning + '20', marginTop: 8 },
   warningText: { color: Colors.textSecondary, fontSize: 13, lineHeight: 18, flex: 1 },
-  bottomPadding: { height: 120 },
+  bottomPadding: { height: 40 },
   footer: { paddingHorizontal: 20, paddingVertical: 14, borderTopWidth: 1, borderTopColor: Colors.surfaceBorder, backgroundColor: Colors.background },
-  nextButton: { backgroundColor: Colors.primary, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
+  nextButton: { backgroundColor: Colors.primary, borderRadius: 14, paddingVertical: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   buttonDisabled: { opacity: 0.4 },
-  nextButtonText: { color: Colors.black, fontWeight: '700' as const, fontSize: 15 },
-  pickerButton: { backgroundColor: Colors.surface, borderRadius: 12, padding: 14, borderWidth: 1, borderColor: Colors.surfaceBorder },
-  pickerButtonText: { color: Colors.text, fontSize: 16 },
-  sectionDivider: { height: 1, backgroundColor: Colors.surfaceBorder, marginVertical: 8 },
-  dividerLine: { height: 1, backgroundColor: Colors.surfaceBorder, marginVertical: 8 },
-  dividerText: { color: Colors.textTertiary, fontSize: 12, paddingHorizontal: 8 },
-  modalContainer: { flex: 1, backgroundColor: Colors.overlay, justifyContent: 'center', padding: 20 },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  nextButtonText: { color: Colors.black, fontWeight: '800' as const, fontSize: 16 },
+  pickerButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: Colors.surface, borderRadius: 12, padding: 14, borderWidth: 1, borderColor: Colors.surfaceBorder },
+  pickerButtonText: { color: Colors.text, fontSize: 15, flex: 1 },
+  sectionDivider: { flexDirection: 'row', alignItems: 'center', gap: 12, marginVertical: 16 },
+  dividerLine: { flex: 1, height: 1, backgroundColor: Colors.surfaceBorder },
+  dividerText: { color: Colors.textTertiary, fontSize: 12, fontWeight: '600' as const, textTransform: 'uppercase' as const, letterSpacing: 0.5 },
+  modalContainer: { flex: 1, backgroundColor: Colors.background },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder },
   modalTitle: { color: Colors.text, fontSize: 20, fontWeight: '800' as const },
   modalCloseButton: { padding: 8 },
-  searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surface, borderRadius: 12, paddingHorizontal: 12, marginBottom: 12, borderWidth: 1, borderColor: Colors.surfaceBorder },
+  searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surface, borderRadius: 12, paddingHorizontal: 14, marginHorizontal: 20, marginBottom: 12, borderWidth: 1, borderColor: Colors.surfaceBorder, gap: 10 },
   searchInput: { flex: 1, color: Colors.text, fontSize: 15, paddingVertical: 12 },
-  countryList: { gap: 8 },
-  countryItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 },
-  countryItemName: { color: Colors.text, fontSize: 15, fontWeight: '700' as const },
-  countryItemCode: { color: '#999', fontSize: 12 },
-  livenessContainer: { gap: 8 },
-  livenessPreview: { gap: 8 },
-  livenessImage: { width: '100%', height: 180, borderRadius: 12 },
-  livenessOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)' },
-  livenessScanner: { alignItems: 'center', gap: 12, paddingVertical: 16 },
-  challengesList: { gap: 8 },
-  challengeItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 },
-  challengeItemActive: { backgroundColor: '#FFD700' + '15', borderColor: '#FFD700' },
-  challengeItemCompleted: { backgroundColor: Colors.success + '10', borderColor: Colors.success + '30' },
-  challengeIconContainer: { width: 32, height: 32, borderRadius: 10, backgroundColor: Colors.surfaceLight, alignItems: 'center', justifyContent: 'center' },
-  challengeText: { color: Colors.textSecondary, fontSize: 13 },
+  countryList: { paddingHorizontal: 20 },
+  countryItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder },
+  countryItemName: { color: Colors.text, fontSize: 15, fontWeight: '500' as const },
+  countryItemCode: { color: Colors.textTertiary, fontSize: 13 },
+  livenessContainer: { alignItems: 'center', gap: 20 },
+  livenessPreview: { width: 200, height: 200, borderRadius: 100, overflow: 'hidden' as const, borderWidth: 3, borderColor: Colors.primary },
+  livenessImage: { width: '100%', height: '100%' },
+  livenessOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(255,215,0,0.15)', alignItems: 'center', justifyContent: 'center' },
+  livenessScanner: { width: 60, height: 60, borderRadius: 30, borderWidth: 2, borderColor: Colors.primary },
+  challengesList: { width: '100%', gap: 6 },
+  challengeItem: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, paddingHorizontal: 16, backgroundColor: Colors.surface, borderRadius: 12, borderWidth: 1, borderColor: Colors.surfaceBorder },
+  challengeItemActive: { backgroundColor: Colors.primary + '10', borderColor: Colors.primary + '40' },
+  challengeItemCompleted: { backgroundColor: Colors.success + '08', borderColor: Colors.success + '30' },
+  challengeIconContainer: { width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.surfaceLight, alignItems: 'center', justifyContent: 'center' },
+  challengeText: { flex: 1, color: Colors.textSecondary, fontSize: 14, fontWeight: '500' as const },
   challengeTextCompleted: { color: Colors.success, textDecorationLine: 'line-through' as const },
-  livenessSuccessCard: { backgroundColor: Colors.surface, borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: Colors.surfaceBorder },
-  livenessSuccessTitle: { color: Colors.text, fontSize: 16, fontWeight: '700' as const },
-  livenessSuccessText: { color: Colors.textSecondary, fontSize: 13 },
-  startLivenessButton: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 12, alignItems: 'center' },
-  startLivenessText: { color: Colors.textSecondary, fontSize: 13 },
+  livenessSuccessCard: { width: '100%', backgroundColor: Colors.success + '10', borderRadius: 16, padding: 20, alignItems: 'center', gap: 8, borderWidth: 1, borderColor: Colors.success + '30' },
+  livenessSuccessTitle: { color: Colors.success, fontSize: 18, fontWeight: '700' as const },
+  livenessSuccessText: { color: Colors.textSecondary, fontSize: 14 },
+  startLivenessButton: { flexDirection: 'row', width: '100%', backgroundColor: Colors.primary, borderRadius: 14, paddingVertical: 16, alignItems: 'center', justifyContent: 'center', gap: 10 },
+  startLivenessText: { color: Colors.black, fontWeight: '700' as const, fontSize: 16 },
   livenessInProgress: { alignItems: 'center', gap: 12, paddingVertical: 20 },
-  livenessProgressText: { color: Colors.textSecondary, fontSize: 13 },
-  verificationContainer: { gap: 8 },
-  progressCircleContainer: { gap: 8 },
-  progressCircle: { width: 80, height: 80, borderRadius: 40, borderWidth: 4, borderColor: Colors.primary, alignItems: 'center', justifyContent: 'center' },
-  progressText: { color: Colors.textTertiary, fontSize: 12 },
-  verificationChecks: { gap: 8 },
-  verificationCheckItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 },
-  checkStatusDot: { width: 8, height: 8, borderRadius: 4 },
-  checkStatusDotActive: { backgroundColor: Colors.primary },
-  verificationCheckText: { color: Colors.textSecondary, fontSize: 13 },
-  verificationCheckTextActive: { color: '#000' },
-  databasesCard: { backgroundColor: Colors.surface, borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: Colors.surfaceBorder },
-  databasesTitle: { color: Colors.text, fontSize: 16, fontWeight: '700' as const },
-  databasesList: { gap: 8 },
-  databaseItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 },
-  databaseDot: { width: 8, height: 8, borderRadius: 4 },
-  databaseDotActive: { backgroundColor: Colors.primary },
-  databaseName: { color: Colors.text, fontSize: 15, fontWeight: '700' as const },
-  riskScoreCard: { backgroundColor: Colors.surface, borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: Colors.surfaceBorder },
-  riskScoreHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
-  riskScoreLabel: { color: Colors.textSecondary, fontSize: 13 },
-  riskBadge: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
-  riskBadgeText: { fontSize: 11, fontWeight: '700' as const },
-  overallScoreBar: { alignItems: 'center', gap: 4 },
-  overallScoreFill: { alignItems: 'center', gap: 4 },
-  overallScoreText: { color: Colors.textSecondary, fontSize: 13 },
-  verificationResultsCard: { backgroundColor: Colors.surface, borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: Colors.surfaceBorder },
-  verificationResultItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 },
-  resultStatusIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: Colors.primary + '15', alignItems: 'center', justifyContent: 'center' },
-  resultContent: { flex: 1, gap: 4 },
-  resultName: { color: Colors.text, fontSize: 15, fontWeight: '700' as const },
-  resultDetails: { gap: 8 },
-  resultScore: { alignItems: 'center', gap: 4 },
+  livenessProgressText: { color: Colors.textSecondary, fontSize: 14 },
+  verificationContainer: { alignItems: 'center', gap: 20, paddingVertical: 10 },
+  progressCircleContainer: { alignItems: 'center', marginBottom: 8 },
+  progressCircle: { width: 100, height: 100, borderRadius: 50, borderWidth: 5, borderColor: Colors.primary, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.primary + '08' },
+  progressText: { color: Colors.primary, fontSize: 22, fontWeight: '800' as const },
+  verificationChecks: { width: '100%', gap: 6 },
+  verificationCheckItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, paddingHorizontal: 14, backgroundColor: Colors.surface, borderRadius: 12, borderWidth: 1, borderColor: Colors.surfaceBorder },
+  checkStatusDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.textTertiary },
+  checkStatusDotActive: { backgroundColor: Colors.success },
+  verificationCheckText: { flex: 1, color: Colors.textSecondary, fontSize: 14 },
+  verificationCheckTextActive: { color: Colors.text },
+  databasesCard: { width: '100%', backgroundColor: Colors.surface, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: Colors.surfaceBorder },
+  databasesTitle: { color: Colors.text, fontSize: 14, fontWeight: '700' as const, marginBottom: 10 },
+  databasesList: { flexDirection: 'row', flexWrap: 'wrap' as const, gap: 6 },
+  databaseItem: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 4, paddingHorizontal: 10, backgroundColor: Colors.surfaceLight, borderRadius: 8 },
+  databaseDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.textTertiary },
+  databaseDotActive: { backgroundColor: Colors.success },
+  databaseName: { color: Colors.textSecondary, fontSize: 12, fontWeight: '500' as const },
+  riskScoreCard: { backgroundColor: Colors.surface, borderRadius: 16, padding: 20, marginBottom: 16, borderWidth: 1, borderColor: Colors.surfaceBorder },
+  riskScoreHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
+  riskScoreLabel: { color: Colors.text, fontSize: 16, fontWeight: '700' as const },
+  riskBadge: { borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 },
+  riskBadgeText: { fontSize: 11, fontWeight: '800' as const, letterSpacing: 0.5 },
+  overallScoreBar: { height: 8, backgroundColor: Colors.surfaceBorder, borderRadius: 4, overflow: 'hidden' as const, marginBottom: 8 },
+  overallScoreFill: { height: 8, borderRadius: 4 },
+  overallScoreText: { color: Colors.textSecondary, fontSize: 13, textAlign: 'center' as const },
+  verificationResultsCard: { backgroundColor: Colors.surface, borderRadius: 16, padding: 4, borderWidth: 1, borderColor: Colors.surfaceBorder },
+  verificationResultItem: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, paddingHorizontal: 12, borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder },
+  resultStatusIcon: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  resultContent: { flex: 1 },
+  resultName: { color: Colors.text, fontSize: 14, fontWeight: '600' as const, marginBottom: 2 },
+  resultDetails: { color: Colors.textSecondary, fontSize: 12, lineHeight: 16 },
+  resultScore: { fontSize: 14, fontWeight: '700' as const },
 });

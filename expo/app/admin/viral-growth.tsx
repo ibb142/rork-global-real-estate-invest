@@ -212,9 +212,8 @@ export default function ViralGrowthHub() {
 
   const copyContent = useCallback(async (id: string, text: string) => {
     try {
-      if (Platform.OS === 'web') {
-        await navigator.clipboard.writeText(text);
-      }
+      const { safeSetString: safeCopy } = await import('@/lib/safe-clipboard');
+      await safeCopy(text);
       setCopiedId(id);
       setTimeout(() => setCopiedId(null), 2000);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);

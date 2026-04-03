@@ -45,6 +45,7 @@ export interface ParsedJVDeal {
   type: string;
   expectedROI: number;
   totalInvestment: number;
+  propertyValue: number;
   partners: ParsedJVDealPartner[] | number;
   description: string;
   propertyAddress: string;
@@ -166,6 +167,7 @@ export function parseDeal(d: Record<string, unknown>): ParsedJVDeal {
     state: (d.state || '') as string,
     country: (d.country || '') as string,
     totalInvestment: Number(d.totalInvestment || d.total_investment || 0),
+    propertyValue: Number(d.propertyValue || d.property_value || d.estimated_value || 0),
     expectedROI: Number(d.expectedROI || d.expected_roi || 0),
     distributionFrequency: (d.distributionFrequency || d.distribution_frequency || '') as string,
     exitStrategy: (d.exitStrategy || d.exit_strategy || '') as string,

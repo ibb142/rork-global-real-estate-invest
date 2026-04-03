@@ -21,18 +21,20 @@ export interface LandingSubmission {
   notes?: string;
 }
 
-export async function fetchLandingSubmissions(): Promise<LandingSubmission[]> {
+export async function fetchLandingSubmissions(page = 0, pageSize = 50): Promise<LandingSubmission[]> {
   if (!isSupabaseConfigured()) {
     console.log('[LandingSubmissions] Supabase not configured');
     return [];
   }
 
   try {
+    const from = page * pageSize;
+    const to = from + pageSize - 1;
     const { data, error } = await supabase
       .from('landing_submissions')
       .select('*')
       .order('submitted_at', { ascending: false })
-      .limit(200);
+      .range(from, to);
 
     if (error) {
       const msg = (error.message || '').toLowerCase();
@@ -99,6 +101,22 @@ export async function updateSubmissionStatus(
   }
 }
 
+export async function fetchSubmissionCount(): Promise<number> {
+  if (!isSupabaseConfigured()) return 0;
+  try {
+    const { count, error } = await supabase
+      .from('landing_submissions')
+      .select('id', { count: 'exact', head: true });
+    if (error) {
+      console.log('[LandingSubmissions] Count error:', error.message);
+      return 0;
+    }
+    return count ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
 export async function getSubmissionStats(): Promise<{
   total: number;
   pending: number;
@@ -106,7 +124,7 @@ export async function getSubmissionStats(): Promise<{
   rejected: number;
   totalInvestmentAmount: number;
 }> {
-  const submissions = await fetchLandingSubmissions();
+  const submissions = await fetchLandingSubmissions(0, 500);
   return {
     total: submissions.length,
     pending: submissions.filter(s => s.status === 'pending').length,

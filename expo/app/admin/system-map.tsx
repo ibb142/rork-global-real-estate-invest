@@ -150,7 +150,7 @@ const INFRA_LAYER: SystemModule[] = [
 ];
 
 const ALL_LAYERS: LayerGroup[] = [
-  { id: 'presentation', name: 'Presentation Layer', icon: Smartphone, color: '#00C48C', modules: PRESENTATION_LAYER },
+  { id: 'presentation', name: 'Presentation Layer', icon: Smartphone, color: '#22C55E', modules: PRESENTATION_LAYER },
   { id: 'admin', name: 'Admin Layer', icon: Shield, color: '#FFD700', modules: ADMIN_LAYER },
   { id: 'context', name: 'Context Providers', icon: Layers, color: '#9B59B6', modules: CONTEXT_LAYER },
   { id: 'data', name: 'Data Layer', icon: Database, color: '#4A90D9', modules: DATA_LAYER },
@@ -160,7 +160,7 @@ const ALL_LAYERS: LayerGroup[] = [
 
 const DATA_FLOWS = [
   { id: 'admin-publish', name: 'Admin Publishes Deal', color: '#FFD700', steps: ['Admin JV Deals → upsertJVDeal()', 'jv-storage.ts → Supabase INSERT/UPDATE', 'Supabase Realtime → WebSocket event', 'jv-realtime.ts → invalidateAllJVQueries()', 'BroadcastChannel → cross-tab notification', 'Landing + Home → refetch → re-render'] },
-  { id: 'user-invest', name: 'User Invests in Deal', color: '#00C48C', steps: ['JV Investment Page → Select Pool Tier', 'payment-service.ts → Validate + Process', 'Supabase → INSERT transaction', 'investment-service.ts → Update holdings', 'Analytics → Track conversion event', 'Profile → Updated portfolio'] },
+  { id: 'user-invest', name: 'User Invests in Deal', color: '#22C55E', steps: ['JV Investment Page → Select Pool Tier', 'payment-service.ts → Validate + Process', 'Supabase → INSERT transaction', 'investment-service.ts → Update holdings', 'Analytics → Track conversion event', 'Profile → Updated portfolio'] },
   { id: 'realtime-sync', name: 'Realtime Sync (4 Layers)', color: '#4A90D9', steps: ['Layer 1: Supabase Realtime subscription', 'Layer 2: Fallback polling (3s interval)', 'Layer 3: refetchInterval (3s)', 'Layer 4: Visibility reconnect (tab focus)', 'Any layer triggers → React Query invalidation', 'All subscribed pages re-render with fresh data'] },
   { id: 'photo-protect', name: 'Photo Protection Flow', color: '#FF6B6B', steps: ['Update request with photos[]', 'protectPhotos() guard checks existing count', 'If incoming < existing → BLOCK (unless admin)', 'If empty → fetch existing from DB → preserve', 'Admin can override with adminOverride: true', 'Audit log records every protection event'] },
   { id: 'trash-flow', name: 'Trash & Recovery Flow', color: '#9B59B6', steps: ['Delete action → moveToTrash()', 'Deal status → "trashed", published → false', 'Local backup saved to AsyncStorage', 'Admin Trash Bin shows all trashed items', 'Restore → status back to active', 'Permanent delete requires typing project name'] },
@@ -169,7 +169,7 @@ const DATA_FLOWS = [
 
 function StatusBadge({ status }: { status: ModuleStatus }) {
   const config = {
-    live: { color: '#00C48C', label: 'LIVE', Icon: CheckCircle },
+    live: { color: '#22C55E', label: 'LIVE', Icon: CheckCircle },
     degraded: { color: '#FFB800', label: 'DEGRADED', Icon: AlertCircle },
     offline: { color: '#FF4D4D', label: 'OFFLINE', Icon: XCircle },
     stub: { color: '#6A6A6A', label: 'STUB', Icon: Clock },
@@ -406,7 +406,7 @@ function LiveHealthPanel() {
     return () => clearInterval(interval);
   }, [checkHealth, pulseAnim]);
 
-  const statusColor = (s: string) => s === 'connected' ? '#00C48C' : s === 'error' ? '#FF4D4D' : '#FFB800';
+  const statusColor = (s: string) => s === 'connected' ? '#22C55E' : s === 'error' ? '#FF4D4D' : '#FFB800';
   const StatusIcon = (s: string) => s === 'connected' ? Wifi : s === 'error' ? WifiOff : Clock;
 
   const DbIcon = StatusIcon(supabaseStatus);
@@ -416,7 +416,7 @@ function LiveHealthPanel() {
     <View style={styles.healthPanel}>
       <View style={styles.healthHeader}>
         <Animated.View style={{ opacity: pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [0.5, 1] }) }}>
-          <Activity size={16} color="#00C48C" />
+          <Activity size={16} color="#22C55E" />
         </Animated.View>
         <Text style={styles.healthTitle}>Live System Health</Text>
         <TouchableOpacity onPress={checkHealth} style={styles.refreshBtn}>
@@ -435,15 +435,15 @@ function LiveHealthPanel() {
           <Text style={styles.healthLabel}>Realtime WS</Text>
           <View style={[styles.healthDot, { backgroundColor: statusColor(realtimeStatus) }]} />
         </View>
-        <View style={[styles.healthItem, { borderColor: '#00C48C40' }]}>
-          <Smartphone size={18} color="#00C48C" />
+        <View style={[styles.healthItem, { borderColor: '#22C55E40' }]}>
+          <Smartphone size={18} color="#22C55E" />
           <Text style={styles.healthLabel}>App Runtime</Text>
-          <View style={[styles.healthDot, { backgroundColor: '#00C48C' }]} />
+          <View style={[styles.healthDot, { backgroundColor: '#22C55E' }]} />
         </View>
-        <View style={[styles.healthItem, { borderColor: '#00C48C40' }]}>
-          <Zap size={18} color="#00C48C" />
+        <View style={[styles.healthItem, { borderColor: '#22C55E40' }]}>
+          <Zap size={18} color="#22C55E" />
           <Text style={styles.healthLabel}>React Query</Text>
-          <View style={[styles.healthDot, { backgroundColor: '#00C48C' }]} />
+          <View style={[styles.healthDot, { backgroundColor: '#22C55E' }]} />
         </View>
       </View>
 
@@ -464,7 +464,7 @@ function StatsOverview() {
         <Text style={styles.statLabel}>Total Modules</Text>
       </View>
       <View style={styles.statCard}>
-        <Text style={[styles.statNumber, { color: '#00C48C' }]}>{liveModules}</Text>
+        <Text style={[styles.statNumber, { color: '#22C55E' }]}>{liveModules}</Text>
         <Text style={styles.statLabel}>Live</Text>
       </View>
       <View style={styles.statCard}>
@@ -604,7 +604,7 @@ function DiagramNodeView({ node, offsetX, offsetY, scale, onSelect, isSelected }
   isSelected: boolean;
 }) {
   const Icon = node.icon;
-  const statusColor = node.status === 'live' ? '#00C48C' : node.status === 'degraded' ? '#FFB800' : node.status === 'offline' ? '#FF4D4D' : '#6A6A6A';
+  const statusColor = node.status === 'live' ? '#22C55E' : node.status === 'degraded' ? '#FFB800' : node.status === 'offline' ? '#FF4D4D' : '#6A6A6A';
   const pulseAnim = useRef(new Animated.Value(0.6)).current;
 
   useEffect(() => {
@@ -833,7 +833,7 @@ export default function SystemMapScreen() {
         </TouchableOpacity>
         <View style={styles.headerCenter}>
           <View style={styles.headerTitleRow}>
-            <PulsingDot color="#00C48C" />
+            <PulsingDot color="#22C55E" />
             <Text style={styles.headerTitle}>System Blueprint</Text>
           </View>
           <Text style={styles.headerSubtitle}>Live Architecture Map</Text>

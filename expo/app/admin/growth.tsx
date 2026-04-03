@@ -47,6 +47,7 @@ import {
   ArrowLeft,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
+import { formatCurrency as _fmtCurr } from '@/lib/formatters';
 import {
   mockSocialContent,
   mockCampaigns,
@@ -90,14 +91,7 @@ export default function GrowthScreen() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSearchingTrends, setIsSearchingTrends] = useState(false);
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(amount);
-  };
+  const formatCurrency = (amount: number) => _fmtCurr(amount);
 
   const formatNumber = (num: number) => {
     if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';

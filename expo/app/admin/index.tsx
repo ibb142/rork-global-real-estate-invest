@@ -68,6 +68,7 @@ import {
   Sliders,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
+import { formatCurrency as _fmtCurr } from '@/lib/formatters';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 
@@ -127,6 +128,7 @@ const ADMIN_MODULES = [
   { id: 'analytics-report', name: 'Analytics Report', icon: PieChart, route: '/analytics-report', category: 'Analytics', keywords: 'analytics report google real time dashboard live visitors' },
   { id: 'landing-analytics', name: 'Landing Analytics', icon: Globe, route: '/admin/landing-analytics', category: 'Analytics', keywords: 'landing page analytics visitors traffic website' },
   { id: 'landing-control', name: 'Landing Control', icon: Sliders, route: '/admin/landing-control', category: 'Core', keywords: 'landing page control sections modules visibility public live deploy content admin toggle screens' },
+  { id: 'deploy-waitlist', name: 'Deploy Waitlist', icon: Rocket, route: '/admin/deploy-waitlist', category: 'Core', keywords: 'deploy waitlist table supabase investor landing page form submissions database create' },
   { id: 'feature-control', name: 'Feature Control', icon: Zap, route: '/admin/feature-control', category: 'Core', keywords: 'feature control toggle on off live modules functionality enable disable admin master switch real time' },
   { id: 'outreach-analytics', name: 'Outreach Analytics', icon: FileBarChart, route: '/admin/outreach-analytics', category: 'Analytics', keywords: 'outreach analytics campaigns performance' },
   { id: 'engagement', name: 'Engagement', icon: Target, route: '/admin/engagement', category: 'Analytics', keywords: 'engagement retention users active' },
@@ -165,7 +167,7 @@ const ADMIN_MODULES = [
 const CATEGORY_COLORS: Record<string, string> = {
   'Core': '#FFD700',
   'Users': '#4ECDC4',
-  'Finance': '#00C48C',
+  'Finance': '#22C55E',
   'Deals & Assets': '#4A90D9',
   'Analytics': '#FF6B9D',
   'Marketing': '#FF9F43',
@@ -298,14 +300,7 @@ export default function AdminDashboard() {
     return groups;
   }, []);
 
-  const formatCurrency = useCallback((amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(amount);
-  }, []);
+  const formatCurrency = useCallback((amount: number) => _fmtCurr(amount), []);
 
   const formatDate = useCallback((dateString: string) => {
     const date = new Date(dateString);

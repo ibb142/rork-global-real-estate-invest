@@ -28,11 +28,11 @@ const DEFAULT_STEPS: OnboardingStep[] = [
   {
     id: '1',
     title: 'Welcome to IVX HOLDINGS',
-    description: 'Your gateway to fractional real estate investing. Start building your property portfolio from just $1.',
+    description: 'Your gateway to fractional real estate investing. Start building your property portfolio from just $50.',
     iconType: 'sparkles',
     features: [
       { id: 'f1', text: 'Invest in premium properties worldwide' },
-      { id: 'f2', text: 'Start with as little as $1' },
+      { id: 'f2', text: 'Start with as little as $50' },
       { id: 'f3', text: 'Earn rental income & appreciation' },
       { id: 'f4', text: 'Trade shares 24/7' },
     ],

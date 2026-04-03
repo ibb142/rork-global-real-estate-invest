@@ -122,7 +122,7 @@ const LAUNCH_PLAN: LaunchWeek[] = [
   {
     week: 3,
     title: 'App Store Submission',
-    color: '#10B981',
+    color: '#22C55E',
     tasks: [
       { label: 'Prepare App Store screenshots & preview video', hours: '4–6h', priority: 'high', done: false },
       { label: 'Write App Store description & keywords (ASO)', hours: '2–3h', priority: 'high', done: false },
@@ -207,7 +207,7 @@ function DeveloperLaunchPlan() {
                 <View key={i} style={devStyles.taskRow}>
                   <View style={[
                     devStyles.priorityDot,
-                    { backgroundColor: task.priority === 'critical' ? '#FF6B6B' : task.priority === 'high' ? '#F59E0B' : '#10B981' }
+                    { backgroundColor: task.priority === 'critical' ? '#FF6B6B' : task.priority === 'high' ? '#F59E0B' : '#22C55E' }
                   ]} />
                   <View style={devStyles.taskInfo}>
                     <Text style={devStyles.taskLabel}>{task.label}</Text>
@@ -216,11 +216,11 @@ function DeveloperLaunchPlan() {
                       <Text style={devStyles.taskHours}>{task.hours}</Text>
                       <View style={[
                         devStyles.priorityBadge,
-                        { backgroundColor: task.priority === 'critical' ? '#FF6B6B20' : task.priority === 'high' ? '#F59E0B20' : '#10B98120' }
+                        { backgroundColor: task.priority === 'critical' ? '#FF6B6B20' : task.priority === 'high' ? '#F59E0B20' : '#22C55E20' }
                       ]}>
                         <Text style={[
                           devStyles.priorityText,
-                          { color: task.priority === 'critical' ? '#FF6B6B' : task.priority === 'high' ? '#F59E0B' : '#10B981' }
+                          { color: task.priority === 'critical' ? '#FF6B6B' : task.priority === 'high' ? '#F59E0B' : '#22C55E' }
                         ]}>{task.priority}</Text>
                       </View>
                     </View>
@@ -551,7 +551,7 @@ const ARCH_SECTIONS: ArchSection[] = [
       { label: 'Colors.text', value: '#FFFFFF — Primary text' },
       { label: 'Colors.textSecondary', value: '#9A9A9A — Subtitles, descriptions, labels' },
       { label: 'Colors.textTertiary', value: '#6A6A6A — Placeholder, disabled, metadata' },
-      { label: 'Colors.success / .positive', value: '#00C48C — Gains, positive values, success state' },
+      { label: 'Colors.success / .positive', value: '#22C55E — Gains, positive values, success state' },
       { label: 'Colors.error / .negative', value: '#FF4D4D — Losses, errors, negative values, warnings' },
       { label: 'Colors.accent', value: '#4A90D9 — Links, info badges, secondary CTAs' },
       { label: 'Colors.warning', value: '#FFB800 — Caution states, pending status' },

@@ -24,10 +24,17 @@ import {
   TrendingUp,
   Building2,
   Clock,
+  Shield,
+  FileText,
+  Camera,
+  AlertTriangle,
+  Globe,
+  IdCard,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
+import { formatCurrencyWithDecimals } from '@/lib/formatters';
 
 interface MemberData {
   id: string;
@@ -44,6 +51,42 @@ interface MemberData {
   created_at: string;
   updated_at: string;
   role: string;
+}
+
+interface KYCVerification {
+  id: string;
+  user_id: string;
+  first_name: string;
+  last_name: string;
+  date_of_birth: string;
+  nationality: string;
+  nationality_code: string;
+  tax_id: string;
+  street: string;
+  city: string;
+  state: string;
+  postal_code: string;
+  country: string;
+  country_code: string;
+  status: string;
+  verification_score: number | null;
+  risk_level: string | null;
+  verification_passed: boolean;
+  submitted_at: string | null;
+  reviewed_at: string | null;
+  reviewer_notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface KYCDocument {
+  id: string;
+  user_id: string;
+  document_type: string;
+  document_url: string;
+  issuing_country: string;
+  status: string;
+  created_at: string;
 }
 
 export default function MemberDetailScreen() {
@@ -92,13 +135,44 @@ export default function MemberDetailScreen() {
     enabled: !!id,
   });
 
+  const kycVerificationQuery = useQuery({
+    queryKey: ['admin-member-kyc-verification', id],
+    queryFn: async () => {
+      console.log('[Member Detail] Fetching KYC verification:', id);
+      const { data, error } = await supabase.from('kyc_verifications').select('*').eq('user_id', id).single();
+      if (error) { console.log('[Member Detail] KYC verification not found:', error.message); return null; }
+      return data as KYCVerification;
+    },
+    enabled: !!id,
+  });
+
+  const kycDocumentsQuery = useQuery({
+    queryKey: ['admin-member-kyc-documents', id],
+    queryFn: async () => {
+      console.log('[Member Detail] Fetching KYC documents:', id);
+      const { data, error } = await supabase.from('kyc_documents').select('*').eq('user_id', id).order('created_at', { ascending: false });
+      if (error) { console.log('[Member Detail] KYC documents error:', error.message); return []; }
+      return (data ?? []) as KYCDocument[];
+    },
+    enabled: !!id,
+  });
+
   const kycMutation = useMutation({
     mutationFn: async (input: { status: string }) => {
-      const { error } = await supabase.from('profiles').update({ kyc_status: input.status }).eq('id', id);
-      if (error) throw error;
+      console.log('[Member Detail] Updating KYC status:', id, input.status);
+      const { error: profileError } = await supabase.from('profiles').update({ kyc_status: input.status }).eq('id', id);
+      if (profileError) throw profileError;
+
+      const { error: kycError } = await supabase.from('kyc_verifications').update({
+        status: input.status === 'approved' ? 'approved' : 'rejected',
+        reviewed_at: new Date().toISOString(),
+        verification_passed: input.status === 'approved',
+      }).eq('user_id', id);
+      if (kycError) console.log('[Member Detail] KYC verification update error (non-blocking):', kycError.message);
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['admin-member-detail', id] });
+      void queryClient.invalidateQueries({ queryKey: ['admin-member-kyc-verification', id] });
       Alert.alert('Success', 'KYC status updated');
     },
     onError: (err: Error) => Alert.alert('Error', err.message),
@@ -120,6 +194,8 @@ export default function MemberDetailScreen() {
   const wallet = walletQuery.data;
   const holdings = holdingsQuery.data ?? [];
   const totalTransactions = txQuery.data?.count ?? 0;
+  const kycVerification = kycVerificationQuery.data;
+  const kycDocuments = kycDocumentsQuery.data ?? [];
 
   if (memberQuery.isLoading) {
     return (
@@ -145,13 +221,7 @@ export default function MemberDetailScreen() {
     );
   }
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 2,
-    }).format(amount);
-  };
+  const formatCurrency = (amount: number) => formatCurrencyWithDecimals(amount);
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
@@ -203,16 +273,39 @@ export default function MemberDetailScreen() {
 
   const getKycStatusColor = () => {
     switch (kycStatus) {
-      case 'approved':
-        return Colors.positive;
-      case 'in_review':
-        return Colors.primary;
-      case 'pending':
-        return Colors.warning;
-      case 'rejected':
-        return Colors.negative;
-      default:
-        return Colors.textSecondary;
+      case 'approved': return Colors.positive;
+      case 'in_review': return Colors.primary;
+      case 'pending': return Colors.warning;
+      case 'rejected': return Colors.negative;
+      default: return Colors.textSecondary;
+    }
+  };
+
+  const getRiskColor = (risk: string | null) => {
+    switch (risk) {
+      case 'low': return Colors.positive;
+      case 'medium': return Colors.warning;
+      case 'high': return Colors.negative;
+      default: return Colors.textSecondary;
+    }
+  };
+
+  const getDocTypeLabel = (type: string) => {
+    switch (type) {
+      case 'drivers_license': return "Driver's License";
+      case 'passport': return 'Passport';
+      case 'national_id': return 'National ID';
+      case 'proof_of_address': return 'Proof of Address';
+      case 'selfie': return 'Selfie';
+      default: return type.replace(/_/g, ' ');
+    }
+  };
+
+  const getDocIcon = (type: string) => {
+    switch (type) {
+      case 'selfie': return <Camera size={16} color={Colors.primary} />;
+      case 'proof_of_address': return <FileText size={16} color={Colors.info} />;
+      default: return <IdCard size={16} color={Colors.accent} />;
     }
   };
 
@@ -247,7 +340,7 @@ export default function MemberDetailScreen() {
                 { backgroundColor: getKycStatusColor() + '20' },
               ]}
             >
-              <Text style={[styles.kycText, { color: getKycStatusColor() }]}>
+              <Text style={[styles.kycTextStyle, { color: getKycStatusColor() }]}>
                 KYC: {kycStatus.replace('_', ' ')}
               </Text>
             </View>
@@ -294,6 +387,142 @@ export default function MemberDetailScreen() {
             </View>
           </View>
         </View>
+
+        {kycVerification && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeaderRow}>
+              <Shield size={20} color={Colors.primary} />
+              <Text style={styles.sectionTitle}>KYC Verification Data</Text>
+            </View>
+
+            {kycVerification.verification_score !== null && (
+              <View style={styles.kycScoreCard}>
+                <View style={styles.kycScoreRow}>
+                  <View style={styles.kycScoreLeft}>
+                    <Text style={styles.kycScoreLabel}>Verification Score</Text>
+                    <Text style={[styles.kycScoreValue, { color: (kycVerification.verification_score ?? 0) >= 0.7 ? Colors.positive : Colors.negative }]}>
+                      {((kycVerification.verification_score ?? 0) * 100).toFixed(1)}%
+                    </Text>
+                  </View>
+                  {kycVerification.risk_level && (
+                    <View style={[styles.riskBadge, { backgroundColor: getRiskColor(kycVerification.risk_level) + '20' }]}>
+                      <Text style={[styles.riskBadgeText, { color: getRiskColor(kycVerification.risk_level) }]}>
+                        {(kycVerification.risk_level || '').toUpperCase()} RISK
+                      </Text>
+                    </View>
+                  )}
+                </View>
+                <View style={styles.scoreBar}>
+                  <View style={[styles.scoreBarFill, { width: `${(kycVerification.verification_score ?? 0) * 100}%`, backgroundColor: (kycVerification.verification_score ?? 0) >= 0.7 ? Colors.positive : Colors.negative }]} />
+                </View>
+                <View style={styles.kycMetaRow}>
+                  <Text style={styles.kycMetaText}>
+                    Status: {(kycVerification.status || 'pending').replace('_', ' ')}
+                  </Text>
+                  {kycVerification.submitted_at && (
+                    <Text style={styles.kycMetaText}>
+                      Submitted: {formatDateTime(kycVerification.submitted_at)}
+                    </Text>
+                  )}
+                </View>
+                {kycVerification.reviewed_at && (
+                  <Text style={styles.kycMetaText}>
+                    Reviewed: {formatDateTime(kycVerification.reviewed_at)}
+                  </Text>
+                )}
+              </View>
+            )}
+
+            <View style={styles.infoCard}>
+              <View style={styles.infoRow}>
+                <User size={16} color={Colors.textSecondary} />
+                <View style={styles.infoContent}>
+                  <Text style={styles.infoLabel}>Full Name (KYC)</Text>
+                  <Text style={styles.infoValue}>{kycVerification.first_name} {kycVerification.last_name}</Text>
+                </View>
+              </View>
+              <View style={styles.infoDivider} />
+              <View style={styles.infoRow}>
+                <Calendar size={16} color={Colors.textSecondary} />
+                <View style={styles.infoContent}>
+                  <Text style={styles.infoLabel}>Date of Birth</Text>
+                  <Text style={styles.infoValue}>{kycVerification.date_of_birth || 'N/A'}</Text>
+                </View>
+              </View>
+              <View style={styles.infoDivider} />
+              <View style={styles.infoRow}>
+                <Globe size={16} color={Colors.textSecondary} />
+                <View style={styles.infoContent}>
+                  <Text style={styles.infoLabel}>Nationality</Text>
+                  <Text style={styles.infoValue}>{kycVerification.nationality || 'N/A'} ({kycVerification.nationality_code || ''})</Text>
+                </View>
+              </View>
+              <View style={styles.infoDivider} />
+              <View style={styles.infoRow}>
+                <IdCard size={16} color={Colors.textSecondary} />
+                <View style={styles.infoContent}>
+                  <Text style={styles.infoLabel}>Tax ID</Text>
+                  <Text style={styles.infoValue}>{kycVerification.tax_id ? '••••' + kycVerification.tax_id.slice(-4) : 'N/A'}</Text>
+                </View>
+              </View>
+              <View style={styles.infoDivider} />
+              <View style={styles.infoRow}>
+                <MapPin size={16} color={Colors.textSecondary} />
+                <View style={styles.infoContent}>
+                  <Text style={styles.infoLabel}>Address (KYC)</Text>
+                  <Text style={styles.infoValue}>
+                    {[kycVerification.street, kycVerification.city, kycVerification.state, kycVerification.postal_code, kycVerification.country].filter(Boolean).join(', ') || 'N/A'}
+                  </Text>
+                </View>
+              </View>
+            </View>
+          </View>
+        )}
+
+        {kycDocuments.length > 0 && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeaderRow}>
+              <FileText size={20} color={Colors.info} />
+              <Text style={styles.sectionTitle}>KYC Documents ({kycDocuments.length})</Text>
+            </View>
+            <View style={styles.infoCard}>
+              {kycDocuments.map((doc, idx) => (
+                <React.Fragment key={doc.id}>
+                  <View style={styles.docRow}>
+                    {getDocIcon(doc.document_type)}
+                    <View style={styles.docInfo}>
+                      <Text style={styles.docType}>{getDocTypeLabel(doc.document_type)}</Text>
+                      <Text style={styles.docMeta}>
+                        {doc.issuing_country ? `${doc.issuing_country} · ` : ''}{formatDateTime(doc.created_at)}
+                      </Text>
+                    </View>
+                    <View style={[styles.docStatusBadge, { backgroundColor: doc.status === 'verified' ? Colors.positive + '20' : Colors.warning + '20' }]}>
+                      <Text style={[styles.docStatusText, { color: doc.status === 'verified' ? Colors.positive : Colors.warning }]}>
+                        {doc.status || 'pending'}
+                      </Text>
+                    </View>
+                  </View>
+                  {doc.document_url && (
+                    <View style={styles.docPreviewContainer}>
+                      <Image source={{ uri: doc.document_url }} style={styles.docPreview} resizeMode="cover" />
+                    </View>
+                  )}
+                  {idx < kycDocuments.length - 1 && <View style={styles.infoDivider} />}
+                </React.Fragment>
+              ))}
+            </View>
+          </View>
+        )}
+
+        {!kycVerification && kycDocuments.length === 0 && (kycStatus === 'pending') && (
+          <View style={styles.section}>
+            <View style={styles.noKycCard}>
+              <AlertTriangle size={24} color={Colors.warning} />
+              <Text style={styles.noKycTitle}>No KYC Submitted</Text>
+              <Text style={styles.noKycText}>This member has not started or completed their KYC verification yet.</Text>
+            </View>
+          </View>
+        )}
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Financial Overview</Text>
@@ -375,6 +604,28 @@ export default function MemberDetailScreen() {
                 </TouchableOpacity>
               </>
             )}
+            {kycStatus === 'approved' && (
+              <TouchableOpacity
+                style={styles.actionButton}
+                onPress={() => handleAction('reject')}
+              >
+                <Ban size={20} color={Colors.negative} />
+                <Text style={[styles.actionButtonText, { color: Colors.negative }]}>
+                  Revoke KYC Approval
+                </Text>
+              </TouchableOpacity>
+            )}
+            {kycStatus === 'rejected' && (
+              <TouchableOpacity
+                style={styles.actionButton}
+                onPress={() => handleAction('approve')}
+              >
+                <CheckCircle size={20} color={Colors.positive} />
+                <Text style={[styles.actionButtonText, { color: Colors.positive }]}>
+                  Re-Approve KYC
+                </Text>
+              </TouchableOpacity>
+            )}
             {memberStatus === 'active' ? (
               <TouchableOpacity
                 style={styles.actionButton}
@@ -427,7 +678,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 17,
-    fontWeight: '600',
+    fontWeight: '600' as const,
     color: Colors.text,
   },
   content: {
@@ -446,7 +697,7 @@ const styles = StyleSheet.create({
   backLink: {
     fontSize: 16,
     color: Colors.primary,
-    fontWeight: '600',
+    fontWeight: '600' as const,
   },
   profileSection: {
     alignItems: 'center',
@@ -472,7 +723,7 @@ const styles = StyleSheet.create({
   },
   memberName: {
     fontSize: 24,
-    fontWeight: '700',
+    fontWeight: '700' as const,
     color: Colors.text,
     marginBottom: 12,
   },
@@ -486,10 +737,10 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 8,
   },
-  kycText: {
+  kycTextStyle: {
     fontSize: 13,
-    fontWeight: '600',
-    textTransform: 'capitalize',
+    fontWeight: '600' as const,
+    textTransform: 'capitalize' as const,
   },
   statusBadge: {
     paddingHorizontal: 12,
@@ -507,17 +758,23 @@ const styles = StyleSheet.create({
   },
   statusText: {
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '600' as const,
     color: Colors.text,
-    textTransform: 'capitalize',
+    textTransform: 'capitalize' as const,
   },
   section: {
     padding: 20,
     paddingBottom: 0,
   },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 14,
+  },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: '600' as const,
     color: Colors.text,
     marginBottom: 14,
   },
@@ -544,13 +801,129 @@ const styles = StyleSheet.create({
   },
   infoValue: {
     fontSize: 15,
-    fontWeight: '500',
+    fontWeight: '500' as const,
     color: Colors.text,
   },
   infoDivider: {
     height: 1,
     backgroundColor: Colors.border,
     marginLeft: 50,
+  },
+  kycScoreCard: {
+    backgroundColor: Colors.card,
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    marginBottom: 12,
+  },
+  kycScoreRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  kycScoreLeft: {
+    gap: 2,
+  },
+  kycScoreLabel: {
+    fontSize: 12,
+    color: Colors.textTertiary,
+  },
+  kycScoreValue: {
+    fontSize: 28,
+    fontWeight: '800' as const,
+  },
+  riskBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  riskBadgeText: {
+    fontSize: 11,
+    fontWeight: '800' as const,
+    letterSpacing: 0.5,
+  },
+  scoreBar: {
+    height: 6,
+    backgroundColor: Colors.border,
+    borderRadius: 3,
+    overflow: 'hidden' as const,
+    marginBottom: 10,
+  },
+  scoreBarFill: {
+    height: 6,
+    borderRadius: 3,
+  },
+  kycMetaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap' as const,
+    gap: 4,
+  },
+  kycMetaText: {
+    fontSize: 12,
+    color: Colors.textTertiary,
+  },
+  docRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    gap: 12,
+  },
+  docInfo: {
+    flex: 1,
+  },
+  docType: {
+    fontSize: 14,
+    fontWeight: '600' as const,
+    color: Colors.text,
+    textTransform: 'capitalize' as const,
+  },
+  docMeta: {
+    fontSize: 12,
+    color: Colors.textTertiary,
+    marginTop: 2,
+  },
+  docStatusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  docStatusText: {
+    fontSize: 11,
+    fontWeight: '600' as const,
+    textTransform: 'capitalize' as const,
+  },
+  docPreviewContainer: {
+    paddingHorizontal: 14,
+    paddingBottom: 10,
+  },
+  docPreview: {
+    width: '100%',
+    height: 140,
+    borderRadius: 10,
+    backgroundColor: Colors.surfaceLight,
+  },
+  noKycCard: {
+    backgroundColor: Colors.warning + '10',
+    borderRadius: 14,
+    padding: 20,
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: Colors.warning + '25',
+  },
+  noKycTitle: {
+    fontSize: 16,
+    fontWeight: '700' as const,
+    color: Colors.text,
+  },
+  noKycText: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    textAlign: 'center' as const,
+    lineHeight: 18,
   },
   statsGrid: {
     flexDirection: 'row',
@@ -567,7 +940,7 @@ const styles = StyleSheet.create({
   },
   statValue: {
     fontSize: 18,
-    fontWeight: '700',
+    fontWeight: '700' as const,
     color: Colors.text,
     marginTop: 10,
     marginBottom: 4,
@@ -579,7 +952,7 @@ const styles = StyleSheet.create({
   actionsCard: {
     backgroundColor: Colors.card,
     borderRadius: 14,
-    overflow: 'hidden',
+    overflow: 'hidden' as const,
     borderWidth: 1,
     borderColor: Colors.border,
   },
@@ -593,7 +966,7 @@ const styles = StyleSheet.create({
   },
   actionButtonText: {
     fontSize: 15,
-    fontWeight: '600',
+    fontWeight: '600' as const,
   },
   bottomPadding: {
     height: 100,

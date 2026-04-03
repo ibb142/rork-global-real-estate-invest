@@ -157,7 +157,7 @@ const CATEGORIES: APICategory[] = [
     id: 'market',
     title: 'Market Data',
     emoji: '📊',
-    color: '#10B981',
+    color: '#22C55E',
     icon: BarChart3,
     apis: [
       { id: 18, name: 'Alpha Vantage', description: 'Stock/REIT market data, price history, financial metrics', url: 'https://www.alphavantage.co/support/#api-key', checkUrl: 'https://alphavantage.co', priority: 'optional' },
@@ -407,7 +407,7 @@ export default function APIListScreen() {
 
   function getStatusColor(status: APIStatus): string {
     switch (status) {
-      case 'online': return '#00C48C';
+      case 'online': return '#22C55E';
       case 'offline': return '#FF4D4D';
       case 'checking': return '#FFD700';
       default: return '#6A6A6A';
@@ -455,8 +455,8 @@ export default function APIListScreen() {
 
           <View style={styles.liveBar}>
             <View style={styles.liveBarLeft}>
-              <Activity size={13} color={isChecking ? Colors.primary : '#00C48C'} />
-              <Text style={[styles.liveBarText, { color: isChecking ? Colors.primary : '#00C48C' }]}>
+              <Activity size={13} color={isChecking ? Colors.primary : '#22C55E'} />
+              <Text style={[styles.liveBarText, { color: isChecking ? Colors.primary : '#22C55E' }]}>
                 {isChecking ? 'Checking all APIs...' : `${onlineCount}/${totalAPIs} APIs reachable`}
               </Text>
             </View>
@@ -489,7 +489,7 @@ export default function APIListScreen() {
             </View>
             <View style={styles.heroDivider} />
             <View style={styles.heroStat}>
-              <Text style={[styles.heroNum, { color: '#00C48C' }]}>{onlineCount}</Text>
+              <Text style={[styles.heroNum, { color: '#22C55E' }]}>{onlineCount}</Text>
               <Text style={styles.heroLabel}>Online</Text>
             </View>
             <View style={styles.heroDivider} />
@@ -554,8 +554,8 @@ export default function APIListScreen() {
                     </View>
                     <Text style={styles.categoryTitle}>{cat.emoji} {cat.title}</Text>
                     <View style={styles.catStatusRow}>
-                      <View style={[styles.catOnlineBadge, { backgroundColor: catOnline === cat.apis.length ? '#00C48C22' : '#FF4D4D22' }]}>
-                        <Text style={[styles.catOnlineText, { color: catOnline === cat.apis.length ? '#00C48C' : '#FF4D4D' }]}>
+                      <View style={[styles.catOnlineBadge, { backgroundColor: catOnline === cat.apis.length ? '#22C55E22' : '#FF4D4D22' }]}>
+                        <Text style={[styles.catOnlineText, { color: catOnline === cat.apis.length ? '#22C55E' : '#FF4D4D' }]}>
                           {catOnline}/{cat.apis.length}
                         </Text>
                       </View>
@@ -628,7 +628,7 @@ export default function APIListScreen() {
                 <Text style={styles.summaryTitle}>PRIORITY SUMMARY</Text>
               </View>
               <View style={styles.completedSection}>
-                <Text style={[styles.summaryLabel, { color: '#00C48C' }]}>✅ Already Completed</Text>
+                <Text style={[styles.summaryLabel, { color: '#22C55E' }]}>✅ Already Completed</Text>
                 <Text style={styles.summaryItems}>JWT Secret · AWS S3 · Expo Push · Apple/Google Pay (via Stripe) · Mailgun (using SendGrid)</Text>
               </View>
               <View style={styles.summarySection}>
@@ -689,7 +689,7 @@ const styles = StyleSheet.create({
   backBtn: { padding: 8 },
   headerCenter: { flex: 1, alignItems: 'center' },
   headerTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  liveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#00C48C' },
+  liveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#22C55E' },
   headerTitle: { color: Colors.text, fontSize: 17, fontWeight: '800' as const },
   headerSub: { color: Colors.textTertiary, fontSize: 11, marginTop: 2 },
   refreshBtn: { padding: 8 },
@@ -738,7 +738,7 @@ const styles = StyleSheet.create({
   },
   progressFill: {
     height: '100%',
-    backgroundColor: '#00C48C',
+    backgroundColor: '#22C55E',
     borderRadius: 3,
   },
   progressLabel: { color: Colors.textTertiary, fontSize: 11, width: 80, textAlign: 'right' as const },
@@ -862,7 +862,7 @@ const styles = StyleSheet.create({
   },
   summaryTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 },
   summaryTitle: { color: Colors.text, fontSize: 13, fontWeight: '800' as const, letterSpacing: 1 },
-  completedSection: { marginBottom: 12, backgroundColor: '#00C48C12', borderRadius: 10, padding: 10 },
+  completedSection: { marginBottom: 12, backgroundColor: '#22C55E12', borderRadius: 10, padding: 10 },
   summarySection: { marginBottom: 12 },
   summaryLabel: { fontSize: 13, fontWeight: '700' as const, marginBottom: 4 },
   summaryItems: { color: Colors.textSecondary, fontSize: 12, lineHeight: 18 },

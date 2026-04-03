@@ -60,7 +60,7 @@ interface EmailAccountWithAccess extends EmailAccount {
 
 const ACCESS_LEVEL_CONFIG: Record<AccessLevel, { label: string; color: string; icon: typeof Eye }> = {
   read: { label: 'Read Only', color: '#4A90D9', icon: Eye },
-  send: { label: 'Read & Send', color: '#00C48C', icon: Send },
+  send: { label: 'Read & Send', color: '#22C55E', icon: Send },
   manage: { label: 'Full Access', color: '#FFD700', icon: Settings },
 };
 

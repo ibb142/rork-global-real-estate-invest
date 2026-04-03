@@ -353,7 +353,7 @@ export default function OnboardingFlow({ visible, onClose, onComplete }: Onboard
                   ]}
                 >
                   Your gateway to fractional real estate investing.
-                  Start building your property portfolio from just $1.
+                  Start building your property portfolio from just $50.
                 </Animated.Text>
 
                 <Animated.View

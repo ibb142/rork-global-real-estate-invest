@@ -61,7 +61,7 @@ const formatTimeAgo = (date: string | null): string => {
 
 const SOURCE_ICONS: Record<string, { icon: typeof Globe; color: string }> = {
   sec_edgar: { icon: Shield, color: '#3B82F6' },
-  google_places: { icon: Globe, color: '#10B981' },
+  google_places: { icon: Globe, color: '#22C55E' },
   opencorporates: { icon: Building2, color: '#F59E0B' },
   crunchbase: { icon: Database, color: '#8B5CF6' },
 };
@@ -302,7 +302,7 @@ export default function LenderSyncScreen() {
         <Text style={styles.sectionTitle}>Source Breakdown</Text>
       </View>
       {stats?.bySource && Object.entries(stats.bySource).map(([source, count]) => {
-        const info = SOURCE_ICONS[source] || { icon: Globe, color: '#94A3B8' };
+        const info = SOURCE_ICONS[source] || { icon: Globe, color: '#999999' };
         const Icon = info.icon;
         return (
           <View key={source} style={styles.breakdownRow}>
@@ -319,7 +319,7 @@ export default function LenderSyncScreen() {
         <Text style={styles.sectionTitle}>Status Distribution</Text>
       </View>
       {stats?.byStatus && Object.entries(stats.byStatus).map(([status, count]) => {
-        const style = STATUS_STYLES[status] || { bg: '#1E293B', text: '#94A3B8', label: status };
+        const style = STATUS_STYLES[status] || { bg: '#2A2A2A', text: '#999999', label: status };
         return (
           <View key={status} style={styles.breakdownRow}>
             <View style={[styles.breakdownIcon, { backgroundColor: style.bg }]}>
@@ -361,8 +361,8 @@ export default function LenderSyncScreen() {
           <Switch
             value={config?.autoSyncEnabled || false}
             onValueChange={(v) => updateConfigMutation.mutate({ autoSyncEnabled: v })}
-            trackColor={{ false: '#334155', true: '#1D4ED8' }}
-            thumbColor={config?.autoSyncEnabled ? '#60A5FA' : '#94A3B8'}
+            trackColor={{ false: '#333333', true: '#1D4ED8' }}
+            thumbColor={config?.autoSyncEnabled ? '#60A5FA' : '#999999'}
           />
         </View>
         <View style={styles.configRow}>
@@ -373,8 +373,8 @@ export default function LenderSyncScreen() {
           <Switch
             value={config?.autoDeduplicate || false}
             onValueChange={(v) => updateConfigMutation.mutate({ autoDeduplicate: v })}
-            trackColor={{ false: '#334155', true: '#1D4ED8' }}
-            thumbColor={config?.autoDeduplicate ? '#60A5FA' : '#94A3B8'}
+            trackColor={{ false: '#333333', true: '#1D4ED8' }}
+            thumbColor={config?.autoDeduplicate ? '#60A5FA' : '#999999'}
           />
         </View>
         <View style={styles.configRow}>
@@ -385,8 +385,8 @@ export default function LenderSyncScreen() {
           <Switch
             value={config?.emailVerificationEnabled || false}
             onValueChange={(v) => updateConfigMutation.mutate({ emailVerificationEnabled: v })}
-            trackColor={{ false: '#334155', true: '#1D4ED8' }}
-            thumbColor={config?.emailVerificationEnabled ? '#60A5FA' : '#94A3B8'}
+            trackColor={{ false: '#333333', true: '#1D4ED8' }}
+            thumbColor={config?.emailVerificationEnabled ? '#60A5FA' : '#999999'}
           />
         </View>
         <View style={styles.configRow}>
@@ -397,8 +397,8 @@ export default function LenderSyncScreen() {
           <Switch
             value={config?.autoImportToDirectory || false}
             onValueChange={(v) => updateConfigMutation.mutate({ autoImportToDirectory: v })}
-            trackColor={{ false: '#334155', true: '#1D4ED8' }}
-            thumbColor={config?.autoImportToDirectory ? '#60A5FA' : '#94A3B8'}
+            trackColor={{ false: '#333333', true: '#1D4ED8' }}
+            thumbColor={config?.autoImportToDirectory ? '#60A5FA' : '#999999'}
           />
         </View>
       </View>
@@ -407,7 +407,7 @@ export default function LenderSyncScreen() {
         <Text style={styles.sectionTitle}>API Sources</Text>
       </View>
       {config?.sources.map((source: any) => {
-        const info = SOURCE_ICONS[source.id] || { icon: Globe, color: '#94A3B8' };
+        const info = SOURCE_ICONS[source.id] || { icon: Globe, color: '#999999' };
         const Icon = info.icon;
         return (
           <View key={source.id} style={styles.sourceCard}>
@@ -425,13 +425,13 @@ export default function LenderSyncScreen() {
               <Switch
                 value={source.enabled}
                 onValueChange={(v) => updateSourceMutation.mutate({ sourceId: source.id, enabled: v })}
-                trackColor={{ false: '#334155', true: info.color + '80' }}
-                thumbColor={source.enabled ? info.color : '#64748B'}
+                trackColor={{ false: '#333333', true: info.color + '80' }}
+                thumbColor={source.enabled ? info.color : '#666666'}
               />
             </View>
             {source.id !== 'sec_edgar' && (
               <View style={styles.apiKeyRow}>
-                <Key size={14} color="#64748B" />
+                <Key size={14} color="#666666" />
                 <TextInput
                   style={styles.apiKeyInput}
                   placeholder={`Enter ${source.name} API key...`}
@@ -491,13 +491,13 @@ export default function LenderSyncScreen() {
             <Text style={styles.addQueryBtnText}>Add</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={() => { setShowAddQuery(false); setNewQuery(''); }}>
-            <X size={18} color="#64748B" />
+            <X size={18} color="#666666" />
           </TouchableOpacity>
         </View>
       )}
       {config?.defaultSearchQueries.map((q: any, i: number) => (
         <View key={i} style={styles.queryRow}>
-          <Search size={14} color="#64748B" />
+          <Search size={14} color="#666666" />
           <Text style={styles.queryText}>{q}</Text>
           <TouchableOpacity onPress={() => removeQueryMutation.mutate({ query: q })}>
             <X size={16} color="#EF4444" />
@@ -510,7 +510,7 @@ export default function LenderSyncScreen() {
   const renderLenders = () => (
     <View>
       <View style={styles.searchBar}>
-        <Search size={18} color="#64748B" />
+        <Search size={18} color="#666666" />
         <TextInput
           style={styles.searchInput}
           placeholder="Search synced lenders..."
@@ -520,7 +520,7 @@ export default function LenderSyncScreen() {
         />
         {searchQuery.length > 0 && (
           <TouchableOpacity onPress={() => setSearchQuery('')}>
-            <X size={18} color="#64748B" />
+            <X size={18} color="#666666" />
           </TouchableOpacity>
         )}
       </View>
@@ -568,7 +568,7 @@ export default function LenderSyncScreen() {
       ) : (
         (lenders?.lenders || []).map((lender: any) => {
           const statusStyle = STATUS_STYLES[lender.status] || STATUS_STYLES.new;
-          const sourceInfo = SOURCE_ICONS[lender.source] || { icon: Globe, color: '#94A3B8' };
+          const sourceInfo = SOURCE_ICONS[lender.source] || { icon: Globe, color: '#999999' };
           return (
             <View key={lender.id} style={styles.lenderCard}>
               <View style={styles.lenderHeader}>
@@ -584,7 +584,7 @@ export default function LenderSyncScreen() {
               </View>
               <View style={styles.lenderDetails}>
                 <View style={styles.lenderDetail}>
-                  <Mail size={12} color={lender.emailVerified ? '#34D399' : '#64748B'} />
+                  <Mail size={12} color={lender.emailVerified ? '#34D399' : '#666666'} />
                   <Text style={[styles.lenderDetailText, lender.emailVerified && { color: '#34D399' }]} numberOfLines={1}>
                     {lender.email}
                   </Text>
@@ -606,7 +606,7 @@ export default function LenderSyncScreen() {
 
       {(lenders?.lenders || []).length === 0 && !lendersQuery.isLoading && (
         <View style={styles.emptyState}>
-          <Database size={48} color="#334155" />
+          <Database size={48} color="#333333" />
           <Text style={styles.emptyTitle}>No Lenders Synced Yet</Text>
           <Text style={styles.emptyDesc}>Trigger a sync from the Sources tab to start collecting lender emails</Text>
         </View>
@@ -618,7 +618,7 @@ export default function LenderSyncScreen() {
     <View>
       {(jobs?.jobs || []).length === 0 ? (
         <View style={styles.emptyState}>
-          <Clock size={48} color="#334155" />
+          <Clock size={48} color="#333333" />
           <Text style={styles.emptyTitle}>No Sync Jobs Yet</Text>
           <Text style={styles.emptyDesc}>Jobs will appear here when you trigger a sync</Text>
         </View>
@@ -702,7 +702,7 @@ export default function LenderSyncScreen() {
                 style={[styles.tab, active && styles.tabActive]}
                 onPress={() => setActiveTab(tab.id)}
               >
-                <Icon size={16} color={active ? '#60A5FA' : '#64748B'} />
+                <Icon size={16} color={active ? '#60A5FA' : '#666666'} />
                 <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>{tab.label}</Text>
               </TouchableOpacity>
             );

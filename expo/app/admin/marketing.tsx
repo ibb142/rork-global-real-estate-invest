@@ -22,6 +22,7 @@ import { Video as ExpoVideo, ResizeMode } from 'expo-av';
 import * as ImagePicker from 'expo-image-picker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { safeSetString } from '@/lib/safe-clipboard';
 import {
   Brain,
   Users,
@@ -69,6 +70,7 @@ import {
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
+import { formatCurrency as _fmtCurr } from '@/lib/formatters';
 import { generateText } from '@/lib/ai-service';
 import {
   getInactiveMembers,
@@ -128,13 +130,7 @@ interface SmartMessage {
   scheduledFor?: string;
 }
 
-const formatCurrency = (amount: number) => {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 0,
-  }).format(amount);
-};
+const formatCurrency = (amount: number) => _fmtCurr(amount);
 
 const formatNumber = (num: number) => {
   if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
@@ -441,11 +437,7 @@ Requirements:
   const handleCopyContent = useCallback(async () => {
     if (!generatedContent) return;
     try {
-      if (Platform.OS === 'web') {
-        await navigator.clipboard.writeText(generatedContent);
-      } else {
-        Clipboard.setString(generatedContent);
-      }
+      await safeSetString(generatedContent);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setCopiedPlatform('clipboard');
       setTimeout(() => setCopiedPlatform(null), 2000);
@@ -506,11 +498,7 @@ Requirements:
         break;
       case 'instagram':
       case 'tiktok':
-        if (Platform.OS === 'web') {
-          await navigator.clipboard.writeText(generatedContent);
-        } else {
-          Clipboard.setString(generatedContent);
-        }
+        await safeSetString(generatedContent);
         setCopiedPlatform(platformId);
         setTimeout(() => setCopiedPlatform(null), 2000);
         Alert.alert(
@@ -532,11 +520,7 @@ Requirements:
       } else if (Platform.OS === 'web' && url.startsWith('http')) {
         window.open(url, '_blank');
       } else {
-        if (Platform.OS === 'web') {
-          await navigator.clipboard.writeText(generatedContent);
-        } else {
-          Clipboard.setString(generatedContent);
-        }
+        await safeSetString(generatedContent);
         setCopiedPlatform(platformId);
         setTimeout(() => setCopiedPlatform(null), 2000);
         Alert.alert('App Not Installed', `Content copied. Please open ${platformId} manually and paste.`);
@@ -572,11 +556,7 @@ Requirements:
 
   const handleCopyLink = useCallback(async (link: TrackableLink) => {
     try {
-      if (Platform.OS === 'web') {
-        await navigator.clipboard.writeText(link.fullUrl);
-      } else {
-        Clipboard.setString(link.fullUrl);
-      }
+      await safeSetString(link.fullUrl);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setCopiedPlatform(link.id);
       setTimeout(() => setCopiedPlatform(null), 2000);
@@ -653,11 +633,7 @@ Requirements:
     const wrappedText = getWrappedContent();
     if (!wrappedText) return;
     try {
-      if (Platform.OS === 'web') {
-        await navigator.clipboard.writeText(wrappedText);
-      } else {
-        Clipboard.setString(wrappedText);
-      }
+      await safeSetString(wrappedText);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setCopiedPlatform('wrappedContent');
       setTimeout(() => setCopiedPlatform(null), 2000);
@@ -673,7 +649,7 @@ Requirements:
     const shareText = getWrappedContent();
     try {
       if (Platform.OS === 'web') {
-        await navigator.clipboard.writeText(shareText);
+        await safeSetString(shareText);
         Alert.alert('Copied!', 'Content with link copied to clipboard');
       } else {
         await Share.share({
@@ -845,11 +821,7 @@ Requirements:
         url = `tg://msg?text=${encodedText}`;
         break;
       default:
-        if (Platform.OS === 'web') {
-          await navigator.clipboard.writeText(shareText);
-        } else {
-          Clipboard.setString(shareText);
-        }
+        await safeSetString(shareText);
         Alert.alert('Copied!', `Caption copied. Open ${platformId} and paste with your media.`);
         return;
     }
@@ -1085,7 +1057,7 @@ Output just the script with timing notes.`;
     if (!generatedVideo?.script) return;
     try {
       if (Platform.OS === 'web') {
-        await navigator.clipboard.writeText(generatedVideo.script);
+        await safeSetString(generatedVideo.script);
         Alert.alert('Copied!', 'Video script copied to clipboard');
       } else {
         await Share.share({

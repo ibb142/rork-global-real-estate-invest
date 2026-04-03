@@ -369,7 +369,7 @@ export default function WalletScreen() {
             </View>
           </View>
           <Text style={styles.balanceLabel}>Available Balance</Text>
-          <Text style={styles.balanceValue}>${formatNumber(currentUser.walletBalance)}</Text>
+          <Text style={styles.balanceValue}>{formatCurrencyWithDecimals(currentUser.walletBalance)}</Text>
           <View style={styles.actionRow}>
             <TouchableOpacity
               style={styles.depositButton}
@@ -470,7 +470,7 @@ export default function WalletScreen() {
                   styles.txAmount,
                   { color: tx.amount >= 0 ? Colors.success : Colors.error }
                 ]}>
-                  {tx.amount >= 0 ? '+' : ''}${formatNumber(Math.abs(tx.amount))}
+                  {tx.amount >= 0 ? '+' : ''}{formatCurrencyWithDecimals(Math.abs(tx.amount))}
                 </Text>
               </View>
             ))}
@@ -496,7 +496,7 @@ export default function WalletScreen() {
               </View>
               <Text style={styles.earnBannerDesc}>
                 {earnBalance > 0
-                  ? `Earning on ${formatNumber(earnBalance)}` 
+                  ? `Earning on ${formatCurrencyWithDecimals(earnBalance)}` 
                   : `Deposit & earn ${Math.round(apyRate * 100)}% yearly from IVXHOLDINGS profits`}
               </Text>
             </View>
@@ -544,7 +544,7 @@ export default function WalletScreen() {
               </TouchableOpacity>
             </View>
 
-            {!showResult && !balanceFromAPI && (
+            {!showResult && !balanceFromAPI && __DEV__ && (
               <View style={styles.testModeBanner}>
                 <TestTube2 size={16} color={Colors.warning} />
                 <Text style={styles.testModeText}>Demo Mode - Connect payment provider for live transactions</Text>
@@ -564,7 +564,7 @@ export default function WalletScreen() {
                       <AlertCircle size={48} color={Colors.error} />
                     )}
                   </View>
-                  <Text style={styles.resultAmount}>${formatNumber(paymentResult.amount)}</Text>
+                  <Text style={styles.resultAmount}>{formatCurrencyWithDecimals(paymentResult.amount)}</Text>
                   <Text style={[
                     styles.resultStatus,
                     { color: paymentResult.success ? Colors.success : Colors.error }
@@ -881,7 +881,7 @@ export default function WalletScreen() {
                   <View style={styles.feeBreakdown}>
                     <View style={styles.feeRow}>
                       <Text style={styles.feeLabel}>Amount</Text>
-                      <Text style={styles.feeValue}>${formatNumber(parseFloat(fundAmount))}</Text>
+                      <Text style={styles.feeValue}>{formatCurrencyWithDecimals(parseFloat(fundAmount))}</Text>
                     </View>
                     {calculatedFee > 0 && (
                       <View style={styles.feeRow}>
@@ -963,7 +963,7 @@ export default function WalletScreen() {
                     <AlertCircle size={48} color={Colors.error} />
                   )}
                 </View>
-                <Text style={styles.resultAmount}>${formatNumber(withdrawResult.amount)}</Text>
+                <Text style={styles.resultAmount}>{formatCurrencyWithDecimals(withdrawResult.amount)}</Text>
                 <Text style={[
                   styles.resultStatus,
                   { color: withdrawResult.success ? Colors.success : Colors.error }
@@ -1014,7 +1014,7 @@ export default function WalletScreen() {
               <ScrollView showsVerticalScrollIndicator={false}>
                 <View style={styles.balanceInfoRow}>
                   <Text style={styles.balanceInfoLabel}>Available Balance</Text>
-                  <Text style={styles.balanceInfoValue}>${formatNumber(currentUser.walletBalance)}</Text>
+                  <Text style={styles.balanceInfoValue}>{formatCurrencyWithDecimals(currentUser.walletBalance)}</Text>
                 </View>
 
                 <View style={styles.amountSection}>
@@ -1100,7 +1100,7 @@ export default function WalletScreen() {
                   <View style={styles.feeBreakdown}>
                     <View style={styles.feeRow}>
                       <Text style={styles.feeLabel}>Withdrawal Amount</Text>
-                      <Text style={styles.feeValue}>${formatNumber(parseFloat(withdrawAmount))}</Text>
+                      <Text style={styles.feeValue}>{formatCurrencyWithDecimals(parseFloat(withdrawAmount))}</Text>
                     </View>
                     {withdrawFee > 0 && (
                       <View style={styles.feeRow}>

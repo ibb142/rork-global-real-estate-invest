@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -43,6 +43,8 @@ import {
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { formatCurrencyWithDecimals, formatNumber, formatAmountInput } from '@/lib/formatters';
+import { useInvestmentGuard } from '@/hooks/useInvestmentGuard';
+import InvestorDisclosure from '@/components/InvestorDisclosure';
 import { supabase } from '@/lib/supabase';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { purchaseJVInvestment } from '@/lib/investment-service';
@@ -67,6 +69,7 @@ interface DealData {
   state: string;
   country: string;
   totalInvestment: number;
+  propertyValue: number;
   expectedROI: number;
   managementFee: number;
   performanceFee: number;
@@ -151,6 +154,7 @@ function mapRowToDeal(row: Record<string, unknown>): DealData {
     state: str(row.state),
     country: str(row.country),
     totalInvestment: num(row.total_investment ?? row.totalInvestment),
+    propertyValue: num(row.property_value ?? row.propertyValue ?? row.estimated_value),
     expectedROI: num(row.expected_roi ?? row.expectedROI),
     managementFee: num(row.management_fee ?? row.managementFee, 2),
     performanceFee: num(row.performance_fee ?? row.performanceFee, 20),
@@ -181,7 +185,7 @@ const POOL_CONFIG: Record<InvestmentPool, { label: string; desc: string; icon: t
     label: 'JV Investment',
     desc: 'Direct equity stake in the project with profit sharing',
     icon: Landmark,
-    color: '#00C48C',
+    color: '#22C55E',
   },
 
 };
@@ -198,25 +202,10 @@ export default function JVInvestScreen() {
   const [step, setStep] = useState<Step>('pool');
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [confirmationNum, setConfirmationNum] = useState('');
-  const [isUserAuthenticated, setIsUserAuthenticated] = useState(false);
+  const { canInvest, checkAndProceed } = useInvestmentGuard();
 
   const successAnim = useRef(new Animated.Value(0)).current;
   const checkScale = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    let mounted = true;
-    const checkAuth = async () => {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (mounted) setIsUserAuthenticated(!!user);
-        console.log('[JVInvest] Auth check:', user ? 'authenticated' : 'guest');
-      } catch {
-        if (mounted) setIsUserAuthenticated(false);
-      }
-    };
-    void checkAuth();
-    return () => { mounted = false; };
-  }, []);
 
   const dealQuery = useQuery({
     queryKey: ['jv-invest-deal', jvId],
@@ -263,7 +252,7 @@ export default function JVInvestScreen() {
         return 0;
       }
     },
-    enabled: isUserAuthenticated,
+    enabled: canInvest,
     staleTime: 60000,
   });
   const walletBalance = balanceQuery.data ?? 0;
@@ -280,7 +269,7 @@ export default function JVInvestScreen() {
   const amount = useMemo(() => parseFloat(investAmount.replace(/,/g, '')) || 0, [investAmount]);
   const estimatedReturn = deal ? amount * ((deal.expectedROI) / 100) : 0;
   const poolRemaining = selectedPoolData ? selectedPoolData.targetAmount - selectedPoolData.currentRaised : (deal?.totalInvestment ?? 0);
-  const ownershipBase = deal?.totalInvestment ?? 0;
+  const ownershipBase = (deal?.propertyValue && deal.propertyValue > 0) ? deal.propertyValue : (deal?.totalInvestment ?? 0);
   const equityPercent = ownershipBase > 0 ? Math.min((amount / ownershipBase) * 100, 100) : 0;
   const estimatedProfit = estimatedReturn;
   const estimatedTotalPayout = amount + estimatedProfit;
@@ -357,41 +346,23 @@ export default function JVInvestScreen() {
   }, []);
 
   const handleContinueToReview = useCallback(() => {
-    if (!isUserAuthenticated) {
-      Alert.alert(
-        'Sign In Required',
-        'Create a free account to start investing.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Sign Up', onPress: () => router.push('/signup' as never) },
-          { text: 'Log In', onPress: () => router.push('/login' as never) },
-        ]
-      );
-      return;
-    }
-    if (amount < minInvestment) {
-      Alert.alert('Below Minimum', `Minimum investment is ${formatCurrencyWithDecimals(minInvestment)}`);
-      return;
-    }
-    if (amount > poolRemaining) {
-      Alert.alert('Exceeds Available', `Maximum available is ${formatCurrencyWithDecimals(poolRemaining)}`);
-      return;
-    }
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setStep('review');
-  }, [isUserAuthenticated, amount, minInvestment, poolRemaining, router]);
+    checkAndProceed(() => {
+      if (amount < minInvestment) {
+        Alert.alert('Below Minimum', `Minimum investment is ${formatCurrencyWithDecimals(minInvestment)}`);
+        return;
+      }
+      if (amount > poolRemaining) {
+        Alert.alert('Exceeds Available', `Maximum available is ${formatCurrencyWithDecimals(poolRemaining)}`);
+        return;
+      }
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      setStep('review');
+    });
+  }, [checkAndProceed, amount, minInvestment, poolRemaining]);
 
   const handleConfirmInvestment = useCallback(() => {
-    if (!isUserAuthenticated) {
-      Alert.alert(
-        'Sign In Required',
-        'You need an account to invest. Create one now?',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Sign Up', onPress: () => router.push('/signup' as never) },
-          { text: 'Log In', onPress: () => router.push('/login' as never) },
-        ]
-      );
+    if (!canInvest) {
+      checkAndProceed(() => {});
       return;
     }
     if (!agreedToTerms) {
@@ -404,7 +375,7 @@ export default function JVInvestScreen() {
     }
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     investMutation.mutate();
-  }, [isUserAuthenticated, agreedToTerms, paymentMethod, walletBalance, amount, investMutation, router]);
+  }, [canInvest, checkAndProceed, agreedToTerms, paymentMethod, walletBalance, amount, investMutation]);
 
   const goBack = useCallback(() => {
     if (step === 'amount') setStep('pool');
@@ -453,12 +424,12 @@ export default function JVInvestScreen() {
           <TouchableOpacity style={styles.retryBtn} onPress={() => void dealQuery.refetch()} testID="retry-btn">
             <Text style={styles.retryBtnText}>Retry</Text>
           </TouchableOpacity>
-          {!isUserAuthenticated && (
+          {!canInvest && (
             <TouchableOpacity
               style={[styles.retryBtn, { backgroundColor: Colors.success, marginBottom: 10 }]}
-              onPress={() => router.push('/signup' as never)}
+              onPress={() => router.push('/login' as never)}
             >
-              <Text style={styles.retryBtnText}>Create Account</Text>
+              <Text style={styles.retryBtnText}>Sign In</Text>
             </TouchableOpacity>
           )}
           <TouchableOpacity style={styles.goBackBtn} onPress={() => router.back()}>
@@ -674,16 +645,16 @@ export default function JVInvestScreen() {
                   );
                 })}
 
-                {!isUserAuthenticated && (
+                {!canInvest && (
                   <TouchableOpacity
                     style={styles.authBanner}
-                    onPress={() => router.push('/signup' as never)}
+                    onPress={() => router.push('/login' as never)}
                     activeOpacity={0.8}
                   >
                     <LogIn size={16} color={Colors.primary} />
                     <View style={styles.authBannerText}>
-                      <Text style={styles.authBannerTitle}>Create a Free Account to Invest</Text>
-                      <Text style={styles.authBannerSub}>Sign up in 30 seconds — no credit card required</Text>
+                      <Text style={styles.authBannerTitle}>Sign In & Verify to Invest</Text>
+                      <Text style={styles.authBannerSub}>Complete KYC verification to start investing</Text>
                     </View>
                     <ChevronRight size={16} color={Colors.primary} />
                   </TouchableOpacity>
@@ -759,7 +730,7 @@ export default function JVInvestScreen() {
                       onPress={() => { Keyboard.dismiss(); setInvestAmount(formatAmountInput(String(qty))); }}
                     >
                       <Text style={[styles.quickBtnText, amount === qty && styles.quickBtnTextActive]}>
-                        {qty >= 1000 ? `${formatNumber(qty)}` : `${qty}`}
+                        {`${formatNumber(qty)}`}
                       </Text>
                     </TouchableOpacity>
                   ))}
@@ -879,6 +850,8 @@ export default function JVInvestScreen() {
                     Investments involve risk. Past performance does not guarantee future results. Disputes resolved via {deal.disputeResolution}.
                   </Text>
                 </View>
+
+                <InvestorDisclosure compact />
               </>
             )}
           </ScrollView>
@@ -888,7 +861,7 @@ export default function JVInvestScreen() {
       <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 16) + 12 }]}>
         {step === 'pool' && (
           <TouchableOpacity style={styles.ctaBtn} onPress={handleContinueToAmount} testID="continue-pool-btn">
-            <Text style={styles.ctaBtnText}>{isUserAuthenticated ? `Continue with ${poolLabel}` : `Explore ${poolLabel}`}</Text>
+            <Text style={styles.ctaBtnText}>{canInvest ? `Continue with ${poolLabel}` : `Explore ${poolLabel}`}</Text>
             <ChevronRight size={18} color={Colors.black} />
           </TouchableOpacity>
         )}

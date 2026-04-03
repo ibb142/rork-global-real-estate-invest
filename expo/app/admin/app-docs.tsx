@@ -50,7 +50,7 @@ import {
 } from 'lucide-react-native';
 import * as Clipboard from 'expo-clipboard';
 import * as Print from 'expo-print';
-import * as Sharing from 'expo-sharing';
+
 import Colors from '@/constants/colors';
 import {
   FUNCTIONALITY_REGISTRY,
@@ -66,7 +66,7 @@ import {
 
 const ICON_MAP: Record<string, React.ReactNode> = {
   Lock: <Lock size={20} color="#6366F1" />,
-  Shield: <Shield size={20} color="#10B981" />,
+  Shield: <Shield size={20} color="#22C55E" />,
   Users: <Users size={20} color="#6366F1" />,
   Building2: <Building2 size={20} color="#F59E0B" />,
   TrendingUp: <TrendingUp size={20} color="#EC4899" />,
@@ -78,7 +78,7 @@ const ICON_MAP: Record<string, React.ReactNode> = {
   Brain: <Brain size={20} color="#A855F7" />,
   MessageSquare: <MessageSquare size={20} color="#3B82F6" />,
   Handshake: <Handshake size={20} color="#84CC16" />,
-  Settings: <Settings size={20} color="#64748B" />,
+  Settings: <Settings size={20} color="#666666" />,
   ShieldCheck: <ShieldCheck size={20} color="#DC2626" />,
   Palette: <Palette size={20} color="#D946EF" />,
   LineChart: <LineChart size={20} color="#0EA5E9" />,
@@ -159,16 +159,10 @@ export default function AppDocsScreen() {
           base64: false,
         });
         console.log('PDF generated at:', uri);
-        const canShare = await Sharing.isAvailableAsync();
-        if (canShare) {
-          await Sharing.shareAsync(uri, {
-            mimeType: 'application/pdf',
-            dialogTitle: 'IVXHOLDINGS App Documentation',
-            UTI: 'com.adobe.pdf',
-          });
-        } else {
-          Alert.alert('PDF Ready', 'PDF has been generated. Check your files.');
-        }
+        await Share.share({
+          title: 'IVXHOLDINGS App Documentation',
+          url: uri,
+        });
       }
     } catch (error) {
       console.error('PDF generation error:', error);
@@ -297,9 +291,9 @@ export default function AppDocsScreen() {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'active': return '#10B981';
+      case 'active': return '#22C55E';
       case 'beta': return '#F59E0B';
-      case 'coming_soon': return '#64748B';
+      case 'coming_soon': return '#666666';
       default: return Colors.textSecondary;
     }
   };
@@ -342,7 +336,7 @@ export default function AppDocsScreen() {
             <Text style={styles.statLabel}>Total</Text>
           </View>
           <View style={[styles.statCard, styles.statActive]}>
-            <Text style={[styles.statNumber, { color: '#10B981' }]}>{activeFeatures}</Text>
+            <Text style={[styles.statNumber, { color: '#22C55E' }]}>{activeFeatures}</Text>
             <Text style={styles.statLabel}>Active</Text>
           </View>
           <View style={styles.statCard}>

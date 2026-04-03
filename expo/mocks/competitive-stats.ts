@@ -113,7 +113,7 @@ export const assetClassComparison: AssetClassPerformance[] = [
     inflationHedge: true,
     tangible: true,
     tradingHours: 'N/A',
-    color: '#00C48C',
+    color: '#22C55E',
   },
 ];
 

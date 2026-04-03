@@ -322,7 +322,7 @@ async function fallbackFullVerification(_params: {
 
 export function getRiskColor(riskLevel: 'low' | 'medium' | 'high'): string {
   switch (riskLevel) {
-    case 'low': return '#10B981';
+    case 'low': return '#22C55E';
     case 'medium': return '#F59E0B';
     case 'high': return '#EF4444';
   }
@@ -330,7 +330,7 @@ export function getRiskColor(riskLevel: 'low' | 'medium' | 'high'): string {
 
 export function getStatusColor(status: 'passed' | 'failed' | 'pending' | 'warning'): string {
   switch (status) {
-    case 'passed': return '#10B981';
+    case 'passed': return '#22C55E';
     case 'failed': return '#EF4444';
     case 'pending': return '#6B7280';
     case 'warning': return '#F59E0B';

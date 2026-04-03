@@ -114,7 +114,7 @@ const BASE_COMMODITIES: Commodity[] = [
   { symbol: 'XAG', name: 'Silver', price: 27.43, unit: '/oz', change24h: -0.23, changePercent24h: -0.83, color: '#C0C0C0' },
   { symbol: 'WTI', name: 'Crude Oil', price: 78.34, unit: '/bbl', change24h: 1.23, changePercent24h: 1.60, color: '#4A90D9' },
   { symbol: 'BRENT', name: 'Brent Oil', price: 82.12, unit: '/bbl', change24h: 0.98, changePercent24h: 1.21, color: '#2C7BE5' },
-  { symbol: 'NG', name: 'Natural Gas', price: 2.143, unit: '/MMBtu', change24h: 0.034, changePercent24h: 1.61, color: '#00C48C' },
+  { symbol: 'NG', name: 'Natural Gas', price: 2.143, unit: '/MMBtu', change24h: 0.034, changePercent24h: 1.61, color: '#22C55E' },
   { symbol: 'WHEAT', name: 'Wheat', price: 543.25, unit: '/bu', change24h: -3.75, changePercent24h: -0.69, color: '#F4A261' },
 ];
 
@@ -129,7 +129,7 @@ export const ECONOMIC_INDICATORS: EconomicIndicator[] = [
 
 export const MONEY_FLOW_NODES: MoneyFlowNode[] = [
   { country: 'USA', flag: '🇺🇸', city: 'New York', volume: 8420, direction: 'outflow', percentage: 28.4, color: '#4A90D9' },
-  { country: 'UK', flag: '🇬🇧', city: 'London', volume: 6230, direction: 'inflow', percentage: 21.0, color: '#00C48C' },
+  { country: 'UK', flag: '🇬🇧', city: 'London', volume: 6230, direction: 'inflow', percentage: 21.0, color: '#22C55E' },
   { country: 'China', flag: '🇨🇳', city: 'Shanghai', volume: 4890, direction: 'outflow', percentage: 16.5, color: '#FF6B6B' },
   { country: 'Japan', flag: '🇯🇵', city: 'Tokyo', volume: 3210, direction: 'inflow', percentage: 10.8, color: '#FFD700' },
   { country: 'UAE', flag: '🇦🇪', city: 'Dubai', volume: 2780, direction: 'inflow', percentage: 9.4, color: '#9B59B6' },

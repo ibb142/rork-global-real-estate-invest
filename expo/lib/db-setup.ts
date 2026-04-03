@@ -334,7 +334,7 @@ CREATE TABLE IF NOT EXISTS jv_deals (
   partner_name text, partner_email text, partner_phone text, partner_type text,
   "propertyAddress" text, property_address text, city text, state text, zip_code text, country text,
   lot_size numeric, lot_size_unit text, zoning text, property_type text,
-  "totalInvestment" numeric DEFAULT 0, "expectedROI" numeric DEFAULT 0,
+  "totalInvestment" numeric DEFAULT 0, "propertyValue" numeric DEFAULT 0, "expectedROI" numeric DEFAULT 0,
   estimated_value numeric, appraised_value numeric, cash_payment_percent numeric,
   collateral_percent numeric, partner_profit_share numeric, developer_profit_share numeric,
   term_months integer, cash_payment_amount numeric, collateral_amount numeric,
@@ -404,14 +404,417 @@ DROP POLICY IF EXISTS waitlist_insert_validated ON waitlist;
 CREATE POLICY waitlist_select_admin ON waitlist FOR SELECT USING (public.is_admin());
 CREATE POLICY waitlist_insert_validated ON waitlist FOR INSERT WITH CHECK (email IS NOT NULL AND length(email)>=5);
 
--- 14. ENABLE REALTIME ON jv_deals
-DO $$ BEGIN
+-- 14. RESALE_LISTINGS
+CREATE TABLE IF NOT EXISTS resale_listings (
+  id text PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  seller_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  property_id text REFERENCES properties(id) ON DELETE SET NULL,
+  property_name text,
+  shares integer NOT NULL DEFAULT 0,
+  ask_price_per_share numeric NOT NULL DEFAULT 0,
+  original_cost_basis numeric DEFAULT 0,
+  total_ask numeric DEFAULT 0,
+  status text DEFAULT 'active' CHECK (status IN ('active','sold','cancelled','expired')),
+  created_at timestamptz DEFAULT now(),
+  expires_at timestamptz
+);
+ALTER TABLE resale_listings ENABLE ROW LEVEL SECURITY;
+DO $ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname='resale_select_all' AND tablename='resale_listings') THEN
+    CREATE POLICY resale_select_all ON resale_listings FOR SELECT USING (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname='resale_insert_own' AND tablename='resale_listings') THEN
+    CREATE POLICY resale_insert_own ON resale_listings FOR INSERT WITH CHECK (auth.uid()=seller_id);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname='resale_update_own' AND tablename='resale_listings') THEN
+    CREATE POLICY resale_update_own ON resale_listings FOR UPDATE USING (auth.uid()=seller_id OR public.is_admin());
+  END IF;
+END $;
+CREATE INDEX IF NOT EXISTS idx_resale_status ON resale_listings(status);
+CREATE INDEX IF NOT EXISTS idx_resale_seller ON resale_listings(seller_id);
+CREATE INDEX IF NOT EXISTS idx_resale_property ON resale_listings(property_id);
+
+-- 15. WALLET_TRANSACTIONS
+CREATE TABLE IF NOT EXISTS wallet_transactions (
+  id text PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  wallet_id text,
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  type text CHECK (type IN ('deposit','withdrawal','investment','sale_proceeds','dividend','refund','fee','resale_purchase','resale_sale')),
+  amount numeric NOT NULL DEFAULT 0,
+  direction text CHECK (direction IN ('credit','debit')),
+  status text DEFAULT 'pending' CHECK (status IN ('pending','completed','failed','cancelled')),
+  reference_id text,
+  reference_type text,
+  description text,
+  fee numeric DEFAULT 0,
+  net_amount numeric DEFAULT 0,
+  payment_method text,
+  created_at timestamptz DEFAULT now()
+);
+ALTER TABLE wallet_transactions ENABLE ROW LEVEL SECURITY;
+DO $ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname='wtx_select_own' AND tablename='wallet_transactions') THEN
+    CREATE POLICY wtx_select_own ON wallet_transactions FOR SELECT USING (auth.uid()=user_id);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname='wtx_insert_own' AND tablename='wallet_transactions') THEN
+    CREATE POLICY wtx_insert_own ON wallet_transactions FOR INSERT WITH CHECK (auth.uid()=user_id);
+  END IF;
+END $;
+CREATE INDEX IF NOT EXISTS idx_wtx_user ON wallet_transactions(user_id);
+CREATE INDEX IF NOT EXISTS idx_wtx_created ON wallet_transactions(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_wtx_type ON wallet_transactions(type);
+
+-- 16. ENABLE REALTIME ON jv_deals
+DO $ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname='supabase_realtime' AND tablename='jv_deals') THEN
     ALTER PUBLICATION supabase_realtime ADD TABLE jv_deals;
   END IF;
-END $$;
+END $;
 
--- 15. VERIFY
+-- =============================================================================
+-- 17. ATOMIC STORED PROCEDURES
+-- =============================================================================
+
+-- ATOMIC PURCHASE SHARES: Single transaction for wallet debit + holding creation/update + transaction record
+CREATE OR REPLACE FUNCTION public.atomic_purchase_shares(
+  p_user_id uuid,
+  p_property_id text,
+  p_property_name text,
+  p_shares integer,
+  p_price_per_share numeric,
+  p_subtotal numeric,
+  p_platform_fee numeric,
+  p_total_cost numeric,
+  p_payment_method text,
+  p_investment_type text,
+  p_transaction_id text,
+  p_holding_id text,
+  p_confirmation_number text
+) RETURNS jsonb AS $fn$
+DECLARE
+  v_wallet_available numeric;
+  v_wallet_invested numeric;
+  v_existing_holding record;
+  v_new_shares integer;
+  v_new_cost_basis numeric;
+  v_new_current_value numeric;
+  v_final_holding_id text;
+  v_tx_status text;
+  v_tx_description text;
+BEGIN
+  -- Lock wallet row for update (prevents concurrent modifications)
+  SELECT available, invested INTO v_wallet_available, v_wallet_invested
+  FROM wallets WHERE user_id = p_user_id FOR UPDATE;
+
+  IF NOT FOUND THEN
+    INSERT INTO wallets (user_id, available, pending, invested, total, currency)
+    VALUES (p_user_id, 0, 0, 0, 0, 'USD');
+    v_wallet_available := 0;
+    v_wallet_invested := 0;
+  END IF;
+
+  -- Check balance for wallet payments
+  IF p_payment_method = 'wallet' AND v_wallet_available < p_total_cost THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'transaction_id', '',
+      'holding_id', '',
+      'confirmation_number', '',
+      'message', format('Insufficient balance: $%s available, $%s required', v_wallet_available::text, p_total_cost::text),
+      'new_balance', v_wallet_available
+    );
+  END IF;
+
+  -- Debit wallet if wallet payment
+  IF p_payment_method = 'wallet' THEN
+    UPDATE wallets SET
+      available = GREATEST(0, available - p_total_cost),
+      invested = invested + p_total_cost,
+      updated_at = now()
+    WHERE user_id = p_user_id;
+  END IF;
+
+  -- Set transaction status
+  IF p_payment_method = 'wallet' THEN
+    v_tx_status := 'completed';
+    v_tx_description := format('Purchased %s shares of %s (%s) — Confirmation: %s', p_shares, p_property_name, p_investment_type, p_confirmation_number);
+  ELSE
+    v_tx_status := 'pending';
+    v_tx_description := format('Pending payment: %s shares of %s (%s) via %s — Confirmation: %s', p_shares, p_property_name, p_investment_type, p_payment_method, p_confirmation_number);
+  END IF;
+
+  -- Insert transaction
+  INSERT INTO transactions (id, user_id, type, amount, status, description, property_id, property_name, created_at)
+  VALUES (p_transaction_id, p_user_id, 'buy', p_total_cost, v_tx_status, v_tx_description, p_property_id, p_property_name, now());
+
+  -- Upsert holding
+  SELECT * INTO v_existing_holding FROM holdings
+  WHERE user_id = p_user_id AND property_id = p_property_id FOR UPDATE;
+
+  IF FOUND THEN
+    v_final_holding_id := v_existing_holding.id;
+    v_new_shares := v_existing_holding.shares + p_shares;
+    v_new_cost_basis := ((v_existing_holding.avg_cost_basis * v_existing_holding.shares) + p_subtotal) / v_new_shares;
+    v_new_current_value := v_new_shares * p_price_per_share;
+
+    UPDATE holdings SET
+      shares = v_new_shares,
+      avg_cost_basis = ROUND(v_new_cost_basis, 2),
+      current_value = ROUND(v_new_current_value, 2),
+      total_return = ROUND(v_new_current_value - (v_new_cost_basis * v_new_shares), 2),
+      total_return_percent = CASE WHEN v_new_cost_basis > 0 THEN ROUND(((p_price_per_share - v_new_cost_basis) / v_new_cost_basis) * 100, 2) ELSE 0 END,
+      unrealized_pnl = ROUND(v_new_current_value - (v_new_cost_basis * v_new_shares), 2),
+      unrealized_pnl_percent = CASE WHEN v_new_cost_basis > 0 THEN ROUND(((p_price_per_share - v_new_cost_basis) / v_new_cost_basis) * 100, 2) ELSE 0 END
+    WHERE id = v_existing_holding.id;
+  ELSE
+    v_final_holding_id := p_holding_id;
+    INSERT INTO holdings (id, user_id, property_id, shares, avg_cost_basis, current_value, total_return, total_return_percent, unrealized_pnl, unrealized_pnl_percent, purchase_date, created_at)
+    VALUES (p_holding_id, p_user_id, p_property_id, p_shares, p_price_per_share, ROUND(p_subtotal, 2), 0, 0, 0, 0, now(), now());
+  END IF;
+
+  -- Record platform fee if any
+  IF p_platform_fee > 0 THEN
+    INSERT INTO transactions (id, user_id, type, amount, status, description, property_id, property_name, created_at)
+    VALUES ('fee_' || extract(epoch from now())::bigint || '_' || substr(md5(random()::text), 1, 6), p_user_id, 'fee', p_platform_fee, 'completed', 'Platform fee for ' || p_property_name || ' purchase', p_property_id, p_property_name, now());
+  END IF;
+
+  -- Send notification
+  INSERT INTO notifications (id, user_id, type, title, message, read, created_at)
+  VALUES ('notif_' || extract(epoch from now())::bigint || '_' || substr(md5(random()::text), 1, 6), p_user_id, 'transaction', 'Investment Confirmed', format('You purchased %s shares of %s for $%s. Confirmation: %s', p_shares, p_property_name, p_total_cost::text, p_confirmation_number), false, now());
+
+  -- Update profile total_invested
+  UPDATE profiles SET
+    total_invested = COALESCE(total_invested, 0) + p_total_cost,
+    updated_at = now()
+  WHERE id = p_user_id;
+
+  -- Get new balance
+  SELECT available INTO v_wallet_available FROM wallets WHERE user_id = p_user_id;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'transaction_id', p_transaction_id,
+    'holding_id', v_final_holding_id,
+    'confirmation_number', p_confirmation_number,
+    'message', format('Successfully purchased %s shares of %s.', p_shares, p_property_name),
+    'new_balance', COALESCE(v_wallet_available, 0)
+  );
+
+EXCEPTION WHEN OTHERS THEN
+  RETURN jsonb_build_object(
+    'success', false,
+    'transaction_id', '',
+    'holding_id', '',
+    'confirmation_number', '',
+    'message', SQLERRM,
+    'new_balance', 0
+  );
+END;
+$fn$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- ATOMIC SELL SHARES: Single transaction for holding update/delete + wallet credit + transaction record
+CREATE OR REPLACE FUNCTION public.atomic_sell_shares(
+  p_user_id uuid,
+  p_property_id text,
+  p_property_name text,
+  p_shares integer,
+  p_price_per_share numeric,
+  p_subtotal numeric,
+  p_platform_fee numeric,
+  p_net_proceeds numeric,
+  p_transaction_id text,
+  p_confirmation_number text
+) RETURNS jsonb AS $fn$
+DECLARE
+  v_holding record;
+  v_remaining_shares integer;
+  v_new_current_value numeric;
+  v_invested_reduction numeric;
+BEGIN
+  -- Lock holding for update
+  SELECT * INTO v_holding FROM holdings
+  WHERE user_id = p_user_id AND property_id = p_property_id FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'transaction_id', '',
+      'holding_id', '',
+      'confirmation_number', '',
+      'message', 'You do not own shares in this property.',
+      'new_balance', 0,
+      'remaining_shares', 0
+    );
+  END IF;
+
+  IF v_holding.shares < p_shares THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'transaction_id', '',
+      'holding_id', '',
+      'confirmation_number', '',
+      'message', format('You only own %s shares. Cannot sell %s.', v_holding.shares, p_shares),
+      'new_balance', 0,
+      'remaining_shares', v_holding.shares
+    );
+  END IF;
+
+  v_remaining_shares := v_holding.shares - p_shares;
+  v_invested_reduction := p_shares * v_holding.avg_cost_basis;
+
+  -- Update or delete holding
+  IF v_remaining_shares = 0 THEN
+    DELETE FROM holdings WHERE id = v_holding.id;
+  ELSE
+    v_new_current_value := v_remaining_shares * p_price_per_share;
+    UPDATE holdings SET
+      shares = v_remaining_shares,
+      current_value = ROUND(v_new_current_value, 2),
+      total_return = ROUND(v_new_current_value - (v_holding.avg_cost_basis * v_remaining_shares), 2),
+      total_return_percent = CASE WHEN v_holding.avg_cost_basis > 0 THEN ROUND(((p_price_per_share - v_holding.avg_cost_basis) / v_holding.avg_cost_basis) * 100, 2) ELSE 0 END,
+      unrealized_pnl = ROUND(v_new_current_value - (v_holding.avg_cost_basis * v_remaining_shares), 2),
+      unrealized_pnl_percent = CASE WHEN v_holding.avg_cost_basis > 0 THEN ROUND(((p_price_per_share - v_holding.avg_cost_basis) / v_holding.avg_cost_basis) * 100, 2) ELSE 0 END
+    WHERE id = v_holding.id;
+  END IF;
+
+  -- Insert sell transaction
+  INSERT INTO transactions (id, user_id, type, amount, status, description, property_id, property_name, created_at)
+  VALUES (p_transaction_id, p_user_id, 'sell', p_net_proceeds, 'completed', format('Sold %s shares of %s — Net: %s — Confirmation: %s', p_shares, p_property_name, p_net_proceeds::text, p_confirmation_number), p_property_id, p_property_name, now());
+
+  -- Credit wallet atomically (lock row)
+  UPDATE wallets SET
+    available = available + p_net_proceeds,
+    invested = GREATEST(0, invested - v_invested_reduction),
+    updated_at = now()
+  WHERE user_id = p_user_id;
+
+  -- Record fee transaction
+  IF p_platform_fee > 0 THEN
+    INSERT INTO transactions (id, user_id, type, amount, status, description, property_id, property_name, created_at)
+    VALUES ('fee_' || extract(epoch from now())::bigint || '_' || substr(md5(random()::text), 1, 6), p_user_id, 'fee', p_platform_fee, 'completed', 'Platform fee for ' || p_property_name || ' sale', p_property_id, p_property_name, now());
+  END IF;
+
+  -- Send notification
+  INSERT INTO notifications (id, user_id, type, title, message, read, created_at)
+  VALUES ('notif_' || extract(epoch from now())::bigint || '_' || substr(md5(random()::text), 1, 6), p_user_id, 'transaction', 'Shares Sold', format('You sold %s shares of %s for $%s. Confirmation: %s', p_shares, p_property_name, p_net_proceeds::text, p_confirmation_number), false, now());
+
+  DECLARE v_new_available numeric;
+  BEGIN
+    SELECT available INTO v_new_available FROM wallets WHERE user_id = p_user_id;
+    RETURN jsonb_build_object(
+      'success', true,
+      'transaction_id', p_transaction_id,
+      'holding_id', v_holding.id,
+      'confirmation_number', p_confirmation_number,
+      'message', format('Successfully sold %s shares of %s. $%s credited to wallet.', p_shares, p_property_name, p_net_proceeds::text),
+      'new_balance', COALESCE(v_new_available, 0),
+      'remaining_shares', v_remaining_shares
+    );
+  END;
+
+EXCEPTION WHEN OTHERS THEN
+  RETURN jsonb_build_object(
+    'success', false,
+    'transaction_id', '',
+    'holding_id', '',
+    'confirmation_number', '',
+    'message', SQLERRM,
+    'new_balance', 0,
+    'remaining_shares', 0
+  );
+END;
+$fn$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- ATOMIC WALLET OPERATION: Deposit/withdrawal/dividend with row-level locking
+CREATE OR REPLACE FUNCTION public.atomic_wallet_operation(
+  p_user_id uuid,
+  p_amount numeric,
+  p_operation text, -- 'credit' or 'debit'
+  p_reason text,
+  p_description text,
+  p_reference_id text DEFAULT NULL,
+  p_reference_type text DEFAULT NULL,
+  p_fee numeric DEFAULT 0
+) RETURNS jsonb AS $fn$
+DECLARE
+  v_wallet record;
+  v_new_available numeric;
+  v_new_invested numeric;
+  v_new_total numeric;
+  v_tx_id text;
+  v_is_investment boolean;
+BEGIN
+  v_tx_id := 'wtx_' || extract(epoch from now())::bigint || '_' || substr(md5(random()::text), 1, 8);
+  v_is_investment := (p_reason IN ('investment', 'resale_purchase'));
+
+  -- Lock wallet row
+  SELECT * INTO v_wallet FROM wallets WHERE user_id = p_user_id FOR UPDATE;
+
+  IF NOT FOUND THEN
+    INSERT INTO wallets (user_id, available, pending, invested, total, currency)
+    VALUES (p_user_id, 0, 0, 0, 0, 'USD');
+    SELECT * INTO v_wallet FROM wallets WHERE user_id = p_user_id;
+  END IF;
+
+  IF p_operation = 'debit' THEN
+    IF v_wallet.available < p_amount THEN
+      RETURN jsonb_build_object(
+        'success', false,
+        'new_available', v_wallet.available,
+        'new_invested', v_wallet.invested,
+        'new_total', v_wallet.total,
+        'message', format('Insufficient balance: $%s available, $%s required', v_wallet.available::text, p_amount::text),
+        'transaction_id', ''
+      );
+    END IF;
+
+    v_new_available := GREATEST(0, v_wallet.available - p_amount);
+    v_new_invested := CASE WHEN v_is_investment THEN v_wallet.invested + p_amount ELSE v_wallet.invested END;
+    v_new_total := v_new_available + v_new_invested + v_wallet.pending;
+  ELSE
+    v_new_available := v_wallet.available + p_amount;
+    v_new_invested := v_wallet.invested;
+    v_new_total := v_new_available + v_new_invested + v_wallet.pending;
+  END IF;
+
+  UPDATE wallets SET
+    available = v_new_available,
+    invested = v_new_invested,
+    total = v_new_total,
+    updated_at = now()
+  WHERE user_id = p_user_id;
+
+  -- Record wallet transaction
+  BEGIN
+    INSERT INTO wallet_transactions (id, user_id, type, amount, direction, status, reference_id, reference_type, description, fee, net_amount, created_at)
+    VALUES (v_tx_id, p_user_id, p_reason, p_amount, p_operation, 'completed', p_reference_id, p_reference_type, p_description, p_fee, p_amount - p_fee, now());
+  EXCEPTION WHEN undefined_table THEN
+    INSERT INTO transactions (id, user_id, type, amount, status, description, created_at)
+    VALUES (v_tx_id, p_user_id, p_reason, CASE WHEN p_operation = 'debit' THEN -p_amount ELSE p_amount END, 'completed', p_description, now());
+  END;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'new_available', v_new_available,
+    'new_invested', v_new_invested,
+    'new_total', v_new_total,
+    'message', format('Wallet %s: $%s %s', p_operation, p_amount::text, p_reason),
+    'transaction_id', v_tx_id
+  );
+
+EXCEPTION WHEN OTHERS THEN
+  RETURN jsonb_build_object(
+    'success', false,
+    'new_available', 0,
+    'new_invested', 0,
+    'new_total', 0,
+    'message', SQLERRM,
+    'transaction_id', ''
+  );
+END;
+$fn$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- 18. VERIFY
 DO $$
 DECLARE
   _tables text[] := ARRAY['profiles','wallets','properties','market_data','holdings','transactions','notifications','analytics_events','image_registry','push_tokens','jv_deals','landing_analytics','waitlist'];
@@ -427,25 +830,25 @@ END $$;
 `;
 
 export const VERIFY_SQL = `-- IVXHOLDINGS GO-LIVE VERIFICATION
-DO $$ DECLARE _t text; _ok int:=0; _tables text[]:=ARRAY['profiles','wallets','properties','market_data','holdings','transactions','notifications','analytics_events','image_registry','push_tokens','jv_deals','landing_analytics','waitlist'];
+DO $ DECLARE _t text; _ok int:=0; _tables text[]:=ARRAY['profiles','wallets','properties','market_data','holdings','transactions','notifications','analytics_events','image_registry','push_tokens','jv_deals','landing_analytics','waitlist','resale_listings','wallet_transactions'];
 BEGIN
   RAISE NOTICE '=== TABLE CHECK ===';
   FOREACH _t IN ARRAY _tables LOOP
     IF EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name=_t AND table_schema='public') THEN _ok:=_ok+1; RAISE NOTICE '[OK] %', _t;
     ELSE RAISE NOTICE '[MISS] %', _t; END IF;
   END LOOP;
-  RAISE NOTICE 'Tables: % / 13', _ok;
-END $$;
+  RAISE NOTICE 'Tables: % / 15', _ok;
+END $;
 
-DO $$ DECLARE _t text; _ok int:=0; _tables text[]:=ARRAY['profiles','wallets','properties','market_data','holdings','transactions','notifications','analytics_events','image_registry','push_tokens','jv_deals','landing_analytics','waitlist'];
+DO $ DECLARE _t text; _ok int:=0; _tables text[]:=ARRAY['profiles','wallets','properties','market_data','holdings','transactions','notifications','analytics_events','image_registry','push_tokens','jv_deals','landing_analytics','waitlist','resale_listings','wallet_transactions'];
 BEGIN
   RAISE NOTICE '=== RLS CHECK ===';
   FOREACH _t IN ARRAY _tables LOOP
     IF (SELECT relrowsecurity FROM pg_class WHERE relname=_t AND relnamespace=(SELECT oid FROM pg_namespace WHERE nspname='public')) THEN _ok:=_ok+1; RAISE NOTICE '[OK] % RLS', _t;
     ELSE RAISE NOTICE '[WARN] % NO RLS', _t; END IF;
   END LOOP;
-  RAISE NOTICE 'RLS: % / 13', _ok;
-END $$;
+  RAISE NOTICE 'RLS: % / 15', _ok;
+END $;
 
 DO $$ BEGIN
   RAISE NOTICE '=== REALTIME CHECK ===';
@@ -458,7 +861,10 @@ DO $$ BEGIN
   IF EXISTS(SELECT 1 FROM pg_proc WHERE proname='is_admin') THEN RAISE NOTICE '[OK] is_admin()'; ELSE RAISE NOTICE '[FAIL] is_admin() missing'; END IF;
   IF EXISTS(SELECT 1 FROM pg_proc WHERE proname='set_updated_at') THEN RAISE NOTICE '[OK] set_updated_at()'; ELSE RAISE NOTICE '[FAIL] set_updated_at() missing'; END IF;
   IF EXISTS(SELECT 1 FROM pg_proc WHERE proname='handle_new_user') THEN RAISE NOTICE '[OK] handle_new_user()'; ELSE RAISE NOTICE '[FAIL] handle_new_user() missing'; END IF;
-END $$;
+  IF EXISTS(SELECT 1 FROM pg_proc WHERE proname='atomic_purchase_shares') THEN RAISE NOTICE '[OK] atomic_purchase_shares()'; ELSE RAISE NOTICE '[FAIL] atomic_purchase_shares() missing'; END IF;
+  IF EXISTS(SELECT 1 FROM pg_proc WHERE proname='atomic_sell_shares') THEN RAISE NOTICE '[OK] atomic_sell_shares()'; ELSE RAISE NOTICE '[FAIL] atomic_sell_shares() missing'; END IF;
+  IF EXISTS(SELECT 1 FROM pg_proc WHERE proname='atomic_wallet_operation') THEN RAISE NOTICE '[OK] atomic_wallet_operation()'; ELSE RAISE NOTICE '[FAIL] atomic_wallet_operation() missing'; END IF;
+END $;
 
 DO $$ BEGIN
   RAISE NOTICE '=== AUTH TRIGGER CHECK ===';

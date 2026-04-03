@@ -63,7 +63,7 @@ import type { IntegrationPriority, IntegrationStatus } from '@/mocks/developer-h
 const CATEGORY_ICONS: Record<string, React.ReactNode> = {
   Database: <Database size={20} color="#3B82F6" />,
   Lock: <Lock size={20} color="#6366F1" />,
-  CreditCard: <CreditCard size={20} color="#10B981" />,
+  CreditCard: <CreditCard size={20} color="#22C55E" />,
   ShieldCheck: <ShieldCheck size={20} color="#F59E0B" />,
   Bell: <Bell size={20} color="#EC4899" />,
   Brain: <Brain size={20} color="#A855F7" />,
@@ -81,7 +81,7 @@ const PRIORITY_CONFIG: Record<IntegrationPriority, { color: string; label: strin
 };
 
 const STATUS_CONFIG: Record<IntegrationStatus, { color: string; label: string }> = {
-  ready: { color: '#10B981', label: 'Ready' },
+  ready: { color: '#22C55E', label: 'Ready' },
   mock_only: { color: '#F59E0B', label: 'Mock Only' },
   in_progress: { color: '#3B82F6', label: 'In Progress' },
   not_started: { color: '#6B7280', label: 'Not Started' },
@@ -304,7 +304,7 @@ export default function DeveloperHandoffScreen() {
             <Text style={styles.statLabel}>Mocked</Text>
           </View>
           <View style={styles.statBox}>
-            <Text style={[styles.statNum, { color: '#10B981' }]}>{readyCount}</Text>
+            <Text style={[styles.statNum, { color: '#22C55E' }]}>{readyCount}</Text>
             <Text style={styles.statLabel}>Ready</Text>
           </View>
         </View>

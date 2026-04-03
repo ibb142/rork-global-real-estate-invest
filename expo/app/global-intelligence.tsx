@@ -445,7 +445,7 @@ export default function GlobalIntelligenceScreen() {
                 {[
                   { label: 'Real Estate (Global)', pct: 28, color: Colors.primary, amount: '$2.1T' },
                   { label: 'Equity Markets', pct: 32, color: '#4A90D9', amount: '$2.4T' },
-                  { label: 'Fixed Income / Bonds', pct: 18, color: '#00C48C', amount: '$1.35T' },
+                  { label: 'Fixed Income / Bonds', pct: 18, color: '#22C55E', amount: '$1.35T' },
                   { label: 'Cryptocurrencies', pct: 8, color: '#F7931A', amount: '$600B' },
                   { label: 'Commodities', pct: 7, color: '#FFD700', amount: '$525B' },
                   { label: 'Cash & Equivalents', pct: 7, color: '#9A9A9A', amount: '$525B' },

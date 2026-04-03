@@ -266,7 +266,7 @@ export default function VIPTiersScreen() {
 
               <View style={styles.heroStatsRow}>
                 <View style={styles.heroStatBox}>
-                  <TrendingDown size={14} color="#00C48C" />
+                  <TrendingDown size={14} color="#22C55E" />
                   <Text style={styles.heroStatValue}>
                     {currentTier.tradingFeeDiscount > 0 ? `-${currentTier.tradingFeeDiscount}%` : '0%'}
                   </Text>
@@ -382,7 +382,7 @@ export default function VIPTiersScreen() {
 
               <View style={styles.tierMetricsGrid}>
                 <View style={[styles.metricCard, { borderColor: activeTier.color + '18' }]}>
-                  <TrendingDown size={16} color="#00C48C" />
+                  <TrendingDown size={16} color="#22C55E" />
                   <Text style={styles.metricValue}>
                     {activeTier.tradingFeeDiscount > 0 ? `${activeTier.tradingFeeDiscount}%` : '0%'}
                   </Text>
@@ -404,7 +404,7 @@ export default function VIPTiersScreen() {
                 </View>
                 <View style={[styles.metricCard, { borderColor: activeTier.color + '18' }]}>
                   <Gift size={16} color="#FF8C00" />
-                  <Text style={styles.metricValue}>${activeTier.referralBonus}</Text>
+                  <Text style={styles.metricValue}>${formatNumber(activeTier.referralBonus)}</Text>
                   <Text style={styles.metricLabel}>Referral</Text>
                 </View>
               </View>

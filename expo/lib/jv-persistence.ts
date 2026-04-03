@@ -142,12 +142,22 @@ export async function walRollback(walId: string): Promise<Record<string, unknown
 
 export async function walReplayUncommitted(): Promise<{ replayed: number; failed: number }> {
   const wal = await getWAL();
-  const uncommitted = wal.filter(e => !e.committed && !e.rolledBack && e.retryCount < 3);
+  const MAX_WAL_AGE_MS = 5 * 60 * 1000;
+  const now = Date.now();
+  const uncommitted = wal.filter(e => {
+    if (e.committed || e.rolledBack || e.retryCount >= 3) return false;
+    const entryAge = now - new Date(e.timestamp).getTime();
+    if (entryAge > MAX_WAL_AGE_MS) {
+      console.log('[WAL] Skipping stale entry (age:', Math.round(entryAge / 1000), 's):', e.id, '| deal:', e.dealId);
+      return false;
+    }
+    return true;
+  });
   let replayed = 0;
   let failed = 0;
 
   for (const entry of uncommitted) {
-    if (!entry.before) continue;
+    if (!entry.after) continue;
     console.log('[WAL] Replaying uncommitted:', entry.id, '| op:', entry.operation, '| deal:', entry.dealId);
 
     try {
@@ -157,6 +167,17 @@ export async function walReplayUncommitted(): Promise<{ replayed: number; failed
           const localDeals: Record<string, unknown>[] = localRaw ? JSON.parse(localRaw) : [];
           const localIdx = localDeals.findIndex((d: any) => d.id === entry.dealId);
           if (localIdx >= 0) {
+            const localDeal = localDeals[localIdx] as Record<string, unknown>;
+            const localUpdated = (localDeal?.updatedAt as string) || (localDeal?.updated_at as string) || '';
+            const entryTime = entry.timestamp || '';
+            if (localUpdated && entryTime && String(localUpdated) > String(entryTime)) {
+              console.log('[WAL] Skipping replay — local deal is newer (local:', localUpdated, '> wal:', entryTime, ') deal:', entry.dealId);
+              const walIdx = wal.findIndex(e => e.id === entry.id);
+              if (walIdx >= 0 && wal[walIdx]) {
+                wal[walIdx]!.committed = true;
+              }
+              continue;
+            }
             localDeals[localIdx] = { ...localDeals[localIdx], ...entry.after };
           } else {
             localDeals.unshift(entry.after);
@@ -209,6 +230,33 @@ async function saveWriteQueue(queue: WriteQueueItem[]): Promise<void> {
   }
 }
 
+export async function clearQueueForDeal(dealId: string): Promise<number> {
+  const queue = await getWriteQueue();
+  const filtered = queue.filter(item => item.dealId !== dealId);
+  const removed = queue.length - filtered.length;
+  if (removed > 0) {
+    await saveWriteQueue(filtered);
+    console.log('[WriteQueue] Cleared', removed, 'stale queue entries for deal:', dealId);
+  }
+  return removed;
+}
+
+export async function clearWALForDeal(dealId: string): Promise<number> {
+  const wal = await getWAL();
+  const updated = wal.map(e => {
+    if (e.dealId === dealId && !e.committed && !e.rolledBack) {
+      return { ...e, committed: true };
+    }
+    return e;
+  });
+  const marked = updated.filter((e, i) => e.committed !== wal[i]?.committed).length;
+  if (marked > 0) {
+    await saveWAL(updated);
+    console.log('[WAL] Marked', marked, 'uncommitted entries as committed for deal:', dealId);
+  }
+  return marked;
+}
+
 export async function enqueueWrite(
   operation: WriteQueueItem['operation'],
   dealId: string,
@@ -257,13 +305,13 @@ export async function processWriteQueue(): Promise<{ processed: number; failed: 
       if (item.operation === 'upsert') {
         const result = await supabase.from(item.table).upsert({
           ...item.payload,
-          updated_at: new Date().toISOString(),
+          updated_at: item.payload.updated_at || new Date().toISOString(),
         });
         error = result.error;
       } else if (item.operation === 'update') {
         const result = await supabase.from(item.table).update({
           ...item.payload,
-          updated_at: new Date().toISOString(),
+          updated_at: item.payload.updated_at || new Date().toISOString(),
         }).eq('id', item.dealId);
         error = result.error;
       }
@@ -436,72 +484,13 @@ export async function runPublicationIntegrityCheck(): Promise<IntegrityReport> {
       }
 
       if (!isPublished || isTrashed) {
-        console.log('[Watchdog] Deal', record.dealId, 'found in Supabase but NOT published (published:', supabaseRow.published, 'status:', supabaseRow.status, ') — auto-restoring...');
+        console.log('[Watchdog] Deal', record.dealId, 'found in Supabase but NOT published (published:', supabaseRow.published, 'status:', supabaseRow.status, ') — logging mismatch only (auto-restore DISABLED to respect admin edits)');
         report.mismatched++;
-
-        try {
-          const { error: restoreErr } = await supabase.from('jv_deals').update({
-            published: true,
-            status: 'active',
-            published_at: record.publishedAt || new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          }).eq('id', record.dealId);
-
-          if (!restoreErr) {
-            report.restored++;
-            console.log('[Watchdog] AUTO-RESTORED deal in Supabase:', record.dealId);
-          } else {
-            report.errors.push(`Restore failed for ${record.dealId}: ${restoreErr.message}`);
-          }
-        } catch (err) {
-          report.errors.push(`Restore exception for ${record.dealId}: ${(err as Error)?.message}`);
-        }
       }
     } else {
       if (isSupabaseConfigured() && supabaseMap.size > 0) {
-        console.log('[Watchdog] Deal', record.dealId, 'MISSING from Supabase — attempting full re-insert from snapshot...');
+        console.log('[Watchdog] Deal', record.dealId, 'MISSING from Supabase — logging only (auto re-insert DISABLED to respect admin edits)');
         report.missing++;
-
-        try {
-          const snapshot = record.snapshotData;
-          if (snapshot && Object.keys(snapshot).length > 0) {
-            const photos = record.photos.length > 0 ? record.photos : (Array.isArray(snapshot.photos) ? snapshot.photos : []);
-            const partners = snapshot.partners;
-
-            const insertPayload: Record<string, unknown> = {
-              id: record.dealId,
-              title: record.title || snapshot.title,
-              project_name: record.projectName || (snapshot as any).projectName || (snapshot as any).project_name || '',
-              type: snapshot.type || 'development',
-              description: snapshot.description || '',
-              property_address: (snapshot as any).propertyAddress || (snapshot as any).property_address || '',
-              city: snapshot.city || '',
-              state: snapshot.state || '',
-              total_investment: (snapshot as any).totalInvestment || (snapshot as any).total_investment || 0,
-              expected_roi: (snapshot as any).expectedROI || (snapshot as any).expected_roi || 0,
-              distribution_frequency: (snapshot as any).distributionFrequency || (snapshot as any).distribution_frequency || '',
-              exit_strategy: (snapshot as any).exitStrategy || (snapshot as any).exit_strategy || '',
-              status: 'active',
-              published: true,
-              published_at: record.publishedAt || new Date().toISOString(),
-              photos: Array.isArray(photos) ? JSON.stringify(photos) : (typeof photos === 'string' ? photos : '[]'),
-              partners: Array.isArray(partners) ? JSON.stringify(partners) : (typeof partners === 'string' ? partners : '[]'),
-              updated_at: new Date().toISOString(),
-            };
-
-            const { error: upsertErr } = await supabase.from('jv_deals').upsert(insertPayload);
-            if (!upsertErr) {
-              report.restored++;
-              console.log('[Watchdog] FULL RE-INSERT SUCCESS for deal:', record.dealId);
-            } else {
-              report.errors.push(`Re-insert failed for ${record.dealId}: ${upsertErr.message}`);
-            }
-          } else {
-            report.errors.push(`No snapshot data for ${record.dealId} — cannot restore`);
-          }
-        } catch (err) {
-          report.errors.push(`Re-insert exception for ${record.dealId}: ${(err as Error)?.message}`);
-        }
       }
     }
 
@@ -580,8 +569,8 @@ export async function cleanupWAL(): Promise<number> {
 
 let _watchdogInterval: ReturnType<typeof setInterval> | null = null;
 let _watchdogRunning = false;
-const WATCHDOG_INTERVAL = 60_000;
-const WRITE_QUEUE_INTERVAL = 30_000;
+const WATCHDOG_INTERVAL = 300_000;
+const WRITE_QUEUE_INTERVAL = 120_000;
 let _writeQueueInterval: ReturnType<typeof setInterval> | null = null;
 
 export async function autoCleanStaleItems(): Promise<void> {

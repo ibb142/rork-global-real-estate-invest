@@ -71,10 +71,14 @@ function getDefaultTrustInfo(deal: ParsedJVDeal): DealTrustInfo {
 }
 
 function formatTimelineString(trust: DealTrustInfo): string {
-  if (trust.timelineMin && trust.timelineMax) {
-    return `${trust.timelineMin}\u2013${trust.timelineMax} ${trust.timelineUnit === 'years' ? 'yr' : 'mo'}`;
+  const min = trust.timelineMin || 0;
+  const max = trust.timelineMax || 0;
+  const unit = trust.timelineUnit === 'years' ? 'yr' : 'mo';
+  if (min > 0 && max > 0) {
+    return `${min}\u2013${max} ${unit}`;
   }
-  if (trust.timelineMax) return `${trust.timelineMax} ${trust.timelineUnit === 'years' ? 'yr' : 'mo'}`;
+  if (max > 0) return `${max} ${unit}`;
+  if (min > 0) return `${min} ${unit}`;
   return '';
 }
 
@@ -163,7 +167,7 @@ const TrustDealCard = memo(function TrustDealCard({
           </View>
           {verifiedCount >= 3 && (
             <View style={styles.verifiedBadgeOverlay}>
-              <Shield size={10} color="#00C48C" />
+              <Shield size={10} color="#22C55E" />
               <Text style={styles.verifiedBadgeText}>VERIFIED</Text>
             </View>
           )}
@@ -212,7 +216,7 @@ const TrustDealCard = memo(function TrustDealCard({
         <View style={styles.trustIndicators}>
           {trust.titleVerified && (
             <View style={styles.trustBadge}>
-              <CheckCircle2 size={10} color="#00C48C" />
+              <CheckCircle2 size={10} color="#22C55E" />
               <Text style={styles.trustBadgeText}>Title Verified</Text>
             </View>
           )}
@@ -230,7 +234,7 @@ const TrustDealCard = memo(function TrustDealCard({
           )}
           {trust.permitStatus === 'approved' && (
             <View style={styles.trustBadge}>
-              <FileText size={10} color="#00C48C" />
+              <FileText size={10} color="#22C55E" />
               <Text style={styles.trustBadgeText}>Permitted</Text>
             </View>
           )}
@@ -343,10 +347,10 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: '#00C48C',
+    backgroundColor: '#22C55E',
   },
   liveBadgeText: {
-    color: '#00C48C',
+    color: '#22C55E',
     fontSize: 9,
     fontWeight: '900' as const,
     letterSpacing: 1.5,
@@ -366,7 +370,7 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
   },
   verifiedBadgeText: {
-    color: '#00C48C',
+    color: '#22C55E',
     fontSize: 9,
     fontWeight: '800' as const,
     letterSpacing: 0.5,

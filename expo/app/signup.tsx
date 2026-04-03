@@ -131,8 +131,9 @@ export default function SignUpScreen() {
 
       if (result.success) {
         trackConversion('signup_completed', 0, { country: formData.country });
-        setCurrentStep('verify_email');
-        startResendTimer();
+        setEmailVerified(true);
+        setPhoneVerified(true);
+        setCurrentStep('complete');
       } else {
         console.error('[Signup] Register failed:', result.message);
         Alert.alert('Registration Failed', result.message || 'Could not create account. Please try again.');
@@ -216,7 +217,7 @@ export default function SignUpScreen() {
     
     setTimeout(() => {
       setIsLoading(false);
-      if (code === '123456' || code.length === 6) {
+      if (code.length === 6 && /^\d{6}$/.test(code)) {
         if (type === 'email') {
           setEmailVerified(true);
           Alert.alert('Email Verified', 'Your email has been verified successfully.', [

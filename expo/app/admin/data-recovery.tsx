@@ -237,7 +237,7 @@ export default function DataRecoveryScreen() {
             <ArrowLeft size={22} color={Colors.text} />
           </TouchableOpacity>
           <View style={styles.headerCenter}>
-            <Database size={18} color="#00C48C" />
+            <Database size={18} color="#22C55E" />
             <Text style={styles.headerTitle}>Data Recovery</Text>
           </View>
           <View style={styles.headerRight}>
@@ -252,7 +252,7 @@ export default function DataRecoveryScreen() {
               <Text style={styles.statLabel}>Deleted</Text>
             </View>
             <View style={styles.statCard}>
-              <Text style={[styles.statValue, { color: '#00C48C' }]}>{stats.restorableCount}</Text>
+              <Text style={[styles.statValue, { color: '#22C55E' }]}>{stats.restorableCount}</Text>
               <Text style={styles.statLabel}>Restorable</Text>
             </View>
             <View style={styles.statCard}>
@@ -311,7 +311,7 @@ export default function DataRecoveryScreen() {
                 </View>
               ) : filteredDeleted.length === 0 ? (
                 <View style={styles.centerWrap}>
-                  <CheckCircle size={48} color="#00C48C" />
+                  <CheckCircle size={48} color="#22C55E" />
                   <Text style={styles.emptyTitle}>No Deleted Items</Text>
                   <Text style={styles.emptySubtitle}>
                     {searchQuery ? 'No items match your search' : 'All data is safe. Deleted items will appear here for recovery.'}
@@ -328,9 +328,9 @@ export default function DataRecoveryScreen() {
                             <Text style={styles.entityBadgeText}>{ENTITY_LABELS[item.entityType] || item.entityType}</Text>
                           </View>
                           {item.restored ? (
-                            <View style={[styles.statusBadge, { backgroundColor: '#00C48C18' }]}>
-                              <CheckCircle size={10} color="#00C48C" />
-                              <Text style={[styles.statusBadgeText, { color: '#00C48C' }]}>Restored</Text>
+                            <View style={[styles.statusBadge, { backgroundColor: '#22C55E18' }]}>
+                              <CheckCircle size={10} color="#22C55E" />
+                              <Text style={[styles.statusBadgeText, { color: '#22C55E' }]}>Restored</Text>
                             </View>
                           ) : (
                             <View style={[styles.statusBadge, { backgroundColor: '#FF4D4D18' }]}>
@@ -353,8 +353,8 @@ export default function DataRecoveryScreen() {
                       </View>
                       {item.restoredAt && (
                         <View style={styles.metaRow}>
-                          <ArchiveRestore size={10} color="#00C48C" />
-                          <Text style={[styles.metaText, { color: '#00C48C' }]}>Restored: {formatDate(item.restoredAt)}</Text>
+                          <ArchiveRestore size={10} color="#22C55E" />
+                          <Text style={[styles.metaText, { color: '#22C55E' }]}>Restored: {formatDate(item.restoredAt)}</Text>
                         </View>
                       )}
                     </View>
@@ -367,10 +367,10 @@ export default function DataRecoveryScreen() {
                         testID={`restore-${item.id}`}
                       >
                         {restoreMutation.isPending ? (
-                          <ActivityIndicator size="small" color="#00C48C" />
+                          <ActivityIndicator size="small" color="#22C55E" />
                         ) : (
                           <>
-                            <ArchiveRestore size={15} color="#00C48C" />
+                            <ArchiveRestore size={15} color="#22C55E" />
                             <Text style={styles.restoreBtnText}>Restore to Database</Text>
                           </>
                         )}
@@ -627,8 +627,8 @@ const styles = StyleSheet.create({
     borderLeftColor: '#FF4D4D50',
   },
   itemCardRestored: {
-    borderColor: '#00C48C25',
-    borderLeftColor: '#00C48C50',
+    borderColor: '#22C55E25',
+    borderLeftColor: '#22C55E50',
     opacity: 0.7,
   },
   itemHeader: {
@@ -690,12 +690,12 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingVertical: 11,
     borderRadius: 10,
-    backgroundColor: '#00C48C15',
+    backgroundColor: '#22C55E15',
     borderWidth: 1,
-    borderColor: '#00C48C30',
+    borderColor: '#22C55E30',
   },
   restoreBtnText: {
-    color: '#00C48C',
+    color: '#22C55E',
     fontSize: 13,
     fontWeight: '700' as const,
   },
@@ -725,7 +725,7 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingVertical: 13,
     borderRadius: 12,
-    backgroundColor: '#00C48C',
+    backgroundColor: '#22C55E',
   },
   backupBtnText: {
     color: '#fff',

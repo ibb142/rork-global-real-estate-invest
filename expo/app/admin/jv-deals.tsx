@@ -81,6 +81,7 @@ interface JVDeal {
   published: boolean;
   publishedAt?: string | null;
   totalInvestment: number;
+  propertyValue: number;
   currency: string;
   expectedROI: number;
   propertyAddress?: string;
@@ -113,6 +114,7 @@ interface EditFormState {
   projectName: string;
   type: JVDealType;
   totalInvestment: string;
+  propertyValue: string;
   expectedROI: string;
   propertyAddress: string;
   description: string;
@@ -133,12 +135,14 @@ interface EditFormState {
   permitApproved: boolean;
   yearEstablished: string;
   completedProjects: string;
+  startDate: string;
+  endDate: string;
 }
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
   draft: { label: 'Draft', color: '#9A9A9A', bg: '#9A9A9A18' },
   pending_review: { label: 'Pending', color: '#FFB800', bg: '#FFB80018' },
-  active: { label: 'Active', color: '#00C48C', bg: '#00C48C18' },
+  active: { label: 'Active', color: '#22C55E', bg: '#22C55E18' },
   completed: { label: 'Completed', color: '#4A90D9', bg: '#4A90D918' },
   expired: { label: 'Expired', color: '#FF4D4D', bg: '#FF4D4D18' },
   archived: { label: 'Archived', color: '#A855F7', bg: '#A855F718' },
@@ -165,11 +169,27 @@ const FILTER_OPTIONS = [
 
 const DEAL_TYPES: JVDealType[] = ['equity_split', 'profit_sharing', 'hybrid', 'development', 'new_construction', 'existing_complete', 'rehab_construction'];
 
+function normalizeDate(raw: string): string {
+  if (!raw) return '';
+  const trimmed = raw.trim();
+  const isoMatch = trimmed.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (isoMatch) return isoMatch[1];
+  const d = new Date(trimmed);
+  if (!isNaN(d.getTime())) {
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  }
+  return trimmed;
+}
+
 const DEFAULT_EDIT_FORM: EditFormState = {
   title: '',
   projectName: '',
   type: 'equity_split',
   totalInvestment: '',
+  propertyValue: '',
   expectedROI: '',
   propertyAddress: '',
   description: '',
@@ -190,6 +210,8 @@ const DEFAULT_EDIT_FORM: EditFormState = {
   permitApproved: true,
   yearEstablished: '',
   completedProjects: '',
+  startDate: '',
+  endDate: '',
 };
 
 export default function AdminJVDealsScreen() {
@@ -261,7 +283,7 @@ export default function AdminJVDealsScreen() {
     refetchOnWindowFocus: true,
     refetchOnMount: 'always',
     gcTime: 1000 * 60 * 5,
-    refetchInterval: 5000,
+    refetchInterval: 30000,
   });
 
   const publishMutation = useMutation({
@@ -332,15 +354,20 @@ export default function AdminJVDealsScreen() {
 
   const updateMutation = useMutation({
     mutationFn: async (input: { id: string; data: Record<string, unknown> }) => {
-      console.log('[JV-Storage] Updating JV deal:', input.id);
+      console.log('[Admin JV] Saving deal update:', input.id, '| fields:', Object.keys(input.data).join(','));
       const { data, error } = await updateJVDeal(input.id, input.data, { adminOverride: true });
-      if (error) throw error;
+      if (error) {
+        console.error('[Admin JV] updateJVDeal returned error:', error.message);
+        throw error;
+      }
+      console.log('[Admin JV] updateJVDeal returned success — data id:', data?.id);
       return { success: true, ...data };
     },
-    onSuccess: () => {
-      console.log('[Admin JV] Updated successfully — triggering landing sync');
+    onSuccess: (_result, variables) => {
+      console.log('[Admin JV] Update saved successfully for deal:', variables.id, '— resetting cache + triggering landing sync');
       resetSupabaseCheck();
       invalidateAllJVQueries(queryClient);
+      void queryClient.refetchQueries({ queryKey: ['jvAgreements.list'] });
       setEditModalVisible(false);
       setSelectedDeal(null);
       syncToLandingPage().then(result => {
@@ -350,8 +377,13 @@ export default function AdminJVDealsScreen() {
       });
     },
     onError: (err: Error) => {
-      console.error('[Admin JV] Update error:', err);
-      Alert.alert('Error', 'Failed to update deal: ' + err.message);
+      console.error('[Admin JV] Update FAILED:', err.message);
+      const isAuthError = err.message.toLowerCase().includes('admin') || err.message.toLowerCase().includes('role');
+      if (isAuthError) {
+        Alert.alert('Access Denied', 'Only admin users can edit deals. Your current role does not have permission.');
+      } else {
+        Alert.alert('Save Failed', 'Failed to save deal changes: ' + err.message + '\n\nPlease try again.');
+      }
     },
   });
 
@@ -556,6 +588,7 @@ export default function AdminJVDealsScreen() {
       projectName: deal.projectName,
       type: deal.type,
       totalInvestment: deal.totalInvestment ? formatAmountInput(String(deal.totalInvestment)) : '0',
+      propertyValue: (deal as any).propertyValue ? formatAmountInput(String((deal as any).propertyValue)) : '',
       expectedROI: String(deal.expectedROI),
       propertyAddress: deal.propertyAddress || '',
       description: deal.description || '',
@@ -567,15 +600,17 @@ export default function AdminJVDealsScreen() {
       minimumHoldPeriod: String(deal.minimumHoldPeriod || 12),
       llcName: (trustData.llcName as string) || '',
       builderName: (trustData.builderName as string) || '',
-      minInvestment: formatAmountInput(String((trustData.minInvestment as number) || 50)),
-      timelineMin: String((trustData.timelineMin as number) || 14),
-      timelineMax: String((trustData.timelineMax as number) || 24),
+      minInvestment: formatAmountInput(String((trustData.minInvestment as number) ?? 50)),
+      timelineMin: String((trustData.timelineMin as number) ?? ''),
+      timelineMax: String((trustData.timelineMax as number) ?? ''),
       titleVerified: (trustData.titleVerified as boolean) ?? true,
       insuranceCoverage: (trustData.insuranceCoverage as boolean) ?? true,
       escrowProtected: (trustData.escrowProtected as boolean) ?? true,
       permitApproved: trustData.permitStatus ? (trustData.permitStatus as string) === 'approved' : true,
       yearEstablished: String((trustData.yearEstablished as number) || ''),
       completedProjects: String((trustData.completedProjects as number) || ''),
+      startDate: normalizeDate(deal.startDate || ''),
+      endDate: normalizeDate(deal.endDate || ''),
     });
     setEditModalVisible(true);
   }, []);
@@ -587,19 +622,20 @@ export default function AdminJVDealsScreen() {
       return;
     }
     const parsedInvestment = Number(parseAmountInput(editForm.totalInvestment)) || 0;
+    const parsedPropertyValue = Number(parseAmountInput(editForm.propertyValue)) || 0;
     const parsedMinInvestment = Number(parseAmountInput(editForm.minInvestment)) || 50;
-    const parsedTimelineMin = Number(parseAmountInput(editForm.timelineMin));
-    const parsedTimelineMax = Number(parseAmountInput(editForm.timelineMax));
-    const safeTimelineMin = isNaN(parsedTimelineMin) ? 14 : parsedTimelineMin;
-    const safeTimelineMax = isNaN(parsedTimelineMax) ? 24 : parsedTimelineMax;
+    const parsedTimelineMin = editForm.timelineMin.trim() !== '' ? Number(parseAmountInput(editForm.timelineMin)) : undefined;
+    const parsedTimelineMax = editForm.timelineMax.trim() !== '' ? Number(parseAmountInput(editForm.timelineMax)) : undefined;
+    const safeTimelineMin = parsedTimelineMin !== undefined && !isNaN(parsedTimelineMin) ? parsedTimelineMin : undefined;
+    const safeTimelineMax = parsedTimelineMax !== undefined && !isNaN(parsedTimelineMax) ? parsedTimelineMax : undefined;
     const parsedROI = Number(parseAmountInput(editForm.expectedROI)) || 15;
     console.log('[Admin JV] Saving edit for:', selectedDeal.id, 'investment:', parsedInvestment, 'timeline:', safeTimelineMin, '-', safeTimelineMax, 'photos:', editPhotos.length);
     const trustInfo = {
       llcName: editForm.llcName.trim() || editForm.projectName.trim(),
       builderName: editForm.builderName.trim() || 'IVX Development',
       minInvestment: parsedMinInvestment,
-      timelineMin: safeTimelineMin,
-      timelineMax: safeTimelineMax,
+      ...(safeTimelineMin !== undefined ? { timelineMin: safeTimelineMin } : {}),
+      ...(safeTimelineMax !== undefined ? { timelineMax: safeTimelineMax } : {}),
       timelineUnit: 'months',
       legalStructure: 'LLC Joint Venture',
       insuranceCoverage: editForm.insuranceCoverage,
@@ -619,30 +655,41 @@ export default function AdminJVDealsScreen() {
       keyMilestones: [],
       documents: [],
     };
+    const updatePayload: Record<string, unknown> = {
+      title: editForm.title.trim(),
+      projectName: editForm.projectName.trim(),
+      type: editForm.type,
+      totalInvestment: parsedInvestment,
+      propertyValue: parsedPropertyValue,
+      expectedROI: parsedROI,
+      description: editForm.description.trim(),
+      distributionFrequency: editForm.distributionFrequency,
+      exitStrategy: editForm.exitStrategy,
+      governingLaw: editForm.governingLaw,
+      managementFee: Number(parseAmountInput(editForm.managementFee)) || 2,
+      performanceFee: Number(parseAmountInput(editForm.performanceFee)) || 20,
+      minimumHoldPeriod: Number(parseAmountInput(editForm.minimumHoldPeriod)) || 12,
+      photos: editPhotos,
+      trust_info: JSON.stringify(trustInfo),
+    };
+    if (editForm.propertyAddress.trim()) {
+      updatePayload.propertyAddress = editForm.propertyAddress.trim();
+    }
+    if (editForm.startDate.trim()) {
+      updatePayload.startDate = editForm.startDate.trim();
+    }
+    if (editForm.endDate.trim()) {
+      updatePayload.endDate = editForm.endDate.trim();
+    }
+    console.log('[Admin JV] Update payload keys:', Object.keys(updatePayload).join(','), '| startDate:', updatePayload.startDate, '| endDate:', updatePayload.endDate);
     updateMutation.mutate({
       id: selectedDeal.id,
-      data: {
-        title: editForm.title.trim(),
-        projectName: editForm.projectName.trim(),
-        type: editForm.type,
-        totalInvestment: parsedInvestment,
-        expectedROI: parsedROI,
-        propertyAddress: editForm.propertyAddress.trim() || undefined,
-        description: editForm.description.trim(),
-        distributionFrequency: editForm.distributionFrequency,
-        exitStrategy: editForm.exitStrategy,
-        governingLaw: editForm.governingLaw,
-        managementFee: Number(parseAmountInput(editForm.managementFee)) || 2,
-        performanceFee: Number(parseAmountInput(editForm.performanceFee)) || 20,
-        minimumHoldPeriod: Number(parseAmountInput(editForm.minimumHoldPeriod)) || 12,
-        photos: editPhotos,
-        trust_info: JSON.stringify(trustInfo),
-      },
+      data: updatePayload,
     },
     {
       onSuccess: () => {
         const investStr = formatAmountInput(String(parsedInvestment));
-        const timelineStr = `${safeTimelineMin}–${safeTimelineMax} mo`;
+        const timelineStr = `${safeTimelineMin ?? 'N/A'}–${safeTimelineMax ?? 'N/A'} mo`;
         Alert.alert(
           'Deal Saved',
           `"${editForm.projectName.trim()}" updated.\n\nInvestment: ${investStr}\nROI: ${parsedROI}%\nTimeline: ${timelineStr}\nMin Investment: ${formatAmountInput(String(parsedMinInvestment))}\nPhotos: ${editPhotos.length}`
@@ -1105,7 +1152,7 @@ export default function AdminJVDealsScreen() {
                           disabled={isFirst}
                           testID={`jv-move-top-${deal.id}`}
                         >
-                          <ArrowUpToLine size={14} color={isFirst ? Colors.textTertiary : '#00C48C'} />
+                          <ArrowUpToLine size={14} color={isFirst ? Colors.textTertiary : '#22C55E'} />
                         </TouchableOpacity>
                         <TouchableOpacity
                           style={[styles.reorderMoveBtn, isFirst && styles.reorderMoveBtnDisabled]}
@@ -1146,7 +1193,7 @@ export default function AdminJVDealsScreen() {
                       </View>
                       {deal.published ? (
                         <View style={[styles.pubBadge, styles.pubBadgeLive]}>
-                          <Eye size={10} color="#00C48C" />
+                          <Eye size={10} color="#22C55E" />
                           <Text style={[styles.pubBadgeText, styles.pubBadgeTextLive]}>Live</Text>
                         </View>
                       ) : (
@@ -1171,7 +1218,7 @@ export default function AdminJVDealsScreen() {
                       <Text style={styles.dealMetricValue}>{formatCurrency(deal.totalInvestment)}</Text>
                     </View>
                     <View style={styles.dealMetric}>
-                      <TrendingUp size={12} color="#00C48C" />
+                      <TrendingUp size={12} color="#22C55E" />
                       <Text style={styles.dealMetricValue}>{deal.expectedROI}% ROI</Text>
                     </View>
                     <View style={styles.dealMetric}>
@@ -1193,7 +1240,7 @@ export default function AdminJVDealsScreen() {
                         testID={`jv-quick-up-${deal.id}`}
                         accessibilityLabel={`Move ${deal.projectName} up`}
                       >
-                        <ChevronUp size={18} color={isFirst ? Colors.textTertiary : '#00C48C'} />
+                        <ChevronUp size={18} color={isFirst ? Colors.textTertiary : '#22C55E'} />
                       </TouchableOpacity>
                       {positionInputDealId === deal.id ? (
                         <View style={styles.positionInputWrap}>
@@ -1249,7 +1296,7 @@ export default function AdminJVDealsScreen() {
                           testID={`admin-jv-restore-${deal.id}`}
                           accessibilityLabel={`Restore ${deal.projectName}`}
                         >
-                          <ArchiveRestore size={14} color="#00C48C" />
+                          <ArchiveRestore size={14} color="#22C55E" />
                           <Text style={[styles.actionBtnText, styles.actionBtnTextGreen]}>Restore</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
@@ -1282,7 +1329,7 @@ export default function AdminJVDealsScreen() {
                           testID={`admin-jv-toggle-${deal.id}`}
                           accessibilityLabel={deal.published ? `Unpublish ${deal.projectName}` : `Publish ${deal.projectName}`}
                         >
-                          {deal.published ? <EyeOff size={14} color="#FF6B6B" /> : <Eye size={14} color="#00C48C" />}
+                          {deal.published ? <EyeOff size={14} color="#FF6B6B" /> : <Eye size={14} color="#22C55E" />}
                           <Text style={[styles.actionBtnText, deal.published ? styles.actionBtnTextDanger : styles.actionBtnTextGreen]}>
                             {deal.published ? 'Unpublish' : 'Publish'}
                           </Text>
@@ -1530,7 +1577,7 @@ export default function AdminJVDealsScreen() {
                 ))}
               </View>
 
-              <Text style={styles.fieldLabel}>Total Investment ($)</Text>
+              <Text style={styles.fieldLabel}>Total Investment / Raise Amount ($)</Text>
               <TextInput
                 style={styles.fieldInput}
                 value={editForm.totalInvestment}
@@ -1539,6 +1586,17 @@ export default function AdminJVDealsScreen() {
                 placeholder="2500000"
                 placeholderTextColor={Colors.textTertiary}
                 testID="edit-investment"
+              />
+
+              <Text style={styles.fieldLabel}>Property Market Value ($)</Text>
+              <TextInput
+                style={styles.fieldInput}
+                value={editForm.propertyValue}
+                onChangeText={(v) => setEditForm(f => ({ ...f, propertyValue: v }))}
+                keyboardType="numeric"
+                placeholder="15000000"
+                placeholderTextColor={Colors.textTertiary}
+                testID="edit-property-value"
               />
 
               <Text style={styles.fieldLabel}>Expected ROI (%)</Text>
@@ -1574,6 +1632,31 @@ export default function AdminJVDealsScreen() {
                 textAlignVertical="top"
                 testID="edit-description"
               />
+
+              <View style={styles.fieldRow}>
+                <View style={styles.fieldHalf}>
+                  <Text style={styles.fieldLabel}>Start Date</Text>
+                  <TextInput
+                    style={styles.fieldInput}
+                    value={editForm.startDate}
+                    onChangeText={(v) => setEditForm(f => ({ ...f, startDate: v }))}
+                    placeholder="YYYY-MM-DD"
+                    placeholderTextColor={Colors.textTertiary}
+                    testID="edit-start-date"
+                  />
+                </View>
+                <View style={styles.fieldHalf}>
+                  <Text style={styles.fieldLabel}>End Date</Text>
+                  <TextInput
+                    style={styles.fieldInput}
+                    value={editForm.endDate}
+                    onChangeText={(v) => setEditForm(f => ({ ...f, endDate: v }))}
+                    placeholder="YYYY-MM-DD"
+                    placeholderTextColor={Colors.textTertiary}
+                    testID="edit-end-date"
+                  />
+                </View>
+              </View>
 
               <Text style={styles.fieldLabel}>Exit Strategy</Text>
               <TextInput
@@ -1634,7 +1717,7 @@ export default function AdminJVDealsScreen() {
               />
 
               <View style={styles.trustSectionHeader}>
-                <Shield size={16} color="#00C48C" />
+                <Shield size={16} color="#22C55E" />
                 <Text style={styles.trustSectionTitle}>Investor Trust Info</Text>
               </View>
 
@@ -1792,7 +1875,7 @@ export default function AdminJVDealsScreen() {
                           ) : state === 'failed' ? (
                             <AlertTriangle size={16} color="#FF4D4D" />
                           ) : state === 'done' ? (
-                            <Check size={16} color="#00C48C" />
+                            <Check size={16} color="#22C55E" />
                           ) : (
                             <View style={styles.photoPendingDot} />
                           )}
@@ -1911,7 +1994,7 @@ const styles = StyleSheet.create({
     fontWeight: '800' as const,
   },
   statValueGreen: {
-    color: '#00C48C',
+    color: '#22C55E',
   },
   statValuePrimary: {
     color: Colors.primary,
@@ -2089,7 +2172,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   pubBadgeLive: {
-    backgroundColor: '#00C48C18',
+    backgroundColor: '#22C55E18',
   },
   pubBadgeHidden: {
     backgroundColor: '#9A9A9A18',
@@ -2099,7 +2182,7 @@ const styles = StyleSheet.create({
     fontWeight: '700' as const,
   },
   pubBadgeTextLive: {
-    color: '#00C48C',
+    color: '#22C55E',
   },
   pubBadgeTextHidden: {
     color: '#9A9A9A',
@@ -2155,7 +2238,7 @@ const styles = StyleSheet.create({
     color: Colors.primary,
   },
   actionBtnTextGreen: {
-    color: '#00C48C',
+    color: '#22C55E',
   },
   actionBtnTextRed: {
     color: '#FF4D4D',
@@ -2173,8 +2256,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   publishBtn: {
-    borderColor: '#00C48C40',
-    backgroundColor: '#00C48C10',
+    borderColor: '#22C55E40',
+    backgroundColor: '#22C55E10',
     flex: 1,
     justifyContent: 'center',
   },
@@ -2195,8 +2278,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
   },
   restoreBtn: {
-    borderColor: '#00C48C40',
-    backgroundColor: '#00C48C10',
+    borderColor: '#22C55E40',
+    backgroundColor: '#22C55E10',
     flex: 1,
     justifyContent: 'center' as const,
   },
@@ -2740,7 +2823,7 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: 6,
-    backgroundColor: '#00C48C',
+    backgroundColor: '#22C55E',
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
   },
@@ -2763,7 +2846,7 @@ const styles = StyleSheet.create({
     borderTopColor: Colors.surfaceBorder,
   },
   trustSectionTitle: {
-    color: '#00C48C',
+    color: '#22C55E',
     fontSize: 15,
     fontWeight: '700' as const,
   },
@@ -2782,8 +2865,8 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface,
   },
   trustToggleActive: {
-    borderColor: '#00C48C',
-    backgroundColor: '#00C48C18',
+    borderColor: '#22C55E',
+    backgroundColor: '#22C55E18',
   },
   trustToggleText: {
     color: Colors.textTertiary,
@@ -2791,6 +2874,6 @@ const styles = StyleSheet.create({
     fontWeight: '600' as const,
   },
   trustToggleTextActive: {
-    color: '#00C48C',
+    color: '#22C55E',
   },
 });

@@ -38,6 +38,7 @@ import {
   ArrowLeft,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
+import { formatCurrency as _fmtCurr } from '@/lib/formatters';
 import {
   mockInfluencers,
   mockInfluencerReferrals,
@@ -121,13 +122,7 @@ export default function InfluencersScreen() {
     return filtered.sort((a, b) => b.totalEarnings - a.totalEarnings);
   }, [filterStatus, searchQuery]);
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 0,
-    }).format(amount);
-  };
+  const formatCurrency = (amount: number) => _fmtCurr(amount);
 
   const formatNumber = (num: number) => {
     if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;

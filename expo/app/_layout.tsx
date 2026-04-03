@@ -5,6 +5,14 @@ import React, { useEffect } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AuthProvider, useAuth } from '@/lib/auth-context';
 import { WalletProvider } from '@/lib/wallet-context';
+import { IPXProvider } from '@/lib/ipx-context';
+import { I18nProvider } from '@/lib/i18n-context';
+import { AnalyticsProvider } from '@/lib/analytics-context';
+import { NetworkProvider } from '@/lib/network-context';
+import { IntroProvider } from '@/lib/intro-context';
+import { LenderProvider } from '@/lib/lender-context';
+import { EarnProvider } from '@/lib/earn-context';
+import { EmailProvider } from '@/lib/email-context';
 import Colors from '@/constants/colors';
 
 void SplashScreen.preventAutoHideAsync();
@@ -19,6 +27,41 @@ const screenDefaults = {
   headerShadowVisible: false,
 };
 
+const PROTECTED_ROUTES = [
+  'buy-shares',
+  'sell-shares',
+  'jv-invest',
+  'wallet',
+  'portfolio',
+  'resale-marketplace',
+  'gift-shares',
+  'auto-reinvest',
+  'copy-investing',
+  'statements',
+  'tax-documents',
+  'tax-info',
+  'personal-info',
+  'security-settings',
+  'notification-settings',
+  'notifications',
+  'kyc-verification',
+  'contract-generator',
+];
+
+const PUBLIC_ROUTES = [
+  'landing',
+  'login',
+  'signup',
+  'waitlist',
+  'legal',
+  'company-info',
+  'trust-center',
+  'investor-pitch',
+  'investor-prospectus',
+  'app-guide',
+  'app-demo',
+];
+
 function useAuthGate() {
   const { isAuthenticated, isLoading } = useAuth();
   const segments = useSegments();
@@ -27,14 +70,36 @@ function useAuthGate() {
   useEffect(() => {
     if (isLoading) return;
 
-    const inAuthFlow = segments[0] === 'landing' || segments[0] === 'login' || segments[0] === 'signup';
+    const currentRoute = segments[0] ?? '';
+    const inLanding = currentRoute === 'landing';
+    const inLogin = currentRoute === 'login';
+    const inSignup = currentRoute === 'signup';
+    const isPublicRoute = PUBLIC_ROUTES.includes(currentRoute);
+    const isProtectedRoute = PROTECTED_ROUTES.includes(currentRoute);
 
-    if (!isAuthenticated && !inAuthFlow) {
-      console.log('[AuthGate] Not authenticated, redirecting to landing');
-      router.replace('/landing' as any);
-    } else if (isAuthenticated && (segments[0] === 'landing')) {
-      console.log('[AuthGate] Authenticated, redirecting to home');
+    if (inLanding && isAuthenticated) {
+      console.log('[AuthGate] Authenticated user on landing, redirecting to home');
       router.replace('/(tabs)' as any);
+      return;
+    }
+
+    if ((inLogin || inSignup) && isAuthenticated) {
+      console.log('[AuthGate] Authenticated user on auth screen, redirecting to home');
+      router.replace('/(tabs)' as any);
+      return;
+    }
+
+    if (!isAuthenticated && isProtectedRoute) {
+      console.log('[AuthGate] Unauthenticated user on protected route:', currentRoute, '— redirecting to login');
+      router.replace('/login' as any);
+      return;
+    }
+
+    const routeStr = String(currentRoute);
+    if (!isAuthenticated && !isPublicRoute && routeStr !== '(tabs)' && routeStr !== '' && routeStr !== 'admin' && routeStr !== 'property') {
+      console.log('[AuthGate] Unauthenticated user on non-public route:', currentRoute, '— redirecting to landing');
+      router.replace('/landing' as any);
+      return;
     }
   }, [isAuthenticated, isLoading, segments, router]);
 }
@@ -104,6 +169,7 @@ function RootLayoutNav() {
       <Stack.Screen name="supabase-export" options={{ title: 'Supabase Export' }} />
       <Stack.Screen name="video-presentation" options={{ title: 'Video Presentation' }} />
       <Stack.Screen name="viral-growth" options={{ title: 'Viral Growth' }} />
+      <Stack.Screen name="waitlist" options={{ title: 'Investor Waitlist', headerShown: false }} />
       <Stack.Screen name="email" options={{ title: 'Email' }} />
       <Stack.Screen name="email-compose" options={{ title: 'Compose Email' }} />
       <Stack.Screen name="email-detail" options={{ title: 'Email Detail' }} />
@@ -128,9 +194,25 @@ export default function RootLayout() {
     <QueryClientProvider client={queryClient}>
       <GestureHandlerRootView style={{ flex: 1 }}>
         <AuthProvider>
-          <WalletProvider>
-            <RootLayoutNav />
-          </WalletProvider>
+          <NetworkProvider>
+            <I18nProvider>
+              <AnalyticsProvider>
+                <IPXProvider>
+                  <WalletProvider>
+                    <EarnProvider>
+                      <LenderProvider>
+                        <IntroProvider>
+                          <EmailProvider>
+                            <RootLayoutNav />
+                          </EmailProvider>
+                        </IntroProvider>
+                      </LenderProvider>
+                    </EarnProvider>
+                  </WalletProvider>
+                </IPXProvider>
+              </AnalyticsProvider>
+            </I18nProvider>
+          </NetworkProvider>
         </AuthProvider>
       </GestureHandlerRootView>
     </QueryClientProvider>

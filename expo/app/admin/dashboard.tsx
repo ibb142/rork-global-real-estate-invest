@@ -34,6 +34,7 @@ import {
   Target,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
+import { formatCurrencyCompact } from '@/lib/formatters';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 
@@ -193,20 +194,7 @@ export default function AdminDashboardScreen() {
     void queryClient.invalidateQueries({ queryKey: ['members.list'] });
   }, [queryClient]);
 
-  const formatCurrency = useCallback((amount: number) => {
-    if (amount >= 1000000) {
-      return `${(amount / 1000000).toFixed(2)}M`;
-    }
-    if (amount >= 1000) {
-      return `${new Intl.NumberFormat('en-US').format(Math.round(amount))}`;
-    }
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(amount);
-  }, []);
+  const formatCurrency = useCallback((amount: number) => formatCurrencyCompact(amount), []);
 
   const formatDate = useCallback((dateString: string) => {
     const date = new Date(dateString);
@@ -664,7 +652,7 @@ export default function AdminDashboardScreen() {
               </View>
               <View style={styles.leadsHeroBreakdown}>
                 <View style={styles.leadsHeroBreakdownItem}>
-                  <View style={[styles.leadsHeroDot, { backgroundColor: '#00C48C' }]} />
+                  <View style={[styles.leadsHeroDot, { backgroundColor: '#22C55E' }]} />
                   <Text style={styles.leadsHeroBreakdownText}>{leadsStats?.totalUsers ?? 0} Registered</Text>
                 </View>
                 <View style={styles.leadsHeroBreakdownItem}>
@@ -681,7 +669,7 @@ export default function AdminDashboardScreen() {
               </View>
               <View style={styles.leadsKpiDivider} />
               <View style={styles.leadsKpiItem}>
-                <Phone size={12} color="#00C48C" />
+                <Phone size={12} color="#22C55E" />
                 <Text style={styles.leadsKpiValue}>{leadsStats?.withPhone ?? 0}</Text>
                 <Text style={styles.leadsKpiLabel}>Phones</Text>
               </View>
@@ -698,8 +686,8 @@ export default function AdminDashboardScreen() {
             <View style={styles.recentLeadsList}>
               {recentLeads.slice(0, 5).map((lead: any) => (
                 <View key={lead.id} style={styles.recentLeadRow}>
-                  <View style={[styles.recentLeadAvatar, { backgroundColor: lead.type === 'user' ? '#00C48C18' : '#F57C0018' }]}>
-                    <Text style={[styles.recentLeadInitials, { color: lead.type === 'user' ? '#00C48C' : '#F57C00' }]}>
+                  <View style={[styles.recentLeadAvatar, { backgroundColor: lead.type === 'user' ? '#22C55E18' : '#F57C0018' }]}>
+                    <Text style={[styles.recentLeadInitials, { color: lead.type === 'user' ? '#22C55E' : '#F57C00' }]}>
                       {lead.firstName?.charAt(0) ?? ''}{lead.lastName?.charAt(0) ?? ''}
                     </Text>
                   </View>
@@ -707,8 +695,8 @@ export default function AdminDashboardScreen() {
                     <Text style={styles.recentLeadName} numberOfLines={1}>{lead.firstName} {lead.lastName}</Text>
                     <Text style={styles.recentLeadEmail} numberOfLines={1}>{lead.email}</Text>
                   </View>
-                  <View style={[styles.recentLeadTypeBadge, { backgroundColor: lead.type === 'user' ? '#00C48C18' : '#F57C0018' }]}>
-                    <Text style={[styles.recentLeadTypeText, { color: lead.type === 'user' ? '#00C48C' : '#F57C00' }]}>
+                  <View style={[styles.recentLeadTypeBadge, { backgroundColor: lead.type === 'user' ? '#22C55E18' : '#F57C0018' }]}>
+                    <Text style={[styles.recentLeadTypeText, { color: lead.type === 'user' ? '#22C55E' : '#F57C00' }]}>
                       {lead.type === 'user' ? 'Registered' : 'Waitlist'}
                     </Text>
                   </View>

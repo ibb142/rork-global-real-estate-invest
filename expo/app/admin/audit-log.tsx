@@ -32,26 +32,26 @@ import { useQuery } from '@tanstack/react-query';
 import { getAuditTrail, getAuditStats } from '@/lib/audit-trail';
 
 const ACTION_CONFIG: Record<string, { label: string; color: string; icon: string }> = {
-  CREATE: { label: 'Created', color: '#00C48C', icon: 'plus' },
+  CREATE: { label: 'Created', color: '#22C55E', icon: 'plus' },
   UPDATE: { label: 'Updated', color: '#4A90D9', icon: 'edit' },
   DELETE: { label: 'Deleted', color: '#FF4D4D', icon: 'trash' },
   SOFT_DELETE: { label: 'Soft Deleted', color: '#FF6B6B', icon: 'trash' },
   TRASH: { label: 'Trashed', color: '#FF8C00', icon: 'trash' },
-  RESTORE: { label: 'Restored', color: '#00C48C', icon: 'restore' },
-  RESTORE_FROM_TRASH: { label: 'Restored', color: '#00C48C', icon: 'restore' },
+  RESTORE: { label: 'Restored', color: '#22C55E', icon: 'restore' },
+  RESTORE_FROM_TRASH: { label: 'Restored', color: '#22C55E', icon: 'restore' },
   PERMANENT_DELETE: { label: 'Perm. Deleted', color: '#FF0000', icon: 'trash' },
   ARCHIVE: { label: 'Archived', color: '#A855F7', icon: 'archive' },
-  PUBLISH: { label: 'Published', color: '#00C48C', icon: 'eye' },
+  PUBLISH: { label: 'Published', color: '#22C55E', icon: 'eye' },
   UNPUBLISH: { label: 'Unpublished', color: '#9A9A9A', icon: 'eye-off' },
   PURCHASE: { label: 'Purchase', color: '#FFD700', icon: 'cart' },
   SELL: { label: 'Sale', color: '#FF4D4D', icon: 'cart' },
   TRANSFER: { label: 'Transfer', color: '#4A90D9', icon: 'transfer' },
-  DEPOSIT: { label: 'Deposit', color: '#00C48C', icon: 'deposit' },
+  DEPOSIT: { label: 'Deposit', color: '#22C55E', icon: 'deposit' },
   WITHDRAWAL: { label: 'Withdrawal', color: '#FF6B6B', icon: 'withdrawal' },
   LOGIN: { label: 'Login', color: '#4A90D9', icon: 'user' },
   LOGOUT: { label: 'Logout', color: '#9A9A9A', icon: 'user' },
   ROLE_CHANGE: { label: 'Role Change', color: '#A855F7', icon: 'shield' },
-  BACKUP_CREATED: { label: 'Backup', color: '#00C48C', icon: 'database' },
+  BACKUP_CREATED: { label: 'Backup', color: '#22C55E', icon: 'database' },
   BACKUP_RESTORED: { label: 'Backup Restored', color: '#FFD700', icon: 'database' },
   SYSTEM_EVENT: { label: 'System', color: '#9A9A9A', icon: 'system' },
   PHOTO_UPDATE: { label: 'Photos Updated', color: '#4A90D9', icon: 'image' },
@@ -78,14 +78,14 @@ function getActionIcon(action: string) {
     case 'RESTORE':
     case 'RESTORE_FROM_TRASH':
     case 'BACKUP_RESTORED':
-      return <ArchiveRestore size={14} color="#00C48C" />;
+      return <ArchiveRestore size={14} color="#22C55E" />;
     case 'DELETE':
     case 'SOFT_DELETE':
     case 'TRASH':
     case 'PERMANENT_DELETE':
       return <Trash2 size={14} color="#FF4D4D" />;
     case 'PUBLISH':
-      return <Eye size={14} color="#00C48C" />;
+      return <Eye size={14} color="#22C55E" />;
     case 'UNPUBLISH':
       return <EyeOff size={14} color="#9A9A9A" />;
     case 'PURCHASE':
@@ -99,7 +99,7 @@ function getActionIcon(action: string) {
     case 'ROLE_CHANGE':
       return <UserCheck size={14} color="#A855F7" />;
     case 'BACKUP_CREATED':
-      return <Database size={14} color="#00C48C" />;
+      return <Database size={14} color="#22C55E" />;
     default:
       return <Shield size={14} color={Colors.textTertiary} />;
   }
@@ -190,7 +190,7 @@ export default function AuditLogScreen() {
               <Text style={styles.statLabel}>Total</Text>
             </View>
             <View style={styles.statCard}>
-              <Text style={[styles.statValue, { color: '#00C48C' }]}>{stats.todayEntries}</Text>
+              <Text style={[styles.statValue, { color: '#22C55E' }]}>{stats.todayEntries}</Text>
               <Text style={styles.statLabel}>Today</Text>
             </View>
             <View style={styles.statCard}>

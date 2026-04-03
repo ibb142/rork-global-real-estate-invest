@@ -59,15 +59,11 @@ import {
   type EngagementLevel,
   type FollowUpPriority,
 } from '@/mocks/outreach-analytics';
+import { formatCurrencyCompact } from '@/lib/formatters';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-const formatCurrency = (amount: number): string => {
-  if (amount >= 1000000000) return `${(amount / 1000000000).toFixed(1)}B`;
-  if (amount >= 1000000) return `${(amount / 1000000).toFixed(1)}M`;
-  if (amount >= 1000) return `${new Intl.NumberFormat('en-US').format(Math.round(amount))}`;
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount);
-};
+const formatCurrency = (amount: number): string => formatCurrencyCompact(amount);
 
 const formatTime = (seconds: number): string => {
   if (seconds >= 60) {

@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import type { WalletRow } from '@/types/database';
+import { rpcAtomicWalletOp } from '@/lib/stored-procedures';
 
 export type WalletTransactionType =
   | 'deposit'
@@ -221,6 +222,32 @@ export async function creditWallet(
   referenceType?: string,
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    // --- TRY ATOMIC RPC FIRST ---
+    try {
+      console.log('[WalletService] Attempting atomic RPC credit...');
+      const rpcResult = await rpcAtomicWalletOp({
+        p_user_id: userId,
+        p_amount: amount,
+        p_operation: 'credit',
+        p_reason: reason,
+        p_description: description,
+        p_reference_id: referenceId,
+        p_reference_type: referenceType,
+      });
+      if (rpcResult.success) {
+        console.log('[WalletService] Atomic RPC credit SUCCESS:', amount, reason);
+        return { success: true };
+      }
+      if (rpcResult.message && !rpcResult.message.includes('does not exist')) {
+        console.log('[WalletService] Atomic RPC credit business error:', rpcResult.message);
+        return { success: false, error: rpcResult.message };
+      }
+      console.log('[WalletService] Atomic RPC not available, falling back');
+    } catch (rpcErr) {
+      console.log('[WalletService] Atomic RPC credit exception, falling back:', (rpcErr as Error)?.message);
+    }
+
+    // --- FALLBACK: Client-side logic ---
     const { data: currentWallet, error: fetchErr } = await supabase
       .from('wallets')
       .select('available, invested, total, updated_at')
@@ -261,7 +288,7 @@ export async function creditWallet(
       description,
     });
 
-    console.log('[WalletService] Wallet credited:', amount, reason);
+    console.log('[WalletService] Wallet credited:', amount, reason, '| method: client_fallback');
     return { success: true };
   } catch (err) {
     console.log('[WalletService] creditWallet error:', (err as Error)?.message);
@@ -278,6 +305,32 @@ export async function debitWallet(
   referenceType?: string,
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    // --- TRY ATOMIC RPC FIRST ---
+    try {
+      console.log('[WalletService] Attempting atomic RPC debit...');
+      const rpcResult = await rpcAtomicWalletOp({
+        p_user_id: userId,
+        p_amount: amount,
+        p_operation: 'debit',
+        p_reason: reason,
+        p_description: description,
+        p_reference_id: referenceId,
+        p_reference_type: referenceType,
+      });
+      if (rpcResult.success) {
+        console.log('[WalletService] Atomic RPC debit SUCCESS:', amount, reason);
+        return { success: true };
+      }
+      if (rpcResult.message && !rpcResult.message.includes('does not exist')) {
+        console.log('[WalletService] Atomic RPC debit business error:', rpcResult.message);
+        return { success: false, error: rpcResult.message };
+      }
+      console.log('[WalletService] Atomic RPC not available, falling back');
+    } catch (rpcErr) {
+      console.log('[WalletService] Atomic RPC debit exception, falling back:', (rpcErr as Error)?.message);
+    }
+
+    // --- FALLBACK: Client-side logic ---
     const { data: currentWallet, error: fetchErr } = await supabase
       .from('wallets')
       .select('available, invested, total, updated_at')
@@ -292,7 +345,7 @@ export async function debitWallet(
     if ((typed.available ?? 0) < amount) {
       return {
         success: false,
-        error: `Insufficient balance: $${(typed.available ?? 0).toFixed(2)} available, $${amount.toFixed(2)} required`,
+        error: `Insufficient balance: ${(typed.available ?? 0).toFixed(2)} available, ${amount.toFixed(2)} required`,
       };
     }
 
@@ -326,7 +379,7 @@ export async function debitWallet(
       description,
     });
 
-    console.log('[WalletService] Wallet debited:', amount, reason, '| new available:', newAvailable);
+    console.log('[WalletService] Wallet debited:', amount, reason, '| new available:', newAvailable, '| method: client_fallback');
     return { success: true };
   } catch (err) {
     console.log('[WalletService] debitWallet error:', (err as Error)?.message);

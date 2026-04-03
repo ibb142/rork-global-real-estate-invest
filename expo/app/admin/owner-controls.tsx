@@ -37,6 +37,7 @@ import {
 import Colors from '@/constants/colors';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fetchJVDeals, archiveJVDeal } from '@/lib/jv-storage';
+import { formatCurrencyWithDecimals } from '@/lib/formatters';
 
 import { supabase } from '@/lib/supabase';
 
@@ -236,14 +237,7 @@ export default function OwnerControlsScreen() {
     return feeStats.feesThisMonth + (propertyControls.reduce((sum, p) => p.currentRaise, 0) * 0.025 / 12);
   }, [feeStats, propertyControls]);
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(amount);
-  };
+  const formatCurrency = (amount: number) => formatCurrencyWithDecimals(amount);
 
   const formatPrice = (amount: number) => {
     return `${new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount)}`;
@@ -566,12 +560,12 @@ export default function OwnerControlsScreen() {
             <Text style={styles.sectionTitle}>JV Deals ({jvDealControls.length})</Text>
             <View style={{ flexDirection: 'row', gap: 8 }}>
               <TouchableOpacity
-                style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#00C48C15', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, gap: 4 }}
+                style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#22C55E15', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, gap: 4 }}
                 onPress={() => router.push('/admin/publication-log' as any)}
                 testID="owner-publication-log"
               >
-                <Eye size={14} color="#00C48C" />
-                <Text style={{ color: '#00C48C', fontSize: 12, fontWeight: '700' as const }}>Pub Log</Text>
+                <Eye size={14} color="#22C55E" />
+                <Text style={{ color: '#22C55E', fontSize: 12, fontWeight: '700' as const }}>Pub Log</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#4A90D915', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, gap: 4 }}

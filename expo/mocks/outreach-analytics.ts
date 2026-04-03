@@ -205,8 +205,8 @@ export const outreachFunnel: OutreachFunnel[] = [
   { stage: 'Delivered', count: 0, percentage: 0, color: '#8B5CF6', dropOffRate: 0 },
   { stage: 'Opened', count: 0, percentage: 0, color: '#FFD700', dropOffRate: 0 },
   { stage: 'Clicked', count: 0, percentage: 0, color: '#F59E0B', dropOffRate: 0 },
-  { stage: 'Replied', count: 0, percentage: 0, color: '#00C48C', dropOffRate: 0 },
-  { stage: 'Meeting Set', count: 0, percentage: 0, color: '#10B981', dropOffRate: 0 },
+  { stage: 'Replied', count: 0, percentage: 0, color: '#22C55E', dropOffRate: 0 },
+  { stage: 'Meeting Set', count: 0, percentage: 0, color: '#22C55E', dropOffRate: 0 },
   { stage: 'Deal Interest', count: 0, percentage: 0, color: '#059669', dropOffRate: 0 },
 ];
 

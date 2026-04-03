@@ -9,7 +9,6 @@ import {
   Animated,
   Alert,
   Platform,
-  Clipboard,
   Keyboard,
   Dimensions,
   KeyboardAvoidingView,
@@ -17,7 +16,18 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Stack, useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { CameraView, useCameraPermissions } from 'expo-camera';
+import * as ExpoClipboard from 'expo-clipboard';
+let CameraView: any = null;
+let useCameraPermissions: any = () => [null, () => {}];
+if (Platform.OS !== 'web') {
+  try {
+    const cam = require('expo-camera');
+    CameraView = cam.CameraView;
+    useCameraPermissions = cam.useCameraPermissions;
+  } catch {
+    console.log('[Authenticator] expo-camera not available');
+  }
+}
 import {
   Shield,
   Plus,
@@ -650,11 +660,11 @@ export default function AuthenticatorScreen() {
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
   }, []);
 
-  const handleCopyCode = useCallback((code: string, _issuer: string) => {
-    if (Platform.OS === 'web') {
-      try { void navigator.clipboard.writeText(code); } catch {}
-    } else {
-      Clipboard.setString(code);
+  const handleCopyCode = useCallback(async (code: string, _issuer: string) => {
+    try {
+      await ExpoClipboard.setStringAsync(code);
+    } catch {}
+    if (Platform.OS !== 'web') {
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
   }, []);

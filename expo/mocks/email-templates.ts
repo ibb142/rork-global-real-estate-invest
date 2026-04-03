@@ -59,7 +59,7 @@ Miami, FL 33131, United States
 https://ivxholding.com`,
     description: 'Welcome email for newly registered investors',
     iconName: 'UserCheck',
-    iconColor: '#00C48C',
+    iconColor: '#22C55E',
   },
   {
     id: 'kyc_approved',
@@ -213,7 +213,7 @@ Finance Department
 IVX Holdings Ltd.`,
     description: 'Confirm an investment transaction',
     iconName: 'DollarSign',
-    iconColor: '#00C48C',
+    iconColor: '#22C55E',
   },
   {
     id: 'dividend_payout',

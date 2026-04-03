@@ -90,14 +90,14 @@ export const getTierColor = (tier: Influencer['tier']): string => {
 };
 
 export const getStatusColor = (status: Influencer['status']): string => {
-  const colors = { active: '#10B981', paused: '#F59E0B', pending: '#6B7280', terminated: '#EF4444' };
+  const colors = { active: '#22C55E', paused: '#F59E0B', pending: '#6B7280', terminated: '#EF4444' };
   return colors[status];
 };
 
 export const mockInfluencerApplications: InfluencerApplication[] = [];
 
 export const getApplicationStatusColor = (status: InfluencerApplication['status']): string => {
-  const colors = { pending: '#F59E0B', approved: '#10B981', rejected: '#EF4444' };
+  const colors = { pending: '#F59E0B', approved: '#22C55E', rejected: '#EF4444' };
   return colors[status];
 };
 

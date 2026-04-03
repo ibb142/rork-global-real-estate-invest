@@ -6,7 +6,7 @@ import { ArrowUpRight, ArrowDownRight } from 'lucide-react-native';
 
 export const ACCENT = Colors.primary;
 export const BLUE = '#4A90D9';
-export const GREEN = '#00C48C';
+export const GREEN = '#22C55E';
 export const TEAL = '#0097A7';
 export const RED = '#E53935';
 export const ORANGE = '#F57C00';

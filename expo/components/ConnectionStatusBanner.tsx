@@ -15,7 +15,7 @@ const STATUS_COLORS: Record<BackendStatus, string> = {
   online: '#22C55E',
   degraded: '#F59E0B',
   offline: '#EF4444',
-  unknown: '#94A3B8',
+  unknown: '#999999',
 };
 
 const STATUS_LABELS: Record<BackendStatus, string> = {
@@ -119,13 +119,13 @@ export default function ConnectionStatusBanner() {
         <View style={styles.rightSection}>
           <TouchableOpacity onPress={handleRefresh} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
             <Animated.View style={{ transform: [{ rotate: spin }] }}>
-              <RefreshCw size={16} color="#94A3B8" />
+              <RefreshCw size={16} color="#999999" />
             </Animated.View>
           </TouchableOpacity>
           {expanded ? (
-            <ChevronUp size={16} color="#94A3B8" />
+            <ChevronUp size={16} color="#999999" />
           ) : (
-            <ChevronDown size={16} color="#94A3B8" />
+            <ChevronDown size={16} color="#999999" />
           )}
         </View>
       </TouchableOpacity>
@@ -133,7 +133,7 @@ export default function ConnectionStatusBanner() {
       {expanded && (
         <View style={styles.detailsContainer}>
           <View style={styles.detailRow}>
-            <Database size={14} color="#94A3B8" />
+            <Database size={14} color="#999999" />
             <Text style={styles.detailLabel}>Supabase DB</Text>
             <View style={[styles.statusPill, { backgroundColor: STATUS_COLORS[supabaseStatus] + '22' }]}>
               <View style={[styles.statusDot, { backgroundColor: STATUS_COLORS[supabaseStatus] }]} />
@@ -216,7 +216,7 @@ const styles = StyleSheet.create({
   },
   detailLabel: {
     fontSize: 12,
-    color: '#94A3B8',
+    color: '#999999',
     flex: 1,
   },
   statusPill: {

@@ -85,13 +85,13 @@ interface StyleOption {
 const STYLE_OPTIONS: StyleOption[] = [
   { id: 'investor', name: 'Investor Pitch', description: '8K cinematic for investors', iconName: 'briefcase', color: '#FFD700', tone: 'professional, persuasive, data-driven, use financial metrics and ROI projections' },
   { id: 'demo', name: 'Product Demo', description: 'Full feature walkthrough', iconName: 'zap', color: '#4A90D9', tone: 'engaging, technical but accessible, highlight UX and innovation' },
-  { id: 'executive', name: 'Executive Brief', description: 'Quick C-suite highlights', iconName: 'target', color: '#00C48C', tone: 'concise, impactful, focus on market opportunity and competitive advantage' },
+  { id: 'executive', name: 'Executive Brief', description: 'Quick C-suite highlights', iconName: 'target', color: '#22C55E', tone: 'concise, impactful, focus on market opportunity and competitive advantage' },
 ];
 
 const SECTION_CONFIGS = [
   { id: 'intro', title: 'IVXHOLDINGS Real Estate', subtitle: 'The Future of Property Investment', icon: '🏛️', color: '#FFD700' },
   { id: 'opportunity', title: 'Market Opportunity', subtitle: '$326T Global Real Estate Market', icon: '🌍', color: '#4A90D9' },
-  { id: 'platform', title: 'Platform Overview', subtitle: '340+ Features Built-In', icon: '🚀', color: '#00C48C' },
+  { id: 'platform', title: 'Platform Overview', subtitle: '340+ Features Built-In', icon: '🚀', color: '#22C55E' },
   { id: 'onboarding', title: 'Smart Onboarding', subtitle: 'KYC & Verification', icon: '🛡️', color: '#9B59B6' },
   { id: 'marketplace', title: 'Property Marketplace', subtitle: 'Curated Opportunities', icon: '🏘️', color: '#FF6B6B' },
   { id: 'trading', title: 'Investment Engine', subtitle: 'Fractional Trading', icon: '📈', color: '#FFB800' },
@@ -220,7 +220,7 @@ const PHOTO_TEMPLATES = [
   { id: 'penthouse', label: 'Penthouse Interior 8K', color: '#E91E63', prompt: 'Photorealistic interior of ultra-luxury penthouse, floor-to-ceiling windows with panoramic city skyline at night, modern minimalist design, marble floors, designer furniture, warm ambient lighting, 8K quality' },
   { id: 'construction', label: 'Under Construction 8K', color: '#FF6B35', prompt: 'Ultra-realistic luxury high-rise under construction, cranes, scaffolding, concrete floors, city skyline, golden sunlight, professional real estate development photography, 8K quality' },
   { id: 'smart-city', label: 'Smart City 8K', color: '#7C4DFF', prompt: 'Futuristic photorealistic smart city mixed-use development, interconnected buildings with LED facades, autonomous vehicle lanes, elevated walkways, holographic signage, sunset lighting, 8K ultra-realistic' },
-  { id: 'invest-dash', label: 'Investment Dashboard 8K', color: '#00C48C', prompt: 'Photorealistic sleek modern desk with curved monitor and smartphone displaying real estate portfolio charts, green profit indicators, dark mode UI with gold accents, ambient LED lighting, city skyline, 8K ultra-realistic' },
+  { id: 'invest-dash', label: 'Investment Dashboard 8K', color: '#22C55E', prompt: 'Photorealistic sleek modern desk with curved monitor and smartphone displaying real estate portfolio charts, green profit indicators, dark mode UI with gold accents, ambient LED lighting, city skyline, 8K ultra-realistic' },
 ];
 
 export default function AIVideoStudio() {
@@ -827,7 +827,7 @@ export default function AIVideoStudio() {
         <Text style={styles.sectionLabel}>SHARE & UPLOAD</Text>
         {shareSuccess && (
           <View style={styles.successToast}>
-            <CheckCircle size={16} color="#00C48C" />
+            <CheckCircle size={16} color="#22C55E" />
             <Text style={styles.successToastText}>Shared successfully!</Text>
           </View>
         )}
@@ -1222,7 +1222,7 @@ const styles = StyleSheet.create({
 
   shareActionsBlock: { gap: 12 },
   successToast: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: 'rgba(0,196,140,0.1)', borderWidth: 1, borderColor: 'rgba(0,196,140,0.2)', paddingVertical: 10, borderRadius: 12 },
-  successToastText: { fontSize: 13, fontWeight: '700' as const, color: '#00C48C' },
+  successToastText: { fontSize: 13, fontWeight: '700' as const, color: '#22C55E' },
   waBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#25D366', borderRadius: 16, paddingVertical: 14, paddingHorizontal: 16, gap: 12 },
   waBtnIcon: { width: 44, height: 44, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center' },
   waBtnInfo: { flex: 1, gap: 2 },

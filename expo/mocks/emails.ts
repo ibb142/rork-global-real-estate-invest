@@ -43,7 +43,7 @@ export const EMAIL_ACCOUNTS: EmailAccount[] = [
     displayName: 'KYC Team',
     role: 'KYC Verification',
     avatar: 'K',
-    color: '#00C48C',
+    color: '#22C55E',
     unreadCount: 0,
   },
   {
@@ -88,7 +88,7 @@ export const EMAIL_LABELS: EmailLabel[] = [
   { id: 'urgent', name: 'Urgent', color: '#FF4D4D' },
   { id: 'important', name: 'Important', color: '#FFB800' },
   { id: 'follow-up', name: 'Follow Up', color: '#4A90D9' },
-  { id: 'internal', name: 'Internal', color: '#00C48C' },
+  { id: 'internal', name: 'Internal', color: '#22C55E' },
   { id: 'external', name: 'External', color: '#9B59B6' },
 ];
 

@@ -30,6 +30,7 @@ import {
 import Colors from '@/constants/colors';
 import { landPartnerDeals, landPartnerStats } from '@/mocks/ipx-invest';
 import { LandPartnerDeal, LandPartnerStatus } from '@/types';
+import { formatCurrencyCompact } from '@/lib/formatters';
 
 type FilterType = 'all' | 'active' | 'pending' | 'completed' | 'jv' | 'lp';
 
@@ -56,15 +57,7 @@ export default function LandPartnersScreen() {
     setTimeout(() => setRefreshing(false), 1500);
   }, []);
 
-  const formatCurrency = (value: number) => {
-    if (value >= 1000000) {
-      return `${(value / 1000000).toFixed(2)}M`;
-    }
-    if (value >= 1000) {
-      return `${new Intl.NumberFormat('en-US').format(Math.round(value))}`;
-    }
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
-  };
+  const formatCurrency = (value: number) => formatCurrencyCompact(value);
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {

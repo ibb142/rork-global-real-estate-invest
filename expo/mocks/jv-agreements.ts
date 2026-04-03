@@ -56,7 +56,7 @@ export interface JVAgreement {
 
 export const JV_AGREEMENT_TYPES = [
   { id: 'equity_split', label: 'Equity Split', icon: '📊', desc: 'Partners share ownership proportional to contribution', color: '#4A90D9' },
-  { id: 'profit_sharing', label: 'Profit Sharing', icon: '💰', desc: 'Fixed returns based on profit distribution schedule', color: '#00C48C' },
+  { id: 'profit_sharing', label: 'Profit Sharing', icon: '💰', desc: 'Fixed returns based on profit distribution schedule', color: '#22C55E' },
   { id: 'hybrid', label: 'Hybrid Structure', icon: '🔄', desc: 'Combined equity + profit sharing arrangement', color: '#E879F9' },
   { id: 'development', label: 'Development JV', icon: '📋', desc: 'Joint development with milestone-based payouts', color: '#FFD700' },
 ] as const;

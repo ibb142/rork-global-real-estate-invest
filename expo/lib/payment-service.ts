@@ -876,26 +876,26 @@ class PaymentService {
     await this.simulateProcessingDelay();
 
     const domesticInstructions: BankTransferInstructions = {
-      bankName: 'JPMorgan Chase Bank, N.A.',
+      bankName: '[PENDING CONFIGURATION - Contact admin@ivxholdings.com]',
       accountName: 'IVX HOLDINGS LLC',
-      accountNumber: '9,876,543,210',
-      routingNumber: '021000021',
-      swiftCode: 'CHASUS33',
+      accountNumber: '[Wire details pending - Real bank account will be configured before launch]',
+      routingNumber: '[Pending configuration]',
+      swiftCode: '[Pending]',
       reference,
       fedReference,
       wireType: 'domestic',
       memo: `Investment Deposit - ${reference}`,
       bankAddress: {
-        line1: '383 Madison Avenue',
-        city: 'New York',
-        state: 'NY',
-        postalCode: '10179',
+        line1: '[Bank address pending configuration]',
+        city: '',
+        state: '',
+        postalCode: '',
         country: 'USA',
       },
       beneficiaryAddress: {
         name: 'IVX HOLDINGS LLC',
-        line1: '100 Financial Center Drive',
-        line2: 'Suite 500',
+        line1: '[Beneficiary address pending configuration]',
+        line2: '',
         city: 'Miami',
         state: 'FL',
         postalCode: '33131',
@@ -914,41 +914,41 @@ class PaymentService {
     };
 
     const internationalInstructions: BankTransferInstructions = {
-      bankName: 'JPMorgan Chase Bank, N.A.',
+      bankName: '[PENDING CONFIGURATION - Contact admin@ivxholdings.com]',
       accountName: 'IVX HOLDINGS LLC',
-      accountNumber: '9,876,543,210',
-      routingNumber: '021000021',
-      swiftCode: 'CHASUS33XXX',
-      iban: 'US12 0210 0002 1987 6543 210',
+      accountNumber: '[Wire details pending - Real bank account will be configured before launch]',
+      routingNumber: '[Pending configuration]',
+      swiftCode: '[Pending]',
+      iban: '[IBAN pending configuration]',
       reference,
       fedReference,
       wireType: 'international',
       memo: `International Investment Deposit - ${reference}`,
       bankAddress: {
-        line1: '383 Madison Avenue',
-        city: 'New York',
-        state: 'NY',
-        postalCode: '10179',
+        line1: '[Bank address pending configuration]',
+        city: '',
+        state: '',
+        postalCode: '',
         country: 'USA',
       },
       beneficiaryAddress: {
         name: 'IVX HOLDINGS LLC',
-        line1: '100 Financial Center Drive',
-        line2: 'Suite 500',
+        line1: '[Beneficiary address pending configuration]',
+        line2: '',
         city: 'Miami',
         state: 'FL',
         postalCode: '33131',
         country: 'USA',
       },
       intermediaryBank: {
-        bankName: 'JPMorgan Chase Bank, N.A.',
-        swiftCode: 'CHASUS33',
-        routingNumber: '021000021',
+        bankName: '[Pending configuration]',
+        swiftCode: '[Pending]',
+        routingNumber: '[Pending]',
         address: {
-          line1: '383 Madison Avenue',
-          city: 'New York',
-          state: 'NY',
-          postalCode: '10179',
+          line1: '[Address pending configuration]',
+          city: '',
+          state: '',
+          postalCode: '',
           country: 'USA',
         },
       },
@@ -1135,11 +1135,21 @@ class PaymentService {
     };
   }
 
+  isSimulated(): boolean {
+    const stripeConfigured = this.isConfigured('stripe');
+    const plaidConfigured = this.isConfigured('plaid');
+    return !stripeConfigured && !plaidConfigured;
+  }
+
   async processPayment(
     amount: number,
     paymentMethodType: PaymentMethodType,
     details?: CardDetails | BankAccountDetails | CardToken
   ): Promise<PaymentResult> {
+    if (this.isSimulated()) {
+      logger.payment.log('[SIMULATED] No real payment provider configured. Transaction is simulated only.');
+    }
+
     const validation = this.validateAmount(amount, paymentMethodType);
     if (!validation.valid) {
       return this.createErrorResult(amount, paymentMethodType, validation.error || 'Invalid amount');
@@ -1150,7 +1160,7 @@ class PaymentService {
       return this.createErrorResult(amount, paymentMethodType, 'Payment method not available');
     }
 
-    logger.payment.log('Processing payment:', { amount, method: paymentMethodType, provider: method.provider });
+    logger.payment.log('Processing payment:', { amount, method: paymentMethodType, provider: method.provider, simulated: this.isSimulated() });
 
     try {
       switch (paymentMethodType) {

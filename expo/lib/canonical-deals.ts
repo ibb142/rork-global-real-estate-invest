@@ -183,6 +183,7 @@ export function canonicalCardToParsedDeal(card: PublishedDealCardModel): ParsedJ
     type: card.dealType,
     expectedROI: card.expectedROI,
     totalInvestment: card.totalInvestment,
+    propertyValue: card.propertyValue || 0,
     partners: card.partnersCount,
     description: card.descriptionShort,
     propertyAddress: card.addressFull,
@@ -196,5 +197,6 @@ export function canonicalCardToParsedDeal(card: PublishedDealCardModel): ParsedJ
     city: card.city,
     state: card.state,
     country: card.country,
+    trustInfo: card.rawTrustInfo,
   };
 }

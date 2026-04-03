@@ -96,5 +96,14 @@ export function generateConfigJson(): string {
 export function getLandingPageSupabaseFetchUrl(): string {
   const { url, anonKey } = getSupabaseCredentials();
   if (!url || !anonKey) return '';
-  return `${url}/rest/v1/jv_deals?select=*&published=eq.true&status=in.(active,published,live)&order=display_order.asc.nullslast,created_at.desc.nullslast&apikey=${anonKey}`;
+  return `${url}/rest/v1/jv_deals?select=*&published=eq.true&status=in.(active,published,live)&order=display_order.asc.nullslast,created_at.desc.nullslast`;
+}
+
+export function getLandingPageSupabaseFetchHeaders(): Record<string, string> {
+  const { anonKey } = getSupabaseCredentials();
+  return {
+    'apikey': anonKey,
+    'Authorization': `Bearer ${anonKey}`,
+    'Content-Type': 'application/json',
+  };
 }

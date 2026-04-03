@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
 import { logAudit } from '@/lib/audit-trail';
 import type { WalletRow, HoldingRow, ProfileRow } from '@/types/database';
+import { rpcAtomicPurchase, rpcAtomicSell } from '@/lib/stored-procedures';
 
 import { getApiBaseUrl } from '@/lib/api-base';
 
@@ -159,6 +160,76 @@ export async function purchaseShares(request: InvestmentRequest): Promise<Invest
       };
     }
 
+    // --- TRY ATOMIC RPC FIRST (single DB transaction) ---
+    try {
+      console.log('[InvestmentService] Attempting atomic RPC purchase...');
+      const rpcResult = await rpcAtomicPurchase({
+        p_user_id: user.id,
+        p_property_id: request.propertyId,
+        p_property_name: request.propertyName,
+        p_shares: request.shares,
+        p_price_per_share: request.pricePerShare,
+        p_subtotal: request.subtotal,
+        p_platform_fee: request.platformFee,
+        p_total_cost: request.totalCost,
+        p_payment_method: request.paymentMethod,
+        p_investment_type: request.investmentType,
+        p_transaction_id: transactionId,
+        p_holding_id: holdingId,
+        p_confirmation_number: confirmationNumber,
+      });
+
+      if (rpcResult.success) {
+        console.log('[InvestmentService] Atomic RPC purchase SUCCESS:', rpcResult.confirmation_number);
+        try {
+          await logAudit({
+            entityType: 'transaction',
+            entityId: rpcResult.transaction_id,
+            entityTitle: `Purchase: ${request.shares} shares of ${request.propertyName}`,
+            action: 'PURCHASE',
+            source: 'app',
+            details: {
+              propertyId: request.propertyId,
+              propertyName: request.propertyName,
+              shares: request.shares,
+              totalCost: request.totalCost,
+              paymentMethod: request.paymentMethod,
+              investmentType: request.investmentType,
+              confirmationNumber: rpcResult.confirmation_number,
+              holdingId: rpcResult.holding_id,
+              method: 'atomic_rpc',
+            },
+          });
+        } catch (auditErr) {
+          console.log('[InvestmentService] Audit log failed (non-critical):', (auditErr as Error)?.message);
+        }
+        return {
+          success: true,
+          transactionId: rpcResult.transaction_id,
+          holdingId: rpcResult.holding_id,
+          confirmationNumber: rpcResult.confirmation_number,
+          message: rpcResult.message,
+        };
+      }
+
+      if (rpcResult.message && !rpcResult.message.includes('does not exist')) {
+        console.log('[InvestmentService] Atomic RPC returned business error:', rpcResult.message);
+        return {
+          success: false,
+          transactionId: '',
+          holdingId: '',
+          confirmationNumber: '',
+          message: rpcResult.message,
+          error: 'rpc_business_error',
+        };
+      }
+
+      console.log('[InvestmentService] Atomic RPC not available, falling back to client-side logic');
+    } catch (rpcErr) {
+      console.log('[InvestmentService] Atomic RPC exception, falling back:', (rpcErr as Error)?.message);
+    }
+
+    // --- FALLBACK: Client-side multi-step logic ---
     const walletBalance = await ensureWalletExists(user.id);
     console.log('[InvestmentService] Wallet balance:', walletBalance);
 
@@ -168,7 +239,7 @@ export async function purchaseShares(request: InvestmentRequest): Promise<Invest
         transactionId: '',
         holdingId: '',
         confirmationNumber: '',
-        message: `Insufficient wallet balance. You have $${walletBalance.toFixed(2)} but need $${request.totalCost.toFixed(2)}.`,
+        message: `Insufficient wallet balance. You have ${walletBalance.toFixed(2)} but need ${request.totalCost.toFixed(2)}.`,
         error: 'insufficient_funds',
       };
     }
@@ -187,6 +258,11 @@ export async function purchaseShares(request: InvestmentRequest): Promise<Invest
       }
     }
 
+    const txStatus = request.paymentMethod === 'wallet' ? 'completed' : 'pending_payment';
+    const txDescription = request.paymentMethod === 'wallet'
+      ? `Purchased ${request.shares} shares of ${request.propertyName} (${request.investmentType}) — Confirmation: ${confirmationNumber}`
+      : `Pending payment: ${request.shares} shares of ${request.propertyName} (${request.investmentType}) via ${request.paymentMethod} — Awaiting funds — Confirmation: ${confirmationNumber}`;
+
     const { error: txError } = await supabase
       .from('transactions')
       .insert({
@@ -194,12 +270,14 @@ export async function purchaseShares(request: InvestmentRequest): Promise<Invest
         user_id: user.id,
         type: 'buy',
         amount: request.totalCost,
-        status: 'completed',
-        description: `Purchased ${request.shares} shares of ${request.propertyName} (${request.investmentType}) — Confirmation: ${confirmationNumber}`,
+        status: txStatus,
+        description: txDescription,
         property_id: request.propertyId,
         property_name: request.propertyName,
         created_at: new Date().toISOString(),
       });
+
+    console.log('[InvestmentService] Transaction status:', txStatus, '| payment method:', request.paymentMethod);
 
     if (txError) {
       console.log('[InvestmentService] Transaction insert failed:', txError?.message);
@@ -318,7 +396,7 @@ export async function purchaseShares(request: InvestmentRequest): Promise<Invest
         user_id: user.id,
         type: 'transaction',
         title: 'Investment Confirmed',
-        message: `You purchased ${request.shares} shares of ${request.propertyName} for $${request.totalCost.toFixed(2)}. Confirmation: ${confirmationNumber}`,
+        message: `You purchased ${request.shares} shares of ${request.propertyName} for ${request.totalCost.toFixed(2)}. Confirmation: ${confirmationNumber}`,
         read: false,
         created_at: new Date().toISOString(),
       });
@@ -346,7 +424,11 @@ export async function purchaseShares(request: InvestmentRequest): Promise<Invest
       console.log('[InvestmentService] Profile update skipped:', profileError.message);
     }
 
-    console.log('[InvestmentService] Purchase completed successfully:', confirmationNumber);
+    const completionMessage = request.paymentMethod === 'wallet'
+      ? `Successfully purchased ${request.shares} shares of ${request.propertyName}.`
+      : `Investment reserved: ${request.shares} shares of ${request.propertyName}. Your ${request.paymentMethod === 'wire' ? 'wire transfer' : 'bank transfer'} is pending. Shares will be confirmed once payment is received and verified by our team.`;
+
+    console.log('[InvestmentService] Purchase completed successfully:', confirmationNumber, '| status:', txStatus, '| method: client_fallback');
 
     try {
       await logAudit({
@@ -364,6 +446,7 @@ export async function purchaseShares(request: InvestmentRequest): Promise<Invest
           investmentType: request.investmentType,
           confirmationNumber,
           holdingId: finalHoldingId,
+          method: 'client_fallback',
         },
       });
 
@@ -388,7 +471,7 @@ export async function purchaseShares(request: InvestmentRequest): Promise<Invest
       transactionId,
       holdingId: finalHoldingId,
       confirmationNumber,
-      message: `Successfully purchased ${request.shares} shares of ${request.propertyName}.`,
+      message: completionMessage,
     };
 
   } catch (error) {
@@ -456,6 +539,72 @@ export async function sellShares(request: SellRequest): Promise<InvestmentResult
       };
     }
 
+    // --- TRY ATOMIC RPC FIRST for instant sells ---
+    if (request.sellType === 'instant') {
+      try {
+        console.log('[InvestmentService] Attempting atomic RPC sell...');
+        const rpcResult = await rpcAtomicSell({
+          p_user_id: user.id,
+          p_property_id: request.propertyId,
+          p_property_name: request.propertyName,
+          p_shares: request.shares,
+          p_price_per_share: request.pricePerShare,
+          p_subtotal: request.subtotal,
+          p_platform_fee: request.platformFee,
+          p_net_proceeds: request.netProceeds,
+          p_transaction_id: transactionId,
+          p_confirmation_number: confirmationNumber,
+        });
+
+        if (rpcResult.success) {
+          console.log('[InvestmentService] Atomic RPC sell SUCCESS:', rpcResult.confirmation_number);
+          try {
+            await logAudit({
+              entityType: 'transaction',
+              entityId: rpcResult.transaction_id,
+              entityTitle: `Sell: ${request.shares} shares of ${request.propertyName}`,
+              action: 'PURCHASE',
+              source: 'app',
+              details: {
+                propertyId: request.propertyId,
+                shares: request.shares,
+                netProceeds: request.netProceeds,
+                platformFee: request.platformFee,
+                confirmationNumber: rpcResult.confirmation_number,
+                method: 'atomic_rpc',
+              },
+            });
+          } catch (auditErr) {
+            console.log('[InvestmentService] Audit log failed (non-critical):', (auditErr as Error)?.message);
+          }
+          return {
+            success: true,
+            transactionId: rpcResult.transaction_id,
+            holdingId: rpcResult.holding_id,
+            confirmationNumber: rpcResult.confirmation_number,
+            message: rpcResult.message,
+          };
+        }
+
+        if (rpcResult.message && !rpcResult.message.includes('does not exist')) {
+          console.log('[InvestmentService] Atomic RPC sell returned business error:', rpcResult.message);
+          return {
+            success: false,
+            transactionId: '',
+            holdingId: '',
+            confirmationNumber: '',
+            message: rpcResult.message,
+            error: 'rpc_business_error',
+          };
+        }
+
+        console.log('[InvestmentService] Atomic RPC sell not available, falling back to client-side logic');
+      } catch (rpcErr) {
+        console.log('[InvestmentService] Atomic RPC sell exception, falling back:', (rpcErr as Error)?.message);
+      }
+    }
+
+    // --- FALLBACK: Client-side multi-step logic ---
     const { data: holdingData, error: holdingErr } = await supabase
       .from('holdings')
       .select('*')

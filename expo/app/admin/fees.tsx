@@ -37,6 +37,7 @@ import Colors from '@/constants/colors';
 import { FeeConfiguration, FeeTransaction, FeeType } from '@/types';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
+import { formatCurrencyWithDecimals } from '@/lib/formatters';
 
 type FilterType = 'all' | 'buy' | 'sell' | 'withdrawal' | 'deposit';
 type StatusFilter = 'all' | 'collected' | 'pending' | 'waived';
@@ -134,13 +135,7 @@ export default function FeesScreen() {
     return result;
   }, [transactions, typeFilter, statusFilter, searchQuery]);
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 2,
-    }).format(amount);
-  };
+  const formatCurrency = (amount: number) => formatCurrencyWithDecimals(amount);
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);

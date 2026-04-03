@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS jv_deals (
   zoning text,
   property_type text,
   "totalInvestment" numeric DEFAULT 0,
+  "propertyValue" numeric DEFAULT 0,
   "expectedROI" numeric DEFAULT 0,
   estimated_value numeric,
   appraised_value numeric,
@@ -306,7 +307,7 @@ export default function SupabaseExportScreen() {
             <ArrowLeft size={22} color="#fff" />
           </TouchableOpacity>
           <View style={styles.headerCenter}>
-            <Database size={20} color="#10B981" />
+            <Database size={20} color="#22C55E" />
             <Text style={styles.headerTitle}>Supabase SQL Export</Text>
           </View>
           <View style={{ width: 40 }} />
@@ -367,9 +368,9 @@ export default function SupabaseExportScreen() {
                     {isExpanded ? 'Hide SQL' : 'Preview SQL'}
                   </Text>
                   {isExpanded ? (
-                    <ChevronUp size={16} color="#94A3B8" />
+                    <ChevronUp size={16} color="#999999" />
                   ) : (
-                    <ChevronDown size={16} color="#94A3B8" />
+                    <ChevronDown size={16} color="#999999" />
                   )}
                 </TouchableOpacity>
 
@@ -410,13 +411,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: '#1E293B',
+    borderBottomColor: '#2A2A2A',
   },
   backBtn: {
     width: 40,
     height: 40,
     borderRadius: 12,
-    backgroundColor: '#1E293B',
+    backgroundColor: '#2A2A2A',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -430,26 +431,26 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 17,
     fontWeight: '700' as const,
-    color: '#F1F5F9',
+    color: '#FFFFFF',
   },
   instructions: {
     marginHorizontal: 16,
     marginTop: 12,
-    backgroundColor: '#1E293B',
+    backgroundColor: '#2A2A2A',
     borderRadius: 12,
     padding: 14,
     borderLeftWidth: 3,
-    borderLeftColor: '#10B981',
+    borderLeftColor: '#22C55E',
   },
   instructionTitle: {
     fontSize: 14,
     fontWeight: '700' as const,
-    color: '#10B981',
+    color: '#22C55E',
     marginBottom: 6,
   },
   instructionText: {
     fontSize: 13,
-    color: '#CBD5E1',
+    color: '#CCCCCC',
     lineHeight: 20,
   },
   scroll: {
@@ -461,11 +462,11 @@ const styles = StyleSheet.create({
     gap: 14,
   },
   card: {
-    backgroundColor: '#1E293B',
+    backgroundColor: '#2A2A2A',
     borderRadius: 14,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: '#333333',
   },
   cardHeader: {
     flexDirection: 'row',
@@ -477,7 +478,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 10,
-    backgroundColor: '#10B981',
+    backgroundColor: '#22C55E',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -492,11 +493,11 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontSize: 15,
     fontWeight: '700' as const,
-    color: '#F1F5F9',
+    color: '#FFFFFF',
   },
   cardSubtitle: {
     fontSize: 12,
-    color: '#94A3B8',
+    color: '#999999',
     marginTop: 2,
   },
   copyBtn: {
@@ -504,7 +505,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
-    backgroundColor: '#10B981',
+    backgroundColor: '#22C55E',
     marginHorizontal: 14,
     marginBottom: 10,
     paddingVertical: 14,
@@ -526,25 +527,25 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingVertical: 10,
     borderTopWidth: 1,
-    borderTopColor: '#334155',
+    borderTopColor: '#333333',
   },
   previewToggleText: {
     fontSize: 13,
-    color: '#94A3B8',
+    color: '#999999',
     fontWeight: '500' as const,
   },
   codeWrap: {
     backgroundColor: '#0F172A',
     maxHeight: 200,
     borderTopWidth: 1,
-    borderTopColor: '#334155',
+    borderTopColor: '#333333',
   },
   codeScroll: {
     padding: 12,
   },
   codeText: {
     fontSize: 11,
-    color: '#10B981',
+    color: '#22C55E',
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
     lineHeight: 16,
   },
@@ -555,7 +556,7 @@ const styles = StyleSheet.create({
   },
   footerText: {
     fontSize: 13,
-    color: '#64748B',
+    color: '#666666',
     textAlign: 'center',
     lineHeight: 20,
   },

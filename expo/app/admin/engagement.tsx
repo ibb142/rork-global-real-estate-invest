@@ -37,19 +37,13 @@ import {
   ArrowLeft,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
+import { formatCurrency as _fmtCurr } from '@/lib/formatters';
 import { MemberEngagementStats, MemberActivity } from '@/types';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { generateText } from '@/lib/ai-service';
 
-const formatCurrency = (amount: number) => {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(amount);
-};
+const formatCurrency = (amount: number) => _fmtCurr(amount);
 
 type TabType = 'overview' | 'inactive' | 'messages' | 'drafts' | 'activity' | 'automation';
 

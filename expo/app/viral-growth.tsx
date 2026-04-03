@@ -235,7 +235,7 @@ function ViralChannelsList() {
     Play: <Play size={14} color="#FF0000" />,
     Twitter: <MessageCircle size={14} color="#1DA1F2" />,
     Briefcase: <Briefcase size={14} color="#0A66C2" />,
-    Mail: <Mail size={14} color="#00C48C" />,
+    Mail: <Mail size={14} color="#22C55E" />,
   };
 
   return (

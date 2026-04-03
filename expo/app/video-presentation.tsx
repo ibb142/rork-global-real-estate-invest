@@ -147,7 +147,7 @@ const PHOTO_TEMPLATES: PhotoTemplate[] = [
     label: 'Investment Dashboard 8K',
     prompt:
       'Photorealistic image of a sleek modern desk with large curved monitor and smartphone both displaying real estate portfolio charts with green profit indicators, dark mode interface with gold accents, ambient LED desk lighting, modern office with city skyline view at golden hour, professional product photography, 8K ultra-realistic',
-    color: '#00C48C',
+    color: '#22C55E',
   },
   {
     id: 'vip-luxury',
@@ -199,7 +199,7 @@ const COMPARISON_DATA = [
 
 const STATS_DATA = [
   { label: 'Global RE Market', value: 326, prefix: '$', suffix: 'T', color: '#FFD700', barPct: 95 },
-  { label: 'Avg Annual Return', value: 9.8, prefix: '', suffix: '%', color: '#00C48C', barPct: 78 },
+  { label: 'Avg Annual Return', value: 9.8, prefix: '', suffix: '%', color: '#22C55E', barPct: 78 },
   { label: 'Millionaires via RE', value: 90, prefix: '', suffix: '%', color: '#4A90D9', barPct: 90 },
   { label: 'Monthly Growth', value: 32, prefix: '+', suffix: '%', color: '#E91E63', barPct: 65 },
 ];
@@ -207,7 +207,7 @@ const STATS_DATA = [
 const ECO_ITEMS = [
   { text: 'Property owners list & earn in 2 steps', color: '#FFD700' },
   { text: 'Private lenders grow wealth passively', color: '#4A90D9' },
-  { text: 'Regular people invest from just $10', color: '#00C48C' },
+  { text: 'Regular people invest from just $10', color: '#22C55E' },
   { text: 'Influencers earn commissions automatically', color: '#E91E63' },
   { text: 'Realtors expand their network & income', color: '#9B59B6' },
   { text: 'AI removes every friction point', color: '#FF6B35' },
@@ -236,11 +236,11 @@ const FLOOR_COLORS = [
 const SLIDES: SlideConfig[] = [
   { id: 'hero', type: 'hero', title: 'IVXHOLDINGS HOLDING', subtitle: 'The Future of Real Estate Investment', accentColor: '#FFD700', duration: 5000 },
   { id: 'problem', type: 'pain', title: 'Traditional Real Estate\nis Broken', accentColor: '#FF4D4D', duration: 6500 },
-  { id: 'solution', type: 'hero', title: 'IVXHOLDINGS + AI\nChanges Everything', subtitle: 'Crushing every barrier with artificial intelligence', accentColor: '#00C48C', duration: 4500 },
+  { id: 'solution', type: 'hero', title: 'IVXHOLDINGS + AI\nChanges Everything', subtitle: 'Crushing every barrier with artificial intelligence', accentColor: '#22C55E', duration: 4500 },
   { id: 'comparison', type: 'comparison', title: 'Why This Crushes\nTraditional Real Estate', accentColor: '#FFD700', duration: 8000 },
   { id: 'listing', type: 'feature', title: 'AI-Powered Listing', subtitle: 'Replace the 30-60 day process', accentColor: '#4A90D9', duration: 5500, featureValue: '2 min', featureDesc: ['AI scans & structures data', 'Auto-generates listing', 'Instant market placement'], mockupKey: 'marketplace' },
   { id: 'kyc', type: 'feature', title: 'Instant Verification', subtitle: 'AI document scanning & biometrics', accentColor: '#9B59B6', duration: 5500, featureValue: '60 sec', featureDesc: ['Camera ID / passport scan', 'AI data extraction', 'Real-time verification'], mockupKey: 'onboarding' },
-  { id: 'invest10', type: 'feature', title: 'Invest for Everyone', subtitle: 'No more $50K minimum barriers', accentColor: '#00C48C', duration: 5500, featureValue: '$10', featureDesc: ['Fractional ownership', 'Instant diversification', 'Zero lock-up period'], mockupKey: 'trading' },
+  { id: 'invest10', type: 'feature', title: 'Invest for Everyone', subtitle: 'No more $50K minimum barriers', accentColor: '#22C55E', duration: 5500, featureValue: '$10', featureDesc: ['Fractional ownership', 'Instant diversification', 'Zero lock-up period'], mockupKey: 'trading' },
   { id: 'liquidity', type: 'feature', title: 'Daily Liquidity', subtitle: 'Your money is never locked again', accentColor: '#FFB800', duration: 5500, featureValue: '24/7', featureDesc: ['Sell shares anytime', 'Instant settlement', 'No penalties or fees'], mockupKey: 'wallet' },
   { id: 'ai-power', type: 'feature', title: 'AI Does It All', subtitle: 'No broker. No lawyer. No agent.', accentColor: '#E91E63', duration: 5500, featureValue: 'AI', featureDesc: ['Smart contract automation', 'Full property management', 'Trust Score + live data'], mockupKey: 'ai' },
   { id: 'construction', type: 'construction', title: 'Development Investing', subtitle: 'Invest in properties under construction.\nWatch your investment grow floor by floor.', accentColor: '#FF6B35', duration: 7000 },
@@ -249,7 +249,7 @@ const SLIDES: SlideConfig[] = [
   { id: 'wallet', type: 'feature', title: 'Wallet & Payments', subtitle: 'Fund your account in seconds', accentColor: '#2ECC71', duration: 5000, featureValue: '28', featureDesc: ['Bank ACH & wire transfers', 'Credit & debit cards', 'Instant deposits'], mockupKey: 'wallet' },
   { id: 'viral', type: 'feature', title: 'Viral Growth Engine', subtitle: 'Organic growth that scales itself', accentColor: '#7C4DFF', duration: 5500, featureValue: '10x', featureDesc: ['Copy top investors', 'Influencer AI engine', 'Tiered referral rewards'], mockupKey: 'growth' },
   { id: 'stats', type: 'stats', title: '340+ Features Built', accentColor: '#FFD700', duration: 6000 },
-  { id: 'ecosystem', type: 'ecosystem', title: 'Self-Growing\nEcosystem', subtitle: 'Every user attracts more users.\nEvery property attracts more investors.\nAI removes every friction point.', accentColor: '#00C48C', duration: 5500 },
+  { id: 'ecosystem', type: 'ecosystem', title: 'Self-Growing\nEcosystem', subtitle: 'Every user attracts more users.\nEvery property attracts more investors.\nAI removes every friction point.', accentColor: '#22C55E', duration: 5500 },
   { id: 'foundation', type: 'hero', title: '340+ Features\nBuilt & Live', subtitle: 'Marketplace \u00B7 Wallet \u00B7 AI Chat \u00B7 Portfolio \u00B7 KYC \u00B7 Copy Investing \u00B7 VIP \u00B7 Referrals \u00B7 Admin \u2014 everything ready.', accentColor: '#FFD700', duration: 5500 },
   { id: 'closing', type: 'closing', title: 'Join the\nRevolution', subtitle: 'Start investing in real estate today.\nFree to download. Start from $10.', accentColor: '#FFD700', duration: 6000 },
 ];
@@ -1207,7 +1207,7 @@ export default function VideoPresentationScreen() {
             <Text style={styles.presWAText}>WhatsApp</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.presDownloadBtn} onPress={handleDownloadPresentation} activeOpacity={0.8} testID="pres-download-btn">
-            <ArrowDownToLine size={16} color="#00C48C" />
+            <ArrowDownToLine size={16} color="#22C55E" />
             <Text style={styles.presDownloadText}>Download</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.presMoreBtn} onPress={openNativeShare} activeOpacity={0.8}>
@@ -1253,7 +1253,7 @@ export default function VideoPresentationScreen() {
 
           {shareSuccess && (
             <View style={styles.successToast}>
-              <CheckCircle size={16} color="#00C48C" />
+              <CheckCircle size={16} color="#22C55E" />
               <Text style={styles.successToastText}>Shared successfully!</Text>
             </View>
           )}
@@ -1276,7 +1276,7 @@ export default function VideoPresentationScreen() {
               </View>
               <View style={styles.hubMetricDivider} />
               <View style={styles.hubMetricItem}>
-                <Text style={[styles.hubMetricValue, { color: '#00C48C' }]}>340<Text style={styles.hubMetricSuffix}>+</Text></Text>
+                <Text style={[styles.hubMetricValue, { color: '#22C55E' }]}>340<Text style={styles.hubMetricSuffix}>+</Text></Text>
                 <Text style={styles.hubMetricLabel}>Features Live</Text>
               </View>
               <View style={styles.hubMetricDivider} />
@@ -1377,11 +1377,11 @@ export default function VideoPresentationScreen() {
               <Image source={{ uri: 'https://images.unsplash.com/photo-1460317442991-0ec209397118?w=600&q=80' }} style={styles.hubGridCardBg} resizeMode="cover" />
               <View style={styles.hubGridCardOverlay} />
               <View style={styles.hubGridCardContent}>
-                <View style={[styles.hubGridCardBadge, { backgroundColor: '#00C48C' }]}>
+                <View style={[styles.hubGridCardBadge, { backgroundColor: '#22C55E' }]}>
                   <Text style={styles.hubGridCardBadgeText}>NEW</Text>
                 </View>
                 <View style={styles.hubGridCardBottom}>
-                  <Sparkles size={16} color="#00C48C" />
+                  <Sparkles size={16} color="#22C55E" />
                   <Text style={styles.hubGridCardTitle}>Enterprise{`\n`}Pitch Deck</Text>
                   <Text style={styles.hubGridCardSub}>9 slides · Owner protection · Revenue</Text>
                 </View>
@@ -1424,8 +1424,8 @@ export default function VideoPresentationScreen() {
                 <Text style={styles.hubShareBlockActionText}>Email</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.hubShareBlockAction} onPress={copyShareLink} activeOpacity={0.8}>
-                {copiedLink ? <CheckCircle size={18} color="#00C48C" /> : <Copy size={18} color="#FFD700" />}
-                <Text style={[styles.hubShareBlockActionText, copiedLink && { color: '#00C48C' }]}>{copiedLink ? 'Copied!' : 'Copy'}</Text>
+                {copiedLink ? <CheckCircle size={18} color="#22C55E" /> : <Copy size={18} color="#FFD700" />}
+                <Text style={[styles.hubShareBlockActionText, copiedLink && { color: '#22C55E' }]}>{copiedLink ? 'Copied!' : 'Copy'}</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.hubShareBlockAction} onPress={openNativeShare} activeOpacity={0.8}>
                 <ExternalLink size={18} color="#FF6B35" />
@@ -1500,7 +1500,7 @@ export default function VideoPresentationScreen() {
               <Text style={styles.hubActionHint}>Image or Video</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.hubDownloadBtn} onPress={handleDownloadPresentation} activeOpacity={0.85} testID="hub-download-btn">
-              <ArrowDownToLine size={22} color="#00C48C" />
+              <ArrowDownToLine size={22} color="#22C55E" />
               <Text style={styles.hubDownloadLabel}>Download</Text>
               <Text style={styles.hubActionHint}>Save to device</Text>
             </TouchableOpacity>
@@ -1582,7 +1582,7 @@ export default function VideoPresentationScreen() {
                       </View>
                       <View style={styles.galleryActions}>
                         <TouchableOpacity style={styles.galleryActionBtn} onPress={() => handleDownloadImage(img)} activeOpacity={0.7} testID={`download-${img.id}`}>
-                          <ArrowDownToLine size={16} color="#00C48C" />
+                          <ArrowDownToLine size={16} color="#22C55E" />
                         </TouchableOpacity>
                         <TouchableOpacity style={[styles.galleryActionBtn, { backgroundColor: 'rgba(37,211,102,0.1)' }]} onPress={() => handleShareImageWhatsApp(img)} activeOpacity={0.7} testID={`share-wa-${img.id}`}>
                           <MessageCircle size={16} color="#25D366" />
@@ -1625,8 +1625,8 @@ const styles = StyleSheet.create({
   hubGlowBlob: { position: 'absolute', width: 300, height: 300, borderRadius: 150 },
   hubTopBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 18, paddingVertical: 10 },
   hubLiveBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(0,196,140,0.1)', borderWidth: 1, borderColor: 'rgba(0,196,140,0.25)', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 5 },
-  hubLiveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#00C48C' },
-  hubLiveText: { fontSize: 10, fontWeight: '800' as const, color: '#00C48C', letterSpacing: 1.5 },
+  hubLiveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#22C55E' },
+  hubLiveText: { fontSize: 10, fontWeight: '800' as const, color: '#22C55E', letterSpacing: 1.5 },
   hubHeroSection: { paddingTop: 8, paddingBottom: 20, gap: 10 },
   hubHeroBadgeRow: { flexDirection: 'row', gap: 8 },
   hubHeroTagEnterprise: { backgroundColor: 'rgba(212,160,23,0.15)', borderWidth: 1, borderColor: 'rgba(212,160,23,0.35)', borderRadius: 6, paddingHorizontal: 10, paddingVertical: 4 },
@@ -1689,9 +1689,9 @@ const styles = StyleSheet.create({
   hubBgGlow2: { position: 'absolute', bottom: 80, right: -40, width: 200, height: 200, borderRadius: 100, backgroundColor: 'rgba(74,144,217,0.03)' },
 
   hubEnterprisePitchCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,196,140,0.06)', borderRadius: 18, borderWidth: 1.5, borderColor: 'rgba(0,196,140,0.35)', padding: 16, marginBottom: 10, gap: 14 },
-  hubEnterprisePitchLeft: { width: 52, height: 52, borderRadius: 14, backgroundColor: '#00C48C', justifyContent: 'center', alignItems: 'center' },
+  hubEnterprisePitchLeft: { width: 52, height: 52, borderRadius: 14, backgroundColor: '#22C55E', justifyContent: 'center', alignItems: 'center' },
   hubEnterprisePitchIcon: { justifyContent: 'center', alignItems: 'center' },
-  hubEnterprisePitchTitle: { fontSize: 15, fontWeight: '800' as const, color: '#00C48C', letterSpacing: 0.2, marginBottom: 2 },
+  hubEnterprisePitchTitle: { fontSize: 15, fontWeight: '800' as const, color: '#22C55E', letterSpacing: 0.2, marginBottom: 2 },
 
   hubSafeArea: { zIndex: 10 },
   hubHeader: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 12 },
@@ -1745,7 +1745,7 @@ const styles = StyleSheet.create({
 
   hubActionRow: { flexDirection: 'row', gap: 10, marginBottom: 10 },
   hubDownloadBtn: { flex: 1, backgroundColor: 'rgba(0,196,140,0.08)', borderWidth: 1.5, borderColor: 'rgba(0,196,140,0.25)', borderRadius: 16, paddingVertical: 18, alignItems: 'center', gap: 6 },
-  hubDownloadLabel: { fontSize: 14, fontWeight: '800' as const, color: '#00C48C' },
+  hubDownloadLabel: { fontSize: 14, fontWeight: '800' as const, color: '#22C55E' },
   hubUploadBtn: { flex: 1, backgroundColor: 'rgba(74,144,217,0.08)', borderWidth: 1.5, borderColor: 'rgba(74,144,217,0.25)', borderRadius: 16, paddingVertical: 18, alignItems: 'center', gap: 6 },
   hubUploadLabel: { fontSize: 14, fontWeight: '800' as const, color: '#4A90D9' },
   hubActionHint: { fontSize: 10, color: Colors.textTertiary, marginTop: -2 },
@@ -1753,11 +1753,11 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 18, fontWeight: '800' as const, color: Colors.text, flex: 1 },
 
   successToast: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: 'rgba(0,196,140,0.12)', borderWidth: 1, borderColor: 'rgba(0,196,140,0.25)', paddingVertical: 10, borderRadius: 12, marginBottom: 12 },
-  successToastText: { fontSize: 13, fontWeight: '700' as const, color: '#00C48C' },
+  successToastText: { fontSize: 13, fontWeight: '700' as const, color: '#22C55E' },
 
   hubDemoCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,196,140,0.06)', borderWidth: 1.5, borderColor: 'rgba(0,196,140,0.25)', borderRadius: 16, paddingVertical: 16, paddingHorizontal: 14, gap: 14, marginBottom: 16 },
   hubDemoLeft: {},
-  hubDemoIcon: { width: 56, height: 56, borderRadius: 16, backgroundColor: '#00C48C', justifyContent: 'center', alignItems: 'center' },
+  hubDemoIcon: { width: 56, height: 56, borderRadius: 16, backgroundColor: '#22C55E', justifyContent: 'center', alignItems: 'center' },
   hubDemoInfo: { flex: 1, gap: 4 },
   hubPitchCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,215,0,0.06)', borderWidth: 1.5, borderColor: 'rgba(255,215,0,0.2)', borderRadius: 16, paddingVertical: 16, paddingHorizontal: 14, gap: 14, marginBottom: 16 },
   hubPitchLeft: {},
@@ -1931,7 +1931,7 @@ const styles = StyleSheet.create({
   presWABtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: '#25D366', paddingVertical: 11, borderRadius: 12 },
   presWAText: { fontSize: 13, fontWeight: '800' as const, color: '#fff' },
   presDownloadBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: 'rgba(0,196,140,0.1)', borderWidth: 1, borderColor: 'rgba(0,196,140,0.25)', paddingVertical: 11, borderRadius: 12 },
-  presDownloadText: { fontSize: 13, fontWeight: '700' as const, color: '#00C48C' },
+  presDownloadText: { fontSize: 13, fontWeight: '700' as const, color: '#22C55E' },
   presMoreBtn: { width: 42, height: 42, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', alignItems: 'center', justifyContent: 'center' },
 
   ctaButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, borderRadius: 14, marginTop: 4, marginBottom: 8 },

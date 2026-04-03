@@ -33,7 +33,7 @@ import type { PublicationLogEntry } from '@/lib/jv-storage';
 import { invalidateAllJVQueries } from '@/lib/jv-realtime';
 
 const ACTION_CONFIG: Record<string, { label: string; color: string; icon: 'publish' | 'unpublish' | 'restore' }> = {
-  PUBLISH: { label: 'Published', color: '#00C48C', icon: 'publish' },
+  PUBLISH: { label: 'Published', color: '#22C55E', icon: 'publish' },
   UNPUBLISH: { label: 'Unpublished', color: '#FF6B6B', icon: 'unpublish' },
   AUTO_RESTORE: { label: 'Auto-Restored', color: '#4A90D9', icon: 'restore' },
 };
@@ -157,7 +157,7 @@ export default function PublicationLogScreen() {
             <Text style={styles.statLabel}>Total</Text>
           </View>
           <View style={styles.statCard}>
-            <Text style={[styles.statValue, { color: '#00C48C' }]}>{stats.publishes}</Text>
+            <Text style={[styles.statValue, { color: '#22C55E' }]}>{stats.publishes}</Text>
             <Text style={styles.statLabel}>Published</Text>
           </View>
           <View style={styles.statCard}>

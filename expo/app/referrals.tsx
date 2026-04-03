@@ -38,6 +38,7 @@ import * as Clipboard from 'expo-clipboard';
 import Colors from '@/constants/colors';
 import { Referral } from '@/types';
 import { supabase } from '@/lib/supabase';
+import { formatCurrency as _fmtCurr } from '@/lib/formatters';
 import { useQuery, useMutation } from '@tanstack/react-query';
 
 const mockUserReferrals: Referral[] = [
@@ -129,13 +130,7 @@ export default function ReferralsScreen() {
   const totalEarned = referrals.filter(r => r.rewardPaid).reduce((sum, r) => sum + r.reward, 0);
   const pendingRewards = referrals.filter(r => r.status === 'invested' && !r.rewardPaid).reduce((sum, r) => sum + r.reward, 0);
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 0,
-    }).format(amount);
-  };
+  const formatCurrency = (amount: number) => _fmtCurr(amount);
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {

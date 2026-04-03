@@ -83,7 +83,7 @@ function computeAIScore(property: Property): { score: number; label: string; col
   score += Math.min(funded * 0.2, 20);
   score = Math.min(99, Math.max(40, Math.round(score)));
 
-  if (score >= 85) return { score, label: 'Strong Buy', color: '#00C48C' };
+  if (score >= 85) return { score, label: 'Strong Buy', color: '#22C55E' };
   if (score >= 70) return { score, label: 'Buy', color: '#4ECDC4' };
   if (score >= 55) return { score, label: 'Hold', color: '#FFB800' };
   return { score, label: 'Watch', color: '#FF6B6B' };

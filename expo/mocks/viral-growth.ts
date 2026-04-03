@@ -54,7 +54,7 @@ export const viralChannels: ViralChannel[] = [
   { id: 'vc-5', name: 'YouTube', icon: 'Play', usersAcquired: 0, conversionRate: 0, costPerAcquisition: 0, trend: 'stable', trendPercent: 0, color: '#FF0000' },
   { id: 'vc-6', name: 'Twitter/X', icon: 'Twitter', usersAcquired: 0, conversionRate: 0, costPerAcquisition: 0, trend: 'stable', trendPercent: 0, color: '#1DA1F2' },
   { id: 'vc-7', name: 'LinkedIn', icon: 'Briefcase', usersAcquired: 0, conversionRate: 0, costPerAcquisition: 0, trend: 'stable', trendPercent: 0, color: '#0A66C2' },
-  { id: 'vc-8', name: 'Email Campaigns', icon: 'Mail', usersAcquired: 0, conversionRate: 0, costPerAcquisition: 0, trend: 'stable', trendPercent: 0, color: '#00C48C' },
+  { id: 'vc-8', name: 'Email Campaigns', icon: 'Mail', usersAcquired: 0, conversionRate: 0, costPerAcquisition: 0, trend: 'stable', trendPercent: 0, color: '#22C55E' },
 ];
 
 export const growthMetrics: GrowthMetric[] = [

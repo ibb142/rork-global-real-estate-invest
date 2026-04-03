@@ -638,7 +638,7 @@ export default function EmailComposeScreen() {
 
             <TouchableOpacity style={styles.attachOption} onPress={handleTakePhoto} testID="attach-camera">
               <View style={[styles.attachOptionIcon, { backgroundColor: 'rgba(0,196,140,0.12)' }]}>
-                <Camera size={22} color="#00C48C" strokeWidth={1.8} />
+                <Camera size={22} color="#22C55E" strokeWidth={1.8} />
               </View>
               <View style={styles.attachOptionInfo}>
                 <Text style={styles.attachOptionLabel}>Take Photo</Text>

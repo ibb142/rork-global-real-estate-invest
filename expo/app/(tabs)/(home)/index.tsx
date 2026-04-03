@@ -90,7 +90,7 @@ function PortfolioSnapshot({ router }: { router: ReturnType<typeof useRouter> })
   const mode = !isAuthenticated ? 'signup' : !hasHoldings ? 'explore' : 'portfolio';
 
   const ctaTitle = mode === 'signup' ? 'Start Investing Today' : mode === 'explore' ? 'Build Your Portfolio' : '';
-  const ctaSubtitle = mode === 'signup' ? 'From $1 — Own real estate globally' : mode === 'explore' ? 'Browse properties and start earning' : '';
+  const ctaSubtitle = mode === 'signup' ? 'From $50 — Own real estate globally' : mode === 'explore' ? 'Browse properties and start earning' : '';
   const ctaBtnText = mode === 'signup' ? 'Get Started' : 'Explore';
   const ctaIconColor = mode === 'signup' ? Colors.primary : Colors.success;
   const ctaTestId = mode === 'signup' ? 'portfolio-cta-signup' : 'portfolio-cta-invest';
@@ -326,7 +326,7 @@ const QuickActionCard = React.memo(function QuickActionCard({ icon, title, subti
 const JV_STATUS_CONFIG: Record<string, { label: string; color: string }> = {
   draft: { label: 'Draft', color: '#9A9A9A' },
   pending_review: { label: 'Pending', color: '#FFB800' },
-  active: { label: 'Active', color: '#00C48C' },
+  active: { label: 'Active', color: '#22C55E' },
   completed: { label: 'Completed', color: '#4A90D9' },
   expired: { label: 'Expired', color: '#FF4D4D' },
 };
@@ -582,7 +582,7 @@ const JVPropertyCard = React.memo(function JVPropertyCard({ agreement, onPress, 
             activeOpacity={0.8}
             testID={`jv-invest-now-${agreement.id}`}
           >
-            <Text style={igStyles.investNowBtnText}>Invest Now</Text>
+            <Text style={igStyles.investNowBtnText}>Join Waitlist</Text>
           </TouchableOpacity>
         </View>
 
@@ -993,7 +993,7 @@ function QuickInvestSection({ router, jvDeals, jvDealsLoading, isXs, onQuickBuy 
       <View style={[qiStyles.header, { paddingHorizontal: isXs ? 16 : 20 }]}>
         <View style={qiStyles.titleRow}>
           <Landmark size={18} color={Colors.primary} />
-          <Text style={qiStyles.title}>Invest Now</Text>
+          <Text style={qiStyles.title}>Explore Deals</Text>
         </View>
         <TouchableOpacity
           style={qiStyles.seeAllBtn}
@@ -1016,11 +1016,11 @@ function QuickInvestSection({ router, jvDeals, jvDealsLoading, isXs, onQuickBuy 
           activeOpacity={0.8}
           testID="quick-buy-shares"
         >
-          <View style={[qiStyles.actionIconWrap, { backgroundColor: '#00C48C18' }]}>
-            <Coins size={22} color="#00C48C" />
+          <View style={[qiStyles.actionIconWrap, { backgroundColor: '#22C55E18' }]}>
+            <Coins size={22} color="#22C55E" />
           </View>
           <Text style={qiStyles.actionTitle}>Buy Property Shares</Text>
-          <Text style={qiStyles.actionDesc}>From $1 — fractional ownership in premium real estate</Text>
+          <Text style={qiStyles.actionDesc}>From $50 — fractional ownership in premium real estate</Text>
           <View style={qiStyles.actionCta}>
             <Text style={qiStyles.actionCtaText}>Browse Properties</Text>
             <ArrowRight size={14} color={Colors.primary} />
@@ -1088,7 +1088,7 @@ function QuickInvestSection({ router, jvDeals, jvDealsLoading, isXs, onQuickBuy 
                 <View style={qiStyles.liveDealMeta}>
                   <Text style={qiStyles.liveDealAmount}>{formatCurrencyCompact(deal.totalInvestment)}</Text>
                   <View style={qiStyles.liveDealRoiBadge}>
-                    <TrendingUp size={10} color="#00C48C" />
+                    <TrendingUp size={10} color="#22C55E" />
                     <Text style={qiStyles.liveDealRoi}>{deal.expectedROI}% ROI</Text>
                   </View>
                 </View>
@@ -1196,7 +1196,7 @@ const qiStyles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#00C48C',
+    backgroundColor: '#22C55E',
   },
   liveBannerText: {
     fontSize: 13,
@@ -1243,7 +1243,7 @@ const qiStyles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
-    backgroundColor: '#00C48C15',
+    backgroundColor: '#22C55E15',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 6,
@@ -1251,7 +1251,7 @@ const qiStyles = StyleSheet.create({
   liveDealRoi: {
     fontSize: 11,
     fontWeight: '700' as const,
-    color: '#00C48C',
+    color: '#22C55E',
   },
   liveDealInvestBtn: {
     flexDirection: 'row',

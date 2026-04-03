@@ -24,6 +24,7 @@ import Colors from '@/constants/colors';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { AdminTransaction } from '@/types';
+import { formatCurrencyWithDecimals } from '@/lib/formatters';
 
 type FilterType = 'all' | 'deposit' | 'withdrawal' | 'buy' | 'sell' | 'dividend';
 type StatusFilter = 'all' | 'completed' | 'pending' | 'failed';
@@ -41,17 +42,69 @@ export default function TransactionsScreen() {
     queryKey: ['admin-transactions'],
     queryFn: async () => {
       console.log('[Admin Transactions] Fetching from Supabase...');
-      const { data, error, count } = await supabase
-        .from('transactions')
-        .select('*', { count: 'exact' })
-        .order('created_at', { ascending: false })
-        .limit(200);
-      if (error) {
-        console.log('[Admin Transactions] Supabase error:', error.message, '— falling back to mock');
-        return { transactions: null, count: null };
+      const [txResult, landingResult] = await Promise.all([
+        supabase
+          .from('transactions')
+          .select('*', { count: 'exact' })
+          .order('created_at', { ascending: false })
+          .limit(200),
+        supabase
+          .from('landing_investments')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(200),
+      ]);
+
+      const txData = txResult.error ? [] : (txResult.data ?? []);
+      if (txResult.error) {
+        console.log('[Admin Transactions] transactions table error:', txResult.error.message);
+      } else {
+        console.log('[Admin Transactions] Fetched', txData.length, 'from transactions table');
       }
-      console.log('[Admin Transactions] Fetched', data?.length, 'transactions from Supabase');
-      return { transactions: data, count };
+
+      const landingData = landingResult.error ? [] : (landingResult.data ?? []);
+      if (landingResult.error) {
+        const msg = (landingResult.error.message || '').toLowerCase();
+        if (!msg.includes('does not exist') && !msg.includes('schema cache')) {
+          console.log('[Admin Transactions] landing_investments error:', landingResult.error.message);
+        }
+      } else {
+        console.log('[Admin Transactions] Fetched', landingData.length, 'from landing_investments');
+      }
+
+      const landingTxIds = new Set<string>();
+      const landingAsTx = (landingData as Record<string, unknown>[]).map((row) => {
+        const intentId = typeof row.intent_id === 'string' ? row.intent_id : '';
+        const rowId = typeof row.id === 'string' ? row.id : '';
+        const id = intentId || rowId || `li_${Math.random().toString(36).substring(2, 8)}`;
+        landingTxIds.add(id);
+        const dealTitle = typeof row.deal_title === 'string' ? row.deal_title : '';
+        const investType = typeof row.investment_type === 'string' ? row.investment_type : 'JV Direct';
+        const investorEmail = typeof row.investor_email === 'string' ? row.investor_email : '';
+        const investorId = typeof row.investor_id === 'string' ? row.investor_id : '';
+        const createdAt = typeof row.created_at === 'string' ? row.created_at : new Date().toISOString();
+        return {
+          id,
+          type: 'buy',
+          amount: Number(row.amount) || 0,
+          status: row.status === 'confirmed' ? 'completed' : row.status === 'cancelled' ? 'failed' : 'pending',
+          user_id: investorId,
+          user_name: dealTitle || 'Landing Investment',
+          user_email: investorEmail,
+          description: `${investType} — ${dealTitle || 'Deal'} (Landing)`,
+          property_name: dealTitle,
+          created_at: createdAt,
+          source: 'landing',
+        };
+      });
+
+      const combined = [
+        ...txData.map((row: Record<string, unknown>) => ({ ...row, source: 'app' })),
+        ...landingAsTx.filter((lt) => !txData.some((t: Record<string, unknown>) => String(t.id) === lt.id)),
+      ];
+
+      console.log('[Admin Transactions] Combined:', combined.length, 'total (', txData.length, 'app +', landingAsTx.length, 'landing)');
+      return { transactions: combined, count: combined.length };
     },
     staleTime: 1000 * 30,
     retry: 1,
@@ -106,13 +159,7 @@ export default function TransactionsScreen() {
     );
   }, [typeFilter, statusFilter, searchQuery, allTransactions]);
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 2,
-    }).format(Math.abs(amount));
-  };
+  const formatCurrency = (amount: number) => formatCurrencyWithDecimals(Math.abs(amount));
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -194,7 +241,7 @@ export default function TransactionsScreen() {
           </View>
           <View style={styles.statBox}>
             <Text style={styles.statLabel}>Source</Text>
-            <Text style={[styles.statValue, { color: Colors.positive, fontSize: 11 }]}>LIVE</Text>
+            <Text style={[styles.statValue, { color: Colors.positive, fontSize: 11 }]}>LIVE + LANDING</Text>
           </View>
         </View>
       </View>

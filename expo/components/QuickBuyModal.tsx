@@ -76,7 +76,7 @@ export default function QuickBuyModal({ visible, onClose, deal, onNavigateToFull
   const [investType, setInvestType] = useState<InvestType>('jv');
   const [step, setStep] = useState<ModalStep>('select');
   const [purchaseError, setPurchaseError] = useState<string | null>(null);
-  const [confirmationNumber, setConfirmationNumber] = useState('');
+  const [_confirmationNumber, setConfirmationNumber] = useState('');
   const slideAnim = useRef(new Animated.Value(0)).current;
   const successScale = useRef(new Animated.Value(0)).current;
   const queryClient = useQueryClient();
@@ -90,6 +90,7 @@ export default function QuickBuyModal({ visible, onClose, deal, onNavigateToFull
   const [showPassword, setShowPassword] = useState(false);
   const [authError, setAuthError] = useState('');
   const [pendingInvest, setPendingInvest] = useState(false);
+  const [tosAccepted, setTosAccepted] = useState(false);
 
   const activeAmounts = investType === 'jv' ? JV_AMOUNTS : FRACTIONAL_AMOUNTS;
   const minAmount = investType === 'jv' ? 25000 : 100;
@@ -159,8 +160,9 @@ export default function QuickBuyModal({ visible, onClose, deal, onNavigateToFull
     }
   }, []);
 
-  const ownershipBase = deal ? deal.totalInvestment : 0;
+  const ownershipBase = deal ? ((deal.propertyMarketValue && deal.propertyMarketValue > 0) ? deal.propertyMarketValue : (deal.totalInvestment > 0 ? deal.totalInvestment : 1)) : 1;
   const equityPercent = ownershipBase > 0 ? Math.min((selectedAmount / ownershipBase) * 100, 100) : 0;
+  const ownershipLabel = deal?.propertyMarketValue && deal.propertyMarketValue > 0 ? 'Property Ownership' : 'Pool Ownership';
   const estimatedReturn = deal ? selectedAmount * (deal.expectedROI / 100) : 0;
 
   const handleContinue = useCallback(() => {
@@ -178,6 +180,7 @@ export default function QuickBuyModal({ visible, onClose, deal, onNavigateToFull
       return;
     }
 
+    setTosAccepted(false);
     setStep('confirm');
   }, [deal, selectedAmount, minAmount, isAuthenticated, investType]);
 
@@ -361,7 +364,7 @@ export default function QuickBuyModal({ visible, onClose, deal, onNavigateToFull
                     <View style={ms.dealMetaRow}>
                       <Text style={ms.dealInvestment}>{formatCurrencyCompact(deal.totalInvestment)}</Text>
                       <View style={ms.dealRoiBadge}>
-                        <TrendingUp size={10} color="#00C48C" />
+                        <TrendingUp size={10} color="#22C55E" />
                         <Text style={ms.dealRoi}>{deal.expectedROI}% ROI</Text>
                       </View>
                     </View>
@@ -376,7 +379,7 @@ export default function QuickBuyModal({ visible, onClose, deal, onNavigateToFull
                         onPress={() => handleSwitchType('jv')}
                         activeOpacity={0.7}
                       >
-                        <Landmark size={16} color={investType === 'jv' ? '#00C48C' : Colors.textTertiary} />
+                        <Landmark size={16} color={investType === 'jv' ? '#22C55E' : Colors.textTertiary} />
                         <Text style={[ms.typeBtnText, investType === 'jv' && ms.typeBtnTextActive]}>JV Direct</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
@@ -433,13 +436,13 @@ export default function QuickBuyModal({ visible, onClose, deal, onNavigateToFull
                       </View>
                       <View style={ms.previewDivider} />
                       <View style={ms.previewItem}>
-                        <Text style={ms.previewLabel}>Ownership</Text>
+                        <Text style={ms.previewLabel}>{ownershipLabel}</Text>
                         <Text style={[ms.previewValue, { color: Colors.primary }]}>{equityPercent.toFixed(2)}%</Text>
                       </View>
                       <View style={ms.previewDivider} />
                       <View style={ms.previewItem}>
                         <Text style={ms.previewLabel}>Est. Return</Text>
-                        <Text style={[ms.previewValue, { color: '#00C48C' }]}>{formatCurrencyCompact(estimatedReturn)}</Text>
+                        <Text style={[ms.previewValue, { color: '#22C55E' }]}>{formatCurrencyCompact(estimatedReturn)}</Text>
                       </View>
                     </View>
 
@@ -601,7 +604,7 @@ export default function QuickBuyModal({ visible, onClose, deal, onNavigateToFull
 
                     <View style={ms.authTrustRow}>
                       <View style={ms.authTrustItem}>
-                        <Shield size={12} color="#00C48C" />
+                        <Shield size={12} color="#22C55E" />
                         <Text style={ms.authTrustText}>Bank-grade encryption</Text>
                       </View>
                       <View style={ms.authTrustItem}>
@@ -708,11 +711,11 @@ export default function QuickBuyModal({ visible, onClose, deal, onNavigateToFull
                       </View>
                       <View style={ms.confirmRow}>
                         <Text style={ms.confirmLabel}>Expected ROI</Text>
-                        <Text style={[ms.confirmValue, { color: '#00C48C' }]}>{deal.expectedROI}%</Text>
+                        <Text style={[ms.confirmValue, { color: '#22C55E' }]}>{deal.expectedROI}%</Text>
                       </View>
                       <View style={ms.confirmRow}>
                         <Text style={ms.confirmLabel}>Estimated Profit</Text>
-                        <Text style={[ms.confirmValue, { color: '#00C48C' }]}>{formatCurrencyWithDecimals(estimatedReturn)}</Text>
+                        <Text style={[ms.confirmValue, { color: '#22C55E' }]}>{formatCurrencyWithDecimals(estimatedReturn)}</Text>
                       </View>
                       <View style={ms.confirmRow}>
                         <Text style={ms.confirmLabel}>Estimated Total Payout</Text>
@@ -736,14 +739,31 @@ export default function QuickBuyModal({ visible, onClose, deal, onNavigateToFull
                       </View>
                     )}
 
+                    <View style={ms.riskDisclaimer}>
+                      <AlertCircle size={14} color="#FFB800" />
+                      <Text style={ms.riskDisclaimerText}>All investments involve risk, including potential loss of principal. Projected returns are estimates and not guaranteed. This is not a solicitation or offer to sell securities.</Text>
+                    </View>
+
+                    <TouchableOpacity
+                      style={ms.tosRow}
+                      onPress={() => { setTosAccepted(prev => !prev); void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
+                      activeOpacity={0.7}
+                    >
+                      <View style={[ms.tosCheckbox, tosAccepted && ms.tosCheckboxActive]}>
+                        {tosAccepted && <CheckCircle size={16} color="#22C55E" />}
+                      </View>
+                      <Text style={ms.tosText}>I acknowledge the investment risks and agree to the terms of this offering.</Text>
+                    </TouchableOpacity>
+
                     <View style={ms.securityRow}>
                       <Shield size={14} color={Colors.info} />
                       <Text style={ms.securityText}>Protected by escrow-secured funds</Text>
                     </View>
 
                     <TouchableOpacity
-                      style={ms.ctaBtn}
+                      style={[ms.ctaBtn, !tosAccepted && ms.ctaBtnDisabled]}
                       onPress={handleConfirmPurchase}
+                      disabled={!tosAccepted}
                       testID="quick-buy-confirm"
                     >
                       <Lock size={16} color="#000" />
@@ -767,43 +787,26 @@ export default function QuickBuyModal({ visible, onClose, deal, onNavigateToFull
                 {step === 'success' && (
                   <Animated.View style={[ms.successWrap, { transform: [{ scale: successScale }] }]}>
                     <View style={ms.successCircle}>
-                      <CheckCircle size={48} color="#00C48C" />
+                      <CheckCircle size={48} color="#22C55E" />
                     </View>
-                    <Text style={ms.successTitle}>Investment Confirmed!</Text>
+                    <Text style={ms.successTitle}>Interest Recorded</Text>
                     <Text style={ms.successSubtext}>
-                      You invested {formatCurrencyWithDecimals(selectedAmount)} in {deal.projectName}
+                      Your interest in {deal.projectName} for {formatCurrencyWithDecimals(selectedAmount)} has been recorded. Full transactions are launching soon.
                     </Text>
 
-                    <View style={ms.successStats}>
-                      <View style={ms.successStatItem}>
-                        <Text style={ms.successStatValue}>{formatCurrencyWithDecimals(selectedAmount)}</Text>
-                        <Text style={ms.successStatLabel}>Invested</Text>
-                      </View>
-                      <View style={ms.successStatDivider} />
-                      <View style={ms.successStatItem}>
-                        <Text style={[ms.successStatValue, { color: '#00C48C' }]}>{equityPercent.toFixed(2)}%</Text>
-                        <Text style={ms.successStatLabel}>Ownership</Text>
-                      </View>
-                      <View style={ms.successStatDivider} />
-                      <View style={ms.successStatItem}>
-                        <Text style={[ms.successStatValue, { color: Colors.primary }]}>{confirmationNumber || `INV-${Date.now().toString(36).slice(-5).toUpperCase()}`}</Text>
-                        <Text style={ms.successStatLabel}>Ref #</Text>
-                      </View>
-                    </View>
-
                     <View style={ms.successNextSteps}>
-                      <Text style={ms.successNextTitle}>NEXT STEPS</Text>
+                      <Text style={ms.successNextTitle}>WHAT HAPPENS NEXT</Text>
                       <View style={ms.successNextItem}>
-                        <CheckCircle size={14} color="#00C48C" />
-                        <Text style={ms.successNextText}>Confirmation email sent to your inbox</Text>
+                        <CheckCircle size={14} color="#22C55E" />
+                        <Text style={ms.successNextText}>Our team will review your interest</Text>
                       </View>
                       <View style={ms.successNextItem}>
                         <Shield size={14} color="#4A90D9" />
-                        <Text style={ms.successNextText}>Complete KYC verification for full access</Text>
+                        <Text style={ms.successNextText}>You'll be contacted to discuss this opportunity</Text>
                       </View>
                       <View style={ms.successNextItem}>
                         <TrendingUp size={14} color="#FFD700" />
-                        <Text style={ms.successNextText}>Track your investment in the portfolio tab</Text>
+                        <Text style={ms.successNextText}>Full payment processing launching soon</Text>
                       </View>
                     </View>
 
@@ -941,7 +944,7 @@ const ms = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
-    backgroundColor: '#00C48C15',
+    backgroundColor: '#22C55E15',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 6,
@@ -949,7 +952,7 @@ const ms = StyleSheet.create({
   dealRoi: {
     fontSize: 11,
     fontWeight: '700' as const,
-    color: '#00C48C',
+    color: '#22C55E',
   },
   typeRow: {
     flexDirection: 'row',
@@ -969,8 +972,8 @@ const ms = StyleSheet.create({
     borderColor: Colors.surfaceBorder,
   },
   typeBtnActive: {
-    borderColor: '#00C48C',
-    backgroundColor: '#00C48C' + '0A',
+    borderColor: '#22C55E',
+    backgroundColor: '#22C55E' + '0A',
   },
   typeBtnActiveFractional: {
     borderColor: '#FFD700',
@@ -1268,6 +1271,51 @@ const ms = StyleSheet.create({
     fontSize: 13,
     color: Colors.textSecondary,
   },
+  riskDisclaimer: {
+    flexDirection: 'row' as const,
+    alignItems: 'flex-start' as const,
+    gap: 8,
+    backgroundColor: 'rgba(255,184,0,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,184,0,0.2)',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+  },
+  riskDisclaimerText: {
+    flex: 1,
+    fontSize: 11,
+    color: '#C4A84D',
+    lineHeight: 16,
+  },
+  tosRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'flex-start' as const,
+    gap: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 4,
+    marginBottom: 12,
+  },
+  tosCheckbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: Colors.surfaceBorder,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    marginTop: 1,
+  },
+  tosCheckboxActive: {
+    borderColor: '#22C55E',
+    backgroundColor: '#22C55E15',
+  },
+  tosText: {
+    flex: 1,
+    fontSize: 13,
+    color: Colors.textSecondary,
+    lineHeight: 19,
+  },
   errorBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1317,7 +1365,7 @@ const ms = StyleSheet.create({
     width: 88,
     height: 88,
     borderRadius: 44,
-    backgroundColor: '#00C48C15',
+    backgroundColor: '#22C55E15',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,

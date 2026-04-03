@@ -5,7 +5,7 @@ import { scopedKey } from '@/lib/project-storage';
 import { getAuthUserRole, getAuthUserId, isAdminRole, loadStoredAuth } from '@/lib/auth-store';
 import { logAudit } from '@/lib/audit-trail';
 import { captureDeleteSnapshot } from '@/lib/data-recovery';
-import { walBegin, walCommit, walRollback, enqueueWrite, registerPublishedDeal } from '@/lib/jv-persistence';
+import { walBegin, walCommit, walRollback, enqueueWrite, registerPublishedDeal, clearQueueForDeal, clearWALForDeal } from '@/lib/jv-persistence';
 import type { JVAuditEvent } from '@/types/database';
 
 const JV_STORAGE_KEY = scopedKey('jv_deals_v2');
@@ -397,10 +397,6 @@ function mapSupabaseRowToCamelCase(row: any): any {
 
 
 
-  const now = new Date();
-  const twoYearsLater = new Date(now);
-  twoYearsLater.setFullYear(twoYearsLater.getFullYear() + 2);
-
   return {
     ...row,
     photos,
@@ -418,8 +414,8 @@ function mapSupabaseRowToCamelCase(row: any): any {
     managementFee: row.managementFee ?? row.management_fee ?? 2,
     performanceFee: row.performanceFee ?? row.performance_fee ?? 20,
     minimumHoldPeriod: row.minimumHoldPeriod ?? row.minimum_hold_period ?? 12,
-    startDate: row.startDate || row.start_date || now.toISOString(),
-    endDate: row.endDate || row.end_date || twoYearsLater.toISOString(),
+    startDate: row.startDate || row.start_date || '',
+    endDate: row.endDate || row.end_date || '',
     governingLaw: row.governingLaw || row.governing_law || 'State of Florida',
     disputeResolution: row.disputeResolution || row.dispute_resolution || 'Binding Arbitration',
     confidentialityPeriod: row.confidentialityPeriod ?? row.confidentiality_period ?? 24,
@@ -431,6 +427,7 @@ function mapSupabaseRowToCamelCase(row: any): any {
 
 const CAMEL_TO_SNAKE: Record<string, string> = {
   projectName: 'project_name',
+  propertyValue: 'property_value',
   propertyAddress: 'property_address',
   totalInvestment: 'total_investment',
   expectedROI: 'expected_roi',
@@ -469,7 +466,7 @@ const VALID_COLUMNS = new Set([
   'currency', 'profit_split', 'start_date', 'end_date',
   'governing_law', 'dispute_resolution', 'confidentiality_period',
   'non_compete_period', 'management_fee', 'performance_fee', 'minimum_hold_period', 'display_order',
-  'trust_info', 'trustInfo',
+  'trust_info', 'trustInfo', 'property_value', 'propertyValue',
   'projectName', 'propertyAddress', 'totalInvestment', 'expectedROI',
   'distributionFrequency', 'exitStrategy', 'poolTiers', 'publishedAt',
   'createdAt', 'updatedAt', 'profitSplit', 'startDate', 'endDate',
@@ -911,6 +908,8 @@ export async function upsertJVDeal(payload: Record<string, unknown>, options?: {
       } else {
         console.log('[JV-Storage] Supabase upsert SUCCESS — id:', data?.id, 'published:', data?.published);
         if (walId) { try { await walCommit(walId); } catch {} }
+        try { await clearQueueForDeal(data?.id || dealId); } catch {}
+        try { await clearWALForDeal(data?.id || dealId); } catch {}
         if (data?.published === true) {
           try { await registerPublishedDeal(mapSupabaseRowToCamelCase(data)); } catch {}
         }
@@ -1027,28 +1026,35 @@ async function protectPhotos(id: string, updates: Record<string, unknown>, useSu
 }
 
 export async function updateJVDeal(id: string, updates: Record<string, unknown>, options?: { adminOverride?: boolean }): Promise<{ data: any; error: null } | { data: null; error: Error }> {
+  const auth = await requireAdmin('update deal', options?.adminOverride);
+  if (!auth.allowed) {
+    console.warn('[JV-Storage] 🚫 UPDATE BLOCKED — not admin. userId:', auth.userId, 'role:', auth.role);
+    return { data: null, error: new Error(auth.error!) };
+  }
+  console.log('[JV-Storage] ✅ Admin verified for update — userId:', auth.userId, 'role:', auth.role);
+
   const useSupabase = await checkSupabaseTable();
   const isAdmin = options?.adminOverride === true;
   const isPublishAction = 'published' in updates;
 
   let snapshotBefore: any = null;
-  if (isPublishAction) {
-    try {
-      if (useSupabase) {
-        const { data: existing } = await supabase.from('jv_deals').select('*').eq('id', id).single();
-        if (existing) snapshotBefore = mapSupabaseRowToCamelCase(existing);
-      }
-      if (!snapshotBefore) {
-        const localDeals = await getLocalDeals();
-        snapshotBefore = localDeals.find(d => d.id === id) || null;
-      }
-      if (snapshotBefore) {
-        console.log('[JV-Storage] 📸 PRE-PUBLISH SNAPSHOT captured for deal:', id, '| photos:', Array.isArray(snapshotBefore.photos) ? snapshotBefore.photos.length : 0);
+  try {
+    if (useSupabase) {
+      const { data: existing } = await supabase.from('jv_deals').select('*').eq('id', id).single();
+      if (existing) snapshotBefore = mapSupabaseRowToCamelCase(existing);
+    }
+    if (!snapshotBefore) {
+      const localDeals = await getLocalDeals();
+      snapshotBefore = localDeals.find(d => d.id === id) || null;
+    }
+    if (snapshotBefore) {
+      console.log('[JV-Storage] 📸 PRE-UPDATE SNAPSHOT captured for deal:', id, '| photos:', Array.isArray(snapshotBefore.photos) ? snapshotBefore.photos.length : 0);
+      if (isPublishAction) {
         void capturePublicationSnapshot(id, snapshotBefore, updates.published === true ? 'PUBLISH' : 'UNPUBLISH');
       }
-    } catch (snapErr) {
-      console.log('[JV-Storage] Snapshot capture failed (non-critical):', (snapErr as Error)?.message);
     }
+  } catch (snapErr) {
+    console.log('[JV-Storage] Snapshot capture failed (non-critical):', (snapErr as Error)?.message);
   }
 
   const safeUpdates_ = await protectPhotos(id, updates, useSupabase, isAdmin);
@@ -1082,11 +1088,14 @@ export async function updateJVDeal(id: string, updates: Record<string, unknown>,
       } else {
         console.log('[JV-Storage] Supabase update SUCCESS — id:', data?.id, 'published:', data?.published);
         if (walId) { try { await walCommit(walId); } catch {} }
+        try { await clearQueueForDeal(id); } catch {}
+        try { await clearWALForDeal(id); } catch {}
 
-        if (isPublishAction) {
-          try {
-            const { data: verify } = await supabase.from('jv_deals').select('id, published, status').eq('id', id).single();
-            if (verify) {
+        try {
+          const verifyFields = Object.keys(safeUpdates).slice(0, 5).join(', ');
+          const { data: verify } = await supabase.from('jv_deals').select('*').eq('id', id).single();
+          if (verify) {
+            if (isPublishAction) {
               const expectedPublished = updates.published;
               if (verify.published !== expectedPublished) {
                 console.warn('[JV-Storage] ⚠️ PUBLISH VERIFICATION FAILED — expected published:', expectedPublished, 'but got:', verify.published, '| Retrying...');
@@ -1104,9 +1113,52 @@ export async function updateJVDeal(id: string, updates: Record<string, unknown>,
                 console.log('[JV-Storage] ✅ PUBLISH VERIFIED — deal', id, 'published:', verify.published, 'status:', verify.status);
               }
             }
-          } catch (verifyErr) {
-            console.log('[JV-Storage] Publish verification failed (non-critical):', (verifyErr as Error)?.message);
+
+            const _verifyMapped = mapSupabaseRowToCamelCase(verify);
+            if ('title' in safeUpdates && verify.title !== safeUpdates.title) {
+              console.warn('[JV-Storage] ⚠️ UPDATE VERIFY MISMATCH — title: expected', safeUpdates.title, 'got', verify.title);
+            }
+            if ('trust_info' in safeUpdates) {
+              const savedTrust = verify.trust_info;
+              if (savedTrust) {
+                console.log('[JV-Storage] ✅ trust_info VERIFIED saved — length:', String(savedTrust).length);
+              } else {
+                console.warn('[JV-Storage] ⚠️ trust_info NOT found in verification read-back');
+              }
+            }
+            console.log('[JV-Storage] ✅ POST-UPDATE VERIFICATION passed for deal:', id, '| checked fields:', verifyFields);
+          } else {
+            console.warn('[JV-Storage] ⚠️ POST-UPDATE VERIFICATION — could not read back deal:', id);
           }
+        } catch (verifyErr) {
+          console.log('[JV-Storage] Post-update verification failed (non-critical):', (verifyErr as Error)?.message);
+        }
+
+        try {
+          const auditAction = isPublishAction
+            ? (updates.published === true ? 'PUBLISH' : 'UNPUBLISH')
+            : 'UPDATE';
+          const changedFields = Object.keys(safeUpdates).filter(k => k !== 'updated_at');
+          await logAuditEvent({
+            action: auditAction,
+            dealId: id,
+            userId: auth.userId,
+            role: auth.role,
+            dealTitle: (updates.title as string) || snapshotBefore?.title || id,
+          });
+          await logAudit({
+            entityType: 'jv_deal',
+            entityId: id,
+            entityTitle: (updates.title as string) || snapshotBefore?.title || id,
+            action: auditAction as any,
+            source: 'admin',
+            details: { changedFields, userId: auth.userId, role: auth.role },
+            snapshotBefore: snapshotBefore ? { title: snapshotBefore.title, totalInvestment: snapshotBefore.totalInvestment, expectedROI: snapshotBefore.expectedROI, trust_info: snapshotBefore.trust_info } : undefined,
+            snapshotAfter: { ...safeUpdates },
+          });
+          console.log('[JV-Storage] 📝 Audit logged for', auditAction, '| deal:', id, '| fields:', changedFields.join(','));
+        } catch (auditErr) {
+          console.log('[JV-Storage] Audit logging failed (non-critical):', (auditErr as Error)?.message);
         }
 
         try {
@@ -1150,6 +1202,32 @@ export async function updateJVDeal(id: string, updates: Record<string, unknown>,
     try { await registerPublishedDeal(deals[idx]); } catch {}
   }
   try { await enqueueWrite('update', id, { ...sanitizePayloadForSupabase(safeUpdates_), id }); } catch {}
+
+  try {
+    const auditAction = isPublishAction
+      ? (updates.published === true ? 'PUBLISH' : 'UNPUBLISH')
+      : 'UPDATE';
+    await logAuditEvent({
+      action: auditAction,
+      dealId: id,
+      userId: auth.userId,
+      role: auth.role,
+      dealTitle: (updates.title as string) || deals[idx]?.title || id,
+    });
+    await logAudit({
+      entityType: 'jv_deal',
+      entityId: id,
+      entityTitle: (updates.title as string) || deals[idx]?.title || id,
+      action: auditAction as any,
+      source: 'admin',
+      details: { changedFields: Object.keys(safeUpdates_).filter(k => k !== 'updatedAt'), userId: auth.userId, role: auth.role, storage: 'local' },
+      snapshotBefore: snapshotBefore ? { title: snapshotBefore.title, totalInvestment: snapshotBefore.totalInvestment } : undefined,
+      snapshotAfter: { ...safeUpdates_ },
+    });
+  } catch (auditErr) {
+    console.log('[JV-Storage] Audit logging failed (non-critical):', (auditErr as Error)?.message);
+  }
+
   console.log('[JV-Storage] Updated deal locally (with photo protection + queued for sync):', id);
   return { data: deals[idx], error: null };
 }

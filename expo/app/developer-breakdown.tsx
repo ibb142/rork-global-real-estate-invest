@@ -125,7 +125,7 @@ const PHASES: Phase[] = [
     title: 'Security & Compliance',
     subtitle: 'SEC, GDPR, Encryption, Audit',
     icon: Shield,
-    color: '#10B981',
+    color: '#22C55E',
     totalDays: 8,
     tasks: [
       { id: 's1', task: 'SEC Regulation CF/D Compliance', description: 'Investment limits per investor type, accreditation checks, offering documents, SEC filing integration.', days: 3, hours: 24, priority: 'critical', type: 'backend' },
@@ -161,7 +161,7 @@ const TYPE_COLORS: Record<string, string> = {
   backend: '#6366F1',
   frontend: '#F59E0B',
   integration: '#EC4899',
-  testing: '#10B981',
+  testing: '#22C55E',
   design: '#8B5CF6',
 };
 

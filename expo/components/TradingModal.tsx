@@ -15,7 +15,7 @@ import { X, TrendingUp, TrendingDown, Clock, Zap, Shield, AlertCircle, CheckCirc
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
 import { Property, MarketData, Order } from '@/types';
-import { formatNumber, formatAmountInput, parseAmountInput } from '@/lib/formatters';
+import { formatNumber, formatAmountInput, parseAmountInput, formatCurrencyWithDecimals } from '@/lib/formatters';
 import { sellShares } from '@/lib/investment-service';
 import { supabase } from '@/lib/supabase';
 import { useQueryClient } from '@tanstack/react-query';
@@ -315,15 +315,15 @@ export default function TradingModal({
                   </View>
                   <View style={styles.resultRow}>
                     <Text style={styles.resultLabel}>Price</Text>
-                    <Text style={styles.resultValue}>${tradeResult.order.price.toFixed(2)}</Text>
+                    <Text style={styles.resultValue}>{formatCurrencyWithDecimals(tradeResult.order.price)}</Text>
                   </View>
                   <View style={styles.resultRow}>
                     <Text style={styles.resultLabel}>Fee</Text>
-                    <Text style={styles.resultValue}>${tradeResult.order.fees.toFixed(2)}</Text>
+                    <Text style={styles.resultValue}>{formatCurrencyWithDecimals(tradeResult.order.fees)}</Text>
                   </View>
                   <View style={[styles.resultRow, styles.resultRowTotal]}>
                     <Text style={styles.resultLabelTotal}>Total</Text>
-                    <Text style={styles.resultValueTotal}>${tradeResult.order.total.toFixed(2)}</Text>
+                    <Text style={styles.resultValueTotal}>{formatCurrencyWithDecimals(tradeResult.order.total)}</Text>
                   </View>
                 </View>
               )}
@@ -351,21 +351,21 @@ export default function TradingModal({
                 </View>
                 <View style={styles.confirmRow}>
                   <Text style={styles.confirmLabel}>Price per Share</Text>
-                  <Text style={styles.confirmValue}>${currentPrice.toFixed(2)}</Text>
+                  <Text style={styles.confirmValue}>{formatCurrencyWithDecimals(currentPrice)}</Text>
                 </View>
                 <View style={styles.confirmRow}>
                   <Text style={styles.confirmLabel}>Subtotal</Text>
-                  <Text style={styles.confirmValue}>${subtotal.toFixed(2)}</Text>
+                  <Text style={styles.confirmValue}>{formatCurrencyWithDecimals(subtotal)}</Text>
                 </View>
                 <View style={styles.confirmRow}>
                   <Text style={styles.confirmLabel}>Trading Fee (1%)</Text>
-                  <Text style={[styles.confirmValue, { color: Colors.error }]}>-${fee.toFixed(2)}</Text>
+                  <Text style={[styles.confirmValue, { color: Colors.error }]}>-{formatCurrencyWithDecimals(fee)}</Text>
                 </View>
                 <View style={[styles.confirmRow, styles.confirmRowTotal]}>
                   <Text style={styles.confirmLabelTotal}>
                     {tradeType === 'buy' ? 'Total Cost' : 'You Receive'}
                   </Text>
-                  <Text style={styles.confirmValueTotal}>${total.toFixed(2)}</Text>
+                  <Text style={styles.confirmValueTotal}>{formatCurrencyWithDecimals(total)}</Text>
                 </View>
               </View>
 
@@ -426,7 +426,7 @@ export default function TradingModal({
                     styles.currentPrice,
                     { color: priceDirection === 'up' ? Colors.success : priceDirection === 'down' ? Colors.error : Colors.text }
                   ]}>
-                    ${displayPrice.toFixed(2)}
+                    {formatCurrencyWithDecimals(displayPrice)}
                   </Text>
                   <View style={[styles.changeBadge, { backgroundColor: isPositive ? Colors.success + '20' : Colors.error + '20' }]}>
                     {isPositive ? <TrendingUp size={14} color={Colors.success} /> : <TrendingDown size={14} color={Colors.error} />}
@@ -439,13 +439,13 @@ export default function TradingModal({
                 <View style={styles.bidAskContainer}>
                   <View style={styles.bidAskItem}>
                     <Text style={styles.bidAskLabel}>Bid</Text>
-                    <Text style={[styles.bidAskValue, { color: Colors.success }]}>${bestBid.toFixed(2)}</Text>
+                    <Text style={[styles.bidAskValue, { color: Colors.success }]}>{formatCurrencyWithDecimals(bestBid)}</Text>
                     <Text style={styles.bidAskShares}>{marketData.bids[0]?.shares || 0} shares</Text>
                   </View>
                   <View style={styles.bidAskDivider} />
                   <View style={styles.bidAskItem}>
                     <Text style={styles.bidAskLabel}>Ask</Text>
-                    <Text style={[styles.bidAskValue, { color: Colors.error }]}>${bestAsk.toFixed(2)}</Text>
+                    <Text style={[styles.bidAskValue, { color: Colors.error }]}>{formatCurrencyWithDecimals(bestAsk)}</Text>
                     <Text style={styles.bidAskShares}>{marketData.asks[0]?.shares || 0} shares</Text>
                   </View>
                 </View>
@@ -536,17 +536,17 @@ export default function TradingModal({
               <View style={styles.summarySection}>
                 <View style={styles.summaryRow}>
                   <Text style={styles.summaryLabel}>Subtotal</Text>
-                  <Text style={styles.summaryValue}>${subtotal.toFixed(2)}</Text>
+                  <Text style={styles.summaryValue}>{formatCurrencyWithDecimals(subtotal)}</Text>
                 </View>
                 <View style={styles.summaryRow}>
                   <Text style={styles.summaryLabel}>Trading Fee (1%)</Text>
-                  <Text style={[styles.summaryValue, { color: Colors.error }]}>-${fee.toFixed(2)}</Text>
+                  <Text style={[styles.summaryValue, { color: Colors.error }]}>-{formatCurrencyWithDecimals(fee)}</Text>
                 </View>
                 <View style={[styles.summaryRow, styles.summaryRowTotal]}>
                   <Text style={styles.summaryLabelTotal}>
                     {tradeType === 'buy' ? 'Total Cost' : 'You Receive'}
                   </Text>
-                  <Text style={styles.summaryValueTotal}>${total.toFixed(2)}</Text>
+                  <Text style={styles.summaryValueTotal}>{formatCurrencyWithDecimals(total)}</Text>
                 </View>
               </View>
 

@@ -151,7 +151,7 @@ interface TemplateCategory {
 const TEMPLATE_CATEGORIES: TemplateCategory[] = [
   { id: 'all', label: 'All', color: '#FFD700' },
   { id: 'properties', label: 'Properties', color: '#4A90D9' },
-  { id: 'app-features', label: 'App Features', color: '#00C48C' },
+  { id: 'app-features', label: 'App Features', color: '#22C55E' },
   { id: 'finance', label: 'Finance', color: '#E91E63' },
   { id: 'people', label: 'People', color: '#9B59B6' },
 ];
@@ -194,8 +194,8 @@ const PROMPT_TEMPLATES: PromptTemplate[] = [
     label: 'Eco Community',
     prompt: 'Photorealistic aerial view of a sustainable eco-friendly residential community, modern architecture with green rooftops, solar panels, central park with walking paths, communal gardens, electric car charging stations, lush greenery, clear blue sky, professional drone photography, 8K ultra-realistic',
     category: 'Properties',
-    icon: <TreePine size={18} color="#00C48C" />,
-    color: '#00C48C',
+    icon: <TreePine size={18} color="#22C55E" />,
+    color: '#22C55E',
   },
   {
     id: 'mountain-resort',
@@ -346,8 +346,8 @@ const PROMPT_TEMPLATES: PromptTemplate[] = [
     label: 'Invest from $10',
     prompt: 'Photorealistic image of a 10 dollar bill transforming into a miniature modern luxury building, the bill partially morphing with architectural elements emerging from it, placed on a clean white surface with soft studio lighting, creative conceptual photography showing fractional real estate investing, golden accent lighting, 8K ultra-realistic quality',
     category: 'Finance',
-    icon: <TrendingUp size={18} color="#00C48C" />,
-    color: '#00C48C',
+    icon: <TrendingUp size={18} color="#22C55E" />,
+    color: '#22C55E',
   },
   {
     id: 'card-payment',

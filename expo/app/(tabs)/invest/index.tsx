@@ -201,8 +201,8 @@ export default function InvestScreen() {
           <View style={styles.profitToolsInner}>
             <View style={styles.profitToolsLeft}>
               <View style={styles.profitToolsIconRow}>
-                <View style={[styles.profitToolsMiniIcon, { backgroundColor: '#00C48C20' }]}>
-                  <Shield size={14} color="#00C48C" />
+                <View style={[styles.profitToolsMiniIcon, { backgroundColor: '#22C55E20' }]}>
+                  <Shield size={14} color="#22C55E" />
                 </View>
                 <View style={[styles.profitToolsMiniIcon, { backgroundColor: '#FFD70020' }]}>
                   <TrendingUp size={14} color="#FFD700" />
@@ -972,7 +972,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#00C48C20',
+    backgroundColor: '#22C55E20',
     borderRadius: 10,
     paddingHorizontal: 10,
     paddingVertical: 4,
@@ -981,7 +981,7 @@ const styles = StyleSheet.create({
     width: 7,
     height: 7,
     borderRadius: 3.5,
-    backgroundColor: '#00C48C',
+    backgroundColor: '#22C55E',
   },
   liveJvGallery: {
     position: 'relative' as const,
@@ -1048,10 +1048,10 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: '#00C48C',
+    backgroundColor: '#22C55E',
   },
   liveJvLiveBadgeOverlayText: {
-    color: '#00C48C',
+    color: '#22C55E',
     fontSize: 9,
     fontWeight: '900' as const,
     letterSpacing: 1.5,
@@ -1103,7 +1103,7 @@ const styles = StyleSheet.create({
     fontSize: 10,
   },
   liveJvBadgeText: {
-    color: '#00C48C',
+    color: '#22C55E',
     fontSize: 11,
     fontWeight: '800' as const,
     letterSpacing: 0.5,
@@ -1150,13 +1150,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#00C48C15',
+    backgroundColor: '#22C55E15',
     borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 4,
   },
   liveJvRoiText: {
-    color: '#00C48C',
+    color: '#22C55E',
     fontSize: 11,
     fontWeight: '700' as const,
   },
