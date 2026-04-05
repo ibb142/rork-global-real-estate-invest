@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -33,11 +33,15 @@ import {
   Eye,
   MessageSquare,
   Trash2,
+  Wifi,
+  Fingerprint,
+  WifiOff,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fetchJVDeals, archiveJVDeal } from '@/lib/jv-storage';
 import { formatCurrencyWithDecimals } from '@/lib/formatters';
+import { useAuth, getStoredOwnerIP, clearOwnerIP } from '@/lib/auth-context';
 
 import { supabase } from '@/lib/supabase';
 
@@ -73,6 +77,207 @@ interface JVDealControl {
   ownerShare: number;
   tradingPaused: boolean;
 }
+
+function OwnerIPAccessCard() {
+  const { isOwnerIPAccess, detectedIP, ownerDirectAccess } = useAuth();
+  const [storedIP, setStoredIP] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    void getStoredOwnerIP().then(setStoredIP);
+  }, [isOwnerIPAccess]);
+
+  const handleActivate = async () => {
+    setLoading(true);
+    try {
+      const result = await ownerDirectAccess();
+      if (result.success) {
+        const ip = await getStoredOwnerIP();
+        setStoredIP(ip);
+        Alert.alert('IP Access Activated', result.message);
+      } else {
+        Alert.alert('Failed', result.message);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeactivate = async () => {
+    Alert.alert('Deactivate IP Access', 'This will require normal login next time.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Deactivate',
+        style: 'destructive',
+        onPress: async () => {
+          await clearOwnerIP();
+          setStoredIP(null);
+          Alert.alert('Deactivated', 'IP auto-login disabled. You will need to sign in next time.');
+        },
+      },
+    ]);
+  };
+
+  return (
+    <View style={ipCardStyles.container}>
+      <View style={ipCardStyles.header}>
+        <View style={[ipCardStyles.iconWrap, { backgroundColor: isOwnerIPAccess ? '#22C55E20' : '#3B82F620' }]}>
+          {isOwnerIPAccess ? <Wifi size={20} color="#22C55E" /> : <WifiOff size={18} color="#3B82F6" />}
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={ipCardStyles.title}>Owner IP Auto-Login</Text>
+          <Text style={ipCardStyles.sub}>
+            {isOwnerIPAccess
+              ? `Active · IP: ${detectedIP ?? storedIP ?? 'detected'}`
+              : storedIP
+                ? `Saved IP: ${storedIP}`
+                : 'Not configured'}
+          </Text>
+        </View>
+        {isOwnerIPAccess && (
+          <View style={ipCardStyles.liveBadge}>
+            <View style={ipCardStyles.liveDot} />
+            <Text style={ipCardStyles.liveText}>ACTIVE</Text>
+          </View>
+        )}
+      </View>
+      <View style={ipCardStyles.actions}>
+        {!storedIP ? (
+          <TouchableOpacity
+            style={ipCardStyles.activateBtn}
+            onPress={handleActivate}
+            disabled={loading}
+          >
+            <Fingerprint size={16} color="#000" />
+            <Text style={ipCardStyles.activateBtnText}>
+              {loading ? 'Detecting IP...' : 'Activate My Device'}
+            </Text>
+          </TouchableOpacity>
+        ) : (
+          <View style={ipCardStyles.actionRow}>
+            <TouchableOpacity
+              style={ipCardStyles.refreshBtn}
+              onPress={handleActivate}
+              disabled={loading}
+            >
+              <Wifi size={14} color={Colors.primary} />
+              <Text style={ipCardStyles.refreshBtnText}>{loading ? 'Updating...' : 'Update IP'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={ipCardStyles.deactivateBtn} onPress={handleDeactivate}>
+              <WifiOff size={14} color={Colors.negative} />
+              <Text style={ipCardStyles.deactivateBtnText}>Deactivate</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
+    </View>
+  );
+}
+
+const ipCardStyles = StyleSheet.create({
+  container: {
+    backgroundColor: '#0A1520',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#3B82F630',
+    marginBottom: 10,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  iconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  title: {
+    fontSize: 14,
+    fontWeight: '700' as const,
+    color: Colors.text,
+  },
+  sub: {
+    fontSize: 11,
+    color: Colors.textTertiary,
+    marginTop: 1,
+  },
+  liveBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#22C55E18',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  liveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#22C55E',
+  },
+  liveText: {
+    fontSize: 9,
+    fontWeight: '700' as const,
+    color: '#22C55E',
+    letterSpacing: 0.5,
+  },
+  actions: {
+    marginTop: 12,
+  },
+  activateBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: Colors.primary,
+    borderRadius: 10,
+    paddingVertical: 12,
+  },
+  activateBtnText: {
+    fontSize: 14,
+    fontWeight: '700' as const,
+    color: '#000',
+  },
+  actionRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  refreshBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: Colors.primary + '18',
+    borderRadius: 10,
+    paddingVertical: 10,
+  },
+  refreshBtnText: {
+    fontSize: 13,
+    fontWeight: '600' as const,
+    color: Colors.primary,
+  },
+  deactivateBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: Colors.negative + '15',
+    borderRadius: 10,
+    paddingVertical: 10,
+  },
+  deactivateBtnText: {
+    fontSize: 13,
+    fontWeight: '600' as const,
+    color: Colors.negative,
+  },
+});
 
 export default function OwnerControlsScreen() {
   const router = useRouter();
@@ -320,6 +525,8 @@ export default function OwnerControlsScreen() {
         <Crown size={24} color="#FFD700" />
         <Text style={styles.ownerBadgeText}>Owner Dashboard</Text>
       </View>
+
+      <OwnerIPAccessCard />
 
       <TouchableOpacity
         style={styles.staffActivityLink}

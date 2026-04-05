@@ -138,7 +138,7 @@ const PRIORITY_72H: string[] = [
   'Activate SendGrid email API — needed for property alert system',
   'Activate Twilio API — needed for WhatsApp/SMS automation reports',
   'Set Stripe & Plaid production keys — needed for live payments',
-  'Set KYC provider production keys — needed for investor verification',
+  'Set KYC provider production keys — needed for identity verification (open to all investors)',
   'Connect OpenAI API key — needed for AI chat & content generation',
   'Configure APNs & FCM certificates — needed for push notifications',
 ];

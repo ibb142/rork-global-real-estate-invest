@@ -120,8 +120,8 @@ const FALLBACK_NARRATIONS: Record<string, { narration: string; bullets: string[]
     bullets: ['340+ features built and integrated', 'AI-powered investment recommendations', 'Real-time market data and analytics', 'Multi-platform: iOS, Android, and Web'],
   },
   onboarding: {
-    narration: 'Our smart onboarding ensures every investor is verified and compliant from day one. AI-powered KYC verification, biometric authentication, and accredited investor checks maintain the highest standards of security and regulatory compliance.',
-    bullets: ['AI-powered document verification', 'Biometric authentication built-in', 'Accredited investor verification', 'GDPR-compliant data handling'],
+    narration: 'Our smart onboarding ensures every investor is verified and compliant from day one. AI-powered KYC verification and biometric authentication maintain the highest standards of security — open to all investors with no accreditation barriers.',
+    bullets: ['AI-powered document verification', 'Biometric authentication built-in', 'Open to all investors — no accreditation required', 'GDPR-compliant data handling'],
   },
   marketplace: {
     narration: 'Our curated property marketplace features vetted investment opportunities across residential, commercial, and mixed-use real estate. Advanced filters, interactive maps, and detailed financial projections help investors make informed decisions.',

@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, Href } from 'expo-router';
 import { Bell } from 'lucide-react-native';
 import Colors from '@/constants/colors';
+import { IVX_LOGO_SOURCE } from '@/constants/brand';
 
 interface BrandBannerProps {
   notificationCount?: number;
@@ -22,7 +23,7 @@ export default function BrandBanner({ notificationCount = 2 }: BrandBannerProps)
       <View style={styles.banner}>
         <View style={styles.leftSection}>
           <Image 
-            source={require('@/assets/images/ivx-logo.png')} 
+            source={IVX_LOGO_SOURCE} 
             style={styles.logo}
             resizeMode="contain"
             accessibilityLabel="IVX HOLDINGS LLC logo"

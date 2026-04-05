@@ -160,6 +160,7 @@ const ADMIN_MODULES = [
   { id: 'email-inbox', name: 'Email Inbox', icon: Mail, route: '/admin/email-inbox', category: 'Email', keywords: 'email inbox messages received sent' },
 
   { id: 'api-keys', name: 'API Keys Vault', icon: KeyRound, route: '/admin/api-keys', category: 'Settings', keywords: 'api keys vault secrets tokens' },
+  { id: 'registration-audit', name: 'Registration Audit', icon: UserCheck, route: '/admin/registration-audit', category: 'Users', keywords: 'registration audit test signup login ip device analyze module flow' },
   { id: 'authenticator', name: 'Authenticator', icon: ShieldCheck, route: '/authenticator', category: 'Settings', keywords: 'authenticator 2fa totp security codes' },
   { id: 'app-docs', name: 'Docs & Legal', icon: FileText, route: '/admin/app-docs', category: 'Settings', keywords: 'docs legal documents contracts' },
 ];
@@ -197,8 +198,8 @@ export default function AdminDashboard() {
         return null;
       }
     },
-    staleTime: 1000 * 10,
-    refetchInterval: 1000 * 3,
+    staleTime: 1000 * 30,
+    refetchInterval: 1000 * 60,
     placeholderData: (prev: any) => prev,
     retry: 0,
     throwOnError: false,
@@ -232,7 +233,7 @@ export default function AdminDashboard() {
         return null;
       }
     },
-    staleTime: 1000 * 30,
+    staleTime: 1000 * 60,
     placeholderData: (prev: any) => prev,
     retry: 0,
     throwOnError: false,
@@ -249,7 +250,7 @@ export default function AdminDashboard() {
         return null;
       }
     },
-    staleTime: 1000 * 30,
+    staleTime: 1000 * 60,
     placeholderData: (prev: any) => prev,
     retry: 0,
     throwOnError: false,
@@ -472,6 +473,25 @@ export default function AdminDashboard() {
             </View>
           </View>
           <ChevronRight size={18} color={Colors.textSecondary} />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.regAuditCard}
+          onPress={() => router.push('/admin/registration-audit' as any)}
+          activeOpacity={0.8}
+          testID="admin-registration-audit-btn"
+        >
+          <View style={styles.regAuditCardInner}>
+            <View style={styles.regAuditCardIcon}>
+              <UserCheck size={22} color="#000" />
+            </View>
+            <View style={styles.regAuditCardText}>
+              <Text style={styles.regAuditCardLabel}>REGISTRATION MODULE</Text>
+              <Text style={styles.regAuditCardTitle}>Registration Audit</Text>
+              <Text style={styles.regAuditCardSub}>Test signup · Analyze flow · View users</Text>
+            </View>
+          </View>
+          <ChevronRight size={18} color={Colors.primary} />
         </TouchableOpacity>
 
         <View style={styles.teamSection}>
@@ -1323,5 +1343,51 @@ const styles = StyleSheet.create({
   },
   bottomPad: {
     height: 120,
+  },
+  regAuditCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginHorizontal: 14,
+    marginBottom: 10,
+    backgroundColor: '#1A1206',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1.5,
+    borderColor: Colors.primary + '50',
+  },
+  regAuditCardInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  regAuditCardIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: Colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  regAuditCardText: {
+    flex: 1,
+  },
+  regAuditCardLabel: {
+    fontSize: 9,
+    fontWeight: '700' as const,
+    color: Colors.primary,
+    letterSpacing: 0.8,
+    marginBottom: 2,
+  },
+  regAuditCardTitle: {
+    fontSize: 15,
+    fontWeight: '700' as const,
+    color: Colors.text,
+  },
+  regAuditCardSub: {
+    fontSize: 11,
+    color: Colors.textTertiary,
+    marginTop: 1,
   },
 });

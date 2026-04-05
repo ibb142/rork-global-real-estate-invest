@@ -21,13 +21,18 @@ export const [AnalyticsProvider, useAnalytics] = createContextHook<AnalyticsHook
   useEffect(() => {
     if (!initializedRef.current) {
       initializedRef.current = true;
+      analytics.revive();
       void analytics.initialize();
       console.log('[Analytics] Provider mounted — service initialized');
       analytics.track('app_open', 'navigation', { timestamp: Date.now() });
     }
 
     return () => {
-      analytics.destroy();
+      analytics.track('session_end', 'navigation', {
+        sessionDuration: analytics.getSessionDuration(),
+        timestamp: Date.now(),
+      });
+      void analytics.flush();
     };
   }, []);
 

@@ -653,8 +653,8 @@ export default function JVInvestScreen() {
                   >
                     <LogIn size={16} color={Colors.primary} />
                     <View style={styles.authBannerText}>
-                      <Text style={styles.authBannerTitle}>Sign In & Verify to Invest</Text>
-                      <Text style={styles.authBannerSub}>Complete KYC verification to start investing</Text>
+                      <Text style={styles.authBannerTitle}>Sign In to Start Investing</Text>
+                      <Text style={styles.authBannerSub}>Create a free account — no restrictions, open to everyone</Text>
                     </View>
                     <ChevronRight size={16} color={Colors.primary} />
                   </TouchableOpacity>

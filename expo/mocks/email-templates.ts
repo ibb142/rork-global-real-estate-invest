@@ -75,7 +75,7 @@ VERIFICATION STATUS: APPROVED
 What this means for you:
 - You are now fully verified and eligible to invest in all IVX Holdings opportunities
 - You can participate in Joint Venture projects with no restrictions
-- Your accredited investor status has been confirmed
+- You now have full access to all investment opportunities on the platform
 
 Next Steps:
 1. Browse available JV investment opportunities in your dashboard
@@ -136,7 +136,7 @@ IVX Holdings Ltd.`,
     subject: 'IVX Holdings — New Joint Venture Investment Opportunity Available',
     body: `Dear [Investor Name],
 
-We are excited to announce a new Joint Venture investment opportunity exclusively available to our verified investors.
+We are excited to announce a new Joint Venture investment opportunity available to all verified investors.
 
 PROJECT: [Project Name]
 LOCATION: [City, State/Country]
@@ -156,7 +156,7 @@ This opportunity has limited availability and shares are allocated on a first-co
 To review full project details, financial projections, and legal documentation:
 https://ivxholding.com
 
-IMPORTANT: This investment opportunity is available to accredited and verified investors only. Past performance does not guarantee future results.
+IMPORTANT: This investment opportunity is open to all verified investors. Past performance does not guarantee future results.
 
 For questions or to discuss this opportunity in detail, contact our investor relations team:
 - Email: investors@ivxholding.com
@@ -389,7 +389,7 @@ Keep sharing! Your unique referral link:
 https://ivxholding.com/ref/[CODE]
 
 Referral Program Benefits:
-- Earn $[X] for each verified investor you refer
+- Earn $[X] for each new investor you refer
 - Additional bonuses when your referrals make their first investment
 - No limit on the number of referrals
 

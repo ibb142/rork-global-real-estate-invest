@@ -1,3 +1,6 @@
+export type { ReferralTier } from '@/constants/platform-config';
+export { REFERRAL_TIERS as referralTiers } from '@/constants/platform-config';
+
 export interface GrowthMilestone {
   users: number;
   label: string;
@@ -23,15 +26,6 @@ export interface GrowthMetric {
   value: string;
   change: number;
   period: string;
-}
-
-export interface ReferralTier {
-  name: string;
-  minReferrals: number;
-  shareReward: number;
-  cashBonus: number;
-  color: string;
-  perks: string[];
 }
 
 export const growthMilestones: GrowthMilestone[] = [
@@ -66,41 +60,6 @@ export const growthMetrics: GrowthMetric[] = [
   { label: 'NPS Score', value: '0', change: 0, period: 'industry avg: 31' },
 ];
 
-export const referralTiers: ReferralTier[] = [
-  {
-    name: 'Starter',
-    minReferrals: 0,
-    shareReward: 25,
-    cashBonus: 0,
-    color: '#9A9A9A',
-    perks: ['$25 in shares per referral', 'Basic referral link', 'Email invitations'],
-  },
-  {
-    name: 'Ambassador',
-    minReferrals: 5,
-    shareReward: 50,
-    cashBonus: 25,
-    color: '#4A90D9',
-    perks: ['$50 in shares per referral', '$25 cash bonus', 'Custom referral page', 'Priority support'],
-  },
-  {
-    name: 'Champion',
-    minReferrals: 25,
-    shareReward: 100,
-    cashBonus: 50,
-    color: '#FFD700',
-    perks: ['$100 in shares per referral', '$50 cash bonus', 'VIP event access', 'Dedicated account manager'],
-  },
-  {
-    name: 'Elite',
-    minReferrals: 100,
-    shareReward: 250,
-    cashBonus: 100,
-    color: '#FF6B6B',
-    perks: ['$250 in shares per referral', '$100 cash bonus', 'Revenue share 0.5%', 'Board advisory seat', 'Private jet events'],
-  },
-];
-
 export const projectionData = {
   months: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
   organic: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
@@ -110,14 +69,8 @@ export const projectionData = {
 };
 
 export const globalReachStats = {
-  countries: 0,
-  languages: 0,
-  currencies: 0,
-  timeZones: 'All 24',
-  mobileUsers: '0%',
-  avgSessionTime: '0 min',
-  dailyTransactions: '0',
-  peakConcurrentUsers: '0',
+  countries: 0, languages: 0, currencies: 0, timeZones: 'All 24',
+  mobileUsers: '0%', avgSessionTime: '0 min', dailyTransactions: '0', peakConcurrentUsers: '0',
 };
 
 export const competitorComparison = [

@@ -7,6 +7,7 @@
  */
 
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { getStoredOwnerIP, isStoredOwnerIPEnabled } from '@/lib/auth-context';
 
 export interface DeployResult {
   success: boolean;
@@ -15,8 +16,32 @@ export interface DeployResult {
   timestamp: string;
 }
 
+async function isOwnerIPActive(): Promise<boolean> {
+  try {
+    const ownerIPEnabled = await isStoredOwnerIPEnabled();
+    if (!ownerIPEnabled) {
+      return false;
+    }
+    const storedIP = await getStoredOwnerIP();
+    return !!storedIP;
+  } catch {
+    return false;
+  }
+}
+
 async function ensureValidSession(): Promise<string | null> {
   try {
+    const ownerIP = await isOwnerIPActive();
+    if (ownerIP) {
+      const anonKey = (process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '').trim();
+      if (anonKey) {
+        console.log('[LandingDeploy] Owner IP mode — using anon key for deploy');
+        return anonKey;
+      }
+      console.log('[LandingDeploy] Owner IP mode but no anon key available');
+      return null;
+    }
+
     const { data: { session } } = await supabase.auth.getSession();
 
     if (session?.access_token) {
@@ -42,10 +67,21 @@ async function ensureValidSession(): Promise<string | null> {
       return refreshed.session.access_token;
     }
 
+    const fallbackKey = (process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '').trim();
+    if (fallbackKey) {
+      console.log('[LandingDeploy] No session — falling back to anon key');
+      return fallbackKey;
+    }
+
     console.log('[LandingDeploy] No session recoverable');
     return null;
   } catch (err) {
     console.log('[LandingDeploy] Session check error:', (err as Error)?.message);
+    const fallbackKey = (process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '').trim();
+    if (fallbackKey) {
+      console.log('[LandingDeploy] Using anon key after session error');
+      return fallbackKey;
+    }
     return null;
   }
 }
@@ -180,11 +216,82 @@ export async function deployConfigOnly(): Promise<{ success: boolean; error?: st
   }
 }
 
-export function getDeployStatus(): { awsConfigured: boolean; supabaseConfigured: boolean; canDeploy: boolean } {
-  const configured = isSupabaseConfigured();
+export interface DeployStatus {
+  awsConfigured: boolean;
+  cloudFrontConfigured: boolean;
+  githubActionsConfigured: boolean;
+  githubTokenConfigured: boolean;
+  githubRepositoryConfigured: boolean;
+  supabaseConfigured: boolean;
+  canDeploy: boolean;
+  publicDeployConfigured: boolean;
+  pipelineLabel: string;
+  githubRepository: string;
+  awsRegion: string;
+  s3Bucket: string;
+  cloudFrontDistributionId: string;
+  missingRequirements: string[];
+}
+
+export function getDeployStatus(): DeployStatus {
+  const supabaseConfigured = isSupabaseConfigured();
+  const awsRegion = (process.env.AWS_REGION || '').trim();
+  const s3Bucket = (process.env.S3_BUCKET_NAME || '').trim();
+  const cloudFrontDistributionId = (process.env.CLOUDFRONT_DISTRIBUTION_ID || '').trim();
+  const githubToken = (process.env.GITHUB_TOKEN || '').trim();
+  const githubRepository = (
+    process.env.GITHUB_REPOSITORY ||
+    process.env.GITHUB_REPO ||
+    process.env.EXPO_PUBLIC_GITHUB_REPOSITORY ||
+    'ibb142/rork-global-real-estate-invest'
+  ).trim();
+  const awsConfigured = !!(awsRegion && s3Bucket);
+  const cloudFrontConfigured = !!cloudFrontDistributionId;
+  const githubTokenConfigured = !!githubToken;
+  const githubRepositoryConfigured = !!githubRepository;
+  const githubActionsConfigured = githubTokenConfigured && githubRepositoryConfigured;
+  const publicDeployConfigured = githubActionsConfigured && awsConfigured;
+  const missingRequirements: string[] = [];
+
+  if (!supabaseConfigured) {
+    missingRequirements.push('Supabase public URL / anon key');
+  }
+  if (!githubTokenConfigured) {
+    missingRequirements.push('GITHUB_TOKEN');
+  }
+  if (!githubRepositoryConfigured) {
+    missingRequirements.push('GITHUB_REPOSITORY');
+  }
+  if (!awsRegion) {
+    missingRequirements.push('AWS_REGION');
+  }
+  if (!s3Bucket) {
+    missingRequirements.push('S3_BUCKET_NAME');
+  }
+
+  let pipelineLabel = 'Deploy unavailable';
+  if (publicDeployConfigured && cloudFrontConfigured) {
+    pipelineLabel = 'GitHub Actions → AWS S3 → CloudFront';
+  } else if (publicDeployConfigured) {
+    pipelineLabel = 'GitHub Actions → AWS S3';
+  } else if (supabaseConfigured) {
+    pipelineLabel = 'Supabase landing sync only';
+  }
+
   return {
-    awsConfigured: false,
-    supabaseConfigured: configured,
-    canDeploy: configured,
+    awsConfigured,
+    cloudFrontConfigured,
+    githubActionsConfigured,
+    githubTokenConfigured,
+    githubRepositoryConfigured,
+    supabaseConfigured,
+    canDeploy: supabaseConfigured,
+    publicDeployConfigured,
+    pipelineLabel,
+    githubRepository,
+    awsRegion,
+    s3Bucket,
+    cloudFrontDistributionId,
+    missingRequirements,
   };
 }

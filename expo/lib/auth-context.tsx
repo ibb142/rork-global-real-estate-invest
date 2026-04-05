@@ -1,10 +1,77 @@
 import createContextHook from '@nkzw/create-context-hook';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import * as SecureStore from 'expo-secure-store';
 import { supabase } from './supabase';
 import { persistAuth, loadStoredAuth, clearStoredAuth, setAuthCredentials } from './auth-store';
 import { isAdminRole, normalizeRole } from './auth-helpers';
 import { startSessionMonitor } from './session-timeout';
+import { initializeSync, syncOwnerData, syncUserData } from './supabase-sync';
 import type { Session } from '@supabase/supabase-js';
+
+const OWNER_IP_KEY = 'ivx_owner_ip';
+const OWNER_IP_ENABLED_KEY = 'ivx_owner_ip_enabled';
+
+async function fetchDeviceIP(): Promise<string | null> {
+  const sources = [
+    'https://api.ipify.org?format=json',
+    'https://ipapi.co/json/',
+    'https://api.my-ip.io/v2/ip.json',
+  ];
+  for (const url of sources) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
+      const res = await fetch(url, { signal: controller.signal });
+      clearTimeout(timeout);
+      if (!res.ok) continue;
+      const data = await res.json();
+      const ip = data.ip || null;
+      if (ip) {
+        console.log('[Auth] IP detected from', url, ':', ip);
+        return ip;
+      }
+    } catch {
+      console.log('[Auth] IP source failed:', url);
+    }
+  }
+  console.log('[Auth] All IP detection sources failed');
+  return null;
+}
+
+export async function getStoredOwnerIP(): Promise<string | null> {
+  try {
+    return await SecureStore.getItemAsync(OWNER_IP_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export async function setOwnerIP(ip: string): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(OWNER_IP_KEY, ip);
+    await SecureStore.setItemAsync(OWNER_IP_ENABLED_KEY, 'true');
+    console.log('[Auth] Owner IP saved:', ip);
+  } catch (e) {
+    console.log('[Auth] Failed to save owner IP:', e);
+  }
+}
+
+export async function clearOwnerIP(): Promise<void> {
+  try {
+    await SecureStore.deleteItemAsync(OWNER_IP_KEY);
+    await SecureStore.deleteItemAsync(OWNER_IP_ENABLED_KEY);
+    console.log('[Auth] Owner IP cleared');
+  } catch {}
+}
+
+export async function isStoredOwnerIPEnabled(): Promise<boolean> {
+  try {
+    const val = await SecureStore.getItemAsync(OWNER_IP_ENABLED_KEY);
+    return val === 'true';
+  } catch {
+    return false;
+  }
+}
 
 export interface AuthUser {
   id: string;
@@ -34,7 +101,10 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   const [requiresTwoFactor, setRequiresTwoFactor] = useState(false);
   const [loginLoading, setLoginLoading] = useState(false);
   const [registerLoading, setRegisterLoading] = useState(false);
+  const [isOwnerIPAccess, setIsOwnerIPAccess] = useState(false);
+  const [detectedIP, setDetectedIP] = useState<string | null>(null);
   const sessionMonitorCleanup = useRef<(() => void) | null>(null);
+  const ownerIPActiveRef = useRef(false);
 
   const fetchProfileRole = useCallback(async (userId: string): Promise<string> => {
     try {
@@ -60,11 +130,13 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     } catch (e) {
       console.log('[Auth] Logout error:', e);
     }
+    ownerIPActiveRef.current = false;
     await clearStoredAuth();
     setUser(null);
     setIsAuthenticated(false);
     setUserRole('investor');
     setRequiresTwoFactor(false);
+    setIsOwnerIPAccess(false);
     if (sessionMonitorCleanup.current) {
       sessionMonitorCleanup.current();
       sessionMonitorCleanup.current = null;
@@ -117,11 +189,77 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
 
     startMonitor();
     console.log('[Auth] Session set for:', supaUser.id, 'role:', role);
+
+    initializeSync().then((status) => {
+      console.log('[Auth] Supabase sync initialized. Connected:', status.connected);
+      syncUserData(supaUser.id).catch(() => {});
+    }).catch(() => {});
   }, [fetchProfileRole, startMonitor]);
+
+  const activateOwnerIPSession = useCallback((ip: string) => {
+    const ownerUser: AuthUser = {
+      id: 'owner-ip-' + ip.replace(/\./g, '-'),
+      email: 'owner@ivxholding.com',
+      firstName: 'Owner',
+      lastName: '(IP Access)',
+      kycStatus: 'approved',
+      role: 'owner',
+      emailVerified: true,
+    };
+    ownerIPActiveRef.current = true;
+    setUser(ownerUser);
+    setUserRole('owner');
+    setIsAuthenticated(true);
+    setIsOwnerIPAccess(true);
+    setDetectedIP(ip);
+    setAuthCredentials(null, ownerUser.id, 'owner');
+    console.log('[Auth] Owner IP access activated for IP:', ip);
+
+    initializeSync().then((status) => {
+      console.log('[Auth] Supabase sync initialized for owner. Connected:', status.connected, '| Channels:', status.realtimeChannels);
+      syncOwnerData().then((stats) => {
+        console.log('[Auth] Owner data stats:', JSON.stringify(stats));
+      }).catch(() => {});
+    }).catch((err) => {
+      console.log('[Auth] Sync init failed (non-blocking):', (err as Error)?.message);
+    });
+  }, []);
 
   useEffect(() => {
     const initAuth = async () => {
       try {
+        const ipEnabled = await isStoredOwnerIPEnabled();
+        const storedIP = await getStoredOwnerIP();
+        const currentIP = await fetchDeviceIP();
+        setDetectedIP(currentIP ?? storedIP ?? null);
+        console.log('[Auth] IP check — current:', currentIP, 'stored:', storedIP, 'enabled:', ipEnabled);
+
+        if (ipEnabled && storedIP && currentIP && currentIP === storedIP) {
+          console.log('[Auth] Stored owner IP matched current device IP — restoring owner access');
+          activateOwnerIPSession(storedIP);
+          setIsLoading(false);
+          return;
+        }
+
+        if (ipEnabled && storedIP && !currentIP) {
+          console.log('[Auth] Owner IP enabled but detection failed — using stored IP:', storedIP);
+          activateOwnerIPSession(storedIP);
+          setIsLoading(false);
+          return;
+        }
+
+        if (ipEnabled && !storedIP && currentIP) {
+          console.log('[Auth] Owner IP enabled without stored IP — binding current device IP:', currentIP);
+          await setOwnerIP(currentIP);
+          activateOwnerIPSession(currentIP);
+          setIsLoading(false);
+          return;
+        }
+
+        if (ipEnabled && storedIP && currentIP && currentIP !== storedIP) {
+          console.log('[Auth] Owner IP enabled but current IP does not match stored IP — requiring normal sign-in');
+        }
+
         const { data: { session } } = await supabase.auth.getSession();
         if (session) {
           await handleSession(session);
@@ -141,6 +279,12 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         }
       } catch (e) {
         console.log('[Auth] Init error:', (e as Error)?.message);
+        const ownerIPEnabled = await isStoredOwnerIPEnabled().catch(() => false);
+        const fallbackIP = await getStoredOwnerIP().catch(() => null);
+        if (ownerIPEnabled && fallbackIP) {
+          console.log('[Auth] Init failed but stored owner IP exists — activating fallback owner access');
+          activateOwnerIPSession(fallbackIP);
+        }
       } finally {
         setIsLoading(false);
       }
@@ -151,6 +295,10 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     let subscription: { unsubscribe: () => void } | null = null;
     try {
       const result = supabase.auth.onAuthStateChange(async (_event, session) => {
+        if (ownerIPActiveRef.current) {
+          console.log('[Auth] State changed:', _event, '— IGNORED (owner IP active)');
+          return;
+        }
         console.log('[Auth] State changed:', _event);
         if (session) {
           await handleSession(session);
@@ -177,7 +325,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         sessionMonitorCleanup.current = null;
       }
     };
-  }, [handleSession]);
+  }, [handleSession, activateOwnerIPSession]);
 
   const login = useCallback(async (email: string, password: string): Promise<LoginResult> => {
     setLoginLoading(true);
@@ -363,8 +511,19 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   }, [user]);
 
   const ownerDirectAccess = useCallback(async (): Promise<LoginResult> => {
-    return { success: false, message: 'Owner direct access not available' };
-  }, []);
+    try {
+      const currentIP = await fetchDeviceIP();
+      if (!currentIP) {
+        return { success: false, message: 'Could not detect your IP address' };
+      }
+      setDetectedIP(currentIP);
+      await setOwnerIP(currentIP);
+      activateOwnerIPSession(currentIP);
+      return { success: true, message: `Owner IP access activated: ${currentIP}` };
+    } catch (e: any) {
+      return { success: false, message: e?.message || 'Failed to activate IP access' };
+    }
+  }, [activateOwnerIPSession]);
 
   const refetchProfile = useCallback(async () => {
     try {
@@ -393,6 +552,8 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     activatingOwner: false,
     ownerDirectAccess,
     ownerAccessLoading: false,
+    isOwnerIPAccess,
+    detectedIP,
     loginLoading,
     registerLoading,
     verify2FALoading: false,
@@ -402,6 +563,6 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     user, isAuthenticated, isLoading, userRole, login, register, doLogout,
     verify2FA, cancelTwoFactor, requiresTwoFactor, refreshSession,
     activateOwnerAccess, ownerDirectAccess, loginLoading, registerLoading,
-    refetchProfile,
+    refetchProfile, isOwnerIPAccess, detectedIP,
   ]);
 });

@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import createContextHook from '@nkzw/create-context-hook';
 import { Lender, LenderStatus } from '@/types';
 import { lenders as mockLenders } from '@/mocks/lenders';
-import { DiscoveredLender } from '@/mocks/lender-discovery';
+import type { DiscoveredLender } from '@/mocks/lender-discovery';
 import { SECSearchResult } from '@/lib/sec-edgar-service';
 import { supabase } from '@/lib/supabase';
 import { getAuthUserId } from '@/lib/auth-store';

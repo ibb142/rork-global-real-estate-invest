@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import createContextHook from '@nkzw/create-context-hook';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { EmailMessage, EmailFolder, ComposeEmailData, EmailSource } from '@/types/email';
-import { EMAIL_ACCOUNTS } from '@/mocks/emails';
+import { EMAIL_ACCOUNTS } from '@/constants/platform-config';
 import { scopedKey } from '@/lib/project-storage';
 import { getAuthToken } from '@/lib/auth-store';
 import { Platform } from 'react-native';

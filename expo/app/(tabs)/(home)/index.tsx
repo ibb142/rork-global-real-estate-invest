@@ -39,6 +39,7 @@ import {
   ArrowRight,
   Handshake,
   Globe,
+  ClipboardCheck,
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import Colors from '@/constants/colors';
@@ -60,7 +61,7 @@ import { CANONICAL_MIN_INVESTMENT } from '@/lib/published-deal-card-model';
 
 
 
-const IPX_LOGO = require('@/assets/images/ivx-logo.png');
+import { IVX_LOGO_SOURCE } from '@/constants/brand';
 
 
 
@@ -1511,29 +1512,42 @@ export default function HomeScreen() {
         <View style={[styles.header, { paddingHorizontal: isXs ? 12 : 16 }]}>
           <View style={styles.brandContainer}>
             <Image
-              source={IPX_LOGO}
+              source={IVX_LOGO_SOURCE}
               style={[styles.brandLogo, { width: isXs ? 44 : 55, height: isXs ? 44 : 55 }]}
               resizeMode="contain"
               accessibilityLabel="IVX HOLDINGS LLC logo"
             />
             <Text style={[styles.brandName, { fontSize: isXs ? 14 : isCompact ? 16 : 18 }]}>IVX HOLDINGS LLC</Text>
           </View>
-          <TouchableOpacity
-            style={styles.notificationButton}
-            onPress={() => router.push('/notifications' as any)}
-            accessible={true}
-            accessibilityRole="button"
-            accessibilityLabel={unreadNotifications > 0 ? `Notifications, ${unreadNotifications} unread` : 'Notifications'}
-            accessibilityHint="Opens notifications screen"
-            testID="home-notification-button"
-          >
-            <Bell size={isXs ? 22 : 26} color={Colors.text} />
-            {unreadNotifications > 0 ? (
-              <View style={styles.notificationBadge}>
-                <Text style={styles.notificationBadgeText}>{unreadNotifications}</Text>
-              </View>
-            ) : null}
-          </TouchableOpacity>
+          <View style={styles.headerActions}>
+            <TouchableOpacity
+              style={styles.auditButton}
+              onPress={() => router.push('/registration-audit' as any)}
+              accessible={true}
+              accessibilityRole="button"
+              accessibilityLabel="Registration Audit"
+              accessibilityHint="Opens registration module audit"
+              testID="home-audit-button"
+            >
+              <ClipboardCheck size={isXs ? 20 : 22} color={Colors.primary} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.notificationButton}
+              onPress={() => router.push('/notifications' as any)}
+              accessible={true}
+              accessibilityRole="button"
+              accessibilityLabel={unreadNotifications > 0 ? `Notifications, ${unreadNotifications} unread` : 'Notifications'}
+              accessibilityHint="Opens notifications screen"
+              testID="home-notification-button"
+            >
+              <Bell size={isXs ? 22 : 26} color={Colors.text} />
+              {unreadNotifications > 0 ? (
+                <View style={styles.notificationBadge}>
+                  <Text style={styles.notificationBadgeText}>{unreadNotifications}</Text>
+                </View>
+              ) : null}
+            </TouchableOpacity>
+          </View>
         </View>
 
         <ScrollView
@@ -1697,8 +1711,23 @@ const styles = StyleSheet.create({
     color: Colors.text,
     letterSpacing: 1,
   },
+  headerActions: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 4,
+  },
+  auditButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: Colors.primary + '15',
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    borderWidth: 1,
+    borderColor: Colors.primary + '30',
+  },
   notificationButton: {
-    position: 'relative',
+    position: 'relative' as const,
     padding: 8,
   },
   notificationBadge: {

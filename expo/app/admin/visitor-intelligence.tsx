@@ -148,17 +148,21 @@ export default function VisitorIntelligenceScreen() {
     queryKey: ['analytics.getAIVisitorIntelligence', { period }],
     queryFn: async () => {
       try {
+        console.log('[VisitorIntel] Fetching raw events for period:', period);
         const rawEvents = await fetchRawEvents(period);
         console.log('[VisitorIntel] Raw events fetched:', rawEvents.length);
         const computed = computeVisitorIntelligence(rawEvents, period);
+        console.log('[VisitorIntel] Computed:', { sessions: computed.summary?.totalSessions, hotLeads: computed.summary?.hotLeads, events: computed.summary?.totalEvents });
         return computed;
-      } catch {
+      } catch (err) {
+        console.error('[VisitorIntel] Query error:', (err as Error)?.message);
         return computeVisitorIntelligence([], period);
       }
     },
-    staleTime: 0,
-    refetchInterval: 3000,
-    retry: 0,
+    staleTime: 30000,
+    refetchInterval: activeTab === 'alerts' ? 30000 : 60000,
+    retry: 2,
+    retryDelay: (attempt) => Math.min(1000 * Math.pow(2, attempt), 10000),
     refetchOnMount: true,
     throwOnError: false,
   });
@@ -167,6 +171,7 @@ export default function VisitorIntelligenceScreen() {
     queryKey: ['analytics.getVisitorAlerts', { period }],
     queryFn: async () => {
       try {
+        console.log('[VisitorIntel] Fetching alerts for period:', period);
         const rawEvents = await fetchRawEvents(period);
         const alerts: any[] = [];
         const now = Date.now();
@@ -193,14 +198,17 @@ export default function VisitorIntelligenceScreen() {
             }
           }
         });
+        console.log('[VisitorIntel] Alerts computed:', alerts.length, 'alerts,', activeVisitors, 'active visitors');
         return { alerts, activeVisitors };
-      } catch {
+      } catch (err) {
+        console.error('[VisitorIntel] Alerts query error:', (err as Error)?.message);
         return { alerts: [], activeVisitors: 0 };
       }
     },
-    staleTime: 0,
-    refetchInterval: 3000,
-    retry: 0,
+    staleTime: 30000,
+    refetchInterval: activeTab === 'alerts' ? 30000 : 60000,
+    retry: 2,
+    retryDelay: (attempt) => Math.min(1000 * Math.pow(2, attempt), 10000),
     refetchOnMount: true,
     throwOnError: false,
   });

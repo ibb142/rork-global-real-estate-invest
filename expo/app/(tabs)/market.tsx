@@ -30,6 +30,32 @@ import type { ResaleListing } from '@/lib/investment-service';
 
 type MarketTab = 'all' | 'gainers' | 'losers';
 
+const MarketPropertyThumb = React.memo(function MarketPropertyThumb({ uri, name, size, borderRadius, marginRight }: {
+  uri?: string;
+  name?: string;
+  size: number;
+  borderRadius: number;
+  marginRight: number;
+}) {
+  const [failed, setFailed] = useState(false);
+
+  if (!uri || failed) {
+    return (
+      <View style={[styles.propertyImage, styles.propertyImagePlaceholder, { width: size, height: size, borderRadius, marginRight }]}>
+        <Text style={styles.propertyImagePlaceholderText}>{name?.charAt(0) ?? 'P'}</Text>
+      </View>
+    );
+  }
+
+  return (
+    <Image
+      source={{ uri }}
+      style={[styles.propertyImage, { width: size, height: size, borderRadius, marginRight }]}
+      onError={() => { setFailed(true); console.log('[Market] Image failed:', uri?.substring(0, 60)); }}
+    />
+  );
+});
+
 function GlobalMarketsSection({ router }: { router: ReturnType<typeof useRouter> }) {
   const { forex, indices, crypto: _crypto, commodities, marketSentiment } = useGlobalMarkets(4000);
   const sentimentColor = marketSentiment === 'bullish' ? Colors.success : marketSentiment === 'bearish' ? Colors.error : Colors.warning;
@@ -870,35 +896,13 @@ export default function MarketScreen() {
                   onLongPress={() => router.push(`/property/${property.id}` as any)}
                 >
                   <View style={[styles.propertyCell, { flex: isCompact ? 1.5 : 2 }]}>
-                    {property.images && property.images[0] ? (
-                      <Image 
-                        source={{ uri: property.images[0] }} 
-                        style={[
-                          styles.propertyImage, 
-                          { 
-                            width: responsiveStyles.propertyImage, 
-                            height: responsiveStyles.propertyImage,
-                            borderRadius: isXs ? 4 : isCompact ? 6 : 8,
-                            marginRight: isXs ? 6 : isCompact ? 8 : 10,
-                          }
-                        ]} 
-                      />
-                    ) : (
-                      <View 
-                        style={[
-                          styles.propertyImage, 
-                          styles.propertyImagePlaceholder,
-                          { 
-                            width: responsiveStyles.propertyImage, 
-                            height: responsiveStyles.propertyImage,
-                            borderRadius: isXs ? 4 : isCompact ? 6 : 8,
-                            marginRight: isXs ? 6 : isCompact ? 8 : 10,
-                          }
-                        ]}
-                      >
-                        <Text style={styles.propertyImagePlaceholderText}>{property.name?.charAt(0) ?? 'P'}</Text>
-                      </View>
-                    )}
+                    <MarketPropertyThumb
+                      uri={property.images?.[0]}
+                      name={property.name}
+                      size={responsiveStyles.propertyImage}
+                      borderRadius={isXs ? 4 : isCompact ? 6 : 8}
+                      marginRight={isXs ? 6 : isCompact ? 8 : 10}
+                    />
                     <View style={styles.propertyInfo}>
                       <Text style={[styles.propertyName, { fontSize: responsiveStyles.propertyName }]} numberOfLines={1}>
                         {property.name}

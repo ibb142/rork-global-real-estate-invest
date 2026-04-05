@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { IVX_LOGO_SOURCE } from '@/constants/brand';
 import logger from '@/lib/logger';
 import {
   View,
@@ -281,7 +282,7 @@ export default function CompanyInfoScreen() {
           <Animated.View style={[styles.brandSection, { opacity: fadeAnim }]}>
             <View style={styles.logoRow}>
               <Image
-                source={require('@/assets/images/ivx-logo.png')}
+                source={IVX_LOGO_SOURCE}
                 style={styles.logo}
                 resizeMode="contain"
               />

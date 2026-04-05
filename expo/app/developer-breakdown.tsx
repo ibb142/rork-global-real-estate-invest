@@ -92,7 +92,7 @@ const PHASES: Phase[] = [
     totalDays: 14,
     tasks: [
       { id: 'f1', task: 'Sign Up & Login Screens', description: 'Connect registration, email verification, login, forgot password, social login buttons to live backend.', days: 2, hours: 16, priority: 'critical', type: 'frontend' },
-      { id: 'f2', task: 'KYC Verification Flow', description: 'Connect document upload, face scan, accredited investor form to real KYC provider API.', days: 2, hours: 16, priority: 'critical', type: 'frontend' },
+      { id: 'f2', task: 'KYC Verification Flow', description: 'Connect document upload, face scan, identity verification form to real KYC provider API. Open to all investors.', days: 2, hours: 16, priority: 'critical', type: 'frontend' },
       { id: 'f3', task: 'Property Marketplace (Live Data)', description: 'Replace mock data with real property listings from database. Filters, search, sorting with API.', days: 2, hours: 16, priority: 'critical', type: 'frontend' },
       { id: 'f4', task: 'Trading Modal (Buy/Sell)', description: 'Connect buy/sell flows to Stripe/Plaid. Real-time price quotes, order confirmation, receipt.', days: 2, hours: 16, priority: 'critical', type: 'frontend' },
       { id: 'f5', task: 'Portfolio Dashboard (Live)', description: 'Real holdings, P&L calculations, performance charts with live data. Dividend tracking.', days: 2, hours: 16, priority: 'high', type: 'frontend' },
@@ -128,7 +128,7 @@ const PHASES: Phase[] = [
     color: '#22C55E',
     totalDays: 8,
     tasks: [
-      { id: 's1', task: 'SEC Regulation CF/D Compliance', description: 'Investment limits per investor type, accreditation checks, offering documents, SEC filing integration.', days: 3, hours: 24, priority: 'critical', type: 'backend' },
+      { id: 's1', task: 'SEC Regulation A+/CF Compliance', description: 'Open-access investment structure, offering documents, SEC filing integration. No accreditation requirements.', days: 3, hours: 24, priority: 'critical', type: 'backend' },
       { id: 's2', task: 'AML / Sanctions Screening', description: 'OFAC sanctions list check, PEP screening, transaction monitoring, suspicious activity reports.', days: 2, hours: 16, priority: 'critical', type: 'integration' },
       { id: 's3', task: 'GDPR & Data Privacy', description: 'Data deletion requests, export data, consent management, cookie policy, privacy controls.', days: 1, hours: 8, priority: 'high', type: 'backend' },
       { id: 's4', task: 'Security Audit & Pen Testing', description: 'API security audit, auth flow review, SQL injection checks, rate limiting, DDoS protection.', days: 2, hours: 16, priority: 'critical', type: 'testing' },

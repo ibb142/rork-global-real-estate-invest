@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,7 +6,6 @@ import {
   ScrollView,
   TouchableOpacity,
   Animated,
-  Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -25,7 +24,6 @@ import {
   Target,
   TrendingUp,
   Users,
-  ChevronRight,
   Brain,
   Lightbulb,
   AlertTriangle,
@@ -34,11 +32,8 @@ import {
   Smartphone,
   Monitor,
   Tablet,
-  Filter,
   Star,
-  CalendarClock,
   Activity,
-  PieChart,
   Sparkles,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
@@ -48,20 +43,17 @@ import {
   outreachFunnel,
   smartRecommendations,
   timeSpentData,
-  dailyMetrics,
   costBreakdown,
   getTopEngagedLenders,
   getHotLeads,
   getFollowUpQueue,
   getOverallStats,
-  type LenderEngagement,
-  type SmartRecommendation,
   type EngagementLevel,
   type FollowUpPriority,
 } from '@/mocks/outreach-analytics';
 import { formatCurrencyCompact } from '@/lib/formatters';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
 
 const formatCurrency = (amount: number): string => formatCurrencyCompact(amount);
 
@@ -81,12 +73,7 @@ const ENGAGEMENT_COLORS: Record<EngagementLevel, string> = {
   unresponsive: '#6B7280',
 };
 
-const ENGAGEMENT_ICONS: Record<EngagementLevel, string> = {
-  hot: 'flame',
-  warm: 'zap',
-  cold: 'snowflake',
-  unresponsive: 'clock',
-};
+
 
 const PRIORITY_COLORS: Record<FollowUpPriority, string> = {
   urgent: '#EF4444',
@@ -202,7 +189,7 @@ export default function OutreachAnalyticsScreen() {
 
       <View style={styles.funnelSection}>
         <Text style={styles.sectionTitle}>Outreach Funnel</Text>
-        {outreachFunnel.map((stage, index) => (
+        {outreachFunnel.map((stage, _index) => (
           <View key={stage.stage} style={styles.funnelRow}>
             <View style={styles.funnelLabelWrap}>
               <Text style={styles.funnelLabel}>{stage.stage}</Text>

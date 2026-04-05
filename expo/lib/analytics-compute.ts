@@ -152,6 +152,8 @@ export interface ComputedAnalytics {
   };
   acquisition: AcquisitionChannel[];
   sessionQuality: SessionQuality;
+  linkClicks: Array<{ label: string; destination: string; count: number; location: string; lastClicked: string }>;
+  sectionViews: Array<{ section: string; count: number; pct: number }>;
 }
 
 export interface VisitorIntelData {
@@ -242,12 +244,7 @@ async function getAuthToken(): Promise<string | null> {
       }
       return session.access_token;
     }
-    console.log('[Analytics] No session found, attempting refresh...');
-    const { data: refreshed } = await supabase.auth.refreshSession();
-    if (refreshed?.session?.access_token) {
-      console.log('[Analytics] Session restored via refresh');
-      return refreshed.session.access_token;
-    }
+    console.log('[Analytics] No Supabase session — using anon key (Owner IP mode)');
     return null;
   } catch (err) {
     console.log('[Analytics] getAuthToken error:', (err as Error)?.message);
@@ -267,18 +264,18 @@ async function fetchViaRestApi(table: string, columns: string, cutoff: Date | nu
       url += `&created_at=gte.${cutoff.toISOString()}`;
     }
 
+    if (!token) {
+      console.log(`[Analytics] REST API: No auth token for ${table} — using anon key (Owner IP mode)`);
+    }
+
     const headers: Record<string, string> = {
       'apikey': supabaseKey,
       'Content-Type': 'application/json',
       'Prefer': 'return=representation',
+      'Authorization': `Bearer ${token || supabaseKey}`,
     };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    } else {
-      headers['Authorization'] = `Bearer ${supabaseKey}`;
-    }
 
-    console.log(`[Analytics] REST API fetch: ${table}`);
+    console.log(`[Analytics] REST API fetch: ${table} (auth: ${token ? 'jwt' : 'anon'})`);
     const resp = await fetch(url, { method: 'GET', headers });
 
     if (!resp.ok) {
@@ -289,41 +286,7 @@ async function fetchViaRestApi(table: string, columns: string, cutoff: Date | nu
         return null;
       }
       if (resp.status === 401 || resp.status === 403) {
-        console.log(`[Analytics] RLS/Auth blocking ${table} (${resp.status}). Refreshing session and retrying...`);
-        try {
-          const { data: refreshed } = await supabase.auth.refreshSession();
-          if (refreshed?.session?.access_token) {
-            token = refreshed.session.access_token;
-            const retryHeaders: Record<string, string> = {
-              'apikey': supabaseKey,
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json',
-              'Prefer': 'return=representation',
-            };
-            console.log(`[Analytics] REST API retry with refreshed JWT for ${table}`);
-            const retryResp = await fetch(url, { method: 'GET', headers: retryHeaders });
-            if (retryResp.ok) {
-              const retryData = await retryResp.json();
-              console.log(`[Analytics] REST API ${table} retry success: ${Array.isArray(retryData) ? retryData.length : 0} rows`);
-              return Array.isArray(retryData) ? retryData : null;
-            }
-            console.error(`[Analytics] REST API ${table} retry also failed: ${retryResp.status}`);
-          }
-        } catch (refreshErr) {
-          console.error(`[Analytics] Session refresh during REST fallback failed:`, (refreshErr as Error)?.message);
-        }
-        const anonHeaders: Record<string, string> = {
-          'apikey': supabaseKey,
-          'Authorization': `Bearer ${supabaseKey}`,
-          'Content-Type': 'application/json',
-        };
-        const anonResp = await fetch(url, { method: 'GET', headers: anonHeaders });
-        if (anonResp.ok) {
-          const anonData = await anonResp.json();
-          console.log(`[Analytics] REST API ${table} anon fallback: ${Array.isArray(anonData) ? anonData.length : 0} rows`);
-          return Array.isArray(anonData) ? anonData : null;
-        }
-        console.error(`[Analytics] REST API ${table} anon fallback also failed: ${anonResp.status}`);
+        console.log(`[Analytics] RLS/Auth blocking ${table} SELECT (${resp.status}). Using anon key — data may be limited.`);
         return null;
       }
       return null;
@@ -372,6 +335,33 @@ function mapLandingRow(row: Record<string, unknown>): RawEvent {
   };
 }
 
+async function fetchViaRpc(fnName: string, cutoff: Date | null, limit: number = 50000): Promise<Record<string, unknown>[] | null> {
+  try {
+    console.log(`[Analytics] RPC fallback: calling ${fnName}...`);
+    const params: Record<string, unknown> = { p_limit: limit };
+    if (cutoff) {
+      params.p_cutoff = cutoff.toISOString();
+    }
+    const { data, error } = await supabase.rpc(fnName, params);
+    if (error) {
+      if (error.message?.includes('does not exist') || error.code === '42883') {
+        console.log(`[Analytics] RPC function ${fnName} not found — deploy it via Supabase Scripts`);
+        return null;
+      }
+      console.error(`[Analytics] RPC ${fnName} error:`, error.code, error.message);
+      return null;
+    }
+    if (Array.isArray(data)) {
+      console.log(`[Analytics] RPC ${fnName} success: ${data.length} rows`);
+      return data as Record<string, unknown>[];
+    }
+    return null;
+  } catch (err) {
+    console.error(`[Analytics] RPC ${fnName} exception:`, (err as Error)?.message);
+    return null;
+  }
+}
+
 async function fetchLandingEvents(cutoff: Date, period: string): Promise<RawEvent[]> {
   const columns = 'id,event,session_id,properties,geo,created_at';
   try {
@@ -394,6 +384,12 @@ async function fetchLandingEvents(cutoff: Date, period: string): Promise<RawEven
         return [];
       }
       console.error('[Analytics] landing_analytics query error:', error.code, error.message);
+      console.log('[Analytics] Trying RPC fallback for landing_analytics...');
+      const rpcData = await fetchViaRpc('get_landing_analytics', period !== 'all' ? cutoff : null, 50000);
+      if (rpcData && rpcData.length > 0) {
+        console.log('[Analytics] RPC fallback success: landing_analytics:', rpcData.length, 'events');
+        return rpcData.map(mapLandingRow);
+      }
       console.log('[Analytics] Trying REST API fallback for landing_analytics...');
       const restData = await fetchViaRestApi('landing_analytics', columns, period !== 'all' ? cutoff : null, 50000);
       if (restData && restData.length > 0) {
@@ -407,13 +403,13 @@ async function fetchLandingEvents(cutoff: Date, period: string): Promise<RawEven
     console.log('[Analytics] landing_analytics (client):', landingCount, 'events');
 
     if (landingCount === 0) {
-      console.log('[Analytics] Supabase client returned 0 landing events — possible RLS block. Trying REST API fallback...');
-      const restData = await fetchViaRestApi('landing_analytics', columns, period !== 'all' ? cutoff : null, 50000);
-      if (restData && restData.length > 0) {
-        console.log('[Analytics] REST API fallback success: landing_analytics:', restData.length, 'events');
-        return restData.map(mapLandingRow);
+      console.log('[Analytics] Supabase client returned 0 landing events — trying RPC bypass...');
+
+      const rpcData = await fetchViaRpc('get_landing_analytics', period !== 'all' ? cutoff : null, 50000);
+      if (rpcData && rpcData.length > 0) {
+        console.log('[Analytics] RPC bypass success: landing_analytics:', rpcData.length, 'events (RLS was blocking)');
+        return rpcData.map(mapLandingRow);
       }
-      console.log('[Analytics] REST API also returned 0 — table may genuinely be empty or RLS blocks all access');
 
       const { count: rowCount, error: countErr } = await supabase
         .from('landing_analytics')
@@ -421,10 +417,23 @@ async function fetchLandingEvents(cutoff: Date, period: string): Promise<RawEven
       if (!countErr && rowCount !== null) {
         console.log('[Analytics] landing_analytics total row count (via count):', rowCount);
         if (rowCount > 0) {
-          console.error('[Analytics] CONFIRMED: landing_analytics has', rowCount, 'rows but RLS is blocking SELECT. Fix RLS policies in Supabase.');
+          console.error('[Analytics] CONFIRMED: landing_analytics has', rowCount, 'rows but query returned 0. RLS SELECT policy is blocking. Trying REST API...');
+          const restData = await fetchViaRestApi('landing_analytics', columns, period !== 'all' ? cutoff : null, 50000);
+          if (restData && restData.length > 0) {
+            console.log('[Analytics] REST API fallback success: landing_analytics:', restData.length, 'events');
+            return restData.map(mapLandingRow);
+          }
+          console.error('[Analytics] All fallbacks failed. Deploy get_landing_analytics RPC function via Supabase Scripts.');
+        } else {
+          console.log('[Analytics] landing_analytics table is genuinely empty (0 rows).');
         }
       } else if (countErr) {
         console.log('[Analytics] landing_analytics count check error:', countErr.message);
+        const restData = await fetchViaRestApi('landing_analytics', columns, period !== 'all' ? cutoff : null, 50000);
+        if (restData && restData.length > 0) {
+          console.log('[Analytics] REST API fallback success: landing_analytics:', restData.length, 'events');
+          return restData.map(mapLandingRow);
+        }
       }
 
       return [];
@@ -437,6 +446,11 @@ async function fetchLandingEvents(cutoff: Date, period: string): Promise<RawEven
     return (data ?? []).map(mapLandingRow);
   } catch (err) {
     console.log('[Analytics] landing_analytics fetch failed:', (err as Error)?.message);
+    console.log('[Analytics] Trying RPC fallback...');
+    const rpcData = await fetchViaRpc('get_landing_analytics', period !== 'all' ? cutoff : null);
+    if (rpcData && rpcData.length > 0) {
+      return rpcData.map(mapLandingRow);
+    }
     console.log('[Analytics] Trying REST API fallback...');
     const restData = await fetchViaRestApi('landing_analytics', columns, period !== 'all' ? cutoff : null);
     if (restData && restData.length > 0) {
@@ -448,16 +462,26 @@ async function fetchLandingEvents(cutoff: Date, period: string): Promise<RawEven
 
 function mapAppRow(row: Record<string, unknown>): RawEvent {
   const id = typeof row.id === 'string' ? row.id : typeof row.id === 'number' ? String(row.id) : '';
-  const eventName = typeof row.event === 'string' ? row.event : 'unknown';
+  const eventName = typeof row.name === 'string' ? row.name
+    : typeof row.event === 'string' ? row.event
+    : 'unknown';
   const sessionId = typeof row.session_id === 'string' ? row.session_id : 'unknown';
-  const createdAt = typeof row.created_at === 'string' ? row.created_at : new Date().toISOString();
+  const createdAt = typeof row.created_at === 'string' ? row.created_at
+    : typeof row.timestamp === 'string' ? row.timestamp
+    : new Date().toISOString();
   let parsedProps: Record<string, unknown> = {};
   if (typeof row.properties === 'string') {
     try { parsedProps = JSON.parse(row.properties); } catch { parsedProps = {}; }
   } else if (row.properties && typeof row.properties === 'object') {
     parsedProps = row.properties as Record<string, unknown>;
   }
-  const platform = typeof parsedProps.platform === 'string' ? parsedProps.platform : 'unknown';
+  const platform = typeof row.platform === 'string' ? row.platform
+    : typeof parsedProps.platform === 'string' ? parsedProps.platform
+    : 'unknown';
+  const category = typeof row.category === 'string' ? row.category : undefined;
+  if (category) {
+    parsedProps.category = category;
+  }
   return {
     id,
     event: eventName,
@@ -469,12 +493,13 @@ function mapAppRow(row: Record<string, unknown>): RawEvent {
 }
 
 async function fetchAppEvents(cutoff: Date, period: string): Promise<RawEvent[]> {
-  const columns = 'id,event,session_id,user_id,properties,created_at';
+  const extendedColumns = 'id,name,category,session_id,user_id,properties,platform,timestamp,created_at';
+  const masterColumns = 'id,event,session_id,user_id,properties,created_at';
   try {
     console.log('[Analytics] Fetching analytics_events — period:', period, 'cutoff:', period !== 'all' ? cutoff.toISOString() : 'none');
     let query = supabase
       .from('analytics_events')
-      .select(columns)
+      .select(extendedColumns)
       .order('created_at', { ascending: false })
       .limit(50000);
 
@@ -482,16 +507,42 @@ async function fetchAppEvents(cutoff: Date, period: string): Promise<RawEvent[]>
       query = query.gte('created_at', cutoff.toISOString());
     }
 
-    const { data, error } = await query;
+    let result = await query;
+    let data: Record<string, unknown>[] | null = result.data as Record<string, unknown>[] | null;
+    let error = result.error;
+
+    if (error && (error.message?.includes('column') || error.code === '42703')) {
+      console.log('[Analytics] Extended schema failed, retrying with master columns...');
+      let masterQuery = supabase
+        .from('analytics_events')
+        .select(masterColumns)
+        .order('created_at', { ascending: false })
+        .limit(50000);
+      if (period !== 'all') {
+        masterQuery = masterQuery.gte('created_at', cutoff.toISOString());
+      }
+      const masterResult = await masterQuery;
+      data = masterResult.data as Record<string, unknown>[] | null;
+      error = masterResult.error;
+    }
 
     if (error) {
-      if (error.code === '42P01' || error.message?.includes('does not exist')) {
+      if (error.code === '42P01' || error.message?.includes('does not exist') || error.message?.includes('relation')) {
         console.warn('[Analytics] analytics_events table does not exist');
         return [];
       }
       console.error('[Analytics] analytics_events query error:', error.code, error.message);
+      console.log('[Analytics] Trying RPC fallback for analytics_events...');
+      const rpcData = await fetchViaRpc('get_analytics_events', period !== 'all' ? cutoff : null, 50000);
+      if (rpcData && rpcData.length > 0) {
+        console.log('[Analytics] RPC fallback success: analytics_events:', rpcData.length, 'events');
+        return rpcData.map(mapAppRow);
+      }
       console.log('[Analytics] Trying REST API fallback for analytics_events...');
-      const restData = await fetchViaRestApi('analytics_events', columns, period !== 'all' ? cutoff : null, 50000);
+      let restData = await fetchViaRestApi('analytics_events', extendedColumns, period !== 'all' ? cutoff : null, 50000);
+      if (!restData || restData.length === 0) {
+        restData = await fetchViaRestApi('analytics_events', masterColumns, period !== 'all' ? cutoff : null, 50000);
+      }
       if (restData && restData.length > 0) {
         console.log('[Analytics] REST API fallback success: analytics_events:', restData.length, 'events');
         return restData.map(mapAppRow);
@@ -503,11 +554,12 @@ async function fetchAppEvents(cutoff: Date, period: string): Promise<RawEvent[]>
     console.log('[Analytics] analytics_events (client):', appCount, 'events');
 
     if (appCount === 0) {
-      console.log('[Analytics] Supabase client returned 0 app events — possible RLS block. Trying REST API fallback...');
-      const restData = await fetchViaRestApi('analytics_events', columns, period !== 'all' ? cutoff : null, 50000);
-      if (restData && restData.length > 0) {
-        console.log('[Analytics] REST API fallback success: analytics_events:', restData.length, 'events');
-        return restData.map(mapAppRow);
+      console.log('[Analytics] Supabase client returned 0 app events — trying RPC bypass...');
+
+      const rpcData = await fetchViaRpc('get_analytics_events', period !== 'all' ? cutoff : null, 50000);
+      if (rpcData && rpcData.length > 0) {
+        console.log('[Analytics] RPC bypass success: analytics_events:', rpcData.length, 'events (RLS was blocking)');
+        return rpcData.map(mapAppRow);
       }
 
       const { count: rowCount, error: countErr } = await supabase
@@ -516,7 +568,28 @@ async function fetchAppEvents(cutoff: Date, period: string): Promise<RawEvent[]>
       if (!countErr && rowCount !== null) {
         console.log('[Analytics] analytics_events total row count:', rowCount);
         if (rowCount > 0) {
-          console.error('[Analytics] CONFIRMED: analytics_events has', rowCount, 'rows but RLS is blocking SELECT.');
+          console.error('[Analytics] CONFIRMED: analytics_events has', rowCount, 'rows but query returned 0. RLS is blocking. Trying REST API...');
+          let restData = await fetchViaRestApi('analytics_events', extendedColumns, period !== 'all' ? cutoff : null, 50000);
+          if (!restData || restData.length === 0) {
+            restData = await fetchViaRestApi('analytics_events', masterColumns, period !== 'all' ? cutoff : null, 50000);
+          }
+          if (restData && restData.length > 0) {
+            console.log('[Analytics] REST API fallback success: analytics_events:', restData.length, 'events');
+            return restData.map(mapAppRow);
+          }
+          console.error('[Analytics] All fallbacks failed. Deploy get_analytics_events RPC function via Supabase Scripts.');
+        } else {
+          console.log('[Analytics] analytics_events table is genuinely empty (0 rows).');
+        }
+      } else if (countErr) {
+        console.log('[Analytics] analytics_events count check error:', countErr.message);
+        let restData = await fetchViaRestApi('analytics_events', extendedColumns, period !== 'all' ? cutoff : null, 50000);
+        if (!restData || restData.length === 0) {
+          restData = await fetchViaRestApi('analytics_events', masterColumns, period !== 'all' ? cutoff : null, 50000);
+        }
+        if (restData && restData.length > 0) {
+          console.log('[Analytics] REST API fallback success: analytics_events:', restData.length, 'events');
+          return restData.map(mapAppRow);
         }
       }
 
@@ -530,7 +603,16 @@ async function fetchAppEvents(cutoff: Date, period: string): Promise<RawEvent[]>
     return (data ?? []).map(mapAppRow);
   } catch (err) {
     console.log('[Analytics] analytics_events fetch failed:', (err as Error)?.message);
-    const restData = await fetchViaRestApi('analytics_events', columns, period !== 'all' ? cutoff : null, 50000);
+    console.log('[Analytics] Trying RPC fallback...');
+    const rpcData = await fetchViaRpc('get_analytics_events', period !== 'all' ? cutoff : null);
+    if (rpcData && rpcData.length > 0) {
+      return rpcData.map(mapAppRow);
+    }
+    console.log('[Analytics] Trying REST API fallback...');
+    let restData = await fetchViaRestApi('analytics_events', extendedColumns, period !== 'all' ? cutoff : null, 50000);
+    if (!restData || restData.length === 0) {
+      restData = await fetchViaRestApi('analytics_events', masterColumns, period !== 'all' ? cutoff : null, 50000);
+    }
     if (restData && restData.length > 0) {
       return restData.map(mapAppRow);
     }
@@ -599,9 +681,12 @@ export interface FetchMetrics {
 export type AnalyticsSource = 'all' | 'landing' | 'app';
 
 export async function fetchRawEvents(period: string, source: AnalyticsSource = 'all'): Promise<RawEvent[]> {
+  const startTime = Date.now();
   const cutoff = getPeriodCutoff(period);
   const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
   const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+
+  console.log('[Analytics] === fetchRawEvents START === period:', period, 'source:', source, 'time:', new Date().toISOString());
 
   if (!supabaseUrl) {
     console.error('[Analytics] BLOCKER: No EXPO_PUBLIC_SUPABASE_URL configured. Dashboard will show 0.');
@@ -615,18 +700,7 @@ export async function fetchRawEvents(period: string, source: AnalyticsSource = '
 
   let token = await getAuthToken();
   if (!token) {
-    console.log('[Analytics] No auth token — forcing session refresh before fetch...');
-    try {
-      const { data: refreshed } = await supabase.auth.refreshSession();
-      token = refreshed?.session?.access_token ?? null;
-      if (token) {
-        console.log('[Analytics] Session refreshed — got valid JWT');
-      } else {
-        console.warn('[Analytics] WARNING: No auth token available. landing_analytics SELECT requires is_admin() which needs auth.uid(). Dashboard will likely show 0.');
-      }
-    } catch (refreshErr) {
-      console.warn('[Analytics] Session refresh failed:', (refreshErr as Error)?.message);
-    }
+    console.log('[Analytics] No auth token — using anon key (Owner IP mode). Data access depends on RLS policy.');
   }
   console.log('[Analytics] fetchRawEvents — period:', period, 'source:', source, 'auth:', token ? 'jwt' : 'anon', 'supabaseUrl:', supabaseUrl?.substring(0, 40));
 
@@ -692,6 +766,9 @@ export async function fetchRawEvents(period: string, source: AnalyticsSource = '
   if (duplicateCount > 0) {
     console.log('[Analytics] Deduped', duplicateCount, 'duplicate events');
   }
+
+  const elapsed = Date.now() - startTime;
+  console.log(`[Analytics] === fetchRawEvents DONE === ${deduped.length} events in ${elapsed}ms (landing: ${metrics.landingCount}, app: ${metrics.appCount})`);
 
   return deduped;
 }
@@ -783,35 +860,52 @@ const CHANNEL_COLORS: Record<string, string> = {
 
 export function computeAnalytics(events: RawEvent[], period: string): ComputedAnalytics {
   const sessionGeoMap = new Map<string, RawEvent['geo']>();
-  events.forEach(e => {
-    const sid = e.session_id || 'unknown';
-    const geo = e.geo as RawEvent['geo'];
-    if (geo?.country && !sessionGeoMap.has(sid)) {
-      sessionGeoMap.set(sid, geo);
-    }
-    if (e.event === 'geo_backfill' && geo?.country) {
-      sessionGeoMap.set(sid, geo);
-    }
-  });
 
-  events.forEach(e => {
+  for (const e of events) {
     const sid = e.session_id || 'unknown';
     const geo = e.geo as RawEvent['geo'];
-    if (!geo?.country && sessionGeoMap.has(sid)) {
-      e.geo = sessionGeoMap.get(sid);
+    if (geo?.country) {
+      if (e.event === 'geo_backfill') {
+        sessionGeoMap.set(sid, geo);
+      } else if (!sessionGeoMap.has(sid)) {
+        sessionGeoMap.set(sid, geo);
+      }
     }
     const props = e.properties as Record<string, unknown> | undefined;
-    if (!geo?.country && props?.geoCountry && typeof props.geoCountry === 'string') {
-      e.geo = {
-        country: props.geoCountry as string,
-        city: (props.geoCity as string) || undefined,
-        region: (props.geoRegion as string) || undefined,
-      };
-      if (!sessionGeoMap.has(sid)) sessionGeoMap.set(sid, e.geo);
+    if (!geo?.country && props && !sessionGeoMap.has(sid)) {
+      const geoCountry = typeof props.geoCountry === 'string' ? props.geoCountry : undefined;
+      const geoCity = typeof props.geoCity === 'string' ? props.geoCity : undefined;
+      const geoRegion = typeof props.geoRegion === 'string' ? props.geoRegion : undefined;
+      const geoTimezone = typeof props.geoTimezone === 'string' ? props.geoTimezone : undefined;
+      const geoLat = typeof props.geoLat === 'number' ? props.geoLat : undefined;
+      const geoLng = typeof props.geoLng === 'number' ? props.geoLng : undefined;
+      const geoCountryCode = typeof props.geoCountryCode === 'string' ? props.geoCountryCode : undefined;
+      if (geoCountry) {
+        const extractedGeo: RawEvent['geo'] = {
+          country: geoCountry,
+          city: geoCity,
+          region: geoRegion,
+          countryCode: geoCountryCode,
+          timezone: geoTimezone,
+          lat: geoLat,
+          lng: geoLng,
+        };
+        sessionGeoMap.set(sid, extractedGeo);
+        e.geo = extractedGeo;
+      }
     }
-  });
+  }
 
-  console.log('[Analytics] Geo propagation: sessions with geo:', sessionGeoMap.size, 'of', new Set(events.map(e => e.session_id)).size);
+  for (const e of events) {
+    const sid = e.session_id || 'unknown';
+    const currentGeo = e.geo as RawEvent['geo'];
+    if (!currentGeo?.country && sessionGeoMap.has(sid)) {
+      e.geo = sessionGeoMap.get(sid);
+    }
+  }
+
+  const totalSessions = new Set(events.map(e => e.session_id)).size;
+  console.log('[Analytics] Geo propagation: sessions with geo:', sessionGeoMap.size, 'of', totalSessions, '(' + (totalSessions > 0 ? Math.round((sessionGeoMap.size / totalSessions) * 100) : 0) + '%)');
 
   const sessionMap = new Map<string, RawEvent[]>();
   events.forEach(e => {
@@ -845,6 +939,35 @@ export function computeAnalytics(events: RawEvent[], period: string): ComputedAn
 
   const waitlistJoins = sumEventCounts(eventCounts, ['waitlist_join', 'waitlist_signup', 'waitlist_success', 'funnel_success']);
   const waitlistCount = Math.max(waitlistJoins - formSubmits, 0);
+
+  const linkClickEvents = events.filter(e => e.event === 'link_click' || e.event === 'cta_click');
+  const linkClickMap = new Map<string, { label: string; destination: string; count: number; location: string; lastClicked: string }>();
+  for (const e of linkClickEvents) {
+    const props = e.properties as Record<string, unknown> | undefined;
+    const label = typeof props?.label === 'string' ? props.label : e.event;
+    const destination = typeof props?.destination === 'string' ? props.destination : '';
+    const location = typeof props?.location === 'string' ? props.location : 'unknown';
+    const key = `${label}|${destination}`;
+    const existing = linkClickMap.get(key);
+    if (existing) {
+      existing.count++;
+      if (e.created_at > existing.lastClicked) existing.lastClicked = e.created_at;
+    } else {
+      linkClickMap.set(key, { label, destination, count: 1, location, lastClicked: e.created_at });
+    }
+  }
+  const linkClicks = Array.from(linkClickMap.values()).sort((a, b) => b.count - a.count);
+
+  const sectionViewEvents = events.filter(e => e.event === 'section_view');
+  const sectionViewMap = new Map<string, number>();
+  for (const e of sectionViewEvents) {
+    const props = e.properties as Record<string, unknown> | undefined;
+    const section = typeof props?.section === 'string' ? props.section : 'unknown';
+    sectionViewMap.set(section, (sectionViewMap.get(section) || 0) + 1);
+  }
+  const sectionViews = Array.from(sectionViewMap.entries())
+    .map(([section, count]) => ({ section, count, pct: uniqueSessions > 0 ? parseFloat(((count / uniqueSessions) * 100).toFixed(1)) : 0 }))
+    .sort((a, b) => b.count - a.count);
 
   const conversionRate = pageViews > 0 ? parseFloat(((formSubmits / pageViews) * 100).toFixed(1)) : 0;
   const scrollEngagement = pageViews > 0 ? parseFloat(((scroll50 / pageViews) * 100).toFixed(1)) : 0;
@@ -1077,22 +1200,49 @@ export function computeAnalytics(events: RawEvent[], period: string): ComputedAn
 
   const sessionEventCounts: number[] = [];
   const allSessionIds = new Set<string>();
-  const returningIps = new Map<string, Set<string>>();
+  const returningFingerprints = new Map<string, Set<string>>();
+  const sessionDays = new Map<string, Set<string>>();
   sessionMap.forEach((sessionEvents, sid) => {
     sessionEventCounts.push(sessionEvents.length);
     allSessionIds.add(sid);
     const props = sessionEvents[0]?.properties as Record<string, unknown> | undefined;
     const ip = typeof props?.ip === 'string' ? props.ip : '';
-    if (ip) {
-      if (!returningIps.has(ip)) returningIps.set(ip, new Set());
-      returningIps.get(ip)!.add(sid);
+    const ua = typeof props?.userAgent === 'string' ? props.userAgent : '';
+    const platform = typeof props?.platform === 'string' ? props.platform : '';
+    const geo = sessionEvents[0]?.geo as { country?: string; city?: string } | undefined;
+    const geoStr = geo?.country ? `${geo.country}_${geo.city || ''}` : '';
+    const userId = typeof props?.userId === 'string' ? props.userId : '';
+    const email = typeof props?.email === 'string' ? props.email : '';
+    const fingerprint = userId || email || ip || (ua && geoStr ? `${ua}_${geoStr}` : '') || (platform && geoStr ? `${platform}_${geoStr}` : '');
+    if (fingerprint) {
+      if (!returningFingerprints.has(fingerprint)) returningFingerprints.set(fingerprint, new Set());
+      returningFingerprints.get(fingerprint)!.add(sid);
     }
+    const _day = sessionEvents[0]?.created_at?.split('T')[0] || 'unknown';
+    if (!sessionDays.has(sid)) sessionDays.set(sid, new Set());
+    sessionEvents.forEach(e => {
+      const d = e.created_at?.split('T')[0] || 'unknown';
+      sessionDays.get(sid)!.add(d);
+    });
   });
   const avgPagesPerSession = sessionEventCounts.length > 0 ? parseFloat((sessionEventCounts.reduce((s, c) => s + c, 0) / sessionEventCounts.length).toFixed(1)) : 0;
   const engagedSessionsCount = sessionEventCounts.filter(c => c >= 3).length;
   const engagedSessionsPct = uniqueSessions > 0 ? parseFloat(((engagedSessionsCount / uniqueSessions) * 100).toFixed(1)) : 0;
   let returningCount = 0;
-  returningIps.forEach(sessions => { if (sessions.size > 1) returningCount += sessions.size - 1; });
+  const fingerprintDays = new Map<string, Set<string>>();
+  returningFingerprints.forEach((sessions, fp) => {
+    if (!fingerprintDays.has(fp)) fingerprintDays.set(fp, new Set());
+    sessions.forEach(sid => {
+      const days = sessionDays.get(sid);
+      if (days) days.forEach(d => fingerprintDays.get(fp)!.add(d));
+    });
+    if (sessions.size > 1) {
+      returningCount += sessions.size - 1;
+    } else if (fingerprintDays.get(fp)!.size > 1) {
+      returningCount += 1;
+    }
+  });
+  console.log('[Analytics] Return visitor detection: fingerprints:', returningFingerprints.size, 'returning sessions:', returningCount, 'of', uniqueSessions, '| multi-day fingerprints:', Array.from(fingerprintDays.values()).filter(d => d.size > 1).length);
   const newCount = Math.max(uniqueSessions - returningCount, 0);
   const totalForNR = Math.max(uniqueSessions, 1);
 
@@ -1191,6 +1341,8 @@ export function computeAnalytics(events: RawEvent[], period: string): ComputedAn
         returningPct: parseFloat(((returningCount / totalForNR) * 100).toFixed(1)),
       },
     },
+    linkClicks,
+    sectionViews,
   };
 }
 

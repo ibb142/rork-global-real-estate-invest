@@ -283,9 +283,11 @@ ALTER TABLE analytics_events ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS analytics_select_own ON analytics_events;
 DROP POLICY IF EXISTS analytics_select_admin ON analytics_events;
 DROP POLICY IF EXISTS analytics_insert_auth ON analytics_events;
-CREATE POLICY analytics_select_own ON analytics_events FOR SELECT USING (auth.uid()=user_id);
+DROP POLICY IF EXISTS analytics_insert_anon ON analytics_events;
+CREATE POLICY analytics_select_own ON analytics_events FOR SELECT USING (auth.uid()=user_id OR user_id IS NULL);
 CREATE POLICY analytics_select_admin ON analytics_events FOR SELECT USING (public.is_admin());
-CREATE POLICY analytics_insert_auth ON analytics_events FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
+CREATE POLICY analytics_insert_auth ON analytics_events FOR INSERT WITH CHECK (auth.uid() IS NOT NULL OR user_id IS NULL);
+CREATE POLICY analytics_insert_anon ON analytics_events FOR INSERT WITH CHECK (user_id IS NULL AND session_id IS NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_analytics_user ON analytics_events(user_id);
 CREATE INDEX IF NOT EXISTS idx_analytics_timestamp ON analytics_events(timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_analytics_session ON analytics_events(session_id);
@@ -464,7 +466,35 @@ CREATE INDEX IF NOT EXISTS idx_wtx_user ON wallet_transactions(user_id);
 CREATE INDEX IF NOT EXISTS idx_wtx_created ON wallet_transactions(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_wtx_type ON wallet_transactions(type);
 
--- 16. ENABLE REALTIME ON jv_deals
+-- 16. ANALYTICS RPC FUNCTIONS (SECURITY DEFINER — bypasses RLS for admin reads)
+CREATE OR REPLACE FUNCTION public.get_landing_analytics(
+  p_cutoff timestamptz DEFAULT NULL,
+  p_limit integer DEFAULT 50000
+) RETURNS SETOF landing_analytics
+LANGUAGE sql SECURITY DEFINER STABLE
+AS $
+  SELECT * FROM landing_analytics
+  WHERE (p_cutoff IS NULL OR created_at >= p_cutoff)
+  ORDER BY created_at DESC
+  LIMIT p_limit;
+$;
+
+CREATE OR REPLACE FUNCTION public.get_analytics_events(
+  p_cutoff timestamptz DEFAULT NULL,
+  p_limit integer DEFAULT 50000
+) RETURNS SETOF analytics_events
+LANGUAGE sql SECURITY DEFINER STABLE
+AS $
+  SELECT * FROM analytics_events
+  WHERE (p_cutoff IS NULL OR created_at >= p_cutoff)
+  ORDER BY created_at DESC
+  LIMIT p_limit;
+$;
+
+GRANT EXECUTE ON FUNCTION public.get_landing_analytics TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.get_analytics_events TO anon, authenticated;
+
+-- 17. ENABLE REALTIME ON jv_deals
 DO $ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname='supabase_realtime' AND tablename='jv_deals') THEN
     ALTER PUBLICATION supabase_realtime ADD TABLE jv_deals;

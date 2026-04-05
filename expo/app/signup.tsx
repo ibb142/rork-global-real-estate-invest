@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import { IVX_LOGO_SOURCE } from '@/constants/brand';
 import logger from '@/lib/logger';
 import {
   View,
@@ -277,7 +278,7 @@ export default function SignUpScreen() {
     <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
       <View style={styles.logoContainer}>
         <Image
-          source={require('@/assets/images/ivx-logo.png')}
+          source={IVX_LOGO_SOURCE}
           style={styles.logo}
           resizeMode="contain"
         />

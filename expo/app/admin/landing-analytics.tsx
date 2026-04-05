@@ -47,6 +47,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { usePresenceTracker } from '@/lib/realtime-presence';
+import { awsAnalyticsBackup } from '@/lib/aws-analytics-backup';
+import * as Clipboard from 'expo-clipboard';
+import * as Haptics from 'expo-haptics';
 
 type EventSource = 'landing' | 'app' | 'unknown';
 
@@ -124,6 +127,8 @@ interface ComputedAnalytics {
   };
   acquisition?: Array<{ channel: string; sessions: number; leads: number; conversionRate: number; pct: number; color: string }>;
   sessionQuality?: { avgPagesPerSession: number; avgSessionDuration: number; engagedSessionsPct: number; newVsReturning: { new: number; returning: number; newPct: number; returningPct: number } };
+  linkClicks?: Array<{ label: string; destination: string; count: number; location: string; lastClicked: string }>;
+  sectionViews?: Array<{ section: string; count: number; pct: number }>;
 }
 
 function getPeriodCutoff(period: string): Date {
@@ -235,6 +240,31 @@ async function directSupabaseFetch(period: string): Promise<{ events: RawEvent[]
   }
 
   const all = [...landingEvents, ...appEvents].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+  if (all.length === 0) {
+    console.log('[Analytics] Supabase returned 0 events — checking AWS local backup...');
+    try {
+      const awsEvents = await awsAnalyticsBackup.getLocalEvents(period);
+      if (awsEvents.length > 0) {
+        console.log('[Analytics] AWS FAILOVER READ: found', awsEvents.length, 'events in local backup');
+        const awsConverted: RawEvent[] = awsEvents.map(ae => ({
+          id: ae.id,
+          event: ae.event,
+          session_id: ae.session_id,
+          properties: { ...(ae.properties || {}), source: ae.source, platform: ae.platform, ip_address: ae.ip_address },
+          geo: ae.geo as RawEvent['geo'],
+          created_at: ae.created_at,
+          _source: (ae.source === 'landing' ? 'landing' : 'app') as EventSource,
+        }));
+        const awsLanding = awsConverted.filter(e => e._source === 'landing').length;
+        const awsApp = awsConverted.filter(e => e._source === 'app').length;
+        return { events: awsConverted, landingCount: awsLanding, appCount: awsApp };
+      }
+    } catch (awsErr) {
+      console.log('[Analytics] AWS local backup read error:', (awsErr as Error)?.message);
+    }
+  }
+
   return { events: all, landingCount: landingEvents.length, appCount: appEvents.length };
 }
 
@@ -465,7 +495,7 @@ function PulseIndicator({ active }: { active: boolean }) {
 
 export default function LandingAnalyticsScreen() {
   const router = useRouter();
-  const { isAuthenticated, isAdmin, isLoading: authLoading, refreshSession } = useAuth();
+  const { isAuthenticated, isAdmin, isLoading: authLoading, refreshSession, isOwnerIPAccess, userId: authUserId } = useAuth();
   const [period, setPeriod] = useState<PeriodType>('all');
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [directData, setDirectData] = useState<ComputedAnalytics | null>(null);
@@ -480,6 +510,8 @@ export default function LandingAnalyticsScreen() {
     error: string | null;
     lastFetch: string;
   } | null>(null);
+  const [rpcDeploying, setRpcDeploying] = useState<boolean>(false);
+  const [rpcDeployResult, setRpcDeployResult] = useState<string | null>(null);
 
   const presenceState = usePresenceTracker();
 
@@ -489,10 +521,10 @@ export default function LandingAnalyticsScreen() {
   }, [headerAnim]);
 
   useEffect(() => {
-    if (!authLoading && isAuthenticated && !isAdmin) {
+    if (!authLoading && isAuthenticated && !isAdmin && !isOwnerIPAccess) {
       void refreshSession();
     }
-  }, [authLoading, isAuthenticated, isAdmin, refreshSession]);
+  }, [authLoading, isAuthenticated, isAdmin, isOwnerIPAccess, refreshSession]);
 
   const analyticsQuery = useQuery<ComputedAnalytics>({
     queryKey: ['admin.analytics.report', { period }],
@@ -507,22 +539,32 @@ export default function LandingAnalyticsScreen() {
         return buildFallbackAnalytics([], period);
       }
 
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        authState = session ? 'authenticated' : 'anonymous';
-        userId = session?.user?.id ?? null;
-        if (!session) {
-          console.log('[Admin Analytics] No session, attempting refresh...');
-          const { data: refreshed } = await supabase.auth.refreshSession();
-          if (refreshed?.session) {
-            authState = 'authenticated (refreshed)';
-            userId = refreshed.session.user?.id ?? null;
+      if (isOwnerIPAccess && isAuthenticated) {
+        authState = 'owner-ip';
+        userId = authUserId ?? 'owner-ip';
+        console.log('[Admin Analytics] Owner IP access detected — skipping Supabase session check');
+      } else {
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          authState = session ? 'authenticated' : 'anonymous';
+          userId = session?.user?.id ?? null;
+          if (!session) {
+            console.log('[Admin Analytics] No session — attempting refresh (RLS SELECT requires authenticated)...');
+            const { data: refreshed } = await supabase.auth.refreshSession();
+            if (refreshed?.session) {
+              authState = 'authenticated (refreshed)';
+              userId = refreshed.session.user?.id ?? null;
+              console.log('[Admin Analytics] Session refreshed successfully');
+            } else {
+              console.warn('[Admin Analytics] WARNING: No auth session. Analytics data will not load — RLS requires authenticated user for SELECT.');
+              authState = 'anonymous (RLS will block reads)';
+            }
           }
+          console.log('[Admin Analytics] Auth:', authState, '| User:', userId?.substring(0, 8) ?? 'none');
+        } catch (authErr) {
+          authState = 'error';
+          console.error('[Admin Analytics] Auth check failed:', (authErr as Error)?.message);
         }
-        console.log('[Admin Analytics] Auth:', authState, '| User:', userId?.substring(0, 8) ?? 'none');
-      } catch (authErr) {
-        authState = 'error';
-        console.error('[Admin Analytics] Auth check failed:', (authErr as Error)?.message);
       }
 
       let computed: ComputedAnalytics | null = null;
@@ -593,11 +635,11 @@ export default function LandingAnalyticsScreen() {
       setFetchCount(prev => prev + 1);
       return computed;
     },
-    staleTime: 5000,
-    refetchInterval: activeTab === 'live' ? 8000 : 30000,
+    staleTime: 30000,
+    refetchInterval: activeTab === 'live' ? 15000 : 120000,
     retry: 2,
     retryDelay: (attempt) => Math.min(1000 * Math.pow(2, attempt), 10000),
-    gcTime: 15000,
+    gcTime: 60000,
     refetchOnMount: true,
     throwOnError: false,
   });
@@ -688,12 +730,88 @@ export default function LandingAnalyticsScreen() {
     return data.dailyViews.slice(-14).map((d: { date: string; views: number; sessions: number }) => d.views);
   }, [data]);
 
+  const deployRpcFunctions = useCallback(async () => {
+    setRpcDeploying(true);
+    setRpcDeployResult(null);
+    try {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      const rpcSql = `
+CREATE OR REPLACE FUNCTION public.get_landing_analytics(
+  p_cutoff timestamptz DEFAULT NULL,
+  p_limit integer DEFAULT 50000
+) RETURNS SETOF landing_analytics
+LANGUAGE sql SECURITY DEFINER STABLE
+AS $
+  SELECT * FROM landing_analytics
+  WHERE (p_cutoff IS NULL OR created_at >= p_cutoff)
+  ORDER BY created_at DESC
+  LIMIT p_limit;
+$;
+
+CREATE OR REPLACE FUNCTION public.get_analytics_events(
+  p_cutoff timestamptz DEFAULT NULL,
+  p_limit integer DEFAULT 50000
+) RETURNS SETOF analytics_events
+LANGUAGE sql SECURITY DEFINER STABLE
+AS $
+  SELECT * FROM analytics_events
+  WHERE (p_cutoff IS NULL OR created_at >= p_cutoff)
+  ORDER BY created_at DESC
+  LIMIT p_limit;
+$;
+
+GRANT EXECUTE ON FUNCTION public.get_landing_analytics TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.get_analytics_events TO anon, authenticated;
+      `.trim();
+
+      const apiBase = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || '').trim();
+      if (apiBase) {
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          const token = session?.access_token;
+          if (token) {
+            console.log('[Analytics] Trying auto-deploy of RPC functions via API...');
+            const resp = await fetch(`${apiBase}/execute-sql`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+              },
+              body: JSON.stringify({ sql: rpcSql }),
+            });
+            if (resp.ok) {
+              console.log('[Analytics] RPC functions deployed successfully via API');
+              setRpcDeployResult('success');
+              void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              await queryClient.invalidateQueries({ queryKey: ['admin.analytics.report'] });
+              setRpcDeploying(false);
+              return;
+            }
+            console.log('[Analytics] API deploy failed:', resp.status, '- falling back to clipboard');
+          }
+        } catch (apiErr) {
+          console.log('[Analytics] API deploy error:', (apiErr as Error)?.message);
+        }
+      }
+
+      await Clipboard.setStringAsync(rpcSql);
+      setRpcDeployResult('copied');
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      console.log('[Analytics] RPC SQL copied to clipboard for manual deploy');
+    } catch (err) {
+      console.error('[Analytics] Deploy RPC error:', (err as Error)?.message);
+      setRpcDeployResult('error');
+    } finally {
+      setRpcDeploying(false);
+    }
+  }, [queryClient]);
+
   const renderDiagnostics = () => {
     if (!diagnostics) return null;
     const hasIssue = diagnostics.error || (diagnostics.landingCount === 0 && diagnostics.appCount === 0);
     if (!hasIssue) return null;
 
-    const isEmptyTables = diagnostics.landingCount === 0 && diagnostics.appCount === 0 && !diagnostics.error;
+    const isRlsBlocking = diagnostics.error?.includes('RLS') || diagnostics.error?.includes('No events found') || (diagnostics.landingCount === 0 && diagnostics.appCount === 0);
     const borderColor = diagnostics.error ? '#FF6B6B' : '#FFB800';
 
     return (
@@ -710,14 +828,34 @@ export default function LandingAnalyticsScreen() {
           {diagnostics.error && (
             <View style={{ backgroundColor: '#FF6B6B12', borderRadius: 8, padding: 10, marginTop: 4 }}>
               <Text style={{ color: '#FF6B6B', fontSize: 11, fontWeight: '600' as const, lineHeight: 16 }}>
-                {diagnostics.error.length > 120 ? diagnostics.error.substring(0, 120) + '...' : diagnostics.error}
+                {diagnostics.error.length > 200 ? diagnostics.error.substring(0, 200) + '...' : diagnostics.error}
               </Text>
             </View>
           )}
-          {isEmptyTables && (
+          {isRlsBlocking && (
             <View style={{ backgroundColor: '#FFB80012', borderRadius: 8, padding: 10, marginTop: 4 }}>
-              <Text style={{ color: '#FFB800', fontSize: 11, fontWeight: '600' as const }}>No analytics events found</Text>
-              <Text style={{ color: '#FFB800', fontSize: 10, marginTop: 4, lineHeight: 15 }}>• Ensure landing_analytics and analytics_events tables exist{"\n"}• Check RLS policies allow admin SELECT{"\n"}• Deploy landing page with analytics tracking</Text>
+              <Text style={{ color: '#FFB800', fontSize: 11, fontWeight: '700' as const }}>RLS is blocking analytics reads</Text>
+              <Text style={{ color: '#FFB800', fontSize: 10, marginTop: 4, lineHeight: 15 }}>Your data exists in Supabase but RLS policies prevent reading it. Deploy the analytics RPC functions to fix this.</Text>
+              <TouchableOpacity
+                onPress={deployRpcFunctions}
+                disabled={rpcDeploying}
+                style={{
+                  backgroundColor: rpcDeployResult === 'success' ? '#22C55E' : '#FFB800',
+                  borderRadius: 8,
+                  paddingVertical: 10,
+                  paddingHorizontal: 16,
+                  marginTop: 8,
+                  alignItems: 'center',
+                  opacity: rpcDeploying ? 0.6 : 1,
+                }}
+              >
+                <Text style={{ color: '#000', fontSize: 12, fontWeight: '800' as const }}>
+                  {rpcDeploying ? 'Deploying...' : rpcDeployResult === 'success' ? 'Deployed! Refreshing...' : rpcDeployResult === 'copied' ? 'SQL Copied! Paste in Supabase SQL Editor' : 'Deploy Analytics Fix'}
+                </Text>
+              </TouchableOpacity>
+              {rpcDeployResult === 'copied' && (
+                <Text style={{ color: '#97A0AF', fontSize: 9, marginTop: 4, lineHeight: 14 }}>Go to Supabase Dashboard {'>'} SQL Editor {'>'} Paste {'>'} Run. Then pull down to refresh.</Text>
+              )}
             </View>
           )}
           <Text style={{ color: '#C0C7D3', fontSize: 9, marginTop: 2 }}>Updated: {new Date(diagnostics.lastFetch).toLocaleTimeString()}</Text>
@@ -902,6 +1040,139 @@ export default function LandingAnalyticsScreen() {
             )}
           </View>
         </View>
+
+        {data.sessionQuality && (
+          <View style={s.card}>
+            <View style={s.cardHeader}>
+              <RefreshCw size={16} color={SS_PURPLE} />
+              <Text style={s.cardTitle}>New vs Returning</Text>
+            </View>
+            <View style={{ flexDirection: 'row', gap: 12, marginBottom: 12 }}>
+              <View style={{ flex: 1, backgroundColor: '#4A90D912', borderRadius: 12, padding: 14, alignItems: 'center' }}>
+                <Text style={{ fontSize: 24, fontWeight: '900' as const, color: '#4A90D9' }}>{data.sessionQuality.newVsReturning.new}</Text>
+                <Text style={{ fontSize: 11, fontWeight: '600' as const, color: '#5E6C84', marginTop: 2 }}>New Visitors</Text>
+                <Text style={{ fontSize: 10, fontWeight: '700' as const, color: '#4A90D9', marginTop: 2 }}>{data.sessionQuality.newVsReturning.newPct}%</Text>
+              </View>
+              <View style={{ flex: 1, backgroundColor: '#7B61FF12', borderRadius: 12, padding: 14, alignItems: 'center' }}>
+                <Text style={{ fontSize: 24, fontWeight: '900' as const, color: SS_PURPLE }}>{data.sessionQuality.newVsReturning.returning}</Text>
+                <Text style={{ fontSize: 11, fontWeight: '600' as const, color: '#5E6C84', marginTop: 2 }}>Returning</Text>
+                <Text style={{ fontSize: 10, fontWeight: '700' as const, color: SS_PURPLE, marginTop: 2 }}>{data.sessionQuality.newVsReturning.returningPct}%</Text>
+              </View>
+            </View>
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 11, color: '#5E6C84', marginBottom: 4 }}>Avg Pages/Session</Text>
+                <Text style={{ fontSize: 15, fontWeight: '800' as const, color: '#1B2A3D' }}>{data.sessionQuality.avgPagesPerSession}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 11, color: '#5E6C84', marginBottom: 4 }}>Avg Duration</Text>
+                <Text style={{ fontSize: 15, fontWeight: '800' as const, color: '#1B2A3D' }}>{formatSeconds(data.sessionQuality.avgSessionDuration)}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 11, color: '#5E6C84', marginBottom: 4 }}>Engaged</Text>
+                <Text style={{ fontSize: 15, fontWeight: '800' as const, color: SS_GREEN }}>{data.sessionQuality.engagedSessionsPct}%</Text>
+              </View>
+            </View>
+          </View>
+        )}
+
+        {(data.linkClicks ?? []).length > 0 && (
+          <View style={s.card}>
+            <View style={s.cardHeader}>
+              <Crosshair size={16} color={SS_PINK} />
+              <Text style={s.cardTitle}>Link Clicks</Text>
+              <View style={s.cardBadge}>
+                <Text style={s.cardBadgeText}>{(data.linkClicks ?? []).reduce((t, l) => t + l.count, 0)} total</Text>
+              </View>
+            </View>
+            {(data.linkClicks ?? []).slice(0, 15).map((link, i) => {
+              const maxClick = (data.linkClicks ?? [])[0]?.count || 1;
+              const barPct = Math.round((link.count / maxClick) * 100);
+              const locationColors: Record<string, string> = {
+                header: SS_BLUE,
+                hero_cta: SS_GREEN,
+                hero_secondary: '#7B68EE',
+                features_section: SS_ORANGE,
+                investment_types: SS_TEAL,
+                how_it_works: SS_PURPLE,
+                trust_section: '#22C55E',
+                waitlist_form: SS_PINK,
+                unknown: '#97A0AF',
+              };
+              const locColor = locationColors[link.location] || CHART_COLORS[i % CHART_COLORS.length];
+              const timeAgo = (() => {
+                const diff = Math.round((Date.now() - new Date(link.lastClicked).getTime()) / 1000);
+                if (diff < 60) return `${diff}s ago`;
+                if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+                if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+                return `${Math.floor(diff / 86400)}d ago`;
+              })();
+              return (
+                <View key={i} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: i < (data.linkClicks ?? []).length - 1 ? 1 : 0, borderBottomColor: '#F0F3F8', gap: 10 }}>
+                  <View style={{ width: 28, height: 28, borderRadius: 8, backgroundColor: locColor + '15', alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ fontSize: 11, fontWeight: '800' as const, color: locColor }}>{link.count}</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 13, fontWeight: '700' as const, color: '#1B2A3D' }} numberOfLines={1}>{link.label}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3 }}>
+                      <View style={{ backgroundColor: locColor + '18', borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 }}>
+                        <Text style={{ fontSize: 9, fontWeight: '700' as const, color: locColor, textTransform: 'uppercase' as const }}>{link.location.replace(/_/g, ' ')}</Text>
+                      </View>
+                      <Text style={{ fontSize: 10, color: '#97A0AF' }}>{timeAgo}</Text>
+                    </View>
+                    <View style={{ height: 3, backgroundColor: '#F0F3F8', borderRadius: 2, marginTop: 4 }}>
+                      <View style={{ height: 3, borderRadius: 2, backgroundColor: locColor, width: `${Math.max(barPct, 5)}%` as any }} />
+                    </View>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        )}
+
+        {(data.sectionViews ?? []).length > 0 && (
+          <View style={s.card}>
+            <View style={s.cardHeader}>
+              <Layers size={16} color={SS_TEAL} />
+              <Text style={s.cardTitle}>Section Views</Text>
+              <View style={s.cardBadge}>
+                <Text style={s.cardBadgeText}>{(data.sectionViews ?? []).length} sections</Text>
+              </View>
+            </View>
+            {(data.sectionViews ?? []).map((sec, i) => {
+              const maxSec = (data.sectionViews ?? [])[0]?.count || 1;
+              const barPct = Math.round((sec.count / maxSec) * 100);
+              const sectionLabels: Record<string, string> = {
+                hero: 'Hero Banner',
+                features: 'Features Grid',
+                investment_types: 'Investment Types',
+                how_it_works: 'How It Works',
+                trust_security: 'Trust & Security',
+                waitlist_form: 'Waitlist Form',
+                footer: 'Footer',
+              };
+              return (
+                <View key={i} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: i < (data.sectionViews ?? []).length - 1 ? 1 : 0, borderBottomColor: '#F0F3F8', gap: 10 }}>
+                  <View style={{ width: 28, height: 28, borderRadius: 8, backgroundColor: CHART_COLORS[i % CHART_COLORS.length] + '15', alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ fontSize: 11, fontWeight: '800' as const, color: CHART_COLORS[i % CHART_COLORS.length] }}>{i + 1}</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Text style={{ fontSize: 13, fontWeight: '700' as const, color: '#1B2A3D' }}>{sectionLabels[sec.section] || sec.section}</Text>
+                      <Text style={{ fontSize: 12, fontWeight: '800' as const, color: CHART_COLORS[i % CHART_COLORS.length] }}>{sec.count}</Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                      <View style={{ flex: 1, height: 4, backgroundColor: '#F0F3F8', borderRadius: 2 }}>
+                        <View style={{ height: 4, borderRadius: 2, backgroundColor: CHART_COLORS[i % CHART_COLORS.length], width: `${Math.max(barPct, 5)}%` as any }} />
+                      </View>
+                      <Text style={{ fontSize: 10, fontWeight: '700' as const, color: '#97A0AF' }}>{sec.pct}%</Text>
+                    </View>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        )}
 
         <View style={s.card}>
           <View style={s.cardHeader}>
@@ -1232,8 +1503,8 @@ export default function LandingAnalyticsScreen() {
       }
     },
     enabled: activeTab === 'brain',
-    staleTime: 5000,
-    refetchInterval: activeTab === 'brain' ? 3000 : false,
+    staleTime: 30000,
+    refetchInterval: activeTab === 'brain' ? 30000 : false,
   });
 
   const learnMutation = useMutation({

@@ -1,31 +1,14 @@
-import { DebtAcquisitionProperty, DebtTokenPurchase, FirstLienInvestment, DebtAcquisitionStats } from '@/types';
+import type { DebtAcquisitionProperty, DebtTokenPurchase, FirstLienInvestment, DebtAcquisitionStats } from '@/types';
 
-export const IPX_MORTGAGE_STRATEGY = {
-  name: 'IVXHOLDINGS Tokenized Mortgage',
-  description: 'Property owners bring clean (debt-free) properties. IVXHOLDINGS-LUXURY-HOLDINGS LLC provides 85% LTV financing, records a first lien mortgage, and tokenizes it for investors to purchase 24/7.',
-  ltvPercent: 0.85,
-  closingCostPercent: 0.03,
-  ipxOriginationFee: 0.025,
-  mortgageInterestRate: 7.5,
-  mortgageTermMonths: 360,
-  transactionFee: 0.025,
-  managementFee: 0.01,
-};
+export { IPX_MORTGAGE_STRATEGY } from '@/constants/platform-config';
 
 export const debtAcquisitionProperties: DebtAcquisitionProperty[] = [];
-
 export const mockDebtTokenPurchases: DebtTokenPurchase[] = [];
-
 export const mockFirstLienInvestments: FirstLienInvestment[] = [];
 
 export const debtAcquisitionStats: DebtAcquisitionStats = {
-  totalPropertiesListed: 0,
-  totalDebtAcquired: 0,
-  totalTokenized: 0,
-  firstLiensSecured: 0,
-  totalInvestorReturns: 0,
-  averageYield: 0,
-  averageLTV: 0,
+  totalPropertiesListed: 0, totalDebtAcquired: 0, totalTokenized: 0,
+  firstLiensSecured: 0, totalInvestorReturns: 0, averageYield: 0, averageLTV: 0,
 };
 
 export const getDebtPropertyById = (id: string): DebtAcquisitionProperty | undefined => {
@@ -41,21 +24,15 @@ export const getFirstLienSecuredProperties = (): DebtAcquisitionProperty[] => {
 };
 
 export const calculateTokenization = (property: DebtAcquisitionProperty, tokens: number) => {
+  const { IPX_MORTGAGE_STRATEGY } = require('@/constants/platform-config');
   const subtotal = tokens * property.pricePerToken;
   const ipxFee = subtotal * IPX_MORTGAGE_STRATEGY.transactionFee;
   const netInvestment = subtotal - ipxFee;
   const ownershipPercent = (tokens / property.totalTokens) * 100;
   const projectedAnnualReturn = netInvestment * (property.projectedYield / 100);
-
   return {
-    tokens,
-    pricePerToken: property.pricePerToken,
-    subtotal,
-    ipxFee,
-    netInvestment,
-    ownershipPercent,
-    projectedAnnualReturn,
-    projectedMonthlyReturn: projectedAnnualReturn / 12,
+    tokens, pricePerToken: property.pricePerToken, subtotal, ipxFee, netInvestment,
+    ownershipPercent, projectedAnnualReturn, projectedMonthlyReturn: projectedAnnualReturn / 12,
     lienPosition: property.ipxLienPosition,
   };
 };

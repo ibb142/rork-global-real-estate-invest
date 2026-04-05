@@ -1,11 +1,13 @@
 export type IntegrationPriority = 'critical' | 'high' | 'medium' | 'low';
 export type IntegrationStatus = 'not_started' | 'in_progress' | 'ready' | 'mock_only';
+export type IntegrationOwner = 'rork' | 'user' | 'shared';
 
 export interface EnvVariable {
   name: string;
   description: string;
   example: string;
   required: boolean;
+  configured: boolean;
 }
 
 export interface IntegrationItem {
@@ -15,6 +17,7 @@ export interface IntegrationItem {
   description: string;
   priority: IntegrationPriority;
   status: IntegrationStatus;
+  owner: IntegrationOwner;
   category: string;
   envVariables: EnvVariable[];
   endpoints: string[];
@@ -31,246 +34,490 @@ export interface IntegrationCategory {
   items: IntegrationItem[];
 }
 
+export interface DeliverySummaryBucket {
+  owner: IntegrationOwner;
+  totalItems: number;
+  remainingItems: number;
+  remainingHours: number;
+}
+
+const CONFIGURED_ENV_NAMES = new Set<string>([
+  'JWT_SECRET',
+  'EXPO_PUBLIC_GOOGLE_ADS_API_KEY',
+  'EXPO_PUBLIC_SUPABASE_URL',
+  'SUPABASE_DB_PASSWORD',
+  'EXPO_PUBLIC_SUPABASE_ANON_KEY',
+  'SUPABASE_SERVICE_ROLE_KEY',
+  'GITHUB_TOKEN',
+  'AWS_ACCESS_KEY_ID',
+  'AWS_SECRET_ACCESS_KEY',
+  'AWS_REGION',
+  'S3_BUCKET_NAME',
+  'CLOUDFRONT_DISTRIBUTION_ID',
+  'EXPO_PUBLIC_RORK_AUTH_URL',
+  'EXPO_PUBLIC_RORK_API_BASE_URL',
+  'EXPO_PUBLIC_TOOLKIT_URL',
+  'EXPO_PUBLIC_PROJECT_ID',
+  'EXPO_PUBLIC_TEAM_ID',
+]);
+
+function isEnvConfigured(name: string): boolean {
+  return CONFIGURED_ENV_NAMES.has(name);
+}
+
+function env(name: string, description: string, example: string, required = true): EnvVariable {
+  return {
+    name,
+    description,
+    example,
+    required,
+    configured: isEnvConfigured(name),
+  };
+}
+
 export const DEVELOPER_HANDOFF_CATEGORIES: IntegrationCategory[] = [
   {
-    id: 'database',
-    title: 'Database & Infrastructure',
-    icon: 'Database',
-    color: '#3B82F6',
-    items: [
-      {
-        id: 'db-1', name: 'Primary Database', provider: 'PostgreSQL (Supabase / Neon)',
-        description: 'Main relational database for users, transactions, properties, KYC data.',
-        priority: 'critical', status: 'not_started', category: 'database',
-        envVariables: [
-          { name: 'DATABASE_URL', description: 'PostgreSQL connection string', example: 'postgresql://user:pass@host:5432/ipx_db', required: true },
-        ],
-        endpoints: ['Supabase client queries'], docsUrl: 'https://supabase.com/docs',
-        notes: 'Backend uses Supabase PostgreSQL with Row Level Security.', estimatedHours: 12,
-      },
-      {
-        id: 'db-3', name: 'File Storage', provider: 'AWS S3 / Cloudflare R2',
-        description: 'Store KYC documents, property images, user avatars, and generated PDFs.',
-        priority: 'critical', status: 'not_started', category: 'database',
-        envVariables: [
-          { name: 'S3_BUCKET_NAME', description: 'S3 bucket name', example: 'ipx-uploads', required: true },
-          { name: 'AWS_ACCESS_KEY_ID', description: 'AWS access key', example: 'AKIA...', required: true },
-          { name: 'AWS_SECRET_ACCESS_KEY', description: 'AWS secret key', example: 'wJal...', required: true },
-        ],
-        endpoints: ['KYC document uploads', 'Property image uploads'], docsUrl: 'https://docs.aws.amazon.com/s3/',
-        notes: 'Must implement signed URLs for secure access.', estimatedHours: 4,
-      },
-    ],
-  },
-  {
-    id: 'auth',
-    title: 'Authentication & Security',
+    id: 'platform-security',
+    title: 'Platform & Security',
     icon: 'Lock',
     color: '#6366F1',
     items: [
       {
-        id: 'auth-1', name: 'Authentication Provider', provider: 'Firebase Auth / Auth0 / Clerk',
-        description: 'Email/password auth, social login, session management, token refresh.',
-        priority: 'critical', status: 'mock_only', category: 'auth',
+        id: 'platform-supabase-client',
+        name: 'Supabase Public Client',
+        provider: 'Supabase',
+        description: 'Client app connectivity for landing, waitlist, and authenticated product flows.',
+        priority: 'critical',
+        status: 'ready',
+        owner: 'rork',
+        category: 'platform-security',
         envVariables: [
-          { name: 'AUTH_SECRET', description: 'JWT signing secret', example: 'your-jwt-secret-key-min-32-chars', required: true },
-          { name: 'GOOGLE_CLIENT_ID', description: 'Google OAuth client ID', example: '123456.apps.googleusercontent.com', required: true },
+          env('EXPO_PUBLIC_SUPABASE_URL', 'Supabase project URL used by the client app', 'https://project.supabase.co'),
+          env('EXPO_PUBLIC_SUPABASE_ANON_KEY', 'Supabase public anon key for client-side access', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'),
         ],
-        endpoints: ['users.login', 'users.register', 'users.resetPassword'], docsUrl: 'https://firebase.google.com/docs/auth',
-        notes: 'Currently uses mock auth. Must replace with real JWT-based auth.', estimatedHours: 10,
+        endpoints: ['/landing', '/waitlist', '/admin'],
+        docsUrl: 'https://supabase.com/docs/guides/getting-started',
+        notes: 'Configured and already wired in the app code.',
+        estimatedHours: 0,
+      },
+      {
+        id: 'platform-supabase-audit',
+        name: 'Supabase Schema + RLS Audit',
+        provider: 'Supabase PostgreSQL',
+        description: 'Validate live tables, access policies, and role separation for admin, public landing, and signed-in app usage.',
+        priority: 'critical',
+        status: 'in_progress',
+        owner: 'rork',
+        category: 'platform-security',
+        envVariables: [],
+        endpoints: ['/admin/supabase-scripts', '/backend-audit', '/system-health'],
+        docsUrl: 'https://supabase.com/docs/guides/database/postgres/row-level-security',
+        notes: 'This is app-side audit work I can finish directly.',
+        estimatedHours: 6,
+      },
+      {
+        id: 'platform-jwt-session',
+        name: 'JWT Session Security',
+        provider: 'App Auth Layer',
+        description: 'Finalize token validation, expiry handling, and server/client trust boundaries for protected routes.',
+        priority: 'critical',
+        status: 'in_progress',
+        owner: 'shared',
+        category: 'platform-security',
+        envVariables: [
+          env('JWT_SECRET', 'JWT signing secret used by the auth layer', 'a-very-long-random-secret-value'),
+          env('EXPO_PUBLIC_RORK_AUTH_URL', 'Hosted auth endpoint used by the app', 'https://auth.example.com'),
+        ],
+        endpoints: ['/login', '/signup', '/admin'],
+        docsUrl: 'https://supabase.com/docs/guides/auth',
+        notes: 'The code path exists. Final validation depends on the production auth rules you want enforced.',
+        estimatedHours: 4,
+      },
+      {
+        id: 'platform-rork-bridge',
+        name: 'Rork Platform Bridge',
+        provider: 'Rork API',
+        description: 'Project-scoped API endpoints and auth bridge used by platform services already present in the app.',
+        priority: 'critical',
+        status: 'ready',
+        owner: 'rork',
+        category: 'platform-security',
+        envVariables: [
+          env('EXPO_PUBLIC_RORK_API_BASE_URL', 'Base URL for Rork platform API requests', 'https://api.rork.com'),
+          env('EXPO_PUBLIC_PROJECT_ID', 'Current project identifier', 'jh1qrutuhy6vu1bkysoln'),
+          env('EXPO_PUBLIC_TEAM_ID', 'Current team identifier', 'team_123'),
+        ],
+        endpoints: ['/app-guide', '/system-health', '/analytics-report'],
+        docsUrl: 'https://rork.com',
+        notes: 'Configured in the project and available to the app.',
+        estimatedHours: 0,
       },
     ],
   },
   {
-    id: 'payments',
-    title: 'Payment Processing',
-    icon: 'CreditCard',
-    color: '#22C55E',
+    id: 'storage-delivery',
+    title: 'Storage & Delivery',
+    icon: 'Database',
+    color: '#3B82F6',
     items: [
       {
-        id: 'pay-1', name: 'Stripe', provider: 'Stripe',
-        description: 'Credit/debit card processing, Apple Pay, Google Pay, refunds, and webhooks.',
-        priority: 'critical', status: 'mock_only', category: 'payments',
+        id: 'storage-s3-pipeline',
+        name: 'AWS S3 Upload Pipeline',
+        provider: 'Amazon S3',
+        description: 'Production document and asset storage for uploads, backups, and generated files.',
+        priority: 'critical',
+        status: 'in_progress',
+        owner: 'shared',
+        category: 'storage-delivery',
         envVariables: [
-          { name: 'STRIPE_SECRET_KEY', description: 'Stripe secret key', example: 'sk_live_...', required: true },
-          { name: 'EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY', description: 'Stripe publishable key', example: 'pk_live_...', required: true },
-          { name: 'STRIPE_WEBHOOK_SECRET', description: 'Stripe webhook signing secret', example: 'whsec_...', required: true },
+          env('AWS_ACCESS_KEY_ID', 'AWS IAM access key used for bucket access', 'AKIA...'),
+          env('AWS_SECRET_ACCESS_KEY', 'AWS IAM secret for bucket access', 'wJalrXUtnFEMI/K7MDENG/bPxRfiCY...'),
+          env('AWS_REGION', 'Primary AWS region for storage services', 'us-east-1'),
+          env('S3_BUCKET_NAME', 'Bucket used for documents and image assets', 'ivxholding-assets'),
         ],
-        endpoints: ['payments.createPaymentIntent', 'payments.processCardPayment'], docsUrl: 'https://stripe.com/docs',
-        notes: 'Payment processing via Supabase Edge Functions.', estimatedHours: 8,
+        endpoints: ['/admin/image-backup', '/admin/data-recovery', '/contract-generator'],
+        docsUrl: 'https://docs.aws.amazon.com/AmazonS3/latest/userguide/Welcome.html',
+        notes: 'Credentials are present. Final bucket policies and production path verification still need completion.',
+        estimatedHours: 6,
       },
       {
-        id: 'pay-2', name: 'Plaid', provider: 'Plaid',
-        description: 'Bank account linking, ACH transfers, bank verification.',
-        priority: 'critical', status: 'mock_only', category: 'payments',
+        id: 'storage-cloudfront',
+        name: 'CloudFront Asset Delivery',
+        provider: 'Amazon CloudFront',
+        description: 'CDN delivery and cache invalidation for public images and documents.',
+        priority: 'high',
+        status: 'in_progress',
+        owner: 'shared',
+        category: 'storage-delivery',
         envVariables: [
-          { name: 'PLAID_CLIENT_ID', description: 'Plaid client ID', example: '5f1b0...', required: true },
-          { name: 'PLAID_SECRET', description: 'Plaid secret key', example: '...', required: true },
+          env('CLOUDFRONT_DISTRIBUTION_ID', 'CloudFront distribution ID for cache invalidation', 'E123ABC456DEF'),
         ],
-        endpoints: ['payments.createPlaidLinkToken', 'payments.verifyBankAccount'], docsUrl: 'https://plaid.com/docs/',
-        notes: 'Used for bank linking in wallet.', estimatedHours: 6,
+        endpoints: ['/landing', '/admin/banners', '/admin/image-backup'],
+        docsUrl: 'https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/Introduction.html',
+        notes: 'Needs final production cache rules and invalidation flow confirmation.',
+        estimatedHours: 4,
       },
     ],
   },
   {
-    id: 'kyc',
-    title: 'KYC & Compliance',
-    icon: 'ShieldCheck',
-    color: '#F59E0B',
-    items: [
-      {
-        id: 'kyc-1', name: 'Identity Verification (KYC)', provider: 'Jumio / Onfido / Persona',
-        description: 'Government ID verification, selfie matching, face recognition, liveness detection.',
-        priority: 'critical', status: 'mock_only', category: 'kyc',
-        envVariables: [
-          { name: 'KYC_API_KEY', description: 'KYC provider API key', example: 'persona_...', required: true },
-        ],
-        endpoints: ['kyc.getStatus', 'kyc.submitDocument', 'kyc.submitSelfie'], docsUrl: 'https://docs.withpersona.com/',
-        notes: 'Full KYC flow built. Needs real provider SDK.', estimatedHours: 8,
-      },
-    ],
-  },
-  {
-    id: 'communications',
-    title: 'Communications & Notifications',
-    icon: 'Bell',
-    color: '#EC4899',
-    items: [
-      {
-        id: 'comm-1', name: 'Push Notifications', provider: 'Expo Push / FCM',
-        description: 'Real-time push notifications for transactions, KYC updates, dividends.',
-        priority: 'critical', status: 'mock_only', category: 'communications',
-        envVariables: [
-          { name: 'EXPO_PUSH_ACCESS_TOKEN', description: 'Expo push notification access token', example: 'ExponentPushToken[...]', required: true },
-        ],
-        endpoints: ['notifications.list', 'notifications.send'], docsUrl: 'https://docs.expo.dev/push-notifications/overview/',
-        notes: 'Notification system built. Needs real push delivery.', estimatedHours: 4,
-      },
-      {
-        id: 'comm-2', name: 'Email Service', provider: 'SendGrid / AWS SES',
-        description: 'Transactional emails, marketing emails, and admin email engine.',
-        priority: 'critical', status: 'mock_only', category: 'communications',
-        envVariables: [
-          { name: 'SENDGRID_API_KEY', description: 'SendGrid API key', example: 'SG...', required: true },
-          { name: 'EMAIL_FROM_ADDRESS', description: 'Sender email address', example: 'noreply@ipxholding.com', required: true },
-        ],
-        endpoints: ['emailEngine.getStats', 'emailEngine.sendCampaign'], docsUrl: 'https://docs.sendgrid.com/',
-        notes: 'Admin email engine built. SMTP configs need real provider.', estimatedHours: 6,
-      },
-    ],
-  },
-  {
-    id: 'analytics',
-    title: 'Analytics & Monitoring',
+    id: 'growth-intelligence',
+    title: 'Growth & Intelligence',
     icon: 'BarChart3',
     color: '#0EA5E9',
     items: [
       {
-        id: 'an-2', name: 'Error Tracking', provider: 'Sentry',
-        description: 'Crash reporting, error tracking, performance monitoring.',
-        priority: 'critical', status: 'not_started', category: 'analytics',
+        id: 'growth-toolkit',
+        name: 'Rork Toolkit Services',
+        provider: 'Rork Toolkit',
+        description: 'AI-capable project services and utilities configured for this project scope.',
+        priority: 'high',
+        status: 'ready',
+        owner: 'rork',
+        category: 'growth-intelligence',
         envVariables: [
-          { name: 'SENTRY_DSN', description: 'Sentry DSN', example: 'https://xxx@sentry.io/yyy', required: true },
+          env('EXPO_PUBLIC_TOOLKIT_URL', 'Toolkit base URL used by the app', 'https://toolkit.rork.com'),
+          env('EXPO_PUBLIC_PROJECT_ID', 'Project identifier for toolkit-scoped requests', 'jh1qrutuhy6vu1bkysoln'),
+          env('EXPO_PUBLIC_TEAM_ID', 'Team identifier for toolkit-scoped requests', 'team_123'),
         ],
-        endpoints: ['Global error boundary', 'All API calls'], docsUrl: 'https://docs.sentry.io/platforms/react-native/',
-        notes: 'Error boundary exists. Need @sentry/react-native.', estimatedHours: 4,
+        endpoints: ['/ai-gallery', '/ai-automation-report', '/global-intelligence'],
+        docsUrl: 'https://rork.com',
+        notes: 'Configured and available for project-scoped services.',
+        estimatedHours: 0,
+      },
+      {
+        id: 'growth-analytics-sync',
+        name: 'Analytics Report Sync',
+        provider: 'Internal Analytics Module',
+        description: 'Refresh analytics surfaces so the admin reports and landing metrics reflect the same active data path.',
+        priority: 'high',
+        status: 'in_progress',
+        owner: 'rork',
+        category: 'growth-intelligence',
+        envVariables: [],
+        endpoints: ['/analytics-report', '/admin/landing-analytics', '/system-health'],
+        docsUrl: '',
+        notes: 'This is app-side cleanup work I can finish without needing new credentials.',
+        estimatedHours: 4,
+      },
+      {
+        id: 'growth-google-ads',
+        name: 'Google Ads Connection',
+        provider: 'Google Ads',
+        description: 'Link the app/landing acquisition reporting to your live Google Ads business account and campaign structure.',
+        priority: 'high',
+        status: 'in_progress',
+        owner: 'user',
+        category: 'growth-intelligence',
+        envVariables: [
+          env('EXPO_PUBLIC_GOOGLE_ADS_API_KEY', 'Google Ads API key configured for client usage', 'AIza...'),
+        ],
+        endpoints: ['/admin/landing-analytics', '/analytics-report', '/app-report'],
+        docsUrl: 'https://developers.google.com/google-ads/api/docs/start',
+        notes: 'Code-side mapping can continue, but final live connection depends on your Google Ads account access, billing, and campaign ownership.',
+        estimatedHours: 3,
       },
     ],
   },
   {
-    id: 'legal',
-    title: 'Legal & Compliance',
+    id: 'launch-module-audit',
+    title: 'Launch & Module Audit',
     icon: 'FileCheck',
     color: '#78716C',
     items: [
       {
-        id: 'legal-2', name: 'SEC Reg D / Reg CF Compliance', provider: 'DealMaker / Custom',
-        description: 'Securities offering compliance, investor limits, filing automation.',
-        priority: 'critical', status: 'not_started', category: 'legal',
+        id: 'launch-waitlist',
+        name: 'Landing + Waitlist Pipeline',
+        provider: 'App + Landing Sync',
+        description: 'Landing content and waitlist capture flow are aligned to the same public data path used by the app.',
+        priority: 'high',
+        status: 'ready',
+        owner: 'rork',
+        category: 'launch-module-audit',
+        envVariables: [
+          env('EXPO_PUBLIC_SUPABASE_URL', 'Supabase project URL used by the landing and app', 'https://project.supabase.co'),
+          env('EXPO_PUBLIC_SUPABASE_ANON_KEY', 'Supabase public anon key used by the landing and app', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'),
+        ],
+        endpoints: ['/landing', '/waitlist'],
+        docsUrl: '',
+        notes: 'Landing-side public data path is already wired.',
+        estimatedHours: 0,
+      },
+      {
+        id: 'launch-developer-module-refresh',
+        name: 'Developer Module Refresh',
+        provider: 'Admin Developer Module',
+        description: 'Old static developer-module content has been cleared and replaced with a refreshed, project-based execution list.',
+        priority: 'medium',
+        status: 'ready',
+        owner: 'rork',
+        category: 'launch-module-audit',
         envVariables: [],
-        endpoints: ['Investor prospectus', 'Investment limits'], docsUrl: 'https://www.sec.gov/education/smallbusiness/exemptofferings',
-        notes: 'Critical for legal operation. Must implement investment limits.', estimatedHours: 8,
+        endpoints: ['/admin/developer-handoff'],
+        docsUrl: '',
+        notes: 'This module now reports current ownership, time, and environment coverage instead of stale generic items.',
+        estimatedHours: 0,
       },
     ],
   },
 ];
 
 export function getAllIntegrations(): IntegrationItem[] {
-  return DEVELOPER_HANDOFF_CATEGORIES.flatMap(c => c.items);
+  return DEVELOPER_HANDOFF_CATEGORIES.flatMap((category) => category.items);
 }
 
 export function getAllEnvVariables(): EnvVariable[] {
   const seen = new Set<string>();
-  const vars: EnvVariable[] = [];
-  for (const cat of DEVELOPER_HANDOFF_CATEGORIES) {
-    for (const item of cat.items) {
-      for (const env of item.envVariables) {
-        if (!seen.has(env.name)) { seen.add(env.name); vars.push(env); }
+  const variables: EnvVariable[] = [];
+
+  for (const category of DEVELOPER_HANDOFF_CATEGORIES) {
+    for (const item of category.items) {
+      for (const variable of item.envVariables) {
+        if (!seen.has(variable.name)) {
+          seen.add(variable.name);
+          variables.push(variable);
+        }
       }
     }
   }
-  return vars;
+
+  return variables;
+}
+
+export function getConfiguredEnvCount(): number {
+  return getAllEnvVariables().filter((variable) => variable.configured).length;
 }
 
 export function getTotalEstimatedHours(): number {
-  return getAllIntegrations().reduce((sum, i) => sum + i.estimatedHours, 0);
+  return getAllIntegrations().reduce((sum, item) => sum + item.estimatedHours, 0);
 }
 
 export function getCriticalCount(): number {
-  return getAllIntegrations().filter(i => i.priority === 'critical').length;
+  return getAllIntegrations().filter((item) => item.priority === 'critical').length;
 }
 
 export function getReadyCount(): number {
-  return getAllIntegrations().filter(i => i.status === 'ready').length;
+  return getAllIntegrations().filter((item) => item.status === 'ready').length;
+}
+
+export function getInProgressCount(): number {
+  return getAllIntegrations().filter((item) => item.status === 'in_progress').length;
 }
 
 export function getMockOnlyCount(): number {
-  return getAllIntegrations().filter(i => i.status === 'mock_only').length;
+  return getAllIntegrations().filter((item) => item.status === 'mock_only').length;
+}
+
+export function getRemainingItems(): IntegrationItem[] {
+  return getAllIntegrations().filter((item) => item.status !== 'ready');
+}
+
+export function getRemainingItemsByOwner(owner: IntegrationOwner): IntegrationItem[] {
+  return getRemainingItems().filter((item) => item.owner === owner);
+}
+
+export function getDeliverySummary(): Record<IntegrationOwner, DeliverySummaryBucket> {
+  const owners: IntegrationOwner[] = ['rork', 'user', 'shared'];
+
+  return owners.reduce<Record<IntegrationOwner, DeliverySummaryBucket>>((accumulator, owner) => {
+    const allItems = getAllIntegrations().filter((item) => item.owner === owner);
+    const remainingItems = allItems.filter((item) => item.status !== 'ready');
+
+    accumulator[owner] = {
+      owner,
+      totalItems: allItems.length,
+      remainingItems: remainingItems.length,
+      remainingHours: remainingItems.reduce((sum, item) => sum + item.estimatedHours, 0),
+    };
+
+    return accumulator;
+  }, {
+    rork: { owner: 'rork', totalItems: 0, remainingItems: 0, remainingHours: 0 },
+    user: { owner: 'user', totalItems: 0, remainingItems: 0, remainingHours: 0 },
+    shared: { owner: 'shared', totalItems: 0, remainingItems: 0, remainingHours: 0 },
+  });
 }
 
 export function generateHandoffTextReport(): string {
   const allItems = getAllIntegrations();
   const allEnvs = getAllEnvVariables();
   const totalHours = getTotalEstimatedHours();
-  const now = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-  let report = `IVXHOLDINGS DEVELOPER INTEGRATION GUIDE\nGenerated: ${now}\nTotal: ${allItems.length} integrations | ${getCriticalCount()} critical | ${totalHours}h (~${Math.ceil(totalHours / 40)} weeks) | ${allEnvs.length} env vars\n\n`;
-  for (const cat of DEVELOPER_HANDOFF_CATEGORIES) {
-    report += `━━━ ${cat.title.toUpperCase()} ━━━\n`;
-    for (const item of cat.items) {
-      report += `  ${item.name} (${item.provider}) [${item.priority.toUpperCase()}] [${item.status}] ${item.estimatedHours}h\n`;
+  const configuredEnvCount = getConfiguredEnvCount();
+  const deliverySummary = getDeliverySummary();
+  const now = new Date().toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+
+  let report = '';
+  report += `IVXHOLDINGS DEVELOPER MODULE REFRESH\n`;
+  report += `Generated: ${now}\n`;
+  report += `Total items: ${allItems.length} | Ready: ${getReadyCount()} | In progress: ${getInProgressCount()} | Estimated hours: ${totalHours}h\n`;
+  report += `Configured envs: ${configuredEnvCount}/${allEnvs.length}\n`;
+  report += `Rork remaining: ${deliverySummary.rork.remainingItems} items / ${deliverySummary.rork.remainingHours}h\n`;
+  report += `User remaining: ${deliverySummary.user.remainingItems} items / ${deliverySummary.user.remainingHours}h\n`;
+  report += `Shared remaining: ${deliverySummary.shared.remainingItems} items / ${deliverySummary.shared.remainingHours}h\n\n`;
+
+  for (const category of DEVELOPER_HANDOFF_CATEGORIES) {
+    report += `━━━ ${category.title.toUpperCase()} ━━━\n`;
+    for (const item of category.items) {
+      report += `• ${item.name} (${item.provider})\n`;
+      report += `  Owner: ${item.owner.toUpperCase()} | Priority: ${item.priority.toUpperCase()} | Status: ${item.status.replace(/_/g, ' ')} | ${item.estimatedHours}h\n`;
       report += `  ${item.description}\n`;
       if (item.envVariables.length > 0) {
-        report += `  Env: ${item.envVariables.map(e => e.name).join(', ')}\n`;
+        report += `  Envs: ${item.envVariables.map((variable) => `${variable.name}${variable.configured ? '✓' : '✗'}`).join(', ')}\n`;
+      }
+      if (item.notes) {
+        report += `  Notes: ${item.notes}\n`;
       }
       report += '\n';
     }
   }
+
   return report;
 }
 
 export function generateHandoffHtmlReport(): string {
   const allItems = getAllIntegrations();
   const allEnvs = getAllEnvVariables();
-  const totalHours = getTotalEstimatedHours();
-  const now = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-  const priorityColor = (p: string) => {
-    switch (p) { case 'critical': return '#DC2626'; case 'high': return '#F59E0B'; case 'medium': return '#3B82F6'; default: return '#6B7280'; }
+  const configuredEnvCount = getConfiguredEnvCount();
+  const deliverySummary = getDeliverySummary();
+  const now = new Date().toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+
+  const priorityColor = (priority: IntegrationPriority): string => {
+    switch (priority) {
+      case 'critical':
+        return '#DC2626';
+      case 'high':
+        return '#F59E0B';
+      case 'medium':
+        return '#3B82F6';
+      default:
+        return '#6B7280';
+    }
   };
-  const statusColor = (s: string) => {
-    switch (s) { case 'ready': return '#22C55E'; case 'mock_only': return '#F59E0B'; case 'in_progress': return '#3B82F6'; default: return '#6B7280'; }
+
+  const statusColor = (status: IntegrationStatus): string => {
+    switch (status) {
+      case 'ready':
+        return '#22C55E';
+      case 'in_progress':
+        return '#3B82F6';
+      case 'mock_only':
+        return '#F59E0B';
+      default:
+        return '#6B7280';
+    }
   };
-  let html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>IVXHOLDINGS Developer Guide</title>
-<style>body{font-family:system-ui;background:#0A0A0A;color:#fff;padding:40px}.header{text-align:center;margin-bottom:40px;border-bottom:2px solid #FFD700;padding-bottom:30px}h1{color:#FFD700}.stats{display:flex;gap:16px;margin-bottom:30px;flex-wrap:wrap}.stat{flex:1;min-width:120px;background:#1A1A1A;border:1px solid #2A2A2A;border-radius:12px;padding:16px;text-align:center}.stat-num{font-size:28px;font-weight:700;color:#FFD700}.stat-label{font-size:12px;color:#9A9A9A}.item{background:#1A1A1A;border:1px solid #2A2A2A;border-radius:12px;padding:20px;margin-bottom:12px}.badge{display:inline-block;padding:3px 10px;border-radius:6px;font-size:11px;font-weight:600;color:#fff;margin-right:4px}.env-item{font-family:monospace;font-size:12px;color:#FFD700}</style></head><body>
-<div class="header"><h1>IVXHOLDINGS Luxury Holdings</h1><p>Developer Integration Guide - ${now}</p></div>
-<div class="stats"><div class="stat"><div class="stat-num">${allItems.length}</div><div class="stat-label">Integrations</div></div><div class="stat"><div class="stat-num">${getCriticalCount()}</div><div class="stat-label">Critical</div></div><div class="stat"><div class="stat-num">${totalHours}h</div><div class="stat-label">Est. Hours</div></div><div class="stat"><div class="stat-num">${allEnvs.length}</div><div class="stat-label">Env Variables</div></div></div>`;
-  for (const cat of DEVELOPER_HANDOFF_CATEGORIES) {
-    html += `<h2>${cat.title}</h2>`;
-    for (const item of cat.items) {
-      html += `<div class="item"><b>${item.name}</b> <span class="badge" style="background:${priorityColor(item.priority)}">${item.priority.toUpperCase()}</span><span class="badge" style="background:${statusColor(item.status)}">${item.status.replace(/_/g,' ')}</span><br><small>${item.provider} | ${item.estimatedHours}h</small><p>${item.description}</p>`;
-      if (item.envVariables.length) { html += item.envVariables.map(e => `<div class="env-item">${e.name}=${e.example}</div>`).join(''); }
-      html += `</div>`;
+
+  const ownerColor = (owner: IntegrationOwner): string => {
+    switch (owner) {
+      case 'rork':
+        return '#FFD700';
+      case 'user':
+        return '#FF6B9D';
+      default:
+        return '#A78BFA';
+    }
+  };
+
+  let html = '';
+  html += '<!DOCTYPE html><html><head><meta charset="utf-8"><title>IVXHOLDINGS Developer Module Refresh</title>';
+  html += '<style>';
+  html += 'body{font-family:system-ui;background:#080808;color:#fff;padding:32px}';
+  html += '.header{text-align:center;margin-bottom:28px;border-bottom:1px solid #2A2A2A;padding-bottom:20px}';
+  html += '.title{font-size:28px;font-weight:800;color:#FFD700;margin:0 0 8px}';
+  html += '.subtitle{color:#A1A1AA;margin:0}';
+  html += '.stats{display:flex;gap:12px;flex-wrap:wrap;margin:24px 0}';
+  html += '.stat{flex:1;min-width:150px;background:#141414;border:1px solid #2A2A2A;border-radius:14px;padding:16px}';
+  html += '.stat-num{font-size:24px;font-weight:800;margin-bottom:6px}';
+  html += '.stat-label{color:#9A9A9A;font-size:12px}';
+  html += '.section-title{font-size:18px;font-weight:700;margin:28px 0 12px}';
+  html += '.item{background:#141414;border:1px solid #2A2A2A;border-radius:14px;padding:18px;margin-bottom:12px}';
+  html += '.item-top{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}';
+  html += '.name{font-size:16px;font-weight:700;margin:0 0 6px}';
+  html += '.provider{color:#9A9A9A;font-size:12px;margin:0 0 10px}';
+  html += '.desc{color:#D4D4D8;font-size:14px;line-height:1.5;margin:0 0 10px}';
+  html += '.badge{display:inline-block;border-radius:999px;padding:5px 10px;font-size:11px;font-weight:700;margin-right:6px;color:#fff}';
+  html += '.env{font-family:monospace;font-size:12px;color:#FFD700;margin-top:4px}';
+  html += '.note{color:#FBBF24;font-size:12px;margin-top:8px}';
+  html += '</style></head><body>';
+  html += `<div class="header"><h1 class="title">Developer Module Refresh</h1><p class="subtitle">Updated ${now}</p></div>`;
+  html += '<div class="stats">';
+  html += `<div class="stat"><div class="stat-num">${allItems.length}</div><div class="stat-label">Items</div></div>`;
+  html += `<div class="stat"><div class="stat-num">${getReadyCount()}</div><div class="stat-label">Ready</div></div>`;
+  html += `<div class="stat"><div class="stat-num">${configuredEnvCount}/${allEnvs.length}</div><div class="stat-label">Configured Envs</div></div>`;
+  html += `<div class="stat"><div class="stat-num">${deliverySummary.rork.remainingItems + deliverySummary.user.remainingItems + deliverySummary.shared.remainingItems}</div><div class="stat-label">Remaining Items</div></div>`;
+  html += '</div>';
+
+  for (const category of DEVELOPER_HANDOFF_CATEGORIES) {
+    html += `<div class="section-title">${category.title}</div>`;
+    for (const item of category.items) {
+      html += '<div class="item">';
+      html += '<div class="item-top">';
+      html += '<div>';
+      html += `<p class="name">${item.name}</p>`;
+      html += `<p class="provider">${item.provider}</p>`;
+      html += `<p class="desc">${item.description}</p>`;
+      html += `</div><div>`;
+      html += `<span class="badge" style="background:${priorityColor(item.priority)}">${item.priority.toUpperCase()}</span>`;
+      html += `<span class="badge" style="background:${statusColor(item.status)}">${item.status.replace(/_/g, ' ').toUpperCase()}</span>`;
+      html += `<span class="badge" style="background:${ownerColor(item.owner)};color:#000">${item.owner.toUpperCase()}</span>`;
+      html += '</div></div>';
+      if (item.envVariables.length > 0) {
+        html += item.envVariables.map((variable) => `<div class="env">${variable.name} ${variable.configured ? '✓' : '✗'}</div>`).join('');
+      }
+      if (item.notes) {
+        html += `<div class="note">${item.notes}</div>`;
+      }
+      html += '</div>';
     }
   }
-  html += `</body></html>`;
+
+  html += '</body></html>';
   return html;
 }

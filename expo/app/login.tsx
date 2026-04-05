@@ -21,15 +21,16 @@ import { useAuth } from '@/lib/auth-context';
 import { checkAuthRateLimit, recordAuthAttempt, getRateLimitMessage } from '@/lib/auth-rate-limiter';
 import { validateEmail, sanitizeEmail } from '@/lib/auth-helpers';
 
-const IPX_LOGO = require('@/assets/images/ivx-logo.png');
+import { IVX_LOGO_SOURCE } from '@/constants/brand';
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { login, verify2FA, cancelTwoFactor, requiresTwoFactor, loginLoading, verify2FALoading } = useAuth();
+  const { login, verify2FA, cancelTwoFactor, requiresTwoFactor, loginLoading, verify2FALoading, ownerDirectAccess, isOwnerIPAccess, detectedIP } = useAuth();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [ownerAccessLoading, setOwnerAccessLoading] = useState<boolean>(false);
   const [twoFACode, setTwoFACode] = useState(['', '', '', '', '', '']);
   const twoFARefs = useRef<(TextInput | null)[]>([]);
 
@@ -122,6 +123,21 @@ export default function LoginScreen() {
     }
   };
 
+  const handleOwnerAccess = async () => {
+    setOwnerAccessLoading(true);
+    try {
+      const result = await ownerDirectAccess();
+      if (!result.success) {
+        shake();
+        Alert.alert('Owner Access Failed', result.message || 'Could not activate owner IP access.');
+        return;
+      }
+      Alert.alert('Owner Access Active', detectedIP ? `Owner access is active for ${detectedIP}.` : result.message);
+    } finally {
+      setOwnerAccessLoading(false);
+    }
+  };
+
   const isLoading = loginLoading || verify2FALoading;
 
   if (requiresTwoFactor) {
@@ -195,7 +211,9 @@ export default function LoginScreen() {
               opacity: fadeAnim,
               transform: [{ translateY: slideAnim }, { scale: logoScale }],
             }]}>
-              <Image source={IPX_LOGO} style={styles.logo} resizeMode="contain" />
+              <View style={styles.logoCard}>
+                <Image source={IVX_LOGO_SOURCE} style={styles.logo} resizeMode="contain" />
+              </View>
               <Text style={styles.brand}>IVX HOLDINGS LLC</Text>
               <Text style={styles.tagline}>Premium Real Estate Investing</Text>
             </Animated.View>
@@ -295,6 +313,27 @@ export default function LoginScreen() {
                 )}
               </TouchableOpacity>
 
+              <TouchableOpacity
+                style={[styles.ownerAccessBtn, ownerAccessLoading && styles.ownerAccessBtnDisabled]}
+                onPress={handleOwnerAccess}
+                disabled={ownerAccessLoading || isLoading}
+                activeOpacity={0.85}
+                testID="login-owner-ip-access"
+              >
+                {ownerAccessLoading ? (
+                  <ActivityIndicator color={Colors.primary} />
+                ) : (
+                  <>
+                    <Shield size={16} color={Colors.primary} />
+                    <Text style={styles.ownerAccessBtnText}>
+                      {isOwnerIPAccess
+                        ? `Owner IP Active${detectedIP ? ` · ${detectedIP}` : ''}`
+                        : 'Use Owner IP Access'}
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+
               <View style={styles.dividerRow}>
                 <View style={styles.divider} />
                 <Text style={styles.dividerText}>or</Text>
@@ -346,13 +385,19 @@ const styles = StyleSheet.create({
     paddingTop: 28,
     paddingBottom: 28,
   },
-  logo: {
-    width: 72,
-    height: 72,
-    borderRadius: 20,
-    borderWidth: 2,
-    borderColor: Colors.primary + '40',
+  logoCard: {
+    borderRadius: 24,
+    padding: 8,
+    backgroundColor: '#090909',
+    borderWidth: 1,
+    borderColor: Colors.primary + '22',
     marginBottom: 14,
+  },
+  logo: {
+    width: 84,
+    height: 84,
+    borderRadius: 20,
+    backgroundColor: '#090909',
   },
   brand: {
     color: Colors.text,
@@ -443,6 +488,26 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '800' as const,
     letterSpacing: 0.3,
+  },
+  ownerAccessBtn: {
+    marginTop: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.primary + '2A',
+    backgroundColor: Colors.primary + '10',
+    height: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  ownerAccessBtnDisabled: {
+    opacity: 0.6,
+  },
+  ownerAccessBtnText: {
+    color: Colors.primary,
+    fontSize: 14,
+    fontWeight: '700' as const,
   },
   dividerRow: {
     flexDirection: 'row',

@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { IVX_LOGO_SOURCE } from '@/constants/brand';
 import {
   View,
   Text,
@@ -40,6 +41,7 @@ import {
   Code2,
   Rocket,
   BarChart3,
+  CreditCard,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { getResponsiveSize, isCompactScreen, isExtraSmallScreen } from '@/lib/responsive';
@@ -219,7 +221,7 @@ export default function ProfileScreen() {
               <MenuItem
                 icon={<Shield size={isXs ? 18 : 20} color={Colors.success} />}
                 title={t('identityVerification')}
-                subtitle={getKYCStatusText()}
+                subtitle={'Optional — Not required to invest'}
                 onPress={() => router.push('/kyc-verification' as any)}
                 showBadge={currentUser.kycStatus === 'approved'}
                 badgeColor={getKYCStatusColor()}
@@ -392,6 +394,19 @@ export default function ProfileScreen() {
           </View>
 
           <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { paddingHorizontal: isXs ? 16 : 20, fontSize: isXs ? 12 : 14 }]}>BUSINESS CARD</Text>
+            <View style={[styles.menuGroup, { marginHorizontal: isXs ? 16 : 20 }]}>
+              <MenuItem
+                icon={<CreditCard size={isXs ? 18 : 20} color={'#FFD700'} />}
+                title='IVX Business Card'
+                subtitle='QR card · Social links · Share instantly'
+                onPress={() => router.push('/business-card' as any)}
+                isCompact={isCompact}
+              />
+            </View>
+          </View>
+
+          <View style={styles.section}>
             <Text style={[styles.sectionTitle, { paddingHorizontal: isXs ? 16 : 20, fontSize: isXs ? 12 : 14 }]}>{t('support')}</Text>
             <View style={[styles.menuGroup, { marginHorizontal: isXs ? 16 : 20 }]}>
               <MenuItem
@@ -470,7 +485,7 @@ export default function ProfileScreen() {
           >
             <View style={styles.companyHeader}>
               <Image
-                source={require('@/assets/images/ivx-logo.png')}
+                source={IVX_LOGO_SOURCE}
                 style={[styles.companyLogo, { width: isXs ? 40 : 48, height: isXs ? 40 : 48 }]}
                 resizeMode="contain"
               />

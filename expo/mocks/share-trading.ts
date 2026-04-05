@@ -1,3 +1,5 @@
+export { SHARE_TRADING_CONFIG } from '@/constants/platform-config';
+
 export interface TokenizedProperty {
   id: string;
   name: string;
@@ -56,19 +58,7 @@ export interface UserShareHolding {
 }
 
 export const tokenizedProperties: TokenizedProperty[] = [];
-
 export const mockUserHoldings: UserShareHolding[] = [];
-
-export const SHARE_TRADING_CONFIG = {
-  initialPrice: 1.00,
-  ltvPercent: 85,
-  ipxFeePercent: 2.5,
-  closingCostPercent: 3,
-  tradingFeePercent: 1,
-  minPurchase: 1,
-  tradingHours: '24/7',
-  resellDelay: 'Instant',
-};
 
 export interface IPXGlobalIndex {
   name: string;
@@ -89,41 +79,13 @@ export interface IPXGlobalIndex {
 }
 
 export const ipxGlobalIndex: IPXGlobalIndex = {
-  name: 'IVX HOLDINGS LLC Index',
-  ticker: 'IVXHOLDINGS-GREI',
-  currentValue: 0,
-  change24h: 0,
-  changePercent24h: 0,
-  high24h: 0,
-  low24h: 0,
-  totalMarketCap: 0,
-  totalVolume24h: 0,
-  totalProperties: 0,
-  totalInvestors: 0,
-  countriesActive: 0,
-  allTimeHigh: 0,
-  allTimeHighDate: '',
-  history: [],
+  name: 'IVX HOLDINGS LLC Index', ticker: 'IVXHOLDINGS-GREI',
+  currentValue: 0, change24h: 0, changePercent24h: 0, high24h: 0, low24h: 0,
+  totalMarketCap: 0, totalVolume24h: 0, totalProperties: 0, totalInvestors: 0,
+  countriesActive: 0, allTimeHigh: 0, allTimeHighDate: '', history: [],
 };
 
-export const getGlobalStats = () => {
-  const tradingCount = tokenizedProperties.filter(p => p.status === 'trading').length;
-  const ipoCount = tokenizedProperties.filter(p => p.status === 'ipo').length;
-  const avgYield = tokenizedProperties.length > 0
-    ? tokenizedProperties.reduce((sum, p) => sum + p.projectedYield, 0) / tokenizedProperties.length
-    : 0;
-  const topGainer = [...tokenizedProperties].sort((a, b) => b.changePercent24h - a.changePercent24h)[0];
-  const topLoser = [...tokenizedProperties].sort((a, b) => a.changePercent24h - b.changePercent24h)[0];
-
-  return {
-    tradingCount,
-    ipoCount,
-    avgYield: Math.round(avgYield * 10) / 10,
-    topGainer,
-    topLoser,
-    totalMarketCap: ipxGlobalIndex.totalMarketCap,
-    totalVolume24h: ipxGlobalIndex.totalVolume24h,
-    totalInvestors: ipxGlobalIndex.totalInvestors,
-    countriesActive: ipxGlobalIndex.countriesActive,
-  };
-};
+export const getGlobalStats = () => ({
+  tradingCount: 0, ipoCount: 0, avgYield: 0, topGainer: undefined,
+  topLoser: undefined, totalMarketCap: 0, totalVolume24h: 0, totalInvestors: 0, countriesActive: 0,
+});

@@ -1,5 +1,4 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { deployLandingPage, type DeployResult } from '@/lib/landing-deploy';
 import { syncToLandingPage, type LandingSyncResult } from '@/lib/landing-sync';
 
 const AUTO_DEPLOY_ENABLED_KEY = 'ivx_auto_deploy_enabled';
@@ -32,14 +31,19 @@ export interface AutoDeployStatus {
 }
 
 const DEFAULT_CONFIG: AutoDeployConfig = {
-  enabled: false,
+  enabled: true,
   deployOnSave: true,
   deployOnDealPublish: true,
   deployOnContentChange: true,
 };
 
+interface QueuedDeploy {
+  trigger: AutoDeployLogEntry['trigger'];
+  resolvers: Array<(entry: AutoDeployLogEntry) => void>;
+}
+
 let _isDeploying = false;
-let _deployQueue: Array<{ trigger: AutoDeployLogEntry['trigger']; resolve: (entry: AutoDeployLogEntry) => void }> = [];
+let _deployQueue: QueuedDeploy[] = [];
 let _currentConfig: AutoDeployConfig | null = null;
 
 export function isAutoDeploying(): boolean {
@@ -127,34 +131,17 @@ async function executeDeploy(trigger: AutoDeployLogEntry['trigger']): Promise<Au
     try {
       syncResult = await syncToLandingPage();
       entry.syncedDeals = syncResult.syncedDeals;
+      entry.filesUploaded = syncResult.filesUploaded;
       if (syncResult.errors.length > 0) {
-        entry.errors.push(...syncResult.errors.map(e => `Sync: ${e}`));
+        entry.errors.push(...syncResult.errors);
       }
-      console.log(`[AutoDeploy] Sync complete: ${syncResult.syncedDeals} deals`);
+      entry.status = syncResult.success ? 'success' : 'failed';
+      console.log(`[AutoDeploy] Sync + deploy complete: ${syncResult.syncedDeals} deals, ${syncResult.filesUploaded.length} files, deployTriggered=${syncResult.deployTriggered}`);
     } catch (syncErr) {
       const msg = (syncErr as Error)?.message || 'Sync failed';
-      console.log('[AutoDeploy] Sync error (continuing to deploy):', msg);
-      entry.errors.push(`Sync error: ${msg}`);
-    }
-
-    let deployResult: DeployResult | null = null;
-    try {
-      deployResult = await deployLandingPage();
-      entry.filesUploaded = deployResult.filesUploaded;
-      if (!deployResult.success) {
-        entry.status = 'failed';
-        entry.errors.push(...deployResult.errors.map(e => `Deploy: ${e}`));
-      }
-      console.log(`[AutoDeploy] Deploy complete: ${deployResult.success ? 'SUCCESS' : 'FAILED'}`);
-    } catch (deployErr) {
+      console.log('[AutoDeploy] Sync/deploy error:', msg);
       entry.status = 'failed';
-      const msg = (deployErr as Error)?.message || 'Deploy failed';
-      console.log('[AutoDeploy] Deploy error:', msg);
-      entry.errors.push(`Deploy error: ${msg}`);
-    }
-
-    if (entry.errors.length > 0 && entry.status !== 'failed') {
-      entry.status = 'success';
+      entry.errors.push(msg);
     }
   } catch (err) {
     entry.status = 'failed';
@@ -181,7 +168,7 @@ async function processQueue(): Promise<void> {
 
   try {
     const result = await executeDeploy(item.trigger);
-    item.resolve(result);
+    item.resolvers.forEach((resolve) => resolve(result));
   } catch (err) {
     const errorEntry: AutoDeployLogEntry = {
       id: `deploy-err-${Date.now()}`,
@@ -193,7 +180,7 @@ async function processQueue(): Promise<void> {
       errors: [(err as Error)?.message || 'Queue processing error'],
       durationMs: 0,
     };
-    item.resolve(errorEntry);
+    item.resolvers.forEach((resolve) => resolve(errorEntry));
   } finally {
     _isDeploying = false;
     if (_deployQueue.length > 0) {
@@ -204,14 +191,14 @@ async function processQueue(): Promise<void> {
 
 export function queueDeploy(trigger: AutoDeployLogEntry['trigger']): Promise<AutoDeployLogEntry> {
   return new Promise((resolve) => {
-    const existing = _deployQueue.find(q => q.trigger === trigger);
-    if (existing && _deployQueue.length > 1) {
-      console.log(`[AutoDeploy] Deduplicating ${trigger} trigger — already queued`);
-      existing.resolve = resolve;
+    const existing = _deployQueue.find((queued) => queued.trigger === trigger);
+    if (existing) {
+      console.log(`[AutoDeploy] Deduplicating ${trigger} trigger — attaching listener to existing queued deploy`);
+      existing.resolvers.push(resolve);
       return;
     }
 
-    _deployQueue.push({ trigger, resolve });
+    _deployQueue.push({ trigger, resolvers: [resolve] });
     console.log(`[AutoDeploy] Queued deploy (trigger: ${trigger}, queue size: ${_deployQueue.length})`);
     void processQueue();
   });

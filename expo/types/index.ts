@@ -703,7 +703,7 @@ export interface MemberProfile extends User {
 export type PartnerType = 'jv' | 'lp' | 'hybrid';
 export type LandPartnerStatus = 'draft' | 'submitted' | 'valuation' | 'review' | 'approved' | 'active' | 'completed' | 'rejected';
 export type PaymentStructure = 'immediate' | 'deferred' | 'milestone' | 'exit_balloon';
-export type AccreditedInvestorStatus = 'not_verified' | 'pending' | 'verified' | 'rejected';
+export type AccreditedInvestorStatus = 'not_required';
 
 export interface LandPartnerDeal {
   id: string;
@@ -798,7 +798,6 @@ export interface LandPartnerFormData {
   paymentStructure: PaymentStructure;
   // LP-specific fields
   isAccreditedInvestor?: boolean;
-  accreditedInvestorStatus?: AccreditedInvestorStatus;
   annualIncome?: string;
   netWorth?: string;
   investmentExperience?: 'none' | 'limited' | 'moderate' | 'extensive';

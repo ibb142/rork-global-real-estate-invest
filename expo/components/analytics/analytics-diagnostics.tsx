@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { AlertTriangle, Database, WifiOff, RefreshCw, Shield } from 'lucide-react-native';
 import Colors from '@/constants/colors';
@@ -23,17 +23,34 @@ interface TableDiagnostic {
 export function AnalyticsDiagnostics({ hasNoRealData, period, isConnected }: DiagnosticsProps) {
   const [tableDiags, setTableDiags] = useState<TableDiagnostic[]>([]);
   const [checking, setChecking] = useState(false);
+  const [authStatus, setAuthStatus] = useState<string>('unknown');
+
+  const runDiagnostics = useCallback(() => {
+    void runTableDiagnostics();
+  }, []);
 
   useEffect(() => {
     if (hasNoRealData) {
-      void runTableDiagnostics();
+      runDiagnostics();
     }
-  }, [hasNoRealData]);
+  }, [hasNoRealData, runDiagnostics]);
 
   async function runTableDiagnostics() {
     setChecking(true);
     const tables = ['landing_analytics', 'analytics_events'];
     const results: TableDiagnostic[] = [];
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user?.id) {
+        setAuthStatus(`authenticated (${session.user.email || session.user.id.substring(0, 8)})`);
+      } else {
+        setAuthStatus('not authenticated — SELECT blocked by RLS');
+        console.warn('[Diagnostics] No auth session. Analytics SELECT requires authenticated user.');
+      }
+    } catch {
+      setAuthStatus('auth check failed');
+    }
 
     for (const table of tables) {
       try {
@@ -134,14 +151,23 @@ export function AnalyticsDiagnostics({ hasNoRealData, period, isConnected }: Dia
         <View style={[s.warningBox, { marginTop: 0, marginBottom: 10 }]}>
           <Shield size={14} color={RED} />
           <Text style={s.warningText}>
-            Your Supabase tables have data but Row Level Security (RLS) is blocking reads. Add a SELECT policy for authenticated admin users on the tables below.
+            Your Supabase tables have data but RLS is blocking reads. Ensure you are logged in and the RLS policy allows SELECT TO authenticated.
+          </Text>
+        </View>
+      )}
+
+      {authStatus !== 'unknown' && (
+        <View style={s.diagnosticRow}>
+          <Text style={s.diagnosticLabel}>Auth</Text>
+          <Text style={[s.diagnosticValue, { color: authStatus.includes('not auth') ? RED : GREEN, fontSize: 11 }]}>
+            {authStatus}
           </Text>
         </View>
       )}
 
       <Text style={s.diagnosticDesc}>
         {hasRlsIssue
-          ? 'Fix: Go to Supabase Dashboard → Authentication → Policies → Add SELECT policy for admin role on each table.'
+          ? 'Fix: Run this SQL in Supabase SQL Editor:\nCREATE POLICY landing_analytics_auth_select ON landing_analytics FOR SELECT TO authenticated USING (true);\nCREATE POLICY analytics_events_auth_select ON analytics_events FOR SELECT TO authenticated USING (true);'
           : 'Events are tracked as visitors use your landing page and app. Data syncs automatically.'}
       </Text>
 

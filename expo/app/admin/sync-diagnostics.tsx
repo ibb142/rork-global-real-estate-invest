@@ -24,6 +24,7 @@ import {
   Zap,
   Activity,
   BarChart3,
+  Image as ImageIcon,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -36,8 +37,15 @@ import {
   validatePublicClaim,
 } from '@/lib/published-deal-card-model';
 import { getDeployStatus } from '@/lib/landing-deploy';
-import { getCanonicalCacheStats } from '@/lib/canonical-deals';
+import { fetchCanonicalDeals, getCanonicalCacheStats } from '@/lib/canonical-deals';
+import {
+  diagnoseDealsPhotos,
+  getPhotoHealthPresentation,
+  getPhotoSourcePresentation,
+  type DealPhotoDiagnostic,
+} from '@/lib/deal-photo-health';
 import { performanceMonitor } from '@/lib/performance-monitor';
+import { getAutoDeployStatus } from '@/lib/auto-deploy';
 
 
 type StatusLevel = 'green' | 'yellow' | 'red';
@@ -66,18 +74,42 @@ export default function SyncDiagnosticsScreen() {
     refetchInterval: false,
   });
 
+  const imageAuditQuery = useQuery<DealPhotoDiagnostic[]>({
+    queryKey: ['sync-diagnostics-image-audit'],
+    queryFn: async (): Promise<DealPhotoDiagnostic[]> => {
+      const canonicalResult = await fetchCanonicalDeals(true);
+      return diagnoseDealsPhotos(canonicalResult.deals);
+    },
+    staleTime: 1000 * 30,
+    gcTime: 1000 * 60 * 5,
+    refetchOnWindowFocus: true,
+    refetchInterval: false,
+  });
+
   const forceSyncMutation = useMutation({
     mutationFn: () => syncToLandingPage(),
     onSuccess: (result) => {
       console.log('[SyncDiag] Force sync result:', result.success, 'deals:', result.syncedDeals);
       void queryClient.invalidateQueries({ queryKey: ['sync-diagnostics-status'] });
+      void queryClient.invalidateQueries({ queryKey: ['auto-deploy-status'] });
     },
+  });
+
+  const autoDeployQuery = useQuery({
+    queryKey: ['auto-deploy-status'],
+    queryFn: getAutoDeployStatus,
+    staleTime: 1000 * 30,
+    gcTime: 1000 * 60 * 5,
+    refetchOnWindowFocus: true,
+    refetchInterval: false,
   });
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
       void queryClient.invalidateQueries({ queryKey: ['sync-diagnostics-status'] });
+      void queryClient.invalidateQueries({ queryKey: ['sync-diagnostics-image-audit'] });
+      void queryClient.invalidateQueries({ queryKey: ['auto-deploy-status'] });
       void publishedJV.refetch();
     } finally {
       setRefreshing(false);
@@ -86,6 +118,8 @@ export default function SyncDiagnosticsScreen() {
 
   const status = syncStatusQuery.data;
   const appVisibleCount = publishedJV.deals.length;
+  const imageDiagnostics = imageAuditQuery.data;
+  const imageDiagnosticsList = imageDiagnostics ?? [];
 
   const cacheStats = getCanonicalCacheStats();
   const perfSummary = performanceMonitor.getSummary();
@@ -102,6 +136,30 @@ export default function SyncDiagnosticsScreen() {
       ...validatePublicClaim(claim),
     }));
   }, []);
+
+  const imageAuditSummary = useMemo(() => {
+    const items = imageDiagnostics ?? [];
+    return items.reduce((acc, item) => {
+      acc.total += 1;
+      if (item.status === 'healthy') acc.healthy += 1;
+      if (item.status === 'warning') acc.warning += 1;
+      if (item.status === 'broken') acc.broken += 1;
+      if (item.source === 'db') acc.db += 1;
+      if (item.source === 'storage') acc.storage += 1;
+      if (item.source === 'fallback') acc.fallback += 1;
+      if (item.source === 'none') acc.missing += 1;
+      return acc;
+    }, {
+      total: 0,
+      healthy: 0,
+      warning: 0,
+      broken: 0,
+      db: 0,
+      storage: 0,
+      fallback: 0,
+      missing: 0,
+    });
+  }, [imageDiagnostics]);
 
   const diagnostics: DiagnosticItem[] = [];
 
@@ -188,9 +246,13 @@ export default function SyncDiagnosticsScreen() {
   diagnostics.push({
     id: 'deploy-mode',
     label: 'Deploy Mode',
-    value: deployStatus.canDeploy ? 'Backend API' : 'Not Configured',
-    status: deployStatus.canDeploy ? 'green' : 'yellow',
-    detail: 'Deploy is backend-only. No client-side AWS credentials used.',
+    value: deployStatus.pipelineLabel,
+    status: deployStatus.publicDeployConfigured ? 'green' : deployStatus.canDeploy ? 'yellow' : 'red',
+    detail: deployStatus.publicDeployConfigured
+      ? 'Landing sync runs in-app and the public website pipeline is configured end-to-end.'
+      : deployStatus.missingRequirements.length > 0
+        ? `Missing: ${deployStatus.missingRequirements.join(', ')}`
+        : 'Landing sync runs in-app. GitHub Actions and AWS deliver the public landing when configured.',
   });
 
   diagnostics.push({
@@ -346,6 +408,105 @@ export default function SyncDiagnosticsScreen() {
         {diagnostics.slice(8).map(renderDiagRow)}
 
         <View style={styles.sectionHeader}>
+          <ImageIcon size={16} color={Colors.primary} />
+          <Text style={styles.sectionTitle}>Deal Image Health</Text>
+        </View>
+
+        {imageAuditQuery.isPending ? (
+          <View style={styles.imageAuditEmptyCard}>
+            <ActivityIndicator size="small" color={Colors.primary} />
+            <Text style={styles.imageAuditEmptyTitle}>Scanning published deal media</Text>
+            <Text style={styles.imageAuditEmptyText}>Checking each live deal for DB, Storage, and Fallback image paths.</Text>
+          </View>
+        ) : imageDiagnosticsList.length === 0 ? (
+          <View style={styles.imageAuditEmptyCard}>
+            <AlertTriangle size={18} color="#FFD700" />
+            <Text style={styles.imageAuditEmptyTitle}>No published deals to audit yet</Text>
+            <Text style={styles.imageAuditEmptyText}>Publish at least one deal and this panel will show photo-source health before ads go live.</Text>
+          </View>
+        ) : (
+          <>
+            <View style={styles.imageAuditSummaryCard}>
+              <View style={styles.imageAuditSummaryRow}>
+                <View style={styles.imageAuditStat}>
+                  <Text style={styles.imageAuditStatValue}>{imageAuditSummary.total}</Text>
+                  <Text style={styles.imageAuditStatLabel}>Deals</Text>
+                </View>
+                <View style={styles.imageAuditStat}>
+                  <Text style={[styles.imageAuditStatValue, { color: '#22C55E' }]}>{imageAuditSummary.healthy}</Text>
+                  <Text style={styles.imageAuditStatLabel}>Healthy</Text>
+                </View>
+                <View style={styles.imageAuditStat}>
+                  <Text style={[styles.imageAuditStatValue, { color: '#FFD36A' }]}>{imageAuditSummary.warning}</Text>
+                  <Text style={styles.imageAuditStatLabel}>Warning</Text>
+                </View>
+                <View style={styles.imageAuditStat}>
+                  <Text style={[styles.imageAuditStatValue, { color: '#FF7D7D' }]}>{imageAuditSummary.broken}</Text>
+                  <Text style={styles.imageAuditStatLabel}>Broken</Text>
+                </View>
+              </View>
+              <Text style={styles.imageAuditSummaryText}>
+                Sources — DB: {imageAuditSummary.db} · Storage: {imageAuditSummary.storage} · Fallback: {imageAuditSummary.fallback} · Missing: {imageAuditSummary.missing}
+              </Text>
+            </View>
+
+            {imageDiagnosticsList.map((item) => {
+              const sourcePresentation = getPhotoSourcePresentation(item.source);
+              const healthPresentation = getPhotoHealthPresentation(item.status);
+
+              return (
+                <View key={item.dealId || item.dealTitle} style={styles.imageDealCard} testID={`image-health-${item.dealId}`}>
+                  <View style={styles.imageDealTopRow}>
+                    <View style={styles.imageDealTitleWrap}>
+                      <Text style={styles.imageDealTitle}>{item.dealTitle}</Text>
+                      <Text style={styles.imageDealSubtitle}>
+                        Live {item.resolvedPhotos.length} · DB {item.dbPhotos.length} · Storage {item.storagePhotos.length} · Fallback {item.fallbackPhotos.length}
+                      </Text>
+                    </View>
+                    <View style={styles.imageBadgeRow}>
+                      <View style={[
+                        styles.imageBadge,
+                        {
+                          backgroundColor: sourcePresentation.backgroundColor,
+                          borderColor: sourcePresentation.borderColor,
+                        },
+                      ]}>
+                        <Text style={[styles.imageBadgeText, { color: sourcePresentation.textColor }]}>{sourcePresentation.label}</Text>
+                      </View>
+                      <View style={[
+                        styles.imageBadge,
+                        {
+                          backgroundColor: healthPresentation.backgroundColor,
+                          borderColor: healthPresentation.borderColor,
+                        },
+                      ]}>
+                        <Text style={[styles.imageBadgeText, { color: healthPresentation.textColor }]}>{healthPresentation.label}</Text>
+                      </View>
+                    </View>
+                  </View>
+                  <Text style={styles.imageDealDescription}>{item.sourceDescription}</Text>
+                  {item.issues.length > 0 ? (
+                    <View style={styles.imageIssueList}>
+                      {item.issues.map((issue, index) => (
+                        <View key={`${item.dealId}-issue-${index}`} style={styles.imageIssueRow}>
+                          <AlertTriangle size={12} color="#FFD36A" />
+                          <Text style={styles.imageIssueText}>{issue}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  ) : (
+                    <View style={styles.imageIssueRow}>
+                      <CheckCircle2 size={12} color="#22C55E" />
+                      <Text style={styles.imageIssueText}>Primary deal images are ready for investor traffic.</Text>
+                    </View>
+                  )}
+                </View>
+              );
+            })}
+          </>
+        )}
+
+        <View style={styles.sectionHeader}>
           <Activity size={16} color={Colors.primary} />
           <Text style={styles.sectionTitle}>Performance Metrics</Text>
         </View>
@@ -442,6 +603,90 @@ export default function SyncDiagnosticsScreen() {
               </View>
             </View>
           ))}
+        </View>
+
+        <View style={styles.sectionHeader}>
+          <Globe size={16} color={Colors.primary} />
+          <Text style={styles.sectionTitle}>Deployment Pipeline</Text>
+        </View>
+
+        <View style={styles.pipelineCard}>
+          <View style={styles.perfRow}>
+            <Text style={styles.perfLabel}>Pipeline</Text>
+            <Text style={[styles.perfValue, { color: deployStatus.publicDeployConfigured ? '#22C55E' : '#FFD700' }]}>
+              {deployStatus.pipelineLabel}
+            </Text>
+          </View>
+          <View style={styles.perfRow}>
+            <Text style={styles.perfLabel}>GitHub Actions</Text>
+            <Text style={[styles.perfValue, { color: deployStatus.githubActionsConfigured ? '#22C55E' : '#FFD700' }]}>
+              {deployStatus.githubActionsConfigured ? 'Ready' : 'Missing'}
+            </Text>
+          </View>
+          <View style={styles.perfRow}>
+            <Text style={styles.perfLabel}>GitHub Repository</Text>
+            <Text style={[styles.perfValue, { color: deployStatus.githubRepositoryConfigured ? '#22C55E' : '#FF7D7D' }]}>
+              {deployStatus.githubRepository || 'Not set'}
+            </Text>
+          </View>
+          <View style={styles.perfRow}>
+            <Text style={styles.perfLabel}>AWS S3</Text>
+            <Text style={[styles.perfValue, { color: deployStatus.awsConfigured ? '#22C55E' : '#FFD700' }]}>
+              {deployStatus.awsConfigured ? 'Configured' : 'Needs review'}
+            </Text>
+          </View>
+          <View style={styles.perfRow}>
+            <Text style={styles.perfLabel}>S3 Bucket</Text>
+            <Text style={[styles.perfValue, { color: deployStatus.s3Bucket ? '#22C55E' : '#FF7D7D' }]}>
+              {deployStatus.s3Bucket || 'Not set'}
+            </Text>
+          </View>
+          <View style={styles.perfRow}>
+            <Text style={styles.perfLabel}>AWS Region</Text>
+            <Text style={[styles.perfValue, { color: deployStatus.awsRegion ? '#22C55E' : '#FF7D7D' }]}>
+              {deployStatus.awsRegion || 'Not set'}
+            </Text>
+          </View>
+          <View style={styles.perfRow}>
+            <Text style={styles.perfLabel}>CloudFront</Text>
+            <Text style={[styles.perfValue, { color: deployStatus.cloudFrontConfigured ? '#22C55E' : '#FFD700' }]}>
+              {deployStatus.cloudFrontConfigured ? deployStatus.cloudFrontDistributionId : 'Optional / pending'}
+            </Text>
+          </View>
+          <View style={styles.perfRow}>
+            <Text style={styles.perfLabel}>Auto-deploy</Text>
+            <Text style={[styles.perfValue, { color: autoDeployQuery.data?.config.enabled ? '#22C55E' : '#FFD700' }]}>
+              {autoDeployQuery.data?.config.enabled ? 'Enabled' : 'Disabled'}
+            </Text>
+          </View>
+          <View style={styles.perfRow}>
+            <Text style={styles.perfLabel}>Publish trigger</Text>
+            <Text style={[styles.perfValue, { color: autoDeployQuery.data?.config.deployOnDealPublish ? '#22C55E' : '#FFD700' }]}>
+              {autoDeployQuery.data?.config.deployOnDealPublish ? 'On' : 'Off'}
+            </Text>
+          </View>
+          <View style={styles.perfRow}>
+            <Text style={styles.perfLabel}>Last auto-deploy</Text>
+            <Text style={styles.perfValue}>
+              {autoDeployQuery.data?.lastDeploy?.timestamp ? new Date(autoDeployQuery.data.lastDeploy.timestamp).toLocaleString() : 'Never'}
+            </Text>
+          </View>
+          {deployStatus.missingRequirements.length > 0 ? (
+            <View style={styles.pipelineErrorBox}>
+              <Text style={styles.pipelineErrorTitle}>Missing pipeline requirements</Text>
+              {deployStatus.missingRequirements.map((item, index) => (
+                <Text key={`pipeline-missing-${index}`} style={styles.pipelineErrorText}>{item}</Text>
+              ))}
+            </View>
+          ) : null}
+          {autoDeployQuery.data?.lastDeploy?.errors?.length ? (
+            <View style={styles.pipelineErrorBox}>
+              <Text style={styles.pipelineErrorTitle}>Latest deploy issues</Text>
+              {autoDeployQuery.data.lastDeploy.errors.slice(0, 3).map((error, index) => (
+                <Text key={`pipeline-error-${index}`} style={styles.pipelineErrorText}>{error}</Text>
+              ))}
+            </View>
+          ) : null}
         </View>
 
         <View style={styles.sectionHeader}>
@@ -654,6 +899,129 @@ const styles = StyleSheet.create({
     marginLeft: 10,
     flexShrink: 0,
   },
+  imageAuditSummaryCard: {
+    marginHorizontal: 16,
+    marginBottom: 12,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.05)',
+    gap: 12,
+  },
+  imageAuditSummaryRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  imageAuditStat: {
+    flex: 1,
+    backgroundColor: 'rgba(255,255,255,0.025)',
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.04)',
+  },
+  imageAuditStatValue: {
+    color: Colors.text,
+    fontSize: 18,
+    fontWeight: '800' as const,
+  },
+  imageAuditStatLabel: {
+    color: Colors.textTertiary,
+    fontSize: 11,
+    marginTop: 4,
+  },
+  imageAuditSummaryText: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  imageAuditEmptyCard: {
+    marginHorizontal: 16,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderRadius: 14,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.05)',
+    gap: 10,
+    alignItems: 'center',
+  },
+  imageAuditEmptyTitle: {
+    color: Colors.text,
+    fontSize: 14,
+    fontWeight: '700' as const,
+    textAlign: 'center' as const,
+  },
+  imageAuditEmptyText: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: 'center' as const,
+  },
+  imageDealCard: {
+    marginHorizontal: 16,
+    marginBottom: 12,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.05)',
+    gap: 10,
+  },
+  imageDealTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  imageDealTitleWrap: {
+    flex: 1,
+  },
+  imageDealTitle: {
+    color: Colors.text,
+    fontSize: 14,
+    fontWeight: '800' as const,
+  },
+  imageDealSubtitle: {
+    color: Colors.textTertiary,
+    fontSize: 11,
+    marginTop: 4,
+  },
+  imageBadgeRow: {
+    alignItems: 'flex-end',
+    gap: 8,
+  },
+  imageBadge: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  imageBadgeText: {
+    fontSize: 10,
+    fontWeight: '800' as const,
+    letterSpacing: 0.7,
+  },
+  imageDealDescription: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  imageIssueList: {
+    gap: 8,
+  },
+  imageIssueRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  imageIssueText: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    flex: 1,
+    lineHeight: 18,
+  },
   perfCard: {
     marginHorizontal: 16,
     backgroundColor: 'rgba(255,255,255,0.03)',
@@ -724,6 +1092,35 @@ const styles = StyleSheet.create({
     color: Colors.textTertiary,
     fontSize: 11,
     marginTop: 2,
+  },
+  pipelineCard: {
+    marginHorizontal: 16,
+    marginBottom: 16,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.05)',
+    gap: 10,
+  },
+  pipelineErrorBox: {
+    marginTop: 6,
+    backgroundColor: 'rgba(255,77,77,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,77,77,0.16)',
+    borderRadius: 12,
+    padding: 12,
+    gap: 6,
+  },
+  pipelineErrorTitle: {
+    color: '#FF7D7D',
+    fontSize: 12,
+    fontWeight: '700' as const,
+  },
+  pipelineErrorText: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
   },
   archCard: {
     marginHorizontal: 16,

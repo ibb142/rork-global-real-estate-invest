@@ -9,7 +9,12 @@ export const CASA_ROSARIO_PHOTOS: string[] = [
   'https://pub-e001eb4506b145aa938b5d3badbff6a5.r2.dev/attachments/g9g9wbb8r1epd4hc9qifl',
 ];
 
-export const PEREZ_RESIDENCE_PHOTOS: string[] = [];
+export const PEREZ_RESIDENCE_PHOTOS: string[] = [
+  'https://pub-e001eb4506b145aa938b5d3badbff6a5.r2.dev/attachments/junpisw15h6borglpbckz',
+  'https://pub-e001eb4506b145aa938b5d3badbff6a5.r2.dev/attachments/2s8bcg6npyx96xcfrr5rm',
+  'https://pub-e001eb4506b145aa938b5d3badbff6a5.r2.dev/attachments/t8rc86kynbs64jopcujtf',
+  'https://pub-e001eb4506b145aa938b5d3badbff6a5.r2.dev/attachments/bxqj57n0z60oqoxaqvnlo',
+];
 
 let _storagePhotoCache: Map<string, { photos: string[]; fetchedAt: number }> = new Map();
 const STORAGE_CACHE_TTL = 5 * 60 * 1000;

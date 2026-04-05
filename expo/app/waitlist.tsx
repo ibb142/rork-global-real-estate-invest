@@ -30,6 +30,7 @@ import { useMutation } from '@tanstack/react-query';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/lib/supabase';
 import Colors from '@/constants/colors';
+import { awsAnalyticsBackup, type AWSAnalyticsEvent } from '@/lib/aws-analytics-backup';
 
 const WAITLIST_STORAGE_KEY = 'ivx_waitlist_submissions';
 
@@ -140,6 +141,32 @@ export default function WaitlistScreen() {
         console.log('[Waitlist] Saved to local storage as backup (' + list.length + ' total)');
       } catch (storageErr) {
         console.log('[Waitlist] Local storage backup failed:', (storageErr as Error)?.message);
+      }
+
+      try {
+        const awsEvent: AWSAnalyticsEvent = {
+          id: `wl_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+          event: 'waitlist_submission',
+          session_id: `wl_session_${Date.now()}`,
+          properties: {
+            first_name: data.firstName.trim(),
+            last_name: data.lastName.trim(),
+            email: data.email.trim().toLowerCase(),
+            phone: data.phone.trim(),
+            investment_range: data.investmentRange,
+            return_expectation: data.returnExpectation,
+            preferred_contact_hour: data.contactHour,
+            savedToSupabase,
+          },
+          platform: 'app',
+          source: 'waitlist',
+          timestamp: new Date().toISOString(),
+          created_at: new Date().toISOString(),
+        };
+        awsAnalyticsBackup.enqueue(awsEvent);
+        console.log('[Waitlist] Sent to AWS backup');
+      } catch (awsErr) {
+        console.log('[Waitlist] AWS backup failed:', (awsErr as Error)?.message);
       }
 
       console.log('[Waitlist] Submission complete (supabase:', savedToSupabase, ')');

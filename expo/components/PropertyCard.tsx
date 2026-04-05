@@ -45,7 +45,7 @@
  * =============================================================================
  */
 
-import React, { useCallback, useMemo, memo } from 'react';
+import React, { useCallback, useMemo, memo, useState } from 'react';
 import {
   View,
   Text,
@@ -101,6 +101,27 @@ const PROPERTY_TYPE_MAP: Record<string, TranslationKeys> = {
   'land': 'typeLand',
 };
 
+const CompactPropertyImage = memo(function CompactPropertyImage({ uri, height, name }: { uri: string; height: number; name: string }) {
+  const [failed, setFailed] = useState(false);
+
+  if (failed) {
+    return (
+      <View style={[styles.compactImage, styles.compactImagePlaceholder, { height }]}>
+        <ImageOff size={18} color={Colors.textTertiary} />
+      </View>
+    );
+  }
+
+  return (
+    <Image
+      source={{ uri }}
+      style={[styles.compactImage, { height }]}
+      accessibilityLabel={`Photo of ${name}`}
+      onError={() => { setFailed(true); console.log('[PropertyCard] Compact image failed:', uri?.substring(0, 60)); }}
+    />
+  );
+});
+
 const PropertyCard = memo(function PropertyCard({ property, variant = 'full', isCompact = false }: PropertyCardProps) {
   const isXs = isCompact;
   const router = useRouter();
@@ -152,10 +173,10 @@ const PropertyCard = memo(function PropertyCard({ property, variant = 'full', is
       >
         <View>
           {storedImages && storedImages[0] ? (
-            <Image
-              source={{ uri: storedImages[0] }}
-              style={[styles.compactImage, { height: isXs ? 85 : 100 }]}
-              accessibilityLabel={`Photo of ${property.name}`}
+            <CompactPropertyImage
+              uri={storedImages[0]}
+              height={isXs ? 85 : 100}
+              name={property.name}
             />
           ) : (
             <View style={[styles.compactImage, styles.compactImagePlaceholder, { height: isXs ? 85 : 100 }]}>

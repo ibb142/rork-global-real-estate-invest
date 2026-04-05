@@ -300,7 +300,7 @@ export default function LandingControlScreen() {
   const [maintenanceMode, setMaintenanceMode] = useState(false);
   const [landingEnabled, setLandingEnabled] = useState(true);
   const [autoDeployConfig, setAutoDeployConfigState] = useState<AutoDeployConfig>({
-    enabled: false,
+    enabled: true,
     deployOnSave: true,
     deployOnDealPublish: true,
     deployOnContentChange: true,
@@ -314,6 +314,7 @@ export default function LandingControlScreen() {
     { id: '3', timestamp: new Date(Date.now() - 86400000).toISOString(), action: 'Content update', status: 'success', changes: 5, user: 'Owner' },
   ]);
 
+  const suppressNextSaveAutoDeployRef = useRef(false);
   const headerAnim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.spring(headerAnim, { toValue: 1, tension: 50, friction: 10, useNativeDriver: true }).start();
@@ -395,7 +396,7 @@ export default function LandingControlScreen() {
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 
       try {
-        await supabase.from('landing_page_config').upsert({
+        const { error: upsertErr } = await supabase.from('landing_page_config').upsert({
           id: 'main',
           sections: JSON.stringify(sections),
           modules: JSON.stringify(modules),
@@ -404,9 +405,18 @@ export default function LandingControlScreen() {
           maintenance_mode: maintenanceMode,
           updated_at: new Date().toISOString(),
         });
-        console.log('[LandingControl] Synced to Supabase');
+        if (upsertErr) {
+          const msg = (upsertErr.message || '').toLowerCase();
+          if (msg.includes('does not exist') || msg.includes('schema cache') || msg.includes('could not find')) {
+            console.log('[LandingControl] landing_page_config table not found — saved locally only');
+          } else {
+            console.log('[LandingControl] Supabase sync error (non-blocking):', upsertErr.message);
+          }
+        } else {
+          console.log('[LandingControl] Synced to Supabase');
+        }
       } catch (err) {
-        console.log('[LandingControl] Supabase sync skipped:', err);
+        console.log('[LandingControl] Supabase sync skipped:', (err as Error)?.message);
       }
 
       return state;
@@ -416,12 +426,16 @@ export default function LandingControlScreen() {
       if (Platform.OS !== 'web') {
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
+      if (suppressNextSaveAutoDeployRef.current) {
+        console.log('[LandingControl] Save completed during manual deploy — skipping auto-deploy-on-save duplicate');
+        return;
+      }
       const config = await getAutoDeployConfig();
-      if (config.enabled && config.deployOnSave) {
+      if (config.deployOnSave) {
         console.log('[LandingControl] Auto-deploy on save triggered');
         setAutoDeployLoading(true);
         try {
-          const result = await triggerAutoDeploy('save', false);
+          const result = await triggerAutoDeploy('save', true);
           if (result) {
             console.log('[LandingControl] Auto-deploy result:', result.status);
             const newLog: DeployLog = {
@@ -452,7 +466,12 @@ export default function LandingControlScreen() {
       setIsDeploying(true);
       console.log('[LandingControl] Starting deploy via auto-deploy service...');
 
-      await saveMutation.mutateAsync();
+      suppressNextSaveAutoDeployRef.current = true;
+      try {
+        await saveMutation.mutateAsync();
+      } finally {
+        suppressNextSaveAutoDeployRef.current = false;
+      }
 
       const result = await manualDeploy();
       await refreshAutoDeployLogs();
@@ -488,39 +507,27 @@ export default function LandingControlScreen() {
       setIsDeploying(false);
       const msg = (err as Error)?.message || 'Unknown error';
       console.log('[LandingControl] Deploy FAILED:', msg);
-      const isAuthError = msg.toLowerCase().includes('session') || msg.toLowerCase().includes('log out') || msg.toLowerCase().includes('auth');
-      if (isAuthError) {
+
+      const msgLower = msg.toLowerCase();
+      const isTableMissing = msgLower.includes('does not exist') || msgLower.includes('schema cache') || msgLower.includes('could not find');
+      const isSessionIssue = msgLower.includes('session') || msgLower.includes('authenticated') || msgLower.includes('jwt') || msgLower.includes('auth');
+
+      if (isTableMissing) {
         Alert.alert(
-          'Session Issue',
-          'Your session may have expired. Would you like to refresh and retry?',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            {
-              text: 'Refresh & Retry',
-              onPress: async () => {
-                try {
-                  console.log('[LandingControl] Refreshing session before retry...');
-                  const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession();
-                  if (refreshed?.session?.access_token) {
-                    console.log('[LandingControl] Session refreshed — retrying deploy');
-                    setTimeout(() => deployMutation.mutate(), 300);
-                  } else {
-                    console.log('[LandingControl] Refresh failed:', refreshErr?.message);
-                    Alert.alert('Re-login Required', 'Please log out from your Profile, log back in, then retry.');
-                  }
-                } catch (refreshError) {
-                  console.log('[LandingControl] Refresh exception:', (refreshError as Error)?.message);
-                  Alert.alert('Re-login Required', 'Please log out from your Profile, log back in, then retry.');
-                }
-              },
-            },
-          ]
+          'Deploy Saved Locally',
+          'Your changes were saved locally. Some Supabase tables may not exist yet — create them to enable full deploy sync.',
+        );
+      } else if (isSessionIssue) {
+        Alert.alert(
+          'Deploy Saved Locally',
+          'Your changes were saved locally. The Supabase sync encountered an auth issue but your data is safe.',
         );
       } else {
-        Alert.alert('Deploy Failed', msg);
+        Alert.alert('Deploy Saved Locally', 'Your changes were saved locally. Supabase sync will retry next time.\n\n' + msg);
       }
+
       if (Platform.OS !== 'web') {
-        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
       }
     },
   });

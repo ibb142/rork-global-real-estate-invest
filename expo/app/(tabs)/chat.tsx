@@ -24,25 +24,13 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { ChatMessage } from '@/types';
 import ChatBubble from '@/components/ChatBubble';
-import { useLocalAgent } from '@/lib/ai-service';
+import { aiInvestorService } from '@/lib/ai-investor-service';
+import { awsAnalyticsBackup } from '@/lib/aws-analytics-backup';
 
 type ViewMode = 'chat' | 'tickets';
 type ConnectionStatus = 'connecting' | 'connected' | 'waiting';
 
-const AI_SYSTEM_PROMPT = `You are an AI assistant for IVX HOLDINGS LLC - a real estate investment platform. Provide helpful, concise responses about:
-- Investment opportunities and how to invest
-- Portfolio management and dividends
-- Account questions and withdrawals
-- Property information
-- Stock trading: Users can buy and sell stocks every day during market hours. Daily trading is available for all listed stocks on the platform.
 
-Key features:
-- Real estate fractional ownership with quarterly dividends
-- Daily stock trading (buy/sell) available during market hours
-- Withdraw dividends anytime (3-5 business days to bank)
-- Principal investment stays until property is sold
-
-Be friendly and professional. Keep responses brief (2-3 sentences max for quick chat).`;
 
 export default function ChatScreen() {
   const _router = useRouter();
@@ -113,7 +101,7 @@ export default function ChatScreen() {
   const isXs = isExtraSmallScreen(screenSize);
   const { t } = useTranslation();
 
-  const { messages: aiMessages, sendMessage: sendAiMessage } = useLocalAgent();
+  const [_aiProvider, setAiProvider] = useState<string>('');
 
   useEffect(() => {
     scrollViewRef.current?.scrollToEnd({ animated: true });
@@ -135,36 +123,7 @@ export default function ChatScreen() {
     };
   }, []);
 
-  useEffect(() => {
-    if (aiMessages.length > 0) {
-      const lastMessage = aiMessages[aiMessages.length - 1];
-      if (!lastMessage) return;
-      
-      if (lastMessage.role === 'assistant') {
-        setIsAiTyping(false);
-        const textParts = lastMessage.parts?.filter(p => p.type === 'text') ?? [];
-        if (textParts.length > 0) {
-          const textContent = textParts.map(p => p.type === 'text' ? p.text : '').join('');
-          
-          setMessages(prev => {
-            const existingIds = prev.map(m => m.id);
-            if (existingIds.includes(lastMessage.id)) return prev;
-            const aiReply: ChatMessage = {
-              id: lastMessage.id,
-              senderId: 'ai-support',
-              senderName: 'IVXHOLDINGS AI',
-              senderAvatar: '',
-              message: textContent,
-              timestamp: new Date().toISOString(),
-              isSupport: true,
-              status: 'delivered',
-            };
-            return [...prev, aiReply];
-          });
-        }
-      }
-    }
-  }, [aiMessages]);
+
 
   useEffect(() => {
     if (connectionStatus === 'connecting' || connectionStatus === 'waiting') {
@@ -206,10 +165,42 @@ export default function ChatScreen() {
     setIsAiTyping(true);
 
     try {
-      const fullPrompt = `${AI_SYSTEM_PROMPT}\n\nUser: ${userText}`;
-      sendAiMessage(fullPrompt);
+      const result = await aiInvestorService.generateResponse(userText);
+      setAiProvider(result.provider);
+      console.log('[Chat] AI response via', result.provider, '| lang:', result.language, '| failovers:', result.failovers);
+
+      const aiReply: ChatMessage = {
+        id: `msg-ai-${Date.now()}`,
+        senderId: 'ai-support',
+        senderName: `IVXHOLDINGS AI`,
+        senderAvatar: '',
+        message: result.text,
+        timestamp: new Date().toISOString(),
+        isSupport: true,
+        status: 'delivered',
+      };
+      setMessages(prev => [...prev, aiReply]);
+      setIsAiTyping(false);
+
+      try {
+        awsAnalyticsBackup.enqueue({
+          id: `chat_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+          event: 'ai_chat_interaction',
+          session_id: `chat_${Date.now()}`,
+          properties: {
+            user_message_length: userText.length,
+            ai_provider: result.provider,
+            language: result.language,
+            failovers: result.failovers,
+          },
+          platform: Platform.OS,
+          source: 'chat',
+          timestamp: new Date().toISOString(),
+          created_at: new Date().toISOString(),
+        });
+      } catch {}
     } catch (error) {
-      console.error('AI error:', error);
+      console.error('[Chat] AI error:', error);
       setIsAiTyping(false);
       const errorReply: ChatMessage = {
         id: `msg-${Date.now() + 1}`,
@@ -223,7 +214,7 @@ export default function ChatScreen() {
       };
       setMessages(prev => [...prev, errorReply]);
     }
-  }, [inputText, sendAiMessage]);
+  }, [inputText]);
 
   const handleQuickReply = (reply: string) => {
     setInputText(reply);

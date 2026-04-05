@@ -4,15 +4,15 @@ import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
 const PRESENCE_CHANNEL_PREFIX = 'ivx-presence-v3-';
-const NUM_SHARDS = 10;
-const BROADCAST_INTERVAL = 90_000;
+const NUM_SHARDS = 3;
+const BROADCAST_INTERVAL = 120_000;
 const PRESENCE_STALE_THRESHOLD = 180_000;
 const PRESENCE_CLEANUP_INTERVAL = 120_000;
 const MAX_PRESENCE_AGE = 300_000;
-const TRACKER_POLL_INTERVAL = 60_000;
-const AGGREGATE_DEBOUNCE = 5_000;
-const MAX_TRACKER_SHARDS = 5;
-const TRACKER_SHARD_ROTATION_INTERVAL = 60_000;
+const TRACKER_POLL_INTERVAL = 120_000;
+const AGGREGATE_DEBOUNCE = 10_000;
+const MAX_TRACKER_SHARDS = 2;
+const TRACKER_SHARD_ROTATION_INTERVAL = 180_000;
 
 export interface PresenceUser {
   sessionId: string;

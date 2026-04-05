@@ -1,4 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
+import { IVX_LOGO_SOURCE } from '@/constants/brand';
 import {
   View,
   Text,
@@ -210,7 +211,7 @@ export default function OnboardingFlow({ visible, onClose, onComplete }: Onboard
             {!isFirstStep && (
               <View style={styles.logoContainer}>
                 <Image
-                  source={require('@/assets/images/ivx-logo.png')}
+                  source={IVX_LOGO_SOURCE}
                   style={styles.logo}
                   resizeMode="contain"
                 />
@@ -298,7 +299,7 @@ export default function OnboardingFlow({ visible, onClose, onComplete }: Onboard
                     ]}
                   >
                     <Image
-                      source={require('@/assets/images/ivx-logo.png')}
+                      source={IVX_LOGO_SOURCE}
                       style={styles.heroLogo}
                       resizeMode="contain"
                     />

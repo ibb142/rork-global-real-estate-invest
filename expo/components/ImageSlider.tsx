@@ -243,6 +243,7 @@ const ImageSlider = memo(function ImageSlider({
               resizeMode="cover"
               onLoadStart={() => handleImageLoadStart(index)}
               onLoad={() => handleImageLoad(index)}
+              onError={() => { handleImageLoad(index); console.log('[ImageSlider] Image failed to load:', image?.substring(0, 60)); }}
             />
             <View style={styles.imageGradientBottom} />
             <View style={styles.imageGradientTop} />

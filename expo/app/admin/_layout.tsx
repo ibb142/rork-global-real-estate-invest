@@ -1,395 +1,108 @@
 import React from 'react';
-import { View, StyleSheet } from 'react-native';
-import { Tabs } from 'expo-router';
-import { LayoutDashboard, Crown, Users, ArrowLeftRight, FileText } from 'lucide-react-native';
+import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
+import { Stack } from 'expo-router';
 import Colors from '@/constants/colors';
+import { useAdminGuard } from '@/hooks/useAdminGuard';
 
-export default function AdminLayout() {
-  return (
-    <View style={styles.container}>
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarActiveTintColor: Colors.primary,
-        tabBarInactiveTintColor: '#555555',
-        tabBarStyle: {
-          backgroundColor: '#0D0D0D',
-          borderTopColor: 'rgba(255, 215, 0, 0.08)',
-          borderTopWidth: StyleSheet.hairlineWidth,
-          elevation: 0,
-          shadowOpacity: 0,
-        },
-        tabBarLabelStyle: {
-          fontSize: 10,
-          fontWeight: '700' as const,
-          letterSpacing: 0.5,
-          textTransform: 'uppercase',
-          marginTop: 2,
-        },
-        tabBarIconStyle: {
-          marginBottom: -2,
-        },
-      }}
-    >
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: 'Home',
-          tabBarIcon: ({ color, focused }) => (
-            <LayoutDashboard size={20} color={color} strokeWidth={focused ? 2.2 : 1.5} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="owner-controls"
-        options={{
-          title: 'Owner',
-          tabBarIcon: ({ color, focused }) => (
-            <Crown size={20} color={color} strokeWidth={focused ? 2.2 : 1.5} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="members"
-        options={{
-          title: 'Team',
-          tabBarIcon: ({ color, focused }) => (
-            <Users size={20} color={color} strokeWidth={focused ? 2.2 : 1.5} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="transactions"
-        options={{
-          title: 'Txns',
-          tabBarIcon: ({ color, focused }) => (
-            <ArrowLeftRight size={20} color={color} strokeWidth={focused ? 2.2 : 1.5} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="applications"
-        options={{
-          title: 'Apps',
-          tabBarIcon: ({ color, focused }) => (
-            <FileText size={20} color={color} strokeWidth={focused ? 2.2 : 1.5} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="investor-profits"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="properties"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="marketing"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="team"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="fees"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="land-partners"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="engagement"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="broadcast"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="growth"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="influencers"
-        options={{
-          href: null,
-        }}
-      />
-
-      <Tabs.Screen
-        name="banners"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="intro"
-        options={{
-          href: null,
-        }}
-      />
-
-      <Tabs.Screen
-        name="app-docs"
-        options={{
-          href: null,
-        }}
-      />
-
-      <Tabs.Screen
-        name="social-command"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="member"
-        options={{
-          href: null,
-        }}
-      />
-
-
-
-      <Tabs.Screen
-        name="title-companies"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="lender-directory"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="ai-outreach"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="lender-search"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="outreach-analytics"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="email-engine"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="lender-sync"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="ai-video"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="developer-handoff"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="api-keys"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="email-inbox"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="email-management"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="email-accounts"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="dashboard"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="lead-intelligence"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="traffic-control"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="viral-growth"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="landing-analytics"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="system-monitor"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="visitor-intelligence"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="staff-activity"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="retargeting"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="jv-deals"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="trash-bin"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="system-map"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="audit-log"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="data-recovery"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="publication-log"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="supabase-scripts"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="image-backup"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="landing-control"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="feature-control"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="sync-diagnostics"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="landing-submissions"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="deploy-waitlist"
-        options={{
-          href: null,
-        }}
-      />
-    </Tabs>
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({
-  container: {
+const layoutStyles = StyleSheet.create({
+  loading: {
     flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
     backgroundColor: Colors.background,
   },
+  loadingText: {
+    color: '#97A0AF',
+    fontSize: 14,
+    marginTop: 12,
+  },
 });
+
+export default function AdminLayout() {
+  const { isAdmin, isVerifying } = useAdminGuard({ redirectOnFail: true });
+
+  if (isVerifying) {
+    return (
+      <View style={layoutStyles.loading}>
+        <ActivityIndicator size="large" color={Colors.primary} />
+        <Text style={layoutStyles.loadingText}>Verifying access...</Text>
+      </View>
+    );
+  }
+
+  if (!isAdmin) {
+    return (
+      <View style={layoutStyles.loading}>
+        <Text style={layoutStyles.loadingText}>Access denied</Text>
+      </View>
+    );
+  }
+
+  return (
+    <Stack
+      screenOptions={{
+        headerShown: false,
+        contentStyle: { backgroundColor: Colors.background },
+        animation: 'slide_from_right',
+      }}
+    >
+      <Stack.Screen name="index" />
+      <Stack.Screen name="owner-controls" />
+      <Stack.Screen name="members" />
+      <Stack.Screen name="transactions" />
+      <Stack.Screen name="applications" />
+      <Stack.Screen name="investor-profits" />
+      <Stack.Screen name="properties" />
+      <Stack.Screen name="marketing" />
+      <Stack.Screen name="team" />
+      <Stack.Screen name="fees" />
+      <Stack.Screen name="land-partners" />
+      <Stack.Screen name="engagement" />
+      <Stack.Screen name="broadcast" />
+      <Stack.Screen name="growth" />
+      <Stack.Screen name="influencers" />
+      <Stack.Screen name="banners" />
+      <Stack.Screen name="intro" />
+      <Stack.Screen name="app-docs" />
+      <Stack.Screen name="social-command" />
+      <Stack.Screen name="member" />
+      <Stack.Screen name="title-companies" />
+      <Stack.Screen name="lender-directory" />
+      <Stack.Screen name="ai-outreach" />
+      <Stack.Screen name="lender-search" />
+      <Stack.Screen name="outreach-analytics" />
+      <Stack.Screen name="email-engine" />
+      <Stack.Screen name="lender-sync" />
+      <Stack.Screen name="ai-video" />
+      <Stack.Screen name="developer-handoff" />
+      <Stack.Screen name="api-keys" />
+      <Stack.Screen name="email-inbox" />
+      <Stack.Screen name="email-management" />
+      <Stack.Screen name="email-accounts" />
+      <Stack.Screen name="dashboard" />
+      <Stack.Screen name="lead-intelligence" />
+      <Stack.Screen name="traffic-control" />
+      <Stack.Screen name="viral-growth" />
+      <Stack.Screen name="landing-analytics" />
+      <Stack.Screen name="system-monitor" />
+      <Stack.Screen name="visitor-intelligence" />
+      <Stack.Screen name="staff-activity" />
+      <Stack.Screen name="retargeting" />
+      <Stack.Screen name="jv-deals" />
+      <Stack.Screen name="trash-bin" />
+      <Stack.Screen name="system-map" />
+      <Stack.Screen name="audit-log" />
+      <Stack.Screen name="data-recovery" />
+      <Stack.Screen name="publication-log" />
+      <Stack.Screen name="supabase-scripts" />
+      <Stack.Screen name="image-backup" />
+      <Stack.Screen name="landing-control" />
+      <Stack.Screen name="feature-control" />
+      <Stack.Screen name="sync-diagnostics" />
+      <Stack.Screen name="landing-submissions" />
+      <Stack.Screen name="deploy-waitlist" />
+      <Stack.Screen name="waitlist-admin" />
+      <Stack.Screen name="registration-audit" />
+    </Stack>
+  );
+}

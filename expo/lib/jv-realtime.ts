@@ -36,7 +36,7 @@ function triggerLandingSync(immediate: boolean = false) {
   }, delay);
 }
 
-let _broadcastChannel: BroadcastChannel | null = null;
+let _broadcastChannel: globalThis.BroadcastChannel | null = null;
 let _broadcastListenerCount = 0;
 let _tableVerified = false;
 let _tableVerifyTimestamp = 0;
@@ -78,7 +78,7 @@ export function resetTableVerification(): void {
   _tableVerifyTimestamp = 0;
 }
 
-function getBroadcastChannel(): BroadcastChannel | null {
+function getBroadcastChannel(): globalThis.BroadcastChannel | null {
   if (Platform.OS !== 'web') return null;
   try {
     if (!_broadcastChannel || _broadcastChannel.onmessage === undefined) {

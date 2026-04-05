@@ -13,11 +13,13 @@ import { IntroProvider } from '@/lib/intro-context';
 import { LenderProvider } from '@/lib/lender-context';
 import { EarnProvider } from '@/lib/earn-context';
 import { EmailProvider } from '@/lib/email-context';
+import ErrorBoundary from '@/components/ErrorBoundary';
 import Colors from '@/constants/colors';
+import { queryClientConfig } from '@/lib/query-config';
 
 void SplashScreen.preventAutoHideAsync();
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient(queryClientConfig);
 
 const screenDefaults = {
   headerStyle: { backgroundColor: Colors.background },
@@ -96,7 +98,7 @@ function useAuthGate() {
     }
 
     const routeStr = String(currentRoute);
-    if (!isAuthenticated && !isPublicRoute && routeStr !== '(tabs)' && routeStr !== '' && routeStr !== 'admin' && routeStr !== 'property') {
+    if (!isAuthenticated && !isPublicRoute && routeStr !== '' && routeStr !== 'admin' && routeStr !== 'property') {
       console.log('[AuthGate] Unauthenticated user on non-public route:', currentRoute, '— redirecting to landing');
       router.replace('/landing' as any);
       return;
@@ -180,6 +182,9 @@ function RootLayoutNav() {
       <Stack.Screen name="sms-history" options={{ title: 'SMS History' }} />
       <Stack.Screen name="sms-reports" options={{ title: 'SMS Reports' }} />
       <Stack.Screen name="property/[id]" options={{ title: 'Property Details' }} />
+      <Stack.Screen name="registration-audit" options={{ title: 'Registration Audit' }} />
+      <Stack.Screen name="business-card" options={{ title: 'Business Card' }} />
+      <Stack.Screen name="qr-code" options={{ title: 'QR Code' }} />
       <Stack.Screen name="admin" options={{ headerShown: false }} />
     </Stack>
   );
@@ -191,30 +196,32 @@ export default function RootLayout() {
   }, []);
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <GestureHandlerRootView style={{ flex: 1 }}>
-        <AuthProvider>
-          <NetworkProvider>
-            <I18nProvider>
-              <AnalyticsProvider>
-                <IPXProvider>
-                  <WalletProvider>
-                    <EarnProvider>
-                      <LenderProvider>
-                        <IntroProvider>
-                          <EmailProvider>
-                            <RootLayoutNav />
-                          </EmailProvider>
-                        </IntroProvider>
-                      </LenderProvider>
-                    </EarnProvider>
-                  </WalletProvider>
-                </IPXProvider>
-              </AnalyticsProvider>
-            </I18nProvider>
-          </NetworkProvider>
-        </AuthProvider>
-      </GestureHandlerRootView>
-    </QueryClientProvider>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <GestureHandlerRootView style={{ flex: 1 }}>
+          <AuthProvider>
+            <NetworkProvider>
+              <I18nProvider>
+                <AnalyticsProvider>
+                  <IPXProvider>
+                    <WalletProvider>
+                      <EarnProvider>
+                        <LenderProvider>
+                          <IntroProvider>
+                            <EmailProvider>
+                              <RootLayoutNav />
+                            </EmailProvider>
+                          </IntroProvider>
+                        </LenderProvider>
+                      </EarnProvider>
+                    </WalletProvider>
+                  </IPXProvider>
+                </AnalyticsProvider>
+              </I18nProvider>
+            </NetworkProvider>
+          </AuthProvider>
+        </GestureHandlerRootView>
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }

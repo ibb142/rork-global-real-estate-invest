@@ -298,7 +298,7 @@ export default function AdminJVDealsScreen() {
       resetSupabaseCheck();
       invalidateAllJVQueries(queryClient);
       void queryClient.refetchQueries({ queryKey: ['published-jv-deals'] });
-      triggerAutoDeploy('deal_publish').then(result => {
+      triggerAutoDeploy('deal_publish', true).then(result => {
         if (result) {
           console.log('[Admin JV] Auto-deploy after publish:', result.status, 'deals:', result.syncedDeals);
         } else {
@@ -331,7 +331,7 @@ export default function AdminJVDealsScreen() {
       resetSupabaseCheck();
       invalidateAllJVQueries(queryClient);
       void queryClient.refetchQueries({ queryKey: ['published-jv-deals'] });
-      triggerAutoDeploy('deal_unpublish').then(result => {
+      triggerAutoDeploy('deal_unpublish', true).then(result => {
         if (result) {
           console.log('[Admin JV] Auto-deploy after unpublish:', result.status, 'deals:', result.syncedDeals);
         } else {
@@ -370,10 +370,23 @@ export default function AdminJVDealsScreen() {
       void queryClient.refetchQueries({ queryKey: ['jvAgreements.list'] });
       setEditModalVisible(false);
       setSelectedDeal(null);
-      syncToLandingPage().then(result => {
-        console.log('[Admin JV] Landing sync after update:', result.success, 'synced:', result.syncedDeals);
+      triggerAutoDeploy('content_change', true).then(result => {
+        if (result) {
+          console.log('[Admin JV] Auto-deploy after update:', result.status, 'deals:', result.syncedDeals, 'files:', result.filesUploaded.length);
+          return;
+        }
+        syncToLandingPage().then(syncResult => {
+          console.log('[Admin JV] Landing sync after update (fallback):', syncResult.success, 'synced:', syncResult.syncedDeals);
+        }).catch(err => {
+          console.log('[Admin JV] Landing sync after update fallback failed (non-critical):', err);
+        });
       }).catch(err => {
-        console.log('[Admin JV] Landing sync after update failed (non-critical):', err);
+        console.log('[Admin JV] Auto-deploy after update failed:', err);
+        syncToLandingPage().then(syncResult => {
+          console.log('[Admin JV] Landing sync after update fallback:', syncResult.success, 'synced:', syncResult.syncedDeals);
+        }).catch(syncErr => {
+          console.log('[Admin JV] Landing sync after update fallback failed (non-critical):', syncErr);
+        });
       });
     },
     onError: (err: Error) => {

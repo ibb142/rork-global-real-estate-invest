@@ -10,7 +10,7 @@
  */
 import { supabase } from '@/lib/supabase';
 import { logAudit } from '@/lib/audit-trail';
-import { deployLandingPage, getDeployStatus } from '@/lib/landing-deploy';
+import { deployLandingPage, getDeployStatus, type DeployResult } from '@/lib/landing-deploy';
 import {
   mapDealToCardModel,
   CANONICAL_DISTRIBUTION_LABEL,
@@ -19,9 +19,10 @@ import {
 import { fetchCanonicalDeals } from '@/lib/canonical-deals';
 
 async function _getSyncAuthHeaders(): Promise<Record<string, string>> {
+  const anonKey = (process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '').trim();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    'apikey': process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '',
+    'apikey': anonKey,
   };
   try {
     const { data: { session } } = await supabase.auth.getSession();
@@ -30,11 +31,9 @@ async function _getSyncAuthHeaders(): Promise<Record<string, string>> {
       const isExpiringSoon = expiresAt > 0 && (expiresAt - Date.now()) < 120000;
 
       if (isExpiringSoon && session.refresh_token) {
-        console.log('[LandingSync] Token expiring soon — refreshing...');
         const { data: refreshed } = await supabase.auth.refreshSession();
         if (refreshed?.session?.access_token) {
           headers['Authorization'] = `Bearer ${refreshed.session.access_token}`;
-          console.log('[LandingSync] Refreshed token attached');
         } else {
           headers['Authorization'] = `Bearer ${session.access_token}`;
         }
@@ -42,17 +41,10 @@ async function _getSyncAuthHeaders(): Promise<Record<string, string>> {
         headers['Authorization'] = `Bearer ${session.access_token}`;
       }
     } else {
-      console.log('[LandingSync] No session — attempting refresh...');
-      const { data: refreshed } = await supabase.auth.refreshSession();
-      if (refreshed?.session?.access_token) {
-        headers['Authorization'] = `Bearer ${refreshed.session.access_token}`;
-        console.log('[LandingSync] Recovered session via refresh');
-      } else {
-        headers['Authorization'] = `Bearer ${process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || ''}`;
-      }
+      headers['Authorization'] = `Bearer ${anonKey}`;
     }
   } catch {
-    headers['Authorization'] = `Bearer ${process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || ''}`;
+    headers['Authorization'] = `Bearer ${anonKey}`;
   }
   return headers;
 }
@@ -62,6 +54,8 @@ export interface LandingSyncResult {
   syncedDeals: number;
   errors: string[];
   timestamp: string;
+  filesUploaded: string[];
+  deployTriggered: boolean;
 }
 
 export interface PublishedDealPayload {
@@ -328,16 +322,16 @@ async function generateStaticDealsJson(deals: PublishedDealPayload[], timestamp:
   }
 }
 
-async function triggerBackendDeploy(): Promise<void> {
+async function triggerBackendDeploy(): Promise<DeployResult | null> {
   const now = Date.now();
   if (now - _lastDeployTimestamp < DEPLOY_COOLDOWN) {
-    console.log('[LandingSync] Deploy cooldown active, skipping');
-    return;
+    console.log('[LandingSync] Deploy cooldown active, skipping duplicate deploy');
+    return null;
   }
   const status = getDeployStatus();
   if (!status.canDeploy) {
     console.log('[LandingSync] Cannot deploy: backend not configured');
-    return;
+    return null;
   }
   _lastDeployTimestamp = now;
   try {
@@ -350,9 +344,17 @@ async function triggerBackendDeploy(): Promise<void> {
       console.log('[LandingSync] Backend deploy failed:', result.errors.join('; '));
       _lastDeployError = result.errors.join('; ') || 'Deploy failed';
     }
+    return result;
   } catch (err) {
-    console.log('[LandingSync] Deploy error:', (err as Error)?.message);
-    _lastDeployError = (err as Error)?.message || 'Deploy error';
+    const message = (err as Error)?.message || 'Deploy error';
+    console.log('[LandingSync] Deploy error:', message);
+    _lastDeployError = message;
+    return {
+      success: false,
+      filesUploaded: [],
+      errors: [message],
+      timestamp: new Date().toISOString(),
+    };
   }
 }
 
@@ -363,11 +365,7 @@ export async function syncToLandingPage(): Promise<LandingSyncResult> {
     const deals = await fetchPublishedDeals();
     _lastSyncTimestamp = timestamp;
 
-    if (deals.length === 0) {
-      return { success: true, syncedDeals: 0, errors: [], timestamp };
-    }
-
-    console.log('[LandingSync] Syncing', deals.length, 'deals to landing_deals table + triggering deploy...');
+    console.log('[LandingSync] Syncing', deals.length, 'published deals to landing_deals table + triggering deploy...');
 
     const tableResult = await syncToSupabaseLandingTable(deals, timestamp);
 
@@ -377,9 +375,14 @@ export async function syncToLandingPage(): Promise<LandingSyncResult> {
       console.log('[LandingSync] Static deals.json cache failed (non-blocking):', (cacheErr as Error)?.message);
     }
 
+    let deployResult: DeployResult | null = null;
     try {
-      await triggerBackendDeploy();
-      console.log('[LandingSync] Backend deploy triggered after table sync');
+      deployResult = await triggerBackendDeploy();
+      if (deployResult) {
+        console.log('[LandingSync] Backend deploy triggered after table sync');
+      } else {
+        console.log('[LandingSync] Backend deploy skipped after table sync');
+      }
     } catch (deployErr) {
       console.log('[LandingSync] Backend deploy trigger failed (non-blocking):', (deployErr as Error)?.message);
     }
@@ -407,6 +410,20 @@ export async function syncToLandingPage(): Promise<LandingSyncResult> {
       }
     }
 
+    const combinedErrors = [...tableResult.errors];
+    if (deployResult && deployResult.errors.length > 0) {
+      combinedErrors.push(...deployResult.errors.map((error) => `Deploy: ${error}`));
+    }
+
+    const finalResult: LandingSyncResult = {
+      success: tableResult.success && (deployResult ? deployResult.success : true),
+      syncedDeals: tableResult.syncedDeals,
+      errors: combinedErrors,
+      timestamp,
+      filesUploaded: deployResult?.filesUploaded ?? [],
+      deployTriggered: !!deployResult,
+    };
+
     try {
       await logAudit({
         entityType: 'system',
@@ -418,16 +435,25 @@ export async function syncToLandingPage(): Promise<LandingSyncResult> {
           dealCount: deals.length,
           dealIds: deals.map(d => d.id),
           syncedToTable: tableResult.syncedDeals,
+          deployTriggered: finalResult.deployTriggered,
+          deployedFiles: finalResult.filesUploaded,
         },
       });
     } catch (auditErr) {
       console.log('[LandingSync] Audit log failed (non-critical):', auditErr);
     }
 
-    return tableResult;
+    return finalResult;
   } catch (err) {
     console.log('[LandingSync] Sync exception:', (err as Error)?.message);
-    return { success: false, syncedDeals: 0, errors: [(err as Error)?.message || 'Unknown error'], timestamp };
+    return {
+      success: false,
+      syncedDeals: 0,
+      errors: [(err as Error)?.message || 'Unknown error'],
+      timestamp,
+      filesUploaded: [],
+      deployTriggered: false,
+    };
   }
 }
 
@@ -466,10 +492,12 @@ async function syncToSupabaseLandingTable(deals: PublishedDealPayload[], timesta
 
   if (!tableExists) {
     return {
-      success: true,
+      success: false,
       syncedDeals: 0,
       errors: ['landing_deals table not found — create with supabase-full-setup.sql'],
       timestamp,
+      filesUploaded: [],
+      deployTriggered: false,
     };
   }
 
@@ -563,6 +591,8 @@ async function syncToSupabaseLandingTable(deals: PublishedDealPayload[], timesta
     syncedDeals: syncedCount,
     errors,
     timestamp,
+    filesUploaded: [],
+    deployTriggered: false,
   };
 }
 

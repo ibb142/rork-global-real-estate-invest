@@ -294,9 +294,7 @@ Also provide 3-4 actionable insights about the local market.`,
       case 0:
         return true;
       case 1:
-        if (formData.partnerType === 'lp' && formData.isAccreditedInvestor === undefined) {
-          return false;
-        }
+
         return !!(formData.firstName && formData.lastName && formData.email && formData.phone);
       case 2:
         return !!(formData.propertyAddress && formData.city && formData.state && formData.lotSize && formData.estimatedValue);
@@ -459,7 +457,7 @@ Also provide 3-4 actionable insights about the local market.`,
           </View>
           <View style={styles.featureItem}>
             <Shield size={14} color={Colors.info} />
-            <Text style={styles.featureText}>Accredited investor</Text>
+            <Text style={styles.featureText}>Open to all investors</Text>
           </View>
         </View>
       </TouchableOpacity>
@@ -526,7 +524,7 @@ Also provide 3-4 actionable insights about the local market.`,
         style={styles.infoButton}
         onPress={() => showInfo(
           'JV vs LP Partnership',
-          'Joint Venture (JV): You become a non-managing member with equity participation. Simpler structure, same economics.\n\nLimited Partner (LP): You\'re treated as a passive investor. Requires accredited investor verification. Better for those wanting formal securities compliance.\n\nBoth options have identical economic terms:\n• 60% cash payment at closing\n• 40% used as collateral\n• 30% of net profit at exit\n• 30-month agreement term'
+          'Joint Venture (JV): You become a non-managing member with equity participation. Simpler structure, same economics.\n\nLimited Partner (LP): You\'re treated as a passive investor. Better for those wanting formal securities compliance.\n\nBoth options have identical economic terms and are open to everyone:\n• 60% cash payment at closing\n• 40% used as collateral\n• 30% of net profit at exit\n• 30-month agreement term'
         )}
       >
         <Info size={16} color={Colors.primary} />
@@ -541,48 +539,6 @@ Also provide 3-4 actionable insights about the local market.`,
       <Text style={styles.stepSubtitle}>
         Provide your contact details for the partnership agreement
       </Text>
-
-      {formData.partnerType === 'lp' && (
-        <View style={styles.accreditedSection}>
-          <View style={styles.accreditedHeader}>
-            <Shield size={20} color={Colors.warning} />
-            <Text style={styles.accreditedTitle}>Accredited Investor Status</Text>
-          </View>
-          <Text style={styles.accreditedNote}>
-            LP partnerships require accredited investor verification per SEC regulations.
-          </Text>
-          <TouchableOpacity
-            style={[
-              styles.accreditedOption,
-              formData.isAccreditedInvestor === true && styles.accreditedOptionSelected,
-            ]}
-            onPress={() => updateFormData('isAccreditedInvestor', true)}
-          >
-            <View style={[styles.radioCircle, formData.isAccreditedInvestor === true && styles.radioCircleSelected]}>
-              {formData.isAccreditedInvestor === true && <View style={styles.radioDot} />}
-            </View>
-            <View style={styles.accreditedOptionText}>
-              <Text style={styles.accreditedOptionTitle}>Yes, I am an accredited investor</Text>
-              <Text style={styles.accreditedOptionDesc}>Annual income $200K+ or net worth $1M+ (excluding primary residence)</Text>
-            </View>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-              styles.accreditedOption,
-              formData.isAccreditedInvestor === false && styles.accreditedOptionSelected,
-            ]}
-            onPress={() => updateFormData('isAccreditedInvestor', false)}
-          >
-            <View style={[styles.radioCircle, formData.isAccreditedInvestor === false && styles.radioCircleSelected]}>
-              {formData.isAccreditedInvestor === false && <View style={styles.radioDot} />}
-            </View>
-            <View style={styles.accreditedOptionText}>
-              <Text style={styles.accreditedOptionTitle}>No, I am not accredited</Text>
-              <Text style={styles.accreditedOptionDesc}>Consider JV partnership instead (no accreditation required)</Text>
-            </View>
-          </TouchableOpacity>
-        </View>
-      )}
 
       <View style={styles.formRow}>
         <View style={styles.formHalf}>

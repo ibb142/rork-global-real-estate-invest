@@ -49,6 +49,9 @@ import {
   CheckCircle2,
   XCircle,
   Clock,
+  Building,
+  Hash,
+  ImageIcon,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { COUNTRIES, Country, getCountryByName } from '@/constants/countries';
@@ -90,6 +93,11 @@ export default function KYCVerificationScreen() {
     countryCode: 'US',
     passportNumber: '',
     taxId: '',
+    ssn: '',
+    investingAsCompany: false,
+    companyName: '',
+    companyEin: '',
+    companyTaxId: '',
   });
 
   const [showNationalityPicker, setShowNationalityPicker] = useState(false);
@@ -147,6 +155,8 @@ export default function KYCVerificationScreen() {
     setPersonalInfo(prev => ({ ...prev, [key]: value }));
   };
 
+  const isUSResident = personalInfo.countryCode === 'US' || personalInfo.nationalityCode === 'US';
+
   const validatePersonalInfo = (): boolean => {
     if (!personalInfo.firstName || !personalInfo.lastName) {
       Alert.alert('Missing Information', 'Please enter your full name.');
@@ -161,12 +171,30 @@ export default function KYCVerificationScreen() {
       return false;
     }
     if (!personalInfo.passportNumber) {
-      Alert.alert('Missing Information', 'Please enter your passport number.');
+      Alert.alert('Missing Information', 'Please enter your ID or passport number.');
       return false;
     }
-    if (!personalInfo.taxId) {
+    if (isUSResident && !personalInfo.ssn) {
+      Alert.alert('Missing Information', 'Please enter your Social Security Number (SSN).');
+      return false;
+    }
+    if (!isUSResident && !personalInfo.taxId) {
       Alert.alert('Missing Information', `Please enter your ${selectedCountryInfo.taxIdLabel}.`);
       return false;
+    }
+    if (personalInfo.investingAsCompany) {
+      if (!personalInfo.companyName) {
+        Alert.alert('Missing Information', 'Please enter your company name.');
+        return false;
+      }
+      if (!personalInfo.companyEin) {
+        Alert.alert('Missing Information', 'Please enter your company EIN number.');
+        return false;
+      }
+      if (!personalInfo.companyTaxId) {
+        Alert.alert('Missing Information', 'Please enter your company Tax ID.');
+        return false;
+      }
     }
     return true;
   };
@@ -347,13 +375,26 @@ export default function KYCVerificationScreen() {
     </TouchableOpacity>
   );
 
-  const pickDocument = async (type: 'governmentId' | 'proofOfAddress' | 'selfie') => {
-    const isCamera = type === 'selfie';
-    
-    if (isCamera) {
+  const [showUploadPicker, setShowUploadPicker] = useState(false);
+  const [pendingUploadType, setPendingUploadType] = useState<'governmentId' | 'proofOfAddress' | 'selfie' | null>(null);
+
+  const showDocumentPickerOptions = (type: 'governmentId' | 'proofOfAddress' | 'selfie') => {
+    if (Platform.OS === 'web') {
+      void launchDocumentPicker(type, 'gallery');
+      return;
+    }
+    setPendingUploadType(type);
+    setShowUploadPicker(true);
+  };
+
+  const launchDocumentPicker = async (type: 'governmentId' | 'proofOfAddress' | 'selfie', source: 'camera' | 'gallery') => {
+    setShowUploadPicker(false);
+    setPendingUploadType(null);
+
+    if (source === 'camera') {
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Permission Required', 'Please grant camera permissions to take a selfie.');
+        Alert.alert('Permission Required', 'Please grant camera permissions to take a photo.');
         return;
       }
     } else {
@@ -371,7 +412,7 @@ export default function KYCVerificationScreen() {
       quality: 0.8,
     };
 
-    const result = isCamera
+    const result = source === 'camera'
       ? await ImagePicker.launchCameraAsync(options)
       : await ImagePicker.launchImageLibraryAsync(options);
 
@@ -401,6 +442,10 @@ export default function KYCVerificationScreen() {
         }));
       }, 1500);
     }
+  };
+
+  const pickDocument = async (type: 'governmentId' | 'proofOfAddress' | 'selfie') => {
+    showDocumentPickerOptions(type);
   };
 
   const removeDocument = (type: 'governmentId' | 'proofOfAddress' | 'selfie') => {
@@ -747,35 +792,145 @@ export default function KYCVerificationScreen() {
         </View>
 
         <View style={styles.inputGroup}>
-          <Text style={styles.inputLabel}>Passport Number *</Text>
+          <Text style={styles.inputLabel}>ID / Passport Number *</Text>
           <View style={styles.inputWithIcon}>
             <CreditCard size={18} color={Colors.textTertiary} />
             <TextInput
               style={styles.inputIconText}
-              placeholder="Enter your passport number"
+              placeholder="Enter your ID or passport number"
               placeholderTextColor={Colors.textTertiary}
               value={personalInfo.passportNumber}
               onChangeText={(text) => updatePersonalInfo('passportNumber', text.toUpperCase())}
               autoCapitalize="characters"
             />
           </View>
-          <Text style={styles.inputHint}>Enter passport number exactly as shown on your passport</Text>
+          <Text style={styles.inputHint}>Enter your government ID or passport number exactly as shown</Text>
         </View>
 
-        <View style={styles.inputGroup}>
-          <Text style={styles.inputLabel}>{selectedCountryInfo.taxIdLabel} *</Text>
-          <View style={styles.inputWithIcon}>
-            <IdCard size={18} color={Colors.textTertiary} />
-            <TextInput
-              style={styles.inputIconText}
-              placeholder={selectedCountryInfo.taxIdPlaceholder}
-              placeholderTextColor={Colors.textTertiary}
-              value={personalInfo.taxId}
-              onChangeText={(text) => updatePersonalInfo('taxId', text)}
-            />
+        {isUSResident ? (
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Social Security Number (SSN) *</Text>
+            <View style={styles.inputWithIcon}>
+              <IdCard size={18} color={Colors.textTertiary} />
+              <TextInput
+                style={styles.inputIconText}
+                placeholder="XXX-XX-XXXX"
+                placeholderTextColor={Colors.textTertiary}
+                value={personalInfo.ssn}
+                onChangeText={(text) => {
+                  const cleaned = text.replace(/[^0-9]/g, '');
+                  let formatted = cleaned;
+                  if (cleaned.length > 3 && cleaned.length <= 5) {
+                    formatted = `${cleaned.slice(0, 3)}-${cleaned.slice(3)}`;
+                  } else if (cleaned.length > 5) {
+                    formatted = `${cleaned.slice(0, 3)}-${cleaned.slice(3, 5)}-${cleaned.slice(5, 9)}`;
+                  }
+                  updatePersonalInfo('ssn', formatted);
+                }}
+                keyboardType="number-pad"
+                maxLength={11}
+                secureTextEntry
+              />
+            </View>
+            <Text style={styles.inputHint}>Required for US residents. Your SSN is encrypted and secure.</Text>
           </View>
-          <Text style={styles.inputHint}>Your tax identification number for {personalInfo.country}</Text>
+        ) : (
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>{selectedCountryInfo.taxIdLabel} *</Text>
+            <View style={styles.inputWithIcon}>
+              <IdCard size={18} color={Colors.textTertiary} />
+              <TextInput
+                style={styles.inputIconText}
+                placeholder={selectedCountryInfo.taxIdPlaceholder}
+                placeholderTextColor={Colors.textTertiary}
+                value={personalInfo.taxId}
+                onChangeText={(text) => updatePersonalInfo('taxId', text)}
+              />
+            </View>
+            <Text style={styles.inputHint}>Your tax identification number for {personalInfo.country}</Text>
+          </View>
+        )}
+
+        <View style={styles.sectionDivider}>
+          <View style={styles.dividerLine} />
+          <Text style={styles.dividerText}>Company Investment (Optional)</Text>
+          <View style={styles.dividerLine} />
         </View>
+
+        <TouchableOpacity
+          style={styles.companyToggle}
+          onPress={() => setPersonalInfo(prev => ({ ...prev, investingAsCompany: !prev.investingAsCompany }))}
+        >
+          <View style={styles.companyToggleLeft}>
+            <View style={[styles.companyToggleIcon, personalInfo.investingAsCompany && styles.companyToggleIconActive]}>
+              <Building size={20} color={personalInfo.investingAsCompany ? Colors.primary : Colors.textTertiary} />
+            </View>
+            <View>
+              <Text style={styles.companyToggleTitle}>Investing as a Company</Text>
+              <Text style={styles.companyToggleHint}>Enable if you plan to invest through a company entity</Text>
+            </View>
+          </View>
+          <View style={[styles.toggleSwitch, personalInfo.investingAsCompany && styles.toggleSwitchActive]}>
+            <View style={[styles.toggleKnob, personalInfo.investingAsCompany && styles.toggleKnobActive]} />
+          </View>
+        </TouchableOpacity>
+
+        {personalInfo.investingAsCompany && (
+          <View style={styles.companyFields}>
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Company Name *</Text>
+              <View style={styles.inputWithIcon}>
+                <Building size={18} color={Colors.textTertiary} />
+                <TextInput
+                  style={styles.inputIconText}
+                  placeholder="Enter company legal name"
+                  placeholderTextColor={Colors.textTertiary}
+                  value={personalInfo.companyName}
+                  onChangeText={(text) => updatePersonalInfo('companyName', text)}
+                  autoCapitalize="words"
+                />
+              </View>
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Company EIN Number *</Text>
+              <View style={styles.inputWithIcon}>
+                <Hash size={18} color={Colors.textTertiary} />
+                <TextInput
+                  style={styles.inputIconText}
+                  placeholder="XX-XXXXXXX"
+                  placeholderTextColor={Colors.textTertiary}
+                  value={personalInfo.companyEin}
+                  onChangeText={(text) => {
+                    const cleaned = text.replace(/[^0-9]/g, '');
+                    let formatted = cleaned;
+                    if (cleaned.length > 2) {
+                      formatted = `${cleaned.slice(0, 2)}-${cleaned.slice(2, 9)}`;
+                    }
+                    updatePersonalInfo('companyEin', formatted);
+                  }}
+                  keyboardType="number-pad"
+                  maxLength={10}
+                />
+              </View>
+              <Text style={styles.inputHint}>Employer Identification Number issued by IRS</Text>
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Company Tax ID *</Text>
+              <View style={styles.inputWithIcon}>
+                <IdCard size={18} color={Colors.textTertiary} />
+                <TextInput
+                  style={styles.inputIconText}
+                  placeholder="Enter company tax ID"
+                  placeholderTextColor={Colors.textTertiary}
+                  value={personalInfo.companyTaxId}
+                  onChangeText={(text) => updatePersonalInfo('companyTaxId', text)}
+                />
+              </View>
+            </View>
+          </View>
+        )}
       </View>
 
       <View style={styles.bottomPadding} />
@@ -898,6 +1053,21 @@ export default function KYCVerificationScreen() {
         <FileText size={24} color={Colors.primary} />
       )}
 
+      <View style={styles.uploadMethodInfo}>
+        <View style={styles.uploadMethodRow}>
+          <View style={styles.uploadMethodIcon}>
+            <Camera size={18} color={Colors.primary} />
+          </View>
+          <Text style={styles.uploadMethodText}>Take a photo with your camera</Text>
+        </View>
+        <View style={styles.uploadMethodRow}>
+          <View style={styles.uploadMethodIcon}>
+            <ImageIcon size={18} color={Colors.primary} />
+          </View>
+          <Text style={styles.uploadMethodText}>Upload from your photo gallery</Text>
+        </View>
+      </View>
+
       <View style={styles.infoCard}>
         <Info size={18} color={Colors.info} />
         <Text style={styles.infoCardText}>
@@ -950,16 +1120,25 @@ export default function KYCVerificationScreen() {
           </TouchableOpacity>
         </View>
       ) : (
-        <TouchableOpacity
-          style={styles.selfieButton}
-          onPress={() => pickDocument('selfie')}
-        >
-          <View style={styles.selfieIconContainer}>
-            <Camera size={48} color={Colors.primary} />
-          </View>
-          <Text style={styles.selfieButtonText}>Take Selfie</Text>
-          <Text style={styles.selfieButtonHint}>Tap to open camera</Text>
-        </TouchableOpacity>
+        <View style={styles.selfieOptionsContainer}>
+          <TouchableOpacity
+            style={styles.selfieButton}
+            onPress={() => launchDocumentPicker('selfie', 'camera')}
+          >
+            <View style={styles.selfieIconContainer}>
+              <Camera size={48} color={Colors.primary} />
+            </View>
+            <Text style={styles.selfieButtonText}>Take Selfie</Text>
+            <Text style={styles.selfieButtonHint}>Tap to open camera</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.galleryFallbackButton}
+            onPress={() => launchDocumentPicker('selfie', 'gallery')}
+          >
+            <ImageIcon size={18} color={Colors.primary} />
+            <Text style={styles.galleryFallbackText}>Or upload from gallery</Text>
+          </TouchableOpacity>
+        </View>
       )}
 
       <View style={styles.bottomPadding} />
@@ -1224,10 +1403,39 @@ export default function KYCVerificationScreen() {
             <Text style={styles.reviewLabel}>Passport Number</Text>
             <Text style={styles.reviewValue}>{personalInfo.passportNumber}</Text>
           </View>
-          <View style={[styles.reviewRow, { borderBottomWidth: 0 }]}>
-            <Text style={styles.reviewLabel}>{selectedCountryInfo.taxIdLabel}</Text>
-            <Text style={styles.reviewValue}>{personalInfo.taxId}</Text>
-          </View>
+          {isUSResident ? (
+            <View style={styles.reviewRow}>
+              <Text style={styles.reviewLabel}>SSN</Text>
+              <Text style={styles.reviewValue}>***-**-{personalInfo.ssn.slice(-4)}</Text>
+            </View>
+          ) : (
+            <View style={styles.reviewRow}>
+              <Text style={styles.reviewLabel}>{selectedCountryInfo.taxIdLabel}</Text>
+              <Text style={styles.reviewValue}>{personalInfo.taxId}</Text>
+            </View>
+          )}
+          {personalInfo.investingAsCompany && (
+            <>
+              <View style={styles.reviewRow}>
+                <Text style={styles.reviewLabel}>Company</Text>
+                <Text style={styles.reviewValue}>{personalInfo.companyName}</Text>
+              </View>
+              <View style={styles.reviewRow}>
+                <Text style={styles.reviewLabel}>EIN</Text>
+                <Text style={styles.reviewValue}>{personalInfo.companyEin}</Text>
+              </View>
+              <View style={[styles.reviewRow, { borderBottomWidth: 0 }]}>
+                <Text style={styles.reviewLabel}>Company Tax ID</Text>
+                <Text style={styles.reviewValue}>{personalInfo.companyTaxId}</Text>
+              </View>
+            </>
+          )}
+          {!personalInfo.investingAsCompany && (
+            <View style={[styles.reviewRow, { borderBottomWidth: 0 }]}>
+              <Text style={styles.reviewLabel}>Investment Type</Text>
+              <Text style={styles.reviewValue}>Individual</Text>
+            </View>
+          )}
         </View>
       </View>
 
@@ -1275,6 +1483,56 @@ export default function KYCVerificationScreen() {
 
   return (
     <View style={styles.container}>
+      <Modal
+        visible={showUploadPicker}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowUploadPicker(false)}
+      >
+        <TouchableOpacity
+          style={styles.uploadPickerOverlay}
+          activeOpacity={1}
+          onPress={() => setShowUploadPicker(false)}
+        >
+          <View style={styles.uploadPickerSheet}>
+            <Text style={styles.uploadPickerTitle}>Upload Document</Text>
+            <Text style={styles.uploadPickerSubtitle}>Choose how to add your document</Text>
+            <TouchableOpacity
+              style={styles.uploadPickerOption}
+              onPress={() => pendingUploadType && launchDocumentPicker(pendingUploadType, 'camera')}
+            >
+              <View style={styles.uploadPickerOptionIcon}>
+                <Camera size={24} color={Colors.primary} />
+              </View>
+              <View style={styles.uploadPickerOptionContent}>
+                <Text style={styles.uploadPickerOptionTitle}>Take a Photo</Text>
+                <Text style={styles.uploadPickerOptionHint}>Use your camera to capture the document</Text>
+              </View>
+              <ChevronRight size={20} color={Colors.textTertiary} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.uploadPickerOption}
+              onPress={() => pendingUploadType && launchDocumentPicker(pendingUploadType, 'gallery')}
+            >
+              <View style={styles.uploadPickerOptionIcon}>
+                <ImageIcon size={24} color={Colors.primary} />
+              </View>
+              <View style={styles.uploadPickerOptionContent}>
+                <Text style={styles.uploadPickerOptionTitle}>Upload from Gallery</Text>
+                <Text style={styles.uploadPickerOptionHint}>Select an existing photo from your device</Text>
+              </View>
+              <ChevronRight size={20} color={Colors.textTertiary} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.uploadPickerCancel}
+              onPress={() => setShowUploadPicker(false)}
+            >
+              <Text style={styles.uploadPickerCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
       <Modal
         visible={showNationalityPicker || showCountryPicker}
         animationType="slide"
@@ -1513,6 +1771,35 @@ const styles = StyleSheet.create({
   riskScoreLabel: { color: Colors.text, fontSize: 16, fontWeight: '700' as const },
   riskBadge: { borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 },
   riskBadgeText: { fontSize: 11, fontWeight: '800' as const, letterSpacing: 0.5 },
+  companyToggle: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: Colors.surface, borderRadius: 14, padding: 16, borderWidth: 1, borderColor: Colors.surfaceBorder, marginBottom: 14 },
+  companyToggleLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
+  companyToggleIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: Colors.surfaceLight, alignItems: 'center', justifyContent: 'center' },
+  companyToggleIconActive: { backgroundColor: Colors.primary + '20' },
+  companyToggleTitle: { color: Colors.text, fontSize: 15, fontWeight: '600' as const },
+  companyToggleHint: { color: Colors.textTertiary, fontSize: 12, marginTop: 2 },
+  toggleSwitch: { width: 48, height: 28, borderRadius: 14, backgroundColor: Colors.surfaceLight, padding: 2, justifyContent: 'center' },
+  toggleSwitchActive: { backgroundColor: Colors.primary },
+  toggleKnob: { width: 24, height: 24, borderRadius: 12, backgroundColor: Colors.textTertiary },
+  toggleKnobActive: { backgroundColor: Colors.black, alignSelf: 'flex-end' as const },
+  companyFields: { backgroundColor: Colors.surface, borderRadius: 14, padding: 16, borderWidth: 1, borderColor: Colors.primary + '30', marginBottom: 14, gap: 4 },
+  uploadPickerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
+  uploadPickerSheet: { backgroundColor: Colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40 },
+  uploadPickerTitle: { color: Colors.text, fontSize: 20, fontWeight: '800' as const, textAlign: 'center' as const, marginBottom: 4 },
+  uploadPickerSubtitle: { color: Colors.textSecondary, fontSize: 14, textAlign: 'center' as const, marginBottom: 20 },
+  uploadPickerOption: { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: Colors.surfaceLight, borderRadius: 14, padding: 16, marginBottom: 10, borderWidth: 1, borderColor: Colors.surfaceBorder },
+  uploadPickerOptionIcon: { width: 48, height: 48, borderRadius: 14, backgroundColor: Colors.primary + '15', alignItems: 'center', justifyContent: 'center' },
+  uploadPickerOptionContent: { flex: 1 },
+  uploadPickerOptionTitle: { color: Colors.text, fontSize: 16, fontWeight: '600' as const },
+  uploadPickerOptionHint: { color: Colors.textTertiary, fontSize: 12, marginTop: 2 },
+  uploadPickerCancel: { marginTop: 6, paddingVertical: 14, borderRadius: 14, backgroundColor: Colors.surfaceBorder, alignItems: 'center' },
+  uploadPickerCancelText: { color: Colors.text, fontSize: 16, fontWeight: '600' as const },
+  uploadMethodInfo: { backgroundColor: Colors.surface, borderRadius: 14, padding: 14, gap: 10, marginBottom: 10, borderWidth: 1, borderColor: Colors.surfaceBorder },
+  uploadMethodRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  uploadMethodIcon: { width: 32, height: 32, borderRadius: 8, backgroundColor: Colors.primary + '12', alignItems: 'center', justifyContent: 'center' },
+  uploadMethodText: { color: Colors.textSecondary, fontSize: 13 },
+  selfieOptionsContainer: { gap: 12 },
+  galleryFallbackButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, borderRadius: 12, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.surfaceBorder },
+  galleryFallbackText: { color: Colors.primary, fontWeight: '600' as const, fontSize: 14 },
   overallScoreBar: { height: 8, backgroundColor: Colors.surfaceBorder, borderRadius: 4, overflow: 'hidden' as const, marginBottom: 8 },
   overallScoreFill: { height: 8, borderRadius: 4 },
   overallScoreText: { color: Colors.textSecondary, fontSize: 13, textAlign: 'center' as const },

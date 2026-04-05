@@ -41,7 +41,7 @@ ABOUT IVX HOLDINGS
 
 IVX Holdings Ltd. is a premier global real estate investment platform, specializing in high-yield Joint Venture (JV) development projects across international markets.
 
-Our platform empowers accredited investors, institutional partners, and development firms to participate in carefully vetted real estate opportunities — from luxury residential developments to commercial mixed-use projects.
+Our platform empowers all investors, institutional partners, and development firms to participate in carefully vetted real estate opportunities — from luxury residential developments to commercial mixed-use projects. No accreditation required — investing is open to everyone.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 

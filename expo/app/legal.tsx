@@ -91,7 +91,7 @@ We reserve the right to modify these Terms at any time. Material changes will be
 
 (f) Provide accurate, current, and complete registration information and maintain its accuracy;
 
-(g) For offerings limited to accredited investors under SEC Regulation D, meet the definition of "accredited investor" as defined in Rule 501 of Regulation D under the Securities Act of 1933, as amended ("Securities Act").
+(g) Acknowledge that all investment opportunities on the Platform are open to all eligible users who have completed KYC verification, regardless of accreditation status.
 
 We reserve the right to refuse service, terminate accounts, or restrict access at our sole discretion if we determine that eligibility requirements are not met.`,
       },
@@ -259,7 +259,7 @@ Data Protection Officer: ${COMPANY_EMAIL_PRIVACY}`,
 
 (b) Contact Information: Email address, phone number, mailing address, country of residence.
 
-(c) Financial Information: Bank account details, credit/debit card information (processed by PCI-DSS compliant third-party processors), investment history, income information, net worth (for accredited investor verification), source of funds documentation.
+(c) Financial Information: Bank account details, credit/debit card information (processed by PCI-DSS compliant third-party processors), investment history, income information, source of funds documentation.
 
 (d) KYC/AML Verification Data: Identity verification results, sanctions screening results, PEP (Politically Exposed Person) status, watchlist screening data, biometric data (facial recognition for identity verification), document verification data.
 
@@ -559,19 +559,15 @@ All material conflicts of interest are disclosed in the applicable Offering Docu
         heading: '1. Securities Regulatory Framework',
         content: `${COMPANY_NAME} structures its fractional real estate offerings as securities in compliance with applicable federal and state securities laws.
 
-(a) Regulation D (Rule 506(c)): Certain Offerings are made pursuant to Rule 506(c) of Regulation D under the Securities Act, which permits general solicitation and advertising provided that:
-  • All purchasers are verified accredited investors
-  • The issuer takes reasonable steps to verify accredited investor status
-  • Certain filing requirements with the SEC (Form D) are satisfied
-
-(b) Regulation A+ (Tier 2): Certain Offerings may be made under Regulation A+ (Tier 2), which permits offerings of up to $75 million per year to both accredited and non-accredited investors, subject to:
+(a) Regulation A+ (Tier 2): Offerings are primarily made under Regulation A+ (Tier 2), which permits offerings of up to $75 million per year to ALL investors — both accredited and non-accredited — with no individual investment limits beyond standard suitability. This is subject to:
   • SEC qualification of the offering statement
   • Ongoing annual reporting requirements (Form 1-K)
   • Semi-annual reporting (Form 1-SA)
   • Current event reporting (Form 1-U)
-  • Investment limits for non-accredited investors (10% of annual income or net worth)
 
-(c) Regulation CF: Certain Offerings may be made under Regulation Crowdfunding, subject to applicable limits and requirements.
+(b) Regulation CF: Certain Offerings may also be made under Regulation Crowdfunding, open to all investors.
+
+(c) Our platform is designed to make real estate investment accessible to everyone. There are no accredited investor requirements — any verified user can purchase shares in any property listed on the platform.
 
 (d) State Securities Laws (Blue Sky Laws): We comply with applicable state securities registration and notice filing requirements in all states where we operate.
 
@@ -635,22 +631,22 @@ Our KYC process includes:
 (g) Independent Testing: Our AML program is subject to independent testing by qualified third parties on an annual basis.`,
       },
       {
-        heading: '4. Accredited Investor Verification',
-        content: `For Offerings limited to accredited investors under Regulation D (Rule 506(c)), we employ the following verification methods:
+        heading: '4. Investor Eligibility — Open to Everyone',
+        content: `${COMPANY_NAME} is committed to making real estate investment accessible to all people. Unlike traditional platforms that restrict access to accredited investors only, our platform operates under regulatory frameworks that allow ALL verified users to invest.
 
-(a) Income Test: Verification that the investor had individual income exceeding $200,000 (or joint income with spouse exceeding $300,000) in each of the two most recent calendar years, with a reasonable expectation of reaching the same income level in the current year. Verification methods include:
-  • Review of tax returns (IRS forms W-2, 1099, K-1, 1040)
-  • Letter from registered broker-dealer, SEC-registered investment adviser, licensed CPA, or attorney
+Eligibility Requirements:
 
-(b) Net Worth Test: Verification that the investor has a net worth exceeding $1,000,000 (individually or jointly with spouse), excluding the value of the primary residence. Verification methods include:
-  • Review of bank statements, brokerage statements, tax assessments
-  • Letter from registered broker-dealer, SEC-registered investment adviser, licensed CPA, or attorney
+(a) Identity Verification: Successfully complete our KYC (Know Your Customer) process including government-issued photo ID and proof of address.
 
-(c) Professional Certifications: Holders of Series 7, Series 65, or Series 82 licenses in good standing.
+(b) Age Requirement: Be at least 18 years of age (or the age of majority in your jurisdiction).
 
-(d) Entity Accreditation: For entity investors, verification that the entity meets applicable accredited investor criteria.
+(c) Funding Source: Have a verified bank account or payment method linked to your account.
 
-Accredited investor status is re-verified annually for ongoing investment eligibility.`,
+(d) Platform Agreement: Accept our Terms of Service and understand the risks associated with real estate investment.
+
+There is NO minimum income requirement, NO net worth threshold, and NO accredited investor verification needed. Anyone who completes KYC verification can purchase shares in any property on our platform — just like buying everyday items at a store.
+
+This open access model is what makes ${COMPANY_NAME} unique in the real estate investment space.`,
       },
       {
         heading: '5. Tax Reporting & Compliance',
@@ -886,13 +882,11 @@ ${COMPANY_NAME} facilitates fractional real estate investments through special p
 
 Offerings may be conducted under one or more of the following regulatory frameworks:
 
-(a) Regulation D (Rule 506(b)): Private placements available to accredited investors and up to 35 sophisticated non-accredited investors, without general solicitation.
+(a) Regulation A+ (Tier 2): Qualified offerings of up to $75 million per year, available to ALL investors with no accreditation requirements, subject to SEC qualification and ongoing reporting.
 
-(b) Regulation D (Rule 506(c)): Private placements with general solicitation permitted, available exclusively to verified accredited investors.
+(b) Regulation CF: Crowdfunding offerings open to all investors.
 
-(c) Regulation A+ (Tier 2): Qualified offerings of up to $75 million per year, available to both accredited and non-accredited investors, subject to SEC qualification and ongoing reporting.
-
-(d) Regulation CF: Crowdfunding offerings subject to aggregate annual limits per issuer and per-investor investment limits based on income and net worth.
+Our platform is designed so that any verified user can invest in any property — no accredited investor status required.
 
 The specific exemption applicable to each Offering is disclosed in the Offering Documents. Shares have not been, and will not be, registered under the Securities Act of 1933, as amended, and may not be resold except in compliance with applicable securities laws.`,
       },
@@ -1000,10 +994,8 @@ PAST PERFORMANCE IS NOT INDICATIVE OF FUTURE RESULTS. ANY HISTORICAL RETURNS, EX
   • Your familiarity with securities regulations and restrictions
   • Your ability to evaluate offering documents and risk factors
 
-(d) INVESTMENT LIMITS:
-  For non-accredited investors in Regulation A+ and Regulation CF offerings, federal securities laws limit the amount you may invest:
-  • Regulation A+: No more than 10% of the greater of your annual income or net worth
-  • Regulation CF: Investment limits based on your annual income and net worth as defined in SEC rules
+(d) OPEN ACCESS INVESTING:
+  ${COMPANY_NAME} does not impose accredited investor requirements or investment limits based on income or net worth. All verified users can invest in any property listed on the platform without restrictions.
 
 ${COMPANY_NAME} does not provide personalized investment advice. The availability of an investment on the Platform does not constitute a recommendation. You should consult with your own financial, tax, and legal advisors before making any investment decision.
 

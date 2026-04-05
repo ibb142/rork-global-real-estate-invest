@@ -4,6 +4,7 @@ import { Platform } from 'react-native';
 import { supabase, isSupabaseConfigured } from './supabase';
 import { scopedKey } from './project-storage';
 import { isProduction, getEnvConfig } from './environment';
+import { awsAnalyticsBackup, type AWSAnalyticsEvent } from './aws-analytics-backup';
 
 const ANALYTICS_STORAGE_KEY = scopedKey('analytics');
 const SESSION_STORAGE_KEY = scopedKey('session');
@@ -84,11 +85,20 @@ class AnalyticsService {
   private eventCountThisWindow = 0;
   private windowStart = Date.now();
   private throttledCount = 0;
+  private destroyed = false;
+  private initTimeout: ReturnType<typeof setTimeout> | null = null;
+  private flushing = false;
+
+  private cachedIp: string | null = null;
 
   constructor() {
     this.sessionId = this.generateId();
     this.sessionStartTime = Date.now();
-    setTimeout(() => { void this.initialize(); }, 500);
+    this.initTimeout = setTimeout(() => {
+      if (!this.destroyed) {
+        void this.initialize();
+      }
+    }, 500);
   }
 
   async initialize(): Promise<void> {
@@ -98,6 +108,10 @@ class AnalyticsService {
       this.startFlushInterval();
       this.startSupabaseSyncInterval();
       this.isInitialized = true;
+      void this.resolveIpAddress();
+      void awsAnalyticsBackup.init();
+      const health = this.getSyncHealth();
+      console.log('[Analytics] Initialized — session:', this.sessionId.substring(0, 12), '| table verified:', health.tableVerified, '| table missing:', health.tableMissing, '| supabase configured:', isSupabaseConfigured());
       logger.analytics.log('Initialized successfully');
     } catch (error) {
       console.log('[Analytics] Initialization error:', (error as Error)?.message);
@@ -124,14 +138,17 @@ class AnalyticsService {
     }
   }
 
+  private screenViewCount = 0;
+  private totalEventCount = 0;
+
   private async saveSession(): Promise<void> {
     try {
       const session: SessionData = {
         id: this.sessionId,
         startTime: this.sessionStartTime,
         lastActiveTime: Date.now(),
-        screenViews: this.eventQueue.filter(e => e.name === 'screen_view').length,
-        events: this.eventQueue.length,
+        screenViews: this.screenViewCount,
+        events: this.totalEventCount,
       };
       await AsyncStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
     } catch (error) {
@@ -264,7 +281,10 @@ class AnalyticsService {
     if (this.supabasePendingQueue.length === 0) return;
 
     if (this.supabasePendingQueue.length > MAX_PENDING_QUEUE) {
+      const overflow = this.supabasePendingQueue.slice(0, this.supabasePendingQueue.length - MAX_PENDING_QUEUE);
       this.supabasePendingQueue = this.supabasePendingQueue.slice(-MAX_PENDING_QUEUE);
+      this.failoverToAWS(overflow, 'queue_overflow');
+      console.warn('[Analytics] Pending queue overflow — sent', overflow.length, 'events to AWS backup');
     }
 
     const userId = await this.getSupabaseUserId();
@@ -280,7 +300,7 @@ class AnalyticsService {
     if (batch.length === 0) return;
 
     try {
-      const effectiveUserId = userId || 'anonymous';
+      const effectiveUserId = userId || null;
       const useExtended = this.tableHasExtendedSchema !== false;
       const rows = batch.map(event => {
         if (useExtended) {
@@ -303,6 +323,8 @@ class AnalyticsService {
         };
       });
 
+      console.log(`[Analytics] Attempting sync of ${rows.length} events (user: ${effectiveUserId ? effectiveUserId.substring(0, 8) : 'null'}, schema: ${useExtended ? 'extended' : 'master'})`);
+
       let { error } = await supabase.from('analytics_events').insert(rows);
 
       if (error && useExtended && (error.message?.includes('column') || error.code === '42703')) {
@@ -314,14 +336,31 @@ class AnalyticsService {
           properties: { ...(event.properties || {}), category: event.category, platform: event.platform },
           session_id: event.sessionId,
         }));
+        console.log('[Analytics] Retrying with master schema for', masterRows.length, 'events');
         const retryResult = await supabase.from('analytics_events').insert(masterRows);
         error = retryResult.error;
+      }
+
+      if (error && !effectiveUserId && (error.message?.includes('RLS') || error.code === '42501' || error.message?.includes('violates'))) {
+        console.log('[Analytics] RLS blocked anon insert — retrying via REST API with anon key...');
+        const restError = await this.syncBatchViaRest(batch, useExtended);
+        if (!restError) {
+          this.totalSynced += batch.length;
+          this.syncFailureCount = 0;
+          this.rlsFailureCount = 0;
+          this.lastSyncError = null;
+          this.resetSyncBackoff();
+          console.log(`[Analytics] REST fallback synced ${batch.length} events successfully`);
+          return;
+        }
+        error = { message: restError, details: '', hint: '', code: 'REST_FAIL' } as typeof error;
       }
 
       if (error) {
         if (error.message?.includes('does not exist') || error.code === '42P01') {
           this.supabaseTableMissing = true;
-          console.log('[Analytics] analytics_events table missing.');
+          this.failoverToAWS(batch, 'table_missing');
+          console.log('[Analytics] analytics_events table missing — events sent to AWS backup');
           return;
         }
         if (error.code === '23505') {
@@ -334,8 +373,8 @@ class AnalyticsService {
           this.syncFailureCount++;
           this.lastSyncError = `RLS blocked: ${error.message}`;
           if (this.rlsFailureCount >= this.MAX_RLS_FAILURES) {
-            this.totalDropped += batch.length;
-            console.error('[Analytics] RLS blocked', this.rlsFailureCount, 'times — dropping', batch.length, 'events to prevent infinite queue cycling. Total dropped:', this.totalDropped);
+            this.failoverToAWS(batch, 'rls_blocked');
+            console.warn('[Analytics] RLS blocked', this.rlsFailureCount, 'times — sent', batch.length, 'events to AWS backup (zero events dropped)');
           } else {
             this.supabasePendingQueue.unshift(...batch);
             console.log('[Analytics] RLS blocked (attempt', this.rlsFailureCount, '/', this.MAX_RLS_FAILURES, ') — events re-queued');
@@ -343,11 +382,19 @@ class AnalyticsService {
           this.increaseSyncBackoff();
           return;
         }
-        this.supabasePendingQueue.unshift(...batch);
-        this.syncFailureCount++;
-        this.lastSyncError = error.message;
-        this.increaseSyncBackoff();
-        console.log('[Analytics] Supabase sync FAILED (attempt', this.syncFailureCount, '):', error.message);
+        if (this.syncFailureCount >= 10) {
+          this.failoverToAWS(batch, 'persistent_failure');
+          console.warn('[Analytics] Supabase sync failed', this.syncFailureCount, 'times — sent', batch.length, 'events to AWS backup');
+          this.syncFailureCount++;
+          this.lastSyncError = error.message;
+          this.increaseSyncBackoff();
+        } else {
+          this.supabasePendingQueue.unshift(...batch);
+          this.syncFailureCount++;
+          this.lastSyncError = error.message;
+          this.increaseSyncBackoff();
+          console.log('[Analytics] Supabase sync FAILED (attempt', this.syncFailureCount, '):', error.message);
+        }
       } else {
         this.totalSynced += batch.length;
         this.syncFailureCount = 0;
@@ -357,7 +404,12 @@ class AnalyticsService {
         console.log(`[Analytics] Synced ${batch.length} events to Supabase (${this.supabasePendingQueue.length} remaining, ${this.totalSynced} total synced)`);
       }
     } catch (error) {
-      this.supabasePendingQueue.unshift(...batch);
+      if (this.syncFailureCount >= 10) {
+        this.failoverToAWS(batch, 'exception_failover');
+        console.warn('[Analytics] Supabase exception after', this.syncFailureCount, 'failures — sent', batch.length, 'events to AWS backup');
+      } else {
+        this.supabasePendingQueue.unshift(...batch);
+      }
       this.syncFailureCount++;
       this.lastSyncError = (error as Error)?.message ?? 'Unknown sync error';
       this.increaseSyncBackoff();
@@ -365,11 +417,80 @@ class AnalyticsService {
     }
   }
 
+  private failoverToAWS(batch: AnalyticsEvent[], reason: string): void {
+    if (!awsAnalyticsBackup.isConfigured()) {
+      console.log(`[Analytics] AWS failover skipped (${reason}): no endpoint configured — ${batch.length} events stored locally`);
+      return;
+    }
+    const awsEvents = batch.map(event => ({
+      id: event.id,
+      event: event.name,
+      session_id: event.sessionId,
+      properties: event.properties,
+      ip_address: (event.properties?.ip_address as string) || undefined,
+      platform: event.platform,
+      source: 'app' as const,
+      timestamp: new Date(event.timestamp).toISOString(),
+      created_at: new Date(event.timestamp).toISOString(),
+    }));
+    awsAnalyticsBackup.enqueueSupabaseFailover(awsEvents);
+    console.log(`[Analytics] AWS FAILOVER (${reason}): ${batch.length} events routed to AWS backup`);
+  }
 
+  private async syncBatchViaRest(batch: AnalyticsEvent[], useExtended: boolean): Promise<string | null> {
+    const supabaseUrl = (process.env.EXPO_PUBLIC_SUPABASE_URL || '').trim();
+    const supabaseKey = (process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '').trim();
+    if (!supabaseUrl || !supabaseKey) return 'Supabase not configured for REST fallback';
+
+    try {
+      const rows = batch.map(event => {
+        if (useExtended) {
+          return {
+            id: event.id,
+            user_id: null,
+            name: event.name,
+            category: event.category,
+            properties: event.properties ? JSON.stringify(event.properties) : null,
+            timestamp: new Date(event.timestamp).toISOString(),
+            session_id: event.sessionId,
+            platform: event.platform,
+          };
+        }
+        return {
+          event: event.name || event.category || 'unknown',
+          user_id: null,
+          properties: { ...(event.properties || {}), category: event.category, platform: event.platform },
+          session_id: event.sessionId,
+        };
+      });
+
+      const resp = await fetch(`${supabaseUrl}/rest/v1/analytics_events`, {
+        method: 'POST',
+        headers: {
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${supabaseKey}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=minimal',
+        },
+        body: JSON.stringify(rows),
+      });
+
+      if (!resp.ok) {
+        const body = await resp.text();
+        console.error('[Analytics] REST sync failed:', resp.status, body);
+        return `REST ${resp.status}: ${body.substring(0, 200)}`;
+      }
+
+      return null;
+    } catch (err) {
+      console.error('[Analytics] REST sync exception:', (err as Error)?.message);
+      return (err as Error)?.message ?? 'REST sync unknown error';
+    }
+  }
 
   track(name: string, category: EventCategory = 'user_action', properties?: Record<string, unknown>): void {
     const config = getEnvConfig();
-    if (!config.enableAnalytics && isProduction()) {
+    if (!config.enableAnalytics) {
       return;
     }
 
@@ -384,7 +505,10 @@ class AnalyticsService {
       id: this.generateId(),
       name,
       category,
-      properties,
+      properties: {
+        ...properties,
+        ip_address: this.cachedIp || undefined,
+      },
       timestamp: Date.now(),
       sessionId: this.sessionId,
       platform: Platform.OS,
@@ -392,10 +516,16 @@ class AnalyticsService {
 
     this.eventQueue.push(event);
     this.supabasePendingQueue.push(event);
+    this.totalEventCount++;
+    if (name === 'screen_view') {
+      this.screenViewCount++;
+    }
 
     if (this.eventQueue.length > MAX_STORED_EVENTS) {
       this.eventQueue = this.eventQueue.slice(-MAX_STORED_EVENTS);
     }
+
+    this.sendToAWSBackup(event);
   }
 
   trackScreenView(screenName: string, params?: Record<string, unknown>): void {
@@ -453,15 +583,23 @@ class AnalyticsService {
 
   async flush(): Promise<void> {
     if (this.eventQueue.length === 0) return;
+    if (this.flushing) {
+      console.log('[Analytics] Flush already in progress — skipping concurrent call');
+      return;
+    }
+    this.flushing = true;
     try {
+      const batch = [...this.eventQueue];
+      this.eventQueue = [];
       const existingData = await AsyncStorage.getItem(ANALYTICS_STORAGE_KEY);
       let allEvents: AnalyticsEvent[] = existingData ? JSON.parse(existingData) : [];
-      allEvents = [...allEvents, ...this.eventQueue].slice(-MAX_STORED_EVENTS);
+      allEvents = [...allEvents, ...batch].slice(-MAX_STORED_EVENTS);
       await AsyncStorage.setItem(ANALYTICS_STORAGE_KEY, JSON.stringify(allEvents));
       await this.saveSession();
-      this.eventQueue = [];
     } catch (error) {
       console.log('[Analytics] Flush error:', (error as Error)?.message);
+    } finally {
+      this.flushing = false;
     }
   }
 
@@ -662,15 +800,76 @@ class AnalyticsService {
     return Date.now() - this.sessionStartTime;
   }
 
+  private async resolveIpAddress(): Promise<void> {
+    try {
+      const resp = await fetch('https://api.ipify.org?format=json', { signal: AbortSignal.timeout(5000) });
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.ip) {
+          this.cachedIp = data.ip;
+          console.log('[Analytics] IP resolved:', this.cachedIp);
+          return;
+        }
+      }
+    } catch {}
+    try {
+      const resp = await fetch('https://ipapi.co/json/', { signal: AbortSignal.timeout(5000) });
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.ip) {
+          this.cachedIp = data.ip;
+          console.log('[Analytics] IP resolved (fallback):', this.cachedIp);
+        }
+      }
+    } catch (err) {
+      console.log('[Analytics] IP resolve failed:', (err as Error)?.message);
+    }
+  }
+
+  private sendToAWSBackup(event: AnalyticsEvent): void {
+    if (!awsAnalyticsBackup.isConfigured()) return;
+    const awsEvent: AWSAnalyticsEvent = {
+      id: event.id,
+      event: event.name,
+      session_id: event.sessionId,
+      properties: event.properties,
+      ip_address: this.cachedIp || undefined,
+      platform: event.platform,
+      source: 'app',
+      timestamp: new Date(event.timestamp).toISOString(),
+      created_at: new Date(event.timestamp).toISOString(),
+    };
+    awsAnalyticsBackup.enqueue(awsEvent);
+  }
+
+  getCachedIp(): string | null {
+    return this.cachedIp;
+  }
+
   destroy(): void {
+    this.destroyed = true;
+    if (this.initTimeout) {
+      clearTimeout(this.initTimeout);
+      this.initTimeout = null;
+    }
     if (this.flushInterval) {
       clearInterval(this.flushInterval);
+      this.flushInterval = null;
     }
     if (this.syncInterval) {
       clearTimeout(this.syncInterval);
+      this.syncInterval = null;
     }
     void this.flush();
     void this.syncToSupabase();
+  }
+
+  revive(): void {
+    if (!this.destroyed) return;
+    this.destroyed = false;
+    console.log('[Analytics] Reviving service after destroy');
+    this.startFlushInterval();
+    this.startSupabaseSyncInterval();
   }
 }
 

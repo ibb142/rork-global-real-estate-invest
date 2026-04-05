@@ -42,7 +42,7 @@ export const FUNCTIONALITY_REGISTRY: Module[] = [
       { id: 'kyc-2', name: 'Government ID upload and verification', status: 'active', addedDate: '2024-01-01' },
       { id: 'kyc-3', name: 'Face recognition verification', status: 'active', addedDate: '2024-01-15' },
       { id: 'kyc-4', name: 'KYC status tracking and progress', status: 'active', addedDate: '2024-01-01' },
-      { id: 'kyc-5', name: 'Accredited investor verification', status: 'active', addedDate: '2024-01-01' },
+      { id: 'kyc-5', name: 'Open access investor verification (no accreditation required)', status: 'active', addedDate: '2024-01-01' },
     ],
   },
   {

@@ -1,46 +1,45 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Share,
-  Platform,
-  Alert,
   ActivityIndicator,
+  Alert,
   Linking,
+  Platform,
+  ScrollView,
+  Share,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
-  Code2,
+  AlertTriangle,
+  ArrowLeft,
+  BarChart3,
+  Bell,
+  CheckCircle,
   ChevronDown,
   ChevronRight,
+  Clock,
+  Code2,
   Copy,
-  CheckCircle,
-  MessageCircle,
-  Mail,
-  Share2,
-  Printer,
-  Download,
-  Database,
-  Lock,
   CreditCard,
-  ShieldCheck,
-  Bell,
+  Database,
+  Download,
+  ExternalLink,
+  FileCheck,
+  Filter,
+  Hash,
+  Lock,
+  Mail,
+  MessageCircle,
   Brain,
   Building2,
-  BarChart3,
-  FileCheck,
   Plug,
-  Clock,
-  AlertTriangle,
+  Printer,
+  Share2,
+  ShieldCheck,
   Zap,
-  Filter,
-  ExternalLink,
-  FileText,
-  Hash,
-  ArrowLeft,
 } from 'lucide-react-native';
 import * as Clipboard from 'expo-clipboard';
 import * as Print from 'expo-print';
@@ -49,35 +48,36 @@ import { useRouter } from 'expo-router';
 import Colors from '@/constants/colors';
 import {
   DEVELOPER_HANDOFF_CATEGORIES,
-  getAllIntegrations,
-  getAllEnvVariables,
-  getTotalEstimatedHours,
-  getCriticalCount,
-  getReadyCount,
-  getMockOnlyCount,
-  generateHandoffTextReport,
   generateHandoffHtmlReport,
+  generateHandoffTextReport,
+  getAllEnvVariables,
+  getAllIntegrations,
+  getConfiguredEnvCount,
+  getCriticalCount,
+  getDeliverySummary,
+  getInProgressCount,
+  getReadyCount,
 } from '@/mocks/developer-handoff';
-import type { IntegrationPriority, IntegrationStatus } from '@/mocks/developer-handoff';
+import type { IntegrationOwner, IntegrationPriority, IntegrationStatus } from '@/mocks/developer-handoff';
 
 const CATEGORY_ICONS: Record<string, React.ReactNode> = {
-  Database: <Database size={20} color="#3B82F6" />,
-  Lock: <Lock size={20} color="#6366F1" />,
-  CreditCard: <CreditCard size={20} color="#22C55E" />,
-  ShieldCheck: <ShieldCheck size={20} color="#F59E0B" />,
-  Bell: <Bell size={20} color="#EC4899" />,
-  Brain: <Brain size={20} color="#A855F7" />,
-  Building2: <Building2 size={20} color="#F97316" />,
-  BarChart3: <BarChart3 size={20} color="#0EA5E9" />,
-  FileCheck: <FileCheck size={20} color="#78716C" />,
-  Plug: <Plug size={20} color="#22C55E" />,
+  Database: <Database size={18} color="#3B82F6" />,
+  Lock: <Lock size={18} color="#6366F1" />,
+  CreditCard: <CreditCard size={18} color="#22C55E" />,
+  ShieldCheck: <ShieldCheck size={18} color="#F59E0B" />,
+  Bell: <Bell size={18} color="#EC4899" />,
+  Brain: <Brain size={18} color="#A855F7" />,
+  Building2: <Building2 size={18} color="#F97316" />,
+  BarChart3: <BarChart3 size={18} color="#0EA5E9" />,
+  FileCheck: <FileCheck size={18} color="#78716C" />,
+  Plug: <Plug size={18} color="#22C55E" />,
 };
 
 const PRIORITY_CONFIG: Record<IntegrationPriority, { color: string; label: string }> = {
-  critical: { color: '#DC2626', label: 'CRITICAL' },
-  high: { color: '#F59E0B', label: 'HIGH' },
-  medium: { color: '#3B82F6', label: 'MEDIUM' },
-  low: { color: '#6B7280', label: 'LOW' },
+  critical: { color: '#DC2626', label: 'Critical' },
+  high: { color: '#F59E0B', label: 'High' },
+  medium: { color: '#3B82F6', label: 'Medium' },
+  low: { color: '#6B7280', label: 'Low' },
 };
 
 const STATUS_CONFIG: Record<IntegrationStatus, { color: string; label: string }> = {
@@ -87,96 +87,129 @@ const STATUS_CONFIG: Record<IntegrationStatus, { color: string; label: string }>
   not_started: { color: '#6B7280', label: 'Not Started' },
 };
 
+const OWNER_CONFIG: Record<IntegrationOwner, { color: string; label: string; shortLabel: string }> = {
+  rork: { color: '#FFD700', label: 'Rork side', shortLabel: 'Rork' },
+  user: { color: '#FF6B9D', label: 'Your side', shortLabel: 'You' },
+  shared: { color: '#A78BFA', label: 'Shared', shortLabel: 'Both' },
+};
+
 export default function DeveloperHandoffScreen() {
   const router = useRouter();
-  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set(DEVELOPER_HANDOFF_CATEGORIES.map((category) => category.id)));
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
-  const [copied, setCopied] = useState(false);
-  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+  const [copied, setCopied] = useState<boolean>(false);
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState<boolean>(false);
   const [filterPriority, setFilterPriority] = useState<'all' | IntegrationPriority>('all');
-  const [showEnvVars, setShowEnvVars] = useState(false);
+  const [showEnvVars, setShowEnvVars] = useState<boolean>(false);
 
   const allItems = useMemo(() => getAllIntegrations(), []);
   const allEnvVars = useMemo(() => getAllEnvVariables(), []);
-  const totalHours = useMemo(() => getTotalEstimatedHours(), []);
   const criticalCount = useMemo(() => getCriticalCount(), []);
   const readyCount = useMemo(() => getReadyCount(), []);
-  const mockCount = useMemo(() => getMockOnlyCount(), []);
+  const inProgressCount = useMemo(() => getInProgressCount(), []);
+  const configuredEnvCount = useMemo(() => getConfiguredEnvCount(), []);
+  const deliverySummary = useMemo(() => getDeliverySummary(), []);
+
+  const totalRemainingItems = useMemo(() => {
+    return deliverySummary.rork.remainingItems + deliverySummary.user.remainingItems + deliverySummary.shared.remainingItems;
+  }, [deliverySummary]);
+
+  const totalRemainingHours = useMemo(() => {
+    return deliverySummary.rork.remainingHours + deliverySummary.user.remainingHours + deliverySummary.shared.remainingHours;
+  }, [deliverySummary]);
 
   const filteredCategories = useMemo(() => {
-    if (filterPriority === 'all') return DEVELOPER_HANDOFF_CATEGORIES;
-    return DEVELOPER_HANDOFF_CATEGORIES.map(cat => ({
-      ...cat,
-      items: cat.items.filter(item => item.priority === filterPriority),
-    })).filter(cat => cat.items.length > 0);
+    if (filterPriority === 'all') {
+      return DEVELOPER_HANDOFF_CATEGORIES;
+    }
+
+    return DEVELOPER_HANDOFF_CATEGORIES.map((category) => ({
+      ...category,
+      items: category.items.filter((item) => item.priority === filterPriority),
+    })).filter((category) => category.items.length > 0);
   }, [filterPriority]);
 
+  const visibleItemCount = useMemo(() => {
+    return filteredCategories.reduce((sum, category) => sum + category.items.length, 0);
+  }, [filteredCategories]);
+
+  const expandAllCategories = useCallback(() => {
+    console.log('[DeveloperHandoff] Expanding all categories');
+    setExpandedCategories(new Set(filteredCategories.map((category) => category.id)));
+  }, [filteredCategories]);
+
+  const collapseAllCategories = useCallback(() => {
+    console.log('[DeveloperHandoff] Collapsing all categories');
+    setExpandedCategories(new Set());
+    setExpandedItems(new Set());
+  }, []);
+
   const toggleCategory = useCallback((id: string) => {
-    setExpandedCategories(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
+    setExpandedCategories((previous) => {
+      const next = new Set(previous);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
       return next;
     });
   }, []);
 
   const toggleItem = useCallback((id: string) => {
-    setExpandedItems(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
+    setExpandedItems((previous) => {
+      const next = new Set(previous);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
       return next;
     });
   }, []);
 
-  const expandAllCategories = useCallback(() => {
-    setExpandedCategories(new Set(DEVELOPER_HANDOFF_CATEGORIES.map(c => c.id)));
-  }, []);
-
-  const collapseAllCategories = useCallback(() => {
-    setExpandedCategories(new Set());
-    setExpandedItems(new Set());
-  }, []);
-
   const handleCopyToClipboard = useCallback(async () => {
     try {
+      console.log('[DeveloperHandoff] Copying refreshed report');
       const content = generateHandoffTextReport();
       await Clipboard.setStringAsync(content);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-      Alert.alert('Copied!', 'Full developer integration guide copied to clipboard.');
+      Alert.alert('Copied', 'Developer workplan copied.');
     } catch (error) {
-      console.log('Copy error:', error);
-      Alert.alert('Error', 'Failed to copy. Please try again.');
+      console.log('[DeveloperHandoff] Copy failed', error);
+      Alert.alert('Error', 'Failed to copy the developer workplan.');
     }
   }, []);
 
   const handleGeneratePDF = useCallback(async () => {
     setIsGeneratingPDF(true);
     try {
+      console.log('[DeveloperHandoff] Generating PDF');
       const html = generateHandoffHtmlReport();
       if (Platform.OS === 'web') {
         const printWindow = window.open('', '_blank');
         if (printWindow) {
           printWindow.document.write(html);
           printWindow.document.close();
-          setTimeout(() => printWindow.print(), 500);
+          setTimeout(() => printWindow.print(), 400);
         }
       } else {
         const { uri } = await Print.printToFileAsync({ html, base64: false });
-        console.log('PDF generated at:', uri);
         const canShare = await Sharing.isAvailableAsync();
         if (canShare) {
           await Sharing.shareAsync(uri, {
             mimeType: 'application/pdf',
-            dialogTitle: 'IVXHOLDINGS Developer Integration Guide',
+            dialogTitle: 'Developer Workplan',
             UTI: 'com.adobe.pdf',
           });
         } else {
-          Alert.alert('PDF Ready', 'PDF has been generated successfully.');
+          Alert.alert('PDF ready', uri);
         }
       }
     } catch (error) {
-      console.error('PDF generation error:', error);
-      Alert.alert('Error', 'Failed to generate PDF. Please try again.');
+      console.log('[DeveloperHandoff] PDF generation failed', error);
+      Alert.alert('Error', 'Failed to generate PDF.');
     } finally {
       setIsGeneratingPDF(false);
     }
@@ -184,503 +217,485 @@ export default function DeveloperHandoffScreen() {
 
   const handleShareWhatsApp = useCallback(async () => {
     const content = generateHandoffTextReport();
-    const summary = `*IVXHOLDINGS Developer Integration Guide*\n\n` +
-      `Total Integrations: ${allItems.length}\n` +
-      `Critical: ${criticalCount}\n` +
-      `Est. Hours: ${totalHours}h (~${Math.ceil(totalHours / 40)} weeks)\n` +
-      `Env Variables: ${allEnvVars.length}\n\n` +
-      `_Full integration list below:_\n\n`;
+    const summary = `Developer module refreshed\nRemaining items: ${totalRemainingItems}\nRemaining hours: ${totalRemainingHours}h\nRork: ${deliverySummary.rork.remainingItems}\nYou: ${deliverySummary.user.remainingItems}\nShared: ${deliverySummary.shared.remainingItems}\n\n`;
 
     try {
+      console.log('[DeveloperHandoff] Sharing to WhatsApp');
       if (Platform.OS === 'web') {
-        const message = encodeURIComponent(summary + content.substring(0, 3000) + '\n\n...(truncated for WhatsApp)');
+        const message = encodeURIComponent(summary + content);
         window.open(`https://wa.me/?text=${message}`, '_blank');
+        return;
+      }
+
+      const whatsappUrl = `whatsapp://send?text=${encodeURIComponent(summary + content)}`;
+      const canOpen = await Linking.canOpenURL(whatsappUrl);
+      if (canOpen) {
+        await Linking.openURL(whatsappUrl);
       } else {
-        const whatsappUrl = `whatsapp://send?text=${encodeURIComponent(summary + content)}`;
-        const canOpen = await Linking.canOpenURL(whatsappUrl);
-        if (canOpen) {
-          await Linking.openURL(whatsappUrl);
-        } else {
-          await Share.share({ message: summary + content });
-        }
+        await Share.share({ message: summary + content });
       }
     } catch (error) {
-      console.log('WhatsApp share error:', error);
+      console.log('[DeveloperHandoff] WhatsApp share failed', error);
       await Share.share({ message: summary + content });
     }
-  }, [allItems.length, criticalCount, totalHours, allEnvVars.length]);
+  }, [deliverySummary, totalRemainingHours, totalRemainingItems]);
 
   const handleShareEmail = useCallback(async () => {
     const content = generateHandoffTextReport();
-    const subject = 'IVXHOLDINGS Luxury Holdings - Developer Integration Guide';
+    const subject = 'IVXHOLDINGS Developer Workplan';
 
     try {
+      console.log('[DeveloperHandoff] Sharing by email');
+      const mailtoUrl = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(content)}`;
       if (Platform.OS === 'web') {
-        const mailtoUrl = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(content)}`;
         window.open(mailtoUrl, '_blank');
+        return;
+      }
+
+      const canOpen = await Linking.canOpenURL(mailtoUrl);
+      if (canOpen) {
+        await Linking.openURL(mailtoUrl);
       } else {
-        const mailtoUrl = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(content)}`;
-        const canOpen = await Linking.canOpenURL(mailtoUrl);
-        if (canOpen) {
-          await Linking.openURL(mailtoUrl);
-        } else {
-          await Share.share({ title: subject, message: content });
-        }
+        await Share.share({ title: subject, message: content });
       }
     } catch (error) {
-      console.log('Email share error:', error);
-      await Share.share({ message: content });
+      console.log('[DeveloperHandoff] Email share failed', error);
+      await Share.share({ title: subject, message: content });
     }
   }, []);
 
   const handleShareGeneral = useCallback(async () => {
     try {
+      console.log('[DeveloperHandoff] Opening general share sheet');
       const content = generateHandoffTextReport();
       await Share.share({
-        title: 'IVXHOLDINGS Developer Integration Guide',
+        title: 'Developer Workplan',
         message: content,
       });
     } catch (error) {
-      console.log('Share error:', error);
+      console.log('[DeveloperHandoff] General share failed', error);
     }
   }, []);
 
   const handleDownloadText = useCallback(() => {
     const content = generateHandoffTextReport();
-    if (Platform.OS === 'web') {
-      const blob = new Blob([content], { type: 'text/plain' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `IVXHOLDINGS-Developer-Guide-${new Date().toISOString().split('T')[0]}.txt`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    } else {
-      Share.share({
-        title: 'IVXHOLDINGS Developer Integration Guide',
-        message: content,
-      });
+
+    try {
+      console.log('[DeveloperHandoff] Downloading text report');
+      if (Platform.OS === 'web') {
+        const blob = new Blob([content], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = `developer-workplan-${new Date().toISOString().split('T')[0]}.txt`;
+        document.body.appendChild(anchor);
+        anchor.click();
+        document.body.removeChild(anchor);
+        URL.revokeObjectURL(url);
+        return;
+      }
+
+      void Share.share({ title: 'Developer Workplan', message: content });
+    } catch (error) {
+      console.log('[DeveloperHandoff] Text download failed', error);
+      Alert.alert('Error', 'Failed to export the text file.');
     }
   }, []);
 
   const handleOpenDocs = useCallback((url: string) => {
-    if (url) Linking.openURL(url);
+    if (!url) {
+      return;
+    }
+
+    console.log('[DeveloperHandoff] Opening docs', url);
+    void Linking.openURL(url);
   }, []);
 
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false}>
+    <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+      <ScrollView contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false}>
         <View style={styles.topBar}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton} activeOpacity={0.7}>
-            <ArrowLeft size={22} color={Colors.text} />
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={() => router.back()}
+            style={styles.backButton}
+            testID="developer-module-back-btn"
+          >
+            <ArrowLeft size={20} color={Colors.text} />
           </TouchableOpacity>
-          <Text style={styles.topBarTitle}>Developer Handoff</Text>
-          <View style={{ width: 40 }} />
+
+          <View style={styles.topBarCenter}>
+            <Text style={styles.topBarTitle}>Developer Module</Text>
+            <Text style={styles.topBarSubtitle}>Refreshed</Text>
+          </View>
+
+          <View style={styles.topBarSpacer} />
         </View>
 
-        <View style={styles.hero}>
+        <View style={styles.heroCard}>
           <View style={styles.heroIconWrap}>
-            <Code2 size={36} color={Colors.primary} />
+            <Code2 size={28} color={Colors.background} />
           </View>
-          <Text style={styles.heroTitle}>Integration Guide</Text>
+          <Text style={styles.heroTitle}>Developer Workplan</Text>
           <Text style={styles.heroSubtitle}>
-            Everything your developer needs to connect this app to production services
+            Old generic items were cleared from this module. This screen now shows the current project split, the items I can finish, the items you need to handle, and the estimated time.
           </Text>
+          <View style={styles.heroBadgeRow}>
+            <View style={styles.heroBadge}>
+              <Text style={styles.heroBadgeText}>{allItems.length} total items</Text>
+            </View>
+            <View style={styles.heroBadgeSecondary}>
+              <Text style={styles.heroBadgeSecondaryText}>{totalRemainingItems} remaining</Text>
+            </View>
+          </View>
         </View>
 
-        <View style={styles.statsRow}>
-          <View style={styles.statBox}>
-            <Text style={styles.statNum}>{allItems.length}</Text>
-            <Text style={styles.statLabel}>APIs</Text>
+        <View style={styles.statsGrid}>
+          <View style={styles.statCard}>
+            <Text style={styles.statValue}>{readyCount}</Text>
+            <Text style={styles.statLabel}>Ready now</Text>
           </View>
-          <View style={[styles.statBox, { borderColor: '#DC262640' }]}>
-            <Text style={[styles.statNum, { color: '#DC2626' }]}>{criticalCount}</Text>
+          <View style={styles.statCard}>
+            <Text style={[styles.statValue, { color: '#3B82F6' }]}>{inProgressCount}</Text>
+            <Text style={styles.statLabel}>In progress</Text>
+          </View>
+          <View style={styles.statCard}>
+            <Text style={[styles.statValue, { color: '#DC2626' }]}>{criticalCount}</Text>
             <Text style={styles.statLabel}>Critical</Text>
           </View>
-          <View style={styles.statBox}>
-            <Text style={[styles.statNum, { color: '#F59E0B' }]}>{mockCount}</Text>
-            <Text style={styles.statLabel}>Mocked</Text>
-          </View>
-          <View style={styles.statBox}>
-            <Text style={[styles.statNum, { color: '#22C55E' }]}>{readyCount}</Text>
-            <Text style={styles.statLabel}>Ready</Text>
+          <View style={styles.statCard}>
+            <Text style={[styles.statValue, { color: Colors.primary }]}>{configuredEnvCount}/{allEnvVars.length}</Text>
+            <Text style={styles.statLabel}>Configured envs</Text>
           </View>
         </View>
 
-        <View style={styles.timeEstimate}>
+        <View style={styles.sectionCard}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Work split</Text>
+            <Text style={styles.sectionMeta}>{totalRemainingHours}h remaining</Text>
+          </View>
+
+          <View style={styles.splitGrid}>
+            {(['rork', 'user', 'shared'] as const).map((owner) => {
+              const ownerConfig = OWNER_CONFIG[owner];
+              const bucket = deliverySummary[owner];
+              return (
+                <View key={owner} style={styles.splitCard}>
+                  <View style={[styles.splitPill, { backgroundColor: ownerConfig.color }]}>
+                    <Text style={styles.splitPillText}>{ownerConfig.shortLabel}</Text>
+                  </View>
+                  <Text style={styles.splitTitle}>{ownerConfig.label}</Text>
+                  <Text style={styles.splitValue}>{bucket.remainingItems} items</Text>
+                  <Text style={styles.splitSub}>{bucket.remainingHours}h estimated</Text>
+                </View>
+              );
+            })}
+          </View>
+        </View>
+
+        <View style={styles.timeBanner}>
           <Clock size={16} color={Colors.primary} />
-          <Text style={styles.timeText}>
-            Estimated: <Text style={styles.timeBold}>{totalHours} hours</Text> (~{Math.ceil(totalHours / 40)} developer-weeks)
+          <Text style={styles.timeBannerText}>
+            If we work only on this module plan, I can finish <Text style={styles.timeBannerBold}>{deliverySummary.rork.remainingItems} items</Text> on my side. You still have <Text style={styles.timeBannerBold}>{deliverySummary.user.remainingItems} items</Text> on your side, plus <Text style={styles.timeBannerBold}>{deliverySummary.shared.remainingItems} shared items</Text>.
           </Text>
         </View>
 
-        <View style={styles.envVarsHeader}>
-          <Hash size={16} color={Colors.primary} />
-          <Text style={styles.timeText}>
-            <Text style={styles.timeBold}>{allEnvVars.length}</Text> environment variables needed
-          </Text>
-        </View>
-
-        <View style={styles.shareSection}>
-          <Text style={styles.sectionTitle}>Share with Developer</Text>
-          <View style={styles.shareRow}>
+        <View style={styles.sectionCard}>
+          <Text style={styles.sectionTitle}>Export</Text>
+          <View style={styles.actionGrid}>
             <TouchableOpacity
-              style={[styles.shareBtn, { backgroundColor: '#DC2626' }]}
-              onPress={handleGeneratePDF}
+              activeOpacity={0.85}
               disabled={isGeneratingPDF}
-              activeOpacity={0.8}
+              onPress={handleGeneratePDF}
+              style={[styles.actionButton, { backgroundColor: '#DC2626' }]}
+              testID="developer-module-pdf-btn"
             >
-              {isGeneratingPDF ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <Printer size={16} color="#fff" />
-              )}
-              <Text style={styles.shareBtnText}>{isGeneratingPDF ? 'Creating...' : 'PDF'}</Text>
+              {isGeneratingPDF ? <ActivityIndicator color="#FFFFFF" size="small" /> : <Printer size={16} color="#FFFFFF" />}
+              <Text style={styles.actionButtonText}>{isGeneratingPDF ? 'Creating' : 'PDF'}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.shareBtn, { backgroundColor: '#25D366' }]}
+              activeOpacity={0.85}
               onPress={handleShareWhatsApp}
-              activeOpacity={0.8}
+              style={[styles.actionButton, { backgroundColor: '#25D366' }]}
+              testID="developer-module-whatsapp-btn"
             >
-              <MessageCircle size={16} color="#fff" />
-              <Text style={styles.shareBtnText}>WhatsApp</Text>
+              <MessageCircle size={16} color="#FFFFFF" />
+              <Text style={styles.actionButtonText}>WhatsApp</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.shareBtn, { backgroundColor: '#EA4335' }]}
+              activeOpacity={0.85}
               onPress={handleShareEmail}
-              activeOpacity={0.8}
+              style={[styles.actionButton, { backgroundColor: '#EA4335' }]}
+              testID="developer-module-email-btn"
             >
-              <Mail size={16} color="#fff" />
-              <Text style={styles.shareBtnText}>Email</Text>
+              <Mail size={16} color="#FFFFFF" />
+              <Text style={styles.actionButtonText}>Email</Text>
             </TouchableOpacity>
-          </View>
 
-          <View style={styles.shareRow}>
             <TouchableOpacity
-              style={[styles.shareBtn, { backgroundColor: Colors.primary }]}
+              activeOpacity={0.85}
               onPress={handleCopyToClipboard}
-              activeOpacity={0.8}
+              style={[styles.actionButton, { backgroundColor: Colors.primary }]}
+              testID="developer-module-copy-btn"
             >
               {copied ? <CheckCircle size={16} color={Colors.background} /> : <Copy size={16} color={Colors.background} />}
-              <Text style={[styles.shareBtnText, { color: Colors.background }]}>{copied ? 'Copied!' : 'Copy All'}</Text>
+              <Text style={[styles.actionButtonText, { color: Colors.background }]}>{copied ? 'Copied' : 'Copy'}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.shareBtn, { backgroundColor: '#3B82F6' }]}
+              activeOpacity={0.85}
               onPress={handleDownloadText}
-              activeOpacity={0.8}
+              style={[styles.actionButton, { backgroundColor: '#3B82F6' }]}
+              testID="developer-module-download-btn"
             >
-              <Download size={16} color="#fff" />
-              <Text style={styles.shareBtnText}>Text File</Text>
+              <Download size={16} color="#FFFFFF" />
+              <Text style={styles.actionButtonText}>Text</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.shareBtn, { backgroundColor: '#8B5CF6' }]}
+              activeOpacity={0.85}
               onPress={handleShareGeneral}
-              activeOpacity={0.8}
+              style={[styles.actionButton, { backgroundColor: '#8B5CF6' }]}
+              testID="developer-module-share-btn"
             >
-              <Share2 size={16} color="#fff" />
-              <Text style={styles.shareBtnText}>Share</Text>
+              <Share2 size={16} color="#FFFFFF" />
+              <Text style={styles.actionButtonText}>Share</Text>
             </TouchableOpacity>
           </View>
         </View>
 
-        <View style={styles.filterSection}>
-          <View style={styles.filterRow}>
-            <Filter size={14} color={Colors.textSecondary} />
-            <Text style={styles.filterLabel}>Priority:</Text>
+        <View style={styles.sectionCard}>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionHeaderLeft}>
+              <Filter size={14} color={Colors.textSecondary} />
+              <Text style={styles.sectionTitle}>Priority filter</Text>
+            </View>
+            <Text style={styles.sectionMeta}>{visibleItemCount} shown</Text>
           </View>
+
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <View style={styles.filterChips}>
-              {(['all', 'critical', 'high', 'medium', 'low'] as const).map(p => (
-                <TouchableOpacity
-                  key={p}
-                  style={[
-                    styles.chip,
-                    filterPriority === p && styles.chipActive,
-                    filterPriority === p && p === 'critical' && { backgroundColor: '#DC2626' },
-                    filterPriority === p && p === 'high' && { backgroundColor: '#F59E0B' },
-                    filterPriority === p && p === 'medium' && { backgroundColor: '#3B82F6' },
-                    filterPriority === p && p === 'low' && { backgroundColor: '#6B7280' },
-                  ]}
-                  onPress={() => setFilterPriority(p)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[
-                    styles.chipText,
-                    filterPriority === p && styles.chipTextActive,
-                  ]}>
-                    {p === 'all' ? `All (${allItems.length})` : `${p.charAt(0).toUpperCase() + p.slice(1)} (${allItems.filter(i => i.priority === p).length})`}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+            <View style={styles.filterRow}>
+              {(['all', 'critical', 'high', 'medium', 'low'] as const).map((priority) => {
+                const selected = filterPriority === priority;
+                const chipLabel = priority === 'all'
+                  ? `All (${allItems.length})`
+                  : `${PRIORITY_CONFIG[priority].label} (${allItems.filter((item) => item.priority === priority).length})`;
+
+                return (
+                  <TouchableOpacity
+                    key={priority}
+                    activeOpacity={0.8}
+                    onPress={() => setFilterPriority(priority)}
+                    style={[
+                      styles.filterChip,
+                      selected && styles.filterChipActive,
+                      selected && priority !== 'all' && { backgroundColor: PRIORITY_CONFIG[priority].color, borderColor: PRIORITY_CONFIG[priority].color },
+                    ]}
+                    testID={`developer-module-filter-${priority}`}
+                  >
+                    <Text style={[styles.filterChipText, selected && styles.filterChipTextActive]}>{chipLabel}</Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           </ScrollView>
         </View>
 
-        <View style={styles.listSection}>
-          <View style={styles.listHeader}>
-            <Text style={styles.sectionTitle}>
-              Integrations ({filteredCategories.reduce((s, c) => s + c.items.length, 0)})
-            </Text>
-            <View style={styles.expandBtns}>
-              <TouchableOpacity onPress={expandAllCategories} style={styles.expandBtn}>
-                <Text style={styles.expandBtnText}>Expand</Text>
+        <View style={styles.sectionCard}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Items</Text>
+            <View style={styles.expandActions}>
+              <TouchableOpacity activeOpacity={0.8} onPress={expandAllCategories} style={styles.secondaryButton} testID="developer-module-expand-btn">
+                <Text style={styles.secondaryButtonText}>Expand</Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={collapseAllCategories} style={styles.collapseBtn}>
-                <Text style={styles.collapseBtnText}>Collapse</Text>
+              <TouchableOpacity activeOpacity={0.8} onPress={collapseAllCategories} style={styles.secondaryButton} testID="developer-module-collapse-btn">
+                <Text style={styles.secondaryButtonText}>Collapse</Text>
               </TouchableOpacity>
             </View>
           </View>
 
-          {filteredCategories.map(cat => {
-            const isExpanded = expandedCategories.has(cat.id);
-            const catHours = cat.items.reduce((s, i) => s + i.estimatedHours, 0);
-            return (
-              <View key={cat.id} style={styles.catCard}>
-                <TouchableOpacity
-                  style={styles.catHeader}
-                  onPress={() => toggleCategory(cat.id)}
-                  activeOpacity={0.7}
-                >
-                  <View style={styles.catLeft}>
-                    <View style={[styles.catIconWrap, { backgroundColor: `${cat.color}18` }]}>
-                      {CATEGORY_ICONS[cat.icon] || <Code2 size={20} color={cat.color} />}
+          <View style={styles.categoryList}>
+            {filteredCategories.map((category) => {
+              const expanded = expandedCategories.has(category.id);
+              const categoryHours = category.items.reduce((sum, item) => sum + item.estimatedHours, 0);
+
+              return (
+                <View key={category.id} style={styles.categoryCard}>
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={() => toggleCategory(category.id)}
+                    style={styles.categoryHeader}
+                    testID={`developer-module-category-${category.id}`}
+                  >
+                    <View style={styles.categoryHeaderLeft}>
+                      <View style={[styles.categoryIconWrap, { backgroundColor: `${category.color}18` }]}>
+                        {CATEGORY_ICONS[category.icon] ?? <Code2 size={18} color={category.color} />}
+                      </View>
+                      <View style={styles.categoryHeaderText}>
+                        <Text style={styles.categoryTitle}>{category.title}</Text>
+                        <Text style={styles.categoryMeta}>{category.items.length} items · {categoryHours}h</Text>
+                      </View>
                     </View>
-                    <View style={styles.catInfo}>
-                      <Text style={styles.catTitle}>{cat.title}</Text>
-                      <Text style={styles.catMeta}>
-                        {cat.items.length} items · {catHours}h est.
-                      </Text>
-                    </View>
-                  </View>
-                  <View style={styles.catRight}>
-                    <View style={styles.catBadge}>
-                      <Text style={styles.catBadgeText}>{cat.items.length}</Text>
-                    </View>
-                    {isExpanded ? (
-                      <ChevronDown size={18} color={Colors.textSecondary} />
-                    ) : (
-                      <ChevronRight size={18} color={Colors.textSecondary} />
-                    )}
-                  </View>
-                </TouchableOpacity>
+                    {expanded ? <ChevronDown size={18} color={Colors.textSecondary} /> : <ChevronRight size={18} color={Colors.textSecondary} />}
+                  </TouchableOpacity>
 
-                {isExpanded && (
-                  <View style={styles.catBody}>
-                    {cat.items.map(item => {
-                      const isItemExpanded = expandedItems.has(item.id);
-                      const pConfig = PRIORITY_CONFIG[item.priority];
-                      const sConfig = STATUS_CONFIG[item.status];
-                      return (
-                        <View key={item.id} style={styles.itemCard}>
-                          <TouchableOpacity
-                            style={styles.itemHeader}
-                            onPress={() => toggleItem(item.id)}
-                            activeOpacity={0.7}
-                          >
-                            <View style={styles.itemLeft}>
-                              <Text style={styles.itemName}>{item.name}</Text>
-                              <Text style={styles.itemProvider}>{item.provider}</Text>
-                            </View>
-                            <View style={styles.itemBadges}>
-                              <View style={[styles.badge, { backgroundColor: `${pConfig.color}20` }]}>
-                                <Text style={[styles.badgeText, { color: pConfig.color }]}>{pConfig.label}</Text>
+                  {expanded && (
+                    <View style={styles.itemList}>
+                      {category.items.map((item) => {
+                        const itemExpanded = expandedItems.has(item.id);
+                        const priorityConfig = PRIORITY_CONFIG[item.priority];
+                        const statusConfig = STATUS_CONFIG[item.status];
+                        const ownerConfig = OWNER_CONFIG[item.owner];
+
+                        return (
+                          <View key={item.id} style={styles.itemCard}>
+                            <TouchableOpacity
+                              activeOpacity={0.8}
+                              onPress={() => toggleItem(item.id)}
+                              style={styles.itemHeader}
+                              testID={`developer-module-item-${item.id}`}
+                            >
+                              <View style={styles.itemHeaderText}>
+                                <Text style={styles.itemName}>{item.name}</Text>
+                                <Text style={styles.itemProvider}>{item.provider}</Text>
                               </View>
-                              <View style={[styles.badge, { backgroundColor: `${sConfig.color}20` }]}>
-                                <Text style={[styles.badgeText, { color: sConfig.color }]}>{sConfig.label}</Text>
+                              <View style={styles.itemBadges}>
+                                <View style={[styles.tag, { backgroundColor: `${ownerConfig.color}22` }]}>
+                                  <Text style={[styles.tagText, { color: ownerConfig.color }]}>{ownerConfig.shortLabel}</Text>
+                                </View>
+                                <View style={[styles.tag, { backgroundColor: `${priorityConfig.color}22` }]}>
+                                  <Text style={[styles.tagText, { color: priorityConfig.color }]}>{priorityConfig.label}</Text>
+                                </View>
+                                <View style={[styles.tag, { backgroundColor: `${statusConfig.color}22` }]}>
+                                  <Text style={[styles.tagText, { color: statusConfig.color }]}>{statusConfig.label}</Text>
+                                </View>
                               </View>
-                            </View>
-                          </TouchableOpacity>
+                            </TouchableOpacity>
 
-                          {isItemExpanded && (
-                            <View style={styles.itemBody}>
-                              <Text style={styles.itemDesc}>{item.description}</Text>
+                            {itemExpanded && (
+                              <View style={styles.itemBody}>
+                                <Text style={styles.itemDescription}>{item.description}</Text>
 
-                              <View style={styles.itemMeta}>
-                                <Clock size={13} color={Colors.textSecondary} />
-                                <Text style={styles.itemMetaText}>Est. {item.estimatedHours} hours</Text>
+                                <View style={styles.inlineMetaRow}>
+                                  <Clock size={13} color={Colors.textSecondary} />
+                                  <Text style={styles.inlineMetaText}>{item.estimatedHours}h estimate</Text>
+                                </View>
+
+                                {item.envVariables.length > 0 && (
+                                  <View style={styles.detailBlock}>
+                                    <Text style={styles.detailTitle}>Environment variables</Text>
+                                    {item.envVariables.map((variable) => (
+                                      <View key={variable.name} style={styles.envCard}>
+                                        <View style={styles.envCardHeader}>
+                                          <Text style={styles.envName}>{variable.name}</Text>
+                                          <View style={styles.envCardBadges}>
+                                            {variable.required ? (
+                                              <View style={[styles.tag, { backgroundColor: '#DC262622' }]}>
+                                                <Text style={[styles.tagText, { color: '#DC2626' }]}>Required</Text>
+                                              </View>
+                                            ) : null}
+                                            <View style={[styles.tag, { backgroundColor: variable.configured ? '#22C55E22' : '#6B728022' }]}>
+                                              <Text style={[styles.tagText, { color: variable.configured ? '#22C55E' : '#9CA3AF' }]}>
+                                                {variable.configured ? 'Configured' : 'Missing'}
+                                              </Text>
+                                            </View>
+                                          </View>
+                                        </View>
+                                        <Text style={styles.envDescription}>{variable.description}</Text>
+                                        <Text style={styles.envExample}>{variable.example}</Text>
+                                      </View>
+                                    ))}
+                                  </View>
+                                )}
+
+                                {item.endpoints.length > 0 && (
+                                  <View style={styles.detailBlock}>
+                                    <Text style={styles.detailTitle}>Linked screens</Text>
+                                    {item.endpoints.map((endpoint) => (
+                                      <Text key={endpoint} style={styles.endpointText}>• {endpoint}</Text>
+                                    ))}
+                                  </View>
+                                )}
+
+                                {item.notes ? (
+                                  <View style={styles.noteRow}>
+                                    <AlertTriangle size={14} color="#F59E0B" />
+                                    <Text style={styles.noteText}>{item.notes}</Text>
+                                  </View>
+                                ) : null}
+
+                                {item.docsUrl ? (
+                                  <TouchableOpacity
+                                    activeOpacity={0.8}
+                                    onPress={() => handleOpenDocs(item.docsUrl)}
+                                    style={styles.docsButton}
+                                    testID={`developer-module-docs-${item.id}`}
+                                  >
+                                    <ExternalLink size={14} color={Colors.primary} />
+                                    <Text style={styles.docsButtonText}>Open docs</Text>
+                                  </TouchableOpacity>
+                                ) : null}
                               </View>
-
-                              {item.envVariables.length > 0 && (
-                                <View style={styles.envBlock}>
-                                  <Text style={styles.envBlockTitle}>Environment Variables ({item.envVariables.length})</Text>
-                                  {item.envVariables.map(env => (
-                                    <View key={env.name} style={styles.envRow}>
-                                      <Text style={styles.envName}>
-                                        {env.name}
-                                        {env.required && <Text style={styles.envRequired}> *</Text>}
-                                      </Text>
-                                      <Text style={styles.envDesc}>{env.description}</Text>
-                                      <Text style={styles.envExample}>{env.example}</Text>
-                                    </View>
-                                  ))}
-                                </View>
-                              )}
-
-                              {item.endpoints.length > 0 && (
-                                <View style={styles.endpointBlock}>
-                                  <Text style={styles.envBlockTitle}>Endpoints / Screens</Text>
-                                  {item.endpoints.map((ep, idx) => (
-                                    <Text key={idx} style={styles.endpointText}>· {ep}</Text>
-                                  ))}
-                                </View>
-                              )}
-
-                              {item.notes ? (
-                                <View style={styles.notesBlock}>
-                                  <AlertTriangle size={13} color="#F59E0B" />
-                                  <Text style={styles.notesText}>{item.notes}</Text>
-                                </View>
-                              ) : null}
-
-                              {item.docsUrl ? (
-                                <TouchableOpacity
-                                  style={styles.docsLink}
-                                  onPress={() => handleOpenDocs(item.docsUrl)}
-                                  activeOpacity={0.7}
-                                >
-                                  <ExternalLink size={13} color={Colors.primary} />
-                                  <Text style={styles.docsLinkText}>Open Documentation</Text>
-                                </TouchableOpacity>
-                              ) : null}
-                            </View>
-                          )}
-                        </View>
-                      );
-                    })}
-                  </View>
-                )}
-              </View>
-            );
-          })}
-        </View>
-
-        <TouchableOpacity
-          style={styles.envVarsToggle}
-          onPress={() => setShowEnvVars(!showEnvVars)}
-          activeOpacity={0.7}
-        >
-          <View style={styles.envVarsToggleLeft}>
-            <FileText size={18} color={Colors.primary} />
-            <Text style={styles.envVarsToggleText}>
-              All Environment Variables ({allEnvVars.length})
-            </Text>
-          </View>
-          {showEnvVars ? (
-            <ChevronDown size={18} color={Colors.textSecondary} />
-          ) : (
-            <ChevronRight size={18} color={Colors.textSecondary} />
-          )}
-        </TouchableOpacity>
-
-        {showEnvVars && (
-          <View style={styles.envVarsList}>
-            {allEnvVars.map(env => (
-              <View key={env.name} style={styles.envVarItem}>
-                <View style={styles.envVarHeader}>
-                  <Text style={styles.envVarName}>{env.name}</Text>
-                  {env.required && (
-                    <View style={[styles.badge, { backgroundColor: '#DC262620' }]}>
-                      <Text style={[styles.badgeText, { color: '#DC2626' }]}>REQUIRED</Text>
+                            )}
+                          </View>
+                        );
+                      })}
                     </View>
                   )}
                 </View>
-                <Text style={styles.envVarDesc}>{env.description}</Text>
-                <Text style={styles.envVarExample}>{env.example}</Text>
-              </View>
-            ))}
-          </View>
-        )}
-
-        <View style={styles.prioritySummary}>
-          <Text style={styles.sectionTitle}>Priority Roadmap</Text>
-
-          <View style={styles.roadmapCard}>
-            <View style={styles.roadmapPhase}>
-              <View style={[styles.phaseIndicator, { backgroundColor: '#DC2626' }]} />
-              <View style={styles.phaseContent}>
-                <Text style={styles.phaseTitle}>Phase 1 - Launch Critical</Text>
-                <Text style={styles.phaseDesc}>
-                  {allItems.filter(i => i.priority === 'critical').map(i => i.name).join(', ')}
-                </Text>
-                <Text style={styles.phaseHours}>
-                  {allItems.filter(i => i.priority === 'critical').reduce((s, i) => s + i.estimatedHours, 0)}h estimated
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.roadmapDivider} />
-
-            <View style={styles.roadmapPhase}>
-              <View style={[styles.phaseIndicator, { backgroundColor: '#F59E0B' }]} />
-              <View style={styles.phaseContent}>
-                <Text style={styles.phaseTitle}>Phase 2 - Post-Launch</Text>
-                <Text style={styles.phaseDesc}>
-                  {allItems.filter(i => i.priority === 'high').map(i => i.name).join(', ')}
-                </Text>
-                <Text style={styles.phaseHours}>
-                  {allItems.filter(i => i.priority === 'high').reduce((s, i) => s + i.estimatedHours, 0)}h estimated
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.roadmapDivider} />
-
-            <View style={styles.roadmapPhase}>
-              <View style={[styles.phaseIndicator, { backgroundColor: '#3B82F6' }]} />
-              <View style={styles.phaseContent}>
-                <Text style={styles.phaseTitle}>Phase 3 - Growth</Text>
-                <Text style={styles.phaseDesc}>
-                  {allItems.filter(i => i.priority === 'medium').map(i => i.name).join(', ')}
-                </Text>
-                <Text style={styles.phaseHours}>
-                  {allItems.filter(i => i.priority === 'medium').reduce((s, i) => s + i.estimatedHours, 0)}h estimated
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.roadmapDivider} />
-
-            <View style={styles.roadmapPhase}>
-              <View style={[styles.phaseIndicator, { backgroundColor: '#6B7280' }]} />
-              <View style={styles.phaseContent}>
-                <Text style={styles.phaseTitle}>Phase 4 - Optional</Text>
-                <Text style={styles.phaseDesc}>
-                  {allItems.filter(i => i.priority === 'low').map(i => i.name).join(', ')}
-                </Text>
-                <Text style={styles.phaseHours}>
-                  {allItems.filter(i => i.priority === 'low').reduce((s, i) => s + i.estimatedHours, 0)}h estimated
-                </Text>
-              </View>
-            </View>
+              );
+            })}
           </View>
         </View>
 
-        <View style={styles.infoBox}>
+        <TouchableOpacity
+          activeOpacity={0.8}
+          onPress={() => setShowEnvVars((previous) => !previous)}
+          style={styles.sectionCard}
+          testID="developer-module-env-toggle"
+        >
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionHeaderLeft}>
+              <Hash size={15} color={Colors.primary} />
+              <Text style={styles.sectionTitle}>All environment variables</Text>
+            </View>
+            <View style={styles.envSummaryRight}>
+              <Text style={styles.sectionMeta}>{configuredEnvCount}/{allEnvVars.length}</Text>
+              {showEnvVars ? <ChevronDown size={18} color={Colors.textSecondary} /> : <ChevronRight size={18} color={Colors.textSecondary} />}
+            </View>
+          </View>
+
+          {showEnvVars ? (
+            <View style={styles.allEnvList}>
+              {allEnvVars.map((variable) => (
+                <View key={variable.name} style={styles.allEnvCard}>
+                  <View style={styles.envCardHeader}>
+                    <Text style={styles.envName}>{variable.name}</Text>
+                    <View style={styles.envCardBadges}>
+                      <View style={[styles.tag, { backgroundColor: variable.configured ? '#22C55E22' : '#6B728022' }]}>
+                        <Text style={[styles.tagText, { color: variable.configured ? '#22C55E' : '#9CA3AF' }]}>
+                          {variable.configured ? 'Configured' : 'Missing'}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                  <Text style={styles.envDescription}>{variable.description}</Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
+        </TouchableOpacity>
+
+        <View style={styles.infoCard}>
           <Zap size={18} color={Colors.primary} />
-          <View style={styles.infoBoxContent}>
-            <Text style={styles.infoBoxTitle}>Quick Start for Developers</Text>
-            <Text style={styles.infoBoxText}>
-              1. Set up PostgreSQL database and run migrations{'\n'}
-              2. Configure Stripe + Plaid for payments{'\n'}
-              3. Set up Firebase Auth or Auth0{'\n'}
-              4. Connect KYC provider (Persona/Jumio){'\n'}
-              5. Configure push notifications (Expo Push){'\n'}
-              6. Set up Sentry for error tracking{'\n'}
-              7. Deploy backend to Vercel/Railway
+          <View style={styles.infoCardTextWrap}>
+            <Text style={styles.infoCardTitle}>Completion estimate</Text>
+            <Text style={styles.infoCardText}>
+              Fast finish: about 2-4 working days for my side if we keep scope tight. Full closeout including your items and shared approvals: about 1-2 weeks depending on your account access, confirmations, and production decisions.
             </Text>
           </View>
-        </View>
-
-        <View style={styles.footer}>
-          <Text style={styles.footerTitle}>IVXHOLDINGS Luxury Holdings</Text>
-          <Text style={styles.footerText}>Developer Integration Guide</Text>
-          <Text style={styles.footerDate}>Last Updated: {new Date().toLocaleDateString()}</Text>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -688,102 +703,497 @@ export default function DeveloperHandoffScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
-  topBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 12 },
-  backButton: { padding: 8 },
-  topBarTitle: { color: Colors.text, fontSize: 16, fontWeight: '700' as const },
-  hero: { gap: 4 },
-  heroIconWrap: { width: 56, height: 56, borderRadius: 18, backgroundColor: Colors.primary + '15', alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
-  heroTitle: { color: Colors.text, fontSize: 22, fontWeight: '800' as const, textAlign: 'center', marginBottom: 8 },
-  heroSubtitle: { color: Colors.text, fontSize: 22, fontWeight: '800' as const, textAlign: 'center', marginBottom: 8 },
-  statsRow: { flexDirection: 'row', gap: 10, marginBottom: 16 },
-  statBox: { flex: 1, backgroundColor: Colors.surface, borderRadius: 14, padding: 14, alignItems: 'center', gap: 4, borderWidth: 1, borderColor: Colors.surfaceBorder },
-  statNum: { color: Colors.text, fontSize: 18, fontWeight: '800' as const },
-  statLabel: { color: Colors.textTertiary, fontSize: 11 },
-  timeEstimate: { gap: 4 },
-  envVarsHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
-  timeText: { color: Colors.textSecondary, fontSize: 13 },
-  timeBold: { gap: 4 },
-  shareSection: { marginBottom: 16 },
-  sectionTitle: { color: Colors.text, fontSize: 16, fontWeight: '700' as const, marginBottom: 12 },
-  shareRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  shareBtn: { padding: 8 },
-  shareBtnText: { color: Colors.black, fontWeight: '700' as const, fontSize: 15 },
-  filterSection: { marginBottom: 12 },
-  filterRow: { marginBottom: 12 },
-  filterLabel: { color: Colors.text, fontSize: 14, fontWeight: '600' as const, marginBottom: 8 },
-  filterChips: { flexDirection: 'row', gap: 8 },
-  chip: { backgroundColor: Colors.surface, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: Colors.surfaceBorder },
-  chipActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  chipText: { color: Colors.textSecondary, fontSize: 13 },
-  chipTextActive: { color: Colors.black },
-  listSection: { marginBottom: 16 },
-  listHeader: { color: Colors.text, fontSize: 16, fontWeight: '700' as const, marginBottom: 12 },
-  expandBtns: { gap: 4 },
-  expandBtn: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 12, alignItems: 'center' },
-  expandBtnText: { color: Colors.black, fontWeight: '700' as const, fontSize: 15 },
-  collapseBtn: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 12, alignItems: 'center' },
-  collapseBtnText: { color: Colors.black, fontWeight: '700' as const, fontSize: 15 },
-  catCard: { backgroundColor: Colors.surface, borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: Colors.surfaceBorder },
-  catHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
-  catLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
-  catIconWrap: { gap: 4 },
-  catInfo: { flex: 1 },
-  catTitle: { color: Colors.text, fontSize: 16, fontWeight: '700' as const },
-  catMeta: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  catRight: { alignItems: 'flex-end' },
-  catBadge: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
-  catBadgeText: { fontSize: 11, fontWeight: '700' as const },
-  catBody: { gap: 8 },
-  itemCard: { backgroundColor: Colors.surface, borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: Colors.surfaceBorder },
-  itemHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
-  itemLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
-  itemName: { color: Colors.text, fontSize: 15, fontWeight: '700' as const },
-  itemProvider: { gap: 4 },
-  itemBadges: { gap: 4 },
-  badge: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
-  badgeText: { fontSize: 11, fontWeight: '700' as const },
-  itemBody: { gap: 8 },
-  itemDesc: { color: Colors.textSecondary, fontSize: 13, lineHeight: 18 },
-  itemMeta: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  itemMetaText: { color: Colors.textSecondary, fontSize: 13 },
-  envBlock: { gap: 4 },
-  envBlockTitle: { color: Colors.text, fontSize: 16, fontWeight: '700' as const },
-  envRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  envName: { color: Colors.text, fontSize: 15, fontWeight: '700' as const },
-  envRequired: { gap: 4 },
-  envDesc: { color: Colors.textSecondary, fontSize: 13, lineHeight: 18 },
-  envExample: { gap: 4 },
-  endpointBlock: { gap: 4 },
-  endpointText: { color: Colors.textSecondary, fontSize: 13 },
-  notesBlock: { gap: 4 },
-  notesText: { color: Colors.textSecondary, fontSize: 13 },
-  docsLink: { gap: 4 },
-  docsLinkText: { color: Colors.textSecondary, fontSize: 13 },
-  envVarsToggle: { gap: 4 },
-  envVarsToggleLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
-  envVarsToggleText: { color: Colors.textSecondary, fontSize: 13 },
-  envVarsList: { gap: 8 },
-  envVarItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 },
-  envVarHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
-  envVarName: { color: Colors.text, fontSize: 15, fontWeight: '700' as const },
-  envVarDesc: { color: Colors.textSecondary, fontSize: 13, lineHeight: 18 },
-  envVarExample: { gap: 4 },
-  prioritySummary: { gap: 4 },
-  roadmapCard: { backgroundColor: Colors.surface, borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: Colors.surfaceBorder },
-  roadmapPhase: { gap: 4 },
-  phaseIndicator: { width: 4, borderRadius: 2 },
-  phaseContent: { flex: 1, gap: 4 },
-  phaseTitle: { color: Colors.text, fontSize: 16, fontWeight: '700' as const },
-  phaseDesc: { color: Colors.textSecondary, fontSize: 13, lineHeight: 18 },
-  phaseHours: { gap: 4 },
-  roadmapDivider: { width: 1, height: 24, backgroundColor: Colors.surfaceBorder },
-  infoBox: { backgroundColor: Colors.info + '10', borderRadius: 12, padding: 14 },
-  infoBoxContent: { flex: 1, gap: 4 },
-  infoBoxTitle: { color: Colors.text, fontSize: 16, fontWeight: '700' as const },
-  infoBoxText: { color: Colors.textSecondary, fontSize: 13 },
-  footer: { paddingHorizontal: 20, paddingVertical: 14, borderTopWidth: 1, borderTopColor: Colors.surfaceBorder, backgroundColor: Colors.background },
-  footerTitle: { color: Colors.text, fontSize: 14, fontWeight: '600' as const, textAlign: 'center', marginBottom: 4 },
-  footerText: { color: Colors.textTertiary, fontSize: 12, textAlign: 'center' },
-  footerDate: { color: Colors.textTertiary, fontSize: 11, textAlign: 'center', marginTop: 4 },
+  safeArea: {
+    flex: 1,
+    backgroundColor: Colors.background,
+  },
+  contentContainer: {
+    paddingHorizontal: 20,
+    paddingBottom: 32,
+    gap: 16,
+  },
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 8,
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  topBarCenter: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+  },
+  topBarTitle: {
+    color: Colors.text,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  topBarSubtitle: {
+    color: Colors.primary,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  topBarSpacer: {
+    width: 40,
+    height: 40,
+  },
+  heroCard: {
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    borderRadius: 24,
+    padding: 22,
+    gap: 14,
+  },
+  heroIconWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: 18,
+    backgroundColor: Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroTitle: {
+    color: Colors.text,
+    fontSize: 26,
+    fontWeight: '800',
+  },
+  heroSubtitle: {
+    color: Colors.textSecondary,
+    fontSize: 14,
+    lineHeight: 21,
+  },
+  heroBadgeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  heroBadge: {
+    backgroundColor: Colors.primary,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  heroBadgeText: {
+    color: Colors.background,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  heroBadgeSecondary: {
+    backgroundColor: '#1F2937',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  heroBadgeSecondaryText: {
+    color: Colors.white,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  statsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  statCard: {
+    flexGrow: 1,
+    flexBasis: '47%',
+    backgroundColor: Colors.surface,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    padding: 16,
+    gap: 6,
+  },
+  statValue: {
+    color: Colors.text,
+    fontSize: 24,
+    fontWeight: '800',
+  },
+  statLabel: {
+    color: Colors.textSecondary,
+    fontSize: 13,
+  },
+  sectionCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    padding: 18,
+    gap: 14,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  sectionHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexShrink: 1,
+  },
+  sectionTitle: {
+    color: Colors.text,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  sectionMeta: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  splitGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  splitCard: {
+    flexGrow: 1,
+    flexBasis: '31%',
+    minWidth: 92,
+    backgroundColor: '#0F0F10',
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    borderRadius: 18,
+    padding: 14,
+    gap: 8,
+  },
+  splitPill: {
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  splitPillText: {
+    color: Colors.background,
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  splitTitle: {
+    color: Colors.text,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  splitValue: {
+    color: Colors.text,
+    fontSize: 20,
+    fontWeight: '800',
+  },
+  splitSub: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+  },
+  timeBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    backgroundColor: 'rgba(255,215,0,0.08)',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,215,0,0.18)',
+    padding: 14,
+  },
+  timeBannerText: {
+    flex: 1,
+    color: Colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  timeBannerBold: {
+    color: Colors.text,
+    fontWeight: '700',
+  },
+  actionGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  actionButton: {
+    minWidth: 98,
+    flexGrow: 1,
+    flexBasis: '31%',
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  actionButtonText: {
+    color: Colors.white,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  filterRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  filterChip: {
+    backgroundColor: '#101010',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+  },
+  filterChipActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  filterChipText: {
+    color: Colors.textSecondary,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  filterChipTextActive: {
+    color: Colors.background,
+  },
+  expandActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  secondaryButton: {
+    backgroundColor: '#101010',
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  secondaryButtonText: {
+    color: Colors.text,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  categoryList: {
+    gap: 12,
+  },
+  categoryCard: {
+    backgroundColor: '#0F0F10',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    overflow: 'hidden',
+  },
+  categoryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    padding: 16,
+  },
+  categoryHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  categoryIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  categoryHeaderText: {
+    flex: 1,
+    gap: 3,
+  },
+  categoryTitle: {
+    color: Colors.text,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  categoryMeta: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+  },
+  itemList: {
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+    gap: 12,
+  },
+  itemCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    padding: 14,
+    gap: 10,
+  },
+  itemHeader: {
+    gap: 10,
+  },
+  itemHeaderText: {
+    gap: 4,
+  },
+  itemName: {
+    color: Colors.text,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  itemProvider: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+  },
+  itemBadges: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  tag: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  tagText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  itemBody: {
+    gap: 12,
+  },
+  itemDescription: {
+    color: Colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  inlineMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  inlineMetaText: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  detailBlock: {
+    gap: 10,
+  },
+  detailTitle: {
+    color: Colors.text,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  envCard: {
+    backgroundColor: '#101010',
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    borderRadius: 14,
+    padding: 12,
+    gap: 8,
+  },
+  envCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  envCardBadges: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'flex-end',
+    gap: 8,
+  },
+  envName: {
+    color: Colors.text,
+    fontSize: 12,
+    fontWeight: '800',
+    flex: 1,
+  },
+  envDescription: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  envExample: {
+    color: Colors.primary,
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  endpointText: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  noteRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    backgroundColor: 'rgba(245,158,11,0.08)',
+    borderRadius: 12,
+    padding: 10,
+  },
+  noteText: {
+    flex: 1,
+    color: '#FCD34D',
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  docsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    alignSelf: 'flex-start',
+    paddingVertical: 4,
+  },
+  docsButtonText: {
+    color: Colors.primary,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  envSummaryRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  allEnvList: {
+    gap: 10,
+  },
+  allEnvCard: {
+    backgroundColor: '#101010',
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    borderRadius: 14,
+    padding: 12,
+    gap: 8,
+  },
+  infoCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    borderRadius: 18,
+    padding: 16,
+  },
+  infoCardTextWrap: {
+    flex: 1,
+    gap: 6,
+  },
+  infoCardTitle: {
+    color: Colors.text,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  infoCardText: {
+    color: Colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 19,
+  },
 });

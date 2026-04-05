@@ -114,9 +114,18 @@ ALTER TABLE landing_analytics ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS landing_analytics_select_all ON landing_analytics;
 DROP POLICY IF EXISTS landing_analytics_insert_all ON landing_analytics;
+DROP POLICY IF EXISTS landing_analytics_anon_insert ON landing_analytics;
+DROP POLICY IF EXISTS landing_analytics_auth_select ON landing_analytics;
 
-CREATE POLICY landing_analytics_select_all ON landing_analytics FOR SELECT USING (true);
-CREATE POLICY landing_analytics_insert_all ON landing_analytics FOR INSERT WITH CHECK (true);
+-- Anyone (anon / landing page) can INSERT analytics events
+CREATE POLICY landing_analytics_anon_insert ON landing_analytics
+  FOR INSERT TO anon, authenticated
+  WITH CHECK (true);
+
+-- Only authenticated users (admin dashboard) can SELECT
+CREATE POLICY landing_analytics_auth_select ON landing_analytics
+  FOR SELECT TO authenticated
+  USING (true);
 
 CREATE INDEX IF NOT EXISTS idx_landing_analytics_event ON landing_analytics(event);
 CREATE INDEX IF NOT EXISTS idx_landing_analytics_session ON landing_analytics(session_id);
@@ -135,16 +144,23 @@ CREATE TABLE IF NOT EXISTS landing_deals (
   state text,
   country text,
   total_investment numeric DEFAULT 0,
+  property_value numeric DEFAULT 0,
   expected_roi numeric DEFAULT 0,
   status text DEFAULT 'active',
   photos text,
   distribution_frequency text,
   exit_strategy text,
   published_at timestamptz,
+  display_order integer DEFAULT 999,
+  trust_info text,
   updated_at timestamptz DEFAULT now(),
   synced_at timestamptz DEFAULT now(),
   created_at timestamptz DEFAULT now()
 );
+
+ALTER TABLE landing_deals ADD COLUMN IF NOT EXISTS property_value numeric DEFAULT 0;
+ALTER TABLE landing_deals ADD COLUMN IF NOT EXISTS display_order integer DEFAULT 999;
+ALTER TABLE landing_deals ADD COLUMN IF NOT EXISTS trust_info text;
 
 ALTER TABLE landing_deals ENABLE ROW LEVEL SECURITY;
 
