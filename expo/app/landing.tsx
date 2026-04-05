@@ -28,8 +28,8 @@ import {
   Coins,
   Clock,
   Mail,
-  Phone,
   User,
+  Phone,
   CheckCircle,
   Sparkles,
   ShieldCheck,
@@ -67,6 +67,8 @@ import { IVX_LOGO_SOURCE } from '@/constants/brand';
 import { fetchCanonicalDeals } from '@/lib/canonical-deals';
 import type { PublishedDealCardModel } from '@/lib/published-deal-card-model';
 import type { DealTrustInfo } from '@/lib/parse-deal';
+import { getDealExitProjection } from '@/lib/investor-intake';
+import InvestorIntakeForm from '@/components/InvestorIntakeForm';
 import {
   diagnoseDealPhotos,
   getPhotoSourcePresentation,
@@ -480,8 +482,13 @@ function LandingDealsShowcase({ scrollToForm }: { scrollToForm: () => void }) {
               const totalInvestment = Number(deal.totalInvestment || 0);
               const roi = Number(deal.expectedROI || 0);
               const location = deal.addressShort || deal.addressFull;
-              const minInvestmentLabel = deal.minInvestment > 0 ? `${deal.minInvestment}` : '$50';
+              const minInvestmentLabel = deal.minInvestment > 0 ? formatCurrencyCompact(deal.minInvestment) : '$50';
               const proofItems = getDealProofItems(deal);
+              const exitProjection = getDealExitProjection(deal);
+              const estimatedSaleLabel = exitProjection.estimatedSalePrice > 0 ? formatCurrencyCompact(exitProjection.estimatedSalePrice) : 'TBA';
+              const projectedPayoutLabel = exitProjection.estimatedGrossPayoutAtMinimum > 0 ? formatCurrencyCompact(exitProjection.estimatedGrossPayoutAtMinimum) : 'TBA';
+              const ownershipLabel = exitProjection.minimumOwnershipPercent > 0 ? `${exitProjection.minimumOwnershipPercent.toFixed(3)}%` : 'TBA';
+              const timelineLabel = deal.timeline || 'Deal-specific';
 
               const sourcePresentation = getPhotoSourcePresentation(deal.photoDiagnostic.source);
 
@@ -543,6 +550,31 @@ function LandingDealsShowcase({ scrollToForm }: { scrollToForm: () => void }) {
                           <Text style={dealStyles.proofValue}>{item.value}</Text>
                         </View>
                       ))}
+                    </View>
+
+                    <View style={dealStyles.exitProjectionCard} testID={`landing-deal-exit-math-${deal.id || idx}`}>
+                      <View style={dealStyles.exitProjectionHeader}>
+                        <Text style={dealStyles.exitProjectionTitle}>Exit math for the minimum ticket</Text>
+                        <Text style={dealStyles.exitProjectionTimeline}>{timelineLabel}</Text>
+                      </View>
+                      <View style={dealStyles.exitProjectionGrid}>
+                        <View style={dealStyles.exitProjectionItem}>
+                          <Text style={dealStyles.exitProjectionLabel}>Est. sale</Text>
+                          <Text style={dealStyles.exitProjectionValue}>{estimatedSaleLabel}</Text>
+                        </View>
+                        <View style={dealStyles.exitProjectionItem}>
+                          <Text style={dealStyles.exitProjectionLabel}>Min ownership</Text>
+                          <Text style={dealStyles.exitProjectionValue}>{ownershipLabel}</Text>
+                        </View>
+                        <View style={dealStyles.exitProjectionItem}>
+                          <Text style={dealStyles.exitProjectionLabel}>Min ticket</Text>
+                          <Text style={dealStyles.exitProjectionValue}>{minInvestmentLabel}</Text>
+                        </View>
+                        <View style={dealStyles.exitProjectionItem}>
+                          <Text style={dealStyles.exitProjectionLabel}>Est. gross payout</Text>
+                          <Text style={[dealStyles.exitProjectionValue, { color: ACCENT_GREEN }]}>{projectedPayoutLabel}</Text>
+                        </View>
+                      </View>
                     </View>
 
                     <Text style={dealStyles.cardDisclosure}>
@@ -729,6 +761,58 @@ const dealStyles = StyleSheet.create({
     lineHeight: 17,
     fontWeight: '600' as const,
   },
+  exitProjectionCard: {
+    backgroundColor: '#0D1310',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: ACCENT_GREEN + '20',
+    padding: 14,
+    marginBottom: 14,
+  },
+  exitProjectionHeader: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'space-between' as const,
+    gap: 10,
+    marginBottom: 10,
+  },
+  exitProjectionTitle: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '800' as const,
+    flex: 1,
+  },
+  exitProjectionTimeline: {
+    color: ACCENT_GREEN,
+    fontSize: 11,
+    fontWeight: '700' as const,
+  },
+  exitProjectionGrid: {
+    flexDirection: 'row' as const,
+    flexWrap: 'wrap' as const,
+    gap: 10,
+  },
+  exitProjectionItem: {
+    width: '47%',
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  exitProjectionLabel: {
+    color: '#6E8B78',
+    fontSize: 10,
+    fontWeight: '700' as const,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase' as const,
+    marginBottom: 6,
+  },
+  exitProjectionValue: {
+    color: '#F5F5F5',
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '700' as const,
+  },
   cardDisclosure: {
     color: Colors.textSecondary,
     fontSize: 11,
@@ -855,6 +939,17 @@ const dealStyles = StyleSheet.create({
 
 
 function LandingWaitlistForm() {
+  return (
+    <InvestorIntakeForm
+      variant="landing"
+      source="landing_page"
+      pagePath="/"
+      testIdPrefix="landing-investor"
+    />
+  );
+}
+
+function LandingWaitlistFormLegacy() {
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -1209,6 +1304,8 @@ function LandingWaitlistForm() {
     </View>
   );
 }
+
+void LandingWaitlistFormLegacy;
 
 export default function LandingScreen() {
   const router = useRouter();

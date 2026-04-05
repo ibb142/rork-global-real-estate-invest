@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -18,22 +18,13 @@ import {
   ChevronDown,
   ChevronRight,
   Clock,
-  Code2,
   Database,
   Smartphone,
   Shield,
-  CreditCard,
   Brain,
-  Users,
-  Building2,
-  BarChart3,
-  Wallet,
-  Bell,
-  Settings,
   CheckCircle2,
   AlertTriangle,
   Zap,
-  Copy,
   MessageCircle,
   FileDown,
 } from 'lucide-react-native';
@@ -228,16 +219,16 @@ export default function DeveloperBreakdownScreen() {
   const [copied, setCopied] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
-  React.useEffect(() => {
+  useEffect(() => {
     Animated.timing(fadeAnim, {
       toValue: 1,
       duration: 350,
       useNativeDriver: true,
     }).start();
-  }, []);
+  }, [fadeAnim]);
 
   const togglePhase = useCallback((id: string) => {
-    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (Platform.OS !== 'web') void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setExpandedPhases(prev => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -255,7 +246,7 @@ export default function DeveloperBreakdownScreen() {
   }, []);
 
   const handleShare = useCallback(async () => {
-    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    if (Platform.OS !== 'web') void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const report = generateReport();
     try {
       await Share.share({
@@ -268,7 +259,7 @@ export default function DeveloperBreakdownScreen() {
   }, []);
 
   const handleWhatsApp = useCallback(async () => {
-    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    if (Platform.OS !== 'web') void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const report = generateReport();
     const encoded = encodeURIComponent(report);
     const url = `whatsapp://send?text=${encoded}`;
@@ -286,14 +277,14 @@ export default function DeveloperBreakdownScreen() {
   }, []);
 
   const handleCopy = useCallback(async () => {
-    if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    if (Platform.OS !== 'web') void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     const report = generateReport();
     if (Platform.OS === 'web') {
       try {
         await navigator.clipboard.writeText(report);
         setCopied(true);
         setTimeout(() => setCopied(false), 2500);
-      } catch { /* noop */ }
+      } catch {}
     } else {
       await Share.share({ message: report });
     }

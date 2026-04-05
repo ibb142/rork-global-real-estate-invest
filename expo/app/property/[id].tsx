@@ -57,6 +57,7 @@ import PriceChart from '@/components/PriceChart';
 import { usePropertyImages } from '@/lib/use-property-images';
 import { showImagePickerOptions } from '@/lib/image-picker-utils';
 import { Camera } from 'lucide-react-native';
+import { getDealExitProjection, INVESTOR_TIMELINE_STEPS } from '@/lib/investor-intake';
 
 export default function PropertyDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -176,6 +177,44 @@ export default function PropertyDetailScreen() {
   }, [shares, property]);
   
   const fees = useMemo(() => totalCost * 0.01, [totalCost]);
+
+  const investmentProjection = useMemo(() => {
+    if (!property) return null;
+    return getDealExitProjection({
+      propertyValue: property.pricePerShare * property.totalShares,
+      expectedROI: property.irr || property.yield,
+      minInvestment: property.minInvestment,
+      totalInvestment: property.targetRaise || property.pricePerShare * property.totalShares,
+    });
+  }, [property]);
+
+  const timelineMilestones = useMemo(() => {
+    if (!property) return [] as { id: string; title: string; detail: string }[];
+
+    const modeledReturn = property.irr || property.yield;
+    return [
+      {
+        id: 'funding',
+        title: 'Funding window',
+        detail: fundedPercent >= 100 ? 'Funding target reached' : `${fundedPercent}% of the target raise is currently funded.`,
+      },
+      {
+        id: 'wallet',
+        title: INVESTOR_TIMELINE_STEPS[2]?.label ?? 'Wallet + funding',
+        detail: 'Wallet balance, transaction records, and payment source review are completed before final allocation.',
+      },
+      {
+        id: 'hold',
+        title: 'Projected hold period',
+        detail: `Current timeline modeling uses ${modeledReturn.toFixed(1)}% as the expected exit return basis for this property.`,
+      },
+      {
+        id: 'exit',
+        title: INVESTOR_TIMELINE_STEPS[4]?.label ?? 'Distributions + exit',
+        detail: 'Final investor proceeds depend on real performance, fees, distributions, and the actual sale or refinance outcome.',
+      },
+    ];
+  }, [fundedPercent, property]);
 
   const getRiskColor = useCallback(() => {
     if (!property) return Colors.textTertiary;
@@ -701,6 +740,42 @@ export default function PropertyDetailScreen() {
             </View>
             </>
           )}
+
+          {investmentProjection ? (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Investment Timeline & Exit Math</Text>
+              <View style={styles.projectionCard}>
+                <View style={styles.projectionGrid}>
+                  <View style={styles.projectionItem}>
+                    <Text style={styles.projectionLabel}>Est. sale price</Text>
+                    <Text style={styles.projectionValue}>{formatCurrencyCompact(investmentProjection.estimatedSalePrice)}</Text>
+                  </View>
+                  <View style={styles.projectionItem}>
+                    <Text style={styles.projectionLabel}>Min. ownership</Text>
+                    <Text style={styles.projectionValue}>{investmentProjection.minimumOwnershipPercent.toFixed(3)}%</Text>
+                  </View>
+                  <View style={styles.projectionItem}>
+                    <Text style={styles.projectionLabel}>Your current ownership</Text>
+                    <Text style={styles.projectionValue}>{investmentProjection.baseAssetValue > 0 ? `${((totalCost / investmentProjection.baseAssetValue) * 100).toFixed(3)}%` : '0.000%'}</Text>
+                  </View>
+                  <View style={styles.projectionItem}>
+                    <Text style={styles.projectionLabel}>Est. payout at current amount</Text>
+                    <Text style={[styles.projectionValue, { color: Colors.success }]}>{formatCurrencyCompact(totalCost + (totalCost * ((property.irr || property.yield) / 100)))}</Text>
+                  </View>
+                </View>
+                <View style={styles.projectionDivider} />
+                {timelineMilestones.map((item, index) => (
+                  <View key={item.id} style={[styles.timelineMilestoneRow, index < timelineMilestones.length - 1 && styles.timelineMilestoneBorder]}>
+                    <View style={styles.timelineMilestoneDot} />
+                    <View style={styles.timelineMilestoneCopy}>
+                      <Text style={styles.timelineMilestoneTitle}>{item.title}</Text>
+                      <Text style={styles.timelineMilestoneText}>{item.detail}</Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            </View>
+          ) : null}
 
           {property.distributions.length > 0 && (
             <View style={styles.section}>
@@ -1468,6 +1543,18 @@ const styles = StyleSheet.create({
   riskText: { color: Colors.textSecondary, fontSize: 13 },
   documentItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 },
   documentName: { color: Colors.text, fontSize: 15, fontWeight: '700' as const },
+  projectionCard: { backgroundColor: Colors.surface, borderRadius: 18, borderWidth: 1, borderColor: Colors.surfaceBorder, padding: 16 },
+  projectionGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 14 },
+  projectionItem: { width: '47%', backgroundColor: Colors.backgroundSecondary, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 12 },
+  projectionLabel: { color: Colors.textSecondary, fontSize: 11, fontWeight: '700' as const, textTransform: 'uppercase' as const, marginBottom: 6 },
+  projectionValue: { color: Colors.text, fontSize: 14, fontWeight: '700' as const, lineHeight: 18 },
+  projectionDivider: { height: 1, backgroundColor: Colors.surfaceBorder, marginBottom: 8 },
+  timelineMilestoneRow: { flexDirection: 'row', gap: 12, paddingVertical: 12 },
+  timelineMilestoneBorder: { borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder },
+  timelineMilestoneDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: Colors.primary, marginTop: 5 },
+  timelineMilestoneCopy: { flex: 1 },
+  timelineMilestoneTitle: { color: Colors.text, fontSize: 14, fontWeight: '700' as const, marginBottom: 4 },
+  timelineMilestoneText: { color: Colors.textSecondary, fontSize: 13, lineHeight: 19 },
   distributionItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 },
   distributionLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
   distributionDate: { color: Colors.textTertiary, fontSize: 12 },

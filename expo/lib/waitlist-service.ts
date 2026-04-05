@@ -1,13 +1,33 @@
 import { supabase, isSupabaseConfigured } from './supabase';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import type { IntakeProofOfFundsFile } from '@/lib/investor-intake';
+import {
+  INVESTOR_MEMBER_AGREEMENT_VERSION,
+  parseRangeMidpoint,
+  parseReturnMidpoint,
+} from '@/lib/investor-intake';
 
 export interface WaitlistFormData {
   full_name: string;
+  first_name?: string;
+  last_name?: string;
   email: string;
   phone: string;
   accredited_status: 'accredited' | 'non_accredited' | 'unsure' | null;
   consent: boolean;
+  agreement_accepted?: boolean;
+  agreement_version?: string;
+  signature_name?: string;
+  investment_range?: string;
+  return_expectation?: string;
+  preferred_call_time?: string;
+  best_time_for_call?: string;
+  investment_timeline?: string;
+  membership_interest?: 'waitlist' | 'member_signup' | 'investor_onboarding';
+  proof_of_funds_url?: string | null;
+  proof_of_funds_name?: string | null;
+  proof_of_funds_storage_path?: string | null;
   source: string;
   page_path: string;
   utm_source: string;
@@ -21,6 +41,8 @@ export interface WaitlistFormData {
 export interface WaitlistEntry {
   id: string;
   full_name: string;
+  first_name?: string | null;
+  last_name?: string | null;
   email: string;
   phone: string;
   email_normalized: string;
@@ -29,6 +51,18 @@ export interface WaitlistEntry {
   accredited_status: string | null;
   consent_sms: boolean;
   consent_email: boolean;
+  agreement_accepted?: boolean | null;
+  agreement_version?: string | null;
+  signature_name?: string | null;
+  investment_range?: string | null;
+  return_expectation?: string | null;
+  preferred_call_time?: string | null;
+  best_time_for_call?: string | null;
+  investment_timeline?: string | null;
+  membership_interest?: string | null;
+  proof_of_funds_url?: string | null;
+  proof_of_funds_name?: string | null;
+  proof_of_funds_storage_path?: string | null;
   source: string;
   page_path: string | null;
   referrer: string | null;
@@ -266,6 +300,104 @@ function logOtpEvent(phoneE164: string, eventType: string): void {
   });
 }
 
+const INVESTOR_INTAKE_BUCKET = 'investor-intake';
+
+export async function uploadProofOfFundsFile(file: IntakeProofOfFundsFile): Promise<IntakeProofOfFundsFile> {
+  console.log('[WaitlistService] Uploading proof of funds:', file.name);
+
+  if (!isSupabaseConfigured()) {
+    console.log('[WaitlistService] Supabase not configured — returning local proof-of-funds metadata only');
+    return file;
+  }
+
+  try {
+    const response = await fetch(file.uri);
+    const blob = await response.blob();
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const storagePath = `proof-of-funds/${Date.now()}_${safeName}`;
+    const contentType = file.mimeType ?? blob.type ?? 'application/octet-stream';
+
+    const { error } = await supabase.storage.from(INVESTOR_INTAKE_BUCKET).upload(storagePath, blob, {
+      contentType,
+      upsert: false,
+    });
+
+    if (error) {
+      console.log('[WaitlistService] Proof-of-funds upload failed:', error.message);
+      return file;
+    }
+
+    const { data } = supabase.storage.from(INVESTOR_INTAKE_BUCKET).getPublicUrl(storagePath);
+    console.log('[WaitlistService] Proof-of-funds upload success:', storagePath);
+
+    return {
+      ...file,
+      storagePath,
+      publicUrl: data.publicUrl,
+    };
+  } catch (err) {
+    console.log('[WaitlistService] Proof-of-funds upload exception:', (err as Error)?.message);
+    return file;
+  }
+}
+
+async function syncLandingSubmission(data: WaitlistFormData & { phone_verified: boolean }, submittedAt: string): Promise<void> {
+  if (!isSupabaseConfigured()) {
+    return;
+  }
+
+  const investmentAmount = data.investment_range ? parseRangeMidpoint(data.investment_range) : 0;
+  const expectedRoi = data.return_expectation ? parseReturnMidpoint(data.return_expectation) : 0;
+  const bestTimeForCall = data.best_time_for_call || data.preferred_call_time || null;
+  const notesPayload = {
+    first_name: data.first_name ?? null,
+    last_name: data.last_name ?? null,
+    investment_range: data.investment_range ?? null,
+    return_expectation: data.return_expectation ?? null,
+    preferred_call_time: bestTimeForCall,
+    investment_timeline: data.investment_timeline ?? null,
+    accredited_status: data.accredited_status ?? null,
+    membership_interest: data.membership_interest ?? 'waitlist',
+    agreement_accepted: data.agreement_accepted ?? data.consent,
+    agreement_version: data.agreement_version ?? INVESTOR_MEMBER_AGREEMENT_VERSION,
+    signature_name: data.signature_name ?? data.full_name,
+    proof_of_funds_name: data.proof_of_funds_name ?? null,
+    proof_of_funds_url: data.proof_of_funds_url ?? null,
+    proof_of_funds_storage_path: data.proof_of_funds_storage_path ?? null,
+    phone_verified: data.phone_verified,
+    utm_source: data.utm_source || null,
+    utm_medium: data.utm_medium || null,
+    utm_campaign: data.utm_campaign || null,
+    utm_content: data.utm_content || null,
+    utm_term: data.utm_term || null,
+    referrer: data.referrer || null,
+  };
+
+  try {
+    const { error } = await supabase.from('landing_submissions').insert({
+      source: data.source || 'landing_page',
+      type: 'registration',
+      investment_type: data.membership_interest || 'waitlist',
+      investment_amount: investmentAmount > 0 ? investmentAmount : null,
+      expected_roi: expectedRoi > 0 ? expectedRoi : null,
+      full_name: data.full_name.trim(),
+      email: data.email.trim().toLowerCase(),
+      phone: data.phone.trim(),
+      status: 'pending',
+      submitted_at: submittedAt,
+      notes: JSON.stringify(notesPayload),
+    });
+
+    if (error) {
+      console.log('[WaitlistService] landing_submissions sync failed:', error.message);
+    } else {
+      console.log('[WaitlistService] landing_submissions sync success');
+    }
+  } catch (err) {
+    console.log('[WaitlistService] landing_submissions sync exception:', (err as Error)?.message);
+  }
+}
+
 export async function sendConfirmationEmail(fullName: string, email: string): Promise<boolean> {
   console.log('[WaitlistEmail] Sending confirmation to:', email);
 
@@ -362,9 +494,17 @@ export async function submitWaitlistEntry(data: WaitlistFormData & { phone_verif
   const emailNormalized = normalizeEmail(data.email);
   const phoneE164 = normalizePhoneE164(data.phone);
   const now = new Date().toISOString();
+  const firstName = data.first_name?.trim() || data.full_name.trim().split(' ')[0] || '';
+  const lastName = data.last_name?.trim() || data.full_name.trim().split(' ').slice(1).join(' ') || '';
+  const agreementAccepted = data.agreement_accepted ?? data.consent;
+  const agreementVersion = data.agreement_version ?? INVESTOR_MEMBER_AGREEMENT_VERSION;
+  const signatureName = data.signature_name?.trim() || data.full_name.trim();
+  const bestTimeForCall = data.best_time_for_call || data.preferred_call_time || null;
 
   const entry = {
     full_name: data.full_name.trim(),
+    first_name: firstName || null,
+    last_name: lastName || null,
     email: data.email.trim(),
     email_normalized: emailNormalized,
     phone: data.phone.trim(),
@@ -373,6 +513,18 @@ export async function submitWaitlistEntry(data: WaitlistFormData & { phone_verif
     accredited_status: data.accredited_status,
     consent_sms: data.consent,
     consent_email: data.consent,
+    agreement_accepted: agreementAccepted,
+    agreement_version: agreementVersion,
+    signature_name: signatureName,
+    investment_range: data.investment_range || null,
+    return_expectation: data.return_expectation || null,
+    preferred_call_time: bestTimeForCall,
+    best_time_for_call: bestTimeForCall,
+    investment_timeline: data.investment_timeline || null,
+    membership_interest: data.membership_interest || 'waitlist',
+    proof_of_funds_url: data.proof_of_funds_url || null,
+    proof_of_funds_name: data.proof_of_funds_name || null,
+    proof_of_funds_storage_path: data.proof_of_funds_storage_path || null,
     source: data.source || 'landing_page',
     page_path: data.page_path || '/',
     referrer: data.referrer || null,
@@ -385,6 +537,15 @@ export async function submitWaitlistEntry(data: WaitlistFormData & { phone_verif
     status: 'pending',
     verified_at: data.phone_verified ? now : null,
     submitted_at: now,
+  };
+
+  const legacyPayload = {
+    first_name: firstName,
+    last_name: lastName,
+    email: emailNormalized,
+    phone: phoneE164,
+    goal: [data.investment_range, data.return_expectation].filter(Boolean).join(' · '),
+    created_at: now,
   };
 
   try {
@@ -402,13 +563,23 @@ export async function submitWaitlistEntry(data: WaitlistFormData & { phone_verif
       if (error.code === '23505') {
         return { success: false, error: 'duplicate_email' };
       }
-      if (error.message?.includes('does not exist') || error.message?.includes('relation')) {
-        console.log('[WaitlistService] Table does not exist — falling back to legacy waitlist table');
-        return await submitToLegacyWaitlist(data);
-      }
 
-      return { success: false, error: 'submission_failed' };
+      const missingColumns = error.message?.includes('column') || error.message?.includes('schema cache');
+      if (missingColumns) {
+        console.log('[WaitlistService] Rich columns not available yet — retrying with legacy waitlist payload');
+        const legacyResult = await submitToLegacyWaitlist(data, legacyPayload, now);
+        if (!legacyResult.success) {
+          return legacyResult;
+        }
+      } else if (error.message?.includes('does not exist') || error.message?.includes('relation')) {
+        console.log('[WaitlistService] Table does not exist — falling back to legacy waitlist table');
+        return await submitToLegacyWaitlist(data, legacyPayload, now);
+      } else {
+        return { success: false, error: 'submission_failed' };
+      }
     }
+
+    await syncLandingSubmission(data, now);
 
     console.log('[WaitlistService] Entry submitted successfully');
 
@@ -423,19 +594,32 @@ export async function submitWaitlistEntry(data: WaitlistFormData & { phone_verif
   }
 }
 
-async function submitToLegacyWaitlist(data: WaitlistFormData & { phone_verified: boolean }): Promise<{ success: boolean; error?: WaitlistErrorCode }> {
+async function submitToLegacyWaitlist(
+  data: WaitlistFormData & { phone_verified: boolean },
+  legacyPayload?: {
+    first_name: string;
+    last_name: string;
+    email: string;
+    phone: string;
+    goal: string;
+    created_at: string;
+  },
+  submittedAt?: string,
+): Promise<{ success: boolean; error?: WaitlistErrorCode }> {
   try {
+    const fallbackSubmittedAt = submittedAt ?? new Date().toISOString();
     const nameParts = data.full_name.trim().split(' ');
-    const firstName = nameParts[0] || '';
-    const lastName = nameParts.slice(1).join(' ') || '';
+    const firstName = legacyPayload?.first_name || nameParts[0] || '';
+    const lastName = legacyPayload?.last_name || nameParts.slice(1).join(' ') || '';
 
     const { error } = await supabase.from('waitlist').insert({
       first_name: firstName,
       last_name: lastName,
-      email: normalizeEmail(data.email),
-      phone: normalizePhoneE164(data.phone),
+      email: legacyPayload?.email || normalizeEmail(data.email),
+      phone: legacyPayload?.phone || normalizePhoneE164(data.phone),
+      goal: legacyPayload?.goal || [data.investment_range, data.return_expectation].filter(Boolean).join(' · '),
       status: 'pending',
-      created_at: new Date().toISOString(),
+      created_at: fallbackSubmittedAt,
     });
 
     if (error) {
@@ -443,6 +627,7 @@ async function submitToLegacyWaitlist(data: WaitlistFormData & { phone_verified:
       return { success: false, error: 'submission_failed' };
     }
 
+    await syncLandingSubmission(data, fallbackSubmittedAt);
     console.log('[WaitlistService] Saved to legacy waitlist table');
     return { success: true };
   } catch (err) {

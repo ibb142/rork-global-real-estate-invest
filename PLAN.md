@@ -5,7 +5,8 @@
 Landing page + admin sync diagnostics for landing readiness.
 No admin guard work.
 Developer module refresh requested separately.
-Expanded to include investor-trust blocks, legal disclosures, and automatic landing deploy flow across admin publish/update/save actions.
+Expanded to include investor-trust blocks, legal disclosures, automatic landing deploy flow across admin publish/update/save actions, full-brand logo cleanup, landing tracker warning suppression, and explicit owner IP access handling.
+Expanded again to cover richer investor intake capture across landing + app: verified cell OTP, name split, investment range, target return, preferred call time, optional proof-of-funds metadata, member agreement acceptance/signature capture, and clearer property exit/share math for investor review.
 
 ## Checklist
 
@@ -24,3 +25,17 @@ Expanded to include investor-trust blocks, legal disclosures, and automatic land
 - [x] Surface GitHub/AWS/auto-deploy pipeline status inside sync diagnostics
 - [x] Default landing auto-deploy configuration to enabled for new sessions
 - [x] Run error checks on the touched landing/admin/deploy files
+- [x] Replace cropped/yellow logo presentation with the full IVX brand logo across landing and login surfaces
+- [x] Suppress visitor-facing landing tracker debug noise that was surfacing at the bottom of Expo Go
+- [x] Harden owner IP access so it restores only when explicitly enabled instead of auto-promoting every device
+- [x] Deploy the refreshed landing page bundle to AWS S3
+- [x] Sync the latest code changes to GitHub
+- [x] Upgrade landing/app waitlist capture to collect first name, last name, email, verified cell OTP, investment amount range, target return, and best time for a call
+- [x] Add optional proof-of-funds capture and persist its metadata in the investor lead flow
+- [x] Sync richer investor lead data into the existing waitlist/admin submission pipeline
+- [x] Add investor member agreement acceptance and typed-signature capture on landing and in-app intake flows
+- [x] Add clearer property exit-sale math and investor ownership-share math on landing deal cards
+- [x] Add clearer investment timeline guidance on investor-facing app property surfaces
+- [x] Re-run checks after investor intake changes
+- [ ] Re-deploy the refreshed landing page bundle to AWS S3 after investor intake changes
+- [ ] Sync the latest investor-intake code changes to GitHub
