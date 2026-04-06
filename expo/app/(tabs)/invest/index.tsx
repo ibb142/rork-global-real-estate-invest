@@ -49,7 +49,7 @@ import { useTranslation } from '@/lib/i18n-context';
 import { useJVRealtime } from '@/lib/jv-realtime';
 import { filterValidPhotos, usePublishedJVDeals, triggerManualJVRefresh } from '@/lib/parse-deal';
 import type { ParsedJVDeal } from '@/lib/parse-deal';
-import { getFallbackPhotosForDeal } from '@/constants/deal-photos';
+import { getFallbackPhotosForDeal, sanitizeDealPhotosForDeal } from '@/constants/deal-photos';
 import QuickBuyModal from '@/components/QuickBuyModal';
 import TrustDealCard from '@/components/TrustDealCard';
 import { CANONICAL_MIN_INVESTMENT } from '@/lib/published-deal-card-model';
@@ -78,10 +78,16 @@ export default function InvestScreen() {
     type?: string;
     minInvestment?: number;
     propertyMarketValue?: number;
+    salePrice?: number;
+    fractionalSharePrice?: number;
+    timelineMin?: number;
+    timelineMax?: number;
+    priceChange1h?: number;
+    priceChange2h?: number;
   } | null>(null);
 
   const openQuickBuy = useCallback((deal: any) => {
-    let photos = filterValidPhotos(deal.photos);
+    let photos = sanitizeDealPhotosForDeal(deal, filterValidPhotos(deal.photos));
     if (photos.length === 0) {
       photos = getFallbackPhotosForDeal(deal);
       console.log('[Invest] QuickBuy fallback photos applied:', photos.length);
@@ -90,6 +96,15 @@ export default function InvestScreen() {
       : typeof deal.propertyMarketValue === 'number' ? deal.propertyMarketValue
       : typeof deal.market_value === 'number' ? deal.market_value
       : undefined;
+    const trustMarket = deal.trustMarket as {
+      minInvestment?: number;
+      salePrice?: number;
+      fractionalSharePrice?: number;
+      timelineMin?: number;
+      timelineMax?: number;
+      priceChange1h?: number;
+      priceChange2h?: number;
+    } | undefined;
     setQuickBuyDeal({
       id: deal.id,
       title: deal.title,
@@ -99,8 +114,14 @@ export default function InvestScreen() {
       photo: photos.length > 0 ? photos[0] : undefined,
       propertyAddress: deal.propertyAddress,
       type: deal.type,
-      minInvestment: CANONICAL_MIN_INVESTMENT,
+      minInvestment: trustMarket?.minInvestment ? Math.max(trustMarket.minInvestment, 1) : CANONICAL_MIN_INVESTMENT,
       propertyMarketValue: marketVal,
+      salePrice: trustMarket?.salePrice,
+      fractionalSharePrice: trustMarket?.fractionalSharePrice,
+      timelineMin: trustMarket?.timelineMin,
+      timelineMax: trustMarket?.timelineMax,
+      priceChange1h: trustMarket?.priceChange1h,
+      priceChange2h: trustMarket?.priceChange2h,
     });
     setQuickBuyVisible(true);
   }, []);

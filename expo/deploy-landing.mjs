@@ -13,9 +13,13 @@ import {
   CreateInvalidationCommand,
 } from '@aws-sdk/client-cloudfront';
 import { readFileSync } from 'fs';
+import { fetchStaticLandingApiPayloads } from './scripts/landing-static-api.mjs';
 
 const BUCKET_NAME = 'ivxholding.com';
 const WWW_BUCKET = 'www.ivxholding.com';
+const PUBLIC_BASE_URL = 'https://ivxholding.com';
+const VERIFY_RETRY_DELAY_MS = 4000;
+const VERIFY_MAX_ATTEMPTS = 6;
 const rawRegion = (process.env.AWS_REGION || '').trim();
 const REGION = /^[a-z]{2}-[a-z]+-[0-9]$/.test(rawRegion) ? rawRegion : 'us-east-1';
 const ACCESS_KEY = (process.env.AWS_ACCESS_KEY_ID || '').trim();
@@ -76,6 +80,75 @@ async function setupBucket(name) {
       }],
     }),
   }));
+}
+
+function isHtmlResponse(text) {
+  const normalized = String(text || '').trim().toLowerCase();
+  return normalized.startsWith('<!doctype html') || normalized.startsWith('<html') || normalized.includes('<body');
+}
+
+async function verifyPublicJsonEndpoint(url, expectedType) {
+  let lastError = 'Unknown verification failure';
+
+  for (let attempt = 1; attempt <= VERIFY_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      console.log(`   🔎 Verifying ${url} (attempt ${attempt}/${VERIFY_MAX_ATTEMPTS})...`);
+      const response = await fetch(url, {
+        headers: {
+          Accept: 'application/json',
+          'cache-control': 'no-cache',
+          pragma: 'no-cache',
+        },
+      });
+      const body = await response.text();
+      const contentType = (response.headers.get('content-type') || '').toLowerCase();
+
+      if (!response.ok) {
+        lastError = `HTTP ${response.status}`;
+      } else if (!contentType.includes('application/json')) {
+        lastError = `invalid content-type ${contentType || 'unknown'}`;
+      } else if (isHtmlResponse(body)) {
+        lastError = 'HTML fallback detected';
+      } else {
+        const parsed = JSON.parse(body);
+
+        if (expectedType === 'health') {
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && typeof parsed.status === 'string') {
+            console.log(`   ✅ Verified ${url} as live JSON health payload`);
+            return true;
+          }
+          lastError = 'health payload schema mismatch';
+        } else {
+          const deals = Array.isArray(parsed) ? parsed : parsed?.deals;
+          if (Array.isArray(deals) && deals.length > 0) {
+            console.log(`   ✅ Verified ${url} as live JSON deals payload with ${deals.length} deals`);
+            return true;
+          }
+          lastError = 'deals payload schema mismatch or empty payload';
+        }
+      }
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+    }
+
+    if (attempt < VERIFY_MAX_ATTEMPTS) {
+      await new Promise((resolve) => setTimeout(resolve, VERIFY_RETRY_DELAY_MS));
+    }
+  }
+
+  console.error(`   ❌ Verification failed for ${url}: ${lastError}`);
+  return false;
+}
+
+async function verifyPublicJsonEndpoints() {
+  console.log('\n🔍 Validating live public JSON endpoints...');
+  const checks = await Promise.all([
+    verifyPublicJsonEndpoint(`${PUBLIC_BASE_URL}/api/landing-deals`, 'deals'),
+    verifyPublicJsonEndpoint(`${PUBLIC_BASE_URL}/api/published-jv-deals`, 'deals'),
+    verifyPublicJsonEndpoint(`${PUBLIC_BASE_URL}/health`, 'health'),
+  ]);
+
+  return checks.every(Boolean);
 }
 
 async function deploy() {
@@ -210,6 +283,39 @@ async function deploy() {
   }));
   console.log('   ✅ ivx-config.json uploaded');
 
+  console.log('\n📤 Uploading static JSON API endpoints...');
+  const { dealsPayload, healthPayload } = await fetchStaticLandingApiPayloads({
+    supabaseUrl,
+    supabaseAnonKey,
+    directApiBaseUrl: backendUrl || apiBaseUrl,
+  });
+  const dealsJson = JSON.stringify(dealsPayload);
+  const healthJson = JSON.stringify(healthPayload);
+  await s3.send(new PutObjectCommand({
+    Bucket: BUCKET_NAME,
+    Key: 'api/landing-deals',
+    Body: dealsJson,
+    ContentType: 'application/json',
+    CacheControl: 'no-cache, no-store, must-revalidate',
+  }));
+  console.log('   ✅ /api/landing-deals uploaded');
+  await s3.send(new PutObjectCommand({
+    Bucket: BUCKET_NAME,
+    Key: 'api/published-jv-deals',
+    Body: dealsJson,
+    ContentType: 'application/json',
+    CacheControl: 'no-cache, no-store, must-revalidate',
+  }));
+  console.log('   ✅ /api/published-jv-deals uploaded');
+  await s3.send(new PutObjectCommand({
+    Bucket: BUCKET_NAME,
+    Key: 'health',
+    Body: healthJson,
+    ContentType: 'application/json',
+    CacheControl: 'no-cache, no-store, must-revalidate',
+  }));
+  console.log('   ✅ /health uploaded');
+
   console.log('\n🖼️  Uploading logo...');
   const logoBuffer = readFileSync('./assets/images/ivx-logo.png');
   await s3.send(new PutObjectCommand({
@@ -247,8 +353,6 @@ async function deploy() {
     ? `${BUCKET_NAME}.s3-website-us-east-1.amazonaws.com`
     : `${BUCKET_NAME}.s3-website-${REGION}.amazonaws.com`;
 
-
-  // ─── CloudFront cache invalidation ──────────────────────────────────────
   console.log('\n🔄 Checking for CloudFront distribution...');
   let cloudfrontDistId = null;
   try {
@@ -285,11 +389,16 @@ async function deploy() {
     console.warn(`   ⚠️  CloudFront invalidation skipped: ${cfErr.message}`);
   }
 
+  const publicJsonVerified = await verifyPublicJsonEndpoints();
+  if (!publicJsonVerified) {
+    throw new Error('Public JSON endpoint verification failed after deploy');
+  }
+
   console.log('\n🎉 DEPLOYMENT COMPLETE!');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   if (cloudfrontDistId) {
-    console.log(`🔒 HTTPS URL: https://ivxholding.com`);
-    console.log(`🔒 HTTPS www:  https://www.ivxholding.com`);
+    console.log('🔒 HTTPS URL: https://ivxholding.com');
+    console.log('🔒 HTTPS www:  https://www.ivxholding.com');
     console.log(`🔗 CloudFront Distribution: ${cloudfrontDistId}`);
   } else {
     console.log(`🔗 Direct URL: http://${websiteEndpoint}`);

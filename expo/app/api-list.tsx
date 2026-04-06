@@ -10,6 +10,7 @@ import {
   Animated,
   Linking,
   RefreshControl,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -35,9 +36,12 @@ import {
   Activity,
   Megaphone,
   TrendingUp,
+  Clipboard,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
+import * as ExpoClipboard from 'expo-clipboard';
 import Colors from '@/constants/colors';
+import { safeSetString } from '@/lib/safe-clipboard';
 
 type Priority = 'must' | 'important' | 'optional';
 type APIStatus = 'checking' | 'online' | 'offline' | 'pending';
@@ -253,7 +257,9 @@ function formatTime(date: Date): string {
 
 export default function APIListScreen() {
   const router = useRouter();
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<boolean>(false);
+  const [pastedFromClipboard, setPastedFromClipboard] = useState<boolean>(false);
+  const [clipboardPreview, setClipboardPreview] = useState<string>('');
   const [statusMap, setStatusMap] = useState<StatusMap>({});
   const [latencyMap, setLatencyMap] = useState<Record<number, number>>({});
   const [isChecking, setIsChecking] = useState(false);
@@ -269,34 +275,26 @@ export default function APIListScreen() {
 
   const spin = spinAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
 
-  useEffect(() => {
-    Animated.timing(fadeAnim, { toValue: 1, duration: 350, useNativeDriver: true }).start();
-    startPulse();
-    runChecks();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  function startPulse() {
+  const startPulse = useCallback(() => {
     Animated.loop(
       Animated.sequence([
         Animated.timing(pulseAnim, { toValue: 1.3, duration: 800, useNativeDriver: true }),
         Animated.timing(pulseAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
       ])
     ).start();
-  }
+  }, [pulseAnim]);
 
-  function startSpinner() {
+  const startSpinner = useCallback(() => {
     spinAnim.setValue(0);
     Animated.loop(
       Animated.timing(spinAnim, { toValue: 1, duration: 700, useNativeDriver: true })
     ).start();
-  }
+  }, [spinAnim]);
 
-  function stopSpinner() {
+  const stopSpinner = useCallback(() => {
     spinAnim.stopAnimation();
-  }
+  }, [spinAnim]);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   const runChecks = useCallback(async () => {
     console.log('[APIList] Running live status checks...');
     setIsChecking(true);
@@ -321,10 +319,18 @@ export default function APIListScreen() {
     setCountdown(AUTO_REFRESH_SECONDS);
     stopSpinner();
     console.log('[APIList] Status check complete:', newStatus);
-  }, []);
+  }, [startSpinner, stopSpinner]);
+
+  useEffect(() => {
+    Animated.timing(fadeAnim, { toValue: 1, duration: 350, useNativeDriver: true }).start();
+    startPulse();
+    void runChecks();
+  }, [fadeAnim, runChecks, startPulse]);
 
   const onRefresh = useCallback(async () => {
-    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    if (Platform.OS !== 'web') {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
     setRefreshing(true);
     await runChecks();
     setRefreshing(false);
@@ -334,7 +340,7 @@ export default function APIListScreen() {
     const interval = setInterval(() => {
       setCountdown(prev => {
         if (prev <= 1) {
-          runChecks();
+          void runChecks();
           return AUTO_REFRESH_SECONDS;
         }
         return prev - 1;
@@ -344,7 +350,9 @@ export default function APIListScreen() {
   }, [runChecks]);
 
   const handleShare = useCallback(async () => {
-    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    if (Platform.OS !== 'web') {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
     try {
       await Share.share({ title: 'IVX Holding API Registration List', message: generateAPIListText() });
     } catch (err) {
@@ -353,34 +361,69 @@ export default function APIListScreen() {
   }, []);
 
   const handleWhatsApp = useCallback(async () => {
-    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    if (Platform.OS !== 'web') {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
     const encoded = encodeURIComponent(generateAPIListText());
     const url = `whatsapp://send?text=${encoded}`;
     try {
       const canOpen = await Linking.canOpenURL(url);
-      if (canOpen) await Linking.openURL(url);
-      else await Share.share({ title: 'IVX Holding API List', message: generateAPIListText() });
+      if (canOpen) {
+        await Linking.openURL(url);
+      } else {
+        await Share.share({ title: 'IVX Holding API List', message: generateAPIListText() });
+      }
     } catch {
       await Share.share({ title: 'IVX Holding API List', message: generateAPIListText() });
     }
   }, []);
 
   const handleCopy = useCallback(async () => {
-    if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    if (Platform.OS !== 'web') {
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
     const text = generateAPIListText();
-    if (Platform.OS === 'web') {
-      try { await navigator.clipboard.writeText(text); } catch { /* noop */ }
-    } else {
-      await Share.share({ message: text });
+    console.log('[APIList] Copying API list to clipboard');
+    const ok = await safeSetString(text);
+    if (!ok) {
+      Alert.alert('Copy failed', 'Unable to copy the API list right now.');
+      return;
     }
     setCopied(true);
     setTimeout(() => setCopied(false), 2500);
   }, []);
 
+  const handlePaste = useCallback(async () => {
+    try {
+      if (Platform.OS !== 'web') {
+        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      }
+      console.log('[APIList] Reading clipboard preview');
+      const content = await ExpoClipboard.getStringAsync();
+      const trimmed = content.trim();
+      if (!trimmed) {
+        Alert.alert('Clipboard empty', 'Copy the list first, then tap Paste Preview.');
+        return;
+      }
+      setClipboardPreview(trimmed);
+      setPastedFromClipboard(true);
+      setTimeout(() => setPastedFromClipboard(false), 2500);
+    } catch (error) {
+      console.log('[APIList] Paste failed:', error);
+      Alert.alert('Paste failed', 'Unable to read the clipboard right now.');
+    }
+  }, []);
+
   const openURL = useCallback(async (url: string) => {
     if (!url) return;
-    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    try { await Linking.openURL(url); } catch (err) { console.log('Open URL error:', err); }
+    if (Platform.OS !== 'web') {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    try {
+      await Linking.openURL(url);
+    } catch (err) {
+      console.log('Open URL error:', err);
+    }
   }, []);
 
   const totalAPIs = ALL_APIS.length;
@@ -392,13 +435,13 @@ export default function APIListScreen() {
   const progressPercent = totalAPIs > 0 ? (onlineCount / totalAPIs) * 100 : 0;
   const progressAnim = useRef(new Animated.Value(0)).current;
 
-  useEffect(() => { // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
     Animated.timing(progressAnim, {
       toValue: progressPercent,
       duration: 600,
       useNativeDriver: false,
     }).start();
-  }, [progressPercent]);
+  }, [progressAnim, progressPercent]);
 
   const progressWidth = progressAnim.interpolate({
     inputRange: [0, 100],
@@ -440,7 +483,12 @@ export default function APIListScreen() {
               <Text style={styles.headerSub}>Auto-refreshes every {AUTO_REFRESH_SECONDS}s</Text>
             </View>
             <TouchableOpacity
-              onPress={() => { if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); runChecks(); }}
+              onPress={() => {
+                if (Platform.OS !== 'web') {
+                  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                }
+                void runChecks();
+              }}
               style={styles.refreshBtn}
               testID="refresh-button"
             >
@@ -519,6 +567,24 @@ export default function APIListScreen() {
               <Text style={styles.copyText}>{copied ? 'Copied!' : 'Copy List'}</Text>
             </TouchableOpacity>
           </View>
+
+          <View style={styles.clipboardRow}>
+            <TouchableOpacity style={styles.pasteBtn} onPress={handlePaste} testID="paste-button">
+              {pastedFromClipboard ? <CheckCircle2 size={16} color={Colors.text} /> : <Clipboard size={16} color={Colors.text} />}
+              <Text style={styles.pasteText}>{pastedFromClipboard ? 'Preview Ready' : 'Paste Preview'}</Text>
+            </TouchableOpacity>
+            <Text style={styles.clipboardHint}>The copy button is under the status cards. Tap Copy List, then Paste Preview to confirm it.</Text>
+          </View>
+
+          {clipboardPreview ? (
+            <View style={styles.clipboardPreviewCard}>
+              <View style={styles.clipboardPreviewHeader}>
+                <Text style={styles.clipboardPreviewTitle}>Clipboard preview</Text>
+                <Text style={styles.clipboardPreviewMeta}>{clipboardPreview.length} chars</Text>
+              </View>
+              <Text style={styles.clipboardPreviewText} numberOfLines={5}>{clipboardPreview}</Text>
+            </View>
+          ) : null}
 
           <ScrollView
             style={styles.scroll}
@@ -761,6 +827,7 @@ const styles = StyleSheet.create({
   heroDivider: { width: 1, height: 28, backgroundColor: Colors.surfaceBorder },
 
   actionRow: { flexDirection: 'row', gap: 10, marginHorizontal: 16, marginBottom: 12 },
+  clipboardRow: { marginHorizontal: 16, marginBottom: 12, gap: 8 },
   whatsappBtn: {
     flex: 1,
     flexDirection: 'row',
@@ -787,6 +854,33 @@ const styles = StyleSheet.create({
     borderColor: Colors.primary + '40',
   },
   copyText: { color: Colors.primary, fontSize: 13, fontWeight: '700' as const },
+  pasteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: Colors.surfaceLight,
+    borderRadius: 12,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+  },
+  pasteText: { color: Colors.text, fontSize: 13, fontWeight: '700' as const },
+  clipboardHint: { color: Colors.textTertiary, fontSize: 11, lineHeight: 16 },
+  clipboardPreviewCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: 14,
+    padding: 14,
+    marginHorizontal: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    gap: 8,
+  },
+  clipboardPreviewHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  clipboardPreviewTitle: { color: Colors.text, fontSize: 13, fontWeight: '700' as const },
+  clipboardPreviewMeta: { color: Colors.textTertiary, fontSize: 11 },
+  clipboardPreviewText: { color: Colors.textSecondary, fontSize: 12, lineHeight: 18 },
 
   scroll: { flex: 1 },
   scrollContent: { paddingHorizontal: 16, paddingBottom: 140 },

@@ -1,5 +1,5 @@
 {
-  "Comment": "IVX Holdings Landing Page — HTTPS via CloudFront",
+  "Comment": "IVX Holdings Landing Page — HTTPS via CloudFront with API bypass",
   "Origins": {
     "Items": [
       {
@@ -14,9 +14,22 @@
             "Items": ["TLSv1.2"]
           }
         }
+      },
+      {
+        "Id": "Api-Origin",
+        "DomainName": "${API_ORIGIN_HOST}",
+        "CustomOriginConfig": {
+          "HTTPPort": 80,
+          "HTTPSPort": 443,
+          "OriginProtocolPolicy": "https-only",
+          "OriginSslProtocols": {
+            "Quantity": 1,
+            "Items": ["TLSv1.2"]
+          }
+        }
       }
     ],
-    "Quantity": 1
+    "Quantity": 2
   },
   "DefaultCacheBehavior": {
     "TargetOriginId": "S3-Website-ivxholding",
@@ -28,6 +41,31 @@
     "MinTTL": 0,
     "DefaultTTL": 300,
     "MaxTTL": 86400
+  },
+  "OrderedCacheBehaviors": {
+    "Items": [
+      {
+        "PathPattern": "/api/*",
+        "TargetOriginId": "Api-Origin",
+        "ViewerProtocolPolicy": "redirect-to-https",
+        "AllowedMethods": ["GET", "HEAD", "OPTIONS", "PUT", "PATCH", "POST", "DELETE"],
+        "CachedMethods": ["GET", "HEAD"],
+        "Compress": true,
+        "CachePolicyId": "4135ea2d-6df8-44a3-9df3-4b5a84be39ad",
+        "OriginRequestPolicyId": "216adef6-5c7f-47e4-b989-5492eafa07d3"
+      },
+      {
+        "PathPattern": "/health*",
+        "TargetOriginId": "Api-Origin",
+        "ViewerProtocolPolicy": "redirect-to-https",
+        "AllowedMethods": ["GET", "HEAD", "OPTIONS"],
+        "CachedMethods": ["GET", "HEAD"],
+        "Compress": true,
+        "CachePolicyId": "4135ea2d-6df8-44a3-9df3-4b5a84be39ad",
+        "OriginRequestPolicyId": "216adef6-5c7f-47e4-b989-5492eafa07d3"
+      }
+    ],
+    "Quantity": 2
   },
   "CustomErrorResponses": {
     "Items": [

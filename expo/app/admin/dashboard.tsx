@@ -38,6 +38,154 @@ import { formatCurrencyCompact } from '@/lib/formatters';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 
+interface DashboardStatsShape {
+  totalInvested?: number;
+  trends?: {
+    volumeLast30d?: number;
+    volumeGrowthRate?: number;
+  };
+  totalMembers?: number;
+  activeMembers?: number;
+  totalTransactions?: number;
+  totalVolume?: number;
+  totalProperties?: number;
+  liveProperties?: number;
+  pendingKyc?: number;
+  totalDeposits?: number;
+  totalWithdrawals?: number;
+  pendingTransactions?: number;
+}
+
+interface DashboardKPI {
+  name?: string;
+  value?: number | string;
+  format?: string;
+  change?: number;
+  trend?: string;
+}
+
+interface SystemHealthShape {
+  status: string;
+  services: Array<{ name: string; status: string; responseTime: number }>;
+  metrics: {
+    activeUsers: number;
+    transactionsPerHour: number;
+    errorRate: number;
+    avgResponseTime: number;
+  };
+}
+
+interface RetentionShape {
+  retention: {
+    day1: number;
+    day7: number;
+    day30: number;
+  };
+  engagement: {
+    dauMauRatio: number;
+  };
+  churn: {
+    churnedUsers: number;
+    churnRate: number;
+    atRisk: number;
+  };
+}
+
+interface InvestmentShape {
+  totalInvestments: number;
+  totalInvestmentVolume: number;
+  averageInvestment: number;
+  uniqueInvestors: number;
+  netFlow: number;
+  totalDividends: number;
+}
+
+function getLatestRecord<T>(value: unknown): T | null {
+  if (Array.isArray(value)) {
+    const firstValid = value.find((item) => item && typeof item === 'object');
+    return (firstValid as T | undefined) ?? null;
+  }
+
+  if (value && typeof value === 'object') {
+    return value as T;
+  }
+
+  return null;
+}
+
+function normalizeSystemHealth(value: unknown): SystemHealthShape | null {
+  const record = getLatestRecord<Record<string, unknown>>(value);
+  if (!record) {
+    return null;
+  }
+
+  const rawServices = Array.isArray(record.services) ? record.services : [];
+  const rawMetrics = record.metrics && typeof record.metrics === 'object' ? record.metrics as Record<string, unknown> : {};
+
+  return {
+    status: typeof record.status === 'string' ? record.status : 'unknown',
+    services: rawServices
+      .filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')
+      .map((item) => ({
+        name: typeof item.name === 'string' ? item.name : 'Service',
+        status: typeof item.status === 'string' ? item.status : 'unknown',
+        responseTime: Number(item.responseTime ?? 0),
+      })),
+    metrics: {
+      activeUsers: Number(rawMetrics.activeUsers ?? 0),
+      transactionsPerHour: Number(rawMetrics.transactionsPerHour ?? 0),
+      errorRate: Number(rawMetrics.errorRate ?? 0),
+      avgResponseTime: Number(rawMetrics.avgResponseTime ?? 0),
+    },
+  };
+}
+
+function normalizeRetention(value: unknown): RetentionShape | null {
+  const record = getLatestRecord<Record<string, unknown>>(value);
+  if (!record) {
+    return null;
+  }
+
+  const retention = record.retention && typeof record.retention === 'object' ? record.retention as Record<string, unknown> : record;
+  const engagement = record.engagement && typeof record.engagement === 'object' ? record.engagement as Record<string, unknown> : record;
+  const churn = record.churn && typeof record.churn === 'object' ? record.churn as Record<string, unknown> : record;
+
+  const normalized: RetentionShape = {
+    retention: {
+      day1: Number(retention.day1 ?? retention.day_1 ?? record.day1 ?? record.day_1 ?? 0),
+      day7: Number(retention.day7 ?? retention.day_7 ?? record.day7 ?? record.day_7 ?? 0),
+      day30: Number(retention.day30 ?? retention.day_30 ?? record.day30 ?? record.day_30 ?? 0),
+    },
+    engagement: {
+      dauMauRatio: Number(engagement.dauMauRatio ?? engagement.dau_mau_ratio ?? record.dauMauRatio ?? record.dau_mau_ratio ?? 0),
+    },
+    churn: {
+      churnedUsers: Number(churn.churnedUsers ?? churn.churned_users ?? record.churnedUsers ?? record.churned_users ?? 0),
+      churnRate: Number(churn.churnRate ?? churn.churn_rate ?? record.churnRate ?? record.churn_rate ?? 0),
+      atRisk: Number(churn.atRisk ?? churn.at_risk ?? record.atRisk ?? record.at_risk ?? 0),
+    },
+  };
+
+  console.log('[AdminDashboard] Normalized retention metrics:', normalized);
+
+  return normalized;
+}
+
+function normalizeInvestment(value: unknown): InvestmentShape | null {
+  const record = getLatestRecord<Record<string, unknown>>(value);
+  if (!record) {
+    return null;
+  }
+
+  return {
+    totalInvestments: Number(record.totalInvestments ?? 0),
+    totalInvestmentVolume: Number(record.totalInvestmentVolume ?? 0),
+    averageInvestment: Number(record.averageInvestment ?? 0),
+    uniqueInvestors: Number(record.uniqueInvestors ?? 0),
+    netFlow: Number(record.netFlow ?? 0),
+    totalDividends: Number(record.totalDividends ?? 0),
+  };
+}
 
 export default function AdminDashboardScreen() {
   const router = useRouter();
@@ -169,16 +317,24 @@ export default function AdminDashboardScreen() {
   const leadsStats = leadsQuery.data?.stats;
   const recentLeads = leadsQuery.data?.signups ?? [];
 
-  const stats = cachedDash;
+  const stats = getLatestRecord<DashboardStatsShape>(cachedDash);
   const recentTransactions = cachedTx?.transactions ?? [];
   const pendingKyc = [
     ...(cachedPendingKyc?.members ?? []),
     ...(cachedInReviewKyc?.members ?? []),
   ];
-  const kpis = cachedKpi?.kpis ?? [];
-  const health = cachedHealth;
-  const retention = cachedRetention;
-  const investment = cachedInvestment;
+  const kpiSource = getLatestRecord<Record<string, unknown>>(cachedKpi);
+  const kpis = Array.isArray(kpiSource?.kpis) ? (kpiSource?.kpis as DashboardKPI[]) : [];
+  const health = normalizeSystemHealth(cachedHealth);
+  const retention = normalizeRetention(cachedRetention);
+  const investment = normalizeInvestment(cachedInvestment);
+  const retentionDay1 = retention?.retention?.day1 ?? 0;
+  const retentionDay7 = retention?.retention?.day7 ?? 0;
+  const retentionDay30 = retention?.retention?.day30 ?? 0;
+  const retentionDauMauRatio = retention?.engagement?.dauMauRatio ?? 0;
+  const retentionChurnedUsers = retention?.churn?.churnedUsers ?? 0;
+  const retentionChurnRate = retention?.churn?.churnRate ?? 0;
+  const retentionAtRisk = retention?.churn?.atRisk ?? 0;
 
   const hasAnyCachedData = !!stats || recentTransactions.length > 0;
   const statsLoading = dashboardQuery.isLoading && !hasAnyCachedData;
@@ -457,33 +613,33 @@ export default function AdminDashboardScreen() {
             <View style={styles.retentionGrid}>
               <View style={styles.retentionCard}>
                 <Text style={styles.retentionLabel}>Day 1</Text>
-                <Text style={styles.retentionValue}>{retention.retention.day1}%</Text>
+                <Text style={styles.retentionValue}>{retentionDay1}%</Text>
               </View>
               <View style={styles.retentionCard}>
                 <Text style={styles.retentionLabel}>Day 7</Text>
-                <Text style={styles.retentionValue}>{retention.retention.day7}%</Text>
+                <Text style={styles.retentionValue}>{retentionDay7}%</Text>
               </View>
               <View style={styles.retentionCard}>
                 <Text style={styles.retentionLabel}>Day 30</Text>
-                <Text style={styles.retentionValue}>{retention.retention.day30}%</Text>
+                <Text style={styles.retentionValue}>{retentionDay30}%</Text>
               </View>
               <View style={styles.retentionCard}>
                 <Text style={styles.retentionLabel}>DAU/MAU</Text>
-                <Text style={styles.retentionValue}>{retention.engagement.dauMauRatio}%</Text>
+                <Text style={styles.retentionValue}>{retentionDauMauRatio}%</Text>
               </View>
             </View>
             <View style={styles.churnRow}>
               <View style={styles.churnItem}>
                 <Text style={styles.churnLabel}>Churned Users</Text>
-                <Text style={[styles.churnValue, { color: Colors.negative }]}>{retention.churn.churnedUsers}</Text>
+                <Text style={[styles.churnValue, { color: Colors.negative }]}>{retentionChurnedUsers}</Text>
               </View>
               <View style={styles.churnItem}>
                 <Text style={styles.churnLabel}>Churn Rate</Text>
-                <Text style={[styles.churnValue, { color: Colors.negative }]}>{retention.churn.churnRate}%</Text>
+                <Text style={[styles.churnValue, { color: Colors.negative }]}>{retentionChurnRate}%</Text>
               </View>
               <View style={styles.churnItem}>
                 <Text style={styles.churnLabel}>At Risk</Text>
-                <Text style={[styles.churnValue, { color: Colors.warning }]}>{retention.churn.atRisk}</Text>
+                <Text style={[styles.churnValue, { color: Colors.warning }]}>{retentionAtRisk}</Text>
               </View>
             </View>
           </View>
@@ -550,11 +706,11 @@ export default function AdminDashboardScreen() {
               >
                 <View style={[styles.kycAvatar, { backgroundColor: Colors.warning + '20' }]}>
                   <Text style={styles.kycInitials}>
-                    {member.firstName[0]}{member.lastName[0]}
+                    {member.firstName?.[0] ?? '?'}{member.lastName?.[0] ?? '?'}
                   </Text>
                 </View>
                 <View style={styles.kycInfo}>
-                  <Text style={styles.kycName}>{member.firstName} {member.lastName}</Text>
+                  <Text style={styles.kycName}>{member.firstName ?? 'Unknown'} {member.lastName ?? 'Member'}</Text>
                   <Text style={styles.kycEmail}>{member.email}</Text>
                 </View>
                 <View style={[

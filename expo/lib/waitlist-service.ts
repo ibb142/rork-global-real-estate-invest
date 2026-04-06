@@ -28,6 +28,32 @@ export interface WaitlistFormData {
   proof_of_funds_url?: string | null;
   proof_of_funds_name?: string | null;
   proof_of_funds_storage_path?: string | null;
+  primary_id_upload_url?: string | null;
+  primary_id_upload_name?: string | null;
+  primary_id_upload_storage_path?: string | null;
+  secondary_id_upload_url?: string | null;
+  secondary_id_upload_name?: string | null;
+  secondary_id_upload_storage_path?: string | null;
+  tax_document_upload_url?: string | null;
+  tax_document_upload_name?: string | null;
+  tax_document_upload_storage_path?: string | null;
+  investor_type?: 'individual' | 'corporate';
+  primary_id_type?: 'drivers_license' | 'passport' | 'national_id' | 'tax_id';
+  primary_id_reference?: string;
+  secondary_id_type?: 'drivers_license' | 'passport' | 'national_id' | 'tax_id';
+  secondary_id_reference?: string;
+  document_issuing_country?: string;
+  tax_residency_country?: string;
+  tax_id_reference?: string;
+  company_name?: string;
+  company_role?: string;
+  company_ein?: string;
+  company_tax_id?: string;
+  company_registration_country?: string;
+  beneficial_owner_name?: string;
+  legal_ack_tax_reporting?: boolean;
+  legal_ack_identity_review?: boolean;
+  legal_ack_entity_authority?: boolean;
   source: string;
   page_path: string;
   utm_source: string;
@@ -63,6 +89,32 @@ export interface WaitlistEntry {
   proof_of_funds_url?: string | null;
   proof_of_funds_name?: string | null;
   proof_of_funds_storage_path?: string | null;
+  primary_id_upload_url?: string | null;
+  primary_id_upload_name?: string | null;
+  primary_id_upload_storage_path?: string | null;
+  secondary_id_upload_url?: string | null;
+  secondary_id_upload_name?: string | null;
+  secondary_id_upload_storage_path?: string | null;
+  tax_document_upload_url?: string | null;
+  tax_document_upload_name?: string | null;
+  tax_document_upload_storage_path?: string | null;
+  investor_type?: string | null;
+  primary_id_type?: string | null;
+  primary_id_reference?: string | null;
+  secondary_id_type?: string | null;
+  secondary_id_reference?: string | null;
+  document_issuing_country?: string | null;
+  tax_residency_country?: string | null;
+  tax_id_reference?: string | null;
+  company_name?: string | null;
+  company_role?: string | null;
+  company_ein?: string | null;
+  company_tax_id?: string | null;
+  company_registration_country?: string | null;
+  beneficial_owner_name?: string | null;
+  legal_ack_tax_reporting?: boolean | null;
+  legal_ack_identity_review?: boolean | null;
+  legal_ack_entity_authority?: boolean | null;
   source: string;
   page_path: string | null;
   referrer: string | null;
@@ -91,6 +143,14 @@ export type WaitlistErrorCode =
   | 'rate_limited'
   | 'submission_failed'
   | 'network_error';
+
+export interface WaitlistSubmissionResult {
+  success: boolean;
+  error?: WaitlistErrorCode;
+  confirmedWrite?: boolean;
+  persistedTable?: 'waitlist_entries' | 'waitlist';
+  persistedId?: string | null;
+}
 
 const ERROR_MESSAGES: Record<WaitlistErrorCode, string> = {
   invalid_email: 'Please enter a valid email address.',
@@ -302,19 +362,43 @@ function logOtpEvent(phoneE164: string, eventType: string): void {
 
 const INVESTOR_INTAKE_BUCKET = 'investor-intake';
 
-export async function uploadProofOfFundsFile(file: IntakeProofOfFundsFile): Promise<IntakeProofOfFundsFile> {
-  console.log('[WaitlistService] Uploading proof of funds:', file.name);
+function sanitizeUploadFileName(value: string, fallback: string): string {
+  const trimmed = value.trim();
+  const safeName = (trimmed || fallback).replace(/[^a-zA-Z0-9._-]/g, '_');
+  return safeName.length > 0 ? safeName : fallback;
+}
+
+function formatUploadedDocumentFallback(reference: string | null, fileName: string | null, fileUrl: string | null): string | null {
+  const trimmedReference = reference?.trim() ?? '';
+  const trimmedName = fileName?.trim() ?? '';
+  const trimmedUrl = fileUrl?.trim() ?? '';
+
+  if (!trimmedName && !trimmedUrl) {
+    return trimmedReference || null;
+  }
+
+  const uploadSummary = [
+    trimmedName ? `Upload: ${trimmedName}` : 'Upload: Document attached',
+    trimmedUrl ? `URL: ${trimmedUrl}` : '',
+  ].filter(Boolean).join(' · ');
+
+  return trimmedReference ? `${trimmedReference}\n${uploadSummary}` : uploadSummary;
+}
+
+export async function uploadInvestorIntakeFile(file: IntakeProofOfFundsFile, folder: string): Promise<IntakeProofOfFundsFile> {
+  console.log('[WaitlistService] Uploading investor intake file:', folder, file.name);
 
   if (!isSupabaseConfigured()) {
-    console.log('[WaitlistService] Supabase not configured — returning local proof-of-funds metadata only');
+    console.log('[WaitlistService] Supabase not configured — returning local file metadata only');
     return file;
   }
 
   try {
     const response = await fetch(file.uri);
     const blob = await response.blob();
-    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const storagePath = `proof-of-funds/${Date.now()}_${safeName}`;
+    const safeFolder = folder.replace(/[^a-zA-Z0-9/_-]/g, '_') || 'general';
+    const safeName = sanitizeUploadFileName(file.name, `${safeFolder}_${Date.now()}`);
+    const storagePath = `${safeFolder}/${Date.now()}_${safeName}`;
     const contentType = file.mimeType ?? blob.type ?? 'application/octet-stream';
 
     const { error } = await supabase.storage.from(INVESTOR_INTAKE_BUCKET).upload(storagePath, blob, {
@@ -323,12 +407,12 @@ export async function uploadProofOfFundsFile(file: IntakeProofOfFundsFile): Prom
     });
 
     if (error) {
-      console.log('[WaitlistService] Proof-of-funds upload failed:', error.message);
+      console.log('[WaitlistService] Investor intake upload failed:', error.message);
       return file;
     }
 
     const { data } = supabase.storage.from(INVESTOR_INTAKE_BUCKET).getPublicUrl(storagePath);
-    console.log('[WaitlistService] Proof-of-funds upload success:', storagePath);
+    console.log('[WaitlistService] Investor intake upload success:', storagePath);
 
     return {
       ...file,
@@ -336,9 +420,13 @@ export async function uploadProofOfFundsFile(file: IntakeProofOfFundsFile): Prom
       publicUrl: data.publicUrl,
     };
   } catch (err) {
-    console.log('[WaitlistService] Proof-of-funds upload exception:', (err as Error)?.message);
+    console.log('[WaitlistService] Investor intake upload exception:', (err as Error)?.message);
     return file;
   }
+}
+
+export async function uploadProofOfFundsFile(file: IntakeProofOfFundsFile): Promise<IntakeProofOfFundsFile> {
+  return uploadInvestorIntakeFile(file, 'proof-of-funds');
 }
 
 async function syncLandingSubmission(data: WaitlistFormData & { phone_verified: boolean }, submittedAt: string): Promise<void> {
@@ -364,6 +452,32 @@ async function syncLandingSubmission(data: WaitlistFormData & { phone_verified: 
     proof_of_funds_name: data.proof_of_funds_name ?? null,
     proof_of_funds_url: data.proof_of_funds_url ?? null,
     proof_of_funds_storage_path: data.proof_of_funds_storage_path ?? null,
+    primary_id_upload_name: data.primary_id_upload_name ?? null,
+    primary_id_upload_url: data.primary_id_upload_url ?? null,
+    primary_id_upload_storage_path: data.primary_id_upload_storage_path ?? null,
+    secondary_id_upload_name: data.secondary_id_upload_name ?? null,
+    secondary_id_upload_url: data.secondary_id_upload_url ?? null,
+    secondary_id_upload_storage_path: data.secondary_id_upload_storage_path ?? null,
+    tax_document_upload_name: data.tax_document_upload_name ?? null,
+    tax_document_upload_url: data.tax_document_upload_url ?? null,
+    tax_document_upload_storage_path: data.tax_document_upload_storage_path ?? null,
+    investor_type: data.investor_type ?? 'individual',
+    primary_id_type: data.primary_id_type ?? null,
+    primary_id_reference: data.primary_id_reference ?? null,
+    secondary_id_type: data.secondary_id_type ?? null,
+    secondary_id_reference: data.secondary_id_reference ?? null,
+    document_issuing_country: data.document_issuing_country ?? null,
+    tax_residency_country: data.tax_residency_country ?? null,
+    tax_id_reference: data.tax_id_reference ?? null,
+    company_name: data.company_name ?? null,
+    company_role: data.company_role ?? null,
+    company_ein: data.company_ein ?? null,
+    company_tax_id: data.company_tax_id ?? null,
+    company_registration_country: data.company_registration_country ?? null,
+    beneficial_owner_name: data.beneficial_owner_name ?? null,
+    legal_ack_tax_reporting: data.legal_ack_tax_reporting ?? false,
+    legal_ack_identity_review: data.legal_ack_identity_review ?? false,
+    legal_ack_entity_authority: data.legal_ack_entity_authority ?? false,
     phone_verified: data.phone_verified,
     utm_source: data.utm_source || null,
     utm_medium: data.utm_medium || null,
@@ -470,7 +584,7 @@ async function sendEmailViaNotificationTable(fullName: string, email: string): P
   }
 }
 
-export async function submitWaitlistEntry(data: WaitlistFormData & { phone_verified: boolean }): Promise<{ success: boolean; error?: WaitlistErrorCode }> {
+export async function submitWaitlistEntry(data: WaitlistFormData & { phone_verified: boolean }): Promise<WaitlistSubmissionResult> {
   console.log('[WaitlistService] Submitting entry...');
 
   if (!validateFullName(data.full_name)) {
@@ -500,6 +614,32 @@ export async function submitWaitlistEntry(data: WaitlistFormData & { phone_verif
   const agreementVersion = data.agreement_version ?? INVESTOR_MEMBER_AGREEMENT_VERSION;
   const signatureName = data.signature_name?.trim() || data.full_name.trim();
   const bestTimeForCall = data.best_time_for_call || data.preferred_call_time || null;
+  const investorType = data.investor_type ?? 'individual';
+  const primaryIdType = data.primary_id_type ?? null;
+  const primaryIdReference = data.primary_id_reference?.trim() || null;
+  const secondaryIdType = data.secondary_id_type ?? null;
+  const secondaryIdReference = data.secondary_id_reference?.trim() || null;
+  const documentIssuingCountry = data.document_issuing_country?.trim() || null;
+  const taxResidencyCountry = data.tax_residency_country?.trim() || null;
+  const taxIdReference = data.tax_id_reference?.trim() || null;
+  const companyName = data.company_name?.trim() || null;
+  const companyRole = data.company_role?.trim() || null;
+  const companyEin = data.company_ein?.trim() || null;
+  const companyTaxId = data.company_tax_id?.trim() || null;
+  const companyRegistrationCountry = data.company_registration_country?.trim() || null;
+  const beneficialOwnerName = data.beneficial_owner_name?.trim() || null;
+  const legalAckTaxReporting = data.legal_ack_tax_reporting ?? false;
+  const legalAckIdentityReview = data.legal_ack_identity_review ?? false;
+  const legalAckEntityAuthority = data.legal_ack_entity_authority ?? false;
+  const primaryIdUploadUrl = data.primary_id_upload_url?.trim() || null;
+  const primaryIdUploadName = data.primary_id_upload_name?.trim() || null;
+  const primaryIdUploadStoragePath = data.primary_id_upload_storage_path?.trim() || null;
+  const secondaryIdUploadUrl = data.secondary_id_upload_url?.trim() || null;
+  const secondaryIdUploadName = data.secondary_id_upload_name?.trim() || null;
+  const secondaryIdUploadStoragePath = data.secondary_id_upload_storage_path?.trim() || null;
+  const taxDocumentUploadUrl = data.tax_document_upload_url?.trim() || null;
+  const taxDocumentUploadName = data.tax_document_upload_name?.trim() || null;
+  const taxDocumentUploadStoragePath = data.tax_document_upload_storage_path?.trim() || null;
 
   const entry = {
     full_name: data.full_name.trim(),
@@ -513,6 +653,23 @@ export async function submitWaitlistEntry(data: WaitlistFormData & { phone_verif
     accredited_status: data.accredited_status,
     consent_sms: data.consent,
     consent_email: data.consent,
+    investor_type: investorType,
+    primary_id_type: primaryIdType,
+    primary_id_reference: primaryIdReference,
+    secondary_id_type: secondaryIdType,
+    secondary_id_reference: secondaryIdReference,
+    document_issuing_country: documentIssuingCountry,
+    tax_residency_country: taxResidencyCountry,
+    tax_id_reference: taxIdReference,
+    company_name: companyName,
+    company_role: companyRole,
+    company_ein: companyEin,
+    company_tax_id: companyTaxId,
+    company_registration_country: companyRegistrationCountry,
+    beneficial_owner_name: beneficialOwnerName,
+    legal_ack_tax_reporting: legalAckTaxReporting,
+    legal_ack_identity_review: legalAckIdentityReview,
+    legal_ack_entity_authority: legalAckEntityAuthority,
     agreement_accepted: agreementAccepted,
     agreement_version: agreementVersion,
     signature_name: signatureName,
@@ -525,6 +682,15 @@ export async function submitWaitlistEntry(data: WaitlistFormData & { phone_verif
     proof_of_funds_url: data.proof_of_funds_url || null,
     proof_of_funds_name: data.proof_of_funds_name || null,
     proof_of_funds_storage_path: data.proof_of_funds_storage_path || null,
+    primary_id_upload_url: primaryIdUploadUrl,
+    primary_id_upload_name: primaryIdUploadName,
+    primary_id_upload_storage_path: primaryIdUploadStoragePath,
+    secondary_id_upload_url: secondaryIdUploadUrl,
+    secondary_id_upload_name: secondaryIdUploadName,
+    secondary_id_upload_storage_path: secondaryIdUploadStoragePath,
+    tax_document_upload_url: taxDocumentUploadUrl,
+    tax_document_upload_name: taxDocumentUploadName,
+    tax_document_upload_storage_path: taxDocumentUploadStoragePath,
     source: data.source || 'landing_page',
     page_path: data.page_path || '/',
     referrer: data.referrer || null,
@@ -549,7 +715,11 @@ export async function submitWaitlistEntry(data: WaitlistFormData & { phone_verif
   };
 
   try {
-    const { error } = await supabase.from('waitlist_entries').insert(entry);
+    const { data: insertedEntry, error } = await supabase
+      .from('waitlist_entries')
+      .insert(entry)
+      .select('id')
+      .maybeSingle();
 
     if (error) {
       console.log('[WaitlistService] Supabase insert error:', error.message, error.code);
@@ -566,31 +736,94 @@ export async function submitWaitlistEntry(data: WaitlistFormData & { phone_verif
 
       const missingColumns = error.message?.includes('column') || error.message?.includes('schema cache');
       if (missingColumns) {
-        console.log('[WaitlistService] Rich columns not available yet — retrying with legacy waitlist payload');
-        const legacyResult = await submitToLegacyWaitlist(data, legacyPayload, now);
-        if (!legacyResult.success) {
-          return legacyResult;
+        console.log('[WaitlistService] Rich upload columns not available yet — retrying without upload-specific columns');
+
+        const {
+          primary_id_upload_url: _primaryIdUploadUrl,
+          primary_id_upload_name: _primaryIdUploadName,
+          primary_id_upload_storage_path: _primaryIdUploadStoragePath,
+          secondary_id_upload_url: _secondaryIdUploadUrl,
+          secondary_id_upload_name: _secondaryIdUploadName,
+          secondary_id_upload_storage_path: _secondaryIdUploadStoragePath,
+          tax_document_upload_url: _taxDocumentUploadUrl,
+          tax_document_upload_name: _taxDocumentUploadName,
+          tax_document_upload_storage_path: _taxDocumentUploadStoragePath,
+          ...fallbackEntryBase
+        } = entry;
+
+        const fallbackEntry = {
+          ...fallbackEntryBase,
+          primary_id_reference: formatUploadedDocumentFallback(primaryIdReference, primaryIdUploadName, primaryIdUploadUrl),
+          secondary_id_reference: formatUploadedDocumentFallback(secondaryIdReference, secondaryIdUploadName, secondaryIdUploadUrl),
+          tax_id_reference: formatUploadedDocumentFallback(taxIdReference, taxDocumentUploadName, taxDocumentUploadUrl),
+        };
+
+        const { data: fallbackInsertedEntry, error: retryError } = await supabase
+          .from('waitlist_entries')
+          .insert(fallbackEntry)
+          .select('id')
+          .maybeSingle();
+
+        if (retryError) {
+          console.log('[WaitlistService] Retry insert without upload columns failed:', retryError.message, retryError.code);
+
+          if (retryError.message?.includes('does not exist') || retryError.message?.includes('relation')) {
+            console.log('[WaitlistService] Table does not exist after upload-column retry — falling back to legacy waitlist table');
+            return await submitToLegacyWaitlist(data, legacyPayload, now);
+          }
+
+          return { success: false, error: 'submission_failed', confirmedWrite: false };
         }
+
+        if (!fallbackInsertedEntry?.id) {
+          console.log('[WaitlistService] Retry insert returned no persisted row id');
+          return { success: false, error: 'submission_failed', confirmedWrite: false };
+        }
+
+        await syncLandingSubmission(data, now);
+
+        console.log('[WaitlistService] Entry submitted successfully after schema-safe retry:', fallbackInsertedEntry.id);
+
+        void sendConfirmationEmail(data.full_name, data.email).then((emailSent) => {
+          console.log('[WaitlistService] Confirmation email sent:', emailSent);
+        });
+
+        return {
+          success: true,
+          confirmedWrite: true,
+          persistedTable: 'waitlist_entries',
+          persistedId: fallbackInsertedEntry.id,
+        };
       } else if (error.message?.includes('does not exist') || error.message?.includes('relation')) {
         console.log('[WaitlistService] Table does not exist — falling back to legacy waitlist table');
         return await submitToLegacyWaitlist(data, legacyPayload, now);
       } else {
-        return { success: false, error: 'submission_failed' };
+        return { success: false, error: 'submission_failed', confirmedWrite: false };
       }
+    }
+
+    if (!insertedEntry?.id) {
+      console.log('[WaitlistService] Insert returned no persisted row id');
+      return { success: false, error: 'submission_failed', confirmedWrite: false };
     }
 
     await syncLandingSubmission(data, now);
 
-    console.log('[WaitlistService] Entry submitted successfully');
+    console.log('[WaitlistService] Entry submitted successfully:', insertedEntry.id);
 
     void sendConfirmationEmail(data.full_name, data.email).then((emailSent) => {
       console.log('[WaitlistService] Confirmation email sent:', emailSent);
     });
 
-    return { success: true };
+    return {
+      success: true,
+      confirmedWrite: true,
+      persistedTable: 'waitlist_entries',
+      persistedId: insertedEntry.id,
+    };
   } catch (err) {
     console.log('[WaitlistService] Exception:', (err as Error)?.message);
-    return { success: false, error: 'network_error' };
+    return { success: false, error: 'network_error', confirmedWrite: false };
   }
 }
 
@@ -605,14 +838,14 @@ async function submitToLegacyWaitlist(
     created_at: string;
   },
   submittedAt?: string,
-): Promise<{ success: boolean; error?: WaitlistErrorCode }> {
+): Promise<WaitlistSubmissionResult> {
   try {
     const fallbackSubmittedAt = submittedAt ?? new Date().toISOString();
     const nameParts = data.full_name.trim().split(' ');
     const firstName = legacyPayload?.first_name || nameParts[0] || '';
     const lastName = legacyPayload?.last_name || nameParts.slice(1).join(' ') || '';
 
-    const { error } = await supabase.from('waitlist').insert({
+    const primaryLegacyPayload = {
       first_name: firstName,
       last_name: lastName,
       email: legacyPayload?.email || normalizeEmail(data.email),
@@ -620,19 +853,68 @@ async function submitToLegacyWaitlist(
       goal: legacyPayload?.goal || [data.investment_range, data.return_expectation].filter(Boolean).join(' · '),
       status: 'pending',
       created_at: fallbackSubmittedAt,
-    });
+    };
+
+    const { data: insertedLegacyRow, error } = await supabase
+      .from('waitlist')
+      .insert(primaryLegacyPayload)
+      .select('id')
+      .maybeSingle();
 
     if (error) {
       console.log('[WaitlistService] Legacy insert error:', error.message);
-      return { success: false, error: 'submission_failed' };
+
+      const lowerMessage = error.message.toLowerCase();
+      const hasSchemaMismatch = lowerMessage.includes('column') || lowerMessage.includes('schema cache');
+      if (hasSchemaMismatch) {
+        console.log('[WaitlistService] Legacy waitlist schema is older than expected — retrying minimal payload');
+        const minimalLegacyPayload = {
+          email: primaryLegacyPayload.email,
+          created_at: fallbackSubmittedAt,
+        };
+        const { data: minimalInsertedLegacyRow, error: minimalError } = await supabase
+          .from('waitlist')
+          .insert(minimalLegacyPayload)
+          .select('id')
+          .maybeSingle();
+        if (minimalError) {
+          console.log('[WaitlistService] Minimal legacy insert error:', minimalError.message);
+          return { success: false, error: 'submission_failed', confirmedWrite: false };
+        }
+        if (!minimalInsertedLegacyRow?.id) {
+          console.log('[WaitlistService] Minimal legacy insert returned no persisted row id');
+          return { success: false, error: 'submission_failed', confirmedWrite: false };
+        }
+
+        await syncLandingSubmission(data, fallbackSubmittedAt);
+        console.log('[WaitlistService] Saved to legacy waitlist table via minimal payload:', minimalInsertedLegacyRow.id);
+        return {
+          success: true,
+          confirmedWrite: true,
+          persistedTable: 'waitlist',
+          persistedId: minimalInsertedLegacyRow.id,
+        };
+      } else {
+        return { success: false, error: 'submission_failed', confirmedWrite: false };
+      }
+    }
+
+    if (!insertedLegacyRow?.id) {
+      console.log('[WaitlistService] Legacy insert returned no persisted row id');
+      return { success: false, error: 'submission_failed', confirmedWrite: false };
     }
 
     await syncLandingSubmission(data, fallbackSubmittedAt);
-    console.log('[WaitlistService] Saved to legacy waitlist table');
-    return { success: true };
+    console.log('[WaitlistService] Saved to legacy waitlist table:', insertedLegacyRow.id);
+    return {
+      success: true,
+      confirmedWrite: true,
+      persistedTable: 'waitlist',
+      persistedId: insertedLegacyRow.id,
+    };
   } catch (err) {
     console.log('[WaitlistService] Legacy exception:', (err as Error)?.message);
-    return { success: false, error: 'network_error' };
+    return { success: false, error: 'network_error', confirmedWrite: false };
   }
 }
 
@@ -831,6 +1113,23 @@ CREATE TABLE IF NOT EXISTS public.waitlist_entries (
   accredited_status TEXT NULL,
   consent_sms BOOLEAN NOT NULL DEFAULT true,
   consent_email BOOLEAN NOT NULL DEFAULT true,
+  investor_type TEXT NULL,
+  primary_id_type TEXT NULL,
+  primary_id_reference TEXT NULL,
+  secondary_id_type TEXT NULL,
+  secondary_id_reference TEXT NULL,
+  document_issuing_country TEXT NULL,
+  tax_residency_country TEXT NULL,
+  tax_id_reference TEXT NULL,
+  company_name TEXT NULL,
+  company_role TEXT NULL,
+  company_ein TEXT NULL,
+  company_tax_id TEXT NULL,
+  company_registration_country TEXT NULL,
+  beneficial_owner_name TEXT NULL,
+  legal_ack_tax_reporting BOOLEAN NOT NULL DEFAULT false,
+  legal_ack_identity_review BOOLEAN NOT NULL DEFAULT false,
+  legal_ack_entity_authority BOOLEAN NOT NULL DEFAULT false,
   source TEXT NOT NULL DEFAULT 'landing_page',
   page_path TEXT NULL,
   referrer TEXT NULL,
@@ -850,6 +1149,7 @@ CREATE TABLE IF NOT EXISTS public.waitlist_entries (
   CONSTRAINT waitlist_entries_email_normalized_key UNIQUE (email_normalized),
   CONSTRAINT waitlist_entries_phone_e164_key UNIQUE (phone_e164),
   CONSTRAINT waitlist_entries_status_check CHECK (status IN ('pending', 'verified', 'contacted', 'removed')),
+  CONSTRAINT waitlist_entries_investor_type_check CHECK (investor_type IS NULL OR investor_type IN ('individual', 'corporate')),
   CONSTRAINT waitlist_entries_accredited_check CHECK (accredited_status IS NULL OR accredited_status IN ('accredited', 'non_accredited', 'unsure'))
 );
 

@@ -50,7 +50,7 @@ import {
 import * as Clipboard from 'expo-clipboard';
 import { PropertyDocument, TimeRange } from '@/types';
 import Colors from '@/constants/colors';
-import { formatCurrencyWithDecimals, formatCurrencyCompact, formatDollar, formatNumber } from '@/lib/formatters';
+import { formatCurrencyWithDecimals, formatCurrencyCompact, formatDollar, formatNumber, formatAmountInput, parseAmountInput } from '@/lib/formatters';
 import { useProperty, useMarketData, useWalletBalance, useCurrentUser } from '@/lib/data-hooks';
 import ImageSlider from '@/components/ImageSlider';
 import PriceChart from '@/components/PriceChart';
@@ -64,10 +64,10 @@ export default function PropertyDetailScreen() {
   const router = useRouter();
   const [isFavorite, setIsFavorite] = useState(false);
   const [showInvestModal, setShowInvestModal] = useState(false);
-  const [investAmount, setInvestAmount] = useState('100');
+  const [investAmount, setInvestAmount] = useState<string>('100');
   const [timeRange, setTimeRange] = useState<TimeRange>('1M');
   const [showAddFundsModal, setShowAddFundsModal] = useState(false);
-  const [addFundsAmount, setAddFundsAmount] = useState('500');
+  const [addFundsAmount, setAddFundsAmount] = useState<string>('500');
   const { user: currentUser } = useCurrentUser();
   const { balance } = useWalletBalance();
   const [walletBalance, setWalletBalance] = useState(0);
@@ -168,7 +168,7 @@ export default function PropertyDetailScreen() {
   
   const shares = useMemo(() => {
     if (!property) return 0;
-    return Math.floor(Number(investAmount) / property.pricePerShare);
+    return Math.floor((Number(parseAmountInput(investAmount)) || 0) / property.pricePerShare);
   }, [investAmount, property]);
   
   const totalCost = useMemo(() => {
@@ -267,15 +267,15 @@ export default function PropertyDetailScreen() {
 
   const adjustAmount = useCallback((delta: number) => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setInvestAmount(prev => {
-      const current = Number(prev) || 0;
+    setInvestAmount((prev) => {
+      const current = Number(parseAmountInput(prev)) || 0;
       const newAmount = Math.max(1, current + delta);
-      return String(newAmount);
+      return formatAmountInput(String(newAmount));
     });
   }, []);
 
   const handleAddFunds = useCallback(() => {
-    const amount = Number(addFundsAmount) || 0;
+    const amount = Number(parseAmountInput(addFundsAmount)) || 0;
     if (amount < 10) {
       Alert.alert('Minimum Amount', 'Minimum deposit amount is $10');
       return;
@@ -845,7 +845,7 @@ export default function PropertyDetailScreen() {
                           <TextInput
                             style={styles.amountTextInput}
                             value={investAmount}
-                            onChangeText={setInvestAmount}
+                            onChangeText={(value) => setInvestAmount(formatAmountInput(parseAmountInput(value)))}
                             keyboardType="numeric"
                             placeholder="0"
                             placeholderTextColor={Colors.textTertiary}
@@ -864,10 +864,10 @@ export default function PropertyDetailScreen() {
                     {[100, 500, 1000, 5000].map(amount => (
                       <TouchableOpacity
                         key={amount}
-                        style={[styles.quickAmountButton, Number(investAmount) === amount && styles.quickAmountButtonActive]}
-                        onPress={() => { Keyboard.dismiss(); setInvestAmount(String(amount)); }}
+                        style={[styles.quickAmountButton, Number(parseAmountInput(investAmount)) === amount && styles.quickAmountButtonActive]}
+                        onPress={() => { Keyboard.dismiss(); setInvestAmount(formatAmountInput(String(amount))); }}
                       >
-                        <Text style={[styles.quickAmountText, Number(investAmount) === amount && styles.quickAmountTextActive]}>
+                        <Text style={[styles.quickAmountText, Number(parseAmountInput(investAmount)) === amount && styles.quickAmountTextActive]}>
                           {formatDollar(amount)}
                         </Text>
                       </TouchableOpacity>
@@ -952,8 +952,8 @@ export default function PropertyDetailScreen() {
                       <TouchableOpacity 
                         style={styles.amountButton} 
                         onPress={() => {
-                          const current = Number(addFundsAmount) || 0;
-                          setAddFundsAmount(String(Math.max(10, current - 100)));
+                          const current = Number(parseAmountInput(addFundsAmount)) || 0;
+                          setAddFundsAmount(formatAmountInput(String(Math.max(10, current - 100))));
                         }}
                       >
                         <Minus size={20} color={Colors.text} />
@@ -964,7 +964,7 @@ export default function PropertyDetailScreen() {
                           <TextInput
                             style={styles.amountTextInput}
                             value={addFundsAmount}
-                            onChangeText={setAddFundsAmount}
+                            onChangeText={(value) => setAddFundsAmount(formatAmountInput(parseAmountInput(value)))}
                             keyboardType="numeric"
                             placeholder="0"
                             placeholderTextColor={Colors.textTertiary}
@@ -976,8 +976,8 @@ export default function PropertyDetailScreen() {
                       <TouchableOpacity 
                         style={styles.amountButton} 
                         onPress={() => {
-                          const current = Number(addFundsAmount) || 0;
-                          setAddFundsAmount(String(current + 100));
+                          const current = Number(parseAmountInput(addFundsAmount)) || 0;
+                          setAddFundsAmount(formatAmountInput(String(current + 100)));
                         }}
                       >
                         <Plus size={20} color={Colors.text} />
@@ -989,10 +989,10 @@ export default function PropertyDetailScreen() {
                     {[100, 500, 1000, 5000].map(amount => (
                       <TouchableOpacity
                         key={amount}
-                        style={[styles.quickAmountButton, Number(addFundsAmount) === amount && styles.quickAmountButtonActive]}
-                        onPress={() => { Keyboard.dismiss(); setAddFundsAmount(String(amount)); }}
+                        style={[styles.quickAmountButton, Number(parseAmountInput(addFundsAmount)) === amount && styles.quickAmountButtonActive]}
+                        onPress={() => { Keyboard.dismiss(); setAddFundsAmount(formatAmountInput(String(amount))); }}
                       >
-                        <Text style={[styles.quickAmountText, Number(addFundsAmount) === amount && styles.quickAmountTextActive]}>
+                        <Text style={[styles.quickAmountText, Number(parseAmountInput(addFundsAmount)) === amount && styles.quickAmountTextActive]}>
                           {formatDollar(amount)}
                         </Text>
                       </TouchableOpacity>
@@ -1025,7 +1025,7 @@ export default function PropertyDetailScreen() {
                   <View style={styles.addFundsSummary}>
                     <View style={styles.summaryRow}>
                       <Text style={styles.summaryLabel}>Amount</Text>
-                      <Text style={styles.summaryValue}>{formatDollar(Number(addFundsAmount || 0))}</Text>
+                      <Text style={styles.summaryValue}>{formatDollar(Number(parseAmountInput(addFundsAmount)) || 0)}</Text>
                     </View>
                     <View style={styles.summaryRow}>
                       <Text style={styles.summaryLabel}>Fee</Text>
@@ -1035,13 +1035,13 @@ export default function PropertyDetailScreen() {
                     <View style={styles.summaryRow}>
                       <Text style={styles.summaryLabelBold}>New Balance</Text>
                       <Text style={styles.summaryValueBold}>
-                        {formatDollar(walletBalance + Number(addFundsAmount || 0))}
+                        {formatDollar(walletBalance + (Number(parseAmountInput(addFundsAmount)) || 0))}
                       </Text>
                     </View>
                   </View>
 
                   <TouchableOpacity style={styles.confirmButton} onPress={handleAddFunds}>
-                    <Text style={styles.confirmButtonText}>Add {formatDollar(Number(addFundsAmount || 0))}</Text>
+                    <Text style={styles.confirmButtonText}>Add {formatDollar(Number(parseAmountInput(addFundsAmount)) || 0)}</Text>
                   </TouchableOpacity>
                   <View style={{ height: 16 }} />
                 </ScrollView>

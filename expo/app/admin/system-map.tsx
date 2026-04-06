@@ -60,8 +60,11 @@ import { supabase } from '@/lib/supabase';
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 type ModuleStatus = 'live' | 'degraded' | 'offline' | 'stub';
+type SeverityLevel = 'healthy' | 'warning' | 'critical';
 
 interface SystemModule {
+  severity?: SeverityLevel;
+  severityReason?: string;
   id: string;
   name: string;
   file: string;
@@ -80,6 +83,20 @@ interface LayerGroup {
   icon: any;
   color: string;
   modules: SystemModule[];
+}
+
+interface DataFlowStep {
+  id: string;
+  text: string;
+  severity: SeverityLevel;
+  reason?: string;
+}
+
+interface DataFlowDefinition {
+  id: string;
+  name: string;
+  color: string;
+  steps: DataFlowStep[];
 }
 
 const PRESENTATION_LAYER: SystemModule[] = [
@@ -158,14 +175,125 @@ const ALL_LAYERS: LayerGroup[] = [
   { id: 'infra', name: 'Infrastructure', icon: Cpu, color: '#E67E22', modules: INFRA_LAYER },
 ];
 
-const DATA_FLOWS = [
-  { id: 'admin-publish', name: 'Admin Publishes Deal', color: '#FFD700', steps: ['Admin JV Deals → upsertJVDeal()', 'jv-storage.ts → Supabase INSERT/UPDATE', 'Supabase Realtime → WebSocket event', 'jv-realtime.ts → invalidateAllJVQueries()', 'BroadcastChannel → cross-tab notification', 'Landing + Home → refetch → re-render'] },
-  { id: 'user-invest', name: 'User Invests in Deal', color: '#22C55E', steps: ['JV Investment Page → Select Pool Tier', 'payment-service.ts → Validate + Process', 'Supabase → INSERT transaction', 'investment-service.ts → Update holdings', 'Analytics → Track conversion event', 'Profile → Updated portfolio'] },
-  { id: 'realtime-sync', name: 'Realtime Sync (4 Layers)', color: '#4A90D9', steps: ['Layer 1: Supabase Realtime subscription', 'Layer 2: Fallback polling (3s interval)', 'Layer 3: refetchInterval (3s)', 'Layer 4: Visibility reconnect (tab focus)', 'Any layer triggers → React Query invalidation', 'All subscribed pages re-render with fresh data'] },
-  { id: 'photo-protect', name: 'Photo Protection Flow', color: '#FF6B6B', steps: ['Update request with photos[]', 'protectPhotos() guard checks existing count', 'If incoming < existing → BLOCK (unless admin)', 'If empty → fetch existing from DB → preserve', 'Admin can override with adminOverride: true', 'Audit log records every protection event'] },
-  { id: 'trash-flow', name: 'Trash & Recovery Flow', color: '#9B59B6', steps: ['Delete action → moveToTrash()', 'Deal status → "trashed", published → false', 'Local backup saved to AsyncStorage', 'Admin Trash Bin shows all trashed items', 'Restore → status back to active', 'Permanent delete requires typing project name'] },
-  { id: 'project-isolation', name: 'Project Storage Isolation', color: '#E67E22', steps: ['Every key prefixed: @ivx_p_{PROJECT_ID}::', 'User-scoped: adds _u_{USER_ID}', 'validateKeyOwnership() blocks cross-project', 'Startup: runStorageIntegrityCheck()', 'auditStorageKeys() detects foreign data', 'cleanForeignKeys() auto-removes leaks'] },
+const DATA_FLOWS: DataFlowDefinition[] = [
+  {
+    id: 'admin-publish',
+    name: 'Admin Publishes Deal',
+    color: '#FFD700',
+    steps: [
+      { id: 'admin-publish-1', text: 'Admin JV Deals → upsertJVDeal()', severity: 'healthy' },
+      { id: 'admin-publish-2', text: 'jv-storage.ts → Supabase INSERT/UPDATE', severity: 'healthy' },
+      { id: 'admin-publish-3', text: 'Supabase Realtime → WebSocket event', severity: 'warning', reason: 'Watch for delayed broadcasts when realtime reconnects.' },
+      { id: 'admin-publish-4', text: 'jv-realtime.ts → invalidateAllJVQueries()', severity: 'healthy' },
+      { id: 'admin-publish-5', text: 'BroadcastChannel → cross-tab notification', severity: 'warning', reason: 'Use yellow when browser cross-tab sync looks delayed.' },
+      { id: 'admin-publish-6', text: 'Landing + Home → refetch → re-render', severity: 'healthy' },
+    ],
+  },
+  {
+    id: 'user-invest',
+    name: 'User Invests in Deal',
+    color: '#22C55E',
+    steps: [
+      { id: 'user-invest-1', text: 'JV Investment Page → Select Pool Tier', severity: 'healthy' },
+      { id: 'user-invest-2', text: 'payment-service.ts → Validate + Process', severity: 'critical', reason: 'Turn red immediately if payment validation or processing fails.' },
+      { id: 'user-invest-3', text: 'Supabase → INSERT transaction', severity: 'healthy' },
+      { id: 'user-invest-4', text: 'investment-service.ts → Update holdings', severity: 'healthy' },
+      { id: 'user-invest-5', text: 'Analytics → Track conversion event', severity: 'warning', reason: 'Yellow means money flow worked but analytics visibility needs attention.' },
+      { id: 'user-invest-6', text: 'Profile → Updated portfolio', severity: 'healthy' },
+    ],
+  },
+  {
+    id: 'realtime-sync',
+    name: 'Realtime Sync (4 Layers)',
+    color: '#4A90D9',
+    steps: [
+      { id: 'realtime-sync-1', text: 'Layer 1: Supabase Realtime subscription', severity: 'warning', reason: 'Yellow when socket reconnects too often.' },
+      { id: 'realtime-sync-2', text: 'Layer 2: Fallback polling (3s interval)', severity: 'healthy' },
+      { id: 'realtime-sync-3', text: 'Layer 3: refetchInterval (3s)', severity: 'healthy' },
+      { id: 'realtime-sync-4', text: 'Layer 4: Visibility reconnect (tab focus)', severity: 'healthy' },
+      { id: 'realtime-sync-5', text: 'Any layer triggers → React Query invalidation', severity: 'healthy' },
+      { id: 'realtime-sync-6', text: 'All subscribed pages re-render with fresh data', severity: 'healthy' },
+    ],
+  },
+  {
+    id: 'photo-protect',
+    name: 'Photo Protection Flow',
+    color: '#FF6B6B',
+    steps: [
+      { id: 'photo-protect-1', text: 'Update request with photos[]', severity: 'warning', reason: 'Yellow if incoming payload is incomplete or inconsistent.' },
+      { id: 'photo-protect-2', text: 'protectPhotos() guard checks existing count', severity: 'critical', reason: 'Red because this guard must stop destructive overwrite paths.' },
+      { id: 'photo-protect-3', text: 'If incoming < existing → BLOCK (unless admin)', severity: 'healthy' },
+      { id: 'photo-protect-4', text: 'If empty → fetch existing from DB → preserve', severity: 'critical', reason: 'Red when preservation fallback fails because photos can be lost.' },
+      { id: 'photo-protect-5', text: 'Admin can override with adminOverride: true', severity: 'healthy' },
+      { id: 'photo-protect-6', text: 'Audit log records every protection event', severity: 'warning', reason: 'Yellow if audit coverage is partial but no data is lost.' },
+    ],
+  },
+  {
+    id: 'trash-flow',
+    name: 'Trash & Recovery Flow',
+    color: '#9B59B6',
+    steps: [
+      { id: 'trash-flow-1', text: 'Delete action → moveToTrash()', severity: 'healthy' },
+      { id: 'trash-flow-2', text: 'Deal status → "trashed", published → false', severity: 'healthy' },
+      { id: 'trash-flow-3', text: 'Local backup saved to AsyncStorage', severity: 'warning', reason: 'Yellow if backup save is delayed or skipped.' },
+      { id: 'trash-flow-4', text: 'Admin Trash Bin shows all trashed items', severity: 'healthy' },
+      { id: 'trash-flow-5', text: 'Restore → status back to active', severity: 'healthy' },
+      { id: 'trash-flow-6', text: 'Permanent delete requires typing project name', severity: 'healthy' },
+    ],
+  },
+  {
+    id: 'project-isolation',
+    name: 'Project Storage Isolation',
+    color: '#E67E22',
+    steps: [
+      { id: 'project-isolation-1', text: 'Every key prefixed: @ivx_p_{PROJECT_ID}::', severity: 'healthy' },
+      { id: 'project-isolation-2', text: 'User-scoped: adds _u_{USER_ID}', severity: 'healthy' },
+      { id: 'project-isolation-3', text: 'validateKeyOwnership() blocks cross-project', severity: 'critical', reason: 'Red because ownership validation protects all scoped data.' },
+      { id: 'project-isolation-4', text: 'Startup: runStorageIntegrityCheck()', severity: 'warning', reason: 'Yellow when integrity audit has not run recently.' },
+      { id: 'project-isolation-5', text: 'auditStorageKeys() detects foreign data', severity: 'healthy' },
+      { id: 'project-isolation-6', text: 'cleanForeignKeys() auto-removes leaks', severity: 'healthy' },
+    ],
+  },
 ];
+
+function getSeverityPalette(severity: SeverityLevel) {
+  switch (severity) {
+    case 'critical':
+      return {
+        color: '#FF4D4D',
+        backgroundColor: 'rgba(255,77,77,0.14)',
+        borderColor: 'rgba(255,77,77,0.3)',
+        label: 'Critical',
+      };
+    case 'warning':
+      return {
+        color: '#FFD700',
+        backgroundColor: 'rgba(255,215,0,0.14)',
+        borderColor: 'rgba(255,215,0,0.3)',
+        label: 'Warning',
+      };
+    default:
+      return {
+        color: '#22C55E',
+        backgroundColor: 'rgba(34,197,94,0.14)',
+        borderColor: 'rgba(34,197,94,0.3)',
+        label: 'Healthy',
+      };
+  }
+}
+
+function getModuleSeverity(module: SystemModule): SeverityLevel {
+  if (module.severity) {
+    return module.severity;
+  }
+  if (module.status === 'offline') {
+    return 'critical';
+  }
+  if (module.status === 'degraded') {
+    return 'warning';
+  }
+  return 'healthy';
+}
 
 function StatusBadge({ status }: { status: ModuleStatus }) {
   const config = {
@@ -177,6 +305,7 @@ function StatusBadge({ status }: { status: ModuleStatus }) {
   const { color, label, Icon } = config[status];
   return (
     <View style={[styles.statusBadge, { backgroundColor: color + '20' }]}>
+
       <Icon size={10} color={color} />
       <Text style={[styles.statusText, { color }]}>{label}</Text>
     </View>
@@ -204,6 +333,8 @@ function PulsingDot({ color, delay = 0 }: { color: string; delay?: number }) {
 function ModuleCard({ module, index }: { module: SystemModule; index: number }) {
   const [expanded, setExpanded] = useState(false);
   const slideAnim = useRef(new Animated.Value(0)).current;
+  const severity = getModuleSeverity(module);
+  const severityPalette = getSeverityPalette(severity);
 
   useEffect(() => {
     Animated.spring(slideAnim, {
@@ -235,13 +366,31 @@ function ModuleCard({ module, index }: { module: SystemModule; index: number }) 
             <Text style={styles.moduleName} numberOfLines={1}>{module.name}</Text>
             <Text style={styles.moduleFile} numberOfLines={1}>{module.file}</Text>
           </View>
-          <StatusBadge status={module.status} />
+          <View style={styles.moduleHeaderBadges}>
+            <StatusBadge status={module.status} />
+            <View style={[
+              styles.severityBadge,
+              {
+                backgroundColor: severityPalette.backgroundColor,
+                borderColor: severityPalette.borderColor,
+              },
+            ]}>
+              <View style={[styles.severityBadgeDot, { backgroundColor: severityPalette.color }]} />
+              <Text style={[styles.severityBadgeText, { color: severityPalette.color }]}>{severityPalette.label}</Text>
+            </View>
+          </View>
           {expanded ? <ChevronUp size={14} color={Colors.textSecondary} /> : <ChevronDown size={14} color={Colors.textSecondary} />}
         </View>
 
         {expanded && (
           <View style={styles.moduleDetails}>
             <Text style={styles.moduleDesc}>{module.description}</Text>
+            {module.severityReason ? (
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Severity rule</Text>
+                <Text style={[styles.detailValue, { color: severityPalette.color }]}>{module.severityReason}</Text>
+              </View>
+            ) : null}
 
             <View style={styles.detailRow}>
               <Text style={styles.detailLabel}>Data Flow</Text>
@@ -315,9 +464,11 @@ function LayerSection({ layer, index: _index }: { layer: LayerGroup; index: numb
   );
 }
 
-function DataFlowCard({ flow, index }: { flow: typeof DATA_FLOWS[0]; index: number }) {
+function DataFlowCard({ flow, index }: { flow: DataFlowDefinition; index: number }) {
   const [expanded, setExpanded] = useState(false);
   const slideAnim = useRef(new Animated.Value(0)).current;
+  const warningCount = flow.steps.filter((step) => step.severity === 'warning').length;
+  const criticalCount = flow.steps.filter((step) => step.severity === 'critical').length;
 
   useEffect(() => {
     Animated.spring(slideAnim, {
@@ -342,26 +493,63 @@ function DataFlowCard({ flow, index }: { flow: typeof DATA_FLOWS[0]; index: numb
         <View style={styles.flowHeader}>
           <View style={[styles.flowDot, { backgroundColor: flow.color }]} />
           <Text style={styles.flowName}>{flow.name}</Text>
-          <Text style={styles.flowStepCount}>{flow.steps.length} steps</Text>
+          <View style={styles.flowHeaderMeta}>
+            {warningCount > 0 ? (
+              <View style={[styles.flowCountBadge, styles.flowCountBadgeWarning]}>
+                <Text style={styles.flowCountBadgeText}>{warningCount} warning</Text>
+              </View>
+            ) : null}
+            {criticalCount > 0 ? (
+              <View style={[styles.flowCountBadge, styles.flowCountBadgeCritical]}>
+                <Text style={styles.flowCountBadgeText}>{criticalCount} critical</Text>
+              </View>
+            ) : null}
+            <Text style={styles.flowStepCount}>{flow.steps.length} steps</Text>
+          </View>
           {expanded ? <ChevronUp size={14} color={Colors.textSecondary} /> : <ChevronDown size={14} color={Colors.textSecondary} />}
         </View>
 
         {expanded && (
           <View style={styles.flowSteps}>
-            {flow.steps.map((step, i) => (
-              <View key={i} style={styles.flowStep}>
-                <View style={styles.flowStepLine}>
-                  <View style={[styles.flowStepDot, { backgroundColor: flow.color }]} />
-                  {i < flow.steps.length - 1 && (
-                    <View style={[styles.flowStepConnector, { backgroundColor: flow.color + '40' }]} />
-                  )}
+            {flow.steps.map((step, i) => {
+              const severityPalette = getSeverityPalette(step.severity);
+
+              return (
+                <View key={step.id} style={styles.flowStep}>
+                  <View style={styles.flowStepLine}>
+                    <View style={[
+                      styles.flowStepDot,
+                      {
+                        backgroundColor: severityPalette.color,
+                        shadowColor: severityPalette.color,
+                      },
+                    ]} />
+                    {i < flow.steps.length - 1 && (
+                      <View style={[
+                        styles.flowStepConnector,
+                        { backgroundColor: severityPalette.borderColor },
+                      ]} />
+                    )}
+                  </View>
+                  <View style={styles.flowStepContent}>
+                    <View style={styles.flowStepTopRow}>
+                      <Text style={styles.flowStepNumber}>Step {i + 1}</Text>
+                      <View style={[
+                        styles.flowSeverityPill,
+                        {
+                          backgroundColor: severityPalette.backgroundColor,
+                          borderColor: severityPalette.borderColor,
+                        },
+                      ]}>
+                        <Text style={[styles.flowSeverityPillText, { color: severityPalette.color }]}>{severityPalette.label}</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.flowStepText}>{step.text}</Text>
+                    {step.reason ? <Text style={styles.flowStepReason}>{step.reason}</Text> : null}
+                  </View>
                 </View>
-                <View style={styles.flowStepContent}>
-                  <Text style={styles.flowStepNumber}>Step {i + 1}</Text>
-                  <Text style={styles.flowStepText}>{step}</Text>
-                </View>
-              </View>
-            ))}
+              );
+            })}
           </View>
         )}
       </TouchableOpacity>
@@ -604,7 +792,19 @@ function DiagramNodeView({ node, offsetX, offsetY, scale, onSelect, isSelected }
   isSelected: boolean;
 }) {
   const Icon = node.icon;
-  const statusColor = node.status === 'live' ? '#22C55E' : node.status === 'degraded' ? '#FFB800' : node.status === 'offline' ? '#FF4D4D' : '#6A6A6A';
+  const severity = getModuleSeverity({
+    id: node.id,
+    name: node.name,
+    file: '',
+    category: '',
+    status: node.status,
+    description: '',
+    dependencies: node.dependencies,
+    dataFlow: '',
+    icon: node.icon,
+    linesOfCode: 0,
+  });
+  const severityPalette = getSeverityPalette(severity);
   const pulseAnim = useRef(new Animated.Value(0.6)).current;
 
   useEffect(() => {
@@ -643,7 +843,7 @@ function DiagramNodeView({ node, offsetX, offsetY, scale, onSelect, isSelected }
       <View style={diagramStyles.nodeInner}>
         <View style={diagramStyles.nodeTop}>
           <Icon size={Math.max(10, 14 * scale)} color={node.layerColor} />
-          <Animated.View style={[diagramStyles.nodeStatusDot, { backgroundColor: statusColor, opacity: pulseAnim }]} />
+          <Animated.View style={[diagramStyles.nodeStatusDot, { backgroundColor: severityPalette.color, opacity: pulseAnim }]} />
         </View>
         <Text
           style={[diagramStyles.nodeLabel, { fontSize: Math.max(7, 10 * scale) }]}
@@ -752,6 +952,27 @@ function SystemDiagramMap() {
             <Text style={diagramStyles.legendText}>{l.name.replace(' Layer', '').replace(' Providers', '')}</Text>
           </View>
         ))}
+      </View>
+
+      <View style={diagramStyles.severityLegend}>
+        {(['healthy', 'warning', 'critical'] as SeverityLevel[]).map((severity) => {
+          const palette = getSeverityPalette(severity);
+          return (
+            <View
+              key={severity}
+              style={[
+                diagramStyles.severityLegendItem,
+                {
+                  backgroundColor: palette.backgroundColor,
+                  borderColor: palette.borderColor,
+                },
+              ]}
+            >
+              <View style={[diagramStyles.severityLegendDot, { backgroundColor: palette.color }]} />
+              <Text style={[diagramStyles.severityLegendText, { color: palette.color }]}>{palette.label}</Text>
+            </View>
+          );
+        })}
       </View>
 
       <View style={diagramStyles.canvasWrap} {...panResponder.panHandlers}>
@@ -1157,6 +1378,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
+  moduleHeaderBadges: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
   moduleIconWrap: {
     width: 32,
     height: 32,
@@ -1251,6 +1477,30 @@ const styles = StyleSheet.create({
     color: Colors.text,
     flex: 1,
   },
+  flowHeaderMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  flowCountBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  flowCountBadgeWarning: {
+    backgroundColor: 'rgba(255,215,0,0.12)',
+    borderColor: 'rgba(255,215,0,0.28)',
+  },
+  flowCountBadgeCritical: {
+    backgroundColor: 'rgba(255,77,77,0.12)',
+    borderColor: 'rgba(255,77,77,0.28)',
+  },
+  flowCountBadgeText: {
+    fontSize: 10,
+    fontWeight: '700' as const,
+    color: Colors.text,
+  },
   flowStepCount: {
     fontSize: 11,
     color: Colors.textTertiary,
@@ -1272,6 +1522,9 @@ const styles = StyleSheet.create({
     height: 10,
     borderRadius: 5,
     marginTop: 4,
+    shadowOpacity: 0.35,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 0 },
   },
   flowStepConnector: {
     width: 2,
@@ -1283,6 +1536,12 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingLeft: 8,
     paddingBottom: 12,
+  },
+  flowStepTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
   },
   flowStepNumber: {
     fontSize: 9,
@@ -1296,6 +1555,44 @@ const styles = StyleSheet.create({
     color: Colors.text,
     marginTop: 2,
     lineHeight: 18,
+  },
+  flowStepReason: {
+    fontSize: 11,
+    color: Colors.textSecondary,
+    marginTop: 6,
+    lineHeight: 16,
+  },
+  flowSeverityPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  flowSeverityPillText: {
+    fontSize: 9,
+    fontWeight: '700' as const,
+    letterSpacing: 0.3,
+    textTransform: 'uppercase' as const,
+  },
+  severityBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  severityBadgeDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  severityBadgeText: {
+    fontSize: 9,
+    fontWeight: '700' as const,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.3,
   },
   statusBadge: {
     flexDirection: 'row',
@@ -1368,11 +1665,42 @@ const diagramStyles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingTop: 8,
+    paddingBottom: 6,
     gap: 8,
     justifyContent: 'center',
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
+  },
+  severityLegend: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  severityLegendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  severityLegendDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  severityLegendText: {
+    fontSize: 10,
+    fontWeight: '700' as const,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.4,
   },
   legendItem: {
     flexDirection: 'row',

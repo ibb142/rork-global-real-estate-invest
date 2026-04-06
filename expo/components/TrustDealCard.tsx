@@ -1,4 +1,4 @@
-import React, { memo, useCallback, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -19,10 +19,10 @@ import {
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
-import { formatCurrency } from '@/lib/formatters';
+import { formatCurrencyCompact, formatCurrencyWithDecimals } from '@/lib/formatters';
+import { buildOwnershipSnapshot } from '@/lib/ownership-math';
 import type { ParsedJVDeal, DealTrustInfo } from '@/lib/parse-deal';
-import { filterValidPhotos } from '@/lib/parse-deal';
-import { getFallbackPhotosForDeal } from '@/constants/deal-photos';
+import { resolveDealPhotos } from '@/lib/parse-deal';
 
 interface TrustDealCardProps {
   deal: ParsedJVDeal;
@@ -46,10 +46,15 @@ function extractLocationFromDeal(deal: ParsedJVDeal): string {
 function getDefaultTrustInfo(deal: ParsedJVDeal): DealTrustInfo {
   const projName = deal.projectName || '';
   const isLLC = projName.toUpperCase().includes('LLC');
+  const salePrice = deal.propertyValue || deal.totalInvestment || 0;
+  const minInvestment = 50;
+  const fractionalSharePrice = Math.max(minInvestment, 1);
+  const ownershipSnapshot = buildOwnershipSnapshot(minInvestment, salePrice);
+
   return {
     llcName: isLLC ? projName : (projName ? `${projName} LLC` : 'IVX Holdings LLC'),
     builderName: projName.includes('ONE STOP') ? 'One Stop Development' : (projName || 'IVX Development'),
-    minInvestment: 50,
+    minInvestment,
     timelineMin: 14,
     timelineMax: 24,
     timelineUnit: 'months' as const,
@@ -59,6 +64,11 @@ function getDefaultTrustInfo(deal: ParsedJVDeal): DealTrustInfo {
     permitStatus: 'approved' as const,
     escrowProtected: true,
     thirdPartyAudit: false,
+    salePrice,
+    fractionalSharePrice,
+    priceChange1h: 10,
+    priceChange2h: 18,
+    ownershipLabel: ownershipSnapshot.ownershipText,
     investorProtections: [
       'LLC-backed investment structure',
       'Title insurance verified',
@@ -75,11 +85,20 @@ function formatTimelineString(trust: DealTrustInfo): string {
   const max = trust.timelineMax || 0;
   const unit = trust.timelineUnit === 'years' ? 'yr' : 'mo';
   if (min > 0 && max > 0) {
-    return `${min}\u2013${max} ${unit}`;
+    return `${min}–${max} ${unit}`;
   }
   if (max > 0) return `${max} ${unit}`;
   if (min > 0) return `${min} ${unit}`;
   return '';
+}
+
+function formatMarketValue(value: number): string {
+  const safeValue = Number.isFinite(value) ? value : 0;
+  if (safeValue <= 0) {
+    return '$0';
+  }
+  const compact = formatCurrencyCompact(safeValue);
+  return compact.startsWith('$') ? compact : `$${compact}`;
 }
 
 const TrustDealCard = memo(function TrustDealCard({
@@ -88,25 +107,122 @@ const TrustDealCard = memo(function TrustDealCard({
   onViewDetails,
   galleryWidth = 300,
 }: TrustDealCardProps) {
-  const trust = useMemo(() => deal.trustInfo || getDefaultTrustInfo(deal), [deal]);
+  const trust = useMemo(() => {
+    if (deal.trustInfo) {
+      return deal.trustInfo;
+    }
+    if (deal.trustMarket) {
+      const ownershipSnapshot = buildOwnershipSnapshot(deal.trustMarket.minInvestment, deal.trustMarket.salePrice);
+      return {
+        ...getDefaultTrustInfo(deal),
+        minInvestment: deal.trustMarket.minInvestment,
+        salePrice: deal.trustMarket.salePrice,
+        fractionalSharePrice: deal.trustMarket.fractionalSharePrice,
+        timelineMin: deal.trustMarket.timelineMin ?? 14,
+        timelineMax: deal.trustMarket.timelineMax ?? 24,
+        timelineUnit: deal.trustMarket.timelineUnit ?? 'months',
+        priceChange1h: deal.trustMarket.priceChange1h,
+        priceChange2h: deal.trustMarket.priceChange2h,
+        ownershipLabel: deal.trustMarket.ownershipLabel ?? ownershipSnapshot.ownershipText,
+      };
+    }
+    return getDefaultTrustInfo(deal);
+  }, [deal]);
   const [activePhotoIndex, setActivePhotoIndex] = useState<number>(0);
+
+  const photos = useMemo(() => {
+    return resolveDealPhotos({
+      id: deal.id,
+      title: deal.title,
+      projectName: deal.projectName,
+      photos: deal.photos,
+      publishedAt: deal.publishedAt,
+      created_at: deal.created_at,
+      updatedAt: typeof deal.updatedAt === 'string' ? deal.updatedAt : undefined,
+      updated_at: typeof deal.updated_at === 'string' ? deal.updated_at : undefined,
+    });
+  }, [deal.created_at, deal.id, deal.photos, deal.projectName, deal.publishedAt, deal.title, deal.updatedAt, deal.updated_at]);
+
+  useEffect(() => {
+    if (photos.length === 0 && activePhotoIndex !== 0) {
+      setActivePhotoIndex(0);
+      return;
+    }
+    if (activePhotoIndex >= photos.length && photos.length > 0) {
+      setActivePhotoIndex(photos.length - 1);
+    }
+  }, [activePhotoIndex, photos.length]);
 
   const handleScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const offsetX = e.nativeEvent.contentOffset.x;
-    const idx = Math.round(offsetX / galleryWidth);
-    setActivePhotoIndex(idx);
-  }, [galleryWidth]);
-
-  const photos = useMemo(() => {
-    let p = filterValidPhotos(deal.photos);
-    if (p.length === 0) {
-      p = getFallbackPhotosForDeal(deal);
-    }
-    return p;
-  }, [deal]);
+    const rawIndex = Math.round(offsetX / galleryWidth);
+    const safeIndex = photos.length > 0
+      ? Math.max(0, Math.min(rawIndex, photos.length - 1))
+      : 0;
+    setActivePhotoIndex(safeIndex);
+  }, [galleryWidth, photos.length]);
 
   const location = useMemo(() => extractLocationFromDeal(deal), [deal]);
   const timeline = useMemo(() => formatTimelineString(trust), [trust]);
+  const salePrice = useMemo(() => {
+    const trustMarketSalePrice = Number(deal.trustMarket?.salePrice ?? 0);
+    if (trustMarketSalePrice > 0) {
+      return trustMarketSalePrice;
+    }
+    const trustSalePrice = Number(trust.salePrice ?? 0);
+    if (trustSalePrice > 0) {
+      return trustSalePrice;
+    }
+    const propertyValue = Number(deal.propertyValue ?? 0);
+    if (propertyValue > 0) {
+      return propertyValue;
+    }
+    const totalInvestment = Number(deal.totalInvestment ?? 0);
+    if (totalInvestment > 0) {
+      return totalInvestment;
+    }
+    return 0;
+  }, [deal.propertyValue, deal.totalInvestment, deal.trustMarket?.salePrice, trust.salePrice]);
+  const minInvestment = deal.trustMarket?.minInvestment || trust.minInvestment || 50;
+  const ownershipSnapshot = useMemo(() => buildOwnershipSnapshot(minInvestment, salePrice), [minInvestment, salePrice]);
+  const shareEntryPrice = useMemo(() => {
+    const raw = Number(deal.trustMarket?.fractionalSharePrice ?? trust.fractionalSharePrice ?? minInvestment);
+    return Math.max(raw, 1);
+  }, [deal.trustMarket?.fractionalSharePrice, minInvestment, trust.fractionalSharePrice]);
+  const ownershipText = useMemo(() => {
+    if (deal.trustMarket?.ownershipLabel) return deal.trustMarket.ownershipLabel;
+    if (trust.ownershipLabel) return trust.ownershipLabel;
+    return ownershipSnapshot.ownershipText;
+  }, [deal.trustMarket?.ownershipLabel, ownershipSnapshot.ownershipText, trust.ownershipLabel]);
+  const salePriceLabel = useMemo(() => formatMarketValue(salePrice), [salePrice]);
+  const investmentAmountLabel = useMemo(() => formatMarketValue(Number(deal.totalInvestment ?? 0)), [deal.totalInvestment]);
+  const minOwnershipLabel = useMemo(() => `${ownershipSnapshot.ownershipPercent.toFixed(4)}% min`, [ownershipSnapshot.ownershipPercent]);
+  const showEntryPill = useMemo(() => Math.abs(shareEntryPrice - minInvestment) > 0.009, [shareEntryPrice, minInvestment]);
+  const marketPills = useMemo(() => {
+    const pills: Array<{ key: string; label: string; value: string }> = [
+      {
+        key: 'fractional',
+        label: 'Fractional',
+        value: `from ${formatCurrencyWithDecimals(minInvestment)}`,
+      },
+    ];
+
+    if (showEntryPill) {
+      pills.push({
+        key: 'entry',
+        label: 'Entry',
+        value: formatCurrencyWithDecimals(shareEntryPrice),
+      });
+    }
+
+    pills.push({
+      key: 'ownership',
+      label: 'Ownership',
+      value: minOwnershipLabel,
+    });
+
+    return pills;
+  }, [minInvestment, minOwnershipLabel, shareEntryPrice, showEntryPill]);
 
   const verifiedCount = useMemo(() => {
     let count = 0;
@@ -157,7 +273,7 @@ const TrustDealCard = memo(function TrustDealCard({
                 ))}
               </View>
               <View style={styles.photoCounter}>
-                <Text style={styles.photoCounterText}>{activePhotoIndex + 1}/{photos.length}</Text>
+                <Text style={styles.photoCounterText}>{Math.min(activePhotoIndex + 1, photos.length)}/{photos.length}</Text>
               </View>
             </>
           )}
@@ -175,19 +291,28 @@ const TrustDealCard = memo(function TrustDealCard({
       )}
 
       <View style={styles.content}>
-        <Text style={styles.dealTitle}>{deal.title || deal.projectName}</Text>
-        {location ? (
-          <View style={styles.locationRow}>
-            <MapPin size={12} color={Colors.textTertiary} />
-            <Text style={styles.locationText}>{location}</Text>
+        <View style={styles.headerRow}>
+          <View style={styles.headerCopy}>
+            <Text style={styles.dealTitle}>{deal.title || deal.projectName}</Text>
+            {location ? (
+              <View style={styles.locationRow}>
+                <MapPin size={12} color={Colors.textTertiary} />
+                <Text style={styles.locationText}>{location}</Text>
+              </View>
+            ) : null}
           </View>
-        ) : null}
+          <View style={styles.salePriceChip} testID={`trust-sale-price-${deal.id}`}>
+            <Text style={styles.salePriceChipLabel}>Sale Price</Text>
+            <Text style={styles.salePriceChipValue}>{salePriceLabel}</Text>
+            <Text style={styles.salePriceChipSubtext}>{minOwnershipLabel}</Text>
+          </View>
+        </View>
 
         <View style={styles.divider} />
 
         <View style={styles.metricsRow}>
           <View style={styles.metric}>
-            <Text style={styles.metricValue}>{formatCurrency(deal.totalInvestment, true)}</Text>
+            <Text style={styles.metricValue}>{investmentAmountLabel}</Text>
             <Text style={styles.metricLabel}>Investment</Text>
           </View>
           <View style={styles.metricSeparator} />
@@ -203,6 +328,17 @@ const TrustDealCard = memo(function TrustDealCard({
         </View>
 
         <View style={styles.divider} />
+
+        <View style={styles.marketStrip}>
+          {marketPills.map((pill) => (
+            <View key={pill.key} style={styles.marketStatPill}>
+              <Text style={styles.marketStatLabel}>{pill.label}</Text>
+              <Text style={styles.marketStatValue}>{pill.value}</Text>
+            </View>
+          ))}
+        </View>
+
+        <Text style={styles.ownershipHint}>{ownershipText}</Text>
 
         <View style={styles.trustRow}>
           <View style={styles.trustItem}>
@@ -261,7 +397,9 @@ const TrustDealCard = memo(function TrustDealCard({
 
         <View style={styles.minInvestWrap}>
           <Text style={styles.minInvestText}>
-            Invest from <Text style={styles.minInvestBold}>${trust.minInvestment || 50}</Text>
+            Fractional starts at <Text style={styles.minInvestBold}>{formatCurrencyWithDecimals(minInvestment)}</Text>
+            {' · '}
+            <Text style={styles.minInvestBold}>{ownershipText}</Text>
           </Text>
         </View>
       </View>
@@ -378,12 +516,49 @@ const styles = StyleSheet.create({
   content: {
     padding: 18,
   },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  headerCopy: {
+    flex: 1,
+  },
   dealTitle: {
     color: Colors.text,
     fontSize: 20,
     fontWeight: '900' as const,
     letterSpacing: -0.3,
     marginBottom: 4,
+  },
+  salePriceChip: {
+    minWidth: 118,
+    alignItems: 'flex-end',
+    backgroundColor: 'rgba(255, 215, 0, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 215, 0, 0.24)',
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  salePriceChipLabel: {
+    color: Colors.textTertiary,
+    fontSize: 10,
+    fontWeight: '700' as const,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.8,
+  },
+  salePriceChipValue: {
+    color: Colors.primary,
+    fontSize: 16,
+    fontWeight: '900' as const,
+    marginTop: 4,
+  },
+  salePriceChipSubtext: {
+    color: '#22C55E',
+    fontSize: 11,
+    fontWeight: '700' as const,
+    marginTop: 4,
   },
   locationRow: {
     flexDirection: 'row',
@@ -427,6 +602,37 @@ const styles = StyleSheet.create({
     height: 32,
     backgroundColor: Colors.surfaceBorder,
   },
+  marketStrip: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 10,
+  },
+  marketStatPill: {
+    flex: 1,
+    backgroundColor: Colors.backgroundTertiary,
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+  },
+  marketStatLabel: {
+    color: Colors.textTertiary,
+    fontSize: 10,
+    fontWeight: '700' as const,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.6,
+    marginBottom: 4,
+  },
+  marketStatValue: {
+    color: Colors.text,
+    fontSize: 13,
+    fontWeight: '800' as const,
+  },
+  ownershipHint: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+    marginBottom: 12,
+  },
   trustRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -448,10 +654,6 @@ const styles = StyleSheet.create({
   trustBold: {
     color: Colors.text,
     fontWeight: '700' as const,
-  },
-  trustDot: {
-    color: Colors.textTertiary,
-    fontSize: 8,
   },
   trustIndicators: {
     flexDirection: 'row',
@@ -516,7 +718,7 @@ const styles = StyleSheet.create({
   minInvestText: {
     color: Colors.textSecondary,
     fontSize: 13,
-    textAlign: 'center',
+    textAlign: 'center' as const,
   },
   minInvestBold: {
     color: Colors.text,

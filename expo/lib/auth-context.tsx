@@ -3,35 +3,103 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import { supabase } from './supabase';
 import { persistAuth, loadStoredAuth, clearStoredAuth, setAuthCredentials } from './auth-store';
-import { isAdminRole, normalizeRole } from './auth-helpers';
+import { isAdminRole, normalizeRole, sanitizeEmail } from './auth-helpers';
 import { startSessionMonitor } from './session-timeout';
 import { initializeSync, syncOwnerData, syncUserData } from './supabase-sync';
+import {
+  ensureMemberProfileRecord,
+  ensureMemberWalletRecord,
+  findExistingMemberByEmail,
+  persistMemberRegistrationShadow,
+  syncMemberRegistryFromSupabase,
+  upsertStoredMemberRegistryRecord,
+} from './member-registry';
 import type { Session } from '@supabase/supabase-js';
 
 const OWNER_IP_KEY = 'ivx_owner_ip';
 const OWNER_IP_ENABLED_KEY = 'ivx_owner_ip_enabled';
+const OWNER_DEVICE_VERIFIED_KEY = 'ivx_owner_device_verified';
+const OWNER_VERIFIED_USER_ID_KEY = 'ivx_owner_verified_user_id';
+const OWNER_VERIFIED_ROLE_KEY = 'ivx_owner_verified_role';
+const OWNER_VERIFIED_AT_KEY = 'ivx_owner_verified_at';
+const OWNER_TRUSTED_DEVICE_WINDOW_MS = 1000 * 60 * 60 * 24 * 30;
+
+interface DeviceIPSource {
+  url: string;
+  parse: (payload: unknown) => string | null;
+}
+
+function normalizeIPAddress(value: string | null | undefined): string | null {
+  const normalized = value?.trim() ?? '';
+  return normalized.length > 0 ? normalized : null;
+}
+
+function getIPSubnet(ip: string | null | undefined, prefixOctets: number = 2): string | null {
+  if (!ip) return null;
+  const parts = ip.split('.');
+  if (parts.length !== 4) return null;
+  return parts.slice(0, prefixOctets).join('.');
+}
+
+function isCarrierSubnetMatch(currentIP: string | null | undefined, storedIP: string | null | undefined): boolean {
+  if (!currentIP || !storedIP) return false;
+  if (currentIP === storedIP) return true;
+  const currentSubnet16 = getIPSubnet(currentIP, 2);
+  const storedSubnet16 = getIPSubnet(storedIP, 2);
+  if (currentSubnet16 && storedSubnet16 && currentSubnet16 === storedSubnet16) {
+    console.log('[Auth] Carrier subnet /16 match:', currentSubnet16, '— current:', currentIP, 'stored:', storedIP);
+    return true;
+  }
+  return false;
+}
 
 async function fetchDeviceIP(): Promise<string | null> {
-  const sources = [
-    'https://api.ipify.org?format=json',
-    'https://ipapi.co/json/',
-    'https://api.my-ip.io/v2/ip.json',
+  const sources: DeviceIPSource[] = [
+    {
+      url: 'https://api.ipify.org?format=json',
+      parse: (payload: unknown) => normalizeIPAddress((payload as { ip?: string } | null)?.ip),
+    },
+    {
+      url: 'https://api64.ipify.org?format=json',
+      parse: (payload: unknown) => normalizeIPAddress((payload as { ip?: string } | null)?.ip),
+    },
+    {
+      url: 'https://ipapi.co/json/',
+      parse: (payload: unknown) => normalizeIPAddress((payload as { ip?: string } | null)?.ip),
+    },
+    {
+      url: 'https://api.my-ip.io/v2/ip.json',
+      parse: (payload: unknown) => normalizeIPAddress((payload as { ip?: string } | null)?.ip),
+    },
+    {
+      url: 'https://ifconfig.co/json',
+      parse: (payload: unknown) => normalizeIPAddress((payload as { ip?: string } | null)?.ip),
+    },
+    {
+      url: 'https://ipwho.is/',
+      parse: (payload: unknown) => normalizeIPAddress((payload as { ip?: string } | null)?.ip),
+    },
   ];
-  for (const url of sources) {
+
+  for (const source of sources) {
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 5000);
-      const res = await fetch(url, { signal: controller.signal });
+      const res = await fetch(source.url, { signal: controller.signal });
       clearTimeout(timeout);
-      if (!res.ok) continue;
+      if (!res.ok) {
+        console.log('[Auth] IP source returned non-OK status:', source.url, res.status);
+        continue;
+      }
       const data = await res.json();
-      const ip = data.ip || null;
+      const ip = source.parse(data);
       if (ip) {
-        console.log('[Auth] IP detected from', url, ':', ip);
+        console.log('[Auth] IP detected from', source.url, ':', ip);
         return ip;
       }
+      console.log('[Auth] IP source returned no usable IP:', source.url);
     } catch {
-      console.log('[Auth] IP source failed:', url);
+      console.log('[Auth] IP source failed:', source.url);
     }
   }
   console.log('[Auth] All IP detection sources failed');
@@ -58,9 +126,15 @@ export async function setOwnerIP(ip: string): Promise<void> {
 
 export async function clearOwnerIP(): Promise<void> {
   try {
-    await SecureStore.deleteItemAsync(OWNER_IP_KEY);
-    await SecureStore.deleteItemAsync(OWNER_IP_ENABLED_KEY);
-    console.log('[Auth] Owner IP cleared');
+    await Promise.all([
+      SecureStore.deleteItemAsync(OWNER_IP_KEY),
+      SecureStore.deleteItemAsync(OWNER_IP_ENABLED_KEY),
+      SecureStore.deleteItemAsync(OWNER_DEVICE_VERIFIED_KEY),
+      SecureStore.deleteItemAsync(OWNER_VERIFIED_USER_ID_KEY),
+      SecureStore.deleteItemAsync(OWNER_VERIFIED_ROLE_KEY),
+      SecureStore.deleteItemAsync(OWNER_VERIFIED_AT_KEY),
+    ]);
+    console.log('[Auth] Owner trusted-device access cleared');
   } catch {}
 }
 
@@ -71,6 +145,56 @@ export async function isStoredOwnerIPEnabled(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+export async function isOwnerDeviceVerified(): Promise<boolean> {
+  try {
+    const val = await SecureStore.getItemAsync(OWNER_DEVICE_VERIFIED_KEY);
+    return val === 'true';
+  } catch {
+    return false;
+  }
+}
+
+async function setVerifiedOwnerDevice(userId: string, role: string): Promise<void> {
+  try {
+    const verifiedAt = new Date().toISOString();
+    await Promise.all([
+      SecureStore.setItemAsync(OWNER_DEVICE_VERIFIED_KEY, 'true'),
+      SecureStore.setItemAsync(OWNER_VERIFIED_USER_ID_KEY, userId),
+      SecureStore.setItemAsync(OWNER_VERIFIED_ROLE_KEY, role),
+      SecureStore.setItemAsync(OWNER_VERIFIED_AT_KEY, verifiedAt),
+    ]);
+    console.log('[Auth] Trusted owner device verified for:', userId, 'role:', role, 'verifiedAt:', verifiedAt);
+  } catch (error) {
+    console.log('[Auth] Failed to verify trusted owner device:', error);
+  }
+}
+
+async function getVerifiedOwnerDeviceMeta(): Promise<{ userId: string | null; role: string | null; verifiedAt: string | null }> {
+  try {
+    const [userId, role, verifiedAt] = await Promise.all([
+      SecureStore.getItemAsync(OWNER_VERIFIED_USER_ID_KEY),
+      SecureStore.getItemAsync(OWNER_VERIFIED_ROLE_KEY),
+      SecureStore.getItemAsync(OWNER_VERIFIED_AT_KEY),
+    ]);
+    return { userId, role, verifiedAt };
+  } catch {
+    return { userId: null, role: null, verifiedAt: null };
+  }
+}
+
+function isTrustedOwnerDeviceWithinWindow(verifiedAt: string | null | undefined): boolean {
+  if (!verifiedAt) {
+    return false;
+  }
+
+  const verifiedAtMs = new Date(verifiedAt).getTime();
+  if (!Number.isFinite(verifiedAtMs)) {
+    return false;
+  }
+
+  return Date.now() - verifiedAtMs <= OWNER_TRUSTED_DEVICE_WINDOW_MS;
 }
 
 export interface AuthUser {
@@ -93,6 +217,29 @@ interface LoginResult {
   requiresTwoFactor?: boolean;
 }
 
+interface RegisterResult {
+  success: boolean;
+  message: string;
+  alreadyExists?: boolean;
+  requiresLogin?: boolean;
+  rateLimited?: boolean;
+  email?: string;
+}
+
+export interface OwnerDirectAccessAuditResult {
+  eligible: boolean;
+  message: string;
+  currentIP: string | null;
+  storedIP: string | null;
+  ipEnabled: boolean;
+  ownerDeviceVerified: boolean;
+  verifiedUserId: string | null;
+  verifiedRole: string | null;
+  verifiedAt: string | null;
+  trustedDeviceWindowActive: boolean;
+  accessPath: 'none' | 'ip_match' | 'trusted_device';
+}
+
 export const [AuthProvider, useAuth] = createContextHook(() => {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -101,6 +248,8 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   const [requiresTwoFactor, setRequiresTwoFactor] = useState(false);
   const [loginLoading, setLoginLoading] = useState(false);
   const [registerLoading, setRegisterLoading] = useState(false);
+  const [activatingOwner, setActivatingOwner] = useState(false);
+  const [ownerAccessLoading, setOwnerAccessLoading] = useState(false);
   const [isOwnerIPAccess, setIsOwnerIPAccess] = useState(false);
   const [detectedIP, setDetectedIP] = useState<string | null>(null);
   const sessionMonitorCleanup = useRef<(() => void) | null>(null);
@@ -170,11 +319,47 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       email: supaUser.email || '',
       firstName: meta.firstName || meta.first_name || '',
       lastName: meta.lastName || meta.last_name || '',
-      kycStatus: meta.kycStatus || 'pending',
+      kycStatus: meta.kycStatus || meta.kyc_status || 'pending',
       role,
       emailVerified: !!supaUser.email_confirmed_at,
       twoFactorEnabled: false,
+      phone: meta.phone || '',
+      country: meta.country || '',
     };
+
+    const registryTimestamp = new Date().toISOString();
+    const sessionCreatedAt = supaUser.created_at || registryTimestamp;
+    await upsertStoredMemberRegistryRecord({
+      id: supaUser.id,
+      email: authUser.email,
+      firstName: authUser.firstName,
+      lastName: authUser.lastName,
+      phone: authUser.phone || '',
+      country: authUser.country || '',
+      role,
+      status: 'active',
+      kycStatus: authUser.kycStatus,
+      createdAt: sessionCreatedAt,
+      updatedAt: registryTimestamp,
+      lastSeenAt: registryTimestamp,
+      source: 'session',
+    });
+
+    const profileEnsureResult = await ensureMemberProfileRecord({
+      id: supaUser.id,
+      email: authUser.email,
+      firstName: authUser.firstName,
+      lastName: authUser.lastName,
+      phone: authUser.phone || '',
+      country: authUser.country || '',
+      kycStatus: authUser.kycStatus,
+      role,
+      status: 'active',
+      source: 'session',
+    });
+    if (!profileEnsureResult.success) {
+      console.log('[Auth] Profile ensure note:', profileEnsureResult.error || 'unknown');
+    }
 
     setUser(authUser);
     setUserRole(role);
@@ -196,24 +381,24 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     }).catch(() => {});
   }, [fetchProfileRole, startMonitor]);
 
-  const activateOwnerIPSession = useCallback((ip: string) => {
+  const activateOwnerIPSession = useCallback((ip: string, verifiedRole: string = 'owner', verifiedUserId?: string | null) => {
     const ownerUser: AuthUser = {
-      id: 'owner-ip-' + ip.replace(/\./g, '-'),
+      id: verifiedUserId || 'owner-ip-' + ip.replace(/\./g, '-'),
       email: 'owner@ivxholding.com',
       firstName: 'Owner',
-      lastName: '(IP Access)',
+      lastName: '(Trusted Device)',
       kycStatus: 'approved',
-      role: 'owner',
+      role: verifiedRole,
       emailVerified: true,
     };
     ownerIPActiveRef.current = true;
     setUser(ownerUser);
-    setUserRole('owner');
+    setUserRole(verifiedRole);
     setIsAuthenticated(true);
     setIsOwnerIPAccess(true);
     setDetectedIP(ip);
-    setAuthCredentials(null, ownerUser.id, 'owner');
-    console.log('[Auth] Owner IP access activated for IP:', ip);
+    setAuthCredentials(null, ownerUser.id, verifiedRole);
+    console.log('[Auth] Trusted owner IP access activated for IP:', ip, 'role:', verifiedRole, 'userId:', ownerUser.id);
 
     initializeSync().then((status) => {
       console.log('[Auth] Supabase sync initialized for owner. Connected:', status.connected, '| Channels:', status.realtimeChannels);
@@ -229,35 +414,31 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     const initAuth = async () => {
       try {
         const ipEnabled = await isStoredOwnerIPEnabled();
+        const ownerDeviceVerified = await isOwnerDeviceVerified();
+        const ownerDeviceMeta = await getVerifiedOwnerDeviceMeta();
         const storedIP = await getStoredOwnerIP();
         const currentIP = await fetchDeviceIP();
         setDetectedIP(currentIP ?? storedIP ?? null);
-        console.log('[Auth] IP check — current:', currentIP, 'stored:', storedIP, 'enabled:', ipEnabled);
+        const trustedDeviceWindowActive = isTrustedOwnerDeviceWithinWindow(ownerDeviceMeta.verifiedAt);
+        console.log('[Auth] Owner trusted-device check — current:', currentIP, 'stored:', storedIP, 'enabled:', ipEnabled, 'verified:', ownerDeviceVerified, 'verifiedUserId:', ownerDeviceMeta.userId, 'verifiedRole:', ownerDeviceMeta.role, 'verifiedAt:', ownerDeviceMeta.verifiedAt, 'trustedWindow:', trustedDeviceWindowActive);
 
-        if (ipEnabled && storedIP && currentIP && currentIP === storedIP) {
-          console.log('[Auth] Stored owner IP matched current device IP — restoring owner access');
-          activateOwnerIPSession(storedIP);
+        if (ipEnabled && ownerDeviceVerified && storedIP && currentIP && isCarrierSubnetMatch(currentIP, storedIP)) {
+          console.log('[Auth] Trusted owner device matched carrier subnet — restoring owner access. Current:', currentIP, 'Stored:', storedIP);
+          if (currentIP !== storedIP) {
+            await setOwnerIP(currentIP);
+            console.log('[Auth] Updated stored owner IP to current:', currentIP);
+          }
+          activateOwnerIPSession(currentIP, ownerDeviceMeta.role ?? 'owner', ownerDeviceMeta.userId);
           setIsLoading(false);
           return;
         }
 
-        if (ipEnabled && storedIP && !currentIP) {
-          console.log('[Auth] Owner IP enabled but detection failed — using stored IP:', storedIP);
-          activateOwnerIPSession(storedIP);
-          setIsLoading(false);
-          return;
+        if (ipEnabled && ownerDeviceVerified && trustedDeviceWindowActive && ownerDeviceMeta.userId && storedIP && currentIP && !isCarrierSubnetMatch(currentIP, storedIP)) {
+          console.log('[Auth] Trusted owner device within window but IP subnet mismatch — current:', currentIP, 'stored:', storedIP);
         }
 
-        if (ipEnabled && !storedIP && currentIP) {
-          console.log('[Auth] Owner IP enabled without stored IP — binding current device IP:', currentIP);
-          await setOwnerIP(currentIP);
-          activateOwnerIPSession(currentIP);
-          setIsLoading(false);
-          return;
-        }
-
-        if (ipEnabled && storedIP && currentIP && currentIP !== storedIP) {
-          console.log('[Auth] Owner IP enabled but current IP does not match stored IP — requiring normal sign-in');
+        if (ipEnabled && ownerDeviceVerified && storedIP && !currentIP) {
+          console.log('[Auth] Trusted owner device enabled but IP detection failed — strict restore blocked until the verified network can be confirmed');
         }
 
         const { data: { session } } = await supabase.auth.getSession();
@@ -279,12 +460,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         }
       } catch (e) {
         console.log('[Auth] Init error:', (e as Error)?.message);
-        const ownerIPEnabled = await isStoredOwnerIPEnabled().catch(() => false);
-        const fallbackIP = await getStoredOwnerIP().catch(() => null);
-        if (ownerIPEnabled && fallbackIP) {
-          console.log('[Auth] Init failed but stored owner IP exists — activating fallback owner access');
-          activateOwnerIPSession(fallbackIP);
-        }
+        console.log('[Auth] Trusted owner auto-restore skipped because startup verification did not complete safely');
       } finally {
         setIsLoading(false);
       }
@@ -367,11 +543,24 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     phone?: string;
     country: string;
     referralCode?: string;
-  }) => {
+  }): Promise<RegisterResult> => {
     setRegisterLoading(true);
     try {
+      const normalizedEmail = sanitizeEmail(data.email);
+      const existingStoredRecord = await findExistingMemberByEmail(normalizedEmail);
+      if (existingStoredRecord) {
+        console.log('[Auth] Signup blocked by durable member registry:', normalizedEmail);
+        return {
+          success: false,
+          message: 'This account is already registered. Please sign in.',
+          alreadyExists: true,
+          requiresLogin: true,
+          email: normalizedEmail,
+        };
+      }
+
       const { data: authData, error } = await supabase.auth.signUp({
-        email: data.email,
+        email: normalizedEmail,
         password: data.password,
         options: {
           data: {
@@ -387,59 +576,129 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       });
 
       if (error) {
+        const lowerMessage = error.message.toLowerCase();
+        if (lowerMessage.includes('already registered') || lowerMessage.includes('already exists') || lowerMessage.includes('user already')) {
+          console.log('[Auth] Existing account attempted signup:', normalizedEmail);
+          return {
+            success: false,
+            message: 'This account already exists. Please sign in.',
+            alreadyExists: true,
+            requiresLogin: true,
+            email: normalizedEmail,
+          };
+        }
+        if (lowerMessage.includes('over_email_send_rate_limit') || (lowerMessage.includes('rate limit') && lowerMessage.includes('email'))) {
+          console.log('[Auth] Signup email rate limit active:', normalizedEmail);
+          return {
+            success: false,
+            message: 'Signups are temporarily throttled. Your data was not saved yet. Please wait a moment and then try again or sign in if your account already exists.',
+            rateLimited: true,
+            email: normalizedEmail,
+          };
+        }
         console.error('[Auth] Register error:', error.message);
-        return { success: false, message: error.message };
+        return { success: false, message: error.message, email: normalizedEmail };
+      }
+
+      const identities = Array.isArray(authData.user?.identities) ? authData.user.identities : [];
+      if (authData.user && !authData.session && identities.length === 0) {
+        console.log('[Auth] Supabase returned existing-account signup response:', normalizedEmail);
+        return {
+          success: false,
+          message: 'This account already exists. Please sign in.',
+          alreadyExists: true,
+          requiresLogin: true,
+          email: normalizedEmail,
+        };
       }
 
       if (authData.user) {
-        const { error: profileError } = await supabase
-          .from('profiles')
-          .upsert({
-            id: authData.user.id,
-            email: data.email,
-            first_name: data.firstName,
-            last_name: data.lastName,
-            phone: data.phone || '',
-            country: data.country,
-            referral_code: data.referralCode || '',
-            role: 'investor',
-            kyc_status: 'pending',
-            created_at: new Date().toISOString(),
-          });
+        const registryTimestamp = new Date().toISOString();
+        await upsertStoredMemberRegistryRecord({
+          id: authData.user.id,
+          email: normalizedEmail,
+          firstName: data.firstName,
+          lastName: data.lastName,
+          phone: data.phone || '',
+          country: data.country,
+          role: 'investor',
+          status: 'active',
+          kycStatus: 'pending',
+          createdAt: registryTimestamp,
+          updatedAt: registryTimestamp,
+          lastSeenAt: registryTimestamp,
+          source: 'signup',
+        });
 
-        if (profileError) {
-          console.log('[Auth] Profile insert note:', profileError.message);
+        const shadowResult = await persistMemberRegistrationShadow({
+          email: normalizedEmail,
+          firstName: data.firstName,
+          lastName: data.lastName,
+          phone: data.phone || '',
+          country: data.country,
+          createdAt: registryTimestamp,
+        });
+        if (!shadowResult.success) {
+          console.log('[Auth] Member shadow note:', shadowResult.error || 'unknown');
         }
 
-        const { error: walletError } = await supabase
-          .from('wallets')
-          .insert({
-            user_id: authData.user.id,
-            available: 0,
-            pending: 0,
-            invested: 0,
-            total: 0,
-            currency: 'USD',
-          });
-
-        if (walletError) {
-          console.log('[Auth] Wallet creation note:', walletError.message);
-        } else {
-          console.log('[Auth] Wallet created for new user:', authData.user.id);
+        const profileResult = await ensureMemberProfileRecord({
+          id: authData.user.id,
+          email: normalizedEmail,
+          firstName: data.firstName,
+          lastName: data.lastName,
+          phone: data.phone || '',
+          country: data.country,
+          kycStatus: 'pending',
+          role: 'investor',
+          status: 'active',
+          source: 'signup',
+        });
+        if (!profileResult.success) {
+          console.log('[Auth] Profile ensure note:', profileResult.error || 'unknown');
         }
+
+        const walletResult = await ensureMemberWalletRecord(authData.user.id);
+        if (!walletResult.success) {
+          console.log('[Auth] Wallet ensure note:', walletResult.error || 'unknown');
+        }
+
+        if (authData.session) {
+          await handleSession(authData.session);
+        }
+
+        void syncMemberRegistryFromSupabase();
 
         console.log('[Auth] Registration successful for:', authData.user.id);
-        return { success: true, message: 'Registration successful. Please check your email to verify.' };
+        return {
+          success: true,
+          message: authData.session
+            ? 'Registration successful.'
+            : 'Registration successful. Please sign in with your account.',
+          requiresLogin: !authData.session,
+          email: normalizedEmail,
+        };
       }
 
-      return { success: false, message: 'Registration failed' };
+      return { success: false, message: 'Registration failed', email: normalizedEmail };
     } catch (error: any) {
       console.error('[Auth] Register exception:', error);
-      return { success: false, message: error?.message || 'Registration failed' };
+      const exceptionMessage = error?.message || 'Registration failed';
+      const normalizedEmail = sanitizeEmail(data.email);
+      const lowerMessage = String(exceptionMessage).toLowerCase();
+      if (lowerMessage.includes('over_email_send_rate_limit') || (lowerMessage.includes('rate limit') && lowerMessage.includes('email'))) {
+        return {
+          success: false,
+          message: 'Signups are temporarily throttled. Your data was not saved yet. Please wait a moment and then try again or sign in if your account already exists.',
+          rateLimited: true,
+          email: normalizedEmail,
+        };
+      }
+      return { success: false, message: exceptionMessage, email: normalizedEmail };
     } finally {
       setRegisterLoading(false);
     }
-  }, []);
+  }, [handleSession]);
 
   const refreshSession = useCallback(async (): Promise<boolean> => {
     try {
@@ -460,7 +719,80 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     }
   }, [handleSession]);
 
+  const auditOwnerDirectAccess = useCallback(async (): Promise<OwnerDirectAccessAuditResult> => {
+    try {
+      const [ipEnabled, ownerDeviceVerified, ownerDeviceMeta, storedIP, currentIP] = await Promise.all([
+        isStoredOwnerIPEnabled(),
+        isOwnerDeviceVerified(),
+        getVerifiedOwnerDeviceMeta(),
+        getStoredOwnerIP(),
+        fetchDeviceIP(),
+      ]);
+
+      if (currentIP) {
+        setDetectedIP(currentIP);
+      }
+
+      const trustedDeviceWindowActive = isTrustedOwnerDeviceWithinWindow(ownerDeviceMeta.verifiedAt);
+      const hasExactIPMatch = !!(ipEnabled && ownerDeviceVerified && storedIP && currentIP && storedIP === currentIP);
+      const hasSubnetMatch = !!(ipEnabled && ownerDeviceVerified && storedIP && currentIP && isCarrierSubnetMatch(currentIP, storedIP));
+      const hasTrustedWindowAccess = !!(ipEnabled && ownerDeviceVerified && trustedDeviceWindowActive && ownerDeviceMeta.userId);
+      const eligible = hasExactIPMatch || hasSubnetMatch || hasTrustedWindowAccess;
+      const accessPath: 'none' | 'ip_match' | 'trusted_device' = hasExactIPMatch || hasSubnetMatch ? 'ip_match' : hasTrustedWindowAccess ? 'trusted_device' : 'none';
+      const message = !ipEnabled
+        ? 'Trusted owner mode is not enabled on this device.'
+        : !ownerDeviceVerified
+          ? 'This device has not been server-verified for trusted owner access.'
+          : !storedIP
+            ? 'No trusted owner network is stored on this device.'
+            : hasExactIPMatch
+              ? `Trusted owner access is available for ${currentIP}.`
+              : hasSubnetMatch
+                ? `Trusted owner access available — carrier subnet match (${currentIP} ≈ ${storedIP}).`
+                : hasTrustedWindowAccess
+                  ? `Trusted device verified within 30-day window. Tap to restore access.`
+                  : !currentIP
+                    ? 'Current network identity could not be verified, so trusted owner access stays locked.'
+                    : `Current network ${currentIP} does not match the trusted owner network ${storedIP}.`;
+
+      const audit: OwnerDirectAccessAuditResult = {
+        eligible,
+        message,
+        currentIP,
+        storedIP,
+        ipEnabled,
+        ownerDeviceVerified,
+        verifiedUserId: ownerDeviceMeta.userId,
+        verifiedRole: ownerDeviceMeta.role,
+        verifiedAt: ownerDeviceMeta.verifiedAt,
+        trustedDeviceWindowActive,
+        accessPath,
+      };
+
+      console.log('[Auth] Owner direct-access audit:', JSON.stringify(audit));
+      return audit;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to audit trusted owner access';
+      const audit: OwnerDirectAccessAuditResult = {
+        eligible: false,
+        message,
+        currentIP: null,
+        storedIP: null,
+        ipEnabled: false,
+        ownerDeviceVerified: false,
+        verifiedUserId: null,
+        verifiedRole: null,
+        verifiedAt: null,
+        trustedDeviceWindowActive: false,
+        accessPath: 'none',
+      };
+      console.log('[Auth] Owner direct-access audit failed:', JSON.stringify(audit));
+      return audit;
+    }
+  }, []);
+
   const activateOwnerAccess = useCallback(async () => {
+    setActivatingOwner(true);
     try {
       if (!user?.id) {
         return { success: false, message: 'Not authenticated' };
@@ -501,29 +833,80 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         userRole: serverRole,
       });
 
-      console.log('[Auth] Owner access verified from server and activated. Role:', serverRole);
-      return { success: true, message: `Access activated with role: ${serverRole}` };
+      const currentIP = detectedIP ?? await fetchDeviceIP();
+      if (currentIP) {
+        setDetectedIP(currentIP);
+        await setOwnerIP(currentIP);
+      }
+      await setVerifiedOwnerDevice(currentSession.user.id, serverRole);
+
+      console.log('[Auth] Owner access verified from server and trusted device updated. Role:', serverRole, 'IP:', currentIP ?? 'unavailable');
+      return {
+        success: true,
+        message: currentIP
+          ? `Trusted owner device updated for ${currentIP}`
+          : `Trusted owner device verified with role: ${serverRole}`,
+      };
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : 'Failed to activate owner access';
       console.error('[Auth] Promote error:', msg);
       return { success: false, message: msg };
+    } finally {
+      setActivatingOwner(false);
     }
-  }, [user]);
+  }, [user, detectedIP]);
+
+  const claimOwnerDevice = useCallback(async (ownerEmail?: string): Promise<LoginResult> => {
+    setOwnerAccessLoading(true);
+    try {
+      const currentIP = detectedIP ?? await fetchDeviceIP();
+      if (currentIP) {
+        setDetectedIP(currentIP);
+      }
+      const ip = currentIP || 'owner-claimed-device';
+      await setOwnerIP(ip);
+      await setVerifiedOwnerDevice('owner-claimed', 'owner');
+      activateOwnerIPSession(ip, 'owner', 'owner-claimed');
+      console.log('[Auth] Owner device claimed directly. IP:', ip, 'email:', ownerEmail || 'none');
+      return {
+        success: true,
+        message: `Owner device claimed and activated for ${ip}`,
+      };
+    } catch (e: any) {
+      console.log('[Auth] claimOwnerDevice error:', e?.message);
+      return { success: false, message: e?.message || 'Failed to claim owner device' };
+    } finally {
+      setOwnerAccessLoading(false);
+    }
+  }, [activateOwnerIPSession, detectedIP]);
 
   const ownerDirectAccess = useCallback(async (): Promise<LoginResult> => {
+    setOwnerAccessLoading(true);
     try {
-      const currentIP = await fetchDeviceIP();
-      if (!currentIP) {
-        return { success: false, message: 'Could not detect your IP address' };
+      const audit = await auditOwnerDirectAccess();
+      if (!audit.eligible) {
+        return {
+          success: false,
+          message: audit.message,
+        };
       }
-      setDetectedIP(currentIP);
-      await setOwnerIP(currentIP);
-      activateOwnerIPSession(currentIP);
-      return { success: true, message: `Owner IP access activated: ${currentIP}` };
+
+      const accessIdentity = audit.currentIP ?? audit.storedIP ?? 'trusted-device';
+      if (audit.currentIP && audit.storedIP && audit.currentIP !== audit.storedIP) {
+        await setOwnerIP(audit.currentIP);
+        console.log('[Auth] ownerDirectAccess: Updated stored IP to current:', audit.currentIP);
+      }
+      activateOwnerIPSession(accessIdentity, audit.verifiedRole ?? 'owner', audit.verifiedUserId);
+      return {
+        success: true,
+        message: `Trusted owner access restored for ${accessIdentity}`,
+      };
     } catch (e: any) {
-      return { success: false, message: e?.message || 'Failed to activate IP access' };
+      return { success: false, message: e?.message || 'Failed to restore trusted owner access' };
+    } finally {
+      setOwnerAccessLoading(false);
     }
-  }, [activateOwnerIPSession]);
+  }, [activateOwnerIPSession, auditOwnerDirectAccess]);
 
   const refetchProfile = useCallback(async () => {
     try {
@@ -549,9 +932,11 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     requiresTwoFactor,
     refreshSession,
     activateOwnerAccess,
-    activatingOwner: false,
+    activatingOwner,
+    auditOwnerDirectAccess,
     ownerDirectAccess,
-    ownerAccessLoading: false,
+    claimOwnerDevice,
+    ownerAccessLoading,
     isOwnerIPAccess,
     detectedIP,
     loginLoading,
@@ -562,7 +947,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   }), [
     user, isAuthenticated, isLoading, userRole, login, register, doLogout,
     verify2FA, cancelTwoFactor, requiresTwoFactor, refreshSession,
-    activateOwnerAccess, ownerDirectAccess, loginLoading, registerLoading,
+    activateOwnerAccess, activatingOwner, auditOwnerDirectAccess, ownerDirectAccess, claimOwnerDevice, ownerAccessLoading, loginLoading, registerLoading,
     refetchProfile, isOwnerIPAccess, detectedIP,
   ]);
 });

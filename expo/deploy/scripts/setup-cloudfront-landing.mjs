@@ -39,6 +39,11 @@ const DOMAIN = "ivxholding.com";
 const WWW_DOMAIN = "www.ivxholding.com";
 const S3_BUCKET = "ivxholding.com";
 const REGION = (process.env.AWS_REGION || "us-east-1").trim();
+const API_ORIGIN_URL = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || process.env.EXPO_PUBLIC_API_BASE_URL || "").trim().replace(/\/$/, "");
+const API_ORIGIN_HOST = API_ORIGIN_URL ? new URL(API_ORIGIN_URL).host : "";
+const CACHE_POLICY_CACHING_OPTIMIZED = "658327ea-f89d-4fab-a63d-7e88639e58f6";
+const CACHE_POLICY_CACHING_DISABLED = "4135ea2d-6df8-44a3-9df3-4b5a84be39ad";
+const ORIGIN_REQUEST_POLICY_ALL_VIEWER = "216adef6-5c7f-47e4-b989-5492eafa07d3";
 
 const creds = {
   credentials: {
@@ -112,6 +117,45 @@ async function createDistribution(certArn) {
   step("Step 3: Creating CloudFront Distribution");
 
   const s3WebsiteOrigin = `${S3_BUCKET}.s3-website-${REGION}.amazonaws.com`;
+  const orderedCacheBehaviors = API_ORIGIN_HOST
+    ? {
+        Quantity: 2,
+        Items: [
+          {
+            PathPattern: "/api/*",
+            TargetOriginId: "Api-Origin",
+            ViewerProtocolPolicy: "redirect-to-https",
+            AllowedMethods: {
+              Quantity: 7,
+              Items: ["GET", "HEAD", "OPTIONS", "PUT", "PATCH", "POST", "DELETE"],
+              CachedMethods: {
+                Quantity: 2,
+                Items: ["GET", "HEAD"],
+              },
+            },
+            Compress: true,
+            CachePolicyId: CACHE_POLICY_CACHING_DISABLED,
+            OriginRequestPolicyId: ORIGIN_REQUEST_POLICY_ALL_VIEWER,
+          },
+          {
+            PathPattern: "/health*",
+            TargetOriginId: "Api-Origin",
+            ViewerProtocolPolicy: "redirect-to-https",
+            AllowedMethods: {
+              Quantity: 3,
+              Items: ["GET", "HEAD", "OPTIONS"],
+              CachedMethods: {
+                Quantity: 2,
+                Items: ["GET", "HEAD"],
+              },
+            },
+            Compress: true,
+            CachePolicyId: CACHE_POLICY_CACHING_DISABLED,
+            OriginRequestPolicyId: ORIGIN_REQUEST_POLICY_ALL_VIEWER,
+          },
+        ],
+      }
+    : { Quantity: 0 };
 
   const distributionConfig = {
     CallerReference: `ivx-landing-${Date.now()}`,
@@ -125,7 +169,7 @@ async function createDistribution(certArn) {
       Items: [DOMAIN, WWW_DOMAIN],
     },
     Origins: {
-      Quantity: 1,
+      Quantity: API_ORIGIN_HOST ? 2 : 1,
       Items: [
         {
           Id: "S3-Website-ivxholding",
@@ -140,6 +184,19 @@ async function createDistribution(certArn) {
             },
           },
         },
+        ...(API_ORIGIN_HOST ? [{
+          Id: "Api-Origin",
+          DomainName: API_ORIGIN_HOST,
+          CustomOriginConfig: {
+            HTTPPort: 80,
+            HTTPSPort: 443,
+            OriginProtocolPolicy: "https-only",
+            OriginSslProtocols: {
+              Quantity: 1,
+              Items: ["TLSv1.2"],
+            },
+          },
+        }] : []),
       ],
     },
     DefaultCacheBehavior: {
@@ -154,8 +211,9 @@ async function createDistribution(certArn) {
         },
       },
       Compress: true,
-      CachePolicyId: "658327ea-f89d-4fab-a63d-7e88639e58f6",
+      CachePolicyId: CACHE_POLICY_CACHING_OPTIMIZED,
     },
+    OrderedCacheBehaviors: orderedCacheBehaviors,
     CustomErrorResponses: {
       Quantity: 2,
       Items: [
@@ -188,6 +246,11 @@ async function createDistribution(certArn) {
   };
 
   log(`Creating distribution with origin: ${s3WebsiteOrigin}`);
+  if (API_ORIGIN_HOST) {
+    log(`API origin enabled for /api/* and /health*: ${API_ORIGIN_HOST}`);
+  } else {
+    warn('API origin not configured — /api/* will continue to miss CloudFront bypass routing until EXPO_PUBLIC_RORK_API_BASE_URL is set');
+  }
   log(`Aliases: ${DOMAIN}, ${WWW_DOMAIN}`);
   log(`SSL Certificate: ${certArn}`);
   log("Viewer protocol: redirect-to-https");

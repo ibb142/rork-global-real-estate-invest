@@ -2,6 +2,21 @@ import type { PublishedDealCardModel } from '@/lib/published-deal-card-model';
 
 export const INVESTOR_MEMBER_AGREEMENT_VERSION = '2026-04-05';
 
+export type InvestorEntityType = 'individual' | 'corporate';
+export type InvestorDocumentType = 'drivers_license' | 'passport' | 'national_id' | 'tax_id';
+
+export const INVESTOR_ENTITY_OPTIONS = [
+  { id: 'individual' as const, label: 'Individual investor' },
+  { id: 'corporate' as const, label: 'Company / entity investor' },
+] as const;
+
+export const IDENTIFICATION_TYPE_OPTIONS = [
+  { id: 'drivers_license' as const, label: 'Driver\'s license' },
+  { id: 'passport' as const, label: 'Passport' },
+  { id: 'national_id' as const, label: 'National ID' },
+  { id: 'tax_id' as const, label: 'Tax ID / residency card' },
+] as const;
+
 export const INVESTMENT_RANGE_OPTIONS = [
   '$1,000 – $5,000',
   '$5,000 – $10,000',
@@ -40,27 +55,27 @@ export const INVESTOR_TIMELINE_STEPS = [
   {
     id: 'intake',
     label: 'Intake review',
-    detail: 'We review your waitlist details, call preference, and wallet readiness.',
+    detail: 'We review your waitlist details, call preference, identity references, and onboarding readiness.',
   },
   {
     id: 'agreement',
     label: 'Agreement + member onboarding',
-    detail: 'Members sign platform terms, investment acknowledgements, and complete identity checks.',
+    detail: 'Members sign platform terms, investment acknowledgements, tax-responsibility disclosures, and complete identity checks.',
   },
   {
     id: 'wallet',
     label: 'Wallet + funding',
-    detail: 'Funding source, transaction records, and account statements are activated before investing.',
+    detail: 'Funding source, transaction records, source-of-funds review, and account statements are activated before investing.',
   },
   {
     id: 'allocation',
     label: 'Property allocation',
-    detail: 'You review deal timelines, target sale assumptions, and projected ownership economics.',
+    detail: 'You review deal timelines, target sale assumptions, entity economics, and projected ownership economics.',
   },
   {
     id: 'exit',
     label: 'Distributions + exit',
-    detail: 'Investor returns depend on deal performance, distributions, refinance, or property sale.',
+    detail: 'Investor returns depend on deal performance, distributions, refinance, tax treatment, and the final property sale or exit event.',
   },
 ] as const;
 
@@ -68,38 +83,53 @@ export const INVESTOR_MEMBER_AGREEMENT_SECTIONS = [
   {
     id: 'eligibility',
     title: 'Eligibility and truthful information',
-    text: 'You confirm that all information you submit to IVX is accurate, complete, and belongs to you. IVX may pause or deny access if information is incomplete, misleading, or cannot be verified.',
+    text: 'You confirm that all information you submit to IVX is accurate, complete, current, and belongs to you or your authorized entity. IVX may pause or deny access if information is incomplete, misleading, or cannot be verified.',
   },
   {
-    id: 'risk',
-    title: 'No guaranteed returns',
-    text: 'All investment illustrations, sale projections, timelines, yields, IRR figures, and return targets are estimates only. Capital is at risk and losses, delays, or lower returns may occur.',
+    id: 'identity',
+    title: 'Identity, KYC, AML, and document review',
+    text: 'IVX may request government-issued ID, passport, national ID, tax identification references, source-of-funds support, beneficial-owner information, entity formation records, and any other compliance material needed to satisfy KYC, AML, sanctions, fraud, or operational review requirements.',
+  },
+  {
+    id: 'tax',
+    title: 'Tax reporting remains your responsibility',
+    text: 'Each investor remains solely responsible for determining, filing, and paying any taxes, withholding, reporting obligations, or regulatory filings that apply to their account, entity, investment activity, distributions, and exit proceeds in every relevant jurisdiction.',
   },
   {
     id: 'wallet',
     title: 'Wallet, transaction, and recordkeeping',
-    text: 'Members are responsible for using verified funding sources only. IVX may maintain transaction records, statements, wallet activity, suitability notes, and investor communications for compliance and operational purposes.',
+    text: 'Members are responsible for using verified funding sources only. IVX may maintain transaction records, statements, wallet activity, suitability notes, compliance reviews, and investor communications for legal, security, and operational purposes.',
   },
   {
     id: 'ownership',
     title: 'Fractional ownership economics',
-    text: 'Investor ownership percentages, distributions, fees, and exit proceeds are determined by the governing offering documents, capital stack, and the final transaction documents for each property.',
+    text: 'Investor ownership percentages, distributions, fees, tax treatment, and exit proceeds are determined by the governing offering documents, capital stack, entity structure, and the final transaction documents for each property.',
+  },
+  {
+    id: 'entity',
+    title: 'Entity authority and beneficial ownership',
+    text: 'If you register for a company, trust, fund, or other entity, you confirm that you are authorized to act for that entity, that you will provide true beneficial-owner information, and that IVX may require additional company tax, formation, and signer documentation before activation.',
   },
   {
     id: 'compliance',
-    title: 'Compliance, disputes, and platform protections',
-    text: 'IVX may reject, reverse, suspend, or delay onboarding, funding, or member access where needed for legal, compliance, fraud, AML, sanctions, or operational review. Platform use remains subject to the full IVX legal documents and applicable law.',
+    title: 'Compliance, investigations, and platform protections',
+    text: 'IVX may reject, reverse, suspend, restrict, delay, or report onboarding, funding, withdrawals, or member access where needed for legal, compliance, fraud, AML, sanctions, tax, litigation-hold, or operational review. Platform use remains subject to the full IVX legal documents and applicable law.',
   },
 ] as const;
 
-export interface IntakeProofOfFundsFile {
+export type InvestorIntakeUploadSource = 'camera' | 'gallery' | 'document_picker';
+
+export interface InvestorIntakeUploadFile {
   uri: string;
   name: string;
   mimeType: string | null;
   size: number | null;
   publicUrl?: string | null;
   storagePath?: string | null;
+  source?: InvestorIntakeUploadSource;
 }
+
+export type IntakeProofOfFundsFile = InvestorIntakeUploadFile;
 
 export interface DealExitProjection {
   baseAssetValue: number;
@@ -156,6 +186,10 @@ export function parseReturnMidpoint(label: string): number {
   }
 
   return Number((((values[0] ?? 0) + (values[1] ?? 0)) / 2).toFixed(1));
+}
+
+export function getIdentificationTypeLabel(type: InvestorDocumentType): string {
+  return IDENTIFICATION_TYPE_OPTIONS.find((option) => option.id === type)?.label ?? 'Identification';
 }
 
 export function getDealExitProjection(deal: Pick<PublishedDealCardModel, 'propertyValue' | 'expectedROI' | 'minInvestment' | 'totalInvestment'>): DealExitProjection {

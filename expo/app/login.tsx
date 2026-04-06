@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import type { OwnerDirectAccessAuditResult } from '@/lib/auth-context';
 import {
   View,
   Text,
@@ -14,7 +15,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams, Href } from 'expo-router';
 import { Mail, Lock, Eye, EyeOff, ArrowLeft, Shield, ChevronRight } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useAuth } from '@/lib/auth-context';
@@ -25,19 +26,36 @@ import { IVX_LOGO_SOURCE } from '@/constants/brand';
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { login, verify2FA, cancelTwoFactor, requiresTwoFactor, loginLoading, verify2FALoading, ownerDirectAccess, isOwnerIPAccess, detectedIP } = useAuth();
+  const params = useLocalSearchParams<{ email?: string; justRegistered?: string }>();
+  const {
+    login,
+    verify2FA,
+    cancelTwoFactor,
+    requiresTwoFactor,
+    loginLoading,
+    verify2FALoading,
+    isOwnerIPAccess,
+    detectedIP,
+    isAuthenticated,
+    isAdmin,
+    auditOwnerDirectAccess,
+    ownerDirectAccess,
+  } = useAuth();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [ownerAccessLoading, setOwnerAccessLoading] = useState<boolean>(false);
-  const [twoFACode, setTwoFACode] = useState(['', '', '', '', '', '']);
+  const [twoFACode, setTwoFACode] = useState<string[]>(['', '', '', '', '', '']);
+  const [failedLoginMessage, setFailedLoginMessage] = useState<string | null>(null);
+  const [ownerRecoveryAudit, setOwnerRecoveryAudit] = useState<OwnerDirectAccessAuditResult | null>(null);
+  const [ownerRecoveryLoading, setOwnerRecoveryLoading] = useState<boolean>(false);
   const twoFARefs = useRef<(TextInput | null)[]>([]);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
   const logoScale = useRef(new Animated.Value(0.85)).current;
   const shakeAnim = useRef(new Animated.Value(0)).current;
+  const registrationAlertShown = useRef(false);
 
   useEffect(() => {
     Animated.parallel([
@@ -46,6 +64,23 @@ export default function LoginScreen() {
       Animated.spring(logoScale, { toValue: 1, tension: 80, friction: 10, useNativeDriver: true }),
     ]).start();
   }, [fadeAnim, slideAnim, logoScale]);
+
+  useEffect(() => {
+    const nextEmail = typeof params.email === 'string' ? params.email.trim() : '';
+    if (nextEmail) {
+      setEmail(nextEmail);
+    }
+  }, [params.email]);
+
+  useEffect(() => {
+    const justRegistered = params.justRegistered === '1' || (Array.isArray(params.justRegistered) && params.justRegistered.includes('1'));
+    if (!justRegistered || registrationAlertShown.current) {
+      return;
+    }
+
+    registrationAlertShown.current = true;
+    Alert.alert('Registration Saved', 'Your account is registered. Next time, only Sign In is required.');
+  }, [params.justRegistered]);
 
   const shake = () => {
     Animated.sequence([
@@ -56,6 +91,38 @@ export default function LoginScreen() {
       Animated.timing(shakeAnim, { toValue: 0, duration: 60, useNativeDriver: true }),
     ]).start();
   };
+
+  const openOwnerAccess = useCallback((source: 'login' | 'login-failure' | 'owner-recovery' = 'login') => {
+    const normalizedEmail = sanitizeEmail(email);
+    router.push({
+      pathname: '/owner-access',
+      params: {
+        source,
+        ...(normalizedEmail ? { email: normalizedEmail } : {}),
+      },
+    } as Href);
+  }, [email, router]);
+
+  const handleOwnerTrustedRestore = useCallback(async () => {
+    setOwnerRecoveryLoading(true);
+    try {
+      const result = await ownerDirectAccess();
+      if (result.success) {
+        setFailedLoginMessage(null);
+        Alert.alert('Owner Access Restored', result.message, [
+          { text: 'Continue', onPress: () => router.replace('/(tabs)' as any) },
+        ]);
+        return;
+      }
+
+      Alert.alert('Trusted Access Blocked', result.message);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to restore trusted owner access';
+      Alert.alert('Trusted Access Blocked', message);
+    } finally {
+      setOwnerRecoveryLoading(false);
+    }
+  }, [ownerDirectAccess, router]);
 
   const handleLogin = async () => {
     if (!email.trim()) {
@@ -82,15 +149,47 @@ export default function LoginScreen() {
       return;
     }
 
+    setFailedLoginMessage(null);
+    setOwnerRecoveryAudit(null);
+
     const result = await login(identifier, password);
     recordAuthAttempt(identifier, result.success || !!result.requiresTwoFactor);
 
     if (!result.success && !result.requiresTwoFactor) {
       shake();
+      const normalizedMessage = result.message || 'Invalid email or password.';
+      setFailedLoginMessage(normalizedMessage);
+
+      const lowerMessage = normalizedMessage.toLowerCase();
+      const shouldAuditOwnerRecovery = lowerMessage.includes('invalid login credentials') || lowerMessage.includes('invalid email or password') || lowerMessage.includes('email not confirmed');
+
+      let audit: OwnerDirectAccessAuditResult | null = null;
+      if (shouldAuditOwnerRecovery) {
+        try {
+          audit = await auditOwnerDirectAccess();
+          setOwnerRecoveryAudit(audit);
+        } catch (error: unknown) {
+          console.log('[Login] Owner recovery audit failed:', error instanceof Error ? error.message : error);
+        }
+      }
+
       const remaining = rateCheck.remainingAttempts - 1;
       const msg = remaining > 0
-        ? `${result.message || 'Invalid email or password.'}\n${remaining} attempt${remaining === 1 ? '' : 's'} remaining.`
-        : result.message || 'Invalid email or password.';
+        ? `${normalizedMessage}\n${remaining} attempt${remaining === 1 ? '' : 's'} remaining.`
+        : normalizedMessage;
+
+      if (audit?.eligible) {
+        Alert.alert(
+          'Owner Access Available',
+          `${msg}\n\nThis device is already verified for trusted owner recovery. You can restore owner access without signing in again.`,
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Restore Owner Access', onPress: () => { void handleOwnerTrustedRestore(); } },
+          ]
+        );
+        return;
+      }
+
       Alert.alert('Sign In Failed', msg);
     }
   };
@@ -120,21 +219,6 @@ export default function LoginScreen() {
       setTwoFACode(['', '', '', '', '', '']);
       twoFARefs.current[0]?.focus();
       Alert.alert('Invalid Code', result.message || 'The 2FA code is incorrect.');
-    }
-  };
-
-  const handleOwnerAccess = async () => {
-    setOwnerAccessLoading(true);
-    try {
-      const result = await ownerDirectAccess();
-      if (!result.success) {
-        shake();
-        Alert.alert('Owner Access Failed', result.message || 'Could not activate owner IP access.');
-        return;
-      }
-      Alert.alert('Owner Access Active', detectedIP ? `Owner access is active for ${detectedIP}.` : result.message);
-    } finally {
-      setOwnerAccessLoading(false);
     }
   };
 
@@ -223,7 +307,7 @@ export default function LoginScreen() {
               transform: [{ translateY: slideAnim }, { translateX: shakeAnim }],
             }]}>
               <Text style={styles.title}>Welcome Back</Text>
-              <Text style={styles.subtitle}>Sign in to your investment portfolio</Text>
+              <Text style={styles.subtitle}>Sign in to your investment portfolio or open the owner recovery path below.</Text>
 
               <View style={styles.fieldGroup}>
                 <Text style={styles.fieldLabel}>Email Address</Text>
@@ -313,26 +397,97 @@ export default function LoginScreen() {
                 )}
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[styles.ownerAccessBtn, ownerAccessLoading && styles.ownerAccessBtnDisabled]}
-                onPress={handleOwnerAccess}
-                disabled={ownerAccessLoading || isLoading}
-                activeOpacity={0.85}
-                testID="login-owner-ip-access"
-              >
-                {ownerAccessLoading ? (
-                  <ActivityIndicator color={Colors.primary} />
-                ) : (
-                  <>
-                    <Shield size={16} color={Colors.primary} />
-                    <Text style={styles.ownerAccessBtnText}>
-                      {isOwnerIPAccess
-                        ? `Owner IP Active${detectedIP ? ` · ${detectedIP}` : ''}`
-                        : 'Use Owner IP Access'}
+              {(isOwnerIPAccess || (isAuthenticated && isAdmin) || ownerRecoveryAudit?.eligible) ? (
+                <TouchableOpacity
+                  style={styles.ownerAccessNotice}
+                  testID="login-owner-access-notice"
+                  activeOpacity={0.82}
+                  onPress={ownerRecoveryAudit?.eligible ? () => { void handleOwnerTrustedRestore(); } : () => openOwnerAccess('owner-recovery')}
+                  disabled={ownerRecoveryLoading}
+                >
+                  {ownerRecoveryLoading ? (
+                    <ActivityIndicator size="small" color={Colors.primary} />
+                  ) : (
+                    <Shield size={16} color={isOwnerIPAccess || ownerRecoveryAudit?.eligible ? Colors.success : Colors.primary} />
+                  )}
+                  <View style={styles.ownerAccessNoticeContent}>
+                    <Text style={styles.ownerAccessNoticeText}>
+                      {ownerRecoveryAudit?.eligible
+                        ? `Trusted owner recovery available${ownerRecoveryAudit.currentIP ? ` · ${ownerRecoveryAudit.currentIP}` : ''}`
+                        : isOwnerIPAccess
+                          ? `Trusted owner device recognized${detectedIP ? ` · ${detectedIP}` : ''}`
+                          : 'Verified owner session detected. Open your owner access hub.'}
                     </Text>
-                  </>
-                )}
+                    <Text style={styles.ownerAccessLink}>{ownerRecoveryAudit?.eligible ? 'Restore owner access now' : 'Open owner access'}</Text>
+                  </View>
+                  <ChevronRight size={16} color={Colors.primary} />
+                </TouchableOpacity>
+              ) : null}
+
+              <TouchableOpacity
+                style={styles.ownerAlternativeCard}
+                activeOpacity={0.84}
+                onPress={() => openOwnerAccess('login')}
+                testID="login-owner-alternative"
+              >
+                <View style={styles.ownerAlternativeIconWrap}>
+                  <Shield size={18} color={Colors.black} />
+                </View>
+                <View style={styles.ownerAlternativeContent}>
+                  <Text style={styles.ownerAlternativeTitle}>Owner access alternative</Text>
+                  <Text style={styles.ownerAlternativeText}>If this is your project owner account, do not use public signup. Open Owner Access to restore trusted-device access, confirm the carried owner email, or verify your owner route.</Text>
+                </View>
+                <ChevronRight size={18} color={Colors.primary} />
               </TouchableOpacity>
+
+              {failedLoginMessage ? (
+                <View style={styles.loginFailureCard} testID="login-failure-card">
+                  <View style={styles.loginFailureHeader}>
+                    <Shield size={15} color={ownerRecoveryAudit?.eligible ? Colors.success : '#F59E0B'} />
+                    <Text style={styles.loginFailureTitle}>{ownerRecoveryAudit?.eligible ? 'Owner recovery is available' : 'Sign-in needs attention'}</Text>
+                  </View>
+                  <Text style={styles.loginFailureText}>{failedLoginMessage}</Text>
+                  <Text style={styles.loginFailureHint}>
+                    {ownerRecoveryAudit?.eligible
+                      ? 'This device is already trusted. Restore owner access instantly or open the owner hub.'
+                      : 'If this is your owner account, use Owner Access instead of creating a new public account.'}
+                  </Text>
+                  {email.trim() ? (
+                    <View style={styles.failedEmailChip} testID="login-failed-email-chip">
+                      <Text style={styles.failedEmailChipLabel}>Last attempted owner email</Text>
+                      <Text style={styles.failedEmailChipValue}>{sanitizeEmail(email)}</Text>
+                    </View>
+                  ) : null}
+                  <View style={styles.loginFailureActions}>
+                    {ownerRecoveryAudit?.eligible ? (
+                      <TouchableOpacity
+                        style={[styles.loginFailurePrimaryAction, ownerRecoveryLoading && styles.loginFailureActionDisabled]}
+                        activeOpacity={0.84}
+                        onPress={() => { void handleOwnerTrustedRestore(); }}
+                        disabled={ownerRecoveryLoading}
+                        testID="login-restore-owner-access"
+                      >
+                        {ownerRecoveryLoading ? (
+                          <ActivityIndicator size="small" color={Colors.black} />
+                        ) : (
+                          <>
+                            <Text style={styles.loginFailurePrimaryActionText}>Restore owner access</Text>
+                            <ChevronRight size={16} color={Colors.black} />
+                          </>
+                        )}
+                      </TouchableOpacity>
+                    ) : null}
+                    <TouchableOpacity
+                      style={styles.loginFailureSecondaryAction}
+                      activeOpacity={0.84}
+                      onPress={() => openOwnerAccess('login-failure')}
+                      testID="login-open-owner-hub"
+                    >
+                      <Text style={styles.loginFailureSecondaryActionText}>Open owner hub</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ) : null}
 
               <View style={styles.dividerRow}>
                 <View style={styles.divider} />
@@ -489,25 +644,158 @@ const styles = StyleSheet.create({
     fontWeight: '800' as const,
     letterSpacing: 0.3,
   },
-  ownerAccessBtn: {
+  ownerAccessNotice: {
     marginTop: 10,
     borderRadius: 14,
     borderWidth: 1,
     borderColor: Colors.primary + '2A',
     backgroundColor: Colors.primary + '10',
-    height: 48,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  ownerAccessNoticeContent: {
+    flex: 1,
+  },
+  ownerAccessNoticeText: {
+    color: Colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '600' as const,
+  },
+  ownerAccessLink: {
+    marginTop: 4,
+    color: Colors.primary,
+    fontSize: 12,
+    fontWeight: '700' as const,
+  },
+  ownerAlternativeCard: {
+    marginTop: 12,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#3B82F638',
+    backgroundColor: '#07111D',
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  ownerAlternativeIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.primary,
+  },
+  ownerAlternativeContent: {
+    flex: 1,
+  },
+  ownerAlternativeTitle: {
+    color: Colors.text,
+    fontSize: 14,
+    fontWeight: '800' as const,
+  },
+  ownerAlternativeText: {
+    marginTop: 3,
+    color: Colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  loginFailureCard: {
+    marginTop: 14,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#F59E0B30',
+    backgroundColor: '#18120A',
+    padding: 14,
+    gap: 10,
+  },
+  loginFailureHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  loginFailureTitle: {
+    color: Colors.text,
+    fontSize: 13,
+    fontWeight: '800' as const,
+  },
+  loginFailureText: {
+    color: Colors.text,
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '700' as const,
+  },
+  loginFailureHint: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  failedEmailChip: {
+    marginTop: 2,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#FFFFFF12',
+    backgroundColor: '#080F18',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 4,
+  },
+  failedEmailChipLabel: {
+    color: Colors.textTertiary,
+    fontSize: 11,
+    fontWeight: '700' as const,
+    letterSpacing: 0.4,
+    textTransform: 'uppercase' as const,
+  },
+  failedEmailChipValue: {
+    color: Colors.text,
+    fontSize: 14,
+    fontWeight: '700' as const,
+  },
+  loginFailureActions: {
+    flexDirection: 'row',
+    gap: 10,
+    flexWrap: 'wrap' as const,
+  },
+  loginFailurePrimaryAction: {
+    minHeight: 42,
+    borderRadius: 12,
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: 6,
   },
-  ownerAccessBtnDisabled: {
-    opacity: 0.6,
+  loginFailurePrimaryActionText: {
+    color: Colors.black,
+    fontSize: 13,
+    fontWeight: '800' as const,
   },
-  ownerAccessBtnText: {
-    color: Colors.primary,
-    fontSize: 14,
+  loginFailureSecondaryAction: {
+    minHeight: 42,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#FFFFFF14',
+    backgroundColor: '#FFFFFF0A',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loginFailureSecondaryActionText: {
+    color: Colors.text,
+    fontSize: 13,
     fontWeight: '700' as const,
+  },
+  loginFailureActionDisabled: {
+    opacity: 0.6,
   },
   dividerRow: {
     flexDirection: 'row',

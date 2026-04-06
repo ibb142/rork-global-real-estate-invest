@@ -65,6 +65,9 @@ export interface ComputedAnalytics {
   totalEvents: number;
   pageViews: number;
   uniqueSessions: number;
+  topScreens: Array<{ screen: string; views: number; uniqueSessions: number; avgTimeSpent: number; totalTimeSpent: number; pct: number; lastViewed: string }>;
+  topActions: Array<{ action: string; count: number; uniqueSessions: number; avgTimeSpent: number; pct: number; lastTriggered: string }>;
+  timeSpent: { totalTrackedSeconds: number; avgSessionSeconds: number; avgScreenSeconds: number; maxSessionSeconds: number; engagedSessions: number };
   funnel: {
     pageViews: number;
     scroll25: number;
@@ -858,6 +861,188 @@ const CHANNEL_COLORS: Record<string, string> = {
   'Referral': '#0097A7',
 };
 
+function normalizeAnalyticsLabel(value: string): string {
+  return value
+    .replace(/^[#/]+/, '')
+    .replace(/[?].*$/, '')
+    .replace(/\.[a-z0-9]+$/i, '')
+    .replace(/[-_]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (char) => char.toUpperCase()) || 'Unknown';
+}
+
+function getStringProp(props: Record<string, unknown> | undefined, keys: string[]): string {
+  for (const key of keys) {
+    const value = props?.[key];
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
+  }
+  return '';
+}
+
+function getNumericProp(props: Record<string, unknown> | undefined, keys: string[]): number | null {
+  for (const key of keys) {
+    const value = props?.[key];
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+    if (typeof value === 'string') {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+  }
+  return null;
+}
+
+function deriveScreenLabel(event: RawEvent): string {
+  const props = event.properties as Record<string, unknown> | undefined;
+  const rawValue = getStringProp(props, ['screen', 'screenName', 'routeName', 'route', 'pathname', 'path', 'page', 'url', 'href', 'location', 'section']);
+  if (!rawValue) {
+    if (event.event === 'landing_page_view' || event.event === 'landing_view') {
+      return 'Landing';
+    }
+    if (event.event === 'screen_view') {
+      return 'App Screen';
+    }
+    return 'Unknown';
+  }
+  if (rawValue.startsWith('http')) {
+    try {
+      const url = new URL(rawValue);
+      return normalizeAnalyticsLabel(url.pathname || url.hostname);
+    } catch {
+      return normalizeAnalyticsLabel(rawValue);
+    }
+  }
+  return normalizeAnalyticsLabel(rawValue);
+}
+
+function deriveActionLabel(event: RawEvent): string {
+  const props = event.properties as Record<string, unknown> | undefined;
+  const explicitLabel = getStringProp(props, ['label', 'action', 'name', 'target', 'destination', 'cta', 'section']);
+  if (explicitLabel) {
+    return normalizeAnalyticsLabel(explicitLabel);
+  }
+  return normalizeAnalyticsLabel(event.event);
+}
+
+function isScreenViewEvent(eventName: string): boolean {
+  return ['page_view', 'pageview', 'landing_page_view', 'landing_view', 'screen_view'].includes(eventName);
+}
+
+function isActionEvent(eventName: string): boolean {
+  if (isScreenViewEvent(eventName)) return false;
+  if (eventName.startsWith('scroll')) return false;
+  if (eventName === 'geo_backfill') return false;
+  return eventName.includes('click') || eventName.includes('cta') || eventName.includes('submit') || eventName.includes('form') || eventName.includes('login') || eventName.includes('signup') || eventName.includes('register') || eventName.includes('search') || eventName.includes('share');
+}
+
+function estimateEventDurationSeconds(current: RawEvent, next: RawEvent | undefined): number {
+  const props = current.properties as Record<string, unknown> | undefined;
+  const explicitSeconds = getNumericProp(props, ['durationSeconds', 'timeSpentSeconds', 'activeSeconds']);
+  if (explicitSeconds !== null) {
+    return Math.max(0, Math.min(Math.round(explicitSeconds), 600));
+  }
+  const explicitMs = getNumericProp(props, ['durationMs', 'timeSpentMs', 'activeMs']);
+  if (explicitMs !== null) {
+    return Math.max(0, Math.min(Math.round(explicitMs / 1000), 600));
+  }
+  if (!next) return 0;
+  const deltaSeconds = Math.round((new Date(next.created_at).getTime() - new Date(current.created_at).getTime()) / 1000);
+  if (!Number.isFinite(deltaSeconds) || deltaSeconds < 0) return 0;
+  return Math.min(deltaSeconds, 600);
+}
+
+function computeBehaviorBreakdown(events: RawEvent[], sessionMap: Map<string, RawEvent[]>, uniqueSessions: number) {
+  const screenMap = new Map<string, { views: number; totalTimeSpent: number; lastViewed: string; sessions: Set<string> }>();
+  const actionMap = new Map<string, { count: number; totalTimeSpent: number; lastTriggered: string; sessions: Set<string> }>();
+  let totalTrackedSeconds = 0;
+  let maxSessionSeconds = 0;
+  let engagedSessions = 0;
+
+  sessionMap.forEach((sessionEvents, sessionId) => {
+    const sortedEvents = [...sessionEvents].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+    let sessionTrackedSeconds = 0;
+
+    sortedEvents.forEach((event, index) => {
+      const nextEvent = sortedEvents[index + 1];
+      const durationSeconds = estimateEventDurationSeconds(event, nextEvent);
+      sessionTrackedSeconds += durationSeconds;
+      totalTrackedSeconds += durationSeconds;
+
+      if (isScreenViewEvent(event.event)) {
+        const screen = deriveScreenLabel(event);
+        const existing = screenMap.get(screen) ?? { views: 0, totalTimeSpent: 0, lastViewed: event.created_at, sessions: new Set<string>() };
+        existing.views += 1;
+        existing.totalTimeSpent += durationSeconds;
+        existing.sessions.add(sessionId);
+        if (event.created_at > existing.lastViewed) {
+          existing.lastViewed = event.created_at;
+        }
+        screenMap.set(screen, existing);
+      }
+
+      if (isActionEvent(event.event)) {
+        const action = deriveActionLabel(event);
+        const existing = actionMap.get(action) ?? { count: 0, totalTimeSpent: 0, lastTriggered: event.created_at, sessions: new Set<string>() };
+        existing.count += 1;
+        existing.totalTimeSpent += durationSeconds;
+        existing.sessions.add(sessionId);
+        if (event.created_at > existing.lastTriggered) {
+          existing.lastTriggered = event.created_at;
+        }
+        actionMap.set(action, existing);
+      }
+    });
+
+    if (sessionTrackedSeconds >= 30) {
+      engagedSessions += 1;
+    }
+    maxSessionSeconds = Math.max(maxSessionSeconds, sessionTrackedSeconds);
+  });
+
+  const topScreens = Array.from(screenMap.entries())
+    .map(([screen, value]) => ({
+      screen,
+      views: value.views,
+      uniqueSessions: value.sessions.size,
+      avgTimeSpent: value.views > 0 ? Math.round(value.totalTimeSpent / value.views) : 0,
+      totalTimeSpent: value.totalTimeSpent,
+      pct: uniqueSessions > 0 ? parseFloat(((value.sessions.size / uniqueSessions) * 100).toFixed(1)) : 0,
+      lastViewed: value.lastViewed,
+    }))
+    .sort((a, b) => b.views - a.views || b.totalTimeSpent - a.totalTimeSpent)
+    .slice(0, 8);
+
+  const topActions = Array.from(actionMap.entries())
+    .map(([action, value]) => ({
+      action,
+      count: value.count,
+      uniqueSessions: value.sessions.size,
+      avgTimeSpent: value.count > 0 ? Math.round(value.totalTimeSpent / value.count) : 0,
+      pct: uniqueSessions > 0 ? parseFloat(((value.sessions.size / uniqueSessions) * 100).toFixed(1)) : 0,
+      lastTriggered: value.lastTriggered,
+    }))
+    .sort((a, b) => b.count - a.count || b.uniqueSessions - a.uniqueSessions)
+    .slice(0, 8);
+
+  return {
+    topScreens,
+    topActions,
+    timeSpent: {
+      totalTrackedSeconds,
+      avgSessionSeconds: uniqueSessions > 0 ? Math.round(totalTrackedSeconds / uniqueSessions) : 0,
+      avgScreenSeconds: topScreens.length > 0 ? Math.round(topScreens.reduce((sum, item) => sum + item.avgTimeSpent, 0) / topScreens.length) : 0,
+      maxSessionSeconds,
+      engagedSessions,
+    },
+  };
+}
+
 export function computeAnalytics(events: RawEvent[], period: string): ComputedAnalytics {
   const sessionGeoMap = new Map<string, RawEvent['geo']>();
 
@@ -968,6 +1153,8 @@ export function computeAnalytics(events: RawEvent[], period: string): ComputedAn
   const sectionViews = Array.from(sectionViewMap.entries())
     .map(([section, count]) => ({ section, count, pct: uniqueSessions > 0 ? parseFloat(((count / uniqueSessions) * 100).toFixed(1)) : 0 }))
     .sort((a, b) => b.count - a.count);
+
+  const behaviorBreakdown = computeBehaviorBreakdown(events, sessionMap, uniqueSessions);
 
   const conversionRate = pageViews > 0 ? parseFloat(((formSubmits / pageViews) * 100).toFixed(1)) : 0;
   const scrollEngagement = pageViews > 0 ? parseFloat(((scroll50 / pageViews) * 100).toFixed(1)) : 0;
@@ -1254,6 +1441,9 @@ export function computeAnalytics(events: RawEvent[], period: string): ComputedAn
     totalEvents,
     pageViews,
     uniqueSessions,
+    topScreens: behaviorBreakdown.topScreens,
+    topActions: behaviorBreakdown.topActions,
+    timeSpent: behaviorBreakdown.timeSpent,
     funnel: { pageViews, scroll25, scroll50, scroll75, scroll100, formFocuses, formSubmits },
     cta: { getStarted: ctaGetStarted, signIn: ctaSignIn, jvInquire: ctaJvInquire, websiteClick: ctaWebsite },
     conversionRate,

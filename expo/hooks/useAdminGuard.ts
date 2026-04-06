@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useRouter } from 'expo-router';
 import { Alert } from 'react-native';
 import { isAdminRole } from '@/lib/auth-helpers';
@@ -16,14 +16,8 @@ export function useAdminGuard(options?: { redirectOnFail?: boolean; silent?: boo
   const router = useRouter();
   const auth = useAuth();
   const deniedOnce = useRef(false);
-  const recoveryAttempted = useRef(false);
-  const [recovering, setRecovering] = useState(false);
 
   const state = useMemo<AdminGuardState>(() => {
-    if (recovering) {
-      console.log('[AdminGuard] Recovery in progress — waiting');
-      return { isAdmin: false, isVerifying: true, userId: null, role: null, error: null };
-    }
 
     if (auth.isOwnerIPAccess) {
       const uid = auth.user?.id ?? auth.userId ?? 'owner-ip-access';
@@ -59,47 +53,19 @@ export function useAdminGuard(options?: { redirectOnFail?: boolean; silent?: boo
       return { isAdmin: false, isVerifying: true, userId: null, role: null, error: null };
     }
 
-    if (typeof __DEV__ !== 'undefined' && __DEV__) {
-      console.log('[AdminGuard] Dev mode fallback — granting owner access');
-      return { isAdmin: true, isVerifying: false, userId: 'dev-owner', role: 'owner', error: null };
-    }
-
     console.log('[AdminGuard] DENIED — isAuthenticated:', auth.isAuthenticated, 'userRole:', auth.userRole, 'isOwnerIP:', auth.isOwnerIPAccess);
     return { isAdmin: false, isVerifying: false, userId: null, role: null, error: 'Not authenticated. Please log in.' };
-  }, [auth.isOwnerIPAccess, auth.isAdmin, auth.isLoading, auth.isAuthenticated, auth.user, auth.userRole, auth.userId, recovering]);
+  }, [auth.isOwnerIPAccess, auth.isAdmin, auth.isLoading, auth.isAuthenticated, auth.user, auth.userRole, auth.userId]);
 
   useEffect(() => {
     if (state.isAdmin) {
       deniedOnce.current = false;
-      recoveryAttempted.current = false;
     }
   }, [state.isAdmin]);
 
   useEffect(() => {
-    if (state.isVerifying || state.isAdmin) return;
-    if (recoveryAttempted.current) return;
-
-    recoveryAttempted.current = true;
-    console.log('[AdminGuard] Access denied — attempting owner IP recovery');
-    setRecovering(true);
-
-    auth.ownerDirectAccess().then((result) => {
-      if (result.success) {
-        console.log('[AdminGuard] Recovery succeeded:', result.message);
-      } else {
-        console.log('[AdminGuard] Recovery failed:', result.message);
-      }
-    }).catch((err) => {
-      console.log('[AdminGuard] Recovery error:', (err as Error)?.message);
-    }).finally(() => {
-      setRecovering(false);
-    });
-  }, [state.isVerifying, state.isAdmin, auth]);
-
-  useEffect(() => {
     if (state.isVerifying) return;
     if (state.isAdmin) return;
-    if (recovering) return;
     if (deniedOnce.current) return;
 
     deniedOnce.current = true;
@@ -118,7 +84,7 @@ export function useAdminGuard(options?: { redirectOnFail?: boolean; silent?: boo
       }, 1500);
       return () => clearTimeout(timer);
     }
-  }, [state.isVerifying, state.isAdmin, state.error, options?.redirectOnFail, options?.silent, router, recovering]);
+  }, [state.isVerifying, state.isAdmin, state.error, options?.redirectOnFail, options?.silent, router]);
 
   return state;
 }

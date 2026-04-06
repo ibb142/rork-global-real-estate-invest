@@ -39,6 +39,7 @@ import {
   Printer,
   Share2,
   ShieldCheck,
+  Clipboard as ClipboardIcon,
   Zap,
 } from 'lucide-react-native';
 import * as Clipboard from 'expo-clipboard';
@@ -53,7 +54,6 @@ import {
   getAllEnvVariables,
   getAllIntegrations,
   getConfiguredEnvCount,
-  getCriticalCount,
   getDeliverySummary,
   getInProgressCount,
   getReadyCount,
@@ -93,18 +93,46 @@ const OWNER_CONFIG: Record<IntegrationOwner, { color: string; label: string; sho
   shared: { color: '#A78BFA', label: 'Shared', shortLabel: 'Both' },
 };
 
+function getEffectivePriority(item: { priority: IntegrationPriority; status: IntegrationStatus }): IntegrationPriority {
+  if (item.status === 'ready' || item.status === 'mock_only') {
+    return item.priority === 'critical' || item.priority === 'high' ? 'low' : item.priority;
+  }
+
+  return item.priority;
+}
+
+function getPriorityDisplay(item: { priority: IntegrationPriority; status: IntegrationStatus }): { color: string; label: string } {
+  if (item.status === 'ready') {
+    return { color: '#22C55E', label: 'Resolved' };
+  }
+
+  if (item.status === 'mock_only') {
+    return { color: '#F59E0B', label: 'Mock Only' };
+  }
+
+  if (item.priority === 'critical') {
+    return { color: '#F97316', label: 'Needs Audit' };
+  }
+
+  return PRIORITY_CONFIG[item.priority];
+}
+
 export default function DeveloperHandoffScreen() {
   const router = useRouter();
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set(DEVELOPER_HANDOFF_CATEGORIES.map((category) => category.id)));
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
   const [copied, setCopied] = useState<boolean>(false);
+  const [pasted, setPasted] = useState<boolean>(false);
+  const [clipboardPreview, setClipboardPreview] = useState<string>('');
   const [isGeneratingPDF, setIsGeneratingPDF] = useState<boolean>(false);
   const [filterPriority, setFilterPriority] = useState<'all' | IntegrationPriority>('all');
   const [showEnvVars, setShowEnvVars] = useState<boolean>(false);
 
   const allItems = useMemo(() => getAllIntegrations(), []);
   const allEnvVars = useMemo(() => getAllEnvVariables(), []);
-  const criticalCount = useMemo(() => getCriticalCount(), []);
+  const openCriticalCount = useMemo(() => {
+    return allItems.filter((item) => item.priority === 'critical' && item.status !== 'ready').length;
+  }, [allItems]);
   const readyCount = useMemo(() => getReadyCount(), []);
   const inProgressCount = useMemo(() => getInProgressCount(), []);
   const configuredEnvCount = useMemo(() => getConfiguredEnvCount(), []);
@@ -125,7 +153,7 @@ export default function DeveloperHandoffScreen() {
 
     return DEVELOPER_HANDOFF_CATEGORIES.map((category) => ({
       ...category,
-      items: category.items.filter((item) => item.priority === filterPriority),
+      items: category.items.filter((item) => getEffectivePriority(item) === filterPriority),
     })).filter((category) => category.items.length > 0);
   }, [filterPriority]);
 
@@ -179,6 +207,25 @@ export default function DeveloperHandoffScreen() {
     } catch (error) {
       console.log('[DeveloperHandoff] Copy failed', error);
       Alert.alert('Error', 'Failed to copy the developer workplan.');
+    }
+  }, []);
+
+  const handlePasteFromClipboard = useCallback(async () => {
+    try {
+      console.log('[DeveloperHandoff] Reading clipboard');
+      const content = await Clipboard.getStringAsync();
+      const trimmed = content.trim();
+      if (!trimmed) {
+        Alert.alert('Clipboard empty', 'Copy text first, then tap paste.');
+        return;
+      }
+      setClipboardPreview(trimmed);
+      setPasted(true);
+      setTimeout(() => setPasted(false), 2000);
+      Alert.alert('Pasted', 'Clipboard text loaded below.');
+    } catch (error) {
+      console.log('[DeveloperHandoff] Paste failed', error);
+      Alert.alert('Error', 'Failed to read the clipboard.');
     }
   }, []);
 
@@ -360,8 +407,8 @@ export default function DeveloperHandoffScreen() {
             <Text style={styles.statLabel}>In progress</Text>
           </View>
           <View style={styles.statCard}>
-            <Text style={[styles.statValue, { color: '#DC2626' }]}>{criticalCount}</Text>
-            <Text style={styles.statLabel}>Critical</Text>
+            <Text style={[styles.statValue, { color: '#F97316' }]}>{openCriticalCount}</Text>
+            <Text style={styles.statLabel}>Needs audit</Text>
           </View>
           <View style={styles.statCard}>
             <Text style={[styles.statValue, { color: Colors.primary }]}>{configuredEnvCount}/{allEnvVars.length}</Text>
@@ -396,7 +443,7 @@ export default function DeveloperHandoffScreen() {
         <View style={styles.timeBanner}>
           <Clock size={16} color={Colors.primary} />
           <Text style={styles.timeBannerText}>
-            If we work only on this module plan, I can finish <Text style={styles.timeBannerBold}>{deliverySummary.rork.remainingItems} items</Text> on my side. You still have <Text style={styles.timeBannerBold}>{deliverySummary.user.remainingItems} items</Text> on your side, plus <Text style={styles.timeBannerBold}>{deliverySummary.shared.remainingItems} shared items</Text>.
+            This screen is a delivery workplan, not a live production outage board. I can finish <Text style={styles.timeBannerBold}>{deliverySummary.rork.remainingItems} items</Text> on my side. You still have <Text style={styles.timeBannerBold}>{deliverySummary.user.remainingItems} items</Text> on your side, plus <Text style={styles.timeBannerBold}>{deliverySummary.shared.remainingItems} shared items</Text>.
           </Text>
         </View>
 
@@ -446,6 +493,16 @@ export default function DeveloperHandoffScreen() {
 
             <TouchableOpacity
               activeOpacity={0.85}
+              onPress={handlePasteFromClipboard}
+              style={[styles.actionButton, { backgroundColor: pasted ? '#10B981' : '#0F766E' }]}
+              testID="developer-module-paste-btn"
+            >
+              {pasted ? <CheckCircle size={16} color="#FFFFFF" /> : <ClipboardIcon size={16} color="#FFFFFF" />}
+              <Text style={styles.actionButtonText}>{pasted ? 'Pasted' : 'Paste'}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              activeOpacity={0.85}
               onPress={handleDownloadText}
               style={[styles.actionButton, { backgroundColor: '#3B82F6' }]}
               testID="developer-module-download-btn"
@@ -464,6 +521,18 @@ export default function DeveloperHandoffScreen() {
               <Text style={styles.actionButtonText}>Share</Text>
             </TouchableOpacity>
           </View>
+
+          {clipboardPreview ? (
+            <View style={styles.clipboardPreviewCard}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Clipboard preview</Text>
+                <Text style={styles.sectionMeta}>{clipboardPreview.length} chars</Text>
+              </View>
+              <Text style={styles.clipboardPreviewText} numberOfLines={8}>
+                {clipboardPreview}
+              </Text>
+            </View>
+          ) : null}
         </View>
 
         <View style={styles.sectionCard}>
@@ -481,7 +550,7 @@ export default function DeveloperHandoffScreen() {
                 const selected = filterPriority === priority;
                 const chipLabel = priority === 'all'
                   ? `All (${allItems.length})`
-                  : `${PRIORITY_CONFIG[priority].label} (${allItems.filter((item) => item.priority === priority).length})`;
+                  : `${PRIORITY_CONFIG[priority].label} (${allItems.filter((item) => getEffectivePriority(item) === priority).length})`;
 
                 return (
                   <TouchableOpacity
@@ -545,7 +614,7 @@ export default function DeveloperHandoffScreen() {
                     <View style={styles.itemList}>
                       {category.items.map((item) => {
                         const itemExpanded = expandedItems.has(item.id);
-                        const priorityConfig = PRIORITY_CONFIG[item.priority];
+                        const priorityConfig = getPriorityDisplay(item);
                         const statusConfig = STATUS_CONFIG[item.status];
                         const ownerConfig = OWNER_CONFIG[item.owner];
 
@@ -936,6 +1005,20 @@ const styles = StyleSheet.create({
     color: Colors.white,
     fontSize: 13,
     fontWeight: '700',
+  },
+  clipboardPreviewCard: {
+    marginTop: 4,
+    backgroundColor: '#0F0F10',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    padding: 14,
+    gap: 10,
+  },
+  clipboardPreviewText: {
+    color: Colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 20,
   },
   filterRow: {
     flexDirection: 'row',

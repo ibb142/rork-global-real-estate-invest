@@ -28,6 +28,7 @@ import {
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useAuth } from '@/lib/auth-context';
 import { getLandingSyncStatus, syncToLandingPage } from '@/lib/landing-sync';
 import { usePublishedJVDeals } from '@/lib/parse-deal';
 import {
@@ -46,9 +47,20 @@ import {
 } from '@/lib/deal-photo-health';
 import { performanceMonitor } from '@/lib/performance-monitor';
 import { getAutoDeployStatus } from '@/lib/auto-deploy';
+import { getAdminMemberRegistrySnapshot, type AdminMemberRegistrySnapshot } from '@/lib/member-registry';
+import { getDeployAccessDiagnostic } from '@/lib/landing-deploy';
+import { runLandingReadinessAudit } from '@/lib/landing-readiness-audit';
 
 
 type StatusLevel = 'green' | 'yellow' | 'red';
+
+interface AdminAuditCardItem {
+  id: string;
+  label: string;
+  value: string;
+  status: StatusLevel;
+  detail?: string;
+}
 
 interface DiagnosticItem {
   id: string;
@@ -61,6 +73,7 @@ interface DiagnosticItem {
 export default function SyncDiagnosticsScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const auth = useAuth();
   const [refreshing, setRefreshing] = useState(false);
 
   const publishedJV = usePublishedJVDeals();
@@ -104,12 +117,42 @@ export default function SyncDiagnosticsScreen() {
     refetchInterval: false,
   });
 
+  const memberRegistryQuery = useQuery<AdminMemberRegistrySnapshot>({
+    queryKey: ['sync-diagnostics-member-registry'],
+    queryFn: getAdminMemberRegistrySnapshot,
+    staleTime: 1000 * 30,
+    gcTime: 1000 * 60 * 5,
+    refetchOnWindowFocus: true,
+    refetchInterval: false,
+  });
+
+  const deployAccessQuery = useQuery({
+    queryKey: ['sync-diagnostics-deploy-access'],
+    queryFn: getDeployAccessDiagnostic,
+    staleTime: 1000 * 30,
+    gcTime: 1000 * 60 * 5,
+    refetchOnWindowFocus: true,
+    refetchInterval: false,
+  });
+
+  const readinessAuditQuery = useQuery({
+    queryKey: ['sync-diagnostics-readiness-audit'],
+    queryFn: runLandingReadinessAudit,
+    staleTime: 1000 * 30,
+    gcTime: 1000 * 60 * 5,
+    refetchOnWindowFocus: true,
+    refetchInterval: false,
+  });
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
       void queryClient.invalidateQueries({ queryKey: ['sync-diagnostics-status'] });
       void queryClient.invalidateQueries({ queryKey: ['sync-diagnostics-image-audit'] });
       void queryClient.invalidateQueries({ queryKey: ['auto-deploy-status'] });
+      void queryClient.invalidateQueries({ queryKey: ['sync-diagnostics-member-registry'] });
+      void queryClient.invalidateQueries({ queryKey: ['sync-diagnostics-deploy-access'] });
+      void queryClient.invalidateQueries({ queryKey: ['sync-diagnostics-readiness-audit'] });
       void publishedJV.refetch();
     } finally {
       setRefreshing(false);
@@ -123,6 +166,9 @@ export default function SyncDiagnosticsScreen() {
 
   const cacheStats = getCanonicalCacheStats();
   const perfSummary = performanceMonitor.getSummary();
+  const readinessAudit = readinessAuditQuery.data;
+  const readiness30k = readinessAudit?.scaleAssessments.find((assessment) => assessment.targetUsers === 30000);
+  const readiness1M = readinessAudit?.scaleAssessments.find((assessment) => assessment.targetUsers === 1000000);
 
   const claimChecks = useMemo(() => {
     const testClaims = [
@@ -266,6 +312,120 @@ export default function SyncDiagnosticsScreen() {
   const countMismatch = status && !status.inSync;
   const appVsApiMismatch = status && appVisibleCount !== status.publishedDealsCount;
 
+  const adminAuditCards = useMemo(() => {
+    const memberSnapshot = memberRegistryQuery.data;
+    const deployAccess = deployAccessQuery.data;
+    const cards: { id: string; title: string; items: AdminAuditCardItem[] }[] = [
+      {
+        id: 'scale-readiness',
+        title: 'Scale Readiness',
+        items: [
+          {
+            id: 'scale-readiness-30k',
+            label: '30K audit',
+            value: readiness30k ? (readiness30k.status === 'pass' ? 'Passed' : readiness30k.status === 'warn' ? 'Needs review' : 'Blocked') : readinessAuditQuery.isPending ? 'Loading' : 'Unavailable',
+            status: readiness30k ? (readiness30k.status === 'pass' ? 'green' : readiness30k.status === 'warn' ? 'yellow' : 'red') : readinessAuditQuery.isPending ? 'yellow' : 'red',
+            detail: readiness30k ? `${readiness30k.summary} Evidence: ${readiness30k.evidence}.` : '30K launch-path audit has not returned yet.',
+          },
+          {
+            id: 'scale-readiness-1m',
+            label: '1M audit',
+            value: readiness1M ? (readiness1M.status === 'pass' ? 'Passed' : readiness1M.status === 'warn' ? 'Needs review' : 'Blocked') : readinessAuditQuery.isPending ? 'Loading' : 'Unavailable',
+            status: readiness1M ? (readiness1M.status === 'pass' ? 'green' : readiness1M.status === 'warn' ? 'yellow' : 'red') : readinessAuditQuery.isPending ? 'yellow' : 'red',
+            detail: readiness1M ? `${readiness1M.summary} Evidence: ${readiness1M.evidence}.` : '1M audit has not returned yet.',
+          },
+          {
+            id: 'scale-readiness-summary',
+            label: 'Audit summary',
+            value: readinessAudit ? `${readinessAudit.blockerCount} blockers · ${readinessAudit.warningCount} warnings` : readinessAuditQuery.isPending ? 'Running' : 'Unavailable',
+            status: readinessAudit ? (readinessAudit.overallStatus === 'pass' ? 'green' : readinessAudit.overallStatus === 'warn' ? 'yellow' : 'red') : readinessAuditQuery.isPending ? 'yellow' : 'red',
+            detail: readinessAudit?.summary ?? 'Readiness audit summary is not available yet.',
+          },
+        ],
+      },
+      {
+        id: 'owner-access',
+        title: 'Owner Access',
+        items: [
+          {
+            id: 'owner-authenticated',
+            label: 'Authenticated session',
+            value: auth.isAuthenticated ? 'Live' : 'Missing',
+            status: auth.isAuthenticated ? 'green' : 'red',
+          },
+          {
+            id: 'owner-role',
+            label: 'Resolved role',
+            value: deployAccess?.role ?? auth.userRole ?? 'unknown',
+            status: (deployAccess?.role ?? auth.userRole) && (deployAccess?.role ?? auth.userRole) !== 'investor' ? 'green' : 'yellow',
+          },
+          {
+            id: 'owner-trusted',
+            label: 'Trusted owner route',
+            value: auth.isOwnerIPAccess ? 'Restored' : 'Normal session',
+            status: auth.isOwnerIPAccess ? 'green' : 'yellow',
+            detail: auth.detectedIP ? `Detected IP ${auth.detectedIP}` : 'Network identity not currently resolved',
+          },
+        ],
+      },
+      {
+        id: 'member-retention',
+        title: 'Member Retention',
+        items: [
+          {
+            id: 'member-merged-count',
+            label: 'Durable member registry',
+            value: memberSnapshot ? String(memberSnapshot.mergedCount) : '...',
+            status: memberSnapshot && memberSnapshot.mergedCount > 0 ? 'green' : 'yellow',
+          },
+          {
+            id: 'member-remote-profiles',
+            label: 'Remote profiles',
+            value: memberSnapshot ? String(memberSnapshot.remoteProfileCount) : '...',
+            status: memberSnapshot && memberSnapshot.remoteProfileCount > 0 ? 'green' : 'yellow',
+          },
+          {
+            id: 'member-local-recovery',
+            label: 'Local-only safety net',
+            value: memberSnapshot ? String(memberSnapshot.staleLocalOnlyCount) : '...',
+            status: memberSnapshot && memberSnapshot.staleLocalOnlyCount === 0 ? 'green' : 'yellow',
+            detail: memberSnapshot ? `Waitlist shadows ${memberSnapshot.remoteWaitlistShadowCount}` : undefined,
+          },
+        ],
+      },
+      {
+        id: 'write-paths',
+        title: 'Backend + Write Paths',
+        items: [
+          {
+            id: 'deploy-guard',
+            label: 'Deploy access guard',
+            value: deployAccess?.allowed ? 'Verified' : 'Blocked',
+            status: deployAccess?.allowed ? 'green' : 'red',
+            detail: deployAccess?.reason,
+          },
+          {
+            id: 'deploy-token',
+            label: 'Fresh auth token',
+            value: deployAccess?.tokenAvailable ? 'Ready' : 'Missing',
+            status: deployAccess?.tokenAvailable ? 'green' : 'red',
+          },
+          {
+            id: 'auto-deploy-live',
+            label: 'Auto-deploy pipeline',
+            value: autoDeployQuery.data?.config.enabled ? 'Enabled' : 'Disabled',
+            status: autoDeployQuery.data?.config.enabled ? 'green' : 'yellow',
+            detail: autoDeployQuery.data?.lastDeploy?.timestamp
+              ? `Last run ${new Date(autoDeployQuery.data.lastDeploy.timestamp).toLocaleString()}`
+              : 'No deploy run recorded yet',
+          },
+        ],
+      },
+    ];
+
+    return cards;
+  }, [auth.detectedIP, auth.isAuthenticated, auth.isOwnerIPAccess, auth.userRole, autoDeployQuery.data, deployAccessQuery.data, memberRegistryQuery.data, readiness1M, readiness30k, readinessAudit, readinessAuditQuery.isPending]);
+
   const getStatusIcon = (level: StatusLevel) => {
     switch (level) {
       case 'green': return <CheckCircle2 size={16} color="#22C55E" />;
@@ -356,6 +516,35 @@ export default function SyncDiagnosticsScreen() {
               </Text>
             </View>
           </View>
+        </View>
+
+        <View style={styles.sectionHeader}>
+          <Shield size={16} color={Colors.primary} />
+          <Text style={styles.sectionTitle}>Live Admin Audit</Text>
+        </View>
+
+        <View style={styles.auditPanelCard} testID="sync-diagnostics-admin-audit-panel">
+          <Text style={styles.auditPanelTitle}>Owner, member, backend, deploy, and readiness status</Text>
+          <Text style={styles.auditPanelSubtext}>This panel stays visible so admin can verify trusted access, registration durability, write-path readiness, and the live 30K audit in one place.</Text>
+          {adminAuditCards.map((card) => (
+            <View key={card.id} style={styles.auditGroupCard}>
+              <Text style={styles.auditGroupTitle}>{card.title}</Text>
+              {card.items.map((item) => (
+                <View key={item.id} style={styles.auditItemRow}>
+                  <View style={styles.auditItemTextWrap}>
+                    <Text style={styles.auditItemLabel}>{item.label}</Text>
+                    {item.detail ? <Text style={styles.auditItemDetail}>{item.detail}</Text> : null}
+                  </View>
+                  <Text style={[
+                    styles.auditItemValue,
+                    { color: item.status === 'green' ? '#22C55E' : item.status === 'red' ? '#FF7D7D' : '#FFD36A' },
+                  ]}>
+                    {item.value}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          ))}
         </View>
 
         {(countMismatch || appVsApiMismatch) ? (
@@ -829,6 +1018,68 @@ const styles = StyleSheet.create({
     color: '#000',
     fontSize: 15,
     fontWeight: '800' as const,
+  },
+  auditPanelCard: {
+    marginHorizontal: 16,
+    marginBottom: 8,
+    backgroundColor: '#0B1526',
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(96,165,250,0.24)',
+  },
+  auditPanelTitle: {
+    color: Colors.text,
+    fontSize: 16,
+    fontWeight: '800' as const,
+    letterSpacing: -0.2,
+  },
+  auditPanelSubtext: {
+    color: '#9DB0C9',
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 4,
+    marginBottom: 12,
+  },
+  auditGroupCard: {
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.05)',
+    marginBottom: 10,
+  },
+  auditGroupTitle: {
+    color: Colors.text,
+    fontSize: 13,
+    fontWeight: '700' as const,
+    marginBottom: 8,
+  },
+  auditItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    paddingVertical: 6,
+  },
+  auditItemTextWrap: {
+    flex: 1,
+  },
+  auditItemLabel: {
+    color: Colors.text,
+    fontSize: 12,
+    fontWeight: '600' as const,
+  },
+  auditItemDetail: {
+    color: Colors.textTertiary,
+    fontSize: 11,
+    marginTop: 2,
+  },
+  auditItemValue: {
+    maxWidth: '44%' as const,
+    fontSize: 12,
+    fontWeight: '800' as const,
+    textAlign: 'right',
   },
   syncResult: {
     marginHorizontal: 16,

@@ -48,6 +48,7 @@ import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { usePresenceTracker } from '@/lib/realtime-presence';
 import { awsAnalyticsBackup } from '@/lib/aws-analytics-backup';
+import { fetchRawEvents as fetchAnalyticsRawEvents, computeAnalytics as computeAnalyticsData, fetchExtraCounts as fetchAnalyticsExtraCounts } from '@/lib/analytics-compute';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 
@@ -63,18 +64,6 @@ interface RawEvent {
   _source?: EventSource;
 }
 
-let _computeModule: typeof import('@/lib/analytics-compute') | null = null;
-async function getComputeModule() {
-  if (_computeModule) return _computeModule;
-  try {
-    _computeModule = await import('@/lib/analytics-compute');
-    return _computeModule;
-  } catch (err) {
-    console.error('[Analytics] Failed to load analytics-compute module:', (err as Error)?.message);
-    return null;
-  }
-}
-
 interface ComputedAnalytics {
   period: string;
   totalLeads: number;
@@ -83,6 +72,9 @@ interface ComputedAnalytics {
   totalEvents: number;
   pageViews: number;
   uniqueSessions: number;
+  topScreens: Array<{ screen: string; views: number; uniqueSessions: number; avgTimeSpent: number; totalTimeSpent: number; pct: number; lastViewed: string }>;
+  topActions: Array<{ action: string; count: number; uniqueSessions: number; avgTimeSpent: number; pct: number; lastTriggered: string }>;
+  timeSpent: { totalTrackedSeconds: number; avgSessionSeconds: number; avgScreenSeconds: number; maxSessionSeconds: number; engagedSessions: number };
   funnel: { pageViews: number; scroll25: number; scroll50: number; scroll75: number; scroll100: number; formFocuses: number; formSubmits: number };
   cta: { getStarted: number; signIn: number; jvInquire: number; websiteClick: number };
   conversionRate: number;
@@ -178,6 +170,7 @@ function buildFallbackAnalytics(events: RawEvent[], period: string): ComputedAna
   const byCountry = Array.from(countryMap.entries()).map(([country, count]) => ({ country, count, pct: totalWithGeo > 0 ? Math.round((count / totalWithGeo) * 100) : 0 })).sort((a, b) => b.count - a.count);
   return {
     period, totalLeads: formSubmits, registeredUsers: 0, waitlistLeads: 0, totalEvents, pageViews, uniqueSessions,
+    topScreens: [], topActions: [], timeSpent: { totalTrackedSeconds: 0, avgSessionSeconds: 0, avgScreenSeconds: 0, maxSessionSeconds: 0, engagedSessions: 0 },
     funnel: { pageViews, scroll25: 0, scroll50: 0, scroll75: 0, scroll100: 0, formFocuses: 0, formSubmits },
     cta: { getStarted: 0, signIn: 0, jvInquire: 0, websiteClick: 0 },
     conversionRate: pageViews > 0 ? parseFloat(((formSubmits / pageViews) * 100).toFixed(1)) : 0,
@@ -572,28 +565,24 @@ export default function LandingAnalyticsScreen() {
       let appCount = 0;
       let fetchError: string | null = null;
 
-      const mod = await getComputeModule();
-      if (mod) {
-        try {
-          console.log('[Admin Analytics] Using analytics-compute module for period:', period);
-          const rawEvents = await mod.fetchRawEvents(period);
-          landingCount = rawEvents.filter(e => e._source === 'landing').length;
-          appCount = rawEvents.filter(e => e._source === 'app').length;
-          console.log('[Admin Analytics] Raw events:', rawEvents.length, '(landing:', landingCount, ', app:', appCount, ')');
+      try {
+        console.log('[Admin Analytics] Using analytics-compute module for period:', period);
+        const rawEvents = await fetchAnalyticsRawEvents(period);
+        landingCount = rawEvents.filter(e => e._source === 'landing').length;
+        appCount = rawEvents.filter(e => e._source === 'app').length;
+        console.log('[Admin Analytics] Raw events:', rawEvents.length, '(landing:', landingCount, ', app:', appCount, ')');
 
-          computed = mod.computeAnalytics(rawEvents, period) as unknown as ComputedAnalytics;
+        computed = computeAnalyticsData(rawEvents, period) as unknown as ComputedAnalytics;
 
-          const extras = await mod.fetchExtraCounts();
-          if (extras.registeredUserCount > 0) computed.registeredUsers = extras.registeredUserCount;
-          if (extras.waitlistCount > 0) computed.waitlistLeads = extras.waitlistCount;
-          computed.totalLeads = computed.registeredUsers + computed.waitlistLeads;
-        } catch (err) {
-          fetchError = (err as Error)?.message ?? 'Unknown error';
-          console.error('[Admin Analytics] Compute module error:', fetchError);
-          computed = null;
-        }
-      } else {
-        console.log('[Admin Analytics] Compute module unavailable, using direct Supabase fallback');
+        const extras = await fetchAnalyticsExtraCounts();
+        if (extras.registeredUserCount > 0) computed.registeredUsers = extras.registeredUserCount;
+        if (extras.waitlistCount > 0) computed.waitlistLeads = extras.waitlistCount;
+        computed.totalLeads = computed.registeredUsers + computed.waitlistLeads;
+      } catch (err) {
+        fetchError = (err as Error)?.message ?? 'Unknown error';
+        console.error('[Admin Analytics] Compute module error:', fetchError);
+        computed = null;
+        console.log('[Admin Analytics] Falling back to direct Supabase analytics fetch');
       }
 
       if (!computed) {
@@ -671,6 +660,9 @@ export default function LandingAnalyticsScreen() {
       uniqueSessions: rawData.uniqueSessions ?? 0,
       conversionRate: rawData.conversionRate ?? 0,
       totalLeads: rawData.totalLeads ?? 0,
+      topScreens: rawData.topScreens ?? [],
+      topActions: rawData.topActions ?? [],
+      timeSpent: rawData.timeSpent ?? { totalTrackedSeconds: 0, avgSessionSeconds: 0, avgScreenSeconds: 0, maxSessionSeconds: 0, engagedSessions: 0 },
       funnel: rawData.funnel ? { ...defaultFunnel, ...rawData.funnel } : defaultFunnel,
       cta: rawData.cta ? { ...defaultCta, ...rawData.cta } : defaultCta,
       hourlyActivity: rawData.hourlyActivity ?? [],
@@ -973,6 +965,58 @@ GRANT EXECUTE ON FUNCTION public.get_analytics_events TO anon, authenticated;
             </View>
           </View>
         )}
+
+        <View style={s.card}>
+          <View style={s.cardHeader}>
+            <Clock size={16} color={SS_ORANGE} />
+            <Text style={s.cardTitle}>Screen & Click Breakdown</Text>
+            <View style={s.cardBadge}>
+              <Text style={s.cardBadgeText}>{data.timeSpent?.totalTrackedSeconds ?? 0}s tracked</Text>
+            </View>
+          </View>
+          <View style={{ flexDirection: 'row', gap: 12, marginBottom: 14 }}>
+            <View style={{ flex: 1, backgroundColor: '#4A90D912', borderRadius: 12, padding: 14, alignItems: 'center' }}>
+              <Text style={{ fontSize: 11, fontWeight: '700' as const, color: '#4A90D9' }}>Avg Session</Text>
+              <Text style={{ fontSize: 22, fontWeight: '900' as const, color: '#1B2A3D', marginTop: 6 }}>{data.timeSpent?.avgSessionSeconds ?? 0}s</Text>
+            </View>
+            <View style={{ flex: 1, backgroundColor: '#22C55E12', borderRadius: 12, padding: 14, alignItems: 'center' }}>
+              <Text style={{ fontSize: 11, fontWeight: '700' as const, color: '#22C55E' }}>Engaged Sessions</Text>
+              <Text style={{ fontSize: 22, fontWeight: '900' as const, color: '#1B2A3D', marginTop: 6 }}>{data.timeSpent?.engagedSessions ?? 0}</Text>
+            </View>
+          </View>
+          <View style={{ gap: 10 }}>
+            <Text style={{ fontSize: 12, fontWeight: '800' as const, color: '#5E6C84', textTransform: 'uppercase' as const }}>Most viewed screens</Text>
+            {(data.topScreens ?? []).slice(0, 5).map((screen, index) => (
+              <View key={`${screen.screen}-${index}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#F8FAFC', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#E9EEF5' }}>
+                <View style={{ width: 28, height: 28, borderRadius: 8, backgroundColor: '#4A90D918', alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ color: '#4A90D9', fontSize: 11, fontWeight: '800' as const }}>{index + 1}</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: '#1B2A3D', fontSize: 13, fontWeight: '700' as const }} numberOfLines={1}>{screen.screen}</Text>
+                  <Text style={{ color: '#5E6C84', fontSize: 11, marginTop: 2 }}>{screen.views} views · {screen.avgTimeSpent}s avg · {screen.uniqueSessions} sessions</Text>
+                </View>
+                <Text style={{ color: '#4A90D9', fontSize: 12, fontWeight: '800' as const }}>{screen.pct}%</Text>
+              </View>
+            ))}
+            {(data.topScreens ?? []).length === 0 && <Text style={s.noDataText}>No screen view breakdown yet.</Text>}
+          </View>
+          <View style={{ gap: 10, marginTop: 14 }}>
+            <Text style={{ fontSize: 12, fontWeight: '800' as const, color: '#5E6C84', textTransform: 'uppercase' as const }}>Most clicked functionality</Text>
+            {(data.topActions ?? []).slice(0, 5).map((action, index) => (
+              <View key={`${action.action}-${index}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#F8FAFC', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#E9EEF5' }}>
+                <View style={{ width: 28, height: 28, borderRadius: 8, backgroundColor: '#22C55E18', alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ color: '#22C55E', fontSize: 11, fontWeight: '800' as const }}>{index + 1}</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: '#1B2A3D', fontSize: 13, fontWeight: '700' as const }} numberOfLines={1}>{action.action}</Text>
+                  <Text style={{ color: '#5E6C84', fontSize: 11, marginTop: 2 }}>{action.count} clicks · {action.uniqueSessions} sessions · {action.avgTimeSpent}s avg</Text>
+                </View>
+                <Text style={{ color: '#22C55E', fontSize: 12, fontWeight: '800' as const }}>{action.pct}%</Text>
+              </View>
+            ))}
+            {(data.topActions ?? []).length === 0 && <Text style={s.noDataText}>No click breakdown yet.</Text>}
+          </View>
+        </View>
 
         <View style={s.card}>
           <View style={s.cardHeader}>

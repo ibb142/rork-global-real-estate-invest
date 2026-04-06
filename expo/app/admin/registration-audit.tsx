@@ -39,6 +39,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { validateEmail, validatePassword, validatePhone } from '@/lib/auth-helpers';
 import * as Clipboard from 'expo-clipboard';
+import { fetchAdminMemberRegistry } from '@/lib/member-registry';
 
 interface DeviceInfo {
   ip: string;
@@ -142,17 +143,18 @@ export default function RegistrationAuditScreen() {
   const recentRegsQuery = useQuery<RecentRegistration[]>({
     queryKey: ['admin-recent-registrations'],
     queryFn: async () => {
-      console.log('[RegAudit] Fetching recent registrations...');
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('id, email, first_name, last_name, country, role, kyc_status, created_at')
-        .order('created_at', { ascending: false })
-        .limit(20);
-      if (error) {
-        console.log('[RegAudit] Profiles fetch error:', error.message);
-        return [];
-      }
-      return (data ?? []) as RecentRegistration[];
+      console.log('[RegAudit] Fetching durable recent registrations...');
+      const members = await fetchAdminMemberRegistry();
+      return members.slice(0, 20).map((member) => ({
+        id: member.id,
+        email: member.email,
+        first_name: member.firstName,
+        last_name: member.lastName,
+        country: member.country,
+        role: member.role,
+        kyc_status: member.kycStatus,
+        created_at: member.createdAt,
+      }));
     },
     staleTime: 1000 * 30,
   });
@@ -160,11 +162,8 @@ export default function RegistrationAuditScreen() {
   const profileCountQuery = useQuery<number>({
     queryKey: ['admin-profile-count'],
     queryFn: async () => {
-      const { count, error } = await supabase
-        .from('profiles')
-        .select('*', { count: 'exact', head: true });
-      if (error) return 0;
-      return count ?? 0;
+      const members = await fetchAdminMemberRegistry();
+      return members.length;
     },
     staleTime: 1000 * 60,
   });

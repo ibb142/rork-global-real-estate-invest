@@ -115,12 +115,11 @@ export const MASTER_SETUP_SQL = `-- ============================================
 CREATE OR REPLACE FUNCTION public.is_admin()
 RETURNS boolean AS $f$
 BEGIN
-  RETURN (
-    SELECT COALESCE(
-      (auth.jwt()->'user_metadata'->>'role') = 'admin'
-      OR (auth.jwt()->'app_metadata'->>'role') = 'admin',
-      false
-    )
+  RETURN EXISTS (
+    SELECT 1
+    FROM public.profiles
+    WHERE id = auth.uid()
+      AND COALESCE(role, 'investor') IN ('owner', 'admin', 'ceo', 'manager', 'staff', 'analyst', 'support')
   );
 END;
 $f$ LANGUAGE plpgsql SECURITY DEFINER STABLE;
@@ -137,24 +136,41 @@ $f$ LANGUAGE plpgsql;
 CREATE TABLE IF NOT EXISTS profiles (
   id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   first_name text, last_name text, email text, phone text, country text, avatar text,
+  role text DEFAULT 'investor',
+  status text DEFAULT 'active' CHECK (status IN ('active','suspended','inactive','archived')),
   kyc_status text DEFAULT 'pending' CHECK (kyc_status IN ('pending','in_review','approved','rejected')),
   total_invested numeric DEFAULT 0, total_returns numeric DEFAULT 0,
   created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now()
 );
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS role text DEFAULT 'investor';
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS status text DEFAULT 'active';
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
-DO $$ BEGIN
+DO $ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname='profiles_select_own' AND tablename='profiles') THEN CREATE POLICY profiles_select_own ON profiles FOR SELECT USING (auth.uid()=id); END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname='profiles_select_admin' AND tablename='profiles') THEN CREATE POLICY profiles_select_admin ON profiles FOR SELECT USING (public.is_admin()); END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname='profiles_update_own' AND tablename='profiles') THEN CREATE POLICY profiles_update_own ON profiles FOR UPDATE USING (auth.uid()=id); END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname='profiles_update_admin' AND tablename='profiles') THEN CREATE POLICY profiles_update_admin ON profiles FOR UPDATE USING (public.is_admin()); END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname='profiles_insert_own' AND tablename='profiles') THEN CREATE POLICY profiles_insert_own ON profiles FOR INSERT WITH CHECK (auth.uid()=id); END IF;
-END $$;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname='profiles_insert_admin' AND tablename='profiles') THEN CREATE POLICY profiles_insert_admin ON profiles FOR INSERT WITH CHECK (public.is_admin()); END IF;
+END $;
 DROP TRIGGER IF EXISTS trg_profiles_updated_at ON profiles;
 CREATE TRIGGER trg_profiles_updated_at BEFORE UPDATE ON profiles FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS trigger AS $f$
 BEGIN
-  INSERT INTO public.profiles (id, email, first_name, last_name)
-  VALUES (NEW.id, NEW.email, COALESCE(NEW.raw_user_meta_data->>'firstName',''), COALESCE(NEW.raw_user_meta_data->>'lastName',''))
+  INSERT INTO public.profiles (id, email, first_name, last_name, phone, country, role, status, kyc_status)
+  VALUES (
+    NEW.id,
+    NEW.email,
+    COALESCE(NEW.raw_user_meta_data->>'firstName',''),
+    COALESCE(NEW.raw_user_meta_data->>'lastName',''),
+    COALESCE(NEW.raw_user_meta_data->>'phone',''),
+    COALESCE(NEW.raw_user_meta_data->>'country',''),
+    COALESCE(NEW.raw_user_meta_data->>'role','investor'),
+    'active',
+    COALESCE(NEW.raw_user_meta_data->>'kycStatus','pending')
+  )
   ON CONFLICT (id) DO NOTHING;
   RETURN NEW;
 END;

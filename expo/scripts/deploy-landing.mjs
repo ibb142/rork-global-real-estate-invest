@@ -4,6 +4,7 @@
  * Reads local index.html, replaces placeholders, uploads to S3.
  */
 import { readFileSync } from 'fs';
+import { fetchStaticLandingApiPayloads } from './landing-static-api.mjs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { createHmac, createHash } from 'crypto';
@@ -18,9 +19,82 @@ const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
 const API_BASE_URL = process.env.EXPO_PUBLIC_RORK_API_BASE_URL || '';
 const AWS_ACCESS_KEY_ID = process.env.AWS_ACCESS_KEY_ID || '';
 const AWS_SECRET_ACCESS_KEY = process.env.AWS_SECRET_ACCESS_KEY || '';
-const AWS_REGION = 'us-east-2'; // bucket is in us-east-2 per S3 redirect
-const BUCKET = (process.env.S3_BUCKET_NAME || 'ivxholding-landing').trim();
+const AWS_REGION = (process.env.AWS_REGION || 'us-east-1').trim();
+const BUCKET = (process.env.LANDING_PUBLIC_BUCKET_NAME || 'ivxholding.com').trim();
 const CF_DISTRIBUTION_ID = process.env.CLOUDFRONT_DISTRIBUTION_ID || '';
+const PUBLIC_BASE_URL = (process.env.LANDING_PUBLIC_BASE_URL || 'https://ivxholding.com').trim().replace(/\/$/, '');
+const VERIFY_RETRY_DELAY_MS = Number.parseInt(process.env.LANDING_VERIFY_RETRY_DELAY_MS || '4000', 10);
+const VERIFY_MAX_ATTEMPTS = Number.parseInt(process.env.LANDING_VERIFY_MAX_ATTEMPTS || '6', 10);
+const JSON_CACHE_CONTROL = 'no-cache, no-store, must-revalidate';
+const HTML_CACHE_CONTROL = 'no-cache, no-store, must-revalidate';
+
+function isHtmlResponse(text) {
+  const normalized = String(text || '').trim().toLowerCase();
+  return normalized.startsWith('<!doctype html') || normalized.startsWith('<html') || normalized.includes('<body');
+}
+
+async function verifyPublicJsonEndpoint(url, expectedType) {
+  let lastError = 'Unknown verification failure';
+
+  for (let attempt = 1; attempt <= VERIFY_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      console.log(`[Deploy] Verifying ${url} (${attempt}/${VERIFY_MAX_ATTEMPTS})...`);
+      const response = await fetch(url, {
+        headers: {
+          Accept: 'application/json',
+          'cache-control': 'no-cache',
+          pragma: 'no-cache',
+        },
+      });
+      const body = await response.text();
+      const contentType = (response.headers.get('content-type') || '').toLowerCase();
+
+      if (!response.ok) {
+        lastError = `HTTP ${response.status}`;
+      } else if (!contentType.includes('application/json')) {
+        lastError = `invalid content-type ${contentType || 'unknown'}`;
+      } else if (isHtmlResponse(body)) {
+        lastError = 'HTML fallback detected';
+      } else {
+        const parsed = JSON.parse(body);
+        if (expectedType === 'health') {
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && typeof parsed.status === 'string') {
+            console.log(`[Deploy] ✅ Verified live health JSON at ${url}`);
+            return true;
+          }
+          lastError = 'health payload schema mismatch';
+        } else {
+          const deals = Array.isArray(parsed) ? parsed : parsed?.deals;
+          if (Array.isArray(deals) && deals.length > 0) {
+            console.log(`[Deploy] ✅ Verified live deals JSON at ${url} (${deals.length} deals)`);
+            return true;
+          }
+          lastError = 'deals payload schema mismatch or empty payload';
+        }
+      }
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+    }
+
+    if (attempt < VERIFY_MAX_ATTEMPTS) {
+      await new Promise((resolve) => setTimeout(resolve, VERIFY_RETRY_DELAY_MS));
+    }
+  }
+
+  console.error(`[Deploy] ❌ Verification failed for ${url}: ${lastError}`);
+  return false;
+}
+
+async function verifyPublicJsonEndpoints() {
+  console.log('[Deploy] Validating live public JSON endpoints...');
+  const checks = await Promise.all([
+    verifyPublicJsonEndpoint(`${PUBLIC_BASE_URL}/api/landing-deals`, 'deals'),
+    verifyPublicJsonEndpoint(`${PUBLIC_BASE_URL}/api/published-jv-deals`, 'deals'),
+    verifyPublicJsonEndpoint(`${PUBLIC_BASE_URL}/health`, 'health'),
+  ]);
+
+  return checks.every(Boolean);
+}
 
 function sha256(data) {
   return createHash('sha256').update(data, 'utf8').digest('hex');
@@ -113,10 +187,13 @@ async function invalidateCloudFront() {
 <InvalidationBatch xmlns="http://cloudfront.amazonaws.com/doc/2020-05-31/">
   <CallerReference>${callerRef}</CallerReference>
   <Paths>
-    <Quantity>2</Quantity>
+    <Quantity>5</Quantity>
     <Items>
       <Path>/index.html</Path>
       <Path>/ivx-config.json</Path>
+      <Path>/api/landing-deals</Path>
+      <Path>/api/published-jv-deals</Path>
+      <Path>/health</Path>
     </Items>
   </Paths>
 </InvalidationBatch>`;
@@ -215,15 +292,26 @@ async function main() {
     backendUrl: backendUrl,
     deployedAt: new Date().toISOString(),
   });
+  const { dealsPayload, healthPayload } = await fetchStaticLandingApiPayloads({
+    supabaseUrl: SUPABASE_URL,
+    supabaseAnonKey: SUPABASE_ANON_KEY,
+    directApiBaseUrl: backendUrl,
+  });
+  const dealsJson = JSON.stringify(dealsPayload);
+  const healthJson = JSON.stringify(healthPayload);
 
   const results = [];
 
-  results.push(await s3PutObject('index.html', html, 'text/html; charset=utf-8', 'no-cache, no-store, must-revalidate'));
-  results.push(await s3PutObject('ivx-config.json', configJson, 'application/json', 'no-cache, no-store, must-revalidate'));
+  results.push(await s3PutObject('index.html', html, 'text/html; charset=utf-8', HTML_CACHE_CONTROL));
+  results.push(await s3PutObject('ivx-config.json', configJson, 'application/json', JSON_CACHE_CONTROL));
+  results.push(await s3PutObject('api/landing-deals', dealsJson, 'application/json', JSON_CACHE_CONTROL));
+  results.push(await s3PutObject('api/published-jv-deals', dealsJson, 'application/json', JSON_CACHE_CONTROL));
+  results.push(await s3PutObject('health', healthJson, 'application/json', JSON_CACHE_CONTROL));
 
   await invalidateCloudFront();
 
-  const allOk = results.every(r => r === true);
+  const publicJsonVerified = await verifyPublicJsonEndpoints();
+  const allOk = results.every(r => r === true) && publicJsonVerified;
   console.log('\n[Deploy] ' + (allOk ? '✅ DEPLOYMENT SUCCESSFUL' : '❌ DEPLOYMENT HAD ERRORS'));
   console.log('[Deploy] Files uploaded:', results.filter(r => r).length, '/', results.length);
   console.log('[Deploy] Timestamp:', new Date().toISOString());

@@ -79,7 +79,7 @@ interface JVDealControl {
 }
 
 function OwnerIPAccessCard() {
-  const { isOwnerIPAccess, detectedIP, ownerDirectAccess } = useAuth();
+  const { isOwnerIPAccess, detectedIP, activateOwnerAccess } = useAuth();
   const [storedIP, setStoredIP] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -90,11 +90,11 @@ function OwnerIPAccessCard() {
   const handleActivate = async () => {
     setLoading(true);
     try {
-      const result = await ownerDirectAccess();
+      const result = await activateOwnerAccess();
       if (result.success) {
         const ip = await getStoredOwnerIP();
         setStoredIP(ip);
-        Alert.alert('IP Access Activated', result.message);
+        Alert.alert('Trusted Device Updated', result.message);
       } else {
         Alert.alert('Failed', result.message);
       }
@@ -104,7 +104,7 @@ function OwnerIPAccessCard() {
   };
 
   const handleDeactivate = async () => {
-    Alert.alert('Deactivate IP Access', 'This will require normal login next time.', [
+    Alert.alert('Deactivate Trusted Owner Access', 'This will require normal login next time on this device.', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Deactivate',
@@ -112,7 +112,7 @@ function OwnerIPAccessCard() {
         onPress: async () => {
           await clearOwnerIP();
           setStoredIP(null);
-          Alert.alert('Deactivated', 'IP auto-login disabled. You will need to sign in next time.');
+          Alert.alert('Deactivated', 'Trusted owner auto-access disabled. You will need to sign in next time.');
         },
       },
     ]);
@@ -125,12 +125,12 @@ function OwnerIPAccessCard() {
           {isOwnerIPAccess ? <Wifi size={20} color="#22C55E" /> : <WifiOff size={18} color="#3B82F6" />}
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={ipCardStyles.title}>Owner IP Auto-Login</Text>
+          <Text style={ipCardStyles.title}>Trusted Owner Device</Text>
           <Text style={ipCardStyles.sub}>
             {isOwnerIPAccess
               ? `Active · IP: ${detectedIP ?? storedIP ?? 'detected'}`
               : storedIP
-                ? `Saved IP: ${storedIP}`
+                ? `Verified IP: ${storedIP}`
                 : 'Not configured'}
           </Text>
         </View>
@@ -150,7 +150,7 @@ function OwnerIPAccessCard() {
           >
             <Fingerprint size={16} color="#000" />
             <Text style={ipCardStyles.activateBtnText}>
-              {loading ? 'Detecting IP...' : 'Activate My Device'}
+              {loading ? 'Verifying...' : 'Verify This Device'}
             </Text>
           </TouchableOpacity>
         ) : (
@@ -161,7 +161,7 @@ function OwnerIPAccessCard() {
               disabled={loading}
             >
               <Wifi size={14} color={Colors.primary} />
-              <Text style={ipCardStyles.refreshBtnText}>{loading ? 'Updating...' : 'Update IP'}</Text>
+              <Text style={ipCardStyles.refreshBtnText}>{loading ? 'Updating...' : 'Refresh Verification'}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={ipCardStyles.deactivateBtn} onPress={handleDeactivate}>
               <WifiOff size={14} color={Colors.negative} />

@@ -46,22 +46,18 @@ interface ReEngagementStrategy {
 }
 
 export function IntelTab({ insights, uniqueSessions, funnel }: IntelTabProps) {
-  if (!insights) {
-    return (
-      <View style={shared.emptyWrap}>
-        <Brain size={48} color={Colors.textTertiary} />
-        <Text style={shared.emptyTitle}>Loading Insights</Text>
-        <Text style={shared.emptySubtitle}>Analysis will appear as more data is collected.</Text>
-      </View>
-    );
-  }
-
-  const engColor = insights.engagementScore >= 60 ? GREEN : insights.engagementScore >= 30 ? ACCENT : RED;
+  const engagementScore = insights?.engagementScore ?? 0;
+  const bounceRate = insights?.bounceRate ?? 0;
+  const engColor = engagementScore >= 60 ? GREEN : engagementScore >= 30 ? ACCENT : RED;
 
   const reEngagementStrategies = useMemo(() => {
+    if (!insights) {
+      return [] as ReEngagementStrategy[];
+    }
+
     const strategies: ReEngagementStrategy[] = [];
     const totalUsers = uniqueSessions;
-    const atRiskUsers = Math.round(totalUsers * (insights.bounceRate / 100));
+    const atRiskUsers = Math.round(totalUsers * (bounceRate / 100));
     const activeUsers = Math.max(totalUsers - atRiskUsers, 0);
     const dormantUsers = Math.max(totalUsers - activeUsers - atRiskUsers, 0);
 
@@ -96,9 +92,19 @@ export function IntelTab({ insights, uniqueSessions, funnel }: IntelTabProps) {
       });
     }
     return strategies;
-  }, [uniqueSessions, insights.bounceRate, funnel.scroll75, funnel.formSubmits]);
+  }, [bounceRate, funnel.formSubmits, funnel.scroll75, insights, uniqueSessions]);
 
-  const atRiskUsers = Math.round(uniqueSessions * (insights.bounceRate / 100));
+  if (!insights) {
+    return (
+      <View style={shared.emptyWrap}>
+        <Brain size={48} color={Colors.textTertiary} />
+        <Text style={shared.emptyTitle}>Loading Insights</Text>
+        <Text style={shared.emptySubtitle}>Analysis will appear as more data is collected.</Text>
+      </View>
+    );
+  }
+
+  const atRiskUsers = Math.round(uniqueSessions * (bounceRate / 100));
   const dormantUsers = Math.max(uniqueSessions - (uniqueSessions - atRiskUsers) - atRiskUsers, 0);
 
   return (

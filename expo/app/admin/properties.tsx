@@ -326,7 +326,7 @@ export default function PropertiesScreen() {
                 keyboardType="decimal-pad"
                 value={formData.pricePerShare}
                 onChangeText={(text) =>
-                  setFormData({ ...formData, pricePerShare: text })
+                  setFormData({ ...formData, pricePerShare: formatAmountInput(parseAmountInput(text)) })
                 }
               />
             </View>
@@ -339,7 +339,7 @@ export default function PropertiesScreen() {
                 keyboardType="number-pad"
                 value={formData.totalShares}
                 onChangeText={(text) =>
-                  setFormData({ ...formData, totalShares: text })
+                  setFormData({ ...formData, totalShares: formatAmountInput(parseAmountInput(text)) })
                 }
               />
             </View>

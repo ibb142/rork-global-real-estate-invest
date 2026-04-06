@@ -71,6 +71,10 @@ import Colors from '@/constants/colors';
 import { formatCurrency as _fmtCurr } from '@/lib/formatters';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/lib/auth-context';
+import { getAdminMemberRegistrySnapshot, type AdminMemberRegistrySnapshot } from '@/lib/member-registry';
+import { getDeployAccessDiagnostic } from '@/lib/landing-deploy';
+import { getAutoDeployStatus } from '@/lib/auto-deploy';
 
 const adminTeamMembers = [
   {
@@ -165,6 +169,15 @@ const ADMIN_MODULES = [
   { id: 'app-docs', name: 'Docs & Legal', icon: FileText, route: '/admin/app-docs', category: 'Settings', keywords: 'docs legal documents contracts' },
 ];
 
+type AuditTone = 'good' | 'warn' | 'bad';
+
+interface AdminAuditRow {
+  id: string;
+  label: string;
+  value: string;
+  tone: AuditTone;
+}
+
 const CATEGORY_COLORS: Record<string, string> = {
   'Core': '#FFD700',
   'Users': '#4ECDC4',
@@ -181,6 +194,7 @@ console.log('[Admin] v6 ADMIN_MODULES loaded:', ADMIN_MODULES.length, 'modules')
 
 export default function AdminDashboard() {
   const router = useRouter();
+  const auth = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch] = useState(false);
   const queryClient = useQueryClient();
@@ -220,6 +234,27 @@ export default function AdminDashboard() {
     placeholderData: (prev: any) => prev,
     retry: 0,
     throwOnError: false,
+  });
+
+  const memberAuditQuery = useQuery<AdminMemberRegistrySnapshot>({
+    queryKey: ['admin-member-registry-snapshot'],
+    queryFn: getAdminMemberRegistrySnapshot,
+    staleTime: 1000 * 30,
+    refetchInterval: 1000 * 45,
+  });
+
+  const deployAccessQuery = useQuery({
+    queryKey: ['admin-deploy-access-diagnostic'],
+    queryFn: getDeployAccessDiagnostic,
+    staleTime: 1000 * 30,
+    refetchInterval: 1000 * 45,
+  });
+
+  const autoDeployStatusQuery = useQuery({
+    queryKey: ['admin-auto-deploy-status'],
+    queryFn: getAutoDeployStatus,
+    staleTime: 1000 * 30,
+    refetchInterval: 1000 * 45,
   });
 
   const pendingKycQuery = useQuery<any>({
@@ -263,12 +298,15 @@ export default function AdminDashboard() {
     ...(inReviewKycQuery.data?.members ?? []),
   ];
 
-  const refreshing = dashboardQuery.isRefetching || transactionsQuery.isRefetching;
+  const refreshing = dashboardQuery.isRefetching || transactionsQuery.isRefetching || memberAuditQuery.isRefetching || deployAccessQuery.isRefetching || autoDeployStatusQuery.isRefetching;
 
   const onRefresh = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: ['analytics.getDashboard'] });
     void queryClient.invalidateQueries({ queryKey: ['transactions.list'] });
     void queryClient.invalidateQueries({ queryKey: ['members.list'] });
+    void queryClient.invalidateQueries({ queryKey: ['admin-member-registry-snapshot'] });
+    void queryClient.invalidateQueries({ queryKey: ['admin-deploy-access-diagnostic'] });
+    void queryClient.invalidateQueries({ queryKey: ['admin-auto-deploy-status'] });
   }, [queryClient]);
 
   const filteredModules = useMemo(() => {
@@ -302,6 +340,110 @@ export default function AdminDashboard() {
   }, []);
 
   const formatCurrency = useCallback((amount: number) => _fmtCurr(amount), []);
+
+  const getAuditToneColor = useCallback((tone: AuditTone) => {
+    switch (tone) {
+      case 'good':
+        return Colors.positive;
+      case 'warn':
+        return Colors.warning;
+      case 'bad':
+      default:
+        return Colors.negative;
+    }
+  }, []);
+
+  const memberAuditRows = useMemo<AdminAuditRow[]>(() => {
+    const snapshot = memberAuditQuery.data;
+    return [
+      {
+        id: 'member-merged',
+        label: 'Durable member registry',
+        value: snapshot ? String(snapshot.mergedCount) : '... ',
+        tone: snapshot && snapshot.mergedCount > 0 ? 'good' : 'warn',
+      },
+      {
+        id: 'member-remote',
+        label: 'Remote profiles',
+        value: snapshot ? String(snapshot.remoteProfileCount) : '... ',
+        tone: snapshot && snapshot.remoteProfileCount > 0 ? 'good' : 'warn',
+      },
+      {
+        id: 'member-shadow',
+        label: 'Waitlist shadows',
+        value: snapshot ? String(snapshot.remoteWaitlistShadowCount) : '... ',
+        tone: snapshot && snapshot.remoteWaitlistShadowCount > 0 ? 'good' : 'warn',
+      },
+      {
+        id: 'member-local-only',
+        label: 'Local-only recovery',
+        value: snapshot ? String(snapshot.staleLocalOnlyCount) : '... ',
+        tone: snapshot && snapshot.staleLocalOnlyCount === 0 ? 'good' : 'warn',
+      },
+    ];
+  }, [memberAuditQuery.data]);
+
+  const ownerAuditRows = useMemo<AdminAuditRow[]>(() => {
+    const deployAccess = deployAccessQuery.data;
+    const trustedOwnerEnabled = auth.isOwnerIPAccess || !!auth.detectedIP;
+    return [
+      {
+        id: 'owner-auth',
+        label: 'Authenticated session',
+        value: auth.isAuthenticated ? 'Live' : 'Missing',
+        tone: auth.isAuthenticated ? 'good' : 'bad',
+      },
+      {
+        id: 'owner-role',
+        label: 'Resolved role',
+        value: deployAccess?.role ?? auth.userRole ?? 'unknown',
+        tone: (deployAccess?.role ?? auth.userRole) && (deployAccess?.role ?? auth.userRole) !== 'investor' ? 'good' : 'warn',
+      },
+      {
+        id: 'owner-trusted',
+        label: 'Trusted owner path',
+        value: auth.isOwnerIPAccess ? 'Restored on verified network' : trustedOwnerEnabled ? 'Configured, normal session active' : 'Not active',
+        tone: auth.isOwnerIPAccess ? 'good' : trustedOwnerEnabled ? 'warn' : 'warn',
+      },
+      {
+        id: 'owner-ip',
+        label: 'Detected IP',
+        value: auth.detectedIP ?? 'Unavailable',
+        tone: auth.detectedIP ? 'good' : 'warn',
+      },
+    ];
+  }, [auth.detectedIP, auth.isAuthenticated, auth.isOwnerIPAccess, auth.userRole, deployAccessQuery.data]);
+
+  const pipelineAuditRows = useMemo<AdminAuditRow[]>(() => {
+    const deployAccess = deployAccessQuery.data;
+    const autoDeploy = autoDeployStatusQuery.data;
+    return [
+      {
+        id: 'deploy-access',
+        label: 'Deploy write access',
+        value: deployAccess?.allowed ? 'Verified' : 'Blocked',
+        tone: deployAccess?.allowed ? 'good' : 'bad',
+      },
+      {
+        id: 'deploy-token',
+        label: 'Fresh auth token',
+        value: deployAccess?.tokenAvailable ? 'Ready' : 'Missing',
+        tone: deployAccess?.tokenAvailable ? 'good' : 'bad',
+      },
+      {
+        id: 'auto-deploy',
+        label: 'Auto-deploy',
+        value: autoDeploy?.config.enabled ? 'Enabled' : 'Disabled',
+        tone: autoDeploy?.config.enabled ? 'good' : 'warn',
+      },
+      {
+        id: 'publish-trigger',
+        label: 'Publish trigger',
+        value: autoDeploy?.config.deployOnDealPublish ? 'On' : 'Off',
+        tone: autoDeploy?.config.deployOnDealPublish ? 'good' : 'warn',
+      },
+    ];
+  }, [autoDeployStatusQuery.data, deployAccessQuery.data]);
 
   const formatDate = useCallback((dateString: string) => {
     const date = new Date(dateString);
@@ -474,6 +616,82 @@ export default function AdminDashboard() {
           </View>
           <ChevronRight size={18} color={Colors.textSecondary} />
         </TouchableOpacity>
+
+        <View style={styles.auditPanel} testID="admin-live-audit-panel">
+          <View style={styles.auditPanelHeader}>
+            <View>
+              <Text style={styles.auditPanelEyebrow}>LIVE ADMIN AUDIT</Text>
+              <Text style={styles.auditPanelTitle}>Owner, member, backend, and deploy status</Text>
+              <Text style={styles.auditPanelSub}>One panel to verify session trust, durable member retention, and write-path readiness.</Text>
+            </View>
+            <TouchableOpacity style={styles.auditPanelAction} onPress={() => router.push('/admin/sync-diagnostics' as any)} testID="admin-live-audit-open-sync-btn">
+              <Text style={styles.auditPanelActionText}>Open</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.auditGrid}>
+            <View style={styles.auditSectionCard}>
+              <View style={styles.auditSectionHeaderRow}>
+                <Crown size={16} color={Colors.primary} />
+                <Text style={styles.auditSectionTitle}>Owner recognition</Text>
+              </View>
+              {ownerAuditRows.map((item) => (
+                <View key={item.id} style={styles.auditRow}>
+                  <Text style={styles.auditRowLabel}>{item.label}</Text>
+                  <Text style={[styles.auditRowValue, { color: getAuditToneColor(item.tone) }]}>{item.value}</Text>
+                </View>
+              ))}
+            </View>
+
+            <View style={styles.auditSectionCard}>
+              <View style={styles.auditSectionHeaderRow}>
+                <Users size={16} color={Colors.info} />
+                <Text style={styles.auditSectionTitle}>Member durability</Text>
+              </View>
+              {memberAuditRows.map((item) => (
+                <View key={item.id} style={styles.auditRow}>
+                  <Text style={styles.auditRowLabel}>{item.label}</Text>
+                  <Text style={[styles.auditRowValue, { color: getAuditToneColor(item.tone) }]}>{item.value}</Text>
+                </View>
+              ))}
+            </View>
+
+            <View style={styles.auditSectionCard}>
+              <View style={styles.auditSectionHeaderRow}>
+                <Server size={16} color={Colors.warning} />
+                <Text style={styles.auditSectionTitle}>Backend + deploy</Text>
+              </View>
+              {pipelineAuditRows.map((item) => (
+                <View key={item.id} style={styles.auditRow}>
+                  <Text style={styles.auditRowLabel}>{item.label}</Text>
+                  <Text style={[styles.auditRowValue, { color: getAuditToneColor(item.tone) }]}>{item.value}</Text>
+                </View>
+              ))}
+              {deployAccessQuery.data?.reason ? (
+                <Text style={styles.auditHintText}>{deployAccessQuery.data.reason}</Text>
+              ) : null}
+            </View>
+          </View>
+
+          <View style={styles.auditQuickActions}>
+            <TouchableOpacity style={styles.auditQuickBtn} onPress={() => router.push('/owner-access' as any)} testID="admin-live-audit-owner-access-btn">
+              <ShieldCheck size={16} color={Colors.text} />
+              <Text style={styles.auditQuickBtnText}>Owner Access</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.auditQuickBtn} onPress={() => router.push('/admin/owner-controls' as any)} testID="admin-live-audit-owner-btn">
+              <Crown size={16} color={Colors.text} />
+              <Text style={styles.auditQuickBtnText}>Owner Controls</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.auditQuickBtn} onPress={() => router.push('/admin/members' as any)} testID="admin-live-audit-members-btn">
+              <Users size={16} color={Colors.text} />
+              <Text style={styles.auditQuickBtnText}>Members</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.auditQuickBtn} onPress={() => router.push('/admin/registration-audit' as any)} testID="admin-live-audit-registration-btn">
+              <UserCheck size={16} color={Colors.text} />
+              <Text style={styles.auditQuickBtnText}>Registration Audit</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
 
         <TouchableOpacity
           style={styles.regAuditCard}
@@ -1343,6 +1561,119 @@ const styles = StyleSheet.create({
   },
   bottomPad: {
     height: 120,
+  },
+  auditPanel: {
+    marginHorizontal: 14,
+    marginBottom: 10,
+    backgroundColor: '#09111F',
+    borderRadius: 18,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(59,130,246,0.28)',
+    gap: 14,
+  },
+  auditPanelHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  auditPanelEyebrow: {
+    fontSize: 10,
+    fontWeight: '800' as const,
+    color: '#7DD3FC',
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
+  auditPanelTitle: {
+    fontSize: 17,
+    fontWeight: '800' as const,
+    color: Colors.text,
+    letterSpacing: -0.3,
+  },
+  auditPanelSub: {
+    marginTop: 4,
+    fontSize: 12,
+    lineHeight: 18,
+    color: '#9FB0C8',
+    maxWidth: 260,
+  },
+  auditPanelAction: {
+    backgroundColor: 'rgba(125,211,252,0.14)',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(125,211,252,0.22)',
+  },
+  auditPanelActionText: {
+    color: '#7DD3FC',
+    fontSize: 12,
+    fontWeight: '700' as const,
+  },
+  auditGrid: {
+    gap: 10,
+  },
+  auditSectionCard: {
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+    gap: 8,
+  },
+  auditSectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  auditSectionTitle: {
+    fontSize: 13,
+    fontWeight: '700' as const,
+    color: Colors.text,
+  },
+  auditRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  auditRowLabel: {
+    flex: 1,
+    fontSize: 12,
+    color: '#9FB0C8',
+  },
+  auditRowValue: {
+    maxWidth: '52%' as const,
+    fontSize: 12,
+    fontWeight: '700' as const,
+    textAlign: 'right',
+  },
+  auditHintText: {
+    fontSize: 11,
+    lineHeight: 16,
+    color: '#F5C16C',
+  },
+  auditQuickActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  auditQuickBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+  },
+  auditQuickBtnText: {
+    fontSize: 12,
+    fontWeight: '700' as const,
+    color: Colors.text,
   },
   regAuditCard: {
     flexDirection: 'row',

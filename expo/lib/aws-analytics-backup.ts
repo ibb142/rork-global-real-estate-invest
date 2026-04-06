@@ -11,6 +11,16 @@ const AWS_MAX_RETRIES = 5;
 
 const AWS_REGION = process.env.AWS_REGION || 'us-east-1';
 const S3_BUCKET = process.env.S3_BUCKET_NAME || '';
+const AWS_BACKUP_DEBUG = process.env.EXPO_PUBLIC_ANALYTICS_DEBUG === 'true';
+const RORK_APP_KEY = (process.env.EXPO_PUBLIC_RORK_APP_KEY || '').trim();
+const PROJECT_ID = (process.env.EXPO_PUBLIC_PROJECT_ID || '').trim();
+const TEAM_ID = (process.env.EXPO_PUBLIC_TEAM_ID || '').trim();
+
+function backupLog(...args: unknown[]): void {
+  if (__DEV__ && AWS_BACKUP_DEBUG) {
+    console.log(...args);
+  }
+}
 
 export interface AWSAnalyticsEvent {
   id: string;
@@ -26,6 +36,7 @@ export interface AWSAnalyticsEvent {
 }
 
 type BackupStatus = 'idle' | 'syncing' | 'error' | 'disabled';
+type SendBatchResult = 'success' | 'retry' | 'disabled';
 
 class AWSAnalyticsBackup {
   private queue: AWSAnalyticsEvent[] = [];
@@ -53,8 +64,7 @@ class AWSAnalyticsBackup {
       return `${apiBase}/analytics/aws-backup`;
     }
     if (S3_BUCKET && AWS_REGION) {
-      this.useDirectApi = true;
-      return `https://${S3_BUCKET}.s3.${AWS_REGION}.amazonaws.com/analytics`;
+      backupLog('[AWSBackup] S3 bucket detected but direct unsigned uploads are disabled; backend proxy is required');
     }
     return '';
   }
@@ -69,11 +79,11 @@ class AWSAnalyticsBackup {
         const parsed = JSON.parse(stored);
         if (Array.isArray(parsed)) {
           this.queue = parsed;
-          console.log('[AWSBackup] Loaded', parsed.length, 'queued events from storage');
+          backupLog('[AWSBackup] Loaded', parsed.length, 'queued events from storage');
         }
       }
     } catch (err) {
-      console.log('[AWSBackup] Load queue error:', (err as Error)?.message);
+      backupLog('[AWSBackup] Load queue error:', (err as Error)?.message);
     }
 
     try {
@@ -83,20 +93,20 @@ class AWSAnalyticsBackup {
         if (Array.isArray(parsed)) {
           this.localEventStore = parsed;
           this.totalStoredLocally = parsed.length;
-          console.log('[AWSBackup] Loaded', parsed.length, 'local backup events');
+          backupLog('[AWSBackup] Loaded', parsed.length, 'local backup events');
         }
       }
     } catch (err) {
-      console.log('[AWSBackup] Load local events error:', (err as Error)?.message);
+      backupLog('[AWSBackup] Load local events error:', (err as Error)?.message);
     }
 
     this.flushTimer = setInterval(() => {
       void this.flush();
     }, AWS_FLUSH_INTERVAL);
 
-    const hasConfig = !!(this.apiEndpoint);
-    this.status = hasConfig ? 'idle' : 'idle';
-    console.log('[AWSBackup] Initialized | endpoint:', this.apiEndpoint ? this.apiEndpoint.substring(0, 50) : 'LOCAL_ONLY', '| status:', this.status, '| local events:', this.localEventStore.length);
+    const hasConfig = !!this.apiEndpoint;
+    this.status = hasConfig ? 'idle' : 'disabled';
+    backupLog('[AWSBackup] Initialized | endpoint:', this.apiEndpoint ? this.apiEndpoint.substring(0, 50) : 'LOCAL_ONLY', '| status:', this.status, '| local events:', this.localEventStore.length);
   }
 
   isConfigured(): boolean {
@@ -104,14 +114,23 @@ class AWSAnalyticsBackup {
   }
 
   enqueue(event: AWSAnalyticsEvent): void {
-    this.queue.push(event);
+    if (!this.initialized) {
+      void this.init();
+    }
+
     this.storeLocally(event);
+
+    if (!this.apiEndpoint || this.status === 'disabled') {
+      return;
+    }
+
+    this.queue.push(event);
 
     if (this.queue.length > AWS_MAX_QUEUE) {
       const dropped = this.queue.length - AWS_MAX_QUEUE;
       this.queue = this.queue.slice(-AWS_MAX_QUEUE);
       this.totalFailed += dropped;
-      console.log('[AWSBackup] Queue overflow - rotated', dropped, 'oldest events');
+      backupLog('[AWSBackup] Queue overflow - rotated', dropped, 'oldest events');
     }
 
     void this.saveQueue();
@@ -122,12 +141,18 @@ class AWSAnalyticsBackup {
   }
 
   enqueueSupabaseFailover(events: AWSAnalyticsEvent[]): void {
+    if (!this.initialized) {
+      void this.init();
+    }
+
     this.supabaseFailoverActive = true;
     this.supabaseFailoverCount += events.length;
-    console.log('[AWSBackup] Supabase failover — receiving', events.length, 'events (total failover:', this.supabaseFailoverCount, ')');
+    backupLog('[AWSBackup] Supabase failover — receiving', events.length, 'events (total failover:', this.supabaseFailoverCount, ')');
     for (const event of events) {
       this.storeLocally(event);
-      this.queue.push(event);
+      if (this.apiEndpoint && this.status !== 'disabled') {
+        this.queue.push(event);
+      }
     }
     void this.saveQueue();
     if (this.queue.length >= AWS_BATCH_SIZE) {
@@ -151,9 +176,9 @@ class AWSAnalyticsBackup {
   }
 
   async flush(): Promise<void> {
-    if (this.queue.length === 0 || this.status === 'syncing') return;
+    if (this.queue.length === 0 || this.status === 'syncing' || this.status === 'disabled') return;
     if (!this.apiEndpoint) {
-      console.log('[AWSBackup] No remote endpoint — events stored locally only (' + this.localEventStore.length + ' events)');
+      this.status = 'disabled';
       this.queue = [];
       void this.saveQueue();
       return;
@@ -163,14 +188,17 @@ class AWSAnalyticsBackup {
     const batch = this.queue.splice(0, AWS_BATCH_SIZE);
 
     try {
-      const success = await this.sendBatch(batch);
+      const result = await this.sendBatch(batch);
 
-      if (success) {
+      if (result === 'success') {
         this.totalSynced += batch.length;
         this.retryCount = 0;
         this.lastError = null;
         this.status = 'idle';
-        console.log(`[AWSBackup] Synced ${batch.length} events (total: ${this.totalSynced}, remaining: ${this.queue.length})`);
+        backupLog(`[AWSBackup] Synced ${batch.length} events (total: ${this.totalSynced}, remaining: ${this.queue.length})`);
+      } else if (result === 'disabled') {
+        this.retryCount = 0;
+        this.status = 'disabled';
       } else {
         this.queue.unshift(...batch);
         this.retryCount++;
@@ -179,9 +207,8 @@ class AWSAnalyticsBackup {
         if (this.retryCount >= AWS_MAX_RETRIES) {
           this.totalFailed += batch.length;
           this.queue.splice(0, batch.length);
-          console.log(`[AWSBackup] Max retries reached — ${batch.length} events kept locally, remote sync paused`);
           this.retryCount = 0;
-          this.disableRemoteSync();
+          this.disableRemoteSync('max_retries');
         } else {
           const backoff = AWS_RETRY_BACKOFF_BASE * Math.pow(2, this.retryCount - 1);
           setTimeout(() => void this.flush(), backoff);
@@ -191,33 +218,46 @@ class AWSAnalyticsBackup {
       this.queue.unshift(...batch);
       this.lastError = (err as Error)?.message ?? 'Unknown error';
       this.status = 'error';
-      console.log('[AWSBackup] Flush exception — events kept locally');
+      backupLog('[AWSBackup] Flush exception — events kept locally');
     }
 
     await this.saveQueue();
   }
 
-  private async sendBatch(batch: AWSAnalyticsEvent[]): Promise<boolean> {
-    if (!this.apiEndpoint) return false;
+  private async sendBatch(batch: AWSAnalyticsEvent[]): Promise<SendBatchResult> {
+    if (!this.apiEndpoint) {
+      return 'disabled';
+    }
 
     if (this.useDirectApi) {
-      console.log('[AWSBackup] Direct S3 uploads require server-side signing — storing locally instead');
-      return false;
+      this.disableRemoteSync('direct_api_requires_signing');
+      return 'disabled';
     }
 
     return this.sendToBackendProxy(batch);
   }
 
-  private async sendToBackendProxy(batch: AWSAnalyticsEvent[]): Promise<boolean> {
+  private async sendToBackendProxy(batch: AWSAnalyticsEvent[]): Promise<SendBatchResult> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10_000);
+
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 10_000);
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      if (RORK_APP_KEY) {
+        headers['x-rork-app-key'] = RORK_APP_KEY;
+      }
+      if (PROJECT_ID) {
+        headers['x-rork-project-id'] = PROJECT_ID;
+      }
+      if (TEAM_ID) {
+        headers['x-rork-team-id'] = TEAM_ID;
+      }
 
       const resp = await fetch(this.apiEndpoint, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers,
         body: JSON.stringify({
           events: batch,
           source: 'aws_backup',
@@ -227,38 +267,42 @@ class AWSAnalyticsBackup {
         signal: controller.signal,
       });
 
-      clearTimeout(timeout);
-
       if (!resp.ok) {
         const body = await resp.text().catch(() => '');
         this.lastError = `Backend proxy: ${resp.status} ${body.substring(0, 200)}`;
-        if (resp.status === 404 || resp.status === 502 || resp.status === 503) {
-          console.log('[AWSBackup] Endpoint unavailable (' + resp.status + ') — events kept locally');
-          this.disableRemoteSync();
-          return false;
+
+        if ((resp.status >= 400 && resp.status < 500 && resp.status !== 408 && resp.status !== 429) || resp.status === 502 || resp.status === 503 || resp.status === 504) {
+          this.disableRemoteSync(`backend_${resp.status}`);
+          return 'disabled';
         }
-        console.warn('[AWSBackup] Backend proxy failed:', resp.status);
-        return false;
+
+        backupLog('[AWSBackup] Backend proxy failed:', resp.status);
+        return 'retry';
       }
 
-      return true;
+      return 'success';
     } catch (err) {
       this.lastError = (err as Error)?.message ?? 'Network error';
       if (this.retryCount === 0) {
-        console.log('[AWSBackup] Backend proxy unreachable — events stored locally');
+        backupLog('[AWSBackup] Backend proxy unreachable — events stored locally');
       }
-      return false;
+      return 'retry';
+    } finally {
+      clearTimeout(timeout);
     }
   }
 
-  private disableRemoteSync(): void {
+  private disableRemoteSync(reason?: string): void {
     this.apiEndpoint = '';
     this.useDirectApi = false;
     this.retryCount = 0;
-    this.status = 'idle';
+    this.status = 'disabled';
     this.queue = [];
     void this.saveQueue();
-    console.log('[AWSBackup] Remote sync disabled — all events stored locally only');
+    if (reason) {
+      this.lastError = reason;
+    }
+    backupLog('[AWSBackup] Remote sync disabled — all events stored locally only');
   }
 
   private async sendToS3Direct(batch: AWSAnalyticsEvent[]): Promise<boolean> {
@@ -290,15 +334,15 @@ class AWSAnalyticsBackup {
 
       if (!resp.ok) {
         this.lastError = `S3 direct: ${resp.status}`;
-        console.error('[AWSBackup] S3 direct upload failed:', resp.status);
+        backupLog('[AWSBackup] S3 direct upload failed:', resp.status);
         return false;
       }
 
-      console.log('[AWSBackup] S3 direct upload success:', key);
+      backupLog('[AWSBackup] S3 direct upload success:', key);
       return true;
     } catch (err) {
       this.lastError = (err as Error)?.message ?? 'S3 error';
-      console.error('[AWSBackup] S3 direct error:', this.lastError);
+      backupLog('[AWSBackup] S3 direct error:', this.lastError);
       return false;
     }
   }
@@ -338,7 +382,7 @@ class AWSAnalyticsBackup {
   }
 
   async forceSyncNow(): Promise<void> {
-    console.log('[AWSBackup] Force sync requested');
+    backupLog('[AWSBackup] Force sync requested');
     await this.flush();
   }
 

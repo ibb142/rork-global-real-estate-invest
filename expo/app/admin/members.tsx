@@ -30,6 +30,12 @@ import Colors from '@/constants/colors';
 import { formatCurrency as _fmtCurr } from '@/lib/formatters';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
+import {
+  fetchAdminMemberRegistry,
+  syncMemberRegistryFromSupabase,
+  upsertStoredMemberRegistryRecord,
+} from '@/lib/member-registry';
+import { useRealtimeTable } from '@/lib/realtime';
 
 type FilterType = 'all' | 'active' | 'pending_kyc' | 'suspended';
 
@@ -55,15 +61,40 @@ export default function MembersScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState<FilterType>('all');
 
+  const handleMemberRealtimePayload = useCallback((source: 'supabase' | 'waitlist_shadow' | 'landing_submission_shadow') => (
+    (payload: { eventType: string; new: Record<string, unknown> | null }) => {
+      console.log('[Members] Realtime payload received:', source, payload.eventType);
+      if (payload.eventType === 'DELETE') {
+        return;
+      }
+
+      if (payload.new && typeof payload.new === 'object') {
+        void upsertStoredMemberRegistryRecord({
+          ...payload.new,
+          source,
+        });
+      }
+    }
+  ), []);
+
+  useRealtimeTable('profiles', [['members.list'], ['members.getStats']], {
+    onPayload: handleMemberRealtimePayload('supabase'),
+  });
+
+  useRealtimeTable('waitlist', [['members.list'], ['members.getStats']], {
+    onPayload: handleMemberRealtimePayload('waitlist_shadow'),
+  });
+
+  useRealtimeTable('landing_submissions', [['members.list'], ['members.getStats']], {
+    onPayload: handleMemberRealtimePayload('landing_submission_shadow'),
+  });
+
   const membersQuery = useQuery({
     queryKey: ['members.list', { page: 1, limit: 100, search: searchQuery || undefined }],
     queryFn: async () => {
-      console.log('[Supabase] Fetching members list');
-      let query = supabase.from('profiles').select('*').limit(100);
-      if (searchQuery) query = query.or(`email.ilike.%${searchQuery}%,first_name.ilike.%${searchQuery}%,last_name.ilike.%${searchQuery}%`);
-      const { data, error } = await query;
-      if (error) { console.log('[Supabase] profiles error:', error.message); return null; }
-      return { members: data ?? [], total: data?.length ?? 0 };
+      console.log('[Members] Fetching durable members list');
+      const members = await fetchAdminMemberRegistry(searchQuery);
+      return { members, total: members.length };
     },
     staleTime: 3000,
   });
@@ -71,21 +102,19 @@ export default function MembersScreen() {
   const statsQuery = useQuery<{ totalMembers: number; activeMembers: number; pendingKyc: number; newMembersToday: number; newMembersThisWeek: number; newMembersThisMonth: number } | null>({
     queryKey: ['members.getStats'],
     queryFn: async () => {
-      console.log('[Supabase] Fetching member stats');
-      const { data, error } = await supabase.from('profiles').select('*').limit(500);
-      if (error) { console.log('[Supabase] profiles stats error:', error.message); return null; }
-      const members = data ?? [];
+      console.log('[Members] Computing durable member stats');
+      const members = await fetchAdminMemberRegistry();
       const now = new Date();
       const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
       const weekStart = new Date(now.getTime() - 7 * 86400000).toISOString();
       const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
       return {
         totalMembers: members.length,
-        activeMembers: members.filter((m: any) => m.status === 'active').length,
-        pendingKyc: members.filter((m: any) => m.kyc_status === 'pending' || m.kycStatus === 'pending').length,
-        newMembersToday: members.filter((m: any) => (m.created_at || m.createdAt) >= todayStart).length,
-        newMembersThisWeek: members.filter((m: any) => (m.created_at || m.createdAt) >= weekStart).length,
-        newMembersThisMonth: members.filter((m: any) => (m.created_at || m.createdAt) >= monthStart).length,
+        activeMembers: members.filter((m) => (m.status || 'active') === 'active').length,
+        pendingKyc: members.filter((m) => (m.kycStatus || 'pending') === 'pending' || m.kycStatus === 'in_review').length,
+        newMembersToday: members.filter((m) => (m.createdAt || '') >= todayStart).length,
+        newMembersThisWeek: members.filter((m) => (m.createdAt || '') >= weekStart).length,
+        newMembersThisMonth: members.filter((m) => (m.createdAt || '') >= monthStart).length,
       };
     },
     staleTime: 30000,
@@ -98,7 +127,11 @@ export default function MembersScreen() {
       if (error) return { success: false, message: error.message };
       return { success: true, ...data };
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      if (data && typeof data === 'object') {
+        void upsertStoredMemberRegistryRecord({ ...(data as Record<string, unknown>), source: 'admin_update' });
+      }
+      void syncMemberRegistryFromSupabase();
       void membersQuery.refetch();
       void statsQuery.refetch();
     },
@@ -111,7 +144,11 @@ export default function MembersScreen() {
       if (error) return { success: false, message: error.message };
       return { success: true, ...data };
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      if (data && typeof data === 'object') {
+        void upsertStoredMemberRegistryRecord({ ...(data as Record<string, unknown>), source: 'admin_update' });
+      }
+      void syncMemberRegistryFromSupabase();
       void membersQuery.refetch();
       void statsQuery.refetch();
     },
@@ -124,7 +161,11 @@ export default function MembersScreen() {
       if (error) return { success: false, message: error.message };
       return { success: true, ...data };
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      if (data && typeof data === 'object') {
+        void upsertStoredMemberRegistryRecord({ ...(data as Record<string, unknown>), source: 'admin_update' });
+      }
+      void syncMemberRegistryFromSupabase();
       void membersQuery.refetch();
       void statsQuery.refetch();
     },
@@ -335,8 +376,10 @@ export default function MembersScreen() {
   ), [formatCurrency, formatDate, getKycStatusColor, getKycStatusIcon, handleMemberAction, router]);
 
   const handleRefresh = useCallback(() => {
-    void membersQuery.refetch();
-    void statsQuery.refetch();
+    void syncMemberRegistryFromSupabase().finally(() => {
+      void membersQuery.refetch();
+      void statsQuery.refetch();
+    });
   }, [membersQuery, statsQuery]);
 
   return (

@@ -11,6 +11,7 @@ import {
   Platform,
 } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
+import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { useMutation } from '@tanstack/react-query';
 import {
@@ -30,13 +31,23 @@ import {
   TrendingUp,
   Building2,
   ChevronDown,
+  Camera,
+  Upload,
+  Trash2,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
-import type { IntakeProofOfFundsFile } from '@/lib/investor-intake';
+import type {
+  IntakeProofOfFundsFile,
+  InvestorDocumentType,
+  InvestorEntityType,
+} from '@/lib/investor-intake';
 import {
   ACCREDITED_STATUS_OPTIONS,
   CALL_TIME_OPTIONS,
+  getIdentificationTypeLabel,
+  IDENTIFICATION_TYPE_OPTIONS,
   INVESTMENT_RANGE_OPTIONS,
+  INVESTOR_ENTITY_OPTIONS,
   INVESTOR_MEMBER_AGREEMENT_SECTIONS,
   INVESTOR_MEMBER_AGREEMENT_VERSION,
   INVESTOR_TIMELINE_STEPS,
@@ -47,6 +58,7 @@ import {
   isFormValid,
   sendOtp,
   submitWaitlistEntry,
+  uploadInvestorIntakeFile,
   uploadProofOfFundsFile,
   validateEmail,
   validatePhone,
@@ -69,10 +81,45 @@ interface InvestorFormState {
   returnExpectation: string;
   bestTimeForCall: string;
   accreditedStatus: 'accredited' | 'non_accredited' | 'unsure' | null;
+  entityType: InvestorEntityType;
+  primaryIdType: InvestorDocumentType;
+  primaryIdReference: string;
+  secondaryIdType: InvestorDocumentType;
+  secondaryIdReference: string;
+  documentIssuingCountry: string;
+  taxResidencyCountry: string;
+  taxIdReference: string;
+  companyName: string;
+  companyRole: string;
+  companyEin: string;
+  companyTaxId: string;
+  companyRegistrationCountry: string;
+  beneficialOwnerName: string;
   signatureName: string;
 }
 
-type DropdownField = 'investmentRange' | 'returnExpectation' | 'bestTimeForCall' | 'accreditedStatus';
+type InvestorTextField =
+  | 'firstName'
+  | 'lastName'
+  | 'email'
+  | 'phone'
+  | 'investmentRange'
+  | 'returnExpectation'
+  | 'bestTimeForCall'
+  | 'primaryIdReference'
+  | 'secondaryIdReference'
+  | 'documentIssuingCountry'
+  | 'taxResidencyCountry'
+  | 'taxIdReference'
+  | 'companyName'
+  | 'companyRole'
+  | 'companyEin'
+  | 'companyTaxId'
+  | 'companyRegistrationCountry'
+  | 'beneficialOwnerName'
+  | 'signatureName';
+
+type DropdownField = 'investmentRange' | 'returnExpectation' | 'bestTimeForCall' | 'accreditedStatus' | 'primaryIdType' | 'secondaryIdType';
 
 const MEMBER_ACCESS_ITEMS = [
   {
@@ -109,13 +156,34 @@ export default function InvestorIntakeForm({ variant, source, pagePath, testIdPr
     returnExpectation: '',
     bestTimeForCall: '',
     accreditedStatus: 'unsure',
+    entityType: 'individual',
+    primaryIdType: 'drivers_license',
+    primaryIdReference: '',
+    secondaryIdType: 'passport',
+    secondaryIdReference: '',
+    documentIssuingCountry: '',
+    taxResidencyCountry: '',
+    taxIdReference: '',
+    companyName: '',
+    companyRole: '',
+    companyEin: '',
+    companyTaxId: '',
+    companyRegistrationCountry: '',
+    beneficialOwnerName: '',
     signatureName: '',
   });
   const [activeDropdown, setActiveDropdown] = useState<DropdownField | null>(null);
   const [contactConsent, setContactConsent] = useState<boolean>(true);
+  const [taxResponsibilityAccepted, setTaxResponsibilityAccepted] = useState<boolean>(false);
+  const [identityReviewAccepted, setIdentityReviewAccepted] = useState<boolean>(false);
+  const [entityAuthorityAccepted, setEntityAuthorityAccepted] = useState<boolean>(false);
   const [agreementAccepted, setAgreementAccepted] = useState<boolean>(false);
   const [proofOfFunds, setProofOfFunds] = useState<IntakeProofOfFundsFile | null>(null);
+  const [primaryIdUpload, setPrimaryIdUpload] = useState<IntakeProofOfFundsFile | null>(null);
+  const [secondaryIdUpload, setSecondaryIdUpload] = useState<IntakeProofOfFundsFile | null>(null);
+  const [taxDocumentUpload, setTaxDocumentUpload] = useState<IntakeProofOfFundsFile | null>(null);
   const [proofUploadPending, setProofUploadPending] = useState<boolean>(false);
+  const [identityUploadPending, setIdentityUploadPending] = useState<boolean>(false);
   const [otpSent, setOtpSent] = useState<boolean>(false);
   const [otpCode, setOtpCode] = useState<string>('');
   const [phoneVerified, setPhoneVerified] = useState<boolean>(false);
@@ -168,8 +236,15 @@ export default function InvestorIntakeForm({ variant, source, pagePath, testIdPr
     };
   }, []);
 
-  const updateField = useCallback((field: keyof InvestorFormState, value: string) => {
+  const updateField = useCallback((field: InvestorTextField, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }));
+  }, []);
+
+  const handleEntityTypeChange = useCallback((nextType: InvestorEntityType) => {
+    setForm((prev) => ({ ...prev, entityType: nextType }));
+    if (nextType !== 'corporate') {
+      setEntityAuthorityAccepted(false);
+    }
   }, []);
 
   const toggleDropdown = useCallback((field: DropdownField) => {
@@ -181,6 +256,16 @@ export default function InvestorIntakeForm({ variant, source, pagePath, testIdPr
       setForm((prev) => ({
         ...prev,
         accreditedStatus: value as InvestorFormState['accreditedStatus'],
+      }));
+    } else if (field === 'primaryIdType') {
+      setForm((prev) => ({
+        ...prev,
+        primaryIdType: value as InvestorDocumentType,
+      }));
+    } else if (field === 'secondaryIdType') {
+      setForm((prev) => ({
+        ...prev,
+        secondaryIdType: value as InvestorDocumentType,
       }));
     } else {
       setForm((prev) => ({ ...prev, [field]: value }));
@@ -284,6 +369,7 @@ export default function InvestorIntakeForm({ variant, source, pagePath, testIdPr
         name: asset.name || 'proof-of-funds',
         mimeType: asset.mimeType ?? null,
         size: asset.size ?? null,
+        source: 'document_picker',
       };
 
       setProofOfFunds(nextFile);
@@ -294,6 +380,92 @@ export default function InvestorIntakeForm({ variant, source, pagePath, testIdPr
     }
   }, []);
 
+  const isCorporate = form.entityType === 'corporate';
+
+  const createImageUploadFile = useCallback((asset: ImagePicker.ImagePickerAsset, sourceType: 'camera' | 'gallery', fallbackPrefix: string): IntakeProofOfFundsFile => {
+    const extension = asset.mimeType?.split('/')[1]?.split(';')[0] ?? 'jpg';
+    const fallbackName = `${fallbackPrefix}_${sourceType}_${Date.now()}.${extension}`;
+
+    return {
+      uri: asset.uri,
+      name: asset.fileName ?? fallbackName,
+      mimeType: asset.mimeType ?? 'image/jpeg',
+      size: asset.fileSize ?? null,
+      source: sourceType,
+    };
+  }, []);
+
+  const pickComplianceImage = useCallback(async (
+    sourceType: 'camera' | 'gallery',
+    targetLabel: string,
+    fallbackPrefix: string,
+    onSelect: (file: IntakeProofOfFundsFile) => void,
+  ) => {
+    try {
+      if (Platform.OS !== 'web') {
+        if (sourceType === 'camera') {
+          const { status } = await ImagePicker.requestCameraPermissionsAsync();
+          if (status !== 'granted') {
+            Alert.alert('Permission Required', 'Please allow camera access to take a document photo.');
+            return;
+          }
+        } else {
+          const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+          if (status !== 'granted') {
+            Alert.alert('Permission Required', 'Please allow photo access to upload a document from your gallery.');
+            return;
+          }
+        }
+      }
+
+      const pickerOptions: ImagePicker.ImagePickerOptions = {
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.85,
+      };
+
+      const result = sourceType === 'camera'
+        ? await ImagePicker.launchCameraAsync(pickerOptions)
+        : await ImagePicker.launchImageLibraryAsync(pickerOptions);
+
+      if (result.canceled) {
+        return;
+      }
+
+      const asset = result.assets?.[0];
+      if (!asset?.uri) {
+        Alert.alert('Upload Error', 'We could not read that image. Please try again.');
+        return;
+      }
+
+      const nextFile = createImageUploadFile(asset, sourceType, fallbackPrefix);
+      onSelect(nextFile);
+      console.log('[InvestorIntake] Compliance image selected:', targetLabel, nextFile.name, sourceType);
+    } catch (err) {
+      console.log('[InvestorIntake] Compliance image picker exception:', (err as Error)?.message);
+      Alert.alert('Upload Error', 'We could not open your camera or gallery. Please try again.');
+    }
+  }, [createImageUploadFile]);
+
+  const openPrimaryIdPicker = useCallback((sourceType: 'camera' | 'gallery') => {
+    void pickComplianceImage(sourceType, getIdentificationTypeLabel(form.primaryIdType), 'primary-id', (file) => {
+      setPrimaryIdUpload(file);
+    });
+  }, [form.primaryIdType, pickComplianceImage]);
+
+  const openSecondaryIdPicker = useCallback((sourceType: 'camera' | 'gallery') => {
+    void pickComplianceImage(sourceType, getIdentificationTypeLabel(form.secondaryIdType), 'secondary-id', (file) => {
+      setSecondaryIdUpload(file);
+    });
+  }, [form.secondaryIdType, pickComplianceImage]);
+
+  const openTaxDocumentPicker = useCallback((sourceType: 'camera' | 'gallery') => {
+    void pickComplianceImage(sourceType, isCorporate ? 'Company tax or registration document' : 'SSN or tax document', isCorporate ? 'company-tax-document' : 'tax-document', (file) => {
+      setTaxDocumentUpload(file);
+    });
+  }, [isCorporate, pickComplianceImage]);
+
   const signatureMatches = useMemo(() => {
     const normalizedSignature = form.signatureName.trim().toLowerCase();
     const normalizedFullName = fullName.trim().toLowerCase();
@@ -303,64 +475,152 @@ export default function InvestorIntakeForm({ variant, source, pagePath, testIdPr
     return normalizedSignature === normalizedFullName;
   }, [form.signatureName, fullName]);
 
+  const hasDistinctDocumentTypes = form.primaryIdType !== form.secondaryIdType;
+
+  const documentRequirementsMet = useMemo(() => {
+    const baseDocumentFieldsReady = form.primaryIdReference.trim().length > 0
+      && form.secondaryIdReference.trim().length > 0
+      && form.documentIssuingCountry.trim().length > 0
+      && form.taxResidencyCountry.trim().length > 0
+      && hasDistinctDocumentTypes;
+
+    if (!baseDocumentFieldsReady) {
+      return false;
+    }
+
+    if (isCorporate) {
+      return form.companyName.trim().length > 0
+        && form.companyRole.trim().length > 0
+        && form.companyEin.trim().length > 0
+        && form.companyTaxId.trim().length > 0
+        && form.companyRegistrationCountry.trim().length > 0
+        && form.beneficialOwnerName.trim().length > 0;
+    }
+
+    return form.taxIdReference.trim().length > 0;
+  }, [form.beneficialOwnerName, form.companyEin, form.companyName, form.companyRegistrationCountry, form.companyRole, form.companyTaxId, form.documentIssuingCountry, form.primaryIdReference, form.secondaryIdReference, form.taxIdReference, form.taxResidencyCountry, hasDistinctDocumentTypes, isCorporate]);
+
+  const requiredAcknowledgementsAccepted = useMemo(() => {
+    if (isCorporate) {
+      return contactConsent && taxResponsibilityAccepted && identityReviewAccepted && entityAuthorityAccepted && agreementAccepted;
+    }
+
+    return contactConsent && taxResponsibilityAccepted && identityReviewAccepted && agreementAccepted;
+  }, [agreementAccepted, contactConsent, entityAuthorityAccepted, identityReviewAccepted, isCorporate, taxResponsibilityAccepted]);
+
   const canSubmit = useMemo(() => {
     return isFormValid(fullName, form.email, form.phone, phoneVerified, contactConsent)
-      && agreementAccepted
+      && requiredAcknowledgementsAccepted
       && signatureMatches
       && form.investmentRange.length > 0
-      && form.returnExpectation.length > 0;
-  }, [agreementAccepted, contactConsent, form.email, form.investmentRange, form.phone, form.returnExpectation, fullName, phoneVerified, signatureMatches]);
+      && form.returnExpectation.length > 0
+      && documentRequirementsMet;
+  }, [contactConsent, documentRequirementsMet, form.email, form.investmentRange, form.phone, form.returnExpectation, fullName, phoneVerified, requiredAcknowledgementsAccepted, signatureMatches]);
 
   const submitMutation = useMutation({
     mutationFn: async () => {
       console.log('[InvestorIntake] Submitting lead');
+
       let uploadedProof = proofOfFunds;
+      let uploadedPrimaryId = primaryIdUpload;
+      let uploadedSecondaryId = secondaryIdUpload;
+      let uploadedTaxDocument = taxDocumentUpload;
 
-      if (proofOfFunds?.uri && !proofOfFunds.publicUrl && !proofOfFunds.storagePath) {
-        setProofUploadPending(true);
-        uploadedProof = await uploadProofOfFundsFile(proofOfFunds);
-        setProofOfFunds(uploadedProof);
+      try {
+        if (primaryIdUpload?.uri && !primaryIdUpload.publicUrl && !primaryIdUpload.storagePath) {
+          setIdentityUploadPending(true);
+          uploadedPrimaryId = await uploadInvestorIntakeFile(primaryIdUpload, 'identity-primary');
+          setPrimaryIdUpload(uploadedPrimaryId);
+        }
+
+        if (secondaryIdUpload?.uri && !secondaryIdUpload.publicUrl && !secondaryIdUpload.storagePath) {
+          setIdentityUploadPending(true);
+          uploadedSecondaryId = await uploadInvestorIntakeFile(secondaryIdUpload, 'identity-secondary');
+          setSecondaryIdUpload(uploadedSecondaryId);
+        }
+
+        if (taxDocumentUpload?.uri && !taxDocumentUpload.publicUrl && !taxDocumentUpload.storagePath) {
+          setIdentityUploadPending(true);
+          uploadedTaxDocument = await uploadInvestorIntakeFile(taxDocumentUpload, isCorporate ? 'entity-tax-document' : 'tax-document');
+          setTaxDocumentUpload(uploadedTaxDocument);
+        }
+
+        if (proofOfFunds?.uri && !proofOfFunds.publicUrl && !proofOfFunds.storagePath) {
+          setProofUploadPending(true);
+          uploadedProof = await uploadProofOfFundsFile(proofOfFunds);
+          setProofOfFunds(uploadedProof);
+        }
+
+        const result = await submitWaitlistEntry({
+          full_name: fullName,
+          first_name: form.firstName,
+          last_name: form.lastName,
+          email: form.email,
+          phone: form.phone,
+          accredited_status: form.accreditedStatus,
+          consent: contactConsent,
+          agreement_accepted: agreementAccepted,
+          agreement_version: INVESTOR_MEMBER_AGREEMENT_VERSION,
+          signature_name: form.signatureName,
+          investment_range: form.investmentRange,
+          return_expectation: form.returnExpectation,
+          preferred_call_time: form.bestTimeForCall,
+          best_time_for_call: form.bestTimeForCall,
+          investment_timeline: INVESTOR_TIMELINE_STEPS.map((step) => step.label).join(' > '),
+          membership_interest: 'waitlist',
+          proof_of_funds_url: uploadedProof?.publicUrl ?? null,
+          proof_of_funds_name: uploadedProof?.name ?? null,
+          proof_of_funds_storage_path: uploadedProof?.storagePath ?? null,
+          primary_id_upload_url: uploadedPrimaryId?.publicUrl ?? null,
+          primary_id_upload_name: uploadedPrimaryId?.name ?? null,
+          primary_id_upload_storage_path: uploadedPrimaryId?.storagePath ?? null,
+          secondary_id_upload_url: uploadedSecondaryId?.publicUrl ?? null,
+          secondary_id_upload_name: uploadedSecondaryId?.name ?? null,
+          secondary_id_upload_storage_path: uploadedSecondaryId?.storagePath ?? null,
+          tax_document_upload_url: uploadedTaxDocument?.publicUrl ?? null,
+          tax_document_upload_name: uploadedTaxDocument?.name ?? null,
+          tax_document_upload_storage_path: uploadedTaxDocument?.storagePath ?? null,
+          investor_type: form.entityType,
+          primary_id_type: form.primaryIdType,
+          primary_id_reference: form.primaryIdReference,
+          secondary_id_type: form.secondaryIdType,
+          secondary_id_reference: form.secondaryIdReference,
+          document_issuing_country: form.documentIssuingCountry,
+          tax_residency_country: form.taxResidencyCountry,
+          tax_id_reference: form.taxIdReference,
+          company_name: form.companyName,
+          company_role: form.companyRole,
+          company_ein: form.companyEin,
+          company_tax_id: form.companyTaxId,
+          company_registration_country: form.companyRegistrationCountry,
+          beneficial_owner_name: form.beneficialOwnerName,
+          legal_ack_tax_reporting: taxResponsibilityAccepted,
+          legal_ack_identity_review: identityReviewAccepted,
+          legal_ack_entity_authority: isCorporate ? entityAuthorityAccepted : false,
+          phone_verified: phoneVerified,
+          source,
+          page_path: attribution.pagePath,
+          utm_source: attribution.utm_source,
+          utm_medium: attribution.utm_medium,
+          utm_campaign: attribution.utm_campaign,
+          utm_content: attribution.utm_content,
+          utm_term: attribution.utm_term,
+          referrer: attribution.referrer,
+        });
+
+        if (!result.success || !result.confirmedWrite || !result.persistedId) {
+          console.log('[InvestorIntake] Submission was not confirmed by persistence layer:', result);
+          throw new Error(result.error ?? 'submission_failed');
+        }
+
+        return result;
+      } finally {
         setProofUploadPending(false);
+        setIdentityUploadPending(false);
       }
-
-      const result = await submitWaitlistEntry({
-        full_name: fullName,
-        first_name: form.firstName,
-        last_name: form.lastName,
-        email: form.email,
-        phone: form.phone,
-        accredited_status: form.accreditedStatus,
-        consent: contactConsent,
-        agreement_accepted: agreementAccepted,
-        agreement_version: INVESTOR_MEMBER_AGREEMENT_VERSION,
-        signature_name: form.signatureName,
-        investment_range: form.investmentRange,
-        return_expectation: form.returnExpectation,
-        preferred_call_time: form.bestTimeForCall,
-        best_time_for_call: form.bestTimeForCall,
-        investment_timeline: INVESTOR_TIMELINE_STEPS.map((step) => step.label).join(' > '),
-        membership_interest: 'waitlist',
-        proof_of_funds_url: uploadedProof?.publicUrl ?? null,
-        proof_of_funds_name: uploadedProof?.name ?? null,
-        proof_of_funds_storage_path: uploadedProof?.storagePath ?? null,
-        phone_verified: phoneVerified,
-        source,
-        page_path: attribution.pagePath,
-        utm_source: attribution.utm_source,
-        utm_medium: attribution.utm_medium,
-        utm_campaign: attribution.utm_campaign,
-        utm_content: attribution.utm_content,
-        utm_term: attribution.utm_term,
-        referrer: attribution.referrer,
-      });
-
-      if (!result.success) {
-        throw new Error(result.error ?? 'submission_failed');
-      }
-
-      return result;
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
+      console.log('[InvestorIntake] Submission confirmed:', result.persistedTable, result.persistedId);
       setSubmitted(true);
       Animated.parallel([
         Animated.spring(successScale, { toValue: 1, tension: 60, friction: 8, useNativeDriver: true }),
@@ -369,6 +629,7 @@ export default function InvestorIntakeForm({ variant, source, pagePath, testIdPr
     },
     onError: (err: Error) => {
       setProofUploadPending(false);
+      setIdentityUploadPending(false);
       setFormError(getErrorMessage(err.message as any));
     },
   });
@@ -399,8 +660,41 @@ export default function InvestorIntakeForm({ variant, source, pagePath, testIdPr
       setFormError('Please select your return target.');
       return;
     }
+    if (!form.primaryIdReference.trim() || !form.secondaryIdReference.trim()) {
+      setFormError('Please enter both identification references.');
+      return;
+    }
+    if (!hasDistinctDocumentTypes) {
+      setFormError('Please choose two different identification types.');
+      return;
+    }
+    if (!form.documentIssuingCountry.trim() || !form.taxResidencyCountry.trim()) {
+      setFormError('Please provide issuing country and tax residency details.');
+      return;
+    }
+    if (isCorporate) {
+      if (!form.companyName.trim() || !form.companyRole.trim() || !form.companyEin.trim() || !form.companyTaxId.trim() || !form.companyRegistrationCountry.trim() || !form.beneficialOwnerName.trim()) {
+        setFormError('Please complete the company identity, signer, EIN, tax ID, and beneficial-owner fields.');
+        return;
+      }
+    } else if (!form.taxIdReference.trim()) {
+      setFormError('Please enter your SSN / tax ID reference.');
+      return;
+    }
     if (!contactConsent) {
       setFormError('Please allow IVX to contact you about investor onboarding.');
+      return;
+    }
+    if (!identityReviewAccepted) {
+      setFormError('Please authorize identity and compliance review.');
+      return;
+    }
+    if (!taxResponsibilityAccepted) {
+      setFormError('Please confirm your tax reporting responsibility.');
+      return;
+    }
+    if (isCorporate && !entityAuthorityAccepted) {
+      setFormError('Please confirm you are authorized to act for the entity.');
       return;
     }
     if (!agreementAccepted) {
@@ -412,7 +706,7 @@ export default function InvestorIntakeForm({ variant, source, pagePath, testIdPr
       return;
     }
     submitMutation.mutate();
-  }, [agreementAccepted, contactConsent, form.email, form.firstName, form.investmentRange, form.lastName, form.phone, form.returnExpectation, phoneVerified, signatureMatches, submitMutation]);
+  }, [agreementAccepted, contactConsent, entityAuthorityAccepted, form.beneficialOwnerName, form.companyEin, form.companyName, form.companyRegistrationCountry, form.companyRole, form.companyTaxId, form.documentIssuingCountry, form.email, form.firstName, form.investmentRange, form.lastName, form.phone, form.primaryIdReference, form.returnExpectation, form.secondaryIdReference, form.taxIdReference, form.taxResidencyCountry, hasDistinctDocumentTypes, identityReviewAccepted, isCorporate, phoneVerified, signatureMatches, submitMutation, taxResponsibilityAccepted]);
 
   if (submitted) {
     return (
@@ -422,7 +716,7 @@ export default function InvestorIntakeForm({ variant, source, pagePath, testIdPr
         </View>
         <Text style={styles.successTitle}>Investor profile captured</Text>
         <Text style={styles.successSubtitle}>
-          We saved your verified contact details, investor preferences, and agreement acknowledgement. Our team can now move you into member onboarding when the next opening is available.
+          We saved your verified contact details, identity references, tax acknowledgements, and member agreement acceptance. Our team can now move you into secure KYC and member onboarding when the next opening is available.
         </Text>
         <View style={styles.successCard}>
           <Text style={styles.successCardLabel}>Call window</Text>
@@ -639,6 +933,274 @@ export default function InvestorIntakeForm({ variant, source, pagePath, testIdPr
         />
       ) : null}
 
+      <Text style={styles.sectionLabel}>Identity + compliance</Text>
+      <View style={styles.complianceIntroCard}>
+        <Text style={styles.complianceIntroTitle}>Two IDs, tax responsibility, and entity readiness</Text>
+        <Text style={styles.complianceIntroText}>
+          Enter document references now and add clear photos from your gallery or camera for passport, ID, SSN, or company tax review.
+        </Text>
+      </View>
+
+      <View style={styles.entitySwitchRow}>
+        {INVESTOR_ENTITY_OPTIONS.map((option) => {
+          const isActive = form.entityType === option.id;
+          return (
+            <TouchableOpacity
+              key={option.id}
+              style={[styles.entitySwitchButton, isActive && styles.entitySwitchButtonActive]}
+              onPress={() => handleEntityTypeChange(option.id)}
+              activeOpacity={0.85}
+              testID={`${testIdPrefix}-entity-${option.id}`}
+            >
+              <Text style={[styles.entitySwitchText, isActive && styles.entitySwitchTextActive]}>{option.label}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      <DropdownRow
+        icon={FileText}
+        label={getIdentificationTypeLabel(form.primaryIdType)}
+        isPlaceholder={false}
+        isOpen={activeDropdown === 'primaryIdType'}
+        onPress={() => toggleDropdown('primaryIdType')}
+        testID={`${testIdPrefix}-primary-id-type`}
+      />
+      {activeDropdown === 'primaryIdType' ? (
+        <DropdownList
+          options={IDENTIFICATION_TYPE_OPTIONS.map((option) => option.label)}
+          selectedValue={getIdentificationTypeLabel(form.primaryIdType)}
+          onSelect={(label) => {
+            const next = IDENTIFICATION_TYPE_OPTIONS.find((option) => option.label === label);
+            if (next) {
+              selectDropdownValue('primaryIdType', next.id);
+            }
+          }}
+        />
+      ) : null}
+
+      <View style={styles.inputWrap}>
+        <FileText size={18} color={Colors.textTertiary} />
+        <TextInput
+          style={styles.input}
+          placeholder="Primary ID reference / last 4"
+          placeholderTextColor={Colors.inputPlaceholder}
+          value={form.primaryIdReference}
+          onChangeText={(value) => updateField('primaryIdReference', value.toUpperCase())}
+          autoCapitalize="characters"
+          autoCorrect={false}
+          testID={`${testIdPrefix}-primary-id-reference`}
+        />
+      </View>
+
+      <DropdownRow
+        icon={FileText}
+        label={getIdentificationTypeLabel(form.secondaryIdType)}
+        isPlaceholder={false}
+        isOpen={activeDropdown === 'secondaryIdType'}
+        onPress={() => toggleDropdown('secondaryIdType')}
+        testID={`${testIdPrefix}-secondary-id-type`}
+      />
+      {activeDropdown === 'secondaryIdType' ? (
+        <DropdownList
+          options={IDENTIFICATION_TYPE_OPTIONS.map((option) => option.label)}
+          selectedValue={getIdentificationTypeLabel(form.secondaryIdType)}
+          onSelect={(label) => {
+            const next = IDENTIFICATION_TYPE_OPTIONS.find((option) => option.label === label);
+            if (next) {
+              selectDropdownValue('secondaryIdType', next.id);
+            }
+          }}
+        />
+      ) : null}
+
+      <View style={styles.inputWrap}>
+        <FileText size={18} color={Colors.textTertiary} />
+        <TextInput
+          style={styles.input}
+          placeholder="Secondary ID reference / last 4"
+          placeholderTextColor={Colors.inputPlaceholder}
+          value={form.secondaryIdReference}
+          onChangeText={(value) => updateField('secondaryIdReference', value.toUpperCase())}
+          autoCapitalize="characters"
+          autoCorrect={false}
+          testID={`${testIdPrefix}-secondary-id-reference`}
+        />
+      </View>
+
+      <View style={styles.row}>
+        <View style={styles.halfField}>
+          <View style={styles.inputWrap}>
+            <Building2 size={18} color={Colors.textTertiary} />
+            <TextInput
+              style={styles.input}
+              placeholder="ID issuing country"
+              placeholderTextColor={Colors.inputPlaceholder}
+              value={form.documentIssuingCountry}
+              onChangeText={(value) => updateField('documentIssuingCountry', value)}
+              autoCapitalize="words"
+              testID={`${testIdPrefix}-document-country`}
+            />
+          </View>
+        </View>
+        <View style={styles.halfField}>
+          <View style={styles.inputWrap}>
+            <ShieldCheck size={18} color={Colors.textTertiary} />
+            <TextInput
+              style={styles.input}
+              placeholder="Tax residency"
+              placeholderTextColor={Colors.inputPlaceholder}
+              value={form.taxResidencyCountry}
+              onChangeText={(value) => updateField('taxResidencyCountry', value)}
+              autoCapitalize="words"
+              testID={`${testIdPrefix}-tax-residency`}
+            />
+          </View>
+        </View>
+      </View>
+
+      {isCorporate ? (
+        <>
+          <Text style={styles.subsectionHint}>Entity applicants must provide signer authority, beneficial-owner, EIN, company tax details, and supporting document photos.</Text>
+          <View style={styles.inputWrap}>
+            <Building2 size={18} color={Colors.textTertiary} />
+            <TextInput
+              style={styles.input}
+              placeholder="Legal company name"
+              placeholderTextColor={Colors.inputPlaceholder}
+              value={form.companyName}
+              onChangeText={(value) => updateField('companyName', value)}
+              autoCapitalize="words"
+              testID={`${testIdPrefix}-company-name`}
+            />
+          </View>
+          <View style={styles.row}>
+            <View style={styles.halfField}>
+              <View style={styles.inputWrap}>
+                <User size={18} color={Colors.textTertiary} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Your role / title"
+                  placeholderTextColor={Colors.inputPlaceholder}
+                  value={form.companyRole}
+                  onChangeText={(value) => updateField('companyRole', value)}
+                  autoCapitalize="words"
+                  testID={`${testIdPrefix}-company-role`}
+                />
+              </View>
+            </View>
+            <View style={styles.halfField}>
+              <View style={styles.inputWrap}>
+                <User size={18} color={Colors.textTertiary} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Beneficial owner"
+                  placeholderTextColor={Colors.inputPlaceholder}
+                  value={form.beneficialOwnerName}
+                  onChangeText={(value) => updateField('beneficialOwnerName', value)}
+                  autoCapitalize="words"
+                  testID={`${testIdPrefix}-beneficial-owner`}
+                />
+              </View>
+            </View>
+          </View>
+          <View style={styles.row}>
+            <View style={styles.halfField}>
+              <View style={styles.inputWrap}>
+                <ShieldCheck size={18} color={Colors.textTertiary} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Company EIN"
+                  placeholderTextColor={Colors.inputPlaceholder}
+                  value={form.companyEin}
+                  onChangeText={(value) => updateField('companyEin', value.toUpperCase())}
+                  autoCapitalize="characters"
+                  autoCorrect={false}
+                  testID={`${testIdPrefix}-company-ein`}
+                />
+              </View>
+            </View>
+            <View style={styles.halfField}>
+              <View style={styles.inputWrap}>
+                <FileText size={18} color={Colors.textTertiary} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Company tax ID"
+                  placeholderTextColor={Colors.inputPlaceholder}
+                  value={form.companyTaxId}
+                  onChangeText={(value) => updateField('companyTaxId', value.toUpperCase())}
+                  autoCapitalize="characters"
+                  autoCorrect={false}
+                  testID={`${testIdPrefix}-company-tax-id`}
+                />
+              </View>
+            </View>
+          </View>
+          <View style={styles.inputWrap}>
+            <Building2 size={18} color={Colors.textTertiary} />
+            <TextInput
+              style={styles.input}
+              placeholder="Company registration country / jurisdiction"
+              placeholderTextColor={Colors.inputPlaceholder}
+              value={form.companyRegistrationCountry}
+              onChangeText={(value) => updateField('companyRegistrationCountry', value)}
+              autoCapitalize="words"
+              testID={`${testIdPrefix}-company-registration-country`}
+            />
+          </View>
+        </>
+      ) : (
+        <View style={styles.inputWrap}>
+          <ShieldCheck size={18} color={Colors.textTertiary} />
+          <TextInput
+            style={styles.input}
+            placeholder="SSN / tax ID reference (last 4 or member tax ref)"
+            placeholderTextColor={Colors.inputPlaceholder}
+            value={form.taxIdReference}
+            onChangeText={(value) => updateField('taxIdReference', value.toUpperCase())}
+            autoCapitalize="characters"
+            autoCorrect={false}
+            testID={`${testIdPrefix}-tax-id-reference`}
+          />
+        </View>
+      )}
+
+      <Text style={styles.sectionLabel}>Secure document photos</Text>
+      <View style={styles.documentUploadsWrap}>
+        <DocumentUploadCard
+          title={`Upload ${getIdentificationTypeLabel(form.primaryIdType)}`}
+          description="Take a clear photo of the front of your primary ID or passport."
+          selectedFile={primaryIdUpload}
+          onCameraPress={() => openPrimaryIdPicker('camera')}
+          onGalleryPress={() => openPrimaryIdPicker('gallery')}
+          onClearPress={() => setPrimaryIdUpload(null)}
+          pending={identityUploadPending && !!primaryIdUpload?.uri && !primaryIdUpload.publicUrl && !primaryIdUpload.storagePath}
+          testIDPrefix={`${testIdPrefix}-primary-id-upload`}
+        />
+        <DocumentUploadCard
+          title={`Upload ${getIdentificationTypeLabel(form.secondaryIdType)}`}
+          description="Add the second identification image from gallery or capture it with the camera."
+          selectedFile={secondaryIdUpload}
+          onCameraPress={() => openSecondaryIdPicker('camera')}
+          onGalleryPress={() => openSecondaryIdPicker('gallery')}
+          onClearPress={() => setSecondaryIdUpload(null)}
+          pending={identityUploadPending && !!secondaryIdUpload?.uri && !secondaryIdUpload.publicUrl && !secondaryIdUpload.storagePath}
+          testIDPrefix={`${testIdPrefix}-secondary-id-upload`}
+        />
+        <DocumentUploadCard
+          title={isCorporate ? 'Upload company tax / registration document' : 'Upload SSN / tax document'}
+          description={isCorporate
+            ? 'Upload EIN, company tax ID, or registration proof for faster review.'
+            : 'Upload your SSN or tax reference image if you want IVX to review it now.'}
+          selectedFile={taxDocumentUpload}
+          onCameraPress={() => openTaxDocumentPicker('camera')}
+          onGalleryPress={() => openTaxDocumentPicker('gallery')}
+          onClearPress={() => setTaxDocumentUpload(null)}
+          pending={identityUploadPending && !!taxDocumentUpload?.uri && !taxDocumentUpload.publicUrl && !taxDocumentUpload.storagePath}
+          testIDPrefix={`${testIdPrefix}-tax-document-upload`}
+        />
+      </View>
+
       <View style={styles.proofCard}>
         <View style={styles.proofHeader}>
           <View style={styles.proofTitleRow}>
@@ -711,12 +1273,29 @@ export default function InvestorIntakeForm({ variant, source, pagePath, testIdPr
 
       <TouchableOpacity style={styles.checkboxRow} onPress={() => setContactConsent((prev) => !prev)} activeOpacity={0.75} testID={`${testIdPrefix}-contact-consent`}>
         <View style={[styles.checkbox, contactConsent && styles.checkboxChecked]}>{contactConsent ? <CheckCircle2 size={14} color="#000" /> : null}</View>
-        <Text style={styles.checkboxText}>I allow IVX to contact me by email and SMS about waitlist review, member onboarding, wallet setup, and live opportunities.</Text>
+        <Text style={styles.checkboxText}>I allow IVX to contact me by email and SMS about waitlist review, member onboarding, wallet setup, secure KYC, and live opportunities.</Text>
       </TouchableOpacity>
+
+      <TouchableOpacity style={styles.checkboxRow} onPress={() => setIdentityReviewAccepted((prev) => !prev)} activeOpacity={0.75} testID={`${testIdPrefix}-identity-review-consent`}>
+        <View style={[styles.checkbox, identityReviewAccepted && styles.checkboxChecked]}>{identityReviewAccepted ? <CheckCircle2 size={14} color="#000" /> : null}</View>
+        <Text style={styles.checkboxText}>I authorize IVX to request identity, passport, tax, sanctions, AML, source-of-funds, and beneficial-owner documentation before account activation.</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity style={styles.checkboxRow} onPress={() => setTaxResponsibilityAccepted((prev) => !prev)} activeOpacity={0.75} testID={`${testIdPrefix}-tax-responsibility-consent`}>
+        <View style={[styles.checkbox, taxResponsibilityAccepted && styles.checkboxChecked]}>{taxResponsibilityAccepted ? <CheckCircle2 size={14} color="#000" /> : null}</View>
+        <Text style={styles.checkboxText}>I understand I am responsible for my own tax reporting, withholding, filings, and payments with the IRS and any other relevant government authority.</Text>
+      </TouchableOpacity>
+
+      {isCorporate ? (
+        <TouchableOpacity style={styles.checkboxRow} onPress={() => setEntityAuthorityAccepted((prev) => !prev)} activeOpacity={0.75} testID={`${testIdPrefix}-entity-authority-consent`}>
+          <View style={[styles.checkbox, entityAuthorityAccepted && styles.checkboxChecked]}>{entityAuthorityAccepted ? <CheckCircle2 size={14} color="#000" /> : null}</View>
+          <Text style={styles.checkboxText}>I confirm I am authorized to act for this entity and will provide valid EIN, company tax ID, and beneficial-owner information.</Text>
+        </TouchableOpacity>
+      ) : null}
 
       <TouchableOpacity style={styles.checkboxRow} onPress={() => setAgreementAccepted((prev) => !prev)} activeOpacity={0.75} testID={`${testIdPrefix}-agreement-consent`}>
         <View style={[styles.checkbox, agreementAccepted && styles.checkboxChecked]}>{agreementAccepted ? <CheckCircle2 size={14} color="#000" /> : null}</View>
-        <Text style={styles.checkboxText}>I have reviewed the IVX investor member terms and I adopt the typed signature above as my electronic acknowledgement. Version {INVESTOR_MEMBER_AGREEMENT_VERSION}.</Text>
+        <Text style={styles.checkboxText}>I have reviewed the IVX investor member terms, including identity review and tax-responsibility disclosures, and I adopt the typed signature above as my electronic acknowledgement. Version {INVESTOR_MEMBER_AGREEMENT_VERSION}.</Text>
       </TouchableOpacity>
 
       {formError ? (
@@ -727,13 +1306,13 @@ export default function InvestorIntakeForm({ variant, source, pagePath, testIdPr
       ) : null}
 
       <TouchableOpacity
-        style={[styles.primarySubmitButton, (!canSubmit || submitMutation.isPending || proofUploadPending) && styles.buttonDisabled]}
+        style={[styles.primarySubmitButton, (!canSubmit || submitMutation.isPending || proofUploadPending || identityUploadPending) && styles.buttonDisabled]}
         onPress={handleSubmit}
-        disabled={!canSubmit || submitMutation.isPending || proofUploadPending}
+        disabled={!canSubmit || submitMutation.isPending || proofUploadPending || identityUploadPending}
         activeOpacity={0.85}
         testID={`${testIdPrefix}-submit`}
       >
-        {submitMutation.isPending || proofUploadPending ? (
+        {submitMutation.isPending || proofUploadPending || identityUploadPending ? (
           <ActivityIndicator size="small" color="#000" />
         ) : (
           <>
@@ -794,6 +1373,68 @@ function DropdownList({
           </TouchableOpacity>
         );
       })}
+    </View>
+  );
+}
+
+function DocumentUploadCard({
+  title,
+  description,
+  selectedFile,
+  onCameraPress,
+  onGalleryPress,
+  onClearPress,
+  pending,
+  testIDPrefix,
+}: {
+  title: string;
+  description: string;
+  selectedFile: IntakeProofOfFundsFile | null;
+  onCameraPress: () => void;
+  onGalleryPress: () => void;
+  onClearPress: () => void;
+  pending: boolean;
+  testIDPrefix: string;
+}) {
+  const sourceLabel = selectedFile?.source === 'camera'
+    ? 'Captured with camera'
+    : selectedFile?.source === 'gallery'
+      ? 'Selected from gallery'
+      : selectedFile?.source === 'document_picker'
+        ? 'Selected from files'
+        : '';
+
+  return (
+    <View style={styles.documentUploadCard}>
+      <View style={styles.documentUploadHeader}>
+        <View style={styles.documentUploadTitleWrap}>
+          <FileText size={16} color={Colors.primary} />
+          <Text style={styles.documentUploadTitle}>{title}</Text>
+        </View>
+        {pending ? <ActivityIndicator size="small" color={Colors.primary} /> : null}
+      </View>
+      <Text style={styles.documentUploadDescription}>{description}</Text>
+      <View style={styles.documentUploadButtonsRow}>
+        <TouchableOpacity style={styles.documentUploadButton} onPress={onGalleryPress} activeOpacity={0.8} testID={`${testIDPrefix}-gallery`}>
+          <Upload size={14} color={Colors.primary} />
+          <Text style={styles.documentUploadButtonText}>Gallery</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.documentUploadButton} onPress={onCameraPress} activeOpacity={0.8} testID={`${testIDPrefix}-camera`}>
+          <Camera size={14} color={Colors.primary} />
+          <Text style={styles.documentUploadButtonText}>Camera</Text>
+        </TouchableOpacity>
+      </View>
+      {selectedFile ? (
+        <View style={styles.documentUploadMetaCard}>
+          <View style={styles.documentUploadMetaCopy}>
+            <Text style={styles.documentUploadFileName}>{selectedFile.name}</Text>
+            <Text style={styles.documentUploadMetaText}>{sourceLabel || 'Ready to upload securely'}</Text>
+          </View>
+          <TouchableOpacity style={styles.documentUploadClearButton} onPress={onClearPress} activeOpacity={0.8} testID={`${testIDPrefix}-clear`}>
+            <Trash2 size={14} color={Colors.error} />
+          </TouchableOpacity>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -907,6 +1548,60 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     textTransform: 'uppercase',
   },
+  complianceIntroCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    padding: 16,
+    marginBottom: 10,
+  },
+  complianceIntroTitle: {
+    color: Colors.text,
+    fontSize: 15,
+    fontWeight: '800' as const,
+    marginBottom: 6,
+  },
+  complianceIntroText: {
+    color: Colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 20,
+  },
+  entitySwitchRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 10,
+  },
+  entitySwitchButton: {
+    flex: 1,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.inputBorder,
+    backgroundColor: Colors.inputBackground,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  entitySwitchButtonActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  entitySwitchText: {
+    color: Colors.textSecondary,
+    fontSize: 13,
+    fontWeight: '700' as const,
+    textAlign: 'center',
+  },
+  entitySwitchTextActive: {
+    color: '#000',
+  },
+  subsectionHint: {
+    color: Colors.textTertiary,
+    fontSize: 12,
+    lineHeight: 18,
+    marginBottom: 10,
+  },
   dropdownTrigger: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -957,6 +1652,99 @@ const styles = StyleSheet.create({
   dropdownOptionTextActive: {
     color: Colors.primary,
     fontWeight: '700' as const,
+  },
+  documentUploadsWrap: {
+    gap: 10,
+    marginBottom: 4,
+  },
+  documentUploadCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    padding: 16,
+  },
+  documentUploadHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  documentUploadTitleWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+  },
+  documentUploadTitle: {
+    color: Colors.text,
+    fontSize: 15,
+    fontWeight: '700' as const,
+    flexShrink: 1,
+  },
+  documentUploadDescription: {
+    color: Colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 20,
+  },
+  documentUploadButtonsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 12,
+  },
+  documentUploadButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.primary + '30',
+    backgroundColor: Colors.primary + '08',
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+  },
+  documentUploadButtonText: {
+    color: Colors.primary,
+    fontSize: 13,
+    fontWeight: '700' as const,
+  },
+  documentUploadMetaCard: {
+    marginTop: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.success + '30',
+    backgroundColor: Colors.success + '10',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  documentUploadMetaCopy: {
+    flex: 1,
+    gap: 4,
+  },
+  documentUploadFileName: {
+    color: Colors.text,
+    fontSize: 13,
+    fontWeight: '700' as const,
+  },
+  documentUploadMetaText: {
+    color: Colors.success,
+    fontSize: 12,
+    fontWeight: '600' as const,
+  },
+  documentUploadClearButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.error + '10',
+    borderWidth: 1,
+    borderColor: Colors.error + '20',
   },
   proofCard: {
     backgroundColor: Colors.surface,

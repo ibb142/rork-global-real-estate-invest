@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { readFileSync } from 'fs';
+import { fetchStaticLandingApiPayloads } from './landing-static-api.mjs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { createHmac, createHash } from 'crypto';
@@ -123,15 +124,25 @@ async function main() {
     backendUrl: backendUrl,
     deployedAt: new Date().toISOString(),
   });
+  const { dealsPayload, healthPayload } = await fetchStaticLandingApiPayloads({
+    supabaseUrl: SUPABASE_URL,
+    supabaseAnonKey: SUPABASE_ANON_KEY,
+    directApiBaseUrl: backendUrl,
+  });
+  const dealsJson = JSON.stringify(dealsPayload);
+  const healthJson = JSON.stringify(healthPayload);
 
   const cacheControl = 'no-cache, no-store, must-revalidate';
   const r1 = await s3PutPathStyle('index.html', html, 'text/html; charset=utf-8', cacheControl);
   const r2 = await s3PutPathStyle('ivx-config.json', configJson, 'application/json', cacheControl);
+  const r3 = await s3PutPathStyle('api/landing-deals', dealsJson, 'application/json', cacheControl);
+  const r4 = await s3PutPathStyle('api/published-jv-deals', dealsJson, 'application/json', cacheControl);
+  const r5 = await s3PutPathStyle('health', healthJson, 'application/json', cacheControl);
 
-  console.log('\n[Deploy] ' + (r1 && r2 ? '✅ DEPLOYMENT SUCCESSFUL' : '❌ DEPLOYMENT HAD ERRORS'));
+  console.log('\n[Deploy] ' + (r1 && r2 && r3 && r4 && r5 ? '✅ DEPLOYMENT SUCCESSFUL' : '❌ DEPLOYMENT HAD ERRORS'));
   console.log('[Deploy] Timestamp:', new Date().toISOString());
 
-  if (!r1 || !r2) process.exit(1);
+  if (!r1 || !r2 || !r3 || !r4 || !r5) process.exit(1);
 }
 
 main().catch(err => { console.error('[Deploy] Fatal:', err); process.exit(1); });

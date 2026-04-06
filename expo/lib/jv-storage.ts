@@ -6,6 +6,7 @@ import { getAuthUserRole, getAuthUserId, isAdminRole, loadStoredAuth } from '@/l
 import { logAudit } from '@/lib/audit-trail';
 import { captureDeleteSnapshot } from '@/lib/data-recovery';
 import { walBegin, walCommit, walRollback, enqueueWrite, registerPublishedDeal, clearQueueForDeal, clearWALForDeal } from '@/lib/jv-persistence';
+import { getLandingDealsReadUrls } from '@/lib/public-api';
 import type { JVAuditEvent } from '@/types/database';
 
 const JV_STORAGE_KEY = scopedKey('jv_deals_v2');
@@ -349,11 +350,11 @@ function mapSupabaseRowToCamelCase(row: any): any {
   const rawPhotoCount = photos.length;
   photos = photos.filter((p: any) => {
     if (typeof p !== 'string' || p.length <= 5) return false;
-    if (p.startsWith('data:image/') && p.length > 500000) {
-      console.log('[JV-Storage] Filtered out oversized base64 photo:', (p.length / 1024).toFixed(0), 'KB for deal:', row.id);
+    if (p.startsWith('data:image/')) {
+      console.log('[JV-Storage] Filtered out base64 photo from published payload for deal:', row.id);
       return false;
     }
-    if (!p.startsWith('http') && !p.startsWith('data:image/')) return false;
+    if (!p.startsWith('http://') && !p.startsWith('https://')) return false;
     const lower = p.toLowerCase();
     if (lower.includes('picsum.photos') || lower.includes('placehold.co') || lower.includes('via.placeholder.com') || lower.includes('placekitten.com') || lower.includes('loremflickr.com') || lower.includes('dummyimage.com') || lower.includes('fakeimg.pl') || lower.includes('lorempixel.com') || lower.includes('placeholder.com')) {
       console.log('[JV-Storage] Filtered out placeholder photo:', p.substring(0, 80));
@@ -365,20 +366,43 @@ function mapSupabaseRowToCamelCase(row: any): any {
     console.log('[JV-Storage] Photo filter: kept', photos.length, 'of', rawPhotoCount, 'photos for deal:', row.id);
   }
 
-  if (photos.length === 0) {
-    try {
-      const { getFallbackPhotosForDeal } = require('@/constants/deal-photos');
-      const fallback = getFallbackPhotosForDeal({
-        title: row.title || '',
-        projectName: row.projectName || row.project_name || '',
-      });
+  let dealIdentity = {
+    title: row.title || row.name || '',
+    projectName: row.projectName || row.project_name || row.title || row.name || '',
+  };
+
+  try {
+    const { resolveCanonicalDealIdentity } = require('@/lib/deal-identity') as {
+      resolveCanonicalDealIdentity: (deal: Record<string, unknown>) => { title: string; projectName: string };
+    };
+    const canonicalIdentity = resolveCanonicalDealIdentity(row as Record<string, unknown>);
+    dealIdentity = {
+      title: canonicalIdentity.title,
+      projectName: canonicalIdentity.projectName,
+    };
+  } catch {}
+
+  try {
+    const { sanitizeDealPhotosForDeal, getFallbackPhotosForDeal } = require('@/constants/deal-photos') as {
+      sanitizeDealPhotosForDeal: (deal: { title?: string; projectName?: string; project_name?: string }, photos: string[]) => string[];
+      getFallbackPhotosForDeal: (deal: { title?: string; projectName?: string; project_name?: string }) => string[];
+    };
+
+    const sanitizedPhotos = sanitizeDealPhotosForDeal(dealIdentity, photos as string[]);
+    if (photos.length > 0 && sanitizedPhotos.length !== photos.length) {
+      console.log('[JV-Storage] Cross-mapped photos removed for deal:', row.id, '| kept:', sanitizedPhotos.length, 'of', photos.length);
+    }
+    photos = sanitizedPhotos;
+
+    if (photos.length === 0) {
+      const fallback = getFallbackPhotosForDeal(dealIdentity);
       if (fallback.length > 0) {
         photos = fallback;
         console.log('[JV-Storage] Applied fallback photos for deal:', row.id, '| count:', fallback.length);
         _queuePhotoRestore(row.id, fallback);
       }
-    } catch {}
-  }
+    }
+  } catch {}
 
   if (photos.length === 0 && row.id) {
     try {
@@ -402,7 +426,8 @@ function mapSupabaseRowToCamelCase(row: any): any {
     photos,
     partners,
     poolTiers,
-    projectName: row.projectName || row.project_name || '',
+    title: row.title || row.name || dealIdentity.title,
+    projectName: row.projectName || row.project_name || dealIdentity.projectName || '',
     propertyAddress: row.propertyAddress || row.property_address || '',
     totalInvestment: row.totalInvestment || row.total_investment || 0,
     expectedROI: row.expectedROI || row.expected_roi || 0,
@@ -679,36 +704,46 @@ async function _fetchJVDealsInternal(filters?: { published?: boolean; limit?: nu
   }
 
   try {
-    const backendUrl = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || process.env.EXPO_PUBLIC_API_BASE_URL || '').trim().replace(/\/$/, '');
-    if (backendUrl) {
-      console.log('[JV-Storage] Local storage empty — trying backend API fallback:', backendUrl + '/api/landing-deals');
+    const candidateUrls = getLandingDealsReadUrls();
+    for (const apiUrl of candidateUrls) {
+      console.log('[JV-Storage] Local storage empty — trying published deals API fallback:', apiUrl);
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 4000);
-      const response = await fetch(backendUrl + '/api/landing-deals', { signal: controller.signal });
+      const response = await fetch(apiUrl, { signal: controller.signal, headers: { Accept: 'application/json' } });
       clearTimeout(timeout);
-      if (response.ok) {
-        const result = await response.json();
-        const apiDeals = Array.isArray(result) ? result : (result?.deals || []);
-        if (apiDeals.length > 0) {
-          const mapped = apiDeals.map(mapSupabaseRowToCamelCase);
-          console.log('[JV-Storage] Backend API returned', mapped.length, 'deals as fallback');
-          await saveLocalDeals(mapped);
-          let filteredApi = mapped;
-          if (filters?.published !== undefined) {
-            filteredApi = filteredApi.filter((d: any) => {
-              const val = d.published;
-              const target = filters.published;
-              if (typeof val === 'boolean') return val === target;
-              if (typeof val === 'string') return (val === 'true') === target;
-              return Boolean(val) === target;
-            });
-          }
-          return { deals: deduplicateDeals(filteredApi), total: filteredApi.length };
+      if (!response.ok) {
+        console.log('[JV-Storage] API fallback returned HTTP', response.status, 'for', apiUrl);
+        continue;
+      }
+      const contentType = (response.headers.get('content-type') || '').toLowerCase();
+      const body = await response.text();
+      const normalizedBody = body.trim().toLowerCase();
+      const isHtmlFallback = normalizedBody.startsWith('<!doctype html') || normalizedBody.startsWith('<html');
+      if (!contentType.includes('application/json') || isHtmlFallback) {
+        console.log('[JV-Storage] API fallback rejected — invalid content type or HTML body:', apiUrl, '|', contentType || 'unknown');
+        continue;
+      }
+      const result = JSON.parse(body) as unknown;
+      const apiDeals = Array.isArray(result) ? result : ((result as { deals?: unknown })?.deals || []);
+      if (Array.isArray(apiDeals) && apiDeals.length > 0) {
+        const mapped = apiDeals.map(mapSupabaseRowToCamelCase);
+        console.log('[JV-Storage] API fallback returned', mapped.length, 'deals from', apiUrl);
+        await saveLocalDeals(mapped);
+        let filteredApi = mapped;
+        if (filters?.published !== undefined) {
+          filteredApi = filteredApi.filter((d: any) => {
+            const val = d.published;
+            const target = filters.published;
+            if (typeof val === 'boolean') return val === target;
+            if (typeof val === 'string') return (val === 'true') === target;
+            return Boolean(val) === target;
+          });
         }
+        return { deals: deduplicateDeals(filteredApi), total: filteredApi.length };
       }
     }
   } catch (apiErr) {
-    console.log('[JV-Storage] Backend API fallback failed:', (apiErr as Error)?.message);
+    console.log('[JV-Storage] Published deals API fallback failed:', (apiErr as Error)?.message);
   }
 
   return { deals: dedupedLocal, total: dedupedLocal.length };
@@ -1306,19 +1341,32 @@ export async function verifyPublishPipeline(dealId: string): Promise<{ supabaseO
     if (backendUrl) {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 6000);
-      const res = await fetch(backendUrl + '/api/landing-deals', { signal: controller.signal });
+      const res = await fetch(backendUrl + '/api/landing-deals', { signal: controller.signal, headers: { Accept: 'application/json' } });
       clearTimeout(timeout);
       if (res.ok) {
-        const result = await res.json();
-        const deals = Array.isArray(result) ? result : (result?.deals || []);
-        const match = deals.find((d: any) => d.id === dealId);
-        if (match) {
-          backendOk = true;
-          const bPhotos = Array.isArray(match.photos) ? match.photos.length : 0;
-          if (bPhotos === 0) errors.push('Backend /landing-deals returns deal but with 0 photos');
-          console.log('[JV-Verify] Backend check — deal found, photos:', bPhotos, '| source:', result?.source);
+        const contentType = (res.headers.get('content-type') || '').toLowerCase();
+        const body = await res.text();
+        const isHtmlFallback = body.trim().toLowerCase().startsWith('<!doctype html') || body.trim().toLowerCase().startsWith('<html');
+        if (!contentType.includes('application/json') || isHtmlFallback) {
+          errors.push(`Backend /landing-deals invalid response type: ${contentType || 'unknown'}`);
+          console.log('[JV-Verify] Backend response rejected — invalid content-type or HTML fallback');
         } else {
-          errors.push(`Deal ${dealId} not found in backend /landing-deals response (${deals.length} deals returned, source: ${result?.source})`);
+          const result = JSON.parse(body) as unknown;
+          const deals = Array.isArray(result) ? result : (((result as { deals?: unknown })?.deals) || []);
+          const normalizedDeals = Array.isArray(deals) ? deals : [];
+          const match = normalizedDeals.find((d: any) => d.id === dealId);
+          if (match) {
+            backendOk = true;
+            const bPhotos = Array.isArray(match.photos) ? match.photos.length : 0;
+            if (bPhotos === 0) errors.push('Backend /landing-deals returns deal but with 0 photos');
+            const backendSourceRaw = (result as { source?: unknown })?.source;
+            const backendSource = typeof backendSourceRaw === 'string' ? backendSourceRaw : 'unknown';
+            console.log('[JV-Verify] Backend check — deal found, photos:', bPhotos, '| source:', backendSource);
+          } else {
+            const backendSourceRaw = (result as { source?: unknown })?.source;
+            const backendSource = typeof backendSourceRaw === 'string' ? backendSourceRaw : 'unknown';
+            errors.push(`Deal ${dealId} not found in backend /landing-deals response (${normalizedDeals.length} deals returned, source: ${backendSource})`);
+          }
         }
       } else {
         errors.push(`Backend /landing-deals HTTP ${res.status}`);

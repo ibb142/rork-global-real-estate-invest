@@ -1,4 +1,5 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
+import { fetchStaticLandingApiPayloads } from './scripts/landing-static-api.mjs';
 
 const SUPABASE_URL = (process.env.EXPO_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '').trim();
 const SUPABASE_ANON_KEY = (process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '').trim();
@@ -62,8 +63,12 @@ html = html.replace(/<meta\s+name="ivx-linkedin-partner-id"\s+content="[^"]*"/, 
 console.log('   Injected credentials + ad pixel IDs into JS vars + meta tags');
 
 const distDir = './ivxholding-landing/dist';
+const distApiDir = distDir + '/api';
 if (!existsSync(distDir)) {
   mkdirSync(distDir, { recursive: true });
+}
+if (!existsSync(distApiDir)) {
+  mkdirSync(distApiDir, { recursive: true });
 }
 
 writeFileSync(distDir + '/index.html', html, 'utf-8');
@@ -80,6 +85,20 @@ const configJson = JSON.stringify({
 
 writeFileSync(distDir + '/ivx-config.json', configJson, 'utf-8');
 console.log('   ✅ ivx-config.json built → ivxholding-landing/dist/ivx-config.json');
+
+const { dealsPayload, healthPayload } = await fetchStaticLandingApiPayloads({
+  supabaseUrl: SUPABASE_URL,
+  supabaseAnonKey: SUPABASE_ANON_KEY,
+  directApiBaseUrl: BACKEND_URL || API_BASE_URL,
+});
+const dealsJson = JSON.stringify(dealsPayload, null, 2);
+const healthJson = JSON.stringify(healthPayload, null, 2);
+writeFileSync(distApiDir + '/landing-deals', dealsJson, 'utf-8');
+writeFileSync(distApiDir + '/published-jv-deals', dealsJson, 'utf-8');
+writeFileSync(distDir + '/health', healthJson, 'utf-8');
+console.log('   ✅ static API JSON built → ivxholding-landing/dist/api/landing-deals');
+console.log('   ✅ static API JSON built → ivxholding-landing/dist/api/published-jv-deals');
+console.log('   ✅ static health JSON built → ivxholding-landing/dist/health');
 
 console.log('\n🎉 BUILD COMPLETE!');
 console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -100,10 +119,18 @@ console.log('    aws s3 cp ivxholding-landing/dist/index.html s3://ivxholding.co
 console.log('      --content-type "text/html" --cache-control "no-cache"');
 console.log('    aws s3 cp ivxholding-landing/dist/ivx-config.json s3://ivxholding.com/ivx-config.json \\');
 console.log('      --content-type "application/json" --cache-control "no-cache"');
+console.log('    aws s3 cp ivxholding-landing/dist/api/landing-deals s3://ivxholding.com/api/landing-deals \\');
+console.log('      --content-type "application/json" --cache-control "no-cache"');
+console.log('    aws s3 cp ivxholding-landing/dist/api/published-jv-deals s3://ivxholding.com/api/published-jv-deals \\');
+console.log('      --content-type "application/json" --cache-control "no-cache"');
+console.log('    aws s3 cp ivxholding-landing/dist/health s3://ivxholding.com/health \\');
+console.log('      --content-type "application/json" --cache-control "no-cache"');
 console.log('');
 console.log('  Option C — AWS Console:');
 console.log('    1. Go to S3 → ivxholding.com bucket');
 console.log('    2. Upload dist/index.html (replace existing)');
 console.log('    3. Upload dist/ivx-config.json');
-console.log('    4. Both files: set Content-Type and disable caching');
+console.log('    4. Upload dist/api/landing-deals and dist/api/published-jv-deals');
+console.log('    5. Upload dist/health');
+console.log('    6. Set JSON Content-Type and disable caching for all API files');
 console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');

@@ -1,8 +1,14 @@
+import { sanitizeDealPhotosForDeal } from '@/constants/deal-photos';
+import { resolveCanonicalDealIdentity } from '@/lib/deal-identity';
+import { formatCurrencyCompact, formatCurrencyWithDecimals } from '@/lib/formatters';
+import { buildOwnershipSnapshot } from '@/lib/ownership-math';
+import { resolveDealTrustMarket } from '@/lib/parse-deal';
 import type { ParsedJVDeal, DealTrustInfo } from '@/lib/parse-deal';
 
 export interface PublishedDealCardModel {
   id: string;
   title: string;
+  projectName: string;
   developerName: string;
   addressShort: string;
   addressFull: string;
@@ -27,6 +33,10 @@ export interface PublishedDealCardModel {
   trustVerified: boolean;
   trustIndicators: string[];
   rawTrustInfo?: DealTrustInfo;
+  salePrice: number;
+  fractionalSharePrice: number;
+  ownershipPercentAtMinimum: number;
+  ownershipText: string;
 }
 
 export const CANONICAL_MIN_INVESTMENT = 50;
@@ -105,36 +115,6 @@ function extractShortAddress(deal: {
     return address;
   }
   return '';
-}
-
-function extractDeveloperName(deal: {
-  projectName?: string;
-  project_name?: string;
-  trustInfo?: DealTrustInfo | Record<string, unknown>;
-  trust_info?: string | Record<string, unknown>;
-}): string {
-  let trustInfo: DealTrustInfo | Record<string, unknown> | undefined = deal.trustInfo as DealTrustInfo | undefined;
-  if (!trustInfo && deal.trust_info) {
-    if (typeof deal.trust_info === 'string') {
-      try { trustInfo = JSON.parse(deal.trust_info); } catch { trustInfo = undefined; }
-    } else {
-      trustInfo = deal.trust_info as Record<string, unknown>;
-    }
-  }
-
-  if (trustInfo && typeof trustInfo === 'object') {
-    const llc = (trustInfo as DealTrustInfo).llcName;
-    if (llc) return llc;
-    const builder = (trustInfo as DealTrustInfo).builderName;
-    if (builder) return builder;
-  }
-
-  const projectName = (deal.projectName || deal.project_name || '').trim();
-  if (projectName) {
-    if (projectName.toUpperCase().includes('LLC')) return projectName;
-    return `${projectName} LLC`;
-  }
-  return 'IVX Holdings LLC';
 }
 
 function extractTimeline(deal: {
@@ -236,37 +216,47 @@ function str(val: unknown, fallback = ''): string {
 }
 
 export function mapDealToCardModel(deal: Record<string, unknown>): PublishedDealCardModel {
-  const photos = extractPhotos(deal);
-  const description = str(deal.description).trim();
-  const descShort = description.length > 200 ? description.substring(0, 197) + '...' : description;
+  const identity = resolveCanonicalDealIdentity(deal);
+  const photos = extractPhotos({ ...deal, title: identity.title, projectName: identity.projectName, project_name: identity.projectName });
+  const description = str(deal.description_short) || str(deal.description);
+  const descShort = description.trim().length > 200 ? description.trim().substring(0, 197) + '...' : description.trim();
+  const rawTrustInfo = identity.trustInfo ?? extractRawTrustInfo(deal);
+  const trustIndicators = extractTrustIndicators({ ...deal, trustInfo: rawTrustInfo });
+  const trustMarket = resolveDealTrustMarket(deal, rawTrustInfo);
+  const ownershipSnapshot = buildOwnershipSnapshot(trustMarket.minInvestment, trustMarket.salePrice);
 
   return {
     id: str(deal.id),
-    title: str(deal.title) || str(deal.projectName) || str(deal.project_name),
-    developerName: extractDeveloperName(deal as any),
+    title: identity.title,
+    projectName: identity.projectName,
+    developerName: identity.developerName,
     addressShort: extractShortAddress(deal as any),
-    addressFull: str(deal.propertyAddress) || str(deal.property_address),
+    addressFull: str(deal.propertyAddress) || str(deal.property_address) || str(deal.address_full) || str(deal.address),
     descriptionShort: descShort,
     totalInvestment: Number(deal.totalInvestment || deal.total_investment || 0),
     propertyValue: Number(deal.propertyValue || deal.property_value || deal.estimated_value || 0),
     expectedROI: Number(deal.expectedROI || deal.expected_roi || 0),
-    timeline: extractTimeline(deal as any),
-    partnersCount: getPartnersCount(deal.partners),
-    badges: extractBadges(deal),
-    minInvestment: CANONICAL_MIN_INVESTMENT,
+    timeline: extractTimeline({ ...(deal as any), trustInfo: rawTrustInfo }),
+    partnersCount: Number(deal.partnersCount ?? deal.partners_count ?? getPartnersCount(deal.partners)),
+    badges: extractBadges({ ...deal, trustInfo: rawTrustInfo }),
+    minInvestment: trustMarket.minInvestment || CANONICAL_MIN_INVESTMENT,
     photos,
-    dealType: str(deal.type, 'development'),
+    dealType: str(deal.deal_type) || str(deal.type, 'development'),
     status: str(deal.status, 'active'),
     exitStrategy: str(deal.exitStrategy) || str(deal.exit_strategy) || 'Sale upon completion',
-    distributionFrequency: CANONICAL_DISTRIBUTION_LABEL,
+    distributionFrequency: str(deal.distributionFrequency) || str(deal.distribution_frequency) || CANONICAL_DISTRIBUTION_LABEL,
     publishedAt: str(deal.publishedAt) || str(deal.published_at),
     displayOrder: Number(deal.displayOrder ?? deal.display_order ?? 999),
     city: str(deal.city),
     state: str(deal.state),
     country: str(deal.country),
-    trustVerified: extractTrustIndicators(deal).length >= 3,
-    trustIndicators: extractTrustIndicators(deal),
-    rawTrustInfo: extractRawTrustInfo(deal),
+    trustVerified: trustIndicators.length >= 3,
+    trustIndicators,
+    rawTrustInfo,
+    salePrice: trustMarket.salePrice,
+    fractionalSharePrice: trustMarket.fractionalSharePrice,
+    ownershipPercentAtMinimum: ownershipSnapshot.ownershipPercent,
+    ownershipText: rawTrustInfo?.ownershipLabel || ownershipSnapshot.ownershipText,
   };
 }
 
@@ -283,12 +273,34 @@ function extractPhotos(deal: Record<string, unknown>): string[] {
     'fakeimg.pl', 'lorempixel.com', 'placeholder.com',
   ];
 
-  return (raw as string[]).filter((p: string) => {
+  const filtered = (raw as string[]).filter((p: string) => {
     if (typeof p !== 'string' || p.length <= 5) return false;
-    if (!p.startsWith('http') && !p.startsWith('data:image/')) return false;
+    if (!p.startsWith('http://') && !p.startsWith('https://')) return false;
     const lower = p.toLowerCase();
+    if (lower.startsWith('data:image/')) return false;
     return !PLACEHOLDER_DOMAINS.some(domain => lower.includes(domain));
   });
+
+  const photoVersion = str(deal.updatedAt) || str(deal.updated_at) || str(deal.publishedAt) || str(deal.published_at) || str(deal.createdAt) || str(deal.created_at);
+  const appendVersion = (photoUrl: string): string => {
+    if (!photoVersion) return photoUrl;
+    try {
+      const parsedUrl = new URL(photoUrl);
+      parsedUrl.searchParams.set('ivxv', photoVersion);
+      return parsedUrl.toString();
+    } catch {
+      const joiner = photoUrl.includes('?') ? '&' : '?';
+      return `${photoUrl}${joiner}ivxv=${encodeURIComponent(photoVersion)}`;
+    }
+  };
+
+  const identity = resolveCanonicalDealIdentity(deal);
+
+  return sanitizeDealPhotosForDeal({
+    title: identity.title,
+    projectName: identity.projectName,
+    project_name: identity.projectName,
+  }, filtered).map(appendVersion);
 }
 
 export function mapParsedDealToCardModel(deal: ParsedJVDeal): PublishedDealCardModel {
@@ -296,17 +308,24 @@ export function mapParsedDealToCardModel(deal: ParsedJVDeal): PublishedDealCardM
 }
 
 export function generateLandingDealHtml(card: PublishedDealCardModel): string {
-  const photoHtml = card.photos.length > 0
-    ? card.photos.map(p => `<img src="${escapeHtml(p)}" alt="${escapeHtml(card.title)}" loading="lazy" />`).join('')
+  const salePriceLabel = formatCurrencyCompact(card.salePrice || card.propertyValue || card.totalInvestment || 0);
+  const investmentLabel = formatCurrencyCompact(card.totalInvestment || 0);
+  const fractionalSharePriceLabel = formatCurrencyWithDecimals(card.fractionalSharePrice || card.minInvestment || CANONICAL_MIN_INVESTMENT);
+  const minimumOwnershipLabel = card.ownershipPercentAtMinimum > 0 ? `${card.ownershipPercentAtMinimum.toFixed(4)}% min` : 'Live sync pending';
+  const fractionalFromLabel = `from ${formatCurrencyWithDecimals(card.minInvestment || CANONICAL_MIN_INVESTMENT)}`;
+  const showEntryPill = Math.abs((card.fractionalSharePrice || card.minInvestment || CANONICAL_MIN_INVESTMENT) - (card.minInvestment || CANONICAL_MIN_INVESTMENT)) > 0.009;
+  const renderablePhotos = card.photos.filter(isRenderablePhotoUrl);
+  const photoHtml = renderablePhotos.length > 0
+    ? renderablePhotos.map(p => `<img src="${escapeHtml(p)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.closest('.live-deal-gallery')?.classList.add('live-deal-gallery-empty');this.remove();" />`).join('')
     : `<div class="live-deal-no-photo"><span>\u{1F3D7}\u{FE0F}</span><span>Photos coming soon</span></div>`;
 
-  const hasGallery = card.photos.length > 1;
+  const hasGallery = renderablePhotos.length > 1;
   const galleryDotsHtml = hasGallery
     ? `<div class="live-deal-photo-dots">${card.photos.map((_, i) => `<div class="live-deal-photo-dot${i === 0 ? ' active' : ''}" data-idx="${i}"></div>`).join('')}</div>`
     : '';
 
-  const photoCounter = card.photos.length > 1
-    ? `<div class="live-deal-photo-count">1/${card.photos.length}</div>`
+  const photoCounter = renderablePhotos.length > 1
+    ? `<div class="live-deal-photo-count">1/${renderablePhotos.length}</div>`
     : '';
 
   const verifiedCount = card.trustIndicators.length;
@@ -337,12 +356,21 @@ export function generateLandingDealHtml(card: PublishedDealCardModel): string {
         ${photoCounter}
       </div>
       <div class="live-deal-content">
-        <div class="live-deal-title">${escapeHtml(card.title || card.developerName)}</div>
-        ${card.addressShort ? `<div class="live-deal-location"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6A6A6A" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg> ${escapeHtml(card.addressShort)}</div>` : ''}
+        <div class="live-deal-header-row" style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+          <div style="flex:1;min-width:0;">
+            <div class="live-deal-title">${escapeHtml(card.title || card.developerName)}</div>
+            ${card.addressShort ? `<div class="live-deal-location"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6A6A6A" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg> ${escapeHtml(card.addressShort)}</div>` : ''}
+          </div>
+          <div class="live-deal-market-pill live-deal-sale-pill" style="min-width:118px;background:rgba(255,215,0,0.08);border-color:rgba(255,215,0,0.22);">
+            <div class="live-deal-market-pill-label">Sale Price</div>
+            <div class="live-deal-market-pill-value" style="color:#FFD700;">${escapeHtml(salePriceLabel)}</div>
+            <div class="live-deal-market-pill-label" style="color:#00C784;">${escapeHtml(minimumOwnershipLabel)}</div>
+          </div>
+        </div>
         <div class="live-deal-divider"></div>
         <div class="live-deal-metrics">
           <div class="live-deal-metric">
-            <div class="live-deal-metric-val">${formatCompact(card.totalInvestment)}</div>
+            <div class="live-deal-metric-val">${escapeHtml(investmentLabel)}</div>
             <div class="live-deal-metric-lbl">Investment</div>
           </div>
           <div class="live-deal-metric-div"></div>
@@ -357,6 +385,21 @@ export function generateLandingDealHtml(card: PublishedDealCardModel): string {
           </div>
         </div>
         <div class="live-deal-divider"></div>
+        <div class="live-deal-market-strip">
+          <div class="live-deal-market-pill">
+            <div class="live-deal-market-pill-label">Fractional</div>
+            <div class="live-deal-market-pill-value">${escapeHtml(fractionalFromLabel)}</div>
+          </div>
+          ${showEntryPill ? `<div class="live-deal-market-pill">
+            <div class="live-deal-market-pill-label">Entry</div>
+            <div class="live-deal-market-pill-value">${escapeHtml(fractionalSharePriceLabel)}</div>
+          </div>` : ''}
+          <div class="live-deal-market-pill">
+            <div class="live-deal-market-pill-label">Ownership</div>
+            <div class="live-deal-market-pill-value">${escapeHtml(minimumOwnershipLabel)}</div>
+          </div>
+        </div>
+        <div class="live-deal-divider"></div>
         <div class="live-deal-developer-row">
           <div class="live-deal-developer-icon"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#FFD700" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 18v3c0 .6.4 1 1 1h4v-3h3v3h4v-3h3v3h4c.6 0 1-.4 1-1v-3"/><path d="M2 18V8c0-.6.4-1 1-1h18c.6 0 1 .4 1 1v10"/><path d="M9 7V4c0-.6.4-1 1-1h4c.6 0 1 .4 1 1v3"/></svg></div>
           <span class="live-deal-developer-text">Developed by <span class="live-deal-developer-name">${escapeHtml(card.developerName)}</span></span>
@@ -365,12 +408,17 @@ export function generateLandingDealHtml(card: PublishedDealCardModel): string {
           ${trustBadgesHtml}
         </div>
         <div class="live-deal-actions">
-          <button class="live-deal-details-btn" onclick="openInvestModal('${escapeHtml(card.id)}','${escapeJs(card.title)}',${card.totalInvestment},${card.expectedROI},'${escapeJs(card.addressShort)}',${card.propertyValue || 0})">Details</button>
-          <button class="live-deal-invest-btn" onclick="openInvestModal('${escapeHtml(card.id)}','${escapeJs(card.title)}',${card.totalInvestment},${card.expectedROI},'${escapeJs(card.addressShort)}',${card.propertyValue || 0})">Invest Now</button>
+          <button class="live-deal-details-btn" onclick="openInvestModal('${escapeHtml(card.id)}','${escapeJs(card.title)}',${card.totalInvestment},${card.expectedROI},'${escapeJs(card.addressShort)}',${card.salePrice || card.propertyValue || 0},${card.minInvestment},${card.fractionalSharePrice || 0})">Details</button>
+          <button class="live-deal-invest-btn" onclick="openInvestModal('${escapeHtml(card.id)}','${escapeJs(card.title)}',${card.totalInvestment},${card.expectedROI},'${escapeJs(card.addressShort)}',${card.salePrice || card.propertyValue || 0},${card.minInvestment},${card.fractionalSharePrice || 0})">Invest Now</button>
         </div>
-        <div class="live-deal-min-invest">Invest from <strong>${card.minInvestment}</strong></div>
+        <div class="live-deal-min-invest">Invest from <strong>${card.minInvestment}</strong> · ${escapeHtml(card.ownershipText)}</div>
       </div>
     </div>`;
+}
+
+function isRenderablePhotoUrl(photoUrl: string): boolean {
+  const trimmed = photoUrl.trim();
+  return trimmed.length > 0 && !trimmed.startsWith('data:image/gif;base64,R0lGODlhAQABA');
 }
 
 function escapeHtml(str: string): string {
@@ -386,12 +434,6 @@ function escapeJs(str: string): string {
   return str.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"');
 }
 
-function formatCompact(n: number): string {
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, '') + 'M';
-  if (n >= 1_000) return (n / 1_000).toFixed(0) + 'K';
-  return String(n);
-}
-
 export function generateLandingInvestModalJs(supabaseUrl: string, supabaseAnonKey: string): string {
   const d = '$';
   return `
@@ -400,15 +442,17 @@ var _activeDeal = null;
 var _supabaseUrl = '${supabaseUrl}';
 var _supabaseAnonKey = '${supabaseAnonKey}';
 
-function openInvestModal(dealId, dealTitle, totalInvestment, expectedRoi, address, propertyValue) {
-  console.log('[Landing] openInvestModal called:', dealId, dealTitle, totalInvestment, expectedRoi, address, 'propertyValue:', propertyValue);
+function openInvestModal(dealId, dealTitle, totalInvestment, expectedRoi, address, propertyValue, minInvestment, fractionalSharePrice) {
+  console.log('[Landing] openInvestModal called:', dealId, dealTitle, totalInvestment, expectedRoi, address, 'propertyValue:', propertyValue, 'minInvestment:', minInvestment, 'fractionalSharePrice:', fractionalSharePrice);
   _activeDeal = {
     deal_id: dealId,
     deal_name: dealTitle,
     total_investment: totalInvestment,
     expected_roi: expectedRoi,
     address: address,
-    property_value: propertyValue || 0
+    property_value: propertyValue || 0,
+    min_investment: minInvestment || 50,
+    fractional_share_price: fractionalSharePrice || minInvestment || 50
   };
   var modal = document.getElementById('ivx-invest-modal');
   if (!modal) { console.error('[Landing] invest modal element not found'); return; }
@@ -417,7 +461,7 @@ function openInvestModal(dealId, dealTitle, totalInvestment, expectedRoi, addres
   var addrEl = modal.querySelector('.invest-modal-address');
   if (addrEl) addrEl.textContent = address || '';
   var investEl = modal.querySelector('.invest-modal-total');
-  if (investEl) investEl.textContent = '${d}' + Number(totalInvestment || 0).toLocaleString();
+  if (investEl) investEl.textContent = '${d}' + Number(propertyValue || totalInvestment || 0).toLocaleString();
   var roiEl = modal.querySelector('.invest-modal-roi');
   if (roiEl) roiEl.textContent = (expectedRoi || 0) + '% ROI';
   updateOwnershipCalc();
@@ -434,8 +478,8 @@ function updateOwnershipCalc() {
   var amountInput = document.getElementById('invest-amount-input');
   if (!amountInput || !_activeDeal) return;
   var amount = parseFloat(amountInput.value.replace(/[^0-9.]/g, '')) || 0;
-  var propVal = _activeDeal.property_value || _activeDeal.total_investment || 1;
-  var ownership = (amount / propVal) * 100;
+  var propVal = _activeDeal.property_value || _activeDeal.total_investment || 0;
+  var ownership = propVal > 0 ? (amount / propVal) * 100 : 0;
   var roi = _activeDeal.expected_roi || 0;
   var profit = amount * (roi / 100);
   var ownerEl = document.getElementById('invest-ownership');
@@ -459,8 +503,8 @@ function submitLandingInvestment() {
     alert('Please fill in your name, email, and investment amount.');
     return;
   }
-  var propVal = _activeDeal.property_value || _activeDeal.total_investment || 1;
-  var ownership = (amount / propVal) * 100;
+  var propVal = _activeDeal.property_value || _activeDeal.total_investment || 0;
+  var ownership = propVal > 0 ? (amount / propVal) * 100 : 0;
   var payload = {
     source: 'landing_page',
     deal_id: _activeDeal.deal_id,
@@ -578,6 +622,10 @@ export function generateCanonicalDealJson(card: PublishedDealCardModel): Record<
     description_short: card.descriptionShort,
     total_investment: card.totalInvestment,
     property_value: card.propertyValue || 0,
+    sale_price: card.salePrice,
+    fractional_share_price: card.fractionalSharePrice,
+    ownership_percent_at_minimum: card.ownershipPercentAtMinimum,
+    ownership_text: card.ownershipText,
     expected_roi: card.expectedROI,
     timeline: card.timeline,
     partners_count: card.partnersCount,

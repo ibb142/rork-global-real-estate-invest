@@ -17,6 +17,30 @@ import {
   type PublishedDealCardModel,
 } from '@/lib/published-deal-card-model';
 import { fetchCanonicalDeals } from '@/lib/canonical-deals';
+import { fetchDealsJsonEndpoint } from '@/lib/api-response-guard';
+import { DIRECT_API_BASE_URL, getPublishedDealsReadUrls } from '@/lib/public-api';
+
+const LANDING_VISIBLE_STATUSES = ['active', 'published', 'live'] as const;
+
+function readText(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return '';
+}
+
+function isLandingVisibleRow(row: Record<string, unknown>): boolean {
+  const status = readText(row.status).trim().toLowerCase();
+  return row.published === true || row.is_published === true || LANDING_VISIBLE_STATUSES.includes(status as (typeof LANDING_VISIBLE_STATUSES)[number]);
+}
+
+function sortPublishedPayloads<T extends { displayOrder: number; publishedAt: string; updatedAt: string }>(rows: T[]): T[] {
+  return rows.slice().sort((a, b) => {
+    if (a.displayOrder !== b.displayOrder) return a.displayOrder - b.displayOrder;
+    const dateA = a.publishedAt || a.updatedAt || '';
+    const dateB = b.publishedAt || b.updatedAt || '';
+    return dateB.localeCompare(dateA);
+  });
+}
 
 async function _getSyncAuthHeaders(): Promise<Record<string, string>> {
   const anonKey = (process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '').trim();
@@ -81,7 +105,7 @@ export interface PublishedDealPayload {
   cardModel?: PublishedDealCardModel;
 }
 
-const _landingSyncBase = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || process.env.EXPO_PUBLIC_API_BASE_URL || '').trim().replace(/\/$/, '');
+const _landingSyncBase = DIRECT_API_BASE_URL;
 const LANDING_SYNC_ENDPOINT = _landingSyncBase
   ? `${_landingSyncBase}/api/landing-sync`
   : null;
@@ -93,54 +117,42 @@ function isSupabaseConfigured(): boolean {
 }
 
 async function fetchPublishedDealsViaBackend(): Promise<PublishedDealPayload[]> {
-  const backendUrl = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || process.env.EXPO_PUBLIC_API_BASE_URL || '').trim().replace(/\/$/, '');
-  if (!backendUrl) {
-    console.log('[LandingSync] No backend URL — cannot fetch published deals');
+  const candidateUrls = getPublishedDealsReadUrls();
+  if (candidateUrls.length === 0) {
+    console.log('[LandingSync] No published-deals API candidates configured');
     return [];
   }
   try {
-    console.log('[LandingSync] Fetching published deals from backend:', backendUrl + '/api/published-jv-deals');
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
     const authHeaders = await _getSyncAuthHeaders();
-    let response = await fetch(backendUrl + '/api/published-jv-deals', { headers: authHeaders, signal: controller.signal }).catch(() => null);
-    if (!response || !response.ok) {
-      console.log('[LandingSync] /api/published-jv-deals failed, falling back to /api/landing-deals');
-      const controller2 = new AbortController();
-      const timeout2 = setTimeout(() => controller2.abort(), 8000);
-      response = await fetch(backendUrl + '/api/landing-deals', { headers: authHeaders, signal: controller2.signal });
-      clearTimeout(timeout2);
+    for (const url of candidateUrls) {
+      const endpointName = url.includes('published-jv-deals') ? 'published-jv-deals' : 'landing-deals';
+      console.log('[LandingSync] Fetching published deals from API candidate:', url);
+      const result = await fetchDealsJsonEndpoint(url, {
+        endpointName,
+        timeoutMs: 8000,
+        headers: authHeaders,
+      });
+      if (!result.ok) {
+        console.log('[LandingSync] API candidate failed hard:', url, '|', result.error, '| content-type:', result.contentType, '| preview:', result.bodyPreview);
+        continue;
+      }
+      console.log('[LandingSync] API candidate returned', result.deals.length, 'deals from', url);
+      const mapped = sortPublishedPayloads(
+        result.deals
+          .filter((row: Record<string, unknown>) => isLandingVisibleRow(row))
+          .map((row: Record<string, unknown>) => mapRowToPayload(row))
+      );
+      return mapped;
     }
-    clearTimeout(timeout);
-    if (!response || !response.ok) {
-      console.log('[LandingSync] Backend fetch failed:', response?.status);
-      return [];
-    }
-    const result = await response.json();
-    const deals = Array.isArray(result) ? result : (result?.deals || []);
-    console.log('[LandingSync] Backend returned', deals.length, 'deals');
-    const mapped = deals.map((row: Record<string, unknown>) => mapRowToPayload(row));
-    mapped.sort((a: PublishedDealPayload, b: PublishedDealPayload) => {
-      if (a.displayOrder !== b.displayOrder) return a.displayOrder - b.displayOrder;
-      return (b.publishedAt || '').localeCompare(a.publishedAt || '');
-    });
-    return mapped;
+    return [];
   } catch (err) {
-    console.log('[LandingSync] Backend fetch exception:', (err as Error)?.message);
+    console.log('[LandingSync] Published deals fetch exception:', (err as Error)?.message);
     return [];
   }
 }
 
 function mapRowToPayload(row: Record<string, unknown>): PublishedDealPayload {
-  let photosRaw: unknown[] = [];
-  if (typeof row.photos === 'string') {
-    try { const parsed = JSON.parse(row.photos as string); photosRaw = Array.isArray(parsed) ? parsed : []; } catch { photosRaw = []; }
-  } else if (Array.isArray(row.photos)) {
-    photosRaw = row.photos;
-  }
-  const photos: string[] = photosRaw.filter(
-    (p: unknown) => typeof p === 'string' && (p as string).length > 5 && ((p as string).startsWith('http') || (p as string).startsWith('data:image/'))
-  ) as string[];
+  const cardModel = mapDealToCardModel(row);
 
   let trustInfo: Record<string, unknown> | undefined;
   const rawTrust = row.trustInfo ?? row.trust_info;
@@ -152,31 +164,28 @@ function mapRowToPayload(row: Record<string, unknown>): PublishedDealPayload {
     }
   }
 
-  const payload: PublishedDealPayload = {
-    id: (row.id as string) || '',
-    title: (row.title as string) || '',
-    projectName: (row.projectName as string) || (row.project_name as string) || '',
-    description: (row.description as string) || '',
-    propertyAddress: (row.propertyAddress as string) || (row.property_address as string) || '',
-    city: (row.city as string) || '',
-    state: (row.state as string) || '',
-    country: (row.country as string) || '',
-    totalInvestment: (row.totalInvestment as number) || (row.total_investment as number) || 0,
-    propertyValue: (row.propertyValue as number) || (row.property_value as number) || (row.estimated_value as number) || 0,
-    expectedROI: (row.expectedROI as number) || (row.expected_roi as number) || 0,
-    status: (row.status as string) || 'active',
-    photos,
-    distributionFrequency: CANONICAL_DISTRIBUTION_LABEL,
-    exitStrategy: (row.exitStrategy as string) || (row.exit_strategy as string) || 'Sale upon completion',
-    publishedAt: (row.publishedAt as string) || (row.published_at as string) || '',
-    updatedAt: (row.updatedAt as string) || (row.updated_at as string) || new Date().toISOString(),
-    displayOrder: (row.displayOrder as number) ?? (row.display_order as number) ?? 999,
+  return {
+    id: cardModel.id,
+    title: cardModel.title,
+    projectName: cardModel.projectName || cardModel.title,
+    description: cardModel.descriptionShort,
+    propertyAddress: cardModel.addressFull,
+    city: cardModel.city,
+    state: cardModel.state,
+    country: cardModel.country,
+    totalInvestment: cardModel.totalInvestment,
+    propertyValue: cardModel.propertyValue || 0,
+    expectedROI: cardModel.expectedROI,
+    status: cardModel.status,
+    photos: cardModel.photos,
+    distributionFrequency: cardModel.distributionFrequency || CANONICAL_DISTRIBUTION_LABEL,
+    exitStrategy: cardModel.exitStrategy,
+    publishedAt: cardModel.publishedAt,
+    updatedAt: (row.updatedAt as string) || (row.updated_at as string) || cardModel.publishedAt || new Date().toISOString(),
+    displayOrder: cardModel.displayOrder,
     trustInfo,
+    cardModel,
   };
-
-  payload.cardModel = mapDealToCardModel(row);
-
-  return payload;
 }
 
 async function fetchPublishedDeals(): Promise<PublishedDealPayload[]> {
@@ -204,7 +213,7 @@ function cardModelToPayload(card: PublishedDealCardModel): PublishedDealPayload 
   return {
     id: card.id,
     title: card.title,
-    projectName: card.developerName,
+    projectName: card.projectName || card.title,
     description: card.descriptionShort,
     propertyAddress: card.addressFull,
     city: card.city,
@@ -234,9 +243,9 @@ async function fetchPublishedDealsDirectFallback(): Promise<PublishedDealPayload
     const result = await supabase
       .from('jv_deals')
       .select('*')
-      .eq('published', true)
-      .in('status', ['active', 'published', 'live'])
       .order('display_order', { ascending: true, nullsFirst: false })
+      .order('published_at', { ascending: false, nullsFirst: false })
+      .order('updated_at', { ascending: false, nullsFirst: false })
       .order('created_at', { ascending: false });
 
     if (result.error) {
@@ -247,11 +256,7 @@ async function fetchPublishedDealsDirectFallback(): Promise<PublishedDealPayload
     const data = result.data as Record<string, unknown>[] | null;
     if (!data || data.length === 0) return [];
 
-    const mapped = data.map(mapRowToPayload);
-    mapped.sort((a, b) => {
-      if (a.displayOrder !== b.displayOrder) return a.displayOrder - b.displayOrder;
-      return (b.publishedAt || '').localeCompare(a.publishedAt || '');
-    });
+    const mapped = sortPublishedPayloads(data.filter((row) => isLandingVisibleRow(row)).map(mapRowToPayload));
     return mapped;
   } catch (err) {
     console.log('[LandingSync] Direct fallback exception:', (err as Error)?.message);
@@ -648,12 +653,13 @@ export async function getLandingSyncStatus(): Promise<{
   let landingCount = 0;
 
   try {
-    const { count: pubCount } = await supabase
+    const { data: publishedRows } = await supabase
       .from('jv_deals')
-      .select('id', { count: 'exact', head: true })
-      .eq('published', true)
-      .in('status', ['active', 'published', 'live']);
-    publishedCount = pubCount ?? 0;
+      .select('id,published,status')
+      .order('id', { ascending: true });
+    publishedCount = Array.isArray(publishedRows)
+      ? publishedRows.filter((row) => isLandingVisibleRow((row ?? {}) as Record<string, unknown>)).length
+      : 0;
   } catch {
     console.log('[LandingSync] Could not count published deals');
   }

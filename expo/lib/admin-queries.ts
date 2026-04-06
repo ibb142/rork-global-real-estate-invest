@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
+import { fetchAdminMemberRegistry } from '@/lib/member-registry';
 import { supabase } from '@/lib/supabase';
 import type {
   Member,
@@ -23,41 +24,38 @@ export function useMembers() {
   const query = useQuery({
     queryKey: ['admin-members'],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('id,first_name,last_name,email,phone,country,avatar,kyc_status,total_invested,total_returns,created_at,updated_at')
-        .order('created_at', { ascending: false })
-        .limit(200);
-      if (error) {
-        console.log('[AdminQueries] Members fetch error:', error.message);
-        throw error;
-      }
-      return data || [];
+      console.log('[AdminQueries] Fetching durable member registry for member module');
+      return fetchAdminMemberRegistry();
     },
     retry: 1,
-    staleTime: 1000 * 60 * 5,
+    staleTime: 1000 * 15,
+    refetchInterval: 1000 * 20,
   });
 
   const members: Member[] = useMemo(() => {
     if (!query.data || !Array.isArray(query.data)) return [];
-    return query.data.map((row: any) => ({
-      id: row.id,
-      email: row.email || '',
-      firstName: row.first_name || '',
-      lastName: row.last_name || '',
-      avatar: row.avatar || '',
-      phone: row.phone || '',
-      country: row.country || '',
-      kycStatus: row.kyc_status || 'pending',
+    return query.data.map((row) => ({
+      id: row.id || row.email,
+      email: row.email,
+      firstName: row.firstName,
+      lastName: row.lastName,
+      avatar: '',
+      phone: row.phone,
+      country: row.country,
+      kycStatus: row.kycStatus as Member['kycStatus'],
       eligibilityStatus: 'pending' as const,
       walletBalance: 0,
-      totalInvested: row.total_invested || 0,
-      totalReturns: row.total_returns || 0,
-      createdAt: row.created_at || new Date().toISOString(),
+      totalInvested: row.totalInvested,
+      totalReturns: row.totalReturns,
+      createdAt: row.createdAt,
       holdings: 0,
       totalTransactions: 0,
-      lastActivity: row.updated_at || row.created_at || new Date().toISOString(),
-      status: 'active' as const,
+      lastActivity: row.lastSeenAt || row.updatedAt || row.createdAt,
+      status: row.status === 'suspended'
+        ? 'suspended'
+        : row.status === 'inactive'
+          ? 'inactive'
+          : 'active',
     }));
   }, [query.data]);
 

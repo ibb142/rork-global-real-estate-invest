@@ -16,7 +16,7 @@ const MEMBER_READY_ITEMS = [
   {
     id: 'onboarding',
     title: 'Real member onboarding',
-    description: 'Capture name, email, verified cell OTP, investor range, return target, and agreement signature.',
+    description: 'Capture verified contact data, two ID references, tax responsibility acknowledgement, and agreement signature before activation.',
     icon: Shield,
     accent: Colors.primary,
   },
@@ -65,7 +65,7 @@ export default function WaitlistScreen() {
           </View>
           <Text style={styles.heroTitle}>Investor Waitlist</Text>
           <Text style={styles.heroSubtitle}>
-            Reserve your spot with real investor details now. This flow syncs your verified contact data, member agreement acknowledgement, call preference, and optional proof-of-funds metadata.
+            Reserve your spot with real investor details now. This flow syncs verified contact data, two ID references, tax-responsibility acknowledgements, optional entity onboarding details, and proof-of-funds metadata.
           </Text>
         </View>
 

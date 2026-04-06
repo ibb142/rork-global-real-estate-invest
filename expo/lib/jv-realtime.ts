@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { syncToLandingPage } from '@/lib/landing-sync';
 import { resetSupabaseCheck } from '@/lib/jv-storage';
+import { invalidateCanonicalCache } from '@/lib/canonical-deals';
 import { runPublicationIntegrityCheck, processWriteQueue, walReplayUncommitted } from '@/lib/jv-persistence';
 
 export type RealtimeStatus = 'live' | 'polling' | 'offline';
@@ -108,6 +109,7 @@ function notifyCrossTabs(action: string) {
 
 export function invalidateAllJVQueries(queryClient: ReturnType<typeof useQueryClient>, broadcastToOtherTabs: boolean = true) {
   console.log('[JV-Realtime] Invalidating JV query keys + forcing refetch');
+  invalidateCanonicalCache();
 
   const allKeys = [
     ['jvAgreements.list'],
@@ -137,12 +139,13 @@ export function invalidateAllJVQueries(queryClient: ReturnType<typeof useQueryCl
   });
 
   setTimeout(() => {
+    invalidateCanonicalCache();
     void queryClient.refetchQueries({ queryKey: [PUBLISHED_QUERY_KEY], type: 'all' });
     void queryClient.refetchQueries({ queryKey: [JV_QUERY_KEY_PREFIX], type: 'all' });
     void queryClient.refetchQueries({ queryKey: ['jv-deals', 'published-list'], type: 'all' });
     void queryClient.refetchQueries({ queryKey: ['properties', 'home'], type: 'all' });
     void queryClient.refetchQueries({ queryKey: ['jvAgreements.list'], type: 'all' });
-    console.log('[JV-Realtime] Forced refetch triggered for all JV queries');
+    console.log('[JV-Realtime] Forced refetch triggered for all JV queries after canonical cache reset');
   }, 100);
 
   triggerLandingSync();

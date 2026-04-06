@@ -54,6 +54,7 @@ const PUBLIC_ROUTES = [
   'landing',
   'login',
   'signup',
+  'owner-access',
   'waitlist',
   'legal',
   'company-info',
@@ -115,6 +116,7 @@ function RootLayoutNav() {
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="login" options={{ headerShown: false, presentation: 'modal' }} />
       <Stack.Screen name="signup" options={{ headerShown: false, presentation: 'modal' }} />
+      <Stack.Screen name="owner-access" options={{ title: 'Owner Access' }} />
       <Stack.Screen name="wallet" options={{ title: 'Wallet' }} />
       <Stack.Screen name="buy-shares" options={{ title: 'Buy Shares' }} />
       <Stack.Screen name="sell-shares" options={{ title: 'Sell Shares' }} />

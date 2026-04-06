@@ -7,10 +7,10 @@ import {
   Image,
   Animated,
   ScrollView,
-  TextInput,
   Platform,
   ActivityIndicator,
   KeyboardAvoidingView,
+  Alert,
   useWindowDimensions,
   type LayoutChangeEvent,
 } from 'react-native';
@@ -28,9 +28,6 @@ import {
   Coins,
   Clock,
   Mail,
-  User,
-  Phone,
-  CheckCircle,
   Sparkles,
   ShieldCheck,
   AlertCircle,
@@ -48,19 +45,10 @@ import {
   ExternalLink,
   ScanLine,
 } from 'lucide-react-native';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { landingTracker } from '@/lib/landing-tracker';
-import {
-  validateFullName,
-  validateEmail,
-  validatePhone,
-  isFormValid,
-  submitWaitlistEntry,
-  getErrorMessage,
-  sendOtp,
-  verifyOtp,
-  type WaitlistErrorCode,
-} from '@/lib/waitlist-service';
+
+import ErrorBoundary from '@/components/ErrorBoundary';
 import Colors from '@/constants/colors';
 import { formatCurrencyCompact } from '@/lib/formatters';
 import { IVX_LOGO_SOURCE } from '@/constants/brand';
@@ -71,9 +59,9 @@ import { getDealExitProjection } from '@/lib/investor-intake';
 import InvestorIntakeForm from '@/components/InvestorIntakeForm';
 import {
   diagnoseDealPhotos,
-  getPhotoSourcePresentation,
   type DealPhotoDiagnostic,
 } from '@/lib/deal-photo-health';
+import { useAuth, type OwnerDirectAccessAuditResult } from '@/lib/auth-context';
 
 const IVX_BUSINESS_CARD_URL = 'https://pub-e001eb4506b145aa938b5d3badbff6a5.r2.dev/attachments/u2shr3b6qstzut5xgdyud.jpg';
 
@@ -417,7 +405,7 @@ function LandingDealsShowcase({ scrollToForm }: { scrollToForm: () => void }) {
             '[Landing Showcase] Deal resolved:',
             card.title,
             '| canonical:',
-            card.photos.length,
+            Array.isArray(card.photos) ? card.photos.length : 0,
             '| final:',
             resolvedPhotos.length,
             '| source:',
@@ -433,7 +421,12 @@ function LandingDealsShowcase({ scrollToForm }: { scrollToForm: () => void }) {
         return [];
       }
     },
-    staleTime: 60000,
+    staleTime: 5_000,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
   });
 
   const deals = dealsQuery.data ?? [];
@@ -479,18 +472,19 @@ function LandingDealsShowcase({ scrollToForm }: { scrollToForm: () => void }) {
           >
             {deals.map((deal, idx) => {
               const title = deal.title || 'Investment Opportunity';
-              const totalInvestment = Number(deal.totalInvestment || 0);
+              const salePrice = Number(deal.salePrice || deal.propertyValue || deal.totalInvestment || 0);
               const roi = Number(deal.expectedROI || 0);
               const location = deal.addressShort || deal.addressFull;
               const minInvestmentLabel = deal.minInvestment > 0 ? formatCurrencyCompact(deal.minInvestment) : '$50';
+              const salePriceLabel = salePrice > 0 ? formatCurrencyCompact(salePrice) : 'TBA';
+              const fractionalEntryLabel = deal.fractionalSharePrice > 0 ? formatCurrencyCompact(deal.fractionalSharePrice) : minInvestmentLabel;
+              const minFractionalLabel = `from ${minInvestmentLabel}`;
               const proofItems = getDealProofItems(deal);
               const exitProjection = getDealExitProjection(deal);
               const estimatedSaleLabel = exitProjection.estimatedSalePrice > 0 ? formatCurrencyCompact(exitProjection.estimatedSalePrice) : 'TBA';
               const projectedPayoutLabel = exitProjection.estimatedGrossPayoutAtMinimum > 0 ? formatCurrencyCompact(exitProjection.estimatedGrossPayoutAtMinimum) : 'TBA';
               const ownershipLabel = exitProjection.minimumOwnershipPercent > 0 ? `${exitProjection.minimumOwnershipPercent.toFixed(3)}%` : 'TBA';
               const timelineLabel = deal.timeline || 'Deal-specific';
-
-              const sourcePresentation = getPhotoSourcePresentation(deal.photoDiagnostic.source);
 
               return (
                 <View key={deal.id || `deal-${idx}`} style={[dealStyles.card, { width: cardWidth, marginRight: idx < deals.length - 1 ? 14 : 0 }]} testID={`landing-deal-card-${deal.id || idx}`}>
@@ -501,20 +495,6 @@ function LandingDealsShowcase({ scrollToForm }: { scrollToForm: () => void }) {
                       <View style={dealStyles.liveBadge}>
                         <View style={dealStyles.liveDot} />
                         <Text style={dealStyles.liveBadgeText}>LIVE</Text>
-                      </View>
-                      <View
-                        style={[
-                          dealStyles.sourceBadge,
-                          {
-                            backgroundColor: sourcePresentation.backgroundColor,
-                            borderColor: sourcePresentation.borderColor,
-                          },
-                        ]}
-                        testID={`landing-deal-source-${deal.id || idx}`}
-                      >
-                        <Text style={[dealStyles.sourceBadgeText, { color: sourcePresentation.textColor }]}>
-                          {sourcePresentation.label}
-                        </Text>
                       </View>
                     </View>
 
@@ -528,8 +508,8 @@ function LandingDealsShowcase({ scrollToForm }: { scrollToForm: () => void }) {
 
                     <View style={dealStyles.metricsRow}>
                       <View style={dealStyles.metric}>
-                        <Text style={dealStyles.metricValue}>{formatCurrencyCompact(totalInvestment)}</Text>
-                        <Text style={dealStyles.metricLabel}>Investment</Text>
+                        <Text style={dealStyles.metricValue}>{salePriceLabel}</Text>
+                        <Text style={dealStyles.metricLabel}>Sale Price</Text>
                       </View>
                       <View style={dealStyles.metricDivider} />
                       <View style={dealStyles.metric}>
@@ -538,8 +518,8 @@ function LandingDealsShowcase({ scrollToForm }: { scrollToForm: () => void }) {
                       </View>
                       <View style={dealStyles.metricDivider} />
                       <View style={dealStyles.metric}>
-                        <Text style={dealStyles.metricValue}>{minInvestmentLabel}</Text>
-                        <Text style={dealStyles.metricLabel}>Starting Access</Text>
+                        <Text style={dealStyles.metricValue}>{ownershipLabel}</Text>
+                        <Text style={dealStyles.metricLabel}>Min Ownership</Text>
                       </View>
                     </View>
 
@@ -550,6 +530,21 @@ function LandingDealsShowcase({ scrollToForm }: { scrollToForm: () => void }) {
                           <Text style={dealStyles.proofValue}>{item.value}</Text>
                         </View>
                       ))}
+                    </View>
+
+                    <View style={dealStyles.marketStrip} testID={`landing-deal-market-${deal.id || idx}`}>
+                      <View style={dealStyles.marketPill}>
+                        <Text style={dealStyles.marketPillLabel}>Fractional</Text>
+                        <Text style={dealStyles.marketPillValue}>{minFractionalLabel}</Text>
+                      </View>
+                      <View style={dealStyles.marketPill}>
+                        <Text style={dealStyles.marketPillLabel}>Entry</Text>
+                        <Text style={dealStyles.marketPillValue}>{fractionalEntryLabel}</Text>
+                      </View>
+                      <View style={dealStyles.marketPill}>
+                        <Text style={dealStyles.marketPillLabel}>Ownership</Text>
+                        <Text style={dealStyles.marketPillValue}>{ownershipLabel}</Text>
+                      </View>
                     </View>
 
                     <View style={dealStyles.exitProjectionCard} testID={`landing-deal-exit-math-${deal.id || idx}`}>
@@ -737,6 +732,33 @@ const dealStyles = StyleSheet.create({
     flexWrap: 'wrap' as const,
     gap: 10,
     marginBottom: 12,
+  },
+  marketStrip: {
+    flexDirection: 'row' as const,
+    gap: 10,
+    marginBottom: 14,
+  },
+  marketPill: {
+    flex: 1,
+    backgroundColor: '#0E0E0E',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#1E1E1E',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  marketPillLabel: {
+    color: Colors.textTertiary,
+    fontSize: 10,
+    fontWeight: '700' as const,
+    letterSpacing: 0.5,
+    marginBottom: 6,
+    textTransform: 'uppercase' as const,
+  },
+  marketPillValue: {
+    color: '#F5F5F5',
+    fontSize: 12,
+    fontWeight: '800' as const,
   },
   proofCard: {
     width: '47%',
@@ -949,366 +971,19 @@ function LandingWaitlistForm() {
   );
 }
 
-function LandingWaitlistFormLegacy() {
-  const [fullName, setFullName] = useState('');
-  const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
-  const [consent, setConsent] = useState(false);
 
-  const [otpSent, setOtpSent] = useState(false);
-  const [otpCode, setOtpCode] = useState('');
-  const [phoneVerified, setPhoneVerified] = useState(false);
-  const [otpCooldown, setOtpCooldown] = useState(0);
-  const [otpSendCount, setOtpSendCount] = useState(0);
-  const [otpVerifyCount, setOtpVerifyCount] = useState(0);
-  const [otpError, setOtpError] = useState('');
-
-  const [formError, setFormError] = useState('');
-  const [submitted, setSubmitted] = useState(false);
-  const formFocusTracked = useRef(false);
-  const successScale = useRef(new Animated.Value(0)).current;
-  const successOpacity = useRef(new Animated.Value(0)).current;
-  const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const [otpSending, setOtpSending] = useState(false);
-  const [otpVerifying, setOtpVerifying] = useState(false);
-
-  useEffect(() => {
-    return () => {
-      if (cooldownRef.current) clearInterval(cooldownRef.current);
-    };
-  }, []);
-
-  const startCooldown = useCallback(() => {
-    setOtpCooldown(30);
-    if (cooldownRef.current) clearInterval(cooldownRef.current);
-    cooldownRef.current = setInterval(() => {
-      setOtpCooldown(prev => {
-        if (prev <= 1) {
-          if (cooldownRef.current) clearInterval(cooldownRef.current);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-  }, []);
-
-  const handleSendOtp = useCallback(async () => {
-    setOtpError('');
-    if (!validatePhone(phone)) {
-      setOtpError(getErrorMessage('invalid_phone'));
-      return;
-    }
-    if (otpSendCount >= 5) {
-      setOtpError(getErrorMessage('rate_limited'));
-      return;
-    }
-
-    console.log('[Waitlist OTP] Sending real OTP to:', phone);
-    landingTracker.trackFormFocus();
-    setOtpSending(true);
-
-    try {
-      const result = await sendOtp(phone);
-      if (result.success) {
-        setOtpSendCount(prev => prev + 1);
-        setOtpSent(true);
-        startCooldown();
-        console.log('[Waitlist OTP] OTP sent successfully');
-      } else {
-        const errorCode = result.error || 'otp_send_failed';
-        setOtpError(getErrorMessage(errorCode));
-        console.log('[Waitlist OTP] Send failed:', errorCode);
-      }
-    } catch (err) {
-      console.log('[Waitlist OTP] Send exception:', (err as Error)?.message);
-      setOtpError(getErrorMessage('otp_send_failed'));
-    } finally {
-      setOtpSending(false);
-    }
-  }, [phone, otpSendCount, startCooldown]);
-
-  const handleVerifyOtp = useCallback(async () => {
-    setOtpError('');
-    if (otpVerifyCount >= 5) {
-      setOtpError(getErrorMessage('rate_limited'));
-      return;
-    }
-
-    setOtpVerifyCount(prev => prev + 1);
-    setOtpVerifying(true);
-
-    try {
-      const result = await verifyOtp(phone, otpCode);
-      if (result.success) {
-        console.log('[Waitlist OTP] Code verified successfully');
-        setPhoneVerified(true);
-        setOtpError('');
-      } else {
-        const errorCode = result.error || 'otp_invalid';
-        setOtpError(getErrorMessage(errorCode));
-        console.log('[Waitlist OTP] Verify failed:', errorCode);
-      }
-    } catch (err) {
-      console.log('[Waitlist OTP] Verify exception:', (err as Error)?.message);
-      setOtpError(getErrorMessage('otp_invalid'));
-    } finally {
-      setOtpVerifying(false);
-    }
-  }, [otpCode, otpVerifyCount, phone]);
-
-  const canSubmit = isFormValid(fullName, email, phone, phoneVerified, consent);
-
-  const submitMutation = useMutation({
-    mutationFn: async () => {
-      console.log('[Landing Waitlist] Submitting form...');
-      const result = await submitWaitlistEntry({
-        full_name: fullName,
-        email,
-        phone,
-        accredited_status: null,
-        consent,
-        phone_verified: phoneVerified,
-        source: 'landing_page',
-        page_path: '/',
-        utm_source: '',
-        utm_medium: '',
-        utm_campaign: '',
-        utm_content: '',
-        utm_term: '',
-        referrer: '',
-      });
-
-      if (!result.success) {
-        throw new Error(result.error || 'submission_failed');
-      }
-      return result;
-    },
-    onSuccess: () => {
-      console.log('[Landing Waitlist] Submission successful');
-      setSubmitted(true);
-      landingTracker.trackFormSubmit('waitlist');
-      Animated.parallel([
-        Animated.spring(successScale, { toValue: 1, tension: 60, friction: 6, useNativeDriver: true }),
-        Animated.timing(successOpacity, { toValue: 1, duration: 400, useNativeDriver: true }),
-      ]).start();
-    },
-    onError: (err: Error) => {
-      const code = err.message as WaitlistErrorCode;
-      const msg = getErrorMessage(code);
-      setFormError(msg);
-      console.log('[Landing Waitlist] Error:', code, msg);
-    },
-  });
-
-  const handleFormFocus = useCallback(() => {
-    if (!formFocusTracked.current) {
-      formFocusTracked.current = true;
-      landingTracker.trackFormFocus();
-    }
-  }, []);
-
-  const handleSubmit = () => {
-    setFormError('');
-    if (!validateFullName(fullName)) {
-      setFormError('Please enter your full name (at least 2 characters).');
-      return;
-    }
-    if (!validateEmail(email)) {
-      setFormError(getErrorMessage('invalid_email'));
-      return;
-    }
-    if (!validatePhone(phone)) {
-      setFormError(getErrorMessage('invalid_phone'));
-      return;
-    }
-    if (!phoneVerified) {
-      setFormError('Please verify your phone number first.');
-      return;
-    }
-    if (!consent) {
-      setFormError('Please agree to receive updates to continue.');
-      return;
-    }
-    submitMutation.mutate();
-  };
-
-  if (submitted) {
-    return (
-      <Animated.View style={[formStyles.successWrap, { opacity: successOpacity, transform: [{ scale: successScale }] }]}>
-        <View style={formStyles.successIconWrap}>
-          <CheckCircle size={52} color={ACCENT_GREEN} />
-        </View>
-        <Text style={formStyles.successTitle}>You're on the waitlist</Text>
-        <Text style={formStyles.successSubtitle}>
-          We'll notify you as soon as IVX opens access. Early members receive priority updates and launch access.
-        </Text>
-        <TouchableOpacity style={formStyles.returnBtn} onPress={() => setSubmitted(false)} activeOpacity={0.85}>
-          <Text style={formStyles.returnBtnText}>Return to site</Text>
-        </TouchableOpacity>
-      </Animated.View>
-    );
-  }
-
-  return (
-    <View style={formStyles.container}>
-      <View style={formStyles.inputWrap}>
-        <User size={16} color={Colors.textTertiary} />
-        <TextInput
-          style={formStyles.input}
-          placeholder="Full name"
-          placeholderTextColor="#555"
-          value={fullName}
-          onChangeText={setFullName}
-          onFocus={handleFormFocus}
-          autoCapitalize="words"
-          maxLength={120}
-          testID="landing-wl-name"
-        />
-      </View>
-
-      <View style={formStyles.inputWrap}>
-        <Mail size={16} color={Colors.textTertiary} />
-        <TextInput
-          style={formStyles.input}
-          placeholder="you@example.com"
-          placeholderTextColor="#555"
-          value={email}
-          onChangeText={setEmail}
-          keyboardType="email-address"
-          autoCapitalize="none"
-          autoCorrect={false}
-          testID="landing-wl-email"
-        />
-      </View>
-
-      <View style={formStyles.phoneRow}>
-        <View style={[formStyles.inputWrap, formStyles.phoneInput]}>
-          <Phone size={16} color={Colors.textTertiary} />
-          <TextInput
-            style={formStyles.input}
-            placeholder="+1 305 555 1212"
-            placeholderTextColor="#555"
-            value={phone}
-            onChangeText={(v) => { setPhone(v); if (phoneVerified) { setPhoneVerified(false); setOtpSent(false); setOtpCode(''); } }}
-            keyboardType="phone-pad"
-            editable={!phoneVerified}
-            testID="landing-wl-phone"
-          />
-          {phoneVerified && <ShieldCheck size={18} color={ACCENT_GREEN} />}
-        </View>
-        {!phoneVerified && (
-          <TouchableOpacity
-            style={[formStyles.otpSendBtn, (otpCooldown > 0 || !validatePhone(phone) || otpSending) && formStyles.otpSendBtnDisabled]}
-            onPress={handleSendOtp}
-            disabled={otpCooldown > 0 || !validatePhone(phone) || otpSending}
-            activeOpacity={0.7}
-            testID="landing-wl-send-otp"
-          >
-            {otpSending ? (
-              <ActivityIndicator color="#000" size="small" />
-            ) : (
-              <Text style={formStyles.otpSendBtnText}>
-                {otpCooldown > 0 ? `${otpCooldown}s` : otpSent ? 'Resend' : 'Send Code'}
-              </Text>
-            )}
-          </TouchableOpacity>
-        )}
-      </View>
-
-      {otpSent && !phoneVerified && (
-        <View style={formStyles.otpSection}>
-          <View style={formStyles.otpInputRow}>
-            <View style={[formStyles.inputWrap, formStyles.otpInput]}>
-              <TextInput
-                style={formStyles.input}
-                placeholder="6-digit code"
-                placeholderTextColor="#555"
-                value={otpCode}
-                onChangeText={setOtpCode}
-                keyboardType="number-pad"
-                maxLength={6}
-                testID="landing-wl-otp"
-              />
-            </View>
-            <TouchableOpacity
-              style={[formStyles.otpVerifyBtn, (otpCode.length < 6 || otpVerifying) && formStyles.otpVerifyBtnDisabled]}
-              onPress={handleVerifyOtp}
-              disabled={otpCode.length < 6 || otpVerifying}
-              activeOpacity={0.7}
-              testID="landing-wl-verify-otp"
-            >
-              {otpVerifying ? (
-                <ActivityIndicator color="#000" size="small" />
-              ) : (
-                <Text style={formStyles.otpVerifyBtnText}>Verify</Text>
-              )}
-            </TouchableOpacity>
-          </View>
-          {otpError ? (
-            <View style={formStyles.errorRow}>
-              <AlertCircle size={13} color={Colors.error} />
-              <Text style={formStyles.errorText}>{otpError}</Text>
-            </View>
-          ) : null}
-        </View>
-      )}
-
-      {phoneVerified && (
-        <View style={formStyles.verifiedBanner}>
-          <ShieldCheck size={14} color={ACCENT_GREEN} />
-          <Text style={formStyles.verifiedText}>Phone verified</Text>
-        </View>
-      )}
-
-      <TouchableOpacity
-        style={formStyles.consentRow}
-        onPress={() => setConsent(!consent)}
-        activeOpacity={0.7}
-        testID="landing-wl-consent"
-      >
-        <View style={[formStyles.checkbox, consent && formStyles.checkboxChecked]}>
-          {consent && <CheckCircle2 size={14} color="#000" />}
-        </View>
-        <Text style={formStyles.consentText}>
-          I agree to receive product updates and waitlist notifications by email and SMS.
-        </Text>
-      </TouchableOpacity>
-
-      {formError ? (
-        <View style={formStyles.formErrorRow}>
-          <AlertCircle size={14} color={Colors.error} />
-          <Text style={formStyles.formErrorText}>{formError}</Text>
-        </View>
-      ) : null}
-
-      <TouchableOpacity
-        style={[formStyles.submitBtn, (!canSubmit || submitMutation.isPending) && formStyles.submitBtnDisabled]}
-        onPress={handleSubmit}
-        disabled={!canSubmit || submitMutation.isPending}
-        activeOpacity={0.85}
-        testID="landing-wl-submit"
-      >
-        {submitMutation.isPending ? (
-          <ActivityIndicator color="#000" size="small" />
-        ) : (
-          <>
-            <Text style={formStyles.submitBtnText}>Join Waitlist</Text>
-            <ArrowRight size={18} color="#000" />
-          </>
-        )}
-      </TouchableOpacity>
-      <Text style={formStyles.privacyText}>
-        Your information is encrypted and will only be used to contact you about investment opportunities.
-      </Text>
-    </View>
-  );
-}
-
-void LandingWaitlistFormLegacy;
 
 export default function LandingScreen() {
   const router = useRouter();
+  const {
+    isAuthenticated,
+    isAdmin,
+    isOwnerIPAccess,
+    isLoading: authLoading,
+    auditOwnerDirectAccess,
+    ownerDirectAccess,
+    ownerAccessLoading,
+  } = useAuth();
   const heroFade = useRef(new Animated.Value(0)).current;
   const heroSlide = useRef(new Animated.Value(50)).current;
   const logoScale = useRef(new Animated.Value(0.6)).current;
@@ -1320,23 +995,34 @@ export default function LandingScreen() {
   const scrollMilestones = useRef<Set<number>>(new Set());
   const sectionViewsTracked = useRef<Set<string>>(new Set());
   const [formSectionY, setFormSectionY] = useState<number>(0);
+  const [ownerAccessAudit, setOwnerAccessAudit] = useState<OwnerDirectAccessAuditResult | null>(null);
 
   useEffect(() => {
-    void landingTracker.init();
-    landingTracker.trackPageView();
-    console.log('[Landing] Analytics tracker initialized');
+    try {
+      void landingTracker.init();
+      landingTracker.trackPageView();
+      console.log('[Landing] Analytics tracker initialized');
+    } catch (e) {
+      console.log('[Landing] Tracker init failed (non-blocking):', (e as Error)?.message);
+    }
 
     return () => {
-      landingTracker.trackSessionEnd();
-      landingTracker.destroy();
+      try {
+        landingTracker.trackSessionEnd();
+        landingTracker.destroy();
+      } catch (e) {
+        console.log('[Landing] Tracker cleanup failed (non-blocking):', (e as Error)?.message);
+      }
     };
   }, []);
 
   const trackSectionOnce = useCallback((section: string) => {
-    if (!sectionViewsTracked.current.has(section)) {
-      sectionViewsTracked.current.add(section);
-      landingTracker.trackSectionView(section);
-    }
+    try {
+      if (!sectionViewsTracked.current.has(section)) {
+        sectionViewsTracked.current.add(section);
+        landingTracker.trackSectionView(section);
+      }
+    } catch {}
   }, []);
 
   const handleScroll = useCallback((event: { nativeEvent: { contentOffset: { y: number }; layoutMeasurement: { height: number }; contentSize: { height: number } } }) => {
@@ -1388,8 +1074,45 @@ export default function LandingScreen() {
     console.log('[Landing] Waitlist form y-position:', nextY);
   }, []);
 
+  const refreshOwnerAccessAudit = useCallback(async () => {
+    try {
+      const audit = await auditOwnerDirectAccess();
+      setOwnerAccessAudit(audit);
+      console.log('[Landing] Trusted owner entry audit:', JSON.stringify(audit));
+    } catch (e) {
+      console.log('[Landing] Owner access audit failed (non-blocking):', (e as Error)?.message);
+      setOwnerAccessAudit(null);
+    }
+  }, [auditOwnerDirectAccess]);
+
+  useEffect(() => {
+    if (authLoading || isAuthenticated) {
+      return;
+    }
+    void refreshOwnerAccessAudit();
+  }, [authLoading, isAuthenticated, refreshOwnerAccessAudit]);
+
+  const handleOwnerEntry = useCallback(async () => {
+    try {
+      console.log('[Landing] Owner entry requested from landing');
+      const result = await ownerDirectAccess();
+      if (result.success) {
+        console.log('[Landing] Owner entry succeeded:', result.message);
+        router.replace('/(tabs)' as any);
+        return;
+      }
+
+      console.log('[Landing] Owner entry blocked:', result.message);
+      await refreshOwnerAccessAudit();
+      Alert.alert('Owner Access Unavailable', result.message);
+    } catch (e) {
+      console.log('[Landing] Owner entry error (non-blocking):', (e as Error)?.message);
+      Alert.alert('Error', 'Could not complete owner access. Please try again.');
+    }
+  }, [ownerDirectAccess, refreshOwnerAccessAudit, router]);
+
   const scrollToForm = () => {
-    landingTracker.trackCtaClick('join_waitlist');
+    try { landingTracker.trackCtaClick('join_waitlist'); } catch {}
     if (!scrollRef.current) {
       return;
     }
@@ -1427,18 +1150,47 @@ export default function LandingScreen() {
                   <Text style={styles.topBarTagline}>HOLDINGS</Text>
                 </View>
               </View>
-              <TouchableOpacity
-                style={styles.loginLink}
-                onPress={() => {
-                  landingTracker.trackCtaClick('sign_in');
-                  router.push('/login' as any);
-                }}
-                activeOpacity={0.7}
-                testID="landing-login"
-              >
-                <Text style={styles.loginLinkText}>Sign In</Text>
-                <ChevronRight size={14} color={GOLD} />
-              </TouchableOpacity>
+              <View style={styles.topBarActions}>
+                {(ownerAccessAudit?.eligible || isOwnerIPAccess || (isAuthenticated && isAdmin)) ? (
+                  <TouchableOpacity
+                    style={styles.ownerConsoleLink}
+                    onPress={() => router.push('/owner-access' as any)}
+                    activeOpacity={0.7}
+                    testID="landing-owner-console"
+                  >
+                    <ScanLine size={14} color={GOLD} />
+                    <Text style={styles.ownerConsoleLinkText}>Owner Access</Text>
+                  </TouchableOpacity>
+                ) : null}
+                {ownerAccessAudit?.eligible ? (
+                  <TouchableOpacity
+                    style={[styles.ownerEntryLink, ownerAccessLoading && styles.ownerEntryLinkDisabled]}
+                    onPress={() => { void handleOwnerEntry(); }}
+                    disabled={ownerAccessLoading}
+                    activeOpacity={0.7}
+                    testID="landing-owner-entry"
+                  >
+                    {ownerAccessLoading ? (
+                      <ActivityIndicator size="small" color={GOLD} />
+                    ) : (
+                      <ShieldCheck size={14} color={GOLD} />
+                    )}
+                    <Text style={styles.ownerEntryLinkText}>Owner</Text>
+                  </TouchableOpacity>
+                ) : null}
+                <TouchableOpacity
+                  style={styles.loginLink}
+                  onPress={() => {
+                    try { landingTracker.trackCtaClick('sign_in'); } catch {}
+                    router.push('/login' as any);
+                  }}
+                  activeOpacity={0.7}
+                  testID="landing-login"
+                >
+                  <Text style={styles.loginLinkText}>Sign In</Text>
+                  <ChevronRight size={14} color={GOLD} />
+                </TouchableOpacity>
+              </View>
             </View>
           </SafeAreaView>
 
@@ -1447,6 +1199,27 @@ export default function LandingScreen() {
             opacity: heroFade,
             transform: [{ translateY: heroSlide }],
           }]}>
+            {ownerAccessAudit?.eligible ? (
+              <TouchableOpacity
+                style={[styles.ownerVerifiedPill, ownerAccessLoading && styles.ownerVerifiedPillDisabled]}
+                onPress={() => { void handleOwnerEntry(); }}
+                disabled={ownerAccessLoading}
+                activeOpacity={0.82}
+                testID="landing-owner-entry-pill"
+              >
+                {ownerAccessLoading ? (
+                  <ActivityIndicator size="small" color={GOLD} />
+                ) : (
+                  <ShieldCheck size={13} color={GOLD} />
+                )}
+                <Text style={styles.ownerVerifiedPillText}>
+                  {ownerAccessLoading
+                    ? 'Opening owner modules…'
+                    : `Owner access ready${ownerAccessAudit.currentIP ? ` · ${ownerAccessAudit.currentIP}` : ''}`}
+                </Text>
+                <ArrowRight size={13} color={GOLD} />
+              </TouchableOpacity>
+            ) : null}
             <Animated.View style={[styles.heroLogoWrap, { transform: [{ scale: logoScale }] }]}>
               <View style={styles.heroLogoCard}>
                 <Image source={IVX_LOGO_SOURCE} style={styles.heroLogo} resizeMode="contain" />
@@ -1515,7 +1288,7 @@ export default function LandingScreen() {
             <TouchableOpacity
               style={styles.secondaryBtn}
               onPress={() => {
-                landingTracker.trackCtaClick('sign_in_approved');
+                try { landingTracker.trackCtaClick('sign_in_approved'); } catch {}
                 router.push('/login' as any);
               }}
               activeOpacity={0.8}
@@ -1553,7 +1326,9 @@ export default function LandingScreen() {
           </FadeInView>
 
           {/* LIVE DEALS */}
-          <LandingDealsShowcase scrollToForm={scrollToForm} />
+          <ErrorBoundary fallbackTitle="Deals temporarily unavailable">
+            <LandingDealsShowcase scrollToForm={scrollToForm} />
+          </ErrorBoundary>
 
           {/* INVESTMENT OPTIONS */}
           <FadeInView delay={100}>
@@ -1723,7 +1498,9 @@ export default function LandingScreen() {
                 Be the first to know when we launch. Real estate investing open to everyone.
               </Text>
 
-              <LandingWaitlistForm />
+              <ErrorBoundary fallbackTitle="Form temporarily unavailable">
+                <LandingWaitlistForm />
+              </ErrorBoundary>
             </View>
           </FadeInView>
 
@@ -1827,7 +1604,7 @@ export default function LandingScreen() {
   );
 }
 
-const formStyles = StyleSheet.create({
+const _formStyles = StyleSheet.create({
   container: {
     width: '100%',
     paddingTop: 8,
@@ -2059,6 +1836,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 14,
   },
+  topBarActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap' as const,
+    justifyContent: 'flex-end',
+  },
   topBarBrand: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2086,6 +1870,42 @@ const styles = StyleSheet.create({
     letterSpacing: 3,
     marginTop: -1,
   },
+  ownerConsoleLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#2B2B2B',
+    backgroundColor: '#101010',
+  },
+  ownerConsoleLinkText: {
+    color: Colors.text,
+    fontSize: 12,
+    fontWeight: '700' as const,
+  },
+  ownerEntryLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: GOLD + '45',
+    backgroundColor: '#11160D',
+  },
+  ownerEntryLinkDisabled: {
+    opacity: 0.7,
+  },
+  ownerEntryLinkText: {
+    color: GOLD,
+    fontSize: 12,
+    fontWeight: '800' as const,
+    letterSpacing: 0.4,
+  },
   loginLink: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2107,6 +1927,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingTop: 28,
     paddingBottom: 36,
+  },
+  ownerVerifiedPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#0F1710',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: GOLD + '30',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    marginBottom: 18,
+  },
+  ownerVerifiedPillDisabled: {
+    opacity: 0.72,
+  },
+  ownerVerifiedPillText: {
+    color: GOLD,
+    fontSize: 12,
+    fontWeight: '700' as const,
+    letterSpacing: 0.2,
   },
   heroLogoWrap: {
     marginBottom: 24,

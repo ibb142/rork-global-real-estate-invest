@@ -8,6 +8,7 @@ import {
   Share,
   Platform,
   Animated,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -40,16 +41,17 @@ import {
   CheckCircle,
   AlertCircle,
   Circle,
-  Copy,
+  Clipboard as ClipboardIcon,
+  ClipboardCopy,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
+import * as ExpoClipboard from 'expo-clipboard';
 import Colors from '@/constants/colors';
 import {
   FUNCTIONALITY_REGISTRY,
   getTotalFeatures,
   getTotalModules,
   getActiveFeatures,
-  generateTextReport,
 } from '@/mocks/functionality-registry';
 
 const ICON_MAP: Record<string, React.ComponentType<{ size: number; color: string }>> = {
@@ -261,6 +263,8 @@ export default function AppReportScreen() {
   const [expandedModules, setExpandedModules] = useState<Set<string>>(new Set());
   const [expandedIntegrations, setExpandedIntegrations] = useState<Set<string>>(new Set());
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [pastedFromClipboard, setPastedFromClipboard] = useState<boolean>(false);
+  const [clipboardPreview, setClipboardPreview] = useState<string>('');
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   React.useEffect(() => {
@@ -269,10 +273,10 @@ export default function AppReportScreen() {
       duration: 400,
       useNativeDriver: true,
     }).start();
-  }, []);
+  }, [fadeAnim]);
 
   const toggleModule = useCallback((moduleId: string) => {
-    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (Platform.OS !== 'web') void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setExpandedModules(prev => {
       const next = new Set(prev);
       if (next.has(moduleId)) next.delete(moduleId);
@@ -282,7 +286,7 @@ export default function AppReportScreen() {
   }, []);
 
   const toggleIntegration = useCallback((integrationId: string) => {
-    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (Platform.OS !== 'web') void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setExpandedIntegrations(prev => {
       const next = new Set(prev);
       if (next.has(integrationId)) next.delete(integrationId);
@@ -305,7 +309,7 @@ export default function AppReportScreen() {
   }, [activeTab]);
 
   const handleShareReport = useCallback(async () => {
-    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    if (Platform.OS !== 'web') void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const report = generateFullReport();
     try {
       await Share.share({
@@ -318,16 +322,39 @@ export default function AppReportScreen() {
   }, []);
 
   const handleCopyReport = useCallback(async () => {
-    if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    const report = generateFullReport();
-    if (Platform.OS === 'web') {
-      try {
-        await navigator.clipboard.writeText(report);
-        setCopiedId('full');
-        setTimeout(() => setCopiedId(null), 2000);
-      } catch { /* fallback */ }
-    } else {
-      await Share.share({ message: report });
+    try {
+      if (Platform.OS !== 'web') {
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+      const report = generateFullReport();
+      console.log('[AppReport] Copying full report to clipboard');
+      await ExpoClipboard.setStringAsync(report);
+      setCopiedId('full');
+      setTimeout(() => setCopiedId(null), 2000);
+    } catch (error) {
+      console.log('[AppReport] Copy report failed:', error);
+      Alert.alert('Copy failed', 'Unable to copy the report right now.');
+    }
+  }, []);
+
+  const handlePasteReport = useCallback(async () => {
+    try {
+      if (Platform.OS !== 'web') {
+        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      }
+      console.log('[AppReport] Reading clipboard preview');
+      const content = await ExpoClipboard.getStringAsync();
+      const trimmed = content.trim();
+      if (!trimmed) {
+        Alert.alert('Clipboard empty', 'Copy text first, then tap paste.');
+        return;
+      }
+      setClipboardPreview(trimmed);
+      setPastedFromClipboard(true);
+      setTimeout(() => setPastedFromClipboard(false), 2000);
+    } catch (error) {
+      console.log('[AppReport] Paste report failed:', error);
+      Alert.alert('Paste failed', 'Unable to read the clipboard right now.');
     }
   }, []);
 
@@ -351,9 +378,25 @@ export default function AppReportScreen() {
               <Text style={styles.headerTitle}>App Report</Text>
               <Text style={styles.headerSubtitle}>{totalFeatures} Features | {totalIntegrations} Integrations</Text>
             </View>
-            <TouchableOpacity onPress={handleShareReport} style={styles.shareBtn} testID="share-button">
-              <Share2 size={20} color={Colors.primary} />
-            </TouchableOpacity>
+            <View style={styles.headerActions}>
+              <TouchableOpacity onPress={handleShareReport} style={styles.shareBtn} testID="share-button">
+                <Share2 size={20} color={Colors.primary} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handlePasteReport}
+                style={[styles.shareBtn, pastedFromClipboard && styles.headerActionActive]}
+                testID="paste-button"
+              >
+                {pastedFromClipboard ? <CheckCircle size={20} color={Colors.primary} /> : <ClipboardIcon size={20} color={Colors.primary} />}
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handleCopyReport}
+                style={[styles.shareBtn, copiedId === 'full' && styles.headerActionActive]}
+                testID="copy-button"
+              >
+                {copiedId === 'full' ? <CheckCircle size={20} color={Colors.primary} /> : <ClipboardCopy size={20} color={Colors.primary} />}
+              </TouchableOpacity>
+            </View>
           </View>
 
           <View style={styles.tabRow}>
@@ -378,17 +421,29 @@ export default function AppReportScreen() {
           </View>
 
           <View style={styles.actionRow}>
-            <TouchableOpacity onPress={expandAll} style={styles.actionBtn}>
+            <TouchableOpacity onPress={expandAll} style={styles.actionBtn} testID="expand-all-button">
               <Text style={styles.actionText}>Expand All</Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={collapseAll} style={styles.actionBtn}>
+            <TouchableOpacity onPress={collapseAll} style={styles.actionBtn} testID="collapse-all-button">
               <Text style={styles.actionText}>Collapse All</Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={handleCopyReport} style={styles.copyBtn}>
-              <Copy size={14} color={Colors.text} />
+            <TouchableOpacity onPress={handleCopyReport} style={styles.copyBtn} testID="copy-report-button">
+              {copiedId === 'full' ? <CheckCircle size={14} color={Colors.primary} /> : <ClipboardCopy size={14} color={Colors.primary} />}
               <Text style={styles.copyText}>{copiedId === 'full' ? 'Copied!' : 'Copy Report'}</Text>
             </TouchableOpacity>
           </View>
+
+          {clipboardPreview ? (
+            <View style={styles.clipboardCard}>
+              <View style={styles.clipboardCardHeader}>
+                <Text style={styles.clipboardCardTitle}>Clipboard preview</Text>
+                <Text style={styles.clipboardCardMeta}>{clipboardPreview.length} chars</Text>
+              </View>
+              <Text style={styles.clipboardCardText} numberOfLines={8}>
+                {clipboardPreview}
+              </Text>
+            </View>
+          ) : null}
 
           <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
             {activeTab === 'features' && (
@@ -690,7 +745,9 @@ const styles = StyleSheet.create({
   headerCenter: { flex: 1, alignItems: 'center' },
   headerTitle: { color: Colors.text, fontSize: 20, fontWeight: '800' as const },
   headerSubtitle: { color: Colors.textSecondary, fontSize: 13, marginTop: 4 },
-  shareBtn: { padding: 8 },
+  shareBtn: { padding: 8, borderRadius: 12, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.surfaceBorder },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  headerActionActive: { backgroundColor: Colors.primary + '14', borderColor: Colors.primary + '50' },
   tabRow: { flexDirection: 'row', gap: 4, marginBottom: 16 },
   tab: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 10 },
   tabActive: { backgroundColor: Colors.primary },
@@ -699,8 +756,13 @@ const styles = StyleSheet.create({
   actionRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   actionBtn: { backgroundColor: Colors.primary, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
   actionText: { color: '#000000', fontSize: 13, fontWeight: '600' as const },
-  copyBtn: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 12, alignItems: 'center' },
+  copyBtn: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 12, alignItems: 'center', flexDirection: 'row', gap: 8, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.surfaceBorder },
   copyText: { color: Colors.textSecondary, fontSize: 13 },
+  clipboardCard: { backgroundColor: Colors.surface, borderRadius: 16, padding: 14, marginTop: 12, marginBottom: 12, borderWidth: 1, borderColor: Colors.surfaceBorder, gap: 10 },
+  clipboardCardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  clipboardCardTitle: { color: Colors.text, fontSize: 14, fontWeight: '700' as const },
+  clipboardCardMeta: { color: Colors.textSecondary, fontSize: 12, fontWeight: '600' as const },
+  clipboardCardText: { color: Colors.textSecondary, fontSize: 13, lineHeight: 20 },
   scroll: { flex: 1, backgroundColor: Colors.background },
   section: { marginBottom: 20 },
   summaryCard: { backgroundColor: Colors.surface, borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: Colors.surfaceBorder },

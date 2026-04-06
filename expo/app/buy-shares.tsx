@@ -38,7 +38,7 @@ import {
   CircleDollarSign,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
-import { formatCurrencyWithDecimals, formatNumber } from '@/lib/formatters';
+import { formatCurrencyWithDecimals, formatNumber, formatAmountInput, parseAmountInput } from '@/lib/formatters';
 import { useInvestmentGuard } from '@/hooks/useInvestmentGuard';
 import InvestorDisclosure from '@/components/InvestorDisclosure';
 
@@ -108,7 +108,7 @@ export default function BuySharesScreen() {
   const successAnim = useRef(new Animated.Value(0)).current;
   const checkScale = useRef(new Animated.Value(0)).current;
 
-  const shares = useMemo(() => Math.max(0, parseInt(sharesInput, 10) || 0), [sharesInput]);
+  const shares = useMemo(() => Math.max(0, parseInt(parseAmountInput(sharesInput), 10) || 0), [sharesInput]);
   const pricePerShare = property?.pricePerShare ?? 0;
   const subtotal = shares * pricePerShare;
   const platformFee = subtotal * 0.01;
@@ -136,8 +136,8 @@ export default function BuySharesScreen() {
   const adjustShares = useCallback((delta: number) => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setSharesInput(prev => {
-      const current = parseInt(prev, 10) || 0;
-      return String(Math.max(1, current + delta));
+      const current = parseInt(parseAmountInput(prev), 10) || 0;
+      return formatAmountInput(String(Math.max(1, current + delta)));
     });
   }, []);
 
@@ -341,7 +341,7 @@ export default function BuySharesScreen() {
                       <TextInput
                         style={styles.amountInput}
                         value={sharesInput}
-                        onChangeText={setSharesInput}
+                        onChangeText={(value) => setSharesInput(formatAmountInput(parseAmountInput(value)))}
                         keyboardType="numeric"
                         returnKeyType="done"
                         onSubmitEditing={Keyboard.dismiss}
@@ -360,7 +360,7 @@ export default function BuySharesScreen() {
                     <TouchableOpacity
                       key={qty}
                       style={[styles.quickPickBtn, shares === qty && styles.quickPickBtnActive]}
-                      onPress={() => { Keyboard.dismiss(); setSharesInput(String(qty)); }}
+                      onPress={() => { Keyboard.dismiss(); setSharesInput(formatAmountInput(String(qty))); }}
                     >
                       <Text style={[styles.quickPickText, shares === qty && styles.quickPickTextActive]}>
                         {qty >= 1000 ? `${qty / 1000}K` : qty}

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -57,6 +57,7 @@ import { fetchPhotosFromStorageBucket } from '@/constants/deal-photos';
 import { prefetchImages } from '@/components/CachedImage';
 import { invalidateAllJVQueries, useJVRealtime } from '@/lib/jv-realtime';
 import { formatCurrency, parseAmountInput, formatAmountInput } from '@/lib/formatters';
+import { buildOwnershipSnapshot } from '@/lib/ownership-math';
 import { syncToLandingPage } from '@/lib/landing-sync';
 import { triggerAutoDeploy } from '@/lib/auto-deploy';
 
@@ -127,6 +128,8 @@ interface EditFormState {
   llcName: string;
   builderName: string;
   minInvestment: string;
+  salePrice: string;
+  fractionalSharePrice: string;
   timelineMin: string;
   timelineMax: string;
   titleVerified: boolean;
@@ -202,6 +205,8 @@ const DEFAULT_EDIT_FORM: EditFormState = {
   llcName: '',
   builderName: '',
   minInvestment: '50',
+  salePrice: '',
+  fractionalSharePrice: '50',
   timelineMin: '14',
   timelineMax: '24',
   titleVerified: true,
@@ -239,6 +244,8 @@ export default function AdminJVDealsScreen() {
   const [localOrder, setLocalOrder] = useState<string[]>([]);
   const [positionInputDealId, setPositionInputDealId] = useState<string | null>(null);
   const [positionInputValue, setPositionInputValue] = useState<string>('');
+  const [isTimelineAutosaving, setIsTimelineAutosaving] = useState<boolean>(false);
+  const lastAutoSyncKeyRef = useRef<string>('');
 
   const queryClient = useQueryClient();
 
@@ -354,8 +361,9 @@ export default function AdminJVDealsScreen() {
 
   const updateMutation = useMutation({
     mutationFn: async (input: { id: string; data: Record<string, unknown> }) => {
-      console.log('[Admin JV] Saving deal update:', input.id, '| fields:', Object.keys(input.data).join(','));
-      const { data, error } = await updateJVDeal(input.id, input.data, { adminOverride: true });
+      const { __autoSync, ...safeData } = input.data;
+      console.log('[Admin JV] Saving deal update:', input.id, '| fields:', Object.keys(safeData).join(','), '| autoSync:', __autoSync === true);
+      const { data, error } = await updateJVDeal(input.id, safeData, { adminOverride: true });
       if (error) {
         console.error('[Admin JV] updateJVDeal returned error:', error.message);
         throw error;
@@ -364,12 +372,17 @@ export default function AdminJVDealsScreen() {
       return { success: true, ...data };
     },
     onSuccess: (_result, variables) => {
-      console.log('[Admin JV] Update saved successfully for deal:', variables.id, '— resetting cache + triggering landing sync');
+      const isAutoSync = variables.data.__autoSync === true;
+      console.log('[Admin JV] Update saved successfully for deal:', variables.id, '— resetting cache + triggering landing sync | autoSync:', isAutoSync);
       resetSupabaseCheck();
       invalidateAllJVQueries(queryClient);
       void queryClient.refetchQueries({ queryKey: ['jvAgreements.list'] });
-      setEditModalVisible(false);
-      setSelectedDeal(null);
+      if (isAutoSync) {
+        setIsTimelineAutosaving(false);
+      } else {
+        setEditModalVisible(false);
+        setSelectedDeal(null);
+      }
       triggerAutoDeploy('content_change', true).then(result => {
         if (result) {
           console.log('[Admin JV] Auto-deploy after update:', result.status, 'deals:', result.syncedDeals, 'files:', result.filesUploaded.length);
@@ -391,6 +404,7 @@ export default function AdminJVDealsScreen() {
     },
     onError: (err: Error) => {
       console.error('[Admin JV] Update FAILED:', err.message);
+      setIsTimelineAutosaving(false);
       const isAuthError = err.message.toLowerCase().includes('admin') || err.message.toLowerCase().includes('role');
       if (isAuthError) {
         Alert.alert('Access Denied', 'Only admin users can edit deals. Your current role does not have permission.');
@@ -580,6 +594,67 @@ export default function AdminJVDealsScreen() {
 
   const isAnyMutating = publishMutation.isPending || unpublishMutation.isPending || archiveMutation.isPending || restoreMutation.isPending || reorderMutation.isPending;
 
+  useEffect(() => {
+    if (!editModalVisible || !selectedDeal || updateMutation.isPending) return;
+
+    const parsedSalePrice = Number(parseAmountInput(editForm.salePrice)) || 0;
+    const parsedFractionalSharePrice = Number(parseAmountInput(editForm.fractionalSharePrice)) || 0;
+    const parsedTimelineMin = editForm.timelineMin.trim() !== '' ? Number(parseAmountInput(editForm.timelineMin)) : undefined;
+    const parsedTimelineMax = editForm.timelineMax.trim() !== '' ? Number(parseAmountInput(editForm.timelineMax)) : undefined;
+
+    if ((parsedTimelineMin !== undefined && isNaN(parsedTimelineMin)) || (parsedTimelineMax !== undefined && isNaN(parsedTimelineMax))) {
+      return;
+    }
+
+    const autoSyncKey = JSON.stringify({
+      id: selectedDeal.id,
+      salePrice: parsedSalePrice,
+      fractionalSharePrice: parsedFractionalSharePrice,
+      timelineMin: parsedTimelineMin ?? null,
+      timelineMax: parsedTimelineMax ?? null,
+    });
+
+    if (autoSyncKey === lastAutoSyncKeyRef.current) return;
+
+    const timer = setTimeout(() => {
+      const dealAny = selectedDeal as unknown as Record<string, unknown>;
+      const rawTrust = dealAny.trustInfo ?? dealAny.trust_info;
+      let trustData: Record<string, unknown> = {};
+      if (rawTrust && typeof rawTrust === 'object') {
+        trustData = rawTrust as Record<string, unknown>;
+      } else if (typeof rawTrust === 'string') {
+        try { trustData = JSON.parse(rawTrust); } catch { trustData = {}; }
+      }
+
+      const syncedMinInvestment = Number(parseAmountInput(editForm.minInvestment)) || 50;
+      const syncedSalePrice = parsedSalePrice || Number((trustData.salePrice as number) ?? 0) || selectedDeal.propertyValue || selectedDeal.totalInvestment;
+      const trustInfo = {
+        ...trustData,
+        minInvestment: syncedMinInvestment,
+        salePrice: syncedSalePrice,
+        fractionalSharePrice: parsedFractionalSharePrice || Number((trustData.fractionalSharePrice as number) ?? 0) || syncedMinInvestment,
+        ownershipLabel: buildOwnershipSnapshot(syncedMinInvestment, syncedSalePrice).ownershipText,
+        priceChange1h: Number((trustData.priceChange1h as number) ?? 10) || 10,
+        priceChange2h: Number((trustData.priceChange2h as number) ?? 18) || 18,
+        timelineMin: parsedTimelineMin ?? Number((trustData.timelineMin as number) ?? 14),
+        timelineMax: parsedTimelineMax ?? Number((trustData.timelineMax as number) ?? 24),
+        timelineUnit: 'months',
+      };
+
+      setIsTimelineAutosaving(true);
+      lastAutoSyncKeyRef.current = autoSyncKey;
+      updateMutation.mutate({
+        id: selectedDeal.id,
+        data: {
+          trust_info: JSON.stringify(trustInfo),
+          __autoSync: true,
+        },
+      });
+    }, 700);
+
+    return () => clearTimeout(timer);
+  }, [editForm.fractionalSharePrice, editForm.minInvestment, editForm.salePrice, editForm.timelineMax, editForm.timelineMin, editModalVisible, selectedDeal, updateMutation]);
+
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     void jvQuery.refetch().finally(() => setRefreshing(false));
@@ -614,6 +689,8 @@ export default function AdminJVDealsScreen() {
       llcName: (trustData.llcName as string) || '',
       builderName: (trustData.builderName as string) || '',
       minInvestment: formatAmountInput(String((trustData.minInvestment as number) ?? 50)),
+      salePrice: formatAmountInput(String((trustData.salePrice as number) ?? (deal as any).propertyValue ?? '')),
+      fractionalSharePrice: formatAmountInput(String((trustData.fractionalSharePrice as number) ?? (trustData.minInvestment as number) ?? 50)),
       timelineMin: String((trustData.timelineMin as number) ?? ''),
       timelineMax: String((trustData.timelineMax as number) ?? ''),
       titleVerified: (trustData.titleVerified as boolean) ?? true,
@@ -637,16 +714,25 @@ export default function AdminJVDealsScreen() {
     const parsedInvestment = Number(parseAmountInput(editForm.totalInvestment)) || 0;
     const parsedPropertyValue = Number(parseAmountInput(editForm.propertyValue)) || 0;
     const parsedMinInvestment = Number(parseAmountInput(editForm.minInvestment)) || 50;
+    const parsedSalePrice = Number(parseAmountInput(editForm.salePrice)) || parsedPropertyValue || parsedInvestment;
+    const resolvedPropertyValue = parsedPropertyValue || selectedDeal.propertyValue || 0;
+    const parsedFractionalSharePrice = Number(parseAmountInput(editForm.fractionalSharePrice)) || parsedMinInvestment;
     const parsedTimelineMin = editForm.timelineMin.trim() !== '' ? Number(parseAmountInput(editForm.timelineMin)) : undefined;
     const parsedTimelineMax = editForm.timelineMax.trim() !== '' ? Number(parseAmountInput(editForm.timelineMax)) : undefined;
     const safeTimelineMin = parsedTimelineMin !== undefined && !isNaN(parsedTimelineMin) ? parsedTimelineMin : undefined;
     const safeTimelineMax = parsedTimelineMax !== undefined && !isNaN(parsedTimelineMax) ? parsedTimelineMax : undefined;
     const parsedROI = Number(parseAmountInput(editForm.expectedROI)) || 15;
-    console.log('[Admin JV] Saving edit for:', selectedDeal.id, 'investment:', parsedInvestment, 'timeline:', safeTimelineMin, '-', safeTimelineMax, 'photos:', editPhotos.length);
+    console.log('[Admin JV] Saving edit for:', selectedDeal.id, 'investment:', parsedInvestment, 'sale price:', parsedSalePrice, 'timeline:', safeTimelineMin, '-', safeTimelineMax, 'photos:', editPhotos.length);
+    const ownershipSnapshot = buildOwnershipSnapshot(parsedMinInvestment, parsedSalePrice);
     const trustInfo = {
       llcName: editForm.llcName.trim() || editForm.projectName.trim(),
       builderName: editForm.builderName.trim() || 'IVX Development',
       minInvestment: parsedMinInvestment,
+      salePrice: parsedSalePrice,
+      fractionalSharePrice: parsedFractionalSharePrice,
+      ownershipLabel: ownershipSnapshot.ownershipText,
+      priceChange1h: 10,
+      priceChange2h: 18,
       ...(safeTimelineMin !== undefined ? { timelineMin: safeTimelineMin } : {}),
       ...(safeTimelineMax !== undefined ? { timelineMax: safeTimelineMax } : {}),
       timelineUnit: 'months',
@@ -673,7 +759,7 @@ export default function AdminJVDealsScreen() {
       projectName: editForm.projectName.trim(),
       type: editForm.type,
       totalInvestment: parsedInvestment,
-      propertyValue: parsedPropertyValue,
+      propertyValue: resolvedPropertyValue,
       expectedROI: parsedROI,
       description: editForm.description.trim(),
       distributionFrequency: editForm.distributionFrequency,
@@ -705,7 +791,7 @@ export default function AdminJVDealsScreen() {
         const timelineStr = `${safeTimelineMin ?? 'N/A'}–${safeTimelineMax ?? 'N/A'} mo`;
         Alert.alert(
           'Deal Saved',
-          `"${editForm.projectName.trim()}" updated.\n\nInvestment: ${investStr}\nROI: ${parsedROI}%\nTimeline: ${timelineStr}\nMin Investment: ${formatAmountInput(String(parsedMinInvestment))}\nPhotos: ${editPhotos.length}`
+          `"${editForm.projectName.trim()}" updated.\n\nInvestment: ${investStr}\nSale Price: ${formatAmountInput(String(parsedSalePrice))}\nProperty Value: ${formatAmountInput(String(resolvedPropertyValue || 0))}\nROI: ${parsedROI}%\nTimeline: ${timelineStr}\nMin Investment: ${formatAmountInput(String(parsedMinInvestment))}\nFractional Share: ${formatAmountInput(String(parsedFractionalSharePrice))}\nPhotos: ${editPhotos.length}`
         );
       },
     });
@@ -1590,22 +1676,22 @@ export default function AdminJVDealsScreen() {
                 ))}
               </View>
 
-              <Text style={styles.fieldLabel}>Total Investment / Raise Amount ($)</Text>
+              <Text style={styles.fieldLabel}>Investment / Raise Amount ($)</Text>
               <TextInput
                 style={styles.fieldInput}
                 value={editForm.totalInvestment}
-                onChangeText={(v) => setEditForm(f => ({ ...f, totalInvestment: v }))}
+                onChangeText={(v) => setEditForm(f => ({ ...f, totalInvestment: formatAmountInput(parseAmountInput(v)) }))}
                 keyboardType="numeric"
                 placeholder="2500000"
                 placeholderTextColor={Colors.textTertiary}
                 testID="edit-investment"
               />
 
-              <Text style={styles.fieldLabel}>Property Market Value ($)</Text>
+              <Text style={styles.fieldLabel}>Property Market Value ($) · separate from sale price</Text>
               <TextInput
                 style={styles.fieldInput}
                 value={editForm.propertyValue}
-                onChangeText={(v) => setEditForm(f => ({ ...f, propertyValue: v }))}
+                onChangeText={(v) => setEditForm(f => ({ ...f, propertyValue: formatAmountInput(parseAmountInput(v)) }))}
                 keyboardType="numeric"
                 placeholder="15000000"
                 placeholderTextColor={Colors.textTertiary}
@@ -1760,7 +1846,7 @@ export default function AdminJVDealsScreen() {
                   <TextInput
                     style={styles.fieldInput}
                     value={editForm.minInvestment}
-                    onChangeText={(v) => setEditForm(f => ({ ...f, minInvestment: v }))}
+                    onChangeText={(v) => setEditForm(f => ({ ...f, minInvestment: formatAmountInput(parseAmountInput(v)) }))}
                     keyboardType="numeric"
                     placeholder="50"
                     placeholderTextColor={Colors.textTertiary}
@@ -1777,6 +1863,33 @@ export default function AdminJVDealsScreen() {
                     placeholder="5"
                     placeholderTextColor={Colors.textTertiary}
                     testID="edit-completed-projects"
+                  />
+                </View>
+              </View>
+
+              <View style={styles.fieldRow}>
+                <View style={styles.fieldHalf}>
+                  <Text style={styles.fieldLabel}>Sale Price ($)</Text>
+                  <TextInput
+                    style={styles.fieldInput}
+                    value={editForm.salePrice}
+                    onChangeText={(v) => setEditForm(f => ({ ...f, salePrice: formatAmountInput(parseAmountInput(v)) }))}
+                    keyboardType="numeric"
+                    placeholder="15,000,000"
+                    placeholderTextColor={Colors.textTertiary}
+                    testID="edit-sale-price"
+                  />
+                </View>
+                <View style={styles.fieldHalf}>
+                  <Text style={styles.fieldLabel}>Fractional Share ($)</Text>
+                  <TextInput
+                    style={styles.fieldInput}
+                    value={editForm.fractionalSharePrice}
+                    onChangeText={(v) => setEditForm(f => ({ ...f, fractionalSharePrice: formatAmountInput(parseAmountInput(v)) }))}
+                    keyboardType="numeric"
+                    placeholder="1"
+                    placeholderTextColor={Colors.textTertiary}
+                    testID="edit-fractional-share-price"
                   />
                 </View>
               </View>
@@ -1807,6 +1920,10 @@ export default function AdminJVDealsScreen() {
                   />
                 </View>
               </View>
+
+              <Text style={{ color: Colors.textSecondary, fontSize: 12, marginTop: 8, marginBottom: 10 }}>
+                {isTimelineAutosaving ? 'Syncing timeline and sale price live…' : 'Sale price stays separate from investment amount and auto-syncs live for investors.'}
+              </Text>
 
               <View style={styles.fieldRow}>
                 <View style={styles.fieldHalf}>

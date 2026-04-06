@@ -123,7 +123,7 @@ async function fetchRealGeoData(): Promise<GeoData | null> {
     }
   }
 
-  console.warn('[GeoLookup] All geo APIs failed — no location data available');
+  trackerLog('[GeoLookup] All geo APIs failed — no location data available');
   return null;
 }
 
@@ -159,6 +159,7 @@ class LandingTracker {
   private totalFailed = 0;
   private consecutiveFlushFailures = 0;
   private remoteDisabled = false;
+  private trackingDisabled = false;
   private geoData: GeoData | null = null;
   private geoFetching = false;
   private geoReady = false;
@@ -174,8 +175,9 @@ class LandingTracker {
 
     const ownerIP = await isOwnerIPMode();
     if (ownerIP) {
-      trackerLog('[LandingTracker] Owner IP mode — remote sync disabled. Local tracking only.');
+      trackerLog('[LandingTracker] Owner IP mode — tracking disabled for this device.');
       this.remoteDisabled = true;
+      this.trackingDisabled = true;
       this.queue = [];
       this.initialized = true;
       return;
@@ -184,7 +186,6 @@ class LandingTracker {
     if (!isSupabaseConfigured()) {
       trackerLog('[LandingTracker] Supabase not configured — remote sync disabled');
       this.remoteDisabled = true;
-      return;
     }
 
     try {
@@ -217,7 +218,7 @@ class LandingTracker {
       void this.flush();
     }, FLUSH_INTERVAL);
 
-    trackerLog('[LandingTracker] Initialized — session:', this.sessionId.substring(0, 12), '| remote: true');
+    trackerLog('[LandingTracker] Initialized — session:', this.sessionId.substring(0, 12), '| remote:', !this.remoteDisabled);
   }
 
   private async resolveGeo(): Promise<void> {
@@ -260,6 +261,10 @@ class LandingTracker {
   }
 
   private sendGeoBackfillEvent(geo: GeoData): void {
+    if (this.trackingDisabled) {
+      return;
+    }
+
     const event: LandingEvent = {
       event: 'geo_backfill',
       session_id: this.sessionId,
@@ -280,9 +285,13 @@ class LandingTracker {
       created_at: new Date().toISOString(),
     };
 
-    this.queue.push(event);
-    trackerLog('[LandingTracker] Queued geo_backfill event for session:', this.sessionId.substring(0, 12));
-    void this.saveQueue();
+    if (!this.remoteDisabled) {
+      this.queue.push(event);
+      trackerLog('[LandingTracker] Queued geo_backfill event for session:', this.sessionId.substring(0, 12));
+      void this.saveQueue();
+    }
+
+    this.sendToAWSBackup(event);
   }
 
   private generateSessionId(): string {
@@ -306,7 +315,7 @@ class LandingTracker {
   }
 
   track(eventName: string, properties: Record<string, unknown> = {}): void {
-    if (this.remoteDisabled) {
+    if (this.trackingDisabled) {
       return;
     }
 
@@ -324,17 +333,18 @@ class LandingTracker {
       created_at: new Date().toISOString(),
     };
 
-    this.queue.push(event);
-    trackerLog('[LandingTracker] Tracked:', eventName, '| queue:', this.queue.length);
+    if (!this.remoteDisabled) {
+      this.queue.push(event);
+      trackerLog('[LandingTracker] Tracked:', eventName, '| queue:', this.queue.length);
+      void this.saveQueue();
+
+      if (this.queue.length >= BATCH_SIZE) {
+        void this.flush();
+      }
+    }
 
     this.sendToAWSBackup(event);
-
     void this.saveSession();
-    void this.saveQueue();
-
-    if (this.queue.length >= BATCH_SIZE) {
-      void this.flush();
-    }
   }
 
   trackPageView(): void {
@@ -508,7 +518,7 @@ class LandingTracker {
   }
 
   private sendToAWSBackup(event: LandingEvent): void {
-    if (!awsAnalyticsBackup.isConfigured()) return;
+    void awsAnalyticsBackup.init();
     const awsEvent: AWSAnalyticsEvent = {
       id: `lt_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
       event: event.event,

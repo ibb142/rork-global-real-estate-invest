@@ -43,6 +43,8 @@ import {
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { formatCurrencyWithDecimals, formatNumber, formatAmountInput } from '@/lib/formatters';
+import { buildOwnershipSnapshot } from '@/lib/ownership-math';
+import { formatTrustTimelineLabel, resolveTrustMarket } from '@/lib/trust-market';
 import { useInvestmentGuard } from '@/hooks/useInvestmentGuard';
 import InvestorDisclosure from '@/components/InvestorDisclosure';
 import { supabase } from '@/lib/supabase';
@@ -50,11 +52,22 @@ import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { purchaseJVInvestment } from '@/lib/investment-service';
 import { fetchJVDealById } from '@/lib/jv-storage';
 import type { PoolTier } from '@/types/jv';
+import { sanitizeDealPhotosForDeal } from '@/constants/deal-photos';
 
 
 type PaymentMethod = 'wallet' | 'bank' | 'wire';
 type InvestmentPool = 'jv_direct';
 type Step = 'pool' | 'amount' | 'review' | 'success';
+
+interface DealTrustMarket {
+  minInvestment: number;
+  timelineMin: number;
+  timelineMax: number;
+  salePrice: number;
+  fractionalSharePrice: number;
+  priceChange1h: number;
+  priceChange2h: number;
+}
 
 interface DealData {
   id: string;
@@ -86,6 +99,7 @@ interface DealData {
   photos: string[];
   poolTiers: PoolTier[];
   partners: Array<{ name: string; role: string; share: number }>;
+  trustMarket: DealTrustMarket;
 }
 
 
@@ -111,6 +125,44 @@ function num(val: unknown, fallback: number = 0): number {
   return isNaN(n) ? fallback : n;
 }
 
+function buildTrustMarket(row: Record<string, unknown>, totalInvestment: number, propertyValue: number): DealTrustMarket {
+  const rawTrust = parseJsonField(row.trust_info ?? row.trustInfo, {}) as Record<string, unknown>;
+  const resolved = resolveTrustMarket({
+    salePrice: rawTrust.salePrice,
+    propertyValue,
+    totalInvestment,
+    minInvestment: rawTrust.minInvestment,
+    fractionalSharePrice: rawTrust.fractionalSharePrice,
+    timelineMin: rawTrust.timelineMin,
+    timelineMax: rawTrust.timelineMax,
+    timelineUnit: rawTrust.timelineUnit,
+    priceChange1h: rawTrust.priceChange1h,
+    priceChange2h: rawTrust.priceChange2h,
+  });
+
+  return {
+    minInvestment: resolved.minInvestment,
+    timelineMin: resolved.timelineMin,
+    timelineMax: resolved.timelineMax,
+    salePrice: resolved.salePrice,
+    fractionalSharePrice: resolved.fractionalSharePrice,
+    priceChange1h: resolved.priceChange1h,
+    priceChange2h: resolved.priceChange2h,
+  };
+}
+
+function formatMarketCap(value: number): string {
+  if (value >= 1000000) {
+    const millions = value / 1000000;
+    return Number.isInteger(millions) ? `${millions.toFixed(0)}M` : `${millions.toFixed(2)}M`;
+  }
+  if (value >= 1000) {
+    const thousands = value / 1000;
+    return Number.isInteger(thousands) ? `${thousands.toFixed(0)}K` : `${thousands.toFixed(1)}K`;
+  }
+  return formatCurrencyWithDecimals(value);
+}
+
 function mapRowToDeal(row: Record<string, unknown>): DealData {
   const now = new Date();
   const twoYears = new Date(now);
@@ -118,9 +170,12 @@ function mapRowToDeal(row: Record<string, unknown>): DealData {
 
   let photos = parseJsonField(row.photos, []) as string[];
   if (!Array.isArray(photos)) photos = [];
-  photos = photos.filter((p: string) =>
+  photos = sanitizeDealPhotosForDeal({
+    title: str(row.title),
+    projectName: str(row.project_name ?? row.projectName),
+  }, photos.filter((p: string) =>
     typeof p === 'string' && p.length > 5 && (p.startsWith('http') || p.startsWith('data:image/'))
-  );
+  ));
 
   let poolTiers = parseJsonField(row.pool_tiers ?? row.poolTiers, []) as PoolTier[];
   if (!Array.isArray(poolTiers) || poolTiers.length === 0) {
@@ -140,6 +195,9 @@ function mapRowToDeal(row: Record<string, unknown>): DealData {
   }
 
   const partners = parseJsonField(row.partners, []) as Array<{ name: string; role: string; share: number }>;
+  const totalInvestment = num(row.total_investment ?? row.totalInvestment);
+  const propertyValue = num(row.property_value ?? row.propertyValue ?? row.estimated_value);
+  const trustMarket = buildTrustMarket(row, totalInvestment, propertyValue);
 
   return {
     id: str(row.id),
@@ -153,8 +211,8 @@ function mapRowToDeal(row: Record<string, unknown>): DealData {
     city: str(row.city),
     state: str(row.state),
     country: str(row.country),
-    totalInvestment: num(row.total_investment ?? row.totalInvestment),
-    propertyValue: num(row.property_value ?? row.propertyValue ?? row.estimated_value),
+    totalInvestment,
+    propertyValue,
     expectedROI: num(row.expected_roi ?? row.expectedROI),
     managementFee: num(row.management_fee ?? row.managementFee, 2),
     performanceFee: num(row.performance_fee ?? row.performanceFee, 20),
@@ -171,6 +229,7 @@ function mapRowToDeal(row: Record<string, unknown>): DealData {
     photos,
     poolTiers,
     partners: Array.isArray(partners) ? partners : [],
+    trustMarket,
   };
 }
 
@@ -269,20 +328,35 @@ export default function JVInvestScreen() {
   const amount = useMemo(() => parseFloat(investAmount.replace(/,/g, '')) || 0, [investAmount]);
   const estimatedReturn = deal ? amount * ((deal.expectedROI) / 100) : 0;
   const poolRemaining = selectedPoolData ? selectedPoolData.targetAmount - selectedPoolData.currentRaised : (deal?.totalInvestment ?? 0);
-  const ownershipBase = (deal?.propertyValue && deal.propertyValue > 0) ? deal.propertyValue : (deal?.totalInvestment ?? 0);
-  const equityPercent = ownershipBase > 0 ? Math.min((amount / ownershipBase) * 100, 100) : 0;
+  const resolvedTrustMarket = useMemo(() => {
+    return resolveTrustMarket({
+      salePrice: deal?.trustMarket.salePrice,
+      propertyValue: deal?.propertyValue,
+      totalInvestment: deal?.totalInvestment,
+      minInvestment: selectedPoolData?.minInvestment ?? deal?.trustMarket.minInvestment,
+      fractionalSharePrice: deal?.trustMarket.fractionalSharePrice,
+      timelineMin: deal?.trustMarket.timelineMin,
+      timelineMax: deal?.trustMarket.timelineMax,
+      timelineUnit: 'months',
+      priceChange1h: deal?.trustMarket.priceChange1h,
+      priceChange2h: deal?.trustMarket.priceChange2h,
+    });
+  }, [deal?.propertyValue, deal?.totalInvestment, deal?.trustMarket.fractionalSharePrice, deal?.trustMarket.minInvestment, deal?.trustMarket.priceChange1h, deal?.trustMarket.priceChange2h, deal?.trustMarket.salePrice, deal?.trustMarket.timelineMax, deal?.trustMarket.timelineMin, selectedPoolData?.minInvestment]);
+  const liveSalePrice = resolvedTrustMarket.salePrice;
+  const investmentRaise = Number(deal?.totalInvestment ?? 0);
+  const ownershipSnapshot = buildOwnershipSnapshot(amount, liveSalePrice);
+  const equityPercent = ownershipSnapshot.ownershipPercent;
   const estimatedProfit = estimatedReturn;
   const estimatedTotalPayout = amount + estimatedProfit;
-  const minInvestment = selectedPoolData?.minInvestment ?? 50;
+  const minInvestment = resolvedTrustMarket.minInvestment;
+  const shareEntryPrice = resolvedTrustMarket.fractionalSharePrice;
+  const sharePrice1h = Number((shareEntryPrice * (1 + (resolvedTrustMarket.priceChange1h / 100))).toFixed(2));
+  const sharePrice2h = Number((shareEntryPrice * (1 + (resolvedTrustMarket.priceChange2h / 100))).toFixed(2));
+  const timelineLabel = formatTrustTimelineLabel(resolvedTrustMarket);
 
   const totalRaised = useMemo(() => {
     if (!deal?.poolTiers) return 0;
     return deal.poolTiers.reduce((s, t) => s + t.currentRaised, 0);
-  }, [deal]);
-
-  const totalInvestors = useMemo(() => {
-    if (!deal?.poolTiers) return 0;
-    return deal.poolTiers.reduce((s, t) => s + t.investorCount, 0);
   }, [deal]);
 
   const fundingProgress = deal && deal.totalInvestment > 0 ? (totalRaised / deal.totalInvestment) * 100 : 0;
@@ -549,7 +623,7 @@ export default function JVInvestScreen() {
               <View style={styles.dealStats}>
                 <View style={styles.dealStatItem}>
                   <DollarSign size={13} color={Colors.primary} />
-                  <Text style={styles.dealStatValue}>{formatCurrencyWithDecimals(deal.totalInvestment)}</Text>
+                  <Text style={styles.dealStatValue}>{formatMarketCap(investmentRaise)}</Text>
                 </View>
                 <View style={styles.dealStatDivider} />
                 <View style={styles.dealStatItem}>
@@ -559,9 +633,28 @@ export default function JVInvestScreen() {
                 <View style={styles.dealStatDivider} />
                 <View style={styles.dealStatItem}>
                   <Users size={13} color={Colors.info} />
-                  <Text style={styles.dealStatValue}>{totalInvestors} investors</Text>
+                  <Text style={styles.dealStatValue}>{timelineLabel}</Text>
                 </View>
               </View>
+              <View style={styles.marketSnapshot}>
+                <View style={styles.marketSnapshotCard}>
+                  <Text style={styles.marketSnapshotLabel}>Sale price</Text>
+                  <Text style={styles.marketSnapshotValue}>{formatCurrencyWithDecimals(liveSalePrice)}</Text>
+                </View>
+                <View style={styles.marketSnapshotCard}>
+                  <Text style={styles.marketSnapshotLabel}>Fractional share</Text>
+                  <Text style={styles.marketSnapshotValue}>{formatCurrencyWithDecimals(shareEntryPrice)}</Text>
+                </View>
+                <View style={styles.marketSnapshotCard}>
+                  <Text style={styles.marketSnapshotLabel}>1 hour</Text>
+                  <Text style={[styles.marketSnapshotValue, styles.marketSnapshotValueUp]}>{formatCurrencyWithDecimals(sharePrice1h)}</Text>
+                </View>
+              </View>
+
+              <Text style={styles.marketSnapshotHint}>
+                Investment and sale price stay separate. Ownership syncs only to the live sale price, while raise progress stays tied to the investment amount.
+              </Text>
+
               <View style={styles.fundingSection}>
                 <View style={styles.fundingRow}>
                   <Text style={styles.fundingLabel}>Raised</Text>
@@ -671,6 +764,7 @@ export default function JVInvestScreen() {
                   <Text style={styles.termsCardTitle}>Deal Terms</Text>
                   {[
                     { icon: Calendar, label: 'Duration', value: `${formatDateShort(deal.startDate)} — ${formatDateShort(deal.endDate)}` },
+                    { icon: Clock, label: 'Timeline', value: timelineLabel },
                     { icon: Percent, label: 'Management Fee', value: `${deal.managementFee}%` },
                     { icon: BarChart3, label: 'Performance Fee', value: `${deal.performanceFee}%` },
                     { icon: Clock, label: 'Distributions', value: capitalize(deal.distributionFrequency) },
@@ -746,6 +840,14 @@ export default function JVInvestScreen() {
                     <Text style={[styles.summaryValue, { color: Colors.primary }]}>{equityPercent.toFixed(2)}%</Text>
                   </View>
                   <View style={styles.summaryRow}>
+                    <Text style={styles.summaryLabel}>Live Sale Price</Text>
+                    <Text style={styles.summaryValue}>{formatCurrencyWithDecimals(liveSalePrice)}</Text>
+                  </View>
+                  <View style={styles.summaryRow}>
+                    <Text style={styles.summaryLabel}>Fractional Market</Text>
+                    <Text style={styles.summaryValue}>${shareEntryPrice.toFixed(2)} → ${sharePrice1h.toFixed(2)}</Text>
+                  </View>
+                  <View style={styles.summaryRow}>
                     <Text style={styles.summaryLabel}>Projected ROI</Text>
                     <Text style={[styles.summaryValue, { color: Colors.success }]}>{deal.expectedROI}%</Text>
                   </View>
@@ -814,9 +916,12 @@ export default function JVInvestScreen() {
                     { label: 'Type', value: poolLabel },
                     { label: 'Investment Amount', value: formatCurrencyWithDecimals(amount) },
                     { label: 'Ownership Share', value: `${equityPercent.toFixed(2)}%`, color: Colors.primary },
+                    { label: 'Live Sale Price', value: formatCurrencyWithDecimals(liveSalePrice) },
+                    { label: 'Fractional Market', value: `${shareEntryPrice.toFixed(2)} → ${sharePrice1h.toFixed(2)} → ${sharePrice2h.toFixed(2)}`, color: Colors.info },
                     { label: 'Projected ROI', value: `${deal.expectedROI}%`, color: Colors.success },
                     { label: 'Estimated Profit', value: formatCurrencyWithDecimals(estimatedProfit), color: Colors.success },
                     { label: 'Distribution', value: capitalize(deal.distributionFrequency) },
+                    { label: 'Timeline', value: timelineLabel },
                     { label: 'Min Hold', value: `${deal.minimumHoldPeriod} months` },
                   ].map((item, idx) => (
                     <View key={idx} style={styles.reviewRow}>
@@ -1128,6 +1233,40 @@ const styles = StyleSheet.create({
     width: 1,
     height: 16,
     backgroundColor: Colors.surfaceBorder,
+  },
+  marketSnapshot: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 10,
+  },
+  marketSnapshotCard: {
+    flex: 1,
+    backgroundColor: Colors.backgroundSecondary,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  marketSnapshotLabel: {
+    fontSize: 10,
+    fontWeight: '700' as const,
+    color: Colors.textTertiary,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.6,
+    marginBottom: 4,
+  },
+  marketSnapshotValue: {
+    fontSize: 13,
+    fontWeight: '800' as const,
+    color: Colors.text,
+  },
+  marketSnapshotValueUp: {
+    color: Colors.success,
+  },
+  marketSnapshotHint: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    lineHeight: 18,
+    marginBottom: 12,
   },
   fundingSection: {},
   fundingRow: {

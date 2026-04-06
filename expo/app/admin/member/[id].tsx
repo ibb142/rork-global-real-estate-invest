@@ -35,6 +35,11 @@ import Colors from '@/constants/colors';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { formatCurrencyWithDecimals } from '@/lib/formatters';
+import {
+  fetchAdminMemberRegistryRecord,
+  syncMemberRegistryFromSupabase,
+  upsertStoredMemberRegistryRecord,
+} from '@/lib/member-registry';
 
 interface MemberData {
   id: string;
@@ -97,10 +102,27 @@ export default function MemberDetailScreen() {
   const memberQuery = useQuery({
     queryKey: ['admin-member-detail', id],
     queryFn: async () => {
-      console.log('[Member Detail] Fetching profile:', id);
-      const { data, error } = await supabase.from('profiles').select('*').eq('id', id).single();
-      if (error) { console.log('[Member Detail] error:', error.message); return null; }
-      return data as MemberData;
+      console.log('[Member Detail] Fetching durable member profile:', id);
+      const data = await fetchAdminMemberRegistryRecord(id);
+      if (!data) {
+        return null;
+      }
+      return {
+        id: data.id,
+        first_name: data.firstName,
+        last_name: data.lastName,
+        email: data.email,
+        phone: data.phone,
+        country: data.country,
+        avatar: '',
+        kyc_status: data.kycStatus,
+        status: data.status,
+        total_invested: data.totalInvested,
+        total_returns: data.totalReturns,
+        created_at: data.createdAt,
+        updated_at: data.updatedAt,
+        role: data.role,
+      } as MemberData;
     },
     enabled: !!id,
   });
@@ -170,7 +192,12 @@ export default function MemberDetailScreen() {
       }).eq('user_id', id);
       if (kycError) console.log('[Member Detail] KYC verification update error (non-blocking):', kycError.message);
     },
-    onSuccess: () => {
+    onSuccess: async () => {
+      const refreshedMember = await fetchAdminMemberRegistryRecord(id);
+      if (refreshedMember) {
+        await upsertStoredMemberRegistryRecord({ ...refreshedMember, source: 'admin_update' } as unknown as Record<string, unknown>);
+      }
+      await syncMemberRegistryFromSupabase();
       void queryClient.invalidateQueries({ queryKey: ['admin-member-detail', id] });
       void queryClient.invalidateQueries({ queryKey: ['admin-member-kyc-verification', id] });
       Alert.alert('Success', 'KYC status updated');
@@ -183,7 +210,12 @@ export default function MemberDetailScreen() {
       const { error } = await supabase.from('profiles').update({ status: input.status }).eq('id', id);
       if (error) throw error;
     },
-    onSuccess: () => {
+    onSuccess: async () => {
+      const refreshedMember = await fetchAdminMemberRegistryRecord(id);
+      if (refreshedMember) {
+        await upsertStoredMemberRegistryRecord({ ...refreshedMember, source: 'admin_update' } as unknown as Record<string, unknown>);
+      }
+      await syncMemberRegistryFromSupabase();
       void queryClient.invalidateQueries({ queryKey: ['admin-member-detail', id] });
       Alert.alert('Success', 'Account status updated');
     },

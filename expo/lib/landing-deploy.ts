@@ -7,7 +7,7 @@
  */
 
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
-import { getStoredOwnerIP, isStoredOwnerIPEnabled } from '@/lib/auth-context';
+import { isAdminRole, normalizeRole } from '@/lib/auth-helpers';
 
 export interface DeployResult {
   success: boolean;
@@ -16,32 +16,8 @@ export interface DeployResult {
   timestamp: string;
 }
 
-async function isOwnerIPActive(): Promise<boolean> {
-  try {
-    const ownerIPEnabled = await isStoredOwnerIPEnabled();
-    if (!ownerIPEnabled) {
-      return false;
-    }
-    const storedIP = await getStoredOwnerIP();
-    return !!storedIP;
-  } catch {
-    return false;
-  }
-}
-
 async function ensureValidSession(): Promise<string | null> {
   try {
-    const ownerIP = await isOwnerIPActive();
-    if (ownerIP) {
-      const anonKey = (process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '').trim();
-      if (anonKey) {
-        console.log('[LandingDeploy] Owner IP mode — using anon key for deploy');
-        return anonKey;
-      }
-      console.log('[LandingDeploy] Owner IP mode but no anon key available');
-      return null;
-    }
-
     const { data: { session } } = await supabase.auth.getSession();
 
     if (session?.access_token) {
@@ -67,23 +43,99 @@ async function ensureValidSession(): Promise<string | null> {
       return refreshed.session.access_token;
     }
 
-    const fallbackKey = (process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '').trim();
-    if (fallbackKey) {
-      console.log('[LandingDeploy] No session — falling back to anon key');
-      return fallbackKey;
-    }
-
     console.log('[LandingDeploy] No session recoverable');
     return null;
   } catch (err) {
     console.log('[LandingDeploy] Session check error:', (err as Error)?.message);
-    const fallbackKey = (process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '').trim();
-    if (fallbackKey) {
-      console.log('[LandingDeploy] Using anon key after session error');
-      return fallbackKey;
-    }
     return null;
   }
+}
+
+export interface DeployAccessDiagnostic {
+  allowed: boolean;
+  tokenAvailable: boolean;
+  authenticated: boolean;
+  userId: string | null;
+  role: string | null;
+  reason?: string;
+}
+
+async function verifyDeployAccess(): Promise<{ allowed: boolean; token: string | null; userId?: string | null; role?: string | null; reason?: string }> {
+  const token = await ensureValidSession();
+  if (!token) {
+    return {
+      allowed: false,
+      token: null,
+      userId: null,
+      role: null,
+      reason: 'No authenticated session. Please log in again with an owner/admin account.',
+    };
+  }
+
+  try {
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError || !user?.id) {
+      return {
+        allowed: false,
+        token: null,
+        userId: null,
+        role: null,
+        reason: userError?.message || 'Unable to resolve the current authenticated user.',
+      };
+    }
+
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .single();
+
+    if (profileError) {
+      console.log('[LandingDeploy] Server role verification failed:', profileError.message);
+      return {
+        allowed: false,
+        token: null,
+        userId: user.id,
+        role: null,
+        reason: 'Server role verification failed. Deploy requires a verified owner/admin profile.',
+      };
+    }
+
+    const role = normalizeRole(profile?.role);
+    if (!isAdminRole(role)) {
+      console.log('[LandingDeploy] Deploy blocked for non-admin role:', role, 'user:', user.id);
+      return {
+        allowed: false,
+        token: null,
+        userId: user.id,
+        role,
+        reason: `Deploy blocked. Verified server role is ${role}.`,
+      };
+    }
+
+    return { allowed: true, token, userId: user.id, role };
+  } catch (error) {
+    console.log('[LandingDeploy] Deploy access verification error:', (error as Error)?.message);
+    return {
+      allowed: false,
+      token: null,
+      userId: null,
+      role: null,
+      reason: 'Deploy access verification failed.',
+    };
+  }
+}
+
+export async function getDeployAccessDiagnostic(): Promise<DeployAccessDiagnostic> {
+  const access = await verifyDeployAccess();
+  return {
+    allowed: access.allowed,
+    tokenAvailable: !!access.token,
+    authenticated: !!access.userId,
+    userId: access.userId ?? null,
+    role: access.role ?? null,
+    reason: access.reason,
+  };
 }
 
 export async function deployLandingPage(): Promise<DeployResult> {
@@ -99,13 +151,13 @@ export async function deployLandingPage(): Promise<DeployResult> {
     };
   }
 
-  const token = await ensureValidSession();
-  if (!token) {
-    console.log('[LandingDeploy] No valid session — deploy requires authentication');
+  const access = await verifyDeployAccess();
+  if (!access.allowed || !access.token) {
+    console.log('[LandingDeploy] Deploy blocked:', access.reason);
     return {
       success: false,
       filesUploaded: [],
-      errors: ['No authenticated session. Please log out and log back in, then retry.'],
+      errors: [access.reason || 'Deploy requires a verified authenticated owner/admin session.'],
       timestamp,
     };
   }

@@ -36,6 +36,7 @@ import {
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { supabase } from '@/lib/supabase';
+import { runLandingReadinessAudit } from '@/lib/landing-readiness-audit';
 
 type AuditStatus = 'pass' | 'fail' | 'warn' | 'info' | 'checking';
 
@@ -748,6 +749,63 @@ async function runFullAudit(): Promise<AuditCategory[]> {
     });
   }
 
+  const readinessAudit = await runLandingReadinessAudit();
+  const readinessSeverityByStatus: Record<'pass' | 'warn' | 'fail', AuditItem['severity']> = {
+    pass: 'info',
+    warn: 'medium',
+    fail: 'critical',
+  };
+
+  const readiness30k = readinessAudit.scaleAssessments.find((assessment) => assessment.targetUsers === 30000);
+  const readiness1M = readinessAudit.scaleAssessments.find((assessment) => assessment.targetUsers === 1000000);
+
+  healthItems.push({
+    id: 'readiness-summary',
+    category: 'health',
+    name: 'Readiness Summary',
+    status: readinessAudit.overallStatus,
+    message: readinessAudit.summary,
+    details: `blockers=${readinessAudit.blockerCount} · warnings=${readinessAudit.warningCount}`,
+    severity: readinessSeverityByStatus[readinessAudit.overallStatus],
+  });
+
+  if (readiness30k) {
+    healthItems.push({
+      id: 'readiness-30k',
+      category: 'health',
+      name: '30K Launch Readiness',
+      status: readiness30k.status,
+      message: readiness30k.summary,
+      details: `evidence=${readiness30k.evidence}${readiness30k.blockerIds.length ? ` · blockers=${readiness30k.blockerIds.join(', ')}` : ''}`,
+      severity: readinessSeverityByStatus[readiness30k.status],
+    });
+  }
+
+  if (readiness1M) {
+    healthItems.push({
+      id: 'readiness-1m',
+      category: 'health',
+      name: '1M Scale Readiness',
+      status: readiness1M.status,
+      message: readiness1M.summary,
+      details: `evidence=${readiness1M.evidence}${readiness1M.blockerIds.length ? ` · blockers=${readiness1M.blockerIds.join(', ')}` : ''}`,
+      severity: readinessSeverityByStatus[readiness1M.status],
+    });
+  }
+
+  readinessAudit.probes.forEach((probe) => {
+    healthItems.push({
+      id: probe.id,
+      category: 'health',
+      name: probe.label,
+      status: probe.status,
+      message: probe.message,
+      details: probe.detail,
+      latencyMs: probe.latencyMs,
+      severity: readinessSeverityByStatus[probe.status],
+    });
+  });
+
   healthItems.push({
     id: 'health-frontend',
     category: 'health',
@@ -885,7 +943,7 @@ export default function BackendAuditScreen() {
         </TouchableOpacity>
         <View style={styles.headerTitleContainer}>
           <Text style={styles.headerTitle}>Backend Audit</Text>
-          <Text style={styles.headerSubtitle}>Full System Health Report</Text>
+          <Text style={styles.headerSubtitle}>Full System Health + 30K Readiness Report</Text>
         </View>
         <TouchableOpacity onPress={startAudit} style={styles.refreshButton} disabled={isRunning} testID="refresh-audit">
           <Animated.View style={{ opacity: isRunning ? pulseAnim : 1 }}>

@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { Platform } from 'react-native';
+import { runLandingReadinessAudit } from '@/lib/landing-readiness-audit';
 
 /**
  * system-health-checker.ts — Comprehensive system health monitor.
@@ -406,6 +407,32 @@ async function checkJVDealsData(): Promise<HealthCheck> {
   };
 }
 
+async function checkLandingApiReadiness(): Promise<HealthCheck> {
+  const startedAt = Date.now();
+  const audit = await runLandingReadinessAudit();
+  const blockingProbe = audit.probes.find((probe) => probe.status === 'fail');
+  const warningProbe = audit.probes.find((probe) => probe.status === 'warn');
+  const latency = Date.now() - startedAt;
+  const status: HealthStatus = audit.overallStatus === 'pass' ? 'green' : audit.overallStatus === 'warn' ? 'yellow' : 'red';
+
+  return {
+    id: 'landing-api-readiness',
+    name: 'Landing/API Scale Readiness',
+    category: 'backend',
+    status,
+    latency,
+    message: audit.summary,
+    lastChecked: new Date(),
+    details: [
+      blockingProbe?.message ?? warningProbe?.message,
+      `30k=${audit.readyFor30k ? 'pass' : 'not_passed'}`,
+      `1m=${audit.readyFor1M ? 'pass' : 'not_passed'}`,
+    ].filter(Boolean).join(' · '),
+    endpoint: 'https://ivxholding.com/api/landing-deals',
+    port: '443',
+  };
+}
+
 export async function runFullHealthCheck(): Promise<SystemHealthSnapshot> {
   console.log('[HealthCheck] Starting full system scan...');
 
@@ -418,6 +445,7 @@ export async function runFullHealthCheck(): Promise<SystemHealthSnapshot> {
     checkSupabaseRealtime(),
     checkSupabaseRLS(),
     checkJVDealsData(),
+    checkLandingApiReadiness(),
     checkAsyncStorage(),
     checkSecureStore(),
     checkReactQuery(),
@@ -460,6 +488,13 @@ export async function runFullHealthCheck(): Promise<SystemHealthSnapshot> {
       status: checks.find(c => c.id === 'landing-page')?.status || 'red',
       label: 'Fetch Deals',
       latency: checks.find(c => c.id === 'landing-page')?.latency,
+    },
+    {
+      from: 'landing-page',
+      to: 'aws-infra',
+      status: checks.find(c => c.id === 'landing-api-readiness')?.status || 'red',
+      label: 'JSON API Routing',
+      latency: checks.find(c => c.id === 'landing-api-readiness')?.latency,
     },
     {
       from: 'app-frontend',

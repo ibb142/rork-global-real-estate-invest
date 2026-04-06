@@ -21,6 +21,9 @@ interface AnalyticsData {
   registeredUsers: number;
   waitlistLeads: number;
   conversionRate: number;
+  topScreens: Array<{ screen: string; views: number; uniqueSessions: number; avgTimeSpent: number; totalTimeSpent: number; pct: number; lastViewed: string }>;
+  topActions: Array<{ action: string; count: number; uniqueSessions: number; avgTimeSpent: number; pct: number; lastTriggered: string }>;
+  timeSpent: { totalTrackedSeconds: number; avgSessionSeconds: number; avgScreenSeconds: number; maxSessionSeconds: number; engagedSessions: number };
   funnel: {
     pageViews: number;
     scroll75: number;
@@ -218,6 +221,56 @@ export function OverviewTab({ data, presenceState, onSwitchToLive }: OverviewTab
             <Text style={s.engagementValue}>{data.funnel.formSubmits}</Text>
             <Text style={s.engagementLabel}>Form Submits</Text>
           </View>
+        </View>
+      </View>
+
+      <View style={shared.card}>
+        <View style={shared.cardHeader}>
+          <Clock size={16} color={ACCENT} />
+          <Text style={shared.cardTitle}>Screen & Click Breakdown</Text>
+          <Text style={shared.cardSubtitle}>{data.timeSpent?.totalTrackedSeconds ?? 0}s tracked</Text>
+        </View>
+        <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
+          <View style={{ flex: 1, backgroundColor: Colors.backgroundSecondary, borderRadius: 12, padding: 12, borderWidth: 1, borderColor: Colors.surfaceBorder }}>
+            <Text style={{ fontSize: 11, color: Colors.textSecondary, fontWeight: '700' as const }}>Avg Session</Text>
+            <Text style={{ fontSize: 22, color: Colors.text, fontWeight: '900' as const, marginTop: 6 }}>{data.timeSpent?.avgSessionSeconds ?? 0}s</Text>
+          </View>
+          <View style={{ flex: 1, backgroundColor: Colors.backgroundSecondary, borderRadius: 12, padding: 12, borderWidth: 1, borderColor: Colors.surfaceBorder }}>
+            <Text style={{ fontSize: 11, color: Colors.textSecondary, fontWeight: '700' as const }}>Engaged Sessions</Text>
+            <Text style={{ fontSize: 22, color: Colors.text, fontWeight: '900' as const, marginTop: 6 }}>{data.timeSpent?.engagedSessions ?? 0}</Text>
+          </View>
+        </View>
+        <View style={{ gap: 10 }}>
+          <Text style={{ fontSize: 12, color: Colors.textSecondary, fontWeight: '800' as const, textTransform: 'uppercase' as const }}>Most viewed screens</Text>
+          {(data.topScreens ?? []).slice(0, 5).map((screen, index) => (
+            <View key={`${screen.screen}-${index}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: Colors.backgroundSecondary, borderRadius: 12, padding: 12, borderWidth: 1, borderColor: Colors.surfaceBorder }}>
+              <View style={{ width: 28, height: 28, borderRadius: 8, backgroundColor: BLUE + '18', alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ color: BLUE, fontSize: 11, fontWeight: '800' as const }}>{index + 1}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: Colors.text, fontSize: 13, fontWeight: '700' as const }} numberOfLines={1}>{screen.screen}</Text>
+                <Text style={{ color: Colors.textSecondary, fontSize: 11, marginTop: 2 }}>{screen.views} views · {screen.avgTimeSpent}s avg · {screen.uniqueSessions} sessions</Text>
+              </View>
+              <Text style={{ color: ACCENT, fontSize: 12, fontWeight: '800' as const }}>{screen.pct}%</Text>
+            </View>
+          ))}
+          {(data.topScreens ?? []).length === 0 && <Text style={shared.noDataText}>No screen view breakdown yet.</Text>}
+        </View>
+        <View style={{ gap: 10, marginTop: 14 }}>
+          <Text style={{ fontSize: 12, color: Colors.textSecondary, fontWeight: '800' as const, textTransform: 'uppercase' as const }}>Most clicked functionality</Text>
+          {(data.topActions ?? []).slice(0, 5).map((action, index) => (
+            <View key={`${action.action}-${index}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: Colors.backgroundSecondary, borderRadius: 12, padding: 12, borderWidth: 1, borderColor: Colors.surfaceBorder }}>
+              <View style={{ width: 28, height: 28, borderRadius: 8, backgroundColor: GREEN + '18', alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ color: GREEN, fontSize: 11, fontWeight: '800' as const }}>{index + 1}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: Colors.text, fontSize: 13, fontWeight: '700' as const }} numberOfLines={1}>{action.action}</Text>
+                <Text style={{ color: Colors.textSecondary, fontSize: 11, marginTop: 2 }}>{action.count} clicks · {action.uniqueSessions} sessions · {action.avgTimeSpent}s avg</Text>
+              </View>
+              <Text style={{ color: GREEN, fontSize: 12, fontWeight: '800' as const }}>{action.pct}%</Text>
+            </View>
+          ))}
+          {(data.topActions ?? []).length === 0 && <Text style={shared.noDataText}>No click breakdown yet.</Text>}
         </View>
       </View>
 

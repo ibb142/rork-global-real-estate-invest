@@ -45,8 +45,7 @@ import { useRouter } from 'expo-router';
 import Colors from '@/constants/colors';
 import { getResponsiveSize, isCompactScreen, isExtraSmallScreen } from '@/lib/responsive';
 import { useQuery } from '@tanstack/react-query';
-import { isValidPhoto, usePublishedJVDeals, triggerManualJVRefresh } from '@/lib/parse-deal';
-import { getFallbackPhotosForDeal } from '@/constants/deal-photos';
+import { resolveDealPhotos, resolvePrimaryDealPhoto, resolveDealTrustMarket, usePublishedJVDeals, triggerManualJVRefresh } from '@/lib/parse-deal';
 import { supabase } from '@/lib/supabase';
 import { useJVRealtime, usePublicationWatchdog } from '@/lib/jv-realtime';
 import { useTranslation } from '@/lib/i18n-context';
@@ -55,9 +54,11 @@ import { useIPX } from '@/lib/ipx-context';
 import { useAuth } from '@/lib/auth-context';
 import PropertyCard from '@/components/PropertyCard';
 import QuickBuyModal from '@/components/QuickBuyModal';
-import { formatCurrency, formatCurrencyCompact } from '@/lib/formatters';
+import TrustDealCard from '@/components/TrustDealCard';
+import { formatCurrency, formatCurrencyCompact, formatCurrencyWithDecimals } from '@/lib/formatters';
+import type { ParsedJVDeal } from '@/lib/parse-deal';
 import type { JVAgreement } from '@/types/jv';
-import { CANONICAL_MIN_INVESTMENT } from '@/lib/published-deal-card-model';
+import { buildOwnershipSnapshot } from '@/lib/ownership-math';
 
 
 
@@ -68,6 +69,27 @@ import { IVX_LOGO_SOURCE } from '@/constants/brand';
 
 
 
+
+function getPrimaryDealPhoto(deal: JVAgreement): string | undefined {
+  const primaryPhoto = resolvePrimaryDealPhoto({
+    id: deal.id,
+    title: deal.title,
+    projectName: deal.projectName,
+    photos: deal.photos,
+    publishedAt: deal.publishedAt,
+    createdAt: deal.createdAt,
+    updatedAt: deal.updatedAt,
+    updated_at: typeof (deal as unknown as Record<string, unknown>).updated_at === 'string'
+      ? ((deal as unknown as Record<string, unknown>).updated_at as string)
+      : undefined,
+  });
+
+  if (primaryPhoto) {
+    console.log('[Home] Shared primary photo resolved for deal:', deal.id, '|', primaryPhoto.substring(0, 120));
+  }
+
+  return primaryPhoto;
+}
 
 function PortfolioSnapshot({ router }: { router: ReturnType<typeof useRouter> }) {
   const { holdings, getTotalIPXValue, getTotalIPXPnL, getTotalIPXPnLPercent } = useIPX();
@@ -91,7 +113,7 @@ function PortfolioSnapshot({ router }: { router: ReturnType<typeof useRouter> })
   const mode = !isAuthenticated ? 'signup' : !hasHoldings ? 'explore' : 'portfolio';
 
   const ctaTitle = mode === 'signup' ? 'Start Investing Today' : mode === 'explore' ? 'Build Your Portfolio' : '';
-  const ctaSubtitle = mode === 'signup' ? 'From $50 — Own real estate globally' : mode === 'explore' ? 'Browse properties and start earning' : '';
+  const ctaSubtitle = mode === 'signup' ? 'Own real estate globally with curated access' : mode === 'explore' ? 'Browse properties and start earning' : '';
   const ctaBtnText = mode === 'signup' ? 'Get Started' : 'Explore';
   const ctaIconColor = mode === 'signup' ? Colors.primary : Colors.success;
   const ctaTestId = mode === 'signup' ? 'portfolio-cta-signup' : 'portfolio-cta-invest';
@@ -435,7 +457,7 @@ const IGPhotoSlider = React.memo(function IGPhotoSlider({ photos, cardWidth }: {
   );
 });
 
-const JVPropertyCard = React.memo(function JVPropertyCard({ agreement, onPress, onInvest, onQuickBuy, cardWidth }: { agreement: JVAgreement; onPress: () => void; onInvest?: () => void; onQuickBuy?: () => void; cardWidth: number }) {
+const _JVPropertyCard = React.memo(function JVPropertyCard({ agreement, onPress, onInvest, onQuickBuy, cardWidth }: { agreement: JVAgreement; onPress: () => void; onInvest?: () => void; onQuickBuy?: () => void; cardWidth: number }) {
   if (!agreement || !agreement.id) {
     console.warn('[JVPropertyCard] Invalid agreement data, rendering placeholder');
     return (
@@ -462,33 +484,31 @@ const JVPropertyCard = React.memo(function JVPropertyCard({ agreement, onPress, 
   } else if (typeof rawTrust === 'string') {
     try { trustData = JSON.parse(rawTrust); } catch { trustData = {}; }
   }
-  const tMin = trustData.timelineMin as number | undefined;
-  const tMax = trustData.timelineMax as number | undefined;
-  const tUnit = (trustData.timelineUnit as string) === 'years' ? 'yr' : 'mo';
+  const trustMarket = resolveDealTrustMarket(agreementAny, Object.keys(trustData).length > 0 ? trustData as any : undefined);
+  const tMin = trustMarket.timelineMin;
+  const tMax = trustMarket.timelineMax;
+  const tUnit = trustMarket.timelineUnit === 'years' ? 'yr' : 'mo';
   const timeline = (tMin && tMax) ? `${tMin}\u2013${tMax} ${tUnit}` : (tMax ? `${tMax} ${tUnit}` : '14\u201324 mo');
+  const minimumOwnershipSnapshot = buildOwnershipSnapshot(trustMarket.minInvestment, trustMarket.salePrice);
+  const salePriceLabel = formatCurrencyCompact(trustMarket.salePrice);
+  const fractionalEntryLabel = formatCurrencyWithDecimals(trustMarket.minInvestment);
+  const minimumOwnershipLabel = `${minimumOwnershipSnapshot.ownershipPercent.toFixed(4)}% ownership`;
 
   let developerName = agreement.projectName || 'IVX Holdings LLC';
   if (developerName && !developerName.toUpperCase().includes('LLC') && !developerName.toUpperCase().includes('INC')) {
     developerName = developerName + ' LLC';
   }
 
-  let validPhotos: string[] = [];
-  try {
-    const photosRaw = agreement.photos;
-    let photos: unknown[] = [];
-    if (Array.isArray(photosRaw)) {
-      photos = photosRaw;
-    } else if (typeof photosRaw === 'string' && (photosRaw as string).length > 2) {
-      const parsed = JSON.parse(photosRaw as string);
-      photos = Array.isArray(parsed) ? parsed : [];
-    }
-    validPhotos = photos.filter((p): p is string => isValidPhoto(p));
-  } catch { validPhotos = []; }
-
-  if (validPhotos.length === 0) {
-    validPhotos = getFallbackPhotosForDeal(agreement);
-    if (validPhotos.length > 0) console.log('[JVPropertyCard] Fallback photos applied:', validPhotos.length);
-  }
+  const validPhotos = resolveDealPhotos({
+    id: agreement.id,
+    title: agreement.title,
+    projectName: agreement.projectName,
+    photos: agreement.photos,
+    publishedAt: agreement.publishedAt,
+    createdAt: agreement.createdAt,
+    updatedAt: agreement.updatedAt,
+    updated_at: typeof agreementAny.updated_at === 'string' ? agreementAny.updated_at : undefined,
+  });
 
   const displayName = agreement.projectName || agreement.title || 'Investment Opportunity';
   const displayTitle = agreement.title || agreement.projectName || 'Untitled Deal';
@@ -588,7 +608,13 @@ const JVPropertyCard = React.memo(function JVPropertyCard({ agreement, onPress, 
         </View>
 
         <View style={igStyles.minInvestRow}>
-          <Text style={igStyles.minInvestText}>Invest from <Text style={igStyles.minInvestBold}>${CANONICAL_MIN_INVESTMENT}</Text></Text>
+          <Text style={igStyles.minInvestText}>
+            Fractional <Text style={igStyles.minInvestBold}>from {fractionalEntryLabel}</Text>
+            {' · '}
+            Sale price <Text style={igStyles.minInvestBold}>{salePriceLabel}</Text>
+            {' · '}
+            <Text style={igStyles.minInvestBold}>{minimumOwnershipLabel}</Text>
+          </Text>
         </View>
       </View>
     </View>
@@ -951,12 +977,11 @@ function JVDealsCarousel({ jvDeals, jvDealsLoading, isXs, screenWidth, router, o
           >
             {jvDeals.map((deal, idx) => (
               <View key={deal.id || `jv-${idx}`} style={{ width: cardWidth, marginRight: idx < jvDeals.length - 1 ? 12 : 0 }}>
-                <JVPropertyCard
-                  agreement={deal}
-                  cardWidth={cardWidth}
-                  onPress={() => router.push({ pathname: '/jv-invest', params: { jvId: deal.id } } as any)}
-                  onInvest={() => router.push({ pathname: '/jv-invest', params: { jvId: deal.id } } as any)}
-                  onQuickBuy={() => openQuickBuy(deal)}
+                <TrustDealCard
+                  deal={deal as unknown as ParsedJVDeal}
+                  galleryWidth={cardWidth}
+                  onViewDetails={() => router.push({ pathname: '/jv-invest', params: { jvId: deal.id } } as any)}
+                  onInvestNow={() => openQuickBuy(deal)}
                 />
               </View>
             ))}
@@ -1021,7 +1046,7 @@ function QuickInvestSection({ router, jvDeals, jvDealsLoading, isXs, onQuickBuy 
             <Coins size={22} color="#22C55E" />
           </View>
           <Text style={qiStyles.actionTitle}>Buy Property Shares</Text>
-          <Text style={qiStyles.actionDesc}>From $50 — fractional ownership in premium real estate</Text>
+          <Text style={qiStyles.actionDesc}>Fractional ownership in premium real estate</Text>
           <View style={qiStyles.actionCta}>
             <Text style={qiStyles.actionCtaText}>Browse Properties</Text>
             <ArrowRight size={14} color={Colors.primary} />
@@ -1077,13 +1102,17 @@ function QuickInvestSection({ router, jvDeals, jvDealsLoading, isXs, onQuickBuy 
               activeOpacity={0.8}
               testID={`quick-deal-${deal.id}`}
             >
-              {deal.photos && deal.photos.length > 0 ? (
-                <Image source={{ uri: deal.photos[0] }} style={qiStyles.liveDealThumb} />
-              ) : (
-                <View style={[qiStyles.liveDealThumb, { backgroundColor: Colors.primary + '15', alignItems: 'center' as const, justifyContent: 'center' as const }]}>
-                  <Landmark size={18} color={Colors.primary} />
-                </View>
-              )}
+              {(() => {
+                const primaryPhoto = getPrimaryDealPhoto(deal);
+                if (primaryPhoto) {
+                  return <Image source={{ uri: primaryPhoto }} style={qiStyles.liveDealThumb} />;
+                }
+                return (
+                  <View style={[qiStyles.liveDealThumb, { backgroundColor: Colors.primary + '15', alignItems: 'center' as const, justifyContent: 'center' as const }]}>
+                    <Landmark size={18} color={Colors.primary} />
+                  </View>
+                );
+              })()}
               <View style={qiStyles.liveDealInfo}>
                 <Text style={qiStyles.liveDealName} numberOfLines={1}>{deal.projectName}</Text>
                 <View style={qiStyles.liveDealMeta}>
@@ -1373,6 +1402,12 @@ export default function HomeScreen() {
     type?: string;
     minInvestment?: number;
     propertyMarketValue?: number;
+    salePrice?: number;
+    fractionalSharePrice?: number;
+    timelineMin?: number;
+    timelineMax?: number;
+    priceChange1h?: number;
+    priceChange2h?: number;
   } | null>(null);
   const { t } = useTranslation();
   const { trackScreen } = useAnalytics();
@@ -1463,7 +1498,14 @@ export default function HomeScreen() {
   }, [propertiesQuery.data?.properties]);
   const unreadNotifications = unreadQuery.data?.count ?? 0;
 
-  const featuredProperties = useMemo(() => (properties ?? []).filter((p: { status?: string }) => (p?.status ?? '').toLowerCase() === 'live').slice(0, 3), [properties]);
+  const featuredLiveDeals = useMemo(() => {
+    return jvDeals
+      .filter((deal) => {
+        const normalizedStatus = String(deal?.status ?? '').toLowerCase();
+        return normalizedStatus === 'active' || normalizedStatus === 'pending_review' || normalizedStatus === 'published';
+      })
+      .slice(0, 3);
+  }, [jvDeals]);
   const comingSoonProperties = useMemo(() => (properties ?? []).filter((p: { status?: string }) => (p?.status ?? '').toLowerCase() === 'coming_soon').slice(0, 2), [properties]);
 
   const onRefresh = useCallback(async () => {
@@ -1485,23 +1527,38 @@ export default function HomeScreen() {
   }, [propertiesQuery, unreadQuery, publishedJV]);
 
   const openQuickBuy = useCallback((deal: JVAgreement) => {
-    const photos = Array.isArray(deal.photos) ? deal.photos : [];
+    const primaryPhoto = getPrimaryDealPhoto(deal);
     const rawDeal = deal as unknown as Record<string, unknown>;
     const marketVal = typeof rawDeal.property_market_value === 'number' ? rawDeal.property_market_value
       : typeof rawDeal.propertyMarketValue === 'number' ? rawDeal.propertyMarketValue
       : typeof rawDeal.market_value === 'number' ? rawDeal.market_value
       : undefined;
+    const trustMarket = rawDeal.trustMarket as {
+      minInvestment?: number;
+      salePrice?: number;
+      fractionalSharePrice?: number;
+      timelineMin?: number;
+      timelineMax?: number;
+      priceChange1h?: number;
+      priceChange2h?: number;
+    } | undefined;
     setQuickBuyDeal({
       id: deal.id,
       title: deal.title,
       projectName: deal.projectName,
       totalInvestment: deal.totalInvestment,
       expectedROI: deal.expectedROI,
-      photo: photos.length > 0 ? photos[0] : undefined,
+      photo: primaryPhoto,
       propertyAddress: deal.propertyAddress,
       type: deal.type,
-      minInvestment: 25000,
+      minInvestment: trustMarket?.minInvestment ? Math.max(trustMarket.minInvestment, 1) : 50,
       propertyMarketValue: marketVal as number | undefined,
+      salePrice: trustMarket?.salePrice,
+      fractionalSharePrice: trustMarket?.fractionalSharePrice,
+      timelineMin: trustMarket?.timelineMin,
+      timelineMax: trustMarket?.timelineMax,
+      priceChange1h: trustMarket?.priceChange1h,
+      priceChange2h: trustMarket?.priceChange2h,
     });
     setQuickBuyVisible(true);
   }, []);
@@ -1587,11 +1644,11 @@ export default function HomeScreen() {
                 <Sparkles size={isXs ? 16 : 18} color={Colors.primary} />
                 <Text style={[styles.sectionTitle, { fontSize: isXs ? 16 : 18 }]}>{t('featuredProperties')}</Text>
               </View>
-              <TouchableOpacity style={styles.seeAllButton} onPress={() => router.push('/(tabs)/market' as any)}
+              <TouchableOpacity style={styles.seeAllButton} onPress={() => router.push('/(tabs)/invest' as any)}
                 accessible={true}
                 accessibilityRole="button"
-                accessibilityLabel="See all properties"
-                accessibilityHint="Opens the market screen"
+                accessibilityLabel="See all live investment deals"
+                accessibilityHint="Opens the invest screen"
                 testID="see-all-properties"
               >
                 <Text style={[styles.seeAllText, { fontSize: isXs ? 12 : 14 }]}>{t('seeAll')}</Text>
@@ -1603,8 +1660,20 @@ export default function HomeScreen() {
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={[styles.featuredScroll, { paddingHorizontal: isXs ? 16 : 20 }]}
             >
-              {featuredProperties.map((property: any) => (
-                <PropertyCard key={property.id} property={property} variant="compact" isCompact={isCompact} />
+              {jvDealsLoading ? (
+                <View style={{ width: Math.min(width - (isXs ? 32 : 40), 320), height: 220, borderRadius: 20, backgroundColor: Colors.surface, alignItems: 'center', justifyContent: 'center' }}>
+                  <ActivityIndicator size="small" color={Colors.primary} />
+                  <Text style={{ color: Colors.textSecondary, fontSize: 13, marginTop: 10 }}>Syncing live deals...</Text>
+                </View>
+              ) : featuredLiveDeals.map((deal) => (
+                <View key={deal.id} style={{ width: Math.min(width - (isXs ? 48 : 56), 320) }}>
+                  <TrustDealCard
+                    deal={deal as unknown as ParsedJVDeal}
+                    galleryWidth={Math.min(width - (isXs ? 48 : 56), 320)}
+                    onViewDetails={() => router.push({ pathname: '/jv-invest', params: { jvId: deal.id } } as any)}
+                    onInvestNow={() => openQuickBuy(deal)}
+                  />
+                </View>
               ))}
             </ScrollView>
           </View>

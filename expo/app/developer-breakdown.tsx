@@ -9,6 +9,7 @@ import {
   Platform,
   Animated,
   Linking,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -26,10 +27,13 @@ import {
   AlertTriangle,
   Zap,
   MessageCircle,
-  FileDown,
+  Copy,
+  Clipboard,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
+import * as ExpoClipboard from 'expo-clipboard';
 import Colors from '@/constants/colors';
+import { safeSetString } from '@/lib/safe-clipboard';
 
 interface TaskItem {
   id: string;
@@ -216,7 +220,9 @@ function generateReport(): string {
 export default function DeveloperBreakdownScreen() {
   const router = useRouter();
   const [expandedPhases, setExpandedPhases] = useState<Set<string>>(new Set(['phase1']));
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<boolean>(false);
+  const [pastedFromClipboard, setPastedFromClipboard] = useState<boolean>(false);
+  const [clipboardPreview, setClipboardPreview] = useState<string>('');
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -277,16 +283,38 @@ export default function DeveloperBreakdownScreen() {
   }, []);
 
   const handleCopy = useCallback(async () => {
-    if (Platform.OS !== 'web') void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    if (Platform.OS !== 'web') {
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
     const report = generateReport();
-    if (Platform.OS === 'web') {
-      try {
-        await navigator.clipboard.writeText(report);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2500);
-      } catch {}
-    } else {
-      await Share.share({ message: report });
+    console.log('[DeveloperBreakdown] Copying report to clipboard');
+    const ok = await safeSetString(report);
+    if (!ok) {
+      Alert.alert('Copy failed', 'Unable to copy the report right now.');
+      return;
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2500);
+  }, []);
+
+  const handlePaste = useCallback(async () => {
+    try {
+      if (Platform.OS !== 'web') {
+        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      }
+      console.log('[DeveloperBreakdown] Reading clipboard preview');
+      const content = await ExpoClipboard.getStringAsync();
+      const trimmed = content.trim();
+      if (!trimmed) {
+        Alert.alert('Clipboard empty', 'Copy the report first, then tap Paste Preview.');
+        return;
+      }
+      setClipboardPreview(trimmed);
+      setPastedFromClipboard(true);
+      setTimeout(() => setPastedFromClipboard(false), 2500);
+    } catch (error) {
+      console.log('[DeveloperBreakdown] Paste failed:', error);
+      Alert.alert('Paste failed', 'Unable to read the clipboard right now.');
     }
   }, []);
 
@@ -338,10 +366,28 @@ export default function DeveloperBreakdownScreen() {
               <Text style={styles.whatsappText}>Share via WhatsApp</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.pdfBtn} onPress={handleCopy} testID="copy-button">
-              <FileDown size={16} color={Colors.primary} />
-              <Text style={styles.pdfText}>{copied ? 'Copied!' : 'Export / PDF'}</Text>
+              {copied ? <CheckCircle2 size={16} color={Colors.primary} /> : <Copy size={16} color={Colors.primary} />}
+              <Text style={styles.pdfText}>{copied ? 'Copied!' : 'Copy Report'}</Text>
             </TouchableOpacity>
           </View>
+
+          <View style={styles.clipboardRow}>
+            <TouchableOpacity style={styles.pasteBtn} onPress={handlePaste} testID="paste-button">
+              {pastedFromClipboard ? <CheckCircle2 size={16} color={Colors.text} /> : <Clipboard size={16} color={Colors.text} />}
+              <Text style={styles.pasteText}>{pastedFromClipboard ? 'Preview Ready' : 'Paste Preview'}</Text>
+            </TouchableOpacity>
+            <Text style={styles.clipboardHint}>The copy button is under the stats card. Tap Copy Report, then Paste Preview to verify it.</Text>
+          </View>
+
+          {clipboardPreview ? (
+            <View style={styles.clipboardPreviewCard}>
+              <View style={styles.clipboardPreviewHeader}>
+                <Text style={styles.clipboardPreviewTitle}>Clipboard preview</Text>
+                <Text style={styles.clipboardPreviewMeta}>{clipboardPreview.length} chars</Text>
+              </View>
+              <Text style={styles.clipboardPreviewText} numberOfLines={5}>{clipboardPreview}</Text>
+            </View>
+          ) : null}
 
           <View style={styles.controlRow}>
             <TouchableOpacity onPress={expandAll} style={styles.controlBtn}>
@@ -531,6 +577,11 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginBottom: 10,
   },
+  clipboardRow: {
+    marginHorizontal: 16,
+    marginBottom: 12,
+    gap: 8,
+  },
   whatsappBtn: {
     flex: 1,
     flexDirection: 'row',
@@ -557,6 +608,33 @@ const styles = StyleSheet.create({
     borderColor: Colors.primary + '40',
   },
   pdfText: { color: Colors.primary, fontSize: 13, fontWeight: '700' as const },
+  pasteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: Colors.surfaceLight,
+    borderRadius: 12,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+  },
+  pasteText: { color: Colors.text, fontSize: 13, fontWeight: '700' as const },
+  clipboardHint: { color: Colors.textTertiary, fontSize: 11, lineHeight: 16 },
+  clipboardPreviewCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: 14,
+    padding: 14,
+    marginHorizontal: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    gap: 8,
+  },
+  clipboardPreviewHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  clipboardPreviewTitle: { color: Colors.text, fontSize: 13, fontWeight: '700' as const },
+  clipboardPreviewMeta: { color: Colors.textTertiary, fontSize: 11 },
+  clipboardPreviewText: { color: Colors.textSecondary, fontSize: 12, lineHeight: 18 },
 
   controlRow: {
     flexDirection: 'row',

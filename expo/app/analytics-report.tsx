@@ -54,6 +54,9 @@ interface AnalyticsData {
   totalEvents: number;
   pageViews: number;
   uniqueSessions: number;
+  topScreens: Array<{ screen: string; views: number; uniqueSessions: number; avgTimeSpent: number; totalTimeSpent: number; pct: number; lastViewed: string }>;
+  topActions: Array<{ action: string; count: number; uniqueSessions: number; avgTimeSpent: number; pct: number; lastTriggered: string }>;
+  timeSpent: { totalTrackedSeconds: number; avgSessionSeconds: number; avgScreenSeconds: number; maxSessionSeconds: number; engagedSessions: number };
   funnel: {
     pageViews: number;
     scroll25: number;

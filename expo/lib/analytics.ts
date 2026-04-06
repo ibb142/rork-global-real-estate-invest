@@ -827,7 +827,7 @@ class AnalyticsService {
   }
 
   private sendToAWSBackup(event: AnalyticsEvent): void {
-    if (!awsAnalyticsBackup.isConfigured()) return;
+    void awsAnalyticsBackup.init();
     const awsEvent: AWSAnalyticsEvent = {
       id: event.id,
       event: event.name,

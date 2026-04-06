@@ -39,6 +39,8 @@ import {
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
 import { formatCurrencyWithDecimals, formatCurrencyCompact, formatNumber } from '@/lib/formatters';
+import { buildOwnershipSnapshot } from '@/lib/ownership-math';
+import { formatTrustTimelineLabel, resolveTrustMarket } from '@/lib/trust-market';
 import { purchaseJVInvestment } from '@/lib/investment-service';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth-context';
@@ -57,6 +59,22 @@ interface QuickBuyDeal {
   type?: string;
   minInvestment?: number;
   propertyMarketValue?: number;
+  salePrice?: number;
+  fractionalSharePrice?: number;
+  timelineMin?: number;
+  timelineMax?: number;
+  priceChange1h?: number;
+  priceChange2h?: number;
+}
+
+function formatOwnershipPercent(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) {
+    return '0%';
+  }
+  if (value >= 1) {
+    return `${value.toFixed(2)}%`;
+  }
+  return `${value.toFixed(4)}%`;
 }
 
 interface QuickBuyModalProps {
@@ -93,7 +111,7 @@ export default function QuickBuyModal({ visible, onClose, deal, onNavigateToFull
   const [tosAccepted, setTosAccepted] = useState(false);
 
   const activeAmounts = investType === 'jv' ? JV_AMOUNTS : FRACTIONAL_AMOUNTS;
-  const minAmount = investType === 'jv' ? 25000 : 100;
+  const minAmount = investType === 'jv' ? 25000 : Math.max(Number(deal?.minInvestment ?? 100), 1);
 
   const handleSwitchType = useCallback((type: InvestType) => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -160,10 +178,27 @@ export default function QuickBuyModal({ visible, onClose, deal, onNavigateToFull
     }
   }, []);
 
-  const ownershipBase = deal ? ((deal.propertyMarketValue && deal.propertyMarketValue > 0) ? deal.propertyMarketValue : (deal.totalInvestment > 0 ? deal.totalInvestment : 1)) : 1;
-  const equityPercent = ownershipBase > 0 ? Math.min((selectedAmount / ownershipBase) * 100, 100) : 0;
-  const ownershipLabel = deal?.propertyMarketValue && deal.propertyMarketValue > 0 ? 'Property Ownership' : 'Pool Ownership';
+  const resolvedTrustMarket = resolveTrustMarket({
+    salePrice: deal?.salePrice,
+    propertyValue: deal?.propertyMarketValue,
+    totalInvestment: deal?.totalInvestment,
+    minInvestment: deal?.minInvestment,
+    fractionalSharePrice: deal?.fractionalSharePrice,
+    timelineMin: deal?.timelineMin,
+    timelineMax: deal?.timelineMax,
+    timelineUnit: 'months',
+    priceChange1h: deal?.priceChange1h,
+    priceChange2h: deal?.priceChange2h,
+  });
+  const liveSalePrice = resolvedTrustMarket.salePrice;
+  const ownershipSnapshot = buildOwnershipSnapshot(selectedAmount, liveSalePrice);
+  const equityPercent = ownershipSnapshot.ownershipPercent;
+  const ownershipLabel = liveSalePrice > 0 ? 'Live Ownership' : deal?.propertyMarketValue && deal.propertyMarketValue > 0 ? 'Property Ownership' : 'Pool Ownership';
   const estimatedReturn = deal ? selectedAmount * (deal.expectedROI / 100) : 0;
+  const liveFractionalPrice = resolvedTrustMarket.fractionalSharePrice;
+  const oneHourPrice = Number((liveFractionalPrice * (1 + (resolvedTrustMarket.priceChange1h / 100))).toFixed(2));
+  const twoHourPrice = Number((liveFractionalPrice * (1 + (resolvedTrustMarket.priceChange2h / 100))).toFixed(2));
+  const timelineLabel = formatTrustTimelineLabel(resolvedTrustMarket);
 
   const handleContinue = useCallback(() => {
     if (!deal) return;
@@ -240,8 +275,7 @@ export default function QuickBuyModal({ visible, onClose, deal, onNavigateToFull
         type: investType,
       });
 
-      const eqBase = deal.propertyMarketValue && deal.propertyMarketValue > 0 ? deal.propertyMarketValue : deal.totalInvestment;
-      const eqPct = eqBase > 0 ? Math.min((selectedAmount / eqBase) * 100, 100) : 0;
+      const eqPct = ownershipSnapshot.ownershipPercent;
 
       const result = await purchaseJVInvestment({
         jvDealId: deal.id,
@@ -285,7 +319,7 @@ export default function QuickBuyModal({ visible, onClose, deal, onNavigateToFull
       setStep('confirm');
       Alert.alert('Error', msg);
     }
-  }, [deal, selectedAmount, investType, successScale, queryClient]);
+  }, [deal, selectedAmount, investType, successScale, queryClient, ownershipSnapshot.ownershipPercent]);
 
   const handleGoToFullInvest = useCallback(() => {
     if (!deal) return;
@@ -392,11 +426,26 @@ export default function QuickBuyModal({ visible, onClose, deal, onNavigateToFull
                       </TouchableOpacity>
                     </View>
 
-                    {deal.propertyMarketValue && deal.propertyMarketValue > 0 ? (
+                    {liveSalePrice > 0 ? (
                       <View style={ms.marketValueNote}>
-                        <Text style={ms.marketValueNoteText}>Property Value: {formatCurrencyCompact(deal.propertyMarketValue)}</Text>
+                        <Text style={ms.marketValueNoteText}>Sale Price: {formatCurrencyCompact(liveSalePrice)} • Timeline: {timelineLabel} • Ownership: {formatOwnershipPercent(equityPercent)}</Text>
                       </View>
                     ) : null}
+
+                    <View style={ms.previewMarketStrip}>
+                      <View style={ms.previewMarketPill}>
+                        <Text style={ms.previewMarketLabel}>Entry</Text>
+                        <Text style={ms.previewMarketValue}>{formatCurrencyWithDecimals(liveFractionalPrice)}</Text>
+                      </View>
+                      <View style={ms.previewMarketPill}>
+                        <Text style={ms.previewMarketLabel}>1H</Text>
+                        <Text style={[ms.previewMarketValue, ms.previewMarketValueUp]}>{formatCurrencyWithDecimals(oneHourPrice)}</Text>
+                      </View>
+                      <View style={ms.previewMarketPill}>
+                        <Text style={ms.previewMarketLabel}>2H</Text>
+                        <Text style={[ms.previewMarketValue, ms.previewMarketValueUp]}>{formatCurrencyWithDecimals(twoHourPrice)}</Text>
+                      </View>
+                    </View>
 
                     <Text style={ms.amountLabel}>
                       {investType === 'jv' ? 'Select Amount (Min $25K)' : 'Select Amount (Min $100)'}
@@ -437,7 +486,7 @@ export default function QuickBuyModal({ visible, onClose, deal, onNavigateToFull
                       <View style={ms.previewDivider} />
                       <View style={ms.previewItem}>
                         <Text style={ms.previewLabel}>{ownershipLabel}</Text>
-                        <Text style={[ms.previewValue, { color: Colors.primary }]}>{equityPercent.toFixed(2)}%</Text>
+                        <Text style={[ms.previewValue, { color: Colors.primary }]}>{formatOwnershipPercent(equityPercent)}</Text>
                       </View>
                       <View style={ms.previewDivider} />
                       <View style={ms.previewItem}>
@@ -445,6 +494,8 @@ export default function QuickBuyModal({ visible, onClose, deal, onNavigateToFull
                         <Text style={[ms.previewValue, { color: '#22C55E' }]}>{formatCurrencyCompact(estimatedReturn)}</Text>
                       </View>
                     </View>
+
+                    <Text style={ms.ownershipHint}>{ownershipSnapshot.ownershipText}</Text>
 
                     <TouchableOpacity
                       style={[ms.ctaBtn, selectedAmount < minAmount && ms.ctaBtnDisabled]}
@@ -708,6 +759,18 @@ export default function QuickBuyModal({ visible, onClose, deal, onNavigateToFull
                       <View style={ms.confirmRow}>
                         <Text style={ms.confirmLabel}>Ownership</Text>
                         <Text style={ms.confirmValue}>{equityPercent.toFixed(2)}%</Text>
+                      </View>
+                      <View style={ms.confirmRow}>
+                        <Text style={ms.confirmLabel}>Sale Price</Text>
+                        <Text style={ms.confirmValue}>{formatCurrencyCompact(liveSalePrice)}</Text>
+                      </View>
+                      <View style={ms.confirmRow}>
+                        <Text style={ms.confirmLabel}>Timeline</Text>
+                        <Text style={ms.confirmValue}>{timelineLabel}</Text>
+                      </View>
+                      <View style={ms.confirmRow}>
+                        <Text style={ms.confirmLabel}>Fractional Entry</Text>
+                        <Text style={ms.confirmValue}>{formatCurrencyWithDecimals(liveFractionalPrice)}</Text>
                       </View>
                       <View style={ms.confirmRow}>
                         <Text style={ms.confirmLabel}>Expected ROI</Text>
@@ -1046,6 +1109,49 @@ const ms = StyleSheet.create({
     fontWeight: '700' as const,
     color: Colors.text,
   },
+  marketValueNote: {
+    marginBottom: 14,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  marketValueNoteText: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '600' as const,
+  },
+  previewMarketStrip: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 14,
+  },
+  previewMarketPill: {
+    flex: 1,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+  },
+  previewMarketLabel: {
+    color: Colors.textTertiary,
+    fontSize: 11,
+    marginBottom: 6,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.6,
+  },
+  previewMarketValue: {
+    fontSize: 15,
+    fontWeight: '800' as const,
+    color: Colors.text,
+  },
+  previewMarketValueUp: {
+    color: '#22C55E',
+  },
   previewRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1075,6 +1181,14 @@ const ms = StyleSheet.create({
     width: 1,
     height: 28,
     backgroundColor: Colors.surfaceBorder,
+  },
+  ownershipHint: {
+    marginTop: -4,
+    marginBottom: 18,
+    color: Colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: 'center' as const,
   },
   ctaBtn: {
     flexDirection: 'row',
@@ -1440,20 +1554,5 @@ const ms = StyleSheet.create({
     fontSize: 13,
     color: Colors.textSecondary,
     flex: 1,
-  },
-  marketValueNote: {
-    backgroundColor: Colors.surface,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    marginBottom: 14,
-    borderWidth: 1,
-    borderColor: Colors.surfaceBorder,
-  },
-  marketValueNoteText: {
-    fontSize: 12,
-    fontWeight: '600' as const,
-    color: Colors.textSecondary,
-    textAlign: 'center' as const,
   },
 });

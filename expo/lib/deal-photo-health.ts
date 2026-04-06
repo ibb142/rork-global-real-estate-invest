@@ -2,6 +2,7 @@ import {
   fetchPhotosFromStorageBucket,
   filterOutStockPhotos,
   getFallbackPhotosForDeal,
+  sanitizeDealPhotosForDeal,
 } from '@/constants/deal-photos';
 import type { PublishedDealCardModel } from '@/lib/published-deal-card-model';
 
@@ -99,14 +100,30 @@ export function getPhotoHealthPresentation(status: DealPhotoHealthStatus): Photo
 }
 
 export async function diagnoseDealPhotos(card: PublishedDealCardModel): Promise<DealPhotoDiagnostic> {
-  const dbPhotos = dedupePhotos(filterOutStockPhotos(Array.isArray(card.photos) ? card.photos : []));
-  const storagePhotos = dbPhotos.length === 0 && card.id
-    ? dedupePhotos(await fetchPhotosFromStorageBucket(card.id))
-    : [];
-  const fallbackPhotos = dedupePhotos(getFallbackPhotosForDeal({
+  const dealIdentity = {
     title: card.title,
     projectName: card.developerName,
-  }));
+  };
+  let dbPhotos: string[] = [];
+  try {
+    dbPhotos = dedupePhotos(sanitizeDealPhotosForDeal(dealIdentity, filterOutStockPhotos(Array.isArray(card.photos) ? card.photos : [])));
+  } catch (e) {
+    console.log('[DealPhotoHealth] DB photo sanitize error (non-blocking):', (e as Error)?.message);
+  }
+  let storagePhotos: string[] = [];
+  if (dbPhotos.length === 0 && card.id) {
+    try {
+      storagePhotos = dedupePhotos(sanitizeDealPhotosForDeal(dealIdentity, await fetchPhotosFromStorageBucket(card.id)));
+    } catch (e) {
+      console.log('[DealPhotoHealth] Storage photo fetch error (non-blocking):', (e as Error)?.message);
+    }
+  }
+  let fallbackPhotos: string[] = [];
+  try {
+    fallbackPhotos = dedupePhotos(getFallbackPhotosForDeal(dealIdentity));
+  } catch (e) {
+    console.log('[DealPhotoHealth] Fallback photo resolve error (non-blocking):', (e as Error)?.message);
+  }
 
   let source: DealPhotoSource = 'none';
   let resolvedPhotos: string[] = [];

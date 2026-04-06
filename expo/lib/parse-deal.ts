@@ -1,3 +1,5 @@
+import { resolveCanonicalDealIdentity } from '@/lib/deal-identity';
+
 export interface DealTrustInfo {
   llcName: string;
   builderName: string;
@@ -16,6 +18,11 @@ export interface DealTrustInfo {
   yearEstablished?: number;
   completedProjects?: number;
   totalDeliveredValue?: number;
+  salePrice?: number;
+  fractionalSharePrice?: number;
+  priceChange1h?: number;
+  priceChange2h?: number;
+  ownershipLabel?: string;
   investorProtections: string[];
   riskFactors: string[];
   keyMilestones: DealMilestone[];
@@ -38,6 +45,18 @@ export interface DealDocument {
   url?: string;
 }
 
+export interface DealTrustMarket {
+  salePrice: number;
+  minInvestment: number;
+  fractionalSharePrice: number;
+  timelineMin?: number;
+  timelineMax?: number;
+  timelineUnit?: 'months' | 'years';
+  priceChange1h: number;
+  priceChange2h: number;
+  ownershipLabel?: string;
+}
+
 export interface ParsedJVDeal {
   id: string;
   title: string;
@@ -58,6 +77,7 @@ export interface ParsedJVDeal {
   created_at: string;
   status?: string;
   trustInfo?: DealTrustInfo;
+  trustMarket?: DealTrustMarket;
   city?: string;
   state?: string;
   country?: string;
@@ -94,6 +114,63 @@ function safeJsonParse(val: unknown, fallback: unknown = []): unknown {
   return val;
 }
 
+function toPositiveNumber(value: unknown, fallback = 0): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+  return parsed;
+}
+
+function toTimelineNumber(value: unknown): number | undefined {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return undefined;
+  }
+  return parsed;
+}
+
+export function extractDealTrustInfo(rawDeal: Record<string, unknown>): DealTrustInfo | undefined {
+  const rawTrust = rawDeal.trustInfo ?? rawDeal.trust_info;
+  if (!rawTrust) {
+    return undefined;
+  }
+  if (typeof rawTrust === 'object') {
+    return rawTrust as DealTrustInfo;
+  }
+  if (typeof rawTrust === 'string') {
+    try {
+      return JSON.parse(rawTrust) as DealTrustInfo;
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
+export function resolveDealTrustMarket(rawDeal: Record<string, unknown>, trustInfo?: DealTrustInfo): DealTrustMarket {
+  const resolvedTrustInfo = trustInfo ?? extractDealTrustInfo(rawDeal);
+  const propertyValue = toPositiveNumber(rawDeal.propertyValue ?? rawDeal.property_value ?? rawDeal.estimated_value, 0);
+  const totalInvestment = toPositiveNumber(rawDeal.totalInvestment ?? rawDeal.total_investment, 0);
+  const fallbackSalePrice = propertyValue || totalInvestment;
+  const minInvestment = toPositiveNumber(resolvedTrustInfo?.minInvestment, 50);
+  const fractionalSharePrice = toPositiveNumber(resolvedTrustInfo?.fractionalSharePrice, Math.max(minInvestment, 1));
+  const priceChange1h = Number.isFinite(Number(resolvedTrustInfo?.priceChange1h)) ? Number(resolvedTrustInfo?.priceChange1h) : 10;
+  const priceChange2h = Number.isFinite(Number(resolvedTrustInfo?.priceChange2h)) ? Number(resolvedTrustInfo?.priceChange2h) : 18;
+
+  return {
+    salePrice: toPositiveNumber(resolvedTrustInfo?.salePrice, fallbackSalePrice),
+    minInvestment,
+    fractionalSharePrice,
+    timelineMin: toTimelineNumber(resolvedTrustInfo?.timelineMin),
+    timelineMax: toTimelineNumber(resolvedTrustInfo?.timelineMax),
+    timelineUnit: resolvedTrustInfo?.timelineUnit === 'years' ? 'years' : 'months',
+    priceChange1h,
+    priceChange2h,
+    ownershipLabel: resolvedTrustInfo?.ownershipLabel,
+  };
+}
+
 const PLACEHOLDER_DOMAINS = [
   'picsum.photos',
   'via.placeholder.com',
@@ -116,19 +193,31 @@ function isPlaceholderPhoto(url: string): boolean {
 }
 
 export function parseDeal(d: Record<string, unknown>): ParsedJVDeal {
+  const identity = resolveCanonicalDealIdentity(d);
   let photos = safeJsonParse(d.photos, []);
   if (!Array.isArray(photos)) photos = [];
   photos = (photos as string[]).filter(
-    (p: string) => typeof p === 'string' && p.length > 5 && (p.startsWith('http') || p.startsWith('data:image/')) && !isPlaceholderPhoto(p)
+    (p: string) => typeof p === 'string' && p.length > 5 && (p.startsWith('http://') || p.startsWith('https://')) && !isPlaceholderPhoto(p)
   );
+
+  const dealIdentity = {
+    title: identity.title,
+    projectName: identity.projectName,
+  };
+
+  try {
+    const { sanitizeDealPhotosForDeal } = require('@/constants/deal-photos') as {
+      sanitizeDealPhotosForDeal: (deal: { title?: string; projectName?: string; project_name?: string }, photos: string[]) => string[];
+    };
+    photos = sanitizeDealPhotosForDeal(dealIdentity, photos as string[]);
+  } catch {}
 
   if ((photos as string[]).length === 0) {
     try {
-      const { getFallbackPhotosForDeal } = require('@/constants/deal-photos');
-      const fallback = getFallbackPhotosForDeal({
-        title: (d.title || '') as string,
-        projectName: (d.projectName || d.project_name || '') as string,
-      });
+      const { getFallbackPhotosForDeal } = require('@/constants/deal-photos') as {
+        getFallbackPhotosForDeal: (deal: { title?: string; projectName?: string; project_name?: string }) => string[];
+      };
+      const fallback = getFallbackPhotosForDeal(dealIdentity);
       if (fallback.length > 0) {
         photos = fallback;
         console.log('[parseDeal] Applied fallback photos for:', (d.projectName || d.project_name || d.title || 'unknown'), '->', fallback.length, 'photos');
@@ -148,20 +237,18 @@ export function parseDeal(d: Record<string, unknown>): ParsedJVDeal {
     poolTiers = undefined;
   }
 
-  const projectName = (d.projectName || d.project_name || '') as string;
-
-  let trustInfo = safeJsonParse(d.trustInfo ?? d.trust_info, undefined);
-  if (trustInfo !== undefined && typeof trustInfo !== 'object') {
-    trustInfo = undefined;
-  }
+  const trustInfo = identity.trustInfo ?? extractDealTrustInfo(d);
+  const trustMarket = resolveDealTrustMarket(d, trustInfo);
 
   return {
     ...d,
     photos: photos as string[],
     partners: partners as ParsedJVDealPartner[] | number,
     poolTiers: poolTiers as ParsedJVDealPoolTier[] | undefined,
-    trustInfo: trustInfo as DealTrustInfo | undefined,
-    projectName,
+    trustInfo,
+    trustMarket,
+    title: identity.title,
+    projectName: identity.projectName,
     propertyAddress: (d.propertyAddress || d.property_address || '') as string,
     city: (d.city || '') as string,
     state: (d.state || '') as string,
@@ -208,7 +295,6 @@ export function isValidPhoto(p: unknown): boolean {
   if (typeof p !== 'string' || p.length < 6) return false;
   if (isPlaceholderPhoto(p)) return false;
   if (p.startsWith('http://') || p.startsWith('https://')) return true;
-  if (p.startsWith('data:image/')) return true;
   return false;
 }
 
@@ -223,11 +309,71 @@ export function filterValidPhotos(raw: unknown): string[] {
   return arr.filter(isValidPhoto) as string[];
 }
 
+export interface DealPhotoIdentityLike {
+  id?: string;
+  title?: string;
+  projectName?: string;
+  project_name?: string;
+  photos?: unknown;
+  publishedAt?: string | null;
+  published_at?: string | null;
+  updatedAt?: string | null;
+  updated_at?: string | null;
+  createdAt?: string | null;
+  created_at?: string | null;
+}
+
+function resolveDealPhotoVersion(deal: DealPhotoIdentityLike): string {
+  const version = deal.updatedAt
+    ?? deal.updated_at
+    ?? deal.publishedAt
+    ?? deal.published_at
+    ?? deal.createdAt
+    ?? deal.created_at
+    ?? '';
+  return typeof version === 'string' ? version.trim() : '';
+}
+
+function appendPhotoVersion(url: string, version: string): string {
+  if (!version || !url.startsWith('http')) {
+    return url;
+  }
+
+  try {
+    const parsedUrl = new URL(url);
+    parsedUrl.searchParams.set('ivxv', version);
+    return parsedUrl.toString();
+  } catch {
+    const joiner = url.includes('?') ? '&' : '?';
+    return `${url}${joiner}ivxv=${encodeURIComponent(version)}`;
+  }
+}
+
+export function resolveDealPhotos(deal: DealPhotoIdentityLike): string[] {
+  const photoVersion = resolveDealPhotoVersion(deal);
+  const validPhotos = sanitizeDealPhotosForDeal(deal, filterValidPhotos(deal.photos)).map((photo) => appendPhotoVersion(photo, photoVersion));
+  if (validPhotos.length > 0) {
+    return validPhotos;
+  }
+
+  const fallbackPhotos = getFallbackPhotosForDeal(deal).map((photo) => appendPhotoVersion(photo, photoVersion));
+  if (fallbackPhotos.length > 0) {
+    console.log('[SharedJVFetch] Applied fallback photos for deal:', deal.id ?? deal.projectName ?? deal.title ?? 'unknown', '| count:', fallbackPhotos.length, '| version:', photoVersion || 'none');
+  }
+  return fallbackPhotos;
+}
+
+export function resolvePrimaryDealPhoto(deal: DealPhotoIdentityLike): string | undefined {
+  const photos = resolveDealPhotos(deal);
+  return photos[0];
+}
+
 export const QUERY_KEY_PUBLISHED_JV_DEALS = ['published-jv-deals'] as const;
 
 import { useQuery } from '@tanstack/react-query';
 import { resetSupabaseCheck } from '@/lib/jv-storage';
 import { fetchCanonicalDeals, invalidateCanonicalCache, canonicalCardToParsedDeal } from '@/lib/canonical-deals';
+import { getFallbackPhotosForDeal, sanitizeDealPhotosForDeal } from '@/constants/deal-photos';
 
 export interface UsePublishedJVDealsResult {
   deals: ParsedJVDeal[];
@@ -278,21 +424,28 @@ export function usePublishedJVDeals(): UsePublishedJVDealsResult {
     queryFn: fetchPublishedJVDealsShared,
     retry: 2,
     retryDelay: (attempt: number) => Math.min(1000 * Math.pow(2, attempt), 8000),
-    staleTime: 1000 * 60 * 2,
+    staleTime: 2000,
     gcTime: 1000 * 60 * 10,
     refetchOnWindowFocus: true,
     refetchOnMount: true,
-    refetchInterval: false,
+    refetchOnReconnect: true,
+    refetchInterval: 3000,
+    refetchIntervalInBackground: true,
     placeholderData: { deals: [] as ParsedJVDeal[] },
   });
 
   const deals = query.data?.deals ?? [];
   const isLoading = query.isPending && !query.isPlaceholderData;
 
+  const refetch = async (): Promise<unknown> => {
+    triggerManualJVRefresh();
+    return query.refetch();
+  };
+
   return {
     deals,
     isLoading,
     isError: query.isError,
-    refetch: query.refetch,
+    refetch,
   };
 }

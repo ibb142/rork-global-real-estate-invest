@@ -37,7 +37,8 @@ import Colors from '@/constants/colors';
 import { COUNTRIES, Country } from '@/constants/countries';
 import { useAuth } from '@/lib/auth-context';
 import { useAnalytics } from '@/lib/analytics-context';
-import { validateEmail, validatePassword, validatePhone } from '@/lib/auth-helpers';
+import { validateEmail, validatePassword, validatePhone, sanitizeEmail } from '@/lib/auth-helpers';
+import { findExistingMemberByEmail } from '@/lib/member-registry';
 
 type Step = 'register' | 'verify_email' | 'verify_phone' | 'complete';
 
@@ -49,6 +50,7 @@ export default function SignUpScreen() {
   React.useEffect(() => {
     trackScreen('Signup');
   }, [trackScreen]);
+
   const [currentStep, setCurrentStep] = useState<Step>('register');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -69,11 +71,69 @@ export default function SignUpScreen() {
 
   const [showCountryPicker, setShowCountryPicker] = useState(false);
   const [countrySearch, setCountrySearch] = useState('');
+  const [existingAccountDetected, setExistingAccountDetected] = useState<boolean>(false);
 
   const filteredCountries = COUNTRIES.filter(country =>
     country.name.toLowerCase().includes(countrySearch.toLowerCase()) ||
     country.code.toLowerCase().includes(countrySearch.toLowerCase())
   );
+
+  const navigateToLogin = React.useCallback((prefillEmail?: string, justRegistered?: boolean) => {
+    const trimmedEmail = prefillEmail?.trim() ?? '';
+    const params: Record<string, string> = {};
+
+    if (trimmedEmail) {
+      params.email = trimmedEmail;
+    }
+    if (justRegistered) {
+      params.justRegistered = '1';
+    }
+
+    router.replace({
+      pathname: '/login',
+      params,
+    } as Href);
+  }, [router]);
+
+  const navigateToOwnerAccess = React.useCallback((prefillEmail?: string) => {
+    const trimmedEmail = prefillEmail?.trim() ?? '';
+
+    router.push({
+      pathname: '/owner-access',
+      params: {
+        source: 'signup',
+        ...(trimmedEmail ? { email: trimmedEmail } : {}),
+      },
+    } as Href);
+  }, [router]);
+
+  React.useEffect(() => {
+    const normalizedEmail = formData.email.trim().toLowerCase();
+    if (!normalizedEmail) {
+      setExistingAccountDetected(false);
+      return;
+    }
+
+    let isActive = true;
+    const timeout = setTimeout(() => {
+      findExistingMemberByEmail(normalizedEmail)
+        .then((record) => {
+          if (isActive) {
+            setExistingAccountDetected(!!record);
+          }
+        })
+        .catch(() => {
+          if (isActive) {
+            setExistingAccountDetected(false);
+          }
+        });
+    }, 180);
+
+    return () => {
+      isActive = false;
+      clearTimeout(timeout);
+    };
+  }, [formData.email]);
 
   const [emailCode, setEmailCode] = useState(['', '', '', '', '', '']);
   const [phoneCode, setPhoneCode] = useState(['', '', '', '', '', '']);
@@ -91,11 +151,12 @@ export default function SignUpScreen() {
 
 
   const handleRegister = async () => {
+    const normalizedEmail = sanitizeEmail(formData.email);
     if (!formData.firstName || !formData.lastName) {
       Alert.alert('Missing Information', 'Please enter your first and last name.');
       return;
     }
-    if (!validateEmail(formData.email)) {
+    if (!validateEmail(normalizedEmail)) {
       Alert.alert('Invalid Email', 'Please enter a valid email address.');
       return;
     }
@@ -120,7 +181,7 @@ export default function SignUpScreen() {
     setIsLoading(true);
     try {
       const result = await authRegister({
-        email: formData.email,
+        email: normalizedEmail,
         password: formData.password,
         firstName: formData.firstName,
         lastName: formData.lastName,
@@ -131,10 +192,62 @@ export default function SignUpScreen() {
       logger.signup.log('Register result:', result);
 
       if (result.success) {
+        updateForm('email', normalizedEmail);
         trackConversion('signup_completed', 0, { country: formData.country });
+
+        if (result.requiresLogin) {
+          Alert.alert(
+            'Account Created',
+            'Registration is saved. Next time, just sign in with your email and password.',
+            [
+              {
+                text: 'Go to Sign In',
+                onPress: () => navigateToLogin(result.email ?? formData.email, true),
+              },
+            ]
+          );
+          return;
+        }
+
         setEmailVerified(true);
         setPhoneVerified(true);
         setCurrentStep('complete');
+      } else if (result.alreadyExists) {
+        console.error('[Signup] Existing account:', result.message);
+        Alert.alert(
+          'Account Already Exists',
+          `${result.message || 'This email is already registered. Please sign in instead.'}\n\nIf this is your owner account, open Owner Access instead of public signup.`,
+          [
+            {
+              text: 'Owner Access',
+              onPress: () => navigateToOwnerAccess(result.email ?? formData.email),
+            },
+            {
+              text: 'Go to Sign In',
+              onPress: () => navigateToLogin(result.email ?? formData.email),
+            },
+            {
+              text: 'Cancel',
+              style: 'cancel',
+            },
+          ]
+        );
+      } else if (result.rateLimited) {
+        console.error('[Signup] Signup rate limited:', result.message);
+        Alert.alert(
+          'Please Wait a Moment',
+          result.message || 'Signups are temporarily throttled. Your data was not saved yet. Please wait a moment and try again.',
+          [
+            {
+              text: 'Go to Sign In',
+              onPress: () => navigateToLogin(result.email ?? normalizedEmail),
+            },
+            {
+              text: 'OK',
+              style: 'cancel',
+            },
+          ]
+        );
       } else {
         console.error('[Signup] Register failed:', result.message);
         Alert.alert('Registration Failed', result.message || 'Could not create account. Please try again.');
@@ -286,6 +399,22 @@ export default function SignUpScreen() {
         <Text style={styles.subtitle}>Join IVX HOLDINGS and start investing in premium real estate</Text>
       </View>
 
+      <TouchableOpacity
+        style={styles.ownerShortcutCard}
+        activeOpacity={0.84}
+        onPress={() => navigateToOwnerAccess(formData.email)}
+        testID="signup-owner-shortcut"
+      >
+        <View style={styles.ownerShortcutIconWrap}>
+          <Shield size={18} color={Colors.black} />
+        </View>
+        <View style={styles.ownerShortcutContent}>
+          <Text style={styles.ownerShortcutTitle}>Project owner?</Text>
+          <Text style={styles.ownerShortcutSubtitle}>Do not create a public member account for owner recovery. Open Owner Access instead to sign in with your verified owner account or restore the trusted device path.</Text>
+        </View>
+        <ChevronRight size={18} color={Colors.primary} />
+      </TouchableOpacity>
+
       <View style={styles.formSection}>
         <View style={styles.inputRow}>
           <View style={[styles.inputGroup, { flex: 1 }]}>
@@ -327,12 +456,26 @@ export default function SignUpScreen() {
               placeholder="john.doe@example.com"
               placeholderTextColor={Colors.textTertiary}
               value={formData.email}
-              onChangeText={(text) => updateForm('email', text)}
+              onChangeText={(text) => updateForm('email', sanitizeEmail(text))}
               keyboardType="email-address"
               autoCapitalize="none"
               autoCorrect={false}
+              testID="signup-email"
             />
           </View>
+          {existingAccountDetected && (
+            <TouchableOpacity
+              style={styles.existingAccountCard}
+              onPress={() => navigateToLogin(formData.email)}
+              testID="signup-existing-account"
+            >
+              <Shield size={16} color={Colors.primary} />
+              <View style={styles.existingAccountContent}>
+                <Text style={styles.existingAccountTitle}>Account already found</Text>
+                <Text style={styles.existingAccountSubtitle}>Use Sign In for returning members. If this is your owner account, open Owner Access instead of creating another public account.</Text>
+              </View>
+            </TouchableOpacity>
+          )}
         </View>
 
         <View style={styles.inputGroup}>
@@ -426,6 +569,7 @@ export default function SignUpScreen() {
           style={[styles.primaryButton, isLoading && styles.buttonDisabled]}
           onPress={handleRegister}
           disabled={isLoading}
+          testID="signup-submit"
         >
           <Text style={styles.primaryButtonText}>
             {isLoading ? 'Creating Account...' : 'Create Account'}
@@ -434,7 +578,7 @@ export default function SignUpScreen() {
 
         <View style={styles.loginRow}>
           <Text style={styles.loginText}>Already have an account? </Text>
-          <TouchableOpacity onPress={() => router.back()}>
+          <TouchableOpacity onPress={() => navigateToLogin(formData.email)} testID="signup-go-login">
             <Text style={styles.loginLink}>Sign In</Text>
           </TouchableOpacity>
         </View>
@@ -725,8 +869,68 @@ const styles = StyleSheet.create({
   formSection: {
     marginBottom: 16,
   },
+  ownerShortcutCard: {
+    marginBottom: 16,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#3B82F638',
+    backgroundColor: '#07111D',
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  ownerShortcutIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.primary,
+  },
+  ownerShortcutContent: {
+    flex: 1,
+  },
+  ownerShortcutTitle: {
+    color: Colors.text,
+    fontSize: 14,
+    fontWeight: '800' as const,
+  },
+  ownerShortcutSubtitle: {
+    marginTop: 3,
+    color: Colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+  },
   inputGroup: {
     marginBottom: 16,
+  },
+  existingAccountCard: {
+    marginTop: 10,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Colors.primary + '28',
+    backgroundColor: Colors.primary + '10',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  existingAccountContent: {
+    flex: 1,
+  },
+  existingAccountTitle: {
+    color: Colors.text,
+    fontSize: 13,
+    fontWeight: '700' as const,
+  },
+  existingAccountSubtitle: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    marginTop: 2,
+    lineHeight: 18,
   },
   inputRow: {
     flexDirection: 'row',

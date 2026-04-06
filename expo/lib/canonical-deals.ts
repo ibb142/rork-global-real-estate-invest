@@ -5,16 +5,49 @@ import {
   CANONICAL_DISTRIBUTION_LABEL,
   type PublishedDealCardModel,
 } from '@/lib/published-deal-card-model';
-import type { ParsedJVDeal } from '@/lib/parse-deal';
+import { resolveDealTrustMarket, type ParsedJVDeal } from '@/lib/parse-deal';
+import { fetchDealsJsonEndpoint } from '@/lib/api-response-guard';
+import { DIRECT_API_BASE_URL, getPublishedDealsReadUrls } from '@/lib/public-api';
+
+const PUBLISHED_STATUSES = ['active', 'published', 'live'] as const;
+
+function isPublishedRow(row: Record<string, unknown>): boolean {
+  return row.published === true || row.is_published === true;
+}
+
+function readString(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return '';
+}
+
+function isActiveStatus(status: unknown): boolean {
+  return PUBLISHED_STATUSES.includes(readString(status).trim().toLowerCase() as (typeof PUBLISHED_STATUSES)[number]);
+}
+
+function isLandingVisibleRow(row: Record<string, unknown>): boolean {
+  return isPublishedRow(row) || isActiveStatus(row.status);
+}
+
+function sortDeals(rows: Record<string, unknown>[]): Record<string, unknown>[] {
+  return rows.slice().sort((a, b) => {
+    const orderA = Number(a.display_order ?? a.displayOrder ?? 999);
+    const orderB = Number(b.display_order ?? b.displayOrder ?? 999);
+    if (orderA !== orderB) return orderA - orderB;
+    const dateA = readString(a.published_at ?? a.publishedAt ?? a.updated_at ?? a.updatedAt ?? a.created_at ?? a.createdAt);
+    const dateB = readString(b.published_at ?? b.publishedAt ?? b.updated_at ?? b.updatedAt ?? b.created_at ?? b.createdAt);
+    return dateB.localeCompare(dateA);
+  });
+}
 
 export interface CanonicalDealResult {
   deals: PublishedDealCardModel[];
-  source: 'supabase' | 'backend' | 'cache' | 'empty';
+  source: 'supabase' | 'backend' | 'public_api' | 'cache' | 'empty';
   fetchedAt: string;
   count: number;
 }
 
-const BACKEND_URL = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || process.env.EXPO_PUBLIC_API_BASE_URL || '').trim().replace(/\/$/, '');
+const BACKEND_URL = DIRECT_API_BASE_URL;
 
 let _cachedResult: CanonicalDealResult | null = null;
 let _cacheTimestamp = 0;
@@ -22,7 +55,7 @@ let _lastETag: string | null = null;
 let _fetchLatencyMs: number | null = null;
 let _fetchCount = 0;
 let _cacheHitCount = 0;
-const CACHE_TTL = 60_000;
+const CACHE_TTL = 1_000;
 
 export async function fetchCanonicalDeals(forceRefresh = false): Promise<CanonicalDealResult> {
   const now = Date.now();
@@ -62,9 +95,9 @@ async function fetchFromSupabase(): Promise<CanonicalDealResult> {
     const { data, error } = await supabase
       .from('jv_deals')
       .select('*')
-      .eq('published', true)
-      .in('status', ['active', 'published', 'live'])
       .order('display_order', { ascending: true, nullsFirst: false })
+      .order('published_at', { ascending: false, nullsFirst: false })
+      .order('updated_at', { ascending: false, nullsFirst: false })
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -78,11 +111,26 @@ async function fetchFromSupabase(): Promise<CanonicalDealResult> {
     }
 
     if (!data || data.length === 0) {
-      console.log('[CanonicalDeals] No published deals found in Supabase');
+      console.log('[CanonicalDeals] No landing-visible deals found in Supabase');
       return { deals: [], source: 'supabase', fetchedAt: new Date().toISOString(), count: 0 };
     }
 
-    const cards = (data as Record<string, unknown>[]).map(row => mapDealToCardModel(row));
+    const safeData = Array.isArray(data) ? data : [];
+    const visibleRows = sortDeals((safeData as Record<string, unknown>[]).filter((row) => {
+      try {
+        return isLandingVisibleRow(row);
+      } catch {
+        return false;
+      }
+    }));
+    const cards = visibleRows.map((row) => {
+      try {
+        return mapDealToCardModel(row);
+      } catch (e) {
+        console.log('[CanonicalDeals] mapDealToCardModel error for row:', (row as any)?.id, (e as Error)?.message);
+        return null;
+      }
+    }).filter((c): c is PublishedDealCardModel => c !== null);
     console.log('[CanonicalDeals] Fetched', cards.length, 'canonical deals from Supabase');
     return {
       deals: cards,
@@ -97,48 +145,40 @@ async function fetchFromSupabase(): Promise<CanonicalDealResult> {
 }
 
 async function fetchFromBackend(): Promise<CanonicalDealResult> {
-  if (!BACKEND_URL) {
+  const readUrls = getPublishedDealsReadUrls();
+  if (readUrls.length === 0) {
     return { deals: [], source: 'empty', fetchedAt: new Date().toISOString(), count: 0 };
   }
 
   try {
-    console.log('[CanonicalDeals] Fetching from backend API...');
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
+    console.log('[CanonicalDeals] Fetching from published deals API candidates...', readUrls);
 
-    let response = await fetch(BACKEND_URL + '/api/published-jv-deals', {
-      signal: controller.signal,
-    }).catch(() => null);
+    for (const url of readUrls) {
+      const endpointName = url.includes('published-jv-deals') ? 'published-jv-deals' : 'landing-deals';
+      const result = await fetchDealsJsonEndpoint(url, {
+        endpointName,
+        timeoutMs: 8000,
+      });
 
-    if (!response || !response.ok) {
-      const controller2 = new AbortController();
-      const timeout2 = setTimeout(() => controller2.abort(), 8000);
-      response = await fetch(BACKEND_URL + '/api/landing-deals', {
-        signal: controller2.signal,
-      }).catch(() => null);
-      clearTimeout(timeout2);
+      if (!result.ok) {
+        console.log('[CanonicalDeals] API candidate failed hard:', url, '|', result.error);
+        continue;
+      }
+
+      const cards = result.deals.map((row: Record<string, unknown>) => mapDealToCardModel(row));
+      const source = url.startsWith(BACKEND_URL) ? 'backend' : 'public_api';
+      console.log('[CanonicalDeals] Fetched', cards.length, 'canonical deals from', source, 'via', url);
+      return {
+        deals: cards,
+        source,
+        fetchedAt: new Date().toISOString(),
+        count: cards.length,
+      };
     }
 
-    clearTimeout(timeout);
-
-    if (!response || !response.ok) {
-      console.log('[CanonicalDeals] Backend fetch failed:', response?.status);
-      return { deals: [], source: 'empty', fetchedAt: new Date().toISOString(), count: 0 };
-    }
-
-    const result = await response.json();
-    const rawDeals = Array.isArray(result) ? result : (result?.deals || []);
-    const cards = rawDeals.map((row: Record<string, unknown>) => mapDealToCardModel(row));
-
-    console.log('[CanonicalDeals] Fetched', cards.length, 'canonical deals from backend');
-    return {
-      deals: cards,
-      source: 'backend',
-      fetchedAt: new Date().toISOString(),
-      count: cards.length,
-    };
+    return { deals: [], source: 'empty', fetchedAt: new Date().toISOString(), count: 0 };
   } catch (err) {
-    console.log('[CanonicalDeals] Backend fetch error:', (err as Error)?.message);
+    console.log('[CanonicalDeals] Backend/public API fetch error:', (err as Error)?.message);
     return { deals: [], source: 'empty', fetchedAt: new Date().toISOString(), count: 0 };
   }
 }
@@ -176,10 +216,10 @@ export function getCanonicalConstants() {
 }
 
 export function canonicalCardToParsedDeal(card: PublishedDealCardModel): ParsedJVDeal {
-  return {
+  const parsedDeal: ParsedJVDeal = {
     id: card.id,
     title: card.title,
-    projectName: card.developerName,
+    projectName: card.projectName || card.title,
     type: card.dealType,
     expectedROI: card.expectedROI,
     totalInvestment: card.totalInvestment,
@@ -198,5 +238,10 @@ export function canonicalCardToParsedDeal(card: PublishedDealCardModel): ParsedJ
     state: card.state,
     country: card.country,
     trustInfo: card.rawTrustInfo,
+  };
+
+  return {
+    ...parsedDeal,
+    trustMarket: resolveDealTrustMarket(parsedDeal as unknown as Record<string, unknown>, card.rawTrustInfo),
   };
 }
