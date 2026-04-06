@@ -54,7 +54,7 @@ Expanded again to fix canonical deal source-of-truth mapping so title, developer
 - [x] Suppress visitor-facing landing tracker debug noise that was surfacing at the bottom of Expo Go
 - [x] Harden owner IP access so it restores only when explicitly enabled instead of auto-promoting every device
 - [x] Deploy the refreshed landing page bundle to AWS S3
-- [ ] Sync the latest code changes to GitHub
+- [x] Sync the latest code changes to GitHub
 - [x] Upgrade landing/app waitlist capture to collect first name, last name, email, verified cell OTP, investment amount range, target return, and best time for a call
 - [x] Add optional proof-of-funds capture and persist its metadata in the investor lead flow
 - [x] Sync richer investor lead data into the existing waitlist/admin submission pipeline
@@ -63,7 +63,7 @@ Expanded again to fix canonical deal source-of-truth mapping so title, developer
 - [x] Add clearer investment timeline guidance on investor-facing app property surfaces
 - [x] Re-run checks after investor intake changes
 - [x] Re-deploy the refreshed landing page bundle to AWS S3 after investor intake changes
-- [ ] Sync the latest investor-intake code changes to GitHub
+- [x] Sync the latest investor-intake code changes to GitHub
 - [x] Expand landing/app registration to collect investor type, two identification references, issuing country, and tax residency details
 - [x] Add individual SSN/tax-reference capture plus corporate company name, signer role, EIN, company tax ID, registration jurisdiction, and beneficial-owner fields
 - [x] Add tax-responsibility, identity-review, and entity-authority acknowledgements to member registration on landing and in-app flows
@@ -252,3 +252,10 @@ Expanded again to fix canonical deal source-of-truth mapping so title, developer
   - throttled `fetchDeals()` to avoid burst re-renders from overlapping refresh/realtime triggers
   - re-deployed with `bun ./scripts/deploy-landing-v2.mjs` → success at 2026-04-06T21:38:01.395Z
   - re-validated with `bun ./scripts/human-smoke-check.mjs` → pass after deploy
+- Final live deploy + GitHub sync verification completed in this session:
+  - re-deployed with `bun ./scripts/deploy-landing-v2.mjs` → success at 2026-04-06T21:43:43.047Z
+  - re-ran `bun ./scripts/human-smoke-check.mjs` → pass against `https://ivxholding.com/`
+  - synced GitHub with `bun ./sync-github.mjs --message "chore: deploy live landing and sync GitHub 2026-04-06"`
+  - public commit created: `a5ad201cd5e28e1025feddf1938fb2520aed3920`
+  - remote parity re-check with `bun ./verify-sync.mjs` → IN SYNC (422 local files matched 422 remote files)
+  - honest note: the repository contents are now synced, but the latest visible GitHub Actions workflow statuses still show older failed runs from March 2026 and were not re-run by this sync step
