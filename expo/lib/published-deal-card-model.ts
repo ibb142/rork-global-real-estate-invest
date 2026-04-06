@@ -314,14 +314,15 @@ export function generateLandingDealHtml(card: PublishedDealCardModel): string {
   const minimumOwnershipLabel = card.ownershipPercentAtMinimum > 0 ? `${card.ownershipPercentAtMinimum.toFixed(4)}% min` : 'Live sync pending';
   const fractionalFromLabel = `from ${formatCurrencyWithDecimals(card.minInvestment || CANONICAL_MIN_INVESTMENT)}`;
   const showEntryPill = Math.abs((card.fractionalSharePrice || card.minInvestment || CANONICAL_MIN_INVESTMENT) - (card.minInvestment || CANONICAL_MIN_INVESTMENT)) > 0.009;
-  const renderablePhotos = card.photos.filter(isRenderablePhotoUrl);
+  const safePhotos = Array.isArray(card.photos) ? card.photos : [];
+  const renderablePhotos = safePhotos.filter(isRenderablePhotoUrl).slice(0, 4);
   const photoHtml = renderablePhotos.length > 0
-    ? renderablePhotos.map(p => `<img src="${escapeHtml(p)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.closest('.live-deal-gallery')?.classList.add('live-deal-gallery-empty');this.remove();" />`).join('')
+    ? renderablePhotos.map(p => `<img src="${escapeHtml(p)}" alt="" loading="lazy" decoding="async" fetchpriority="low" referrerpolicy="no-referrer" onerror="this.closest('.live-deal-gallery')?.classList.add('live-deal-gallery-empty');this.remove();" />`).join('')
     : `<div class="live-deal-no-photo"><span>\u{1F3D7}\u{FE0F}</span><span>Photos coming soon</span></div>`;
 
   const hasGallery = renderablePhotos.length > 1;
   const galleryDotsHtml = hasGallery
-    ? `<div class="live-deal-photo-dots">${card.photos.map((_, i) => `<div class="live-deal-photo-dot${i === 0 ? ' active' : ''}" data-idx="${i}"></div>`).join('')}</div>`
+    ? `<div class="live-deal-photo-dots">${renderablePhotos.map((_, i) => `<div class="live-deal-photo-dot${i === 0 ? ' active' : ''}" data-idx="${i}"></div>`).join('')}</div>`
     : '';
 
   const photoCounter = renderablePhotos.length > 1

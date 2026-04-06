@@ -23,6 +23,8 @@ const OWNER_VERIFIED_USER_ID_KEY = 'ivx_owner_verified_user_id';
 const OWNER_VERIFIED_ROLE_KEY = 'ivx_owner_verified_role';
 const OWNER_VERIFIED_AT_KEY = 'ivx_owner_verified_at';
 const OWNER_TRUSTED_DEVICE_WINDOW_MS = 1000 * 60 * 60 * 24 * 30;
+const OWNER_IP_FETCH_TIMEOUT_MS = 2500;
+const OWNER_IP_FETCH_TOTAL_TIMEOUT_MS = 4000;
 
 interface DeviceIPSource {
   url: string;
@@ -81,10 +83,19 @@ async function fetchDeviceIP(): Promise<string | null> {
     },
   ];
 
+  const startedAt = Date.now();
+
   for (const source of sources) {
+    const remainingMs = OWNER_IP_FETCH_TOTAL_TIMEOUT_MS - (Date.now() - startedAt);
+    if (remainingMs <= 0) {
+      console.log('[Auth] IP detection timed out before trying source:', source.url);
+      break;
+    }
+
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 5000);
+      const timeoutMs = Math.max(800, Math.min(OWNER_IP_FETCH_TIMEOUT_MS, remainingMs));
+      const timeout = setTimeout(() => controller.abort(), timeoutMs);
       const res = await fetch(source.url, { signal: controller.signal });
       clearTimeout(timeout);
       if (!res.ok) {
@@ -102,7 +113,7 @@ async function fetchDeviceIP(): Promise<string | null> {
       console.log('[Auth] IP source failed:', source.url);
     }
   }
-  console.log('[Auth] All IP detection sources failed');
+  console.log('[Auth] All IP detection sources failed or timed out');
   return null;
 }
 
@@ -417,7 +428,8 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         const ownerDeviceVerified = await isOwnerDeviceVerified();
         const ownerDeviceMeta = await getVerifiedOwnerDeviceMeta();
         const storedIP = await getStoredOwnerIP();
-        const currentIP = await fetchDeviceIP();
+        const shouldVerifyOwnerNetwork = ipEnabled && ownerDeviceVerified;
+        const currentIP = shouldVerifyOwnerNetwork ? await fetchDeviceIP() : null;
         setDetectedIP(currentIP ?? storedIP ?? null);
         const trustedDeviceWindowActive = isTrustedOwnerDeviceWithinWindow(ownerDeviceMeta.verifiedAt);
         console.log('[Auth] Owner trusted-device check — current:', currentIP, 'stored:', storedIP, 'enabled:', ipEnabled, 'verified:', ownerDeviceVerified, 'verifiedUserId:', ownerDeviceMeta.userId, 'verifiedRole:', ownerDeviceMeta.role, 'verifiedAt:', ownerDeviceMeta.verifiedAt, 'trustedWindow:', trustedDeviceWindowActive);

@@ -239,3 +239,16 @@ Expanded again to fix canonical deal source-of-truth mapping so title, developer
   - `bun ./scripts/deploy-landing-v2.mjs` → success at 2026-04-06T16:05:07.245Z
   - All 3 deals present: Jacksonville, Perez, Casa Rosario
   - All API endpoints uploaded: index.html, ivx-config.json, api/landing-deals, api/published-jv-deals, health
+- Startup freeze hardening shipped for app launch:
+  - narrowed trusted-owner IP detection so it only runs when owner trusted-device mode is actually enabled
+  - added a bounded total timeout for IP lookup sources in `expo/lib/auth-context.tsx` so app startup cannot sit waiting on multiple slow external IP services
+  - targeted validation passed: `checkErrors` on `expo/lib/auth-context.tsx` → pass
+  - live landing/API smoke check remained green after the hotfix: `bun ./scripts/human-smoke-check.mjs` → pass
+- Landing overload/crash hotfix shipped for the public landing bundle in this session:
+  - removed the duplicated ticker/trust-strip content so the top marquee no longer ships the repeated second copy in `expo/ivxholding-landing/index.html`
+  - reduced the static above-the-fold Live JV Deals fallback media from multi-image galleries to a single safe image each for Perez and Casa Rosario, cutting the initial built fallback image count before the third card down to 2
+  - capped dynamic landing deal gallery rendering to 4 images per card and added `decoding="async"`, `fetchpriority="low"`, and guarded image failure removal for the landing renderer paths
+  - added a render guard around `renderDeals()` plus invalid-payload fallback protection so bad deal data no longer whitescreens the landing grid
+  - throttled `fetchDeals()` to avoid burst re-renders from overlapping refresh/realtime triggers
+  - re-deployed with `bun ./scripts/deploy-landing-v2.mjs` → success at 2026-04-06T21:38:01.395Z
+  - re-validated with `bun ./scripts/human-smoke-check.mjs` → pass after deploy
