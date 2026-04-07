@@ -53,9 +53,18 @@ export const JACKSONVILLE_PRIME_PHOTOS: string[] = [
 
 let _storagePhotoCache: Map<string, { photos: string[]; fetchedAt: number }> = new Map();
 const STORAGE_CACHE_TTL = 5 * 60 * 1000;
+let _dealPhotosBucketKnownMissing = false;
+let _dealPhotosBucketLoggedMissing = false;
 
 export async function fetchPhotosFromStorageBucket(dealId: string): Promise<string[]> {
   if (!dealId) return [];
+  if (_dealPhotosBucketKnownMissing) {
+    if (!_dealPhotosBucketLoggedMissing) {
+      console.log('[DealPhotos] deal-photos bucket unavailable — skipping storage photo recovery');
+      _dealPhotosBucketLoggedMissing = true;
+    }
+    return [];
+  }
 
   const cached = _storagePhotoCache.get(dealId);
   if (cached && Date.now() - cached.fetchedAt < STORAGE_CACHE_TTL) {
@@ -82,9 +91,18 @@ export async function fetchPhotosFromStorageBucket(dealId: string): Promise<stri
     });
     clearTimeout(timeout);
     if (!res.ok) {
+      if (res.status === 400 || res.status === 404) {
+        const errorText = await res.text().catch(() => '');
+        if (errorText.toLowerCase().includes('bucket not found')) {
+          _dealPhotosBucketKnownMissing = true;
+          console.log('[DealPhotos] deal-photos bucket not found — disabling storage photo recovery');
+          return [];
+        }
+      }
       console.log('[DealPhotos] Storage list failed:', res.status, 'for deal:', dealId);
       return [];
     }
+    _dealPhotosBucketKnownMissing = false;
     const files = await res.json() as Array<{ name: string; id?: string }>;
     if (!Array.isArray(files) || files.length === 0) return [];
     const photos = files
@@ -103,6 +121,8 @@ export async function fetchPhotosFromStorageBucket(dealId: string): Promise<stri
 
 export function clearStoragePhotoCache(): void {
   _storagePhotoCache.clear();
+  _dealPhotosBucketKnownMissing = false;
+  _dealPhotosBucketLoggedMissing = false;
 }
 
 export function getCasaRosarioPhotos(): string[] {

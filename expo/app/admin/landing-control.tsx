@@ -59,9 +59,16 @@ import {
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase } from '@/lib/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import '@/lib/landing-deploy';
+import {
+  getDeployAccessDiagnostic,
+  upsertLandingConfigEntry,
+  LANDING_CONFIG_MAIN_KEY,
+  isLandingAuthError,
+  isLandingConfigSchemaMismatchError,
+  isLandingConfigTableMissingError,
+} from '@/lib/landing-deploy';
+import { useAuth } from '@/lib/auth-context';
 import '@/lib/landing-sync';
 import {
   getAutoDeployConfig,
@@ -287,6 +294,7 @@ function PulseDot({ active, color }: { active: boolean; color: string }) {
 export default function LandingControlScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const auth = useAuth();
   const [activeTab, setActiveTab] = useState<TabType>('sections');
   const [sections, setSections] = useState<LandingSection[]>(DEFAULT_SECTIONS);
   const [modules, setModules] = useState<AppModule[]>(DEFAULT_MODULES);
@@ -396,21 +404,32 @@ export default function LandingControlScreen() {
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 
       try {
-        const { error: upsertErr } = await supabase.from('landing_page_config').upsert({
-          id: 'main',
-          sections: JSON.stringify(sections),
-          modules: JSON.stringify(modules),
-          content: JSON.stringify(contentBlocks),
-          landing_enabled: landingEnabled,
-          maintenance_mode: maintenanceMode,
-          updated_at: new Date().toISOString(),
-        });
+        if (auth.isOwnerIPAccess) {
+          console.log('[LandingControl] Trusted owner device mode active without a live Supabase write session — saving locally only');
+          return state;
+        }
+
+        const { error: upsertErr } = await upsertLandingConfigEntry(
+          LANDING_CONFIG_MAIN_KEY,
+          {
+            sections: sectionsToSave,
+            modules: modulesToSave,
+            contentBlocks,
+            landingEnabled,
+            maintenanceMode,
+            savedAt: state.savedAt,
+          },
+          auth.userId,
+          state.savedAt,
+        );
         if (upsertErr) {
-          const msg = (upsertErr.message || '').toLowerCase();
-          if (msg.includes('does not exist') || msg.includes('schema cache') || msg.includes('could not find')) {
-            console.log('[LandingControl] landing_page_config table not found — saved locally only');
+          const msg = upsertErr.message || '';
+          if (isLandingConfigTableMissingError(msg) || isLandingConfigSchemaMismatchError(msg)) {
+            console.log('[LandingControl] landing_page_config unavailable for remote sync — saved locally only:', msg);
+          } else if (isLandingAuthError(msg)) {
+            console.log('[LandingControl] Supabase auth issue during landing sync — saved locally only:', msg);
           } else {
-            console.log('[LandingControl] Supabase sync error (non-blocking):', upsertErr.message);
+            console.log('[LandingControl] Supabase sync error (non-blocking):', msg);
           }
         } else {
           console.log('[LandingControl] Synced to Supabase');
@@ -428,6 +447,10 @@ export default function LandingControlScreen() {
       }
       if (suppressNextSaveAutoDeployRef.current) {
         console.log('[LandingControl] Save completed during manual deploy — skipping auto-deploy-on-save duplicate');
+        return;
+      }
+      if (auth.isOwnerIPAccess) {
+        console.log('[LandingControl] Trusted owner device mode active without live Supabase auth — skipping auto-deploy-on-save');
         return;
       }
       const config = await getAutoDeployConfig();
@@ -473,8 +496,32 @@ export default function LandingControlScreen() {
         suppressNextSaveAutoDeployRef.current = false;
       }
 
+      const deployAccess = await getDeployAccessDiagnostic();
+      console.log('[LandingControl] Deploy access diagnostic:', JSON.stringify(deployAccess));
+      if (!deployAccess.allowed) {
+        if (auth.isOwnerIPAccess) {
+          throw new Error('Trusted owner device mode can open admin tools, but live deploy still requires a real verified owner/admin Supabase sign-in. Please sign in again before deploying.');
+        }
+        throw new Error(deployAccess.reason || 'Deploy requires a verified authenticated owner/admin session.');
+      }
+
       const result = await manualDeploy();
       await refreshAutoDeployLogs();
+
+      if (result.status === 'failed' && result.errors.length > 0) {
+        if (result.syncedDeals > 0 || result.filesUploaded.length > 0) {
+          const failedLog: DeployLog = {
+            id: result.id,
+            timestamp: result.timestamp,
+            action: `Full deploy (${result.filesUploaded.length} files)`,
+            status: 'failed',
+            changes: result.syncedDeals + result.filesUploaded.length,
+            user: 'Owner',
+          };
+          setDeployLogs(prev => [failedLog, ...prev]);
+        }
+        throw new Error(result.errors.join('; '));
+      }
 
       const newLog: DeployLog = {
         id: result.id,
@@ -486,10 +533,6 @@ export default function LandingControlScreen() {
       };
       setDeployLogs(prev => [newLog, ...prev]);
       setIsDeploying(false);
-
-      if (result.status === 'failed' && result.errors.length > 0) {
-        throw new Error(result.errors.join('; '));
-      }
 
       return result;
     },
@@ -508,19 +551,18 @@ export default function LandingControlScreen() {
       const msg = (err as Error)?.message || 'Unknown error';
       console.log('[LandingControl] Deploy FAILED:', msg);
 
-      const msgLower = msg.toLowerCase();
-      const isTableMissing = msgLower.includes('does not exist') || msgLower.includes('schema cache') || msgLower.includes('could not find');
-      const isSessionIssue = msgLower.includes('session') || msgLower.includes('authenticated') || msgLower.includes('jwt') || msgLower.includes('auth');
+      const isTableOrSchemaIssue = isLandingConfigTableMissingError(msg) || isLandingConfigSchemaMismatchError(msg);
+      const isSessionIssue = isLandingAuthError(msg);
 
-      if (isTableMissing) {
+      if (isTableOrSchemaIssue) {
         Alert.alert(
           'Deploy Saved Locally',
-          'Your changes were saved locally. Some Supabase tables may not exist yet — create them to enable full deploy sync.',
+          'Your changes were saved locally. The landing deploy config in Supabase is missing or still on the older schema, so the remote sync was skipped safely.',
         );
       } else if (isSessionIssue) {
         Alert.alert(
           'Deploy Saved Locally',
-          'Your changes were saved locally. The Supabase sync encountered an auth issue but your data is safe.',
+          `Your changes were saved locally. Live deploy was blocked until you sign in again with a verified owner/admin account.\n\n${msg}`,
         );
       } else {
         Alert.alert('Deploy Saved Locally', 'Your changes were saved locally. Supabase sync will retry next time.\n\n' + msg);

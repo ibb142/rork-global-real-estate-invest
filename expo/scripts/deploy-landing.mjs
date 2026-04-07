@@ -5,6 +5,7 @@
  */
 import { readFileSync } from 'fs';
 import { fetchStaticLandingApiPayloads } from './landing-static-api.mjs';
+import { injectLandingCardRenderer } from './landing-card-renderer-injector.mjs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { createHmac, createHash } from 'crypto';
@@ -258,6 +259,7 @@ async function main() {
   const htmlPath = resolve(__dirname, '..', 'ivxholding-landing', 'index.html');
   console.log('[Deploy] Reading HTML from:', htmlPath);
   let html = readFileSync(htmlPath, 'utf-8');
+  html = injectLandingCardRenderer(html);
   console.log('[Deploy] HTML length:', html.length);
 
   const backendUrl = API_BASE_URL.replace(/\/$/, '');

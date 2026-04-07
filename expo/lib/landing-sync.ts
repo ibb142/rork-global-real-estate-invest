@@ -10,7 +10,15 @@
  */
 import { supabase } from '@/lib/supabase';
 import { logAudit } from '@/lib/audit-trail';
-import { deployLandingPage, getDeployStatus, type DeployResult } from '@/lib/landing-deploy';
+import {
+  deployLandingPage,
+  getDeployStatus,
+  upsertLandingConfigEntry,
+  LANDING_CONFIG_DEALS_CACHE_KEY,
+  type DeployResult,
+  isLandingConfigSchemaMismatchError,
+  isLandingConfigTableMissingError,
+} from '@/lib/landing-deploy';
 import {
   mapDealToCardModel,
   CANONICAL_DISTRIBUTION_LABEL,
@@ -40,6 +48,76 @@ function sortPublishedPayloads<T extends { displayOrder: number; publishedAt: st
     const dateB = b.publishedAt || b.updatedAt || '';
     return dateB.localeCompare(dateA);
   });
+}
+
+function isMissingColumnError(message: string | null | undefined): boolean {
+  const msg = readText(message).toLowerCase();
+  return msg.includes('column') && msg.includes('does not exist');
+}
+
+async function upsertLandingDealRow(deal: PublishedDealPayload, timestamp: string): Promise<{ message: string } | null> {
+  const safePhotos = Array.isArray(deal.photos)
+    ? deal.photos.filter((photo): photo is string => typeof photo === 'string' && photo.trim().length > 0)
+    : [];
+
+  const fullRow = {
+    id: deal.id,
+    title: deal.title,
+    project_name: deal.projectName,
+    description: deal.description,
+    property_address: deal.propertyAddress,
+    city: deal.city,
+    state: deal.state,
+    country: deal.country,
+    total_investment: deal.totalInvestment,
+    expected_roi: deal.expectedROI,
+    sale_price: deal.cardModel?.salePrice ?? 0,
+    estimated_value: deal.propertyValue || 0,
+    status: deal.status,
+    photos: safePhotos,
+    developer_name: deal.cardModel?.developerName || deal.projectName || deal.title,
+    published: true,
+    published_at: deal.publishedAt,
+    updated_at: deal.updatedAt || timestamp,
+    source_deal_id: deal.id,
+  };
+
+  const fullResult = await supabase
+    .from('landing_deals')
+    .upsert(fullRow);
+
+  if (!fullResult.error) {
+    return null;
+  }
+
+  if (!isMissingColumnError(fullResult.error.message)) {
+    return { message: fullResult.error.message };
+  }
+
+  console.log('[LandingSync] landing_deals schema drift detected for deal', deal.id, '— retrying with legacy-safe payload');
+
+  const legacySafeRow = {
+    id: deal.id,
+    title: deal.title,
+    project_name: deal.projectName,
+    description: deal.description,
+    property_address: deal.propertyAddress,
+    city: deal.city,
+    state: deal.state,
+    country: deal.country,
+    total_investment: deal.totalInvestment,
+    expected_roi: deal.expectedROI,
+    status: deal.status,
+    published: true,
+    published_at: deal.publishedAt,
+    updated_at: deal.updatedAt || timestamp,
+  };
+
+  const legacyResult = await supabase
+    .from('landing_deals')
+    .upsert(legacySafeRow);
+
+  return legacyResult.error ? { message: legacyResult.error.message } : null;
 }
 
 async function _getSyncAuthHeaders(): Promise<Record<string, string>> {
@@ -298,27 +376,23 @@ async function generateStaticDealsJson(deals: PublishedDealPayload[], timestamp:
       ttl: 300,
     };
 
-    const { error } = await supabase
-      .from('landing_page_config')
-      .upsert({
-        id: 'deals_cache',
-        deployed_at: timestamp,
-        deploy_status: 'cached',
-        updated_at: timestamp,
-        details: JSON.stringify(staticPayload),
-      });
+    const { error } = await upsertLandingConfigEntry(
+      LANDING_CONFIG_DEALS_CACHE_KEY,
+      {
+        ...staticPayload,
+        deployStatus: 'cached',
+      },
+      null,
+      timestamp,
+    );
 
     if (error) {
-      const msg = (error.message || '').toLowerCase();
-      if (msg.includes('does not exist') || msg.includes('schema cache') || msg.includes('could not find')) {
-        console.log('[LandingSync] landing_page_config table not found — skipping deals cache');
+      const msg = error.message || '';
+      if (isLandingConfigTableMissingError(msg) || isLandingConfigSchemaMismatchError(msg)) {
+        console.log('[LandingSync] landing_page_config unavailable for deals cache — skipping (non-critical):', msg);
         return;
       }
-      if (msg.includes('details')) {
-        console.log('[LandingSync] deals_cache column missing — skipping (non-critical)');
-        return;
-      }
-      console.log('[LandingSync] Deals cache upsert error:', error.message);
+      console.log('[LandingSync] Deals cache upsert error:', msg);
     } else {
       console.log('[LandingSync] Static deals.json cached in landing_page_config —', deals.length, 'deals, TTL 5min');
     }
@@ -509,8 +583,10 @@ async function syncToSupabaseLandingTable(deals: PublishedDealPayload[], timesta
   const liveDealIds = new Set(deals.map(d => d.id));
 
   try {
-    const { data: existingLanding } = await supabase.from('landing_deals').select('id');
-    if (existingLanding && Array.isArray(existingLanding)) {
+    const { data: existingLanding, error: existingLandingError } = await supabase.from('landing_deals').select('id');
+    if (existingLandingError) {
+      console.log('[LandingSync] Existing landing_deals read failed:', existingLandingError.message);
+    } else if (existingLanding && Array.isArray(existingLanding)) {
       const staleIds = existingLanding
         .map((r: { id: string }) => r.id)
         .filter((id: string) => !liveDealIds.has(id));
@@ -527,30 +603,7 @@ async function syncToSupabaseLandingTable(deals: PublishedDealPayload[], timesta
 
   for (const deal of deals) {
     try {
-      const { error } = await supabase
-        .from('landing_deals')
-        .upsert({
-          id: deal.id,
-          title: deal.title,
-          project_name: deal.projectName,
-          description: deal.description,
-          property_address: deal.propertyAddress,
-          city: deal.city,
-          state: deal.state,
-          country: deal.country,
-          total_investment: deal.totalInvestment,
-          property_value: deal.propertyValue || 0,
-          expected_roi: deal.expectedROI,
-          status: deal.status,
-          photos: JSON.stringify(deal.photos),
-          distribution_frequency: deal.distributionFrequency,
-          exit_strategy: deal.exitStrategy,
-          published_at: deal.publishedAt,
-          updated_at: deal.updatedAt,
-          display_order: deal.displayOrder ?? 999,
-          trust_info: deal.trustInfo ? JSON.stringify(deal.trustInfo) : null,
-          synced_at: timestamp,
-        });
+      const error = await upsertLandingDealRow(deal, timestamp);
 
       if (error) {
         const msg = (error.message || '').toLowerCase();

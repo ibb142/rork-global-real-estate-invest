@@ -14,6 +14,7 @@ import {
 } from '@aws-sdk/client-cloudfront';
 import { readFileSync } from 'fs';
 import { fetchStaticLandingApiPayloads } from './scripts/landing-static-api.mjs';
+import { injectLandingCardRenderer } from './scripts/landing-card-renderer-injector.mjs';
 
 const BUCKET_NAME = 'ivxholding.com';
 const WWW_BUCKET = 'www.ivxholding.com';
@@ -231,6 +232,7 @@ async function deploy() {
   const linkedinPartnerId = (process.env.LINKEDIN_PARTNER_ID || '').trim();
 
   let html = readFileSync('./ivxholding-landing/index.html', 'utf-8');
+  html = injectLandingCardRenderer(html);
   html = html.replace(/__IVX_API_BASE_URL__/g, apiBaseUrl);
   html = html.replace(/__IVX_SUPABASE_URL__/g, supabaseUrl);
   html = html.replace(/__IVX_SUPABASE_ANON_KEY__/g, supabaseAnonKey);

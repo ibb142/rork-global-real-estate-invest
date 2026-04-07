@@ -1,19 +1,96 @@
-/**
- * landing-deploy.ts — Deploy landing page config & deals via Supabase.
- *
- * Deploy writes config + timestamp to `landing_page_config` and
- * records each deploy in `landing_deployments` for audit trail.
- * No external backend endpoint is needed.
- */
-
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { isAdminRole, normalizeRole } from '@/lib/auth-helpers';
+
+export const LANDING_CONFIG_MAIN_KEY = 'main';
+export const LANDING_CONFIG_DEPLOY_STATUS_KEY = 'deploy_status';
+export const LANDING_CONFIG_DEALS_CACHE_KEY = 'deals_cache';
 
 export interface DeployResult {
   success: boolean;
   filesUploaded: string[];
   errors: string[];
   timestamp: string;
+}
+
+export interface DeployAccessDiagnostic {
+  allowed: boolean;
+  tokenAvailable: boolean;
+  authenticated: boolean;
+  userId: string | null;
+  role: string | null;
+  reason?: string;
+}
+
+interface LandingConfigValue {
+  [key: string]: unknown;
+}
+
+function normalizeSupabaseMessage(message: string | null | undefined): string {
+  return (message || '').toLowerCase();
+}
+
+export function isLandingConfigTableMissingError(message: string | null | undefined): boolean {
+  const msg = normalizeSupabaseMessage(message);
+  return msg.includes('does not exist') || msg.includes('schema cache') || msg.includes('relation') || msg.includes('could not find');
+}
+
+export function isLandingConfigSchemaMismatchError(message: string | null | undefined): boolean {
+  const msg = normalizeSupabaseMessage(message);
+  return (
+    msg.includes('invalid input syntax for type uuid') ||
+    (msg.includes('column') && msg.includes('does not exist')) ||
+    msg.includes("could not find the 'details' column") ||
+    msg.includes("could not find the 'deployed_at' column") ||
+    msg.includes("could not find the 'deploy_status' column")
+  );
+}
+
+export function isLandingAuthError(message: string | null | undefined): boolean {
+  const msg = normalizeSupabaseMessage(message);
+  return (
+    msg.includes('session') ||
+    msg.includes('authenticated') ||
+    msg.includes('jwt') ||
+    msg.includes('auth') ||
+    msg.includes('permission') ||
+    msg.includes('row-level security') ||
+    msg.includes('row level security') ||
+    msg.includes('not authorized') ||
+    msg.includes('forbidden') ||
+    msg.includes('401') ||
+    msg.includes('403')
+  );
+}
+
+export async function upsertLandingConfigEntry(
+  key: string,
+  value: LandingConfigValue,
+  updatedBy?: string | null,
+  updatedAt?: string,
+): Promise<{ error: { message: string } | null }> {
+  const timestamp = updatedAt || new Date().toISOString();
+  const payload: {
+    key: string;
+    value: LandingConfigValue;
+    updated_at: string;
+    updated_by?: string | null;
+  } = {
+    key,
+    value,
+    updated_at: timestamp,
+  };
+
+  if (updatedBy) {
+    payload.updated_by = updatedBy;
+  }
+
+  const { error } = await supabase
+    .from('landing_page_config')
+    .upsert(payload, { onConflict: 'key' });
+
+  return {
+    error: error ? { message: error.message } : null,
+  };
 }
 
 async function ensureValidSession(): Promise<string | null> {
@@ -49,15 +126,6 @@ async function ensureValidSession(): Promise<string | null> {
     console.log('[LandingDeploy] Session check error:', (err as Error)?.message);
     return null;
   }
-}
-
-export interface DeployAccessDiagnostic {
-  allowed: boolean;
-  tokenAvailable: boolean;
-  authenticated: boolean;
-  userId: string | null;
-  role: string | null;
-  reason?: string;
 }
 
 async function verifyDeployAccess(): Promise<{ allowed: boolean; token: string | null; userId?: string | null; role?: string | null; reason?: string }> {
@@ -168,22 +236,28 @@ export async function deployLandingPage(): Promise<DeployResult> {
   try {
     console.log('[LandingDeploy] Deploying via Supabase...');
 
-    const { error: configErr } = await supabase
-      .from('landing_page_config')
-      .upsert({
-        id: 'main',
-        deployed_at: timestamp,
-        deploy_status: 'live',
-        updated_at: timestamp,
-      });
+    const deployStatusValue: LandingConfigValue = {
+      deployedAt: timestamp,
+      deployStatus: 'live',
+      lastSuccessfulDeployAt: timestamp,
+      trigger: 'manual',
+      source: 'app',
+    };
+
+    const { error: configErr } = await upsertLandingConfigEntry(
+      LANDING_CONFIG_DEPLOY_STATUS_KEY,
+      deployStatusValue,
+      access.userId ?? null,
+      timestamp,
+    );
 
     if (configErr) {
-      const msg = (configErr.message || '').toLowerCase();
-      if (msg.includes('does not exist') || msg.includes('schema cache') || msg.includes('relation') || msg.includes('could not find')) {
-        console.log('[LandingDeploy] landing_page_config table not found — skipping config upsert (non-critical)');
+      const msg = configErr.message || '';
+      if (isLandingConfigTableMissingError(msg) || isLandingConfigSchemaMismatchError(msg)) {
+        console.log('[LandingDeploy] landing_page_config unavailable for deploy status write — skipping (non-critical):', msg);
       } else {
-        console.log('[LandingDeploy] Config upsert error:', configErr.message);
-        errors.push(`Config update: ${configErr.message}`);
+        console.log('[LandingDeploy] Config upsert error:', msg);
+        errors.push(`Config update: ${msg}`);
       }
     } else {
       filesUpdated.push('landing_page_config');
@@ -194,18 +268,21 @@ export async function deployLandingPage(): Promise<DeployResult> {
       const { error: deployLogErr } = await supabase
         .from('landing_deployments')
         .insert({
-          deployed_at: timestamp,
-          status: 'success',
-          trigger: 'manual',
-          details: JSON.stringify({ filesUpdated, source: 'app' }),
+          status: errors.length === 0 ? 'success' : 'failed',
+          deployed_by: access.userId ?? null,
+          deployment_url: null,
+          notes: JSON.stringify({ filesUpdated, source: 'app', trigger: 'manual' }),
+          error_message: errors.length > 0 ? errors.join('; ') : null,
+          created_at: timestamp,
+          completed_at: timestamp,
         });
 
       if (deployLogErr) {
-        const msg = (deployLogErr.message || '').toLowerCase();
-        if (msg.includes('does not exist') || msg.includes('schema cache') || msg.includes('relation') || msg.includes('could not find')) {
-          console.log('[LandingDeploy] landing_deployments table not found — skipping deploy log (non-critical)');
+        const msg = deployLogErr.message || '';
+        if (isLandingConfigTableMissingError(msg) || isLandingConfigSchemaMismatchError(msg)) {
+          console.log('[LandingDeploy] landing_deployments unavailable — skipping deploy log (non-critical):', msg);
         } else {
-          console.log('[LandingDeploy] Deploy log insert error:', deployLogErr.message);
+          console.log('[LandingDeploy] Deploy log insert error:', msg);
         }
       } else {
         filesUpdated.push('landing_deployments');
@@ -243,23 +320,26 @@ export async function deployConfigOnly(): Promise<{ success: boolean; error?: st
   try {
     console.log('[LandingDeploy] Config-only deploy via Supabase');
     const timestamp = new Date().toISOString();
-
-    const { error } = await supabase
-      .from('landing_page_config')
-      .upsert({
-        id: 'main',
-        deployed_at: timestamp,
-        deploy_status: 'live',
-        updated_at: timestamp,
-      });
+    const { error } = await upsertLandingConfigEntry(
+      LANDING_CONFIG_DEPLOY_STATUS_KEY,
+      {
+        deployedAt: timestamp,
+        deployStatus: 'live',
+        lastSuccessfulDeployAt: timestamp,
+        trigger: 'config_only',
+        source: 'app',
+      },
+      null,
+      timestamp,
+    );
 
     if (error) {
-      const msg = (error.message || '').toLowerCase();
-      if (msg.includes('does not exist') || msg.includes('schema cache') || msg.includes('relation') || msg.includes('could not find')) {
-        console.log('[LandingDeploy] landing_page_config table not found — treating as success');
+      const msg = error.message || '';
+      if (isLandingConfigTableMissingError(msg) || isLandingConfigSchemaMismatchError(msg)) {
+        console.log('[LandingDeploy] landing_page_config unavailable during config-only deploy — treating as success');
         return { success: true };
       }
-      return { success: false, error: error.message };
+      return { success: false, error: msg };
     }
 
     return { success: true };

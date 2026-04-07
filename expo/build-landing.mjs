@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
 import { fetchStaticLandingApiPayloads } from './scripts/landing-static-api.mjs';
+import { injectLandingCardRenderer } from './scripts/landing-card-renderer-injector.mjs';
 
 const SUPABASE_URL = (process.env.EXPO_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '').trim();
 const SUPABASE_ANON_KEY = (process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '').trim();
@@ -30,6 +31,7 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
 }
 
 let html = readFileSync('./ivxholding-landing/index.html', 'utf-8');
+html = injectLandingCardRenderer(html);
 
 html = html.replace(/__IVX_SUPABASE_URL__/g, SUPABASE_URL);
 html = html.replace(/__IVX_SUPABASE_ANON_KEY__/g, SUPABASE_ANON_KEY);

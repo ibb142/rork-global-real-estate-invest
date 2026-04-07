@@ -50,13 +50,12 @@ import { landingTracker } from '@/lib/landing-tracker';
 
 import ErrorBoundary from '@/components/ErrorBoundary';
 import Colors from '@/constants/colors';
-import { formatCurrencyCompact } from '@/lib/formatters';
 import { IVX_LOGO_SOURCE } from '@/constants/brand';
 import { fetchCanonicalDeals } from '@/lib/canonical-deals';
 import type { PublishedDealCardModel } from '@/lib/published-deal-card-model';
-import type { DealTrustInfo } from '@/lib/parse-deal';
-import { getDealExitProjection } from '@/lib/investor-intake';
+import type { ParsedJVDeal } from '@/lib/parse-deal';
 import InvestorIntakeForm from '@/components/InvestorIntakeForm';
+import TrustDealCard from '@/components/TrustDealCard';
 import {
   diagnoseDealPhotos,
   type DealPhotoDiagnostic,
@@ -240,154 +239,56 @@ function FadeInView({ delay = 0, children, style }: { delay?: number; children: 
   );
 }
 
-function LandingDealPhoto({ uri, width, height }: { uri: string; width: number; height: number }) {
-  const [failed, setFailed] = useState(false);
-  const [loading, setLoading] = useState(true);
 
-  if (failed) {
-    return (
-      <View style={[dealStyles.photoFallback, { width, height }]}>
-        <Landmark size={32} color={GOLD} />
-        <Text style={dealStyles.photoFallbackText}>Photo unavailable</Text>
-      </View>
-    );
-  }
-
-  return (
-    <View style={{ width, height, backgroundColor: '#0A0A0A' }}>
-      {loading && (
-        <View style={dealStyles.photoLoading}>
-          <ActivityIndicator size="small" color={GOLD} />
-        </View>
-      )}
-      <Image
-        source={{ uri }}
-        style={{ width, height }}
-        resizeMode="cover"
-        onLoad={() => setLoading(false)}
-        onError={() => { setFailed(true); setLoading(false); }}
-      />
-    </View>
-  );
-}
-
-function LandingDealSlider({ photos, cardWidth }: { photos: string[]; cardWidth: number }) {
-  const [activeIndex, setActiveIndex] = useState(0);
-  const IMG_HEIGHT = Math.round(cardWidth * 0.58);
-
-  const handleScroll = useCallback((e: { nativeEvent: { contentOffset: { x: number } } }) => {
-    const idx = Math.round(e.nativeEvent.contentOffset.x / cardWidth);
-    setActiveIndex(idx);
-  }, [cardWidth]);
-
-  if (!photos || photos.length === 0) {
-    return (
-      <View style={[dealStyles.photoFallback, { width: cardWidth, height: IMG_HEIGHT }]}>
-        <Landmark size={36} color={GOLD} />
-        <Text style={dealStyles.photoFallbackText}>Photos coming soon</Text>
-      </View>
-    );
-  }
-
-  return (
-    <View style={{ width: cardWidth, height: IMG_HEIGHT, position: 'relative' as const, overflow: 'hidden' as const }}>
-      <ScrollView
-        horizontal
-        pagingEnabled
-        showsHorizontalScrollIndicator={false}
-        bounces={false}
-        onScroll={handleScroll}
-        scrollEventThrottle={16}
-        style={{ width: cardWidth, height: IMG_HEIGHT }}
-      >
-        {photos.slice(0, 6).map((uri, i) => (
-          <LandingDealPhoto key={`lp-${i}`} uri={uri} width={cardWidth} height={IMG_HEIGHT} />
-        ))}
-      </ScrollView>
-      {photos.length > 1 && (
-        <>
-          <View style={dealStyles.counterBadge}>
-            <Text style={dealStyles.counterText}>{activeIndex + 1}/{Math.min(photos.length, 6)}</Text>
-          </View>
-          <View style={dealStyles.dotsRow}>
-            {photos.slice(0, 6).map((_, i) => (
-              <View key={`dot-${i}`} style={[dealStyles.dot, i === activeIndex ? dealStyles.dotActive : dealStyles.dotInactive]} />
-            ))}
-          </View>
-        </>
-      )}
-      <LinearGradient
-        colors={['transparent', 'rgba(0,0,0,0.6)']}
-        style={dealStyles.photoGradient}
-      />
-    </View>
-  );
-}
 
 type LandingShowcaseDeal = PublishedDealCardModel & {
   resolvedPhotos: string[];
   photoDiagnostic: DealPhotoDiagnostic;
 };
 
-interface DealProofItem {
-  id: string;
-  label: string;
-  value: string;
-}
+function buildLandingShowcaseDeal(deal: LandingShowcaseDeal): ParsedJVDeal {
+  const trustInfo = deal.rawTrustInfo;
+  const publishedAt = deal.publishedAt || '';
 
-function getDealProofItems(deal: LandingShowcaseDeal): DealProofItem[] {
-  const trust = deal.rawTrustInfo as DealTrustInfo | undefined;
-  const verifiedDocs = Array.isArray(trust?.documents)
-    ? trust.documents.filter((doc) => doc?.verified).length
-    : 0;
-
-  const titleAndInsurance = trust?.titleVerified && trust?.insuranceCoverage
-    ? 'Title verified + insurance tracked'
-    : trust?.titleVerified
-      ? 'Title verification tracked'
-      : trust?.insuranceCoverage
-        ? 'Insurance coverage tracked'
-        : 'Review deal docs before funding';
-
-  const escrowFlow = trust?.escrowProtected
-    ? 'Escrow / payment workflow documented'
-    : 'Payment instructions shared during diligence';
-
-  const permitStatus = trust?.permitStatus === 'approved'
-    ? 'Permit approved'
-    : trust?.permitStatus === 'pending'
-      ? 'Permit review pending'
-      : 'Permit status shared in docs';
-
-  const docsLabel = verifiedDocs > 0
-    ? `${verifiedDocs} verified diligence docs tracked`
-    : 'Offering docs shared during diligence';
-
-  return [
-    {
-      id: 'entity',
-      label: 'LLC / sponsor',
-      value: trust?.llcName || deal.developerName || 'IVX Holdings LLC',
+  return {
+    id: deal.id,
+    title: deal.title,
+    projectName: deal.projectName,
+    type: deal.dealType || 'development',
+    expectedROI: deal.expectedROI,
+    totalInvestment: deal.totalInvestment,
+    propertyValue: deal.propertyValue || deal.salePrice,
+    partners: deal.partnersCount,
+    description: deal.descriptionShort,
+    propertyAddress: deal.addressFull || deal.addressShort,
+    distributionFrequency: deal.distributionFrequency,
+    exitStrategy: deal.exitStrategy,
+    photos: deal.resolvedPhotos,
+    published: true,
+    publishedAt,
+    created_at: publishedAt,
+    status: deal.status,
+    trustInfo,
+    trustMarket: {
+      salePrice: deal.salePrice || deal.propertyValue || deal.totalInvestment,
+      minInvestment: deal.minInvestment,
+      fractionalSharePrice: deal.fractionalSharePrice,
+      timelineMin: trustInfo?.timelineMin,
+      timelineMax: trustInfo?.timelineMax,
+      timelineUnit: trustInfo?.timelineUnit ?? 'months',
+      priceChange1h: trustInfo?.priceChange1h ?? 10,
+      priceChange2h: trustInfo?.priceChange2h ?? 18,
+      ownershipLabel: deal.ownershipText || trustInfo?.ownershipLabel,
     },
-    {
-      id: 'title',
-      label: 'Title / insurance',
-      value: titleAndInsurance,
-    },
-    {
-      id: 'escrow',
-      label: 'Escrow flow',
-      value: escrowFlow,
-    },
-    {
-      id: 'docs',
-      label: 'Docs / permits',
-      value: verifiedDocs > 0 ? docsLabel : permitStatus,
-    },
-  ];
+    city: deal.city,
+    state: deal.state,
+    country: deal.country,
+    developerName: deal.developerName,
+  };
 }
 
 function LandingDealsShowcase({ scrollToForm }: { scrollToForm: () => void }) {
+  const router = useRouter();
   const { width: screenWidth } = useWindowDimensions();
   const cardWidth = Math.min(screenWidth - 48, 380);
 
@@ -471,121 +372,20 @@ function LandingDealsShowcase({ scrollToForm }: { scrollToForm: () => void }) {
             contentContainerStyle={{ paddingHorizontal: 0 }}
           >
             {deals.map((deal, idx) => {
-              const title = deal.title || 'Investment Opportunity';
-              const salePrice = Number(deal.salePrice || deal.propertyValue || deal.totalInvestment || 0);
-              const roi = Number(deal.expectedROI || 0);
-              const location = deal.addressShort || deal.addressFull;
-              const minInvestmentLabel = deal.minInvestment > 0 ? formatCurrencyCompact(deal.minInvestment) : '$50';
-              const salePriceLabel = salePrice > 0 ? formatCurrencyCompact(salePrice) : 'TBA';
-              const fractionalEntryLabel = deal.fractionalSharePrice > 0 ? formatCurrencyCompact(deal.fractionalSharePrice) : minInvestmentLabel;
-              const minFractionalLabel = `from ${minInvestmentLabel}`;
-              const proofItems = getDealProofItems(deal);
-              const exitProjection = getDealExitProjection(deal);
-              const estimatedSaleLabel = exitProjection.estimatedSalePrice > 0 ? formatCurrencyCompact(exitProjection.estimatedSalePrice) : 'TBA';
-              const projectedPayoutLabel = exitProjection.estimatedGrossPayoutAtMinimum > 0 ? formatCurrencyCompact(exitProjection.estimatedGrossPayoutAtMinimum) : 'TBA';
-              const ownershipLabel = exitProjection.minimumOwnershipPercent > 0 ? `${exitProjection.minimumOwnershipPercent.toFixed(3)}%` : 'TBA';
-              const timelineLabel = deal.timeline || 'Deal-specific';
+              const sharedDeal = buildLandingShowcaseDeal(deal);
 
               return (
-                <View key={deal.id || `deal-${idx}`} style={[dealStyles.card, { width: cardWidth, marginRight: idx < deals.length - 1 ? 14 : 0 }]} testID={`landing-deal-card-${deal.id || idx}`}>
-                  <LandingDealSlider photos={deal.resolvedPhotos} cardWidth={cardWidth} />
-
-                  <View style={dealStyles.cardContent}>
-                    <View style={dealStyles.liveBadgeRow}>
-                      <View style={dealStyles.liveBadge}>
-                        <View style={dealStyles.liveDot} />
-                        <Text style={dealStyles.liveBadgeText}>LIVE</Text>
-                      </View>
-                    </View>
-
-                    <Text style={dealStyles.dealTitle} numberOfLines={1}>{title}</Text>
-                    {location ? (
-                      <View style={dealStyles.locationRow}>
-                        <MapPin size={11} color={Colors.textTertiary} />
-                        <Text style={dealStyles.locationText} numberOfLines={1}>{location}</Text>
-                      </View>
-                    ) : null}
-
-                    <View style={dealStyles.metricsRow}>
-                      <View style={dealStyles.metric}>
-                        <Text style={dealStyles.metricValue}>{salePriceLabel}</Text>
-                        <Text style={dealStyles.metricLabel}>Sale Price</Text>
-                      </View>
-                      <View style={dealStyles.metricDivider} />
-                      <View style={dealStyles.metric}>
-                        <Text style={[dealStyles.metricValue, { color: ACCENT_GREEN }]}>{roi > 0 ? `${roi}%` : 'TBA'}</Text>
-                        <Text style={dealStyles.metricLabel}>Projected ROI</Text>
-                      </View>
-                      <View style={dealStyles.metricDivider} />
-                      <View style={dealStyles.metric}>
-                        <Text style={dealStyles.metricValue}>{ownershipLabel}</Text>
-                        <Text style={dealStyles.metricLabel}>Min Ownership</Text>
-                      </View>
-                    </View>
-
-                    <View style={dealStyles.proofGrid} testID={`landing-deal-proof-${deal.id || idx}`}>
-                      {proofItems.map((item) => (
-                        <View key={item.id} style={dealStyles.proofCard}>
-                          <Text style={dealStyles.proofLabel}>{item.label}</Text>
-                          <Text style={dealStyles.proofValue}>{item.value}</Text>
-                        </View>
-                      ))}
-                    </View>
-
-                    <View style={dealStyles.marketStrip} testID={`landing-deal-market-${deal.id || idx}`}>
-                      <View style={dealStyles.marketPill}>
-                        <Text style={dealStyles.marketPillLabel}>Fractional</Text>
-                        <Text style={dealStyles.marketPillValue}>{minFractionalLabel}</Text>
-                      </View>
-                      <View style={dealStyles.marketPill}>
-                        <Text style={dealStyles.marketPillLabel}>Entry</Text>
-                        <Text style={dealStyles.marketPillValue}>{fractionalEntryLabel}</Text>
-                      </View>
-                      <View style={dealStyles.marketPill}>
-                        <Text style={dealStyles.marketPillLabel}>Ownership</Text>
-                        <Text style={dealStyles.marketPillValue}>{ownershipLabel}</Text>
-                      </View>
-                    </View>
-
-                    <View style={dealStyles.exitProjectionCard} testID={`landing-deal-exit-math-${deal.id || idx}`}>
-                      <View style={dealStyles.exitProjectionHeader}>
-                        <Text style={dealStyles.exitProjectionTitle}>Exit math for the minimum ticket</Text>
-                        <Text style={dealStyles.exitProjectionTimeline}>{timelineLabel}</Text>
-                      </View>
-                      <View style={dealStyles.exitProjectionGrid}>
-                        <View style={dealStyles.exitProjectionItem}>
-                          <Text style={dealStyles.exitProjectionLabel}>Est. sale</Text>
-                          <Text style={dealStyles.exitProjectionValue}>{estimatedSaleLabel}</Text>
-                        </View>
-                        <View style={dealStyles.exitProjectionItem}>
-                          <Text style={dealStyles.exitProjectionLabel}>Min ownership</Text>
-                          <Text style={dealStyles.exitProjectionValue}>{ownershipLabel}</Text>
-                        </View>
-                        <View style={dealStyles.exitProjectionItem}>
-                          <Text style={dealStyles.exitProjectionLabel}>Min ticket</Text>
-                          <Text style={dealStyles.exitProjectionValue}>{minInvestmentLabel}</Text>
-                        </View>
-                        <View style={dealStyles.exitProjectionItem}>
-                          <Text style={dealStyles.exitProjectionLabel}>Est. gross payout</Text>
-                          <Text style={[dealStyles.exitProjectionValue, { color: ACCENT_GREEN }]}>{projectedPayoutLabel}</Text>
-                        </View>
-                      </View>
-                    </View>
-
-                    <Text style={dealStyles.cardDisclosure}>
-                      Projected returns are estimates only. Review fees, liquidity, exit terms, and full offering documents before participating.
-                    </Text>
-
-                    <TouchableOpacity
-                      style={dealStyles.investBtn}
-                      onPress={scrollToForm}
-                      activeOpacity={0.85}
-                      testID={`landing-deal-cta-${deal.id || idx}`}
-                    >
-                      <Text style={dealStyles.investBtnText}>Join Waitlist to Invest</Text>
-                      <ArrowRight size={15} color="#000" />
-                    </TouchableOpacity>
-                  </View>
+                <View key={deal.id || `deal-${idx}`} style={{ width: cardWidth, marginRight: idx < deals.length - 1 ? 14 : 0 }} testID={`landing-deal-card-${deal.id || idx}`}>
+                  <TrustDealCard
+                    deal={sharedDeal}
+                    galleryWidth={cardWidth}
+                    onViewDetails={(selectedDeal) => {
+                      router.push(`/jv-invest?jvId=${selectedDeal.id}` as any);
+                    }}
+                    onInvestNow={() => {
+                      scrollToForm();
+                    }}
+                  />
                 </View>
               );
             })}
