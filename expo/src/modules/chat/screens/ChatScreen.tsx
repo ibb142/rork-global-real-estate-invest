@@ -21,11 +21,33 @@ import { Composer } from '../components/Composer';
 import { MessageBubble } from '../components/MessageBubble';
 import { getChatMessagesQueryKey, useChatMessages } from '../hooks/useChatMessages';
 import { chatService } from '../services/chatService';
+import { getChatStorageStatus, subscribeToChatStorageMode, type ChatStorageStatus } from '../services/supabaseChatProvider';
 import type { ChatFileType, ChatMessage } from '../types/chat';
+
+type ChatAuditCard = {
+  id: string;
+  eyebrow?: string;
+  title: string;
+  description: string;
+  bullets: string[];
+};
+
+type ChatRoomMeta = {
+  badgeText?: string;
+  title?: string;
+  subtitle?: string;
+  capabilityPills?: string[];
+  emptyTitle?: string;
+  emptyText?: string;
+  auditCards?: ChatAuditCard[];
+};
 
 type ChatScreenProps = {
   conversationId: string;
   currentUserId: string;
+  roomMeta?: ChatRoomMeta;
+  showHero?: boolean;
+  onSendSuccess?: (payload: ComposerPayload) => Promise<void> | void;
 };
 
 type ComposerPayload = {
@@ -42,15 +64,69 @@ function getRoomLabel(conversationId: string): string {
     .join(' ');
 }
 
-export function ChatScreen({ conversationId, currentUserId }: ChatScreenProps) {
+export function ChatScreen({
+  conversationId,
+  currentUserId,
+  roomMeta,
+  showHero = true,
+  onSendSuccess,
+}: ChatScreenProps) {
   const listRef = useRef<FlatList<ChatMessage> | null>(null);
   const screenRef = useRef<View | null>(null);
   const screenFrameRef = useRef<{ y: number; height: number }>({ y: 0, height: 0 });
   const queryClient = useQueryClient();
   const insets = useSafeAreaInsets();
   const [keyboardInset, setKeyboardInset] = useState<number>(0);
+  const [storageStatus, setStorageStatus] = useState<ChatStorageStatus>(() => getChatStorageStatus());
   const stableConversationId = useMemo(() => conversationId.trim(), [conversationId]);
-  const roomLabel = useMemo(() => getRoomLabel(stableConversationId), [stableConversationId]);
+  const heroTitle = useMemo(() => roomMeta?.title?.trim() || getRoomLabel(stableConversationId), [roomMeta?.title, stableConversationId]);
+  const heroSubtitle = useMemo(() => roomMeta?.subtitle?.trim() || `Conversation ID: ${stableConversationId}`, [roomMeta?.subtitle, stableConversationId]);
+  const heroBadgeText = useMemo(() => roomMeta?.badgeText?.trim() || 'Realtime room', [roomMeta?.badgeText]);
+  const roomCapabilities = useMemo(() => {
+    const capabilityPills = roomMeta?.capabilityPills?.filter((item) => item.trim().length > 0) ?? [];
+    return capabilityPills.length > 0
+      ? capabilityPills
+      : ['Realtime sync', 'Image upload', 'Video upload', 'PDF / File'];
+  }, [roomMeta?.capabilityPills]);
+  const emptyStateTitle = useMemo(() => roomMeta?.emptyTitle?.trim() || 'No messages yet', [roomMeta?.emptyTitle]);
+  const emptyStateText = useMemo(() => roomMeta?.emptyText?.trim() || 'Start the room with a note, image, video, or PDF.', [roomMeta?.emptyText]);
+  const auditCards = useMemo<ChatAuditCard[]>(() => {
+    return (roomMeta?.auditCards ?? [])
+      .map((card) => {
+        const title = card.title.trim();
+        const description = card.description.trim();
+        const bullets = card.bullets
+          .map((bullet) => bullet.trim())
+          .filter((bullet) => bullet.length > 0);
+
+        if (!title || !description || bullets.length === 0) {
+          return null;
+        }
+
+        return {
+          ...card,
+          eyebrow: card.eyebrow?.trim(),
+          title,
+          description,
+          bullets,
+        };
+      })
+      .filter((card): card is ChatAuditCard => !!card);
+  }, [roomMeta?.auditCards]);
+  const statusAccentColor = useMemo(() => {
+    switch (storageStatus.mode) {
+      case 'primary':
+        return Colors.primary;
+      case 'room':
+      case 'fallback':
+        return Colors.info;
+      case 'local':
+        return Colors.warning;
+      case 'unknown':
+      default:
+        return Colors.textTertiary;
+    }
+  }, [storageStatus.mode]);
   const { messages, loading, error, refetch, isRefreshing } = useChatMessages(stableConversationId);
   const keyboardBehavior = Platform.select<'padding' | undefined>({
     ios: 'padding',
@@ -114,10 +190,19 @@ export function ChatScreen({ conversationId, currentUserId }: ChatScreenProps) {
         fileType: payload.fileType,
       });
     },
-    onSuccess: async () => {
+    onSuccess: async (_data, variables) => {
       await queryClient.invalidateQueries({
         queryKey: getChatMessagesQueryKey(stableConversationId),
       });
+
+      if (onSendSuccess) {
+        try {
+          await onSendSuccess(variables);
+        } catch (callbackError) {
+          console.log('[ChatScreen] Send success callback error:', (callbackError as Error)?.message ?? 'Unknown error');
+        }
+      }
+
       scrollToBottom(true);
     },
     onError: (mutationError) => {
@@ -125,6 +210,15 @@ export function ChatScreen({ conversationId, currentUserId }: ChatScreenProps) {
       Alert.alert('Message not sent', mutationError.message || 'Please try again in a moment.');
     },
   });
+
+  useEffect(() => {
+    setStorageStatus(getChatStorageStatus());
+    const unsubscribe = subscribeToChatStorageMode((nextMode) => {
+      setStorageStatus(getChatStorageStatus(nextMode));
+    });
+
+    return unsubscribe;
+  }, [stableConversationId]);
 
   useEffect(() => {
     if (messages.length === 0) {
@@ -220,18 +314,79 @@ export function ChatScreen({ conversationId, currentUserId }: ChatScreenProps) {
           updateScreenFrame();
         }}
       >
-        <View style={styles.heroCard} testID="chat-room-hero">
-          <View style={styles.heroLeft}>
-            <View style={styles.statusPill}>
-              <Radio size={14} color={Colors.primary} />
-              <Text style={styles.statusPillText}>Realtime room</Text>
+        {showHero ? (
+          <View style={styles.heroCard} testID="chat-room-hero">
+            <View style={styles.heroLeft}>
+              <View style={styles.statusPill}>
+                <Radio size={14} color={Colors.primary} />
+                <Text style={styles.statusPillText}>{heroBadgeText}</Text>
+              </View>
+              <Text style={styles.heroTitle}>{heroTitle || 'Message Room'}</Text>
+              <Text style={styles.heroSubtitle}>{heroSubtitle}</Text>
+              <View style={styles.capabilityRow}>
+                {roomCapabilities.map((capability) => {
+                  return (
+                    <View key={capability} style={styles.capabilityPill}>
+                      <Text style={styles.capabilityText}>{capability}</Text>
+                    </View>
+                  );
+                })}
+              </View>
             </View>
-            <Text style={styles.heroTitle}>{roomLabel || 'Message Room'}</Text>
-            <Text style={styles.heroSubtitle}>Conversation ID: {stableConversationId}</Text>
           </View>
-        </View>
+        ) : null}
 
         <View style={[styles.body, androidKeyboardInset > 0 ? { paddingBottom: androidKeyboardInset } : null]}>
+        <View style={styles.statusCard} testID="chat-room-storage-status">
+          <View style={styles.statusCardHeader}>
+            <Text style={styles.statusCardEyebrow}>Room status</Text>
+            <View style={[styles.statusBadge, { borderColor: statusAccentColor }]}> 
+              <View style={[styles.statusDot, { backgroundColor: statusAccentColor }]} />
+              <Text style={[styles.statusBadgeText, { color: statusAccentColor }]}>{storageStatus.label}</Text>
+            </View>
+          </View>
+          <Text style={styles.statusDetail}>{storageStatus.detail}</Text>
+          <View style={styles.statusMetricRow}>
+            <View style={styles.statusMetricCard} testID="chat-room-status-storage">
+              <Text style={styles.statusMetricLabel}>Storage</Text>
+              <Text style={styles.statusMetricValue}>{storageStatus.persistenceLabel}</Text>
+            </View>
+            <View style={styles.statusMetricCard} testID="chat-room-status-visibility">
+              <Text style={styles.statusMetricLabel}>Visibility</Text>
+              <Text style={styles.statusMetricValue}>{storageStatus.visibilityLabel}</Text>
+            </View>
+            <View style={styles.statusMetricCard} testID="chat-room-status-delivery">
+              <Text style={styles.statusMetricLabel}>Delivery</Text>
+              <Text style={styles.statusMetricValue}>{storageStatus.deliveryLabel}</Text>
+            </View>
+          </View>
+        </View>
+        {auditCards.length > 0 ? (
+          <View style={styles.auditSection} testID="chat-room-audit">
+            <Text style={styles.auditSectionTitle}>End-to-end audit</Text>
+            <View style={styles.auditCardList}>
+              {auditCards.map((card) => {
+                return (
+                  <View key={card.id} style={styles.auditCard} testID={`chat-room-audit-card-${card.id}`}>
+                    {card.eyebrow ? <Text style={styles.auditEyebrow}>{card.eyebrow}</Text> : null}
+                    <Text style={styles.auditTitle}>{card.title}</Text>
+                    <Text style={styles.auditDescription}>{card.description}</Text>
+                    <View style={styles.auditBulletList}>
+                      {card.bullets.map((bullet, bulletIndex) => {
+                        return (
+                          <View key={`${card.id}-${bulletIndex}`} style={styles.auditBulletRow}>
+                            <View style={styles.auditBulletDot} />
+                            <Text style={styles.auditBulletText}>{bullet}</Text>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+        ) : null}
         {error ? (
           <View style={styles.errorCard} testID="chat-room-error">
             <Text style={styles.errorTitle}>Could not load this room</Text>
@@ -281,8 +436,8 @@ export function ChatScreen({ conversationId, currentUserId }: ChatScreenProps) {
               </View>
             ) : (
               <View style={styles.centerState} testID="chat-room-empty">
-                <Text style={styles.centerTitle}>No messages yet</Text>
-                <Text style={styles.centerText}>Start the room with a note, image, video, or PDF.</Text>
+                <Text style={styles.centerTitle}>{emptyStateTitle}</Text>
+                <Text style={styles.centerText}>{emptyStateText}</Text>
               </View>
             )
           }
@@ -352,9 +507,159 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
   },
+  capabilityRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 4,
+  },
+  capabilityPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: Colors.backgroundSecondary,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+  },
+  capabilityText: {
+    color: Colors.textSecondary,
+    fontSize: 11,
+    fontWeight: '700' as const,
+  },
   body: {
     flex: 1,
     minHeight: 0,
+  },
+  statusCard: {
+    marginHorizontal: 16,
+    marginBottom: 10,
+    padding: 16,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    backgroundColor: Colors.surface,
+    gap: 10,
+  },
+  statusCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  statusCardEyebrow: {
+    color: Colors.text,
+    fontSize: 15,
+    fontWeight: '700' as const,
+  },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: Colors.backgroundSecondary,
+    borderWidth: 1,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 999,
+  },
+  statusBadgeText: {
+    fontSize: 12,
+    fontWeight: '700' as const,
+  },
+  statusDetail: {
+    color: Colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  statusMetricRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  statusMetricCard: {
+    flex: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 12,
+    borderRadius: 16,
+    backgroundColor: Colors.backgroundSecondary,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    gap: 6,
+  },
+  statusMetricLabel: {
+    color: Colors.textTertiary,
+    fontSize: 11,
+    fontWeight: '700' as const,
+    textTransform: 'uppercase',
+  },
+  statusMetricValue: {
+    color: Colors.text,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '600' as const,
+  },
+  auditSection: {
+    marginHorizontal: 16,
+    marginBottom: 10,
+    gap: 10,
+  },
+  auditSectionTitle: {
+    color: Colors.text,
+    fontSize: 15,
+    fontWeight: '800' as const,
+  },
+  auditCardList: {
+    gap: 10,
+  },
+  auditCard: {
+    padding: 16,
+    borderRadius: 20,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    gap: 10,
+  },
+  auditEyebrow: {
+    color: Colors.primary,
+    fontSize: 11,
+    fontWeight: '800' as const,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  auditTitle: {
+    color: Colors.text,
+    fontSize: 16,
+    fontWeight: '700' as const,
+  },
+  auditDescription: {
+    color: Colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  auditBulletList: {
+    gap: 8,
+  },
+  auditBulletRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  auditBulletDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 999,
+    backgroundColor: Colors.primary,
+    marginTop: 6,
+  },
+  auditBulletText: {
+    flex: 1,
+    color: Colors.text,
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: '600' as const,
   },
   errorCard: {
     marginHorizontal: 16,
