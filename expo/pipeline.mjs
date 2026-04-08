@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import 'dotenv/config';
+
 /**
  * IVX Holdings — Unified Pipeline
  * 
@@ -12,12 +14,11 @@
  *   GITHUB_TOKEN=ghp_xxx node pipeline.mjs --watch
  */
 
-import { execSync } from 'child_process';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { execFileSync } from 'child_process';
+import { join } from 'path';
+import { getSyncPaths } from './sync-paths.mjs';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+const { syncRoot: SYNC_ROOT, appRoot: APP_ROOT } = getSyncPaths(import.meta.url);
 
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 const REPO = process.env.GITHUB_REPO || 'ibb142/rork-global-real-estate-invest';
@@ -94,13 +95,13 @@ async function waitForWorkflow(triggerTime, timeoutMs = 300000) {
 }
 
 function runCommand(script, extraArgs = []) {
-  const allArgs = extraArgs.length > 0 ? ' ' + extraArgs.join(' ') : '';
-  execSync(
-    `node "${join(__dirname, script)}"${allArgs}`,
+  execFileSync(
+    process.execPath,
+    [join(APP_ROOT, script), ...extraArgs],
     {
-      env: { ...process.env, GITHUB_TOKEN },
+      env: { ...process.env, GITHUB_TOKEN, SYNC_ROOT },
       stdio: 'inherit',
-      cwd: __dirname,
+      cwd: APP_ROOT,
       timeout: 120_000,
     }
   );
@@ -126,7 +127,7 @@ async function runPipeline() {
   console.log(`${COLORS.bold}[Step 1/3] Syncing code to GitHub...${COLORS.reset}`);
   const syncArgs = [];
   if (CUSTOM_MESSAGE) {
-    syncArgs.push('--message', `"${CUSTOM_MESSAGE}"`);
+    syncArgs.push('--message', CUSTOM_MESSAGE);
   }
   
   const triggerTime = Date.now();

@@ -2,6 +2,7 @@ import { buildOwnershipSnapshot } from '@/lib/ownership-math';
 
 export interface ResolvedTrustMarket {
   salePrice: number;
+  explicitSalePrice?: number;
   minInvestment: number;
   fractionalSharePrice: number;
   timelineMin: number;
@@ -33,11 +34,12 @@ export function resolveTrustMarket(values: {
   priceChange2h?: unknown;
 }): ResolvedTrustMarket {
   const fallbackSalePrice = sanitizePositiveNumber(values.propertyValue, sanitizePositiveNumber(values.totalInvestment, 0));
-  const salePrice = sanitizePositiveNumber(values.salePrice, fallbackSalePrice);
+  const explicitSalePrice = sanitizePositiveNumber(values.salePrice, 0);
+  const salePrice = explicitSalePrice || fallbackSalePrice;
   const minInvestment = sanitizePositiveNumber(values.minInvestment, 50);
   const fractionalSharePrice = sanitizePositiveNumber(values.fractionalSharePrice, Math.max(minInvestment, 1));
-  const timelineMin = sanitizePositiveNumber(values.timelineMin, 14);
-  const timelineMax = sanitizePositiveNumber(values.timelineMax, Math.max(timelineMin, 24));
+  const timelineMin = sanitizePositiveNumber(values.timelineMin, 0);
+  const timelineMax = sanitizePositiveNumber(values.timelineMax, timelineMin > 0 ? timelineMin : 0);
   const timelineUnit = values.timelineUnit === 'years' ? 'years' : 'months';
   const priceChange1h = Number.isFinite(Number(values.priceChange1h)) ? Number(values.priceChange1h) : 10;
   const priceChange2h = Number.isFinite(Number(values.priceChange2h)) ? Number(values.priceChange2h) : 18;
@@ -45,6 +47,7 @@ export function resolveTrustMarket(values: {
 
   return {
     salePrice,
+    explicitSalePrice: explicitSalePrice > 0 ? explicitSalePrice : undefined,
     minInvestment,
     fractionalSharePrice,
     timelineMin,
@@ -58,5 +61,17 @@ export function resolveTrustMarket(values: {
 
 export function formatTrustTimelineLabel(values: Pick<ResolvedTrustMarket, 'timelineMin' | 'timelineMax' | 'timelineUnit'>): string {
   const unit = values.timelineUnit === 'years' ? 'yr' : 'mo';
-  return `${values.timelineMin}–${values.timelineMax} ${unit}`;
+  if (values.timelineMin > 0 && values.timelineMax > 0) {
+    if (values.timelineMin === values.timelineMax) {
+      return `${values.timelineMax} ${unit}`;
+    }
+    return `${values.timelineMin}–${values.timelineMax} ${unit}`;
+  }
+  if (values.timelineMax > 0) {
+    return `${values.timelineMax} ${unit}`;
+  }
+  if (values.timelineMin > 0) {
+    return `${values.timelineMin} ${unit}`;
+  }
+  return '';
 }

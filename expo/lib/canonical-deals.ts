@@ -47,6 +47,8 @@ export interface CanonicalDealResult {
   count: number;
 }
 
+export type CanonicalDealSourcePreference = 'auto' | 'public_api' | 'supabase';
+
 const BACKEND_URL = DIRECT_API_BASE_URL;
 
 let _cachedResult: CanonicalDealResult | null = null;
@@ -55,26 +57,37 @@ let _lastETag: string | null = null;
 let _fetchLatencyMs: number | null = null;
 let _fetchCount = 0;
 let _cacheHitCount = 0;
-const CACHE_TTL = 1_000;
+const CACHE_TTL = 60_000;
 
-export async function fetchCanonicalDeals(forceRefresh = false): Promise<CanonicalDealResult> {
+export async function fetchCanonicalDeals(
+  forceRefresh = false,
+  sourcePreference: CanonicalDealSourcePreference = 'auto',
+): Promise<CanonicalDealResult> {
   const now = Date.now();
   if (!forceRefresh && _cachedResult && (now - _cacheTimestamp) < CACHE_TTL) {
     _cacheHitCount++;
-    console.log('[CanonicalDeals] Cache hit (age:', Math.round((now - _cacheTimestamp) / 1000), 's, hits:', _cacheHitCount, ')');
+    console.log('[CanonicalDeals] Cache hit (age:', Math.round((now - _cacheTimestamp) / 1000), 's, hits:', _cacheHitCount, '| preference:', sourcePreference, ')');
     return _cachedResult;
   }
 
   _fetchCount++;
   const fetchStart = Date.now();
 
-  let result = await fetchFromSupabase();
-  if (result.source === 'empty' && BACKEND_URL) {
+  let result: CanonicalDealResult;
+  if (sourcePreference === 'public_api') {
     result = await fetchFromBackend();
+    if (result.source === 'empty') {
+      result = await fetchFromSupabase();
+    }
+  } else {
+    result = await fetchFromSupabase();
+    if (result.source === 'empty') {
+      result = await fetchFromBackend();
+    }
   }
 
   _fetchLatencyMs = Date.now() - fetchStart;
-  console.log('[CanonicalDeals] Fetch #' + _fetchCount, '| latency:', _fetchLatencyMs + 'ms', '| deals:', result.count);
+  console.log('[CanonicalDeals] Fetch #' + _fetchCount, '| latency:', _fetchLatencyMs + 'ms', '| deals:', result.count, '| source:', result.source, '| preference:', sourcePreference);
 
   if (result.deals.length > 0) {
     _cachedResult = result;
@@ -224,6 +237,7 @@ export function canonicalCardToParsedDeal(card: PublishedDealCardModel): ParsedJ
     expectedROI: card.expectedROI,
     totalInvestment: card.totalInvestment,
     propertyValue: card.propertyValue || 0,
+    salePrice: card.explicitSalePrice,
     partners: card.partnersCount,
     description: card.descriptionShort,
     propertyAddress: card.addressFull,

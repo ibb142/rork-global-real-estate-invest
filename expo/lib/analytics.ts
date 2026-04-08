@@ -5,6 +5,7 @@ import { supabase, isSupabaseConfigured } from './supabase';
 import { scopedKey } from './project-storage';
 import { isProduction, getEnvConfig } from './environment';
 import { awsAnalyticsBackup, type AWSAnalyticsEvent } from './aws-analytics-backup';
+import { fetchPublicIpAddress } from './public-geo';
 
 const ANALYTICS_STORAGE_KEY = scopedKey('analytics');
 const SESSION_STORAGE_KEY = scopedKey('session');
@@ -802,28 +803,17 @@ class AnalyticsService {
 
   private async resolveIpAddress(): Promise<void> {
     try {
-      const resp = await fetch('https://api.ipify.org?format=json', { signal: AbortSignal.timeout(5000) });
-      if (resp.ok) {
-        const data = await resp.json();
-        if (data.ip) {
-          this.cachedIp = data.ip;
-          console.log('[Analytics] IP resolved:', this.cachedIp);
-          return;
-        }
+      const resolvedIp = await fetchPublicIpAddress();
+      if (resolvedIp) {
+        this.cachedIp = resolvedIp;
+        console.log('[Analytics] IP resolved:', this.cachedIp);
+        return;
       }
-    } catch {}
-    try {
-      const resp = await fetch('https://ipapi.co/json/', { signal: AbortSignal.timeout(5000) });
-      if (resp.ok) {
-        const data = await resp.json();
-        if (data.ip) {
-          this.cachedIp = data.ip;
-          console.log('[Analytics] IP resolved (fallback):', this.cachedIp);
-        }
-      }
-    } catch (err) {
-      console.log('[Analytics] IP resolve failed:', (err as Error)?.message);
+    } catch (error) {
+      console.log('[Analytics] IP resolve exception:', (error as Error)?.message ?? 'Unknown error');
     }
+
+    console.log('[Analytics] IP resolve failed');
   }
 
   private sendToAWSBackup(event: AnalyticsEvent): void {

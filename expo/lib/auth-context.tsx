@@ -15,6 +15,7 @@ import {
   upsertStoredMemberRegistryRecord,
 } from './member-registry';
 import type { Session } from '@supabase/supabase-js';
+import { fetchPublicIpAddress } from './public-geo';
 
 const OWNER_IP_KEY = 'ivx_owner_ip';
 const OWNER_IP_ENABLED_KEY = 'ivx_owner_ip_enabled';
@@ -23,18 +24,6 @@ const OWNER_VERIFIED_USER_ID_KEY = 'ivx_owner_verified_user_id';
 const OWNER_VERIFIED_ROLE_KEY = 'ivx_owner_verified_role';
 const OWNER_VERIFIED_AT_KEY = 'ivx_owner_verified_at';
 const OWNER_TRUSTED_DEVICE_WINDOW_MS = 1000 * 60 * 60 * 24 * 30;
-const OWNER_IP_FETCH_TIMEOUT_MS = 2500;
-const OWNER_IP_FETCH_TOTAL_TIMEOUT_MS = 4000;
-
-interface DeviceIPSource {
-  url: string;
-  parse: (payload: unknown) => string | null;
-}
-
-function normalizeIPAddress(value: string | null | undefined): string | null {
-  const normalized = value?.trim() ?? '';
-  return normalized.length > 0 ? normalized : null;
-}
 
 function getIPSubnet(ip: string | null | undefined, prefixOctets: number = 2): string | null {
   if (!ip) return null;
@@ -56,63 +45,16 @@ function isCarrierSubnetMatch(currentIP: string | null | undefined, storedIP: st
 }
 
 async function fetchDeviceIP(): Promise<string | null> {
-  const sources: DeviceIPSource[] = [
-    {
-      url: 'https://api.ipify.org?format=json',
-      parse: (payload: unknown) => normalizeIPAddress((payload as { ip?: string } | null)?.ip),
-    },
-    {
-      url: 'https://api64.ipify.org?format=json',
-      parse: (payload: unknown) => normalizeIPAddress((payload as { ip?: string } | null)?.ip),
-    },
-    {
-      url: 'https://ipapi.co/json/',
-      parse: (payload: unknown) => normalizeIPAddress((payload as { ip?: string } | null)?.ip),
-    },
-    {
-      url: 'https://api.my-ip.io/v2/ip.json',
-      parse: (payload: unknown) => normalizeIPAddress((payload as { ip?: string } | null)?.ip),
-    },
-    {
-      url: 'https://ifconfig.co/json',
-      parse: (payload: unknown) => normalizeIPAddress((payload as { ip?: string } | null)?.ip),
-    },
-    {
-      url: 'https://ipwho.is/',
-      parse: (payload: unknown) => normalizeIPAddress((payload as { ip?: string } | null)?.ip),
-    },
-  ];
-
-  const startedAt = Date.now();
-
-  for (const source of sources) {
-    const remainingMs = OWNER_IP_FETCH_TOTAL_TIMEOUT_MS - (Date.now() - startedAt);
-    if (remainingMs <= 0) {
-      console.log('[Auth] IP detection timed out before trying source:', source.url);
-      break;
+  try {
+    const ip = await fetchPublicIpAddress({ requestTimeoutMs: 2500, totalTimeoutMs: 4000 });
+    if (ip) {
+      console.log('[Auth] IP detected:', ip);
+      return ip;
     }
-
-    try {
-      const controller = new AbortController();
-      const timeoutMs = Math.max(800, Math.min(OWNER_IP_FETCH_TIMEOUT_MS, remainingMs));
-      const timeout = setTimeout(() => controller.abort(), timeoutMs);
-      const res = await fetch(source.url, { signal: controller.signal });
-      clearTimeout(timeout);
-      if (!res.ok) {
-        console.log('[Auth] IP source returned non-OK status:', source.url, res.status);
-        continue;
-      }
-      const data = await res.json();
-      const ip = source.parse(data);
-      if (ip) {
-        console.log('[Auth] IP detected from', source.url, ':', ip);
-        return ip;
-      }
-      console.log('[Auth] IP source returned no usable IP:', source.url);
-    } catch {
-      console.log('[Auth] IP source failed:', source.url);
-    }
+  } catch (error) {
+    console.log('[Auth] IP detection exception:', (error as Error)?.message ?? 'Unknown error');
   }
+
   console.log('[Auth] All IP detection sources failed or timed out');
   return null;
 }

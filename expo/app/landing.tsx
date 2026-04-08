@@ -45,7 +45,7 @@ import {
   ExternalLink,
   ScanLine,
 } from 'lucide-react-native';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { landingTracker } from '@/lib/landing-tracker';
 
 import ErrorBoundary from '@/components/ErrorBoundary';
@@ -56,11 +56,19 @@ import type { PublishedDealCardModel } from '@/lib/published-deal-card-model';
 import type { ParsedJVDeal } from '@/lib/parse-deal';
 import InvestorIntakeForm from '@/components/InvestorIntakeForm';
 import TrustDealCard from '@/components/TrustDealCard';
+import InvestorSupportChat, { type HumanSupportRequestResult } from '@/components/InvestorSupportChat';
 import {
   diagnoseDealPhotos,
   type DealPhotoDiagnostic,
 } from '@/lib/deal-photo-health';
 import { useAuth, type OwnerDirectAccessAuditResult } from '@/lib/auth-context';
+import type { ChatMessage } from '@/types';
+import {
+  type CreateSupportTicketParams,
+  type SupportTicketRow,
+  buildLiveSupportTicketDraft,
+  createSupportTicket,
+} from '@/lib/support-chat';
 
 const IVX_BUSINESS_CARD_URL = 'https://pub-e001eb4506b145aa938b5d3badbff6a5.r2.dev/attachments/u2shr3b6qstzut5xgdyud.jpg';
 
@@ -122,7 +130,7 @@ const HOW_IT_WORKS = [
   {
     step: '01',
     title: 'Create Your Account',
-    desc: 'Join the waitlist, complete onboarding, and review the active offering terms before participating.',
+    desc: 'Request investor access, complete onboarding, and review the active offering terms before participating.',
     accent: ACCENT_GREEN,
   },
   {
@@ -197,6 +205,71 @@ const INVESTOR_DISCLOSURES = [
   },
 ];
 
+const MEMBER_READY_ITEMS = [
+  {
+    id: 'registration',
+    title: 'Member registration',
+    text: 'Approved applicants move from public intake into a verified member account before live allocation access is opened.',
+    icon: Users,
+    accent: ACCENT_GREEN,
+  },
+  {
+    id: 'profile',
+    title: 'Investor profiles',
+    text: 'Member profiles store verified contact data, onboarding status, and deal access readiness for each investor.',
+    icon: ShieldCheck,
+    accent: ACCENT_BLUE,
+  },
+  {
+    id: 'wallet',
+    title: 'Wallet readiness',
+    text: 'Funding methods and wallet access are prepared inside the platform before a member moves into live deal execution.',
+    icon: Landmark,
+    accent: GOLD,
+  },
+  {
+    id: 'records',
+    title: 'Transaction records',
+    text: 'Statements, transaction history, and investment status records remain visible inside approved member accounts.',
+    icon: BarChart3,
+    accent: GOLD_DIM,
+  },
+];
+
+const INVESTOR_FAQS = [
+  {
+    id: 'registration',
+    question: 'Do you have member registration already?',
+    answer: 'Yes. Qualified applicants can move from the public intake into verified member registration once investor review is complete.',
+  },
+  {
+    id: 'profiles-wallets',
+    question: 'Do approved members get profiles and wallet access?',
+    answer: 'Yes. The platform supports member profiles, onboarding status, and wallet readiness before funding is enabled for a live deal.',
+  },
+  {
+    id: 'records',
+    question: 'Are transaction records and statements tracked?',
+    answer: 'Yes. Member accounts are designed to surface transaction records, statements, and investment status visibility after approval.',
+  },
+  {
+    id: 'management',
+    question: 'Can investors speak with management before committing?',
+    answer: 'Yes. Qualified prospects can request a management diligence call during active review before moving into final commitment steps.',
+  },
+];
+
+const LANDING_CHAT_QUICK_REPLIES = [
+  'How do I start investing?',
+  'Show me live deals',
+  'Frontend or app issue',
+  'AWS or backend support',
+  'ChatGPT integration help',
+  'Can I speak with management?',
+] as const;
+
+const LANDING_CHAT_WELCOME_MESSAGE = 'Hello! Welcome to IVX investor support. Ask about live deals, investor approval, frontend or backend support, AWS operations, or ChatGPT and OpenAI integration.';
+
 function AnimatedCounter({ value, delay }: { value: string; delay: number }) {
   const opacity = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(24)).current;
@@ -258,6 +331,7 @@ function buildLandingShowcaseDeal(deal: LandingShowcaseDeal): ParsedJVDeal {
     expectedROI: deal.expectedROI,
     totalInvestment: deal.totalInvestment,
     propertyValue: deal.propertyValue || deal.salePrice,
+    salePrice: deal.explicitSalePrice,
     partners: deal.partnersCount,
     description: deal.descriptionShort,
     propertyAddress: deal.addressFull || deal.addressShort,
@@ -271,6 +345,7 @@ function buildLandingShowcaseDeal(deal: LandingShowcaseDeal): ParsedJVDeal {
     trustInfo,
     trustMarket: {
       salePrice: deal.salePrice || deal.propertyValue || deal.totalInvestment,
+      explicitSalePrice: deal.explicitSalePrice,
       minInvestment: deal.minInvestment,
       fractionalSharePrice: deal.fractionalSharePrice,
       timelineMin: trustInfo?.timelineMin,
@@ -296,7 +371,7 @@ function LandingDealsShowcase({ scrollToForm }: { scrollToForm: () => void }) {
     queryKey: ['landing-deals-showcase'],
     queryFn: async (): Promise<LandingShowcaseDeal[]> => {
       try {
-        const canonicalResult = await fetchCanonicalDeals();
+        const canonicalResult = await fetchCanonicalDeals(false, 'public_api');
         const cards = canonicalResult.deals.slice(0, 5);
         const resolvedDeals = await Promise.all(cards.map(async (card) => {
           const photoDiagnostic = await diagnoseDealPhotos(card);
@@ -322,11 +397,12 @@ function LandingDealsShowcase({ scrollToForm }: { scrollToForm: () => void }) {
         return [];
       }
     },
-    staleTime: 5_000,
-    refetchOnMount: 'always',
-    refetchOnWindowFocus: true,
+    staleTime: 1000 * 60 * 5,
+    gcTime: 1000 * 60 * 30,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
     refetchOnReconnect: true,
-    refetchInterval: 60_000,
+    refetchInterval: 1000 * 60 * 5,
     refetchIntervalInBackground: false,
   });
 
@@ -357,7 +433,7 @@ function LandingDealsShowcase({ scrollToForm }: { scrollToForm: () => void }) {
             <Text style={dealStyles.statusTitle}>No live deals are published yet</Text>
             <Text style={dealStyles.statusText}>The featured deals section is active. It will populate automatically when published deals are available in the shared source.</Text>
             <TouchableOpacity style={dealStyles.investBtn} onPress={scrollToForm} activeOpacity={0.85} testID="landing-deals-empty-cta">
-              <Text style={dealStyles.investBtnText}>Join Waitlist Anyway</Text>
+              <Text style={dealStyles.investBtnText}>Request Investor Review</Text>
               <ArrowRight size={15} color="#000" />
             </TouchableOpacity>
           </View>
@@ -796,6 +872,9 @@ export default function LandingScreen() {
   const sectionViewsTracked = useRef<Set<string>>(new Set());
   const [formSectionY, setFormSectionY] = useState<number>(0);
   const [ownerAccessAudit, setOwnerAccessAudit] = useState<OwnerDirectAccessAuditResult | null>(null);
+  const landingSupportMutation = useMutation<SupportTicketRow, Error, CreateSupportTicketParams>({
+    mutationFn: createSupportTicket,
+  });
 
   useEffect(() => {
     try {
@@ -925,6 +1004,43 @@ export default function LandingScreen() {
     scrollRef.current.scrollToEnd({ animated: true });
   };
 
+  const openExternalLink = useCallback(async (url: string) => {
+    try {
+      await Linking.openURL(url);
+    } catch (e) {
+      console.log('[Landing] Failed to open external link:', url, (e as Error)?.message);
+      Alert.alert('Link unavailable', 'Please try again in a moment.');
+    }
+  }, []);
+
+  const handleLandingHumanSupport = useCallback(
+    async (messages: ChatMessage[]): Promise<HumanSupportRequestResult> => {
+      const draft = buildLiveSupportTicketDraft(messages, 'Landing Live Chat');
+
+      try {
+        const data = await landingSupportMutation.mutateAsync({
+          subject: draft.subject,
+          category: draft.category,
+          message: draft.message,
+          priority: draft.priority,
+        });
+
+        console.log('[Landing] Live support request created:', data.id);
+        return {
+          ok: true,
+          message: `Your request has been submitted (Ticket #${data.id.slice(-6)}). Investor support will follow up shortly by email or phone with the right team for this issue.`,
+        };
+      } catch (error) {
+        console.error('[Landing] Live support request failed:', error);
+        return {
+          ok: false,
+          message: 'We could not create your live support request right now. Please email investors@ivxholding.com or call +1 (561) 644-3503.',
+        };
+      }
+    },
+    [landingSupportMutation]
+  );
+
   return (
     <View style={styles.root}>
       <KeyboardAvoidingView
@@ -1028,7 +1144,7 @@ export default function LandingScreen() {
 
             <View style={styles.comingSoonBadge}>
               <Clock size={11} color={ACCENT_GREEN} />
-              <Text style={styles.comingSoonText}>COMING SOON</Text>
+              <Text style={styles.comingSoonText}>INVESTOR INTAKE OPEN</Text>
             </View>
 
             <Text style={styles.heroTitle}>
@@ -1038,7 +1154,7 @@ export default function LandingScreen() {
             </Text>
 
             <Text style={styles.heroSubtitle}>
-              Join the IVX waitlist to review curated real estate offerings, investor disclosures, and deal-specific terms. Fractional access starts from $50 on eligible deals.
+              Request investor access to review curated real estate offerings, investor disclosures, and deal-specific terms. Fractional access starts from $50 on eligible deals.
             </Text>
 
             <View style={styles.openAccessPill} testID="landing-open-access-pill">
@@ -1079,7 +1195,7 @@ export default function LandingScreen() {
                   end={{ x: 1, y: 1 }}
                   style={styles.primaryBtnGradient}
                 >
-                  <Text style={styles.primaryBtnText}>Join Waitlist</Text>
+                  <Text style={styles.primaryBtnText}>Request Investor Access</Text>
                   <ArrowRight size={20} color="#000" />
                 </LinearGradient>
               </TouchableOpacity>
@@ -1155,7 +1271,7 @@ export default function LandingScreen() {
                     Buy property shares from $50. Earn projected returns from real estate development projects.
                   </Text>
                   <TouchableOpacity style={styles.investTypeCta} onPress={scrollToForm} activeOpacity={0.7}>
-                    <Text style={[styles.investTypeCtaText, { color: ACCENT_GREEN }]}>Join Waitlist</Text>
+                    <Text style={[styles.investTypeCtaText, { color: ACCENT_GREEN }]}>Request Access</Text>
                     <ArrowRight size={13} color={ACCENT_GREEN} />
                   </TouchableOpacity>
                 </View>
@@ -1177,7 +1293,7 @@ export default function LandingScreen() {
                     Direct equity stake in live deals. Partner with developers on premium real estate projects.
                   </Text>
                   <TouchableOpacity style={styles.investTypeCta} onPress={scrollToForm} activeOpacity={0.7}>
-                    <Text style={[styles.investTypeCtaText, { color: GOLD }]}>Get Early Access</Text>
+                    <Text style={[styles.investTypeCtaText, { color: GOLD }]}>Request Deal Access</Text>
                     <ArrowRight size={13} color={GOLD} />
                   </TouchableOpacity>
                 </View>
@@ -1257,6 +1373,35 @@ export default function LandingScreen() {
                   </View>
                 ))}
               </View>
+              <View style={styles.credibilityActions}>
+                <TouchableOpacity
+                  style={[styles.credibilityActionButton, styles.credibilityActionPrimary]}
+                  onPress={() => { void openExternalLink('mailto:investors@ivxholding.com'); }}
+                  activeOpacity={0.85}
+                  testID="landing-email-investor-relations"
+                >
+                  <Mail size={15} color="#000" />
+                  <Text style={styles.credibilityActionPrimaryText}>Email Investor Relations</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.credibilityActionButton}
+                  onPress={() => { void openExternalLink('tel:+15616443503'); }}
+                  activeOpacity={0.8}
+                  testID="landing-call-management"
+                >
+                  <MessageCircle size={15} color={GOLD} />
+                  <Text style={styles.credibilityActionText}>Request Management Call</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.credibilityActionButton}
+                  onPress={() => router.push('/trust-center' as any)}
+                  activeOpacity={0.8}
+                  testID="landing-open-trust-center"
+                >
+                  <ExternalLink size={15} color={GOLD} />
+                  <Text style={styles.credibilityActionText}>Open Trust Center</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </FadeInView>
 
@@ -1282,7 +1427,69 @@ export default function LandingScreen() {
             </View>
           </FadeInView>
 
-          {/* WAITLIST FORM */}
+          <FadeInView delay={100}>
+            <View style={styles.memberAccessSection} testID="landing-member-access-section">
+              <View style={styles.sectionLabelRow}>
+                <CheckCircle2 size={12} color={ACCENT_GREEN} />
+                <Text style={[styles.sectionLabel, { color: ACCENT_GREEN }]}>MEMBER ACCESS READINESS</Text>
+              </View>
+              <Text style={styles.sectionTitle}>What unlocks after approval</Text>
+              <Text style={styles.memberAccessIntro}>
+                The public page now shows the path into verified member registration, profile activation, wallet preparation, and record visibility.
+              </Text>
+              <View style={styles.memberAccessGrid}>
+                {MEMBER_READY_ITEMS.map((item) => (
+                  <View key={item.id} style={styles.memberAccessCard}>
+                    <View style={[styles.memberAccessIconWrap, { backgroundColor: item.accent + '18' }]}> 
+                      <item.icon size={18} color={item.accent} />
+                    </View>
+                    <Text style={styles.memberAccessTitle}>{item.title}</Text>
+                    <Text style={styles.memberAccessText}>{item.text}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          </FadeInView>
+
+          <FadeInView delay={100}>
+            <View style={styles.chatSection} testID="landing-chat-section">
+              <View style={styles.sectionLabelRow}>
+                <MessageCircle size={12} color={ACCENT_BLUE} />
+                <Text style={[styles.sectionLabel, { color: ACCENT_BLUE }]}>INVESTOR CHAT</Text>
+              </View>
+              <Text style={styles.sectionTitle}>The same IVX chat now lives on the landing page</Text>
+              <Text style={styles.chatIntro}>
+                Visitors can ask investor questions, get technical-support answers about the app, backend, AWS, and AI integrations from the same chat used in the app, and request live support without leaving the landing flow.
+              </Text>
+              <View style={styles.chatHighlights}>
+                <View style={styles.chatHighlightCard}>
+                  <Text style={styles.chatHighlightTitle}>App-parity experience</Text>
+                  <Text style={styles.chatHighlightText}>The landing page now exposes the same IVX support chat used inside the app.</Text>
+                </View>
+                <View style={styles.chatHighlightCard}>
+                  <Text style={styles.chatHighlightTitle}>AI first, human when needed</Text>
+                  <Text style={styles.chatHighlightText}>Visitors can self-serve fast answers on deals, technical issues, AWS, and AI integrations or escalate to investor support for follow-up.</Text>
+                </View>
+                <View style={styles.chatHighlightCard}>
+                  <Text style={styles.chatHighlightTitle}>Conversion without friction</Text>
+                  <Text style={styles.chatHighlightText}>Questions about deals, approval, and management access are answered before the intake form.</Text>
+                </View>
+              </View>
+              <ErrorBoundary fallbackTitle="Support chat temporarily unavailable">
+                <InvestorSupportChat
+                  variant="card"
+                  style={styles.chatShell}
+                  source="landing"
+                  testIdPrefix="landing-support-chat"
+                  requestHumanLabel="Request Live Investor Support"
+                  welcomeMessage={LANDING_CHAT_WELCOME_MESSAGE}
+                  quickReplies={LANDING_CHAT_QUICK_REPLIES}
+                  onRequestHumanSupport={handleLandingHumanSupport}
+                />
+              </ErrorBoundary>
+            </View>
+          </FadeInView>
+
           <FadeInView delay={100}>
             <View nativeID="waitlist" style={styles.waitlistFormSection} onLayout={handleFormLayout} testID="landing-waitlist-section">
               <LinearGradient
@@ -1291,16 +1498,34 @@ export default function LandingScreen() {
               />
               <View style={styles.waitlistFormBadge}>
                 <Sparkles size={13} color={GOLD} />
-                <Text style={styles.waitlistFormBadgeText}>JOIN THE WAITLIST</Text>
+                <Text style={styles.waitlistFormBadgeText}>INVESTOR ACCESS</Text>
               </View>
-              <Text style={styles.waitlistFormTitle}>Reserve Your Spot</Text>
+              <Text style={styles.waitlistFormTitle}>Request Investor Access</Text>
               <Text style={styles.waitlistFormSubtitle}>
-                Be the first to know when we launch. Real estate investing open to everyone.
+                Submit your details for investor review, deal updates, and management follow-up.
               </Text>
 
               <ErrorBoundary fallbackTitle="Form temporarily unavailable">
                 <LandingWaitlistForm />
               </ErrorBoundary>
+            </View>
+          </FadeInView>
+
+          <FadeInView delay={100}>
+            <View style={styles.faqSection} testID="landing-investor-faq-section">
+              <View style={styles.sectionLabelRow}>
+                <ShieldCheck size={12} color={GOLD} />
+                <Text style={[styles.sectionLabel, { color: GOLD }]}>INVESTOR FAQ</Text>
+              </View>
+              <Text style={styles.sectionTitle}>Questions serious investors ask first</Text>
+              <View style={styles.faqGrid}>
+                {INVESTOR_FAQS.map((item) => (
+                  <View key={item.id} style={styles.faqCard}>
+                    <Text style={styles.faqQuestion}>{item.question}</Text>
+                    <Text style={styles.faqAnswer}>{item.answer}</Text>
+                  </View>
+                ))}
+              </View>
             </View>
           </FadeInView>
 
@@ -1355,13 +1580,7 @@ export default function LandingScreen() {
                     <TouchableOpacity
                       key={link.id}
                       style={cardStyles.socialCard}
-                      onPress={() => {
-                        try {
-                          void Linking.openURL(link.url);
-                        } catch (e) {
-                          console.log('[Landing] Failed to open:', link.url, e);
-                        }
-                      }}
+                      onPress={() => { void openExternalLink(link.url); }}
                       activeOpacity={0.75}
                       testID={`card-social-${link.id}`}
                     >
@@ -2143,6 +2362,37 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#222',
   },
+  credibilityActions: {
+    gap: 10,
+    marginTop: 16,
+  },
+  credibilityActionButton: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    gap: 8,
+    minHeight: 48,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: GOLD + '22',
+    backgroundColor: '#101010',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  credibilityActionPrimary: {
+    backgroundColor: GOLD,
+    borderColor: GOLD,
+  },
+  credibilityActionText: {
+    color: '#F5D97A',
+    fontSize: 13,
+    fontWeight: '700' as const,
+  },
+  credibilityActionPrimaryText: {
+    color: '#000',
+    fontSize: 13,
+    fontWeight: '800' as const,
+  },
   credibilityIconWrap: {
     width: 42,
     height: 42,
@@ -2215,6 +2465,81 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
   },
+  memberAccessSection: {
+    paddingHorizontal: 24,
+    marginBottom: 40,
+  },
+  memberAccessIntro: {
+    color: '#888',
+    fontSize: 14,
+    lineHeight: 21,
+    marginBottom: 18,
+  },
+  memberAccessGrid: {
+    gap: 12,
+  },
+  memberAccessCard: {
+    backgroundColor: '#0F1211',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: ACCENT_GREEN + '16',
+    padding: 18,
+  },
+  memberAccessIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    marginBottom: 12,
+  },
+  memberAccessTitle: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '700' as const,
+    marginBottom: 6,
+  },
+  memberAccessText: {
+    color: '#888',
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  chatSection: {
+    paddingHorizontal: 24,
+    marginBottom: 40,
+  },
+  chatIntro: {
+    color: '#888',
+    fontSize: 14,
+    lineHeight: 21,
+    marginBottom: 18,
+  },
+  chatHighlights: {
+    gap: 10,
+    marginBottom: 18,
+  },
+  chatHighlightCard: {
+    backgroundColor: '#0D1216',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: ACCENT_BLUE + '20',
+    padding: 16,
+  },
+  chatHighlightTitle: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700' as const,
+    marginBottom: 4,
+  },
+  chatHighlightText: {
+    color: '#888',
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  chatShell: {
+    minHeight: 680,
+    flex: 0,
+  },
   waitlistFormSection: {
     marginHorizontal: 24,
     marginBottom: 32,
@@ -2265,6 +2590,32 @@ const styles = StyleSheet.create({
     lineHeight: 21,
     marginBottom: 20,
     paddingHorizontal: 4,
+  },
+  faqSection: {
+    paddingHorizontal: 24,
+    marginBottom: 40,
+  },
+  faqGrid: {
+    gap: 12,
+  },
+  faqCard: {
+    backgroundColor: '#0E0E0E',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#1F1F1F',
+    padding: 18,
+  },
+  faqQuestion: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '700' as const,
+    lineHeight: 21,
+    marginBottom: 8,
+  },
+  faqAnswer: {
+    color: '#888',
+    fontSize: 13,
+    lineHeight: 20,
   },
   footer: {
     alignItems: 'center',

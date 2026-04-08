@@ -1650,7 +1650,10 @@ export default function JVAgreementScreen() {
       {agreements.some(a => a.published) && (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12, backgroundColor: '#1A1A2E', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#2A2A3E' }}>
           <Shield size={16} color="#FFD700" />
-          <Text style={{ color: '#9A9A9A', fontSize: 12, flex: 1 }}>Live deals can only be edited or deleted from the <Text style={{ color: '#FFD700', fontWeight: '700' as const }}>Admin Panel</Text>.</Text>
+          <Text style={{ color: '#9A9A9A', fontSize: 12, flex: 1 }}>
+            {'Live deals can only be edited or deleted from the '}
+            <Text style={{ color: '#FFD700', fontWeight: '700' as const }}>Admin Panel.</Text>
+          </Text>
         </View>
       )}
 

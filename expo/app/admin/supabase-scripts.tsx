@@ -316,6 +316,13 @@ DO $ BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.visitor_sessions
 CREATE TABLE IF NOT EXISTS public.realtime_snapshots (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), snapshot_type TEXT DEFAULT 'visitor', data JSONB DEFAULT '{}'::jsonb, active_visitors INTEGER DEFAULT 0, created_at TIMESTAMPTZ DEFAULT now());
 ALTER TABLE public.realtime_snapshots ENABLE ROW LEVEL SECURITY;
 DO $ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname='realtime_snapshots_auth_select') THEN CREATE POLICY "realtime_snapshots_auth_select" ON public.realtime_snapshots FOR SELECT TO authenticated USING (true); END IF; IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname='realtime_snapshots_auth_insert') THEN CREATE POLICY "realtime_snapshots_auth_insert" ON public.realtime_snapshots FOR INSERT TO authenticated WITH CHECK (true); END IF; END $;
+DO $ BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.realtime_snapshots; EXCEPTION WHEN duplicate_object THEN NULL; END $;
+
+CREATE TABLE IF NOT EXISTS public.messages (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), conversation_id TEXT NOT NULL, sender_id TEXT NOT NULL, text TEXT, file_url TEXT, file_type TEXT, created_at TIMESTAMPTZ DEFAULT now());
+ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
+DO $ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname='messages_auth_select') THEN CREATE POLICY "messages_auth_select" ON public.messages FOR SELECT TO authenticated USING (true); END IF; IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname='messages_auth_insert') THEN CREATE POLICY "messages_auth_insert" ON public.messages FOR INSERT TO authenticated WITH CHECK (true); END IF; END $;
+CREATE INDEX IF NOT EXISTS idx_messages_conversation_created ON public.messages(conversation_id, created_at DESC);
+DO $ BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.messages; EXCEPTION WHEN duplicate_object THEN NULL; END $;
 
 CREATE TABLE IF NOT EXISTS public.push_tokens (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID, token TEXT NOT NULL, platform TEXT, created_at TIMESTAMPTZ DEFAULT now(), updated_at TIMESTAMPTZ DEFAULT now(), UNIQUE(token));
 ALTER TABLE public.push_tokens ENABLE ROW LEVEL SECURITY;

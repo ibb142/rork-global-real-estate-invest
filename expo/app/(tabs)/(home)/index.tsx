@@ -490,7 +490,9 @@ const _JVPropertyCard = React.memo(function JVPropertyCard({ agreement, onPress,
   const tUnit = trustMarket.timelineUnit === 'years' ? 'yr' : 'mo';
   const timeline = (tMin && tMax) ? `${tMin}\u2013${tMax} ${tUnit}` : (tMax ? `${tMax} ${tUnit}` : '14\u201324 mo');
   const minimumOwnershipSnapshot = buildOwnershipSnapshot(trustMarket.minInvestment, trustMarket.salePrice);
-  const salePriceLabel = formatCurrencyCompact(trustMarket.salePrice);
+  const hasExplicitSalePrice = Number(trustMarket.explicitSalePrice ?? 0) > 0;
+  const marketValueLabel = formatCurrencyCompact(trustMarket.salePrice);
+  const marketValueTitle = hasExplicitSalePrice ? 'Sale price' : 'Property value';
   const fractionalEntryLabel = formatCurrencyWithDecimals(trustMarket.minInvestment);
   const minimumOwnershipLabel = `${minimumOwnershipSnapshot.ownershipPercent.toFixed(4)}% ownership`;
 
@@ -611,7 +613,7 @@ const _JVPropertyCard = React.memo(function JVPropertyCard({ agreement, onPress,
           <Text style={igStyles.minInvestText}>
             Fractional <Text style={igStyles.minInvestBold}>from {fractionalEntryLabel}</Text>
             {' · '}
-            Sale price <Text style={igStyles.minInvestBold}>{salePriceLabel}</Text>
+            {marketValueTitle} <Text style={igStyles.minInvestBold}>{marketValueLabel}</Text>
             {' · '}
             <Text style={igStyles.minInvestBold}>{minimumOwnershipLabel}</Text>
           </Text>
@@ -1536,6 +1538,7 @@ export default function HomeScreen() {
     const trustMarket = rawDeal.trustMarket as {
       minInvestment?: number;
       salePrice?: number;
+      explicitSalePrice?: number;
       fractionalSharePrice?: number;
       timelineMin?: number;
       timelineMax?: number;
@@ -1553,7 +1556,7 @@ export default function HomeScreen() {
       type: deal.type,
       minInvestment: trustMarket?.minInvestment ? Math.max(trustMarket.minInvestment, 1) : 50,
       propertyMarketValue: marketVal as number | undefined,
-      salePrice: trustMarket?.salePrice,
+      salePrice: trustMarket?.explicitSalePrice,
       fractionalSharePrice: trustMarket?.fractionalSharePrice,
       timelineMin: trustMarket?.timelineMin,
       timelineMax: trustMarket?.timelineMax,

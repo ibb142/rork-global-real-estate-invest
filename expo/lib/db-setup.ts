@@ -19,6 +19,7 @@ const REQUIRED_TABLES: { name: string; description: string }[] = [
   { name: 'analytics_events', description: 'App analytics tracking' },
   { name: 'image_registry', description: 'Stored image tracking' },
   { name: 'push_tokens', description: 'Push notification tokens' },
+  { name: 'messages', description: 'Shared chat room messages' },
   { name: 'jv_deals', description: 'Joint Venture deals' },
   { name: 'landing_analytics', description: 'Landing page events' },
   { name: 'waitlist', description: 'Waitlist signups' },
@@ -38,7 +39,7 @@ export async function checkTableExists(tableName: string): Promise<boolean> {
 }
 
 export async function checkAllTables(): Promise<TableStatus[]> {
-  console.log('[DB Setup] Checking all 13 tables...');
+  console.log(`[DB Setup] Checking all ${REQUIRED_TABLES.length} tables...`);
   const results: TableStatus[] = [];
   for (const table of REQUIRED_TABLES) {
     const exists = await checkTableExists(table.name);
@@ -346,7 +347,25 @@ CREATE INDEX IF NOT EXISTS idx_push_tokens_user ON push_tokens(user_id);
 DROP TRIGGER IF EXISTS trg_push_tokens_updated_at ON push_tokens;
 CREATE TRIGGER trg_push_tokens_updated_at BEFORE UPDATE ON push_tokens FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
--- 11. JV_DEALS
+-- 11. MESSAGES
+CREATE TABLE IF NOT EXISTS messages (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  conversation_id text NOT NULL,
+  sender_id text NOT NULL,
+  text text,
+  file_url text,
+  file_type text,
+  created_at timestamptz DEFAULT now()
+);
+ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
+DO $ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname='messages_select_auth' AND tablename='messages') THEN CREATE POLICY messages_select_auth ON messages FOR SELECT TO authenticated USING (true); END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname='messages_insert_auth' AND tablename='messages') THEN CREATE POLICY messages_insert_auth ON messages FOR INSERT TO authenticated WITH CHECK (true); END IF;
+END $;
+CREATE INDEX IF NOT EXISTS idx_messages_conversation_created ON messages(conversation_id, created_at);
+DO $ BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.messages; EXCEPTION WHEN duplicate_object THEN NULL; END $;
+
+-- 12. JV_DEALS
 CREATE TABLE IF NOT EXISTS jv_deals (
   id text PRIMARY KEY, title text, "projectName" text, type text, description text,
   partner_name text, partner_email text, partner_phone text, partner_type text,
@@ -863,37 +882,37 @@ $fn$ LANGUAGE plpgsql SECURITY DEFINER;
 -- 18. VERIFY
 DO $$
 DECLARE
-  _tables text[] := ARRAY['profiles','wallets','properties','market_data','holdings','transactions','notifications','analytics_events','image_registry','push_tokens','jv_deals','landing_analytics','waitlist'];
+  _tables text[] := ARRAY['profiles','wallets','properties','market_data','holdings','transactions','notifications','analytics_events','image_registry','push_tokens','messages','jv_deals','landing_analytics','waitlist'];
   _t text; _count integer := 0;
 BEGIN
   FOREACH _t IN ARRAY _tables LOOP
     IF EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name=_t AND table_schema='public') THEN _count:=_count+1;
     ELSE RAISE NOTICE 'MISSING: %', _t; END IF;
   END LOOP;
-  RAISE NOTICE 'Tables: % / 13 created', _count;
-  IF _count=13 THEN RAISE NOTICE 'ALL TABLES READY'; END IF;
+  RAISE NOTICE 'Tables: % / 14 created', _count;
+  IF _count=14 THEN RAISE NOTICE 'ALL TABLES READY'; END IF;
 END $$;
 `;
 
 export const VERIFY_SQL = `-- IVXHOLDINGS GO-LIVE VERIFICATION
-DO $ DECLARE _t text; _ok int:=0; _tables text[]:=ARRAY['profiles','wallets','properties','market_data','holdings','transactions','notifications','analytics_events','image_registry','push_tokens','jv_deals','landing_analytics','waitlist','resale_listings','wallet_transactions'];
+DO $ DECLARE _t text; _ok int:=0; _tables text[]:=ARRAY['profiles','wallets','properties','market_data','holdings','transactions','notifications','analytics_events','image_registry','push_tokens','messages','jv_deals','landing_analytics','waitlist','resale_listings','wallet_transactions'];
 BEGIN
   RAISE NOTICE '=== TABLE CHECK ===';
   FOREACH _t IN ARRAY _tables LOOP
     IF EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name=_t AND table_schema='public') THEN _ok:=_ok+1; RAISE NOTICE '[OK] %', _t;
     ELSE RAISE NOTICE '[MISS] %', _t; END IF;
   END LOOP;
-  RAISE NOTICE 'Tables: % / 15', _ok;
+  RAISE NOTICE 'Tables: % / 16', _ok;
 END $;
 
-DO $ DECLARE _t text; _ok int:=0; _tables text[]:=ARRAY['profiles','wallets','properties','market_data','holdings','transactions','notifications','analytics_events','image_registry','push_tokens','jv_deals','landing_analytics','waitlist','resale_listings','wallet_transactions'];
+DO $ DECLARE _t text; _ok int:=0; _tables text[]:=ARRAY['profiles','wallets','properties','market_data','holdings','transactions','notifications','analytics_events','image_registry','push_tokens','messages','jv_deals','landing_analytics','waitlist','resale_listings','wallet_transactions'];
 BEGIN
   RAISE NOTICE '=== RLS CHECK ===';
   FOREACH _t IN ARRAY _tables LOOP
     IF (SELECT relrowsecurity FROM pg_class WHERE relname=_t AND relnamespace=(SELECT oid FROM pg_namespace WHERE nspname='public')) THEN _ok:=_ok+1; RAISE NOTICE '[OK] % RLS', _t;
     ELSE RAISE NOTICE '[WARN] % NO RLS', _t; END IF;
   END LOOP;
-  RAISE NOTICE 'RLS: % / 15', _ok;
+  RAISE NOTICE 'RLS: % / 16', _ok;
 END $;
 
 DO $$ BEGIN

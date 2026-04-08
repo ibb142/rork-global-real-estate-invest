@@ -38,6 +38,7 @@ import Colors from '@/constants/colors';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { validateEmail, validatePassword, validatePhone } from '@/lib/auth-helpers';
+import { fetchPublicGeoData } from '@/lib/public-geo';
 import * as Clipboard from 'expo-clipboard';
 import { fetchAdminMemberRegistry } from '@/lib/member-registry';
 
@@ -109,32 +110,23 @@ export default function RegistrationAuditScreen() {
     queryKey: ['device-ip-info'],
     queryFn: async () => {
       console.log('[RegAudit] Fetching device IP info...');
-      try {
-        const res = await fetch('https://ipapi.co/json/');
-        if (!res.ok) throw new Error('ipapi failed');
-        const data = await res.json();
-        console.log('[RegAudit] IP info:', data.ip, data.city, data.country_name);
+      const geo = await fetchPublicGeoData();
+      if (geo) {
+        console.log('[RegAudit] Geo info:', geo.ip, geo.city, geo.country, geo.source);
         return {
-          ip: data.ip || 'Unknown',
-          city: data.city || '',
-          region: data.region || '',
-          country: data.country_name || '',
-          isp: data.org || '',
-          timezone: data.timezone || '',
-          lat: data.latitude,
-          lon: data.longitude,
-          org: data.org || '',
+          ip: geo.ip || 'Unknown',
+          city: geo.city || '',
+          region: geo.region || '',
+          country: geo.country || '',
+          isp: geo.org || '',
+          timezone: geo.timezone || '',
+          lat: geo.lat,
+          lon: geo.lng,
+          org: geo.org || '',
         };
-      } catch {
-        console.log('[RegAudit] ipapi failed, trying ipify...');
-        try {
-          const res2 = await fetch('https://api.ipify.org?format=json');
-          const data2 = await res2.json();
-          return { ip: data2.ip || 'Unknown' };
-        } catch {
-          return { ip: 'Could not detect' };
-        }
       }
+
+      return { ip: 'Could not detect' };
     },
     staleTime: 1000 * 60 * 5,
     retry: 1,

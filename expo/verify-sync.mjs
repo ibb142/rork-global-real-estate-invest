@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import 'dotenv/config';
+
 /**
  * IVX Holdings — Sync Verification & Health Check
  * 
@@ -13,18 +15,22 @@
 import { readFileSync, readdirSync, statSync } from 'fs';
 import { join, relative } from 'path';
 import { createHash } from 'crypto';
+import { getSyncPaths } from './sync-paths.mjs';
+
+const { syncRoot: PROJECT_ROOT, appRoot: APP_ROOT } = getSyncPaths(import.meta.url);
 
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 const REPO = process.env.GITHUB_REPO || 'ibb142/rork-global-real-estate-invest';
 const BRANCH = process.env.GITHUB_BRANCH || 'main';
 const API = 'https://api.github.com';
-const PROJECT_ROOT = process.env.SYNC_ROOT || '/home/user/rork-app';
 
 const FIX = process.argv.includes('--fix');
 
 const IGNORE_DIRS = new Set([
   'node_modules', '.git', '.expo', 'dist', 'build', '.rork',
   '.DS_Store', '__pycache__', 'tmp', 'core',
+  'dist-audit-ios', 'dist-audit-ios-final', 'dist-audit-ios-postfix',
+  'dist-audit-web', 'dist-audit-web-final', 'dist-audit-web-postfix',
 ]);
 
 const IGNORE_FILES = new Set([
@@ -217,11 +223,12 @@ async function main() {
 
   if (!inSync && FIX) {
     console.log('  --fix flag detected. Running sync now...\n');
-    const { execSync } = await import('child_process');
+    const { execFileSync } = await import('child_process');
     try {
-      execSync(
-        `node "${join(PROJECT_ROOT, 'expo', 'sync-github.mjs')}" --message "fix: resolve drift (${totalDrift} files)"`,
-        { env: { ...process.env, GITHUB_TOKEN }, stdio: 'inherit', timeout: 120_000 }
+      execFileSync(
+        process.execPath,
+        [join(APP_ROOT, 'sync-github.mjs'), '--message', `fix: resolve drift (${totalDrift} files)`],
+        { env: { ...process.env, GITHUB_TOKEN, SYNC_ROOT: PROJECT_ROOT }, stdio: 'inherit', cwd: APP_ROOT, timeout: 120_000 }
       );
     } catch (err) {
       console.error(`Sync failed: ${err.message}`);

@@ -46,17 +46,17 @@ function extractLocationFromDeal(deal: ParsedJVDeal): string {
 function getDefaultTrustInfo(deal: ParsedJVDeal): DealTrustInfo {
   const projName = deal.projectName || '';
   const isLLC = projName.toUpperCase().includes('LLC');
-  const salePrice = deal.propertyValue || deal.totalInvestment || 0;
+  const ownershipBasis = deal.propertyValue || deal.totalInvestment || 0;
   const minInvestment = 50;
   const fractionalSharePrice = Math.max(minInvestment, 1);
-  const ownershipSnapshot = buildOwnershipSnapshot(minInvestment, salePrice);
+  const ownershipSnapshot = buildOwnershipSnapshot(minInvestment, ownershipBasis);
 
   return {
     llcName: isLLC ? projName : (projName ? `${projName} LLC` : 'IVX Holdings LLC'),
     builderName: projName.includes('ONE STOP') ? 'One Stop Development' : (projName || 'IVX Development'),
     minInvestment,
-    timelineMin: 14,
-    timelineMax: 24,
+    timelineMin: 0,
+    timelineMax: 0,
     timelineUnit: 'months' as const,
     legalStructure: 'LLC Joint Venture',
     insuranceCoverage: true,
@@ -64,7 +64,6 @@ function getDefaultTrustInfo(deal: ParsedJVDeal): DealTrustInfo {
     permitStatus: 'approved' as const,
     escrowProtected: true,
     thirdPartyAudit: false,
-    salePrice,
     fractionalSharePrice,
     priceChange1h: 10,
     priceChange2h: 18,
@@ -116,10 +115,10 @@ const TrustDealCard = memo(function TrustDealCard({
       return {
         ...getDefaultTrustInfo(deal),
         minInvestment: deal.trustMarket.minInvestment,
-        salePrice: deal.trustMarket.salePrice,
+        salePrice: deal.trustMarket.explicitSalePrice,
         fractionalSharePrice: deal.trustMarket.fractionalSharePrice,
-        timelineMin: deal.trustMarket.timelineMin ?? 14,
-        timelineMax: deal.trustMarket.timelineMax ?? 24,
+        timelineMin: deal.trustMarket.timelineMin ?? 0,
+        timelineMax: deal.trustMarket.timelineMax ?? 0,
         timelineUnit: deal.trustMarket.timelineUnit ?? 'months',
         priceChange1h: deal.trustMarket.priceChange1h,
         priceChange2h: deal.trustMarket.priceChange2h,
@@ -164,14 +163,25 @@ const TrustDealCard = memo(function TrustDealCard({
 
   const location = useMemo(() => extractLocationFromDeal(deal), [deal]);
   const timeline = useMemo(() => formatTimelineString(trust), [trust]);
-  const salePrice = useMemo(() => {
-    const trustMarketSalePrice = Number(deal.trustMarket?.salePrice ?? 0);
-    if (trustMarketSalePrice > 0) {
-      return trustMarketSalePrice;
+  const explicitSalePrice = useMemo(() => {
+    const trustMarketExplicitSalePrice = Number(deal.trustMarket?.explicitSalePrice ?? 0);
+    if (trustMarketExplicitSalePrice > 0) {
+      return trustMarketExplicitSalePrice;
+    }
+    const topLevelSalePrice = Number(deal.salePrice ?? 0);
+    if (topLevelSalePrice > 0) {
+      return topLevelSalePrice;
     }
     const trustSalePrice = Number(trust.salePrice ?? 0);
     if (trustSalePrice > 0) {
       return trustSalePrice;
+    }
+    return 0;
+  }, [deal.salePrice, deal.trustMarket?.explicitSalePrice, trust.salePrice]);
+  const salePrice = useMemo(() => {
+    const trustMarketSalePrice = Number(deal.trustMarket?.salePrice ?? 0);
+    if (trustMarketSalePrice > 0) {
+      return trustMarketSalePrice;
     }
     const propertyValue = Number(deal.propertyValue ?? 0);
     if (propertyValue > 0) {
@@ -182,7 +192,7 @@ const TrustDealCard = memo(function TrustDealCard({
       return totalInvestment;
     }
     return 0;
-  }, [deal.propertyValue, deal.totalInvestment, deal.trustMarket?.salePrice, trust.salePrice]);
+  }, [deal.propertyValue, deal.totalInvestment, deal.trustMarket?.salePrice]);
   const minInvestment = deal.trustMarket?.minInvestment || trust.minInvestment || 50;
   const ownershipSnapshot = useMemo(() => buildOwnershipSnapshot(minInvestment, salePrice), [minInvestment, salePrice]);
   const shareEntryPrice = useMemo(() => {
@@ -194,7 +204,7 @@ const TrustDealCard = memo(function TrustDealCard({
     if (trust.ownershipLabel) return trust.ownershipLabel;
     return ownershipSnapshot.ownershipText;
   }, [deal.trustMarket?.ownershipLabel, ownershipSnapshot.ownershipText, trust.ownershipLabel]);
-  const salePriceLabel = useMemo(() => formatMarketValue(salePrice), [salePrice]);
+  const salePriceLabel = useMemo(() => formatMarketValue(explicitSalePrice), [explicitSalePrice]);
   const investmentAmountLabel = useMemo(() => formatMarketValue(Number(deal.totalInvestment ?? 0)), [deal.totalInvestment]);
   const minOwnershipLabel = useMemo(() => `${ownershipSnapshot.ownershipPercent.toFixed(4)}% min`, [ownershipSnapshot.ownershipPercent]);
   const showEntryPill = useMemo(() => Math.abs(shareEntryPrice - minInvestment) > 0.009, [shareEntryPrice, minInvestment]);
@@ -301,11 +311,13 @@ const TrustDealCard = memo(function TrustDealCard({
               </View>
             ) : null}
           </View>
-          <View style={styles.salePriceChip} testID={`trust-sale-price-${deal.id}`}>
-            <Text style={styles.salePriceChipLabel}>Sale Price</Text>
-            <Text style={styles.salePriceChipValue}>{salePriceLabel}</Text>
-            <Text style={styles.salePriceChipSubtext}>{minOwnershipLabel}</Text>
-          </View>
+          {explicitSalePrice > 0 ? (
+            <View style={styles.salePriceChip} testID={`trust-sale-price-${deal.id}`}>
+              <Text style={styles.salePriceChipLabel}>Sale Price</Text>
+              <Text style={styles.salePriceChipValue}>{salePriceLabel}</Text>
+              <Text style={styles.salePriceChipSubtext}>{minOwnershipLabel}</Text>
+            </View>
+          ) : null}
         </View>
 
         <View style={styles.divider} />

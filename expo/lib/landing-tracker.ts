@@ -3,6 +3,7 @@ import { supabase, isSupabaseConfigured } from './supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { awsAnalyticsBackup, type AWSAnalyticsEvent } from './aws-analytics-backup';
 import * as SecureStore from 'expo-secure-store';
+import { getCachedPublicGeoData, type PublicGeoData } from './public-geo';
 
 const OWNER_IP_ENABLED_KEY = 'ivx_owner_ip_enabled';
 
@@ -20,19 +21,8 @@ const QUEUE_KEY = '@ivx_landing_queue';
 const GEO_CACHE_KEY = '@ivx_geo_cache';
 const BATCH_SIZE = 50;
 const FLUSH_INTERVAL = 15_000;
-const GEO_CACHE_TTL = 30 * 60 * 1000;
 
-interface GeoData {
-  city?: string;
-  region?: string;
-  country?: string;
-  countryCode?: string;
-  lat?: number;
-  lng?: number;
-  timezone?: string;
-  ip?: string;
-  org?: string;
-}
+type GeoData = PublicGeoData;
 
 interface LandingEvent {
   event: string;
@@ -48,104 +38,6 @@ function trackerLog(...args: unknown[]): void {
   if (__DEV__ && LANDING_TRACKER_DEBUG) {
     console.log(...args);
   }
-}
-
-async function fetchRealGeoData(): Promise<GeoData | null> {
-  const GEO_APIS = [
-    {
-      url: 'https://ipapi.co/json/',
-      parse: (d: Record<string, unknown>): GeoData => ({
-        city: d.city as string || undefined,
-        region: d.region as string || undefined,
-        country: d.country_name as string || undefined,
-        countryCode: d.country_code as string || undefined,
-        lat: typeof d.latitude === 'number' ? d.latitude : undefined,
-        lng: typeof d.longitude === 'number' ? d.longitude : undefined,
-        timezone: d.timezone as string || undefined,
-        ip: d.ip as string || undefined,
-        org: d.org as string || undefined,
-      }),
-    },
-    {
-      url: 'https://ip-api.com/json/?fields=status,message,country,countryCode,region,regionName,city,lat,lon,timezone,isp,org,query',
-      parse: (d: Record<string, unknown>): GeoData => ({
-        city: d.city as string || undefined,
-        region: d.regionName as string || undefined,
-        country: d.country as string || undefined,
-        countryCode: d.countryCode as string || undefined,
-        lat: typeof d.lat === 'number' ? d.lat : undefined,
-        lng: typeof d.lon === 'number' ? d.lon : undefined,
-        timezone: d.timezone as string || undefined,
-        ip: d.query as string || undefined,
-        org: d.org as string || d.isp as string || undefined,
-      }),
-    },
-    {
-      url: 'https://ipwho.is/',
-      parse: (d: Record<string, unknown>): GeoData => ({
-        city: d.city as string || undefined,
-        region: d.region as string || undefined,
-        country: d.country as string || undefined,
-        countryCode: d.country_code as string || undefined,
-        lat: typeof d.latitude === 'number' ? d.latitude : undefined,
-        lng: typeof d.longitude === 'number' ? d.longitude : undefined,
-        timezone: typeof d.timezone === 'object' && d.timezone ? (d.timezone as Record<string, unknown>).id as string : undefined,
-        ip: d.ip as string || undefined,
-      }),
-    },
-  ];
-
-  for (const api of GEO_APIS) {
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 5000);
-      const resp = await fetch(api.url, { signal: controller.signal });
-      clearTimeout(timeout);
-
-      if (!resp.ok) {
-        trackerLog('[GeoLookup] API failed:', api.url, resp.status);
-        continue;
-      }
-
-      const data = await resp.json();
-      if (data.error || data.status === 'fail') {
-        trackerLog('[GeoLookup] API returned error:', api.url, data.message || data.error);
-        continue;
-      }
-
-      const geo = api.parse(data);
-      if (geo.country) {
-        trackerLog('[GeoLookup] Real geo resolved:', geo.city, geo.region, geo.country, '| IP:', geo.ip, '| via', api.url);
-        return geo;
-      }
-    } catch (err) {
-      trackerLog('[GeoLookup] API exception:', api.url, (err as Error)?.message);
-    }
-  }
-
-  trackerLog('[GeoLookup] All geo APIs failed — no location data available');
-  return null;
-}
-
-async function getCachedOrFetchGeo(): Promise<GeoData | null> {
-  try {
-    const cached = await AsyncStorage.getItem(GEO_CACHE_KEY);
-    if (cached) {
-      const parsed = JSON.parse(cached);
-      if (parsed.data && parsed.timestamp && Date.now() - parsed.timestamp < GEO_CACHE_TTL) {
-        trackerLog('[GeoLookup] Using cached geo:', parsed.data.city, parsed.data.country);
-        return parsed.data as GeoData;
-      }
-    }
-  } catch {}
-
-  const geo = await fetchRealGeoData();
-  if (geo) {
-    try {
-      await AsyncStorage.setItem(GEO_CACHE_KEY, JSON.stringify({ data: geo, timestamp: Date.now() }));
-    } catch {}
-  }
-  return geo;
 }
 
 class LandingTracker {
@@ -226,7 +118,7 @@ class LandingTracker {
     this.geoFetching = true;
 
     try {
-      const geo = await getCachedOrFetchGeo();
+      const geo = await getCachedPublicGeoData({ cacheKey: GEO_CACHE_KEY });
       if (geo && geo.country) {
         this.geoData = geo;
         this.geoReady = true;

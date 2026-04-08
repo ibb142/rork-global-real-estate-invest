@@ -15,6 +15,7 @@ import {
 import { readFileSync } from 'fs';
 import { fetchStaticLandingApiPayloads } from './scripts/landing-static-api.mjs';
 import { injectLandingCardRenderer } from './scripts/landing-card-renderer-injector.mjs';
+import { sanitizeLandingHtml } from './scripts/landing-html-sanitizer.mjs';
 
 const BUCKET_NAME = 'ivxholding.com';
 const WWW_BUCKET = 'www.ivxholding.com';
@@ -25,6 +26,10 @@ const rawRegion = (process.env.AWS_REGION || '').trim();
 const REGION = /^[a-z]{2}-[a-z]+-[0-9]$/.test(rawRegion) ? rawRegion : 'us-east-1';
 const ACCESS_KEY = (process.env.AWS_ACCESS_KEY_ID || '').trim();
 const SECRET_KEY = (process.env.AWS_SECRET_ACCESS_KEY || '').trim();
+const LANDING_HTML_CACHE_CONTROL = 'no-cache, no-store, must-revalidate';
+const LANDING_CONFIG_CACHE_CONTROL = 'no-cache, no-store, must-revalidate';
+const LANDING_API_CACHE_CONTROL = 'public, max-age=60, s-maxage=300, stale-while-revalidate=600';
+const LANDING_HEALTH_CACHE_CONTROL = 'public, max-age=30, s-maxage=60, stale-while-revalidate=120';
 
 const s3 = new S3Client({
   region: REGION,
@@ -232,6 +237,11 @@ async function deploy() {
   const linkedinPartnerId = (process.env.LINKEDIN_PARTNER_ID || '').trim();
 
   let html = readFileSync('./ivxholding-landing/index.html', 'utf-8');
+  const sanitizedLandingHtml = sanitizeLandingHtml(html);
+  html = sanitizedLandingHtml.html;
+  if (sanitizedLandingHtml.duplicateBlockCount > 0) {
+    console.log('   🧹 Removed duplicate landing runtime blocks:', sanitizedLandingHtml.duplicateBlockCount, '(markers:', sanitizedLandingHtml.markerOccurrences + ')');
+  }
   html = injectLandingCardRenderer(html);
   html = html.replace(/__IVX_API_BASE_URL__/g, apiBaseUrl);
   html = html.replace(/__IVX_SUPABASE_URL__/g, supabaseUrl);
@@ -263,7 +273,7 @@ async function deploy() {
     Key: 'index.html',
     Body: html,
     ContentType: 'text/html; charset=utf-8',
-    CacheControl: 'no-cache, no-store, must-revalidate',
+    CacheControl: LANDING_HTML_CACHE_CONTROL,
   }));
   console.log('   ✅ index.html uploaded');
 
@@ -281,7 +291,7 @@ async function deploy() {
     Key: 'ivx-config.json',
     Body: configJson,
     ContentType: 'application/json',
-    CacheControl: 'no-cache, no-store, must-revalidate',
+    CacheControl: LANDING_CONFIG_CACHE_CONTROL,
   }));
   console.log('   ✅ ivx-config.json uploaded');
 
@@ -298,7 +308,7 @@ async function deploy() {
     Key: 'api/landing-deals',
     Body: dealsJson,
     ContentType: 'application/json',
-    CacheControl: 'no-cache, no-store, must-revalidate',
+    CacheControl: LANDING_API_CACHE_CONTROL,
   }));
   console.log('   ✅ /api/landing-deals uploaded');
   await s3.send(new PutObjectCommand({
@@ -306,7 +316,7 @@ async function deploy() {
     Key: 'api/published-jv-deals',
     Body: dealsJson,
     ContentType: 'application/json',
-    CacheControl: 'no-cache, no-store, must-revalidate',
+    CacheControl: LANDING_API_CACHE_CONTROL,
   }));
   console.log('   ✅ /api/published-jv-deals uploaded');
   await s3.send(new PutObjectCommand({
@@ -314,7 +324,7 @@ async function deploy() {
     Key: 'health',
     Body: healthJson,
     ContentType: 'application/json',
-    CacheControl: 'no-cache, no-store, must-revalidate',
+    CacheControl: LANDING_HEALTH_CACHE_CONTROL,
   }));
   console.log('   ✅ /health uploaded');
 

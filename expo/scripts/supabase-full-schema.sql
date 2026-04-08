@@ -859,7 +859,30 @@ DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname='realtime_snapshots_auth_insert') THEN
     CREATE POLICY "realtime_snapshots_auth_insert" ON public.realtime_snapshots FOR INSERT TO authenticated WITH CHECK (true);
   END IF;
-END $$;
+END $;
+DO $ BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.realtime_snapshots; EXCEPTION WHEN duplicate_object THEN NULL; END $;
+
+-- 6h. messages
+CREATE TABLE IF NOT EXISTS public.messages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  conversation_id TEXT NOT NULL,
+  sender_id TEXT NOT NULL,
+  text TEXT,
+  file_url TEXT,
+  file_type TEXT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
+DO $ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname='messages_auth_select') THEN
+    CREATE POLICY "messages_auth_select" ON public.messages FOR SELECT TO authenticated USING (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname='messages_auth_insert') THEN
+    CREATE POLICY "messages_auth_insert" ON public.messages FOR INSERT TO authenticated WITH CHECK (true);
+  END IF;
+END $;
+CREATE INDEX IF NOT EXISTS idx_messages_conversation_created ON public.messages(conversation_id, created_at DESC);
+DO $ BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.messages; EXCEPTION WHEN duplicate_object THEN NULL; END $;
 
 -- ============================================================
 -- 7. KYC

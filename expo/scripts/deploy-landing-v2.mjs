@@ -2,6 +2,7 @@
 import { readFileSync } from 'fs';
 import { fetchStaticLandingApiPayloads } from './landing-static-api.mjs';
 import { injectLandingCardRenderer } from './landing-card-renderer-injector.mjs';
+import { sanitizeLandingHtml } from './landing-html-sanitizer.mjs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { createHmac, createHash } from 'crypto';
@@ -91,6 +92,11 @@ async function main() {
 
   const htmlPath = resolve(__dirname, '..', 'ivxholding-landing', 'index.html');
   let html = readFileSync(htmlPath, 'utf-8');
+  const sanitizedLandingHtml = sanitizeLandingHtml(html);
+  html = sanitizedLandingHtml.html;
+  if (sanitizedLandingHtml.duplicateBlockCount > 0) {
+    console.log('[Deploy] Removed duplicate landing runtime blocks:', sanitizedLandingHtml.duplicateBlockCount, '(markers:', sanitizedLandingHtml.markerOccurrences + ')');
+  }
   html = injectLandingCardRenderer(html);
   console.log('[Deploy] HTML length:', html.length);
 

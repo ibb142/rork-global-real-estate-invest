@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import 'dotenv/config';
 /**
  * IVX Holdings — Auto Sync Watcher
  * 
@@ -13,12 +14,14 @@
 
 import { watch, readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
+import { getSyncPaths, toSyncRelativePath } from './sync-paths.mjs';
+
+const { syncRoot: PROJECT_ROOT, appRoot: WORKSPACE_ROOT, appPrefix } = getSyncPaths(import.meta.url);
 
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
-const PROJECT_ROOT = process.env.SYNC_ROOT || '/home/user/rork-app';
-const SYNC_SCRIPT = join(PROJECT_ROOT, 'expo', 'sync-github.mjs');
-const STATE_DIR = join(PROJECT_ROOT, 'expo', 'tmp');
+const SYNC_SCRIPT = join(WORKSPACE_ROOT, 'sync-github.mjs');
+const STATE_DIR = join(WORKSPACE_ROOT, 'tmp');
 const STATE_FILE = join(STATE_DIR, 'sync-state.json');
 
 const args = process.argv.slice(2);
@@ -28,11 +31,28 @@ const INTERVAL_SECONDS = intervalIdx !== -1 && args[intervalIdx + 1]
   ? parseInt(args[intervalIdx + 1], 10)
   : 60;
 
-const WATCH_DIRS = ['app', 'components', 'lib', 'constants', 'types', 'mocks', 'deploy', 'ivxholding-landing'];
+const WATCH_DIRS = [
+  'app',
+  'src',
+  'components',
+  'lib',
+  'constants',
+  'types',
+  'hooks',
+  'mocks',
+  'deploy',
+  'docs',
+  'scripts',
+  '__tests__',
+  '.github',
+  'ivxholding-landing',
+];
 
 const IGNORE = new Set([
   'node_modules', '.git', '.expo', 'dist', 'build', '.rork',
   'tmp', 'core', '.DS_Store',
+  'dist-audit-ios', 'dist-audit-ios-final', 'dist-audit-ios-postfix',
+  'dist-audit-web', 'dist-audit-web-final', 'dist-audit-web-postfix',
 ]);
 
 function loadState() {
@@ -51,9 +71,18 @@ function saveState(state) {
   writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
 }
 
+function normalizeWatchedPath(filePath) {
+  if (appPrefix && filePath.startsWith(`${appPrefix}/`)) {
+    return filePath.slice(appPrefix.length + 1);
+  }
+
+  return filePath;
+}
+
 function getChangeSummary(changedFiles) {
   const categories = { app: 0, lib: 0, components: 0, deploy: 0, other: 0 };
-  for (const f of changedFiles) {
+  for (const rawPath of changedFiles) {
+    const f = normalizeWatchedPath(rawPath);
     if (f.startsWith('app/')) categories.app++;
     else if (f.startsWith('lib/')) categories.lib++;
     else if (f.startsWith('components/')) categories.components++;
@@ -83,10 +112,11 @@ async function runSync(changedFiles = []) {
   console.log(`[sync] Changed files: ${changedFiles.length || 'all'}`);
 
   try {
-    execSync(
-      `node "${SYNC_SCRIPT}" --message "${message}"`,
+    execFileSync(
+      process.execPath,
+      [SYNC_SCRIPT, '--message', message],
       {
-        env: { ...process.env, GITHUB_TOKEN },
+        env: { ...process.env, GITHUB_TOKEN, SYNC_ROOT: PROJECT_ROOT },
         stdio: 'inherit',
         cwd: dirname(SYNC_SCRIPT),
         timeout: 120_000,
@@ -144,7 +174,7 @@ async function watchAndSync() {
   }
 
   for (const dir of WATCH_DIRS) {
-    const fullDir = join(PROJECT_ROOT, 'expo', dir);
+    const fullDir = join(WORKSPACE_ROOT, dir);
     if (!existsSync(fullDir)) continue;
 
     try {
@@ -154,27 +184,58 @@ async function watchAndSync() {
         if (parts.some(p => IGNORE.has(p))) return;
         if (filename.endsWith('.lock') || filename.endsWith('.DS_Store')) return;
 
-        const relPath = join(dir, filename);
+        const absolutePath = join(fullDir, filename);
+        const relPath = toSyncRelativePath(PROJECT_ROOT, absolutePath);
         console.log(`[watch] ${eventType}: ${relPath}`);
         pendingChanges.add(relPath);
         schedulSync();
       });
-      console.log(`[watch] Watching: expo/${dir}/`);
+      console.log(`[watch] Watching: ${dir}/`);
     } catch (err) {
       console.warn(`[watch] Cannot watch ${dir}: ${err.message}`);
     }
   }
 
-  const rootFiles = ['package.json', 'app.json', 'tsconfig.json', 'Dockerfile'];
+  const rootFiles = [
+    'package.json',
+    'app.json',
+    'tsconfig.json',
+    'Dockerfile',
+    'babel.config.js',
+    'metro.config.js',
+    'eslint.config.js',
+    'expo-env.d.ts',
+    'README.md',
+    'PLAN.md',
+    'pipeline.mjs',
+    'sync-github.mjs',
+    'verify-sync.mjs',
+    'auto-sync.mjs',
+  ];
   try {
-    watch(join(PROJECT_ROOT, 'expo'), { recursive: false }, (eventType, filename) => {
+    watch(WORKSPACE_ROOT, { recursive: false }, (eventType, filename) => {
       if (filename && rootFiles.includes(filename)) {
-        console.log(`[watch] ${eventType}: ${filename}`);
-        pendingChanges.add(filename);
+        const relPath = toSyncRelativePath(PROJECT_ROOT, join(WORKSPACE_ROOT, filename));
+        console.log(`[watch] ${eventType}: ${relPath}`);
+        pendingChanges.add(relPath);
         schedulSync();
       }
     });
   } catch {}
+
+  if (PROJECT_ROOT !== WORKSPACE_ROOT) {
+    const repoRootFiles = ['PLAN.md', 'rork.json', '.gitignore'];
+    try {
+      watch(PROJECT_ROOT, { recursive: false }, (eventType, filename) => {
+        if (filename && repoRootFiles.includes(filename)) {
+          const relPath = toSyncRelativePath(PROJECT_ROOT, join(PROJECT_ROOT, filename));
+          console.log(`[watch] ${eventType}: ${relPath}`);
+          pendingChanges.add(relPath);
+          schedulSync();
+        }
+      });
+    } catch {}
+  }
 
   console.log('\n[watch] Ready. Waiting for changes...\n');
 

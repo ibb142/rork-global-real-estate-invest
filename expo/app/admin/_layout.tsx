@@ -85,6 +85,7 @@ export default function AdminLayout() {
       <Stack.Screen name="viral-growth" />
       <Stack.Screen name="landing-analytics" />
       <Stack.Screen name="system-monitor" />
+      <Stack.Screen name="chat-room" />
       <Stack.Screen name="visitor-intelligence" />
       <Stack.Screen name="staff-activity" />
       <Stack.Screen name="retargeting" />

@@ -19,6 +19,7 @@ export interface DealTrustInfo {
   completedProjects?: number;
   totalDeliveredValue?: number;
   salePrice?: number;
+  hasExplicitSalePrice?: boolean;
   fractionalSharePrice?: number;
   priceChange1h?: number;
   priceChange2h?: number;
@@ -47,6 +48,7 @@ export interface DealDocument {
 
 export interface DealTrustMarket {
   salePrice: number;
+  explicitSalePrice?: number;
   minInvestment: number;
   fractionalSharePrice: number;
   timelineMin?: number;
@@ -65,6 +67,7 @@ export interface ParsedJVDeal {
   expectedROI: number;
   totalInvestment: number;
   propertyValue: number;
+  salePrice?: number;
   partners: ParsedJVDealPartner[] | number;
   description: string;
   propertyAddress: string;
@@ -130,6 +133,49 @@ function toTimelineNumber(value: unknown): number | undefined {
   return parsed;
 }
 
+function differsFromFallback(candidate: number, fallback: number): boolean {
+  if (candidate <= 0) {
+    return false;
+  }
+  if (fallback <= 0) {
+    return true;
+  }
+  return Math.abs(candidate - fallback) > 0.009;
+}
+
+export function extractExplicitDealSalePrice(rawDeal: Record<string, unknown>, trustInfo?: DealTrustInfo): number | undefined {
+  const topLevelSalePrice = toPositiveNumber(rawDeal.salePrice ?? rawDeal.sale_price, 0);
+  const trustSalePrice = toPositiveNumber(trustInfo?.salePrice, 0);
+  const fallbackSalePrice = toPositiveNumber(
+    rawDeal.propertyValue ?? rawDeal.property_value ?? rawDeal.estimated_value,
+    toPositiveNumber(rawDeal.totalInvestment ?? rawDeal.total_investment, 0)
+  );
+
+  if (trustInfo?.hasExplicitSalePrice === true) {
+    if (topLevelSalePrice > 0) {
+      return topLevelSalePrice;
+    }
+    if (trustSalePrice > 0) {
+      return trustSalePrice;
+    }
+    return undefined;
+  }
+
+  if (trustInfo?.hasExplicitSalePrice === false) {
+    return undefined;
+  }
+
+  if (differsFromFallback(topLevelSalePrice, fallbackSalePrice)) {
+    return topLevelSalePrice;
+  }
+
+  if (differsFromFallback(trustSalePrice, fallbackSalePrice)) {
+    return trustSalePrice;
+  }
+
+  return undefined;
+}
+
 export function extractDealTrustInfo(rawDeal: Record<string, unknown>): DealTrustInfo | undefined {
   const rawTrust = rawDeal.trustInfo ?? rawDeal.trust_info;
   if (!rawTrust) {
@@ -153,13 +199,15 @@ export function resolveDealTrustMarket(rawDeal: Record<string, unknown>, trustIn
   const propertyValue = toPositiveNumber(rawDeal.propertyValue ?? rawDeal.property_value ?? rawDeal.estimated_value, 0);
   const totalInvestment = toPositiveNumber(rawDeal.totalInvestment ?? rawDeal.total_investment, 0);
   const fallbackSalePrice = propertyValue || totalInvestment;
+  const explicitSalePrice = extractExplicitDealSalePrice(rawDeal, resolvedTrustInfo);
   const minInvestment = toPositiveNumber(resolvedTrustInfo?.minInvestment, 50);
   const fractionalSharePrice = toPositiveNumber(resolvedTrustInfo?.fractionalSharePrice, Math.max(minInvestment, 1));
   const priceChange1h = Number.isFinite(Number(resolvedTrustInfo?.priceChange1h)) ? Number(resolvedTrustInfo?.priceChange1h) : 10;
   const priceChange2h = Number.isFinite(Number(resolvedTrustInfo?.priceChange2h)) ? Number(resolvedTrustInfo?.priceChange2h) : 18;
 
   return {
-    salePrice: toPositiveNumber(resolvedTrustInfo?.salePrice, fallbackSalePrice),
+    salePrice: explicitSalePrice ?? fallbackSalePrice,
+    explicitSalePrice,
     minInvestment,
     fractionalSharePrice,
     timelineMin: toTimelineNumber(resolvedTrustInfo?.timelineMin),
@@ -255,6 +303,7 @@ export function parseDeal(d: Record<string, unknown>): ParsedJVDeal {
     country: (d.country || '') as string,
     totalInvestment: Number(d.totalInvestment || d.total_investment || 0),
     propertyValue: Number(d.propertyValue || d.property_value || d.estimated_value || 0),
+    salePrice: Number(d.salePrice || d.sale_price || 0),
     expectedROI: Number(d.expectedROI || d.expected_roi || 0),
     distributionFrequency: (d.distributionFrequency || d.distribution_frequency || '') as string,
     exitStrategy: (d.exitStrategy || d.exit_strategy || '') as string,

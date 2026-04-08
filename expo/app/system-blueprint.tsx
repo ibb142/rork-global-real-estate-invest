@@ -8,6 +8,8 @@ import {
   Animated,
   Dimensions,
   Platform,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -29,7 +31,10 @@ import {
   Activity,
   Eye,
   ArrowRight,
+  Bot,
+  MessageCircle,
 } from 'lucide-react-native';
+import { useMutation } from '@tanstack/react-query';
 import Colors from '@/constants/colors';
 import {
   runFullHealthCheck,
@@ -37,6 +42,17 @@ import {
   type HealthCheck,
   type HealthStatus,
 } from '@/lib/system-health-checker';
+import { runAIOpsScan, type AIOpsOverallStatus, type AIOpsSeverity, type AIOpsSnapshot } from '@/lib/ai-ops';
+import {
+  getOwnerAlertFeed,
+  getOwnerAlertSettings,
+  openOwnerAlertWhatsApp,
+  sendOwnerAlertEmail,
+  syncAIOpsOwnerAlerts,
+  type OwnerAlertDispatchResult,
+  type OwnerAlertFeedItem,
+  type OwnerAlertSettings,
+} from '@/lib/ai-ops-alerts';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const NODE_SIZE = 72;
@@ -114,6 +130,37 @@ const STATUS_BORDER: Record<HealthStatus, string> = {
 };
 
 const TIER_LABELS = ['Client Layer', 'Routing & Cache', 'Authentication', 'Data Layer', 'Infrastructure', 'Services'];
+
+function getAIOpsToneColor(tone: AIOpsOverallStatus | AIOpsSeverity): string {
+  if (tone === 'critical') {
+    return '#FF1744';
+  }
+  if (tone === 'degraded' || tone === 'warning') {
+    return '#FFD600';
+  }
+  return '#00E676';
+}
+
+function getAIOpsToneLabel(tone: AIOpsOverallStatus | AIOpsSeverity): string {
+  if (tone === 'critical') {
+    return 'Critical';
+  }
+  if (tone === 'degraded' || tone === 'warning') {
+    return 'Degraded';
+  }
+  return 'Healthy';
+}
+
+function formatOwnerAlertTimestamp(timestamp?: string): string {
+  if (!timestamp) {
+    return 'Not sent yet';
+  }
+
+  return new Date(timestamp).toLocaleString('en-US', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+}
 
 function getNodePosition(node: BlueprintNode, containerWidth: number) {
   const padding = 24;
@@ -481,16 +528,276 @@ function OverallStatusBar({ snapshot }: { snapshot: SystemHealthSnapshot | null 
   );
 }
 
+function OwnerAlertHub({
+  settings,
+  snapshot,
+  lastDispatch,
+  emailPending,
+  whatsappPending,
+  onSendEmail,
+  onOpenWhatsApp,
+  onOpenAutoRepair,
+}: {
+  settings: OwnerAlertSettings | null;
+  snapshot: AIOpsSnapshot | null;
+  lastDispatch: OwnerAlertDispatchResult | null;
+  emailPending: boolean;
+  whatsappPending: boolean;
+  onSendEmail: () => void;
+  onOpenWhatsApp: () => void;
+  onOpenAutoRepair: () => void;
+}) {
+  if (!settings || !snapshot) {
+    return null;
+  }
+
+  const toneColor = getAIOpsToneColor(snapshot.overallStatus);
+  const incidentCount = snapshot.incidents.length;
+  const hasActiveIssues = incidentCount > 0;
+  const lastDispatchTone = lastDispatch ? getAIOpsToneColor(lastDispatch.status === 'sent' || lastDispatch.status === 'opened' ? 'healthy' : 'warning') : toneColor;
+
+  return (
+    <View style={styles.ownerAlertsCard} testID="owner-alert-hub">
+      <View style={styles.ownerAlertsHeader}>
+        <View style={[styles.ownerAlertsBadge, { backgroundColor: `${toneColor}18`, borderColor: `${toneColor}33` }]}>
+          <Bot size={16} color={toneColor} />
+          <Text style={[styles.ownerAlertsBadgeText, { color: toneColor }]}>{getAIOpsToneLabel(snapshot.overallStatus)}</Text>
+        </View>
+        <Text style={[styles.ownerAlertsCount, { color: toneColor }]}>{incidentCount} alert{incidentCount === 1 ? '' : 's'}</Text>
+      </View>
+
+      <Text style={styles.ownerAlertsTitle}>Owner alert routing</Text>
+      <Text style={styles.ownerAlertsBody}>
+        {hasActiveIssues
+          ? 'AI Ops is ready to notify the owner immediately with the current incident summary and the next safe action.'
+          : 'No active AI Ops incidents right now. Email and WhatsApp routing is armed for the next failure.'}
+      </Text>
+
+      <View style={styles.ownerContactRow}>
+        <Mail size={15} color={Colors.primary} />
+        <Text style={styles.ownerContactText}>{settings.ownerEmail}</Text>
+      </View>
+      <View style={styles.ownerContactRow}>
+        <MessageCircle size={15} color="#25D366" />
+        <Text style={styles.ownerContactText}>{settings.ownerPhone}</Text>
+      </View>
+
+      <View style={styles.ownerChipRow}>
+        <View style={[styles.ownerChip, { backgroundColor: settings.enableEmail ? 'rgba(0, 230, 118, 0.12)' : 'rgba(255,255,255,0.06)' }]}>
+          <Text style={[styles.ownerChipText, { color: settings.enableEmail ? '#00E676' : Colors.textSecondary }]}>Email {settings.enableEmail ? 'ON' : 'OFF'}</Text>
+        </View>
+        <View style={[styles.ownerChip, { backgroundColor: settings.enableWhatsApp ? 'rgba(37, 211, 102, 0.12)' : 'rgba(255,255,255,0.06)' }]}>
+          <Text style={[styles.ownerChipText, { color: settings.enableWhatsApp ? '#25D366' : Colors.textSecondary }]}>WhatsApp {settings.enableWhatsApp ? 'ON' : 'OFF'}</Text>
+        </View>
+        <View style={styles.ownerChip}>
+          <Text style={styles.ownerChipText}>Cooldown {settings.cooldownMinutes}m</Text>
+        </View>
+      </View>
+
+      <View style={styles.ownerActionRow}>
+        <TouchableOpacity
+          style={[styles.ownerPrimaryAction, (!hasActiveIssues || emailPending) && styles.ownerDisabledAction]}
+          onPress={onSendEmail}
+          disabled={!hasActiveIssues || emailPending}
+          activeOpacity={0.85}
+          testID="owner-alert-send-email"
+        >
+          {emailPending ? <ActivityIndicator size="small" color={Colors.black} /> : <Mail size={16} color={Colors.black} />}
+          <Text style={styles.ownerPrimaryActionText}>{emailPending ? 'Sending...' : 'Send email'}</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.ownerSecondaryAction, (!hasActiveIssues || whatsappPending) && styles.ownerDisabledAction]}
+          onPress={onOpenWhatsApp}
+          disabled={!hasActiveIssues || whatsappPending}
+          activeOpacity={0.85}
+          testID="owner-alert-open-whatsapp"
+        >
+          {whatsappPending ? <ActivityIndicator size="small" color={Colors.text} /> : <MessageCircle size={16} color="#25D366" />}
+          <Text style={styles.ownerSecondaryActionText}>{whatsappPending ? 'Opening...' : 'WhatsApp'}</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.ownerSecondaryAction}
+          onPress={onOpenAutoRepair}
+          activeOpacity={0.85}
+          testID="owner-alert-open-auto-repair"
+        >
+          <Zap size={16} color={Colors.text} />
+          <Text style={styles.ownerSecondaryActionText}>Auto Repair</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={[styles.ownerDispatchRow, { borderColor: `${lastDispatchTone}22` }]}>
+        <Bell size={14} color={lastDispatchTone} />
+        <Text style={styles.ownerDispatchText}>
+          {lastDispatch
+            ? `${lastDispatch.channel === 'email' ? 'Email' : 'WhatsApp'} ${lastDispatch.status} · ${lastDispatch.detail}`
+            : 'No owner alert has been manually triggered in this session.'}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+function OwnerAlertFeedCard({ feed }: { feed: OwnerAlertFeedItem[] }) {
+  if (feed.length === 0) {
+    return null;
+  }
+
+  return (
+    <View style={styles.ownerFeedSection} testID="owner-alert-feed">
+      <View style={styles.ownerFeedHeader}>
+        <Bell size={15} color={Colors.primary} />
+        <Text style={styles.ownerFeedTitle}>Owner alert feed</Text>
+      </View>
+      {feed.slice(0, 4).map((item) => {
+        const toneColor = getAIOpsToneColor(item.severity);
+        return (
+          <View key={item.id} style={[styles.ownerFeedItem, { borderColor: `${toneColor}20` }]}>
+            <View style={styles.ownerFeedTopRow}>
+              <View style={[styles.ownerFeedDot, { backgroundColor: toneColor }]} />
+              <Text style={styles.ownerFeedItemTitle}>{item.title}</Text>
+              <Text style={[styles.ownerFeedItemStatus, { color: toneColor }]}>{getAIOpsToneLabel(item.severity)}</Text>
+            </View>
+            <Text style={styles.ownerFeedItemSummary}>{item.summary}</Text>
+            <Text style={styles.ownerFeedItemMeta}>
+              {item.lastChannel ? `${item.lastChannel} · ${item.lastDeliveryStatus ?? 'pending'}` : 'Awaiting owner delivery'} · {formatOwnerAlertTimestamp(item.lastNotifiedAt)}
+            </Text>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+function OwnerEscalationLanes({
+  settings,
+  snapshot,
+  lastDispatch,
+}: {
+  settings: OwnerAlertSettings | null;
+  snapshot: AIOpsSnapshot | null;
+  lastDispatch: OwnerAlertDispatchResult | null;
+}) {
+  if (!settings || !snapshot) {
+    return null;
+  }
+
+  const hasActiveIssues = snapshot.incidents.length > 0;
+  const autoRepairCount = snapshot.incidents.filter((incident) => incident.autoRepairEligible).length;
+
+  const lanes: {
+    id: string;
+    title: string;
+    description: string;
+    target: string;
+    statusLabel: string;
+    toneColor: string;
+    Icon: typeof Mail;
+  }[] = [
+    {
+      id: 'email',
+      title: 'Auto email dispatch',
+      description:
+        lastDispatch?.channel === 'email'
+          ? lastDispatch.detail
+          : hasActiveIssues
+            ? 'The owner email lane can send the active AI Ops incident summary right now.'
+            : 'Email dispatch is armed and will attach the next incident summary automatically.',
+      target: settings.ownerEmail,
+      statusLabel: !settings.enableEmail ? 'Disabled' : lastDispatch?.channel === 'email' ? lastDispatch.status : hasActiveIssues ? 'Ready' : 'Armed',
+      toneColor: !settings.enableEmail
+        ? Colors.textTertiary
+        : lastDispatch?.channel === 'email'
+          ? getAIOpsToneColor(lastDispatch.status === 'sent' || lastDispatch.status === 'opened' ? 'healthy' : 'warning')
+          : hasActiveIssues
+            ? Colors.primary
+            : '#00E676',
+      Icon: Mail,
+    },
+    {
+      id: 'whatsapp',
+      title: 'WhatsApp escalation',
+      description:
+        lastDispatch?.channel === 'whatsapp'
+          ? lastDispatch.detail
+          : hasActiveIssues
+            ? 'Open a prefilled owner WhatsApp handoff with the same incident summary and next safe actions.'
+            : 'WhatsApp escalation stays on standby until a live incident needs owner attention.',
+      target: settings.ownerPhone,
+      statusLabel: !settings.enableWhatsApp ? 'Disabled' : lastDispatch?.channel === 'whatsapp' ? lastDispatch.status : hasActiveIssues ? 'Standby' : 'Armed',
+      toneColor: !settings.enableWhatsApp
+        ? Colors.textTertiary
+        : lastDispatch?.channel === 'whatsapp'
+          ? '#25D366'
+          : hasActiveIssues
+            ? '#25D366'
+            : 'rgba(37, 211, 102, 0.9)',
+      Icon: MessageCircle,
+    },
+    {
+      id: 'repair',
+      title: 'Repair console handoff',
+      description:
+        autoRepairCount > 0
+          ? `${autoRepairCount} incident${autoRepairCount === 1 ? '' : 's'} can go straight into safe repair actions from this screen.`
+          : 'No auto-repair-safe incident is open right now. The console stays ready for the next scan.',
+      target: 'Auto Repair control room',
+      statusLabel: autoRepairCount > 0 ? `${autoRepairCount} safe path${autoRepairCount === 1 ? '' : 's'}` : 'Standby',
+      toneColor: autoRepairCount > 0 ? Colors.primary : Colors.textSecondary,
+      Icon: Zap,
+    },
+  ];
+
+  return (
+    <View style={styles.ownerLaneSection} testID="owner-alert-lanes">
+      <View style={styles.ownerLaneHeader}>
+        <Bot size={15} color={Colors.primary} />
+        <Text style={styles.ownerLaneTitle}>Escalation lanes</Text>
+      </View>
+      <Text style={styles.ownerLaneSubtitle}>Live routing from AI Ops scan → owner notification → repair handoff.</Text>
+
+      {lanes.map((lane) => {
+        const LaneIcon = lane.Icon;
+        return (
+          <View key={lane.id} style={[styles.ownerLaneCard, { borderColor: `${lane.toneColor}22` }]}>
+            <View style={[styles.ownerLaneIconWrap, { backgroundColor: `${lane.toneColor}18` }]}>
+              <LaneIcon size={16} color={lane.toneColor} />
+            </View>
+            <View style={styles.ownerLaneContent}>
+              <View style={styles.ownerLaneTopRow}>
+                <Text style={styles.ownerLaneCardTitle}>{lane.title}</Text>
+                <View style={[styles.ownerLaneStatusPill, { backgroundColor: `${lane.toneColor}18` }]}>
+                  <Text style={[styles.ownerLaneStatusText, { color: lane.toneColor }]}>{lane.statusLabel}</Text>
+                </View>
+              </View>
+              <Text style={styles.ownerLaneTarget}>{lane.target}</Text>
+              <Text style={styles.ownerLaneDescription}>{lane.description}</Text>
+            </View>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
 export default function SystemBlueprintScreen() {
   const router = useRouter();
   const [snapshot, setSnapshot] = useState<SystemHealthSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedCheck, setSelectedCheck] = useState<HealthCheck | null>(null);
-  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [autoRefresh, setAutoRefresh] = useState(false);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
   const spinAnim = useRef(new Animated.Value(0)).current;
+  const spinLoopRef = useRef<Animated.CompositeAnimation | null>(null);
+  const scanInFlightRef = useRef(false);
   const containerWidth = Math.min(SCREEN_WIDTH, 500);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [aiOpsSnapshot, setAIOpsSnapshot] = useState<AIOpsSnapshot | null>(null);
+  const [ownerAlertSettings, setOwnerAlertSettings] = useState<OwnerAlertSettings | null>(null);
+  const [ownerAlertFeed, setOwnerAlertFeed] = useState<OwnerAlertFeedItem[]>([]);
+  const [lastOwnerDispatch, setLastOwnerDispatch] = useState<OwnerAlertDispatchResult | null>(null);
 
   const healthMap = useMemo(() => {
     const map = new Map<string, HealthCheck>();
@@ -500,38 +807,124 @@ export default function SystemBlueprintScreen() {
     return map;
   }, [snapshot]);
 
+  const loadOwnerAlertState = useCallback(async () => {
+    try {
+      const [settings, feed] = await Promise.all([
+        getOwnerAlertSettings(),
+        getOwnerAlertFeed(),
+      ]);
+      setOwnerAlertSettings(settings);
+      setOwnerAlertFeed(feed);
+    } catch (error) {
+      console.log('[Blueprint] Owner alert state load error:', (error as Error)?.message ?? 'unknown');
+    }
+  }, []);
+
+  const emailAlertMutation = useMutation({
+    mutationFn: async () => {
+      if (!aiOpsSnapshot || aiOpsSnapshot.incidents.length === 0) {
+        throw new Error('No active AI Ops incidents are available for email alerts.');
+      }
+      return sendOwnerAlertEmail(aiOpsSnapshot);
+    },
+    onSuccess: async (result) => {
+      setLastOwnerDispatch(result);
+      await loadOwnerAlertState();
+      Alert.alert('Owner email alert', result.detail);
+    },
+    onError: (error: Error) => {
+      Alert.alert('Owner email alert failed', error.message);
+    },
+  });
+
+  const whatsappAlertMutation = useMutation({
+    mutationFn: async () => {
+      if (!aiOpsSnapshot || aiOpsSnapshot.incidents.length === 0) {
+        throw new Error('No active AI Ops incidents are available for WhatsApp alerts.');
+      }
+      return openOwnerAlertWhatsApp(aiOpsSnapshot);
+    },
+    onSuccess: async (result) => {
+      setLastOwnerDispatch(result);
+      await loadOwnerAlertState();
+      Alert.alert('Owner WhatsApp alert', result.detail);
+    },
+    onError: (error: Error) => {
+      Alert.alert('Owner WhatsApp alert failed', error.message);
+    },
+  });
+
   const runScan = useCallback(async () => {
+    if (scanInFlightRef.current) {
+      console.log('[Blueprint] Scan skipped because another scan is still running');
+      return;
+    }
+
+    scanInFlightRef.current = true;
     setLoading(true);
-    Animated.loop(
+    spinLoopRef.current?.stop();
+    spinAnim.setValue(0);
+    spinLoopRef.current = Animated.loop(
       Animated.timing(spinAnim, { toValue: 1, duration: 1000, useNativeDriver: Platform.OS !== 'web' })
-    ).start();
+    );
+    spinLoopRef.current.start();
 
     try {
-      console.log('[Blueprint] Running system scan...');
-      const result = await runFullHealthCheck();
-      setSnapshot(result);
+      console.log('[Blueprint] Running system and AI Ops scan...');
+      const [systemSnapshot, aiOpsResult] = await Promise.all([
+        runFullHealthCheck(),
+        runAIOpsScan(),
+      ]);
+      const alertSyncResult = await syncAIOpsOwnerAlerts(aiOpsResult);
+      setSnapshot(systemSnapshot);
+      setAIOpsSnapshot(aiOpsResult);
+      setOwnerAlertSettings(alertSyncResult.settings);
+      setOwnerAlertFeed(alertSyncResult.feed);
+      if (alertSyncResult.dispatched) {
+        setLastOwnerDispatch(alertSyncResult.dispatched);
+      }
       setLastRefresh(new Date());
-      console.log('[Blueprint] Scan complete:', result.overallStatus);
+      console.log('[Blueprint] Scan complete:', systemSnapshot.overallStatus, '| AI Ops:', aiOpsResult.overallStatus, '| incidents:', aiOpsResult.incidents.length);
     } catch (err) {
       console.log('[Blueprint] Scan error:', (err as Error)?.message);
+      await loadOwnerAlertState();
     } finally {
-      setLoading(false);
+      scanInFlightRef.current = false;
+      spinLoopRef.current?.stop();
+      spinLoopRef.current = null;
+      spinAnim.stopAnimation();
       spinAnim.setValue(0);
+      setLoading(false);
     }
-  }, [spinAnim]);
+  }, [loadOwnerAlertState, spinAnim]);
+
+  useEffect(() => {
+    void loadOwnerAlertState();
+  }, [loadOwnerAlertState]);
 
   useEffect(() => {
     void runScan();
   }, [runScan]);
 
   useEffect(() => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+
     if (autoRefresh) {
       intervalRef.current = setInterval(() => {
         void runScan();
-      }, 3000);
+      }, 30000);
     }
+
     return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+      spinLoopRef.current?.stop();
+      spinLoopRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoRefresh, runScan]);
@@ -583,6 +976,24 @@ export default function SystemBlueprintScreen() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
+          <OwnerAlertHub
+            settings={ownerAlertSettings}
+            snapshot={aiOpsSnapshot}
+            lastDispatch={lastOwnerDispatch}
+            emailPending={emailAlertMutation.isPending}
+            whatsappPending={whatsappAlertMutation.isPending}
+            onSendEmail={() => emailAlertMutation.mutate()}
+            onOpenWhatsApp={() => whatsappAlertMutation.mutate()}
+            onOpenAutoRepair={() => router.push('/auto-repair' as any)}
+          />
+
+          <OwnerAlertFeedCard feed={ownerAlertFeed} />
+          <OwnerEscalationLanes
+            settings={ownerAlertSettings}
+            snapshot={aiOpsSnapshot}
+            lastDispatch={lastOwnerDispatch}
+          />
+
           <View style={styles.diagramTitle}>
             <Text style={styles.diagramTitleText}>3D Architecture Map</Text>
             <Text style={styles.diagramSubtitle}>
@@ -1201,6 +1612,280 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700' as const,
     color: '#FF1744',
+  },
+  ownerAlertsCard: {
+    alignSelf: 'stretch' as const,
+    marginTop: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 18,
+    marginHorizontal: 16,
+    backgroundColor: 'rgba(7, 12, 24, 0.94)',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  ownerAlertsHeader: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'space-between' as const,
+    marginBottom: 12,
+  },
+  ownerAlertsBadge: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  ownerAlertsBadgeText: {
+    fontSize: 11,
+    fontWeight: '800' as const,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase' as const,
+  },
+  ownerAlertsCount: {
+    fontSize: 12,
+    fontWeight: '700' as const,
+  },
+  ownerAlertsTitle: {
+    fontSize: 20,
+    fontWeight: '700' as const,
+    color: Colors.text,
+    marginBottom: 6,
+  },
+  ownerAlertsBody: {
+    fontSize: 13,
+    lineHeight: 19,
+    color: Colors.textSecondary,
+    marginBottom: 14,
+  },
+  ownerContactRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 8,
+    marginBottom: 8,
+  },
+  ownerContactText: {
+    flex: 1,
+    fontSize: 13,
+    color: Colors.text,
+    fontWeight: '600' as const,
+  },
+  ownerChipRow: {
+    flexDirection: 'row' as const,
+    flexWrap: 'wrap' as const,
+    gap: 8,
+    marginTop: 6,
+    marginBottom: 14,
+  },
+  ownerChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  ownerChipText: {
+    fontSize: 11,
+    fontWeight: '700' as const,
+    color: Colors.textSecondary,
+  },
+  ownerActionRow: {
+    flexDirection: 'row' as const,
+    flexWrap: 'wrap' as const,
+    gap: 10,
+  },
+  ownerPrimaryAction: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 14,
+    backgroundColor: Colors.primary,
+    minWidth: 132,
+  },
+  ownerPrimaryActionText: {
+    fontSize: 13,
+    fontWeight: '800' as const,
+    color: Colors.black,
+  },
+  ownerSecondaryAction: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    minWidth: 118,
+  },
+  ownerSecondaryActionText: {
+    fontSize: 13,
+    fontWeight: '700' as const,
+    color: Colors.text,
+  },
+  ownerDisabledAction: {
+    opacity: 0.5,
+  },
+  ownerDispatchRow: {
+    marginTop: 14,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    flexDirection: 'row' as const,
+    alignItems: 'flex-start' as const,
+    gap: 8,
+  },
+  ownerDispatchText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 18,
+    color: Colors.textSecondary,
+  },
+  ownerFeedSection: {
+    alignSelf: 'stretch' as const,
+    marginTop: 12,
+    marginHorizontal: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+  },
+  ownerFeedHeader: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 8,
+    marginBottom: 12,
+  },
+  ownerFeedTitle: {
+    fontSize: 13,
+    fontWeight: '800' as const,
+    color: Colors.text,
+    letterSpacing: 0.6,
+  },
+  ownerFeedItem: {
+    paddingVertical: 12,
+    borderTopWidth: 1,
+  },
+  ownerFeedTopRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 8,
+  },
+  ownerFeedDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  ownerFeedItemTitle: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '700' as const,
+    color: Colors.text,
+  },
+  ownerFeedItemStatus: {
+    fontSize: 11,
+    fontWeight: '800' as const,
+    textTransform: 'uppercase' as const,
+  },
+  ownerFeedItemSummary: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: Colors.textSecondary,
+    marginTop: 6,
+  },
+  ownerFeedItemMeta: {
+    fontSize: 11,
+    color: Colors.textTertiary,
+    marginTop: 6,
+  },
+  ownerLaneSection: {
+    alignSelf: 'stretch' as const,
+    marginTop: 12,
+    marginHorizontal: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    backgroundColor: 'rgba(10, 16, 28, 0.88)',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+  },
+  ownerLaneHeader: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 8,
+  },
+  ownerLaneTitle: {
+    fontSize: 13,
+    fontWeight: '800' as const,
+    color: Colors.text,
+    letterSpacing: 0.6,
+  },
+  ownerLaneSubtitle: {
+    marginTop: 8,
+    marginBottom: 14,
+    fontSize: 12,
+    lineHeight: 18,
+    color: Colors.textSecondary,
+  },
+  ownerLaneCard: {
+    flexDirection: 'row' as const,
+    alignItems: 'flex-start' as const,
+    gap: 12,
+    paddingVertical: 13,
+    borderTopWidth: 1,
+  },
+  ownerLaneIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+  },
+  ownerLaneContent: {
+    flex: 1,
+  },
+  ownerLaneTopRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'space-between' as const,
+    gap: 10,
+  },
+  ownerLaneCardTitle: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '700' as const,
+    color: Colors.text,
+  },
+  ownerLaneStatusPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  ownerLaneStatusText: {
+    fontSize: 10,
+    fontWeight: '800' as const,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.6,
+  },
+  ownerLaneTarget: {
+    marginTop: 5,
+    fontSize: 11,
+    fontWeight: '700' as const,
+    color: Colors.textSecondary,
+  },
+  ownerLaneDescription: {
+    marginTop: 6,
+    fontSize: 12,
+    lineHeight: 18,
+    color: Colors.textTertiary,
   },
   detailPanel: {
     position: 'absolute' as const,

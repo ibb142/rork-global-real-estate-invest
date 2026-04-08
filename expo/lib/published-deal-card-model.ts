@@ -2,7 +2,7 @@ import { sanitizeDealPhotosForDeal } from '@/constants/deal-photos';
 import { resolveCanonicalDealIdentity } from '@/lib/deal-identity';
 import { formatCurrencyCompact, formatCurrencyWithDecimals } from '@/lib/formatters';
 import { buildOwnershipSnapshot } from '@/lib/ownership-math';
-import { resolveDealTrustMarket } from '@/lib/parse-deal';
+import { extractExplicitDealSalePrice, resolveDealTrustMarket } from '@/lib/parse-deal';
 import type { ParsedJVDeal, DealTrustInfo } from '@/lib/parse-deal';
 
 export interface PublishedDealCardModel {
@@ -26,6 +26,8 @@ export interface PublishedDealCardModel {
   exitStrategy: string;
   distributionFrequency: string;
   publishedAt: string;
+  updatedAt: string;
+  createdAt: string;
   displayOrder: number;
   city: string;
   state: string;
@@ -34,6 +36,7 @@ export interface PublishedDealCardModel {
   trustIndicators: string[];
   rawTrustInfo?: DealTrustInfo;
   salePrice: number;
+  explicitSalePrice?: number;
   fractionalSharePrice: number;
   ownershipPercentAtMinimum: number;
   ownershipText: string;
@@ -223,6 +226,7 @@ export function mapDealToCardModel(deal: Record<string, unknown>): PublishedDeal
   const rawTrustInfo = identity.trustInfo ?? extractRawTrustInfo(deal);
   const trustIndicators = extractTrustIndicators({ ...deal, trustInfo: rawTrustInfo });
   const trustMarket = resolveDealTrustMarket(deal, rawTrustInfo);
+  const explicitSalePrice = extractExplicitDealSalePrice(deal, rawTrustInfo);
   const ownershipSnapshot = buildOwnershipSnapshot(trustMarket.minInvestment, trustMarket.salePrice);
 
   return {
@@ -246,6 +250,8 @@ export function mapDealToCardModel(deal: Record<string, unknown>): PublishedDeal
     exitStrategy: str(deal.exitStrategy) || str(deal.exit_strategy) || 'Sale upon completion',
     distributionFrequency: str(deal.distributionFrequency) || str(deal.distribution_frequency) || CANONICAL_DISTRIBUTION_LABEL,
     publishedAt: str(deal.publishedAt) || str(deal.published_at),
+    updatedAt: str(deal.updatedAt) || str(deal.updated_at) || str(deal.publishedAt) || str(deal.published_at),
+    createdAt: str(deal.createdAt) || str(deal.created_at) || str(deal.publishedAt) || str(deal.published_at),
     displayOrder: Number(deal.displayOrder ?? deal.display_order ?? 999),
     city: str(deal.city),
     state: str(deal.state),
@@ -254,6 +260,7 @@ export function mapDealToCardModel(deal: Record<string, unknown>): PublishedDeal
     trustIndicators,
     rawTrustInfo,
     salePrice: trustMarket.salePrice,
+    explicitSalePrice,
     fractionalSharePrice: trustMarket.fractionalSharePrice,
     ownershipPercentAtMinimum: ownershipSnapshot.ownershipPercent,
     ownershipText: rawTrustInfo?.ownershipLabel || ownershipSnapshot.ownershipText,
@@ -308,14 +315,16 @@ export function mapParsedDealToCardModel(deal: ParsedJVDeal): PublishedDealCardM
 }
 
 export function generateLandingDealHtml(card: PublishedDealCardModel): string {
-  const salePriceLabel = formatCurrencyCompact(card.salePrice || card.propertyValue || card.totalInvestment || 0);
+  const explicitSalePrice = card.explicitSalePrice || 0;
+  const salePriceLabel = explicitSalePrice > 0 ? formatCurrencyCompact(explicitSalePrice) : '';
+  const marketValueForInvestModal = explicitSalePrice || card.propertyValue || card.totalInvestment || 0;
   const investmentLabel = formatCurrencyCompact(card.totalInvestment || 0);
   const fractionalSharePriceLabel = formatCurrencyWithDecimals(card.fractionalSharePrice || card.minInvestment || CANONICAL_MIN_INVESTMENT);
   const minimumOwnershipLabel = card.ownershipPercentAtMinimum > 0 ? `${card.ownershipPercentAtMinimum.toFixed(4)}% min` : 'Live sync pending';
   const fractionalFromLabel = `from ${formatCurrencyWithDecimals(card.minInvestment || CANONICAL_MIN_INVESTMENT)}`;
   const showEntryPill = Math.abs((card.fractionalSharePrice || card.minInvestment || CANONICAL_MIN_INVESTMENT) - (card.minInvestment || CANONICAL_MIN_INVESTMENT)) > 0.009;
   const safePhotos = Array.isArray(card.photos) ? card.photos : [];
-  const renderablePhotos = safePhotos.filter(isRenderablePhotoUrl).slice(0, 4);
+  const renderablePhotos = safePhotos.filter(isRenderablePhotoUrl);
   const photoHtml = renderablePhotos.length > 0
     ? renderablePhotos.map(p => `<img src="${escapeHtml(p)}" alt="" loading="lazy" decoding="async" fetchpriority="low" referrerpolicy="no-referrer" onerror="this.closest('.live-deal-gallery')?.classList.add('live-deal-gallery-empty');this.remove();" />`).join('')
     : `<div class="live-deal-no-photo"><span>\u{1F3D7}\u{FE0F}</span><span>Photos coming soon</span></div>`;
@@ -362,11 +371,11 @@ export function generateLandingDealHtml(card: PublishedDealCardModel): string {
             <div class="live-deal-title">${escapeHtml(card.title || card.developerName)}</div>
             ${card.addressShort ? `<div class="live-deal-location"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6A6A6A" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg> ${escapeHtml(card.addressShort)}</div>` : ''}
           </div>
-          <div class="live-deal-market-pill live-deal-sale-pill" style="min-width:118px;background:rgba(255,215,0,0.08);border-color:rgba(255,215,0,0.22);">
+          ${explicitSalePrice > 0 ? `<div class="live-deal-market-pill live-deal-sale-pill" style="min-width:118px;background:rgba(255,215,0,0.08);border-color:rgba(255,215,0,0.22);">
             <div class="live-deal-market-pill-label">Sale Price</div>
             <div class="live-deal-market-pill-value" style="color:#FFD700;">${escapeHtml(salePriceLabel)}</div>
             <div class="live-deal-market-pill-label" style="color:#00C784;">${escapeHtml(minimumOwnershipLabel)}</div>
-          </div>
+          </div>` : ''}
         </div>
         <div class="live-deal-divider"></div>
         <div class="live-deal-metrics">
@@ -409,8 +418,8 @@ export function generateLandingDealHtml(card: PublishedDealCardModel): string {
           ${trustBadgesHtml}
         </div>
         <div class="live-deal-actions">
-          <button class="live-deal-details-btn" onclick="openInvestModal('${escapeHtml(card.id)}','${escapeJs(card.title)}',${card.totalInvestment},${card.expectedROI},'${escapeJs(card.addressShort)}',${card.salePrice || card.propertyValue || 0},${card.minInvestment},${card.fractionalSharePrice || 0})">Details</button>
-          <button class="live-deal-invest-btn" onclick="openInvestModal('${escapeHtml(card.id)}','${escapeJs(card.title)}',${card.totalInvestment},${card.expectedROI},'${escapeJs(card.addressShort)}',${card.salePrice || card.propertyValue || 0},${card.minInvestment},${card.fractionalSharePrice || 0})">Invest Now</button>
+          <button class="live-deal-details-btn" onclick="openInvestModal('${escapeHtml(card.id)}','${escapeJs(card.title)}',${card.totalInvestment},${card.expectedROI},'${escapeJs(card.addressShort)}',${marketValueForInvestModal},${card.minInvestment},${card.fractionalSharePrice || 0})">Details</button>
+          <button class="live-deal-invest-btn" onclick="openInvestModal('${escapeHtml(card.id)}','${escapeJs(card.title)}',${card.totalInvestment},${card.expectedROI},'${escapeJs(card.addressShort)}',${marketValueForInvestModal},${card.minInvestment},${card.fractionalSharePrice || 0})">Invest Now</button>
         </div>
         <div class="live-deal-min-invest">Invest from <strong>${card.minInvestment}</strong> · ${escapeHtml(card.ownershipText)}</div>
       </div>
@@ -623,7 +632,7 @@ export function generateCanonicalDealJson(card: PublishedDealCardModel): Record<
     description_short: card.descriptionShort,
     total_investment: card.totalInvestment,
     property_value: card.propertyValue || 0,
-    sale_price: card.salePrice,
+    sale_price: card.explicitSalePrice || 0,
     fractional_share_price: card.fractionalSharePrice,
     ownership_percent_at_minimum: card.ownershipPercentAtMinimum,
     ownership_text: card.ownershipText,

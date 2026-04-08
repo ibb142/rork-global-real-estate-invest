@@ -16,10 +16,15 @@ import { EmailProvider } from '@/lib/email-context';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import Colors from '@/constants/colors';
 import { queryClientConfig } from '@/lib/query-config';
+import { configureReactQueryLifecycle } from '@/lib/react-query-runtime';
+import { setChatProvider } from '@/src/modules/chat/services/chatProvider';
+import { supabaseChatProvider } from '@/src/modules/chat/services/supabaseChatProvider';
 
 void SplashScreen.preventAutoHideAsync();
 
 const queryClient = new QueryClient(queryClientConfig);
+
+setChatProvider(supabaseChatProvider);
 
 const screenDefaults = {
   headerStyle: { backgroundColor: Colors.background },
@@ -46,6 +51,7 @@ const PROTECTED_ROUTES = [
   'security-settings',
   'notification-settings',
   'notifications',
+  'chat-room',
   'kyc-verification',
   'contract-generator',
 ];
@@ -64,6 +70,71 @@ const PUBLIC_ROUTES = [
   'app-guide',
   'app-demo',
 ];
+
+const EMAIL_ROUTES = [
+  'email',
+  'email-compose',
+  'email-detail',
+  'send-test-email',
+];
+
+const ADMIN_EMAIL_ROUTES = [
+  'email-management',
+  'email-inbox',
+  'email-engine',
+  'email-accounts',
+];
+
+function RouteAwareFeatureProviders({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated } = useAuth();
+  const segments = useSegments();
+  const currentRoute = segments[0];
+  const nestedRoute = segments[1] ?? '';
+
+  const isPublicRoute = currentRoute ? PUBLIC_ROUTES.includes(currentRoute) : false;
+  const shouldMountAppDataProviders = isAuthenticated || (!!currentRoute && !isPublicRoute);
+  const shouldMountEmailProvider = !!currentRoute && (
+    EMAIL_ROUTES.includes(currentRoute)
+      || (currentRoute === 'admin' && ADMIN_EMAIL_ROUTES.includes(nestedRoute))
+  );
+
+  useEffect(() => {
+    console.log('[RootLayout] Provider strategy:', {
+      currentRoute,
+      nestedRoute,
+      isAuthenticated,
+      isPublicRoute,
+      shouldMountAppDataProviders,
+      shouldMountEmailProvider,
+    });
+  }, [currentRoute, nestedRoute, isAuthenticated, isPublicRoute, shouldMountAppDataProviders, shouldMountEmailProvider]);
+
+  if (!shouldMountAppDataProviders) {
+    console.log('[RootLayout] Rendering lightweight provider tree for public startup');
+    return <>{children}</>;
+  }
+
+  const content = (
+    <IPXProvider>
+      <WalletProvider>
+        <EarnProvider>
+          <LenderProvider>
+            <IntroProvider>
+              {children}
+            </IntroProvider>
+          </LenderProvider>
+        </EarnProvider>
+      </WalletProvider>
+    </IPXProvider>
+  );
+
+  if (shouldMountEmailProvider) {
+    console.log('[RootLayout] Email provider enabled for route:', currentRoute, nestedRoute);
+    return <EmailProvider>{content}</EmailProvider>;
+  }
+
+  return content;
+}
 
 function useAuthGate() {
   const { isAuthenticated, isLoading } = useAuth();
@@ -129,6 +200,7 @@ function RootLayoutNav() {
       <Stack.Screen name="security-settings" options={{ title: 'Security Settings' }} />
       <Stack.Screen name="notification-settings" options={{ title: 'Notification Settings' }} />
       <Stack.Screen name="notifications" options={{ title: 'Notifications' }} />
+      <Stack.Screen name="chat-room" options={{ title: 'Message Room' }} />
       <Stack.Screen name="statements" options={{ title: 'Statements' }} />
       <Stack.Screen name="tax-documents" options={{ title: 'Tax Documents' }} />
       <Stack.Screen name="tax-info" options={{ title: 'Tax Info' }} />
@@ -194,7 +266,10 @@ function RootLayoutNav() {
 
 export default function RootLayout() {
   useEffect(() => {
+    const cleanupReactQueryLifecycle = configureReactQueryLifecycle();
     void SplashScreen.hideAsync();
+
+    return cleanupReactQueryLifecycle;
   }, []);
 
   return (
@@ -205,19 +280,9 @@ export default function RootLayout() {
             <NetworkProvider>
               <I18nProvider>
                 <AnalyticsProvider>
-                  <IPXProvider>
-                    <WalletProvider>
-                      <EarnProvider>
-                        <LenderProvider>
-                          <IntroProvider>
-                            <EmailProvider>
-                              <RootLayoutNav />
-                            </EmailProvider>
-                          </IntroProvider>
-                        </LenderProvider>
-                      </EarnProvider>
-                    </WalletProvider>
-                  </IPXProvider>
+                  <RouteAwareFeatureProviders>
+                    <RootLayoutNav />
+                  </RouteAwareFeatureProviders>
                 </AnalyticsProvider>
               </I18nProvider>
             </NetworkProvider>

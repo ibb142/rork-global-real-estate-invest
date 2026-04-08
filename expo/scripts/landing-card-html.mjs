@@ -112,7 +112,7 @@ function buildOwnershipText(minInvestment, salePrice) {
 export function generateLandingCardHtml(rawCard) {
   const card = rawCard && typeof rawCard === 'object' ? rawCard : {};
   const trustInfo = parseMaybeJsonObject(card.trustInfo || card.trust_info) || {};
-  const photos = (Array.isArray(card.photos) ? card.photos : []).filter(isRenderablePhotoUrl).slice(0, 4);
+  const photos = (Array.isArray(card.photos) ? card.photos : []).filter(isRenderablePhotoUrl);
   const location = extractLocation(card);
   const salePrice = asNumber(card.salePrice || card.sale_price || card.propertyValue || card.property_value || card.totalInvestment || card.total_investment);
   const minInvestment = Math.max(asNumber(card.minInvestment || card.min_investment || card.minimum_investment || trustInfo.minInvestment || trustInfo.min_investment || 50), 1);

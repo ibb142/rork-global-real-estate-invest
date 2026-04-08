@@ -1,6 +1,7 @@
 import createContextHook from '@nkzw/create-context-hook';
-import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Platform, AppState, AppStateStatus } from 'react-native';
+import { onlineManager } from '@tanstack/react-query';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { Platform, AppState, type AppStateStatus } from 'react-native';
 import {
   type BackendStatus,
   subscribeHealth,
@@ -17,17 +18,24 @@ interface NetworkState {
 }
 
 async function checkConnectivity(): Promise<boolean> {
+  if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.onLine === false) {
+    return false;
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
     const response = await fetch('https://clients3.google.com/generate_204', {
       method: 'HEAD',
       signal: controller.signal,
     });
-    clearTimeout(timeout);
+
     return response.ok || response.status === 204;
   } catch {
     return false;
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -39,26 +47,71 @@ export const [NetworkProvider, useNetwork] = createContextHook(() => {
     supabaseStatus: 'unknown',
   });
 
-  const check = useCallback(async () => {
-    const reachable = await checkConnectivity();
-    setState(prev => ({
+  const inFlightCheckRef = useRef<Promise<boolean> | null>(null);
+  const lastReachableRef = useRef<boolean>(true);
+  const lastCheckRef = useRef<number>(0);
+  const lastHealthKickRef = useRef<number>(0);
+
+  const updateReachability = useCallback((reachable: boolean, reason: string) => {
+    lastReachableRef.current = reachable;
+    onlineManager.setOnline(reachable);
+
+    setState((prev) => ({
       ...prev,
       isConnected: reachable,
       isInternetReachable: reachable,
       lastChecked: Date.now(),
     }));
-    console.log('[Network] Connectivity check:', reachable ? 'online' : 'offline');
 
-    if (reachable) {
-      void runFullHealthCheck();
-    }
+    console.log('[Network] Connectivity update:', reason, reachable ? 'online' : 'offline');
   }, []);
+
+  const maybeRunHealthCheck = useCallback((force: boolean) => {
+    const now = Date.now();
+    if (!force && now - lastHealthKickRef.current < 60_000) {
+      return;
+    }
+
+    lastHealthKickRef.current = now;
+    void runFullHealthCheck();
+  }, []);
+
+  const check = useCallback(async (force: boolean = false): Promise<boolean> => {
+    const now = Date.now();
+
+    if (!force && inFlightCheckRef.current) {
+      return inFlightCheckRef.current;
+    }
+
+    if (!force && now - lastCheckRef.current < 30_000) {
+      return lastReachableRef.current;
+    }
+
+    lastCheckRef.current = now;
+
+    const request = (async () => {
+      const reachable = await checkConnectivity();
+      updateReachability(reachable, force ? 'forced' : 'scheduled');
+
+      if (reachable) {
+        maybeRunHealthCheck(force);
+      }
+
+      return reachable;
+    })();
+
+    inFlightCheckRef.current = request.finally(() => {
+      inFlightCheckRef.current = null;
+    });
+
+    return inFlightCheckRef.current;
+  }, [maybeRunHealthCheck, updateReachability]);
 
   useEffect(() => {
     startHealthMonitor();
 
     const unsub = subscribeHealth((health) => {
-      setState(prev => ({
+      setState((prev) => ({
         ...prev,
         supabaseStatus: health.supabaseStatus,
       }));
@@ -71,23 +124,30 @@ export const [NetworkProvider, useNetwork] = createContextHook(() => {
   }, []);
 
   useEffect(() => {
-    void check();
+    void check(true);
 
     const interval = setInterval(() => {
-      void check();
+      void check(false);
     }, 180000);
 
     const handleAppState = (nextState: AppStateStatus) => {
       if (nextState === 'active') {
-        void check();
+        void check(true);
       }
     };
 
     const sub = AppState.addEventListener('change', handleAppState);
 
     if (Platform.OS === 'web' && typeof window !== 'undefined') {
-      const onOnline = () => setState(prev => ({ ...prev, isConnected: true, isInternetReachable: true }));
-      const onOffline = () => setState(prev => ({ ...prev, isConnected: false, isInternetReachable: false }));
+      const onOnline = () => {
+        updateReachability(true, 'browser-online');
+        void check(true);
+      };
+
+      const onOffline = () => {
+        updateReachability(false, 'browser-offline');
+      };
+
       window.addEventListener('online', onOnline);
       window.addEventListener('offline', onOffline);
 
@@ -103,7 +163,9 @@ export const [NetworkProvider, useNetwork] = createContextHook(() => {
       clearInterval(interval);
       sub.remove();
     };
-  }, [check]);
+  }, [check, updateReachability]);
+
+  const refresh = useCallback(() => check(true), [check]);
 
   return useMemo(() => ({
     isConnected: state.isConnected,
@@ -112,6 +174,6 @@ export const [NetworkProvider, useNetwork] = createContextHook(() => {
     lastChecked: state.lastChecked,
     supabaseStatus: state.supabaseStatus,
     isFullyOperational: state.supabaseStatus === 'online' && state.isConnected,
-    refresh: check,
-  }), [state, check]);
+    refresh,
+  }), [refresh, state]);
 });

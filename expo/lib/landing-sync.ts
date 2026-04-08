@@ -70,16 +70,19 @@ async function upsertLandingDealRow(deal: PublishedDealPayload, timestamp: strin
     state: deal.state,
     country: deal.country,
     total_investment: deal.totalInvestment,
-    expected_roi: deal.expectedROI,
-    sale_price: deal.cardModel?.salePrice ?? 0,
+    property_value: deal.propertyValue || 0,
     estimated_value: deal.propertyValue || 0,
+    sale_price: deal.salePrice || 0,
+    expected_roi: deal.expectedROI,
     status: deal.status,
     photos: safePhotos,
-    developer_name: deal.cardModel?.developerName || deal.projectName || deal.title,
-    published: true,
+    distribution_frequency: deal.distributionFrequency,
+    exit_strategy: deal.exitStrategy,
     published_at: deal.publishedAt,
+    display_order: deal.displayOrder,
+    trust_info: deal.trustInfo ? JSON.stringify(deal.trustInfo) : null,
     updated_at: deal.updatedAt || timestamp,
-    source_deal_id: deal.id,
+    synced_at: timestamp,
   };
 
   const fullResult = await supabase
@@ -106,9 +109,11 @@ async function upsertLandingDealRow(deal: PublishedDealPayload, timestamp: strin
     state: deal.state,
     country: deal.country,
     total_investment: deal.totalInvestment,
+    estimated_value: deal.propertyValue || 0,
+    sale_price: deal.salePrice || 0,
     expected_roi: deal.expectedROI,
     status: deal.status,
-    published: true,
+    photos: safePhotos,
     published_at: deal.publishedAt,
     updated_at: deal.updatedAt || timestamp,
   };
@@ -171,6 +176,7 @@ export interface PublishedDealPayload {
   country: string;
   totalInvestment: number;
   propertyValue: number;
+  salePrice: number;
   expectedROI: number;
   status: string;
   photos: string[];
@@ -253,6 +259,7 @@ function mapRowToPayload(row: Record<string, unknown>): PublishedDealPayload {
     country: cardModel.country,
     totalInvestment: cardModel.totalInvestment,
     propertyValue: cardModel.propertyValue || 0,
+    salePrice: cardModel.explicitSalePrice || 0,
     expectedROI: cardModel.expectedROI,
     status: cardModel.status,
     photos: cardModel.photos,
@@ -299,14 +306,16 @@ function cardModelToPayload(card: PublishedDealCardModel): PublishedDealPayload 
     country: card.country,
     totalInvestment: card.totalInvestment,
     propertyValue: card.propertyValue || 0,
+    salePrice: card.explicitSalePrice || 0,
     expectedROI: card.expectedROI,
     status: card.status,
     photos: card.photos,
     distributionFrequency: card.distributionFrequency,
     exitStrategy: card.exitStrategy,
     publishedAt: card.publishedAt,
-    updatedAt: card.publishedAt,
+    updatedAt: card.updatedAt || card.publishedAt || new Date().toISOString(),
     displayOrder: card.displayOrder,
+    trustInfo: card.rawTrustInfo as Record<string, unknown> | undefined,
     cardModel: card,
   };
 }
@@ -362,6 +371,7 @@ async function generateStaticDealsJson(deals: PublishedDealPayload[], timestamp:
         country: d.country,
         totalInvestment: d.totalInvestment,
         propertyValue: d.propertyValue,
+        salePrice: d.salePrice,
         expectedROI: d.expectedROI,
         status: d.status,
         photos: d.photos,

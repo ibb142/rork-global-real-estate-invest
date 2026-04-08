@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Platform } from 'react-native';
+import { fetchPublicGeoData, fetchPublicIpAddress } from './public-geo';
 
 interface DeviceIPInfo {
   ip: string;
@@ -22,59 +23,64 @@ export function useDeviceIP(): DeviceIPInfo {
   useEffect(() => {
     let cancelled = false;
 
-    async function fetchIP() {
+    async function loadDeviceIP(): Promise<void> {
       try {
-        console.log('[DeviceIP] Fetching IP address...');
-        const res = await fetch('https://ipapi.co/json/', {
-          headers: { 'Accept': 'application/json' },
-        });
+        console.log('[DeviceIP] Starting public geo lookup...');
+        const geo = await fetchPublicGeoData();
 
-        if (!res.ok) {
-          throw new Error(`HTTP ${res.status}`);
-        }
-
-        const data = await res.json();
-        console.log('[DeviceIP] IP data received:', data.ip, data.city, data.country_name);
-
-        if (!cancelled) {
-          setInfo({
-            ip: data.ip ?? '',
-            city: data.city ?? undefined,
-            region: data.region ?? undefined,
-            country: data.country_name ?? undefined,
-            org: data.org ?? undefined,
-            timezone: data.timezone ?? undefined,
-            isLoading: false,
-            error: null,
-          });
-        }
-      } catch (err: any) {
-        console.log('[DeviceIP] Primary fetch failed, trying fallback...', err?.message);
-        try {
-          const fallbackRes = await fetch('https://api.ipify.org?format=json');
-          const fallbackData = await fallbackRes.json();
+        if (geo) {
+          console.log('[DeviceIP] Geo data resolved:', geo.ip, geo.city, geo.country, geo.source);
           if (!cancelled) {
             setInfo({
-              ip: fallbackData.ip ?? '',
+              ip: geo.ip ?? '',
+              city: geo.city ?? undefined,
+              region: geo.region ?? undefined,
+              country: geo.country ?? undefined,
+              org: geo.org ?? undefined,
+              timezone: geo.timezone ?? undefined,
               isLoading: false,
               error: null,
             });
           }
-        } catch (fallbackErr: any) {
-          console.error('[DeviceIP] All IP fetches failed:', fallbackErr?.message);
-          if (!cancelled) {
+          return;
+        }
+
+        const fallbackIp = await fetchPublicIpAddress();
+        console.log('[DeviceIP] Geo unavailable, IP fallback result:', fallbackIp ?? 'none');
+
+        if (!cancelled) {
+          if (fallbackIp) {
+            setInfo({
+              ip: fallbackIp,
+              isLoading: false,
+              error: null,
+            });
+          } else {
             setInfo({
               ip: Platform.OS === 'web' ? 'Web client' : 'Unavailable',
               isLoading: false,
-              error: fallbackErr?.message ?? 'Failed to detect IP',
+              error: 'Failed to detect geo or IP information',
             });
           }
+        }
+      } catch (error) {
+        const message = (error as Error)?.message ?? 'Failed to detect IP';
+        console.log('[DeviceIP] Lookup failed:', message);
+        if (!cancelled) {
+          setInfo({
+            ip: Platform.OS === 'web' ? 'Web client' : 'Unavailable',
+            isLoading: false,
+            error: message,
+          });
         }
       }
     }
 
-    void fetchIP();
-    return () => { cancelled = true; };
+    void loadDeviceIP();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   return info;

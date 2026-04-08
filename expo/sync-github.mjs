@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import 'dotenv/config';
+
 /**
  * IVX Holdings — GitHub Sync (Git Tree API)
  * 
@@ -14,12 +16,14 @@
 import { readFileSync, readdirSync, statSync } from 'fs';
 import { join, relative } from 'path';
 import { createHash } from 'crypto';
+import { getSyncPaths } from './sync-paths.mjs';
+
+const { syncRoot: PROJECT_ROOT } = getSyncPaths(import.meta.url);
 
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 const REPO = process.env.GITHUB_REPO || 'ibb142/rork-global-real-estate-invest';
 const BRANCH = process.env.GITHUB_BRANCH || 'main';
 const API = 'https://api.github.com';
-const PROJECT_ROOT = process.env.SYNC_ROOT || '/home/user/rork-app';
 
 const args = process.argv.slice(2);
 const DRY_RUN = args.includes('--dry-run');
@@ -31,6 +35,8 @@ const COMMIT_MESSAGE = msgIdx !== -1 && args[msgIdx + 1]
 const IGNORE_DIRS = new Set([
   'node_modules', '.git', '.expo', 'dist', 'build', '.rork',
   '.DS_Store', '__pycache__', 'tmp', 'core',
+  'dist-audit-ios', 'dist-audit-ios-final', 'dist-audit-ios-postfix',
+  'dist-audit-web', 'dist-audit-web-final', 'dist-audit-web-postfix',
 ]);
 
 const IGNORE_FILES = new Set([
@@ -186,6 +192,7 @@ async function main() {
   console.log(`  HEAD: ${headSha.slice(0, 7)}`);
 
   console.log('[2/6] Scanning local files...');
+  console.log(`  Root: ${PROJECT_ROOT}`);
   const localFiles = getAllFiles(PROJECT_ROOT);
   console.log(`  Found ${localFiles.length} files locally`);
 

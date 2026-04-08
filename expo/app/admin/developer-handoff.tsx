@@ -443,7 +443,12 @@ export default function DeveloperHandoffScreen() {
         <View style={styles.timeBanner}>
           <Clock size={16} color={Colors.primary} />
           <Text style={styles.timeBannerText}>
-            This screen is a delivery workplan, not a live production outage board. I can finish <Text style={styles.timeBannerBold}>{deliverySummary.rork.remainingItems} items</Text> on my side. You still have <Text style={styles.timeBannerBold}>{deliverySummary.user.remainingItems} items</Text> on your side, plus <Text style={styles.timeBannerBold}>{deliverySummary.shared.remainingItems} shared items</Text>.
+            {'This screen is a delivery workplan, not a live production outage board. I can finish '}
+            <Text style={styles.timeBannerBold}>{`${deliverySummary.rork.remainingItems} items`}</Text>
+            {' on my side. You still have '}
+            <Text style={styles.timeBannerBold}>{`${deliverySummary.user.remainingItems} items`}</Text>
+            {' on your side, plus '}
+            <Text style={styles.timeBannerBold}>{`${deliverySummary.shared.remainingItems} shared items.`}</Text>
           </Text>
         </View>
 

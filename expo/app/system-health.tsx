@@ -414,8 +414,15 @@ export default function SystemHealthScreen() {
   const [filter, setFilter] = useState<FilterMode>('all');
   const [autoRefreshCount, setAutoRefreshCount] = useState(0);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const scanInFlightRef = useRef(false);
 
   const runScan = useCallback(async (isRefresh = false) => {
+    if (scanInFlightRef.current) {
+      console.log('[SystemHealth] Scan skipped because another scan is still running');
+      return;
+    }
+
+    scanInFlightRef.current = true;
     console.log('[SystemHealth] Running scan...');
     if (isRefresh) setRefreshing(true);
     else setLoading(true);
@@ -427,6 +434,7 @@ export default function SystemHealthScreen() {
     } catch (err) {
       console.error('[SystemHealth] Scan error:', err);
     } finally {
+      scanInFlightRef.current = false;
       setLoading(false);
       setRefreshing(false);
     }
@@ -434,11 +442,21 @@ export default function SystemHealthScreen() {
 
   useEffect(() => {
     void runScan();
+
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+
     intervalRef.current = setInterval(() => {
       void runScan();
-    }, 3000);
+    }, 30000);
+
     return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
     };
   }, [runScan]);
 

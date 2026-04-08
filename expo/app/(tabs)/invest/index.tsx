@@ -99,6 +99,7 @@ export default function InvestScreen() {
     const trustMarket = deal.trustMarket as {
       minInvestment?: number;
       salePrice?: number;
+      explicitSalePrice?: number;
       fractionalSharePrice?: number;
       timelineMin?: number;
       timelineMax?: number;
@@ -116,7 +117,7 @@ export default function InvestScreen() {
       type: deal.type,
       minInvestment: trustMarket?.minInvestment ? Math.max(trustMarket.minInvestment, 1) : CANONICAL_MIN_INVESTMENT,
       propertyMarketValue: marketVal,
-      salePrice: trustMarket?.salePrice,
+      salePrice: trustMarket?.explicitSalePrice,
       fractionalSharePrice: trustMarket?.fractionalSharePrice,
       timelineMin: trustMarket?.timelineMin,
       timelineMax: trustMarket?.timelineMax,

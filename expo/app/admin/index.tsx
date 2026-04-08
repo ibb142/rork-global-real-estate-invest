@@ -102,6 +102,7 @@ const ADMIN_MODULES = [
   { id: 'owner-controls', name: 'Owner Controls', icon: Crown, route: '/admin/owner-controls', category: 'Core', keywords: 'owner admin controls master settings' },
   { id: 'dashboard', name: 'Dashboard', icon: LayoutDashboard, route: '/admin/dashboard', category: 'Core', keywords: 'dashboard overview summary' },
   { id: 'system-monitor', name: '24/7 Command Center', icon: Monitor, route: '/admin/system-monitor', category: 'Core', keywords: 'monitor command center health live status' },
+  { id: 'admin-chat-room', name: 'Admin Chat Room', icon: MessageSquare, route: '/admin/chat-room', category: 'Core', keywords: 'chat room realtime supabase owner admin support messages inbox' },
   { id: 'supabase-scripts', name: 'Supabase SQL', icon: Database, route: '/admin/supabase-scripts', category: 'Core', keywords: 'supabase sql scripts copy paste database tables setup migration' },
   { id: 'audit-log', name: 'Audit Trail', icon: Shield, route: '/admin/audit-log', category: 'Core', keywords: 'audit trail log history records tracking delete restore' },
   { id: 'data-recovery', name: 'Data Recovery', icon: RefreshCw, route: '/admin/data-recovery', category: 'Core', keywords: 'recovery backup restore deleted data snapshot' },
