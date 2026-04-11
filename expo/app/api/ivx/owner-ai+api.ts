@@ -5,7 +5,12 @@ import {
   IVX_OWNER_AI_ROOM_ID,
   IVX_OWNER_AI_ROOM_SLUG,
 } from '@/constants/ivx-owner-ai';
-import { IVX_OWNER_AI_TABLES, type IVXOwnerAIResponse } from '@/shared/ivx';
+import {
+  IVX_OWNER_AI_TABLES,
+  type IVXOwnerAIHealthProbeResponse,
+  type IVXOwnerAIRoomStatus,
+  type IVXOwnerAIResponse,
+} from '@/shared/ivx';
 
 type IVXOwnerAIRequestBody = {
   conversationId?: string;
@@ -38,9 +43,11 @@ type AuthResult = {
 };
 
 type ResolvedApiTables = {
-  schema: 'ivx' | 'generic';
+  schema: 'ivx' | 'generic' | 'none';
   conversations: string;
   messages: string;
+  inboxState: string | null;
+  aiRequests: string | null;
 };
 
 const JSON_HEADERS = {
@@ -52,6 +59,7 @@ const JSON_HEADERS = {
 } as const;
 
 let cachedApiTables: ResolvedApiTables | null = null;
+const DEPLOYMENT_MARKER = 'ivx-owner-ai-2026-04-11t2215z';
 
 function jsonResponse(payload: Record<string, unknown>, status: number = 200): Response {
   return new Response(JSON.stringify(payload), { status, headers: JSON_HEADERS });
@@ -156,23 +164,74 @@ async function resolveApiTables(client: SupabaseClient): Promise<ResolvedApiTabl
   const { error: ivxErr } = await client.from(IVX_OWNER_AI_TABLES.conversations).select('id').limit(1);
   if (!ivxErr) {
     console.log('[IVXOwnerAI-API] Using ivx tables');
-    cachedApiTables = { schema: 'ivx', conversations: IVX_OWNER_AI_TABLES.conversations, messages: IVX_OWNER_AI_TABLES.messages };
+    cachedApiTables = {
+      schema: 'ivx',
+      conversations: IVX_OWNER_AI_TABLES.conversations,
+      messages: IVX_OWNER_AI_TABLES.messages,
+      inboxState: IVX_OWNER_AI_TABLES.inboxState,
+      aiRequests: IVX_OWNER_AI_TABLES.aiRequests,
+    };
     return cachedApiTables;
   }
 
   const { error: genErr } = await client.from('conversations').select('id').limit(1);
   if (!genErr) {
     console.log('[IVXOwnerAI-API] Using generic tables (conversations/messages)');
-    cachedApiTables = { schema: 'generic', conversations: 'conversations', messages: 'messages' };
+    cachedApiTables = {
+      schema: 'generic',
+      conversations: 'conversations',
+      messages: 'messages',
+      inboxState: 'conversation_participants',
+      aiRequests: null,
+    };
     return cachedApiTables;
   }
 
-  console.log('[IVXOwnerAI-API] No tables found, defaulting to generic');
-  cachedApiTables = { schema: 'generic', conversations: 'conversations', messages: 'messages' };
+  console.log('[IVXOwnerAI-API] No shared chat tables found, using local AI fallback mode');
+  cachedApiTables = {
+    schema: 'none',
+    conversations: IVX_OWNER_AI_TABLES.conversations,
+    messages: IVX_OWNER_AI_TABLES.messages,
+    inboxState: null,
+    aiRequests: null,
+  };
   return cachedApiTables;
 }
 
+function buildRoomStatus(tables: ResolvedApiTables): IVXOwnerAIRoomStatus {
+  if (tables.schema === 'ivx') {
+    return {
+      storageMode: 'primary_supabase_tables',
+      visibility: 'shared',
+      deliveryMethod: 'primary_realtime',
+    };
+  }
+
+  if (tables.schema === 'generic') {
+    return {
+      storageMode: 'alternate_room_schema',
+      visibility: 'shared',
+      deliveryMethod: 'alternate_shared',
+    };
+  }
+
+  return {
+    storageMode: 'local_device_only',
+    visibility: 'local_only',
+    deliveryMethod: 'local_only',
+    warning: 'No shared IVX chat tables are available yet. AI replies can still run, but room sync stays local until the chat schema is provisioned.',
+  };
+}
+
 async function ensureConversation(client: SupabaseClient, tables: ResolvedApiTables): Promise<ConversationResult> {
+  if (tables.schema === 'none') {
+    return {
+      id: IVX_OWNER_AI_ROOM_ID,
+      title: IVX_OWNER_AI_PROFILE.sharedRoom.title,
+      subtitle: IVX_OWNER_AI_PROFILE.sharedRoom.subtitle,
+    };
+  }
+
   const lookupField = tables.schema === 'ivx' ? 'slug' : 'id';
   const lookupValue = tables.schema === 'ivx' ? IVX_OWNER_AI_ROOM_SLUG : IVX_OWNER_AI_ROOM_ID;
 
@@ -254,6 +313,10 @@ async function ensureConversation(client: SupabaseClient, tables: ResolvedApiTab
 }
 
 async function loadRecentMessages(client: SupabaseClient, tables: ResolvedApiTables, conversationId: string): Promise<RecentMessageRow[]> {
+  if (tables.schema === 'none') {
+    return [];
+  }
+
   const { data, error } = await client
     .from(tables.messages)
     .select('*')
@@ -276,6 +339,11 @@ async function insertMessage(client: SupabaseClient, tables: ResolvedApiTables, 
   text: string;
   senderRole?: string;
 }): Promise<void> {
+  if (tables.schema === 'none') {
+    console.log('[IVXOwnerAI-API] Shared chat tables unavailable, skipping message persistence for local AI fallback mode');
+    return;
+  }
+
   const payload: Record<string, unknown> = {
     conversation_id: input.conversationId,
     created_at: nowIso(),
@@ -327,6 +395,10 @@ async function insertMessage(client: SupabaseClient, tables: ResolvedApiTables, 
 }
 
 async function updateConversationSummary(client: SupabaseClient, tables: ResolvedApiTables, conversationId: string, preview: string): Promise<void> {
+  if (tables.schema === 'none') {
+    return;
+  }
+
   const trimmedPreview = preview.length <= 120 ? preview : `${preview.slice(0, 117)}...`;
   const { error } = await client.from(tables.conversations).update({
     last_message_text: trimmedPreview,
@@ -335,6 +407,56 @@ async function updateConversationSummary(client: SupabaseClient, tables: Resolve
 
   if (error) {
     console.log('[IVXOwnerAI-API] Conversation summary update non-blocking error:', error.message);
+  }
+}
+
+async function ensureInboxState(client: SupabaseClient, tables: ResolvedApiTables, conversationId: string, userId: string): Promise<void> {
+  if (tables.schema !== 'ivx' || !tables.inboxState) {
+    return;
+  }
+
+  const { error } = await client.from(tables.inboxState).upsert({
+    conversation_id: conversationId,
+    user_id: userId,
+    unread_count: 0,
+    last_read_at: nowIso(),
+    updated_at: nowIso(),
+  }, {
+    onConflict: 'conversation_id,user_id',
+  });
+
+  if (error) {
+    console.log('[IVXOwnerAI-API] Inbox state upsert non-blocking error:', error.message);
+  }
+}
+
+async function logAIRequest(client: SupabaseClient, tables: ResolvedApiTables, input: {
+  requestId: string;
+  conversationId: string;
+  userId: string;
+  prompt: string;
+  responseText: string;
+  status: 'completed' | 'failed';
+  model: string;
+}): Promise<void> {
+  if (tables.schema !== 'ivx' || !tables.aiRequests) {
+    return;
+  }
+
+  const { error } = await client.from(tables.aiRequests).insert({
+    id: input.requestId,
+    conversation_id: input.conversationId,
+    user_id: input.userId,
+    prompt: input.prompt,
+    response_text: input.responseText,
+    status: input.status,
+    model: input.model,
+    created_at: nowIso(),
+    updated_at: nowIso(),
+  });
+
+  if (error) {
+    console.log('[IVXOwnerAI-API] AI request insert non-blocking error:', error.message);
   }
 }
 
@@ -383,43 +505,40 @@ export async function POST(request: Request): Promise<Response> {
       return jsonResponse({ error: 'Message is required.' }, 400);
     }
 
-    console.log('[IVXOwnerAI-API] Incoming request:', { promptLength: prompt.length, mode, isProbe: isHealthProbe(prompt) });
+    console.log('[IVXOwnerAI-API] Incoming request:', { promptLength: prompt.length, mode, isProbe: isHealthProbe(prompt), marker: DEPLOYMENT_MARKER });
 
     if (isHealthProbe(prompt)) {
       try {
-        const token = extractBearerToken(request);
-        if (!token) {
-          return jsonResponse({ error: 'Authorization required for health probe.' }, 401);
-        }
+        const auth = await verifyAuth(request);
+        const tables = await resolveApiTables(auth.client);
+        const roomStatus = buildRoomStatus(tables);
 
-        const client = createAuthenticatedClient(token);
-        const { data, error } = await client.auth.getUser(token);
-        if (error || !data.user) {
-          return jsonResponse({ error: 'Invalid session for health probe.' }, 401);
-        }
+        console.log('[IVXOwnerAI-API] Health probe passed for user:', auth.userId, 'schema:', tables.schema, 'storageMode:', roomStatus.storageMode, 'marker:', DEPLOYMENT_MARKER);
 
-        console.log('[IVXOwnerAI-API] Health probe passed for user:', data.user.id);
+        const probePayload: IVXOwnerAIHealthProbeResponse = {
+          requestId: createRequestId(),
+          conversationId: IVX_OWNER_AI_ROOM_ID,
+          answer: 'IVX Owner AI is active and ready.',
+          model,
+          status: 'ok',
+          probe: true,
+          resolvedSchema: tables.schema,
+          roomStatus,
+          capabilities: {
+            ai_chat: true,
+            knowledge_answers: true,
+            owner_commands: true,
+            code_aware_support: true,
+            file_upload: tables.schema !== 'none',
+            inbox_sync: tables.schema !== 'none',
+          },
+        };
+
+        return jsonResponse({ ...probePayload, deploymentMarker: DEPLOYMENT_MARKER } as unknown as Record<string, unknown>);
       } catch (authErr) {
         console.log('[IVXOwnerAI-API] Health probe auth error:', authErr instanceof Error ? authErr.message : 'unknown');
         return jsonResponse({ error: 'Health probe auth failed.' }, 401);
       }
-
-      return jsonResponse({
-        requestId: createRequestId(),
-        conversationId: IVX_OWNER_AI_ROOM_ID,
-        answer: 'IVX Owner AI is active and ready.',
-        model,
-        status: 'ok',
-        probe: true,
-        capabilities: {
-          ai_chat: true,
-          knowledge_answers: true,
-          owner_commands: true,
-          code_aware_support: true,
-          file_upload: true,
-          inbox_sync: true,
-        },
-      });
     }
 
     const auth = await verifyAuth(request);
@@ -427,6 +546,8 @@ export async function POST(request: Request): Promise<Response> {
     const conversation = await ensureConversation(auth.client, tables);
     const requestId = createRequestId();
     const effectiveSenderLabel = senderLabel || auth.email || 'IVX User';
+
+    await ensureInboxState(auth.client, tables, conversation.id, auth.userId);
 
     console.log('[IVXOwnerAI-API] User verified:', {
       userId: auth.userId,
@@ -473,6 +594,16 @@ export async function POST(request: Request): Promise<Response> {
     });
 
     await updateConversationSummary(auth.client, tables, conversation.id, answer);
+    await ensureInboxState(auth.client, tables, conversation.id, auth.userId);
+    await logAIRequest(auth.client, tables, {
+      requestId,
+      conversationId: conversation.id,
+      userId: auth.userId,
+      prompt,
+      responseText: answer,
+      status: 'completed',
+      model,
+    });
 
     const responsePayload: IVXOwnerAIResponse = {
       requestId,
@@ -482,7 +613,7 @@ export async function POST(request: Request): Promise<Response> {
       status: 'ok',
     };
 
-    return jsonResponse(responsePayload as unknown as Record<string, unknown>);
+    return jsonResponse({ ...responsePayload, deploymentMarker: DEPLOYMENT_MARKER } as unknown as Record<string, unknown>);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unable to process the IVX Owner AI request.';
     const status = message.includes('Authorization') || message.includes('Invalid session')
@@ -491,7 +622,7 @@ export async function POST(request: Request): Promise<Response> {
         ? 503
         : 500;
 
-    console.log('[IVXOwnerAI-API] Request failed:', message);
+    console.log('[IVXOwnerAI-API] Request failed:', message, 'marker:', DEPLOYMENT_MARKER);
     return jsonResponse({ error: message }, status);
   }
 }

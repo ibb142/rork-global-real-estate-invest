@@ -329,7 +329,7 @@ export default function ChatScreen() {
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.moduleButton}
-                onPress={() => router.push('/chat-room?conversationId=ivx-owner-room&title=IVX%20Owner%20AI%20Room' as any)}
+                onPress={() => router.push('/ivx/chat' as any)}
                 testID="chat-open-message-room"
               >
                 <Text style={styles.moduleButtonText}>Open room</Text>

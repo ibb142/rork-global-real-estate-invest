@@ -1,9 +1,9 @@
 import React, { useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { Stack, useLocalSearchParams } from 'expo-router';
+import { Redirect, Stack, useLocalSearchParams } from 'expo-router';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import Colors from '@/constants/colors';
-import { IVX_OWNER_AI_PROFILE } from '@/constants/ivx-owner-ai';
+import { IVX_OWNER_AI_PROFILE, IVX_OWNER_AI_ROOM_ID, IVX_OWNER_AI_ROOM_SLUG } from '@/constants/ivx-owner-ai';
 import { useAuth } from '@/lib/auth-context';
 import { ChatModule } from '@/src/modules/chat';
 import { getChatConversationTitle, resolveChatActorId, resolveChatConversationId } from '@/src/modules/chat/services/chatRooms';
@@ -37,9 +37,19 @@ export default function ChatRoomRoute() {
     return getChatConversationTitle(routeConversationId, normalizeOptionalParam(params.title) ?? IVX_OWNER_AI_PROFILE.sharedRoom.title) ?? IVX_OWNER_AI_PROFILE.sharedRoom.title;
   }, [params.title, routeConversationId]);
 
+  const isIVXOwnerRoomRoute = useMemo(() => {
+    const normalizedRouteConversationId = routeConversationId?.trim() ?? '';
+    return normalizedRouteConversationId === IVX_OWNER_AI_ROOM_SLUG || conversationId === IVX_OWNER_AI_ROOM_ID;
+  }, [conversationId, routeConversationId]);
+
   const currentUserId = useMemo(() => {
     return resolveChatActorId(user?.id, 'preview');
   }, [user?.id]);
+
+  if (isIVXOwnerRoomRoute) {
+    console.log('[ChatRoomRoute] Redirecting IVX owner room to /ivx/chat');
+    return <Redirect href="/ivx/chat" />;
+  }
 
   return (
     <ErrorBoundary fallbackTitle="Chat room unavailable">

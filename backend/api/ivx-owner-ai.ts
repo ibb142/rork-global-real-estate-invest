@@ -1,7 +1,13 @@
 import { generateText } from '@rork-ai/toolkit-sdk';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { IVX_OWNER_AI_PROFILE, IVX_OWNER_AI_ROOM_ID, IVX_OWNER_AI_ROOM_SLUG } from '../../expo/constants/ivx-owner-ai';
-import { IVX_OWNER_AI_TABLES, type IVXConversation, type IVXOwnerAIRequest, type IVXOwnerAIResponse } from '../../expo/shared/ivx';
+import {
+  IVX_OWNER_AI_TABLES,
+  type IVXConversation,
+  type IVXOwnerAIHealthProbeResponse,
+  type IVXOwnerAIRequest,
+  type IVXOwnerAIResponse,
+} from '../../expo/shared/ivx';
 import { assertIVXOwnerOnly, ownerOnlyJson, ownerOnlyOptions } from './owner-only';
 
 type IVXConversationRow = {
@@ -134,6 +140,22 @@ async function updateConversationSummary(client: SupabaseClient, conversationId:
   }
 }
 
+async function ensureInboxState(client: SupabaseClient, conversationId: string, userId: string): Promise<void> {
+  const upsertResult = await client.from(IVX_OWNER_AI_TABLES.inboxState).upsert({
+    conversation_id: conversationId,
+    user_id: userId,
+    unread_count: 0,
+    last_read_at: nowIso(),
+    updated_at: nowIso(),
+  }, {
+    onConflict: 'conversation_id,user_id',
+  });
+
+  if (upsertResult.error) {
+    throw new Error(upsertResult.error.message);
+  }
+}
+
 async function logAIRequest(client: SupabaseClient, input: {
   requestId: string;
   conversationId: string;
@@ -192,6 +214,11 @@ function getErrorStatus(error: unknown): number {
   return 500;
 }
 
+function isHealthProbe(prompt: string): boolean {
+  const normalized = prompt.trim().toLowerCase();
+  return normalized === 'health_probe' || normalized === 'ping' || normalized === 'health_check';
+}
+
 export function OPTIONS(): Response {
   return ownerOnlyOptions();
 }
@@ -211,6 +238,35 @@ export async function handleIVXOwnerAIRequest(request: Request): Promise<Respons
 
     const conversation = await ensureOwnerConversation(ownerContext.client);
     const requestId = createRequestId();
+
+    await ensureInboxState(ownerContext.client, conversation.id, ownerContext.userId);
+
+    if (isHealthProbe(prompt)) {
+      const probePayload: IVXOwnerAIHealthProbeResponse = {
+        requestId,
+        conversationId: conversation.id,
+        answer: 'IVX Owner AI is active and ready.',
+        model,
+        status: 'ok',
+        probe: true,
+        resolvedSchema: 'ivx',
+        roomStatus: {
+          storageMode: 'primary_supabase_tables',
+          visibility: 'shared',
+          deliveryMethod: 'primary_realtime',
+        },
+        capabilities: {
+          ai_chat: true,
+          knowledge_answers: true,
+          owner_commands: true,
+          code_aware_support: true,
+          file_upload: true,
+          inbox_sync: true,
+        },
+      };
+
+      return ownerOnlyJson(probePayload as unknown as Record<string, unknown>);
+    }
 
     await insertMessage(ownerContext.client, {
       conversationId: conversation.id,
@@ -237,6 +293,7 @@ export async function handleIVXOwnerAIRequest(request: Request): Promise<Respons
     });
 
     await updateConversationSummary(ownerContext.client, conversation.id, answer);
+    await ensureInboxState(ownerContext.client, conversation.id, ownerContext.userId);
     await logAIRequest(ownerContext.client, {
       requestId,
       conversationId: conversation.id,

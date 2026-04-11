@@ -28,7 +28,6 @@ import type { ChatRoomRuntimeSignals, ChatRoomStatus, ServiceRuntimeHealth } fro
 import { resolveRoomCapabilityState, type RoomCapabilityResolution } from '@/src/modules/chat/services/roomCapabilityResolver';
 import { RoomHeader } from '@/src/modules/chat/components/RoomHeader';
 import { ComposerStatusNote } from '@/src/modules/chat/components/ComposerStatusNote';
-import { getIVXAccessToken, getIVXOwnerAIEndpoint } from '@/lib/ivx-supabase-client';
 
 type PickerAsset = {
   uri: string;
@@ -170,6 +169,7 @@ export default function IVXOwnerChatRoute() {
   const messages = messagesQuery.data ?? [];
   const sendingDisabled = composerValue.trim().length === 0;
   const [localSystemMessages, setLocalSystemMessages] = useState<IVXMessage[]>([]);
+  const shouldMirrorAssistantRepliesLocally = ivxRoomStatus?.storageMode === 'local_device_only';
   const allMessages = useMemo<IVXMessage[]>(() => {
     const combined = [...messages, ...localSystemMessages];
     return combined.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
@@ -277,6 +277,9 @@ export default function IVXOwnerChatRoute() {
             senderLabel: ownerLabel,
             mode: 'chat',
           });
+          if (shouldMirrorAssistantRepliesLocally) {
+            addLocalSystemMessage(aiResult.answer, 'assistant');
+          }
           setAiBackendReachable(true);
           setAiHealthDetail('active');
           setKnowledgeActive(true);
@@ -293,6 +296,9 @@ export default function IVXOwnerChatRoute() {
           senderLabel: ownerLabel,
           mode: 'chat',
         });
+        if (shouldMirrorAssistantRepliesLocally) {
+          addLocalSystemMessage(aiResult.answer, 'assistant');
+        }
         setAiBackendReachable(true);
         setAiHealthDetail('active');
         setKnowledgeActive(true);
@@ -313,6 +319,9 @@ export default function IVXOwnerChatRoute() {
             senderLabel: ownerLabel,
             mode: 'chat',
           });
+          if (shouldMirrorAssistantRepliesLocally) {
+            addLocalSystemMessage(aiResult.answer, 'assistant');
+          }
           setAiBackendReachable(true);
           setAiHealthDetail('active');
           setKnowledgeActive(true);
@@ -344,53 +353,37 @@ export default function IVXOwnerChatRoute() {
     let cancelled = false;
     let intervalId: ReturnType<typeof setInterval> | null = null;
 
-    const activateAllCapabilities = () => {
-      setAiBackendReachable(true);
-      setAiHealthDetail('active');
-      setKnowledgeActive(true);
-      setOwnerCommandsActive(true);
-      setCodeAwareActive(true);
-      probeRetryCount.current = 0;
+    const applyCapabilityHealth = (health: ServiceRuntimeHealth) => {
+      const isAvailable = health === 'active' || health === 'degraded';
+      setAiBackendReachable(isAvailable);
+      setAiHealthDetail(health);
+      setKnowledgeActive(isAvailable);
+      setOwnerCommandsActive(isAvailable);
+      setCodeAwareActive(isAvailable);
+      if (isAvailable) {
+        probeRetryCount.current = 0;
+      }
     };
 
-    const singleProbeAttempt = async (): Promise<boolean> => {
-      const token = await getIVXAccessToken();
-      if (!token) {
-        console.log('[IVXOwnerChatRoute] AI health probe: no token, waiting for session');
-        return false;
+    const singleProbeAttempt = async (): Promise<ServiceRuntimeHealth> => {
+      const result = await ivxAIRequestService.probeOwnerAIHealth();
+      if (result.roomStatus) {
+        queryClient.setQueryData<ChatRoomStatus>(IVX_ROOM_STATUS_QUERY_KEY, result.roomStatus);
       }
-      const endpoint = getIVXOwnerAIEndpoint();
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 10000);
-      try {
-        const res = await fetch(endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ message: 'health_probe', mode: 'chat' }),
-          signal: controller.signal,
-        });
-        clearTimeout(timeout);
-        if (res.ok) {
-          const data = await res.json().catch(() => null);
-          const hasCapabilities = !!data && typeof data === 'object' && 'capabilities' in data;
-          console.log('[IVXOwnerChatRoute] AI health probe: ACTIVE, hasCapabilities:', hasCapabilities);
-          return true;
-        }
-        console.log('[IVXOwnerChatRoute] AI health probe: failed status:', res.status);
-        return false;
-      } catch (err) {
-        clearTimeout(timeout);
-        console.log('[IVXOwnerChatRoute] AI health probe attempt failed:', err instanceof Error ? err.message : 'unknown');
-        return false;
-      }
+      console.log('[IVXOwnerChatRoute] AI health probe result:', {
+        health: result.health,
+        source: result.source,
+        storageMode: result.roomStatus?.storageMode ?? ivxRoomStatus?.storageMode ?? 'unknown',
+      });
+      return result.health;
     };
 
     const probe = async () => {
-      const success = await singleProbeAttempt();
+      const health = await singleProbeAttempt();
       if (cancelled) return;
 
-      if (success) {
-        activateAllCapabilities();
+      if (health === 'active' || health === 'degraded') {
+        applyCapabilityHealth(health);
         return;
       }
 
@@ -399,21 +392,22 @@ export default function IVXOwnerChatRoute() {
         console.log('[IVXOwnerChatRoute] AI health probe: retry', probeRetryCount.current, 'of', MAX_PROBE_RETRIES, 'in', PROBE_RETRY_DELAY_MS, 'ms');
         await new Promise((resolve) => setTimeout(resolve, PROBE_RETRY_DELAY_MS));
         if (cancelled) return;
-        const retrySuccess = await singleProbeAttempt();
+        const retryHealth = await singleProbeAttempt();
         if (cancelled) return;
-        if (retrySuccess) {
-          activateAllCapabilities();
+        if (retryHealth === 'active' || retryHealth === 'degraded') {
+          applyCapabilityHealth(retryHealth);
           return;
         }
       }
 
       if (aiReachableRef.current) {
-        console.log('[IVXOwnerChatRoute] AI health probe: failed but was previously active, setting degraded');
+        console.log('[IVXOwnerChatRoute] AI health probe: inactive after retries, keeping degraded state');
+        setAiBackendReachable(true);
         setAiHealthDetail('degraded');
       } else {
-        console.log('[IVXOwnerChatRoute] AI health probe: failed, setting degraded (not inactive) to allow retry');
+        console.log('[IVXOwnerChatRoute] AI health probe: inactive after retries');
         setAiBackendReachable(false);
-        setAiHealthDetail('degraded');
+        setAiHealthDetail('inactive');
       }
     };
 
@@ -430,7 +424,7 @@ export default function IVXOwnerChatRoute() {
       clearTimeout(initialDelay);
       if (intervalId) clearInterval(intervalId);
     };
-  }, []);
+  }, [ivxRoomStatus?.storageMode, queryClient]);
 
   const runtimeSignals = useMemo<ChatRoomRuntimeSignals>(() => {
     const effectiveAiHealth: ServiceRuntimeHealth = sendAndAIMutation.isPending ? 'active' : aiHealthDetail;

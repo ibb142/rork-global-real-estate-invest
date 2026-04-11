@@ -475,7 +475,7 @@ export default function OwnerAccessScreen() {
         subtitle: 'Live shared owner AI chat and backend capability proof',
         accent: '#FF9F43',
         icon: MessageSquareText,
-        onPress: () => router.push('/admin/chat-room?conversationId=ivx-owner-room&title=IVX%20Owner%20AI%20Room' as any),
+        onPress: () => router.push('/ivx/chat' as any),
         testID: 'owner-access-open-ivx-owner-room',
       },
       {

@@ -1,3 +1,6 @@
+import { generateText as toolkitGenerateText } from '@rork-ai/toolkit-sdk';
+import { IVX_OWNER_AI_PROFILE } from '@/constants/ivx-owner-ai';
+import { getIVXOwnerAIEndpoint } from '@/lib/ivx-supabase-client';
 import { supabase } from '@/lib/supabase';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import type {
@@ -26,7 +29,6 @@ type KnowledgeQueryResult = {
   confidence: number;
 };
 
-const AI_API_PATH = '/api/ivx/owner-ai';
 const AI_PROBE_TIMEOUT_MS = 8000;
 const AI_REPLY_TIMEOUT_MS = 30000;
 const OWNER_COMMAND_PREFIX = '/';
@@ -80,12 +82,92 @@ const OWNER_COMMANDS: Record<string, { description: string; handler: (args: stri
   },
 };
 
-function getApiBaseUrl(): string {
-  const rorkBase = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL ?? '').trim();
-  if (rorkBase) {
-    return rorkBase;
+function createLocalAIRequestId(prefix: string): string {
+  const cryptoRef = globalThis.crypto as { randomUUID?: () => string } | undefined;
+  if (cryptoRef?.randomUUID) {
+    return `${prefix}-${cryptoRef.randomUUID()}`;
   }
-  return '';
+
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function buildToolkitPrompt(input: {
+  messageText: string;
+  conversationId: string;
+  senderLabel?: string | null;
+}): string {
+  const senderLabel = input.senderLabel?.trim() || 'Owner';
+  return [
+    `You are ${IVX_OWNER_AI_PROFILE.name}.`,
+    'Respond with concise owner-first guidance for IVX operations, chat, inbox, uploads, knowledge base, and owner commands.',
+    'You are running in the in-app fallback path, so do not claim server-side actions were completed unless the user already confirmed them.',
+    `Conversation ID: ${input.conversationId}`,
+    `Sender label: ${senderLabel}`,
+    `Owner request: ${input.messageText}`,
+  ].join('\n\n');
+}
+
+function shouldFallbackToToolkit(status: number | null, message: string): boolean {
+  const normalizedMessage = message.toLowerCase();
+
+  if (status !== null && status !== 401 && status !== 403 && (status === 404 || status === 405 || status >= 500)) {
+    return true;
+  }
+
+  return normalizedMessage.includes('network request failed')
+    || normalizedMessage.includes('failed to fetch')
+    || normalizedMessage.includes('load failed')
+    || normalizedMessage.includes('not found')
+    || normalizedMessage.includes('abort');
+}
+
+async function probeToolkitFallbackHealth(): Promise<ServiceRuntimeHealth> {
+  try {
+    const answer = (await toolkitGenerateText({
+      messages: [{ role: 'user', content: 'Reply with READY only.' }],
+    })).trim();
+
+    if (!answer) {
+      console.log('[AIReplyService] Toolkit fallback probe returned empty output');
+      return 'inactive';
+    }
+
+    console.log('[AIReplyService] Toolkit fallback probe: available');
+    return 'degraded';
+  } catch (error) {
+    console.log('[AIReplyService] Toolkit fallback probe failed:', (error as Error)?.message ?? 'unknown');
+    return 'inactive';
+  }
+}
+
+async function requestToolkitAIReply(
+  messageText: string,
+  conversationId: string,
+  senderLabel?: string | null,
+): Promise<AIReplyResult> {
+  const prompt = buildToolkitPrompt({
+    messageText,
+    conversationId,
+    senderLabel,
+  });
+  const answer = (await toolkitGenerateText({
+    messages: [{ role: 'user', content: prompt }],
+  })).trim();
+
+  if (!answer) {
+    throw new Error('AI returned an empty fallback response.');
+  }
+
+  console.log('[AIReplyService] Toolkit fallback reply received, length:', answer.length);
+  cachedAIHealth = 'degraded';
+  lastProbeTimestamp = Date.now();
+
+  return {
+    answer,
+    requestId: createLocalAIRequestId('toolkit-ai'),
+    conversationId,
+    model: 'rork-toolkit-fallback',
+  };
 }
 
 async function getAccessToken(): Promise<string | null> {
@@ -108,23 +190,22 @@ export async function probeAIBackendHealth(): Promise<ServiceRuntimeHealth> {
   console.log('[AIReplyService] Probing AI backend health...');
 
   if (!isSupabaseConfigured()) {
-    console.log('[AIReplyService] Supabase not configured, AI unavailable');
-    cachedAIHealth = 'inactive';
+    console.log('[AIReplyService] Supabase not configured, probing toolkit fallback');
+    cachedAIHealth = await probeToolkitFallbackHealth();
     lastProbeTimestamp = now;
     return cachedAIHealth;
   }
 
   const token = await getAccessToken();
   if (!token) {
-    console.log('[AIReplyService] No auth token, AI health: inactive');
-    cachedAIHealth = 'inactive';
+    console.log('[AIReplyService] No auth token, probing toolkit fallback');
+    cachedAIHealth = await probeToolkitFallbackHealth();
     lastProbeTimestamp = now;
     return cachedAIHealth;
   }
 
   try {
-    const baseUrl = getApiBaseUrl();
-    const url = `${baseUrl}${AI_API_PATH}`;
+    const url = getIVXOwnerAIEndpoint();
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), AI_PROBE_TIMEOUT_MS);
@@ -161,22 +242,19 @@ export async function probeAIBackendHealth(): Promise<ServiceRuntimeHealth> {
       return cachedAIHealth;
     }
 
-    if (response.status === 503 || response.status >= 500) {
-      console.log('[AIReplyService] AI backend probe: degraded (server error)');
-      cachedAIHealth = 'degraded';
-      lastProbeTimestamp = now;
-      return cachedAIHealth;
-    }
+    const fallbackHealth = shouldFallbackToToolkit(response.status, `status:${response.status}`)
+      ? await probeToolkitFallbackHealth()
+      : 'inactive';
 
-    console.log('[AIReplyService] AI backend probe: degraded (status:', response.status, ')');
-    cachedAIHealth = 'degraded';
+    console.log('[AIReplyService] AI backend probe fallback result:', fallbackHealth, 'status:', response.status);
+    cachedAIHealth = fallbackHealth;
     lastProbeTimestamp = now;
     return cachedAIHealth;
   } catch (error) {
     const message = (error as Error)?.message ?? '';
-    if (message.includes('abort')) {
-      console.log('[AIReplyService] AI backend probe: degraded (timeout)');
-      cachedAIHealth = 'degraded';
+    if (shouldFallbackToToolkit(null, message)) {
+      console.log('[AIReplyService] AI backend probe failed, trying toolkit fallback:', message);
+      cachedAIHealth = await probeToolkitFallbackHealth();
     } else {
       console.log('[AIReplyService] AI backend probe: inactive (error:', message, ')');
       cachedAIHealth = 'inactive';
@@ -195,11 +273,11 @@ export async function requestAIReply(
 
   const token = await getAccessToken();
   if (!token) {
-    throw new Error('Authentication required for AI replies.');
+    console.log('[AIReplyService] No auth token for remote AI reply, using toolkit fallback');
+    return await requestToolkitAIReply(messageText, conversationId, senderLabel);
   }
 
-  const baseUrl = getApiBaseUrl();
-  const url = `${baseUrl}${AI_API_PATH}`;
+  const url = getIVXOwnerAIEndpoint();
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), AI_REPLY_TIMEOUT_MS);
@@ -224,7 +302,12 @@ export async function requestAIReply(
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-      throw new Error((errorData as { error?: string }).error ?? `AI API returned ${response.status}`);
+      const errorMessage = (errorData as { error?: string }).error ?? `AI API returned ${response.status}`;
+      if (shouldFallbackToToolkit(response.status, errorMessage)) {
+        console.log('[AIReplyService] Remote AI reply unavailable, switching to toolkit fallback:', response.status, errorMessage);
+        return await requestToolkitAIReply(messageText, conversationId, senderLabel);
+      }
+      throw new Error(errorMessage);
     }
 
     const data = await response.json() as AIReplyResult;
@@ -243,6 +326,11 @@ export async function requestAIReply(
     clearTimeout(timeout);
     const msg = (error as Error)?.message ?? 'Unknown error';
     console.log('[AIReplyService] AI reply failed:', msg);
+
+    if (shouldFallbackToToolkit(null, msg)) {
+      console.log('[AIReplyService] Falling back to toolkit AI reply');
+      return await requestToolkitAIReply(messageText, conversationId, senderLabel);
+    }
 
     if (msg.includes('abort') || msg.includes('timeout')) {
       cachedAIHealth = 'degraded';

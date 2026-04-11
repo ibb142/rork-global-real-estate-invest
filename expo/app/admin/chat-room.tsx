@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { Redirect, Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { ArrowLeft, Radio } from 'lucide-react-native';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import Colors from '@/constants/colors';
-import { IVX_OWNER_AI_PROFILE } from '@/constants/ivx-owner-ai';
+import { IVX_OWNER_AI_PROFILE, IVX_OWNER_AI_ROOM_ID, IVX_OWNER_AI_ROOM_SLUG } from '@/constants/ivx-owner-ai';
 import { useAuth } from '@/lib/auth-context';
 import { ChatScreen } from '@/src/modules/chat';
 import {
@@ -54,6 +54,10 @@ export default function AdminChatRoomScreen() {
   const title = useMemo(() => {
     return getChatConversationTitle(routeConversationId, normalizeParam(params.title, IVX_OWNER_AI_PROFILE.sharedRoom.title)) ?? IVX_OWNER_AI_PROFILE.sharedRoom.title;
   }, [params.title, routeConversationId]);
+
+  const isIVXOwnerRoomRoute = useMemo(() => {
+    return routeConversationId === IVX_OWNER_AI_ROOM_SLUG || conversationId === IVX_OWNER_AI_ROOM_ID;
+  }, [conversationId, routeConversationId]);
 
   const [roomStatus, setRoomStatus] = useState<ChatRoomStatus | null>(() => getCurrentChatRoomStatus());
   const [runtimeSignals, setRuntimeSignals] = useState<ChatRoomRuntimeSignals>({
@@ -110,6 +114,11 @@ export default function AdminChatRoomScreen() {
       currentUserId,
     });
   }, [conversationId, currentUserId, displayConversationId, roomStatus, routeConversationId, title]);
+
+  if (isIVXOwnerRoomRoute) {
+    console.log('[AdminChatRoom] Redirecting IVX owner room to /ivx/chat');
+    return <Redirect href="/ivx/chat" />;
+  }
 
   return (
     <ErrorBoundary fallbackTitle="Chat room unavailable">

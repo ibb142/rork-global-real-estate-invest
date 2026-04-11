@@ -11,7 +11,15 @@ app.options('/ivx/owner-ai', () => {
   return OPTIONS();
 });
 
+app.options('/api/ivx/owner-ai', () => {
+  return OPTIONS();
+});
+
 app.post('/ivx/owner-ai', async (context) => {
+  return handleIVXOwnerAIRequest(context.req.raw);
+});
+
+app.post('/api/ivx/owner-ai', async (context) => {
   return handleIVXOwnerAIRequest(context.req.raw);
 });
 

@@ -101,6 +101,27 @@ export type IVXOwnerAIResponse = {
   status: 'ok';
 };
 
+export type IVXOwnerAIRoomStatus = {
+  storageMode: 'primary_supabase_tables' | 'alternate_room_schema' | 'snapshot_storage' | 'local_device_only';
+  visibility: 'private' | 'shared' | 'local_only';
+  deliveryMethod: 'primary_realtime' | 'primary_polling' | 'alternate_shared' | 'snapshot_fallback' | 'local_only';
+  warning?: string;
+};
+
+export type IVXOwnerAIHealthProbeResponse = IVXOwnerAIResponse & {
+  probe: true;
+  resolvedSchema: 'ivx' | 'generic' | 'none';
+  roomStatus: IVXOwnerAIRoomStatus;
+  capabilities: {
+    ai_chat: boolean;
+    knowledge_answers: boolean;
+    owner_commands: boolean;
+    code_aware_support: boolean;
+    file_upload: boolean;
+    inbox_sync: boolean;
+  };
+};
+
 export type IVXApiError = {
   error: string;
   statusCode: number;
