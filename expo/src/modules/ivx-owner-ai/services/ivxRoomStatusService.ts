@@ -1,4 +1,5 @@
-import { getIVXSupabaseClient } from '@/lib/ivx-supabase-client';
+import { getIVXAccessToken, getIVXOwnerAICandidateEndpoints, getIVXSupabaseClient } from '@/lib/ivx-supabase-client';
+import type { IVXOwnerAIHealthProbeResponse } from '@/shared/ivx';
 import type { ChatRoomStatus, DeliveryMode, StorageMode } from '@/src/modules/chat/types/chat';
 import { resolveIVXTables, invalidateTableResolverCache } from './ivxTableResolver';
 
@@ -12,6 +13,7 @@ export type IVXRoomProbeResult = {
 };
 
 const PROBE_CACHE_TTL_MS = 25_000;
+const API_PROBE_TIMEOUT_MS = 8_000;
 let cachedResult: IVXRoomProbeResult | null = null;
 let cachedAt = 0;
 
@@ -55,6 +57,87 @@ export function invalidateIVXRoomProbeCache(): void {
   console.log('[IVXRoomStatus] Probe cache invalidated');
 }
 
+function isChatRoomStatus(value: unknown): value is ChatRoomStatus {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const record = value as Record<string, unknown>;
+  return typeof record.storageMode === 'string'
+    && typeof record.visibility === 'string'
+    && typeof record.deliveryMethod === 'string';
+}
+
+async function probeRoomStatusViaOwnerAI(): Promise<ChatRoomStatus | null> {
+  try {
+    const accessToken = await getIVXAccessToken();
+    if (!accessToken) {
+      console.log('[IVXRoomStatus] Skipping API-backed room probe because no auth token is available yet');
+      return null;
+    }
+
+    const endpoints = getIVXOwnerAICandidateEndpoints();
+
+    for (const endpoint of endpoints) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), API_PROBE_TIMEOUT_MS);
+
+      try {
+        console.log('[IVXRoomStatus] Trying API-backed room probe endpoint:', endpoint);
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({
+            message: 'health_probe',
+            mode: 'chat',
+          }),
+          signal: controller.signal,
+        });
+
+        clearTimeout(timeout);
+
+        if (response.status === 404 || response.status === 405) {
+          console.log('[IVXRoomStatus] API-backed room probe endpoint unavailable:', endpoint, 'status:', response.status);
+          continue;
+        }
+
+        if (!response.ok) {
+          console.log('[IVXRoomStatus] API-backed room probe failed with status:', response.status, 'endpoint:', endpoint);
+          return null;
+        }
+
+        const payload = await response.json().catch(() => null) as IVXOwnerAIHealthProbeResponse | null;
+        const roomStatus = payload?.roomStatus;
+
+        if (!isChatRoomStatus(roomStatus)) {
+          console.log('[IVXRoomStatus] API-backed room probe returned no usable room status');
+          return null;
+        }
+
+        console.log('[IVXRoomStatus] API-backed room probe resolved:', {
+          endpoint,
+          storageMode: roomStatus.storageMode,
+          deliveryMethod: roomStatus.deliveryMethod,
+          resolvedSchema: payload?.resolvedSchema ?? 'unknown',
+        });
+
+        return roomStatus;
+      } catch (endpointError) {
+        clearTimeout(timeout);
+        console.log('[IVXRoomStatus] API-backed room probe endpoint exception:', endpoint, endpointError instanceof Error ? endpointError.message : 'unknown');
+      }
+    }
+
+    return null;
+  } catch (error) {
+    console.log('[IVXRoomStatus] API-backed room probe exception:', error instanceof Error ? error.message : 'unknown');
+    return null;
+  }
+}
+
 async function verifyRealtimeChannel(): Promise<boolean> {
   try {
     const client = getIVXSupabaseClient();
@@ -81,6 +164,11 @@ async function verifyRealtimeChannel(): Promise<boolean> {
 }
 
 export async function detectIVXRoomStatus(): Promise<ChatRoomStatus> {
+  const apiRoomStatus = await probeRoomStatusViaOwnerAI();
+  if (apiRoomStatus) {
+    return apiRoomStatus;
+  }
+
   const probe = await probeIVXRoomTables();
 
   if (probe.tablesReachable) {

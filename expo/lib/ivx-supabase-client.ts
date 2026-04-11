@@ -7,24 +7,64 @@ import {
   type IVXOwnerRole,
 } from '@/shared/ivx';
 
+const IVX_OWNER_AI_LEGACY_API_PATH = IVX_OWNER_AI_API_PATH.replace(/^\/api/, '');
+
 const IVX_ALLOWED_OWNER_ROLES = new Set<IVXOwnerRole>(['owner']);
 
 function readTrimmedEnv(name: string): string {
   return (process.env[name] ?? '').trim();
 }
 
+function getDefaultProjectApiBaseUrl(): string {
+  const projectId = readTrimmedEnv('EXPO_PUBLIC_PROJECT_ID');
+  if (!projectId) {
+    return '';
+  }
+
+  return `https://dev-${projectId}.rorktest.dev`;
+}
+
 export function getIVXSupabaseClient(): SupabaseClient {
   return getSupabaseClient();
 }
 
-export function getIVXOwnerAIEndpoint(): string {
-  const configuredBaseUrl = readTrimmedEnv('EXPO_PUBLIC_RORK_API_BASE_URL').replace(/\/$/, '');
-
-  if (configuredBaseUrl.length > 0) {
-    return `${configuredBaseUrl}${IVX_OWNER_AI_API_PATH}`;
+function pushUniqueUrl(urls: string[], value: string): void {
+  const normalizedValue = value.trim();
+  if (!normalizedValue || urls.includes(normalizedValue)) {
+    return;
   }
 
-  return IVX_OWNER_AI_API_PATH;
+  urls.push(normalizedValue);
+}
+
+export function getIVXOwnerAICandidateEndpoints(): string[] {
+  const configuredBaseUrl = readTrimmedEnv('EXPO_PUBLIC_RORK_API_BASE_URL').replace(/\/$/, '');
+  const projectBaseUrl = getDefaultProjectApiBaseUrl();
+  const urls: string[] = [];
+
+  if (configuredBaseUrl.length > 0) {
+    pushUniqueUrl(urls, `${configuredBaseUrl}${IVX_OWNER_AI_API_PATH}`);
+    pushUniqueUrl(urls, `${configuredBaseUrl}${IVX_OWNER_AI_LEGACY_API_PATH}`);
+  }
+
+  if (typeof window !== 'undefined' && typeof window.location?.origin === 'string') {
+    const webOrigin = window.location.origin.trim().replace(/\/$/, '');
+    if (webOrigin.length > 0) {
+      pushUniqueUrl(urls, `${webOrigin}${IVX_OWNER_AI_API_PATH}`);
+      pushUniqueUrl(urls, `${webOrigin}${IVX_OWNER_AI_LEGACY_API_PATH}`);
+    }
+  }
+
+  if (projectBaseUrl.length > 0) {
+    pushUniqueUrl(urls, `${projectBaseUrl}${IVX_OWNER_AI_API_PATH}`);
+    pushUniqueUrl(urls, `${projectBaseUrl}${IVX_OWNER_AI_LEGACY_API_PATH}`);
+  }
+
+  return urls;
+}
+
+export function getIVXOwnerAIEndpoint(): string {
+  return getIVXOwnerAICandidateEndpoints()[0] ?? IVX_OWNER_AI_API_PATH;
 }
 
 export async function getIVXAccessToken(): Promise<string | null> {
