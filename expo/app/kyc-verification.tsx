@@ -18,6 +18,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { File } from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
 import {
   ArrowLeft,
@@ -258,8 +259,8 @@ export default function KYCVerificationScreen() {
           }
         }
       } else {
-        const FileSystem = require('expo-file-system/legacy');
-        const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+        const localFile = new File(uri);
+        const base64 = await localFile.base64();
         const raw = atob(base64);
         const arr = new Uint8Array(raw.length);
         for (let i = 0; i < raw.length; i++) {

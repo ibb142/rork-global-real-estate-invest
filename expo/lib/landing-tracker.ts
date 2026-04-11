@@ -4,6 +4,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { awsAnalyticsBackup, type AWSAnalyticsEvent } from './aws-analytics-backup';
 import * as SecureStore from 'expo-secure-store';
 import { getCachedPublicGeoData, type PublicGeoData } from './public-geo';
+import { controlTowerEmitter } from './control-tower/event-emitter';
+import { ingestLandingEvent } from './control-tower/traffic-aggregator';
+import type { CTEventType, CTFlowStep } from './control-tower/types';
 
 const OWNER_IP_ENABLED_KEY = 'ivx_owner_ip_enabled';
 
@@ -37,6 +40,83 @@ const LANDING_TRACKER_DEBUG = process.env.EXPO_PUBLIC_LANDING_TRACKER_DEBUG === 
 function trackerLog(...args: unknown[]): void {
   if (__DEV__ && LANDING_TRACKER_DEBUG) {
     console.log(...args);
+  }
+}
+
+function getWebAttributionProperties(): Record<string, string> {
+  if (Platform.OS !== 'web') {
+    return {};
+  }
+
+  const properties: Record<string, string> = {};
+
+  try {
+    const search = typeof window !== 'undefined' ? window.location.search : '';
+    const query = new URLSearchParams(search);
+    const keys = ['utm_source', 'utm_medium', 'utm_campaign', 'campaign_id', 'deep_link_source'] as const;
+
+    for (const key of keys) {
+      const value = query.get(key);
+      if (value) {
+        properties[key] = value;
+      }
+    }
+
+    if (typeof document !== 'undefined' && document.referrer) {
+      properties.referrer = document.referrer;
+    }
+  } catch (error) {
+    trackerLog('[LandingTracker] Attribution parse error:', (error as Error)?.message);
+  }
+
+  return properties;
+}
+
+function sanitizeControlTowerMetadata(properties: Record<string, unknown>): Record<string, string | number | boolean> {
+  const metadata: Record<string, string | number | boolean> = {};
+
+  for (const [key, value] of Object.entries(properties)) {
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+      metadata[key] = value;
+      continue;
+    }
+
+    if (value !== null && value !== undefined) {
+      try {
+        metadata[key] = JSON.stringify(value).slice(0, 180);
+      } catch {
+      }
+    }
+  }
+
+  return metadata;
+}
+
+function mapLandingEventToControlTower(eventName: string): { type: CTEventType; step?: CTFlowStep } | null {
+  switch (eventName) {
+    case 'page_view':
+    case 'landing_visit':
+      return { type: 'landing_visit', step: 'landing_visit' };
+    case 'section_view':
+      return { type: 'step_change', step: 'landing_section_view' };
+    case 'cta_click':
+      return { type: 'landing_cta_clicked', step: 'landing_cta_clicked' };
+    case 'form_focus':
+      return { type: 'landing_form_started', step: 'landing_form_started' };
+    case 'form_submit':
+      return { type: 'landing_form_submitted', step: 'landing_form_submitted' };
+    case 'api_call':
+      return { type: 'landing_api_started', step: 'landing_api_started' };
+    case 'api_success':
+      return { type: 'landing_api_succeeded', step: 'landing_api_succeeded' };
+    case 'api_error':
+      return { type: 'landing_api_failed', step: 'landing_api_failed' };
+    case 'app_handoff_started':
+      return { type: 'handoff_to_app', step: 'handoff_to_app_started' };
+    case 'app_handoff_success':
+      return { type: 'handoff_to_app', step: 'handoff_to_app_succeeded' };
+    default:
+      return null;
   }
 }
 
@@ -211,19 +291,36 @@ class LandingTracker {
       return;
     }
 
+    const attributionProperties = getWebAttributionProperties();
+    const eventProperties: Record<string, unknown> = {
+      ...attributionProperties,
+      ...properties,
+      platform: Platform.OS,
+      source: 'landing_app',
+      sessionDuration: Math.round((Date.now() - this.sessionStart) / 1000),
+      userAgent: Platform.OS === 'web' ? (typeof navigator !== 'undefined' ? navigator.userAgent : '') : Platform.OS,
+    };
+
     const event: LandingEvent = {
       event: eventName,
       session_id: this.sessionId,
-      properties: {
-        ...properties,
-        platform: Platform.OS,
-        source: 'landing_app',
-        sessionDuration: Math.round((Date.now() - this.sessionStart) / 1000),
-        userAgent: Platform.OS === 'web' ? (typeof navigator !== 'undefined' ? navigator.userAgent : '') : Platform.OS,
-      },
+      properties: eventProperties,
       geo: this.geoData ? { ...this.geoData } : undefined,
       created_at: new Date().toISOString(),
     };
+
+    try {
+      ingestLandingEvent(this.sessionId, eventName, eventProperties);
+      const controlTowerEvent = mapLandingEventToControlTower(eventName);
+      if (controlTowerEvent) {
+        controlTowerEmitter.emit(controlTowerEvent.type, 'landing', this.sessionId, {
+          step: controlTowerEvent.step,
+          metadata: sanitizeControlTowerMetadata(eventProperties),
+        });
+      }
+    } catch (error) {
+      console.log('[LandingTracker] Control Tower bridge error:', (error as Error)?.message);
+    }
 
     if (!this.remoteDisabled) {
       this.queue.push(event);

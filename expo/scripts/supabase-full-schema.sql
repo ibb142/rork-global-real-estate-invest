@@ -862,26 +862,78 @@ DO $$ BEGIN
 END $;
 DO $ BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.realtime_snapshots; EXCEPTION WHEN duplicate_object THEN NULL; END $;
 
--- 6h. messages
+CREATE OR REPLACE FUNCTION public.ivx_is_owner()
+RETURNS boolean
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $ivx$
+  SELECT auth.uid() IS NOT NULL
+    AND EXISTS (
+      SELECT 1
+      FROM public.profiles
+      WHERE id = auth.uid()
+        AND regexp_replace(lower(coalesce(role, 'investor')), '[^a-z0-9]+', '', 'g') IN ('owner', 'owneradmin')
+    );
+$ivx$;
+
+-- 6h. conversations
+CREATE TABLE IF NOT EXISTS public.conversations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title TEXT NOT NULL,
+  subtitle TEXT,
+  last_message_text TEXT,
+  last_message_at TIMESTAMPTZ DEFAULT now()
+);
+ALTER TABLE public.conversations ENABLE ROW LEVEL SECURITY;
+DO $ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_policies WHERE policyname='conversations_auth_all' AND schemaname='public' AND tablename='conversations') THEN
+    DROP POLICY "conversations_auth_all" ON public.conversations;
+  END IF;
+  CREATE POLICY "conversations_auth_all" ON public.conversations FOR ALL TO authenticated USING (id <> '8f5a9c42-1cb5-4f81-b2d8-6f3a0a8b9d41'::uuid OR public.ivx_is_owner()) WITH CHECK (id <> '8f5a9c42-1cb5-4f81-b2d8-6f3a0a8b9d41'::uuid OR public.ivx_is_owner());
+END $;
+CREATE INDEX IF NOT EXISTS idx_conversations_last_message_at ON public.conversations(last_message_at DESC);
+DO $ BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.conversations; EXCEPTION WHEN duplicate_object THEN NULL; END $;
+
+-- 6i. conversation_participants
+CREATE TABLE IF NOT EXISTS public.conversation_participants (
+  conversation_id UUID NOT NULL REFERENCES public.conversations(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL,
+  unread_count INTEGER DEFAULT 0,
+  last_read_at TIMESTAMPTZ,
+  PRIMARY KEY (conversation_id, user_id)
+);
+ALTER TABLE public.conversation_participants ENABLE ROW LEVEL SECURITY;
+DO $ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_policies WHERE policyname='conversation_participants_auth_all' AND schemaname='public' AND tablename='conversation_participants') THEN
+    DROP POLICY "conversation_participants_auth_all" ON public.conversation_participants;
+  END IF;
+  CREATE POLICY "conversation_participants_auth_all" ON public.conversation_participants FOR ALL TO authenticated USING (conversation_id <> '8f5a9c42-1cb5-4f81-b2d8-6f3a0a8b9d41'::uuid OR public.ivx_is_owner()) WITH CHECK (conversation_id <> '8f5a9c42-1cb5-4f81-b2d8-6f3a0a8b9d41'::uuid OR public.ivx_is_owner());
+END $;
+CREATE INDEX IF NOT EXISTS idx_conversation_participants_user ON public.conversation_participants(user_id);
+CREATE INDEX IF NOT EXISTS idx_conversation_participants_conversation ON public.conversation_participants(conversation_id);
+DO $ BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.conversation_participants; EXCEPTION WHEN duplicate_object THEN NULL; END $;
+
+-- 6j. messages
 CREATE TABLE IF NOT EXISTS public.messages (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  conversation_id TEXT NOT NULL,
+  conversation_id UUID NOT NULL REFERENCES public.conversations(id) ON DELETE CASCADE,
   sender_id TEXT NOT NULL,
   text TEXT,
   file_url TEXT,
   file_type TEXT,
-  created_at TIMESTAMPTZ DEFAULT now()
+  read_by TEXT[] DEFAULT '{}'::TEXT[],
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
 DO $ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname='messages_auth_select') THEN
-    CREATE POLICY "messages_auth_select" ON public.messages FOR SELECT TO authenticated USING (true);
+  IF EXISTS (SELECT 1 FROM pg_policies WHERE policyname='messages_auth_all' AND schemaname='public' AND tablename='messages') THEN
+    DROP POLICY "messages_auth_all" ON public.messages;
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname='messages_auth_insert') THEN
-    CREATE POLICY "messages_auth_insert" ON public.messages FOR INSERT TO authenticated WITH CHECK (true);
-  END IF;
+  CREATE POLICY "messages_auth_all" ON public.messages FOR ALL TO authenticated USING (conversation_id <> '8f5a9c42-1cb5-4f81-b2d8-6f3a0a8b9d41'::uuid OR public.ivx_is_owner()) WITH CHECK (conversation_id <> '8f5a9c42-1cb5-4f81-b2d8-6f3a0a8b9d41'::uuid OR public.ivx_is_owner());
 END $;
 CREATE INDEX IF NOT EXISTS idx_messages_conversation_created ON public.messages(conversation_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_messages_sender_created ON public.messages(sender_id, created_at DESC);
 DO $ BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.messages; EXCEPTION WHEN duplicate_object THEN NULL; END $;
 
 -- ============================================================
@@ -1839,11 +1891,25 @@ CREATE TRIGGER kyc_sync_profile_trigger AFTER UPDATE ON public.kyc_verifications
 -- ============================================================
 
 CREATE OR REPLACE FUNCTION is_admin() RETURNS BOOLEAN AS $fn$
-BEGIN RETURN EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role IN ('admin','owner')); END;
+BEGIN
+  RETURN EXISTS (
+    SELECT 1
+    FROM public.profiles
+    WHERE id = auth.uid()
+      AND regexp_replace(lower(COALESCE(role, 'investor')), '[^a-z0-9]+', '', 'g') IN ('owner', 'owneradmin')
+  );
+END;
 $fn$ LANGUAGE plpgsql SECURITY DEFINER;
 
 CREATE OR REPLACE FUNCTION is_owner_of(check_user_id UUID) RETURNS BOOLEAN AS $fn$
-BEGIN RETURN EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'owner'); END;
+BEGIN
+  RETURN EXISTS (
+    SELECT 1
+    FROM public.profiles
+    WHERE id = auth.uid()
+      AND regexp_replace(lower(COALESCE(role, 'investor')), '[^a-z0-9]+', '', 'g') IN ('owner', 'owneradmin')
+  );
+END;
 $fn$ LANGUAGE plpgsql SECURITY DEFINER;
 
 CREATE OR REPLACE FUNCTION get_user_role() RETURNS TEXT AS $fn$
@@ -1852,7 +1918,14 @@ BEGIN SELECT role INTO user_role FROM public.profiles WHERE id = auth.uid(); RET
 $fn$ LANGUAGE plpgsql SECURITY DEFINER;
 
 CREATE OR REPLACE FUNCTION verify_admin_access() RETURNS BOOLEAN AS $fn$
-BEGIN RETURN EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role IN ('admin','owner')); END;
+BEGIN
+  RETURN EXISTS (
+    SELECT 1
+    FROM public.profiles
+    WHERE id = auth.uid()
+      AND regexp_replace(lower(COALESCE(role, 'investor')), '[^a-z0-9]+', '', 'g') IN ('owner', 'owneradmin')
+  );
+END;
 $fn$ LANGUAGE plpgsql SECURITY DEFINER;
 
 CREATE OR REPLACE FUNCTION upsert_visitor_session(
@@ -1944,6 +2017,7 @@ INSERT INTO storage.buckets (id,name,public) VALUES ('deal-photos','deal-photos'
 INSERT INTO storage.buckets (id,name,public) VALUES ('investor-intake','investor-intake',true) ON CONFLICT (id) DO NOTHING;
 INSERT INTO storage.buckets (id,name,public) VALUES ('landing-page','landing-page',true) ON CONFLICT (id) DO NOTHING;
 INSERT INTO storage.buckets (id,name,public) VALUES ('kyc-documents','kyc-documents',false) ON CONFLICT (id) DO NOTHING;
+INSERT INTO storage.buckets (id,name,public) VALUES ('chat-uploads','chat-uploads',true) ON CONFLICT (id) DO NOTHING;
 
 -- Storage policies
 DO $$ BEGIN
@@ -1974,7 +2048,13 @@ DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname='kyc_docs_auth_select') THEN
     CREATE POLICY "kyc_docs_auth_select" ON storage.objects FOR SELECT TO authenticated USING (bucket_id='kyc-documents');
   END IF;
-END $$;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname='chat_uploads_public_select') THEN
+    CREATE POLICY "chat_uploads_public_select" ON storage.objects FOR SELECT USING (bucket_id='chat-uploads');
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname='chat_uploads_auth_insert') THEN
+    CREATE POLICY "chat_uploads_auth_insert" ON storage.objects FOR INSERT TO authenticated WITH CHECK (bucket_id='chat-uploads');
+  END IF;
+END $;
 
 -- ============================================================
 -- DONE

@@ -365,18 +365,41 @@ export interface DeployStatus {
   missingRequirements: string[];
 }
 
+function normalizeGitHubRepositoryValue(value: string): string {
+  const trimmedValue = value.trim();
+  if (!trimmedValue) {
+    return '';
+  }
+
+  if (!trimmedValue.includes('github.com/')) {
+    return trimmedValue.replace(/\.git$/i, '');
+  }
+
+  try {
+    const parsed = new URL(trimmedValue);
+    return parsed.pathname.replace(/^\/+/, '').replace(/\.git$/i, '');
+  } catch {
+    return trimmedValue
+      .replace(/^https?:\/\/github\.com\//i, '')
+      .replace(/^git@github\.com:/i, '')
+      .replace(/\.git$/i, '')
+      .replace(/^\/+/, '');
+  }
+}
+
 export function getDeployStatus(): DeployStatus {
   const supabaseConfigured = isSupabaseConfigured();
   const awsRegion = (process.env.AWS_REGION || '').trim();
   const s3Bucket = (process.env.S3_BUCKET_NAME || '').trim();
   const cloudFrontDistributionId = (process.env.CLOUDFRONT_DISTRIBUTION_ID || '').trim();
   const githubToken = (process.env.GITHUB_TOKEN || '').trim();
-  const githubRepository = (
+  const githubRepository = normalizeGitHubRepositoryValue(
     process.env.GITHUB_REPOSITORY ||
     process.env.GITHUB_REPO ||
+    process.env.GITHUB_REPO_URL ||
     process.env.EXPO_PUBLIC_GITHUB_REPOSITORY ||
-    'ibb142/rork-global-real-estate-invest'
-  ).trim();
+    ''
+  );
   const awsConfigured = !!(awsRegion && s3Bucket);
   const cloudFrontConfigured = !!cloudFrontDistributionId;
   const githubTokenConfigured = !!githubToken;
@@ -392,7 +415,7 @@ export function getDeployStatus(): DeployStatus {
     missingRequirements.push('GITHUB_TOKEN');
   }
   if (!githubRepositoryConfigured) {
-    missingRequirements.push('GITHUB_REPOSITORY');
+    missingRequirements.push('GITHUB_REPOSITORY / GITHUB_REPO_URL');
   }
   if (!awsRegion) {
     missingRequirements.push('AWS_REGION');

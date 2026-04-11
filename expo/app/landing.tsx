@@ -69,6 +69,7 @@ import {
   buildLiveSupportTicketDraft,
   createSupportTicket,
 } from '@/lib/support-chat';
+import { isOpenAccessModeEnabled } from '@/lib/open-access';
 
 const IVX_BUSINESS_CARD_URL = 'https://pub-e001eb4506b145aa938b5d3badbff6a5.r2.dev/attachments/u2shr3b6qstzut5xgdyud.jpg';
 
@@ -851,6 +852,7 @@ function LandingWaitlistForm() {
 
 export default function LandingScreen() {
   const router = useRouter();
+  const openAccessMode = isOpenAccessModeEnabled();
   const {
     isAuthenticated,
     isAdmin,
@@ -965,14 +967,20 @@ export default function LandingScreen() {
   }, [auditOwnerDirectAccess]);
 
   useEffect(() => {
-    if (authLoading || isAuthenticated) {
+    if (openAccessMode || authLoading || isAuthenticated) {
       return;
     }
     void refreshOwnerAccessAudit();
-  }, [authLoading, isAuthenticated, refreshOwnerAccessAudit]);
+  }, [authLoading, isAuthenticated, openAccessMode, refreshOwnerAccessAudit]);
 
   const handleOwnerEntry = useCallback(async () => {
     try {
+      if (openAccessMode) {
+        console.log('[Landing] Open access mode active — opening admin directly from landing');
+        router.replace('/admin' as any);
+        return;
+      }
+
       console.log('[Landing] Owner entry requested from landing');
       const result = await ownerDirectAccess();
       if (result.success) {
@@ -988,7 +996,7 @@ export default function LandingScreen() {
       console.log('[Landing] Owner entry error (non-blocking):', (e as Error)?.message);
       Alert.alert('Error', 'Could not complete owner access. Please try again.');
     }
-  }, [ownerDirectAccess, refreshOwnerAccessAudit, router]);
+  }, [openAccessMode, ownerDirectAccess, refreshOwnerAccessAudit, router]);
 
   const scrollToForm = () => {
     try { landingTracker.trackCtaClick('join_waitlist'); } catch {}
@@ -1067,45 +1075,84 @@ export default function LandingScreen() {
                 </View>
               </View>
               <View style={styles.topBarActions}>
-                {(ownerAccessAudit?.eligible || isOwnerIPAccess || (isAuthenticated && isAdmin)) ? (
-                  <TouchableOpacity
-                    style={styles.ownerConsoleLink}
-                    onPress={() => router.push('/owner-access' as any)}
-                    activeOpacity={0.7}
-                    testID="landing-owner-console"
-                  >
-                    <ScanLine size={14} color={GOLD} />
-                    <Text style={styles.ownerConsoleLinkText}>Owner Access</Text>
-                  </TouchableOpacity>
-                ) : null}
-                {ownerAccessAudit?.eligible ? (
-                  <TouchableOpacity
-                    style={[styles.ownerEntryLink, ownerAccessLoading && styles.ownerEntryLinkDisabled]}
-                    onPress={() => { void handleOwnerEntry(); }}
-                    disabled={ownerAccessLoading}
-                    activeOpacity={0.7}
-                    testID="landing-owner-entry"
-                  >
-                    {ownerAccessLoading ? (
-                      <ActivityIndicator size="small" color={GOLD} />
-                    ) : (
-                      <ShieldCheck size={14} color={GOLD} />
-                    )}
-                    <Text style={styles.ownerEntryLinkText}>Owner</Text>
-                  </TouchableOpacity>
-                ) : null}
-                <TouchableOpacity
-                  style={styles.loginLink}
-                  onPress={() => {
-                    try { landingTracker.trackCtaClick('sign_in'); } catch {}
-                    router.push('/login' as any);
-                  }}
-                  activeOpacity={0.7}
-                  testID="landing-login"
-                >
-                  <Text style={styles.loginLinkText}>Sign In</Text>
-                  <ChevronRight size={14} color={GOLD} />
-                </TouchableOpacity>
+                {openAccessMode ? (
+                  <>
+                    <TouchableOpacity
+                      style={[styles.ownerConsoleLink, styles.ownerConsoleLinkReady]}
+                      onPress={() => router.push('/admin' as any)}
+                      activeOpacity={0.7}
+                      testID="landing-owner-console"
+                    >
+                      <ScanLine size={14} color={GOLD} />
+                      <Text style={[styles.ownerConsoleLinkText, styles.ownerConsoleLinkTextReady]}>Admin</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.loginLink}
+                      onPress={() => {
+                        try { landingTracker.trackCtaClick('open_app'); } catch {}
+                        router.push('/(tabs)' as any);
+                      }}
+                      activeOpacity={0.7}
+                      testID="landing-login"
+                    >
+                      <Text style={styles.loginLinkText}>Open App</Text>
+                      <ChevronRight size={14} color={GOLD} />
+                    </TouchableOpacity>
+                  </>
+                ) : (
+                  <>
+                    <TouchableOpacity
+                      style={[
+                        styles.ownerConsoleLink,
+                        (ownerAccessAudit?.eligible || isOwnerIPAccess || (isAuthenticated && isAdmin)) && styles.ownerConsoleLinkReady,
+                      ]}
+                      onPress={() => router.push('/owner-access' as any)}
+                      activeOpacity={0.7}
+                      testID="landing-owner-console"
+                    >
+                      <ScanLine
+                        size={14}
+                        color={(ownerAccessAudit?.eligible || isOwnerIPAccess || (isAuthenticated && isAdmin)) ? GOLD : Colors.textSecondary}
+                      />
+                      <Text
+                        style={[
+                          styles.ownerConsoleLinkText,
+                          (ownerAccessAudit?.eligible || isOwnerIPAccess || (isAuthenticated && isAdmin)) && styles.ownerConsoleLinkTextReady,
+                        ]}
+                      >
+                        Owner Access
+                      </Text>
+                    </TouchableOpacity>
+                    {ownerAccessAudit?.eligible ? (
+                      <TouchableOpacity
+                        style={[styles.ownerEntryLink, ownerAccessLoading && styles.ownerEntryLinkDisabled]}
+                        onPress={() => { void handleOwnerEntry(); }}
+                        disabled={ownerAccessLoading}
+                        activeOpacity={0.7}
+                        testID="landing-owner-entry"
+                      >
+                        {ownerAccessLoading ? (
+                          <ActivityIndicator size="small" color={GOLD} />
+                        ) : (
+                          <ShieldCheck size={14} color={GOLD} />
+                        )}
+                        <Text style={styles.ownerEntryLinkText}>Restore</Text>
+                      </TouchableOpacity>
+                    ) : null}
+                    <TouchableOpacity
+                      style={styles.loginLink}
+                      onPress={() => {
+                        try { landingTracker.trackCtaClick('sign_in'); } catch {}
+                        router.push('/login' as any);
+                      }}
+                      activeOpacity={0.7}
+                      testID="landing-login"
+                    >
+                      <Text style={styles.loginLinkText}>Sign In</Text>
+                      <ChevronRight size={14} color={GOLD} />
+                    </TouchableOpacity>
+                  </>
+                )}
               </View>
             </View>
           </SafeAreaView>
@@ -1115,7 +1162,7 @@ export default function LandingScreen() {
             opacity: heroFade,
             transform: [{ translateY: heroSlide }],
           }]}>
-            {ownerAccessAudit?.eligible ? (
+            {!openAccessMode && ownerAccessAudit?.eligible ? (
               <TouchableOpacity
                 style={[styles.ownerVerifiedPill, ownerAccessLoading && styles.ownerVerifiedPillDisabled]}
                 onPress={() => { void handleOwnerEntry(); }}
@@ -1204,14 +1251,14 @@ export default function LandingScreen() {
             <TouchableOpacity
               style={styles.secondaryBtn}
               onPress={() => {
-                try { landingTracker.trackCtaClick('sign_in_approved'); } catch {}
-                router.push('/login' as any);
+                try { landingTracker.trackCtaClick(openAccessMode ? 'open_workspace' : 'sign_in_approved'); } catch {}
+                router.push((openAccessMode ? '/(tabs)' : '/login') as any);
               }}
               activeOpacity={0.8}
               testID="landing-sign-in"
             >
-              <Text style={styles.secondaryBtnText}>Already have an account? </Text>
-              <Text style={[styles.secondaryBtnText, { color: GOLD }]}>Sign In</Text>
+              <Text style={styles.secondaryBtnText}>{openAccessMode ? 'Workspace is open now. ' : 'Already have an account? '}</Text>
+              <Text style={[styles.secondaryBtnText, { color: GOLD }]}>{openAccessMode ? 'Open App' : 'Sign In'}</Text>
             </TouchableOpacity>
           </Animated.View>
 
@@ -1900,10 +1947,17 @@ const styles = StyleSheet.create({
     borderColor: '#2B2B2B',
     backgroundColor: '#101010',
   },
+  ownerConsoleLinkReady: {
+    borderColor: GOLD + '35',
+    backgroundColor: '#11160D',
+  },
   ownerConsoleLinkText: {
     color: Colors.text,
     fontSize: 12,
     fontWeight: '700' as const,
+  },
+  ownerConsoleLinkTextReady: {
+    color: GOLD,
   },
   ownerEntryLink: {
     flexDirection: 'row',

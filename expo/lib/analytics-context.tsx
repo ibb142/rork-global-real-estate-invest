@@ -1,4 +1,5 @@
 import { useEffect, useRef, useCallback, useMemo } from 'react';
+import { InteractionManager } from 'react-native';
 import { analytics } from './analytics';
 import { usePathname } from 'expo-router';
 import type { EventCategory } from './analytics';
@@ -15,19 +16,35 @@ export interface AnalyticsHook {
 
 export const [AnalyticsProvider, useAnalytics] = createContextHook<AnalyticsHook>(() => {
   const pathname = usePathname();
-  const initializedRef = useRef(false);
   const lastPathnameRef = useRef<string>('');
 
   useEffect(() => {
-    if (!initializedRef.current) {
-      initializedRef.current = true;
+    let cancelled = false;
+    let booted = false;
+
+    const bootstrapAnalytics = () => {
+      if (cancelled || booted) {
+        return;
+      }
+
+      booted = true;
       analytics.revive();
       void analytics.initialize();
-      console.log('[Analytics] Provider mounted — service initialized');
+      console.log('[Analytics] Provider mounted — service boot deferred until after first interactions');
       analytics.track('app_open', 'navigation', { timestamp: Date.now() });
-    }
+    };
+
+    const interactionTask = InteractionManager.runAfterInteractions(() => {
+      bootstrapAnalytics();
+    });
+    const fallbackTimeout = setTimeout(() => {
+      bootstrapAnalytics();
+    }, 900);
 
     return () => {
+      cancelled = true;
+      interactionTask.cancel();
+      clearTimeout(fallbackTimeout);
       analytics.track('session_end', 'navigation', {
         sessionDuration: analytics.getSessionDuration(),
         timestamp: Date.now(),

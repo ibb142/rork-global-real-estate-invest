@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { useScreenFocusState } from '@/hooks/useScreenFocusState';
 import {
   Users,
   ArrowLeftRight,
@@ -99,6 +100,9 @@ interface InvestmentShape {
   netFlow: number;
   totalDividends: number;
 }
+
+const ADMIN_DASHBOARD_REFRESH_MS = 1000 * 60 * 2;
+const ADMIN_DASHBOARD_LEADS_REFRESH_MS = 1000 * 90;
 
 function getLatestRecord<T>(value: unknown): T | null {
   if (Array.isArray(value)) {
@@ -192,6 +196,7 @@ export default function AdminDashboardScreen() {
   const { width } = useWindowDimensions();
 
   const queryClient = useQueryClient();
+  const isScreenFocused = useScreenFocusState(true);
 
 
 
@@ -203,8 +208,11 @@ export default function AdminDashboardScreen() {
       if (error) { console.log('[Supabase] analytics_dashboard error:', error.message); return null; }
       return data;
     },
-    staleTime: 1000 * 5,
-    refetchInterval: 1000 * 5,
+    staleTime: ADMIN_DASHBOARD_REFRESH_MS,
+    refetchInterval: isScreenFocused ? ADMIN_DASHBOARD_REFRESH_MS : false,
+    refetchIntervalInBackground: false,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
     placeholderData: (prev: any) => prev,
   });
 
@@ -228,8 +236,11 @@ export default function AdminDashboardScreen() {
       if (error) { console.log('[Supabase] system_health error:', error.message); return null; }
       return data;
     },
-    staleTime: 1000 * 5,
-    refetchInterval: 1000 * 5,
+    staleTime: ADMIN_DASHBOARD_REFRESH_MS,
+    refetchInterval: isScreenFocused ? ADMIN_DASHBOARD_REFRESH_MS : false,
+    refetchIntervalInBackground: false,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
     placeholderData: (prev: any) => prev,
   });
 
@@ -310,8 +321,11 @@ export default function AdminDashboardScreen() {
       if (error) { console.log('[Supabase] signups error:', error.message); return null; }
       return { signups: data ?? [], stats: null };
     },
-    staleTime: 1000 * 10,
-    refetchInterval: 1000 * 3,
+    staleTime: ADMIN_DASHBOARD_LEADS_REFRESH_MS,
+    refetchInterval: isScreenFocused ? ADMIN_DASHBOARD_LEADS_REFRESH_MS : false,
+    refetchIntervalInBackground: false,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
   });
 
   const leadsStats = leadsQuery.data?.stats;

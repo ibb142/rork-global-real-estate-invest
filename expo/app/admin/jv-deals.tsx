@@ -17,6 +17,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { useScreenFocusState } from '@/hooks/useScreenFocusState';
 import {
   ArrowLeft,
   Plus,
@@ -63,6 +64,8 @@ import { syncToLandingPage } from '@/lib/landing-sync';
 import { triggerAutoDeploy } from '@/lib/auto-deploy';
 
 type JVDealType = 'equity_split' | 'profit_sharing' | 'hybrid' | 'development' | 'new_construction' | 'existing_complete' | 'rehab_construction';
+
+const ADMIN_JV_DEALS_REFRESH_MS = 120_000;
 
 interface JVPartner {
   id: string;
@@ -256,6 +259,7 @@ export default function AdminJVDealsScreen() {
   const [isTimelineAutosaving, setIsTimelineAutosaving] = useState<boolean>(false);
 
   const queryClient = useQueryClient();
+  const isScreenFocused = useScreenFocusState(true);
 
   useJVRealtime('admin-jv-deals', true);
 
@@ -294,11 +298,12 @@ export default function AdminJVDealsScreen() {
     },
     retry: 2,
     retryDelay: 800,
-    staleTime: 1000 * 5,
-    refetchOnWindowFocus: true,
-    refetchOnMount: 'always',
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+    refetchIntervalInBackground: false,
     gcTime: 1000 * 60 * 5,
-    refetchInterval: 30000,
+    refetchInterval: isScreenFocused ? ADMIN_JV_DEALS_REFRESH_MS : false,
   });
 
   const publishMutation = useMutation({

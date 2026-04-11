@@ -37,8 +37,8 @@ import {
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import * as Linking from 'expo-linking';
-import * as Clipboard from 'expo-clipboard';
 import { safeSetString } from '@/lib/safe-clipboard';
+import { executeSupabaseSqlScript, isSupabaseSqlExecMissing } from '@/lib/supabase-sql-executor';
 import Colors from '@/constants/colors';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
@@ -229,12 +229,8 @@ export default function DeployWaitlistScreen() {
     }
     const editorUrl = `https://supabase.com/dashboard/project/${ref}/sql/new`;
     console.log('[DeployWaitlist] Opening Supabase SQL Editor:', editorUrl);
-    try {
-      await Clipboard.setStringAsync(sql);
-      console.log('[DeployWaitlist] SQL copied to clipboard');
-    } catch (e) {
-      console.log('[DeployWaitlist] Clipboard copy failed:', e);
-    }
+    const copied = await safeSetString(sql);
+    console.log('[DeployWaitlist] SQL copied to clipboard:', copied);
     try {
       await Linking.openURL(editorUrl);
       return true;
@@ -271,13 +267,15 @@ export default function DeployWaitlistScreen() {
 
       setDeployMessage('Creating waitlist table...');
 
-      const { error: rpcError } = await supabase.rpc('ivx_exec_sql', {
-        sql_text: WAITLIST_SQL,
-      });
-
-      if (rpcError) {
-        const msg = (rpcError.message || '').toLowerCase();
-        if (msg.includes('does not exist') || msg.includes('could not find the function')) {
+      try {
+        await executeSupabaseSqlScript(supabase, WAITLIST_SQL, ({ current, total }) => {
+          const progressLabel = `Deploying SQL step ${current}/${total}...`;
+          console.log('[DeployWaitlist] Progress:', progressLabel);
+          setDeployMessage(progressLabel);
+        });
+      } catch (error) {
+        const message = (error as Error)?.message ?? 'Deploy failed';
+        if (isSupabaseSqlExecMissing(message)) {
           console.log('[DeployWaitlist] ivx_exec_sql not found — opening Supabase SQL Editor');
           setDeployMessage('Opening Supabase SQL Editor...');
 
@@ -293,14 +291,14 @@ export default function DeployWaitlistScreen() {
               [{ text: 'Got It' }]
             );
             return { success: true, openedEditor: true };
-          } else {
-            setShowSql(true);
-            throw new Error(
-              'Could not open browser. Tap "Show SQL Script" below, copy the SQL, then paste and run it in your Supabase SQL Editor.'
-            );
           }
+
+          setShowSql(true);
+          throw new Error(
+            'Could not open browser. Tap "Show SQL Script" below, copy the SQL, then paste and run it in your Supabase SQL Editor.'
+          );
         }
-        throw new Error(rpcError.message);
+        throw error;
       }
 
       setDeployMessage('Verifying table...');

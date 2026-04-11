@@ -283,7 +283,7 @@ async function fetchViaRestApi(table: string, columns: string, cutoff: Date | nu
 
     if (!resp.ok) {
       const body = await resp.text();
-      console.error(`[Analytics] REST API ${table} error ${resp.status}:`, body);
+      console.log(`[Analytics] REST API ${table} returned ${resp.status}:`, body);
       if (resp.status === 404 || body.includes('does not exist')) {
         console.warn(`[Analytics] Table ${table} does not exist`);
         return null;
@@ -299,7 +299,7 @@ async function fetchViaRestApi(table: string, columns: string, cutoff: Date | nu
     console.log(`[Analytics] REST API ${table}: ${Array.isArray(data) ? data.length : 0} rows`);
     return Array.isArray(data) ? data : null;
   } catch (err) {
-    console.error(`[Analytics] REST API ${table} exception:`, (err as Error)?.message);
+    console.log(`[Analytics] REST API ${table} exception:`, (err as Error)?.message);
     return null;
   }
 }
@@ -338,9 +338,13 @@ function mapLandingRow(row: Record<string, unknown>): RawEvent {
   };
 }
 
+const _rpcNotFoundCache = new Set<string>();
+
 async function fetchViaRpc(fnName: string, cutoff: Date | null, limit: number = 50000): Promise<Record<string, unknown>[] | null> {
+  if (_rpcNotFoundCache.has(fnName)) {
+    return null;
+  }
   try {
-    console.log(`[Analytics] RPC fallback: calling ${fnName}...`);
     const params: Record<string, unknown> = { p_limit: limit };
     if (cutoff) {
       params.p_cutoff = cutoff.toISOString();
@@ -348,10 +352,11 @@ async function fetchViaRpc(fnName: string, cutoff: Date | null, limit: number = 
     const { data, error } = await supabase.rpc(fnName, params);
     if (error) {
       if (error.message?.includes('does not exist') || error.code === '42883') {
-        console.log(`[Analytics] RPC function ${fnName} not found — deploy it via Supabase Scripts`);
+        _rpcNotFoundCache.add(fnName);
+        console.log(`[Analytics] RPC function ${fnName} not deployed — skipping future attempts`);
         return null;
       }
-      console.error(`[Analytics] RPC ${fnName} error:`, error.code, error.message);
+      console.log(`[Analytics] RPC ${fnName} unavailable:`, error.code, error.message);
       return null;
     }
     if (Array.isArray(data)) {
@@ -360,7 +365,7 @@ async function fetchViaRpc(fnName: string, cutoff: Date | null, limit: number = 
     }
     return null;
   } catch (err) {
-    console.error(`[Analytics] RPC ${fnName} exception:`, (err as Error)?.message);
+    console.log(`[Analytics] RPC ${fnName} exception:`, (err as Error)?.message);
     return null;
   }
 }
@@ -386,7 +391,7 @@ async function fetchLandingEvents(cutoff: Date, period: string): Promise<RawEven
         console.warn('[Analytics] landing_analytics table does not exist');
         return [];
       }
-      console.error('[Analytics] landing_analytics query error:', error.code, error.message);
+      console.log('[Analytics] landing_analytics query returned error (will try fallbacks):', error.code, error.message);
       console.log('[Analytics] Trying RPC fallback for landing_analytics...');
       const rpcData = await fetchViaRpc('get_landing_analytics', period !== 'all' ? cutoff : null, 50000);
       if (rpcData && rpcData.length > 0) {
@@ -420,13 +425,13 @@ async function fetchLandingEvents(cutoff: Date, period: string): Promise<RawEven
       if (!countErr && rowCount !== null) {
         console.log('[Analytics] landing_analytics total row count (via count):', rowCount);
         if (rowCount > 0) {
-          console.error('[Analytics] CONFIRMED: landing_analytics has', rowCount, 'rows but query returned 0. RLS SELECT policy is blocking. Trying REST API...');
+          console.log('[Analytics] landing_analytics has', rowCount, 'rows but query returned 0 — RLS blocking, trying REST API...');
           const restData = await fetchViaRestApi('landing_analytics', columns, period !== 'all' ? cutoff : null, 50000);
           if (restData && restData.length > 0) {
             console.log('[Analytics] REST API fallback success: landing_analytics:', restData.length, 'events');
             return restData.map(mapLandingRow);
           }
-          console.error('[Analytics] All fallbacks failed. Deploy get_landing_analytics RPC function via Supabase Scripts.');
+          console.log('[Analytics] All landing_analytics fallbacks exhausted — RLS blocking and RPC not deployed. Data will show as empty.');
         } else {
           console.log('[Analytics] landing_analytics table is genuinely empty (0 rows).');
         }
@@ -534,7 +539,7 @@ async function fetchAppEvents(cutoff: Date, period: string): Promise<RawEvent[]>
         console.warn('[Analytics] analytics_events table does not exist');
         return [];
       }
-      console.error('[Analytics] analytics_events query error:', error.code, error.message);
+      console.log('[Analytics] analytics_events query returned error (will try fallbacks):', error.code, error.message);
       console.log('[Analytics] Trying RPC fallback for analytics_events...');
       const rpcData = await fetchViaRpc('get_analytics_events', period !== 'all' ? cutoff : null, 50000);
       if (rpcData && rpcData.length > 0) {
@@ -571,7 +576,7 @@ async function fetchAppEvents(cutoff: Date, period: string): Promise<RawEvent[]>
       if (!countErr && rowCount !== null) {
         console.log('[Analytics] analytics_events total row count:', rowCount);
         if (rowCount > 0) {
-          console.error('[Analytics] CONFIRMED: analytics_events has', rowCount, 'rows but query returned 0. RLS is blocking. Trying REST API...');
+          console.log('[Analytics] analytics_events has', rowCount, 'rows but query returned 0 — RLS blocking, trying REST API...');
           let restData = await fetchViaRestApi('analytics_events', extendedColumns, period !== 'all' ? cutoff : null, 50000);
           if (!restData || restData.length === 0) {
             restData = await fetchViaRestApi('analytics_events', masterColumns, period !== 'all' ? cutoff : null, 50000);
@@ -580,7 +585,7 @@ async function fetchAppEvents(cutoff: Date, period: string): Promise<RawEvent[]>
             console.log('[Analytics] REST API fallback success: analytics_events:', restData.length, 'events');
             return restData.map(mapAppRow);
           }
-          console.error('[Analytics] All fallbacks failed. Deploy get_analytics_events RPC function via Supabase Scripts.');
+          console.log('[Analytics] All analytics_events fallbacks exhausted — RLS blocking and RPC not deployed. Data will show as empty.');
         } else {
           console.log('[Analytics] analytics_events table is genuinely empty (0 rows).');
         }

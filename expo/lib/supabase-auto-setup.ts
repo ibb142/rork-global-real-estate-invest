@@ -9,7 +9,8 @@ const REQUIRED_TABLES = [
   'profiles', 'wallets', 'properties', 'market_data', 'holdings',
   'transactions', 'notifications', 'analytics_events', 'image_registry',
   'push_tokens', 'jv_deals', 'landing_analytics', 'waitlist',
-  'visitor_sessions', 'realtime_snapshots', 'messages',
+  'visitor_sessions', 'realtime_snapshots', 'conversations',
+  'conversation_participants', 'messages',
 ];
 
 const REQUIRED_FUNCTIONS = [

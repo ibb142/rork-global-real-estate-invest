@@ -42,6 +42,8 @@ import {
   AlertTriangle,
   TrendingDown,
   Lightbulb,
+  Wifi,
+  WifiOff,
 } from 'lucide-react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
@@ -274,7 +276,6 @@ async function fetchExtraCountsDirect(): Promise<{ waitlistCount: number; regist
   } catch {}
   return { waitlistCount, registeredUserCount };
 }
-import { Wifi, WifiOff } from 'lucide-react-native';
 
 type PeriodType = '1h' | '24h' | '7d' | '30d' | '90d' | 'all';
 type TabType = 'overview' | 'funnel' | 'geo' | 'insights' | 'live' | 'brain';
@@ -580,9 +581,8 @@ export default function LandingAnalyticsScreen() {
         computed.totalLeads = computed.registeredUsers + computed.waitlistLeads;
       } catch (err) {
         fetchError = (err as Error)?.message ?? 'Unknown error';
-        console.error('[Admin Analytics] Compute module error:', fetchError);
+        console.log('[Admin Analytics] Compute module note (falling back to direct fetch):', fetchError);
         computed = null;
-        console.log('[Admin Analytics] Falling back to direct Supabase analytics fetch');
       }
 
       if (!computed) {
@@ -602,19 +602,20 @@ export default function LandingAnalyticsScreen() {
           fetchError = null;
         } catch (directErr) {
           fetchError = (directErr as Error)?.message ?? 'Direct fetch failed';
-          console.error('[Admin Analytics] Direct fallback also failed:', fetchError);
+          console.log('[Admin Analytics] Direct fallback also failed:', fetchError);
           computed = buildFallbackAnalytics([], period);
         }
       }
 
       const totalEvents = landingCount + appCount;
+      const isRealError = fetchError && totalEvents === 0 && !fetchError.includes('landing_analytics');
       setDiagnostics({
         supabaseUrl: sbUrl?.substring(0, 50) || 'NOT SET',
         authState,
         userId,
         landingCount,
         appCount,
-        error: fetchError || (totalEvents === 0 ? 'No events found. Tables may be empty or RLS is blocking access.' : null),
+        error: isRealError ? fetchError : null,
         lastFetch: new Date().toISOString(),
       });
 
@@ -728,6 +729,7 @@ export default function LandingAnalyticsScreen() {
     try {
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       const rpcSql = `
+-- Core data access RPCs (bypass RLS for admin analytics reads)
 CREATE OR REPLACE FUNCTION public.get_landing_analytics(
   p_cutoff timestamptz DEFAULT NULL,
   p_limit integer DEFAULT 50000
@@ -754,6 +756,146 @@ $;
 
 GRANT EXECUTE ON FUNCTION public.get_landing_analytics TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.get_analytics_events TO anon, authenticated;
+
+-- Server-side aggregation RPCs
+CREATE OR REPLACE FUNCTION public.analytics_overview(p_period text)
+RETURNS json AS $
+DECLARE
+  cutoff timestamptz;
+  result json;
+BEGIN
+  cutoff := CASE p_period
+    WHEN '1h' THEN now() - interval '1 hour'
+    WHEN '24h' THEN now() - interval '24 hours'
+    WHEN '7d' THEN now() - interval '7 days'
+    WHEN '30d' THEN now() - interval '30 days'
+    WHEN '90d' THEN now() - interval '90 days'
+    ELSE '1970-01-01'::timestamptz
+  END;
+  SELECT json_build_object(
+    'total_events', COUNT(*),
+    'unique_sessions', COUNT(DISTINCT session_id),
+    'page_views', COUNT(*) FILTER (WHERE event IN ('page_view','pageview','landing_page_view','screen_view')),
+    'form_submits', COUNT(*) FILTER (WHERE event IN ('form_submit','form_submitted','waitlist_join','waitlist_success')),
+    'conversion_rate', CASE
+      WHEN COUNT(*) FILTER (WHERE event IN ('page_view','pageview','landing_page_view','screen_view')) > 0
+      THEN ROUND(
+        (COUNT(*) FILTER (WHERE event IN ('form_submit','form_submitted','waitlist_join','waitlist_success'))::numeric /
+         COUNT(*) FILTER (WHERE event IN ('page_view','pageview','landing_page_view','screen_view'))::numeric) * 100, 1
+      ) ELSE 0 END,
+    'bounce_rate', CASE WHEN COUNT(DISTINCT session_id) > 0 THEN ROUND(
+      (COUNT(DISTINCT session_id) FILTER (WHERE session_id IN (
+        SELECT si FROM (SELECT session_id si, COUNT(*) c FROM landing_analytics WHERE created_at >= cutoff GROUP BY session_id) sub WHERE c = 1
+      ))::numeric / COUNT(DISTINCT session_id)::numeric) * 100, 1
+    ) ELSE 0 END,
+    'avg_session_duration', 0
+  ) INTO result
+  FROM landing_analytics WHERE created_at >= cutoff;
+  RETURN result;
+END;
+$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION public.analytics_geo_breakdown(p_period text)
+RETURNS json AS $
+DECLARE
+  cutoff timestamptz;
+  result json;
+BEGIN
+  cutoff := CASE p_period
+    WHEN '1h' THEN now() - interval '1 hour'
+    WHEN '24h' THEN now() - interval '24 hours'
+    WHEN '7d' THEN now() - interval '7 days'
+    WHEN '30d' THEN now() - interval '30 days'
+    WHEN '90d' THEN now() - interval '90 days'
+    ELSE '1970-01-01'::timestamptz
+  END;
+  SELECT COALESCE(json_agg(row_to_json(t)), '[]'::json) INTO result
+  FROM (
+    SELECT geo->>'country' as country, COUNT(*) as count,
+      ROUND((COUNT(*)::numeric / NULLIF(SUM(COUNT(*)) OVER(), 0)) * 100, 1) as pct
+    FROM landing_analytics
+    WHERE created_at >= cutoff AND geo->>'country' IS NOT NULL
+    GROUP BY geo->>'country' ORDER BY count DESC LIMIT 50
+  ) t;
+  RETURN result;
+END;
+$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION public.analytics_source_breakdown(p_period text)
+RETURNS json AS $
+DECLARE
+  cutoff timestamptz;
+  result json;
+BEGIN
+  cutoff := CASE p_period
+    WHEN '1h' THEN now() - interval '1 hour'
+    WHEN '24h' THEN now() - interval '24 hours'
+    WHEN '7d' THEN now() - interval '7 days'
+    WHEN '30d' THEN now() - interval '30 days'
+    WHEN '90d' THEN now() - interval '90 days'
+    ELSE '1970-01-01'::timestamptz
+  END;
+  SELECT COALESCE(json_agg(row_to_json(t)), '[]'::json) INTO result
+  FROM (
+    SELECT COALESCE(properties->>'referrer', 'direct') as source,
+      COUNT(DISTINCT session_id) as sessions,
+      COUNT(*) FILTER (WHERE event IN ('form_submit','form_submitted','waitlist_join','waitlist_success')) as leads,
+      CASE WHEN COUNT(DISTINCT session_id) > 0 THEN ROUND(
+        (COUNT(*) FILTER (WHERE event IN ('form_submit','form_submitted','waitlist_join','waitlist_success'))::numeric /
+         COUNT(DISTINCT session_id)::numeric) * 100, 1
+      ) ELSE 0 END as conversion_rate
+    FROM landing_analytics
+    WHERE created_at >= cutoff
+    GROUP BY properties->>'referrer' ORDER BY sessions DESC LIMIT 20
+  ) t;
+  RETURN result;
+END;
+$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION public.analytics_lead_summary(p_period text)
+RETURNS json AS $
+DECLARE
+  cutoff timestamptz;
+  result json;
+BEGIN
+  cutoff := CASE p_period
+    WHEN '1h' THEN now() - interval '1 hour'
+    WHEN '24h' THEN now() - interval '24 hours'
+    WHEN '7d' THEN now() - interval '7 days'
+    WHEN '30d' THEN now() - interval '30 days'
+    WHEN '90d' THEN now() - interval '90 days'
+    ELSE '1970-01-01'::timestamptz
+  END;
+  SELECT json_build_object(
+    'total_leads', COALESCE((SELECT COUNT(*) FROM waitlist), 0) + COALESCE((SELECT COUNT(*) FROM profiles), 0),
+    'waitlist_count', COALESCE((SELECT COUNT(*) FROM waitlist), 0),
+    'registered_count', COALESCE((SELECT COUNT(*) FROM profiles), 0),
+    'hot_leads', COUNT(DISTINCT session_id) FILTER (WHERE event IN ('form_submit','form_submitted','waitlist_join','waitlist_success')),
+    'warm_leads', COUNT(DISTINCT session_id) FILTER (WHERE event LIKE 'cta_%' AND event NOT IN ('form_submit','form_submitted'))
+  ) INTO result
+  FROM landing_analytics WHERE created_at >= cutoff;
+  RETURN result;
+END;
+$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION public.analytics_live_count()
+RETURNS json AS $
+DECLARE result json;
+BEGIN
+  SELECT json_build_object(
+    'active', COUNT(DISTINCT session_id)
+  ) INTO result
+  FROM landing_analytics
+  WHERE created_at >= now() - interval '5 minutes';
+  RETURN result;
+END;
+$ LANGUAGE plpgsql SECURITY DEFINER;
+
+GRANT EXECUTE ON FUNCTION public.analytics_overview TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.analytics_geo_breakdown TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.analytics_source_breakdown TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.analytics_lead_summary TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.analytics_live_count TO anon, authenticated;
       `.trim();
 
       const apiBase = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || '').trim();
@@ -1327,7 +1469,60 @@ GRANT EXECUTE ON FUNCTION public.get_analytics_events TO anon, authenticated;
     if (!data) return null;
     const geo = data.geoZones;
 
-    if (!geo || (geo.byCountry.length === 0 && geo.byCity.length === 0)) {
+    const hasGeoData = geo && (geo.byCountry.length > 0 || geo.byCity.length > 0);
+    const hasFetchError = diagnostics?.error != null;
+    const hasEventsButNoGeo = !hasGeoData && ((diagnostics?.landingCount ?? 0) + (diagnostics?.appCount ?? 0)) > 0;
+    const isRpcFailure = hasFetchError && (diagnostics?.error?.includes('RPC') || diagnostics?.error?.includes('RLS') || diagnostics?.error?.includes('does not exist'));
+
+    if (!hasGeoData) {
+      if (isRpcFailure || hasFetchError) {
+        return (
+          <View style={s.emptyWrap}>
+            <AlertTriangle size={48} color="#FF6B6B" />
+            <Text style={s.emptyTitle}>Geo Data Unavailable</Text>
+            <Text style={s.emptySubtitle}>
+              {isRpcFailure
+                ? 'Analytics RPC functions are not deployed. Geo breakdown requires server-side aggregation.'
+                : `Failed to load geo data: ${diagnostics?.error?.substring(0, 120) ?? 'Unknown error'}`}
+            </Text>
+            <TouchableOpacity
+              onPress={deployRpcFunctions}
+              disabled={rpcDeploying}
+              style={{
+                backgroundColor: rpcDeployResult === 'success' ? '#22C55E' : '#FF6B6B',
+                borderRadius: 10,
+                paddingVertical: 12,
+                paddingHorizontal: 20,
+                marginTop: 16,
+                opacity: rpcDeploying ? 0.6 : 1,
+              }}
+            >
+              <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700' as const }}>
+                {rpcDeploying ? 'Deploying...' : rpcDeployResult === 'success' ? 'Deployed! Pull to refresh' : rpcDeployResult === 'copied' ? 'SQL Copied — Paste in Supabase' : 'Deploy Analytics Functions'}
+              </Text>
+            </TouchableOpacity>
+            {rpcDeployResult === 'copied' && (
+              <Text style={{ color: '#97A0AF', fontSize: 10, marginTop: 8, textAlign: 'center' as const, lineHeight: 15 }}>
+                Supabase Dashboard {'>'} SQL Editor {'>'} Paste {'>'} Run{' '}n then pull down to refresh.
+              </Text>
+            )}
+          </View>
+        );
+      }
+
+      if (hasEventsButNoGeo) {
+        return (
+          <View style={s.emptyWrap}>
+            <Globe size={48} color="#FFB800" />
+            <Text style={s.emptyTitle}>Events Found, No Geo Data</Text>
+            <Text style={s.emptySubtitle}>
+              {(diagnostics?.landingCount ?? 0) + (diagnostics?.appCount ?? 0)} events were loaded but none contain location data.
+              Geo is collected via IP lookup when visitors first arrive.
+            </Text>
+          </View>
+        );
+      }
+
       return (
         <View style={s.emptyWrap}>
           <MapPin size={48} color="#97A0AF" />

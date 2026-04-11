@@ -12,6 +12,7 @@ import {
   Animated,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useScreenFocusState } from '@/hooks/useScreenFocusState';
 import {
   Building2,
   DollarSign,
@@ -61,8 +62,9 @@ export default function InvestScreen() {
   const { width } = useWindowDimensions();
   const { fractionalShares } = useIPX();
   const { t } = useTranslation();
+  const isScreenFocused = useScreenFocusState(true);
   useJVRealtime('invest-jv-deals');
-  const publishedJV = usePublishedJVDeals();
+  const publishedJV = usePublishedJVDeals({ refetchIntervalMs: isScreenFocused ? 1000 * 90 : false });
   const [refreshing, setRefreshing] = useState(false);
   const [galleryWidth, setGalleryWidth] = useState<number>(width - 42);
   const [showFeeInfo, setShowFeeInfo] = useState(false);

@@ -1,10 +1,12 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Directory, File, Paths } from 'expo-file-system';
 import { Platform } from 'react-native';
 import { supabase } from './supabase';
 import { getAuthUserId } from './auth-store';
 import { scopedKey } from './project-storage';
 
 const IMAGE_REGISTRY_KEY = scopedKey('image_registry');
+const LOCAL_IMAGE_DIRECTORY_NAME = 'ivx_images';
 
 
 export interface StoredImage {
@@ -82,15 +84,8 @@ async function removeImageFromSupabase(imageId: string): Promise<void> {
   }
 }
 
-async function getLegacyFileSystem() {
-  if (Platform.OS === 'web') return null;
-  try {
-    const mod = await import('expo-file-system/legacy');
-    return mod;
-  } catch {
-    console.warn('[ImageStorage] Legacy file system not available');
-    return null;
-  }
+function getLocalImageDirectory(): Directory {
+  return new Directory(Paths.document, LOCAL_IMAGE_DIRECTORY_NAME);
 }
 
 async function copyToLocalStorage(sourceUri: string, imageId: string): Promise<string> {
@@ -98,30 +93,38 @@ async function copyToLocalStorage(sourceUri: string, imageId: string): Promise<s
     return sourceUri;
   }
 
-  const LegacyFS = await getLegacyFileSystem();
-  if (!LegacyFS || !LegacyFS.documentDirectory) {
-    return sourceUri;
-  }
-
   try {
-    const dir = `${LegacyFS.documentDirectory}ivx_images/`;
-    const dirInfo = await LegacyFS.getInfoAsync(dir);
-    if (!dirInfo.exists) {
-      await LegacyFS.makeDirectoryAsync(dir, { intermediates: true });
+    const directory = getLocalImageDirectory();
+    if (!directory.exists) {
+      directory.create({ intermediates: true });
     }
 
     const extension = sourceUri.split('.').pop()?.split('?')[0] || 'jpg';
-    const destUri = `${dir}${imageId}.${extension}`;
+    const destinationFile = new File(directory, `${imageId}.${extension}`);
+
+    if (destinationFile.exists) {
+      destinationFile.delete();
+    }
 
     if (sourceUri.startsWith('http')) {
-      const downloadResult = await LegacyFS.downloadAsync(sourceUri, destUri);
-      console.log('[ImageStorage] Downloaded remote image to:', downloadResult.uri);
-      return downloadResult.uri;
-    } else {
-      await LegacyFS.copyAsync({ from: sourceUri, to: destUri });
-      console.log('[ImageStorage] Copied local image to:', destUri);
-      return destUri;
+      const response = await fetch(sourceUri);
+      if (!response.ok) {
+        throw new Error(`Remote image download failed with status ${response.status}`);
+      }
+      const arrayBuffer = await response.arrayBuffer();
+      destinationFile.create({ intermediates: true, overwrite: true });
+      destinationFile.write(new Uint8Array(arrayBuffer));
+      console.log('[ImageStorage] Downloaded remote image to:', destinationFile.uri);
+      return destinationFile.uri;
     }
+
+    const sourceFile = new File(sourceUri);
+    if (!sourceFile.exists) {
+      throw new Error(`Source file does not exist: ${sourceUri}`);
+    }
+    sourceFile.copy(destinationFile);
+    console.log('[ImageStorage] Copied local image to:', destinationFile.uri);
+    return destinationFile.uri;
   } catch (err) {
     console.log('[ImageStorage] Failed to copy image, using original URI:', (err as Error)?.message);
     return sourceUri;
@@ -254,10 +257,13 @@ export async function removeImage(imageId: string): Promise<boolean> {
       }
 
       if (Platform.OS !== 'web') {
-        const LegacyFS = await getLegacyFileSystem();
-        if (LegacyFS && LegacyFS.documentDirectory && image.uri.startsWith(LegacyFS.documentDirectory)) {
+        const directory = getLocalImageDirectory();
+        if (image.uri.startsWith(directory.uri)) {
           try {
-            await LegacyFS.deleteAsync(image.uri, { idempotent: true });
+            const file = new File(image.uri);
+            if (file.exists) {
+              file.delete();
+            }
           } catch (err) {
             console.log('[ImageStorage] Failed to delete file:', (err as Error)?.message);
           }
@@ -358,17 +364,13 @@ export async function getStorageStats(): Promise<{
 
 export async function clearAllImages(): Promise<void> {
   if (Platform.OS !== 'web') {
-    const LegacyFS = await getLegacyFileSystem();
-    if (LegacyFS && LegacyFS.documentDirectory) {
-      try {
-        const dir = `${LegacyFS.documentDirectory}ivx_images/`;
-        const dirInfo = await LegacyFS.getInfoAsync(dir);
-        if (dirInfo.exists) {
-          await LegacyFS.deleteAsync(dir, { idempotent: true });
-        }
-      } catch (err) {
-        console.log('[ImageStorage] Failed to clear image directory:', (err as Error)?.message);
+    try {
+      const directory = getLocalImageDirectory();
+      if (directory.exists) {
+        directory.delete();
       }
+    } catch (err) {
+      console.log('[ImageStorage] Failed to clear image directory:', (err as Error)?.message);
     }
   }
   await AsyncStorage.removeItem(IMAGE_REGISTRY_KEY);

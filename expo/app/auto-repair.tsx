@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, useRouter } from 'expo-router';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 import {
   AlertTriangle,
@@ -279,15 +279,18 @@ function IncidentCard({
 
 export default function AutoRepairScreen() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const pulseAnim = useRef(new Animated.Value(0.85)).current;
   const [actionHistory, setActionHistory] = useState<AIOpsRepairResult[]>([]);
   const [activeAction, setActiveAction] = useState<AIOpsRepairAction | null>(null);
 
   const snapshotQuery = useQuery<AIOpsSnapshot>({
     queryKey: ['ai-ops', 'snapshot'],
-    queryFn: runAIOpsScan,
-    staleTime: 10000,
-    refetchInterval: 20000,
+    queryFn: () => runAIOpsScan(),
+    staleTime: 120000,
+    refetchInterval: 120000,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: false,
   });
 
   const repairMutation = useMutation<AIOpsRepairResult, Error, AIOpsRepairAction>({
@@ -346,8 +349,14 @@ export default function AutoRepairScreen() {
 
   const handleRefresh = useCallback(async () => {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    await snapshotQuery.refetch();
-  }, [snapshotQuery]);
+
+    try {
+      const nextSnapshot = await runAIOpsScan({ force: true });
+      queryClient.setQueryData(['ai-ops', 'snapshot'], nextSnapshot);
+    } catch (error) {
+      Alert.alert('Refresh failed', (error as Error).message);
+    }
+  }, [queryClient]);
 
   const handleRepair = useCallback((action: AIOpsRepairAction) => {
     repairMutation.mutate(action);

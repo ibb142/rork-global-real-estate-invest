@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { useScreenFocusState } from '@/hooks/useScreenFocusState';
 import {
   Users,
   ArrowLeftRight,
@@ -76,6 +77,9 @@ import { getAdminMemberRegistrySnapshot, type AdminMemberRegistrySnapshot } from
 import { getDeployAccessDiagnostic } from '@/lib/landing-deploy';
 import { getAutoDeployStatus } from '@/lib/auto-deploy';
 
+const ADMIN_OVERVIEW_REFRESH_MS = 120_000;
+const ADMIN_AUDIT_REFRESH_MS = 180_000;
+
 const adminTeamMembers = [
   {
     id: 'mgr-kimberly',
@@ -102,7 +106,7 @@ const ADMIN_MODULES = [
   { id: 'owner-controls', name: 'Owner Controls', icon: Crown, route: '/admin/owner-controls', category: 'Core', keywords: 'owner admin controls master settings' },
   { id: 'dashboard', name: 'Dashboard', icon: LayoutDashboard, route: '/admin/dashboard', category: 'Core', keywords: 'dashboard overview summary' },
   { id: 'system-monitor', name: '24/7 Command Center', icon: Monitor, route: '/admin/system-monitor', category: 'Core', keywords: 'monitor command center health live status' },
-  { id: 'admin-chat-room', name: 'Admin Chat Room', icon: MessageSquare, route: '/admin/chat-room', category: 'Core', keywords: 'chat room realtime supabase owner admin support messages inbox' },
+  { id: 'admin-chat-room', name: 'Message Room', icon: MessageSquare, route: '/admin/chat-room', category: 'Core', keywords: 'chat room realtime supabase shared support messages inbox' },
   { id: 'supabase-scripts', name: 'Supabase SQL', icon: Database, route: '/admin/supabase-scripts', category: 'Core', keywords: 'supabase sql scripts copy paste database tables setup migration' },
   { id: 'audit-log', name: 'Audit Trail', icon: Shield, route: '/admin/audit-log', category: 'Core', keywords: 'audit trail log history records tracking delete restore' },
   { id: 'data-recovery', name: 'Data Recovery', icon: RefreshCw, route: '/admin/data-recovery', category: 'Core', keywords: 'recovery backup restore deleted data snapshot' },
@@ -196,6 +200,7 @@ console.log('[Admin] v6 ADMIN_MODULES loaded:', ADMIN_MODULES.length, 'modules')
 export default function AdminDashboard() {
   const router = useRouter();
   const auth = useAuth();
+  const isScreenFocused = useScreenFocusState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch] = useState(false);
   const queryClient = useQueryClient();
@@ -213,8 +218,11 @@ export default function AdminDashboard() {
         return null;
       }
     },
-    staleTime: 1000 * 30,
-    refetchInterval: 1000 * 60,
+    staleTime: ADMIN_OVERVIEW_REFRESH_MS,
+    refetchInterval: isScreenFocused ? ADMIN_OVERVIEW_REFRESH_MS : false,
+    refetchIntervalInBackground: false,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
     placeholderData: (prev: any) => prev,
     retry: 0,
     throwOnError: false,
@@ -240,22 +248,31 @@ export default function AdminDashboard() {
   const memberAuditQuery = useQuery<AdminMemberRegistrySnapshot>({
     queryKey: ['admin-member-registry-snapshot'],
     queryFn: getAdminMemberRegistrySnapshot,
-    staleTime: 1000 * 30,
-    refetchInterval: 1000 * 45,
+    staleTime: ADMIN_AUDIT_REFRESH_MS,
+    refetchInterval: isScreenFocused ? ADMIN_AUDIT_REFRESH_MS : false,
+    refetchIntervalInBackground: false,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
   });
 
   const deployAccessQuery = useQuery({
     queryKey: ['admin-deploy-access-diagnostic'],
     queryFn: getDeployAccessDiagnostic,
-    staleTime: 1000 * 30,
-    refetchInterval: 1000 * 45,
+    staleTime: ADMIN_AUDIT_REFRESH_MS,
+    refetchInterval: isScreenFocused ? ADMIN_AUDIT_REFRESH_MS : false,
+    refetchIntervalInBackground: false,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
   });
 
   const autoDeployStatusQuery = useQuery({
     queryKey: ['admin-auto-deploy-status'],
     queryFn: getAutoDeployStatus,
-    staleTime: 1000 * 30,
-    refetchInterval: 1000 * 45,
+    staleTime: ADMIN_AUDIT_REFRESH_MS,
+    refetchInterval: isScreenFocused ? ADMIN_AUDIT_REFRESH_MS : false,
+    refetchIntervalInBackground: false,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
   });
 
   const pendingKycQuery = useQuery<any>({

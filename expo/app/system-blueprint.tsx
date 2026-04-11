@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { useScreenFocusState } from '@/hooks/useScreenFocusState';
 import {
   ArrowLeft,
   RefreshCw,
@@ -57,6 +58,7 @@ import {
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const NODE_SIZE = 72;
 const ICON_SIZE = 28;
+const BLUEPRINT_AUTO_REFRESH_INTERVAL_MS = 180_000;
 
 interface BlueprintNode {
   id: string;
@@ -798,6 +800,7 @@ export default function SystemBlueprintScreen() {
   const [ownerAlertSettings, setOwnerAlertSettings] = useState<OwnerAlertSettings | null>(null);
   const [ownerAlertFeed, setOwnerAlertFeed] = useState<OwnerAlertFeedItem[]>([]);
   const [lastOwnerDispatch, setLastOwnerDispatch] = useState<OwnerAlertDispatchResult | null>(null);
+  const isScreenFocused = useScreenFocusState(true);
 
   const healthMap = useMemo(() => {
     const map = new Map<string, HealthCheck>();
@@ -854,7 +857,7 @@ export default function SystemBlueprintScreen() {
     },
   });
 
-  const runScan = useCallback(async () => {
+  const runScan = useCallback(async (force: boolean = false) => {
     if (scanInFlightRef.current) {
       console.log('[Blueprint] Scan skipped because another scan is still running');
       return;
@@ -870,11 +873,9 @@ export default function SystemBlueprintScreen() {
     spinLoopRef.current.start();
 
     try {
-      console.log('[Blueprint] Running system and AI Ops scan...');
-      const [systemSnapshot, aiOpsResult] = await Promise.all([
-        runFullHealthCheck(),
-        runAIOpsScan(),
-      ]);
+      console.log('[Blueprint] Running system and AI Ops scan...', force ? '(forced)' : '(cached mode)');
+      const systemSnapshot = await runFullHealthCheck({ force });
+      const aiOpsResult = await runAIOpsScan({ force, fullHealthSnapshot: systemSnapshot });
       const alertSyncResult = await syncAIOpsOwnerAlerts(aiOpsResult);
       setSnapshot(systemSnapshot);
       setAIOpsSnapshot(aiOpsResult);
@@ -899,12 +900,14 @@ export default function SystemBlueprintScreen() {
   }, [loadOwnerAlertState, spinAnim]);
 
   useEffect(() => {
-    void loadOwnerAlertState();
-  }, [loadOwnerAlertState]);
+    if (!isScreenFocused) {
+      console.log('[Blueprint] Screen blurred — pausing scan bootstrap');
+      return;
+    }
 
-  useEffect(() => {
+    void loadOwnerAlertState();
     void runScan();
-  }, [runScan]);
+  }, [isScreenFocused, loadOwnerAlertState, runScan]);
 
   useEffect(() => {
     if (intervalRef.current) {
@@ -912,10 +915,10 @@ export default function SystemBlueprintScreen() {
       intervalRef.current = null;
     }
 
-    if (autoRefresh) {
+    if (autoRefresh && isScreenFocused) {
       intervalRef.current = setInterval(() => {
         void runScan();
-      }, 30000);
+      }, BLUEPRINT_AUTO_REFRESH_INTERVAL_MS);
     }
 
     return () => {
@@ -926,8 +929,7 @@ export default function SystemBlueprintScreen() {
       spinLoopRef.current?.stop();
       spinLoopRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoRefresh, runScan]);
+  }, [autoRefresh, isScreenFocused, runScan]);
 
   const spinRotation = spinAnim.interpolate({
     inputRange: [0, 1],
@@ -961,7 +963,7 @@ export default function SystemBlueprintScreen() {
               <Eye size={14} color={autoRefresh ? '#00E676' : Colors.textSecondary} />
               <Text style={[styles.autoRefreshText, autoRefresh && { color: '#00E676' }]}>LIVE</Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={runScan} disabled={loading} style={styles.refreshBtn}>
+            <TouchableOpacity onPress={() => void runScan(true)} disabled={loading} style={styles.refreshBtn}>
               <Animated.View style={{ transform: [{ rotate: loading ? spinRotation : '0deg' }] }}>
                 <RefreshCw size={18} color={loading ? '#FFD600' : Colors.text} />
               </Animated.View>

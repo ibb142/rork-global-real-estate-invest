@@ -38,7 +38,7 @@ import { COUNTRIES, Country } from '@/constants/countries';
 import { useAuth } from '@/lib/auth-context';
 import { useAnalytics } from '@/lib/analytics-context';
 import { validateEmail, validatePassword, validatePhone, sanitizeEmail } from '@/lib/auth-helpers';
-import { findExistingMemberByEmail } from '@/lib/member-registry';
+import { findExistingRegisteredMemberByEmail } from '@/lib/member-registry';
 
 type Step = 'register' | 'verify_email' | 'verify_phone' | 'complete';
 
@@ -116,7 +116,7 @@ export default function SignUpScreen() {
 
     let isActive = true;
     const timeout = setTimeout(() => {
-      findExistingMemberByEmail(normalizedEmail)
+      findExistingRegisteredMemberByEmail(normalizedEmail)
         .then((record) => {
           if (isActive) {
             setExistingAccountDetected(!!record);

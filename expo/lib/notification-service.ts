@@ -16,6 +16,7 @@ export interface AppNotification {
 }
 
 const NOTIFICATION_QUERY_KEY = ['notifications'];
+const NOTIFICATION_POLL_INTERVAL_MS = 180_000;
 
 export function useNotifications() {
   const queryClient = useQueryClient();
@@ -40,8 +41,10 @@ export function useNotifications() {
       return (data as AppNotification[]) ?? [];
     },
     enabled: !!userId && isSupabaseConfigured(),
-    staleTime: 30000,
-    refetchInterval: 60000,
+    staleTime: 60_000,
+    refetchInterval: NOTIFICATION_POLL_INTERVAL_MS,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: false,
   });
 
   useRealtimeTable('notifications', [NOTIFICATION_QUERY_KEY], {

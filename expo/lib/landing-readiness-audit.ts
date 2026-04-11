@@ -25,7 +25,10 @@ export interface ScaleReadinessAssessment {
   blockerIds: string[];
 }
 
+export type ReadinessAuditMode = 'light' | 'full';
+
 export interface ReadinessAuditResult {
+  mode: ReadinessAuditMode;
   overallStatus: ReadinessStatus;
   readyFor30k: boolean;
   readyFor1M: boolean;
@@ -36,9 +39,60 @@ export interface ReadinessAuditResult {
   warningCount: number;
 }
 
+export interface RunLandingReadinessAuditOptions {
+  mode?: ReadinessAuditMode;
+  force?: boolean;
+}
+
 const PUBLIC_LANDING_URL = 'https://ivxholding.com';
 const API_CONCURRENCY_SAMPLE_SIZE = 8;
 const WRITE_CONCURRENCY_SAMPLE_SIZE = 5;
+const LIGHT_AUDIT_CACHE_MS = 60_000;
+const FULL_AUDIT_CACHE_MS = 5 * 60_000;
+
+interface ReadinessAuditCacheEntry {
+  result: ReadinessAuditResult;
+  timestamp: number;
+}
+
+const readinessAuditCache = new Map<ReadinessAuditMode, ReadinessAuditCacheEntry>();
+const readinessAuditInFlight = new Map<ReadinessAuditMode, Promise<ReadinessAuditResult>>();
+
+function getAuditCacheTtl(mode: ReadinessAuditMode): number {
+  return mode === 'full' ? FULL_AUDIT_CACHE_MS : LIGHT_AUDIT_CACHE_MS;
+}
+
+function getCachedReadinessAudit(mode: ReadinessAuditMode): ReadinessAuditResult | null {
+  const cached = readinessAuditCache.get(mode);
+  if (!cached) {
+    return null;
+  }
+
+  const ageMs = Date.now() - cached.timestamp;
+  if (ageMs > getAuditCacheTtl(mode)) {
+    readinessAuditCache.delete(mode);
+    return null;
+  }
+
+  console.log('[LandingReadinessAudit] Reusing cached', mode, 'audit from', ageMs, 'ms ago');
+  return cached.result;
+}
+
+function setCachedReadinessAudit(mode: ReadinessAuditMode, result: ReadinessAuditResult): void {
+  readinessAuditCache.set(mode, {
+    result,
+    timestamp: Date.now(),
+  });
+}
+
+function withFetchTimeout(timeoutMs: number): { controller: AbortController; cleanup: () => void } {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  return {
+    controller,
+    cleanup: () => clearTimeout(timeout),
+  };
+}
 
 function getDirectApiBaseUrl(): string {
   return (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || process.env.EXPO_PUBLIC_API_BASE_URL || '').trim().replace(/\/$/, '');
@@ -104,7 +158,7 @@ function normalizeSupportedDirectMirrorProbe(probe: ReadinessProbe, fallbackProb
   };
 }
 
-function buildScaleAssessment(targetUsers: number, probes: ReadinessProbe[]): ScaleReadinessAssessment {
+function buildScaleAssessment(targetUsers: number, probes: ReadinessProbe[], mode: ReadinessAuditMode): ScaleReadinessAssessment {
   const label = targetUsers >= 1000000 ? '1M readiness' : '30k readiness';
   const failures = probes.filter((probe) => probe.status === 'fail');
   const warnings = probes.filter((probe) => probe.status === 'warn');
@@ -123,6 +177,30 @@ function buildScaleAssessment(targetUsers: number, probes: ReadinessProbe[]): Sc
         ? `${label} blocked because direct backend validation is missing.`
         : `${label} blocked by ${failures.length} failing probe(s), including ${Math.max(apiBurstFailures.length, writeFailures.length)} scale-critical path issue(s).`,
       blockerIds,
+    };
+  }
+
+  if (mode === 'light') {
+    if (targetUsers >= 1000000) {
+      return {
+        targetUsers,
+        label,
+        status: 'warn',
+        evidence: 'partial',
+        summary: '1M is not proven from the lightweight read-only scan. Run a full audit before making infrastructure claims.',
+        blockerIds: warnings.map((probe) => probe.id),
+      };
+    }
+
+    return {
+      targetUsers,
+      label,
+      status: warnings.length > 0 ? 'warn' : 'pass',
+      evidence: 'partial',
+      summary: warnings.length > 0
+        ? `Read-only launch scan passed the core paths, but ${warnings.length} warning probe(s) still need review before a 30k claim.`
+        : 'Read-only launch scan passed the core paths. Deep write-path validation is skipped until a full audit is run manually.',
+      blockerIds: warnings.map((probe) => probe.id),
     };
   }
 
@@ -295,101 +373,117 @@ async function probeWaitlistWritePath(): Promise<ReadinessProbe> {
 
   const startedAt = Date.now();
   const probeIdentity = buildReadinessProbeIdentity('readiness-waitlist');
-  const response = await fetch(`${SUPABASE_URL}/rest/v1/waitlist_entries`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-      Prefer: 'return=representation',
-    },
-    body: JSON.stringify({
-      full_name: 'Readiness Audit Waitlist',
-      first_name: 'Readiness',
-      last_name: 'Audit',
-      email: probeIdentity.email,
-      phone: probeIdentity.phone,
-      email_normalized: probeIdentity.email,
-      phone_e164: probeIdentity.phone,
-      phone_verified: true,
-      accredited_status: 'unsure',
-      consent_sms: true,
-      consent_email: true,
-      source: 'readiness_audit',
-      page_path: '/backend-audit',
-      referrer: 'backend-audit',
-      status: 'pending',
-      created_at: probeIdentity.createdAt,
-      updated_at: probeIdentity.createdAt,
-      submitted_at: probeIdentity.createdAt,
-    }),
-  });
-  const latencyMs = Date.now() - startedAt;
-  const contentType = (response.headers.get('content-type') || '').toLowerCase();
-  const body = await response.text();
-  const bodyPreview = body.slice(0, 220);
-  const isHtmlFallback = body.trim().toLowerCase().startsWith('<!doctype html') || body.trim().toLowerCase().startsWith('<html');
-
-  if (!response.ok) {
-    return {
-      id: 'write-waitlist-live',
-      label: 'Waitlist live write path',
-      status: 'fail',
-      message: `HTTP ${response.status}`,
-      detail: bodyPreview || 'Insert request failed.',
-      latencyMs,
-    };
-  }
-
-  if (!contentType.includes('application/json') || isHtmlFallback) {
-    return {
-      id: 'write-waitlist-live',
-      label: 'Waitlist live write path',
-      status: 'fail',
-      message: 'Insert response is not valid JSON',
-      detail: bodyPreview || `content-type=${contentType || 'unknown'}`,
-      latencyMs,
-    };
-  }
+  const { controller, cleanup } = withFetchTimeout(8000);
 
   try {
-    const parsed = JSON.parse(body) as unknown;
-    const rows = Array.isArray(parsed) ? parsed : [];
-    const inserted = rows.find((row: unknown) => {
-      if (!row || typeof row !== 'object') return false;
-      const candidate = row as { id?: unknown; email_normalized?: unknown };
-      return typeof candidate.id === 'string' && candidate.id.trim().length > 0 && candidate.email_normalized === probeIdentity.email;
+    const response = await fetch(`${SUPABASE_URL}/rest/v1/waitlist_entries`, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        Prefer: 'return=representation',
+      },
+      body: JSON.stringify({
+        full_name: 'Readiness Audit Waitlist',
+        first_name: 'Readiness',
+        last_name: 'Audit',
+        email: probeIdentity.email,
+        phone: probeIdentity.phone,
+        email_normalized: probeIdentity.email,
+        phone_e164: probeIdentity.phone,
+        phone_verified: true,
+        accredited_status: 'unsure',
+        consent_sms: true,
+        consent_email: true,
+        source: 'readiness_audit',
+        page_path: '/backend-audit',
+        referrer: 'backend-audit',
+        status: 'pending',
+        created_at: probeIdentity.createdAt,
+        updated_at: probeIdentity.createdAt,
+        submitted_at: probeIdentity.createdAt,
+      }),
     });
+    const latencyMs = Date.now() - startedAt;
+    const contentType = (response.headers.get('content-type') || '').toLowerCase();
+    const body = await response.text();
+    const bodyPreview = body.slice(0, 220);
+    const isHtmlFallback = body.trim().toLowerCase().startsWith('<!doctype html') || body.trim().toLowerCase().startsWith('<html');
 
-    if (!inserted) {
+    if (!response.ok) {
       return {
         id: 'write-waitlist-live',
         label: 'Waitlist live write path',
         status: 'fail',
-        message: 'Insert response missing persisted row',
-        detail: bodyPreview || 'Supabase did not return the inserted waitlist record.',
+        message: `HTTP ${response.status}`,
+        detail: bodyPreview || 'Insert request failed.',
         latencyMs,
       };
     }
 
-    return {
-      id: 'write-waitlist-live',
-      label: 'Waitlist live write path',
-      status: 'pass',
-      message: 'Insert returned persisted JSON row',
-      detail: `content-type=${contentType} · source=readiness_audit`,
-      latencyMs,
-    };
+    if (!contentType.includes('application/json') || isHtmlFallback) {
+      return {
+        id: 'write-waitlist-live',
+        label: 'Waitlist live write path',
+        status: 'fail',
+        message: 'Insert response is not valid JSON',
+        detail: bodyPreview || `content-type=${contentType || 'unknown'}`,
+        latencyMs,
+      };
+    }
+
+    try {
+      const parsed = JSON.parse(body) as unknown;
+      const rows = Array.isArray(parsed) ? parsed : [];
+      const inserted = rows.find((row: unknown) => {
+        if (!row || typeof row !== 'object') return false;
+        const candidate = row as { id?: unknown; email_normalized?: unknown };
+        return typeof candidate.id === 'string' && candidate.id.trim().length > 0 && candidate.email_normalized === probeIdentity.email;
+      });
+
+      if (!inserted) {
+        return {
+          id: 'write-waitlist-live',
+          label: 'Waitlist live write path',
+          status: 'fail',
+          message: 'Insert response missing persisted row',
+          detail: bodyPreview || 'Supabase did not return the inserted waitlist record.',
+          latencyMs,
+        };
+      }
+
+      return {
+        id: 'write-waitlist-live',
+        label: 'Waitlist live write path',
+        status: 'pass',
+        message: 'Insert returned persisted JSON row',
+        detail: `content-type=${contentType} · source=readiness_audit`,
+        latencyMs,
+      };
+    } catch (error) {
+      return {
+        id: 'write-waitlist-live',
+        label: 'Waitlist live write path',
+        status: 'fail',
+        message: 'Insert response JSON parsing failed',
+        detail: error instanceof Error ? error.message : 'Invalid JSON',
+        latencyMs,
+      };
+    }
   } catch (error) {
     return {
       id: 'write-waitlist-live',
       label: 'Waitlist live write path',
       status: 'fail',
-      message: 'Insert response JSON parsing failed',
-      detail: error instanceof Error ? error.message : 'Invalid JSON',
-      latencyMs,
+      message: error instanceof Error ? error.message : 'Waitlist write probe failed',
+      detail: 'The live waitlist write probe did not complete successfully.',
+      latencyMs: Date.now() - startedAt,
     };
+  } finally {
+    cleanup();
   }
 }
 
@@ -488,7 +582,7 @@ async function probeMemberProfilePath(): Promise<ReadinessProbe[]> {
   return probes;
 }
 
-async function probeWaitlistPath(): Promise<ReadinessProbe[]> {
+async function probeWaitlistPath(includeLiveWriteProbe: boolean = true): Promise<ReadinessProbe[]> {
   if (!isSupabaseConfigured()) {
     return [{
       id: 'write-waitlist-config',
@@ -501,14 +595,14 @@ async function probeWaitlistPath(): Promise<ReadinessProbe[]> {
 
   const probes: ReadinessProbe[] = [];
   const startedAt = Date.now();
-  const tableResult = await supabase.from('waitlist_entries').select('id', { count: 'exact', head: true });
+  const tableResult = await supabase.from('waitlist_entries').select('id').limit(1);
   if (tableResult.error) {
     probes.push({
       id: 'write-waitlist-table',
       label: 'Waitlist entries table',
       status: 'fail',
       message: tableResult.error.message,
-      detail: 'The primary waitlist write table is not healthy enough for 30k intake.',
+      detail: 'The primary waitlist write table is not healthy enough for intake traffic.',
       latencyMs: Date.now() - startedAt,
     });
   } else {
@@ -516,14 +610,14 @@ async function probeWaitlistPath(): Promise<ReadinessProbe[]> {
       id: 'write-waitlist-table',
       label: 'Waitlist entries table',
       status: 'pass',
-      message: `Reachable${typeof tableResult.count === 'number' ? ` (${tableResult.count} rows)` : ''}`,
-      detail: 'Primary write table resolves and responds to exact-count queries.',
+      message: 'Reachable',
+      detail: 'Primary write table resolves and responds to lightweight read probes.',
       latencyMs: Date.now() - startedAt,
     });
   }
 
   const landingStartedAt = Date.now();
-  const landingResult = await supabase.from('landing_submissions').select('id', { count: 'exact', head: true });
+  const landingResult = await supabase.from('landing_submissions').select('id').limit(1);
   if (landingResult.error) {
     probes.push({
       id: 'write-landing-submissions-table',
@@ -538,13 +632,15 @@ async function probeWaitlistPath(): Promise<ReadinessProbe[]> {
       id: 'write-landing-submissions-table',
       label: 'Landing submissions mirror',
       status: 'pass',
-      message: `Reachable${typeof landingResult.count === 'number' ? ` (${landingResult.count} rows)` : ''}`,
-      detail: 'Secondary persistence path responds correctly.',
+      message: 'Reachable',
+      detail: 'Secondary persistence path responds correctly to lightweight read probes.',
       latencyMs: Date.now() - landingStartedAt,
     });
   }
 
-  probes.push(await probeWaitlistWritePath());
+  if (includeLiveWriteProbe) {
+    probes.push(await probeWaitlistWritePath());
+  }
 
   return probes;
 }
@@ -579,136 +675,210 @@ async function probeConcurrentWritePaths(): Promise<ReadinessProbe[]> {
   ];
 }
 
-async function probeMemberPersistence(): Promise<ReadinessProbe[]> {
-  const snapshot = await getAdminMemberRegistrySnapshot();
+async function probeMemberPersistence(mode: ReadinessAuditMode): Promise<ReadinessProbe[]> {
+  const snapshot = await getAdminMemberRegistrySnapshot({ mode });
   const staleLocalOnlyCount = snapshot.staleLocalOnlyCount;
+  const hasRegistryEvidence = snapshot.localCount > 0 || snapshot.remoteCount > 0;
 
   return [
     {
       id: 'member-registry-merged',
       label: 'Member registry durability',
-      status: snapshot.mergedCount > 0 ? 'pass' : 'warn',
-      message: `${snapshot.mergedCount} merged member record(s)`,
-      detail: `profiles=${snapshot.remoteProfileCount} · waitlist shadows=${snapshot.remoteWaitlistShadowCount} · landing shadows=${snapshot.remoteLandingSubmissionShadowCount}`,
+      status: hasRegistryEvidence ? 'pass' : 'warn',
+      message: mode === 'light'
+        ? hasRegistryEvidence
+          ? 'Lightweight member registry sample completed'
+          : 'No local or sampled remote member records detected'
+        : `${snapshot.mergedCount} merged member record(s)`,
+      detail: mode === 'light'
+        ? `local=${snapshot.localCount} · sampled_profiles=${snapshot.remoteProfileCount} · sampled_waitlist=${snapshot.remoteWaitlistShadowCount} · sampled_landing=${snapshot.remoteLandingSubmissionShadowCount}`
+        : `profiles=${snapshot.remoteProfileCount} · waitlist shadows=${snapshot.remoteWaitlistShadowCount} · landing shadows=${snapshot.remoteLandingSubmissionShadowCount}`,
     },
     {
       id: 'member-registry-stale-local',
       label: 'Member persistence drift',
-      status: staleLocalOnlyCount === 0 ? 'pass' : 'warn',
-      message: staleLocalOnlyCount === 0 ? 'No stale local-only member records detected' : `${staleLocalOnlyCount} local-only record(s) still need remote confirmation`,
-      detail: 'If this stays above zero, 30k readiness is not fully proven for member persistence.',
+      status: mode === 'light' ? 'warn' : staleLocalOnlyCount === 0 ? 'pass' : 'warn',
+      message: mode === 'light'
+        ? 'Drift confirmation is skipped during lightweight scans'
+        : staleLocalOnlyCount === 0
+          ? 'No stale local-only member records detected'
+          : `${staleLocalOnlyCount} local-only record(s) still need remote confirmation`,
+      detail: mode === 'light'
+        ? 'Run a full audit to compare local registry records against remote member sources.'
+        : 'If this stays above zero, 30k readiness is not fully proven for member persistence.',
     },
   ];
 }
 
-export async function runLandingReadinessAudit(): Promise<ReadinessAuditResult> {
-  const probes: ReadinessProbe[] = [];
-  const directApiBaseUrl = getDirectApiBaseUrl();
+export async function runLandingReadinessAudit(options: RunLandingReadinessAuditOptions = {}): Promise<ReadinessAuditResult> {
+  const mode = options.mode ?? 'full';
+  const force = options.force ?? false;
 
-  const publicLandingDealsProbe = await probeDealsEndpoint(`${PUBLIC_LANDING_URL}/api/landing-deals`, 'public-landing-deals', 'Public API');
-  pushProbe(probes, publicLandingDealsProbe);
-  const publicLandingDealsBurstProbe = await probeDealsEndpointBurst(`${PUBLIC_LANDING_URL}/api/landing-deals`, 'public-landing-deals', 'Public API');
-  pushProbe(probes, publicLandingDealsBurstProbe);
-  const publicPublishedDealsProbe = await probeDealsEndpoint(`${PUBLIC_LANDING_URL}/api/published-jv-deals`, 'public-published-jv-deals', 'Public API');
-  pushProbe(probes, publicPublishedDealsProbe);
-  const publicPublishedDealsBurstProbe = await probeDealsEndpointBurst(`${PUBLIC_LANDING_URL}/api/published-jv-deals`, 'public-published-jv-deals', 'Public API');
-  pushProbe(probes, publicPublishedDealsBurstProbe);
-  const publicHealthProbe = await probeJsonHealth(`${PUBLIC_LANDING_URL}/health`, 'Public API');
-  pushProbe(probes, publicHealthProbe);
+  if (!force) {
+    const cachedResult = getCachedReadinessAudit(mode);
+    if (cachedResult) {
+      return cachedResult;
+    }
 
-  if (directApiBaseUrl) {
-    pushProbe(probes, await probeDealsEndpoint(`${directApiBaseUrl}/api/landing-deals`, 'direct-landing-deals', 'Direct API'));
-    pushProbe(probes, await probeDealsEndpointBurst(`${directApiBaseUrl}/api/landing-deals`, 'direct-landing-deals', 'Direct API'));
-
-    const directPublishedDealsProbe = normalizeSupportedDirectMirrorProbe(
-      await probeDealsEndpoint(`${directApiBaseUrl}/api/published-jv-deals`, 'direct-published-jv-deals', 'Direct API'),
-      publicPublishedDealsProbe,
-      'Published deals'
-    );
-    pushProbe(probes, directPublishedDealsProbe);
-
-    const directPublishedBurstProbe = normalizeSupportedDirectMirrorProbe(
-      await probeDealsEndpointBurst(`${directApiBaseUrl}/api/published-jv-deals`, 'direct-published-jv-deals', 'Direct API'),
-      publicPublishedDealsBurstProbe,
-      'Published deals burst validation'
-    );
-    pushProbe(probes, directPublishedBurstProbe);
-
-    const directHealthUrl = `${directApiBaseUrl}/health`;
-    const directHealthProbe = normalizeSupportedDirectMirrorProbe(
-      await probeJsonHealth(directHealthUrl, 'Direct API'),
-      publicHealthProbe,
-      'Health endpoint'
-    );
-    pushProbe(probes, directHealthProbe);
-  } else {
-    pushProbe(probes, {
-      id: 'direct-api-missing',
-      label: 'Direct API base URL',
-      status: 'fail',
-      message: 'EXPO_PUBLIC_RORK_API_BASE_URL is not configured',
-      detail: 'Cannot bypass CDN routing to verify the backend directly.',
-    });
+    const inFlightAudit = readinessAuditInFlight.get(mode);
+    if (inFlightAudit) {
+      console.log('[LandingReadinessAudit] Joining in-flight', mode, 'audit');
+      return inFlightAudit;
+    }
   }
 
-  const signupShadowProbe = await probeSignupShadowPath();
-  pushProbe(probes, signupShadowProbe);
+  const auditPromise = (async (): Promise<ReadinessAuditResult> => {
+    const probes: ReadinessProbe[] = [];
+    const directApiBaseUrl = getDirectApiBaseUrl();
 
-  const waitlistProbes = await probeWaitlistPath();
-  waitlistProbes.forEach((probe) => pushProbe(probes, probe));
+    pushProbe(probes, {
+      id: `scan-mode-${mode}`,
+      label: 'Readiness scan mode',
+      status: 'pass',
+      message: mode === 'full' ? 'Deep audit running with live write validation' : 'Lightweight read-only scan running',
+      detail: mode === 'full'
+        ? 'Burst and persistence probes are enabled for explicit backend verification.'
+        : 'Automatic health checks stay read-only and skip burst/load probes so routine scans do not hammer Supabase.',
+    });
 
-  const memberProfileProbes = await probeMemberProfilePath();
-  memberProfileProbes.forEach((probe) => pushProbe(probes, probe));
+    const publicLandingDealsProbe = await probeDealsEndpoint(`${PUBLIC_LANDING_URL}/api/landing-deals`, 'public-landing-deals', 'Public API');
+    pushProbe(probes, publicLandingDealsProbe);
+    const publicLandingDealsBurstProbe = mode === 'full'
+      ? await probeDealsEndpointBurst(`${PUBLIC_LANDING_URL}/api/landing-deals`, 'public-landing-deals', 'Public API')
+      : null;
+    if (publicLandingDealsBurstProbe) {
+      pushProbe(probes, publicLandingDealsBurstProbe);
+    }
+    const publicPublishedDealsProbe = await probeDealsEndpoint(`${PUBLIC_LANDING_URL}/api/published-jv-deals`, 'public-published-jv-deals', 'Public API');
+    pushProbe(probes, publicPublishedDealsProbe);
+    const publicPublishedDealsBurstProbe = mode === 'full'
+      ? await probeDealsEndpointBurst(`${PUBLIC_LANDING_URL}/api/published-jv-deals`, 'public-published-jv-deals', 'Public API')
+      : null;
+    if (publicPublishedDealsBurstProbe) {
+      pushProbe(probes, publicPublishedDealsBurstProbe);
+    }
+    const publicHealthProbe = await probeJsonHealth(`${PUBLIC_LANDING_URL}/health`, 'Public API');
+    pushProbe(probes, publicHealthProbe);
 
-  const concurrentWriteProbes = await probeConcurrentWritePaths();
-  concurrentWriteProbes.forEach((probe) => pushProbe(probes, probe));
+    if (directApiBaseUrl) {
+      pushProbe(probes, await probeDealsEndpoint(`${directApiBaseUrl}/api/landing-deals`, 'direct-landing-deals', 'Direct API'));
+      if (mode === 'full') {
+        pushProbe(probes, await probeDealsEndpointBurst(`${directApiBaseUrl}/api/landing-deals`, 'direct-landing-deals', 'Direct API'));
+      }
 
-  const memberProbes = await probeMemberPersistence();
-  memberProbes.forEach((probe) => pushProbe(probes, probe));
+      const directPublishedDealsProbe = normalizeSupportedDirectMirrorProbe(
+        await probeDealsEndpoint(`${directApiBaseUrl}/api/published-jv-deals`, 'direct-published-jv-deals', 'Direct API'),
+        publicPublishedDealsProbe,
+        'Published deals'
+      );
+      pushProbe(probes, directPublishedDealsProbe);
 
-  const blockingProbeCount = probes.filter((probe) => probe.status === 'fail').length;
-  const warningProbeCount = probes.filter((probe) => probe.status === 'warn').length;
-  const scaleAssessments = [
-    buildScaleAssessment(30000, probes),
-    buildScaleAssessment(1000000, probes),
-  ];
-  const scale30k = scaleAssessments[0];
-  const scale1M = scaleAssessments[1];
+      if (mode === 'full' && publicPublishedDealsBurstProbe) {
+        const directPublishedBurstProbe = normalizeSupportedDirectMirrorProbe(
+          await probeDealsEndpointBurst(`${directApiBaseUrl}/api/published-jv-deals`, 'direct-published-jv-deals', 'Direct API'),
+          publicPublishedDealsBurstProbe,
+          'Published deals burst validation'
+        );
+        pushProbe(probes, directPublishedBurstProbe);
+      }
 
-  pushProbe(probes, {
-    id: 'load-30k-proof',
-    label: '30k launch-path readiness',
-    status: scale30k.status,
-    message: scale30k.summary,
-    detail: `evidence=${scale30k.evidence} · blocking=${blockingProbeCount} · warnings=${warningProbeCount} · api_sample_size=${API_CONCURRENCY_SAMPLE_SIZE} · write_sample_size=${WRITE_CONCURRENCY_SAMPLE_SIZE}`,
+      const directHealthUrl = `${directApiBaseUrl}/health`;
+      const directHealthProbe = normalizeSupportedDirectMirrorProbe(
+        await probeJsonHealth(directHealthUrl, 'Direct API'),
+        publicHealthProbe,
+        'Health endpoint'
+      );
+      pushProbe(probes, directHealthProbe);
+    } else {
+      pushProbe(probes, {
+        id: 'direct-api-missing',
+        label: 'Direct API base URL',
+        status: 'fail',
+        message: 'EXPO_PUBLIC_RORK_API_BASE_URL is not configured',
+        detail: 'Cannot bypass CDN routing to verify the backend directly.',
+      });
+    }
+
+    if (mode === 'full') {
+      const signupShadowProbe = await probeSignupShadowPath();
+      pushProbe(probes, signupShadowProbe);
+    }
+
+    const waitlistProbes = await probeWaitlistPath(mode === 'full');
+    waitlistProbes.forEach((probe) => pushProbe(probes, probe));
+
+    if (mode === 'full') {
+      const memberProfileProbes = await probeMemberProfilePath();
+      memberProfileProbes.forEach((probe) => pushProbe(probes, probe));
+
+      const concurrentWriteProbes = await probeConcurrentWritePaths();
+      concurrentWriteProbes.forEach((probe) => pushProbe(probes, probe));
+    }
+
+    const memberProbes = await probeMemberPersistence(mode);
+    memberProbes.forEach((probe) => pushProbe(probes, probe));
+
+    const blockingProbeCount = probes.filter((probe) => probe.status === 'fail').length;
+    const warningProbeCount = probes.filter((probe) => probe.status === 'warn').length;
+    const scaleAssessments = [
+      buildScaleAssessment(30000, probes, mode),
+      buildScaleAssessment(1000000, probes, mode),
+    ];
+    const scale30k = scaleAssessments[0];
+    const scale1M = scaleAssessments[1];
+
+    if (mode === 'full') {
+      pushProbe(probes, {
+        id: 'load-30k-proof',
+        label: '30k launch-path readiness',
+        status: scale30k.status,
+        message: scale30k.summary,
+        detail: `mode=${mode} · evidence=${scale30k.evidence} · blocking=${blockingProbeCount} · warnings=${warningProbeCount} · api_sample_size=${API_CONCURRENCY_SAMPLE_SIZE} · write_sample_size=${WRITE_CONCURRENCY_SAMPLE_SIZE}`,
+      });
+
+      pushProbe(probes, {
+        id: 'load-1m-proof',
+        label: '1M scale readiness',
+        status: scale1M.status,
+        message: scale1M.summary,
+        detail: `mode=${mode} · evidence=${scale1M.evidence} · million-user saturation is not claimed from app-side probes alone`,
+      });
+    }
+
+    const overallStatus = resolveOverallStatus(probes);
+    const readyFor30k = scale30k.status === 'pass';
+    const readyFor1M = scale1M.status === 'pass';
+
+    const result: ReadinessAuditResult = {
+      mode,
+      overallStatus,
+      readyFor30k,
+      readyFor1M,
+      probes,
+      scaleAssessments,
+      blockerCount: blockingProbeCount,
+      warningCount: warningProbeCount,
+      summary: mode === 'light'
+        ? overallStatus === 'fail'
+          ? 'Read-only readiness scan found critical blockers.'
+          : overallStatus === 'warn'
+            ? 'Read-only readiness scan found issues that need review.'
+            : 'Read-only readiness scan passed. Run a full audit before making write-path scale claims.'
+        : readyFor30k
+          ? readyFor1M
+            ? '30k and 1M readiness both validated.'
+            : '30k launch-path readiness is passing. 1M is not proven yet.'
+          : overallStatus === 'fail'
+            ? 'Critical blockers remain. Do not claim 30k readiness yet.'
+            : 'Core paths are healthier, but some readiness checks still need stronger proof.',
+    };
+
+    setCachedReadinessAudit(mode, result);
+    return result;
+  })().finally(() => {
+    readinessAuditInFlight.delete(mode);
   });
 
-  pushProbe(probes, {
-    id: 'load-1m-proof',
-    label: '1M scale readiness',
-    status: scale1M.status,
-    message: scale1M.summary,
-    detail: `evidence=${scale1M.evidence} · million-user saturation is not claimed from app-side probes alone`,
-  });
-
-  const overallStatus = resolveOverallStatus(probes);
-  const readyFor30k = scale30k.status === 'pass';
-  const readyFor1M = scale1M.status === 'pass';
-
-  return {
-    overallStatus,
-    readyFor30k,
-    readyFor1M,
-    probes,
-    scaleAssessments,
-    blockerCount: blockingProbeCount,
-    warningCount: warningProbeCount,
-    summary: readyFor30k
-      ? readyFor1M
-        ? '30k and 1M readiness both validated.'
-        : '30k launch-path readiness is passing. 1M is not proven yet.'
-      : overallStatus === 'fail'
-        ? 'Critical blockers remain. Do not claim 30k readiness yet.'
-        : 'Core paths are healthier, but some readiness checks still need stronger proof.',
-  };
+  readinessAuditInFlight.set(mode, auditPromise);
+  return auditPromise;
 }

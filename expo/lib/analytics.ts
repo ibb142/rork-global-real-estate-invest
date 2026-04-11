@@ -6,6 +6,11 @@ import { scopedKey } from './project-storage';
 import { isProduction, getEnvConfig } from './environment';
 import { awsAnalyticsBackup, type AWSAnalyticsEvent } from './aws-analytics-backup';
 import { fetchPublicIpAddress } from './public-geo';
+import { landingTracker } from './landing-tracker';
+import { controlTowerEmitter } from './control-tower/event-emitter';
+import { trafficAttribution } from './control-tower/traffic-attribution';
+import type { CTModuleId, CTFlowStep } from './control-tower/types';
+import type { FrictionType, JourneyStep } from './control-tower/traffic-types';
 
 const ANALYTICS_STORAGE_KEY = scopedKey('analytics');
 const SESSION_STORAGE_KEY = scopedKey('session');
@@ -58,6 +63,176 @@ export interface AnalyticsStats {
   topEvents: { name: string; count: number }[];
   errorRate: number;
   conversionEvents: number;
+}
+
+function sanitizeControlTowerMetadata(properties?: Record<string, unknown>): Record<string, string | number | boolean> {
+  const metadata: Record<string, string | number | boolean> = {};
+
+  if (!properties) {
+    return metadata;
+  }
+
+  for (const [key, value] of Object.entries(properties)) {
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+      metadata[key] = value;
+      continue;
+    }
+
+    if (value !== null && value !== undefined) {
+      try {
+        metadata[key] = JSON.stringify(value).slice(0, 180);
+      } catch {
+      }
+    }
+  }
+
+  return metadata;
+}
+
+function getTrafficSessionId(fallbackSessionId: string): string {
+  const landingSessionId = landingTracker.getSessionId();
+  return landingSessionId || fallbackSessionId;
+}
+
+function mapScreenToModule(screenName: string): CTModuleId {
+  const screen = screenName.toLowerCase();
+
+  if (screen.includes('chat')) return 'chat';
+  if (screen.includes('portfolio')) return 'portfolio';
+  if (screen.includes('market')) return 'market';
+  if (screen.includes('invest')) return 'invest';
+  if (screen.includes('analytics')) return 'analytics';
+  if (screen.includes('admin')) return 'admin_dashboard';
+  if (screen.includes('settings')) return 'settings';
+  if (screen.includes('profile') || screen.includes('login') || screen.includes('sign') || screen.includes('auth') || screen.includes('owner_access')) {
+    return 'profile';
+  }
+
+  return 'home';
+}
+
+function mapModuleToFlowStep(moduleId: CTModuleId): CTFlowStep | undefined {
+  switch (moduleId) {
+    case 'chat':
+      return 'chat_room_open';
+    case 'invest':
+      return 'payment_step';
+    case 'market':
+      return 'detail_view';
+    case 'home':
+      return 'browsing';
+    default:
+      return undefined;
+  }
+}
+
+function mapModuleToJourneyStep(moduleId: CTModuleId): JourneyStep | null {
+  switch (moduleId) {
+    case 'chat':
+      return 'chat_entry';
+    case 'portfolio':
+      return 'portfolio_view';
+    case 'invest':
+      return 'invest_flow';
+    case 'market':
+    case 'home':
+      return 'deal_browse';
+    default:
+      return null;
+  }
+}
+
+function mapErrorToFriction(errorText: string): FrictionType | null {
+  if (errorText.includes('auth')) return 'auth_failure';
+  if (errorText.includes('upload')) return 'upload_failure';
+  if (errorText.includes('chat')) return 'chat_degradation';
+  if (errorText.includes('invest')) return 'invest_stall';
+  if (errorText.includes('handoff')) return 'handoff_failure';
+  if (errorText.includes('api')) return 'api_failure';
+  return null;
+}
+
+function bridgeTrafficAnalyticsEvent(event: AnalyticsEvent): void {
+  const trafficSessionId = getTrafficSessionId(event.sessionId);
+  const properties = event.properties || {};
+
+  try {
+    trafficAttribution.trackSession({
+      sessionId: trafficSessionId,
+      utmSource: typeof properties.utm_source === 'string' ? properties.utm_source : undefined,
+      utmMedium: typeof properties.utm_medium === 'string' ? properties.utm_medium : undefined,
+      utmCampaign: typeof properties.utm_campaign === 'string' ? properties.utm_campaign : undefined,
+      referrer: typeof properties.referrer === 'string' ? properties.referrer : undefined,
+      campaignId: typeof properties.campaign_id === 'string' ? properties.campaign_id : undefined,
+      deepLinkSource: typeof properties.deep_link_source === 'string' ? properties.deep_link_source : undefined,
+      userAgent: Platform.OS === 'web' ? (typeof navigator !== 'undefined' ? navigator.userAgent : 'web') : Platform.OS,
+      metadata: properties,
+    });
+
+    const metadata = sanitizeControlTowerMetadata(properties);
+
+    if (event.name === 'app_open') {
+      trafficAttribution.updateStep(trafficSessionId, 'app_opened', properties);
+      controlTowerEmitter.emit('handoff_to_app', 'landing', trafficSessionId, {
+        step: 'handoff_to_app_succeeded',
+        metadata,
+      });
+      controlTowerEmitter.emit('enter_module', 'home', trafficSessionId, {
+        step: 'browsing',
+        metadata,
+      });
+      return;
+    }
+
+    if (event.name === 'screen_view' && typeof properties.screen === 'string') {
+      const moduleId = mapScreenToModule(properties.screen);
+      const flowStep = mapModuleToFlowStep(moduleId);
+      controlTowerEmitter.emit('enter_module', moduleId, trafficSessionId, {
+        step: flowStep,
+        metadata: {
+          ...metadata,
+          screen: properties.screen,
+        },
+      });
+
+      trafficAttribution.updateStep(trafficSessionId, 'first_module', properties);
+
+      const journeyStep = mapModuleToJourneyStep(moduleId);
+      if (journeyStep) {
+        trafficAttribution.updateStep(trafficSessionId, journeyStep, properties);
+      }
+
+      const lowerScreen = properties.screen.toLowerCase();
+      if (lowerScreen.includes('login') || lowerScreen.includes('signup') || lowerScreen.includes('auth')) {
+        trafficAttribution.updateStep(trafficSessionId, 'auth_signup', properties);
+      }
+      return;
+    }
+
+    if (event.name.startsWith('conversion_')) {
+      const lowerName = event.name.toLowerCase();
+      if (lowerName.includes('signup') || lowerName.includes('auth')) {
+        trafficAttribution.updateStep(trafficSessionId, 'auth_signup', properties);
+      }
+      if (lowerName.includes('invest')) {
+        trafficAttribution.updateStep(trafficSessionId, 'invest_flow', properties);
+      }
+      if (lowerName.includes('portfolio')) {
+        trafficAttribution.updateStep(trafficSessionId, 'portfolio_view', properties);
+      }
+      return;
+    }
+
+    if (event.name === 'error') {
+      const errorText = `${String(properties.errorName ?? '')} ${String(properties.errorMessage ?? '')}`.toLowerCase();
+      const friction = mapErrorToFriction(errorText);
+      if (friction) {
+        trafficAttribution.recordFriction(trafficSessionId, friction);
+      }
+    }
+  } catch (error) {
+    console.log('[Analytics] Traffic bridge error:', (error as Error)?.message);
+  }
 }
 
 class AnalyticsService {
@@ -514,6 +689,8 @@ class AnalyticsService {
       sessionId: this.sessionId,
       platform: Platform.OS,
     };
+
+    bridgeTrafficAnalyticsEvent(event);
 
     this.eventQueue.push(event);
     this.supabasePendingQueue.push(event);

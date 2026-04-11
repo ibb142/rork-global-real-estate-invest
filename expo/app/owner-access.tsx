@@ -20,6 +20,7 @@ import {
   XCircle,
   ScanLine,
   LayoutGrid,
+  MessageSquareText,
   LockKeyhole,
   Fingerprint,
   RefreshCw,
@@ -30,6 +31,22 @@ import Colors from '@/constants/colors';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
 import { validateEmail } from '@/lib/auth-helpers';
+import { getPasswordResetRedirectUrl } from '@/lib/auth-password-recovery';
+import {
+  buildRepairIssueItems,
+  fetchOwnerRepairReadiness,
+  getOwnerRepairReadiness,
+  type OwnerRepairReadiness,
+  type RepairIssueItem,
+} from '@/lib/owner-repair-readiness';
+import {
+  getAdminAccessLockFixUpdate,
+  getAdminAccessLockHonestStatus,
+  getAdminAccessLockMessage,
+  getAdminAccessLockNextStep,
+  isAdminAccessLocked,
+} from '@/lib/admin-access-lock';
+import { getOpenAccessModeMessage, isOpenAccessModeEnabled } from '@/lib/open-access';
 
 interface AccessRouteCard {
   id: string;
@@ -64,6 +81,12 @@ interface HonestStatusItem {
   tone: string;
 }
 
+interface DirectAnswerItem {
+  id: string;
+  title: string;
+  detail: string;
+}
+
 const ACCESS_ROUTES: AccessRouteCard[] = [
   {
     id: 'owner-session',
@@ -94,30 +117,100 @@ const ACCESS_ROUTES: AccessRouteCard[] = [
   },
 ];
 
+function formatAuthoritySource(source: string | null | undefined): string {
+  switch (source) {
+    case 'profiles':
+      return 'Profiles table';
+    case 'rpc_get_user_role':
+      return 'get_user_role RPC';
+    case 'rpc_verify_admin_access':
+      return 'verify_admin_access RPC';
+    case 'trusted_device':
+      return 'Trusted-device fallback';
+    case 'owner_ip_access':
+      return 'Trusted owner session';
+    case 'local_session':
+      return 'Local session state';
+    case 'not_authenticated':
+      return 'No active session';
+    case 'fallback':
+      return 'Fallback';
+    default:
+      return 'Unknown source';
+  }
+}
+
+function formatIdentityVerdict(status: string | null | undefined): string {
+  switch (status) {
+    case 'verified_owner_authority':
+      return 'Verified owner authority';
+    case 'trusted_device_owner_authority':
+      return 'Trusted-device owner authority';
+    case 'normal_user_account':
+      return 'Normal user account only';
+    case 'email_mismatch':
+      return 'Email mismatch';
+    default:
+      return 'Unverified';
+  }
+}
+
 export default function OwnerAccessScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ email?: string; source?: string }>();
   const auth = useAuth();
+  const openAccessMode = isOpenAccessModeEnabled();
+  const openAccessMessage = getOpenAccessModeMessage();
+  const adminAccessLocked = isAdminAccessLocked();
+  const adminAccessLockMessage = getAdminAccessLockMessage();
+  const adminAccessLockHonestStatus = getAdminAccessLockHonestStatus();
+  const adminAccessLockFixUpdate = getAdminAccessLockFixUpdate();
+  const adminAccessLockNextStep = getAdminAccessLockNextStep();
 
   const carriedEmail = useMemo(() => {
     const rawEmail = typeof params.email === 'string' ? params.email.trim().toLowerCase() : '';
     return rawEmail;
   }, [params.email]);
+
+  React.useEffect(() => {
+    if (!openAccessMode) {
+      return;
+    }
+
+    console.log('[OwnerAccessHub] Open access mode active — bypassing owner access screen');
+    router.replace('/(tabs)' as any);
+  }, [openAccessMode, router]);
   const recoverySource = typeof params.source === 'string' ? params.source : 'direct';
+  const requestedOwnerEmail = useMemo(() => carriedEmail || auth.user?.email || '', [auth.user?.email, carriedEmail]);
 
   const ownerAuditQuery = useQuery({
-    queryKey: ['owner-access-audit-hub'],
-    queryFn: auth.auditOwnerDirectAccess,
+    queryKey: ['owner-access-audit-hub', requestedOwnerEmail],
+    queryFn: () => auth.auditOwnerDirectAccess(requestedOwnerEmail || undefined),
     staleTime: 10000,
     refetchOnWindowFocus: true,
+    enabled: !openAccessMode,
   });
+  const ownerIdentityAuditQuery = useQuery({
+    queryKey: ['owner-identity-audit-hub', requestedOwnerEmail, auth.user?.id ?? 'anon', auth.userRole, auth.isOwnerIPAccess],
+    queryFn: () => auth.auditOwnerIdentity(requestedOwnerEmail || undefined),
+    staleTime: 10000,
+    refetchOnWindowFocus: true,
+    enabled: !openAccessMode,
+  });
+  const effectiveOwnerEmail = useMemo(() => {
+    if (ownerAuditQuery.data?.emailMismatch && ownerAuditQuery.data.verifiedEmail) {
+      return ownerAuditQuery.data.verifiedEmail;
+    }
+    return requestedOwnerEmail;
+  }, [ownerAuditQuery.data?.emailMismatch, ownerAuditQuery.data?.verifiedEmail, requestedOwnerEmail]);
 
   const ownerRestoreMutation = useMutation({
-    mutationFn: auth.ownerDirectAccess,
+    mutationFn: () => auth.ownerDirectAccess(effectiveOwnerEmail || undefined),
     onSuccess: (result) => {
       console.log('[OwnerAccessHub] Trusted owner restore result:', result.success, result.message);
       if (result.success) {
         void ownerAuditQuery.refetch();
+        void ownerIdentityAuditQuery.refetch();
         router.replace('/(tabs)' as any);
         return;
       }
@@ -130,11 +223,12 @@ export default function OwnerAccessScreen() {
   });
 
   const forceVerifyMutation = useMutation({
-    mutationFn: auth.activateOwnerAccess,
+    mutationFn: () => auth.activateOwnerAccess(effectiveOwnerEmail || undefined),
     onSuccess: (result) => {
       console.log('[OwnerAccessHub] Force verify result:', result.success, result.message);
       if (result.success) {
         void ownerAuditQuery.refetch();
+        void ownerIdentityAuditQuery.refetch();
         Alert.alert('Device Verified', result.message + '\n\nYour current network is now the trusted owner network. Trusted restore will work from here.');
       } else {
         Alert.alert('Verification Failed', result.message);
@@ -147,7 +241,7 @@ export default function OwnerAccessScreen() {
 
   const claimOwnerMutation = useMutation({
     mutationFn: async () => {
-      const ownerEmail = carriedEmail || auth.user?.email || 'owner@ivxholding.com';
+      const ownerEmail = effectiveOwnerEmail || auth.user?.email || '';
       console.log('[OwnerAccessHub] Claiming owner device for:', ownerEmail);
       const result = await auth.claimOwnerDevice(ownerEmail);
       if (!result.success) {
@@ -158,9 +252,10 @@ export default function OwnerAccessScreen() {
     onSuccess: (result) => {
       console.log('[OwnerAccessHub] Owner device claimed:', result.message);
       void ownerAuditQuery.refetch();
+      void ownerIdentityAuditQuery.refetch();
       Alert.alert(
-        'Owner Access Activated',
-        result.message + '\n\nYou now have full owner access. This device is registered as your trusted owner device.',
+        'Trusted Device Verified',
+        result.message + '\n\nThis device is now registered for trusted owner recovery.',
         [{ text: 'Open Full App', onPress: () => router.replace('/(tabs)' as any) }]
       );
     },
@@ -171,13 +266,15 @@ export default function OwnerAccessScreen() {
 
   const ownerPasswordResetMutation = useMutation({
     mutationFn: async () => {
-      const targetEmail = carriedEmail || auth.user?.email || '';
+      const targetEmail = effectiveOwnerEmail || auth.user?.email || '';
       const normalizedEmail = targetEmail.trim().toLowerCase();
       if (!validateEmail(normalizedEmail)) {
         throw new Error('A valid owner email is required before sending a password reset link.');
       }
+      const redirectTo = getPasswordResetRedirectUrl();
+      console.log('[OwnerAccessHub] Sending owner password reset to:', normalizedEmail, 'redirect:', redirectTo);
       const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
-        redirectTo: 'https://ivxholding.com/reset-password',
+        redirectTo,
       });
       if (error) {
         throw new Error(error.message || 'Failed to send password reset email.');
@@ -194,6 +291,7 @@ export default function OwnerAccessScreen() {
 
   const hasLiveOwnerControl = auth.isAuthenticated && auth.isAdmin;
   const audit = ownerAuditQuery.data;
+  const identityAudit = ownerIdentityAuditQuery.data;
   const trustedReady = audit?.eligible ?? false;
   const trustedIdentity = audit?.currentIP ?? auth.detectedIP ?? 'Detecting…';
   const verifiedIdentity = audit?.storedIP ?? 'Not stored';
@@ -211,15 +309,19 @@ export default function OwnerAccessScreen() {
     : auth.isAuthenticated
       ? `Signed in · ${auth.userRole}`
       : 'Not active';
-  const ownerSigninCta = auth.isAuthenticated ? 'Open full app' : carriedEmail ? 'Sign in with owner email' : 'Open sign in';
+  const ownerSigninCta = auth.isAuthenticated ? 'Open full app' : effectiveOwnerEmail ? 'Sign in with owner email' : 'Open sign in';
   const ownerSigninDetail = auth.isAuthenticated
     ? 'Your owner session is already active. Open the full app now.'
-    : carriedEmail
-      ? `Use ${carriedEmail} on the sign-in screen. No new signup is needed.`
-      : 'Use your verified owner email and password. No new signup is needed.';
+    : audit?.emailMismatch && audit.verifiedEmail
+      ? `Use ${audit.verifiedEmail} on the sign-in screen. The carried email did not match the verified owner authority saved on this device.`
+      : effectiveOwnerEmail
+        ? `Use ${effectiveOwnerEmail} on the sign-in screen. No new signup is needed.`
+        : 'Use your verified owner email and password. No new signup is needed.';
   const ownerSigninDescription = auth.isAuthenticated
     ? 'Your verified owner session is already active for full app access.'
-    : 'Use your verified owner email and password for full app access.';
+    : audit?.emailMismatch
+      ? 'Use the verified owner email saved on this trusted device for full app access.'
+      : 'Use your verified owner email and password for full app access.';
   const ownerSessionTone = hasLiveOwnerControl
     ? Colors.success
     : auth.isAuthenticated
@@ -228,16 +330,31 @@ export default function OwnerAccessScreen() {
 
   const trustedStatusText = trustedReady
     ? 'Ready now'
-    : subnetMatch
-      ? 'Subnet match'
-      : audit?.ownerDeviceVerified
-        ? 'IP changed'
-        : 'Not verified';
+    : audit?.emailMismatch
+      ? 'Email mismatch'
+      : subnetMatch
+        ? 'Subnet match'
+        : audit?.ownerDeviceVerified
+          ? 'IP changed'
+          : 'Not verified';
   const trustedStatusColor = trustedReady
     ? Colors.success
-    : subnetMatch
-      ? '#F59E0B'
-      : '#EF4444';
+    : audit?.emailMismatch
+      ? '#EF4444'
+      : subnetMatch
+        ? '#F59E0B'
+        : '#EF4444';
+  const ownerRepairReadinessQuery = useQuery<OwnerRepairReadiness>({
+    queryKey: ['owner-repair-readiness'],
+    queryFn: fetchOwnerRepairReadiness,
+    staleTime: 60000,
+    enabled: !openAccessMode,
+  });
+  const ownerRepairReadiness = ownerRepairReadinessQuery.data ?? getOwnerRepairReadiness();
+  const repairIssueItems = useMemo<RepairIssueItem[]>(() => buildRepairIssueItems(ownerRepairReadiness), [ownerRepairReadiness]);
+  const criticalRepairIssues = useMemo<RepairIssueItem[]>(() => repairIssueItems.filter((item) => item.tone === 'critical'), [repairIssueItems]);
+  const warningRepairIssues = useMemo<RepairIssueItem[]>(() => repairIssueItems.filter((item) => item.tone === 'warning'), [repairIssueItems]);
+  const successRepairIssues = useMemo<RepairIssueItem[]>(() => repairIssueItems.filter((item) => item.tone === 'success'), [repairIssueItems]);
 
   const handleRoutePress = useCallback((mode: AccessRouteCard['mode']) => {
     console.log('[OwnerAccessHub] Route requested:', mode, 'auth:', auth.isAuthenticated, 'role:', auth.userRole);
@@ -248,7 +365,7 @@ export default function OwnerAccessScreen() {
       }
       router.push({
         pathname: '/login',
-        params: carriedEmail ? { email: carriedEmail } : undefined,
+        params: effectiveOwnerEmail ? { email: effectiveOwnerEmail } : undefined,
       } as any);
       return;
     }
@@ -268,7 +385,7 @@ export default function OwnerAccessScreen() {
       pathname: '/login',
       params: carriedEmail ? { email: carriedEmail } : undefined,
     } as any);
-  }, [auth.isAuthenticated, auth.userRole, carriedEmail, hasLiveOwnerControl, ownerRestoreMutation, router]);
+  }, [auth.isAuthenticated, auth.userRole, effectiveOwnerEmail, hasLiveOwnerControl, ownerRestoreMutation, router]);
 
   const handleForceVerify = useCallback(() => {
     if (!auth.isAuthenticated) {
@@ -281,7 +398,7 @@ export default function OwnerAccessScreen() {
             text: 'Sign In',
             onPress: () => router.push({
               pathname: '/login',
-              params: carriedEmail ? { email: carriedEmail } : undefined,
+              params: effectiveOwnerEmail ? { email: effectiveOwnerEmail } : undefined,
             } as any),
           },
         ]
@@ -302,7 +419,31 @@ export default function OwnerAccessScreen() {
         { text: 'Verify Now', onPress: () => forceVerifyMutation.mutate() },
       ]
     );
-  }, [auth.isAuthenticated, auth.isAdmin, carriedEmail, trustedIdentity, forceVerifyMutation, router]);
+  }, [auth.isAuthenticated, auth.isAdmin, effectiveOwnerEmail, trustedIdentity, forceVerifyMutation, router]);
+
+  const handleClaimOwnerPress = useCallback(() => {
+    if (!auth.isAuthenticated) {
+      router.push({
+        pathname: '/login',
+        params: effectiveOwnerEmail ? { email: effectiveOwnerEmail } : undefined,
+      } as any);
+      return;
+    }
+
+    if (!auth.isAdmin) {
+      Alert.alert('Owner Sign-In Required', 'Sign in with your verified owner account, then verify this device in Owner Controls.');
+      return;
+    }
+
+    Alert.alert(
+      'Verify This Device',
+      `This will register your current network (${trustedIdentity}) as the trusted owner device after your verified owner sign-in.\n\nTrusted restore will work from this device next time.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Verify Now', onPress: () => claimOwnerMutation.mutate() },
+      ]
+    );
+  }, [auth.isAdmin, auth.isAuthenticated, effectiveOwnerEmail, claimOwnerMutation, router, trustedIdentity]);
 
   const quickActions = useMemo<QuickActionCard[]>(() => {
     if (!hasLiveOwnerControl && !auth.isOwnerIPAccess) {
@@ -329,6 +470,24 @@ export default function OwnerAccessScreen() {
         testID: 'owner-access-open-admin-hq',
       },
       {
+        id: 'ivx-owner-room',
+        title: 'Open IVX Owner room',
+        subtitle: 'Live shared owner AI chat and backend capability proof',
+        accent: '#FF9F43',
+        icon: MessageSquareText,
+        onPress: () => router.push('/admin/chat-room?conversationId=ivx-owner-room&title=IVX%20Owner%20AI%20Room' as any),
+        testID: 'owner-access-open-ivx-owner-room',
+      },
+      {
+        id: 'deploy-proof',
+        title: 'Open deploy proof',
+        subtitle: 'GitHub, AWS, and landing pipeline diagnostics',
+        accent: '#38BDF8',
+        icon: ScanLine,
+        onPress: () => router.push('/admin/sync-diagnostics' as any),
+        testID: 'owner-access-open-deploy-proof',
+      },
+      {
         id: 'owner-controls',
         title: 'Open Owner Controls',
         subtitle: 'Verify or rotate trusted device access',
@@ -340,10 +499,63 @@ export default function OwnerAccessScreen() {
     ];
   }, [auth.isOwnerIPAccess, hasLiveOwnerControl, router]);
 
+  const identityVerdictTone = identityAudit?.status === 'verified_owner_authority' || identityAudit?.status === 'trusted_device_owner_authority'
+    ? Colors.success
+    : identityAudit?.status === 'normal_user_account'
+      ? '#F59E0B'
+      : '#EF4444';
   const overallHealthy = hasLiveOwnerControl || auth.isOwnerIPAccess || trustedReady;
+  const lockUpdateItems = useMemo<DirectAnswerItem[]>(() => {
+    return [
+      {
+        id: 'fix-update',
+        title: 'What is already in place',
+        detail: adminAccessLockFixUpdate,
+      },
+      {
+        id: 'honest-lock-status',
+        title: 'What is still blocking you',
+        detail: adminAccessLockHonestStatus,
+      },
+      {
+        id: 'next-step',
+        title: 'What must happen next',
+        detail: adminAccessLockNextStep,
+      },
+    ];
+  }, [adminAccessLockFixUpdate, adminAccessLockHonestStatus, adminAccessLockNextStep]);
+  const directAnswerItems = useMemo<DirectAnswerItem[]>(() => {
+    const resetTargetLabel = effectiveOwnerEmail || 'your verified owner email';
+
+    return [
+      {
+        id: 'service-role-answer',
+        title: 'Why the server repair key came up',
+        detail: ownerRepairReadiness.hasRealServiceRole
+          ? 'That key is only for backend-only inspection or repair of an existing owner auth user. Your normal owner email/password sign-in still stays separate.'
+          : 'That key is only for backend-only inspection or repair of an existing owner auth user. It did not cause the password rejection on this screen.',
+      },
+      {
+        id: 'remove-login-answer',
+        title: 'Why admin login is not removed',
+        detail: 'The app cannot safely drop owner verification on a new or untrusted device. Full admin access still requires either a verified owner sign-in or a previously trusted-device restore.',
+      },
+      {
+        id: 'fastest-path-answer',
+        title: 'Fastest safe path now',
+        detail: trustedReady
+          ? 'This device is already trusted. Use restore now and you can open the full app immediately.'
+          : `If the current password is wrong or unknown, send a reset link to ${resetTargetLabel}, set a new password, sign in once, then verify this device again.`,
+      },
+    ];
+  }, [effectiveOwnerEmail, ownerRepairReadiness.hasRealServiceRole, trustedReady]);
 
   const honestStatusItems = useMemo<HonestStatusItem[]>(() => {
-    const ownerEmailValue = carriedEmail || auth.user?.email || 'Not detected on this screen';
+    const ownerEmailValue = carriedEmail
+      ? `Carried from ${recoverySource}: ${carriedEmail}`
+      : auth.user?.email
+        ? `Signed-in session: ${auth.user.email}`
+        : 'No owner email was carried into this screen yet. Open Sign In with your owner email first.';
     const signinValue = hasLiveOwnerControl
       ? 'Signed in and verified'
       : auth.isAuthenticated
@@ -351,21 +563,27 @@ export default function OwnerAccessScreen() {
         : 'Not signed in';
     const trustedValue = trustedReady
       ? 'Trusted restore is available now'
-      : audit?.ownerDeviceVerified
-        ? 'This device was verified before, but current restore conditions are not passing'
-        : 'This device has not been verified for trusted restore yet';
+      : audit?.emailMismatch && audit.verifiedEmail
+        ? `The carried email does not match the verified owner email saved on this device (${audit.verifiedEmail}).`
+        : audit?.ownerDeviceVerified
+          ? 'This device was verified before, but current restore conditions are not passing'
+          : 'This device has not been verified for trusted restore yet';
     const nextActionValue = trustedReady
       ? 'Tap Restore trusted access below'
-      : auth.isAuthenticated && auth.isAdmin
-        ? 'Tap Verify this device now'
-        : 'Use your owner email and password once, then verify this device in Owner Controls';
+      : audit?.emailMismatch && audit.verifiedEmail
+        ? `Use ${audit.verifiedEmail} on Sign In, or sign in live and verify this device again.`
+        : auth.isAuthenticated && auth.isAdmin
+          ? 'Tap Verify this device now'
+          : !ownerRepairReadiness.hasRealServiceRole
+            ? 'Your normal owner sign-in does not use the server repair key. If the real password is unknown or keeps getting rejected, use password reset now because backend admin repair stays unavailable until the server service-role key is real and different from anon.'
+            : 'Use your owner email and password once, then verify this device in Owner Controls';
 
     return [
       {
         id: 'owner-email',
-        label: 'Owner email',
+        label: 'Email evidence',
         value: ownerEmailValue,
-        tone: Colors.primary,
+        tone: carriedEmail || auth.user?.email ? Colors.primary : '#F59E0B',
       },
       {
         id: 'signin-state',
@@ -386,9 +604,169 @@ export default function OwnerAccessScreen() {
         tone: Colors.text,
       },
     ];
-  }, [audit?.ownerDeviceVerified, auth.isAdmin, auth.isAuthenticated, auth.user?.email, carriedEmail, hasLiveOwnerControl, trustedReady]);
+  }, [audit?.emailMismatch, audit?.ownerDeviceVerified, audit?.verifiedEmail, auth.isAdmin, auth.isAuthenticated, auth.user?.email, carriedEmail, hasLiveOwnerControl, ownerRepairReadiness.hasRealServiceRole, recoverySource, trustedReady]);
+
+  const identityEvidenceItems = useMemo<HonestStatusItem[]>(() => {
+    if (!identityAudit) {
+      return [];
+    }
+
+    const authenticatedAuthorityValue = identityAudit.authenticatedEmail
+      ? `${identityAudit.authenticatedRole || 'unknown'} via ${formatAuthoritySource(identityAudit.authenticatedRoleSource)}`
+      : 'No active authenticated session';
+    const trustedAuthorityValue = identityAudit.trustedDeviceVerified
+      ? `${identityAudit.trustedDeviceVerifiedRole || 'unknown'} · ${identityAudit.trustedDeviceWindowActive ? 'window active' : 'window expired'}`
+      : 'No trusted-device owner verification saved';
+
+    return [
+      {
+        id: 'identity-requested-email',
+        label: 'Audited email',
+        value: identityAudit.requestedEmail || 'Missing',
+        tone: identityAudit.requestedEmail ? Colors.primary : '#F59E0B',
+      },
+      {
+        id: 'identity-authenticated-email',
+        label: 'Authenticated session email',
+        value: identityAudit.authenticatedEmail || 'No active session',
+        tone: identityAudit.matchesAuthenticatedEmail ? Colors.success : identityAudit.authenticatedEmail ? '#F59E0B' : '#EF4444',
+      },
+      {
+        id: 'identity-authenticated-authority',
+        label: 'Authenticated authority',
+        value: authenticatedAuthorityValue,
+        tone: identityAudit.authenticatedAuthorityIsAdmin ? Colors.success : identityAudit.authenticatedEmail ? '#F59E0B' : '#EF4444',
+      },
+      {
+        id: 'identity-trusted-email',
+        label: 'Trusted-device owner email',
+        value: identityAudit.trustedDeviceVerifiedEmail || 'Missing',
+        tone: identityAudit.matchesTrustedDeviceEmail ? Colors.success : identityAudit.trustedDeviceVerifiedEmail ? '#F59E0B' : '#EF4444',
+      },
+      {
+        id: 'identity-trusted-authority',
+        label: 'Trusted-device authority',
+        value: trustedAuthorityValue,
+        tone: identityAudit.trustedDeviceAuthorityIsAdmin ? Colors.success : identityAudit.trustedDeviceVerified ? '#F59E0B' : '#EF4444',
+      },
+      {
+        id: 'identity-verdict',
+        label: 'Identity verdict',
+        value: formatIdentityVerdict(identityAudit.status),
+        tone: identityVerdictTone,
+      },
+    ];
+  }, [identityAudit, identityVerdictTone]);
+
+  const auditEvidenceItems = useMemo<HonestStatusItem[]>(() => {
+    if (!audit) {
+      return [];
+    }
+
+    const verifiedAtValue = audit.verifiedAt
+      ? new Date(audit.verifiedAt).toLocaleString()
+      : 'Missing';
+
+    return [
+      {
+        id: 'carried-email',
+        label: 'Carried email',
+        value: carriedEmail || 'None',
+        tone: carriedEmail ? Colors.primary : '#F59E0B',
+      },
+      {
+        id: 'session-email',
+        label: 'Authenticated email',
+        value: auth.user?.email || 'No active authenticated session email',
+        tone: auth.user?.email ? Colors.primary : '#F59E0B',
+      },
+      {
+        id: 'verified-email',
+        label: 'Verified owner email',
+        value: audit.verifiedEmail || 'Missing',
+        tone: audit.verifiedEmail ? Colors.success : '#F59E0B',
+      },
+      {
+        id: 'email-check',
+        label: 'Email authority check',
+        value: audit.emailCheckPassed ? 'Pass' : 'Mismatch',
+        tone: audit.emailCheckPassed ? Colors.success : '#EF4444',
+      },
+      {
+        id: 'trusted-mode',
+        label: 'Trusted mode',
+        value: audit.ipEnabled ? 'Enabled' : 'Disabled',
+        tone: audit.ipEnabled ? Colors.success : '#EF4444',
+      },
+      {
+        id: 'device-verified',
+        label: 'Device verified',
+        value: audit.ownerDeviceVerified ? 'Yes' : 'No',
+        tone: audit.ownerDeviceVerified ? Colors.success : '#EF4444',
+      },
+      {
+        id: 'verified-user-id',
+        label: 'Verified owner id',
+        value: audit.verifiedUserId || 'Missing',
+        tone: audit.hasValidTrustedIdentity ? Colors.success : '#EF4444',
+      },
+      {
+        id: 'verified-role',
+        label: 'Verified role',
+        value: audit.verifiedRole || 'Missing',
+        tone: audit.verifiedRole ? Colors.primary : '#EF4444',
+      },
+      {
+        id: 'verified-at',
+        label: 'Verified at',
+        value: verifiedAtValue,
+        tone: audit.trustedDeviceWindowActive ? Colors.success : '#F59E0B',
+      },
+      {
+        id: 'exact-match',
+        label: 'Exact network match',
+        value: audit.exactIPMatch ? 'Pass' : 'No',
+        tone: audit.exactIPMatch ? Colors.success : '#EF4444',
+      },
+      {
+        id: 'subnet-match',
+        label: 'Carrier subnet match',
+        value: audit.subnetMatch ? 'Pass' : 'No',
+        tone: audit.subnetMatch ? Colors.success : '#F59E0B',
+      },
+      {
+        id: 'access-path',
+        label: 'Restore path',
+        value: audit.accessPath,
+        tone: audit.eligible ? Colors.success : Colors.textSecondary,
+      },
+    ];
+  }, [audit, auth.user?.email, carriedEmail]);
+
+  const auditBlockers = useMemo<string[]>(() => {
+    if (!audit || audit.eligible) {
+      return [];
+    }
+
+    return audit.blockingReasons.length > 0 ? audit.blockingReasons : [audit.message];
+  }, [audit]);
 
   const nextSteps = useMemo<NextStepItem[]>(() => {
+    if (adminAccessLocked) {
+      return [
+        {
+          id: 'owner-only-lock',
+          title: 'Owner-only admin lock is active',
+          detail: adminAccessLockMessage,
+        },
+        {
+          id: 'use-owner-email',
+          title: effectiveOwnerEmail ? `Use ${effectiveOwnerEmail} on Sign In` : 'Use your configured owner email on Sign In',
+          detail: 'This temporary lock only allows the configured owner email to keep admin access while testing.',
+        },
+      ];
+    }
+
     if (hasLiveOwnerControl) {
       return [
         {
@@ -421,10 +799,25 @@ export default function OwnerAccessScreen() {
       ];
     }
 
+    if (audit?.emailMismatch && audit.verifiedEmail) {
+      return [
+        {
+          id: 'use-verified-email',
+          title: `Use ${audit.verifiedEmail} on Sign In`,
+          detail: 'The carried email does not match the trusted owner authority saved on this device.',
+        },
+        {
+          id: 'reverify-after-login',
+          title: 'After sign-in, verify this device again if needed',
+          detail: 'That keeps the trusted-device authority aligned to the real owner account you control.',
+        },
+      ];
+    }
+
     return [
       {
         id: 'signin-owner',
-        title: 'Use your owner email + password',
+        title: effectiveOwnerEmail ? `Use ${effectiveOwnerEmail} + your owner password` : 'Use your owner email + password',
         detail: 'Owner access starts with your existing sign-in. Do not create a new public account.',
       },
       {
@@ -433,7 +826,81 @@ export default function OwnerAccessScreen() {
         detail: 'That saves this phone/network for trusted owner recovery next time.',
       },
     ];
-  }, [audit?.ownerDeviceVerified, hasLiveOwnerControl, trustedReady]);
+  }, [adminAccessLockMessage, adminAccessLocked, audit?.emailMismatch, audit?.ownerDeviceVerified, audit?.verifiedEmail, effectiveOwnerEmail, hasLiveOwnerControl, trustedReady]);
+
+  if (openAccessMode) {
+    return (
+      <View style={styles.root}>
+        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} testID="owner-access-screen">
+          <View style={[styles.heroCard, styles.heroCardActive]}>
+            <View style={[styles.heroIconWrap, { backgroundColor: '#22C55E' }]}>
+              <ShieldCheck size={22} color="#000" />
+            </View>
+            <Text style={styles.eyebrow}>OPEN ACCESS ACTIVE</Text>
+            <Text style={styles.title}>Owner gate is bypassed</Text>
+            <Text style={styles.subtitle}>{openAccessMessage}</Text>
+          </View>
+
+          <View style={styles.directAnswerCard} testID="owner-access-open-access-card">
+            <Text style={styles.directAnswerTitle}>Direct access</Text>
+            <Text style={styles.directAnswerSubtitle}>This build no longer needs the owner recovery flow before opening the project.</Text>
+            <View style={styles.directAnswerList}>
+              <View style={styles.directAnswerRow}>
+                <View style={styles.directAnswerIndexWrap}>
+                  <Text style={styles.directAnswerIndex}>1</Text>
+                </View>
+                <View style={styles.directAnswerBody}>
+                  <Text style={styles.directAnswerRowTitle}>Open the workspace now</Text>
+                  <Text style={styles.directAnswerRowDetail}>The app bypasses login and owner-only gating while emergency access recovery stays enabled.</Text>
+                </View>
+              </View>
+              <View style={styles.directAnswerRow}>
+                <View style={styles.directAnswerIndexWrap}>
+                  <Text style={styles.directAnswerIndex}>2</Text>
+                </View>
+                <View style={styles.directAnswerBody}>
+                  <Text style={styles.directAnswerRowTitle}>Admin routes stay open</Text>
+                  <Text style={styles.directAnswerRowDetail}>You can open Admin directly in this build without waiting on trusted-device or password recovery checks.</Text>
+                </View>
+              </View>
+            </View>
+          </View>
+
+          <TouchableOpacity
+            style={styles.primarySigninCard}
+            activeOpacity={0.84}
+            onPress={() => router.replace('/(tabs)' as any)}
+            testID="owner-access-open-app-direct"
+          >
+            <View style={styles.primarySigninIconWrap}>
+              <LayoutGrid size={18} color={Colors.black} />
+            </View>
+            <View style={styles.primarySigninBody}>
+              <Text style={styles.primarySigninTitle}>Open full app</Text>
+              <Text style={styles.primarySigninSubtitle}>Go straight into the workspace with no owner login step.</Text>
+            </View>
+            <ChevronRight size={18} color={Colors.black} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.verifyDeviceCard}
+            activeOpacity={0.82}
+            onPress={() => router.replace('/admin' as any)}
+            testID="owner-access-open-admin-direct"
+          >
+            <View style={styles.verifyIconWrap}>
+              <Crown size={20} color="#000" />
+            </View>
+            <View style={styles.verifyBody}>
+              <Text style={styles.verifyTitle}>Open Admin HQ</Text>
+              <Text style={styles.verifySubtitle}>Admin modules are available directly while the emergency open-access build is active.</Text>
+            </View>
+            <ChevronRight size={18} color="#FFD700" />
+          </TouchableOpacity>
+        </ScrollView>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.root}>
@@ -453,19 +920,44 @@ export default function OwnerAccessScreen() {
           </Text>
         </View>
 
+        {adminAccessLocked ? (
+          <>
+            <View style={styles.lockCard} testID="owner-access-owner-only-lock-card">
+              <View style={styles.lockIconWrap}>
+                <LockKeyhole size={18} color={Colors.error} />
+              </View>
+              <View style={styles.lockBody}>
+                <Text style={styles.lockTitle}>Owner-only admin lock is active</Text>
+                <Text style={styles.lockText}>{adminAccessLockMessage}</Text>
+              </View>
+            </View>
+
+            <View style={styles.directAnswerCard} testID="owner-access-lock-update">
+              <Text style={styles.directAnswerTitle}>Current update</Text>
+              <Text style={styles.directAnswerSubtitle}>Plain status of the temporary owner-only admin lock in this build.</Text>
+              <View style={styles.directAnswerList}>
+                {lockUpdateItems.map((item, index) => (
+                  <View key={item.id} style={styles.directAnswerRow}>
+                    <View style={styles.directAnswerIndexWrap}>
+                      <Text style={styles.directAnswerIndex}>{index + 1}</Text>
+                    </View>
+                    <View style={styles.directAnswerBody}>
+                      <Text style={styles.directAnswerRowTitle}>{item.title}</Text>
+                      <Text style={styles.directAnswerRowDetail}>{item.detail}</Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            </View>
+          </>
+        ) : null}
+
         {!overallHealthy ? (
           <TouchableOpacity
             style={[styles.claimCard, claimOwnerMutation.isPending && styles.claimCardDisabled]}
             activeOpacity={0.82}
             onPress={() => {
-              Alert.alert(
-                'Claim Owner Access',
-                'This will register this device as the trusted owner device and give you full owner access immediately.\n\nNo sign-in required.',
-                [
-                  { text: 'Cancel', style: 'cancel' },
-                  { text: 'Claim Now', onPress: () => claimOwnerMutation.mutate() },
-                ]
-              );
+              handleClaimOwnerPress();
             }}
             disabled={claimOwnerMutation.isPending}
             testID="owner-access-claim-device"
@@ -478,14 +970,32 @@ export default function OwnerAccessScreen() {
               )}
             </View>
             <View style={styles.claimBody}>
-              <Text style={styles.claimTitle}>Claim Owner Access Now</Text>
+              <Text style={styles.claimTitle}>Sign in and verify this device</Text>
               <Text style={styles.claimSubtitle}>
-                One tap — no sign-in needed. This registers your device as the trusted owner and gives you full VIP access instantly.
+                Admin login is not removed from a new device. For safety, owner recovery requires one verified owner sign-in before this device can be trusted again.
               </Text>
             </View>
             <ChevronRight size={20} color="#000" />
           </TouchableOpacity>
         ) : null}
+
+        <View style={styles.directAnswerCard} testID="owner-access-direct-answer">
+          <Text style={styles.directAnswerTitle}>Straight answer</Text>
+          <Text style={styles.directAnswerSubtitle}>Why the repair key was mentioned, why admin login stays protected, and the fastest safe way back in.</Text>
+          <View style={styles.directAnswerList}>
+            {directAnswerItems.map((item, index) => (
+              <View key={item.id} style={styles.directAnswerRow}>
+                <View style={styles.directAnswerIndexWrap}>
+                  <Text style={styles.directAnswerIndex}>{index + 1}</Text>
+                </View>
+                <View style={styles.directAnswerBody}>
+                  <Text style={styles.directAnswerRowTitle}>{item.title}</Text>
+                  <Text style={styles.directAnswerRowDetail}>{item.detail}</Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        </View>
 
         <View style={styles.nextStepsCard} testID="owner-access-next-steps">
           <Text style={styles.nextStepsTitle}>What you need to do</Text>
@@ -517,11 +1027,146 @@ export default function OwnerAccessScreen() {
           </View>
         </View>
 
+        <View
+          style={[
+            styles.repairReadinessCard,
+            ownerRepairReadiness.hasRealServiceRole
+              ? styles.repairReadinessCardSuccess
+              : styles.repairReadinessCardCritical,
+          ]}
+          testID="owner-access-repair-readiness"
+        >
+          <Text style={styles.repairReadinessEyebrow}>Backend repair only · not normal sign-in</Text>
+          <Text style={styles.repairReadinessTitle}>{ownerRepairReadiness.title}</Text>
+          <Text style={styles.repairReadinessSubtitle}>{ownerRepairReadiness.detail}</Text>
+
+          {criticalRepairIssues.length > 0 ? (
+            <View style={styles.repairIssueGroup}>
+              <Text style={[styles.repairIssueGroupTitle, styles.repairIssueGroupTitleCritical]}>Red blockers</Text>
+              {criticalRepairIssues.map((item, index) => (
+                <View key={item.id} style={[styles.repairIssueRow, styles.repairIssueRowCritical]}>
+                  <View style={[styles.repairIssueIndexWrap, styles.repairIssueIndexWrapCritical]}>
+                    <Text style={styles.repairIssueIndex}>{index + 1}</Text>
+                  </View>
+                  <View style={styles.repairIssueBody}>
+                    <Text style={styles.repairIssueTitle}>{item.title}</Text>
+                    <Text style={styles.repairIssueDetail}>{item.detail}</Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+          ) : null}
+
+          {warningRepairIssues.length > 0 ? (
+            <View style={styles.repairIssueGroup}>
+              <Text style={[styles.repairIssueGroupTitle, styles.repairIssueGroupTitleWarning]}>Yellow warnings</Text>
+              {warningRepairIssues.map((item, index) => (
+                <View key={item.id} style={[styles.repairIssueRow, styles.repairIssueRowWarning]}>
+                  <View style={[styles.repairIssueIndexWrap, styles.repairIssueIndexWrapWarning]}>
+                    <Text style={styles.repairIssueIndex}>{index + 1}</Text>
+                  </View>
+                  <View style={styles.repairIssueBody}>
+                    <Text style={styles.repairIssueTitle}>{item.title}</Text>
+                    <Text style={styles.repairIssueDetail}>{item.detail}</Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+          ) : null}
+
+          {successRepairIssues.length > 0 ? (
+            <View style={styles.repairIssueGroup}>
+              <Text style={[styles.repairIssueGroupTitle, styles.repairIssueGroupTitleSuccess]}>Verified paths</Text>
+              {successRepairIssues.map((item, index) => (
+                <View key={item.id} style={[styles.repairIssueRow, styles.repairIssueRowSuccess]}>
+                  <View style={[styles.repairIssueIndexWrap, styles.repairIssueIndexWrapSuccess]}>
+                    <Text style={styles.repairIssueIndex}>{index + 1}</Text>
+                  </View>
+                  <View style={styles.repairIssueBody}>
+                    <Text style={styles.repairIssueTitle}>{item.title}</Text>
+                    <Text style={styles.repairIssueDetail}>{item.detail}</Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+          ) : null}
+        </View>
+
+        {identityEvidenceItems.length > 0 ? (
+          <View style={styles.identityCard} testID="owner-access-identity-card">
+            <View style={styles.identityHeader}>
+              <Text style={styles.identityTitle}>Owner identity authority</Text>
+              <View style={[styles.identityBadge, { backgroundColor: identityVerdictTone + '20' }]}>
+                <View style={[styles.identityBadgeDot, { backgroundColor: identityVerdictTone }]} />
+                <Text style={[styles.identityBadgeText, { color: identityVerdictTone }]}>{formatIdentityVerdict(identityAudit?.status)}</Text>
+              </View>
+            </View>
+            <Text style={styles.identitySubtitle}>{identityAudit?.message ?? 'Checking owner identity authority...'}</Text>
+            <View style={styles.evidenceList}>
+              {identityEvidenceItems.map((item) => (
+                <View key={item.id} style={styles.identityRow}>
+                  <Text style={styles.evidenceLabel}>{item.label}</Text>
+                  <Text style={[styles.evidenceValue, { color: item.tone }]}>{item.value}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        ) : null}
+
+        {identityAudit?.warnings && identityAudit.warnings.length > 0 ? (
+          <View style={styles.identityWarningsCard} testID="owner-access-identity-warnings-card">
+            <Text style={styles.identityWarningsTitle}>Identity audit warnings</Text>
+            <Text style={styles.identityWarningsSubtitle}>This is the exact evidence showing whether the audited email is the real owner authority or only a normal user account.</Text>
+            <View style={styles.identityWarningsList}>
+              {identityAudit.warnings.map((warning, index) => (
+                <View key={`${index}-${warning}`} style={styles.identityWarningRow}>
+                  <View style={styles.identityWarningIndexWrap}>
+                    <Text style={styles.identityWarningIndex}>{index + 1}</Text>
+                  </View>
+                  <Text style={styles.identityWarningText}>{warning}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        ) : null}
+
+        {auditEvidenceItems.length > 0 ? (
+          <View style={styles.evidenceCard} testID="owner-access-evidence-card">
+            <Text style={styles.evidenceTitle}>Trusted-device evidence</Text>
+            <Text style={styles.evidenceSubtitle}>These are the raw checks the trusted-restore path is using on this device right now.</Text>
+            <View style={styles.evidenceList}>
+              {auditEvidenceItems.map((item) => (
+                <View key={item.id} style={styles.evidenceRow}>
+                  <Text style={styles.evidenceLabel}>{item.label}</Text>
+                  <Text style={[styles.evidenceValue, { color: item.tone }]}>{item.value}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        ) : null}
+
+        {auditBlockers.length > 0 ? (
+          <View style={styles.blockersCard} testID="owner-access-blockers-card">
+            <Text style={styles.blockersTitle}>Exact blockers</Text>
+            <Text style={styles.blockersSubtitle}>Trusted restore stays locked until every blocker below is cleared.</Text>
+            <View style={styles.blockersList}>
+              {auditBlockers.map((reason, index) => (
+                <View key={`${index}-${reason}`} style={styles.blockerRow}>
+                  <View style={styles.blockerIndexWrap}>
+                    <Text style={styles.blockerIndex}>{index + 1}</Text>
+                  </View>
+                  <Text style={styles.blockerText}>{reason}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        ) : null}
+
         {!overallHealthy ? (
           <View style={styles.auditCallout} testID="owner-access-audit-callout">
             <Text style={styles.auditCalloutTitle}>What I audited</Text>
-            <Text style={styles.auditCalloutText}>Regular sign-in still uses your Supabase owner email + password. Trusted owner access only works after this exact device/network was previously verified from Owner Controls.</Text>
-            <Text style={styles.auditCalloutText}>If sign-in says invalid credentials, that means Supabase rejected the email/password pair. If this phone was verified before, restore will appear immediately when the trusted check passes.</Text>
+            <Text style={styles.auditCalloutText}>This screen now uses raw trusted-device evidence instead of broad owner-access claims. If a restore check fails, the blocker list above tells you exactly which proof is missing.</Text>
+            <Text style={styles.auditCalloutText}>If the email is empty here, this screen was opened without a carried email and without an authenticated owner session. Standard owner sign-in still depends on the real Supabase email/password pair and does not require the server service-role key.</Text>
           </View>
         ) : null}
 
@@ -533,7 +1178,9 @@ export default function OwnerAccessScreen() {
             <View style={styles.recoveryBody}>
               <Text style={styles.recoveryTitle}>Owner recovery info carried over</Text>
               <Text style={styles.recoverySubtitle}>
-                {`We brought ${carriedEmail} from ${recoverySource}. If this is your verified owner email, use that exact email on Sign In.`}
+                {audit?.emailMismatch && audit.verifiedEmail
+                  ? `We brought ${carriedEmail} from ${recoverySource}, but this device is anchored to ${audit.verifiedEmail}. Use the verified owner email on Sign In.`
+                  : `We brought ${carriedEmail} from ${recoverySource}. If this is your verified owner email, use that exact email on Sign In.`}
               </Text>
               <View style={styles.emailChip} testID="owner-access-email-chip">
                 <Text style={styles.emailChipLabel}>Owner email</Text>
@@ -543,7 +1190,7 @@ export default function OwnerAccessScreen() {
             <TouchableOpacity
               style={styles.recoveryAction}
               activeOpacity={0.82}
-              onPress={() => router.push({ pathname: '/login', params: { email: carriedEmail } } as any)}
+              onPress={() => router.push({ pathname: '/login', params: effectiveOwnerEmail ? { email: effectiveOwnerEmail } : undefined } as any)}
               testID="owner-access-return-login"
             >
               <Text style={styles.recoveryActionText}>Open Sign In</Text>
@@ -567,11 +1214,11 @@ export default function OwnerAccessScreen() {
               )}
             </View>
             <View style={styles.resetBody}>
-              <Text style={styles.resetTitle}>Reset owner password</Text>
+              <Text style={styles.resetTitle}>Fastest safe recovery: reset owner password</Text>
               <Text style={styles.resetSubtitle}>
-                {carriedEmail
-                  ? `Send a reset link to ${carriedEmail}. This is the fastest safe recovery path when trusted restore is not ready.`
-                  : 'Send a reset link to your verified owner email. Use this if you do not know the current password.'}
+                {effectiveOwnerEmail
+                  ? `Send a reset link to ${effectiveOwnerEmail}. Use this when the password is unknown or rejected and trusted restore is not ready yet.`
+                  : 'Send a reset link to your verified owner email. Use this when the current password is unknown or keeps getting rejected.'}
               </Text>
             </View>
             <ChevronRight size={18} color={Colors.black} />
@@ -584,7 +1231,7 @@ export default function OwnerAccessScreen() {
             activeOpacity={0.84}
             onPress={() => router.push({
               pathname: '/login',
-              params: carriedEmail ? { email: carriedEmail } : undefined,
+              params: effectiveOwnerEmail ? { email: effectiveOwnerEmail } : undefined,
             } as any)}
             testID="owner-access-primary-signin"
           >
@@ -594,8 +1241,8 @@ export default function OwnerAccessScreen() {
             <View style={styles.primarySigninBody}>
               <Text style={styles.primarySigninTitle}>Sign in with your owner account</Text>
               <Text style={styles.primarySigninSubtitle}>
-                {carriedEmail
-                  ? `Use ${carriedEmail} and your owner password. Do not create another public member account.`
+                {effectiveOwnerEmail
+                  ? `Use ${effectiveOwnerEmail} and your owner password. Do not create another public member account.`
                   : 'Use your verified owner email and password. Do not create another public member account.'}
               </Text>
             </View>
@@ -714,7 +1361,7 @@ export default function OwnerAccessScreen() {
           <View style={styles.commandDeck}>
             <View style={styles.commandDeckHeader}>
               <LockKeyhole size={16} color={Colors.primary} />
-              <Text style={styles.commandDeckTitle}>Owner command center</Text>
+              <Text style={styles.commandDeckTitle}>Owner proof & command center</Text>
             </View>
             <View style={styles.commandDeckGrid}>
               {quickActions.map((item) => {
@@ -793,7 +1440,10 @@ export default function OwnerAccessScreen() {
         <TouchableOpacity
           style={styles.secondaryButton}
           activeOpacity={0.82}
-          onPress={() => void ownerAuditQuery.refetch()}
+          onPress={() => {
+            void ownerAuditQuery.refetch();
+            void ownerIdentityAuditQuery.refetch();
+          }}
           testID="owner-access-refresh"
         >
           <ShieldCheck size={16} color={Colors.primary} />
@@ -853,6 +1503,60 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
   },
+  directAnswerCard: {
+    backgroundColor: '#0E1726',
+    borderRadius: 20,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#1E3A5F',
+    gap: 12,
+  },
+  directAnswerTitle: {
+    color: Colors.text,
+    fontSize: 16,
+    fontWeight: '800' as const,
+  },
+  directAnswerSubtitle: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  directAnswerList: {
+    gap: 10,
+  },
+  directAnswerRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  directAnswerIndexWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+  directAnswerIndex: {
+    color: Colors.black,
+    fontSize: 13,
+    fontWeight: '900' as const,
+  },
+  directAnswerBody: {
+    flex: 1,
+    gap: 4,
+  },
+  directAnswerRowTitle: {
+    color: Colors.text,
+    fontSize: 14,
+    fontWeight: '800' as const,
+  },
+  directAnswerRowDetail: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+  },
   nextStepsCard: {
     backgroundColor: '#111111',
     borderRadius: 20,
@@ -860,6 +1564,38 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#252525',
     gap: 12,
+  },
+  lockCard: {
+    backgroundColor: '#1A1113',
+    borderRadius: 20,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#4B2027',
+    gap: 12,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  lockIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: '#2A1013',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lockBody: {
+    flex: 1,
+    gap: 4,
+  },
+  lockTitle: {
+    color: Colors.text,
+    fontSize: 15,
+    fontWeight: '800' as const,
+  },
+  lockText: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
   },
   honestStatusCard: {
     backgroundColor: '#0E1621',
@@ -900,6 +1636,293 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700' as const,
     lineHeight: 20,
+  },
+  repairReadinessCard: {
+    borderRadius: 20,
+    padding: 16,
+    borderWidth: 1,
+    gap: 12,
+  },
+  repairReadinessCardCritical: {
+    backgroundColor: '#181014',
+    borderColor: '#4B2027',
+  },
+  repairReadinessCardSuccess: {
+    backgroundColor: '#0A1614',
+    borderColor: '#1E4F45',
+  },
+  repairReadinessEyebrow: {
+    color: Colors.textTertiary,
+    fontSize: 10,
+    fontWeight: '800' as const,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.8,
+  },
+  repairReadinessTitle: {
+    color: Colors.text,
+    fontSize: 16,
+    fontWeight: '900' as const,
+  },
+  repairReadinessSubtitle: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  repairIssueGroup: {
+    gap: 10,
+  },
+  repairIssueGroupTitle: {
+    fontSize: 12,
+    fontWeight: '800' as const,
+  },
+  repairIssueGroupTitleCritical: {
+    color: '#F87171',
+  },
+  repairIssueGroupTitleWarning: {
+    color: '#F59E0B',
+  },
+  repairIssueGroupTitleSuccess: {
+    color: '#34D399',
+  },
+  repairIssueRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    borderRadius: 16,
+    padding: 12,
+    borderWidth: 1,
+  },
+  repairIssueRowCritical: {
+    backgroundColor: '#2A1216',
+    borderColor: '#5B232C',
+  },
+  repairIssueRowWarning: {
+    backgroundColor: '#2A210F',
+    borderColor: '#5A4311',
+  },
+  repairIssueRowSuccess: {
+    backgroundColor: '#10211A',
+    borderColor: '#1E4F45',
+  },
+  repairIssueIndexWrap: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+  repairIssueIndexWrapCritical: {
+    backgroundColor: '#EF4444',
+  },
+  repairIssueIndexWrapWarning: {
+    backgroundColor: '#F59E0B',
+  },
+  repairIssueIndexWrapSuccess: {
+    backgroundColor: '#22C55E',
+  },
+  repairIssueIndex: {
+    color: '#08110B',
+    fontSize: 11,
+    fontWeight: '900' as const,
+  },
+  repairIssueBody: {
+    flex: 1,
+    gap: 4,
+  },
+  repairIssueTitle: {
+    color: Colors.text,
+    fontSize: 13,
+    fontWeight: '800' as const,
+    lineHeight: 18,
+  },
+  repairIssueDetail: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: '600' as const,
+  },
+  identityCard: {
+    backgroundColor: '#0A1614',
+    borderRadius: 20,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#1E4F45',
+    gap: 12,
+  },
+  identityHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  identityTitle: {
+    flex: 1,
+    color: Colors.text,
+    fontSize: 16,
+    fontWeight: '800' as const,
+  },
+  identitySubtitle: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  identityBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  identityBadgeDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  identityBadgeText: {
+    fontSize: 11,
+    fontWeight: '800' as const,
+  },
+  identityRow: {
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1E4F45',
+    gap: 5,
+  },
+  identityWarningsCard: {
+    backgroundColor: '#1F180C',
+    borderRadius: 20,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#5A4311',
+    gap: 12,
+  },
+  identityWarningsTitle: {
+    color: Colors.text,
+    fontSize: 16,
+    fontWeight: '800' as const,
+  },
+  identityWarningsSubtitle: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  identityWarningsList: {
+    gap: 10,
+  },
+  identityWarningRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  identityWarningIndexWrap: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#F59E0B',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+  identityWarningIndex: {
+    color: '#161006',
+    fontSize: 11,
+    fontWeight: '900' as const,
+  },
+  identityWarningText: {
+    flex: 1,
+    color: Colors.text,
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: '600' as const,
+  },
+  evidenceCard: {
+    backgroundColor: '#151120',
+    borderRadius: 20,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#34294D',
+    gap: 12,
+  },
+  evidenceTitle: {
+    color: Colors.text,
+    fontSize: 16,
+    fontWeight: '800' as const,
+  },
+  evidenceSubtitle: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  evidenceList: {
+    gap: 2,
+  },
+  evidenceRow: {
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#34294D',
+    gap: 5,
+  },
+  evidenceLabel: {
+    color: Colors.textTertiary,
+    fontSize: 10,
+    fontWeight: '700' as const,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.6,
+  },
+  evidenceValue: {
+    color: Colors.text,
+    fontSize: 13,
+    fontWeight: '700' as const,
+    lineHeight: 19,
+  },
+  blockersCard: {
+    backgroundColor: '#1A1113',
+    borderRadius: 20,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#4B2027',
+    gap: 12,
+  },
+  blockersTitle: {
+    color: Colors.text,
+    fontSize: 16,
+    fontWeight: '800' as const,
+  },
+  blockersSubtitle: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  blockersList: {
+    gap: 10,
+  },
+  blockerRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  blockerIndexWrap: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#EF4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+  blockerIndex: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '900' as const,
+  },
+  blockerText: {
+    flex: 1,
+    color: Colors.text,
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: '600' as const,
   },
   nextStepsTitle: {
     color: Colors.text,

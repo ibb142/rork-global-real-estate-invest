@@ -1,6 +1,7 @@
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { AppState, AppStateStatus } from 'react-native';
 import type { RealtimeChannel } from '@supabase/supabase-js';
+import { isAdminRole, normalizeRole } from '@/lib/auth-helpers';
 
 export interface SyncStatus {
   connected: boolean;
@@ -402,12 +403,16 @@ export async function ensureOwnerProfile(userId: string, email: string): Promise
       .single();
 
     if (data) {
-      if (data.role !== 'owner') {
-        console.log('[SupabaseSync] Updating profile role to owner for:', userId);
+      const existingRole = typeof data.role === 'string' ? data.role : null;
+      const normalizedExistingRole = normalizeRole(existingRole);
+      if (!isAdminRole(normalizedExistingRole)) {
+        console.log('[SupabaseSync] Updating non-admin profile role to owner for:', userId, 'currentRole:', existingRole ?? 'missing');
         await supabase
           .from('profiles')
           .update({ role: 'owner', updated_at: new Date().toISOString() })
           .eq('id', userId);
+      } else {
+        console.log('[SupabaseSync] Preserving verified admin role for:', userId, 'role:', normalizedExistingRole);
       }
       return true;
     }

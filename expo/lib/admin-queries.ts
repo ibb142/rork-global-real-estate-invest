@@ -28,8 +28,10 @@ export function useMembers() {
       return fetchAdminMemberRegistry();
     },
     retry: 1,
-    staleTime: 1000 * 15,
-    refetchInterval: 1000 * 20,
+    staleTime: 1000 * 60,
+    refetchInterval: 1000 * 60 * 2,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: false,
   });
 
   const members: Member[] = useMemo(() => {

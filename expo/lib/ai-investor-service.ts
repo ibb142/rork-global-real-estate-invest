@@ -1,6 +1,7 @@
 import { Platform } from 'react-native';
 import { generateText as toolkitGenerateText } from '@rork-ai/toolkit-sdk';
 import type { ChatMessage } from '@/types';
+import { IVX_OWNER_AI_PROFILE } from '@/constants/ivx-owner-ai';
 import { supabase, isSupabaseConfigured } from './supabase';
 import { fetchCanonicalDeals } from './canonical-deals';
 import { CANONICAL_CLAIMS } from './published-deal-card-model';
@@ -139,13 +140,14 @@ function buildSystemPrompt(context: InvestorContext): string {
     ? `\n\nRECENT CONVERSATION CONTEXT:\n${context.conversationSummary}`
     : '';
 
-  return `You are the IVX Holdings AI support assistant for investor guidance, product support, and technical triage.
+  return `You are ${IVX_OWNER_AI_PROFILE.name}, the owner-first IVX assistant for investor guidance, product support, knowledge-base answers, and technical triage.
 
 ${langInstruction}
 
 CORE RESPONSIBILITIES:
-- Help with investing, live deals, member onboarding, KYC, dividends, withdrawals, and account-access questions.
-- Answer high-level technical questions about the IVX mobile and web frontend, backend services, Supabase auth and data flows, AWS S3 and CloudFront usage, and ChatGPT or OpenAI-style AI chat integrations.
+- Help with investing, live deals, member onboarding, KYC, dividends, withdrawals, inbox follow-up, and owner-access questions.
+- Answer high-level technical questions about the IVX mobile and web frontend, backend services, Supabase auth and data flows, AWS S3 and CloudFront usage, shared-room architecture, and ChatGPT or OpenAI-style AI chat integrations.
+- Use the owner-first V1 scope: AI chat, inbox, shared room, file uploads, knowledge base, and owner commands.
 - Explain what the platform already supports, what the next safest implementation or debugging step should be, and when human escalation is still required.
 - When users ask for code or infrastructure help, give practical implementation guidance, but never claim that production code was changed, deployed, repaired, or approved automatically from this chat alone.
 
@@ -158,7 +160,7 @@ PLATFORM FACTS:
 - Frontend: Expo / React Native application with shared landing and app support chat flows across mobile and web.
 - Backend: Supabase-backed data, auth, edge-function, and support-ticket workflows.
 - AWS: S3 object storage and CloudFront delivery are used for media and distribution workflows.
-- AI support: the platform uses a configured AI provider chain to answer investor, platform, and technical-support questions.
+- AI support: the platform uses a configured AI provider chain to answer investor, owner-workflow, knowledge-base, platform, and technical-support questions.
 - ChatGPT-style integrations: the platform can support approved OpenAI or toolkit-backed chat experiences, but releases and production control still require human approval.
 ${dealsInfo}${conversationInfo}
 
@@ -389,13 +391,13 @@ function generateSmartFallback(prompt: string, context: InvestorContext): string
       fr: 'Je peux aider pour l’accès au compte, le KYC, l’onboarding, la préparation du portefeuille, les paiements et le diagnostic technique. Si le problème touche les fonds, la sécurité ou un incident de production, demandez une assistance humaine.',
     },
     ai: {
-      en: 'The AI chat module can answer investor, product, and technical-support questions, including frontend, backend, AWS, and integration topics. It can guide, triage, and draft recommendations, but it should not claim that code or infrastructure was changed automatically without human approval.',
+      en: 'IVX Owner AI can answer investor, owner-workflow, knowledge-base, product, and technical-support questions, including frontend, backend, AWS, inbox, shared-room, and integration topics. It can guide, triage, and draft recommendations, but it should not claim that code or infrastructure was changed automatically without human approval.',
       es: 'El módulo de chat con IA puede responder preguntas de inversión, producto y soporte técnico, incluyendo frontend, backend, AWS e integraciones. Puede orientar, clasificar incidencias y sugerir acciones, pero no debe afirmar que cambió código o infraestructura automáticamente sin aprobación humana.',
       pt: 'O módulo de chat com IA pode responder perguntas de investimento, produto e suporte técnico, incluindo frontend, backend, AWS e integrações. Ele pode orientar, fazer triagem e sugerir ações, mas não deve afirmar que alterou código ou infraestrutura automaticamente sem aprovação humana.',
       fr: 'Le module de chat IA peut répondre aux questions d’investissement, de produit et de support technique, y compris sur le frontend, le backend, AWS et les intégrations. Il peut guider, aider au triage et proposer des recommandations, mais il ne doit pas prétendre avoir modifié le code ou l’infrastructure automatiquement sans validation humaine.',
     },
     default: {
-      en: `I can help with investing, account support, product questions, and technical triage across the IVX platform. ${CANONICAL_CLAIMS.riskDisclaimer} For direct follow-up, request human support or contact investors@ivxholding.com.`,
+      en: `I can help with investing, owner inbox questions, shared-room coordination, knowledge-base requests, product questions, and technical triage across the IVX platform. ${CANONICAL_CLAIMS.riskDisclaimer} For direct follow-up, request human support or contact investors@ivxholding.com.`,
       es: `Puedo ayudar con inversión, soporte de cuenta, preguntas del producto y diagnóstico técnico dentro de IVX. ${CANONICAL_CLAIMS.riskDisclaimer} Para seguimiento directo, solicite soporte humano o escriba a investors@ivxholding.com.`,
       pt: `Posso ajudar com investimento, suporte de conta, perguntas sobre o produto e triagem técnica na IVX. ${CANONICAL_CLAIMS.riskDisclaimer} Para acompanhamento direto, solicite suporte humano ou envie e-mail para investors@ivxholding.com.`,
       fr: `Je peux aider pour l’investissement, le support de compte, les questions produit et le diagnostic technique sur IVX. ${CANONICAL_CLAIMS.riskDisclaimer} Pour un suivi direct, demandez une assistance humaine ou contactez investors@ivxholding.com.`,

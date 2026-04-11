@@ -29,6 +29,10 @@ export interface UseAnalyticsReportResult {
   };
 }
 
+const LIVE_ANALYTICS_REFRESH_INTERVAL_MS = 60_000;
+const STANDARD_ANALYTICS_REFRESH_INTERVAL_MS = 180_000;
+const ANALYTICS_STALE_TIME_MS = 60_000;
+
 export function useAnalyticsReport(): UseAnalyticsReportResult {
   const [period, setPeriod] = useState<PeriodType>('all');
   const [activeTab, setActiveTab] = useState<TabType>('overview');
@@ -36,7 +40,9 @@ export function useAnalyticsReport(): UseAnalyticsReportResult {
   const [fetchCount, setFetchCount] = useState<number>(0);
   const queryClient = useQueryClient();
 
-  const pollInterval = activeTab === 'live' ? 5000 : 10000;
+  const pollInterval = activeTab === 'live'
+    ? LIVE_ANALYTICS_REFRESH_INTERVAL_MS
+    : STANDARD_ANALYTICS_REFRESH_INTERVAL_MS;
 
   const analyticsQuery = useQuery<ComputedAnalytics | null>({
     queryKey: ['analytics.report.hook', { period }],
@@ -73,14 +79,15 @@ export function useAnalyticsReport(): UseAnalyticsReportResult {
       setFetchCount(prev => prev + 1);
       return computed;
     },
-    staleTime: 5000,
-    gcTime: 15000,
+    staleTime: ANALYTICS_STALE_TIME_MS,
+    gcTime: 1000 * 60 * 10,
     refetchInterval: pollInterval,
+    refetchIntervalInBackground: false,
     networkMode: 'always',
     retry: 1,
     retryDelay: 1000,
-    refetchOnMount: true,
-    refetchOnWindowFocus: true,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
   });
 
   const data = (analyticsQuery.data as ComputedAnalytics | undefined) ?? null;

@@ -62,6 +62,8 @@ const TYPE_LABELS: Record<string, string> = {
   smart_update: 'AI Smart Updates',
 };
 
+const SMS_DASHBOARD_REFRESH_MS = 60_000;
+
 export default function SMSDashboardScreen() {
   const router = useRouter();
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -89,8 +91,11 @@ export default function SMSDashboardScreen() {
       }
       return data as unknown as SMSStats;
     },
-    refetchInterval: 10000,
-    staleTime: 5000,
+    refetchInterval: SMS_DASHBOARD_REFRESH_MS,
+    refetchIntervalInBackground: false,
+    staleTime: 30_000,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
   });
 
   const breakdownQuery = useQuery<TypeBreakdown[]>({

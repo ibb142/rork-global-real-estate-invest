@@ -1,14 +1,37 @@
 import { useState, useCallback, useRef } from 'react';
+import { generateObject as rorkGenerateObject, generateText as rorkGenerateText } from '@rork-ai/toolkit-sdk';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 
-const AI_ENDPOINT = process.env.EXPO_PUBLIC_AI_ENDPOINT || '';
+const AI_ENDPOINT = (process.env.EXPO_PUBLIC_AI_ENDPOINT ?? '').trim();
+const TOOLKIT_URL = (process.env.EXPO_PUBLIC_TOOLKIT_URL ?? '').trim();
+const DEFAULT_WORKSPACE_ASSISTANT_SYSTEM_PROMPT = 'You are the in-app assistant for this workspace.';
+
+type RawContentPart = {
+  type: string;
+  text?: string;
+  image?: string;
+};
+
+type SupportedContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image'; image: string };
+
+type RawMessage = {
+  role: string;
+  content: string | RawContentPart[];
+};
+
+type ToolkitMessage = {
+  role: 'user' | 'assistant';
+  content: string | SupportedContentPart[];
+};
 
 interface GenerateTextOptions {
-  messages?: Array<{ role: string; content: string | Array<{ type: string; text?: string; image?: string }> }>;
+  messages?: RawMessage[];
 }
 
 interface GenerateObjectOptions<T = Record<string, unknown>> {
-  messages: Array<{ role: string; content: string | Array<{ type: string; text?: string; image?: string }> }>;
+  messages: RawMessage[];
   schema: { parse: (data: unknown) => T };
 }
 
@@ -20,11 +43,179 @@ interface AgentMessage {
 
 interface UseAgentOptions {
   tools?: Record<string, unknown>;
+  systemPrompt?: string;
 }
 
 interface UseAgentReturn {
   messages: AgentMessage[];
   sendMessage: (text: string) => void;
+}
+
+function getPlainTextFromContent(content: string | RawContentPart[]): string {
+  if (typeof content === 'string') {
+    return content.trim();
+  }
+
+  return content
+    .filter((part) => part.type === 'text' && typeof part.text === 'string' && part.text.trim().length > 0)
+    .map((part) => part.text?.trim() ?? '')
+    .join(' ')
+    .trim();
+}
+
+function normalizeMessagesForToolkit(messages: RawMessage[] | undefined): ToolkitMessage[] {
+  if (!messages || messages.length === 0) {
+    return [];
+  }
+
+  const normalizedMessages: ToolkitMessage[] = [];
+  const pendingSystemInstructions: string[] = [];
+
+  for (const message of messages) {
+    const role = message.role === 'assistant' ? 'assistant' : message.role === 'system' ? 'system' : 'user';
+
+    if (role === 'system') {
+      const systemText = getPlainTextFromContent(message.content);
+      if (systemText.length > 0) {
+        pendingSystemInstructions.push(systemText);
+      }
+      continue;
+    }
+
+    if (typeof message.content === 'string') {
+      const baseContent = message.content.trim();
+      const contentWithSystem = pendingSystemInstructions.length > 0 && role === 'user'
+        ? `${pendingSystemInstructions.join('\n\n')}\n\n${baseContent}`.trim()
+        : baseContent;
+
+      if (pendingSystemInstructions.length > 0) {
+        pendingSystemInstructions.length = 0;
+      }
+
+      if (contentWithSystem.length > 0) {
+        normalizedMessages.push({ role, content: contentWithSystem });
+      }
+      continue;
+    }
+
+    const normalizedParts: SupportedContentPart[] = [];
+
+    if (pendingSystemInstructions.length > 0) {
+      if (role === 'user') {
+        normalizedParts.push({
+          type: 'text',
+          text: pendingSystemInstructions.join('\n\n'),
+        });
+      } else {
+        normalizedMessages.push({
+          role: 'user',
+          content: pendingSystemInstructions.join('\n\n'),
+        });
+      }
+      pendingSystemInstructions.length = 0;
+    }
+
+    for (const part of message.content) {
+      if (part.type === 'image' && typeof part.image === 'string' && part.image.trim().length > 0) {
+        normalizedParts.push({ type: 'image', image: part.image.trim() });
+        continue;
+      }
+
+      if (typeof part.text === 'string' && part.text.trim().length > 0) {
+        normalizedParts.push({ type: 'text', text: part.text.trim() });
+      }
+    }
+
+    if (normalizedParts.length > 0) {
+      normalizedMessages.push({ role, content: normalizedParts });
+    }
+  }
+
+  if (pendingSystemInstructions.length > 0) {
+    normalizedMessages.push({
+      role: 'user',
+      content: pendingSystemInstructions.join('\n\n'),
+    });
+  }
+
+  return normalizedMessages;
+}
+
+function buildPromptFromMessages(messages: RawMessage[] | undefined): string {
+  if (!messages || messages.length === 0) {
+    return '';
+  }
+
+  return messages
+    .map((message) => {
+      const content = getPlainTextFromContent(message.content);
+      return content.length > 0 ? `${message.role.toUpperCase()}: ${content}` : '';
+    })
+    .filter((value) => value.length > 0)
+    .join('\n');
+}
+
+function isLikelyZodSchema<T>(schema: GenerateObjectOptions<T>['schema']): boolean {
+  const candidate = schema as {
+    safeParse?: unknown;
+    parse?: unknown;
+  };
+
+  return typeof candidate.parse === 'function' && typeof candidate.safeParse === 'function';
+}
+
+async function callToolkitText(messages: ToolkitMessage[]): Promise<string | null> {
+  if (messages.length === 0) {
+    return null;
+  }
+
+  try {
+    console.log('[AI] Trying Rork toolkit text generation:', {
+      hasToolkitUrl: TOOLKIT_URL.length > 0,
+      messageCount: messages.length,
+    });
+    const response = await rorkGenerateText({ messages });
+    const normalizedResponse = response.trim();
+
+    if (normalizedResponse.length > 0) {
+      console.log('[AI] Rork toolkit text generation succeeded');
+      return normalizedResponse;
+    }
+
+    console.log('[AI] Rork toolkit text generation returned empty response');
+    return null;
+  } catch (error) {
+    console.log('[AI] Rork toolkit text generation failed:', (error as Error)?.message ?? 'Unknown error');
+    return null;
+  }
+}
+
+async function callToolkitObject<T>(options: GenerateObjectOptions<T>): Promise<T | null> {
+  if (!isLikelyZodSchema(options.schema)) {
+    console.log('[AI] Toolkit object generation skipped because schema is not a Zod schema');
+    return null;
+  }
+
+  const messages = normalizeMessagesForToolkit(options.messages);
+  if (messages.length === 0) {
+    return null;
+  }
+
+  try {
+    console.log('[AI] Trying Rork toolkit object generation:', {
+      hasToolkitUrl: TOOLKIT_URL.length > 0,
+      messageCount: messages.length,
+    });
+    const result = await rorkGenerateObject({
+      messages,
+      schema: options.schema as never,
+    });
+    console.log('[AI] Rork toolkit object generation succeeded');
+    return result as T;
+  } catch (error) {
+    console.log('[AI] Rork toolkit object generation failed:', (error as Error)?.message ?? 'Unknown error');
+    return null;
+  }
 }
 
 async function callSupabaseAI(prompt: string): Promise<string> {
@@ -57,10 +248,7 @@ async function callSupabaseAIObject(messages: GenerateObjectOptions['messages'])
   }
 
   try {
-    const prompt = messages.map(m => {
-      if (typeof m.content === 'string') return m.content;
-      return m.content.filter(c => c.type === 'text').map(c => c.text).join(' ');
-    }).join('\n');
+    const prompt = buildPromptFromMessages(messages);
 
     const { data, error } = await supabase.functions.invoke('ai-generate', {
       body: { prompt, type: 'object', messages },
@@ -112,21 +300,25 @@ function getFallbackResponse(prompt: string): string {
 export async function generateText(
   input: string | GenerateTextOptions
 ): Promise<string> {
-  let prompt = '';
+  const messages = typeof input === 'string'
+    ? [{ role: 'user', content: input.trim() } satisfies RawMessage]
+    : input.messages ?? [];
+  const prompt = buildPromptFromMessages(messages);
+  const toolkitMessages = normalizeMessagesForToolkit(messages);
 
-  if (typeof input === 'string') {
-    prompt = input;
-  } else if (input.messages && input.messages.length > 0) {
-    prompt = input.messages.map(m => {
-      if (typeof m.content === 'string') return m.content;
-      return m.content.filter(c => c.type === 'text').map(c => c.text).join(' ');
-    }).join('\n');
+  console.log('[AI] generateText called:', {
+    promptLength: prompt.length,
+    messageCount: messages.length,
+  });
+
+  const toolkitResponse = await callToolkitText(toolkitMessages);
+  if (toolkitResponse) {
+    return toolkitResponse;
   }
-
-  console.log('[AI] generateText called, prompt length:', prompt.length);
 
   if (AI_ENDPOINT) {
     try {
+      console.log('[AI] Trying custom AI endpoint');
       const response = await fetch(AI_ENDPOINT, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -134,7 +326,11 @@ export async function generateText(
       });
       if (response.ok) {
         const data = await response.json();
-        return data.text || data.result || '';
+        const text = data.text || data.result || '';
+        if (typeof text === 'string' && text.trim().length > 0) {
+          console.log('[AI] Custom AI endpoint succeeded');
+          return text.trim();
+        }
       }
     } catch (err) {
       console.log('[AI] Custom endpoint failed, trying Supabase:', err);
@@ -144,13 +340,44 @@ export async function generateText(
   return callSupabaseAI(prompt);
 }
 
+export async function generateWorkspaceAssistantReply(
+  userMessage: string,
+  systemPrompt: string = DEFAULT_WORKSPACE_ASSISTANT_SYSTEM_PROMPT
+): Promise<string> {
+  const normalizedMessage = userMessage.trim();
+
+  console.log('[AI] generateWorkspaceAssistantReply called:', {
+    hasSystemPrompt: systemPrompt.trim().length > 0,
+    messageLength: normalizedMessage.length,
+  });
+
+  if (normalizedMessage.length === 0) {
+    return 'Please enter a message so I can help.';
+  }
+
+  return generateText({
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: normalizedMessage },
+    ],
+  });
+}
+
 export async function generateObject<T = Record<string, unknown>>(
   options: GenerateObjectOptions<T>
 ): Promise<T> {
-  console.log('[AI] generateObject called');
+  console.log('[AI] generateObject called:', {
+    messageCount: options.messages.length,
+  });
+
+  const toolkitResult = await callToolkitObject(options);
+  if (toolkitResult !== null) {
+    return toolkitResult;
+  }
 
   if (AI_ENDPOINT) {
     try {
+      console.log('[AI] Trying custom AI endpoint object generation');
       const response = await fetch(AI_ENDPOINT, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -215,22 +442,34 @@ export async function generateImage(prompt: string, size: string = '1024x1024'):
   return null;
 }
 
-export function useLocalAgent(_options?: UseAgentOptions): UseAgentReturn {
+export function useLocalAgent(options?: UseAgentOptions): UseAgentReturn {
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const messageIdRef = useRef(0);
 
   const sendMessage = useCallback(async (text: string) => {
+    const normalizedText = text.trim();
+    if (normalizedText.length === 0) {
+      return;
+    }
+
     const userMsgId = `msg-${Date.now()}-${messageIdRef.current++}`;
     const userMessage: AgentMessage = {
       id: userMsgId,
       role: 'user',
-      parts: [{ type: 'text', text }],
+      parts: [{ type: 'text', text: normalizedText }],
     };
 
-    setMessages(prev => [...prev, userMessage]);
+    setMessages((prev) => [...prev, userMessage]);
 
     try {
-      const response = await generateText(text);
+      const response = options?.systemPrompt
+        ? await generateText({
+            messages: [
+              { role: 'system', content: options.systemPrompt },
+              { role: 'user', content: normalizedText },
+            ],
+          })
+        : await generateText(normalizedText);
       const assistantMsgId = `msg-${Date.now()}-${messageIdRef.current++}`;
       const assistantMessage: AgentMessage = {
         id: assistantMsgId,
@@ -238,7 +477,7 @@ export function useLocalAgent(_options?: UseAgentOptions): UseAgentReturn {
         parts: [{ type: 'text', text: response }],
       };
 
-      setMessages(prev => [...prev, assistantMessage]);
+      setMessages((prev) => [...prev, assistantMessage]);
     } catch (err) {
       console.log('[AI] Agent response error:', err);
       const errorMsgId = `msg-${Date.now()}-${messageIdRef.current++}`;
@@ -247,9 +486,9 @@ export function useLocalAgent(_options?: UseAgentOptions): UseAgentReturn {
         role: 'assistant',
         parts: [{ type: 'text', text: 'I apologize, but I am unable to process your request right now. Please try again or contact support.' }],
       };
-      setMessages(prev => [...prev, errorMessage]);
+      setMessages((prev) => [...prev, errorMessage]);
     }
-  }, []);
+  }, [options?.systemPrompt]);
 
   return { messages, sendMessage };
 }

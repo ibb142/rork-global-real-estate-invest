@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import { Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/lib/auth-context';
+import { isOpenAccessModeEnabled } from '@/lib/open-access';
 
 export type InvestmentBlockReason =
   | 'not_authenticated'
@@ -18,33 +19,34 @@ interface InvestmentGuardResult {
 export function useInvestmentGuard(): InvestmentGuardResult {
   const { isAuthenticated, isLoading: authLoading } = useAuth();
   const router = useRouter();
+  const openAccessMode = isOpenAccessModeEnabled();
 
-  const isLoading = authLoading;
+  const isLoading = openAccessMode ? false : authLoading;
 
   let blockReason: InvestmentBlockReason = null;
 
-  if (!isAuthenticated) {
+  if (!openAccessMode && !isAuthenticated) {
     blockReason = 'not_authenticated';
   }
 
   const canInvest = blockReason === null;
 
   const checkAndProceed = useCallback((onAllowed: () => void) => {
-    if (!isAuthenticated) {
-      Alert.alert(
-        'Sign In Required',
-        'Create a free account or sign in to start investing. No minimums, no restrictions.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Sign In', onPress: () => router.push('/login' as any) },
-          { text: 'Sign Up', onPress: () => router.push('/signup' as any) },
-        ]
-      );
+    if (openAccessMode || isAuthenticated) {
+      onAllowed();
       return;
     }
 
-    onAllowed();
-  }, [isAuthenticated, router]);
+    Alert.alert(
+      'Sign In Required',
+      'Create a free account or sign in to start investing. No minimums, no restrictions.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Sign In', onPress: () => router.push('/login' as any) },
+        { text: 'Sign Up', onPress: () => router.push('/signup' as any) },
+      ]
+    );
+  }, [isAuthenticated, openAccessMode, router]);
 
   return {
     canInvest,

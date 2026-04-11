@@ -472,6 +472,8 @@ function filterMemberRegistryRecords(records: MemberRegistryRecord[], search?: s
   });
 }
 
+export type AdminMemberRegistrySnapshotMode = 'full' | 'light';
+
 export interface AdminMemberRegistrySnapshot {
   localCount: number;
   remoteCount: number;
@@ -484,8 +486,67 @@ export interface AdminMemberRegistrySnapshot {
   latestCreatedAt: string | null;
 }
 
-export async function getAdminMemberRegistrySnapshot(): Promise<AdminMemberRegistrySnapshot> {
+function buildMemberRegistrySourceCounts(records: MemberRegistryRecord[]): Record<MemberRegistryRecord['source'], number> {
+  const sources: Record<MemberRegistryRecord['source'], number> = {
+    signup: 0,
+    session: 0,
+    supabase: 0,
+    admin_update: 0,
+    fallback: 0,
+    waitlist_shadow: 0,
+    landing_submission_shadow: 0,
+  };
+
+  for (const record of records) {
+    sources[record.source] += 1;
+  }
+
+  return sources;
+}
+
+export async function getAdminMemberRegistrySnapshot(options: { mode?: AdminMemberRegistrySnapshotMode } = {}): Promise<AdminMemberRegistrySnapshot> {
+  const mode = options.mode ?? 'full';
   const localRecords = await loadStoredMemberRegistry();
+
+  if (mode === 'light' || !isSupabaseConfigured()) {
+    if (!isSupabaseConfigured()) {
+      return {
+        localCount: localRecords.length,
+        remoteCount: 0,
+        mergedCount: localRecords.length,
+        remoteProfileCount: 0,
+        remoteWaitlistShadowCount: 0,
+        remoteLandingSubmissionShadowCount: 0,
+        staleLocalOnlyCount: 0,
+        sources: buildMemberRegistrySourceCounts(localRecords),
+        latestCreatedAt: localRecords[0]?.createdAt ?? null,
+      };
+    }
+
+    const [remoteProfileResult, remoteWaitlistResult, remoteLandingResult] = await Promise.all([
+      supabase.from('profiles').select('id').limit(1),
+      supabase.from('waitlist').select('id').limit(1),
+      supabase.from('landing_submissions').select('id').in('type', ['registration', 'waitlist']).limit(1),
+    ]);
+
+    const remoteProfileCount = remoteProfileResult.error ? 0 : (remoteProfileResult.data?.length ?? 0);
+    const remoteWaitlistShadowCount = remoteWaitlistResult.error ? 0 : (remoteWaitlistResult.data?.length ?? 0);
+    const remoteLandingSubmissionShadowCount = remoteLandingResult.error ? 0 : (remoteLandingResult.data?.length ?? 0);
+    const remoteCount = remoteProfileCount + remoteWaitlistShadowCount + remoteLandingSubmissionShadowCount;
+
+    return {
+      localCount: localRecords.length,
+      remoteCount,
+      mergedCount: Math.max(localRecords.length, remoteCount),
+      remoteProfileCount,
+      remoteWaitlistShadowCount,
+      remoteLandingSubmissionShadowCount,
+      staleLocalOnlyCount: 0,
+      sources: buildMemberRegistrySourceCounts(localRecords),
+      latestCreatedAt: localRecords[0]?.createdAt ?? null,
+    };
+  }
+
   const [remoteProfileRecords, remoteWaitlistShadowRecords, remoteLandingSubmissionShadowRecords] = await Promise.all([
     fetchRemoteProfileRegistry(),
     fetchWaitlistShadowRegistry(),
@@ -505,20 +566,6 @@ export async function getAdminMemberRegistrySnapshot(): Promise<AdminMemberRegis
     remoteRecords.map((record) => `${record.id.trim()}::${normalizeEmail(record.email)}`)
   );
 
-  const sources: Record<MemberRegistryRecord['source'], number> = {
-    signup: 0,
-    session: 0,
-    supabase: 0,
-    admin_update: 0,
-    fallback: 0,
-    waitlist_shadow: 0,
-    landing_submission_shadow: 0,
-  };
-
-  for (const record of merged) {
-    sources[record.source] += 1;
-  }
-
   return {
     localCount: localRecords.length,
     remoteCount: remoteRecords.length,
@@ -527,9 +574,43 @@ export async function getAdminMemberRegistrySnapshot(): Promise<AdminMemberRegis
     remoteWaitlistShadowCount: remoteWaitlistShadowRecords.length,
     remoteLandingSubmissionShadowCount: remoteLandingSubmissionShadowRecords.length,
     staleLocalOnlyCount: merged.filter((record) => !remoteKeys.has(`${record.id.trim()}::${normalizeEmail(record.email)}`)).length,
-    sources,
+    sources: buildMemberRegistrySourceCounts(merged),
     latestCreatedAt: merged[0]?.createdAt ?? null,
   };
+}
+
+export async function findExistingRegisteredMemberByEmail(email: string): Promise<MemberRegistryRecord | null> {
+  const normalizedEmail = normalizeEmail(email);
+  if (!normalizedEmail) {
+    return null;
+  }
+
+  const localMatch = await getStoredMemberRegistryRecordByEmail(normalizedEmail);
+  if (localMatch && (localMatch.source === 'signup' || localMatch.source === 'session' || localMatch.source === 'supabase' || localMatch.source === 'admin_update')) {
+    return localMatch;
+  }
+
+  if (!isSupabaseConfigured()) {
+    return null;
+  }
+
+  const profileResult = await supabase
+    .from('profiles')
+    .select('id,email,first_name,last_name,phone,country,role,status,kyc_status,total_invested,total_returns,created_at,updated_at')
+    .eq('email', normalizedEmail)
+    .limit(1)
+    .maybeSingle();
+
+  if (!profileResult.error && profileResult.data) {
+    const record = normalizeMemberRegistryRecord({
+      ...profileResult.data,
+      source: 'supabase',
+    });
+    await upsertStoredMemberRegistryRecord(record as unknown as Record<string, unknown>);
+    return record;
+  }
+
+  return null;
 }
 
 export async function findExistingMemberByEmail(email: string): Promise<MemberRegistryRecord | null> {
@@ -538,22 +619,16 @@ export async function findExistingMemberByEmail(email: string): Promise<MemberRe
     return null;
   }
 
-  const localMatch = await getStoredMemberRegistryRecordByEmail(normalizedEmail);
-  if (localMatch) {
-    return localMatch;
+  const registeredMember = await findExistingRegisteredMemberByEmail(normalizedEmail);
+  if (registeredMember) {
+    return registeredMember;
   }
 
   if (!isSupabaseConfigured()) {
     return null;
   }
 
-  const [profileResult, waitlistResult, landingResult] = await Promise.all([
-    supabase
-      .from('profiles')
-      .select('id,email,first_name,last_name,phone,country,role,status,kyc_status,total_invested,total_returns,created_at,updated_at')
-      .eq('email', normalizedEmail)
-      .limit(1)
-      .maybeSingle(),
+  const [waitlistResult, landingResult] = await Promise.all([
     supabase
       .from('waitlist')
       .select('id,first_name,last_name,email,phone,created_at')
@@ -569,15 +644,6 @@ export async function findExistingMemberByEmail(email: string): Promise<MemberRe
       .limit(1)
       .maybeSingle(),
   ]);
-
-  if (!profileResult.error && profileResult.data) {
-    const record = normalizeMemberRegistryRecord({
-      ...profileResult.data,
-      source: 'supabase',
-    });
-    await upsertStoredMemberRegistryRecord(record as unknown as Record<string, unknown>);
-    return record;
-  }
 
   if (!waitlistResult.error && waitlistResult.data) {
     const createdAt = waitlistResult.data.created_at ?? new Date().toISOString();

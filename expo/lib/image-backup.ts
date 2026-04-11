@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { File } from 'expo-file-system';
 import { Platform } from 'react-native';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { getAuthUserId } from '@/lib/auth-store';
@@ -191,16 +192,13 @@ async function attemptRecovery(entry: ImageBackupEntry): Promise<{ recovered: bo
 
   if (entry.localUri && Platform.OS !== 'web') {
     try {
-      const LegacyFS = await import('expo-file-system/legacy');
-      if (LegacyFS && entry.localUri) {
-        const info = await LegacyFS.getInfoAsync(entry.localUri);
-        if (info.exists) {
-          console.log('[ImageBackup] Local file exists, re-uploading:', entry.localUri);
-          const result = await uploadDealPhoto(entry.entityId, entry.localUri, 0);
-          if (result.url) {
-            console.log('[ImageBackup] Re-uploaded from local cache:', result.url.substring(0, 80));
-            return { recovered: true, newUrl: result.url, source: 'local_reupload' };
-          }
+      const localFile = new File(entry.localUri);
+      if (localFile.exists) {
+        console.log('[ImageBackup] Local file exists, re-uploading:', entry.localUri);
+        const result = await uploadDealPhoto(entry.entityId, entry.localUri, 0);
+        if (result.url) {
+          console.log('[ImageBackup] Re-uploaded from local cache:', result.url.substring(0, 80));
+          return { recovered: true, newUrl: result.url, source: 'local_reupload' };
         }
       }
     } catch (err) {

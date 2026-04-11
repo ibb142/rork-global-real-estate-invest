@@ -221,15 +221,17 @@ const INTEGRATIONS: IntegrationItem[] = [
     notes: 'Built-in analytics is functional. External service optional for advanced insights.',
   },
   {
-    id: 'openai',
-    service: 'OpenAI (AI Chat Assistant)',
-    description: 'AI-powered investment assistant, content generation',
+    id: 'rork_toolkit',
+    service: 'Rork Toolkit (AI Assistant)',
+    description: 'Workspace assistant, content generation, and structured AI workflows',
     keys: [
-      { name: 'API Key', envVar: 'OPENAI_API_KEY', example: 'sk-...', isPublic: false },
+      { name: 'Toolkit URL', envVar: 'EXPO_PUBLIC_TOOLKIT_URL', example: 'https://toolkit.rork.com', isPublic: true },
+      { name: 'Project ID', envVar: 'EXPO_PUBLIC_PROJECT_ID', example: 'jh1qrutuhy6vu1bkysoln', isPublic: true },
+      { name: 'Team ID', envVar: 'EXPO_PUBLIC_TEAM_ID', example: 'team_123', isPublic: true },
     ],
     priority: 'medium',
-    status: 'mock',
-    notes: 'Sign up at platform.openai.com. Used for AI chat and admin content generation.',
+    status: 'ready',
+    notes: 'Already configured. Used for AI chat, admin content generation, and structured AI flows.',
   },
   {
     id: 'blockchain',

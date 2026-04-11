@@ -35,8 +35,10 @@ import {
   Activity,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
+import { isAbortLikeError, runWithAbortTimeout } from '@/lib/abort-utils';
 import { supabase } from '@/lib/supabase';
-import { runLandingReadinessAudit } from '@/lib/landing-readiness-audit';
+import { runLandingReadinessAudit, type ReadinessAuditMode } from '@/lib/landing-readiness-audit';
+import { inspectPasswordResetRedirect } from '@/lib/auth-password-recovery';
 
 type AuditStatus = 'pass' | 'fail' | 'warn' | 'info' | 'checking';
 
@@ -74,6 +76,8 @@ const SEVERITY_COLORS: Record<string, string> = {
   info: '#6366F1',
 };
 
+const BACKEND_AUDIT_TIMEOUT_MS = 3_500;
+
 function isSupabaseConfigured(): boolean {
   const url = (process.env.EXPO_PUBLIC_SUPABASE_URL || '').trim();
   const key = (process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '').trim();
@@ -90,7 +94,7 @@ async function measureLatency<T>(fn: () => Promise<T>): Promise<{ result: T | nu
   }
 }
 
-async function runFullAudit(): Promise<AuditCategory[]> {
+async function runFullAudit(mode: ReadinessAuditMode = 'full'): Promise<AuditCategory[]> {
   const categories: AuditCategory[] = [];
 
   const supabaseConfigured = isSupabaseConfigured();
@@ -118,19 +122,36 @@ async function runFullAudit(): Promise<AuditCategory[]> {
       severity: 'info',
     });
 
+    supabaseItems.push({
+      id: 'supabase-scan-mode',
+      category: 'supabase',
+      name: 'Supabase scan mode',
+      status: 'info',
+      message: mode === 'full' ? 'Deep verification is running' : 'Lightweight read-only audit is running',
+      details: mode === 'full'
+        ? 'Detailed table enumeration and deep readiness verification are enabled for this manual audit.'
+        : 'Routine audit refresh skips the noisy table sweep so Supabase is not hammered during normal reviews.',
+      severity: 'info',
+    });
+
     const { latency: connLatency, error: connError } = await measureLatency(async () => {
-      const { error } = await supabase.from('profiles').select('id').limit(1);
+      const { error } = await runWithAbortTimeout(
+        BACKEND_AUDIT_TIMEOUT_MS,
+        (signal) => supabase.from('profiles').select('id').limit(1).abortSignal(signal),
+        `Backend audit connection probe timed out after ${BACKEND_AUDIT_TIMEOUT_MS}ms`,
+      );
       if (error) throw new Error(error.message);
     });
+    const connectionTimedOut = connError ? isAbortLikeError(connError) : false;
 
     supabaseItems.push({
       id: 'supabase-connection',
       category: 'supabase',
       name: 'Database Connection',
-      status: connError ? 'fail' : connLatency > 3000 ? 'warn' : 'pass',
-      message: connError ? `Connection failed: ${connError}` : `Connected (${connLatency}ms)`,
+      status: connError ? (connectionTimedOut ? 'warn' : 'fail') : connLatency > 3000 ? 'warn' : 'pass',
+      message: connError ? (connectionTimedOut ? `Connection probe timed out (${connLatency}ms)` : `Connection failed: ${connError}`) : `Connected (${connLatency}ms)`,
       latencyMs: connLatency,
-      severity: connError ? 'critical' : 'info',
+      severity: connError ? (connectionTimedOut ? 'medium' : 'critical') : 'info',
     });
 
     const { latency: authLatency, error: authError } = await measureLatency(async () => {
@@ -151,52 +172,74 @@ async function runFullAudit(): Promise<AuditCategory[]> {
     const requiredTables = ['profiles', 'wallets', 'transactions', 'holdings', 'notifications'];
     const optionalTables = ['jv_deals', 'audit_trail', 'waitlist', 'image_registry', 'push_tokens', 'landing_deals', 'app_config'];
 
-    for (const table of requiredTables) {
-      try {
-        const { error } = await supabase.from(table).select('id').limit(1);
-        const missing = error && ((error.message || '').toLowerCase().includes('could not find') || (error.message || '').toLowerCase().includes('does not exist'));
-        supabaseItems.push({
-          id: `table-${table}`,
-          category: 'supabase',
-          name: `Table: ${table}`,
-          status: missing ? 'fail' : error ? 'warn' : 'pass',
-          message: missing ? 'Table NOT FOUND' : error ? `Query error: ${error.message}` : 'Exists & accessible',
-          severity: missing ? 'high' : error ? 'medium' : 'info',
-        });
-      } catch (err) {
-        supabaseItems.push({
-          id: `table-${table}`,
-          category: 'supabase',
-          name: `Table: ${table}`,
-          status: 'fail',
-          message: `Check failed: ${(err as Error)?.message}`,
-          severity: 'high',
-        });
+    if (mode === 'full') {
+      for (const table of requiredTables) {
+        try {
+          const { error } = await runWithAbortTimeout(
+            BACKEND_AUDIT_TIMEOUT_MS,
+            (signal) => supabase.from(table).select('id').limit(1).abortSignal(signal),
+            `Table check timed out for ${table}`,
+          );
+          const missing = error && ((error.message || '').toLowerCase().includes('could not find') || (error.message || '').toLowerCase().includes('does not exist'));
+          supabaseItems.push({
+            id: `table-${table}`,
+            category: 'supabase',
+            name: `Table: ${table}`,
+            status: missing ? 'fail' : error ? 'warn' : 'pass',
+            message: missing ? 'Table NOT FOUND' : error ? `Query error: ${error.message}` : 'Exists & accessible',
+            severity: missing ? 'high' : error ? 'medium' : 'info',
+          });
+        } catch (err) {
+          const timedOut = isAbortLikeError(err);
+          supabaseItems.push({
+            id: `table-${table}`,
+            category: 'supabase',
+            name: `Table: ${table}`,
+            status: timedOut ? 'warn' : 'fail',
+            message: timedOut ? `Check timed out for ${table}` : `Check failed: ${(err as Error)?.message}`,
+            severity: timedOut ? 'medium' : 'high',
+          });
+        }
       }
-    }
 
-    for (const table of optionalTables) {
-      try {
-        const { error } = await supabase.from(table).select('id').limit(1);
-        const missing = error && ((error.message || '').toLowerCase().includes('could not find') || (error.message || '').toLowerCase().includes('does not exist'));
-        supabaseItems.push({
-          id: `table-${table}`,
-          category: 'supabase',
-          name: `Table: ${table}`,
-          status: missing ? 'warn' : error ? 'warn' : 'pass',
-          message: missing ? 'Optional table not created yet' : error ? `Query error: ${error.message}` : 'Exists & accessible',
-          severity: missing ? 'low' : error ? 'medium' : 'info',
-        });
-      } catch {
-        supabaseItems.push({
-          id: `table-${table}`,
-          category: 'supabase',
-          name: `Table: ${table}`,
-          status: 'warn',
-          message: 'Check failed',
-          severity: 'low',
-        });
+      for (const table of optionalTables) {
+        try {
+          const { error } = await runWithAbortTimeout(
+            BACKEND_AUDIT_TIMEOUT_MS,
+            (signal) => supabase.from(table).select('id').limit(1).abortSignal(signal),
+            `Optional table check timed out for ${table}`,
+          );
+          const missing = error && ((error.message || '').toLowerCase().includes('could not find') || (error.message || '').toLowerCase().includes('does not exist'));
+          supabaseItems.push({
+            id: `table-${table}`,
+            category: 'supabase',
+            name: `Table: ${table}`,
+            status: missing ? 'warn' : error ? 'warn' : 'pass',
+            message: missing ? 'Optional table not created yet' : error ? `Query error: ${error.message}` : 'Exists & accessible',
+            severity: missing ? 'low' : error ? 'medium' : 'info',
+          });
+        } catch (err) {
+          const timedOut = isAbortLikeError(err);
+          supabaseItems.push({
+            id: `table-${table}`,
+            category: 'supabase',
+            name: `Table: ${table}`,
+            status: 'warn',
+            message: timedOut ? `Optional table check timed out for ${table}` : 'Check failed',
+            severity: 'low',
+          });
+        }
       }
+    } else {
+      supabaseItems.push({
+        id: 'table-sweep-skipped',
+        category: 'supabase',
+        name: 'Detailed table inventory',
+        status: 'info',
+        message: 'Skipped during lightweight refresh',
+        details: `Run a deep audit to enumerate ${requiredTables.length} required tables and ${optionalTables.length} optional tables.`,
+        severity: 'info',
+      });
     }
 
     try {
@@ -221,7 +264,11 @@ async function runFullAudit(): Promise<AuditCategory[]> {
     }
 
     try {
-      const { error: rlsError } = await supabase.from('profiles').select('id').limit(1);
+      const { error: rlsError } = await runWithAbortTimeout(
+        BACKEND_AUDIT_TIMEOUT_MS,
+        (signal) => supabase.from('profiles').select('id').limit(1).abortSignal(signal),
+        `RLS check timed out after ${BACKEND_AUDIT_TIMEOUT_MS}ms`,
+      );
       supabaseItems.push({
         id: 'rls',
         category: 'supabase',
@@ -230,13 +277,14 @@ async function runFullAudit(): Promise<AuditCategory[]> {
         message: rlsError ? (rlsError.message.includes('permission') ? 'RLS active (blocking unauthenticated)' : `RLS check: ${rlsError.message}`) : 'Policies enforced',
         severity: 'info',
       });
-    } catch {
+    } catch (err) {
+      const timedOut = isAbortLikeError(err);
       supabaseItems.push({
         id: 'rls',
         category: 'supabase',
         name: 'Row Level Security (RLS)',
         status: 'warn',
-        message: 'Could not verify RLS policies',
+        message: timedOut ? `RLS check timed out after ${BACKEND_AUDIT_TIMEOUT_MS}ms` : 'Could not verify RLS policies',
         severity: 'medium',
       });
     }
@@ -249,50 +297,149 @@ async function runFullAudit(): Promise<AuditCategory[]> {
     items: supabaseItems,
   });
 
+  const passwordResetRedirectAudit = inspectPasswordResetRedirect();
+  const passwordResetRedirectUrl = passwordResetRedirectAudit.resolvedUrl;
+  const hasConfiguredAuthRecoveryUrl = passwordResetRedirectAudit.configuredValue.length > 0;
+  const passwordResetRedirectLooksValid = passwordResetRedirectUrl.endsWith('/reset-password');
+  const anonKey = (process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '').trim();
+  const serviceRoleKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+  const missingServiceRoleKey = !serviceRoleKey;
+  const serviceRoleMatchesAnon = !!serviceRoleKey && serviceRoleKey === anonKey;
+
   const authItems: AuditItem[] = [
     {
-      id: 'auth-supabase',
+      id: 'auth-owner-password-live-signin',
       category: 'auth',
-      name: 'Supabase Auth Integration',
+      name: '1. Owner password sign-in path',
       status: supabaseConfigured ? 'pass' : 'fail',
-      message: supabaseConfigured ? 'SignUp, SignIn, SignOut, RefreshSession all wired to Supabase Auth' : 'Auth disabled (no Supabase config)',
-      details: 'Login uses signInWithPassword, Register uses signUp with user_metadata. Auth state persisted in SecureStore.',
+      message: supabaseConfigured
+        ? 'Owner password goes directly to Supabase Auth with signInWithPassword'
+        : 'Owner password sign-in cannot work without Supabase configuration',
+      details: 'Code path: expo/lib/auth-context.tsx login() -> supabase.auth.signInWithPassword. There is no client-side owner-password deny branch left in the login screen.',
       severity: supabaseConfigured ? 'info' : 'critical',
     },
     {
-      id: 'auth-securestore',
+      id: 'auth-owner-admin-service-role',
       category: 'auth',
-      name: 'Token Storage (SecureStore)',
+      name: '2. Supabase admin repair key (not normal sign-in)',
+      status: missingServiceRoleKey || serviceRoleMatchesAnon ? 'fail' : 'pass',
+      message: missingServiceRoleKey
+        ? 'SUPABASE_SERVICE_ROLE_KEY is missing, so backend owner-auth repair is unavailable, but normal owner sign-in still uses the public auth path'
+        : serviceRoleMatchesAnon
+          ? 'SUPABASE_SERVICE_ROLE_KEY matches the anon key, so backend owner-auth repair is blocked, but normal owner sign-in still does not use this key'
+          : 'Service-role key is distinct from anon and can support secure backend owner-auth repair',
+      details: missingServiceRoleKey
+        ? 'Programmatic owner-account inspection, password rotation, and admin auth repair require a real Supabase service_role key. Without it, endpoints like /auth/v1/admin/users cannot be used.'
+        : serviceRoleMatchesAnon
+          ? 'When the configured service-role key matches the anon key, Supabase admin endpoints return not_admin. That blocks secure owner-account inspection and password repair outside the normal reset-email flow.'
+          : 'Keep the service-role key server-side only. Never expose it in client code.',
+      severity: missingServiceRoleKey || serviceRoleMatchesAnon ? 'critical' : 'info',
+    },
+    {
+      id: 'auth-owner-password-reset-redirect',
+      category: 'auth',
+      name: '3. Owner password reset redirect',
+      status: !passwordResetRedirectLooksValid ? 'fail' : passwordResetRedirectAudit.rejectedConfiguredUrl ? 'warn' : hasConfiguredAuthRecoveryUrl ? 'pass' : 'warn',
+      message: !passwordResetRedirectLooksValid
+        ? 'Password reset redirect URL is malformed and recovery emails can land on a dead page'
+        : passwordResetRedirectAudit.rejectedConfiguredUrl
+          ? `Configured auth URL was rejected. Using fallback reset URL ${passwordResetRedirectUrl}`
+          : hasConfiguredAuthRecoveryUrl
+            ? `Reset emails target ${passwordResetRedirectUrl}`
+            : `Using fallback reset URL ${passwordResetRedirectUrl}`,
+      details: passwordResetRedirectAudit.rejectedConfiguredUrl
+        ? `${passwordResetRedirectAudit.rejectionReason ?? 'Configured auth URL is invalid.'} The app now falls back to a public reset route, but that route must still be allow-listed in Supabase Auth redirect settings.`
+        : 'Reset emails are sent from expo/app/login.tsx and expo/app/owner-access.tsx through getPasswordResetRedirectUrl(). If EXPO_PUBLIC_RORK_AUTH_URL is missing or wrong in Supabase Auth redirect settings, password recovery can appear broken even when the email is sent.',
+      severity: !passwordResetRedirectLooksValid ? 'critical' : passwordResetRedirectAudit.rejectedConfiguredUrl ? 'medium' : hasConfiguredAuthRecoveryUrl ? 'info' : 'medium',
+    },
+    {
+      id: 'auth-owner-password-reset-handler',
+      category: 'auth',
+      name: '4. Owner password recovery session handler',
       status: 'pass',
-      message: 'JWT tokens stored in expo-secure-store (localStorage polyfill on web)',
-      details: 'Keys: ipx_auth_token, ipx_refresh_token, ipx_user_id, ipx_user_role',
+      message: 'Reset password screen can exchange PKCE codes or URL tokens and then update the password',
+      details: 'Route: expo/app/reset-password.tsx. Public access is registered in expo/app/_layout.tsx so recovery links no longer hit a missing-screen gap.',
+      severity: 'info',
+    },
+    {
+      id: 'auth-owner-legacy-claim-crash',
+      category: 'auth',
+      name: '5. Owner trusted-device crash path',
+      status: 'pass',
+      message: 'Legacy fake trusted-device claims are cleared before owner restore runs',
+      details: 'auth-context rejects non-UUID verified owner ids, resets broken local owner-claim state, and prevents stale trusted-device metadata from crashing or falsely unlocking owner recovery.',
+      severity: 'info',
+    },
+    {
+      id: 'auth-owner-role-resolution',
+      category: 'auth',
+      name: '6. Owner/admin role resolution',
+      status: supabaseConfigured ? 'pass' : 'fail',
+      message: supabaseConfigured ? 'Roles resolve from profiles -> get_user_role -> verify_admin_access' : 'Cannot verify owner/admin roles without Supabase configuration',
+      details: 'Authorization no longer trusts user_metadata for admin access. support, staff, manager, administrator, and super_admin aliases normalize into verified admin-capable roles.',
+      severity: supabaseConfigured ? 'info' : 'critical',
+    },
+    {
+      id: 'auth-owner-trusted-restore-window',
+      category: 'auth',
+      name: '7. Trusted owner restore boundary',
+      status: 'info',
+      message: 'Passwordless trusted restore now behaves like a security boundary, not a broken owner restriction',
+      details: 'A previously verified device plus a carrier-subnet match or active 30-day trusted-device window is required for passwordless restore. Full owner sign-in still works on any device with the verified owner account.',
+      severity: 'info',
+    },
+    {
+      id: 'auth-member-signup-shadow-duplicates',
+      category: 'auth',
+      name: '8. Member signup duplicate blocking',
+      status: 'pass',
+      message: 'Waitlist and landing shadow records no longer deny real member registration',
+      details: 'Signup checks durable member sources first (signup, session, supabase, admin_update) and then respects Supabase Auth existing-account responses instead of shadow leads.',
+      severity: 'info',
+    },
+    {
+      id: 'auth-local-persistence',
+      category: 'auth',
+      name: '9. Local auth persistence',
+      status: 'pass',
+      message: 'Local storage no longer grants owner access on its own',
+      details: 'auth-store persists only user id and normalized role. Supabase owns tokens and active sessions; trusted owner recovery still requires validated server or verified-device evidence.',
+      severity: 'info',
+    },
+    {
+      id: 'auth-password-change-reauth-gap',
+      category: 'auth',
+      name: '10. Signed-in password change re-auth check',
+      status: 'pass',
+      message: 'Security Settings now verifies the current password before any signed-in password change is submitted',
+      details: 'Code path: expo/app/security-settings.tsx first validates the current password against live Supabase credentials, then uses supabase.auth.updateUser with current_password and optional nonce support when Secure Password Change is enabled.',
       severity: 'info',
     },
     {
       id: 'auth-2fa',
       category: 'auth',
-      name: '2FA / Two-Factor Auth',
-      status: 'warn',
-      message: 'Not implemented - returns "2FA not yet configured with Supabase"',
-      details: 'verify2FA function is a stub. Supabase MFA can be enabled but requires Edge Function setup.',
-      severity: 'medium',
-    },
-    {
-      id: 'auth-session-refresh',
-      category: 'auth',
-      name: 'Session Auto-Refresh',
+      name: '11. 2FA / Two-Factor Auth',
       status: 'pass',
-      message: 'autoRefreshToken: true in Supabase config',
-      details: 'Supabase SDK handles token refresh automatically. Manual refreshSession() also available.',
+      message: 'Supabase TOTP MFA is now implemented for setup, sign-in challenge, and removal',
+      details: 'Login now detects aal1 -> aal2 upgrades and requires a live MFA challenge. Security Settings can enroll, verify, and unenroll TOTP factors through supabase.auth.mfa APIs.',
       severity: 'info',
     },
     {
-      id: 'auth-role-management',
+      id: 'auth-admin-guard',
       category: 'auth',
-      name: 'Role Management',
+      name: '12. Admin route guard',
       status: 'pass',
-      message: 'Roles stored in user_metadata (investor, owner, ceo, staff, manager, analyst)',
-      details: 'isAdminRole() checks against allowed admin roles. Role persisted in SecureStore and user_metadata.',
+      message: 'Admin routing accepts verified admin roles and trusted owner-IP access',
+      details: 'useAdminGuard now recognizes server-verified admin roles instead of relying on fragile client-only labels.',
+      severity: 'info',
+    },
+    {
+      id: 'auth-owner-identity-authority-audit',
+      category: 'auth',
+      name: '13. Owner identity authority audit',
+      status: 'pass',
+      message: 'Owner Access now distinguishes verified owner authority from a normal user account using both live session role evidence and trusted-device authority',
+      details: 'Code path: expo/lib/auth-context.tsx auditOwnerIdentity() + expo/app/owner-access.tsx. The audit compares the requested email against the authenticated session email/role/source and the trusted-device verified email/role/window so the app can show whether the audited email is the real verified owner authority, only a normal user account, an email mismatch, or still unverified.',
       severity: 'info',
     },
   ];
@@ -311,7 +458,7 @@ async function runFullAudit(): Promise<AuditCategory[]> {
       name: 'Local Image Storage',
       status: 'pass',
       message: 'Images copied to documentDirectory/ivx_images/ on native, URI used on web',
-      details: 'Uses expo-file-system legacy API. Falls back to original URI if copy fails.',
+      details: 'Uses the modern expo-file-system API for local copies and falls back to the original URI if a copy fails.',
       severity: 'info',
     },
     {
@@ -552,51 +699,58 @@ async function runFullAudit(): Promise<AuditCategory[]> {
     items: pushItems,
   });
 
+  const hasAwsCredentials = !!(process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY);
+  const hasLandingAwsConfig = !!(process.env.S3_BUCKET_NAME && process.env.CLOUDFRONT_DISTRIBUTION_ID);
+
   const awsItems: AuditItem[] = [
     {
       id: 'aws-credentials',
       category: 'aws',
       name: 'AWS Credentials',
-      status: (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) ? 'pass' : 'fail',
-      message: (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) ? 'AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY configured' : 'AWS credentials NOT configured',
+      status: hasAwsCredentials ? 'pass' : 'fail',
+      message: hasAwsCredentials ? 'AWS access keys are configured for infrastructure operations' : 'AWS credentials are not configured',
       details: `Region: ${process.env.AWS_REGION || 'Not set'}`,
-      severity: (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) ? 'info' : 'high',
-    },
-    {
-      id: 'aws-s3',
-      category: 'aws',
-      name: 'AWS S3 Storage',
-      status: 'warn',
-      message: '@aws-sdk/client-s3 installed but only used for landing page deploy',
-      details: 'S3 is used in landing-deploy.ts to deploy static HTML to S3 bucket. NOT used for image uploads or file storage.',
-      severity: 'medium',
-    },
-    {
-      id: 'aws-ses-actual',
-      category: 'aws',
-      name: 'AWS SES (Email)',
-      status: 'fail',
-      message: 'No AWS SES SDK usage in the codebase',
-      details: '.env.example mentions SES but no @aws-sdk/client-ses is imported anywhere. Email relies on Supabase Edge Functions.',
-      severity: 'high',
-    },
-    {
-      id: 'aws-sns-actual',
-      category: 'aws',
-      name: 'AWS SNS (SMS)',
-      status: 'fail',
-      message: 'No AWS SNS SDK usage in the codebase',
-      details: '.env.example mentions "SMS uses the same AWS credentials" but no @aws-sdk/client-sns is imported. SMS relies on Supabase Edge Functions.',
-      severity: 'high',
+      severity: hasAwsCredentials ? 'info' : 'high',
     },
     {
       id: 'aws-landing-deploy',
       category: 'aws',
-      name: 'Landing Page S3 Deploy',
+      name: 'S3 + CloudFront landing infrastructure',
+      status: hasLandingAwsConfig ? 'pass' : hasAwsCredentials ? 'warn' : 'fail',
+      message: hasLandingAwsConfig
+        ? 'S3 bucket and CloudFront distribution are configured for landing deploy + cache invalidation'
+        : hasAwsCredentials
+          ? 'AWS keys exist, but S3_BUCKET_NAME or CLOUDFRONT_DISTRIBUTION_ID is missing'
+          : 'Landing AWS deploy configuration is incomplete',
+      details: 'landing-deploy.ts can publish the landing bundle to S3 and invalidate CloudFront. This is infrastructure support, not the owner authorization path.',
+      severity: hasLandingAwsConfig ? 'info' : hasAwsCredentials ? 'medium' : 'high',
+    },
+    {
+      id: 'aws-owner-auth-independence',
+      category: 'aws',
+      name: 'Owner access dependency on AWS',
       status: 'pass',
-      message: 'S3 deploy pipeline exists (landing-deploy.ts)',
-      details: 'Uploads HTML, CSS, JS to S3 bucket with CloudFront invalidation. Uses @aws-sdk/client-s3.',
+      message: 'Owner/admin access is not gated by AWS services',
+      details: 'Owner authorization resolves through Supabase profiles, RPC role checks, and verified-device recovery. AWS is supporting landing infrastructure and delivery operations, not acting as the auth source.',
       severity: 'info',
+    },
+    {
+      id: 'aws-ses-account-limit',
+      category: 'aws',
+      name: 'AWS SES account state',
+      status: 'warn',
+      message: 'SES production access is still an AWS account approval task',
+      details: 'This affects real outbound email volume and recipient restrictions only. It does not block owner/admin login, trusted restore, or member signup.',
+      severity: 'medium',
+    },
+    {
+      id: 'aws-sns-account-limit',
+      category: 'aws',
+      name: 'AWS SNS account state',
+      status: 'warn',
+      message: 'SNS spend-limit increase is still an AWS account task',
+      details: 'This affects SMS throughput only. It does not block owner/admin login, trusted restore, or member signup.',
+      severity: 'medium',
     },
   ];
 
@@ -749,7 +903,7 @@ async function runFullAudit(): Promise<AuditCategory[]> {
     });
   }
 
-  const readinessAudit = await runLandingReadinessAudit();
+  const readinessAudit = await runLandingReadinessAudit({ mode });
   const readinessSeverityByStatus: Record<'pass' | 'warn' | 'fail', AuditItem['severity']> = {
     pass: 'info',
     warn: 'medium',
@@ -765,7 +919,7 @@ async function runFullAudit(): Promise<AuditCategory[]> {
     name: 'Readiness Summary',
     status: readinessAudit.overallStatus,
     message: readinessAudit.summary,
-    details: `blockers=${readinessAudit.blockerCount} · warnings=${readinessAudit.warningCount}`,
+    details: `mode=${readinessAudit.mode} · blockers=${readinessAudit.blockerCount} · warnings=${readinessAudit.warningCount}`,
     severity: readinessSeverityByStatus[readinessAudit.overallStatus],
   });
 
@@ -830,6 +984,7 @@ export default function BackendAuditScreen() {
   const insets = useSafeAreaInsets();
   const [categories, setCategories] = useState<AuditCategory[]>([]);
   const [isRunning, setIsRunning] = useState(false);
+  const [currentMode, setCurrentMode] = useState<ReadinessAuditMode>('light');
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   const [lastRunAt, setLastRunAt] = useState<Date | null>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -839,15 +994,15 @@ export default function BackendAuditScreen() {
   const totalWarn = categories.reduce((sum, c) => sum + c.items.filter(i => i.status === 'warn').length, 0);
   const totalItems = categories.reduce((sum, c) => sum + c.items.length, 0);
 
-  const startAudit = useCallback(async () => {
+  const startAudit = useCallback(async (mode: ReadinessAuditMode = 'light') => {
     setIsRunning(true);
-    setCategories([]);
+    setCurrentMode(mode);
     try {
-      console.log('[BackendAudit] Starting full audit...');
-      const result = await runFullAudit();
+      console.log('[BackendAudit] Starting', mode, 'audit...');
+      const result = await runFullAudit(mode);
       setCategories(result);
       setLastRunAt(new Date());
-      console.log('[BackendAudit] Audit complete');
+      console.log('[BackendAudit] Audit complete for mode:', mode);
     } catch (err) {
       console.error('[BackendAudit] Audit failed:', err);
     } finally {
@@ -856,7 +1011,7 @@ export default function BackendAuditScreen() {
   }, []);
 
   useEffect(() => {
-    void startAudit();
+    void startAudit('light');
   }, [startAudit]);
 
   useEffect(() => {
@@ -943,26 +1098,37 @@ export default function BackendAuditScreen() {
         </TouchableOpacity>
         <View style={styles.headerTitleContainer}>
           <Text style={styles.headerTitle}>Backend Audit</Text>
-          <Text style={styles.headerSubtitle}>Full System Health + 30K Readiness Report</Text>
+          <Text style={styles.headerSubtitle}>Light scan by default · deep audit on demand</Text>
         </View>
-        <TouchableOpacity onPress={startAudit} style={styles.refreshButton} disabled={isRunning} testID="refresh-audit">
-          <Animated.View style={{ opacity: isRunning ? pulseAnim : 1 }}>
-            <RefreshCw size={20} color="#fff" />
-          </Animated.View>
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity onPress={() => void startAudit('light')} style={styles.refreshButton} disabled={isRunning} testID="refresh-audit-light">
+            <Animated.View style={{ opacity: isRunning && currentMode === 'light' ? pulseAnim : 1 }}>
+              <RefreshCw size={20} color="#fff" />
+            </Animated.View>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => void startAudit('full')} style={styles.deepAuditButton} disabled={isRunning} testID="refresh-audit-full">
+            <Animated.View style={{ opacity: isRunning && currentMode === 'full' ? pulseAnim : 1 }}>
+              <Zap size={20} color="#fff" />
+            </Animated.View>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 40 }]}
-        refreshControl={<RefreshControl refreshing={isRunning} onRefresh={startAudit} tintColor={Colors.primary} />}
+        refreshControl={<RefreshControl refreshing={isRunning} onRefresh={() => void startAudit('light')} tintColor={Colors.primary} />}
         showsVerticalScrollIndicator={false}
       >
         {isRunning && categories.length === 0 && (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={Colors.primary} />
-            <Text style={styles.loadingText}>Running deep audit...</Text>
-            <Text style={styles.loadingSubtext}>Checking Supabase, AWS, Email, SMS, Payments, KYC...</Text>
+            <Text style={styles.loadingText}>{currentMode === 'full' ? 'Running deep audit...' : 'Running lightweight audit...'}</Text>
+            <Text style={styles.loadingSubtext}>
+              {currentMode === 'full'
+                ? 'Checking Supabase, write-path readiness, AWS, Email, SMS, Payments, KYC...'
+                : 'Checking cached health, auth reachability, and read-only readiness without the heavy write probes...'}
+            </Text>
           </View>
         )}
 
@@ -978,7 +1144,7 @@ export default function BackendAuditScreen() {
                 <View style={[styles.summaryBox, { backgroundColor: '#EF444415' }]}>
                   <XCircle size={22} color="#EF4444" />
                   <Text style={[styles.summaryCount, { color: '#EF4444' }]}>{totalFail}</Text>
-                  <Text style={styles.summaryLabel}>Issues</Text>
+                  <Text style={styles.summaryLabel}>Red</Text>
                 </View>
                 <View style={[styles.summaryBox, { backgroundColor: '#F59E0B15' }]}>
                   <AlertTriangle size={22} color="#F59E0B" />
@@ -1000,7 +1166,7 @@ export default function BackendAuditScreen() {
               <View style={styles.criticalSection}>
                 <View style={styles.criticalHeader}>
                   <XCircle size={18} color="#EF4444" />
-                  <Text style={styles.criticalTitle}>Issues Found ({totalFail})</Text>
+                  <Text style={styles.criticalTitle}>Red crashes & blockers ({totalFail})</Text>
                 </View>
                 {categories.flatMap(c => c.items.filter(i => i.status === 'fail')).map((item, idx) => (
                   <View key={item.id} style={styles.criticalItem}>
@@ -1024,7 +1190,7 @@ export default function BackendAuditScreen() {
               <View style={styles.warningSection}>
                 <View style={styles.warningHeader}>
                   <AlertTriangle size={18} color="#F59E0B" />
-                  <Text style={styles.warningTitle}>Warnings ({totalWarn})</Text>
+                  <Text style={styles.warningTitle}>Yellow warnings ({totalWarn})</Text>
                 </View>
                 {categories.flatMap(c => c.items.filter(i => i.status === 'warn')).map((item, idx) => (
                   <View key={item.id} style={styles.warningItem}>
@@ -1146,7 +1312,20 @@ const styles = StyleSheet.create({
     color: '#9CA3AF',
     marginTop: 2,
   },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   refreshButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: '#1F2937',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deepAuditButton: {
     width: 38,
     height: 38,
     borderRadius: 10,

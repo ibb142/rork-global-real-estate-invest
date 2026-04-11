@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'expo-router';
 import {
   View,
@@ -13,11 +13,13 @@ import * as Haptics from 'expo-haptics';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { ArrowUpRight, Clock, HelpCircle, MessageCircle, User } from 'lucide-react-native';
+import { ArrowUpRight, Clock, HelpCircle, MessageCircle, Radio, ScanLine, User } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useTranslation } from '@/lib/i18n-context';
 import { getResponsiveSize, isExtraSmallScreen } from '@/lib/responsive';
 import InvestorSupportChat, { type HumanSupportRequestResult } from '@/components/InvestorSupportChat';
+import { getAutoDeployStatus } from '@/lib/auto-deploy';
+import { getDeployStatus } from '@/lib/landing-deploy';
 import type { ChatMessage } from '@/types';
 import {
   type CreateSupportTicketParams,
@@ -30,6 +32,9 @@ import {
   fetchUserSupportTickets,
   mapSupportTicketRows,
 } from '@/lib/support-chat';
+import { probeAIBackendHealth } from '@/src/modules/chat/services/aiReplyService';
+import { getCurrentChatRoomStatus, subscribeToChatRoomStatus } from '@/src/modules/chat/services/supabaseChatProvider';
+import type { ChatRoomStatus, ServiceRuntimeHealth } from '@/src/modules/chat/types/chat';
 
 type ViewMode = 'chat' | 'tickets';
 
@@ -44,6 +49,80 @@ const APP_CHAT_QUICK_REPLIES = [
 
 const APP_CHAT_WELCOME_MESSAGE = 'Hello! Ask about investing, account support, frontend or web issues, backend or Supabase flows, AWS S3 and CloudFront, or ChatGPT and OpenAI integration.';
 
+function getRoomProofLabel(status: ChatRoomStatus | null): string {
+  if (!status) {
+    return 'Checking room';
+  }
+
+  switch (status.storageMode) {
+    case 'primary_supabase_tables':
+      return 'Live shared room';
+    case 'alternate_room_schema':
+      return 'Shared fallback';
+    case 'snapshot_storage':
+      return 'Snapshot mode';
+    case 'local_device_only':
+      return 'Local only';
+    default:
+      return 'Checking room';
+  }
+}
+
+function getRoomProofColor(status: ChatRoomStatus | null): string {
+  if (!status) {
+    return Colors.textTertiary;
+  }
+
+  switch (status.storageMode) {
+    case 'primary_supabase_tables':
+      return Colors.success;
+    case 'alternate_room_schema':
+    case 'snapshot_storage':
+      return Colors.warning;
+    case 'local_device_only':
+      return '#FF7D7D';
+    default:
+      return Colors.textTertiary;
+  }
+}
+
+function getAIProofLabel(health: ServiceRuntimeHealth | undefined): string {
+  switch (health) {
+    case 'active':
+      return 'Replies ready';
+    case 'degraded':
+      return 'Replies degraded';
+    case 'inactive':
+    default:
+      return 'Replies off';
+  }
+}
+
+function getAIProofColor(health: ServiceRuntimeHealth | undefined): string {
+  switch (health) {
+    case 'active':
+      return Colors.success;
+    case 'degraded':
+      return Colors.warning;
+    case 'inactive':
+    default:
+      return '#FF7D7D';
+  }
+}
+
+function formatLastDeployLabel(value: string | null | undefined): string {
+  if (!value) {
+    return 'Last deploy: none';
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return 'Last deploy: unknown';
+  }
+
+  return `Last deploy: ${parsed.toLocaleString()}`;
+}
+
 export default function ChatScreen() {
   const router = useRouter();
   const { width } = useWindowDimensions();
@@ -51,6 +130,7 @@ export default function ChatScreen() {
   const insets = useSafeAreaInsets();
   const tabBarHeight = useBottomTabBarHeight();
   const [viewMode, setViewMode] = useState<ViewMode>('chat');
+  const [roomStatus, setRoomStatus] = useState<ChatRoomStatus | null>(() => getCurrentChatRoomStatus());
 
   const screenSize = getResponsiveSize(width);
   const isXs = isExtraSmallScreen(screenSize);
@@ -63,6 +143,25 @@ export default function ChatScreen() {
     queryFn: fetchUserSupportTickets,
   });
 
+  const deployProofQuery = useQuery({
+    queryKey: ['chat-room-proof', 'deploy'],
+    queryFn: async () => {
+      return {
+        deploy: getDeployStatus(),
+        autoDeploy: await getAutoDeployStatus(),
+      };
+    },
+    staleTime: 60000,
+    refetchInterval: 120000,
+  });
+
+  const aiHealthQuery = useQuery<ServiceRuntimeHealth>({
+    queryKey: ['chat-room-proof', 'ai-health'],
+    queryFn: probeAIBackendHealth,
+    staleTime: 30000,
+    refetchInterval: 60000,
+  });
+
   const createTicketMutation = useMutation<SupportTicketRow, Error, CreateSupportTicketParams>({
     mutationFn: createSupportTicket,
   });
@@ -70,6 +169,45 @@ export default function ChatScreen() {
   const supportTickets = useMemo<SupportTicketItem[]>(() => {
     return mapSupportTicketRows(ticketsQuery.data ?? []);
   }, [ticketsQuery.data]);
+  const roomProofLabel = useMemo(() => getRoomProofLabel(roomStatus), [roomStatus]);
+  const roomProofColor = useMemo(() => getRoomProofColor(roomStatus), [roomStatus]);
+  const aiProofLabel = useMemo(() => getAIProofLabel(aiHealthQuery.data), [aiHealthQuery.data]);
+  const aiProofColor = useMemo(() => getAIProofColor(aiHealthQuery.data), [aiHealthQuery.data]);
+  const deployProofLabel = useMemo(() => {
+    if (deployProofQuery.data?.deploy.publicDeployConfigured) {
+      return 'Public pipeline ready';
+    }
+
+    return deployProofQuery.data?.deploy.pipelineLabel ?? 'Checking deploy';
+  }, [deployProofQuery.data?.deploy.pipelineLabel, deployProofQuery.data?.deploy.publicDeployConfigured]);
+  const deployProofColor = useMemo(() => {
+    if (deployProofQuery.data?.deploy.publicDeployConfigured) {
+      return Colors.success;
+    }
+
+    if (deployProofQuery.data?.deploy.canDeploy) {
+      return Colors.warning;
+    }
+
+    return Colors.textTertiary;
+  }, [deployProofQuery.data?.deploy.canDeploy, deployProofQuery.data?.deploy.publicDeployConfigured]);
+  const githubProofLabel = useMemo(() => {
+    return deployProofQuery.data?.deploy.githubActionsConfigured ? 'GitHub ready' : 'GitHub missing';
+  }, [deployProofQuery.data?.deploy.githubActionsConfigured]);
+  const githubProofColor = useMemo(() => {
+    return deployProofQuery.data?.deploy.githubActionsConfigured ? Colors.success : '#FF7D7D';
+  }, [deployProofQuery.data?.deploy.githubActionsConfigured]);
+  const lastDeployLabel = useMemo(() => {
+    return formatLastDeployLabel(deployProofQuery.data?.autoDeploy.lastDeploy?.timestamp ?? null);
+  }, [deployProofQuery.data?.autoDeploy.lastDeploy?.timestamp]);
+
+  useEffect(() => {
+    const unsubscribe = subscribeToChatRoomStatus((nextStatus) => {
+      setRoomStatus(nextStatus);
+    });
+
+    return unsubscribe;
+  }, []);
 
   const getTicketStatusColor = useCallback((status: TicketStatus) => {
     switch (status) {
@@ -178,19 +316,60 @@ export default function ChatScreen() {
         <View style={[styles.moduleCard, { marginHorizontal: isXs ? 16 : 20, padding: isXs ? 14 : 16 }]}>
           <View style={styles.moduleCardHeader}>
             <View style={styles.moduleBadge}>
-              <Text style={styles.moduleBadgeText}>NEW</Text>
+              <Text style={styles.moduleBadgeText}>OWNER</Text>
             </View>
-            <TouchableOpacity
-              style={styles.moduleButton}
-              onPress={() => router.push('/chat-room?conversationId=ivx-owner-room&title=IVX%20Message%20Room' as any)}
-              testID="chat-open-message-room"
-            >
-              <Text style={styles.moduleButtonText}>Open room</Text>
-              <ArrowUpRight size={14} color={Colors.black} />
-            </TouchableOpacity>
+            <View style={styles.moduleActions}>
+              <TouchableOpacity
+                style={styles.moduleGhostButton}
+                onPress={() => router.push('/admin/sync-diagnostics' as any)}
+                testID="chat-open-room-proof"
+              >
+                <Text style={styles.moduleGhostButtonText}>Proof</Text>
+                <ScanLine size={14} color={Colors.text} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.moduleButton}
+                onPress={() => router.push('/chat-room?conversationId=ivx-owner-room&title=IVX%20Owner%20AI%20Room' as any)}
+                testID="chat-open-message-room"
+              >
+                <Text style={styles.moduleButtonText}>Open room</Text>
+                <ArrowUpRight size={14} color={Colors.black} />
+              </TouchableOpacity>
+            </View>
           </View>
-          <Text style={[styles.moduleTitle, { fontSize: isXs ? 16 : 18 }]}>Realtime message room</Text>
-          <Text style={[styles.moduleText, { fontSize: isXs ? 12 : 13 }]}>Use the new Supabase-backed chat module for direct message, image, video, and PDF room testing without replacing live support.</Text>
+          <Text style={[styles.moduleTitle, { fontSize: isXs ? 16 : 18 }]}>IVX Owner AI room</Text>
+          <Text style={[styles.moduleText, { fontSize: isXs ? 12 : 13 }]}>Open the shared owner room for live sync, AI reply checks, and owner-side backend proof without replacing live support.</Text>
+          <View style={styles.proofGrid}>
+            <View style={styles.proofCard}>
+              <View style={styles.proofTopRow}>
+                <Radio size={14} color={roomProofColor} />
+                <Text style={styles.proofLabel}>Room sync</Text>
+              </View>
+              <Text style={[styles.proofValue, { color: roomProofColor }]}>{roomProofLabel}</Text>
+            </View>
+            <View style={styles.proofCard}>
+              <View style={styles.proofTopRow}>
+                <MessageCircle size={14} color={aiProofColor} />
+                <Text style={styles.proofLabel}>AI replies</Text>
+              </View>
+              <Text style={[styles.proofValue, { color: aiProofColor }]}>{aiProofLabel}</Text>
+            </View>
+            <View style={styles.proofCard}>
+              <View style={styles.proofTopRow}>
+                <ScanLine size={14} color={deployProofColor} />
+                <Text style={styles.proofLabel}>Deploy</Text>
+              </View>
+              <Text style={[styles.proofValue, { color: deployProofColor }]}>{deployProofLabel}</Text>
+            </View>
+            <View style={styles.proofCard}>
+              <View style={styles.proofTopRow}>
+                <ArrowUpRight size={14} color={githubProofColor} />
+                <Text style={styles.proofLabel}>GitHub</Text>
+              </View>
+              <Text style={[styles.proofValue, { color: githubProofColor }]}>{githubProofLabel}</Text>
+              <Text style={styles.proofMeta}>{lastDeployLabel}</Text>
+            </View>
+          </View>
         </View>
 
         <View style={[styles.tabsContainer, { marginHorizontal: isXs ? 16 : 20 }]}> 
@@ -367,6 +546,11 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '800' as const,
   },
+  moduleActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   moduleButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -375,6 +559,22 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 10,
+  },
+  moduleGhostButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: Colors.backgroundSecondary,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+  },
+  moduleGhostButtonText: {
+    color: Colors.text,
+    fontSize: 12,
+    fontWeight: '700' as const,
   },
   moduleButtonText: {
     color: Colors.black,
@@ -389,6 +589,47 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     lineHeight: 19,
     marginTop: 6,
+  },
+  proofGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 14,
+  },
+  proofCard: {
+    flexBasis: '48%',
+    flexGrow: 1,
+    minHeight: 78,
+    borderRadius: 14,
+    padding: 12,
+    backgroundColor: Colors.backgroundSecondary,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    gap: 8,
+  },
+  proofTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  proofLabel: {
+    color: Colors.textTertiary,
+    fontSize: 11,
+    fontWeight: '700' as const,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.4,
+  },
+  proofValue: {
+    color: Colors.text,
+    fontSize: 13,
+    fontWeight: '800' as const,
+    lineHeight: 18,
+  },
+  proofMeta: {
+    color: Colors.textTertiary,
+    fontSize: 11,
+    lineHeight: 16,
+    fontWeight: '600' as const,
   },
   tabsContainer: {
     flexDirection: 'row',

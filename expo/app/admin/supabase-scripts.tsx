@@ -34,9 +34,13 @@ import {
   Copy,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
-import * as Clipboard from 'expo-clipboard';
 import * as Linking from 'expo-linking';
 import Colors from '@/constants/colors';
+import { IVX_OWNER_AI_SCHEMA_SQL } from '@/constants/ivx-owner-ai-schema-sql';
+import { IVX_OWNER_ADMIN_MODULE_SQL } from '@/constants/ivx-owner-admin-module-sql';
+import { IVX_SECURITY_HOTFIX_SQL } from '@/constants/ivx-security-hotfix-sql';
+import { safeSetString } from '@/lib/safe-clipboard';
+import { executeSupabaseSqlScript, isSupabaseSqlExecMissing } from '@/lib/supabase-sql-executor';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 
 console.log('[Supabase Status] Live dashboard loaded');
@@ -76,6 +80,7 @@ interface SectionState {
 }
 
 type DeployAction = 'idle' | 'deploying' | 'success' | 'error';
+type OwnerModuleStatus = 'live' | 'partial' | 'missing';
 
 const KYC_TABLES_SQL = `-- IVX KYC Tables: kyc_verifications + kyc_documents
 -- Run this in Supabase SQL Editor to create KYC tables
@@ -196,7 +201,7 @@ CREATE TRIGGER kyc_sync_profile_trigger
 
 const FULL_SCHEMA_SQL = `-- IVX COMPLETE SUPABASE SCHEMA — AUTO-DEPLOY SCRIPT
 -- Run this ONCE in Supabase SQL Editor
--- Creates ALL 39 tables, RLS policies, indexes, triggers, RPC functions, and storage buckets
+-- Creates the full IVX schema, including IVX Owner AI tables, RLS policies, indexes, triggers, RPC functions, and storage buckets
 -- Safe to re-run: uses CREATE IF NOT EXISTS and DO blocks
 
 CREATE OR REPLACE FUNCTION ivx_exec_sql(sql_text TEXT) RETURNS VOID AS $fn$ BEGIN EXECUTE sql_text; END; $fn$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -318,10 +323,26 @@ ALTER TABLE public.realtime_snapshots ENABLE ROW LEVEL SECURITY;
 DO $ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname='realtime_snapshots_auth_select') THEN CREATE POLICY "realtime_snapshots_auth_select" ON public.realtime_snapshots FOR SELECT TO authenticated USING (true); END IF; IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname='realtime_snapshots_auth_insert') THEN CREATE POLICY "realtime_snapshots_auth_insert" ON public.realtime_snapshots FOR INSERT TO authenticated WITH CHECK (true); END IF; END $;
 DO $ BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.realtime_snapshots; EXCEPTION WHEN duplicate_object THEN NULL; END $;
 
-CREATE TABLE IF NOT EXISTS public.messages (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), conversation_id TEXT NOT NULL, sender_id TEXT NOT NULL, text TEXT, file_url TEXT, file_type TEXT, created_at TIMESTAMPTZ DEFAULT now());
+CREATE OR REPLACE FUNCTION public.ivx_is_owner() RETURNS boolean LANGUAGE sql SECURITY DEFINER SET search_path = public AS $ivx$ SELECT auth.uid() IS NOT NULL AND EXISTS ( SELECT 1 FROM public.profiles WHERE id = auth.uid() AND regexp_replace(lower(coalesce(role, 'investor')), '[^a-z0-9]+', '', 'g') IN ('owner', 'owneradmin') ); $ivx$;
+
+CREATE TABLE IF NOT EXISTS public.conversations (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), title TEXT NOT NULL, subtitle TEXT, last_message_text TEXT, last_message_at TIMESTAMPTZ DEFAULT now());
+ALTER TABLE public.conversations ENABLE ROW LEVEL SECURITY;
+DO $ BEGIN IF EXISTS (SELECT 1 FROM pg_policies WHERE policyname='conversations_auth_all' AND schemaname='public' AND tablename='conversations') THEN DROP POLICY "conversations_auth_all" ON public.conversations; END IF; CREATE POLICY "conversations_auth_all" ON public.conversations FOR ALL TO authenticated USING (id <> '8f5a9c42-1cb5-4f81-b2d8-6f3a0a8b9d41'::uuid OR public.ivx_is_owner()) WITH CHECK (id <> '8f5a9c42-1cb5-4f81-b2d8-6f3a0a8b9d41'::uuid OR public.ivx_is_owner()); END $;
+CREATE INDEX IF NOT EXISTS idx_conversations_last_message_at ON public.conversations(last_message_at DESC);
+DO $ BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.conversations; EXCEPTION WHEN duplicate_object THEN NULL; END $;
+
+CREATE TABLE IF NOT EXISTS public.conversation_participants (conversation_id UUID NOT NULL REFERENCES public.conversations(id) ON DELETE CASCADE, user_id TEXT NOT NULL, unread_count INTEGER DEFAULT 0, last_read_at TIMESTAMPTZ, PRIMARY KEY (conversation_id, user_id));
+ALTER TABLE public.conversation_participants ENABLE ROW LEVEL SECURITY;
+DO $ BEGIN IF EXISTS (SELECT 1 FROM pg_policies WHERE policyname='conversation_participants_auth_all' AND schemaname='public' AND tablename='conversation_participants') THEN DROP POLICY "conversation_participants_auth_all" ON public.conversation_participants; END IF; CREATE POLICY "conversation_participants_auth_all" ON public.conversation_participants FOR ALL TO authenticated USING (conversation_id <> '8f5a9c42-1cb5-4f81-b2d8-6f3a0a8b9d41'::uuid OR public.ivx_is_owner()) WITH CHECK (conversation_id <> '8f5a9c42-1cb5-4f81-b2d8-6f3a0a8b9d41'::uuid OR public.ivx_is_owner()); END $;
+CREATE INDEX IF NOT EXISTS idx_conversation_participants_user ON public.conversation_participants(user_id);
+CREATE INDEX IF NOT EXISTS idx_conversation_participants_conversation ON public.conversation_participants(conversation_id);
+DO $ BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.conversation_participants; EXCEPTION WHEN duplicate_object THEN NULL; END $;
+
+CREATE TABLE IF NOT EXISTS public.messages (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), conversation_id UUID NOT NULL REFERENCES public.conversations(id) ON DELETE CASCADE, sender_id TEXT NOT NULL, text TEXT, file_url TEXT, file_type TEXT, read_by TEXT[] DEFAULT '{}'::TEXT[], created_at TIMESTAMPTZ NOT NULL DEFAULT now());
 ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
-DO $ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname='messages_auth_select') THEN CREATE POLICY "messages_auth_select" ON public.messages FOR SELECT TO authenticated USING (true); END IF; IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname='messages_auth_insert') THEN CREATE POLICY "messages_auth_insert" ON public.messages FOR INSERT TO authenticated WITH CHECK (true); END IF; END $;
+DO $ BEGIN IF EXISTS (SELECT 1 FROM pg_policies WHERE policyname='messages_auth_all' AND schemaname='public' AND tablename='messages') THEN DROP POLICY "messages_auth_all" ON public.messages; END IF; CREATE POLICY "messages_auth_all" ON public.messages FOR ALL TO authenticated USING (conversation_id <> '8f5a9c42-1cb5-4f81-b2d8-6f3a0a8b9d41'::uuid OR public.ivx_is_owner()) WITH CHECK (conversation_id <> '8f5a9c42-1cb5-4f81-b2d8-6f3a0a8b9d41'::uuid OR public.ivx_is_owner()); END $;
 CREATE INDEX IF NOT EXISTS idx_messages_conversation_created ON public.messages(conversation_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_messages_sender_created ON public.messages(sender_id, created_at DESC);
 DO $ BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.messages; EXCEPTION WHEN duplicate_object THEN NULL; END $;
 
 CREATE TABLE IF NOT EXISTS public.push_tokens (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID, token TEXT NOT NULL, platform TEXT, created_at TIMESTAMPTZ DEFAULT now(), updated_at TIMESTAMPTZ DEFAULT now(), UNIQUE(token));
@@ -412,10 +433,10 @@ CREATE OR REPLACE FUNCTION sync_kyc_status_to_profile() RETURNS TRIGGER AS $fn$ 
 DROP TRIGGER IF EXISTS kyc_sync_profile_trigger ON public.kyc_verifications;
 CREATE TRIGGER kyc_sync_profile_trigger AFTER UPDATE ON public.kyc_verifications FOR EACH ROW EXECUTE FUNCTION sync_kyc_status_to_profile();
 
-CREATE OR REPLACE FUNCTION is_admin() RETURNS BOOLEAN AS $fn$ BEGIN RETURN EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role IN ('admin','owner')); END; $fn$ LANGUAGE plpgsql SECURITY DEFINER;
-CREATE OR REPLACE FUNCTION is_owner_of(check_user_id UUID) RETURNS BOOLEAN AS $fn$ BEGIN RETURN EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'owner'); END; $fn$ LANGUAGE plpgsql SECURITY DEFINER;
+CREATE OR REPLACE FUNCTION is_admin() RETURNS BOOLEAN AS $fn$ BEGIN RETURN EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND regexp_replace(lower(COALESCE(role, 'investor')), '[^a-z0-9]+', '', 'g') IN ('owner', 'owneradmin')); END; $fn$ LANGUAGE plpgsql SECURITY DEFINER;
+CREATE OR REPLACE FUNCTION is_owner_of(check_user_id UUID) RETURNS BOOLEAN AS $fn$ BEGIN RETURN EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND regexp_replace(lower(COALESCE(role, 'investor')), '[^a-z0-9]+', '', 'g') IN ('owner', 'owneradmin')); END; $fn$ LANGUAGE plpgsql SECURITY DEFINER;
 CREATE OR REPLACE FUNCTION get_user_role() RETURNS TEXT AS $fn$ DECLARE user_role TEXT; BEGIN SELECT role INTO user_role FROM public.profiles WHERE id = auth.uid(); RETURN COALESCE(user_role, 'investor'); END; $fn$ LANGUAGE plpgsql SECURITY DEFINER;
-CREATE OR REPLACE FUNCTION verify_admin_access() RETURNS BOOLEAN AS $fn$ BEGIN RETURN EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role IN ('admin','owner')); END; $fn$ LANGUAGE plpgsql SECURITY DEFINER;
+CREATE OR REPLACE FUNCTION verify_admin_access() RETURNS BOOLEAN AS $fn$ BEGIN RETURN EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND regexp_replace(lower(COALESCE(role, 'investor')), '[^a-z0-9]+', '', 'g') IN ('owner', 'owneradmin')); END; $fn$ LANGUAGE plpgsql SECURITY DEFINER;
 
 CREATE OR REPLACE FUNCTION upsert_visitor_session(p_session_id TEXT, p_ip_hash TEXT DEFAULT NULL, p_user_agent TEXT DEFAULT NULL, p_country TEXT DEFAULT NULL, p_city TEXT DEFAULT NULL, p_device_type TEXT DEFAULT NULL, p_page_path TEXT DEFAULT NULL, p_referrer TEXT DEFAULT NULL, p_utm_source TEXT DEFAULT NULL, p_utm_medium TEXT DEFAULT NULL, p_utm_campaign TEXT DEFAULT NULL) RETURNS VOID AS $fn$ BEGIN INSERT INTO public.visitor_sessions (session_id,ip_hash,user_agent,country,city,device_type,page_path,referrer,utm_source,utm_medium,utm_campaign,is_active,last_seen_at) VALUES (p_session_id,p_ip_hash,p_user_agent,p_country,p_city,p_device_type,p_page_path,p_referrer,p_utm_source,p_utm_medium,p_utm_campaign,true,now()) ON CONFLICT (session_id) DO UPDATE SET last_seen_at=now(),is_active=true,page_path=COALESCE(EXCLUDED.page_path,visitor_sessions.page_path); EXCEPTION WHEN unique_violation THEN UPDATE public.visitor_sessions SET last_seen_at=now(),is_active=true WHERE session_id=p_session_id; END; $fn$ LANGUAGE plpgsql SECURITY DEFINER;
 DO $ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='visitor_sessions_session_id_key') THEN ALTER TABLE public.visitor_sessions ADD CONSTRAINT visitor_sessions_session_id_key UNIQUE (session_id); END IF; EXCEPTION WHEN duplicate_object THEN NULL; END $;
@@ -431,8 +452,11 @@ CREATE OR REPLACE FUNCTION ensure_deal_photos_bucket() RETURNS VOID AS $fn$ BEGI
 INSERT INTO storage.buckets (id,name,public) VALUES ('deal-photos','deal-photos',true) ON CONFLICT (id) DO NOTHING;
 INSERT INTO storage.buckets (id,name,public) VALUES ('investor-intake','investor-intake',true) ON CONFLICT (id) DO NOTHING;
 INSERT INTO storage.buckets (id,name,public) VALUES ('landing-page','landing-page',true) ON CONFLICT (id) DO NOTHING;
+INSERT INTO storage.buckets (id,name,public) VALUES ('chat-uploads','chat-uploads',true) ON CONFLICT (id) DO NOTHING;
 
-DO $ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname='deal_photos_public_select') THEN CREATE POLICY "deal_photos_public_select" ON storage.objects FOR SELECT USING (bucket_id='deal-photos'); END IF; IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname='deal_photos_auth_insert') THEN CREATE POLICY "deal_photos_auth_insert" ON storage.objects FOR INSERT TO authenticated WITH CHECK (bucket_id='deal-photos'); END IF; IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname='investor_intake_public_select') THEN CREATE POLICY "investor_intake_public_select" ON storage.objects FOR SELECT USING (bucket_id='investor-intake'); END IF; IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname='investor_intake_anon_insert') THEN CREATE POLICY "investor_intake_anon_insert" ON storage.objects FOR INSERT TO anon WITH CHECK (bucket_id='investor-intake'); END IF; IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname='landing_page_public_select') THEN CREATE POLICY "landing_page_public_select" ON storage.objects FOR SELECT USING (bucket_id='landing-page'); END IF; IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname='landing_page_auth_all') THEN CREATE POLICY "landing_page_auth_all" ON storage.objects FOR ALL TO authenticated USING (bucket_id='landing-page') WITH CHECK (bucket_id='landing-page'); END IF; END $;
+DO $ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname='deal_photos_public_select') THEN CREATE POLICY "deal_photos_public_select" ON storage.objects FOR SELECT USING (bucket_id='deal-photos'); END IF; IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname='deal_photos_auth_insert') THEN CREATE POLICY "deal_photos_auth_insert" ON storage.objects FOR INSERT TO authenticated WITH CHECK (bucket_id='deal-photos'); END IF; IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname='investor_intake_public_select') THEN CREATE POLICY "investor_intake_public_select" ON storage.objects FOR SELECT USING (bucket_id='investor-intake'); END IF; IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname='investor_intake_anon_insert') THEN CREATE POLICY "investor_intake_anon_insert" ON storage.objects FOR INSERT TO anon WITH CHECK (bucket_id='investor-intake'); END IF; IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname='landing_page_public_select') THEN CREATE POLICY "landing_page_public_select" ON storage.objects FOR SELECT USING (bucket_id='landing-page'); END IF; IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname='landing_page_auth_all') THEN CREATE POLICY "landing_page_auth_all" ON storage.objects FOR ALL TO authenticated USING (bucket_id='landing-page') WITH CHECK (bucket_id='landing-page'); END IF; IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname='chat_uploads_public_select') THEN CREATE POLICY "chat_uploads_public_select" ON storage.objects FOR SELECT USING (bucket_id='chat-uploads'); END IF; IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname='chat_uploads_auth_insert') THEN CREATE POLICY "chat_uploads_auth_insert" ON storage.objects FOR INSERT TO authenticated WITH CHECK (bucket_id='chat-uploads'); END IF; END $;
+
+${IVX_OWNER_AI_SCHEMA_SQL}
 
 SELECT 'IVX Full Schema deployed successfully — ' || now()::text AS result;`;
 
@@ -505,7 +529,7 @@ CREATE TRIGGER waitlist_updated_at
   FOR EACH ROW
   EXECUTE FUNCTION update_waitlist_updated_at();`;
 
-const ALL_TABLES = [
+const BASE_APP_TABLES = [
   'jv_deals', 'landing_deals', 'audit_trail', 'waitlist',
   'profiles', 'wallets', 'holdings', 'transactions', 'notifications',
   'analytics_events', 'analytics_dashboard', 'analytics_kpi',
@@ -526,21 +550,36 @@ const ALL_TABLES = [
   'retargeting_dashboard', 'audience_segments', 'ad_pixels',
   'utm_analytics', 'search_discovery', 're_engagement_triggers',
   'engagement_scoring', 'emails',
-  'visitor_sessions', 'realtime_snapshots',
+  'visitor_sessions', 'realtime_snapshots', 'conversations',
+  'conversation_participants', 'messages',
   'image_backups', 'image_health_reports',
   'landing_investments',
-];
+] as const;
+
+const IVX_OWNER_AI_DEPLOY_TABLES = [
+  'ivx_conversations',
+  'ivx_messages',
+  'ivx_inbox_state',
+  'ivx_ai_requests',
+  'ivx_knowledge_documents',
+] as const;
+
+const ALL_TABLES = [...BASE_APP_TABLES, ...IVX_OWNER_AI_DEPLOY_TABLES];
 
 const ALL_FUNCTIONS = [
   'is_admin', 'is_owner_of', 'get_user_role', 'verify_admin_access',
   'ensure_deal_photos_bucket', 'increment_sms_counter',
   'update_updated_at', 'update_updated_at_column', 'increment_jv_version',
   'upsert_visitor_session', 'mark_inactive_sessions', 'save_realtime_snapshot',
-  'ivx_exec_sql',
+  'ivx_exec_sql', 'ivx_is_owner',
 ];
 
-const REALTIME_TABLES = ['jv_deals', 'landing_deals', 'waitlist', 'notifications', 'transactions', 'landing_analytics', 'visitor_sessions', 'analytics_events'];
-const STORAGE_BUCKETS = ['deal-photos', 'landing-page'];
+const BASE_REALTIME_TABLES = ['jv_deals', 'landing_deals', 'waitlist', 'notifications', 'transactions', 'landing_analytics', 'visitor_sessions', 'analytics_events', 'conversations', 'conversation_participants', 'messages'] as const;
+const IVX_OWNER_AI_REALTIME_TABLES = ['ivx_conversations', 'ivx_messages', 'ivx_inbox_state'] as const;
+const REALTIME_TABLES = [...BASE_REALTIME_TABLES, ...IVX_OWNER_AI_REALTIME_TABLES];
+const BASE_STORAGE_BUCKETS = ['deal-photos', 'landing-page', 'chat-uploads'] as const;
+const IVX_OWNER_AI_STORAGE_BUCKETS = ['ivx-owner-files'] as const;
+const STORAGE_BUCKETS = [...BASE_STORAGE_BUCKETS, ...IVX_OWNER_AI_STORAGE_BUCKETS];
 
 export default function SupabaseStatusPage() {
   const router = useRouter();
@@ -704,6 +743,38 @@ export default function SupabaseStatusPage() {
   const waitlistStatus = waitlistCheck?.status ?? 'pending';
   const waitlistRowCount = waitlistCheck?.rowCount ?? 0;
 
+  const ownerModuleStats = useMemo(() => {
+    const ownerTableChecks = IVX_OWNER_AI_DEPLOY_TABLES.map((name) => tables.find((table) => table.name === name));
+    const tablesOk = ownerTableChecks.filter((table) => table?.status === 'ok').length;
+    const bucketOk = buckets.find((bucket) => bucket.name === 'ivx-owner-files')?.status === 'ok';
+    const functionOk = functions.find((entry) => entry.name === 'ivx_is_owner')?.status === 'ok';
+    let status: OwnerModuleStatus = 'partial';
+
+    if (tablesOk === IVX_OWNER_AI_DEPLOY_TABLES.length && bucketOk && functionOk) {
+      status = 'live';
+    } else if (tablesOk === 0 && !bucketOk && !functionOk) {
+      status = 'missing';
+    }
+
+    return {
+      status,
+      tablesOk,
+      totalTables: IVX_OWNER_AI_DEPLOY_TABLES.length,
+      bucketOk,
+      functionOk,
+    };
+  }, [tables, buckets, functions]);
+
+  const ownerModuleBadge = useMemo(() => {
+    if (ownerModuleStats.status === 'live') {
+      return { label: 'LIVE', backgroundColor: '#00E67620', color: '#00E676' };
+    }
+    if (ownerModuleStats.status === 'missing') {
+      return { label: 'MISSING', backgroundColor: '#FF525220', color: '#FF5252' };
+    }
+    return { label: 'PARTIAL', backgroundColor: '#FFB80020', color: '#FFB800' };
+  }, [ownerModuleStats.status]);
+
   const getSupabaseProjectRef = useCallback((): string | null => {
     const url = (process.env.EXPO_PUBLIC_SUPABASE_URL || '').trim();
     try {
@@ -723,12 +794,8 @@ export default function SupabaseStatusPage() {
     }
     const editorUrl = `https://supabase.com/dashboard/project/${ref}/sql/new`;
     console.log('[Supabase Status] Opening Supabase SQL Editor:', editorUrl);
-    try {
-      await Clipboard.setStringAsync(sql);
-      console.log('[Supabase Status] SQL copied to clipboard');
-    } catch (e) {
-      console.log('[Supabase Status] Clipboard copy failed:', e);
-    }
+    const copied = await safeSetString(sql);
+    console.log('[Supabase Status] SQL copied to clipboard:', copied);
     try {
       await Linking.openURL(editorUrl);
       return true;
@@ -772,11 +839,15 @@ export default function SupabaseStatusPage() {
 
       setDeployMsg('Creating waitlist table...');
 
-      const { error: rpcError } = await supabase.rpc('ivx_exec_sql', { sql_text: WAITLIST_SQL });
-
-      if (rpcError) {
-        const msg = (rpcError.message || '').toLowerCase();
-        if (msg.includes('does not exist') || msg.includes('could not find the function')) {
+      try {
+        await executeSupabaseSqlScript(supabase, WAITLIST_SQL, ({ current, total }) => {
+          const progressLabel = `Deploying SQL step ${current}/${total}...`;
+          console.log('[Supabase Status] Waitlist deploy progress:', progressLabel);
+          setDeployMsg(progressLabel);
+        });
+      } catch (error) {
+        const message = (error as Error)?.message ?? 'Deploy failed';
+        if (isSupabaseSqlExecMissing(message)) {
           console.log('[Supabase Status] ivx_exec_sql not found — opening Supabase SQL Editor');
           setDeployMsg('Opening Supabase SQL Editor...');
 
@@ -792,7 +863,8 @@ export default function SupabaseStatusPage() {
               [{ text: 'Got It' }]
             );
           } else {
-            try { await Clipboard.setStringAsync(WAITLIST_SQL); } catch (e) { console.log('[Supabase Status] Clipboard fallback failed:', e); }
+            const copied = await safeSetString(WAITLIST_SQL);
+            console.log('[Supabase Status] Clipboard fallback result:', copied);
             setDeployAction('error');
             setDeployMsg('SQL copied to clipboard — paste in Supabase SQL Editor manually.');
             void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
@@ -803,7 +875,7 @@ export default function SupabaseStatusPage() {
           }
           return;
         }
-        throw new Error(rpcError.message);
+        throw error;
       }
 
       setDeployMsg('Verifying table...');
@@ -836,7 +908,8 @@ export default function SupabaseStatusPage() {
   }, [runFullScan, deployScale, openSupabaseSqlEditor]);
 
   const handleCopyWaitlistSql = useCallback(async () => {
-    try { await Clipboard.setStringAsync(WAITLIST_SQL); } catch (e) { console.log('[Supabase Status] Clipboard copy failed:', e); }
+    const copied = await safeSetString(WAITLIST_SQL);
+    console.log('[Supabase Status] Waitlist SQL copied:', copied);
     setCopiedSql(true);
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setTimeout(() => setCopiedSql(false), 2000);
@@ -844,80 +917,171 @@ export default function SupabaseStatusPage() {
   }, []);
 
   const [copiedKycSql, setCopiedKycSql] = useState(false);
+  const [copiedOwnerSql, setCopiedOwnerSql] = useState(false);
   const [copiedFullSql, setCopiedFullSql] = useState(false);
+  const [copiedSecuritySql, setCopiedSecuritySql] = useState(false);
+  const [securityHotfixDeploying, setSecurityHotfixDeploying] = useState(false);
+  const [securityHotfixResult, setSecurityHotfixResult] = useState<{ status: 'success' | 'error' | 'manual'; message: string } | null>(null);
+  const [ownerModuleDeploying, setOwnerModuleDeploying] = useState(false);
+  const [ownerModuleResult, setOwnerModuleResult] = useState<{ status: 'success' | 'error' | 'manual'; message: string } | null>(null);
   const [fullSchemaDeploying, setFullSchemaDeploying] = useState(false);
+  const [fullSchemaResult, setFullSchemaResult] = useState<{ status: 'success' | 'error' | 'manual'; message: string } | null>(null);
 
   const handleDeployKycTables = useCallback(async () => {
     console.log('[Supabase Status] Deploying KYC tables...');
     try {
-      const { error: rpcError } = await supabase.rpc('ivx_exec_sql', { sql_text: KYC_TABLES_SQL });
-      if (rpcError) {
-        const msg = (rpcError.message || '').toLowerCase();
-        if (msg.includes('does not exist') || msg.includes('could not find the function')) {
-          const opened = await openSupabaseSqlEditor(KYC_TABLES_SQL);
-          if (opened) {
-            Alert.alert('SQL Copied', 'KYC tables SQL copied & Supabase SQL Editor opening. Paste and click Run.');
-          } else {
-            try { await Clipboard.setStringAsync(KYC_TABLES_SQL); } catch (e) { console.log('[Supabase Status] Clipboard fallback:', e); }
-            Alert.alert('SQL Copied', 'Paste in Supabase SQL Editor manually.');
-          }
-          return;
-        }
-        throw new Error(rpcError.message);
-      }
+      await executeSupabaseSqlScript(supabase, KYC_TABLES_SQL, ({ current, total }) => {
+        console.log('[Supabase Status] KYC deploy progress:', `${current}/${total}`);
+      });
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert('KYC Tables Deployed', 'kyc_verifications and kyc_documents tables created with RLS, indexes, and triggers.');
       void runFullScan();
     } catch (err) {
+      const message = (err as Error)?.message || 'Unknown error';
+      if (isSupabaseSqlExecMissing(message)) {
+        const opened = await openSupabaseSqlEditor(KYC_TABLES_SQL);
+        if (opened) {
+          Alert.alert('SQL Copied', 'KYC tables SQL copied & Supabase SQL Editor opening. Paste and click Run.');
+        } else {
+          const copied = await safeSetString(KYC_TABLES_SQL);
+          console.log('[Supabase Status] KYC clipboard fallback:', copied);
+          Alert.alert('SQL Copied', 'Paste in Supabase SQL Editor manually.');
+        }
+        return;
+      }
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      Alert.alert('Deploy Failed', (err as Error)?.message || 'Unknown error');
+      Alert.alert('Deploy Failed', message);
     }
   }, [runFullScan, openSupabaseSqlEditor]);
 
   const handleCopyKycSql = useCallback(async () => {
-    try { await Clipboard.setStringAsync(KYC_TABLES_SQL); } catch (e) { console.log('[Supabase Status] KYC SQL copy failed:', e); }
+    const copied = await safeSetString(KYC_TABLES_SQL);
+    console.log('[Supabase Status] KYC SQL copied:', copied);
     setCopiedKycSql(true);
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setTimeout(() => setCopiedKycSql(false), 2000);
     Alert.alert('KYC SQL Copied', 'Paste this in your Supabase SQL Editor and run it.');
   }, []);
 
+  const handleDeployOwnerModule = useCallback(async () => {
+    console.log('[Supabase Status] Deploying IVX owner module...');
+    setOwnerModuleDeploying(true);
+    setOwnerModuleResult(null);
+    try {
+      await executeSupabaseSqlScript(supabase, IVX_OWNER_ADMIN_MODULE_SQL, ({ current, total }) => {
+        console.log('[Supabase Status] Owner module deploy progress:', `${current}/${total}`);
+      });
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setOwnerModuleResult({ status: 'success', message: 'Owner module deployed — tables, RLS, storage, and RPCs synced.' });
+      void runFullScan();
+    } catch (err) {
+      const message = (err as Error)?.message || 'Unknown error';
+      if (isSupabaseSqlExecMissing(message)) {
+        const opened = await openSupabaseSqlEditor(IVX_OWNER_ADMIN_MODULE_SQL);
+        if (opened) {
+          setOwnerModuleResult({ status: 'manual', message: 'SQL copied to clipboard. Paste in the Supabase SQL Editor and click Run, then tap Refresh.' });
+        } else {
+          await safeSetString(IVX_OWNER_ADMIN_MODULE_SQL);
+          setOwnerModuleResult({ status: 'manual', message: 'SQL copied. Go to supabase.com → SQL Editor → New Query, paste and run.' });
+        }
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+        setOwnerModuleDeploying(false);
+        return;
+      }
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      setOwnerModuleResult({ status: 'error', message });
+    } finally {
+      setOwnerModuleDeploying(false);
+    }
+  }, [runFullScan, openSupabaseSqlEditor]);
+
+  const handleCopyOwnerSql = useCallback(async () => {
+    const copied = await safeSetString(IVX_OWNER_ADMIN_MODULE_SQL);
+    console.log('[Supabase Status] Owner module SQL copied:', copied);
+    setCopiedOwnerSql(true);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setTimeout(() => setCopiedOwnerSql(false), 2000);
+    Alert.alert('Owner Module SQL Copied', 'Paste this in your Supabase SQL Editor to deploy the exact owner-only admin module.');
+  }, []);
+
+  const handleDeploySecurityHotfix = useCallback(async () => {
+    console.log('[Supabase Status] Deploying security hotfix...');
+    setSecurityHotfixDeploying(true);
+    setSecurityHotfixResult(null);
+    try {
+      await executeSupabaseSqlScript(supabase, IVX_SECURITY_HOTFIX_SQL, ({ current, total }) => {
+        console.log('[Supabase Status] Security hotfix progress:', `${current}/${total}`);
+      });
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setSecurityHotfixResult({ status: 'success', message: 'Security hotfix applied — all permissive policies replaced, storage locked, FORCE RLS enabled.' });
+      void runFullScan();
+    } catch (err) {
+      const message = (err as Error)?.message || 'Unknown error';
+      if (isSupabaseSqlExecMissing(message)) {
+        const opened = await openSupabaseSqlEditor(IVX_SECURITY_HOTFIX_SQL);
+        if (opened) {
+          setSecurityHotfixResult({ status: 'manual', message: 'SQL copied to clipboard. Paste in the Supabase SQL Editor and click Run, then tap Refresh here.' });
+        } else {
+          await safeSetString(IVX_SECURITY_HOTFIX_SQL);
+          setSecurityHotfixResult({ status: 'manual', message: 'SQL copied. Go to supabase.com → SQL Editor → New Query, paste and run.' });
+        }
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+        setSecurityHotfixDeploying(false);
+        return;
+      }
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      setSecurityHotfixResult({ status: 'error', message });
+    }
+    setSecurityHotfixDeploying(false);
+  }, [runFullScan, openSupabaseSqlEditor]);
+
+  const handleCopySecuritySql = useCallback(async () => {
+    const copied = await safeSetString(IVX_SECURITY_HOTFIX_SQL);
+    console.log('[Supabase Status] Security hotfix SQL copied:', copied);
+    setCopiedSecuritySql(true);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setTimeout(() => setCopiedSecuritySql(false), 2000);
+    Alert.alert('Security Hotfix SQL Copied', 'This replaces all permissive policies with owner-only or row-scoped policies and locks down storage buckets.\n\nPaste in Supabase SQL Editor and click Run.');
+  }, []);
+
   const handleDeployFullSchema = useCallback(async () => {
     console.log('[Supabase Status] Deploying full schema...');
     setFullSchemaDeploying(true);
+    setFullSchemaResult(null);
     try {
-      const { error: rpcError } = await supabase.rpc('ivx_exec_sql', { sql_text: FULL_SCHEMA_SQL });
-      if (rpcError) {
-        const msg = (rpcError.message || '').toLowerCase();
-        if (msg.includes('does not exist') || msg.includes('could not find the function')) {
-          const opened = await openSupabaseSqlEditor(FULL_SCHEMA_SQL);
-          if (opened) {
-            Alert.alert('SQL Copied', 'Full schema SQL copied & Supabase SQL Editor opening.\n\nPaste and click Run to create ALL 39+ tables, functions, storage buckets, and RLS policies.');
-          } else {
-            try { await Clipboard.setStringAsync(FULL_SCHEMA_SQL); } catch (e) { console.log('[Supabase Status] Clipboard fallback:', e); }
-            Alert.alert('SQL Copied', 'Paste in Supabase SQL Editor manually.');
-          }
-          setFullSchemaDeploying(false);
-          return;
-        }
-        throw new Error(rpcError.message);
-      }
+      await executeSupabaseSqlScript(supabase, FULL_SCHEMA_SQL, ({ current, total }) => {
+        console.log('[Supabase Status] Full schema deploy progress:', `${current}/${total}`);
+      });
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert('Full Schema Deployed', 'All tables, RLS policies, indexes, triggers, RPC functions, and storage buckets created successfully.');
+      setFullSchemaResult({ status: 'success', message: 'Full schema deployed — all tables, RLS, indexes, triggers, RPCs, and storage buckets created.' });
       void runFullScan();
     } catch (err) {
+      const message = (err as Error)?.message || 'Unknown error';
+      if (isSupabaseSqlExecMissing(message)) {
+        const opened = await openSupabaseSqlEditor(FULL_SCHEMA_SQL);
+        if (opened) {
+          setFullSchemaResult({ status: 'manual', message: 'SQL copied to clipboard. Paste in the Supabase SQL Editor and click Run, then tap Refresh here.' });
+        } else {
+          await safeSetString(FULL_SCHEMA_SQL);
+          setFullSchemaResult({ status: 'manual', message: 'SQL copied. Go to supabase.com → SQL Editor → New Query, paste and run.' });
+        }
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+        setFullSchemaDeploying(false);
+        return;
+      }
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      Alert.alert('Deploy Failed', (err as Error)?.message || 'Unknown error');
+      setFullSchemaResult({ status: 'error', message });
     }
     setFullSchemaDeploying(false);
   }, [runFullScan, openSupabaseSqlEditor]);
 
   const handleCopyFullSql = useCallback(async () => {
-    try { await Clipboard.setStringAsync(FULL_SCHEMA_SQL); } catch (e) { console.log('[Supabase Status] Full SQL copy failed:', e); }
+    const copied = await safeSetString(FULL_SCHEMA_SQL);
+    console.log('[Supabase Status] Full SQL copied:', copied);
     setCopiedFullSql(true);
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setTimeout(() => setCopiedFullSql(false), 2000);
-    Alert.alert('Full Schema SQL Copied', 'This is the complete IVX database schema — 39 tables, all RLS policies, indexes, triggers, RPC functions, and 3 storage buckets.\n\nPaste it in Supabase SQL Editor and click Run.');
+    Alert.alert('Full Schema SQL Copied', 'This is the complete IVX database schema, including IVX Owner AI tables, RLS policies, indexes, triggers, RPC functions, and storage buckets.\n\nPaste it in Supabase SQL Editor and click Run.');
   }, []);
 
   const renderStatusIcon = (status: CheckStatus, size: number = 14) => {
@@ -1235,15 +1399,111 @@ export default function SupabaseStatusPage() {
               </View>
             </View>
 
+            <View style={[styles.deployCard, { borderColor: '#22C55E30', marginTop: 12 }]}>
+              <View style={styles.deployCardHeader}>
+                <View style={[styles.deployCardIcon, { backgroundColor: '#22C55E20' }]}>
+                  <Shield size={18} color="#22C55E" />
+                </View>
+                <View style={styles.deployCardInfo}>
+                  <Text style={styles.deployCardTitle}>IVX Owner Admin Module</Text>
+                  <Text style={styles.deployCardSub}>
+                    Owner-only room, inbox, AI requests, knowledge docs, private uploads, and owner-only admin RPC locks with exact Supabase RLS
+                  </Text>
+                </View>
+                <View style={[styles.deployCardBadge, { backgroundColor: ownerModuleBadge.backgroundColor }]}>
+                  <Text style={[styles.deployCardBadgeText, { color: ownerModuleBadge.color }]}>
+                    {ownerModuleBadge.label}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.ownerSecurityList}>
+                <View style={styles.ownerSecurityRow}>
+                  <Shield size={14} color="#22C55E" />
+                  <Text style={styles.ownerSecurityText}>
+                    <Text style={styles.ownerSecurityStrong}>RLS owner-only</Text>
+                    {' '}on ivx_conversations, ivx_messages, ivx_inbox_state, ivx_ai_requests, and ivx_knowledge_documents
+                  </Text>
+                </View>
+                <View style={styles.ownerSecurityRow}>
+                  <HardDrive size={14} color="#22C55E" />
+                  <Text style={styles.ownerSecurityText}>
+                    <Text style={styles.ownerSecurityStrong}>Private storage</Text>
+                    {' '}through the ivx-owner-files bucket only
+                  </Text>
+                </View>
+                <View style={styles.ownerSecurityRow}>
+                  <Server size={14} color="#22C55E" />
+                  <Text style={styles.ownerSecurityText}>
+                    <Text style={styles.ownerSecurityStrong}>API enforced</Text>
+                    {' '}by owner session checks against profiles.role before routes continue
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.ownerModuleMetaRow}>
+                <Text style={styles.ownerModuleMetaText}>
+                  Tables {ownerModuleStats.tablesOk}/{ownerModuleStats.totalTables}
+                </Text>
+                <Text style={styles.ownerModuleMetaText}>
+                  {ownerModuleStats.functionOk ? 'ivx_is_owner OK' : 'ivx_is_owner MISS'}
+                </Text>
+                <Text style={styles.ownerModuleMetaText}>
+                  {ownerModuleStats.bucketOk ? 'ivx-owner-files OK' : 'ivx-owner-files MISS'}
+                </Text>
+              </View>
+
+              {ownerModuleResult && (
+                <View style={[styles.deployResultBanner, ownerModuleResult.status === 'success' ? styles.deployResultSuccess : ownerModuleResult.status === 'error' ? styles.deployResultError : styles.deployResultManual]}>
+                  {ownerModuleResult.status === 'success' ? <CheckCircle size={14} color="#00E676" /> : ownerModuleResult.status === 'error' ? <XCircle size={14} color="#FF5252" /> : <AlertTriangle size={14} color="#FFB800" />}
+                  <Text style={[styles.deployResultText, { color: ownerModuleResult.status === 'success' ? '#00E676' : ownerModuleResult.status === 'error' ? '#FF8A80' : '#FFB800' }]}>{ownerModuleResult.message}</Text>
+                </View>
+              )}
+
+              <View style={styles.deployActions}>
+                <TouchableOpacity
+                  style={[styles.deployButton, { backgroundColor: '#22C55E' }, ownerModuleDeploying && styles.deployButtonDisabled]}
+                  onPress={handleDeployOwnerModule}
+                  disabled={ownerModuleDeploying}
+                  activeOpacity={0.85}
+                  testID="sync-deploy-owner-module-btn"
+                >
+                  {ownerModuleDeploying ? (
+                    <View style={styles.deployButtonInner}>
+                      <ActivityIndicator color="#04110A" size="small" />
+                      <Text style={[styles.deployButtonText, { color: '#04110A' }]}>Deploying...</Text>
+                    </View>
+                  ) : (
+                    <View style={styles.deployButtonInner}>
+                      <Rocket size={16} color="#04110A" />
+                      <Text style={[styles.deployButtonText, { color: '#04110A' }]}>Deploy Owner Module</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.copySqlButton}
+                  onPress={handleCopyOwnerSql}
+                  activeOpacity={0.7}
+                  testID="copy-owner-module-sql-btn"
+                >
+                  <Copy size={14} color={copiedOwnerSql ? '#00E676' : Colors.primary} />
+                  <Text style={[styles.copySqlText, copiedOwnerSql && { color: '#00E676' }]}>
+                    {copiedOwnerSql ? 'Copied!' : 'Copy SQL'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
             <View style={[styles.deployCard, { borderColor: '#42A5F530', marginTop: 12 }]}>
               <View style={styles.deployCardHeader}>
                 <View style={[styles.deployCardIcon, { backgroundColor: '#42A5F518' }]}>
                   <Database size={18} color="#42A5F5" />
                 </View>
                 <View style={styles.deployCardInfo}>
-                  <Text style={styles.deployCardTitle}>Full Schema (All Tables)</Text>
+                  <Text style={styles.deployCardTitle}>Full Schema + IVX Owner AI</Text>
                   <Text style={styles.deployCardSub}>
-                    39 tables + RLS + indexes + triggers + RPCs + 3 storage buckets
+                    Core IVX tables + IVX Owner AI tables + RLS + indexes + triggers + RPCs + storage buckets
                   </Text>
                 </View>
                 <View style={[styles.deployCardBadge, { backgroundColor: stats.tablesMissing === 0 && tables.length > 0 ? '#00E67620' : '#42A5F520' }]}>
@@ -1252,6 +1512,13 @@ export default function SupabaseStatusPage() {
                   </Text>
                 </View>
               </View>
+
+              {fullSchemaResult && (
+                <View style={[styles.deployResultBanner, fullSchemaResult.status === 'success' ? styles.deployResultSuccess : fullSchemaResult.status === 'error' ? styles.deployResultError : styles.deployResultManual]}>
+                  {fullSchemaResult.status === 'success' ? <CheckCircle size={14} color="#00E676" /> : fullSchemaResult.status === 'error' ? <XCircle size={14} color="#FF5252" /> : <AlertTriangle size={14} color="#FFB800" />}
+                  <Text style={[styles.deployResultText, { color: fullSchemaResult.status === 'success' ? '#00E676' : fullSchemaResult.status === 'error' ? '#FF8A80' : '#FFB800' }]}>{fullSchemaResult.message}</Text>
+                </View>
+              )}
 
               <View style={styles.deployActions}>
                 <TouchableOpacity
@@ -1290,8 +1557,90 @@ export default function SupabaseStatusPage() {
             <View style={styles.deployInfoCard}>
               <Zap size={14} color="#FFD700" />
               <Text style={styles.deployInfoText}>
-                Deploy Full Schema creates ALL 39 tables with RLS, indexes, triggers, RPC functions, and storage buckets in one shot. Safe to re-run.
+                Deploy Full Schema creates the full IVX schema, including IVX Owner AI chat, inbox, AI request, knowledge, and storage setup in one shot. Safe to re-run.
               </Text>
+            </View>
+
+            <View style={[styles.deployCard, { borderColor: '#FF525230', marginTop: 12 }]}>
+              <View style={styles.deployCardHeader}>
+                <View style={[styles.deployCardIcon, { backgroundColor: '#FF525220' }]}>
+                  <Shield size={18} color="#FF5252" />
+                </View>
+                <View style={styles.deployCardInfo}>
+                  <Text style={styles.deployCardTitle}>Security Hotfix</Text>
+                  <Text style={styles.deployCardSub}>
+                    Replace all permissive policies with owner-only or row-scoped RLS. Lock down storage buckets. Force RLS on all tables.
+                  </Text>
+                </View>
+                <View style={[styles.deployCardBadge, { backgroundColor: '#FF525220' }]}>
+                  <Text style={[styles.deployCardBadgeText, { color: '#FF5252' }]}>CRITICAL</Text>
+                </View>
+              </View>
+
+              <View style={styles.ownerSecurityList}>
+                <View style={styles.ownerSecurityRow}>
+                  <Shield size={14} color="#FF5252" />
+                  <Text style={styles.ownerSecurityText}>
+                    <Text style={styles.ownerSecurityStrong}>Drops permissive</Text>
+                    {' '}"any authenticated" policies on 60+ admin/sensitive tables
+                  </Text>
+                </View>
+                <View style={styles.ownerSecurityRow}>
+                  <Shield size={14} color="#FF5252" />
+                  <Text style={styles.ownerSecurityText}>
+                    <Text style={styles.ownerSecurityStrong}>Row-scoped</Text>
+                    {' '}user data: wallets, holdings, transactions, orders, notifications, KYC
+                  </Text>
+                </View>
+                <View style={styles.ownerSecurityRow}>
+                  <HardDrive size={14} color="#FF5252" />
+                  <Text style={styles.ownerSecurityText}>
+                    <Text style={styles.ownerSecurityStrong}>Storage locked</Text>
+                    {' '}investor-intake and chat-uploads set private, owner-only reads on sensitive buckets
+                  </Text>
+                </View>
+              </View>
+
+              {securityHotfixResult && (
+                <View style={[styles.deployResultBanner, securityHotfixResult.status === 'success' ? styles.deployResultSuccess : securityHotfixResult.status === 'error' ? styles.deployResultError : styles.deployResultManual]}>
+                  {securityHotfixResult.status === 'success' ? <CheckCircle size={14} color="#00E676" /> : securityHotfixResult.status === 'error' ? <XCircle size={14} color="#FF5252" /> : <AlertTriangle size={14} color="#FFB800" />}
+                  <Text style={[styles.deployResultText, { color: securityHotfixResult.status === 'success' ? '#00E676' : securityHotfixResult.status === 'error' ? '#FF8A80' : '#FFB800' }]}>{securityHotfixResult.message}</Text>
+                </View>
+              )}
+
+              <View style={styles.deployActions}>
+                <TouchableOpacity
+                  style={[styles.deployButton, { backgroundColor: '#FF5252' }, securityHotfixDeploying && styles.deployButtonDisabled]}
+                  onPress={handleDeploySecurityHotfix}
+                  disabled={securityHotfixDeploying}
+                  activeOpacity={0.85}
+                  testID="sync-deploy-security-hotfix-btn"
+                >
+                  {securityHotfixDeploying ? (
+                    <View style={styles.deployButtonInner}>
+                      <ActivityIndicator color="#fff" size="small" />
+                      <Text style={[styles.deployButtonText, { color: '#fff' }]}>Applying...</Text>
+                    </View>
+                  ) : (
+                    <View style={styles.deployButtonInner}>
+                      <Shield size={16} color="#fff" />
+                      <Text style={[styles.deployButtonText, { color: '#fff' }]}>Apply Security Hotfix</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.copySqlButton}
+                  onPress={handleCopySecuritySql}
+                  activeOpacity={0.7}
+                  testID="copy-security-hotfix-sql-btn"
+                >
+                  <Copy size={14} color={copiedSecuritySql ? '#00E676' : Colors.primary} />
+                  <Text style={[styles.copySqlText, copiedSecuritySql && { color: '#00E676' }]}>
+                    {copiedSecuritySql ? 'Copied!' : 'Copy SQL'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
 
             <View style={styles.deployCard}>
@@ -1734,6 +2083,39 @@ const styles = StyleSheet.create({
     fontWeight: '600' as const,
     color: Colors.primary,
   },
+  ownerSecurityList: {
+    gap: 8,
+    marginBottom: 12,
+  },
+  ownerSecurityRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  ownerSecurityText: {
+    flex: 1,
+    fontSize: 12,
+    color: Colors.textSecondary,
+    lineHeight: 17,
+  },
+  ownerSecurityStrong: {
+    color: Colors.text,
+    fontWeight: '700' as const,
+  },
+  ownerModuleMetaRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 12,
+  },
+  ownerModuleMetaText: {
+    fontSize: 11,
+    color: Colors.textTertiary,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: Colors.card,
+  },
   deployInfoCard: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -1750,5 +2132,32 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#B8A040',
     lineHeight: 16,
+  },
+  deployResultBanner: {
+    flexDirection: 'row' as const,
+    alignItems: 'flex-start' as const,
+    gap: 8,
+    padding: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginBottom: 10,
+  },
+  deployResultSuccess: {
+    backgroundColor: '#0D2818',
+    borderColor: '#00E67630',
+  },
+  deployResultError: {
+    backgroundColor: '#1A0808',
+    borderColor: '#FF525240',
+  },
+  deployResultManual: {
+    backgroundColor: '#1A1400',
+    borderColor: '#FFB80040',
+  },
+  deployResultText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '600' as const,
+    lineHeight: 17,
   },
 });

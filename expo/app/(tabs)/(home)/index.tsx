@@ -42,6 +42,7 @@ import {
   ClipboardCheck,
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
+import { useScreenFocusState } from '@/hooks/useScreenFocusState';
 import Colors from '@/constants/colors';
 import { getResponsiveSize, isCompactScreen, isExtraSmallScreen } from '@/lib/responsive';
 import { useQuery } from '@tanstack/react-query';
@@ -1424,7 +1425,8 @@ export default function HomeScreen() {
     trackScreen('Home');
   }, [trackScreen]);
 
-  const publishedJV = usePublishedJVDeals();
+  const isScreenFocused = useScreenFocusState(true);
+  const publishedJV = usePublishedJVDeals({ refetchIntervalMs: isScreenFocused ? 1000 * 90 : false });
 
   const jvDealsLoading = publishedJV.isLoading;
   const jvDeals = useMemo(() => {
@@ -1475,9 +1477,11 @@ export default function HomeScreen() {
       return { properties: data || [] };
     },
     retry: 1,
-    staleTime: 1000 * 60,
-    refetchOnMount: 'always' as const,
-    refetchInterval: 5000,
+    staleTime: 1000 * 60 * 2,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    refetchInterval: isScreenFocused ? 1000 * 60 * 2 : false,
+    refetchIntervalInBackground: false,
   });
   const unreadQuery = useQuery({
     queryKey: ['notifications', 'unread-count'],

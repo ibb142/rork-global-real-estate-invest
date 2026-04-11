@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect } from "react";
+import React, { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import {
   View,
   Text,
@@ -47,6 +47,75 @@ import { supabase } from '@/lib/supabase';
 
 type LogType = "all" | "hourly" | "emergency" | "manual" | "daily_summary" | "smart_update";
 
+interface SmartScheduleMessage {
+  recipient: string;
+  timestamp: string;
+  message: string;
+}
+
+interface TeamRecipient {
+  name: string;
+  phone: string;
+  role: string;
+  active: boolean;
+  alertTypes: string[];
+}
+
+interface SMSReportStatus {
+  id: string;
+  status: string;
+  running: boolean;
+  phone: string;
+  total_sent: number;
+  total_failed: number;
+  total_simulated: number;
+  total_delivered?: number | null;
+  recipients?: unknown;
+  sns_configured: boolean;
+  updated_at: string | null;
+  last_report_time?: string | null;
+  last_report?: string | null;
+  mode?: string | null;
+  timesPerDay?: number | null;
+  scheduledHoursET?: number[] | null;
+  recentMessages?: unknown;
+}
+
+interface SmartScheduleView {
+  running: boolean;
+  mode: string;
+  timesPerDay: number;
+  scheduledHoursET: number[];
+  recipients: string[];
+  startDate: string | null;
+  recentMessages: SmartScheduleMessage[];
+}
+
+const SMS_REPORT_STATUS_REFRESH_MS = 60_000;
+
+const DEFAULT_SMS_REPORT_STATUS: SMSReportStatus = {
+  id: 'default',
+  status: 'stopped',
+  running: false,
+  phone: '+1 561-644-3503',
+  total_sent: 0,
+  total_failed: 0,
+  total_simulated: 0,
+  recipients: [],
+  sns_configured: false,
+  updated_at: null,
+};
+
+const DEFAULT_SMART_SCHEDULE: SmartScheduleView = {
+  running: false,
+  mode: 'testing',
+  timesPerDay: 3,
+  scheduledHoursET: [8, 13, 18],
+  recipients: ['Kimberly Perez', 'Sharon'],
+  startDate: null,
+  recentMessages: [],
+};
+
 const TYPE_COLORS: Record<string, string> = {
   hourly: Colors.accent,
   emergency: Colors.error,
@@ -82,36 +151,36 @@ export default function SMSReportsScreen() {
   const sendAnim = useRef(new Animated.Value(1)).current;
   const isMountedRef = useRef(true);
 
-  const statusQuery = useQuery<any>({
+  const statusQuery = useQuery<SMSReportStatus>({
     queryKey: ['smsReports.getStatus'],
     queryFn: async () => {
       console.log('[Supabase] Fetching SMS report status');
       try {
-        const { data, error } = await supabase.from('sms_reports').select('id, updated_at').eq('id', 'default').single();
+        const { data, error } = await supabase.from('sms_reports').select('*').eq('id', 'default').single();
         if (error) {
           console.log('[Supabase] sms_reports error:', error.message);
           if (error.message.includes('schema cache') || error.code === 'PGRST204') {
             console.log('[Supabase] sms_reports table needs migration — returning defaults');
-            return { id: 'default', status: 'stopped', running: false, phone: '+1 561-644-3503', total_sent: 0, total_failed: 0, total_simulated: 0, recipients: [], sns_configured: false };
           }
-          return null;
+          return DEFAULT_SMS_REPORT_STATUS;
         }
-        const fullQuery = await supabase.from('sms_reports').select('*').eq('id', 'default').single();
-        if (fullQuery.error) {
-          console.log('[Supabase] sms_reports full query error:', fullQuery.error.message);
-          return { status: 'stopped', running: false, phone: '+1 561-644-3503', total_sent: 0, total_failed: 0, total_simulated: 0, recipients: [], sns_configured: false, ...data };
-        }
-        return fullQuery.data;
+        return {
+          ...DEFAULT_SMS_REPORT_STATUS,
+          ...((data ?? {}) as Partial<SMSReportStatus>),
+        };
       } catch (e: any) {
         console.log('[Supabase] sms_reports fetch failed:', e?.message);
-        return { id: 'default', status: 'stopped', running: false, phone: '+1 561-644-3503', total_sent: 0, total_failed: 0, total_simulated: 0, recipients: [], sns_configured: false };
+        return DEFAULT_SMS_REPORT_STATUS;
       }
     },
-    refetchInterval: 5000,
-    staleTime: 0,
+    placeholderData: DEFAULT_SMS_REPORT_STATUS,
+    refetchInterval: SMS_REPORT_STATUS_REFRESH_MS,
+    refetchIntervalInBackground: false,
+    staleTime: 30_000,
     retry: 1,
     retryDelay: 1000,
-    refetchOnMount: true,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
   });
 
   const logQuery = useQuery<any>({
@@ -307,44 +376,90 @@ export default function SMSReportsScreen() {
     },
   });
 
-  const smartScheduleQuery = useQuery<any>({
-    queryKey: ['smsReports.getSmartSchedule'],
-    queryFn: async () => {
-      console.log('[Supabase] Fetching smart schedule');
-      const defaultSchedule = {
-        running: false,
-        mode: 'testing',
-        timesPerDay: 3,
-        scheduledHoursET: [8, 13, 18],
-        recipients: ['Kimberly Perez', 'Sharon'],
-        startDate: null,
-        recentMessages: [],
-      };
-      try {
-        const { data, error } = await supabase.from('sms_reports').select('id, updated_at').eq('id', 'default').single();
-        if (error) {
-          console.log('[Supabase] smart schedule error:', error.message);
-          return defaultSchedule;
+  const teamRecipients = useMemo<TeamRecipient[]>(() => {
+    const rawRecipients = statusQuery.data?.recipients;
+    if (!Array.isArray(rawRecipients)) {
+      return [];
+    }
+
+    return rawRecipients.flatMap((item): TeamRecipient[] => {
+      if (typeof item === 'string') {
+        const trimmed = item.trim();
+        if (!trimmed) {
+          return [];
         }
-        let statusValue: string | null = null;
-        try {
-          const fullData = await supabase.from('sms_reports').select('*').eq('id', 'default').single();
-          if (!fullData.error && fullData.data) {
-            statusValue = (fullData.data as any)?.status ?? null;
-          }
-        } catch { /* ignore */ }
-        return {
-          ...defaultSchedule,
-          running: statusValue === 'smart_active',
-          startDate: data?.updated_at ? data.updated_at.split('T')[0] : null,
-        };
-      } catch (e: any) {
-        console.log('[Supabase] smart schedule fetch failed:', e?.message);
-        return defaultSchedule;
+
+        return [{
+          name: trimmed,
+          phone: '',
+          role: 'team_member',
+          active: true,
+          alertTypes: [],
+        }];
       }
-    },
-    refetchInterval: 5000,
-  });
+
+      if (!item || typeof item !== 'object') {
+        return [];
+      }
+
+      const candidate = item as {
+        name?: unknown;
+        phone?: unknown;
+        role?: unknown;
+        active?: unknown;
+        alertTypes?: unknown;
+      };
+      const name = typeof candidate.name === 'string' ? candidate.name.trim() : '';
+      if (!name) {
+        return [];
+      }
+
+      const alertTypes = Array.isArray(candidate.alertTypes)
+        ? candidate.alertTypes.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+        : [];
+
+      return [{
+        name,
+        phone: typeof candidate.phone === 'string' ? candidate.phone : '',
+        role: typeof candidate.role === 'string' ? candidate.role : 'team_member',
+        active: candidate.active !== false,
+        alertTypes,
+      }];
+    });
+  }, [statusQuery.data?.recipients]);
+
+  const smartSchedule = useMemo<SmartScheduleView>(() => {
+    const statusData = statusQuery.data ?? DEFAULT_SMS_REPORT_STATUS;
+    const scheduledHoursET = Array.isArray(statusData.scheduledHoursET)
+      ? statusData.scheduledHoursET.filter((hour): hour is number => typeof hour === 'number' && Number.isFinite(hour))
+      : DEFAULT_SMART_SCHEDULE.scheduledHoursET;
+    const recipients = teamRecipients.length > 0
+      ? teamRecipients.map((recipient) => recipient.name)
+      : DEFAULT_SMART_SCHEDULE.recipients;
+    const rawRecentMessages = statusData.recentMessages;
+    const recentMessages = Array.isArray(rawRecentMessages)
+      ? rawRecentMessages.filter(
+          (item): item is SmartScheduleMessage =>
+            !!item &&
+            typeof item === 'object' &&
+            typeof (item as SmartScheduleMessage).recipient === 'string' &&
+            typeof (item as SmartScheduleMessage).timestamp === 'string' &&
+            typeof (item as SmartScheduleMessage).message === 'string'
+        )
+      : DEFAULT_SMART_SCHEDULE.recentMessages;
+
+    return {
+      running: statusData.status === 'smart_active',
+      mode: typeof statusData.mode === 'string' && statusData.mode.trim().length > 0 ? statusData.mode : DEFAULT_SMART_SCHEDULE.mode,
+      timesPerDay: typeof statusData.timesPerDay === 'number' && Number.isFinite(statusData.timesPerDay) ? statusData.timesPerDay : DEFAULT_SMART_SCHEDULE.timesPerDay,
+      scheduledHoursET,
+      recipients,
+      startDate: statusData.updated_at ? statusData.updated_at.split('T')[0] : DEFAULT_SMART_SCHEDULE.startDate,
+      recentMessages,
+    };
+  }, [statusQuery.data, teamRecipients]);
+
+  const activeTeamRecipientCount = useMemo<number>(() => teamRecipients.filter((recipient) => recipient.active).length, [teamRecipients]);
 
   const startSmartMutation = useMutation({
     mutationFn: async () => {
@@ -372,7 +487,6 @@ export default function SMSReportsScreen() {
     onSuccess: () => {
       console.log('[SMS] Smart schedule started');
       Alert.alert('Success', 'AI Smart Schedule activated');
-      void smartScheduleQuery.refetch();
       void statusQuery.refetch();
       void logQuery.refetch();
     },
@@ -402,7 +516,6 @@ export default function SMSReportsScreen() {
     },
     onSuccess: () => {
       console.log('[SMS] Smart schedule stopped');
-      void smartScheduleQuery.refetch();
       void statusQuery.refetch();
     },
     onError: (error: Error) => {
@@ -423,7 +536,6 @@ export default function SMSReportsScreen() {
       console.log('[SMS] Smart update sent now');
       Alert.alert('Sent', 'AI Smart Update sent successfully');
       void logQuery.refetch();
-      void smartScheduleQuery.refetch();
       void statusQuery.refetch();
     },
     onError: (error: Error) => {
@@ -440,7 +552,8 @@ export default function SMSReportsScreen() {
   }, []);
 
   useEffect(() => {
-    if (statusQuery.data?.running) {
+    const shouldPulse = Boolean(statusQuery.data?.running || smartSchedule.running);
+    if (shouldPulse) {
       const loop = Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, { toValue: 0.4, duration: 1200, useNativeDriver: true }),
@@ -449,10 +562,9 @@ export default function SMSReportsScreen() {
       );
       loop.start();
       return () => loop.stop();
-    } else {
-      pulseAnim.setValue(1);
     }
-  }, [statusQuery.data?.running, pulseAnim]);
+    pulseAnim.setValue(1);
+  }, [pulseAnim, smartSchedule.running, statusQuery.data?.running]);
 
   const scrollToBottom = useCallback(() => {
     const doScroll = () => {
@@ -567,7 +679,7 @@ export default function SMSReportsScreen() {
         keyboardDismissMode="interactive"
         refreshControl={
           <RefreshControl
-            refreshing={statusQuery.isRefetching}
+            refreshing={statusQuery.isRefetching || logQuery.isRefetching}
             onRefresh={onRefresh}
             tintColor={Colors.primary}
           />
@@ -582,22 +694,22 @@ export default function SMSReportsScreen() {
             <View style={[
               styles.smartModeBadge,
               {
-                backgroundColor: smartScheduleQuery.data?.running ? "#00C9A720" : Colors.surface,
-                borderColor: smartScheduleQuery.data?.running ? "#00C9A760" : Colors.surfaceBorder,
+                backgroundColor: smartSchedule.running ? "#00C9A720" : Colors.surface,
+                borderColor: smartSchedule.running ? "#00C9A760" : Colors.surfaceBorder,
               },
             ]}>
               <Animated.View style={[
                 styles.smartModeDot,
                 {
-                  backgroundColor: smartScheduleQuery.data?.running ? "#00C9A7" : Colors.textTertiary,
-                  opacity: smartScheduleQuery.data?.running ? pulseAnim : 1,
+                  backgroundColor: smartSchedule.running ? "#00C9A7" : Colors.textTertiary,
+                  opacity: smartSchedule.running ? pulseAnim : 1,
                 },
               ]} />
               <Text style={[
                 styles.smartModeText,
-                { color: smartScheduleQuery.data?.running ? "#00C9A7" : Colors.textTertiary },
+                { color: smartSchedule.running ? "#00C9A7" : Colors.textTertiary },
               ]}>
-                {smartScheduleQuery.data?.running ? smartScheduleQuery.data.mode === "testing" ? "TESTING" : "LIVE 24/7" : "OFF"}
+                {smartSchedule.running ? smartSchedule.mode === "testing" ? "TESTING" : "LIVE 24/7" : "OFF"}
               </Text>
             </View>
           </View>
@@ -610,30 +722,30 @@ export default function SMSReportsScreen() {
             <View style={styles.smartInfoRow}>
               <Clock size={13} color={Colors.textSecondary} />
               <Text style={styles.smartInfoText}>
-                {smartScheduleQuery.data?.timesPerDay || 3}x/day at{" "}
-                {(smartScheduleQuery.data?.scheduledHoursET || [8, 13, 18]).map((h: number) => `${h}:00`).join(", ")} ET
+                {smartSchedule.timesPerDay || 3}x/day at{" "}
+                {(smartSchedule.scheduledHoursET || [8, 13, 18]).map((h: number) => `${h}:00`).join(", ")} ET
               </Text>
             </View>
             <View style={styles.smartInfoRow}>
               <Users size={13} color={Colors.textSecondary} />
               <Text style={styles.smartInfoText}>
-                {(smartScheduleQuery.data?.recipients || ["Kimberly Perez", "Sharon"]).join(", ")}
+                {(smartSchedule.recipients || ["Kimberly Perez", "Sharon"]).join(", ")}
               </Text>
             </View>
-            {smartScheduleQuery.data?.startDate && (
+            {smartSchedule.startDate && (
               <View style={styles.smartInfoRow}>
                 <Sparkles size={13} color={Colors.textSecondary} />
                 <Text style={styles.smartInfoText}>
-                  Start: {smartScheduleQuery.data.startDate}
+                  Start: {smartSchedule.startDate}
                 </Text>
               </View>
             )}
           </View>
 
-          {smartScheduleQuery.data?.recentMessages && smartScheduleQuery.data.recentMessages.length > 0 && (
+          {smartSchedule.recentMessages.length > 0 && (
             <View style={styles.smartRecentSection}>
               <Text style={styles.smartRecentTitle}>Recent AI Messages</Text>
-              {smartScheduleQuery.data.recentMessages.slice(-3).map((msg: any, idx: number) => (
+              {smartSchedule.recentMessages.slice(-3).map((msg: SmartScheduleMessage, idx: number) => (
                 <View key={idx} style={styles.smartRecentItem}>
                   <View style={styles.smartRecentHeader}>
                     <Text style={styles.smartRecentRecipient}>{msg.recipient}</Text>
@@ -648,7 +760,7 @@ export default function SMSReportsScreen() {
           )}
 
           <View style={styles.smartActions}>
-            {!smartScheduleQuery.data?.running ? (
+            {!smartSchedule.running ? (
               <TouchableOpacity
                 style={styles.smartStartBtn}
                 onPress={() => startSmartMutation.mutate()}
@@ -706,11 +818,11 @@ export default function SMSReportsScreen() {
             <Text style={styles.teamTitle}>Advertising Team</Text>
             <View style={styles.teamBadge}>
               <Text style={styles.teamBadgeText}>
-                {status?.recipients?.filter((r: any) => r.active).length ?? 0} Active
+                {activeTeamRecipientCount} Active
               </Text>
             </View>
           </View>
-          {status?.recipients?.map((r: any, idx: number) => {
+          {teamRecipients.map((r: TeamRecipient, idx: number) => {
             const isManager = r.role === "advertising_manager";
             const isOwner = r.role === "owner";
             const roleColor = isOwner ? Colors.primary : isManager ? Colors.accent : Colors.success;
@@ -752,7 +864,7 @@ export default function SMSReportsScreen() {
           </View>
         </View>
 
-        {status && !(status as any).sns_configured && (
+        {!!status && !status.sns_configured && (
           <View style={styles.snsWarningCard}>
             <View style={styles.snsWarningRow}>
               <AlertTriangle size={16} color="#FFB800" />
@@ -761,9 +873,9 @@ export default function SMSReportsScreen() {
             <Text style={styles.snsWarningText}>
               SMS messages are being simulated — NOT actually delivered to phones. Configure AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables to enable real SMS delivery via AWS SNS.
             </Text>
-            {(status as any).total_simulated > 0 && (
+            {(status?.total_simulated ?? 0) > 0 && (
               <Text style={styles.snsWarningCount}>
-                {(status as any).total_simulated} message(s) simulated so far
+                {status?.total_simulated ?? 0} message(s) simulated so far
               </Text>
             )}
           </View>
@@ -806,7 +918,7 @@ export default function SMSReportsScreen() {
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
-              <Text style={[styles.statValue, { color: (status as any)?.total_simulated ? '#FFB800' : Colors.text }]}>{(status as any)?.total_simulated ?? 0}</Text>
+              <Text style={[styles.statValue, { color: (status?.total_simulated ?? 0) > 0 ? '#FFB800' : Colors.text }]}>{status?.total_simulated ?? 0}</Text>
               <Text style={styles.statLabel}>Simulated</Text>
             </View>
             <View style={styles.statDivider} />

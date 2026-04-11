@@ -1,16 +1,48 @@
-const ADMIN_ROLES = ['owner', 'ceo', 'staff', 'manager', 'analyst'] as const;
+const ADMIN_ROLES = ['owner', 'admin', 'ceo', 'staff', 'manager', 'analyst', 'support'] as const;
+
 export type AdminRole = (typeof ADMIN_ROLES)[number];
 export type UserRole = AdminRole | 'investor';
 
-export function isAdminRole(role: string | null | undefined): boolean {
-  if (!role) return false;
-  return ADMIN_ROLES.includes(role as AdminRole);
+const ROLE_ALIASES: Record<string, UserRole> = {
+  super_admin: 'admin',
+  superadmin: 'admin',
+  administrator: 'admin',
+  admin_user: 'admin',
+  adminuser: 'admin',
+  owner_admin: 'owner',
+  owneradmin: 'owner',
+  chief_executive_officer: 'ceo',
+  chiefexecutiveofficer: 'ceo',
+  staff_member: 'staff',
+  staffmember: 'staff',
+  team_manager: 'manager',
+  teammanager: 'manager',
+  support_staff: 'support',
+  supportstaff: 'support',
+  support_agent: 'support',
+  supportagent: 'support',
+  customer_support: 'support',
+  customersupport: 'support',
+};
+
+export function canonicalizeRole(role: string | null | undefined): string {
+  return role?.trim().toLowerCase().replace(/[\s-]+/g, '_') ?? '';
 }
 
 export function normalizeRole(role: string | null | undefined): UserRole {
-  if (!role) return 'investor';
-  if (ADMIN_ROLES.includes(role as AdminRole)) return role as AdminRole;
+  const normalized = canonicalizeRole(role);
+  if (!normalized) return 'investor';
+
+  const aliasedRole = ROLE_ALIASES[normalized] ?? normalized;
+  if (ADMIN_ROLES.includes(aliasedRole as AdminRole)) {
+    return aliasedRole as AdminRole;
+  }
+
   return 'investor';
+}
+
+export function isAdminRole(role: string | null | undefined): boolean {
+  return normalizeRole(role) !== 'investor';
 }
 
 export function validateEmail(email: string): boolean {
@@ -38,4 +70,9 @@ export function validatePhone(phone: string): boolean {
 
 export function sanitizeEmail(email: string): string {
   return email.trim().toLowerCase();
+}
+
+/** Use for password sign-in only; trims accidental leading/trailing whitespace from the field. */
+export function sanitizePasswordForSignIn(password: string): string {
+  return password.trim();
 }

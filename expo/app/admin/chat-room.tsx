@@ -1,17 +1,26 @@
-import React, { useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { ArrowLeft, Radio } from 'lucide-react-native';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import Colors from '@/constants/colors';
+import { IVX_OWNER_AI_PROFILE } from '@/constants/ivx-owner-ai';
 import { useAuth } from '@/lib/auth-context';
 import { ChatScreen } from '@/src/modules/chat';
 import {
+  buildRuntimeSignalsFromProbe,
+  probeAIBackendHealth,
+} from '@/src/modules/chat/services/aiReplyService';
+import {
   getChatConversationDisplayId,
   getChatConversationTitle,
+  resolveChatActorId,
   resolveChatConversationId,
 } from '@/src/modules/chat/services/chatRooms';
+import { resolveRoomCapabilityState } from '@/src/modules/chat/services/roomCapabilityResolver';
+import { getCurrentChatRoomStatus, subscribeToChatRoomStatus } from '@/src/modules/chat/services/supabaseChatProvider';
+import type { ChatRoomRuntimeSignals, ChatRoomStatus } from '@/src/modules/chat/types/chat';
 
 function normalizeParam(value: string | string[] | undefined, fallback: string): string {
   if (Array.isArray(value)) {
@@ -43,13 +52,67 @@ export default function AdminChatRoomScreen() {
   }, [routeConversationId]);
 
   const title = useMemo(() => {
-    return getChatConversationTitle(routeConversationId, normalizeParam(params.title, 'Admin Message Room')) ?? 'Admin Message Room';
+    return getChatConversationTitle(routeConversationId, normalizeParam(params.title, IVX_OWNER_AI_PROFILE.sharedRoom.title)) ?? IVX_OWNER_AI_PROFILE.sharedRoom.title;
   }, [params.title, routeConversationId]);
 
-  const currentUserId = user?.id ?? 'ivx-admin-preview';
+  const [roomStatus, setRoomStatus] = useState<ChatRoomStatus | null>(() => getCurrentChatRoomStatus());
+  const [runtimeSignals, setRuntimeSignals] = useState<ChatRoomRuntimeSignals>({
+    aiBackendHealth: 'inactive',
+    knowledgeBackendHealth: 'inactive',
+    ownerCommandAvailability: 'inactive',
+    codeAwareServiceAvailability: 'inactive',
+    aiResponseState: 'inactive',
+  });
+  const probeRanRef = useRef(false);
+
+  const runAIProbe = useCallback(async () => {
+    try {
+      console.log('[AdminChatRoom] Running AI backend probe...');
+      const health = await probeAIBackendHealth();
+      const signals = buildRuntimeSignalsFromProbe(health);
+      setRuntimeSignals(signals);
+      console.log('[AdminChatRoom] AI probe result:', health, signals);
+    } catch (probeError) {
+      console.log('[AdminChatRoom] AI probe error:', (probeError as Error)?.message);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!probeRanRef.current) {
+      probeRanRef.current = true;
+      void runAIProbe();
+    }
+  }, [runAIProbe]);
+
+  const capabilityResolution = useMemo(() => {
+    return resolveRoomCapabilityState(roomStatus, runtimeSignals);
+  }, [roomStatus, runtimeSignals]);
+
+  const currentUserId = useMemo(() => {
+    return resolveChatActorId(user?.id, 'admin');
+  }, [user?.id]);
+
+  useEffect(() => {
+    const unsubscribe = subscribeToChatRoomStatus((nextStatus) => {
+      setRoomStatus(nextStatus);
+    });
+
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    console.log('[AdminChatRoom] Opening room route:', {
+      routeConversationId,
+      conversationId,
+      displayConversationId,
+      title,
+      roomStatus,
+      currentUserId,
+    });
+  }, [conversationId, currentUserId, displayConversationId, roomStatus, routeConversationId, title]);
 
   return (
-    <ErrorBoundary fallbackTitle="Admin chat unavailable">
+    <ErrorBoundary fallbackTitle="Chat room unavailable">
       <Stack.Screen options={{ headerShown: false }} />
       <View style={styles.container} testID="admin-chat-room-screen">
         <SafeAreaView edges={['top']} style={styles.safeArea}>
@@ -65,10 +128,11 @@ export default function AdminChatRoomScreen() {
             <View style={styles.headerCopy}>
               <View style={styles.badge}>
                 <Radio size={12} color={Colors.primary} />
-                <Text style={styles.badgeText}>LIVE</Text>
+                <Text style={styles.badgeText}>{capabilityResolution.badgeText}</Text>
               </View>
               <Text style={styles.title}>{title}</Text>
-              <Text style={styles.subtitle}>Owner/admin access to the shared realtime IVX room.</Text>
+              <Text style={styles.subtitle}>{capabilityResolution.subtitle}</Text>
+              <Text style={styles.summary}>{capabilityResolution.summary}</Text>
             </View>
           </View>
         </SafeAreaView>
@@ -77,50 +141,12 @@ export default function AdminChatRoomScreen() {
           conversationId={conversationId}
           currentUserId={currentUserId}
           roomMeta={{
-            badgeText: 'Owner room',
-            title: 'IVX Owner Room',
-            subtitle: `Conversation ID: ${displayConversationId}`,
-            capabilityPills: ['Realtime sync', 'Owner access', 'Image / video', 'PDF / File'],
-            auditCards: [
-              {
-                id: 'capabilities',
-                eyebrow: 'What it can do',
-                title: 'Shared owner communication lane',
-                description: 'This room is already wired as a reusable owner/admin room across app routes, web, and Expo clients.',
-                bullets: [
-                  'Send plain-text updates plus image, video, PDF, and general file attachments.',
-                  'Open the room by friendly slug, then resolve it to the stable UUID-backed conversation before reads and writes.',
-                  'Bootstrap the canonical room record and participant row when the known IVX room is missing.',
-                  'Reuse the same room key from assistant and ops flows instead of creating one-off support threads.',
-                ],
-              },
-              {
-                id: 'delivery',
-                eyebrow: 'How it works end to end',
-                title: 'Resilient Supabase delivery path',
-                description: 'Every send goes through the shared chat provider, which keeps the room alive even when part of the schema is unavailable.',
-                bullets: [
-                  'Composer → chatService.sendMessage() → Supabase chat provider.',
-                  'Primary path writes to conversations/messages with live inserts and polling.',
-                  'If the main tables are unavailable, the provider falls back to chat_rooms/room_messages, then realtime_snapshots, then local device storage.',
-                  'The status card above the thread tells you if the room is shared in Supabase or only cached on the current device.',
-                ],
-              },
-              {
-                id: 'value',
-                eyebrow: 'How it helps the app',
-                title: 'Owner ops, QA, and escalation hub',
-                description: 'The room gives the product a durable internal comms lane for support handoff, live QA, and incident coordination.',
-                bullets: [
-                  'Coordinate owner/admin decisions without mixing those messages into public investor support tickets.',
-                  'Test attachments, routing, and shared-room behavior safely before pointing users into the flow.',
-                  'Create a natural handoff target for AI assistant summaries, support escalations, and ops alerts.',
-                  'Surface backend permission or schema problems immediately because fallback state is visible in the UI.',
-                ],
-              },
-            ],
-            emptyTitle: 'No owner messages yet',
-            emptyText: 'Send the first owner update, media upload, or document into the shared IVX room.',
+            badgeText: capabilityResolution.badgeText,
+            title,
+            subtitle: capabilityResolution.subtitle,
+            emptyTitle: IVX_OWNER_AI_PROFILE.sharedRoom.emptyTitle,
+            emptyText: IVX_OWNER_AI_PROFILE.sharedRoom.emptyText,
+            runtimeSignals,
           }}
         />
       </View>
@@ -184,5 +210,11 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     fontSize: 12,
     lineHeight: 18,
+  },
+  summary: {
+    color: Colors.textTertiary,
+    fontSize: 11,
+    lineHeight: 17,
+    fontWeight: '600' as const,
   },
 });

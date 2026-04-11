@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { Platform } from 'react-native';
+import { isAbortLikeError, runWithAbortTimeout } from '@/lib/abort-utils';
 import { runLandingReadinessAudit } from '@/lib/landing-readiness-audit';
 
 /**
@@ -44,6 +45,51 @@ export interface SystemHealthSnapshot {
   totalRed: number;
 }
 
+export interface RunFullHealthCheckOptions {
+  force?: boolean;
+}
+
+const HEALTH_SNAPSHOT_CACHE_MS = 120_000;
+const SUPABASE_HEALTH_TIMEOUT_MS = 3_500;
+
+interface SystemHealthSnapshotCacheEntry {
+  snapshot: SystemHealthSnapshot;
+  timestamp: number;
+}
+
+let cachedSystemHealthSnapshot: SystemHealthSnapshotCacheEntry | null = null;
+let inFlightSystemHealthSnapshot: Promise<SystemHealthSnapshot> | null = null;
+
+function getCachedSystemHealthSnapshot(): SystemHealthSnapshot | null {
+  if (!cachedSystemHealthSnapshot) {
+    return null;
+  }
+
+  const ageMs = Date.now() - cachedSystemHealthSnapshot.timestamp;
+  if (ageMs > HEALTH_SNAPSHOT_CACHE_MS) {
+    cachedSystemHealthSnapshot = null;
+    return null;
+  }
+
+  console.log('[HealthCheck] Returning cached snapshot from', ageMs, 'ms ago');
+  return cachedSystemHealthSnapshot.snapshot;
+}
+
+function setCachedSystemHealthSnapshot(snapshot: SystemHealthSnapshot): void {
+  cachedSystemHealthSnapshot = {
+    snapshot,
+    timestamp: Date.now(),
+  };
+}
+
+function getCheckStatus(checks: HealthCheck[], id: string, fallback: HealthStatus): HealthStatus {
+  return checks.find((check) => check.id === id)?.status ?? fallback;
+}
+
+function getCheckLatency(checks: HealthCheck[], id: string): number | undefined {
+  return checks.find((check) => check.id === id)?.latency;
+}
+
 async function measureLatency<T>(fn: () => Promise<T>): Promise<{ result: T | null; latency: number; error: string | null }> {
   const start = Date.now();
   try {
@@ -56,16 +102,21 @@ async function measureLatency<T>(fn: () => Promise<T>): Promise<{ result: T | nu
 
 async function checkSupabaseDB(): Promise<HealthCheck> {
   const { result, latency, error } = await measureLatency(async () => {
-    const { data, error: dbError } = await supabase.from('jv_deals').select('id').limit(1);
+    const { data, error: dbError } = await runWithAbortTimeout(
+      SUPABASE_HEALTH_TIMEOUT_MS,
+      (signal) => supabase.from('jv_deals').select('id').limit(1).abortSignal(signal),
+      `Supabase DB probe timed out after ${SUPABASE_HEALTH_TIMEOUT_MS}ms`,
+    );
     if (dbError) throw new Error(dbError.message);
     return data;
   });
 
+  const timedOut = error ? isAbortLikeError(error) : false;
   let status: HealthStatus = 'green';
   let message = `Connected (${latency}ms)`;
   if (error) {
-    status = 'red';
-    message = `Error: ${error}`;
+    status = timedOut ? 'yellow' : 'red';
+    message = timedOut ? `Probe timed out (${latency}ms)` : `Error: ${error}`;
   } else if (latency > 3000) {
     status = 'red';
     message = `Very slow response (${latency}ms)`;
@@ -320,7 +371,11 @@ async function checkSecureStore(): Promise<HealthCheck> {
 
 async function checkSupabaseRLS(): Promise<HealthCheck> {
   const { latency, error } = await measureLatency(async () => {
-    const { data, error: rlsError } = await supabase.from('profiles').select('id').limit(1);
+    const { data, error: rlsError } = await runWithAbortTimeout(
+      SUPABASE_HEALTH_TIMEOUT_MS,
+      (signal) => supabase.from('profiles').select('id').limit(1).abortSignal(signal),
+      `RLS probe timed out after ${SUPABASE_HEALTH_TIMEOUT_MS}ms`,
+    );
     if (rlsError && rlsError.message.includes('permission')) {
       return 'RLS active — blocking unauthorized';
     }
@@ -328,13 +383,15 @@ async function checkSupabaseRLS(): Promise<HealthCheck> {
     return data ? 'RLS OK — data accessible' : 'RLS active';
   });
 
+  const timedOut = error ? isAbortLikeError(error) : false;
+
   return {
     id: 'supabase-rls',
     name: 'Row Level Security',
     category: 'database',
     status: error ? 'yellow' : 'green',
     latency,
-    message: error ? `RLS check: ${error}` : 'Policies enforced',
+    message: error ? (timedOut ? `RLS probe timed out (${latency}ms)` : `RLS check: ${error}`) : 'Policies enforced',
     lastChecked: new Date(),
     details: '13 tables with RLS enabled',
   };
@@ -384,32 +441,41 @@ async function checkAWSInfra(): Promise<HealthCheck> {
 
 async function checkJVDealsData(): Promise<HealthCheck> {
   const { result, latency, error } = await measureLatency(async () => {
-    const { data, error: dbError } = await supabase
-      .from('jv_deals')
-      .select('id, status, published')
-      .order('created_at', { ascending: false });
+    const { data, error: dbError } = await runWithAbortTimeout(
+      SUPABASE_HEALTH_TIMEOUT_MS,
+      (signal) => supabase
+        .from('jv_deals')
+        .select('id, published')
+        .limit(5)
+        .abortSignal(signal),
+      `JV deals probe timed out after ${SUPABASE_HEALTH_TIMEOUT_MS}ms`,
+    );
     if (dbError) throw new Error(dbError.message);
-    return data || [];
+    return (data ?? []) as { id?: string | null; published?: boolean | null }[];
   });
 
-  const published = result?.filter((d: any) => d.published)?.length ?? 0;
-  const total = result?.length ?? 0;
+  const timedOut = error ? isAbortLikeError(error) : false;
+  const sample = result ?? [];
+  const liveSampleCount = sample.filter((deal) => deal.published === true).length;
+  const sampleSize = sample.length;
 
   return {
     id: 'jv-deals-data',
     name: 'JV Deals Data',
     category: 'database',
-    status: error ? 'red' : total > 0 ? 'green' : 'yellow',
+    status: error ? (timedOut ? 'yellow' : 'red') : sampleSize > 0 ? 'green' : 'yellow',
     latency,
-    message: error ? `Error: ${error}` : `${total} deals (${published} published)`,
+    message: error
+      ? (timedOut ? `Sample probe timed out (${latency}ms)` : `Error: ${error}`)
+      : sampleSize > 0 ? `Sample read OK (${sampleSize} row${sampleSize === 1 ? '' : 's'})` : 'No sampled deals returned',
     lastChecked: new Date(),
-    details: error ? undefined : `Active: ${total - published} draft, ${published} live`,
+    details: error ? undefined : `sample_live=${liveSampleCount} · sample_size=${sampleSize} · lightweight scan`,
   };
 }
 
 async function checkLandingApiReadiness(): Promise<HealthCheck> {
   const startedAt = Date.now();
-  const audit = await runLandingReadinessAudit();
+  const audit = await runLandingReadinessAudit({ mode: 'light' });
   const blockingProbe = audit.probes.find((probe) => probe.status === 'fail');
   const warningProbe = audit.probes.find((probe) => probe.status === 'warn');
   const latency = Date.now() - startedAt;
@@ -424,6 +490,7 @@ async function checkLandingApiReadiness(): Promise<HealthCheck> {
     message: audit.summary,
     lastChecked: new Date(),
     details: [
+      `mode=${audit.mode}`,
       blockingProbe?.message ?? warningProbe?.message,
       `30k=${audit.readyFor30k ? 'pass' : 'not_passed'}`,
       `1m=${audit.readyFor1M ? 'pass' : 'not_passed'}`,
@@ -433,118 +500,141 @@ async function checkLandingApiReadiness(): Promise<HealthCheck> {
   };
 }
 
-export async function runFullHealthCheck(): Promise<SystemHealthSnapshot> {
-  console.log('[HealthCheck] Starting full system scan...');
+export async function runFullHealthCheck(options: RunFullHealthCheckOptions = {}): Promise<SystemHealthSnapshot> {
+  const force = options.force ?? false;
 
-  const checks = await Promise.all([
-    checkLandingPage(),
-    checkAppFrontend(),
-    checkExpoRouter(),
-    checkSupabaseDB(),
-    checkSupabaseAuth(),
-    checkSupabaseRealtime(),
-    checkSupabaseRLS(),
-    checkJVDealsData(),
-    checkLandingApiReadiness(),
-    checkAsyncStorage(),
-    checkSecureStore(),
-    checkReactQuery(),
-    checkEmailService(),
-    checkPushNotifications(),
-    checkAWSInfra(),
-  ]);
+  if (inFlightSystemHealthSnapshot) {
+    console.log('[HealthCheck] Joining in-flight system scan');
+    return inFlightSystemHealthSnapshot;
+  }
 
-  const connections: ConnectionFlow[] = [
-    {
-      from: 'app-frontend',
-      to: 'supabase-db',
-      status: checks.find(c => c.id === 'supabase-db')?.status || 'red',
-      label: 'REST API',
-      latency: checks.find(c => c.id === 'supabase-db')?.latency,
-    },
-    {
-      from: 'app-frontend',
-      to: 'supabase-auth',
-      status: checks.find(c => c.id === 'supabase-auth')?.status || 'red',
-      label: 'Auth JWT',
-      latency: checks.find(c => c.id === 'supabase-auth')?.latency,
-    },
-    {
-      from: 'app-frontend',
-      to: 'supabase-realtime',
-      status: checks.find(c => c.id === 'supabase-realtime')?.status || 'red',
-      label: 'WebSocket',
-      latency: checks.find(c => c.id === 'supabase-realtime')?.latency,
-    },
-    {
-      from: 'supabase-db',
-      to: 'supabase-realtime',
-      status: checks.find(c => c.id === 'supabase-realtime')?.status || 'yellow',
-      label: 'Pub/Sub',
-    },
-    {
-      from: 'landing-page',
-      to: 'supabase-db',
-      status: checks.find(c => c.id === 'landing-page')?.status || 'red',
-      label: 'Fetch Deals',
-      latency: checks.find(c => c.id === 'landing-page')?.latency,
-    },
-    {
-      from: 'landing-page',
-      to: 'aws-infra',
-      status: checks.find(c => c.id === 'landing-api-readiness')?.status || 'red',
-      label: 'JSON API Routing',
-      latency: checks.find(c => c.id === 'landing-api-readiness')?.latency,
-    },
-    {
-      from: 'app-frontend',
-      to: 'react-query',
-      status: 'green',
-      label: 'Cache Layer',
-    },
-    {
-      from: 'react-query',
-      to: 'supabase-db',
-      status: checks.find(c => c.id === 'supabase-db')?.status || 'red',
-      label: 'Query/Mutate',
-    },
-    {
-      from: 'supabase-auth',
-      to: 'secure-store',
-      status: checks.find(c => c.id === 'secure-store')?.status || 'yellow',
-      label: 'Token Store',
-    },
-    {
-      from: 'app-frontend',
-      to: 'aws-infra',
-      status: checks.find(c => c.id === 'aws-infra')?.status || 'yellow',
-      label: 'S3/CloudFront',
-    },
-    {
-      from: 'supabase-db',
-      to: 'supabase-rls',
-      status: checks.find(c => c.id === 'supabase-rls')?.status || 'yellow',
-      label: 'RLS Policies',
-    },
-  ];
+  if (!force) {
+    const cachedSnapshot = getCachedSystemHealthSnapshot();
+    if (cachedSnapshot) {
+      return cachedSnapshot;
+    }
+  }
 
-  const totalGreen = checks.filter(c => c.status === 'green').length;
-  const totalYellow = checks.filter(c => c.status === 'yellow').length;
-  const totalRed = checks.filter(c => c.status === 'red').length;
+  inFlightSystemHealthSnapshot = (async (): Promise<SystemHealthSnapshot> => {
+    console.log('[HealthCheck] Starting full system scan...', force ? '(forced)' : '(cached mode)');
 
-  let overallStatus: HealthStatus = 'green';
-  if (totalRed > 0) overallStatus = 'red';
-  else if (totalYellow > 2) overallStatus = 'yellow';
+    const checks = await Promise.all([
+      checkLandingPage(),
+      checkAppFrontend(),
+      checkExpoRouter(),
+      checkSupabaseDB(),
+      checkSupabaseAuth(),
+      checkSupabaseRealtime(),
+      checkSupabaseRLS(),
+      checkJVDealsData(),
+      checkLandingApiReadiness(),
+      checkAsyncStorage(),
+      checkSecureStore(),
+      checkReactQuery(),
+      checkEmailService(),
+      checkPushNotifications(),
+      checkAWSInfra(),
+    ]);
 
-  console.log(`[HealthCheck] Complete — Green: ${totalGreen}, Yellow: ${totalYellow}, Red: ${totalRed}`);
+    const connections: ConnectionFlow[] = [
+      {
+        from: 'app-frontend',
+        to: 'supabase-db',
+        status: getCheckStatus(checks, 'supabase-db', 'red'),
+        label: 'REST API',
+        latency: getCheckLatency(checks, 'supabase-db'),
+      },
+      {
+        from: 'app-frontend',
+        to: 'supabase-auth',
+        status: getCheckStatus(checks, 'supabase-auth', 'red'),
+        label: 'Auth JWT',
+        latency: getCheckLatency(checks, 'supabase-auth'),
+      },
+      {
+        from: 'app-frontend',
+        to: 'supabase-realtime',
+        status: getCheckStatus(checks, 'supabase-realtime', 'red'),
+        label: 'WebSocket',
+        latency: getCheckLatency(checks, 'supabase-realtime'),
+      },
+      {
+        from: 'supabase-db',
+        to: 'supabase-realtime',
+        status: getCheckStatus(checks, 'supabase-realtime', 'yellow'),
+        label: 'Pub/Sub',
+      },
+      {
+        from: 'landing-page',
+        to: 'supabase-db',
+        status: getCheckStatus(checks, 'landing-page', 'red'),
+        label: 'Fetch Deals',
+        latency: getCheckLatency(checks, 'landing-page'),
+      },
+      {
+        from: 'landing-page',
+        to: 'aws-infra',
+        status: getCheckStatus(checks, 'landing-api-readiness', 'red'),
+        label: 'JSON API Routing',
+        latency: getCheckLatency(checks, 'landing-api-readiness'),
+      },
+      {
+        from: 'app-frontend',
+        to: 'react-query',
+        status: 'green',
+        label: 'Cache Layer',
+      },
+      {
+        from: 'react-query',
+        to: 'supabase-db',
+        status: getCheckStatus(checks, 'supabase-db', 'red'),
+        label: 'Query/Mutate',
+      },
+      {
+        from: 'supabase-auth',
+        to: 'secure-store',
+        status: getCheckStatus(checks, 'secure-store', 'yellow'),
+        label: 'Token Store',
+      },
+      {
+        from: 'app-frontend',
+        to: 'aws-infra',
+        status: getCheckStatus(checks, 'aws-infra', 'yellow'),
+        label: 'S3/CloudFront',
+      },
+      {
+        from: 'supabase-db',
+        to: 'supabase-rls',
+        status: getCheckStatus(checks, 'supabase-rls', 'yellow'),
+        label: 'RLS Policies',
+      },
+    ];
 
-  return {
-    checks,
-    connections,
-    overallStatus,
-    timestamp: new Date(),
-    totalGreen,
-    totalYellow,
-    totalRed,
-  };
+    const totalGreen = checks.filter((check) => check.status === 'green').length;
+    const totalYellow = checks.filter((check) => check.status === 'yellow').length;
+    const totalRed = checks.filter((check) => check.status === 'red').length;
+
+    let overallStatus: HealthStatus = 'green';
+    if (totalRed > 0) overallStatus = 'red';
+    else if (totalYellow > 2) overallStatus = 'yellow';
+
+    console.log(`[HealthCheck] Complete — Green: ${totalGreen}, Yellow: ${totalYellow}, Red: ${totalRed}`);
+
+    const snapshot: SystemHealthSnapshot = {
+      checks,
+      connections,
+      overallStatus,
+      timestamp: new Date(),
+      totalGreen,
+      totalYellow,
+      totalRed,
+    };
+
+    setCachedSystemHealthSnapshot(snapshot);
+    return snapshot;
+  })();
+
+  return inFlightSystemHealthSnapshot.finally(() => {
+    inFlightSystemHealthSnapshot = null;
+  });
 }

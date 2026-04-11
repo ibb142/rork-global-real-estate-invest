@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { useScreenFocusState } from '@/hooks/useScreenFocusState';
 import {
   ArrowLeft,
   Search,
@@ -80,6 +81,8 @@ const INTEREST_COLORS: Record<string, string> = {
   'registered': '#9E9E9E',
 };
 
+const LEAD_INTELLIGENCE_REFRESH_MS = 1000 * 60;
+
 function formatInterest(raw: string): string {
   return INTEREST_LABELS[raw] || raw.replace(/_/g, ' ');
 }
@@ -136,6 +139,7 @@ function getKycBadge(kyc: string): { label: string; color: string } {
 
 export default function LeadIntelligence() {
   const router = useRouter();
+  const isScreenFocused = useScreenFocusState(true);
   const [activeFilter, setActiveFilter] = useState<FilterType>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<SortType>('date');
@@ -176,8 +180,11 @@ export default function LeadIntelligence() {
         },
       };
     },
-    staleTime: 5000,
-    refetchInterval: 3000,
+    staleTime: LEAD_INTELLIGENCE_REFRESH_MS,
+    refetchInterval: isScreenFocused ? LEAD_INTELLIGENCE_REFRESH_MS : false,
+    refetchIntervalInBackground: false,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
     retry: 1,
     retryDelay: 1000,
   });

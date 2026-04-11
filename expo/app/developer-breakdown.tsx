@@ -105,7 +105,7 @@ const PHASES: Phase[] = [
     color: '#8B5CF6',
     totalDays: 12,
     tasks: [
-      { id: 'a1', task: 'AI Chat Assistant (OpenAI)', description: 'Connect OpenAI API to chat screen. Investment analysis, portfolio insights, property Q&A.', days: 2, hours: 16, priority: 'high', type: 'integration' },
+      { id: 'a1', task: 'AI Chat Assistant (Rork Toolkit)', description: 'Wire the toolkit-backed AI assistant into the chat screen for investment analysis, portfolio insights, and property Q&A.', days: 2, hours: 16, priority: 'high', type: 'integration' },
       { id: 'a2', task: 'IVXHOLDINGS Token System (Blockchain)', description: 'Deploy smart contract, connect wallet, real token balance, buy/sell/stake/governance voting.', days: 3, hours: 24, priority: 'medium', type: 'backend' },
       { id: 'a3', task: 'Referral & Rewards System', description: 'Referral code tracking, commission calculation, leaderboard, reward distribution engine.', days: 2, hours: 16, priority: 'medium', type: 'backend' },
       { id: 'a4', task: 'Admin Panel (Live Data)', description: 'Connect all admin screens to live database. KYC approvals, user management, transactions.', days: 2, hours: 16, priority: 'high', type: 'frontend' },

@@ -1,7 +1,11 @@
 import { cleanForeignKeys, runStorageIntegrityCheck } from '@/lib/project-storage';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { runStartupHealthCheck } from '@/lib/startup-health';
-import { runFullHealthCheck, type HealthCheck as FullHealthCheck } from '@/lib/system-health-checker';
+import {
+  runFullHealthCheck,
+  type HealthCheck as FullHealthCheck,
+  type SystemHealthSnapshot,
+} from '@/lib/system-health-checker';
 
 export type AIOpsOverallStatus = 'healthy' | 'degraded' | 'critical';
 export type AIOpsSeverity = 'healthy' | 'warning' | 'critical';
@@ -68,6 +72,43 @@ export interface AIOpsSnapshot {
   capabilities: AIOpsCapability[];
 }
 
+export interface RunAIOpsScanOptions {
+  force?: boolean;
+  fullHealthSnapshot?: SystemHealthSnapshot;
+}
+
+interface AIOpsSnapshotCacheEntry {
+  snapshot: AIOpsSnapshot;
+  timestamp: number;
+}
+
+const AI_OPS_SNAPSHOT_CACHE_MS = 120_000;
+
+let cachedAIOpsSnapshot: AIOpsSnapshotCacheEntry | null = null;
+let inFlightAIOpsSnapshot: Promise<AIOpsSnapshot> | null = null;
+
+function getCachedAIOpsSnapshot(): AIOpsSnapshot | null {
+  if (!cachedAIOpsSnapshot) {
+    return null;
+  }
+
+  const ageMs = Date.now() - cachedAIOpsSnapshot.timestamp;
+  if (ageMs > AI_OPS_SNAPSHOT_CACHE_MS) {
+    cachedAIOpsSnapshot = null;
+    return null;
+  }
+
+  console.log('[AIOps] Returning cached snapshot from', ageMs, 'ms ago');
+  return cachedAIOpsSnapshot.snapshot;
+}
+
+function setCachedAIOpsSnapshot(snapshot: AIOpsSnapshot): void {
+  cachedAIOpsSnapshot = {
+    snapshot,
+    timestamp: Date.now(),
+  };
+}
+
 function toSeverityFromFullStatus(status: 'green' | 'yellow' | 'red'): AIOpsSeverity {
   if (status === 'red') {
     return 'critical';
@@ -96,6 +137,14 @@ function toOverallStatus(criticalCount: number, warningCount: number): AIOpsOver
     return 'degraded';
   }
   return 'healthy';
+}
+
+function toMetricTone(status: AIOpsOverallStatus): AIOpsSeverity {
+  if (status === 'degraded') {
+    return 'warning';
+  }
+
+  return status;
 }
 
 function findCheck(checks: FullHealthCheck[], id: string): FullHealthCheck | undefined {
@@ -186,13 +235,28 @@ async function verifyLandingReachability(): Promise<{ success: boolean; message:
   }
 }
 
-export async function runAIOpsScan(): Promise<AIOpsSnapshot> {
-  console.log('[AIOps] Running AI operations scan');
+export async function runAIOpsScan(options: RunAIOpsScanOptions = {}): Promise<AIOpsSnapshot> {
+  const force = options.force ?? false;
 
-  const [startupHealth, fullHealth] = await Promise.all([
-    runStartupHealthCheck(),
-    runFullHealthCheck(),
-  ]);
+  if (inFlightAIOpsSnapshot) {
+    console.log('[AIOps] Joining in-flight AI operations scan');
+    return inFlightAIOpsSnapshot;
+  }
+
+  if (!force) {
+    const cachedSnapshot = getCachedAIOpsSnapshot();
+    if (cachedSnapshot) {
+      return cachedSnapshot;
+    }
+  }
+
+  inFlightAIOpsSnapshot = (async (): Promise<AIOpsSnapshot> => {
+    console.log('[AIOps] Running AI operations scan', force ? '(forced)' : '(cached mode)');
+
+    const [startupHealth, fullHealth] = await Promise.all([
+      runStartupHealthCheck({ force }),
+      options.fullHealthSnapshot ? Promise.resolve(options.fullHealthSnapshot) : runFullHealthCheck({ force }),
+    ]);
 
   const landingCheck = findCheck(fullHealth.checks, 'landing-page');
   const apiReadinessCheck = findCheck(fullHealth.checks, 'landing-api-readiness');
@@ -341,7 +405,7 @@ export async function runAIOpsScan(): Promise<AIOpsSnapshot> {
       id: 'incidents',
       label: 'Open incidents',
       value: `${incidents.length}`,
-      tone: incidents.length === 0 ? 'healthy' : overallStatus,
+      tone: incidents.length === 0 ? 'healthy' : toMetricTone(overallStatus),
     },
     {
       id: 'auto-repair-coverage',
@@ -353,7 +417,7 @@ export async function runAIOpsScan(): Promise<AIOpsSnapshot> {
       id: 'healthy-modules',
       label: 'Healthy modules',
       value: `${healthyModuleCount}/${moduleStatuses.length}`,
-      tone: healthyModuleCount === moduleStatuses.length ? 'healthy' : overallStatus,
+      tone: healthyModuleCount === moduleStatuses.length ? 'healthy' : toMetricTone(overallStatus),
     },
     {
       id: 'available-automation',
@@ -363,23 +427,31 @@ export async function runAIOpsScan(): Promise<AIOpsSnapshot> {
     },
   ];
 
-  return {
-    scannedAt: new Date().toISOString(),
-    overallStatus,
-    honestyStatement: 'Honest answer: no AI can guarantee 100% no-crash, no-human app operations. What AI can do well is monitor, classify, retry safe fixes, clean isolated storage issues, and prepare repair steps fast.',
-    promise: 'This control center is AI-assisted and self-healing for safe recoveries only. Code changes, deployments, payments, database migrations, AWS changes, and security-sensitive fixes still need human approval.',
-    metrics,
-    modules: moduleStatuses,
-    incidents,
-    capabilities: createCapabilities(),
-  };
+    const snapshot: AIOpsSnapshot = {
+      scannedAt: new Date().toISOString(),
+      overallStatus,
+      honestyStatement: 'Honest answer: no AI can guarantee 100% no-crash, no-human app operations. What AI can do well is monitor, classify, retry safe fixes, clean isolated storage issues, and prepare repair steps fast.',
+      promise: 'This control center is AI-assisted and self-healing for safe recoveries only. Code changes, deployments, payments, database migrations, AWS changes, and security-sensitive fixes still need human approval.',
+      metrics,
+      modules: moduleStatuses,
+      incidents,
+      capabilities: createCapabilities(),
+    };
+
+    setCachedAIOpsSnapshot(snapshot);
+    return snapshot;
+  })();
+
+  return inFlightAIOpsSnapshot.finally(() => {
+    inFlightAIOpsSnapshot = null;
+  });
 }
 
 export async function executeSafeRepairAction(action: AIOpsRepairAction): Promise<AIOpsRepairResult> {
   console.log('[AIOps] Executing repair action:', action);
 
   if (action === 'rerun-scan') {
-    const snapshot = await runAIOpsScan();
+    const snapshot = await runAIOpsScan({ force: true });
     return {
       action,
       success: true,

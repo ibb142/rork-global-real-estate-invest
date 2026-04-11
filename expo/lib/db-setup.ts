@@ -19,6 +19,8 @@ const REQUIRED_TABLES: { name: string; description: string }[] = [
   { name: 'analytics_events', description: 'App analytics tracking' },
   { name: 'image_registry', description: 'Stored image tracking' },
   { name: 'push_tokens', description: 'Push notification tokens' },
+  { name: 'conversations', description: 'Shared chat room conversations' },
+  { name: 'conversation_participants', description: 'Shared chat room participants' },
   { name: 'messages', description: 'Shared chat room messages' },
   { name: 'jv_deals', description: 'Joint Venture deals' },
   { name: 'landing_analytics', description: 'Landing page events' },
@@ -120,7 +122,7 @@ BEGIN
     SELECT 1
     FROM public.profiles
     WHERE id = auth.uid()
-      AND COALESCE(role, 'investor') IN ('owner', 'admin', 'ceo', 'manager', 'staff', 'analyst', 'support')
+      AND regexp_replace(lower(COALESCE(role, 'investor')), '[^a-z0-9]+', '', 'g') IN ('owner', 'owneradmin')
   );
 END;
 $f$ LANGUAGE plpgsql SECURITY DEFINER STABLE;
@@ -337,35 +339,94 @@ CREATE TABLE IF NOT EXISTS push_tokens (
   updated_at timestamptz DEFAULT now(), created_at timestamptz DEFAULT now(), UNIQUE(user_id, token)
 );
 ALTER TABLE push_tokens ENABLE ROW LEVEL SECURITY;
-DO $$ BEGIN
+DO $ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname='push_tokens_select_own' AND tablename='push_tokens') THEN CREATE POLICY push_tokens_select_own ON push_tokens FOR SELECT USING (auth.uid()=user_id); END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname='push_tokens_insert_own' AND tablename='push_tokens') THEN CREATE POLICY push_tokens_insert_own ON push_tokens FOR INSERT WITH CHECK (auth.uid()=user_id); END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname='push_tokens_update_own' AND tablename='push_tokens') THEN CREATE POLICY push_tokens_update_own ON push_tokens FOR UPDATE USING (auth.uid()=user_id); END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname='push_tokens_delete_own' AND tablename='push_tokens') THEN CREATE POLICY push_tokens_delete_own ON push_tokens FOR DELETE USING (auth.uid()=user_id); END IF;
-END $$;
+END $;
 CREATE INDEX IF NOT EXISTS idx_push_tokens_user ON push_tokens(user_id);
 DROP TRIGGER IF EXISTS trg_push_tokens_updated_at ON push_tokens;
 CREATE TRIGGER trg_push_tokens_updated_at BEFORE UPDATE ON push_tokens FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
--- 11. MESSAGES
+CREATE OR REPLACE FUNCTION public.ivx_is_owner()
+RETURNS boolean
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $ivx$
+  SELECT auth.uid() IS NOT NULL
+    AND EXISTS (
+      SELECT 1
+      FROM public.profiles
+      WHERE id = auth.uid()
+        AND regexp_replace(lower(coalesce(role, 'investor')), '[^a-z0-9]+', '', 'g') IN ('owner', 'owneradmin')
+    );
+$ivx$;
+
+-- 11. CHAT_CONVERSATIONS
+CREATE TABLE IF NOT EXISTS conversations (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  title text NOT NULL,
+  subtitle text,
+  last_message_text text,
+  last_message_at timestamptz DEFAULT now()
+);
+ALTER TABLE conversations ENABLE ROW LEVEL SECURITY;
+DO $ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_policies WHERE policyname='conversations_auth_all' AND tablename='conversations') THEN DROP POLICY conversations_auth_all ON conversations; END IF;
+  CREATE POLICY conversations_auth_all ON conversations FOR ALL TO authenticated USING (id <> '8f5a9c42-1cb5-4f81-b2d8-6f3a0a8b9d41'::uuid OR public.ivx_is_owner()) WITH CHECK (id <> '8f5a9c42-1cb5-4f81-b2d8-6f3a0a8b9d41'::uuid OR public.ivx_is_owner());
+END $;
+CREATE INDEX IF NOT EXISTS idx_conversations_last_message_at ON conversations(last_message_at DESC);
+DO $ BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.conversations; EXCEPTION WHEN duplicate_object THEN NULL; END $;
+
+-- 12. CHAT_PARTICIPANTS
+CREATE TABLE IF NOT EXISTS conversation_participants (
+  conversation_id uuid NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+  user_id text NOT NULL,
+  unread_count integer DEFAULT 0,
+  last_read_at timestamptz,
+  PRIMARY KEY (conversation_id, user_id)
+);
+ALTER TABLE conversation_participants ENABLE ROW LEVEL SECURITY;
+DO $ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_policies WHERE policyname='conversation_participants_auth_all' AND tablename='conversation_participants') THEN DROP POLICY conversation_participants_auth_all ON conversation_participants; END IF;
+  CREATE POLICY conversation_participants_auth_all ON conversation_participants FOR ALL TO authenticated USING (conversation_id <> '8f5a9c42-1cb5-4f81-b2d8-6f3a0a8b9d41'::uuid OR public.ivx_is_owner()) WITH CHECK (conversation_id <> '8f5a9c42-1cb5-4f81-b2d8-6f3a0a8b9d41'::uuid OR public.ivx_is_owner());
+END $;
+CREATE INDEX IF NOT EXISTS idx_conversation_participants_user ON conversation_participants(user_id);
+CREATE INDEX IF NOT EXISTS idx_conversation_participants_conversation ON conversation_participants(conversation_id);
+DO $ BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.conversation_participants; EXCEPTION WHEN duplicate_object THEN NULL; END $;
+
+-- 13. MESSAGES
 CREATE TABLE IF NOT EXISTS messages (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  conversation_id text NOT NULL,
+  conversation_id uuid NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
   sender_id text NOT NULL,
   text text,
   file_url text,
   file_type text,
-  created_at timestamptz DEFAULT now()
+  read_by text[] DEFAULT '{}'::text[],
+  created_at timestamptz NOT NULL DEFAULT now()
 );
 ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
 DO $ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname='messages_select_auth' AND tablename='messages') THEN CREATE POLICY messages_select_auth ON messages FOR SELECT TO authenticated USING (true); END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname='messages_insert_auth' AND tablename='messages') THEN CREATE POLICY messages_insert_auth ON messages FOR INSERT TO authenticated WITH CHECK (true); END IF;
+  IF EXISTS (SELECT 1 FROM pg_policies WHERE policyname='messages_auth_all' AND tablename='messages') THEN DROP POLICY messages_auth_all ON messages; END IF;
+  CREATE POLICY messages_auth_all ON messages FOR ALL TO authenticated USING (conversation_id <> '8f5a9c42-1cb5-4f81-b2d8-6f3a0a8b9d41'::uuid OR public.ivx_is_owner()) WITH CHECK (conversation_id <> '8f5a9c42-1cb5-4f81-b2d8-6f3a0a8b9d41'::uuid OR public.ivx_is_owner());
 END $;
-CREATE INDEX IF NOT EXISTS idx_messages_conversation_created ON messages(conversation_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_messages_conversation_created ON messages(conversation_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_messages_sender_created ON messages(sender_id, created_at DESC);
 DO $ BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.messages; EXCEPTION WHEN duplicate_object THEN NULL; END $;
 
--- 12. JV_DEALS
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('chat-uploads', 'chat-uploads', true)
+ON CONFLICT (id) DO NOTHING;
+
+DO $ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname='chat_uploads_public_select' AND schemaname='storage' AND tablename='objects') THEN CREATE POLICY chat_uploads_public_select ON storage.objects FOR SELECT USING (bucket_id='chat-uploads'); END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname='chat_uploads_auth_insert' AND schemaname='storage' AND tablename='objects') THEN CREATE POLICY chat_uploads_auth_insert ON storage.objects FOR INSERT TO authenticated WITH CHECK (bucket_id='chat-uploads'); END IF;
+END $;
+
+-- 14. JV_DEALS
 CREATE TABLE IF NOT EXISTS jv_deals (
   id text PRIMARY KEY, title text, "projectName" text, type text, description text,
   partner_name text, partner_email text, partner_phone text, partner_type text,
@@ -880,46 +941,52 @@ END;
 $fn$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- 18. VERIFY
-DO $$
+DO $
 DECLARE
-  _tables text[] := ARRAY['profiles','wallets','properties','market_data','holdings','transactions','notifications','analytics_events','image_registry','push_tokens','messages','jv_deals','landing_analytics','waitlist'];
+  _tables text[] := ARRAY['profiles','wallets','properties','market_data','holdings','transactions','notifications','analytics_events','image_registry','push_tokens','conversations','conversation_participants','messages','jv_deals','landing_analytics','waitlist'];
   _t text; _count integer := 0;
 BEGIN
   FOREACH _t IN ARRAY _tables LOOP
     IF EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name=_t AND table_schema='public') THEN _count:=_count+1;
     ELSE RAISE NOTICE 'MISSING: %', _t; END IF;
   END LOOP;
-  RAISE NOTICE 'Tables: % / 14 created', _count;
-  IF _count=14 THEN RAISE NOTICE 'ALL TABLES READY'; END IF;
-END $$;
+  RAISE NOTICE 'Tables: % / 16 created', _count;
+  IF _count=16 THEN RAISE NOTICE 'ALL TABLES READY'; END IF;
+END $;
 `;
 
 export const VERIFY_SQL = `-- IVXHOLDINGS GO-LIVE VERIFICATION
-DO $ DECLARE _t text; _ok int:=0; _tables text[]:=ARRAY['profiles','wallets','properties','market_data','holdings','transactions','notifications','analytics_events','image_registry','push_tokens','messages','jv_deals','landing_analytics','waitlist','resale_listings','wallet_transactions'];
+DO $ DECLARE _t text; _ok int:=0; _tables text[]:=ARRAY['profiles','wallets','properties','market_data','holdings','transactions','notifications','analytics_events','image_registry','push_tokens','conversations','conversation_participants','messages','jv_deals','landing_analytics','waitlist','resale_listings','wallet_transactions'];
 BEGIN
   RAISE NOTICE '=== TABLE CHECK ===';
   FOREACH _t IN ARRAY _tables LOOP
     IF EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name=_t AND table_schema='public') THEN _ok:=_ok+1; RAISE NOTICE '[OK] %', _t;
     ELSE RAISE NOTICE '[MISS] %', _t; END IF;
   END LOOP;
-  RAISE NOTICE 'Tables: % / 16', _ok;
+  RAISE NOTICE 'Tables: % / 18', _ok;
 END $;
 
-DO $ DECLARE _t text; _ok int:=0; _tables text[]:=ARRAY['profiles','wallets','properties','market_data','holdings','transactions','notifications','analytics_events','image_registry','push_tokens','messages','jv_deals','landing_analytics','waitlist','resale_listings','wallet_transactions'];
+DO $ DECLARE _t text; _ok int:=0; _tables text[]:=ARRAY['profiles','wallets','properties','market_data','holdings','transactions','notifications','analytics_events','image_registry','push_tokens','conversations','conversation_participants','messages','jv_deals','landing_analytics','waitlist','resale_listings','wallet_transactions'];
 BEGIN
   RAISE NOTICE '=== RLS CHECK ===';
   FOREACH _t IN ARRAY _tables LOOP
     IF (SELECT relrowsecurity FROM pg_class WHERE relname=_t AND relnamespace=(SELECT oid FROM pg_namespace WHERE nspname='public')) THEN _ok:=_ok+1; RAISE NOTICE '[OK] % RLS', _t;
     ELSE RAISE NOTICE '[WARN] % NO RLS', _t; END IF;
   END LOOP;
-  RAISE NOTICE 'RLS: % / 16', _ok;
+  RAISE NOTICE 'RLS: % / 18', _ok;
 END $;
 
-DO $$ BEGIN
+DO $ BEGIN
   RAISE NOTICE '=== REALTIME CHECK ===';
   IF EXISTS(SELECT 1 FROM pg_publication_tables WHERE pubname='supabase_realtime' AND tablename='jv_deals') THEN RAISE NOTICE '[OK] jv_deals realtime enabled';
   ELSE RAISE NOTICE '[FAIL] jv_deals NOT in realtime'; END IF;
-END $$;
+  IF EXISTS(SELECT 1 FROM pg_publication_tables WHERE pubname='supabase_realtime' AND tablename='conversations') THEN RAISE NOTICE '[OK] conversations realtime enabled';
+  ELSE RAISE NOTICE '[FAIL] conversations NOT in realtime'; END IF;
+  IF EXISTS(SELECT 1 FROM pg_publication_tables WHERE pubname='supabase_realtime' AND tablename='conversation_participants') THEN RAISE NOTICE '[OK] conversation_participants realtime enabled';
+  ELSE RAISE NOTICE '[FAIL] conversation_participants NOT in realtime'; END IF;
+  IF EXISTS(SELECT 1 FROM pg_publication_tables WHERE pubname='supabase_realtime' AND tablename='messages') THEN RAISE NOTICE '[OK] messages realtime enabled';
+  ELSE RAISE NOTICE '[FAIL] messages NOT in realtime'; END IF;
+END $;
 
 DO $$ BEGIN
   RAISE NOTICE '=== FUNCTIONS CHECK ===';

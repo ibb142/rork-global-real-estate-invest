@@ -54,8 +54,9 @@ import {
   Maximize2,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
+import { runFullHealthCheck, type HealthStatus } from '@/lib/system-health-checker';
 
-import { supabase } from '@/lib/supabase';
+const LIVE_HEALTH_REFRESH_INTERVAL_MS = 180_000;
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -118,7 +119,7 @@ const ADMIN_LAYER: SystemModule[] = [
   { id: 'admin-transactions', name: 'Transactions', file: 'app/admin/transactions.tsx', category: 'Admin', status: 'live', description: 'Transaction history, filters, audit trail', dependencies: ['supabase'], dataFlow: 'Supabase transactions → Filtered List', icon: DollarSign, linesOfCode: 0 },
   { id: 'admin-email', name: 'Email Engine', file: 'app/admin/email-engine.tsx', category: 'Admin', status: 'live', description: 'Email campaigns, templates, send management', dependencies: ['email-context', 'email-engine'], dataFlow: 'Compose → Queue → Edge Function → Delivery', icon: Mail, linesOfCode: 0 },
   { id: 'admin-system-monitor', name: 'System Monitor', file: 'app/admin/system-monitor.tsx', category: 'Admin', status: 'live', description: '24/7 command center, uptime, error logs, performance', dependencies: ['supabase', 'analytics'], dataFlow: 'System Events → Monitor → Alerts', icon: Cpu, linesOfCode: 0 },
-  { id: 'admin-chat-room', name: 'Admin Chat Room', file: 'app/admin/chat-room.tsx', category: 'Admin', status: 'live', description: 'Owner/admin access to the shared Supabase-backed realtime message room with file uploads', dependencies: ['auth-context', 'src/modules/chat', 'supabase-client'], dataFlow: 'Admin Auth → Chat Provider → Supabase Realtime → Message UI', icon: MessageSquare, linesOfCode: 0 },
+  { id: 'admin-chat-room', name: 'Message Room', file: 'app/admin/chat-room.tsx', category: 'Admin', status: 'live', description: 'Shared Supabase-backed realtime message room with file uploads', dependencies: ['auth-context', 'src/modules/chat', 'supabase-client'], dataFlow: 'Admin Auth → Chat Provider → Supabase Realtime → Message UI', icon: MessageSquare, linesOfCode: 0 },
   { id: 'admin-trash', name: 'Trash Bin', file: 'app/admin/trash-bin.tsx', category: 'Admin', status: 'live', description: 'Soft-deleted deals recovery, permanent delete with confirmation', dependencies: ['jv-storage'], dataFlow: 'Trash → Restore/Permanent Delete', icon: HardDrive, linesOfCode: 0 },
 ];
 
@@ -559,44 +560,71 @@ function DataFlowCard({ flow, index }: { flow: DataFlowDefinition; index: number
 }
 
 function LiveHealthPanel() {
-  const [supabaseStatus, setSupabaseStatus] = useState<'checking' | 'connected' | 'error'>('checking');
-  const [realtimeStatus, setRealtimeStatus] = useState<'checking' | 'connected' | 'error'>('checking');
+  const [supabaseStatus, setSupabaseStatus] = useState<'checking' | 'connected' | 'degraded' | 'error'>('checking');
+  const [realtimeStatus, setRealtimeStatus] = useState<'checking' | 'connected' | 'degraded' | 'error'>('checking');
   const [lastCheck, setLastCheck] = useState<Date>(new Date());
   const pulseAnim = useRef(new Animated.Value(0)).current;
 
-  const checkHealth = useCallback(async () => {
-    setSupabaseStatus('checking');
-    setRealtimeStatus('checking');
-    try {
-      const { error } = await supabase.from('jv_deals').select('id').limit(1);
-      setSupabaseStatus(error ? 'error' : 'connected');
-    } catch {
-      setSupabaseStatus('error');
+  const mapHealthStatus = useCallback((status: HealthStatus | undefined): 'connected' | 'degraded' | 'error' => {
+    if (status === 'green') {
+      return 'connected';
     }
-
-    try {
-      const channels = supabase.getChannels();
-      setRealtimeStatus(channels.length >= 0 ? 'connected' : 'error');
-    } catch {
-      setRealtimeStatus('error');
+    if (status === 'yellow') {
+      return 'degraded';
     }
-    setLastCheck(new Date());
+    return 'error';
   }, []);
 
+  const checkHealth = useCallback(async (force: boolean = false) => {
+    setSupabaseStatus('checking');
+    setRealtimeStatus('checking');
+
+    try {
+      const snapshot = await runFullHealthCheck({ force });
+      const databaseCheck = snapshot.checks.find((check) => check.id === 'supabase-db');
+      const realtimeCheck = snapshot.checks.find((check) => check.id === 'supabase-realtime');
+
+      setSupabaseStatus(mapHealthStatus(databaseCheck?.status));
+      setRealtimeStatus(mapHealthStatus(realtimeCheck?.status));
+    } catch (error) {
+      console.log('[AdminSystemMap] Live health check failed:', (error as Error)?.message);
+      setSupabaseStatus('error');
+      setRealtimeStatus('error');
+    }
+
+    setLastCheck(new Date());
+  }, [mapHealthStatus]);
+
   useEffect(() => {
-    void checkHealth();
-    const interval = setInterval(() => { void checkHealth(); }, 3000);
-    Animated.loop(
+    let cancelled = false;
+
+    const run = async () => {
+      if (cancelled) {
+        return;
+      }
+      await checkHealth(false);
+    };
+
+    void run();
+    const interval = setInterval(() => {
+      void run();
+    }, LIVE_HEALTH_REFRESH_INTERVAL_MS);
+    const animationLoop = Animated.loop(
       Animated.sequence([
         Animated.timing(pulseAnim, { toValue: 1, duration: 1500, useNativeDriver: true }),
         Animated.timing(pulseAnim, { toValue: 0, duration: 1500, useNativeDriver: true }),
       ])
-    ).start();
-    return () => clearInterval(interval);
+    );
+    animationLoop.start();
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      animationLoop.stop();
+    };
   }, [checkHealth, pulseAnim]);
 
-  const statusColor = (s: string) => s === 'connected' ? '#22C55E' : s === 'error' ? '#FF4D4D' : '#FFB800';
-  const StatusIcon = (s: string) => s === 'connected' ? Wifi : s === 'error' ? WifiOff : Clock;
+  const statusColor = (s: string) => s === 'connected' ? '#22C55E' : s === 'degraded' ? '#FFB800' : s === 'error' ? '#FF4D4D' : '#94A3B8';
+  const StatusIcon = (s: string) => s === 'connected' ? Wifi : s === 'degraded' ? Clock : s === 'error' ? WifiOff : Clock;
 
   const DbIcon = StatusIcon(supabaseStatus);
   const RtIcon = StatusIcon(realtimeStatus);
@@ -608,7 +636,7 @@ function LiveHealthPanel() {
           <Activity size={16} color="#22C55E" />
         </Animated.View>
         <Text style={styles.healthTitle}>Live System Health</Text>
-        <TouchableOpacity onPress={checkHealth} style={styles.refreshBtn}>
+        <TouchableOpacity onPress={() => void checkHealth(true)} style={styles.refreshBtn}>
           <RefreshCw size={14} color={Colors.textSecondary} />
         </TouchableOpacity>
       </View>
@@ -636,7 +664,7 @@ function LiveHealthPanel() {
         </View>
       </View>
 
-      <Text style={styles.healthTimestamp}>Last checked: {lastCheck.toLocaleTimeString()}</Text>
+      <Text style={styles.healthTimestamp}>Last checked: {lastCheck.toLocaleTimeString()} · cached health snapshot</Text>
     </View>
   );
 }

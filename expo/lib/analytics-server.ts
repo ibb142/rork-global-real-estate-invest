@@ -160,9 +160,43 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+-- Source breakdown
+CREATE OR REPLACE FUNCTION analytics_source_breakdown(p_period text)
+RETURNS json AS $
+DECLARE
+  cutoff timestamptz;
+  result json;
+BEGIN
+  cutoff := CASE p_period
+    WHEN '1h' THEN now() - interval '1 hour'
+    WHEN '24h' THEN now() - interval '24 hours'
+    WHEN '7d' THEN now() - interval '7 days'
+    WHEN '30d' THEN now() - interval '30 days'
+    WHEN '90d' THEN now() - interval '90 days'
+    ELSE '1970-01-01'::timestamptz
+  END;
+
+  SELECT COALESCE(json_agg(row_to_json(t)), '[]'::json) INTO result
+  FROM (
+    SELECT COALESCE(properties->>'referrer', 'direct') as source,
+      COUNT(DISTINCT session_id) as sessions,
+      COUNT(*) FILTER (WHERE event IN ('form_submit','form_submitted','waitlist_join','waitlist_success')) as leads,
+      CASE WHEN COUNT(DISTINCT session_id) > 0 THEN ROUND(
+        (COUNT(*) FILTER (WHERE event IN ('form_submit','form_submitted','waitlist_join','waitlist_success'))::numeric /
+         COUNT(DISTINCT session_id)::numeric) * 100, 1
+      ) ELSE 0 END as conversion_rate
+    FROM landing_analytics
+    WHERE created_at >= cutoff
+    GROUP BY properties->>'referrer' ORDER BY sessions DESC LIMIT 20
+  ) t;
+
+  RETURN result;
+END;
+$ LANGUAGE plpgsql SECURITY DEFINER;
+
 -- Lead summary
 CREATE OR REPLACE FUNCTION analytics_lead_summary(p_period text)
-RETURNS json AS $$
+RETURNS json AS $
 DECLARE
   cutoff timestamptz;
   result json;
@@ -177,9 +211,9 @@ BEGIN
   END;
 
   SELECT json_build_object(
-    'total_leads', (SELECT COUNT(*) FROM waitlist) + (SELECT COUNT(*) FROM profiles),
-    'waitlist_count', (SELECT COUNT(*) FROM waitlist),
-    'registered_count', (SELECT COUNT(*) FROM profiles),
+    'total_leads', COALESCE((SELECT COUNT(*) FROM waitlist), 0) + COALESCE((SELECT COUNT(*) FROM profiles), 0),
+    'waitlist_count', COALESCE((SELECT COUNT(*) FROM waitlist), 0),
+    'registered_count', COALESCE((SELECT COUNT(*) FROM profiles), 0),
     'hot_leads', COUNT(DISTINCT session_id) FILTER (WHERE event IN ('form_submit', 'form_submitted', 'waitlist_join', 'waitlist_success')),
     'warm_leads', COUNT(DISTINCT session_id) FILTER (WHERE event LIKE 'cta_%' AND event NOT IN ('form_submit', 'form_submitted'))
   ) INTO result
@@ -188,5 +222,19 @@ BEGIN
 
   RETURN result;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Live visitor count
+CREATE OR REPLACE FUNCTION analytics_live_count()
+RETURNS json AS $
+DECLARE result json;
+BEGIN
+  SELECT json_build_object(
+    'active', COUNT(DISTINCT session_id)
+  ) INTO result
+  FROM landing_analytics
+  WHERE created_at >= now() - interval '5 minutes';
+  RETURN result;
+END;
+$ LANGUAGE plpgsql SECURITY DEFINER;
 `;

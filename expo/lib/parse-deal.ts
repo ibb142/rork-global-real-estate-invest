@@ -109,6 +109,10 @@ export interface ParsedJVDealPoolTier {
   status: string;
 }
 
+const SHARED_JV_DEALS_STALE_MS = 60_000;
+const SHARED_JV_DEALS_REFRESH_MS = 90_000;
+const SHARED_JV_DEALS_GC_MS = 1000 * 60 * 10;
+
 function safeJsonParse(val: unknown, fallback: unknown = []): unknown {
   if (val === null || val === undefined) return fallback;
   if (typeof val === 'string') {
@@ -431,6 +435,11 @@ export interface UsePublishedJVDealsResult {
   refetch: () => Promise<unknown>;
 }
 
+export interface UsePublishedJVDealsOptions {
+  enabled?: boolean;
+  refetchIntervalMs?: number | false;
+}
+
 const SHARED_FETCH_TIMEOUT_MS = 10000;
 
 let _lastManualReset = 0;
@@ -467,19 +476,25 @@ async function fetchPublishedJVDealsShared(): Promise<{ deals: ParsedJVDeal[] }>
   return result;
 }
 
-export function usePublishedJVDeals(): UsePublishedJVDealsResult {
+export function usePublishedJVDeals(options: UsePublishedJVDealsOptions = {}): UsePublishedJVDealsResult {
+  const isEnabled = options.enabled ?? true;
+  const refetchInterval = isEnabled
+    ? (options.refetchIntervalMs ?? SHARED_JV_DEALS_REFRESH_MS)
+    : false;
+
   const query = useQuery({
     queryKey: [...QUERY_KEY_PUBLISHED_JV_DEALS],
     queryFn: fetchPublishedJVDealsShared,
+    enabled: isEnabled,
     retry: 2,
     retryDelay: (attempt: number) => Math.min(1000 * Math.pow(2, attempt), 8000),
-    staleTime: 2000,
-    gcTime: 1000 * 60 * 10,
-    refetchOnWindowFocus: true,
-    refetchOnMount: true,
+    staleTime: SHARED_JV_DEALS_STALE_MS,
+    gcTime: SHARED_JV_DEALS_GC_MS,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
     refetchOnReconnect: true,
-    refetchInterval: 3000,
-    refetchIntervalInBackground: true,
+    refetchInterval,
+    refetchIntervalInBackground: false,
     placeholderData: { deals: [] as ParsedJVDeal[] },
   });
 

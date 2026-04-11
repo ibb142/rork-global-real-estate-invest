@@ -29,6 +29,52 @@ function getEffectiveUrl(url: string): string {
 const effectiveUrl = getEffectiveUrl(supabaseUrl);
 const isSelfHosted = !isHostedSupabase(supabaseUrl);
 
+function requestUrlString(url: RequestInfo | URL): string {
+  if (typeof url === 'string') {
+    return url;
+  }
+  if (url instanceof URL) {
+    return url.href;
+  }
+  return url.url;
+}
+
+/** Pooling hint is for Postgres/REST; keep it off Auth (GoTrue) requests to avoid edge cases on hosted projects. */
+function stripConnectionPoolHeaderForAuth(urlStr: string, init: RequestInit | undefined): RequestInit {
+  if (!init) {
+    return {};
+  }
+  if (isSelfHosted || !urlStr.includes('/auth/v1/') || !init.headers) {
+    return { ...init };
+  }
+  const headers = new Headers(init.headers);
+  headers.delete('x-connection-pool');
+  return { ...init, headers };
+}
+
+function logAuthTokenRequestIfDev(urlStr: string, init: RequestInit | undefined): void {
+  if (typeof __DEV__ === 'undefined' || !__DEV__) {
+    return;
+  }
+  if (!urlStr.includes('/auth/v1/token')) {
+    return;
+  }
+  const body = init?.body;
+  if (typeof body !== 'string') {
+    return;
+  }
+  try {
+    const parsed = JSON.parse(body) as Record<string, unknown>;
+    const safe: Record<string, unknown> = { ...parsed };
+    if (typeof safe.password === 'string') {
+      safe.password = `[REDACTED length=${safe.password.length}]`;
+    }
+    console.log('[Supabase] /auth/v1/token outbound JSON:', JSON.stringify(safe));
+  } catch {
+    console.log('[Supabase] /auth/v1/token outbound body (non-JSON, not logged)');
+  }
+}
+
 export const SUPABASE_NOT_CONFIGURED_MESSAGE =
   'Supabase URL is required. Add EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY to your environment variables. Restart the dev server after changing env.';
 
@@ -76,11 +122,14 @@ if (supabaseUrl && supabaseAnonKey) {
         'x-client-info': `ivx-app/${Platform.OS}`,
       },
       fetch: (url: RequestInfo | URL, options?: RequestInit) => {
+        const urlStr = requestUrlString(url);
+        const nextOptions = stripConnectionPoolHeaderForAuth(urlStr, options);
+        logAuthTokenRequestIfDev(urlStr, nextOptions);
         const controller = new AbortController();
         const timeoutMs = isSelfHosted ? 20000 : 15000;
         const timeout = setTimeout(() => controller.abort(), timeoutMs);
         return fetch(url, {
-          ...options,
+          ...nextOptions,
           signal: controller.signal,
         }).finally(() => clearTimeout(timeout));
       },
@@ -98,6 +147,16 @@ if (supabaseUrl && supabaseAnonKey) {
     },
   });
   console.log(`[Supabase] Client initialized (${isSelfHosted ? 'self-hosted' : 'hosted+pooler'}), ${isSelfHosted ? 5 : 2} events/sec`);
+  if (typeof __DEV__ !== 'undefined' && __DEV__) {
+    try {
+      const host = new URL(effectiveUrl).hostname;
+      const key = supabaseAnonKey;
+      const keyHint = key.length > 12 ? `${key.slice(0, 8)}…${key.slice(-4)}` : '(short key)';
+      console.log('[Supabase] Config check (preview/dev): host=', host, 'anonKeyHint=', keyHint);
+    } catch {
+      console.log('[Supabase] Config check: URL parse failed for logging');
+    }
+  }
 } else {
   console.warn('[Supabase]', SUPABASE_NOT_CONFIGURED_MESSAGE);
 }
@@ -111,6 +170,18 @@ const _noopAuth = {
   onAuthStateChange: (_event: string, _session: unknown) => ({ data: { subscription: { unsubscribe: () => {} } } }),
   refreshSession: async () => ({ data: { session: null, user: null }, error: { message: SUPABASE_NOT_CONFIGURED_MESSAGE, name: 'AuthError', status: 500 } }),
   updateUser: async () => ({ data: { user: null }, error: { message: SUPABASE_NOT_CONFIGURED_MESSAGE, name: 'AuthError', status: 500 } }),
+  resetPasswordForEmail: async () => ({ data: {}, error: { message: SUPABASE_NOT_CONFIGURED_MESSAGE, name: 'AuthError', status: 500 } }),
+  setSession: async () => ({ data: { session: null, user: null }, error: { message: SUPABASE_NOT_CONFIGURED_MESSAGE, name: 'AuthError', status: 500 } }),
+  exchangeCodeForSession: async () => ({ data: { session: null, user: null }, error: { message: SUPABASE_NOT_CONFIGURED_MESSAGE, name: 'AuthError', status: 500 } }),
+  reauthenticate: async () => ({ data: { user: null }, error: { message: SUPABASE_NOT_CONFIGURED_MESSAGE, name: 'AuthError', status: 500 } }),
+  mfa: {
+    listFactors: async () => ({ data: { all: [], totp: [], phone: [] }, error: { message: SUPABASE_NOT_CONFIGURED_MESSAGE, name: 'AuthError', status: 500 } }),
+    getAuthenticatorAssuranceLevel: async () => ({ data: { currentLevel: null, nextLevel: null }, error: { message: SUPABASE_NOT_CONFIGURED_MESSAGE, name: 'AuthError', status: 500 } }),
+    enroll: async () => ({ data: null, error: { message: SUPABASE_NOT_CONFIGURED_MESSAGE, name: 'AuthError', status: 500 } }),
+    challenge: async () => ({ data: null, error: { message: SUPABASE_NOT_CONFIGURED_MESSAGE, name: 'AuthError', status: 500 } }),
+    verify: async () => ({ data: null, error: { message: SUPABASE_NOT_CONFIGURED_MESSAGE, name: 'AuthError', status: 500 } }),
+    unenroll: async () => ({ data: null, error: { message: SUPABASE_NOT_CONFIGURED_MESSAGE, name: 'AuthError', status: 500 } }),
+  },
 };
 
 const _noopQuery = {

@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { useScreenFocusState } from '@/hooks/useScreenFocusState';
 import {
   ArrowLeft,
   Activity,
@@ -50,6 +51,10 @@ import {
 } from '@/lib/system-health-checker';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const AUTO_REFRESH_INTERVAL_MS = 90_000;
+const AUTO_REFRESH_INTERVAL_SECONDS = Math.round(AUTO_REFRESH_INTERVAL_MS / 1000);
+const AUTO_REFRESH_INTERVAL_LABEL = `${AUTO_REFRESH_INTERVAL_SECONDS}s`;
+const AUTO_REFRESH_INTERVAL_TEXT = `${AUTO_REFRESH_INTERVAL_SECONDS} seconds`;
 
 const STATUS_COLORS: Record<HealthStatus, string> = {
   green: '#00E676',
@@ -415,8 +420,9 @@ export default function SystemHealthScreen() {
   const [autoRefreshCount, setAutoRefreshCount] = useState(0);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const scanInFlightRef = useRef(false);
+  const isScreenFocused = useScreenFocusState(true);
 
-  const runScan = useCallback(async (isRefresh = false) => {
+  const runScan = useCallback(async (isRefresh = false, force = false) => {
     if (scanInFlightRef.current) {
       console.log('[SystemHealth] Scan skipped because another scan is still running');
       return;
@@ -428,7 +434,7 @@ export default function SystemHealthScreen() {
     else setLoading(true);
 
     try {
-      const result = await runFullHealthCheck();
+      const result = await runFullHealthCheck({ force });
       setSnapshot(result);
       setAutoRefreshCount(prev => prev + 1);
     } catch (err) {
@@ -441,16 +447,21 @@ export default function SystemHealthScreen() {
   }, []);
 
   useEffect(() => {
-    void runScan();
-
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
     }
 
+    if (!isScreenFocused) {
+      console.log('[SystemHealth] Screen blurred — pausing auto refresh');
+      return;
+    }
+
+    void runScan();
+
     intervalRef.current = setInterval(() => {
       void runScan();
-    }, 30000);
+    }, AUTO_REFRESH_INTERVAL_MS);
 
     return () => {
       if (intervalRef.current) {
@@ -458,7 +469,7 @@ export default function SystemHealthScreen() {
         intervalRef.current = null;
       }
     };
-  }, [runScan]);
+  }, [isScreenFocused, runScan]);
 
   const filteredChecks = useMemo(() => {
     if (!snapshot) return [];
@@ -467,7 +478,7 @@ export default function SystemHealthScreen() {
   }, [snapshot, filter]);
 
   const onRefresh = useCallback(() => {
-    void runScan(true);
+    void runScan(true, true);
   }, [runScan]);
 
   if (loading && !snapshot) {
@@ -497,14 +508,14 @@ export default function SystemHealthScreen() {
             <Text style={styles.headerTitle}>System Health</Text>
           </View>
           <Text style={styles.headerSubtitle}>
-            Live · Auto-refresh #{autoRefreshCount}
+            Light scan · refresh #{autoRefreshCount} · every {AUTO_REFRESH_INTERVAL_LABEL}
           </Text>
         </View>
         <TouchableOpacity onPress={() => router.push('/system-blueprint' as any)} style={styles.blueprintBtn}>
           <Layers size={16} color="#00E676" />
           <Text style={styles.blueprintBtnText}>3D</Text>
         </TouchableOpacity>
-        <TouchableOpacity onPress={onRefresh} style={styles.refreshBtn}>
+        <TouchableOpacity onPress={onRefresh} style={styles.refreshBtn} testID="system-health-refresh-button">
           <RefreshCw size={18} color={Colors.primary} />
         </TouchableOpacity>
       </View>
@@ -594,7 +605,7 @@ export default function SystemHealthScreen() {
               <Text style={styles.footerText}>
                 {Platform.OS} · {snapshot.checks.length} checks · {snapshot.connections.length} connections
               </Text>
-              <Text style={styles.footerText}>Auto-refreshes every 3-5 seconds</Text>
+              <Text style={styles.footerText}>Auto-refreshes every {AUTO_REFRESH_INTERVAL_TEXT}</Text>
             </View>
           </>
         )}

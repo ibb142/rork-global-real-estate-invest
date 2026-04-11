@@ -169,6 +169,10 @@ function getApiBaseUrl(): string {
   return process.env.EXPO_PUBLIC_SUPABASE_URL || process.env.EXPO_PUBLIC_API_BASE_URL || 'https://ivxholding.com';
 }
 
+const LIVE_ANALYTICS_REFRESH_INTERVAL_MS = 60_000;
+const STANDARD_ANALYTICS_REFRESH_INTERVAL_MS = 180_000;
+const ANALYTICS_STALE_TIME_MS = 60_000;
+
 export default function AnalyticsReportScreen() {
   const router = useRouter();
   const adminGuard = useAdminGuard({ redirectOnFail: false });
@@ -182,7 +186,9 @@ export default function AnalyticsReportScreen() {
     Animated.spring(headerAnim, { toValue: 1, tension: 40, friction: 10, useNativeDriver: true }).start();
   }, [headerAnim]);
 
-  const pollInterval = activeTab === 'live' ? 5000 : 10000;
+  const pollInterval = activeTab === 'live'
+    ? LIVE_ANALYTICS_REFRESH_INTERVAL_MS
+    : STANDARD_ANALYTICS_REFRESH_INTERVAL_MS;
 
   const analyticsQuery = useQuery<AnalyticsData | null>({
     queryKey: ['analytics.report', { period }],
@@ -213,14 +219,15 @@ export default function AnalyticsReportScreen() {
       return computed as unknown as AnalyticsData;
     },
     enabled: adminGuard.isAdmin,
-    staleTime: 2000,
-    gcTime: 5000,
+    staleTime: ANALYTICS_STALE_TIME_MS,
+    gcTime: 1000 * 60 * 10,
     refetchInterval: pollInterval,
+    refetchIntervalInBackground: false,
     networkMode: 'always',
     retry: 1,
     retryDelay: 1000,
-    refetchOnMount: true,
-    refetchOnWindowFocus: true,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
   });
 
   const data = analyticsQuery.data as AnalyticsData | undefined ?? null;

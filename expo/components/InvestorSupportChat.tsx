@@ -20,6 +20,7 @@ import * as Haptics from 'expo-haptics';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowRight, Bot, CheckCircle, Headphones, Send, Sparkles } from 'lucide-react-native';
 import Colors from '@/constants/colors';
+import { IVX_OWNER_AI_PROFILE } from '@/constants/ivx-owner-ai';
 import { useTranslation } from '@/lib/i18n-context';
 import { getResponsiveSize, isExtraSmallScreen } from '@/lib/responsive';
 import { aiInvestorService } from '@/lib/ai-investor-service';
@@ -32,15 +33,9 @@ type ConnectionStatus = 'connecting' | 'connected' | 'waiting';
 
 type ChatVariant = 'screen' | 'card';
 
-const DEFAULT_QUICK_REPLIES = [
-  'How do I invest?',
-  'Frontend issue',
-  'Backend or Supabase help',
-  'AWS or CloudFront support',
-  'ChatGPT integration',
-] as const;
+const DEFAULT_QUICK_REPLIES = IVX_OWNER_AI_PROFILE.support.quickReplies;
 
-const DEFAULT_WELCOME_MESSAGE = 'Hello! Welcome to IVXHOLDINGS support. Ask about investing, your account, technical support, frontend or backend flows, AWS integrations, or ChatGPT and OpenAI chat setup.';
+const DEFAULT_WELCOME_MESSAGE = IVX_OWNER_AI_PROFILE.support.welcomeMessage;
 
 const MAX_RENDERED_MESSAGES = 120;
 
@@ -91,7 +86,7 @@ export default function InvestorSupportChat({
     {
       id: 'msg-welcome',
       senderId: 'support-1',
-      senderName: 'IVXHOLDINGS Support',
+      senderName: IVX_OWNER_AI_PROFILE.support.assistantDisplayName,
       senderAvatar: '',
       message: welcomeMessage,
       timestamp: new Date().toISOString(),
@@ -195,7 +190,7 @@ export default function InvestorSupportChat({
     const supportReply: ChatMessage = {
       id: `msg-support-${Date.now()}`,
       senderId: 'ai-support',
-      senderName: 'IVXHOLDINGS AI',
+      senderName: IVX_OWNER_AI_PROFILE.support.assistantDisplayName,
       senderAvatar: '',
       message,
       timestamp: new Date().toISOString(),
@@ -236,7 +231,7 @@ export default function InvestorSupportChat({
       const aiReply: ChatMessage = {
         id: `msg-ai-${Date.now()}`,
         senderId: 'ai-support',
-        senderName: 'IVXHOLDINGS AI',
+        senderName: IVX_OWNER_AI_PROFILE.support.assistantDisplayName,
         senderAvatar: '',
         message: result.text,
         timestamp: new Date().toISOString(),

@@ -35,7 +35,7 @@ import {
 } from 'lucide-react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Colors from '@/constants/colors';
-import { fetchRawEvents, computeVisitorIntelligence } from '@/lib/analytics-compute';
+import { fetchRawEvents, computeVisitorIntelligence, type RawEvent } from '@/lib/analytics-compute';
 
 type PeriodType = '1h' | '24h' | '7d' | '30d' | '90d' | 'all';
 type TabType = 'overview' | 'leads' | 'patterns' | 'alerts';
@@ -57,6 +57,10 @@ const TABS: { label: string; value: TabType; icon: React.ReactNode }[] = [
   { label: 'Patterns', value: 'patterns', icon: <Activity size={14} color="#97A0AF" /> },
   { label: 'Alerts', value: 'alerts', icon: <Bell size={14} color="#E53935" /> },
 ];
+
+const LIVE_VISITOR_INTELLIGENCE_REFRESH_INTERVAL_MS = 120_000;
+const STANDARD_VISITOR_INTELLIGENCE_REFRESH_INTERVAL_MS = 300_000;
+const VISITOR_INTELLIGENCE_STALE_TIME_MS = 60_000;
 
 const INTENT_COLORS: Record<string, { bg: string; text: string; label: string }> = {
   hot_lead: { bg: '#FF4D4D20', text: '#FF4D4D', label: 'HOT LEAD' },
@@ -113,6 +117,71 @@ function PulseIndicator({ active, color = '#22C55E' }: { active: boolean; color?
   );
 }
 
+type VisitorAlert = {
+  type: string;
+  severity: 'critical' | 'high' | 'medium' | 'info';
+  title: string;
+  message: string;
+  timestamp: string;
+};
+
+function buildVisitorAlerts(rawEvents: RawEvent[]): { alerts: VisitorAlert[]; activeVisitors: number } {
+  const alerts: VisitorAlert[] = [];
+  const now = Date.now();
+  const fiveMinAgo = now - 5 * 60 * 1000;
+  const sessionMap = new Map<string, RawEvent[]>();
+
+  rawEvents.forEach((event) => {
+    const sessionId = event.session_id || 'unknown';
+    const existing = sessionMap.get(sessionId) ?? [];
+    existing.push(event);
+    sessionMap.set(sessionId, existing);
+  });
+
+  let activeVisitors = 0;
+  sessionMap.forEach((events, sessionId) => {
+    const lastTime = Math.max(...events.map((event) => new Date(event.created_at).getTime()));
+    if (lastTime <= fiveMinAgo) {
+      return;
+    }
+
+    activeVisitors++;
+    const hasForm = events.some((event) => event.event?.includes('form_submit') || event.event?.includes('waitlist'));
+    const hasCta = events.some((event) => event.event?.includes('cta_'));
+    if (hasForm) {
+      alerts.push({
+        type: 'hot_lead',
+        severity: 'critical',
+        title: 'Hot Lead Detected',
+        message: `Active session ${sessionId.slice(0, 8)} submitted a form`,
+        timestamp: new Date(lastTime).toISOString(),
+      });
+      return;
+    }
+
+    if (hasCta) {
+      alerts.push({
+        type: 'high_engagement',
+        severity: 'high',
+        title: 'High Engagement',
+        message: `Session ${sessionId.slice(0, 8)} clicked CTA`,
+        timestamp: new Date(lastTime).toISOString(),
+      });
+      return;
+    }
+
+    alerts.push({
+      type: 'live_visitor',
+      severity: 'info',
+      title: 'Live Visitor',
+      message: `Active session from ${events[0]?.geo?.country || 'unknown location'}`,
+      timestamp: new Date(lastTime).toISOString(),
+    });
+  });
+
+  return { alerts, activeVisitors };
+}
+
 function HeatmapBar({ data, maxVal }: { data: Array<{ hour: number; count: number }>; maxVal: number }) {
   const barW = Math.max(Math.floor((SCREEN_W - 64) / 24) - 2, 6);
   return (
@@ -144,6 +213,10 @@ export default function VisitorIntelligenceScreen() {
     Animated.spring(headerAnim, { toValue: 1, tension: 40, friction: 10, useNativeDriver: true }).start();
   }, [headerAnim]);
 
+  const pollInterval = activeTab === 'alerts'
+    ? LIVE_VISITOR_INTELLIGENCE_REFRESH_INTERVAL_MS
+    : STANDARD_VISITOR_INTELLIGENCE_REFRESH_INTERVAL_MS;
+
   const intelQuery = useQuery<any>({
     queryKey: ['analytics.getAIVisitorIntelligence', { period }],
     queryFn: async () => {
@@ -152,69 +225,35 @@ export default function VisitorIntelligenceScreen() {
         const rawEvents = await fetchRawEvents(period);
         console.log('[VisitorIntel] Raw events fetched:', rawEvents.length);
         const computed = computeVisitorIntelligence(rawEvents, period);
-        console.log('[VisitorIntel] Computed:', { sessions: computed.summary?.totalSessions, hotLeads: computed.summary?.hotLeads, events: computed.summary?.totalEvents });
-        return computed;
+        const alertsData = buildVisitorAlerts(rawEvents);
+        console.log('[VisitorIntel] Computed:', {
+          sessions: computed.summary?.totalSessions,
+          hotLeads: computed.summary?.hotLeads,
+          events: computed.summary?.totalEvents,
+          alerts: alertsData.alerts.length,
+          activeVisitors: alertsData.activeVisitors,
+        });
+        return { ...computed, alertsData };
       } catch (err) {
         console.error('[VisitorIntel] Query error:', (err as Error)?.message);
-        return computeVisitorIntelligence([], period);
+        return {
+          ...computeVisitorIntelligence([], period),
+          alertsData: { alerts: [] as VisitorAlert[], activeVisitors: 0 },
+        };
       }
     },
-    staleTime: 30000,
-    refetchInterval: activeTab === 'alerts' ? 30000 : 60000,
+    staleTime: VISITOR_INTELLIGENCE_STALE_TIME_MS,
+    refetchInterval: pollInterval,
+    refetchIntervalInBackground: false,
     retry: 2,
     retryDelay: (attempt) => Math.min(1000 * Math.pow(2, attempt), 10000),
-    refetchOnMount: true,
-    throwOnError: false,
-  });
-
-  const alertsQuery = useQuery<any>({
-    queryKey: ['analytics.getVisitorAlerts', { period }],
-    queryFn: async () => {
-      try {
-        console.log('[VisitorIntel] Fetching alerts for period:', period);
-        const rawEvents = await fetchRawEvents(period);
-        const alerts: any[] = [];
-        const now = Date.now();
-        const fiveMinAgo = now - 5 * 60 * 1000;
-        const sessionMap = new Map<string, any[]>();
-        rawEvents.forEach(e => {
-          const sid = e.session_id || 'unknown';
-          if (!sessionMap.has(sid)) sessionMap.set(sid, []);
-          sessionMap.get(sid)!.push(e);
-        });
-        let activeVisitors = 0;
-        sessionMap.forEach((events, sid) => {
-          const lastTime = Math.max(...events.map(e => new Date(e.created_at).getTime()));
-          if (lastTime > fiveMinAgo) {
-            activeVisitors++;
-            const hasForm = events.some(e => e.event?.includes('form_submit') || e.event?.includes('waitlist'));
-            const hasCta = events.some(e => e.event?.includes('cta_'));
-            if (hasForm) {
-              alerts.push({ type: 'hot_lead', severity: 'critical', title: 'Hot Lead Detected', message: `Active session ${sid.slice(0, 8)} submitted a form`, timestamp: new Date(lastTime).toISOString() });
-            } else if (hasCta) {
-              alerts.push({ type: 'high_engagement', severity: 'high', title: 'High Engagement', message: `Session ${sid.slice(0, 8)} clicked CTA`, timestamp: new Date(lastTime).toISOString() });
-            } else {
-              alerts.push({ type: 'live_visitor', severity: 'info', title: 'Live Visitor', message: `Active session from ${events[0]?.geo?.country || 'unknown location'}`, timestamp: new Date(lastTime).toISOString() });
-            }
-          }
-        });
-        console.log('[VisitorIntel] Alerts computed:', alerts.length, 'alerts,', activeVisitors, 'active visitors');
-        return { alerts, activeVisitors };
-      } catch (err) {
-        console.error('[VisitorIntel] Alerts query error:', (err as Error)?.message);
-        return { alerts: [], activeVisitors: 0 };
-      }
-    },
-    staleTime: 30000,
-    refetchInterval: activeTab === 'alerts' ? 30000 : 60000,
-    retry: 2,
-    retryDelay: (attempt) => Math.min(1000 * Math.pow(2, attempt), 10000),
-    refetchOnMount: true,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
     throwOnError: false,
   });
 
   const data = intelQuery.data;
-  const alertsData = alertsQuery.data;
+  const alertsData = data?.alertsData;
 
   useEffect(() => {
     if (data) {
@@ -236,10 +275,7 @@ export default function VisitorIntelligenceScreen() {
   const queryClient = useQueryClient();
   const onRefresh = useCallback(async () => {
     setManualRefreshing(true);
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ['analytics.getAIVisitorIntelligence'] }),
-      queryClient.invalidateQueries({ queryKey: ['analytics.getVisitorAlerts'] }),
-    ]);
+    await queryClient.invalidateQueries({ queryKey: ['analytics.getAIVisitorIntelligence'] });
     setManualRefreshing(false);
   }, [queryClient]);
 

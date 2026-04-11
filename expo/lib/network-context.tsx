@@ -1,7 +1,7 @@
 import createContextHook from '@nkzw/create-context-hook';
 import { onlineManager } from '@tanstack/react-query';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Platform, AppState, type AppStateStatus } from 'react-native';
+import { Platform, AppState, InteractionManager, type AppStateStatus } from 'react-native';
 import {
   type BackendStatus,
   subscribeHealth,
@@ -108,7 +108,21 @@ export const [NetworkProvider, useNetwork] = createContextHook(() => {
   }, [maybeRunHealthCheck, updateReachability]);
 
   useEffect(() => {
-    startHealthMonitor();
+    let cancelled = false;
+    let monitorStarted = false;
+
+    const startMonitor = () => {
+      if (cancelled || monitorStarted) {
+        return;
+      }
+
+      monitorStarted = true;
+      startHealthMonitor();
+      console.log('[Network] Health monitor released after startup interactions');
+    };
+
+    const interactionTask = InteractionManager.runAfterInteractions(startMonitor);
+    const fallbackTimeout = setTimeout(startMonitor, 700);
 
     const unsub = subscribeHealth((health) => {
       setState((prev) => ({
@@ -118,13 +132,26 @@ export const [NetworkProvider, useNetwork] = createContextHook(() => {
     });
 
     return () => {
+      cancelled = true;
+      interactionTask.cancel();
+      clearTimeout(fallbackTimeout);
       unsub();
       stopHealthMonitor();
     };
   }, []);
 
   useEffect(() => {
-    void check(true);
+    let cancelled = false;
+    const runInitialCheck = () => {
+      if (cancelled) {
+        return;
+      }
+
+      void check(true);
+    };
+
+    const interactionTask = InteractionManager.runAfterInteractions(runInitialCheck);
+    const fallbackTimeout = setTimeout(runInitialCheck, 450);
 
     const interval = setInterval(() => {
       void check(false);
@@ -152,6 +179,9 @@ export const [NetworkProvider, useNetwork] = createContextHook(() => {
       window.addEventListener('offline', onOffline);
 
       return () => {
+        cancelled = true;
+        interactionTask.cancel();
+        clearTimeout(fallbackTimeout);
         clearInterval(interval);
         sub.remove();
         window.removeEventListener('online', onOnline);
@@ -160,6 +190,9 @@ export const [NetworkProvider, useNetwork] = createContextHook(() => {
     }
 
     return () => {
+      cancelled = true;
+      interactionTask.cancel();
+      clearTimeout(fallbackTimeout);
       clearInterval(interval);
       sub.remove();
     };

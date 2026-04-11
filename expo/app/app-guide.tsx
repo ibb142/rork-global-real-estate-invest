@@ -100,7 +100,7 @@ const LAUNCH_PLAN: LaunchWeek[] = [
       { label: 'Activate Twilio — WhatsApp/SMS notifications (561-644-3503)', hours: '4–8h', priority: 'critical', done: false },
       { label: 'Configure Plaid — bank link & ACH deposits', hours: '8–12h', priority: 'critical', done: false },
       { label: 'Configure Stripe — card payments & payouts', hours: '6–10h', priority: 'critical', done: false },
-      { label: 'Connect OpenAI API — AI assistant & content generation', hours: '4–6h', priority: 'high', done: false },
+      { label: 'Confirm Rork Toolkit AI wiring — workspace assistant & content generation', hours: '2–4h', priority: 'high', done: false },
       { label: 'Set up KYC provider (Persona/Jumio) production keys', hours: '8–16h', priority: 'critical', done: false },
       { label: 'Configure push notifications (Expo + APNs + FCM)', hours: '4–6h', priority: 'high', done: false },
     ],
@@ -139,7 +139,7 @@ const PRIORITY_72H: string[] = [
   'Activate Twilio API — needed for WhatsApp/SMS automation reports',
   'Set Stripe & Plaid production keys — needed for live payments',
   'Set KYC provider production keys — needed for identity verification (open to all investors)',
-  'Connect OpenAI API key — needed for AI chat & content generation',
+  'Confirm Rork Toolkit AI routing — needed for AI chat & content generation',
   'Configure APNs & FCM certificates — needed for push notifications',
 ];
 
@@ -527,7 +527,9 @@ const ARCH_SECTIONS: ArchSection[] = [
       { label: 'EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY', value: 'Client-side Stripe key (pk_live_...)', badge: 'CRITICAL' },
       { label: 'PLAID_CLIENT_ID', value: 'Plaid bank link client ID for ACH deposits', badge: 'CRITICAL' },
       { label: 'PLAID_SECRET', value: 'Plaid secret key', badge: 'CRITICAL' },
-      { label: 'OPENAI_API_KEY', value: 'AI chat, contract generator, AI gallery, smart investing', badge: 'HIGH' },
+      { label: 'EXPO_PUBLIC_TOOLKIT_URL', value: 'AI toolkit base URL for workspace assistant, contract generator, AI gallery, and smart investing', badge: 'HIGH' },
+      { label: 'EXPO_PUBLIC_PROJECT_ID', value: 'Toolkit project scope for AI and project services', badge: 'HIGH' },
+      { label: 'EXPO_PUBLIC_TEAM_ID', value: 'Toolkit team scope for AI and project services', badge: 'HIGH' },
       { label: 'KYC_API_KEY', value: 'Persona or Jumio production API key for identity verification', badge: 'CRITICAL' },
       { label: 'SENTRY_DSN', value: 'Error tracking and crash monitoring (Sentry)', badge: 'HIGH' },
       { label: 'ALLOWED_ORIGINS', value: 'CORS: comma-separated production origins, e.g. https://app.ipxholding.com', badge: 'CRITICAL' },

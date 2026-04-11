@@ -3,6 +3,8 @@ import { useRouter } from 'expo-router';
 import { Alert } from 'react-native';
 import { isAdminRole } from '@/lib/auth-helpers';
 import { useAuth } from '@/lib/auth-context';
+import { getAdminAccessLockMessage, shouldBlockRoleForAdminAccess } from '@/lib/admin-access-lock';
+import { isOpenAccessModeEnabled } from '@/lib/open-access';
 
 export interface AdminGuardState {
   isAdmin: boolean;
@@ -18,6 +20,19 @@ export function useAdminGuard(options?: { redirectOnFail?: boolean; silent?: boo
   const deniedOnce = useRef(false);
 
   const state = useMemo<AdminGuardState>(() => {
+    if (isOpenAccessModeEnabled()) {
+      const uid = auth.user?.id ?? auth.userId ?? 'open-access-admin';
+      const role = auth.userRole ?? auth.user?.role ?? 'owner';
+      console.log('[AdminGuard] GRANTED — open access mode active | userId:', uid, '| role:', role);
+      return { isAdmin: true, isVerifying: false, userId: uid, role, error: null };
+    }
+
+    const adminLockBlocked = shouldBlockRoleForAdminAccess(auth.userRole, auth.user?.email);
+
+    if (adminLockBlocked) {
+      console.log('[AdminGuard] DENIED — owner-only admin lock blocked this session | email:', auth.user?.email ?? 'unknown', '| role:', auth.userRole ?? 'unknown');
+      return { isAdmin: false, isVerifying: false, userId: auth.user?.id ?? auth.userId ?? null, role: auth.userRole ?? null, error: getAdminAccessLockMessage() };
+    }
 
     if (auth.isOwnerIPAccess) {
       const uid = auth.user?.id ?? auth.userId ?? 'owner-ip-access';
@@ -33,14 +48,13 @@ export function useAdminGuard(options?: { redirectOnFail?: boolean; silent?: boo
     }
 
     if (auth.isAuthenticated && auth.user) {
-      if (auth.user.role === 'owner' || auth.user.id?.startsWith('owner-ip-')) {
-        console.log('[AdminGuard] GRANTED — owner user fallback | userId:', auth.user.id);
-        return { isAdmin: true, isVerifying: false, userId: auth.user.id, role: 'owner', error: null };
-      }
-
-      if (auth.userRole === 'ceo' || isAdminRole(auth.user.role)) {
-        const role = auth.userRole || auth.user.role;
-        console.log('[AdminGuard] GRANTED — admin user | role:', role);
+      const resolvedRole = auth.userRole || auth.user.role || null;
+      const ownerIpFallback = auth.user.id?.startsWith('owner-ip-') ?? false;
+      if (ownerIpFallback || isAdminRole(resolvedRole)) {
+        const role = ownerIpFallback
+          ? (resolvedRole && isAdminRole(resolvedRole) ? resolvedRole : 'owner')
+          : (resolvedRole ?? 'owner');
+        console.log('[AdminGuard] GRANTED — authenticated admin fallback | userId:', auth.user.id, '| role:', role, '| ownerIpFallback:', ownerIpFallback);
         return { isAdmin: true, isVerifying: false, userId: auth.user.id, role, error: null };
       }
 

@@ -76,7 +76,7 @@ export default function SyncDiagnosticsScreen() {
   const auth = useAuth();
   const [refreshing, setRefreshing] = useState(false);
 
-  const publishedJV = usePublishedJVDeals();
+  const publishedJV = usePublishedJVDeals({ refetchIntervalMs: false });
 
   const syncStatusQuery = useQuery({
     queryKey: ['sync-diagnostics-status'],

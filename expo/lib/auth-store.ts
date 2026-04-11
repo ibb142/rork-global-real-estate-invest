@@ -25,17 +25,17 @@ export function setAuthCredentials(
 }
 
 export function getAuthToken(): string | null {
-  console.warn('[AuthStore] getAuthToken() is deprecated — use supabase.auth.getSession() instead');
+  console.log('[AuthStore] getAuthToken() is deprecated — use supabase.auth.getSession() instead');
   return null;
 }
 
 export function getRefreshToken(): string | null {
-  console.warn('[AuthStore] getRefreshToken() is deprecated — use supabase.auth.getSession() instead');
+  console.log('[AuthStore] getRefreshToken() is deprecated — use supabase.auth.getSession() instead');
   return null;
 }
 
 export function setAuthToken(_token: string) {
-  console.warn('[AuthStore] setAuthToken() is deprecated — Supabase manages tokens');
+  console.log('[AuthStore] setAuthToken() is deprecated — Supabase manages tokens');
 }
 
 export function getAuthUserId(): string | null {

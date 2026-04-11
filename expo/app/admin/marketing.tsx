@@ -18,7 +18,6 @@ import {
   KeyboardAvoidingView,
   Animated,
 } from 'react-native';
-import { Video as ExpoVideo, ResizeMode } from 'expo-av';
 import * as ImagePicker from 'expo-image-picker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -175,7 +174,6 @@ export default function AIMarketingHub() {
   const [generatedVideo, setGeneratedVideo] = useState<{ url: string; script: string; videoUrl: string } | null>(null);
   const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
   const [videoDuration, setVideoDuration] = useState<'15' | '30' | '60'>('30');
-  const [isPlayingVideo, setIsPlayingVideo] = useState(false);
 
   const [uploadedMedia, setUploadedMedia] = useState<MediaItem[]>([]);
   const [mediaCaption, setMediaCaption] = useState('');
@@ -1072,6 +1070,25 @@ Output just the script with timing notes.`;
     }
   }, [generatedVideo]);
 
+  const handleOpenGeneratedVideo = useCallback(async () => {
+    if (!generatedVideo?.videoUrl) return;
+
+    try {
+      const canOpen = await Linking.canOpenURL(generatedVideo.videoUrl);
+      if (!canOpen) {
+        Alert.alert('Video unavailable', 'This generated video could not be opened on your device.');
+        return;
+      }
+
+      await Linking.openURL(generatedVideo.videoUrl);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      console.log('Generated video opened');
+    } catch (error) {
+      console.error('Open generated video error:', error);
+      Alert.alert('Video unavailable', 'Could not open this generated video right now.');
+    }
+  }, [generatedVideo]);
+
   const getEventIcon = (eventType: LinkEvent['eventType']) => {
     switch (eventType) {
       case 'click': return { icon: Globe, color: Colors.textSecondary };
@@ -1751,41 +1768,20 @@ Output just the script with timing notes.`;
             </TouchableOpacity>
           </View>
           <View style={styles.videoThumbnailContainer}>
-            {isPlayingVideo ? (
-              <ExpoVideo
-                source={{ uri: generatedVideo.videoUrl }}
-                style={styles.videoPlayer}
-                useNativeControls
-                resizeMode={ResizeMode.CONTAIN}
-                shouldPlay
-                isLooping
-                onError={(error: string) => {
-                  console.error('Video playback error:', error);
-                  setIsPlayingVideo(false);
-                  Alert.alert('Playback Error', 'Could not play video. Please try again.');
-                }}
-              />
-            ) : (
-              <>
-                <Image 
-                  source={{ uri: generatedVideo.url }} 
-                  style={styles.videoThumbnail}
-                  resizeMode="cover"
-                />
-                <TouchableOpacity 
-                  style={styles.videoPlayOverlay}
-                  onPress={() => {
-                    setIsPlayingVideo(true);
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                  }}
-                >
-                  <View style={styles.videoPlayButton}>
-                    <Play size={32} color="#fff" />
-                  </View>
-                  <Text style={styles.videoDurationBadge}>{videoDuration}s</Text>
-                </TouchableOpacity>
-              </>
-            )}
+            <Image 
+              source={{ uri: generatedVideo.url }} 
+              style={styles.videoThumbnail}
+              resizeMode="cover"
+            />
+            <TouchableOpacity 
+              style={styles.videoPlayOverlay}
+              onPress={handleOpenGeneratedVideo}
+            >
+              <View style={styles.videoPlayButton}>
+                <Play size={32} color="#fff" />
+              </View>
+              <Text style={styles.videoDurationBadge}>{videoDuration}s</Text>
+            </TouchableOpacity>
           </View>
           <View style={styles.videoScriptBox}>
             <Text style={styles.videoScriptLabel}>AI Generated Script</Text>
@@ -1797,6 +1793,10 @@ Output just the script with timing notes.`;
             <TouchableOpacity style={styles.imageActionBtn} onPress={generateAIVideo}>
               <RefreshCw size={14} color={Colors.text} />
               <Text style={styles.imageActionText}>Regenerate</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.imageActionBtn} onPress={handleOpenGeneratedVideo}>
+              <ExternalLink size={14} color={Colors.text} />
+              <Text style={styles.imageActionText}>Open Video</Text>
             </TouchableOpacity>
             <TouchableOpacity style={[styles.imageActionBtn, styles.imageActionBtnPrimary]} onPress={handleShareVideoScript}>
               <Share2 size={14} color="#000" />
@@ -2913,7 +2913,6 @@ const styles = StyleSheet.create({
   progressBarBgVideo: { gap: 4 },
   progressBarFillVideo: { gap: 4 },
   progressText: { color: Colors.textTertiary, fontSize: 12 },
-  videoPlayer: { gap: 4 },
   mediaUploadSection: { marginBottom: 16 },
   mediaUploadHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
   mediaUploadTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
