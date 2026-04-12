@@ -8,6 +8,7 @@ import {
 } from '@/shared/ivx';
 
 const IVX_OWNER_AI_LEGACY_API_PATH = IVX_OWNER_AI_API_PATH.replace(/^\/api/, '');
+const IVX_CANONICAL_API_BASE_URL = 'https://api.ivxholding.com';
 
 const IVX_ALLOWED_OWNER_ROLES = new Set<IVXOwnerRole>(['owner']);
 
@@ -42,6 +43,11 @@ export function getIVXOwnerAICandidateEndpoints(): string[] {
   const projectBaseUrl = getDefaultProjectApiBaseUrl();
   const urls: string[] = [];
 
+  if (IVX_CANONICAL_API_BASE_URL.length > 0) {
+    pushUniqueUrl(urls, `${IVX_CANONICAL_API_BASE_URL}${IVX_OWNER_AI_API_PATH}`);
+    pushUniqueUrl(urls, `${IVX_CANONICAL_API_BASE_URL}${IVX_OWNER_AI_LEGACY_API_PATH}`);
+  }
+
   if (configuredBaseUrl.length > 0) {
     pushUniqueUrl(urls, `${configuredBaseUrl}${IVX_OWNER_AI_API_PATH}`);
     pushUniqueUrl(urls, `${configuredBaseUrl}${IVX_OWNER_AI_LEGACY_API_PATH}`);
@@ -59,6 +65,8 @@ export function getIVXOwnerAICandidateEndpoints(): string[] {
     pushUniqueUrl(urls, `${projectBaseUrl}${IVX_OWNER_AI_API_PATH}`);
     pushUniqueUrl(urls, `${projectBaseUrl}${IVX_OWNER_AI_LEGACY_API_PATH}`);
   }
+
+  console.log('[IVXSupabaseClient] Owner AI candidate endpoints:', urls);
 
   return urls;
 }
