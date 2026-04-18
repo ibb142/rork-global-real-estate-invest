@@ -131,6 +131,8 @@ class PresenceManager {
   private isSubscribed = false;
   private isSubscribing = false;
   private isBroadcasting = false;
+  private isBroadcastChannelBound = false;
+  private isBroadcastChannelSubscribing = false;
   private listeners = new Set<PresenceListener>();
   private broadcastData: PresenceUser | null = null;
   private broadcastInterval: ReturnType<typeof setInterval> | null = null;
@@ -152,14 +154,34 @@ class PresenceManager {
     this.broadcastShardIndex = getShardIndex(sessionId);
     const channelName = getShardChannelName(this.broadcastShardIndex);
 
-    if (this.broadcastChannel) return this.broadcastChannel;
+    if (this.broadcastChannel) {
+      return this.broadcastChannel;
+    }
 
     this.broadcastChannel = supabase.channel(channelName, {
       config: { presence: { key: sessionId } },
     });
+    this.isBroadcastChannelBound = false;
+    this.isBroadcastChannelSubscribing = false;
+    this.bindBroadcastChannel(this.broadcastChannel);
 
     console.log('[PresenceMgr] Broadcast channel created on shard:', this.broadcastShardIndex, 'key:', sessionId);
     return this.broadcastChannel;
+  }
+
+  private bindBroadcastChannel(channel: RealtimeChannel) {
+    if (this.isBroadcastChannelBound) {
+      return;
+    }
+
+    try {
+      channel.on('presence', { event: 'sync' }, () => {
+        this.debouncedSync();
+      });
+      this.isBroadcastChannelBound = true;
+    } catch (error) {
+      console.log('[PresenceMgr] Presence sync binding skipped:', (error as Error)?.message ?? 'unknown');
+    }
   }
 
   private syncAllShards() {
@@ -372,49 +394,73 @@ class PresenceManager {
 
   async startBroadcasting(data: Omit<PresenceUser, 'startedAt' | 'lastSeen' | 'online_at'>) {
     const now = new Date().toISOString();
+    const existingStartedAt = this.broadcastData?.startedAt ?? now;
     this.broadcastData = {
       ...data,
-      startedAt: now,
+      startedAt: existingStartedAt,
       lastSeen: now,
       online_at: now,
     };
     console.log('[PresenceMgr] Broadcasting as:', data.sessionId, 'source:', data.source, 'shard:', getShardIndex(data.sessionId));
 
     const channel = this.getOrCreateBroadcastChannel(data.sessionId);
-    if (!channel) return;
+    if (!channel) {
+      return;
+    }
+
+    if (this.isBroadcasting) {
+      try {
+        await channel.track({
+          ...this.broadcastData,
+          lastSeen: new Date().toISOString(),
+          online_at: new Date().toISOString(),
+        });
+        console.log('[PresenceMgr] Broadcast channel already active, refreshed tracked payload for:', data.sessionId);
+      } catch (err) {
+        console.log('[PresenceMgr] Refresh track error:', (err as Error)?.message);
+      }
+      this.startBroadcastHeartbeat();
+      return;
+    }
+
+    if (this.isBroadcastChannelSubscribing) {
+      console.log('[PresenceMgr] Broadcast channel subscribe already in progress for:', data.sessionId);
+      return;
+    }
+
+    this.isBroadcastChannelSubscribing = true;
 
     return new Promise<void>((resolve) => {
-      channel
-        .on('presence', { event: 'sync' }, () => {
-          this.debouncedSync();
-        })
-        .subscribe(async (status) => {
-          console.log('[PresenceMgr] Broadcast channel status:', status);
-          if (status === 'SUBSCRIBED') {
-            this.isBroadcasting = true;
-            try {
-              await channel.track({
-                ...this.broadcastData!,
-                lastSeen: new Date().toISOString(),
-                online_at: new Date().toISOString(),
-              });
-              console.log('[PresenceMgr] Initial presence tracked for:', data.sessionId);
-            } catch (err) {
-              console.log('[PresenceMgr] Initial track error:', (err as Error)?.message);
-            }
-            this.startBroadcastHeartbeat();
-            resolve();
-          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-            this.isBroadcasting = false;
-            console.log('[PresenceMgr] Broadcast channel error:', status);
-            setTimeout(() => { void this.reconnectBroadcast(); }, 5000);
-            resolve();
-          } else if (status === 'CLOSED') {
-            this.isBroadcasting = false;
-            setTimeout(() => { void this.reconnectBroadcast(); }, 3000);
-            resolve();
+      channel.subscribe(async (status) => {
+        console.log('[PresenceMgr] Broadcast channel status:', status);
+        if (status === 'SUBSCRIBED') {
+          this.isBroadcastChannelSubscribing = false;
+          this.isBroadcasting = true;
+          try {
+            await channel.track({
+              ...this.broadcastData!,
+              lastSeen: new Date().toISOString(),
+              online_at: new Date().toISOString(),
+            });
+            console.log('[PresenceMgr] Initial presence tracked for:', data.sessionId);
+          } catch (err) {
+            console.log('[PresenceMgr] Initial track error:', (err as Error)?.message);
           }
-        });
+          this.startBroadcastHeartbeat();
+          resolve();
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          this.isBroadcastChannelSubscribing = false;
+          this.isBroadcasting = false;
+          console.log('[PresenceMgr] Broadcast channel error:', status);
+          setTimeout(() => { void this.reconnectBroadcast(); }, 5000);
+          resolve();
+        } else if (status === 'CLOSED') {
+          this.isBroadcastChannelSubscribing = false;
+          this.isBroadcasting = false;
+          setTimeout(() => { void this.reconnectBroadcast(); }, 3000);
+          resolve();
+        }
+      });
     });
   }
 
@@ -424,6 +470,8 @@ class PresenceManager {
     if (this.broadcastChannel) {
       try { void supabase.removeChannel(this.broadcastChannel); } catch {}
       this.broadcastChannel = null;
+      this.isBroadcastChannelBound = false;
+      this.isBroadcastChannelSubscribing = false;
     }
     const data = this.broadcastData;
     this.broadcastData = null;
@@ -484,6 +532,7 @@ class PresenceManager {
     }
     this.broadcastData = null;
     this.isBroadcasting = false;
+    this.isBroadcastChannelSubscribing = false;
     console.log('[PresenceMgr] Broadcasting stopped');
   }
 
@@ -529,6 +578,8 @@ class PresenceManager {
     if (this.broadcastChannel) {
       try { void supabase.removeChannel(this.broadcastChannel); } catch {}
       this.broadcastChannel = null;
+      this.isBroadcastChannelBound = false;
+      this.isBroadcastChannelSubscribing = false;
     }
     for (const ch of this.trackerChannels) {
       if (ch !== this.broadcastChannel) {

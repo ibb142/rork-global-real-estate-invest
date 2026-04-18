@@ -247,7 +247,7 @@ export default function AdminDashboard() {
 
   const memberAuditQuery = useQuery<AdminMemberRegistrySnapshot>({
     queryKey: ['admin-member-registry-snapshot'],
-    queryFn: getAdminMemberRegistrySnapshot,
+    queryFn: () => getAdminMemberRegistrySnapshot(),
     staleTime: ADMIN_AUDIT_REFRESH_MS,
     refetchInterval: isScreenFocused ? ADMIN_AUDIT_REFRESH_MS : false,
     refetchIntervalInBackground: false,

@@ -199,7 +199,7 @@ export const MessageBubble = memo(function MessageBubble({
 
 const styles = StyleSheet.create({
   row: {
-    marginVertical: 6,
+    marginVertical: 2,
     width: '100%',
   },
   myRow: {
@@ -209,10 +209,10 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   bubble: {
-    maxWidth: '84%',
-    borderRadius: 20,
+    maxWidth: '88%',
+    borderRadius: 18,
     paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingVertical: 8,
     borderWidth: 1,
   },
   myBubble: {
@@ -221,8 +221,8 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 8,
   },
   otherBubble: {
-    backgroundColor: Colors.surface,
-    borderColor: Colors.surfaceBorder,
+    backgroundColor: '#161B22',
+    borderColor: '#394150',
     borderBottomLeftRadius: 8,
   },
   sendingBubble: {
@@ -233,22 +233,23 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,215,0,0.6)',
   },
   senderLabel: {
-    marginBottom: 8,
+    marginBottom: 6,
     color: Colors.primary,
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '700' as const,
     textTransform: 'uppercase',
     letterSpacing: 0.3,
   },
   messageText: {
-    fontSize: 15,
-    lineHeight: 22,
+    fontSize: 16,
+    lineHeight: 24,
+    fontWeight: '500' as const,
   },
   myText: {
     color: Colors.black,
   },
   otherText: {
-    color: Colors.text,
+    color: '#F8FAFC',
   },
   imageAttachment: {
     width: 220,
@@ -275,14 +276,15 @@ const styles = StyleSheet.create({
   attachmentLabel: {
     flex: 1,
     fontSize: 13,
-    fontWeight: '600' as const,
+    lineHeight: 18,
+    fontWeight: '700' as const,
   },
   metaRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-end',
     gap: 6,
-    marginTop: 8,
+    marginTop: 6,
   },
   localOnlyBadge: {
     fontSize: 10,
@@ -297,7 +299,7 @@ const styles = StyleSheet.create({
     color: 'rgba(0,0,0,0.6)',
   },
   otherMeta: {
-    color: Colors.textTertiary,
+    color: '#B4BDC9',
   },
   readLabel: {
     fontSize: 10,

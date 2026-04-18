@@ -27,6 +27,7 @@ import {
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
+import { getDirectApiBaseUrl } from '@/lib/api-base';
 import { supabase } from '@/lib/supabase';
 
 const TEST_PHONE = '+15616443503';
@@ -91,7 +92,7 @@ export default function SendTestSMSScreen() {
   useEffect(() => {
     const checkSNS = async () => {
       try {
-        const apiBase = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || process.env.EXPO_PUBLIC_API_BASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL || '').trim().replace(/\/$/, '');
+        const apiBase = getDirectApiBaseUrl() || (process.env.EXPO_PUBLIC_SUPABASE_URL || '').trim().replace(/\/$/, '');
         if (!apiBase) {
           console.log('[TestSMS] No API base URL configured');
           return;
@@ -122,9 +123,9 @@ export default function SendTestSMSScreen() {
     console.log('[TestSMS] Sending branded test SMS to:', TEST_PHONE);
 
     try {
-      const apiBase = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || process.env.EXPO_PUBLIC_API_BASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL || '').trim().replace(/\/$/, '');
+      const apiBase = getDirectApiBaseUrl() || (process.env.EXPO_PUBLIC_SUPABASE_URL || '').trim().replace(/\/$/, '');
       if (!apiBase) {
-        throw new Error('API base URL not configured. Set EXPO_PUBLIC_RORK_API_BASE_URL.');
+        throw new Error('API base URL not configured. Set EXPO_PUBLIC_API_BASE_URL.');
       }
 
       const { data: { session } } = await supabase.auth.getSession();

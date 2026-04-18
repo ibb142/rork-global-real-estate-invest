@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 
+const activeTypingTeardowns = new Set<string>();
+
 type TypingUser = {
   userId: string;
   displayName?: string | null;
@@ -39,23 +41,76 @@ export function useTypingIndicator({
   const lastBroadcastRef = useRef<number>(0);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cleanupIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const stableConversationId = useMemo(() => conversationId.trim(), [conversationId]);
-  const stableCurrentUserId = useMemo(() => currentUserId.trim(), [currentUserId]);
+  const cleanupStartedRef = useRef<boolean>(false);
+  const channelClosedRef = useRef<boolean>(false);
+  const stableConversationId = useMemo(() => (typeof conversationId === 'string' ? conversationId.trim() : ''), [conversationId]);
+  const stableCurrentUserId = useMemo(() => (typeof currentUserId === 'string' ? currentUserId.trim() : ''), [currentUserId]);
 
   useEffect(() => {
     if (!enabled || !stableConversationId || !stableCurrentUserId) {
       return;
     }
 
-    const channelName = `typing:${stableConversationId}:${Date.now()}`;
+    cleanupStartedRef.current = false;
+    channelClosedRef.current = false;
+
+    const channelName = `typing:${stableConversationId}:${stableCurrentUserId}`;
     console.log('[useTypingIndicator] Joining channel:', channelName);
 
     const channel = supabase.channel(channelName, {
       config: { presence: { key: stableCurrentUserId } },
     });
 
+    const safeCleanup = (): void => {
+      if (cleanupStartedRef.current) {
+        return;
+      }
+
+      cleanupStartedRef.current = true;
+      const activeChannel = channelRef.current;
+      channelRef.current = null;
+      channelClosedRef.current = true;
+
+      if (cleanupIntervalRef.current) {
+        clearInterval(cleanupIntervalRef.current);
+        cleanupIntervalRef.current = null;
+      }
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+        typingTimeoutRef.current = null;
+      }
+      setRemoteTypingMap(new Map());
+
+      if (!activeChannel) {
+        return;
+      }
+
+      console.log('[useTypingIndicator] Closing channel:', channelName);
+      if (activeTypingTeardowns.has(channelName)) {
+        console.log('[useTypingIndicator] Typing teardown already in progress:', channelName);
+        return;
+      }
+
+      activeTypingTeardowns.add(channelName);
+      setTimeout(() => {
+        void (async () => {
+          try {
+            await supabase.removeChannel(activeChannel as never);
+          } catch (error) {
+            console.log('[useTypingIndicator] Typing teardown note:', error instanceof Error ? error.message : 'unknown');
+          } finally {
+            activeTypingTeardowns.delete(channelName);
+          }
+        })();
+      }, 0);
+    };
+
     channel
       .on('presence', { event: 'sync' }, () => {
+        if (channelClosedRef.current) {
+          return;
+        }
+
         const state = channel.presenceState<{ typing: boolean; displayName?: string }>();
         const now = Date.now();
         const nextMap = new Map<string, TypingUser>();
@@ -76,6 +131,9 @@ export function useTypingIndicator({
       })
       .subscribe((status) => {
         console.log('[useTypingIndicator] Channel status:', status);
+        if (status === 'CLOSED') {
+          channelClosedRef.current = true;
+        }
       });
 
     channelRef.current = channel;
@@ -98,19 +156,7 @@ export function useTypingIndicator({
 
     return () => {
       console.log('[useTypingIndicator] Leaving channel:', channelName);
-      if (channelRef.current) {
-        void supabase.removeChannel(channelRef.current);
-        channelRef.current = null;
-      }
-      if (cleanupIntervalRef.current) {
-        clearInterval(cleanupIntervalRef.current);
-        cleanupIntervalRef.current = null;
-      }
-      if (typingTimeoutRef.current) {
-        clearTimeout(typingTimeoutRef.current);
-        typingTimeoutRef.current = null;
-      }
-      setRemoteTypingMap(new Map());
+      safeCleanup();
     };
   }, [stableConversationId, stableCurrentUserId, enabled, expiryMs]);
 
@@ -120,7 +166,7 @@ export function useTypingIndicator({
     lastBroadcastRef.current = now;
 
     const channel = channelRef.current;
-    if (!channel) return;
+    if (!channel || channelClosedRef.current) return;
 
     void channel.track({ typing: true });
 
@@ -130,6 +176,9 @@ export function useTypingIndicator({
 
     typingTimeoutRef.current = setTimeout(() => {
       typingTimeoutRef.current = null;
+      if (channelClosedRef.current) {
+        return;
+      }
       void channel.track({ typing: false });
     }, expiryMs);
   }, [debounceMs, expiryMs]);
@@ -142,7 +191,7 @@ export function useTypingIndicator({
     lastBroadcastRef.current = 0;
 
     const channel = channelRef.current;
-    if (!channel) return;
+    if (!channel || channelClosedRef.current) return;
     void channel.track({ typing: false });
   }, []);
 

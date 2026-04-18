@@ -60,6 +60,7 @@ type MessageDraft = {
   fileName: string | null;
   fileMime: string | null;
   fileSize: number | null;
+  clientMessageId: string | null;
 };
 
 const CHAT_LOCAL_PREFIX = 'ivx_chat_room:';
@@ -69,8 +70,90 @@ const CHAT_LOCAL_MAX_MESSAGES = 250;
 const CHAT_SEND_TIMEOUT_MS = 15000;
 const CHAT_ROOM_STATUS_CACHE_TTL_MS = 15000;
 
+type RealtimeChannelLike = {
+  unsubscribe?: () => Promise<unknown> | unknown;
+  name?: string;
+};
+
+type RoomMessageSubscriptionRecord = {
+  key: string;
+  listeners: Set<(message: ChatMessage) => void>;
+  statusListeners: Set<(status: ChatRoomStatus) => void>;
+  status: ChatRoomStatus;
+  dispose: () => void;
+};
+
+type InboxSubscriptionRecord = {
+  key: string;
+  listeners: Set<(items: InboxItem[]) => void>;
+  statusListeners: Set<(status: ChatRoomStatus) => void>;
+  status: ChatRoomStatus;
+  dispose: () => void;
+};
+
 let cachedRoomStatus: ChatRoomStatus | null = null;
 let cachedRoomStatusTimestamp = 0;
+const activeRoomMessageSubscriptions = new Map<string, RoomMessageSubscriptionRecord>();
+const activeInboxSubscriptions = new Map<string, InboxSubscriptionRecord>();
+const activeRealtimeChannelTeardowns = new Set<string>();
+
+function createIdempotentChannelCleanup(
+  channel: RealtimeChannelLike,
+  options: {
+    label: string;
+    stopPolling: () => void;
+    onClosed?: () => void;
+  },
+): () => void {
+  let closed = false;
+
+  return () => {
+    if (closed) {
+      return;
+    }
+
+    closed = true;
+    options.stopPolling();
+    options.onClosed?.();
+    const teardownKey = `${options.label}:${channel.name ?? 'unnamed-channel'}`;
+    console.log(`[IVXChat] Closing realtime subscription: ${options.label}`);
+
+    if (activeRealtimeChannelTeardowns.has(teardownKey)) {
+      console.log(`[IVXChat] Realtime teardown already in progress: ${teardownKey}`);
+      return;
+    }
+
+    activeRealtimeChannelTeardowns.add(teardownKey);
+
+    setTimeout(() => {
+      void (async () => {
+        try {
+          await supabase.removeChannel(channel as never);
+          console.log(`[IVXChat] Realtime channel removed safely: ${teardownKey}`);
+        } catch (unsubscribeError) {
+          console.log(`[IVXChat] Realtime teardown note (${options.label}):`, (unsubscribeError as Error)?.message ?? 'Unknown error');
+        } finally {
+          activeRealtimeChannelTeardowns.delete(teardownKey);
+        }
+      })();
+    }, 0);
+  };
+}
+
+function createLocalIdempotentCleanup(options: { label: string; stopPolling: () => void; onClosed?: () => void }): () => void {
+  let closed = false;
+
+  return () => {
+    if (closed) {
+      return;
+    }
+
+    closed = true;
+    options.stopPolling();
+    options.onClosed?.();
+    console.log(`[IVXChat] Closing local polling subscription: ${options.label}`);
+  };
+}
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -85,6 +168,12 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   });
 }
 
+function cacheRoomStatus(status: ChatRoomStatus): ChatRoomStatus {
+  cachedRoomStatus = status;
+  cachedRoomStatusTimestamp = Date.now();
+  return status;
+}
+
 async function getCachedOrDetectRoomStatus(): Promise<ChatRoomStatus> {
   const now = Date.now();
   if (cachedRoomStatus && (now - cachedRoomStatusTimestamp) < CHAT_ROOM_STATUS_CACHE_TTL_MS) {
@@ -94,9 +183,7 @@ async function getCachedOrDetectRoomStatus(): Promise<ChatRoomStatus> {
 
   console.log('[IVXChat] Room status cache expired or empty, detecting...');
   const status = await withTimeout(detectRoomStatus(), 8000, 'detectRoomStatus');
-  cachedRoomStatus = status;
-  cachedRoomStatusTimestamp = Date.now();
-  return status;
+  return cacheRoomStatus(status);
 }
 
 export function invalidateRoomStatusCache(): void {
@@ -349,6 +436,71 @@ function mapConversationRow(row: ConversationRow | null | undefined, shell: Room
     lastMessageAt: readString(row?.last_message_at),
     unreadCount,
   };
+}
+
+function normalizeMessageText(value: string | null | undefined): string {
+  return safeTrim(value).toLowerCase();
+}
+
+function buildMessageSignature(row: MessageRow | null | undefined, fallbackConversationId: string): string {
+  const conversationId = readString(row?.conversation_id) ?? readString(row?.room_id) ?? fallbackConversationId;
+  const senderId = readString(row?.sender_id)
+    ?? readString(row?.sender_actor_id)
+    ?? readString(row?.actor_id)
+    ?? readString(row?.user_id)
+    ?? '';
+  const text = normalizeMessageText(readString(row?.text) ?? readString(row?.body));
+  const fileUrl = readString(row?.file_url) ?? readString(row?.attachment_url) ?? '';
+  const createdAt = readString(row?.created_at) ?? '';
+  return [conversationId, senderId, text, fileUrl, createdAt].join('::');
+}
+
+async function findPrimaryConversationBySlug(shell: RoomShell): Promise<ConversationRow | null> {
+  if (!shell.slug) {
+    return null;
+  }
+
+  const { data, error } = await supabase
+    .from(IVX_CHAT_CONFIG.tables.conversations)
+    .select('*')
+    .eq('slug', shell.slug)
+    .limit(2);
+
+  if (error && !isSchemaMissingError(error) && !isColumnMissingError(error)) {
+    throw error;
+  }
+
+  const rows = ((data ?? []) as ConversationRow[]);
+  if (rows.length > 1) {
+    console.log('[IVXChat] Duplicate primary conversations detected for slug:', shell.slug, 'count:', rows.length);
+    throw new Error(`Duplicate owner room conversations detected for slug ${shell.slug}. Run the owner-room dedupe migration.`);
+  }
+
+  return rows[0] ?? null;
+}
+
+async function findAlternateConversationBySlug(shell: RoomShell): Promise<ConversationRow | null> {
+  if (!shell.slug) {
+    return null;
+  }
+
+  const { data, error } = await supabase
+    .from(IVX_CHAT_CONFIG.tables.altConversations)
+    .select('*')
+    .eq('slug', shell.slug)
+    .limit(2);
+
+  if (error && !isSchemaMissingError(error) && !isColumnMissingError(error)) {
+    throw error;
+  }
+
+  const rows = ((data ?? []) as ConversationRow[]);
+  if (rows.length > 1) {
+    console.log('[IVXChat] Duplicate alternate conversations detected for slug:', shell.slug, 'count:', rows.length);
+    throw new Error(`Duplicate owner room rooms detected for slug ${shell.slug}. Run the owner-room dedupe migration.`);
+  }
+
+  return rows[0] ?? null;
 }
 
 function mapPrimaryParticipantRow(row: Record<string, unknown>): ChatParticipant {
@@ -628,6 +780,7 @@ function getDraftFromInput(input: SendMessageInput): MessageDraft {
     fileName,
     fileMime,
     fileSize,
+    clientMessageId: safeTrim(input.clientMessageId) || null,
   };
 }
 
@@ -792,6 +945,7 @@ function mergeDraftWithAttachment(draft: MessageDraft, attachment: ResolvedAttac
     fileName: attachment.fileName,
     fileMime: attachment.fileMime,
     fileSize: attachment.fileSize,
+    clientMessageId: draft.clientMessageId,
   };
 }
 
@@ -812,6 +966,11 @@ async function resolvePrimaryConversation(shell: RoomShell): Promise<ChatConvers
 
   if (existing) {
     return mapConversationRow(existing as ConversationRow, shell);
+  }
+
+  const existingBySlug = await findPrimaryConversationBySlug(shell);
+  if (existingBySlug) {
+    return mapConversationRow(existingBySlug, shell);
   }
 
   const payloads = uniquePayloads([
@@ -881,20 +1040,9 @@ async function resolveAlternateConversation(shell: RoomShell): Promise<ChatConve
     return mapConversationRow(existingById as ConversationRow, shell);
   }
 
-  if (shell.slug) {
-    const { data: existingBySlug, error: bySlugError } = await supabase
-      .from(IVX_CHAT_CONFIG.tables.altConversations)
-      .select('*')
-      .eq('slug', shell.slug)
-      .maybeSingle();
-
-    if (bySlugError && !isSchemaMissingError(bySlugError) && !isColumnMissingError(bySlugError)) {
-      throw bySlugError;
-    }
-
-    if (existingBySlug) {
-      return mapConversationRow(existingBySlug as ConversationRow, shell);
-    }
+  const existingBySlug = await findAlternateConversationBySlug(shell);
+  if (existingBySlug) {
+    return mapConversationRow(existingBySlug, shell);
   }
 
   const payloads = uniquePayloads([
@@ -1025,11 +1173,11 @@ export async function detectRoomStatus(): Promise<ChatRoomStatus> {
   return status;
 }
 
-export async function bootstrapRoomByFriendlySlug(requestedKey = IVX_CHAT_CONFIG.friendlyOwnerRoomSlug): Promise<{
+export async function bootstrapRoomByFriendlySlug(requestedKey: string = IVX_CHAT_CONFIG.friendlyOwnerRoomSlug): Promise<{
   conversation: ChatConversation;
   status: ChatRoomStatus;
 }> {
-  return bootstrapRoomForStatus(requestedKey, await detectRoomStatus());
+  return bootstrapRoomForStatus(requestedKey, await getCachedOrDetectRoomStatus());
 }
 
 async function ensurePrimaryParticipant(conversationId: string, actorId: string): Promise<void> {
@@ -1270,12 +1418,12 @@ async function loadRoomMessagesForStatus(requestedKey: string, status: ChatRoomS
   };
 }
 
-export async function loadRoomMessages(requestedKey = IVX_CHAT_CONFIG.friendlyOwnerRoomSlug): Promise<{
+export async function loadRoomMessages(requestedKey: string = IVX_CHAT_CONFIG.friendlyOwnerRoomSlug): Promise<{
   conversation: ChatConversation;
   status: ChatRoomStatus;
   messages: ChatMessage[];
 }> {
-  return loadRoomMessagesForStatus(requestedKey, await detectRoomStatus());
+  return loadRoomMessagesForStatus(requestedKey, await getCachedOrDetectRoomStatus());
 }
 
 async function updatePrimaryConversationSummary(conversationId: string, preview: string): Promise<void> {
@@ -1403,6 +1551,7 @@ function buildPrimaryMessagePayloads(conversationId: string, senderId: string, d
       body: draft.text,
       file_url: draft.fileUrl,
       file_type: draft.fileType,
+      file_name: draft.clientMessageId,
       read_by: [senderId],
       created_at: nowIso(),
     },
@@ -1414,6 +1563,7 @@ function buildPrimaryMessagePayloads(conversationId: string, senderId: string, d
       body: draft.text,
       file_url: draft.fileUrl,
       file_type: draft.fileType,
+      file_name: draft.clientMessageId,
       read_by: [senderId],
       created_at: nowIso(),
     },
@@ -1423,6 +1573,7 @@ function buildPrimaryMessagePayloads(conversationId: string, senderId: string, d
       text: draft.text,
       file_url: draft.fileUrl,
       file_type: draft.fileType,
+      file_name: draft.clientMessageId,
       read_by: [senderId],
     },
   ]);
@@ -1437,6 +1588,7 @@ function buildAlternateMessagePayloads(conversationId: string, senderId: string,
       body: draft.text,
       file_url: draft.fileUrl,
       file_type: draft.fileType,
+      file_name: draft.clientMessageId,
       read_by: [senderId],
       created_at: nowIso(),
     },
@@ -1447,6 +1599,7 @@ function buildAlternateMessagePayloads(conversationId: string, senderId: string,
       body: draft.text,
       file_url: draft.fileUrl,
       file_type: draft.fileType,
+      file_name: draft.clientMessageId,
       read_by: [senderId],
       created_at: nowIso(),
     },
@@ -1456,6 +1609,7 @@ function buildAlternateMessagePayloads(conversationId: string, senderId: string,
       text: draft.text,
       file_url: draft.fileUrl,
       file_type: draft.fileType,
+      file_name: draft.clientMessageId,
       created_at: nowIso(),
     },
     {
@@ -1464,6 +1618,7 @@ function buildAlternateMessagePayloads(conversationId: string, senderId: string,
       text: draft.text,
       file_url: draft.fileUrl,
       file_type: draft.fileType,
+      file_name: draft.clientMessageId,
       created_at: nowIso(),
     },
     {
@@ -1471,6 +1626,7 @@ function buildAlternateMessagePayloads(conversationId: string, senderId: string,
       body: draft.text,
       file_url: draft.fileUrl,
       file_type: draft.fileType,
+      file_name: draft.clientMessageId,
     },
   ]);
 }
@@ -1478,6 +1634,7 @@ function buildAlternateMessagePayloads(conversationId: string, senderId: string,
 async function insertMessageWithPayloads(
   table: string,
   payloads: Record<string, unknown>[],
+  existingMessageLookup?: () => Promise<MessageRow | null>,
 ): Promise<MessageRow> {
   let lastError: ErrorLike | null = null;
 
@@ -1498,6 +1655,14 @@ async function insertMessageWithPayloads(
   }
 
   if (lastError) {
+    const duplicateMessage = await existingMessageLookup?.();
+    if (duplicateMessage) {
+      console.log('[IVXChat] Reusing existing message after duplicate insert attempt:', {
+        table,
+        messageId: readString(duplicateMessage.id) ?? 'unknown',
+      });
+      return duplicateMessage;
+    }
     throw lastError;
   }
 
@@ -1538,6 +1703,7 @@ function buildFallbackDraft(input: SendMessageInput): MessageDraft {
     fileName: baseDraft.fileName || sanitizeFileName(input.upload.name),
     fileMime: baseDraft.fileMime || safeTrim(input.upload.type) || null,
     fileSize: baseDraft.fileSize ?? input.upload.size ?? null,
+    clientMessageId: baseDraft.clientMessageId,
   };
 }
 
@@ -1555,6 +1721,26 @@ async function sendMessageForStatus(
       const row = await insertMessageWithPayloads(
         IVX_CHAT_CONFIG.tables.messages,
         buildPrimaryMessagePayloads(conversation.id, actorId, draft),
+        async () => {
+          const { data, error } = await supabase
+            .from(IVX_CHAT_CONFIG.tables.messages)
+            .select('*')
+            .eq('conversation_id', conversation.id)
+            .order('created_at', { ascending: false })
+            .limit(10);
+
+          if (error) {
+            console.log('[IVXChat] Primary duplicate lookup note:', error.message);
+            return null;
+          }
+
+          const match = ((data ?? []) as MessageRow[]).find((rowCandidate) => {
+            return buildMessageSignature(rowCandidate, conversation.id) === buildMessageSignature(buildPrimaryMessagePayloads(conversation.id, actorId, draft)[0] ?? null, conversation.id)
+              || (draft.clientMessageId && readString(rowCandidate.file_name) === draft.clientMessageId);
+          });
+
+          return match ?? null;
+        },
       );
       await updatePrimaryConversationSummary(conversation.id, createMessagePreview(draft));
       await incrementPrimaryUnread(conversation.id, actorId);
@@ -1586,6 +1772,26 @@ async function sendMessageForStatus(
       const row = await insertMessageWithPayloads(
         IVX_CHAT_CONFIG.tables.altMessages,
         buildAlternateMessagePayloads(conversation.id, actorId, draft),
+        async () => {
+          const { data, error } = await supabase
+            .from(IVX_CHAT_CONFIG.tables.altMessages)
+            .select('*')
+            .eq('room_id', conversation.id)
+            .order('created_at', { ascending: false })
+            .limit(10);
+
+          if (error) {
+            console.log('[IVXChat] Alternate duplicate lookup note:', error.message);
+            return null;
+          }
+
+          const match = ((data ?? []) as MessageRow[]).find((rowCandidate) => {
+            return buildMessageSignature(rowCandidate, conversation.id) === buildMessageSignature(buildAlternateMessagePayloads(conversation.id, actorId, draft)[0] ?? null, conversation.id)
+              || (draft.clientMessageId && readString(rowCandidate.file_name) === draft.clientMessageId);
+          });
+
+          return match ?? null;
+        },
       );
       await updateAlternateConversationSummary(conversation.id, createMessagePreview(draft));
       await incrementAlternateUnread(conversation.id, actorId);
@@ -1695,16 +1901,73 @@ export async function subscribeToRoomMessages(
   onStatus?: (status: ChatRoomStatus) => void,
 ): Promise<MessageSubscription> {
   const loaded = await loadRoomMessages(conversationKey);
+  const subscriptionKey = loaded.conversation.id;
+  const existingSubscription = activeRoomMessageSubscriptions.get(subscriptionKey);
+
+  if (existingSubscription) {
+    existingSubscription.listeners.add(onMessage);
+    if (onStatus) {
+      existingSubscription.statusListeners.add(onStatus);
+      onStatus(existingSubscription.status);
+    }
+
+    let closed = false;
+    return {
+      unsubscribe: () => {
+        if (closed) {
+          return;
+        }
+
+        closed = true;
+        existingSubscription.listeners.delete(onMessage);
+        if (onStatus) {
+          existingSubscription.statusListeners.delete(onStatus);
+        }
+
+        if (existingSubscription.listeners.size === 0 && existingSubscription.statusListeners.size === 0) {
+          existingSubscription.dispose();
+          activeRoomMessageSubscriptions.delete(subscriptionKey);
+        }
+      },
+    };
+  }
+
   const seenIds = new Set<string>(loaded.messages.map((message) => message.id));
   const requestedKey = loaded.conversation.slug ?? conversationKey;
   let disposed = false;
   let pollingInterval: ReturnType<typeof setInterval> | null = null;
+  const messageListeners = new Set<(message: ChatMessage) => void>([onMessage]);
+  const statusListeners = new Set<(status: ChatRoomStatus) => void>();
+  if (onStatus) {
+    statusListeners.add(onStatus);
+  }
+
+  const emitStatus = (status: ChatRoomStatus): void => {
+    const subscriptionRecord = activeRoomMessageSubscriptions.get(subscriptionKey);
+    if (subscriptionRecord) {
+      subscriptionRecord.status = status;
+    }
+    cacheRoomStatus(status);
+    statusListeners.forEach((listener) => {
+      listener(status);
+    });
+  };
+
+  const emitMessage = (message: ChatMessage): void => {
+    messageListeners.forEach((listener) => {
+      listener(message);
+    });
+  };
 
   const stopPolling = (): void => {
     if (pollingInterval) {
       clearInterval(pollingInterval);
       pollingInterval = null;
     }
+  };
+
+  const markDisposed = (): void => {
+    disposed = true;
   };
 
   const pollForMessages = async (statusOverride?: ChatRoomStatus): Promise<void> => {
@@ -1715,25 +1978,27 @@ export async function subscribeToRoomMessages(
     try {
       const nextLoaded = await loadRoomMessages(requestedKey);
       const nextStatus = statusOverride ?? nextLoaded.status;
-      onStatus?.(nextStatus);
+      emitStatus(nextStatus);
       nextLoaded.messages.forEach((message) => {
         if (!message.id || seenIds.has(message.id)) {
           return;
         }
 
         seenIds.add(message.id);
-        onMessage(message);
+        emitMessage(message);
       });
     } catch (error) {
       console.log('[IVXChat] Room polling error:', (error as Error)?.message ?? 'Unknown error');
     }
   };
 
-  onStatus?.(loaded.status);
+  emitStatus(loaded.status);
+
+  let cleanup: () => void;
 
   if (loaded.status.storageMode === 'primary_supabase_tables') {
     const channel = supabase
-      .channel(`ivx-room:${loaded.conversation.id}:${Date.now()}`)
+      .channel(`ivx-room:${loaded.conversation.id}`)
       .on(
         'postgres_changes',
         {
@@ -1744,27 +2009,31 @@ export async function subscribeToRoomMessages(
         },
         (payload) => {
           const nextMessage = mapMessageRow(payload.new as MessageRow, loaded.conversation.id, 'primary_realtime');
-          if (!nextMessage.id || seenIds.has(nextMessage.id)) {
+          if (!nextMessage.id || seenIds.has(nextMessage.id) || disposed) {
             return;
           }
 
           seenIds.add(nextMessage.id);
-          onStatus?.(getPrimaryStatus('primary_realtime'));
-          onMessage(nextMessage);
+          emitStatus(getPrimaryStatus('primary_realtime'));
+          emitMessage(nextMessage);
         },
       )
       .subscribe((status) => {
         const normalizedStatus = String(status ?? '');
         console.log('[IVXChat] Primary room channel status:', normalizedStatus);
 
+        if (disposed) {
+          return;
+        }
+
         if (normalizedStatus === 'SUBSCRIBED') {
           stopPolling();
-          onStatus?.(getPrimaryStatus('primary_realtime'));
+          emitStatus(getPrimaryStatus('primary_realtime'));
           return;
         }
 
         if (normalizedStatus === 'CHANNEL_ERROR' || normalizedStatus === 'TIMED_OUT' || normalizedStatus === 'CLOSED') {
-          onStatus?.(getPrimaryStatus('primary_polling'));
+          emitStatus(getPrimaryStatus('primary_polling'));
           if (!pollingInterval) {
             pollingInterval = setInterval(() => {
               void pollForMessages(getPrimaryStatus('primary_polling'));
@@ -1773,20 +2042,16 @@ export async function subscribeToRoomMessages(
         }
       });
 
+    cleanup = createIdempotentChannelCleanup(channel, {
+      label: `room:${loaded.conversation.id}:primary`,
+      stopPolling,
+      onClosed: markDisposed,
+    });
+
     void pollForMessages(getPrimaryStatus('primary_polling'));
-
-    return {
-      unsubscribe: () => {
-        disposed = true;
-        stopPolling();
-        void supabase.removeChannel(channel);
-      },
-    };
-  }
-
-  if (loaded.status.storageMode === 'alternate_room_schema') {
+  } else if (loaded.status.storageMode === 'alternate_room_schema') {
     const channel = supabase
-      .channel(`ivx-alt-room:${loaded.conversation.id}:${Date.now()}`)
+      .channel(`ivx-alt-room:${loaded.conversation.id}`)
       .on(
         'postgres_changes',
         {
@@ -1797,21 +2062,25 @@ export async function subscribeToRoomMessages(
         },
         (payload) => {
           const nextMessage = mapMessageRow(payload.new as MessageRow, loaded.conversation.id, 'alternate_shared');
-          if (!nextMessage.id || seenIds.has(nextMessage.id)) {
+          if (!nextMessage.id || seenIds.has(nextMessage.id) || disposed) {
             return;
           }
 
           seenIds.add(nextMessage.id);
-          onStatus?.(getAlternateStatus());
-          onMessage(nextMessage);
+          emitStatus(getAlternateStatus());
+          emitMessage(nextMessage);
         },
       )
       .subscribe((status) => {
         const normalizedStatus = String(status ?? '');
         console.log('[IVXChat] Alternate room channel status:', normalizedStatus);
+        if (disposed) {
+          return;
+        }
+
         if (normalizedStatus === 'SUBSCRIBED') {
           stopPolling();
-          onStatus?.(getAlternateStatus());
+          emitStatus(getAlternateStatus());
           return;
         }
 
@@ -1824,26 +2093,51 @@ export async function subscribeToRoomMessages(
         }
       });
 
-    void pollForMessages(getAlternateStatus());
+    cleanup = createIdempotentChannelCleanup(channel, {
+      label: `room:${loaded.conversation.id}:alternate`,
+      stopPolling,
+      onClosed: markDisposed,
+    });
 
-    return {
-      unsubscribe: () => {
-        disposed = true;
-        stopPolling();
-        void supabase.removeChannel(channel);
-      },
-    };
+    void pollForMessages(getAlternateStatus());
+  } else {
+    pollingInterval = setInterval(() => {
+      void pollForMessages(loaded.status);
+    }, CHAT_POLL_INTERVAL_MS);
+    void pollForMessages(loaded.status);
+    cleanup = createLocalIdempotentCleanup({
+      label: `room:${loaded.conversation.id}:local`,
+      stopPolling,
+      onClosed: markDisposed,
+    });
   }
 
-  pollingInterval = setInterval(() => {
-    void pollForMessages(loaded.status);
-  }, CHAT_POLL_INTERVAL_MS);
-  void pollForMessages(loaded.status);
+  const subscriptionRecord: RoomMessageSubscriptionRecord = {
+    key: subscriptionKey,
+    listeners: messageListeners,
+    statusListeners,
+    status: loaded.status,
+    dispose: cleanup,
+  };
+  activeRoomMessageSubscriptions.set(subscriptionKey, subscriptionRecord);
 
+  let closed = false;
   return {
     unsubscribe: () => {
-      disposed = true;
-      stopPolling();
+      if (closed) {
+        return;
+      }
+
+      closed = true;
+      messageListeners.delete(onMessage);
+      if (onStatus) {
+        statusListeners.delete(onStatus);
+      }
+
+      if (messageListeners.size === 0 && statusListeners.size === 0) {
+        cleanup();
+        activeRoomMessageSubscriptions.delete(subscriptionKey);
+      }
     },
   };
 }
@@ -2042,7 +2336,7 @@ async function loadAlternateInbox(actorId: string): Promise<{ items: InboxItem[]
 
 export async function loadInbox(actorId: string): Promise<{ items: InboxItem[]; status: ChatRoomStatus }> {
   const cleanActorId = ensureActorId(actorId);
-  const status = await detectRoomStatus();
+  const status = await getCachedOrDetectRoomStatus();
 
   if (status.storageMode === 'primary_supabase_tables') {
     try {
@@ -2091,18 +2385,77 @@ export async function subscribeInbox(
   onStatus?: (status: ChatRoomStatus) => void,
 ): Promise<MessageSubscription> {
   const cleanActorId = ensureActorId(actorId);
-  const initial = await loadInbox(cleanActorId);
-  onInboxUpdate(initial.items);
-  onStatus?.(initial.status);
+  const existingSubscription = activeInboxSubscriptions.get(cleanActorId);
 
+  if (existingSubscription) {
+    existingSubscription.listeners.add(onInboxUpdate);
+    if (onStatus) {
+      existingSubscription.statusListeners.add(onStatus);
+    }
+
+    const initial = await loadInbox(cleanActorId);
+    onInboxUpdate(initial.items);
+    onStatus?.(existingSubscription.status);
+
+    let closed = false;
+    return {
+      unsubscribe: () => {
+        if (closed) {
+          return;
+        }
+
+        closed = true;
+        existingSubscription.listeners.delete(onInboxUpdate);
+        if (onStatus) {
+          existingSubscription.statusListeners.delete(onStatus);
+        }
+
+        if (existingSubscription.listeners.size === 0 && existingSubscription.statusListeners.size === 0) {
+          existingSubscription.dispose();
+          activeInboxSubscriptions.delete(cleanActorId);
+        }
+      },
+    };
+  }
+
+  const initial = await loadInbox(cleanActorId);
   let disposed = false;
   let pollingInterval: ReturnType<typeof setInterval> | null = null;
+  const inboxListeners = new Set<(items: InboxItem[]) => void>([onInboxUpdate]);
+  const statusListeners = new Set<(status: ChatRoomStatus) => void>();
+  if (onStatus) {
+    statusListeners.add(onStatus);
+  }
+
+  const emitInbox = (items: InboxItem[]): void => {
+    inboxListeners.forEach((listener) => {
+      listener(items);
+    });
+  };
+
+  const emitStatus = (status: ChatRoomStatus): void => {
+    const subscriptionRecord = activeInboxSubscriptions.get(cleanActorId);
+    if (subscriptionRecord) {
+      subscriptionRecord.status = status;
+    }
+    cacheRoomStatus(status);
+    statusListeners.forEach((listener) => {
+      listener(status);
+    });
+  };
+
+  emitInbox(initial.items);
+  emitStatus(initial.status);
 
   const stopPolling = (): void => {
     if (pollingInterval) {
       clearInterval(pollingInterval);
       pollingInterval = null;
     }
+  };
+
+  const markDisposed = (): void => {
+    disposed = true;
   };
 
   const refreshInbox = async (): Promise<void> => {
@@ -2112,16 +2465,18 @@ export async function subscribeInbox(
 
     try {
       const next = await loadInbox(cleanActorId);
-      onInboxUpdate(next.items);
-      onStatus?.(next.status);
+      emitInbox(next.items);
+      emitStatus(next.status);
     } catch (error) {
       console.log('[IVXChat] Inbox refresh note:', (error as Error)?.message ?? 'Unknown error');
     }
   };
 
+  let cleanup: () => void;
+
   if (initial.status.storageMode === 'primary_supabase_tables') {
     const channel = supabase
-      .channel(`ivx-inbox:${cleanActorId}:${Date.now()}`)
+      .channel(`ivx-inbox:${cleanActorId}`)
       .on(
         'postgres_changes',
         {
@@ -2148,6 +2503,10 @@ export async function subscribeInbox(
       .subscribe((status) => {
         const normalizedStatus = String(status ?? '');
         console.log('[IVXChat] Inbox channel status:', normalizedStatus);
+        if (disposed) {
+          return;
+        }
+
         if (normalizedStatus === 'SUBSCRIBED') {
           stopPolling();
           return;
@@ -2162,18 +2521,14 @@ export async function subscribeInbox(
         }
       });
 
-    return {
-      unsubscribe: () => {
-        disposed = true;
-        stopPolling();
-        void supabase.removeChannel(channel);
-      },
-    };
-  }
-
-  if (initial.status.storageMode === 'alternate_room_schema' && (await canUseAlternateParticipants())) {
+    cleanup = createIdempotentChannelCleanup(channel, {
+      label: `inbox:${cleanActorId}:primary`,
+      stopPolling,
+      onClosed: markDisposed,
+    });
+  } else if (initial.status.storageMode === 'alternate_room_schema' && (await canUseAlternateParticipants())) {
     const channel = supabase
-      .channel(`ivx-alt-inbox:${cleanActorId}:${Date.now()}`)
+      .channel(`ivx-alt-inbox:${cleanActorId}`)
       .on(
         'postgres_changes',
         {
@@ -2199,6 +2554,10 @@ export async function subscribeInbox(
       .subscribe((status) => {
         const normalizedStatus = String(status ?? '');
         console.log('[IVXChat] Alternate inbox channel status:', normalizedStatus);
+        if (disposed) {
+          return;
+        }
+
         if (normalizedStatus === 'SUBSCRIBED') {
           stopPolling();
           return;
@@ -2213,23 +2572,48 @@ export async function subscribeInbox(
         }
       });
 
-    return {
-      unsubscribe: () => {
-        disposed = true;
-        stopPolling();
-        void supabase.removeChannel(channel);
-      },
-    };
+    cleanup = createIdempotentChannelCleanup(channel, {
+      label: `inbox:${cleanActorId}:alternate`,
+      stopPolling,
+      onClosed: markDisposed,
+    });
+  } else {
+    pollingInterval = setInterval(() => {
+      void refreshInbox();
+    }, CHAT_POLL_INTERVAL_MS);
+    cleanup = createLocalIdempotentCleanup({
+      label: `inbox:${cleanActorId}:local`,
+      stopPolling,
+      onClosed: markDisposed,
+    });
   }
 
-  pollingInterval = setInterval(() => {
-    void refreshInbox();
-  }, CHAT_POLL_INTERVAL_MS);
+  const subscriptionRecord: InboxSubscriptionRecord = {
+    key: cleanActorId,
+    listeners: inboxListeners,
+    statusListeners,
+    status: initial.status,
+    dispose: cleanup,
+  };
+  activeInboxSubscriptions.set(cleanActorId, subscriptionRecord);
 
+  let closed = false;
   return {
     unsubscribe: () => {
-      disposed = true;
-      stopPolling();
+      if (closed) {
+        return;
+      }
+
+      closed = true;
+      inboxListeners.delete(onInboxUpdate);
+      if (onStatus) {
+        statusListeners.delete(onStatus);
+      }
+
+      if (inboxListeners.size === 0 && statusListeners.size === 0) {
+        cleanup();
+        activeInboxSubscriptions.delete(cleanActorId);
+      }
     },
   };
 }

@@ -1097,7 +1097,7 @@ export default function LoginScreen() {
                   onPress={ownerRecoveryAudit?.eligible
                     ? () => { void handleOwnerTrustedRestore(); }
                     : ownerRecoveryAudit?.emailMismatch && ownerRecoveryAudit.verifiedEmail
-                      ? () => { void handlePasswordReset(ownerRecoveryAudit.verifiedEmail); }
+                      ? () => { void handlePasswordReset(ownerRecoveryAudit.verifiedEmail ?? undefined); }
                       : () => openOwnerAccess('owner-recovery')}
                   disabled={ownerRecoveryLoading || passwordResetLoading}
                 >

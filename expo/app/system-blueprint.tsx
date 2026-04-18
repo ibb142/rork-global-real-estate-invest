@@ -34,6 +34,7 @@ import {
   ArrowRight,
   Bot,
   MessageCircle,
+  Radar,
 } from 'lucide-react-native';
 import { useMutation } from '@tanstack/react-query';
 import Colors from '@/constants/colors';
@@ -973,6 +974,23 @@ export default function SystemBlueprintScreen() {
 
         <OverallStatusBar snapshot={snapshot} />
 
+        <TouchableOpacity
+          style={styles.trafficLaunchCard}
+          onPress={() => router.push({ pathname: '/admin/control-tower', params: { tab: 'traffic' } })}
+          activeOpacity={0.86}
+          testID="blueprint-open-traffic"
+        >
+          <View style={styles.trafficLaunchIconWrap}>
+            <Radar size={18} color="#4FC3F7" />
+          </View>
+          <View style={styles.trafficLaunchContent}>
+            <Text style={styles.trafficLaunchEyebrow}>LIVE TRAFFIC INTEL</Text>
+            <Text style={styles.trafficLaunchTitle}>Open Control Tower Traffic</Text>
+            <Text style={styles.trafficLaunchBody}>This screen is the architecture map. The new world-origin traffic view lives in Nerve Center.</Text>
+          </View>
+          <ArrowRight size={16} color="#4FC3F7" />
+        </TouchableOpacity>
+
         <ScrollView
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
@@ -1354,6 +1372,49 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600' as const,
     color: Colors.text,
+  },
+  trafficLaunchCard: {
+    marginHorizontal: 16,
+    marginTop: 12,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(79, 195, 247, 0.28)',
+    backgroundColor: 'rgba(79, 195, 247, 0.08)',
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 12,
+  },
+  trafficLaunchIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    backgroundColor: 'rgba(79, 195, 247, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(79, 195, 247, 0.22)',
+  },
+  trafficLaunchContent: {
+    flex: 1,
+    gap: 3,
+  },
+  trafficLaunchEyebrow: {
+    fontSize: 10,
+    fontWeight: '800' as const,
+    letterSpacing: 1.3,
+    color: '#4FC3F7',
+  },
+  trafficLaunchTitle: {
+    fontSize: 14,
+    fontWeight: '700' as const,
+    color: Colors.text,
+  },
+  trafficLaunchBody: {
+    fontSize: 12,
+    lineHeight: 17,
+    color: Colors.textSecondary,
   },
   scrollView: {
     flex: 1,

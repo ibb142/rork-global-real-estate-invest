@@ -79,7 +79,12 @@ export type CTOperatorAction =
   | 'transition_stuck_sends'
   | 'retry_landing_api'
   | 'failover_lead_capture'
-  | 'invalidate_query_cache';
+  | 'invalidate_query_cache'
+  | 'force_transcript_reconciliation'
+  | 'force_provider_probe'
+  | 'rerun_shared_room_sync'
+  | 'rerun_inbox_sync'
+  | 'reindex_knowledge';
 
 export interface CTEvent {
   id: string;
@@ -147,6 +152,26 @@ export interface CTIncident {
   resolved: boolean;
   correlationId?: string;
   decisionAnalysis?: CTDecisionAnalysis;
+  subjectId?: string;
+  state?: 'open' | 'investigating' | 'mitigated' | 'resolved';
+  openedBy?: 'system' | 'operator' | 'policy';
+  triggerReason?: string;
+  rootCauseHypothesis?: string;
+  evidenceIds?: string[];
+  timelineEventIds?: string[];
+  recommendedActions?: string[];
+  executedActions?: string[];
+}
+
+export interface CTFunnelStageAttribution {
+  id: string;
+  stage: string;
+  affectedUsers: number;
+  leakRate: number;
+  blockedBy: string[];
+  dependencyBasis: string[];
+  interventionSuggestion: string;
+  proofSummary: string;
 }
 
 export interface CTLandingFunnelSnapshot {
@@ -167,6 +192,8 @@ export interface CTLandingFunnelSnapshot {
   dropOffPoints: Array<{ step: string; count: number; rate: number }>;
   topReferrers: Array<{ source: string; count: number }>;
   avgLatencyMs: number;
+  stageAttribution: CTFunnelStageAttribution[];
+  ifFixedNowOpportunity: number;
 }
 
 export interface CTPredictiveScore {
@@ -210,6 +237,98 @@ export interface CTAutoRemediationLog {
   incidentId?: string;
 }
 
+export type CTProofStatus = 'verified' | 'warning' | 'blocked' | 'pending';
+
+export type CTSystemNodeKind =
+  | 'module'
+  | 'service'
+  | 'provider'
+  | 'queue'
+  | 'room'
+  | 'pipeline'
+  | 'funnel_step'
+  | 'traffic_source';
+
+export type CTSystemEdgeRelationship = 'depends_on' | 'feeds' | 'blocks' | 'heals' | 'verifies' | 'degrades';
+
+export interface CTSystemNode {
+  id: string;
+  kind: CTSystemNodeKind;
+  name: string;
+  environment: 'prod' | 'dev';
+  criticality: 'low' | 'medium' | 'high' | 'critical';
+  owner: string;
+  dependencies: string[];
+  dependents: string[];
+  sla: string;
+  status: CTHealthState;
+  proofStatus: CTProofStatus;
+  proofIds: string[];
+}
+
+export interface CTSystemEdge {
+  id: string;
+  fromNodeId: string;
+  toNodeId: string;
+  relationshipType: CTSystemEdgeRelationship;
+  weight: number;
+  proofIds: string[];
+}
+
+export interface CTEvidenceRecord {
+  id: string;
+  subjectType: CTSystemNodeKind | 'incident' | 'system';
+  subjectId: string;
+  claim: string;
+  status: CTProofStatus;
+  sourceSignalId: string;
+  sourceType: string;
+  confidence: number;
+  observedAt: string;
+  expiresAt: string;
+  dependencyBasis: string[];
+  linkedEventIds: string[];
+  linkedLogRefs: string[];
+  userImpactLevel: 'none' | 'low' | 'medium' | 'high';
+  proofSummary: string;
+  environmentScope: 'prod' | 'dev';
+}
+
+export interface CTRiskAssessment {
+  id: string;
+  subjectId: string;
+  currentRiskScore: number;
+  failureProbability: number;
+  blastRadius: number;
+  trendDirection: 'rising' | 'stable' | 'falling';
+  anomalyReason: string;
+  causeChain: string[];
+  confidenceBasis: string;
+  recommendedAction: CTOperatorAction;
+  autoHealAvailable: boolean;
+  proofFreshnessMinutes: number;
+  contradictoryEvidenceCount: number;
+  computedAt: string;
+}
+
+export interface CTOperatorActionRun {
+  id: string;
+  actionType: CTOperatorAction;
+  targetId: string;
+  initiatedBy: 'system' | 'operator' | 'policy';
+  approvalMode: 'auto-execute' | 'operator-approve' | 'owner-only' | 'disabled';
+  input: string;
+  startedAt: string;
+  completedAt: string | null;
+  result: 'success' | 'failed' | 'skipped' | 'running';
+  beforeProofIds: string[];
+  afterProofIds: string[];
+  rollbackAvailable: boolean;
+  policyReason?: string;
+}
+
+import type { TrafficIntelSnapshot } from './traffic-types';
+
 export interface CTDashboardSnapshot {
   modules: CTModulePresence[];
   health: CTModuleHealth[];
@@ -218,17 +337,18 @@ export interface CTDashboardSnapshot {
   landingFunnel: CTLandingFunnelSnapshot;
   predictions: CTPredictiveScore[];
   autoRemediations: CTAutoRemediationLog[];
-  trafficIntel: CTTrafficIntelRef | null;
+  trafficIntel: TrafficIntelSnapshot | null;
+  systemNodes: CTSystemNode[];
+  systemEdges: CTSystemEdge[];
+  evidence: CTEvidenceRecord[];
+  riskAssessments: CTRiskAssessment[];
+  actionRuns: CTOperatorActionRun[];
   totalActiveUsers: number;
   totalAuthenticated: number;
   totalAnonymous: number;
   systemHealth: CTHealthState;
   systemRiskScore: number;
   lastUpdated: string;
-}
-
-export interface CTTrafficIntelRef {
-  available: true;
 }
 
 export const CT_MODULE_LABELS: Record<CTModuleId, string> = {

@@ -157,7 +157,10 @@ export default function ChatScreen() {
 
   const aiHealthQuery = useQuery<ServiceRuntimeHealth>({
     queryKey: ['chat-room-proof', 'ai-health'],
-    queryFn: probeAIBackendHealth,
+    queryFn: async () => {
+      const probe = await probeAIBackendHealth();
+      return probe.health;
+    },
     staleTime: 30000,
     refetchInterval: 60000,
   });

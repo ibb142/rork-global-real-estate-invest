@@ -320,7 +320,7 @@ export default function V1BriefScreen() {
     });
   }, []);
 
-  const progressWidth = `${completionScore}%`;
+  const progressWidth: `${number}%` = `${completionScore}%`;
 
   return (
     <>

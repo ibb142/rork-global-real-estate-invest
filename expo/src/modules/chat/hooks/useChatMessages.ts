@@ -34,7 +34,7 @@ function deduplicateMessages(messages: ChatMessage[]): ChatMessage[] {
 
 export const useChatMessages = (conversationId: string) => {
   const queryClient = useQueryClient();
-  const normalizedConversationId = useMemo(() => conversationId.trim(), [conversationId]);
+  const normalizedConversationId = useMemo(() => (typeof conversationId === 'string' ? conversationId.trim() : ''), [conversationId]);
   const queryKey = useMemo(() => getChatMessagesQueryKey(normalizedConversationId), [normalizedConversationId]);
   const [olderMessages, setOlderMessages] = useState<ChatMessage[]>([]);
   const [isLoadingOlder, setIsLoadingOlder] = useState<boolean>(false);

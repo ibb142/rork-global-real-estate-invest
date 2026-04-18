@@ -12,6 +12,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronLeft, Clock3, Inbox, MessageSquareText, Sparkles } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { IVX_OWNER_AI_PROFILE } from '@/constants/ivx-owner-ai';
+import { isOpenAccessModeEnabled } from '@/lib/open-access';
 import {
   buildRuntimeSignalsFromProbe,
   probeAIBackendHealth,
@@ -193,6 +194,9 @@ export function ChatModule({
 
     return createFallbackConversation(normalizedInitialConversationId, initialTitle);
   }, [initialTitle, normalizedInitialConversationId]);
+  const devRoomConversation = useMemo(() => {
+    return initialConversation ?? createFallbackConversation(IVX_OWNER_AI_PROFILE.sharedRoom.slug, initialTitle);
+  }, [initialConversation, initialTitle]);
   const [selectedConversation, setSelectedConversation] = useState<ChatConversation | null>(initialConversation);
   const [selectedRoomStatus, setSelectedRoomStatus] = useState<ChatRoomStatus | null>(() => getCurrentChatRoomStatus());
   const [runtimeSignals, setRuntimeSignals] = useState<ChatRoomRuntimeSignals>({
@@ -236,9 +240,9 @@ export function ChatModule({
       aiProbeRanRef.current = true;
       void (async () => {
         try {
-          const health = await probeAIBackendHealth();
-          setRuntimeSignals(buildRuntimeSignalsFromProbe(health));
-          console.log('[ChatModule] AI probe result:', health);
+          const probe = await probeAIBackendHealth();
+          setRuntimeSignals(buildRuntimeSignalsFromProbe(probe));
+          console.log('[ChatModule] AI probe result:', probe);
         } catch (e) {
           console.log('[ChatModule] AI probe error:', (e as Error)?.message);
         }
@@ -427,6 +431,26 @@ export function ChatModule({
     });
   }, [markConversationRead, normalizedUserId, queryClient, selectedConversation]);
 
+  const openDevRoom = useCallback(() => {
+    console.log('[ChatModule] Opening dev room fallback:', devRoomConversation.id);
+    openConversation(devRoomConversation);
+  }, [devRoomConversation, openConversation]);
+
+  useEffect(() => {
+    if (!isOpenAccessModeEnabled()) {
+      return;
+    }
+
+    if (selectedConversation || inboxQuery.isPending) {
+      return;
+    }
+
+    if (conversations.length === 0 || !!inboxQuery.error) {
+      console.log('[ChatModule] Open-access dev fallback activated for owner room');
+      setSelectedConversation(devRoomConversation);
+    }
+  }, [conversations.length, devRoomConversation, inboxQuery.error, inboxQuery.isPending, selectedConversation]);
+
   const renderConversation = useCallback(({ item }: { item: ChatConversation }) => {
     const unreadCount = item.unreadCount ?? 0;
 
@@ -549,6 +573,15 @@ export function ChatModule({
         <View style={styles.centerState} testID="chat-module-error">
           <Text style={styles.centerTitle}>Inbox unavailable</Text>
           <Text style={styles.centerText}>{inboxQuery.error.message || 'Please try again in a moment.'}</Text>
+          {isOpenAccessModeEnabled() ? (
+            <Pressable
+              style={({ pressed }) => [styles.devOpenButton, pressed ? styles.pressed : null]}
+              onPress={openDevRoom}
+              testID="chat-module-open-dev-room-error"
+            >
+              <Text style={styles.devOpenButtonText}>Open IVX Owner AI now</Text>
+            </Pressable>
+          ) : null}
           <Pressable
             style={({ pressed }) => [styles.retryButton, pressed ? styles.pressed : null]}
             onPress={() => {
@@ -563,8 +596,19 @@ export function ChatModule({
         <View style={styles.centerState} testID="chat-module-empty">
           <Text style={styles.centerTitle}>No conversations yet</Text>
           <Text style={styles.centerText}>
-            When your owner room is ready, it will appear here automatically.
+            {isOpenAccessModeEnabled()
+              ? 'Dev access is open in this build. You can enter the owner room now while shared inbox sync catches up.'
+              : 'When your owner room is ready, it will appear here automatically.'}
           </Text>
+          {isOpenAccessModeEnabled() ? (
+            <Pressable
+              style={({ pressed }) => [styles.devOpenButton, pressed ? styles.pressed : null]}
+              onPress={openDevRoom}
+              testID="chat-module-open-dev-room-empty"
+            >
+              <Text style={styles.devOpenButtonText}>Open IVX Owner AI now</Text>
+            </Pressable>
+          ) : null}
         </View>
       ) : (
         <FlatList
@@ -765,6 +809,18 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
     textAlign: 'center',
+  },
+  devOpenButton: {
+    marginTop: 4,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 14,
+    backgroundColor: Colors.primary,
+  },
+  devOpenButtonText: {
+    color: Colors.black,
+    fontSize: 13,
+    fontWeight: '800' as const,
   },
   retryButton: {
     marginTop: 4,

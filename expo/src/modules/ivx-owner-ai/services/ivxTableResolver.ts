@@ -1,24 +1,42 @@
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { getIVXSupabaseClient } from '@/lib/ivx-supabase-client';
 import { IVX_OWNER_AI_TABLES } from '@/shared/ivx';
 
+export type ResolvedDbSchema = 'public' | 'generic';
 export type ResolvedTableSchema = 'ivx' | 'generic' | 'none';
 
 export type ResolvedTables = {
   schema: ResolvedTableSchema;
+  dbSchema: ResolvedDbSchema;
   conversations: string;
   messages: string;
   inboxState: string;
 };
 
+type ScopedSupabaseClient = Pick<SupabaseClient, 'from'>;
+type SchemaAwareSupabaseClient = SupabaseClient & {
+  schema: (schema: ResolvedDbSchema) => ScopedSupabaseClient;
+};
+
 const IVX_TABLES: ResolvedTables = {
   schema: 'ivx',
+  dbSchema: 'public',
   conversations: IVX_OWNER_AI_TABLES.conversations,
   messages: IVX_OWNER_AI_TABLES.messages,
   inboxState: IVX_OWNER_AI_TABLES.inboxState,
 };
 
-const GENERIC_TABLES: ResolvedTables = {
+const GENERIC_SCHEMA_TABLES: ResolvedTables = {
   schema: 'generic',
+  dbSchema: 'generic',
+  conversations: 'conversations',
+  messages: 'messages',
+  inboxState: 'conversation_participants',
+};
+
+const GENERIC_PUBLIC_TABLES: ResolvedTables = {
+  schema: 'generic',
+  dbSchema: 'public',
   conversations: 'conversations',
   messages: 'messages',
   inboxState: 'conversation_participants',
@@ -26,27 +44,72 @@ const GENERIC_TABLES: ResolvedTables = {
 
 const NONE_TABLES: ResolvedTables = {
   schema: 'none',
+  dbSchema: 'public',
   conversations: IVX_OWNER_AI_TABLES.conversations,
   messages: IVX_OWNER_AI_TABLES.messages,
   inboxState: IVX_OWNER_AI_TABLES.inboxState,
 };
 
+const GENERIC_ASSISTANT_SENDER_ID = '__ivx_assistant__';
+const GENERIC_SYSTEM_SENDER_ID = '__ivx_system__';
+
+function normalizeGenericSenderRole(senderRole: unknown, senderIdRaw: string | null): 'owner' | 'assistant' | 'system' {
+  if (senderRole === 'assistant' || senderRole === 'system' || senderRole === 'owner') {
+    return senderRole;
+  }
+
+  if (senderIdRaw === GENERIC_ASSISTANT_SENDER_ID) {
+    return 'assistant';
+  }
+
+  if (senderIdRaw === GENERIC_SYSTEM_SENDER_ID) {
+    return 'system';
+  }
+
+  return 'owner';
+}
+
+function resolveGenericSenderId(senderUserId: string | null, senderRole: string): string {
+  if (senderRole === 'assistant') {
+    return GENERIC_ASSISTANT_SENDER_ID;
+  }
+
+  if (senderRole === 'system') {
+    return GENERIC_SYSTEM_SENDER_ID;
+  }
+
+  return senderUserId ?? 'unknown';
+}
+
 let cachedResolution: ResolvedTables | null = null;
 let cachedAt = 0;
 const CACHE_TTL_MS = 60_000;
 
-async function canQueryTable(table: string, field: string): Promise<boolean> {
+export function getScopedSupabaseClient(client: SupabaseClient, dbSchema: ResolvedDbSchema): ScopedSupabaseClient {
+  if (dbSchema === 'public') {
+    return client;
+  }
+
+  return (client as SchemaAwareSupabaseClient).schema(dbSchema);
+}
+
+export function getRealtimeSchema(tables: ResolvedTables): ResolvedDbSchema {
+  return tables.dbSchema;
+}
+
+async function canQueryTable(table: string, field: string, dbSchema: ResolvedDbSchema): Promise<boolean> {
   try {
     const client = getIVXSupabaseClient();
-    const { error } = await client.from(table).select(field).limit(1);
+    const scopedClient = getScopedSupabaseClient(client, dbSchema);
+    const { error } = await scopedClient.from(table).select(field).limit(1);
     if (error) {
-      console.log(`[IVXTableResolver] Probe failed for ${table}:`, error.message);
+      console.log(`[IVXTableResolver] Probe failed for ${dbSchema}.${table}:`, error.message);
       return false;
     }
-    console.log(`[IVXTableResolver] Probe OK for ${table}`);
+    console.log(`[IVXTableResolver] Probe OK for ${dbSchema}.${table}`);
     return true;
   } catch (err) {
-    console.log(`[IVXTableResolver] Probe exception for ${table}:`, err instanceof Error ? err.message : 'unknown');
+    console.log(`[IVXTableResolver] Probe exception for ${dbSchema}.${table}:`, err instanceof Error ? err.message : 'unknown');
     return false;
   }
 }
@@ -59,24 +122,34 @@ export async function resolveIVXTables(): Promise<ResolvedTables> {
 
   console.log('[IVXTableResolver] Probing for available tables...');
 
-  const ivxConvOk = await canQueryTable(IVX_OWNER_AI_TABLES.conversations, 'id');
-  const ivxMsgOk = await canQueryTable(IVX_OWNER_AI_TABLES.messages, 'id');
+  const ivxConvOk = await canQueryTable(IVX_OWNER_AI_TABLES.conversations, 'id', 'public');
+  const ivxMsgOk = await canQueryTable(IVX_OWNER_AI_TABLES.messages, 'id', 'public');
 
   if (ivxConvOk && ivxMsgOk) {
-    console.log('[IVXTableResolver] RESOLVED: Using IVX tables (ivx_conversations, ivx_messages)');
+    console.log('[IVXTableResolver] RESOLVED: Using IVX tables in public schema (ivx_conversations, ivx_messages)');
     cachedResolution = IVX_TABLES;
     cachedAt = Date.now();
     return IVX_TABLES;
   }
 
-  const genConvOk = await canQueryTable('conversations', 'id');
-  const genMsgOk = await canQueryTable('messages', 'id');
+  const genConvSchemaOk = await canQueryTable('conversations', 'id', 'generic');
+  const genMsgSchemaOk = await canQueryTable('messages', 'id', 'generic');
 
-  if (genConvOk && genMsgOk) {
-    console.log('[IVXTableResolver] RESOLVED: Using generic tables (conversations, messages)');
-    cachedResolution = GENERIC_TABLES;
+  if (genConvSchemaOk && genMsgSchemaOk) {
+    console.log('[IVXTableResolver] RESOLVED: Using generic schema tables (generic.conversations, generic.messages)');
+    cachedResolution = GENERIC_SCHEMA_TABLES;
     cachedAt = Date.now();
-    return GENERIC_TABLES;
+    return GENERIC_SCHEMA_TABLES;
+  }
+
+  const genConvPublicOk = await canQueryTable('conversations', 'id', 'public');
+  const genMsgPublicOk = await canQueryTable('messages', 'id', 'public');
+
+  if (genConvPublicOk && genMsgPublicOk) {
+    console.log('[IVXTableResolver] RESOLVED: Using public generic fallback tables (public.conversations, public.messages)');
+    cachedResolution = GENERIC_PUBLIC_TABLES;
+    cachedAt = Date.now();
+    return GENERIC_PUBLIC_TABLES;
   }
 
   console.log('[IVXTableResolver] RESOLVED: No tables found — will use ivx defaults (will fail gracefully)');
@@ -111,7 +184,7 @@ export function mapGenericMessageRow(row: Record<string, unknown>): {
   updated_at: string;
 } {
   const senderIdRaw = (row.sender_user_id ?? row.sender_id ?? null) as string | null;
-  const senderRole = (row.sender_role ?? 'owner') as 'owner' | 'assistant' | 'system';
+  const senderRole = normalizeGenericSenderRole(row.sender_role, senderIdRaw);
   const body = (row.body ?? row.text ?? null) as string | null;
   const attachmentUrl = (row.attachment_url ?? row.file_url ?? null) as string | null;
   const attachmentName = (row.attachment_name ?? row.file_name ?? null) as string | null;
@@ -121,8 +194,8 @@ export function mapGenericMessageRow(row: Record<string, unknown>): {
 
   return {
     id: row.id as string,
-    conversation_id: row.conversation_id as string,
-    sender_user_id: senderIdRaw,
+    conversation_id: (row.conversation_id ?? row.room_id) as string,
+    sender_user_id: senderIdRaw === GENERIC_ASSISTANT_SENDER_ID || senderIdRaw === GENERIC_SYSTEM_SENDER_ID ? null : senderIdRaw,
     sender_role: senderRole,
     sender_label: (row.sender_label ?? null) as string | null,
     body,
@@ -155,8 +228,8 @@ export function buildMessageInsertPayload(
 
   if (schema === 'generic') {
     return {
-      conversation_id: input.conversationId,
-      sender_id: input.senderUserId ?? 'unknown',
+      room_id: input.conversationId,
+      sender_id: resolveGenericSenderId(input.senderUserId, input.senderRole),
       sender_label: input.senderLabel,
       body: input.body,
       text: input.body,

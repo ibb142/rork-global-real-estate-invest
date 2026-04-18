@@ -207,7 +207,7 @@ export default function InvestorSupportChat({
     }
 
     const userText = inputText.trim();
-    const newMessage: ChatMessage = {
+    const userMessage: ChatMessage = {
       id: `msg-${Date.now()}`,
       senderId: 'user-1',
       senderName: 'You',
@@ -218,8 +218,8 @@ export default function InvestorSupportChat({
       status: 'sent',
     };
 
-    const nextMessages = trimMessages([...messages, newMessage]);
-    setMessages(nextMessages);
+    const nextMessages = trimMessages([...messages, userMessage]);
+    setMessages((prev) => trimMessages([...prev, userMessage]));
     setInputText('');
     setIsAiTyping(true);
 
@@ -399,7 +399,7 @@ export default function InvestorSupportChat({
       <KeyboardAvoidingView
         style={styles.keyboardContainer}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={keyboardVerticalOffset}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? Math.max(keyboardVerticalOffset, 80) : keyboardVerticalOffset}
       >
         {renderConnectionStatus()}
 

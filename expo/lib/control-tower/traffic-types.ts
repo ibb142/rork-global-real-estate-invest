@@ -153,6 +153,19 @@ export const FRICTION_LABELS: Record<FrictionType, string> = {
   invest_stall: 'Invest Stall',
 };
 
+export interface TrafficDependencyImpact {
+  id: string;
+  dependencyId: string;
+  dependencyLabel: string;
+  blockedStep: JourneyStep | 'unknown';
+  issue: string;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  affectedUsers: number;
+  lostConversionRate: number;
+  dependencyBasis: string[];
+  proofSummary: string;
+}
+
 export interface TrafficSourceSnapshot {
   sourceId: TrafficSourceId;
   activeNow: number;
@@ -171,6 +184,8 @@ export interface TrafficSourceSnapshot {
   frictions: TrafficFriction[];
   healthState: 'healthy' | 'friction' | 'degraded' | 'blocked';
   businessOutcomeScore: number;
+  dependencyBasis: string[];
+  failureImpacts: TrafficDependencyImpact[];
 }
 
 export interface TrafficOutcome {
@@ -214,10 +229,23 @@ export interface TrafficNodeConnection {
   healthColor: string;
 }
 
+export interface TrafficHandoffIssue {
+  id: string;
+  sourceId: TrafficSourceId;
+  title: string;
+  summary: string;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  affectedUsers: number;
+  dependencyBasis: string[];
+  blockedStep: JourneyStep | 'unknown';
+  route: string[];
+}
+
 export interface TrafficIntelSnapshot {
   sources: TrafficSourceSnapshot[];
   connections: TrafficNodeConnection[];
   predictions: TrafficPrediction[];
+  handoffIssues: TrafficHandoffIssue[];
   totalVisitors: number;
   totalAuthenticated: number;
   totalAnonymous: number;

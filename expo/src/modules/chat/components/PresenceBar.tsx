@@ -36,12 +36,12 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 6,
-    backgroundColor: 'rgba(34,197,94,0.06)',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    backgroundColor: 'rgba(34,197,94,0.05)',
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(34,197,94,0.12)',
+    borderBottomColor: 'rgba(34,197,94,0.1)',
   },
   dotRow: {
     flexDirection: 'row',
@@ -49,8 +49,8 @@ const styles = StyleSheet.create({
     gap: 3,
   },
   dot: {
-    width: 8,
-    height: 8,
+    width: 7,
+    height: 7,
     borderRadius: 4,
     backgroundColor: Colors.success,
   },
@@ -63,7 +63,7 @@ const styles = StyleSheet.create({
   label: {
     flex: 1,
     color: Colors.success,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600' as const,
   },
 });

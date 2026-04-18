@@ -11,7 +11,7 @@ as $$
       select 1
       from public.profiles
       where id = auth.uid()
-        and regexp_replace(lower(coalesce(role, 'investor')), '[^a-z0-9]+', '', 'g') in ('owner', 'owneradmin')
+        and regexp_replace(lower(coalesce(role, 'investor')), '[^a-z0-9]+', '', 'g') in ('owner', 'owneradmin', 'ivxowner', 'developer', 'dev', 'admin', 'superadmin', 'administrator', 'founder', 'staff', 'staffmember', 'ceo', 'manager', 'analyst', 'support')
     );
 $$;
 
@@ -55,13 +55,18 @@ create table if not exists public.ivx_ai_requests (
   id uuid primary key default gen_random_uuid(),
   conversation_id uuid not null references public.ivx_conversations(id) on delete cascade,
   user_id uuid not null references auth.users(id) on delete cascade,
+  request_id text,
   prompt text not null,
   response_text text,
+  response_message_id uuid references public.ivx_messages(id) on delete set null,
   status text not null default 'completed',
   model text not null default 'gpt-4.1-mini',
   created_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now())
 );
+
+alter table public.ivx_ai_requests add column if not exists request_id text;
+alter table public.ivx_ai_requests add column if not exists response_message_id uuid references public.ivx_messages(id) on delete set null;
 
 create table if not exists public.ivx_knowledge_documents (
   id uuid primary key default gen_random_uuid(),
@@ -80,6 +85,8 @@ create table if not exists public.ivx_knowledge_documents (
 create index if not exists idx_ivx_messages_conversation_created_at on public.ivx_messages(conversation_id, created_at);
 create index if not exists idx_ivx_inbox_state_user_id on public.ivx_inbox_state(user_id, updated_at desc);
 create index if not exists idx_ivx_ai_requests_conversation_id on public.ivx_ai_requests(conversation_id, created_at desc);
+create unique index if not exists idx_ivx_ai_requests_request_id_unique on public.ivx_ai_requests(request_id) where request_id is not null;
+create unique index if not exists idx_ivx_ai_requests_response_message_id_unique on public.ivx_ai_requests(response_message_id) where response_message_id is not null;
 create index if not exists idx_ivx_knowledge_documents_owner_id on public.ivx_knowledge_documents(owner_user_id, updated_at desc);
 
 alter table public.ivx_conversations enable row level security;

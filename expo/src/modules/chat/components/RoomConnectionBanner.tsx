@@ -166,11 +166,11 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.06)',
+    borderBottomColor: 'rgba(255,255,255,0.05)',
   },
   dot: {
     width: 6,
@@ -179,20 +179,20 @@ const styles = StyleSheet.create({
   },
   label: {
     flex: 1,
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: '600' as const,
   },
   reconnectButton: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
     borderRadius: 8,
     backgroundColor: 'rgba(255,255,255,0.06)',
   },
   reconnectText: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '700' as const,
   },
   pressed: {

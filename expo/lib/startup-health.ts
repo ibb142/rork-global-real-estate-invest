@@ -79,7 +79,7 @@ async function checkSupabaseConnection(): Promise<CheckStatus> {
   try {
     const { error } = await runWithAbortTimeout(
       STARTUP_HEALTH_TIMEOUT_MS,
-      (signal) => supabase.from('profiles').select('id').limit(1).abortSignal(signal),
+      async (signal) => await supabase.from('profiles').select('id').limit(1).abortSignal(signal),
       'Connection check timeout 3s',
     );
     const latency = Date.now() - start;
@@ -114,7 +114,7 @@ async function checkSupabaseTables(): Promise<CheckStatus> {
     try {
       const { error } = await runWithAbortTimeout(
         2_500,
-        (signal) => supabase.from(table).select('id').limit(1).abortSignal(signal),
+        async (signal) => await supabase.from(table).select('id').limit(1).abortSignal(signal),
         `Table check timeout for ${table}`,
       );
 

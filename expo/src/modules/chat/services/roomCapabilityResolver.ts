@@ -98,7 +98,7 @@ function getServiceState(health: ServiceRuntimeHealth | undefined): CapabilitySt
 
 function getRoomBadgeText(status: ChatRoomStatus | null): string {
   if (!status) {
-    return 'Checking room';
+    return 'Room probe pending';
   }
 
   if (status.storageMode === 'local_device_only') {
@@ -136,7 +136,7 @@ function buildCapability(
 
 function resolveInboxSyncCapability(status: ChatRoomStatus | null): RoomCapabilityDescriptor {
   if (!status) {
-    return buildCapability('inbox_sync', 'degraded', 'Checking shared backend availability for inbox sync.');
+    return buildCapability('inbox_sync', 'unavailable', 'Inbox sync is not proven yet because the room transport probe has not completed.');
   }
 
   if (status.storageMode === 'local_device_only') {
@@ -160,7 +160,7 @@ function resolveInboxSyncCapability(status: ChatRoomStatus | null): RoomCapabili
 
 function resolveSharedRoomCapability(status: ChatRoomStatus | null): RoomCapabilityDescriptor {
   if (!status) {
-    return buildCapability('shared_room', 'degraded', 'Checking whether the shared room backend is available.');
+    return buildCapability('shared_room', 'unavailable', 'Shared room transport is not proven yet because the room probe has not completed.');
   }
 
   if (status.storageMode === 'local_device_only') {
@@ -180,7 +180,7 @@ function resolveSharedRoomCapability(status: ChatRoomStatus | null): RoomCapabil
 
 function resolveFileUploadCapability(status: ChatRoomStatus | null): RoomCapabilityDescriptor {
   if (!status) {
-    return buildCapability('file_upload', 'degraded', 'Checking upload availability for this room backend.');
+    return buildCapability('file_upload', 'unavailable', 'Upload availability is not proven yet because the room probe has not completed.');
   }
 
   if (status.storageMode === 'local_device_only') {
@@ -204,6 +204,10 @@ function resolveAICapability(status: ChatRoomStatus | null, signals: ChatRoomRun
   if (aiState === 'available') {
     if (signals.aiResponseState === 'responding') {
       return buildCapability('ai_chat', 'available', 'AI backend is active and the assistant is generating a reply.');
+    }
+
+    if (signals.aiBackendSource === 'toolkit_fallback') {
+      return buildCapability('ai_chat', 'available', 'AI replies are working through the active development fallback path. Remote endpoint proof has not been attached yet.');
     }
 
     return buildCapability('ai_chat', 'available', 'AI backend is active for this room. Assistant replies are available.');
@@ -264,7 +268,7 @@ function resolveCodeAwareCapability(signals: ChatRoomRuntimeSignals): RoomCapabi
 
 function buildSubtitle(status: ChatRoomStatus | null, capabilities: RoomCapabilityDescriptor[]): string {
   if (!status) {
-    return 'Checking room backend. Shared sync and advanced AI features are still being verified.';
+    return 'Awaiting the first live room proof. Shared sync and operator features stay unclaimed until the probe completes.';
   }
 
   if (status.storageMode === 'local_device_only') {
@@ -301,7 +305,7 @@ function buildSubtitle(status: ChatRoomStatus | null, capabilities: RoomCapabili
 
 function buildSummary(status: ChatRoomStatus | null, capabilities: RoomCapabilityDescriptor[]): string {
   if (!status) {
-    return 'Checking runtime capability state.';
+    return 'Proof pending for room runtime.';
   }
 
   if (status.storageMode === 'local_device_only') {
@@ -318,7 +322,11 @@ function buildSummary(status: ChatRoomStatus | null, capabilities: RoomCapabilit
   return `${availableCount} active capabilities.`;
 }
 
-function buildAIIndicator(aiCapability: RoomCapabilityDescriptor, responseState: AIResponseState | undefined): RoomAIAvailabilityIndicator {
+function buildAIIndicator(
+  aiCapability: RoomCapabilityDescriptor,
+  responseState: AIResponseState | undefined,
+  signals: ChatRoomRuntimeSignals,
+): RoomAIAvailabilityIndicator {
   if (responseState === 'responding' && aiCapability.state === 'available') {
     return {
       state: 'available',
@@ -333,7 +341,9 @@ function buildAIIndicator(aiCapability: RoomCapabilityDescriptor, responseState:
     return {
       state: 'available',
       label: 'AI replies ready',
-      detail: 'The AI response pipeline is active for this room.',
+      detail: signals.aiBackendSource === 'toolkit_fallback'
+        ? 'Assistant replies are currently available through the active development fallback path.'
+        : 'The AI response pipeline is active for this room.',
       isLoading: false,
       testID: 'chat-room-ai-indicator',
     };
@@ -342,8 +352,8 @@ function buildAIIndicator(aiCapability: RoomCapabilityDescriptor, responseState:
   if (aiCapability.state === 'degraded') {
     return {
       state: 'degraded',
-      label: 'AI replies degraded',
-      detail: 'The AI backend is active, but replies may be delayed or fail.',
+      label: 'AI proof degraded',
+      detail: 'Assistant replies are available with degraded proof and need a fresh remote verification cycle.',
       isLoading: false,
       testID: 'chat-room-ai-indicator',
     };
@@ -397,7 +407,7 @@ function buildComposerNotes(
     notes.push({
       id: 'ai-degraded',
       tone: 'info',
-      text: 'Messages send normally, but assistant replies may be delayed while the AI backend is degraded.',
+      text: 'Messages still send, but assistant reply proof is degraded and needs a fresh verification cycle.',
       testID: 'chat-room-composer-note-ai-degraded',
     });
   }
@@ -408,6 +418,7 @@ function buildComposerNotes(
 export function getDefaultRoomRuntimeSignals(): ChatRoomRuntimeSignals {
   return {
     aiBackendHealth: 'inactive',
+    aiBackendSource: 'unknown',
     knowledgeBackendHealth: 'inactive',
     ownerCommandAvailability: 'inactive',
     codeAwareServiceAvailability: 'inactive',
@@ -441,7 +452,7 @@ export function resolveRoomCapabilityState(
     if (cap.id === 'code_aware_support' && cap.state === 'unavailable') return false;
     return true;
   });
-  const aiIndicator = buildAIIndicator(aiCapability, signals.aiResponseState);
+  const aiIndicator = buildAIIndicator(aiCapability, signals.aiResponseState, signals);
 
   return {
     badgeText: getRoomBadgeText(status),

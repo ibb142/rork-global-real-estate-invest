@@ -1,5 +1,5 @@
-import React, { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { useMutation } from '@tanstack/react-query';
 import { FileText, ImageIcon, Send, Video } from 'lucide-react-native';
@@ -40,27 +40,24 @@ type ComposerProps = {
   statusIndicator?: ComposerStatusIndicator | null;
 };
 
-function getStateColors(state: CapabilityState): { backgroundColor: string; borderColor: string; textColor: string } {
-  switch (state) {
-    case 'available':
-      return {
-        backgroundColor: 'rgba(255,215,0,0.1)',
-        borderColor: 'rgba(255,215,0,0.28)',
-        textColor: Colors.primary,
-      };
-    case 'degraded':
-      return {
-        backgroundColor: 'rgba(245,158,11,0.12)',
-        borderColor: 'rgba(245,158,11,0.3)',
-        textColor: Colors.warning,
-      };
-    case 'unavailable':
-    default:
-      return {
-        backgroundColor: Colors.backgroundSecondary,
-        borderColor: Colors.surfaceBorder,
-        textColor: Colors.textSecondary,
-      };
+function normalizeComposerText(value: unknown, fallback: string = ''): string {
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+
+  if (value == null) {
+    return fallback;
+  }
+
+  try {
+    return String(value);
+  } catch (error) {
+    console.log('[Composer] Failed to normalize text value:', (error as Error)?.message ?? 'Unknown error');
+    return fallback;
   }
 }
 
@@ -70,10 +67,10 @@ export function Composer({
   onFocus,
   onTyping,
   bottomInset = 16,
-  notes,
-  statusIndicator,
 }: ComposerProps) {
   const [text, setText] = useState<string>('');
+  const textRef = useRef<string>('');
+  const inputRef = useRef<TextInput | null>(null);
 
   const pickAttachmentMutation = useMutation<UploadableFile | null, Error, UploadKind>({
     mutationFn: async (kind) => {
@@ -90,27 +87,38 @@ export function Composer({
     },
   });
 
-  const isBusy = sending || pickAttachmentMutation.isPending;
-  const canSendText = useMemo(() => text.trim().length > 0 && !isBusy, [isBusy, text]);
-  const containerPaddingBottom = useMemo(() => Math.max(bottomInset, 16), [bottomInset]);
-  const indicatorColors = useMemo(() => {
-    return statusIndicator ? getStateColors(statusIndicator.state) : null;
-  }, [statusIndicator]);
+  useEffect(() => {
+    textRef.current = text;
+  }, [text]);
 
-  const handleSend = useCallback(async () => {
-    const value = text.trim();
+  const isBusy = sending || pickAttachmentMutation.isPending;
+  const normalizedText = useMemo(() => normalizeComposerText(text), [text]);
+  const canSendText = useMemo(() => normalizedText.trim().length > 0 && !isBusy, [isBusy, normalizedText]);
+  const containerPaddingBottom = useMemo(() => Math.max(bottomInset, 8), [bottomInset]);
+
+  const handleSend = useCallback(async (overrideText?: unknown) => {
+    const capturedValue = normalizeComposerText(overrideText, textRef.current);
+    const value = capturedValue.trim();
     if (!value || isBusy) {
+      console.log('[Composer] Skipping send:', {
+        isBusy,
+        normalizedType: typeof capturedValue,
+        normalizedLength: capturedValue.length,
+      });
       return;
     }
 
     try {
+      console.log('[Composer] Sending text payload length:', value.length);
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      await onSend({ text: value });
+      await onSend({ text: capturedValue });
+      textRef.current = '';
       setText('');
+      inputRef.current?.clear();
     } catch (error) {
       console.log('[Composer] Send error:', (error as Error)?.message ?? 'Unknown error');
     }
-  }, [isBusy, onSend, text]);
+  }, [isBusy, onSend]);
 
   const handleAttachment = useCallback(async (kind: UploadKind) => {
     if (isBusy) {
@@ -124,14 +132,17 @@ export function Composer({
         return;
       }
 
-      const trimmedText = text.trim();
+      const capturedText = normalizeComposerText(textRef.current);
+      const trimmedText = capturedText.trim();
       const fileType = guessUploadFileType(attachment.type ?? null);
       await onSend({
-        text: trimmedText || undefined,
+        text: trimmedText.length > 0 ? capturedText : undefined,
         fileType,
         upload: attachment,
       });
+      textRef.current = '';
       setText('');
+      inputRef.current?.clear();
     } catch (error) {
       console.log('[Composer] Attachment send error:', (error as Error)?.message ?? 'Unknown error');
       Alert.alert('Attachment not sent', 'We could not send that attachment. Please try again.');
@@ -140,79 +151,33 @@ export function Composer({
 
   return (
     <View style={[styles.container, { paddingBottom: containerPaddingBottom }]} testID="chat-composer">
-      {statusIndicator && indicatorColors ? (
-        <View
-          style={[
-            styles.statusIndicator,
-            {
-              backgroundColor: indicatorColors.backgroundColor,
-              borderColor: indicatorColors.borderColor,
-            },
-          ]}
-          testID={statusIndicator.testID}
-        >
-          {statusIndicator.isLoading ? (
-            <ActivityIndicator size="small" color={indicatorColors.textColor} />
-          ) : (
-            <View style={[styles.statusDot, { backgroundColor: indicatorColors.textColor }]} />
-          )}
-          <View style={styles.statusCopy}>
-            <Text style={[styles.statusLabel, { color: indicatorColors.textColor }]}>{statusIndicator.label}</Text>
-            <Text style={[styles.statusDetail, { color: indicatorColors.textColor }]}>{statusIndicator.detail}</Text>
-          </View>
-        </View>
-      ) : null}
-
-      {notes && notes.length > 0 ? (
-        <View style={styles.noteList}>
-          {notes.map((note) => {
-            const noteColors = note.tone === 'warning'
-              ? {
-                backgroundColor: 'rgba(245,158,11,0.12)',
-                borderColor: 'rgba(245,158,11,0.28)',
-                textColor: Colors.warning,
-              }
-              : {
-                backgroundColor: Colors.backgroundSecondary,
-                borderColor: Colors.surfaceBorder,
-                textColor: Colors.textSecondary,
-              };
-
-            return (
-              <View
-                key={note.id}
-                style={[
-                  styles.noteCard,
-                  {
-                    backgroundColor: noteColors.backgroundColor,
-                    borderColor: noteColors.borderColor,
-                  },
-                ]}
-                testID={note.testID}
-              >
-                <Text style={[styles.noteText, { color: noteColors.textColor }]}>{note.text}</Text>
-              </View>
-            );
-          })}
-        </View>
-      ) : null}
-
       <View style={styles.inputShell}>
         <TextInput
+          ref={inputRef}
           value={text}
           onChangeText={(value) => {
-            setText(value);
-            if (value.trim().length > 0) {
+            const nextValue = normalizeComposerText(value);
+            textRef.current = nextValue;
+            setText(nextValue);
+            if (nextValue.trim().length > 0) {
               onTyping?.();
             }
           }}
           onFocus={onFocus}
           placeholder="Write a message"
-          placeholderTextColor={Colors.inputPlaceholder}
+          placeholderTextColor="#B8C0CC"
           style={styles.input}
           multiline
           maxLength={1200}
           editable={!isBusy}
+          textAlignVertical="top"
+          returnKeyType="send"
+          blurOnSubmit={false}
+          onSubmitEditing={(event) => {
+            const submittedText = normalizeComposerText(event?.nativeEvent?.text, textRef.current);
+            void handleSend(submittedText);
+          }}
+          selectionColor={Colors.primary}
           testID="chat-composer-input"
         />
         <Pressable
@@ -274,82 +239,41 @@ export function Composer({
 
 const styles = StyleSheet.create({
   container: {
-    paddingHorizontal: 16,
-    paddingTop: 12,
+    paddingHorizontal: 10,
+    paddingTop: 4,
     backgroundColor: Colors.background,
     borderTopWidth: 1,
     borderTopColor: Colors.surfaceBorder,
   },
-  statusIndicator: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
-    borderRadius: 16,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 10,
-  },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 999,
-    marginTop: 5,
-  },
-  statusCopy: {
-    flex: 1,
-    gap: 4,
-  },
-  statusLabel: {
-    fontSize: 12,
-    fontWeight: '800' as const,
-  },
-  statusDetail: {
-    fontSize: 12,
-    lineHeight: 18,
-    fontWeight: '600' as const,
-  },
-  noteList: {
-    gap: 8,
-    marginBottom: 10,
-  },
-  noteCard: {
-    borderRadius: 14,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  noteText: {
-    fontSize: 12,
-    lineHeight: 18,
-    fontWeight: '600' as const,
-  },
   inputShell: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    gap: 12,
+    gap: 6,
+    minHeight: 34,
   },
   input: {
     flex: 1,
-    minHeight: 52,
-    maxHeight: 132,
-    backgroundColor: Colors.inputBackground,
+    minHeight: 34,
+    maxHeight: 74,
+    backgroundColor: '#12161C',
     borderWidth: 1,
-    borderColor: Colors.inputBorder,
-    borderRadius: 18,
-    color: Colors.text,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 15,
-    lineHeight: 20,
+    borderColor: '#46505E',
+    borderRadius: 12,
+    color: '#F8FAFC',
+    paddingHorizontal: 10,
+    paddingTop: 6,
+    paddingBottom: 6,
+    fontSize: 14,
+    lineHeight: 18,
   },
   sendButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 16,
+    width: 32,
+    height: 32,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
+    flexShrink: 0,
   },
   sendButtonActive: {
     backgroundColor: Colors.primary,
@@ -362,23 +286,23 @@ const styles = StyleSheet.create({
   actionRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 10,
-    marginTop: 12,
+    gap: 4,
+    marginTop: 4,
   },
   actionButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 4,
     backgroundColor: Colors.surface,
-    borderRadius: 14,
+    borderRadius: 9,
     borderWidth: 1,
     borderColor: Colors.surfaceBorder,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
   },
   actionText: {
-    color: Colors.textSecondary,
-    fontSize: 13,
+    color: '#E2E8F0',
+    fontSize: 8,
     fontWeight: '600' as const,
   },
   pressed: {

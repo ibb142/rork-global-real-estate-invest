@@ -8,6 +8,7 @@ import { getRemediationLog, autoRemediateFromHealth } from './auto-remediation';
 import { analyzeAllIncidents, generateDecisionSummary } from './decision-engine';
 import { computeTrafficIntelSnapshot } from './traffic-aggregator';
 import { computeAllSourcePredictions, shouldRunPredictions } from './traffic-predictive';
+import { buildProofGraphSnapshot } from './proof-graph';
 import type { TrafficIntelSnapshot } from './traffic-types';
 import type {
   CTModuleId,
@@ -21,7 +22,6 @@ import type {
   CTLandingFunnelSnapshot,
   CTPredictiveScore,
   CTAutoRemediationLog,
-  CTTrafficIntelRef,
 } from './types';
 import { CT_MODULE_LABELS } from './types';
 
@@ -54,6 +54,7 @@ const EMPTY_LANDING_FUNNEL: CTLandingFunnelSnapshot = {
   apiCalls: 0, apiSuccesses: 0, apiFailures: 0, apiSuccessRate: 0,
   handoffsStarted: 0, handoffsCompleted: 0,
   dropOffPoints: [], topReferrers: [], avgLatencyMs: 0,
+  stageAttribution: [], ifFixedNowOpportunity: 0,
 };
 
 class ControlTowerAggregator {
@@ -217,21 +218,42 @@ class ControlTowerAggregator {
     const totalAuth = modules.reduce((sum, m) => sum + m.authenticated, 0);
     const totalAnon = modules.reduce((sum, m) => sum + m.anonymous, 0);
 
+    const lastUpdated = new Date().toISOString();
+    const proofGraph = buildProofGraphSnapshot({
+      health,
+      chatRooms,
+      incidents: enrichedIncidents,
+      predictions,
+      autoRemediations,
+      landingFunnel,
+      trafficIntel: this.cachedTrafficIntel,
+      lastUpdated,
+    });
+    const synthesizedIncidents = proofGraph.incidentCandidates.filter((candidate) => {
+      return !enrichedIncidents.some((incident) => incident.module === candidate.module && incident.title === candidate.title && !incident.resolved);
+    });
+    const finalIncidents = [...enrichedIncidents, ...synthesizedIncidents].slice(0, 24);
+
     const snapshot: CTDashboardSnapshot = {
       modules,
       health,
       chatRooms,
-      incidents: enrichedIncidents,
+      incidents: finalIncidents,
       landingFunnel,
       predictions,
       autoRemediations,
-      trafficIntel: this.cachedTrafficIntel ? { available: true } : null,
+      trafficIntel: this.cachedTrafficIntel,
+      systemNodes: proofGraph.systemNodes,
+      systemEdges: proofGraph.systemEdges,
+      evidence: proofGraph.evidence,
+      riskAssessments: proofGraph.riskAssessments,
+      actionRuns: proofGraph.actionRuns,
       totalActiveUsers: Math.max(totalActive, presence.totalOnline),
       totalAuthenticated: Math.max(totalAuth, presence.appOnline),
       totalAnonymous: Math.max(totalAnon, presence.landingOnline),
       systemHealth,
       systemRiskScore,
-      lastUpdated: new Date().toISOString(),
+      lastUpdated,
     };
 
     this.lastSnapshot = snapshot;

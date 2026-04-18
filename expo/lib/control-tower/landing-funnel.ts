@@ -128,6 +128,76 @@ function computeDropOff(): Array<{ step: string; count: number; rate: number }> 
   });
 }
 
+function computeStageAttribution(params: {
+  visits: number;
+  ctaClicks: number;
+  formStarts: number;
+  formSubmits: number;
+  apiCalls: number;
+  apiFailures: number;
+  handoffsStarted: number;
+  handoffsCompleted: number;
+}): CTLandingFunnelSnapshot['stageAttribution'] {
+  const stageAttribution: CTLandingFunnelSnapshot['stageAttribution'] = [];
+
+  const landingLeak = Math.max(0, params.visits - params.ctaClicks);
+  if (landingLeak > 0) {
+    stageAttribution.push({
+      id: 'landing-cta',
+      stage: 'Landing → CTA',
+      affectedUsers: landingLeak,
+      leakRate: params.visits > 0 ? Math.round((landingLeak / params.visits) * 100) : 0,
+      blockedBy: ['landing performance', 'cta relevance'],
+      dependencyBasis: ['landing', 'traffic ingestion'],
+      interventionSuggestion: 'Shift traffic to the strongest landing variant and verify CTA responsiveness.',
+      proofSummary: 'Visitors are leaking before they commit to the primary CTA.',
+    });
+  }
+
+  const formLeak = Math.max(0, params.formStarts - params.formSubmits);
+  if (formLeak > 0) {
+    stageAttribution.push({
+      id: 'form-submit',
+      stage: 'Form start → submit',
+      affectedUsers: formLeak,
+      leakRate: params.formStarts > 0 ? Math.round((formLeak / params.formStarts) * 100) : 0,
+      blockedBy: ['lead capture form', 'validation path'],
+      dependencyBasis: ['landing', 'database'],
+      interventionSuggestion: 'Fail over to backup lead capture and inspect form validation errors.',
+      proofSummary: 'Users start the lead flow but fail to complete submission.',
+    });
+  }
+
+  if (params.apiFailures > 0) {
+    stageAttribution.push({
+      id: 'api-write',
+      stage: 'Submit → API write',
+      affectedUsers: params.apiFailures,
+      leakRate: params.apiCalls > 0 ? Math.round((params.apiFailures / params.apiCalls) * 100) : 0,
+      blockedBy: ['api provider', 'database write'],
+      dependencyBasis: ['database', 'auth', 'app handoff'],
+      interventionSuggestion: 'Retry the landing API path and route new leads to safe capture while degraded.',
+      proofSummary: 'Backend/API failures are directly blocking conversion completion.',
+    });
+  }
+
+  const handoffLeak = Math.max(0, params.handoffsStarted - params.handoffsCompleted);
+  if (handoffLeak > 0) {
+    stageAttribution.push({
+      id: 'handoff',
+      stage: 'Handoff → app open',
+      affectedUsers: handoffLeak,
+      leakRate: params.handoffsStarted > 0 ? Math.round((handoffLeak / params.handoffsStarted) * 100) : 0,
+      blockedBy: ['auth', 'app open route'],
+      dependencyBasis: ['auth', 'app', 'chat transport'],
+      interventionSuggestion: 'Hold users on the safest handoff route while app/auth dependencies recover.',
+      proofSummary: 'Users complete landing intent but fail to enter the app or target module.',
+    });
+  }
+
+  return stageAttribution.sort((a, b) => b.affectedUsers - a.affectedUsers);
+}
+
 export function computeLandingFunnel(): CTLandingFunnelSnapshot {
   const activeVisitors = getActiveVisitors();
   const visitorsLast5m = getUniqueSessionCount(WINDOW_5M);
@@ -152,8 +222,19 @@ export function computeLandingFunnel(): CTLandingFunnelSnapshot {
   const dropOffPoints = computeDropOff();
   const topReferrers = getReferrerSources();
   const avgLatencyMs = getAvgLatency();
+  const stageAttribution = computeStageAttribution({
+    visits,
+    ctaClicks,
+    formStarts,
+    formSubmits,
+    apiCalls,
+    apiFailures,
+    handoffsStarted,
+    handoffsCompleted,
+  });
+  const ifFixedNowOpportunity = stageAttribution.reduce((sum, stage) => sum + stage.affectedUsers, 0);
 
-  console.log(`[CT:LandingFunnel] visitors=${activeVisitors} cta=${ctaClicks}(${ctaClickRate}%) forms=${formStarts}->${formSubmits}(${formSubmitRate}%) api=${apiSuccesses}/${apiCalls}(${apiSuccessRate}%)`);
+  console.log(`[CT:LandingFunnel] visitors=${activeVisitors} cta=${ctaClicks}(${ctaClickRate}%) forms=${formStarts}->${formSubmits}(${formSubmitRate}%) api=${apiSuccesses}/${apiCalls}(${apiSuccessRate}%) stageAttribution=${stageAttribution.length}`);
 
   return {
     activeVisitors,
@@ -173,5 +254,7 @@ export function computeLandingFunnel(): CTLandingFunnelSnapshot {
     dropOffPoints,
     topReferrers,
     avgLatencyMs,
+    stageAttribution,
+    ifFixedNowOpportunity,
   };
 }

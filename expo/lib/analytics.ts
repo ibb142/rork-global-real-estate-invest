@@ -9,6 +9,7 @@ import { fetchPublicIpAddress } from './public-geo';
 import { landingTracker } from './landing-tracker';
 import { controlTowerEmitter } from './control-tower/event-emitter';
 import { trafficAttribution } from './control-tower/traffic-attribution';
+import { liveIntelligenceService, type AttributionPayload, type IntelligenceEventName } from './control-tower/live-intelligence';
 import type { CTModuleId, CTFlowStep } from './control-tower/types';
 import type { FrictionType, JourneyStep } from './control-tower/traffic-types';
 
@@ -142,6 +143,16 @@ function mapModuleToJourneyStep(moduleId: CTModuleId): JourneyStep | null {
   }
 }
 
+function inferModuleFromProperties(properties: Record<string, unknown>): CTModuleId {
+  if (typeof properties.module === 'string') {
+    return mapScreenToModule(properties.module);
+  }
+  if (typeof properties.path === 'string') {
+    return mapScreenToModule(properties.path);
+  }
+  return 'home';
+}
+
 function mapErrorToFriction(errorText: string): FrictionType | null {
   if (errorText.includes('auth')) return 'auth_failure';
   if (errorText.includes('upload')) return 'upload_failure';
@@ -150,6 +161,25 @@ function mapErrorToFriction(errorText: string): FrictionType | null {
   if (errorText.includes('handoff')) return 'handoff_failure';
   if (errorText.includes('api')) return 'api_failure';
   return null;
+}
+
+function mapAnalyticsEventToIntelligenceEvent(name: string, properties: Record<string, unknown>, moduleId: CTModuleId): IntelligenceEventName {
+  const lowerName = name.toLowerCase();
+  if (lowerName === 'screen_view') return 'module_view';
+  if (lowerName === 'app_open') return 'session_start';
+  if (lowerName === 'error') return 'error_seen';
+  if (lowerName.includes('fallback')) return 'fallback_used';
+  if (lowerName.includes('deal')) return 'deal_view';
+  if (lowerName.includes('invest') && lowerName.includes('complete')) return 'invest_complete';
+  if (lowerName.includes('invest') && (lowerName.includes('start') || lowerName.includes('click'))) return 'invest_start';
+  if (lowerName.includes('conversion_signup') || lowerName.includes('conversion_auth')) return 'auth_state_change';
+  if (lowerName.includes('chat') && typeof properties.message === 'string') return 'chat_message';
+  if (lowerName.includes('chat')) return 'chat_open';
+  if (lowerName.includes('cta') || lowerName.includes('click')) return 'cta_click';
+  if (lowerName.includes('submit')) return 'form_submit';
+  if (lowerName.includes('start') || lowerName.includes('focus')) return 'form_start';
+  if (moduleId === 'landing') return 'page_view';
+  return 'routing_selected';
 }
 
 function bridgeTrafficAnalyticsEvent(event: AnalyticsEvent): void {
@@ -170,6 +200,31 @@ function bridgeTrafficAnalyticsEvent(event: AnalyticsEvent): void {
     });
 
     const metadata = sanitizeControlTowerMetadata(properties);
+    const moduleIdForIntelligence = typeof properties.screen === 'string' ? mapScreenToModule(properties.screen) : inferModuleFromProperties(properties);
+    const attribution: AttributionPayload = {
+      utmSource: typeof properties.utm_source === 'string' ? properties.utm_source : undefined,
+      utmMedium: typeof properties.utm_medium === 'string' ? properties.utm_medium : undefined,
+      utmCampaign: typeof properties.utm_campaign === 'string' ? properties.utm_campaign : undefined,
+      utmContent: typeof properties.utm_content === 'string' ? properties.utm_content : undefined,
+      utmTerm: typeof properties.utm_term === 'string' ? properties.utm_term : undefined,
+      referrer: typeof properties.referrer === 'string' ? properties.referrer : undefined,
+      deepLinkSource: typeof properties.deep_link_source === 'string' ? properties.deep_link_source : undefined,
+      referralCode: typeof properties.referral_code === 'string' ? properties.referral_code : undefined,
+      landingPage: typeof properties.path === 'string' ? properties.path : typeof properties.screen === 'string' ? properties.screen : undefined,
+      firstTouchSource: typeof properties.utm_source === 'string' ? properties.utm_source : undefined,
+      lastTouchSource: typeof properties.utm_source === 'string' ? properties.utm_source : undefined,
+      campaignId: typeof properties.campaign_id === 'string' ? properties.campaign_id : undefined,
+    };
+
+    liveIntelligenceService.captureEvent({
+      eventName: mapAnalyticsEventToIntelligenceEvent(event.name, properties, moduleIdForIntelligence),
+      screen: typeof properties.screen === 'string' ? properties.screen : String(properties.path ?? moduleIdForIntelligence),
+      module: moduleIdForIntelligence,
+      sessionId: trafficSessionId,
+      userId: typeof properties.userId === 'string' ? properties.userId : null,
+      attribution,
+      metadata: properties,
+    });
 
     if (event.name === 'app_open') {
       trafficAttribution.updateStep(trafficSessionId, 'app_opened', properties);

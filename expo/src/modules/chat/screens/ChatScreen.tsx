@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   AppState,
   type AppStateStatus,
   FlatList,
@@ -11,6 +10,7 @@ import {
   Platform,
   Pressable,
   RefreshControl,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -19,6 +19,26 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ChevronUp, Radio, RefreshCw } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Colors from '@/constants/colors';
+import { IVX_OWNER_AI_PROFILE } from '@/constants/ivx-owner-ai';
+import { getIVXOwnerAIConfigAudit, getIVXOwnerAuthContext } from '@/lib/ivx-supabase-client';
+import { isOpenAccessModeEnabled } from '@/lib/open-access';
+import { getIVXOwnerAIErrorDiagnostics, getLastIVXOwnerAIRuntimeProof } from '@/src/modules/ivx-owner-ai/services/ivxAIRequestService';
+import {
+  getActiveRuntimeSource,
+  getRuntimeModeSummary,
+  getRuntimeProofTone,
+  getRuntimeSourceLabel,
+  getRuntimeStatusCopy,
+  hasActiveStreamingState,
+  hasRuntimeFailure,
+  isPendingRequestState,
+  normalizeRuntimeSource,
+  shouldPreserveRequestScopedRuntime,
+  shouldShowFallbackUI,
+  shouldShowRuntimeDebugDetails,
+  supportsTrueChunkStreaming,
+  type ChatRuntimeProofTone,
+} from '@/src/modules/chat/chatRuntimeState';
 import { Composer } from '../components/Composer';
 import { MessageBubble } from '../components/MessageBubble';
 import { PresenceBar } from '../components/PresenceBar';
@@ -28,7 +48,6 @@ import { getChatMessagesQueryKey, useChatMessages } from '../hooks/useChatMessag
 import { useRoomPresence } from '../hooks/useRoomPresence';
 import { useTypingIndicator } from '../hooks/useTypingIndicator';
 import {
-  createAssistantChatMessage,
   createCommandResponseMessage,
   parseOwnerCommand,
   requestAIReply,
@@ -45,7 +64,6 @@ import {
   type ChatStorageStatus,
 } from '../services/supabaseChatProvider';
 import {
-  type RoomStateSnapshot,
   type RoomSyncPhase,
   generateSendCorrelationId,
   getRoomStateSnapshot,
@@ -97,12 +115,191 @@ type ComposerPayload = {
   upload?: UploadableFile;
 };
 
+type RuntimeDashboardState = {
+  environment: string;
+  activeBaseUrl: string | null;
+  resolvedEndpointUrl: string | null;
+  source: 'remote_api' | 'toolkit_fallback' | 'pending' | 'unknown';
+  deploymentMarker: string | null;
+  authMode: string;
+  conversationId: string;
+  requestId: string | null;
+  isFallback: boolean;
+  isStreaming: boolean;
+  hasVisibleResponseText: boolean;
+  fallbackState: string;
+  degradedState: string;
+  routingPolicy: string;
+  selectionReason: string;
+  requestStage: string;
+  failureClass: string;
+  lastStatusCode: string;
+  failureDetail: string;
+  responsePreview: string;
+  lastAttemptAt: string;
+  lastVerifiedAt: string;
+};
+
+function safeTrimCS(value: unknown): string {
+  if (typeof value === 'string') {
+    return value.trim();
+  }
+  if (value == null) {
+    return '';
+  }
+  try {
+    return String(value).trim();
+  } catch {
+    return '';
+  }
+}
+
+function normalizeOutboundText(value: unknown): string {
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+
+  if (value == null) {
+    return '';
+  }
+
+  try {
+    return String(value);
+  } catch (error) {
+    console.log('[ChatScreen] Failed to normalize outbound text:', (error as Error)?.message ?? 'Unknown error');
+    return '';
+  }
+}
+
+function resolveFallbackStateLabel(isFallback: boolean): string {
+  return isFallback ? 'active' : 'off';
+}
+
+function resolveStreamingState(input: {
+  requestStage: string;
+  failureClass: string;
+  runtimeSignals?: ChatRoomRuntimeSignals;
+  explicitStreaming?: boolean;
+}): boolean {
+  if (input.runtimeSignals?.aiResponseState === 'responding') {
+    return true;
+  }
+
+  return hasActiveStreamingState({
+    requestStage: input.requestStage,
+    failureClass: input.failureClass,
+    isStreaming: input.explicitStreaming,
+  });
+}
+
+type RuntimeRow = {
+  label: string;
+  value: string;
+};
+
+function formatRuntimeTimestamp(value: number | null): string {
+  if (!value || Number.isNaN(value)) {
+    return 'pending';
+  }
+
+  try {
+    return new Date(value).toLocaleTimeString();
+  } catch {
+    return 'pending';
+  }
+}
+
 function getRoomLabel(conversationId: string): string {
   return conversationId
     .split(/[-_]/g)
     .filter(Boolean)
     .map((segment) => `${segment.charAt(0).toUpperCase()}${segment.slice(1)}`)
     .join(' ');
+}
+
+function getRuntimeProofToneColors(tone: ChatRuntimeProofTone): {
+  backgroundColor: string;
+  borderColor: string;
+  textColor: string;
+  mutedTextColor: string;
+} {
+  switch (tone) {
+    case 'success':
+      return {
+        backgroundColor: 'rgba(16,185,129,0.12)',
+        borderColor: 'rgba(16,185,129,0.32)',
+        textColor: '#34D399',
+        mutedTextColor: 'rgba(52,211,153,0.84)',
+      };
+    case 'warning':
+      return {
+        backgroundColor: 'rgba(245,158,11,0.14)',
+        borderColor: 'rgba(245,158,11,0.32)',
+        textColor: Colors.warning,
+        mutedTextColor: 'rgba(245,158,11,0.84)',
+      };
+    case 'error':
+      return {
+        backgroundColor: 'rgba(239,68,68,0.14)',
+        borderColor: 'rgba(239,68,68,0.32)',
+        textColor: '#F87171',
+        mutedTextColor: 'rgba(248,113,113,0.84)',
+      };
+    case 'neutral':
+    default:
+      return {
+        backgroundColor: Colors.backgroundSecondary,
+        borderColor: Colors.surfaceBorder,
+        textColor: Colors.text,
+        mutedTextColor: Colors.textSecondary,
+      };
+  }
+}
+
+function getRuntimeProofHeadline(runtime: RuntimeDashboardState): { title: string; detail: string } {
+  if (hasRuntimeFailure(runtime)) {
+    return {
+      title: `Blocked at ${runtime.requestStage}`,
+      detail: `${runtime.failureClass} · HTTP ${runtime.lastStatusCode} · ${runtime.failureDetail}`,
+    };
+  }
+
+  if (runtime.isFallback) {
+    if (runtime.isStreaming) {
+      return {
+        title: 'Fallback request in flight',
+        detail: 'The owner room is usable, but this assistant turn is currently running on the fallback path.',
+      };
+    }
+
+    return {
+      title: 'Fallback path answered',
+      detail: 'The room is replying through fallback infrastructure instead of the canonical remote API.',
+    };
+  }
+
+  if (runtime.source === 'remote_api' && runtime.requestStage === 'response_ok') {
+    return {
+      title: 'Live runtime proof captured',
+      detail: `Remote API replied 200 from ${runtime.resolvedEndpointUrl ?? 'resolved endpoint pending'}`,
+    };
+  }
+
+  if (runtime.isStreaming || isPendingRequestState(runtime)) {
+    return {
+      title: 'Awaiting live runtime proof',
+      detail: 'Send one real message now and inspect stage, status, request ID, and response preview below.',
+    };
+  }
+
+  return {
+    title: 'Runtime proof idle',
+    detail: 'No completed live send has been captured in this session yet.',
+  };
 }
 
 function getCapabilityStateColors(state: CapabilityState): {
@@ -161,7 +358,39 @@ export function ChatScreen({
   const [storageStatus, setStorageStatus] = useState<ChatStorageStatus>(() => getChatStorageStatus());
   const [roomStatus, setRoomStatus] = useState<ChatRoomStatus | null>(() => getCurrentChatRoomStatus());
   const [selectedCapabilityId, setSelectedCapabilityId] = useState<string | null>(null);
-  const stableConversationId = useMemo(() => conversationId.trim(), [conversationId]);
+  const [showDiagnostics, setShowDiagnostics] = useState<boolean>(false);
+  const stableConversationId = useMemo(() => (typeof conversationId === 'string' ? conversationId.trim() : ''), [conversationId]);
+  const [runtimeDashboard, setRuntimeDashboard] = useState<RuntimeDashboardState>(() => {
+    const audit = getIVXOwnerAIConfigAudit();
+    return {
+      environment: audit.currentEnvironment,
+      activeBaseUrl: audit.activeBaseUrl,
+      resolvedEndpointUrl: audit.activeEndpoint,
+      source: 'pending',
+      deploymentMarker: null,
+      authMode: isOpenAccessModeEnabled() ? 'open_access_pending_session' : 'session_pending',
+      conversationId: stableConversationId,
+      requestId: null,
+      isFallback: false,
+      isStreaming: resolveStreamingState({
+        requestStage: 'idle',
+        failureClass: 'none',
+        runtimeSignals: roomMeta?.runtimeSignals,
+      }),
+      hasVisibleResponseText: false,
+      fallbackState: resolveFallbackStateLabel(false),
+      degradedState: 'checking',
+      routingPolicy: audit.routingPolicy,
+      selectionReason: audit.selectionReason,
+      requestStage: 'idle',
+      failureClass: 'none',
+      lastStatusCode: 'pending',
+      failureDetail: 'No live send attempted yet.',
+      responsePreview: 'pending',
+      lastAttemptAt: 'pending',
+      lastVerifiedAt: 'pending',
+    };
+  });
   const stableCurrentUserId = useMemo(() => {
     return resolveChatActorId(currentUserId, 'preview');
   }, [currentUserId]);
@@ -184,27 +413,29 @@ export function ChatScreen({
     return roomMeta?.emptyText?.trim() || capabilityResolution.emptyStateText;
   }, [capabilityResolution.emptyStateText, roomMeta?.emptyText]);
   const auditCards = useMemo<ChatAuditCard[]>(() => {
-    return (roomMeta?.auditCards ?? [])
-      .map((card) => {
-        const title = card.title.trim();
-        const description = card.description.trim();
-        const bullets = card.bullets
-          .map((bullet) => bullet.trim())
-          .filter((bullet) => bullet.length > 0);
+    const normalizedCards: ChatAuditCard[] = [];
 
-        if (!title || !description || bullets.length === 0) {
-          return null;
-        }
+    for (const card of roomMeta?.auditCards ?? []) {
+      const title = card.title.trim();
+      const description = card.description.trim();
+      const bullets = card.bullets
+        .map((bullet) => bullet.trim())
+        .filter((bullet) => bullet.length > 0);
 
-        return {
-          ...card,
-          eyebrow: card.eyebrow?.trim(),
-          title,
-          description,
-          bullets,
-        };
-      })
-      .filter((card): card is ChatAuditCard => !!card);
+      if (!title || !description || bullets.length === 0) {
+        continue;
+      }
+
+      normalizedCards.push({
+        id: card.id,
+        eyebrow: card.eyebrow?.trim(),
+        title,
+        description,
+        bullets,
+      });
+    }
+
+    return normalizedCards;
   }, [roomMeta?.auditCards]);
   const statusAccentColor = useMemo(() => {
     switch (storageStatus.mode) {
@@ -223,12 +454,65 @@ export function ChatScreen({
   const aiIndicatorColors = useMemo(() => {
     return getCapabilityStateColors(capabilityResolution.aiIndicator.state);
   }, [capabilityResolution.aiIndicator.state]);
+  const [roomPhase, setRoomPhase] = useState<RoomSyncPhase>(() => getRoomStateSnapshot().phase);
+  const { messages, loading, error, refetch, isRefreshing, loadOlderMessages, isLoadingOlder, hasMoreOlder } = useChatMessages(stableConversationId);
+  const primaryRoomState = useMemo<{
+    state: 'loading' | 'error' | 'degraded' | 'ready';
+    title: string;
+    detail: string;
+    tone: CapabilityState;
+    testID: string;
+    showSpinner: boolean;
+  }>(() => {
+    if (loading && messages.length === 0) {
+      return {
+        state: 'loading',
+        title: 'Opening room…',
+        detail: 'Checking room status, sync state, and live capabilities.',
+        tone: 'available',
+        testID: 'chat-room-primary-state-loading',
+        showSpinner: true,
+      };
+    }
+
+    if (error) {
+      return {
+        state: 'error',
+        title: 'Could not load this room',
+        detail: error.message || 'Please try again.',
+        tone: 'unavailable',
+        testID: 'chat-room-primary-state-error',
+        showSpinner: false,
+      };
+    }
+
+    if (capabilityResolution.aiIndicator.state === 'degraded') {
+      return {
+        state: 'degraded',
+        title: capabilityResolution.aiIndicator.label,
+        detail: 'Room stays usable. You can still type and send while assistant replies recover.',
+        tone: 'degraded',
+        testID: 'chat-room-primary-state-degraded',
+        showSpinner: false,
+      };
+    }
+
+    return {
+      state: 'ready',
+      title: 'Room ready',
+      detail: 'Messages, composer, and room sync are available.',
+      tone: 'available',
+      testID: 'chat-room-primary-state-ready',
+      showSpinner: false,
+    };
+  }, [capabilityResolution.aiIndicator.label, capabilityResolution.aiIndicator.state, error, loading, messages.length]);
+  const primaryRoomStateColors = useMemo(() => {
+    return getCapabilityStateColors(primaryRoomState.tone);
+  }, [primaryRoomState.tone]);
   const selectedCapabilityColors = useMemo(() => {
     return selectedCapability ? getCapabilityStateColors(selectedCapability.state) : null;
   }, [selectedCapability]);
-  const [roomPhase, setRoomPhase] = useState<RoomSyncPhase>(() => getRoomStateSnapshot().phase);
-  const { messages, loading, error, refetch, isRefreshing, loadOlderMessages, isLoadingOlder, hasMoreOlder } = useChatMessages(stableConversationId);
-  const { typingUsers, isAnyoneTyping, typingLabel, broadcastTyping, stopTyping } = useTypingIndicator({
+  const { isAnyoneTyping, typingLabel, broadcastTyping, stopTyping } = useTypingIndicator({
     conversationId: stableConversationId,
     currentUserId: stableCurrentUserId,
   });
@@ -236,9 +520,9 @@ export function ChatScreen({
     conversationId: stableConversationId,
     currentUserId: stableCurrentUserId,
   });
-  const keyboardBehavior = Platform.select<'padding' | 'height' | undefined>({
+  const keyboardBehavior = Platform.select<'padding' | undefined>({
     ios: 'padding',
-    android: 'height',
+    android: undefined,
     default: undefined,
   });
   const androidKeyboardInset = useMemo(() => {
@@ -249,13 +533,72 @@ export function ChatScreen({
     return Math.max(keyboardInset, 0);
   }, [keyboardInset]);
   const composerBottomInset = useMemo(() => {
+    const baseInset = Math.max(insets.bottom, Platform.OS === 'android' ? 16 : 12);
     if (Platform.OS === 'android' && androidKeyboardInset > 0) {
-      return 12;
+      return baseInset;
     }
 
-    return Math.max(insets.bottom, 12);
+    return baseInset;
   }, [androidKeyboardInset, insets.bottom]);
-  const listContentStyle = useMemo(() => [styles.listContent, { paddingBottom: 10 }], []);
+  const [bottomDockHeight, setBottomDockHeight] = useState<number>(0);
+  const listContentStyle = useMemo(() => {
+    return [styles.listContent, { paddingBottom: Math.max(bottomDockHeight + 12, 12) }];
+  }, [bottomDockHeight]);
+  const threadFooterSpacerHeight = useMemo(() => {
+    return Math.max(composerBottomInset, 12);
+  }, [composerBottomInset]);
+  const shouldRequestAssistantReply = useMemo(() => {
+    const aiHealth = roomMeta?.runtimeSignals?.aiBackendHealth;
+    return aiHealth === 'active' || aiHealth === 'degraded' || isOpenAccessModeEnabled();
+  }, [roomMeta?.runtimeSignals?.aiBackendHealth]);
+  const runtimeProofTone = useMemo<ChatRuntimeProofTone>(() => {
+    return getRuntimeProofTone(runtimeDashboard);
+  }, [runtimeDashboard]);
+  const runtimeProofColors = useMemo(() => {
+    return getRuntimeProofToneColors(runtimeProofTone);
+  }, [runtimeProofTone]);
+  const runtimeProofHeadline = useMemo(() => {
+    return getRuntimeProofHeadline(runtimeDashboard);
+  }, [runtimeDashboard]);
+  const runtimeStatusCopy = useMemo(() => {
+    return getRuntimeStatusCopy(runtimeDashboard);
+  }, [runtimeDashboard]);
+  const runtimeModeSummary = useMemo(() => {
+    return getRuntimeModeSummary(runtimeDashboard);
+  }, [runtimeDashboard]);
+  const runtimePrimaryRows = useMemo<RuntimeRow[]>(() => {
+    return [
+      { label: 'Request stage', value: runtimeDashboard.requestStage },
+      { label: 'Failure class', value: runtimeDashboard.failureClass },
+      { label: 'HTTP status', value: runtimeDashboard.lastStatusCode },
+      { label: 'Base URL', value: runtimeDashboard.activeBaseUrl ?? 'unset' },
+      { label: 'Endpoint', value: runtimeDashboard.resolvedEndpointUrl ?? 'unset' },
+      { label: 'Request ID', value: runtimeDashboard.requestId ?? 'pending' },
+      { label: 'Response preview', value: runtimeDashboard.responsePreview },
+    ];
+  }, [runtimeDashboard]);
+  const runtimeRows = useMemo<RuntimeRow[]>(() => {
+    return [
+      { label: 'Environment', value: runtimeDashboard.environment },
+      { label: 'UI mode', value: runtimeModeSummary.label },
+      { label: 'Source', value: getRuntimeSourceLabel(runtimeDashboard) },
+      { label: 'Deployment marker', value: runtimeDashboard.deploymentMarker ?? 'pending' },
+      { label: 'Auth mode', value: runtimeDashboard.authMode },
+      { label: 'Conversation ID', value: runtimeDashboard.conversationId },
+      { label: 'Fallback', value: String(runtimeDashboard.isFallback) },
+      { label: 'Streaming', value: String(runtimeDashboard.isStreaming) },
+      { label: 'Degraded', value: runtimeDashboard.degradedState },
+      { label: 'Last attempt', value: runtimeDashboard.lastAttemptAt },
+      { label: 'Last verified', value: runtimeDashboard.lastVerifiedAt },
+      { label: 'Failure detail', value: runtimeDashboard.failureDetail },
+      { label: 'Routing policy', value: runtimeDashboard.routingPolicy },
+      { label: 'Selection reason', value: runtimeDashboard.selectionReason },
+    ];
+  }, [runtimeDashboard, runtimeModeSummary.label]);
+
+  const shouldShowDiagnosticsToggle = useMemo(() => {
+    return shouldShowRuntimeDebugDetails(runtimeDashboard) || auditCards.length > 0 || primaryRoomState.state === 'degraded';
+  }, [auditCards.length, primaryRoomState.state, runtimeDashboard]);
 
   const scrollToBottom = useCallback((animated: boolean) => {
     requestAnimationFrame(() => {
@@ -295,6 +638,62 @@ export function ChatScreen({
       return v.toString(16);
     })}`;
   }, []);
+
+  const generateClientMessageId = useCallback(() => {
+    const cryptoRef = globalThis.crypto as { randomUUID?: () => string } | undefined;
+    if (cryptoRef?.randomUUID) {
+      return cryptoRef.randomUUID();
+    }
+
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      const r = Math.floor(Math.random() * 16);
+      const v = c === 'x' ? r : (r & 0x3) | 0x8;
+      return v.toString(16);
+    });
+  }, []);
+
+  const createAssistantPlaceholderMessage = useCallback((placeholderId: string): ChatMessage => {
+    return {
+      id: placeholderId,
+      conversationId: stableConversationId,
+      senderId: 'ivx-owner-ai-assistant',
+      senderLabel: IVX_OWNER_AI_PROFILE.support.assistantDisplayName,
+      text: '',
+      createdAt: new Date().toISOString(),
+      sendStatus: 'sending',
+      optimistic: true,
+      localOnly: true,
+    };
+  }, [stableConversationId]);
+
+  const upsertAssistantPlaceholder = useCallback((placeholderId: string, partialText: string, sendStatus: 'sending' | 'sent' | 'failed') => {
+    const queryKey = getChatMessagesQueryKey(stableConversationId);
+    queryClient.setQueryData<ChatMessage[]>(queryKey, (prev) => {
+      const currentMessages = prev ?? [];
+      const placeholderIndex = currentMessages.findIndex((message) => message.id === placeholderId);
+      const nextMessage: ChatMessage = {
+        ...(placeholderIndex >= 0 ? currentMessages[placeholderIndex] : createAssistantPlaceholderMessage(placeholderId)),
+        text: partialText,
+        sendStatus,
+        optimistic: sendStatus !== 'sent',
+        localOnly: sendStatus !== 'sent',
+        updatedAt: new Date().toISOString(),
+      };
+
+      if (placeholderIndex >= 0) {
+        return currentMessages.map((message, index) => index === placeholderIndex ? nextMessage : message);
+      }
+
+      return [...currentMessages, nextMessage];
+    });
+  }, [createAssistantPlaceholderMessage, queryClient, stableConversationId]);
+
+  const removeAssistantPlaceholder = useCallback((placeholderId: string) => {
+    const queryKey = getChatMessagesQueryKey(stableConversationId);
+    queryClient.setQueryData<ChatMessage[]>(queryKey, (prev) => {
+      return (prev ?? []).filter((message) => message.id !== placeholderId);
+    });
+  }, [queryClient, stableConversationId]);
 
   const handleRetryMessage = useCallback((message: ChatMessage) => {
     if (!message.retryPayload) {
@@ -371,13 +770,25 @@ export function ChatScreen({
     }, 15000);
   }, [stableConversationId, queryClient]);
 
-  const sendMessageMutation = useMutation<void, Error, ComposerPayload & { optimisticId: string; sendCid: string }>({ 
+  const sendMessageMutation = useMutation<
+    void,
+    Error,
+    ComposerPayload & { optimisticId: string; sendCid: string; clientMessageId: string },
+    { previousMessages: ChatMessage[]; optimisticId: string; sendCid: string; clientMessageId: string }
+  >({
     mutationFn: async (payload) => {
       const snapshot = getRoomStateSnapshot();
+      const normalizedText = normalizeOutboundText(payload.text);
+      const trimmedText = safeTrimCS(normalizedText);
+      const normalizedPayload = {
+        ...payload,
+        text: trimmedText.length > 0 ? normalizedText : undefined,
+      };
       console.log('[ChatScreen] Send start cid:', payload.sendCid, '|', {
         conversationId: stableConversationId,
         currentUserId: stableCurrentUserId,
-        hasText: !!payload.text,
+        hasText: trimmedText.length > 0,
+        textLength: normalizedText.length,
         hasFile: !!payload.fileUrl,
         hasUpload: !!payload.upload,
         fileType: payload.fileType ?? null,
@@ -386,13 +797,18 @@ export function ChatScreen({
         roomDelivery: snapshot.status?.deliveryMethod ?? 'unknown',
       });
 
+      if (trimmedText.length === 0 && !payload.fileUrl && !payload.upload) {
+        throw new Error('Type a message before sending.');
+      }
+
       await chatService.sendMessage({
         conversationId: stableConversationId,
         senderId: stableCurrentUserId,
-        text: payload.text,
+        text: normalizedPayload.text,
         fileUrl: payload.fileUrl,
         fileType: payload.fileType,
         upload: payload.upload,
+        clientMessageId: payload.clientMessageId,
       });
 
       console.log('[ChatScreen] Send success cid:', payload.sendCid);
@@ -403,20 +819,25 @@ export function ChatScreen({
 
       const previousMessages = queryClient.getQueryData<ChatMessage[]>(queryKey) ?? [];
 
+      const normalizedText = normalizeOutboundText(payload.text);
+      const trimmedText = safeTrimCS(normalizedText);
+      const normalizedSendText = trimmedText.length > 0 ? normalizedText : undefined;
+
       const retryPayload: SendMessageInput = {
         conversationId: stableConversationId,
         senderId: stableCurrentUserId,
-        text: payload.text,
+        text: normalizedSendText,
         fileUrl: payload.fileUrl,
         fileType: payload.fileType,
         upload: payload.upload,
+        clientMessageId: payload.clientMessageId,
       };
 
       const optimisticMessage: ChatMessage = {
         id: payload.optimisticId,
         conversationId: stableConversationId,
         senderId: stableCurrentUserId,
-        text: payload.text ?? null,
+        text: normalizedSendText ?? null,
         fileUrl: payload.fileUrl ?? null,
         fileType: payload.fileType ?? null,
         createdAt: new Date().toISOString(),
@@ -429,7 +850,12 @@ export function ChatScreen({
       scrollToBottom(true);
       cleanupStuckSending(payload.optimisticId, payload.sendCid);
 
-      return { previousMessages, optimisticId: payload.optimisticId, sendCid: payload.sendCid };
+      return {
+        previousMessages,
+        optimisticId: payload.optimisticId,
+        sendCid: payload.sendCid,
+        clientMessageId: payload.clientMessageId,
+      };
     },
     onSuccess: async (_data, payload, context) => {
       if (stuckSendingCleanupRef.current) {
@@ -457,7 +883,8 @@ export function ChatScreen({
 
       scrollToBottom(true);
 
-      const messageText = (payload.text ?? '').trim();
+      const rawMessageText = normalizeOutboundText(payload.text);
+      const messageText = safeTrimCS(rawMessageText);
       if (messageText) {
         const commandResult = parseOwnerCommand(messageText);
         if (commandResult) {
@@ -471,24 +898,173 @@ export function ChatScreen({
           if (commandResult.command === 'reconnect') {
             requestRoomRedetection();
           }
-        } else if (roomMeta?.runtimeSignals?.aiBackendHealth === 'active' || roomMeta?.runtimeSignals?.aiBackendHealth === 'degraded') {
-          console.log('[ChatScreen] Triggering AI reply for:', messageText.slice(0, 40));
+        } else if (shouldRequestAssistantReply) {
+          console.log('[ChatScreen] Triggering AI reply for:', rawMessageText.slice(0, 40));
+          const sendAudit = getIVXOwnerAIConfigAudit();
+          const startedAt = Date.now();
+          setRuntimeDashboard((current) => ({
+            ...current,
+            environment: sendAudit.currentEnvironment,
+            activeBaseUrl: sendAudit.activeBaseUrl,
+            resolvedEndpointUrl: sendAudit.activeEndpoint,
+            conversationId: stableConversationId,
+            requestStage: 'request_started',
+            failureClass: 'pending',
+            lastStatusCode: 'pending',
+            source: 'pending',
+            isFallback: false,
+            isStreaming: false,
+            hasVisibleResponseText: false,
+            fallbackState: resolveFallbackStateLabel(false),
+            routingPolicy: sendAudit.routingPolicy,
+            selectionReason: sendAudit.selectionReason,
+            responsePreview: rawMessageText.slice(0, 120),
+            lastAttemptAt: formatRuntimeTimestamp(startedAt),
+            failureDetail: 'Awaiting AI response from live runtime.',
+          }));
           void (async () => {
+            const assistantPlaceholderId = `assistant-placeholder-${generateClientMessageId()}`;
+            upsertAssistantPlaceholder(assistantPlaceholderId, '', 'sending');
+            scrollToBottom(true);
             try {
-              const aiResult = await requestAIReply(messageText, stableConversationId);
-              const assistantMsg = createAssistantChatMessage(
-                stableConversationId,
-                aiResult.answer,
-              );
-              queryClient.setQueryData<ChatMessage[]>(queryKey, (prev) => [
-                ...(prev ?? []),
-                assistantMsg,
-              ]);
+              const aiResult = await requestAIReply(rawMessageText, stableConversationId);
+              const runtimeProof = getLastIVXOwnerAIRuntimeProof();
+              const normalizedSource = normalizeRuntimeSource(runtimeProof?.source ?? aiResult.source);
+              const normalizedAnswer = safeTrimCS(aiResult.answer);
+
+              if (!normalizedAnswer) {
+                throw new Error('IVX Owner AI completed without returning visible response text.');
+              }
+
+              upsertAssistantPlaceholder(assistantPlaceholderId, normalizedAnswer, 'sent');
+              setRuntimeDashboard((current) => {
+                const nextRequestStage = runtimeProof?.requestStage ?? (normalizedSource === 'remote_api' ? 'response_ok' : 'fallback_reply');
+                const nextFailureClass = runtimeProof?.failureClass ?? 'none';
+                const nextRuntimeState = {
+                  source: normalizedSource,
+                  requestStage: nextRequestStage,
+                  failureClass: nextFailureClass,
+                  isFallback: normalizedSource === 'toolkit_fallback',
+                  isStreaming: false,
+                  hasVisibleResponseText: true,
+                };
+                const nextIsFallback = shouldShowFallbackUI(nextRuntimeState);
+
+                return {
+                  ...current,
+                  activeBaseUrl: runtimeProof?.baseUrl ?? current.activeBaseUrl,
+                  resolvedEndpointUrl: runtimeProof?.endpoint ?? aiResult.endpoint ?? current.resolvedEndpointUrl,
+                  source: normalizedSource,
+                  deploymentMarker: runtimeProof?.deploymentMarker ?? aiResult.deploymentMarker ?? current.deploymentMarker,
+                  conversationId: aiResult.conversationId,
+                  requestId: runtimeProof?.requestId ?? aiResult.requestId,
+                  isFallback: nextIsFallback,
+                  isStreaming: false,
+                  hasVisibleResponseText: true,
+                  fallbackState: resolveFallbackStateLabel(nextIsFallback),
+                  degradedState: normalizedSource === 'remote_api' ? 'cleared' : 'active',
+                  requestStage: nextRequestStage,
+                  failureClass: nextFailureClass,
+                  lastStatusCode: runtimeProof?.statusCode !== null && runtimeProof?.statusCode !== undefined
+                    ? String(runtimeProof.statusCode)
+                    : normalizedSource === 'remote_api'
+                      ? '200'
+                      : 'fallback',
+                  responsePreview: runtimeProof?.responsePreview ?? normalizedAnswer.slice(0, 160),
+                  lastVerifiedAt: formatRuntimeTimestamp(runtimeProof?.lastUpdatedAt ?? Date.now()),
+                  failureDetail: runtimeProof?.detail ?? (normalizedSource === 'remote_api'
+                    ? 'Live backend replied with visible response text.'
+                    : 'Toolkit fallback produced visible response text.'),
+                };
+              });
+              const currentMessages = queryClient.getQueryData<ChatMessage[]>(queryKey) ?? [];
+              const duplicateAssistantReply = currentMessages.some((message) => {
+                return message.id !== assistantPlaceholderId
+                  && message.senderId === 'ivx-owner-ai-assistant'
+                  && safeTrimCS(message.text) === normalizedAnswer;
+              });
+
+              if (duplicateAssistantReply) {
+                console.log('[ChatScreen] Assistant reply already present, keeping visible transcript and skipping duplicate persistence:', aiResult.requestId);
+                removeAssistantPlaceholder(assistantPlaceholderId);
+                return;
+              }
+
+              if (normalizedSource === 'remote_api') {
+                await queryClient.invalidateQueries({ queryKey });
+                scrollToBottom(true);
+                console.log('[ChatScreen] AI reply confirmed from remote API and visible in thread:', {
+                  requestId: aiResult.requestId,
+                  source: normalizedSource,
+                  endpoint: aiResult.endpoint,
+                  deploymentMarker: aiResult.deploymentMarker,
+                  length: normalizedAnswer.length,
+                  model: aiResult.model,
+                });
+                return;
+              }
+
+              const assistantClientMessageId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(aiResult.requestId)
+                ? aiResult.requestId
+                : generateClientMessageId();
+              await chatService.sendMessage({
+                conversationId: stableConversationId,
+                senderId: 'ivx-owner-ai-assistant',
+                senderLabel: IVX_OWNER_AI_PROFILE.support.assistantDisplayName,
+                text: normalizedAnswer,
+                clientMessageId: assistantClientMessageId,
+              });
               await queryClient.invalidateQueries({ queryKey });
+              removeAssistantPlaceholder(assistantPlaceholderId);
               scrollToBottom(true);
-              console.log('[ChatScreen] AI reply injected, length:', aiResult.answer.length);
+              console.log('[ChatScreen] AI reply persisted via local fallback:', {
+                requestId: aiResult.requestId,
+                clientMessageId: assistantClientMessageId,
+                source: normalizedSource,
+                endpoint: aiResult.endpoint,
+                deploymentMarker: aiResult.deploymentMarker,
+                length: normalizedAnswer.length,
+                model: aiResult.model,
+              });
             } catch (aiError) {
-              console.log('[ChatScreen] AI reply failed (non-blocking):', (aiError as Error)?.message ?? 'Unknown');
+              removeAssistantPlaceholder(assistantPlaceholderId);
+              const diagnostics = getIVXOwnerAIErrorDiagnostics(aiError);
+              setRuntimeDashboard((current) => ({
+                ...current,
+                activeBaseUrl: diagnostics?.baseUrl ?? current.activeBaseUrl,
+                resolvedEndpointUrl: diagnostics?.endpoint ?? current.resolvedEndpointUrl,
+                requestId: diagnostics?.requestId ?? current.requestId,
+                requestStage: diagnostics?.stage ?? 'unknown',
+                failureClass: diagnostics?.classification ?? 'unknown_failure',
+                lastStatusCode: diagnostics?.statusCode !== null && diagnostics?.statusCode !== undefined
+                  ? String(diagnostics.statusCode)
+                  : 'none',
+                failureDetail: diagnostics?.detail ?? ((aiError as Error)?.message ?? 'Unknown error'),
+                responsePreview: diagnostics?.responsePreview ?? current.responsePreview,
+                isFallback: shouldShowFallbackUI({
+                  source: getActiveRuntimeSource({
+                    source: normalizeRuntimeSource(current.source),
+                    requestStage: diagnostics?.stage ?? 'unknown',
+                    failureClass: diagnostics?.classification ?? 'unknown_failure',
+                    isFallback: current.source === 'toolkit_fallback',
+                    isStreaming: false,
+                    hasVisibleResponseText: false,
+                  }),
+                  requestStage: diagnostics?.stage ?? 'unknown',
+                  failureClass: diagnostics?.classification ?? 'unknown_failure',
+                  isFallback: current.source === 'toolkit_fallback',
+                  isStreaming: false,
+                  hasVisibleResponseText: false,
+                }),
+                isStreaming: false,
+                hasVisibleResponseText: false,
+                degradedState: 'active',
+                fallbackState: resolveFallbackStateLabel(false),
+              }));
+              console.log('[ChatScreen] AI reply failed (non-blocking):', {
+                message: (aiError as Error)?.message ?? 'Unknown',
+                diagnostics,
+              });
             }
           })();
         }
@@ -537,6 +1113,19 @@ export function ChatScreen({
   const listHeader = useMemo(() => {
     return (
       <>
+        <RoomConnectionBanner
+          phase={roomPhase}
+          onReconnect={() => {
+            console.log('[ChatScreen] Manual reconnect requested');
+            requestRoomRedetection();
+          }}
+        />
+        <PresenceBar
+          members={presenceMembers}
+          currentUserId={stableCurrentUserId}
+          presenceLabel={presenceLabel}
+        />
+
         {showHero ? (
           <View style={styles.heroCard} testID="chat-room-hero">
             <View style={styles.heroLeft}>
@@ -544,8 +1133,8 @@ export function ChatScreen({
                 <Radio size={14} color={statusAccentColor} />
                 <Text style={[styles.statusPillText, { color: statusAccentColor }]}>{heroBadgeText}</Text>
               </View>
-              <Text style={styles.heroTitle}>{heroTitle || 'Message Room'}</Text>
-              <Text style={styles.heroSubtitle}>{heroSubtitle}</Text>
+              <Text style={styles.heroTitle} numberOfLines={1}>{heroTitle || 'Message Room'}</Text>
+              <Text style={styles.heroSubtitle} numberOfLines={2} ellipsizeMode="tail">{heroSubtitle}</Text>
 
               <View style={styles.heroSignalRow}>
                 <View
@@ -567,7 +1156,7 @@ export function ChatScreen({
                     {capabilityResolution.aiIndicator.label}
                   </Text>
                 </View>
-                <Text style={styles.heroSummary}>{capabilityResolution.summary}</Text>
+                <Text style={styles.heroSummary} numberOfLines={1}>{capabilityResolution.summary}</Text>
               </View>
 
               <View style={styles.capabilityRow}>
@@ -624,58 +1213,145 @@ export function ChatScreen({
           </View>
         ) : null}
 
-        <View style={styles.statusCard} testID="chat-room-storage-status">
-          <View style={styles.statusCardHeader}>
-            <Text style={styles.statusCardEyebrow}>Room status</Text>
-            <View style={[styles.statusBadge, { borderColor: statusAccentColor }]}>
-              <View style={[styles.statusDot, { backgroundColor: statusAccentColor }]} />
-              <Text style={[styles.statusBadgeText, { color: statusAccentColor }]}>{storageStatus.label}</Text>
+        <View
+          style={[
+            styles.primaryStateCard,
+            {
+              backgroundColor: primaryRoomStateColors.backgroundColor,
+              borderColor: primaryRoomStateColors.borderColor,
+            },
+          ]}
+          testID={primaryRoomState.testID}
+        >
+          <View style={styles.primaryStateHeader}>
+            <View style={styles.primaryStateCopy}>
+              <View style={styles.primaryStateHeaderRow}>
+                {primaryRoomState.showSpinner ? (
+                  <ActivityIndicator size="small" color={primaryRoomStateColors.textColor} />
+                ) : (
+                  <View style={[styles.primaryStateDot, { backgroundColor: primaryRoomStateColors.textColor }]} />
+                )}
+                <Text style={[styles.primaryStateTitle, { color: primaryRoomStateColors.textColor }]}>{runtimeStatusCopy.title}</Text>
+              </View>
+              <Text style={[styles.primaryStateDetail, { color: primaryRoomStateColors.textColor }]} numberOfLines={1}>{runtimeStatusCopy.detail}</Text>
             </View>
+            {shouldShowDiagnosticsToggle ? (
+              <Pressable
+                style={({ pressed }) => [styles.detailsToggle, pressed ? styles.pressed : null]}
+                onPress={() => {
+                  setShowDiagnostics((current) => !current);
+                }}
+                testID="chat-room-toggle-details"
+              >
+                <Text style={styles.detailsToggleText}>{showDiagnostics ? 'Hide' : 'Details'}</Text>
+              </Pressable>
+            ) : null}
           </View>
-          <Text style={styles.statusDetail}>{storageStatus.detail}</Text>
-          <Text style={styles.statusSummary}>{capabilityResolution.summary}</Text>
-          <View
-            style={[
-              styles.statusAIIndicator,
-              {
-                backgroundColor: aiIndicatorColors.backgroundColor,
-                borderColor: aiIndicatorColors.borderColor,
-              },
-            ]}
-            testID={capabilityResolution.aiIndicator.testID}
-          >
-            <View style={styles.statusAIHeader}>
-              {capabilityResolution.aiIndicator.isLoading ? (
-                <ActivityIndicator size="small" color={aiIndicatorColors.textColor} />
-              ) : (
-                <View style={[styles.aiIndicatorDot, { backgroundColor: aiIndicatorColors.textColor }]} />
-              )}
-              <Text style={[styles.statusAITitle, { color: aiIndicatorColors.textColor }]}>
-                {capabilityResolution.aiIndicator.label}
-              </Text>
-            </View>
-            <Text style={[styles.statusAIDetail, { color: aiIndicatorColors.textColor }]}>
-              {capabilityResolution.aiIndicator.detail}
-            </Text>
-          </View>
-          {storageStatus.warning ? <Text style={styles.statusWarning}>{storageStatus.warning}</Text> : null}
-          <View style={styles.statusMetricRow}>
-            <View style={styles.statusMetricCard} testID="chat-room-status-storage">
-              <Text style={styles.statusMetricLabel}>Storage</Text>
-              <Text style={styles.statusMetricValue}>{storageStatus.persistenceLabel}</Text>
-            </View>
-            <View style={styles.statusMetricCard} testID="chat-room-status-visibility">
-              <Text style={styles.statusMetricLabel}>Visibility</Text>
-              <Text style={styles.statusMetricValue}>{storageStatus.visibilityLabel}</Text>
-            </View>
-            <View style={styles.statusMetricCard} testID="chat-room-status-delivery">
-              <Text style={styles.statusMetricLabel}>Delivery</Text>
-              <Text style={styles.statusMetricValue}>{storageStatus.deliveryLabel}</Text>
-            </View>
-          </View>
+          {primaryRoomState.state === 'error' ? (
+            <Pressable
+              style={({ pressed }) => [styles.retryButton, pressed ? styles.pressed : null]}
+              onPress={handleRetry}
+              testID="chat-room-retry"
+            >
+              <RefreshCw size={16} color={Colors.black} />
+              <Text style={styles.retryText}>Retry</Text>
+            </Pressable>
+          ) : null}
         </View>
 
-        {auditCards.length > 0 ? (
+        {showDiagnostics && primaryRoomState.state !== 'error' ? (
+          <View style={styles.runtimeCard} testID="chat-room-runtime-dashboard">
+            <View style={styles.statusCardHeader}>
+              <Text style={styles.statusCardEyebrow}>Runtime proof</Text>
+              <View style={[styles.statusBadge, { borderColor: runtimeProofColors.borderColor }]}> 
+                <View style={[styles.statusDot, { backgroundColor: runtimeProofColors.textColor }]} />
+                <Text style={[styles.statusBadgeText, { color: runtimeProofColors.textColor }]}>{getRuntimeSourceLabel(runtimeDashboard)}</Text>
+              </View>
+            </View>
+
+            <View
+              style={[
+                styles.runtimeProofBanner,
+                {
+                  backgroundColor: runtimeProofColors.backgroundColor,
+                  borderColor: runtimeProofColors.borderColor,
+                },
+              ]}
+              testID="chat-room-runtime-proof-banner"
+            >
+              <Text style={[styles.runtimeProofTitle, { color: runtimeProofColors.textColor }]}>{runtimeProofHeadline.title}</Text>
+              <Text style={[styles.runtimeProofDetail, { color: runtimeProofColors.mutedTextColor }]}>{runtimeProofHeadline.detail}</Text>
+            </View>
+
+            <View style={styles.runtimeModeCard} testID={runtimeModeSummary.testID}>
+              <Text style={styles.runtimeModeLabel}>{runtimeModeSummary.label}</Text>
+              <Text style={styles.runtimeModeDetail}>{runtimeModeSummary.detail}</Text>
+            </View>
+
+            <View style={styles.runtimePrimaryGrid}>
+              {runtimePrimaryRows.map((row) => {
+                const isResponsePreview = row.label === 'Response preview';
+                return (
+                  <View
+                    key={row.label}
+                    style={[
+                      styles.runtimeMetricCard,
+                      isResponsePreview ? styles.runtimeMetricCardWide : null,
+                    ]}
+                    testID={`chat-room-runtime-${row.label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`}
+                  >
+                    <Text style={styles.runtimeMetricLabel}>{row.label}</Text>
+                    <Text style={styles.runtimeMetricValue}>{row.value}</Text>
+                  </View>
+                );
+              })}
+            </View>
+
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.runtimeScrollContent}>
+              <View style={styles.runtimeGrid}>
+                {runtimeRows.map((row) => {
+                  return (
+                    <View key={row.label} style={styles.runtimeMetricCard} testID={`chat-room-runtime-${row.label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`}>
+                      <Text style={styles.runtimeMetricLabel}>{row.label}</Text>
+                      <Text style={styles.runtimeMetricValue}>{row.value}</Text>
+                    </View>
+                  );
+                })}
+              </View>
+            </ScrollView>
+          </View>
+        ) : null}
+
+        {showDiagnostics && primaryRoomState.state !== 'error' ? (
+          <View style={styles.statusCard} testID="chat-room-storage-status">
+            <View style={styles.statusCardHeader}>
+              <Text style={styles.statusCardEyebrow}>Room status</Text>
+              <View style={[styles.statusBadge, { borderColor: statusAccentColor }]}>
+                <View style={[styles.statusDot, { backgroundColor: statusAccentColor }]} />
+                <Text style={[styles.statusBadgeText, { color: statusAccentColor }]}>{storageStatus.label}</Text>
+              </View>
+            </View>
+            <Text style={styles.statusDetail}>{storageStatus.detail}</Text>
+            <Text style={styles.statusSummary}>{capabilityResolution.summary}</Text>
+            {storageStatus.warning ? <Text style={styles.statusWarning}>{storageStatus.warning}</Text> : null}
+            <View style={styles.statusMetricRow}>
+              <View style={styles.statusMetricCard} testID="chat-room-status-storage">
+                <Text style={styles.statusMetricLabel}>Storage</Text>
+                <Text style={styles.statusMetricValue}>{storageStatus.persistenceLabel}</Text>
+              </View>
+              <View style={styles.statusMetricCard} testID="chat-room-status-visibility">
+                <Text style={styles.statusMetricLabel}>Visibility</Text>
+                <Text style={styles.statusMetricValue}>{storageStatus.visibilityLabel}</Text>
+              </View>
+              <View style={styles.statusMetricCard} testID="chat-room-status-delivery">
+                <Text style={styles.statusMetricLabel}>Delivery</Text>
+                <Text style={styles.statusMetricValue}>{storageStatus.deliveryLabel}</Text>
+              </View>
+            </View>
+          </View>
+        ) : null}
+
+        {showDiagnostics && auditCards.length > 0 && primaryRoomState.state !== 'error' ? (
           <View style={styles.auditSection} testID="chat-room-audit">
             <Text style={styles.auditSectionTitle}>End-to-end audit</Text>
             <View style={styles.auditCardList}>
@@ -702,22 +1378,7 @@ export function ChatScreen({
           </View>
         ) : null}
 
-        {error ? (
-          <View style={styles.errorCard} testID="chat-room-error">
-            <Text style={styles.errorTitle}>Could not load this room</Text>
-            <Text style={styles.errorText}>{error.message || 'Please try again.'}</Text>
-            <Pressable
-              style={({ pressed }) => [styles.retryButton, pressed ? styles.pressed : null]}
-              onPress={handleRetry}
-              testID="chat-room-retry"
-            >
-              <RefreshCw size={16} color={Colors.black} />
-              <Text style={styles.retryText}>Retry</Text>
-            </Pressable>
-          </View>
-        ) : null}
-
-        {loadOlderBlock}
+        {primaryRoomState.state === 'ready' || primaryRoomState.state === 'degraded' ? loadOlderBlock : null}
       </>
     );
   }, [
@@ -725,22 +1386,45 @@ export function ChatScreen({
     aiIndicatorColors.borderColor,
     aiIndicatorColors.textColor,
     auditCards,
-    capabilityResolution.aiIndicator.detail,
-    capabilityResolution.aiIndicator.isLoading,
-    capabilityResolution.aiIndicator.label,
-    capabilityResolution.aiIndicator.testID,
+    primaryRoomState.detail,
+    primaryRoomState.showSpinner,
+    primaryRoomState.state,
+    primaryRoomState.testID,
+    primaryRoomState.title,
+    primaryRoomStateColors.backgroundColor,
+    primaryRoomStateColors.borderColor,
+    primaryRoomStateColors.textColor,
     capabilityResolution.summary,
-    error,
     handleRetry,
+    runtimeDashboard.source,
+    runtimePrimaryRows,
+    runtimeProofColors.backgroundColor,
+    runtimeProofColors.borderColor,
+    runtimeProofColors.mutedTextColor,
+    runtimeProofColors.textColor,
+    runtimeProofHeadline.detail,
+    runtimeProofHeadline.title,
+    runtimeModeSummary.detail,
+    runtimeModeSummary.label,
+    runtimeModeSummary.testID,
+    runtimeRows,
+    runtimeStatusCopy.detail,
+    runtimeStatusCopy.title,
     loadOlderBlock,
     heroBadgeText,
     heroSubtitle,
     heroTitle,
+    presenceLabel,
+    presenceMembers,
     roomCapabilities,
+    roomPhase,
     selectedCapability,
     selectedCapabilityColors,
     selectedCapabilityId,
+    showDiagnostics,
     showHero,
+    shouldShowDiagnosticsToggle,
+    stableCurrentUserId,
     statusAccentColor,
     storageStatus.detail,
     storageStatus.label,
@@ -768,6 +1452,92 @@ export function ChatScreen({
 
   useEffect(() => {
     setSelectedCapabilityId(null);
+  }, [stableConversationId]);
+
+  useEffect(() => {
+    const audit = getIVXOwnerAIConfigAudit();
+    const runtimeProof = getLastIVXOwnerAIRuntimeProof();
+    setRuntimeDashboard((current) => ({
+      ...current,
+      environment: audit.currentEnvironment,
+      activeBaseUrl: runtimeProof?.baseUrl ?? audit.activeBaseUrl,
+      resolvedEndpointUrl: runtimeProof?.endpoint ?? audit.activeEndpoint,
+      source: shouldPreserveRequestScopedRuntime(current)
+        ? current.source
+        : getActiveRuntimeSource({
+          source: normalizeRuntimeSource(runtimeProof?.source ?? current.source),
+          requestStage: runtimeProof?.requestStage ?? current.requestStage,
+          failureClass: runtimeProof?.failureClass ?? current.failureClass,
+          isFallback: runtimeProof?.source === 'toolkit_fallback',
+          isStreaming: current.isStreaming,
+          hasVisibleResponseText: current.hasVisibleResponseText,
+        }),
+      deploymentMarker: runtimeProof?.deploymentMarker ?? current.deploymentMarker,
+      conversationId: stableConversationId,
+      requestId: runtimeProof?.requestId ?? current.requestId,
+      isFallback: shouldShowFallbackUI({
+        source: normalizeRuntimeSource(runtimeProof?.source ?? current.source),
+        requestStage: runtimeProof?.requestStage ?? current.requestStage,
+        failureClass: runtimeProof?.failureClass ?? current.failureClass,
+        isFallback: runtimeProof?.source === 'toolkit_fallback',
+        isStreaming: current.isStreaming,
+        hasVisibleResponseText: current.hasVisibleResponseText,
+      }),
+      isStreaming: resolveStreamingState({
+        requestStage: runtimeProof?.requestStage ?? current.requestStage,
+        failureClass: runtimeProof?.failureClass ?? current.failureClass,
+        runtimeSignals: roomMeta?.runtimeSignals,
+        explicitStreaming: current.isStreaming,
+      }),
+      hasVisibleResponseText: current.hasVisibleResponseText,
+      fallbackState: resolveFallbackStateLabel(runtimeProof?.source === 'toolkit_fallback' && !isPendingRequestState({
+        requestStage: runtimeProof?.requestStage ?? current.requestStage,
+        failureClass: runtimeProof?.failureClass ?? current.failureClass,
+      })),
+      routingPolicy: audit.routingPolicy,
+      selectionReason: audit.selectionReason,
+      requestStage: runtimeProof?.requestStage ?? (current.requestStage === 'idle' ? 'idle' : current.requestStage),
+      failureClass: runtimeProof?.failureClass ?? current.failureClass,
+      lastStatusCode: runtimeProof?.statusCode !== null && runtimeProof?.statusCode !== undefined
+        ? String(runtimeProof.statusCode)
+        : current.lastStatusCode,
+      failureDetail: runtimeProof?.detail ?? current.failureDetail,
+      responsePreview: runtimeProof?.responsePreview ?? current.responsePreview,
+      lastAttemptAt: current.lastAttemptAt,
+      lastVerifiedAt: runtimeProof?.lastUpdatedAt ? formatRuntimeTimestamp(runtimeProof.lastUpdatedAt) : current.lastVerifiedAt,
+    }));
+  }, [stableConversationId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const ownerContext = await getIVXOwnerAuthContext();
+        if (cancelled) {
+          return;
+        }
+
+        setRuntimeDashboard((current) => ({
+          ...current,
+          authMode: ownerContext.accessToken === 'dev-open-access-token' ? 'dev_bypass' : 'authenticated_owner',
+        }));
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+
+        setRuntimeDashboard((current) => ({
+          ...current,
+          authMode: isOpenAccessModeEnabled() ? 'open_access_blocked' : 'auth_required',
+        }));
+        console.log('[ChatScreen] Runtime auth mode resolution failed:', (error as Error)?.message ?? 'Unknown error');
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [stableConversationId]);
 
   useEffect(() => {
@@ -902,6 +1672,15 @@ export function ChatScreen({
     [stableCurrentUserId, handleRetryMessage, handleDismissFailedMessage],
   );
 
+  const listFooter = useMemo(() => {
+    return (
+      <View style={styles.threadFooterStack} testID="chat-room-thread-footer">
+        <TypingIndicator isVisible={isAnyoneTyping} label={typingLabel} />
+        <View style={[styles.threadEndSpacer, { height: threadFooterSpacerHeight }]} />
+      </View>
+    );
+  }, [isAnyoneTyping, threadFooterSpacerHeight, typingLabel]);
+
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -916,18 +1695,6 @@ export function ChatScreen({
         }}
       >
         <View style={styles.body}>
-          <RoomConnectionBanner
-            phase={roomPhase}
-            onReconnect={() => {
-              console.log('[ChatScreen] Manual reconnect requested');
-              requestRoomRedetection();
-            }}
-          />
-          <PresenceBar
-            members={presenceMembers}
-            currentUserId={stableCurrentUserId}
-            presenceLabel={presenceLabel}
-          />
           <FlatList
             ref={listRef}
             data={messages}
@@ -974,28 +1741,35 @@ export function ChatScreen({
                 </View>
               )
             }
+            ListFooterComponent={listFooter}
             testID="chat-room-list"
           />
 
-          <TypingIndicator isVisible={isAnyoneTyping} label={typingLabel} />
-
-          <Composer
-            onSend={async (payload) => {
-              stopTyping();
-              const optimisticId = generateOptimisticId();
-              const sendCid = generateSendCorrelationId();
-              await sendMessageMutation.mutateAsync({ ...payload, optimisticId, sendCid });
+          <View
+            style={styles.bottomDock}
+            onLayout={(event) => {
+              const nextHeight = event.nativeEvent.layout.height;
+              if (Math.abs(nextHeight - bottomDockHeight) > 1) {
+                setBottomDockHeight(nextHeight);
+              }
             }}
-            sending={sendMessageMutation.isPending}
-            onFocus={() => {
-              updateScreenFrame();
-              scrollToBottom(true);
-            }}
-            onTyping={broadcastTyping}
-            bottomInset={composerBottomInset}
-            notes={capabilityResolution.composerNotes}
-            statusIndicator={capabilityResolution.aiIndicator}
-          />
+          >
+            <Composer
+              onSend={async (payload) => {
+                stopTyping();
+                const optimisticId = generateOptimisticId();
+                const sendCid = generateSendCorrelationId();
+                await sendMessageMutation.mutateAsync({ ...payload, optimisticId, sendCid, clientMessageId: sendCid });
+              }}
+              sending={sendMessageMutation.isPending}
+              onFocus={() => {
+                updateScreenFrame();
+                scrollToBottom(true);
+              }}
+              onTyping={broadcastTyping}
+              bottomInset={composerBottomInset}
+            />
+          </View>
         </View>
       </View>
     </KeyboardAvoidingView>
@@ -1011,65 +1785,66 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   heroCard: {
-    marginHorizontal: 16,
-    marginTop: 16,
-    marginBottom: 10,
-    borderRadius: 24,
-    padding: 18,
+    marginHorizontal: 12,
+    marginTop: 2,
+    marginBottom: 4,
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
     backgroundColor: Colors.surface,
     borderWidth: 1,
     borderColor: Colors.surfaceBorder,
   },
   heroLeft: {
-    gap: 8,
+    gap: 3,
   },
   statusPill: {
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
-    gap: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    gap: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
     borderRadius: 999,
     backgroundColor: Colors.backgroundSecondary,
     borderWidth: 1,
   },
   statusPillText: {
-    fontSize: 12,
+    fontSize: 8,
     fontWeight: '700' as const,
   },
   heroTitle: {
     color: Colors.text,
-    fontSize: 24,
+    fontSize: 15,
     fontWeight: '800' as const,
   },
   heroSubtitle: {
-    color: Colors.textSecondary,
-    fontSize: 13,
-    lineHeight: 18,
+    color: '#E0E6EE',
+    fontSize: 11,
+    lineHeight: 14,
   },
   heroSignalRow: {
-    gap: 10,
-    marginTop: 2,
+    gap: 3,
+    marginTop: 0,
   },
   heroSummary: {
-    color: Colors.textTertiary,
-    fontSize: 12,
-    lineHeight: 18,
+    color: '#B6BDC8',
+    fontSize: 9,
+    lineHeight: 12,
     fontWeight: '600' as const,
   },
   capabilityRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
-    marginTop: 4,
+    gap: 4,
+    marginTop: 1,
   },
   capabilityPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
+    gap: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
     borderRadius: 999,
     borderWidth: 1,
   },
@@ -1077,22 +1852,22 @@ const styles = StyleSheet.create({
     transform: [{ scale: 0.98 }],
   },
   capabilityText: {
-    fontSize: 11,
+    fontSize: 7,
     fontWeight: '700' as const,
   },
   capabilityStateText: {
-    fontSize: 10,
+    fontSize: 7,
     fontWeight: '800' as const,
     textTransform: 'uppercase',
     letterSpacing: 0.3,
   },
   capabilityDetailCard: {
-    marginTop: 4,
-    borderRadius: 16,
+    marginTop: 3,
+    borderRadius: 14,
     borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    gap: 4,
   },
   capabilityDetailTitle: {
     fontSize: 12,
@@ -1107,15 +1882,63 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 0,
   },
+  primaryStateCard: {
+    marginHorizontal: 12,
+    marginBottom: 3,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: 2,
+  },
+  primaryStateHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  primaryStateCopy: {
+    flex: 1,
+    gap: 3,
+  },
+  primaryStateHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  primaryStateDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 999,
+  },
+  primaryStateTitle: {
+    fontSize: 10,
+    fontWeight: '800' as const,
+  },
+  primaryStateDetail: {
+    fontSize: 8,
+    lineHeight: 11,
+    fontWeight: '600' as const,
+  },
   statusCard: {
-    marginHorizontal: 16,
-    marginBottom: 10,
-    padding: 16,
-    borderRadius: 20,
+    marginHorizontal: 12,
+    marginBottom: 6,
+    padding: 10,
+    borderRadius: 15,
     borderWidth: 1,
     borderColor: Colors.surfaceBorder,
     backgroundColor: Colors.surface,
-    gap: 10,
+    gap: 7,
+  },
+  runtimeCard: {
+    marginHorizontal: 12,
+    marginBottom: 6,
+    padding: 10,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    backgroundColor: Colors.surface,
+    gap: 8,
   },
   statusCardHeader: {
     flexDirection: 'row',
@@ -1125,15 +1948,15 @@ const styles = StyleSheet.create({
   },
   statusCardEyebrow: {
     color: Colors.text,
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: '700' as const,
   },
   statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    gap: 6,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
     borderRadius: 999,
     backgroundColor: Colors.backgroundSecondary,
     borderWidth: 1,
@@ -1144,58 +1967,37 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   statusBadgeText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700' as const,
   },
   statusDetail: {
-    color: Colors.textSecondary,
-    fontSize: 13,
-    lineHeight: 19,
+    color: '#C8C8C8',
+    fontSize: 12,
+    lineHeight: 17,
   },
   statusSummary: {
-    color: Colors.textTertiary,
-    fontSize: 12,
-    lineHeight: 18,
-    fontWeight: '600' as const,
-  },
-  statusAIIndicator: {
-    borderRadius: 16,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    gap: 6,
-  },
-  statusAIHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  statusAITitle: {
-    fontSize: 12,
-    fontWeight: '800' as const,
-  },
-  statusAIDetail: {
-    fontSize: 12,
-    lineHeight: 18,
+    color: '#8E8E93',
+    fontSize: 11,
+    lineHeight: 16,
     fontWeight: '600' as const,
   },
   aiIndicatorBadge: {
     alignSelf: 'flex-start',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    gap: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
     borderRadius: 999,
     borderWidth: 1,
   },
   aiIndicatorDot: {
-    width: 8,
-    height: 8,
+    width: 7,
+    height: 7,
     borderRadius: 999,
   },
   aiIndicatorText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700' as const,
   },
   statusWarning: {
@@ -1208,15 +2010,90 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 10,
   },
-  statusMetricCard: {
-    flex: 1,
-    paddingHorizontal: 10,
-    paddingVertical: 12,
-    borderRadius: 16,
+  runtimeProofBanner: {
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 5,
+  },
+  runtimeProofTitle: {
+    fontSize: 13,
+    fontWeight: '800' as const,
+  },
+  runtimeProofDetail: {
+    fontSize: 11,
+    lineHeight: 16,
+    fontWeight: '600' as const,
+  },
+  runtimeModeCard: {
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 5,
     backgroundColor: Colors.backgroundSecondary,
     borderWidth: 1,
     borderColor: Colors.surfaceBorder,
-    gap: 6,
+  },
+  runtimeModeLabel: {
+    color: Colors.text,
+    fontSize: 13,
+    fontWeight: '800' as const,
+  },
+  runtimeModeDetail: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: '600' as const,
+  },
+  runtimePrimaryGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  runtimeScrollContent: {
+    paddingRight: 8,
+  },
+  runtimeGrid: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  runtimeMetricCard: {
+    width: 164,
+    minHeight: 76,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    borderRadius: 14,
+    backgroundColor: Colors.backgroundSecondary,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    gap: 5,
+  },
+  runtimeMetricCardWide: {
+    width: '100%',
+    minHeight: 84,
+  },
+  runtimeMetricLabel: {
+    color: Colors.textTertiary,
+    fontSize: 11,
+    fontWeight: '700' as const,
+    textTransform: 'uppercase',
+  },
+  runtimeMetricValue: {
+    color: Colors.text,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '600' as const,
+  },
+  statusMetricCard: {
+    flex: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    borderRadius: 14,
+    backgroundColor: Colors.backgroundSecondary,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    gap: 5,
   },
   statusMetricLabel: {
     color: Colors.textTertiary,
@@ -1231,9 +2108,9 @@ const styles = StyleSheet.create({
     fontWeight: '600' as const,
   },
   auditSection: {
-    marginHorizontal: 16,
-    marginBottom: 10,
-    gap: 10,
+    marginHorizontal: 12,
+    marginBottom: 8,
+    gap: 8,
   },
   auditSectionTitle: {
     color: Colors.text,
@@ -1244,12 +2121,12 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   auditCard: {
-    padding: 16,
-    borderRadius: 20,
+    padding: 12,
+    borderRadius: 16,
     backgroundColor: Colors.surface,
     borderWidth: 1,
     borderColor: Colors.surfaceBorder,
-    gap: 10,
+    gap: 8,
   },
   auditEyebrow: {
     color: Colors.primary,
@@ -1290,33 +2167,14 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     fontWeight: '600' as const,
   },
-  errorCard: {
-    marginHorizontal: 16,
-    marginBottom: 10,
-    padding: 16,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: 'rgba(239,68,68,0.35)',
-    backgroundColor: 'rgba(239,68,68,0.08)',
-  },
-  errorTitle: {
-    color: Colors.text,
-    fontSize: 16,
-    fontWeight: '700' as const,
-  },
-  errorText: {
-    color: Colors.textSecondary,
-    marginTop: 6,
-    lineHeight: 20,
-  },
   retryButton: {
-    marginTop: 14,
+    marginTop: 8,
     alignSelf: 'flex-start',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     borderRadius: 12,
     backgroundColor: Colors.primary,
   },
@@ -1330,17 +2188,18 @@ const styles = StyleSheet.create({
     minHeight: 0,
   },
   listContent: {
-    paddingTop: 4,
+    paddingTop: 0,
     flexGrow: 1,
   },
   messageRow: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
+    marginBottom: 0,
   },
   centerState: {
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 24,
-    paddingVertical: 32,
+    paddingVertical: 24,
     borderRadius: 22,
     borderWidth: 1,
     borderColor: Colors.surfaceBorder,
@@ -1359,23 +2218,50 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     textAlign: 'center',
   },
+  bottomDock: {
+    backgroundColor: Colors.background,
+    marginTop: 0,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: Colors.surfaceBorder,
+  },
+  detailsToggle: {
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: Colors.backgroundSecondary,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+  },
+  detailsToggleText: {
+    color: Colors.textSecondary,
+    fontSize: 8,
+    fontWeight: '700' as const,
+  },
+  threadFooterStack: {
+    paddingHorizontal: 12,
+    paddingTop: 1,
+    gap: 2,
+  },
+  threadEndSpacer: {
+    height: 4,
+  },
   loadOlderButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: 6,
     marginHorizontal: 16,
-    marginTop: 12,
-    marginBottom: 8,
-    paddingVertical: 10,
-    borderRadius: 14,
+    marginTop: 3,
+    marginBottom: 3,
+    paddingVertical: 5,
+    borderRadius: 12,
     backgroundColor: Colors.surface,
     borderWidth: 1,
     borderColor: Colors.surfaceBorder,
   },
   loadOlderText: {
     color: Colors.primary,
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: '700' as const,
   },
   pressed: {

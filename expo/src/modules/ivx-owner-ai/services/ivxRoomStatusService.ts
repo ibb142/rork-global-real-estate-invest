@@ -143,18 +143,51 @@ async function verifyRealtimeChannel(): Promise<boolean> {
     const client = getIVXSupabaseClient();
     const testChannel = client.channel('ivx-realtime-probe');
     return await new Promise<boolean>((resolve) => {
+      let settled = false;
+      let unsubscribeStarted = false;
+      let channelTerminated = false;
+
+      const safeUnsubscribe = (): void => {
+        if (unsubscribeStarted || channelTerminated) {
+          return;
+        }
+
+        unsubscribeStarted = true;
+        try {
+          void testChannel.unsubscribe();
+        } catch (error) {
+          console.log('[IVXRoomStatus] Realtime probe unsubscribe note:', error instanceof Error ? error.message : 'unknown');
+        }
+      };
+
+      const finish = (value: boolean, reason: string): void => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        console.log('[IVXRoomStatus] Realtime probe finished:', reason, 'result:', value);
+        safeUnsubscribe();
+        resolve(value);
+      };
+
       const timeout = setTimeout(() => {
-        void client.removeChannel(testChannel);
         console.log('[IVXRoomStatus] Realtime probe: timed out, assuming capable');
-        resolve(true);
+        finish(true, 'timeout');
       }, 3000);
 
       testChannel.subscribe((status) => {
+        const normalizedStatus = String(status ?? '').toUpperCase();
+        if (normalizedStatus === 'CLOSED') {
+          channelTerminated = true;
+        }
+
         clearTimeout(timeout);
-        const isSubscribed = status === 'SUBSCRIBED';
-        console.log('[IVXRoomStatus] Realtime probe status:', status, 'subscribed:', isSubscribed);
-        void client.removeChannel(testChannel);
-        resolve(isSubscribed || status === 'CHANNEL_ERROR' ? false : true);
+        const isSubscribed = normalizedStatus === 'SUBSCRIBED';
+        console.log('[IVXRoomStatus] Realtime probe status:', normalizedStatus, 'subscribed:', isSubscribed);
+        if (normalizedStatus === 'SUBSCRIBED' || normalizedStatus === 'CHANNEL_ERROR' || normalizedStatus === 'TIMED_OUT' || normalizedStatus === 'CLOSED') {
+          finish(isSubscribed, `status:${normalizedStatus}`);
+        }
       });
     });
   } catch (err) {

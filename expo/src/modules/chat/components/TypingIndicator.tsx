@@ -72,9 +72,9 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 6,
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
   },
   dotsRow: {
     flexDirection: 'row',
@@ -89,8 +89,8 @@ const styles = StyleSheet.create({
   },
   label: {
     flex: 1,
-    color: Colors.textSecondary,
-    fontSize: 12,
+    color: '#C9CDD5',
+    fontSize: 11,
     fontWeight: '600' as const,
   },
 });

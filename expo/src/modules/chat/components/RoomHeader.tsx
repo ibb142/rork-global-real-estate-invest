@@ -52,45 +52,49 @@ function RoomHeaderInner({ title, resolution, isLoading }: RoomHeaderProps) {
     <View style={styles.headerCard} testID="ivx-owner-chat-header">
       <View style={styles.topRow}>
         <View style={styles.roomBadge}>
-          <Bot size={14} color={Colors.black} />
+          <Bot size={12} color={Colors.black} />
           <Text style={styles.roomBadgeText}>{resolution.badgeText}</Text>
         </View>
         <AIIndicatorBadge indicator={resolution.aiIndicator} />
       </View>
 
-      <Text style={styles.headerTitle}>{title}</Text>
-
-      {isLoading ? (
-        <View style={styles.subtitleLoading}>
-          <ActivityIndicator size="small" color={Colors.textTertiary} />
-          <Text style={styles.subtitleLoadingText}>Checking room backend…</Text>
-        </View>
-      ) : (
-        <Text style={styles.headerSubtitle}>{resolution.subtitle}</Text>
-      )}
-
-      <View style={styles.summaryRow}>
-        <Text style={styles.summaryText}>{resolution.summary}</Text>
+      <View style={styles.titleRow}>
+        <Text style={styles.headerTitle} numberOfLines={1}>{title}</Text>
+        {isLoading ? (
+          <View style={styles.subtitleLoading}>
+            <ActivityIndicator size="small" color={Colors.textTertiary} />
+            <Text style={styles.subtitleLoadingText} numberOfLines={1}>Connecting…</Text>
+          </View>
+        ) : null}
       </View>
 
-      <CapabilityPillRow capabilities={resolution.capabilities} />
+      <Text style={styles.headerSubtitle} numberOfLines={2} ellipsizeMode="tail">{resolution.subtitle}</Text>
+      <CapabilityPillRow capabilities={resolution.capabilities.slice(0, 3)} />
     </View>
   );
+
 }
 
 export const RoomHeader = React.memo(RoomHeaderInner);
 
 const styles = StyleSheet.create({
   headerCard: {
-    marginHorizontal: 16,
-    marginTop: 16,
-    marginBottom: 12,
-    padding: 18,
-    borderRadius: 24,
+    marginHorizontal: 12,
+    marginTop: 2,
+    marginBottom: 3,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 14,
     backgroundColor: Colors.surface,
     borderWidth: 1,
     borderColor: Colors.surfaceBorder,
-    gap: 10,
+    gap: 2,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
   },
   topRow: {
     flexDirection: 'row',
@@ -101,24 +105,24 @@ const styles = StyleSheet.create({
   roomBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 3,
     backgroundColor: Colors.primary,
     borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
   },
   roomBadgeText: {
     color: Colors.black,
-    fontSize: 11,
+    fontSize: 6,
     fontWeight: '700' as const,
   },
   aiBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    gap: 3,
     borderRadius: 999,
-    paddingHorizontal: 9,
-    paddingVertical: 5,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
     borderWidth: 1,
   },
   aiBadgeActive: {
@@ -138,35 +142,32 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.08)',
   },
   aiBadgeText: {
-    fontSize: 11,
+    fontSize: 6,
     fontWeight: '600' as const,
   },
   headerTitle: {
+    flex: 1,
     color: Colors.text,
-    fontSize: 22,
+    fontSize: 14,
     fontWeight: '800' as const,
   },
   headerSubtitle: {
-    color: Colors.textSecondary,
-    fontSize: 13,
-    lineHeight: 19,
+    color: '#E0E5EC',
+    fontSize: 10,
+    lineHeight: 13,
   },
   subtitleLoading: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 4,
   },
   subtitleLoadingText: {
     color: Colors.textTertiary,
-    fontSize: 13,
-  },
-  summaryRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    fontSize: 9,
   },
   summaryText: {
-    color: Colors.textTertiary,
-    fontSize: 11,
+    color: '#B2B8C2',
+    fontSize: 8,
     fontWeight: '600' as const,
   },
 });

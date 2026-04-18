@@ -87,6 +87,7 @@ export type AIResponseState = 'inactive' | 'idle' | 'responding';
 
 export type ChatRoomRuntimeSignals = {
   aiBackendHealth?: ServiceRuntimeHealth;
+  aiBackendSource?: 'remote_api' | 'toolkit_fallback' | 'unknown';
   knowledgeBackendHealth?: ServiceRuntimeHealth;
   ownerCommandAvailability?: ServiceRuntimeHealth;
   codeAwareServiceAvailability?: ServiceRuntimeHealth;
@@ -114,6 +115,7 @@ export type SendMessageInput = {
   fileMime?: string | null;
   fileSize?: number | null;
   upload?: UploadableFile;
+  clientMessageId?: string | null;
 };
 
 export type MessageSubscription = {

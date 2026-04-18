@@ -30,7 +30,7 @@ AS $ivx$
       SELECT 1
       FROM public.profiles
       WHERE id = auth.uid()
-        AND regexp_replace(lower(coalesce(role, 'investor')), '[^a-z0-9]+', '', 'g') IN ('owner', 'owneradmin')
+        AND regexp_replace(lower(coalesce(role, 'investor')), '[^a-z0-9]+', '', 'g') IN ('owner', 'owneradmin', 'ivxowner', 'developer', 'dev', 'admin', 'superadmin', 'administrator', 'founder', 'staff', 'staffmember', 'ceo', 'manager', 'analyst', 'support')
     );
 $ivx$;
 
@@ -314,13 +314,18 @@ CREATE TABLE IF NOT EXISTS public.ivx_ai_requests (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   conversation_id UUID NOT NULL REFERENCES public.ivx_conversations(id) ON DELETE CASCADE,
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  request_id TEXT,
   prompt TEXT NOT NULL,
   response_text TEXT,
+  response_message_id UUID REFERENCES public.ivx_messages(id) ON DELETE SET NULL,
   status TEXT NOT NULL DEFAULT 'completed',
   model TEXT NOT NULL DEFAULT 'gpt-4.1-mini',
   created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now()),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now())
 );
+
+ALTER TABLE public.ivx_ai_requests ADD COLUMN IF NOT EXISTS request_id TEXT;
+ALTER TABLE public.ivx_ai_requests ADD COLUMN IF NOT EXISTS response_message_id UUID REFERENCES public.ivx_messages(id) ON DELETE SET NULL;
 
 CREATE TABLE IF NOT EXISTS public.ivx_knowledge_documents (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -339,6 +344,8 @@ CREATE TABLE IF NOT EXISTS public.ivx_knowledge_documents (
 CREATE INDEX IF NOT EXISTS idx_ivx_messages_conversation_created_at ON public.ivx_messages(conversation_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_ivx_inbox_state_user_id ON public.ivx_inbox_state(user_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_ivx_ai_requests_conversation_id ON public.ivx_ai_requests(conversation_id, created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ivx_ai_requests_request_id_unique ON public.ivx_ai_requests(request_id) WHERE request_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ivx_ai_requests_response_message_id_unique ON public.ivx_ai_requests(response_message_id) WHERE response_message_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_ivx_knowledge_documents_owner_id ON public.ivx_knowledge_documents(owner_user_id, updated_at DESC);
 
 ALTER TABLE public.ivx_conversations ENABLE ROW LEVEL SECURITY;
@@ -444,7 +451,7 @@ BEGIN
   RETURN EXISTS (
     SELECT 1 FROM public.profiles
     WHERE id = auth.uid()
-      AND regexp_replace(lower(COALESCE(role, 'investor')), '[^a-z0-9]+', '', 'g') IN ('owner', 'owneradmin')
+      AND regexp_replace(lower(COALESCE(role, 'investor')), '[^a-z0-9]+', '', 'g') IN ('owner', 'owneradmin', 'ivxowner', 'developer', 'dev', 'admin', 'superadmin', 'administrator', 'founder', 'staff', 'staffmember', 'ceo', 'manager', 'analyst', 'support')
   );
 END;
 $fn$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -455,7 +462,7 @@ BEGIN
   RETURN EXISTS (
     SELECT 1 FROM public.profiles
     WHERE id = auth.uid()
-      AND regexp_replace(lower(COALESCE(role, 'investor')), '[^a-z0-9]+', '', 'g') IN ('owner', 'owneradmin')
+      AND regexp_replace(lower(COALESCE(role, 'investor')), '[^a-z0-9]+', '', 'g') IN ('owner', 'owneradmin', 'ivxowner', 'developer', 'dev', 'admin', 'superadmin', 'administrator', 'founder', 'staff', 'staffmember', 'ceo', 'manager', 'analyst', 'support')
   );
 END;
 $fn$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -466,7 +473,7 @@ BEGIN
   RETURN EXISTS (
     SELECT 1 FROM public.profiles
     WHERE id = auth.uid()
-      AND regexp_replace(lower(COALESCE(role, 'investor')), '[^a-z0-9]+', '', 'g') IN ('owner', 'owneradmin')
+      AND regexp_replace(lower(COALESCE(role, 'investor')), '[^a-z0-9]+', '', 'g') IN ('owner', 'owneradmin', 'ivxowner', 'developer', 'dev', 'admin', 'superadmin', 'administrator', 'founder', 'staff', 'staffmember', 'ceo', 'manager', 'analyst', 'support')
   );
 END;
 $fn$ LANGUAGE plpgsql SECURITY DEFINER;

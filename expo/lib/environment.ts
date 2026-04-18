@@ -24,7 +24,7 @@ export interface EnvironmentConfig {
 
 const developmentConfig: EnvironmentConfig = {
   name: 'development',
-  apiBaseUrl: process.env.EXPO_PUBLIC_RORK_API_BASE_URL || process.env.EXPO_PUBLIC_API_BASE_URL || 'http://localhost:3000',
+  apiBaseUrl: process.env.EXPO_PUBLIC_API_BASE_URL || 'http://localhost:3000',
   enableDebugLogging: true,
   enableAnalytics: true,
   enableCrashReporting: false,

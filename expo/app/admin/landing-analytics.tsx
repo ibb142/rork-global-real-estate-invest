@@ -898,7 +898,7 @@ GRANT EXECUTE ON FUNCTION public.analytics_lead_summary TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.analytics_live_count TO anon, authenticated;
       `.trim();
 
-      const apiBase = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || '').trim();
+      const apiBase = (process.env.EXPO_PUBLIC_API_BASE_URL || '').trim();
       if (apiBase) {
         try {
           const { data: { session } } = await supabase.auth.getSession();

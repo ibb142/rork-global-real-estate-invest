@@ -1339,7 +1339,7 @@ export async function verifyPublishPipeline(dealId: string): Promise<{ supabaseO
   }
 
   try {
-    const backendUrl = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || process.env.EXPO_PUBLIC_API_BASE_URL || '').trim().replace(/\/$/, '');
+    const backendUrl = (process.env.EXPO_PUBLIC_API_BASE_URL || '').trim().replace(/\/$/, '');
     if (backendUrl) {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 6000);
@@ -1374,7 +1374,7 @@ export async function verifyPublishPipeline(dealId: string): Promise<{ supabaseO
         errors.push(`Backend /landing-deals HTTP ${res.status}`);
       }
     } else {
-      errors.push('No API base URL configured (EXPO_PUBLIC_RORK_API_BASE_URL)');
+      errors.push('No API base URL configured (EXPO_PUBLIC_API_BASE_URL)');
     }
   } catch (err) {
     errors.push(`Backend check failed: ${(err as Error)?.message}`);

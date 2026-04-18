@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react';
+import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -6,1091 +6,1491 @@ import {
   ScrollView,
   TouchableOpacity,
   Animated,
-  Dimensions,
   RefreshControl,
-  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
-import { useMutation } from '@tanstack/react-query';
-import * as Haptics from 'expo-haptics';
+import { Stack, useRouter } from 'expo-router';
 import {
-  ArrowLeft,
   Activity,
-  Users,
-  Radio,
-  Eye,
-  Shield,
-  Zap,
   AlertTriangle,
-  CheckCircle,
-  XCircle,
-  RefreshCw,
-  MessageSquare,
-  Home,
-  TrendingUp,
-  PieChart,
-  BarChart3,
-  Globe,
-  Lock,
-  Mail,
-  Cpu,
-  Settings,
-  Trash2,
-  FileText,
-  DollarSign,
-  Play,
-  Pause,
-  User,
-  Wifi,
+  ArrowLeft,
+  ArrowRight,
+  Bot,
   Brain,
-  Target,
-  ArrowUpRight,
-  ArrowDownRight,
-  Minus,
-  LayoutDashboard,
-  MousePointer,
-  FormInput,
-  Send,
-  Link2,
-  Clock,
-  Wrench,
-  Radar,
+  CheckCircle2,
+  ChevronRight,
+  Command,
+  Cpu,
+  GitBranch,
+  Layers3,
+  Network,
+  Radio,
+  RefreshCw,
+  ShieldAlert,
+  Sparkles,
+  Timer,
+  Users,
+  Waypoints,
+  Workflow,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import {
-  controlTowerAggregator,
-  executeOperatorAction,
-  getActionLabel,
-  isActionSafe,
-  generateDecisionSummary,
-  getRemediationStats,
-  CT_MODULE_LABELS,
-  type CTDashboardSnapshot,
-  type CTModulePresence,
-  type CTModuleHealth,
-  type CTChatRoomSnapshot,
-  type CTIncident,
-  type CTModuleId,
-  type CTOperatorAction,
-  type CTHealthState,
-  type CTPredictiveScore,
-  type CTLandingFunnelSnapshot,
-  type CTAutoRemediationLog,
-  type CTDecisionAnalysis,
-} from '@/lib/control-tower';
-import { usePresenceTracker, type LivePresenceState } from '@/lib/realtime-presence';
-import { TrafficIntelTab } from '@/lib/control-tower/TrafficIntelTab';
-import { controlTowerAggregator as ctAgg } from '@/lib/control-tower';
-import type { TrafficIntelSnapshot } from '@/lib/control-tower/traffic-types';
+  getIVXOwnerAIConfigAudit,
+  type IVXOwnerAIConfigAudit,
+} from '@/lib/ivx-supabase-client';
+import {
+  buildNerveCenterSnapshot,
+  type ArchitectureNodeRecord,
+  type ChatRoomRecord,
+  type CommandRecord,
+  type DependencyRecord,
+  type FunnelStageRecord,
+  type HealthState,
+  type IncidentRecord,
+  type ModuleRecord,
+  type NerveCenterSnapshot,
+  type RecommendationRecord,
+  type RiskModuleRecord,
+  type TrafficSourceRecord,
+} from '@/lib/control-tower/nerve-center-intelligence';
+import { useLiveIntelligenceSnapshot } from '@/lib/control-tower/use-live-intelligence';
+import type { LiveIntelligenceSnapshot } from '@/lib/control-tower/live-intelligence';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const CARD_WIDTH = (SCREEN_WIDTH - 48 - 12) / 2;
+type TabId = 'nerve' | 'traffic' | 'funnel' | 'risk' | 'chat' | 'blueprint';
+type AuditTone = 'pass' | 'warn' | 'blocked';
 
-type TabId = 'nerve' | 'traffic' | 'landing' | 'predict' | 'chat' | 'incidents' | 'operator' | 'auto';
-
-const TABS: { id: TabId; label: string; icon: typeof Activity }[] = [
-  { id: 'nerve', label: 'Nerve', icon: Brain },
-  { id: 'traffic', label: 'Traffic', icon: Radar },
-  { id: 'landing', label: 'Funnel', icon: Globe },
-  { id: 'predict', label: 'Risk', icon: Target },
-  { id: 'chat', label: 'Chat', icon: MessageSquare },
-  { id: 'incidents', label: 'Alerts', icon: AlertTriangle },
-  { id: 'operator', label: 'Ops', icon: Zap },
-  { id: 'auto', label: 'Auto', icon: Wrench },
-];
-
-const MODULE_ICON_MAP: Record<string, typeof Activity> = {
-  home: Home, invest: TrendingUp, market: BarChart3, portfolio: PieChart,
-  chat: MessageSquare, profile: User, analytics: Activity,
-  admin_dashboard: LayoutDashboard, admin_publish_deal: FileText,
-  user_invest_flow: DollarSign, realtime_sync: Radio, photo_protection: Shield,
-  trash_recovery: Trash2, storage_isolation: Lock, landing: Globe,
-  settings: Settings, email: Mail, ai_ops: Cpu,
+type EnvironmentAuditSummary = {
+  environment: string;
+  configuredUrl: string;
+  configSource: string;
+  explicitProductionPin: string;
+  activeFallbackUrl: string;
+  routingAuditState: string;
+  fallbackUsed: string;
+  whyFallbackSelected: string;
+  selectionReason: string;
+  productionGuardText: string;
+  productionGuardBlocked: boolean;
+  topBannerMessage: string;
+  tone: AuditTone;
 };
 
-function getHealthColor(state: CTHealthState): string {
-  switch (state) {
-    case 'healthy': return '#00E676';
-    case 'degraded': return '#FFB300';
-    case 'critical': return '#FF1744';
-    default: return '#555';
-  }
+const TABS: Array<{ id: TabId; label: string; icon: typeof Brain }> = [
+  { id: 'nerve', label: 'Nerve', icon: Brain },
+  { id: 'traffic', label: 'Traffic', icon: Waypoints },
+  { id: 'funnel', label: 'Funnel', icon: Workflow },
+  { id: 'risk', label: 'Risk', icon: ShieldAlert },
+  { id: 'chat', label: 'Chat', icon: Radio },
+  { id: 'blueprint', label: 'Blueprint', icon: GitBranch },
+];
+
+function getHealthColor(state: HealthState): string {
+  if (state === 'critical') return '#FF4D6D';
+  if (state === 'warning') return '#FFB84D';
+  return '#32D583';
 }
 
-function getHealthLabel(state: CTHealthState): string {
-  switch (state) {
-    case 'healthy': return 'HEALTHY';
-    case 'degraded': return 'DEGRADED';
-    case 'critical': return 'CRITICAL';
-    default: return 'UNKNOWN';
-  }
+function formatPct(value: number): string {
+  return `${value}%`;
 }
 
-function getRiskColor(score: number): string {
-  if (score >= 0.7) return '#FF1744';
-  if (score >= 0.4) return '#FFB300';
-  if (score >= 0.2) return '#448AFF';
-  return '#00E676';
+function scoreTone(score: number): string {
+  if (score >= 80) return '#FF4D6D';
+  if (score >= 55) return '#FFB84D';
+  return '#32D583';
 }
 
-function getTrendIcon(trend: 'rising' | 'stable' | 'falling') {
-  if (trend === 'rising') return ArrowUpRight;
-  if (trend === 'falling') return ArrowDownRight;
-  return Minus;
+function getAuditToneColor(tone: AuditTone): string {
+  if (tone === 'blocked') return '#FF4D6D';
+  if (tone === 'warn') return '#FFB84D';
+  return '#32D583';
 }
 
-function getTrendColor(trend: 'rising' | 'stable' | 'falling'): string {
-  if (trend === 'rising') return '#FF1744';
-  if (trend === 'falling') return '#00E676';
-  return '#555';
+function buildEnvironmentAuditSummary(audit: IVXOwnerAIConfigAudit): EnvironmentAuditSummary {
+  const configuredUrl = audit.configuredBaseUrl ?? 'unconfigured';
+  const activeFallbackUrl = audit.fallbackUsed
+    ? (audit.activeBaseUrl ?? audit.devFallbackBaseUrl ?? 'unconfigured')
+    : 'not-active';
+  const routingAuditState = audit.blocksRemoteRequests
+    ? 'guard_blocked'
+    : audit.fallbackUsed
+      ? 'dev_fallback_active'
+      : audit.productionReady
+        ? 'live'
+        : 'explicit_non_production';
+  const tone: AuditTone = audit.blocksRemoteRequests
+    ? 'blocked'
+    : audit.fallbackUsed
+      ? 'warn'
+      : 'pass';
+  const productionGuardText = audit.blocksRemoteRequests
+    ? `blocked — ${audit.configurationError ?? 'Owner AI production routing is invalid.'}`
+    : audit.currentEnvironment === 'production'
+      ? 'pass — production routing is explicitly set by EXPO_PUBLIC_IVX_OWNER_AI_BASE_URL'
+      : 'pass — development routing policy allows explicit or fallback routing';
+  const topBannerMessage = audit.blocksRemoteRequests
+    ? audit.configurationError ?? 'Production guard blocked Owner AI routing.'
+    : audit.fallbackUsed
+      ? `Development fallback active. ${audit.fallbackReason ?? audit.selectionReason}`
+      : `Routing live. ${audit.selectionReason}`;
+
+  return {
+    environment: audit.currentEnvironment,
+    configuredUrl,
+    configSource: audit.configuredFrom ?? (audit.fallbackUsed ? 'EXPO_PUBLIC_PROJECT_ID derived dev fallback' : 'unconfigured'),
+    explicitProductionPin: audit.explicitProductionPinApplied
+      ? `yes — ${audit.configuredBaseUrl ?? audit.canonicalBaseUrl}`
+      : 'no',
+    activeFallbackUrl,
+    routingAuditState,
+    fallbackUsed: audit.fallbackUsed ? 'yes' : 'no',
+    whyFallbackSelected: audit.fallbackReason ?? (audit.fallbackUsed ? audit.selectionReason : 'Fallback not selected.'),
+    selectionReason: audit.selectionReason,
+    productionGuardText,
+    productionGuardBlocked: audit.blocksRemoteRequests,
+    topBannerMessage,
+    tone,
+  };
 }
 
-function formatNum(n: number): string {
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
-  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
-  return n.toString();
-}
+const LiveDot = memo(function LiveDot({ color }: { color: string }) {
+  const anim = useRef(new Animated.Value(0.35)).current;
 
-function timeAgo(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  if (diff < 60_000) return 'just now';
-  if (diff < 3600_000) return `${Math.floor(diff / 60_000)}m ago`;
-  return `${Math.floor(diff / 3600_000)}h ago`;
-}
-
-function formatSeconds(s: number | null): string {
-  if (s === null) return '--';
-  if (s < 60) return `${s}s`;
-  if (s < 3600) return `${Math.floor(s / 60)}m`;
-  return `${Math.floor(s / 3600)}h`;
-}
-
-const PulsingOrb = memo(function PulsingOrb({ color, size = 8 }: { color: string; size?: number }) {
-  const anim = useRef(new Animated.Value(0.4)).current;
   useEffect(() => {
     Animated.loop(
       Animated.sequence([
-        Animated.timing(anim, { toValue: 1, duration: 1200, useNativeDriver: true }),
-        Animated.timing(anim, { toValue: 0.4, duration: 1200, useNativeDriver: true }),
-      ]),
+        Animated.timing(anim, { toValue: 1, duration: 1100, useNativeDriver: true }),
+        Animated.timing(anim, { toValue: 0.35, duration: 1100, useNativeDriver: true }),
+      ])
     ).start();
   }, [anim]);
+
   return (
-    <View style={{ width: size * 3, height: size * 3, justifyContent: 'center', alignItems: 'center' }}>
-      <Animated.View
-        style={{
-          position: 'absolute' as const,
-          width: size * 2.5, height: size * 2.5, borderRadius: size * 1.25,
-          backgroundColor: color,
-          opacity: anim.interpolate({ inputRange: [0.4, 1], outputRange: [0.15, 0.05] }),
-        }}
-      />
-      <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: color }} />
+    <View style={styles.liveDotWrap}>
+      <Animated.View style={[styles.liveDotHalo, { backgroundColor: color, opacity: anim }]} />
+      <View style={[styles.liveDotCore, { backgroundColor: color }]} />
     </View>
   );
 });
 
-const RiskGauge = memo(function RiskGauge({ score, size = 60 }: { score: number; size?: number }) {
-  const color = getRiskColor(score);
-  const pct = Math.round(score * 100);
+const MetricTile = memo(function MetricTile({ label, value, tone }: { label: string; value: string; tone?: string }) {
   return (
-    <View style={[s.riskGauge, { width: size, height: size }]}>
-      <View style={[s.riskGaugeOuter, { width: size, height: size, borderRadius: size / 2, borderColor: color + '30' }]}>
-        <View style={[s.riskGaugeInner, { width: size - 8, height: size - 8, borderRadius: (size - 8) / 2, borderColor: color + '60' }]}>
-          <Text style={[s.riskGaugeText, { color, fontSize: size > 50 ? 18 : 14 }]}>{pct}</Text>
-        </View>
-      </View>
+    <View style={styles.metricTile}>
+      <Text style={[styles.metricValue, tone ? { color: tone } : null]}>{value}</Text>
+      <Text style={styles.metricLabel}>{label}</Text>
     </View>
   );
 });
 
-const NerveCenterTab = memo(function NerveCenterTab({
-  snapshot,
-  presence,
-}: {
-  snapshot: CTDashboardSnapshot;
-  presence: LivePresenceState;
-}) {
-  const summary = useMemo(() => generateDecisionSummary(snapshot), [snapshot]);
-  const remStats = useMemo(() => getRemediationStats(), [snapshot]);
-  const color = getHealthColor(snapshot.systemHealth);
-  const totalOnline = Math.max(snapshot.totalActiveUsers, presence.totalOnline);
-
-  const activeModules = useMemo(() =>
-    [...snapshot.modules].filter(m => m.activeNow > 0).sort((a, b) => b.activeNow - a.activeNow).slice(0, 10),
-    [snapshot.modules],
+const SectionCard = memo(function SectionCard({ title, right, children }: { title: string; right?: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <View style={styles.sectionCard}>
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>{title}</Text>
+        {right}
+      </View>
+      {children}
+    </View>
   );
+});
 
-  const topRisks = useMemo(() =>
-    [...snapshot.predictions].filter(p => p.score > 0.15).sort((a, b) => b.score - a.score).slice(0, 6),
-    [snapshot.predictions],
+const AuditField = memo(function AuditField({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.auditField}>
+      <Text style={styles.auditFieldLabel}>{label}</Text>
+      <Text style={styles.auditFieldValue}>{value}</Text>
+    </View>
   );
+});
+
+const RecommendationRow = memo(function RecommendationRow({ item }: { item: RecommendationRecord }) {
+  const tone = item.severity === 'critical' ? '#FF4D6D' : item.severity === 'high' ? '#FFB84D' : '#76A9FF';
 
   return (
-    <>
-      <View style={[s.nerveBanner, { borderColor: color + '30' }]}>
-        <View style={s.nerveBannerTop}>
-          <PulsingOrb color={color} size={7} />
-          <Text style={[s.nerveLabel, { color }]}>{getHealthLabel(snapshot.systemHealth)}</Text>
-          <View style={{ flex: 1 }} />
-          <RiskGauge score={snapshot.systemRiskScore} size={48} />
+    <View style={[styles.recommendationRow, { borderColor: `${tone}33` }]} testID={`recommendation-${item.id}`}>
+      <View style={styles.recommendationTop}>
+        <View style={styles.rowStart}>
+          <LiveDot color={tone} />
+          <Text style={styles.recommendationTarget}>{item.targetModuleId.replace(/_/g, ' ')}</Text>
         </View>
-        <Text style={s.nerveAssessment}>{summary.overallAssessment}</Text>
-        <View style={s.nerveStatsRow}>
-          <View style={s.nerveStat}>
-            <Text style={s.nerveStatVal}>{formatNum(totalOnline)}</Text>
-            <Text style={s.nerveStatLbl}>ONLINE</Text>
+        <Text style={[styles.recommendationSeverity, { color: tone }]}>{item.commandType.toUpperCase()}</Text>
+      </View>
+      <Text style={styles.recommendationReason}>{item.reason}</Text>
+      <View style={styles.metaRow}>
+        <Text style={styles.metaText}>confidence {Math.round(item.confidence * 100)}%</Text>
+        <Text style={styles.metaText}>blast radius {item.blastRadius}</Text>
+      </View>
+      <Text style={styles.commandText}>{item.command}</Text>
+    </View>
+  );
+});
+
+const NerveTab = memo(function NerveTab({ snapshot, live }: { snapshot: NerveCenterSnapshot; live: LiveIntelligenceSnapshot }) {
+  const criticalModules = snapshot.modules.filter((item) => item.health !== 'stable');
+
+  return (
+    <View style={styles.tabBody}>
+      <View style={[styles.hero, { borderColor: `${getHealthColor(snapshot.globalStatus)}44` }]}>
+        <View style={styles.heroTop}>
+          <View style={styles.rowStart}>
+            <LiveDot color={getHealthColor(snapshot.globalStatus)} />
+            <Text style={[styles.heroState, { color: getHealthColor(snapshot.globalStatus) }]}>{snapshot.globalStatus.toUpperCase()}</Text>
           </View>
-          <View style={s.nerveStatDiv} />
-          <View style={s.nerveStat}>
-            <Text style={s.nerveStatVal}>{formatNum(snapshot.totalAuthenticated)}</Text>
-            <Text style={s.nerveStatLbl}>AUTH</Text>
-          </View>
-          <View style={s.nerveStatDiv} />
-          <View style={s.nerveStat}>
-            <Text style={s.nerveStatVal}>{formatNum(snapshot.totalAnonymous)}</Text>
-            <Text style={s.nerveStatLbl}>ANON</Text>
-          </View>
-          <View style={s.nerveStatDiv} />
-          <View style={s.nerveStat}>
-            <Text style={[s.nerveStatVal, { color: snapshot.incidents.length > 0 ? '#FF1744' : '#00E676' }]}>
-              {snapshot.incidents.length}
-            </Text>
-            <Text style={s.nerveStatLbl}>ALERTS</Text>
-          </View>
-          <View style={s.nerveStatDiv} />
-          <View style={s.nerveStat}>
-            <Text style={[s.nerveStatVal, { color: '#E040FB' }]}>{remStats.total}</Text>
-            <Text style={s.nerveStatLbl}>HEALS</Text>
-          </View>
+          <Text style={styles.heroTime}>{new Date(snapshot.asOf).toLocaleTimeString()}</Text>
+        </View>
+        <Text style={styles.heroTitle}>Nerve Center</Text>
+        <Text style={styles.heroSubtitle}>Mission-control state for software health, routing degradation, runtime risk, and operator actionability.</Text>
+        <View style={styles.metricsGrid}>
+          <MetricTile label="Active incidents" value={String(snapshot.activeIncidentsCount)} tone="#FF4D6D" />
+          <MetricTile label="Online modules" value={String(snapshot.onlineModulesCount)} />
+          <MetricTile label="Auth vs anon" value={`${snapshot.authSessions}/${snapshot.anonSessions}`} tone="#76A9FF" />
+          <MetricTile label="Alerts in progress" value={String(snapshot.alertsInProgress)} tone="#FFB84D" />
+          <MetricTile label="Heal attempts" value={String(snapshot.healActionsAttempted)} tone="#32D583" />
+          <MetricTile label="Approvals" value={String(snapshot.approvals.length)} tone="#B692F6" />
         </View>
       </View>
 
-      {summary.topRisks.length > 0 && (
-        <View style={s.nerveSection}>
-          <Text style={s.nerveSectionTitle}>Rising Risks</Text>
-          {summary.topRisks.map((r, i) => (
-            <View key={i} style={s.nerveRiskRow}>
-              <ArrowUpRight size={12} color="#FF1744" />
-              <Text style={s.nerveRiskText}>{r}</Text>
+      <SectionCard title="Live module occupancy" right={<Text style={styles.sectionHint}>operator load map</Text>}>
+        <View style={styles.panelGrid}>
+          {snapshot.modules.map((module) => (
+            <View key={module.id} style={[styles.modulePanel, { borderColor: `${getHealthColor(module.health)}33` }]} testID={`module-${module.id}`}>
+              <View style={styles.modulePanelTop}>
+                <Text style={styles.moduleName}>{module.name}</Text>
+                <Text style={[styles.moduleStatus, { color: getHealthColor(module.health) }]}>{module.status}</Text>
+              </View>
+              <Text style={styles.moduleValue}>{module.occupancy}</Text>
+              <Text style={styles.moduleMeta}>latency {module.latencyMs}ms · err {module.errorRate}%</Text>
             </View>
           ))}
         </View>
-      )}
+      </SectionCard>
 
-      {summary.immediateActions.length > 0 && (
-        <View style={s.nerveSection}>
-          <Text style={s.nerveSectionTitle}>Recommended Actions</Text>
-          {summary.immediateActions.map((a, i) => (
-            <View key={i} style={s.nerveActionRow}>
-              <Zap size={12} color="#FFB300" />
-              <Text style={s.nerveActionText}>{a}</Text>
-            </View>
-          ))}
-        </View>
-      )}
-
-      {summary.approvalNeeded.length > 0 && (
-        <View style={s.nerveSection}>
-          <Text style={[s.nerveSectionTitle, { color: '#FF6D00' }]}>Requires Approval</Text>
-          {summary.approvalNeeded.map((a, i) => (
-            <View key={i} style={s.nerveActionRow}>
-              <Shield size={12} color="#FF6D00" />
-              <Text style={[s.nerveActionText, { color: '#FF6D00' }]}>{a}</Text>
-            </View>
-          ))}
-        </View>
-      )}
-
-      {activeModules.length > 0 && (
-        <View style={s.nerveSection}>
-          <Text style={s.nerveSectionTitle}>Live Module Occupancy</Text>
-          <View style={s.nerveModGrid}>
-            {activeModules.map(m => {
-              const Icon = MODULE_ICON_MAP[m.moduleId] || Activity;
-              const h = snapshot.health.find(x => x.moduleId === m.moduleId);
-              const hc = h ? getHealthColor(h.state) : '#555';
-              return (
-                <View key={m.moduleId} style={s.nerveModChip}>
-                  <Icon size={12} color={hc} />
-                  <Text style={s.nerveModLabel} numberOfLines={1}>{CT_MODULE_LABELS[m.moduleId]}</Text>
-                  <Text style={s.nerveModCount}>{m.activeNow}</Text>
-                </View>
-              );
-            })}
-          </View>
-        </View>
-      )}
-
-      {topRisks.length > 0 && (
-        <View style={s.nerveSection}>
-          <Text style={s.nerveSectionTitle}>Risk Scores by Module</Text>
-          {topRisks.map(p => {
-            const TrendIcon = getTrendIcon(p.trend);
-            const tc = getTrendColor(p.trend);
+      <SectionCard title="Live module telemetry" right={<Text style={styles.sectionHint}>real traffic + conversion state</Text>}>
+        <View style={styles.panelGrid}>
+          {live.moduleMetrics.slice(0, 8).map((module) => {
+            const tone = module.healthStatus === 'critical' ? '#FF4D6D' : module.healthStatus === 'degraded' ? '#FFB84D' : '#32D583';
             return (
-              <View key={p.moduleId} style={s.nerveRiskModule}>
-                <View style={s.nerveRiskModLeft}>
-                  <Text style={s.nerveRiskModName}>{CT_MODULE_LABELS[p.moduleId]}</Text>
-                  <View style={s.nerveRiskModTrend}>
-                    <TrendIcon size={10} color={tc} />
-                    <Text style={[s.nerveRiskModTrendText, { color: tc }]}>{p.trend}</Text>
-                  </View>
+              <View key={module.moduleId} style={[styles.modulePanel, { borderColor: `${tone}33` }]} testID={`live-module-${module.moduleId}`}>
+                <View style={styles.modulePanelTop}>
+                  <Text style={styles.moduleName}>{module.moduleId.replace(/_/g, ' ')}</Text>
+                  <Text style={[styles.moduleStatus, { color: tone }]}>{module.healthStatus}</Text>
                 </View>
-                <RiskGauge score={p.score} size={36} />
-                {p.estimatedTimeToIncident !== null && (
-                  <View style={s.nerveETI}>
-                    <Clock size={9} color="#FF1744" />
-                    <Text style={s.nerveETIText}>~{formatSeconds(p.estimatedTimeToIncident)}</Text>
-                  </View>
-                )}
+                <Text style={styles.moduleValue}>{module.activeUsers}</Text>
+                <Text style={styles.moduleMeta}>sessions {module.sessionsInProgress} · CTA {module.ctaActions} · done {module.conversionsCompleted}</Text>
               </View>
             );
           })}
         </View>
-      )}
-    </>
+      </SectionCard>
+
+      <SectionCard title="Recommended actions" right={<Text style={styles.sectionHint}>ranked by impact</Text>}>
+        {snapshot.recommendations.map((item) => (
+          <RecommendationRow key={item.id} item={item} />
+        ))}
+      </SectionCard>
+
+      <SectionCard title="Approval-required actions" right={<Text style={styles.sectionHint}>owner gate</Text>}>
+        {snapshot.approvals.map((approval) => (
+          <View key={approval.id} style={styles.approvalRow}>
+            <View style={styles.rowStart}>
+              <ShieldAlert size={14} color="#B692F6" />
+              <Text style={styles.approvalTitle}>{approval.title}</Text>
+            </View>
+            <Text style={styles.approvalReason}>{approval.reason}</Text>
+            <Text style={styles.commandText}>{approval.command}</Text>
+          </View>
+        ))}
+      </SectionCard>
+
+      <SectionCard title="System hot path" right={<Text style={styles.sectionHint}>where it fails next</Text>}>
+        {criticalModules.map((module) => (
+          <View key={module.id} style={styles.pathRow}>
+            <View style={styles.pathRowMain}>
+              <Text style={styles.pathName}>{module.name}</Text>
+              <Text style={[styles.pathState, { color: getHealthColor(module.health) }]}>{module.health}</Text>
+            </View>
+            <Text style={styles.pathReason}>{module.explanation}</Text>
+            <Text style={styles.pathImpact}>Downstream: {module.downstreamModules.join(' → ') || 'none'}</Text>
+          </View>
+        ))}
+      </SectionCard>
+    </View>
   );
 });
 
-const LandingFunnelTab = memo(function LandingFunnelTab({ funnel }: { funnel: CTLandingFunnelSnapshot }) {
-  const funnelSteps = useMemo(() => [
-    { label: 'Visitors', value: funnel.activeVisitors, icon: Users, color: '#448AFF' },
-    { label: 'CTA Clicks', value: funnel.ctaClicks, icon: MousePointer, color: '#E040FB' },
-    { label: 'Form Starts', value: funnel.formStarts, icon: FormInput, color: '#FFB300' },
-    { label: 'Submissions', value: funnel.formSubmits, icon: Send, color: '#00E676' },
-    { label: 'API OK', value: funnel.apiSuccesses, icon: CheckCircle, color: '#00BCD4' },
-    { label: 'Handoffs', value: funnel.handoffsCompleted, icon: Link2, color: '#FF6D00' },
-  ], [funnel]);
-
-  const maxVal = Math.max(1, ...funnelSteps.map(f => f.value));
+const TrafficTab = memo(function TrafficTab({ sources, live }: { sources: TrafficSourceRecord[]; live: LiveIntelligenceSnapshot }) {
+  const topSource = useMemo(() => [...sources].sort((a, b) => b.qualityScore - a.qualityScore)[0], [sources]);
+  const topIntent = useMemo(() => [...sources].sort((a, b) => b.count - a.count)[0]?.detectedIntent ?? 'unknown', [sources]);
+  const auth = sources.reduce((sum, item) => sum + item.authSessions, 0);
+  const anon = sources.reduce((sum, item) => sum + item.anonSessions, 0);
 
   return (
-    <View style={s.funnelTab}>
-      <Text style={s.sectionTitle}>Landing Page Funnel</Text>
+    <View style={styles.tabBody}>
+      <SectionCard title="Origin intelligence" right={<Text style={styles.sectionHint}>source quality + routing</Text>}>
+        <View style={styles.metricsGrid}>
+          <MetricTile label="Active sources" value={String(sources.length)} />
+          <MetricTile label="Top source" value={topSource?.name ?? '--'} tone="#76A9FF" />
+          <MetricTile label="Top intent" value={topIntent} tone="#32D583" />
+          <MetricTile label="Auth / anon" value={`${auth}/${anon}`} tone="#FFB84D" />
+        </View>
+      </SectionCard>
 
-      <View style={s.funnelOverview}>
-        <View style={s.funnelOverviewStat}>
-          <Text style={s.funnelOverviewVal}>{funnel.activeVisitors}</Text>
-          <Text style={s.funnelOverviewLbl}>Now</Text>
-        </View>
-        <View style={s.funnelOverviewDiv} />
-        <View style={s.funnelOverviewStat}>
-          <Text style={s.funnelOverviewVal}>{funnel.visitorsLast5m}</Text>
-          <Text style={s.funnelOverviewLbl}>5min</Text>
-        </View>
-        <View style={s.funnelOverviewDiv} />
-        <View style={s.funnelOverviewStat}>
-          <Text style={s.funnelOverviewVal}>{funnel.visitorsLast1h}</Text>
-          <Text style={s.funnelOverviewLbl}>1hr</Text>
-        </View>
-        <View style={s.funnelOverviewDiv} />
-        <View style={s.funnelOverviewStat}>
-          <Text style={[s.funnelOverviewVal, { color: '#00E676' }]}>{funnel.ctaClickRate}%</Text>
-          <Text style={s.funnelOverviewLbl}>CTR</Text>
-        </View>
-        <View style={s.funnelOverviewDiv} />
-        <View style={s.funnelOverviewStat}>
-          <Text style={[s.funnelOverviewVal, { color: funnel.apiSuccessRate < 90 ? '#FF1744' : '#00E676' }]}>
-            {funnel.apiSuccessRate}%
-          </Text>
-          <Text style={s.funnelOverviewLbl}>API</Text>
-        </View>
-      </View>
+      <SectionCard title="Real attribution intelligence" right={<Text style={styles.sectionHint}>live source quality</Text>}>
+        {live.sourceMetrics.slice(0, 6).map((source) => (
+          <View key={source.source} style={styles.flowCard}>
+            <View style={styles.flowHead}>
+              <Text style={styles.flowTitle}>{source.source}</Text>
+              <Text style={[styles.flowHealth, { color: source.qualityScore >= 70 ? '#32D583' : source.qualityScore >= 45 ? '#FFB84D' : '#FF4D6D' }]}>{source.qualityScore}</Text>
+            </View>
+            <View style={styles.metaRow}>
+              <Text style={styles.metaText}>live {source.activeUsers}</Text>
+              <Text style={styles.metaText}>sessions {source.totalSessions}</Text>
+              <Text style={styles.metaText}>conv {source.conversions}</Text>
+            </View>
+            <Text style={styles.metaText}>investor quality {source.investorQualityScore} · low intent {source.lowIntentRate}% · drop {source.dropOffRate}%</Text>
+          </View>
+        ))}
+      </SectionCard>
 
-      <View style={s.funnelBars}>
-        {funnelSteps.map((step) => {
-          const Icon = step.icon;
-          const barW = Math.max(8, (step.value / maxVal) * 100);
+      <SectionCard title="Likely investors" right={<Text style={styles.sectionHint}>per-user readiness</Text>}>
+        {live.likelyToInvestProfiles.map((profile) => (
+          <View key={profile.id} style={styles.approvalRow}>
+            <View style={styles.rowStart}>
+              <Users size={14} color="#76A9FF" />
+              <Text style={styles.approvalTitle}>{profile.userId ?? profile.anonId.slice(0, 8)}</Text>
+            </View>
+            <Text style={styles.approvalReason}>{profile.predictedInvestorInterestCategory} · {profile.preferredTicketSize} · {profile.likelyRiskAppetite}</Text>
+            <Text style={styles.metaText}>intent {profile.intentScore} · convert {profile.predictedConversionScore} · source {profile.lastSource}</Text>
+          </View>
+        ))}
+      </SectionCard>
+
+      <SectionCard title="Source → entry → modules" right={<Text style={styles.sectionHint}>flow map</Text>}>
+        {sources.map((source) => {
+          const tone = source.health === 'suspicious' ? '#FF4D6D' : source.health === 'degraded' ? '#FFB84D' : '#32D583';
           return (
-            <View key={step.label} style={s.funnelBarRow}>
-              <View style={s.funnelBarLeft}>
-                <Icon size={12} color={step.color} />
-                <Text style={s.funnelBarLabel}>{step.label}</Text>
+            <View key={source.id} style={[styles.flowCard, { borderColor: `${tone}33` }]} testID={`source-${source.id}`}>
+              <View style={styles.flowHead}>
+                <View style={styles.rowStart}>
+                  <LiveDot color={tone} />
+                  <Text style={styles.flowTitle}>{source.name}</Text>
+                </View>
+                <Text style={[styles.flowHealth, { color: tone }]}>{source.health.toUpperCase()}</Text>
               </View>
-              <View style={s.funnelBarTrack}>
-                <View style={[s.funnelBarFill, { width: `${barW}%`, backgroundColor: step.color }]} />
+              <View style={styles.flowMetaGrid}>
+                <Text style={styles.metaText}>quality {source.qualityScore}</Text>
+                <Text style={styles.metaText}>count {source.count}</Text>
+                <Text style={styles.metaText}>intent {source.detectedIntent}</Text>
               </View>
-              <Text style={s.funnelBarVal}>{step.value}</Text>
+              <View style={styles.flowPath}>
+                <Text style={styles.pathPill}>{source.name}</Text>
+                <ArrowRight size={12} color={Colors.textTertiary} />
+                <Text style={styles.pathPill}>{source.entryPoint}</Text>
+                {source.destinationModules.map((module) => (
+                  <React.Fragment key={`${source.id}-${module}`}>
+                    <ArrowRight size={12} color={Colors.textTertiary} />
+                    <Text style={styles.pathPill}>{module}</Text>
+                  </React.Fragment>
+                ))}
+              </View>
+              {source.anomalyFlag ? <Text style={styles.anomalyText}>anomaly: {source.anomalyFlag}</Text> : null}
             </View>
           );
         })}
-      </View>
-
-      {funnel.dropOffPoints.length > 0 && (
-        <View style={s.funnelDropSection}>
-          <Text style={s.funnelDropTitle}>Drop-off Analysis</Text>
-          {funnel.dropOffPoints.filter(d => d.rate > 0).map((d) => (
-            <View key={d.step} style={s.funnelDropRow}>
-              <Text style={s.funnelDropStep}>{d.step}</Text>
-              <View style={s.funnelDropBarTrack}>
-                <View style={[s.funnelDropBarFill, { width: `${Math.min(100, d.rate)}%` }]} />
-              </View>
-              <Text style={[s.funnelDropRate, d.rate > 50 ? { color: '#FF1744' } : {}]}>{d.rate}%</Text>
-            </View>
-          ))}
-        </View>
-      )}
-
-      {funnel.topReferrers.length > 0 && (
-        <View style={s.funnelRefSection}>
-          <Text style={s.funnelDropTitle}>Top Referrers</Text>
-          {funnel.topReferrers.slice(0, 5).map((r) => (
-            <View key={r.source} style={s.funnelRefRow}>
-              <Text style={s.funnelRefSource} numberOfLines={1}>{r.source}</Text>
-              <Text style={s.funnelRefCount}>{r.count}</Text>
-            </View>
-          ))}
-        </View>
-      )}
-
-      {funnel.avgLatencyMs > 0 && (
-        <View style={s.funnelLatency}>
-          <Clock size={12} color={Colors.textTertiary} />
-          <Text style={s.funnelLatencyText}>Avg API Latency: {funnel.avgLatencyMs}ms</Text>
-        </View>
-      )}
+      </SectionCard>
     </View>
   );
 });
 
-const PredictiveTab = memo(function PredictiveTab({ predictions, health }: {
-  predictions: CTPredictiveScore[];
-  health: CTModuleHealth[];
-}) {
-  const sorted = useMemo(() => [...predictions].sort((a, b) => b.score - a.score), [predictions]);
-  const healthMap = useMemo(() => {
-    const m = new Map<CTModuleId, CTModuleHealth>();
-    for (const h of health) m.set(h.moduleId, h);
-    return m;
-  }, [health]);
-
+const FunnelStageRow = memo(function FunnelStageRow({ stage }: { stage: FunnelStageRecord }) {
+  const tone = stage.failureReason ? '#FFB84D' : '#32D583';
   return (
-    <View style={s.predictTab}>
-      <Text style={s.sectionTitle}>Predictive Risk Scoring</Text>
-      <Text style={s.sectionSub}>AI-derived failure probability per module</Text>
+    <View style={styles.funnelStageRow}>
+      <View style={styles.funnelStageTop}>
+        <Text style={styles.funnelStageName}>{stage.name}</Text>
+        <Text style={styles.funnelStageCount}>{stage.count}</Text>
+      </View>
+      <View style={styles.metaRow}>
+        <Text style={styles.metaText}>5m {stage.delta5m >= 0 ? '+' : ''}{stage.delta5m}</Text>
+        <Text style={styles.metaText}>1h {stage.delta1h >= 0 ? '+' : ''}{stage.delta1h}</Text>
+        <Text style={styles.metaText}>conv {formatPct(stage.conversionRate)}</Text>
+        <Text style={[styles.metaText, { color: tone }]}>drop {formatPct(stage.dropOffRate)}</Text>
+      </View>
+      {stage.failureReason ? <Text style={styles.stageReason}>{stage.failureReason}</Text> : null}
+      <Text style={styles.stageImpact}>Impacted: {stage.impactedModules.join(', ')}</Text>
+    </View>
+  );
+});
 
-      {sorted.map(p => {
-        const h = healthMap.get(p.moduleId);
-        const TrendIcon = getTrendIcon(p.trend);
-        const tc = getTrendColor(p.trend);
-        const rc = getRiskColor(p.score);
-        const critFactors = p.factors.filter(f => f.status === 'critical');
-        const elevFactors = p.factors.filter(f => f.status === 'elevated');
+const FunnelTab = memo(function FunnelTab({ snapshot, live }: { snapshot: NerveCenterSnapshot; live: LiveIntelligenceSnapshot }) {
+  return (
+    <View style={styles.tabBody}>
+      <SectionCard title="Failure-aware conversion funnel" right={<Text style={styles.sectionHint}>causal leakage</Text>}>
+        {snapshot.funnel.map((stage) => (
+          <FunnelStageRow key={stage.id} stage={stage} />
+        ))}
+      </SectionCard>
 
-        return (
-          <View key={p.moduleId} style={[s.predictCard, { borderLeftColor: rc }]}>
-            <View style={s.predictCardHeader}>
-              <View style={s.predictCardLeft}>
-                <Text style={s.predictCardName}>{CT_MODULE_LABELS[p.moduleId]}</Text>
-                <View style={s.predictCardTrend}>
-                  <TrendIcon size={11} color={tc} />
-                  <Text style={[s.predictCardTrendText, { color: tc }]}>{p.trend}</Text>
-                  {p.estimatedTimeToIncident !== null && (
-                    <Text style={s.predictCardETI}>ETA ~{formatSeconds(p.estimatedTimeToIncident)}</Text>
-                  )}
-                </View>
-              </View>
-              <RiskGauge score={p.score} size={44} />
+      <SectionCard title="Live funnel map" right={<Text style={styles.sectionHint}>source → convert</Text>}>
+        {live.funnelMetrics.map((stage) => (
+          <View key={stage.step} style={styles.funnelStageRow}>
+            <View style={styles.funnelStageTop}>
+              <Text style={styles.funnelStageName}>{stage.step}</Text>
+              <Text style={styles.funnelStageCount}>{stage.count}</Text>
             </View>
-
-            <Text style={s.predictCardPrediction}>{p.prediction}</Text>
-
-            {(critFactors.length > 0 || elevFactors.length > 0) && (
-              <View style={s.predictFactors}>
-                {critFactors.map(f => (
-                  <View key={f.name} style={[s.predictFactorChip, { borderColor: '#FF1744' + '40' }]}>
-                    <View style={[s.predictFactorDot, { backgroundColor: '#FF1744' }]} />
-                    <Text style={[s.predictFactorName, { color: '#FF1744' }]}>{f.name}</Text>
-                  </View>
-                ))}
-                {elevFactors.map(f => (
-                  <View key={f.name} style={[s.predictFactorChip, { borderColor: '#FFB300' + '40' }]}>
-                    <View style={[s.predictFactorDot, { backgroundColor: '#FFB300' }]} />
-                    <Text style={[s.predictFactorName, { color: '#FFB300' }]}>{f.name}</Text>
-                  </View>
-                ))}
-              </View>
-            )}
-
-            <View style={s.predictConfidence}>
-              <Text style={s.predictConfLabel}>Confidence</Text>
-              <View style={s.predictConfBar}>
-                <View style={[s.predictConfFill, { width: `${Math.round(p.confidence * 100)}%` }]} />
-              </View>
-              <Text style={s.predictConfVal}>{Math.round(p.confidence * 100)}%</Text>
+            <View style={styles.metaRow}>
+              <Text style={styles.metaText}>conv {stage.conversionRate}%</Text>
+              <Text style={styles.metaText}>drop {stage.dropRate}%</Text>
+              <Text style={styles.metaText}>{stage.impactedModules.join(' · ')}</Text>
             </View>
+            {stage.reason ? <Text style={styles.stageReason}>{stage.reason}</Text> : null}
           </View>
-        );
-      })}
+        ))}
+      </SectionCard>
+
+      <SectionCard title="Drop-off analysis" right={<Text style={styles.sectionHint}>debug next</Text>}>
+        <Text style={styles.dropTitle}>Largest drop-off: {snapshot.dropOffAnalysis.largestDropOffPoint}</Text>
+        <Text style={styles.dropBody}>{snapshot.dropOffAnalysis.probableCause}</Text>
+        <Text style={styles.dropMeta}>Impacted APIs: {snapshot.dropOffAnalysis.impactedApis.join(' · ')}</Text>
+        <Text style={styles.dropMeta}>Impacted modules: {snapshot.dropOffAnalysis.impactedModules.join(' · ')}</Text>
+        <Text style={styles.commandText}>{snapshot.dropOffAnalysis.recommendedDebugCommand}</Text>
+        {snapshot.dropOffAnalysis.logicAnomaly ? <Text style={styles.logicAlert}>logic anomaly: {snapshot.dropOffAnalysis.logicAnomaly}</Text> : null}
+      </SectionCard>
     </View>
   );
 });
 
-const ChatControlTab = memo(function ChatControlTab({ rooms }: { rooms: CTChatRoomSnapshot[] }) {
+const RiskRow = memo(function RiskRow({ risk }: { risk: RiskModuleRecord }) {
+  const tone = scoreTone(risk.riskScore);
   return (
-    <View style={s.chatTab}>
-      <Text style={s.sectionTitle}>Chat Control Layer</Text>
-      {rooms.length > 0 ? rooms.map((room) => {
-        const modeColor = room.mode === 'shared_live' ? '#00E676'
-          : room.mode === 'local_fallback' ? '#FFB300' : '#555';
-        return (
-          <View key={room.roomId} style={s.chatCard}>
-            <View style={s.chatCardHeader}>
-              <MessageSquare size={16} color={Colors.primary} />
-              <Text style={s.chatCardName}>{room.roomName}</Text>
-              <View style={[s.chatModeBadge, { backgroundColor: modeColor + '15', borderColor: modeColor + '30' }]}>
-                <Text style={[s.chatModeText, { color: modeColor }]}>{room.mode.replace(/_/g, ' ').toUpperCase()}</Text>
-              </View>
+    <View style={[styles.riskRow, { borderColor: `${tone}33` }]} testID={`risk-${risk.moduleId}`}>
+      <View style={styles.riskRowTop}>
+        <Text style={styles.riskModule}>{risk.moduleId.replace(/_/g, ' ')}</Text>
+        <Text style={[styles.riskScore, { color: tone }]}>{risk.riskScore}</Text>
+      </View>
+      <Text style={styles.riskExplanation}>{risk.whyStableOrAtRisk}</Text>
+      <View style={styles.metaRow}>
+        <Text style={styles.metaText}>driver {risk.primaryRiskDriver}</Text>
+        <Text style={styles.metaText}>conf {Math.round(risk.confidence * 100)}%</Text>
+        <Text style={styles.metaText}>dep {risk.dependencySensitivity}</Text>
+      </View>
+      <Text style={styles.riskChange}>Changed: {risk.recentChange}</Text>
+      <Text style={styles.commandText}>{risk.suggestedIntervention}</Text>
+    </View>
+  );
+});
+
+const RiskTab = memo(function RiskTab({ risks, incidents, live }: { risks: RiskModuleRecord[]; incidents: IncidentRecord[]; live: LiveIntelligenceSnapshot }) {
+  return (
+    <View style={styles.tabBody}>
+      <SectionCard title="Predictive risk engine" right={<Text style={styles.sectionHint}>0–100 by module</Text>}>
+        {risks.map((risk) => (
+          <RiskRow key={risk.moduleId} risk={risk} />
+        ))}
+      </SectionCard>
+
+      <SectionCard title="Investors at risk of stall" right={<Text style={styles.sectionHint}>follow-up now</Text>}>
+        {live.stalledProfiles.map((profile) => (
+          <View key={profile.id} style={styles.riskRow}>
+            <View style={styles.riskRowTop}>
+              <Text style={styles.riskModule}>{profile.userId ?? profile.anonId.slice(0, 8)}</Text>
+              <Text style={[styles.riskScore, { color: scoreTone(profile.intentScore) }]}>{profile.intentScore}</Text>
             </View>
-            <View style={s.chatStatsGrid}>
-              {[
-                { label: 'Users', value: room.activeUsers, icon: Users, warn: false },
-                { label: 'Typing', value: room.typingUsers, icon: Activity, warn: false },
-                { label: 'Stuck', value: room.stuckSends, icon: AlertTriangle, warn: room.stuckSends > 0 },
-                { label: 'Failed', value: room.failedSends, icon: XCircle, warn: room.failedSends > 0 },
-              ].map(stat => {
-                const Icon = stat.icon;
-                return (
-                  <View key={stat.label} style={s.chatStatCell}>
-                    <Icon size={12} color={stat.warn ? '#FF1744' : Colors.textTertiary} />
-                    <Text style={[s.chatStatVal, stat.warn ? { color: '#FF1744' } : {}]}>{stat.value}</Text>
-                    <Text style={s.chatStatLbl}>{stat.label}</Text>
-                  </View>
-                );
-              })}
-            </View>
-            {room.isDegraded && (
-              <View style={s.chatDegBanner}>
-                <AlertTriangle size={12} color="#FFB300" />
-                <Text style={s.chatDegText}>Room degraded</Text>
-              </View>
-            )}
-            <View style={s.chatTimestamps}>
-              <Text style={s.chatTimestamp}>Last write: {timeAgo(room.lastSharedWrite)}</Text>
-              <Text style={s.chatTimestamp}>Last RT: {timeAgo(room.lastRealtimeEvent)}</Text>
-            </View>
+            <Text style={styles.riskExplanation}>source {profile.lastSource} · viewed {profile.dealsViewed.length} deals · started {profile.investmentsStarted} investment flows</Text>
+            <Text style={styles.commandText}>{profile.avgTimeToInvestMs ? `avg time to invest ${(profile.avgTimeToInvestMs / 60000).toFixed(1)}m` : 'needs follow-up before first investment completion'}</Text>
           </View>
-        );
-      }) : (
-        <View style={s.emptyState}>
-          <MessageSquare size={32} color={Colors.textTertiary} />
-          <Text style={s.emptyText}>No active chat rooms</Text>
-        </View>
-      )}
-    </View>
-  );
-});
+        ))}
+      </SectionCard>
 
-const IncidentCard = memo(function IncidentCard({
-  incident,
-  onResolve,
-  onAction,
-}: {
-  incident: CTIncident;
-  onResolve: (id: string) => void;
-  onAction: (action: CTOperatorAction, module: CTModuleId) => void;
-}) {
-  const [showAnalysis, setShowAnalysis] = useState(false);
-  const isCrit = incident.severity === 'critical';
-  const color = isCrit ? '#FF1744' : '#FFB300';
-  const analysis = incident.decisionAnalysis;
-
-  return (
-    <View style={[s.incCard, { borderLeftColor: color }]}>
-      <View style={s.incHeader}>
-        {isCrit ? <XCircle size={16} color={color} /> : <AlertTriangle size={16} color={color} />}
-        <Text style={[s.incTitle, { color }]} numberOfLines={2}>{incident.title}</Text>
-      </View>
-      <Text style={s.incDesc}>{incident.description}</Text>
-      <View style={s.incMeta}>
-        <Text style={s.incMetaText}>
-          {CT_MODULE_LABELS[incident.module]} · {incident.affectedUsers} users · {timeAgo(incident.timestamp)}
-        </Text>
-      </View>
-
-      {analysis && (
-        <TouchableOpacity onPress={() => setShowAnalysis(p => !p)} style={s.incAnalysisToggle}>
-          <Brain size={12} color="#E040FB" />
-          <Text style={s.incAnalysisToggleText}>{showAnalysis ? 'Hide' : 'Show'} Decision Analysis</Text>
-        </TouchableOpacity>
-      )}
-
-      {showAnalysis && analysis && (
-        <View style={s.incAnalysis}>
-          <Text style={s.incAnalysisLabel}>Likely Cause</Text>
-          <Text style={s.incAnalysisValue}>{analysis.likelyCause}</Text>
-          <Text style={s.incAnalysisLabel}>Business Impact</Text>
-          <Text style={s.incAnalysisValue}>{analysis.businessImpact}</Text>
-          <Text style={s.incAnalysisLabel}>Severity</Text>
-          <Text style={[s.incAnalysisValue, {
-            color: analysis.estimatedSeverity === 'critical' ? '#FF1744' :
-              analysis.estimatedSeverity === 'high' ? '#FF6D00' :
-              analysis.estimatedSeverity === 'medium' ? '#FFB300' : '#00E676',
-          }]}>{analysis.estimatedSeverity.toUpperCase()}</Text>
-          {analysis.involvedModules.length > 1 && (
-            <>
-              <Text style={s.incAnalysisLabel}>Involved Modules</Text>
-              <Text style={s.incAnalysisValue}>{analysis.involvedModules.map(m => CT_MODULE_LABELS[m]).join(', ')}</Text>
-            </>
-          )}
-          {analysis.approvalActions.length > 0 && (
-            <>
-              <Text style={[s.incAnalysisLabel, { color: '#FF6D00' }]}>Requires Approval</Text>
-              {analysis.approvalActions.map((a, i) => (
-                <Text key={i} style={[s.incAnalysisValue, { color: '#FF6D00' }]}>• {a}</Text>
-              ))}
-            </>
-          )}
-        </View>
-      )}
-
-      <View style={s.incActions}>
-        <TouchableOpacity
-          style={[s.incActionBtn, { borderColor: color + '40' }]}
-          onPress={() => onAction(incident.suggestedAction, incident.module)}
-        >
-          <Zap size={12} color={color} />
-          <Text style={[s.incActionText, { color }]}>{getActionLabel(incident.suggestedAction)}</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[s.incActionBtn, { borderColor: '#00E676' + '40' }]}
-          onPress={() => onResolve(incident.id)}
-        >
-          <CheckCircle size={12} color="#00E676" />
-          <Text style={[s.incActionText, { color: '#00E676' }]}>Resolve</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-});
-
-const OperatorPanel = memo(function OperatorPanel({
-  onExecute,
-  isExecuting,
-  lastResult,
-}: {
-  onExecute: (action: CTOperatorAction) => void;
-  isExecuting: boolean;
-  lastResult: { action: string; success: boolean; message: string } | null;
-}) {
-  const actions: { action: CTOperatorAction; label: string; icon: typeof Activity; color: string }[] = [
-    { action: 'rerun_health_probe', label: 'Health Probe', icon: Activity, color: '#00E676' },
-    { action: 'reconnect_realtime', label: 'Reconnect RT', icon: Radio, color: '#448AFF' },
-    { action: 'clear_stale_cache', label: 'Clear Cache', icon: RefreshCw, color: '#FFB300' },
-    { action: 'retry_safe_rpc', label: 'Retry RPC', icon: Zap, color: '#E040FB' },
-    { action: 'reopen_subscriptions', label: 'Reopen Subs', icon: Wifi, color: '#00BCD4' },
-    { action: 'transition_stuck_sends', label: 'Fix Stuck', icon: MessageSquare, color: '#FF6D00' },
-    { action: 'retry_landing_api', label: 'Landing API', icon: Globe, color: '#448AFF' },
-    { action: 'invalidate_query_cache', label: 'Query Cache', icon: RefreshCw, color: '#9C27B0' },
-    { action: 'notify_admin', label: 'Notify Admin', icon: Mail, color: '#FF1744' },
-  ];
-
-  return (
-    <View style={s.opPanel}>
-      <Text style={s.sectionTitle}>Safe Operator Actions</Text>
-      <Text style={s.sectionSub}>Non-destructive remediation only</Text>
-      <View style={s.opGrid}>
-        {actions.map((a) => {
-          const Icon = a.icon;
-          const safe = isActionSafe(a.action);
+      <SectionCard title="Emergent incidents" right={<Text style={styles.sectionHint}>open clusters</Text>}>
+        {incidents.map((incident) => {
+          const tone = incident.severity === 'critical' ? '#FF4D6D' : incident.severity === 'high' ? '#FFB84D' : '#76A9FF';
           return (
-            <TouchableOpacity
-              key={a.action}
-              style={[s.opBtn, { borderColor: a.color + '25' }]}
-              activeOpacity={0.7}
-              disabled={isExecuting}
-              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); onExecute(a.action); }}
-            >
-              <View style={[s.opBtnIcon, { backgroundColor: a.color + '12' }]}>
-                <Icon size={18} color={a.color} />
+            <View key={incident.id} style={styles.incidentRow}>
+              <View style={styles.rowStart}>
+                <AlertTriangle size={14} color={tone} />
+                <Text style={styles.incidentTitle}>{incident.title}</Text>
               </View>
-              <Text style={s.opBtnLabel}>{a.label}</Text>
-              {safe && (
-                <View style={s.opSafeBadge}>
-                  <Shield size={8} color="#00E676" />
-                  <Text style={s.opSafeText}>SAFE</Text>
-                </View>
-              )}
-            </TouchableOpacity>
+              <Text style={styles.incidentReason}>{incident.reason}</Text>
+              <Text style={styles.metaText}>blast radius {incident.blastRadius} · actionability {incident.actionability}</Text>
+            </View>
           );
         })}
-      </View>
-      {isExecuting && (
-        <View style={s.opExec}>
-          <ActivityIndicator size="small" color={Colors.primary} />
-          <Text style={s.opExecText}>Executing...</Text>
-        </View>
-      )}
-      {lastResult && (
-        <View style={[s.opResult, { borderColor: lastResult.success ? '#00E676' + '30' : '#FF1744' + '30' }]}>
-          {lastResult.success ? <CheckCircle size={14} color="#00E676" /> : <XCircle size={14} color="#FF1744" />}
-          <View style={s.opResultText}>
-            <Text style={s.opResultAction}>{lastResult.action}</Text>
-            <Text style={s.opResultMsg}>{lastResult.message}</Text>
-          </View>
-        </View>
-      )}
+      </SectionCard>
     </View>
   );
 });
 
-const AutoRemediationTab = memo(function AutoRemediationTab({ logs }: { logs: CTAutoRemediationLog[] }) {
-  const stats = useMemo(() => getRemediationStats(), [logs]);
+const ChatTab = memo(function ChatTab({ rooms, live }: { rooms: ChatRoomRecord[]; live: LiveIntelligenceSnapshot }) {
   return (
-    <View style={s.autoTab}>
-      <Text style={s.sectionTitle}>Autonomous Remediation</Text>
-      <Text style={s.sectionSub}>Safe auto-heal actions executed by the system</Text>
+    <View style={styles.tabBody}>
+      <SectionCard title="Operator control state" right={<Text style={styles.sectionHint}>stuck + waiting</Text>}>
+        <View style={styles.metricsGrid}>
+          <MetricTile label="Waiting users" value={String(live.operator.waitingUsers)} tone="#76A9FF" />
+          <MetricTile label="Stuck users" value={String(live.operator.stuckUsers)} tone="#FFB84D" />
+          <MetricTile label="Failed convos" value={String(live.operator.failedConversations)} tone="#FF4D6D" />
+          <MetricTile label="Fallback" value={live.operator.fallbackTransportState} tone={live.operator.fallbackTransportState === 'healthy' ? '#32D583' : '#FFB84D'} />
+        </View>
+      </SectionCard>
 
-      <View style={s.autoStatsRow}>
-        <View style={s.autoStat}>
-          <Text style={s.autoStatVal}>{stats.total}</Text>
-          <Text style={s.autoStatLbl}>Total</Text>
-        </View>
-        <View style={s.autoStatDiv} />
-        <View style={s.autoStat}>
-          <Text style={[s.autoStatVal, { color: '#00E676' }]}>{stats.success}</Text>
-          <Text style={s.autoStatLbl}>Success</Text>
-        </View>
-        <View style={s.autoStatDiv} />
-        <View style={s.autoStat}>
-          <Text style={[s.autoStatVal, { color: '#FF1744' }]}>{stats.failed}</Text>
-          <Text style={s.autoStatLbl}>Failed</Text>
-        </View>
-        <View style={s.autoStatDiv} />
-        <View style={s.autoStat}>
-          <Text style={[s.autoStatVal, { color: '#FFB300' }]}>{stats.skipped}</Text>
-          <Text style={s.autoStatLbl}>Skipped</Text>
-        </View>
-      </View>
-
-      {logs.length > 0 ? (
-        <View style={s.autoLogList}>
-          {[...logs].reverse().slice(0, 20).map((log) => {
-            const resultColor = log.result === 'success' ? '#00E676' : log.result === 'failed' ? '#FF1744' : '#FFB300';
-            return (
-              <View key={log.id} style={s.autoLogRow}>
-                <View style={[s.autoLogDot, { backgroundColor: resultColor }]} />
-                <View style={s.autoLogContent}>
-                  <View style={s.autoLogHeader}>
-                    <Text style={s.autoLogAction}>{log.action}</Text>
-                    <Text style={[s.autoLogResult, { color: resultColor }]}>{log.result}</Text>
-                  </View>
-                  <Text style={s.autoLogModule}>{CT_MODULE_LABELS[log.module]} · {log.durationMs}ms</Text>
-                  <Text style={s.autoLogMsg} numberOfLines={2}>{log.message}</Text>
-                  <Text style={s.autoLogTime}>{timeAgo(log.triggeredAt)}</Text>
+      <SectionCard title="Operator communications layer" right={<Text style={styles.sectionHint}>runtime + escalation</Text>}>
+        {rooms.map((room) => {
+          const tone = room.roomStatus === 'critical' ? '#FF4D6D' : room.roomStatus === 'degraded' ? '#FFB84D' : room.roomStatus === 'idle' ? '#76A9FF' : '#32D583';
+          return (
+            <View key={room.id} style={[styles.chatCard, { borderColor: `${tone}33` }]} testID={`chat-room-${room.id}`}>
+              <View style={styles.chatHeader}>
+                <View style={styles.rowStart}>
+                  <LiveDot color={tone} />
+                  <Text style={styles.chatRoomName}>{room.name}</Text>
                 </View>
+                <Text style={[styles.chatState, { color: tone }]}>{room.roomStatus}</Text>
               </View>
-            );
-          })}
-        </View>
-      ) : (
-        <View style={s.emptyState}>
-          <Wrench size={32} color={Colors.textTertiary} />
-          <Text style={s.emptyText}>No auto-remediation actions yet</Text>
-        </View>
-      )}
+              <View style={styles.metricsGrid}>
+                <MetricTile label="Users" value={String(room.activeUsers)} />
+                <MetricTile label="Typing" value={String(room.typingUsers)} />
+                <MetricTile label="Stuck" value={String(room.stuckConversations)} tone="#FFB84D" />
+                <MetricTile label="Failed" value={String(room.failedMessages)} tone="#FF4D6D" />
+              </View>
+              <Text style={styles.chatProof}>{room.proof}</Text>
+              <Text style={styles.chatMeta}>last write {room.lastWrite} · transport {room.realtimeTransportStatus} · delivery {room.messageDeliveryHealth}</Text>
+              {room.incidentWithoutOperator ? <Text style={styles.logicAlert}>incident active while room is inactive</Text> : null}
+              {room.escalationGap ? <Text style={styles.logicAlert}>escalation required but no operator presence</Text> : null}
+            </View>
+          );
+        })}
+      </SectionCard>
     </View>
   );
 });
+
+const BlueprintNode = memo(function BlueprintNode({ node }: { node: ArchitectureNodeRecord }) {
+  const tone = getHealthColor(node.healthState);
+  return (
+    <View style={[styles.blueprintNode, { borderColor: `${tone}33` }]}>
+      <View style={styles.blueprintTop}>
+        <Text style={styles.blueprintName}>{node.name}</Text>
+        <Text style={[styles.blueprintStatus, { color: tone }]}>{node.criticalPathStatus}</Text>
+      </View>
+      <Text style={styles.blueprintMeta}>{node.layer} · {node.latencyMs}ms</Text>
+      <Text style={styles.blueprintIssue}>root issue: {node.rootIssue}</Text>
+      <Text style={styles.blueprintImpact}>downstream: {node.affectedDownstreamSystems.join(' → ') || 'none'}</Text>
+      <Text style={styles.commandText}>{node.recommendedRecoveryCommand}</Text>
+    </View>
+  );
+});
+
+const BlueprintTab = memo(function BlueprintTab({ nodes, dependencies, commands }: { nodes: ArchitectureNodeRecord[]; dependencies: DependencyRecord[]; commands: CommandRecord[] }) {
+  return (
+    <View style={styles.tabBody}>
+      <SectionCard title="System blueprint" right={<Text style={styles.sectionHint}>live architecture audit map</Text>}>
+        {nodes.map((node) => (
+          <BlueprintNode key={node.id} node={node} />
+        ))}
+      </SectionCard>
+
+      <SectionCard title="Meaningful connections" right={<Text style={styles.sectionHint}>dependency links</Text>}>
+        {dependencies.map((dependency) => (
+          <View key={dependency.id} style={styles.connectionRow}>
+            <Text style={styles.connectionText}>{dependency.from}</Text>
+            <ChevronRight size={12} color={dependency.degraded ? '#FF4D6D' : Colors.textTertiary} />
+            <Text style={styles.connectionText}>{dependency.to}</Text>
+            <Text style={[styles.connectionType, dependency.degraded ? { color: '#FF4D6D' } : null]}>{dependency.type}</Text>
+          </View>
+        ))}
+      </SectionCard>
+
+      <SectionCard title="Command layer" right={<Text style={styles.sectionHint}>specific operator actions</Text>}>
+        {commands.map((command) => (
+          <View key={command.id} style={styles.commandRow}>
+            <View style={styles.rowStart}>
+              <Command size={14} color="#76A9FF" />
+              <Text style={styles.commandTitle}>{command.title}</Text>
+            </View>
+            <Text style={styles.commandReason}>{command.reason}</Text>
+            <Text style={styles.commandText}>{command.command}</Text>
+          </View>
+        ))}
+      </SectionCard>
+    </View>
+  );
+});
+
+function renderTab(tab: TabId, snapshot: NerveCenterSnapshot, live: LiveIntelligenceSnapshot) {
+  if (tab === 'traffic') return <TrafficTab sources={snapshot.trafficSources} live={live} />;
+  if (tab === 'funnel') return <FunnelTab snapshot={snapshot} live={live} />;
+  if (tab === 'risk') return <RiskTab risks={snapshot.riskModules} incidents={snapshot.incidents} live={live} />;
+  if (tab === 'chat') return <ChatTab rooms={snapshot.chatRooms} live={live} />;
+  if (tab === 'blueprint') return <BlueprintTab nodes={snapshot.architectureNodes} dependencies={snapshot.dependencies} commands={snapshot.commands} />;
+  return <NerveTab snapshot={snapshot} live={live} />;
+}
 
 export default function ControlTowerScreen() {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<TabId>('nerve');
-  const [snapshot, setSnapshot] = useState<CTDashboardSnapshot | null>(null);
-  const [isRunning, setIsRunning] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  const [lastActionResult, setLastActionResult] = useState<{
-    action: string; success: boolean; message: string;
-  } | null>(null);
-  const presence = usePresenceTracker();
+  const [tab, setTab] = useState<TabId>('nerve');
+  const [refreshing, setRefreshing] = useState<boolean>(false);
+  const [snapshot, setSnapshot] = useState<NerveCenterSnapshot>(() => buildNerveCenterSnapshot());
+  const liveSnapshot = useLiveIntelligenceSnapshot();
+  const ownerAIConfigAudit = useMemo<IVXOwnerAIConfigAudit>(() => getIVXOwnerAIConfigAudit(), [snapshot.asOf, liveSnapshot.totalLiveUsers]);
 
-  useEffect(() => {
-    controlTowerAggregator.start();
-    setIsRunning(true);
-    const unsub = controlTowerAggregator.subscribe((snap) => setSnapshot(snap));
-    return () => { unsub(); };
-  }, []);
-
-  const handleRefresh = useCallback(async () => {
-    setRefreshing(true);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    await controlTowerAggregator.refreshHealth();
-    setRefreshing(false);
-  }, []);
-
-  const handleToggle = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    if (isRunning) { controlTowerAggregator.stop(); setIsRunning(false); }
-    else { controlTowerAggregator.start(); setIsRunning(true); }
-  }, [isRunning]);
-
-  const operatorMutation = useMutation({
-    mutationFn: async (action: CTOperatorAction) => executeOperatorAction(action, 'home'),
-    onSuccess: (result) => {
-      setLastActionResult({ action: getActionLabel(result.action), success: result.success, message: result.message });
-      Haptics.notificationAsync(result.success ? Haptics.NotificationFeedbackType.Success : Haptics.NotificationFeedbackType.Error);
-    },
-    onError: (err) => {
-      setLastActionResult({ action: 'Unknown', success: false, message: (err as Error)?.message || 'Failed' });
-    },
-  });
-
-  const handleOperatorAction = useCallback((action: CTOperatorAction) => { operatorMutation.mutate(action); }, [operatorMutation]);
-  const handleResolveIncident = useCallback((id: string) => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); controlTowerAggregator.resolveIncident(id); }, []);
-  const handleIncidentAction = useCallback((action: CTOperatorAction, _module: CTModuleId) => { operatorMutation.mutate(action); }, [operatorMutation]);
-
-  const trafficIntel = useMemo<TrafficIntelSnapshot | null>(() => {
-    return ctAgg.getTrafficIntel();
-  }, [snapshot]);
-
-  const renderContent = () => {
-    if (!snapshot) return (
-      <View style={s.loading}>
-        <ActivityIndicator size="large" color={Colors.primary} />
-        <Text style={s.loadingText}>Initializing nerve center...</Text>
-      </View>
-    );
-
-    switch (activeTab) {
-      case 'nerve': return <NerveCenterTab snapshot={snapshot} presence={presence} />;
-      case 'traffic': return trafficIntel ? <TrafficIntelTab intel={trafficIntel} /> : (
-        <View style={s.loading}>
-          <Radar size={28} color={Colors.textTertiary} />
-          <Text style={s.loadingText}>Loading traffic intelligence...</Text>
-        </View>
-      );
-      case 'landing': return <LandingFunnelTab funnel={snapshot.landingFunnel} />;
-      case 'predict': return <PredictiveTab predictions={snapshot.predictions} health={snapshot.health} />;
-      case 'chat': return <ChatControlTab rooms={snapshot.chatRooms} />;
-      case 'incidents': return snapshot.incidents.length > 0 ? (
-        <View style={s.incTab}><Text style={s.sectionTitle}>Active Incidents</Text>
-          {snapshot.incidents.map(inc => (
-            <IncidentCard key={inc.id} incident={inc} onResolve={handleResolveIncident} onAction={handleIncidentAction} />
-          ))}
-        </View>
-      ) : (
-        <View style={s.emptyState}><CheckCircle size={32} color="#00E676" /><Text style={s.emptyText}>All clear</Text></View>
-      );
-      case 'operator': return <OperatorPanel onExecute={handleOperatorAction} isExecuting={operatorMutation.isPending} lastResult={lastActionResult} />;
-      case 'auto': return <AutoRemediationTab logs={snapshot.autoRemediations} />;
-    }
+  const refreshSnapshot = () => {
+    console.log('[NerveCenter] Refreshing operational snapshot');
+    setSnapshot(buildNerveCenterSnapshot());
   };
 
+  const onRefresh = () => {
+    setRefreshing(true);
+    refreshSnapshot();
+    setTimeout(() => setRefreshing(false), 500);
+  };
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      refreshSnapshot();
+    }, 12000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  const severityCopy = useMemo(() => {
+    return snapshot.globalStatus === 'critical'
+      ? 'Critical software risk is concentrated in lead capture, handoff integrity, and owner-room transport.'
+      : snapshot.globalStatus === 'warning'
+        ? 'Several modules need operator action, but automated containment is holding the blast radius.'
+        : 'System is stable with fresh proofs across the critical path.';
+  }, [snapshot.globalStatus]);
+  const environmentAudit = useMemo<EnvironmentAuditSummary>(() => buildEnvironmentAuditSummary(ownerAIConfigAudit), [ownerAIConfigAudit]);
+  const auditToneColor = useMemo<string>(() => getAuditToneColor(environmentAudit.tone), [environmentAudit.tone]);
+
   return (
-    <View style={s.root}>
-      <SafeAreaView style={s.safeArea} edges={['top']}>
-        <View style={s.header}>
-          <TouchableOpacity onPress={() => router.back()} style={s.backBtn} testID="ct-back">
-            <ArrowLeft size={20} color={Colors.text} />
+    <View style={styles.screen}>
+      <Stack.Screen options={{ headerShown: false }} />
+      <View style={styles.backgroundGlowTop} />
+      <View style={styles.backgroundGlowBottom} />
+      <SafeAreaView style={styles.safeArea} edges={['top']}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButton} testID="nerve-back-button">
+            <ArrowLeft size={18} color={Colors.text} />
           </TouchableOpacity>
-          <View style={s.headerCenter}>
-            <Brain size={18} color={Colors.primary} />
-            <Text style={s.headerTitle}>Nerve Center</Text>
+          <View style={styles.headerCopy}>
+            <Text style={styles.headerEyebrow}>Runtime intelligence cockpit</Text>
+            <Text style={styles.headerTitle}>Nerve Center</Text>
+            <Text style={styles.headerSubtitle}>{severityCopy}</Text>
           </View>
-          <View style={s.headerRight}>
-            <TouchableOpacity onPress={handleToggle} style={s.headerAction} testID="ct-toggle">
-              {isRunning ? <Pause size={16} color="#00E676" /> : <Play size={16} color="#FFB300" />}
-            </TouchableOpacity>
-            <TouchableOpacity onPress={handleRefresh} style={s.headerAction} testID="ct-refresh">
-              <RefreshCw size={16} color={Colors.text} />
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity onPress={refreshSnapshot} style={styles.refreshButton} testID="nerve-refresh-button">
+            <RefreshCw size={16} color="#76A9FF" />
+          </TouchableOpacity>
         </View>
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.tabBar} contentContainerStyle={s.tabBarContent}>
-          {TABS.map((tab) => {
-            const Icon = tab.icon;
-            const active = activeTab === tab.id;
-            return (
-              <TouchableOpacity
-                key={tab.id}
-                style={[s.tab, active && s.tabActive]}
-                onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setActiveTab(tab.id); }}
-                testID={`ct-tab-${tab.id}`}
-              >
-                <Icon size={13} color={active ? Colors.primary : Colors.textTertiary} />
-                <Text style={[s.tabLabel, active && s.tabLabelActive]}>{tab.label}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-
         <ScrollView
-          style={s.scroll}
-          contentContainerStyle={s.scrollContent}
           showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={Colors.primary} colors={[Colors.primary]} />}
+          contentContainerStyle={styles.content}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#76A9FF" />}
         >
-          {renderContent()}
+          <View style={[styles.topStatusBanner, { borderColor: `${auditToneColor}33`, backgroundColor: `${auditToneColor}14` }]} testID="nerve-top-status-banner">
+            <View style={styles.signalRow}>
+              <LiveDot color={auditToneColor} />
+              <Text style={[styles.signalText, { color: auditToneColor }]}>{environmentAudit.routingAuditState.replace(/_/g, ' ').toUpperCase()}</Text>
+            </View>
+            <Text style={styles.topStatusBannerTitle}>Owner AI routing and environment audit</Text>
+            <Text style={styles.topStatusBannerBody}>{environmentAudit.topBannerMessage}</Text>
+          </View>
+
+          {environmentAudit.productionGuardBlocked ? (
+            <View style={styles.productionGuardCard} testID="nerve-production-guard-block">
+              <Text style={styles.productionGuardEyebrow}>Production guard block</Text>
+              <Text style={styles.productionGuardTitle}>Remote Owner AI routing is blocked</Text>
+              <Text style={styles.productionGuardBody}>{ownerAIConfigAudit.configurationError ?? 'Production configuration is invalid for Owner AI routing.'}</Text>
+              <View style={styles.auditGrid}>
+                <AuditField label="Environment" value={environmentAudit.environment} />
+                <AuditField label="Configured URL" value={environmentAudit.configuredUrl} />
+                <AuditField label="Routing state" value={environmentAudit.routingAuditState} />
+                <AuditField label="Config source" value={environmentAudit.configSource} />
+              </View>
+            </View>
+          ) : null}
+
+          <SectionCard title="Environment audit" right={<Text style={styles.sectionHint}>live routing + fallback</Text>}>
+            <View style={styles.auditGrid} testID="nerve-environment-audit-panel">
+              <AuditField label="Environment" value={environmentAudit.environment} />
+              <AuditField label="Routing / audit state" value={environmentAudit.routingAuditState} />
+              <AuditField label="Configured URL" value={environmentAudit.configuredUrl} />
+              <AuditField label="Config source" value={environmentAudit.configSource} />
+              <AuditField label="Explicit production pin" value={environmentAudit.explicitProductionPin} />
+              <AuditField label="Active fallback URL" value={environmentAudit.activeFallbackUrl} />
+              <AuditField label="Fallback used" value={environmentAudit.fallbackUsed} />
+              <AuditField label="Production guard" value={environmentAudit.productionGuardText} />
+            </View>
+            <View style={styles.auditNarrativeCard}>
+              <Text style={styles.auditNarrativeTitle}>Why fallback was selected</Text>
+              <Text style={styles.auditNarrativeBody}>{environmentAudit.whyFallbackSelected}</Text>
+            </View>
+            <View style={styles.auditNarrativeCard}>
+              <Text style={styles.auditNarrativeTitle}>Selection reason</Text>
+              <Text style={styles.auditNarrativeBody}>{environmentAudit.selectionReason}</Text>
+            </View>
+          </SectionCard>
+
+          <View style={styles.bannerRow}>
+            <View style={styles.bannerLeft}>
+              <View style={styles.signalRow}>
+                <LiveDot color={getHealthColor(snapshot.globalStatus)} />
+                <Text style={[styles.signalText, { color: getHealthColor(snapshot.globalStatus) }]}>{snapshot.globalStatus.toUpperCase()}</Text>
+              </View>
+              <Text style={styles.bannerTitle}>Real-time audit, trace, predict, escalate.</Text>
+            </View>
+            <View style={styles.bannerBadges}>
+              <View style={styles.bannerBadge}><Cpu size={12} color="#76A9FF" /><Text style={styles.bannerBadgeText}>{liveSnapshot.moduleMetrics.length || snapshot.modules.length} modules</Text></View>
+              <View style={styles.bannerBadge}><Timer size={12} color="#FFB84D" /><Text style={styles.bannerBadgeText}>{liveSnapshot.totalLiveUsers} live users</Text></View>
+              <View style={styles.bannerBadge}><Bot size={12} color="#B692F6" /><Text style={styles.bannerBadgeText}>{liveSnapshot.stalledProfiles.length} stalled</Text></View>
+            </View>
+          </View>
+
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabRail}>
+            {TABS.map((item) => {
+              const Icon = item.icon;
+              const active = item.id === tab;
+              return (
+                <TouchableOpacity
+                  key={item.id}
+                  onPress={() => setTab(item.id)}
+                  style={[styles.tabChip, active ? styles.tabChipActive : null]}
+                  testID={`tab-${item.id}`}
+                >
+                  <Icon size={14} color={active ? '#0A101B' : Colors.textSecondary} />
+                  <Text style={[styles.tabChipText, active ? styles.tabChipTextActive : null]}>{item.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+
+          {renderTab(tab, snapshot, liveSnapshot)}
         </ScrollView>
       </SafeAreaView>
     </View>
   );
 }
 
-const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#050508' },
-  safeArea: { flex: 1 },
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#1A1A1F' },
-  backBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#1A1A1F', justifyContent: 'center', alignItems: 'center' },
-  headerCenter: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
-  headerTitle: { color: Colors.text, fontSize: 17, fontWeight: '700' as const, letterSpacing: 0.3 },
-  headerRight: { flexDirection: 'row', gap: 8 },
-  headerAction: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#1A1A1F', justifyContent: 'center', alignItems: 'center' },
-  tabBar: { maxHeight: 44, borderBottomWidth: 1, borderBottomColor: '#1A1A1F' },
-  tabBarContent: { paddingHorizontal: 12, gap: 4, alignItems: 'center' },
-  tab: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 },
-  tabActive: { backgroundColor: '#1A1A1F' },
-  tabLabel: { color: Colors.textTertiary, fontSize: 11, fontWeight: '600' as const },
-  tabLabelActive: { color: Colors.primary },
-  scroll: { flex: 1 },
-  scrollContent: { paddingHorizontal: 16, paddingBottom: 40 },
-  loading: { paddingTop: 80, alignItems: 'center', gap: 12 },
-  loadingText: { color: Colors.textSecondary, fontSize: 13 },
-  sectionTitle: { color: Colors.text, fontSize: 15, fontWeight: '700' as const, marginBottom: 4 },
-  sectionSub: { color: Colors.textTertiary, fontSize: 11, marginBottom: 12 },
-  emptyState: { alignItems: 'center', paddingVertical: 48, gap: 12 },
-  emptyText: { color: Colors.textTertiary, fontSize: 13 },
-
-  nerveBanner: { marginTop: 16, borderRadius: 16, backgroundColor: '#0D0D12', borderWidth: 1, padding: 16 },
-  nerveBannerTop: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
-  nerveLabel: { fontSize: 13, fontWeight: '800' as const, letterSpacing: 1.2 },
-  nerveAssessment: { color: Colors.textSecondary, fontSize: 12, lineHeight: 18, marginBottom: 14 },
-  nerveStatsRow: { flexDirection: 'row', alignItems: 'center' },
-  nerveStat: { flex: 1, alignItems: 'center' },
-  nerveStatVal: { color: Colors.text, fontSize: 18, fontWeight: '700' as const },
-  nerveStatLbl: { color: Colors.textTertiary, fontSize: 8, fontWeight: '700' as const, marginTop: 2, letterSpacing: 0.5 },
-  nerveStatDiv: { width: 1, height: 24, backgroundColor: '#1A1A1F' },
-  nerveSection: { marginTop: 16, borderRadius: 14, backgroundColor: '#0D0D12', borderWidth: 1, borderColor: '#1A1A1F', padding: 14 },
-  nerveSectionTitle: { color: Colors.text, fontSize: 13, fontWeight: '700' as const, marginBottom: 8 },
-  nerveRiskRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, paddingVertical: 4 },
-  nerveRiskText: { color: '#FF1744', fontSize: 11, lineHeight: 16, flex: 1 },
-  nerveActionRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, paddingVertical: 4 },
-  nerveActionText: { color: '#FFB300', fontSize: 11, lineHeight: 16, flex: 1 },
-  nerveModGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  nerveModChip: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, backgroundColor: '#0A0A0E', borderWidth: 1, borderColor: '#1A1A1F' },
-  nerveModLabel: { color: Colors.textSecondary, fontSize: 10, fontWeight: '500' as const, maxWidth: 80 },
-  nerveModCount: { color: Colors.text, fontSize: 11, fontWeight: '700' as const },
-  nerveRiskModule: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#1A1A1F' },
-  nerveRiskModLeft: { flex: 1 },
-  nerveRiskModName: { color: Colors.text, fontSize: 12, fontWeight: '600' as const },
-  nerveRiskModTrend: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 2 },
-  nerveRiskModTrendText: { fontSize: 10, fontWeight: '600' as const },
-  nerveETI: { flexDirection: 'row', alignItems: 'center', gap: 3, marginLeft: 8 },
-  nerveETIText: { color: '#FF1744', fontSize: 9, fontWeight: '600' as const },
-
-  riskGauge: { justifyContent: 'center', alignItems: 'center' },
-  riskGaugeOuter: { justifyContent: 'center', alignItems: 'center', borderWidth: 2 },
-  riskGaugeInner: { justifyContent: 'center', alignItems: 'center', borderWidth: 1.5 },
-  riskGaugeText: { fontWeight: '800' as const },
-
-  funnelTab: { marginTop: 16 },
-  funnelOverview: { flexDirection: 'row', alignItems: 'center', borderRadius: 14, backgroundColor: '#0D0D12', borderWidth: 1, borderColor: '#1A1A1F', padding: 14, marginBottom: 14 },
-  funnelOverviewStat: { flex: 1, alignItems: 'center' },
-  funnelOverviewVal: { color: Colors.text, fontSize: 18, fontWeight: '700' as const },
-  funnelOverviewLbl: { color: Colors.textTertiary, fontSize: 9, fontWeight: '600' as const, marginTop: 2 },
-  funnelOverviewDiv: { width: 1, height: 24, backgroundColor: '#1A1A1F' },
-  funnelBars: { borderRadius: 14, backgroundColor: '#0D0D12', borderWidth: 1, borderColor: '#1A1A1F', padding: 14, gap: 10 },
-  funnelBarRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  funnelBarLeft: { flexDirection: 'row', alignItems: 'center', gap: 6, width: 90 },
-  funnelBarLabel: { color: Colors.textSecondary, fontSize: 11 },
-  funnelBarTrack: { flex: 1, height: 6, backgroundColor: '#1A1A1F', borderRadius: 3, overflow: 'hidden' as const },
-  funnelBarFill: { height: 6, borderRadius: 3 },
-  funnelBarVal: { color: Colors.text, fontSize: 12, fontWeight: '700' as const, width: 36, textAlign: 'right' as const },
-  funnelDropSection: { marginTop: 14, borderRadius: 14, backgroundColor: '#0D0D12', borderWidth: 1, borderColor: '#1A1A1F', padding: 14 },
-  funnelDropTitle: { color: Colors.text, fontSize: 12, fontWeight: '700' as const, marginBottom: 10 },
-  funnelDropRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4 },
-  funnelDropStep: { color: Colors.textSecondary, fontSize: 11, width: 80 },
-  funnelDropBarTrack: { flex: 1, height: 4, backgroundColor: '#1A1A1F', borderRadius: 2, overflow: 'hidden' as const },
-  funnelDropBarFill: { height: 4, borderRadius: 2, backgroundColor: '#FF1744' },
-  funnelDropRate: { color: Colors.textSecondary, fontSize: 11, fontWeight: '600' as const, width: 36, textAlign: 'right' as const },
-  funnelRefSection: { marginTop: 14, borderRadius: 14, backgroundColor: '#0D0D12', borderWidth: 1, borderColor: '#1A1A1F', padding: 14 },
-  funnelRefRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3 },
-  funnelRefSource: { color: Colors.textSecondary, fontSize: 11, flex: 1 },
-  funnelRefCount: { color: Colors.text, fontSize: 11, fontWeight: '600' as const },
-  funnelLatency: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 12, paddingHorizontal: 4 },
-  funnelLatencyText: { color: Colors.textTertiary, fontSize: 11 },
-
-  predictTab: { marginTop: 16 },
-  predictCard: { borderRadius: 14, backgroundColor: '#0D0D12', borderWidth: 1, borderColor: '#1A1A1F', borderLeftWidth: 3, padding: 14, marginBottom: 10 },
-  predictCardHeader: { flexDirection: 'row', alignItems: 'center' },
-  predictCardLeft: { flex: 1 },
-  predictCardName: { color: Colors.text, fontSize: 14, fontWeight: '600' as const },
-  predictCardTrend: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 3 },
-  predictCardTrendText: { fontSize: 10, fontWeight: '600' as const },
-  predictCardETI: { color: '#FF1744', fontSize: 9, fontWeight: '600' as const, marginLeft: 6 },
-  predictCardPrediction: { color: Colors.textSecondary, fontSize: 11, lineHeight: 16, marginTop: 8, marginBottom: 8 },
-  predictFactors: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 },
-  predictFactorChip: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1 },
-  predictFactorDot: { width: 5, height: 5, borderRadius: 2.5 },
-  predictFactorName: { fontSize: 9, fontWeight: '600' as const },
-  predictConfidence: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  predictConfLabel: { color: Colors.textTertiary, fontSize: 9, fontWeight: '600' as const, width: 60 },
-  predictConfBar: { flex: 1, height: 3, backgroundColor: '#1A1A1F', borderRadius: 1.5, overflow: 'hidden' as const },
-  predictConfFill: { height: 3, borderRadius: 1.5, backgroundColor: '#448AFF' },
-  predictConfVal: { color: Colors.textTertiary, fontSize: 9, fontWeight: '600' as const, width: 28, textAlign: 'right' as const },
-
-  chatTab: { marginTop: 16 },
-  chatCard: { borderRadius: 14, backgroundColor: '#0D0D12', borderWidth: 1, borderColor: '#1A1A1F', padding: 14, marginBottom: 10 },
-  chatCardHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
-  chatCardName: { color: Colors.text, fontSize: 14, fontWeight: '600' as const, flex: 1 },
-  chatModeBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1 },
-  chatModeText: { fontSize: 9, fontWeight: '700' as const, letterSpacing: 0.4 },
-  chatStatsGrid: { flexDirection: 'row', gap: 8 },
-  chatStatCell: { flex: 1, alignItems: 'center', gap: 3, paddingVertical: 8, borderRadius: 8, backgroundColor: '#0A0A0E' },
-  chatStatVal: { color: Colors.text, fontSize: 16, fontWeight: '700' as const },
-  chatStatLbl: { color: Colors.textTertiary, fontSize: 9, fontWeight: '600' as const },
-  chatDegBanner: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10, padding: 8, borderRadius: 8, backgroundColor: 'rgba(255,179,0,0.08)', borderWidth: 1, borderColor: 'rgba(255,179,0,0.2)' },
-  chatDegText: { color: '#FFB300', fontSize: 11, fontWeight: '500' as const },
-  chatTimestamps: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 },
-  chatTimestamp: { color: Colors.textTertiary, fontSize: 10 },
-
-  incTab: { marginTop: 16 },
-  incCard: { borderRadius: 12, backgroundColor: '#0D0D12', borderWidth: 1, borderColor: '#1A1A1F', borderLeftWidth: 3, padding: 14, marginBottom: 10 },
-  incHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 6 },
-  incTitle: { fontSize: 13, fontWeight: '700' as const, flex: 1, lineHeight: 18 },
-  incDesc: { color: Colors.textSecondary, fontSize: 11, lineHeight: 16, marginBottom: 8 },
-  incMeta: { marginBottom: 8 },
-  incMetaText: { color: Colors.textTertiary, fontSize: 10 },
-  incAnalysisToggle: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 6, marginBottom: 6 },
-  incAnalysisToggleText: { color: '#E040FB', fontSize: 10, fontWeight: '600' as const },
-  incAnalysis: { backgroundColor: '#0A0A0E', borderRadius: 10, padding: 12, marginBottom: 10, gap: 4 },
-  incAnalysisLabel: { color: Colors.textTertiary, fontSize: 9, fontWeight: '700' as const, letterSpacing: 0.5, marginTop: 4 },
-  incAnalysisValue: { color: Colors.textSecondary, fontSize: 11, lineHeight: 16 },
-  incActions: { flexDirection: 'row', gap: 8 },
-  incActionBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, borderWidth: 1 },
-  incActionText: { fontSize: 10, fontWeight: '600' as const },
-
-  opPanel: { marginTop: 16 },
-  opGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  opBtn: { width: CARD_WIDTH, borderRadius: 12, backgroundColor: '#0D0D12', borderWidth: 1, padding: 14, alignItems: 'center', gap: 8 },
-  opBtnIcon: { width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
-  opBtnLabel: { color: Colors.text, fontSize: 12, fontWeight: '600' as const, textAlign: 'center' as const },
-  opSafeBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, backgroundColor: 'rgba(0,230,118,0.08)' },
-  opSafeText: { color: '#00E676', fontSize: 8, fontWeight: '800' as const, letterSpacing: 0.5 },
-  opExec: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 14, paddingVertical: 12, borderRadius: 10, backgroundColor: '#0D0D12' },
-  opExecText: { color: Colors.textSecondary, fontSize: 12 },
-  opResult: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginTop: 14, padding: 12, borderRadius: 10, backgroundColor: '#0D0D12', borderWidth: 1 },
-  opResultText: { flex: 1 },
-  opResultAction: { color: Colors.text, fontSize: 12, fontWeight: '600' as const },
-  opResultMsg: { color: Colors.textSecondary, fontSize: 11, marginTop: 2 },
-
-  autoTab: { marginTop: 16 },
-  autoStatsRow: { flexDirection: 'row', alignItems: 'center', borderRadius: 14, backgroundColor: '#0D0D12', borderWidth: 1, borderColor: '#1A1A1F', padding: 14, marginBottom: 14 },
-  autoStat: { flex: 1, alignItems: 'center' },
-  autoStatVal: { color: Colors.text, fontSize: 20, fontWeight: '700' as const },
-  autoStatLbl: { color: Colors.textTertiary, fontSize: 9, fontWeight: '600' as const, marginTop: 2 },
-  autoStatDiv: { width: 1, height: 24, backgroundColor: '#1A1A1F' },
-  autoLogList: { gap: 8 },
-  autoLogRow: { flexDirection: 'row', gap: 10, borderRadius: 12, backgroundColor: '#0D0D12', borderWidth: 1, borderColor: '#1A1A1F', padding: 12 },
-  autoLogDot: { width: 8, height: 8, borderRadius: 4, marginTop: 4 },
-  autoLogContent: { flex: 1 },
-  autoLogHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 },
-  autoLogAction: { color: Colors.text, fontSize: 12, fontWeight: '600' as const },
-  autoLogResult: { fontSize: 10, fontWeight: '700' as const },
-  autoLogModule: { color: Colors.textTertiary, fontSize: 10, marginBottom: 2 },
-  autoLogMsg: { color: Colors.textSecondary, fontSize: 11, lineHeight: 15 },
-  autoLogTime: { color: Colors.textTertiary, fontSize: 9, marginTop: 3 },
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: '#04070C',
+  },
+  safeArea: {
+    flex: 1,
+  },
+  backgroundGlowTop: {
+    position: 'absolute',
+    top: -120,
+    right: -60,
+    width: 240,
+    height: 240,
+    borderRadius: 120,
+    backgroundColor: 'rgba(118,169,255,0.08)',
+  },
+  backgroundGlowBottom: {
+    position: 'absolute',
+    bottom: -140,
+    left: -80,
+    width: 260,
+    height: 260,
+    borderRadius: 130,
+    backgroundColor: 'rgba(182,146,246,0.08)',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 8,
+  },
+  backButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  refreshButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: 'rgba(118,169,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(118,169,255,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerCopy: {
+    flex: 1,
+  },
+  headerEyebrow: {
+    color: '#76A9FF',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+  },
+  headerTitle: {
+    color: Colors.text,
+    fontSize: 24,
+    fontWeight: '800',
+    marginTop: 2,
+  },
+  headerSubtitle: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 3,
+  },
+  content: {
+    paddingHorizontal: 20,
+    paddingBottom: 120,
+  },
+  topStatusBanner: {
+    marginTop: 8,
+    marginBottom: 12,
+    padding: 14,
+    borderRadius: 18,
+    borderWidth: 1,
+    gap: 8,
+  },
+  topStatusBannerTitle: {
+    color: Colors.text,
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  topStatusBannerBody: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  productionGuardCard: {
+    marginBottom: 14,
+    padding: 14,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,77,109,0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,77,109,0.28)',
+    gap: 10,
+  },
+  productionGuardEyebrow: {
+    color: '#FF8AA0',
+    fontSize: 10,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  productionGuardTitle: {
+    color: Colors.text,
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  productionGuardBody: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  auditGrid: {
+    gap: 10,
+  },
+  auditField: {
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+    gap: 4,
+  },
+  auditFieldLabel: {
+    color: Colors.textTertiary,
+    fontSize: 10,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+  auditFieldValue: {
+    color: Colors.text,
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: '700',
+  },
+  auditNarrativeCard: {
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+    gap: 5,
+  },
+  auditNarrativeTitle: {
+    color: Colors.text,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  auditNarrativeBody: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  bannerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginTop: 8,
+    marginBottom: 14,
+  },
+  bannerLeft: {
+    flex: 1,
+  },
+  signalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  signalText: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+  },
+  bannerTitle: {
+    color: Colors.text,
+    fontSize: 19,
+    fontWeight: '700',
+    lineHeight: 26,
+    marginTop: 8,
+    maxWidth: 260,
+  },
+  bannerBadges: {
+    width: 120,
+    gap: 8,
+  },
+  bannerBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  bannerBadgeText: {
+    color: Colors.textSecondary,
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  tabRail: {
+    gap: 10,
+    paddingBottom: 8,
+  },
+  tabChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  tabChipActive: {
+    backgroundColor: '#89D3FF',
+    borderColor: '#89D3FF',
+  },
+  tabChipText: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  tabChipTextActive: {
+    color: '#0A101B',
+  },
+  tabBody: {
+    gap: 14,
+    marginTop: 10,
+  },
+  hero: {
+    padding: 16,
+    borderRadius: 20,
+    backgroundColor: 'rgba(9,15,24,0.94)',
+    borderWidth: 1,
+  },
+  heroTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  heroState: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+  },
+  heroTime: {
+    color: Colors.textTertiary,
+    fontSize: 11,
+  },
+  heroTitle: {
+    color: Colors.text,
+    fontSize: 28,
+    fontWeight: '800',
+    marginTop: 12,
+  },
+  heroSubtitle: {
+    color: Colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 20,
+    marginTop: 8,
+  },
+  metricsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 14,
+  },
+  metricTile: {
+    minWidth: '31%',
+    flexGrow: 1,
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+  },
+  metricValue: {
+    color: Colors.text,
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  metricLabel: {
+    color: Colors.textTertiary,
+    fontSize: 10,
+    fontWeight: '700',
+    marginTop: 4,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+  sectionCard: {
+    padding: 14,
+    borderRadius: 18,
+    backgroundColor: 'rgba(8,12,19,0.94)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    gap: 12,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  sectionTitle: {
+    color: Colors.text,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  sectionHint: {
+    color: Colors.textTertiary,
+    fontSize: 10,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+  panelGrid: {
+    gap: 10,
+  },
+  modulePanel: {
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderWidth: 1,
+  },
+  modulePanelTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  moduleName: {
+    flex: 1,
+    color: Colors.text,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  moduleStatus: {
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  moduleValue: {
+    color: Colors.text,
+    fontSize: 22,
+    fontWeight: '800',
+    marginTop: 10,
+  },
+  moduleMeta: {
+    color: Colors.textSecondary,
+    fontSize: 11,
+    marginTop: 4,
+  },
+  recommendationRow: {
+    borderRadius: 14,
+    padding: 12,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderWidth: 1,
+    gap: 8,
+  },
+  recommendationTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  recommendationTarget: {
+    color: Colors.text,
+    fontSize: 13,
+    fontWeight: '700',
+    textTransform: 'capitalize',
+  },
+  recommendationSeverity: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.7,
+  },
+  recommendationReason: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  rowStart: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  metaText: {
+    color: Colors.textTertiary,
+    fontSize: 11,
+  },
+  commandText: {
+    color: '#89D3FF',
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: '700',
+  },
+  approvalRow: {
+    gap: 6,
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: 'rgba(182,146,246,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(182,146,246,0.18)',
+  },
+  approvalTitle: {
+    color: Colors.text,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  approvalReason: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  pathRow: {
+    gap: 5,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.06)',
+  },
+  pathRowMain: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  pathName: {
+    color: Colors.text,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  pathState: {
+    fontSize: 11,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+  pathReason: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  pathImpact: {
+    color: '#76A9FF',
+    fontSize: 11,
+  },
+  flowCard: {
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderWidth: 1,
+    gap: 8,
+  },
+  flowHead: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  flowTitle: {
+    color: Colors.text,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  flowHealth: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  flowMetaGrid: {
+    gap: 4,
+  },
+  flowPath: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 6,
+  },
+  pathPill: {
+    color: Colors.text,
+    fontSize: 11,
+    fontWeight: '700',
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+  },
+  anomalyText: {
+    color: '#FF4D6D',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  funnelStageRow: {
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.06)',
+    gap: 6,
+  },
+  funnelStageTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  funnelStageName: {
+    color: Colors.text,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  funnelStageCount: {
+    color: Colors.text,
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  stageReason: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  stageImpact: {
+    color: '#76A9FF',
+    fontSize: 11,
+  },
+  dropTitle: {
+    color: Colors.text,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  dropBody: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  dropMeta: {
+    color: Colors.textTertiary,
+    fontSize: 11,
+  },
+  logicAlert: {
+    color: '#FF4D6D',
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 18,
+  },
+  riskRow: {
+    borderRadius: 14,
+    padding: 12,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderWidth: 1,
+    gap: 7,
+  },
+  riskRowTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  riskModule: {
+    color: Colors.text,
+    fontSize: 13,
+    fontWeight: '700',
+    textTransform: 'capitalize',
+  },
+  riskScore: {
+    fontSize: 22,
+    fontWeight: '800',
+  },
+  riskExplanation: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  riskChange: {
+    color: '#B692F6',
+    fontSize: 11,
+  },
+  incidentRow: {
+    gap: 5,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.06)',
+  },
+  incidentTitle: {
+    color: Colors.text,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  incidentReason: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  chatCard: {
+    borderRadius: 14,
+    padding: 12,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderWidth: 1,
+    gap: 10,
+  },
+  chatHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  chatRoomName: {
+    color: Colors.text,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  chatState: {
+    fontSize: 11,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+  chatProof: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  chatMeta: {
+    color: Colors.textTertiary,
+    fontSize: 11,
+    lineHeight: 17,
+  },
+  blueprintNode: {
+    borderRadius: 14,
+    padding: 12,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderWidth: 1,
+    gap: 7,
+  },
+  blueprintTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  blueprintName: {
+    flex: 1,
+    color: Colors.text,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  blueprintStatus: {
+    fontSize: 11,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+  blueprintMeta: {
+    color: Colors.textTertiary,
+    fontSize: 11,
+  },
+  blueprintIssue: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  blueprintImpact: {
+    color: '#76A9FF',
+    fontSize: 11,
+  },
+  connectionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.06)',
+  },
+  connectionText: {
+    color: Colors.text,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  connectionType: {
+    marginLeft: 'auto',
+    color: Colors.textTertiary,
+    fontSize: 11,
+    textTransform: 'lowercase',
+  },
+  commandRow: {
+    gap: 5,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.06)',
+  },
+  commandTitle: {
+    color: Colors.text,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  commandReason: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  liveDotWrap: {
+    width: 14,
+    height: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  liveDotHalo: {
+    position: 'absolute',
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+  },
+  liveDotCore: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+  },
 });

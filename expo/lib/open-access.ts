@@ -1,13 +1,19 @@
-const OPEN_ACCESS_MODE_ENABLED = true;
+import { getIVXAccessControlConfig } from '@/shared/ivx';
 
 export function isOpenAccessModeEnabled(): boolean {
-  return OPEN_ACCESS_MODE_ENABLED;
+  return getIVXAccessControlConfig().openAccessEnabled;
 }
 
 export function getOpenAccessModeMessage(): string {
-  return 'Login is temporarily disabled in this build. The app opens directly.';
+  const config = getIVXAccessControlConfig();
+  return config.openAccessEnabled
+    ? 'Login is temporarily disabled in this build. The app opens directly.'
+    : 'Open access is disabled in this build. Sign in is required.';
 }
 
 export function getOpenAccessModeAdminMessage(): string {
-  return 'Open access is active. Owner Access and Sign In are bypassed so you can open the app and admin routes directly.';
+  const config = getIVXAccessControlConfig();
+  return config.openAccessEnabled
+    ? 'Open access is active. Owner Access and Sign In are bypassed so you can open the app and admin routes directly.'
+    : 'Open access is disabled. Admin routes require a verified session.';
 }

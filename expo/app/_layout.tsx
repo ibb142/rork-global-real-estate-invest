@@ -255,14 +255,15 @@ function useAuthGate(): AuthGateState {
   const navigationState = useRootNavigationState();
   const openAccessMode = isOpenAccessModeEnabled();
   const isNavigationReady = Boolean(navigationState?.key);
-  const currentRoute = segments[0] ?? '';
+  const currentRoute = segments[0];
+  const currentRouteKey = currentRoute ?? 'root';
   const inLanding = currentRoute === 'landing';
   const inLogin = currentRoute === 'login';
   const inSignup = currentRoute === 'signup';
   const inOwnerAccess = currentRoute === 'owner-access';
   const inResetPassword = currentRoute === 'reset-password';
-  const isPublicRoute = PUBLIC_ROUTES.includes(currentRoute);
-  const isProtectedRoute = PROTECTED_ROUTES.includes(currentRoute);
+  const isPublicRoute = currentRoute ? PUBLIC_ROUTES.includes(currentRoute) : false;
+  const isProtectedRoute = currentRoute ? PROTECTED_ROUTES.includes(currentRoute) : false;
   const hasStableAuthSession = isAuthenticated && hasStableAuthIdentity(userId);
   const shouldRedirectToHome = isNavigationReady && (
     openAccessMode
@@ -270,12 +271,12 @@ function useAuthGate(): AuthGateState {
       : !isLoading && hasStableAuthSession && (inLanding || inLogin || inSignup)
   );
   const shouldRedirectToLogin = !openAccessMode && isNavigationReady && !isLoading && !hasStableAuthSession && isProtectedRoute;
-  const shouldRedirectToLanding = !openAccessMode && isNavigationReady && !isLoading && !hasStableAuthSession && !isPublicRoute && currentRoute !== '' && currentRoute !== 'admin' && currentRoute !== 'property';
+  const shouldRedirectToLanding = !openAccessMode && isNavigationReady && !isLoading && !hasStableAuthSession && !isPublicRoute && !!currentRoute && currentRoute !== 'admin' && currentRoute !== 'property';
   const shouldBlockWhileLoading = !isNavigationReady || (!openAccessMode && isLoading);
 
   useEffect(() => {
     console.log('[AuthGate] State:', {
-      currentRoute,
+      currentRoute: currentRouteKey,
       isLoading,
       isAuthenticated,
       userId,

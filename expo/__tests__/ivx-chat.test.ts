@@ -398,8 +398,8 @@ class QueryBuilder {
     });
   }
 
-  then<TResult1 = { data: MockRow[] | null; error: MockError | null }, TResult2 = never>(
-    onfulfilled?: ((value: { data: MockRow[] | null; error: MockError | null }) => TResult1 | PromiseLike<TResult1>) | null,
+  then<TResult1 = { data: MockRow[] | MockRow | null; error: MockError | null }, TResult2 = never>(
+    onfulfilled?: ((value: { data: MockRow[] | MockRow | null; error: MockError | null }) => TResult1 | PromiseLike<TResult1>) | null,
     onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
   ): Promise<TResult1 | TResult2> {
     return this.execute().then(onfulfilled ?? undefined, onrejected ?? undefined);

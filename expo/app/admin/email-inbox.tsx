@@ -30,6 +30,7 @@ import {
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { generateText } from '@/lib/ai-service';
+import { getDirectApiBaseUrl } from '@/lib/api-base';
 import { getAuthToken } from '@/lib/auth-store';
 
 interface InvestorIntent {
@@ -58,7 +59,7 @@ interface InboxEmail {
 }
 
 async function fetchAdminInboxEmails(): Promise<InboxEmail[]> {
-  const API_BASE = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || process.env.EXPO_PUBLIC_API_BASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL || '').trim().replace(/\/$/, '');
+  const API_BASE = getDirectApiBaseUrl() || (process.env.EXPO_PUBLIC_SUPABASE_URL || '').trim().replace(/\/$/, '');
   if (!API_BASE) {
     console.log('[AdminInbox] No API_BASE configured — cannot fetch emails');
     return [];

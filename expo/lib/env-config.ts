@@ -54,7 +54,7 @@ function buildConfig(env: Environment): EnvironmentConfig {
   const awsRegion = (process.env.AWS_REGION || 'us-east-1').trim();
   const s3Bucket = (process.env.S3_BUCKET_NAME || 'ivx-holdings-prod').trim();
   const cfDistId = (process.env.CLOUDFRONT_DISTRIBUTION_ID || '').trim();
-  const apiBase = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || supabaseUrl || '').trim();
+  const apiBase = (process.env.EXPO_PUBLIC_API_BASE_URL || supabaseUrl || '').trim();
 
   const baseConfig: EnvironmentConfig = {
     environment: env,

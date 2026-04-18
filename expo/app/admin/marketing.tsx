@@ -173,6 +173,7 @@ export default function AIMarketingHub() {
   const [videoPrompt, setVideoPrompt] = useState('');
   const [generatedVideo, setGeneratedVideo] = useState<{ url: string; script: string; videoUrl: string } | null>(null);
   const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
+  const [isPlayingVideo, setIsPlayingVideo] = useState(false);
   const [videoDuration, setVideoDuration] = useState<'15' | '30' | '60'>('30');
 
   const [uploadedMedia, setUploadedMedia] = useState<MediaItem[]>([]);

@@ -1,6 +1,6 @@
 export const PUBLIC_LANDING_BASE_URL = 'https://ivxholding.com';
 
-export const DIRECT_API_BASE_URL = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || process.env.EXPO_PUBLIC_API_BASE_URL || '').trim().replace(/\/$/, '');
+export const DIRECT_API_BASE_URL = (process.env.EXPO_PUBLIC_API_BASE_URL || '').trim().replace(/\/$/, '');
 
 export function buildPublicApiUrl(path: string): string {
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;

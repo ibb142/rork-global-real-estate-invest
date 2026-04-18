@@ -5,7 +5,9 @@ export type IVXOwnerAIFeatureId =
   | 'ai_chat'
   | 'inbox'
   | 'shared_room'
-  | 'file_upload';
+  | 'file_upload'
+  | 'knowledge_base'
+  | 'owner_commands';
 
 export const IVX_OWNER_AI_ROOM_ID = '8f5a9c42-1cb5-4f81-b2d8-6f3a0a8b9d41';
 export const IVX_OWNER_AI_ROOM_SLUG = 'ivx-owner-room';
@@ -15,6 +17,8 @@ export const IVX_OWNER_AI_FEATURE_LABELS: Record<IVXOwnerAIFeatureId, string> = 
   inbox: 'Inbox',
   shared_room: 'Shared room',
   file_upload: 'File upload',
+  knowledge_base: 'Knowledge base',
+  owner_commands: 'Owner commands',
 };
 
 export const IVX_OWNER_AI_PROFILE = {
@@ -33,7 +37,7 @@ export const IVX_OWNER_AI_PROFILE = {
     id: IVX_OWNER_AI_ROOM_ID,
     slug: IVX_OWNER_AI_ROOM_SLUG,
     title: 'IVX Owner AI Room',
-    subtitle: 'Owner workspace. Live sync and AI features depend on the active room backend.',
+    subtitle: 'Owner-only shared room for AI chat, inbox, uploads, knowledge, and commands.',
     badgeText: 'Owner AI',
     emptyTitle: 'No owner messages yet',
     emptyText: 'Start with a note, message, image, video, or document.',

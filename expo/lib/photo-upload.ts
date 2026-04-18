@@ -1,6 +1,7 @@
 import { Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getDirectApiBaseUrl } from '@/lib/api-base';
 import { supabase } from '@/lib/supabase';
 
 const STORAGE_BUCKET = 'deal-photos';
@@ -39,7 +40,7 @@ interface QueuedUpload {
 }
 
 function getApiBaseUrl(): string {
-  return (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || process.env.EXPO_PUBLIC_API_BASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL || '').trim().replace(/\/$/, '');
+  return getDirectApiBaseUrl() || (process.env.EXPO_PUBLIC_SUPABASE_URL || '').trim().replace(/\/$/, '');
 }
 
 function generateFilePath(dealId: string, index: number, ext: string): string {

@@ -40,6 +40,7 @@ import type {
   TrafficSourceId,
   UserIntent,
   JourneyStep,
+  TrafficHandoffIssue,
 } from './traffic-types';
 import {
   TRAFFIC_SOURCE_META,
@@ -394,6 +395,29 @@ const SourceCard = memo(function SourceCard({ source }: { source: TrafficSourceS
               })}
             </View>
           )}
+
+          {source.failureImpacts.length > 0 && (
+            <View style={ts.causalSection}>
+              <Text style={[ts.journeySectionTitle, { color: '#00BCD4' }]}>Causal Failure Attribution</Text>
+              {source.failureImpacts.map((impact) => {
+                const severityColor = impact.severity === 'critical' ? '#FF1744'
+                  : impact.severity === 'high' ? '#FF6D00'
+                  : impact.severity === 'medium' ? '#FFB300'
+                  : '#00BCD4';
+                return (
+                  <View key={impact.id} style={ts.causalCard}>
+                    <View style={ts.causalHeader}>
+                      <Text style={ts.causalTitle}>{impact.dependencyLabel}</Text>
+                      <Text style={[ts.causalLoss, { color: severityColor }]}>{impact.lostConversionRate}% leak</Text>
+                    </View>
+                    <Text style={ts.causalMeta}>{impact.issue}</Text>
+                    <Text style={ts.causalMeta}>Step: {JOURNEY_STEP_LABELS[impact.blockedStep as JourneyStep] ?? impact.blockedStep} · Users: {impact.affectedUsers}</Text>
+                    <Text style={ts.causalSummary}>{impact.proofSummary}</Text>
+                  </View>
+                );
+              })}
+            </View>
+          )}
         </View>
       )}
     </View>
@@ -444,6 +468,41 @@ interface TrafficOperatorGuide {
   nextAction: string;
   severityColor: string;
 }
+
+const HandoffIssueCard = memo(function HandoffIssueCard({ issue }: { issue: TrafficHandoffIssue }) {
+  const meta = TRAFFIC_SOURCE_META[issue.sourceId];
+  const severityColor = issue.severity === 'critical' ? '#FF1744'
+    : issue.severity === 'high' ? '#FF6D00'
+      : issue.severity === 'medium' ? '#FFB300'
+        : '#00BCD4';
+
+  return (
+    <View style={[ts.opsCard, { borderLeftColor: severityColor }]} testID={`traffic-handoff-${issue.id}`}>
+      <View style={ts.opsHeader}>
+        <View style={[ts.opsSourceBadge, { backgroundColor: meta.color + '12' }]}>
+          <AlertTriangle size={12} color={severityColor} />
+          <Text style={[ts.opsSourceText, { color: meta.color }]}>{issue.title}</Text>
+        </View>
+        <View style={ts.opsUsers}>
+          <Users size={11} color={Colors.textTertiary} />
+          <Text style={ts.opsUsersText}>{issue.affectedUsers}</Text>
+        </View>
+      </View>
+      <View style={ts.opsRow}>
+        <Text style={ts.opsLabel}>Blocked Step</Text>
+        <Text style={ts.opsValue}>{JOURNEY_STEP_LABELS[issue.blockedStep as JourneyStep] ?? issue.blockedStep}</Text>
+      </View>
+      <View style={ts.opsRow}>
+        <Text style={ts.opsLabel}>Dependency Basis</Text>
+        <Text style={ts.opsValue}>{issue.dependencyBasis.join(' → ')}</Text>
+      </View>
+      <View style={ts.opsRow}>
+        <Text style={ts.opsLabel}>Summary</Text>
+        <Text style={ts.opsValue}>{issue.summary}</Text>
+      </View>
+    </View>
+  );
+});
 
 function getFrictionStepLabel(source: TrafficSourceSnapshot): string {
   const topFriction = source.frictions[0];
@@ -557,6 +616,7 @@ export const TrafficIntelTab = memo(function TrafficIntelTab({ intel }: { intel:
     : intel.overallQualityScore >= 30 ? '#FFB300' : '#FF1744';
 
   const operatorGuides = useMemo(() => deriveOperatorGuides(intel), [intel]);
+  const handoffIssues = useMemo(() => intel.handoffIssues.slice(0, 4), [intel.handoffIssues]);
 
   return (
     <View style={ts.root} testID="traffic-intel-tab">
@@ -610,6 +670,15 @@ export const TrafficIntelTab = memo(function TrafficIntelTab({ intel }: { intel:
           <Text style={ts.sectionTitle}>Predictive Alerts</Text>
           {activePredictions.slice(0, 5).map(p => (
             <PredictionChip key={p.sourceId} prediction={p} />
+          ))}
+        </View>
+      )}
+
+      {handoffIssues.length > 0 && (
+        <View style={ts.opsSection} testID="traffic-handoff-issues">
+          <Text style={ts.sectionTitle}>Broken Routes & Handoffs</Text>
+          {handoffIssues.map((issue) => (
+            <HandoffIssueCard key={issue.id} issue={issue} />
           ))}
         </View>
       )}
@@ -821,6 +890,13 @@ const ts = StyleSheet.create({
   frictionLabel: { color: Colors.textSecondary, fontSize: 10, flex: 1 },
   frictionCount: { fontSize: 10, fontWeight: '600' as const },
   frictionSev: { fontSize: 8, fontWeight: '700' as const, width: 44, textAlign: 'right' as const },
+  causalSection: { gap: 6 },
+  causalCard: { borderRadius: 10, backgroundColor: '#0A0A0E', borderWidth: 1, borderColor: '#1A1A1F', padding: 10, gap: 4 },
+  causalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  causalTitle: { color: Colors.text, fontSize: 11, fontWeight: '700' as const },
+  causalLoss: { fontSize: 10, fontWeight: '800' as const },
+  causalMeta: { color: Colors.textSecondary, fontSize: 10, lineHeight: 15 },
+  causalSummary: { color: Colors.textTertiary, fontSize: 10, lineHeight: 15 },
 
   pulseWrap: { width: 10, height: 10, justifyContent: 'center', alignItems: 'center' },
   pulseHalo: { position: 'absolute', width: 10, height: 10, borderRadius: 5 },

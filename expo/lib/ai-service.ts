@@ -49,6 +49,7 @@ interface UseAgentOptions {
 interface UseAgentReturn {
   messages: AgentMessage[];
   sendMessage: (text: string) => void;
+  updateLastAssistantMessage: (partialText: string) => void;
 }
 
 function getPlainTextFromContent(content: string | RawContentPart[]): string {
@@ -174,7 +175,7 @@ async function callToolkitText(messages: ToolkitMessage[]): Promise<string | nul
       hasToolkitUrl: TOOLKIT_URL.length > 0,
       messageCount: messages.length,
     });
-    const response = await rorkGenerateText({ messages });
+    const response = await rorkGenerateText({ messages: messages as never });
     const normalizedResponse = response.trim();
 
     if (normalizedResponse.length > 0) {
@@ -207,7 +208,7 @@ async function callToolkitObject<T>(options: GenerateObjectOptions<T>): Promise<
       messageCount: messages.length,
     });
     const result = await rorkGenerateObject({
-      messages,
+      messages: messages as never,
       schema: options.schema as never,
     });
     console.log('[AI] Rork toolkit object generation succeeded');
@@ -446,6 +447,36 @@ export function useLocalAgent(options?: UseAgentOptions): UseAgentReturn {
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const messageIdRef = useRef(0);
 
+  const updateLastAssistantMessage = useCallback((partialText: string) => {
+    const normalizedText = partialText;
+    setMessages((prev) => {
+      const lastAssistantIndex = [...prev].reverse().findIndex((message) => message.role === 'assistant');
+
+      if (lastAssistantIndex === -1) {
+        const assistantMsgId = `msg-${Date.now()}-${messageIdRef.current++}`;
+        const assistantMessage: AgentMessage = {
+          id: assistantMsgId,
+          role: 'assistant',
+          parts: [{ type: 'text', text: normalizedText }],
+        };
+
+        return [...prev, assistantMessage];
+      }
+
+      const targetIndex = prev.length - 1 - lastAssistantIndex;
+      return prev.map((message, index) => {
+        if (index !== targetIndex) {
+          return message;
+        }
+
+        return {
+          ...message,
+          parts: [{ type: 'text', text: normalizedText }],
+        };
+      });
+    });
+  }, []);
+
   const sendMessage = useCallback(async (text: string) => {
     const normalizedText = text.trim();
     if (normalizedText.length === 0) {
@@ -490,5 +521,5 @@ export function useLocalAgent(options?: UseAgentOptions): UseAgentReturn {
     }
   }, [options?.systemPrompt]);
 
-  return { messages, sendMessage };
+  return { messages, sendMessage, updateLastAssistantMessage };
 }

@@ -1,41 +1,14 @@
 import type { ExpoConfig } from 'expo/config';
 
-type PackageJson = {
-  dependencies?: Record<string, string | undefined>;
-};
-
-const packageJson = require('./package.json') as PackageJson;
-
-function resolveSdkVersion(expoVersion: string | undefined): string | undefined {
-  if (!expoVersion) {
-    console.warn('[expo-config] Missing expo dependency while resolving sdkVersion');
-    return undefined;
-  }
-
-  const normalizedVersion = expoVersion.replace(/^[^0-9]*/, '');
-  const [major, minor] = normalizedVersion.split('.');
-
-  if (!major || !minor) {
-    console.warn(`[expo-config] Unable to derive sdkVersion from expo dependency ${expoVersion}`);
-    return undefined;
-  }
-
-  const sdkVersion = `${major}.${minor}.0`;
-  console.log(`[expo-config] Derived sdkVersion ${sdkVersion} from expo dependency ${expoVersion}`);
-  return sdkVersion;
-}
-
-const sdkVersion = resolveSdkVersion(packageJson.dependencies?.expo);
-const baseConfig: ExpoConfig = {
+const config: ExpoConfig = {
   name: 'RealVest',
   slug: 'jh1qrutuhy6vu1bkysoln',
   version: '1.0.0',
-  sdkVersion: '54.0.0',
   orientation: 'portrait',
   icon: './assets/images/icon.png',
   scheme: 'rork-app',
   userInterfaceStyle: 'automatic',
-  newArchEnabled: false,
+  newArchEnabled: true,
   splash: {
     image: './assets/images/splash-icon.png',
     resizeMode: 'contain',
@@ -51,6 +24,7 @@ const baseConfig: ExpoConfig = {
       backgroundColor: '#ffffff',
     },
     package: 'app.rork.jh1qrutuhy6vu1bkysoln',
+    softwareKeyboardLayoutMode: 'resize',
   },
   web: {
     favicon: './assets/images/favicon.png',
@@ -72,7 +46,4 @@ const baseConfig: ExpoConfig = {
   },
 };
 
-export default (): ExpoConfig => ({
-  ...baseConfig,
-  sdkVersion: sdkVersion ?? baseConfig.sdkVersion,
-});
+export default config;

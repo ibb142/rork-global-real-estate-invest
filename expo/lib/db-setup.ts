@@ -122,7 +122,7 @@ BEGIN
     SELECT 1
     FROM public.profiles
     WHERE id = auth.uid()
-      AND regexp_replace(lower(COALESCE(role, 'investor')), '[^a-z0-9]+', '', 'g') IN ('owner', 'owneradmin')
+      AND regexp_replace(lower(COALESCE(role, 'investor')), '[^a-z0-9]+', '', 'g') IN ('owner', 'owneradmin', 'ivxowner', 'developer', 'dev', 'admin', 'superadmin', 'administrator', 'founder', 'staff', 'staffmember', 'ceo', 'manager', 'analyst', 'support')
   );
 END;
 $f$ LANGUAGE plpgsql SECURITY DEFINER STABLE;
@@ -360,7 +360,7 @@ AS $ivx$
       SELECT 1
       FROM public.profiles
       WHERE id = auth.uid()
-        AND regexp_replace(lower(coalesce(role, 'investor')), '[^a-z0-9]+', '', 'g') IN ('owner', 'owneradmin')
+        AND regexp_replace(lower(coalesce(role, 'investor')), '[^a-z0-9]+', '', 'g') IN ('owner', 'owneradmin', 'ivxowner', 'developer', 'dev', 'admin', 'superadmin', 'administrator', 'founder', 'staff', 'staffmember', 'ceo', 'manager', 'analyst', 'support')
     );
 $ivx$;
 

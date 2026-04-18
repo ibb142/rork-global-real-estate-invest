@@ -1,0 +1,145 @@
+name: Deploy IVX Owner AI Backend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - 'server.ts'
+      - 'package.json'
+      - 'tsconfig.json'
+      - 'Dockerfile'
+      - 'expo/constants/**'
+      - 'expo/shared/**'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+
+env:
+  APP_NAME: ivx-holdings
+  AWS_REGION: us-east-1
+  ECS_CLUSTER: ivx-holdings-cluster
+  ECS_SERVICE: ivx-holdings-api-service
+  CONTAINER_NAME: ivx-holdings-api
+  API_URL: https://api.ivxholding.com
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install backend dependencies
+        run: bun install
+      - name: Type check backend
+        run: bunx tsc --noEmit
+
+  build-and-deploy:
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set image tag
+        id: tag
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+          echo "IMAGE_TAG=${SHORT_SHA}-${TIMESTAMP}" >> $GITHUB_OUTPUT
+          echo "ECR_URI=${{ steps.login-ecr.outputs.registry }}/${{ env.APP_NAME }}-api" >> $GITHUB_OUTPUT
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            --no-cache \
+            --pull \
+            --platform linux/amd64 \
+            -t ${{ steps.tag.outputs.ECR_URI }}:${{ steps.tag.outputs.IMAGE_TAG }} \
+            -t ${{ steps.tag.outputs.ECR_URI }}:latest \
+            .
+
+      - name: Push Docker image
+        run: |
+          docker push ${{ steps.tag.outputs.ECR_URI }}:${{ steps.tag.outputs.IMAGE_TAG }}
+          docker push ${{ steps.tag.outputs.ECR_URI }}:latest
+
+      - name: Register task definition revision
+        id: task-def
+        run: |
+          CURRENT=$(aws ecs describe-task-definition \
+            --task-definition ${{ env.APP_NAME }}-api \
+            --query 'taskDefinition' \
+            --output json)
+
+          NEW_DEF=$(echo "$CURRENT" | python3 -c "
+          import sys, json
+          td = json.load(sys.stdin)
+          for cd in td['containerDefinitions']:
+              if cd['name'] == '${{ env.CONTAINER_NAME }}':
+                  cd['image'] = '${{ steps.tag.outputs.ECR_URI }}:${{ steps.tag.outputs.IMAGE_TAG }}'
+          for key in ['taskDefinitionArn','revision','status','requiresAttributes','compatibilities','registeredAt','registeredBy']:
+              td.pop(key, None)
+          print(json.dumps(td))
+          ")
+
+          TASK_ARN=$(aws ecs register-task-definition \
+            --cli-input-json "$NEW_DEF" \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)
+
+          echo "TASK_ARN=$TASK_ARN" >> $GITHUB_OUTPUT
+
+      - name: Deploy to ECS
+        run: |
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service ${{ env.ECS_SERVICE }} \
+            --task-definition ${{ steps.task-def.outputs.TASK_ARN }} \
+            --force-new-deployment \
+            --output text > /dev/null
+
+      - name: Wait for ECS stability
+        run: |
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE }}
+
+      - name: Health check
+        run: |
+          RETRIES=0
+          until [ "$RETRIES" -ge 12 ]
+          do
+            BODY=$(curl -sf --max-time 15 "$API_URL/health" || true)
+            STATUS=$(printf '%s' "$BODY" | python3 -c "import sys,json
+try:
+  data=json.load(sys.stdin)
+  print(data.get('status','unknown'))
+except Exception:
+  print('unknown')")
+            if [ "$STATUS" = "healthy" ]; then
+              echo "Health check passed"
+              printf '%s\n' "$BODY"
+              exit 0
+            fi
+            RETRIES=$((RETRIES + 1))
+            echo "Retry $RETRIES/12 waiting for healthy backend"
+            sleep 10
+          done
+          echo "Backend health check failed"
+          exit 1

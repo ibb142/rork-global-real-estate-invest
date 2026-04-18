@@ -1,3 +1,5 @@
+import type { PrivilegedIVXRole } from './access';
+
 export const IVX_OWNER_AI_API_PATH = '/api/ivx/owner-ai';
 export const IVX_OWNER_AI_BUCKET = 'ivx-owner-files';
 export const IVX_OWNER_AI_MAX_UPLOAD_BYTES: number | null = null;
@@ -10,7 +12,7 @@ export const IVX_OWNER_AI_TABLES = {
   knowledgeDocuments: 'ivx_knowledge_documents',
 } as const;
 
-export type IVXOwnerRole = 'owner';
+export type IVXOwnerRole = PrivilegedIVXRole;
 export type IVXMessageSenderRole = 'owner' | 'assistant' | 'system';
 export type IVXAttachmentKind = 'text' | 'image' | 'video' | 'pdf' | 'file' | 'command' | 'system';
 export type IVXUploadSource = 'web' | 'mobile';
@@ -87,10 +89,14 @@ export type IVXOwnerAuthContext = {
 };
 
 export type IVXOwnerAIRequest = {
+  requestId?: string;
   conversationId?: string;
   message: string;
   senderLabel?: string | null;
   mode?: IVXRequestMode;
+  persistUserMessage?: boolean;
+  persistAssistantMessage?: boolean;
+  devTestModeActive?: boolean;
 };
 
 export type IVXOwnerAIResponse = {
@@ -99,6 +105,30 @@ export type IVXOwnerAIResponse = {
   answer: string;
   model: string;
   status: 'ok';
+  source?: 'remote_api' | 'toolkit_fallback';
+  endpoint?: string;
+  deploymentMarker?: string;
+};
+
+export type IVXOwnerAICanonicalResponse = {
+  requestId: string;
+  conversationId: string;
+  answer: string;
+  model: string;
+  status: 'ok';
+  deploymentMarker?: string;
+};
+
+export type IVXOwnerAIRejectedResponse = {
+  reason:
+    | 'non_object_payload'
+    | 'missing_request_id'
+    | 'missing_conversation_id'
+    | 'missing_answer'
+    | 'missing_model'
+    | 'invalid_status'
+    | 'invalid_deployment_marker';
+  payloadType: 'null' | 'array' | 'object' | 'string' | 'number' | 'boolean' | 'undefined';
 };
 
 export type IVXOwnerAIRoomStatus = {

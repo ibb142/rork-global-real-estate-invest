@@ -137,7 +137,7 @@ async function runFullAudit(mode: ReadinessAuditMode = 'full'): Promise<AuditCat
     const { latency: connLatency, error: connError } = await measureLatency(async () => {
       const { error } = await runWithAbortTimeout(
         BACKEND_AUDIT_TIMEOUT_MS,
-        (signal) => supabase.from('profiles').select('id').limit(1).abortSignal(signal),
+        async (signal) => await supabase.from('profiles').select('id').limit(1).abortSignal(signal),
         `Backend audit connection probe timed out after ${BACKEND_AUDIT_TIMEOUT_MS}ms`,
       );
       if (error) throw new Error(error.message);
@@ -177,7 +177,7 @@ async function runFullAudit(mode: ReadinessAuditMode = 'full'): Promise<AuditCat
         try {
           const { error } = await runWithAbortTimeout(
             BACKEND_AUDIT_TIMEOUT_MS,
-            (signal) => supabase.from(table).select('id').limit(1).abortSignal(signal),
+            async (signal) => await supabase.from(table).select('id').limit(1).abortSignal(signal),
             `Table check timed out for ${table}`,
           );
           const missing = error && ((error.message || '').toLowerCase().includes('could not find') || (error.message || '').toLowerCase().includes('does not exist'));
@@ -206,7 +206,7 @@ async function runFullAudit(mode: ReadinessAuditMode = 'full'): Promise<AuditCat
         try {
           const { error } = await runWithAbortTimeout(
             BACKEND_AUDIT_TIMEOUT_MS,
-            (signal) => supabase.from(table).select('id').limit(1).abortSignal(signal),
+            async (signal) => await supabase.from(table).select('id').limit(1).abortSignal(signal),
             `Optional table check timed out for ${table}`,
           );
           const missing = error && ((error.message || '').toLowerCase().includes('could not find') || (error.message || '').toLowerCase().includes('does not exist'));
@@ -266,7 +266,7 @@ async function runFullAudit(mode: ReadinessAuditMode = 'full'): Promise<AuditCat
     try {
       const { error: rlsError } = await runWithAbortTimeout(
         BACKEND_AUDIT_TIMEOUT_MS,
-        (signal) => supabase.from('profiles').select('id').limit(1).abortSignal(signal),
+        async (signal) => await supabase.from('profiles').select('id').limit(1).abortSignal(signal),
         `RLS check timed out after ${BACKEND_AUDIT_TIMEOUT_MS}ms`,
       );
       supabaseItems.push({

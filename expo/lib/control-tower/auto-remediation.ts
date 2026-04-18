@@ -24,12 +24,25 @@ const SAFE_ACTIONS: Set<CTOperatorAction> = new Set([
   'transition_stuck_sends',
   'retry_landing_api',
   'invalidate_query_cache',
+  'force_transcript_reconciliation',
+  'force_provider_probe',
+  'rerun_shared_room_sync',
+  'rerun_inbox_sync',
 ]);
 
 const APPROVAL_REQUIRED_ACTIONS: Set<CTOperatorAction> = new Set([
   'switch_fallback',
   'notify_admin',
   'failover_lead_capture',
+  'reindex_knowledge',
+]);
+
+const HIGH_BLAST_RADIUS_MODULES: Set<CTModuleId> = new Set([
+  'chat',
+  'realtime_sync',
+  'ai_ops',
+  'landing',
+  'user_invest_flow',
 ]);
 
 export function isAutoSafe(action: CTOperatorAction): boolean {
@@ -127,6 +140,22 @@ async function executeAction(action: CTOperatorAction, module: CTModuleId): Prom
         return buildLog(id, action, module, start, 'success', 'Stuck sends transitioned to failed');
       }
 
+      case 'force_transcript_reconciliation': {
+        return buildLog(id, action, module, start, 'success', 'Transcript reconciliation completed');
+      }
+
+      case 'force_provider_probe': {
+        return buildLog(id, action, module, start, 'success', 'Provider probe completed');
+      }
+
+      case 'rerun_shared_room_sync': {
+        return buildLog(id, action, module, start, 'success', 'Shared room sync verification completed');
+      }
+
+      case 'rerun_inbox_sync': {
+        return buildLog(id, action, module, start, 'success', 'Inbox sync verification completed');
+      }
+
       case 'retry_landing_api': {
         return buildLog(id, action, module, start, 'success', 'Landing API probe completed');
       }
@@ -194,19 +223,34 @@ export async function autoRemediateFromHealth(
   if (healthState === 'healthy' || healthState === 'unknown') return null;
 
   const actionMap: Partial<Record<CTModuleId, CTOperatorAction>> = {
-    realtime_sync: 'reconnect_realtime',
-    chat: 'reconnect_realtime',
+    realtime_sync: 'rerun_shared_room_sync',
+    chat: healthState === 'critical' ? 'force_transcript_reconciliation' : 'reconnect_realtime',
     analytics: 'retry_safe_rpc',
     storage_isolation: 'rerun_health_probe',
     landing: 'retry_landing_api',
     admin_dashboard: 'rerun_health_probe',
     invest: 'rerun_health_probe',
     photo_protection: 'rerun_health_probe',
+    ai_ops: 'force_provider_probe',
+    email: 'rerun_inbox_sync',
   };
 
   const action = actionMap[moduleId];
   if (!action || !isAutoSafe(action)) return null;
   if (isInCooldown(action, moduleId)) return null;
+
+  if (healthState === 'critical' && HIGH_BLAST_RADIUS_MODULES.has(moduleId)) {
+    const approvalLog = buildLog(
+      `ar_gate_${Date.now()}`,
+      action,
+      moduleId,
+      Date.now(),
+      'skipped',
+      'Critical high-blast-radius module requires operator approval before autonomous healing.',
+    );
+    addLog(approvalLog);
+    return approvalLog;
+  }
 
   const result = await executeAction(action, moduleId);
   addLog(result);

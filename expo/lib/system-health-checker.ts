@@ -104,7 +104,7 @@ async function checkSupabaseDB(): Promise<HealthCheck> {
   const { result, latency, error } = await measureLatency(async () => {
     const { data, error: dbError } = await runWithAbortTimeout(
       SUPABASE_HEALTH_TIMEOUT_MS,
-      (signal) => supabase.from('jv_deals').select('id').limit(1).abortSignal(signal),
+      async (signal) => await supabase.from('jv_deals').select('id').limit(1).abortSignal(signal),
       `Supabase DB probe timed out after ${SUPABASE_HEALTH_TIMEOUT_MS}ms`,
     );
     if (dbError) throw new Error(dbError.message);
@@ -373,7 +373,7 @@ async function checkSupabaseRLS(): Promise<HealthCheck> {
   const { latency, error } = await measureLatency(async () => {
     const { data, error: rlsError } = await runWithAbortTimeout(
       SUPABASE_HEALTH_TIMEOUT_MS,
-      (signal) => supabase.from('profiles').select('id').limit(1).abortSignal(signal),
+      async (signal) => await supabase.from('profiles').select('id').limit(1).abortSignal(signal),
       `RLS probe timed out after ${SUPABASE_HEALTH_TIMEOUT_MS}ms`,
     );
     if (rlsError && rlsError.message.includes('permission')) {
@@ -443,7 +443,7 @@ async function checkJVDealsData(): Promise<HealthCheck> {
   const { result, latency, error } = await measureLatency(async () => {
     const { data, error: dbError } = await runWithAbortTimeout(
       SUPABASE_HEALTH_TIMEOUT_MS,
-      (signal) => supabase
+      async (signal) => await supabase
         .from('jv_deals')
         .select('id, published')
         .limit(5)

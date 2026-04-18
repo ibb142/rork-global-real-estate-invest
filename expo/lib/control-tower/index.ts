@@ -15,6 +15,14 @@ export type {
   CTPredictiveFactor,
   CTDecisionAnalysis,
   CTAutoRemediationLog,
+  CTProofStatus,
+  CTSystemNodeKind,
+  CTSystemEdgeRelationship,
+  CTSystemNode,
+  CTSystemEdge,
+  CTEvidenceRecord,
+  CTRiskAssessment,
+  CTOperatorActionRun,
 } from './types';
 
 export {
@@ -56,6 +64,8 @@ export {
   analyzeAllIncidents,
   generateDecisionSummary,
 } from './decision-engine';
+
+export { buildProofGraphSnapshot } from './proof-graph';
 
 export { computeTrafficIntelSnapshot, ingestLandingEvent } from './traffic-aggregator';
 export { computeAllSourcePredictions, shouldRunPredictions, getSourceRisks, getRisingSourceRisks } from './traffic-predictive';

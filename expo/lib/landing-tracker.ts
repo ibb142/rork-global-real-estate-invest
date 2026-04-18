@@ -6,6 +6,7 @@ import * as SecureStore from 'expo-secure-store';
 import { getCachedPublicGeoData, type PublicGeoData } from './public-geo';
 import { controlTowerEmitter } from './control-tower/event-emitter';
 import { ingestLandingEvent } from './control-tower/traffic-aggregator';
+import { liveIntelligenceService } from './control-tower/live-intelligence';
 import type { CTEventType, CTFlowStep } from './control-tower/types';
 
 const OWNER_IP_ENABLED_KEY = 'ivx_owner_ip_enabled';
@@ -318,6 +319,36 @@ class LandingTracker {
           metadata: sanitizeControlTowerMetadata(eventProperties),
         });
       }
+      liveIntelligenceService.captureEvent({
+        eventName: eventName === 'cta_click'
+          ? 'cta_click'
+          : eventName === 'form_focus'
+            ? 'form_start'
+            : eventName === 'form_submit'
+              ? 'form_submit'
+              : eventName === 'session_end'
+                ? 'session_end'
+                : eventName.includes('error')
+                  ? 'error_seen'
+                  : 'page_view',
+        screen: 'landing',
+        module: 'landing',
+        sessionId: this.sessionId,
+        attribution: {
+          utmSource: typeof eventProperties.utm_source === 'string' ? eventProperties.utm_source : undefined,
+          utmMedium: typeof eventProperties.utm_medium === 'string' ? eventProperties.utm_medium : undefined,
+          utmCampaign: typeof eventProperties.utm_campaign === 'string' ? eventProperties.utm_campaign : undefined,
+          referrer: typeof eventProperties.referrer === 'string' ? eventProperties.referrer : undefined,
+          deepLinkSource: typeof eventProperties.deep_link_source === 'string' ? eventProperties.deep_link_source : undefined,
+          landingPage: 'landing',
+          firstTouchSource: typeof eventProperties.utm_source === 'string' ? eventProperties.utm_source : undefined,
+          lastTouchSource: typeof eventProperties.utm_source === 'string' ? eventProperties.utm_source : undefined,
+          campaignId: typeof eventProperties.campaign_id === 'string' ? eventProperties.campaign_id : undefined,
+        },
+        country: typeof this.geoData?.country === 'string' ? this.geoData.country : null,
+        region: typeof this.geoData?.region === 'string' ? this.geoData.region : null,
+        metadata: eventProperties,
+      });
     } catch (error) {
       console.log('[LandingTracker] Control Tower bridge error:', (error as Error)?.message);
     }

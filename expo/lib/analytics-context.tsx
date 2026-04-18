@@ -4,6 +4,7 @@ import { analytics } from './analytics';
 import { usePathname } from 'expo-router';
 import type { EventCategory } from './analytics';
 import createContextHook from '@nkzw/create-context-hook';
+import { usePresenceBroadcast, presenceManager } from './realtime-presence';
 
 export interface AnalyticsHook {
   trackScreen: (screenName: string, params?: Record<string, unknown>) => void;
@@ -17,6 +18,18 @@ export interface AnalyticsHook {
 export const [AnalyticsProvider, useAnalytics] = createContextHook<AnalyticsHook>(() => {
   const pathname = usePathname();
   const lastPathnameRef = useRef<string>('');
+
+  usePresenceBroadcast({
+    sessionId: analytics.getSessionId(),
+    source: 'app',
+    page: pathname ?? 'App',
+  });
+
+  useEffect(() => {
+    if (pathname) {
+      presenceManager.updatePage(pathname);
+    }
+  }, [pathname]);
 
   useEffect(() => {
     let cancelled = false;

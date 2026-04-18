@@ -9,6 +9,8 @@ import type {
   UserIntent,
   JourneyStep,
   FrictionType,
+  TrafficDependencyImpact,
+  TrafficHandoffIssue,
 } from './traffic-types';
 import { ALL_TRAFFIC_SOURCES, TRAFFIC_SOURCE_META } from './traffic-types';
 
@@ -180,6 +182,129 @@ function computeBusinessOutcomeScore(outcomes: TrafficOutcome, qualityScore: num
   return Math.round(Math.min(100, Math.max(0, raw)));
 }
 
+function getDependencyBasis(source: TrafficSourceId): string[] {
+  switch (source) {
+    case 'google_ads':
+    case 'instagram':
+    case 'facebook':
+    case 'tiktok':
+    case 'influencer':
+      return ['landing', 'auth', 'app', 'chat', 'invest'];
+    case 'whatsapp':
+    case 'referral':
+      return ['landing', 'chat', 'app'];
+    case 'email_campaign':
+      return ['landing', 'auth', 'portfolio'];
+    default:
+      return ['landing', 'auth', 'app'];
+  }
+}
+
+function getDependencyImpactForFriction(
+  sourceId: TrafficSourceId,
+  friction: TrafficFriction,
+  source: Pick<TrafficSourceSnapshot, 'last1h' | 'activeNow' | 'outcomes' | 'journeySteps'>,
+): TrafficDependencyImpact {
+  let dependencyId = 'landing';
+  let dependencyLabel = 'Landing';
+  let blockedStep: JourneyStep | 'unknown' = 'landing_visit';
+  let issue = 'Traffic quality drift detected';
+
+  switch (friction.type) {
+    case 'slow_landing':
+    case 'broken_cta':
+      dependencyId = 'landing';
+      dependencyLabel = 'Landing';
+      blockedStep = 'cta_clicked';
+      issue = 'Visitors are leaking before or during CTA engagement.';
+      break;
+    case 'failed_form':
+      dependencyId = 'landing';
+      dependencyLabel = 'Lead Capture';
+      blockedStep = 'form_submitted';
+      issue = 'Lead capture is failing after users enter the form.';
+      break;
+    case 'auth_failure':
+      dependencyId = 'auth';
+      dependencyLabel = 'Auth';
+      blockedStep = 'auth_signup';
+      issue = 'The auth handoff is failing and blocking app entry.';
+      break;
+    case 'handoff_failure':
+      dependencyId = 'app';
+      dependencyLabel = 'App Handoff';
+      blockedStep = 'app_opened';
+      issue = 'Visitors reach the handoff but fail to open the app cleanly.';
+      break;
+    case 'chat_degradation':
+      dependencyId = 'chat';
+      dependencyLabel = 'Chat';
+      blockedStep = 'chat_entry';
+      issue = 'Traffic intent reaches chat, but the runtime path is degraded.';
+      break;
+    case 'invest_stall':
+      dependencyId = 'invest';
+      dependencyLabel = 'Invest';
+      blockedStep = 'invest_flow';
+      issue = 'High-intent users are stalling before investment progression.';
+      break;
+    case 'api_failure':
+      dependencyId = 'app';
+      dependencyLabel = 'API/Handoff';
+      blockedStep = 'app_opened';
+      issue = 'Backend/API degradation is interrupting the acquisition path.';
+      break;
+    default:
+      break;
+  }
+
+  const lostConversionRate = Math.max(
+    0,
+    blockedStep === 'app_opened'
+      ? 100 - source.outcomes.appHandoffSuccess
+      : blockedStep === 'auth_signup'
+        ? 100 - source.outcomes.signupConversion
+        : blockedStep === 'invest_flow'
+          ? 100 - source.outcomes.investInitRate
+          : 100 - source.outcomes.leadConversion,
+  );
+
+  return {
+    id: `impact:${sourceId}:${friction.type}`,
+    dependencyId,
+    dependencyLabel,
+    blockedStep,
+    issue,
+    severity: friction.severity,
+    affectedUsers: Math.max(friction.affectedUsers, source.activeNow, Math.round(source.last1h * (lostConversionRate / 100))),
+    lostConversionRate,
+    dependencyBasis: getDependencyBasis(sourceId),
+    proofSummary: `${dependencyLabel} is a causal dependency for ${TRAFFIC_SOURCE_META[sourceId].label} and is contributing to a ${lostConversionRate}% conversion leak.`,
+  };
+}
+
+function deriveFailureImpacts(sourceId: TrafficSourceId, frictions: TrafficFriction[], source: Pick<TrafficSourceSnapshot, 'last1h' | 'activeNow' | 'outcomes' | 'journeySteps'>): TrafficDependencyImpact[] {
+  return frictions.slice(0, 3).map((friction) => getDependencyImpactForFriction(sourceId, friction, source));
+}
+
+function deriveHandoffIssues(sources: TrafficSourceSnapshot[]): TrafficHandoffIssue[] {
+  return sources
+    .flatMap((source) => source.failureImpacts.map((impact) => ({ source, impact })))
+    .sort((a, b) => b.impact.affectedUsers - a.impact.affectedUsers)
+    .slice(0, 6)
+    .map(({ source, impact }) => ({
+      id: `handoff:${source.sourceId}:${impact.id}`,
+      sourceId: source.sourceId,
+      title: `${TRAFFIC_SOURCE_META[source.sourceId].label} → ${impact.dependencyLabel}`,
+      summary: impact.issue,
+      severity: impact.severity,
+      affectedUsers: impact.affectedUsers,
+      dependencyBasis: impact.dependencyBasis,
+      blockedStep: impact.blockedStep,
+      route: ['landing', impact.dependencyId, impact.blockedStep],
+    }));
+}
+
 function buildConnections(sources: TrafficSourceSnapshot[]): TrafficNodeConnection[] {
   const connections: TrafficNodeConnection[] = [];
 
@@ -267,6 +392,14 @@ export function computeTrafficIntelSnapshot(): TrafficIntelSnapshot {
     const signups = journeySteps.auth_signup ?? 0;
     const appOpens = journeySteps.app_opened ?? 0;
 
+    const partialSource = {
+      last1h,
+      activeNow,
+      outcomes,
+      journeySteps,
+    };
+    const failureImpacts = deriveFailureImpacts(sourceId, frictions, partialSource);
+
     return {
       sourceId,
       activeNow,
@@ -277,7 +410,7 @@ export function computeTrafficIntelSnapshot(): TrafficIntelSnapshot {
       signupRate: computeRate(signups, totalVisits),
       appOpenRate: computeRate(appOpens, totalVisits),
       qualityScore,
-      affectedByIncident: 0,
+      affectedByIncident: failureImpacts.reduce((sum, item) => sum + item.affectedUsers, 0),
       journeySteps,
       intents,
       topIntent,
@@ -285,10 +418,13 @@ export function computeTrafficIntelSnapshot(): TrafficIntelSnapshot {
       frictions,
       healthState,
       businessOutcomeScore,
+      dependencyBasis: getDependencyBasis(sourceId),
+      failureImpacts,
     };
   });
 
   const connections = buildConnections(sources);
+  const handoffIssues = deriveHandoffIssues(sources);
 
   const totalVisitors = sources.reduce((s, src) => s + src.activeNow, 0);
   const totalAuth = sources.reduce((s, src) => {
@@ -318,6 +454,7 @@ export function computeTrafficIntelSnapshot(): TrafficIntelSnapshot {
     sources,
     connections,
     predictions: [],
+    handoffIssues,
     totalVisitors,
     totalAuthenticated: totalAuth,
     totalAnonymous: Math.max(0, totalVisitors - totalAuth),

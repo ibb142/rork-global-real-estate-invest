@@ -1,5 +1,6 @@
 import * as Linking from 'expo-linking';
 import { scopedGetJSON, scopedSetJSON } from '@/lib/project-storage';
+import { getDirectApiBaseUrl } from '@/lib/api-base';
 import { supabase } from '@/lib/supabase';
 import type { AIOpsIncident, AIOpsOverallStatus, AIOpsRepairAction, AIOpsSeverity, AIOpsSnapshot } from '@/lib/ai-ops';
 
@@ -11,7 +12,7 @@ const DEFAULT_OWNER_NAME = 'IVX Owner';
 const DEFAULT_COOLDOWN_MINUTES = 15;
 const DEFAULT_FROM_EMAIL = 'investors@ivxholding.com';
 const DEFAULT_FROM_NAME = 'IVX AI Ops';
-const API_BASE = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL ?? '').trim().replace(/\/$/, '');
+const API_BASE = getDirectApiBaseUrl();
 const FEED_LIMIT = 20;
 
 export type OwnerAlertChannel = 'email' | 'whatsapp';

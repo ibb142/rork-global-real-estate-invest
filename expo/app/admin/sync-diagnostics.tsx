@@ -49,7 +49,7 @@ import { performanceMonitor } from '@/lib/performance-monitor';
 import { getAutoDeployStatus } from '@/lib/auto-deploy';
 import { getAdminMemberRegistrySnapshot, type AdminMemberRegistrySnapshot } from '@/lib/member-registry';
 import { getDeployAccessDiagnostic } from '@/lib/landing-deploy';
-import { runLandingReadinessAudit } from '@/lib/landing-readiness-audit';
+import { runLandingReadinessAudit, type ReadinessAuditResult } from '@/lib/landing-readiness-audit';
 
 
 type StatusLevel = 'green' | 'yellow' | 'red';
@@ -119,7 +119,7 @@ export default function SyncDiagnosticsScreen() {
 
   const memberRegistryQuery = useQuery<AdminMemberRegistrySnapshot>({
     queryKey: ['sync-diagnostics-member-registry'],
-    queryFn: getAdminMemberRegistrySnapshot,
+    queryFn: () => getAdminMemberRegistrySnapshot(),
     staleTime: 1000 * 30,
     gcTime: 1000 * 60 * 5,
     refetchOnWindowFocus: true,
@@ -135,9 +135,9 @@ export default function SyncDiagnosticsScreen() {
     refetchInterval: false,
   });
 
-  const readinessAuditQuery = useQuery({
+  const readinessAuditQuery = useQuery<ReadinessAuditResult>({
     queryKey: ['sync-diagnostics-readiness-audit'],
-    queryFn: runLandingReadinessAudit,
+    queryFn: () => runLandingReadinessAudit(),
     staleTime: 1000 * 30,
     gcTime: 1000 * 60 * 5,
     refetchOnWindowFocus: true,

@@ -1,4 +1,9 @@
 const _supabaseUrl = (process.env.EXPO_PUBLIC_SUPABASE_URL || '').trim().replace(/\/$/, '');
+const _directApiBaseUrl = (process.env.EXPO_PUBLIC_API_BASE_URL || '').trim().replace(/\/$/, '');
+
+export function getDirectApiBaseUrl(): string {
+  return _directApiBaseUrl;
+}
 
 export function getSupabaseEdgeFunctionUrl(fnName: string): string {
   if (!_supabaseUrl) {
@@ -17,8 +22,9 @@ export function getSupabaseRestUrl(): string {
 }
 
 export function getApiBaseUrl(): string {
-  const custom = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || process.env.EXPO_PUBLIC_API_BASE_URL || '').trim().replace(/\/$/, '');
-  if (custom) return custom;
+  if (_directApiBaseUrl) {
+    return _directApiBaseUrl;
+  }
 
   if (_supabaseUrl) {
     return `${_supabaseUrl}/functions/v1`;

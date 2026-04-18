@@ -8,6 +8,11 @@ import {
   isUuidConversationId,
   resolveChatConversationId,
 } from '@/src/modules/chat/services/chatRooms';
+import {
+  extractIVXRoleCandidate,
+  isPrivilegedIVXRole,
+  resolveIVXRoleContext,
+} from '@/shared/ivx';
 
 type AssistantRequestBody = {
   message?: unknown;
@@ -101,6 +106,7 @@ type UserContext = {
   id: string;
   email: string | null;
   role: string | null;
+  normalizedRole: 'owner' | 'developer' | 'admin' | 'investor';
 };
 
 type OpenAIResponsePayload = {
@@ -586,7 +592,7 @@ async function resolveConversationContext(
 async function loadUserContext(client: SupabaseClient, user: User): Promise<UserContext> {
   const { data, error } = await client
     .from('profiles')
-    .select('role')
+    .select('*')
     .eq('id', user.id)
     .maybeSingle();
 
@@ -594,18 +600,31 @@ async function loadUserContext(client: SupabaseClient, user: User): Promise<User
     console.log('[AssistantAPI] Profile lookup warning:', error.message);
   }
 
-  const roleFromProfile = data && typeof data === 'object' && 'role' in data ? readTrimmedString((data as { role?: unknown }).role) : null;
+  const roleFromProfile = extractIVXRoleCandidate(data as Record<string, unknown> | null | undefined);
+  const appMetadataRole = extractIVXRoleCandidate(user.app_metadata as Record<string, unknown> | null | undefined);
+  const userMetadataRole = extractIVXRoleCandidate(user.user_metadata as Record<string, unknown> | null | undefined);
+  const roleContext = resolveIVXRoleContext([
+    roleFromProfile,
+    appMetadataRole,
+    userMetadataRole,
+  ]);
+
+  console.log('[AssistantAPI] User role resolution result:', {
+    userId: user.id,
+    email: readTrimmedString(user.email),
+    profileRole: roleFromProfile,
+    appMetadataRole,
+    userMetadataRole,
+    rawRole: roleContext.rawRole,
+    normalizedRole: roleContext.normalizedRole,
+  });
 
   return {
     id: user.id,
     email: readTrimmedString(user.email),
-    role: roleFromProfile,
+    role: roleContext.rawRole,
+    normalizedRole: roleContext.normalizedRole,
   };
-}
-
-function isOwnerOnlyRole(role: string | null | undefined): boolean {
-  const normalizedRole = readTrimmedString(role)?.toLowerCase().replace(/[^a-z0-9]+/g, '') ?? '';
-  return normalizedRole === 'owner' || normalizedRole === 'owneradmin';
 }
 
 async function loadProjectContext(client: SupabaseClient, requestedProjectId: string | null): Promise<ProjectContext> {
@@ -840,9 +859,10 @@ async function callAssistantModel(params: {
     instructions: params.instructions,
     input: params.input,
   });
-  const toolkitAnswer = (await toolkitGenerateText({
+  const rawToolkitAnswer = await toolkitGenerateText({
     messages: [{ role: 'user', content: toolkitPrompt }],
-  })).trim();
+  });
+  const toolkitAnswer = typeof rawToolkitAnswer === 'string' ? rawToolkitAnswer.trim() : '';
 
   if (!toolkitAnswer) {
     throw new Error('AI provider returned an empty assistant response.');
@@ -1029,13 +1049,14 @@ export async function POST(request: Request): Promise<Response> {
     const verifiedUser = await verifyUser(supabaseAdmin, request);
     const userContext = await loadUserContext(supabaseAdmin, verifiedUser);
 
-    if (!isOwnerOnlyRole(userContext.role)) {
-      console.log('[AssistantAPI] Blocked non-owner request:', {
+    if (!isPrivilegedIVXRole(userContext.normalizedRole)) {
+      console.log('[AssistantAPI] Blocked non-privileged request:', {
         userId: verifiedUser.id,
         email: verifiedUser.email ?? null,
-        role: userContext.role,
+        profileRole: userContext.role,
+        normalizedRole: userContext.normalizedRole,
       });
-      return jsonResponse({ error: 'Owner access is required.' }, 403);
+      return jsonResponse({ error: 'Privileged IVX access is required.' }, 403);
     }
 
     const conversationContext = await resolveConversationContext(supabaseAdmin, requestedRoomKey, verifiedUser.id);
@@ -1102,13 +1123,14 @@ export async function POST(request: Request): Promise<Response> {
         featuredDealCount: projectContext.featuredDeals.length,
         selectedDealId: projectContext.selectedDeal?.id ?? null,
         userRole: userContext.role,
+        normalizedUserRole: userContext.normalizedRole,
       },
     });
   } catch (error) {
     const message = getErrorMessage(error);
     const status = message === 'Missing bearer token.' || message === 'Unauthorized request.'
       ? 401
-      : message === 'Owner access is required.'
+      : message === 'Owner access is required.' || message === 'Privileged IVX access is required.'
         ? 403
         : message === 'Room not found.'
           ? 404

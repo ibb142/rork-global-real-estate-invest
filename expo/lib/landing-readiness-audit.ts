@@ -95,7 +95,7 @@ function withFetchTimeout(timeoutMs: number): { controller: AbortController; cle
 }
 
 function getDirectApiBaseUrl(): string {
-  return (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || process.env.EXPO_PUBLIC_API_BASE_URL || '').trim().replace(/\/$/, '');
+  return (process.env.EXPO_PUBLIC_API_BASE_URL || '').trim().replace(/\/$/, '');
 }
 
 function pushProbe(probes: ReadinessProbe[], probe: ReadinessProbe): void {
@@ -794,7 +794,7 @@ export async function runLandingReadinessAudit(options: RunLandingReadinessAudit
         id: 'direct-api-missing',
         label: 'Direct API base URL',
         status: 'fail',
-        message: 'EXPO_PUBLIC_RORK_API_BASE_URL is not configured',
+        message: 'EXPO_PUBLIC_API_BASE_URL is not configured',
         detail: 'Cannot bypass CDN routing to verify the backend directly.',
       });
     }
