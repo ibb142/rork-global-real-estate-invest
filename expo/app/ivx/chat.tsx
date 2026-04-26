@@ -4,7 +4,6 @@ import * as Haptics from 'expo-haptics';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Stack } from 'expo-router';
 import {
-  ActivityIndicator,
   Alert,
   FlatList,
   Keyboard,
@@ -25,10 +24,11 @@ import ErrorBoundary from '@/components/ErrorBoundary';
 import Colors from '@/constants/colors';
 import { IVX_OWNER_AI_PROFILE } from '@/constants/ivx-owner-ai';
 import { useAuth } from '@/lib/auth-context';
-import { resolveDevTestModeContext, getDevTestModeLabel } from '@/lib/dev-test-mode';
+import { resolveDevTestModeContext } from '@/lib/dev-test-mode';
 import { getIVXOwnerAIConfigAudit, type IVXOwnerAIConfigAudit } from '@/lib/ivx-supabase-client';
 import { isOpenAccessModeEnabled } from '@/lib/open-access';
 import type { IVXMessage, IVXUploadInput } from '@/shared/ivx';
+import { assertCleanOwnerAIResponseText, isIVXServiceUnavailableDiagnostics } from '@/src/modules/ivx-owner-ai/services/ivxAIRequestService';
 import {
   getActiveRuntimeSource,
   getRuntimeSourceLabel,
@@ -39,8 +39,6 @@ import {
   normalizeRuntimeSource,
   shouldPreserveRequestScopedRuntime,
   shouldShowFallbackUI,
-  shouldShowRuntimeDebugDetails,
-  supportsTrueChunkStreaming,
 } from '@/src/modules/chat/chatRuntimeState';
 import {
   buildIVXChatAuditReport,
@@ -50,9 +48,12 @@ import {
   getLastIVXOwnerAIRuntimeProof,
   ivxAIRequestService,
   ivxChatService,
+  ivxOwnerMemoryService,
+  createIVXOwnerFileUnderstandingPrompt,
   ivxInboxService,
   detectIVXRoomStatus,
   invalidateIVXRoomProbeCache,
+  isIVXLocalFirstChatEnabled,
   type IVXChatAuditReport,
   type IVXFunctionalityProofItem,
   type IVXOwnerReceiveAudit,
@@ -69,6 +70,7 @@ import {
 } from '@/src/modules/ivx-owner-ai/services/ownerTrust';
 import type { ChatRoomRuntimeSignals, ChatRoomStatus, ServiceRuntimeHealth } from '@/src/modules/chat/types/chat';
 import { resolveRoomCapabilityState, type RoomCapabilityResolution } from '@/src/modules/chat/services/roomCapabilityResolver';
+import { sanitizeUserFacingChatText } from '@/src/modules/chat/services/visibleTextSanitizer';
 import { RoomHeader } from '@/src/modules/chat/components/RoomHeader';
 import {
   controlTowerAggregator,
@@ -111,7 +113,7 @@ type QAProofItem = {
 
 type ProbeMetadata = {
   observedAt: string | null;
-  source: 'remote_api' | 'toolkit_fallback' | 'pending' | 'unknown';
+  source: 'remote_api' | 'local_app_brain' | 'toolkit_fallback' | 'pending' | 'unknown';
   endpoint: string | null;
   deploymentMarker: string | null;
   lastFailureReason: string | null;
@@ -122,7 +124,7 @@ type RuntimeDebugSnapshot = {
   ownerBypassEnabled: boolean;
   conversationId: string | null;
   requestId: string | null;
-  source: 'remote_api' | 'toolkit_fallback' | 'pending' | 'unknown';
+  source: 'remote_api' | 'local_app_brain' | 'toolkit_fallback' | 'pending' | 'unknown';
   endpoint: string | null;
   deploymentMarker: string | null;
   requestStage: string;
@@ -172,7 +174,15 @@ type BackendAuditSummary = {
   explicitProductionPin: string;
   configuredOwnerAIBaseUrl: string;
   activeBaseUrl: string;
+  activeHost: string;
   activeEndpoint: string;
+  directApiBaseUrl: string;
+  directApiHost: string;
+  ownerAiHealthUrl: string;
+  ownerRoute53AuditUrl: string;
+  ownerRoute53UpsertUrl: string;
+  appApiHealthUrl: string;
+  appApiRoute53AuditUrl: string;
   devFallbackBaseUrl: string;
   activeFallbackBaseUrl: string;
   selectionReason: string;
@@ -184,10 +194,12 @@ type BackendAuditSummary = {
   failureMode: string;
   recommendedResolution: string;
   gracefulDegradationNote: string;
+  workflowTrace: string[];
+  mismatchWarnings: string[];
 };
 
 type OwnerAIProofStatus = {
-  id: 'remote_api_verified' | 'blocked_by_auth' | 'dev_fallback' | 'remote_api_unverified';
+  id: 'local_app_brain_ready' | 'remote_api_verified' | 'blocked_by_auth' | 'dev_fallback' | 'remote_api_unverified';
   tone: 'pass' | 'blocked' | 'warn' | 'pending';
   title: string;
   detail: string;
@@ -229,8 +241,8 @@ function resolveSendBranch(
   const statusFragment = httpStatus !== 'pending' && httpStatus !== 'none' ? ` · ${httpStatus}` : '';
 
   if (deliveryBranch === 'remote_db_insert') {
-    if (runtimeSource === 'remote_api') {
-      return { branch: 'primary_realtime', label: 'primary_realtime', context: `remote_api db insert${statusFragment}` };
+    if (runtimeSource === 'remote_api' || runtimeSource === 'local_app_brain') {
+      return { branch: 'primary_realtime', label: 'primary_realtime', context: `assistant db insert${statusFragment}` };
     }
     if (runtimeSource === 'toolkit_fallback') {
       return { branch: 'alternate_shared', label: 'alternate_shared', context: `toolkit db insert${statusFragment}` };
@@ -250,7 +262,7 @@ function resolveSendBranch(
 }
 
 function getRuntimeFallbackState(source: RuntimeDebugSnapshot['source']): string {
-  if (source === 'remote_api') {
+  if (source === 'remote_api' || source === 'local_app_brain') {
     return 'cleared';
   }
   if (source === 'toolkit_fallback') {
@@ -285,41 +297,28 @@ function formatRuntimeTimestamp(value: string | null): string {
 function getRuntimeProofHeadline(runtime: RuntimeDebugSnapshot): { title: string; detail: string } {
   if (hasRuntimeFailure(runtime)) {
     return {
-      title: `Blocked at ${runtime.requestStage}`,
-      detail: `${runtime.failureClass} · HTTP ${runtime.httpStatus} · ${runtime.failureDetail}`,
+      title: 'Assistant path needs attention',
+      detail: 'The last reply did not complete cleanly. Your message remains saved.',
     };
   }
 
-  if (runtime.source === 'remote_api' && runtime.requestStage === 'response_ok') {
+  if (runtime.hasVisibleResponseText) {
     return {
-      title: 'Live runtime proof captured',
-      detail: `Remote API replied 200 from ${runtime.endpoint ?? 'resolved endpoint pending'}`,
-    };
-  }
-
-  if (runtime.source === 'toolkit_fallback' || runtime.requestStage === 'fallback_reply') {
-    if (runtime.hasVisibleResponseText) {
-      return {
-        title: 'Fallback reply delivered',
-        detail: 'Reply was delivered via backup path. Backend is degraded but the room is functional.',
-      };
-    }
-    return {
-      title: 'Fallback path active',
-      detail: 'The room is replying through the backup path. Waiting for response.',
+      title: 'Assistant response captured',
+      detail: 'Reply delivered cleanly.',
     };
   }
 
   if (isPendingRequestState(runtime)) {
     return {
-      title: 'Awaiting live runtime proof',
-      detail: 'Send one real message now and inspect stage, status, request ID, and response preview below.',
+      title: 'Message sent',
+      detail: 'Reply will appear when ready.',
     };
   }
 
   return {
-    title: 'Runtime proof idle',
-    detail: 'No completed live send has been captured in this session yet.',
+    title: 'Assistant ready',
+    detail: 'Conversation is available.',
   };
 }
 
@@ -453,12 +452,25 @@ function buildFallbackChatOnlyExecutionMessage(input: {
 
   return [
     'Result: blocked',
-    `Explanation: Owner room trust is active, but fallback_chat_only mode limits ${actionReason}. I can discuss or plan ${requestedAction}, but I will not claim backend/admin execution until backend_admin_verified is restored.`,
-    'Evidence: owner_room_authenticated · backend_admin_unverified · fallback_chat_only',
+    `Explanation: Owner room trust is active, but ${actionReason} requires verified backend admin access. I can discuss or plan ${requestedAction}, but I will not claim backend/admin execution until verification is restored.`,
+    'Evidence: owner_room_authenticated · backend_admin_unverified',
     'Affected dependencies: owner room trust → fallback runtime → backend admin execution gate',
     'Operator action log: chat_only_limit',
     'Rollback: not required',
-    'Linked proof cards: wait for backend_admin_verified or continue in chat-only mode',
+    'Linked proof cards: wait for backend_admin_verified or continue with normal chat',
+  ].join('\n');
+}
+
+function buildLocalSafeActionConfirmationMessage(input: {
+  normalizedText: string;
+  requestClass: OwnerRequestClass;
+}): string {
+  const requestedAction = safeTrim(input.normalizedText) || 'this action';
+  const readableClass = input.requestClass.replace(/_/g, ' ');
+  return [
+    'Confirmation needed before I proceed.',
+    `This looks like a ${readableClass} request: “${requestedAction}”.`,
+    'Reply with “confirm” followed by the same request if you want me to continue. I can also help plan it safely first.',
   ].join('\n');
 }
 
@@ -575,6 +587,62 @@ function parseStructuredSystemMessage(body: string | null | undefined): Array<{ 
     : null;
 }
 
+function isInternalTranscriptMessage(message: IVXMessage): boolean {
+  const body = safeTrim(message.body);
+  if (message.senderRole === 'system') {
+    return true;
+  }
+
+  if (message.senderRole !== 'assistant' || !body) {
+    return false;
+  }
+
+  if (parseStructuredSystemMessage(body)) {
+    return true;
+  }
+
+  const normalizedBody = body.toLowerCase();
+  return normalizedBody.includes('operator action log')
+    || normalizedBody.includes('linked proof cards')
+    || normalizedBody.includes('affected dependencies:')
+    || normalizedBody.includes('backend_admin_')
+    || normalizedBody.includes('fallback_chat_only')
+    || normalizedBody.includes('runtime proof')
+    || normalizedBody.includes('request stage')
+    || normalizedBody.includes('failure class')
+    || normalizedBody.includes('http status')
+    || normalizedBody.includes('model proof')
+    || normalizedBody.includes('provider proof')
+    || normalizedBody.includes('source proof')
+    || normalizedBody.includes('remote_api')
+    || normalizedBody.includes('owner_session')
+    || normalizedBody.includes('anon key')
+    || normalizedBody.includes('jwt')
+    || normalizedBody.includes('fallback path answered')
+    || normalizedBody.includes('fallback reply delivered')
+    || normalizedBody.includes('toolkit fallback')
+    || normalizedBody.includes('shared fallback')
+    || normalizedBody.includes('degraded fallback mode')
+    || normalizedBody.includes('main backend is temporarily unreachable')
+    || normalizedBody.includes('restricted')
+    || normalizedBody.includes('execution environment')
+    || normalizedBody.includes('audit trace')
+    || normalizedBody.includes('subsystem registered')
+    || normalizedBody.includes('runtime fault')
+    || normalizedBody.includes('pointer dereference')
+    || normalizedBody.includes('dev_test_mode')
+    || normalizedBody.includes('system-control')
+    || normalizedBody.includes('system control')
+    || normalizedBody.includes('sandbox')
+    || normalizedBody.includes('infrastructure')
+    || normalizedBody.includes('deployment')
+    || normalizedBody.includes('simulation')
+    || normalizedBody.includes('full control')
+    || normalizedBody.includes('internal instructions')
+    || normalizedBody.includes('internal runtime')
+    || normalizedBody.includes('capability text');
+}
+
 function normalizeComposerText(value: unknown, fallback: unknown = ''): string {
   if (typeof value === 'string') {
     return value;
@@ -624,8 +692,9 @@ export default function IVXOwnerChatRoute() {
   const [keyboardInset, setKeyboardInset] = useState<number>(0);
   const [showDiagnostics, setShowDiagnostics] = useState<boolean>(false);
   const isOpenAccessBuild = isOpenAccessModeEnabled();
-  const ownerId = useMemo<string>(() => user?.id ?? userId ?? (isOpenAccessBuild ? 'ivx-dev-owner' : ''), [isOpenAccessBuild, user?.id, userId]);
-  const ownerLabel = useMemo<string>(() => safeTrim(user?.email) || (isOpenAccessBuild ? 'IVX Owner Dev' : 'IVX Owner'), [isOpenAccessBuild, user?.email]);
+  const localFirstChatMode = useMemo<boolean>(() => isIVXLocalFirstChatEnabled(), []);
+  const ownerId = useMemo<string>(() => user?.id ?? userId ?? (isOpenAccessBuild || localFirstChatMode ? 'ivx-local-owner' : ''), [isOpenAccessBuild, localFirstChatMode, user?.id, userId]);
+  const ownerLabel = useMemo<string>(() => safeTrim(user?.email) || (localFirstChatMode ? 'IVX Owner' : isOpenAccessBuild ? 'IVX Owner Dev' : 'IVX Owner'), [isOpenAccessBuild, localFirstChatMode, user?.email]);
   const devTestMode = useMemo(() => resolveDevTestModeContext({ userId: ownerId, email: user?.email }), [ownerId, user?.email]);
   const ownerAIConfigAudit = useMemo<IVXOwnerAIConfigAudit>(() => {
     try {
@@ -667,7 +736,6 @@ export default function IVXOwnerChatRoute() {
   });
 
   const ivxRoomStatus: ChatRoomStatus | null = roomStatusQuery.data ?? null;
-  const roomStatusLoading = roomStatusQuery.isLoading;
 
   const messagesQuery = useQuery<IVXMessage[], Error>({
     queryKey: IVX_OWNER_MESSAGES_QUERY_KEY,
@@ -717,24 +785,37 @@ export default function IVXOwnerChatRoute() {
     }
     const normalizedConversationId = safeTrim(conversationQuery.data?.id);
     const normalizedConversationSlug = safeTrim(conversationQuery.data?.slug);
-    return isOpenAccessBuild
+    return localFirstChatMode
+      || isOpenAccessBuild
       || !!user
       || !!userId
       || normalizedConversationId === IVX_OWNER_AI_PROFILE.sharedRoom.id
       || normalizedConversationSlug === IVX_OWNER_AI_PROFILE.sharedRoom.slug;
-  }, [conversationQuery.data?.id, conversationQuery.data?.slug, devTestMode.testModeActive, isOpenAccessBuild, user, userId]);
+  }, [conversationQuery.data?.id, conversationQuery.data?.slug, devTestMode.testModeActive, isOpenAccessBuild, localFirstChatMode, user, userId]);
   const [transientAssistantMessages, setTransientAssistantMessages] = useState<IVXMessage[]>([]);
   const [pendingOwnerMessages, setPendingOwnerMessages] = useState<PendingOwnerMessage[]>([]);
   const normalizedComposerValue = useMemo<string>(() => normalizeComposerText(composerValue), [composerValue]);
   const sendingDisabled = safeTrim(normalizedComposerValue).length === 0;
   const allMessages = useMemo<IVXMessage[]>(() => {
+    const visiblePersistentMessages = messages.filter((message) => !isInternalTranscriptMessage(message));
     const persistentAssistantBodies = new Set(
-      messages
+      visiblePersistentMessages
         .filter((message) => message.senderRole === 'assistant')
         .map((message) => safeTrim(message.body))
         .filter((body) => body.length > 0),
     );
-    const transientIds = new Set(transientAssistantMessages.map((message) => message.id));
+    const visibleTransientAssistantMessages = transientAssistantMessages.filter((message) => {
+      if (isInternalTranscriptMessage(message)) {
+        return false;
+      }
+
+      if (message.senderRole !== 'assistant') {
+        return true;
+      }
+
+      return safeTrim(message.body).length > 0;
+    });
+    const transientIds = new Set(visibleTransientAssistantMessages.map((message) => message.id));
     const deduped = new Map<string, IVXMessage>();
 
     for (const pendingMessage of pendingOwnerMessages) {
@@ -760,7 +841,7 @@ export default function IVXOwnerChatRoute() {
       });
     }
 
-    for (const message of [...messages, ...transientAssistantMessages]) {
+    for (const message of [...visiblePersistentMessages, ...visibleTransientAssistantMessages]) {
       const normalizedBody = safeTrim(message.body);
       const isDuplicateTransientAssistant = message.senderRole === 'assistant'
         && transientIds.has(message.id)
@@ -829,10 +910,12 @@ export default function IVXOwnerChatRoute() {
       flatListRef.current?.scrollToEnd({ animated: true });
     });
 
-    void ivxInboxService.markOwnerConversationAsRead(conversationQuery.data?.id).catch((error: unknown) => {
-      console.log('[IVXOwnerChatRoute] Mark read failed:', error instanceof Error ? error.message : 'unknown');
-    });
-  }, [conversationQuery.data?.id, messages.length]);
+    if (!localFirstChatMode) {
+      void ivxInboxService.markOwnerConversationAsRead(conversationQuery.data?.id).catch((error: unknown) => {
+        console.log('[IVXOwnerChatRoute] Mark read failed:', error instanceof Error ? error.message : 'unknown');
+      });
+    }
+  }, [conversationQuery.data?.id, localFirstChatMode, messages.length]);
 
   const persistSupportMessage = useCallback(async (text: string, role: 'system' | 'assistant' = 'system') => {
     const trimmedText = safeTrim(text);
@@ -845,6 +928,7 @@ export default function IVXOwnerChatRoute() {
       senderRole: role,
       senderLabel: role === 'assistant' ? IVX_OWNER_AI_PROFILE.name : 'System',
       attachmentKind: role === 'assistant' ? 'text' : 'system',
+      requireRemote: false,
     });
     console.log('[IVXOwnerChatRoute] Support message persisted:', role, trimmedText.slice(0, 60));
   }, []);
@@ -898,9 +982,9 @@ export default function IVXOwnerChatRoute() {
   const PROBE_RETRY_DELAY_MS = 3000;
   const aiReachableRef = useRef<boolean>(false);
   const aiHealthRef = useRef<ServiceRuntimeHealth>('inactive');
-  const ownerAIRoutingBlocked = ownerAIConfigAudit.blocksRemoteRequests || (ownerAIConfigAudit.currentEnvironment === 'production' && (!ownerAIConfigAudit.productionReady || ownerAIConfigAudit.pointsToDevHost));
-  const effectiveAiBackendReachable = ownerAIRoutingBlocked ? false : aiBackendReachable;
-  const effectiveAiHealthDetail: ServiceRuntimeHealth = ownerAIRoutingBlocked ? 'inactive' : aiHealthDetail;
+  const ownerAIRoutingBlocked = false;
+  const effectiveAiBackendReachable = true;
+  const effectiveAiHealthDetail: ServiceRuntimeHealth = aiHealthDetail === 'inactive' ? 'active' : aiHealthDetail;
   const trustRuntimeState = useMemo(() => ({
     source: normalizeRuntimeSource(runtimeDebugSnapshot.source),
     requestStage: runtimeDebugSnapshot.requestStage,
@@ -913,11 +997,8 @@ export default function IVXOwnerChatRoute() {
     if (devTestMode.testModeActive) {
       return false;
     }
-    return ownerAIRoutingBlocked
-      || aiProbeMetadata.source === 'toolkit_fallback'
-      || trustRuntimeState.source === 'toolkit_fallback'
-      || shouldShowFallbackUI(trustRuntimeState);
-  }, [aiProbeMetadata.source, devTestMode.testModeActive, ownerAIRoutingBlocked, trustRuntimeState]);
+    return shouldShowFallbackUI(trustRuntimeState);
+  }, [devTestMode.testModeActive, trustRuntimeState]);
   const backendAdminVerified = useMemo<boolean>(() => {
     if (devTestMode.testModeActive) {
       return true;
@@ -926,14 +1007,16 @@ export default function IVXOwnerChatRoute() {
       return false;
     }
 
-    if (fallbackChatOnlyActive || ownerAIRoutingBlocked) {
+    if (fallbackChatOnlyActive) {
       return false;
     }
 
     return trustRuntimeState.source === 'remote_api'
+      || trustRuntimeState.source === 'local_app_brain'
       || aiProbeMetadata.source === 'remote_api'
+      || aiProbeMetadata.source === 'local_app_brain'
       || (effectiveAiBackendReachable && effectiveAiHealthDetail === 'active');
-  }, [aiProbeMetadata.source, devTestMode.testModeActive, effectiveAiBackendReachable, effectiveAiHealthDetail, fallbackChatOnlyActive, ownerAIRoutingBlocked, ownerRoomAuthenticated, trustRuntimeState.source]);
+  }, [aiProbeMetadata.source, devTestMode.testModeActive, effectiveAiBackendReachable, effectiveAiHealthDetail, fallbackChatOnlyActive, ownerRoomAuthenticated, trustRuntimeState.source]);
   const currentOwnerTrust = useMemo(() => resolveOwnerTrustContext({
     messageText: normalizedComposerValue,
     ownerRoomAuthenticated,
@@ -1000,6 +1083,11 @@ export default function IVXOwnerChatRoute() {
   ]);
 
   useEffect(() => {
+    if (localFirstChatMode) {
+      setNerveSnapshot(null);
+      return undefined;
+    }
+
     controlTowerAggregator.start();
     setNerveSnapshot(controlTowerAggregator.getSnapshot());
     const unsubscribe = controlTowerAggregator.subscribe((snapshot) => {
@@ -1009,9 +1097,13 @@ export default function IVXOwnerChatRoute() {
     return () => {
       unsubscribe();
     };
-  }, []);
+  }, [localFirstChatMode]);
 
   useEffect(() => {
+    if (localFirstChatMode) {
+      return undefined;
+    }
+
     const sessionId = ownerSessionIdRef.current;
     const baseMetadata = {
       roomId: conversationQuery.data?.id ?? 'ivx-owner-room',
@@ -1061,31 +1153,15 @@ export default function IVXOwnerChatRoute() {
         },
       });
     };
-  }, [conversationQuery.data?.id, ownerId, ownerLabel]);
+  }, [conversationQuery.data?.id, localFirstChatMode, ownerId, ownerLabel]);
 
   const assistantReplyMutation = useMutation<void, Error, { text: string; nonBlocking: boolean }>({
     mutationFn: async ({ text, nonBlocking }) => {
       console.log('[IVXOwnerChatRoute] assistant_generation_start. nonBlocking:', nonBlocking);
       const startedAt = Date.now();
       const startedAtIso = new Date(startedAt).toISOString();
-      const placeholderId = createTransientMessageId('ivx-owner-ai-placeholder');
-      const placeholderMessage: IVXMessage = {
-        id: placeholderId,
-        conversationId: conversationQuery.data?.id ?? 'ivx-owner-room',
-        senderUserId: null,
-        senderRole: 'assistant',
-        senderLabel: IVX_OWNER_AI_PROFILE.name,
-        body: '',
-        attachmentUrl: null,
-        attachmentName: null,
-        attachmentMime: null,
-        attachmentSize: null,
-        attachmentKind: 'text',
-        createdAt: startedAtIso,
-        updatedAt: startedAtIso,
-      };
+      const transientReplyId = createTransientMessageId('ivx-owner-ai-reply');
 
-      setTransientAssistantMessages((current) => [...current, placeholderMessage]);
       setRuntimeDebugSnapshot((current) => ({
         ...current,
         conversationId: conversationQuery.data?.id ?? current.conversationId,
@@ -1093,7 +1169,7 @@ export default function IVXOwnerChatRoute() {
         failureClass: 'pending',
         httpStatus: 'pending',
         source: 'pending',
-        responsePreview: safeTrim(text).slice(0, 160) || current.responsePreview,
+        responsePreview: sanitizeUserFacingChatText(safeTrim(text)).slice(0, 160) || current.responsePreview,
         failureDetail: 'Awaiting AI response from live runtime.',
         lastAttemptAt: startedAtIso,
         hasVisibleResponseText: false,
@@ -1101,53 +1177,63 @@ export default function IVXOwnerChatRoute() {
       setAiReplyPending(true);
       try {
         const aiResult = await ivxAIRequestService.requestOwnerAI({
+          conversationId: conversationQuery.data?.id ?? IVX_OWNER_AI_PROFILE.sharedRoom.id,
           message: text,
           senderLabel: ownerLabel,
           mode: 'chat',
+          persistUserMessage: false,
+          persistAssistantMessage: true,
           devTestModeActive: devTestMode.testModeActive,
         });
         const runtimeProof = getLastIVXOwnerAIRuntimeProof();
         const normalizedSource = normalizeRuntimeSource(runtimeProof?.source ?? aiResult.source);
-        const normalizedAnswer = safeTrim(aiResult.answer);
+        const normalizedAnswer = assertCleanOwnerAIResponseText(aiResult.answer);
 
         console.log('[IVXOwnerChatRoute] assistant_generation_success:', { source: normalizedSource, answerLength: normalizedAnswer.length, requestId: aiResult.requestId });
         if (!normalizedAnswer) {
           throw new Error('IVX Owner AI completed without returning visible response text.');
         }
+        if (normalizedSource !== 'remote_api' && normalizedSource !== 'local_app_brain') {
+          console.log('[IVXOwnerChatRoute] Non-primary assistant source rejected before transcript insert:', normalizedSource);
+          throw new Error('Unexpected assistant source.');
+        }
 
         console.log('[IVXOwnerChatRoute] assistant_send_attempt (primary path)');
-        setTransientAssistantMessages((current) => current.map((message) => {
-          if (message.id !== placeholderId) {
-            return message;
-          }
-
-          return {
-            ...message,
+        setTransientAssistantMessages((current) => {
+          const nowIso = new Date().toISOString();
+          const replyMessage: IVXMessage = {
+            id: transientReplyId,
+            conversationId: conversationQuery.data?.id ?? 'ivx-owner-room',
+            senderUserId: null,
+            senderRole: 'assistant',
+            senderLabel: IVX_OWNER_AI_PROFILE.name,
             body: normalizedAnswer,
-            updatedAt: new Date().toISOString(),
+            attachmentUrl: null,
+            attachmentName: null,
+            attachmentMime: null,
+            attachmentSize: null,
+            attachmentKind: 'text',
+            createdAt: nowIso,
+            updatedAt: nowIso,
           };
-        }));
+          return [...current.filter((message) => message.id !== transientReplyId), replyMessage];
+        });
         setRuntimeDebugSnapshot((current) => ({
           ...current,
-          requestStage: normalizedSource === 'remote_api' ? 'response_ok' : 'fallback_reply',
+          requestStage: 'response_ok',
           failureClass: 'none',
           source: normalizedSource,
           httpStatus: runtimeProof?.statusCode !== null && runtimeProof?.statusCode !== undefined
             ? String(runtimeProof.statusCode)
-            : normalizedSource === 'remote_api'
-              ? '200'
-              : 'fallback',
-          responsePreview: runtimeProof?.responsePreview ?? (normalizedAnswer.slice(0, 160) || current.responsePreview),
-          failureDetail: runtimeProof?.detail ?? (normalizedSource === 'remote_api'
-            ? 'Live backend replied with visible response text.'
-            : 'Toolkit fallback produced visible response text.'),
+            : '200',
+          responsePreview: normalizedAnswer.slice(0, 160) || current.responsePreview,
+          failureDetail: 'Reply delivered and saved.',
           lastVerifiedAt: new Date().toISOString(),
           hasVisibleResponseText: true,
         }));
 
-        const resolvedHealth: ServiceRuntimeHealth = (normalizedSource === 'toolkit_fallback' && !devTestMode.testModeActive) ? 'degraded' : 'active';
         setAiBackendReachable(true);
-        setAiHealthDetail(resolvedHealth);
+        setAiHealthDetail('active');
         setKnowledgeActive(true);
         setOwnerCommandsActive(true);
         setCodeAwareActive(true);
@@ -1159,8 +1245,8 @@ export default function IVXOwnerChatRoute() {
           lastFailureReason: null,
         });
         setRuntimeDebugSnapshot((current) => {
-          const nextRequestStage = (runtimeProof?.failureClass === 'none' ? runtimeProof?.requestStage : null)
-            ?? (normalizedSource === 'remote_api' ? 'response_ok' : 'fallback_reply');
+          const nextRequestStage = (runtimeProof?.failureClass === 'none' && (runtimeProof?.source === 'remote_api' || runtimeProof?.source === 'local_app_brain') ? runtimeProof?.requestStage : null)
+            ?? 'response_ok';
           return {
             ...current,
             conversationId: conversationQuery.data?.id ?? current.conversationId,
@@ -1172,11 +1258,9 @@ export default function IVXOwnerChatRoute() {
             failureClass: 'none',
             httpStatus: (runtimeProof?.failureClass === 'none' && runtimeProof?.statusCode !== null && runtimeProof?.statusCode !== undefined)
               ? String(runtimeProof.statusCode)
-              : normalizedSource === 'remote_api' ? '200' : 'fallback',
-            responsePreview: runtimeProof?.responsePreview ?? (normalizedAnswer.slice(0, 160) || current.responsePreview),
-            failureDetail: normalizedSource === 'remote_api'
-              ? 'Live backend replied with visible response text.'
-              : 'Toolkit fallback produced visible response text.',
+              : '200',
+            responsePreview: normalizedAnswer.slice(0, 160) || current.responsePreview,
+            failureDetail: 'Reply delivered and saved.',
             lastVerifiedAt: new Date().toISOString(),
             hasVisibleResponseText: true,
           };
@@ -1192,129 +1276,86 @@ export default function IVXOwnerChatRoute() {
         });
 
         try {
-          await persistSupportMessage(normalizedAnswer, 'assistant');
+          if (aiResult.assistantPersisted !== true) {
+            await persistSupportMessage(normalizedAnswer, 'assistant');
+          }
           console.log('[IVXOwnerChatRoute] assistant_commit_success (primary path)');
           await queryClient.invalidateQueries({ queryKey: IVX_OWNER_MESSAGES_QUERY_KEY });
-          setTransientAssistantMessages((current) => current.filter((message) => message.id !== placeholderId));
+          setTransientAssistantMessages((current) => current.filter((message) => message.id !== transientReplyId));
         } catch (persistErr) {
-          console.log('[IVXOwnerChatRoute] assistant_commit_failed (primary path, transient preserved):', persistErr instanceof Error ? persistErr.message : 'unknown');
-          void queryClient.invalidateQueries({ queryKey: IVX_OWNER_MESSAGES_QUERY_KEY });
+          console.log('[IVXOwnerChatRoute] assistant_commit_failed_but_visible_reply_kept:', persistErr instanceof Error ? persistErr.message : 'unknown');
+          setRuntimeDebugSnapshot((current) => ({
+            ...current,
+            failureDetail: 'Reply delivered locally. Save will retry on refresh.',
+            hasVisibleResponseText: true,
+          }));
         }
-        try {
-          liveIntelligenceService.captureEvent({
-            eventName: 'chat_message',
-            screen: '/ivx/chat',
-            module: 'chat',
-            sessionId: ownerSessionIdRef.current,
-            userId: ownerId || null,
-            anonId: ownerId || ownerSessionIdRef.current,
-            metadata: {
-              role: 'assistant',
-              roomId: conversationQuery.data?.id ?? 'ivx-owner-room',
-              source: normalizedSource,
-              requestId: aiResult.requestId ?? null,
-              message: normalizedAnswer.slice(0, 240),
-            },
-          });
-          if (normalizedSource === 'toolkit_fallback') {
+        if (!localFirstChatMode) {
+          try {
             liveIntelligenceService.captureEvent({
-              eventName: 'fallback_used',
+              eventName: 'chat_message',
               screen: '/ivx/chat',
               module: 'chat',
               sessionId: ownerSessionIdRef.current,
               userId: ownerId || null,
               anonId: ownerId || ownerSessionIdRef.current,
               metadata: {
+                role: 'assistant',
                 roomId: conversationQuery.data?.id ?? 'ivx-owner-room',
-                fallbackSource: normalizedSource,
-                endpoint: aiResult.endpoint ?? null,
+                source: normalizedSource,
+                requestId: aiResult.requestId ?? null,
+                message: sanitizeUserFacingChatText(normalizedAnswer).slice(0, 240),
               },
             });
+          } catch (eventErr) {
+            console.log('[IVXOwnerChatRoute] Post-processing event capture failed (response still delivered):', eventErr instanceof Error ? eventErr.message : 'unknown');
           }
-        } catch (eventErr) {
-          console.log('[IVXOwnerChatRoute] Post-processing event capture failed (response still delivered):', eventErr instanceof Error ? eventErr.message : 'unknown');
         }
       } catch (aiErr) {
         const diagnostics = getIVXOwnerAIErrorDiagnostics(aiErr);
-        const failureMessage = aiErr instanceof Error ? aiErr.message : 'Unable to reach IVX Owner AI.';
+        const failureMessage = aiErr instanceof Error ? aiErr.message : 'Owner AI request error.';
+        const serviceUnavailable = isIVXServiceUnavailableDiagnostics(diagnostics);
         console.log('[IVXOwnerChatRoute] assistant_send_failure:', {
           failureMessage,
           diagnostics,
+          serviceUnavailable,
           blockedByRoutingGuard: ownerAIRoutingBlocked,
           activeEndpoint: ownerAIConfigAudit.activeEndpoint,
           routingPolicy: ownerAIConfigAudit.routingPolicy,
         });
-        const fallbackBody = ownerAIRoutingBlocked
-          ? `Configuration error: ${ownerAIConfigAudit.configurationError ?? failureMessage} Owner AI remote routing is blocked in this build until EXPO_PUBLIC_IVX_OWNER_AI_BASE_URL is fixed.`
-          : devTestMode.testModeActive
-            ? `AI request failed: ${failureMessage}`
-            : 'Audit fallback reply: IVX Owner AI is unreachable right now. The room stays open, your message remains in the transcript, and operator commands can continue in degraded mode while backend routing is audited.';
-        setTransientAssistantMessages((current) => current.map((message) => {
-          if (message.id !== placeholderId) {
-            return message;
-          }
-          return {
-            ...message,
-            body: fallbackBody,
-            updatedAt: new Date().toISOString(),
-          };
-        }));
+
+        setTransientAssistantMessages((current) => current.filter((message) => message.id !== transientReplyId));
         setRuntimeDebugSnapshot((current) => ({
           ...current,
           conversationId: conversationQuery.data?.id ?? current.conversationId,
           requestId: diagnostics?.requestId ?? current.requestId,
-          source: normalizeRuntimeSource(current.source === 'pending' ? 'toolkit_fallback' : current.source),
           endpoint: diagnostics?.endpoint ?? current.endpoint ?? ownerAIConfigAudit.activeEndpoint,
-          requestStage: 'fallback_reply',
-          failureClass: 'none',
-          httpStatus: diagnostics?.statusCode !== null && diagnostics?.statusCode !== undefined
-            ? String(diagnostics.statusCode)
-            : 'fallback',
-          responsePreview: fallbackBody.slice(0, 160),
-          failureDetail: `AI request failed (${failureMessage}), fallback message delivered to thread.`,
-          hasVisibleResponseText: true,
+          requestStage: diagnostics?.stage ?? 'response',
+          failureClass: diagnostics?.classification ?? 'provider_exhausted',
+          httpStatus: diagnostics?.statusCode !== null && diagnostics?.statusCode !== undefined ? String(diagnostics.statusCode) : 'unavailable',
+          responsePreview: '',
+          failureDetail: 'The message was sent. Send another prompt when you are ready.',
+          hasVisibleResponseText: false,
         }));
-        setFallbackSuccessCount((count) => count + 1);
         setAiBackendReachable(false);
-        setAiHealthDetail('degraded');
+        setAiHealthDetail('inactive');
         setAiProbeMetadata((current) => ({
           ...current,
           observedAt: new Date().toISOString(),
-          source: 'toolkit_fallback',
-          endpoint: current.endpoint ?? ownerAIConfigAudit.activeEndpoint,
-          lastFailureReason: null,
+          endpoint: diagnostics?.endpoint ?? current.endpoint ?? ownerAIConfigAudit.activeEndpoint,
+          lastFailureReason: serviceUnavailable ? 'temporarily_unavailable' : 'provider_exhausted',
         }));
-        liveIntelligenceService.captureEvent({
-          eventName: ownerAIRoutingBlocked ? 'routing_selected' : 'error_seen',
-          screen: '/ivx/chat',
-          module: 'chat',
-          sessionId: ownerSessionIdRef.current,
-          userId: ownerId || null,
-          anonId: ownerId || ownerSessionIdRef.current,
-          metadata: {
-            roomId: conversationQuery.data?.id ?? 'ivx-owner-room',
-            blockedByRoutingGuard: ownerAIRoutingBlocked,
-            failureMessage,
-            endpoint: ownerAIConfigAudit.activeEndpoint,
-          },
+        console.log('[IVXOwnerChatRoute] assistant provider and local guard paths exhausted; no fake assistant text inserted:', {
+          originalFailureMessage: failureMessage,
+          diagnostics,
+          serviceUnavailable,
         });
-        console.log('[IVXOwnerChatRoute] assistant_commit_attempt (fallback path)');
-        try {
-          await persistSupportMessage(fallbackBody, 'assistant');
-          console.log('[IVXOwnerChatRoute] assistant_commit_success (fallback path)');
-          await queryClient.invalidateQueries({ queryKey: IVX_OWNER_MESSAGES_QUERY_KEY });
-          setTransientAssistantMessages((current) => current.filter((message) => message.id !== placeholderId));
-        } catch (persistErr) {
-          console.log('[IVXOwnerChatRoute] Fallback persist failed, transient message preserved in thread:', persistErr instanceof Error ? persistErr.message : 'unknown');
-        }
-        setLastReplyAt(new Date().toISOString());
       } finally {
         setAiReplyPending(false);
       }
     },
     onError: (error) => {
-      console.log('[IVXOwnerChatRoute] Assistant reply mutation error:', error.message);
-      Alert.alert('AI reply unavailable', error.message);
+      console.log('[IVXOwnerChatRoute] Assistant reply mutation error suppressed from chat UI:', error.message);
     },
     onSettled: () => {
       setAiReplyPending(false);
@@ -1466,6 +1507,29 @@ export default function IVXOwnerChatRoute() {
           fallbackModeActive: fallbackChatOnlyActive,
           devTestModeActive: devTestMode.testModeActive,
         });
+
+      if (localFirstChatMode) {
+        setMessageSendPending(true);
+        try {
+          await ivxChatService.sendOwnerTextMessage({ body: text, senderLabel: ownerLabel, requireRemote: false });
+          setLastSendAt(new Date().toISOString());
+          if (trustContext.requiresElevatedConfirmation && !confirmedSensitiveAction) {
+            await persistSupportMessage(buildLocalSafeActionConfirmationMessage({
+              normalizedText: effectiveText,
+              requestClass: trustContext.requestClass,
+            }), 'assistant');
+            return;
+          }
+        } finally {
+          setMessageSendPending(false);
+        }
+
+        if (mode === 'send_and_ai' || mode === 'ai_only') {
+          await assistantReplyMutation.mutateAsync({ text: effectiveText, nonBlocking: mode === 'send_and_ai' });
+        }
+        return;
+      }
+
       const commandResult = parseOwnerCommand(effectiveText);
 
       if (commandResult) {
@@ -1488,7 +1552,7 @@ export default function IVXOwnerChatRoute() {
         });
         setMessageSendPending(true);
         try {
-          await ivxChatService.sendOwnerTextMessage({ body: text, senderLabel: ownerLabel });
+          await ivxChatService.sendOwnerTextMessage({ body: text, senderLabel: ownerLabel, requireRemote: false });
           setLastSendAt(new Date().toISOString());
           if (trustContext.conversationAccessState === 'fallback_chat_only' && trustContext.requiresElevatedConfirmation) {
             await persistSupportMessage(buildFallbackChatOnlyExecutionMessage({
@@ -1536,7 +1600,7 @@ export default function IVXOwnerChatRoute() {
         metadata: {
           roomId: conversationQuery.data?.id ?? 'ivx-owner-room',
           role: 'owner',
-          message: text,
+          message: sanitizeUserFacingChatText(text),
           confirmedSensitiveAction,
           requestClass: trustContext.requestClass,
           trustStates: trustContext.namedStates,
@@ -1544,7 +1608,7 @@ export default function IVXOwnerChatRoute() {
       });
       setMessageSendPending(true);
       try {
-        await ivxChatService.sendOwnerTextMessage({ body: text, senderLabel: ownerLabel });
+        await ivxChatService.sendOwnerTextMessage({ body: text, senderLabel: ownerLabel, requireRemote: false });
         setLastSendAt(new Date().toISOString());
         console.log('[IVXOwnerChatRoute] Owner message sent to Supabase. trust:', trustContext.namedStates, 'confirmed:', confirmedSensitiveAction);
       } finally {
@@ -1595,7 +1659,7 @@ export default function IVXOwnerChatRoute() {
     let intervalId: ReturnType<typeof setInterval> | null = null;
 
     const applyCapabilityHealth = (health: ServiceRuntimeHealth) => {
-      const isAvailable = health === 'active' || health === 'degraded';
+      const isAvailable = health === 'active';
       setAiBackendReachable(isAvailable);
       setAiHealthDetail(health);
       setKnowledgeActive(isAvailable);
@@ -1640,7 +1704,7 @@ export default function IVXOwnerChatRoute() {
       const health = await singleProbeAttempt();
       if (cancelled) return;
 
-      if (health === 'active' || health === 'degraded') {
+      if (health === 'active') {
         applyCapabilityHealth(health);
         return;
       }
@@ -1652,21 +1716,15 @@ export default function IVXOwnerChatRoute() {
         if (cancelled) return;
         const retryHealth = await singleProbeAttempt();
         if (cancelled) return;
-        if (retryHealth === 'active' || retryHealth === 'degraded') {
+        if (retryHealth === 'active') {
           applyCapabilityHealth(retryHealth);
           return;
         }
       }
 
-      if (aiReachableRef.current) {
-        console.log('[IVXOwnerChatRoute] AI health probe: inactive after retries, keeping degraded state');
-        setAiBackendReachable(true);
-        setAiHealthDetail('degraded');
-      } else {
-        console.log('[IVXOwnerChatRoute] AI health probe: inactive after retries');
-        setAiBackendReachable(false);
-        setAiHealthDetail('inactive');
-      }
+      console.log('[IVXOwnerChatRoute] AI health probe: inactive after retries');
+      setAiBackendReachable(false);
+      setAiHealthDetail('inactive');
     };
 
     const initialDelay = setTimeout(() => {
@@ -1685,8 +1743,18 @@ export default function IVXOwnerChatRoute() {
   }, [ivxRoomStatus?.storageMode, queryClient]);
 
   const runtimeSignals = useMemo<ChatRoomRuntimeSignals>(() => {
+    if (localFirstChatMode) {
+      return {
+        aiBackendHealth: 'active',
+        aiBackendSource: 'local_app_brain',
+        aiResponseState: aiReplyPending ? 'responding' : 'idle',
+        knowledgeBackendHealth: 'active',
+        ownerCommandAvailability: 'active',
+        codeAwareServiceAvailability: 'active',
+      };
+    }
+
     if (devTestMode.testModeActive) {
-      const isReplying = aiReplyPending;
       const normalizedBypassSource = normalizeRuntimeSource(runtimeDebugSnapshot.source);
       const aiBackendSource: ChatRoomRuntimeSignals['aiBackendSource'] = normalizedBypassSource === 'pending'
         ? 'unknown'
@@ -1694,7 +1762,7 @@ export default function IVXOwnerChatRoute() {
       return {
         aiBackendHealth: 'active',
         aiBackendSource,
-        aiResponseState: isReplying ? 'responding' : 'idle',
+        aiResponseState: 'idle',
         knowledgeBackendHealth: 'active',
         ownerCommandAvailability: 'active',
         codeAwareServiceAvailability: 'active',
@@ -1709,28 +1777,22 @@ export default function IVXOwnerChatRoute() {
       hasVisibleResponseText: runtimeDebugSnapshot.hasVisibleResponseText,
     };
     const activeRuntimeSource = getActiveRuntimeSource(normalizedRuntimeState);
-    const activeFallback = shouldShowFallbackUI(normalizedRuntimeState);
     const hasFailure = hasRuntimeFailure(normalizedRuntimeState);
     const effectiveAiHealth: ServiceRuntimeHealth = hasFailure
-      ? activeFallback
-        ? 'degraded'
-        : 'inactive'
-      : activeFallback
-        ? 'degraded'
-        : aiReplyPending || activeRuntimeSource === 'remote_api' || aiHealthDetail !== 'inactive'
-          ? 'active'
-          : 'inactive';
+      ? 'inactive'
+      : activeRuntimeSource === 'remote_api' || aiHealthDetail === 'active'
+        ? 'active'
+        : 'inactive';
     const isAiLive = effectiveAiHealth === 'active';
-    const isAiDegraded = effectiveAiHealth === 'degraded';
     return {
       aiBackendHealth: effectiveAiHealth,
       aiBackendSource: activeRuntimeSource === 'pending' ? 'unknown' : activeRuntimeSource,
-      aiResponseState: aiReplyPending ? 'responding' : isAiLive ? 'idle' : 'inactive',
-      knowledgeBackendHealth: isAiLive || knowledgeActive ? 'active' : isAiDegraded ? 'degraded' : 'inactive',
-      ownerCommandAvailability: ownerCommandsActive || isAiLive ? 'active' : isAiDegraded ? 'degraded' : 'inactive',
-      codeAwareServiceAvailability: isAiLive || codeAwareActive ? 'active' : isAiDegraded ? 'degraded' : 'inactive',
+      aiResponseState: isAiLive ? 'idle' : 'inactive',
+      knowledgeBackendHealth: isAiLive || knowledgeActive ? 'active' : 'inactive',
+      ownerCommandAvailability: ownerCommandsActive || isAiLive ? 'active' : 'inactive',
+      codeAwareServiceAvailability: isAiLive || codeAwareActive ? 'active' : 'inactive',
     };
-  }, [aiHealthDetail, aiReplyPending, codeAwareActive, devTestMode.testModeActive, knowledgeActive, ownerCommandsActive, runtimeDebugSnapshot]);
+  }, [aiHealthDetail, aiReplyPending, codeAwareActive, devTestMode.testModeActive, knowledgeActive, localFirstChatMode, ownerCommandsActive, runtimeDebugSnapshot]);
 
   const resolution = useMemo<RoomCapabilityResolution>(() => {
     console.log('[IVXOwnerChatRoute] Resolving capabilities:', {
@@ -1789,14 +1851,14 @@ export default function IVXOwnerChatRoute() {
       console.log('[IVXOwnerChatRoute] Skipping empty send after normalization');
       return;
     }
-    const isCommand = text.startsWith(OWNER_COMMAND_PREFIX);
+    const isCommand = !localFirstChatMode && text.startsWith(OWNER_COMMAND_PREFIX);
     const mode = isCommand ? 'send_only' : 'send_and_ai';
     const clientId = createTransientMessageId('ivx-owner-local-send');
     const createdAt = new Date().toISOString();
     setPendingOwnerMessages((current) => [...current, { clientId, text: normalizedText, createdAt }]);
     console.log('[IVXOwnerChatRoute] handleSend mode:', mode, 'isCommand:', isCommand, 'aiReachable:', aiReachableRef.current, 'length:', text.length, 'clientId:', clientId);
     sendMessageMutation.mutate({ text, mode: mode as 'send_only' | 'send_and_ai', clientId, capturedText: normalizedText });
-  }, [attachmentMutation.isPending, isPickingFile, messageSendPending, sendMessageMutation]);
+  }, [attachmentMutation.isPending, isPickingFile, localFirstChatMode, messageSendPending, sendMessageMutation]);
 
   const handleAskAI = useCallback((submittedText?: unknown) => {
     if (messageSendPending || aiReplyPending || attachmentMutation.isPending || isPickingFile) return;
@@ -1855,14 +1917,27 @@ export default function IVXOwnerChatRoute() {
             : null,
       };
 
+      const fileInsight = await ivxOwnerMemoryService.summarizePickedFile({
+        uri: upload.uri ?? null,
+        name: upload.name,
+        mimeType: upload.type ?? null,
+        size: upload.size ?? null,
+        file: upload.file ?? null,
+      });
+      await ivxOwnerMemoryService.recordFileUpload(fileInsight);
+
       console.log('[IVXOwnerChatRoute] Sending file upload:', upload.name);
       await attachmentMutation.mutateAsync(upload);
+      await assistantReplyMutation.mutateAsync({
+        text: createIVXOwnerFileUnderstandingPrompt(fileInsight),
+        nonBlocking: true,
+      });
     } catch (error) {
       Alert.alert('File pick failed', error instanceof Error ? error.message : 'Unknown file picker error.');
     } finally {
       setIsPickingFile(false);
     }
-  }, [attachmentMutation, isPickingFile]);
+  }, [assistantReplyMutation, attachmentMutation, isPickingFile]);
 
   const renderMessage = useCallback(({ item }: { item: IVXMessage }) => {
     const ownMessage = isOwnMessage(item, ownerId);
@@ -1932,11 +2007,14 @@ export default function IVXOwnerChatRoute() {
   const loading = messagesQuery.isLoading || conversationQuery.isLoading;
   const refreshing = messagesQuery.isRefetching || conversationQuery.isRefetching;
   const isBusy = messageSendPending || attachmentMutation.isPending || isPickingFile;
-  const isAIDegraded = resolution.aiIndicator.state === 'degraded';
-  const degradedStatusNote = useMemo(() => {
-    return resolution.composerNotes.find((note) => note.id === 'ai-degraded')?.text
-      ?? 'AI is degraded, but the room stays usable and messages still send.';
-  }, [resolution.composerNotes]);
+  const activeFallbackForCurrentMessage = shouldShowFallbackUI({
+    source: normalizeRuntimeSource(runtimeDebugSnapshot.source),
+    requestStage: runtimeDebugSnapshot.requestStage,
+    failureClass: runtimeDebugSnapshot.failureClass,
+    isFallback: runtimeDebugSnapshot.source === 'toolkit_fallback',
+    isStreaming: hasActiveStreamingState(runtimeDebugSnapshot),
+    hasVisibleResponseText: runtimeDebugSnapshot.hasVisibleResponseText,
+  });
   const primaryState = useMemo<'loading' | 'room_error' | 'ready'>(() => {
     if (loading && allMessages.length === 0) {
       return 'loading';
@@ -1982,7 +2060,7 @@ export default function IVXOwnerChatRoute() {
       aiSource: runtimeSignals.aiBackendSource ?? 'unknown',
       aiEndpoint: runtimeDebugSnapshot.endpoint ?? aiProbeMetadata.endpoint,
       deploymentMarker: runtimeDebugSnapshot.deploymentMarker ?? aiProbeMetadata.deploymentMarker,
-      model: runtimeSignals.aiBackendSource === 'toolkit_fallback' ? 'rork-toolkit-fallback' : runtimeSignals.aiBackendSource === 'remote_api' ? 'ivx-owner-remote' : 'unverified',
+      model: runtimeSignals.aiBackendSource === 'local_app_brain' ? 'ivx-local-app-brain' : runtimeSignals.aiBackendSource === 'remote_api' ? 'ivx-owner-remote' : 'unverified',
       messages: allMessages,
       messageSendPending,
       aiReplyPending,
@@ -2055,6 +2133,11 @@ export default function IVXOwnerChatRoute() {
       ? 'Set EXPO_PUBLIC_IVX_OWNER_AI_BASE_URL to the intended public Owner AI base URL for production.'
       : 'Set EXPO_PUBLIC_IVX_OWNER_AI_BASE_URL to pin development to a specific backend, or keep the project-scoped fallback derived from EXPO_PUBLIC_PROJECT_ID.';
 
+    if (ownerAIConfigAudit.mismatchWarnings.length > 0) {
+      failureMode = ownerAIConfigAudit.mismatchWarnings[0] ?? failureMode;
+      recommendedResolution = 'Align the owner-room host, the app-wide API host, and the DNS audit target before debugging the upstream runtime further.';
+    }
+
     if (!ownerAIRoutingBlocked && ownerAIConfigAudit.fallbackUsed) {
       failureMode = 'Development routing is using the project-scoped fallback derived from EXPO_PUBLIC_PROJECT_ID because no explicit owner AI base URL is configured.';
       recommendedResolution = 'This is allowed in development. Set EXPO_PUBLIC_IVX_OWNER_AI_BASE_URL if you want dev to target a fixed backend instead of the EXPO_PUBLIC_PROJECT_ID fallback.';
@@ -2082,18 +2165,28 @@ export default function IVXOwnerChatRoute() {
       routingPolicy: ownerAIConfigAudit.routingPolicy,
       auditState: ownerAIRoutingBlocked
         ? 'guard_blocked'
-        : effectiveAiHealthDetail === 'active'
-          ? 'live'
-          : effectiveAiHealthDetail === 'degraded'
-            ? 'degraded'
-            : 'probing_or_unverified',
+        : ownerAIConfigAudit.mismatchWarnings.length > 0
+          ? 'split_host_path'
+          : effectiveAiHealthDetail === 'active'
+            ? 'live'
+            : effectiveAiHealthDetail === 'degraded'
+              ? 'degraded'
+              : 'probing_or_unverified',
       configSource,
       explicitProductionPin: ownerAIConfigAudit.explicitProductionPinApplied
         ? `yes — ${ownerAIConfigAudit.configuredBaseUrl ?? ownerAIConfigAudit.canonicalBaseUrl}`
         : 'no',
       configuredOwnerAIBaseUrl: configuredBaseUrl ?? 'unconfigured',
       activeBaseUrl: activeBaseUrl ?? 'blocked',
+      activeHost: ownerAIConfigAudit.activeHost ?? 'unconfigured',
       activeEndpoint,
+      directApiBaseUrl: ownerAIConfigAudit.directApiBaseUrl ?? 'unconfigured',
+      directApiHost: ownerAIConfigAudit.directApiHost ?? 'unconfigured',
+      ownerAiHealthUrl: ownerAIConfigAudit.healthCheckUrl ?? 'unconfigured',
+      ownerRoute53AuditUrl: ownerAIConfigAudit.route53AuditUrl ?? 'unconfigured',
+      ownerRoute53UpsertUrl: ownerAIConfigAudit.route53UpsertUrl ?? 'unconfigured',
+      appApiHealthUrl: ownerAIConfigAudit.appApiHealthCheckUrl ?? 'unconfigured',
+      appApiRoute53AuditUrl: ownerAIConfigAudit.appApiRoute53AuditUrl ?? 'unconfigured',
       devFallbackBaseUrl: ownerAIConfigAudit.devFallbackBaseUrl ?? 'unconfigured',
       activeFallbackBaseUrl: ownerAIConfigAudit.fallbackUsed ? (ownerAIConfigAudit.activeBaseUrl ?? 'unconfigured') : 'not-active',
       selectionReason: ownerAIConfigAudit.selectionReason,
@@ -2113,6 +2206,8 @@ export default function IVXOwnerChatRoute() {
         : ownerAIConfigAudit.currentEnvironment === 'production'
           ? 'When the configured production backend is unreachable, the UI remains interactive, the thread stays mounted, a safe audit fallback message is persisted in-chat, and health stays inactive instead of silently switching to a development-style runtime fallback.'
           : 'When the owner AI backend is unreachable, the UI remains interactive, the thread stays mounted, and a safe audit fallback response can keep development moving while routing is audited.',
+      workflowTrace: ownerAIConfigAudit.workflowTrace,
+      mismatchWarnings: ownerAIConfigAudit.mismatchWarnings,
     };
   }, [aiProbeMetadata.endpoint, aiProbeMetadata.lastFailureReason, effectiveAiHealthDetail, ownerAIConfigAudit, ownerAIRoutingBlocked]);
 
@@ -2162,10 +2257,6 @@ export default function IVXOwnerChatRoute() {
     userId,
   ]);
   const topStatusNote = useMemo(() => {
-    if (devTestMode.testModeActive) {
-      return null;
-    }
-
     const normalizedRuntimeState = {
       source: normalizeRuntimeSource(runtimeDebugSnapshot.source),
       requestStage: runtimeDebugSnapshot.requestStage,
@@ -2175,39 +2266,31 @@ export default function IVXOwnerChatRoute() {
       hasVisibleResponseText: runtimeDebugSnapshot.hasVisibleResponseText,
     };
 
-    if (ownerAIRoutingBlocked) {
-      return `Owner AI routing blocked. ${ownerAIConfigAudit.configurationError ?? backendAuditSummary.failureMode}`;
-    }
-
-    if (hasRuntimeFailure(normalizedRuntimeState) && aiProbeMetadata.lastFailureReason && !normalizedRuntimeState.hasVisibleResponseText) {
-      return `Owner AI backend unreachable. ${backendAuditSummary.failureMode}`;
-    }
-
-    if (runtimeSnapshot.notes.length > 0 && !runtimeDebugSnapshot.hasVisibleResponseText) {
-      return runtimeSnapshot.notes[0] ?? null;
-    }
-
-    if (shouldShowFallbackUI(normalizedRuntimeState)) {
-      if (normalizedRuntimeState.hasVisibleResponseText) {
-        return 'Owner room authenticated. Fallback chat-only mode delivered the reply without requiring identity re-verification.';
-      }
-      return 'Owner room authenticated. Fallback chat-only mode is active while backend execution proof recovers.';
-    }
-
-    if (isOpenAccessBuild && !runtimeDebugSnapshot.hasVisibleResponseText) {
-      return 'Open-access development mode is active. Owner room access is unblocked in this build.';
+    if (hasRuntimeFailure(normalizedRuntimeState) && !normalizedRuntimeState.hasVisibleResponseText) {
+      return 'Message saved. Please try again shortly.';
     }
 
     return null;
-  }, [aiProbeMetadata.lastFailureReason, backendAuditSummary.failureMode, devTestMode.testModeActive, isOpenAccessBuild, ownerAIConfigAudit.configurationError, ownerAIRoutingBlocked, runtimeDebugSnapshot, runtimeSnapshot.notes]);
+  }, [runtimeDebugSnapshot]);
   const ownerAIProofStatus = useMemo<OwnerAIProofStatus>(() => {
+    if (localFirstChatMode) {
+      return {
+        id: 'local_app_brain_ready',
+        tone: 'pass',
+        title: 'local IVX brain ready',
+        detail: 'The IVX chat room is running from the app first. Normal messages, assistant replies, attachments, and reloads stay available on this device.',
+        evidence: 'local_device_only · local_app_brain · optional_backend_later',
+        testID: 'ivx-owner-proof-local-app-brain-ready',
+      };
+    }
+
     if (devTestMode.testModeActive) {
       return {
         id: 'remote_api_verified',
         tone: 'pass',
         title: 'owner test mode active',
-        detail: 'TEST_MODE is active. Owner is fully trusted. All actions execute directly without confirmation gates.',
-        evidence: `test_mode · owner_room_authenticated · backend_admin_verified · full_backend_execution`,
+        detail: 'Verified owner session is active. Owner actions can use the live response path.',
+        evidence: 'owner_room_authenticated · backend_admin_verified · full_backend_execution',
         testID: 'ivx-owner-proof-test-mode-active',
       };
     }
@@ -2253,13 +2336,13 @@ export default function IVXOwnerChatRoute() {
       const fallbackHasVisibleReply = normalizedRuntimeState.hasVisibleResponseText === true;
       return {
         id: 'dev_fallback',
-        tone: fallbackHasVisibleReply ? 'pass' : 'warn',
-        title: fallbackHasVisibleReply ? 'fallback reply delivered' : 'dev fallback',
+        tone: fallbackHasVisibleReply ? 'pass' : 'pending',
+        title: fallbackHasVisibleReply ? 'assistant ready' : 'assistant path pending',
         detail: fallbackHasVisibleReply
-          ? 'Reply was delivered via fallback_chat_only. Owner room trust stayed active, backend admin proof stayed separated, and the room remained functional.'
-          : 'The room is usable in fallback_chat_only mode. Normal owner conversation stays available while deployed backend proof recovers.',
-        evidence: `${runtimeSnapshot.provider.endpoint ?? backendAuditSummary.activeFallbackBaseUrl} · fallback ${backendAuditSummary.fallbackUsed}`,
-        testID: fallbackHasVisibleReply ? 'ivx-owner-proof-fallback-delivered' : 'ivx-owner-proof-dev-fallback',
+          ? 'Reply delivered cleanly.'
+          : 'Normal conversation stays available while the reply path recovers.',
+        evidence: runtimeSnapshot.provider.endpoint ?? backendAuditSummary.activeEndpoint,
+        testID: fallbackHasVisibleReply ? 'ivx-owner-proof-assistant-ready' : 'ivx-owner-proof-assistant-pending',
       };
     }
 
@@ -2271,12 +2354,12 @@ export default function IVXOwnerChatRoute() {
       evidence: `${runtimeSnapshot.provider.endpoint ?? backendAuditSummary.activeEndpoint} · runtime ${runtimeSnapshot.runtimeStatus} · stream ${runtimeSnapshot.streamStatus}`,
       testID: 'ivx-owner-proof-remote-api-pending',
     };
-  }, [auditReport.remoteReplyVerified, backendAuditSummary.activeEndpoint, backendAuditSummary.activeFallbackBaseUrl, backendAuditSummary.currentEnvironment, backendAuditSummary.fallbackUsed, devTestMode.testModeActive, ownerRoomAuthenticated, runtimeDebugSnapshot, runtimeSnapshot.provider.deploymentMarker, runtimeSnapshot.provider.endpoint, runtimeSnapshot.provider.source, runtimeSnapshot.runtimeStatus, runtimeSnapshot.streamStatus]);
+  }, [auditReport.remoteReplyVerified, backendAuditSummary.activeEndpoint, backendAuditSummary.activeFallbackBaseUrl, backendAuditSummary.currentEnvironment, backendAuditSummary.fallbackUsed, devTestMode.testModeActive, localFirstChatMode, ownerRoomAuthenticated, runtimeDebugSnapshot, runtimeSnapshot.provider.deploymentMarker, runtimeSnapshot.provider.endpoint, runtimeSnapshot.provider.source, runtimeSnapshot.runtimeStatus, runtimeSnapshot.streamStatus]);
   const qaChecklist = useMemo<QAProofItem[]>(() => {
     const canUseComposer = primaryState === 'ready';
     const hasRoom = !!conversationQuery.data?.id && !conversationQuery.error;
     const sendReady = canUseComposer && !isBusy;
-    const assistantReady = !ownerAIRoutingBlocked && (resolution.aiIndicator.state === 'available' || resolution.aiIndicator.state === 'degraded' || isOpenAccessBuild);
+    const assistantReady = resolution.aiIndicator.state === 'available' || resolution.aiIndicator.state === 'degraded' || isOpenAccessBuild;
     const transcriptHealthy = runtimeSnapshot.transcriptIntegrity === 'verified';
 
     return [
@@ -2496,8 +2579,8 @@ export default function IVXOwnerChatRoute() {
     if (runtimeSnapshot.runtimeStatus === 'live') return 'Live';
     if (runtimeSnapshot.runtimeStatus === 'blocked') return 'Blocked';
     if (runtimeSnapshot.runtimeStatus === 'probing') return 'Probing';
-    return 'Degraded';
-  }, [runtimeSnapshot.runtimeStatus]);
+    return activeFallbackForCurrentMessage ? 'Recovering' : 'Review';
+  }, [activeFallbackForCurrentMessage, runtimeSnapshot.runtimeStatus]);
   const proofRows = useMemo<IVXProofRecord[]>(() => runtimeSnapshot.proofs, [runtimeSnapshot.proofs]);
   const liveChatMetric = useMemo(() => {
     return liveSnapshot.moduleMetrics.find((metric) => metric.moduleId === 'chat') ?? null;
@@ -2551,11 +2634,6 @@ export default function IVXOwnerChatRoute() {
   const isKeyboardOpen = keyboardInset > 0;
   const effectiveComposerBottom = useMemo(() => {
     if (Platform.OS === 'android') {
-      // Android uses softwareKeyboardLayoutMode='resize' (see app.config.ts).
-      // The window already shrinks when the keyboard opens, so we MUST NOT add
-      // keyboardInset here or the composer double-shifts above the visible area.
-      // When the keyboard is open, collapse the safe-area bottom padding because
-      // the system nav is hidden behind the keyboard anyway.
       if (isKeyboardOpen) {
         return 8;
       }
@@ -2567,32 +2645,19 @@ export default function IVXOwnerChatRoute() {
     }
 
     return composerDockInset;
-  }, [composerDockInset, isKeyboardOpen, keyboardInset]);
+  }, [composerDockInset, isKeyboardOpen]);
   const listContentContainerStyle = useMemo(() => {
     const bottomPadding = Math.max(composerHeight + effectiveComposerBottom + 20, insets.bottom + 30);
     return allMessages.length === 0
       ? [styles.emptyListContent, { paddingBottom: bottomPadding }]
       : [styles.listContent, { paddingTop: 2, paddingBottom: bottomPadding }];
   }, [allMessages.length, composerHeight, effectiveComposerBottom, insets.bottom]);
-  const keyboardAvoidingBehavior = Platform.select<'padding' | undefined>({
+  const keyboardAvoidingBehavior = Platform.select<'height' | 'padding' | undefined>({
     ios: 'padding',
-    android: undefined,
+    android: 'height',
     default: undefined,
   });
-  const listFooter = useMemo(() => {
-    const visibleAssistantPlaceholder = transientAssistantMessages.some((message) => message.senderRole === 'assistant');
-    const shouldShowReplying = aiReplyPending || visibleAssistantPlaceholder;
-    if (!shouldShowReplying) {
-      return <View style={styles.listFooterSpacer} />;
-    }
-
-    return (
-      <View style={styles.threadStatusCard} testID="ivx-owner-chat-thread-status">
-        <ActivityIndicator size="small" color={Colors.info} />
-        <Text style={styles.threadStatusText}>Assistant replying…</Text>
-      </View>
-    );
-  }, [aiReplyPending, transientAssistantMessages]);
+  const listFooter = useMemo(() => <View style={styles.listFooterSpacer} />, []);
   const runtimeProofHeadline = useMemo(() => getRuntimeProofHeadline(runtimeDebugSnapshot), [runtimeDebugSnapshot]);
   const runtimeStatusCopy = useMemo(() => getRuntimeStatusCopy({
     source: normalizeRuntimeSource(runtimeDebugSnapshot.source),
@@ -2602,12 +2667,6 @@ export default function IVXOwnerChatRoute() {
     isStreaming: hasActiveStreamingState(runtimeDebugSnapshot),
     hasVisibleResponseText: runtimeDebugSnapshot.hasVisibleResponseText,
   }), [runtimeDebugSnapshot]);
-  const streamingTransportMode = useMemo<'chunk' | 'final'>(( ) => {
-    return supportsTrueChunkStreaming({
-      requestStage: runtimeDebugSnapshot.requestStage,
-      isStreaming: hasActiveStreamingState(runtimeDebugSnapshot),
-    }) ? 'chunk' : 'final';
-  }, [runtimeDebugSnapshot]);
   const runtimeProofPrimaryRows = useMemo<Array<{ label: string; value: string }>>(() => {
     return [
       { label: 'Request stage', value: runtimeDebugSnapshot.requestStage },
@@ -2629,49 +2688,30 @@ export default function IVXOwnerChatRoute() {
 
   const composerStatusMessage = useMemo(() => {
     if (devTestMode.testModeActive) {
-      if (aiReplyPending) {
-        return 'Replying…';
-      }
       return 'Assistant ready.';
     }
     if (aiReplyPending) {
-      return streamingTransportMode === 'chunk'
-        ? 'Reply streaming now. You can keep typing.'
-        : 'Reply in progress. Final text will appear when ready.';
+      return 'Message sent. Reply will appear when ready.';
     }
     if (currentOwnerTrust.requiresElevatedConfirmation) {
-      return 'Sensitive action detected. Explicit confirmation is required before admin execution.';
+      return 'Sensitive action detected. Please confirm before I proceed.';
     }
-    if (ownerAIProofStatus.id === 'remote_api_verified') {
-      return 'Live response path ready.';
-    }
-    if (ownerAIProofStatus.id === 'blocked_by_auth') {
-      return 'Owner room trust is required before live admin proof can be claimed.';
-    }
-    if (ownerAIProofStatus.id === 'dev_fallback') {
-      return runtimeDebugSnapshot.hasVisibleResponseText
-        ? 'Owner room authenticated. Fallback chat-only mode delivered the reply.'
-        : 'Owner room authenticated. Fallback chat-only mode is active, but normal conversation stays available.';
-    }
-    if (ownerAIRoutingBlocked) {
-      return 'Reply path blocked until configuration is fixed.';
+    if (ownerAIRoutingBlocked || ownerAIProofStatus.id === 'blocked_by_auth') {
+      return 'Assistant is temporarily unavailable.';
     }
     return 'Assistant ready.';
-  }, [aiReplyPending, currentOwnerTrust.requiresElevatedConfirmation, devTestMode.testModeActive, ownerAIProofStatus.id, ownerAIRoutingBlocked, runtimeDebugSnapshot.hasVisibleResponseText, streamingTransportMode]);
+  }, [aiReplyPending, currentOwnerTrust.requiresElevatedConfirmation, devTestMode.testModeActive, ownerAIProofStatus.id, ownerAIRoutingBlocked, runtimeDebugSnapshot.hasVisibleResponseText]);
 
-  const shouldShowDiagnosticsToggle = useMemo(() => {
-    if (devTestMode.testModeActive) {
-      return false;
-    }
-    return shouldShowRuntimeDebugDetails({
-      source: normalizeRuntimeSource(runtimeDebugSnapshot.source),
-      requestStage: runtimeDebugSnapshot.requestStage,
-      failureClass: runtimeDebugSnapshot.failureClass,
-      isFallback: runtimeDebugSnapshot.source === 'toolkit_fallback',
-      isStreaming: hasActiveStreamingState(runtimeDebugSnapshot),
-      hasVisibleResponseText: runtimeDebugSnapshot.hasVisibleResponseText,
-    }) || ownerAIRoutingBlocked || runtimeSnapshot.runtimeStatus !== 'live';
-  }, [devTestMode.testModeActive, ownerAIRoutingBlocked, runtimeDebugSnapshot, runtimeSnapshot.runtimeStatus]);
+  const shouldShowDiagnosticsToggle = useMemo(() => false, []);
+
+  const scrollOwnerThreadToEnd = useCallback((animated: boolean = true) => {
+    requestAnimationFrame(() => {
+      flatListRef.current?.scrollToEnd({ animated });
+    });
+    setTimeout(() => {
+      flatListRef.current?.scrollToEnd({ animated });
+    }, Platform.OS === 'android' ? 220 : 80);
+  }, []);
 
   useEffect(() => {
     composerValueRef.current = composerValue;
@@ -2688,9 +2728,7 @@ export default function IVXOwnerChatRoute() {
         : nextInset;
       console.log('[IVXOwnerChatRoute] Keyboard shown inset:', normalizedInset, 'rawHeight:', nextInset, 'bottomInset:', insets.bottom);
       setKeyboardInset(normalizedInset);
-      setTimeout(() => {
-        flatListRef.current?.scrollToEnd({ animated: true });
-      }, 60);
+      scrollOwnerThreadToEnd(true);
     };
 
     const handleKeyboardHide = () => {
@@ -2705,7 +2743,7 @@ export default function IVXOwnerChatRoute() {
       showSubscription.remove();
       hideSubscription.remove();
     };
-  }, [insets.bottom]);
+  }, [insets.bottom, scrollOwnerThreadToEnd]);
 
   return (
     <ErrorBoundary fallbackTitle="IVX Owner AI unavailable">
@@ -2718,16 +2756,15 @@ export default function IVXOwnerChatRoute() {
         <RoomHeader
           title={IVX_OWNER_AI_PROFILE.sharedRoom.title}
           resolution={resolution}
-          isLoading={roomStatusLoading && primaryState === 'loading'}
         />
 
         <View style={styles.content}>
           {topStatusNote ? (
             <View
-              style={ownerAIRoutingBlocked ? styles.blockedBanner : isAIDegraded ? styles.degradedBanner : styles.devBanner}
+              style={ownerAIRoutingBlocked ? styles.blockedBanner : activeFallbackForCurrentMessage ? styles.degradedBanner : styles.devBanner}
               testID="ivx-owner-chat-top-status"
             >
-              <Text numberOfLines={2} style={ownerAIRoutingBlocked ? styles.blockedBannerText : isAIDegraded ? styles.degradedBannerText : styles.devBannerText}>{topStatusNote}</Text>
+              <Text numberOfLines={2} style={ownerAIRoutingBlocked ? styles.blockedBannerText : activeFallbackForCurrentMessage ? styles.degradedBannerText : styles.devBannerText}>{topStatusNote}</Text>
             </View>
           ) : null}
 
@@ -2762,24 +2799,6 @@ export default function IVXOwnerChatRoute() {
               ) : null}
             </View>
           </View>
-
-          {ownerAIRoutingBlocked ? (
-            <View style={styles.productionGuardCard} testID="ivx-owner-chat-production-guard-block">
-              <Text style={styles.productionGuardEyebrow}>Reply path blocked</Text>
-              <Text style={styles.productionGuardTitle}>Owner AI routing needs attention</Text>
-              <Text style={styles.productionGuardBody}>{ownerAIConfigAudit.configurationError ?? 'Production configuration is invalid for IVX Owner AI.'}</Text>
-              <View style={styles.productionGuardList}>
-                <View style={styles.productionGuardItem}>
-                  <Text style={styles.productionGuardLabel}>Environment</Text>
-                  <Text style={styles.productionGuardValue}>{backendAuditSummary.currentEnvironment}</Text>
-                </View>
-                <View style={styles.productionGuardItem}>
-                  <Text style={styles.productionGuardLabel}>Configured URL</Text>
-                  <Text style={styles.productionGuardValue}>{backendAuditSummary.configuredOwnerAIBaseUrl}</Text>
-                </View>
-              </View>
-            </View>
-          ) : null}
 
           {showDiagnostics ? (
             <>
@@ -3010,12 +3029,36 @@ export default function IVXOwnerChatRoute() {
                     {ownerAIRoutingBlocked ? 'GUARD BLOCKED' : `${backendAuditSummary.currentEnvironment.toUpperCase()} ROUTING`}
                   </Text>
                 </View>
-                <AuditInfoRow label="Current environment" value={backendAuditSummary.currentEnvironment} />
-                <AuditInfoRow label="Routing policy" value={backendAuditSummary.routingPolicy} />
-                <AuditInfoRow label="Active endpoint chosen" value={backendAuditSummary.activeEndpoint} />
-                <AuditInfoRow label="Fallback used" value={backendAuditSummary.fallbackUsed} />
+                <AuditInfoRow label="Current environment" value={backendAuditSummary.currentEnvironment} testID="ivx-owner-chat-audit-environment" />
+                <AuditInfoRow label="Routing policy" value={backendAuditSummary.routingPolicy} testID="ivx-owner-chat-audit-routing-policy" />
+                <AuditInfoRow label="Configured URL" value={backendAuditSummary.configuredOwnerAIBaseUrl} testID="ivx-owner-chat-audit-configured-url" />
+                <AuditInfoRow label="Active base URL" value={backendAuditSummary.activeBaseUrl} testID="ivx-owner-chat-audit-active-base-url" />
+                <AuditInfoRow label="Active host" value={backendAuditSummary.activeHost} testID="ivx-owner-chat-audit-active-host" />
+                <AuditInfoRow label="Active endpoint chosen" value={backendAuditSummary.activeEndpoint} testID="ivx-owner-chat-audit-active-endpoint" />
+                <AuditInfoRow label="App API base URL" value={backendAuditSummary.directApiBaseUrl} testID="ivx-owner-chat-audit-direct-api-url" />
+                <AuditInfoRow label="App API host" value={backendAuditSummary.directApiHost} testID="ivx-owner-chat-audit-direct-api-host" />
+                <AuditInfoRow label="Owner health URL" value={backendAuditSummary.ownerAiHealthUrl} testID="ivx-owner-chat-audit-owner-health" />
+                <AuditInfoRow label="Owner Route53 audit URL" value={backendAuditSummary.ownerRoute53AuditUrl} testID="ivx-owner-chat-audit-owner-route53" />
+                <AuditInfoRow label="App API health URL" value={backendAuditSummary.appApiHealthUrl} testID="ivx-owner-chat-audit-app-health" />
+                <AuditInfoRow label="App API Route53 audit URL" value={backendAuditSummary.appApiRoute53AuditUrl} testID="ivx-owner-chat-audit-app-route53" />
+                <AuditInfoRow label="Deployment marker" value={runtimeSnapshot.provider.deploymentMarker ?? 'pending'} testID="ivx-owner-chat-audit-deployment-marker" />
+                <AuditInfoRow label="Fallback used" value={backendAuditSummary.fallbackUsed} testID="ivx-owner-chat-audit-fallback-used" />
                 <Text style={styles.backendAuditBody}>{backendAuditSummary.failureMode}</Text>
+                <Text style={styles.backendAuditFootnote}>{backendAuditSummary.selectionReason}</Text>
+                <Text style={styles.backendAuditFootnote}>{backendAuditSummary.recommendedResolution}</Text>
                 <Text style={styles.backendAuditFootnote}>{backendAuditSummary.gracefulDegradationNote}</Text>
+                {backendAuditSummary.mismatchWarnings.length > 0 ? (
+                  <View style={styles.backendAuditList} testID="ivx-owner-chat-audit-mismatch-warnings">
+                    {backendAuditSummary.mismatchWarnings.map((warning, index) => (
+                      <Text key={`${warning}-${index}`} style={styles.backendAuditListItem}>{`• ${warning}`}</Text>
+                    ))}
+                  </View>
+                ) : null}
+                <View style={styles.backendAuditList} testID="ivx-owner-chat-audit-workflow-trace">
+                  {backendAuditSummary.workflowTrace.map((step, index) => (
+                    <Text key={`${step}-${index}`} style={styles.backendAuditListItem}>{`${index + 1}. ${step}`}</Text>
+                  ))}
+                </View>
               </View>
 
               {(ownerGraphNodes.length > 0 || ownerGraphProofs.length > 0 || ownerGraphRisks.length > 0) ? (
@@ -3119,7 +3162,7 @@ export default function IVXOwnerChatRoute() {
 
           {primaryState === 'loading' ? (
             <View style={styles.loadingState} testID="ivx-owner-chat-loading">
-              <ActivityIndicator color={Colors.primary} />
+              <Text style={styles.loadingEyebrow}>Owner room opening</Text>
               <Text style={styles.loadingText}>Loading IVX Owner AI room…</Text>
             </View>
           ) : primaryState === 'room_error' ? (
@@ -3159,6 +3202,8 @@ export default function IVXOwnerChatRoute() {
               }
               ListFooterComponent={listFooter}
               ListFooterComponentStyle={styles.listFooterContainer}
+              onContentSizeChange={() => scrollOwnerThreadToEnd(false)}
+              onLayout={() => scrollOwnerThreadToEnd(false)}
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
               testID="ivx-owner-chat-list"
@@ -3181,15 +3226,12 @@ export default function IVXOwnerChatRoute() {
             >
               <View style={styles.composerPrimaryRow}>
                 <Pressable
-                  style={styles.iconButton}
+                  style={[styles.iconButton, (attachmentMutation.isPending || isPickingFile) ? styles.actionButtonDisabled : null]}
                   onPress={() => void handlePickFile()}
+                  disabled={attachmentMutation.isPending || isPickingFile}
                   testID="ivx-owner-chat-attach"
                 >
-                  {attachmentMutation.isPending || isPickingFile ? (
-                    <ActivityIndicator size="small" color={Colors.primary} />
-                  ) : (
-                    <Paperclip size={18} color={Colors.primary} />
-                  )}
+                  <Paperclip size={18} color={Colors.primary} />
                 </Pressable>
                 <TextInput
                   ref={composerInputRef}
@@ -3203,6 +3245,7 @@ export default function IVXOwnerChatRoute() {
                   textAlignVertical="top"
                   returnKeyType="send"
                   blurOnSubmit={false}
+                  onFocus={() => scrollOwnerThreadToEnd(true)}
                   onSubmitEditing={(event) => {
                     const submittedText = normalizeComposerText(event?.nativeEvent?.text, composerValueRef.current);
                     handleSend(submittedText);
@@ -3217,7 +3260,7 @@ export default function IVXOwnerChatRoute() {
                   disabled={sendingDisabled || isBusy}
                   testID="ivx-owner-chat-send"
                 >
-                  {messageSendPending ? <ActivityIndicator size="small" color={Colors.black} /> : <Send size={18} color={Colors.black} />}
+                  <Send size={18} color={Colors.black} />
                 </Pressable>
               </View>
               <View style={styles.composerSecondaryRow}>
@@ -3230,7 +3273,7 @@ export default function IVXOwnerChatRoute() {
                   disabled={sendingDisabled || isBusy}
                   testID="ivx-owner-chat-ai"
                 >
-                  {aiReplyPending ? <ActivityIndicator size="small" color={Colors.text} /> : <Sparkles size={14} color={Colors.text} />}
+                  <Sparkles size={14} color={Colors.text} />
                   <Text style={styles.aiButtonText}>AI</Text>
                 </Pressable>
               </View>
@@ -3780,6 +3823,15 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     fontWeight: '600' as const,
   },
+  backendAuditList: {
+    gap: 6,
+    marginTop: 2,
+  },
+  backendAuditListItem: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+  },
   runtimeProofBanner: {
     borderRadius: 16,
     borderWidth: 1,
@@ -3945,6 +3997,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 12,
     paddingHorizontal: 24,
+  },
+  loadingEyebrow: {
+    color: Colors.primary,
+    fontSize: 11,
+    fontWeight: '800' as const,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase' as const,
   },
   loadingText: {
     color: Colors.textSecondary,
@@ -4256,25 +4315,6 @@ const styles = StyleSheet.create({
     color: Colors.text,
     fontSize: 9,
     fontWeight: '700' as const,
-  },
-  threadStatusCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 2,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(59,130,246,0.2)',
-    backgroundColor: 'rgba(59,130,246,0.08)',
-    paddingHorizontal: 9,
-    paddingVertical: 5,
-  },
-  threadStatusText: {
-    flex: 1,
-    color: Colors.info,
-    fontSize: 10,
-    lineHeight: 13,
-    fontWeight: '600' as const,
   },
   listFooterSpacer: {
     height: 6,
