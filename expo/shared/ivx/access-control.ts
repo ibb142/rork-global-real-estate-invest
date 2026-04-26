@@ -65,6 +65,10 @@ type IVXSupabaseServerConfig = {
   isServiceRole: boolean;
 };
 
+type JwtPayloadLike = {
+  role?: unknown;
+};
+
 function readBooleanEnv(names: string[]): boolean | null {
   for (const name of names) {
     const rawValue = readIVXTrimmedString(process.env[name]);
@@ -85,9 +89,17 @@ function readBooleanEnv(names: string[]): boolean | null {
   return null;
 }
 
+function getExpoDevFlag(): boolean | null {
+  const runtimeGlobal = globalThis as typeof globalThis & {
+    __DEV__?: boolean;
+  };
+
+  return typeof runtimeGlobal.__DEV__ === 'boolean' ? runtimeGlobal.__DEV__ : null;
+}
+
 function getIVXAccessRuntime(): IVXAccessRuntime {
   const runtimeNodeEnv = readIVXTrimmedString(process.env.NODE_ENV).toLowerCase();
-  const expoDevFlag = typeof __DEV__ === 'boolean' ? __DEV__ : null;
+  const expoDevFlag = getExpoDevFlag();
 
   if (expoDevFlag === true) {
     return 'development';
@@ -127,7 +139,7 @@ export function getIVXAccessControlConfig(): IVXAccessControlConfig {
         : 'development_default',
     hasSupabaseUrl: readIVXTrimmedString(process.env.EXPO_PUBLIC_SUPABASE_URL).length > 0,
     hasSupabaseAnonKey: readIVXTrimmedString(process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY).length > 0,
-    hasSupabaseServiceRoleKey: readIVXTrimmedString(process.env.SUPABASE_SERVICE_ROLE_KEY).length > 0,
+    hasSupabaseServiceRoleKey: readIVXTrimmedString(process.env.SUPABASE_SERVICE_ROLE_KEY).length > 0 || readIVXTrimmedString(process.env.SUPABASE_SERVICE_KEY).length > 0,
   };
 }
 
@@ -158,11 +170,51 @@ export function extractIVXBearerToken(request: Request): string | null {
   return trimmedToken.length > 0 ? trimmedToken : null;
 }
 
+function decodeIVXJwtPayload(token: string): JwtPayloadLike | null {
+  const normalizedToken = readIVXTrimmedString(token);
+  const payloadSegment = normalizedToken.split('.')[1];
+  if (!payloadSegment) {
+    return null;
+  }
+
+  try {
+    const paddedPayload = payloadSegment
+      .replace(/-/g, '+')
+      .replace(/_/g, '/')
+      .padEnd(Math.ceil(payloadSegment.length / 4) * 4, '=');
+    const decodedPayload = globalThis.Buffer
+      ? globalThis.Buffer.from(paddedPayload, 'base64').toString('utf8')
+      : atob(paddedPayload);
+    return JSON.parse(decodedPayload) as JwtPayloadLike;
+  } catch {
+    return null;
+  }
+}
+
+function isRealSupabaseServiceRoleKey(candidate: string, anonKey: string): boolean {
+  const normalizedCandidate = readIVXTrimmedString(candidate);
+  if (!normalizedCandidate || normalizedCandidate === readIVXTrimmedString(anonKey)) {
+    return false;
+  }
+
+  const roleClaim = readIVXTrimmedString(decodeIVXJwtPayload(normalizedCandidate)?.role);
+  return roleClaim === 'service_role' || roleClaim === 'supabase_admin';
+}
+
+function resolveIVXServiceRoleKey(anonKey: string): string {
+  const candidates = [
+    readIVXTrimmedString(process.env.SUPABASE_SERVICE_ROLE_KEY),
+    readIVXTrimmedString(process.env.SUPABASE_SERVICE_KEY),
+  ];
+
+  return candidates.find((candidate) => isRealSupabaseServiceRoleKey(candidate, anonKey)) ?? '';
+}
+
 function getIVXSupabaseServerConfig(): IVXSupabaseServerConfig {
   const supabaseUrl = readIVXTrimmedString(process.env.EXPO_PUBLIC_SUPABASE_URL);
-  const serviceRoleKey = readIVXTrimmedString(process.env.SUPABASE_SERVICE_ROLE_KEY);
   const anonKey = readIVXTrimmedString(process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY);
-  const hasRealServiceRoleKey = !!serviceRoleKey && serviceRoleKey !== anonKey;
+  const serviceRoleKey = resolveIVXServiceRoleKey(anonKey);
+  const hasRealServiceRoleKey = serviceRoleKey.length > 0;
   const effectiveDataKey = hasRealServiceRoleKey ? serviceRoleKey : anonKey;
 
   if (!supabaseUrl) {
@@ -183,8 +235,9 @@ function getIVXSupabaseServerConfig(): IVXSupabaseServerConfig {
 
 export function createIVXServerClient(accessToken: string): SupabaseClient {
   const config = getIVXSupabaseServerConfig();
+  const ownerBypassToken = shouldAcceptOpenAccessOwnerToken() && accessToken === IVX_OPEN_ACCESS_OWNER_TOKEN;
 
-  if (config.isServiceRole) {
+  if (config.isServiceRole || ownerBypassToken) {
     return createClient(config.url, config.dataKey, {
       auth: {
         autoRefreshToken: false,
