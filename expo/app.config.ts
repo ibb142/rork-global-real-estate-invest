@@ -4,6 +4,7 @@ const config: ExpoConfig = {
   name: 'RealVest',
   slug: 'jh1qrutuhy6vu1bkysoln',
   version: '1.0.0',
+  sdkVersion: '54.0.0',
   orientation: 'portrait',
   icon: './assets/images/icon.png',
   scheme: 'rork-app',
@@ -28,13 +29,13 @@ const config: ExpoConfig = {
   },
   web: {
     favicon: './assets/images/favicon.png',
-    output: 'server',
+    output: 'static',
   },
   plugins: [
     [
       'expo-router',
       {
-        origin: 'https://rork.com/',
+        origin: 'https://chat.ivxholding.com/',
       },
     ],
     'expo-font',
