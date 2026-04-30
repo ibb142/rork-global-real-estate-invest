@@ -90,5 +90,3 @@ void startServer().catch((error: unknown) => {
   console.error('[IVXOwnerAI-Server] Fatal startup error:', error instanceof Error ? error.stack ?? error.message : error);
   process.exit(1);
 });
-
-export default app;
