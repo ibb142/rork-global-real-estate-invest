@@ -1,19 +1,14 @@
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
 import type { ChatMessageSource, ChatRoomMessage } from './chat-types';
 
-type ChatMessageRow = {
-  id: string;
-  room_id: string;
-  username: string;
-  text: string;
-  source: ChatMessageSource;
-  created_at: string;
+type ChatStorageFile = {
+  messages: ChatRoomMessage[];
 };
 
 const DEFAULT_LIMIT = 80;
 const MAX_LIMIT = 200;
+const MAX_STORED_MESSAGES = 5_000;
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -28,50 +23,108 @@ function createId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-function mapRow(row: ChatMessageRow): ChatRoomMessage {
+function isMessageSource(value: unknown): value is ChatMessageSource {
+  return value === 'user' || value === 'assistant' || value === 'system';
+}
+
+function normalizeMessage(value: unknown): ChatRoomMessage | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const id = typeof record.id === 'string' ? record.id.trim() : '';
+  const roomId = typeof record.roomId === 'string' ? record.roomId.trim() : '';
+  const username = typeof record.username === 'string' ? record.username.trim() : '';
+  const text = typeof record.text === 'string' ? record.text : '';
+  const source = isMessageSource(record.source) ? record.source : null;
+  const createdAt = typeof record.createdAt === 'string' ? record.createdAt.trim() : '';
+
+  if (!id || !roomId || !username || !source || !createdAt) {
+    return null;
+  }
+
   return {
-    id: row.id,
-    roomId: row.room_id,
-    username: row.username,
-    text: row.text,
-    source: row.source,
-    createdAt: row.created_at,
+    id,
+    roomId,
+    username,
+    text,
+    source,
+    createdAt,
   };
 }
 
+function sanitizeLimit(limit: number): number {
+  return Number.isFinite(limit) ? Math.min(Math.max(limit, 1), MAX_LIMIT) : DEFAULT_LIMIT;
+}
+
+function parseStorageFile(text: string): ChatRoomMessage[] {
+  const parsed = JSON.parse(text) as Partial<ChatStorageFile>;
+  const messages = Array.isArray(parsed.messages) ? parsed.messages : [];
+  return messages
+    .map(normalizeMessage)
+    .filter((message): message is ChatRoomMessage => message !== null)
+    .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+    .slice(-MAX_STORED_MESSAGES);
+}
+
 export class ChatStorage {
-  private readonly database: DatabaseSync;
+  private readonly databasePath: string;
+  private messages: ChatRoomMessage[] = [];
 
   constructor(databasePath: string) {
-    mkdirSync(dirname(databasePath), { recursive: true });
-    this.database = new DatabaseSync(databasePath);
-    this.database.exec('PRAGMA journal_mode = WAL;');
-    this.database.exec('PRAGMA synchronous = NORMAL;');
-    this.database.exec(`
-      CREATE TABLE IF NOT EXISTS chat_messages (
-        id TEXT PRIMARY KEY,
-        room_id TEXT NOT NULL,
-        username TEXT NOT NULL,
-        text TEXT NOT NULL,
-        source TEXT NOT NULL,
-        created_at TEXT NOT NULL
-      ) STRICT;
-    `);
-    this.database.exec('CREATE INDEX IF NOT EXISTS idx_chat_messages_room_created_at ON chat_messages (room_id, created_at);');
-    console.log('[ChatStorage] SQLite ready', { databasePath });
+    this.databasePath = databasePath.endsWith('.json') ? databasePath : `${databasePath}.json`;
+    mkdirSync(dirname(this.databasePath), { recursive: true });
+    this.messages = this.loadMessages();
+    console.log('[ChatStorage] Portable JSON storage ready', {
+      databasePath: this.databasePath,
+      messageCount: this.messages.length,
+      maxStoredMessages: MAX_STORED_MESSAGES,
+    });
+  }
+
+  private loadMessages(): ChatRoomMessage[] {
+    if (!existsSync(this.databasePath)) {
+      console.log('[ChatStorage] No existing message store found; starting empty', { databasePath: this.databasePath });
+      return [];
+    }
+
+    try {
+      const text = readFileSync(this.databasePath, 'utf8');
+      const messages = parseStorageFile(text);
+      console.log('[ChatStorage] Message store loaded', {
+        databasePath: this.databasePath,
+        messageCount: messages.length,
+      });
+      return messages;
+    } catch (error) {
+      console.log('[ChatStorage] Message store load failed; starting empty', {
+        databasePath: this.databasePath,
+        error: error instanceof Error ? error.message : 'unknown',
+      });
+      return [];
+    }
+  }
+
+  private persistMessages(): void {
+    const trimmedMessages = this.messages.slice(-MAX_STORED_MESSAGES);
+    this.messages = trimmedMessages;
+    const temporaryPath = `${this.databasePath}.tmp`;
+    const payload: ChatStorageFile = { messages: trimmedMessages };
+    writeFileSync(temporaryPath, JSON.stringify(payload), 'utf8');
+    renameSync(temporaryPath, this.databasePath);
+    console.log('[ChatStorage] Message store persisted', {
+      databasePath: this.databasePath,
+      messageCount: trimmedMessages.length,
+    });
   }
 
   listMessages(roomId: string, limit: number = DEFAULT_LIMIT): ChatRoomMessage[] {
-    const safeLimit = Number.isFinite(limit) ? Math.min(Math.max(limit, 1), MAX_LIMIT) : DEFAULT_LIMIT;
-    const statement = this.database.prepare(`
-      SELECT id, room_id, username, text, source, created_at
-      FROM chat_messages
-      WHERE room_id = ?
-      ORDER BY created_at DESC
-      LIMIT ?
-    `);
-    const rows = statement.all(roomId, safeLimit) as ChatMessageRow[];
-    return rows.reverse().map(mapRow);
+    const safeLimit = sanitizeLimit(limit);
+    return this.messages
+      .filter((message) => message.roomId === roomId)
+      .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+      .slice(-safeLimit);
   }
 
   createMessage(input: {
@@ -89,11 +142,8 @@ export class ChatStorage {
       createdAt: nowIso(),
     };
 
-    const statement = this.database.prepare(`
-      INSERT INTO chat_messages (id, room_id, username, text, source, created_at)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `);
-    statement.run(message.id, message.roomId, message.username, message.text, message.source, message.createdAt);
+    this.messages.push(message);
+    this.persistMessages();
 
     console.log('[ChatStorage] Message stored', {
       messageId: message.id,
@@ -106,18 +156,17 @@ export class ChatStorage {
   }
 
   getRoomMessageCount(roomId: string): number {
-    const statement = this.database.prepare('SELECT COUNT(*) AS count FROM chat_messages WHERE room_id = ?');
-    const result = statement.get(roomId) as { count?: number } | undefined;
-    return typeof result?.count === 'number' ? result.count : 0;
+    return this.messages.filter((message) => message.roomId === roomId).length;
   }
 
   getTotalMessageCount(): number {
-    const statement = this.database.prepare('SELECT COUNT(*) AS count FROM chat_messages');
-    const result = statement.get() as { count?: number } | undefined;
-    return typeof result?.count === 'number' ? result.count : 0;
+    return this.messages.length;
   }
 
   close(): void {
-    this.database.close();
+    console.log('[ChatStorage] Storage close requested', {
+      databasePath: this.databasePath,
+      messageCount: this.messages.length,
+    });
   }
 }
