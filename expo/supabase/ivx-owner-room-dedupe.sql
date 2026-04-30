@@ -20,7 +20,7 @@ on conflict (id) do update set
   subtitle = excluded.subtitle,
   updated_at = timezone('utc', now());
 
-do $
+do $ivxdedupe$
 declare
   canonical_id uuid := '8f5a9c42-1cb5-4f81-b2d8-6f3a0a8b9d41'::uuid;
   duplicate_ids uuid[];
@@ -62,11 +62,22 @@ begin
     where id = any(duplicate_ids);
   end if;
 end
-$;
+$ivxdedupe$;
 
 create unique index if not exists idx_ivx_conversations_slug_unique on public.ivx_conversations(slug);
-create unique index if not exists idx_conversations_slug_unique on public.conversations(slug) where slug is not null;
-create unique index if not exists idx_chat_rooms_slug_unique on public.chat_rooms(slug) where slug is not null;
+
+do $ivxdedupe$
+begin
+  if to_regclass('public.conversations') is not null then
+    execute 'create unique index if not exists idx_conversations_slug_unique on public.conversations(slug) where slug is not null';
+  end if;
+
+  if to_regclass('public.chat_rooms') is not null then
+    execute 'create unique index if not exists idx_chat_rooms_slug_unique on public.chat_rooms(slug) where slug is not null';
+  end if;
+end
+$ivxdedupe$;
+
 create unique index if not exists idx_ivx_ai_requests_request_id_unique on public.ivx_ai_requests(request_id) where request_id is not null;
 create unique index if not exists idx_ivx_ai_requests_response_message_id_unique on public.ivx_ai_requests(response_message_id) where response_message_id is not null;
 
@@ -78,4 +89,4 @@ select
   coalesce((select count(*)::int from public.ivx_conversations where slug = 'ivx-owner-room'), 0) as canonical_slug_rows,
   coalesce((select count(*)::int from public.ivx_messages where conversation_id = '8f5a9c42-1cb5-4f81-b2d8-6f3a0a8b9d41'::uuid), 0) as canonical_message_rows,
   coalesce((select count(*)::int from public.ivx_inbox_state where conversation_id = '8f5a9c42-1cb5-4f81-b2d8-6f3a0a8b9d41'::uuid), 0) as canonical_inbox_rows,
-  coalesce((select count(*)::int from public.ivx_ai_requests where conversation_id = '8f5a9c42-1cb5-4f81-b2d8-6f3a0a8b9d41'::uuid), 0) as canonical_ai_request_rows; 
+  coalesce((select count(*)::int from public.ivx_ai_requests where conversation_id = '8f5a9c42-1cb5-4f81-b2d8-6f3a0a8b9d41'::uuid), 0) as canonical_ai_request_rows;
