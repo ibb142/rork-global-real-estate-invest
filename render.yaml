@@ -1,0 +1,70 @@
+services:
+  - type: web
+    name: ivx-chat-app
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    autoDeployTrigger: on
+    healthCheckPath: /health
+    domains:
+      - api.ivxholding.com
+      - chat.ivxholding.com
+    disk:
+      name: ivx-chat-data
+      mountPath: /app/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      - key: PORT
+        value: 3000
+      - key: CHAT_DATABASE_PATH
+        value: /app/data/chat-room.sqlite
+      - key: CHAT_ALLOWED_ORIGINS
+        value: https://chat.ivxholding.com,https://api.ivxholding.com,https://ivx-chat-app.onrender.com
+      - key: EXPO_PUBLIC_CHAT_SOCKET_PATH
+        value: /socket.io
+      - key: EXPO_PUBLIC_APP_ENV
+        value: production
+      - key: EXPO_PUBLIC_API_BASE_URL
+        value: https://api.ivxholding.com
+      - key: JWT_SECRET
+        sync: false
+      - key: EXPO_PUBLIC_GOOGLE_ADS_API_KEY
+        sync: false
+      - key: EXPO_PUBLIC_SUPABASE_URL
+        sync: false
+      - key: SUPABASE_DB_PASSWORD
+        sync: false
+      - key: EXPO_PUBLIC_SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: AWS_REGION
+        sync: false
+      - key: S3_BUCKET_NAME
+        sync: false
+      - key: CLOUDFRONT_DISTRIBUTION_ID
+        sync: false
+      - key: AI_GATEWAY_API_KEY
+        sync: false
+      - key: EXPO_PUBLIC_IVX_AI_GATEWAY_URL
+        sync: false
+      - key: GITHUB_TOKEN
+        sync: false
+      - key: GITHUB_REPO_URL
+        sync: false
+      - key: EXPO_PUBLIC_PROJECT_ID
+        sync: false
+      - key: EXPO_PUBLIC_TEAM_ID
+        sync: false
+      - key: EXPO_PUBLIC_CHAT_API_URL
+        value: https://api.ivxholding.com
+      - key: EXPO_PUBLIC_IVX_OWNER_AI_BASE_URL
+        value: https://api.ivxholding.com
