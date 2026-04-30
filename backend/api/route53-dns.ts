@@ -49,6 +49,34 @@ type DNSUpsertRequest = {
   ttl?: number;
   type?: 'CNAME' | 'A';
   values?: string[];
+  alias?: boolean;
+  aliasHostedZoneId?: string;
+  evaluateTargetHealth?: boolean;
+  confirm?: boolean;
+  confirmText?: string;
+};
+
+type RepoApiHostTraceRecord = {
+  env: string;
+  value: string | null;
+  hostname: string | null;
+  role: string;
+  activeForOwnerAI: boolean;
+};
+
+type WorkflowDiagnostics = {
+  apiHostTrace: RepoApiHostTraceRecord[];
+  awsRegion: string | null;
+  s3BucketName: string | null;
+  cloudFrontDistributionId: string | null;
+  githubRepoUrl: string | null;
+  ownerAiHealthUrl: string | null;
+  ownerRoute53AuditUrl: string | null;
+  ownerRoute53UpsertUrl: string | null;
+  appApiHealthUrl: string | null;
+  appApiRoute53AuditUrl: string | null;
+  mismatchWarnings: string[];
+  suggestedNextActions: string[];
 };
 
 const ROUTE53_DEFAULT_REGION = 'us-east-1';
@@ -70,6 +98,37 @@ function readOptionalStringArray(value: unknown): string[] {
 
 function normalizeDomain(domain: string): string {
   return domain.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/$/, '').replace(/\.$/, '');
+}
+
+function normalizeBaseUrl(value: string): string {
+  return value.trim().replace(/\/$/, '');
+}
+
+function normalizeDnsTarget(value: string): string {
+  return readTrimmedString(value).replace(/^https?:\/\//i, '').replace(/\/$/, '').replace(/\.$/, '');
+}
+
+function safeExtractHostname(value: string): string | null {
+  const normalized = normalizeBaseUrl(value);
+  if (!normalized) {
+    return null;
+  }
+
+  try {
+    return new URL(normalized).hostname || null;
+  } catch {
+    return normalized.replace(/^https?:\/\//i, '').split('/')[0]?.trim() || null;
+  }
+}
+
+function buildAbsoluteUrl(baseUrl: string, path: string): string | null {
+  const normalizedBaseUrl = normalizeBaseUrl(baseUrl);
+  if (!normalizedBaseUrl) {
+    return null;
+  }
+
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  return `${normalizedBaseUrl}${normalizedPath}`;
 }
 
 function withTrailingDot(value: string): string {
@@ -198,11 +257,50 @@ function buildUpsertChange(input: {
   type: 'CNAME' | 'A';
   target: string;
   values: string[];
+  alias: boolean;
+  aliasHostedZoneId: string | null;
+  evaluateTargetHealth: boolean;
 }): Change {
   const normalizedName = withTrailingDot(normalizeDomain(input.domain));
+  const normalizedTarget = normalizeDnsTarget(input.target);
   const normalizedValues = input.values.length > 0
-    ? input.values
-    : [input.target];
+    ? input.values.map((value) => readTrimmedString(value)).filter((value) => value.length > 0)
+    : normalizedTarget
+      ? [normalizedTarget]
+      : [];
+
+  if (input.alias) {
+    if (input.type !== 'A') {
+      throw new Error('Alias Route53 upserts are only supported for A records.');
+    }
+
+    if (!normalizedTarget) {
+      throw new Error('An alias target DNS name is required for Route53 alias upserts.');
+    }
+
+    if (!input.aliasHostedZoneId) {
+      throw new Error('aliasHostedZoneId is required when creating an alias A record to an ALB.');
+    }
+
+    const aliasRecordSet: ResourceRecordSet = {
+      Name: normalizedName,
+      Type: input.type,
+      AliasTarget: {
+        HostedZoneId: input.aliasHostedZoneId,
+        DNSName: withTrailingDot(normalizedTarget),
+        EvaluateTargetHealth: input.evaluateTargetHealth,
+      },
+    };
+
+    return {
+      Action: 'UPSERT',
+      ResourceRecordSet: aliasRecordSet,
+    };
+  }
+
+  if (normalizedValues.length === 0) {
+    throw new Error('A Route53 target or values array is required for non-alias upserts.');
+  }
 
   return {
     Action: 'UPSERT',
@@ -210,7 +308,7 @@ function buildUpsertChange(input: {
       Name: normalizedName,
       Type: input.type,
       TTL: input.ttl,
-      ResourceRecords: normalizedValues.map((value) => ({ Value: readTrimmedString(value) })),
+      ResourceRecords: normalizedValues.map((value) => ({ Value: value })),
     },
   };
 }
@@ -250,6 +348,104 @@ async function getCallerIdentity(): Promise<{ accountId: string | null; arn: str
       userId: null,
     };
   }
+}
+
+function buildCanonicalApiBaseUrl(): string {
+  return 'https://api.ivxholding.com';
+}
+
+function buildRepoApiHostTrace(): RepoApiHostTraceRecord[] {
+  const ownerAIBaseUrl = normalizeBaseUrl(readTrimmedString(process.env.EXPO_PUBLIC_IVX_OWNER_AI_BASE_URL));
+  const directApiBaseUrl = normalizeBaseUrl(readTrimmedString(process.env.EXPO_PUBLIC_API_BASE_URL));
+  const supabaseUrl = normalizeBaseUrl(readTrimmedString(process.env.EXPO_PUBLIC_SUPABASE_URL));
+  const canonicalApiBaseUrl = buildCanonicalApiBaseUrl();
+  const activeOwnerValue = ownerAIBaseUrl || directApiBaseUrl || canonicalApiBaseUrl;
+
+  const records: RepoApiHostTraceRecord[] = [
+    {
+      env: 'EXPO_PUBLIC_IVX_OWNER_AI_BASE_URL',
+      value: ownerAIBaseUrl || null,
+      hostname: safeExtractHostname(ownerAIBaseUrl),
+      role: 'Owner AI explicit base URL',
+      activeForOwnerAI: activeOwnerValue.length > 0 && activeOwnerValue === ownerAIBaseUrl,
+    },
+    {
+      env: 'EXPO_PUBLIC_API_BASE_URL',
+      value: directApiBaseUrl || null,
+      hostname: safeExtractHostname(directApiBaseUrl),
+      role: 'App-wide direct API base URL',
+      activeForOwnerAI: activeOwnerValue.length > 0 && activeOwnerValue === directApiBaseUrl,
+    },
+    {
+      env: 'EXPO_PUBLIC_SUPABASE_URL',
+      value: supabaseUrl || null,
+      hostname: safeExtractHostname(supabaseUrl),
+      role: 'Supabase project URL',
+      activeForOwnerAI: false,
+    },
+    {
+      env: 'IVX_CANONICAL_API_BASE_URL',
+      value: canonicalApiBaseUrl,
+      hostname: safeExtractHostname(canonicalApiBaseUrl),
+      role: 'IVX canonical API base URL',
+      activeForOwnerAI: activeOwnerValue.length > 0 && activeOwnerValue === canonicalApiBaseUrl,
+    },
+  ];
+
+  return records.filter((record) => record.value || record.env === 'IVX_CANONICAL_API_BASE_URL');
+}
+
+function buildWorkflowDiagnostics(domain: string): WorkflowDiagnostics {
+  const apiHostTrace = buildRepoApiHostTrace();
+  const awsRegion = readTrimmedString(process.env.AWS_REGION) || null;
+  const s3BucketName = readTrimmedString(process.env.S3_BUCKET_NAME) || null;
+  const cloudFrontDistributionId = readTrimmedString(process.env.CLOUDFRONT_DISTRIBUTION_ID) || null;
+  const githubRepoUrl = readTrimmedString(process.env.GITHUB_REPO_URL) || null;
+  const activeOwnerTrace = apiHostTrace.find((record) => record.activeForOwnerAI) ?? null;
+  const directApiTrace = apiHostTrace.find((record) => record.env === 'EXPO_PUBLIC_API_BASE_URL') ?? null;
+  const mismatchWarnings: string[] = [];
+  const suggestedNextActions: string[] = [];
+
+  if (activeOwnerTrace?.hostname && activeOwnerTrace.hostname !== normalizeDomain(domain)) {
+    mismatchWarnings.push(`Route53 audit domain ${domain} does not match the active Owner AI host ${activeOwnerTrace.hostname}.`);
+  }
+
+  if (directApiTrace?.value && !activeOwnerTrace?.value) {
+    mismatchWarnings.push(`EXPO_PUBLIC_API_BASE_URL is set to ${directApiTrace.value}, but Owner AI routing is not explicitly pinned.`);
+    suggestedNextActions.push('Set EXPO_PUBLIC_IVX_OWNER_AI_BASE_URL if Owner AI should use the same public API host as the rest of the app.');
+  }
+
+  if (directApiTrace?.hostname && activeOwnerTrace?.hostname && directApiTrace.hostname !== activeOwnerTrace.hostname) {
+    mismatchWarnings.push(`App-wide API host ${directApiTrace.hostname} differs from the active Owner AI host ${activeOwnerTrace.hostname}.`);
+    suggestedNextActions.push('Decide whether Owner AI should stay on a separate host. If not, align EXPO_PUBLIC_IVX_OWNER_AI_BASE_URL with the app API host.');
+  }
+
+  if (!s3BucketName || !cloudFrontDistributionId) {
+    suggestedNextActions.push('Verify AWS landing workflow inputs: AWS_REGION, S3_BUCKET_NAME, and CLOUDFRONT_DISTRIBUTION_ID.');
+  }
+
+  if (!githubRepoUrl) {
+    suggestedNextActions.push('Set GITHUB_REPO_URL so deploy workflow diagnostics can trace the GitHub → AWS publishing path.');
+  }
+
+  if (suggestedNextActions.length === 0) {
+    suggestedNextActions.push('Compare the active Owner AI host, Route53 record, and app-wide API host. If they match, focus next on DNS propagation or upstream backend health.');
+  }
+
+  return {
+    apiHostTrace,
+    awsRegion,
+    s3BucketName,
+    cloudFrontDistributionId,
+    githubRepoUrl,
+    ownerAiHealthUrl: buildAbsoluteUrl(activeOwnerTrace?.value ?? '', '/health'),
+    ownerRoute53AuditUrl: buildAbsoluteUrl(activeOwnerTrace?.value ?? '', '/api/aws/route53/audit'),
+    ownerRoute53UpsertUrl: buildAbsoluteUrl(activeOwnerTrace?.value ?? '', '/api/aws/route53/upsert'),
+    appApiHealthUrl: buildAbsoluteUrl(directApiTrace?.value ?? '', '/health'),
+    appApiRoute53AuditUrl: buildAbsoluteUrl(directApiTrace?.value ?? '', '/api/aws/route53/audit'),
+    mismatchWarnings,
+    suggestedNextActions,
+  };
 }
 
 export function route53DnsOptions(): Response {
@@ -333,6 +529,7 @@ export async function handleRoute53DNSAudit(request: Request): Promise<Response>
     }
 
     const dnsProbe = await probeDns(domain);
+    const workflowDiagnostics = buildWorkflowDiagnostics(domain);
     const allPermissionsSatisfied = permissions.every((permission) => permission.status === 'allowed');
 
     console.log('[Route53DNS] Audit completed:', {
@@ -341,7 +538,14 @@ export async function handleRoute53DNSAudit(request: Request): Promise<Response>
       hostedZoneId: hostedZone?.id ?? null,
       allPermissionsSatisfied,
       resolvable: dnsProbe.resolvable,
+      mismatchWarnings: workflowDiagnostics.mismatchWarnings,
     });
+
+    const baseIssueSummary = !dnsProbe.resolvable
+      ? `${domain} is not publicly resolvable.`
+      : matchingRecord
+        ? `${domain} resolves and the Route53 record exists.`
+        : `${domain} resolves inconsistently or the record is not present in Route53.`;
 
     return ownerOnlyJson({
       ok: true,
@@ -352,12 +556,11 @@ export async function handleRoute53DNSAudit(request: Request): Promise<Response>
       hostedZone,
       record: matchingRecord,
       dnsProbe,
+      workflowDiagnostics,
       readyForUpsert: Boolean(hostedZone) && allPermissionsSatisfied,
-      issueSummary: !dnsProbe.resolvable
-        ? `${domain} is not publicly resolvable.`
-        : matchingRecord
-          ? `${domain} resolves and the Route53 record exists.`
-          : `${domain} resolves inconsistently or the record is not present in Route53.`,
+      issueSummary: workflowDiagnostics.mismatchWarnings.length > 0
+        ? `${baseIssueSummary} ${workflowDiagnostics.mismatchWarnings[0]}`
+        : baseIssueSummary,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Route53 DNS audit failed.';
@@ -374,11 +577,25 @@ export async function handleRoute53DNSUpsert(request: Request): Promise<Response
     const rootDomain = normalizeDomain(readTrimmedString(body.rootDomain) || 'ivxholding.com');
     const type = body.type === 'A' ? 'A' : 'CNAME';
     const ttl = typeof body.ttl === 'number' && Number.isFinite(body.ttl) && body.ttl > 0 ? Math.floor(body.ttl) : 300;
-    const target = readTrimmedString(body.target);
-    const values = readOptionalStringArray(body.values);
+    const target = normalizeDnsTarget(readTrimmedString(body.target));
+    const values = readOptionalStringArray(body.values).map((value) => normalizeDnsTarget(value));
+    const aliasHostedZoneId = readTrimmedString(body.aliasHostedZoneId) || null;
+    const evaluateTargetHealth = typeof body.evaluateTargetHealth === 'boolean' ? body.evaluateTargetHealth : true;
+    const alias = body.alias === true || (type === 'A' && (!!aliasHostedZoneId || target.includes('elb.amazonaws.com')));
 
     if (!target && values.length === 0) {
       return ownerOnlyJson({ ok: false, error: 'A Route53 target or values array is required.' }, 400);
+    }
+
+    if (body.confirm !== true || readTrimmedString(body.confirmText) !== 'CONFIRM_ROUTE53_UPSERT') {
+      return ownerOnlyJson({
+        ok: false,
+        error: 'Route53 changes require explicit owner confirmation before any DNS write is submitted.',
+        requiredConfirmation: {
+          confirm: true,
+          confirmText: 'CONFIRM_ROUTE53_UPSERT',
+        },
+      }, 409);
     }
 
     const client = createRoute53Client();
@@ -389,12 +606,15 @@ export async function handleRoute53DNSUpsert(request: Request): Promise<Response
       type,
       target,
       values,
+      alias,
+      aliasHostedZoneId,
+      evaluateTargetHealth,
     });
 
     const response = await client.send(new ChangeResourceRecordSetsCommand({
       HostedZoneId: hostedZone.id,
       ChangeBatch: {
-        Comment: `Rork backend upsert for ${domain}`,
+        Comment: `IVX backend upsert for ${domain}`,
         Changes: [changeBatch],
       },
     }));
@@ -405,6 +625,9 @@ export async function handleRoute53DNSUpsert(request: Request): Promise<Response
       hostedZoneId: hostedZone.id,
       type,
       ttl,
+      alias,
+      aliasHostedZoneId,
+      evaluateTargetHealth,
       changeId: response.ChangeInfo?.Id ?? null,
       status: response.ChangeInfo?.Status ?? null,
     });
@@ -415,6 +638,9 @@ export async function handleRoute53DNSUpsert(request: Request): Promise<Response
       rootDomain,
       type,
       ttl,
+      alias,
+      aliasHostedZoneId,
+      evaluateTargetHealth,
       target: target || null,
       values,
       hostedZone,
