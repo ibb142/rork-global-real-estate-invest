@@ -99,15 +99,32 @@ export type IVXOwnerAIRequest = {
   devTestModeActive?: boolean;
 };
 
+export type IVXOwnerAIToolOutput = {
+  tool: string;
+  ok: boolean;
+  input: Record<string, unknown>;
+  output?: unknown;
+  error?: string;
+  timestamp: string;
+};
+
 export type IVXOwnerAIResponse = {
   requestId: string;
   conversationId: string;
   answer: string;
   model: string;
   status: 'ok';
-  source?: 'remote_api' | 'toolkit_fallback';
+  source?: 'remote_api' | 'local_app_brain' | 'provider_fallback';
+  provider?: 'chatgpt';
   endpoint?: string;
   deploymentMarker?: string;
+  assistantMessageId?: string | null;
+  assistantPersisted?: boolean;
+  selectedTool?: string | null;
+  toolInput?: Record<string, unknown>[];
+  toolOutput?: unknown[];
+  fallbackUsed?: boolean;
+  toolOutputs?: IVXOwnerAIToolOutput[];
 };
 
 export type IVXOwnerAICanonicalResponse = {
@@ -116,7 +133,16 @@ export type IVXOwnerAICanonicalResponse = {
   answer: string;
   model: string;
   status: 'ok';
+  source: 'remote_api' | 'local_app_brain';
+  provider?: 'chatgpt';
   deploymentMarker?: string;
+  assistantMessageId?: string | null;
+  assistantPersisted?: boolean;
+  selectedTool?: string | null;
+  toolInput?: Record<string, unknown>[];
+  toolOutput?: unknown[];
+  fallbackUsed?: boolean;
+  toolOutputs?: IVXOwnerAIToolOutput[];
 };
 
 export type IVXOwnerAIRejectedResponse = {
@@ -127,6 +153,7 @@ export type IVXOwnerAIRejectedResponse = {
     | 'missing_answer'
     | 'missing_model'
     | 'invalid_status'
+    | 'invalid_source'
     | 'invalid_deployment_marker';
   payloadType: 'null' | 'array' | 'object' | 'string' | 'number' | 'boolean' | 'undefined';
 };
@@ -149,6 +176,12 @@ export type IVXOwnerAIHealthProbeResponse = IVXOwnerAIResponse & {
     code_aware_support: boolean;
     file_upload: boolean;
     inbox_sync: boolean;
+    backend_access?: boolean;
+    supabase_inspection?: boolean;
+    supabase_tables?: boolean;
+    supabase_schema?: boolean;
+    supabase_columns?: boolean;
+    supabase_rls?: boolean;
   };
 };
 
