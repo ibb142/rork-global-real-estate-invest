@@ -64,3 +64,6 @@
 - [x] Added `IVX_AI_BRAIN_TOOLS.md` with owner-only backend tool endpoint usage.
 - [x] Added owner-only IVX AI Brain tool executor routes for GitHub, Supabase, AWS/IAM, S3, CloudFront, Route53, DNS/TLS, deployment health, and environment checklist.
 - [x] Fixed Docker runtime packaging so `expo/deploy/scripts/aws-runtime.mjs` is copied into the production image for `server.ts` startup.
+- [x] Replaced backend public chat `node:sqlite` dependency with portable JSON-backed storage so Bun/Node Docker runtimes can start without the unavailable `node:sqlite` module.
+- [x] Removed `server.ts` default export to prevent Bun from double-starting the server after manual `Bun.serve` startup.
+- [x] Verified local backend health after startup fixes: `GET http://127.0.0.1:3111/health` returned HTTP 200.
