@@ -1,4 +1,4 @@
-import { generateText } from 'ai';
+import { createGateway, generateText } from 'ai';
 
 export type IVXAIModule = 'owner-room' | 'p0-ai-assistant' | 'p1-plan-creator' | 'public-chat' | string;
 export type IVXAIMessageRole = 'user' | 'assistant';
@@ -51,7 +51,7 @@ export type IVXAIConfigurationSnapshot = {
   phase: 'phase_1';
 };
 
-const GATEWAY_BASE_PATH = '/v2/vercel/v3/ai';
+const GATEWAY_BASE_PATH = '/v3/ai';
 const DEFAULT_IVX_AI_MODEL = 'openai/gpt-4o-mini';
 
 function readTrimmed(value: unknown): string {
@@ -65,8 +65,7 @@ function nowIso(): string {
 function getIVXAIGatewayRootUrl(): string {
   return readTrimmed(process.env.EXPO_PUBLIC_IVX_AI_GATEWAY_URL)
     || readTrimmed(process.env.IVX_AI_GATEWAY_URL)
-    || readTrimmed(process.env.EXPO_PUBLIC_TOOLKIT_URL)
-    || 'https://toolkit.rork.com';
+    || 'https://ai-gateway.vercel.sh';
 }
 
 function getIVXAIGatewayApiKey(): string {
@@ -103,7 +102,7 @@ function getGatewayBaseUrlCandidates(): string[] {
   })();
 
   if (configuredHost === 'ai.ivxholding.com') {
-    candidates.push(buildGatewayBaseUrl('https://ai-gateway.vercel.sh/v3/ai'));
+    candidates.push(buildGatewayBaseUrl('https://ai-gateway.vercel.sh'));
   }
 
   return [...new Set(candidates.filter((candidate): candidate is string => Boolean(candidate)))];
@@ -269,14 +268,18 @@ export async function requestIVXAIText(input: {
   for (const baseURL of baseUrlCandidates) {
     ensureIVXAIGatewayEnvironment();
     try {
+      const gatewayProvider = createGateway({
+        apiKey: getIVXAIGatewayApiKey(),
+        baseURL,
+      });
       result = messages.length > 0
         ? await generateText({
-            model,
+            model: gatewayProvider(model),
             system: system.length > 0 ? system : undefined,
             messages,
           })
         : await generateText({
-            model,
+            model: gatewayProvider(model),
             system: system.length > 0 ? system : undefined,
             prompt,
           });

@@ -27,6 +27,7 @@ type OwnerActionResult = {
 };
 
 const MAX_ROWS = 25;
+const WRITE_CONFIRM_TEXT = 'CONFIRM_OWNER_SUPABASE_WRITE';
 const DESTRUCTIVE_CONFIRM_TEXT = 'CONFIRM_OWNER_SUPABASE_DELETE';
 const IDENTIFIER_PATTERN = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
 
@@ -196,10 +197,10 @@ export async function runIVXSupabaseOwnerAction(ownerContext: IVXOwnerRequestCon
   const values = readRecord(body.values);
   const match = readRecord(body.match);
   const reason = readTrimmed(body.reason) || null;
-  const key = getServiceRoleKey();
 
-  if (action === 'delete' && (body.confirm !== true || readTrimmed(body.confirmText) !== DESTRUCTIVE_CONFIRM_TEXT)) {
-    throw new Error(`Destructive confirmation required. Resubmit with confirm=true and confirmText="${DESTRUCTIVE_CONFIRM_TEXT}".`);
+  const requiredConfirmText = action === 'delete' ? DESTRUCTIVE_CONFIRM_TEXT : WRITE_CONFIRM_TEXT;
+  if (body.confirm !== true || readTrimmed(body.confirmText) !== requiredConfirmText) {
+    throw new Error(`Owner approval required. Resubmit with confirm=true and confirmText="${requiredConfirmText}".`);
   }
 
   if ((action === 'insert' || action === 'owner_approved_action') && Object.keys(values).length === 0) {
@@ -209,6 +210,7 @@ export async function runIVXSupabaseOwnerAction(ownerContext: IVXOwnerRequestCon
     throw new Error('Values are required for update owner actions.');
   }
 
+  const key = getServiceRoleKey();
   const method = action === 'insert' || action === 'owner_approved_action' ? 'POST' : action === 'update' ? 'PATCH' : 'DELETE';
   const url = buildRestUrl(schema, table, action === 'insert' || action === 'owner_approved_action' ? null : match);
   const response = await fetch(url, {
@@ -257,16 +259,18 @@ export async function handleIVXSupabaseOwnerActionRequest(request: Request): Pro
     const schema = assertIdentifier(body.schema, 'public', 'schema');
     const table = assertIdentifier(body.table, null, 'table');
 
-    if (action === 'delete' && (body.confirm !== true || readTrimmed(body.confirmText) !== DESTRUCTIVE_CONFIRM_TEXT)) {
+    const requiredConfirmText = action === 'delete' ? DESTRUCTIVE_CONFIRM_TEXT : WRITE_CONFIRM_TEXT;
+    if (body.confirm !== true || readTrimmed(body.confirmText) !== requiredConfirmText) {
       return ownerOnlyJson({
         ok: false,
         ownerOnly: true,
         action,
         schema,
         table,
-        destructiveConfirmationRequired: true,
-        confirmTextRequired: DESTRUCTIVE_CONFIRM_TEXT,
-        message: `Confirm this delete by resubmitting with confirm=true and confirmText="${DESTRUCTIVE_CONFIRM_TEXT}".`,
+        writeConfirmationRequired: true,
+        destructiveConfirmationRequired: action === 'delete',
+        confirmTextRequired: requiredConfirmText,
+        message: `Confirm this ${action} by resubmitting with confirm=true and confirmText="${requiredConfirmText}".`,
         timestamp: nowIso(),
       }, 409);
     }

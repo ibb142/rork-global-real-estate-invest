@@ -4,7 +4,9 @@ import {
   ensureOwnerConversation,
   handleIVXOwnerAIRequest,
   insertMessage,
+  loadInboxState,
   loadRecentMessages,
+  markInboxRead,
   resolveOwnerTables,
   safeEnsureInboxState,
   type ResolvedOwnerTables,
@@ -244,8 +246,14 @@ export async function handleUploadPost(request: Request): Promise<Response> {
 export async function handleInboxSync(request: Request): Promise<Response> {
   try {
     const ctx = await assertIVXOwnerOnly(request);
+    const body = await request.json().catch(() => ({})) as Record<string, unknown>;
+    const action = readTrimmed(body.action).toLowerCase();
+    const markReadRequested = action === 'mark_read' || action === 'read' || body.markRead === true;
     const { tables, conversation } = await getOwnerRoomContext(ctx.client);
     await safeEnsureInboxState(ctx.client, tables, conversation.id, ctx.userId);
+    const inboxState = markReadRequested
+      ? await markInboxRead(ctx.client, tables, conversation.id, ctx.userId)
+      : await loadInboxState(ctx.client, tables, conversation.id, ctx.userId);
 
     return ownerOnlyJson({
       inbox: [{
@@ -253,11 +261,12 @@ export async function handleInboxSync(request: Request): Promise<Response> {
         slug: conversation.slug,
         title: conversation.title,
         subtitle: conversation.subtitle,
-        unreadCount: 0,
-        lastReadAt: nowIso(),
+        unreadCount: inboxState?.unread_count ?? 0,
+        lastReadAt: inboxState?.last_read_at ?? null,
         lastMessageText: conversation.lastMessageText,
         lastMessageAt: conversation.lastMessageAt,
       }],
+      action: markReadRequested ? 'mark_read' : 'sync',
       storage: {
         schema: tables.schema,
         dbSchema: tables.dbSchema,

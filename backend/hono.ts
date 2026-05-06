@@ -87,7 +87,7 @@ async function handleRoute53Request(
 }
 
 const app = new Hono();
-const DEPLOYMENT_MARKER = 'ivx-owner-ai-hono-2026-05-06t0315z';
+const DEPLOYMENT_MARKER = 'ivx-owner-ai-hono-2026-05-06t1200z';
 const SERVER_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const WEB_DIST_ROOT = path.join(SERVER_ROOT, 'expo', 'dist');
 const CHAT_DATABASE_PATH = (process.env.CHAT_DATABASE_PATH?.trim() || path.join(SERVER_ROOT, 'data', 'chat-room.sqlite'));

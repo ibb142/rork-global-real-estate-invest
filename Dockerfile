@@ -4,7 +4,57 @@ WORKDIR /app
 COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile --production
 
-FROM oven/bun:1.2-alpine AS runner
+FROM oven/bun:1.2-alpine AS web-build
+WORKDIR /app/expo
+
+COPY expo/package.json expo/bun.lock ./
+RUN bun install --frozen-lockfile
+
+COPY expo ./
+ENV CI=1
+ARG RENDER_EXTERNAL_HOSTNAME
+ARG EXPO_PUBLIC_APP_ENV
+ARG EXPO_PUBLIC_GOOGLE_ADS_API_KEY
+ARG EXPO_PUBLIC_SUPABASE_URL
+ARG EXPO_PUBLIC_SUPABASE_ANON_KEY
+ARG EXPO_PUBLIC_IVX_AI_GATEWAY_API_KEY
+ARG EXPO_PUBLIC_IVX_AUTH_URL
+ARG EXPO_PUBLIC_IVX_API_BASE_URL
+ARG EXPO_PUBLIC_IVX_AI_GATEWAY_URL
+ARG EXPO_PUBLIC_PROJECT_ID
+ARG EXPO_PUBLIC_TEAM_ID
+ARG EXPO_PUBLIC_CHAT_API_URL
+ARG EXPO_PUBLIC_IVX_OWNER_AI_BASE_URL
+ARG EXPO_PUBLIC_API_BASE_URL
+ARG EXPO_PUBLIC_API_URL
+ARG EXPO_PUBLIC_PRODUCTION_API_URL
+ARG EXPO_PUBLIC_IVX_DB_ENDPOINT
+ARG EXPO_PUBLIC_IVX_DB_NAMESPACE
+ARG EXPO_PUBLIC_IVX_DB_TOKEN
+ARG EXPO_PUBLIC_IVX_APP_KEY
+RUN PUBLIC_RENDER_BASE_URL="${EXPO_PUBLIC_API_BASE_URL:-https://${RENDER_EXTERNAL_HOSTNAME}}" \
+  && export EXPO_PUBLIC_APP_ENV="${EXPO_PUBLIC_APP_ENV}" \
+  && export EXPO_PUBLIC_GOOGLE_ADS_API_KEY="${EXPO_PUBLIC_GOOGLE_ADS_API_KEY}" \
+  && export EXPO_PUBLIC_SUPABASE_URL="${EXPO_PUBLIC_SUPABASE_URL}" \
+  && export EXPO_PUBLIC_SUPABASE_ANON_KEY="${EXPO_PUBLIC_SUPABASE_ANON_KEY}" \
+  && export EXPO_PUBLIC_IVX_AI_GATEWAY_API_KEY="${EXPO_PUBLIC_IVX_AI_GATEWAY_API_KEY}" \
+  && export EXPO_PUBLIC_IVX_AUTH_URL="${EXPO_PUBLIC_IVX_AUTH_URL}" \
+  && export EXPO_PUBLIC_IVX_API_BASE_URL="${EXPO_PUBLIC_IVX_API_BASE_URL:-$PUBLIC_RENDER_BASE_URL}" \
+  && export EXPO_PUBLIC_IVX_AI_GATEWAY_URL="${EXPO_PUBLIC_IVX_AI_GATEWAY_URL}" \
+  && export EXPO_PUBLIC_PROJECT_ID="${EXPO_PUBLIC_PROJECT_ID}" \
+  && export EXPO_PUBLIC_TEAM_ID="${EXPO_PUBLIC_TEAM_ID}" \
+  && export EXPO_PUBLIC_CHAT_API_URL="${EXPO_PUBLIC_CHAT_API_URL:-$PUBLIC_RENDER_BASE_URL}" \
+  && export EXPO_PUBLIC_IVX_OWNER_AI_BASE_URL="${EXPO_PUBLIC_IVX_OWNER_AI_BASE_URL:-$PUBLIC_RENDER_BASE_URL}" \
+  && export EXPO_PUBLIC_API_BASE_URL="${EXPO_PUBLIC_API_BASE_URL:-$PUBLIC_RENDER_BASE_URL}" \
+  && export EXPO_PUBLIC_API_URL="${EXPO_PUBLIC_API_URL:-$PUBLIC_RENDER_BASE_URL}" \
+  && export EXPO_PUBLIC_PRODUCTION_API_URL="${EXPO_PUBLIC_PRODUCTION_API_URL:-$PUBLIC_RENDER_BASE_URL}" \
+  && export EXPO_PUBLIC_IVX_DB_ENDPOINT="${EXPO_PUBLIC_IVX_DB_ENDPOINT}" \
+  && export EXPO_PUBLIC_IVX_DB_NAMESPACE="${EXPO_PUBLIC_IVX_DB_NAMESPACE}" \
+  && export EXPO_PUBLIC_IVX_DB_TOKEN="${EXPO_PUBLIC_IVX_DB_TOKEN}" \
+  && export EXPO_PUBLIC_IVX_APP_KEY="${EXPO_PUBLIC_IVX_APP_KEY}" \
+  && bunx expo export --platform web
+
+FROM node:20-alpine AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
@@ -19,17 +69,11 @@ COPY backend ./backend
 COPY expo/constants ./expo/constants
 COPY expo/shared ./expo/shared
 COPY expo/deploy/scripts ./expo/deploy/scripts
-
-RUN ln -s /app/node_modules /node_modules \
-  && ln -s /app/server.ts /server.ts \
-  && ln -s /app/backend /backend \
-  && ln -s /app/expo /expo \
-  && ln -s /app/tsconfig.json /tsconfig.json \
-  && ln -s /app/package.json /package.json
+COPY --from=web-build /app/expo/dist ./expo/dist
 
 EXPOSE 3000
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
   CMD wget -qO- "http://127.0.0.1:3000/health" || exit 1
 
-CMD ["bun", "/app/server.ts"]
+CMD ["node", "./node_modules/tsx/dist/cli.mjs", "server.ts"]

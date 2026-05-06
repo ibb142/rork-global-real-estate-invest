@@ -698,6 +698,29 @@ async function probeSupabaseRestTable(tableName: string): Promise<boolean> {
   return response.status === 401 || response.status === 403;
 }
 
+async function inspectSupabaseTablesViaSqlFallback(schema: string | null, table: string | null, limit: number): Promise<TableInspectionRow[]> {
+  const requestedSchema = schema ?? 'public';
+  if (requestedSchema !== 'public') {
+    return [];
+  }
+
+  const requestedTable = table?.toLowerCase() ?? null;
+  const tableNames = (await loadCandidateTableNamesFromSql())
+    .filter((name) => !requestedTable || name.toLowerCase() === requestedTable)
+    .slice(0, limit);
+
+  return tableNames.map((tableName) => ({
+    schema_name: 'public',
+    table_name: tableName,
+    relation_type: 'table',
+    owner: null,
+    rls_enabled: null,
+    rls_forced: null,
+    estimated_rows: null,
+    comment: 'Local/dev checked-in SQL schema fallback; live Supabase connection not required.',
+  }));
+}
+
 async function inspectSupabaseTablesViaKnownRestProbes(schema: string | null, table: string | null, limit: number): Promise<TableInspectionRow[]> {
   const requestedSchema = schema ?? 'public';
   if (requestedSchema !== 'public') {
@@ -748,30 +771,23 @@ export async function inspectSupabaseTables(schema: string | null, table: string
   try {
     return await runReadOnlyQuery<TableInspectionRow>(`
       select
-        n.nspname as schema_name,
-        c.relname as table_name,
-        case c.relkind
-          when 'r' then 'table'
-          when 'p' then 'partitioned_table'
-          when 'v' then 'view'
-          when 'm' then 'materialized_view'
-          when 'f' then 'foreign_table'
-          else c.relkind::text
-        end as relation_type,
+        t.table_schema as schema_name,
+        t.table_name,
+        lower(t.table_type) as relation_type,
         pg_get_userbyid(c.relowner) as owner,
         c.relrowsecurity as rls_enabled,
         c.relforcerowsecurity as rls_forced,
         coalesce(s.n_live_tup, c.reltuples)::bigint as estimated_rows,
         obj_description(c.oid, 'pg_class') as comment
-      from pg_class c
-      join pg_namespace n on n.oid = c.relnamespace
+      from information_schema.tables t
+      left join pg_namespace n on n.nspname = t.table_schema
+      left join pg_class c on c.relnamespace = n.oid and c.relname = t.table_name
       left join pg_stat_user_tables s on s.relid = c.oid
-      where c.relkind in ('r', 'p', 'v', 'm', 'f')
-        and n.nspname not in ('pg_catalog', 'information_schema')
-        and n.nspname not like 'pg_toast%'
-        and ($1::text is null or n.nspname = $1)
-        and ($2::text is null or c.relname = $2)
-      order by n.nspname asc, c.relname asc
+      where t.table_schema not in ('pg_catalog', 'information_schema')
+        and t.table_schema not like 'pg_toast%'
+        and ($1::text is null or t.table_schema = $1)
+        and ($2::text is null or t.table_name = $2)
+      order by t.table_schema asc, t.table_name asc
       limit $3
     `, [schema, table, limit]);
   } catch (pgError) {
@@ -783,6 +799,10 @@ export async function inspectSupabaseTables(schema: string | null, table: string
       const probedRows = await inspectSupabaseTablesViaKnownRestProbes(schema, table, limit);
       if (probedRows.length > 0) {
         return probedRows;
+      }
+      const sqlFallbackRows = await inspectSupabaseTablesViaSqlFallback(schema, table, limit);
+      if (sqlFallbackRows.length > 0) {
+        return sqlFallbackRows;
       }
       throw openApiError instanceof Error ? openApiError : pgError;
     }

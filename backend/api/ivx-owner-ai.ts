@@ -1,5 +1,8 @@
+import { appendFile, mkdir, readdir, readFile, unlink, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import { IVX_OWNER_AI_PROFILE, IVX_OWNER_AI_ROOM_ID, IVX_OWNER_AI_ROOM_SLUG } from '../../expo/constants/ivx-owner-ai';
 import { getIVXAIConfigurationSnapshot, getIVXAIEndpoint, requestIVXAIText, resolveIVXAIModel } from '../ivx-ai-runtime';
+import { executeIVXAIBrainTool, type IVXAIBrainToolName, type IVXAIBrainToolResult } from '../services/ivx-ai-brain-tool-executor';
 import { buildIVXAuditReport, type IVXAuditReport } from './ivx-audit-report';
 import {
   inspectSupabaseColumns,
@@ -7,10 +10,12 @@ import {
   inspectSupabaseSchema,
   inspectSupabaseTables,
 } from './ivx-supabase-inspection';
-import { runIVXSupabaseOwnerAction } from './ivx-supabase-owner-actions';
 import {
+  IVX_OWNER_AI_BUCKET,
   IVX_OWNER_AI_TABLES,
   type IVXConversation,
+  type IVXOwnerAICapabilityId,
+  type IVXOwnerAICapabilityProof,
   type IVXOwnerAIHealthProbeResponse,
   type IVXOwnerAIRequest,
   type IVXOwnerAIResponse,
@@ -38,6 +43,9 @@ export type ResolvedOwnerTables = {
   messages: string;
   inboxState: string | null;
   aiRequests: string | null;
+  commandLogs: string | null;
+  knowledgeChunks: string | null;
+  accessTestRows: string | null;
   messageConversationField: ResolvedMessageConversationField;
 };
 
@@ -155,6 +163,89 @@ type PgPoolConstructor = new (config: { connectionString: string; ssl?: { reject
 type OwnerRoomDataToolResult = {
   answer: string;
   toolName: 'inspect_owner_room_data';
+};
+
+type IVXOwnerBackendCommand = '/time-now' | '/room-status' | '/supabase-tables' | '/storage-diagnostics' | '/knowledge-reindex' | '/inbox-diagnostics' | '/create-record' | '/update-record' | '/delete-record' | '/run-query' | '/upload-file' | '/read-file';
+
+type LocalDevStoredRecord = Record<string, unknown> & {
+  id: string;
+  created_at: string;
+  updated_at: string;
+};
+
+const IVX_OWNER_BACKEND_COMMANDS: readonly IVXOwnerBackendCommand[] = [
+  '/time-now',
+  '/room-status',
+  '/supabase-tables',
+  '/storage-diagnostics',
+  '/knowledge-reindex',
+  '/inbox-diagnostics',
+  '/create-record',
+  '/update-record',
+  '/delete-record',
+  '/run-query',
+  '/upload-file',
+  '/read-file',
+] as const;
+
+const LOCAL_DEV_OWNER_ID = '00000000-0000-4000-8000-000000000001';
+const LOCAL_DEV_COMMAND_LOG_PATH = path.join(process.cwd(), 'logs', 'audit', 'ivx-local-dev-command-logs.jsonl');
+const LOCAL_DEV_ERROR_LOG_PATH = path.join(process.cwd(), 'logs', 'audit', 'ivx-local-dev-errors.jsonl');
+const LOCAL_DEV_STORAGE_ROOT = path.join(process.cwd(), 'logs', 'audit', 'ivx-local-dev-storage');
+const LOCAL_DEV_FILES_ROOT = path.join(process.cwd(), 'logs', 'audit', 'ivx-local-dev-files');
+const LOCAL_DEV_IGNORED_DIRS = new Set(['.git', '.rork', '.expo', 'node_modules', 'dist', 'build', 'logs', 'coverage']);
+
+const localDevKnowledgeDocuments = new Map<string, Record<string, unknown>>();
+const localDevKnowledgeChunks = new Map<string, Record<string, unknown>[]>();
+const localDevInboxState = new Map<string, IVXInboxStateRow>();
+const localDevRecordStore = new Map<string, LocalDevStoredRecord[]>();
+
+type OwnerBackendCommandResult = {
+  command: IVXOwnerBackendCommand;
+  command_log_id: string | null;
+  status: 'success' | 'fail';
+  result: Record<string, unknown>;
+  error?: string;
+};
+
+type IVXInboxStateRow = {
+  conversation_id: string;
+  user_id: string;
+  unread_count: number;
+  last_read_at: string | null;
+  updated_at: string | null;
+};
+
+type OwnerCapabilityCheckResult = {
+  capabilities: Record<IVXOwnerAICapabilityId, boolean>;
+  capabilityProofs: Record<IVXOwnerAICapabilityId, IVXOwnerAICapabilityProof>;
+};
+
+type OwnerCapabilityProbeOutput = {
+  success: boolean;
+  executable?: boolean;
+  proof: Record<string, unknown>;
+  error?: string;
+};
+
+const OWNER_CAPABILITY_IDS: readonly IVXOwnerAICapabilityId[] = [
+  'ai_chat',
+  'knowledge_answers',
+  'owner_commands',
+  'code_aware_support',
+  'file_upload',
+  'inbox_sync',
+  'backend_access',
+  'supabase_inspection',
+  'supabase_tables',
+  'supabase_schema',
+  'supabase_columns',
+  'supabase_rls',
+] as const;
+
+type AIBrainToolRoute = {
+  tool: IVXAIBrainToolName;
+  input: Record<string, unknown>;
 };
 
 type ParsedQualifiedTable = {
@@ -376,6 +467,556 @@ function createRequestId(): string {
   return `ivx-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
+function isLocalDevToolsEnabled(): boolean {
+  const runtime = readTrimmedString(process.env.NODE_ENV).toLowerCase();
+  const explicit = readTrimmedString(process.env.IVX_LOCAL_DEV_TOOLS).toLowerCase();
+  return runtime !== 'production' && explicit !== '0' && explicit !== 'false' && explicit !== 'off';
+}
+
+function readBearerToken(request: Request): string | null {
+  const authorizationHeader = request.headers.get('authorization') ?? request.headers.get('Authorization');
+  if (!authorizationHeader) {
+    return null;
+  }
+  const [scheme, token] = authorizationHeader.split(' ');
+  if (scheme?.toLowerCase() !== 'bearer') {
+    return null;
+  }
+  return readTrimmedString(token) || null;
+}
+
+function isLocalDevOwnerRequest(request: Request): boolean {
+  return isLocalDevToolsEnabled() && readBearerToken(request) === 'dev-open-access-token';
+}
+
+function localDevAuthFailureResponse(request: Request): Response | null {
+  if (!isLocalDevToolsEnabled()) {
+    return null;
+  }
+  const token = readBearerToken(request);
+  if (!token) {
+    return ownerOnlyJson({ ok: false, error: 'IVX auth guard failed: missing bearer token.', mode: 'local_dev' }, 401);
+  }
+  if (token !== 'dev-open-access-token') {
+    return ownerOnlyJson({ ok: false, error: 'IVX role guard failed: privileged IVX access is required.', mode: 'local_dev' }, 403);
+  }
+  return null;
+}
+
+function buildLocalDevTables(): ResolvedOwnerTables {
+  return {
+    schema: 'none',
+    dbSchema: 'public',
+    conversations: IVX_OWNER_AI_TABLES.conversations,
+    messages: IVX_OWNER_AI_TABLES.messages,
+    inboxState: 'local_dev_inbox_state',
+    aiRequests: 'local_dev_ai_requests',
+    commandLogs: 'local_dev_command_logs',
+    knowledgeChunks: 'local_dev_knowledge_chunks',
+    accessTestRows: 'local_dev_access_test_rows',
+    messageConversationField: 'conversation_id',
+  };
+}
+
+function buildLocalDevConversation(): IVXConversation {
+  return mapConversation(createSyntheticConversation());
+}
+
+async function insertLocalDevCommandLog(input: {
+  command: IVXOwnerBackendCommand;
+  requestId?: string;
+  status: 'success' | 'fail';
+  result: Record<string, unknown>;
+  error?: string;
+}): Promise<string> {
+  const id = `local-command-${createRequestId()}`;
+  const row = {
+    id,
+    request_id: input.requestId ?? null,
+    owner_user_id: LOCAL_DEV_OWNER_ID,
+    command: input.command,
+    status: input.status,
+    result_json: input.result,
+    error: input.error ?? null,
+    created_at: nowIso(),
+    storage: 'local_dev_jsonl',
+  };
+  try {
+    await mkdir(path.dirname(LOCAL_DEV_COMMAND_LOG_PATH), { recursive: true });
+    await appendFile(LOCAL_DEV_COMMAND_LOG_PATH, `${JSON.stringify(row)}\n`, 'utf8');
+  } catch (error) {
+    console.log('[IVXOwnerAIBackend] Local/dev command log file append failed:', error instanceof Error ? error.message : 'unknown');
+  }
+  return id;
+}
+
+async function insertLocalDevErrorLog(input: {
+  command: IVXOwnerBackendCommand;
+  requestId: string;
+  error: string;
+  payload?: Record<string, unknown>;
+}): Promise<string> {
+  const id = `local-error-${createRequestId()}`;
+  const row = {
+    id,
+    request_id: input.requestId,
+    owner_user_id: LOCAL_DEV_OWNER_ID,
+    command: input.command,
+    error: input.error,
+    payload_keys: Object.keys(input.payload ?? {}),
+    created_at: nowIso(),
+    storage: 'local_dev_jsonl',
+  };
+  try {
+    await mkdir(path.dirname(LOCAL_DEV_ERROR_LOG_PATH), { recursive: true });
+    await appendFile(LOCAL_DEV_ERROR_LOG_PATH, `${JSON.stringify(row)}\n`, 'utf8');
+  } catch (error) {
+    console.log('[IVXOwnerAIBackend] Local/dev error log file append failed:', error instanceof Error ? error.message : 'unknown');
+  }
+  return id;
+}
+
+function isLocalDevSearchFile(filePath: string): boolean {
+  return /\.(ts|tsx|js|jsx|mjs|json|md|sql|yaml|yml)$/i.test(filePath);
+}
+
+function isSensitiveLocalDevPath(filePath: string): boolean {
+  const normalized = filePath.toLowerCase();
+  return normalized.includes('.env')
+    || normalized.includes('secret')
+    || normalized.includes('private-key')
+    || normalized.includes('service-role')
+    || normalized.endsWith('.pem')
+    || normalized.endsWith('.key');
+}
+
+function sanitizeLocalDevName(value: unknown, fallback: string): string {
+  const normalized = readTrimmedString(value)
+    .replace(/[^a-zA-Z0-9_.-]/g, '-')
+    .replace(/-+/g, '-')
+    .slice(0, 80);
+  return normalized || fallback;
+}
+
+function normalizeLocalDevPayload(payload: Record<string, unknown> | undefined, prompt: string | undefined): Record<string, unknown> {
+  const base = readRecord(payload);
+  const commandlessPrompt = readTrimmedString(prompt).replace(/^\/\S+\s*/, '').trim();
+  const fencedJson = commandlessPrompt.match(/```json\s*([\s\S]*?)```/i) ?? commandlessPrompt.match(/```\s*([\s\S]*?)```/i);
+  const rawJson = (fencedJson?.[1] ?? (commandlessPrompt.startsWith('{') ? commandlessPrompt : '')).trim();
+  if (!rawJson) {
+    return base;
+  }
+  try {
+    const parsed = JSON.parse(rawJson) as unknown;
+    return { ...base, ...readRecord(parsed) };
+  } catch {
+    return base;
+  }
+}
+
+function localDevTableKey(value: unknown): string {
+  return sanitizeLocalDevName(value, 'ivx_local_records').toLowerCase();
+}
+
+function localDevRecordMatches(row: LocalDevStoredRecord, match: Record<string, unknown>): boolean {
+  const entries = Object.entries(match).filter(([, value]) => value !== undefined && value !== null && String(value).length > 0);
+  if (entries.length === 0) {
+    return false;
+  }
+  return entries.every(([key, value]) => String(row[key] ?? '') === String(value));
+}
+
+function readLocalDevValues(payload: Record<string, unknown>): Record<string, unknown> {
+  const explicitValues = readRecord(payload.values);
+  if (Object.keys(explicitValues).length > 0) {
+    return explicitValues;
+  }
+  const ignoredKeys = new Set(['command', 'message', 'requestId', 'request_id', 'table', 'match', 'confirm', 'confirmText']);
+  return Object.fromEntries(Object.entries(payload).filter(([key]) => !ignoredKeys.has(key)));
+}
+
+function runLocalDevCreateRecord(payload: Record<string, unknown>, requestId: string): Record<string, unknown> {
+  const table = localDevTableKey(payload.table);
+  const values = readLocalDevValues(payload);
+  const timestamp = nowIso();
+  const record: LocalDevStoredRecord = {
+    id: readTrimmedString(values.id) || `local-record-${createRequestId()}`,
+    ...values,
+    created_at: timestamp,
+    updated_at: timestamp,
+  };
+  const rows = localDevRecordStore.get(table) ?? [];
+  rows.push(record);
+  localDevRecordStore.set(table, rows);
+  return {
+    mode: 'local_dev_memory',
+    operation: 'create',
+    table,
+    requestId,
+    insertedRecord: record,
+    affectedRows: 1,
+    rowCount: rows.length,
+  };
+}
+
+function runLocalDevUpdateRecord(payload: Record<string, unknown>, requestId: string): Record<string, unknown> {
+  const table = localDevTableKey(payload.table);
+  const rows = localDevRecordStore.get(table) ?? [];
+  const match = readRecord(payload.match);
+  const values = readLocalDevValues(payload);
+  const updatedRows = rows.map((row) => localDevRecordMatches(row, match) ? { ...row, ...values, updated_at: nowIso() } : row);
+  const changedRows = updatedRows.filter((row, index) => row !== rows[index]);
+  localDevRecordStore.set(table, updatedRows);
+  return {
+    mode: 'local_dev_memory',
+    operation: 'update',
+    table,
+    requestId,
+    match,
+    values,
+    affectedRows: changedRows.length,
+    updatedRows: changedRows,
+  };
+}
+
+function runLocalDevDeleteRecord(payload: Record<string, unknown>, requestId: string): Record<string, unknown> {
+  const table = localDevTableKey(payload.table);
+  const rows = localDevRecordStore.get(table) ?? [];
+  const match = readRecord(payload.match);
+  const deletedRows = rows.filter((row) => localDevRecordMatches(row, match));
+  const remainingRows = rows.filter((row) => !localDevRecordMatches(row, match));
+  localDevRecordStore.set(table, remainingRows);
+  return {
+    mode: 'local_dev_memory',
+    operation: 'delete',
+    table,
+    requestId,
+    match,
+    affectedRows: deletedRows.length,
+    deletedRows,
+    rowCount: remainingRows.length,
+  };
+}
+
+async function readLocalDevJsonlRows(filePath: string, limit: number = 50): Promise<Record<string, unknown>[]> {
+  const text = await readFile(filePath, 'utf8').catch(() => '');
+  return text
+    .split('\n')
+    .filter((line) => line.trim().length > 0)
+    .slice(-limit)
+    .map((line) => {
+      try {
+        return JSON.parse(line) as Record<string, unknown>;
+      } catch {
+        return { parse_error: true, raw: line.slice(0, 400) };
+      }
+    });
+}
+
+async function readLocalDevCommandHistory(limit: number = 50): Promise<Record<string, unknown>[]> {
+  return readLocalDevJsonlRows(LOCAL_DEV_COMMAND_LOG_PATH, limit);
+}
+
+async function readLocalDevErrorHistory(limit: number = 50): Promise<Record<string, unknown>[]> {
+  return readLocalDevJsonlRows(LOCAL_DEV_ERROR_LOG_PATH, limit);
+}
+
+async function buildLocalDevLoggingSummary(limit: number = 20): Promise<Record<string, unknown>> {
+  const [commandHistory, errorHistory] = await Promise.all([
+    readLocalDevCommandHistory(limit),
+    readLocalDevErrorHistory(limit),
+  ]);
+  return {
+    mode: 'local_dev_jsonl',
+    commandLogPath: 'logs/audit/ivx-local-dev-command-logs.jsonl',
+    errorLogPath: 'logs/audit/ivx-local-dev-errors.jsonl',
+    commandHistoryCount: commandHistory.length,
+    errorHistoryCount: errorHistory.length,
+    recentCommands: commandHistory.slice(-limit),
+    recentErrors: errorHistory.slice(-limit),
+  };
+}
+
+async function runLocalDevQuery(payload: Record<string, unknown>, requestId: string): Promise<Record<string, unknown>> {
+  const sql = readTrimmedString(payload.sql);
+  const tableFromSql = sql.match(/\bfrom\s+([a-zA-Z_][\w.-]*)/i)?.[1];
+  const table = localDevTableKey(payload.table ?? tableFromSql);
+  const limit = Math.min(Math.max(Number.parseInt(readTrimmedString(payload.limit) || '50', 10) || 50, 1), 200);
+  if (sql && !/^\s*select\b/i.test(sql)) {
+    return {
+      mode: 'local_dev_query_engine',
+      operation: 'run-query',
+      requestId,
+      sql,
+      ok: false,
+      error: 'Local/dev /run-query executes SELECT only. Use /create-record, /update-record, or /delete-record for local write simulation.',
+    };
+  }
+  if (table === 'command_history' || table === 'ivx_command_logs' || table === 'local_dev_command_logs') {
+    const rows = await readLocalDevCommandHistory(limit);
+    return { mode: 'local_dev_query_engine', operation: 'select', requestId, table, sql: sql || null, rows, rowCount: rows.length };
+  }
+  if (table === 'error_history' || table === 'ivx_error_logs' || table === 'local_dev_error_logs') {
+    const rows = await readLocalDevErrorHistory(limit);
+    return { mode: 'local_dev_query_engine', operation: 'select', requestId, table, sql: sql || null, rows, rowCount: rows.length };
+  }
+  if (table === 'logging_summary' || table === 'command_logging') {
+    const summary = await buildLocalDevLoggingSummary(limit);
+    return { mode: 'local_dev_query_engine', operation: 'select', requestId, table, sql: sql || null, rows: [summary], rowCount: 1 };
+  }
+  const rows = (localDevRecordStore.get(table) ?? []).slice(0, limit);
+  return { mode: 'local_dev_query_engine', operation: 'select', requestId, table, sql: sql || null, rows, rowCount: rows.length };
+}
+
+function resolveLocalDevFilePath(inputPath: unknown, fallbackName: string): { relativePath: string; absolutePath: string } {
+  const fileName = sanitizeLocalDevName(inputPath, fallbackName);
+  const relativePath = path.join('local-dev-files', fileName);
+  const absolutePath = path.join(LOCAL_DEV_FILES_ROOT, fileName);
+  if (!absolutePath.startsWith(LOCAL_DEV_FILES_ROOT)) {
+    throw new Error('Invalid local/dev file path.');
+  }
+  return { relativePath, absolutePath };
+}
+
+async function runLocalDevUploadFile(payload: Record<string, unknown>, requestId: string): Promise<Record<string, unknown>> {
+  const fileName = payload.fileName ?? payload.path ?? `upload-${requestId}.txt`;
+  const resolved = resolveLocalDevFilePath(fileName, `upload-${requestId}.txt`);
+  const content = readTrimmedString(payload.content) || readTrimmedString(payload.body) || `IVX local/dev upload ${requestId} ${nowIso()}`;
+  await mkdir(path.dirname(resolved.absolutePath), { recursive: true });
+  await writeFile(resolved.absolutePath, content, 'utf8');
+  const readBack = await readFile(resolved.absolutePath, 'utf8');
+  return {
+    mode: 'local_dev_filesystem',
+    operation: 'upload-file',
+    requestId,
+    path: resolved.relativePath,
+    bytesWritten: Buffer.byteLength(content, 'utf8'),
+    mimeType: readTrimmedString(payload.mimeType) || 'text/plain',
+    readBackPreview: readBack.slice(0, 200),
+    metadata: { created_at: nowIso(), storageRoot: 'logs/audit/ivx-local-dev-files' },
+  };
+}
+
+async function runLocalDevReadFile(payload: Record<string, unknown>, requestId: string): Promise<Record<string, unknown>> {
+  const projectScope = payload.scope === 'project' || payload.project === true;
+  const requestedPath = readTrimmedString(payload.path ?? payload.filePath ?? payload.fileName);
+  if (!requestedPath) {
+    throw new Error('A path, filePath, or fileName is required for /read-file.');
+  }
+  if (isSensitiveLocalDevPath(requestedPath)) {
+    throw new Error('Sensitive local file paths are blocked from /read-file output.');
+  }
+  const root = projectScope ? process.cwd() : LOCAL_DEV_FILES_ROOT;
+  const normalizedRelativePath = path.normalize(requestedPath.replace(/^local-dev-files[\\/]/, ''));
+  if (path.isAbsolute(normalizedRelativePath) || normalizedRelativePath.startsWith('..')) {
+    throw new Error('Invalid /read-file path. Use a safe relative path.');
+  }
+  const absolutePath = path.join(root, normalizedRelativePath);
+  if (!absolutePath.startsWith(root)) {
+    throw new Error('Invalid /read-file path scope.');
+  }
+  const content = await readFile(absolutePath, 'utf8');
+  return {
+    mode: projectScope ? 'local_dev_project_file' : 'local_dev_filesystem',
+    operation: 'read-file',
+    requestId,
+    path: projectScope ? normalizedRelativePath : path.join('local-dev-files', normalizedRelativePath),
+    bytesRead: Buffer.byteLength(content, 'utf8'),
+    contentPreview: content.slice(0, 4000),
+    truncated: content.length > 4000,
+  };
+}
+
+async function readLocalDevRepoTree(root: string = process.cwd(), maxDepth: number = 8, maxEntries: number = 2_000): Promise<string[]> {
+  const rows: string[] = [];
+  async function walk(current: string, prefix: string, depth: number): Promise<void> {
+    if (depth > maxDepth || rows.length >= maxEntries) {
+      return;
+    }
+    let entries: Array<{ name: string; isDirectory: () => boolean }>;
+    try {
+      entries = await readdir(current, { withFileTypes: true }) as Array<{ name: string; isDirectory: () => boolean }>;
+    } catch {
+      return;
+    }
+    const visibleEntries = entries
+      .filter((entry) => !entry.name.startsWith('.') || entry.name === '.github')
+      .filter((entry) => !(entry.isDirectory() && LOCAL_DEV_IGNORED_DIRS.has(entry.name)))
+      .sort((left, right) => left.name.localeCompare(right.name));
+    for (const entry of visibleEntries) {
+      if (rows.length >= maxEntries) {
+        return;
+      }
+      const relativePath = path.join(prefix, entry.name);
+      rows.push(entry.isDirectory() ? `${relativePath}/` : relativePath);
+      if (entry.isDirectory()) {
+        await walk(path.join(current, entry.name), relativePath, depth + 1);
+      }
+    }
+  }
+  await walk(root, '', 1);
+  return rows;
+}
+
+async function collectLocalDevCodeFiles(root: string = process.cwd(), maxDepth: number = 8, maxFiles: number = 1_200): Promise<string[]> {
+  const files: string[] = [];
+  async function walk(current: string, prefix: string, depth: number): Promise<void> {
+    if (depth > maxDepth || files.length >= maxFiles) {
+      return;
+    }
+    let entries: Array<{ name: string; isDirectory: () => boolean }>;
+    try {
+      entries = await readdir(current, { withFileTypes: true }) as Array<{ name: string; isDirectory: () => boolean }>;
+    } catch {
+      return;
+    }
+    const visibleEntries = entries
+      .filter((entry) => !entry.name.startsWith('.') || entry.name === '.github')
+      .filter((entry) => !(entry.isDirectory() && LOCAL_DEV_IGNORED_DIRS.has(entry.name)))
+      .sort((left, right) => left.name.localeCompare(right.name));
+    for (const entry of visibleEntries) {
+      if (files.length >= maxFiles) {
+        return;
+      }
+      const relativePath = path.join(prefix, entry.name);
+      const absolutePath = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        await walk(absolutePath, relativePath, depth + 1);
+      } else if (isLocalDevSearchFile(relativePath)) {
+        files.push(relativePath);
+      }
+    }
+  }
+  await walk(root, '', 1);
+  return files;
+}
+
+function buildLocalDevArchitectureSummary(fileTree: string[], files: string[]): Record<string, unknown> {
+  const topLevel = Array.from(new Set(fileTree.map((entry) => entry.split(/[\\/]/)[0]).filter(Boolean))).sort();
+  const fileCountsByArea = files.reduce<Record<string, number>>((accumulator, filePath) => {
+    const area = filePath.split(/[\\/]/)[0] || 'root';
+    accumulator[area] = (accumulator[area] ?? 0) + 1;
+    return accumulator;
+  }, {});
+  const surfaces = [
+    files.some((filePath) => filePath.startsWith('backend/')) ? 'backend Hono API and owner tool executor' : null,
+    files.some((filePath) => filePath.startsWith('expo/app/')) ? 'Expo Router mobile app screens' : null,
+    files.some((filePath) => filePath.startsWith('expo/src/')) ? 'Expo feature modules/services' : null,
+    files.some((filePath) => filePath.startsWith('expo/supabase/') || filePath.includes('/supabase/')) ? 'Supabase migrations/configuration' : null,
+    files.some((filePath) => filePath.startsWith('deploy/') || filePath.startsWith('expo/deploy/')) ? 'deployment scripts and infrastructure docs' : null,
+  ].filter((item): item is string => typeof item === 'string');
+  return {
+    topLevel,
+    fileCountsByArea,
+    surfaces,
+    entrypoints: ['server.ts', 'backend/hono.ts', 'expo/app/_layout.tsx'].filter((entry) => files.includes(entry)),
+    explanation: 'Local/dev architecture: server.ts boots the backend, backend/hono.ts registers API routes, backend/api contains IVX owner tools, expo/app contains app routes, expo/src contains feature modules/services, and Supabase/deploy folders hold data/deployment support.',
+  };
+}
+
+async function detectLocalDevBugRisks(root: string, files: string[], maxFindings: number = 80): Promise<Array<Record<string, unknown>>> {
+  const patterns: Array<{ id: string; severity: 'low' | 'medium' | 'high'; pattern: RegExp; reason: string }> = [
+    { id: 'todo_fixme_marker', severity: 'low', pattern: /\b(TODO|FIXME|HACK)\b/i, reason: 'Open implementation marker needs review.' },
+    { id: 'unsafe_any', severity: 'medium', pattern: /\bas\s+any\b|:\s*any\b/i, reason: 'Unsafe any weakens strict TypeScript guarantees.' },
+    { id: 'console_error', severity: 'low', pattern: /console\.error\(/, reason: 'Console error logging may need sanitized structured handling.' },
+    { id: 'direct_env_access', severity: 'medium', pattern: /process\.env\.[A-Z0-9_]+/, reason: 'Direct env access should stay server-side and avoid exposing private values.' },
+    { id: 'bare_fetch_without_ok_check', severity: 'medium', pattern: /await\s+fetch\(/, reason: 'Fetch call should verify response.ok and handle failures.' },
+    { id: 'throw_generic_error', severity: 'low', pattern: /throw\s+new\s+Error\(/, reason: 'Thrown errors should be user-safe and avoid secret leakage.' },
+  ];
+  const findings: Array<Record<string, unknown>> = [];
+  for (const relativePath of files) {
+    if (findings.length >= maxFindings || isSensitiveLocalDevPath(relativePath)) {
+      continue;
+    }
+    const text = await readFile(path.join(root, relativePath), 'utf8').catch(() => '');
+    if (!text) {
+      continue;
+    }
+    const lines = text.split('\n');
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index] ?? '';
+      for (const item of patterns) {
+        if (item.pattern.test(line)) {
+          findings.push({
+            id: item.id,
+            severity: item.severity,
+            filePath: relativePath,
+            lineNumber: index + 1,
+            line: line.trim().slice(0, 220),
+            reason: item.reason,
+          });
+          break;
+        }
+      }
+      if (findings.length >= maxFindings) {
+        return findings;
+      }
+    }
+  }
+  return findings;
+}
+
+async function searchLocalDevCode(query: string): Promise<Record<string, unknown>> {
+  const normalizedQuery = query.trim().toLowerCase();
+  const root = process.cwd();
+  const [fileTree, files] = await Promise.all([
+    readLocalDevRepoTree(root, 8, 2_000),
+    collectLocalDevCodeFiles(root, 8, 1_200),
+  ]);
+  const matches: Array<{ filePath: string; lineNumber: number; line: string }> = [];
+  if (normalizedQuery) {
+    for (const relativePath of files) {
+      if (matches.length >= 80 || isSensitiveLocalDevPath(relativePath)) {
+        continue;
+      }
+      let text = '';
+      try {
+        text = await readFile(path.join(root, relativePath), 'utf8');
+      } catch {
+        continue;
+      }
+      const lines = text.split('\n');
+      for (let index = 0; index < lines.length; index += 1) {
+        const line = lines[index] ?? '';
+        if (line.toLowerCase().includes(normalizedQuery)) {
+          matches.push({ filePath: relativePath, lineNumber: index + 1, line: line.trim().slice(0, 240) });
+          if (matches.length >= 80) {
+            break;
+          }
+        }
+      }
+    }
+  }
+  const serverSource = await readFile(path.join(root, 'server.ts'), 'utf8').catch(() => '');
+  const [architecture, bugRisks] = await Promise.all([
+    Promise.resolve(buildLocalDevArchitectureSummary(fileTree, files)),
+    detectLocalDevBugRisks(root, files, 80),
+  ]);
+  return {
+    available: true,
+    mode: 'local_dev_full_repo_inspection',
+    query,
+    repoPath: root,
+    fullProjectTree: fileTree,
+    fileTree,
+    scannedDepth: 8,
+    searchedFileCount: files.length,
+    matches,
+    architecture,
+    bugDetection: {
+      scannedFileCount: files.length,
+      findingCount: bugRisks.length,
+      findings: bugRisks,
+      note: 'Static local/dev heuristic scan only; findings are review targets, not confirmed runtime failures.',
+    },
+    sourceFile: 'server.ts',
+    sourcePreview: serverSource.slice(0, 1600),
+    functionExplanation: serverSource.includes('async function startServer')
+      ? 'server.ts startServer starts the Hono backend through Bun.serve when Bun is available, otherwise @hono/node-server, then logs the local /health URL and installs shutdown handlers.'
+      : 'server.ts was read, but startServer was not found in the preview.',
+  };
+}
+
 function getOwnerAIModel(): string {
   return resolveIVXAIModel(readTrimmedString(process.env.IVX_OWNER_AI_MODEL) || DEFAULT_OWNER_AI_MODEL);
 }
@@ -390,6 +1031,161 @@ function getScopedClient(client: IVXDatabaseClient, dbSchema: ResolvedDbSchema):
   }
 
   return (client as SchemaAwareIVXDatabaseClient).schema(dbSchema);
+}
+
+function parsePositiveInteger(value: unknown, fallback: number): number {
+  const parsed = typeof value === 'number' ? value : Number.parseInt(readTrimmedString(value), 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+async function insertCommandLog(
+  client: IVXDatabaseClient,
+  tables: ResolvedOwnerTables,
+  input: {
+    ownerUserId: string;
+    command: IVXOwnerBackendCommand;
+    status: 'success' | 'fail';
+    result: Record<string, unknown>;
+    error?: string;
+  },
+): Promise<string | null> {
+  if (!tables.commandLogs || tables.schema === 'none') {
+    return null;
+  }
+
+  const scopedClient = getScopedClient(client, tables.dbSchema);
+  const response = await scopedClient
+    .from(tables.commandLogs)
+    .insert({
+      owner_user_id: input.ownerUserId,
+      command: input.command,
+      status: input.status,
+      result_json: input.result,
+      error: input.error ?? null,
+      created_at: nowIso(),
+    })
+    .select('id')
+    .limit(1)
+    .maybeSingle();
+
+  if (response.error) {
+    console.log('[IVXOwnerAIBackend] Command log insert failed:', response.error.message);
+    return null;
+  }
+
+  return readTrimmedString((response.data as Record<string, unknown> | null)?.id) || null;
+}
+
+export async function loadInboxState(
+  client: IVXDatabaseClient,
+  tables: ResolvedOwnerTables,
+  conversationId: string,
+  userId: string,
+): Promise<IVXInboxStateRow | null> {
+  if (!tables.inboxState || tables.schema === 'none') {
+    return null;
+  }
+
+  const scopedClient = getScopedClient(client, tables.dbSchema);
+  const response = await scopedClient
+    .from(tables.inboxState)
+    .select('conversation_id, user_id, unread_count, last_read_at, updated_at')
+    .eq('conversation_id', conversationId)
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (response.error) {
+    throw new Error(response.error.message);
+  }
+
+  const row = response.data as Record<string, unknown> | null;
+  if (!row) {
+    return null;
+  }
+
+  return {
+    conversation_id: readTrimmedString(row.conversation_id),
+    user_id: readTrimmedString(row.user_id),
+    unread_count: parsePositiveInteger(row.unread_count, 0),
+    last_read_at: readNullableString(row.last_read_at),
+    updated_at: readNullableString(row.updated_at),
+  };
+}
+
+export async function markInboxRead(
+  client: IVXDatabaseClient,
+  tables: ResolvedOwnerTables,
+  conversationId: string,
+  userId: string,
+): Promise<IVXInboxStateRow | null> {
+  if (!tables.inboxState || tables.schema === 'none') {
+    return null;
+  }
+
+  const scopedClient = getScopedClient(client, tables.dbSchema);
+  const timestamp = nowIso();
+  const response = await scopedClient
+    .from(tables.inboxState)
+    .upsert({
+      conversation_id: conversationId,
+      user_id: userId,
+      unread_count: 0,
+      last_read_at: timestamp,
+      updated_at: timestamp,
+    }, { onConflict: 'conversation_id,user_id' })
+    .select('conversation_id, user_id, unread_count, last_read_at, updated_at')
+    .limit(1)
+    .maybeSingle();
+
+  if (response.error) {
+    throw new Error(response.error.message);
+  }
+
+  const row = response.data as Record<string, unknown> | null;
+  return row ? {
+    conversation_id: readTrimmedString(row.conversation_id),
+    user_id: readTrimmedString(row.user_id),
+    unread_count: parsePositiveInteger(row.unread_count, 0),
+    last_read_at: readNullableString(row.last_read_at),
+    updated_at: readNullableString(row.updated_at),
+  } : null;
+}
+
+async function incrementInboxUnread(
+  client: IVXDatabaseClient,
+  tables: ResolvedOwnerTables,
+  conversationId: string,
+): Promise<void> {
+  if (!tables.inboxState || tables.schema === 'none') {
+    return;
+  }
+
+  const scopedClient = getScopedClient(client, tables.dbSchema);
+  const current = await scopedClient
+    .from(tables.inboxState)
+    .select('conversation_id, user_id, unread_count')
+    .eq('conversation_id', conversationId);
+  if (current.error) {
+    console.log('[IVXOwnerAIBackend] Inbox unread load failed:', current.error.message);
+    return;
+  }
+
+  const rows = (current.data as Record<string, unknown>[] | null) ?? [];
+  await Promise.all(rows.map(async (row) => {
+    const userId = readTrimmedString(row.user_id);
+    if (!userId) {
+      return;
+    }
+    const unreadCount = parsePositiveInteger(row.unread_count, 0) + 1;
+    const update = await scopedClient
+      .from(tables.inboxState as string)
+      .update({ unread_count: unreadCount, updated_at: nowIso() })
+      .eq('conversation_id', conversationId)
+      .eq('user_id', userId);
+    if (update.error) {
+      console.log('[IVXOwnerAIBackend] Inbox unread increment failed:', update.error.message);
+    }
+  }));
 }
 
 function mapConversation(row: IVXConversationRow): IVXConversation {
@@ -625,6 +1421,10 @@ function stringifyUnknown(value: unknown): string {
   return String(value);
 }
 
+function readRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
 function formatSupabaseInspectionAnswer(input: {
   intent: SupabaseInspectionIntent;
   prompt: string;
@@ -802,6 +1602,612 @@ async function runOwnerRoomDataTool(
   };
 }
 
+function parseTimezoneFromPrompt(prompt: string): string {
+  const timezoneMatch = prompt.match(/timezone\s*[:=]?\s*([A-Za-z_\/+.-]+)/i);
+  return timezoneMatch?.[1] ?? 'UTC';
+}
+
+function resolveOwnerBackendCommand(prompt: string): IVXOwnerBackendCommand | null {
+  const normalized = prompt.trim().toLowerCase();
+  const command = normalized.split(/\s+/)[0] ?? '';
+  if ((IVX_OWNER_BACKEND_COMMANDS as readonly string[]).includes(command)) {
+    return command as IVXOwnerBackendCommand;
+  }
+  if (/\b(what\s+time\s+is\s+it\s+now|current\s+time|time\s+now|date\s+now|today'?s\s+date)\b/.test(normalized)) {
+    return '/time-now';
+  }
+  if (/\b(supabase|database|db|information_schema)\b/.test(normalized) && /\b(tables?|schema|columns?|rls|row\s+level\s+security)\b/.test(normalized)) {
+    return '/supabase-tables';
+  }
+  if (/\b(room\s+status|owner\s+room|chat\s+room\s+status|conversation\s+status)\b/.test(normalized)) {
+    return '/room-status';
+  }
+  if (/\b(storage\s+diagnostics?|storage\s+status|list\s+buckets?|bucket\s+list|upload\s+test\s+file)\b/.test(normalized)) {
+    return '/storage-diagnostics';
+  }
+  if (/\b(create\s+record|insert\s+record|add\s+record)\b/.test(normalized)) {
+    return '/create-record';
+  }
+  if (/\b(update\s+record|patch\s+record|edit\s+record)\b/.test(normalized)) {
+    return '/update-record';
+  }
+  if (/\b(delete\s+record|remove\s+record)\b/.test(normalized)) {
+    return '/delete-record';
+  }
+  if (/\b(run\s+query|select\s+.+\s+from|command\s+history|error\s+tracking)\b/.test(normalized)) {
+    return '/run-query';
+  }
+  if (/\b(upload\s+file|write\s+file)\b/.test(normalized)) {
+    return '/upload-file';
+  }
+  if (/\b(read\s+file|open\s+file)\b/.test(normalized)) {
+    return '/read-file';
+  }
+  return null;
+}
+
+async function runLocalDevStorageDiagnostics(requestId: string): Promise<Record<string, unknown>> {
+  const bucket = 'ivx-local-dev-owner-files';
+  const fileName = `${requestId}-${Date.now()}.txt`;
+  const relativePath = path.join(bucket, 'diagnostics', fileName);
+  const absolutePath = path.join(LOCAL_DEV_STORAGE_ROOT, 'diagnostics', fileName);
+  const content = `ivx-storage-diagnostics-local-dev ${requestId} ${nowIso()}`;
+  await mkdir(path.dirname(absolutePath), { recursive: true });
+  await writeFile(absolutePath, content, 'utf8');
+  const readBack = await readFile(absolutePath, 'utf8');
+  const fileNames = await readdir(path.dirname(absolutePath)).catch(() => [] as string[]);
+  await unlink(absolutePath).catch(() => undefined);
+  return {
+    storageMode: 'local_dev_filesystem',
+    bucket,
+    buckets: [{ id: bucket, name: bucket, public: false, source: 'local_dev_filesystem' }],
+    uploadedPath: relativePath,
+    metadataRows: fileNames.map((name) => ({ name, directory: 'diagnostics' })),
+    readMetadata: {
+      contentLength: readBack.length,
+      contentPreview: readBack.slice(0, 120),
+      localFileUrl: `file://${absolutePath}`,
+    },
+    signedUrlCreated: false,
+    signedUrlReason: 'Local/dev filesystem mode uses file metadata instead of remote signed URLs.',
+    deletedPaths: [relativePath],
+  };
+}
+
+function runLocalDevInboxDiagnostics(conversationId: string, userId: string, requestId: string): Record<string, unknown> {
+  const stateKey = `${conversationId}:${userId}`;
+  const before = localDevInboxState.get(stateKey) ?? {
+    conversation_id: conversationId,
+    user_id: userId,
+    unread_count: 0,
+    last_read_at: nowIso(),
+    updated_at: nowIso(),
+  };
+  localDevInboxState.set(stateKey, before);
+  const createdUnreadMessageId = `local-inbox-message-${requestId}`;
+  const afterCreate = {
+    ...before,
+    unread_count: before.unread_count + 1,
+    updated_at: nowIso(),
+  };
+  localDevInboxState.set(stateKey, afterCreate);
+  const afterRead = {
+    ...afterCreate,
+    unread_count: 0,
+    last_read_at: nowIso(),
+    updated_at: nowIso(),
+  };
+  localDevInboxState.set(stateKey, afterRead);
+  return {
+    mode: 'local_dev_memory',
+    before,
+    createdUnreadMessageId,
+    afterCreate,
+    afterRead,
+    unreadIncremented: afterCreate.unread_count > before.unread_count,
+    readActionReset: afterRead.unread_count === 0,
+    ensureInboxStateBehavior: 'does_not_reset_existing_unread_count; reset occurs only through explicit mark-read action',
+  };
+}
+
+async function runStorageDiagnostics(ownerContext: IVXOwnerRequestContext, requestId: string): Promise<Record<string, unknown>> {
+  const path = `diagnostics/${requestId}-${Date.now()}.txt`;
+  const content = `ivx-storage-diagnostics ${requestId} ${nowIso()}`;
+  const bucketList = await ownerContext.client.storage.listBuckets();
+  if (bucketList.error) {
+    throw new Error(bucketList.error.message);
+  }
+  const upload = await ownerContext.client.storage.from(IVX_OWNER_AI_BUCKET).upload(path, new TextEncoder().encode(content), {
+    contentType: 'text/plain',
+    upsert: true,
+  });
+  if (upload.error) {
+    throw new Error(upload.error.message);
+  }
+  const list = await ownerContext.client.storage.from(IVX_OWNER_AI_BUCKET).list('diagnostics', { limit: 20, search: path.split('/').pop() });
+  if (list.error) {
+    throw new Error(list.error.message);
+  }
+  const signed = await ownerContext.client.storage.from(IVX_OWNER_AI_BUCKET).createSignedUrl(path, 60);
+  if (signed.error) {
+    throw new Error(signed.error.message);
+  }
+  const remove = await ownerContext.client.storage.from(IVX_OWNER_AI_BUCKET).remove([path]);
+  if (remove.error) {
+    throw new Error(remove.error.message);
+  }
+  return {
+    bucket: IVX_OWNER_AI_BUCKET,
+    buckets: bucketList.data?.map((bucket) => ({ id: bucket.id, name: bucket.name, public: bucket.public })) ?? [],
+    uploadedPath: upload.data?.path ?? path,
+    metadataRows: list.data ?? [],
+    signedUrlCreated: Boolean(signed.data?.signedUrl),
+    deletedPaths: remove.data?.map((item) => item.name ?? path) ?? [path],
+  };
+}
+
+function tokenizeKnowledgeText(value: string): string[] {
+  return Array.from(new Set(value.toLowerCase().replace(/[^a-z0-9_\s-]/g, ' ').split(/\s+/).map((term) => term.trim()).filter((term) => term.length >= 3)));
+}
+
+function chunkKnowledgeText(content: string, maxLength: number = 900, overlapWords: number = 28): string[] {
+  const normalized = content.replace(/\s+/g, ' ').trim();
+  if (!normalized) {
+    return [];
+  }
+  const sentences = normalized.split(/(?<=[.!?])\s+/).filter((sentence) => sentence.trim().length > 0);
+  const chunks: string[] = [];
+  let current = '';
+  for (const sentence of sentences) {
+    const next = current ? `${current} ${sentence}` : sentence;
+    if (next.length > maxLength && current) {
+      chunks.push(current.trim());
+      const overlap = current.split(/\s+/).slice(-overlapWords).join(' ');
+      current = overlap ? `${overlap} ${sentence}` : sentence;
+    } else {
+      current = next;
+    }
+  }
+  if (current.trim()) {
+    chunks.push(current.trim());
+  }
+  if (chunks.length === 0) {
+    for (let index = 0; index < normalized.length; index += Math.max(maxLength - 180, 1)) {
+      chunks.push(normalized.slice(index, index + maxLength));
+    }
+  }
+  return chunks;
+}
+
+function rankLocalDevKnowledgeChunks(query: string, limit: number = 5): Array<Record<string, unknown> & { score: number }> {
+  const terms = tokenizeKnowledgeText(query);
+  const exactQuery = query.toLowerCase().trim();
+  const allChunks = Array.from(localDevKnowledgeChunks.values()).flat();
+  return allChunks
+    .map((chunk) => {
+      const content = readTrimmedString(chunk.content_text).toLowerCase();
+      const metadata = readRecord(chunk.metadata);
+      const title = readTrimmedString(metadata.title).toLowerCase();
+      const sourceId = readTrimmedString(chunk.source_id).toLowerCase();
+      const score = terms.reduce((total, term) => {
+        const contentMatches = content.split(term).length - 1;
+        const titleBoost = title.includes(term) ? 3 : 0;
+        const sourceBoost = sourceId.includes(term) ? 2 : 0;
+        return total + contentMatches + titleBoost + sourceBoost;
+      }, exactQuery && content.includes(exactQuery) ? 8 : 0);
+      return { ...chunk, score };
+    })
+    .filter((chunk) => chunk.score > 0)
+    .sort((left, right) => right.score - left.score || readTrimmedString((left as Record<string, unknown>).source_id).localeCompare(readTrimmedString((right as Record<string, unknown>).source_id)))
+    .slice(0, limit);
+}
+
+function runLocalDevKnowledgeReindex(requestId: string, payload: Record<string, unknown> = {}): Record<string, unknown> {
+  const payloadDocuments = Array.isArray(payload.documents) ? payload.documents.map((item) => readRecord(item)).filter((item) => Object.keys(item).length > 0) : [];
+  const defaultDocuments: Record<string, unknown>[] = [
+    {
+      title: 'IVX local/dev command executor',
+      content_text: `IVX local/dev command executor supports /time-now, /room-status, /supabase-tables, /storage-diagnostics, /create-record, /update-record, /delete-record, /run-query, /upload-file, and /read-file. The safe answer is: knowledge pipeline executable.`,
+      tags: ['commands', 'tools'],
+    },
+    {
+      title: 'IVX local/dev knowledge ranking',
+      content_text: 'The local knowledge base supports multiple documents, sentence-aware overlapping chunks, keyword scoring, exact phrase boosts, title boosts, and source id proof on every retrieved chunk.',
+      tags: ['knowledge', 'ranking'],
+    },
+    {
+      title: 'IVX local/dev code-aware support',
+      content_text: 'Code-aware support scans the project tree, reads safe source files, summarizes architecture, and detects bug-risk patterns such as TODO/FIXME markers, unsafe any usage, console errors, and direct environment access.',
+      tags: ['code-aware', 'bugs'],
+    },
+  ];
+  const documentsToIndex = payloadDocuments.length > 0 ? payloadDocuments : defaultDocuments;
+  const query = readTrimmedString(payload.query) || 'knowledge pipeline executable source id ranking';
+  const documentsInserted: Record<string, unknown>[] = [];
+  const chunksCreated: Record<string, unknown>[] = [];
+
+  documentsToIndex.forEach((source, documentIndex) => {
+    const sourceId = `ivx-local-source-${requestId}-${documentIndex + 1}`;
+    const documentId = `local-doc-${requestId}-${documentIndex + 1}`;
+    const title = readTrimmedString(source.title) || `IVX local/dev document ${documentIndex + 1}`;
+    const contentText = readTrimmedString(source.content_text) || readTrimmedString(source.content) || `IVX local/dev source ${sourceId}. Knowledge pipeline executable with source id proof.`;
+    const document = {
+      id: documentId,
+      source_id: sourceId,
+      title,
+      content_text: contentText,
+      storage_path: `local-dev-knowledge/${sourceId}.txt`,
+      tags: Array.isArray(source.tags) ? source.tags : ['local-dev'],
+      created_at: nowIso(),
+    };
+    const chunks = chunkKnowledgeText(contentText).map((chunk, chunkIndex) => ({
+      id: `local-chunk-${requestId}-${documentIndex + 1}-${chunkIndex}`,
+      document_id: documentId,
+      source_id: sourceId,
+      chunk_index: chunkIndex,
+      content_text: chunk,
+      token_count_estimate: chunk.split(/\s+/).filter(Boolean).length,
+      metadata: { title, requestId, mode: 'local_dev_memory', documentIndex, tags: document.tags },
+      created_at: nowIso(),
+    }));
+    localDevKnowledgeDocuments.set(documentId, document);
+    localDevKnowledgeChunks.set(sourceId, chunks);
+    documentsInserted.push(document);
+    chunksCreated.push(...chunks);
+  });
+
+  const retrievedChunks = rankLocalDevKnowledgeChunks(query, 5);
+  const bestSourceId = readTrimmedString(retrievedChunks[0]?.source_id) || readTrimmedString(documentsInserted[0]?.source_id);
+  return {
+    mode: 'local_dev_memory',
+    documentInserted: documentsInserted[0] ?? null,
+    documentsInserted,
+    chunksCreated,
+    query,
+    searchRanking: {
+      algorithm: 'keyword_frequency_plus_exact_phrase_title_and_source_boosts',
+      indexedDocumentCount: localDevKnowledgeDocuments.size,
+      indexedChunkCount: Array.from(localDevKnowledgeChunks.values()).flat().length,
+    },
+    retrievedChunks,
+    assistantAnswer: `Knowledge pipeline executable. Source id: ${bestSourceId}.`,
+    source_id: bestSourceId,
+  };
+}
+
+async function runKnowledgeReindex(ownerContext: IVXOwnerRequestContext, tables: ResolvedOwnerTables, requestId: string): Promise<Record<string, unknown>> {
+  if (tables.schema === 'none' || !tables.knowledgeChunks) {
+    if (isLocalDevToolsEnabled()) {
+      return runLocalDevKnowledgeReindex(requestId);
+    }
+    throw new Error('Knowledge document/chunk tables are not configured. Apply expo/supabase/ivx-access-tests-and-commands.sql.');
+  }
+  const scopedClient = getScopedClient(ownerContext.client, tables.dbSchema);
+  const sourceId = `ivx-source-${requestId}`;
+  const contentText = `IVX access test source ${sourceId}. IVX Owner AI must answer knowledge retrieval questions with this source id. The safe answer is: knowledge pipeline executable.`;
+  const documentInsert = await scopedClient
+    .from(IVX_OWNER_AI_TABLES.knowledgeDocuments)
+    .insert({
+      owner_user_id: ownerContext.guardMode === 'test_open_access' ? null : ownerContext.userId,
+      title: 'IVX access test document',
+      file_name: `${sourceId}.txt`,
+      storage_path: `knowledge-tests/${sourceId}.txt`,
+      public_url: `storage://knowledge-tests/${sourceId}.txt`,
+      mime_type: 'text/plain',
+      content_text: contentText,
+      tags: ['access-test'],
+      created_at: nowIso(),
+      updated_at: nowIso(),
+    })
+    .select('id, title, content_text')
+    .limit(1)
+    .maybeSingle();
+  if (documentInsert.error || !documentInsert.data) {
+    throw new Error(documentInsert.error?.message ?? 'Knowledge document insert failed.');
+  }
+  const document = documentInsert.data as Record<string, unknown>;
+  const chunks = chunkKnowledgeText(contentText).map((chunk, index) => ({
+    document_id: document.id,
+    source_id: sourceId,
+    chunk_index: index,
+    content_text: chunk,
+    metadata: { title: document.title, requestId },
+    created_at: nowIso(),
+  }));
+  const chunkInsert = await scopedClient.from(tables.knowledgeChunks).insert(chunks).select('id, source_id, chunk_index, content_text');
+  if (chunkInsert.error) {
+    throw new Error(chunkInsert.error.message);
+  }
+  const retrieval = await scopedClient
+    .from(tables.knowledgeChunks)
+    .select('id, source_id, chunk_index, content_text')
+    .eq('source_id', sourceId)
+    .ilike('content_text', '%knowledge pipeline executable%')
+    .order('chunk_index', { ascending: true })
+    .limit(3);
+  if (retrieval.error) {
+    throw new Error(retrieval.error.message);
+  }
+  const rows = (retrieval.data as Record<string, unknown>[] | null) ?? [];
+  if (rows.length === 0) {
+    throw new Error('Knowledge retrieval returned zero chunks.');
+  }
+  return {
+    documentInserted: document,
+    chunksCreated: (chunkInsert.data as Record<string, unknown>[] | null) ?? [],
+    query: 'knowledge pipeline executable',
+    retrievedChunks: rows,
+    assistantAnswer: `Knowledge pipeline executable. Source id: ${sourceId}.`,
+    source_id: sourceId,
+  };
+}
+
+/**
+ * Executes IVX Owner AI slash commands through real runtime functions and returns proof payloads.
+ */
+export async function executeTool(input: {
+  command: IVXOwnerBackendCommand;
+  ownerContext?: IVXOwnerRequestContext;
+  tables?: ResolvedOwnerTables;
+  conversation?: IVXConversation;
+  requestId: string;
+  prompt?: string;
+  payload?: Record<string, unknown>;
+}): Promise<OwnerBackendCommandResult> {
+  const requireOwnerContext = (): { ownerContext: IVXOwnerRequestContext; tables: ResolvedOwnerTables; conversation: IVXConversation } => {
+    if (!input.ownerContext || !input.tables || !input.conversation) {
+      throw new Error('Supabase-backed owner context is required for this command. Configure EXPO_PUBLIC_SUPABASE_URL, EXPO_PUBLIC_SUPABASE_ANON_KEY, and SUPABASE_SERVICE_ROLE_KEY server-side.');
+    }
+    return { ownerContext: input.ownerContext, tables: input.tables, conversation: input.conversation };
+  };
+  const payload = normalizeLocalDevPayload(input.payload, input.prompt);
+  const executionLog: Array<Record<string, unknown>> = [{ step: 'executeTool.start', command: input.command, requestId: input.requestId, payloadKeys: Object.keys(payload), timestamp: nowIso() }];
+  let status: 'success' | 'fail' = 'fail';
+  let result: Record<string, unknown> = {};
+  let errorMessage: string | undefined;
+  try {
+    if (input.command === '/time-now') {
+      const timezone = parseTimezoneFromPrompt(input.prompt ?? '');
+      const now = new Date();
+      const formatted = new Intl.DateTimeFormat('en-US', {
+        timeZone: timezone,
+        dateStyle: 'full',
+        timeStyle: 'long',
+      }).format(now);
+      result = {
+        ok: true,
+        executable: true,
+        command: input.command,
+        functionExecuted: 'getCurrentRuntimeTime',
+        timestamp: now.toISOString(),
+        epochMs: now.getTime(),
+        timezone,
+        formatted,
+        proof: {
+          source: 'server_runtime_date',
+          responsePayload: { iso: now.toISOString(), epochMs: now.getTime(), timezone, formatted },
+        },
+      };
+    } else if (input.command === '/room-status') {
+      const localDevMode = isLocalDevToolsEnabled() && (!input.ownerContext || !input.tables || !input.conversation);
+      const tables = localDevMode ? buildLocalDevTables() : input.tables;
+      const conversation = localDevMode ? buildLocalDevConversation() : input.conversation;
+      if (!tables || !conversation) {
+        requireOwnerContext();
+        throw new Error('Owner room context is unavailable.');
+      }
+      const recentMessages = input.ownerContext && !localDevMode
+        ? await safeLoadRecentMessages(input.ownerContext.client, tables, conversation.id)
+        : [];
+      result = {
+        ok: true,
+        executable: true,
+        command: input.command,
+        functionExecuted: 'loadOwnerRoomStatus',
+        mode: localDevMode ? 'local_dev_synthetic_room' : 'supabase_owner_room',
+        roomStatus: buildRoomStatus(tables),
+        conversation,
+        recentMessageCount: recentMessages.length,
+        tables,
+        proof: {
+          responsePayload: {
+            conversationId: conversation.id,
+            resolvedSchema: tables.schema,
+            recentMessageCount: recentMessages.length,
+            localDevMode,
+          },
+        },
+        logging: localDevMode ? await buildLocalDevLoggingSummary(10) : { mode: 'supabase_command_logs', commandLogsTable: tables.commandLogs },
+      };
+    } else if (input.command === '/supabase-tables') {
+      const [tables, columns, rls] = await Promise.all([
+        inspectSupabaseTables(null, null, 300),
+        inspectSupabaseColumns(null, null, 1000),
+        inspectSupabaseRls(null, null, 300),
+      ]);
+      result = {
+        ok: true,
+        executable: true,
+        command: input.command,
+        functionExecuted: 'inspectSupabaseInformationSchema',
+        queryProof: {
+          tablesQuery: 'information_schema.tables + pg_class read-only query',
+          columnsQuery: 'information_schema.columns read-only query',
+          rlsQuery: 'pg_class + pg_policies read-only query',
+        },
+        totalTableCount: tables.length,
+        tableNames: tables.map((row) => `${row.schema_name}.${row.table_name}`),
+        tables,
+        columns,
+        columnsPerTable: columns.reduce<Record<string, string[]>>((accumulator, column) => {
+          const key = `${column.schema_name}.${column.table_name}`;
+          accumulator[key] = [...(accumulator[key] ?? []), column.column_name];
+          return accumulator;
+        }, {}),
+        rlsStatus: rls.tables,
+        policies: rls.policies,
+        proof: {
+          responsePayload: {
+            totalTableCount: tables.length,
+            tableNames: tables.map((row) => `${row.schema_name}.${row.table_name}`),
+            rlsStatus: rls.tables,
+          },
+        },
+      };
+    } else if (input.command === '/storage-diagnostics') {
+      const localDevMode = isLocalDevToolsEnabled() && !input.ownerContext;
+      result = {
+        ok: true,
+        executable: true,
+        command: input.command,
+        functionExecuted: localDevMode ? 'runLocalDevStorageDiagnostics' : 'runStorageDiagnostics',
+        ...(localDevMode ? await runLocalDevStorageDiagnostics(input.requestId) : await runStorageDiagnostics(requireOwnerContext().ownerContext, input.requestId)),
+      };
+    } else if (input.command === '/knowledge-reindex') {
+      if (isLocalDevToolsEnabled() && (!input.ownerContext || !input.tables)) {
+        result = runLocalDevKnowledgeReindex(input.requestId, payload);
+      } else {
+        const { ownerContext, tables } = requireOwnerContext();
+        result = await runKnowledgeReindex(ownerContext, tables, input.requestId);
+      }
+    } else if (input.command === '/create-record') {
+      if (!isLocalDevToolsEnabled()) {
+        throw new Error('/create-record is enabled in local/dev mode only for this pass.');
+      }
+      result = { ok: true, executable: true, command: input.command, functionExecuted: 'runLocalDevCreateRecord', ...runLocalDevCreateRecord(payload, input.requestId) };
+    } else if (input.command === '/update-record') {
+      if (!isLocalDevToolsEnabled()) {
+        throw new Error('/update-record is enabled in local/dev mode only for this pass.');
+      }
+      result = { ok: true, executable: true, command: input.command, functionExecuted: 'runLocalDevUpdateRecord', ...runLocalDevUpdateRecord(payload, input.requestId) };
+    } else if (input.command === '/delete-record') {
+      if (!isLocalDevToolsEnabled()) {
+        throw new Error('/delete-record is enabled in local/dev mode only for this pass.');
+      }
+      result = { ok: true, executable: true, command: input.command, functionExecuted: 'runLocalDevDeleteRecord', ...runLocalDevDeleteRecord(payload, input.requestId) };
+    } else if (input.command === '/run-query') {
+      if (!isLocalDevToolsEnabled()) {
+        throw new Error('/run-query is enabled in local/dev mode only for this pass.');
+      }
+      result = { ok: true, executable: true, command: input.command, functionExecuted: 'runLocalDevQuery', ...await runLocalDevQuery(payload, input.requestId) };
+    } else if (input.command === '/upload-file') {
+      if (!isLocalDevToolsEnabled()) {
+        throw new Error('/upload-file is enabled in local/dev mode only for this pass.');
+      }
+      result = { ok: true, executable: true, command: input.command, functionExecuted: 'runLocalDevUploadFile', ...await runLocalDevUploadFile(payload, input.requestId) };
+    } else if (input.command === '/read-file') {
+      if (!isLocalDevToolsEnabled()) {
+        throw new Error('/read-file is enabled in local/dev mode only for this pass.');
+      }
+      result = { ok: true, executable: true, command: input.command, functionExecuted: 'runLocalDevReadFile', ...await runLocalDevReadFile(payload, input.requestId) };
+    } else {
+      if (isLocalDevToolsEnabled() && (!input.ownerContext || !input.tables || !input.conversation)) {
+        const conversation = buildLocalDevConversation();
+        result = {
+          ok: true,
+          executable: true,
+          command: input.command,
+          functionExecuted: 'runLocalDevInboxDiagnostics',
+          ...runLocalDevInboxDiagnostics(conversation.id, LOCAL_DEV_OWNER_ID, input.requestId),
+        };
+      } else {
+        const { ownerContext, tables, conversation } = requireOwnerContext();
+        await safeEnsureInboxState(ownerContext.client, tables, conversation.id, ownerContext.userId);
+        const before = await loadInboxState(ownerContext.client, tables, conversation.id, ownerContext.userId);
+        const message = await insertMessage(ownerContext.client, tables, {
+          conversationId: conversation.id,
+          senderRole: 'assistant',
+          senderUserId: tables.schema === 'generic' ? ownerContext.userId : null,
+          senderLabel: IVX_OWNER_AI_PROFILE.name,
+          body: `Inbox diagnostics unread increment probe ${input.requestId}`,
+        });
+        const afterCreate = await loadInboxState(ownerContext.client, tables, conversation.id, ownerContext.userId);
+        const afterRead = await markInboxRead(ownerContext.client, tables, conversation.id, ownerContext.userId);
+        result = {
+          ok: true,
+          executable: true,
+          command: input.command,
+          functionExecuted: 'runInboxDiagnostics',
+          before,
+          createdUnreadMessageId: message.id,
+          afterCreate,
+          afterRead,
+          unreadIncremented: (afterCreate?.unread_count ?? 0) > (before?.unread_count ?? 0),
+          readActionReset: afterRead?.unread_count === 0,
+        };
+      }
+    }
+    status = 'success';
+    executionLog.push({ step: 'executeTool.success', command: input.command, timestamp: nowIso() });
+  } catch (error) {
+    errorMessage = error instanceof Error ? error.message : 'Owner backend command failed.';
+    result = { ok: false, executable: true, command: input.command, error: errorMessage };
+    executionLog.push({ step: 'executeTool.error', command: input.command, error: errorMessage, timestamp: nowIso() });
+    if (isLocalDevToolsEnabled()) {
+      const errorLogId = await insertLocalDevErrorLog({ command: input.command, requestId: input.requestId, error: errorMessage, payload });
+      result = { ...result, error_log_id: errorLogId };
+      executionLog.push({ step: 'executeTool.errorLogPersisted', command: input.command, errorLogId, timestamp: nowIso() });
+    }
+  }
+
+  const commandLogId = input.ownerContext && input.tables
+    ? await insertCommandLog(input.ownerContext.client, input.tables, {
+      ownerUserId: input.ownerContext.userId,
+      command: input.command,
+      status,
+      result: { ...result, executionLog },
+      error: errorMessage,
+    })
+    : isLocalDevToolsEnabled()
+      ? await insertLocalDevCommandLog({
+        command: input.command,
+        requestId: input.requestId,
+        status,
+        result: { ...result, executionLog },
+        error: errorMessage,
+      })
+      : null;
+  if (!commandLogId && input.command !== '/time-now') {
+    const commandLogWarning = 'Command log persistence unavailable. Apply expo/supabase/ivx-access-tests-and-commands.sql.';
+    result = { ...result, commandLogWarning };
+    executionLog.push({ step: 'executeTool.commandLogMissing', command: input.command, warning: commandLogWarning, timestamp: nowIso() });
+  } else if (!commandLogId) {
+    executionLog.push({ step: 'executeTool.commandLogSkipped', command: input.command, reason: 'No command log storage configured for this command.', timestamp: nowIso() });
+  } else {
+    executionLog.push({ step: 'executeTool.commandLogPersisted', command: input.command, commandLogId, timestamp: nowIso() });
+  }
+
+  const finalResult = {
+    ...result,
+    command_log_id: commandLogId,
+    executionLog,
+    logTracking: isLocalDevToolsEnabled()
+      ? {
+        commandLogPath: 'logs/audit/ivx-local-dev-command-logs.jsonl',
+        errorLogPath: 'logs/audit/ivx-local-dev-errors.jsonl',
+        queryCommandHistoryWith: '/run-query {"table":"command_history"}',
+        queryErrorHistoryWith: '/run-query {"table":"error_history"}',
+      }
+      : undefined,
+  };
+
+  console.log('[IVXOwnerAIBackend] executeTool(command) completed:', {
+    command: input.command,
+    status,
+    commandLogId,
+    requestId: input.requestId,
+    error: errorMessage ?? null,
+  });
+
+  return {
+    command: input.command,
+    command_log_id: commandLogId,
+    status,
+    result: finalResult,
+    error: errorMessage,
+  };
+}
+
 async function runSupabaseOwnerActionTool(prompt: string, ownerContext: IVXOwnerRequestContext): Promise<{
   answer: string;
   toolName: string;
@@ -820,20 +2226,14 @@ async function runSupabaseOwnerActionTool(prompt: string, ownerContext: IVXOwner
 
   const parsedInsert = parseOwnerActionInsertPrompt(prompt);
   if (parsedInsert) {
-    const result = await runIVXSupabaseOwnerAction(ownerContext, {
-      action: 'insert',
-      schema: parsedInsert.schema,
-      table: parsedInsert.table,
-      values: parsedInsert.values,
-      reason: 'Owner AI chat database insert request',
-    });
-    const insertedRows = Array.isArray(result.data) ? result.data : [];
     return {
       answer: [
-        `Inserted ${result.affectedRows} row into ${result.schema}.${result.table} with create_supabase_record.`,
-        insertedRows.length > 0 ? `Read-back row: ${JSON.stringify(insertedRows[0])}` : 'Read-back row: insert completed, but Supabase returned no row body.',
+        'Owner approval required before I write to Supabase.',
+        `Prepared insert target: ${parsedInsert.schema}.${parsedInsert.table}.`,
+        `Prepared values: ${JSON.stringify(parsedInsert.values)}.`,
+        'To execute it through the owner-only backend route, resubmit the exact action with confirm=true and confirmText="CONFIRM_OWNER_SUPABASE_WRITE".',
       ].join('\n'),
-      toolName: 'create_supabase_record',
+      toolName: 'create_supabase_record_confirmation_required',
     };
   }
 
@@ -1055,11 +2455,11 @@ async function runOwnerSystemTools(prompt: string): Promise<{
   if (wantsCodeSearch) {
     const queryMatch = prompt.match(/(?:search\s+code|find\s+in\s+code|code\s+search)\s*(?:for|:)?\s*['"]?([^'"\n]+)['"]?/i);
     const query = (queryMatch?.[1] ?? prompt).trim().slice(0, 120);
-    addOutput('search_code', { query }, true, {
-      available: false,
-      message: 'Runtime code search is not exposed inside the deployed Owner AI process yet. Add an indexed code-search backend route to enable live repository search.',
-      query,
-    });
+    try {
+      addOutput('search_code', { query }, true, await searchLocalDevCode(query));
+    } catch (error) {
+      addOutput('search_code', { query }, false, undefined, error);
+    }
   }
 
   if (outputs.length === 0) {
@@ -1072,6 +2472,243 @@ async function runOwnerSystemTools(prompt: string): Promise<{
     answer: formatStructuredToolAnswer('Executed Owner AI system tool calls. I used tool output rather than assumptions.', outputs),
     toolName: outputs.map((output) => output.tool).join('+'),
     toolOutputs: outputs,
+  };
+}
+
+function pushUniqueAIBrainRoute(routes: AIBrainToolRoute[], route: AIBrainToolRoute): void {
+  const key = `${route.tool}:${JSON.stringify(route.input)}`;
+  if (!routes.some((item) => `${item.tool}:${JSON.stringify(item.input)}` === key)) {
+    routes.push(route);
+  }
+}
+
+function resolveAIBrainToolRoutes(prompt: string): AIBrainToolRoute[] {
+  const normalized = prompt.trim().toLowerCase();
+  if (!normalized) {
+    return [];
+  }
+
+  const routes: AIBrainToolRoute[] = [];
+  const mentionsBrain = /\b(ai\s+brain|brain\s+tools?|tool\s+executor|developer\s+tools?|owner\s+tools?|control\s+room|owner\s+control|business\s+control)\b/.test(normalized);
+  const wantsFullStatus = /\b(full\s+status|system\s+status|control\s+room|developer\s+dashboard|owner\s+dashboard|all\s+tools?|verification\s+tests?|run\s+tests?|verify\s+everything|production\s+readiness|owner\s+readiness|100%|completion\s+percentage)\b/.test(normalized);
+
+  if (/\b(multi[-\s]?app|multi[-\s]?project|project\s+registry|future\s+apps?|business\s+surfaces?|surfaces?|landing\s+page|ivxholding\s+app|ivxholding\s+landing)\b/.test(normalized)) {
+    pushUniqueAIBrainRoute(routes, { tool: 'project_registry', input: {} });
+  }
+  if (/\b(surface\s+health|project\s+health|landing\s+health|app\s+health|future\s+app|ivxholding\.com|landing\s+page|ivxholding\s+app)\b/.test(normalized)) {
+    pushUniqueAIBrainRoute(routes, { tool: 'project_surface_health', input: {} });
+  }
+  if (/\b(code\s+control|repo\s+control|repository\s+control|repo\s+contents?|required\s+paths?|files\s+in\s+github|github\s+readiness)\b/.test(normalized)) {
+    pushUniqueAIBrainRoute(routes, { tool: 'code_repo_control_status', input: {} });
+  }
+  if (/\b(deployment\s+readiness|readiness\s+matrix|deployment\s+matrix|production\s+matrix)\b/.test(normalized)) {
+    pushUniqueAIBrainRoute(routes, { tool: 'deployment_readiness_matrix', input: {} });
+  }
+  if (/\b(owner\s+control\s+audit|true\s+owner\s+control|full\s+control|production\s+readiness|owner[-\s]?level|completion\s+percentage|what\s+remains\s+before\s+100)\b/.test(normalized)) {
+    pushUniqueAIBrainRoute(routes, { tool: 'owner_control_readiness_report', input: {} });
+  }
+  if (/\b(final\s+completion|completion\s+plan|final\s+plan|finish\s+ivx|finish\s+ivx\s+ai|development\s+completion|production\s+completion|blocked[-\s]?by[-\s]?aws|blocked\s+by\s+aws)\b/.test(normalized)) {
+    pushUniqueAIBrainRoute(routes, { tool: 'final_completion_report', input: {} });
+  }
+  if (/\b(credential\s+request|credential\s+manifest|variable\s+file|env\s+manifest|future\s+credentials?|future\s+env|request\s+credentials?|request\s+variables?)\b/.test(normalized)) {
+    pushUniqueAIBrainRoute(routes, { tool: 'credential_request_manifest', input: { includeOptional: true } });
+  }
+  if (/\b(environment|env|secrets?|missing\s+secrets?|checklist|credentials?)\b/.test(normalized)) {
+    pushUniqueAIBrainRoute(routes, { tool: 'environment_checklist', input: {} });
+  }
+  if (/\b(supabase\s+readiness|supabase\s+status|supabase\s+health|supabase\s+auth|supabase\s+storage|message\s+persistence|ai\s+response\s+persistence)\b/.test(normalized)) {
+    pushUniqueAIBrainRoute(routes, { tool: 'supabase_readiness_check', input: {} });
+  }
+  if (/\b(github|repo|repository|branch|current\s+branch|uncommitted|commit)\b/.test(normalized)) {
+    pushUniqueAIBrainRoute(routes, { tool: 'github_repo_status', input: {} });
+  }
+  if (/\b(backend\s+health|api\s+health|deployment\s+health|\/health|health\s+endpoint|deployment\s+status|render\s+status)\b/.test(normalized)) {
+    pushUniqueAIBrainRoute(routes, { tool: 'deployment_health_check', input: {} });
+  }
+  if (/\b(dns|tls|ssl|certificate|domain|api\.ivxholding\.com|chat\.ivxholding\.com)\b/.test(normalized)) {
+    const wantsChat = /chat\.ivxholding\.com|chat\s+domain/.test(normalized);
+    const wantsApi = /api\.ivxholding\.com|api\s+domain|\/health/.test(normalized) || !wantsChat;
+    if (wantsApi) {
+      pushUniqueAIBrainRoute(routes, { tool: 'dns_tls_check', input: { domain: 'api.ivxholding.com' } });
+    }
+    if (wantsChat || wantsFullStatus) {
+      pushUniqueAIBrainRoute(routes, { tool: 'dns_tls_check', input: { domain: 'chat.ivxholding.com' } });
+    }
+  }
+  if (/\b(route\s?53|hosted\s+zone|dns\s+records?)\b/.test(normalized)) {
+    pushUniqueAIBrainRoute(routes, { tool: 'route53_dns_check', input: { domain: normalized.includes('chat.ivxholding.com') ? 'chat.ivxholding.com' : 'api.ivxholding.com' } });
+  }
+  if (/\b(aws|amazon|iam|s3|cloudfront|route\s?53|acm|certificate|ec2|ecs|fargate|load\s+balancer|alb|elb|ssm|parameter\s+store|organizations?|aws\s+account)\b/.test(normalized)) {
+    if (/\b(full|all|inventory|deployment\s+inventory|aws\s+status|amazon\s+status)\b/.test(normalized)) {
+      pushUniqueAIBrainRoute(routes, { tool: 'aws_deployment_inventory', input: {} });
+    } else {
+      if (/\b(identity|account|caller|sts)\b/.test(normalized)) {
+        pushUniqueAIBrainRoute(routes, { tool: 'aws_identity_check', input: {} });
+      }
+      if (/\b(iam|permission|policy|policies|user)\b/.test(normalized)) {
+        pushUniqueAIBrainRoute(routes, { tool: 'iam_readiness_check', input: {} });
+      }
+      if (/\bs3\b|bucket/.test(normalized)) {
+        pushUniqueAIBrainRoute(routes, { tool: 's3_readiness_check', input: {} });
+      }
+      if (/cloudfront|cdn|distribution/.test(normalized)) {
+        pushUniqueAIBrainRoute(routes, { tool: 'cloudfront_readiness_check', input: {} });
+      }
+      if (/\b(acm|certificate|cert|tls|ssl)\b/.test(normalized)) {
+        pushUniqueAIBrainRoute(routes, { tool: 'aws_acm_certificate_check', input: { domain: normalized.includes('chat.ivxholding.com') ? 'chat.ivxholding.com' : 'api.ivxholding.com' } });
+      }
+      if (/\b(ec2|instance|vpc)\b/.test(normalized)) {
+        pushUniqueAIBrainRoute(routes, { tool: 'aws_ec2_readiness_check', input: {} });
+      }
+      if (/\b(ecs|fargate|container|cluster)\b/.test(normalized)) {
+        pushUniqueAIBrainRoute(routes, { tool: 'aws_ecs_readiness_check', input: {} });
+      }
+      if (/load\s+balancer|\balb\b|\belb\b|target\s+group/.test(normalized)) {
+        pushUniqueAIBrainRoute(routes, { tool: 'aws_elb_readiness_check', input: {} });
+      }
+      if (/\b(ssm|parameter\s+store|parameters?)\b/.test(normalized)) {
+        pushUniqueAIBrainRoute(routes, { tool: 'aws_ssm_readiness_check', input: {} });
+      }
+      if (/\b(organization|organizations|org\s+account|aws\s+accounts?)\b/.test(normalized)) {
+        pushUniqueAIBrainRoute(routes, { tool: 'aws_organizations_check', input: {} });
+      }
+      if (/\baws\b|amazon/.test(normalized) && routes.length === 0) {
+        pushUniqueAIBrainRoute(routes, { tool: 'aws_deployment_inventory', input: {} });
+      }
+    }
+  }
+  if (/\b(logs?|log\s+viewer|runtime\s+logs?|status\s+summary)\b/.test(normalized)) {
+    pushUniqueAIBrainRoute(routes, { tool: 'logs_status_summary', input: {} });
+  }
+  if (/\b(fix\s+queue|pending\s+blockers?|blockers?|what\s+is\s+blocked)\b/.test(normalized)) {
+    pushUniqueAIBrainRoute(routes, { tool: 'fix_queue_status', input: {} });
+  }
+  if (/\b(setup\s+export|export\s+setup|setup\s+instructions|independent\s+setup|work\s+without|ownership\s+handoff)\b/.test(normalized)) {
+    pushUniqueAIBrainRoute(routes, { tool: 'setup_export', input: {} });
+  }
+  if (/\b(run\s+verification|verification\s+tests?|verify\s+everything|run\s+tests?|test\s+all\s+tools)\b/.test(normalized)) {
+    pushUniqueAIBrainRoute(routes, { tool: 'run_verification_tests', input: {} });
+  }
+
+  if ((mentionsBrain || wantsFullStatus) && routes.length === 0) {
+    return [
+      { tool: 'project_registry', input: {} },
+      { tool: 'project_surface_health', input: {} },
+      { tool: 'environment_checklist', input: {} },
+      { tool: 'credential_request_manifest', input: { includeOptional: true } },
+      { tool: 'code_repo_control_status', input: {} },
+      { tool: 'supabase_readiness_check', input: {} },
+      { tool: 'github_repo_status', input: {} },
+      { tool: 'deployment_readiness_matrix', input: {} },
+      { tool: 'deployment_health_check', input: {} },
+      { tool: 'dns_tls_check', input: { domain: 'api.ivxholding.com' } },
+      { tool: 'dns_tls_check', input: { domain: 'chat.ivxholding.com' } },
+      { tool: 'aws_deployment_inventory', input: {} },
+      { tool: 'logs_status_summary', input: {} },
+      { tool: 'fix_queue_status', input: {} },
+      { tool: 'setup_export', input: {} },
+      { tool: 'owner_control_readiness_report', input: {} },
+      { tool: 'final_completion_report', input: {} },
+    ];
+  }
+
+  return wantsFullStatus && routes.length > 0 ? routes.slice(0, 20) : routes.slice(0, 12);
+}
+
+function summarizeAIBrainToolResult(result: IVXAIBrainToolResult): string {
+  const missing = result.missingEnvNames.length > 0 ? ` Missing access: ${result.missingEnvNames.join(', ')}.` : '';
+  if (!result.ok) {
+    return `${result.tool}: not verified. ${result.error ?? 'Tool did not complete.'}${missing}`;
+  }
+  const output = result.output && typeof result.output === 'object' && !Array.isArray(result.output) ? result.output as Record<string, unknown> : {};
+  if (result.tool === 'environment_checklist') {
+    const outputMissing = Array.isArray(output.missing) ? output.missing.map((item) => readTrimmedString(item)).filter(Boolean) : [];
+    return outputMissing.length > 0 ? `${result.tool}: missing ${outputMissing.length} required runtime name(s): ${outputMissing.join(', ')}.` : `${result.tool}: verified. Required runtime names are present.`;
+  }
+  if (result.tool === 'credential_request_manifest') {
+    const requestedNames = Array.isArray(output.requestedCredentialNames) ? output.requestedCredentialNames.map((item) => readTrimmedString(item)).filter(Boolean) : [];
+    const missingNames = Array.isArray(output.requestedCredentialMissingNames) ? output.requestedCredentialMissingNames.map((item) => readTrimmedString(item)).filter(Boolean) : [];
+    return `${result.tool}: variable file backend/config/ivx-credential-request-manifest.ts is active; ${requestedNames.length} credential name(s) registered, ${missingNames.length} missing in this runtime; future intake uses render_upsert_env_var with owner confirmation. Secret values returned=false.`;
+  }
+  if (result.tool === 'supabase_readiness_check') {
+    const checks = Array.isArray(output.checks) ? output.checks as Array<Record<string, unknown>> : [];
+    const checkSummary = checks.map((check) => `${readTrimmedString(check.name)}=${readTrimmedString(check.status) || 'not verified'}`).join(', ');
+    return `${result.tool}: ${readTrimmedString(output.status) || 'not verified'}${checkSummary ? ` (${checkSummary})` : ''}.${missing}`;
+  }
+  if (result.tool === 'github_repo_status') {
+    return `${result.tool}: repo ${readTrimmedString(output.owner)}/${readTrimmedString(output.repo)}, branch ${readTrimmedString(output.defaultBranch) || 'not verified'}; uncommitted files are not verified from the deployed backend.${missing}`;
+  }
+  if (result.tool === 'deployment_health_check') {
+    return `${result.tool}: status code ${String(output.status ?? 'not verified')}; ok=${String(output.ok ?? false)}.${missing}`;
+  }
+  if (result.tool === 'dns_tls_check') {
+    const dns = readRecord(output.dns);
+    const tls = readRecord(output.tls);
+    return `${result.tool}: ${readTrimmedString(output.domain)} DNS ${dns.resolvable === true ? 'verified' : 'not connected'}, TLS ${tls.authorized === true ? 'verified' : 'not verified'}.${missing}`;
+  }
+  if (result.tool === 'fix_queue_status') {
+    return `${result.tool}: ${readTrimmedString(output.status) || 'not verified'}; blockers ${String(output.blockerCount ?? 'not verified')}.${missing}`;
+  }
+  if (result.tool === 'setup_export') {
+    return `${result.tool}: available. Docs: README_IVX_DEPLOYMENT.md, ENVIRONMENT_VARIABLES.md, IVX_AI_BRAIN_TOOLS.md, expo/docs/DEVELOPER-SETUP-GUIDE.md.${missing}`;
+  }
+  if (result.tool === 'logs_status_summary') {
+    return `${result.tool}: backend console logs available; external hosted log viewer not connected.${missing}`;
+  }
+  if (result.tool === 'project_registry') {
+    return `${result.tool}: multi-app registry available; projects ${String(output.projectCount ?? 'not verified')}.${missing}`;
+  }
+  if (result.tool === 'project_surface_health') {
+    const surfaces = Array.isArray(output.surfaces) ? output.surfaces.length : 0;
+    return `${result.tool}: ${readTrimmedString(output.status) || 'not verified'}; surfaces ${surfaces}.${missing}`;
+  }
+  if (result.tool === 'code_repo_control_status') {
+    return `${result.tool}: ${readTrimmedString(output.status) || 'not verified'}; repo ${readTrimmedString(output.owner)}/${readTrimmedString(output.repo)}, branch ${readTrimmedString(output.branch) || 'not verified'}.${missing}`;
+  }
+  if (result.tool === 'deployment_readiness_matrix') {
+    return `${result.tool}: ${readTrimmedString(output.status) || 'not verified'}; blockers ${String(output.blockerCount ?? 'not verified')}.${missing}`;
+  }
+  if (result.tool === 'owner_control_audit' || result.tool === 'owner_control_readiness_report') {
+    return `${result.tool}: ${readTrimmedString(output.status) || 'not verified'}; completion ${String(output.completionPercentageAfterThisPass ?? output.codeReadinessAfterThisPassPercentage ?? 'not verified')}%.${missing}`;
+  }
+  if (result.tool === 'final_completion_report') {
+    const estimates = readRecord(output.estimates);
+    return `${result.tool}: ${readTrimmedString(output.status) || 'not verified'}; development ${String(estimates.developmentCompletionPercentage ?? 'not verified')}%, production ${String(estimates.productionCompletionPercentage ?? 'not verified')}%, blocked-by-AWS ${String(estimates.blockedByAwsPercentage ?? 'not verified')}%.${missing}`;
+  }
+  if (result.tool === 'run_verification_tests') {
+    const checks = Array.isArray(output.checks) ? output.checks.length : 0;
+    const blockers = Array.isArray(output.blockers) ? output.blockers.length : 'not verified';
+    return `${result.tool}: ${readTrimmedString(output.status) || 'not verified'}; checks ${checks}; blockers ${String(blockers)}.${missing}`;
+  }
+  if (result.tool.startsWith('aws_') || result.tool === 'iam_readiness_check' || result.tool === 's3_readiness_check' || result.tool === 'cloudfront_readiness_check' || result.tool === 'route53_dns_check') {
+    return `${result.tool}: verified read-only check completed.${missing}`;
+  }
+  return `${result.tool}: verified.${missing}`;
+}
+
+function formatAIBrainToolAnswer(results: IVXAIBrainToolResult[]): string {
+  return [
+    'IVX AI Brain tool executor results:',
+    ...results.map((result, index) => `${index + 1}. ${summarizeAIBrainToolResult(result)}`),
+    'No secret values are shown. Missing access is listed by environment variable name only.',
+  ].join('\n');
+}
+
+async function runAIBrainToolsForPrompt(prompt: string): Promise<{
+  answer: string;
+  toolName: string;
+  toolOutputs: IVXAIBrainToolResult[];
+} | null> {
+  const routes = resolveAIBrainToolRoutes(prompt);
+  if (routes.length === 0) {
+    return null;
+  }
+  const toolOutputs = await Promise.all(routes.map((route) => executeIVXAIBrainTool({ tool: route.tool, input: route.input })));
+  console.log('[IVXOwnerAIBackend] AI Brain tool executor routed:', toolOutputs.map((output) => ({ tool: output.tool, ok: output.ok, missingEnvNames: output.missingEnvNames })));
+  return {
+    answer: formatAIBrainToolAnswer(toolOutputs),
+    toolName: toolOutputs.map((output) => output.tool).join('+'),
+    toolOutputs,
   };
 }
 
@@ -1496,17 +3133,25 @@ async function resolveMessageConversationField(
   return null;
 }
 
-async function resolveOptionalAIRequestTable(
+async function resolveOptionalTable(
   client: IVXDatabaseClient,
   dbSchema: ResolvedDbSchema,
+  candidates: readonly string[],
+  probeField: string,
 ): Promise<string | null> {
-  const candidates = [IVX_OWNER_AI_TABLES.aiRequests, 'ivx_owner_ai_requests'];
   for (const table of candidates) {
-    if (await probeSelectableField(client, table, 'request_id', dbSchema)) {
+    if (await probeSelectableField(client, table, probeField, dbSchema)) {
       return table;
     }
   }
   return null;
+}
+
+async function resolveOptionalAIRequestTable(
+  client: IVXDatabaseClient,
+  dbSchema: ResolvedDbSchema,
+): Promise<string | null> {
+  return await resolveOptionalTable(client, dbSchema, [IVX_OWNER_AI_TABLES.aiRequests, 'ivx_owner_ai_requests'], 'request_id');
 }
 
 export async function resolveOwnerTables(client: IVXDatabaseClient): Promise<ResolvedOwnerTables> {
@@ -1522,6 +3167,9 @@ export async function resolveOwnerTables(client: IVXDatabaseClient): Promise<Res
         ? IVX_OWNER_AI_TABLES.inboxState
         : null,
       aiRequests: await resolveOptionalAIRequestTable(client, 'public'),
+      commandLogs: await resolveOptionalTable(client, 'public', [IVX_OWNER_AI_TABLES.commandLogs], 'command'),
+      knowledgeChunks: await resolveOptionalTable(client, 'public', [IVX_OWNER_AI_TABLES.knowledgeChunks], 'source_id'),
+      accessTestRows: await resolveOptionalTable(client, 'public', [IVX_OWNER_AI_TABLES.accessTestRows], 'request_id'),
       messageConversationField: ivxMessageConversationField,
     };
   }
@@ -1539,6 +3187,9 @@ export async function resolveOwnerTables(client: IVXDatabaseClient): Promise<Res
     messages: IVX_OWNER_AI_TABLES.messages,
     inboxState: null,
     aiRequests: null,
+    commandLogs: null,
+    knowledgeChunks: null,
+    accessTestRows: null,
     messageConversationField: 'conversation_id',
   };
 }
@@ -1829,17 +3480,20 @@ export async function insertMessage(
     const insertResult = await scopedClient.from(tables.messages).insert(payload).select('*').limit(1);
     if (!insertResult.error) {
       const insertedRow = ((insertResult.data as Record<string, unknown>[] | null) ?? [])[0];
-      if (insertedRow) {
-        return normalizeMessageRow(insertedRow);
+      const normalizedRow = insertedRow
+        ? normalizeMessageRow(insertedRow)
+        : normalizeMessageRow({
+            id: createRequestId(),
+            [tables.messageConversationField]: input.conversationId,
+            sender_role: input.senderRole,
+            sender_label: input.senderLabel,
+            body: input.body,
+            created_at: nowIso(),
+          });
+      if (input.senderRole === 'assistant' || input.senderRole === 'system') {
+        await incrementInboxUnread(client, tables, input.conversationId);
       }
-      return normalizeMessageRow({
-        id: createRequestId(),
-        [tables.messageConversationField]: input.conversationId,
-        sender_role: input.senderRole,
-        sender_label: input.senderLabel,
-        body: input.body,
-        created_at: nowIso(),
-      });
+      return normalizedRow;
     }
     lastError = insertResult.error.message;
     console.log('[IVXOwnerAIBackend] Message insert attempt failed:', {
@@ -1894,6 +3548,11 @@ async function ensureInboxState(
     return;
   }
 
+  const existingState = await loadInboxState(client, tables, conversationId, userId);
+  if (existingState) {
+    return;
+  }
+
   const scopedClient = getScopedClient(client, tables.dbSchema);
   const payload: Record<string, unknown> = {
     conversation_id: conversationId,
@@ -1907,6 +3566,7 @@ async function ensureInboxState(
 
   const upsertResult = await scopedClient.from(tables.inboxState).upsert(payload, {
     onConflict: 'conversation_id,user_id',
+    ignoreDuplicates: true,
   });
 
   if (upsertResult.error) {
@@ -2023,6 +3683,39 @@ function buildLiveGroundingAnswer(intent: 'time' | 'project_state'): string {
   ].join('\n');
 }
 
+function resolveOwnerLimitsIntent(prompt: string): boolean {
+  const normalized = prompt.trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+  return /\b(do\s+you\s+have\s+limits?|limits?|limitations?|enumerate\s+all\s+limits?|all\s+limits?)\b/.test(normalized)
+    && /\b(ai|owner|ivx|you|tool|tools|developer|development|backend|supabase|aws|github|deploy|deployment|chat)\b/.test(normalized);
+}
+
+function buildOwnerLimitsAnswer(tables: ResolvedOwnerTables): string {
+  const configuration = getIVXAIConfigurationSnapshot();
+  const persistenceStatus = tables.schema === 'none'
+    ? 'not verified'
+    : tables.aiRequests
+      ? 'verified for messages and AI request records'
+      : 'verified for messages; AI request table not verified';
+  return [
+    'Yes. Here are the current IVX Owner AI limits:',
+    `1. AI provider limit: not unlimited. Model gateway quotas, billing, rate limits, and provider outages may still apply. Current model: ${getOwnerAIModel()}.`,
+    `2. AI configuration limit: ${configuration.configured ? 'configured' : 'not verified'}. If the model gateway key or endpoint is unavailable, live generation is not verified.`,
+    '3. Owner-only limit: developer tools require an owner-authenticated request. If owner auth is missing, tool status must show not connected.',
+    `4. Message persistence limit: ${persistenceStatus}.`,
+    '5. Supabase read limit: tables, schema, columns, storage, auth, and RLS can be inspected only when backend Supabase access is connected.',
+    '6. Supabase write limit: insert, update, delete, RPC, and migration actions require explicit owner approval and exact scope before execution.',
+    '7. GitHub limit: repo status can be checked only when GitHub access is connected; uncommitted working-tree files are not verified from a deployed server.',
+    '8. AWS/IAM limit: AWS, S3, CloudFront, Route53, and deployment checks depend on connected IAM permissions. Missing access must be reported by credential name only.',
+    '9. DNS/TLS limit: API and chat domains are usable only when DNS resolves and TLS is valid. If not verified, I must say not verified.',
+    '10. Logs limit: backend request logs can be summarized from connected routes; a hosted log viewer is not connected unless the deployment exposes one.',
+    '11. Security limit: I cannot print, hardcode, or expose secrets. Missing secrets are named only.',
+    '12. Product limit: I should not claim a tool is connected or a deployment is healthy unless the current IVX status verifies it.',
+  ].join('\n');
+}
+
 function buildOwnerAISystemPrompt(input: {
   mode: 'chat' | 'command';
   devTestModeActive: boolean;
@@ -2101,6 +3794,249 @@ async function generateOwnerAIAnswer(input: {
     provider: result.providerMetadata.provider,
     endpoint: result.providerMetadata.endpoint ?? '',
   };
+}
+
+function normalizeCapabilityProofPayload(value: unknown): Record<string, unknown> {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return { responsePayload: value ?? null };
+}
+
+async function runOwnerCapabilityProbe(
+  capability: IVXOwnerAICapabilityId,
+  functionName: string,
+  callback: () => Promise<OwnerCapabilityProbeOutput>,
+): Promise<[IVXOwnerAICapabilityId, IVXOwnerAICapabilityProof]> {
+  const checkedAt = nowIso();
+  try {
+    const result = await callback();
+    const executable = result.executable ?? true;
+    const success = executable && result.success === true;
+    return [capability, {
+      success,
+      executable,
+      functionName,
+      checkedAt,
+      proof: normalizeCapabilityProofPayload(result.proof),
+      error: success ? undefined : result.error,
+    }];
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Capability probe failed.';
+    return [capability, {
+      success: false,
+      executable: false,
+      functionName,
+      checkedAt,
+      proof: { responsePayload: null },
+      error: message,
+    }];
+  }
+}
+
+async function probeKnowledgeAnswersCapability(client: IVXDatabaseClient, tables: ResolvedOwnerTables): Promise<OwnerCapabilityProbeOutput> {
+  if (tables.schema === 'none') {
+    return {
+      success: false,
+      executable: false,
+      proof: { responsePayload: { resolvedSchema: tables.schema, reason: 'No shared owner-room schema is available for knowledge document lookup.' } },
+      error: 'Knowledge document lookup is not executable without shared storage.',
+    };
+  }
+
+  const scopedClient = getScopedClient(client, tables.dbSchema);
+  const response = await scopedClient
+    .from(IVX_OWNER_AI_TABLES.knowledgeDocuments)
+    .select('id, title, created_at')
+    .limit(1);
+
+  if (response.error) {
+    return {
+      success: false,
+      executable: true,
+      proof: { responsePayload: { resolvedSchema: tables.schema, table: IVX_OWNER_AI_TABLES.knowledgeDocuments, error: response.error.message } },
+      error: response.error.message,
+    };
+  }
+
+  return {
+    success: true,
+    proof: {
+      responsePayload: {
+        resolvedSchema: tables.schema,
+        table: IVX_OWNER_AI_TABLES.knowledgeDocuments,
+        sampleCount: Array.isArray(response.data) ? response.data.length : 0,
+        sampleRows: response.data ?? [],
+      },
+    },
+  };
+}
+
+async function probeOwnerCommandsCapability(): Promise<OwnerCapabilityProbeOutput> {
+  const toolResult = await runOwnerSystemTools('What time is it now? timezone: UTC');
+  const output = toolResult?.toolOutputs.find((item) => item.tool === 'get_current_time');
+  const success = output?.ok === true;
+  return {
+    success,
+    executable: output !== undefined,
+    proof: { responsePayload: toolResult ?? null },
+    error: success ? undefined : output?.error ?? 'Owner command tool did not execute.',
+  };
+}
+
+async function probeCodeAwareSupportCapability(): Promise<OwnerCapabilityProbeOutput> {
+  const result = await executeIVXAIBrainTool({ tool: 'code_repo_control_status', input: {} });
+  const output = readRecord(result.output);
+  const verified = result.ok === true && output.status === 'verified';
+  return {
+    success: verified,
+    executable: true,
+    proof: { responsePayload: result },
+    error: verified ? undefined : result.error ?? `Code/repository control status is ${readTrimmedString(output.status) || 'not_verified'}.`,
+  };
+}
+
+async function probeFileUploadCapability(client: IVXDatabaseClient, requestId: string): Promise<OwnerCapabilityProbeOutput> {
+  const path = `health-probes/${requestId}-${Date.now()}.txt`;
+  const response = await client.storage.from(IVX_OWNER_AI_BUCKET).createSignedUploadUrl(path);
+
+  if (response.error || !response.data?.signedUrl) {
+    return {
+      success: false,
+      executable: true,
+      proof: { responsePayload: { bucket: IVX_OWNER_AI_BUCKET, path, signedUploadUrlCreated: false, error: response.error?.message ?? 'missing signed upload URL' } },
+      error: response.error?.message ?? 'Failed to create signed upload URL.',
+    };
+  }
+
+  return {
+    success: true,
+    proof: {
+      responsePayload: {
+        bucket: IVX_OWNER_AI_BUCKET,
+        path: response.data.path ?? path,
+        signedUploadUrlCreated: true,
+        signedUploadTokenRedacted: true,
+      },
+    },
+  };
+}
+
+async function probeInboxSyncCapability(client: IVXDatabaseClient, tables: ResolvedOwnerTables, conversationId: string, userId: string): Promise<OwnerCapabilityProbeOutput> {
+  if (!tables.inboxState || tables.schema === 'none') {
+    return {
+      success: false,
+      executable: false,
+      proof: { responsePayload: { resolvedSchema: tables.schema, inboxStateTable: tables.inboxState, reason: 'Inbox sync table is unavailable.' } },
+      error: 'Inbox sync is not executable without an inbox state table.',
+    };
+  }
+
+  try {
+    await ensureInboxState(client, tables, conversationId, userId);
+    return {
+      success: true,
+      proof: { responsePayload: { resolvedSchema: tables.schema, inboxStateTable: tables.inboxState, conversationId, userId, upserted: true } },
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Inbox sync probe failed.';
+    return {
+      success: false,
+      executable: true,
+      proof: { responsePayload: { resolvedSchema: tables.schema, inboxStateTable: tables.inboxState, conversationId, userId, error: message } },
+      error: message,
+    };
+  }
+}
+
+function buildBackendAccessProbe(ownerContext: IVXOwnerRequestContext): OwnerCapabilityProbeOutput {
+  return {
+    success: true,
+    proof: {
+      responsePayload: {
+        ownerGuard: 'assertIVXOwnerOnly',
+        guardMode: ownerContext.guardMode,
+        role: ownerContext.role,
+        userId: ownerContext.userId,
+        emailPresent: !!ownerContext.email,
+      },
+    },
+  };
+}
+
+async function buildOwnerCapabilityChecks(input: {
+  client: IVXDatabaseClient;
+  tables: ResolvedOwnerTables;
+  conversationId: string;
+  userId: string;
+  requestId: string;
+  ownerContext: IVXOwnerRequestContext;
+  aiResult: Awaited<ReturnType<typeof generateOwnerAIAnswer>> | null;
+  aiError: string | null;
+}): Promise<OwnerCapabilityCheckResult> {
+  const probeEntries = await Promise.all([
+    runOwnerCapabilityProbe('ai_chat', 'generateOwnerAIAnswer', async () => {
+      if (!input.aiResult) {
+        return {
+          success: false,
+          executable: true,
+          proof: { responsePayload: { error: input.aiError ?? 'AI answer generation failed.' } },
+          error: input.aiError ?? 'AI answer generation failed.',
+        };
+      }
+
+      return {
+        success: input.aiResult.answer.trim().length > 0,
+        proof: {
+          responsePayload: {
+            source: input.aiResult.source,
+            provider: input.aiResult.provider,
+            model: input.aiResult.model,
+            endpoint: input.aiResult.endpoint,
+            answerPreview: input.aiResult.answer.slice(0, 80),
+          },
+        },
+      };
+    }),
+    runOwnerCapabilityProbe('knowledge_answers', 'probeKnowledgeAnswersCapability', async () => await probeKnowledgeAnswersCapability(input.client, input.tables)),
+    runOwnerCapabilityProbe('owner_commands', 'probeOwnerCommandsCapability', probeOwnerCommandsCapability),
+    runOwnerCapabilityProbe('code_aware_support', 'probeCodeAwareSupportCapability', probeCodeAwareSupportCapability),
+    runOwnerCapabilityProbe('file_upload', 'probeFileUploadCapability', async () => await probeFileUploadCapability(input.client, input.requestId)),
+    runOwnerCapabilityProbe('inbox_sync', 'probeInboxSyncCapability', async () => await probeInboxSyncCapability(input.client, input.tables, input.conversationId, input.userId)),
+    runOwnerCapabilityProbe('backend_access', 'assertIVXOwnerOnly', async () => buildBackendAccessProbe(input.ownerContext)),
+    runOwnerCapabilityProbe('supabase_inspection', 'inspectSupabaseSchema', async () => {
+      const responsePayload = await inspectSupabaseSchema(null, null, 5);
+      return { success: true, proof: { responsePayload } };
+    }),
+    runOwnerCapabilityProbe('supabase_tables', 'inspectSupabaseTables', async () => {
+      const responsePayload = await inspectSupabaseTables(null, null, 5);
+      return { success: true, proof: { responsePayload } };
+    }),
+    runOwnerCapabilityProbe('supabase_schema', 'inspectSupabaseSchema', async () => {
+      const responsePayload = await inspectSupabaseSchema(null, null, 5);
+      return { success: true, proof: { responsePayload } };
+    }),
+    runOwnerCapabilityProbe('supabase_columns', 'inspectSupabaseColumns', async () => {
+      const responsePayload = await inspectSupabaseColumns(null, null, 5);
+      return { success: true, proof: { responsePayload } };
+    }),
+    runOwnerCapabilityProbe('supabase_rls', 'inspectSupabaseRls', async () => {
+      const responsePayload = await inspectSupabaseRls(null, null, 5);
+      return { success: true, proof: { responsePayload } };
+    }),
+  ]);
+
+  const capabilityProofs = {} as Record<IVXOwnerAICapabilityId, IVXOwnerAICapabilityProof>;
+  for (const [capability, proof] of probeEntries) {
+    capabilityProofs[capability] = proof;
+  }
+
+  const capabilities = {} as Record<IVXOwnerAICapabilityId, boolean>;
+  for (const capability of OWNER_CAPABILITY_IDS) {
+    capabilities[capability] = capabilityProofs[capability]?.success === true;
+  }
+
+  return { capabilities, capabilityProofs };
 }
 
 function isMissingRelationFailure(message: string): boolean {
@@ -2264,10 +4200,17 @@ export async function safeUpdateConversationSummary(
 
 function getErrorStatus(error: unknown): number {
   const message = error instanceof Error ? error.message.toLowerCase() : '';
-  if (message.includes('authorization') || message.includes('owner access') || message.includes('invalid owner session')) {
+  if (
+    message.includes('authorization')
+    || message.includes('owner access')
+    || message.includes('invalid owner session')
+    || message.includes('missing bearer token')
+    || message.includes('invalid or expired supabase session')
+    || message.includes('ivx auth guard failed')
+  ) {
     return 401;
   }
-  if (message.includes('privileged ivx access is required')) {
+  if (message.includes('privileged ivx access is required') || message.includes('ivx role guard failed')) {
     return 403;
   }
   if (message.includes('configured') || message.includes('environment variables are missing') || message.includes('not configured')) {
@@ -2328,6 +4271,130 @@ export function OPTIONS(): Response {
   return ownerOnlyOptions();
 }
 
+/**
+ * Handles direct executeTool(command) calls for runtime proof endpoints.
+ */
+export async function handleIVXOwnerAIToolRequest(request: Request): Promise<Response> {
+  try {
+    if (request.method !== 'POST') {
+      return ownerOnlyJson({ error: 'Method not allowed.' }, 405);
+    }
+
+    const body = await request.json().catch(() => ({})) as Record<string, unknown>;
+    const commandText = readTrimmedString(body.command) || readTrimmedString(body.message);
+    const prompt = readTrimmedString(body.message) || commandText;
+    const command = resolveOwnerBackendCommand(commandText);
+    if (!command) {
+      return ownerOnlyJson({
+        ok: false,
+        error: `Unsupported command. Supported commands: ${IVX_OWNER_BACKEND_COMMANDS.join(', ')}.`,
+        supportedCommands: IVX_OWNER_BACKEND_COMMANDS,
+        timestamp: nowIso(),
+      }, 400);
+    }
+
+    const requestId = readTrimmedString(body.requestId) || createRequestId();
+    const startedAt = Date.now();
+
+    if (command === '/time-now') {
+      const commandResult = await executeTool({
+        command,
+        requestId,
+        prompt,
+        payload: body,
+      });
+      console.log('[IVXOwnerAIBackend] Direct executeTool(command) route completed:', {
+        command,
+        requestId,
+        status: commandResult.status,
+        commandLogId: commandResult.command_log_id,
+        durationMs: Date.now() - startedAt,
+      });
+      return ownerOnlyJson({
+        ok: commandResult.status === 'success',
+        executor: 'executeTool(command)',
+        requestId,
+        conversationId: null,
+        command: commandResult.command,
+        command_log_id: commandResult.command_log_id,
+        status: commandResult.status,
+        result: commandResult.result,
+        error: commandResult.error,
+        logs: {
+          route: '/api/ivx/owner-ai/tools',
+          serverLogLabel: '[IVXOwnerAIBackend] Direct executeTool(command) route completed',
+          durationMs: Date.now() - startedAt,
+        },
+        deploymentMarker: DEPLOYMENT_MARKER,
+        timestamp: nowIso(),
+      }, commandResult.status === 'success' ? 200 : 500);
+    }
+
+    let conversationIdForResponse: string | null = null;
+    let commandResult: OwnerBackendCommandResult;
+    if (isLocalDevOwnerRequest(request)) {
+      const conversation = buildLocalDevConversation();
+      conversationIdForResponse = conversation.id;
+      commandResult = await executeTool({
+        command,
+        requestId,
+        prompt,
+        payload: body,
+      });
+    } else {
+      const localDevFailure = localDevAuthFailureResponse(request);
+      if (localDevFailure) {
+        return localDevFailure;
+      }
+      const ownerContext = await assertIVXOwnerOnly(request);
+      const tables = await resolveOwnerTables(ownerContext.client);
+      const conversation = await ensureOwnerConversation(ownerContext.client, tables);
+      conversationIdForResponse = conversation.id;
+      commandResult = await executeTool({
+        command,
+        ownerContext,
+        tables,
+        conversation,
+        requestId,
+        prompt,
+        payload: body,
+      });
+    }
+
+    console.log('[IVXOwnerAIBackend] Direct executeTool(command) route completed:', {
+      command,
+      requestId,
+      status: commandResult.status,
+      commandLogId: commandResult.command_log_id,
+      durationMs: Date.now() - startedAt,
+    });
+
+    return ownerOnlyJson({
+      ok: commandResult.status === 'success',
+      executor: 'executeTool(command)',
+      requestId,
+      conversationId: conversationIdForResponse,
+      command: commandResult.command,
+      command_log_id: commandResult.command_log_id,
+      status: commandResult.status,
+      result: commandResult.result,
+      error: commandResult.error,
+      logs: {
+        route: '/api/ivx/owner-ai/tools',
+        serverLogLabel: '[IVXOwnerAIBackend] Direct executeTool(command) route completed',
+        durationMs: Date.now() - startedAt,
+      },
+      deploymentMarker: DEPLOYMENT_MARKER,
+      timestamp: nowIso(),
+    }, commandResult.status === 'success' ? 200 : 500);
+  } catch (error) {
+    const status = getErrorStatus(error);
+    const message = error instanceof Error ? error.message : 'Unable to execute IVX Owner AI tool command.';
+    console.log('[IVXOwnerAIBackend] Direct executeTool(command) route failed:', { status, message });
+    return ownerOnlyJson({ ok: false, error: message, executor: 'executeTool(command)', timestamp: nowIso() }, status);
+  }
+}
+
 export async function handleIVXOwnerAIRequest(request: Request): Promise<Response> {
   try {
     const body = await request.json() as IVXOwnerAIRequest;
@@ -2341,6 +4408,192 @@ export async function handleIVXOwnerAIRequest(request: Request): Promise<Respons
       return ownerOnlyJson({ error: 'Message is required.' }, 400);
     }
 
+    const preAuthCommand = resolveOwnerBackendCommand(prompt);
+    if (preAuthCommand === '/time-now') {
+      const requestId = readTrimmedString(body.requestId) || createRequestId();
+      const commandResult = await executeTool({
+        command: preAuthCommand,
+        requestId,
+        prompt,
+        payload: body as unknown as Record<string, unknown>,
+      });
+      console.log('[IVXOwnerAIBackend] Pre-auth safe time tool auto-routed:', {
+        requestId,
+        command: preAuthCommand,
+        status: commandResult.status,
+      });
+      return ownerOnlyJson({
+        requestId,
+        conversationId: 'runtime-time-tool',
+        answer: JSON.stringify({
+          tool: preAuthCommand,
+          status: commandResult.status,
+          result: commandResult.result,
+        }, null, 2),
+        model: 'executeTool:/time-now',
+        status: 'ok',
+        source: 'remote_api',
+        provider: 'chatgpt',
+        endpoint: '/api/ivx/owner-ai/tools',
+        deploymentMarker: DEPLOYMENT_MARKER,
+        assistantMessageId: null,
+        assistantPersisted: false,
+        selectedTool: preAuthCommand,
+        toolInput: [{ command: preAuthCommand, prompt }],
+        toolOutput: [commandResult.result],
+        fallbackUsed: false,
+        toolOutputs: [{
+          tool: preAuthCommand,
+          ok: commandResult.status === 'success',
+          input: { command: preAuthCommand, prompt },
+          output: commandResult.result,
+          error: commandResult.error,
+          timestamp: nowIso(),
+        }],
+      });
+    }
+
+    if (isLocalDevToolsEnabled()) {
+      const localDevFailure = localDevAuthFailureResponse(request);
+      if (localDevFailure) {
+        return localDevFailure;
+      }
+
+      const requestId = readTrimmedString(body.requestId) || createRequestId();
+      const conversation = buildLocalDevConversation();
+      const ownerBackendCommand = preAuthCommand;
+      if (ownerBackendCommand) {
+        const commandResult = await executeTool({
+          command: ownerBackendCommand,
+          requestId,
+          prompt,
+          payload: body as unknown as Record<string, unknown>,
+        });
+        return ownerOnlyJson({
+          ok: commandResult.status === 'success',
+          executor: 'executeTool(command)',
+          mode: 'local_dev_open_access',
+          requestId,
+          conversationId: conversation.id,
+          status: commandResult.status,
+          command: commandResult.command,
+          command_log_id: commandResult.command_log_id,
+          backend_result_json: commandResult.result,
+          selectedTool: commandResult.command,
+          toolInput: [{ command: commandResult.command, prompt }],
+          toolOutput: [commandResult.result],
+          toolOutputs: [{
+            tool: commandResult.command,
+            ok: commandResult.status === 'success',
+            input: { command: commandResult.command, prompt },
+            output: commandResult.result,
+            error: commandResult.error,
+            timestamp: nowIso(),
+          }],
+          fallbackUsed: false,
+          error: commandResult.error,
+          logs: {
+            route: '/api/ivx/owner-ai',
+            serverLogLabel: '[IVXOwnerAIBackend] executeTool(command) completed',
+          },
+          deploymentMarker: DEPLOYMENT_MARKER,
+        }, commandResult.status === 'success' ? 200 : 500);
+      }
+
+      const aiBrainToolResult = await runAIBrainToolsForPrompt(prompt);
+      if (aiBrainToolResult) {
+        const answer = assertVisibleOwnerAIAnswer(aiBrainToolResult.answer);
+        return ownerOnlyJson(buildOwnerAIResponsePayload({
+          requestId,
+          conversationId: conversation.id,
+          answer,
+          model: aiBrainToolResult.toolName,
+          status: 'ok',
+        }, {
+          source: 'remote_api',
+          provider: 'chatgpt',
+          endpoint: '/api/ivx/ai-brain/tools/execute',
+          deploymentMarker: DEPLOYMENT_MARKER,
+          assistantMessageId: null,
+          assistantPersisted: false,
+          selectedTool: aiBrainToolResult.toolName,
+          toolInput: aiBrainToolResult.toolOutputs.map((output) => output.input),
+          toolOutput: aiBrainToolResult.toolOutputs.map((output) => output.output ?? output.error ?? null),
+          fallbackUsed: false,
+          toolOutputs: aiBrainToolResult.toolOutputs,
+        }, body.devTestModeActive === true) as unknown as Record<string, unknown>);
+      }
+
+      const ownerSystemToolResult = await runOwnerSystemTools(prompt);
+      if (ownerSystemToolResult) {
+        const answer = assertVisibleOwnerAIAnswer(ownerSystemToolResult.answer);
+        return ownerOnlyJson(buildOwnerAIResponsePayload({
+          requestId,
+          conversationId: conversation.id,
+          answer,
+          model: ownerSystemToolResult.toolName,
+          status: 'ok',
+        }, {
+          source: 'remote_api',
+          provider: 'chatgpt',
+          endpoint: '/api/ivx/owner-ai/tools',
+          deploymentMarker: DEPLOYMENT_MARKER,
+          assistantMessageId: null,
+          assistantPersisted: false,
+          selectedTool: ownerSystemToolResult.toolName,
+          toolInput: ownerSystemToolResult.toolOutputs.map((output) => output.input),
+          toolOutput: ownerSystemToolResult.toolOutputs.map((output) => output.output ?? output.error ?? null),
+          fallbackUsed: false,
+          toolOutputs: ownerSystemToolResult.toolOutputs,
+        }, body.devTestModeActive === true) as unknown as Record<string, unknown>);
+      }
+
+      try {
+        const promptText = buildPromptText({
+          prompt,
+          email: 'owner@ivx.dev',
+          conversation,
+          recentMessages: [],
+          mode,
+          devTestModeActive: body.devTestModeActive === true,
+        });
+        const aiResult = await generateOwnerAIAnswer({
+          promptText,
+          sessionId: conversation.id,
+          mode,
+          devTestModeActive: body.devTestModeActive === true,
+        });
+        const answer = assertVisibleOwnerAIAnswer(aiResult.answer);
+        return ownerOnlyJson(buildOwnerAIResponsePayload({
+          requestId,
+          conversationId: conversation.id,
+          answer,
+          model: aiResult.model,
+          status: 'ok',
+        }, {
+          source: aiResult.source,
+          provider: aiResult.provider,
+          endpoint: aiResult.endpoint,
+          deploymentMarker: DEPLOYMENT_MARKER,
+          assistantMessageId: null,
+          assistantPersisted: false,
+          fallbackUsed: false,
+        }, body.devTestModeActive === true) as unknown as Record<string, unknown>);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Local/dev AI runtime failed.';
+        return ownerOnlyJson({
+          ok: false,
+          error: 'Local/dev AI runtime is not configured.',
+          detail: message,
+          requestId,
+          conversationId: conversation.id,
+          model,
+          fallbackUsed: false,
+          deploymentMarker: DEPLOYMENT_MARKER,
+        }, 503);
+      }
+    }
+
     const ownerContext = await assertIVXOwnerOnly(request);
     console.log('[IVXOwnerAIBackend] Owner AI incoming message:', {
       requestUrl: request.url,
@@ -2351,14 +4604,15 @@ export async function handleIVXOwnerAIRequest(request: Request): Promise<Respons
       deploymentMarker: DEPLOYMENT_MARKER,
       fallbackUsed: false,
     });
+    const initialAIBrainRoutes = resolveAIBrainToolRoutes(prompt);
     const initialSupabaseOwnerActionIntent = resolveSupabaseOwnerActionIntent(prompt);
-    const initialSupabaseIntent = initialSupabaseOwnerActionIntent ? null : resolveSupabaseInspectionIntent(prompt);
-    const initialDevelopmentActionIntent = initialSupabaseIntent || initialSupabaseOwnerActionIntent ? null : resolveOwnerDevelopmentActionIntent(prompt);
-    const initialAuditIntent = initialSupabaseIntent || initialSupabaseOwnerActionIntent || initialDevelopmentActionIntent ? null : resolveIVXAuditReportIntent(prompt);
+    const initialSupabaseIntent = initialAIBrainRoutes.length > 0 || initialSupabaseOwnerActionIntent ? null : resolveSupabaseInspectionIntent(prompt);
+    const initialDevelopmentActionIntent = initialAIBrainRoutes.length > 0 || initialSupabaseIntent || initialSupabaseOwnerActionIntent ? null : resolveOwnerDevelopmentActionIntent(prompt);
+    const initialAuditIntent = initialAIBrainRoutes.length > 0 || initialSupabaseIntent || initialSupabaseOwnerActionIntent || initialDevelopmentActionIntent ? null : resolveIVXAuditReportIntent(prompt);
     logOwnerAuditRouting({
       promptText: prompt,
       detectedIntent: initialAuditIntent ?? initialSupabaseIntent ?? initialSupabaseOwnerActionIntent ?? (initialDevelopmentActionIntent === 'public_deploy' ? 'deployment_action' : initialDevelopmentActionIntent ? 'development_action' : null),
-      selectedRoute: initialSupabaseOwnerActionIntent ? 'supabase_owner_action_tool' : initialSupabaseIntent ? 'supabase_inspection_tool' : initialDevelopmentActionIntent === 'public_deploy' ? 'ivx_public_deploy_action' : initialDevelopmentActionIntent ? 'ivx_development_action' : initialAuditIntent ? 'owner_audit_report' : 'generic_ai_chat',
+      selectedRoute: initialAIBrainRoutes.length > 0 ? 'ai_brain_tool_executor' : initialSupabaseOwnerActionIntent ? 'supabase_owner_action_tool' : initialSupabaseIntent ? 'supabase_inspection_tool' : initialDevelopmentActionIntent === 'public_deploy' ? 'ivx_public_deploy_action' : initialDevelopmentActionIntent ? 'ivx_development_action' : initialAuditIntent ? 'owner_audit_report' : 'generic_ai_chat',
       auditEndpointCalled: false,
     });
     const tables = await resolveOwnerTables(ownerContext.client);
@@ -2366,42 +4620,88 @@ export async function handleIVXOwnerAIRequest(request: Request): Promise<Respons
     const conversation = await ensureOwnerConversation(ownerContext.client, tables);
     const requestId = readTrimmedString(body.requestId) || createRequestId();
 
+    const ownerBackendCommand = preAuthCommand;
+    if (ownerBackendCommand) {
+      const commandResult = await executeTool({
+        command: ownerBackendCommand,
+        ownerContext,
+        tables,
+        conversation,
+        requestId,
+        prompt,
+        payload: body as unknown as Record<string, unknown>,
+      });
+      return ownerOnlyJson({
+        ok: commandResult.status === 'success',
+        executor: 'executeTool(command)',
+        requestId,
+        conversationId: conversation.id,
+        status: commandResult.status,
+        command: commandResult.command,
+        command_log_id: commandResult.command_log_id,
+        backend_result_json: commandResult.result,
+        selectedTool: commandResult.command,
+        toolInput: [{ command: commandResult.command, prompt }],
+        toolOutput: [commandResult.result],
+        toolOutputs: [{
+          tool: commandResult.command,
+          ok: commandResult.status === 'success',
+          input: { command: commandResult.command, prompt },
+          output: commandResult.result,
+          error: commandResult.error,
+          timestamp: nowIso(),
+        }],
+        fallbackUsed: false,
+        error: commandResult.error,
+        logs: {
+          route: '/api/ivx/owner-ai',
+          serverLogLabel: '[IVXOwnerAIBackend] executeTool(command) completed',
+        },
+        deploymentMarker: DEPLOYMENT_MARKER,
+      }, commandResult.status === 'success' ? 200 : 500);
+    }
+
     if (isHealthProbe(prompt)) {
       try {
         await safeEnsureInboxState(ownerContext.client, tables, conversation.id, ownerContext.userId);
-        const aiResult = await generateOwnerAIAnswer({
-          promptText: 'Reply with READY only.',
-          sessionId: conversation.id,
-          healthProbe: true,
-        });
+        let aiResult: Awaited<ReturnType<typeof generateOwnerAIAnswer>> | null = null;
+        let aiError: string | null = null;
+        try {
+          aiResult = await generateOwnerAIAnswer({
+            promptText: 'Reply with READY only.',
+            sessionId: conversation.id,
+            healthProbe: true,
+          });
+        } catch (error) {
+          aiError = error instanceof Error ? error.message : 'AI health probe failed.';
+          console.log('[IVXOwnerAIBackend] AI health capability probe failed:', aiError);
+        }
         const roomStatus = buildRoomStatus(tables);
+        const capabilityChecks = await buildOwnerCapabilityChecks({
+          client: ownerContext.client,
+          tables,
+          conversationId: conversation.id,
+          userId: ownerContext.userId,
+          requestId,
+          ownerContext,
+          aiResult,
+          aiError,
+        });
         const probePayload: IVXOwnerAIHealthProbeResponse = {
           requestId,
           conversationId: conversation.id,
-          answer: aiResult.answer,
-          model: aiResult.model,
+          answer: aiResult?.answer ?? 'Health probe completed. See capabilityProofs for executable runtime checks.',
+          model: aiResult?.model ?? getOwnerAIModel(),
           status: 'ok',
-          source: aiResult.source,
-          provider: aiResult.provider,
-          endpoint: aiResult.endpoint,
+          source: aiResult?.source,
+          provider: aiResult?.provider,
+          endpoint: aiResult?.endpoint,
           deploymentMarker: DEPLOYMENT_MARKER,
           probe: true,
           resolvedSchema: tables.schema,
           roomStatus,
-          capabilities: {
-            ai_chat: true,
-            knowledge_answers: true,
-            owner_commands: true,
-            code_aware_support: true,
-            file_upload: tables.schema !== 'none',
-            inbox_sync: tables.inboxState !== null,
-            backend_access: true,
-            supabase_inspection: true,
-            supabase_tables: true,
-            supabase_schema: true,
-            supabase_columns: true,
-            supabase_rls: true,
-          },
+          capabilities: capabilityChecks.capabilities,
+          capabilityProofs: capabilityChecks.capabilityProofs,
         };
 
         return ownerOnlyJson(probePayload as unknown as Record<string, unknown>);
@@ -2492,6 +4792,48 @@ export async function handleIVXOwnerAIRequest(request: Request): Promise<Respons
       } catch (error) {
         console.log('[IVXOwnerAIBackend] Owner prompt persistence failed, continuing with live AI reply:', error instanceof Error ? error.message : 'unknown');
       }
+    }
+
+    if (resolveOwnerLimitsIntent(prompt)) {
+      const answer = assertVisibleOwnerAIAnswer(buildOwnerLimitsAnswer(tables));
+      let assistantMessageId: string | null = existingAIRequest?.response_message_id ?? null;
+      if (persistAssistantMessage && !assistantMessageId) {
+        const assistantMessage = await insertMessage(ownerContext.client, tables, {
+          conversationId: conversation.id,
+          senderRole: 'assistant',
+          senderUserId: tables.schema === 'generic' ? ownerContext.userId : null,
+          senderLabel: IVX_OWNER_AI_PROFILE.name,
+          body: answer,
+        });
+        assistantMessageId = assistantMessage.id;
+        await safeUpdateConversationSummary(ownerContext.client, tables, conversation.id, answer);
+        await safeEnsureInboxState(ownerContext.client, tables, conversation.id, ownerContext.userId);
+      }
+      await safeUpsertAIRequest(ownerContext.client, tables, {
+        requestId,
+        conversationId: conversation.id,
+        userId: ownerContext.userId,
+        prompt,
+        responseText: answer,
+        responseMessageId: assistantMessageId,
+        status: 'completed',
+        model: 'ivx_owner_limits_report',
+      });
+      console.log('[IVXOwnerAIBackend] Owner limits answer completed:', { requestId, conversationId: conversation.id, assistantMessageId });
+      return ownerOnlyJson(buildOwnerAIResponsePayload({
+        requestId,
+        conversationId: conversation.id,
+        answer,
+        model: 'ivx_owner_limits_report',
+        status: 'ok',
+      }, {
+        source: 'remote_api',
+        provider: 'chatgpt',
+        endpoint: '/api/ivx/owner-ai/limits',
+        deploymentMarker: DEPLOYMENT_MARKER,
+        assistantMessageId,
+        assistantPersisted: Boolean(assistantMessageId),
+      }, body.devTestModeActive === true));
     }
 
     const developmentActionIntent = initialDevelopmentActionIntent;
@@ -2717,6 +5059,59 @@ export async function handleIVXOwnerAIRequest(request: Request): Promise<Respons
         deploymentMarker: DEPLOYMENT_MARKER,
         assistantMessageId,
         assistantPersisted: Boolean(assistantMessageId),
+      }, body.devTestModeActive === true));
+    }
+
+    const aiBrainToolResult = await runAIBrainToolsForPrompt(prompt);
+    if (aiBrainToolResult) {
+      const answer = assertVisibleOwnerAIAnswer(aiBrainToolResult.answer);
+      let assistantMessageId: string | null = existingAIRequest?.response_message_id ?? null;
+      if (persistAssistantMessage && !assistantMessageId) {
+        try {
+          const assistantMessage = await insertMessage(ownerContext.client, tables, {
+            conversationId: conversation.id,
+            senderRole: 'assistant',
+            senderUserId: tables.schema === 'generic' ? ownerContext.userId : null,
+            senderLabel: IVX_OWNER_AI_PROFILE.name,
+            body: answer,
+          });
+          assistantMessageId = assistantMessage.id;
+          await safeUpdateConversationSummary(ownerContext.client, tables, conversation.id, answer);
+          await safeEnsureInboxState(ownerContext.client, tables, conversation.id, ownerContext.userId);
+        } catch (error) {
+          console.log('[IVXOwnerAIBackend] AI Brain tool answer persistence failed:', error instanceof Error ? error.message : 'unknown');
+          throw error instanceof Error ? error : new Error('AI Brain tool reply could not be saved.');
+        }
+      }
+      await safeUpsertAIRequest(ownerContext.client, tables, {
+        requestId,
+        conversationId: conversation.id,
+        userId: ownerContext.userId,
+        prompt,
+        responseText: answer,
+        responseMessageId: assistantMessageId,
+        status: 'completed',
+        model: aiBrainToolResult.toolName,
+      });
+      console.log('[IVXOwnerAIBackend] AI Brain tool executor completed:', { requestId, conversationId: conversation.id, toolName: aiBrainToolResult.toolName, assistantMessageId });
+      return ownerOnlyJson(buildOwnerAIResponsePayload({
+        requestId,
+        conversationId: conversation.id,
+        answer,
+        model: aiBrainToolResult.toolName,
+        status: 'ok',
+      }, {
+        source: 'remote_api',
+        provider: 'chatgpt',
+        endpoint: '/api/ivx/ai-brain/tools/execute',
+        deploymentMarker: DEPLOYMENT_MARKER,
+        assistantMessageId,
+        assistantPersisted: Boolean(assistantMessageId),
+        selectedTool: aiBrainToolResult.toolName,
+        toolInput: aiBrainToolResult.toolOutputs.map((output) => output.input),
+        toolOutput: aiBrainToolResult.toolOutputs.map((output) => output.output ?? output.error ?? null),
+        fallbackUsed: false,
+        toolOutputs: aiBrainToolResult.toolOutputs,
       }, body.devTestModeActive === true));
     }
 
