@@ -20,6 +20,13 @@ COPY expo/constants ./expo/constants
 COPY expo/shared ./expo/shared
 COPY expo/deploy/scripts ./expo/deploy/scripts
 
+RUN ln -s /app/node_modules /node_modules \
+  && ln -s /app/server.ts /server.ts \
+  && ln -s /app/backend /backend \
+  && ln -s /app/expo /expo \
+  && ln -s /app/tsconfig.json /tsconfig.json \
+  && ln -s /app/package.json /package.json
+
 EXPOSE 3000
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
