@@ -4,12 +4,16 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { GET, OPTIONS as ownerAIOptions, handleIVXOwnerAIRequest } from './api/ivx-owner-ai';
+import { GET, OPTIONS as ownerAIOptions, handleIVXOwnerAIRequest, handleIVXOwnerAIToolRequest } from './api/ivx-owner-ai';
 import { OPTIONS as auditReportOptions, handleIVXAuditReportRequest } from './api/ivx-audit-report';
-import { OPTIONS as supabaseInspectionOptions, handleIVXSupabaseInspectionRequest } from './api/ivx-supabase-inspection';
+import { OPTIONS as supabaseInspectionOptions, handleIVXSupabaseInspectionRequest, inspectSupabaseTables } from './api/ivx-supabase-inspection';
+import { executeIVXAIBrainTool } from './services/ivx-ai-brain-tool-executor';
 import { OPTIONS as supabaseOwnerActionOptions, handleIVXSupabaseOwnerActionRequest } from './api/ivx-supabase-owner-actions';
 import { handleIVXDevelopmentActionRequest, handleIVXDevelopmentControlRequest, ivxDevelopmentControlOptions } from './api/ivx-development-control';
 import { OPTIONS as aiBrainToolsOptions, handleIVXAIBrainToolExecuteRequest, handleIVXAIBrainToolsListRequest } from './api/ivx-ai-brain-tools';
+import { OPTIONS as controlRoomStatusOptions, handleIVXControlRoomStatusRequest } from './api/ivx-control-room-status';
+import { OPTIONS as developerDeployOptions, handleIVXDeveloperDeployActionRequest, handleIVXDeveloperDeployStatusRequest } from './api/ivx-developer-deploy-control';
+import { OPTIONS as variablesToolOptions, handleIVXVariablesToolSaveRequest, handleIVXVariablesToolStatusRequest } from './api/ivx-variables-tool';
 import { OPTIONS as assistantOptions, POST as handleAssistantPost } from './api/assistant';
 import { OPTIONS as planCreatorOptions, POST as handlePlanCreatorPost } from './api/plan-creator';
 import { handlePublicChatPost } from './api/public-chat';
@@ -83,13 +87,62 @@ async function handleRoute53Request(
 }
 
 const app = new Hono();
-const DEPLOYMENT_MARKER = 'ivx-owner-ai-hono-2026-04-20t0000z';
+const DEPLOYMENT_MARKER = 'ivx-owner-ai-hono-2026-05-06t0315z';
 const SERVER_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const WEB_DIST_ROOT = path.join(SERVER_ROOT, 'expo', 'dist');
 const CHAT_DATABASE_PATH = (process.env.CHAT_DATABASE_PATH?.trim() || path.join(SERVER_ROOT, 'data', 'chat-room.sqlite'));
 const CHAT_DEFAULT_ROOM_ID = (process.env.CHAT_ROOM_ID?.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '-').replace(/-+/g, '-').slice(0, 40) || 'main-room');
 const publicChatStorage = new ChatStorage(CHAT_DATABASE_PATH);
 const publicRoomMembers = new Map<string, number>();
+type RenderProofToolName = 'time-now' | 'room-status' | 'supabase-tables' | 'storage-diagnostics' | 'github-status' | 'aws-status' | 'supabase-status' | 'render-status';
+
+type RenderProofToolPayload = {
+  ok: boolean;
+  status: 'verified' | 'not_verified' | 'missing_access';
+  tool: RenderProofToolName;
+  endpoint: string;
+  deploymentMarker: string;
+  timestamp: string;
+  data?: Record<string, unknown>;
+  error?: string;
+  missingEnvNames?: string[];
+};
+
+const RENDER_PROOF_TOOL_NAMES: readonly RenderProofToolName[] = [
+  'time-now',
+  'room-status',
+  'supabase-tables',
+  'storage-diagnostics',
+  'github-status',
+  'aws-status',
+  'supabase-status',
+  'render-status',
+] as const;
+
+const REQUESTED_PRODUCTION_ACCESS_ENV_NAMES = [
+  'API_BASE_URL',
+  'GITHUB_REPO_URL',
+  'GITHUB_TOKEN',
+  'RENDER_API_KEY',
+  'RENDER_SERVICE_ID',
+  'SUPABASE_SERVICE_ROLE_KEY',
+  'SUPABASE_DB_URL',
+  'SUPABASE_DB_PASSWORD',
+  'DATABASE_URL',
+  'POSTGRES_URL',
+  'AWS_ACCESS_KEY_ID',
+  'AWS_SECRET_ACCESS_KEY',
+  'AWS_REGION',
+  'S3_BUCKET_NAME',
+  'MINIO_PASSWORD',
+  'CLOUDFRONT_DISTRIBUTION_ID',
+  'AI_GATEWAY_API_KEY',
+  'STRIPE_API_KEY',
+  'APP_SECRET',
+] as const;
+
+const RENDER_API_BASE_URL = 'https://api.render.com/v1';
+
 const MIME_TYPES: Record<string, string> = {
   '.css': 'text/css; charset=utf-8',
   '.gif': 'image/gif',
@@ -114,6 +167,10 @@ function hasWebDistBuild(): boolean {
 
 function readTrimmed(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function readObject(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
 function sanitizeRoomId(value: unknown): string {
@@ -175,6 +232,380 @@ function getPublicRoomSnapshot(roomId: string): { roomId: string; onlineCount: n
     onlineCount: publicRoomMembers.get(roomId) ?? 0,
     messageCount: publicChatStorage.getRoomMessageCount(roomId),
   };
+}
+
+function isRenderProofToolName(value: string): value is RenderProofToolName {
+  return (RENDER_PROOF_TOOL_NAMES as readonly string[]).includes(value);
+}
+
+function getMissingEnvNames(names: readonly string[]): string[] {
+  return names.filter((name) => !readTrimmed(process.env[name]));
+}
+
+function summarizeGithubOutput(output: unknown): Record<string, unknown> {
+  const record = output && typeof output === 'object' && !Array.isArray(output) ? output as Record<string, unknown> : {};
+  const latestCommit = record.latestCommit && typeof record.latestCommit === 'object' && !Array.isArray(record.latestCommit)
+    ? record.latestCommit as Record<string, unknown>
+    : null;
+  const branchNames = Array.isArray(record.branchNames) ? record.branchNames.filter((item): item is string => typeof item === 'string') : [];
+
+  return {
+    repoUrlConfigured: Boolean(readTrimmed(process.env.GITHUB_REPO_URL)),
+    owner: readTrimmed(record.owner) || null,
+    repo: readTrimmed(record.repo) || null,
+    private: typeof record.private === 'boolean' ? record.private : null,
+    defaultBranch: readTrimmed(record.defaultBranch) || null,
+    branchCount: branchNames.length,
+    tokenConfigured: record.tokenConfigured === true,
+    tokenMode: readTrimmed(record.tokenMode) || 'not_configured',
+    latestCommit: latestCommit
+      ? {
+        shaPrefix: readTrimmed(latestCommit.sha).slice(0, 12) || null,
+        authorDate: readTrimmed(latestCommit.authorDate) || null,
+      }
+      : null,
+  };
+}
+
+function summarizeSupabaseReadinessOutput(output: unknown): Record<string, unknown> {
+  const record = readObject(output);
+  const checks = Array.isArray(record.checks) ? record.checks.map((item) => {
+    const check = readObject(item);
+    return {
+      name: readTrimmed(check.name) || null,
+      status: readTrimmed(check.status) || null,
+      httpStatus: typeof check.httpStatus === 'number' ? check.httpStatus : null,
+      accessLevel: readTrimmed(check.accessLevel) || null,
+      requiredForMinimum: check.requiredForMinimum === true,
+      missingCredentialNames: Array.isArray(check.missingCredentialNames) ? check.missingCredentialNames.map(readTrimmed).filter(Boolean) : [],
+    };
+  }) : [];
+  return {
+    status: readTrimmed(record.status) || 'not_verified',
+    minimumReadOnlyReady: record.minimumReadOnlyReady === true,
+    projectUrlConfigured: record.projectUrlConfigured === true,
+    anonKeyConfigured: record.anonKeyConfigured === true,
+    serviceRoleConfigured: record.serviceRoleConfigured === true,
+    writeCapableCredentialConfigured: record.writeCapableCredentialConfigured === true,
+    checks,
+  };
+}
+
+function summarizeAwsOutput(output: unknown): Record<string, unknown> {
+  const record = output && typeof output === 'object' && !Array.isArray(output) ? output as Record<string, unknown> : {};
+  const account = readTrimmed(record.account);
+  const arn = readTrimmed(record.arn);
+  const arnParts = arn.split(':');
+  return {
+    identityVerified: Boolean(account || arn),
+    accountSuffix: account ? account.slice(-4).padStart(account.length, '*') : null,
+    arnType: arnParts.length >= 6 ? arnParts[5]?.split('/')[0] ?? null : null,
+    region: readTrimmed(record.region) || readTrimmed(process.env.AWS_REGION) || 'us-east-1',
+    credentialConfigured: getMissingEnvNames(['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY']).length === 0
+      || getMissingEnvNames(['IVX_AWS_READONLY_ACCESS_KEY_ID', 'IVX_AWS_READONLY_SECRET_ACCESS_KEY']).length === 0,
+  };
+}
+
+function extractRenderEnvVarKeyNames(data: unknown): string[] {
+  const values = Array.isArray(data) ? data : Array.isArray(readObject(data).envVars) ? readObject(data).envVars as unknown[] : [];
+  return values
+    .map((item) => {
+      const record = readObject(item);
+      const envVar = readObject(record.envVar);
+      return readTrimmed(record.key) || readTrimmed(envVar.key);
+    })
+    .filter(Boolean);
+}
+
+async function fetchRenderRuntimeStatus(): Promise<{ ok: boolean; status: 'verified' | 'not_verified' | 'missing_access'; data: Record<string, unknown>; missingEnvNames: string[]; error?: string }> {
+  const apiKey = readTrimmed(process.env.RENDER_API_KEY);
+  const serviceId = readTrimmed(process.env.RENDER_SERVICE_ID);
+  const missingEnvNames = getMissingEnvNames(['RENDER_API_KEY', 'RENDER_SERVICE_ID']);
+  const runtimeMissing = getMissingEnvNames(REQUESTED_PRODUCTION_ACCESS_ENV_NAMES);
+  const envGroupMarkerPresent = readTrimmed(process.env.IVX_ENV_GROUP_ATTACHED).toLowerCase() === 'true' && readTrimmed(process.env.IVX_ENV_GROUP_NAME) === 'my-env-group';
+
+  if (!apiKey || !serviceId) {
+    return {
+      ok: false,
+      status: 'missing_access',
+      missingEnvNames,
+      data: {
+        apiKeyConfigured: Boolean(apiKey),
+        serviceIdConfigured: Boolean(serviceId),
+        serviceName: readTrimmed(process.env.RENDER_SERVICE_NAME) || 'ivx-holdings-platform',
+        envGroupMarkerPresent,
+        requestedCredentialPresentByNameOnly: Object.fromEntries(REQUESTED_PRODUCTION_ACCESS_ENV_NAMES.map((name) => [name, Boolean(readTrimmed(process.env[name]))])),
+        runtimeMissingEnvNames: runtimeMissing,
+      },
+      error: 'Render API runtime credentials are not loaded in this backend runtime.',
+    };
+  }
+
+  const headers = {
+    Accept: 'application/json',
+    Authorization: `Bearer ${apiKey}`,
+  };
+
+  try {
+    const [serviceResponse, envVarsResponse, envGroupsResponse] = await Promise.all([
+      fetch(`${RENDER_API_BASE_URL}/services/${encodeURIComponent(serviceId)}`, { headers }),
+      fetch(`${RENDER_API_BASE_URL}/services/${encodeURIComponent(serviceId)}/env-vars?limit=100`, { headers }),
+      fetch(`${RENDER_API_BASE_URL}/env-groups?name=my-env-group&limit=20`, { headers }).catch(() => null),
+    ]);
+    const [serviceData, envVarsData, envGroupsData] = await Promise.all([
+      serviceResponse.text().then((text) => text ? JSON.parse(text) as unknown : null).catch(() => null),
+      envVarsResponse.text().then((text) => text ? JSON.parse(text) as unknown : []).catch(() => []),
+      envGroupsResponse?.text().then((text) => text ? JSON.parse(text) as unknown : []).catch(() => []) ?? Promise.resolve([]),
+    ]);
+    const serviceRecord = readObject(readObject(serviceData).service ?? serviceData);
+    const envVarKeys = extractRenderEnvVarKeyNames(envVarsData);
+    const envVarKeySet = new Set(envVarKeys);
+    const envGroupRows = Array.isArray(envGroupsData) ? envGroupsData : Array.isArray(readObject(envGroupsData).envGroups) ? readObject(envGroupsData).envGroups as unknown[] : [];
+    const envGroupExists = envGroupRows.some((item) => readTrimmed(readObject(readObject(item).envGroup ?? item).name) === 'my-env-group');
+    const requiredEnvVarsPresentInRender = REQUESTED_PRODUCTION_ACCESS_ENV_NAMES.filter((name) => envVarKeySet.has(name));
+    const requiredEnvVarsMissingInRender = REQUESTED_PRODUCTION_ACCESS_ENV_NAMES.filter((name) => !envVarKeySet.has(name));
+    const renderApiAuthorized = serviceResponse.ok && envVarsResponse.ok;
+
+    return {
+      ok: renderApiAuthorized && runtimeMissing.length === 0,
+      status: !renderApiAuthorized ? 'not_verified' : runtimeMissing.length === 0 ? 'verified' : 'missing_access',
+      missingEnvNames: runtimeMissing,
+      data: {
+        renderApiAuthorized,
+        serviceHttpStatus: serviceResponse.status,
+        envVarsHttpStatus: envVarsResponse.status,
+        serviceIdConfigured: true,
+        serviceIdSuffix: serviceId.slice(-6).padStart(serviceId.length, '*'),
+        serviceName: readTrimmed(serviceRecord.name) || readTrimmed(process.env.RENDER_SERVICE_NAME) || 'ivx-holdings-platform',
+        serviceType: readTrimmed(serviceRecord.type) || null,
+        serviceSuspended: serviceRecord.suspended === true,
+        envGroupExists,
+        envGroupMarkerPresent,
+        requestedCredentialPresentByNameOnly: Object.fromEntries(REQUESTED_PRODUCTION_ACCESS_ENV_NAMES.map((name) => [name, Boolean(readTrimmed(process.env[name]))])),
+        requiredEnvVarsPresentInRender,
+        requiredEnvVarsMissingInRender,
+        runtimeMissingEnvNames: runtimeMissing,
+      },
+      error: renderApiAuthorized ? undefined : `Render API check returned service=${serviceResponse.status}, envVars=${envVarsResponse.status}.`,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      status: 'not_verified',
+      missingEnvNames,
+      data: {
+        apiKeyConfigured: true,
+        serviceIdConfigured: true,
+        requestedCredentialPresentByNameOnly: Object.fromEntries(REQUESTED_PRODUCTION_ACCESS_ENV_NAMES.map((name) => [name, Boolean(readTrimmed(process.env[name]))])),
+      },
+      error: error instanceof Error ? error.message : 'Render runtime status check failed.',
+    };
+  }
+}
+
+async function fetchSupabaseStorageDiagnostics(): Promise<{ ok: boolean; status: 'verified' | 'not_verified' | 'missing_access'; data: Record<string, unknown>; missingEnvNames: string[]; error?: string }> {
+  const supabaseUrl = readTrimmed(process.env.EXPO_PUBLIC_SUPABASE_URL).replace(/\/+$/, '');
+  const serviceRoleKey = readTrimmed(process.env.SUPABASE_SERVICE_ROLE_KEY) || readTrimmed(process.env.SUPABASE_SERVICE_KEY);
+  const anonKey = readTrimmed(process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY);
+  const accessKey = serviceRoleKey || anonKey;
+  const missingEnvNames = getMissingEnvNames(['EXPO_PUBLIC_SUPABASE_URL', 'EXPO_PUBLIC_SUPABASE_ANON_KEY']);
+
+  if (!supabaseUrl || !accessKey) {
+    return {
+      ok: false,
+      status: 'missing_access',
+      missingEnvNames,
+      data: {
+        hasSupabaseUrl: Boolean(supabaseUrl),
+        hasAnonKey: Boolean(anonKey),
+        hasServiceRoleKey: Boolean(serviceRoleKey),
+      },
+      error: 'Supabase storage diagnostics env is not fully configured.',
+    };
+  }
+
+  try {
+    const response = await fetch(`${supabaseUrl}/storage/v1/bucket`, {
+      method: 'GET',
+      headers: {
+        apikey: accessKey,
+        Authorization: `Bearer ${accessKey}`,
+      },
+    });
+    const text = await response.text();
+    const parsed = text ? JSON.parse(text) as unknown : [];
+    const buckets = Array.isArray(parsed) ? parsed : [];
+    return {
+      ok: response.ok,
+      status: response.ok ? 'verified' : 'not_verified',
+      missingEnvNames,
+      data: {
+        httpStatus: response.status,
+        hasSupabaseUrl: true,
+        hasAnonKey: Boolean(anonKey),
+        hasServiceRoleKey: Boolean(serviceRoleKey),
+        bucketCount: buckets.length,
+        bucketNames: buckets.map((bucket) => readTrimmed((bucket as Record<string, unknown>).name)).filter(Boolean).slice(0, 20),
+      },
+      error: response.ok ? undefined : text.slice(0, 240),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      status: 'not_verified',
+      missingEnvNames,
+      data: {
+        hasSupabaseUrl: true,
+        hasAnonKey: Boolean(anonKey),
+        hasServiceRoleKey: Boolean(serviceRoleKey),
+      },
+      error: error instanceof Error ? error.message : 'Supabase storage diagnostics failed.',
+    };
+  }
+}
+
+async function buildRenderProofToolPayload(tool: RenderProofToolName, endpoint: string): Promise<RenderProofToolPayload> {
+  if (tool === 'time-now') {
+    const now = new Date();
+    return {
+      ok: true,
+      status: 'verified',
+      tool,
+      endpoint,
+      deploymentMarker: DEPLOYMENT_MARKER,
+      timestamp: now.toISOString(),
+      data: {
+        source: 'server_runtime_date',
+        epochMs: now.getTime(),
+        timezone: 'UTC',
+        formatted: new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', dateStyle: 'full', timeStyle: 'long' }).format(now),
+      },
+    };
+  }
+
+  if (tool === 'room-status') {
+    const room = getPublicRoomSnapshot(CHAT_DEFAULT_ROOM_ID);
+    return {
+      ok: true,
+      status: 'verified',
+      tool,
+      endpoint,
+      deploymentMarker: DEPLOYMENT_MARKER,
+      timestamp: nowIso(),
+      data: {
+        room,
+        totalMessageCount: publicChatStorage.getTotalMessageCount(),
+        storageMode: 'portable_json',
+      },
+    };
+  }
+
+  if (tool === 'supabase-tables') {
+    const tables = await inspectSupabaseTables(null, null, 200);
+    return {
+      ok: true,
+      status: 'verified',
+      tool,
+      endpoint,
+      deploymentMarker: DEPLOYMENT_MARKER,
+      timestamp: nowIso(),
+      data: {
+        tableCount: tables.length,
+        tableNames: tables.map((row) => `${row.schema_name}.${row.table_name}`),
+        sample: tables.slice(0, 20),
+      },
+    };
+  }
+
+  if (tool === 'storage-diagnostics') {
+    const storage = await fetchSupabaseStorageDiagnostics();
+    return {
+      ok: storage.ok,
+      status: storage.status,
+      tool,
+      endpoint,
+      deploymentMarker: DEPLOYMENT_MARKER,
+      timestamp: nowIso(),
+      data: storage.data,
+      error: storage.error,
+      missingEnvNames: storage.missingEnvNames,
+    };
+  }
+
+  if (tool === 'supabase-status') {
+    const result = await executeIVXAIBrainTool({ tool: 'supabase_readiness_check', input: {} });
+    return {
+      ok: result.ok,
+      status: result.missingEnvNames.length > 0 ? 'missing_access' : result.ok ? 'verified' : 'not_verified',
+      tool,
+      endpoint,
+      deploymentMarker: DEPLOYMENT_MARKER,
+      timestamp: nowIso(),
+      data: summarizeSupabaseReadinessOutput(result.output),
+      error: result.error,
+      missingEnvNames: result.missingEnvNames,
+    };
+  }
+
+  if (tool === 'render-status') {
+    const render = await fetchRenderRuntimeStatus();
+    return {
+      ok: render.ok,
+      status: render.status,
+      tool,
+      endpoint,
+      deploymentMarker: DEPLOYMENT_MARKER,
+      timestamp: nowIso(),
+      data: render.data,
+      error: render.error,
+      missingEnvNames: render.missingEnvNames,
+    };
+  }
+
+  const aiTool = tool === 'github-status' ? 'github_repo_status' : 'aws_identity_check';
+  const result = await executeIVXAIBrainTool({ tool: aiTool, input: {} });
+  return {
+    ok: result.ok,
+    status: result.missingEnvNames.length > 0 ? 'missing_access' : result.ok ? 'verified' : 'not_verified',
+    tool,
+    endpoint,
+    deploymentMarker: DEPLOYMENT_MARKER,
+    timestamp: nowIso(),
+    data: tool === 'github-status' ? summarizeGithubOutput(result.output) : summarizeAwsOutput(result.output),
+    error: result.error,
+    missingEnvNames: result.missingEnvNames,
+  };
+}
+
+async function handleRenderProofToolRequest(toolName: string, endpoint: string): Promise<Response> {
+  const normalizedToolName = toolName.trim().toLowerCase();
+  if (!isRenderProofToolName(normalizedToolName)) {
+    return publicJson({
+      ok: false,
+      error: 'Unknown Render proof tool endpoint.',
+      supportedTools: RENDER_PROOF_TOOL_NAMES,
+      deploymentMarker: DEPLOYMENT_MARKER,
+      timestamp: nowIso(),
+    }, 404);
+  }
+
+  try {
+    return publicJson(buildRecord(await buildRenderProofToolPayload(normalizedToolName, endpoint)));
+  } catch (error) {
+    return publicJson({
+      ok: false,
+      status: 'not_verified',
+      tool: normalizedToolName,
+      endpoint,
+      deploymentMarker: DEPLOYMENT_MARKER,
+      timestamp: nowIso(),
+      error: error instanceof Error ? error.message : 'Render proof tool endpoint failed.',
+    }, 200);
+  }
+}
+
+function buildRecord(payload: RenderProofToolPayload): Record<string, unknown> {
+  return payload as unknown as Record<string, unknown>;
 }
 
 async function handlePublicRoomMessages(request: Request): Promise<Response> {
@@ -423,10 +854,23 @@ app.get('/health', (context) => {
       'GET /diagnostics',
       'POST /fallback/reply',
       'POST /api/ivx/owner-ai',
+      'POST /api/ivx/owner-ai/tools',
+      'POST /tool',
+      'POST /api/tool',
       'GET /api/ivx/audit-report',
       'GET /api/ivx/development-control',
       'POST /api/ivx/development-action',
+      'GET /tool/render-status',
+      'GET /tool/supabase-status',
+      'GET /api/tool/render-status',
+      'GET /api/tool/supabase-status',
+      'GET /api/ivx/control-room/status',
+      'GET /api/ivx/developer-deploy/status',
+      'POST /api/ivx/developer-deploy/action',
+      'GET /api/ivx/variables-tool/status',
+      'POST /api/ivx/variables-tool/save',
       'GET /api/ivx/ai-brain/tools',
+      'POST /api/ivx/ai-brain/tools',
       'POST /api/ivx/ai-brain/tools/execute',
       'GET /api/ivx/supabase/tables',
       'GET /api/ivx/supabase/schema',
@@ -452,10 +896,22 @@ app.get('/readiness', (context) => {
 // Owner AI canonical paths
 app.options('/ivx/owner-ai', () => ownerAIOptions());
 app.options('/api/ivx/owner-ai', () => ownerAIOptions());
+app.options('/ivx/owner-ai/tools', () => ownerAIOptions());
+app.options('/api/ivx/owner-ai/tools', () => ownerAIOptions());
+app.options('/tool', () => ownerAIOptions());
+app.options('/api/tool', () => ownerAIOptions());
+app.options('/tool/:toolName', () => ownerAIOptions());
+app.options('/api/tool/:toolName', () => ownerAIOptions());
 app.get('/ivx/owner-ai', () => GET());
 app.get('/api/ivx/owner-ai', () => GET());
+app.get('/tool/:toolName', async (context) => handleRenderProofToolRequest(context.req.param('toolName'), `/tool/${context.req.param('toolName')}`));
+app.get('/api/tool/:toolName', async (context) => handleRenderProofToolRequest(context.req.param('toolName'), `/api/tool/${context.req.param('toolName')}`));
 app.post('/ivx/owner-ai', async (context) => handleIVXOwnerAIRequest(context.req.raw));
 app.post('/api/ivx/owner-ai', async (context) => handleIVXOwnerAIRequest(context.req.raw));
+app.post('/ivx/owner-ai/tools', async (context) => handleIVXOwnerAIToolRequest(context.req.raw));
+app.post('/api/ivx/owner-ai/tools', async (context) => handleIVXOwnerAIToolRequest(context.req.raw));
+app.post('/tool', async (context) => handleIVXOwnerAIToolRequest(context.req.raw));
+app.post('/api/tool', async (context) => handleIVXOwnerAIToolRequest(context.req.raw));
 
 app.options('/api/ivx/audit-report', () => auditReportOptions());
 app.get('/api/ivx/audit-report', async (context) => handleIVXAuditReportRequest(context.req.raw));
@@ -465,8 +921,20 @@ app.get('/api/ivx/development-control', async (context) => handleIVXDevelopmentC
 app.options('/api/ivx/development-action', () => ivxDevelopmentControlOptions());
 app.post('/api/ivx/development-action', async (context) => handleIVXDevelopmentActionRequest(context.req.raw));
 
+app.options('/api/ivx/control-room/status', () => controlRoomStatusOptions());
+app.get('/api/ivx/control-room/status', async (context) => handleIVXControlRoomStatusRequest(context.req.raw));
+app.options('/api/ivx/developer-deploy/status', () => developerDeployOptions());
+app.get('/api/ivx/developer-deploy/status', async (context) => handleIVXDeveloperDeployStatusRequest(context.req.raw));
+app.options('/api/ivx/developer-deploy/action', () => developerDeployOptions());
+app.post('/api/ivx/developer-deploy/action', async (context) => handleIVXDeveloperDeployActionRequest(context.req.raw));
+app.options('/api/ivx/variables-tool/status', () => variablesToolOptions());
+app.get('/api/ivx/variables-tool/status', async (context) => handleIVXVariablesToolStatusRequest(context.req.raw));
+app.options('/api/ivx/variables-tool/save', () => variablesToolOptions());
+app.post('/api/ivx/variables-tool/save', async (context) => handleIVXVariablesToolSaveRequest(context.req.raw));
+
 app.options('/api/ivx/ai-brain/tools', () => aiBrainToolsOptions());
 app.get('/api/ivx/ai-brain/tools', async (context) => handleIVXAIBrainToolsListRequest(context.req.raw));
+app.post('/api/ivx/ai-brain/tools', async (context) => handleIVXAIBrainToolExecuteRequest(context.req.raw));
 app.options('/api/ivx/ai-brain/tools/execute', () => aiBrainToolsOptions());
 app.post('/api/ivx/ai-brain/tools/execute', async (context) => handleIVXAIBrainToolExecuteRequest(context.req.raw));
 
