@@ -9,6 +9,7 @@ import { OPTIONS as auditReportOptions, handleIVXAuditReportRequest } from './ap
 import { OPTIONS as supabaseInspectionOptions, handleIVXSupabaseInspectionRequest, inspectSupabaseTables } from './api/ivx-supabase-inspection';
 import { executeIVXAIBrainTool } from './services/ivx-ai-brain-tool-executor';
 import { OPTIONS as supabaseOwnerActionOptions, handleIVXSupabaseOwnerActionRequest } from './api/ivx-supabase-owner-actions';
+import { OPTIONS as ownerRegistrationOptions, handleIVXOwnerRegistrationRequest, handleIVXOwnerRegistrationStatusRequest } from './api/ivx-owner-registration';
 import { handleIVXDevelopmentActionRequest, handleIVXDevelopmentControlRequest, ivxDevelopmentControlOptions } from './api/ivx-development-control';
 import { OPTIONS as aiBrainToolsOptions, handleIVXAIBrainToolExecuteRequest, handleIVXAIBrainToolsListRequest } from './api/ivx-ai-brain-tools';
 import { OPTIONS as controlRoomStatusOptions, handleIVXControlRoomStatusRequest } from './api/ivx-control-room-status';
@@ -36,6 +37,15 @@ import {
   handleUploadPost,
   ownerRoutesOptions,
 } from './api/owner-routes';
+import {
+  handleMultimodalAnalyze,
+  handleMultimodalGoogleDriveImport,
+  handleMultimodalImageUpload,
+  handleMultimodalPdfUpload,
+  handleMultimodalSummary,
+  handleMultimodalVideoUpload,
+  ownerMultimodalOptions,
+} from './api/owner-multimodal';
 
 async function loadRoute53Module() {
   try {
@@ -87,7 +97,7 @@ async function handleRoute53Request(
 }
 
 const app = new Hono();
-const DEPLOYMENT_MARKER = 'ivx-owner-ai-hono-2026-05-06t1200z';
+const DEPLOYMENT_MARKER = 'ivx-owner-ai-hono-2026-05-06t2030z';
 const SERVER_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const WEB_DIST_ROOT = path.join(SERVER_ROOT, 'expo', 'dist');
 const CHAT_DATABASE_PATH = (process.env.CHAT_DATABASE_PATH?.trim() || path.join(SERVER_ROOT, 'data', 'chat-room.sqlite'));
@@ -119,7 +129,7 @@ const RENDER_PROOF_TOOL_NAMES: readonly RenderProofToolName[] = [
   'render-status',
 ] as const;
 
-const REQUESTED_PRODUCTION_ACCESS_ENV_NAMES = [
+const REQUIRED_PRODUCTION_ACCESS_ENV_NAMES = [
   'API_BASE_URL',
   'GITHUB_REPO_URL',
   'GITHUB_TOKEN',
@@ -134,11 +144,20 @@ const REQUESTED_PRODUCTION_ACCESS_ENV_NAMES = [
   'AWS_SECRET_ACCESS_KEY',
   'AWS_REGION',
   'S3_BUCKET_NAME',
-  'MINIO_PASSWORD',
   'CLOUDFRONT_DISTRIBUTION_ID',
   'AI_GATEWAY_API_KEY',
-  'STRIPE_API_KEY',
+  'JWT_SECRET',
   'APP_SECRET',
+] as const;
+
+const OPTIONAL_PRODUCTION_ACCESS_ENV_NAMES = [
+  'MINIO_PASSWORD',
+  'STRIPE_API_KEY',
+] as const;
+
+const REQUESTED_PRODUCTION_ACCESS_ENV_NAMES = [
+  ...REQUIRED_PRODUCTION_ACCESS_ENV_NAMES,
+  ...OPTIONAL_PRODUCTION_ACCESS_ENV_NAMES,
 ] as const;
 
 const RENDER_API_BASE_URL = 'https://api.render.com/v1';
@@ -280,14 +299,68 @@ function summarizeSupabaseReadinessOutput(output: unknown): Record<string, unkno
       missingCredentialNames: Array.isArray(check.missingCredentialNames) ? check.missingCredentialNames.map(readTrimmed).filter(Boolean) : [],
     };
   }) : [];
+  const requiredChecks = checks.filter((check) => check.requiredForMinimum === true);
+  const requiredChecksVerified = requiredChecks.length > 0 && requiredChecks.every((check) => check.status === 'verified');
+  const minimumReadOnlyReady = record.minimumReadOnlyReady === true && requiredChecksVerified;
   return {
-    status: readTrimmed(record.status) || 'not_verified',
-    minimumReadOnlyReady: record.minimumReadOnlyReady === true,
+    status: minimumReadOnlyReady ? 'verified' : 'not_verified',
+    minimumReadOnlyReady,
     projectUrlConfigured: record.projectUrlConfigured === true,
     anonKeyConfigured: record.anonKeyConfigured === true,
     serviceRoleConfigured: record.serviceRoleConfigured === true,
     writeCapableCredentialConfigured: record.writeCapableCredentialConfigured === true,
     checks,
+    honestStatus: minimumReadOnlyReady
+      ? 'Supabase minimum read-only runtime access is verified.'
+      : 'Supabase route is reachable, but at least one required read-only check is not verified. Do not report Supabase as fully working until this passes.',
+  };
+}
+
+function buildMultimodalStatusPayload(): Record<string, unknown> {
+  const aiGatewayConfigured = Boolean(readTrimmed(process.env.AI_GATEWAY_API_KEY));
+  const supabaseStorageConfigured = Boolean(readTrimmed(process.env.EXPO_PUBLIC_SUPABASE_URL) && (readTrimmed(process.env.SUPABASE_SERVICE_ROLE_KEY) || readTrimmed(process.env.SUPABASE_SERVICE_KEY)));
+  return {
+    ok: true,
+    status: 'production_routes_registered',
+    deploymentMarker: DEPLOYMENT_MARKER,
+    minimumDeploymentMarker: DEPLOYMENT_MARKER,
+    timestamp: nowIso(),
+    routes: [
+      'POST /api/upload/image',
+      'POST /api/upload/pdf',
+      'POST /api/upload/video',
+      'POST /api/google-drive/import',
+      'POST /api/files/:fileId/analyze',
+      'POST /api/files/:fileId/summary',
+    ],
+    storage: {
+      privateSignedUrls: true,
+      supabaseStorageConfigured,
+      publicBucketExposure: false,
+    },
+    capabilities: {
+      imageUpload: true,
+      imageVisionAnalysis: aiGatewayConfigured,
+      multipleImagesInChatContext: false,
+      pdfUpload: true,
+      pdfTextExtraction: 'best_effort_text_layer_only',
+      scannedPdfOcr: false,
+      pdfPageReferences: 'page_count_only_until_pdf_parser_worker_enabled',
+      videoUpload: true,
+      videoMetadataSummary: true,
+      videoFrameAnalysis: false,
+      videoTranscriptExtraction: false,
+      googleDriveSharedFileImport: true,
+      googleWorkspaceDocsExportToPdf: true,
+      googleDrivePrivateOwnerOAuth: false,
+    },
+    honestBlockersForFullChatGPTParity: [
+      'If https://api.ivxholding.com/api/multimodal/status returns 404 or an older deployment marker, production is still serving an old backend deploy and uploads must be treated as FAIL until Render deploys this marker.',
+      'Private Google Drive owner OAuth is not connected without a Google OAuth access/refresh token flow.',
+      'Scanned-PDF OCR requires an OCR worker.',
+      'Video frame extraction/transcription requires a media worker such as ffmpeg plus speech-to-text.',
+      'Multiple uploaded files are listed in the Files workspace, but automatic multi-file chat memory/RAG is not fully wired.',
+    ],
   };
 }
 
@@ -321,7 +394,9 @@ async function fetchRenderRuntimeStatus(): Promise<{ ok: boolean; status: 'verif
   const apiKey = readTrimmed(process.env.RENDER_API_KEY);
   const serviceId = readTrimmed(process.env.RENDER_SERVICE_ID);
   const missingEnvNames = getMissingEnvNames(['RENDER_API_KEY', 'RENDER_SERVICE_ID']);
-  const runtimeMissing = getMissingEnvNames(REQUESTED_PRODUCTION_ACCESS_ENV_NAMES);
+  const requiredRuntimeMissing = getMissingEnvNames(REQUIRED_PRODUCTION_ACCESS_ENV_NAMES);
+  const optionalRuntimeMissing = getMissingEnvNames(OPTIONAL_PRODUCTION_ACCESS_ENV_NAMES);
+  const runtimeMissing = requiredRuntimeMissing;
   const envGroupMarkerPresent = readTrimmed(process.env.IVX_ENV_GROUP_ATTACHED).toLowerCase() === 'true' && readTrimmed(process.env.IVX_ENV_GROUP_NAME) === 'my-env-group';
 
   if (!apiKey || !serviceId) {
@@ -335,6 +410,8 @@ async function fetchRenderRuntimeStatus(): Promise<{ ok: boolean; status: 'verif
         serviceName: readTrimmed(process.env.RENDER_SERVICE_NAME) || 'ivx-holdings-platform',
         envGroupMarkerPresent,
         requestedCredentialPresentByNameOnly: Object.fromEntries(REQUESTED_PRODUCTION_ACCESS_ENV_NAMES.map((name) => [name, Boolean(readTrimmed(process.env[name]))])),
+        requiredRuntimeMissingEnvNames: requiredRuntimeMissing,
+        optionalRuntimeMissingEnvNames: optionalRuntimeMissing,
         runtimeMissingEnvNames: runtimeMissing,
       },
       error: 'Render API runtime credentials are not loaded in this backend runtime.',
@@ -362,8 +439,10 @@ async function fetchRenderRuntimeStatus(): Promise<{ ok: boolean; status: 'verif
     const envVarKeySet = new Set(envVarKeys);
     const envGroupRows = Array.isArray(envGroupsData) ? envGroupsData : Array.isArray(readObject(envGroupsData).envGroups) ? readObject(envGroupsData).envGroups as unknown[] : [];
     const envGroupExists = envGroupRows.some((item) => readTrimmed(readObject(readObject(item).envGroup ?? item).name) === 'my-env-group');
-    const requiredEnvVarsPresentInRender = REQUESTED_PRODUCTION_ACCESS_ENV_NAMES.filter((name) => envVarKeySet.has(name));
-    const requiredEnvVarsMissingInRender = REQUESTED_PRODUCTION_ACCESS_ENV_NAMES.filter((name) => !envVarKeySet.has(name));
+    const requiredEnvVarsPresentInRender = REQUIRED_PRODUCTION_ACCESS_ENV_NAMES.filter((name) => envVarKeySet.has(name));
+    const requiredEnvVarsMissingInRender = REQUIRED_PRODUCTION_ACCESS_ENV_NAMES.filter((name) => !envVarKeySet.has(name));
+    const optionalEnvVarsPresentInRender = OPTIONAL_PRODUCTION_ACCESS_ENV_NAMES.filter((name) => envVarKeySet.has(name));
+    const optionalEnvVarsMissingInRender = OPTIONAL_PRODUCTION_ACCESS_ENV_NAMES.filter((name) => !envVarKeySet.has(name));
     const renderApiAuthorized = serviceResponse.ok && envVarsResponse.ok;
 
     return {
@@ -384,6 +463,10 @@ async function fetchRenderRuntimeStatus(): Promise<{ ok: boolean; status: 'verif
         requestedCredentialPresentByNameOnly: Object.fromEntries(REQUESTED_PRODUCTION_ACCESS_ENV_NAMES.map((name) => [name, Boolean(readTrimmed(process.env[name]))])),
         requiredEnvVarsPresentInRender,
         requiredEnvVarsMissingInRender,
+        optionalEnvVarsPresentInRender,
+        optionalEnvVarsMissingInRender,
+        requiredRuntimeMissingEnvNames: requiredRuntimeMissing,
+        optionalRuntimeMissingEnvNames: optionalRuntimeMissing,
         runtimeMissingEnvNames: runtimeMissing,
       },
       error: renderApiAuthorized ? undefined : `Render API check returned service=${serviceResponse.status}, envVars=${envVarsResponse.status}.`,
@@ -534,15 +617,19 @@ async function buildRenderProofToolPayload(tool: RenderProofToolName, endpoint: 
 
   if (tool === 'supabase-status') {
     const result = await executeIVXAIBrainTool({ tool: 'supabase_readiness_check', input: {} });
+    const data = summarizeSupabaseReadinessOutput(result.output);
+    const minimumReady = data.minimumReadOnlyReady === true;
+    const hasMissingEnv = result.missingEnvNames.length > 0;
+    const ok = result.ok === true && minimumReady === true && hasMissingEnv === false;
     return {
-      ok: result.ok,
-      status: result.missingEnvNames.length > 0 ? 'missing_access' : result.ok ? 'verified' : 'not_verified',
+      ok,
+      status: hasMissingEnv ? 'missing_access' : ok ? 'verified' : 'not_verified',
       tool,
       endpoint,
       deploymentMarker: DEPLOYMENT_MARKER,
       timestamp: nowIso(),
-      data: summarizeSupabaseReadinessOutput(result.output),
-      error: result.error,
+      data,
+      error: minimumReady ? result.error : result.error ?? 'Supabase route is reachable, but minimum read-only access is not verified.',
       missingEnvNames: result.missingEnvNames,
     };
   }
@@ -877,8 +964,17 @@ app.get('/health', (context) => {
       'GET /api/ivx/supabase/columns',
       'GET /api/ivx/supabase/rls',
       'POST /api/ivx/supabase/owner-action',
+      'GET /api/ivx/owner-registration/status',
+      'POST /api/ivx/owner-registration',
       'POST /api/assistant',
       'POST /api/plan-creator',
+      'POST /api/upload/image',
+      'POST /api/upload/pdf',
+      'POST /api/upload/video',
+      'POST /api/google-drive/import',
+      'POST /api/files/:fileId/analyze',
+      'POST /api/files/:fileId/summary',
+      'GET /api/multimodal/status',
     ],
   });
 });
@@ -952,6 +1048,10 @@ for (const [routePath, kind] of supabaseInspectionRoutePairs) {
 
 app.options('/api/ivx/supabase/owner-action', () => supabaseOwnerActionOptions());
 app.post('/api/ivx/supabase/owner-action', async (context) => handleIVXSupabaseOwnerActionRequest(context.req.raw));
+app.options('/api/ivx/owner-registration', () => ownerRegistrationOptions());
+app.options('/api/ivx/owner-registration/status', () => ownerRegistrationOptions());
+app.get('/api/ivx/owner-registration/status', () => handleIVXOwnerRegistrationStatusRequest());
+app.post('/api/ivx/owner-registration', async (context) => handleIVXOwnerRegistrationRequest(context.req.raw));
 
 app.options('/assistant', () => assistantOptions());
 app.options('/api/assistant', () => assistantOptions());
@@ -1020,6 +1120,22 @@ app.get('/api/diagnostics', async (c) => handleDiagnosticsGet(c.req.raw));
 
 app.post('/fallback/reply', async (c) => handleFallbackReply(c.req.raw));
 app.post('/api/fallback/reply', async (c) => handleFallbackReply(c.req.raw));
+
+// Owner-only multimodal upload + analysis
+app.options('/api/upload/image', () => ownerMultimodalOptions());
+app.options('/api/upload/pdf', () => ownerMultimodalOptions());
+app.options('/api/upload/video', () => ownerMultimodalOptions());
+app.options('/api/google-drive/import', () => ownerMultimodalOptions());
+app.options('/api/files/:fileId/analyze', () => ownerMultimodalOptions());
+app.options('/api/files/:fileId/summary', () => ownerMultimodalOptions());
+app.options('/api/multimodal/status', () => publicJson({ ok: true }, 204));
+app.get('/api/multimodal/status', () => publicJson(buildMultimodalStatusPayload()));
+app.post('/api/upload/image', async (c) => handleMultimodalImageUpload(c.req.raw));
+app.post('/api/upload/pdf', async (c) => handleMultimodalPdfUpload(c.req.raw));
+app.post('/api/upload/video', async (c) => handleMultimodalVideoUpload(c.req.raw));
+app.post('/api/google-drive/import', async (c) => handleMultimodalGoogleDriveImport(c.req.raw));
+app.post('/api/files/:fileId/analyze', async (c) => handleMultimodalAnalyze(c.req.raw, c.req.param('fileId')));
+app.post('/api/files/:fileId/summary', async (c) => handleMultimodalSummary(c.req.raw, c.req.param('fileId')));
 
 // Route53 diagnostics
 app.options('/api/aws/route53/audit', async () => handleRoute53Options());

@@ -82,6 +82,32 @@ function isAllowedVariableName(value: string): value is IVXVariablesToolEnvName 
   return (IVX_VARIABLES_TOOL_ENV_NAMES as readonly string[]).includes(value);
 }
 
+function normalizeVariableValue(name: IVXVariablesToolEnvName, rawValue: unknown): string {
+  if (typeof rawValue !== 'string') {
+    throw new Error(`Variable ${name} must be a string.`);
+  }
+  const value = rawValue.trim();
+  if (!value) {
+    throw new Error(`Variable ${name} cannot be blank.`);
+  }
+  if (value.length > MAX_VARIABLE_VALUE_LENGTH) {
+    throw new Error(`Variable ${name} exceeds the maximum allowed length.`);
+  }
+  return value;
+}
+
+function assignBootstrapVariable(
+  variables: Partial<Record<IVXVariablesToolEnvName, string>>,
+  name: IVXVariablesToolEnvName,
+  value: string,
+): void {
+  const trimmedValue = readTrimmed(value);
+  if (!trimmedValue || variables[name]) {
+    return;
+  }
+  variables[name] = normalizeVariableValue(name, trimmedValue);
+}
+
 function buildAllowedVariableMetadata() {
   const manifestByName = new Map(IVX_CREDENTIAL_REQUEST_MANIFEST.map((entry) => [entry.name, entry]));
   return IVX_VARIABLES_TOOL_ENV_NAMES.map((name) => {
@@ -124,6 +150,28 @@ function renderHeaders(apiKey: string): HeadersInit {
     Authorization: `Bearer ${apiKey}`,
     'Content-Type': 'application/json',
   };
+}
+
+function sanitizeExternalErrorDetail(value: string): string {
+  return value
+    .replace(/[A-Za-z0-9_\-.=]{24,}/g, '[redacted]')
+    .replace(/Bearer\s+\S+/gi, 'Bearer [redacted]')
+    .slice(0, 220);
+}
+
+async function readExternalErrorDetail(response: Response): Promise<string> {
+  const text = await response.text().catch(() => '');
+  if (!text) {
+    return '';
+  }
+  try {
+    const payload = JSON.parse(text) as unknown;
+    const record = readRecord(payload);
+    const message = readTrimmed(record.message) || readTrimmed(record.error) || readTrimmed(record.errorMessage);
+    return sanitizeExternalErrorDetail(message || text);
+  } catch {
+    return sanitizeExternalErrorDetail(text);
+  }
 }
 
 function extractRenderEnvVarKeyNames(data: unknown): string[] {
@@ -344,17 +392,7 @@ function parseVariablesPayload(body: Record<string, unknown>): Partial<Record<IV
     if (!isAllowedVariableName(name)) {
       throw new Error(`Unsupported variable name: ${name || 'blank'}.`);
     }
-    if (typeof rawValue !== 'string') {
-      throw new Error(`Variable ${name} must be a string.`);
-    }
-    const value = rawValue.trim();
-    if (!value) {
-      throw new Error(`Variable ${name} cannot be blank.`);
-    }
-    if (value.length > MAX_VARIABLE_VALUE_LENGTH) {
-      throw new Error(`Variable ${name} exceeds the maximum allowed length.`);
-    }
-    parsed[name] = value;
+    parsed[name] = normalizeVariableValue(name, rawValue);
   }
   return parsed;
 }
@@ -372,7 +410,8 @@ async function upsertRenderEnvVar(input: {
     signal: createTimeoutSignal(15_000),
   });
   if (!response.ok) {
-    throw new Error(`Render environment variable update failed for ${input.name} with HTTP ${response.status}.`);
+    const detail = await readExternalErrorDetail(response);
+    throw new Error(`Render environment variable update failed for ${input.name} with HTTP ${response.status}${detail ? `: ${detail}` : ''}.`);
   }
   return {
     name: input.name,
@@ -444,13 +483,17 @@ export async function handleIVXVariablesToolSaveRequest(request: Request): Promi
     const ownerContext = await assertIVXOwnerOnly(request);
     const body = readRecord(await request.json().catch(() => ({})));
     const variables = parseVariablesPayload(body);
-    const variableEntries = Object.entries(variables) as Array<[IVXVariablesToolEnvName, string]>;
-    if (variableEntries.length === 0) {
+    if (Object.keys(variables).length === 0) {
       throw new Error('At least one allowed variable is required.');
     }
 
-    const transientApiKey = variables.RENDER_API_KEY ?? readEnv('RENDER_API_KEY');
-    const transientServiceId = variables.RENDER_SERVICE_ID ?? readEnv('RENDER_SERVICE_ID');
+    const requestRenderApiKey = readTrimmed(body.renderApiKey);
+    const requestRenderServiceId = readTrimmed(body.renderServiceId);
+    const transientApiKey = requestRenderApiKey || variables.RENDER_API_KEY || readEnv('RENDER_API_KEY');
+    const transientServiceId = requestRenderServiceId || variables.RENDER_SERVICE_ID || readEnv('RENDER_SERVICE_ID');
+    assignBootstrapVariable(variables, 'RENDER_API_KEY', requestRenderApiKey);
+    assignBootstrapVariable(variables, 'RENDER_SERVICE_ID', requestRenderServiceId);
+    const variableEntries = Object.entries(variables) as Array<[IVXVariablesToolEnvName, string]>;
     if (!transientApiKey || !transientServiceId) {
       return ownerOnlyJson({
         ok: false,
@@ -461,7 +504,13 @@ export async function handleIVXVariablesToolSaveRequest(request: Request): Promi
           ...(!transientApiKey ? ['RENDER_API_KEY'] : []),
           ...(!transientServiceId ? ['RENDER_SERVICE_ID'] : []),
         ],
-        message: 'Enter RENDER_API_KEY and RENDER_SERVICE_ID in this secure tool first so it can write the variables to Render Environment.',
+        renderCredentialBootstrap: {
+          accepted: false,
+          renderApiKeyProvidedForThisRequest: Boolean(requestRenderApiKey || variables.RENDER_API_KEY),
+          renderServiceIdProvidedForThisRequest: Boolean(requestRenderServiceId || variables.RENDER_SERVICE_ID),
+          secretValuesReturned: false,
+        },
+        message: 'Render connection is required before saving variables. Paste RENDER_API_KEY and RENDER_SERVICE_ID in the Variables tool; they can be sent as transient owner-only connection credentials and are never returned.',
         timestamp: nowIso(),
       }, 409);
     }
@@ -484,6 +533,13 @@ export async function handleIVXVariablesToolSaveRequest(request: Request): Promi
       secureBackendStorage: 'render_environment_variables',
       secretValuesReturned: false,
       savedVariableNames: updateResults.map((result) => result.name),
+      renderCredentialBootstrap: {
+        accepted: Boolean(requestRenderApiKey || requestRenderServiceId),
+        savedToRenderEnvironment: Boolean(requestRenderApiKey || requestRenderServiceId),
+        renderApiKeyProvidedForThisRequest: Boolean(requestRenderApiKey || variables.RENDER_API_KEY),
+        renderServiceIdProvidedForThisRequest: Boolean(requestRenderServiceId || variables.RENDER_SERVICE_ID),
+        secretValuesReturned: false,
+      },
       updateResults,
       redeploy: {
         ...deploy,

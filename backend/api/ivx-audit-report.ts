@@ -92,6 +92,27 @@ async function capture<T>(fn: () => Promise<T>): Promise<AuditCheck<T>> {
   }
 }
 
+async function withAuditTimeout<T>(promise: Promise<T>, label: string, timeoutMs: number = 7_000): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  }
+}
+
+async function captureWithTimeout<T>(label: string, fn: () => Promise<T>, timeoutMs?: number): Promise<AuditCheck<T>> {
+  return await capture(async () => await withAuditTimeout(fn(), label, timeoutMs));
+}
+
 function createAwsClientConfig(regionOverride?: string): AWSClientConfig {
   const accessKeyId = readTrimmed(process.env.AWS_ACCESS_KEY_ID);
   const secretAccessKey = readTrimmed(process.env.AWS_SECRET_ACCESS_KEY);
@@ -246,8 +267,19 @@ async function buildAmazonAudit(): Promise<Record<string, unknown>> {
   const distributionId = readTrimmed(process.env.CLOUDFRONT_DISTRIBUTION_ID);
   const bucketName = readTrimmed(process.env.S3_BUCKET_NAME);
 
-  const checks = {
-    callerIdentity: await capture(async () => {
+  const [
+    callerIdentity,
+    route53HostedZones,
+    acmCertificates,
+    cloudFrontCheck,
+    loadBalancers,
+    ec2Instances,
+    ec2SecurityGroups,
+    ec2Subnets,
+    ecsClusters,
+    s3Check,
+  ] = await Promise.all([
+    captureWithTimeout('AWS caller identity', async () => {
       const response = await sts.send(new GetCallerIdentityCommand({}));
       return {
         account: readTrimmed(response.Account) || null,
@@ -255,7 +287,7 @@ async function buildAmazonAudit(): Promise<Record<string, unknown>> {
         userId: readTrimmed(response.UserId) || null,
       };
     }),
-    route53HostedZones: await capture(async () => {
+    captureWithTimeout('AWS Route53 hosted zones', async () => {
       const response = await route53.send(new ListHostedZonesByNameCommand({ DNSName: `${domainName}.`, MaxItems: 5 }));
       return (response.HostedZones ?? []).map((zone) => ({
         id: readTrimmed(zone.Id).replace('/hostedzone/', ''),
@@ -263,7 +295,7 @@ async function buildAmazonAudit(): Promise<Record<string, unknown>> {
         privateZone: Boolean(zone.Config?.PrivateZone),
       }));
     }),
-    acmCertificates: await capture(async () => {
+    captureWithTimeout('AWS ACM certificates', async () => {
       const response = await acm.send(new ListCertificatesCommand({ MaxItems: 5 }));
       return (response.CertificateSummaryList ?? []).map((certificate) => ({
         arn: maskValue(readTrimmed(certificate.CertificateArn)),
@@ -271,7 +303,7 @@ async function buildAmazonAudit(): Promise<Record<string, unknown>> {
         status: readTrimmed(certificate.Status) || null,
       }));
     }),
-    cloudFront: await capture(async () => {
+    captureWithTimeout('AWS CloudFront', async () => {
       if (distributionId) {
         const response = await cloudFront.send(new GetDistributionCommand({ Id: distributionId }));
         return {
@@ -289,7 +321,7 @@ async function buildAmazonAudit(): Promise<Record<string, unknown>> {
         aliases: distribution.Aliases?.Items ?? [],
       }));
     }),
-    loadBalancers: await capture(async () => {
+    captureWithTimeout('AWS load balancers', async () => {
       const response = await elbv2.send(new DescribeLoadBalancersCommand({}));
       return (response.LoadBalancers ?? []).slice(0, 10).map((loadBalancer) => ({
         arn: maskValue(readTrimmed(loadBalancer.LoadBalancerArn)),
@@ -298,7 +330,7 @@ async function buildAmazonAudit(): Promise<Record<string, unknown>> {
         state: readTrimmed(loadBalancer.State?.Code),
       }));
     }),
-    ec2Instances: await capture(async () => {
+    captureWithTimeout('AWS EC2 instances', async () => {
       const response = await ec2.send(new DescribeInstancesCommand({
         Filters: [{ Name: 'instance-state-name', Values: ['pending', 'running', 'stopping', 'stopped'] }],
         MaxResults: 10,
@@ -310,7 +342,7 @@ async function buildAmazonAudit(): Promise<Record<string, unknown>> {
         publicDnsName: readTrimmed(instance.PublicDnsName) || null,
       }));
     }),
-    ec2SecurityGroups: await capture(async () => {
+    captureWithTimeout('AWS EC2 security groups', async () => {
       const response = await ec2.send(new DescribeSecurityGroupsCommand({}));
       return (response.SecurityGroups ?? []).slice(0, 10).map((group) => ({
         groupId: readTrimmed(group.GroupId),
@@ -318,7 +350,7 @@ async function buildAmazonAudit(): Promise<Record<string, unknown>> {
         description: readTrimmed(group.Description),
       }));
     }),
-    ec2Subnets: await capture(async () => {
+    captureWithTimeout('AWS EC2 subnets', async () => {
       const response = await ec2.send(new DescribeSubnetsCommand({ MaxResults: 10 }));
       return (response.Subnets ?? []).slice(0, 10).map((subnet) => ({
         subnetId: readTrimmed(subnet.SubnetId),
@@ -327,11 +359,11 @@ async function buildAmazonAudit(): Promise<Record<string, unknown>> {
         cidrBlock: readTrimmed(subnet.CidrBlock),
       }));
     }),
-    ecsClusters: await capture(async () => {
+    captureWithTimeout('AWS ECS clusters', async () => {
       const response = await ecs.send(new ListClustersCommand({ maxResults: 10 }));
       return response.clusterArns ?? [];
     }),
-    s3: await capture(async () => {
+    captureWithTimeout('AWS S3', async () => {
       if (bucketName) {
         await s3.send(new HeadBucketCommand({ Bucket: bucketName }));
         return {
@@ -349,6 +381,19 @@ async function buildAmazonAudit(): Promise<Record<string, unknown>> {
         })),
       };
     }),
+  ]);
+
+  const checks = {
+    callerIdentity,
+    route53HostedZones,
+    acmCertificates,
+    cloudFront: cloudFrontCheck,
+    loadBalancers,
+    ec2Instances,
+    ec2SecurityGroups,
+    ec2Subnets,
+    ecsClusters,
+    s3: s3Check,
   };
 
   const checkValues = Object.values(checks);
