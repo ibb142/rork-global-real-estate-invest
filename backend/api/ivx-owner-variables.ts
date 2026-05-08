@@ -3,8 +3,10 @@ import { Buffer } from 'node:buffer';
 import { GetCallerIdentityCommand, STSClient } from '@aws-sdk/client-sts';
 import { assertIVXOwnerOnly, ownerOnlyJson, ownerOnlyOptions, type IVXOwnerRequestContext } from './owner-only';
 
-const DEPLOYMENT_MARKER = 'ivx-owner-variables-2026-05-08t2100z';
+const DEPLOYMENT_MARKER = 'ivx-owner-variables-2026-05-08t2305z-rest-storage';
 const RENDER_API_BASE_URL = 'https://api.render.com/v1';
+const OWNER_VARIABLES_TABLE = 'ivx_owner_variables';
+const OWNER_VARIABLES_AUDIT_TABLE = 'ivx_owner_variable_audit';
 const MAX_VARIABLE_VALUE_LENGTH = 16_384;
 const ENCRYPTION_AAD = Buffer.from('ivx_owner_variables:v1', 'utf8');
 
@@ -94,6 +96,44 @@ function isProductionRuntime(): boolean {
 function useMemoryStore(): boolean {
   const flag = readEnv('IVX_OWNER_VARIABLES_MEMORY_STORE').toLowerCase();
   return !isProductionRuntime() && (flag === '1' || flag === 'true' || flag === 'yes' || flag === 'on');
+}
+
+function decodeJwtRole(token: string): string | null {
+  const payloadSegment = token.split('.')[1];
+  if (!payloadSegment) return null;
+  try {
+    const padded = payloadSegment.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(payloadSegment.length / 4) * 4, '=');
+    const parsed = JSON.parse(Buffer.from(padded, 'base64').toString('utf8')) as { role?: unknown };
+    return typeof parsed.role === 'string' ? parsed.role : null;
+  } catch {
+    return null;
+  }
+}
+
+function getSupabaseServiceRoleKey(): string {
+  const anonKey = readEnv('EXPO_PUBLIC_SUPABASE_ANON_KEY');
+  const serviceKey = readEnv('SUPABASE_SERVICE_ROLE_KEY') || readEnv('SUPABASE_SERVICE_KEY');
+  const role = decodeJwtRole(serviceKey);
+  if (!serviceKey || serviceKey === anonKey || (role !== 'service_role' && role !== 'supabase_admin')) {
+    return '';
+  }
+  return serviceKey;
+}
+
+function getSupabaseRestBaseUrl(): string {
+  const supabaseUrl = readEnv('EXPO_PUBLIC_SUPABASE_URL').replace(/\/+$/, '');
+  return supabaseUrl ? `${supabaseUrl}/rest/v1` : '';
+}
+
+function canUseSupabaseRestStore(): boolean {
+  return Boolean(getSupabaseRestBaseUrl() && getSupabaseServiceRoleKey());
+}
+
+function useSupabaseRestStore(): boolean {
+  const flag = readEnv('IVX_OWNER_VARIABLES_STORAGE').toLowerCase();
+  if (flag === 'postgres' || flag === 'pg') return false;
+  if (flag === 'rest' || flag === 'supabase_rest') return canUseSupabaseRestStore();
+  return isProductionRuntime() && canUseSupabaseRestStore();
 }
 
 function getDatabaseUrl(): string {
@@ -186,6 +226,93 @@ function maskValue(name: OwnerVariableName, value: string): string {
   return `${trimmed.slice(0, Math.min(4, trimmed.length))}****${last}`;
 }
 
+function supabaseRestHeaders(prefer?: string): HeadersInit {
+  const key = getSupabaseServiceRoleKey();
+  return {
+    apikey: key,
+    Authorization: `Bearer ${key}`,
+    Accept: 'application/json',
+    'Content-Type': 'application/json',
+    ...(prefer ? { Prefer: prefer } : {}),
+  };
+}
+
+async function parseSupabaseRestResponse(response: Response): Promise<unknown> {
+  const text = await response.text();
+  if (!text) return null;
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return { message: sanitizeExternalErrorDetail(text) };
+  }
+}
+
+async function supabaseRestRequest<T>(path: string, init: RequestInit = {}, prefer?: string): Promise<T> {
+  const baseUrl = getSupabaseRestBaseUrl();
+  if (!baseUrl || !getSupabaseServiceRoleKey()) {
+    throw new Error('Owner Variables Supabase REST storage is not configured. Set EXPO_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.');
+  }
+  const response = await fetch(`${baseUrl}${path}`, {
+    ...init,
+    headers: {
+      ...supabaseRestHeaders(prefer),
+      ...(init.headers ?? {}),
+    },
+  });
+  const payload = await parseSupabaseRestResponse(response);
+  if (!response.ok) {
+    const record = readRecord(payload);
+    const message = readTrimmed(record.message) || readTrimmed(record.error) || `Supabase REST returned HTTP ${response.status}.`;
+    throw new Error(sanitizeExternalErrorDetail(message));
+  }
+  return payload as T;
+}
+
+async function executeSupabaseSql(sql: string): Promise<void> {
+  await supabaseRestRequest('/rpc/ivx_exec_sql', {
+    method: 'POST',
+    body: JSON.stringify({ sql_text: sql }),
+  });
+}
+
+async function ensureSchemaViaSupabaseRest(): Promise<void> {
+  const statements = [
+    `create table if not exists public.ivx_owner_variables (
+      name text primary key,
+      provider text not null,
+      encrypted_value text not null,
+      value_iv text not null,
+      value_tag text not null,
+      value_hash text not null,
+      masked_preview text not null,
+      status text not null default 'saved',
+      last_tested_at timestamptz,
+      last_test_result text,
+      saved_by_user_id text,
+      saved_by_email text,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    )`,
+    `create table if not exists public.ivx_owner_variable_audit (
+      id text primary key,
+      actor_user_id text,
+      actor_email text,
+      variable_name text,
+      provider text,
+      action text not null,
+      result text not null,
+      details jsonb not null default '{}'::jsonb,
+      created_at timestamptz not null default now()
+    )`,
+    'create index if not exists ivx_owner_variable_audit_created_at_idx on public.ivx_owner_variable_audit (created_at desc)',
+    'create index if not exists ivx_owner_variable_audit_name_idx on public.ivx_owner_variable_audit (variable_name)',
+    "select pg_notify('pgrst','reload schema')",
+  ];
+  for (const statement of statements) {
+    await executeSupabaseSql(statement);
+  }
+}
+
 async function getPool(): Promise<PgPool> {
   if (cachedPool) {
     return cachedPool;
@@ -221,7 +348,10 @@ async function ensureSchema(): Promise<void> {
     return;
   }
   if (!schemaReadyPromise) {
-    schemaReadyPromise = withClient(async (client) => {
+    if (useSupabaseRestStore()) {
+      schemaReadyPromise = ensureSchemaViaSupabaseRest();
+    } else {
+      schemaReadyPromise = withClient(async (client) => {
       await client.query(`
         create table if not exists public.ivx_owner_variables (
           name text primary key,
@@ -253,17 +383,74 @@ async function ensureSchema(): Promise<void> {
           created_at timestamptz not null default now()
         )
       `);
-      await client.query('create index if not exists ivx_owner_variable_audit_created_at_idx on public.ivx_owner_variable_audit (created_at desc)');
-      await client.query('create index if not exists ivx_owner_variable_audit_name_idx on public.ivx_owner_variable_audit (variable_name)');
-    });
+        await client.query('create index if not exists ivx_owner_variable_audit_created_at_idx on public.ivx_owner_variable_audit (created_at desc)');
+        await client.query('create index if not exists ivx_owner_variable_audit_name_idx on public.ivx_owner_variable_audit (variable_name)');
+      });
+    }
   }
   await schemaReadyPromise;
+}
+
+async function listStoredRowsViaSupabaseRest(): Promise<OwnerVariableRow[]> {
+  return await supabaseRestRequest<OwnerVariableRow[]>(`/${OWNER_VARIABLES_TABLE}?select=*&order=provider.asc,name.asc`, { method: 'GET' });
+}
+
+async function getStoredRowViaSupabaseRest(name: OwnerVariableName): Promise<OwnerVariableRow | null> {
+  const rows = await supabaseRestRequest<OwnerVariableRow[]>(`/${OWNER_VARIABLES_TABLE}?select=*&name=eq.${encodeURIComponent(name)}&limit=1`, { method: 'GET' });
+  return rows[0] ?? null;
+}
+
+async function saveStoredVariableViaSupabaseRest(row: OwnerVariableRow): Promise<OwnerVariableRow> {
+  const rows = await supabaseRestRequest<OwnerVariableRow[]>(`/${OWNER_VARIABLES_TABLE}?on_conflict=name`, {
+    method: 'POST',
+    body: JSON.stringify([row]),
+  }, 'resolution=merge-duplicates,return=representation');
+  return rows[0] ?? row;
+}
+
+async function deleteStoredVariableViaSupabaseRest(name: OwnerVariableName): Promise<boolean> {
+  const rows = await supabaseRestRequest<Array<{ name: string }>>(`/${OWNER_VARIABLES_TABLE}?name=eq.${encodeURIComponent(name)}&select=name`, {
+    method: 'DELETE',
+  }, 'return=representation');
+  return rows.length > 0;
+}
+
+async function updateVariableTestStatusViaSupabaseRest(name: OwnerVariableName, status: OwnerVariableStatus, message: string): Promise<void> {
+  await supabaseRestRequest(`/${OWNER_VARIABLES_TABLE}?name=eq.${encodeURIComponent(name)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      status,
+      last_tested_at: nowIso(),
+      last_test_result: sanitizeExternalErrorDetail(message),
+      updated_at: nowIso(),
+    }),
+  }, 'return=minimal');
+}
+
+async function auditOwnerVariableActionViaSupabaseRest(row: Record<string, unknown>): Promise<void> {
+  await supabaseRestRequest(`/${OWNER_VARIABLES_AUDIT_TABLE}`, {
+    method: 'POST',
+    body: JSON.stringify([{
+      id: row.id,
+      actor_user_id: row.actorUserId,
+      actor_email: row.actorEmail,
+      variable_name: row.variableName,
+      provider: row.provider,
+      action: row.action,
+      result: row.result,
+      details: row.details,
+      created_at: row.createdAt,
+    }]),
+  }, 'return=minimal');
 }
 
 async function listStoredRows(): Promise<OwnerVariableRow[]> {
   await ensureSchema();
   if (useMemoryStore()) {
     return Array.from(memoryStore.values());
+  }
+  if (useSupabaseRestStore()) {
+    return await listStoredRowsViaSupabaseRest();
   }
   return await withClient(async (client) => {
     const result = await client.query<OwnerVariableRow>('select * from public.ivx_owner_variables order by provider, name');
@@ -275,6 +462,9 @@ async function getStoredRow(name: OwnerVariableName): Promise<OwnerVariableRow |
   await ensureSchema();
   if (useMemoryStore()) {
     return memoryStore.get(name) ?? null;
+  }
+  if (useSupabaseRestStore()) {
+    return await getStoredRowViaSupabaseRest(name);
   }
   return await withClient(async (client) => {
     const result = await client.query<OwnerVariableRow>('select * from public.ivx_owner_variables where name = $1 limit 1', [name]);
@@ -311,6 +501,9 @@ async function saveStoredVariable(ownerContext: IVXOwnerRequestContext, name: Ow
     memoryStore.set(name, row);
     return row;
   }
+  if (useSupabaseRestStore()) {
+    return await saveStoredVariableViaSupabaseRest(row);
+  }
 
   return await withClient(async (client) => {
     const result = await client.query<OwnerVariableRow>(`
@@ -341,6 +534,9 @@ async function deleteStoredVariable(name: OwnerVariableName): Promise<boolean> {
   if (useMemoryStore()) {
     return memoryStore.delete(name);
   }
+  if (useSupabaseRestStore()) {
+    return await deleteStoredVariableViaSupabaseRest(name);
+  }
   return await withClient(async (client) => {
     const result = await client.query<{ name: string }>('delete from public.ivx_owner_variables where name = $1 returning name', [name]);
     return result.rows.length > 0;
@@ -356,6 +552,10 @@ async function updateVariableTestStatus(name: OwnerVariableName, result: TestRes
     if (row) {
       memoryStore.set(name, { ...row, status, last_tested_at: timestamp, last_test_result: sanitizeExternalErrorDetail(message), updated_at: timestamp });
     }
+    return;
+  }
+  if (useSupabaseRestStore()) {
+    await updateVariableTestStatusViaSupabaseRest(name, status, message);
     return;
   }
   await withClient(async (client) => {
@@ -391,6 +591,10 @@ async function auditOwnerVariableAction(input: {
   }
   try {
     await ensureSchema();
+    if (useSupabaseRestStore()) {
+      await auditOwnerVariableActionViaSupabaseRest(row);
+      return;
+    }
     await withClient(async (client) => {
       await client.query(
         'insert into public.ivx_owner_variable_audit (id, actor_user_id, actor_email, variable_name, provider, action, result, details, created_at) values ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,now())',
@@ -589,7 +793,7 @@ function validateSingleVariableForTest(name: OwnerVariableName, value: string): 
 }
 
 async function buildStatusPayload(ownerContext: IVXOwnerRequestContext, providerOverride?: ProviderReadiness): Promise<Record<string, unknown>> {
-  const storageBackend = useMemoryStore() ? 'local_ephemeral_dev_only' : 'encrypted_postgres';
+  const storageBackend = useMemoryStore() ? 'local_ephemeral_dev_only' : useSupabaseRestStore() ? 'encrypted_supabase_rest' : 'encrypted_postgres';
   const encryptionConfigured = Boolean(getEncryptionSecret());
   try {
     const rows = await listStoredRows();
