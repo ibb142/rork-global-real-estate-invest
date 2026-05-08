@@ -9,12 +9,13 @@ import { OPTIONS as auditReportOptions, handleIVXAuditReportRequest } from './ap
 import { OPTIONS as supabaseInspectionOptions, handleIVXSupabaseInspectionRequest, inspectSupabaseTables } from './api/ivx-supabase-inspection';
 import { executeIVXAIBrainTool } from './services/ivx-ai-brain-tool-executor';
 import { OPTIONS as supabaseOwnerActionOptions, handleIVXSupabaseOwnerActionRequest } from './api/ivx-supabase-owner-actions';
-import { OPTIONS as ownerRegistrationOptions, handleIVXOwnerRegistrationRequest, handleIVXOwnerRegistrationStatusRequest } from './api/ivx-owner-registration';
+import { OPTIONS as ownerRegistrationOptions, handleIVXOwnerRegistrationRepairRequest, handleIVXOwnerRegistrationRequest, handleIVXOwnerRegistrationStatusRequest } from './api/ivx-owner-registration';
 import { handleIVXDevelopmentActionRequest, handleIVXDevelopmentControlRequest, ivxDevelopmentControlOptions } from './api/ivx-development-control';
 import { OPTIONS as aiBrainToolsOptions, handleIVXAIBrainToolExecuteRequest, handleIVXAIBrainToolsListRequest } from './api/ivx-ai-brain-tools';
 import { OPTIONS as controlRoomStatusOptions, handleIVXControlRoomStatusRequest } from './api/ivx-control-room-status';
 import { OPTIONS as developerDeployOptions, handleIVXDeveloperDeployActionRequest, handleIVXDeveloperDeployStatusRequest } from './api/ivx-developer-deploy-control';
 import { OPTIONS as variablesToolOptions, handleIVXVariablesToolSaveRequest, handleIVXVariablesToolStatusRequest } from './api/ivx-variables-tool';
+import { OPTIONS as ownerVariablesOptions, handleIVXOwnerVariablesDeleteRequest, handleIVXOwnerVariablesSaveRequest, handleIVXOwnerVariablesStatusRequest, handleIVXOwnerVariablesTestRequest } from './api/ivx-owner-variables';
 import { OPTIONS as assistantOptions, POST as handleAssistantPost } from './api/assistant';
 import { OPTIONS as planCreatorOptions, POST as handlePlanCreatorPost } from './api/plan-creator';
 import { handlePublicChatPost } from './api/public-chat';
@@ -97,7 +98,7 @@ async function handleRoute53Request(
 }
 
 const app = new Hono();
-const DEPLOYMENT_MARKER = 'ivx-owner-ai-hono-2026-05-06t2030z';
+const DEPLOYMENT_MARKER = 'ivx-owner-ai-hono-2026-05-08t2245z-owner-signup-rate-limit-guard';
 const SERVER_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const WEB_DIST_ROOT = path.join(SERVER_ROOT, 'expo', 'dist');
 const CHAT_DATABASE_PATH = (process.env.CHAT_DATABASE_PATH?.trim() || path.join(SERVER_ROOT, 'data', 'chat-room.sqlite'));
@@ -956,6 +957,10 @@ app.get('/health', (context) => {
       'POST /api/ivx/developer-deploy/action',
       'GET /api/ivx/variables-tool/status',
       'POST /api/ivx/variables-tool/save',
+      'GET /api/ivx/owner-variables/status',
+      'POST /api/ivx/owner-variables/save',
+      'POST /api/ivx/owner-variables/test',
+      'POST /api/ivx/owner-variables/delete',
       'GET /api/ivx/ai-brain/tools',
       'POST /api/ivx/ai-brain/tools',
       'POST /api/ivx/ai-brain/tools/execute',
@@ -966,6 +971,7 @@ app.get('/health', (context) => {
       'POST /api/ivx/supabase/owner-action',
       'GET /api/ivx/owner-registration/status',
       'POST /api/ivx/owner-registration',
+      'POST /api/ivx/owner-registration/repair',
       'POST /api/assistant',
       'POST /api/plan-creator',
       'POST /api/upload/image',
@@ -1027,6 +1033,14 @@ app.options('/api/ivx/variables-tool/status', () => variablesToolOptions());
 app.get('/api/ivx/variables-tool/status', async (context) => handleIVXVariablesToolStatusRequest(context.req.raw));
 app.options('/api/ivx/variables-tool/save', () => variablesToolOptions());
 app.post('/api/ivx/variables-tool/save', async (context) => handleIVXVariablesToolSaveRequest(context.req.raw));
+app.options('/api/ivx/owner-variables/status', () => ownerVariablesOptions());
+app.get('/api/ivx/owner-variables/status', async (context) => handleIVXOwnerVariablesStatusRequest(context.req.raw));
+app.options('/api/ivx/owner-variables/save', () => ownerVariablesOptions());
+app.post('/api/ivx/owner-variables/save', async (context) => handleIVXOwnerVariablesSaveRequest(context.req.raw));
+app.options('/api/ivx/owner-variables/test', () => ownerVariablesOptions());
+app.post('/api/ivx/owner-variables/test', async (context) => handleIVXOwnerVariablesTestRequest(context.req.raw));
+app.options('/api/ivx/owner-variables/delete', () => ownerVariablesOptions());
+app.post('/api/ivx/owner-variables/delete', async (context) => handleIVXOwnerVariablesDeleteRequest(context.req.raw));
 
 app.options('/api/ivx/ai-brain/tools', () => aiBrainToolsOptions());
 app.get('/api/ivx/ai-brain/tools', async (context) => handleIVXAIBrainToolsListRequest(context.req.raw));
@@ -1050,8 +1064,10 @@ app.options('/api/ivx/supabase/owner-action', () => supabaseOwnerActionOptions()
 app.post('/api/ivx/supabase/owner-action', async (context) => handleIVXSupabaseOwnerActionRequest(context.req.raw));
 app.options('/api/ivx/owner-registration', () => ownerRegistrationOptions());
 app.options('/api/ivx/owner-registration/status', () => ownerRegistrationOptions());
-app.get('/api/ivx/owner-registration/status', () => handleIVXOwnerRegistrationStatusRequest());
+app.options('/api/ivx/owner-registration/repair', () => ownerRegistrationOptions());
+app.get('/api/ivx/owner-registration/status', async (context) => handleIVXOwnerRegistrationStatusRequest(context.req.raw));
 app.post('/api/ivx/owner-registration', async (context) => handleIVXOwnerRegistrationRequest(context.req.raw));
+app.post('/api/ivx/owner-registration/repair', async (context) => handleIVXOwnerRegistrationRepairRequest(context.req.raw));
 
 app.options('/assistant', () => assistantOptions());
 app.options('/api/assistant', () => assistantOptions());

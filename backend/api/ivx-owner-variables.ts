@@ -1,0 +1,781 @@
+import { randomBytes, createCipheriv, createDecipheriv, createHash } from 'node:crypto';
+import { Buffer } from 'node:buffer';
+import { GetCallerIdentityCommand, STSClient } from '@aws-sdk/client-sts';
+import { assertIVXOwnerOnly, ownerOnlyJson, ownerOnlyOptions, type IVXOwnerRequestContext } from './owner-only';
+
+const DEPLOYMENT_MARKER = 'ivx-owner-variables-2026-05-08t2100z';
+const RENDER_API_BASE_URL = 'https://api.render.com/v1';
+const MAX_VARIABLE_VALUE_LENGTH = 16_384;
+const ENCRYPTION_AAD = Buffer.from('ivx_owner_variables:v1', 'utf8');
+
+const OWNER_VARIABLES = [
+  { name: 'GITHUB_TOKEN', provider: 'github', required: true, secret: true, description: 'GitHub token for owner-approved repository operations.' },
+  { name: 'GITHUB_REPO_URL', provider: 'github', required: true, secret: false, description: 'GitHub repository URL IVX AI should inspect or update.' },
+  { name: 'RENDER_API_KEY', provider: 'render', required: true, secret: true, description: 'Render API key for deploys and service/env checks.' },
+  { name: 'RENDER_SERVICE_ID', provider: 'render', required: true, secret: false, description: 'Render backend service ID.' },
+  { name: 'EXPO_PUBLIC_SUPABASE_ANON_KEY', provider: 'supabase', required: true, secret: true, description: 'Supabase anon key used by the app.' },
+  { name: 'SUPABASE_SERVICE_ROLE_KEY', provider: 'supabase', required: true, secret: true, description: 'Backend-only Supabase service-role key.' },
+  { name: 'IVX_AWS_READONLY_ACCESS_KEY_ID', provider: 'aws', required: true, secret: true, description: 'Least-privilege AWS read-only access key ID.' },
+  { name: 'IVX_AWS_READONLY_SECRET_ACCESS_KEY', provider: 'aws', required: true, secret: true, description: 'Least-privilege AWS read-only secret access key.' },
+  { name: 'AWS_REGION', provider: 'aws', required: true, secret: false, description: 'AWS region for read-only verification.' },
+  { name: 'AI_GATEWAY_API_KEY', provider: 'ai', required: false, secret: true, description: 'Optional AI gateway key.' },
+  { name: 'JWT_SECRET', provider: 'security', required: false, secret: true, description: 'Optional JWT signing secret.' },
+  { name: 'APP_SECRET', provider: 'security', required: false, secret: true, description: 'Optional app secret.' },
+  { name: 'S3_BUCKET_NAME', provider: 'storage', required: false, secret: false, description: 'Optional S3 bucket name.' },
+  { name: 'CLOUDFRONT_DISTRIBUTION_ID', provider: 'storage', required: false, secret: false, description: 'Optional CloudFront distribution ID.' },
+] as const;
+
+type OwnerVariableMetadata = typeof OWNER_VARIABLES[number];
+type OwnerVariableName = OwnerVariableMetadata['name'];
+type OwnerVariableProvider = OwnerVariableMetadata['provider'];
+type OwnerVariableStatus = 'missing' | 'saved' | 'tested' | 'invalid';
+type TestResult = 'tested' | 'invalid' | 'missing';
+
+type PgPool = import('pg').Pool;
+type PgPoolClient = import('pg').PoolClient;
+
+type OwnerVariableRow = {
+  name: string;
+  provider: string;
+  encrypted_value: string;
+  value_iv: string;
+  value_tag: string;
+  value_hash: string;
+  masked_preview: string;
+  status: OwnerVariableStatus;
+  last_tested_at: string | null;
+  last_test_result: string | null;
+  saved_by_user_id: string | null;
+  saved_by_email: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type ProviderReadiness = {
+  provider: OwnerVariableProvider;
+  status: 'missing' | 'saved' | 'tested' | 'invalid';
+  requiredVariableNames: OwnerVariableName[];
+  savedVariableNames: OwnerVariableName[];
+  missingVariableNames: OwnerVariableName[];
+  lastTestedAt: string | null;
+  secretValuesReturned: false;
+  httpStatus?: number | null;
+  error?: string;
+};
+
+type StoredSecretMap = Partial<Record<OwnerVariableName, string>>;
+
+const variableMetadataByName = new Map<OwnerVariableName, OwnerVariableMetadata>(OWNER_VARIABLES.map((item) => [item.name, item]));
+const memoryStore = new Map<string, OwnerVariableRow>();
+const memoryAuditRows: Record<string, unknown>[] = [];
+let cachedPool: PgPool | null = null;
+let schemaReadyPromise: Promise<void> | null = null;
+
+function nowIso(): string {
+  return new Date().toISOString();
+}
+
+function readTrimmed(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function readRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function readEnv(name: string): string {
+  return readTrimmed(process.env[name]);
+}
+
+function isProductionRuntime(): boolean {
+  return readEnv('NODE_ENV').toLowerCase() === 'production';
+}
+
+function useMemoryStore(): boolean {
+  const flag = readEnv('IVX_OWNER_VARIABLES_MEMORY_STORE').toLowerCase();
+  return !isProductionRuntime() && (flag === '1' || flag === 'true' || flag === 'yes' || flag === 'on');
+}
+
+function getDatabaseUrl(): string {
+  return readEnv('IVX_OWNER_VARIABLES_DATABASE_URL')
+    || readEnv('SUPABASE_DB_URL')
+    || readEnv('DATABASE_URL')
+    || readEnv('POSTGRES_URL');
+}
+
+function isAllowedVariableName(value: string): value is OwnerVariableName {
+  return variableMetadataByName.has(value as OwnerVariableName);
+}
+
+function sanitizeExternalErrorDetail(value: string): string {
+  return value
+    .replace(/Bearer\s+\S+/gi, 'Bearer [redacted]')
+    .replace(/[A-Za-z0-9_\-.=:/+]{24,}/g, '[redacted]')
+    .slice(0, 220);
+}
+
+function normalizeVariableValue(name: OwnerVariableName, rawValue: unknown): string {
+  if (typeof rawValue !== 'string') {
+    throw new Error(`${name} must be a string.`);
+  }
+  const value = rawValue.trim();
+  if (!value) {
+    throw new Error(`${name} cannot be blank.`);
+  }
+  if (value.length > MAX_VARIABLE_VALUE_LENGTH) {
+    throw new Error(`${name} exceeds the maximum allowed length.`);
+  }
+  return value;
+}
+
+function createAuditId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `audit-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function getEncryptionSecret(): string {
+  return readEnv('IVX_OWNER_VARIABLES_ENCRYPTION_KEY') || readEnv('APP_SECRET') || readEnv('JWT_SECRET');
+}
+
+function getEncryptionKey(): Buffer {
+  const secret = getEncryptionSecret();
+  if (!secret) {
+    throw new Error('Owner Variables encryption key is missing. Set IVX_OWNER_VARIABLES_ENCRYPTION_KEY, APP_SECRET, or JWT_SECRET on the backend.');
+  }
+  return createHash('sha256').update(secret, 'utf8').digest();
+}
+
+function encryptValue(value: string): { encryptedValue: string; iv: string; tag: string; hash: string } {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv('aes-256-gcm', getEncryptionKey(), iv);
+  cipher.setAAD(ENCRYPTION_AAD);
+  const encrypted = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return {
+    encryptedValue: encrypted.toString('base64'),
+    iv: iv.toString('base64'),
+    tag: tag.toString('base64'),
+    hash: createHash('sha256').update(value, 'utf8').digest('hex'),
+  };
+}
+
+function decryptRowValue(row: OwnerVariableRow): string {
+  const decipher = createDecipheriv('aes-256-gcm', getEncryptionKey(), Buffer.from(row.value_iv, 'base64'));
+  decipher.setAAD(ENCRYPTION_AAD);
+  decipher.setAuthTag(Buffer.from(row.value_tag, 'base64'));
+  return Buffer.concat([
+    decipher.update(Buffer.from(row.encrypted_value, 'base64')),
+    decipher.final(),
+  ]).toString('utf8');
+}
+
+function maskValue(name: OwnerVariableName, value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return '****';
+  const last = trimmed.slice(-4);
+  if (name === 'GITHUB_TOKEN' && trimmed.startsWith('gh')) return `${trimmed.slice(0, 4)}****${last}`;
+  if (name === 'GITHUB_REPO_URL') {
+    const match = trimmed.match(/github\.com[/:]([^/]+)\/([^/.]+)(?:\.git)?/i);
+    return match ? `github.com/${match[1]}/****` : `url****${last}`;
+  }
+  if (name === 'RENDER_SERVICE_ID' || name === 'CLOUDFRONT_DISTRIBUTION_ID') return `${trimmed.slice(0, 4)}****${last}`;
+  if (name === 'AWS_REGION') return trimmed;
+  if (name === 'S3_BUCKET_NAME') return `${trimmed.slice(0, 3)}****${last}`;
+  return `${trimmed.slice(0, Math.min(4, trimmed.length))}****${last}`;
+}
+
+async function getPool(): Promise<PgPool> {
+  if (cachedPool) {
+    return cachedPool;
+  }
+  const connectionString = getDatabaseUrl();
+  if (!connectionString) {
+    throw new Error('Owner Variables database URL is missing. Set IVX_OWNER_VARIABLES_DATABASE_URL, SUPABASE_DB_URL, DATABASE_URL, or POSTGRES_URL.');
+  }
+  const pgModule = await import('pg');
+  cachedPool = new pgModule.Pool({
+    connectionString,
+    ssl: { rejectUnauthorized: false },
+    application_name: 'ivx_owner_variables',
+    max: 2,
+    idleTimeoutMillis: 5_000,
+    connectionTimeoutMillis: 8_000,
+  });
+  return cachedPool;
+}
+
+async function withClient<T>(callback: (client: PgPoolClient) => Promise<T>): Promise<T> {
+  const pool = await getPool();
+  const client = await pool.connect();
+  try {
+    return await callback(client);
+  } finally {
+    client.release();
+  }
+}
+
+async function ensureSchema(): Promise<void> {
+  if (useMemoryStore()) {
+    return;
+  }
+  if (!schemaReadyPromise) {
+    schemaReadyPromise = withClient(async (client) => {
+      await client.query(`
+        create table if not exists public.ivx_owner_variables (
+          name text primary key,
+          provider text not null,
+          encrypted_value text not null,
+          value_iv text not null,
+          value_tag text not null,
+          value_hash text not null,
+          masked_preview text not null,
+          status text not null default 'saved',
+          last_tested_at timestamptz,
+          last_test_result text,
+          saved_by_user_id text,
+          saved_by_email text,
+          created_at timestamptz not null default now(),
+          updated_at timestamptz not null default now()
+        )
+      `);
+      await client.query(`
+        create table if not exists public.ivx_owner_variable_audit (
+          id text primary key,
+          actor_user_id text,
+          actor_email text,
+          variable_name text,
+          provider text,
+          action text not null,
+          result text not null,
+          details jsonb not null default '{}'::jsonb,
+          created_at timestamptz not null default now()
+        )
+      `);
+      await client.query('create index if not exists ivx_owner_variable_audit_created_at_idx on public.ivx_owner_variable_audit (created_at desc)');
+      await client.query('create index if not exists ivx_owner_variable_audit_name_idx on public.ivx_owner_variable_audit (variable_name)');
+    });
+  }
+  await schemaReadyPromise;
+}
+
+async function listStoredRows(): Promise<OwnerVariableRow[]> {
+  await ensureSchema();
+  if (useMemoryStore()) {
+    return Array.from(memoryStore.values());
+  }
+  return await withClient(async (client) => {
+    const result = await client.query<OwnerVariableRow>('select * from public.ivx_owner_variables order by provider, name');
+    return result.rows;
+  });
+}
+
+async function getStoredRow(name: OwnerVariableName): Promise<OwnerVariableRow | null> {
+  await ensureSchema();
+  if (useMemoryStore()) {
+    return memoryStore.get(name) ?? null;
+  }
+  return await withClient(async (client) => {
+    const result = await client.query<OwnerVariableRow>('select * from public.ivx_owner_variables where name = $1 limit 1', [name]);
+    return result.rows[0] ?? null;
+  });
+}
+
+async function saveStoredVariable(ownerContext: IVXOwnerRequestContext, name: OwnerVariableName, value: string): Promise<OwnerVariableRow> {
+  const metadata = variableMetadataByName.get(name);
+  if (!metadata) {
+    throw new Error(`Unsupported variable name: ${name}.`);
+  }
+  await ensureSchema();
+  const encrypted = encryptValue(value);
+  const timestamp = nowIso();
+  const row: OwnerVariableRow = {
+    name,
+    provider: metadata.provider,
+    encrypted_value: encrypted.encryptedValue,
+    value_iv: encrypted.iv,
+    value_tag: encrypted.tag,
+    value_hash: encrypted.hash,
+    masked_preview: maskValue(name, value),
+    status: 'saved',
+    last_tested_at: null,
+    last_test_result: null,
+    saved_by_user_id: ownerContext.userId,
+    saved_by_email: ownerContext.email,
+    created_at: timestamp,
+    updated_at: timestamp,
+  };
+
+  if (useMemoryStore()) {
+    memoryStore.set(name, row);
+    return row;
+  }
+
+  return await withClient(async (client) => {
+    const result = await client.query<OwnerVariableRow>(`
+      insert into public.ivx_owner_variables
+        (name, provider, encrypted_value, value_iv, value_tag, value_hash, masked_preview, status, last_tested_at, last_test_result, saved_by_user_id, saved_by_email, created_at, updated_at)
+      values ($1,$2,$3,$4,$5,$6,$7,'saved',null,null,$8,$9,now(),now())
+      on conflict (name) do update set
+        provider = excluded.provider,
+        encrypted_value = excluded.encrypted_value,
+        value_iv = excluded.value_iv,
+        value_tag = excluded.value_tag,
+        value_hash = excluded.value_hash,
+        masked_preview = excluded.masked_preview,
+        status = 'saved',
+        last_tested_at = null,
+        last_test_result = null,
+        saved_by_user_id = excluded.saved_by_user_id,
+        saved_by_email = excluded.saved_by_email,
+        updated_at = now()
+      returning *
+    `, [name, metadata.provider, encrypted.encryptedValue, encrypted.iv, encrypted.tag, encrypted.hash, row.masked_preview, ownerContext.userId, ownerContext.email]);
+    return result.rows[0] ?? row;
+  });
+}
+
+async function deleteStoredVariable(name: OwnerVariableName): Promise<boolean> {
+  await ensureSchema();
+  if (useMemoryStore()) {
+    return memoryStore.delete(name);
+  }
+  return await withClient(async (client) => {
+    const result = await client.query<{ name: string }>('delete from public.ivx_owner_variables where name = $1 returning name', [name]);
+    return result.rows.length > 0;
+  });
+}
+
+async function updateVariableTestStatus(name: OwnerVariableName, result: TestResult, message: string): Promise<void> {
+  await ensureSchema();
+  const status: OwnerVariableStatus = result === 'tested' ? 'tested' : result === 'invalid' ? 'invalid' : 'missing';
+  const timestamp = nowIso();
+  if (useMemoryStore()) {
+    const row = memoryStore.get(name);
+    if (row) {
+      memoryStore.set(name, { ...row, status, last_tested_at: timestamp, last_test_result: sanitizeExternalErrorDetail(message), updated_at: timestamp });
+    }
+    return;
+  }
+  await withClient(async (client) => {
+    await client.query(
+      'update public.ivx_owner_variables set status = $2, last_tested_at = now(), last_test_result = $3, updated_at = now() where name = $1',
+      [name, status, sanitizeExternalErrorDetail(message)],
+    );
+  });
+}
+
+async function auditOwnerVariableAction(input: {
+  ownerContext: IVXOwnerRequestContext;
+  variableName: string | null;
+  provider: string | null;
+  action: 'save' | 'delete' | 'test';
+  result: string;
+  details?: Record<string, unknown>;
+}): Promise<void> {
+  const row = {
+    id: createAuditId(),
+    actorUserId: input.ownerContext.userId,
+    actorEmail: input.ownerContext.email,
+    variableName: input.variableName,
+    provider: input.provider,
+    action: input.action,
+    result: input.result,
+    details: { ...(input.details ?? {}), secretValuesReturned: false },
+    createdAt: nowIso(),
+  };
+  if (useMemoryStore()) {
+    memoryAuditRows.push(row);
+    return;
+  }
+  try {
+    await ensureSchema();
+    await withClient(async (client) => {
+      await client.query(
+        'insert into public.ivx_owner_variable_audit (id, actor_user_id, actor_email, variable_name, provider, action, result, details, created_at) values ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,now())',
+        [row.id, row.actorUserId, row.actorEmail, row.variableName, row.provider, row.action, row.result, JSON.stringify(row.details)],
+      );
+    });
+  } catch (error) {
+    console.log('[IVXOwnerVariables] Audit write skipped:', error instanceof Error ? sanitizeExternalErrorDetail(error.message) : 'unknown');
+  }
+}
+
+function buildVariableStatuses(rows: OwnerVariableRow[]) {
+  const rowByName = new Map(rows.map((row) => [row.name, row]));
+  return OWNER_VARIABLES.map((metadata) => {
+    const row = rowByName.get(metadata.name);
+    return {
+      name: metadata.name,
+      provider: metadata.provider,
+      required: metadata.required,
+      secret: metadata.secret,
+      status: row?.status ?? 'missing',
+      saved: Boolean(row),
+      lastTestedAt: row?.last_tested_at ?? null,
+      maskedPreview: row?.masked_preview ?? null,
+      description: metadata.description,
+      secretValuesReturned: false,
+    };
+  });
+}
+
+function buildProviderReadiness(rows: OwnerVariableRow[]): Record<OwnerVariableProvider, ProviderReadiness> {
+  const rowByName = new Map(rows.map((row) => [row.name, row]));
+  const providers = Array.from(new Set(OWNER_VARIABLES.map((item) => item.provider))) as OwnerVariableProvider[];
+  return Object.fromEntries(providers.map((provider) => {
+    const required = OWNER_VARIABLES.filter((item) => item.provider === provider && item.required).map((item) => item.name);
+    const saved = required.filter((name) => rowByName.has(name));
+    const missing = required.filter((name) => !rowByName.has(name));
+    const providerRows = OWNER_VARIABLES.filter((item) => item.provider === provider).map((item) => rowByName.get(item.name)).filter((row): row is OwnerVariableRow => Boolean(row));
+    const hasInvalid = providerRows.some((row) => row.status === 'invalid');
+    const hasTested = required.length > 0 && required.every((name) => rowByName.get(name)?.status === 'tested');
+    const lastTestedAt = providerRows
+      .map((row) => row.last_tested_at)
+      .filter((value): value is string => Boolean(value))
+      .sort()
+      .at(-1) ?? null;
+    const status: ProviderReadiness['status'] = missing.length > 0 ? 'missing' : hasInvalid ? 'invalid' : hasTested ? 'tested' : 'saved';
+    return [provider, {
+      provider,
+      status,
+      requiredVariableNames: required,
+      savedVariableNames: saved,
+      missingVariableNames: missing,
+      lastTestedAt,
+      secretValuesReturned: false,
+    }];
+  })) as Record<OwnerVariableProvider, ProviderReadiness>;
+}
+
+async function buildStoredSecretMap(): Promise<StoredSecretMap> {
+  const rows = await listStoredRows();
+  const output: StoredSecretMap = {};
+  for (const row of rows) {
+    const name = row.name;
+    if (!isAllowedVariableName(name)) {
+      continue;
+    }
+    output[name] = decryptRowValue(row);
+  }
+  return output;
+}
+
+async function parseJsonResponse(response: Response): Promise<unknown> {
+  const text = await response.text();
+  if (!text) return null;
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+function createTimeoutSignal(timeoutMs: number): AbortSignal | undefined {
+  if (typeof AbortController === 'undefined') return undefined;
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), timeoutMs);
+  return controller.signal;
+}
+
+function parseGithubRepo(value: string): { owner: string; repo: string } | null {
+  const match = value.trim().match(/github\.com[/:]([^/\s]+)\/([^/.\s]+)(?:\.git)?/i);
+  if (!match) return null;
+  return { owner: match[1], repo: match[2] };
+}
+
+async function testGithubProvider(values: StoredSecretMap): Promise<ProviderReadiness> {
+  const token = values.GITHUB_TOKEN;
+  const repoUrl = values.GITHUB_REPO_URL;
+  const required: OwnerVariableName[] = ['GITHUB_TOKEN', 'GITHUB_REPO_URL'];
+  const missing = required.filter((name) => !values[name]);
+  if (missing.length > 0) {
+    return { provider: 'github', status: 'missing', requiredVariableNames: required, savedVariableNames: required.filter((name) => Boolean(values[name])), missingVariableNames: missing, lastTestedAt: null, secretValuesReturned: false };
+  }
+  const repo = parseGithubRepo(repoUrl ?? '');
+  if (!repo) {
+    return { provider: 'github', status: 'invalid', requiredVariableNames: required, savedVariableNames: required, missingVariableNames: [], lastTestedAt: nowIso(), secretValuesReturned: false, error: 'GITHUB_REPO_URL is not a valid GitHub repository URL.' };
+  }
+  try {
+    const response = await fetch(`https://api.github.com/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.repo)}`, {
+      headers: { Accept: 'application/vnd.github+json', Authorization: `Bearer ${token}`, 'X-GitHub-Api-Version': '2022-11-28' },
+      signal: createTimeoutSignal(10_000),
+    });
+    return { provider: 'github', status: response.ok ? 'tested' : 'invalid', requiredVariableNames: required, savedVariableNames: required, missingVariableNames: [], lastTestedAt: nowIso(), secretValuesReturned: false, httpStatus: response.status, error: response.ok ? undefined : `GitHub repo access returned HTTP ${response.status}.` };
+  } catch (error) {
+    return { provider: 'github', status: 'invalid', requiredVariableNames: required, savedVariableNames: required, missingVariableNames: [], lastTestedAt: nowIso(), secretValuesReturned: false, httpStatus: null, error: error instanceof Error ? sanitizeExternalErrorDetail(error.message) : 'GitHub provider test failed.' };
+  }
+}
+
+async function testRenderProvider(values: StoredSecretMap): Promise<ProviderReadiness> {
+  const apiKey = values.RENDER_API_KEY;
+  const serviceId = values.RENDER_SERVICE_ID;
+  const required: OwnerVariableName[] = ['RENDER_API_KEY', 'RENDER_SERVICE_ID'];
+  const missing = required.filter((name) => !values[name]);
+  if (missing.length > 0) {
+    return { provider: 'render', status: 'missing', requiredVariableNames: required, savedVariableNames: required.filter((name) => Boolean(values[name])), missingVariableNames: missing, lastTestedAt: null, secretValuesReturned: false };
+  }
+  try {
+    const response = await fetch(`${RENDER_API_BASE_URL}/services/${encodeURIComponent(serviceId ?? '')}`, {
+      headers: { Accept: 'application/json', Authorization: `Bearer ${apiKey}` },
+      signal: createTimeoutSignal(10_000),
+    });
+    return { provider: 'render', status: response.ok ? 'tested' : 'invalid', requiredVariableNames: required, savedVariableNames: required, missingVariableNames: [], lastTestedAt: nowIso(), secretValuesReturned: false, httpStatus: response.status, error: response.ok ? undefined : `Render service access returned HTTP ${response.status}.` };
+  } catch (error) {
+    return { provider: 'render', status: 'invalid', requiredVariableNames: required, savedVariableNames: required, missingVariableNames: [], lastTestedAt: nowIso(), secretValuesReturned: false, httpStatus: null, error: error instanceof Error ? sanitizeExternalErrorDetail(error.message) : 'Render provider test failed.' };
+  }
+}
+
+async function testSupabaseProvider(values: StoredSecretMap): Promise<ProviderReadiness> {
+  const supabaseUrl = readEnv('EXPO_PUBLIC_SUPABASE_URL').replace(/\/+$/, '');
+  const anonKey = values.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+  const serviceRoleKey = values.SUPABASE_SERVICE_ROLE_KEY;
+  const required: OwnerVariableName[] = ['EXPO_PUBLIC_SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY'];
+  const missing = required.filter((name) => !values[name]);
+  if (!supabaseUrl) {
+    return { provider: 'supabase', status: 'missing', requiredVariableNames: required, savedVariableNames: required.filter((name) => Boolean(values[name])), missingVariableNames: missing, lastTestedAt: null, secretValuesReturned: false, error: 'EXPO_PUBLIC_SUPABASE_URL must be configured on the backend runtime for Supabase tests.' };
+  }
+  if (missing.length > 0) {
+    return { provider: 'supabase', status: 'missing', requiredVariableNames: required, savedVariableNames: required.filter((name) => Boolean(values[name])), missingVariableNames: missing, lastTestedAt: null, secretValuesReturned: false };
+  }
+  try {
+    const [anonResponse, serviceResponse] = await Promise.all([
+      fetch(`${supabaseUrl}/rest/v1/`, { headers: { apikey: anonKey ?? '', Authorization: `Bearer ${anonKey}` }, signal: createTimeoutSignal(10_000) }),
+      fetch(`${supabaseUrl}/auth/v1/admin/users?per_page=1`, { headers: { apikey: serviceRoleKey ?? '', Authorization: `Bearer ${serviceRoleKey}` }, signal: createTimeoutSignal(10_000) }),
+    ]);
+    const ok = anonResponse.status < 500 && serviceResponse.ok;
+    return { provider: 'supabase', status: ok ? 'tested' : 'invalid', requiredVariableNames: required, savedVariableNames: required, missingVariableNames: [], lastTestedAt: nowIso(), secretValuesReturned: false, httpStatus: serviceResponse.status, error: ok ? undefined : `Supabase anon/service-role verification returned anon=${anonResponse.status}, service=${serviceResponse.status}.` };
+  } catch (error) {
+    return { provider: 'supabase', status: 'invalid', requiredVariableNames: required, savedVariableNames: required, missingVariableNames: [], lastTestedAt: nowIso(), secretValuesReturned: false, httpStatus: null, error: error instanceof Error ? sanitizeExternalErrorDetail(error.message) : 'Supabase provider test failed.' };
+  }
+}
+
+async function testAwsProvider(values: StoredSecretMap): Promise<ProviderReadiness> {
+  const accessKeyId = values.IVX_AWS_READONLY_ACCESS_KEY_ID;
+  const secretAccessKey = values.IVX_AWS_READONLY_SECRET_ACCESS_KEY;
+  const region = values.AWS_REGION || 'us-east-1';
+  const required: OwnerVariableName[] = ['IVX_AWS_READONLY_ACCESS_KEY_ID', 'IVX_AWS_READONLY_SECRET_ACCESS_KEY', 'AWS_REGION'];
+  const missing = required.filter((name) => !values[name]);
+  if (missing.length > 0) {
+    return { provider: 'aws', status: 'missing', requiredVariableNames: required, savedVariableNames: required.filter((name) => Boolean(values[name])), missingVariableNames: missing, lastTestedAt: null, secretValuesReturned: false };
+  }
+  try {
+    const client = new STSClient({ region, credentials: { accessKeyId: accessKeyId ?? '', secretAccessKey: secretAccessKey ?? '' } });
+    await client.send(new GetCallerIdentityCommand({}));
+    return { provider: 'aws', status: 'tested', requiredVariableNames: required, savedVariableNames: required, missingVariableNames: [], lastTestedAt: nowIso(), secretValuesReturned: false };
+  } catch (error) {
+    return { provider: 'aws', status: 'invalid', requiredVariableNames: required, savedVariableNames: required, missingVariableNames: [], lastTestedAt: nowIso(), secretValuesReturned: false, error: error instanceof Error ? sanitizeExternalErrorDetail(error.message) : 'AWS read-only identity test failed.' };
+  }
+}
+
+async function testProvider(provider: OwnerVariableProvider): Promise<ProviderReadiness> {
+  const values = await buildStoredSecretMap();
+  if (provider === 'github') return await testGithubProvider(values);
+  if (provider === 'render') return await testRenderProvider(values);
+  if (provider === 'supabase') return await testSupabaseProvider(values);
+  if (provider === 'aws') return await testAwsProvider(values);
+  const providerVariables = OWNER_VARIABLES.filter((item) => item.provider === provider && item.required).map((item) => item.name);
+  const missing = providerVariables.filter((name) => !values[name]);
+  return { provider, status: missing.length === 0 ? 'tested' : 'missing', requiredVariableNames: providerVariables, savedVariableNames: providerVariables.filter((name) => Boolean(values[name])), missingVariableNames: missing, lastTestedAt: nowIso(), secretValuesReturned: false };
+}
+
+function validateSingleVariableForTest(name: OwnerVariableName, value: string): { result: TestResult; message: string } {
+  if (!value.trim()) return { result: 'missing', message: 'No saved value.' };
+  if (name === 'GITHUB_REPO_URL' && !parseGithubRepo(value)) return { result: 'invalid', message: 'GitHub repository URL format is invalid.' };
+  if (name === 'AWS_REGION' && !/^[a-z]{2}-[a-z]+-\d$/.test(value)) return { result: 'invalid', message: 'AWS region format is invalid.' };
+  if (name === 'RENDER_SERVICE_ID' && !/^srv-[a-z0-9]+$/i.test(value)) return { result: 'invalid', message: 'Render service ID format is invalid.' };
+  return { result: 'tested', message: 'Saved value format check passed.' };
+}
+
+async function buildStatusPayload(ownerContext: IVXOwnerRequestContext, providerOverride?: ProviderReadiness): Promise<Record<string, unknown>> {
+  const storageBackend = useMemoryStore() ? 'local_ephemeral_dev_only' : 'encrypted_postgres';
+  const encryptionConfigured = Boolean(getEncryptionSecret());
+  try {
+    const rows = await listStoredRows();
+    const variables = buildVariableStatuses(rows);
+    const providers = buildProviderReadiness(rows);
+    if (providerOverride) {
+      providers[providerOverride.provider] = providerOverride;
+    }
+    const missingCredentials = variables.filter((item) => item.required && !item.saved).map((item) => item.name);
+    return {
+      ok: true,
+      ownerOnly: true,
+      routeRegistered: true,
+      tool: 'ivx_owner_variables_credentials_module',
+      deploymentMarker: DEPLOYMENT_MARKER,
+      authenticatedUserId: ownerContext.userId,
+      authenticatedRole: ownerContext.role,
+      storage: {
+        configured: true,
+        backend: storageBackend,
+        encryptedAtRest: true,
+        encryptionConfigured,
+        auditLogEnabled: true,
+      },
+      variables,
+      providers,
+      missingCredentials,
+      endpoints: {
+        status: 'GET /api/ivx/owner-variables/status',
+        save: 'POST /api/ivx/owner-variables/save',
+        test: 'POST /api/ivx/owner-variables/test',
+        delete: 'POST /api/ivx/owner-variables/delete',
+      },
+      audit: {
+        enabled: true,
+        rawSecretsStoredInAudit: false,
+        memoryAuditCount: useMemoryStore() ? memoryAuditRows.length : undefined,
+      },
+      secretValuesReturned: false,
+      timestamp: nowIso(),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      ownerOnly: true,
+      routeRegistered: true,
+      tool: 'ivx_owner_variables_credentials_module',
+      deploymentMarker: DEPLOYMENT_MARKER,
+      authenticatedUserId: ownerContext.userId,
+      authenticatedRole: ownerContext.role,
+      storage: {
+        configured: false,
+        backend: storageBackend,
+        encryptedAtRest: true,
+        encryptionConfigured,
+        auditLogEnabled: false,
+        error: error instanceof Error ? sanitizeExternalErrorDetail(error.message) : 'Owner Variables storage check failed.',
+      },
+      variables: buildVariableStatuses([]),
+      providers: buildProviderReadiness([]),
+      missingCredentials: OWNER_VARIABLES.filter((item) => item.required).map((item) => item.name),
+      secretValuesReturned: false,
+      timestamp: nowIso(),
+    };
+  }
+}
+
+function readRequestedVariableName(value: unknown): OwnerVariableName {
+  const name = readTrimmed(value);
+  if (!isAllowedVariableName(name)) {
+    throw new Error(`Unsupported variable name: ${name || 'blank'}.`);
+  }
+  return name;
+}
+
+function readRequestedProvider(value: unknown): OwnerVariableProvider {
+  const provider = readTrimmed(value) as OwnerVariableProvider;
+  const providers = new Set(OWNER_VARIABLES.map((item) => item.provider));
+  if (!providers.has(provider)) {
+    throw new Error(`Unsupported provider: ${provider || 'blank'}.`);
+  }
+  return provider;
+}
+
+export function OPTIONS(): Response {
+  return ownerOnlyOptions();
+}
+
+export async function handleIVXOwnerVariablesStatusRequest(request: Request): Promise<Response> {
+  try {
+    if (request.method !== 'GET' && request.method !== 'HEAD') {
+      return ownerOnlyJson({ error: 'Method not allowed.', secretValuesReturned: false }, 405);
+    }
+    const ownerContext = await assertIVXOwnerOnly(request);
+    return ownerOnlyJson(await buildStatusPayload(ownerContext));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Owner Variables status failed.';
+    return ownerOnlyJson({ ok: false, ownerOnly: true, routeRegistered: true, secretValuesReturned: false, error: message, deploymentMarker: DEPLOYMENT_MARKER, timestamp: nowIso() }, message.toLowerCase().includes('auth') || message.toLowerCase().includes('owner') ? 401 : 500);
+  }
+}
+
+export async function handleIVXOwnerVariablesSaveRequest(request: Request): Promise<Response> {
+  try {
+    if (request.method !== 'POST') {
+      return ownerOnlyJson({ error: 'Method not allowed.', secretValuesReturned: false }, 405);
+    }
+    const ownerContext = await assertIVXOwnerOnly(request);
+    const body = readRecord(await request.json().catch(() => ({})));
+    const name = readRequestedVariableName(body.name);
+    const value = normalizeVariableValue(name, body.value);
+    const metadata = variableMetadataByName.get(name);
+    if (!metadata) throw new Error(`Unsupported variable name: ${name}.`);
+    const row = await saveStoredVariable(ownerContext, name, value);
+    await auditOwnerVariableAction({ ownerContext, variableName: name, provider: metadata.provider, action: 'save', result: 'saved', details: { status: 'saved' } });
+    return ownerOnlyJson({
+      ok: true,
+      ownerOnly: true,
+      deploymentMarker: DEPLOYMENT_MARKER,
+      saved: {
+        name: row.name,
+        provider: row.provider,
+        status: row.status,
+        maskedPreview: row.masked_preview,
+        lastTestedAt: row.last_tested_at,
+        secretValuesReturned: false,
+      },
+      statusAfterSave: await buildStatusPayload(ownerContext),
+      secretValuesReturned: false,
+      timestamp: nowIso(),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Owner Variables save failed.';
+    return ownerOnlyJson({ ok: false, ownerOnly: true, secretValuesReturned: false, error: sanitizeExternalErrorDetail(message), deploymentMarker: DEPLOYMENT_MARKER, timestamp: nowIso() }, message.toLowerCase().includes('auth') || message.toLowerCase().includes('owner') ? 401 : 400);
+  }
+}
+
+export async function handleIVXOwnerVariablesDeleteRequest(request: Request): Promise<Response> {
+  try {
+    if (request.method !== 'POST' && request.method !== 'DELETE') {
+      return ownerOnlyJson({ error: 'Method not allowed.', secretValuesReturned: false }, 405);
+    }
+    const ownerContext = await assertIVXOwnerOnly(request);
+    const body = request.method === 'DELETE' ? readRecord(Object.fromEntries(new URL(request.url).searchParams.entries())) : readRecord(await request.json().catch(() => ({})));
+    const name = readRequestedVariableName(body.name);
+    const metadata = variableMetadataByName.get(name);
+    if (!metadata) throw new Error(`Unsupported variable name: ${name}.`);
+    const deleted = await deleteStoredVariable(name);
+    await auditOwnerVariableAction({ ownerContext, variableName: name, provider: metadata.provider, action: 'delete', result: deleted ? 'deleted' : 'missing', details: { deleted } });
+    return ownerOnlyJson({ ok: true, ownerOnly: true, deleted, variableName: name, secretValuesReturned: false, statusAfterDelete: await buildStatusPayload(ownerContext), deploymentMarker: DEPLOYMENT_MARKER, timestamp: nowIso() });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Owner Variables delete failed.';
+    return ownerOnlyJson({ ok: false, ownerOnly: true, secretValuesReturned: false, error: sanitizeExternalErrorDetail(message), deploymentMarker: DEPLOYMENT_MARKER, timestamp: nowIso() }, message.toLowerCase().includes('auth') || message.toLowerCase().includes('owner') ? 401 : 400);
+  }
+}
+
+export async function handleIVXOwnerVariablesTestRequest(request: Request): Promise<Response> {
+  try {
+    if (request.method !== 'POST') {
+      return ownerOnlyJson({ error: 'Method not allowed.', secretValuesReturned: false }, 405);
+    }
+    const ownerContext = await assertIVXOwnerOnly(request);
+    const body = readRecord(await request.json().catch(() => ({})));
+    const requestedName = readTrimmed(body.name);
+    const requestedProvider = readTrimmed(body.provider);
+
+    if (requestedName) {
+      const name = readRequestedVariableName(requestedName);
+      const row = await getStoredRow(name);
+      if (!row) {
+        await auditOwnerVariableAction({ ownerContext, variableName: name, provider: variableMetadataByName.get(name)?.provider ?? null, action: 'test', result: 'missing', details: { mode: 'variable_format' } });
+        return ownerOnlyJson({ ok: false, ownerOnly: true, variableName: name, testResult: 'missing', secretValuesReturned: false, error: `${name} has not been saved yet.`, deploymentMarker: DEPLOYMENT_MARKER, timestamp: nowIso() }, 404);
+      }
+      const validation = validateSingleVariableForTest(name, decryptRowValue(row));
+      await updateVariableTestStatus(name, validation.result, validation.message);
+      await auditOwnerVariableAction({ ownerContext, variableName: name, provider: row.provider, action: 'test', result: validation.result, details: { mode: 'variable_format' } });
+      return ownerOnlyJson({ ok: validation.result === 'tested', ownerOnly: true, variableName: name, provider: row.provider, testResult: validation.result, message: validation.message, statusAfterTest: await buildStatusPayload(ownerContext), secretValuesReturned: false, deploymentMarker: DEPLOYMENT_MARKER, timestamp: nowIso() }, validation.result === 'tested' ? 200 : 400);
+    }
+
+    const provider = readRequestedProvider(requestedProvider);
+    const providerResult = await testProvider(provider);
+    const providerVariableNames = OWNER_VARIABLES.filter((item) => item.provider === provider).map((item) => item.name);
+    await Promise.all(providerVariableNames.map((name) => updateVariableTestStatus(name, providerResult.status === 'tested' ? 'tested' : providerResult.status === 'invalid' ? 'invalid' : 'missing', providerResult.error ?? providerResult.status)));
+    await auditOwnerVariableAction({ ownerContext, variableName: null, provider, action: 'test', result: providerResult.status, details: { mode: 'provider', httpStatus: providerResult.httpStatus ?? null, missingVariableNames: providerResult.missingVariableNames } });
+    return ownerOnlyJson({ ok: providerResult.status === 'tested', ownerOnly: true, provider, providerResult, statusAfterTest: await buildStatusPayload(ownerContext, providerResult), secretValuesReturned: false, deploymentMarker: DEPLOYMENT_MARKER, timestamp: nowIso() }, providerResult.status === 'tested' ? 200 : 400);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Owner Variables test failed.';
+    return ownerOnlyJson({ ok: false, ownerOnly: true, secretValuesReturned: false, error: sanitizeExternalErrorDetail(message), deploymentMarker: DEPLOYMENT_MARKER, timestamp: nowIso() }, message.toLowerCase().includes('auth') || message.toLowerCase().includes('owner') ? 401 : 400);
+  }
+}

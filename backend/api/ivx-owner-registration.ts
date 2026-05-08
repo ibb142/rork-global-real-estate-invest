@@ -21,14 +21,26 @@ type OwnerRegistrationProof = {
   requestedRole: 'owner';
 };
 
-const DEPLOYMENT_MARKER = 'ivx-owner-registration-2026-05-08t0315z';
+type OwnerEmailLookup = {
+  requested: boolean;
+  allowed: boolean;
+  authUserExists: boolean | null;
+  profileExists: boolean | null;
+  walletExists: boolean | null;
+  safeToSignup: boolean;
+  action: 'signup' | 'sign_in' | 'not_allowed' | 'unavailable';
+  message: string;
+  secretValuesReturned: false;
+};
+
+const DEPLOYMENT_MARKER = 'ivx-owner-registration-2026-05-08t2245z-rate-limit-guard';
 
 const OWNER_REGISTRATION_HEADERS = {
   'Content-Type': 'application/json',
   'Cache-Control': 'no-store',
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
 } as const;
 
 const REQUEST_WINDOW_MS = 60_000;
@@ -202,6 +214,144 @@ async function findAuthUserByEmail(client: SupabaseClient, email: string): Promi
   return null;
 }
 
+async function inspectOwnerPersistence(client: SupabaseClient, userId: string): Promise<{ profileExists: boolean | null; walletExists: boolean | null }> {
+  const [profileResult, walletResult] = await Promise.allSettled([
+    client.from('profiles').select('id', { count: 'exact', head: true }).eq('id', userId),
+    client.from('wallets').select('user_id', { count: 'exact', head: true }).eq('user_id', userId),
+  ]);
+
+  const profileExists = profileResult.status === 'fulfilled'
+    ? profileResult.value.error ? null : (profileResult.value.count ?? 0) > 0
+    : null;
+  const walletExists = walletResult.status === 'fulfilled'
+    ? walletResult.value.error ? null : (walletResult.value.count ?? 0) > 0
+    : null;
+
+  return { profileExists, walletExists };
+}
+
+function isOwnerLikeUser(user: User, email: string): boolean {
+  const appMetadata = (user.app_metadata ?? {}) as Record<string, unknown>;
+  const userMetadata = (user.user_metadata ?? {}) as Record<string, unknown>;
+  const candidates = [
+    appMetadata.role,
+    appMetadata.accountType,
+    appMetadata.account_type,
+    appMetadata.requestedRole,
+    appMetadata.requested_role,
+    userMetadata.role,
+    userMetadata.accountType,
+    userMetadata.account_type,
+    userMetadata.requestedRole,
+    userMetadata.requested_role,
+  ].map((value) => readTrimmed(value).toLowerCase());
+
+  return getAllowedOwnerRegistrationEmails().includes(email)
+    || candidates.some((candidate) => ['owner', 'admin', 'super_admin'].includes(candidate));
+}
+
+function readBearerToken(request: Request): string {
+  const authorization = readTrimmed(request.headers.get('authorization'));
+  const match = authorization.match(/^Bearer\s+(.+)$/i);
+  return match?.[1]?.trim() ?? '';
+}
+
+function getUserName(user: User, key: 'firstName' | 'lastName', fallback: string): string {
+  const metadata = (user.user_metadata ?? {}) as Record<string, unknown>;
+  const snakeKey = key === 'firstName' ? 'first_name' : 'last_name';
+  return readTrimmed(metadata[key]) || readTrimmed(metadata[snakeKey]) || fallback;
+}
+
+async function buildOwnerEmailLookup(email: string): Promise<OwnerEmailLookup> {
+  if (!email) {
+    return {
+      requested: false,
+      allowed: false,
+      authUserExists: null,
+      profileExists: null,
+      walletExists: null,
+      safeToSignup: false,
+      action: 'unavailable',
+      message: 'No owner email lookup was requested.',
+      secretValuesReturned: false,
+    };
+  }
+
+  if (!isValidEmail(email)) {
+    return {
+      requested: true,
+      allowed: false,
+      authUserExists: null,
+      profileExists: null,
+      walletExists: null,
+      safeToSignup: false,
+      action: 'not_allowed',
+      message: 'A valid owner email is required before signup.',
+      secretValuesReturned: false,
+    };
+  }
+
+  try {
+    assertOwnerRegistrationEmailAllowed(email);
+  } catch (error) {
+    return {
+      requested: true,
+      allowed: false,
+      authUserExists: null,
+      profileExists: null,
+      walletExists: null,
+      safeToSignup: false,
+      action: 'not_allowed',
+      message: error instanceof Error ? error.message : 'Owner registration is limited to the configured owner email.',
+      secretValuesReturned: false,
+    };
+  }
+
+  try {
+    const client = createSupabaseAdminClient();
+    const existingUser = await findAuthUserByEmail(client, email);
+    if (!existingUser) {
+      return {
+        requested: true,
+        allowed: true,
+        authUserExists: false,
+        profileExists: false,
+        walletExists: false,
+        safeToSignup: true,
+        action: 'signup',
+        message: 'Owner email is allowlisted and no existing auth user was found. A single backend signup attempt is allowed.',
+        secretValuesReturned: false,
+      };
+    }
+
+    const persistence = await inspectOwnerPersistence(client, existingUser.id);
+    return {
+      requested: true,
+      allowed: true,
+      authUserExists: true,
+      profileExists: persistence.profileExists,
+      walletExists: persistence.walletExists,
+      safeToSignup: false,
+      action: 'sign_in',
+      message: 'Owner auth user already exists. Route to Owner Login instead of calling signup again.',
+      secretValuesReturned: false,
+    };
+  } catch (error) {
+    console.log('[IVXOwnerRegistration] Owner email lookup unavailable:', error instanceof Error ? error.message : 'unknown');
+    return {
+      requested: true,
+      allowed: true,
+      authUserExists: null,
+      profileExists: null,
+      walletExists: null,
+      safeToSignup: false,
+      action: 'unavailable',
+      message: 'Owner email lookup is unavailable because backend Supabase admin credentials are not ready.',
+      secretValuesReturned: false,
+    };
+  }
+}
+
 async function ensureOwnerProfile(client: SupabaseClient, input: {
   userId: string;
   email: string;
@@ -211,30 +361,56 @@ async function ensureOwnerProfile(client: SupabaseClient, input: {
   country: string;
   timestamp: string;
 }): Promise<boolean> {
+  /**
+   * Production profiles schema (see expo/scripts/supabase-full-schema.sql) does NOT
+   * include a `status` column. Sending it caused PostgREST to reject the upsert with
+   * `column profiles.status does not exist`, so the row was never written.
+   * Owner active-status is already proven via auth.users + role='owner' + kyc_status='approved'.
+   */
+  const basePayload: Record<string, unknown> = {
+    id: input.userId,
+    email: input.email,
+    first_name: input.firstName,
+    last_name: input.lastName,
+    phone: input.phone,
+    country: input.country,
+    role: 'owner',
+    avatar: '',
+    kyc_status: 'approved',
+    total_invested: 0,
+    total_returns: 0,
+    created_at: input.timestamp,
+    updated_at: input.timestamp,
+  };
+
   const { error } = await client
     .from('profiles')
-    .upsert({
-      id: input.userId,
-      email: input.email,
-      first_name: input.firstName,
-      last_name: input.lastName,
-      phone: input.phone,
-      country: input.country,
-      role: 'owner',
-      status: 'active',
-      avatar: '',
-      kyc_status: 'approved',
-      total_invested: 0,
-      total_returns: 0,
-      created_at: input.timestamp,
-      updated_at: input.timestamp,
-    }, {
+    .upsert(basePayload, {
       onConflict: 'id',
       ignoreDuplicates: false,
     });
 
   if (error) {
-    console.log('[IVXOwnerRegistration] Owner profile upsert failed:', error.message);
+    const message = error.message || '';
+    const lower = message.toLowerCase();
+    // Defensive: if the production schema is missing another optional column
+    // (e.g. country/avatar) drop it and retry once with the minimum owner row.
+    const missingColumnMatch = lower.match(/column "?([a-z_]+)"? .*does not exist/);
+    const missingColumn = missingColumnMatch?.[1];
+    if (missingColumn && missingColumn in basePayload) {
+      console.log('[IVXOwnerRegistration] Owner profile upsert dropping missing column and retrying:', missingColumn);
+      const retryPayload = { ...basePayload };
+      delete retryPayload[missingColumn];
+      const retry = await client
+        .from('profiles')
+        .upsert(retryPayload, { onConflict: 'id', ignoreDuplicates: false });
+      if (!retry.error) {
+        return true;
+      }
+      console.log('[IVXOwnerRegistration] Owner profile retry upsert failed:', retry.error.message);
+      return false;
+    }
+    console.log('[IVXOwnerRegistration] Owner profile upsert failed:', message);
     return false;
   }
 
@@ -285,16 +461,22 @@ export function OPTIONS(): Response {
   });
 }
 
-export function handleIVXOwnerRegistrationStatusRequest(): Response {
+export async function handleIVXOwnerRegistrationStatusRequest(request?: Request): Promise<Response> {
+  const url = request ? new URL(request.url) : null;
+  const lookupEmail = sanitizeEmail(url?.searchParams.get('email') ?? '');
+  const ownerEmailLookup = lookupEmail ? await buildOwnerEmailLookup(lookupEmail) : null;
+
   return json({
     ok: true,
     routeRegistered: true,
     route: 'POST /api/ivx/owner-registration',
     statusRoute: 'GET /api/ivx/owner-registration/status',
+    repairRoute: 'POST /api/ivx/owner-registration/repair',
     deploymentMarker: DEPLOYMENT_MARKER,
     supabaseUrlConfigured: Boolean(readTrimmed(process.env.EXPO_PUBLIC_SUPABASE_URL)),
     serviceRoleConfigured: Boolean(readTrimmed(process.env.SUPABASE_SERVICE_ROLE_KEY) || readTrimmed(process.env.SUPABASE_SERVICE_KEY)),
     ownerEmailAllowlistConfigured: getAllowedOwnerRegistrationEmails().length > 0,
+    ...(ownerEmailLookup ? { ownerEmailLookup } : {}),
     secretValuesReturned: false,
     timestamp: nowIso(),
   });
@@ -322,21 +504,36 @@ export async function handleIVXOwnerRegistrationRequest(request: Request): Promi
     }
 
     assertOwnerRegistrationEmailAllowed(email);
-    assertRateLimit(email, request);
 
     const client = createSupabaseAdminClient();
     const existingUser = await findAuthUserByEmail(client, email);
     if (existingUser) {
       console.log('[IVXOwnerRegistration] Existing auth user found; owner signup must use login/recovery:', existingUser.id);
+      const persistence = await inspectOwnerPersistence(client, existingUser.id);
       return json({
         success: false,
         alreadyExists: true,
         requiresLogin: true,
         email,
-        message: 'This owner email already exists in Supabase Auth. Use Owner Login or Owner Recovery instead of creating a duplicate.',
+        userId: existingUser.id,
+        ownerEmailLookup: {
+          requested: true,
+          allowed: true,
+          authUserExists: true,
+          profileExists: persistence.profileExists,
+          walletExists: persistence.walletExists,
+          safeToSignup: false,
+          action: 'sign_in',
+          message: 'Owner auth user already exists. Route to Owner Login instead of calling signup again.',
+          secretValuesReturned: false,
+        },
+        message: 'This owner email already exists in Supabase Auth. Use Owner Login instead of creating a duplicate. After login, backend repair can create any missing profile or wallet rows without calling signup.',
         deploymentMarker: DEPLOYMENT_MARKER,
+        secretValuesReturned: false,
       }, 409);
     }
+
+    assertRateLimit(email, request);
 
     const timestamp = nowIso();
     const metadata = {
@@ -375,7 +572,9 @@ export async function handleIVXOwnerRegistrationRequest(request: Request): Promi
           alreadyExists: true,
           requiresLogin: true,
           email,
-          message: 'This owner email already exists in Supabase Auth. Use Owner Login or Owner Recovery instead of creating a duplicate.',
+          message: 'This owner email already exists in Supabase Auth. Use Owner Login instead of creating a duplicate.',
+          deploymentMarker: DEPLOYMENT_MARKER,
+          secretValuesReturned: false,
         }, 409);
       }
 
@@ -411,6 +610,7 @@ export async function handleIVXOwnerRegistrationRequest(request: Request): Promi
       message: 'Owner registration saved with backend Supabase service-role repair. Email is already confirmed; sign in with the password you entered.',
       proof,
       deploymentMarker: DEPLOYMENT_MARKER,
+      secretValuesReturned: false,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Owner registration repair failed.';
@@ -423,6 +623,83 @@ export async function handleIVXOwnerRegistrationRequest(request: Request): Promi
           ? 403
           : 500;
     console.log('[IVXOwnerRegistration] Request failed:', message);
-    return json({ success: false, message, deploymentMarker: DEPLOYMENT_MARKER }, status);
+    return json({
+      success: false,
+      message,
+      deploymentMarker: DEPLOYMENT_MARKER,
+      ...(status === 429 ? { rateLimited: true, cooldownSeconds: Math.ceil(REQUEST_WINDOW_MS / 1000) } : {}),
+      secretValuesReturned: false,
+    }, status);
+  }
+}
+
+export async function handleIVXOwnerRegistrationRepairRequest(request: Request): Promise<Response> {
+  try {
+    const bearerToken = readBearerToken(request);
+    if (!bearerToken) {
+      return json({ success: false, message: 'Owner login is required before repair.', deploymentMarker: DEPLOYMENT_MARKER, secretValuesReturned: false }, 401);
+    }
+
+    const client = createSupabaseAdminClient();
+    const { data, error } = await client.auth.getUser(bearerToken);
+    const authUser = data.user;
+    const email = sanitizeEmail(authUser?.email ?? '');
+
+    if (error || !authUser || !email) {
+      return json({ success: false, message: 'Owner session could not be verified for repair.', deploymentMarker: DEPLOYMENT_MARKER, secretValuesReturned: false }, 401);
+    }
+
+    try {
+      assertOwnerRegistrationEmailAllowed(email);
+    } catch (allowlistError) {
+      if (!isOwnerLikeUser(authUser, email)) {
+        return json({
+          success: false,
+          message: allowlistError instanceof Error ? allowlistError.message : 'Owner repair is limited to verified owner accounts.',
+          deploymentMarker: DEPLOYMENT_MARKER,
+          secretValuesReturned: false,
+        }, 403);
+      }
+    }
+
+    const timestamp = nowIso();
+    const firstName = getUserName(authUser, 'firstName', 'Owner');
+    const lastName = getUserName(authUser, 'lastName', '');
+    const phone = normalizePhone((authUser.user_metadata ?? {}).phone);
+    const country = readTrimmed((authUser.user_metadata ?? {}).country) || 'United States';
+    const profilePersisted = await ensureOwnerProfile(client, {
+      userId: authUser.id,
+      email,
+      firstName,
+      lastName,
+      phone,
+      country,
+      timestamp,
+    });
+    const walletPersisted = await ensureOwnerWallet(client, authUser.id);
+    const proof = buildProof({ authUserCreated: false, profilePersisted, walletPersisted });
+
+    console.log('[IVXOwnerRegistration] Owner post-login repair completed:', {
+      userId: authUser.id,
+      email,
+      profilePersisted,
+      walletPersisted,
+      timestamp,
+    });
+
+    return json({
+      success: true,
+      email,
+      userId: authUser.id,
+      requiresLogin: false,
+      message: 'Owner profile and wallet repair completed after login without calling signup.',
+      proof,
+      deploymentMarker: DEPLOYMENT_MARKER,
+      secretValuesReturned: false,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Owner post-login repair failed.';
+    console.log('[IVXOwnerRegistration] Repair request failed:', message);
+    return json({ success: false, message, deploymentMarker: DEPLOYMENT_MARKER, secretValuesReturned: false }, 500);
   }
 }

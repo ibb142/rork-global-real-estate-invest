@@ -1,5 +1,121 @@
 # IVX access-control audit and remediation
 
+**Owner Variables / Credentials module — 2026-05-08**
+- [x] Added owner-only encrypted credentials backend module `backend/api/ivx-owner-variables.ts` with status, save, test, delete, provider-readiness, and audit-log flows.
+- [x] Registered live API routes in Hono source: `GET /api/ivx/owner-variables/status`, `POST /api/ivx/owner-variables/save`, `POST /api/ivx/owner-variables/test`, and `POST /api/ivx/owner-variables/delete`.
+- [x] Added a fresh backend health marker for this source: `ivx-owner-ai-hono-2026-05-08t2100z-owner-variables`; owner-variables proof route marker is `ivx-owner-variables-2026-05-08t2100z`.
+- [x] Implemented encrypted-at-rest storage using AES-256-GCM with `IVX_OWNER_VARIABLES_ENCRYPTION_KEY` / `APP_SECRET` / `JWT_SECRET`; production storage uses Postgres tables `ivx_owner_variables` and `ivx_owner_variable_audit`, while local proof uses an explicitly enabled ephemeral memory store.
+- [x] Supported required credential names by owner form/status only: `GITHUB_TOKEN`, `GITHUB_REPO_URL`, `RENDER_API_KEY`, `RENDER_SERVICE_ID`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `IVX_AWS_READONLY_ACCESS_KEY_ID`, `IVX_AWS_READONLY_SECRET_ACCESS_KEY`, and `AWS_REGION`; optional names include `AI_GATEWAY_API_KEY`, `JWT_SECRET`, `APP_SECRET`, `S3_BUCKET_NAME`, and `CLOUDFRONT_DISTRIBUTION_ID`.
+- [x] Added provider tests for GitHub repo access, Render service access, Supabase anon/service-role verification, and AWS STS read-only identity verification; responses expose only provider/name/status/timestamp/masked preview and `secretValuesReturned=false`.
+- [x] Rebuilt `/ivx/variables` as the Owner Variables portal with masked inputs, provider readiness cards, save/test/delete actions, missing-credential list, and owner-only/security proof pills.
+- [x] Secure dummy-flow proof passed locally with owner guard enabled: unauthenticated status returned HTTP 401; authenticated status returned HTTP 200; dummy `GITHUB_TOKEN` saved as masked preview `ghp_****1234`; variable test returned `tested`; delete returned HTTP 200; response scan confirmed the raw dummy secret was not echoed.
+- [x] Validation passed: root TypeScript `bunx tsc --noEmit --pretty false`, Expo TypeScript `bunx tsc --noEmit --pretty false`, and Rork `runChecks` for `expo`.
+- [x] Honest production proof: `https://api.ivxholding.com/health` is live but still serves old marker `ivx-owner-ai-hono-2026-05-06t2030z`; `https://api.ivxholding.com/api/ivx/owner-variables/status` currently returns HTTP 404 with that old marker, proving Render has not deployed this new owner-variables source yet.
+- [ ] Remaining live step: redeploy the backend from the updated source so production health shows `ivx-owner-ai-hono-2026-05-08t2100z-owner-variables` and `/api/ivx/owner-variables/status` returns owner-guarded status; then use the in-app owner portal to enter real credentials securely.
+
+**Owner registration Supabase throttle repair — 2026-05-08**
+- [x] Audited the latest owner-registration screenshot and confirmed the visible save blocker is Supabase hosted Auth email-send throttling, not missing form fields: the app was receiving `Signup rate limited` / `Signups are temporarily throttled. Your data was not saved yet.`
+- [x] Added backend owner-registration repair route `POST /api/ivx/owner-registration` that uses backend-only Supabase service-role auth to create the owner auth user, confirm email, persist `profiles`, ensure wallet, and return proof fields without exposing secrets.
+- [x] Wired owner signup to call the backend repair route before falling back to public `supabase.auth.signUp`, and again if hosted Auth returns an email rate-limit error.
+- [x] Preserved security by locking backend owner registration to the configured owner allowlist (`IVX_OWNER_REGISTRATION_EMAILS`, `EXPO_PUBLIC_OWNER_EMAIL`, `NEXT_PUBLIC_OWNER_EMAIL`, or `OWNER_EMAIL`) instead of creating arbitrary owner accounts.
+- [x] Updated owner success UI to show proof lines: auth user saved, profile saved, `role=owner`, `status=active`, `kyc=approved`, and review queue not required.
+- [x] Proof passed: active grep confirms `/api/ivx/owner-registration`, `repairOwnerRegistrationThroughBackend`, `requestedRole: 'owner'`, `kycStatus: 'approved'`, and profile proof wiring are present; `owner_review` / `owner_pending` grep returns no active matches; root TypeScript passed; Rork `runChecks` for `expo` passed.
+- [x] Honest live limitation: this shell does not have a valid backend service-role key loaded at runtime, so it cannot create a real production owner user from here; the deployed backend must have `SUPABASE_SERVICE_ROLE_KEY` and an owner email allowlist configured for live owner registration proof.
+- [x] Latest senior-dev proof patch: added `GET /api/ivx/owner-registration/status` with `deploymentMarker=ivx-owner-registration-2026-05-08t0315z`, wired it in Hono, and changed owner signup so missing/stale backend deployment returns an explicit `Owner Registration Update Not Live Yet` blocker instead of falling through to public Supabase signup throttle.
+- [x] Local route proof passed: `PORT=3137 IVX_LOCAL_DEV_TOOLS=1 bun server.ts` returned HTTP 200 for `/api/ivx/owner-registration/status` with routeRegistered=true and secretValuesReturned=false.
+- [x] Live production proof currently fails deploy freshness: `https://api.ivxholding.com/health` still returns marker `ivx-owner-ai-hono-2026-05-06t1200z`, and `/api/ivx/owner-registration/status` returns HTTP 404, proving the latest owner-registration update is not live on production yet.
+- [x] Patched signup rate-limit handling so existing owner emails are checked through backend owner-registration status before owner signup POST, duplicate owner emails return `alreadyExists/requiresLogin`, and the app routes to Owner Login instead of repeatedly calling Supabase signup.
+- [x] Added backend `POST /api/ivx/owner-registration/repair` for post-login owner profile/wallet repair using the signed-in owner bearer token, without calling signup again and without returning secrets.
+- [x] Added frontend cooldown UI and `Sign in instead` actions for throttled signup; production UI now uses warning-level handled logs instead of red console errors for expected duplicate/rate-limit cases.
+- [x] Added fresh source markers for this patch: backend health marker `ivx-owner-ai-hono-2026-05-08t2245z-owner-signup-rate-limit-guard`; owner-registration marker `ivx-owner-registration-2026-05-08t2245z-rate-limit-guard`.
+- [x] Validation passed after rate-limit guard patch: root TypeScript, Expo TypeScript, and Rork `runChecks` for `expo` passed.
+- [ ] Remaining live step: redeploy external Render backend from current source so production `/health` shows `ivx-owner-ai-hono-2026-05-08t2245z-owner-signup-rate-limit-guard` and `/api/ivx/owner-registration/status` exposes `ownerEmailLookup`; current shell lacks `RENDER_API_KEY`, `RENDER_SERVICE_ID`, `GITHUB_TOKEN`, and `GITHUB_REPO_URL`, so this runtime cannot force the external Render deploy.
+
+**React Native text-node crash hardening — 2026-05-08**
+- [x] Reproduced the latest user-visible crash: `Unexpected text node: . A text node cannot be a child of a <View>`.
+- [x] Hardened `expo/components/SafeViewChildren.tsx` so the `renderSafeViewChildren` helper now drops `null`/`undefined`/booleans, ignores non-finite numbers, wraps stray strings/numbers inside `<Text>`, and recurses into Fragment children for deep sanitization.
+- [x] Routed the previously-bare `{children}` in additional View wrappers through `renderSafeViewChildren` so any stray primitive child (including a literal `.`) is wrapped in `<Text>` instead of crashing the View: `AnimatedRing` in `expo/app/admin/landing-analytics.tsx`, `LayerCard` in `expo/app/jv-architecture.tsx`, `FadeInView` in `expo/app/landing.tsx`, and `SectionCard` in `expo/app/admin/control-tower.tsx`.
+- [x] Wrapped `RootLayoutNav` with `ErrorBoundary` inside `expo/app/_layout.tsx` so any remaining text-node render error surfaces a recoverable fallback UI instead of a hard app crash.
+- [x] Validation passed: Rork `runChecks` for `expo`.
+
+**Owner cell removal — 2026-05-08**
+- [x] Removed the owner phone number from active Expo app code, public landing HTML/JS, mocks, email/SMS templates, QR/business-card/prospectus surfaces, owner alert defaults, profile/legal/company info, and audit log proof files.
+- [x] Changed phone/WhatsApp actions to email-only or no configured phone so the app no longer sends test SMS/WhatsApp reports to the removed cell.
+- [x] Active-source proof passed: grep for the removed owner phone patterns returned no matches in active `expo`, `backend`, or `logs` source/proof files. Old `.rork/history` snapshots still contain historical copies only and are not active app/runtime code.
+- [x] Supabase service-role REST cleanup proof ran without returning secrets: checked known phone-bearing tables and auth users; `authUsersMatched=0`, `authUsersUpdated=0`, `remainingAuthMatches=0`, and `remainingTableMatches=[]`. Candidate-table/column errors were only for tables/columns that do not exist in the current Supabase schema.
+- [x] Validation passed: Expo TypeScript `bunx tsc --noEmit --pretty false`, Expo lint exited 0 with existing warnings only, and Rork `runChecks` for `expo` passed.
+
+**QR startup owner sign-up screen — 2026-05-07**
+- [x] Audited the Expo startup route and confirmed the QR/root app entry was not a dedicated sign-up screen.
+- [x] Patched the existing root Home index route so unauthenticated QR/startup opens `/owner-signup` inside the app instead of landing/tabs.
+- [x] Updated the root Expo Router stack so `index` is the initial route and `/signup`, `/owner-signup`, `/login`, `/owner-login`, `/landing`, and tabs remain reachable inside the app.
+- [x] Proof passed: route grep confirms the existing root index redirects unauthenticated startup with `router.replace('/owner-signup')`; signup screen contains `Create Owner Account`, `owner-signup-locked-mode`, `signup-submit`, and direct `kycStatus=approved` proof text; Expo TypeScript passed.
+- [x] Latest Expo Go SDK-mismatch audit: confirmed the attached screen is Expo Go rejecting a stale SDK 52 manifest before JS loads, while the active app config/dependencies are SDK 54. Removed the stale custom Metro wrapper/runtime toolkit dependency from the active Expo workspace, added a hard-fail SDK verification script, confirmed no active source references to stale `@rork-ai/toolkit-sdk`, `withRorkMetro`, `RorkDevWrapper`, `Testing App`, or SDK 52 remain, verified public Expo config reports `sdkVersion=54.0.0`, `updates.enabled=false`, no `updates.url`, and no `runtimeVersion`, TypeScript passed, lint exited 0, Expo dependency alignment passed, Android export passed, web export passed, Rork Expo checks passed, and a clean local Expo Go-style Metro proof returned manifest HTTP 200 with SDK 54 present / SDK 52 absent plus Android Expo Router bundle HTTP 200 with a 32,215,119-byte JS response containing `/owner-signup`.
+
+**In-app owner login entry — 2026-05-06**
+- [x] Added a direct Owner Login entry inside the app Home screen at the existing owner CTA slot; it opens `/owner-login` and includes proof testID `home-owner-login-entry`.
+- [x] Added a direct Owner Login entry inside the app Profile → Administration section; it opens `/owner-login` and includes proof testID `profile-owner-login-entry`.
+- [x] Proof passed: grep confirms both in-app entries route to `/owner-login`; Expo TypeScript passed with `bunx tsc --noEmit --pretty false`; Rork `runChecks` for `expo` passed.
+
+**Dedicated owner login screen — 2026-05-06**
+- [x] Added a real `/owner-login` route that renders the shared login flow in owner-only mode with owner-specific title, guidance, and submit copy.
+- [x] Rewired the landing page owner entry to show `Owner Login` and open `/owner-login` directly instead of hiding the path behind Owner Access.
+- [x] Rewired Owner Access and owner signup return paths so existing owners are sent to `/owner-login`, while trusted-device recovery remains available through Owner Access.
+- [x] Proof passed: grep confirms `/owner-login` route references across landing, signup, and Owner Access; Expo TypeScript passed with `bunx tsc --noEmit --pretty false`; Rork `runChecks` for `expo` passed.
+
+**Owner sign-up direct approval — 2026-05-06**
+- [x] Audited the owner sign-up/auth flow and removed the `kycStatus=owner_review` / `status=owner_pending` path from new owner registration.
+- [x] Patched owner sign-up metadata so new owner accounts save `accountType=owner`, `requestedRole=owner`, `role=owner`, `status=active`, and `kycStatus=approved` directly.
+- [x] Patched local member/profile registry writes and session warmup so owner accounts are not downgraded back to investor/owner-pending.
+- [x] Updated `/owner-signup`, public signup owner mode, and Owner Access copy so the app no longer tells the owner there is a separate approval/review step.
+- [x] Validation passed after direct-owner-approval patch: `owner_review` / `owner_pending` grep returned no active signup/auth matches, Expo TypeScript passed, and Rork `runChecks` for `expo` passed.
+
+**Variables tool expired-session retry fix — 2026-05-06**
+- [x] Audited the latest owner screenshot and identified the real current save blocker: backend rejected the save with `IVX auth guard failed: invalid or expired Supabase session`, not a missing save icon.
+- [x] Patched IVX owner access-token resolution to refresh Supabase sessions when a token is expiring, missing, or explicitly retried after an auth rejection.
+- [x] Patched the variables-tool client to retry the same save/status request once with a freshly refreshed owner token after a 401 auth/session rejection.
+- [x] Preserved security behavior: pasted credential values remain masked, are not returned, and are not logged; if refresh cannot recover, the app tells the owner to sign in again instead of pretending the variable was saved.
+- [x] Validation passed for this expired-session retry patch: Expo TypeScript `bunx tsc --noEmit --pretty false` and Rork `runChecks` for `expo` both passed.
+
+**Variables save-flow QA hardening — 2026-05-06**
+- [x] Audited the latest owner screenshot: `/ivx/variables` had a value typed for `GITHUB_TOKEN`, but status still showed `present: false` / `runtime: false`, and Android keyboard still covered lower credential rows.
+- [x] Found the real one-by-one save bug: saving a single variable could fail when `RENDER_API_KEY` and `RENDER_SERVICE_ID` were typed on the screen but not yet loaded in backend `process.env`, because the single-row save sent only the target variable.
+- [x] Patched the app save client so current `RENDER_API_KEY` and `RENDER_SERVICE_ID` draft values are sent as transient owner-only connection credentials with any save request; they are not displayed back.
+- [x] Patched the backend variables-tool save route to accept transient `renderApiKey` / `renderServiceId`, use them for the Render API request, also persist those two bootstrap variables into Render Environment when supplied, return name/status proof only, and sanitize external Render error details.
+- [x] Improved `/ivx/variables` Android keyboard handling with keyboard-height tracking and extra bottom padding so lower credential inputs/buttons remain reachable while typing.
+- [x] QA proof passed: local mocked owner-only save returned HTTP 200, used transient Render auth for the Render env-var PUT, saved `GITHUB_TOKEN`, `RENDER_API_KEY`, and `RENDER_SERVICE_ID` by name, and confirmed `secretValuesReturned=false` with no secret string in the response.
+- [x] Validation passed: root `bun install`, root `bunx tsc --noEmit --pretty false`, Expo `bunx tsc --noEmit --pretty false`, Expo `bun run lint`, Rork `runChecks` for `expo`, and live endpoint smoke checks (`/health` HTTP 200, variables-tool without owner token HTTP 401, chat frontend HTTP 200).
+- [ ] Honest remaining production note: actual owner credential save cannot be proven from this shell without the owner session token; after this patch is deployed, the in-app owner flow should be used to save and confirm `present/runtime` status.
+
+**Variables one-by-one save + Android keyboard remediation — 2026-05-06**
+- [x] Audited the owner screenshots and confirmed `/ivx/variables` lacked per-variable save actions beside each credential input.
+- [x] Added a secure per-row save icon/button for each credential name, including `GITHUB_TOKEN`, so the owner can paste and save one variable at a time without exposing secret values.
+- [x] Preserved the existing bulk save path and optional backend redeploy trigger after saving Render environment variables.
+- [x] Fixed Android keyboard overlap handling for the Owner AI chat composer with root-layout resize detection, manual keyboard lift fallback, extra list bottom padding, and higher dock z-order/elevation.
+- [x] Improved `/ivx/variables` keyboard behavior on Android with `KeyboardAvoidingView` height mode and drag-to-dismiss support.
+- [x] Validation passed: Expo TypeScript `bunx tsc --noEmit --pretty false` and Rork `runChecks` for `expo`.
+
+**Live multimodal route-drift audit — 2026-05-06 20:30Z**
+- [x] Re-audited production directly: `https://api.ivxholding.com/health` returns HTTP 200, and `https://chat.ivxholding.com/` returns HTTP 200 HTML.
+- [x] Confirmed the actual issue: production is still serving backend deployment marker `ivx-owner-ai-hono-2026-05-06t1200z`, while current source has the multimodal route table under a newer marker.
+- [x] Verified the owner-reported failure is real: `/api/multimodal/status`, `/api/upload/image`, `/api/upload/pdf`, `/api/upload/video`, and `/api/google-drive/import` all return HTTP 404 on production with marker `ivx-owner-ai-hono-2026-05-06t1200z`.
+- [x] Patched backend proof logic so Render status no longer fails on optional `MINIO_PASSWORD`/`STRIPE_API_KEY` when the owner-required access variables are present.
+- [x] Patched Supabase proof logic so the top-level `/tool/supabase-status` result cannot claim `ok=true` unless minimum read-only checks are actually verified.
+- [x] Updated multimodal status proof to report `production_routes_registered` only when the new backend marker is actually deployed.
+- [x] Validation passed after the patch: root `bun install`, root `bunx tsc --noEmit --pretty false`, and Rork `runChecks` for `expo`.
+- [ ] Remaining production fix: redeploy the backend so `api.ivxholding.com` serves marker `ivx-owner-ai-hono-2026-05-06t2030z` or newer; until that happens, image/PDF/video/Drive upload routes remain production FAIL.
+
+**IVX Owner AI audit/multimodal honesty fix — 2026-05-06**
+- [x] Reproduced the owner-visible failure from the screenshot: Owner AI reported it could not complete the owner audit because the backend was allegedly unreachable.
+- [x] Verified live public backend/frontend status separately: `/health` and `https://chat.ivxholding.com/` return HTTP 200, so the screenshot was an owner-audit path failure, not full backend downtime.
+- [x] Audited multimodal implementation and confirmed current code supports owner-only image/PDF/video upload routes, shared Google Drive link import, image vision analysis, text-based PDF extraction/summaries, and video metadata storage/summary only.
+- [x] Documented the honest current blockers in code behavior: private owner Google Drive OAuth, scanned-PDF OCR worker, and frame/transcript-level video analysis are not enabled yet and must not be reported as fully working.
+- [x] Patched the app-side protected owner-audit fallback so it no longer falsely says “backend unreachable” when backend health is live; it now separates backend health from protected audit failure and redacts endpoint/token-like details.
+- [x] Added explicit multimodal route-drift diagnostics so image/PDF/video/Drive upload failures report when production is serving an older route table instead of pretending upload analysis is live.
+- [x] Patched backend audit discovery to run AWS checks in parallel with per-check timeouts, reducing owner-audit timeout risk from slow AWS discovery calls.
+- [x] Validation passed after the patch with root `bun install && bunx tsc --noEmit --pretty false`.
+- [x] Run Rork checks for the Expo app after this patch and report final pass/fail proof.
+
 **Live Render end-to-end audit/update — 2026-05-06**
 - [x] Loaded secure deploy environment through the Expo runtime loader without printing secrets; Render and GitHub deploy variables were available there and `secretValuesReturned=false`.
 - [x] Audited Render services by API: backend `ivx-holdings-platform` is service `srv-d7t9ivreo5us73ftose0`; frontend `ivx-holdings-chat-frontend` is service `srv-d7t9j00sfn5c738a18j0`.
@@ -17,7 +133,14 @@
 - [x] Verified required production proof routes at `2026-05-06T12:34:10Z`: `/tool/render-status`, `/tool/github-status`, `/tool/supabase-status`, and `/tool/aws-status` all return HTTP `200` JSON with deployment marker `ivx-owner-ai-hono-2026-05-06t1200z`.
 - [x] Verified Render/GitHub/Supabase/AWS live proof route behavior without printing secrets: GitHub, Supabase, and AWS proof routes report `verified`; Render proof route is live and authorized while still reporting missing optional/remaining env names `MINIO_PASSWORD` and `STRIPE_API_KEY` by name only.
 - [x] Re-verified production after credential redeploy at `2026-05-06T15:02Z`: `https://api.ivxholding.com/health`, `/tool/render-status`, `/tool/github-status`, `/tool/supabase-status`, `/tool/aws-status`, and `https://chat.ivxholding.com/` all return HTTP `200`; backend marker remains `ivx-owner-ai-hono-2026-05-06t1200z`.
-- [x] Deployment goal complete: backend `/tool/*` routes work in production, available credentials are deployed into Render by name/status proof, and `https://chat.ivxholding.com` is live.
+- [x] Ran full secret-safe IVX IA access audit at `2026-05-06T15:18Z-15:21Z`: backend `/health` returned HTTP `200`, `/tool/github-status`, `/tool/supabase-status`, and `/tool/aws-status` returned HTTP `200` with `status=verified`, `/tool/render-status` returned HTTP `200` with Render API authorized but remaining optional missing names `MINIO_PASSWORD` and `STRIPE_API_KEY`, and `https://chat.ivxholding.com` returned HTTP `200` HTML; no secret values were printed.
+- [x] Re-ran the requested senior-developer access proof at `2026-05-06T15:32Z-15:43Z`: secure loader had GitHub, Render, Supabase, AWS, AI Gateway, and JWT variables present by name only; no credential values were printed.
+- [x] Proved GitHub write access by creating remote `docs/ivx-ia-access-proof.md` on `ibb142/rork-global-real-estate-invest/main`; commit `7d5bb1fc53ce` is live at `https://github.com/ibb142/rork-global-real-estate-invest/commit/7d5bb1fc53ced66ffd193b11657bb66ef7834aa5` and file URL `https://github.com/ibb142/rork-global-real-estate-invest/blob/main/docs/ivx-ia-access-proof.md`.
+- [x] Re-saved required backend variables into Render by name only: `RENDER_API_KEY`, `RENDER_SERVICE_ID`, `GITHUB_TOKEN`, `GITHUB_REPO_URL`, Supabase DB/service-role names, AWS/S3/CloudFront names, `AI_GATEWAY_API_KEY`, and `JWT_SECRET`; Render already had `APP_SECRET`; `requiredBackendNamesMissingInRender=[]`.
+- [x] Triggered a fresh backend Render redeploy after the proof-file commit; deploy `dep-d7tlv1b3emhc73atkar0` reached `live` for commit `7d5bb1fc53ce` at `2026-05-06T15:36:48Z`.
+- [x] Re-verified live endpoints at `2026-05-06T15:37Z`: `https://api.ivxholding.com/health`, `/tool/render-status`, `/tool/github-status`, `/tool/supabase-status`, `/tool/aws-status`, and `https://chat.ivxholding.com` all returned HTTP `200`; backend deployment marker remains `ivx-owner-ai-hono-2026-05-06t1200z`.
+- [x] Supabase/AWS caveat from deeper read-only checks: production `/tool/supabase-status` and `/tool/aws-status` are verified, but direct table/storage proof routes still show Supabase API/storage signature issues by error only (`Invalid API key`, `signature verification failed`), and direct local DB/AWS SDK package checks are not the production source of truth.
+- [x] Deployment goal complete: backend `/tool/*` routes work in production, available credentials are deployed into Render by name/status proof, GitHub write proof is committed, and `https://chat.ivxholding.com` is live.
 
 **Current secure deploy proof pass — 2026-05-05**
 - [x] Re-audited and clarified pre-live vs production-live access: IVX Owner AI does not need public production/custom domains live to receive full developer/deploy access; it needs a reachable backend runtime with backend-only credentials loaded there.

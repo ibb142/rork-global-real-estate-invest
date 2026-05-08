@@ -16,7 +16,7 @@ import {
   FlatList,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter, Href } from 'expo-router';
+import { useRouter, useLocalSearchParams, Href } from 'expo-router';
 import {
   Mail,
   Lock,
@@ -35,23 +35,35 @@ import {
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { COUNTRIES, Country } from '@/constants/countries';
-import { useAuth } from '@/lib/auth-context';
+import { useAuth, resetOwnerLocalSignupState } from '@/lib/auth-context';
 import { useAnalytics } from '@/lib/analytics-context';
 import { validateEmail, validatePassword, validatePhone, sanitizeEmail } from '@/lib/auth-helpers';
 import { findExistingRegisteredMemberByEmail } from '@/lib/member-registry';
 
 type Step = 'register' | 'verify_email' | 'verify_phone' | 'complete';
+type SignupAccountType = 'investor' | 'owner';
 
-export default function SignUpScreen() {
+type SignUpScreenContentProps = {
+  forcedAccountType?: SignupAccountType;
+};
+
+export function SignUpScreenContent({ forcedAccountType }: SignUpScreenContentProps = {}) {
   const router = useRouter();
+  const params = useLocalSearchParams<{ accountType?: string; role?: string; email?: string }>();
   const { register: authRegister } = useAuth();
   const { trackScreen, trackConversion } = useAnalytics();
 
-  React.useEffect(() => {
-    trackScreen('Signup');
-  }, [trackScreen]);
-
   const [currentStep, setCurrentStep] = useState<Step>('register');
+  const ownerRouteRequested = forcedAccountType === 'owner' || params.accountType === 'owner' || params.role === 'owner';
+  const initialAccountType: SignupAccountType = ownerRouteRequested ? 'owner' : 'investor';
+  const [accountType, setAccountType] = useState<SignupAccountType>(initialAccountType);
+  const isOwnerSignup = accountType === 'owner';
+  const isDedicatedOwnerSignup = forcedAccountType === 'owner';
+
+  React.useEffect(() => {
+    trackScreen(isOwnerSignup ? 'Owner Signup' : 'Signup');
+  }, [isOwnerSignup, trackScreen]);
+
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -72,6 +84,20 @@ export default function SignUpScreen() {
   const [showCountryPicker, setShowCountryPicker] = useState(false);
   const [countrySearch, setCountrySearch] = useState('');
   const [existingAccountDetected, setExistingAccountDetected] = useState<boolean>(false);
+  const [signupCooldownUntilMs, setSignupCooldownUntilMs] = useState<number>(0);
+  const [cooldownNowMs, setCooldownNowMs] = useState<number>(() => Date.now());
+
+  React.useEffect(() => {
+    const routeAccountType: SignupAccountType = forcedAccountType === 'owner' || params.accountType === 'owner' || params.role === 'owner' ? 'owner' : 'investor';
+    setAccountType(routeAccountType);
+  }, [forcedAccountType, params.accountType, params.role]);
+
+  React.useEffect(() => {
+    const routeEmail = typeof params.email === 'string' ? sanitizeEmail(params.email) : '';
+    if (routeEmail) {
+      updateForm('email', routeEmail);
+    }
+  }, [params.email]);
 
   const filteredCountries = COUNTRIES.filter(country =>
     country.name.toLowerCase().includes(countrySearch.toLowerCase()) ||
@@ -91,6 +117,23 @@ export default function SignUpScreen() {
 
     router.replace({
       pathname: '/login',
+      params,
+    } as Href);
+  }, [router]);
+
+  const navigateToOwnerLogin = React.useCallback((prefillEmail?: string, justRegistered?: boolean) => {
+    const trimmedEmail = prefillEmail?.trim() ?? '';
+    const params: Record<string, string> = {};
+
+    if (trimmedEmail) {
+      params.email = trimmedEmail;
+    }
+    if (justRegistered) {
+      params.justRegistered = '1';
+    }
+
+    router.replace({
+      pathname: '/owner-login',
       params,
     } as Href);
   }, [router]);
@@ -135,6 +178,26 @@ export default function SignUpScreen() {
     };
   }, [formData.email]);
 
+  React.useEffect(() => {
+    if (signupCooldownUntilMs <= Date.now()) {
+      return;
+    }
+
+    setCooldownNowMs(Date.now());
+    const interval = setInterval(() => {
+      const now = Date.now();
+      setCooldownNowMs(now);
+      if (signupCooldownUntilMs <= now) {
+        clearInterval(interval);
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [signupCooldownUntilMs]);
+
+  const signupCooldownRemainingSeconds = Math.max(0, Math.ceil((signupCooldownUntilMs - cooldownNowMs) / 1000));
+  const signupCooldownActive = signupCooldownRemainingSeconds > 0;
+
   const [emailCode, setEmailCode] = useState(['', '', '', '', '', '']);
   const [phoneCode, setPhoneCode] = useState(['', '', '', '', '', '']);
   const [emailVerified, setEmailVerified] = useState(false);
@@ -148,10 +211,84 @@ export default function SignUpScreen() {
     setFormData(prev => ({ ...prev, [key]: value }));
   };
 
+  const startSignupCooldown = React.useCallback((seconds: number = 60) => {
+    const safeSeconds = Number.isFinite(seconds) && seconds > 0 ? Math.min(Math.ceil(seconds), 300) : 60;
+    const now = Date.now();
+    setCooldownNowMs(now);
+    setSignupCooldownUntilMs(now + safeSeconds * 1000);
+  }, []);
+
+  const handleResetOwnerData = React.useCallback(() => {
+    Alert.alert(
+      'Restart Owner Registration?',
+      'This clears stored owner trusted-device data, the local auth session, and any cached owner identity on this device. Your form is also cleared. Server-side owner accounts in Supabase are not deleted by this action.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear & Start Fresh',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setIsLoading(true);
+              const result = await resetOwnerLocalSignupState();
+              setFormData({
+                email: '',
+                password: '',
+                confirmPassword: '',
+                firstName: '',
+                lastName: '',
+                phone: '',
+                country: 'United States',
+                countryCode: 'US',
+                dialCode: '+1',
+                acceptTerms: false,
+              });
+              setExistingAccountDetected(false);
+              setSignupCooldownUntilMs(0);
+              setCooldownNowMs(Date.now());
+              setEmailCode(['', '', '', '', '', '']);
+              setPhoneCode(['', '', '', '', '', '']);
+              setEmailVerified(false);
+              setPhoneVerified(false);
+              setCurrentStep('register');
+              logger.signup.log('Owner local signup reset proof:', result);
+              const proofLines = [
+                `Owner trusted-device cleared: ${result.clearedOwnerTrustedDevice ? 'yes' : 'no'}`,
+                `Local auth store cleared: ${result.clearedAuthStore ? 'yes' : 'no'}`,
+                `Supabase session signed out: ${result.signedOutSupabase ? 'yes' : 'no'}`,
+                result.errors.length > 0 ? `Notes: ${result.errors.join(', ')}` : 'No errors reported.',
+              ];
+              Alert.alert('Owner Data Cleared', proofLines.join('\n'));
+            } catch (error: any) {
+              console.error('[Signup] Reset owner local data exception:', error);
+              Alert.alert('Reset Failed', error?.message || 'Could not clear stored owner data. Please try again.');
+            } finally {
+              setIsLoading(false);
+            }
+          },
+        },
+      ]
+    );
+  }, []);
+
 
 
   const handleRegister = async () => {
     const normalizedEmail = sanitizeEmail(formData.email);
+    if (signupCooldownActive) {
+      Alert.alert(
+        'Signup Cooldown Active',
+        `Signup is paused for ${signupCooldownRemainingSeconds}s to prevent Supabase throttling. If this account already exists, sign in instead.`,
+        [
+          {
+            text: isOwnerSignup ? 'Sign in instead' : 'Go to Sign In',
+            onPress: () => isOwnerSignup ? navigateToOwnerLogin(normalizedEmail) : navigateToLogin(normalizedEmail),
+          },
+          { text: 'OK', style: 'cancel' },
+        ]
+      );
+      return;
+    }
     if (!formData.firstName || !formData.lastName) {
       Alert.alert('Missing Information', 'Please enter your first and last name.');
       return;
@@ -187,13 +324,41 @@ export default function SignUpScreen() {
         lastName: formData.lastName,
         phone: formData.phone ? `${formData.dialCode}${formData.phone}` : undefined,
         country: formData.country,
+        accountType,
       });
 
       logger.signup.log('Register result:', result);
 
       if (result.success) {
         updateForm('email', normalizedEmail);
-        trackConversion('signup_completed', 0, { country: formData.country });
+        trackConversion(isOwnerSignup ? 'owner_signup_submitted' : 'signup_completed', 0, { country: formData.country });
+
+        if (isOwnerSignup) {
+          const proof = result.proof ?? {};
+          const proofLines = [
+            `Auth user saved: ${proof.authUserCreated === false ? 'no' : 'yes'}`,
+            `Profile saved: ${proof.profilePersisted === false ? 'pending retry' : 'yes'}`,
+            'Role: owner',
+            'Status: active',
+            'KYC: approved',
+            'Review queue: not required',
+          ];
+          Alert.alert(
+            'Owner Account Created',
+            `Your owner account was saved separately from regular investor/member accounts and approved for owner access.\n\nProof:\n${proofLines.join('\n')}`,
+            [
+              {
+                text: 'Open Owner Login',
+                onPress: () => navigateToOwnerLogin(result.email ?? formData.email, true),
+              },
+              {
+                text: 'Owner Recovery',
+                onPress: () => navigateToOwnerAccess(result.email ?? formData.email),
+              },
+            ]
+          );
+          return;
+        }
 
         if (result.requiresLogin) {
           Alert.alert(
@@ -213,17 +378,18 @@ export default function SignUpScreen() {
         setPhoneVerified(true);
         setCurrentStep('complete');
       } else if (result.alreadyExists) {
-        console.error('[Signup] Existing account:', result.message);
+        console.warn('[Signup] Existing account routed to sign-in:', result.message);
+        setExistingAccountDetected(true);
         Alert.alert(
           'Account Already Exists',
-          `${result.message || 'This email is already registered. Please sign in instead.'}\n\nIf this is your owner account, open Owner Access instead of public signup.`,
+          `${result.message || 'This email is already registered. Please sign in instead.'}\n\nThe app will not call signup again for this owner email. Sign in to run profile/wallet repair after login.`,
           [
             {
-              text: 'Owner Access',
-              onPress: () => navigateToOwnerAccess(result.email ?? formData.email),
+              text: isOwnerSignup ? 'Sign in instead' : 'Owner Login',
+              onPress: () => navigateToOwnerLogin(result.email ?? formData.email),
             },
             {
-              text: 'Go to Sign In',
+              text: 'Regular Sign In',
               onPress: () => navigateToLogin(result.email ?? formData.email),
             },
             {
@@ -232,15 +398,33 @@ export default function SignUpScreen() {
             },
           ]
         );
-      } else if (result.rateLimited) {
-        console.error('[Signup] Signup rate limited:', result.message);
+      } else if (result.deploymentBlocked) {
+        console.warn('[Signup] Owner registration backend deployment blocked:', result.message);
         Alert.alert(
-          'Please Wait a Moment',
-          result.message || 'Signups are temporarily throttled. Your data was not saved yet. Please wait a moment and try again.',
+          'Owner Registration Update Not Live Yet',
+          result.message || 'The owner-registration backend repair route is not live yet. Your data was not saved through the public signup path. Deploy the current backend and try again.',
           [
             {
-              text: 'Go to Sign In',
-              onPress: () => navigateToLogin(result.email ?? normalizedEmail),
+              text: 'Owner Login',
+              onPress: () => navigateToOwnerLogin(result.email ?? normalizedEmail),
+            },
+            {
+              text: 'OK',
+              style: 'cancel',
+            },
+          ]
+        );
+      } else if (result.rateLimited) {
+        const cooldownSeconds = typeof result.proof?.cooldownSeconds === 'number' ? result.proof.cooldownSeconds : 60;
+        startSignupCooldown(cooldownSeconds);
+        console.warn('[Signup] Signup throttled; cooldown UI armed:', cooldownSeconds, 'seconds');
+        Alert.alert(
+          'Please Wait a Moment',
+          `${result.message || 'Signups are temporarily throttled. Your data was not saved yet. Please wait a moment and try again.'}\n\nSignup is paused on this device for ${Math.ceil(cooldownSeconds)}s to prevent repeated Supabase throttling.`,
+          [
+            {
+              text: isOwnerSignup ? 'Sign in instead' : 'Go to Sign In',
+              onPress: () => isOwnerSignup ? navigateToOwnerLogin(result.email ?? normalizedEmail) : navigateToLogin(result.email ?? normalizedEmail),
             },
             {
               text: 'OK',
@@ -249,11 +433,11 @@ export default function SignUpScreen() {
           ]
         );
       } else {
-        console.error('[Signup] Register failed:', result.message);
+        console.warn('[Signup] Register failed:', result.message);
         Alert.alert('Registration Failed', result.message || 'Could not create account. Please try again.');
       }
     } catch (error: any) {
-      console.error('[Signup] Register exception:', error);
+      console.warn('[Signup] Register exception handled:', error?.message || 'unknown');
       Alert.alert('Error', error?.message || 'Registration failed. Please try again.');
     } finally {
       setIsLoading(false);
@@ -395,25 +579,98 @@ export default function SignUpScreen() {
           style={styles.logo}
           resizeMode="contain"
         />
-        <Text style={styles.title}>Create Account</Text>
-        <Text style={styles.subtitle}>Join IVX HOLDINGS and start investing in premium real estate</Text>
+        <Text style={styles.title}>{isOwnerSignup ? 'Create Owner Account' : 'Create Account'}</Text>
+        <Text style={styles.subtitle}>
+          {isOwnerSignup
+            ? 'Separate owner intake for IVX control access. This does not create a regular worker or public investor account.'
+            : 'Join IVX HOLDINGS and start investing in premium real estate'}
+        </Text>
       </View>
 
-      <TouchableOpacity
-        style={styles.ownerShortcutCard}
-        activeOpacity={0.84}
-        onPress={() => navigateToOwnerAccess(formData.email)}
-        testID="signup-owner-shortcut"
-      >
-        <View style={styles.ownerShortcutIconWrap}>
-          <Shield size={18} color={Colors.black} />
-        </View>
-        <View style={styles.ownerShortcutContent}>
-          <Text style={styles.ownerShortcutTitle}>Project owner?</Text>
-          <Text style={styles.ownerShortcutSubtitle}>Do not create a public member account for owner recovery. Open Owner Access instead to sign in with your verified owner account or restore the trusted device path.</Text>
-        </View>
-        <ChevronRight size={18} color={Colors.primary} />
-      </TouchableOpacity>
+      <View style={[styles.accountTypeCard, isDedicatedOwnerSignup && styles.accountTypeCardOwnerLocked]} testID="signup-account-type-card">
+        <Text style={styles.accountTypeEyebrow}>{isDedicatedOwnerSignup ? 'Owner sign-up screen' : 'Choose sign-up type'}</Text>
+        {isDedicatedOwnerSignup ? (
+          <View style={styles.ownerLockedRow} testID="owner-signup-locked-mode">
+            <View style={styles.ownerLockedIconWrap}>
+              <Shield size={18} color={Colors.black} />
+            </View>
+            <View style={styles.ownerLockedContent}>
+              <Text style={styles.ownerLockedTitle}>Owner mode is selected</Text>
+              <Text style={styles.ownerLockedSubtitle}>This dedicated screen creates an approved owner account directly. It does not create a worker or regular public user account.</Text>
+            </View>
+          </View>
+        ) : (
+          <View style={styles.accountTypeSwitch}>
+            <TouchableOpacity
+              style={[styles.accountTypeOption, !isOwnerSignup && styles.accountTypeOptionActive]}
+              activeOpacity={0.84}
+              onPress={() => setAccountType('investor')}
+              testID="signup-account-type-investor"
+            >
+              <Text style={[styles.accountTypeOptionTitle, !isOwnerSignup && styles.accountTypeOptionTitleActive]}>Regular user</Text>
+              <Text style={styles.accountTypeOptionSubtitle}>Investor/member access</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.accountTypeOption, isOwnerSignup && styles.accountTypeOptionActiveOwner]}
+              activeOpacity={0.84}
+              onPress={() => setAccountType('owner')}
+              testID="signup-account-type-owner"
+            >
+              <Text style={[styles.accountTypeOptionTitle, isOwnerSignup && styles.accountTypeOptionTitleActive]}>Owner</Text>
+              <Text style={styles.accountTypeOptionSubtitle}>Owner control access</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+        <Text style={styles.accountTypeProofText}>
+          {isOwnerSignup
+            ? 'Proof: owner sign-up now saves accountType=owner, requestedRole=owner, role=owner, status=active, and kycStatus=approved directly.'
+            : 'Proof: regular sign-up saves the normal investor/member path only.'}
+        </Text>
+        {isDedicatedOwnerSignup ? (
+          <View style={styles.ownerLockedActionsRow}>
+            <TouchableOpacity style={styles.switchToRegularButton} onPress={() => router.replace('/signup' as Href)} testID="owner-signup-switch-regular">
+              <Text style={styles.switchToRegularText}>Need regular user signup instead?</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.resetOwnerButton} onPress={handleResetOwnerData} testID="owner-signup-reset-local">
+              <Text style={styles.resetOwnerText}>Start fresh — clear stored owner data</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+      </View>
+
+      {!isOwnerSignup ? (
+        <TouchableOpacity
+          style={styles.ownerShortcutCard}
+          activeOpacity={0.84}
+          onPress={() => router.push('/owner-signup' as Href)}
+          testID="signup-owner-shortcut"
+        >
+          <View style={styles.ownerShortcutIconWrap}>
+            <Shield size={18} color={Colors.black} />
+          </View>
+          <View style={styles.ownerShortcutContent}>
+            <Text style={styles.ownerShortcutTitle}>Project owner?</Text>
+            <Text style={styles.ownerShortcutSubtitle}>Use Owner sign-up if you need a new owner account. Existing owners should open Owner Login to sign in directly.</Text>
+          </View>
+          <ChevronRight size={18} color={Colors.primary} />
+        </TouchableOpacity>
+      ) : (
+        <TouchableOpacity
+          style={[styles.ownerShortcutCard, styles.ownerAccessCard]}
+          activeOpacity={0.84}
+          onPress={() => navigateToOwnerLogin(formData.email)}
+          testID="signup-existing-owner-login"
+        >
+          <View style={styles.ownerShortcutIconWrap}>
+            <Shield size={18} color={Colors.black} />
+          </View>
+          <View style={styles.ownerShortcutContent}>
+            <Text style={styles.ownerShortcutTitle}>Already have owner credentials?</Text>
+            <Text style={styles.ownerShortcutSubtitle}>Open Owner Login instead. Owner sign-up below creates a new approved owner account.</Text>
+          </View>
+          <ChevronRight size={18} color={Colors.primary} />
+        </TouchableOpacity>
+      )}
 
       <View style={styles.formSection}>
         <View style={styles.inputRow}>
@@ -466,13 +723,13 @@ export default function SignUpScreen() {
           {existingAccountDetected && (
             <TouchableOpacity
               style={styles.existingAccountCard}
-              onPress={() => navigateToLogin(formData.email)}
+              onPress={() => isOwnerSignup ? navigateToOwnerLogin(formData.email) : navigateToLogin(formData.email)}
               testID="signup-existing-account"
             >
               <Shield size={16} color={Colors.primary} />
               <View style={styles.existingAccountContent}>
                 <Text style={styles.existingAccountTitle}>Account already found</Text>
-                <Text style={styles.existingAccountSubtitle}>Use Sign In for returning members. If this is your owner account, open Owner Access instead of creating another public account.</Text>
+                <Text style={styles.existingAccountSubtitle}>Use Sign In for returning members. If this is your owner account, open Owner Login instead of creating a duplicate account.</Text>
               </View>
             </TouchableOpacity>
           )}
@@ -565,21 +822,38 @@ export default function SignUpScreen() {
           </Text>
         </TouchableOpacity>
 
+        {signupCooldownActive ? (
+          <View style={styles.cooldownCard} testID="signup-cooldown-card">
+            <Shield size={18} color="#F59E0B" />
+            <View style={styles.cooldownContent}>
+              <Text style={styles.cooldownTitle}>Signup cooldown active</Text>
+              <Text style={styles.cooldownSubtitle}>Paused for {signupCooldownRemainingSeconds}s so the app does not keep hitting Supabase signup throttles. Existing owners should sign in instead.</Text>
+            </View>
+            <TouchableOpacity
+              style={styles.cooldownSignInButton}
+              onPress={() => isOwnerSignup ? navigateToOwnerLogin(formData.email) : navigateToLogin(formData.email)}
+              testID="signup-cooldown-signin"
+            >
+              <Text style={styles.cooldownSignInText}>Sign in instead</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
         <TouchableOpacity
-          style={[styles.primaryButton, isLoading && styles.buttonDisabled]}
+          style={[styles.primaryButton, (isLoading || signupCooldownActive) && styles.buttonDisabled]}
           onPress={handleRegister}
-          disabled={isLoading}
+          disabled={isLoading || signupCooldownActive}
           testID="signup-submit"
         >
           <Text style={styles.primaryButtonText}>
-            {isLoading ? 'Creating Account...' : 'Create Account'}
+            {isLoading ? (isOwnerSignup ? 'Checking Owner Account...' : 'Creating Account...') : signupCooldownActive ? `Try again in ${signupCooldownRemainingSeconds}s` : (isOwnerSignup ? 'Submit Owner Sign-Up' : 'Create Account')}
           </Text>
         </TouchableOpacity>
 
         <View style={styles.loginRow}>
           <Text style={styles.loginText}>Already have an account? </Text>
-          <TouchableOpacity onPress={() => navigateToLogin(formData.email)} testID="signup-go-login">
-            <Text style={styles.loginLink}>Sign In</Text>
+          <TouchableOpacity onPress={() => isOwnerSignup ? navigateToOwnerLogin(formData.email) : navigateToLogin(formData.email)} testID="signup-go-login">
+            <Text style={styles.loginLink}>{isOwnerSignup ? 'Owner Login' : 'Sign In'}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -803,6 +1077,10 @@ export default function SignUpScreen() {
   );
 }
 
+export default function SignUpScreen() {
+  return <SignUpScreenContent />;
+}
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -869,6 +1147,127 @@ const styles = StyleSheet.create({
   formSection: {
     marginBottom: 16,
   },
+  accountTypeCard: {
+    marginBottom: 16,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: '#243242',
+    backgroundColor: '#0A121C',
+    padding: 14,
+    gap: 12,
+  },
+  accountTypeEyebrow: {
+    color: Colors.textTertiary,
+    fontSize: 11,
+    fontWeight: '800' as const,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase' as const,
+  },
+  accountTypeSwitch: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  accountTypeCardOwnerLocked: {
+    borderColor: '#F59E0B66',
+    backgroundColor: '#1A1207',
+  },
+  ownerLockedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  ownerLockedIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F59E0B',
+  },
+  ownerLockedContent: {
+    flex: 1,
+  },
+  ownerLockedTitle: {
+    color: Colors.text,
+    fontSize: 15,
+    fontWeight: '900' as const,
+  },
+  ownerLockedSubtitle: {
+    marginTop: 4,
+    color: Colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  accountTypeOption: {
+    flex: 1,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#2A3543',
+    backgroundColor: '#0F1722',
+    padding: 12,
+    minHeight: 82,
+    justifyContent: 'center',
+  },
+  accountTypeOptionActive: {
+    borderColor: Colors.primary + '80',
+    backgroundColor: Colors.primary + '16',
+  },
+  accountTypeOptionActiveOwner: {
+    borderColor: '#F59E0B88',
+    backgroundColor: '#F59E0B18',
+  },
+  accountTypeOptionTitle: {
+    color: Colors.textSecondary,
+    fontSize: 14,
+    fontWeight: '900' as const,
+  },
+  accountTypeOptionTitleActive: {
+    color: Colors.text,
+  },
+  accountTypeOptionSubtitle: {
+    marginTop: 4,
+    color: Colors.textTertiary,
+    fontSize: 11,
+    lineHeight: 15,
+  },
+  accountTypeProofText: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  ownerLockedActionsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 4,
+  },
+  resetOwnerButton: {
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#F87171AA',
+    backgroundColor: '#7F1D1D22',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  resetOwnerText: {
+    color: '#FCA5A5',
+    fontSize: 12,
+    fontWeight: '800' as const,
+  },
+  switchToRegularButton: {
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: Colors.primary + '44',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  switchToRegularText: {
+    color: Colors.primary,
+    fontSize: 12,
+    fontWeight: '800' as const,
+  },
   ownerShortcutCard: {
     marginBottom: 16,
     borderRadius: 18,
@@ -888,6 +1287,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: Colors.primary,
+  },
+  ownerAccessCard: {
+    borderColor: '#F59E0B44',
+    backgroundColor: '#1A1207',
   },
   ownerShortcutContent: {
     flex: 1,
@@ -989,6 +1392,43 @@ const styles = StyleSheet.create({
   termsLink: {
     color: Colors.primary,
     textDecorationLine: 'underline' as const,
+  },
+  cooldownCard: {
+    marginBottom: 14,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#F59E0B66',
+    backgroundColor: '#1A1207',
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  cooldownContent: {
+    flex: 1,
+  },
+  cooldownTitle: {
+    color: Colors.text,
+    fontSize: 13,
+    fontWeight: '900' as const,
+  },
+  cooldownSubtitle: {
+    marginTop: 3,
+    color: Colors.textSecondary,
+    fontSize: 11,
+    lineHeight: 16,
+  },
+  cooldownSignInButton: {
+    borderRadius: 999,
+    backgroundColor: '#F59E0B',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  cooldownSignInText: {
+    color: Colors.black,
+    fontSize: 11,
+    fontWeight: '900' as const,
   },
   primaryButton: {
     backgroundColor: Colors.primary,

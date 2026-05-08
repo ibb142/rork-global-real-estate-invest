@@ -106,6 +106,48 @@ export async function clearOwnerIP(): Promise<void> {
   } catch {}
 }
 
+export async function resetOwnerLocalSignupState(): Promise<{
+  clearedOwnerTrustedDevice: boolean;
+  clearedAuthStore: boolean;
+  signedOutSupabase: boolean;
+  errors: string[];
+}> {
+  const errors: string[] = [];
+  let clearedOwnerTrustedDevice = false;
+  let clearedAuthStore = false;
+  let signedOutSupabase = false;
+
+  try {
+    await clearOwnerIP();
+    clearedOwnerTrustedDevice = true;
+  } catch (e) {
+    errors.push(`owner_trusted_device:${(e as Error)?.message ?? 'unknown'}`);
+  }
+
+  try {
+    await clearStoredAuth();
+    clearedAuthStore = true;
+  } catch (e) {
+    errors.push(`auth_store:${(e as Error)?.message ?? 'unknown'}`);
+  }
+
+  try {
+    await supabase.auth.signOut();
+    signedOutSupabase = true;
+  } catch (e) {
+    errors.push(`supabase_signout:${(e as Error)?.message ?? 'unknown'}`);
+  }
+
+  console.log('[Auth] resetOwnerLocalSignupState complete:', {
+    clearedOwnerTrustedDevice,
+    clearedAuthStore,
+    signedOutSupabase,
+    errorCount: errors.length,
+  });
+
+  return { clearedOwnerTrustedDevice, clearedAuthStore, signedOutSupabase, errors };
+}
+
 export async function isStoredOwnerIPEnabled(): Promise<boolean> {
   try {
     const val = await SecureStore.getItemAsync(OWNER_IP_ENABLED_KEY);
@@ -434,6 +476,8 @@ export interface AuthUser {
   phone?: string;
   country?: string;
   avatar?: string;
+  accountType?: RegisterAccountType;
+  accountStatus?: string;
 }
 
 export type LoginFailureReason = 'invalid_credentials' | 'email_not_confirmed' | 'rate_limited' | 'service_unavailable' | 'admin_access_locked' | 'unknown';
@@ -447,19 +491,309 @@ export interface LoginResult {
   supabaseErrorCode?: string;
 }
 
+type RegisterAccountType = 'investor' | 'owner';
+
 interface RegisterResult {
   success: boolean;
   message: string;
   alreadyExists?: boolean;
   requiresLogin?: boolean;
   rateLimited?: boolean;
+  deploymentBlocked?: boolean;
   email?: string;
+  accountType?: RegisterAccountType;
+  ownerReviewRequired?: boolean;
+  userId?: string;
+  proof?: Record<string, unknown>;
 }
 
 interface AuthSessionResult {
   accepted: boolean;
   role: string;
   blockedReason: string | null;
+}
+
+type OwnerRegistrationRepairInput = {
+  email: string;
+  password: string;
+  firstName: string;
+  lastName: string;
+  phone?: string;
+  country: string;
+};
+
+type OwnerEmailLookupAction = 'signup' | 'sign_in' | 'not_allowed' | 'unavailable';
+
+type OwnerEmailLookupStatus = {
+  requested?: boolean;
+  allowed?: boolean;
+  authUserExists?: boolean | null;
+  profileExists?: boolean | null;
+  walletExists?: boolean | null;
+  safeToSignup?: boolean;
+  action?: OwnerEmailLookupAction;
+  message?: string;
+  secretValuesReturned?: false;
+};
+
+type OwnerRegistrationRepairResponse = {
+  success?: boolean;
+  message?: string;
+  alreadyExists?: boolean;
+  requiresLogin?: boolean;
+  rateLimited?: boolean;
+  cooldownSeconds?: number;
+  email?: string;
+  userId?: string;
+  proof?: Record<string, unknown>;
+  ownerEmailLookup?: OwnerEmailLookupStatus;
+  deploymentMarker?: string;
+  secretValuesReturned?: false;
+};
+
+type OwnerRegistrationStatusResponse = {
+  ok?: boolean;
+  routeRegistered?: boolean;
+  ownerEmailLookup?: OwnerEmailLookupStatus;
+  message?: string;
+  deploymentMarker?: string;
+  secretValuesReturned?: false;
+};
+
+type OwnerPostLoginRepairResult = {
+  success: boolean;
+  message: string;
+  proof?: Record<string, unknown>;
+  email?: string;
+  userId?: string;
+};
+
+const IVX_CANONICAL_API_BASE_URL = 'https://api.ivxholding.com';
+
+function normalizeApiBaseUrl(value: string | undefined): string {
+  return (value ?? '').trim().replace(/\/+$/, '');
+}
+
+function pushUniqueApiBaseUrl(values: string[], value: string | undefined): void {
+  const normalized = normalizeApiBaseUrl(value);
+  if (normalized && !values.includes(normalized)) {
+    values.push(normalized);
+  }
+}
+
+function getOwnerRegistrationApiBaseUrls(): string[] {
+  const urls: string[] = [];
+  pushUniqueApiBaseUrl(urls, process.env.EXPO_PUBLIC_IVX_OWNER_AI_BASE_URL);
+  pushUniqueApiBaseUrl(urls, process.env.EXPO_PUBLIC_IVX_API_BASE_URL);
+  pushUniqueApiBaseUrl(urls, process.env.EXPO_PUBLIC_API_BASE_URL);
+  const projectId = (process.env.EXPO_PUBLIC_PROJECT_ID ?? '').trim();
+  if (projectId) {
+    pushUniqueApiBaseUrl(urls, `https://dev-${projectId}.ivxtest.dev`);
+  }
+  pushUniqueApiBaseUrl(urls, IVX_CANONICAL_API_BASE_URL);
+  return urls;
+}
+
+async function fetchWithOwnerRegistrationTimeout(url: string, init: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12_000);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function isOwnerRegistrationLookupSignIn(status: OwnerEmailLookupStatus | null | undefined): boolean {
+  return status?.authUserExists === true || status?.action === 'sign_in' || status?.safeToSignup === false && status?.authUserExists === true;
+}
+
+async function checkOwnerRegistrationStatusThroughBackend(email: string): Promise<OwnerEmailLookupStatus | null> {
+  const normalizedEmail = sanitizeEmail(email);
+  if (!normalizedEmail) {
+    return null;
+  }
+
+  const baseUrls = getOwnerRegistrationApiBaseUrls();
+  for (const baseUrl of baseUrls) {
+    const endpoint = `${baseUrl}/api/ivx/owner-registration/status?email=${encodeURIComponent(normalizedEmail)}`;
+    try {
+      const response = await fetchWithOwnerRegistrationTimeout(endpoint, {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+      });
+      const rawText = await response.text();
+      const parsed = rawText ? JSON.parse(rawText) as OwnerRegistrationStatusResponse : {};
+      if (response.ok && parsed.ownerEmailLookup) {
+        console.log('[Auth] Owner registration status lookup:', normalizedEmail, 'action:', parsed.ownerEmailLookup.action ?? 'unknown', 'authUserExists:', parsed.ownerEmailLookup.authUserExists ?? null, 'marker:', parsed.deploymentMarker ?? 'missing');
+        return parsed.ownerEmailLookup;
+      }
+      if (response.status !== 404 && response.status !== 405) {
+        console.log('[Auth] Owner registration status lookup returned non-success:', response.status, parsed.message ?? 'no message');
+        return parsed.ownerEmailLookup ?? null;
+      }
+    } catch (error) {
+      console.log('[Auth] Owner registration status lookup failed:', endpoint, error instanceof Error ? error.message : 'unknown');
+    }
+  }
+
+  return null;
+}
+
+function shouldRepairOwnerAfterLogin(session: Session): boolean {
+  const email = sanitizeEmail(session.user.email ?? '');
+  const appMetadata = (session.user.app_metadata ?? {}) as Record<string, unknown>;
+  const userMetadata = (session.user.user_metadata ?? {}) as Record<string, unknown>;
+  const candidates = [
+    appMetadata.role,
+    appMetadata.accountType,
+    appMetadata.account_type,
+    appMetadata.requestedRole,
+    appMetadata.requested_role,
+    userMetadata.role,
+    userMetadata.accountType,
+    userMetadata.account_type,
+    userMetadata.requestedRole,
+    userMetadata.requested_role,
+  ].map((value) => typeof value === 'string' ? value.trim().toLowerCase() : '');
+
+  return isOwnerAdminEmail(email) || candidates.some((candidate) => ['owner', 'admin', 'super_admin'].includes(candidate));
+}
+
+async function repairOwnerRegistrationAfterLogin(session: Session): Promise<OwnerPostLoginRepairResult | null> {
+  if (!session.access_token || !shouldRepairOwnerAfterLogin(session)) {
+    return null;
+  }
+
+  const baseUrls = getOwnerRegistrationApiBaseUrls();
+  for (const baseUrl of baseUrls) {
+    const endpoint = `${baseUrl}/api/ivx/owner-registration/repair`;
+    try {
+      const response = await fetchWithOwnerRegistrationTimeout(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({}),
+      });
+      const rawText = await response.text();
+      const parsed = rawText ? JSON.parse(rawText) as OwnerRegistrationRepairResponse : {};
+      if (response.ok && parsed.success) {
+        console.log('[Auth] Owner post-login profile/wallet repair complete:', parsed.email ?? session.user.email ?? 'owner', 'proof:', JSON.stringify(parsed.proof ?? {}));
+        return {
+          success: true,
+          message: parsed.message || 'Owner profile and wallet repair completed.',
+          proof: parsed.proof,
+          email: parsed.email,
+          userId: parsed.userId,
+        };
+      }
+      if (response.status !== 404 && response.status !== 405) {
+        console.log('[Auth] Owner post-login repair skipped:', response.status, parsed.message ?? 'no message', 'marker:', parsed.deploymentMarker ?? 'missing');
+        return {
+          success: false,
+          message: parsed.message || `Owner post-login repair returned HTTP ${response.status}.`,
+          proof: parsed.proof,
+          email: parsed.email,
+          userId: parsed.userId,
+        };
+      }
+    } catch (error) {
+      console.log('[Auth] Owner post-login repair endpoint failed:', endpoint, error instanceof Error ? error.message : 'unknown');
+    }
+  }
+
+  return null;
+}
+
+async function repairOwnerRegistrationThroughBackend(input: OwnerRegistrationRepairInput): Promise<RegisterResult> {
+  const baseUrls = getOwnerRegistrationApiBaseUrls();
+  let lastMessage = 'Owner registration backend repair is not reachable yet.';
+
+  for (const baseUrl of baseUrls) {
+    const endpoint = `${baseUrl}/api/ivx/owner-registration`;
+    try {
+      const response = await fetchWithOwnerRegistrationTimeout(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(input),
+      });
+      const rawText = await response.text();
+      const parsed = rawText ? JSON.parse(rawText) as OwnerRegistrationRepairResponse : {};
+      lastMessage = parsed.message || `Owner registration backend returned HTTP ${response.status}.`;
+
+      if (response.ok && parsed.success) {
+        console.log('[Auth] Owner registration backend repair saved account:', parsed.email ?? input.email, 'proof:', JSON.stringify(parsed.proof ?? {}), 'secretEcho:', parsed.secretValuesReturned === false ? 'blocked' : 'unknown');
+        return {
+          success: true,
+          message: parsed.message || 'Owner registration saved. Please sign in with your owner email and password.',
+          requiresLogin: parsed.requiresLogin !== false,
+          email: parsed.email ?? input.email,
+          accountType: 'owner',
+          ownerReviewRequired: false,
+          userId: parsed.userId,
+          proof: parsed.proof,
+        };
+      }
+
+      if (parsed.alreadyExists || isOwnerRegistrationLookupSignIn(parsed.ownerEmailLookup)) {
+        console.log('[Auth] Owner registration backend repair found existing account:', parsed.email ?? input.email, 'profileExists:', parsed.ownerEmailLookup?.profileExists ?? null, 'walletExists:', parsed.ownerEmailLookup?.walletExists ?? null);
+        return {
+          success: false,
+          message: parsed.message || 'This owner email already exists. Please use Owner Login. After login, profile/wallet repair runs without calling signup again.',
+          alreadyExists: true,
+          requiresLogin: true,
+          email: parsed.email ?? input.email,
+          accountType: 'owner',
+          ownerReviewRequired: false,
+          userId: parsed.userId,
+          proof: parsed.ownerEmailLookup ? { ownerEmailLookup: parsed.ownerEmailLookup, secretValuesReturned: false } : undefined,
+        };
+      }
+
+      if (parsed.rateLimited || response.status === 429) {
+        console.log('[Auth] Owner registration backend rate limit active:', parsed.email ?? input.email, 'cooldownSeconds:', parsed.cooldownSeconds ?? 60);
+        return {
+          success: false,
+          message: parsed.message || 'Owner signup is temporarily throttled. Please wait before trying again, or sign in if this owner account already exists.',
+          rateLimited: true,
+          requiresLogin: true,
+          email: parsed.email ?? input.email,
+          accountType: 'owner',
+          ownerReviewRequired: false,
+          proof: { cooldownSeconds: parsed.cooldownSeconds ?? 60, secretValuesReturned: false },
+        };
+      }
+
+      if (response.status !== 404 && response.status !== 405) {
+        console.log('[Auth] Owner registration backend repair returned non-success:', response.status, lastMessage, 'marker:', parsed.deploymentMarker ?? 'missing');
+        return {
+          success: false,
+          message: parsed.message || `Owner registration backend returned HTTP ${response.status}.`,
+          deploymentBlocked: response.status >= 500,
+          requiresLogin: false,
+          email: parsed.email ?? input.email,
+          accountType: 'owner',
+          ownerReviewRequired: false,
+        };
+      }
+    } catch (error) {
+      lastMessage = error instanceof Error ? error.message : 'Owner registration backend repair request failed.';
+      console.log('[Auth] Owner registration backend repair endpoint failed:', endpoint, lastMessage);
+    }
+  }
+
+  console.log('[Auth] Owner registration backend repair unavailable after all candidates:', lastMessage);
+  return {
+    success: false,
+    message: `Owner registration backend repair is not live/reachable yet, so no owner data was saved through the public Supabase signup path. Last proof: ${lastMessage}. Deploy the current backend owner-registration route, then submit again or use Owner Login if the account already exists.`,
+    deploymentBlocked: true,
+    requiresLogin: false,
+    email: input.email,
+    accountType: 'owner',
+    ownerReviewRequired: false,
+  };
 }
 
 export interface OwnerDirectAccessAuditResult {
@@ -530,6 +864,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   const sessionMonitorCleanup = useRef<(() => void) | null>(null);
   const ownerIPActiveRef = useRef(false);
   const sessionWarmupKeyRef = useRef<string | null>(null);
+  const ownerRepairKeyRef = useRef<string | null>(null);
   const activeSessionUserIdRef = useRef<string | null>(null);
 
   const resolveServerRole = useCallback(async (userId: string): Promise<ServerRoleResolution> => {
@@ -730,6 +1065,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     }
     ownerIPActiveRef.current = false;
     sessionWarmupKeyRef.current = null;
+    ownerRepairKeyRef.current = null;
     activeSessionUserIdRef.current = null;
     await clearStoredAuth();
     setUser(null);
@@ -775,6 +1111,8 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       const registryTimestamp = new Date().toISOString();
       const sessionCreatedAt = supaUser.created_at || registryTimestamp;
 
+      const warmupStatus = 'active';
+
       try {
         await upsertStoredMemberRegistryRecord({
           id: supaUser.id,
@@ -784,7 +1122,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
           phone: authUser.phone || '',
           country: authUser.country || '',
           role,
-          status: 'active',
+          status: warmupStatus,
           kycStatus: authUser.kycStatus,
           createdAt: sessionCreatedAt,
           updatedAt: registryTimestamp,
@@ -811,7 +1149,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
           country: authUser.country || '',
           kycStatus: authUser.kycStatus,
           role,
-          status: 'active',
+          status: warmupStatus,
           source: 'session',
         });
 
@@ -852,6 +1190,17 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     ownerIPActiveRef.current = false;
     setIsOwnerIPAccess(false);
 
+    if (shouldRepairOwnerAfterLogin(session)) {
+      const repairKey = `${supaUser.id}:${supaUser.updated_at ?? supaUser.email ?? 'owner'}`;
+      if (ownerRepairKeyRef.current !== repairKey) {
+        ownerRepairKeyRef.current = repairKey;
+        await repairOwnerRegistrationAfterLogin(session).catch((error: unknown) => {
+          console.log('[Auth] Owner post-login repair note:', error instanceof Error ? error.message : 'unknown');
+          return null;
+        });
+      }
+    }
+
     const roleBootstrap = await withTimeout<SessionRoleBootstrap | null>(
       async () => {
         const resolvedRole = await resolveServerRole(supaUser.id);
@@ -881,6 +1230,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       console.log('[Auth] Admin access lock blocked authenticated session for:', supaUser.id, 'role:', role, 'email:', sanitizeEmail(supaUser.email ?? 'unknown'));
       ownerIPActiveRef.current = false;
       sessionWarmupKeyRef.current = null;
+      ownerRepairKeyRef.current = null;
       activeSessionUserIdRef.current = null;
       setUser(null);
       setUserRole('investor');
@@ -913,6 +1263,8 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       twoFactorEnabled: false,
       phone: meta.phone || '',
       country: meta.country || '',
+      accountType: meta.accountType === 'owner' ? 'owner' : 'investor',
+      accountStatus: 'active',
     };
 
     clearTwoFactorState();
@@ -1328,10 +1680,18 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     phone?: string;
     country: string;
     referralCode?: string;
+    accountType?: RegisterAccountType;
   }): Promise<RegisterResult> => {
     setRegisterLoading(true);
     try {
       const normalizedEmail = sanitizeEmail(data.email);
+      const accountType: RegisterAccountType = data.accountType === 'owner' ? 'owner' : 'investor';
+      const isOwnerSignup = accountType === 'owner';
+      const signupRole = isOwnerSignup ? 'owner' : 'investor';
+      const signupStatus = 'active';
+      const kycStatus = isOwnerSignup ? 'approved' : 'pending';
+      const ownerReviewRequired = false;
+      const registrationTimestamp = new Date().toISOString();
       const existingStoredRecord = await findExistingRegisteredMemberByEmail(normalizedEmail);
       if (existingStoredRecord) {
         console.log('[Auth] Signup blocked by durable member registry:', normalizedEmail);
@@ -1341,7 +1701,68 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
           alreadyExists: true,
           requiresLogin: true,
           email: normalizedEmail,
+          accountType,
+          ownerReviewRequired,
         };
+      }
+
+      if (isOwnerSignup) {
+        const ownerEmailLookup = await checkOwnerRegistrationStatusThroughBackend(normalizedEmail);
+        if (isOwnerRegistrationLookupSignIn(ownerEmailLookup)) {
+          console.log('[Auth] Owner signup preflight blocked duplicate before POST:', normalizedEmail, 'profileExists:', ownerEmailLookup?.profileExists ?? null, 'walletExists:', ownerEmailLookup?.walletExists ?? null);
+          return {
+            success: false,
+            message: ownerEmailLookup?.message || 'This owner account already exists. Please use Owner Login instead of signup.',
+            alreadyExists: true,
+            requiresLogin: true,
+            email: normalizedEmail,
+            accountType: 'owner',
+            ownerReviewRequired,
+            proof: { ownerEmailLookup, secretValuesReturned: false },
+          };
+        }
+
+        if (ownerEmailLookup?.action === 'not_allowed') {
+          return {
+            success: false,
+            message: ownerEmailLookup.message || 'Owner signup is limited to the configured owner email.',
+            requiresLogin: true,
+            email: normalizedEmail,
+            accountType: 'owner',
+            ownerReviewRequired,
+            proof: { ownerEmailLookup, secretValuesReturned: false },
+          };
+        }
+
+        const ownerRepairResult = await repairOwnerRegistrationThroughBackend({
+          email: normalizedEmail,
+          password: data.password,
+          firstName: data.firstName,
+          lastName: data.lastName,
+          phone: data.phone || '',
+          country: data.country,
+        });
+
+        if (ownerRepairResult) {
+          if (ownerRepairResult.success && ownerRepairResult.userId) {
+            await upsertStoredMemberRegistryRecord({
+              id: ownerRepairResult.userId,
+              email: normalizedEmail,
+              firstName: data.firstName,
+              lastName: data.lastName,
+              phone: data.phone || '',
+              country: data.country,
+              role: signupRole,
+              status: signupStatus,
+              kycStatus,
+              createdAt: registrationTimestamp,
+              updatedAt: registrationTimestamp,
+              lastSeenAt: registrationTimestamp,
+              source: 'signup',
+            });
+          }
+          return ownerRepairResult;
+        }
       }
 
       const { data: authData, error } = await supabase.auth.signUp({
@@ -1354,8 +1775,11 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
             phone: data.phone || '',
             country: data.country,
             referralCode: data.referralCode || '',
-            role: 'investor',
-            kycStatus: 'pending',
+            accountType,
+            requestedRole: isOwnerSignup ? 'owner' : '',
+            ownerSignupApprovedAt: isOwnerSignup ? registrationTimestamp : '',
+            role: signupRole,
+            kycStatus,
           },
         },
       });
@@ -1370,19 +1794,36 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
             alreadyExists: true,
             requiresLogin: true,
             email: normalizedEmail,
+            accountType,
+            ownerReviewRequired,
           };
         }
         if (lowerMessage.includes('over_email_send_rate_limit') || (lowerMessage.includes('rate limit') && lowerMessage.includes('email'))) {
           console.log('[Auth] Signup email rate limit active:', normalizedEmail);
+          if (isOwnerSignup) {
+            const ownerRepairResult = await repairOwnerRegistrationThroughBackend({
+              email: normalizedEmail,
+              password: data.password,
+              firstName: data.firstName,
+              lastName: data.lastName,
+              phone: data.phone || '',
+              country: data.country,
+            });
+            if (ownerRepairResult) {
+              return ownerRepairResult;
+            }
+          }
           return {
             success: false,
             message: 'Signups are temporarily throttled. Your data was not saved yet. Please wait a moment and then try again or sign in if your account already exists.',
             rateLimited: true,
             email: normalizedEmail,
+            accountType,
+            ownerReviewRequired,
           };
         }
         console.log('[Auth] Register rejection handled:', error.message, 'email:', normalizedEmail);
-        return { success: false, message: error.message, email: normalizedEmail };
+        return { success: false, message: error.message, email: normalizedEmail, accountType, ownerReviewRequired };
       }
 
       const identities = Array.isArray(authData.user?.identities) ? authData.user.identities : [];
@@ -1394,11 +1835,13 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
           alreadyExists: true,
           requiresLogin: true,
           email: normalizedEmail,
+          accountType,
+          ownerReviewRequired,
         };
       }
 
       if (authData.user) {
-        const registryTimestamp = new Date().toISOString();
+        const registryTimestamp = registrationTimestamp;
         await upsertStoredMemberRegistryRecord({
           id: authData.user.id,
           email: normalizedEmail,
@@ -1406,9 +1849,9 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
           lastName: data.lastName,
           phone: data.phone || '',
           country: data.country,
-          role: 'investor',
-          status: 'active',
-          kycStatus: 'pending',
+          role: signupRole,
+          status: signupStatus,
+          kycStatus,
           createdAt: registryTimestamp,
           updatedAt: registryTimestamp,
           lastSeenAt: registryTimestamp,
@@ -1434,9 +1877,9 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
           lastName: data.lastName,
           phone: data.phone || '',
           country: data.country,
-          kycStatus: 'pending',
-          role: 'investor',
-          status: 'active',
+          kycStatus,
+          role: signupRole,
+          status: signupStatus,
           source: 'signup',
         });
         if (!profileResult.success) {
@@ -1456,6 +1899,8 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
               message: handledSession.blockedReason ?? getAdminAccessLockMessage(),
               requiresLogin: false,
               email: normalizedEmail,
+              accountType,
+              ownerReviewRequired,
             };
           }
         }
@@ -1465,29 +1910,56 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         console.log('[Auth] Registration successful for:', authData.user.id);
         return {
           success: true,
-          message: authData.session
-            ? 'Registration successful.'
-            : 'Registration successful. Please sign in with your account.',
+          message: isOwnerSignup
+            ? (authData.session
+              ? 'Owner account created and approved. You can open Owner Access now with this account.'
+              : 'Owner account created and approved. Please sign in with this email after confirmation.')
+            : (authData.session
+              ? 'Registration successful.'
+              : 'Registration successful. Please sign in with your account.'),
           requiresLogin: !authData.session,
           email: normalizedEmail,
+          accountType,
+          ownerReviewRequired,
         };
       }
 
-      return { success: false, message: 'Registration failed', email: normalizedEmail };
+      return { success: false, message: 'Registration failed', email: normalizedEmail, accountType, ownerReviewRequired };
     } catch (error: unknown) {
       const exceptionMessage = extractAuthErrorMessage(error) || 'Registration failed';
       const normalizedEmail = sanitizeEmail(data.email);
       console.log('[Auth] Register exception handled:', exceptionMessage, 'email:', normalizedEmail);
       const lowerMessage = String(exceptionMessage).toLowerCase();
       if (lowerMessage.includes('over_email_send_rate_limit') || (lowerMessage.includes('rate limit') && lowerMessage.includes('email'))) {
+        if (data.accountType === 'owner') {
+          const ownerRepairResult = await repairOwnerRegistrationThroughBackend({
+            email: normalizedEmail,
+            password: data.password,
+            firstName: data.firstName,
+            lastName: data.lastName,
+            phone: data.phone || '',
+            country: data.country,
+          });
+          if (ownerRepairResult) {
+            return ownerRepairResult;
+          }
+        }
         return {
           success: false,
           message: 'Signups are temporarily throttled. Your data was not saved yet. Please wait a moment and then try again or sign in if your account already exists.',
           rateLimited: true,
           email: normalizedEmail,
+          accountType: data.accountType === 'owner' ? 'owner' : 'investor',
+          ownerReviewRequired: false,
         };
       }
-      return { success: false, message: exceptionMessage, email: normalizedEmail };
+      return {
+        success: false,
+        message: exceptionMessage,
+        email: normalizedEmail,
+        accountType: data.accountType === 'owner' ? 'owner' : 'investor',
+        ownerReviewRequired: false,
+      };
     } finally {
       setRegisterLoading(false);
     }
