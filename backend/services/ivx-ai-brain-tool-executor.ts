@@ -19,6 +19,7 @@ import {
   getIVXCredentialPresenceByNameOnly,
   IVX_REQUESTED_PRODUCTION_ACCESS_ENV_NAMES,
 } from '../config/ivx-credential-request-manifest';
+import { getIVXOwnerVariableRuntimeValue, hasIVXOwnerVariableRuntimeValue } from '../api/ivx-owner-variables';
 
 export type IVXAIBrainToolName =
   | 'github_repo_status'
@@ -291,8 +292,16 @@ function safeErrorMessage(error: unknown, fallback: string): string {
   return redactKnownSecretValues(raw);
 }
 
-function readGithubApiToken(): string {
+function readGithubApiTokenFromEnv(): string {
   return readEnv('IVX_GITHUB_READONLY_TOKEN') || readEnv('GITHUB_TOKEN');
+}
+
+async function readGithubApiToken(): Promise<string> {
+  return readGithubApiTokenFromEnv() || await getIVXOwnerVariableRuntimeValue('GITHUB_TOKEN');
+}
+
+async function readGithubRepoUrl(input: Record<string, unknown>): Promise<string> {
+  return readStringInput(input, 'repoUrl', readEnv('GITHUB_REPO_URL')) || await getIVXOwnerVariableRuntimeValue('GITHUB_REPO_URL');
 }
 
 function readAwsAccessKeyId(): string {
@@ -335,8 +344,8 @@ function parseGithubRepoUrl(value: string): GithubRepoInfo | null {
   return null;
 }
 
-function buildGithubHeaders(): HeadersInit {
-  const token = readGithubApiToken();
+async function buildGithubHeaders(): Promise<HeadersInit> {
+  const token = await readGithubApiToken();
   return {
     Accept: 'application/vnd.github+json',
     'X-GitHub-Api-Version': '2022-11-28',
@@ -447,12 +456,12 @@ function summarizeDiagnosticResult(result: IVXAIBrainToolResult): string {
 }
 
 async function runGithubRepoStatus(input: Record<string, unknown>): Promise<unknown> {
-  const repoUrl = readStringInput(input, 'repoUrl', readEnv('GITHUB_REPO_URL'));
+  const repoUrl = await readGithubRepoUrl(input);
   const repoInfo = parseGithubRepoUrl(repoUrl);
   if (!repoInfo) {
     throw new Error('GITHUB_REPO_URL is missing or invalid.');
   }
-  const headers = buildGithubHeaders();
+  const headers = await buildGithubHeaders();
   const repoResponse = await fetchJson(`https://api.github.com/repos/${repoInfo.owner}/${repoInfo.repo}`, { headers });
   if (!repoResponse.ok) {
     throw new Error(`GitHub repo lookup failed with HTTP ${repoResponse.status}.`);
@@ -478,8 +487,13 @@ async function runGithubRepoStatus(input: Record<string, unknown>): Promise<unkn
     branchNames,
     cloneUrl: readTrimmed(repoData.clone_url) || null,
     pushedAt: readTrimmed(repoData.pushed_at) || null,
-    tokenConfigured: Boolean(readGithubApiToken()),
-    tokenMode: readEnv('IVX_GITHUB_READONLY_TOKEN') ? 'read_only_token' : readEnv('GITHUB_TOKEN') ? 'legacy_token_fallback' : 'public_or_not_configured',
+    repoUrlConfigured: true,
+    credentialSource: {
+      GITHUB_REPO_URL: readEnv('GITHUB_REPO_URL') ? 'env' : 'owner_variables',
+      GITHUB_TOKEN: readGithubApiTokenFromEnv() ? 'env' : await hasIVXOwnerVariableRuntimeValue('GITHUB_TOKEN') ? 'owner_variables' : 'missing',
+    },
+    tokenConfigured: Boolean(await readGithubApiToken()),
+    tokenMode: readEnv('IVX_GITHUB_READONLY_TOKEN') ? 'read_only_token' : readEnv('GITHUB_TOKEN') ? 'legacy_token_fallback' : await hasIVXOwnerVariableRuntimeValue('GITHUB_TOKEN') ? 'owner_variables' : 'public_or_not_configured',
     latestCommit: commitResponse?.ok === true ? {
       sha: readTrimmed(commitData.sha) || null,
       message: readTrimmed(commitDetails.message).slice(0, 240) || null,
@@ -904,7 +918,7 @@ function runMinimumAccessPlan(): unknown {
     writeCapableCredentials: [...WRITE_CAPABLE_ENV_NAMES],
     missingMinimumRuntimeEnvNames: getMissingEnvNames(MINIMUM_RUNTIME_ENV_NAMES),
     missingAwsReadonlyEnvNames: getMissingAwsReadonlyEnvNames(),
-    githubReadonlyTokenConfigured: Boolean(readGithubApiToken()),
+    githubReadonlyTokenConfigured: Boolean(readGithubApiTokenFromEnv()),
     awsReadonlyCredentialsConfigured: getMissingAwsReadonlyEnvNames().length === 0,
     supabaseMinimumReadonlyConfigured: getMissingEnvNames(['EXPO_PUBLIC_SUPABASE_URL', 'EXPO_PUBLIC_SUPABASE_ANON_KEY']).length === 0,
     developerDeployControl: runDeveloperDeployControlStatus(),
@@ -1278,9 +1292,9 @@ async function readLocalTree(root: string, depth: number = 2): Promise<string[]>
 }
 
 async function runCodeRepoControlStatus(input: Record<string, unknown>): Promise<unknown> {
-  const repoUrl = readStringInput(input, 'repoUrl', readEnv('GITHUB_REPO_URL'));
+  const repoUrl = await readGithubRepoUrl(input);
   const repoInfo = parseGithubRepoUrl(repoUrl);
-  const token = readGithubApiToken();
+  const token = await readGithubApiToken();
   const branch = readStringInput(input, 'branch', readEnv('GITHUB_DEFAULT_BRANCH') || 'main');
   const requestedPaths = readStringArray(input.requiredPaths).length > 0 ? readStringArray(input.requiredPaths) : [...DEFAULT_REPO_REQUIRED_PATHS];
   const localRoot = process.cwd();
@@ -1294,7 +1308,7 @@ async function runCodeRepoControlStatus(input: Record<string, unknown>): Promise
   let branchVerified = fileTree.length > 0;
   let githubPathChecks: Array<{ path: string; status: string; httpStatus: number | null }> = localPathChecks;
   if (repoInfo) {
-    const headers = buildGithubHeaders();
+    const headers = await buildGithubHeaders();
     repoStatus = readRecord(await runGithubRepoStatus({ repoUrl }));
     const githubBranch = readStringInput(input, 'branch', readTrimmed(repoStatus.defaultBranch) || branch);
     githubPathChecks = await Promise.all(requestedPaths.map(async (repoPath) => {
@@ -1337,8 +1351,8 @@ async function runCodeRepoControlStatus(input: Record<string, unknown>): Promise
       explainSourceFunction: sourceText.includes('async function startServer') ? 'verified' : 'not_verified',
       verifyBranch: branchVerified ? 'verified' : 'not_verified',
       detectUncommittedLocalFiles: 'not verified from deployed backend',
-      commitAndPushFromOwnerAI: readEnv('GITHUB_TOKEN') ? 'owner_approval_required_configured' : 'missing_GITHUB_TOKEN',
-      pullRequestAutomation: readEnv('GITHUB_TOKEN') ? 'owner_approval_required_configured' : 'missing_GITHUB_TOKEN',
+      commitAndPushFromOwnerAI: token ? 'owner_approval_required_configured' : 'missing_GITHUB_TOKEN',
+      pullRequestAutomation: token ? 'owner_approval_required_configured' : 'missing_GITHUB_TOKEN',
     },
     accessMode: 'read_only_verification',
     tokenConfigured: Boolean(token),
@@ -1689,7 +1703,7 @@ async function runTool(tool: IVXAIBrainToolName, input: Record<string, unknown>)
 
 function missingEnvForTool(tool: IVXAIBrainToolName): string[] {
   if (tool === 'github_repo_status') {
-    return getMissingEnvNames(['GITHUB_REPO_URL']);
+    return [];
   }
   if (tool === 'developer_deploy_control_status') {
     return getMissingDeveloperDeployEnvNames();

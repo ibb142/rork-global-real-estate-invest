@@ -23,12 +23,13 @@ const OWNER_VARIABLES = [
   { name: 'AI_GATEWAY_API_KEY', provider: 'ai', required: false, secret: true, description: 'Optional AI gateway key.' },
   { name: 'JWT_SECRET', provider: 'security', required: false, secret: true, description: 'Optional JWT signing secret.' },
   { name: 'APP_SECRET', provider: 'security', required: false, secret: true, description: 'Optional app secret.' },
+  { name: 'OWNER_NEW_PASSWORD', provider: 'security', required: false, secret: true, description: 'Emergency owner password reset value used only by backend owner-access repair.' },
   { name: 'S3_BUCKET_NAME', provider: 'storage', required: false, secret: false, description: 'Optional S3 bucket name.' },
   { name: 'CLOUDFRONT_DISTRIBUTION_ID', provider: 'storage', required: false, secret: false, description: 'Optional CloudFront distribution ID.' },
 ] as const;
 
 type OwnerVariableMetadata = typeof OWNER_VARIABLES[number];
-type OwnerVariableName = OwnerVariableMetadata['name'];
+export type OwnerVariableName = OwnerVariableMetadata['name'];
 type OwnerVariableProvider = OwnerVariableMetadata['provider'];
 type OwnerVariableStatus = 'missing' | 'saved' | 'tested' | 'invalid';
 type TestResult = 'tested' | 'invalid' | 'missing';
@@ -664,6 +665,29 @@ async function buildStoredSecretMap(): Promise<StoredSecretMap> {
     output[name] = decryptRowValue(row);
   }
   return output;
+}
+
+/**
+ * Reads one encrypted Owner Variable for backend runtime use without exposing it to API responses.
+ */
+export async function getIVXOwnerVariableRuntimeValue(name: OwnerVariableName): Promise<string> {
+  try {
+    const row = await getStoredRow(name);
+    return row ? decryptRowValue(row).trim() : '';
+  } catch (error) {
+    console.log('[IVXOwnerVariables] Runtime value bridge unavailable:', {
+      name,
+      message: error instanceof Error ? sanitizeExternalErrorDetail(error.message) : 'unknown',
+    });
+    return '';
+  }
+}
+
+/**
+ * Checks encrypted Owner Variable presence for diagnostics without returning secret values.
+ */
+export async function hasIVXOwnerVariableRuntimeValue(name: OwnerVariableName): Promise<boolean> {
+  return Boolean(await getIVXOwnerVariableRuntimeValue(name));
 }
 
 async function parseJsonResponse(response: Response): Promise<unknown> {

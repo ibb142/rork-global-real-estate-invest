@@ -1,4 +1,5 @@
 import { buildIVXCredentialRequestManifestSnapshot, IVX_REQUESTED_PRODUCTION_ACCESS_ENV_NAMES } from '../config/ivx-credential-request-manifest';
+import { getIVXOwnerVariableRuntimeValue, hasIVXOwnerVariableRuntimeValue } from './ivx-owner-variables';
 import { assertIVXOwnerOnly, ownerOnlyJson, ownerOnlyOptions, type IVXOwnerRequestContext } from './owner-only';
 
 type PgQueryResult = {
@@ -34,6 +35,7 @@ type DeveloperDeployAction =
   | 'render_restart_service'
   | 'render_upsert_env_var'
   | 'render_update_subdomain_policy'
+  | 'render_update_source'
   | 'supabase_execute_sql';
 
 type DeveloperDeployRequest = {
@@ -88,6 +90,7 @@ function normalizeAction(value: unknown): DeveloperDeployAction {
     || normalized === 'render_restart_service'
     || normalized === 'render_upsert_env_var'
     || normalized === 'render_update_subdomain_policy'
+    || normalized === 'render_update_source'
     || normalized === 'supabase_execute_sql'
   ) {
     return normalized;
@@ -102,7 +105,7 @@ function requiredConfirmationText(action: DeveloperDeployAction): string {
   if (action === 'render_trigger_deploy') {
     return RENDER_DEPLOY_CONFIRM_TEXT;
   }
-  if (action === 'render_restart_service' || action === 'render_upsert_env_var' || action === 'render_update_subdomain_policy') {
+  if (action === 'render_restart_service' || action === 'render_upsert_env_var' || action === 'render_update_subdomain_policy' || action === 'render_update_source') {
     return RENDER_SERVICE_CONFIRM_TEXT;
   }
   return SUPABASE_SQL_CONFIRM_TEXT;
@@ -116,34 +119,38 @@ function assertConfirmed(action: DeveloperDeployAction, request: DeveloperDeploy
 }
 
 function parseGithubRepoUrl(value: string): GithubRepoInfo | null {
-  const match = value.trim().match(/github\.com[:/]([^/]+)\/([^/.]+)(?:\.git)?/i);
+  const match = value.trim().match(/github\.com[:/]([^/\s]+)\/([^/.\s]+)(?:\.git)?/i);
   if (!match?.[1] || !match[2]) {
     return null;
   }
   return { owner: match[1], repo: match[2] };
 }
 
-function getGithubRepoInfo(input: Record<string, unknown>): GithubRepoInfo {
-  const repoUrl = readTrimmed(input.repoUrl) || readEnv('GITHUB_REPO_URL');
+function buildSafeGithubRepoUrl(repoInfo: GithubRepoInfo): string {
+  return `https://github.com/${repoInfo.owner}/${repoInfo.repo}`;
+}
+
+async function getGithubRepoInfo(input: Record<string, unknown>): Promise<GithubRepoInfo> {
+  const repoUrl = readTrimmed(input.repoUrl) || readEnv('GITHUB_REPO_URL') || await getIVXOwnerVariableRuntimeValue('GITHUB_REPO_URL');
   const repoInfo = parseGithubRepoUrl(repoUrl);
   if (!repoInfo) {
-    throw new Error('GITHUB_REPO_URL is missing or invalid.');
+    throw new Error('GITHUB_REPO_URL is missing or invalid. It was not loaded from process.env, request input, or encrypted Owner Variables.');
   }
   return repoInfo;
 }
 
-function getGithubToken(): string {
-  const token = readEnv('GITHUB_TOKEN');
+async function getGithubToken(): Promise<string> {
+  const token = readEnv('GITHUB_TOKEN') || await getIVXOwnerVariableRuntimeValue('GITHUB_TOKEN');
   if (!token) {
-    throw new Error('GITHUB_TOKEN is required for owner-approved GitHub write actions.');
+    throw new Error('GITHUB_TOKEN is required for owner-approved GitHub write actions. It was not loaded from process.env or encrypted Owner Variables.');
   }
   return token;
 }
 
-function githubHeaders(): HeadersInit {
+async function githubHeaders(): Promise<HeadersInit> {
   return {
     Accept: 'application/vnd.github+json',
-    Authorization: `Bearer ${getGithubToken()}`,
+    Authorization: `Bearer ${await getGithubToken()}`,
     'Content-Type': 'application/json',
     'X-GitHub-Api-Version': '2022-11-28',
   };
@@ -186,7 +193,7 @@ function sanitizeRepoPath(value: unknown): string {
 }
 
 async function runGithubCommitFile(input: Record<string, unknown>): Promise<Record<string, unknown>> {
-  const repoInfo = getGithubRepoInfo(input);
+  const repoInfo = await getGithubRepoInfo(input);
   const branch = readTrimmed(input.branch) || readEnv('GITHUB_DEFAULT_BRANCH') || 'main';
   const repoPath = sanitizeRepoPath(input.path);
   const content = readTrimmed(input.content);
@@ -200,13 +207,13 @@ async function runGithubCommitFile(input: Record<string, unknown>): Promise<Reco
 
   const encodedPath = repoPath.split('/').map((part) => encodeURIComponent(part)).join('/');
   const contentUrl = `https://api.github.com/repos/${repoInfo.owner}/${repoInfo.repo}/contents/${encodedPath}?ref=${encodeURIComponent(branch)}`;
-  const existing = await fetchJson(contentUrl, { method: 'GET', headers: githubHeaders() }).catch(() => null);
+  const existing = await fetchJson(contentUrl, { method: 'GET', headers: await githubHeaders() }).catch(() => null);
   const existingRecord = readRecord(existing?.data);
   const existingSha = existing?.ok === true ? readTrimmed(existingRecord.sha) : '';
 
   const response = await fetchJson(`https://api.github.com/repos/${repoInfo.owner}/${repoInfo.repo}/contents/${encodedPath}`, {
     method: 'PUT',
-    headers: githubHeaders(),
+    headers: await githubHeaders(),
     body: JSON.stringify({
       message,
       content: Buffer.from(content, 'utf8').toString('base64'),
@@ -236,7 +243,7 @@ async function runGithubCommitFile(input: Record<string, unknown>): Promise<Reco
 }
 
 async function runGithubCreatePullRequest(input: Record<string, unknown>): Promise<Record<string, unknown>> {
-  const repoInfo = getGithubRepoInfo(input);
+  const repoInfo = await getGithubRepoInfo(input);
   const title = readTrimmed(input.title);
   const head = readTrimmed(input.head);
   const base = readTrimmed(input.base) || readEnv('GITHUB_DEFAULT_BRANCH') || 'main';
@@ -246,7 +253,7 @@ async function runGithubCreatePullRequest(input: Record<string, unknown>): Promi
   }
   const response = await fetchJson(`https://api.github.com/repos/${repoInfo.owner}/${repoInfo.repo}/pulls`, {
     method: 'POST',
-    headers: githubHeaders(),
+    headers: await githubHeaders(),
     body: JSON.stringify({ title, head, base, body }),
   });
   if (!response.ok) {
@@ -267,7 +274,7 @@ async function runGithubCreatePullRequest(input: Record<string, unknown>): Promi
 }
 
 async function runGithubDispatchWorkflow(input: Record<string, unknown>): Promise<Record<string, unknown>> {
-  const repoInfo = getGithubRepoInfo(input);
+  const repoInfo = await getGithubRepoInfo(input);
   const workflowId = readTrimmed(input.workflowId) || readTrimmed(input.workflowFileName);
   const ref = readTrimmed(input.ref) || readEnv('GITHUB_DEFAULT_BRANCH') || 'main';
   const workflowInputs = readRecord(input.inputs);
@@ -276,7 +283,7 @@ async function runGithubDispatchWorkflow(input: Record<string, unknown>): Promis
   }
   const response = await fetchJson(`https://api.github.com/repos/${repoInfo.owner}/${repoInfo.repo}/actions/workflows/${encodeURIComponent(workflowId)}/dispatches`, {
     method: 'POST',
-    headers: githubHeaders(),
+    headers: await githubHeaders(),
     body: JSON.stringify({ ref, inputs: workflowInputs }),
   });
   if (!response.ok) {
@@ -294,32 +301,32 @@ async function runGithubDispatchWorkflow(input: Record<string, unknown>): Promis
   };
 }
 
-function getRenderApiKey(): string {
-  const apiKey = readEnv('RENDER_API_KEY');
+async function getRenderApiKey(): Promise<string> {
+  const apiKey = readEnv('RENDER_API_KEY') || await getIVXOwnerVariableRuntimeValue('RENDER_API_KEY');
   if (!apiKey) {
-    throw new Error('RENDER_API_KEY is required for owner-approved Render actions.');
+    throw new Error('RENDER_API_KEY is required for owner-approved Render actions. It was not loaded from process.env or encrypted Owner Variables.');
   }
   return apiKey;
 }
 
-function getRenderServiceId(input: Record<string, unknown>): string {
-  const serviceId = readTrimmed(input.serviceId) || readEnv('RENDER_SERVICE_ID');
+async function getRenderServiceId(input: Record<string, unknown>): Promise<string> {
+  const serviceId = readTrimmed(input.serviceId) || readEnv('RENDER_SERVICE_ID') || await getIVXOwnerVariableRuntimeValue('RENDER_SERVICE_ID');
   if (!serviceId) {
-    throw new Error('RENDER_SERVICE_ID is required for Render service actions.');
+    throw new Error('RENDER_SERVICE_ID is required for Render service actions. It was not loaded from process.env, request input, or encrypted Owner Variables.');
   }
   return serviceId;
 }
 
-function renderHeaders(): HeadersInit {
+async function renderHeaders(): Promise<HeadersInit> {
   return {
     Accept: 'application/json',
-    Authorization: `Bearer ${getRenderApiKey()}`,
+    Authorization: `Bearer ${await getRenderApiKey()}`,
     'Content-Type': 'application/json',
   };
 }
 
 async function runRenderTriggerDeploy(input: Record<string, unknown>): Promise<Record<string, unknown>> {
-  const serviceId = getRenderServiceId(input);
+  const serviceId = await getRenderServiceId(input);
   const body: Record<string, unknown> = {};
   const commitId = readTrimmed(input.commitId);
   const imageUrl = readTrimmed(input.imageUrl);
@@ -338,7 +345,7 @@ async function runRenderTriggerDeploy(input: Record<string, unknown>): Promise<R
   }
   const response = await fetchJson(`${RENDER_API_BASE_URL}/services/${encodeURIComponent(serviceId)}/deploys`, {
     method: 'POST',
-    headers: renderHeaders(),
+    headers: await renderHeaders(),
     body: JSON.stringify(body),
   });
   if (!response.ok) {
@@ -356,10 +363,10 @@ async function runRenderTriggerDeploy(input: Record<string, unknown>): Promise<R
 }
 
 async function runRenderRestartService(input: Record<string, unknown>): Promise<Record<string, unknown>> {
-  const serviceId = getRenderServiceId(input);
+  const serviceId = await getRenderServiceId(input);
   const response = await fetchJson(`${RENDER_API_BASE_URL}/services/${encodeURIComponent(serviceId)}/restart`, {
     method: 'POST',
-    headers: renderHeaders(),
+    headers: await renderHeaders(),
   });
   if (!response.ok) {
     throw new Error(`Render restart failed with HTTP ${response.status}.`);
@@ -385,11 +392,11 @@ function normalizeRenderSubdomainPolicy(value: unknown): 'enabled' | 'disabled' 
 }
 
 async function runRenderUpdateSubdomainPolicy(input: Record<string, unknown>): Promise<Record<string, unknown>> {
-  const serviceId = getRenderServiceId(input);
+  const serviceId = await getRenderServiceId(input);
   const policy = normalizeRenderSubdomainPolicy(input.renderSubdomainPolicy ?? input.policy);
   const response = await fetchJson(`${RENDER_API_BASE_URL}/services/${encodeURIComponent(serviceId)}`, {
     method: 'PATCH',
-    headers: renderHeaders(),
+    headers: await renderHeaders(),
     body: JSON.stringify({ serviceDetails: { renderSubdomainPolicy: policy } }),
   });
   if (!response.ok) {
@@ -406,6 +413,48 @@ async function runRenderUpdateSubdomainPolicy(input: Record<string, unknown>): P
   };
 }
 
+async function runRenderUpdateSource(input: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const serviceId = await getRenderServiceId(input);
+  const repoUrl = readTrimmed(input.repoUrl) || readEnv('GITHUB_REPO_URL') || await getIVXOwnerVariableRuntimeValue('GITHUB_REPO_URL');
+  const repoInfo = parseGithubRepoUrl(repoUrl);
+  if (!repoInfo) {
+    throw new Error('A valid owner-controlled GitHub repo URL is required for Render source migration.');
+  }
+  const branch = readTrimmed(input.branch) || readEnv('GITHUB_DEFAULT_BRANCH') || 'main';
+  const autoDeploy = readTrimmed(input.autoDeploy).toLowerCase();
+  const body: Record<string, unknown> = {
+    repo: buildSafeGithubRepoUrl(repoInfo),
+    branch,
+  };
+  if (autoDeploy === 'yes' || autoDeploy === 'no') {
+    body.autoDeploy = autoDeploy;
+  }
+
+  const response = await fetchJson(`${RENDER_API_BASE_URL}/services/${encodeURIComponent(serviceId)}`, {
+    method: 'PATCH',
+    headers: await renderHeaders(),
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    throw new Error(`Render source update failed with HTTP ${response.status}.`);
+  }
+  const serviceRecord = readRecord(readRecord(response.data).service ?? response.data);
+  const responseRepoInfo = parseGithubRepoUrl(readTrimmed(serviceRecord.repo)) ?? repoInfo;
+  return {
+    provider: 'render',
+    action: 'render_update_source',
+    serviceId,
+    httpStatus: response.status,
+    sourceRepoOwner: responseRepoInfo.owner,
+    sourceRepoName: responseRepoInfo.repo,
+    sourceRepoUrl: buildSafeGithubRepoUrl(responseRepoInfo),
+    branch: readTrimmed(serviceRecord.branch) || branch,
+    autoDeploy: readTrimmed(serviceRecord.autoDeploy) || (autoDeploy === 'yes' || autoDeploy === 'no' ? autoDeploy : null),
+    renderSourceUpdated: true,
+    secretValuesReturned: false,
+  };
+}
+
 function sanitizeEnvVarKey(value: unknown): string {
   const key = readTrimmed(value);
   if (!/^[A-Z][A-Z0-9_]{1,120}$/.test(key)) {
@@ -415,7 +464,7 @@ function sanitizeEnvVarKey(value: unknown): string {
 }
 
 async function runRenderUpsertEnvVar(input: Record<string, unknown>): Promise<Record<string, unknown>> {
-  const serviceId = getRenderServiceId(input);
+  const serviceId = await getRenderServiceId(input);
   const key = sanitizeEnvVarKey(input.key);
   const value = typeof input.value === 'string' ? input.value : '';
   if (!value && !parseBoolean(input.generateValue)) {
@@ -424,7 +473,7 @@ async function runRenderUpsertEnvVar(input: Record<string, unknown>): Promise<Re
   const body = parseBoolean(input.generateValue) ? { generateValue: true } : { value };
   const response = await fetchJson(`${RENDER_API_BASE_URL}/services/${encodeURIComponent(serviceId)}/env-vars/${encodeURIComponent(key)}`, {
     method: 'PUT',
-    headers: renderHeaders(),
+    headers: await renderHeaders(),
     body: JSON.stringify(body),
   });
   if (!response.ok) {
@@ -490,10 +539,15 @@ async function runSupabaseExecuteSql(input: Record<string, unknown>): Promise<Re
   }
 }
 
-function buildStatus(): Record<string, unknown> {
-  const githubTokenConfigured = Boolean(readEnv('GITHUB_TOKEN'));
-  const renderApiConfigured = Boolean(readEnv('RENDER_API_KEY'));
-  const renderServiceConfigured = Boolean(readEnv('RENDER_SERVICE_ID'));
+async function buildStatus(): Promise<Record<string, unknown>> {
+  const githubTokenConfigured = Boolean(readEnv('GITHUB_TOKEN')) || await hasIVXOwnerVariableRuntimeValue('GITHUB_TOKEN');
+  const githubRepoUrlConfigured = Boolean(readEnv('GITHUB_REPO_URL')) || await hasIVXOwnerVariableRuntimeValue('GITHUB_REPO_URL');
+  const renderApiConfigured = Boolean(readEnv('RENDER_API_KEY')) || await hasIVXOwnerVariableRuntimeValue('RENDER_API_KEY');
+  const renderServiceConfigured = Boolean(readEnv('RENDER_SERVICE_ID')) || await hasIVXOwnerVariableRuntimeValue('RENDER_SERVICE_ID');
+  const renderCredentialSource = {
+    RENDER_API_KEY: readEnv('RENDER_API_KEY') ? 'env' : renderApiConfigured ? 'owner_variables' : 'missing',
+    RENDER_SERVICE_ID: readEnv('RENDER_SERVICE_ID') ? 'env' : renderServiceConfigured ? 'owner_variables' : 'missing',
+  };
   const supabaseDbUrlConfigured = Boolean(readEnv('SUPABASE_DB_URL'));
   const databaseUrlConfigured = Boolean(readEnv('DATABASE_URL'));
   const postgresUrlConfigured = Boolean(readEnv('POSTGRES_URL'));
@@ -506,7 +560,14 @@ function buildStatus(): Record<string, unknown> {
     && supabaseServiceRoleConfigured
     && supabaseSqlConfigured;
   const requestedCredentialStatusByNameOnly = Object.fromEntries(
-    REQUESTED_PRODUCTION_ACCESS_ENV_NAMES.map((name) => [name, Boolean(readEnv(name))]),
+    REQUESTED_PRODUCTION_ACCESS_ENV_NAMES.map((name) => [
+      name,
+      name === 'RENDER_API_KEY'
+        ? renderApiConfigured
+        : name === 'RENDER_SERVICE_ID'
+          ? renderServiceConfigured
+          : Boolean(readEnv(name)),
+    ]),
   ) as Record<typeof REQUESTED_PRODUCTION_ACCESS_ENV_NAMES[number], boolean>;
   return {
     ok: true,
@@ -564,8 +625,12 @@ function buildStatus(): Record<string, unknown> {
       action: 'POST /api/ivx/developer-deploy/action',
     },
     github: {
-      repoUrlConfigured: Boolean(readEnv('GITHUB_REPO_URL')),
+      repoUrlConfigured: githubRepoUrlConfigured,
       tokenConfigured: githubTokenConfigured,
+      credentialSource: {
+        GITHUB_REPO_URL: readEnv('GITHUB_REPO_URL') ? 'env' : githubRepoUrlConfigured ? 'owner_variables' : 'missing',
+        GITHUB_TOKEN: readEnv('GITHUB_TOKEN') ? 'env' : githubTokenConfigured ? 'owner_variables' : 'missing',
+      },
       requiredTokenPermissions: ['contents:read/write', 'pull_requests:write', 'actions/workflows:write'],
       supportedActions: ['github_commit_file', 'github_create_pull_request', 'github_dispatch_workflow'],
       confirmationTextRequired: GITHUB_CONFIRM_TEXT,
@@ -573,8 +638,9 @@ function buildStatus(): Record<string, unknown> {
     render: {
       apiKeyConfigured: renderApiConfigured,
       serviceIdConfigured: renderServiceConfigured,
+      credentialSource: renderCredentialSource,
       serviceName: readEnv('RENDER_SERVICE_NAME') || 'ivx-holdings-platform',
-      supportedActions: ['render_trigger_deploy', 'render_restart_service', 'render_upsert_env_var', 'render_update_subdomain_policy'],
+      supportedActions: ['render_trigger_deploy', 'render_restart_service', 'render_upsert_env_var', 'render_update_subdomain_policy', 'render_update_source'],
       deployConfirmationTextRequired: RENDER_DEPLOY_CONFIRM_TEXT,
       serviceUpdateConfirmationTextRequired: RENDER_SERVICE_CONFIRM_TEXT,
     },
@@ -593,7 +659,7 @@ function buildStatus(): Record<string, unknown> {
       safety: 'AWS/DNS write actions stay separate and require owner confirmation on their specific owner-only routes.',
     },
     missingCredentialNames: [
-      ...(!readEnv('GITHUB_REPO_URL') ? ['GITHUB_REPO_URL'] : []),
+      ...(!githubRepoUrlConfigured ? ['GITHUB_REPO_URL'] : []),
       ...(!githubTokenConfigured ? ['GITHUB_TOKEN'] : []),
       ...(!renderApiConfigured ? ['RENDER_API_KEY'] : []),
       ...(!renderServiceConfigured ? ['RENDER_SERVICE_ID'] : []),
@@ -629,6 +695,9 @@ async function runAction(action: DeveloperDeployAction, input: Record<string, un
   if (action === 'render_update_subdomain_policy') {
     return await runRenderUpdateSubdomainPolicy(input);
   }
+  if (action === 'render_update_source') {
+    return await runRenderUpdateSource(input);
+  }
   return await runSupabaseExecuteSql(input);
 }
 
@@ -641,6 +710,7 @@ async function auditDeveloperDeployAction(ownerContext: IVXOwnerRequestContext, 
     targetPath: action === 'github_commit_file' ? readTrimmed(input.path) : undefined,
     envKey: action === 'render_upsert_env_var' ? readTrimmed(input.key) : undefined,
     renderSubdomainPolicy: action === 'render_update_subdomain_policy' ? normalizeRenderSubdomainPolicy(input.renderSubdomainPolicy ?? input.policy) : undefined,
+    renderSourceBranch: action === 'render_update_source' ? readTrimmed(input.branch) || 'main' : undefined,
     sqlLength: action === 'supabase_execute_sql' ? readTrimmed(input.sql).length : undefined,
     resultProvider: readTrimmed(result.provider),
     timestamp: nowIso(),
@@ -657,7 +727,7 @@ export async function handleIVXDeveloperDeployStatusRequest(request: Request): P
       return ownerOnlyJson({ error: 'Method not allowed.' }, 405);
     }
     const ownerContext = await assertIVXOwnerOnly(request);
-    return ownerOnlyJson({ ...buildStatus(), authenticatedUserId: ownerContext.userId });
+    return ownerOnlyJson({ ...(await buildStatus()), authenticatedUserId: ownerContext.userId });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Developer deploy status failed.';
     return ownerOnlyJson({ ok: false, ownerOnly: true, readOnly: true, error: message, timestamp: nowIso() }, message.toLowerCase().includes('auth') || message.toLowerCase().includes('owner') ? 401 : 500);

@@ -9,13 +9,14 @@ import { OPTIONS as auditReportOptions, handleIVXAuditReportRequest } from './ap
 import { OPTIONS as supabaseInspectionOptions, handleIVXSupabaseInspectionRequest, inspectSupabaseTables } from './api/ivx-supabase-inspection';
 import { executeIVXAIBrainTool } from './services/ivx-ai-brain-tool-executor';
 import { OPTIONS as supabaseOwnerActionOptions, handleIVXSupabaseOwnerActionRequest } from './api/ivx-supabase-owner-actions';
-import { OPTIONS as ownerRegistrationOptions, handleIVXOwnerRegistrationRepairRequest, handleIVXOwnerRegistrationRequest, handleIVXOwnerRegistrationStatusRequest } from './api/ivx-owner-registration';
+import { OPTIONS as ownerRegistrationOptions, handleIVXOwnerAccessRepairRequest, handleIVXOwnerRegistrationRepairRequest, handleIVXOwnerRegistrationRequest, handleIVXOwnerRegistrationStatusRequest, handleIVXOwnerSignupAuditRequest } from './api/ivx-owner-registration';
 import { handleIVXDevelopmentActionRequest, handleIVXDevelopmentControlRequest, ivxDevelopmentControlOptions } from './api/ivx-development-control';
 import { OPTIONS as aiBrainToolsOptions, handleIVXAIBrainToolExecuteRequest, handleIVXAIBrainToolsListRequest } from './api/ivx-ai-brain-tools';
 import { OPTIONS as controlRoomStatusOptions, handleIVXControlRoomStatusRequest } from './api/ivx-control-room-status';
 import { OPTIONS as developerDeployOptions, handleIVXDeveloperDeployActionRequest, handleIVXDeveloperDeployStatusRequest } from './api/ivx-developer-deploy-control';
 import { OPTIONS as variablesToolOptions, handleIVXVariablesToolSaveRequest, handleIVXVariablesToolStatusRequest } from './api/ivx-variables-tool';
-import { OPTIONS as ownerVariablesOptions, handleIVXOwnerVariablesDeleteRequest, handleIVXOwnerVariablesSaveRequest, handleIVXOwnerVariablesStatusRequest, handleIVXOwnerVariablesTestRequest } from './api/ivx-owner-variables';
+import { OPTIONS as ownerVariablesOptions, getIVXOwnerVariableRuntimeValue, hasIVXOwnerVariableRuntimeValue, handleIVXOwnerVariablesDeleteRequest, handleIVXOwnerVariablesSaveRequest, handleIVXOwnerVariablesStatusRequest, handleIVXOwnerVariablesTestRequest } from './api/ivx-owner-variables';
+import { OPTIONS as independenceStatusOptions, handleIVXIndependenceStatusRequest } from './api/ivx-independence-status';
 import { OPTIONS as assistantOptions, POST as handleAssistantPost } from './api/assistant';
 import { OPTIONS as planCreatorOptions, POST as handlePlanCreatorPost } from './api/plan-creator';
 import { handlePublicChatPost } from './api/public-chat';
@@ -98,7 +99,8 @@ async function handleRoute53Request(
 }
 
 const app = new Hono();
-const DEPLOYMENT_MARKER = 'ivx-owner-ai-hono-2026-05-08t2245z-owner-signup-rate-limit-guard';
+const DEPLOYMENT_MARKER = 'ivx-owner-ai-hono-2026-05-09t1235z-independence-github-day2';
+const OWNER_SIGNUP_AUDIT_SOURCE_PROOF = 'owner-password-owner-vars-route-registered-2026-05-09t1115z';
 const SERVER_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const WEB_DIST_ROOT = path.join(SERVER_ROOT, 'expo', 'dist');
 const CHAT_DATABASE_PATH = (process.env.CHAT_DATABASE_PATH?.trim() || path.join(SERVER_ROOT, 'data', 'chat-room.sqlite'));
@@ -270,7 +272,8 @@ function summarizeGithubOutput(output: unknown): Record<string, unknown> {
   const branchNames = Array.isArray(record.branchNames) ? record.branchNames.filter((item): item is string => typeof item === 'string') : [];
 
   return {
-    repoUrlConfigured: Boolean(readTrimmed(process.env.GITHUB_REPO_URL)),
+    repoUrlConfigured: record.repoUrlConfigured === true || Boolean(readTrimmed(process.env.GITHUB_REPO_URL)),
+    credentialSource: readObject(record.credentialSource),
     owner: readTrimmed(record.owner) || null,
     repo: readTrimmed(record.repo) || null,
     private: typeof record.private === 'boolean' ? record.private : null,
@@ -392,10 +395,25 @@ function extractRenderEnvVarKeyNames(data: unknown): string[] {
 }
 
 async function fetchRenderRuntimeStatus(): Promise<{ ok: boolean; status: 'verified' | 'not_verified' | 'missing_access'; data: Record<string, unknown>; missingEnvNames: string[]; error?: string }> {
-  const apiKey = readTrimmed(process.env.RENDER_API_KEY);
-  const serviceId = readTrimmed(process.env.RENDER_SERVICE_ID);
-  const missingEnvNames = getMissingEnvNames(['RENDER_API_KEY', 'RENDER_SERVICE_ID']);
-  const requiredRuntimeMissing = getMissingEnvNames(REQUIRED_PRODUCTION_ACCESS_ENV_NAMES);
+  const envApiKey = readTrimmed(process.env.RENDER_API_KEY);
+  const envServiceId = readTrimmed(process.env.RENDER_SERVICE_ID);
+  const ownerApiKey = envApiKey ? '' : await getIVXOwnerVariableRuntimeValue('RENDER_API_KEY');
+  const ownerServiceId = envServiceId ? '' : await getIVXOwnerVariableRuntimeValue('RENDER_SERVICE_ID');
+  const apiKey = envApiKey || ownerApiKey;
+  const serviceId = envServiceId || ownerServiceId;
+  const missingEnvNames = [
+    ...(!apiKey ? ['RENDER_API_KEY'] : []),
+    ...(!serviceId ? ['RENDER_SERVICE_ID'] : []),
+  ];
+  const renderCredentialSource = {
+    RENDER_API_KEY: envApiKey ? 'env' : ownerApiKey ? 'owner_variables' : 'missing',
+    RENDER_SERVICE_ID: envServiceId ? 'env' : ownerServiceId ? 'owner_variables' : 'missing',
+  };
+  const requiredRuntimeMissing = REQUIRED_PRODUCTION_ACCESS_ENV_NAMES.filter((name) => {
+    if (name === 'RENDER_API_KEY') return !apiKey;
+    if (name === 'RENDER_SERVICE_ID') return !serviceId;
+    return !readTrimmed(process.env[name]);
+  });
   const optionalRuntimeMissing = getMissingEnvNames(OPTIONAL_PRODUCTION_ACCESS_ENV_NAMES);
   const runtimeMissing = requiredRuntimeMissing;
   const envGroupMarkerPresent = readTrimmed(process.env.IVX_ENV_GROUP_ATTACHED).toLowerCase() === 'true' && readTrimmed(process.env.IVX_ENV_GROUP_NAME) === 'my-env-group';
@@ -408,9 +426,10 @@ async function fetchRenderRuntimeStatus(): Promise<{ ok: boolean; status: 'verif
       data: {
         apiKeyConfigured: Boolean(apiKey),
         serviceIdConfigured: Boolean(serviceId),
+        credentialSource: renderCredentialSource,
         serviceName: readTrimmed(process.env.RENDER_SERVICE_NAME) || 'ivx-holdings-platform',
         envGroupMarkerPresent,
-        requestedCredentialPresentByNameOnly: Object.fromEntries(REQUESTED_PRODUCTION_ACCESS_ENV_NAMES.map((name) => [name, Boolean(readTrimmed(process.env[name]))])),
+        requestedCredentialPresentByNameOnly: Object.fromEntries(REQUESTED_PRODUCTION_ACCESS_ENV_NAMES.map((name) => [name, name === 'RENDER_API_KEY' ? Boolean(apiKey) : name === 'RENDER_SERVICE_ID' ? Boolean(serviceId) : Boolean(readTrimmed(process.env[name]))])),
         requiredRuntimeMissingEnvNames: requiredRuntimeMissing,
         optionalRuntimeMissingEnvNames: optionalRuntimeMissing,
         runtimeMissingEnvNames: runtimeMissing,
@@ -455,13 +474,14 @@ async function fetchRenderRuntimeStatus(): Promise<{ ok: boolean; status: 'verif
         serviceHttpStatus: serviceResponse.status,
         envVarsHttpStatus: envVarsResponse.status,
         serviceIdConfigured: true,
+        credentialSource: renderCredentialSource,
         serviceIdSuffix: serviceId.slice(-6).padStart(serviceId.length, '*'),
         serviceName: readTrimmed(serviceRecord.name) || readTrimmed(process.env.RENDER_SERVICE_NAME) || 'ivx-holdings-platform',
         serviceType: readTrimmed(serviceRecord.type) || null,
         serviceSuspended: serviceRecord.suspended === true,
         envGroupExists,
         envGroupMarkerPresent,
-        requestedCredentialPresentByNameOnly: Object.fromEntries(REQUESTED_PRODUCTION_ACCESS_ENV_NAMES.map((name) => [name, Boolean(readTrimmed(process.env[name]))])),
+        requestedCredentialPresentByNameOnly: Object.fromEntries(REQUESTED_PRODUCTION_ACCESS_ENV_NAMES.map((name) => [name, name === 'RENDER_API_KEY' ? Boolean(apiKey) : name === 'RENDER_SERVICE_ID' ? Boolean(serviceId) : Boolean(readTrimmed(process.env[name]))])),
         requiredEnvVarsPresentInRender,
         requiredEnvVarsMissingInRender,
         optionalEnvVarsPresentInRender,
@@ -480,11 +500,38 @@ async function fetchRenderRuntimeStatus(): Promise<{ ok: boolean; status: 'verif
       data: {
         apiKeyConfigured: true,
         serviceIdConfigured: true,
-        requestedCredentialPresentByNameOnly: Object.fromEntries(REQUESTED_PRODUCTION_ACCESS_ENV_NAMES.map((name) => [name, Boolean(readTrimmed(process.env[name]))])),
+        credentialSource: renderCredentialSource,
+        requestedCredentialPresentByNameOnly: Object.fromEntries(REQUESTED_PRODUCTION_ACCESS_ENV_NAMES.map((name) => [name, name === 'RENDER_API_KEY' ? Boolean(apiKey) : name === 'RENDER_SERVICE_ID' ? Boolean(serviceId) : Boolean(readTrimmed(process.env[name]))])),
       },
       error: error instanceof Error ? error.message : 'Render runtime status check failed.',
     };
   }
+}
+
+async function buildRenderEnvDebugPayload(): Promise<Record<string, unknown>> {
+  const envApiKeyExists = Boolean(readTrimmed(process.env.RENDER_API_KEY));
+  const envServiceIdExists = Boolean(readTrimmed(process.env.RENDER_SERVICE_ID));
+  const ownerApiKeyExists = await hasIVXOwnerVariableRuntimeValue('RENDER_API_KEY');
+  const ownerServiceIdExists = await hasIVXOwnerVariableRuntimeValue('RENDER_SERVICE_ID');
+  const apiKeyExists = envApiKeyExists || ownerApiKeyExists;
+  const serviceIdExists = envServiceIdExists || ownerServiceIdExists;
+  const exists = apiKeyExists && serviceIdExists;
+  const source = envApiKeyExists && envServiceIdExists
+    ? 'env'
+    : ownerApiKeyExists && ownerServiceIdExists
+      ? 'owner_variables'
+      : exists
+        ? 'mixed'
+        : apiKeyExists || serviceIdExists
+          ? 'partial'
+          : 'missing';
+
+  return {
+    exists,
+    source,
+    loadedAtRuntime: exists,
+    secretValuesReturned: false,
+  };
 }
 
 async function fetchSupabaseStorageDiagnostics(): Promise<{ ok: boolean; status: 'verified' | 'not_verified' | 'missing_access'; data: Record<string, unknown>; missingEnvNames: string[]; error?: string }> {
@@ -914,6 +961,7 @@ app.get('/health', (context) => {
     status: 'healthy',
     service: 'ivx-owner-ai-backend',
     deploymentMarker: DEPLOYMENT_MARKER,
+    sourceProof: OWNER_SIGNUP_AUDIT_SOURCE_PROOF,
     frontendUrl: 'https://chat.ivxholding.com',
     apiUrl: 'https://api.ivxholding.com',
     socketPath: '/socket.io',
@@ -955,12 +1003,14 @@ app.get('/health', (context) => {
       'GET /api/ivx/control-room/status',
       'GET /api/ivx/developer-deploy/status',
       'POST /api/ivx/developer-deploy/action',
+      'GET /api/ivx/env-debug/render',
       'GET /api/ivx/variables-tool/status',
       'POST /api/ivx/variables-tool/save',
       'GET /api/ivx/owner-variables/status',
       'POST /api/ivx/owner-variables/save',
       'POST /api/ivx/owner-variables/test',
       'POST /api/ivx/owner-variables/delete',
+      'GET /api/ivx/independence/status',
       'GET /api/ivx/ai-brain/tools',
       'POST /api/ivx/ai-brain/tools',
       'POST /api/ivx/ai-brain/tools/execute',
@@ -970,8 +1020,10 @@ app.get('/health', (context) => {
       'GET /api/ivx/supabase/rls',
       'POST /api/ivx/supabase/owner-action',
       'GET /api/ivx/owner-registration/status',
+      'GET /api/ivx/owner-signup-audit',
       'POST /api/ivx/owner-registration',
       'POST /api/ivx/owner-registration/repair',
+      'POST /api/ivx/owner-access-repair',
       'POST /api/assistant',
       'POST /api/plan-creator',
       'POST /api/upload/image',
@@ -1029,6 +1081,11 @@ app.options('/api/ivx/developer-deploy/status', () => developerDeployOptions());
 app.get('/api/ivx/developer-deploy/status', async (context) => handleIVXDeveloperDeployStatusRequest(context.req.raw));
 app.options('/api/ivx/developer-deploy/action', () => developerDeployOptions());
 app.post('/api/ivx/developer-deploy/action', async (context) => handleIVXDeveloperDeployActionRequest(context.req.raw));
+app.options('/api/ivx/env-debug/render', () => publicJson({ ok: true }, 204));
+app.get('/api/ivx/env-debug/render', async (context) => context.json(await buildRenderEnvDebugPayload(), 200, {
+  'Cache-Control': 'no-store',
+  'Access-Control-Allow-Origin': '*',
+}));
 app.options('/api/ivx/variables-tool/status', () => variablesToolOptions());
 app.get('/api/ivx/variables-tool/status', async (context) => handleIVXVariablesToolStatusRequest(context.req.raw));
 app.options('/api/ivx/variables-tool/save', () => variablesToolOptions());
@@ -1041,6 +1098,8 @@ app.options('/api/ivx/owner-variables/test', () => ownerVariablesOptions());
 app.post('/api/ivx/owner-variables/test', async (context) => handleIVXOwnerVariablesTestRequest(context.req.raw));
 app.options('/api/ivx/owner-variables/delete', () => ownerVariablesOptions());
 app.post('/api/ivx/owner-variables/delete', async (context) => handleIVXOwnerVariablesDeleteRequest(context.req.raw));
+app.options('/api/ivx/independence/status', () => independenceStatusOptions());
+app.get('/api/ivx/independence/status', async (context) => handleIVXIndependenceStatusRequest(context.req.raw));
 
 app.options('/api/ivx/ai-brain/tools', () => aiBrainToolsOptions());
 app.get('/api/ivx/ai-brain/tools', async (context) => handleIVXAIBrainToolsListRequest(context.req.raw));
@@ -1065,9 +1124,13 @@ app.post('/api/ivx/supabase/owner-action', async (context) => handleIVXSupabaseO
 app.options('/api/ivx/owner-registration', () => ownerRegistrationOptions());
 app.options('/api/ivx/owner-registration/status', () => ownerRegistrationOptions());
 app.options('/api/ivx/owner-registration/repair', () => ownerRegistrationOptions());
+app.options('/api/ivx/owner-access-repair', () => ownerRegistrationOptions());
+app.options('/api/ivx/owner-signup-audit', () => ownerRegistrationOptions());
 app.get('/api/ivx/owner-registration/status', async (context) => handleIVXOwnerRegistrationStatusRequest(context.req.raw));
+app.get('/api/ivx/owner-signup-audit', async (context) => handleIVXOwnerSignupAuditRequest(context.req.raw));
 app.post('/api/ivx/owner-registration', async (context) => handleIVXOwnerRegistrationRequest(context.req.raw));
 app.post('/api/ivx/owner-registration/repair', async (context) => handleIVXOwnerRegistrationRepairRequest(context.req.raw));
+app.post('/api/ivx/owner-access-repair', async (context) => handleIVXOwnerAccessRepairRequest(context.req.raw));
 
 app.options('/assistant', () => assistantOptions());
 app.options('/api/assistant', () => assistantOptions());

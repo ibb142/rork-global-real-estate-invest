@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient, type User } from '@supabase/supabase-js';
+import { getIVXOwnerVariableRuntimeValue } from './ivx-owner-variables';
 
 type OwnerRegistrationPayload = {
   email?: unknown;
@@ -7,6 +8,16 @@ type OwnerRegistrationPayload = {
   lastName?: unknown;
   phone?: unknown;
   country?: unknown;
+};
+
+type OwnerAccessRepairPayload = {
+  email?: unknown;
+  phone?: unknown;
+  firstName?: unknown;
+  lastName?: unknown;
+  country?: unknown;
+  sendPasswordReset?: unknown;
+  redirectTo?: unknown;
 };
 
 type OwnerRegistrationProof = {
@@ -33,7 +44,39 @@ type OwnerEmailLookup = {
   secretValuesReturned: false;
 };
 
-const DEPLOYMENT_MARKER = 'ivx-owner-registration-2026-05-08t2245z-rate-limit-guard';
+type OwnerSignupAuditSummary = {
+  ownerExists: boolean;
+  authUserExists: boolean;
+  profileExists: boolean;
+  walletExists: boolean;
+  emailConfirmed: boolean;
+  phonePresent: boolean;
+  duplicateCount: number;
+  orphanCount: number;
+  repairAvailable: boolean;
+  secretValuesReturned: false;
+};
+
+type SafeOwnerRecord = {
+  id: string;
+  email: string | null;
+  phone: string | null;
+  role?: string | null;
+  kyc_status?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+type SafeWalletRecord = {
+  user_id: string;
+  currency?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+const DEPLOYMENT_MARKER = 'ivx-owner-registration-2026-05-09t1040z-owner-fetch-adapter-repair';
+const DEFAULT_OWNER_PASSWORD_RESET_REDIRECT_URL = 'https://ivxholding.com/reset-password';
+const OWNER_PASSWORD_RUNTIME_SECRET_NAME = 'OWNER_NEW_PASSWORD';
 
 const OWNER_REGISTRATION_HEADERS = {
   'Content-Type': 'application/json',
@@ -72,13 +115,64 @@ function normalizePhone(value: unknown): string {
     return '';
   }
 
-  const hasPlus = raw.startsWith('+');
   const digits = raw.replace(/\D/g, '');
   if (digits.length < 8) {
     return '';
   }
 
-  return `${hasPlus ? '+' : '+'}${digits}`;
+  return `+${digits}`;
+}
+
+function maskEmail(email: string): string {
+  const [local = '', domain = ''] = email.split('@');
+  if (!local || !domain) return '***';
+  const visibleLocal = local.length <= 2 ? `${local[0] ?? '*'}*` : `${local.slice(0, 2)}***${local.slice(-1)}`;
+  return `${visibleLocal}@${domain}`;
+}
+
+function maskPhone(phone: string): string | null {
+  const normalized = normalizePhone(phone);
+  if (!normalized) return null;
+  return `${normalized.slice(0, 2)}***${normalized.slice(-4)}`;
+}
+
+function readMetadataString(user: User, key: string): string {
+  const userMetadata = (user.user_metadata ?? {}) as Record<string, unknown>;
+  const appMetadata = (user.app_metadata ?? {}) as Record<string, unknown>;
+  return readTrimmed(userMetadata[key]) || readTrimmed(appMetadata[key]);
+}
+
+function readUserProviders(user: User): string[] {
+  const identities = Array.isArray(user.identities) ? user.identities : [];
+  const identityProviders = identities
+    .map((identity) => readTrimmed((identity as { provider?: unknown }).provider).toLowerCase())
+    .filter(Boolean);
+  const appMetadata = (user.app_metadata ?? {}) as Record<string, unknown>;
+  const metadataProvider = readTrimmed(appMetadata.provider).toLowerCase();
+  const providers = [...identityProviders, metadataProvider].filter(Boolean);
+  return Array.from(new Set(providers));
+}
+
+function isUserBanned(user: User): boolean {
+  const bannedUntil = readTrimmed((user as { banned_until?: unknown }).banned_until);
+  if (!bannedUntil) return false;
+  if (bannedUntil.toLowerCase() === 'none') return false;
+  const bannedTime = Date.parse(bannedUntil);
+  return Number.isFinite(bannedTime) ? bannedTime > Date.now() : true;
+}
+
+function readBoolean(value: unknown, fallback: boolean): boolean {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (['true', '1', 'yes', 'on'].includes(normalized)) return true;
+    if (['false', '0', 'no', 'off'].includes(normalized)) return false;
+  }
+  return fallback;
+}
+
+function getUserNormalizedPhone(user: User): string {
+  return normalizePhone(user.phone) || normalizePhone(readMetadataString(user, 'phone'));
 }
 
 function isValidEmail(email: string): boolean {
@@ -131,6 +225,20 @@ function validatePassword(password: string): string | null {
   return null;
 }
 
+async function getOwnerRuntimePassword(): Promise<string> {
+  const password = readTrimmed(process.env[OWNER_PASSWORD_RUNTIME_SECRET_NAME])
+    || await getIVXOwnerVariableRuntimeValue(OWNER_PASSWORD_RUNTIME_SECRET_NAME);
+  if (!password) {
+    return '';
+  }
+  const validationError = validatePassword(password);
+  if (validationError) {
+    console.log('[IVXOwnerRegistration] OWNER_NEW_PASSWORD ignored because it does not meet password policy.');
+    return '';
+  }
+  return password;
+}
+
 function decodeJwtRole(token: string): string | null {
   const payloadSegment = token.split('.')[1];
   if (!payloadSegment) {
@@ -163,10 +271,15 @@ function createSupabaseAdminClient(): SupabaseClient {
     throw new Error('Supabase URL is not configured on the backend.');
   }
 
+  const runtimeFetch = ((input: RequestInfo | URL, init?: RequestInit) => globalThis.fetch(input, init)) as typeof fetch;
+
   return createClient(supabaseUrl, serviceRoleKey, {
     auth: {
       persistSession: false,
       autoRefreshToken: false,
+    },
+    global: {
+      fetch: runtimeFetch,
     },
   });
 }
@@ -193,25 +306,25 @@ function assertRateLimit(email: string, request: Request): void {
   current.count += 1;
 }
 
-async function findAuthUserByEmail(client: SupabaseClient, email: string): Promise<User | null> {
-  for (let page = 1; page <= 5; page += 1) {
+async function listAuthUsersForAudit(client: SupabaseClient): Promise<User[]> {
+  const users: User[] = [];
+  for (let page = 1; page <= 10; page += 1) {
     const { data, error } = await client.auth.admin.listUsers({ page, perPage: 1000 });
     if (error) {
-      console.log('[IVXOwnerRegistration] Existing-user lookup skipped:', error.message);
-      return null;
+      console.log('[IVXOwnerRegistration] Auth user audit lookup skipped:', error.message);
+      return users;
     }
-
-    const found = data.users.find((user) => sanitizeEmail(user.email ?? '') === email) ?? null;
-    if (found) {
-      return found;
-    }
-
+    users.push(...data.users);
     if (data.users.length < 1000) {
-      return null;
+      return users;
     }
   }
+  return users;
+}
 
-  return null;
+async function findAuthUserByEmail(client: SupabaseClient, email: string): Promise<User | null> {
+  const users = await listAuthUsersForAudit(client);
+  return users.find((user) => sanitizeEmail(user.email ?? '') === email) ?? null;
 }
 
 async function inspectOwnerPersistence(client: SupabaseClient, userId: string): Promise<{ profileExists: boolean | null; walletExists: boolean | null }> {
@@ -228,6 +341,262 @@ async function inspectOwnerPersistence(client: SupabaseClient, userId: string): 
     : null;
 
   return { profileExists, walletExists };
+}
+
+async function selectProfilesForAudit(client: SupabaseClient, email: string, phone: string, candidateIds: string[]): Promise<{ records: SafeOwnerRecord[]; unavailable: boolean; error: string | null }> {
+  const byId = new Map<string, SafeOwnerRecord>();
+  const queries: PromiseLike<{ data: SafeOwnerRecord[] | null; error: { message?: string } | null }>[] = [];
+  if (email) {
+    queries.push(client.from('profiles').select('id,email,phone,role,kyc_status,created_at,updated_at').eq('email', email) as unknown as PromiseLike<{ data: SafeOwnerRecord[] | null; error: { message?: string } | null }>);
+  }
+  if (phone) {
+    queries.push(client.from('profiles').select('id,email,phone,role,kyc_status,created_at,updated_at').eq('phone', phone) as unknown as PromiseLike<{ data: SafeOwnerRecord[] | null; error: { message?: string } | null }>);
+  }
+  if (candidateIds.length > 0) {
+    queries.push(client.from('profiles').select('id,email,phone,role,kyc_status,created_at,updated_at').in('id', candidateIds) as unknown as PromiseLike<{ data: SafeOwnerRecord[] | null; error: { message?: string } | null }>);
+  }
+
+  let unavailable = false;
+  let errorMessage: string | null = null;
+  const results = await Promise.allSettled(queries);
+  for (const result of results) {
+    if (result.status !== 'fulfilled') {
+      unavailable = true;
+      errorMessage = result.reason instanceof Error ? result.reason.message : 'profiles query failed';
+      continue;
+    }
+    if (result.value.error) {
+      unavailable = true;
+      errorMessage = result.value.error.message ?? 'profiles query failed';
+      continue;
+    }
+    for (const record of result.value.data ?? []) {
+      byId.set(record.id, record);
+    }
+  }
+
+  return { records: Array.from(byId.values()), unavailable, error: errorMessage };
+}
+
+async function selectWalletsForAudit(client: SupabaseClient, candidateIds: string[]): Promise<{ records: SafeWalletRecord[]; unavailable: boolean; error: string | null }> {
+  if (candidateIds.length === 0) {
+    return { records: [], unavailable: false, error: null };
+  }
+
+  const { data, error } = await client
+    .from('wallets')
+    .select('user_id,currency,created_at,updated_at')
+    .in('user_id', candidateIds);
+
+  if (error) {
+    return { records: [], unavailable: true, error: error.message };
+  }
+
+  return { records: (data ?? []) as SafeWalletRecord[], unavailable: false, error: null };
+}
+
+async function countAuditLogsForOwner(client: SupabaseClient, userId: string | null): Promise<number | null> {
+  if (!userId) return null;
+  const { count, error } = await client
+    .from('audit_trail')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', userId);
+  if (error) {
+    console.log('[IVXOwnerRegistration] Audit log count skipped:', error.message);
+    return null;
+  }
+  return count ?? 0;
+}
+
+async function insertOwnerRegistrationAudit(client: SupabaseClient, input: {
+  action: string;
+  userId: string;
+  email: string;
+  profilePersisted: boolean;
+  walletPersisted: boolean;
+  source: 'owner_registration' | 'owner_repair' | 'owner_access_repair';
+}): Promise<void> {
+  const safeDetails = JSON.stringify({
+    emailMasked: maskEmail(input.email),
+    profilePersisted: input.profilePersisted,
+    walletPersisted: input.walletPersisted,
+    secretValuesReturned: false,
+  });
+  const { error } = await client.from('audit_trail').insert({
+    entity_type: 'owner_registration',
+    entity_id: input.userId,
+    entity_title: 'IVX owner account bootstrap',
+    action: input.action,
+    user_id: input.userId,
+    user_role: 'owner',
+    details: safeDetails,
+    source: input.source,
+  });
+  if (error) {
+    console.log('[IVXOwnerRegistration] Owner registration audit insert skipped:', error.message);
+  }
+}
+
+function resolvePasswordResetRedirectUrl(value: unknown): string {
+  const raw = readTrimmed(value);
+  if (!raw) return DEFAULT_OWNER_PASSWORD_RESET_REDIRECT_URL;
+  try {
+    const parsed = new URL(raw);
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      return DEFAULT_OWNER_PASSWORD_RESET_REDIRECT_URL;
+    }
+    if (parsed.hostname.startsWith('api.')) {
+      return DEFAULT_OWNER_PASSWORD_RESET_REDIRECT_URL;
+    }
+    return parsed.href;
+  } catch {
+    return DEFAULT_OWNER_PASSWORD_RESET_REDIRECT_URL;
+  }
+}
+
+async function sendOwnerPasswordResetEmail(email: string, redirectTo: string): Promise<{ sent: boolean; httpStatus: number | null; message: string }> {
+  const supabaseUrl = readTrimmed(process.env.EXPO_PUBLIC_SUPABASE_URL).replace(/\/+$/, '');
+  const anonKey = readTrimmed(process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY);
+  if (!supabaseUrl || !anonKey) {
+    return { sent: false, httpStatus: null, message: 'Supabase public auth configuration is not available for reset email delivery.' };
+  }
+
+  try {
+    const endpoint = `${supabaseUrl}/auth/v1/recover?redirect_to=${encodeURIComponent(redirectTo)}`;
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        apikey: anonKey,
+        Authorization: `Bearer ${anonKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ email }),
+    });
+    const sent = response.ok;
+    return {
+      sent,
+      httpStatus: response.status,
+      message: sent ? 'Password reset email accepted by Supabase Auth.' : `Supabase Auth reset email returned HTTP ${response.status}.`,
+    };
+  } catch (error) {
+    return {
+      sent: false,
+      httpStatus: null,
+      message: error instanceof Error ? error.message : 'Password reset email request failed.',
+    };
+  }
+}
+
+async function buildOwnerSignupAudit(client: SupabaseClient, email: string, requestedPhone: string): Promise<Record<string, unknown>> {
+  const authUsers = await listAuthUsersForAudit(client);
+  const matchingEmailUsers = authUsers.filter((user) => sanitizeEmail(user.email ?? '') === email);
+  const firstAuthUserWithPhone = matchingEmailUsers.find((user) => Boolean(getUserNormalizedPhone(user))) ?? null;
+  const inferredPhone = requestedPhone || (firstAuthUserWithPhone ? getUserNormalizedPhone(firstAuthUserWithPhone) : '');
+  const matchingPhoneUsers = inferredPhone ? authUsers.filter((user) => getUserNormalizedPhone(user) === inferredPhone) : [];
+  const candidateAuthUsers = Array.from(new Map([...matchingEmailUsers, ...matchingPhoneUsers].map((user) => [user.id, user])).values());
+  const canonicalAuthUser = candidateAuthUsers
+    .slice()
+    .sort((left, right) => new Date(left.created_at ?? 0).getTime() - new Date(right.created_at ?? 0).getTime())[0] ?? null;
+  const candidateIds = candidateAuthUsers.map((user) => user.id);
+  const profiles = await selectProfilesForAudit(client, email, inferredPhone, candidateIds);
+  const profileIds = profiles.records.map((record) => record.id);
+  const mergedCandidateIds = Array.from(new Set([...candidateIds, ...profileIds]));
+  const wallets = await selectWalletsForAudit(client, mergedCandidateIds);
+  const allAuthUserIds = new Set(authUsers.map((user) => user.id));
+  const canonicalUserId = canonicalAuthUser?.id ?? profileIds[0] ?? null;
+  const canonicalProfile = canonicalUserId ? profiles.records.find((record) => record.id === canonicalUserId) ?? null : null;
+  const canonicalWallet = canonicalUserId ? wallets.records.find((record) => record.user_id === canonicalUserId) ?? null : null;
+  const profileOrphans = profiles.records.filter((record) => !allAuthUserIds.has(record.id));
+  const walletOrphans = wallets.records.filter((record) => !allAuthUserIds.has(record.user_id));
+  const duplicateCount = Math.max(0, matchingEmailUsers.length - 1)
+    + Math.max(0, matchingPhoneUsers.length - 1)
+    + Math.max(0, profiles.records.length - (canonicalProfile ? 1 : 0))
+    + Math.max(0, wallets.records.length - (canonicalWallet ? 1 : 0));
+  const orphanCount = profileOrphans.length + walletOrphans.length;
+  const emailConfirmed = Boolean(canonicalAuthUser?.email_confirmed_at || canonicalAuthUser?.confirmed_at);
+  const phonePresent = Boolean(inferredPhone || normalizePhone(canonicalProfile?.phone));
+  const role = readTrimmed(canonicalProfile?.role)
+    || (canonicalAuthUser ? readMetadataString(canonicalAuthUser, 'role') : '')
+    || (canonicalAuthUser ? readMetadataString(canonicalAuthUser, 'requestedRole') : '')
+    || null;
+  const kycStatus = readTrimmed(canonicalProfile?.kyc_status)
+    || (canonicalAuthUser ? readMetadataString(canonicalAuthUser, 'kycStatus') : '')
+    || null;
+  const auditLogCount = await countAuditLogsForOwner(client, canonicalUserId);
+  const allowedEmails = getAllowedOwnerRegistrationEmails();
+  const ownerAllowlistConfigured = allowedEmails.length > 0;
+  const ownerAllowlistAllowed = ownerAllowlistConfigured ? allowedEmails.includes(email) : process.env.NODE_ENV !== 'production';
+  const ownerExists = Boolean(canonicalAuthUser || canonicalProfile || canonicalWallet);
+  const repairAvailable = Boolean(canonicalAuthUser && (!canonicalProfile || !canonicalWallet || role !== 'owner' || kycStatus !== 'approved'));
+  const summary: OwnerSignupAuditSummary = {
+    ownerExists,
+    authUserExists: Boolean(canonicalAuthUser),
+    profileExists: Boolean(canonicalProfile),
+    walletExists: Boolean(canonicalWallet),
+    emailConfirmed,
+    phonePresent,
+    duplicateCount,
+    orphanCount,
+    repairAvailable,
+    secretValuesReturned: false,
+  };
+
+  return {
+    ok: true,
+    routeRegistered: true,
+    route: 'GET /api/ivx/owner-signup-audit',
+    deploymentMarker: DEPLOYMENT_MARKER,
+    requestedEmailMasked: maskEmail(email),
+    requestedPhoneMasked: maskPhone(inferredPhone),
+    canonicalUserId,
+    ownerExists: summary.ownerExists,
+    authUserExists: summary.authUserExists,
+    profileExists: summary.profileExists,
+    walletExists: summary.walletExists,
+    emailConfirmed: summary.emailConfirmed,
+    phonePresent: summary.phonePresent,
+    duplicateCount: summary.duplicateCount,
+    orphanCount: summary.orphanCount,
+    repairAvailable: summary.repairAvailable,
+    role,
+    kycStatus,
+    profilePersisted: summary.profileExists,
+    walletPersisted: summary.walletExists,
+    ownerAllowlist: {
+      configured: ownerAllowlistConfigured,
+      allowed: ownerAllowlistAllowed,
+    },
+    auditLogs: {
+      available: auditLogCount !== null,
+      count: auditLogCount,
+    },
+    duplicates: {
+      authEmailCount: matchingEmailUsers.length,
+      authPhoneCount: matchingPhoneUsers.length,
+      profileMatchCount: profiles.records.length,
+      walletMatchCount: wallets.records.length,
+    },
+    orphans: {
+      profileOrphanCount: profileOrphans.length,
+      walletOrphanCount: walletOrphans.length,
+    },
+    mismatches: {
+      profileMissing: Boolean(canonicalAuthUser && !canonicalProfile),
+      walletMissing: Boolean(canonicalAuthUser && !canonicalWallet),
+      roleMismatch: Boolean(role && role !== 'owner'),
+      kycMismatch: Boolean(kycStatus && kycStatus !== 'approved'),
+      profileQueryUnavailable: profiles.unavailable,
+      walletQueryUnavailable: wallets.unavailable,
+    },
+    safeFlow: {
+      existingOwnerRoutesToSignIn: Boolean(canonicalAuthUser),
+      signupAllowedOnce: !canonicalAuthUser && ownerAllowlistAllowed,
+      duplicateSignupBlocked: Boolean(canonicalAuthUser),
+      postLoginRepairEndpoint: 'POST /api/ivx/owner-registration/repair',
+    },
+    secretValuesReturned: false,
+    timestamp: nowIso(),
+  };
 }
 
 function isOwnerLikeUser(user: User, email: string): boolean {
@@ -292,48 +661,55 @@ async function buildOwnerEmailLookup(email: string): Promise<OwnerEmailLookup> {
   }
 
   try {
-    assertOwnerRegistrationEmailAllowed(email);
-  } catch (error) {
-    return {
-      requested: true,
-      allowed: false,
-      authUserExists: null,
-      profileExists: null,
-      walletExists: null,
-      safeToSignup: false,
-      action: 'not_allowed',
-      message: error instanceof Error ? error.message : 'Owner registration is limited to the configured owner email.',
-      secretValuesReturned: false,
-    };
-  }
-
-  try {
     const client = createSupabaseAdminClient();
     const existingUser = await findAuthUserByEmail(client, email);
-    if (!existingUser) {
+    const allowedByEnv = (() => {
+      try {
+        assertOwnerRegistrationEmailAllowed(email);
+        return true;
+      } catch {
+        return false;
+      }
+    })();
+
+    if (existingUser) {
+      const persistence = await inspectOwnerPersistence(client, existingUser.id);
       return {
         requested: true,
-        allowed: true,
-        authUserExists: false,
-        profileExists: false,
-        walletExists: false,
-        safeToSignup: true,
-        action: 'signup',
-        message: 'Owner email is allowlisted and no existing auth user was found. A single backend signup attempt is allowed.',
+        allowed: allowedByEnv || isOwnerLikeUser(existingUser, email),
+        authUserExists: true,
+        profileExists: persistence.profileExists,
+        walletExists: persistence.walletExists,
+        safeToSignup: false,
+        action: 'sign_in',
+        message: 'Owner auth user already exists. Route to Owner Login instead of calling signup again. Post-login repair will verify owner authority before writing profile or wallet rows.',
         secretValuesReturned: false,
       };
     }
 
-    const persistence = await inspectOwnerPersistence(client, existingUser.id);
+    if (!allowedByEnv) {
+      return {
+        requested: true,
+        allowed: false,
+        authUserExists: false,
+        profileExists: false,
+        walletExists: false,
+        safeToSignup: false,
+        action: 'not_allowed',
+        message: 'Owner registration is limited to the configured owner email. Use Owner Login or Owner Recovery for existing accounts.',
+        secretValuesReturned: false,
+      };
+    }
+
     return {
       requested: true,
       allowed: true,
-      authUserExists: true,
-      profileExists: persistence.profileExists,
-      walletExists: persistence.walletExists,
-      safeToSignup: false,
-      action: 'sign_in',
-      message: 'Owner auth user already exists. Route to Owner Login instead of calling signup again.',
+      authUserExists: false,
+      profileExists: false,
+      walletExists: false,
+      safeToSignup: true,
+      action: 'signup',
+      message: 'Owner email is allowlisted and no existing auth user was found. A single backend signup attempt is allowed.',
       secretValuesReturned: false,
     };
   } catch (error) {
@@ -461,6 +837,68 @@ export function OPTIONS(): Response {
   });
 }
 
+export async function handleIVXOwnerSignupAuditRequest(request: Request): Promise<Response> {
+  const url = new URL(request.url);
+  const email = sanitizeEmail(url.searchParams.get('email') ?? '');
+  const phone = normalizePhone(url.searchParams.get('phone') ?? '');
+
+  if (!isValidEmail(email)) {
+    return json({
+      ok: false,
+      message: 'A valid owner email is required for the owner signup audit.',
+      deploymentMarker: DEPLOYMENT_MARKER,
+      secretValuesReturned: false,
+      timestamp: nowIso(),
+    }, 400);
+  }
+
+  try {
+    const client = createSupabaseAdminClient();
+    const audit = await buildOwnerSignupAudit(client, email, phone);
+    const ownerAllowlist = audit.ownerAllowlist && typeof audit.ownerAllowlist === 'object' ? audit.ownerAllowlist as { allowed?: unknown } : null;
+    const ownerExists = audit.ownerExists === true;
+    if (ownerAllowlist?.allowed !== true && !ownerExists) {
+      return json({
+        ok: false,
+        ownerExists: false,
+        authUserExists: false,
+        profileExists: false,
+        walletExists: false,
+        emailConfirmed: false,
+        phonePresent: Boolean(phone),
+        duplicateCount: 0,
+        orphanCount: 0,
+        repairAvailable: false,
+        message: 'Owner registration is limited to the configured owner email. No existing owner record was found for this lookup.',
+        deploymentMarker: DEPLOYMENT_MARKER,
+        secretValuesReturned: false,
+        timestamp: nowIso(),
+      }, 403);
+    }
+    return json(audit);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Owner signup audit failed.';
+    const status = message.toLowerCase().includes('limited to the configured owner email') ? 403 : 503;
+    console.log('[IVXOwnerRegistration] Owner signup audit failed:', message);
+    return json({
+      ok: false,
+      ownerExists: false,
+      authUserExists: false,
+      profileExists: false,
+      walletExists: false,
+      emailConfirmed: false,
+      phonePresent: false,
+      duplicateCount: 0,
+      orphanCount: 0,
+      repairAvailable: false,
+      message,
+      deploymentMarker: DEPLOYMENT_MARKER,
+      secretValuesReturned: false,
+      timestamp: nowIso(),
+    }, status);
+  }
+}
+
 export async function handleIVXOwnerRegistrationStatusRequest(request?: Request): Promise<Response> {
   const url = request ? new URL(request.url) : null;
   const lookupEmail = sanitizeEmail(url?.searchParams.get('email') ?? '');
@@ -471,6 +909,7 @@ export async function handleIVXOwnerRegistrationStatusRequest(request?: Request)
     routeRegistered: true,
     route: 'POST /api/ivx/owner-registration',
     statusRoute: 'GET /api/ivx/owner-registration/status',
+    auditRoute: 'GET /api/ivx/owner-signup-audit',
     repairRoute: 'POST /api/ivx/owner-registration/repair',
     deploymentMarker: DEPLOYMENT_MARKER,
     supabaseUrlConfigured: Boolean(readTrimmed(process.env.EXPO_PUBLIC_SUPABASE_URL)),
@@ -503,8 +942,6 @@ export async function handleIVXOwnerRegistrationRequest(request: Request): Promi
       return json({ success: false, message: passwordError, deploymentMarker: DEPLOYMENT_MARKER }, 400);
     }
 
-    assertOwnerRegistrationEmailAllowed(email);
-
     const client = createSupabaseAdminClient();
     const existingUser = await findAuthUserByEmail(client, email);
     if (existingUser) {
@@ -533,6 +970,7 @@ export async function handleIVXOwnerRegistrationRequest(request: Request): Promi
       }, 409);
     }
 
+    assertOwnerRegistrationEmailAllowed(email);
     assertRateLimit(email, request);
 
     const timestamp = nowIso();
@@ -567,11 +1005,25 @@ export async function handleIVXOwnerRegistrationRequest(request: Request): Promi
       const message = error?.message || 'Supabase did not return a created owner user.';
       const lowerMessage = message.toLowerCase();
       if (lowerMessage.includes('already') || lowerMessage.includes('duplicate') || lowerMessage.includes('registered')) {
+        const duplicateUser = await findAuthUserByEmail(client, email);
+        const persistence = duplicateUser ? await inspectOwnerPersistence(client, duplicateUser.id) : { profileExists: null, walletExists: null };
         return json({
           success: false,
           alreadyExists: true,
           requiresLogin: true,
           email,
+          userId: duplicateUser?.id ?? undefined,
+          ownerEmailLookup: {
+            requested: true,
+            allowed: duplicateUser ? isOwnerLikeUser(duplicateUser, email) : true,
+            authUserExists: Boolean(duplicateUser),
+            profileExists: persistence.profileExists,
+            walletExists: persistence.walletExists,
+            safeToSignup: false,
+            action: 'sign_in',
+            message: 'Owner auth user already exists. Route to Owner Login instead of calling signup again.',
+            secretValuesReturned: false,
+          },
           message: 'This owner email already exists in Supabase Auth. Use Owner Login instead of creating a duplicate.',
           deploymentMarker: DEPLOYMENT_MARKER,
           secretValuesReturned: false,
@@ -592,6 +1044,14 @@ export async function handleIVXOwnerRegistrationRequest(request: Request): Promi
       timestamp,
     });
     const walletPersisted = await ensureOwnerWallet(client, data.user.id);
+    await insertOwnerRegistrationAudit(client, {
+      action: 'owner_registration_created',
+      userId: data.user.id,
+      email,
+      profilePersisted,
+      walletPersisted,
+      source: 'owner_registration',
+    });
     const proof = buildProof({ authUserCreated: true, profilePersisted, walletPersisted });
 
     console.log('[IVXOwnerRegistration] Owner registration saved:', {
@@ -633,6 +1093,199 @@ export async function handleIVXOwnerRegistrationRequest(request: Request): Promi
   }
 }
 
+export async function handleIVXOwnerAccessRepairRequest(request: Request): Promise<Response> {
+  try {
+    if (request.method !== 'POST') {
+      return json({ success: false, message: 'Method not allowed.', deploymentMarker: DEPLOYMENT_MARKER, secretValuesReturned: false }, 405);
+    }
+
+    const body = await request.json().catch(() => ({})) as OwnerAccessRepairPayload;
+    const email = sanitizeEmail(body.email);
+    const phone = normalizePhone(body.phone);
+    const timestamp = nowIso();
+    const shouldSendPasswordReset = readBoolean(body.sendPasswordReset, true);
+    const redirectTo = resolvePasswordResetRedirectUrl(body.redirectTo);
+
+    if (!isValidEmail(email)) {
+      return json({ success: false, message: 'A valid owner email is required for emergency owner access repair.', deploymentMarker: DEPLOYMENT_MARKER, secretValuesReturned: false }, 400);
+    }
+
+    assertOwnerRegistrationEmailAllowed(email);
+    assertRateLimit(email, request);
+
+    const client = createSupabaseAdminClient();
+    const authUsers = await listAuthUsersForAudit(client);
+    const matchingEmailUsers = authUsers.filter((user) => sanitizeEmail(user.email ?? '') === email);
+    const matchingPhoneUsers = phone ? authUsers.filter((user) => getUserNormalizedPhone(user) === phone) : [];
+    const candidateAuthUsers = Array.from(new Map([...matchingEmailUsers, ...matchingPhoneUsers].map((user) => [user.id, user])).values());
+    const canonicalAuthUser = candidateAuthUsers
+      .slice()
+      .sort((left, right) => new Date(left.created_at ?? 0).getTime() - new Date(right.created_at ?? 0).getTime())[0] ?? null;
+
+    let authUser = canonicalAuthUser;
+    let authUserCreated = false;
+    let passwordUpdatedFromRuntimeSecret = false;
+    const ownerRuntimePassword = await getOwnerRuntimePassword();
+    const firstName = readTrimmed(body.firstName) || (authUser ? getUserName(authUser, 'firstName', 'Owner') : 'Owner');
+    const lastName = readTrimmed(body.lastName) || (authUser ? getUserName(authUser, 'lastName', '') : '');
+    const country = readTrimmed(body.country) || (authUser ? readTrimmed((authUser.user_metadata ?? {}).country) : '') || 'United States';
+    const repairedPhone = phone || (authUser ? getUserNormalizedPhone(authUser) : '');
+    const ownerMetadata = {
+      firstName,
+      lastName,
+      phone: repairedPhone,
+      country,
+      accountType: 'owner',
+      requestedRole: 'owner',
+      role: 'owner',
+      status: 'active',
+      kycStatus: 'approved',
+      ownerAccessRepairedAt: timestamp,
+    };
+
+    if (!authUser) {
+      const generatedPassword = `${crypto.randomUUID()}A1!${Date.now()}`;
+      const { data, error } = await client.auth.admin.createUser({
+        email,
+        password: ownerRuntimePassword || generatedPassword,
+        email_confirm: true,
+        ...(repairedPhone ? { phone: repairedPhone, phone_confirm: true } : {}),
+        user_metadata: ownerMetadata,
+        app_metadata: {
+          accountType: 'owner',
+          requestedRole: 'owner',
+          role: 'owner',
+        },
+      });
+      if (error || !data.user) {
+        const message = error?.message || 'Supabase did not return a created owner user.';
+        return json({ success: false, message, deploymentMarker: DEPLOYMENT_MARKER, secretValuesReturned: false }, 502);
+      }
+      authUser = data.user;
+      authUserCreated = true;
+      passwordUpdatedFromRuntimeSecret = Boolean(ownerRuntimePassword);
+    } else {
+      const updatePayload = {
+        email_confirm: true,
+        ...(repairedPhone ? { phone: repairedPhone, phone_confirm: true } : {}),
+        user_metadata: {
+          ...(authUser.user_metadata ?? {}),
+          ...ownerMetadata,
+        },
+        app_metadata: {
+          ...(authUser.app_metadata ?? {}),
+          accountType: 'owner',
+          requestedRole: 'owner',
+          role: 'owner',
+        },
+        ban_duration: 'none',
+        ...(ownerRuntimePassword ? { password: ownerRuntimePassword } : {}),
+      } as Parameters<typeof client.auth.admin.updateUserById>[1];
+      const { data, error } = await client.auth.admin.updateUserById(authUser.id, updatePayload);
+      if (error) {
+        return json({ success: false, message: error.message, deploymentMarker: DEPLOYMENT_MARKER, secretValuesReturned: false }, 502);
+      }
+      passwordUpdatedFromRuntimeSecret = Boolean(ownerRuntimePassword);
+      authUser = data.user ?? authUser;
+    }
+
+    const profilePersisted = await ensureOwnerProfile(client, {
+      userId: authUser.id,
+      email,
+      firstName,
+      lastName,
+      phone: repairedPhone,
+      country,
+      timestamp,
+    });
+    const walletPersisted = await ensureOwnerWallet(client, authUser.id);
+    await insertOwnerRegistrationAudit(client, {
+      action: 'owner_access_repaired',
+      userId: authUser.id,
+      email,
+      profilePersisted,
+      walletPersisted,
+      source: 'owner_access_repair',
+    });
+
+    const postRepairAudit = await buildOwnerSignupAudit(client, email, repairedPhone);
+    const resetResult = shouldSendPasswordReset
+      ? await sendOwnerPasswordResetEmail(email, redirectTo)
+      : { sent: false, httpStatus: null, message: 'Password reset email was not requested.' };
+    const providers = readUserProviders(authUser);
+    const proof = buildProof({ authUserCreated, profilePersisted, walletPersisted });
+
+    console.log('[IVXOwnerRegistration] Emergency owner access repair completed:', {
+      userId: authUser.id,
+      emailMasked: maskEmail(email),
+      profilePersisted,
+      walletPersisted,
+      resetEmailAccepted: resetResult.sent,
+      timestamp,
+    });
+
+    return json({
+      success: true,
+      ok: true,
+      route: 'POST /api/ivx/owner-access-repair',
+      deploymentMarker: DEPLOYMENT_MARKER,
+      requestedEmailMasked: maskEmail(email),
+      requestedPhoneMasked: maskPhone(repairedPhone),
+      canonicalUserId: authUser.id,
+      authUserCreated,
+      authUserExists: true,
+      emailConfirmed: Boolean(authUser.email_confirmed_at || authUser.confirmed_at) || true,
+      phonePresent: Boolean(repairedPhone),
+      providerTypes: providers,
+      passwordLoginEnabled: providers.length === 0 || providers.includes('email'),
+      disabledOrBanned: isUserBanned(authUser),
+      lastSignInErrorAvailable: false,
+      lastSignInError: null,
+      profileExists: postRepairAudit.profileExists === true,
+      walletExists: postRepairAudit.walletExists === true,
+      role: 'owner',
+      kycStatus: 'approved',
+      duplicateCount: typeof postRepairAudit.duplicateCount === 'number' ? postRepairAudit.duplicateCount : 0,
+      orphanCount: typeof postRepairAudit.orphanCount === 'number' ? postRepairAudit.orphanCount : 0,
+      repairAvailable: false,
+      passwordUpdatedFromRuntimeSecret,
+      runtimePasswordSecretConfigured: Boolean(ownerRuntimePassword),
+      resetEmailSent: resetResult.sent,
+      resetEmailHttpStatus: resetResult.httpStatus,
+      resetDeliveryStatus: resetResult.sent ? 'accepted' : 'not_accepted',
+      resetRedirectHost: new URL(redirectTo).hostname,
+      proof,
+      message: passwordUpdatedFromRuntimeSecret
+        ? 'Owner auth/profile/wallet repaired and password login was reset from the backend runtime secret. Use Owner Login with the owner password you configured.'
+        : resetResult.sent
+          ? 'Owner auth/profile/wallet repaired. Password reset email was accepted by Supabase Auth; use Owner Login after resetting the password.'
+          : `Owner auth/profile/wallet repaired. Password reset email was not accepted: ${resetResult.message}`,
+      secretValuesReturned: false,
+      timestamp,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Emergency owner access repair failed.';
+    const lowerMessage = message.toLowerCase();
+    const status = lowerMessage.includes('rate limited')
+      ? 429
+      : lowerMessage.includes('limited to the configured owner email')
+        ? 403
+        : lowerMessage.includes('service-role') || lowerMessage.includes('not configured')
+          ? 503
+          : 500;
+    console.log('[IVXOwnerRegistration] Emergency owner access repair failed:', message);
+    return json({
+      success: false,
+      ok: false,
+      route: 'POST /api/ivx/owner-access-repair',
+      message,
+      deploymentMarker: DEPLOYMENT_MARKER,
+      secretValuesReturned: false,
+      timestamp: nowIso(),
+    }, status);
+  }
+}
+
 export async function handleIVXOwnerRegistrationRepairRequest(request: Request): Promise<Response> {
   try {
     const bearerToken = readBearerToken(request);
@@ -662,11 +1315,12 @@ export async function handleIVXOwnerRegistrationRepairRequest(request: Request):
       }
     }
 
+    const body = await request.json().catch(() => ({})) as Partial<OwnerRegistrationPayload>;
     const timestamp = nowIso();
-    const firstName = getUserName(authUser, 'firstName', 'Owner');
-    const lastName = getUserName(authUser, 'lastName', '');
-    const phone = normalizePhone((authUser.user_metadata ?? {}).phone);
-    const country = readTrimmed((authUser.user_metadata ?? {}).country) || 'United States';
+    const firstName = readTrimmed(body.firstName) || getUserName(authUser, 'firstName', 'Owner');
+    const lastName = readTrimmed(body.lastName) || getUserName(authUser, 'lastName', '');
+    const phone = normalizePhone(body.phone) || normalizePhone((authUser.user_metadata ?? {}).phone) || normalizePhone(authUser.phone);
+    const country = readTrimmed(body.country) || readTrimmed((authUser.user_metadata ?? {}).country) || 'United States';
     const profilePersisted = await ensureOwnerProfile(client, {
       userId: authUser.id,
       email,
@@ -677,6 +1331,14 @@ export async function handleIVXOwnerRegistrationRepairRequest(request: Request):
       timestamp,
     });
     const walletPersisted = await ensureOwnerWallet(client, authUser.id);
+    await insertOwnerRegistrationAudit(client, {
+      action: 'owner_registration_repaired',
+      userId: authUser.id,
+      email,
+      profilePersisted,
+      walletPersisted,
+      source: 'owner_repair',
+    });
     const proof = buildProof({ authUserCreated: false, profilePersisted, walletPersisted });
 
     console.log('[IVXOwnerRegistration] Owner post-login repair completed:', {
