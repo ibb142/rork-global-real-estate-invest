@@ -1,6 +1,4 @@
 import { createClient, type SupabaseClient, type User } from '@supabase/supabase-js';
-import { getIVXOwnerVariableRuntimeValue } from './ivx-owner-variables';
-
 type OwnerRegistrationPayload = {
   email?: unknown;
   password?: unknown;
@@ -18,6 +16,10 @@ type OwnerAccessRepairPayload = {
   country?: unknown;
   sendPasswordReset?: unknown;
   redirectTo?: unknown;
+  /** New owner password supplied by the phone UI for same-value reset + immediate sign-in. */
+  newPassword?: unknown;
+  /** Backward-compatible alias; prefer newPassword from the mobile app. */
+  password?: unknown;
 };
 
 type OwnerRegistrationProof = {
@@ -74,9 +76,9 @@ type SafeWalletRecord = {
   updated_at?: string | null;
 };
 
-const DEPLOYMENT_MARKER = 'ivx-owner-registration-2026-05-09t1040z-owner-fetch-adapter-repair';
+const DEPLOYMENT_MARKER = 'ivx-owner-registration-2026-05-11t-render-direct-phone-repair-v7';
+const OWNER_ACCESS_REPAIR_BACKEND_VERSION = 'V7';
 const DEFAULT_OWNER_PASSWORD_RESET_REDIRECT_URL = 'https://ivxholding.com/reset-password';
-const OWNER_PASSWORD_RUNTIME_SECRET_NAME = 'OWNER_NEW_PASSWORD';
 
 const OWNER_REGISTRATION_HEADERS = {
   'Content-Type': 'application/json',
@@ -225,18 +227,14 @@ function validatePassword(password: string): string | null {
   return null;
 }
 
-async function getOwnerRuntimePassword(): Promise<string> {
-  const password = readTrimmed(process.env[OWNER_PASSWORD_RUNTIME_SECRET_NAME])
-    || await getIVXOwnerVariableRuntimeValue(OWNER_PASSWORD_RUNTIME_SECRET_NAME);
-  if (!password) {
-    return '';
+function safeSupabaseProjectHost(): string | null {
+  const supabaseUrl = readTrimmed(process.env.EXPO_PUBLIC_SUPABASE_URL);
+  if (!supabaseUrl) return null;
+  try {
+    return new URL(supabaseUrl).hostname;
+  } catch {
+    return null;
   }
-  const validationError = validatePassword(password);
-  if (validationError) {
-    console.log('[IVXOwnerRegistration] OWNER_NEW_PASSWORD ignored because it does not meet password policy.');
-    return '';
-  }
-  return password;
 }
 
 function decodeJwtRole(token: string): string | null {
@@ -1093,10 +1091,33 @@ export async function handleIVXOwnerRegistrationRequest(request: Request): Promi
   }
 }
 
+export async function handleIVXOwnerAccessRepairStatusRequest(request: Request): Promise<Response> {
+  if (request.method !== 'GET') {
+    return json({ success: false, ok: false, backendVersion: OWNER_ACCESS_REPAIR_BACKEND_VERSION, message: 'Method not allowed.', deploymentMarker: DEPLOYMENT_MARKER, secretValuesReturned: false }, 405);
+  }
+
+  return json({
+    success: true,
+    ok: true,
+    route: 'GET /api/ivx/owner-access-repair/status',
+    backendVersion: OWNER_ACCESS_REPAIR_BACKEND_VERSION,
+    backendVersionProof: 'owner-access-repair-v7-render-direct-client-password-required',
+    phonePasswordSourceOfTruth: true,
+    requiresClientPassword: true,
+    acceptsNewPasswordFromPhone: true,
+    passwordUpdateSource: 'client_request',
+    ownerNewPasswordRuntimeSecretUsed: false,
+    message: 'V7 owner repair is live on the real ivx-holdings-platform backend: phone must submit newPassword; OWNER_NEW_PASSWORD is not used for phone repair.',
+    deploymentMarker: DEPLOYMENT_MARKER,
+    secretValuesReturned: false,
+    timestamp: nowIso(),
+  });
+}
+
 export async function handleIVXOwnerAccessRepairRequest(request: Request): Promise<Response> {
   try {
     if (request.method !== 'POST') {
-      return json({ success: false, message: 'Method not allowed.', deploymentMarker: DEPLOYMENT_MARKER, secretValuesReturned: false }, 405);
+      return json({ success: false, ok: false, backendVersion: OWNER_ACCESS_REPAIR_BACKEND_VERSION, message: 'Method not allowed.', deploymentMarker: DEPLOYMENT_MARKER, secretValuesReturned: false }, 405);
     }
 
     const body = await request.json().catch(() => ({})) as OwnerAccessRepairPayload;
@@ -1107,7 +1128,7 @@ export async function handleIVXOwnerAccessRepairRequest(request: Request): Promi
     const redirectTo = resolvePasswordResetRedirectUrl(body.redirectTo);
 
     if (!isValidEmail(email)) {
-      return json({ success: false, message: 'A valid owner email is required for emergency owner access repair.', deploymentMarker: DEPLOYMENT_MARKER, secretValuesReturned: false }, 400);
+      return json({ success: false, ok: false, backendVersion: OWNER_ACCESS_REPAIR_BACKEND_VERSION, message: 'A valid owner email is required for emergency owner access repair.', deploymentMarker: DEPLOYMENT_MARKER, secretValuesReturned: false }, 400);
     }
 
     assertOwnerRegistrationEmailAllowed(email);
@@ -1125,7 +1146,47 @@ export async function handleIVXOwnerAccessRepairRequest(request: Request): Promi
     let authUser = canonicalAuthUser;
     let authUserCreated = false;
     let passwordUpdatedFromRuntimeSecret = false;
-    const ownerRuntimePassword = await getOwnerRuntimePassword();
+    let passwordUpdatedFromClientRequest = false;
+    const requestedOwnerPassword = readTrimmed(body.newPassword) || readTrimmed(body.password);
+    if (!requestedOwnerPassword) {
+      return json({
+        success: false,
+        ok: false,
+        route: 'POST /api/ivx/owner-access-repair',
+        backendVersion: OWNER_ACCESS_REPAIR_BACKEND_VERSION,
+        message: 'Phone password is required. Enter a new owner password on the phone, then tap the primary server reset button again. This V7 endpoint does not use OWNER_NEW_PASSWORD for phone repair.',
+        passwordUpdatedFromClientRequest: false,
+        passwordUpdatedFromRuntimeSecret: false,
+        passwordUpdateSource: 'none',
+        passwordLoginEnabled: false,
+        ownerNewPasswordRuntimeSecretUsed: false,
+        deploymentMarker: DEPLOYMENT_MARKER,
+        secretValuesReturned: false,
+        timestamp,
+      }, 400);
+    }
+
+    const requestedPasswordError = validatePassword(requestedOwnerPassword);
+    if (requestedPasswordError) {
+      return json({
+        success: false,
+        ok: false,
+        route: 'POST /api/ivx/owner-access-repair',
+        backendVersion: OWNER_ACCESS_REPAIR_BACKEND_VERSION,
+        message: requestedPasswordError,
+        passwordUpdatedFromClientRequest: false,
+        passwordUpdatedFromRuntimeSecret: false,
+        passwordUpdateSource: 'none',
+        passwordLoginEnabled: false,
+        ownerNewPasswordRuntimeSecretUsed: false,
+        deploymentMarker: DEPLOYMENT_MARKER,
+        secretValuesReturned: false,
+        timestamp,
+      }, 400);
+    }
+
+    const ownerPasswordToApply = requestedOwnerPassword;
+    const passwordUpdateSource = 'client_request' as const;
     const firstName = readTrimmed(body.firstName) || (authUser ? getUserName(authUser, 'firstName', 'Owner') : 'Owner');
     const lastName = readTrimmed(body.lastName) || (authUser ? getUserName(authUser, 'lastName', '') : '');
     const country = readTrimmed(body.country) || (authUser ? readTrimmed((authUser.user_metadata ?? {}).country) : '') || 'United States';
@@ -1147,7 +1208,7 @@ export async function handleIVXOwnerAccessRepairRequest(request: Request): Promi
       const generatedPassword = `${crypto.randomUUID()}A1!${Date.now()}`;
       const { data, error } = await client.auth.admin.createUser({
         email,
-        password: ownerRuntimePassword || generatedPassword,
+        password: ownerPasswordToApply || generatedPassword,
         email_confirm: true,
         ...(repairedPhone ? { phone: repairedPhone, phone_confirm: true } : {}),
         user_metadata: ownerMetadata,
@@ -1159,11 +1220,12 @@ export async function handleIVXOwnerAccessRepairRequest(request: Request): Promi
       });
       if (error || !data.user) {
         const message = error?.message || 'Supabase did not return a created owner user.';
-        return json({ success: false, message, deploymentMarker: DEPLOYMENT_MARKER, secretValuesReturned: false }, 502);
+        return json({ success: false, ok: false, backendVersion: OWNER_ACCESS_REPAIR_BACKEND_VERSION, message, deploymentMarker: DEPLOYMENT_MARKER, secretValuesReturned: false, timestamp }, 502);
       }
       authUser = data.user;
       authUserCreated = true;
-      passwordUpdatedFromRuntimeSecret = Boolean(ownerRuntimePassword);
+      passwordUpdatedFromRuntimeSecret = false;
+      passwordUpdatedFromClientRequest = true;
     } else {
       const updatePayload = {
         email_confirm: true,
@@ -1179,13 +1241,14 @@ export async function handleIVXOwnerAccessRepairRequest(request: Request): Promi
           role: 'owner',
         },
         ban_duration: 'none',
-        ...(ownerRuntimePassword ? { password: ownerRuntimePassword } : {}),
+        ...(ownerPasswordToApply ? { password: ownerPasswordToApply } : {}),
       } as Parameters<typeof client.auth.admin.updateUserById>[1];
       const { data, error } = await client.auth.admin.updateUserById(authUser.id, updatePayload);
       if (error) {
-        return json({ success: false, message: error.message, deploymentMarker: DEPLOYMENT_MARKER, secretValuesReturned: false }, 502);
+        return json({ success: false, ok: false, backendVersion: OWNER_ACCESS_REPAIR_BACKEND_VERSION, message: error.message, deploymentMarker: DEPLOYMENT_MARKER, secretValuesReturned: false, timestamp }, 502);
       }
-      passwordUpdatedFromRuntimeSecret = Boolean(ownerRuntimePassword);
+      passwordUpdatedFromRuntimeSecret = false;
+      passwordUpdatedFromClientRequest = true;
       authUser = data.user ?? authUser;
     }
 
@@ -1229,6 +1292,8 @@ export async function handleIVXOwnerAccessRepairRequest(request: Request): Promi
       ok: true,
       route: 'POST /api/ivx/owner-access-repair',
       deploymentMarker: DEPLOYMENT_MARKER,
+      backendVersion: OWNER_ACCESS_REPAIR_BACKEND_VERSION,
+      backendVersionProof: 'owner-access-repair-v7-render-direct-client-password-required',
       requestedEmailMasked: maskEmail(email),
       requestedPhoneMasked: maskPhone(repairedPhone),
       canonicalUserId: authUser.id,
@@ -1249,17 +1314,21 @@ export async function handleIVXOwnerAccessRepairRequest(request: Request): Promi
       orphanCount: typeof postRepairAudit.orphanCount === 'number' ? postRepairAudit.orphanCount : 0,
       repairAvailable: false,
       passwordUpdatedFromRuntimeSecret,
-      runtimePasswordSecretConfigured: Boolean(ownerRuntimePassword),
+      passwordUpdatedFromClientRequest,
+      passwordUpdated: passwordUpdatedFromClientRequest,
+      passwordUpdateSource,
+      requestSource: 'client_request',
+      passwordLoginSource: 'phone_in_memory_password',
+      runtimePasswordSecretConfigured: false,
+      ownerNewPasswordRuntimeSecretUsed: false,
+      clientPasswordAccepted: true,
+      supabaseProjectHost: safeSupabaseProjectHost(),
       resetEmailSent: resetResult.sent,
       resetEmailHttpStatus: resetResult.httpStatus,
       resetDeliveryStatus: resetResult.sent ? 'accepted' : 'not_accepted',
       resetRedirectHost: new URL(redirectTo).hostname,
       proof,
-      message: passwordUpdatedFromRuntimeSecret
-        ? 'Owner auth/profile/wallet repaired and password login was reset from the backend runtime secret. Use Owner Login with the owner password you configured.'
-        : resetResult.sent
-          ? 'Owner auth/profile/wallet repaired. Password reset email was accepted by Supabase Auth; use Owner Login after resetting the password.'
-          : `Owner auth/profile/wallet repaired. Password reset email was not accepted: ${resetResult.message}`,
+      message: 'Owner auth/profile/wallet repaired and password login was reset to the exact password submitted by the phone UI. The password value was not returned. OWNER_NEW_PASSWORD was not used for this phone repair flow.',
       secretValuesReturned: false,
       timestamp,
     });
@@ -1279,6 +1348,7 @@ export async function handleIVXOwnerAccessRepairRequest(request: Request): Promi
       ok: false,
       route: 'POST /api/ivx/owner-access-repair',
       message,
+      backendVersion: OWNER_ACCESS_REPAIR_BACKEND_VERSION,
       deploymentMarker: DEPLOYMENT_MARKER,
       secretValuesReturned: false,
       timestamp: nowIso(),

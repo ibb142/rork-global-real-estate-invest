@@ -9,7 +9,7 @@ import { OPTIONS as auditReportOptions, handleIVXAuditReportRequest } from './ap
 import { OPTIONS as supabaseInspectionOptions, handleIVXSupabaseInspectionRequest, inspectSupabaseTables } from './api/ivx-supabase-inspection';
 import { executeIVXAIBrainTool } from './services/ivx-ai-brain-tool-executor';
 import { OPTIONS as supabaseOwnerActionOptions, handleIVXSupabaseOwnerActionRequest } from './api/ivx-supabase-owner-actions';
-import { OPTIONS as ownerRegistrationOptions, handleIVXOwnerAccessRepairRequest, handleIVXOwnerRegistrationRepairRequest, handleIVXOwnerRegistrationRequest, handleIVXOwnerRegistrationStatusRequest, handleIVXOwnerSignupAuditRequest } from './api/ivx-owner-registration';
+import { OPTIONS as ownerRegistrationOptions, handleIVXOwnerAccessRepairRequest, handleIVXOwnerAccessRepairStatusRequest, handleIVXOwnerRegistrationRepairRequest, handleIVXOwnerRegistrationRequest, handleIVXOwnerRegistrationStatusRequest, handleIVXOwnerSignupAuditRequest } from './api/ivx-owner-registration';
 import { handleIVXDevelopmentActionRequest, handleIVXDevelopmentControlRequest, ivxDevelopmentControlOptions } from './api/ivx-development-control';
 import { OPTIONS as aiBrainToolsOptions, handleIVXAIBrainToolExecuteRequest, handleIVXAIBrainToolsListRequest } from './api/ivx-ai-brain-tools';
 import { OPTIONS as controlRoomStatusOptions, handleIVXControlRoomStatusRequest } from './api/ivx-control-room-status';
@@ -1024,6 +1024,7 @@ app.get('/health', (context) => {
       'POST /api/ivx/owner-registration',
       'POST /api/ivx/owner-registration/repair',
       'POST /api/ivx/owner-access-repair',
+      'GET /api/ivx/owner-access-repair/status',
       'POST /api/assistant',
       'POST /api/plan-creator',
       'POST /api/upload/image',
@@ -1125,8 +1126,10 @@ app.options('/api/ivx/owner-registration', () => ownerRegistrationOptions());
 app.options('/api/ivx/owner-registration/status', () => ownerRegistrationOptions());
 app.options('/api/ivx/owner-registration/repair', () => ownerRegistrationOptions());
 app.options('/api/ivx/owner-access-repair', () => ownerRegistrationOptions());
+app.options('/api/ivx/owner-access-repair/status', () => ownerRegistrationOptions());
 app.options('/api/ivx/owner-signup-audit', () => ownerRegistrationOptions());
 app.get('/api/ivx/owner-registration/status', async (context) => handleIVXOwnerRegistrationStatusRequest(context.req.raw));
+app.get('/api/ivx/owner-access-repair/status', async (context) => handleIVXOwnerAccessRepairStatusRequest(context.req.raw));
 app.get('/api/ivx/owner-signup-audit', async (context) => handleIVXOwnerSignupAuditRequest(context.req.raw));
 app.post('/api/ivx/owner-registration', async (context) => handleIVXOwnerRegistrationRequest(context.req.raw));
 app.post('/api/ivx/owner-registration/repair', async (context) => handleIVXOwnerRegistrationRepairRequest(context.req.raw));
