@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { GET, OPTIONS as ownerAIOptions, handleIVXOwnerAIRequest, handleIVXOwnerAIToolRequest } from './api/ivx-owner-ai';
+import { GET, OPTIONS as ownerAIOptions, handleIVXOwnerAIProxyStatus, handleIVXOwnerAIRequest, handleIVXOwnerAIToolRequest } from './api/ivx-owner-ai';
 import { OPTIONS as auditReportOptions, handleIVXAuditReportRequest } from './api/ivx-audit-report';
 import { OPTIONS as supabaseInspectionOptions, handleIVXSupabaseInspectionRequest, inspectSupabaseTables } from './api/ivx-supabase-inspection';
 import { executeIVXAIBrainTool } from './services/ivx-ai-brain-tool-executor';
@@ -15,7 +15,7 @@ import { OPTIONS as aiBrainToolsOptions, handleIVXAIBrainToolExecuteRequest, han
 import { OPTIONS as controlRoomStatusOptions, handleIVXControlRoomStatusRequest } from './api/ivx-control-room-status';
 import { OPTIONS as developerDeployOptions, handleIVXDeveloperDeployActionRequest, handleIVXDeveloperDeployStatusRequest } from './api/ivx-developer-deploy-control';
 import { OPTIONS as variablesToolOptions, handleIVXVariablesToolSaveRequest, handleIVXVariablesToolStatusRequest } from './api/ivx-variables-tool';
-import { OPTIONS as ownerVariablesOptions, getIVXOwnerVariableRuntimeValue, hasIVXOwnerVariableRuntimeValue, handleIVXOwnerVariablesDeleteRequest, handleIVXOwnerVariablesSaveRequest, handleIVXOwnerVariablesStatusRequest, handleIVXOwnerVariablesTestRequest } from './api/ivx-owner-variables';
+import { OPTIONS as ownerVariablesOptions, getIVXOwnerVariableRuntimeValue, hasIVXOwnerVariableRuntimeValue, handleIVXOwnerVariablesDeleteRequest, handleIVXOwnerVariablesSaveRequest, handleIVXOwnerVariablesSelfSyncRequest, handleIVXOwnerVariablesStatusRequest, handleIVXOwnerVariablesTestRequest } from './api/ivx-owner-variables';
 import { OPTIONS as independenceStatusOptions, handleIVXIndependenceStatusRequest } from './api/ivx-independence-status';
 import { OPTIONS as assistantOptions, POST as handleAssistantPost } from './api/assistant';
 import { OPTIONS as planCreatorOptions, POST as handlePlanCreatorPost } from './api/plan-creator';
@@ -48,6 +48,7 @@ import {
   handleMultimodalVideoUpload,
   ownerMultimodalOptions,
 } from './api/owner-multimodal';
+import { handleOwnerAudioTranscribe, ownerTranscriptionOptions } from './api/owner-transcription';
 
 async function loadRoute53Module() {
   try {
@@ -99,7 +100,7 @@ async function handleRoute53Request(
 }
 
 const app = new Hono();
-const DEPLOYMENT_MARKER = 'ivx-owner-ai-hono-2026-05-09t1235z-independence-github-day2';
+const DEPLOYMENT_MARKER = 'ivx-owner-ai-hono-2026-05-14t-render-validator-routes';
 const OWNER_SIGNUP_AUDIT_SOURCE_PROOF = 'owner-password-owner-vars-route-registered-2026-05-09t1115z';
 const SERVER_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const WEB_DIST_ROOT = path.join(SERVER_ROOT, 'expo', 'dist');
@@ -990,6 +991,7 @@ app.get('/health', (context) => {
       'GET /diagnostics',
       'POST /fallback/reply',
       'POST /api/ivx/owner-ai',
+      'GET /api/ivx/owner-ai/proxy-status',
       'POST /api/ivx/owner-ai/tools',
       'POST /tool',
       'POST /api/tool',
@@ -1010,6 +1012,7 @@ app.get('/health', (context) => {
       'POST /api/ivx/owner-variables/save',
       'POST /api/ivx/owner-variables/test',
       'POST /api/ivx/owner-variables/delete',
+      'POST /api/ivx/owner-variables/self-sync',
       'GET /api/ivx/independence/status',
       'GET /api/ivx/ai-brain/tools',
       'POST /api/ivx/ai-brain/tools',
@@ -1019,6 +1022,7 @@ app.get('/health', (context) => {
       'GET /api/ivx/supabase/columns',
       'GET /api/ivx/supabase/rls',
       'POST /api/ivx/supabase/owner-action',
+      'GET /api/ivx/supabase/owner-action-health',
       'GET /api/ivx/owner-registration/status',
       'GET /api/ivx/owner-signup-audit',
       'POST /api/ivx/owner-registration',
@@ -1065,6 +1069,10 @@ app.post('/ivx/owner-ai', async (context) => handleIVXOwnerAIRequest(context.req
 app.post('/api/ivx/owner-ai', async (context) => handleIVXOwnerAIRequest(context.req.raw));
 app.post('/ivx/owner-ai/tools', async (context) => handleIVXOwnerAIToolRequest(context.req.raw));
 app.post('/api/ivx/owner-ai/tools', async (context) => handleIVXOwnerAIToolRequest(context.req.raw));
+app.options('/api/ivx/owner-ai/proxy-status', () => ownerAIOptions());
+app.get('/api/ivx/owner-ai/proxy-status', () => handleIVXOwnerAIProxyStatus());
+app.options('/ivx/owner-ai/proxy-status', () => ownerAIOptions());
+app.get('/ivx/owner-ai/proxy-status', () => handleIVXOwnerAIProxyStatus());
 app.post('/tool', async (context) => handleIVXOwnerAIToolRequest(context.req.raw));
 app.post('/api/tool', async (context) => handleIVXOwnerAIToolRequest(context.req.raw));
 
@@ -1099,6 +1107,8 @@ app.options('/api/ivx/owner-variables/test', () => ownerVariablesOptions());
 app.post('/api/ivx/owner-variables/test', async (context) => handleIVXOwnerVariablesTestRequest(context.req.raw));
 app.options('/api/ivx/owner-variables/delete', () => ownerVariablesOptions());
 app.post('/api/ivx/owner-variables/delete', async (context) => handleIVXOwnerVariablesDeleteRequest(context.req.raw));
+app.options('/api/ivx/owner-variables/self-sync', () => ownerVariablesOptions());
+app.post('/api/ivx/owner-variables/self-sync', async (context) => handleIVXOwnerVariablesSelfSyncRequest(context.req.raw));
 app.options('/api/ivx/independence/status', () => independenceStatusOptions());
 app.get('/api/ivx/independence/status', async (context) => handleIVXIndependenceStatusRequest(context.req.raw));
 
@@ -1122,6 +1132,39 @@ for (const [routePath, kind] of supabaseInspectionRoutePairs) {
 
 app.options('/api/ivx/supabase/owner-action', () => supabaseOwnerActionOptions());
 app.post('/api/ivx/supabase/owner-action', async (context) => handleIVXSupabaseOwnerActionRequest(context.req.raw));
+app.options('/api/ivx/supabase/owner-action-health', () => publicJson({ ok: true }, 204));
+app.get('/api/ivx/supabase/owner-action-health', async () => {
+  const endpoint = '/api/ivx/supabase/owner-action-health';
+  try {
+    const payload = await buildRenderProofToolPayload('supabase-status', endpoint);
+    const data = readObject(payload.data);
+    const minimumReady = data.minimumReadOnlyReady === true;
+    return publicJson({
+      ok: payload.ok && minimumReady,
+      status: payload.status,
+      service: 'ivx-supabase-owner-action-health',
+      endpoint,
+      ownerActionRoute: 'POST /api/ivx/supabase/owner-action',
+      deploymentMarker: DEPLOYMENT_MARKER,
+      timestamp: payload.timestamp,
+      supabase: data,
+      error: payload.error,
+      missingEnvNames: payload.missingEnvNames ?? [],
+    });
+  } catch (error) {
+    return publicJson({
+      ok: false,
+      status: 'not_verified',
+      service: 'ivx-supabase-owner-action-health',
+      endpoint,
+      ownerActionRoute: 'POST /api/ivx/supabase/owner-action',
+      deploymentMarker: DEPLOYMENT_MARKER,
+      timestamp: nowIso(),
+      error: error instanceof Error ? error.message : 'Supabase owner-action health probe failed.',
+    }, 200);
+  }
+});
+
 app.options('/api/ivx/owner-registration', () => ownerRegistrationOptions());
 app.options('/api/ivx/owner-registration/status', () => ownerRegistrationOptions());
 app.options('/api/ivx/owner-registration/repair', () => ownerRegistrationOptions());
@@ -1218,6 +1261,10 @@ app.post('/api/upload/video', async (c) => handleMultimodalVideoUpload(c.req.raw
 app.post('/api/google-drive/import', async (c) => handleMultimodalGoogleDriveImport(c.req.raw));
 app.post('/api/files/:fileId/analyze', async (c) => handleMultimodalAnalyze(c.req.raw, c.req.param('fileId')));
 app.post('/api/files/:fileId/summary', async (c) => handleMultimodalSummary(c.req.raw, c.req.param('fileId')));
+app.options('/audio/transcribe', () => ownerTranscriptionOptions());
+app.options('/api/audio/transcribe', () => ownerTranscriptionOptions());
+app.post('/audio/transcribe', async (c) => handleOwnerAudioTranscribe(c.req.raw));
+app.post('/api/audio/transcribe', async (c) => handleOwnerAudioTranscribe(c.req.raw));
 
 // Route53 diagnostics
 app.options('/api/aws/route53/audit', async () => handleRoute53Options());

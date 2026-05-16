@@ -49,7 +49,7 @@ export type ResolvedOwnerTables = {
   messageConversationField: ResolvedMessageConversationField;
 };
 
-const DEPLOYMENT_MARKER = 'ivx-owner-ai-hono-2026-04-23t2215z';
+const DEPLOYMENT_MARKER = 'ivx-owner-ai-proxy-2026-05-14t-render-validator-routes';
 const DEFAULT_OWNER_AI_MODEL = 'openai/gpt-4o-mini';
 const GENERIC_ASSISTANT_SENDER_ID = '__ivx_assistant__';
 const GENERIC_SYSTEM_SENDER_ID = '__ivx_system__';
@@ -4267,6 +4267,177 @@ export function GET(): Response {
   });
 }
 
+/**
+ * Safe runtime status for the IVX-owned AI proxy.
+ *
+ * Reports configuration presence and runtime readiness without exposing
+ * any secret values. Used by the owner-controls debug panel to verify
+ * that IVX AI requests are routing through the IVX backend proxy
+ * (Vercel AI Gateway via backend AI_GATEWAY_API_KEY) and that the legacy
+ * Rork toolkit client-direct gateway fallback is disabled.
+ */
+/**
+ * Phase 4c — Insert one accounting row per IVX Owner AI request into
+ * `public.ai_usage_logs` via service_role REST. Best-effort: failures are
+ * logged but never block the AI response.
+ */
+async function logIVXOwnerAIUsageRow(row: {
+  requestId: string | null;
+  userId: string | null;
+  provider: string;
+  model: string;
+  status: 'success' | 'error' | 'blocked' | 'rate_limited';
+  latencyMs: number;
+  error: string | null;
+  surface: string;
+  metadata: Record<string, unknown>;
+}): Promise<{ ok: boolean; error: string | null }> {
+  try {
+    const key = getBackendServiceRoleKey();
+    const payload = {
+      user_id: row.userId,
+      provider: row.provider || 'chatgpt',
+      model: row.model || '',
+      surface: row.surface || 'ivx_ia',
+      request_id: row.requestId,
+      prompt_tokens: 0,
+      completion_tokens: 0,
+      total_tokens: 0,
+      latency_ms: Math.max(0, Math.round(row.latencyMs)),
+      status: row.status,
+      error: row.error,
+      cost_usd: 0,
+      metadata: row.metadata ?? {},
+    };
+    const res = await fetch(`${getSupabaseProjectApiBase()}/rest/v1/ai_usage_logs`, {
+      method: 'POST',
+      headers: {
+        apikey: key,
+        Authorization: `Bearer ${key}`,
+        'Content-Type': 'application/json',
+        Prefer: 'return=minimal',
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      console.log('[IVXOwnerAIBackend] ai_usage_logs insert failed:', { status: res.status, body: text.slice(0, 240) });
+      return { ok: false, error: `http_${res.status}` };
+    }
+    return { ok: true, error: null };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'unknown';
+    console.log('[IVXOwnerAIBackend] ai_usage_logs insert threw:', message);
+    return { ok: false, error: message };
+  }
+}
+
+/**
+ * Phase 4c — Read totals/last_at from `public.ai_usage_logs` for the
+ * owner-only diagnostics card. Best-effort; never throws.
+ */
+async function getIVXOwnerAIUsageStats(): Promise<{
+  available: boolean;
+  totalRows: number | null;
+  successRows: number | null;
+  errorRows: number | null;
+  lastAt: string | null;
+  error: string | null;
+}> {
+  try {
+    const key = getBackendServiceRoleKey();
+    const apiBase = getSupabaseProjectApiBase();
+    const headExact = async (qs: string): Promise<number | null> => {
+      const res = await fetch(`${apiBase}/rest/v1/ai_usage_logs?${qs}`, {
+        method: 'HEAD',
+        headers: {
+          apikey: key,
+          Authorization: `Bearer ${key}`,
+          Prefer: 'count=exact',
+          Range: '0-0',
+        },
+      });
+      if (!res.ok) return null;
+      const range = res.headers.get('content-range') || '';
+      const m = range.match(/\/(\d+|\*)$/);
+      if (!m || m[1] === '*') return null;
+      return Number.parseInt(m[1] ?? '0', 10);
+    };
+    const [total, success, errors] = await Promise.all([
+      headExact('select=id'),
+      headExact('select=id&status=eq.success'),
+      headExact('select=id&status=eq.error'),
+    ]);
+    let lastAt: string | null = null;
+    try {
+      const lastRes = await fetch(`${apiBase}/rest/v1/ai_usage_logs?select=created_at&order=created_at.desc&limit=1`, {
+        headers: { apikey: key, Authorization: `Bearer ${key}` },
+      });
+      if (lastRes.ok) {
+        const arr = await lastRes.json().catch(() => []) as { created_at?: string }[];
+        lastAt = Array.isArray(arr) && arr.length > 0 ? (arr[0]?.created_at ?? null) : null;
+      }
+    } catch {}
+    return {
+      available: total !== null,
+      totalRows: total,
+      successRows: success,
+      errorRows: errors,
+      lastAt,
+      error: null,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'unknown';
+    return { available: false, totalRows: null, successRows: null, errorRows: null, lastAt: null, error: message };
+  }
+}
+
+export async function handleIVXOwnerAIProxyStatus(): Promise<Response> {
+  const model = getOwnerAIModel();
+  const snapshot = getIVXAIConfigurationSnapshot(model);
+  const hasAiGatewayKey = readBackendEnv('AI_GATEWAY_API_KEY').length > 0;
+  const hasLegacyRorkToolkitKeyVisibleToBackend = false;
+  const usageStats = await getIVXOwnerAIUsageStats();
+
+  return ownerOnlyJson({
+    ok: true,
+    route: '/api/ivx/owner-ai/proxy-status',
+    proxyRoute: '/api/ivx/owner-ai',
+    proxyOwnedBy: 'ivx_backend',
+    ownerSessionRequired: true,
+    rollbackPath: {
+      clientDirectGatewayToggleEnv: 'EXPO_PUBLIC_IVX_CLIENT_DIRECT_GATEWAY',
+      defaultEnabled: false,
+      note: 'Client-direct gateway fallback is disabled by default; the IVX backend proxy is the only active AI path.',
+    },
+    runtime: {
+      provider: 'chatgpt',
+      gateway: 'vercel_ai_gateway',
+      layer: snapshot.layer,
+      phase: snapshot.phase,
+      model: snapshot.model,
+      endpointConfigured: snapshot.endpoint !== null,
+      gatewayUrlPresent: snapshot.hasGatewayUrl,
+      gatewayKeyPresent: hasAiGatewayKey,
+      backendKeySource: 'AI_GATEWAY_API_KEY',
+      legacyRorkToolkitKeyDetected: hasLegacyRorkToolkitKeyVisibleToBackend,
+      configured: snapshot.configured && hasAiGatewayKey,
+    },
+    auditLogging: {
+      table: 'public.ai_usage_logs',
+      active: usageStats.available && (usageStats.totalRows ?? 0) > 0,
+      available: usageStats.available,
+      totalRows: usageStats.totalRows,
+      successRows: usageStats.successRows,
+      errorRows: usageStats.errorRows,
+      lastAt: usageStats.lastAt,
+      error: usageStats.error,
+    },
+    deploymentMarker: DEPLOYMENT_MARKER,
+    timestamp: nowIso(),
+  });
+}
+
 export function OPTIONS(): Response {
   return ownerOnlyOptions();
 }
@@ -4396,6 +4567,65 @@ export async function handleIVXOwnerAIToolRequest(request: Request): Promise<Res
 }
 
 export async function handleIVXOwnerAIRequest(request: Request): Promise<Response> {
+  const startedAt = Date.now();
+  const requestClone = request.clone();
+  const response = await handleIVXOwnerAIRequestInternal(request);
+
+  // Phase 4c — fire-and-forget audit log to public.ai_usage_logs. Never blocks.
+  void (async () => {
+    let requestId: string | null = null;
+    let model = '';
+    let userId: string | null = null;
+    let surface = 'ivx_ia';
+    try {
+      const reqBody = await requestClone.json().catch(() => ({} as Record<string, unknown>));
+      requestId = typeof reqBody.requestId === 'string' && reqBody.requestId ? reqBody.requestId : null;
+      surface = typeof reqBody.surface === 'string' && reqBody.surface ? reqBody.surface : 'ivx_ia';
+      try {
+        const ctx = await assertIVXOwnerOnly(requestClone.clone()).catch(() => null);
+        userId = ctx?.userId ?? null;
+      } catch {
+        userId = null;
+      }
+      let respPayload: Record<string, unknown> = {};
+      try {
+        respPayload = await response.clone().json().catch(() => ({})) as Record<string, unknown>;
+      } catch {
+        respPayload = {};
+      }
+      model = typeof respPayload.model === 'string' ? respPayload.model : '';
+      if (!requestId && typeof respPayload.requestId === 'string') {
+        requestId = respPayload.requestId;
+      }
+      const httpOk = response.status >= 200 && response.status < 300;
+      const status: 'success' | 'error' | 'rate_limited' = response.status === 429 ? 'rate_limited' : httpOk ? 'success' : 'error';
+      const errText = typeof respPayload.error === 'string' ? respPayload.error : (httpOk ? null : `http_${response.status}`);
+      await logIVXOwnerAIUsageRow({
+        requestId,
+        userId,
+        provider: typeof respPayload.provider === 'string' ? respPayload.provider : 'chatgpt',
+        model,
+        status,
+        latencyMs: Date.now() - startedAt,
+        error: errText,
+        surface,
+        metadata: {
+          httpStatus: response.status,
+          endpoint: typeof respPayload.endpoint === 'string' ? respPayload.endpoint : '/api/ivx/owner-ai',
+          source: typeof respPayload.source === 'string' ? respPayload.source : null,
+          fallbackUsed: respPayload.fallbackUsed === true,
+          deploymentMarker: DEPLOYMENT_MARKER,
+        },
+      });
+    } catch (error) {
+      console.log('[IVXOwnerAIBackend] ai_usage_logs wrapper threw:', error instanceof Error ? error.message : 'unknown');
+    }
+  })();
+
+  return response;
+}
+
+async function handleIVXOwnerAIRequestInternal(request: Request): Promise<Response> {
   try {
     const body = await request.json() as IVXOwnerAIRequest;
     const prompt = readTrimmedString(body.message);

@@ -973,6 +973,125 @@ export async function handleIVXOwnerVariablesDeleteRequest(request: Request): Pr
   }
 }
 
+const SELF_SYNC_ENV_FALLBACKS: Partial<Record<OwnerVariableName, readonly string[]>> = {
+  IVX_AWS_READONLY_ACCESS_KEY_ID: ['IVX_AWS_READONLY_ACCESS_KEY_ID', 'AWS_ACCESS_KEY_ID'],
+  IVX_AWS_READONLY_SECRET_ACCESS_KEY: ['IVX_AWS_READONLY_SECRET_ACCESS_KEY', 'AWS_SECRET_ACCESS_KEY'],
+};
+
+function resolveEnvValueForOwnerVariable(name: OwnerVariableName): { sourceEnvName: string; value: string } | null {
+  const candidates = SELF_SYNC_ENV_FALLBACKS[name] ?? [name];
+  for (const envName of candidates) {
+    const value = readEnv(envName);
+    if (value) {
+      return { sourceEnvName: envName, value };
+    }
+  }
+  return null;
+}
+
+/**
+ * Owner-triggered: read each Owner Variable name from this backend's own process.env
+ * (where the platform-saved values already live on Render) and securely store an encrypted
+ * copy into `ivx_owner_variables`. The phone never transmits raw secrets; only masked
+ * previews are returned in the response.
+ */
+export async function handleIVXOwnerVariablesSelfSyncRequest(request: Request): Promise<Response> {
+  try {
+    if (request.method !== 'POST') {
+      return ownerOnlyJson({ error: 'Method not allowed.', secretValuesReturned: false }, 405);
+    }
+    const ownerContext = await assertIVXOwnerOnly(request);
+    const body = readRecord(await request.json().catch(() => ({})));
+    const requestedNames = Array.isArray(body.names)
+      ? body.names.map(readTrimmed).filter((value): value is OwnerVariableName => isAllowedVariableName(value))
+      : null;
+    const overwriteExisting = body.overwriteExisting !== false;
+    const candidates = requestedNames && requestedNames.length > 0
+      ? OWNER_VARIABLES.filter((item) => requestedNames.includes(item.name))
+      : OWNER_VARIABLES;
+
+    const existingRows = await listStoredRows();
+    const existingByName = new Map(existingRows.map((row) => [row.name, row]));
+
+    const results: Array<{
+      name: OwnerVariableName;
+      provider: OwnerVariableProvider;
+      action: 'synced' | 'skipped_existing' | 'missing_in_env' | 'error';
+      sourceEnvName: string | null;
+      maskedPreview: string | null;
+      message?: string;
+    }> = [];
+
+    for (const metadata of candidates) {
+      const name = metadata.name;
+      const provider = metadata.provider;
+      const existing = existingByName.get(name);
+      if (existing && !overwriteExisting) {
+        results.push({ name, provider, action: 'skipped_existing', sourceEnvName: null, maskedPreview: existing.masked_preview });
+        continue;
+      }
+      const resolved = resolveEnvValueForOwnerVariable(name);
+      if (!resolved) {
+        results.push({ name, provider, action: 'missing_in_env', sourceEnvName: null, maskedPreview: existing?.masked_preview ?? null, message: 'No matching environment variable on the backend runtime.' });
+        continue;
+      }
+      try {
+        const value = normalizeVariableValue(name, resolved.value);
+        const row = await saveStoredVariable(ownerContext, name, value);
+        await auditOwnerVariableAction({
+          ownerContext,
+          variableName: name,
+          provider,
+          action: 'save',
+          result: 'saved',
+          details: { mode: 'self_sync_from_backend_env', sourceEnvName: resolved.sourceEnvName },
+        });
+        results.push({ name, provider, action: 'synced', sourceEnvName: resolved.sourceEnvName, maskedPreview: row.masked_preview });
+      } catch (error) {
+        const message = error instanceof Error ? sanitizeExternalErrorDetail(error.message) : 'Owner Variables self-sync failed for this variable.';
+        results.push({ name, provider, action: 'error', sourceEnvName: resolved.sourceEnvName, maskedPreview: existing?.masked_preview ?? null, message });
+      }
+    }
+
+    const syncedCount = results.filter((item) => item.action === 'synced').length;
+    const missingInEnv = results.filter((item) => item.action === 'missing_in_env').map((item) => item.name);
+    const errored = results.filter((item) => item.action === 'error').map((item) => item.name);
+
+    return ownerOnlyJson({
+      ok: errored.length === 0,
+      ownerOnly: true,
+      tool: 'ivx_owner_variables_self_sync',
+      deploymentMarker: DEPLOYMENT_MARKER,
+      authenticatedUserId: ownerContext.userId,
+      mode: 'backend_runtime_env_to_encrypted_store',
+      overwriteExisting,
+      summary: {
+        candidatesChecked: candidates.length,
+        syncedCount,
+        skippedExistingCount: results.filter((item) => item.action === 'skipped_existing').length,
+        missingInEnvCount: missingInEnv.length,
+        errorCount: errored.length,
+      },
+      results,
+      missingInEnv,
+      errored,
+      statusAfterSync: await buildStatusPayload(ownerContext),
+      secretValuesReturned: false,
+      timestamp: nowIso(),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Owner Variables self-sync failed.';
+    return ownerOnlyJson({
+      ok: false,
+      ownerOnly: true,
+      secretValuesReturned: false,
+      error: sanitizeExternalErrorDetail(message),
+      deploymentMarker: DEPLOYMENT_MARKER,
+      timestamp: nowIso(),
+    }, message.toLowerCase().includes('auth') || message.toLowerCase().includes('owner') ? 401 : 500);
+  }
+}
+
 export async function handleIVXOwnerVariablesTestRequest(request: Request): Promise<Response> {
   try {
     if (request.method !== 'POST') {

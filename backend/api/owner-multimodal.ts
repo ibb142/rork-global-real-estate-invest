@@ -8,19 +8,20 @@
  * - Images: full vision analysis through gpt-4o-mini using base64 inline image.
  * - PDFs: text extracted with a lightweight pure-JS heuristic (no native deps),
  *   then summarized via the AI Gateway. Long docs are chunked.
+ * - Text/JSON files: decoded and analyzed as business documents.
  * - Videos: stored + signed URL returned + metadata summary. Frame extraction
  *   and full transcription require a separate worker (documented).
  * - Google Drive: public/shared file links are accepted (no OAuth dance);
  *   full owner-OAuth Drive ingestion requires a Google client and is out of
  *   scope for this pass.
  * - Owner-only: every route is guarded by assertIVXOwnerOnly.
- * - Storage: uses the existing IVX_OWNER_AI_BUCKET with signed URLs.
- *   Files are never made public.
+ * - Storage: accepts IVX chat uploads from ivx-chat-uploads and legacy owner
+ *   files from IVX_OWNER_AI_BUCKET. Files are never made public by these routes.
  */
 
 import { generateText } from 'ai';
 import { createGateway } from 'ai';
-import { IVX_OWNER_AI_BUCKET } from '../../expo/shared/ivx';
+import { IVX_CHAT_UPLOAD_BUCKET, IVX_OWNER_AI_BUCKET } from '../../expo/shared/ivx';
 import { assertIVXOwnerOnly, ownerOnlyJson, ownerOnlyOptions, type IVXOwnerRequestContext } from './owner-only';
 
 const DEPLOYMENT_MARKER = 'ivx-owner-multimodal-2026-05-06t1300z';
@@ -54,7 +55,14 @@ const ALLOWED_VIDEO_MIME = new Set([
   'video/3gpp',
 ]);
 
-type FileKind = 'image' | 'pdf' | 'video' | 'other';
+const ALLOWED_TEXT_MIME = new Set([
+  'application/json',
+  'text/csv',
+  'text/markdown',
+  'text/plain',
+]);
+
+type FileKind = 'image' | 'pdf' | 'video' | 'text' | 'other';
 
 type DBClient = IVXOwnerRequestContext['client'];
 
@@ -89,11 +97,12 @@ function classifyKind(mime: string | null): FileKind {
   if (ALLOWED_IMAGE_MIME.has(lower)) return 'image';
   if (ALLOWED_PDF_MIME.has(lower)) return 'pdf';
   if (ALLOWED_VIDEO_MIME.has(lower)) return 'video';
+  if (ALLOWED_TEXT_MIME.has(lower) || lower.startsWith('text/')) return 'text';
   return 'other';
 }
 
 function ensureKindAllowed(kind: FileKind, requested: FileKind): void {
-  if (kind === 'other') {
+  if (kind === 'other' || kind === 'text') {
     throw new Error(`Unsupported mime type for ${requested} upload.`);
   }
   if (kind !== requested) {
@@ -157,16 +166,24 @@ function errorPayload(error: unknown): Record<string, unknown> {
 }
 
 /** Resolve a stored file's signed read URL by Supabase storage path. */
-async function resolveSignedReadUrl(client: DBClient, storagePath: string): Promise<string> {
-  const signed = await client.storage.from(IVX_OWNER_AI_BUCKET).createSignedUrl(storagePath, 60 * 60);
+function resolveAnalysisBucket(value: unknown): string {
+  const requested = readTrimmed(value);
+  if (requested === IVX_CHAT_UPLOAD_BUCKET || requested === IVX_OWNER_AI_BUCKET) {
+    return requested;
+  }
+  return IVX_OWNER_AI_BUCKET;
+}
+
+async function resolveSignedReadUrl(client: DBClient, storagePath: string, bucket: string = IVX_OWNER_AI_BUCKET): Promise<string> {
+  const signed = await client.storage.from(bucket).createSignedUrl(storagePath, 60 * 60);
   if (signed.error || !signed.data?.signedUrl) {
     throw new Error(signed.error?.message ?? 'Failed to resolve signed read URL.');
   }
   return signed.data.signedUrl;
 }
 
-async function downloadStoredFile(client: DBClient, storagePath: string): Promise<{ bytes: Uint8Array; mimeType: string | null }> {
-  const dl = await client.storage.from(IVX_OWNER_AI_BUCKET).download(storagePath);
+async function downloadStoredFile(client: DBClient, storagePath: string, bucket: string = IVX_OWNER_AI_BUCKET): Promise<{ bytes: Uint8Array; mimeType: string | null }> {
+  const dl = await client.storage.from(bucket).download(storagePath);
   if (dl.error || !dl.data) {
     throw new Error(dl.error?.message ?? 'Failed to download stored file.');
   }
@@ -405,7 +422,7 @@ export async function handleMultimodalGoogleDriveImport(request: Request): Promi
     if (direct.error) {
       throw new Error(direct.error.message);
     }
-    const readUrl = await resolveSignedReadUrl(ctx.client, storagePath);
+    const readUrl = await resolveSignedReadUrl(ctx.client, storagePath, IVX_OWNER_AI_BUCKET);
 
     return {
       file: {
@@ -431,16 +448,17 @@ export async function handleMultimodalAnalyze(request: Request, fileId: string):
   return withOwner(request, async (ctx) => {
     const body = await readJsonBody(request);
     const storagePath = readTrimmed(body.path) || decodeURIComponent(fileId);
+    const bucket = resolveAnalysisBucket(body.bucket);
     const userPrompt = readTrimmed(body.prompt) || 'Describe this file. Extract any text, tables, or notable visual content. Be concise.';
     if (!storagePath) throw new Error('Storage path is required.');
 
-    const { bytes, mimeType } = await downloadStoredFile(ctx.client, storagePath);
+    const { bytes, mimeType } = await downloadStoredFile(ctx.client, storagePath, bucket);
     const kind = classifyKind(mimeType);
 
     if (kind === 'image') {
       const answer = await runVisionAnalysis({ imageBytes: bytes, mimeType, prompt: userPrompt });
       return {
-        file: { path: storagePath, mimeType, sizeBytes: bytes.byteLength, kind },
+        file: { bucket, path: storagePath, mimeType, sizeBytes: bytes.byteLength, kind },
         analysis: { kind: 'vision', model: getVisionModel(), answer },
         timestamp: nowIso(),
       };
@@ -450,7 +468,7 @@ export async function handleMultimodalAnalyze(request: Request, fileId: string):
       const { text, pageCount } = extractPdfText(bytes);
       if (!text) {
         return {
-          file: { path: storagePath, mimeType, sizeBytes: bytes.byteLength, kind },
+          file: { bucket, path: storagePath, mimeType, sizeBytes: bytes.byteLength, kind },
           analysis: {
             kind: 'pdf',
             model: getTextModel(),
@@ -465,15 +483,29 @@ export async function handleMultimodalAnalyze(request: Request, fileId: string):
         prompt: `${userPrompt}\n\n--- Document text (truncated) ---\n${text}`,
       });
       return {
-        file: { path: storagePath, mimeType, sizeBytes: bytes.byteLength, kind },
+        file: { bucket, path: storagePath, mimeType, sizeBytes: bytes.byteLength, kind },
         analysis: { kind: 'pdf', model: getTextModel(), answer, pageCount, charsAnalyzed: text.length },
+        timestamp: nowIso(),
+      };
+    }
+
+    if (kind === 'text') {
+      const decoder = new TextDecoder('utf-8');
+      const text = decoder.decode(bytes).slice(0, MAX_PDF_TEXT_CHARS);
+      const answer = await runTextAnalysis({
+        system: 'You are an expert business file analyst. Answer based only on the provided file text.',
+        prompt: `${userPrompt}\n\n--- File text (truncated) ---\n${text}`,
+      });
+      return {
+        file: { bucket, path: storagePath, mimeType, sizeBytes: bytes.byteLength, kind },
+        analysis: { kind: 'text', model: getTextModel(), answer, charsAnalyzed: text.length },
         timestamp: nowIso(),
       };
     }
 
     if (kind === 'video') {
       return {
-        file: { path: storagePath, mimeType, sizeBytes: bytes.byteLength, kind },
+        file: { bucket, path: storagePath, mimeType, sizeBytes: bytes.byteLength, kind },
         analysis: {
           kind: 'video',
           model: null,
@@ -495,9 +527,10 @@ export async function handleMultimodalSummary(request: Request, fileId: string):
   return withOwner(request, async (ctx) => {
     const body = await readJsonBody(request);
     const storagePath = readTrimmed(body.path) || decodeURIComponent(fileId);
+    const bucket = resolveAnalysisBucket(body.bucket);
     if (!storagePath) throw new Error('Storage path is required.');
 
-    const { bytes, mimeType } = await downloadStoredFile(ctx.client, storagePath);
+    const { bytes, mimeType } = await downloadStoredFile(ctx.client, storagePath, bucket);
     const kind = classifyKind(mimeType);
 
     if (kind === 'image') {
@@ -507,7 +540,7 @@ export async function handleMultimodalSummary(request: Request, fileId: string):
         prompt: 'Provide a concise 3-5 sentence summary of this image. Mention any visible text.',
       });
       return {
-        file: { path: storagePath, mimeType, sizeBytes: bytes.byteLength, kind },
+        file: { bucket, path: storagePath, mimeType, sizeBytes: bytes.byteLength, kind },
         summary: { kind: 'vision', model: getVisionModel(), answer },
         timestamp: nowIso(),
       };
@@ -517,7 +550,7 @@ export async function handleMultimodalSummary(request: Request, fileId: string):
       const { text, pageCount } = extractPdfText(bytes);
       if (!text) {
         return {
-          file: { path: storagePath, mimeType, sizeBytes: bytes.byteLength, kind },
+          file: { bucket, path: storagePath, mimeType, sizeBytes: bytes.byteLength, kind },
           summary: { kind: 'pdf', model: getTextModel(), answer: 'No extractable text found.', pageCount },
           timestamp: nowIso(),
         };
@@ -527,15 +560,29 @@ export async function handleMultimodalSummary(request: Request, fileId: string):
         prompt: `Summarize the following document in 5-8 bullet points. Preserve key numbers and entities.\n\n${text}`,
       });
       return {
-        file: { path: storagePath, mimeType, sizeBytes: bytes.byteLength, kind },
+        file: { bucket, path: storagePath, mimeType, sizeBytes: bytes.byteLength, kind },
         summary: { kind: 'pdf', model: getTextModel(), answer, pageCount, charsAnalyzed: text.length },
+        timestamp: nowIso(),
+      };
+    }
+
+    if (kind === 'text') {
+      const decoder = new TextDecoder('utf-8');
+      const text = decoder.decode(bytes).slice(0, MAX_PDF_TEXT_CHARS);
+      const answer = await runTextAnalysis({
+        system: 'You produce concise executive summaries of business files.',
+        prompt: `Summarize the following file in 5-8 bullet points. Preserve key numbers and entities.\n\n${text}`,
+      });
+      return {
+        file: { bucket, path: storagePath, mimeType, sizeBytes: bytes.byteLength, kind },
+        summary: { kind: 'text', model: getTextModel(), answer, charsAnalyzed: text.length },
         timestamp: nowIso(),
       };
     }
 
     if (kind === 'video') {
       return {
-        file: { path: storagePath, mimeType, sizeBytes: bytes.byteLength, kind },
+        file: { bucket, path: storagePath, mimeType, sizeBytes: bytes.byteLength, kind },
         summary: {
           kind: 'video',
           model: null,
