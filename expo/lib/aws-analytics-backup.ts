@@ -12,7 +12,7 @@ const AWS_MAX_RETRIES = 5;
 const AWS_REGION = process.env.AWS_REGION || 'us-east-1';
 const S3_BUCKET = process.env.S3_BUCKET_NAME || '';
 const AWS_BACKUP_DEBUG = process.env.EXPO_PUBLIC_ANALYTICS_DEBUG === 'true';
-const RORK_APP_KEY = (process.env.EXPO_PUBLIC_RORK_APP_KEY || '').trim();
+const IVX_APP_KEY = (process.env.EXPO_PUBLIC_IVX_APP_KEY || '').trim();
 const PROJECT_ID = (process.env.EXPO_PUBLIC_PROJECT_ID || '').trim();
 const TEAM_ID = (process.env.EXPO_PUBLIC_TEAM_ID || '').trim();
 
@@ -245,14 +245,14 @@ class AWSAnalyticsBackup {
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
       };
-      if (RORK_APP_KEY) {
-        headers['x-rork-app-key'] = RORK_APP_KEY;
+      if (IVX_APP_KEY) {
+        headers['x-ivx-app-key'] = IVX_APP_KEY;
       }
       if (PROJECT_ID) {
-        headers['x-rork-project-id'] = PROJECT_ID;
+        headers['x-ivx-project-id'] = PROJECT_ID;
       }
       if (TEAM_ID) {
-        headers['x-rork-team-id'] = TEAM_ID;
+        headers['x-ivx-team-id'] = TEAM_ID;
       }
 
       const resp = await fetch(this.apiEndpoint, {

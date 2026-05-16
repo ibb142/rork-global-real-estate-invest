@@ -3,7 +3,11 @@ import type { ExpoConfig } from 'expo/config';
 const config: ExpoConfig = {
   name: 'IVX Holdings',
   slug: 'ivx-holdings',
-  version: '1.1.0',
+  version: '1.1.2',
+  extra: {
+    buildMarker: 'FORCE_EXPO_GO_RELOAD_2026_05_12',
+    buildTimestamp: '2026-05-12T00:00:00Z',
+  },
   sdkVersion: '54.0.0',
   orientation: 'portrait',
   icon: './assets/images/icon.png',
@@ -41,6 +45,12 @@ const config: ExpoConfig = {
     'expo-font',
     'expo-web-browser',
     'expo-secure-store',
+    [
+      'expo-audio',
+      {
+        microphonePermission: 'Allow IVX Holdings to capture voice prompts for transcription.',
+      },
+    ],
   ],
   experiments: {
     typedRoutes: true,

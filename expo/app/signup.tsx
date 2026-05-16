@@ -54,7 +54,7 @@ export function SignUpScreenContent({ forcedAccountType }: SignUpScreenContentPr
   const { trackScreen, trackConversion } = useAnalytics();
 
   const [currentStep, setCurrentStep] = useState<Step>('register');
-  const ownerRouteRequested = forcedAccountType === 'owner' || params.accountType === 'owner' || params.role === 'owner';
+  const ownerRouteRequested = forcedAccountType === 'owner';
   const initialAccountType: SignupAccountType = ownerRouteRequested ? 'owner' : 'investor';
   const [accountType, setAccountType] = useState<SignupAccountType>(initialAccountType);
   const isOwnerSignup = accountType === 'owner';
@@ -88,9 +88,9 @@ export function SignUpScreenContent({ forcedAccountType }: SignUpScreenContentPr
   const [cooldownNowMs, setCooldownNowMs] = useState<number>(() => Date.now());
 
   React.useEffect(() => {
-    const routeAccountType: SignupAccountType = forcedAccountType === 'owner' || params.accountType === 'owner' || params.role === 'owner' ? 'owner' : 'investor';
+    const routeAccountType: SignupAccountType = forcedAccountType === 'owner' ? 'owner' : 'investor';
     setAccountType(routeAccountType);
-  }, [forcedAccountType, params.accountType, params.role]);
+  }, [forcedAccountType]);
 
   React.useEffect(() => {
     const routeEmail = typeof params.email === 'string' ? sanitizeEmail(params.email) : '';
@@ -132,9 +132,12 @@ export function SignUpScreenContent({ forcedAccountType }: SignUpScreenContentPr
       params.justRegistered = '1';
     }
 
-    router.replace({
-      pathname: '/owner-login',
-      params,
+    router.push({
+      pathname: '/login',
+      params: {
+        ...params,
+        ownerMode: '1',
+      },
     } as Href);
   }, [router]);
 
@@ -211,8 +214,8 @@ export function SignUpScreenContent({ forcedAccountType }: SignUpScreenContentPr
     setFormData(prev => ({ ...prev, [key]: value }));
   };
 
-  const startSignupCooldown = React.useCallback((seconds: number = 60) => {
-    const safeSeconds = Number.isFinite(seconds) && seconds > 0 ? Math.min(Math.ceil(seconds), 300) : 60;
+  const startSignupCooldown = React.useCallback((seconds: number = 30) => {
+    const safeSeconds = Number.isFinite(seconds) && seconds > 0 ? Math.min(Math.ceil(seconds), 60) : 30;
     const now = Date.now();
     setCooldownNowMs(now);
     setSignupCooldownUntilMs(now + safeSeconds * 1000);
@@ -415,7 +418,7 @@ export function SignUpScreenContent({ forcedAccountType }: SignUpScreenContentPr
           ]
         );
       } else if (result.rateLimited) {
-        const cooldownSeconds = typeof result.proof?.cooldownSeconds === 'number' ? result.proof.cooldownSeconds : 60;
+        const cooldownSeconds = typeof result.proof?.cooldownSeconds === 'number' ? Math.min(result.proof.cooldownSeconds, 60) : 30;
         startSignupCooldown(cooldownSeconds);
         console.warn('[Signup] Signup throttled; cooldown UI armed:', cooldownSeconds, 'seconds');
         Alert.alert(
@@ -554,6 +557,20 @@ export function SignUpScreenContent({ forcedAccountType }: SignUpScreenContentPr
   };
 
   const handleComplete = () => {
+    if (isOwnerSignup) {
+      Alert.alert(
+        'Owner Account Created',
+        'Your owner account is active. KYC is not required for owner accounts.',
+        [
+          {
+            text: 'Continue',
+            // Land on Home so the owner sees the real app first; Owner Controls is reachable from Profile/Admin.
+            onPress: () => router.replace('/(tabs)' as Href),
+          },
+        ]
+      );
+      return;
+    }
     Alert.alert(
       'Registration Complete',
       'Your account has been created successfully. You can now complete your KYC verification to start investing.',
@@ -611,13 +628,13 @@ export function SignUpScreenContent({ forcedAccountType }: SignUpScreenContentPr
               <Text style={styles.accountTypeOptionSubtitle}>Investor/member access</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.accountTypeOption, isOwnerSignup && styles.accountTypeOptionActiveOwner]}
+              style={[styles.accountTypeOption, styles.accountTypeOptionActiveOwner]}
               activeOpacity={0.84}
-              onPress={() => setAccountType('owner')}
-              testID="signup-account-type-owner"
+              onPress={() => navigateToOwnerLogin(formData.email)}
+              testID="signup-account-type-owner-login"
             >
-              <Text style={[styles.accountTypeOptionTitle, isOwnerSignup && styles.accountTypeOptionTitleActive]}>Owner</Text>
-              <Text style={styles.accountTypeOptionSubtitle}>Owner control access</Text>
+              <Text style={[styles.accountTypeOptionTitle, styles.accountTypeOptionTitleActive]}>Owner Login</Text>
+              <Text style={styles.accountTypeOptionSubtitle}>Existing owner access</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -639,21 +656,29 @@ export function SignUpScreenContent({ forcedAccountType }: SignUpScreenContentPr
       </View>
 
       {!isOwnerSignup ? (
-        <TouchableOpacity
-          style={styles.ownerShortcutCard}
-          activeOpacity={0.84}
-          onPress={() => router.push('/owner-signup' as Href)}
-          testID="signup-owner-shortcut"
+        <View
+          style={[styles.ownerShortcutCard, styles.ownerAccessCard]}
+          testID="signup-owner-access-chooser"
         >
           <View style={styles.ownerShortcutIconWrap}>
             <Shield size={18} color={Colors.black} />
           </View>
           <View style={styles.ownerShortcutContent}>
-            <Text style={styles.ownerShortcutTitle}>Project owner?</Text>
-            <Text style={styles.ownerShortcutSubtitle}>Use Owner sign-up if you need a new owner account. Existing owners should open Owner Login to sign in directly.</Text>
+            <Text style={styles.ownerShortcutTitle}>Owner access</Text>
+            <Text style={styles.ownerShortcutSubtitle}>Owner account already exists. Use Owner Login only; this screen no longer opens owner sign-up.</Text>
+            <View style={styles.ownerAccessActions}>
+              <TouchableOpacity
+                style={styles.ownerAccessLoginButton}
+                activeOpacity={0.84}
+                onPress={() => navigateToOwnerLogin(formData.email)}
+                testID="signup-owner-login-option"
+              >
+                <Text style={styles.ownerAccessLoginText}>Owner Login</Text>
+                <ChevronRight size={15} color={Colors.black} />
+              </TouchableOpacity>
+            </View>
           </View>
-          <ChevronRight size={18} color={Colors.primary} />
-        </TouchableOpacity>
+        </View>
       ) : (
         <TouchableOpacity
           style={[styles.ownerShortcutCard, styles.ownerAccessCard]}
@@ -665,12 +690,13 @@ export function SignUpScreenContent({ forcedAccountType }: SignUpScreenContentPr
             <Shield size={18} color={Colors.black} />
           </View>
           <View style={styles.ownerShortcutContent}>
-            <Text style={styles.ownerShortcutTitle}>Already have owner credentials?</Text>
-            <Text style={styles.ownerShortcutSubtitle}>Open Owner Login instead. Owner sign-up below creates a new approved owner account.</Text>
+            <Text style={styles.ownerShortcutTitle}>Returning owner?</Text>
+            <Text style={styles.ownerShortcutSubtitle}>Open Owner Login instead. This Owner Sign-Up form is only for creating a brand-new owner account.</Text>
           </View>
           <ChevronRight size={18} color={Colors.primary} />
         </TouchableOpacity>
       )}
+      
 
       <View style={styles.formSection}>
         <View style={styles.inputRow}>
@@ -1305,6 +1331,44 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     fontSize: 12,
     lineHeight: 18,
+  },
+  ownerAccessActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 12,
+  },
+  ownerAccessLoginButton: {
+    minHeight: 38,
+    borderRadius: 999,
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  ownerAccessLoginText: {
+    color: Colors.black,
+    fontSize: 12,
+    fontWeight: '900' as const,
+  },
+  ownerAccessSignupButton: {
+    minHeight: 38,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: Colors.primary + '66',
+    backgroundColor: '#050B12',
+    paddingHorizontal: 13,
+    paddingVertical: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  ownerAccessSignupText: {
+    color: Colors.primary,
+    fontSize: 12,
+    fontWeight: '900' as const,
   },
   inputGroup: {
     marginBottom: 16,

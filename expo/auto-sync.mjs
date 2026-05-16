@@ -49,8 +49,9 @@ const WATCH_DIRS = [
 ];
 
 const IGNORE = new Set([
-  'node_modules', '.git', '.expo', 'dist', 'build', '.rork',
+  'node_modules', '.git', '.expo', 'dist', 'build', '.ivx',
   'tmp', 'core', '.DS_Store',
+  '.rork', 'logs',
   'dist-audit-ios', 'dist-audit-ios-final', 'dist-audit-ios-postfix',
   'dist-audit-web', 'dist-audit-web-final', 'dist-audit-web-postfix',
 ]);
@@ -224,7 +225,7 @@ async function watchAndSync() {
   } catch {}
 
   if (PROJECT_ROOT !== WORKSPACE_ROOT) {
-    const repoRootFiles = ['PLAN.md', 'rork.json', '.gitignore'];
+    const repoRootFiles = ['PLAN.md', 'ivx.json', '.gitignore'];
     try {
       watch(PROJECT_ROOT, { recursive: false }, (eventType, filename) => {
         if (filename && repoRootFiles.includes(filename)) {

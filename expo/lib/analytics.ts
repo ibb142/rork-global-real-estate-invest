@@ -23,6 +23,10 @@ const SYNC_INTERVAL = 45_000;
 const MAX_EVENTS_PER_MINUTE = 60;
 const EVENT_THROTTLE_WINDOW = 60_000;
 
+function isWebStaticRenderRuntime(): boolean {
+  return Platform.OS === 'web' && typeof window === 'undefined';
+}
+
 export type EventCategory =
   | 'navigation'
   | 'user_action'
@@ -325,15 +329,17 @@ class AnalyticsService {
   constructor() {
     this.sessionId = this.generateId();
     this.sessionStartTime = Date.now();
-    this.initTimeout = setTimeout(() => {
-      if (!this.destroyed) {
-        void this.initialize();
-      }
-    }, 500);
+    if (!isWebStaticRenderRuntime()) {
+      this.initTimeout = setTimeout(() => {
+        if (!this.destroyed) {
+          void this.initialize();
+        }
+      }, 500);
+    }
   }
 
   async initialize(): Promise<void> {
-    if (this.isInitialized) return;
+    if (this.isInitialized || isWebStaticRenderRuntime()) return;
     try {
       await this.loadSession();
       this.startFlushInterval();

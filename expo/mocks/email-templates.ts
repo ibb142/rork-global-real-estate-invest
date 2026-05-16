@@ -44,7 +44,7 @@ Your account has been successfully created and you now have access to our premiu
 4. Set Up Two-Factor Authentication
    Protect your account with our enterprise-grade security features.
 
-If you have any questions or need assistance, our dedicated investor relations team is available at investors@ivxholding.com or by phone at +1 (561) 644-3503.
+If you have any questions or need assistance, our dedicated investor relations team is available at investors@ivxholding.com.
 
 We look forward to building wealth together.
 
@@ -90,8 +90,7 @@ Best regards,
 
 KYC Compliance Team
 IVX Holdings Ltd.
-kyc@ivxholding.com
-+1 (561) 644-3503`,
+kyc@ivxholding.com`,
     description: 'Notification when KYC verification is approved',
     iconName: 'Shield',
     iconColor: '#4A90D9',
@@ -160,7 +159,7 @@ IMPORTANT: This investment opportunity is open to all verified investors. Past p
 
 For questions or to discuss this opportunity in detail, contact our investor relations team:
 - Email: investors@ivxholding.com
-- Phone: +1 (561) 644-3503
+- Email: investors@ivxholding.com
 
 Best regards,
 
@@ -203,7 +202,7 @@ Important: Please review and sign the investment agreement when received. Keep t
 For any questions regarding your investment, please contact:
 - Finance: finance@ivxholding.com
 - Investor Relations: investors@ivxholding.com
-- Phone: +1 (561) 644-3503
+- Email: investors@ivxholding.com
 
 Thank you for your trust in IVX Holdings.
 
@@ -281,7 +280,7 @@ IMPORTANT: Please sign the agreement within 5 business days to secure your posit
 
 If you have questions about the agreement terms, please contact our legal department:
 - Email: legal@ivxholding.com
-- Phone: +1 (561) 644-3503
+- Email: investors@ivxholding.com
 
 Best regards,
 
@@ -327,7 +326,7 @@ Best regards,
 
 Investor Relations
 IVX Holdings Ltd.
-+1 (561) 644-3503`,
+investors@ivxholding.com`,
     description: 'Quarterly portfolio performance update',
     iconName: 'BarChart3',
     iconColor: '#4A90D9',
@@ -355,7 +354,7 @@ If you did NOT authorize this login:
 1. Change your password immediately at https://ivxholding.com/security
 2. Enable two-factor authentication if not already active
 3. Contact our security team immediately: security@ivxholding.com
-4. Call our 24/7 security hotline: +1 (561) 644-3503
+4. Email our security team immediately: security@ivxholding.com
 
 Your account security is our top priority. We use bank-grade AES-256 encryption and SOC 2 compliant infrastructure to protect your data.
 

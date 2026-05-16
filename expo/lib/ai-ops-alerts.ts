@@ -6,7 +6,7 @@ import type { AIOpsIncident, AIOpsOverallStatus, AIOpsRepairAction, AIOpsSeverit
 
 const OWNER_ALERT_SETTINGS_KEY = 'ai_ops_owner_alert_settings_v1';
 const OWNER_ALERT_FEED_KEY = 'ai_ops_owner_alert_feed_v1';
-const DEFAULT_OWNER_PHONE = '+15616443503';
+const DEFAULT_OWNER_PHONE = '';
 const DEFAULT_OWNER_EMAIL = 'owner@ivxholding.com';
 const DEFAULT_OWNER_NAME = 'IVX Owner';
 const DEFAULT_COOLDOWN_MINUTES = 15;
@@ -425,7 +425,7 @@ export async function getOwnerAlertSettings(): Promise<OwnerAlertSettings> {
     ownerEmail: sanitizeEmail(stored?.ownerEmail ?? user?.email ?? DEFAULT_OWNER_EMAIL) || DEFAULT_OWNER_EMAIL,
     ownerPhone: sanitizePhone(stored?.ownerPhone ?? DEFAULT_OWNER_PHONE) || DEFAULT_OWNER_PHONE,
     enableEmail: stored?.enableEmail ?? true,
-    enableWhatsApp: stored?.enableWhatsApp ?? true,
+    enableWhatsApp: stored?.enableWhatsApp ?? false,
     cooldownMinutes: stored?.cooldownMinutes ?? DEFAULT_COOLDOWN_MINUTES,
   };
 
@@ -445,7 +445,7 @@ export async function saveOwnerAlertSettings(input: Partial<OwnerAlertSettings>)
   const nextSettings: OwnerAlertSettings = {
     ownerName: (input.ownerName ?? current.ownerName).trim() || DEFAULT_OWNER_NAME,
     ownerEmail: sanitizeEmail(input.ownerEmail ?? current.ownerEmail) || current.ownerEmail || DEFAULT_OWNER_EMAIL,
-    ownerPhone: sanitizePhone(input.ownerPhone ?? current.ownerPhone) || current.ownerPhone || DEFAULT_OWNER_PHONE,
+    ownerPhone: input.ownerPhone !== undefined ? sanitizePhone(input.ownerPhone) : (sanitizePhone(current.ownerPhone) || DEFAULT_OWNER_PHONE),
     enableEmail: input.enableEmail ?? current.enableEmail,
     enableWhatsApp: input.enableWhatsApp ?? current.enableWhatsApp,
     cooldownMinutes: normalizeCooldownMinutes(input.cooldownMinutes, current.cooldownMinutes),

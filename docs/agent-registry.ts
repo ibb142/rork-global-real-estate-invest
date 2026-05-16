@@ -18,7 +18,7 @@ export type AgentToolCapability =
 
 export type MemoryScope = 'session' | 'project' | 'decisions' | 'bugs' | 'deployments' | 'preferences';
 
-export type FallbackStrategy = 'toolkit_generate' | 'cached_response' | 'graceful_degrade' | 'escalate_to_owner';
+export type FallbackStrategy = 'gateway_generate' | 'cached_response' | 'graceful_degrade' | 'escalate_to_owner';
 
 export interface AgentDefinition {
   id: AgentId;
@@ -148,7 +148,7 @@ export const REQUEST_TRACES = {
       { layer: 'Service', file: 'expo/src/modules/ivx-owner-ai/services/ivxAIRequestService.ts', fn: 'fetchOwnerAIEndpointWithFallback', desc: 'Try candidate endpoints in order' },
       { layer: 'Network', file: 'fetch()', fn: 'POST /api/ivx/owner-ai', desc: 'HTTP request to backend' },
       { layer: 'Backend', file: 'backend/api/ivx-owner-ai.ts', fn: 'handleIVXOwnerAIRequest', desc: 'Validate auth, find conversation, generate AI response' },
-      { layer: 'Backend', file: 'backend/api/ivx-owner-ai.ts', fn: 'toolkit generateText', desc: 'Call AI model via rork-toolkit-sdk' },
+      { layer: 'Backend', file: 'backend/api/ivx-owner-ai.ts', fn: 'requestLocalIVXBrain', desc: 'Generate clean IVX-owned local app response' },
       { layer: 'Backend', file: 'backend/api/ivx-owner-ai.ts', fn: 'persist messages', desc: 'Insert user + assistant messages into Supabase' },
       { layer: 'Network', file: 'Response', fn: 'JSON', desc: 'Return canonical IVXOwnerAIResponse' },
       { layer: 'Service', file: 'expo/src/modules/ivx-owner-ai/services/ivxAIRequestService.ts', fn: 'normalizeOwnerAIResponse', desc: 'Validate response schema, extract answer' },
@@ -156,9 +156,8 @@ export const REQUEST_TRACES = {
       { layer: 'UI', file: 'expo/app/ivx/chat.tsx', fn: 'onSuccess callback', desc: 'Add assistant message to thread, update proof display' },
     ],
     fallbackPath: [
-      { layer: 'Service', file: 'expo/src/modules/ivx-owner-ai/services/ivxAIRequestService.ts', fn: 'requestToolkitFallback', desc: 'If remote fails in dev, use toolkit SDK directly' },
-      { layer: 'Service', file: '@rork-ai/toolkit-sdk', fn: 'generateText', desc: 'Direct AI generation without backend' },
-      { layer: 'Service', file: 'expo/src/modules/ivx-owner-ai/services/ivxAIRequestService.ts', fn: 'extractToolkitText', desc: 'Safely extract text from toolkit response' },
+      { layer: 'Service', file: 'expo/src/modules/ivx-owner-ai/services/ivxAIRequestService.ts', fn: 'requestLocalAppBrain', desc: 'Use the local IVX app brain without remote gates' },
+      { layer: 'Service', file: 'expo/src/modules/ivx-owner-ai/services/localIVXBrainService.ts', fn: 'requestLocalIVXBrain', desc: 'Generate IVX-owned assistant text' },
     ],
   },
   realtimeSubscription: {
@@ -188,7 +187,7 @@ export const KNOWN_FAILURE_PATTERNS = [
     preventionRule: 'Never call .trim() directly on user input. Always use normalizeSendInput.',
   },
   {
-    id: 'toolkit_empty_response',
+    id: 'gateway_empty_response',
     pattern: 'AI returned an empty fallback response',
     rootCause: 'Toolkit generateText returned object without .text/.content/.answer property',
     affectedFiles: ['expo/src/modules/ivx-owner-ai/services/ivxAIRequestService.ts'],
@@ -206,7 +205,7 @@ export const KNOWN_FAILURE_PATTERNS = [
   {
     id: 'response_schema_mismatch',
     pattern: 'Owner AI response rejected',
-    rootCause: 'Backend or toolkit returning non-canonical response shape',
+    rootCause: 'Backend or gateway returning non-canonical response shape',
     affectedFiles: ['expo/src/modules/ivx-owner-ai/services/ivxAIRequestService.ts'],
     fix: 'normalizeOwnerAIResponse with compatibility mode for dev, strict mode for prod',
     preventionRule: 'Always validate against canonical schema. Log rejection reason.',
@@ -235,7 +234,7 @@ export const AGENT_DEFINITIONS: AgentDefinition[] = [
       '- Backend: Hono server (backend/) + Expo API routes (expo/app/api/)',
       '- Database: Supabase PostgreSQL with realtime',
       '- Storage: Supabase Storage + AWS S3/CloudFront',
-      '- AI: Rork Toolkit SDK with multi-endpoint fallback',
+      '- AI: IVX AI Gateway with multi-endpoint fallback',
       '',
       'KEY SYSTEMS:',
       '- IVX Owner AI Chat: owner-only room with AI assistant, realtime sync, file uploads',
@@ -272,7 +271,7 @@ export const AGENT_DEFINITIONS: AgentDefinition[] = [
       'inspect_realtime', 'audit_env', 'summarize_arch',
     ],
     memoryScopes: ['session', 'project', 'decisions', 'bugs', 'deployments', 'preferences'],
-    fallbackStrategy: 'toolkit_generate',
+    fallbackStrategy: 'gateway_generate',
     maxContextTokens: 128000,
     confidenceThreshold: 0.4,
   },
@@ -296,16 +295,16 @@ export const ENV_VAR_MAP = {
     cloudfrontDistId: 'CLOUDFRONT_DISTRIBUTION_ID',
   },
   ai: {
-    toolkitSecretKey: 'EXPO_PUBLIC_RORK_TOOLKIT_SECRET_KEY',
-    apiBaseUrl: 'EXPO_PUBLIC_RORK_API_BASE_URL',
-    toolkitUrl: 'EXPO_PUBLIC_TOOLKIT_URL',
+    gatewaySecretKey: 'EXPO_PUBLIC_IVX_AI_GATEWAY_API_KEY',
+    apiBaseUrl: 'EXPO_PUBLIC_IVX_API_BASE_URL',
+    gatewayUrl: 'EXPO_PUBLIC_IVX_AI_GATEWAY_URL',
   },
   github: {
     token: 'GITHUB_TOKEN',
     repoUrl: 'GITHUB_REPO_URL',
   },
-  rork: {
-    authUrl: 'EXPO_PUBLIC_RORK_AUTH_URL',
+  ivx: {
+    authUrl: 'EXPO_PUBLIC_IVX_AUTH_URL',
     projectId: 'EXPO_PUBLIC_PROJECT_ID',
     teamId: 'EXPO_PUBLIC_TEAM_ID',
   },

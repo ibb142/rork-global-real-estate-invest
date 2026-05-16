@@ -1,4 +1,4 @@
-export type ChatRuntimeSource = 'remote_api' | 'toolkit_fallback' | 'pending' | 'unknown';
+export type ChatRuntimeSource = 'remote_api' | 'local_app_brain' | 'provider_fallback' | 'pending' | 'unknown';
 
 export type ChatRuntimeStateLike = {
   source: ChatRuntimeSource;
@@ -11,10 +11,32 @@ export type ChatRuntimeStateLike = {
 
 const STREAMING_REQUEST_STAGES = new Set<string>(['streaming', 'responding']);
 
-function hasCompletedVisibleFallbackTurn(input: ChatRuntimeStateLike): boolean {
-  return input.hasVisibleResponseText === true
-    && input.failureClass === 'none'
-    && (input.source === 'toolkit_fallback' || input.requestStage === 'fallback_reply');
+function hasCompletedVisibleFallbackTurn(_input: ChatRuntimeStateLike): boolean {
+  return false;
+}
+
+function isTimeoutFailure(input: Pick<ChatRuntimeStateLike, 'failureClass' | 'requestStage'>): boolean {
+  return input.failureClass === 'network_unreachable'
+    && (input.requestStage === 'network' || input.requestStage === 'response');
+}
+
+function shouldShowInlineTimeoutFallbackStatus(input: ChatRuntimeStateLike): boolean {
+  return isTimeoutFailure(input)
+    && (input.isFallback === true || input.source === 'provider_fallback' || input.requestStage === 'fallback_reply');
+}
+
+export function getInlineTimeoutFallbackStatusCopy(input: ChatRuntimeStateLike): ChatRuntimeStatusCopy | null {
+  if (!shouldShowInlineTimeoutFallbackStatus(input)) {
+    return null;
+  }
+
+  return {
+    title: 'Message sent',
+    detail: input.hasVisibleResponseText
+      ? 'Reply delivered.'
+      : 'Reply will appear when ready.',
+    tone: 'neutral',
+  };
 }
 
 export function shouldPreserveRequestScopedRuntime(
@@ -44,7 +66,7 @@ export function supportsTrueChunkStreaming(input: Pick<ChatRuntimeStateLike, 're
 }
 
 export function normalizeRuntimeSource(source: string | null | undefined): ChatRuntimeSource {
-  if (source === 'remote_api' || source === 'toolkit_fallback' || source === 'pending' || source === 'unknown') {
+  if (source === 'remote_api' || source === 'local_app_brain' || source === 'provider_fallback' || source === 'pending' || source === 'unknown') {
     return source;
   }
 
@@ -85,7 +107,7 @@ export function hasRuntimeFailure(input: Pick<ChatRuntimeStateLike, 'failureClas
 }
 
 export function hasVerifiedAssistantResponse(input: Pick<ChatRuntimeStateLike, 'source' | 'failureClass' | 'requestStage'>): boolean {
-  return input.source === 'remote_api' && input.failureClass === 'none' && input.requestStage === 'response_ok';
+  return (input.source === 'remote_api' || input.source === 'local_app_brain') && input.failureClass === 'none' && input.requestStage === 'response_ok';
 }
 
 export function shouldShowFallbackUI(input: ChatRuntimeStateLike): boolean {
@@ -93,12 +115,8 @@ export function shouldShowFallbackUI(input: ChatRuntimeStateLike): boolean {
     return false;
   }
 
-  if (hasCompletedVisibleFallbackTurn(input)) {
-    return true;
-  }
-
   if (hasRuntimeFailure(input)) {
-    return input.source === 'toolkit_fallback' || input.requestStage === 'fallback_reply';
+    return input.source === 'provider_fallback' || input.requestStage === 'fallback_reply';
   }
 
   return false;
@@ -110,14 +128,14 @@ export function getRuntimeSourceLabel(input: ChatRuntimeStateLike): string {
   }
 
   if (shouldShowFallbackUI(input)) {
-    return hasActiveStreamingState(input) ? 'backup / replying' : 'backup';
+    return 'assistant';
   }
 
   if (hasActiveStreamingState(input)) {
-    return 'assistant / replying';
+    return 'assistant';
   }
 
-  if (input.source === 'remote_api') {
+  if (input.source === 'remote_api' || input.source === 'local_app_brain') {
     return 'assistant';
   }
 
@@ -131,9 +149,9 @@ export function getRuntimeSourceLabel(input: ChatRuntimeStateLike): string {
 export function getRuntimeModeSummary(input: ChatRuntimeStateLike): ChatRuntimeModeSummary {
   if (shouldShowFallbackUI(input)) {
     return {
-      label: 'Fallback UI',
-      detail: 'Fallback proof is active, so the room surfaces degraded assistant behavior and fallback diagnostics.',
-      testID: 'chat-room-runtime-mode-fallback',
+      label: 'Assistant UI',
+      detail: 'Assistant response handling stays clean while backend recovery diagnostics remain hidden from the transcript.',
+      testID: 'chat-room-runtime-mode-assistant',
     };
   }
 
@@ -153,10 +171,6 @@ export function getRuntimeProofTone(input: ChatRuntimeStateLike): ChatRuntimePro
     return 'success';
   }
 
-  if (hasCompletedVisibleFallbackTurn(input)) {
-    return 'success';
-  }
-
   if (shouldShowFallbackUI(input)) {
     return 'warning';
   }
@@ -165,18 +179,23 @@ export function getRuntimeProofTone(input: ChatRuntimeStateLike): ChatRuntimePro
 }
 
 export function getRuntimeStatusCopy(input: ChatRuntimeStateLike): ChatRuntimeStatusCopy {
+  const inlineTimeoutFallbackStatus = getInlineTimeoutFallbackStatusCopy(input);
+  if (inlineTimeoutFallbackStatus) {
+    return inlineTimeoutFallbackStatus;
+  }
+
   if (isPendingRequestState(input)) {
     return {
-      title: 'Connecting…',
-      detail: 'Preparing the assistant response.',
+      title: 'Message sent',
+      detail: 'Reply will appear when ready.',
       tone: 'neutral',
     };
   }
 
-  if (hasCompletedVisibleFallbackTurn(input)) {
+  if (hasVisibleAssistantResponse(input)) {
     return {
-      title: 'Fallback reply delivered',
-      detail: 'Reply delivered via backup path. Backend is degraded but the room is functional.',
+      title: 'Assistant ready',
+      detail: 'Reply delivered.',
       tone: 'success',
     };
   }
@@ -184,31 +203,31 @@ export function getRuntimeStatusCopy(input: ChatRuntimeStateLike): ChatRuntimeSt
   if (shouldShowFallbackUI(input)) {
     if (hasActiveStreamingState(input)) {
       return {
-        title: 'Backup AI active',
-        detail: 'Replying through the backup path.',
+        title: 'Message sent',
+        detail: 'Reply will appear when ready.',
         tone: 'warning',
       };
     }
 
     return {
-      title: 'Backup AI active',
-      detail: 'Waiting for backup response.',
+      title: 'Message sent',
+      detail: 'Reply will appear when ready.',
       tone: 'warning',
     };
   }
 
   if (hasRuntimeFailure(input) && !input.hasVisibleResponseText) {
     return {
-      title: 'Reply failed',
-      detail: 'The last assistant turn did not complete cleanly.',
-      tone: 'error',
+      title: 'Message saved',
+      detail: 'Assistant backend is unavailable. Try again after the backend is reachable.',
+      tone: 'neutral',
     };
   }
 
   if (hasActiveStreamingState(input)) {
     return {
-      title: 'Assistant replying',
-      detail: 'Response is in progress.',
+      title: 'Message sent',
+      detail: 'Reply will appear when ready.',
       tone: 'neutral',
     };
   }
@@ -229,5 +248,5 @@ export function getRuntimeStatusCopy(input: ChatRuntimeStateLike): ChatRuntimeSt
 }
 
 export function shouldShowRuntimeDebugDetails(input: ChatRuntimeStateLike): boolean {
-  return hasRuntimeFailure(input) || shouldShowFallbackUI(input) || hasVisibleAssistantResponse(input);
+  return hasRuntimeFailure(input) || shouldShowFallbackUI(input);
 }

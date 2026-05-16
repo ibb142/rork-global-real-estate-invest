@@ -84,8 +84,8 @@ export default function PropertyDetailScreen() {
   const marketData = useMemo(() => allMarketData[id || ''] || null, [allMarketData, id]);
 
   React.useEffect(() => {
-    setWalletBalance(balance.available);
-  }, [balance.available]);
+    setWalletBalance(balance?.available ?? 0);
+  }, [balance?.available]);
 
   const { images: propertyImages } = usePropertyImages(
     id || '',

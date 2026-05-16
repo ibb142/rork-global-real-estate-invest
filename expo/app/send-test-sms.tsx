@@ -19,7 +19,6 @@ import {
   MessageSquare,
   Building2,
   Globe,
-  Phone,
   MapPin,
   Shield,
   Smartphone,
@@ -30,8 +29,8 @@ import Colors from '@/constants/colors';
 import { getDirectApiBaseUrl } from '@/lib/api-base';
 import { supabase } from '@/lib/supabase';
 
-const TEST_PHONE = '+15616443503';
-const TEST_PHONE_DISPLAY = '(561) 644-3503';
+const TEST_PHONE = '';
+const TEST_PHONE_DISPLAY = 'No test phone configured';
 
 const BRANDED_SMS_MESSAGE = `IVX Holdings Ltd. — Enterprise SMS System Test
 
@@ -42,7 +41,7 @@ Global Real Estate Investment Platform
 1001 Brickell Bay Drive, Suite 2700
 Miami, FL 33131
 https://ivxholding.com
-+1 (561) 644-3503
+investors@ivxholding.com
 
 Powered by AWS SNS | Enterprise-Grade Delivery`;
 
@@ -120,7 +119,14 @@ export default function SendTestSMSScreen() {
     setDeliveryStatus('');
     if (Platform.OS !== 'web') void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-    console.log('[TestSMS] Sending branded test SMS to:', TEST_PHONE);
+    console.log('[TestSMS] Test SMS send requested');
+
+    if (!TEST_PHONE) {
+      setStatus('error');
+      setDeliveryStatus('No recipient configured');
+      setResultMessage('Test SMS recipient phone has been removed. Configure a new recipient before sending.');
+      return;
+    }
 
     try {
       const apiBase = getDirectApiBaseUrl() || (process.env.EXPO_PUBLIC_SUPABASE_URL || '').trim().replace(/\/$/, '');
@@ -246,14 +252,6 @@ export default function SendTestSMSScreen() {
                 <View style={styles.detailInfo}>
                   <Text style={styles.detailLabel}>Website</Text>
                   <Text style={styles.detailValue}>https://ivxholding.com</Text>
-                </View>
-              </View>
-
-              <View style={styles.detailRow}>
-                <Phone size={16} color={Colors.textSecondary} strokeWidth={1.8} />
-                <View style={styles.detailInfo}>
-                  <Text style={styles.detailLabel}>Phone</Text>
-                  <Text style={styles.detailValue}>+1 (561) 644-3503</Text>
                 </View>
               </View>
 

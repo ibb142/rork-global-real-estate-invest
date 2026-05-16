@@ -8,8 +8,8 @@ import {
   Animated,
   Dimensions,
   Platform,
-  PanResponder,
 } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import {
@@ -889,26 +889,33 @@ function SystemDiagramMap() {
   const nodes = useMemo(() => buildDiagramNodes(), []);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [scale, setScale] = useState(0.65);
-  const _panRef = useRef({ x: 0, y: 0 }).current;
   const [offset, setOffset] = useState({ x: 10, y: 10 });
+  const offsetRef = useRef({ x: 10, y: 10 });
   const lastOffset = useRef({ x: 10, y: 10 });
 
   const maxX = useMemo(() => Math.max(...nodes.map(n => n.x + NODE_W)) + DIAGRAM_PAD, [nodes]);
   const maxY = useMemo(() => Math.max(...nodes.map(n => n.y + NODE_H)) + DIAGRAM_PAD, [nodes]);
 
-  const panResponder = useMemo(() => PanResponder.create({
-    onStartShouldSetPanResponder: () => true,
-    onMoveShouldSetPanResponder: (_, gs) => Math.abs(gs.dx) > 5 || Math.abs(gs.dy) > 5,
-    onPanResponderGrant: () => {
-      lastOffset.current = { ...offset };
-    },
-    onPanResponderMove: (_, gs) => {
-      setOffset({
-        x: lastOffset.current.x + gs.dx,
-        y: lastOffset.current.y + gs.dy,
-      });
-    },
-  }), [offset]);
+  const panGesture = useMemo(() => Gesture.Pan()
+    .minDistance(5)
+    .maxPointers(1)
+    .onBegin(() => {
+      lastOffset.current = { ...offsetRef.current };
+    })
+    .onUpdate((event) => {
+      if (event.numberOfPointers !== 1) {
+        return;
+      }
+
+      const nextOffset = {
+        x: lastOffset.current.x + event.translationX,
+        y: lastOffset.current.y + event.translationY,
+      };
+
+      offsetRef.current = nextOffset;
+      setOffset(nextOffset);
+    })
+    .runOnJS(true), []);
 
   const selectedNodeData = useMemo(() => {
     if (!selectedNode) return null;
@@ -941,8 +948,11 @@ function SystemDiagramMap() {
   const handleFitView = useCallback(() => {
     const sw = SCREEN_WIDTH - 32;
     const fitScale = Math.min(sw / maxX, 0.7);
+    const resetOffset = { x: 10, y: 10 };
     setScale(fitScale);
-    setOffset({ x: 10, y: 10 });
+    offsetRef.current = resetOffset;
+    lastOffset.current = resetOffset;
+    setOffset(resetOffset);
   }, [maxX]);
 
   const layerLabels = useMemo(() => {
@@ -1004,8 +1014,9 @@ function SystemDiagramMap() {
         })}
       </View>
 
-      <View style={diagramStyles.canvasWrap} {...panResponder.panHandlers}>
-        <View style={[diagramStyles.canvas, { width: maxX * scale + 200, height: maxY * scale + 200 }]}>
+      <GestureDetector gesture={panGesture}>
+        <View style={diagramStyles.canvasWrap}>
+          <View style={[diagramStyles.canvas, { width: maxX * scale + 200, height: maxY * scale + 200 }]}>
           {layerLabels.map((label, i) => (
             <View
               key={`label-${i}`}
@@ -1035,8 +1046,9 @@ function SystemDiagramMap() {
               isSelected={selectedNode === node.id || highlightedDeps.has(node.id)}
             />
           ))}
+          </View>
         </View>
-      </View>
+      </GestureDetector>
 
       {selectedNodeData && (
         <View style={[diagramStyles.infoPanel, { borderLeftColor: selectedNodeData.layerColor }]}>

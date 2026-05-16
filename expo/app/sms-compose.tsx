@@ -55,7 +55,7 @@ const SMS_TEMPLATES: SMSTemplate[] = [
     category: 'Onboarding',
     icon: <UserCheck size={18} color="#22C55E" strokeWidth={1.8} />,
     iconColor: '#22C55E',
-    message: `Welcome to IVX Holdings! Your account is now active. Access your investor portal at https://ivxholding.com to explore premium real estate opportunities.\n\nIVX Holdings Ltd.\n+1 (561) 644-3503`,
+    message: `Welcome to IVX Holdings! Your account is now active. Access your investor portal at https://ivxholding.com to explore premium real estate opportunities.\n\nIVX Holdings Ltd.\ninvestors@ivxholding.com`,
     description: 'New investor welcome message',
   },
   {
@@ -82,7 +82,7 @@ const SMS_TEMPLATES: SMSTemplate[] = [
     category: 'Deals',
     icon: <Building2 size={18} color="#FFD700" strokeWidth={1.8} />,
     iconColor: '#FFD700',
-    message: `IVX Holdings: A new Joint Venture opportunity is now available! Limited shares remaining. View details and invest at https://ivxholding.com\n\nIVX Holdings Ltd.\n+1 (561) 644-3503`,
+    message: `IVX Holdings: A new Joint Venture opportunity is now available! Limited shares remaining. View details and invest at https://ivxholding.com\n\nIVX Holdings Ltd.\ninvestors@ivxholding.com`,
     description: 'New deal announcement',
   },
   {
@@ -109,7 +109,7 @@ const SMS_TEMPLATES: SMSTemplate[] = [
     category: 'Security',
     icon: <Shield size={18} color="#FF4D4D" strokeWidth={1.8} />,
     iconColor: '#FF4D4D',
-    message: `IVX Holdings Security Alert: A new login was detected on your account. If this wasn't you, please contact support immediately at support@ivxholding.com or call +1 (561) 644-3503.\n\nIVX Holdings Ltd.`,
+    message: `IVX Holdings Security Alert: A new login was detected on your account. If this wasn't you, please contact support immediately at support@ivxholding.com.\n\nIVX Holdings Ltd.`,
     description: 'Account security notification',
   },
   {
@@ -188,7 +188,7 @@ export default function SMSComposeScreen() {
     }
     const phoneRegex = /^\+[1-9]\d{6,14}$/;
     if (!phoneRegex.test(formatted)) {
-      return { valid: false, error: 'Use E.164 format (e.g., +15616443503)', formatted };
+      return { valid: false, error: 'Use E.164 format (e.g., +15551234567)', formatted };
     }
     return { valid: true, error: '', formatted };
   }, [phoneNumber]);
@@ -376,7 +376,7 @@ export default function SMSComposeScreen() {
                     style={styles.fieldInput}
                     value={phoneNumber}
                     onChangeText={setPhoneNumber}
-                    placeholder="+1 (561) 644-3503"
+                    placeholder="+1 (555) 123-4567"
                     placeholderTextColor={Colors.inputPlaceholder}
                     keyboardType="phone-pad"
                     autoCorrect={false}

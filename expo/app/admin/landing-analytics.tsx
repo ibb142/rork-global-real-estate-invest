@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { renderSafeViewChildren } from '@/components/SafeViewChildren';
 import {
   ArrowLeft,
   Eye,
@@ -402,7 +403,7 @@ function AnimatedRing({ percent, size, strokeWidth, color, children }: {
         );
       })}
       <View style={{ position: 'absolute', alignItems: 'center', justifyContent: 'center' }}>
-        {children}
+        {renderSafeViewChildren(children)}
       </View>
     </View>
   );

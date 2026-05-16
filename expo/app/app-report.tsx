@@ -221,11 +221,11 @@ const INTEGRATIONS: IntegrationItem[] = [
     notes: 'Built-in analytics is functional. External service optional for advanced insights.',
   },
   {
-    id: 'rork_toolkit',
-    service: 'Rork Toolkit (AI Assistant)',
+    id: 'ivx_gateway',
+    service: 'IVX AI Gateway (AI Assistant)',
     description: 'Workspace assistant, content generation, and structured AI workflows',
     keys: [
-      { name: 'Toolkit URL', envVar: 'EXPO_PUBLIC_TOOLKIT_URL', example: 'https://toolkit.rork.com', isPublic: true },
+      { name: 'Toolkit URL', envVar: 'EXPO_PUBLIC_IVX_AI_GATEWAY_URL', example: 'https://ai.ivxholding.com', isPublic: true },
       { name: 'Project ID', envVar: 'EXPO_PUBLIC_PROJECT_ID', example: 'jh1qrutuhy6vu1bkysoln', isPublic: true },
       { name: 'Team ID', envVar: 'EXPO_PUBLIC_TEAM_ID', example: 'team_123', isPublic: true },
     ],

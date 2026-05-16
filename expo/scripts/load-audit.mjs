@@ -5,8 +5,8 @@ import { config as loadEnv } from 'dotenv';
 loadEnv();
 
 const LIVE_BASE_URL = (process.env.LOAD_AUDIT_BASE_URL || 'https://ivxholding.com').trim().replace(/\/$/, '');
-const API_BASE_URL = (process.env.LOAD_AUDIT_API_URL || process.env.EXPO_PUBLIC_RORK_API_BASE_URL || LIVE_BASE_URL).trim().replace(/\/$/, '');
-const DIRECT_API_BASE_URL = (process.env.LOAD_AUDIT_DIRECT_API_URL || process.env.EXPO_PUBLIC_RORK_API_BASE_URL || API_BASE_URL).trim().replace(/\/$/, '');
+const API_BASE_URL = (process.env.LOAD_AUDIT_API_URL || process.env.EXPO_PUBLIC_IVX_API_BASE_URL || LIVE_BASE_URL).trim().replace(/\/$/, '');
+const DIRECT_API_BASE_URL = (process.env.LOAD_AUDIT_DIRECT_API_URL || process.env.EXPO_PUBLIC_IVX_API_BASE_URL || API_BASE_URL).trim().replace(/\/$/, '');
 const TOTAL_REQUESTS = Number.parseInt(process.env.LOAD_AUDIT_TOTAL_REQUESTS || '30000', 10);
 const CONCURRENCY = Number.parseInt(process.env.LOAD_AUDIT_CONCURRENCY || '120', 10);
 const REQUEST_TIMEOUT_MS = Number.parseInt(process.env.LOAD_AUDIT_TIMEOUT_MS || '8000', 10);
@@ -188,8 +188,8 @@ async function runRequest(index) {
       headers: {
         Accept: 'application/json',
         'user-agent': 'IVXLoadAudit/2.0',
-        'x-rork-load-audit': 'true',
-        'x-rork-load-scenario': scenario.name,
+        'x-ivx-load-audit': 'true',
+        'x-ivx-load-scenario': scenario.name,
       },
       signal: controller.signal,
     });

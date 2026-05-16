@@ -3,7 +3,7 @@
 ## Current repo remote
 
 - Remote name: `origin`
-- Exact current remote URL shape from `.git/config`: `https://backend.rork.com/git/jh1qrutuhy6vu1bkysoln`
+- Exact current remote URL shape from `.git/config`: `https://github.com/ibb142/ivx-global-real-estate-invest`
 - Current configured remote includes an embedded auth token in `.git/config`; do not share or reuse that token directly.
 - Current branch tracked: `main`
 
@@ -70,7 +70,7 @@ Primary files:
    - `backend/api/owner-only.ts`
 7. Backend prompt build + AI generation + persistence is handled by:
    - `backend/api/ivx-owner-ai.ts`
-8. Fallback AI generation exists in-app through toolkit when remote API is unavailable:
+8. Fallback AI generation exists in-app through gateway when remote API is unavailable:
    - `expo/src/modules/ivx-owner-ai/services/ivxAIRequestService.ts`
    - `expo/src/modules/chat/services/aiReplyService.ts`
 
@@ -104,9 +104,9 @@ Production owner protection is still enforced server-side:
 ### Frontend endpoint resolution order
 
 `expo/lib/ivx-supabase-client.ts` builds candidate endpoints in this order:
-1. `EXPO_PUBLIC_RORK_API_BASE_URL`
+1. `EXPO_PUBLIC_IVX_API_BASE_URL`
 2. current web origin
-3. `https://dev-jh1qrutuhy6vu1bkysoln.rorktest.dev`
+3. `https://dev-jh1qrutuhy6vu1bkysoln.ivxtest.dev`
 4. `https://api.ivxholding.com`
 
 Path appended:
@@ -119,11 +119,11 @@ Path appended:
 
 - `EXPO_PUBLIC_SUPABASE_URL`
 - `EXPO_PUBLIC_SUPABASE_ANON_KEY`
-- `EXPO_PUBLIC_RORK_API_BASE_URL`
+- `EXPO_PUBLIC_IVX_API_BASE_URL`
 - `EXPO_PUBLIC_PROJECT_ID`
-- `EXPO_PUBLIC_RORK_AUTH_URL`
-- `EXPO_PUBLIC_TOOLKIT_URL`
-- `EXPO_PUBLIC_RORK_TOOLKIT_SECRET_KEY`
+- `EXPO_PUBLIC_IVX_AUTH_URL`
+- `EXPO_PUBLIC_IVX_AI_GATEWAY_URL`
+- `EXPO_PUBLIC_IVX_AI_GATEWAY_API_KEY`
 
 ### Required for backend AI path
 
@@ -206,8 +206,8 @@ If the environment is incomplete and you need the broad bootstrap path instead, 
 ### App rollback
 
 - Repoint the deployed frontend to the previous build artifact or previous source revision in your deployment system
-- If you need to stop remote AI usage quickly, remove `EXPO_PUBLIC_RORK_API_BASE_URL` or point it to the prior healthy backend
-- The app will still retain local/toolkit fallback paths, but production owner enforcement stays on the backend path
+- If you need to stop remote AI usage quickly, remove `EXPO_PUBLIC_IVX_API_BASE_URL` or point it to the prior healthy backend
+- The app will still retain local/provider fallback paths, but production owner enforcement stays on the backend path
 
 ### Backend rollback
 
@@ -247,8 +247,8 @@ If the environment is incomplete and you need the broad bootstrap path instead, 
 
 ### AI provider
 
-This repo uses `@rork-ai/toolkit-sdk` in both frontend fallback and backend generation paths.
-Rotate the toolkit/provider secret in the environment where the runtime is hosted, then redeploy both app/backend runtimes that consume it.
+This repo now uses the AI SDK gateway path for app and backend generation paths.
+Rotate the provider secret in the environment where the runtime is hosted, then redeploy both app/backend runtimes that consume it.
 
 ## DNS / AWS ownership details visible from code
 

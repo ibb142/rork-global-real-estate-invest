@@ -21,27 +21,38 @@ import { getSyncPaths } from './sync-paths.mjs';
 const { syncRoot: PROJECT_ROOT } = getSyncPaths(import.meta.url);
 
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
-const REPO = process.env.GITHUB_REPO || 'ibb142/rork-global-real-estate-invest';
 const BRANCH = process.env.GITHUB_BRANCH || 'main';
 const API = 'https://api.github.com';
 
+function parseGithubRepoSlug(value) {
+  const normalized = String(value || '').trim();
+  if (!normalized) return '';
+  if (/^[^/\s]+\/[^/\s]+$/.test(normalized)) return normalized.replace(/\.git$/i, '');
+  const match = normalized.match(/github\.com[/:]([^/\s]+)\/([^/.\s]+)(?:\.git)?/i);
+  return match ? `${match[1]}/${match[2]}` : '';
+}
+
+const REPO = parseGithubRepoSlug(process.env.GITHUB_REPO) || parseGithubRepoSlug(process.env.GITHUB_REPO_URL);
+
 const args = process.argv.slice(2);
 const DRY_RUN = args.includes('--dry-run');
+const DELETE_REMOTE = process.env.SYNC_DELETE_REMOTE === 'true' || args.includes('--delete-remote');
 const msgIdx = args.indexOf('--message');
 const COMMIT_MESSAGE = msgIdx !== -1 && args[msgIdx + 1]
   ? args[msgIdx + 1]
   : `sync: auto-sync ${new Date().toISOString().slice(0, 19).replace('T', ' ')} UTC`;
 
 const IGNORE_DIRS = new Set([
-  'node_modules', '.git', '.expo', 'dist', 'build', '.rork',
+  'node_modules', '.git', '.expo', 'dist', 'build', '.ivx',
   '.DS_Store', '__pycache__', 'tmp', 'core',
+  '.rork', 'logs',
   'dist-audit-ios', 'dist-audit-ios-final', 'dist-audit-ios-postfix',
   'dist-audit-web', 'dist-audit-web-final', 'dist-audit-web-postfix',
 ]);
 
 const IGNORE_FILES = new Set([
   '.env', '.env.production', '.env.staging', '.env.local',
-  '.env.development', 'rork-eslint.config.js', 'bun.lock',
+  '.env.development', 'ivx-eslint.config.js', 'bun.lock',
   'package-lock.json', 'yarn.lock',
 ]);
 
@@ -52,6 +63,26 @@ const IGNORE_EXTENSIONS = new Set([
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB GitHub limit for blobs
 
+function getPathParts(relativePath) {
+  return String(relativePath || '').split(/[\\/]+/).filter(Boolean);
+}
+
+function getPathExtension(relativePath) {
+  const filename = getPathParts(relativePath).at(-1) || '';
+  return filename.includes('.') ? `.${filename.split('.').pop().toLowerCase()}` : '';
+}
+
+function isIgnoredRelativePath(relativePath) {
+  const parts = getPathParts(relativePath);
+  if (parts.some((part) => IGNORE_DIRS.has(part))) return true;
+  // GitHub tokens without the `workflow` scope cannot modify files under .github/workflows.
+  // Skip them so tree creation does not 404 the entire sync.
+  if (parts.length >= 2 && parts[0] === '.github' && parts[1] === 'workflows') return true;
+  const filename = parts.at(-1) || '';
+  if (IGNORE_FILES.has(filename)) return true;
+  return IGNORE_EXTENSIONS.has(getPathExtension(relativePath));
+}
+
 function getAllFiles(dir, base = dir) {
   const files = [];
   const entries = readdirSync(dir);
@@ -60,12 +91,14 @@ function getAllFiles(dir, base = dir) {
     const full = join(dir, entry);
     const stat = statSync(full);
     if (stat.isDirectory()) {
+      const relDir = relative(base, full);
+      if (isIgnoredRelativePath(relDir + '/_')) continue;
       files.push(...getAllFiles(full, base));
     } else {
-      const ext = entry.includes('.') ? '.' + entry.split('.').pop().toLowerCase() : '';
-      if (!IGNORE_EXTENSIONS.has(ext) && stat.size <= MAX_FILE_SIZE) {
+      const relativePath = relative(base, full);
+      if (!isIgnoredRelativePath(relativePath) && stat.size <= MAX_FILE_SIZE) {
         files.push({
-          path: relative(base, full),
+          path: relativePath,
           fullPath: full,
           size: stat.size,
         });
@@ -82,6 +115,7 @@ function gitBlobSha(content) {
 
 async function githubFetch(path, options = {}) {
   const url = path.startsWith('http') ? path : `${API}${path}`;
+  const method = (options.method || 'GET').toUpperCase();
   const res = await fetch(url, {
     ...options,
     headers: {
@@ -93,9 +127,9 @@ async function githubFetch(path, options = {}) {
     },
   });
 
-  if (!res.ok && res.status !== 404 && res.status !== 422) {
+  if (!res.ok && !(res.status === 404 && method === 'GET')) {
     const text = await res.text();
-    throw new Error(`GitHub API ${res.status} ${res.statusText}: ${text.slice(0, 500)}`);
+    throw new Error(`GitHub API ${method} ${path} ${res.status} ${res.statusText}: ${text.slice(0, 800)}`);
   }
   if (res.status === 404) return null;
   return res.json();
@@ -152,10 +186,16 @@ async function createTree(baseTreeSha, treeItems) {
       tree: treeItems,
     }),
   });
+  if (!result?.sha) {
+    console.error('  Tree create response:', JSON.stringify(result).slice(0, 800));
+    console.error('  base_tree:', baseTreeSha, 'items:', treeItems.length);
+    throw new Error('GitHub tree creation did not return a tree SHA');
+  }
   return result.sha;
 }
 
 async function createCommit(treeSha, parentSha, message) {
+  if (!treeSha) throw new Error('Cannot create GitHub commit without a tree SHA');
   const result = await githubFetch(`/repos/${REPO}/git/commits`, {
     method: 'POST',
     body: JSON.stringify({
@@ -164,6 +204,7 @@ async function createCommit(treeSha, parentSha, message) {
       parents: [parentSha],
     }),
   });
+  if (!result?.sha) throw new Error('GitHub commit creation did not return a commit SHA');
   return result.sha;
 }
 
@@ -179,12 +220,17 @@ async function main() {
     console.error('GITHUB_TOKEN is not set');
     process.exit(1);
   }
+  if (!REPO) {
+    console.error('GITHUB_REPO or GITHUB_REPO_URL must point to the owner-controlled GitHub repo');
+    process.exit(1);
+  }
 
   const startTime = Date.now();
   console.log(`\n========================================`);
   console.log(`  IVX Holdings — GitHub Sync`);
   console.log(`  Repo: ${REPO} (${BRANCH})`);
   console.log(`  ${DRY_RUN ? 'DRY RUN — no changes will be made' : 'LIVE — changes will be pushed'}`);
+  console.log(`  Remote deletes: ${DELETE_REMOTE ? 'enabled' : 'preserved'}`);
   console.log(`========================================\n`);
 
   console.log('[1/6] Verifying branch...');
@@ -219,7 +265,7 @@ async function main() {
 
   const localPaths = new Set(localFiles.map(f => f.path));
   for (const [remotePath] of remoteFiles) {
-    if (!localPaths.has(remotePath)) {
+    if (DELETE_REMOTE && !localPaths.has(remotePath) && !isIgnoredRelativePath(remotePath)) {
       deleted.push(remotePath);
     }
   }
@@ -277,7 +323,23 @@ async function main() {
   }
 
   console.log('[6/6] Creating commit & updating ref...');
-  const newTreeSha = await createTree(baseTreeSha, treeItems);
+  // Layered chunked tree creation. Smaller chunks isolate any single rejected item.
+  const CHUNK = 100;
+  let currentBase = baseTreeSha;
+  let newTreeSha = null;
+  for (let i = 0; i < treeItems.length; i += CHUNK) {
+    const slice = treeItems.slice(i, i + CHUNK);
+    try {
+      newTreeSha = await createTree(currentBase, slice);
+    } catch (err) {
+      console.error(`  chunk ${i / CHUNK + 1} failed (${slice.length} items). First path: ${slice[0]?.path}`);
+      console.error(`  items in chunk:`, slice.map(x => `${x.path} sha=${x.sha?.slice(0,7) || 'null'}`).join('\n    '));
+      throw err;
+    }
+    currentBase = newTreeSha;
+    console.log(`  chunk ${i / CHUNK + 1}: ${slice.length} items -> tree ${newTreeSha.slice(0, 7)}`);
+  }
+  if (!newTreeSha) newTreeSha = await createTree(baseTreeSha, []);
   const newCommitSha = await createCommit(newTreeSha, headSha, COMMIT_MESSAGE);
   await updateRef(newCommitSha);
 

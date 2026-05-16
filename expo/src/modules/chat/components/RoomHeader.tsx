@@ -1,6 +1,6 @@
 import React from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
-import { Bot, Loader, Sparkles, AlertTriangle } from 'lucide-react-native';
+import { StyleSheet, Text, View } from 'react-native';
+import { Bot, Sparkles, AlertTriangle } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import type { RoomCapabilityResolution, RoomAIAvailabilityIndicator } from '../services/roomCapabilityResolver';
 import { CapabilityPillRow } from './CapabilityPill';
@@ -8,19 +8,9 @@ import { CapabilityPillRow } from './CapabilityPill';
 type RoomHeaderProps = {
   title: string;
   resolution: RoomCapabilityResolution;
-  isLoading: boolean;
 };
 
 function AIIndicatorBadge({ indicator }: { indicator: RoomAIAvailabilityIndicator }) {
-  if (indicator.state === 'available' && indicator.isLoading) {
-    return (
-      <View style={[styles.aiBadge, styles.aiBadgeActive]} testID={indicator.testID}>
-        <ActivityIndicator size="small" color={Colors.success} />
-        <Text style={[styles.aiBadgeText, { color: Colors.success }]}>{indicator.label}</Text>
-      </View>
-    );
-  }
-
   if (indicator.state === 'available') {
     return (
       <View style={[styles.aiBadge, styles.aiBadgeReady]} testID={indicator.testID}>
@@ -41,13 +31,13 @@ function AIIndicatorBadge({ indicator }: { indicator: RoomAIAvailabilityIndicato
 
   return (
     <View style={[styles.aiBadge, styles.aiBadgeOff]} testID={indicator.testID}>
-      <Loader size={12} color={Colors.textTertiary} />
+      <Bot size={12} color={Colors.textTertiary} />
       <Text style={[styles.aiBadgeText, { color: Colors.textTertiary }]}>{indicator.label}</Text>
     </View>
   );
 }
 
-function RoomHeaderInner({ title, resolution, isLoading }: RoomHeaderProps) {
+function RoomHeaderInner({ title, resolution }: RoomHeaderProps) {
   return (
     <View style={styles.headerCard} testID="ivx-owner-chat-header">
       <View style={styles.topRow}>
@@ -60,15 +50,9 @@ function RoomHeaderInner({ title, resolution, isLoading }: RoomHeaderProps) {
 
       <View style={styles.titleRow}>
         <Text style={styles.headerTitle} numberOfLines={1}>{title}</Text>
-        {isLoading ? (
-          <View style={styles.subtitleLoading}>
-            <ActivityIndicator size="small" color={Colors.textTertiary} />
-            <Text style={styles.subtitleLoadingText} numberOfLines={1}>Connecting…</Text>
-          </View>
-        ) : null}
       </View>
 
-      <Text style={styles.headerSubtitle} numberOfLines={2} ellipsizeMode="tail">{resolution.subtitle}</Text>
+      <Text style={styles.headerSubtitle} numberOfLines={1} ellipsizeMode="tail">{resolution.subtitle}</Text>
       <CapabilityPillRow capabilities={resolution.capabilities.slice(0, 3)} />
     </View>
   );
@@ -79,16 +63,16 @@ export const RoomHeader = React.memo(RoomHeaderInner);
 
 const styles = StyleSheet.create({
   headerCard: {
-    marginHorizontal: 12,
-    marginTop: 2,
-    marginBottom: 3,
+    marginHorizontal: 10,
+    marginTop: 0,
+    marginBottom: 2,
     paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 14,
+    paddingVertical: 5,
+    borderRadius: 13,
     backgroundColor: Colors.surface,
     borderWidth: 1,
     borderColor: Colors.surfaceBorder,
-    gap: 2,
+    gap: 1,
   },
   titleRow: {
     flexDirection: 'row',
@@ -125,10 +109,6 @@ const styles = StyleSheet.create({
     paddingVertical: 1,
     borderWidth: 1,
   },
-  aiBadgeActive: {
-    backgroundColor: 'rgba(34,197,94,0.1)',
-    borderColor: 'rgba(34,197,94,0.25)',
-  },
   aiBadgeReady: {
     backgroundColor: 'rgba(34,197,94,0.08)',
     borderColor: 'rgba(34,197,94,0.2)',
@@ -148,26 +128,12 @@ const styles = StyleSheet.create({
   headerTitle: {
     flex: 1,
     color: Colors.text,
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '800' as const,
   },
   headerSubtitle: {
     color: '#E0E5EC',
-    fontSize: 10,
-    lineHeight: 13,
-  },
-  subtitleLoading: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  subtitleLoadingText: {
-    color: Colors.textTertiary,
     fontSize: 9,
-  },
-  summaryText: {
-    color: '#B2B8C2',
-    fontSize: 8,
-    fontWeight: '600' as const,
+    lineHeight: 12,
   },
 });

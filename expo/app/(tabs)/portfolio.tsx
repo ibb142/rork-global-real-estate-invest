@@ -316,7 +316,10 @@ export default function PortfolioScreen() {
   const [refreshing, setRefreshing] = useState(false);
 
   const { isAuthenticated } = useAuth();
-  const { available: walletBalance, invested: totalInvestedBackend, refreshWallet } = useWallet();
+  const walletContext = useWallet();
+  const walletBalance = walletContext?.available ?? 0;
+  const totalInvestedBackend = walletContext?.invested ?? 0;
+  const refreshWallet = walletContext?.refreshWallet ?? (() => undefined);
 
   const portfolioQuery = useQuery({
     queryKey: ['portfolio', 'holdings'],
@@ -330,8 +333,14 @@ export default function PortfolioScreen() {
     enabled: isAuthenticated,
   });
 
-  const { holdings: ipxHoldings, getTotalIPXValue, getTotalIPXPnL, getTotalIPXPnLPercent } = useIPX();
-  const { totalBalance: earnBalance, apyRate } = useEarn();
+  const ipxContext = useIPX();
+  const ipxHoldings = ipxContext?.holdings ?? [];
+  const getTotalIPXValue = ipxContext?.getTotalIPXValue ?? 0;
+  const getTotalIPXPnL = ipxContext?.getTotalIPXPnL ?? 0;
+  const getTotalIPXPnLPercent = ipxContext?.getTotalIPXPnLPercent ?? 0;
+  const earnContext = useEarn();
+  const earnBalance = earnContext?.totalBalance ?? 0;
+  const apyRate = earnContext?.apyRate ?? 0.10;
   const { t } = useTranslation();
   const { trackScreen: _trackScreen } = useAnalytics();
 

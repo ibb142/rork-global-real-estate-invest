@@ -49,6 +49,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { landingTracker } from '@/lib/landing-tracker';
 
 import ErrorBoundary from '@/components/ErrorBoundary';
+import { renderSafeViewChildren } from '@/components/SafeViewChildren';
 import Colors from '@/constants/colors';
 import { IVX_LOGO_SOURCE } from '@/constants/brand';
 import { fetchCanonicalDeals } from '@/lib/canonical-deals';
@@ -77,7 +78,6 @@ const SOCIAL_LINKS = [
   { id: 'website', label: 'ivxholding.com', url: 'https://ivxholding.com', icon: Globe, color: '#FFD700' },
   { id: 'instagram', label: '@IVXHolding', url: 'https://www.instagram.com/ivxholding?igsh=MXYzZWtxMGxxOGRucg==', icon: Instagram, color: '#E1306C' },
   { id: 'tiktok', label: '@IVXInvesting', url: 'https://www.tiktok.com/@IVXInvesting', icon: Zap, color: '#00F2EA' },
-  { id: 'whatsapp', label: 'WhatsApp', url: 'https://wa.me/15616443503', icon: MessageCircle, color: '#25D366' },
   { id: 'linkedin', label: 'IVX Holdings', url: 'https://www.linkedin.com/company/ivxholdings', icon: Linkedin, color: '#0A66C2' },
 ];
 
@@ -161,7 +161,7 @@ const COMPANY_FACTS = [
     id: 'contact',
     label: 'Investor relations',
     value: 'investors@ivxholding.com',
-    detail: '+1 (561) 644-3503 · Response target within 24 hours for inbound investor questions.',
+    detail: 'Response target within 24 hours for inbound investor questions.',
     icon: Mail,
     accent: ACCENT_GREEN,
   },
@@ -308,7 +308,7 @@ function FadeInView({ delay = 0, children, style }: { delay?: number; children: 
 
   return (
     <Animated.View style={[{ opacity, transform: [{ translateY }] }, style]}>
-      {children}
+      {renderSafeViewChildren(children)}
     </Animated.View>
   );
 }
@@ -1036,13 +1036,13 @@ export default function LandingScreen() {
         console.log('[Landing] Live support request created:', data.id);
         return {
           ok: true,
-          message: `Your request has been submitted (Ticket #${data.id.slice(-6)}). Investor support will follow up shortly by email or phone with the right team for this issue.`,
+          message: `Your request has been submitted (Ticket #${data.id.slice(-6)}). Investor support will follow up shortly by email with the right team for this issue.`,
         };
       } catch (error) {
         console.error('[Landing] Live support request failed:', error);
         return {
           ok: false,
-          message: 'We could not create your live support request right now. Please email investors@ivxholding.com or call +1 (561) 644-3503.',
+          message: 'We could not create your live support request right now. Please email investors@ivxholding.com.',
         };
       }
     },
@@ -1079,6 +1079,15 @@ export default function LandingScreen() {
                   <>
                     <TouchableOpacity
                       style={[styles.ownerConsoleLink, styles.ownerConsoleLinkReady]}
+                      onPress={() => router.push({ pathname: '/login', params: { ownerMode: '1' } } as any)}
+                      activeOpacity={0.7}
+                      testID="landing-owner-login"
+                    >
+                      <ShieldCheck size={14} color={GOLD} />
+                      <Text style={[styles.ownerConsoleLinkText, styles.ownerConsoleLinkTextReady]}>Owner Login</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.ownerConsoleLink, styles.ownerConsoleLinkReady]}
                       onPress={() => router.push('/admin' as any)}
                       activeOpacity={0.7}
                       testID="landing-owner-console"
@@ -1106,9 +1115,9 @@ export default function LandingScreen() {
                         styles.ownerConsoleLink,
                         (ownerAccessAudit?.eligible || isOwnerIPAccess || (isAuthenticated && isAdmin)) && styles.ownerConsoleLinkReady,
                       ]}
-                      onPress={() => router.push('/owner-access' as any)}
+                      onPress={() => router.push({ pathname: '/login', params: { ownerMode: '1' } } as any)}
                       activeOpacity={0.7}
-                      testID="landing-owner-console"
+                      testID="landing-owner-login"
                     >
                       <ScanLine
                         size={14}
@@ -1120,7 +1129,7 @@ export default function LandingScreen() {
                           (ownerAccessAudit?.eligible || isOwnerIPAccess || (isAuthenticated && isAdmin)) && styles.ownerConsoleLinkTextReady,
                         ]}
                       >
-                        Owner Access
+                        Owner Login
                       </Text>
                     </TouchableOpacity>
                     {ownerAccessAudit?.eligible ? (
@@ -1260,6 +1269,24 @@ export default function LandingScreen() {
               <Text style={styles.secondaryBtnText}>{openAccessMode ? 'Workspace is open now. ' : 'Already have an account? '}</Text>
               <Text style={[styles.secondaryBtnText, { color: GOLD }]}>{openAccessMode ? 'Open App' : 'Sign In'}</Text>
             </TouchableOpacity>
+
+            {!openAccessMode ? (
+              <TouchableOpacity
+                style={styles.openOwnerLoginBtn}
+                onPress={() => {
+                  try { landingTracker.trackCtaClick('open_owner_login'); } catch {}
+                  router.push({ pathname: '/login', params: { ownerMode: '1' } } as any);
+                }}
+                activeOpacity={0.85}
+                testID="open-owner-login"
+                accessibilityLabel="Open Owner Login"
+                accessibilityRole="button"
+              >
+                <ShieldCheck size={18} color={GOLD} />
+                <Text style={styles.openOwnerLoginBtnText}>Open Owner Login</Text>
+                <ArrowRight size={16} color={GOLD} />
+              </TouchableOpacity>
+            ) : null}
           </Animated.View>
 
           {/* FEATURES */}
@@ -1432,7 +1459,7 @@ export default function LandingScreen() {
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.credibilityActionButton}
-                  onPress={() => { void openExternalLink('tel:+15616443503'); }}
+                  onPress={() => { void openExternalLink('mailto:investors@ivxholding.com?subject=Management%20Call%20Request'); }}
                   activeOpacity={0.8}
                   testID="landing-call-management"
                 >
@@ -1651,8 +1678,6 @@ export default function LandingScreen() {
               <Text style={styles.footerText}>Premium Real Estate Investment Platform</Text>
               <View style={styles.footerContactRow}>
                 <Text style={styles.footerContactText}>investors@ivxholding.com</Text>
-                <Text style={styles.footerContactDot}>•</Text>
-                <Text style={styles.footerContactText}>+1 (561) 644-3503</Text>
               </View>
               <Text style={styles.footerAddress}>1001 Brickell Bay Drive, Suite 2700, Miami, FL 33131</Text>
               <View style={styles.footerDivider} />
@@ -1959,6 +1984,23 @@ const styles = StyleSheet.create({
   ownerConsoleLinkTextReady: {
     color: GOLD,
   },
+  ownerSignupLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: GOLD + '35',
+    backgroundColor: '#1A1507',
+  },
+  ownerSignupLinkText: {
+    color: GOLD,
+    fontSize: 12,
+    fontWeight: '800' as const,
+    letterSpacing: 0.2,
+  },
   ownerEntryLink: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2145,6 +2187,25 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 8,
     fontStyle: 'italic',
+  },
+  openOwnerLoginBtn: {
+    marginTop: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: GOLD,
+    backgroundColor: 'rgba(255,215,0,0.08)',
+  },
+  openOwnerLoginBtnText: {
+    color: GOLD,
+    fontSize: 15,
+    fontWeight: '700' as const,
+    letterSpacing: 0.4,
   },
   ctaSection: {
     paddingHorizontal: 24,

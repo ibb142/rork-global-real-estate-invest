@@ -2,6 +2,7 @@ import React, { useState, useRef, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Animated } from 'react-native';
 import { ChevronDown, ChevronUp } from 'lucide-react-native';
 import Colors from '@/constants/colors';
+import { renderSafeViewChildren } from '@/components/SafeViewChildren';
 
 interface CollapsibleSectionProps {
   title: string;
@@ -50,7 +51,7 @@ function CollapsibleSectionInner({
         <View style={styles.headerLeft}>
           {icon && (
             <View style={[styles.iconWrap, { backgroundColor: color + '18' }]}>
-              {icon}
+              {renderSafeViewChildren(icon)}
             </View>
           )}
           <Text style={styles.title} numberOfLines={1}>{title}</Text>
@@ -67,7 +68,7 @@ function CollapsibleSectionInner({
         )}
       </TouchableOpacity>
       <Animated.View style={{ maxHeight: contentHeight, overflow: 'hidden' }}>
-        {expanded && <View style={styles.content}>{children}</View>}
+        {expanded ? <View style={styles.content}>{renderSafeViewChildren(children)}</View> : null}
       </Animated.View>
     </View>
   );

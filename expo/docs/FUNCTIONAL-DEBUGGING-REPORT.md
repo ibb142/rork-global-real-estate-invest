@@ -83,7 +83,7 @@ This report documents the **functional** debugging investigation and fixes for t
 
 - **`app/analytics-report.tsx`**  
   When DB is available but `landingEvents === 0`, the diagnostic panel now says:  
-  *“No landing events yet. Ensure the landing page sends events to this backend: set EXPO_PUBLIC_RORK_API_BASE_URL or EXPO_PUBLIC_API_BASE_URL to your API URL (e.g. http://localhost:3000 in dev). Then visit the landing page to generate events.”*
+  *“No landing events yet. Ensure the landing page sends events to this backend: set EXPO_PUBLIC_IVX_API_BASE_URL or EXPO_PUBLIC_API_BASE_URL to your API URL (e.g. http://localhost:3000 in dev). Then visit the landing page to generate events.”*
 
 ### Verification
 

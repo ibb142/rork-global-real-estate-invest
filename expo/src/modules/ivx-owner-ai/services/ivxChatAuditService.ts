@@ -275,7 +275,7 @@ export function buildIVXChatAuditReport(input: BuildIVXChatAuditInput): IVXChatA
       input.aiIndicatorState !== 'unavailable',
       'critical',
       `${input.aiIndicatorLabel}. ${input.aiIndicatorDetail}`,
-      'Restore the owner AI backend or toolkit fallback so assistant replies can be generated again.',
+      'Restore the owner AI backend or provider fallback so assistant replies can be generated again.',
     ),
     createCheck(
       'remote-reply',
@@ -284,7 +284,7 @@ export function buildIVXChatAuditReport(input: BuildIVXChatAuditInput): IVXChatA
       'warning',
       input.runtimeSnapshot.provider.source === 'remote_api'
         ? 'A verified remote AI probe exists for this room runtime.'
-        : `Current provider source is ${input.runtimeSnapshot.provider.source}.`,
+        : 'Remote reply proof is still pending.',
       'Get a successful probe/send cycle through the deployed owner AI endpoint to prove remote replies end to end.',
     ),
     createCheck(
@@ -351,10 +351,8 @@ export function buildIVXChatAuditReport(input: BuildIVXChatAuditInput): IVXChatA
       input.replyFailures === 0,
       'warning',
       input.replyFailures === 0
-        ? input.fallbackSuccessCount > 0
-          ? `No true reply failures. ${input.fallbackSuccessCount} fallback reply(s) delivered successfully.`
-          : 'No assistant reply failures recorded in this session.'
-        : `${input.replyFailures} assistant reply failure(s) were recorded in this session. Last failure: ${input.lastFailureReason ?? 'unknown'}.`,
+        ? 'No assistant reply failures recorded in this session.'
+        : `${input.replyFailures} assistant reply failure(s) were recorded in this session.`,
       'Fix owner AI routing/auth/network failures so reply failures stay at zero.',
     ),
     createCheck(

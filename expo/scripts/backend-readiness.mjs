@@ -4,7 +4,7 @@ import { config as loadEnv } from 'dotenv';
 loadEnv();
 
 const PUBLIC_BASE_URL = (process.env.LOAD_AUDIT_BASE_URL || 'https://ivxholding.com').trim().replace(/\/$/, '');
-const DIRECT_API_BASE_URL = (process.env.LOAD_AUDIT_DIRECT_API_URL || process.env.EXPO_PUBLIC_RORK_API_BASE_URL || PUBLIC_BASE_URL).trim().replace(/\/$/, '');
+const DIRECT_API_BASE_URL = (process.env.LOAD_AUDIT_DIRECT_API_URL || process.env.EXPO_PUBLIC_IVX_API_BASE_URL || PUBLIC_BASE_URL).trim().replace(/\/$/, '');
 const REQUEST_TIMEOUT_MS = Number.parseInt(process.env.BACKEND_READY_TIMEOUT_MS || '8000', 10);
 const RUN_WRITE_PROBES = (process.env.BACKEND_READY_RUN_WRITE_PROBES || 'true').trim().toLowerCase() === 'true';
 const SUPABASE_URL = (process.env.EXPO_PUBLIC_SUPABASE_URL || '').trim().replace(/\/$/, '');
@@ -149,7 +149,7 @@ async function inspectJsonEndpoint(endpoint) {
     const response = await fetchWithTimeout(endpoint.url, {
       headers: {
         Accept: 'application/json',
-        'x-rork-backend-ready': 'true',
+        'x-ivx-backend-ready': 'true',
       },
     });
     const body = await response.text();

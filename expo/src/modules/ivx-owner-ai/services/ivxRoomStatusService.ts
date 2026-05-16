@@ -2,6 +2,7 @@ import { getIVXAccessToken, getIVXOwnerAICandidateEndpoints, getIVXSupabaseClien
 import type { IVXOwnerAIHealthProbeResponse } from '@/shared/ivx';
 import type { ChatRoomStatus, DeliveryMode, StorageMode } from '@/src/modules/chat/types/chat';
 import { resolveIVXTables, invalidateTableResolverCache } from './ivxTableResolver';
+import { isIVXLocalFirstChatEnabled } from './ivxLocalFirstRuntime';
 
 export type IVXRoomProbeResult = {
   tablesReachable: boolean;
@@ -18,6 +19,21 @@ let cachedResult: IVXRoomProbeResult | null = null;
 let cachedAt = 0;
 
 export async function probeIVXRoomTables(): Promise<IVXRoomProbeResult> {
+  if (isIVXLocalFirstChatEnabled()) {
+    const result: IVXRoomProbeResult = {
+      tablesReachable: false,
+      conversationsOk: true,
+      messagesOk: true,
+      realtimeCapable: false,
+      error: null,
+      resolvedSchema: 'local_first',
+    };
+    cachedResult = result;
+    cachedAt = Date.now();
+    console.log('[IVXRoomStatus] Local-first mode active; table probe skipped');
+    return result;
+  }
+
   const now = Date.now();
   if (cachedResult && (now - cachedAt) < PROBE_CACHE_TTL_MS) {
     console.log('[IVXRoomStatus] Using cached probe result, age:', now - cachedAt, 'ms');
@@ -69,6 +85,11 @@ function isChatRoomStatus(value: unknown): value is ChatRoomStatus {
 }
 
 async function probeRoomStatusViaOwnerAI(): Promise<ChatRoomStatus | null> {
+  if (isIVXLocalFirstChatEnabled()) {
+    console.log('[IVXRoomStatus] Local-first mode active; API room probe skipped');
+    return null;
+  }
+
   try {
     const accessToken = await getIVXAccessToken();
     if (!accessToken) {
@@ -139,6 +160,11 @@ async function probeRoomStatusViaOwnerAI(): Promise<ChatRoomStatus | null> {
 }
 
 async function verifyRealtimeChannel(): Promise<boolean> {
+  if (isIVXLocalFirstChatEnabled()) {
+    console.log('[IVXRoomStatus] Local-first mode active; realtime probe skipped');
+    return false;
+  }
+
   try {
     const client = getIVXSupabaseClient();
     const testChannel = client.channel('ivx-realtime-probe');
@@ -197,6 +223,14 @@ async function verifyRealtimeChannel(): Promise<boolean> {
 }
 
 export async function detectIVXRoomStatus(): Promise<ChatRoomStatus> {
+  if (isIVXLocalFirstChatEnabled()) {
+    return {
+      storageMode: 'local_device_only' as StorageMode,
+      visibility: 'local_only',
+      deliveryMethod: 'local_only' as DeliveryMode,
+    };
+  }
+
   const apiRoomStatus = await probeRoomStatusViaOwnerAI();
   if (apiRoomStatus) {
     return apiRoomStatus;

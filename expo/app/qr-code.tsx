@@ -17,7 +17,6 @@ import {
   Share2,
   Globe,
   Instagram,
-  MessageCircle,
   Copy,
   Check,
   QrCode,
@@ -32,9 +31,8 @@ const SURFACE = '#111';
 const IVX_URL = 'https://ivxholding.com';
 const IVX_APP_URL = 'https://ivxholding.com/app';
 const IVX_INSTAGRAM = 'https://www.instagram.com/ivxholding?igsh=MXYzZWtxMGxxOGRucg==';
-const IVX_WHATSAPP = 'https://wa.me/15616443503';
 
-type QRTarget = 'website' | 'app' | 'instagram' | 'whatsapp';
+type QRTarget = 'website' | 'app' | 'instagram';
 
 interface QROption {
   id: QRTarget;
@@ -49,7 +47,6 @@ const QR_OPTIONS: QROption[] = [
   { id: 'website', label: 'Website', url: IVX_URL, icon: Globe, color: GOLD, description: 'ivxholding.com' },
   { id: 'app', label: 'App', url: IVX_APP_URL, icon: Smartphone, color: '#4A90D9', description: 'Download IVX App' },
   { id: 'instagram', label: 'Instagram', url: IVX_INSTAGRAM, icon: Instagram, color: '#E1306C', description: '@IVXHolding' },
-  { id: 'whatsapp', label: 'WhatsApp', url: IVX_WHATSAPP, icon: MessageCircle, color: '#25D366', description: '+1 (561) 644-3503' },
 ];
 
 export default function QRCodeScreen() {

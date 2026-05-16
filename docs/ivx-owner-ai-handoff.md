@@ -33,7 +33,7 @@ Generated: 2026-04-12
 2. Backend verifies bearer token and owner role
 3. Backend ensures the owner room exists
 4. Backend loads recent messages and builds the prompt
-5. Backend calls `generateText(...)` from `@rork-ai/toolkit-sdk`
+5. Backend calls `generateText(...)` through the AI SDK gateway runtime
 6. Backend persists owner/assistant messages and AI request logs into Supabase
 7. Response returns `{ requestId, conversationId, answer, model, status }`
 
@@ -157,11 +157,11 @@ Resolution logic lives in:
 - `EXPO_PUBLIC_SUPABASE_URL`
 - `EXPO_PUBLIC_SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`
-- `EXPO_PUBLIC_RORK_API_BASE_URL`
-- `EXPO_PUBLIC_TOOLKIT_URL`
+- `EXPO_PUBLIC_IVX_API_BASE_URL`
+- `EXPO_PUBLIC_IVX_AI_GATEWAY_URL`
 - `EXPO_PUBLIC_PROJECT_ID`
 - `EXPO_PUBLIC_TEAM_ID`
-- `EXPO_PUBLIC_RORK_AUTH_URL`
+- `EXPO_PUBLIC_IVX_AUTH_URL`
 
 ### Backend / infrastructure / deployment
 - `AWS_ACCESS_KEY_ID`
@@ -179,11 +179,11 @@ Resolution logic lives in:
 - `EXPO_PUBLIC_SUPABASE_URL`: Supabase project URL for auth, DB, storage, realtime
 - `EXPO_PUBLIC_SUPABASE_ANON_KEY`: public client key for app auth and client data access
 - `SUPABASE_SERVICE_ROLE_KEY`: backend admin key for owner-only verification and server-side writes
-- `EXPO_PUBLIC_RORK_API_BASE_URL`: frontend base URL used to reach deployed backend APIs
-- `EXPO_PUBLIC_TOOLKIT_URL`: toolkit base URL for AI requests
+- `EXPO_PUBLIC_IVX_API_BASE_URL`: frontend base URL used to reach deployed backend APIs
+- `EXPO_PUBLIC_IVX_AI_GATEWAY_URL`: gateway base URL for AI requests
 - `EXPO_PUBLIC_PROJECT_ID`: project-scoped dev URL resolution
 - `EXPO_PUBLIC_TEAM_ID`: team-scoped project metadata
-- `EXPO_PUBLIC_RORK_AUTH_URL`: auth origin used by project flows
+- `EXPO_PUBLIC_IVX_AUTH_URL`: auth origin used by project flows
 - `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_REGION`: AWS access for Route53 / deploy pipeline / infra checks
 - `S3_BUCKET_NAME`: storage bucket configured elsewhere in the product infra
 - `CLOUDFRONT_DISTRIBUTION_ID`: CDN invalidation target where used by deploy flows
@@ -221,12 +221,12 @@ Resolution logic lives in:
 
 ### Local development
 #### Frontend
-From `/home/user/rork-app/expo`:
+From `/home/user/ivx-app/expo`:
 - `bun install`
 - `bun run start`
 
 #### Backend
-From `/home/user/rork-app`:
+From `/home/user/ivx-app`:
 - `bun install`
 - `bun run server.ts`
 

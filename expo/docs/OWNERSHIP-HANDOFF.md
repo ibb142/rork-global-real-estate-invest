@@ -2,7 +2,7 @@
 
 ## Current hard proof available from this repo
 
-- Repo remote: `https://backend.rork.com/git/jh1qrutuhy6vu1bkysoln`
+- Repo remote: `https://github.com/ibb142/ivx-global-real-estate-invest`
 - Current repo access level visible in the remote token payload: `editor`
 - Main branch tracked in `.git/config`
 - CI/CD workflows present in `.github/workflows/`:
@@ -48,7 +48,7 @@ In development/open-access mode:
 
 - owner room can open without a sign-in wall
 - text messages can send without requiring a working owner auth session
-- assistant replies can still work via the existing toolkit fallback path
+- assistant replies can still work via the existing provider fallback path
 - the room no longer hard-fails if the backend auth path is unavailable
 
 ## Architecture overview
@@ -74,7 +74,7 @@ From `docs/DEPLOYMENT.md` and workflow files:
 - Storage: S3
 - Secrets: AWS Secrets Manager
 - Data: Supabase for app data and IVX chat tables
-- Optional toolkit-backed AI fallback through `EXPO_PUBLIC_TOOLKIT_URL`
+- Optional provider-backed AI fallback through `EXPO_PUBLIC_IVX_AI_GATEWAY_URL`
 
 ## Frontend structure
 
@@ -138,6 +138,7 @@ bun run lint
 ./deploy/scripts/setup-aws.sh
 ./deploy/scripts/validate-aws.sh
 ./deploy/scripts/verify-api-domain.sh
+node ./deploy/scripts/ec2-access-audit.mjs
 ```
 
 ## AWS resource map inferred from repo
@@ -180,26 +181,26 @@ Documented or referenced resources:
 - `AWS_REGION`
 - `S3_BUCKET_NAME`
 - `CLOUDFRONT_DISTRIBUTION_ID`
-- `EXPO_PUBLIC_RORK_TOOLKIT_SECRET_KEY`
+- `EXPO_PUBLIC_IVX_AI_GATEWAY_API_KEY`
 - `GITHUB_TOKEN`
 - `GITHUB_REPO_URL`
-- `EXPO_PUBLIC_RORK_AUTH_URL`
-- `EXPO_PUBLIC_RORK_API_BASE_URL`
-- `EXPO_PUBLIC_TOOLKIT_URL`
+- `EXPO_PUBLIC_IVX_AUTH_URL`
+- `EXPO_PUBLIC_IVX_API_BASE_URL`
+- `EXPO_PUBLIC_IVX_AI_GATEWAY_URL`
 - `EXPO_PUBLIC_PROJECT_ID`
 - `EXPO_PUBLIC_TEAM_ID`
 
 ### System-provided public variables available to the app
 
-- `EXPO_PUBLIC_RORK_DB_ENDPOINT`
-- `EXPO_PUBLIC_RORK_DB_NAMESPACE`
-- `EXPO_PUBLIC_RORK_DB_TOKEN`
-- `EXPO_PUBLIC_RORK_API_BASE_URL`
-- `EXPO_PUBLIC_TOOLKIT_URL`
+- `EXPO_PUBLIC_IVX_DB_ENDPOINT`
+- `EXPO_PUBLIC_IVX_DB_NAMESPACE`
+- `EXPO_PUBLIC_IVX_DB_TOKEN`
+- `EXPO_PUBLIC_IVX_API_BASE_URL`
+- `EXPO_PUBLIC_IVX_AI_GATEWAY_URL`
 - `EXPO_PUBLIC_PROJECT_ID`
 - `EXPO_PUBLIC_TEAM_ID`
-- `EXPO_PUBLIC_RORK_AUTH_URL`
-- `EXPO_PUBLIC_RORK_APP_KEY`
+- `EXPO_PUBLIC_IVX_AUTH_URL`
+- `EXPO_PUBLIC_IVX_APP_KEY`
 - `EXPO_PUBLIC_SUPABASE_URL`
 - `EXPO_PUBLIC_SUPABASE_ANON_KEY`
 
@@ -238,7 +239,8 @@ Expected DNS/TLS flow:
 2. Request or locate ACM certificate in `us-east-1`
 3. Create DNS validation records
 4. Point `api.ivxholding.com` to ALB
-5. Validate health with `verify-api-domain.sh` and `health-check.sh`
+5. Audit the public EC2 host with `ec2-access-audit.mjs` to confirm the active instance, key pair, and security-group access for ports 22/80/443
+6. Validate health with `verify-api-domain.sh` and `health-check.sh`
 
 ## Logs and monitoring
 
@@ -273,7 +275,7 @@ If shared auth or room tables fail in dev, the app now falls back to:
 
 - synthetic dev-owner context in open-access mode
 - local persisted owner messages
-- toolkit-backed assistant replies when remote AI is unavailable
+- provider-backed assistant replies when remote AI is unavailable
 
 ## Ownership status: what is actually transferred vs not yet transferred
 

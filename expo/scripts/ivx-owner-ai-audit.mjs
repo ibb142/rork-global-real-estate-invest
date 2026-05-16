@@ -21,11 +21,11 @@ function getDefaultProjectApiBaseUrl() {
   if (!projectId) {
     return '';
   }
-  return `https://dev-${projectId}.rorktest.dev`;
+  return `https://dev-${projectId}.ivxtest.dev`;
 }
 
 function buildCandidateEndpoints() {
-  const configuredBaseUrl = sanitizeUrl(readEnv('EXPO_PUBLIC_RORK_API_BASE_URL'));
+  const configuredBaseUrl = sanitizeUrl(readEnv('EXPO_PUBLIC_IVX_API_BASE_URL'));
   const projectBaseUrl = sanitizeUrl(getDefaultProjectApiBaseUrl());
   const candidates = [];
 

@@ -1,11 +1,9 @@
-FROM oven/bun:1.2-alpine AS base
+FROM oven/bun:1.2-alpine AS deps
 WORKDIR /app
-
-FROM base AS deps
 COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile --production
 
-FROM base AS runner
+FROM node:20-alpine AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
@@ -28,4 +26,4 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
   CMD wget -qO- http://localhost:3000/health || exit 1
 
-CMD ["bun", "run", "server.ts"]
+CMD ["node", "./node_modules/tsx/dist/cli.mjs", "server.ts"]

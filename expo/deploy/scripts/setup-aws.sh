@@ -120,7 +120,18 @@ ok "All secrets created"
 # ─── STEP 3: Build & push Docker image ─────────────────────
 log "Building Docker image..."
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+resolve_project_root() {
+  local current="$SCRIPT_DIR"
+  while [ "$current" != "/" ]; do
+    if [ -f "$current/package.json" ] || [ -d "$current/.git" ]; then
+      printf '%s\n' "$current"
+      return 0
+    fi
+    current="$(dirname "$current")"
+  done
+  return 1
+}
+PROJECT_ROOT="$(resolve_project_root)" || error "Could not resolve project root"
 
 docker build -t "$APP_NAME-api:latest" "$PROJECT_ROOT"
 ok "Docker image built"
@@ -178,14 +189,22 @@ ECR_REPO=$(aws cloudformation describe-stacks \
   --output text \
   --region "$AWS_REGION")
 
+ALB_HOSTED_ZONE_ID=$(aws cloudformation describe-stacks \
+  --stack-name "$STACK_NAME" \
+  --query "Stacks[0].Outputs[?OutputKey=='ALBCanonicalHostedZoneID'].OutputValue" \
+  --output text \
+  --region "$AWS_REGION")
+
 echo ""
 echo "  ALB DNS:    $ALB_DNS"
+echo "  ALB Zone:   $ALB_HOSTED_ZONE_ID"
 echo "  ECR Repo:   $ECR_REPO"
 echo "  Region:     $AWS_REGION"
 echo "  Account:    $ACCOUNT_ID"
 echo ""
 echo "  NEXT STEPS:"
-echo "  1. Point DNS CNAME $DOMAIN_NAME → $ALB_DNS"
+echo "  1. Create or UPSERT Route53 A (Alias) $DOMAIN_NAME → $ALB_DNS"
+echo "     Hosted zone ID for the alias target: $ALB_HOSTED_ZONE_ID"
 echo "  2. Update placeholder secrets in AWS Secrets Manager console"
 echo "  3. Run health check: curl https://$DOMAIN_NAME/health"
 echo ""

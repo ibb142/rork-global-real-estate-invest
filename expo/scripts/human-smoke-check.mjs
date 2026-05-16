@@ -4,7 +4,7 @@ import { config as loadEnv } from 'dotenv';
 loadEnv();
 
 const PUBLIC_BASE_URL = (process.env.HUMAN_SMOKE_BASE_URL || 'https://ivxholding.com').trim().replace(/\/$/, '');
-const DIRECT_API_BASE_URL = (process.env.HUMAN_SMOKE_DIRECT_API_URL || process.env.EXPO_PUBLIC_RORK_API_BASE_URL || PUBLIC_BASE_URL)
+const DIRECT_API_BASE_URL = (process.env.HUMAN_SMOKE_DIRECT_API_URL || process.env.EXPO_PUBLIC_IVX_API_BASE_URL || PUBLIC_BASE_URL)
   .trim()
   .replace(/\/$/, '');
 const REQUEST_TIMEOUT_MS = Number.parseInt(process.env.HUMAN_SMOKE_TIMEOUT_MS || '10000', 10);

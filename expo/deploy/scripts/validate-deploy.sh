@@ -50,14 +50,28 @@ echo ""
 # ─── FILES ────────────────────────────────────────────────────
 echo -e "${BLUE}[Required Files]${NC}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+resolve_project_root() {
+  local current="$SCRIPT_DIR"
+  while [ "$current" != "/" ]; do
+    if [ -f "$current/package.json" ] || [ -d "$current/.git" ]; then
+      printf '%s\n' "$current"
+      return 0
+    fi
+    current="$(dirname "$current")"
+  done
+  return 1
+}
+PROJECT_ROOT="$(resolve_project_root)" || {
+  check_fail "Could not resolve project root"
+  exit "$FAIL"
+}
 
 [ -f "$PROJECT_ROOT/Dockerfile" ]              && check_pass "Dockerfile" || check_fail "Dockerfile missing"
 [ -f "$PROJECT_ROOT/server.ts" ]               && check_pass "server.ts" || check_fail "server.ts missing"
 [ -f "$PROJECT_ROOT/backend/hono.ts" ]         && check_pass "backend/hono.ts" || check_fail "backend/hono.ts missing"
 [ -f "$PROJECT_ROOT/package.json" ]            && check_pass "package.json" || check_fail "package.json missing"
 [ -f "$PROJECT_ROOT/bun.lock" ]                && check_pass "bun.lock" || check_fail "bun.lock missing"
-[ -f "$PROJECT_ROOT/deploy/aws/cloudformation.yml" ] && check_pass "cloudformation.yml" || check_fail "cloudformation.yml missing"
+[ -f "$PROJECT_ROOT/expo/deploy/aws/cloudformation.yml" ] && check_pass "cloudformation.yml" || check_fail "cloudformation.yml missing"
 [ -f "$SCRIPT_DIR/deploy.sh" ]                 && check_pass "deploy.sh" || check_fail "deploy.sh missing"
 [ -f "$SCRIPT_DIR/setup-aws.sh" ]              && check_pass "setup-aws.sh" || check_fail "setup-aws.sh missing"
 echo ""

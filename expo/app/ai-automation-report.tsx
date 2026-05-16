@@ -58,8 +58,8 @@ interface AIModule {
   route?: string;
 }
 
-const WHATSAPP_NUMBER = '15616443503';
-const OWNER_DISPLAY = '+1 (561) 644-3503';
+const WHATSAPP_NUMBER = '';
+const OWNER_DISPLAY = 'No phone configured';
 
 const AI_MODULES: AIModule[] = [
   {
@@ -290,7 +290,7 @@ const AI_MODULES: AIModule[] = [
       'Campaign performance analytics',
       'Automated payout calculation',
       'Multi-tier commission structure',
-      'Content sharing toolkit for influencers',
+      'Content sharing gateway for influencers',
     ],
     route: '/influencer-apply',
   },
@@ -414,6 +414,10 @@ export default function AIAutomationReportScreen() {
       `🏢 IVX HOLDINGS LLC — Real Estate Investment Platform\n` +
       `support@ipxholding.com`
     );
+    if (!WHATSAPP_NUMBER) {
+      Alert.alert('No Phone Configured', 'Owner WhatsApp phone has been removed. Configure a new delivery number before sending reports.');
+      return;
+    }
     const url = `https://wa.me/${WHATSAPP_NUMBER}?text=${msg}`;
     Linking.openURL(url).then(() => {
       setReportSent(true);
@@ -427,6 +431,10 @@ export default function AIAutomationReportScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const totalFunctions = AI_MODULES.reduce((sum, m) => sum + m.functionalities.length, 0);
     const msg = `IVXHOLDINGS AI REPORT: ${AI_MODULES.length} modules, ${totalFunctions} automated functions active. AI, Automation, Advertising & Analytics all running. - IVX HOLDINGS LLC`;
+    if (!WHATSAPP_NUMBER) {
+      Alert.alert('No Phone Configured', 'Owner SMS phone has been removed. Configure a new delivery number before sending reports.');
+      return;
+    }
     const url = Platform.OS === 'ios'
       ? `sms:${WHATSAPP_NUMBER}&body=${encodeURIComponent(msg)}`
       : `sms:${WHATSAPP_NUMBER}?body=${encodeURIComponent(msg)}`;

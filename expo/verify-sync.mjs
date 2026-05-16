@@ -20,22 +20,32 @@ import { getSyncPaths } from './sync-paths.mjs';
 const { syncRoot: PROJECT_ROOT, appRoot: APP_ROOT } = getSyncPaths(import.meta.url);
 
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
-const REPO = process.env.GITHUB_REPO || 'ibb142/rork-global-real-estate-invest';
 const BRANCH = process.env.GITHUB_BRANCH || 'main';
 const API = 'https://api.github.com';
+
+function parseGithubRepoSlug(value) {
+  const normalized = String(value || '').trim();
+  if (!normalized) return '';
+  if (/^[^/\s]+\/[^/\s]+$/.test(normalized)) return normalized.replace(/\.git$/i, '');
+  const match = normalized.match(/github\.com[/:]([^/\s]+)\/([^/.\s]+)(?:\.git)?/i);
+  return match ? `${match[1]}/${match[2]}` : '';
+}
+
+const REPO = parseGithubRepoSlug(process.env.GITHUB_REPO) || parseGithubRepoSlug(process.env.GITHUB_REPO_URL);
 
 const FIX = process.argv.includes('--fix');
 
 const IGNORE_DIRS = new Set([
-  'node_modules', '.git', '.expo', 'dist', 'build', '.rork',
+  'node_modules', '.git', '.expo', 'dist', 'build', '.ivx',
   '.DS_Store', '__pycache__', 'tmp', 'core',
+  '.rork', 'logs',
   'dist-audit-ios', 'dist-audit-ios-final', 'dist-audit-ios-postfix',
   'dist-audit-web', 'dist-audit-web-final', 'dist-audit-web-postfix',
 ]);
 
 const IGNORE_FILES = new Set([
   '.env', '.env.production', '.env.staging', '.env.local',
-  '.env.development', 'rork-eslint.config.js', 'bun.lock',
+  '.env.development', 'ivx-eslint.config.js', 'bun.lock',
   'package-lock.json', 'yarn.lock',
 ]);
 
@@ -121,6 +131,10 @@ async function getLatestWorkflowRuns() {
 async function main() {
   if (!GITHUB_TOKEN) {
     console.error('GITHUB_TOKEN is not set');
+    process.exit(1);
+  }
+  if (!REPO) {
+    console.error('GITHUB_REPO or GITHUB_REPO_URL must point to the owner-controlled GitHub repo');
     process.exit(1);
   }
 

@@ -153,7 +153,7 @@ function getStatusLabel(status: ChatRoomStatus | null): string {
     case 'primary_supabase_tables':
       return 'Primary';
     case 'alternate_room_schema':
-      return 'Shared fallback';
+      return 'Shared room';
     case 'snapshot_storage':
       return 'Snapshot';
     case 'local_device_only':

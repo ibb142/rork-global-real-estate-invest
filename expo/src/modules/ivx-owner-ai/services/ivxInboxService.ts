@@ -168,6 +168,17 @@ async function subscribeToOwnerInbox(onChange: (items: IVXInboxItem[]) => void):
     }
     console.log('[IVXInboxService] Conversation summary changed, reloading');
     void reloadInbox();
+  }).on('postgres_changes', {
+    event: '*',
+    schema: realtimeSchema,
+    table: tables.messages,
+    filter: `${tables.schema === 'generic' ? 'room_id' : 'conversation_id'}=eq.${conversation.id}`,
+  }, () => {
+    if (closed) {
+      return;
+    }
+    console.log('[IVXInboxService] Owner room message changed, reloading inbox');
+    void reloadInbox();
   }).subscribe((status) => {
     const normalizedStatus = String(status ?? '').toLowerCase();
     console.log('[IVXInboxService] Realtime status:', normalizedStatus);

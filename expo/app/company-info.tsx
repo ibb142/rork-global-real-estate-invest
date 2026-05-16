@@ -52,7 +52,7 @@ const DEFAULT_INFO: CompanyInfo = {
   zipCode: '33131',
   email: 'support@ivxholding.com',
   ceoEmail: 'ceo@ivxholding.com',
-  phone: '+1 (561) 644-3503',
+  phone: '',
   website: 'www.ivxholding.com',
 };
 

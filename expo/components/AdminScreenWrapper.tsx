@@ -12,6 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ArrowLeft } from 'lucide-react-native';
 import Colors from '@/constants/colors';
+import { renderSafeViewChildren } from '@/components/SafeViewChildren';
 
 interface AdminScreenWrapperProps {
   title: string;
@@ -55,7 +56,7 @@ function AdminScreenWrapperInner({
           </TouchableOpacity>
           <View style={styles.headerCenter}>
             <View style={styles.titleRow}>
-              {icon && <View style={styles.headerIcon}>{icon}</View>}
+              {icon ? <View style={styles.headerIcon}>{renderSafeViewChildren(icon)}</View> : null}
               <Text style={styles.title} numberOfLines={1}>{title}</Text>
             </View>
             {subtitle && (
@@ -63,7 +64,7 @@ function AdminScreenWrapperInner({
             )}
           </View>
           <View style={styles.headerRightSlot}>
-            {headerRight}
+            {renderSafeViewChildren(headerRight)}
           </View>
         </View>
       </SafeAreaView>
@@ -89,7 +90,7 @@ function AdminScreenWrapperInner({
             ) : undefined
           }
         >
-          {children}
+          {renderSafeViewChildren(children)}
         </ScrollView>
       )}
     </View>

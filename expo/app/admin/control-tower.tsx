@@ -54,6 +54,7 @@ import {
   type TrafficSourceRecord,
 } from '@/lib/control-tower/nerve-center-intelligence';
 import { useLiveIntelligenceSnapshot } from '@/lib/control-tower/use-live-intelligence';
+import { renderSafeViewChildren } from '@/components/SafeViewChildren';
 import type { LiveIntelligenceSnapshot } from '@/lib/control-tower/live-intelligence';
 
 type TabId = 'nerve' | 'traffic' | 'funnel' | 'risk' | 'chat' | 'blueprint';
@@ -64,11 +65,23 @@ type EnvironmentAuditSummary = {
   configuredUrl: string;
   configSource: string;
   explicitProductionPin: string;
+  activeBaseUrl: string;
+  activeHost: string;
+  activeEndpoint: string;
+  directApiBaseUrl: string;
+  directApiHost: string;
+  ownerAiHealthUrl: string;
+  ownerRoute53AuditUrl: string;
+  appApiHealthUrl: string;
+  appApiRoute53AuditUrl: string;
+  canonicalBaseUrl: string;
   activeFallbackUrl: string;
   routingAuditState: string;
   fallbackUsed: string;
   whyFallbackSelected: string;
   selectionReason: string;
+  workflowTrace: string[];
+  mismatchWarnings: string[];
   productionGuardText: string;
   productionGuardBlocked: boolean;
   topBannerMessage: string;
@@ -113,14 +126,16 @@ function buildEnvironmentAuditSummary(audit: IVXOwnerAIConfigAudit): Environment
     : 'not-active';
   const routingAuditState = audit.blocksRemoteRequests
     ? 'guard_blocked'
-    : audit.fallbackUsed
-      ? 'dev_fallback_active'
-      : audit.productionReady
-        ? 'live'
-        : 'explicit_non_production';
+    : audit.mismatchWarnings.length > 0
+      ? 'split_host_path'
+      : audit.fallbackUsed
+        ? 'dev_fallback_active'
+        : audit.productionReady
+          ? 'live'
+          : 'explicit_non_production';
   const tone: AuditTone = audit.blocksRemoteRequests
     ? 'blocked'
-    : audit.fallbackUsed
+    : audit.mismatchWarnings.length > 0 || audit.fallbackUsed
       ? 'warn'
       : 'pass';
   const productionGuardText = audit.blocksRemoteRequests
@@ -130,9 +145,11 @@ function buildEnvironmentAuditSummary(audit: IVXOwnerAIConfigAudit): Environment
       : 'pass — development routing policy allows explicit or fallback routing';
   const topBannerMessage = audit.blocksRemoteRequests
     ? audit.configurationError ?? 'Production guard blocked Owner AI routing.'
-    : audit.fallbackUsed
-      ? `Development fallback active. ${audit.fallbackReason ?? audit.selectionReason}`
-      : `Routing live. ${audit.selectionReason}`;
+    : audit.mismatchWarnings.length > 0
+      ? `Split host path detected. ${audit.mismatchWarnings[0]}`
+      : audit.fallbackUsed
+        ? `Development fallback active. ${audit.fallbackReason ?? audit.selectionReason}`
+        : `Routing live. ${audit.selectionReason}`;
 
   return {
     environment: audit.currentEnvironment,
@@ -141,11 +158,23 @@ function buildEnvironmentAuditSummary(audit: IVXOwnerAIConfigAudit): Environment
     explicitProductionPin: audit.explicitProductionPinApplied
       ? `yes — ${audit.configuredBaseUrl ?? audit.canonicalBaseUrl}`
       : 'no',
+    activeBaseUrl: audit.activeBaseUrl ?? 'blocked',
+    activeHost: audit.activeHost ?? 'unconfigured',
+    activeEndpoint: audit.activeEndpoint ?? 'unconfigured',
+    directApiBaseUrl: audit.directApiBaseUrl ?? 'unconfigured',
+    directApiHost: audit.directApiHost ?? 'unconfigured',
+    ownerAiHealthUrl: audit.healthCheckUrl ?? 'unconfigured',
+    ownerRoute53AuditUrl: audit.route53AuditUrl ?? 'unconfigured',
+    appApiHealthUrl: audit.appApiHealthCheckUrl ?? 'unconfigured',
+    appApiRoute53AuditUrl: audit.appApiRoute53AuditUrl ?? 'unconfigured',
+    canonicalBaseUrl: audit.canonicalBaseUrl,
     activeFallbackUrl,
     routingAuditState,
     fallbackUsed: audit.fallbackUsed ? 'yes' : 'no',
     whyFallbackSelected: audit.fallbackReason ?? (audit.fallbackUsed ? audit.selectionReason : 'Fallback not selected.'),
     selectionReason: audit.selectionReason,
+    workflowTrace: audit.workflowTrace,
+    mismatchWarnings: audit.mismatchWarnings,
     productionGuardText,
     productionGuardBlocked: audit.blocksRemoteRequests,
     topBannerMessage,
@@ -189,7 +218,7 @@ const SectionCard = memo(function SectionCard({ title, right, children }: { titl
         <Text style={styles.sectionTitle}>{title}</Text>
         {right}
       </View>
-      {children}
+      {renderSafeViewChildren(children)}
     </View>
   );
 });
@@ -716,6 +745,16 @@ export default function ControlTowerScreen() {
               <AuditField label="Configured URL" value={environmentAudit.configuredUrl} />
               <AuditField label="Config source" value={environmentAudit.configSource} />
               <AuditField label="Explicit production pin" value={environmentAudit.explicitProductionPin} />
+              <AuditField label="Active base URL" value={environmentAudit.activeBaseUrl} />
+              <AuditField label="Active host" value={environmentAudit.activeHost} />
+              <AuditField label="Active endpoint" value={environmentAudit.activeEndpoint} />
+              <AuditField label="App API base URL" value={environmentAudit.directApiBaseUrl} />
+              <AuditField label="App API host" value={environmentAudit.directApiHost} />
+              <AuditField label="Owner health URL" value={environmentAudit.ownerAiHealthUrl} />
+              <AuditField label="Owner Route53 audit URL" value={environmentAudit.ownerRoute53AuditUrl} />
+              <AuditField label="App API health URL" value={environmentAudit.appApiHealthUrl} />
+              <AuditField label="App API Route53 audit URL" value={environmentAudit.appApiRoute53AuditUrl} />
+              <AuditField label="Canonical base URL" value={environmentAudit.canonicalBaseUrl} />
               <AuditField label="Active fallback URL" value={environmentAudit.activeFallbackUrl} />
               <AuditField label="Fallback used" value={environmentAudit.fallbackUsed} />
               <AuditField label="Production guard" value={environmentAudit.productionGuardText} />
@@ -727,6 +766,20 @@ export default function ControlTowerScreen() {
             <View style={styles.auditNarrativeCard}>
               <Text style={styles.auditNarrativeTitle}>Selection reason</Text>
               <Text style={styles.auditNarrativeBody}>{environmentAudit.selectionReason}</Text>
+            </View>
+            {environmentAudit.mismatchWarnings.length > 0 ? (
+              <View style={styles.auditNarrativeCard} testID="nerve-environment-mismatch-card">
+                <Text style={styles.auditNarrativeTitle}>Broken host warnings</Text>
+                {environmentAudit.mismatchWarnings.map((warning, index) => (
+                  <Text key={`${warning}-${index}`} style={styles.auditNarrativeBody}>{`• ${warning}`}</Text>
+                ))}
+              </View>
+            ) : null}
+            <View style={styles.auditNarrativeCard} testID="nerve-environment-trace-card">
+              <Text style={styles.auditNarrativeTitle}>Broken host trace</Text>
+              {environmentAudit.workflowTrace.map((step, index) => (
+                <Text key={`${step}-${index}`} style={styles.auditNarrativeBody}>{`${index + 1}. ${step}`}</Text>
+              ))}
             </View>
           </SectionCard>
 

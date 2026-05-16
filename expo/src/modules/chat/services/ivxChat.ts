@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Linking } from 'react-native';
 import { supabase } from '@/lib/supabase';
+import { IVX_CHAT_UPLOAD_BUCKET } from '@/shared/ivx';
 import type {
   ChatConversation,
   ChatFileType,
@@ -47,6 +48,8 @@ type RoomShell = {
 
 type ResolvedAttachment = {
   fileUrl: string;
+  fileStorageBucket: string | null;
+  fileStoragePath: string | null;
   fileType: ChatFileType;
   fileName: string | null;
   fileMime: string | null;
@@ -56,6 +59,8 @@ type ResolvedAttachment = {
 type MessageDraft = {
   text: string | null;
   fileUrl: string | null;
+  fileStorageBucket: string | null;
+  fileStoragePath: string | null;
   fileType: ChatFileType | null;
   fileName: string | null;
   fileMime: string | null;
@@ -347,7 +352,7 @@ function isAllowedMime(mime?: string | null): boolean {
 
 function getPrimaryBucketName(): string {
   const configuredBucketName = safeTrim(getChatUploadBucketName());
-  return configuredBucketName || 'chat-uploads';
+  return configuredBucketName || IVX_CHAT_UPLOAD_BUCKET;
 }
 
 function getLocalStorageKey(conversationId: string): string {
@@ -518,10 +523,13 @@ function mapMessageRow(
   row: MessageRow | null | undefined,
   fallbackConversationId: string,
   deliveryMode: DeliveryMode,
+  draft?: MessageDraft,
 ): ChatMessage {
-  const fileUrl = readString(row?.file_url) ?? readString(row?.attachment_url);
-  const fileMime = readString(row?.file_mime) ?? readString(row?.attachment_mime);
-  const fileType = resolveFileType(readString(row?.file_type), fileMime, fileUrl);
+  const fileUrl = readString(row?.file_url) ?? readString(row?.attachment_url) ?? draft?.fileUrl;
+  const fileStorageBucket = readString(row?.file_storage_bucket) ?? readString(row?.attachment_bucket) ?? draft?.fileStorageBucket;
+  const fileStoragePath = readString(row?.file_storage_path) ?? readString(row?.attachment_path) ?? draft?.fileStoragePath;
+  const fileMime = readString(row?.file_mime) ?? readString(row?.attachment_mime) ?? draft?.fileMime;
+  const fileType = resolveFileType(readString(row?.file_type) ?? draft?.fileType, fileMime, fileUrl);
 
   return {
     id: readString(row?.id) ?? `${deliveryMode}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
@@ -532,12 +540,14 @@ function mapMessageRow(
       ?? readString(row?.user_id)
       ?? '',
     senderLabel: readString(row?.sender_label) ?? readString(row?.display_name),
-    text: readString(row?.text) ?? readString(row?.body),
+    text: readString(row?.text) ?? readString(row?.body) ?? draft?.text,
     fileUrl,
+    fileStorageBucket,
+    fileStoragePath,
     fileType,
-    fileName: readString(row?.file_name) ?? readString(row?.attachment_name),
+    fileName: readString(row?.file_name) ?? readString(row?.attachment_name) ?? draft?.fileName,
     fileMime,
-    fileSize: readNumber(row?.file_size) ?? readNumber(row?.attachment_size),
+    fileSize: readNumber(row?.file_size) ?? readNumber(row?.attachment_size) ?? draft?.fileSize,
     createdAt: readString(row?.created_at) ?? nowIso(),
     updatedAt: readString(row?.updated_at),
     readBy: readStringArray(row?.read_by),
@@ -743,6 +753,8 @@ function buildSnapshotPayload(message: ChatMessage): Record<string, unknown> {
     senderLabel: message.senderLabel ?? null,
     text: message.text ?? null,
     fileUrl: message.fileUrl ?? null,
+    fileStorageBucket: message.fileStorageBucket ?? null,
+    fileStoragePath: message.fileStoragePath ?? null,
     fileType: message.fileType ?? null,
     fileName: message.fileName ?? null,
     fileMime: message.fileMime ?? null,
@@ -768,6 +780,8 @@ async function saveSnapshotMessage(conversationId: string, message: ChatMessage)
 function getDraftFromInput(input: SendMessageInput): MessageDraft {
   const text = safeTrim(input.text) || null;
   const fileUrl = safeTrim(input.fileUrl) || null;
+  const fileStorageBucket = safeTrim(input.fileStorageBucket) || null;
+  const fileStoragePath = safeTrim(input.fileStoragePath) || null;
   const fileType = resolveFileType(input.fileType ?? null, input.fileMime ?? null, fileUrl);
   const fileName = safeTrim(input.fileName) || null;
   const fileMime = safeTrim(input.fileMime) || null;
@@ -776,6 +790,8 @@ function getDraftFromInput(input: SendMessageInput): MessageDraft {
   return {
     text,
     fileUrl,
+    fileStorageBucket,
+    fileStoragePath,
     fileType,
     fileName,
     fileMime,
@@ -822,6 +838,8 @@ function createFallbackMessage(
     senderLabel: senderLabel ?? null,
     text: draft.text,
     fileUrl: draft.fileUrl,
+    fileStorageBucket: draft.fileStorageBucket,
+    fileStoragePath: draft.fileStoragePath,
     fileType: draft.fileType,
     fileName: draft.fileName,
     fileMime: draft.fileMime,
@@ -930,6 +948,8 @@ async function uploadToBucket(bucket: string, conversationId: string, upload: Up
 
   return {
     fileUrl: publicUrl,
+    fileStorageBucket: bucket,
+    fileStoragePath: uploadPath,
     fileType,
     fileName: safeName,
     fileMime: mime,
@@ -941,6 +961,8 @@ function mergeDraftWithAttachment(draft: MessageDraft, attachment: ResolvedAttac
   return {
     text: draft.text,
     fileUrl: attachment.fileUrl,
+    fileStorageBucket: attachment.fileStorageBucket,
+    fileStoragePath: attachment.fileStoragePath,
     fileType: attachment.fileType,
     fileName: attachment.fileName,
     fileMime: attachment.fileMime,
@@ -1541,6 +1563,29 @@ async function incrementAlternateUnread(conversationId: string, senderId: string
 }
 
 function buildPrimaryMessagePayloads(conversationId: string, senderId: string, draft: MessageDraft): Record<string, unknown>[] {
+  const fullAttachmentPayload = {
+    file_url: draft.fileUrl,
+    file_storage_bucket: draft.fileStorageBucket,
+    file_storage_path: draft.fileStoragePath,
+    file_type: draft.fileType,
+    file_name: draft.fileName ?? draft.clientMessageId,
+    file_mime: draft.fileMime,
+    file_size: draft.fileSize,
+    client_message_id: draft.clientMessageId,
+  };
+  const attachmentPayload = {
+    file_url: draft.fileUrl,
+    file_type: draft.fileType,
+    file_name: draft.fileName ?? draft.clientMessageId,
+    file_mime: draft.fileMime,
+    file_size: draft.fileSize,
+  };
+  const legacyAttachmentPayload = {
+    file_url: draft.fileUrl,
+    file_type: draft.fileType,
+    file_name: draft.clientMessageId ?? draft.fileName,
+  };
+
   return uniquePayloads([
     {
       id: randomUuid(),
@@ -1549,9 +1594,7 @@ function buildPrimaryMessagePayloads(conversationId: string, senderId: string, d
       sender_label: null,
       text: draft.text,
       body: draft.text,
-      file_url: draft.fileUrl,
-      file_type: draft.fileType,
-      file_name: draft.clientMessageId,
+      ...fullAttachmentPayload,
       read_by: [senderId],
       created_at: nowIso(),
     },
@@ -1561,9 +1604,17 @@ function buildPrimaryMessagePayloads(conversationId: string, senderId: string, d
       sender_id: senderId,
       text: draft.text,
       body: draft.text,
-      file_url: draft.fileUrl,
-      file_type: draft.fileType,
-      file_name: draft.clientMessageId,
+      ...attachmentPayload,
+      read_by: [senderId],
+      created_at: nowIso(),
+    },
+    {
+      id: randomUuid(),
+      conversation_id: conversationId,
+      sender_id: senderId,
+      text: draft.text,
+      body: draft.text,
+      ...legacyAttachmentPayload,
       read_by: [senderId],
       created_at: nowIso(),
     },
@@ -1571,24 +1622,36 @@ function buildPrimaryMessagePayloads(conversationId: string, senderId: string, d
       conversation_id: conversationId,
       sender_id: senderId,
       text: draft.text,
-      file_url: draft.fileUrl,
-      file_type: draft.fileType,
-      file_name: draft.clientMessageId,
+      ...legacyAttachmentPayload,
       read_by: [senderId],
     },
   ]);
 }
 
 function buildAlternateMessagePayloads(conversationId: string, senderId: string, draft: MessageDraft): Record<string, unknown>[] {
+  const fullAttachmentPayload = {
+    file_url: draft.fileUrl,
+    file_storage_bucket: draft.fileStorageBucket,
+    file_storage_path: draft.fileStoragePath,
+    file_type: draft.fileType,
+    file_name: draft.fileName ?? draft.clientMessageId,
+    file_mime: draft.fileMime,
+    file_size: draft.fileSize,
+    client_message_id: draft.clientMessageId,
+  };
+  const legacyAttachmentPayload = {
+    file_url: draft.fileUrl,
+    file_type: draft.fileType,
+    file_name: draft.clientMessageId ?? draft.fileName,
+  };
+
   return uniquePayloads([
     {
       id: randomUuid(),
       room_id: conversationId,
       sender_id: senderId,
       body: draft.text,
-      file_url: draft.fileUrl,
-      file_type: draft.fileType,
-      file_name: draft.clientMessageId,
+      ...fullAttachmentPayload,
       read_by: [senderId],
       created_at: nowIso(),
     },
@@ -1597,9 +1660,25 @@ function buildAlternateMessagePayloads(conversationId: string, senderId: string,
       room_id: conversationId,
       user_id: senderId,
       body: draft.text,
-      file_url: draft.fileUrl,
-      file_type: draft.fileType,
-      file_name: draft.clientMessageId,
+      ...fullAttachmentPayload,
+      read_by: [senderId],
+      created_at: nowIso(),
+    },
+    {
+      id: randomUuid(),
+      room_id: conversationId,
+      sender_id: senderId,
+      body: draft.text,
+      ...legacyAttachmentPayload,
+      read_by: [senderId],
+      created_at: nowIso(),
+    },
+    {
+      id: randomUuid(),
+      room_id: conversationId,
+      user_id: senderId,
+      body: draft.text,
+      ...legacyAttachmentPayload,
       read_by: [senderId],
       created_at: nowIso(),
     },
@@ -1607,26 +1686,20 @@ function buildAlternateMessagePayloads(conversationId: string, senderId: string,
       room_id: conversationId,
       sender_id: senderId,
       text: draft.text,
-      file_url: draft.fileUrl,
-      file_type: draft.fileType,
-      file_name: draft.clientMessageId,
+      ...legacyAttachmentPayload,
       created_at: nowIso(),
     },
     {
       room_id: conversationId,
       user_id: senderId,
       text: draft.text,
-      file_url: draft.fileUrl,
-      file_type: draft.fileType,
-      file_name: draft.clientMessageId,
+      ...legacyAttachmentPayload,
       created_at: nowIso(),
     },
     {
       room_id: conversationId,
       body: draft.text,
-      file_url: draft.fileUrl,
-      file_type: draft.fileType,
-      file_name: draft.clientMessageId,
+      ...legacyAttachmentPayload,
     },
   ]);
 }
@@ -1699,6 +1772,8 @@ function buildFallbackDraft(input: SendMessageInput): MessageDraft {
   return {
     text: baseDraft.text,
     fileUrl: previewUrl,
+    fileStorageBucket: baseDraft.fileStorageBucket,
+    fileStoragePath: baseDraft.fileStoragePath,
     fileType: baseDraft.fileType ?? resolveFileType(null, input.upload.type ?? null, previewUrl) ?? 'file',
     fileName: baseDraft.fileName || sanitizeFileName(input.upload.name),
     fileMime: baseDraft.fileMime || safeTrim(input.upload.type) || null,
@@ -1736,6 +1811,7 @@ async function sendMessageForStatus(
 
           const match = ((data ?? []) as MessageRow[]).find((rowCandidate) => {
             return buildMessageSignature(rowCandidate, conversation.id) === buildMessageSignature(buildPrimaryMessagePayloads(conversation.id, actorId, draft)[0] ?? null, conversation.id)
+              || (draft.clientMessageId && readString(rowCandidate.client_message_id) === draft.clientMessageId)
               || (draft.clientMessageId && readString(rowCandidate.file_name) === draft.clientMessageId);
           });
 
@@ -1746,7 +1822,7 @@ async function sendMessageForStatus(
       await incrementPrimaryUnread(conversation.id, actorId);
 
       return {
-        message: mapMessageRow(row, conversation.id, 'primary_realtime'),
+        message: mapMessageRow(row, conversation.id, 'primary_realtime', draft),
         status,
       };
     } catch (error) {
@@ -1787,6 +1863,7 @@ async function sendMessageForStatus(
 
           const match = ((data ?? []) as MessageRow[]).find((rowCandidate) => {
             return buildMessageSignature(rowCandidate, conversation.id) === buildMessageSignature(buildAlternateMessagePayloads(conversation.id, actorId, draft)[0] ?? null, conversation.id)
+              || (draft.clientMessageId && readString(rowCandidate.client_message_id) === draft.clientMessageId)
               || (draft.clientMessageId && readString(rowCandidate.file_name) === draft.clientMessageId);
           });
 
@@ -1797,7 +1874,7 @@ async function sendMessageForStatus(
       await incrementAlternateUnread(conversation.id, actorId);
 
       return {
-        message: mapMessageRow(row, conversation.id, 'alternate_shared'),
+        message: mapMessageRow(row, conversation.id, 'alternate_shared', draft),
         status,
       };
     } catch (error) {

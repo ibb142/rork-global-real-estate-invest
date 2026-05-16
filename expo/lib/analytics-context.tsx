@@ -15,6 +15,15 @@ export interface AnalyticsHook {
   track: (name: string, category?: EventCategory, properties?: Record<string, unknown>) => void;
 }
 
+const analyticsFallback: AnalyticsHook = {
+  trackScreen: () => {},
+  trackAction: () => {},
+  trackTransaction: () => {},
+  trackConversion: () => {},
+  trackError: () => {},
+  track: () => {},
+};
+
 export const [AnalyticsProvider, useAnalytics] = createContextHook<AnalyticsHook>(() => {
   const pathname = usePathname();
   const lastPathnameRef = useRef<string>('');
@@ -107,6 +116,6 @@ export const [AnalyticsProvider, useAnalytics] = createContextHook<AnalyticsHook
     trackError,
     track,
   }), [trackScreen, trackAction, trackTransaction, trackConversion, trackError, track]);
-});
+}, analyticsFallback);
 
 export default AnalyticsProvider;

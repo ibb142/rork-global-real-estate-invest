@@ -290,13 +290,14 @@ function buildOwnerMetadata(firstName: string, lastName: string): Record<string,
 }
 
 function buildOwnerProfilePayload(userId: string, email: string, firstName: string, lastName: string): Record<string, unknown> {
+  // Production profiles schema does not include a `status` column; sending it
+  // causes the upsert to fail with `column profiles.status does not exist`.
   return {
     id: userId,
     email,
     first_name: firstName,
     last_name: lastName,
     role: 'owner',
-    status: 'active',
     kyc_status: 'approved',
     updated_at: new Date().toISOString(),
   };
@@ -379,12 +380,30 @@ async function updateAdminUser(url: string, serviceRoleKey: string, userId: stri
 }
 
 async function ensureOwnerProfile(client: SupabaseClient, userId: string, email: string, firstName: string, lastName: string): Promise<boolean> {
+  const payload = buildOwnerProfilePayload(userId, email, firstName, lastName);
   const { error } = await client
     .from('profiles')
-    .upsert(buildOwnerProfilePayload(userId, email, firstName, lastName), { onConflict: 'id' });
+    .upsert(payload, { onConflict: 'id' });
 
   if (error) {
-    console.log('[OwnerBootstrapAPI] Profile upsert failed:', error.message);
+    const message = error.message || '';
+    const lower = message.toLowerCase();
+    const missingColumnMatch = lower.match(/column "?([a-z_]+)"? .*does not exist/);
+    const missingColumn = missingColumnMatch?.[1];
+    if (missingColumn && missingColumn in payload) {
+      console.log('[OwnerBootstrapAPI] Profile upsert dropping missing column and retrying:', missingColumn);
+      const retryPayload = { ...payload };
+      delete retryPayload[missingColumn];
+      const retry = await client
+        .from('profiles')
+        .upsert(retryPayload, { onConflict: 'id' });
+      if (!retry.error) {
+        return true;
+      }
+      console.log('[OwnerBootstrapAPI] Profile retry upsert failed:', retry.error.message);
+      return false;
+    }
+    console.log('[OwnerBootstrapAPI] Profile upsert failed:', message);
     return false;
   }
 

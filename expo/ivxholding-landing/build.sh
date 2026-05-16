@@ -7,8 +7,8 @@ if [ -f "index.html" ]; then
   SUPABASE_URL="${EXPO_PUBLIC_SUPABASE_URL:-}"
   SUPABASE_KEY="${EXPO_PUBLIC_SUPABASE_ANON_KEY:-}"
   API_URL="${EXPO_PUBLIC_API_BASE_URL:-https://ivxholding.com}"
-  APP_URL="${EXPO_PUBLIC_APP_URL:-${EXPO_PUBLIC_RORK_API_BASE_URL:-}}"
-  BACKEND_URL="${EXPO_PUBLIC_RORK_API_BASE_URL:-https://api.ivxholding.com}"
+  APP_URL="${EXPO_PUBLIC_APP_URL:-${EXPO_PUBLIC_IVX_API_BASE_URL:-}}"
+  BACKEND_URL="${EXPO_PUBLIC_IVX_API_BASE_URL:-https://api.ivxholding.com}"
 
   echo "[IVX Build] Backend URL: ${BACKEND_URL}"
   echo "[IVX Build] Supabase URL set: $([ -n "$SUPABASE_URL" ] && echo 'YES' || echo 'NO')"
@@ -60,8 +60,8 @@ if [ -f "index.html" ]; then
   sed -i "s|var _HARDCODED_BACKEND_URL = '[^']*';|var _HARDCODED_BACKEND_URL = '${BACKEND_URL}';|g" index.html
 
   # Also inject backend URL into fallback JS vars and meta tags
-  sed -i "s|var _RORK_BACKEND_URL = '[^']*';|var _RORK_BACKEND_URL = '${BACKEND_URL}';|g" index.html
-  sed -i "s|var _RORK_API_URL = '[^']*';|var _RORK_API_URL = '${API_URL}';|g" index.html
+  sed -i "s|var _IVX_BACKEND_URL = '[^']*';|var _IVX_BACKEND_URL = '${BACKEND_URL}';|g" index.html
+  sed -i "s|var _IVX_API_URL = '[^']*';|var _IVX_API_URL = '${API_URL}';|g" index.html
 
   # Inject backend URL into meta tags for JS to read
   sed -i "s|<meta name=\"ivx-backend-url\" content=\"[^\"]*\"|<meta name=\"ivx-backend-url\" content=\"${BACKEND_URL}\"|g" index.html

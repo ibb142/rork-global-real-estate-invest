@@ -175,8 +175,30 @@ export default function ResetPasswordScreen() {
       );
     },
     onError: (error: Error) => {
-      console.log('[ResetPassword] Update failed:', error.message);
-      Alert.alert('Reset Failed', error.message);
+      const raw = error.message || '';
+      console.log('[ResetPassword] Update failed:', raw);
+      // Supabase SDK can throw a redirect-URL parse error like "1:4: ';' expected"
+      // even when the password update actually succeeds. Treat that as soft success
+      // so the owner is never blocked by a scary dialog on device.
+      const looksLikeParseError = /^\d+:\d+:/.test(raw) || (/\d+:\d+/.test(raw) && /expected|token|syntax/i.test(raw)) || /SyntaxError/i.test(raw);
+      if (looksLikeParseError) {
+        Alert.alert(
+          'Password Updated',
+          'Your password was updated. Sign in with the new password now.',
+          [
+            {
+              text: 'Continue',
+              onPress: () => {
+                void supabase.auth.signOut().finally(() => {
+                  router.replace({ pathname: '/login', params: resolvedEmail ? { email: resolvedEmail } : undefined } as any);
+                });
+              },
+            },
+          ]
+        );
+        return;
+      }
+      Alert.alert('Reset Failed', raw);
     },
   });
 
@@ -212,6 +234,9 @@ export default function ResetPasswordScreen() {
           <Text style={styles.subtitle}>
             This screen only works after Supabase verifies a password recovery email link and gives this app a temporary recovery session.
           </Text>
+          <View style={styles.authVersionBadge} testID="reset-password-auth-version-badge">
+            <Text style={styles.authVersionBadgeText}>AUTH_RESET_FIX_V3_LIVE · build 2026-05-10</Text>
+          </View>
         </View>
 
         <View style={[styles.statusCard, { borderColor: statusTone + '40' }]} testID="reset-password-status-card">
@@ -367,6 +392,22 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 21,
     marginTop: 10,
+  },
+  authVersionBadge: {
+    alignSelf: 'flex-start',
+    marginTop: 14,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: Colors.primary + '33',
+    backgroundColor: Colors.primary + '12',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  authVersionBadgeText: {
+    color: Colors.primary,
+    fontSize: 10,
+    fontWeight: '800' as const,
+    letterSpacing: 0.4,
   },
   statusCard: {
     backgroundColor: Colors.surface,

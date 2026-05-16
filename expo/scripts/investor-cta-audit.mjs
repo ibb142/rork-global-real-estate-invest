@@ -369,7 +369,7 @@ async function inspectJacksonvilleRecord() {
   const anonKey = (process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '').trim();
   const publicUrl = `${PUBLIC_BASE_URL}/api/published-jv-deals`;
   const landingUrl = `${PUBLIC_BASE_URL}/api/landing-deals`;
-  const directBaseUrl = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || '').trim().replace(/\/$/, '');
+  const directBaseUrl = (process.env.EXPO_PUBLIC_IVX_API_BASE_URL || '').trim().replace(/\/$/, '');
   const directLandingUrl = directBaseUrl ? `${directBaseUrl}/api/landing-deals` : '';
 
   const details = [];

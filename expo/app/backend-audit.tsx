@@ -349,7 +349,7 @@ async function runFullAudit(mode: ReadinessAuditMode = 'full'): Promise<AuditCat
             : `Using fallback reset URL ${passwordResetRedirectUrl}`,
       details: passwordResetRedirectAudit.rejectedConfiguredUrl
         ? `${passwordResetRedirectAudit.rejectionReason ?? 'Configured auth URL is invalid.'} The app now falls back to a public reset route, but that route must still be allow-listed in Supabase Auth redirect settings.`
-        : 'Reset emails are sent from expo/app/login.tsx and expo/app/owner-access.tsx through getPasswordResetRedirectUrl(). If EXPO_PUBLIC_RORK_AUTH_URL is missing or wrong in Supabase Auth redirect settings, password recovery can appear broken even when the email is sent.',
+        : 'Reset emails are sent from expo/app/login.tsx and expo/app/owner-access.tsx through getPasswordResetRedirectUrl(). If EXPO_PUBLIC_IVX_AUTH_URL is missing or wrong in Supabase Auth redirect settings, password recovery can appear broken even when the email is sent.',
       severity: !passwordResetRedirectLooksValid ? 'critical' : passwordResetRedirectAudit.rejectedConfiguredUrl ? 'medium' : hasConfiguredAuthRecoveryUrl ? 'info' : 'medium',
     },
     {

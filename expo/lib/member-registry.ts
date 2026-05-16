@@ -841,6 +841,8 @@ export async function ensureMemberProfileRecord(input: {
     lastName: payload.last_name,
     phone: payload.phone,
     country: payload.country,
+    role: payload.role,
+    status: payload.status,
     kycStatus: payload.kyc_status,
     updatedAt: now,
     lastSeenAt: now,

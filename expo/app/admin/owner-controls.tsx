@@ -35,7 +35,34 @@ import {
   Trash2,
   Wifi,
   Fingerprint,
+  ShieldCheck,
   WifiOff,
+  LayoutGrid,
+  Search,
+  Globe,
+  Database,
+  Server,
+  Rocket,
+  Bot,
+  Users,
+  Mail,
+  BarChart3,
+  Megaphone,
+  Shield,
+  Activity,
+  KeyRound,
+  Network,
+  Monitor,
+  RefreshCw,
+  Sliders,
+  Zap,
+  FileText,
+  ExternalLink,
+  Home as HomeIcon,
+  TrendingUp,
+  Briefcase,
+  User as UserIcon,
+  LayoutDashboard,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -44,6 +71,8 @@ import { formatCurrencyWithDecimals } from '@/lib/formatters';
 import { useAuth, getStoredOwnerIP, clearOwnerIP } from '@/lib/auth-context';
 
 import { supabase } from '@/lib/supabase';
+import { useFeeConfigurations } from '@/lib/admin-queries';
+import { useUpsertFeeConfiguration, useUpsertPlatformSetting, usePlatformSettings, useUpsertPropertyControl, probePersistenceHealth, applyPlatformPersistenceMigration, type PersistenceHealth, type ApplyMigrationResult } from '@/lib/platform-persistence';
 
 import { Property, FeeConfiguration } from '@/types';
 
@@ -281,12 +310,52 @@ const ipCardStyles = StyleSheet.create({
 
 export default function OwnerControlsScreen() {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<'revenue' | 'properties' | 'fees' | 'settings'>('revenue');
+  const [activeTab, setActiveTab] = useState<'revenue' | 'properties' | 'fees' | 'settings' | 'modules'>('modules');
+  const [moduleSearch, setModuleSearch] = useState<string>('');
   const [editFeeModalVisible, setEditFeeModalVisible] = useState(false);
   const [editPropertyModalVisible, setEditPropertyModalVisible] = useState(false);
   
   const [selectedFee, setSelectedFee] = useState<FeeConfiguration | null>(null);
   const [selectedProperty, setSelectedProperty] = useState<PropertyControl | null>(null);
+
+  const platformSettingsQuery = usePlatformSettings('platform');
+  const upsertSetting = useUpsertPlatformSetting();
+  const upsertPropertyControl = useUpsertPropertyControl();
+  const { configurations: feeConfigurations } = useFeeConfigurations();
+  const upsertFee = useUpsertFeeConfiguration();
+  const [healthRows, setHealthRows] = useState<PersistenceHealth[] | null>(null);
+  const [healthLoading, setHealthLoading] = useState<boolean>(false);
+  const [migrationApplying, setMigrationApplying] = useState<boolean>(false);
+  const [lastMigration, setLastMigration] = useState<ApplyMigrationResult | null>(null);
+
+  const runHealthProbe = async () => {
+    setHealthLoading(true);
+    try {
+      const rows = await probePersistenceHealth();
+      setHealthRows(rows);
+    } catch (e) {
+      console.log('[Owner Controls] persistence probe failed:', e);
+    } finally {
+      setHealthLoading(false);
+    }
+  };
+
+  const applyMigration = async () => {
+    setMigrationApplying(true);
+    try {
+      const result = await applyPlatformPersistenceMigration();
+      setLastMigration(result);
+      if (result.ok) {
+        const rows = await probePersistenceHealth();
+        setHealthRows(rows);
+      }
+    } catch (e) {
+      console.log('[Owner Controls] migration apply failed:', e);
+      setLastMigration({ ok: false, endpoint: '', httpStatus: 0, command: null, rowCount: null, error: String(e), timestamp: new Date().toISOString() });
+    } finally {
+      setMigrationApplying(false);
+    }
+  };
 
   const [platformSettings, setPlatformSettings] = useState<PlatformSettings>({
     minInvestment: 100,
@@ -298,6 +367,26 @@ export default function OwnerControlsScreen() {
     newSignupsEnabled: true,
     tradingEnabled: true,
   });
+
+  useEffect(() => {
+    const rows = platformSettingsQuery.data ?? [];
+    if (rows.length === 0) return;
+    const next: Partial<PlatformSettings> = {};
+    for (const r of rows) {
+      const v = r.value as unknown;
+      if (r.key === 'minInvestment' && typeof v === 'number') next.minInvestment = v;
+      if (r.key === 'maxInvestment' && typeof v === 'number') next.maxInvestment = v;
+      if (r.key === 'platformFeePercent' && typeof v === 'number') next.platformFeePercent = v;
+      if (r.key === 'dividendDistributionDay' && typeof v === 'number') next.dividendDistributionDay = v;
+      if (r.key === 'autoReinvestEnabled' && typeof v === 'boolean') next.autoReinvestEnabled = v;
+      if (r.key === 'maintenanceMode' && typeof v === 'boolean') next.maintenanceMode = v;
+      if (r.key === 'newSignupsEnabled' && typeof v === 'boolean') next.newSignupsEnabled = v;
+      if (r.key === 'tradingEnabled' && typeof v === 'boolean') next.tradingEnabled = v;
+    }
+    if (Object.keys(next).length > 0) {
+      setPlatformSettings((prev) => ({ ...prev, ...next }));
+    }
+  }, [platformSettingsQuery.data]);
 
   const [editedFee, setEditedFee] = useState({
     percentage: '',
@@ -478,24 +567,52 @@ export default function OwnerControlsScreen() {
     setEditPropertyModalVisible(true);
   };
 
-  const handleSaveFee = () => {
+  const handleSaveFee = async () => {
+    if (!selectedFee) return;
     const percentage = parseFloat(editedFee.percentage);
+    const minFee = parseFloat(editedFee.minFee || '0');
+    const maxFee = parseFloat(editedFee.maxFee || '0');
     if (isNaN(percentage) || percentage < 0 || percentage > 50) {
       Alert.alert('Invalid Input', 'Percentage must be between 0 and 50%');
       return;
     }
-    Alert.alert('Success', 'Fee configuration updated successfully');
-    setEditFeeModalVisible(false);
+    try {
+      await upsertFee.mutateAsync({
+        id: selectedFee.id,
+        type: selectedFee.type,
+        name: selectedFee.name,
+        percentage,
+        minFee: isNaN(minFee) ? 0 : minFee,
+        maxFee: isNaN(maxFee) ? 0 : maxFee,
+        isActive: editedFee.isActive,
+      });
+      Alert.alert('Success', 'Fee configuration saved to database');
+      setEditFeeModalVisible(false);
+    } catch (e: any) {
+      Alert.alert('Save Failed', e?.message ?? 'Unknown error');
+    }
   };
 
-  const handleSaveProperty = () => {
+  const handleSaveProperty = async () => {
+    if (!selectedProperty) return;
     const ownerShare = parseFloat(editedProperty.ownerShare);
+    const priceAdjustment = parseFloat(editedProperty.priceAdjustment || '0');
     if (isNaN(ownerShare) || ownerShare < 0 || ownerShare > 100) {
       Alert.alert('Invalid Input', 'Owner share must be between 0 and 100%');
       return;
     }
-    Alert.alert('Success', 'Property controls updated successfully');
-    setEditPropertyModalVisible(false);
+    try {
+      await upsertPropertyControl.mutateAsync({
+        propertyId: selectedProperty.id,
+        isLocked: editedProperty.tradingPaused,
+        overridePrice: isNaN(priceAdjustment) ? null : priceAdjustment,
+        metadata: { ownerShare, priceAdjustmentPercent: isNaN(priceAdjustment) ? 0 : priceAdjustment },
+      });
+      Alert.alert('Success', 'Property controls saved to database');
+      setEditPropertyModalVisible(false);
+    } catch (e: any) {
+      Alert.alert('Save Failed', e?.message ?? 'Unknown error');
+    }
   };
 
   const handleToggleTrading = (property: PropertyControl) => {
@@ -515,8 +632,25 @@ export default function OwnerControlsScreen() {
     );
   };
 
-  const handleSaveSettings = () => {
-    Alert.alert('Success', 'Platform settings updated successfully');
+  const handleSaveSettings = async () => {
+    try {
+      const entries: Array<{ key: string; value: unknown }> = [
+        { key: 'minInvestment', value: platformSettings.minInvestment },
+        { key: 'maxInvestment', value: platformSettings.maxInvestment },
+        { key: 'platformFeePercent', value: platformSettings.platformFeePercent },
+        { key: 'dividendDistributionDay', value: platformSettings.dividendDistributionDay },
+        { key: 'autoReinvestEnabled', value: platformSettings.autoReinvestEnabled },
+        { key: 'maintenanceMode', value: platformSettings.maintenanceMode },
+        { key: 'newSignupsEnabled', value: platformSettings.newSignupsEnabled },
+        { key: 'tradingEnabled', value: platformSettings.tradingEnabled },
+      ];
+      for (const e of entries) {
+        await upsertSetting.mutateAsync({ key: e.key, value: e.value, category: 'platform' });
+      }
+      Alert.alert('Success', 'Platform settings saved to database');
+    } catch (e: any) {
+      Alert.alert('Save Failed', e?.message ?? 'Unknown error');
+    }
   };
 
   const renderRevenue = () => (
@@ -527,6 +661,21 @@ export default function OwnerControlsScreen() {
       </View>
 
       <OwnerIPAccessCard />
+
+      <TouchableOpacity
+        style={[styles.staffActivityLink, { borderColor: '#FFD70040' }]}
+        onPress={() => router.push('/ivx/independence' as any)}
+        testID="owner-dashboard-independence-tracker-link"
+      >
+        <View style={[styles.revenueIcon, { backgroundColor: '#FFD70020' }]}> 
+          <ShieldCheck size={20} color="#FFD700" />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.staffActivityTitle}>Independence Tracker</Text>
+          <Text style={styles.staffActivityDesc}>7-day Rork dependency removal plan and proof route</Text>
+        </View>
+        <ChevronRight size={18} color={Colors.textTertiary} />
+      </TouchableOpacity>
 
       <TouchableOpacity
         style={styles.staffActivityLink}
@@ -994,7 +1143,7 @@ export default function OwnerControlsScreen() {
         </View>
       </View>
 
-      {([] as FeeConfiguration[]).map((fee) => (
+      {feeConfigurations.map((fee) => (
         <TouchableOpacity
           key={fee.id}
           style={styles.feeCard}
@@ -1145,9 +1294,9 @@ export default function OwnerControlsScreen() {
         </View>
       </View>
 
-      <TouchableOpacity style={styles.saveSettingsBtn} onPress={handleSaveSettings}>
+      <TouchableOpacity style={styles.saveSettingsBtn} onPress={handleSaveSettings} disabled={upsertSetting.isPending}>
         <Check size={20} color="#fff" />
-        <Text style={styles.saveSettingsBtnText}>Save All Settings</Text>
+        <Text style={styles.saveSettingsBtnText}>{upsertSetting.isPending ? 'Saving…' : 'Save All Settings'}</Text>
       </TouchableOpacity>
 
       <TouchableOpacity
@@ -1167,6 +1316,236 @@ export default function OwnerControlsScreen() {
         <ChevronRight size={18} color={Colors.textSecondary} />
       </TouchableOpacity>
 
+      <View style={[styles.settingsCard, { marginTop: 12 }]} testID="owner-persistence-health-card">
+        <Text style={styles.settingsTitle}>Persistence Health</Text>
+        <Text style={[styles.toggleDesc, { marginBottom: 10 }]}>Verifies all 7 owner-controlled Supabase tables resolve from this device.</Text>
+        <TouchableOpacity
+          style={[styles.saveSettingsBtn, { backgroundColor: Colors.primary, marginBottom: 12 }]}
+          onPress={runHealthProbe}
+          disabled={healthLoading}
+          activeOpacity={0.85}
+        >
+          <Activity size={18} color={Colors.black} />
+          <Text style={styles.saveSettingsBtnText}>{healthLoading ? 'Probing…' : (healthRows ? 'Re-run probe' : 'Run probe')}</Text>
+        </TouchableOpacity>
+        {healthRows?.map((r) => {
+          const color = r.ok ? Colors.positive : (r.missing ? Colors.warning : Colors.negative);
+          const label = r.ok ? 'ok' : (r.missing ? 'missing' : 'error');
+          return (
+            <View key={r.table} style={styles.settingRow}>
+              <Text style={styles.settingLabel}>{r.table}</Text>
+              <Text style={[styles.settingValue, { color }]}>{label}</Text>
+            </View>
+          );
+        })}
+        {healthRows && healthRows.some((r) => r.missing) && (
+          <>
+            <Text style={[styles.toggleDesc, { color: Colors.warning, marginTop: 8 }]}>Phase 1 tables missing. Tap below to apply the migration via the owner-only backend.</Text>
+            <TouchableOpacity
+              style={[styles.saveSettingsBtn, { backgroundColor: Colors.warning, marginTop: 10 }]}
+              onPress={applyMigration}
+              disabled={migrationApplying}
+              activeOpacity={0.85}
+              testID="owner-persistence-apply-migration"
+            >
+              <Activity size={18} color={Colors.black} />
+              <Text style={styles.saveSettingsBtnText}>{migrationApplying ? 'Applying migration…' : 'Apply Phase 1 migration now'}</Text>
+            </TouchableOpacity>
+          </>
+        )}
+        {lastMigration ? (
+          <View style={{ marginTop: 10 }}>
+            <Text style={[styles.toggleDesc, { color: lastMigration.ok ? Colors.positive : Colors.negative }]}>
+              {lastMigration.ok
+                ? `Migration applied (${lastMigration.command ?? 'SQL'}). Re-probing…`
+                : `Migration failed: ${lastMigration.error ?? 'unknown error'}`}
+            </Text>
+            {lastMigration.endpoint ? (
+              <Text style={[styles.toggleDesc, { color: Colors.textSecondary, marginTop: 2 }]}>HTTP {lastMigration.httpStatus} · {lastMigration.endpoint}</Text>
+            ) : null}
+          </View>
+        ) : null}
+      </View>
+
+      <View style={styles.bottomPadding} />
+    </ScrollView>
+  );
+
+  const ALL_MODULES: { id: string; name: string; desc: string; route: string; category: string; color: string; icon: any }[] = [
+    { id: 'admin-hub', name: 'Admin Hub', desc: 'Full admin dashboard with all modules', route: '/admin', category: 'Core', color: '#FFD700', icon: LayoutGrid },
+    { id: 'admin-dashboard', name: 'Admin Dashboard', desc: 'Operations dashboard', route: '/admin/dashboard', category: 'Core', color: '#FFD700', icon: LayoutGrid },
+    { id: 'admin-intro', name: 'Admin Intro', desc: 'Admin walkthrough', route: '/admin/intro', category: 'Core', color: '#FFD700', icon: FileText },
+    { id: 'activation-center', name: 'Activation Center', desc: 'Activate platform features', route: '/activation-center', category: 'Core', color: '#FFD700', icon: Zap },
+    { id: 'trust-center', name: 'Trust Center', desc: 'Security & compliance', route: '/trust-center', category: 'Core', color: '#FFD700', icon: ShieldCheck },
+    { id: 'system-blueprint-root', name: 'System Blueprint (root)', desc: 'Platform blueprint overview', route: '/system-blueprint', category: 'Core', color: '#FFD700', icon: Network },
+    { id: 'system-map', name: 'System Blueprint', desc: 'Live architecture map & health', route: '/admin/system-map', category: 'Core', color: '#FFD700', icon: Network },
+    { id: 'system-monitor', name: '24/7 Command Center', desc: 'Realtime system monitor', route: '/admin/system-monitor', category: 'Core', color: '#FFD700', icon: Monitor },
+    { id: 'system-health', name: 'System Health', desc: 'Uptime & performance', route: '/system-health', category: 'Core', color: '#FFD700', icon: Activity },
+    { id: 'backend-audit', name: 'Backend Audit', desc: 'API & backend status', route: '/backend-audit', category: 'Core', color: '#FFD700', icon: Server },
+    { id: 'app-report', name: 'App Report', desc: 'App performance & usage', route: '/app-report', category: 'Core', color: '#FFD700', icon: FileText },
+    { id: 'feature-control', name: 'Feature Control', desc: 'Toggle features on/off', route: '/admin/feature-control', category: 'Core', color: '#FFD700', icon: Zap },
+    { id: 'control-tower', name: 'Control Tower', desc: 'Master operations console', route: '/admin/control-tower', category: 'Core', color: '#FFD700', icon: Monitor },
+    { id: 'sync-diagnostics', name: 'Sync Diagnostics', desc: 'Data sync health', route: '/admin/sync-diagnostics', category: 'Core', color: '#FFD700', icon: RefreshCw },
+
+    { id: 'landing-control', name: 'Landing Page Control', desc: 'Edit & toggle landing sections', route: '/admin/landing-control', category: 'Landing & Public', color: '#4A90D9', icon: Sliders },
+    { id: 'landing-analytics', name: 'Landing Analytics', desc: 'Visitors & traffic', route: '/admin/landing-analytics', category: 'Landing & Public', color: '#4A90D9', icon: BarChart3 },
+    { id: 'landing-submissions', name: 'Landing Submissions', desc: 'Form submissions', route: '/admin/landing-submissions', category: 'Landing & Public', color: '#4A90D9', icon: Mail },
+    { id: 'landing-preview', name: 'Public Landing Preview', desc: 'View live landing page', route: '/landing', category: 'Landing & Public', color: '#4A90D9', icon: Globe },
+    { id: 'deploy-waitlist', name: 'Deploy Waitlist', desc: 'Investor waitlist table', route: '/admin/deploy-waitlist', category: 'Landing & Public', color: '#4A90D9', icon: Rocket },
+    { id: 'waitlist-admin', name: 'Waitlist Admin', desc: 'Manage waitlist', route: '/admin/waitlist-admin', category: 'Landing & Public', color: '#4A90D9', icon: Users },
+    { id: 'banners', name: 'Banners', desc: 'Hero images & promos', route: '/admin/banners', category: 'Landing & Public', color: '#4A90D9', icon: LayoutGrid },
+
+    { id: 'properties', name: 'Properties', desc: 'Real estate portfolio', route: '/admin/properties', category: 'Deals & Assets', color: '#22C55E', icon: Building2 },
+    { id: 'jv-deals', name: 'JV Deals', desc: 'Joint venture management', route: '/admin/jv-deals', category: 'Deals & Assets', color: '#22C55E', icon: Building2 },
+    { id: 'land-partners', name: 'Land Partners', desc: 'Lots & parcels', route: '/admin/land-partners', category: 'Deals & Assets', color: '#22C55E', icon: Building2 },
+    { id: 'title-companies', name: 'Title Companies', desc: 'Escrow & closing', route: '/admin/title-companies', category: 'Deals & Assets', color: '#22C55E', icon: Building2 },
+    { id: 'lender-directory', name: 'Lender Directory', desc: 'Banks & financing', route: '/admin/lender-directory', category: 'Deals & Assets', color: '#22C55E', icon: Building2 },
+    { id: 'lender-search', name: 'Lender Search', desc: 'Find financing', route: '/admin/lender-search', category: 'Deals & Assets', color: '#22C55E', icon: Search },
+    { id: 'lender-sync', name: 'Lender Sync', desc: 'Update lender data', route: '/admin/lender-sync', category: 'Deals & Assets', color: '#22C55E', icon: RefreshCw },
+    { id: 'publication-log', name: 'Publication Log', desc: 'Deal publish history', route: '/admin/publication-log', category: 'Deals & Assets', color: '#22C55E', icon: FileText },
+
+    { id: 'members', name: 'Members', desc: 'Users & investors', route: '/admin/members', category: 'Users & Investors', color: '#4ECDC4', icon: Users },
+    { id: 'applications', name: 'Applications', desc: 'Broker / agent applications', route: '/admin/applications', category: 'Users & Investors', color: '#4ECDC4', icon: FileText },
+    { id: 'team', name: 'Team Management', desc: 'Staff & roles', route: '/admin/team', category: 'Users & Investors', color: '#4ECDC4', icon: Users },
+    { id: 'registration-audit', name: 'Registration Audit', desc: 'Signup & device audit', route: '/admin/registration-audit', category: 'Users & Investors', color: '#4ECDC4', icon: Shield },
+    { id: 'investor-profits', name: 'Investor Profits', desc: 'Dividends & ROI', route: '/admin/investor-profits', category: 'Users & Investors', color: '#4ECDC4', icon: DollarSign },
+    { id: 'kyc-verification', name: 'KYC Verification', desc: 'Identity verification', route: '/kyc-verification', category: 'Users & Investors', color: '#4ECDC4', icon: ShieldCheck },
+    { id: 'vip-tiers', name: 'VIP Tiers', desc: 'Premium membership tiers', route: '/vip-tiers', category: 'Users & Investors', color: '#4ECDC4', icon: Crown },
+    { id: 'agent-apply', name: 'Agent Applications', desc: 'Agent intake', route: '/agent-apply', category: 'Users & Investors', color: '#4ECDC4', icon: FileText },
+    { id: 'broker-apply', name: 'Broker Applications', desc: 'Broker intake', route: '/broker-apply', category: 'Users & Investors', color: '#4ECDC4', icon: FileText },
+    { id: 'influencer-apply', name: 'Influencer Applications', desc: 'Influencer intake', route: '/influencer-apply', category: 'Users & Investors', color: '#4ECDC4', icon: FileText },
+    { id: 'waitlist-public', name: 'Public Waitlist', desc: 'Investor waitlist page', route: '/waitlist', category: 'Users & Investors', color: '#4ECDC4', icon: Users },
+
+    { id: 'fees-admin', name: 'Fees & Pricing', desc: 'Commissions & rates', route: '/admin/fees', category: 'Finance', color: '#FF9F43', icon: Percent },
+    { id: 'transactions', name: 'Transactions', desc: 'Deposits & withdrawals', route: '/admin/transactions', category: 'Finance', color: '#FF9F43', icon: ArrowUpRight },
+
+    { id: 'marketing', name: 'Marketing', desc: 'Campaigns & ads', route: '/admin/marketing', category: 'Marketing', color: '#FF6B9D', icon: Megaphone },
+    { id: 'broadcast', name: 'Broadcast', desc: 'Mass push & notifications', route: '/admin/broadcast', category: 'Marketing', color: '#FF6B9D', icon: MessageSquare },
+    { id: 'social-command', name: 'Social Command', desc: 'Social media center', route: '/admin/social-command', category: 'Marketing', color: '#FF6B9D', icon: Megaphone },
+    { id: 'viral-growth', name: 'Viral Growth', desc: 'Referrals & sharing', route: '/admin/viral-growth', category: 'Marketing', color: '#FF6B9D', icon: Rocket },
+    { id: 'influencers', name: 'Influencers', desc: 'Ambassador program', route: '/admin/influencers', category: 'Marketing', color: '#FF6B9D', icon: Users },
+    { id: 'retargeting', name: 'Retargeting', desc: 'Remarketing audiences', route: '/admin/retargeting', category: 'Marketing', color: '#FF6B9D', icon: BarChart3 },
+    { id: 'traffic-control', name: 'Traffic Control', desc: 'UTM & sources', route: '/admin/traffic-control', category: 'Marketing', color: '#FF6B9D', icon: Globe },
+    { id: 'sms-reports', name: 'SMS Reports', desc: 'Text delivery reports', route: '/sms-reports', category: 'Marketing', color: '#FF6B9D', icon: MessageSquare },
+    { id: 'sms-dashboard', name: 'SMS Dashboard', desc: 'SMS overview', route: '/sms-dashboard', category: 'Marketing', color: '#FF6B9D', icon: MessageSquare },
+    { id: 'sms-compose', name: 'SMS Compose', desc: 'Send new SMS', route: '/sms-compose', category: 'Marketing', color: '#FF6B9D', icon: MessageSquare },
+    { id: 'sms-history', name: 'SMS History', desc: 'Past SMS messages', route: '/sms-history', category: 'Marketing', color: '#FF6B9D', icon: MessageSquare },
+    { id: 'send-test-sms', name: 'Send Test SMS', desc: 'Test SMS delivery', route: '/send-test-sms', category: 'Marketing', color: '#FF6B9D', icon: MessageSquare },
+    { id: 'send-test-email', name: 'Send Test Email', desc: 'Test email delivery', route: '/send-test-email', category: 'Email', color: '#38BDF8', icon: Mail },
+
+    { id: 'email-management', name: 'Email Management', desc: 'Templates & campaigns', route: '/admin/email-management', category: 'Email', color: '#38BDF8', icon: Mail },
+    { id: 'email-engine', name: 'Email Engine', desc: 'SMTP & delivery', route: '/admin/email-engine', category: 'Email', color: '#38BDF8', icon: Settings },
+    { id: 'email-accounts', name: 'Email Accounts', desc: 'Connected inboxes', route: '/admin/email-accounts', category: 'Email', color: '#38BDF8', icon: Mail },
+    { id: 'email-inbox', name: 'Email Inbox', desc: 'Sent & received', route: '/admin/email-inbox', category: 'Email', color: '#38BDF8', icon: Mail },
+
+    { id: 'growth', name: 'Growth Analytics', desc: 'KPI metrics', route: '/admin/growth', category: 'Analytics', color: '#A78BFA', icon: BarChart3 },
+    { id: 'analytics-report', name: 'Analytics Report', desc: 'Live visitors & GA', route: '/analytics-report', category: 'Analytics', color: '#A78BFA', icon: BarChart3 },
+    { id: 'outreach-analytics', name: 'Outreach Analytics', desc: 'Campaign performance', route: '/admin/outreach-analytics', category: 'Analytics', color: '#A78BFA', icon: BarChart3 },
+    { id: 'engagement', name: 'Engagement', desc: 'Active user metrics', route: '/admin/engagement', category: 'Analytics', color: '#A78BFA', icon: Activity },
+    { id: 'visitor-intelligence', name: 'Visitor Intelligence', desc: 'Behavior & heatmap', route: '/admin/visitor-intelligence', category: 'Analytics', color: '#A78BFA', icon: Eye },
+
+    { id: 'ai-outreach', name: 'AI Outreach', desc: 'Automated drip campaigns', route: '/admin/ai-outreach', category: 'AI / IVX IA', color: '#A78BFA', icon: Bot },
+    { id: 'ai-video', name: 'AI Video', desc: 'Generate AI video', route: '/admin/ai-video', category: 'AI / IVX IA', color: '#A78BFA', icon: Bot },
+    { id: 'ai-gallery', name: 'AI Gallery', desc: 'Generated assets', route: '/ai-gallery', category: 'AI / IVX IA', color: '#A78BFA', icon: LayoutGrid },
+    { id: 'ai-automation-report', name: 'AI Automation Report', desc: 'Agent task status', route: '/ai-automation-report', category: 'AI / IVX IA', color: '#A78BFA', icon: Bot },
+    { id: 'lead-intelligence', name: 'Lead Intelligence', desc: 'Lead scoring', route: '/admin/lead-intelligence', category: 'AI / IVX IA', color: '#A78BFA', icon: Bot },
+    { id: 'global-intelligence', name: 'Global Intelligence', desc: 'Market trends', route: '/global-intelligence', category: 'AI / IVX IA', color: '#A78BFA', icon: Globe },
+
+    { id: 'ivx-owner-vars', name: 'Owner Variables', desc: 'Env vars & runtime proof', route: '/ivx/variables', category: 'Variables & Deploy', color: '#FF9900', icon: KeyRound },
+    { id: 'api-keys', name: 'API Keys Vault', desc: 'View / copy credentials', route: '/admin/api-keys', category: 'Variables & Deploy', color: '#FF9900', icon: Key },
+    { id: 'authenticator', name: 'Authenticator', desc: '2FA codes & security', route: '/authenticator', category: 'Variables & Deploy', color: '#FF9900', icon: ShieldCheck },
+    { id: 'ivx-independence', name: 'Independence Tracker', desc: 'Rork independence plan', route: '/ivx/independence', category: 'Variables & Deploy', color: '#FF9900', icon: ShieldCheck },
+    { id: 'supabase-scripts', name: 'Supabase SQL', desc: 'DB scripts & migrations', route: '/admin/supabase-scripts', category: 'Variables & Deploy', color: '#FF9900', icon: Database },
+    { id: 'supabase-export', name: 'Supabase Export', desc: 'Export DB data', route: '/supabase-export', category: 'Variables & Deploy', color: '#FF9900', icon: Database },
+    { id: 'v1-brief', name: 'V1 Brief', desc: 'Launch brief & specs', route: '/v1-brief', category: 'Variables & Deploy', color: '#FF9900', icon: FileText },
+    { id: 'ivx-ai-proxy-status', name: 'IVX AI Proxy', desc: 'AI proxy runtime proof', route: '/ivx/ai-proxy-status', category: 'Variables & Deploy', color: '#FF9900', icon: Bot },
+
+    { id: 'audit-log', name: 'Audit Trail', desc: 'Full action history', route: '/admin/audit-log', category: 'Audit & Recovery', color: '#9A9A9A', icon: Shield },
+    { id: 'data-recovery', name: 'Data Recovery', desc: 'Restore deleted data', route: '/admin/data-recovery', category: 'Audit & Recovery', color: '#9A9A9A', icon: RefreshCw },
+    { id: 'image-backup', name: 'Image Backup', desc: 'Photo storage health', route: '/admin/image-backup', category: 'Audit & Recovery', color: '#9A9A9A', icon: Shield },
+    { id: 'trash-bin', name: 'Trash Bin', desc: 'Recycle & restore', route: '/admin/trash-bin', category: 'Audit & Recovery', color: '#9A9A9A', icon: Trash2 },
+    { id: 'quality-control', name: 'Quality Control', desc: 'QC checks', route: '/admin/quality-control', category: 'Audit & Recovery', color: '#9A9A9A', icon: ShieldCheck },
+    { id: 'staff-activity', name: 'Staff Activity', desc: 'See what staff did', route: '/admin/staff-activity', category: 'Audit & Recovery', color: '#9A9A9A', icon: Eye },
+    { id: 'admin-chat-room', name: 'Admin Message Room', desc: 'Shared admin chat', route: '/admin/chat-room', category: 'Audit & Recovery', color: '#9A9A9A', icon: MessageSquare },
+    { id: 'developer-handoff', name: 'Developer Handoff', desc: 'Tech specs export', route: '/admin/developer-handoff', category: 'Audit & Recovery', color: '#9A9A9A', icon: FileText },
+    { id: 'app-docs', name: 'Docs & Legal', desc: 'Contracts & legal', route: '/admin/app-docs', category: 'Audit & Recovery', color: '#9A9A9A', icon: FileText },
+  ];
+
+  const filteredModules = ALL_MODULES.filter((m) => {
+    if (!moduleSearch.trim()) return true;
+    const q = moduleSearch.trim().toLowerCase();
+    return m.name.toLowerCase().includes(q) || m.desc.toLowerCase().includes(q) || m.category.toLowerCase().includes(q);
+  });
+
+  const modulesByCategory = filteredModules.reduce<Record<string, typeof ALL_MODULES>>((acc, m) => {
+    if (!acc[m.category]) acc[m.category] = [];
+    acc[m.category].push(m);
+    return acc;
+  }, {});
+
+  const renderAllModules = () => (
+    <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <View style={styles.ownerBadge}>
+        <Crown size={20} color="#FFD700" />
+        <Text style={styles.ownerBadgeText}>All Owner & Admin Modules ({ALL_MODULES.length})</Text>
+      </View>
+
+      <View style={styles.moduleSearchBox}>
+        <Search size={16} color={Colors.textSecondary} />
+        <TextInput
+          value={moduleSearch}
+          onChangeText={setModuleSearch}
+          placeholder="Search modules..."
+          placeholderTextColor={Colors.textTertiary}
+          style={styles.moduleSearchInput}
+          testID="owner-modules-search"
+        />
+        {moduleSearch.length > 0 && (
+          <TouchableOpacity onPress={() => setModuleSearch('')}>
+            <X size={16} color={Colors.textSecondary} />
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {Object.entries(modulesByCategory).map(([category, items]) => (
+        <View key={category} style={{ marginTop: 16 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <View style={{ width: 4, height: 14, borderRadius: 2, backgroundColor: items[0].color }} />
+            <Text style={styles.sectionTitle}>{category}</Text>
+            <Text style={{ color: Colors.textTertiary, fontSize: 12 }}>({items.length})</Text>
+          </View>
+          <View style={styles.moduleGrid}>
+            {items.map((m) => {
+              const Icon = m.icon ?? LayoutGrid;
+              return (
+                <TouchableOpacity
+                  key={m.id}
+                  style={[styles.moduleCard, { borderColor: m.color + '40' }]}
+                  onPress={() => router.push(m.route as any)}
+                  testID={`owner-module-${m.id}`}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.moduleIcon, { backgroundColor: m.color + '20' }]}>
+                    <Icon size={18} color={m.color} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.moduleName} numberOfLines={1}>{m.name}</Text>
+                    <Text style={styles.moduleDesc} numberOfLines={2}>{m.desc}</Text>
+                  </View>
+                  <ChevronRight size={16} color={Colors.textTertiary} />
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+      ))}
+
+      {filteredModules.length === 0 && (
+        <View style={{ padding: 32, alignItems: 'center' }}>
+          <Text style={{ color: Colors.textSecondary }}>No modules match "{moduleSearch}"</Text>
+        </View>
+      )}
+
       <View style={styles.bottomPadding} />
     </ScrollView>
   );
@@ -1174,7 +1553,7 @@ export default function OwnerControlsScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+        <TouchableOpacity onPress={() => router.replace('/(tabs)' as any)} style={styles.backBtn} testID="owner-back-home">
           <ArrowLeft size={22} color={Colors.text} />
         </TouchableOpacity>
         <View style={[styles.headerLeft, { flex: 1 }]}>
@@ -1186,8 +1565,37 @@ export default function OwnerControlsScreen() {
         </View>
       </View>
 
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.quickNavWrap}
+        contentContainerStyle={styles.quickNavContent}
+      >
+        {[
+          { key: 'home', label: 'Home', icon: HomeIcon, route: '/(tabs)' },
+          { key: 'invest', label: 'Invest', icon: TrendingUp, route: '/(tabs)/invest' },
+          { key: 'market', label: 'Market', icon: BarChart3, route: '/(tabs)/market' },
+          { key: 'portfolio', label: 'Portfolio', icon: Briefcase, route: '/(tabs)/portfolio' },
+          { key: 'chat', label: 'Chat', icon: MessageSquare, route: '/(tabs)/chat' },
+          { key: 'profile', label: 'Profile', icon: UserIcon, route: '/(tabs)/profile' },
+          { key: 'admin', label: 'Admin Hub', icon: LayoutDashboard, route: '/admin' },
+        ].map((item) => (
+          <TouchableOpacity
+            key={item.key}
+            style={styles.quickNavChip}
+            onPress={() => router.push(item.route as any)}
+            testID={`owner-quicknav-${item.key}`}
+            activeOpacity={0.8}
+          >
+            <item.icon size={14} color="#FFD700" />
+            <Text style={styles.quickNavText}>{item.label}</Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+
       <View style={styles.tabContainer}>
         {[
+          { key: 'modules', label: 'All', icon: LayoutGrid },
           { key: 'revenue', label: 'Revenue', icon: DollarSign },
           { key: 'properties', label: 'Properties', icon: Building2 },
           { key: 'fees', label: 'Fees', icon: Percent },
@@ -1210,6 +1618,7 @@ export default function OwnerControlsScreen() {
       {activeTab === 'properties' && renderProperties()}
       {activeTab === 'fees' && renderFees()}
       {activeTab === 'settings' && renderSettings()}
+      {activeTab === 'modules' && renderAllModules()}
 
       <Modal
         visible={editFeeModalVisible}
@@ -1351,9 +1760,9 @@ export default function OwnerControlsScreen() {
                   />
                 </View>
 
-                <TouchableOpacity style={styles.saveBtn} onPress={handleSaveProperty}>
+                <TouchableOpacity style={styles.saveBtn} onPress={handleSaveProperty} disabled={upsertPropertyControl.isPending}>
                   <Check size={20} color="#fff" />
-                  <Text style={styles.saveBtnText}>Save Changes</Text>
+                  <Text style={styles.saveBtnText}>{upsertPropertyControl.isPending ? 'Saving…' : 'Save Changes'}</Text>
                 </TouchableOpacity>
               </>
             )}
@@ -1371,6 +1780,10 @@ const styles = StyleSheet.create({
   headerLeft: { flex: 1, minWidth: 0 },
   title: { color: Colors.text, fontSize: 18, fontWeight: '800' as const, flexShrink: 1 },
   subtitle: { color: Colors.textSecondary, fontSize: 12, marginTop: 2 },
+  quickNavWrap: { maxHeight: 48, marginBottom: 10 },
+  quickNavContent: { paddingHorizontal: 16, gap: 8, alignItems: 'center' },
+  quickNavChip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, backgroundColor: Colors.surface, borderWidth: 1, borderColor: '#FFD70033' },
+  quickNavText: { color: Colors.text, fontSize: 12, fontWeight: '700' as const },
   tabContainer: { flexDirection: 'row', backgroundColor: Colors.surface, borderRadius: 12, padding: 4, marginBottom: 16, marginHorizontal: 16 },
   tab: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 10 },
   tabActive: { backgroundColor: Colors.primary },
@@ -1480,4 +1893,11 @@ const styles = StyleSheet.create({
   staffActivityLink: { flexDirection: 'row' as const, alignItems: 'center', backgroundColor: Colors.surface, borderRadius: 14, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: '#9B59B630', gap: 14 },
   staffActivityTitle: { color: Colors.text, fontSize: 14, fontWeight: '700' as const },
   staffActivityDesc: { color: Colors.textSecondary, fontSize: 12, marginTop: 2 },
+  moduleSearchBox: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.surfaceBorder, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, marginTop: 12 },
+  moduleSearchInput: { flex: 1, color: Colors.text, fontSize: 14, padding: 0 },
+  moduleGrid: { gap: 8 },
+  moduleCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: Colors.surface, borderRadius: 12, padding: 12, borderWidth: 1 },
+  moduleIcon: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  moduleName: { color: Colors.text, fontSize: 14, fontWeight: '700' as const },
+  moduleDesc: { color: Colors.textSecondary, fontSize: 11, marginTop: 2 },
 });

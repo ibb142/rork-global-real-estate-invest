@@ -88,7 +88,7 @@ const STATUS_CONFIG: Record<IntegrationStatus, { color: string; label: string }>
 };
 
 const OWNER_CONFIG: Record<IntegrationOwner, { color: string; label: string; shortLabel: string }> = {
-  rork: { color: '#FFD700', label: 'Rork side', shortLabel: 'Rork' },
+  ivx: { color: '#FFD700', label: 'IVX side', shortLabel: 'IVX' },
   user: { color: '#FF6B9D', label: 'Your side', shortLabel: 'You' },
   shared: { color: '#A78BFA', label: 'Shared', shortLabel: 'Both' },
 };
@@ -139,11 +139,11 @@ export default function DeveloperHandoffScreen() {
   const deliverySummary = useMemo(() => getDeliverySummary(), []);
 
   const totalRemainingItems = useMemo(() => {
-    return deliverySummary.rork.remainingItems + deliverySummary.user.remainingItems + deliverySummary.shared.remainingItems;
+    return deliverySummary.ivx.remainingItems + deliverySummary.user.remainingItems + deliverySummary.shared.remainingItems;
   }, [deliverySummary]);
 
   const totalRemainingHours = useMemo(() => {
-    return deliverySummary.rork.remainingHours + deliverySummary.user.remainingHours + deliverySummary.shared.remainingHours;
+    return deliverySummary.ivx.remainingHours + deliverySummary.user.remainingHours + deliverySummary.shared.remainingHours;
   }, [deliverySummary]);
 
   const filteredCategories = useMemo(() => {
@@ -264,7 +264,7 @@ export default function DeveloperHandoffScreen() {
 
   const handleShareWhatsApp = useCallback(async () => {
     const content = generateHandoffTextReport();
-    const summary = `Developer module refreshed\nRemaining items: ${totalRemainingItems}\nRemaining hours: ${totalRemainingHours}h\nRork: ${deliverySummary.rork.remainingItems}\nYou: ${deliverySummary.user.remainingItems}\nShared: ${deliverySummary.shared.remainingItems}\n\n`;
+    const summary = `Developer module refreshed\nRemaining items: ${totalRemainingItems}\nRemaining hours: ${totalRemainingHours}h\nIVX: ${deliverySummary.ivx.remainingItems}\nYou: ${deliverySummary.user.remainingItems}\nShared: ${deliverySummary.shared.remainingItems}\n\n`;
 
     try {
       console.log('[DeveloperHandoff] Sharing to WhatsApp');
@@ -423,7 +423,7 @@ export default function DeveloperHandoffScreen() {
           </View>
 
           <View style={styles.splitGrid}>
-            {(['rork', 'user', 'shared'] as const).map((owner) => {
+            {(['ivx', 'user', 'shared'] as const).map((owner) => {
               const ownerConfig = OWNER_CONFIG[owner];
               const bucket = deliverySummary[owner];
               return (
@@ -444,7 +444,7 @@ export default function DeveloperHandoffScreen() {
           <Clock size={16} color={Colors.primary} />
           <Text style={styles.timeBannerText}>
             {'This screen is a delivery workplan, not a live production outage board. I can finish '}
-            <Text style={styles.timeBannerBold}>{`${deliverySummary.rork.remainingItems} items`}</Text>
+            <Text style={styles.timeBannerBold}>{`${deliverySummary.ivx.remainingItems} items`}</Text>
             {' on my side. You still have '}
             <Text style={styles.timeBannerBold}>{`${deliverySummary.user.remainingItems} items`}</Text>
             {' on your side, plus '}

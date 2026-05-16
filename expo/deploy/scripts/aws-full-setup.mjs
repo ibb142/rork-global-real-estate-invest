@@ -23,6 +23,12 @@ const API_DOMAIN    = "api.ivxholding.com";
 const APP_DOMAIN    = "app.ivxholding.com";
 const WWW_DOMAIN    = "www.ivxholding.com";
 const STACK_NAME    = `${APP_NAME}-stack`;
+const API_TARGET_DNS = readOptionalDnsEnv("API_TARGET_DNS") || readOptionalDnsEnv("API_ELB_DNS");
+const APP_TARGET_DNS = readOptionalDnsEnv("APP_TARGET_DNS");
+const WWW_TARGET_DNS = readOptionalDnsEnv("WWW_TARGET_DNS");
+const API_TARGET_HOSTED_ZONE_ID = (process.env.API_TARGET_HOSTED_ZONE_ID || "").trim();
+const APP_TARGET_HOSTED_ZONE_ID = (process.env.APP_TARGET_HOSTED_ZONE_ID || "").trim();
+const WWW_TARGET_HOSTED_ZONE_ID = (process.env.WWW_TARGET_HOSTED_ZONE_ID || "").trim();
 
 const creds = {
   credentials: {
@@ -59,6 +65,57 @@ async function getAccountId() {
 
 async function sleep(ms) {
   return new Promise(r => setTimeout(r, ms));
+}
+
+function readOptionalDnsEnv(name) {
+  const value = process.env[name];
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  return value.trim().replace(/^https?:\/\//i, "").replace(/\/+$/, "").replace(/\.$/, "");
+}
+
+function normalizeDnsValue(value) {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  return value.trim().replace(/^https?:\/\//i, "").replace(/\/+$/, "").replace(/\.$/, "");
+}
+
+function normalizeHostedZoneId(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function ensureAliasDnsName(value) {
+  const normalized = normalizeDnsValue(value);
+  if (normalized.includes("elb.amazonaws.com") && !normalized.startsWith("dualstack.")) {
+    return `dualstack.${normalized}`;
+  }
+  return normalized;
+}
+
+function getDnsTargets(albTarget) {
+  const normalizedAlbDns = normalizeDnsValue(albTarget?.dnsName);
+  const normalizedAlbHostedZoneId = normalizeHostedZoneId(albTarget?.hostedZoneId);
+
+  return {
+    api: {
+      dnsName: API_TARGET_DNS || normalizedAlbDns,
+      hostedZoneId: normalizeHostedZoneId(API_TARGET_HOSTED_ZONE_ID) || normalizedAlbHostedZoneId,
+    },
+    app: {
+      dnsName: APP_TARGET_DNS || normalizedAlbDns,
+      hostedZoneId: normalizeHostedZoneId(APP_TARGET_HOSTED_ZONE_ID) || normalizedAlbHostedZoneId,
+    },
+    www: {
+      dnsName: WWW_TARGET_DNS || normalizedAlbDns,
+      hostedZoneId: normalizeHostedZoneId(WWW_TARGET_HOSTED_ZONE_ID) || normalizedAlbHostedZoneId,
+    },
+    defaultAlbDns: normalizedAlbDns,
+    defaultAlbHostedZoneId: normalizedAlbHostedZoneId,
+  };
 }
 
 // ─── STEP 1: CHECK AWS CREDENTIALS ───────────────────────────────────────────
@@ -193,6 +250,10 @@ async function createCertValidationRecords(zoneId, cert) {
 async function getALBDns() {
   step("Step 4: Checking ALB / CloudFormation Stack");
 
+  if (API_TARGET_DNS) {
+    ok(`API target override supplied: ${API_TARGET_DNS}`);
+  }
+
   try {
     const resp = await cf.send(new DescribeStacksCommand({ StackName: STACK_NAME }));
     const stack = resp.Stacks?.[0];
@@ -204,12 +265,21 @@ async function getALBDns() {
     }
 
     const status = stack.StackStatus;
-    const albOutput = stack.Outputs?.find(o => o.OutputKey === "ALBDNS");
+    const albOutput = stack.Outputs?.find((o) => o.OutputKey === "ALBDNS");
+    const albHostedZoneIdOutput = stack.Outputs?.find((o) => o.OutputKey === "ALBCanonicalHostedZoneID");
 
-    if (albOutput) {
+    if (albOutput?.OutputValue) {
+      const dnsName = normalizeDnsValue(albOutput.OutputValue);
+      const hostedZoneId = normalizeHostedZoneId(albHostedZoneIdOutput?.OutputValue);
       ok(`Stack status: ${status}`);
-      ok(`ALB DNS: ${albOutput.OutputValue}`);
-      return albOutput.OutputValue;
+      ok(`ALB DNS: ${dnsName}`);
+      if (hostedZoneId) {
+        ok(`ALB canonical hosted zone ID: ${hostedZoneId}`);
+      }
+      return {
+        dnsName,
+        hostedZoneId: hostedZoneId || null,
+      };
     }
 
     warn(`Stack exists (status: ${status}) but no ALB DNS output yet.`);
@@ -224,44 +294,103 @@ async function getALBDns() {
 }
 
 // ─── STEP 5: DNS RECORDS ──────────────────────────────────────────────────────
-async function setupDNSRecords(zoneId, albDns) {
+async function setupDNSRecords(zoneId, albTarget) {
   step("Step 5: DNS Records for ivxholding.com");
 
-  if (!albDns) {
-    warn("Skipping DNS A/CNAME records — ALB DNS not available yet.");
-    warn("Run this script again after deploying the CloudFormation stack.");
-    return;
+  const targets = getDnsTargets(albTarget);
+  const records = [
+    { name: `${API_DOMAIN}.`, target: targets.api },
+    { name: `${APP_DOMAIN}.`, target: targets.app },
+    { name: `${WWW_DOMAIN}.`, target: targets.www },
+  ].filter((record) => Boolean(record.target.dnsName));
+
+  if (records.length === 0) {
+    warn("Skipping DNS records — no ELB DNS or explicit upstream override is available.");
+    warn("Set API_TARGET_DNS, APP_TARGET_DNS, or WWW_TARGET_DNS and rerun this script.");
+    return [];
   }
 
-  const records = [
-    // API subdomain → ALB
-    { name: `${API_DOMAIN}.`, type: "CNAME", value: albDns, ttl: 300 },
-    // app subdomain → ALB
-    { name: `${APP_DOMAIN}.`, type: "CNAME", value: albDns, ttl: 300 },
-    // www → ALB
-    { name: `${WWW_DOMAIN}.`, type: "CNAME", value: albDns, ttl: 300 },
-  ];
+  if (targets.api.dnsName && targets.api.dnsName !== targets.defaultAlbDns) {
+    ok(`Using explicit API DNS target override: ${targets.api.dnsName}`);
+  }
 
-  const changes = records.map(r => ({
-    Action: "UPSERT",
-    ResourceRecordSet: {
-      Name: r.name,
-      Type: r.type,
-      TTL: r.ttl,
-      ResourceRecords: [{ Value: r.value }],
-    },
-  }));
+  if (!targets.app.dnsName) {
+    warn(`Skipping ${APP_DOMAIN} — no stack ALB or APP_TARGET_DNS override was found.`);
+  }
+
+  if (!targets.www.dnsName) {
+    warn(`Skipping ${WWW_DOMAIN} — no stack ALB or WWW_TARGET_DNS override was found.`);
+  }
+
+  const recordSummaries = records.map((record) => {
+    const normalizedTarget = normalizeDnsValue(record.target.dnsName);
+    const hostedZoneId = normalizeHostedZoneId(record.target.hostedZoneId);
+    const useAlias = Boolean(hostedZoneId) && normalizedTarget.includes("elb.amazonaws.com");
+
+    if (useAlias) {
+      return {
+        name: record.name,
+        type: "A",
+        alias: true,
+        value: ensureAliasDnsName(normalizedTarget),
+        hostedZoneId,
+      };
+    }
+
+    return {
+      name: record.name,
+      type: "CNAME",
+      alias: false,
+      value: normalizedTarget,
+      ttl: 300,
+      hostedZoneId: null,
+    };
+  });
+
+  const changes = recordSummaries.map((record) => {
+    if (record.alias) {
+      return {
+        Action: "UPSERT",
+        ResourceRecordSet: {
+          Name: record.name,
+          Type: record.type,
+          AliasTarget: {
+            DNSName: record.value,
+            HostedZoneId: record.hostedZoneId,
+            EvaluateTargetHealth: false,
+          },
+        },
+      };
+    }
+
+    return {
+      Action: "UPSERT",
+      ResourceRecordSet: {
+        Name: record.name,
+        Type: record.type,
+        TTL: record.ttl,
+        ResourceRecords: [{ Value: record.value }],
+      },
+    };
+  });
 
   await route53.send(new ChangeResourceRecordSetsCommand({
     HostedZoneId: zoneId,
     ChangeBatch: {
       Changes: changes,
-      Comment: "IVX Holdings DNS records — API + app + www → ALB",
+      Comment: "IVX Holdings DNS records — Route53 alias/CNAME mapping",
     },
   }));
 
-  ok(`Created DNS records:`);
-  records.forEach(r => ok(`  ${r.name} → ${r.value}`));
+  ok(`Upserted ${recordSummaries.length} DNS record(s):`);
+  recordSummaries.forEach((record) => {
+    if (record.alias) {
+      ok(`  ${record.name} → A (Alias) ${record.value} [${record.hostedZoneId}]`);
+    } else {
+      ok(`  ${record.name} → ${record.type} ${record.value}`);
+    }
+  });
+  return recordSummaries;
 }
 
 // ─── STEP 6: CHECK ECR ────────────────────────────────────────────────────────
@@ -289,9 +418,22 @@ function printSummary(data) {
   console.log(`\n  ${GREEN}Domain:${RESET}          ${DOMAIN}`);
   console.log(`  ${GREEN}Hosted Zone:${RESET}     ${data.zoneId}`);
   console.log(`  ${GREEN}Certificate:${RESET}     ${data.certArn}`);
-  console.log(`  ${GREEN}ALB DNS:${RESET}         ${data.albDns || "Not deployed yet"}`);
+  console.log(`  ${GREEN}ALB DNS:${RESET}         ${data.albTarget?.dnsName || "Not deployed yet"}`);
+  if (data.albTarget?.hostedZoneId) {
+    console.log(`  ${GREEN}ALB Zone:${RESET}        ${data.albTarget.hostedZoneId}`);
+  }
   console.log(`  ${GREEN}ECR Repo:${RESET}        ${data.ecrUri}`);
   console.log(`  ${GREEN}Region:${RESET}          ${REGION}`);
+  if (Array.isArray(data.dnsRecords) && data.dnsRecords.length > 0) {
+    console.log(`  ${GREEN}DNS Records:${RESET}`);
+    data.dnsRecords.forEach((record) => {
+      if (record.alias) {
+        console.log(`                         ${record.name} → A (Alias) ${record.value} [${record.hostedZoneId}]`);
+      } else {
+        console.log(`                         ${record.name} → ${record.type} ${record.value}`);
+      }
+    });
+  }
 
   if (data.nameServers?.length) {
     console.log(`\n${BOLD}${YELLOW}  ⚠️  Set these NS records at your domain registrar (e.g. GoDaddy, Namecheap):${RESET}`);
@@ -300,9 +442,11 @@ function printSummary(data) {
 
   console.log(`\n${BOLD}  NEXT STEPS:${RESET}`);
 
-  if (!data.albDns) {
+  if (!data.albTarget?.dnsName && (!Array.isArray(data.dnsRecords) || data.dnsRecords.length === 0)) {
     console.log(`  ${YELLOW}1. Deploy CloudFormation stack:${RESET}`);
     console.log(`     CERTIFICATE_ARN="${data.certArn}" ./deploy/scripts/setup-aws.sh`);
+  } else if (!data.albTarget?.dnsName) {
+    console.log(`  ${GREEN}1. DNS updated using explicit upstream override(s) ✓${RESET}`);
   } else {
     console.log(`  ${GREEN}1. Stack deployed ✓${RESET}`);
   }
@@ -328,11 +472,11 @@ async function main() {
     const zoneId    = await setupHostedZone();
     const nameServers = await getHostedZoneNameServers(zoneId);
     const certArn   = await setupCertificate(zoneId);
-    const albDns    = await getALBDns();
-    await setupDNSRecords(zoneId, albDns);
+    const albTarget = await getALBDns();
+    const dnsRecords = await setupDNSRecords(zoneId, albTarget);
     const ecrUri    = await checkECR(accountId);
 
-    printSummary({ zoneId, certArn, albDns, ecrUri, nameServers });
+    printSummary({ zoneId, certArn, albTarget, ecrUri, nameServers, dnsRecords });
 
   } catch (e) {
     err(`Fatal error: ${e.message}`);

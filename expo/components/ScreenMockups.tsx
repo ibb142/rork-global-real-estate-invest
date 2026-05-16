@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, Dimensions } from 'react-native';
 import Colors from '@/constants/colors';
+import { renderSafeViewChildren } from '@/components/SafeViewChildren';
 
 const MOCK_W = Dimensions.get('window').width - 64;
 const PHONE_H = 280;
@@ -17,7 +18,7 @@ const PhoneFrame = ({ children, themeColor }: { children: React.ReactNode; theme
         <View style={[mockStyles.batteryIcon, { backgroundColor: themeColor }]} />
       </View>
     </View>
-    <View style={mockStyles.phoneContent}>{children}</View>
+    <View style={mockStyles.phoneContent}>{renderSafeViewChildren(children)}</View>
     <View style={mockStyles.homeIndicator}>
       <View style={mockStyles.homeBar} />
     </View>

@@ -1,13 +1,22 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Haptics from 'expo-haptics';
+import {
+  RecordingPresets,
+  requestRecordingPermissionsAsync,
+  setAudioModeAsync,
+  useAudioRecorder,
+  useAudioRecorderState,
+} from 'expo-audio';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Stack } from 'expo-router';
+import { useRouter } from 'expo-router';
 import {
   Alert,
   FlatList,
   Keyboard,
   KeyboardAvoidingView,
+  type LayoutChangeEvent,
   Linking,
   Platform,
   Pressable,
@@ -19,7 +28,7 @@ import {
 } from 'react-native';
 import { MessageBubble } from '@/src/modules/chat/components/MessageBubble';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Paperclip, Send, Sparkles, Terminal } from 'lucide-react-native';
+import { KeyRound, MessageCircle, Mic, Paperclip, Pin, Search, Send, ShieldCheck, Sparkles, Square, Terminal, X } from 'lucide-react-native';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import Colors from '@/constants/colors';
 import { IVX_OWNER_AI_PROFILE } from '@/constants/ivx-owner-ai';
@@ -27,7 +36,7 @@ import { useAuth } from '@/lib/auth-context';
 import { resolveDevTestModeContext } from '@/lib/dev-test-mode';
 import { getIVXOwnerAIConfigAudit, type IVXOwnerAIConfigAudit } from '@/lib/ivx-supabase-client';
 import { isOpenAccessModeEnabled } from '@/lib/open-access';
-import type { IVXMessage, IVXUploadInput } from '@/shared/ivx';
+import type { IVXMessage, IVXOwnerAIToolOutput, IVXUploadInput } from '@/shared/ivx';
 import { assertCleanOwnerAIResponseText, isIVXServiceUnavailableDiagnostics } from '@/src/modules/ivx-owner-ai/services/ivxAIRequestService';
 import {
   getActiveRuntimeSource,
@@ -53,7 +62,7 @@ import {
   ivxInboxService,
   detectIVXRoomStatus,
   invalidateIVXRoomProbeCache,
-  isIVXLocalFirstChatEnabled,
+  recordIVXOwnerChatAuditEvent,
   type IVXChatAuditReport,
   type IVXFunctionalityProofItem,
   type IVXOwnerReceiveAudit,
@@ -62,16 +71,18 @@ import {
   type IVXProofRecord,
   type IVXRoomRuntimeSnapshot,
 } from '@/src/modules/ivx-owner-ai/services';
+import { isIVXLocalFirstChatEnabled } from '@/src/modules/ivx-owner-ai/services/ivxLocalFirstRuntime';
+import { transcribeAudioRecording } from '@/src/modules/ivx-owner-ai/services/ivxMultimodalService';
+import { executeReliably, type ReliabilityTrace } from '@/src/modules/chat/services/aiReliability';
 import {
   isExplicitSensitiveActionConfirmation,
   resolveOwnerTrustContext,
   stripSensitiveActionConfirmationPrefix,
   type OwnerRequestClass,
 } from '@/src/modules/ivx-owner-ai/services/ownerTrust';
-import type { ChatRoomRuntimeSignals, ChatRoomStatus, ServiceRuntimeHealth } from '@/src/modules/chat/types/chat';
+import type { ChatMessage, ChatReplyContext, ChatRoomRuntimeSignals, ChatRoomStatus, ServiceRuntimeHealth } from '@/src/modules/chat/types/chat';
 import { resolveRoomCapabilityState, type RoomCapabilityResolution } from '@/src/modules/chat/services/roomCapabilityResolver';
 import { sanitizeUserFacingChatText } from '@/src/modules/chat/services/visibleTextSanitizer';
-import { RoomHeader } from '@/src/modules/chat/components/RoomHeader';
 import {
   controlTowerAggregator,
   executeOperatorAction,
@@ -84,6 +95,7 @@ import {
 } from '@/lib/control-tower';
 import { liveIntelligenceService } from '@/lib/control-tower/live-intelligence';
 import { useLiveIntelligenceSnapshot } from '@/lib/control-tower/use-live-intelligence';
+import { getIVXControlRoomStatus, type IVXControlRoomItem, type IVXControlRoomItemStatus, type IVXControlRoomStatus } from '@/src/modules/ivx-owner-ai/services/ivxControlRoomService';
 
 type PickerAsset = {
   uri: string;
@@ -111,9 +123,16 @@ type QAProofItem = {
   detail: string;
 };
 
+type OwnerPromptTemplate = {
+  id: 'deal_review' | 'investor_reply' | 'document_summary';
+  label: string;
+  prompt: string;
+  testID: string;
+};
+
 type ProbeMetadata = {
   observedAt: string | null;
-  source: 'remote_api' | 'local_app_brain' | 'toolkit_fallback' | 'pending' | 'unknown';
+  source: 'remote_api' | 'local_app_brain' | 'provider_fallback' | 'pending' | 'unknown';
   endpoint: string | null;
   deploymentMarker: string | null;
   lastFailureReason: string | null;
@@ -124,7 +143,7 @@ type RuntimeDebugSnapshot = {
   ownerBypassEnabled: boolean;
   conversationId: string | null;
   requestId: string | null;
-  source: 'remote_api' | 'local_app_brain' | 'toolkit_fallback' | 'pending' | 'unknown';
+  source: 'remote_api' | 'local_app_brain' | 'provider_fallback' | 'pending' | 'unknown';
   endpoint: string | null;
   deploymentMarker: string | null;
   requestStage: string;
@@ -141,6 +160,18 @@ type PendingOwnerMessage = {
   clientId: string;
   text: string;
   createdAt: string;
+  mode: 'send_only' | 'send_and_ai' | 'ai_only' | 'attachment';
+  status: 'sending' | 'uploading' | 'uploaded' | 'failed';
+  errorMessage?: string | null;
+  upload?: IVXUploadInput | null;
+  uploadProgress?: number | null;
+  replyTo?: ChatReplyContext | null;
+};
+
+type OwnerConversationDraft = {
+  text: string;
+  attachmentDrafts: PendingOwnerMessage[];
+  updatedAt: string;
 };
 
 function safeTrim(value: unknown): string {
@@ -156,6 +187,39 @@ function safeTrim(value: unknown): string {
     return '';
   }
 }
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+const IVX_REPLY_CONTEXT_PREFIX = '[[ivx_reply_context:';
+const IVX_REPLY_CONTEXT_SUFFIX = ']]';
+
+const OWNER_PROMPT_TEMPLATES: readonly OwnerPromptTemplate[] = [
+  {
+    id: 'deal_review',
+    label: 'Deal review',
+    prompt: 'Review this real estate deal like a senior IVX analyst. Summarize upside, risks, missing diligence, required documents, investor suitability notes, and the exact next action list.',
+    testID: 'ivx-owner-template-deal-review',
+  },
+  {
+    id: 'investor_reply',
+    label: 'Investor reply',
+    prompt: 'Draft a compliant investor-support reply. Keep it clear, warm, non-promissory, and include what the investor should review before requesting allocation access.',
+    testID: 'ivx-owner-template-investor-reply',
+  },
+  {
+    id: 'document_summary',
+    label: 'Doc summary',
+    prompt: 'Summarize the attached document or pasted text. Extract the key financial terms, obligations, deadlines, risk disclosures, missing signatures, and follow-up questions.',
+    testID: 'ivx-owner-template-document-summary',
+  },
+];
+
+type ParsedReplyBody = {
+  replyTo: ChatReplyContext | null;
+  body: string;
+};
 
 function createTransientMessageId(prefix: string): string {
   const cryptoRef = globalThis.crypto as { randomUUID?: () => string } | undefined;
@@ -244,8 +308,8 @@ function resolveSendBranch(
     if (runtimeSource === 'remote_api' || runtimeSource === 'local_app_brain') {
       return { branch: 'primary_realtime', label: 'primary_realtime', context: `assistant db insert${statusFragment}` };
     }
-    if (runtimeSource === 'toolkit_fallback') {
-      return { branch: 'alternate_shared', label: 'alternate_shared', context: `toolkit db insert${statusFragment}` };
+    if (runtimeSource === 'provider_fallback') {
+      return { branch: 'alternate_shared', label: 'alternate_shared', context: `gateway db insert${statusFragment}` };
     }
     return { branch: 'primary_realtime', label: 'primary_realtime', context: `db insert · source ${runtimeSource}${statusFragment}` };
   }
@@ -265,7 +329,7 @@ function getRuntimeFallbackState(source: RuntimeDebugSnapshot['source']): string
   if (source === 'remote_api' || source === 'local_app_brain') {
     return 'cleared';
   }
-  if (source === 'toolkit_fallback') {
+  if (source === 'provider_fallback') {
     return 'active';
   }
   return 'pending';
@@ -342,9 +406,48 @@ const AuditInfoRow = React.memo(function AuditInfoRow({ label, value, testID }: 
 const IVX_OWNER_MESSAGES_QUERY_KEY = ['ivx-owner-ai', 'messages'] as const;
 const IVX_OWNER_CONVERSATION_QUERY_KEY = ['ivx-owner-ai', 'conversation'] as const;
 const IVX_ROOM_STATUS_QUERY_KEY = ['ivx-owner-ai', 'room-status'] as const;
+const IVX_CONTROL_ROOM_STATUS_QUERY_KEY = ['ivx-owner-ai', 'control-room-status'] as const;
+const CONTROL_ROOM_FALLBACK_ITEMS: IVXControlRoomItem[] = [
+  { id: 'supabase-status', label: 'Supabase status', status: 'not_verified', detail: 'not verified' },
+  { id: 'supabase-tables', label: 'Supabase tables', status: 'not_verified', detail: 'not verified' },
+  { id: 'supabase-auth', label: 'Supabase auth', status: 'not_verified', detail: 'not verified' },
+  { id: 'supabase-storage', label: 'Supabase storage', status: 'not_verified', detail: 'not verified' },
+  { id: 'supabase-rls', label: 'Supabase RLS policies', status: 'not_verified', detail: 'not verified' },
+  { id: 'message-persistence', label: 'Message persistence status', status: 'not_verified', detail: 'not verified' },
+  { id: 'ai-response-persistence', label: 'AI response persistence status', status: 'not_verified', detail: 'not verified' },
+  { id: 'backend-health', label: 'Backend API health', status: 'not_verified', detail: 'not verified' },
+  { id: 'dns-tls', label: 'DNS/TLS status', status: 'not_verified', detail: 'not verified' },
+  { id: 'github-repo', label: 'GitHub repo status', status: 'not_verified', detail: 'not verified' },
+  { id: 'github-branch', label: 'Current branch', status: 'not_verified', detail: 'not verified' },
+  { id: 'github-uncommitted', label: 'Uncommitted files', status: 'not_verified', detail: 'not verified' },
+  { id: 'deployment-status', label: 'Deployment status', status: 'not_verified', detail: 'not verified' },
+  { id: 'aws-iam', label: 'AWS/IAM status', status: 'not_verified', detail: 'not verified' },
+  { id: 'env-checklist', label: 'Environment variable checklist', status: 'not_verified', detail: 'not verified' },
+  { id: 'missing-secrets', label: 'Missing secrets checklist', status: 'not_verified', detail: 'not verified' },
+  { id: 'logs-summary', label: 'Logs viewer/status summary', status: 'not_connected', detail: 'not connected' },
+  { id: 'verification-tests', label: 'Run verification tests', status: 'not_verified', detail: 'not verified' },
+  { id: 'fix-queue', label: 'Fix queue / pending blockers', status: 'not_verified', detail: 'not verified' },
+  { id: 'export-setup', label: 'Export setup instructions', status: 'available', detail: 'README_IVX_DEPLOYMENT.md, ENVIRONMENT_VARIABLES.md, and IVX_AI_BRAIN_TOOLS.md' },
+];
+const IVX_OWNER_DRAFT_STORAGE_KEY = 'ivx-owner-ai:conversation-draft:v1';
+const IVX_OWNER_PINNED_MESSAGES_STORAGE_KEY = 'ivx-owner-ai:pinned-messages:v1';
 const AI_PROBE_INTERVAL_MS = 30_000;
 const OWNER_COMMAND_PREFIX = '/';
 const DEFAULT_OWNER_AI_CONFIG_AUDIT: IVXOwnerAIConfigAudit = getIVXOwnerAIConfigAudit();
+
+function getControlRoomTone(status: IVXControlRoomItemStatus): 'pass' | 'warn' | 'error' | 'pending' {
+  if (status === 'verified' || status === 'connected' || status === 'available') {
+    return 'pass';
+  }
+  if (status === 'blocked' || status === 'missing_access' || status === 'not_connected') {
+    return 'error';
+  }
+  return 'pending';
+}
+
+function getControlRoomStatusLabel(status: IVXControlRoomItemStatus): string {
+  return status.replace(/_/g, ' ');
+}
 
 const OWNER_COMMANDS: Record<string, { description: string; handler: (args: string) => string }> = {
   help: {
@@ -549,6 +652,49 @@ function formatMessageTime(value: string): string {
   });
 }
 
+function formatMessageDateKey(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return 'unknown';
+  }
+
+  return date.toISOString().slice(0, 10);
+}
+
+function formatMessageDateLabel(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return 'Recent';
+  }
+
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+  const dateKey = formatMessageDateKey(value);
+  if (dateKey === formatMessageDateKey(today.toISOString())) {
+    return 'Today';
+  }
+  if (dateKey === formatMessageDateKey(yesterday.toISOString())) {
+    return 'Yesterday';
+  }
+
+  return date.toLocaleDateString([], {
+    month: 'short',
+    day: 'numeric',
+    year: date.getFullYear() === today.getFullYear() ? undefined : 'numeric',
+  });
+}
+
+const DateSeparator = React.memo(function DateSeparator({ value }: { value: string }) {
+  return (
+    <View style={styles.dateSeparatorRow} testID={`ivx-owner-date-separator-${formatMessageDateKey(value)}`}>
+      <View style={styles.dateSeparatorLine} />
+      <Text style={styles.dateSeparatorText}>{formatMessageDateLabel(value)}</Text>
+      <View style={styles.dateSeparatorLine} />
+    </View>
+  );
+});
+
 function isOwnMessage(message: IVXMessage, ownerId: string): boolean {
   if (!safeTrim(ownerId)) {
     return message.senderRole === 'owner';
@@ -559,6 +705,15 @@ function isOwnMessage(message: IVXMessage, ownerId: string): boolean {
 
 function getAttachmentLabel(message: IVXMessage): string {
   return message.attachmentName ?? message.attachmentUrl ?? 'Attachment';
+}
+
+function getAttachmentKindFromUpload(upload: IVXUploadInput): IVXMessage['attachmentKind'] {
+  const mime = upload.type?.toLowerCase() ?? '';
+  const name = upload.name.toLowerCase();
+  if (mime.startsWith('image/') || /\.(png|jpg|jpeg|gif|webp|heic)$/.test(name)) return 'image';
+  if (mime.startsWith('video/') || /\.(mp4|mov|webm|m4v)$/.test(name)) return 'video';
+  if (mime.includes('pdf') || name.endsWith('.pdf')) return 'pdf';
+  return 'file';
 }
 
 function parseStructuredSystemMessage(body: string | null | undefined): Array<{ label: string; value: string }> | null {
@@ -597,50 +752,48 @@ function isInternalTranscriptMessage(message: IVXMessage): boolean {
     return false;
   }
 
-  if (parseStructuredSystemMessage(body)) {
-    return true;
+  return parseStructuredSystemMessage(body) !== null || !sanitizeUserFacingChatText(body);
+}
+
+function encodeReplyBody(text: string, replyTo: ChatReplyContext | null): string {
+  if (!replyTo) {
+    return text;
   }
 
-  const normalizedBody = body.toLowerCase();
-  return normalizedBody.includes('operator action log')
-    || normalizedBody.includes('linked proof cards')
-    || normalizedBody.includes('affected dependencies:')
-    || normalizedBody.includes('backend_admin_')
-    || normalizedBody.includes('fallback_chat_only')
-    || normalizedBody.includes('runtime proof')
-    || normalizedBody.includes('request stage')
-    || normalizedBody.includes('failure class')
-    || normalizedBody.includes('http status')
-    || normalizedBody.includes('model proof')
-    || normalizedBody.includes('provider proof')
-    || normalizedBody.includes('source proof')
-    || normalizedBody.includes('remote_api')
-    || normalizedBody.includes('owner_session')
-    || normalizedBody.includes('anon key')
-    || normalizedBody.includes('jwt')
-    || normalizedBody.includes('fallback path answered')
-    || normalizedBody.includes('fallback reply delivered')
-    || normalizedBody.includes('toolkit fallback')
-    || normalizedBody.includes('shared fallback')
-    || normalizedBody.includes('degraded fallback mode')
-    || normalizedBody.includes('main backend is temporarily unreachable')
-    || normalizedBody.includes('restricted')
-    || normalizedBody.includes('execution environment')
-    || normalizedBody.includes('audit trace')
-    || normalizedBody.includes('subsystem registered')
-    || normalizedBody.includes('runtime fault')
-    || normalizedBody.includes('pointer dereference')
-    || normalizedBody.includes('dev_test_mode')
-    || normalizedBody.includes('system-control')
-    || normalizedBody.includes('system control')
-    || normalizedBody.includes('sandbox')
-    || normalizedBody.includes('infrastructure')
-    || normalizedBody.includes('deployment')
-    || normalizedBody.includes('simulation')
-    || normalizedBody.includes('full control')
-    || normalizedBody.includes('internal instructions')
-    || normalizedBody.includes('internal runtime')
-    || normalizedBody.includes('capability text');
+  try {
+    const encoded = encodeURIComponent(JSON.stringify(replyTo));
+    return `${IVX_REPLY_CONTEXT_PREFIX}${encoded}${IVX_REPLY_CONTEXT_SUFFIX}\n${text}`;
+  } catch (error) {
+    console.log('[IVXOwnerChatRoute] Failed to encode reply context:', error instanceof Error ? error.message : 'unknown');
+    return text;
+  }
+}
+
+function parseReplyBody(value: string | null | undefined): ParsedReplyBody {
+  const body = value ?? '';
+  if (!body.startsWith(IVX_REPLY_CONTEXT_PREFIX)) {
+    return { replyTo: null, body };
+  }
+
+  const suffixIndex = body.indexOf(IVX_REPLY_CONTEXT_SUFFIX);
+  if (suffixIndex < 0) {
+    return { replyTo: null, body };
+  }
+
+  try {
+    const encoded = body.slice(IVX_REPLY_CONTEXT_PREFIX.length, suffixIndex);
+    const parsed = JSON.parse(decodeURIComponent(encoded)) as Partial<ChatReplyContext>;
+    const replyTo: ChatReplyContext = {
+      messageId: safeTrim(parsed.messageId),
+      senderLabel: safeTrim(parsed.senderLabel) || 'Original message',
+      previewText: safeTrim(parsed.previewText) || 'Message',
+    };
+    const visibleBody = body.slice(suffixIndex + IVX_REPLY_CONTEXT_SUFFIX.length).replace(/^\n/, '');
+    return replyTo.messageId ? { replyTo, body: visibleBody } : { replyTo: null, body: visibleBody };
+  } catch (error) {
+    console.log('[IVXOwnerChatRoute] Failed to parse reply context:', error instanceof Error ? error.message : 'unknown');
+    return { replyTo: null, body };
+  }
 }
 
 function normalizeComposerText(value: unknown, fallback: unknown = ''): string {
@@ -681,16 +834,29 @@ function normalizeComposerText(value: unknown, fallback: unknown = ''): string {
 
 export default function IVXOwnerChatRoute() {
   const queryClient = useQueryClient();
+  const router = useRouter();
   const flatListRef = useRef<FlatList<IVXMessage> | null>(null);
   const composerInputRef = useRef<TextInput | null>(null);
   const composerValueRef = useRef<string>('');
+  const highlightedMessageTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingJumpMessageIdRef = useRef<string | null>(null);
+  const suppressAutoScrollUntilRef = useRef<number>(0);
+  const lastNonKeyboardRootHeightRef = useRef<number>(0);
   const insets = useSafeAreaInsets();
   const { user, userId } = useAuth();
   const [composerValue, setComposerValue] = useState<string>('');
+  const [messageSearchQuery, setMessageSearchQuery] = useState<string>('');
+  const [pinnedMessageIds, setPinnedMessageIds] = useState<string[]>([]);
+  const [selectedReplyContext, setSelectedReplyContext] = useState<ChatReplyContext | null>(null);
+  const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
+  const [missingReplyMessageId, setMissingReplyMessageId] = useState<string | null>(null);
+  const pinnedMessagesRestoreCompletedRef = useRef<boolean>(false);
   const [isPickingFile, setIsPickingFile] = useState<boolean>(false);
   const [composerHeight, setComposerHeight] = useState<number>(0);
+  const [composerInputHeight, setComposerInputHeight] = useState<number>(44);
   const [keyboardInset, setKeyboardInset] = useState<number>(0);
-  const [showDiagnostics, setShowDiagnostics] = useState<boolean>(false);
+  const [rootLayoutHeight, setRootLayoutHeight] = useState<number>(0);
+  const [showDiagnostics, setShowDiagnostics] = useState<boolean>(true);
   const isOpenAccessBuild = isOpenAccessModeEnabled();
   const localFirstChatMode = useMemo<boolean>(() => isIVXLocalFirstChatEnabled(), []);
   const ownerId = useMemo<string>(() => user?.id ?? userId ?? (isOpenAccessBuild || localFirstChatMode ? 'ivx-local-owner' : ''), [isOpenAccessBuild, localFirstChatMode, user?.id, userId]);
@@ -706,6 +872,8 @@ export default function IVXOwnerChatRoute() {
   }, []);
   const liveSnapshot = useLiveIntelligenceSnapshot();
   const ownerSessionIdRef = useRef<string>(`ivx-owner-room-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const recorderState = useAudioRecorderState(audioRecorder);
 
   const roomStatusQuery = useQuery<ChatRoomStatus, Error>({
     queryKey: IVX_ROOM_STATUS_QUERY_KEY,
@@ -779,6 +947,62 @@ export default function IVXOwnerChatRoute() {
     },
   });
   const messages = messagesQuery.data ?? [];
+  const transcribeVoiceMutation = useMutation<string, Error, string>({
+    mutationFn: async (uri) => {
+      await recordIVXOwnerChatAuditEvent({
+        action: 'voice_transcription',
+        conversationId: conversationQuery.data?.id ?? IVX_OWNER_AI_PROFILE.sharedRoom.id,
+        status: 'started',
+        summary: 'Owner voice transcription started.',
+        metadata: { platform: Platform.OS, sessionId: ownerSessionIdRef.current },
+      });
+      const result = await transcribeAudioRecording({
+        uri,
+        fileName: Platform.OS === 'web' ? 'ivx-owner-voice.webm' : 'ivx-owner-voice.m4a',
+        mimeType: Platform.OS === 'web' ? 'audio/webm' : 'audio/m4a',
+      });
+      return result.text;
+    },
+    onSuccess: (transcript) => {
+      const normalizedTranscript = normalizeComposerText(transcript).trim();
+      if (!normalizedTranscript) {
+        Alert.alert('Voice not transcribed', 'No speech was detected in that recording.');
+        void recordIVXOwnerChatAuditEvent({
+          action: 'voice_transcription',
+          conversationId: conversationQuery.data?.id ?? IVX_OWNER_AI_PROFILE.sharedRoom.id,
+          status: 'failed',
+          summary: 'Voice transcription completed without usable speech.',
+          metadata: { sessionId: ownerSessionIdRef.current },
+        });
+        return;
+      }
+
+      const currentText = normalizeComposerText(composerValueRef.current).trim();
+      const nextText = currentText ? `${currentText}\n${normalizedTranscript}` : normalizedTranscript;
+      composerValueRef.current = nextText;
+      setComposerValue(nextText);
+      setComposerInputHeight(Math.min(Math.max(Math.ceil(nextText.length / 28) * 22 + 22, 44), 112));
+      composerInputRef.current?.focus();
+      void recordIVXOwnerChatAuditEvent({
+        action: 'voice_transcription',
+        conversationId: conversationQuery.data?.id ?? IVX_OWNER_AI_PROFILE.sharedRoom.id,
+        status: 'success',
+        summary: 'Voice transcription inserted into the IVX Owner AI composer.',
+        metadata: { transcriptLength: normalizedTranscript.length, sessionId: ownerSessionIdRef.current },
+      });
+    },
+    onError: (error) => {
+      console.log('[IVXOwnerChatRoute] Voice transcription error:', error.message);
+      void recordIVXOwnerChatAuditEvent({
+        action: 'voice_transcription',
+        conversationId: conversationQuery.data?.id ?? IVX_OWNER_AI_PROFILE.sharedRoom.id,
+        status: 'failed',
+        summary: 'Voice transcription failed.',
+        metadata: { error: error.message, sessionId: ownerSessionIdRef.current },
+      });
+      Alert.alert('Voice transcription unavailable', error.message || 'We could not transcribe that recording. Please try again.');
+    },
+  });
   const ownerRoomAuthenticated = useMemo<boolean>(() => {
     if (devTestMode.testModeActive) {
       return true;
@@ -792,10 +1016,20 @@ export default function IVXOwnerChatRoute() {
       || normalizedConversationId === IVX_OWNER_AI_PROFILE.sharedRoom.id
       || normalizedConversationSlug === IVX_OWNER_AI_PROFILE.sharedRoom.slug;
   }, [conversationQuery.data?.id, conversationQuery.data?.slug, devTestMode.testModeActive, isOpenAccessBuild, localFirstChatMode, user, userId]);
+  const controlRoomQuery = useQuery<IVXControlRoomStatus, Error>({
+    queryKey: IVX_CONTROL_ROOM_STATUS_QUERY_KEY,
+    queryFn: getIVXControlRoomStatus,
+    enabled: ownerRoomAuthenticated,
+    staleTime: 60_000,
+    refetchInterval: 120_000,
+  });
+
   const [transientAssistantMessages, setTransientAssistantMessages] = useState<IVXMessage[]>([]);
   const [pendingOwnerMessages, setPendingOwnerMessages] = useState<PendingOwnerMessage[]>([]);
+  const draftRestoreCompletedRef = useRef<boolean>(false);
+  const uploadProgressTimersRef = useRef<Record<string, ReturnType<typeof setInterval>>>({});
   const normalizedComposerValue = useMemo<string>(() => normalizeComposerText(composerValue), [composerValue]);
-  const sendingDisabled = safeTrim(normalizedComposerValue).length === 0;
+  const composerHasText = safeTrim(normalizedComposerValue).length > 0;
   const allMessages = useMemo<IVXMessage[]>(() => {
     const visiblePersistentMessages = messages.filter((message) => !isInternalTranscriptMessage(message));
     const persistentAssistantBodies = new Set(
@@ -820,9 +1054,21 @@ export default function IVXOwnerChatRoute() {
 
     for (const pendingMessage of pendingOwnerMessages) {
       const normalizedPendingText = safeTrim(pendingMessage.text);
-      if (!normalizedPendingText) {
+      const pendingUpload = pendingMessage.upload ?? null;
+      if (!normalizedPendingText && !pendingUpload) {
         continue;
       }
+
+      const uploadProgress = typeof pendingMessage.uploadProgress === 'number'
+        ? Math.max(0, Math.min(100, Math.round(pendingMessage.uploadProgress)))
+        : null;
+      const uploadStatusText = pendingMessage.mode === 'attachment' && pendingMessage.status !== 'failed'
+        ? pendingMessage.status === 'uploaded'
+          ? `Uploaded ${pendingUpload?.name ?? 'attachment'} successfully`
+          : uploadProgress != null
+            ? `Uploading ${pendingUpload?.name ?? 'attachment'} • ${uploadProgress}%`
+            : `Preparing ${pendingUpload?.name ?? 'attachment'}...`
+        : pendingMessage.errorMessage ?? normalizedPendingText;
 
       deduped.set(pendingMessage.clientId, {
         id: pendingMessage.clientId,
@@ -830,15 +1076,17 @@ export default function IVXOwnerChatRoute() {
         senderUserId: ownerId || null,
         senderRole: 'owner',
         senderLabel: ownerLabel,
-        body: pendingMessage.text,
-        attachmentUrl: null,
-        attachmentName: null,
-        attachmentMime: null,
-        attachmentSize: null,
-        attachmentKind: 'text',
+        body: pendingMessage.status === 'failed' ? (pendingMessage.errorMessage ?? pendingMessage.text) : (pendingMessage.mode === 'attachment' ? uploadStatusText : pendingMessage.text),
+        attachmentUrl: pendingUpload?.uri ?? null,
+        attachmentName: pendingUpload?.name ?? null,
+        attachmentMime: pendingUpload?.type ?? null,
+        attachmentSize: pendingUpload?.size ?? null,
+        attachmentKind: pendingUpload ? getAttachmentKindFromUpload(pendingUpload) : 'text',
         createdAt: pendingMessage.createdAt,
         updatedAt: pendingMessage.createdAt,
-      });
+        sendStatus: pendingMessage.status,
+        replyTo: pendingMessage.replyTo ?? null,
+      } as IVXMessage & { sendStatus: PendingOwnerMessage['status']; replyTo?: ChatReplyContext | null });
     }
 
     for (const message of [...visiblePersistentMessages, ...visibleTransientAssistantMessages]) {
@@ -856,6 +1104,165 @@ export default function IVXOwnerChatRoute() {
     }
     return Array.from(deduped.values()).sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
   }, [conversationQuery.data?.id, messages, ownerId, ownerLabel, pendingOwnerMessages, transientAssistantMessages]);
+  useEffect(() => {
+    let mounted = true;
+
+    void (async () => {
+      try {
+        const rawDraft = await AsyncStorage.getItem(IVX_OWNER_DRAFT_STORAGE_KEY);
+        if (!mounted) {
+          return;
+        }
+
+        if (!rawDraft) {
+          draftRestoreCompletedRef.current = true;
+          return;
+        }
+
+        const parsed = JSON.parse(rawDraft) as Partial<OwnerConversationDraft>;
+        const restoredText = typeof parsed.text === 'string' ? parsed.text : '';
+        const restoredAttachmentDrafts = Array.isArray(parsed.attachmentDrafts)
+          ? parsed.attachmentDrafts.filter((message): message is PendingOwnerMessage => {
+            const candidate = message as Partial<PendingOwnerMessage>;
+            return candidate.mode === 'attachment'
+              && candidate.status === 'failed'
+              && typeof candidate.clientId === 'string'
+              && typeof candidate.createdAt === 'string'
+              && typeof candidate.text === 'string'
+              && typeof candidate.upload?.uri === 'string'
+              && typeof candidate.upload?.name === 'string';
+          })
+          : [];
+
+        composerValueRef.current = restoredText;
+        setComposerValue(restoredText);
+        if (restoredText.length > 0) {
+          setComposerInputHeight(Math.min(Math.max(Math.ceil(restoredText.length / 28) * 22 + 22, 44), 112));
+        }
+        if (restoredAttachmentDrafts.length > 0) {
+          setPendingOwnerMessages((current) => {
+            const existingIds = new Set(current.map((message) => message.clientId));
+            return [...restoredAttachmentDrafts.filter((message) => !existingIds.has(message.clientId)), ...current];
+          });
+        }
+        draftRestoreCompletedRef.current = true;
+        console.log('[IVXOwnerChatRoute] Restored owner draft:', { textLength: restoredText.length, attachmentDraftCount: restoredAttachmentDrafts.length });
+      } catch (error) {
+        draftRestoreCompletedRef.current = true;
+        console.log('[IVXOwnerChatRoute] Failed to restore owner draft:', error instanceof Error ? error.message : 'unknown');
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!draftRestoreCompletedRef.current) {
+      return;
+    }
+
+    const draftText = composerValueRef.current;
+    const attachmentDrafts = pendingOwnerMessages.filter((message) => message.mode === 'attachment' && message.status === 'failed' && message.upload);
+    const hasDraft = safeTrim(draftText).length > 0 || attachmentDrafts.length > 0;
+    const timeout = setTimeout(() => {
+      void (async () => {
+        try {
+          if (!hasDraft) {
+            await AsyncStorage.removeItem(IVX_OWNER_DRAFT_STORAGE_KEY);
+            console.log('[IVXOwnerChatRoute] Cleared owner draft storage');
+            return;
+          }
+
+          const draft: OwnerConversationDraft = {
+            text: draftText,
+            attachmentDrafts,
+            updatedAt: new Date().toISOString(),
+          };
+          await AsyncStorage.setItem(IVX_OWNER_DRAFT_STORAGE_KEY, JSON.stringify(draft));
+          console.log('[IVXOwnerChatRoute] Saved owner draft:', { textLength: draftText.length, attachmentDraftCount: attachmentDrafts.length });
+        } catch (error) {
+          console.log('[IVXOwnerChatRoute] Failed to persist owner draft:', error instanceof Error ? error.message : 'unknown');
+        }
+      })();
+    }, 250);
+
+    return () => clearTimeout(timeout);
+  }, [composerValue, pendingOwnerMessages]);
+
+  const normalizedMessageSearchQuery = useMemo<string>(() => safeTrim(messageSearchQuery).toLowerCase(), [messageSearchQuery]);
+  const displayedMessages = useMemo<IVXMessage[]>(() => {
+    if (!normalizedMessageSearchQuery) {
+      return allMessages;
+    }
+
+    return allMessages.filter((message) => safeTrim(message.body).toLowerCase().includes(normalizedMessageSearchQuery));
+  }, [allMessages, normalizedMessageSearchQuery]);
+  const searchActive = normalizedMessageSearchQuery.length > 0;
+  const pinnedMessageIdSet = useMemo<Set<string>>(() => new Set(pinnedMessageIds), [pinnedMessageIds]);
+  const pinnedMessages = useMemo<IVXMessage[]>(() => {
+    if (pinnedMessageIds.length === 0) {
+      return [];
+    }
+
+    return allMessages
+      .filter((message) => pinnedMessageIdSet.has(message.id) && !isInternalTranscriptMessage(message))
+      .sort((a, b) => pinnedMessageIds.indexOf(a.id) - pinnedMessageIds.indexOf(b.id));
+  }, [allMessages, pinnedMessageIdSet, pinnedMessageIds]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    void AsyncStorage.getItem(IVX_OWNER_PINNED_MESSAGES_STORAGE_KEY)
+      .then((rawPinnedIds) => {
+        if (!mounted) {
+          return;
+        }
+
+        if (!rawPinnedIds) {
+          pinnedMessagesRestoreCompletedRef.current = true;
+          return;
+        }
+
+        const parsed = JSON.parse(rawPinnedIds) as unknown;
+        if (Array.isArray(parsed)) {
+          const restoredIds = parsed
+            .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+            .filter((value, index, values) => values.indexOf(value) === index);
+          setPinnedMessageIds(restoredIds);
+          console.log('[IVXOwnerChatRoute] Restored pinned messages:', restoredIds.length);
+        }
+        pinnedMessagesRestoreCompletedRef.current = true;
+      })
+      .catch((error) => {
+        pinnedMessagesRestoreCompletedRef.current = true;
+        console.log('[IVXOwnerChatRoute] Failed to restore pinned messages:', error instanceof Error ? error.message : 'unknown');
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!pinnedMessagesRestoreCompletedRef.current) {
+      return;
+    }
+
+    void AsyncStorage.setItem(IVX_OWNER_PINNED_MESSAGES_STORAGE_KEY, JSON.stringify(pinnedMessageIds)).catch((error) => {
+      console.log('[IVXOwnerChatRoute] Failed to persist pinned messages:', error instanceof Error ? error.message : 'unknown');
+    });
+  }, [pinnedMessageIds]);
+
+  useEffect(() => {
+    if (pinnedMessageIds.length === 0 || allMessages.length === 0) {
+      return;
+    }
+
+    const availableIds = new Set(allMessages.map((message) => message.id));
+    setPinnedMessageIds((current) => current.filter((messageId) => availableIds.has(messageId)));
+  }, [allMessages, pinnedMessageIds.length]);
 
   useEffect(() => {
     let mounted = true;
@@ -937,9 +1344,10 @@ export default function IVXOwnerChatRoute() {
   const [aiHealthDetail, setAiHealthDetail] = useState<ServiceRuntimeHealth>('inactive');
   const [messageSendPending, setMessageSendPending] = useState<boolean>(false);
   const [aiReplyPending, setAiReplyPending] = useState<boolean>(false);
-  const [ownerCommandsActive, setOwnerCommandsActive] = useState<boolean>(true);
+  const [ownerCommandsActive, setOwnerCommandsActive] = useState<boolean>(false);
   const [knowledgeActive, setKnowledgeActive] = useState<boolean>(false);
   const [codeAwareActive, setCodeAwareActive] = useState<boolean>(false);
+  const [fileUploadActive, setFileUploadActive] = useState<boolean>(false);
   const [roomProbeAt, setRoomProbeAt] = useState<string | null>(null);
   const [aiProbeMetadata, setAiProbeMetadata] = useState<ProbeMetadata>({
     observedAt: null,
@@ -948,6 +1356,7 @@ export default function IVXOwnerChatRoute() {
     deploymentMarker: null,
     lastFailureReason: null,
   });
+  const [lastToolOutputs, setLastToolOutputs] = useState<IVXOwnerAIToolOutput[]>([]);
   const [runtimeDebugSnapshot, setRuntimeDebugSnapshot] = useState<RuntimeDebugSnapshot>({
     authMode: isOpenAccessBuild ? 'open_access_dev_bypass' : (user || userId ? 'owner_session' : 'missing_owner_session'),
     ownerBypassEnabled: isOpenAccessBuild,
@@ -971,6 +1380,7 @@ export default function IVXOwnerChatRoute() {
   const [replyFailures, setReplyFailures] = useState<number>(0);
   const [fallbackSuccessCount, setFallbackSuccessCount] = useState<number>(0);
   const [latencySamplesMs, setLatencySamplesMs] = useState<number[]>([]);
+  const [lastReliabilityTrace, setLastReliabilityTrace] = useState<ReliabilityTrace | null>(null);
   const [realtimeEventsObserved, setRealtimeEventsObserved] = useState<number>(0);
   const [realtimeSubscriptionState, setRealtimeSubscriptionState] = useState<string | null>(null);
   const [nerveSnapshot, setNerveSnapshot] = useState<CTDashboardSnapshot | null>(null);
@@ -982,14 +1392,14 @@ export default function IVXOwnerChatRoute() {
   const PROBE_RETRY_DELAY_MS = 3000;
   const aiReachableRef = useRef<boolean>(false);
   const aiHealthRef = useRef<ServiceRuntimeHealth>('inactive');
-  const ownerAIRoutingBlocked = false;
-  const effectiveAiBackendReachable = true;
-  const effectiveAiHealthDetail: ServiceRuntimeHealth = aiHealthDetail === 'inactive' ? 'active' : aiHealthDetail;
+  const ownerAIRoutingBlocked = ownerAIConfigAudit.blocksRemoteRequests || !ownerAIConfigAudit.activeEndpoint;
+  const effectiveAiBackendReachable = aiBackendReachable;
+  const effectiveAiHealthDetail: ServiceRuntimeHealth = aiHealthDetail;
   const trustRuntimeState = useMemo(() => ({
     source: normalizeRuntimeSource(runtimeDebugSnapshot.source),
     requestStage: runtimeDebugSnapshot.requestStage,
     failureClass: runtimeDebugSnapshot.failureClass,
-    isFallback: runtimeDebugSnapshot.source === 'toolkit_fallback',
+    isFallback: runtimeDebugSnapshot.source === 'provider_fallback',
     isStreaming: hasActiveStreamingState(runtimeDebugSnapshot),
     hasVisibleResponseText: runtimeDebugSnapshot.hasVisibleResponseText,
   }), [runtimeDebugSnapshot]);
@@ -1138,6 +1548,13 @@ export default function IVXOwnerChatRoute() {
       anonId: ownerId || sessionId,
       metadata: baseMetadata,
     });
+    void recordIVXOwnerChatAuditEvent({
+      action: 'room_open',
+      conversationId: conversationQuery.data?.id ?? IVX_OWNER_AI_PROFILE.sharedRoom.id,
+      status: 'success',
+      summary: 'IVX Owner AI room opened locally with runtime and persistence checks active.',
+      metadata: { sessionId, localFirstChatMode, ownerRoomAuthenticated },
+    });
 
     return () => {
       liveIntelligenceService.captureEvent({
@@ -1153,7 +1570,7 @@ export default function IVXOwnerChatRoute() {
         },
       });
     };
-  }, [conversationQuery.data?.id, localFirstChatMode, ownerId, ownerLabel]);
+  }, [conversationQuery.data?.id, localFirstChatMode, ownerId, ownerLabel, ownerRoomAuthenticated]);
 
   const assistantReplyMutation = useMutation<void, Error, { text: string; nonBlocking: boolean }>({
     mutationFn: async ({ text, nonBlocking }) => {
@@ -1176,20 +1593,39 @@ export default function IVXOwnerChatRoute() {
       }));
       setAiReplyPending(true);
       try {
-        const aiResult = await ivxAIRequestService.requestOwnerAI({
-          conversationId: conversationQuery.data?.id ?? IVX_OWNER_AI_PROFILE.sharedRoom.id,
-          message: text,
-          senderLabel: ownerLabel,
-          mode: 'chat',
-          persistUserMessage: false,
-          persistAssistantMessage: true,
-          devTestModeActive: devTestMode.testModeActive,
+        const reliableConversationId = conversationQuery.data?.id ?? IVX_OWNER_AI_PROFILE.sharedRoom.id;
+        const { value: aiResult, trace } = await executeReliably(
+          reliableConversationId,
+          async () => ivxAIRequestService.requestOwnerAI({
+            conversationId: reliableConversationId,
+            message: text,
+            senderLabel: ownerLabel,
+            mode: 'chat',
+            persistUserMessage: false,
+            persistAssistantMessage: true,
+            devTestModeActive: devTestMode.testModeActive,
+          }),
+          { totalTimeoutMs: 45_000, maxAttempts: 3, baseDelayMs: 600, maxDelayMs: 4_000 },
+        );
+        setLastReliabilityTrace(trace);
+        void recordIVXOwnerChatAuditEvent({
+          action: 'assistant_reply',
+          conversationId: reliableConversationId,
+          status: 'started',
+          summary: 'IVX Owner AI assistant request completed reliability wrapper and entered response validation.',
+          metadata: { attempts: trace.attempts.length, finalOutcome: trace.finalOutcome, elapsedMs: trace.totalElapsedMs, sessionId: ownerSessionIdRef.current },
         });
         const runtimeProof = getLastIVXOwnerAIRuntimeProof();
         const normalizedSource = normalizeRuntimeSource(runtimeProof?.source ?? aiResult.source);
         const normalizedAnswer = assertCleanOwnerAIResponseText(aiResult.answer);
+        const responseToolOutputs = aiResult.toolOutputs ?? [];
+        setLastToolOutputs(responseToolOutputs);
+        const toolUsedLabel = responseToolOutputs.length > 0
+          ? `Tool used: ${responseToolOutputs.map((output) => output.tool).join(', ')}`
+          : null;
+        const visibleAnswer = toolUsedLabel ? `${normalizedAnswer}\n\n${toolUsedLabel}` : normalizedAnswer;
 
-        console.log('[IVXOwnerChatRoute] assistant_generation_success:', { source: normalizedSource, answerLength: normalizedAnswer.length, requestId: aiResult.requestId });
+        console.log('[IVXOwnerChatRoute] assistant_generation_success:', { source: normalizedSource, answerLength: normalizedAnswer.length, requestId: aiResult.requestId, toolUsed: toolUsedLabel });
         if (!normalizedAnswer) {
           throw new Error('IVX Owner AI completed without returning visible response text.');
         }
@@ -1207,7 +1643,7 @@ export default function IVXOwnerChatRoute() {
             senderUserId: null,
             senderRole: 'assistant',
             senderLabel: IVX_OWNER_AI_PROFILE.name,
-            body: normalizedAnswer,
+            body: visibleAnswer,
             attachmentUrl: null,
             attachmentName: null,
             attachmentMime: null,
@@ -1226,7 +1662,7 @@ export default function IVXOwnerChatRoute() {
           httpStatus: runtimeProof?.statusCode !== null && runtimeProof?.statusCode !== undefined
             ? String(runtimeProof.statusCode)
             : '200',
-          responsePreview: normalizedAnswer.slice(0, 160) || current.responsePreview,
+          responsePreview: visibleAnswer.slice(0, 160) || current.responsePreview,
           failureDetail: 'Reply delivered and saved.',
           lastVerifiedAt: new Date().toISOString(),
           hasVisibleResponseText: true,
@@ -1234,9 +1670,6 @@ export default function IVXOwnerChatRoute() {
 
         setAiBackendReachable(true);
         setAiHealthDetail('active');
-        setKnowledgeActive(true);
-        setOwnerCommandsActive(true);
-        setCodeAwareActive(true);
         setAiProbeMetadata({
           observedAt: new Date().toISOString(),
           source: normalizedSource,
@@ -1259,7 +1692,7 @@ export default function IVXOwnerChatRoute() {
             httpStatus: (runtimeProof?.failureClass === 'none' && runtimeProof?.statusCode !== null && runtimeProof?.statusCode !== undefined)
               ? String(runtimeProof.statusCode)
               : '200',
-            responsePreview: normalizedAnswer.slice(0, 160) || current.responsePreview,
+            responsePreview: visibleAnswer.slice(0, 160) || current.responsePreview,
             failureDetail: 'Reply delivered and saved.',
             lastVerifiedAt: new Date().toISOString(),
             hasVisibleResponseText: true,
@@ -1277,9 +1710,26 @@ export default function IVXOwnerChatRoute() {
 
         try {
           if (aiResult.assistantPersisted !== true) {
-            await persistSupportMessage(normalizedAnswer, 'assistant');
+            await persistSupportMessage(visibleAnswer, 'assistant');
           }
           console.log('[IVXOwnerChatRoute] assistant_commit_success (primary path)');
+          void recordIVXOwnerChatAuditEvent({
+            action: 'assistant_reply',
+            conversationId: aiResult.conversationId,
+            messageId: aiResult.assistantMessageId ?? transientReplyId,
+            status: 'success',
+            summary: 'Assistant reply delivered and persisted or confirmed by backend.',
+            metadata: {
+              requestId: aiResult.requestId,
+              source: normalizedSource,
+              endpoint: aiResult.endpoint ?? null,
+              deploymentMarker: aiResult.deploymentMarker ?? null,
+              model: aiResult.model,
+              answerLength: visibleAnswer.length,
+              reliabilityAttempts: trace.attempts.length,
+              sessionId: ownerSessionIdRef.current,
+            },
+          });
           await queryClient.invalidateQueries({ queryKey: IVX_OWNER_MESSAGES_QUERY_KEY });
           setTransientAssistantMessages((current) => current.filter((message) => message.id !== transientReplyId));
         } catch (persistErr) {
@@ -1304,7 +1754,7 @@ export default function IVXOwnerChatRoute() {
                 roomId: conversationQuery.data?.id ?? 'ivx-owner-room',
                 source: normalizedSource,
                 requestId: aiResult.requestId ?? null,
-                message: sanitizeUserFacingChatText(normalizedAnswer).slice(0, 240),
+                message: sanitizeUserFacingChatText(visibleAnswer).slice(0, 240),
               },
             });
           } catch (eventErr) {
@@ -1325,6 +1775,26 @@ export default function IVXOwnerChatRoute() {
         });
 
         setTransientAssistantMessages((current) => current.filter((message) => message.id !== transientReplyId));
+        const failedTrace = isRecord(aiErr) && isRecord((aiErr as { reliabilityTrace?: unknown }).reliabilityTrace)
+          ? (aiErr as { reliabilityTrace: ReliabilityTrace }).reliabilityTrace
+          : null;
+        if (failedTrace) {
+          setLastReliabilityTrace(failedTrace);
+        }
+        void recordIVXOwnerChatAuditEvent({
+          action: 'assistant_reply',
+          conversationId: conversationQuery.data?.id ?? IVX_OWNER_AI_PROFILE.sharedRoom.id,
+          status: 'failed',
+          summary: 'Assistant reply failed after reliability handling.',
+          metadata: {
+            failureMessage,
+            diagnostics,
+            serviceUnavailable,
+            reliabilityAttempts: failedTrace?.attempts.length ?? null,
+            finalOutcome: failedTrace?.finalOutcome ?? null,
+            sessionId: ownerSessionIdRef.current,
+          },
+        });
         setRuntimeDebugSnapshot((current) => ({
           ...current,
           conversationId: conversationQuery.data?.id ?? current.conversationId,
@@ -1438,6 +1908,13 @@ export default function IVXOwnerChatRoute() {
         return 'Result: blocked\nExplanation: Allowed interventions are rerun-proof, clear-stuck, provider-probe, shared-sync, inbox-sync, and transcript.\nEvidence: permission guard\nAffected dependencies: chat transport\nOperator action log: not-started\nRollback: not required\nLinked proof cards: none';
       }
       const result = await executeOperatorAction(action, 'chat');
+      void recordIVXOwnerChatAuditEvent({
+        action: 'control_action',
+        conversationId: conversationQuery.data?.id ?? IVX_OWNER_AI_PROFILE.sharedRoom.id,
+        status: result.success ? 'success' : 'failed',
+        summary: `Owner control action ${getActionLabel(action)} completed.`,
+        metadata: { action, resultMessage: result.message, sessionId: ownerSessionIdRef.current },
+      });
       invalidateIVXRoomProbeCache();
       await queryClient.invalidateQueries({ queryKey: IVX_ROOM_STATUS_QUERY_KEY });
       setAiHealthDetail('inactive');
@@ -1484,8 +1961,9 @@ export default function IVXOwnerChatRoute() {
     return null;
   }, [queryClient]);
 
-  const sendMessageMutation = useMutation<void, Error, { text: string; mode: 'send_only' | 'send_and_ai' | 'ai_only'; clientId: string; capturedText: string }>({
-    mutationFn: async ({ text, mode }) => {
+  const sendMessageMutation = useMutation<void, Error, { text: string; mode: 'send_only' | 'send_and_ai' | 'ai_only'; clientId: string; capturedText: string; replyTo: ChatReplyContext | null }>({
+    mutationFn: async ({ text, mode, replyTo }) => {
+      const persistedOwnerText = encodeReplyBody(text, replyTo);
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       const hasConfirmationPrefix = isExplicitSensitiveActionConfirmation(text);
       const strippedConfirmedText = stripSensitiveActionConfirmationPrefix(text);
@@ -1511,7 +1989,7 @@ export default function IVXOwnerChatRoute() {
       if (localFirstChatMode) {
         setMessageSendPending(true);
         try {
-          await ivxChatService.sendOwnerTextMessage({ body: text, senderLabel: ownerLabel, requireRemote: false });
+          await ivxChatService.sendOwnerTextMessage({ body: persistedOwnerText, senderLabel: ownerLabel, requireRemote: false });
           setLastSendAt(new Date().toISOString());
           if (trustContext.requiresElevatedConfirmation && !confirmedSensitiveAction) {
             await persistSupportMessage(buildLocalSafeActionConfirmationMessage({
@@ -1552,7 +2030,7 @@ export default function IVXOwnerChatRoute() {
         });
         setMessageSendPending(true);
         try {
-          await ivxChatService.sendOwnerTextMessage({ body: text, senderLabel: ownerLabel, requireRemote: false });
+          await ivxChatService.sendOwnerTextMessage({ body: persistedOwnerText, senderLabel: ownerLabel, requireRemote: false });
           setLastSendAt(new Date().toISOString());
           if (trustContext.conversationAccessState === 'fallback_chat_only' && trustContext.requiresElevatedConfirmation) {
             await persistSupportMessage(buildFallbackChatOnlyExecutionMessage({
@@ -1608,8 +2086,16 @@ export default function IVXOwnerChatRoute() {
       });
       setMessageSendPending(true);
       try {
-        await ivxChatService.sendOwnerTextMessage({ body: text, senderLabel: ownerLabel, requireRemote: false });
+        const sentMessage = await ivxChatService.sendOwnerTextMessage({ body: persistedOwnerText, senderLabel: ownerLabel, requireRemote: false });
         setLastSendAt(new Date().toISOString());
+        void recordIVXOwnerChatAuditEvent({
+          action: 'message_send',
+          conversationId: sentMessage.conversationId,
+          messageId: sentMessage.id,
+          status: 'success',
+          summary: 'Owner message saved through the IVX chat send path.',
+          metadata: { mode, requestClass: trustContext.requestClass, confirmedSensitiveAction, trustStates: trustContext.namedStates, sessionId: ownerSessionIdRef.current },
+        });
         console.log('[IVXOwnerChatRoute] Owner message sent to Supabase. trust:', trustContext.namedStates, 'confirmed:', confirmedSensitiveAction);
       } finally {
         setMessageSendPending(false);
@@ -1645,8 +2131,20 @@ export default function IVXOwnerChatRoute() {
     },
     onError: (error, variables) => {
       setSendFailures((count) => count + 1);
-      setPendingOwnerMessages((current) => current.filter((message) => message.clientId !== variables.clientId));
-      console.log('[IVXOwnerChatRoute] Send mutation error:', error.message);
+      setPendingOwnerMessages((current) => current.map((message) => (
+        message.clientId === variables.clientId
+          ? { ...message, status: 'failed', errorMessage: error.message }
+          : message
+      )));
+      console.log('[IVXOwnerChatRoute] Send mutation error:', error.message, 'clientId:', variables.clientId);
+      void recordIVXOwnerChatAuditEvent({
+        action: 'message_send',
+        conversationId: conversationQuery.data?.id ?? IVX_OWNER_AI_PROFILE.sharedRoom.id,
+        messageId: variables.clientId,
+        status: 'failed',
+        summary: 'Owner message send failed.',
+        metadata: { error: error.message, mode: variables.mode, sessionId: ownerSessionIdRef.current },
+      });
       Alert.alert('Message not sent', error.message);
     },
     onSettled: () => {
@@ -1658,19 +2156,20 @@ export default function IVXOwnerChatRoute() {
     let cancelled = false;
     let intervalId: ReturnType<typeof setInterval> | null = null;
 
-    const applyCapabilityHealth = (health: ServiceRuntimeHealth) => {
-      const isAvailable = health === 'active';
-      setAiBackendReachable(isAvailable);
-      setAiHealthDetail(health);
-      setKnowledgeActive(isAvailable);
-      setOwnerCommandsActive(isAvailable);
-      setCodeAwareActive(isAvailable);
-      if (isAvailable) {
+    const applyCapabilityProbeResult = (result: Awaited<ReturnType<typeof ivxAIRequestService.probeOwnerAIHealth>>) => {
+      const aiAvailable = result.health === 'active' && result.capabilities?.ai_chat === true;
+      setAiBackendReachable(aiAvailable);
+      setAiHealthDetail(aiAvailable ? 'active' : 'inactive');
+      setKnowledgeActive(result.capabilities?.knowledge_answers === true);
+      setOwnerCommandsActive(result.capabilities?.owner_commands === true);
+      setCodeAwareActive(result.capabilities?.code_aware_support === true);
+      setFileUploadActive(result.capabilities?.file_upload === true);
+      if (aiAvailable) {
         probeRetryCount.current = 0;
       }
     };
 
-    const singleProbeAttempt = async (): Promise<ServiceRuntimeHealth> => {
+    const singleProbeAttempt = async (): Promise<Awaited<ReturnType<typeof ivxAIRequestService.probeOwnerAIHealth>>> => {
       const result = await ivxAIRequestService.probeOwnerAIHealth();
       setAiProbeMetadata((current) => ({
         observedAt: new Date().toISOString(),
@@ -1697,15 +2196,22 @@ export default function IVXOwnerChatRoute() {
         deploymentMarker: result.deploymentMarker,
         storageMode: result.roomStatus?.storageMode ?? ivxRoomStatus?.storageMode ?? 'unknown',
       });
-      return result.health;
+      return result;
     };
 
     const probe = async () => {
-      const health = await singleProbeAttempt();
+      const result = await singleProbeAttempt();
+      void recordIVXOwnerChatAuditEvent({
+        action: 'sync_probe',
+        conversationId: conversationQuery.data?.id ?? IVX_OWNER_AI_PROFILE.sharedRoom.id,
+        status: result.health === 'active' ? 'success' : 'failed',
+        summary: 'IVX Owner AI backend capability probe completed.',
+        metadata: { health: result.health, source: result.source, endpoint: result.endpoint, deploymentMarker: result.deploymentMarker, sessionId: ownerSessionIdRef.current },
+      });
       if (cancelled) return;
 
-      if (health === 'active') {
-        applyCapabilityHealth(health);
+      if (result.health === 'active') {
+        applyCapabilityProbeResult(result);
         return;
       }
 
@@ -1714,10 +2220,10 @@ export default function IVXOwnerChatRoute() {
         console.log('[IVXOwnerChatRoute] AI health probe: retry', probeRetryCount.current, 'of', MAX_PROBE_RETRIES, 'in', PROBE_RETRY_DELAY_MS, 'ms');
         await new Promise((resolve) => setTimeout(resolve, PROBE_RETRY_DELAY_MS));
         if (cancelled) return;
-        const retryHealth = await singleProbeAttempt();
+        const retryResult = await singleProbeAttempt();
         if (cancelled) return;
-        if (retryHealth === 'active') {
-          applyCapabilityHealth(retryHealth);
+        if (retryResult.health === 'active') {
+          applyCapabilityProbeResult(retryResult);
           return;
         }
       }
@@ -1725,6 +2231,10 @@ export default function IVXOwnerChatRoute() {
       console.log('[IVXOwnerChatRoute] AI health probe: inactive after retries');
       setAiBackendReachable(false);
       setAiHealthDetail('inactive');
+      setKnowledgeActive(false);
+      setOwnerCommandsActive(false);
+      setCodeAwareActive(false);
+      setFileUploadActive(false);
     };
 
     const initialDelay = setTimeout(() => {
@@ -1748,31 +2258,18 @@ export default function IVXOwnerChatRoute() {
         aiBackendHealth: 'active',
         aiBackendSource: 'local_app_brain',
         aiResponseState: aiReplyPending ? 'responding' : 'idle',
-        knowledgeBackendHealth: 'active',
-        ownerCommandAvailability: 'active',
-        codeAwareServiceAvailability: 'active',
+        fileUploadAvailability: 'inactive',
+        knowledgeBackendHealth: 'inactive',
+        ownerCommandAvailability: 'inactive',
+        codeAwareServiceAvailability: 'inactive',
       };
     }
 
-    if (devTestMode.testModeActive) {
-      const normalizedBypassSource = normalizeRuntimeSource(runtimeDebugSnapshot.source);
-      const aiBackendSource: ChatRoomRuntimeSignals['aiBackendSource'] = normalizedBypassSource === 'pending'
-        ? 'unknown'
-        : normalizedBypassSource;
-      return {
-        aiBackendHealth: 'active',
-        aiBackendSource,
-        aiResponseState: 'idle',
-        knowledgeBackendHealth: 'active',
-        ownerCommandAvailability: 'active',
-        codeAwareServiceAvailability: 'active',
-      };
-    }
     const normalizedRuntimeState = {
       source: normalizeRuntimeSource(runtimeDebugSnapshot.source),
       requestStage: runtimeDebugSnapshot.requestStage,
       failureClass: runtimeDebugSnapshot.failureClass,
-      isFallback: runtimeDebugSnapshot.source === 'toolkit_fallback',
+      isFallback: runtimeDebugSnapshot.source === 'provider_fallback',
       isStreaming: hasActiveStreamingState(runtimeDebugSnapshot),
       hasVisibleResponseText: runtimeDebugSnapshot.hasVisibleResponseText,
     };
@@ -1788,11 +2285,12 @@ export default function IVXOwnerChatRoute() {
       aiBackendHealth: effectiveAiHealth,
       aiBackendSource: activeRuntimeSource === 'pending' ? 'unknown' : activeRuntimeSource,
       aiResponseState: isAiLive ? 'idle' : 'inactive',
-      knowledgeBackendHealth: isAiLive || knowledgeActive ? 'active' : 'inactive',
-      ownerCommandAvailability: ownerCommandsActive || isAiLive ? 'active' : 'inactive',
-      codeAwareServiceAvailability: isAiLive || codeAwareActive ? 'active' : 'inactive',
+      fileUploadAvailability: fileUploadActive ? 'active' : 'inactive',
+      knowledgeBackendHealth: knowledgeActive ? 'active' : 'inactive',
+      ownerCommandAvailability: ownerCommandsActive ? 'active' : 'inactive',
+      codeAwareServiceAvailability: codeAwareActive ? 'active' : 'inactive',
     };
-  }, [aiHealthDetail, aiReplyPending, codeAwareActive, devTestMode.testModeActive, knowledgeActive, localFirstChatMode, ownerCommandsActive, runtimeDebugSnapshot]);
+  }, [aiHealthDetail, aiReplyPending, codeAwareActive, devTestMode.testModeActive, fileUploadActive, knowledgeActive, localFirstChatMode, ownerCommandsActive, runtimeDebugSnapshot]);
 
   const resolution = useMemo<RoomCapabilityResolution>(() => {
     console.log('[IVXOwnerChatRoute] Resolving capabilities:', {
@@ -1802,25 +2300,96 @@ export default function IVXOwnerChatRoute() {
       aiReachable: effectiveAiBackendReachable,
       knowledgeActive,
       ownerCommandsActive,
+      codeAwareActive,
+      fileUploadActive,
     });
     return resolveRoomCapabilityState(ivxRoomStatus, runtimeSignals);
-  }, [effectiveAiBackendReachable, effectiveAiHealthDetail, ivxRoomStatus, runtimeSignals, knowledgeActive, ownerCommandsActive]);
+  }, [effectiveAiBackendReachable, effectiveAiHealthDetail, ivxRoomStatus, runtimeSignals, knowledgeActive, ownerCommandsActive, codeAwareActive, fileUploadActive]);
 
-  const attachmentMutation = useMutation<IVXMessage, Error, IVXUploadInput>({
-    mutationFn: async (upload) => {
-      const capturedBody = composerValueRef.current;
-      console.log('[IVXOwnerChatRoute] Attachment send body length:', capturedBody.length);
+  const clearUploadProgressTimer = useCallback((clientId: string) => {
+    const timer = uploadProgressTimersRef.current[clientId];
+    if (timer) {
+      clearInterval(timer);
+      delete uploadProgressTimersRef.current[clientId];
+    }
+  }, []);
+
+  const startUploadProgressTimer = useCallback((clientId: string) => {
+    clearUploadProgressTimer(clientId);
+    uploadProgressTimersRef.current[clientId] = setInterval(() => {
+      setPendingOwnerMessages((current) => current.map((message) => {
+        if (message.clientId !== clientId || message.status !== 'uploading') {
+          return message;
+        }
+        const currentProgress = typeof message.uploadProgress === 'number' ? message.uploadProgress : 8;
+        const nextProgress = Math.min(92, currentProgress + Math.max(3, Math.round((96 - currentProgress) / 7)));
+        return { ...message, uploadProgress: nextProgress };
+      }));
+    }, 420);
+  }, [clearUploadProgressTimer]);
+
+  useEffect(() => {
+    return () => {
+      Object.values(uploadProgressTimersRef.current).forEach((timer) => clearInterval(timer));
+      uploadProgressTimersRef.current = {};
+    };
+  }, []);
+
+  const attachmentMutation = useMutation<IVXMessage, Error, { upload: IVXUploadInput; clientId: string; capturedBody: string; replyTo: ChatReplyContext | null }>({
+    mutationFn: async ({ upload, capturedBody, replyTo }) => {
+      const persistedAttachmentBody = encodeReplyBody(capturedBody, replyTo);
+      console.log('[IVXOwnerChatRoute] Attachment send body length:', capturedBody.length, 'replyTo:', replyTo?.messageId ?? null);
       return ivxChatService.sendOwnerAttachmentMessage({
         upload,
-        body: capturedBody,
+        body: persistedAttachmentBody,
         senderLabel: ownerLabel,
       });
     },
-    onSuccess: async () => {
-      commitComposerClear(normalizeComposerText(composerValueRef.current));
+    onSuccess: async (_message, variables) => {
+      clearUploadProgressTimer(variables.clientId);
+      setPendingOwnerMessages((current) => current.map((message) => (
+        message.clientId === variables.clientId
+          ? { ...message, status: 'uploaded', uploadProgress: 100, errorMessage: null }
+          : message
+      )));
+      commitComposerClear(variables.capturedBody);
+      if (variables.replyTo) {
+        setSelectedReplyContext(null);
+      }
+      void recordIVXOwnerChatAuditEvent({
+        action: 'attachment_upload',
+        conversationId: _message.conversationId,
+        messageId: _message.id,
+        status: 'success',
+        summary: 'Owner attachment uploaded and persisted in the IVX room.',
+        metadata: {
+          fileName: variables.upload.name,
+          fileType: variables.upload.type ?? null,
+          size: variables.upload.size ?? null,
+          attachmentKind: _message.attachmentKind,
+          sessionId: ownerSessionIdRef.current,
+        },
+      });
       await queryClient.invalidateQueries({ queryKey: IVX_OWNER_MESSAGES_QUERY_KEY });
+      setTimeout(() => {
+        setPendingOwnerMessages((current) => current.filter((message) => message.clientId !== variables.clientId));
+      }, 650);
     },
-    onError: (error) => {
+    onError: (error, variables) => {
+      clearUploadProgressTimer(variables.clientId);
+      setPendingOwnerMessages((current) => current.map((message) => (
+        message.clientId === variables.clientId
+          ? { ...message, status: 'failed', uploadProgress: null, errorMessage: `Upload failed: ${error.message}` }
+          : message
+      )));
+      void recordIVXOwnerChatAuditEvent({
+        action: 'attachment_upload',
+        conversationId: conversationQuery.data?.id ?? IVX_OWNER_AI_PROFILE.sharedRoom.id,
+        messageId: variables.clientId,
+        status: 'failed',
+        summary: 'Owner attachment upload failed.',
+        metadata: { error: error.message, fileName: variables.upload.name, sessionId: ownerSessionIdRef.current },
+      });
       Alert.alert('Upload failed', error.message);
     },
   });
@@ -1838,13 +2407,106 @@ export default function IVXOwnerChatRoute() {
       return;
     }
 
+    setSelectedReplyContext(null);
     composerValueRef.current = '';
     setComposerValue('');
+    setComposerInputHeight(44);
     composerInputRef.current?.clear();
+    void AsyncStorage.removeItem(IVX_OWNER_DRAFT_STORAGE_KEY).catch((error) => {
+      console.log('[IVXOwnerChatRoute] Failed to clear owner draft after send:', error instanceof Error ? error.message : 'unknown');
+    });
   }, []);
 
+  const handleApplyPromptTemplate = useCallback((template: OwnerPromptTemplate) => {
+    const currentText = normalizeComposerText(composerValueRef.current).trim();
+    const nextText = currentText ? `${template.prompt}\n\n${currentText}` : template.prompt;
+    composerValueRef.current = nextText;
+    setComposerValue(nextText);
+    setComposerInputHeight(Math.min(Math.max(Math.ceil(nextText.length / 28) * 22 + 22, 44), 112));
+    composerInputRef.current?.focus();
+    void Haptics.selectionAsync();
+    void recordIVXOwnerChatAuditEvent({
+      action: 'template_apply',
+      conversationId: conversationQuery.data?.id ?? IVX_OWNER_AI_PROFILE.sharedRoom.id,
+      status: 'success',
+      summary: `Owner prompt template applied: ${template.label}.`,
+      metadata: { templateId: template.id, sessionId: ownerSessionIdRef.current },
+    });
+  }, [conversationQuery.data?.id]);
+
+  const stopVoiceRecording = useCallback(async () => {
+    try {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      await audioRecorder.stop();
+      await setAudioModeAsync({ allowsRecording: false });
+      const uri = audioRecorder.uri;
+      if (!uri) {
+        Alert.alert('Voice not saved', 'No recording file was created. Please try again.');
+        return;
+      }
+      await transcribeVoiceMutation.mutateAsync(uri);
+    } catch (error) {
+      console.log('[IVXOwnerChatRoute] Stop voice recording error:', error instanceof Error ? error.message : 'unknown');
+      Alert.alert('Voice not transcribed', 'We could not stop or transcribe that recording. Please try again.');
+    }
+  }, [audioRecorder, transcribeVoiceMutation]);
+
+  const startVoiceRecording = useCallback(async () => {
+    if (messageSendPending || attachmentMutation.isPending || isPickingFile || transcribeVoiceMutation.isPending || recorderState.isRecording) {
+      return;
+    }
+
+    try {
+      const permission = await requestRecordingPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Microphone permission required', 'Please allow microphone access to use voice input.');
+        return;
+      }
+
+      await setAudioModeAsync({
+        allowsRecording: true,
+        playsInSilentMode: true,
+      });
+      await audioRecorder.prepareToRecordAsync();
+      audioRecorder.record({ forDuration: 120 });
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      void recordIVXOwnerChatAuditEvent({
+        action: 'voice_transcription',
+        conversationId: conversationQuery.data?.id ?? IVX_OWNER_AI_PROFILE.sharedRoom.id,
+        status: 'started',
+        summary: 'Owner voice recording started.',
+        metadata: { sessionId: ownerSessionIdRef.current, platform: Platform.OS },
+      });
+    } catch (error) {
+      console.log('[IVXOwnerChatRoute] Start voice recording error:', error instanceof Error ? error.message : 'unknown');
+      Alert.alert('Voice recording unavailable', 'We could not start recording. Please try again.');
+    }
+  }, [attachmentMutation.isPending, audioRecorder, conversationQuery.data?.id, isPickingFile, messageSendPending, recorderState.isRecording, transcribeVoiceMutation.isPending]);
+
+  const handleVoicePress = useCallback(async () => {
+    if (recorderState.isRecording) {
+      await stopVoiceRecording();
+      return;
+    }
+    await startVoiceRecording();
+  }, [recorderState.isRecording, startVoiceRecording, stopVoiceRecording]);
+
+  const handleSearchQueryChange = useCallback((value: string) => {
+    setMessageSearchQuery(value);
+    const trimmed = safeTrim(value);
+    if (trimmed.length >= 3) {
+      void recordIVXOwnerChatAuditEvent({
+        action: 'search',
+        conversationId: conversationQuery.data?.id ?? IVX_OWNER_AI_PROFILE.sharedRoom.id,
+        status: 'success',
+        summary: 'Owner searched the IVX Owner AI conversation.',
+        metadata: { queryLength: trimmed.length, resultCount: displayedMessages.length, sessionId: ownerSessionIdRef.current },
+      });
+    }
+  }, [conversationQuery.data?.id, displayedMessages.length]);
+
   const handleSend = useCallback((submittedText?: unknown) => {
-    if (messageSendPending || attachmentMutation.isPending || isPickingFile) return;
+    if (messageSendPending || attachmentMutation.isPending || isPickingFile || !composerHasText) return;
     const normalizedText = normalizeComposerText(submittedText, composerValueRef.current);
     const text = safeTrim(normalizedText);
     if (!text) {
@@ -1855,13 +2517,15 @@ export default function IVXOwnerChatRoute() {
     const mode = isCommand ? 'send_only' : 'send_and_ai';
     const clientId = createTransientMessageId('ivx-owner-local-send');
     const createdAt = new Date().toISOString();
-    setPendingOwnerMessages((current) => [...current, { clientId, text: normalizedText, createdAt }]);
-    console.log('[IVXOwnerChatRoute] handleSend mode:', mode, 'isCommand:', isCommand, 'aiReachable:', aiReachableRef.current, 'length:', text.length, 'clientId:', clientId);
-    sendMessageMutation.mutate({ text, mode: mode as 'send_only' | 'send_and_ai', clientId, capturedText: normalizedText });
-  }, [attachmentMutation.isPending, isPickingFile, localFirstChatMode, messageSendPending, sendMessageMutation]);
+    const replyTo = selectedReplyContext;
+    setPendingOwnerMessages((current) => [...current, { clientId, text: normalizedText, createdAt, mode, status: 'sending', errorMessage: null, replyTo }]);
+    setSelectedReplyContext(null);
+    console.log('[IVXOwnerChatRoute] handleSend mode:', mode, 'isCommand:', isCommand, 'aiReachable:', aiReachableRef.current, 'length:', text.length, 'clientId:', clientId, 'replyTo:', replyTo?.messageId ?? null);
+    sendMessageMutation.mutate({ text, mode: mode as 'send_only' | 'send_and_ai', clientId, capturedText: normalizedText, replyTo });
+  }, [attachmentMutation.isPending, composerHasText, isPickingFile, localFirstChatMode, messageSendPending, selectedReplyContext, sendMessageMutation]);
 
   const handleAskAI = useCallback((submittedText?: unknown) => {
-    if (messageSendPending || aiReplyPending || attachmentMutation.isPending || isPickingFile) return;
+    if (messageSendPending || aiReplyPending || attachmentMutation.isPending || isPickingFile || !composerHasText) return;
     const normalizedText = normalizeComposerText(submittedText, composerValueRef.current);
     const text = safeTrim(normalizedText);
     if (!text) {
@@ -1870,10 +2534,55 @@ export default function IVXOwnerChatRoute() {
     }
     const clientId = createTransientMessageId('ivx-owner-ai-only-send');
     const createdAt = new Date().toISOString();
-    setPendingOwnerMessages((current) => [...current, { clientId, text: normalizedText, createdAt }]);
-    console.log('[IVXOwnerChatRoute] handleAskAI explicit AI request length:', text.length, 'clientId:', clientId);
-    sendMessageMutation.mutate({ text, mode: 'ai_only', clientId, capturedText: normalizedText });
-  }, [aiReplyPending, attachmentMutation.isPending, isPickingFile, messageSendPending, sendMessageMutation]);
+    const replyTo = selectedReplyContext;
+    setPendingOwnerMessages((current) => [...current, { clientId, text: normalizedText, createdAt, mode: 'ai_only', status: 'sending', errorMessage: null, replyTo }]);
+    setSelectedReplyContext(null);
+    console.log('[IVXOwnerChatRoute] handleAskAI explicit AI request length:', text.length, 'clientId:', clientId, 'replyTo:', replyTo?.messageId ?? null);
+    sendMessageMutation.mutate({ text, mode: 'ai_only', clientId, capturedText: normalizedText, replyTo });
+  }, [aiReplyPending, attachmentMutation.isPending, composerHasText, isPickingFile, messageSendPending, selectedReplyContext, sendMessageMutation]);
+
+  const handleRetryMessage = useCallback((message: ChatMessage) => {
+    const pendingMessage = pendingOwnerMessages.find((candidate) => candidate.clientId === message.id);
+    const normalizedText = normalizeComposerText(pendingMessage?.text ?? message.text ?? '');
+    const text = safeTrim(normalizedText);
+    const isAttachmentRetry = pendingMessage?.mode === 'attachment' && pendingMessage.upload;
+    if (!pendingMessage || (!text && !isAttachmentRetry) || messageSendPending || sendMessageMutation.isPending || attachmentMutation.isPending) {
+      console.log('[IVXOwnerChatRoute] Retry skipped:', message.id, 'hasPending:', Boolean(pendingMessage), 'busy:', messageSendPending || sendMessageMutation.isPending || attachmentMutation.isPending);
+      return;
+    }
+
+    if (isAttachmentRetry && pendingMessage.upload) {
+      setPendingOwnerMessages((current) => current.map((candidate) => (
+        candidate.clientId === pendingMessage.clientId
+          ? { ...candidate, status: 'uploading', errorMessage: null, uploadProgress: 8 }
+          : candidate
+      )));
+      startUploadProgressTimer(pendingMessage.clientId);
+      console.log('[IVXOwnerChatRoute] Retrying failed owner attachment:', pendingMessage.clientId, pendingMessage.upload.name);
+      attachmentMutation.mutate({ upload: pendingMessage.upload, clientId: pendingMessage.clientId, capturedBody: normalizedText, replyTo: pendingMessage.replyTo ?? null });
+      return;
+    }
+
+    setPendingOwnerMessages((current) => current.map((candidate) => (
+      candidate.clientId === pendingMessage.clientId
+        ? { ...candidate, status: 'sending', errorMessage: null }
+        : candidate
+    )));
+    console.log('[IVXOwnerChatRoute] Retrying failed owner message:', pendingMessage.clientId, 'mode:', pendingMessage.mode);
+    sendMessageMutation.mutate({
+      text,
+      mode: pendingMessage.mode as 'send_only' | 'send_and_ai' | 'ai_only',
+      clientId: pendingMessage.clientId,
+      capturedText: normalizedText,
+      replyTo: pendingMessage.replyTo ?? null,
+    });
+  }, [attachmentMutation, messageSendPending, pendingOwnerMessages, sendMessageMutation, startUploadProgressTimer]);
+
+  const handleDismissFailedMessage = useCallback((messageId: string) => {
+    console.log('[IVXOwnerChatRoute] Removing failed local message:', messageId);
+    clearUploadProgressTimer(messageId);
+    setPendingOwnerMessages((current) => current.filter((message) => message.clientId !== messageId));
+  }, [clearUploadProgressTimer]);
 
   const handleOpenAttachment = useCallback(async (message: IVXMessage) => {
     if (!message.attachmentUrl) {
@@ -1893,6 +2602,8 @@ export default function IVXOwnerChatRoute() {
     }
 
     try {
+      await Haptics.selectionAsync();
+      Keyboard.dismiss();
       setIsPickingFile(true);
       const pickerResult = await DocumentPicker.getDocumentAsync({
         copyToCacheDirectory: true,
@@ -1901,6 +2612,7 @@ export default function IVXOwnerChatRoute() {
       });
 
       if (pickerResult.canceled || !pickerResult.assets || pickerResult.assets.length === 0) {
+        console.log('[IVXOwnerChatRoute] Attachment picker canceled');
         return;
       }
 
@@ -1926,20 +2638,138 @@ export default function IVXOwnerChatRoute() {
       });
       await ivxOwnerMemoryService.recordFileUpload(fileInsight);
 
-      console.log('[IVXOwnerChatRoute] Sending file upload:', upload.name);
-      await attachmentMutation.mutateAsync(upload);
+      const clientId = createTransientMessageId('ivx-owner-attachment');
+      const capturedBody = normalizeComposerText(composerValueRef.current);
+      const replyTo = selectedReplyContext;
+      setPendingOwnerMessages((current) => [...current, {
+        clientId,
+        text: capturedBody,
+        createdAt: new Date().toISOString(),
+        mode: 'attachment',
+        status: 'uploading',
+        errorMessage: null,
+        upload,
+        uploadProgress: 8,
+        replyTo,
+      }]);
+      if (replyTo) {
+        setSelectedReplyContext(null);
+      }
+      startUploadProgressTimer(clientId);
+      console.log('[IVXOwnerChatRoute] Sending file upload:', upload.name, 'clientId:', clientId, 'replyTo:', replyTo?.messageId ?? null);
+      await attachmentMutation.mutateAsync({ upload, clientId, capturedBody, replyTo });
+      console.log('[IVXOwnerChatRoute] Owner attachment upload completed:', upload.name, 'clientId:', clientId);
       await assistantReplyMutation.mutateAsync({
         text: createIVXOwnerFileUnderstandingPrompt(fileInsight),
         nonBlocking: true,
       });
     } catch (error) {
-      Alert.alert('File pick failed', error instanceof Error ? error.message : 'Unknown file picker error.');
+      console.log('[IVXOwnerChatRoute] Attachment picker/send flow failed:', error instanceof Error ? error.message : 'unknown');
+      if (!attachmentMutation.isError) {
+        Alert.alert('File pick failed', error instanceof Error ? error.message : 'Unknown file picker error.');
+      }
     } finally {
       setIsPickingFile(false);
     }
-  }, [assistantReplyMutation, attachmentMutation, isPickingFile]);
+  }, [assistantReplyMutation, attachmentMutation, isPickingFile, selectedReplyContext, startUploadProgressTimer]);
 
-  const renderMessage = useCallback(({ item }: { item: IVXMessage }) => {
+  const handleStartReplyToMessage = useCallback((message: ChatMessage) => {
+    const previewText = safeTrim(message.text) || safeTrim(message.fileName) || 'Attachment';
+    const replyContext: ChatReplyContext = {
+      messageId: message.id,
+      senderLabel: safeTrim(message.senderLabel) || 'Message',
+      previewText: previewText.length > 140 ? `${previewText.slice(0, 137)}...` : previewText,
+    };
+    setSelectedReplyContext(replyContext);
+    composerInputRef.current?.focus();
+    console.log('[IVXOwnerChatRoute] Reply context selected:', replyContext.messageId);
+    void recordIVXOwnerChatAuditEvent({
+      action: 'reply_context',
+      conversationId: conversationQuery.data?.id ?? IVX_OWNER_AI_PROFILE.sharedRoom.id,
+      messageId: replyContext.messageId,
+      status: 'success',
+      summary: 'Owner selected a reply context in IVX Owner AI.',
+      metadata: { senderLabel: replyContext.senderLabel, sessionId: ownerSessionIdRef.current },
+    });
+  }, [conversationQuery.data?.id]);
+
+  const handleJumpToMessage = useCallback((messageId: string) => {
+    const targetIndex = displayedMessages.findIndex((message) => message.id === messageId);
+    const targetExistsOutsideSearch = searchActive && allMessages.some((message) => message.id === messageId);
+    if (targetIndex < 0 && !targetExistsOutsideSearch) {
+      console.log('[IVXOwnerChatRoute] Reply context original message missing:', messageId);
+      setMissingReplyMessageId(messageId);
+      Alert.alert('Original message unavailable', 'That replied-to message is not in this room anymore. The reply preview remains visible.');
+      return;
+    }
+
+    if (highlightedMessageTimeoutRef.current) {
+      clearTimeout(highlightedMessageTimeoutRef.current);
+    }
+
+    setMissingReplyMessageId(null);
+    suppressAutoScrollUntilRef.current = Date.now() + 2200;
+    setHighlightedMessageId(messageId);
+    highlightedMessageTimeoutRef.current = setTimeout(() => {
+      setHighlightedMessageId((current) => current === messageId ? null : current);
+      highlightedMessageTimeoutRef.current = null;
+    }, 1600);
+
+    const scrollToTarget = (messages: IVXMessage[]) => {
+      const resolvedIndex = messages.findIndex((message) => message.id === messageId);
+      if (resolvedIndex < 0) {
+        pendingJumpMessageIdRef.current = messageId;
+        console.log('[IVXOwnerChatRoute] Reply context jump pending until full thread renders:', messageId);
+        return;
+      }
+      pendingJumpMessageIdRef.current = null;
+      flatListRef.current?.scrollToIndex({ index: resolvedIndex, animated: true, viewPosition: 0.35 });
+      console.log('[IVXOwnerChatRoute] Jumped to reply context:', messageId, 'index:', resolvedIndex);
+    };
+
+    if (searchActive) {
+      pendingJumpMessageIdRef.current = messageId;
+      setMessageSearchQuery('');
+      setTimeout(() => scrollToTarget(allMessages), 160);
+      return;
+    }
+
+    scrollToTarget(displayedMessages);
+  }, [allMessages, displayedMessages, searchActive]);
+
+  const handleTogglePinnedMessage = useCallback((message: ChatMessage) => {
+    setPinnedMessageIds((current) => {
+      if (current.includes(message.id)) {
+        console.log('[IVXOwnerChatRoute] Unpinned owner-room message:', message.id);
+        void recordIVXOwnerChatAuditEvent({
+          action: 'pin_message',
+          conversationId: conversationQuery.data?.id ?? IVX_OWNER_AI_PROFILE.sharedRoom.id,
+          messageId: message.id,
+          status: 'success',
+          summary: 'Owner unpinned a message in IVX Owner AI.',
+          metadata: { pinned: false, sessionId: ownerSessionIdRef.current },
+        });
+        return current.filter((messageId) => messageId !== message.id);
+      }
+
+      console.log('[IVXOwnerChatRoute] Pinned owner-room message:', message.id);
+      void recordIVXOwnerChatAuditEvent({
+        action: 'pin_message',
+        conversationId: conversationQuery.data?.id ?? IVX_OWNER_AI_PROFILE.sharedRoom.id,
+        messageId: message.id,
+        status: 'success',
+        summary: 'Owner pinned a message in IVX Owner AI.',
+        metadata: { pinned: true, sessionId: ownerSessionIdRef.current },
+      });
+      return [...current, message.id].filter((messageId, index, messageIds) => messageIds.indexOf(messageId) === index);
+    });
+  }, [conversationQuery.data?.id]);
+
+  const renderMessage = useCallback(({ item, index }: { item: IVXMessage; index: number }) => {
+    const previousMessage = index > 0 ? displayedMessages[index - 1] : null;
+    const currentDayKey = formatMessageDateKey(item.createdAt);
+    const previousDayKey = previousMessage ? formatMessageDateKey(previousMessage.createdAt) : null;
+    const shouldShowDateSeparator = currentDayKey !== previousDayKey;
     const ownMessage = isOwnMessage(item, ownerId);
     const isAssistant = item.senderRole === 'assistant';
     const isSystem = item.senderRole === 'system';
@@ -1947,7 +2777,9 @@ export default function IVXOwnerChatRoute() {
     if (isSystem) {
       const structuredRows = parseStructuredSystemMessage(item.body);
       return (
-        <View style={styles.systemMessageRow} testID={`ivx-owner-message-${item.id}`}>
+        <>
+          {shouldShowDateSeparator ? <DateSeparator value={item.createdAt} /> : null}
+          <View style={styles.systemMessageRow} testID={`ivx-owner-message-${item.id}`}>
           <View style={styles.systemBubble}>
             <View style={styles.systemLabelRow}>
               <Terminal size={12} color={Colors.info} />
@@ -1966,52 +2798,102 @@ export default function IVXOwnerChatRoute() {
             <Text style={styles.systemMeta}>{formatMessageTime(item.createdAt)}</Text>
           </View>
         </View>
+        </>
       );
     }
 
+    const pendingState = pendingOwnerMessages.find((pendingMessage) => pendingMessage.clientId === item.id);
+    const parsedReplyBody = pendingState?.replyTo ? { replyTo: pendingState.replyTo, body: item.body ?? '' } : parseReplyBody(item.body);
+    const chatMessage = {
+      id: item.id,
+      conversationId: item.conversationId,
+      senderId: item.senderUserId ?? item.senderRole,
+      senderLabel: isAssistant ? (item.senderLabel ?? IVX_OWNER_AI_PROFILE.name) : (item.senderLabel ?? 'IVX Owner'),
+      text: parsedReplyBody.body,
+      replyTo: parsedReplyBody.replyTo,
+      createdAt: item.createdAt,
+      sendStatus: pendingState?.status === 'uploading' || pendingState?.status === 'uploaded' ? 'sending' : (pendingState?.status ?? 'sent'),
+      optimistic: pendingState?.status === 'sending' || pendingState?.status === 'uploading' || pendingState?.status === 'uploaded',
+      localOnly: Boolean(pendingState),
+      readBy: ownMessage && !pendingState ? ['owner', 'assistant'] : undefined,
+      fileUrl: item.attachmentUrl ?? undefined,
+      fileName: item.attachmentName ?? undefined,
+      fileMime: item.attachmentMime ?? undefined,
+      fileSize: item.attachmentSize ?? undefined,
+      fileType: item.attachmentKind === 'image'
+        ? 'image'
+        : item.attachmentKind === 'video'
+          ? 'video'
+          : item.attachmentKind === 'pdf'
+            ? 'pdf'
+            : item.attachmentUrl
+              ? 'file'
+              : undefined,
+    } satisfies ChatMessage;
+
     return (
-      <View
-        style={[styles.messageRow, ownMessage ? styles.messageRowOwn : styles.messageRowOther]}
-        testID={`ivx-owner-message-${item.id}`}
-      >
-        <MessageBubble
-          message={{
-            id: item.id,
-            conversationId: item.conversationId,
-            senderId: item.senderUserId ?? item.senderRole,
-            senderLabel: isAssistant ? (item.senderLabel ?? IVX_OWNER_AI_PROFILE.name) : (item.senderLabel ?? 'IVX Owner'),
-            text: item.body ?? '',
-            createdAt: item.createdAt,
-            sendStatus: 'sent',
-            optimistic: false,
-            localOnly: false,
-            readBy: ownMessage ? ['owner', 'assistant'] : undefined,
-            fileUrl: item.attachmentUrl ?? undefined,
-            fileName: item.attachmentName ?? undefined,
-            fileType: item.attachmentKind === 'image'
-              ? 'image'
-              : item.attachmentKind === 'video'
-                ? 'video'
-                : item.attachmentKind === 'pdf'
-                  ? 'pdf'
-                  : item.attachmentUrl
-                    ? 'file'
-                    : undefined,
-          }}
-          isMine={ownMessage}
-        />
-      </View>
+      <>
+        {shouldShowDateSeparator ? <DateSeparator value={item.createdAt} /> : null}
+        <View
+          style={[
+            styles.messageRow,
+            ownMessage ? styles.messageRowOwn : styles.messageRowOther,
+            highlightedMessageId === item.id ? styles.messageRowHighlighted : null,
+          ]}
+          testID={`ivx-owner-message-${item.id}`}
+        >
+          <MessageBubble
+            message={chatMessage}
+            isMine={ownMessage}
+            searchQuery={messageSearchQuery}
+            onRetry={handleRetryMessage}
+            onDismiss={handleDismissFailedMessage}
+            onTogglePin={handleTogglePinnedMessage}
+            onReply={handleStartReplyToMessage}
+            onOpenReplyContext={handleJumpToMessage}
+            isPinned={pinnedMessageIdSet.has(item.id)}
+          />
+        </View>
+      </>
     );
-  }, [ownerId]);
+  }, [displayedMessages, handleDismissFailedMessage, handleJumpToMessage, handleRetryMessage, handleStartReplyToMessage, handleTogglePinnedMessage, highlightedMessageId, messageSearchQuery, ownerId, pendingOwnerMessages, pinnedMessageIdSet]);
+
+  useEffect(() => {
+    const pendingMessageId = pendingJumpMessageIdRef.current;
+    if (!pendingMessageId) {
+      return;
+    }
+
+    const targetIndex = displayedMessages.findIndex((message) => message.id === pendingMessageId);
+    if (targetIndex < 0) {
+      return;
+    }
+
+    suppressAutoScrollUntilRef.current = Date.now() + 2200;
+    flatListRef.current?.scrollToIndex({ index: targetIndex, animated: true, viewPosition: 0.35 });
+    pendingJumpMessageIdRef.current = null;
+    console.log('[IVXOwnerChatRoute] Completed pending reply context jump:', pendingMessageId, 'index:', targetIndex);
+  }, [displayedMessages]);
 
   const loading = messagesQuery.isLoading || conversationQuery.isLoading;
   const refreshing = messagesQuery.isRefetching || conversationQuery.isRefetching;
-  const isBusy = messageSendPending || attachmentMutation.isPending || isPickingFile;
+  const isRecordingVoice = recorderState.isRecording;
+  const isTranscribingVoice = transcribeVoiceMutation.isPending;
+  const isBusy = messageSendPending || attachmentMutation.isPending || isPickingFile || isRecordingVoice || isTranscribingVoice;
+  const sendingDisabled = !composerHasText || isBusy;
+  const attachmentDisabled = attachmentMutation.isPending || isPickingFile || isRecordingVoice || isTranscribingVoice;
+  const composerPlaceholder = attachmentMutation.isPending
+    ? 'Uploading attachment...'
+    : isPickingFile
+      ? 'Choosing attachment...'
+      : messageSendPending
+        ? 'Sending message...'
+        : 'Message IVX Owner AI';
   const activeFallbackForCurrentMessage = shouldShowFallbackUI({
     source: normalizeRuntimeSource(runtimeDebugSnapshot.source),
     requestStage: runtimeDebugSnapshot.requestStage,
     failureClass: runtimeDebugSnapshot.failureClass,
-    isFallback: runtimeDebugSnapshot.source === 'toolkit_fallback',
+    isFallback: runtimeDebugSnapshot.source === 'provider_fallback',
     isStreaming: hasActiveStreamingState(runtimeDebugSnapshot),
     hasVisibleResponseText: runtimeDebugSnapshot.hasVisibleResponseText,
   });
@@ -2151,13 +3033,13 @@ export default function IVXOwnerChatRoute() {
     }
 
     if (ownerAIConfigAudit.currentEnvironment === 'production' && !ownerAIRoutingBlocked && lastFailureReason) {
-      recommendedResolution = `${recommendedResolution} Production does not silently downgrade Owner AI routing to a dev host or toolkit-backed health state when the configured remote endpoint fails.`;
+      recommendedResolution = `${recommendedResolution} Production does not silently downgrade Owner AI routing to a dev host or provider-backed health state when the configured remote endpoint fails.`;
     }
 
     if (ownerAIRoutingBlocked && ownerAIConfigAudit.currentEnvironment === 'production') {
       recommendedResolution = ownerAIConfigAudit.pointsToDevHost
         ? 'Replace the development-like Owner AI host with the intended production public URL in EXPO_PUBLIC_IVX_OWNER_AI_BASE_URL.'
-        : 'Provide EXPO_PUBLIC_IVX_OWNER_AI_BASE_URL in production. No implicit fallback to EXPO_PUBLIC_RORK_API_BASE_URL or project-scoped dev hosts is allowed.';
+        : 'Provide EXPO_PUBLIC_IVX_OWNER_AI_BASE_URL in production. No implicit fallback to EXPO_PUBLIC_IVX_API_BASE_URL or project-scoped dev hosts is allowed.';
     }
 
     return {
@@ -2261,7 +3143,7 @@ export default function IVXOwnerChatRoute() {
       source: normalizeRuntimeSource(runtimeDebugSnapshot.source),
       requestStage: runtimeDebugSnapshot.requestStage,
       failureClass: runtimeDebugSnapshot.failureClass,
-      isFallback: runtimeDebugSnapshot.source === 'toolkit_fallback',
+      isFallback: runtimeDebugSnapshot.source === 'provider_fallback',
       isStreaming: hasActiveStreamingState(runtimeDebugSnapshot),
       hasVisibleResponseText: runtimeDebugSnapshot.hasVisibleResponseText,
     };
@@ -2299,7 +3181,7 @@ export default function IVXOwnerChatRoute() {
       source: normalizeRuntimeSource(runtimeDebugSnapshot.source),
       requestStage: runtimeDebugSnapshot.requestStage,
       failureClass: runtimeDebugSnapshot.failureClass,
-      isFallback: runtimeDebugSnapshot.source === 'toolkit_fallback',
+      isFallback: runtimeDebugSnapshot.source === 'provider_fallback',
       isStreaming: hasActiveStreamingState(runtimeDebugSnapshot),
       hasVisibleResponseText: runtimeDebugSnapshot.hasVisibleResponseText,
     };
@@ -2625,17 +3507,31 @@ export default function IVXOwnerChatRoute() {
       ],
     );
   }, [backendAdminVerified, devTestMode.testModeActive, fallbackChatOnlyActive, persistSupportMessage, roomControlMutation]);
+  const androidKeyboardActive = Platform.OS === 'android' && keyboardInset > 0;
+  const androidRootResizedByKeyboard = useMemo<boolean>(() => {
+    if (!androidKeyboardActive || rootLayoutHeight <= 0 || lastNonKeyboardRootHeightRef.current <= 0) {
+      return false;
+    }
+    const heightShrink = lastNonKeyboardRootHeightRef.current - rootLayoutHeight;
+    return heightShrink >= Math.max(80, keyboardInset * 0.35);
+  }, [androidKeyboardActive, keyboardInset, rootLayoutHeight]);
+  const manualKeyboardLift = useMemo<number>(() => {
+    if (!androidKeyboardActive || androidRootResizedByKeyboard) {
+      return 0;
+    }
+    return Math.min(Math.max(keyboardInset - insets.bottom + 10, 180), 360);
+  }, [androidKeyboardActive, androidRootResizedByKeyboard, insets.bottom, keyboardInset]);
   const composerDockInset = useMemo(() => {
     if (Platform.OS === 'android') {
-      return Math.max(insets.bottom, 12) + 8;
+      return Math.max(insets.bottom, 16) + 8;
     }
-    return Math.max(insets.bottom, 10) + 10;
+    return Math.max(insets.bottom, 8) + 8;
   }, [insets.bottom]);
   const isKeyboardOpen = keyboardInset > 0;
   const effectiveComposerBottom = useMemo(() => {
     if (Platform.OS === 'android') {
       if (isKeyboardOpen) {
-        return 8;
+        return Math.max(insets.bottom, 12);
       }
       return composerDockInset;
     }
@@ -2645,25 +3541,87 @@ export default function IVXOwnerChatRoute() {
     }
 
     return composerDockInset;
-  }, [composerDockInset, isKeyboardOpen]);
+  }, [composerDockInset, insets.bottom, isKeyboardOpen]);
   const listContentContainerStyle = useMemo(() => {
-    const bottomPadding = Math.max(composerHeight + effectiveComposerBottom + 20, insets.bottom + 30);
-    return allMessages.length === 0
+    const bottomPadding = Math.max(composerHeight + effectiveComposerBottom + manualKeyboardLift + 96, insets.bottom + 120);
+    return displayedMessages.length === 0
       ? [styles.emptyListContent, { paddingBottom: bottomPadding }]
-      : [styles.listContent, { paddingTop: 2, paddingBottom: bottomPadding }];
-  }, [allMessages.length, composerHeight, effectiveComposerBottom, insets.bottom]);
+      : [styles.listContent, { paddingTop: 8, paddingBottom: bottomPadding }];
+  }, [displayedMessages.length, composerHeight, effectiveComposerBottom, insets.bottom, manualKeyboardLift]);
   const keyboardAvoidingBehavior = Platform.select<'height' | 'padding' | undefined>({
     ios: 'padding',
     android: 'height',
     default: undefined,
   });
+  const keyboardVerticalOffset = useMemo<number>(() => {
+    if (Platform.OS !== 'ios') {
+      return 0;
+    }
+
+    return Math.max(insets.top + 56, 88);
+  }, [insets.top]);
+  const handleRootLayout = useCallback((event: LayoutChangeEvent) => {
+    const nextHeight = event.nativeEvent.layout.height;
+    if (nextHeight <= 0) {
+      return;
+    }
+    setRootLayoutHeight((current) => (Math.abs(current - nextHeight) > 1 ? nextHeight : current));
+    if (Platform.OS !== 'android' || keyboardInset <= 0) {
+      lastNonKeyboardRootHeightRef.current = nextHeight;
+    }
+  }, [keyboardInset]);
+  const renderPinnedMessagePreview = useCallback((message: IVXMessage) => {
+    const parsedPinnedBody = parseReplyBody(message.body);
+    const previewText = safeTrim(parsedPinnedBody.body) || safeTrim(message.attachmentName) || 'Attachment';
+    const senderLabel = message.senderRole === 'assistant' ? (message.senderLabel ?? IVX_OWNER_AI_PROFILE.name) : (message.senderLabel ?? 'IVX Owner');
+    return (
+      <View key={message.id} style={styles.pinnedMessageCard} testID={`ivx-owner-pinned-message-${message.id}`}>
+        <View style={styles.pinnedMessageTextStack}>
+          <Text style={styles.pinnedMessageSender} numberOfLines={1}>{senderLabel}</Text>
+          <Text style={styles.pinnedMessageText} numberOfLines={2}>{previewText}</Text>
+          {message.attachmentUrl ? <Text style={styles.pinnedMessageMeta} numberOfLines={1}>{`${message.attachmentName ?? 'Attachment'} · ${message.attachmentMime ?? message.attachmentKind}`}</Text> : null}
+        </View>
+        <Pressable
+          style={({ pressed }) => [styles.pinnedUnpinButton, pressed ? { opacity: 0.72 } : null]}
+          onPress={() => handleTogglePinnedMessage({ id: message.id } as ChatMessage)}
+          accessibilityRole="button"
+          accessibilityLabel="Unpin message"
+          testID={`ivx-owner-pinned-unpin-${message.id}`}
+        >
+          <X size={13} color="#F6C85F" />
+          <Text style={styles.pinnedUnpinText}>Unpin</Text>
+        </Pressable>
+      </View>
+    );
+  }, [handleTogglePinnedMessage]);
+
+  const pinnedMessagesSection = useMemo(() => {
+    if (pinnedMessages.length === 0) {
+      return null;
+    }
+
+    return (
+      <View style={styles.pinnedSection} testID="ivx-owner-pinned-section">
+        <View style={styles.pinnedSectionHeader}>
+          <Pin size={14} color="#F6C85F" />
+          <Text style={styles.pinnedSectionTitle}>Pinned messages</Text>
+          <Text style={styles.pinnedSectionCount}>{pinnedMessages.length}</Text>
+        </View>
+        <View style={styles.pinnedMessageList}>
+          {pinnedMessages.map(renderPinnedMessagePreview)}
+        </View>
+      </View>
+    );
+  }, [pinnedMessages, renderPinnedMessagePreview]);
+
   const listFooter = useMemo(() => <View style={styles.listFooterSpacer} />, []);
+  const androidTopSpacerHeight = Platform.OS === 'android' ? Math.max(insets.top + 2, 24) : Math.max(insets.top, 0);
   const runtimeProofHeadline = useMemo(() => getRuntimeProofHeadline(runtimeDebugSnapshot), [runtimeDebugSnapshot]);
   const runtimeStatusCopy = useMemo(() => getRuntimeStatusCopy({
     source: normalizeRuntimeSource(runtimeDebugSnapshot.source),
     requestStage: runtimeDebugSnapshot.requestStage,
     failureClass: runtimeDebugSnapshot.failureClass,
-    isFallback: runtimeDebugSnapshot.source === 'toolkit_fallback',
+    isFallback: runtimeDebugSnapshot.source === 'provider_fallback',
     isStreaming: hasActiveStreamingState(runtimeDebugSnapshot),
     hasVisibleResponseText: runtimeDebugSnapshot.hasVisibleResponseText,
   }), [runtimeDebugSnapshot]);
@@ -2675,9 +3633,37 @@ export default function IVXOwnerChatRoute() {
       { label: 'Base URL', value: backendAuditSummary.activeBaseUrl },
       { label: 'Endpoint', value: runtimeDebugSnapshot.endpoint ?? backendAuditSummary.activeEndpoint },
       { label: 'Request ID', value: runtimeDebugSnapshot.requestId ?? 'pending' },
+      { label: 'Reliability attempts', value: lastReliabilityTrace ? `${lastReliabilityTrace.attempts.length} · ${lastReliabilityTrace.finalOutcome} · ${lastReliabilityTrace.totalElapsedMs}ms` : 'pending' },
       { label: 'Response preview', value: runtimeDebugSnapshot.responsePreview },
     ];
-  }, [backendAuditSummary.activeBaseUrl, backendAuditSummary.activeEndpoint, runtimeDebugSnapshot]);
+  }, [backendAuditSummary.activeBaseUrl, backendAuditSummary.activeEndpoint, lastReliabilityTrace, runtimeDebugSnapshot]);
+  const developerToolsAllowed = useMemo<boolean>(() => {
+    return ownerRoomAuthenticated;
+  }, [ownerRoomAuthenticated]);
+  const developerStatusRows = useMemo<Array<{ id: string; label: string; value: string; tone: 'pass' | 'warn' | 'error' | 'pending' }>>(() => {
+    const supabasePending = conversationQuery.isLoading || messagesQuery.isLoading || roomStatusQuery.isLoading;
+    const supabaseReady = !conversationQuery.error && !messagesQuery.error && !roomStatusQuery.error;
+    const roomReady = !!conversationQuery.data?.id && !!ivxRoomStatus && !roomStatusQuery.isLoading;
+    const activeSource = getActiveRuntimeSource({
+      source: normalizeRuntimeSource(runtimeDebugSnapshot.source),
+      requestStage: runtimeDebugSnapshot.requestStage,
+      failureClass: runtimeDebugSnapshot.failureClass,
+      isFallback: runtimeDebugSnapshot.source === 'provider_fallback',
+      isStreaming: hasActiveStreamingState(runtimeDebugSnapshot),
+      hasVisibleResponseText: runtimeDebugSnapshot.hasVisibleResponseText,
+    });
+    const aiReady = activeSource === 'remote_api' || activeSource === 'local_app_brain' || effectiveAiHealthDetail === 'active';
+
+    return [
+      { id: 'supabase', label: 'Supabase', value: supabaseReady ? 'connected' : supabasePending ? 'checking' : 'needs attention', tone: supabaseReady ? 'pass' : supabasePending ? 'pending' : 'error' },
+      { id: 'room', label: 'Room', value: roomReady ? `${ivxRoomStatus.storageMode} · ${ivxRoomStatus.deliveryMethod}` : roomStatusQuery.error ? 'probe failed' : 'opening', tone: roomReady ? 'pass' : roomStatusQuery.error ? 'error' : 'pending' },
+      { id: 'ai', label: 'AI', value: aiReady ? (activeSource === 'remote_api' ? 'remote connected' : activeSource === 'local_app_brain' ? 'local brain ready' : 'ready') : 'checking', tone: aiReady ? 'pass' : aiReplyPending ? 'pending' : 'warn' },
+      { id: 'audit', label: 'Audit', value: 'local + audit_events mirror', tone: 'pass' },
+      { id: 'files', label: 'Files', value: fileUploadActive ? 'upload + analysis active' : 'upload path ready', tone: fileUploadActive ? 'pass' : 'warn' },
+      { id: 'voice', label: 'Voice', value: isRecordingVoice ? 'recording' : isTranscribingVoice ? 'transcribing' : 'transcription ready', tone: isRecordingVoice || isTranscribingVoice ? 'pending' : 'pass' },
+      { id: 'templates', label: 'Templates', value: `${OWNER_PROMPT_TEMPLATES.length} business prompts`, tone: 'pass' },
+    ];
+  }, [aiReplyPending, conversationQuery.data?.id, conversationQuery.error, conversationQuery.isLoading, effectiveAiHealthDetail, fileUploadActive, isRecordingVoice, isTranscribingVoice, ivxRoomStatus, messagesQuery.error, messagesQuery.isLoading, roomStatusQuery.error, roomStatusQuery.isLoading, runtimeDebugSnapshot]);
   const sendBranchProof = useMemo<SendBranchProofRow>(() => {
     return resolveSendBranch(
       deliveryBranchStatus.branch,
@@ -2690,6 +3676,12 @@ export default function IVXOwnerChatRoute() {
     if (devTestMode.testModeActive) {
       return 'Assistant ready.';
     }
+    if (isRecordingVoice) {
+      return 'Recording voice prompt. Tap stop when finished.';
+    }
+    if (isTranscribingVoice) {
+      return 'Transcribing voice prompt...';
+    }
     if (aiReplyPending) {
       return 'Message sent. Reply will appear when ready.';
     }
@@ -2700,17 +3692,42 @@ export default function IVXOwnerChatRoute() {
       return 'Assistant is temporarily unavailable.';
     }
     return 'Assistant ready.';
-  }, [aiReplyPending, currentOwnerTrust.requiresElevatedConfirmation, devTestMode.testModeActive, ownerAIProofStatus.id, ownerAIRoutingBlocked, runtimeDebugSnapshot.hasVisibleResponseText]);
+  }, [aiReplyPending, currentOwnerTrust.requiresElevatedConfirmation, devTestMode.testModeActive, isRecordingVoice, isTranscribingVoice, ownerAIProofStatus.id, ownerAIRoutingBlocked, runtimeDebugSnapshot.hasVisibleResponseText]);
 
-  const shouldShowDiagnosticsToggle = useMemo(() => false, []);
+  const controlRoomItems = useMemo<IVXControlRoomItem[]>(() => {
+    if (controlRoomQuery.data?.statusItems && controlRoomQuery.data.statusItems.length > 0) {
+      return controlRoomQuery.data.statusItems;
+    }
+    if (controlRoomQuery.error) {
+      return [{ id: 'control-room', label: 'Owner/developer control room', status: 'not_connected', detail: controlRoomQuery.error.message }];
+    }
+    return CONTROL_ROOM_FALLBACK_ITEMS;
+  }, [controlRoomQuery.data?.statusItems, controlRoomQuery.error]);
+  const controlRoomSummary = useMemo(() => {
+    const verified = controlRoomItems.filter((item) => item.status === 'verified' || item.status === 'connected' || item.status === 'available').length;
+    const blocked = controlRoomItems.filter((item) => item.status === 'blocked' || item.status === 'missing_access' || item.status === 'not_connected' || item.status === 'not_verified').length;
+    return { verified, blocked, total: controlRoomItems.length };
+  }, [controlRoomItems]);
+  const shouldShowDiagnosticsToggle = developerToolsAllowed;
 
   const scrollOwnerThreadToEnd = useCallback((animated: boolean = true) => {
-    requestAnimationFrame(() => {
-      flatListRef.current?.scrollToEnd({ animated });
-    });
-    setTimeout(() => {
-      flatListRef.current?.scrollToEnd({ animated });
-    }, Platform.OS === 'android' ? 220 : 80);
+    const scrollIfAllowed = () => {
+      if (Date.now() >= suppressAutoScrollUntilRef.current) {
+        flatListRef.current?.scrollToEnd({ animated });
+      }
+    };
+
+    requestAnimationFrame(scrollIfAllowed);
+    setTimeout(scrollIfAllowed, Platform.OS === 'android' ? 220 : 80);
+    setTimeout(scrollIfAllowed, Platform.OS === 'android' ? 520 : 180);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (highlightedMessageTimeoutRef.current) {
+        clearTimeout(highlightedMessageTimeoutRef.current);
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -2729,6 +3746,7 @@ export default function IVXOwnerChatRoute() {
       console.log('[IVXOwnerChatRoute] Keyboard shown inset:', normalizedInset, 'rawHeight:', nextInset, 'bottomInset:', insets.bottom);
       setKeyboardInset(normalizedInset);
       scrollOwnerThreadToEnd(true);
+      setTimeout(() => scrollOwnerThreadToEnd(true), Platform.OS === 'android' ? 520 : 160);
     };
 
     const handleKeyboardHide = () => {
@@ -2747,61 +3765,190 @@ export default function IVXOwnerChatRoute() {
 
   return (
     <ErrorBoundary fallbackTitle="IVX Owner AI unavailable">
-      <Stack.Screen options={{ title: 'IVX Owner AI' }} />
       <KeyboardAvoidingView
         style={styles.container}
         behavior={keyboardAvoidingBehavior}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+        keyboardVerticalOffset={keyboardVerticalOffset}
+        onLayout={handleRootLayout}
       >
-        <RoomHeader
-          title={IVX_OWNER_AI_PROFILE.sharedRoom.title}
-          resolution={resolution}
-        />
+        <View style={[styles.androidStatusSpacer, { height: androidTopSpacerHeight }]} testID="ivx-owner-chat-android-status-spacer" />
 
         <View style={styles.content}>
+          {primaryState !== 'loading' && primaryState !== 'room_error' ? (
+            <View style={styles.topSearchRail} testID="ivx-owner-chat-top-search-rail">
+              <View style={styles.searchBarWrap} testID="ivx-owner-chat-search-wrap">
+                <Search size={16} color={Colors.textTertiary} />
+                <TextInput
+                  style={styles.searchInput}
+                  value={messageSearchQuery}
+                  onChangeText={handleSearchQueryChange}
+                  placeholder="Search this conversation"
+                  placeholderTextColor="#7C8797"
+                  returnKeyType="search"
+                  autoCorrect={false}
+                  testID="ivx-owner-chat-search-input"
+                />
+                {searchActive ? (
+                  <Pressable
+                    style={styles.searchClearButton}
+                    onPress={() => setMessageSearchQuery('')}
+                    hitSlop={8}
+                    accessibilityRole="button"
+                    accessibilityLabel="Clear message search"
+                    testID="ivx-owner-chat-search-clear"
+                  >
+                    <X size={14} color={Colors.textTertiary} />
+                  </Pressable>
+                ) : null}
+                {shouldShowDiagnosticsToggle ? (
+                  <Pressable
+                    style={styles.controlRoomToggle}
+                    onPress={() => setShowDiagnostics((current) => !current)}
+                    hitSlop={8}
+                    accessibilityRole="button"
+                    accessibilityLabel="Toggle owner developer control room"
+                    testID="ivx-owner-control-room-toggle"
+                  >
+                    <Terminal size={12} color={showDiagnostics ? Colors.black : Colors.primary} />
+                    <Text style={[styles.controlRoomToggleText, showDiagnostics ? styles.controlRoomToggleTextActive : null]}>{showDiagnostics ? 'Chat' : 'Control'}</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+            </View>
+          ) : null}
           {topStatusNote ? (
             <View
               style={ownerAIRoutingBlocked ? styles.blockedBanner : activeFallbackForCurrentMessage ? styles.degradedBanner : styles.devBanner}
               testID="ivx-owner-chat-top-status"
             >
-              <Text numberOfLines={2} style={ownerAIRoutingBlocked ? styles.blockedBannerText : activeFallbackForCurrentMessage ? styles.degradedBannerText : styles.devBannerText}>{topStatusNote}</Text>
+              <Text numberOfLines={3} style={ownerAIRoutingBlocked ? styles.blockedBannerText : activeFallbackForCurrentMessage ? styles.degradedBannerText : styles.devBannerText}>{topStatusNote}</Text>
             </View>
           ) : null}
 
-          <View
-            style={[
-              styles.providerProofCard,
-              ownerAIProofStatus.tone === 'pass'
-                ? styles.providerProofCardPass
-                : ownerAIProofStatus.tone === 'blocked'
-                  ? styles.providerProofCardBlocked
-                  : ownerAIProofStatus.tone === 'pending'
-                    ? styles.providerProofCardPending
-                    : styles.providerProofCardWarn,
-            ]}
-            testID={ownerAIProofStatus.testID}
-          >
-            <View style={styles.providerProofHeader}>
-              <View style={styles.providerProofCopy}>
-                <Text style={styles.providerProofTitle}>{runtimeStatusCopy.title}</Text>
-                <Text style={styles.providerProofDetail} numberOfLines={1}>{runtimeStatusCopy.detail}</Text>
-              </View>
-              {shouldShowDiagnosticsToggle ? (
-                <Pressable
-                  style={styles.detailsToggle}
-                  onPress={() => {
-                    setShowDiagnostics((current) => !current);
-                  }}
-                  testID="ivx-owner-chat-toggle-details"
-                >
-                  <Text style={styles.detailsToggleText}>{showDiagnostics ? 'Hide' : 'Details'}</Text>
-                </Pressable>
-              ) : null}
-            </View>
-          </View>
-
-          {showDiagnostics ? (
+          {showDiagnostics && developerToolsAllowed ? (
             <>
+              <View style={styles.developerToolsCard} testID="ivx-owner-developer-tools-panel">
+                <View style={styles.developerToolsHeader}>
+                  <View style={styles.developerToolsIconWrap}>
+                    <Terminal size={15} color={Colors.black} />
+                  </View>
+                  <View style={styles.developerToolsCopy}>
+                    <Text style={styles.developerToolsEyebrow}>Developer tools</Text>
+                    <Text style={styles.developerToolsTitle}>Private runtime checks</Text>
+                  </View>
+                </View>
+                <View style={styles.developerStatusGrid}>
+                  {developerStatusRows.map((row) => (
+                    <View
+                      key={row.id}
+                      style={[
+                        styles.developerStatusTile,
+                        row.tone === 'pass'
+                          ? styles.developerStatusTilePass
+                          : row.tone === 'error'
+                            ? styles.developerStatusTileError
+                            : row.tone === 'pending'
+                              ? styles.developerStatusTilePending
+                              : styles.developerStatusTileWarn,
+                      ]}
+                      testID={`ivx-owner-devtools-${row.id}`}
+                    >
+                      <View style={[
+                        styles.developerStatusDot,
+                        row.tone === 'pass'
+                          ? styles.developerStatusDotPass
+                          : row.tone === 'error'
+                            ? styles.developerStatusDotError
+                            : row.tone === 'pending'
+                              ? styles.developerStatusDotPending
+                              : styles.developerStatusDotWarn,
+                      ]} />
+                      <Text style={styles.developerStatusLabel}>{row.label}</Text>
+                      <Text style={styles.developerStatusValue} numberOfLines={2}>{row.value}</Text>
+                    </View>
+                  ))}
+                </View>
+                <Text style={styles.developerToolsFootnote}>Visible only for authenticated owner developer sessions; normal users never see runtime metadata.</Text>
+              </View>
+
+              <View style={styles.controlRoomCard} testID="ivx-owner-developer-control-room">
+                <View style={styles.controlRoomHeaderRow}>
+                  <View style={styles.controlRoomHeaderCopy}>
+                    <Text style={styles.backendAuditEyebrow}>Owner/developer control room</Text>
+                    <Text style={styles.controlRoomTitle}>IVX system status</Text>
+                    <Text style={styles.controlRoomSubtitle}>{`${controlRoomSummary.verified}/${controlRoomSummary.total} verified or available · ${controlRoomSummary.blocked} pending/blocking`}</Text>
+                  </View>
+                  <View style={styles.controlRoomActions}>
+                    <Pressable
+                      style={styles.graphActionButton}
+                      onPress={() => router.push('/ivx/independence' as never)}
+                      testID="ivx-owner-open-independence-tracker"
+                    >
+                      <ShieldCheck size={13} color={Colors.black} />
+                      <Text style={styles.graphActionButtonText}>Independence</Text>
+                    </Pressable>
+                    <Pressable
+                      style={styles.graphActionButton}
+                      onPress={() => router.push('/ivx/variables' as never)}
+                      testID="ivx-owner-open-variables-tool"
+                    >
+                      <KeyRound size={13} color={Colors.black} />
+                      <Text style={styles.graphActionButtonText}>Variables</Text>
+                    </Pressable>
+                    <Pressable
+                      style={[styles.graphActionButton, controlRoomQuery.isFetching ? styles.actionButtonDisabled : null]}
+                      onPress={() => { void controlRoomQuery.refetch(); }}
+                      disabled={controlRoomQuery.isFetching}
+                      testID="ivx-owner-control-room-refresh"
+                    >
+                      <Text style={styles.graphActionButtonText}>{controlRoomQuery.isFetching ? 'Checking' : 'Run tests'}</Text>
+                    </Pressable>
+                  </View>
+                </View>
+                {controlRoomQuery.error ? <Text style={styles.controlRoomError}>{controlRoomQuery.error.message}</Text> : null}
+                <View style={styles.controlRoomList}>
+                  {controlRoomItems.map((item, index) => {
+                    const tone = getControlRoomTone(item.status);
+                    return (
+                      <View key={item.id} style={styles.controlRoomRow} testID={`ivx-owner-control-room-${item.id}`}>
+                        <Text style={styles.controlRoomIndex}>{String(index + 1).padStart(2, '0')}</Text>
+                        <View style={styles.controlRoomRowCopy}>
+                          <View style={styles.controlRoomRowTop}>
+                            <Text style={styles.controlRoomLabel}>{item.label}</Text>
+                            <View style={[
+                              styles.controlRoomStatusBadge,
+                              tone === 'pass'
+                                ? styles.controlRoomStatusBadgePass
+                                : tone === 'error'
+                                  ? styles.controlRoomStatusBadgeError
+                                  : tone === 'pending'
+                                    ? styles.controlRoomStatusBadgePending
+                                    : styles.controlRoomStatusBadgeWarn,
+                            ]}>
+                              <Text style={[
+                                styles.controlRoomStatusText,
+                                tone === 'pass'
+                                  ? styles.controlRoomStatusTextPass
+                                  : tone === 'error'
+                                    ? styles.controlRoomStatusTextError
+                                    : tone === 'pending'
+                                      ? styles.controlRoomStatusTextPending
+                                      : styles.controlRoomStatusTextWarn,
+                              ]}>{getControlRoomStatusLabel(item.status)}</Text>
+                            </View>
+                          </View>
+                          <Text style={styles.controlRoomDetail}>{item.detail}</Text>
+                          {item.missingCredentialNames && item.missingCredentialNames.length > 0 ? (
+                            <Text style={styles.controlRoomMissing}>{`Missing: ${item.missingCredentialNames.join(', ')}`}</Text>
+                          ) : null}
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+                <Text style={styles.developerToolsFootnote}>No status is guessed here. Unconnected tools show not connected; unverified checks show not verified; missing secrets are listed by name only.</Text>
+              </View>
+
               <View style={styles.sendBranchProofRow} testID="ivx-owner-send-branch-proof">
                 <Text style={styles.sendBranchProofLabel}>send branch</Text>
                 <Text
@@ -2948,13 +4095,15 @@ export default function IVXOwnerChatRoute() {
                 <AuditInfoRow label="Request class" value={currentOwnerTrust.requestClass} testID="ivx-owner-runtime-request-class" />
                 <AuditInfoRow label="Owner/dev bypass enabled" value={runtimeDebugSnapshot.ownerBypassEnabled ? 'yes' : 'no'} />
                 <AuditInfoRow label="Conversation ID" value={runtimeDebugSnapshot.conversationId ?? 'pending'} />
+                <AuditInfoRow label="Tool used" value={lastToolOutputs.length > 0 ? lastToolOutputs.map((output) => output.tool).join(', ') : 'none'} testID="ivx-owner-runtime-tool-used" />
+                <AuditInfoRow label="Tool output" value={lastToolOutputs.length > 0 ? JSON.stringify(lastToolOutputs[0]?.output ?? lastToolOutputs[0]?.error ?? null).slice(0, 220) : 'none'} testID="ivx-owner-runtime-tool-output" />
                 <AuditInfoRow
                   label="Fallback state"
                   value={getRuntimeFallbackState(getActiveRuntimeSource({
                     source: normalizeRuntimeSource(runtimeDebugSnapshot.source),
                     requestStage: runtimeDebugSnapshot.requestStage,
                     failureClass: runtimeDebugSnapshot.failureClass,
-                    isFallback: runtimeDebugSnapshot.source === 'toolkit_fallback',
+                    isFallback: runtimeDebugSnapshot.source === 'provider_fallback',
                     isStreaming: hasActiveStreamingState(runtimeDebugSnapshot),
                     hasVisibleResponseText: runtimeDebugSnapshot.hasVisibleResponseText,
                   }))}
@@ -3182,37 +4331,90 @@ export default function IVXOwnerChatRoute() {
               </Pressable>
             </View>
           ) : (
-            <FlatList
-              ref={flatListRef}
-              data={allMessages}
-              keyExtractor={(item) => item.id}
-              renderItem={renderMessage}
-              contentContainerStyle={listContentContainerStyle}
-              refreshControl={<RefreshControl tintColor={Colors.primary} refreshing={refreshing} onRefresh={() => {
+            <>
+              {searchActive ? (
+                <Text style={styles.searchResultText} testID="ivx-owner-chat-search-count">
+                  {displayedMessages.length === 1 ? '1 matching message' : `${displayedMessages.length} matching messages`}
+                </Text>
+              ) : null}
+              <View style={styles.threadViewport} testID="ivx-owner-chat-thread-viewport">
+                {pinnedMessagesSection}
+                {missingReplyMessageId ? (
+                <Pressable
+                  style={styles.missingReplyBanner}
+                  onPress={() => setMissingReplyMessageId(null)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Dismiss missing original message notice"
+                  testID="ivx-owner-missing-reply-context"
+                >
+                  <MessageCircle size={14} color={Colors.warning} />
+                  <Text style={styles.missingReplyText}>Original replied-to message is unavailable. The reply preview is still preserved.</Text>
+                </Pressable>
+              ) : null}
+                <FlatList
+                  ref={flatListRef}
+                  data={displayedMessages}
+                  keyExtractor={(item) => item.id}
+                  renderItem={renderMessage}
+                  style={styles.messageList}
+                  contentContainerStyle={listContentContainerStyle}
+                  scrollEnabled
+                  nestedScrollEnabled
+                  bounces
+                  alwaysBounceVertical
+                  overScrollMode="always"
+                  showsVerticalScrollIndicator
+                  scrollEventThrottle={16}
+                  removeClippedSubviews={false}
+                  automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
+              refreshControl={<RefreshControl tintColor={Colors.primary} refreshing={refreshing || controlRoomQuery.isFetching} onRefresh={() => {
                 void messagesQuery.refetch();
                 void conversationQuery.refetch();
                 void roomStatusQuery.refetch();
+                void controlRoomQuery.refetch();
               }} />}
               ListEmptyComponent={
-                <View style={styles.emptyState} testID="ivx-owner-chat-empty">
+                <View style={styles.emptyState} testID={searchActive ? 'ivx-owner-chat-search-empty' : 'ivx-owner-chat-empty'}>
                   <Sparkles size={28} color={Colors.primary} />
-                  <Text style={styles.emptyTitle}>{IVX_OWNER_AI_PROFILE.sharedRoom.emptyTitle}</Text>
-                  <Text style={styles.emptyText}>{resolution.emptyStateText}</Text>
+                  <Text style={styles.emptyTitle}>{searchActive ? 'No matching messages' : IVX_OWNER_AI_PROFILE.sharedRoom.emptyTitle}</Text>
+                  <Text style={styles.emptyText}>{searchActive ? 'Try a different word or clear search to return to the full owner-room thread.' : resolution.emptyStateText}</Text>
                 </View>
               }
               ListFooterComponent={listFooter}
               ListFooterComponentStyle={styles.listFooterContainer}
-              onContentSizeChange={() => scrollOwnerThreadToEnd(false)}
-              onLayout={() => scrollOwnerThreadToEnd(false)}
+              onContentSizeChange={() => {
+                if (Date.now() >= suppressAutoScrollUntilRef.current && displayedMessages.length <= 2) {
+                  scrollOwnerThreadToEnd(false);
+                }
+              }}
+              onScrollToIndexFailed={(info) => {
+                suppressAutoScrollUntilRef.current = Date.now() + 1800;
+                flatListRef.current?.scrollToOffset({ offset: Math.max(0, info.averageItemLength * info.index), animated: true });
+                setTimeout(() => flatListRef.current?.scrollToIndex({ index: info.index, animated: true, viewPosition: 0.35 }), 220);
+              }}
+              onScrollBeginDrag={() => {
+                suppressAutoScrollUntilRef.current = Date.now() + 2800;
+              }}
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
-              testID="ivx-owner-chat-list"
-            />
+                  testID="ivx-owner-chat-list"
+                />
+              </View>
+            </>
           )}
         </View>
 
         {primaryState !== 'loading' && primaryState !== 'room_error' ? (
-          <View style={[styles.composerDock, { paddingBottom: effectiveComposerBottom }]}>
+          <View
+            style={[
+              styles.composerDock,
+              {
+                paddingBottom: effectiveComposerBottom,
+                transform: [{ translateY: -manualKeyboardLift }],
+              },
+            ]}
+            testID="ivx-owner-chat-composer-dock"
+          >
 
             <View
               style={styles.composerCard}
@@ -3221,31 +4423,93 @@ export default function IVXOwnerChatRoute() {
                 const nextHeight = event.nativeEvent.layout.height;
                 if (Math.abs(nextHeight - composerHeight) > 1) {
                   setComposerHeight(nextHeight);
+                  scrollOwnerThreadToEnd(false);
                 }
               }}
             >
+              {selectedReplyContext ? (
+                <View style={styles.replyComposerPreview} testID="ivx-owner-reply-preview">
+                  <View style={styles.replyComposerAccent} />
+                  <View style={styles.replyComposerCopy}>
+                    <Text style={styles.replyComposerLabel} numberOfLines={1}>{`Replying to ${selectedReplyContext.senderLabel}`}</Text>
+                    <Text style={styles.replyComposerText} numberOfLines={2}>{selectedReplyContext.previewText}</Text>
+                  </View>
+                  <Pressable
+                    style={({ pressed }) => [styles.replyComposerClose, pressed ? { opacity: 0.72 } : null]}
+                    onPress={() => setSelectedReplyContext(null)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Cancel reply"
+                    testID="ivx-owner-reply-cancel"
+                  >
+                    <X size={14} color={Colors.textTertiary} />
+                  </Pressable>
+                </View>
+              ) : null}
+              <View style={styles.templateRow} testID="ivx-owner-chat-template-row">
+                {OWNER_PROMPT_TEMPLATES.map((template) => (
+                  <Pressable
+                    key={template.id}
+                    style={({ pressed }) => [styles.templateChip, pressed ? { opacity: 0.72 } : null]}
+                    onPress={() => handleApplyPromptTemplate(template)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Apply ${template.label} prompt template`}
+                    testID={template.testID}
+                  >
+                    <Text style={styles.templateChipText}>{template.label}</Text>
+                  </Pressable>
+                ))}
+              </View>
               <View style={styles.composerPrimaryRow}>
                 <Pressable
-                  style={[styles.iconButton, (attachmentMutation.isPending || isPickingFile) ? styles.actionButtonDisabled : null]}
+                  style={[styles.iconButton, attachmentDisabled ? styles.actionButtonDisabled : null]}
                   onPress={() => void handlePickFile()}
-                  disabled={attachmentMutation.isPending || isPickingFile}
+                  disabled={attachmentDisabled}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel="Attach a file"
                   testID="ivx-owner-chat-attach"
                 >
-                  <Paperclip size={18} color={Colors.primary} />
+                  <Paperclip size={18} color={attachmentDisabled ? '#7C8797' : Colors.primary} />
+                </Pressable>
+                <Pressable
+                  style={[
+                    styles.iconButton,
+                    isRecordingVoice ? styles.voiceButtonActive : null,
+                    (isTranscribingVoice || messageSendPending || attachmentMutation.isPending || isPickingFile) ? styles.actionButtonDisabled : null,
+                  ]}
+                  onPress={() => { void handleVoicePress(); }}
+                  disabled={isTranscribingVoice || messageSendPending || attachmentMutation.isPending || isPickingFile}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel={isRecordingVoice ? 'Stop voice recording' : 'Start voice recording'}
+                  testID="ivx-owner-chat-voice"
+                >
+                  {isRecordingVoice ? <Square size={17} color={Colors.error} /> : <Mic size={18} color={isTranscribingVoice ? '#7C8797' : Colors.primary} />}
                 </Pressable>
                 <TextInput
                   ref={composerInputRef}
-                  style={styles.composerInput}
+                  style={[styles.composerInput, { height: composerInputHeight }]}
                   value={composerValue}
                   onChangeText={handleComposerChange}
-                  editable={!isBusy}
-                  placeholder="Message IVX Owner AI"
+                  editable={!attachmentMutation.isPending && !isPickingFile && !isRecordingVoice && !isTranscribingVoice}
+                  placeholder={composerPlaceholder}
                   placeholderTextColor="#B8C0CC"
                   multiline
                   textAlignVertical="top"
                   returnKeyType="send"
                   blurOnSubmit={false}
-                  onFocus={() => scrollOwnerThreadToEnd(true)}
+                  scrollEnabled={composerInputHeight >= 112}
+                  onContentSizeChange={(event) => {
+                    const nextHeight = Math.min(Math.max(event.nativeEvent.contentSize.height + 4, 44), 112);
+                    if (Math.abs(nextHeight - composerInputHeight) > 1) {
+                      setComposerInputHeight(nextHeight);
+                    }
+                    scrollOwnerThreadToEnd(false);
+                  }}
+                  onFocus={() => {
+                    scrollOwnerThreadToEnd(true);
+                    setTimeout(() => scrollOwnerThreadToEnd(true), Platform.OS === 'android' ? 420 : 220);
+                  }}
                   onSubmitEditing={(event) => {
                     const submittedText = normalizeComposerText(event?.nativeEvent?.text, composerValueRef.current);
                     handleSend(submittedText);
@@ -3258,9 +4522,12 @@ export default function IVXOwnerChatRoute() {
                     handleSend();
                   }}
                   disabled={sendingDisabled || isBusy}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel="Send message"
                   testID="ivx-owner-chat-send"
                 >
-                  <Send size={18} color={Colors.black} />
+                  <Send size={18} color={sendingDisabled ? '#7C8797' : Colors.black} />
                 </Pressable>
               </View>
               <View style={styles.composerSecondaryRow}>
@@ -3271,6 +4538,9 @@ export default function IVXOwnerChatRoute() {
                     handleAskAI();
                   }}
                   disabled={sendingDisabled || isBusy}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel="Ask IVX Owner AI"
                   testID="ivx-owner-chat-ai"
                 >
                   <Sparkles size={14} color={Colors.text} />
@@ -3293,54 +4563,186 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     minHeight: 0,
+    paddingTop: 0,
+  },
+  androidStatusSpacer: {
+    backgroundColor: Colors.background,
   },
   devBanner: {
-    marginHorizontal: 12,
-    marginBottom: 4,
-    borderRadius: 10,
+    marginHorizontal: 8,
+    marginBottom: 3,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(59,130,246,0.24)',
-    backgroundColor: 'rgba(59,130,246,0.08)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    borderColor: 'rgba(59,130,246,0.28)',
+    backgroundColor: 'rgba(59,130,246,0.10)',
+    paddingHorizontal: 12,
+    paddingVertical: 14,
+    minHeight: 84,
+    justifyContent: 'center' as const,
   },
   devBannerText: {
     color: Colors.info,
-    fontSize: 10,
-    lineHeight: 13,
-    fontWeight: '600' as const,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '700' as const,
   },
   degradedBanner: {
-    marginHorizontal: 12,
-    marginBottom: 4,
-    borderRadius: 10,
+    marginHorizontal: 8,
+    marginBottom: 3,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(245,158,11,0.24)',
-    backgroundColor: 'rgba(245,158,11,0.08)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    borderColor: 'rgba(245,158,11,0.32)',
+    backgroundColor: 'rgba(245,158,11,0.12)',
+    paddingHorizontal: 12,
+    paddingVertical: 14,
+    minHeight: 84,
+    justifyContent: 'center' as const,
   },
   degradedBannerText: {
     color: Colors.warning,
-    fontSize: 10,
-    lineHeight: 13,
-    fontWeight: '600' as const,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '800' as const,
   },
   blockedBanner: {
-    marginHorizontal: 12,
-    marginBottom: 4,
-    borderRadius: 10,
+    marginHorizontal: 8,
+    marginBottom: 3,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(239,68,68,0.28)',
-    backgroundColor: 'rgba(239,68,68,0.10)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    borderColor: 'rgba(239,68,68,0.32)',
+    backgroundColor: 'rgba(239,68,68,0.12)',
+    paddingHorizontal: 12,
+    paddingVertical: 14,
+    minHeight: 84,
+    justifyContent: 'center' as const,
   },
   blockedBannerText: {
     color: Colors.error,
-    fontSize: 10,
-    lineHeight: 13,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '800' as const,
+  },
+  topSearchRail: {
+    paddingHorizontal: 8,
+    paddingTop: 2,
+    paddingBottom: 8,
+    backgroundColor: Colors.background,
+  },
+  searchBarWrap: {
+    minHeight: 46,
+    borderRadius: 23,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: '#0F1521',
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    paddingHorizontal: 14,
+    gap: 10,
+  },
+  searchInput: {
+    flex: 1,
+    color: Colors.text,
+    fontSize: 15,
+    minHeight: 40,
+    paddingVertical: 7,
+  },
+  searchClearButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  searchResultText: {
+    marginHorizontal: 20,
+    marginBottom: 4,
+    color: Colors.textTertiary,
+    fontSize: 11,
     fontWeight: '700' as const,
+    letterSpacing: 0.2,
+  },
+  threadViewport: {
+    flex: 1,
+    minHeight: 0,
+    overflow: 'hidden',
+  },
+  pinnedSection: {
+    marginHorizontal: 14,
+    marginBottom: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(246,200,95,0.24)',
+    backgroundColor: 'rgba(246,200,95,0.08)',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 9,
+  },
+  pinnedSectionHeader: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 7,
+  },
+  pinnedSectionTitle: {
+    flex: 1,
+    color: '#F6C85F',
+    fontSize: 12,
+    fontWeight: '800' as const,
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
+  },
+  pinnedSectionCount: {
+    color: Colors.textTertiary,
+    fontSize: 11,
+    fontWeight: '800' as const,
+  },
+  pinnedMessageList: {
+    gap: 8,
+  },
+  pinnedMessageCard: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 10,
+    borderRadius: 14,
+    backgroundColor: 'rgba(17,23,34,0.92)',
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+  },
+  pinnedMessageTextStack: {
+    flex: 1,
+    gap: 2,
+  },
+  pinnedMessageSender: {
+    color: Colors.textTertiary,
+    fontSize: 10,
+    fontWeight: '800' as const,
+    letterSpacing: 0.2,
+  },
+  pinnedMessageText: {
+    color: Colors.text,
+    fontSize: 13,
+    lineHeight: 17,
+    fontWeight: '600' as const,
+  },
+  pinnedMessageMeta: {
+    color: Colors.textTertiary,
+    fontSize: 10,
+    fontWeight: '600' as const,
+  },
+  pinnedUnpinButton: {
+    minHeight: 32,
+    borderRadius: 16,
+    paddingHorizontal: 10,
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    gap: 5,
+    backgroundColor: 'rgba(246,200,95,0.12)',
+  },
+  pinnedUnpinText: {
+    color: '#F6C85F',
+    fontSize: 11,
+    fontWeight: '800' as const,
   },
   productionGuardCard: {
     marginHorizontal: 16,
@@ -3394,6 +4796,248 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     fontWeight: '700' as const,
   },
+  developerToolsCard: {
+    marginHorizontal: 16,
+    marginBottom: 12,
+    padding: 16,
+    borderRadius: 24,
+    backgroundColor: '#08111f',
+    borderWidth: 1,
+    borderColor: 'rgba(56,189,248,0.28)',
+    gap: 14,
+  },
+  developerToolsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  developerToolsIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.info,
+  },
+  developerToolsCopy: {
+    flex: 1,
+    gap: 3,
+  },
+  developerToolsEyebrow: {
+    color: Colors.info,
+    fontSize: 11,
+    fontWeight: '800' as const,
+    textTransform: 'uppercase',
+    letterSpacing: 0.7,
+  },
+  developerToolsTitle: {
+    color: Colors.text,
+    fontSize: 16,
+    fontWeight: '800' as const,
+  },
+  controlRoomToggle: {
+    minHeight: 32,
+    borderRadius: 16,
+    paddingHorizontal: 10,
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    gap: 5,
+    backgroundColor: Colors.primary,
+  },
+  controlRoomToggleText: {
+    color: Colors.black,
+    fontSize: 11,
+    fontWeight: '800' as const,
+  },
+  controlRoomToggleTextActive: {
+    color: Colors.black,
+  },
+  controlRoomCard: {
+    marginHorizontal: 16,
+    marginBottom: 12,
+    padding: 16,
+    borderRadius: 24,
+    backgroundColor: '#071017',
+    borderWidth: 1,
+    borderColor: 'rgba(34,197,94,0.22)',
+    gap: 14,
+  },
+  controlRoomHeaderRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'flex-start' as const,
+    justifyContent: 'space-between' as const,
+    gap: 12,
+  },
+  controlRoomHeaderCopy: {
+    flex: 1,
+    gap: 4,
+  },
+  controlRoomActions: {
+    alignItems: 'flex-end' as const,
+    gap: 8,
+  },
+  controlRoomTitle: {
+    color: Colors.text,
+    fontSize: 18,
+    fontWeight: '900' as const,
+  },
+  controlRoomSubtitle: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '600' as const,
+  },
+  controlRoomError: {
+    color: Colors.error,
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: '700' as const,
+  },
+  controlRoomList: {
+    gap: 10,
+  },
+  controlRoomRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'flex-start' as const,
+    gap: 10,
+    padding: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'rgba(255,255,255,0.035)',
+  },
+  controlRoomIndex: {
+    width: 24,
+    color: Colors.textTertiary,
+    fontSize: 11,
+    fontWeight: '900' as const,
+    lineHeight: 18,
+  },
+  controlRoomRowCopy: {
+    flex: 1,
+    gap: 6,
+  },
+  controlRoomRowTop: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'space-between' as const,
+    gap: 10,
+  },
+  controlRoomLabel: {
+    flex: 1,
+    color: Colors.text,
+    fontSize: 13,
+    fontWeight: '800' as const,
+  },
+  controlRoomStatusBadge: {
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  controlRoomStatusBadgePass: {
+    backgroundColor: 'rgba(34,197,94,0.12)',
+    borderColor: 'rgba(34,197,94,0.24)',
+  },
+  controlRoomStatusBadgeWarn: {
+    backgroundColor: 'rgba(245,158,11,0.12)',
+    borderColor: 'rgba(245,158,11,0.24)',
+  },
+  controlRoomStatusBadgeError: {
+    backgroundColor: 'rgba(239,68,68,0.12)',
+    borderColor: 'rgba(239,68,68,0.24)',
+  },
+  controlRoomStatusBadgePending: {
+    backgroundColor: 'rgba(59,130,246,0.12)',
+    borderColor: 'rgba(59,130,246,0.24)',
+  },
+  controlRoomStatusText: {
+    fontSize: 10,
+    fontWeight: '900' as const,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.3,
+  },
+  controlRoomStatusTextPass: {
+    color: Colors.success,
+  },
+  controlRoomStatusTextWarn: {
+    color: Colors.warning,
+  },
+  controlRoomStatusTextError: {
+    color: Colors.error,
+  },
+  controlRoomStatusTextPending: {
+    color: Colors.info,
+  },
+  controlRoomDetail: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  controlRoomMissing: {
+    color: Colors.warning,
+    fontSize: 11,
+    lineHeight: 16,
+    fontWeight: '700' as const,
+  },
+  developerStatusGrid: {
+    gap: 10,
+  },
+  developerStatusTile: {
+    padding: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: 5,
+  },
+  developerStatusTilePass: {
+    backgroundColor: 'rgba(34,197,94,0.10)',
+    borderColor: 'rgba(34,197,94,0.24)',
+  },
+  developerStatusTileWarn: {
+    backgroundColor: 'rgba(245,158,11,0.10)',
+    borderColor: 'rgba(245,158,11,0.24)',
+  },
+  developerStatusTileError: {
+    backgroundColor: 'rgba(239,68,68,0.10)',
+    borderColor: 'rgba(239,68,68,0.24)',
+  },
+  developerStatusTilePending: {
+    backgroundColor: 'rgba(59,130,246,0.10)',
+    borderColor: 'rgba(59,130,246,0.24)',
+  },
+  developerStatusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 99,
+  },
+  developerStatusDotPass: {
+    backgroundColor: Colors.success,
+  },
+  developerStatusDotWarn: {
+    backgroundColor: Colors.warning,
+  },
+  developerStatusDotError: {
+    backgroundColor: Colors.error,
+  },
+  developerStatusDotPending: {
+    backgroundColor: Colors.info,
+  },
+  developerStatusLabel: {
+    color: Colors.text,
+    fontSize: 13,
+    fontWeight: '800' as const,
+  },
+  developerStatusValue: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  developerToolsFootnote: {
+    color: Colors.textTertiary,
+    fontSize: 11,
+    lineHeight: 16,
+  },
   sendBranchProofRow: {
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
@@ -3439,13 +5083,14 @@ const styles = StyleSheet.create({
     textAlign: 'right' as const,
   },
   providerProofCard: {
-    marginHorizontal: 12,
-    marginBottom: 4,
+    marginHorizontal: 8,
+    marginBottom: 3,
     borderRadius: 12,
     borderWidth: 1,
     paddingHorizontal: 10,
     paddingVertical: 6,
-    gap: 3,
+    minHeight: 0,
+    gap: 2,
   },
   providerProofCardPass: {
     borderColor: 'rgba(34,197,94,0.24)',
@@ -3475,7 +5120,7 @@ const styles = StyleSheet.create({
   },
   providerProofTitle: {
     color: Colors.text,
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: '800' as const,
   },
   detailsToggle: {
@@ -3493,8 +5138,8 @@ const styles = StyleSheet.create({
   },
   providerProofDetail: {
     color: '#E8EDF5',
-    fontSize: 9,
-    lineHeight: 12,
+    fontSize: 11,
+    lineHeight: 15,
     fontWeight: '600' as const,
   },
   qaCard: {
@@ -4042,10 +5687,15 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700' as const,
   },
+  messageList: {
+    flex: 1,
+    minHeight: 0,
+  },
   listContent: {
-    paddingHorizontal: 12,
-    paddingTop: 1,
-    gap: 4,
+    flexGrow: 1,
+    paddingHorizontal: 10,
+    paddingTop: 0,
+    gap: 3,
   },
   emptyListContent: {
     flexGrow: 1,
@@ -4074,6 +5724,26 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     textAlign: 'center',
   },
+  dateSeparatorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginHorizontal: 18,
+    marginTop: 12,
+    marginBottom: 10,
+  },
+  dateSeparatorLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: Colors.surfaceBorder,
+  },
+  dateSeparatorText: {
+    color: Colors.textTertiary,
+    fontSize: 11,
+    fontWeight: '700' as const,
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+  },
   messageRow: {
     flexDirection: 'row',
     marginBottom: 2,
@@ -4083,6 +5753,37 @@ const styles = StyleSheet.create({
   },
   messageRowOther: {
     justifyContent: 'flex-start',
+  },
+  messageRowHighlighted: {
+    borderRadius: 24,
+    backgroundColor: 'rgba(246,200,95,0.24)',
+    borderWidth: 1,
+    borderColor: 'rgba(246,200,95,0.62)',
+    shadowColor: '#F6C85F',
+    shadowOpacity: 0.34,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
+  },
+  missingReplyBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginHorizontal: 14,
+    marginBottom: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 16,
+    backgroundColor: 'rgba(246,200,95,0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(246,200,95,0.28)',
+  },
+  missingReplyText: {
+    flex: 1,
+    color: Colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '700' as const,
+    lineHeight: 16,
   },
   messageBubble: {
     maxWidth: '86%',
@@ -4216,16 +5917,18 @@ const styles = StyleSheet.create({
   },
   composerDock: {
     paddingHorizontal: 10,
-    paddingTop: 4,
+    paddingTop: 6,
     backgroundColor: Colors.background,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: Colors.surfaceBorder,
+    zIndex: 20,
+    elevation: 20,
   },
   composerCard: {
-    paddingTop: 7,
-    paddingHorizontal: 8,
-    paddingBottom: 6,
-    borderRadius: 14,
+    paddingTop: 8,
+    paddingHorizontal: 10,
+    paddingBottom: 8,
+    borderRadius: 20,
     backgroundColor: Colors.surface,
     borderWidth: 1,
     borderColor: Colors.surfaceBorder,
@@ -4236,15 +5939,77 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: -3 },
     elevation: 6,
   },
+  replyComposerPreview: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    borderRadius: 13,
+    borderWidth: 1,
+    borderColor: 'rgba(246,200,95,0.24)',
+    backgroundColor: 'rgba(246,200,95,0.08)',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  replyComposerAccent: {
+    width: 3,
+    alignSelf: 'stretch',
+    borderRadius: 999,
+    backgroundColor: '#F6C85F',
+  },
+  replyComposerCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  replyComposerLabel: {
+    color: '#F6C85F',
+    fontSize: 11,
+    fontWeight: '900' as const,
+    letterSpacing: 0.2,
+  },
+  replyComposerText: {
+    color: Colors.text,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '600' as const,
+  },
+  replyComposerClose: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  templateRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 6,
+    paddingBottom: 4,
+  },
+  templateChip: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(246,200,95,0.26)',
+    backgroundColor: 'rgba(246,200,95,0.08)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  templateChipText: {
+    color: '#F6C85F',
+    fontSize: 10,
+    fontWeight: '800' as const,
+    letterSpacing: 0.2,
+  },
   composerPrimaryRow: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 6,
+    alignItems: 'center',
+    gap: 8,
   },
   composerInput: {
     flex: 1,
-    minHeight: 36,
-    maxHeight: 84,
+    minHeight: 46,
+    maxHeight: 112,
     color: '#F8FAFC',
     fontSize: 14,
     lineHeight: 19,
@@ -4252,8 +6017,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#12161C',
     borderRadius: 13,
     paddingHorizontal: 11,
-    paddingTop: 7,
-    paddingBottom: 7,
+    paddingTop: 10,
+    paddingBottom: 10,
     borderWidth: 1,
     borderColor: '#46505E',
     minWidth: 0,
@@ -4272,9 +6037,9 @@ const styles = StyleSheet.create({
     fontWeight: '600' as const,
   },
   iconButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
+    width: 48,
+    height: 48,
+    borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: Colors.backgroundSecondary,
@@ -4282,10 +6047,14 @@ const styles = StyleSheet.create({
     borderColor: Colors.surfaceBorder,
     flexShrink: 0,
   },
+  voiceButtonActive: {
+    borderColor: 'rgba(239,68,68,0.42)',
+    backgroundColor: 'rgba(239,68,68,0.14)',
+  },
   sendIconButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 11,
+    width: 48,
+    height: 48,
+    borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: Colors.primary,
@@ -4296,8 +6065,8 @@ const styles = StyleSheet.create({
   },
   aiButton: {
     minWidth: 58,
-    height: 28,
-    borderRadius: 10,
+    height: 34,
+    borderRadius: 11,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
@@ -4317,7 +6086,7 @@ const styles = StyleSheet.create({
     fontWeight: '700' as const,
   },
   listFooterSpacer: {
-    height: 6,
+    height: 2,
   },
   listFooterContainer: {
     paddingTop: 4,

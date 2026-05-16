@@ -25,7 +25,21 @@ AWS_REGION="${AWS_REGION:-us-east-1}"
 ECS_CLUSTER="${ECS_CLUSTER:-ivx-holdings-cluster}"
 ECS_SERVICE="${ECS_SERVICE:-ivx-holdings-api-service}"
 CONTAINER_NAME="${CONTAINER_NAME:-ivx-holdings-api}"
-IMAGE_TAG="${1:-$(git rev-parse --short HEAD 2>/dev/null || echo "latest")}"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+resolve_project_root() {
+  local current="$SCRIPT_DIR"
+  while [ "$current" != "/" ]; do
+    if [ -f "$current/package.json" ] || [ -d "$current/.git" ]; then
+      printf '%s\n' "$current"
+      return 0
+    fi
+    current="$(dirname "$current")"
+  done
+  return 1
+}
+PROJECT_ROOT="$(resolve_project_root)" || error "Could not resolve project root"
+IMAGE_TAG="${1:-$(git -C "$PROJECT_ROOT" rev-parse --short HEAD 2>/dev/null || echo "latest")}"
 
 # ─── PREREQUISITES ─────────────────────────────────────────
 command -v aws    >/dev/null 2>&1 || error "aws CLI not found"
@@ -34,9 +48,6 @@ aws sts get-caller-identity >/dev/null 2>&1 || error "AWS not authenticated. Run
 
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 ECR_URI="$ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$APP_NAME-api"
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

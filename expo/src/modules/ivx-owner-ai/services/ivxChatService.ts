@@ -18,6 +18,7 @@ import {
   getRealtimeSchema,
   type ResolvedTables,
 } from './ivxTableResolver';
+import { isIVXLocalFirstChatEnabled } from './ivxLocalFirstRuntime';
 
 type IVXConversationRow = {
   id: string;
@@ -32,6 +33,8 @@ type IVXConversationRow = {
 
 const IVX_OWNER_FILE_URL_TTL_SECONDS = 60 * 60;
 const IVX_LOCAL_MESSAGES_STORAGE_KEY = 'ivx_owner_ai_local_messages';
+const OWNER_REALTIME_POLL_INTERVAL_MS = 5_000;
+const OWNER_REALTIME_FALLBACK_DELAY_MS = 6_000;
 const activeOwnerRealtimeTeardowns = new Set<string>();
 const activeOwnerRealtimeSubscriptions = new Set<string>();
 const ownerLocalMessageListeners = new Set<(message: IVXMessage) => void>();
@@ -196,7 +199,7 @@ function getLocalConversation(): IVXConversation {
     id: IVX_OWNER_AI_ROOM_ID,
     slug: IVX_OWNER_AI_ROOM_SLUG,
     title: IVX_OWNER_AI_PROFILE.sharedRoom.title,
-    subtitle: 'Dev owner workspace. Messages are stored locally when shared backend access is unavailable.',
+    subtitle: 'Private IVX workspace. Messages stay on this device.',
     createdAt: nowIso(),
     updatedAt: nowIso(),
     lastMessageText: null,
@@ -787,6 +790,11 @@ async function insertMessage(tables: ResolvedTables, input: {
 }
 
 async function bootstrapOwnerConversation(): Promise<IVXConversation> {
+  if (isIVXLocalFirstChatEnabled()) {
+    console.log('[IVXChatService] Local-first mode active; using local owner conversation');
+    return getLocalConversation();
+  }
+
   const client = getIVXSupabaseClient();
   const tables = await resolveIVXTables();
 
@@ -882,12 +890,190 @@ async function bootstrapOwnerConversation(): Promise<IVXConversation> {
   return mapConversation(insertedConversation);
 }
 
+export type IVXOwnerMessageSearchResult = {
+  message: IVXMessage;
+  conversationId: string;
+  conversationTitle: string;
+  snippet: string;
+  matchedAt: string;
+  source: 'remote_db' | 'local_cache';
+};
+
+function buildSearchSnippet(body: string | null, query: string): string {
+  const normalizedBody = (body ?? '').replace(/\s+/g, ' ').trim();
+  if (!normalizedBody) {
+    return '';
+  }
+
+  const idx = normalizedBody.toLowerCase().indexOf(query.toLowerCase());
+  if (idx < 0) {
+    return normalizedBody.length > 160 ? `${normalizedBody.slice(0, 157)}...` : normalizedBody;
+  }
+
+  const start = Math.max(0, idx - 40);
+  const end = Math.min(normalizedBody.length, idx + query.length + 80);
+  const prefix = start > 0 ? '...' : '';
+  const suffix = end < normalizedBody.length ? '...' : '';
+  return `${prefix}${normalizedBody.slice(start, end)}${suffix}`;
+}
+
+function uniqueStrings(values: Array<string | null | undefined>): string[] {
+  const seen = new Set<string>();
+  const output: string[] = [];
+  for (const value of values) {
+    const normalizedValue = trimOrNull(value);
+    if (!normalizedValue || seen.has(normalizedValue)) {
+      continue;
+    }
+    seen.add(normalizedValue);
+    output.push(normalizedValue);
+  }
+  return output;
+}
+
+async function loadConversationTitleMap(tables: ResolvedTables, conversationIds: string[], fallbackTitle: string): Promise<Map<string, string>> {
+  const titleMap = new Map<string, string>();
+  const ids = uniqueStrings(conversationIds).slice(0, 200);
+  if (ids.length === 0 || tables.schema === 'none') {
+    return titleMap;
+  }
+
+  try {
+    const client = getIVXSupabaseClient();
+    const scopedClient = getScopedSupabaseClient(client, tables.dbSchema);
+    const result = await scopedClient
+      .from(tables.conversations)
+      .select('*')
+      .in('id', ids);
+
+    if (result.error) {
+      console.log('[IVXChatService] Conversation title lookup failed for search:', result.error.message);
+      return titleMap;
+    }
+
+    for (const row of getRowsFromSelectResult(result.data)) {
+      const conversation = mapConversation(row);
+      titleMap.set(conversation.id, conversation.title || fallbackTitle);
+    }
+  } catch (error) {
+    console.log('[IVXChatService] Conversation title lookup exception for search:', error instanceof Error ? error.message : 'unknown');
+  }
+
+  return titleMap;
+}
+
+async function searchOwnerMessages(input: {
+  query: string;
+  limit?: number;
+}): Promise<IVXOwnerMessageSearchResult[]> {
+  const trimmed = input.query.trim();
+  if (trimmed.length < 2) {
+    return [];
+  }
+
+  const limit = Math.max(1, Math.min(input.limit ?? 50, 200));
+  const conversation = await bootstrapOwnerConversation();
+  const fallbackConversationTitle = conversation.title || IVX_OWNER_AI_PROFILE.sharedRoom.title;
+  const localMessages = await loadLocalMessages();
+  const localLower = trimmed.toLowerCase();
+  const localConversationTitleMap = new Map<string, string>([
+    [conversation.id, fallbackConversationTitle],
+    [IVX_OWNER_AI_ROOM_ID, IVX_OWNER_AI_PROFILE.sharedRoom.title],
+  ]);
+  const localMatches: IVXOwnerMessageSearchResult[] = localMessages
+    .filter((message) => (message.body ?? '').toLowerCase().includes(localLower))
+    .map((message) => {
+      const conversationId = message.conversationId || conversation.id;
+      return {
+        message,
+        conversationId,
+        conversationTitle: localConversationTitleMap.get(conversationId) ?? fallbackConversationTitle,
+        snippet: buildSearchSnippet(message.body, trimmed),
+        matchedAt: message.createdAt,
+        source: 'local_cache' as const,
+      };
+    });
+
+  if (isIVXLocalFirstChatEnabled()) {
+    console.log('[IVXChatService] Local-first search returned', localMatches.length, 'matches');
+    return localMatches.slice(0, limit);
+  }
+
+  const tables = await resolveIVXTables();
+  if (tables.schema === 'none') {
+    console.log('[IVXChatService] No IVX tables; returning local-only search:', localMatches.length);
+    return localMatches.slice(0, limit);
+  }
+
+  try {
+    const client = getIVXSupabaseClient();
+    const scopedClient = getScopedSupabaseClient(client, tables.dbSchema);
+    const bodyColumn = 'body';
+    const escaped = trimmed.replace(/[%_\\]/g, (m) => `\\${m}`);
+    const ilikePattern = `%${escaped}%`;
+
+    console.log('[IVXChatService] Searching all owner conversations', {
+      table: tables.messages,
+      query: trimmed,
+      limit,
+      schema: tables.schema,
+      dbSchema: tables.dbSchema,
+    });
+
+    const result = await scopedClient
+      .from(tables.messages)
+      .select('*')
+      .ilike(bodyColumn, ilikePattern)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (result.error) {
+      console.log('[IVXChatService] Server search failed, returning local matches:', result.error.message);
+      return localMatches.slice(0, limit);
+    }
+
+    const remoteMessages = await Promise.all((result.data ?? []).map((row) => mapMessage(row as Record<string, unknown>)));
+    const titleMap = await loadConversationTitleMap(tables, remoteMessages.map((message) => message.conversationId), fallbackConversationTitle);
+    const remoteMatches: IVXOwnerMessageSearchResult[] = remoteMessages.map((message) => {
+      const conversationId = message.conversationId || conversation.id;
+      return {
+        message,
+        conversationId,
+        conversationTitle: titleMap.get(conversationId) ?? fallbackConversationTitle,
+        snippet: buildSearchSnippet(message.body, trimmed),
+        matchedAt: message.createdAt,
+        source: 'remote_db' as const,
+      };
+    });
+
+    const seen = new Set<string>();
+    const merged: IVXOwnerMessageSearchResult[] = [];
+    for (const match of [...remoteMatches, ...localMatches]) {
+      const dedupeKey = `${match.source}:${match.message.id}:${match.conversationId}`;
+      if (seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
+      merged.push(match);
+    }
+
+    merged.sort((a, b) => new Date(b.matchedAt).getTime() - new Date(a.matchedAt).getTime());
+    return merged.slice(0, limit);
+  } catch (error) {
+    console.log('[IVXChatService] Search exception, returning local matches:', error instanceof Error ? error.message : 'unknown');
+    return localMatches.slice(0, limit);
+  }
+}
+
 async function listOwnerMessages(): Promise<IVXMessage[]> {
+  const localMessages = await loadLocalMessages();
+  if (isIVXLocalFirstChatEnabled()) {
+    console.log('[IVXChatService] Local-first mode active; listing local owner messages:', localMessages.length);
+    return localMessages;
+  }
+
   const client = getIVXSupabaseClient();
   const tables = await resolveIVXTables();
   const scopedClient = getScopedSupabaseClient(client, tables.dbSchema);
   const conversation = await bootstrapOwnerConversation();
-  const localMessages = await loadLocalMessages();
   const messageConversationField = tables.schema === 'generic' ? 'room_id' : 'conversation_id';
 
   if (tables.schema === 'none') {
@@ -918,7 +1104,36 @@ async function listOwnerMessages(): Promise<IVXMessage[]> {
 async function sendOwnerTextMessage(input: {
   body: string;
   senderLabel?: string | null;
+  requireRemote?: boolean;
 }): Promise<IVXMessage> {
+  const localFirstBody = trimOrNull(input.body);
+  if (isIVXLocalFirstChatEnabled()) {
+    if (!localFirstBody) {
+      throw new Error('Type a message before sending.');
+    }
+
+    const conversation = getLocalConversation();
+    const localMessage = createLocalMessage({
+      conversationId: conversation.id,
+      senderUserId: null,
+      senderRole: 'owner',
+      senderLabel: trimOrNull(input.senderLabel) ?? 'IVX Owner',
+      body: localFirstBody,
+      attachmentKind: 'text',
+    });
+    await appendLocalMessage(localMessage);
+    emitLocalOwnerMessage(localMessage, 'send_owner_text_local_first');
+    trackOwnerSendAudit({
+      transport: 'local_fallback',
+      conversationId: conversation.id,
+      messageId: localMessage.id,
+      senderRole: 'owner',
+      reason: 'Stored in the local IVX room.',
+    });
+    console.log('[IVXChatService] Owner text message stored in local-first mode');
+    return localMessage;
+  }
+
   let ownerContext = null as Awaited<ReturnType<typeof getIVXOwnerAuthContext>> | null;
   try {
     ownerContext = await getIVXOwnerAuthContext();
@@ -934,6 +1149,10 @@ async function sendOwnerTextMessage(input: {
   }
 
   if (!ownerContext || tables.schema === 'none') {
+    if (input.requireRemote === true) {
+      throw new Error(!ownerContext ? 'Owner session is required to save this message.' : 'Shared room persistence is unavailable.');
+    }
+
     const localMessage = createLocalMessage({
       conversationId: conversation.id,
       senderUserId: ownerContext?.userId ?? null,
@@ -985,6 +1204,11 @@ async function sendOwnerTextMessage(input: {
     });
     return message;
   } catch (error) {
+    if (input.requireRemote === true) {
+      console.log('[IVXChatService] Remote owner text send failed in required remote mode:', error instanceof Error ? error.message : 'unknown');
+      throw error instanceof Error ? error : new Error('Unable to save this message.');
+    }
+
     console.log('[IVXChatService] Remote owner text send failed, storing locally instead:', error instanceof Error ? error.message : 'unknown');
     const localMessage = createLocalMessage({
       conversationId: conversation.id,
@@ -1012,7 +1236,39 @@ async function sendOwnerSupportMessage(input: {
   senderRole: 'assistant' | 'system';
   senderLabel?: string | null;
   attachmentKind?: IVXAttachmentKind;
+  requireRemote?: boolean;
 }): Promise<IVXMessage> {
+  const localFirstBody = trimOrNull(input.body);
+  if (isIVXLocalFirstChatEnabled()) {
+    if (!localFirstBody) {
+      throw new Error('Support message body is required.');
+    }
+
+    const conversation = getLocalConversation();
+    const senderLabel = trimOrNull(input.senderLabel)
+      ?? (input.senderRole === 'assistant' ? IVX_OWNER_AI_PROFILE.name : 'IVX');
+    const attachmentKind = input.attachmentKind ?? (input.senderRole === 'assistant' ? 'text' : 'system');
+    const localMessage = createLocalMessage({
+      conversationId: conversation.id,
+      senderUserId: null,
+      senderRole: input.senderRole,
+      senderLabel,
+      body: localFirstBody,
+      attachmentKind,
+    });
+    await appendLocalMessage(localMessage);
+    emitLocalOwnerMessage(localMessage, `send_owner_support_local_first:${input.senderRole}`);
+    trackOwnerSendAudit({
+      transport: 'local_fallback',
+      conversationId: conversation.id,
+      messageId: localMessage.id,
+      senderRole: input.senderRole,
+      reason: 'Stored in the local IVX room.',
+    });
+    console.log('[IVXChatService] Support message stored in local-first mode, role:', input.senderRole);
+    return localMessage;
+  }
+
   let ownerContext = null as Awaited<ReturnType<typeof getIVXOwnerAuthContext>> | null;
   try {
     ownerContext = await getIVXOwnerAuthContext();
@@ -1032,6 +1288,10 @@ async function sendOwnerSupportMessage(input: {
   const attachmentKind = input.attachmentKind ?? (input.senderRole === 'assistant' ? 'text' : 'system');
 
   if (!ownerContext || tables.schema === 'none') {
+    if (input.requireRemote === true) {
+      throw new Error(!ownerContext ? 'Owner session is required to save this reply.' : 'Shared room persistence is unavailable.');
+    }
+
     const localMessage = createLocalMessage({
       conversationId: conversation.id,
       senderUserId: null,
@@ -1083,6 +1343,11 @@ async function sendOwnerSupportMessage(input: {
     });
     return message;
   } catch (error) {
+    if (input.requireRemote === true) {
+      console.log('[IVXChatService] Remote support message send failed in required remote mode:', error instanceof Error ? error.message : 'unknown');
+      throw error instanceof Error ? error : new Error('Unable to save this reply.');
+    }
+
     console.log('[IVXChatService] Remote support message send failed, storing locally instead:', error instanceof Error ? error.message : 'unknown');
     const localMessage = createLocalMessage({
       conversationId: conversation.id,
@@ -1110,6 +1375,28 @@ async function sendOwnerAttachmentMessage(input: {
   body?: string | null;
   senderLabel?: string | null;
 }): Promise<IVXMessage> {
+  if (isIVXLocalFirstChatEnabled()) {
+    const conversation = getLocalConversation();
+    const localMessage = createLocalAttachmentMessage({
+      conversationId: conversation.id,
+      senderUserId: null,
+      senderLabel: trimOrNull(input.senderLabel) ?? 'IVX Owner',
+      body: trimOrNull(input.body),
+      upload: input.upload,
+    });
+    await appendLocalMessage(localMessage);
+    emitLocalOwnerMessage(localMessage, 'send_owner_attachment_local_first');
+    trackOwnerSendAudit({
+      transport: 'local_fallback',
+      conversationId: conversation.id,
+      messageId: localMessage.id,
+      senderRole: 'owner',
+      reason: 'Stored in the local IVX room.',
+    });
+    console.log('[IVXChatService] Owner attachment stored in local-first mode');
+    return localMessage;
+  }
+
   let ownerContext = null as Awaited<ReturnType<typeof getIVXOwnerAuthContext>> | null;
   try {
     ownerContext = await getIVXOwnerAuthContext();
@@ -1166,7 +1453,7 @@ async function sendOwnerAttachmentMessage(input: {
       senderRole: 'owner',
       senderLabel,
       body,
-      attachmentUrl: uploadedFile.path,
+      attachmentUrl: uploadedFile.publicUrl,
       attachmentName: uploadedFile.fileName,
       attachmentMime: uploadedFile.mimeType,
       attachmentSize: uploadedFile.size,
@@ -1209,13 +1496,58 @@ async function subscribeToOwnerMessages(
   onMessage: (message: IVXMessage) => void,
   onStatusChange?: (status: string) => void,
 ): Promise<() => void> {
+  if (isIVXLocalFirstChatEnabled()) {
+    const conversation = getLocalConversation();
+    let closed = false;
+    const seenMessageIds = new Set<string>();
+    const localListener = (message: IVXMessage): void => {
+      if (closed || message.conversationId !== conversation.id || seenMessageIds.has(message.id)) {
+        return;
+      }
+
+      seenMessageIds.add(message.id);
+      trackOwnerReceiveAudit({
+        transport: 'local_listener',
+        conversationId: message.conversationId,
+        messageId: message.id,
+        senderRole: message.senderRole,
+        reason: `Local IVX listener delivered ${message.senderRole} message ${message.id}.`,
+      });
+      console.log('[IVXChatService] Delivering local-first owner message:', {
+        messageId: message.id,
+        senderRole: message.senderRole,
+        conversationId: message.conversationId,
+      });
+      onMessage(message);
+    };
+
+    ownerLocalMessageListeners.add(localListener);
+    onStatusChange?.('local_ready');
+    return () => {
+      closed = true;
+      ownerLocalMessageListeners.delete(localListener);
+    };
+  }
+
   const client = getIVXSupabaseClient();
   const tables = await resolveIVXTables();
   const conversation = await bootstrapOwnerConversation();
   const seenMessageIds = new Set<string>();
+  try {
+    const existingMessages = await listOwnerMessages();
+    existingMessages.forEach((message) => {
+      if (message.id) {
+        seenMessageIds.add(message.id);
+      }
+    });
+  } catch (error) {
+    console.log('[IVXChatService] Initial realtime de-dupe seed failed:', error instanceof Error ? error.message : 'unknown');
+  }
   let closed = false;
   let unsubscribeStarted = false;
   let channelTerminated = false;
+  let pollingInterval: ReturnType<typeof setInterval> | null = null;
+  let realtimeFallbackTimer: ReturnType<typeof setTimeout> | null = null;
 
   const markClosed = (): void => {
     closed = true;
@@ -1252,6 +1584,45 @@ async function subscribeToOwnerMessages(
 
     onStatusChange?.('local_fallback');
     handleIncomingMessage(message, 'local');
+  };
+
+  const pollForRemoteMessages = async (reason: string): Promise<void> => {
+    if (closed) {
+      return;
+    }
+
+    try {
+      const latestMessages = await listOwnerMessages();
+      latestMessages.forEach((message) => {
+        if (message.conversationId === conversation.id) {
+          handleIncomingMessage(message, 'local');
+        }
+      });
+      onStatusChange?.(`polling:${reason}`);
+    } catch (error) {
+      console.log('[IVXChatService] Owner realtime polling fallback failed:', error instanceof Error ? error.message : 'unknown');
+      onStatusChange?.('polling_error');
+    }
+  };
+
+  const stopPolling = (): void => {
+    if (pollingInterval) {
+      clearInterval(pollingInterval);
+      pollingInterval = null;
+    }
+  };
+
+  const startPolling = (reason: string): void => {
+    if (pollingInterval || closed) {
+      return;
+    }
+
+    console.log('[IVXChatService] Starting owner-room polling fallback:', reason);
+    onStatusChange?.(`polling:${reason}`);
+    void pollForRemoteMessages(reason);
+    pollingInterval = setInterval(() => {
+      void pollForRemoteMessages(reason);
+    }, OWNER_REALTIME_POLL_INTERVAL_MS);
   };
 
   ownerLocalMessageListeners.add(localListener);
@@ -1299,13 +1670,27 @@ async function subscribeToOwnerMessages(
     const normalizedStatus = String(status ?? '').toLowerCase();
     console.log('[IVXChatService] Realtime status:', normalizedStatus);
 
+    if (normalizedStatus === 'subscribed') {
+      if (realtimeFallbackTimer) {
+        clearTimeout(realtimeFallbackTimer);
+        realtimeFallbackTimer = null;
+      }
+      stopPolling();
+      onStatusChange?.(normalizedStatus);
+      return;
+    }
+
     if (normalizedStatus === 'closed') {
       channelTerminated = true;
-      markClosed();
+      startPolling('channel_closed');
     }
 
     if (closed && normalizedStatus !== 'subscribed') {
       return;
+    }
+
+    if (normalizedStatus === 'channel_error' || normalizedStatus === 'timed_out') {
+      startPolling(normalizedStatus);
     }
 
     onStatusChange?.(normalizedStatus);
@@ -1324,6 +1709,11 @@ async function subscribeToOwnerMessages(
 
     unsubscribeStarted = true;
     markClosed();
+    if (realtimeFallbackTimer) {
+      clearTimeout(realtimeFallbackTimer);
+      realtimeFallbackTimer = null;
+    }
+    stopPolling();
     ownerLocalMessageListeners.delete(localListener);
     unregisterActiveChannel();
     console.log('[IVXChatService] Closing owner realtime channel:', reason, 'channel:', channelName, 'alreadyTerminated:', channelTerminated);
@@ -1355,6 +1745,11 @@ async function subscribeToOwnerMessages(
   activeOwnerRealtimeSubscriptions.add(teardownKey);
   console.log('[IVXChatService] Setting up realtime on:', tables.messages, 'conversation:', conversation.id, 'realtimeSchema:', realtimeSchema, 'conversationField:', realtimeConversationField, 'channel:', channelName, 'activeChannelCount:', activeOwnerRealtimeSubscriptions.size);
   onStatusChange?.('connecting');
+  realtimeFallbackTimer = setTimeout(() => {
+    if (!closed) {
+      startPolling('subscription_timeout');
+    }
+  }, OWNER_REALTIME_FALLBACK_DELAY_MS);
 
   return () => {
     safeClose('cleanup');
@@ -1364,6 +1759,7 @@ async function subscribeToOwnerMessages(
 export const ivxChatService = {
   bootstrapOwnerConversation,
   listOwnerMessages,
+  searchOwnerMessages,
   sendOwnerTextMessage,
   sendOwnerSupportMessage,
   sendOwnerAttachmentMessage,

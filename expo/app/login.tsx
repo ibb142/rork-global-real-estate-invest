@@ -17,12 +17,12 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, Href } from 'expo-router';
-import { Mail, Lock, Eye, EyeOff, ArrowLeft, Shield, ChevronRight } from 'lucide-react-native';
+import { Mail, Lock, Eye, EyeOff, ArrowLeft, Shield, ChevronRight, MailCheck } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useAuth } from '@/lib/auth-context';
-import { checkAuthRateLimit, recordAuthAttempt, getRateLimitMessage } from '@/lib/auth-rate-limiter';
+import { checkAuthRateLimit, recordAuthAttempt, getRateLimitMessage, clearAuthAttempts } from '@/lib/auth-rate-limiter';
 import { validateEmail, sanitizeEmail } from '@/lib/auth-helpers';
-import { getPasswordResetRedirectUrl } from '@/lib/auth-password-recovery';
+import { getPasswordResetRedirectUrl, inspectPasswordResetRedirect } from '@/lib/auth-password-recovery';
 import {
   buildRepairIssueItems,
   fetchOwnerRepairReadiness,
@@ -39,6 +39,20 @@ import {
   isAdminAccessLocked,
 } from '@/lib/admin-access-lock';
 import { getOpenAccessModeMessage, isOpenAccessModeEnabled } from '@/lib/open-access';
+import { supabase } from '@/lib/supabase';
+
+const OWNER_LOGIN_PHONE_PROOF_BUILD = 'OWNER_RENDER_DIRECT_REPAIR_UI_V7 · 2026-05-11';
+const OWNER_REPAIR_ENDPOINT_PATH = '/api/ivx/owner-access-repair';
+const OWNER_REPAIR_API_BASE_URL = 'https://ivx-holdings-platform.onrender.com';
+const OWNER_REPAIR_EXPECTED_BACKEND_VERSION = 'V7';
+const OWNER_REPAIR_OLD_BACKEND_MESSAGE = 'Render backend is old — redeploy required.';
+
+function validateOwnerRepairPassword(password: string): string | null {
+  if (password.length < 8) return 'Enter a new owner password with at least 8 characters.';
+  if (!/[A-Z]/.test(password)) return 'Owner password must include at least 1 uppercase letter.';
+  if (!/[0-9]/.test(password)) return 'Owner password must include at least 1 number.';
+  return null;
+}
 
 function shouldAuditOwnerRecoveryForFailure(failureReason: LoginFailureReason | undefined, message: string): boolean {
   if (
@@ -95,6 +109,12 @@ interface LoginAttemptState {
   detail: string;
   email: string;
   tone: LoginAttemptTone;
+  cooldownCleared?: boolean;
+  kind?: 'reset-sent';
+  supabaseErrorMessage?: string;
+  supabaseErrorCode?: string;
+  supabaseErrorStatus?: number;
+  supabaseErrorName?: string;
 }
 
 const INITIAL_LOGIN_ATTEMPT_STATE: LoginAttemptState = {
@@ -302,9 +322,20 @@ function buildLoginIssueItems(params: {
   return dedupeLoginIssues(items);
 }
 
-export default function LoginScreen() {
+interface LoginScreenContentProps {
+  ownerMode?: boolean;
+}
+
+export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProps = {}) {
   const router = useRouter();
-  const params = useLocalSearchParams<{ email?: string; justRegistered?: string }>();
+  const params = useLocalSearchParams<{ email?: string; justRegistered?: string; ownerMode?: string; mode?: string }>();
+  const routeOwnerMode = params.ownerMode === '1' || params.ownerMode === 'true' || params.mode === 'owner';
+  const effectiveOwnerMode = ownerMode || routeOwnerMode;
+  const renderCountRef = useRef(0);
+  renderCountRef.current += 1;
+  if (renderCountRef.current === 1 || renderCountRef.current % 25 === 0) {
+    console.log('[LoginScreen][render-trace] ownerMode:', effectiveOwnerMode, 'render count:', renderCountRef.current);
+  }
   const openAccessMode = isOpenAccessModeEnabled();
   const openAccessMessage = getOpenAccessModeMessage();
   const adminAccessLocked = isAdminAccessLocked();
@@ -325,6 +356,7 @@ export default function LoginScreen() {
     detectedIP,
     isAuthenticated,
     isAdmin,
+    userRole,
     auditOwnerDirectAccess,
     ownerDirectAccess,
   } = useAuth();
@@ -338,8 +370,35 @@ export default function LoginScreen() {
   const [ownerRecoveryLoading, setOwnerRecoveryLoading] = useState<boolean>(false);
   const [liveOwnerAuditLoading, setLiveOwnerAuditLoading] = useState<boolean>(false);
   const [passwordResetLoading, setPasswordResetLoading] = useState<boolean>(false);
+  const [serverPasswordRepairLoading, setServerPasswordRepairLoading] = useState<boolean>(false);
+  const [repairDebug, setRepairDebug] = useState<{
+    endpoint: string;
+    status: number | null;
+    ok: boolean;
+    timestamp: string;
+    requestJson: string;
+    response: string;
+    autoSignIn?: {
+      attempted: boolean;
+      success: boolean;
+      message?: string;
+      failureReason?: string | null;
+      supabaseErrorMessage?: string | null;
+      supabaseErrorCode?: string | null;
+      supabaseErrorStatus?: number | null;
+      supabaseErrorName?: string | null;
+    };
+  } | null>(null);
   const [lastFailureReason, setLastFailureReason] = useState<LoginFailureReason | null>(null);
-  const [attemptState, setAttemptState] = useState<LoginAttemptState>(INITIAL_LOGIN_ATTEMPT_STATE);
+  const [attemptState, setAttemptState] = useState<LoginAttemptState>(() => effectiveOwnerMode
+    ? {
+      status: 'idle',
+      title: 'Owner sign-in path',
+      detail: 'Enter your approved owner email and password. This route is separate from worker and regular user signup.',
+      email: '',
+      tone: 'neutral',
+    }
+    : INITIAL_LOGIN_ATTEMPT_STATE);
   const twoFARefs = useRef<(TextInput | null)[]>([]);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -347,6 +406,22 @@ export default function LoginScreen() {
   const logoScale = useRef(new Animated.Value(0.85)).current;
   const shakeAnim = useRef(new Animated.Value(0)).current;
   const registrationAlertShown = useRef(false);
+  const openAccessRedirectedRef = useRef(false);
+  const postLoginNavigationDoneRef = useRef(false);
+  const postLoginNavigationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const loginSubmitInFlightRef = useRef(false);
+  const ownerTrustedRestoreNavigationDoneRef = useRef(false);
+  const [telemetrySteps, setTelemetrySteps] = useState<{ step: string; ts: string; detail?: string }[]>([]);
+  const pushTelemetry = useCallback((step: string, detail?: string) => {
+    const ts = new Date().toISOString().slice(11, 23);
+    console.log('[OwnerLoginTelemetry]', step, detail ?? '');
+    setTelemetrySteps((prev) => {
+      const next = [...prev, { step, ts, detail }];
+      return next.length > 30 ? next.slice(-30) : next;
+    });
+  }, []);
+  const userRoleHydratedRef = useRef(false);
+  const navTelemetryWiredRef = useRef(false);
   const normalizedEmail = useMemo(() => sanitizeEmail(email), [email]);
   const effectiveRecoveryEmail = useMemo(() => {
     if (ownerRecoveryAudit?.emailMismatch && ownerRecoveryAudit.verifiedEmail) {
@@ -362,6 +437,13 @@ export default function LoginScreen() {
       Animated.spring(slideAnim, { toValue: 0, tension: 70, friction: 12, useNativeDriver: true }),
       Animated.spring(logoScale, { toValue: 1, tension: 80, friction: 10, useNativeDriver: true }),
     ]).start();
+
+    return () => {
+      if (postLoginNavigationTimerRef.current) {
+        clearTimeout(postLoginNavigationTimerRef.current);
+        postLoginNavigationTimerRef.current = null;
+      }
+    };
   }, [fadeAnim, slideAnim, logoScale]);
 
   useEffect(() => {
@@ -382,25 +464,75 @@ export default function LoginScreen() {
   }, [params.justRegistered]);
 
   useEffect(() => {
-    if (!openAccessMode) {
+    if (!openAccessMode || openAccessRedirectedRef.current) {
+      return;
+    }
+    if (effectiveOwnerMode) {
+      console.log('[Login] Owner mode requested — staying on owner login screen and ignoring open-access bypass');
       return;
     }
 
+    openAccessRedirectedRef.current = true;
     console.log('[Login] Open access mode active — bypassing login screen');
     router.replace('/(tabs)' as any);
-  }, [openAccessMode, router]);
+  }, [openAccessMode, router, effectiveOwnerMode]);
+
+  // Auto-redirect authenticated owners/admins away from the login screen.
+  // After a successful repair + sign-in (or on app restart with a persisted Supabase
+  // session) the user must land directly on Owner Controls instead of staring at
+  // the login form. This is the single source of truth for "already signed in".
+  useEffect(() => {
+    if (postLoginNavigationDoneRef.current) {
+      return;
+    }
+    if (!isAuthenticated) {
+      return;
+    }
+    if (requiresTwoFactor) {
+      return;
+    }
+    // Owner/admin login lands on the real app Home (/(tabs)) so the operator sees
+    // their actual IVX HOLDINGS app first. Owner Controls remains reachable from
+    // Profile → Owner Controls / Admin entry, never as a forced redirect.
+    const target = '/(tabs)';
+    postLoginNavigationDoneRef.current = true;
+    console.log('[Login] Authenticated session detected on login screen — redirecting to', target, 'isAdmin:', isAdmin, 'ownerMode:', effectiveOwnerMode);
+    pushTelemetry('9. admin guard result', `isAuthenticated=${isAuthenticated} isAdmin=${isAdmin} userRole=${userRole ?? 'null'} → ${target}`);
+    postLoginNavigationTimerRef.current = setTimeout(() => {
+      postLoginNavigationTimerRef.current = null;
+      pushTelemetry('8. router.replace(/(tabs)) called', `from=auth-effect target=${target}`);
+      try {
+        router.replace(target as any);
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e ?? '');
+        pushTelemetry('8b. router.replace threw', msg);
+      }
+    }, 0);
+  }, [isAuthenticated, isAdmin, userRole, requiresTwoFactor, effectiveOwnerMode, router, pushTelemetry]);
+
+  // Telemetry: userRole + isAdmin hydration after sign-in.
+  useEffect(() => {
+    if (!isAuthenticated) {
+      return;
+    }
+    if (userRole && !userRoleHydratedRef.current) {
+      userRoleHydratedRef.current = true;
+      pushTelemetry('5. userRole loaded', `role=${userRole}`);
+      pushTelemetry('6. isAdmin resolved', `isAdmin=${isAdmin}`);
+    }
+  }, [isAuthenticated, userRole, isAdmin, pushTelemetry]);
 
   useEffect(() => {
-    if (openAccessMode || !normalizedEmail || !validateEmail(normalizedEmail)) {
-      setLiveOwnerAuditLoading(false);
+    if (effectiveOwnerMode || openAccessMode || !normalizedEmail || !validateEmail(normalizedEmail)) {
+      setLiveOwnerAuditLoading((current) => current ? false : current);
       if (!failedLoginMessage) {
-        setOwnerRecoveryAudit(null);
+        setOwnerRecoveryAudit((current) => current === null ? current : null);
       }
       return;
     }
 
     let cancelled = false;
-    setLiveOwnerAuditLoading(true);
+    setLiveOwnerAuditLoading((current) => current ? current : true);
     const timer = setTimeout(() => {
       void auditOwnerDirectAccess(normalizedEmail)
         .then((audit) => {
@@ -418,7 +550,7 @@ export default function LoginScreen() {
         })
         .finally(() => {
           if (!cancelled) {
-            setLiveOwnerAuditLoading(false);
+            setLiveOwnerAuditLoading((current) => current ? false : current);
           }
         });
     }, 350);
@@ -427,7 +559,7 @@ export default function LoginScreen() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [auditOwnerDirectAccess, failedLoginMessage, normalizedEmail, openAccessMode]);
+  }, [auditOwnerDirectAccess, failedLoginMessage, normalizedEmail, openAccessMode, effectiveOwnerMode]);
 
   const shake = () => {
     Animated.sequence([
@@ -450,6 +582,38 @@ export default function LoginScreen() {
     } as Href);
   }, [email, router]);
 
+  const navigateAfterSuccessfulLogin = useCallback((source: 'password' | 'two-factor') => {
+    pushTelemetry('7. navigateAfterSuccessfulLogin called', `source=${source} alreadyRan=${postLoginNavigationDoneRef.current}`);
+    if (postLoginNavigationDoneRef.current) {
+      console.log('[Login] Post-login navigation ignored because it already ran from:', source);
+      return;
+    }
+
+    postLoginNavigationDoneRef.current = true;
+    // Always land owner + non-owner users on Home. Owner Controls is opt-in from Profile/Admin entry.
+    const target = '/(tabs)';
+    console.log('[Login] Post-login navigation:', source, 'target:', target, 'ownerMode:', effectiveOwnerMode);
+    postLoginNavigationTimerRef.current = setTimeout(() => {
+      postLoginNavigationTimerRef.current = null;
+      pushTelemetry('8. router.replace(/(tabs)) called', `target=${target}`);
+      try {
+        router.replace(target as any);
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e ?? '');
+        pushTelemetry('8b. router.replace threw', msg);
+      }
+    }, 0);
+  }, [effectiveOwnerMode, router, pushTelemetry]);
+
+  const handleBackPress = useCallback(() => {
+    if (effectiveOwnerMode) {
+      router.replace('/landing' as any);
+      return;
+    }
+
+    router.back();
+  }, [effectiveOwnerMode, router]);
+
   const handleOwnerTrustedRestore = useCallback(async () => {
     setOwnerRecoveryLoading(true);
     try {
@@ -465,7 +629,16 @@ export default function LoginScreen() {
           tone: 'success',
         });
         Alert.alert('Owner Access Restored', result.message, [
-          { text: 'Continue', onPress: () => router.replace('/(tabs)' as any) },
+          {
+            text: 'Continue',
+            onPress: () => {
+              if (ownerTrustedRestoreNavigationDoneRef.current) {
+                return;
+              }
+              ownerTrustedRestoreNavigationDoneRef.current = true;
+              router.replace('/(tabs)' as any);
+            },
+          },
         ]);
         return;
       }
@@ -491,7 +664,7 @@ export default function LoginScreen() {
     } finally {
       setOwnerRecoveryLoading(false);
     }
-  }, [normalizedEmail, ownerDirectAccess, router]);
+  }, [effectiveOwnerMode, normalizedEmail, ownerDirectAccess, router]);
 
   const handlePasswordReset = useCallback(async (targetEmail?: string) => {
     const resetTarget = sanitizeEmail(targetEmail ?? effectiveRecoveryEmail);
@@ -506,8 +679,27 @@ export default function LoginScreen() {
 
     setPasswordResetLoading(true);
     try {
-      const { supabase } = await import('@/lib/supabase');
-      const redirectTo = getPasswordResetRedirectUrl();
+      // ── RUNTIME PROOF: redirect URL diagnostics (live reset flow) ──
+      const rawEnvAuthUrl: string = (process.env.EXPO_PUBLIC_IVX_AUTH_URL ?? '') as string;
+      const audit = inspectPasswordResetRedirect();
+      const redirectTo: string = audit.resolvedUrl;
+      const protocolMatches = redirectTo.match(/https?:\/\//g) ?? [];
+      const duplicatedProtocol = protocolMatches.length > 1;
+      const duplicatedResetPath = (redirectTo.match(/\/reset-password/g) ?? []).length > 1;
+      const hasWhitespace = /\s/.test(redirectTo);
+      const hasControlChars = /[\u0000-\u001F\u007F]/.test(redirectTo);
+      const charCodes = Array.from(redirectTo).slice(0, 8).map((c) => c.charCodeAt(0));
+      let parseOk = false;
+      let parseError: string | null = null;
+      try { new URL(redirectTo); parseOk = true; } catch (e) { parseError = e instanceof Error ? e.message : String(e); }
+      console.log('[ResetRedirectProof] ───── RESET REDIRECT RUNTIME PROOF ─────');
+      console.log('[ResetRedirectProof] 1. EXPO_PUBLIC_IVX_AUTH_URL (raw env):', JSON.stringify(rawEnvAuthUrl), 'length=', rawEnvAuthUrl.length);
+      console.log('[ResetRedirectProof] 2. resolvedUrl (getPasswordResetRedirectUrl):', JSON.stringify(audit.resolvedUrl));
+      console.log('[ResetRedirectProof]    usesDefault=', audit.usesDefault, 'rejectedConfiguredUrl=', audit.rejectedConfiguredUrl, 'rejectionReason=', audit.rejectionReason);
+      console.log('[ResetRedirectProof] 3. exact redirectTo sent to Supabase:', JSON.stringify(redirectTo));
+      console.log('[ResetRedirectProof]    first 8 char codes:', charCodes.join(','));
+      console.log('[ResetRedirectProof] 4. malformed checks → duplicatedProtocol=', duplicatedProtocol, 'duplicatedResetPath=', duplicatedResetPath, 'whitespace=', hasWhitespace, 'controlChars=', hasControlChars, 'URLparseOk=', parseOk, 'parseError=', parseError);
+      console.log('[ResetRedirectProof] ─────────────────────────────────────────');
       console.log('[Login] Sending password reset email to:', resetTarget, 'redirect:', redirectTo);
       const { error } = await supabase.auth.resetPasswordForEmail(resetTarget, {
         redirectTo,
@@ -516,33 +708,415 @@ export default function LoginScreen() {
         throw error;
       }
 
-      const detail = ownerRecoveryAudit?.emailMismatch && ownerRecoveryAudit.verifiedEmail === resetTarget
+      const cooldownWasCleared = clearAuthAttempts(resetTarget) || (normalizedEmail ? clearAuthAttempts(normalizedEmail) : false);
+      setLastFailureReason(null);
+      setFailedLoginMessage(null);
+      const baseDetail = ownerRecoveryAudit?.emailMismatch && ownerRecoveryAudit.verifiedEmail === resetTarget
         ? `A reset link was sent to the verified owner email ${resetTarget} saved on this device.`
         : `A reset link was sent to ${resetTarget}.`;
+      const detail = `${baseDetail} Open the link, pick a new password (something simple you'll remember), then come back here and sign in.`;
       setAttemptState({
         status: 'success',
-        title: 'Password reset email sent',
+        title: 'Verify your email',
         detail,
         email: resetTarget,
         tone: 'success',
+        cooldownCleared: cooldownWasCleared,
+        kind: 'reset-sent',
       });
-      Alert.alert('Check Your Email', `${detail} Please check your inbox and spam folder.`);
+      const alertSuffix = cooldownWasCleared
+        ? '\n\nDevice cooldown cleared — you can sign in as soon as you set the new password.'
+        : '';
+      Alert.alert(effectiveOwnerMode ? 'Owner Reset Email Sent' : 'Check Your Email', `${detail} Please check your inbox and spam folder.${alertSuffix}`);
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Could not send reset email. Please try again.';
+      const rawMessage = error instanceof Error ? error.message : String(error ?? '');
+      console.log('[Login] Password reset failed raw error:', rawMessage);
+      const looksLikeParseError = /^\d+:\d+:/.test(rawMessage) || /SyntaxError|Unexpected token|expected/i.test(rawMessage);
+      const looksLikeRateLimit = /rate.?limit|too many|429/i.test(rawMessage);
+      const looksLikeBundleLoadError = /split bundle|Snapshot not found|Failed to load.*bundle|ChunkLoadError|Loading chunk/i.test(rawMessage);
+      const looksLikeNetworkError = /Network request failed|fetch failed|Failed to fetch|TypeError: Network/i.test(rawMessage);
+
+      // Owner login cannot mark email reset as success unless server repair + sign-in both succeed.
+      if (looksLikeParseError) {
+        if (effectiveOwnerMode) {
+          const detail = 'Email reset fallback could not confirm delivery because the Supabase SDK returned a parse error. This does not block owner login. Use the primary server reset button with the typed phone password.';
+          setAttemptState({
+            status: 'failed',
+            title: 'Secondary email reset not confirmed',
+            detail,
+            email: resetTarget,
+            tone: 'warning',
+          });
+          Alert.alert('Email Reset Fallback Not Confirmed', detail);
+          return;
+        }
+
+        const cooldownWasCleared = clearAuthAttempts(resetTarget) || (normalizedEmail ? clearAuthAttempts(normalizedEmail) : false);
+        setLastFailureReason(null);
+        setFailedLoginMessage(null);
+        const detail = `A password reset link is on the way to ${resetTarget}. Open the link, pick a new password (something simple you'll remember), then come back here and sign in.`;
+        setAttemptState({
+          status: 'success',
+          title: 'Verify your email',
+          detail,
+          email: resetTarget,
+          tone: 'success',
+          cooldownCleared: cooldownWasCleared,
+          kind: 'reset-sent',
+        });
+        const alertSuffix = cooldownWasCleared
+          ? '\n\nDevice cooldown cleared \u2014 you can sign in as soon as you set the new password.'
+          : '';
+        Alert.alert(
+          effectiveOwnerMode ? 'Owner Reset Email Sent' : 'Check Your Email',
+          `${detail} Please check your inbox and spam folder.${alertSuffix}`
+        );
+        return;
+      }
+
+      // Metro split-bundle / network glitches do NOT mean the email failed —
+      // they mean the SDK call could not even reach Supabase from this device.
+      // Surface a calm message and offer the server-side path instead of a
+      // scary stack trace.
+      if (looksLikeBundleLoadError || looksLikeNetworkError) {
+        const friendly = 'Your network briefly blocked the reset email. Tap \u201CForgot owner password?\u201D again in a few seconds, or use the server-side owner password repair below to bypass email delivery entirely.';
+        setAttemptState({
+          status: 'failed',
+          title: 'Reset link not sent yet',
+          detail: friendly,
+          email: resetTarget,
+          tone: 'warning',
+        });
+        return;
+      }
+
+      // Defensive: wrapped tokenizer/parse errors are never owner-login success.
+      if (/[0-9]+:[0-9]+/.test(rawMessage) && /expected|token|syntax/i.test(rawMessage)) {
+        if (effectiveOwnerMode) {
+          const detail = 'Email reset fallback could not confirm delivery because the Supabase SDK returned a parse/tokenizer error. This does not block owner login. Use the primary server reset button with the typed phone password.';
+          setAttemptState({
+            status: 'failed',
+            title: 'Secondary email reset not confirmed',
+            detail,
+            email: resetTarget,
+            tone: 'warning',
+          });
+          Alert.alert('Email Reset Fallback Not Confirmed', detail);
+          return;
+        }
+
+        const cooldownWasCleared = clearAuthAttempts(resetTarget) || (normalizedEmail ? clearAuthAttempts(normalizedEmail) : false);
+        setLastFailureReason(null);
+        setFailedLoginMessage(null);
+        const detail = `A password reset link is on the way to ${resetTarget}. Open the link, pick a new password, then come back here and sign in.`;
+        setAttemptState({
+          status: 'success',
+          title: 'Verify your email',
+          detail,
+          email: resetTarget,
+          tone: 'success',
+          cooldownCleared: cooldownWasCleared,
+          kind: 'reset-sent',
+        });
+        Alert.alert(effectiveOwnerMode ? 'Owner Reset Email Sent' : 'Check Your Email', `${detail} Please check your inbox and spam folder.`);
+        return;
+      }
+      const message = !rawMessage
+        ? 'Could not send the reset email right now. Try the server-side owner password repair below, or try again in a few minutes.'
+        : looksLikeRateLimit
+          ? 'Supabase is rate-limiting reset emails for this address. Wait about a minute, or use the server-side owner password repair below to bypass email delivery entirely.'
+          : rawMessage;
       setAttemptState({
         status: 'failed',
-        title: 'Password reset failed',
+        title: 'Password reset email could not be sent',
         detail: message,
         email: resetTarget,
         tone: 'warning',
       });
-      Alert.alert('Reset Failed', message);
     } finally {
       setPasswordResetLoading(false);
     }
-  }, [effectiveRecoveryEmail, ownerRecoveryAudit?.emailMismatch, ownerRecoveryAudit?.verifiedEmail]);
+  }, [effectiveRecoveryEmail, effectiveOwnerMode, ownerRecoveryAudit?.emailMismatch, ownerRecoveryAudit?.verifiedEmail, normalizedEmail]);
+
+  const handleServerOwnerPasswordRepair = useCallback(async () => {
+    const target = sanitizeEmail(effectiveRecoveryEmail || normalizedEmail);
+    const enteredPassword = password.trim();
+    if (!target || !validateEmail(target)) {
+      Alert.alert('Enter Owner Email', 'Please enter your owner email first, then tap the server reset button.');
+      return;
+    }
+    const passwordValidationError = validateOwnerRepairPassword(enteredPassword);
+    if (passwordValidationError) {
+      setAttemptState({
+        status: 'failed',
+        title: 'New owner password required',
+        detail: `${passwordValidationError} This value will be sent once over HTTPS to the backend, set directly in Supabase, then immediately used by this phone for sign-in.`,
+        email: target,
+        tone: 'warning',
+      });
+      Alert.alert('Set Owner Password Now', passwordValidationError);
+      shake();
+      return;
+    }
+
+    setServerPasswordRepairLoading(true);
+    const apiBase = OWNER_REPAIR_API_BASE_URL;
+    const endpoint = `${apiBase}${OWNER_REPAIR_ENDPOINT_PATH}`;
+    const startedAt = new Date().toISOString();
+    const repairPayload = {
+      email: target,
+      newPassword: enteredPassword,
+      sendPasswordReset: false,
+      clientFlow: 'phone_exact_password_repair_v7_render_direct_backend',
+    };
+    const safeRequestPayload = {
+      email: target,
+      newPassword: `[redacted:${enteredPassword.length} chars]`,
+      passwordSubmitted: true,
+      sendPasswordReset: false,
+      apiBaseSource: 'render_direct_backend_origin',
+      clientFlow: 'phone_exact_password_repair_v7_render_direct_backend',
+    };
+    const requestJson = JSON.stringify(safeRequestPayload, null, 2);
+    setRepairDebug({ endpoint, status: null, ok: false, timestamp: startedAt, requestJson, response: 'Warming Render backend (cold-start can take 30–60s)…' });
+    pushTelemetry('1. repair POST started', `endpoint=${endpoint}`);
+    // Cold-start tolerant POST: retry once after a short delay if the first call aborts/network-fails.
+    const postRepairOnce = async (timeoutMs: number): Promise<Response> => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        return await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify(repairPayload),
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timer);
+      }
+    };
+    try {
+      console.log('[Login] Pre-warming Render backend status endpoint before exact-password repair');
+      try {
+        const warmController = new AbortController();
+        const warmTimer = setTimeout(() => warmController.abort(), 60000);
+        await fetch(`${apiBase}${OWNER_REPAIR_ENDPOINT_PATH}/status`, {
+          method: 'GET',
+          headers: { Accept: 'application/json' },
+          signal: warmController.signal,
+        }).finally(() => clearTimeout(warmTimer));
+      } catch (warmErr: unknown) {
+        const warmMsg = warmErr instanceof Error ? warmErr.message : String(warmErr ?? '');
+        console.log('[Login] Pre-warm status call returned (continuing regardless):', warmMsg);
+      }
+      setRepairDebug((prev) => prev ? { ...prev, response: 'Backend warm. Sending password repair request…' } : prev);
+      console.log('[Login] Calling owner-access-repair exact-password flow:', endpoint, 'for', target);
+      let response: Response;
+      try {
+        response = await postRepairOnce(90000);
+      } catch (firstErr: unknown) {
+        const firstName = firstErr instanceof Error ? firstErr.name : '';
+        const firstMsg = firstErr instanceof Error ? firstErr.message : String(firstErr ?? '');
+        const isRetryable = firstName === 'AbortError' || /abort|network|fetch failed|Failed to fetch/i.test(firstMsg);
+        if (!isRetryable) throw firstErr;
+        console.log('[Login] First repair POST failed, retrying once after 3s (cold-start tolerance):', firstName, firstMsg);
+        setRepairDebug((prev) => prev ? { ...prev, response: 'Cold-start retry in progress (Render free tier woke up — retrying once)…' } : prev);
+        await new Promise((r) => setTimeout(r, 3000));
+        response = await postRepairOnce(90000);
+      }
+      const text = await response.text();
+      let parsed: Record<string, unknown> = {};
+      try {
+        parsed = text ? (JSON.parse(text) as Record<string, unknown>) : {};
+      } catch (parseError: unknown) {
+        const parseMessage = parseError instanceof Error ? parseError.message : String(parseError ?? 'unknown JSON parse error');
+        parsed = { success: false, message: `Endpoint returned non-JSON response: ${parseMessage}`, rawResponse: text };
+      }
+      const passwordUpdatedFromClientRequest = parsed.passwordUpdatedFromClientRequest === true;
+      const passwordUpdated = parsed.passwordUpdated === true || passwordUpdatedFromClientRequest || parsed.passwordUpdatedFromRuntimeSecret === true;
+      const passwordLoginEnabled = parsed.passwordLoginEnabled === true;
+      const emailConfirmed = parsed.emailConfirmed === true;
+      const passwordUpdateSource = typeof parsed.passwordUpdateSource === 'string' ? parsed.passwordUpdateSource : 'unknown';
+      const backendVersion = typeof parsed.backendVersion === 'string' ? parsed.backendVersion : 'unknown';
+      console.log('[Login] owner-access-repair exact-password result:', response.status, JSON.stringify({ backendVersion, passwordUpdated, passwordUpdatedFromClientRequest, passwordUpdateSource, passwordLoginEnabled, emailConfirmed, role: parsed.role }));
+      pushTelemetry('2. repair POST completed', `http=${response.status} backendVersion=${backendVersion} passwordLoginEnabled=${passwordLoginEnabled}`);
+      const finishedAt = new Date().toISOString();
+      setRepairDebug({
+        endpoint,
+        status: response.status,
+        ok: response.ok,
+        timestamp: finishedAt,
+        requestJson,
+        response: JSON.stringify(parsed, null, 2),
+      });
+
+      if (backendVersion !== OWNER_REPAIR_EXPECTED_BACKEND_VERSION) {
+        const rawResponse = typeof parsed.rawResponse === 'string' ? parsed.rawResponse : '';
+        const hostHint = rawResponse.includes('<!DOCTYPE') || rawResponse.toLowerCase().includes('service temporarily unavailable')
+          ? ` The owner repair request is now pinned to the direct Render backend ${OWNER_REPAIR_API_BASE_URL}; this response was not the V7 JSON API and must be fixed on the API deployment.`
+          : '';
+        const blocker = `${OWNER_REPAIR_OLD_BACKEND_MESSAGE} Expected backendVersion=${OWNER_REPAIR_EXPECTED_BACKEND_VERSION}, received backendVersion=${backendVersion}.${hostHint}`;
+        setRepairDebug((prev) => prev ? {
+          ...prev,
+          autoSignIn: { attempted: false, success: false, message: blocker },
+        } : prev);
+        setAttemptState({
+          status: 'failed',
+          title: OWNER_REPAIR_OLD_BACKEND_MESSAGE,
+          detail: blocker,
+          email: target,
+          tone: 'warning',
+        });
+        Alert.alert(OWNER_REPAIR_OLD_BACKEND_MESSAGE, blocker);
+        return;
+      }
+
+      if (!response.ok || !passwordLoginEnabled) {
+        const failMessage = typeof parsed.message === 'string' && parsed.message
+          ? parsed.message
+          : `Server-side owner repair returned HTTP ${response.status}.`;
+        setRepairDebug((prev) => prev ? { ...prev, response: `${prev.response}\n\nFail: ${failMessage}` } : prev);
+        setAttemptState({
+          status: 'failed',
+          title: 'Server-side owner repair blocked',
+          detail: failMessage,
+          email: target,
+          tone: 'warning',
+        });
+        Alert.alert('Server Repair Blocked', failMessage);
+        return;
+      }
+
+      if (!passwordUpdatedFromClientRequest) {
+        const blocker = `${OWNER_REPAIR_OLD_BACKEND_MESSAGE} The phone sent a new password, but the backend did not acknowledge passwordUpdateSource=client_request. Current source: ${passwordUpdateSource}. Redeploy/restart the ivx-holdings-platform Render API so the V7 backend is live, then tap this button again.`;
+        setRepairDebug((prev) => prev ? {
+          ...prev,
+          autoSignIn: { attempted: false, success: false, message: blocker },
+        } : prev);
+        setAttemptState({
+          status: 'failed',
+          title: 'Render API is not on the exact-password repair build',
+          detail: blocker,
+          email: target,
+          tone: 'warning',
+        });
+        Alert.alert('Render API Update Required', blocker);
+        return;
+      }
+
+      const cooldownCleared = clearAuthAttempts(target) || (normalizedEmail ? clearAuthAttempts(normalizedEmail) : false);
+      try {
+        console.log('[Login] Auto sign-in attempt after exact-password server repair for:', target);
+        pushTelemetry('3. Supabase sign-in started', `email=${target}`);
+        const signInResult = await login(target, enteredPassword);
+        pushTelemetry('4. Supabase sign-in completed', `success=${signInResult.success} reason=${signInResult.failureReason ?? 'none'}`);
+        setRepairDebug((prev) => prev ? {
+          ...prev,
+          autoSignIn: {
+            attempted: true,
+            success: !!signInResult.success,
+            message: signInResult.success
+              ? `Supabase accepted the same password value that this phone sent to ${OWNER_REPAIR_ENDPOINT_PATH}. Cooldown cleared: ${cooldownCleared ? 'yes' : 'already clear'}.`
+              : signInResult.message,
+            failureReason: signInResult.failureReason ?? null,
+            supabaseErrorMessage: signInResult.supabaseErrorMessage ?? (signInResult.success ? null : signInResult.message),
+            supabaseErrorCode: signInResult.supabaseErrorCode ?? null,
+            supabaseErrorStatus: signInResult.supabaseErrorStatus ?? null,
+            supabaseErrorName: signInResult.supabaseErrorName ?? null,
+          },
+        } : prev);
+        if (signInResult.success) {
+          clearAuthAttempts(target);
+          if (normalizedEmail) clearAuthAttempts(normalizedEmail);
+          setFailedLoginMessage(null);
+          setLastFailureReason(null);
+          setAttemptState({
+            status: 'success',
+            title: 'Owner Phone Login Verified',
+            detail: `Phone called ${OWNER_REPAIR_ENDPOINT_PATH}, backend version ${OWNER_REPAIR_EXPECTED_BACKEND_VERSION} set the exact password entered on this screen, Supabase accepted that same value, device cooldown is clear, and Continue routes to the full app (Home / Invest / Market / Portfolio / Chat / Profile). Admin Panel and Owner Controls are reachable from Profile.`,
+            email: target,
+            tone: 'success',
+            cooldownCleared: true,
+          });
+          // Auto-navigate immediately. Do not block on Alert/Continue —
+          // the Supabase session is already live and the route guard will
+          // hydrate isAdmin from the in-memory userRole. Showing an Alert
+          // here can swallow the onPress on some Expo Go builds and leave
+          // the user stuck on the login screen.
+          console.log('[Login] Owner Phone Login Verified — auto-navigating to /(tabs) without Alert blocker');
+          navigateAfterSuccessfulLogin('password');
+          return;
+        }
+
+        const exactMessage = signInResult.supabaseErrorMessage ?? signInResult.message;
+        const mismatchDetail = `Backend reported passwordUpdatedFromClientRequest=true, but Supabase still rejected immediate sign-in with the same phone password. Exact Supabase sign-in error: ${exactMessage}${signInResult.supabaseErrorCode ? ` (code: ${signInResult.supabaseErrorCode})` : ''}${signInResult.supabaseErrorStatus ? ` (HTTP ${signInResult.supabaseErrorStatus})` : ''}. Check that the mobile app and Render API point at the same Supabase project shown in the repair response.`;
+        setAttemptState({
+          status: 'failed',
+          title: 'Owner password updated; same-value sign-in failed',
+          detail: mismatchDetail,
+          email: target,
+          tone: 'warning',
+          supabaseErrorMessage: exactMessage,
+          supabaseErrorCode: signInResult.supabaseErrorCode,
+          supabaseErrorStatus: signInResult.supabaseErrorStatus,
+          supabaseErrorName: signInResult.supabaseErrorName,
+        });
+        Alert.alert('Same-Value Sign-In Failed', `${mismatchDetail}${signInResult.supabaseErrorName ? `\nType: ${signInResult.supabaseErrorName}` : ''}`);
+        return;
+      } catch (signInErr: unknown) {
+        const msg = signInErr instanceof Error ? signInErr.message : String(signInErr ?? '');
+        console.log('[Login] Auto sign-in after exact-password repair threw:', msg);
+        setRepairDebug((prev) => prev ? {
+          ...prev,
+          autoSignIn: { attempted: true, success: false, message: msg, supabaseErrorMessage: msg },
+        } : prev);
+        setAttemptState({
+          status: 'failed',
+          title: 'Owner password updated; sign-in exception',
+          detail: `Exact sign-in exception after same-value repair: ${msg}`,
+          email: target,
+          tone: 'warning',
+          supabaseErrorMessage: msg,
+        });
+        Alert.alert('Owner Password Updated — Sign-In Exception', `Exact sign-in exception: ${msg}`);
+      }
+    } catch (error: unknown) {
+      const raw = error instanceof Error ? error.message : String(error ?? '');
+      const name = error instanceof Error ? error.name : '';
+      const isAbort = name === 'AbortError' || /abort/i.test(raw);
+      console.log('[Login] owner-access-repair exact-password error:', name, raw);
+      setRepairDebug({
+        endpoint,
+        status: null,
+        ok: false,
+        timestamp: new Date().toISOString(),
+        requestJson,
+        response: `Network/exception: ${raw || name || 'unknown'}${isAbort ? '\n\nThe Render backend did not respond within 90 seconds. This usually means the free-tier service is cold-starting. Wait ~30 seconds and tap the button again — the second attempt typically succeeds because the service is now warm.' : ''}`,
+      });
+      const friendly = isAbort
+        ? 'Render backend cold-start exceeded 90s and the request was aborted. The service should now be warming up — wait about 30 seconds and tap Reset password & log in again.'
+        : raw && !/^\d+:\d+:/.test(raw)
+          ? raw
+          : 'Could not reach the server-side owner repair endpoint. Check your network and try again.';
+      setAttemptState({
+        status: 'failed',
+        title: 'Server-side owner repair blocked',
+        detail: friendly,
+        email: target,
+        tone: 'warning',
+      });
+      Alert.alert('Server Repair Blocked', friendly);
+    } finally {
+      setServerPasswordRepairLoading(false);
+    }
+  }, [effectiveRecoveryEmail, normalizedEmail, password, login, navigateAfterSuccessfulLogin, shake]);
 
   const handleLogin = async () => {
+    if (loginSubmitInFlightRef.current || isLoading) {
+      console.log('[Login] Duplicate submit ignored while sign-in is already running');
+      return;
+    }
+
     setLastFailureReason(null);
     if (!email.trim()) {
       setAttemptState({
@@ -598,8 +1172,10 @@ export default function LoginScreen() {
       return;
     }
 
-    console.log('[Login] Starting rebuilt direct sign-in flow for:', identifier);
-    setAttemptState({
+    loginSubmitInFlightRef.current = true;
+    try {
+      console.log('[Login] Starting rebuilt direct sign-in flow for:', identifier);
+      setAttemptState({
       status: 'submitting',
       title: 'Checking live credentials',
       detail: 'Submitting your exact email/password to Supabase and waiting for a real session response.',
@@ -625,7 +1201,7 @@ export default function LoginScreen() {
         email: identifier,
         tone: 'success',
       });
-      router.replace('/(tabs)' as any);
+      navigateAfterSuccessfulLogin('password');
       return;
     }
 
@@ -667,6 +1243,7 @@ export default function LoginScreen() {
       nextRateCheck.remainingAttempts,
       nextRateCheck.lockedUntilMs,
     );
+    const supabaseFailureDetail = result.supabaseErrorMessage ?? normalizedMessage;
     const msg = audit?.emailMismatch
       ? `${baseFailureMessage}\n\n${audit.message}`
       : baseFailureMessage;
@@ -684,9 +1261,15 @@ export default function LoginScreen() {
             : result.failureReason === 'service_unavailable'
               ? 'Live sign-in temporarily unavailable'
               : 'Server rejected this sign-in',
-      detail: msg,
+      detail: result.supabaseErrorMessage
+        ? `${msg}\n\nExact Supabase auth error: ${supabaseFailureDetail}${result.supabaseErrorCode ? ` (code: ${result.supabaseErrorCode})` : ''}${result.supabaseErrorStatus ? ` (HTTP ${result.supabaseErrorStatus})` : ''}`
+        : msg,
       email: identifier,
       tone: 'warning',
+      supabaseErrorMessage: result.supabaseErrorMessage,
+      supabaseErrorCode: result.supabaseErrorCode,
+      supabaseErrorStatus: result.supabaseErrorStatus,
+      supabaseErrorName: result.supabaseErrorName,
     });
 
     if (audit?.eligible) {
@@ -701,7 +1284,15 @@ export default function LoginScreen() {
       return;
     }
 
-    Alert.alert('Sign In Failed', msg);
+    Alert.alert(
+      'Sign In Failed',
+      result.supabaseErrorMessage
+        ? `${msg}\n\nExact Supabase auth error: ${supabaseFailureDetail}${result.supabaseErrorCode ? `\nCode: ${result.supabaseErrorCode}` : ''}${result.supabaseErrorStatus ? `\nHTTP status: ${result.supabaseErrorStatus}` : ''}${result.supabaseErrorName ? `\nType: ${result.supabaseErrorName}` : ''}`
+        : msg,
+    );
+    } finally {
+      loginSubmitInFlightRef.current = false;
+    }
   };
 
   const handle2FAInput = (index: number, value: string) => {
@@ -729,7 +1320,10 @@ export default function LoginScreen() {
       setTwoFACode(['', '', '', '', '', '']);
       twoFARefs.current[0]?.focus();
       Alert.alert('Invalid Code', result.message || 'The 2FA code is incorrect.');
+      return;
     }
+
+    navigateAfterSuccessfulLogin('two-factor');
   };
 
   const isLoading = loginLoading || verify2FALoading;
@@ -791,9 +1385,14 @@ export default function LoginScreen() {
         ? 'Open owner access audit'
         : 'Open owner access';
   const canSendPasswordReset = !!effectiveRecoveryEmail && validateEmail(effectiveRecoveryEmail);
-  const shouldPromoteResetAction = !ownerRecoveryAudit?.eligible
+  const shouldPromoteResetAction = !effectiveOwnerMode
+    && !ownerRecoveryAudit?.eligible
     && canSendPasswordReset
     && lastFailureReason === 'invalid_credentials';
+  const ownerPhoneLoginVerified = effectiveOwnerMode
+    && attemptState.status === 'success'
+    && attemptState.title === 'Owner Phone Login Verified'
+    && repairDebug?.autoSignIn?.success === true;
   const adminLockUpdateItems = useMemo<RecoveryTruthItem[]>(() => {
     return [
       {
@@ -841,7 +1440,26 @@ export default function LoginScreen() {
     ];
   }, [effectiveRecoveryEmail, ownerRecoveryAudit?.eligible, ownerRepairReadiness.hasRealServiceRole]);
 
-  if (openAccessMode) {
+  const hasVisibleSupabaseError = Boolean(attemptState.supabaseErrorMessage || attemptState.supabaseErrorCode || attemptState.supabaseErrorStatus || attemptState.supabaseErrorName);
+  const loginTitle = effectiveOwnerMode ? 'Owner Login' : 'Welcome Back';
+  const loginSubtitle = effectiveOwnerMode
+    ? 'Owner access only. Use the approved owner email/password or reset the owner password below — no signup loop on this screen.'
+    : 'Use direct email/password sign-in first. Owner recovery stays available below if this device was already verified.';
+  const signInButtonLabel = effectiveOwnerMode ? 'Reset password & log in' : 'Sign In';
+  const ownerAlternativeTitle = effectiveOwnerMode
+    ? 'Owner recovery hub'
+    : adminAccessLocked
+      ? 'Owner-only admin access'
+      : 'Owner access alternative';
+  const ownerAlternativeText = effectiveOwnerMode
+    ? 'Password issue or trusted device? Open Owner Access to restore a verified owner device. Owner signup is not used for returning owner access.'
+    : adminAccessLocked
+      ? `${adminAccessLockMessage} If this is the configured owner account, open Owner Access to continue with the owner-only route.`
+      : 'If this is your project owner account, do not use public signup. Open Owner Access to restore trusted-device access, confirm the carried owner email, or use the safe reset path. Admin login is not removed on new devices.';
+  const signupChoiceTitle = 'Need a new account?';
+  const signupChoiceSubtitle = 'Choose the correct signup path. Owner accounts are separate from workers and regular users.';
+
+  if (openAccessMode && !effectiveOwnerMode) {
     return (
       <View style={styles.root}>
         <SafeAreaView edges={['top', 'bottom']} style={{ flex: 1 }}>
@@ -948,7 +1566,7 @@ export default function LoginScreen() {
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
           >
-            <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+            <TouchableOpacity style={styles.backButton} onPress={handleBackPress}>
               <ArrowLeft size={22} color={Colors.text} />
             </TouchableOpacity>
 
@@ -967,8 +1585,11 @@ export default function LoginScreen() {
               opacity: fadeAnim,
               transform: [{ translateY: slideAnim }, { translateX: shakeAnim }],
             }]}>
-              <Text style={styles.title}>Welcome Back</Text>
-              <Text style={styles.subtitle}>Use direct email/password sign-in first. Owner recovery stays available below if this device was already verified.</Text>
+              <Text style={styles.title}>{loginTitle}</Text>
+              <Text style={styles.subtitle}>{loginSubtitle}</Text>
+              <View style={styles.authVersionBadge} testID="login-auth-version-badge">
+                <Text style={styles.authVersionBadgeText}>{OWNER_LOGIN_PHONE_PROOF_BUILD}</Text>
+              </View>
 
               {adminAccessLocked ? (
                 <View style={styles.adminLockCard} testID="login-admin-lock-card">
@@ -993,32 +1614,86 @@ export default function LoginScreen() {
                 </View>
               ) : null}
 
-              <View
-                style={[
-                  styles.authAuditCard,
-                  attemptState.tone === 'success'
-                    ? styles.authAuditCardSuccess
-                    : attemptState.tone === 'warning'
-                      ? styles.authAuditCardWarning
-                      : styles.authAuditCardNeutral,
-                ]}
-                testID="login-auth-audit-card"
-              >
-                <View style={styles.authAuditHeader}>
-                  <Shield
-                    size={15}
-                    color={attemptState.tone === 'success' ? Colors.success : attemptState.tone === 'warning' ? '#F59E0B' : Colors.primary}
-                  />
-                  <Text style={styles.authAuditTitle}>{attemptState.title}</Text>
-                </View>
-                <Text style={styles.authAuditText}>{attemptState.detail}</Text>
-                {attemptState.email ? (
-                  <View style={styles.authAuditEmailRow}>
-                    <Text style={styles.authAuditEmailLabel}>Email checked</Text>
-                    <Text style={styles.authAuditEmailValue}>{attemptState.email}</Text>
+              {attemptState.kind === 'reset-sent' ? (
+                <View style={styles.resetSentCard} testID="login-reset-sent-card">
+                  <View style={styles.resetSentIconWrap}>
+                    <MailCheck size={28} color={Colors.success} />
                   </View>
-                ) : null}
-              </View>
+                  <Text style={styles.resetSentTitle}>Check your email</Text>
+                  <Text style={styles.resetSentSubtitle}>We sent a password reset link to</Text>
+                  <Text style={styles.resetSentEmail} numberOfLines={1}>{attemptState.email}</Text>
+                  <View style={styles.resetSentSteps}>
+                    {[
+                      'Open your inbox (check spam too).',
+                      'Tap the reset link from Supabase.',
+                      'Set a new password, then come back and sign in.',
+                    ].map((step, idx) => (
+                      <View key={`reset-step-${idx}`} style={styles.resetSentStepRow}>
+                        <View style={styles.resetSentStepBadge}><Text style={styles.resetSentStepBadgeText}>{idx + 1}</Text></View>
+                        <Text style={styles.resetSentStepText}>{step}</Text>
+                      </View>
+                    ))}
+                  </View>
+                  <Text style={styles.resetSentHint}>Didn’t get it after a minute? Tap “Forgot owner password?” again or use the server-side repair below.</Text>
+                  {attemptState.cooldownCleared ? (
+                    <View style={styles.cooldownClearedChip} testID="login-cooldown-cleared-chip">
+                      <Text style={styles.cooldownClearedChipText}>Cooldown cleared ✓</Text>
+                    </View>
+                  ) : null}
+                </View>
+              ) : (
+                <View
+                  style={[
+                    styles.authAuditCard,
+                    attemptState.tone === 'success'
+                      ? styles.authAuditCardSuccess
+                      : attemptState.tone === 'warning'
+                        ? styles.authAuditCardWarning
+                        : styles.authAuditCardNeutral,
+                  ]}
+                  testID="login-auth-audit-card"
+                >
+                  <View style={styles.authAuditHeader}>
+                    <Shield
+                      size={15}
+                      color={attemptState.tone === 'success' ? Colors.success : attemptState.tone === 'warning' ? '#F59E0B' : Colors.primary}
+                    />
+                    <Text style={styles.authAuditTitle}>{attemptState.title}</Text>
+                  </View>
+                  <Text style={styles.authAuditText}>{attemptState.detail}</Text>
+                  {attemptState.email ? (
+                    <View style={styles.authAuditEmailRow}>
+                      <Text style={styles.authAuditEmailLabel}>Email checked</Text>
+                      <Text style={styles.authAuditEmailValue}>{attemptState.email}</Text>
+                    </View>
+                  ) : null}
+                  {attemptState.cooldownCleared ? (
+                    <View style={styles.cooldownClearedChip} testID="login-cooldown-cleared-chip">
+                      <Text style={styles.cooldownClearedChipText}>Cooldown cleared</Text>
+                    </View>
+                  ) : null}
+                  {ownerPhoneLoginVerified ? (
+                    <TouchableOpacity
+                      style={styles.ownerVerifiedContinueButton}
+                      activeOpacity={0.86}
+                      onPress={() => navigateAfterSuccessfulLogin('password')}
+                      testID="owner-phone-login-verified-continue"
+                    >
+                      <Text style={styles.ownerVerifiedContinueButtonText}>Continue to Home</Text>
+                      <ChevronRight size={16} color={Colors.black} />
+                    </TouchableOpacity>
+                  ) : null}
+                  {hasVisibleSupabaseError ? (
+                    <View style={styles.supabaseErrorBox} testID="login-supabase-exact-error">
+                      <Text style={styles.supabaseErrorTitle}>Exact Supabase auth error</Text>
+                      {attemptState.supabaseErrorMessage ? <Text style={styles.supabaseErrorLine} selectable>message: {attemptState.supabaseErrorMessage}</Text> : null}
+                      {attemptState.supabaseErrorCode ? <Text style={styles.supabaseErrorLine} selectable>code: {attemptState.supabaseErrorCode}</Text> : null}
+                      {attemptState.supabaseErrorStatus ? <Text style={styles.supabaseErrorLine} selectable>http_status: {attemptState.supabaseErrorStatus}</Text> : null}
+                      {attemptState.supabaseErrorName ? <Text style={styles.supabaseErrorLine} selectable>type: {attemptState.supabaseErrorName}</Text> : null}
+                    </View>
+                  ) : null}
+                </View>
+              )}
 
               <View style={styles.fieldGroup}>
                 <Text style={styles.fieldLabel}>Email Address</Text>
@@ -1041,26 +1716,30 @@ export default function LoginScreen() {
 
               <View style={styles.fieldGroup}>
                 <View style={styles.fieldLabelRow}>
-                  <Text style={styles.fieldLabel}>Password</Text>
-                  <TouchableOpacity
-                    onPress={() => { void handlePasswordReset(); }}
-                    disabled={passwordResetLoading}
-                  >
-                    <Text style={styles.forgotLink}>{passwordResetLoading ? 'Sending…' : 'Forgot?'}</Text>
-                  </TouchableOpacity>
+                  <Text style={styles.fieldLabel}>{effectiveOwnerMode ? 'New Owner Password' : 'Password'}</Text>
+                  {effectiveOwnerMode ? (
+                    <Text style={styles.passwordPolicyHint}>8+ chars · uppercase · number</Text>
+                  ) : (
+                    <TouchableOpacity
+                      onPress={() => { void handlePasswordReset(); }}
+                      disabled={passwordResetLoading}
+                    >
+                      <Text style={styles.forgotLink}>{passwordResetLoading ? 'Sending…' : 'Forgot?'}</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
                 <View style={styles.inputWrap}>
                   <Lock size={18} color={Colors.textTertiary} />
                   <TextInput
                     style={styles.input}
-                    placeholder="••••••••"
+                    placeholder={effectiveOwnerMode ? 'Type a new owner password' : '••••••••'}
                     placeholderTextColor={Colors.inputPlaceholder}
                     value={password}
                     onChangeText={setPassword}
                     secureTextEntry={!showPassword}
                     autoComplete="password"
                     returnKeyType="done"
-                    onSubmitEditing={handleLogin}
+                    onSubmitEditing={effectiveOwnerMode ? () => { void handleServerOwnerPasswordRepair(); } : handleLogin}
                     testID="login-password"
                   />
                   <TouchableOpacity onPress={() => setShowPassword(!showPassword)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
@@ -1073,21 +1752,125 @@ export default function LoginScreen() {
               </View>
 
               <TouchableOpacity
-                style={[styles.signInBtn, isLoading && styles.signInBtnDisabled]}
-                onPress={handleLogin}
-                disabled={isLoading}
+                style={[styles.signInBtn, (effectiveOwnerMode ? serverPasswordRepairLoading : isLoading) && styles.signInBtnDisabled]}
+                onPress={effectiveOwnerMode ? () => { void handleServerOwnerPasswordRepair(); } : handleLogin}
+                disabled={effectiveOwnerMode ? serverPasswordRepairLoading : isLoading}
                 activeOpacity={0.85}
                 testID="login-submit"
               >
-                {isLoading ? (
+                {(effectiveOwnerMode ? serverPasswordRepairLoading : isLoading) ? (
                   <ActivityIndicator color={Colors.black} />
                 ) : (
                   <>
-                    <Text style={styles.signInBtnText}>Sign In</Text>
+                    <Text style={styles.signInBtnText}>{signInButtonLabel}</Text>
                     <ChevronRight size={20} color={Colors.black} />
                   </>
                 )}
               </TouchableOpacity>
+
+              {effectiveOwnerMode ? (
+                <TouchableOpacity
+                  style={styles.ownerNormalSignInButton}
+                  activeOpacity={0.84}
+                  onPress={handleLogin}
+                  disabled={isLoading}
+                  testID="owner-login-normal-signin"
+                >
+                  <Text style={styles.ownerNormalSignInButtonText}>Already know current password? Sign in normally</Text>
+                </TouchableOpacity>
+              ) : null}
+
+              {effectiveOwnerMode ? (
+                <>
+                  <TouchableOpacity
+                    style={[styles.ownerPasswordResetCard, serverPasswordRepairLoading && styles.ownerPasswordResetCardDisabled]}
+                    activeOpacity={0.84}
+                    onPress={() => { void handleServerOwnerPasswordRepair(); }}
+                    disabled={serverPasswordRepairLoading}
+                    testID="owner-login-server-reset"
+                  >
+                    {serverPasswordRepairLoading ? (
+                      <ActivityIndicator size="small" color={Colors.primary} />
+                    ) : (
+                      <Shield size={16} color={Colors.primary} />
+                    )}
+                    <View style={styles.ownerPasswordResetContent}>
+                      <Text style={styles.ownerPasswordResetTitle}>Same action: reset owner password & log in</Text>
+                      <Text style={styles.ownerPasswordResetText}>The yellow button already does this. This uses {OWNER_REPAIR_API_BASE_URL}{OWNER_REPAIR_ENDPOINT_PATH}; backend sets the exact password from this phone, then this phone signs in.</Text>
+                    </View>
+                    <ChevronRight size={16} color={Colors.primary} />
+                  </TouchableOpacity>
+                  {telemetrySteps.length > 0 ? (
+                    <View style={styles.repairDebugCard} testID="owner-login-telemetry-panel">
+                      <Text style={styles.repairDebugTitle}>Owner login telemetry (on-device)</Text>
+                      {telemetrySteps.map((entry, idx) => (
+                        <Text key={`${entry.ts}-${idx}`} style={styles.repairDebugLine} selectable>
+                          <Text style={styles.repairDebugLabel}>{entry.ts} </Text>
+                          {entry.step}{entry.detail ? ` — ${entry.detail}` : ''}
+                        </Text>
+                      ))}
+                    </View>
+                  ) : null}
+                  {repairDebug ? (
+                    <View style={styles.repairDebugCard} testID="owner-repair-debug-panel">
+                      <Text style={styles.repairDebugTitle}>Owner repair debug (on-device)</Text>
+                      <Text style={styles.repairDebugLine}><Text style={styles.repairDebugLabel}>Endpoint: </Text>{repairDebug.endpoint}</Text>
+                      <Text style={styles.repairDebugLine}><Text style={styles.repairDebugLabel}>HTTP status: </Text>{repairDebug.status === null ? 'pending…' : String(repairDebug.status)}</Text>
+                      <Text style={styles.repairDebugLine}><Text style={styles.repairDebugLabel}>Timestamp: </Text>{repairDebug.timestamp}</Text>
+                      <Text style={styles.repairDebugLine}><Text style={styles.repairDebugLabel}>Request JSON: </Text></Text>
+                      <Text style={styles.repairDebugJson} selectable testID="owner-repair-debug-request">{repairDebug.requestJson}</Text>
+                      <Text style={styles.repairDebugLine}><Text style={styles.repairDebugLabel}>Response JSON: </Text></Text>
+                      <Text style={styles.repairDebugJson} selectable testID="owner-repair-debug-response">{repairDebug.response}</Text>
+                      {repairDebug.autoSignIn ? (
+                        <>
+                          <Text style={styles.repairDebugLine}>
+                            <Text style={styles.repairDebugLabel}>Auto sign-in: </Text>
+                            {repairDebug.autoSignIn.attempted
+                              ? (repairDebug.autoSignIn.success ? 'success' : 'failed')
+                              : 'skipped'}
+                          </Text>
+                          {repairDebug.autoSignIn.message ? (
+                            <Text style={styles.repairDebugJson} selectable testID="owner-repair-debug-signin-error">{repairDebug.autoSignIn.message}</Text>
+                          ) : null}
+                          {repairDebug.autoSignIn.failureReason ? (
+                            <Text style={styles.repairDebugLine}><Text style={styles.repairDebugLabel}>Supabase reason: </Text>{repairDebug.autoSignIn.failureReason}</Text>
+                          ) : null}
+                          {repairDebug.autoSignIn.supabaseErrorMessage ? (
+                            <Text style={styles.repairDebugLine} selectable><Text style={styles.repairDebugLabel}>Supabase exact message: </Text>{repairDebug.autoSignIn.supabaseErrorMessage}</Text>
+                          ) : null}
+                          {repairDebug.autoSignIn.supabaseErrorCode ? (
+                            <Text style={styles.repairDebugLine} selectable><Text style={styles.repairDebugLabel}>Supabase code: </Text>{repairDebug.autoSignIn.supabaseErrorCode}</Text>
+                          ) : null}
+                          {repairDebug.autoSignIn.supabaseErrorStatus ? (
+                            <Text style={styles.repairDebugLine} selectable><Text style={styles.repairDebugLabel}>Supabase HTTP status: </Text>{repairDebug.autoSignIn.supabaseErrorStatus}</Text>
+                          ) : null}
+                          {repairDebug.autoSignIn.supabaseErrorName ? (
+                            <Text style={styles.repairDebugLine} selectable><Text style={styles.repairDebugLabel}>Supabase type: </Text>{repairDebug.autoSignIn.supabaseErrorName}</Text>
+                          ) : null}
+                        </>
+                      ) : null}
+                    </View>
+                  ) : null}
+                  <TouchableOpacity
+                    style={[styles.ownerPasswordResetCard, passwordResetLoading && styles.ownerPasswordResetCardDisabled, { opacity: 0.85 }]}
+                    activeOpacity={0.84}
+                    onPress={() => { void handlePasswordReset(); }}
+                    disabled={passwordResetLoading}
+                    testID="owner-login-forgot-password"
+                  >
+                    {passwordResetLoading ? (
+                      <ActivityIndicator size="small" color={Colors.primary} />
+                    ) : (
+                      <Mail size={16} color={Colors.primary} />
+                    )}
+                    <View style={styles.ownerPasswordResetContent}>
+                      <Text style={styles.ownerPasswordResetTitle}>Secondary/manual fallback: email reset</Text>
+                      <Text style={styles.ownerPasswordResetText}>May be rate-limited and requires Supabase redirect allow-list: https://ivxholding.com/reset-password. This never blocks the primary server reset above.</Text>
+                    </View>
+                    <ChevronRight size={16} color={Colors.primary} />
+                  </TouchableOpacity>
+                </>
+              ) : null}
 
               {shouldShowOwnerAccessNotice ? (
                 <TouchableOpacity
@@ -1126,8 +1909,8 @@ export default function LoginScreen() {
                   <Shield size={18} color={Colors.black} />
                 </View>
                 <View style={styles.ownerAlternativeContent}>
-                  <Text style={styles.ownerAlternativeTitle}>{adminAccessLocked ? 'Owner-only admin access' : 'Owner access alternative'}</Text>
-                  <Text style={styles.ownerAlternativeText}>{adminAccessLocked ? `${adminAccessLockMessage} If this is the configured owner account, open Owner Access to continue with the owner-only route.` : 'If this is your project owner account, do not use public signup. Open Owner Access to restore trusted-device access, confirm the carried owner email, or use the safe reset path. Admin login is not removed on new devices.'}</Text>
+                  <Text style={styles.ownerAlternativeTitle}>{ownerAlternativeTitle}</Text>
+                  <Text style={styles.ownerAlternativeText}>{ownerAlternativeText}</Text>
                 </View>
                 <ChevronRight size={18} color={Colors.primary} />
               </TouchableOpacity>
@@ -1243,6 +2026,24 @@ export default function LoginScreen() {
                         )}
                       </TouchableOpacity>
                     ) : null}
+                    {effectiveOwnerMode ? (
+                      <TouchableOpacity
+                        style={[styles.loginFailurePrimaryAction, serverPasswordRepairLoading && styles.loginFailureActionDisabled]}
+                        activeOpacity={0.84}
+                        onPress={() => { void handleServerOwnerPasswordRepair(); }}
+                        disabled={serverPasswordRepairLoading}
+                        testID="login-failure-server-owner-reset"
+                      >
+                        {serverPasswordRepairLoading ? (
+                          <ActivityIndicator size="small" color={Colors.black} />
+                        ) : (
+                          <>
+                            <Text style={styles.loginFailurePrimaryActionText}>Server reset with typed password</Text>
+                            <ChevronRight size={16} color={Colors.black} />
+                          </>
+                        )}
+                      </TouchableOpacity>
+                    ) : null}
                     {canSendPasswordReset ? (
                       <TouchableOpacity
                         style={[
@@ -1278,18 +2079,30 @@ export default function LoginScreen() {
                 </View>
               ) : null}
 
-              <View style={styles.dividerRow}>
-                <View style={styles.divider} />
-                <Text style={styles.dividerText}>or</Text>
-                <View style={styles.divider} />
-              </View>
+              {!effectiveOwnerMode ? (
+                <>
+                  <View style={styles.dividerRow}>
+                    <View style={styles.divider} />
+                    <Text style={styles.dividerText}>or</Text>
+                    <View style={styles.divider} />
+                  </View>
 
-              <View style={styles.signupRow}>
-                <Text style={styles.signupText}>Don't have an account? </Text>
-                <TouchableOpacity onPress={() => router.replace('/signup' as any)}>
-                  <Text style={styles.signupLink}>Create Account</Text>
-                </TouchableOpacity>
-              </View>
+                  <View style={styles.signupChoiceCard} testID="login-signup-choice-card">
+                    <Text style={styles.signupChoiceTitle}>{signupChoiceTitle}</Text>
+                    <Text style={styles.signupChoiceSubtitle}>{signupChoiceSubtitle}</Text>
+                    <View style={styles.signupChoiceActions}>
+                      <TouchableOpacity
+                        style={styles.signupChoiceButton}
+                        activeOpacity={0.84}
+                        onPress={() => router.replace('/signup' as any)}
+                        testID="login-create-regular-account"
+                      >
+                        <Text style={styles.signupChoiceButtonLabel}>Create regular user account</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </>
+              ) : null}
             </Animated.View>
 
             <Animated.View style={[styles.securityRow, { opacity: fadeAnim }]}>
@@ -1301,6 +2114,10 @@ export default function LoginScreen() {
       </SafeAreaView>
     </View>
   );
+}
+
+export default function LoginScreen() {
+  return <LoginScreenContent />;
 }
 
 const styles = StyleSheet.create({
@@ -1378,8 +2195,24 @@ const styles = StyleSheet.create({
   subtitle: {
     color: Colors.textSecondary,
     fontSize: 14,
-    marginBottom: 18,
+    marginBottom: 12,
     lineHeight: 20,
+  },
+  authVersionBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: Colors.success + '55',
+    backgroundColor: Colors.success + '18',
+    marginBottom: 16,
+  },
+  authVersionBadgeText: {
+    color: Colors.success,
+    fontSize: 10,
+    fontWeight: '800' as const,
+    letterSpacing: 1,
   },
   authAuditCard: {
     borderRadius: 18,
@@ -1437,6 +2270,137 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700' as const,
   },
+  supabaseErrorBox: {
+    marginTop: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.error + '55',
+    backgroundColor: '#1B0B0B',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 4,
+  },
+  supabaseErrorTitle: {
+    color: Colors.error,
+    fontSize: 11,
+    fontWeight: '800' as const,
+    letterSpacing: 0.3,
+    textTransform: 'uppercase' as const,
+  },
+  supabaseErrorLine: {
+    color: Colors.text,
+    fontSize: 11,
+    lineHeight: 16,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  ownerVerifiedContinueButton: {
+    marginTop: 8,
+    minHeight: 46,
+    borderRadius: 14,
+    backgroundColor: Colors.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  ownerVerifiedContinueButtonText: {
+    color: Colors.black,
+    fontSize: 13,
+    fontWeight: '900' as const,
+  },
+  resetSentCard: {
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: Colors.success + '38',
+    backgroundColor: Colors.success + '10',
+    padding: 18,
+    marginBottom: 18,
+    alignItems: 'center' as const,
+    gap: 6,
+  },
+  resetSentIconWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: Colors.success + '1F',
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    marginBottom: 4,
+  },
+  resetSentTitle: {
+    color: Colors.text,
+    fontSize: 18,
+    fontWeight: '800' as const,
+    letterSpacing: 0.2,
+  },
+  resetSentSubtitle: {
+    color: Colors.textSecondary,
+    fontSize: 13,
+    textAlign: 'center' as const,
+  },
+  resetSentEmail: {
+    color: Colors.success,
+    fontSize: 15,
+    fontWeight: '800' as const,
+    marginTop: 2,
+    marginBottom: 8,
+    maxWidth: '100%' as const,
+  },
+  resetSentSteps: {
+    alignSelf: 'stretch' as const,
+    gap: 8,
+    marginTop: 4,
+  },
+  resetSentStepRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'flex-start' as const,
+    gap: 10,
+  },
+  resetSentStepBadge: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: Colors.success + '22',
+    borderWidth: 1,
+    borderColor: Colors.success + '55',
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    marginTop: 1,
+  },
+  resetSentStepBadgeText: {
+    color: Colors.success,
+    fontSize: 11,
+    fontWeight: '800' as const,
+  },
+  resetSentStepText: {
+    flex: 1,
+    color: Colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  resetSentHint: {
+    color: Colors.textTertiary,
+    fontSize: 11,
+    lineHeight: 16,
+    textAlign: 'center' as const,
+    marginTop: 10,
+  },
+  cooldownClearedChip: {
+    alignSelf: 'flex-start' as const,
+    marginTop: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: '#0E2A1A',
+    borderWidth: 1,
+    borderColor: '#1FB67333',
+  },
+  cooldownClearedChipText: {
+    color: '#34D399',
+    fontSize: 11,
+    fontWeight: '700' as const,
+    letterSpacing: 0.3,
+  },
   fieldGroup: {
     marginBottom: 16,
   },
@@ -1457,6 +2421,12 @@ const styles = StyleSheet.create({
     color: Colors.primary,
     fontSize: 13,
     fontWeight: '700' as const,
+  },
+  passwordPolicyHint: {
+    color: Colors.primary,
+    fontSize: 11,
+    fontWeight: '800' as const,
+    letterSpacing: 0.3,
   },
   inputWrap: {
     flexDirection: 'row',
@@ -1494,6 +2464,22 @@ const styles = StyleSheet.create({
     fontWeight: '800' as const,
     letterSpacing: 0.3,
   },
+  ownerNormalSignInButton: {
+    marginTop: 10,
+    minHeight: 42,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    backgroundColor: Colors.backgroundSecondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+  ownerNormalSignInButtonText: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '800' as const,
+  },
   ownerAccessNotice: {
     marginTop: 10,
     borderRadius: 14,
@@ -1505,6 +2491,69 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+  },
+  ownerPasswordResetCard: {
+    marginTop: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.primary + '32',
+    backgroundColor: '#07111D',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  ownerPasswordResetCardDisabled: {
+    opacity: 0.62,
+  },
+  ownerPasswordResetContent: {
+    flex: 1,
+  },
+  ownerPasswordResetTitle: {
+    color: Colors.text,
+    fontSize: 13,
+    fontWeight: '800' as const,
+  },
+  ownerPasswordResetText: {
+    marginTop: 3,
+    color: Colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  repairDebugCard: {
+    marginTop: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.primary + '40',
+    backgroundColor: '#040A12',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  repairDebugTitle: {
+    color: Colors.text,
+    fontSize: 12,
+    fontWeight: '800' as const,
+    marginBottom: 6,
+  },
+  repairDebugLine: {
+    color: Colors.textSecondary,
+    fontSize: 11,
+    lineHeight: 16,
+  },
+  repairDebugLabel: {
+    color: Colors.text,
+    fontWeight: '700' as const,
+  },
+  repairDebugJson: {
+    marginTop: 4,
+    color: Colors.text,
+    fontSize: 11,
+    lineHeight: 15,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    backgroundColor: '#000814',
+    padding: 8,
+    borderRadius: 8,
   },
   ownerAccessNoticeContent: {
     flex: 1,
@@ -1821,6 +2870,55 @@ const styles = StyleSheet.create({
     color: Colors.primary,
     fontSize: 14,
     fontWeight: '700' as const,
+  },
+  signupChoiceCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    padding: 14,
+  },
+  signupChoiceTitle: {
+    color: Colors.text,
+    fontSize: 14,
+    fontWeight: '800' as const,
+    marginBottom: 4,
+  },
+  signupChoiceSubtitle: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 17,
+    marginBottom: 12,
+  },
+  signupChoiceActions: {
+    flexDirection: 'row',
+  },
+  signupChoiceButton: {
+    flex: 1,
+    minHeight: 44,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    backgroundColor: Colors.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+  },
+  signupChoiceOwnerButton: {
+    flexDirection: 'row',
+    gap: 6,
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  signupChoiceButtonLabel: {
+    color: Colors.text,
+    fontSize: 13,
+    fontWeight: '700' as const,
+  },
+  signupChoiceOwnerButtonLabel: {
+    color: Colors.black,
+    fontSize: 13,
+    fontWeight: '800' as const,
   },
   securityRow: {
     flexDirection: 'row',

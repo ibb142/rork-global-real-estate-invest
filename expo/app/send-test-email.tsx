@@ -19,7 +19,6 @@ import {
   Mail,
   Building2,
   Globe,
-  Phone,
   MapPin,
   Shield,
 } from 'lucide-react-native';
@@ -66,7 +65,6 @@ Headquarters: 1001 Brickell Bay Drive, Suite 2700, Miami, FL 33131
 Website: https://ivxholding.com
 Email: support@ivxholding.com
 CEO Office: ceo@ivxholding.com
-Phone: +1 (561) 644-3503
 
 Registration: Licensed & Regulated Entity
 Platform: Proprietary Investment Technology Stack
@@ -86,7 +84,6 @@ IVX Holdings Ltd.
 
 1001 Brickell Bay Drive, Suite 2700
 Miami, FL 33131, United States
-+1 (561) 644-3503
 https://ivxholding.com
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -241,14 +238,6 @@ export default function SendTestEmailScreen() {
                 <View style={styles.detailInfo}>
                   <Text style={styles.detailLabel}>Website</Text>
                   <Text style={styles.detailValue}>https://ivxholding.com</Text>
-                </View>
-              </View>
-
-              <View style={styles.detailRow}>
-                <Phone size={16} color={Colors.textSecondary} strokeWidth={1.8} />
-                <View style={styles.detailInfo}>
-                  <Text style={styles.detailLabel}>Phone</Text>
-                  <Text style={styles.detailValue}>+1 (561) 644-3503</Text>
                 </View>
               </View>
 

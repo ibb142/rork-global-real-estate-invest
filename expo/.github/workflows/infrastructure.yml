@@ -1,6 +1,8 @@
 name: AWS Infrastructure Setup
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       action:
@@ -37,9 +39,9 @@ permissions:
 
 jobs:
   infrastructure:
-    name: ${{ github.event.inputs.action }}
+    name: ${{ github.event.inputs.action || 'validate' }}
     runs-on: ubuntu-latest
-    environment: ${{ github.event.inputs.environment }}
+    environment: ${{ github.event.inputs.environment || 'production' }}
 
     steps:
       - name: Checkout code
@@ -59,7 +61,7 @@ jobs:
           echo "ACCOUNT_ID=$ACCOUNT_ID" >> $GITHUB_ENV
 
       - name: Validate infrastructure
-        if: github.event.inputs.action == 'validate'
+        if: github.event_name == 'push' || github.event.inputs.action == 'validate'
         run: |
           echo "### Infrastructure Validation" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -260,9 +262,15 @@ jobs:
             --query "Stacks[0].Outputs[?OutputKey=='ALBDNS'].OutputValue" \
             --output text \
             --region ${{ env.AWS_REGION }} 2>/dev/null || echo "")
+          ALB_ZONE_ID=$(aws cloudformation describe-stacks \
+            --stack-name "$STACK_NAME" \
+            --query "Stacks[0].Outputs[?OutputKey=='ALBCanonicalHostedZoneID'].OutputValue" \
+            --output text \
+            --region ${{ env.AWS_REGION }} 2>/dev/null || echo "")
 
-          if [ -n "$ALB_DNS" ] && [ "$ALB_DNS" != "None" ]; then
-            echo "Pointing DNS records to ALB: $ALB_DNS"
+          if [ -n "$ALB_DNS" ] && [ "$ALB_DNS" != "None" ] && [ -n "$ALB_ZONE_ID" ] && [ "$ALB_ZONE_ID" != "None" ]; then
+            ALIAS_DNS="dualstack.${ALB_DNS%.}"
+            echo "Pointing DNS records to ALB via Route53 Alias A: $ALIAS_DNS ($ALB_ZONE_ID)"
             cat > /tmp/dns-changes.json << EOF
           {
             "Changes": [
@@ -270,39 +278,48 @@ jobs:
                 "Action": "UPSERT",
                 "ResourceRecordSet": {
                   "Name": "api.ivxholding.com.",
-                  "Type": "CNAME",
-                  "TTL": 300,
-                  "ResourceRecords": [{"Value": "$ALB_DNS"}]
+                  "Type": "A",
+                  "AliasTarget": {
+                    "HostedZoneId": "$ALB_ZONE_ID",
+                    "DNSName": "$ALIAS_DNS",
+                    "EvaluateTargetHealth": false
+                  }
                 }
               },
               {
                 "Action": "UPSERT",
                 "ResourceRecordSet": {
                   "Name": "app.ivxholding.com.",
-                  "Type": "CNAME",
-                  "TTL": 300,
-                  "ResourceRecords": [{"Value": "$ALB_DNS"}]
+                  "Type": "A",
+                  "AliasTarget": {
+                    "HostedZoneId": "$ALB_ZONE_ID",
+                    "DNSName": "$ALIAS_DNS",
+                    "EvaluateTargetHealth": false
+                  }
                 }
               },
               {
                 "Action": "UPSERT",
                 "ResourceRecordSet": {
                   "Name": "www.ivxholding.com.",
-                  "Type": "CNAME",
-                  "TTL": 300,
-                  "ResourceRecords": [{"Value": "$ALB_DNS"}]
+                  "Type": "A",
+                  "AliasTarget": {
+                    "HostedZoneId": "$ALB_ZONE_ID",
+                    "DNSName": "$ALIAS_DNS",
+                    "EvaluateTargetHealth": false
+                  }
                 }
               }
             ],
-            "Comment": "IVX Holdings DNS records - API + app + www -> ALB"
+            "Comment": "IVX Holdings DNS records - API + app + www -> ALB alias A"
           }
           EOF
             aws route53 change-resource-record-sets \
               --hosted-zone-id "$ZONE_ID" \
               --change-batch file:///tmp/dns-changes.json >/dev/null
-            echo "DNS records updated"
+            echo "DNS alias records updated"
           else
-            echo "::warning::ALB not deployed yet — deploy the stack first, then re-run DNS setup"
+            echo "::warning::ALB not deployed yet or ALB canonical hosted zone ID is unavailable — deploy the stack first, then re-run DNS setup"
           fi
 
           echo "### DNS + SSL Setup" >> $GITHUB_STEP_SUMMARY
@@ -311,6 +328,7 @@ jobs:
           echo "| Hosted Zone | $ZONE_ID |" >> $GITHUB_STEP_SUMMARY
           echo "| Certificate | $CERT_ARN |" >> $GITHUB_STEP_SUMMARY
           echo "| ALB DNS | ${ALB_DNS:-Not deployed} |" >> $GITHUB_STEP_SUMMARY
+          echo "| ALB Zone ID | ${ALB_ZONE_ID:-Not deployed} |" >> $GITHUB_STEP_SUMMARY
 
       - name: Check status
         if: github.event.inputs.action == 'status'

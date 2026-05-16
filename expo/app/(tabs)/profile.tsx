@@ -25,7 +25,6 @@ import {
   Globe,
   LayoutDashboard,
   Mail,
-  Phone,
   MapPin,
   Gift,
   MessageSquare,
@@ -52,6 +51,7 @@ import { useAuth } from '@/lib/auth-context';
 import { useTranslation, useI18n } from '@/lib/i18n-context';
 import { useAnalytics } from '@/lib/analytics-context';
 import { formatDollar } from '@/lib/formatters';
+import { renderSafeViewChildren } from '@/components/SafeViewChildren';
 
 interface MenuItemProps {
   icon: React.ReactNode;
@@ -61,9 +61,10 @@ interface MenuItemProps {
   showBadge?: boolean;
   badgeColor?: string;
   isCompact?: boolean;
+  testID?: string;
 }
 
-function MenuItem({ icon, title, subtitle, onPress, showBadge, badgeColor, isCompact = false }: MenuItemProps) {
+function MenuItem({ icon, title, subtitle, onPress, showBadge, badgeColor, isCompact = false, testID }: MenuItemProps) {
   return (
     <TouchableOpacity
       style={[styles.menuItem, { padding: isCompact ? 12 : 16 }]}
@@ -72,9 +73,10 @@ function MenuItem({ icon, title, subtitle, onPress, showBadge, badgeColor, isCom
       accessibilityRole="button"
       accessibilityLabel={`${title}${subtitle ? `, ${subtitle}` : ''}${showBadge ? ', verified' : ''}`}
       accessibilityHint={`Opens ${title}`}
+      testID={testID}
     >
       <View style={styles.menuItemLeft}>
-        <View style={[styles.menuItemIcon, { width: isCompact ? 36 : 40, height: isCompact ? 36 : 40 }]}>{icon}</View>
+        <View style={[styles.menuItemIcon, { width: isCompact ? 36 : 40, height: isCompact ? 36 : 40 }]}>{renderSafeViewChildren(icon)}</View>
         <View>
           <Text style={[styles.menuItemTitle, { fontSize: isCompact ? 13 : 15 }]}>{title}</Text>
           {subtitle && <Text style={[styles.menuItemSubtitle, { fontSize: isCompact ? 11 : 12 }]}>{subtitle}</Text>}
@@ -114,6 +116,8 @@ export default function ProfileScreen() {
 
   const currentUser = useMemo(() => {
     const pd = profileData;
+    const role = ((pd as any)?.role ?? '') as string;
+    const isOwnerOrAdmin = role === 'owner' || role === 'admin';
     return {
       id: pd?.id ?? '',
       email: pd?.email ?? '',
@@ -122,7 +126,9 @@ export default function ProfileScreen() {
       avatar: (pd as any)?.avatar ?? '',
       phone: (pd as any)?.phone ?? '',
       country: (pd as any)?.country ?? '',
-      kycStatus: (pd?.kycStatus ?? 'pending') as 'approved' | 'pending' | 'in_review' | 'rejected',
+      role,
+      isOwnerOrAdmin,
+      kycStatus: (isOwnerOrAdmin ? 'approved' : (pd?.kycStatus ?? 'pending')) as 'approved' | 'pending' | 'in_review' | 'rejected',
       walletBalance: balanceQuery.data?.available ?? (pd as any)?.walletBalance ?? 0,
       totalInvested: balanceQuery.data?.invested ?? (pd as any)?.totalInvested ?? 0,
       totalReturns: (pd as any)?.totalReturns ?? 0,
@@ -199,12 +205,14 @@ export default function ProfileScreen() {
                 )}
               </View>
               <Text style={[styles.userEmail, { fontSize: isXs ? 12 : 14 }]}>{currentUser.email}</Text>
-              <View style={styles.kycBadge}>
-                <View style={[styles.kycDot, { backgroundColor: getKYCStatusColor() }]} />
-                <Text style={[styles.kycText, { color: getKYCStatusColor(), fontSize: isXs ? 11 : 12 }]}>
-                  {getKYCStatusText()}
-                </Text>
-              </View>
+              {!currentUser.isOwnerOrAdmin && (
+                <View style={styles.kycBadge}>
+                  <View style={[styles.kycDot, { backgroundColor: getKYCStatusColor() }]} />
+                  <Text style={[styles.kycText, { color: getKYCStatusColor(), fontSize: isXs ? 11 : 12 }]}>
+                    {getKYCStatusText()}
+                  </Text>
+                </View>
+              )}
             </View>
           </View>
 
@@ -218,15 +226,17 @@ export default function ProfileScreen() {
                 onPress={() => router.push('/personal-info' as any)}
                 isCompact={isCompact}
               />
-              <MenuItem
-                icon={<Shield size={isXs ? 18 : 20} color={Colors.success} />}
-                title={t('identityVerification')}
-                subtitle={'Optional — Not required to invest'}
-                onPress={() => router.push('/kyc-verification' as any)}
-                showBadge={currentUser.kycStatus === 'approved'}
-                badgeColor={getKYCStatusColor()}
-                isCompact={isCompact}
-              />
+              {currentUser.role !== 'owner' && currentUser.role !== 'admin' && (
+                <MenuItem
+                  icon={<Shield size={isXs ? 18 : 20} color={Colors.success} />}
+                  title={t('identityVerification')}
+                  subtitle={'Optional — Not required to invest'}
+                  onPress={() => router.push('/kyc-verification' as any)}
+                  showBadge={currentUser.kycStatus === 'approved'}
+                  badgeColor={getKYCStatusColor()}
+                  isCompact={isCompact}
+                />
+              )}
               <MenuItem
                 icon={<Globe size={isXs ? 18 : 20} color={Colors.info} />}
                 title={t('taxInfo')}
@@ -464,6 +474,14 @@ export default function ProfileScreen() {
             <Text style={[styles.sectionTitle, { paddingHorizontal: isXs ? 16 : 20, fontSize: isXs ? 12 : 14 }]}>{t('administration')}</Text>
             <View style={[styles.menuGroup, { marginHorizontal: isXs ? 16 : 20 }]}>
               <MenuItem
+                icon={<Shield size={isXs ? 18 : 20} color={Colors.primary} />}
+                title="Owner Login"
+                subtitle="Direct approved-owner sign in inside the app"
+                onPress={() => router.push({ pathname: '/login', params: { ownerMode: '1' } } as any)}
+                isCompact={isCompact}
+                testID="profile-owner-login-entry"
+              />
+              <MenuItem
                 icon={<LayoutDashboard size={isXs ? 18 : 20} color={Colors.warning} />}
                 title={t('adminPanel')}
                 subtitle={t('adminDesc')}
@@ -507,10 +525,6 @@ export default function ProfileScreen() {
               <View style={styles.companyDetailRow}>
                 <Mail size={isXs ? 14 : 16} color={Colors.primary} />
                 <Text style={[styles.companyDetailText, { fontSize: isXs ? 11 : 13 }]}>ceo@ivxholding.com</Text>
-              </View>
-              <View style={styles.companyDetailRow}>
-                <Phone size={isXs ? 14 : 16} color={Colors.textTertiary} />
-                <Text style={[styles.companyDetailText, { fontSize: isXs ? 11 : 13 }]}>+1 (561) 644-3503</Text>
               </View>
             </View>
             <Text style={[styles.companyLegal, { fontSize: isXs ? 10 : 11 }]}>

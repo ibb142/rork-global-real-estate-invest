@@ -98,7 +98,7 @@ const generateProspectusText = (investment: number): string => {
   projections.forEach((p, i) => {
     lines.push(`${i + 1}. ${p.period}: Dividend ${formatCurrency(p.dividendReturn)} + Growth ${formatCurrency(p.capitalAppreciation)} = ${formatCurrency(p.totalReturn)} (${p.percentReturn.toFixed(4)}%)`);
   });
-  lines.push('', 'Contact: investors@ipxholding.com | +1 (561) 644-3503 | www.ipxholding.com');
+  lines.push('', 'Contact: investors@ipxholding.com | www.ipxholding.com');
   lines.push(`(c) ${new Date().getFullYear()} IVX HOLDINGS LLC. Past performance does not guarantee future results.`);
   return lines.join('\n');
 };
@@ -111,7 +111,7 @@ export default function InvestorProspectusScreen() {
 
   const handleShare = async (method: 'whatsapp' | 'email' | 'sms' | 'call' | 'general') => {
     const prospectusText = generateProspectusText(selectedAmount);
-    const shortMessage = `📊 IVXHOLDINGS Investor Prospectus\n\nInvest ${formatCurrency(selectedAmount)} and earn:\n• ${formatCurrency(projections[5].totalReturn)}/year\n• ${(ANNUAL_YIELD + ANNUAL_APPRECIATION).toFixed(1)}% combined return\n\n24/7 Trading | Fractional Real Estate\n\nContact: +1 (561) 644-3503`;
+    const shortMessage = `📊 IVXHOLDINGS Investor Prospectus\n\nInvest ${formatCurrency(selectedAmount)} and earn:\n• ${formatCurrency(projections[5].totalReturn)}/year\n• ${(ANNUAL_YIELD + ANNUAL_APPRECIATION).toFixed(1)}% combined return\n\n24/7 Trading | Fractional Real Estate\n\nContact: investors@ipxholding.com`;
 
     try {
       switch (method) {
@@ -138,7 +138,7 @@ export default function InvestorProspectusScreen() {
           break;
         }
         case 'call':
-          await Linking.openURL('tel:+15616443503');
+          await Linking.openURL('mailto:investors@ipxholding.com?subject=Investor%20Prospectus%20Call%20Request');
           break;
         case 'general':
           await Share.share({ message: prospectusText, title: 'IVXHOLDINGS Investor Prospectus' });

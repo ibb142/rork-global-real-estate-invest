@@ -15,12 +15,10 @@ import * as Linking from 'expo-linking';
 import {
   Instagram,
   Linkedin,
-  MessageCircle,
   Zap,
   ScanLine,
   ChevronRight,
   Share2,
-  Phone,
   Mail,
   MapPin,
   Globe,
@@ -40,14 +38,12 @@ const SOCIAL_LINKS = [
   { id: 'website', label: 'ivxholding.com', url: 'https://ivxholding.com', icon: Globe, color: '#FFD700', bg: '#FFD70015' },
   { id: 'instagram', label: '@IVXHolding', url: 'https://www.instagram.com/ivxholding?igsh=MXYzZWtxMGxxOGRucg==', icon: Instagram, color: '#E1306C', bg: '#E1306C15' },
   { id: 'tiktok', label: '@IVXInvesting', url: 'https://www.tiktok.com/@IVXInvesting', icon: Zap, color: '#00F2EA', bg: '#00F2EA15' },
-  { id: 'whatsapp', label: '+1 (561) 644-3503', url: 'https://wa.me/15616443503', icon: MessageCircle, color: '#25D366', bg: '#25D36615' },
   { id: 'linkedin', label: 'IVX Holdings', url: 'https://www.linkedin.com/company/ivxholdings', icon: Linkedin, color: '#0A66C2', bg: '#0A66C215' },
 ];
 
 const CONTACT_INFO = [
   { id: 'website', label: 'ivxholding.com', icon: Globe, color: GOLD },
   { id: 'email', label: 'ceo@ivxholding.com', icon: Mail, color: '#4A90D9' },
-  { id: 'phone', label: '+1 (561) 644-3503', icon: Phone, color: '#25D366' },
   { id: 'address', label: '1001 Brickell Bay Dr, Suite 2700, Miami FL 33131', icon: MapPin, color: '#FF6B6B' },
 ];
 
@@ -87,7 +83,7 @@ export default function BusinessCardScreen() {
     try {
       await Share.share({
         title: 'IVX Holdings - Smart Investing Platform',
-        message: 'Check out IVX Holdings - Smart Investing Platform\n\nInvest in real estate from $50\n\nInstagram: @IVXInvesting\nWebsite: ivxholding.com\nWhatsApp: +1 (561) 644-3503\nLinkedIn: linkedin.com/company/ivxholdings',
+        message: 'Check out IVX Holdings - Smart Investing Platform\n\nInvest in real estate from $50\n\nInstagram: @IVXInvesting\nWebsite: ivxholding.com\nEmail: investors@ivxholding.com\nLinkedIn: linkedin.com/company/ivxholdings',
         url: 'https://ivxholding.com',
       });
     } catch (e) {

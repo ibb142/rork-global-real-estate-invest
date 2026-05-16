@@ -212,7 +212,7 @@ function filterPublishedDeals(rows) {
 export async function fetchStaticLandingApiPayloads(options = {}) {
   const supabaseUrl = asString(options.supabaseUrl ?? process.env.EXPO_PUBLIC_SUPABASE_URL).trim().replace(/\/$/, '');
   const supabaseAnonKey = asString(options.supabaseAnonKey ?? process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY).trim();
-  const directApiBaseUrl = asString(options.directApiBaseUrl ?? process.env.EXPO_PUBLIC_RORK_API_BASE_URL).trim().replace(/\/$/, '');
+  const directApiBaseUrl = asString(options.directApiBaseUrl ?? process.env.EXPO_PUBLIC_IVX_API_BASE_URL).trim().replace(/\/$/, '');
   if (!supabaseUrl || !supabaseAnonKey) {
     throw new Error('Missing EXPO_PUBLIC_SUPABASE_URL or EXPO_PUBLIC_SUPABASE_ANON_KEY');
   }

@@ -190,7 +190,7 @@ async function deploy() {
   console.log('\n📤 Uploading index.html...');
   const apiBaseUrl = (
     process.env.EXPO_PUBLIC_API_BASE_URL ||
-    process.env.EXPO_PUBLIC_RORK_API_BASE_URL ||
+    process.env.EXPO_PUBLIC_IVX_API_BASE_URL ||
     'https://ivxholding.com'
   ).trim().replace(/\/$/, '');
   const supabaseUrl = (
@@ -205,7 +205,7 @@ async function deploy() {
   ).trim();
   const appUrl = (
     process.env.EXPO_PUBLIC_APP_URL ||
-    process.env.EXPO_PUBLIC_RORK_API_BASE_URL ||
+    process.env.EXPO_PUBLIC_IVX_API_BASE_URL ||
     ''
   ).trim().replace(/\/$/, '');
 
@@ -224,7 +224,7 @@ async function deploy() {
   }
 
   const backendUrl = (
-    process.env.EXPO_PUBLIC_RORK_API_BASE_URL ||
+    process.env.EXPO_PUBLIC_IVX_API_BASE_URL ||
     ''
   ).trim().replace(/\/$/, '');
 

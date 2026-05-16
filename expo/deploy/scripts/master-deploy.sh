@@ -22,7 +22,18 @@ error() { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
 step()  { echo -e "\n${BOLD}${CYAN}━━━ $1 ━━━${NC}"; }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+resolve_project_root() {
+  local current="$SCRIPT_DIR"
+  while [ "$current" != "/" ]; do
+    if [ -f "$current/package.json" ] || [ -d "$current/.git" ]; then
+      printf '%s\n' "$current"
+      return 0
+    fi
+    current="$(dirname "$current")"
+  done
+  return 1
+}
+PROJECT_ROOT="$(resolve_project_root)" || error "Could not resolve project root"
 
 ENVIRONMENT="${1:-production}"
 APP_NAME="${APP_NAME:-ivx-holdings}"

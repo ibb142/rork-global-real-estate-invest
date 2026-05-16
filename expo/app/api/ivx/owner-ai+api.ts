@@ -1,4 +1,4 @@
-import { generateText as toolkitGenerateText } from '@rork-ai/toolkit-sdk';
+import { requestLocalIVXBrain } from '@/src/modules/ivx-owner-ai/services/localIVXBrainService';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   IVX_OWNER_AI_PROFILE,
@@ -10,6 +10,8 @@ import {
   IVX_OWNER_AI_TABLES,
   resolveIVXAuthenticatedRequest,
   type IVXAuthenticatedRequestContext,
+  type IVXOwnerAICapabilityId,
+  type IVXOwnerAICapabilityProof,
   type IVXOwnerAIHealthProbeResponse,
   type IVXOwnerAIRoomStatus,
   type IVXOwnerAIResponse,
@@ -38,6 +40,29 @@ class DuplicateOwnerRoomError extends Error {
     this.name = 'DuplicateOwnerRoomError';
   }
 }
+
+type OwnerCapabilityProbeOutput = {
+  success: boolean;
+  executable?: boolean;
+  functionName: string;
+  proof: Record<string, unknown>;
+  error?: string;
+};
+
+const OWNER_CAPABILITY_IDS: readonly IVXOwnerAICapabilityId[] = [
+  'ai_chat',
+  'knowledge_answers',
+  'owner_commands',
+  'code_aware_support',
+  'file_upload',
+  'inbox_sync',
+  'backend_access',
+  'supabase_inspection',
+  'supabase_tables',
+  'supabase_schema',
+  'supabase_columns',
+  'supabase_rls',
+] as const;
 
 type ConversationLookupRow = {
   id: string | null;
@@ -742,6 +767,126 @@ function isHealthProbe(prompt: string): boolean {
   return normalized === 'health_probe' || normalized === 'ping' || normalized === 'health_check';
 }
 
+function normalizeCapabilityProof(value: unknown): Record<string, unknown> {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return { responsePayload: value ?? null };
+}
+
+function buildCapabilityProbeResult(input: OwnerCapabilityProbeOutput): IVXOwnerAICapabilityProof {
+  const executable = input.executable ?? true;
+  const success = executable && input.success === true;
+  return {
+    success,
+    executable,
+    functionName: input.functionName,
+    checkedAt: nowIso(),
+    proof: normalizeCapabilityProof(input.proof),
+    error: success ? undefined : input.error,
+  };
+}
+
+function buildLocalHealthCapabilityChecks(local: ReturnType<typeof requestLocalIVXBrain>): {
+  capabilities: Record<IVXOwnerAICapabilityId, boolean>;
+  capabilityProofs: Record<IVXOwnerAICapabilityId, IVXOwnerAICapabilityProof>;
+} {
+  const checks: Record<IVXOwnerAICapabilityId, OwnerCapabilityProbeOutput> = {
+    ai_chat: {
+      functionName: 'requestLocalIVXBrain',
+      success: local.answer.trim().length > 0,
+      proof: { responsePayload: local },
+    },
+    knowledge_answers: {
+      functionName: 'requestLocalIVXBrain',
+      success: false,
+      executable: false,
+      proof: { responsePayload: { source: 'local_app_brain', reason: 'No executable knowledge-base lookup is exposed in this local route.' } },
+      error: 'Knowledge answers are not executable in this local API route.',
+    },
+    owner_commands: {
+      functionName: 'local_owner_command_dispatcher',
+      success: false,
+      executable: false,
+      proof: { responsePayload: { source: 'local_app_brain', reason: 'No executable owner-command dispatcher is exposed in this local route.' } },
+      error: 'Owner commands are not executable in this local API route.',
+    },
+    code_aware_support: {
+      functionName: 'local_code_aware_support',
+      success: false,
+      executable: false,
+      proof: { responsePayload: { source: 'local_app_brain', reason: 'No code-aware runtime function is exposed in this local route.' } },
+      error: 'Code-aware support is not executable in this local API route.',
+    },
+    file_upload: {
+      functionName: 'local_file_upload_probe',
+      success: false,
+      executable: false,
+      proof: { responsePayload: { source: 'local_app_brain', reason: 'No storage upload function is executed by this local health route.' } },
+      error: 'File upload is not executable in this local API route.',
+    },
+    inbox_sync: {
+      functionName: 'local_inbox_sync_probe',
+      success: false,
+      executable: false,
+      proof: { responsePayload: { storageMode: 'local_device_only', reason: 'No shared inbox sync function is executed by this local route.' } },
+      error: 'Inbox sync is not executable in this local API route.',
+    },
+    backend_access: {
+      functionName: 'local_backend_access_probe',
+      success: false,
+      executable: false,
+      proof: { responsePayload: { source: 'local_app_brain', reason: 'Owner backend guard is not executed by this local route.' } },
+      error: 'Backend access is not executable in this local API route.',
+    },
+    supabase_inspection: {
+      functionName: 'local_supabase_inspection_probe',
+      success: false,
+      executable: false,
+      proof: { responsePayload: { source: 'local_app_brain', reason: 'No Supabase inspection function is executed by this local route.' } },
+      error: 'Supabase inspection is not executable in this local API route.',
+    },
+    supabase_tables: {
+      functionName: 'local_supabase_tables_probe',
+      success: false,
+      executable: false,
+      proof: { responsePayload: { source: 'local_app_brain', reason: 'No Supabase tables inspection function is executed by this local route.' } },
+      error: 'Supabase table inspection is not executable in this local API route.',
+    },
+    supabase_schema: {
+      functionName: 'local_supabase_schema_probe',
+      success: false,
+      executable: false,
+      proof: { responsePayload: { source: 'local_app_brain', reason: 'No Supabase schema inspection function is executed by this local route.' } },
+      error: 'Supabase schema inspection is not executable in this local API route.',
+    },
+    supabase_columns: {
+      functionName: 'local_supabase_columns_probe',
+      success: false,
+      executable: false,
+      proof: { responsePayload: { source: 'local_app_brain', reason: 'No Supabase columns inspection function is executed by this local route.' } },
+      error: 'Supabase column inspection is not executable in this local API route.',
+    },
+    supabase_rls: {
+      functionName: 'local_supabase_rls_probe',
+      success: false,
+      executable: false,
+      proof: { responsePayload: { source: 'local_app_brain', reason: 'No Supabase RLS inspection function is executed by this local route.' } },
+      error: 'Supabase RLS inspection is not executable in this local API route.',
+    },
+  };
+
+  const capabilityProofs = {} as Record<IVXOwnerAICapabilityId, IVXOwnerAICapabilityProof>;
+  const capabilities = {} as Record<IVXOwnerAICapabilityId, boolean>;
+
+  for (const capability of OWNER_CAPABILITY_IDS) {
+    capabilityProofs[capability] = buildCapabilityProbeResult(checks[capability]);
+    capabilities[capability] = capabilityProofs[capability].success;
+  }
+
+  return { capabilities, capabilityProofs };
+}
+
 export async function POST(request: Request): Promise<Response> {
   try {
     const body = await request.json() as IVXOwnerAIRequestBody;
@@ -751,13 +896,13 @@ export async function POST(request: Request): Promise<Response> {
     const senderLabel = readTrimmed(body.senderLabel) || null;
     const persistUserMessage = body.persistUserMessage === true;
     const persistAssistantMessage = body.persistAssistantMessage === true;
-    const model = 'rork-toolkit';
+    const model = 'ivx-local-app-brain-v1';
 
     if (!prompt) {
       return jsonResponse({ error: 'Message is required.' }, 400);
     }
 
-    console.log('[IVXOwnerAI-API] Incoming request:', {
+    console.log('[IVXOwnerAI-API] Local app brain route handling request:', {
       requestId,
       promptLength: prompt.length,
       mode,
@@ -767,149 +912,47 @@ export async function POST(request: Request): Promise<Response> {
       marker: DEPLOYMENT_MARKER,
     });
 
+    const local = requestLocalIVXBrain({
+      message: prompt,
+      senderLabel,
+      requestId,
+      conversationId: readTrimmed(body.conversationId) || IVX_OWNER_AI_ROOM_ID,
+    });
+
     if (isHealthProbe(prompt)) {
-      try {
-        const auth = await verifyAuth(request);
-        const tables = await resolveApiTables(auth.client);
-        const roomStatus = buildRoomStatus(tables);
-
-        console.log('[IVXOwnerAI-API] Health probe passed for user:', auth.userId, 'schema:', tables.schema, 'storageMode:', roomStatus.storageMode, 'marker:', DEPLOYMENT_MARKER);
-
-        const probePayload: IVXOwnerAIHealthProbeResponse = {
-          requestId: createRequestId(),
-          conversationId: IVX_OWNER_AI_ROOM_ID,
-          answer: 'IVX Owner AI is active and ready.',
-          model,
-          status: 'ok',
-          probe: true,
-          resolvedSchema: tables.schema,
-          roomStatus,
-          capabilities: {
-            ai_chat: true,
-            knowledge_answers: true,
-            owner_commands: true,
-            code_aware_support: true,
-            file_upload: tables.schema !== 'none',
-            inbox_sync: tables.schema !== 'none',
-          },
-        };
-
-        return jsonResponse({ ...probePayload, deploymentMarker: DEPLOYMENT_MARKER } as unknown as Record<string, unknown>);
-      } catch (authErr) {
-        console.log('[IVXOwnerAI-API] Health probe auth error:', authErr instanceof Error ? authErr.message : 'unknown');
-        return jsonResponse({
-          error: 'Health probe auth failed.',
-          detail: authErr instanceof Error ? authErr.message : 'unknown auth failure',
-          guard: 'ivx_owner_ai_auth',
-        }, 401);
-      }
-    }
-
-    const auth = await verifyAuth(request);
-    const tables = await resolveApiTables(auth.client);
-    const conversation = await ensureConversation(auth.client, tables);
-    const effectiveSenderLabel = senderLabel || auth.email || 'IVX User';
-
-    await ensureInboxState(auth.client, tables, conversation.id, auth.userId);
-
-    console.log('[IVXOwnerAI-API] User verified:', {
-      userId: auth.userId,
-      email: auth.email,
-      normalizedRole: auth.role,
-      conversationId: conversation.id,
-      schema: tables.schema,
-      guardMode: auth.guardMode,
-      roleAudit: auth.roleAudit,
-    });
-
-    const existingRequest = await findExistingAIRequest(auth.client, tables, requestId);
-    if (existingRequest?.status === 'completed' && readTrimmed(existingRequest.response_text)) {
-      console.log('[IVXOwnerAI-API] Reusing completed AI request:', {
-        requestId,
-        conversationId: existingRequest.conversation_id,
-        model: existingRequest.model,
-        marker: DEPLOYMENT_MARKER,
-      });
-      return jsonResponse({
-        requestId,
-        conversationId: readTrimmed(existingRequest.conversation_id) || conversation.id,
-        answer: readTrimmed(existingRequest.response_text),
-        model: readTrimmed(existingRequest.model) || model,
+      const capabilityChecks = buildLocalHealthCapabilityChecks(local);
+      const probePayload: IVXOwnerAIHealthProbeResponse = {
+        requestId: local.requestId,
+        conversationId: IVX_OWNER_AI_ROOM_ID,
+        answer: local.answer,
+        model,
         status: 'ok',
-        deploymentMarker: DEPLOYMENT_MARKER,
-      });
+        source: 'local_app_brain',
+        probe: true,
+        resolvedSchema: 'none',
+        roomStatus: {
+          storageMode: 'local_device_only',
+          visibility: 'local_only',
+          deliveryMethod: 'local_only',
+        },
+        capabilities: capabilityChecks.capabilities,
+        capabilityProofs: capabilityChecks.capabilityProofs,
+      };
+
+      return jsonResponse({ ...probePayload, deploymentMarker: DEPLOYMENT_MARKER } as unknown as Record<string, unknown>);
     }
 
-    if (persistUserMessage) {
-      await insertMessage(auth.client, tables, {
-        conversationId: conversation.id,
-        senderId: auth.userId,
-        senderLabel: effectiveSenderLabel,
-        text: prompt,
-        senderRole: 'owner',
-      });
-    }
-
-    const recentMessages = await loadRecentMessages(auth.client, tables, conversation.id);
-
-    const promptText = buildPrompt({
-      prompt,
-      email: auth.email,
-      conversation,
-      recentMessages,
-      mode,
-      devTestModeActive: body.devTestModeActive === true,
-    });
-
-    console.log('[IVXOwnerAI-API] Generating AI response via toolkit');
-    const rawAnswer = await toolkitGenerateText({
-      messages: [{ role: 'user', content: promptText }],
-    });
-    const answer = typeof rawAnswer === 'string' ? rawAnswer.trim() : '';
-
-    if (!answer) {
-      throw new Error('AI provider returned an empty response.');
-    }
-
-    console.log('[IVXOwnerAI-API] AI response generated, length:', answer.length);
-
-    if (persistAssistantMessage) {
-      const assistantMessageId = await insertMessage(auth.client, tables, {
-        messageId: requestId,
-        conversationId: conversation.id,
-        senderId: 'ivx-owner-ai-assistant',
-        senderLabel: IVX_OWNER_AI_PROFILE.name,
-        text: answer,
-        senderRole: 'assistant',
-      });
-      console.log('[IVXOwnerAI-API] Assistant persistence result:', {
-        requestId,
-        assistantMessageId,
-        conversationId: conversation.id,
-        marker: DEPLOYMENT_MARKER,
-      });
-      await updateConversationSummary(auth.client, tables, conversation.id, answer);
-      await ensureInboxState(auth.client, tables, conversation.id, auth.userId);
-    }
-    await logAIRequest(auth.client, tables, {
-      requestId,
-      conversationId: conversation.id,
-      userId: auth.userId,
-      prompt,
-      responseText: answer,
-      status: 'completed',
-      model,
-    });
-
-    const responsePayload: IVXOwnerAIResponse = {
-      requestId,
-      conversationId: conversation.id,
-      answer,
+    const localResponsePayload: IVXOwnerAIResponse = {
+      requestId: local.requestId,
+      conversationId: readTrimmed(body.conversationId) || IVX_OWNER_AI_ROOM_ID,
+      answer: local.answer,
       model,
       status: 'ok',
+      source: 'local_app_brain',
+      assistantPersisted: false,
     };
 
-    return jsonResponse({ ...responsePayload, deploymentMarker: DEPLOYMENT_MARKER } as unknown as Record<string, unknown>);
+    return jsonResponse({ ...localResponsePayload, deploymentMarker: DEPLOYMENT_MARKER } as unknown as Record<string, unknown>);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unable to process the IVX Owner AI request.';
     const normalizedMessage = message.toLowerCase();

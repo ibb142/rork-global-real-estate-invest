@@ -20,7 +20,7 @@ export type IVXProofRecord = {
 };
 
 export type IVXRuntimeProviderState = {
-  source: 'remote_api' | 'toolkit_fallback' | 'unknown';
+  source: 'remote_api' | 'local_app_brain' | 'provider_fallback' | 'unknown';
   endpoint: string | null;
   deploymentMarker: string | null;
   model: string | null;
@@ -62,7 +62,7 @@ type BuildSnapshotInput = {
   roomProbeObservedAt: string | null;
   aiHealth: ServiceRuntimeHealth;
   aiProbeObservedAt: string | null;
-  aiSource: 'remote_api' | 'toolkit_fallback' | 'unknown';
+  aiSource: 'remote_api' | 'local_app_brain' | 'provider_fallback' | 'unknown';
   aiEndpoint: string | null;
   deploymentMarker: string | null;
   model: string | null;
@@ -234,9 +234,9 @@ export function buildIVXRoomRuntimeSnapshot(input: BuildSnapshotInput): IVXRoomR
     dependencyBasis: ['owner_ai_endpoint', 'provider_runtime', 'auth_token'],
     userImpact: input.aiHealth === 'inactive' ? 'high' : input.aiHealth === 'degraded' ? 'medium' : 'low',
     summary: input.aiHealth === 'active'
-      ? `AI replies are live through ${input.aiSource === 'remote_api' ? 'the deployed endpoint' : 'the active development fallback path'}.`
+      ? 'AI replies are live through the primary owner-session path.'
       : input.aiHealth === 'degraded'
-        ? 'AI replies are available with degraded proof.'
+        ? 'AI replies are available while primary proof refreshes.'
         : 'AI runtime is not verified yet.',
   });
 
@@ -348,8 +348,8 @@ export function buildIVXRoomRuntimeSnapshot(input: BuildSnapshotInput): IVXRoomR
         : 'live';
 
   const notes: string[] = [];
-  if (input.aiSource === 'toolkit_fallback') {
-    notes.push('Assistant replies are currently using the active development fallback path. Remote endpoint proof is not attached to this snapshot yet.');
+  if (input.aiSource === 'provider_fallback') {
+    notes.push('Primary assistant proof is refreshing. Messages remain saved.');
   }
   if (duplicateWriteDetected) {
     notes.push('Duplicate transcript signatures were detected and need reconciliation.');
@@ -361,7 +361,7 @@ export function buildIVXRoomRuntimeSnapshot(input: BuildSnapshotInput): IVXRoomR
     notes.push(`${input.replyFailures} assistant reply failure(s) were observed in this session.`);
   }
   if (input.fallbackSuccessCount > 0) {
-    notes.push(`${input.fallbackSuccessCount} fallback reply(s) delivered successfully in this session.`);
+    notes.push(`${input.fallbackSuccessCount} assistant recovery reply/replies completed in this session.`);
   }
   if (input.sendFailures > 0) {
     notes.push(`${input.sendFailures} send failure(s) were observed in this session.`);

@@ -101,7 +101,7 @@ export default function InvestorProfitsScreen() {
     phone: '+1 (305) 555-0123',
     email: 'investors@ipxholding.com',
     website: 'www.ipxholding.com',
-    logo: 'https://r2-pub.rork.com/attachments/1y2v16crdz546mo2tbt14',
+    logo: 'https://r2-pub.ivx.com/attachments/1y2v16crdz546mo2tbt14',
   };
 
   const profilesQuery = useQuery({

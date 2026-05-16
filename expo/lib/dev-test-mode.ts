@@ -2,8 +2,8 @@ import { getIVXAccessControlConfig } from '@/shared/ivx';
 import { isOpenAccessModeEnabled } from './open-access';
 
 const OWNER_ALLOWLIST_EMAILS: readonly string[] = [
-  'owner@ivx.com',
-  'admin@ivx.com',
+  'owner@ivxholding.com',
+  'admin@ivxholding.com',
 ];
 
 const OWNER_ALLOWLIST_IDS: readonly string[] = [

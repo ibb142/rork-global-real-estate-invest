@@ -1,12 +1,10 @@
 import { Platform } from 'react-native';
-import { generateText as toolkitGenerateText } from '@rork-ai/toolkit-sdk';
 import type { ChatMessage } from '@/types';
 import { IVX_OWNER_AI_PROFILE } from '@/constants/ivx-owner-ai';
 import { supabase, isSupabaseConfigured } from './supabase';
 import { fetchCanonicalDeals } from './canonical-deals';
 import { CANONICAL_CLAIMS } from './published-deal-card-model';
 
-const TOOLKIT_URL = (process.env.EXPO_PUBLIC_TOOLKIT_URL || '').trim();
 const AI_ENDPOINT = process.env.EXPO_PUBLIC_AI_ENDPOINT || '';
 const PROVIDER_TIMEOUT_MS = 12_000;
 const PROVIDER_COOLDOWN_MS = 45_000;
@@ -161,7 +159,7 @@ PLATFORM FACTS:
 - Backend: Supabase-backed data, auth, edge-function, and support-ticket workflows.
 - AWS: S3 object storage and CloudFront delivery are used for media and distribution workflows.
 - AI support: the platform uses a configured AI provider chain to answer investor, owner-workflow, knowledge-base, platform, and technical-support questions.
-- ChatGPT-style integrations: the platform can support approved OpenAI or toolkit-backed chat experiences, but releases and production control still require human approval.
+- ChatGPT-style integrations: the platform can support approved OpenAI or provider-backed chat experiences, but releases and production control still require human approval.
 ${dealsInfo}${conversationInfo}
 
 RULES:
@@ -210,10 +208,10 @@ function buildRequestKey(
   return [language, normalizedName, normalizedInterest, normalizedConversation, normalizedMessage].join('|');
 }
 
-function createProvider1_RorkToolkit(): AIProvider {
+function createProvider1_LocalIVXBrain(): AIProvider {
   return {
-    id: 'rork_toolkit',
-    name: 'Rork AI Toolkit',
+    id: 'local_ivx_brain',
+    name: 'Local IVX Brain',
     priority: 1,
     status: 'idle',
     failCount: 0,
@@ -221,22 +219,7 @@ function createProvider1_RorkToolkit(): AIProvider {
     lastUsed: 0,
     cooldownUntil: 0,
     generate: async (prompt: string, context: InvestorContext): Promise<string> => {
-      if (!TOOLKIT_URL) {
-        throw new Error('Toolkit URL not configured');
-      }
-
-      const systemPrompt = buildSystemPrompt(context);
-      const result = await toolkitGenerateText({
-        messages: [
-          { role: 'user', content: `${systemPrompt}\n\nUser message: ${prompt}` },
-        ],
-      });
-
-      if (!result || result.length === 0) {
-        throw new Error('Empty response from Rork toolkit');
-      }
-
-      return result;
+      return generateSmartFallback(prompt, context);
     },
   };
 }
@@ -373,10 +356,10 @@ function generateSmartFallback(prompt: string, context: InvestorContext): string
       fr: 'Pour le support AWS, IVX utilise S3 pour le stockage et CloudFront pour la diffusion. Les vérifications principales portent sur les permissions du bucket, les chemins d’objet, l’invalidation du cache, les URL publiques et la configuration d’origine. Je peux aider à cadrer le problème probable, mais les changements en production exigent toujours une validation humaine.',
     },
     chatgpt: {
-      en: 'For ChatGPT or OpenAI integration questions, the safest pattern is a controlled backend or approved toolkit layer, clear prompt rules, rate limits, error fallbacks, and human-governed releases. I can outline the integration approach and support flow, but I should not claim autonomous deployment or self-healing code.',
-      es: 'Para preguntas sobre integración con ChatGPT u OpenAI, el patrón más seguro es una capa backend controlada o un toolkit aprobado, reglas claras de prompt, límites de uso, respuestas de fallback y lanzamientos gobernados por humanos. Puedo explicar el enfoque, pero no debo afirmar despliegue autónomo ni código que se autorepara.',
-      pt: 'Para perguntas sobre integração com ChatGPT ou OpenAI, o padrão mais seguro é uma camada backend controlada ou toolkit aprovado, regras claras de prompt, limites, fallbacks e releases governados por humanos. Posso explicar a abordagem, mas não devo afirmar deploy autônomo nem código que se auto corrige.',
-      fr: 'Pour les questions sur l’intégration ChatGPT ou OpenAI, le schéma le plus sûr passe par une couche backend contrôlée ou un toolkit approuvé, des règles de prompt claires, des limites d’usage, des fallbacks et des mises en production validées par des humains. Je peux décrire l’approche, mais je ne dois pas prétendre à un déploiement autonome ni à du code auto-réparé.',
+      en: 'For ChatGPT or OpenAI integration questions, the safest pattern is a controlled backend or approved gateway layer, clear prompt rules, rate limits, error fallbacks, and human-governed releases. I can outline the integration approach and support flow, but I should not claim autonomous deployment or self-healing code.',
+      es: 'Para preguntas sobre integración con ChatGPT u OpenAI, el patrón más seguro es una capa backend controlada o un gateway aprobado, reglas claras de prompt, límites de uso, respuestas de fallback y lanzamientos gobernados por humanos. Puedo explicar el enfoque, pero no debo afirmar despliegue autónomo ni código que se autorepara.',
+      pt: 'Para perguntas sobre integração com ChatGPT ou OpenAI, o padrão mais seguro é uma camada backend controlada ou gateway aprovado, regras claras de prompt, limites, fallbacks e releases governados por humanos. Posso explicar a abordagem, mas não devo afirmar deploy autônomo nem código que se auto corrige.',
+      fr: 'Pour les questions sur l’intégration ChatGPT ou OpenAI, le schéma le plus sûr passe par une couche backend contrôlée ou un gateway approuvé, des règles de prompt claires, des limites d’usage, des fallbacks et des mises en production validées par des humains. Je peux décrire l’approche, mais je ne dois pas prétendre à un déploiement autonome ni à du code auto-réparé.',
     },
     automation: {
       en: 'AI can help draft code, explain frontend and backend architecture, support AWS troubleshooting, and answer technical questions 24/7. It should not be presented as having full autonomous control over production fixes, releases, or infrastructure without human review.',
@@ -450,7 +433,7 @@ class AIInvestorService {
 
     this.initialized = true;
     this.providers = [
-      createProvider1_RorkToolkit(),
+      createProvider1_LocalIVXBrain(),
       createProvider2_SupabaseEdge(),
       createProvider3_CustomEndpoint(),
       createProvider4_SmartFallback(),

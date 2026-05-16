@@ -7,11 +7,11 @@
 import { Alert, AlertSettings, AlertStats, SystemHealth } from '@/types';
 
 export const mockAlertSettings: AlertSettings = {
-  ownerPhone: '+15616443503',
+  ownerPhone: '',
   ownerEmail: 'owner@ipxholding.com',
   ownerName: 'IVXHOLDINGS Owner',
-  enableSMS: true,
-  enableWhatsApp: true,
+  enableSMS: false,
+  enableWhatsApp: false,
   enableEmail: true,
   enablePush: true,
   quietHoursStart: undefined,

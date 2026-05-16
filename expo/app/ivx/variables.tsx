@@ -1,6 +1,6 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Stack } from 'expo-router';
+
 import {
   ActivityIndicator,
   Alert,
@@ -19,13 +19,17 @@ import {
   CircleAlert,
   Cloud,
   Database,
+  DownloadCloud,
   Github,
+  Info,
   KeyRound,
   LockKeyhole,
   RefreshCw,
+  Rocket,
   Save,
   Server,
   ShieldCheck,
+  Sparkles,
   Trash2,
 } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -36,12 +40,34 @@ import {
   getIVXOwnerVariablesStatus,
   IVX_OWNER_VARIABLE_NAMES,
   saveIVXOwnerVariable,
+  selfSyncIVXOwnerVariablesFromRorkEnv,
   testIVXOwnerVariable,
+  triggerIVXRenderDeploy,
   type IVXOwnerVariableName,
   type IVXOwnerVariableProvider,
   type IVXOwnerVariableRow,
+  type IVXOwnerVariablesSelfSyncResponse,
   type IVXOwnerVariablesStatus,
+  type IVXRenderDeployTriggerResult,
 } from '@/src/modules/ivx-owner-ai/services/ivxVariablesToolService';
+import {
+  detectPublicVariablePresence,
+  IVX_TRACKED_VARIABLE_METADATA,
+  type IVXTrackedVariableMetadata,
+} from '@/src/modules/ivx-owner-ai/services/ivxVariablesMetadata';
+
+type IVXMergedVariableRow = {
+  metadata: IVXTrackedVariableMetadata;
+  backend: IVXOwnerVariableRow | null;
+  isWritable: boolean;
+  present: boolean;
+  runtimeReadable: boolean;
+  verified: boolean;
+  lastVerifiedAt: string | null;
+  status: 'tested' | 'saved' | 'invalid' | 'missing';
+};
+
+const OWNER_WRITABLE_NAMES = new Set<string>(IVX_OWNER_VARIABLE_NAMES as readonly string[]);
 
 const IVX_OWNER_VARIABLES_QUERY_KEY = ['ivx-owner-ai', 'owner-variables-status'] as const;
 
@@ -198,6 +224,86 @@ function VariableRow({
   );
 }
 
+type SummaryTone = 'primary' | 'success' | 'warning' | 'danger' | 'muted';
+
+function summaryToneColor(tone: SummaryTone): string {
+  if (tone === 'primary') return Colors.primary;
+  if (tone === 'success') return Colors.success;
+  if (tone === 'warning') return Colors.warning;
+  if (tone === 'danger') return Colors.error;
+  return Colors.textSecondary;
+}
+
+function SummaryStat({ label, value, tone }: { label: string; value: string; tone: SummaryTone }) {
+  const color = summaryToneColor(tone);
+  return (
+    <View style={[styles.summaryStat, { borderColor: `${color}44` }]} testID={`ivx-owner-variables-summary-${label.replace(/\s+/g, '-').toLowerCase()}`}>
+      <Text style={[styles.summaryStatValue, { color }]}>{value}</Text>
+      <Text style={styles.summaryStatLabel}>{label}</Text>
+    </View>
+  );
+}
+
+function MetadataPill({ label, tone }: { label: string; tone: SummaryTone }) {
+  const color = summaryToneColor(tone);
+  return (
+    <View style={[styles.metadataPill, { borderColor: `${color}55`, backgroundColor: `${color}14` }]}>
+      <Text style={[styles.metadataPillText, { color }]}>{label}</Text>
+    </View>
+  );
+}
+
+function TrackedVariableRow({ row }: { row: IVXMergedVariableRow }) {
+  const { metadata, backend, isWritable, present, runtimeReadable, verified, lastVerifiedAt, status } = row;
+  const statusColor = getStatusColor(status);
+  return (
+    <View style={styles.trackedCard} testID={`ivx-owner-tracked-${metadata.name}`}>
+      <View style={styles.variableTopRow}>
+        <View style={styles.variableNameBlock}>
+          <Text style={styles.variableName}>{metadata.name}</Text>
+          <Text style={styles.variableDescription}>{metadata.description}</Text>
+        </View>
+        <View style={[styles.statusBadge, { borderColor: statusColor, backgroundColor: `${statusColor}22` }]}>
+          <Text style={[styles.statusBadgeText, { color: statusColor }]}>{getStatusLabel(status)}</Text>
+        </View>
+      </View>
+
+      <View style={styles.metadataPillRow}>
+        <MetadataPill label={metadata.category} tone="primary" />
+        <MetadataPill label={metadata.isPublic ? 'public env' : 'private / backend'} tone={metadata.isPublic ? 'muted' : 'warning'} />
+        <MetadataPill label={metadata.secret ? 'secret · masked' : 'non-secret'} tone={metadata.secret ? 'danger' : 'muted'} />
+        <MetadataPill label={present ? 'present: yes' : 'present: no'} tone={present ? 'success' : 'danger'} />
+        <MetadataPill label={runtimeReadable ? 'runtime: readable' : 'runtime: unverified'} tone={runtimeReadable ? 'success' : 'warning'} />
+        <MetadataPill label={verified ? 'verified' : 'not verified'} tone={verified ? 'success' : 'warning'} />
+        {metadata.required ? <MetadataPill label="required" tone="warning" /> : null}
+        {metadata.rollbackOnly ? <MetadataPill label="rollback-only" tone="muted" /> : null}
+        {metadata.devOnly ? <MetadataPill label="dev-only" tone="muted" /> : null}
+        {metadata.safeToRemove ? <MetadataPill label="safe to remove" tone="muted" /> : null}
+        {metadata.ownerActionNeeded ? <MetadataPill label="owner action" tone="warning" /> : null}
+      </View>
+
+      <View style={styles.variableMetaGrid}>
+        <Text style={styles.metaText}>Source: {metadata.sourceLocation}</Text>
+        <Text style={styles.metaText}>Unlocks: {metadata.featureUnlocked}</Text>
+        <Text style={styles.metaText}>Last verified: {formatTime(lastVerifiedAt)}</Text>
+        <Text style={styles.metaText}>Preview: {backend?.maskedPreview ?? (metadata.isPublic && present ? 'inlined (masked)' : 'not stored')}</Text>
+        {!isWritable ? (
+          <View style={styles.metadataNoteRow}>
+            <Info size={11} color={Colors.textTertiary} />
+            <Text style={styles.metaText}>Edit this credential in {metadata.sourceLocation}. Backend save/test/delete is intentionally disabled here.</Text>
+          </View>
+        ) : null}
+        {metadata.actionRequired ? (
+          <View style={styles.metadataNoteRow}>
+            <CircleAlert size={11} color={Colors.warning} />
+            <Text style={[styles.metaText, { color: Colors.warning }]}>Action required: {metadata.actionRequired}</Text>
+          </View>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
 export default function IVXVariablesToolRoute() {
   const queryClient = useQueryClient();
   const insets = useSafeAreaInsets();
@@ -237,6 +343,66 @@ export default function IVXVariablesToolRoute() {
     onSettled: () => setBusyName(null),
   });
 
+  const [lastSelfSync, setLastSelfSync] = useState<IVXOwnerVariablesSelfSyncResponse | null>(null);
+  const selfSyncMutation = useMutation<IVXOwnerVariablesSelfSyncResponse, Error, { overwriteExisting: boolean }>({
+    mutationFn: async (input) => await selfSyncIVXOwnerVariablesFromRorkEnv({ overwriteExisting: input.overwriteExisting }),
+    onSuccess: async (response) => {
+      setLastSelfSync(response);
+      await queryClient.invalidateQueries({ queryKey: IVX_OWNER_VARIABLES_QUERY_KEY });
+      const { syncedCount, missingInEnvCount, errorCount } = response.summary;
+      Alert.alert(
+        response.ok ? 'Sync from Rork complete' : 'Sync from Rork finished with issues',
+        `Synced: ${syncedCount}\nMissing on backend env: ${missingInEnvCount}\nErrors: ${errorCount}\n\nSecret values returned=false. Only masked previews are shown below.`,
+      );
+    },
+    onError: (error) => {
+      setLastSelfSync(null);
+      Alert.alert('Sync from Rork failed', error instanceof Error ? error.message : 'Owner Variables self-sync failed.');
+    },
+  });
+
+  const handleSelfSync = useCallback((overwriteExisting: boolean) => {
+    Alert.alert(
+      overwriteExisting ? 'Sync ALL credentials from Rork now?' : 'Sync missing credentials from Rork now?',
+      'The backend reads its own saved Rork env values (GITHUB_TOKEN, RENDER_API_KEY, SUPABASE_SERVICE_ROLE_KEY, AWS keys, AI keys, etc.) and writes encrypted copies into ivx_owner_variables. Your phone never sees the raw secrets. Response shows only masked previews.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Sync now', onPress: () => selfSyncMutation.mutate({ overwriteExisting }) },
+      ],
+    );
+  }, [selfSyncMutation]);
+
+  const [lastDeploy, setLastDeploy] = useState<IVXRenderDeployTriggerResult | null>(null);
+  const deployMutation = useMutation<IVXRenderDeployTriggerResult, Error, { clearCache: boolean }>({
+    mutationFn: async (input) => await triggerIVXRenderDeploy({ clearCache: input.clearCache }),
+    onSuccess: (result) => {
+      setLastDeploy(result);
+      if (result.ok) {
+        Alert.alert(
+          'Render deploy triggered',
+          `Service: ivx-holdings-platform\nService ID: ${result.serviceId ?? 'unknown'}\nDeploy ID: ${result.deployId ?? 'pending'}\nStatus: ${result.deployStatus ?? 'accepted'}\n\nWait ~2\u20135 minutes for Render to build and go Live, then refresh and tap Test Render.`,
+        );
+      } else {
+        Alert.alert('Render deploy not triggered', result.error || 'Backend rejected the deploy. Confirm RENDER_API_KEY and RENDER_SERVICE_ID are saved and tested above.');
+      }
+    },
+    onError: (error) => {
+      setLastDeploy(null);
+      Alert.alert('Render deploy failed', error instanceof Error ? error.message : 'Could not reach backend deploy action.');
+    },
+  });
+
+  const handleTriggerDeploy = useCallback((clearCache: boolean) => {
+    Alert.alert(
+      clearCache ? 'Deploy backend (clear cache)?' : 'Deploy backend now?',
+      'This triggers a Render deploy of ivx-holdings-platform using the backend\u2019s RENDER_API_KEY. The static site rork-global-real-estate-invest is NOT touched.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Deploy', onPress: () => deployMutation.mutate({ clearCache }) },
+      ],
+    );
+  }, [deployMutation]);
+
   const deleteMutation = useMutation({
     mutationFn: async (name: IVXOwnerVariableName) => await deleteIVXOwnerVariable(name),
     onMutate: (name) => setBusyName(name),
@@ -253,6 +419,53 @@ export default function IVXVariablesToolRoute() {
     const rowsByName = new Map((status?.variables ?? []).map((item) => [item.name, item]));
     return IVX_OWNER_VARIABLE_NAMES.map((name) => rowsByName.get(name)).filter((item): item is IVXOwnerVariableRow => Boolean(item));
   }, [status?.variables]);
+
+  const trackedRows = useMemo<IVXMergedVariableRow[]>(() => {
+    const backendByName = new Map((status?.variables ?? []).map((item) => [item.name as string, item]));
+    return IVX_TRACKED_VARIABLE_METADATA.map((metadata) => {
+      const backend = backendByName.get(metadata.name) ?? null;
+      const publicPresent = metadata.isPublic ? detectPublicVariablePresence(metadata.name) : false;
+      const backendSaved = backend?.saved === true;
+      const backendStatus = backend?.status ?? 'missing';
+      const verified = backendStatus === 'tested';
+      const present = backendSaved || publicPresent;
+      const runtimeReadable = backendStatus === 'tested' || backendStatus === 'saved' || (metadata.isPublic && publicPresent);
+      const status: IVXMergedVariableRow['status'] = backend ? backendStatus : present ? 'saved' : 'missing';
+      return {
+        metadata,
+        backend,
+        isWritable: OWNER_WRITABLE_NAMES.has(metadata.name),
+        present,
+        runtimeReadable,
+        verified,
+        lastVerifiedAt: backend?.lastTestedAt ?? null,
+        status,
+      };
+    });
+  }, [status?.variables]);
+
+  const trackedSummary = useMemo(() => {
+    let synced = 0;
+    let runtimeVerified = 0;
+    let presentNotVerified = 0;
+    let missing = 0;
+    let rollbackOnly = 0;
+    let devOnly = 0;
+    let safeToRemove = 0;
+    let ownerActionRequired = 0;
+    for (const row of trackedRows) {
+      if (row.present) synced += 1;
+      if (row.verified) runtimeVerified += 1;
+      if (row.present && !row.verified) presentNotVerified += 1;
+      if (!row.present) missing += 1;
+      if (row.metadata.rollbackOnly) rollbackOnly += 1;
+      if (row.metadata.devOnly) devOnly += 1;
+      if (row.metadata.safeToRemove) safeToRemove += 1;
+      if (row.metadata.ownerActionNeeded) ownerActionRequired += 1;
+    }
+    return { synced, runtimeVerified, presentNotVerified, missing, rollbackOnly, devOnly, safeToRemove, ownerActionRequired, total: trackedRows.length };
+  }, [trackedRows]);
+
   const providerNames = useMemo<IVXOwnerVariableProvider[]>(() => ['github', 'render', 'supabase', 'aws', 'ai', 'security', 'storage'], []);
   const requiredTotal = useMemo<number>(() => variables.filter((item) => item.required).length, [variables]);
   const savedRequiredCount = useMemo<number>(() => variables.filter((item) => item.required && item.saved).length, [variables]);
@@ -264,6 +477,9 @@ export default function IVXVariablesToolRoute() {
   }, []);
 
   const handleRefresh = useCallback(() => {
+    if (statusQuery.isFetching) {
+      return;
+    }
     void statusQuery.refetch();
   }, [statusQuery]);
 
@@ -300,7 +516,6 @@ export default function IVXVariablesToolRoute() {
 
   return (
     <ErrorBoundary fallbackTitle="IVX Owner Variables unavailable">
-      <Stack.Screen options={{ title: 'Owner Variables' }} />
       <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView
           contentContainerStyle={[styles.content, { paddingBottom: Math.max(120, insets.bottom + 96) }]}
@@ -352,6 +567,120 @@ export default function IVXVariablesToolRoute() {
               <Text style={styles.proofText}>Authenticated owner: {status?.authenticatedUserId ? 'yes' : 'not verified'}</Text>
               <Text style={styles.proofText}>Missing: {missingList.length > 0 ? missingList.join(', ') : 'none'}</Text>
             </View>
+          </View>
+
+          <View style={styles.card}>
+            <View style={styles.cardHeaderRow}>
+              <DownloadCloud size={18} color={Colors.primary} />
+              <View style={styles.cardHeaderCopy}>
+                <Text style={styles.cardTitle}>Sync from Rork to IVX now</Text>
+                <Text style={styles.cardSubtitle}>One tap: the backend reads its own saved Rork env values (GITHUB_TOKEN, RENDER_API_KEY, SUPABASE_SERVICE_ROLE_KEY, AWS, AI, etc.) and writes encrypted copies into ivx_owner_variables. Raw secrets never reach your phone — only masked previews are returned as proof.</Text>
+              </View>
+            </View>
+            <View style={styles.deployButtonRow}>
+              <Pressable
+                style={[styles.deployButtonPrimary, selfSyncMutation.isPending ? styles.buttonDisabled : null]}
+                disabled={selfSyncMutation.isPending}
+                onPress={() => handleSelfSync(true)}
+                testID="ivx-owner-variables-self-sync-overwrite"
+              >
+                {selfSyncMutation.isPending ? <ActivityIndicator size="small" color={Colors.black} /> : <DownloadCloud size={15} color={Colors.black} />}
+                <Text style={styles.deployButtonPrimaryText}>{selfSyncMutation.isPending ? 'Syncing…' : 'Sync ALL from Rork now'}</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.deployButtonSecondary, selfSyncMutation.isPending ? styles.buttonDisabled : null]}
+                disabled={selfSyncMutation.isPending}
+                onPress={() => handleSelfSync(false)}
+                testID="ivx-owner-variables-self-sync-missing-only"
+              >
+                <Text style={styles.deployButtonSecondaryText}>Sync only missing</Text>
+              </Pressable>
+            </View>
+            {lastSelfSync ? (
+              <View style={styles.proofGrid}>
+                <Text style={styles.proofText}>Synced: {lastSelfSync.summary.syncedCount}/{lastSelfSync.summary.candidatesChecked}</Text>
+                <Text style={styles.proofText}>Skipped existing: {lastSelfSync.summary.skippedExistingCount}</Text>
+                <Text style={styles.proofText}>Missing on backend env: {lastSelfSync.summary.missingInEnvCount}</Text>
+                <Text style={styles.proofText}>Errors: {lastSelfSync.summary.errorCount}</Text>
+                <Text style={styles.proofText}>Time: {formatTime(lastSelfSync.timestamp)}</Text>
+                {lastSelfSync.results.slice(0, 16).map((item) => (
+                  <Text key={`self-sync-${item.name}`} style={styles.proofText}>
+                    {item.name}: {item.action}{item.maskedPreview ? ` — ${item.maskedPreview}` : ''}{item.sourceEnvName && item.sourceEnvName !== item.name ? ` (from ${item.sourceEnvName})` : ''}
+                  </Text>
+                ))}
+                {lastSelfSync.error ? <Text style={styles.errorText}>{lastSelfSync.error}</Text> : null}
+              </View>
+            ) : (
+              <Text style={styles.securityNote}>Owner session token authorizes this sync. Phone never transmits raw secrets — the backend uses its own saved Rork env values and returns only masked previews like ghp_****1234.</Text>
+            )}
+          </View>
+
+          <View style={styles.card}>
+            <View style={styles.cardHeaderRow}>
+              <Rocket size={18} color={Colors.primary} />
+              <View style={styles.cardHeaderCopy}>
+                <Text style={styles.cardTitle}>Deploy backend now</Text>
+                <Text style={styles.cardSubtitle}>Triggers Render deploy of ivx-holdings-platform using the backend\u2019s RENDER_API_KEY + RENDER_SERVICE_ID. Pinned to https://ivx-holdings-platform.onrender.com to bypass the broken api.ivxholding.com routing. The static site rork-global-real-estate-invest is never touched.</Text>
+              </View>
+            </View>
+            <View style={styles.deployButtonRow}>
+              <Pressable
+                style={[styles.deployButtonPrimary, deployMutation.isPending ? styles.buttonDisabled : null]}
+                disabled={deployMutation.isPending}
+                onPress={() => handleTriggerDeploy(false)}
+                testID="ivx-owner-render-deploy-trigger"
+              >
+                {deployMutation.isPending ? <ActivityIndicator size="small" color={Colors.black} /> : <Rocket size={15} color={Colors.black} />}
+                <Text style={styles.deployButtonPrimaryText}>{deployMutation.isPending ? 'Triggering deploy…' : 'Deploy backend now'}</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.deployButtonSecondary, deployMutation.isPending ? styles.buttonDisabled : null]}
+                disabled={deployMutation.isPending}
+                onPress={() => handleTriggerDeploy(true)}
+                testID="ivx-owner-render-deploy-trigger-clear-cache"
+              >
+                <Text style={styles.deployButtonSecondaryText}>Deploy + clear cache</Text>
+              </Pressable>
+            </View>
+            {lastDeploy ? (
+              <View style={styles.proofGrid}>
+                <Text style={styles.proofText}>Endpoint: {lastDeploy.endpoint}</Text>
+                <Text style={styles.proofText}>HTTP: {lastDeploy.httpStatus}</Text>
+                <Text style={styles.proofText}>Service ID: {lastDeploy.serviceId ?? 'unknown'}</Text>
+                <Text style={styles.proofText}>Deploy ID: {lastDeploy.deployId ?? 'pending'}</Text>
+                <Text style={styles.proofText}>Status: {lastDeploy.deployStatus ?? (lastDeploy.ok ? 'accepted' : 'failed')}</Text>
+                <Text style={styles.proofText}>Time: {formatTime(lastDeploy.timestamp)}</Text>
+                {lastDeploy.error ? <Text style={styles.errorText}>{lastDeploy.error}</Text> : null}
+              </View>
+            ) : (
+              <Text style={styles.securityNote}>Owner session token is used to authorize this deploy. Secrets are never sent from the phone \u2014 the backend uses its own saved RENDER_API_KEY.</Text>
+            )}
+          </View>
+
+          <View style={styles.card}>
+            <View style={styles.cardHeaderRow}>
+              <Sparkles size={18} color={Colors.primary} />
+              <View style={styles.cardHeaderCopy}>
+                <Text style={styles.cardTitle}>Tracked credential metadata</Text>
+                <Text style={styles.cardSubtitle}>Single source of truth for safe metadata across Rork, Render, Supabase, AWS, AI, and storage. Secret values are never displayed, logged, or returned.</Text>
+              </View>
+            </View>
+            <View style={styles.summaryGrid}>
+              <SummaryStat label="Synced" value={`${trackedSummary.synced}/${trackedSummary.total}`} tone="primary" />
+              <SummaryStat label="Runtime verified" value={`${trackedSummary.runtimeVerified}`} tone="success" />
+              <SummaryStat label="Present, not verified" value={`${trackedSummary.presentNotVerified}`} tone="warning" />
+              <SummaryStat label="Missing" value={`${trackedSummary.missing}`} tone="danger" />
+              <SummaryStat label="Rollback-only" value={`${trackedSummary.rollbackOnly}`} tone="muted" />
+              <SummaryStat label="Dev-only" value={`${trackedSummary.devOnly}`} tone="muted" />
+              <SummaryStat label="Safe to remove" value={`${trackedSummary.safeToRemove}`} tone="muted" />
+              <SummaryStat label="Owner action" value={`${trackedSummary.ownerActionRequired}`} tone="warning" />
+            </View>
+            <View style={styles.trackedList}>
+              {trackedRows.map((row) => (
+                <TrackedVariableRow key={row.metadata.name} row={row} />
+              ))}
+            </View>
+            <Text style={styles.securityNote}>Metadata only: name, category, source, presence, runtime readability, verification timestamp, feature unlocked, and action required. Secret values are never displayed, logged, or returned.</Text>
           </View>
 
           <View style={styles.card}>
@@ -719,10 +1048,105 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '900' as const,
   },
+  deployButtonRow: {
+    flexDirection: 'row' as const,
+    flexWrap: 'wrap' as const,
+    gap: 10,
+  },
+  deployButtonPrimary: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 999,
+    backgroundColor: Colors.primary,
+  },
+  deployButtonPrimaryText: {
+    color: Colors.black,
+    fontSize: 13,
+    fontWeight: '900' as const,
+  },
+  deployButtonSecondary: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,215,0,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,215,0,0.32)',
+  },
+  deployButtonSecondaryText: {
+    color: Colors.primary,
+    fontSize: 12,
+    fontWeight: '900' as const,
+  },
   securityNote: {
     color: Colors.textTertiary,
     fontSize: 11,
     lineHeight: 17,
     fontWeight: '700' as const,
+  },
+  summaryGrid: {
+    flexDirection: 'row' as const,
+    flexWrap: 'wrap' as const,
+    gap: 8,
+  },
+  summaryStat: {
+    minWidth: 96,
+    flexGrow: 1,
+    flexBasis: '22%',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    backgroundColor: 'rgba(255,255,255,0.035)',
+    gap: 4,
+  },
+  summaryStatValue: {
+    fontSize: 18,
+    fontWeight: '900' as const,
+  },
+  summaryStatLabel: {
+    color: Colors.textSecondary,
+    fontSize: 10,
+    fontWeight: '800' as const,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  trackedList: {
+    gap: 10,
+  },
+  trackedCard: {
+    gap: 8,
+    padding: 12,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.025)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.07)',
+  },
+  metadataPillRow: {
+    flexDirection: 'row' as const,
+    flexWrap: 'wrap' as const,
+    gap: 6,
+  },
+  metadataPill: {
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  metadataPillText: {
+    fontSize: 10,
+    fontWeight: '800' as const,
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+  metadataNoteRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'flex-start' as const,
+    gap: 6,
   },
 });

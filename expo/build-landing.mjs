@@ -5,9 +5,9 @@ import { sanitizeLandingHtml } from './scripts/landing-html-sanitizer.mjs';
 
 const SUPABASE_URL = (process.env.EXPO_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '').trim();
 const SUPABASE_ANON_KEY = (process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '').trim();
-const API_BASE_URL = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || process.env.EXPO_PUBLIC_API_BASE_URL || 'https://ivxholding.com').trim().replace(/\/$/, '');
-const APP_URL = (process.env.EXPO_PUBLIC_APP_URL || process.env.EXPO_PUBLIC_RORK_API_BASE_URL || '').trim().replace(/\/$/, '');
-const BACKEND_URL = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || '').trim().replace(/\/$/, '');
+const API_BASE_URL = (process.env.EXPO_PUBLIC_IVX_API_BASE_URL || process.env.EXPO_PUBLIC_API_BASE_URL || 'https://ivxholding.com').trim().replace(/\/$/, '');
+const APP_URL = (process.env.EXPO_PUBLIC_APP_URL || process.env.EXPO_PUBLIC_IVX_API_BASE_URL || '').trim().replace(/\/$/, '');
+const BACKEND_URL = (process.env.EXPO_PUBLIC_IVX_API_BASE_URL || '').trim().replace(/\/$/, '');
 const GOOGLE_ADS_KEY = (process.env.EXPO_PUBLIC_GOOGLE_ADS_API_KEY || '').trim();
 const META_PIXEL_ID = (process.env.META_PIXEL_ID || '').trim();
 const TIKTOK_PIXEL_ID = (process.env.TIKTOK_PIXEL_ID || '').trim();
@@ -56,8 +56,8 @@ html = html.replace(/__IVX_LINKEDIN_PARTNER_ID__/g, LINKEDIN_PARTNER_ID);
 // Also inject into JS variables and meta tags directly
 html = html.replace(/var _FALLBACK_SUPABASE_URL = '[^']*';/, `var _FALLBACK_SUPABASE_URL = '${SUPABASE_URL}';`);
 html = html.replace(/var _FALLBACK_SUPABASE_KEY = '[^']*';/, `var _FALLBACK_SUPABASE_KEY = '${SUPABASE_ANON_KEY}';`);
-html = html.replace(/var _RORK_API_URL = '[^']*';/, `var _RORK_API_URL = '${API_BASE_URL}';`);
-html = html.replace(/var _RORK_BACKEND_URL = '[^']*';/, `var _RORK_BACKEND_URL = '${BACKEND_URL}';`);
+html = html.replace(/var _IVX_API_URL = '[^']*';/, `var _IVX_API_URL = '${API_BASE_URL}';`);
+html = html.replace(/var _IVX_BACKEND_URL = '[^']*';/, `var _IVX_BACKEND_URL = '${BACKEND_URL}';`);
 
 // Inject into meta tags content attributes
 html = html.replace(/<meta\s+name="ivx-sb-url"\s+content="[^"]*"/, `<meta name="ivx-sb-url" content="${SUPABASE_URL}"`);

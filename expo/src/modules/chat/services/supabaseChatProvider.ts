@@ -48,7 +48,7 @@ function buildStorageStatus(mode: ChatStorageMode, warning?: string | null): Cha
         label: 'Primary Supabase chat',
         detail: 'This IVX room is using the main conversations, participants, and messages tables with live sync.',
         persistenceLabel: 'Shared in Supabase',
-        deliveryLabel: 'Realtime + polling fallback',
+        deliveryLabel: 'Realtime + polling sync',
         visibilityLabel: 'Visible to room participants',
         warning: warning ?? null,
       };
@@ -65,18 +65,18 @@ function buildStorageStatus(mode: ChatStorageMode, warning?: string | null): Cha
     case 'fallback':
       return {
         mode,
-        label: 'Snapshot fallback',
-        detail: 'This IVX room is storing messages in the snapshot fallback path because the shared room tables are unavailable.',
+        label: 'Shared snapshot sync',
+        detail: 'This IVX room is storing messages through the shared snapshot path while primary room tables recover.',
         persistenceLabel: 'Shared in Supabase',
         deliveryLabel: 'Polling snapshot mode',
-        visibilityLabel: 'Shared fallback visibility',
+        visibilityLabel: 'Shared room visibility',
         warning: warning ?? null,
       };
     case 'local':
       return {
         mode,
-        label: 'Local device fallback',
-        detail: 'This IVX room is only saving messages on the current device because shared writes are blocked right now.',
+        label: 'Local device mode',
+        detail: 'This IVX room is saving messages on this device while shared writes recover.',
         persistenceLabel: 'Only on this device',
         deliveryLabel: 'Local cache only',
         visibilityLabel: 'Not shared with other users',
@@ -225,6 +225,7 @@ export const supabaseChatProvider: ChatProvider = {
     });
 
     syncStorageStatus(result.status);
+    return result.message;
   },
 
   subscribeToMessages(conversationId: string, onMessage) {

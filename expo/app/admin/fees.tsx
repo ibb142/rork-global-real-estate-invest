@@ -38,6 +38,8 @@ import { FeeConfiguration, FeeTransaction, FeeType } from '@/types';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { formatCurrencyWithDecimals } from '@/lib/formatters';
+import { useFeeConfigurations } from '@/lib/admin-queries';
+import { useUpsertFeeConfiguration } from '@/lib/platform-persistence';
 
 type FilterType = 'all' | 'buy' | 'sell' | 'withdrawal' | 'deposit';
 type StatusFilter = 'all' | 'collected' | 'pending' | 'waived';
@@ -104,12 +106,8 @@ export default function FeesScreen() {
     averageFeeAmount: feeQuery.data?.stats?.averageFeeAmount ?? 0,
     feesByType: feeQuery.data?.stats?.feesByType ?? { buy: 0, sell: 0, withdrawal: 0, deposit: 0 },
   };
-  const configurations: FeeConfiguration[] = [
-    { id: 'fee-buy', name: 'Buy Transaction Fee', type: 'buy' as FeeType, percentage: 2.5, minFee: 1, maxFee: 500, isActive: true, updatedAt: new Date().toISOString() },
-    { id: 'fee-sell', name: 'Sell Transaction Fee', type: 'sell' as FeeType, percentage: 2.5, minFee: 1, maxFee: 500, isActive: true, updatedAt: new Date().toISOString() },
-    { id: 'fee-withdrawal', name: 'Withdrawal Fee', type: 'withdrawal' as FeeType, percentage: 1.5, minFee: 2, maxFee: 100, isActive: true, updatedAt: new Date().toISOString() },
-    { id: 'fee-deposit', name: 'Deposit Fee', type: 'deposit' as FeeType, percentage: 0, minFee: 0, maxFee: 0, isActive: false, updatedAt: new Date().toISOString() },
-  ];
+  const { configurations } = useFeeConfigurations();
+  const upsertFee = useUpsertFeeConfiguration();
 
   const filteredTransactions = useMemo(() => {
     let result = transactions;
@@ -194,7 +192,7 @@ export default function FeesScreen() {
     setEditModalVisible(true);
   };
 
-  const handleSaveConfig = () => {
+  const handleSaveConfig = async () => {
     if (!selectedConfig) return;
 
     const percentage = parseFloat(editedPercentage);
@@ -216,20 +214,23 @@ export default function FeesScreen() {
       return;
     }
 
-    const index = configurations.findIndex((f: FeeConfiguration) => f.id === selectedConfig.id);
-    if (index !== -1) {
-      configurations[index] = {
-        ...configurations[index],
+    try {
+      await upsertFee.mutateAsync({
+        id: selectedConfig.id,
+        type: selectedConfig.type,
+        name: selectedConfig.name,
         percentage,
         minFee,
         maxFee,
         isActive: editedActive,
-        updatedAt: new Date().toISOString(),
-      };
+      });
+      setEditModalVisible(false);
+      Alert.alert('Success', 'Fee configuration saved to database');
+    } catch (e: any) {
+      const msg = e?.message ?? 'Unknown error';
+      console.log('[Fees] upsert error:', msg);
+      Alert.alert('Save Failed', msg);
     }
-
-    setEditModalVisible(false);
-    Alert.alert('Success', 'Fee configuration updated successfully');
   };
 
   const renderOverview = () => (
@@ -709,9 +710,9 @@ export default function FeesScreen() {
                   />
                 </View>
 
-                <TouchableOpacity style={styles.saveButton} onPress={handleSaveConfig}>
+                <TouchableOpacity style={styles.saveButton} onPress={handleSaveConfig} disabled={upsertFee.isPending}>
                   <Check size={20} color="#fff" />
-                  <Text style={styles.saveButtonText}>Save Changes</Text>
+                  <Text style={styles.saveButtonText}>{upsertFee.isPending ? 'Saving…' : 'Save Changes'}</Text>
                 </TouchableOpacity>
               </>
             )}

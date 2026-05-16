@@ -418,12 +418,12 @@ CREATE INDEX IF NOT EXISTS idx_messages_sender_created ON messages(sender_id, cr
 DO $ BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.messages; EXCEPTION WHEN duplicate_object THEN NULL; END $;
 
 INSERT INTO storage.buckets (id, name, public)
-VALUES ('chat-uploads', 'chat-uploads', true)
+VALUES ('ivx-chat-uploads', 'ivx-chat-uploads', true)
 ON CONFLICT (id) DO NOTHING;
 
 DO $ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname='chat_uploads_public_select' AND schemaname='storage' AND tablename='objects') THEN CREATE POLICY chat_uploads_public_select ON storage.objects FOR SELECT USING (bucket_id='chat-uploads'); END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname='chat_uploads_auth_insert' AND schemaname='storage' AND tablename='objects') THEN CREATE POLICY chat_uploads_auth_insert ON storage.objects FOR INSERT TO authenticated WITH CHECK (bucket_id='chat-uploads'); END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname='ivx_chat_uploads_public_select' AND schemaname='storage' AND tablename='objects') THEN CREATE POLICY ivx_chat_uploads_public_select ON storage.objects FOR SELECT USING (bucket_id='ivx-chat-uploads'); END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname='ivx_chat_uploads_auth_insert' AND schemaname='storage' AND tablename='objects') THEN CREATE POLICY ivx_chat_uploads_auth_insert ON storage.objects FOR INSERT TO authenticated WITH CHECK (bucket_id='ivx-chat-uploads'); END IF;
 END $;
 
 -- 14. JV_DEALS

@@ -2,6 +2,7 @@ import type { PrivilegedIVXRole } from './access';
 
 export const IVX_OWNER_AI_API_PATH = '/api/ivx/owner-ai';
 export const IVX_OWNER_AI_BUCKET = 'ivx-owner-files';
+export const IVX_CHAT_UPLOAD_BUCKET = 'ivx-chat-uploads';
 export const IVX_OWNER_AI_MAX_UPLOAD_BYTES: number | null = null;
 
 export const IVX_OWNER_AI_TABLES = {
@@ -10,6 +11,9 @@ export const IVX_OWNER_AI_TABLES = {
   inboxState: 'ivx_inbox_state',
   aiRequests: 'ivx_ai_requests',
   knowledgeDocuments: 'ivx_knowledge_documents',
+  knowledgeChunks: 'ivx_knowledge_chunks',
+  commandLogs: 'ivx_command_logs',
+  accessTestRows: 'ivx_access_test_rows',
 } as const;
 
 export type IVXOwnerRole = PrivilegedIVXRole;
@@ -165,24 +169,35 @@ export type IVXOwnerAIRoomStatus = {
   warning?: string;
 };
 
+export type IVXOwnerAICapabilityId =
+  | 'ai_chat'
+  | 'knowledge_answers'
+  | 'owner_commands'
+  | 'code_aware_support'
+  | 'file_upload'
+  | 'inbox_sync'
+  | 'backend_access'
+  | 'supabase_inspection'
+  | 'supabase_tables'
+  | 'supabase_schema'
+  | 'supabase_columns'
+  | 'supabase_rls';
+
+export type IVXOwnerAICapabilityProof = {
+  success: boolean;
+  executable: boolean;
+  functionName: string;
+  checkedAt: string;
+  proof: Record<string, unknown>;
+  error?: string;
+};
+
 export type IVXOwnerAIHealthProbeResponse = IVXOwnerAIResponse & {
   probe: true;
   resolvedSchema: 'ivx' | 'generic' | 'none';
   roomStatus: IVXOwnerAIRoomStatus;
-  capabilities: {
-    ai_chat: boolean;
-    knowledge_answers: boolean;
-    owner_commands: boolean;
-    code_aware_support: boolean;
-    file_upload: boolean;
-    inbox_sync: boolean;
-    backend_access?: boolean;
-    supabase_inspection?: boolean;
-    supabase_tables?: boolean;
-    supabase_schema?: boolean;
-    supabase_columns?: boolean;
-    supabase_rls?: boolean;
-  };
+  capabilities: Record<IVXOwnerAICapabilityId, boolean>;
+  capabilityProofs: Record<IVXOwnerAICapabilityId, IVXOwnerAICapabilityProof>;
 };
 
 export type IVXApiError = {

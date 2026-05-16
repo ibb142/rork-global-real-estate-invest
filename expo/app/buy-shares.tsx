@@ -72,7 +72,7 @@ export default function BuySharesScreen() {
   const property = supabaseProperty;
 
   const { balance } = useWalletBalance();
-  const walletBalance = balance.available;
+  const walletBalance = balance?.available ?? 0;
 
   const adminCardEnabled = useQuery({
     queryKey: ['admin-card-enabled'],

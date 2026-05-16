@@ -40,7 +40,7 @@ function resolveConfiguredPasswordResetUrl(value: string): { url: string; reject
 }
 
 export function inspectPasswordResetRedirect(): PasswordResetRedirectAudit {
-  const configuredValue = (process.env.EXPO_PUBLIC_RORK_AUTH_URL || '').trim();
+  const configuredValue = (process.env.EXPO_PUBLIC_IVX_AUTH_URL || '').trim();
   const configuredResolution = resolveConfiguredPasswordResetUrl(configuredValue);
   const resolvedUrl = configuredResolution.url || DEFAULT_PASSWORD_RESET_REDIRECT_URL;
 

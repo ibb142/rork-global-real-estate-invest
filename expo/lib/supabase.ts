@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 
@@ -78,27 +79,65 @@ function logAuthTokenRequestIfDev(urlStr: string, init: RequestInit | undefined)
 export const SUPABASE_NOT_CONFIGURED_MESSAGE =
   'Supabase URL is required. Add EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY to your environment variables. Restart the dev server after changing env.';
 
-const ExpoSecureStoreAdapter = {
+/**
+ * Supabase session storage adapter.
+ *
+ * IMPORTANT: We use AsyncStorage (not SecureStore) because Supabase session
+ * payloads (access_token + refresh_token + user JSON) routinely exceed 2KB,
+ * which is above expo-secure-store's per-value limit on Android. When the
+ * limit is hit, setItemAsync fails silently and the session is never persisted
+ * — causing the user to be logged out every time the app is closed.
+ *
+ * AsyncStorage is the storage layer recommended by the official Supabase
+ * Expo/React Native guide and supports payloads of any practical size.
+ *
+ * On web, AsyncStorage transparently uses localStorage. SecureStore is no-op
+ * on web, so this adapter also fixes web persistence in Expo web builds.
+ *
+ * Migration: on first read, if the new AsyncStorage slot is empty but a
+ * legacy SecureStore value exists for the same key, we copy it over so
+ * users who were authenticated under the old setup remain logged in.
+ */
+async function migrateLegacySecureStoreValue(key: string): Promise<string | null> {
+  if (Platform.OS === 'web') return null;
+  try {
+    const legacy = await SecureStore.getItemAsync(key);
+    if (!legacy) return null;
+    await AsyncStorage.setItem(key, legacy);
+    try { await SecureStore.deleteItemAsync(key); } catch {}
+    console.log('[Supabase] Migrated legacy SecureStore session to AsyncStorage for key:', key);
+    return legacy;
+  } catch {
+    return null;
+  }
+}
+
+const AsyncStorageAdapter = {
   getItem: async (key: string): Promise<string | null> => {
     try {
-      return await SecureStore.getItemAsync(key);
-    } catch {
-      console.log('[Supabase] SecureStore getItem error for key:', key);
+      const value = await AsyncStorage.getItem(key);
+      if (value !== null) return value;
+      return await migrateLegacySecureStoreValue(key);
+    } catch (error) {
+      console.log('[Supabase] AsyncStorage getItem error for key:', key, (error as Error)?.message ?? 'unknown');
       return null;
     }
   },
   setItem: async (key: string, value: string): Promise<void> => {
     try {
-      await SecureStore.setItemAsync(key, value);
-    } catch {
-      console.log('[Supabase] SecureStore setItem error for key:', key);
+      await AsyncStorage.setItem(key, value);
+    } catch (error) {
+      console.log('[Supabase] AsyncStorage setItem error for key:', key, (error as Error)?.message ?? 'unknown');
     }
   },
   removeItem: async (key: string): Promise<void> => {
     try {
-      await SecureStore.deleteItemAsync(key);
-    } catch {
-      console.log('[Supabase] SecureStore removeItem error for key:', key);
+      await AsyncStorage.removeItem(key);
+    } catch (error) {
+      console.log('[Supabase] AsyncStorage removeItem error for key:', key, (error as Error)?.message ?? 'unknown');
+    }
+    if (Platform.OS !== 'web') {
+      try { await SecureStore.deleteItemAsync(key); } catch {}
     }
   },
 };
@@ -107,7 +146,7 @@ let _client: SupabaseClient | null = null;
 if (supabaseUrl && supabaseAnonKey) {
   _client = createClient(effectiveUrl, supabaseAnonKey, {
     auth: {
-      storage: ExpoSecureStoreAdapter,
+      storage: AsyncStorageAdapter,
       autoRefreshToken: true,
       persistSession: true,
       detectSessionInUrl: Platform.OS === 'web',
@@ -121,7 +160,7 @@ if (supabaseUrl && supabaseAnonKey) {
         ...(isSelfHosted ? {} : { 'x-connection-pool': 'true' }),
         'x-client-info': `ivx-app/${Platform.OS}`,
       },
-      fetch: (url: RequestInfo | URL, options?: RequestInit) => {
+      fetch: ((url: RequestInfo | URL, options?: RequestInit) => {
         const urlStr = requestUrlString(url);
         const nextOptions = stripConnectionPoolHeaderForAuth(urlStr, options);
         logAuthTokenRequestIfDev(urlStr, nextOptions);
@@ -132,7 +171,7 @@ if (supabaseUrl && supabaseAnonKey) {
           ...nextOptions,
           signal: controller.signal,
         }).finally(() => clearTimeout(timeout));
-      },
+      }) as typeof fetch,
     },
     realtime: {
       params: {

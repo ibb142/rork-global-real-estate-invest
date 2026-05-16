@@ -10,7 +10,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
-  Linking,
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import {
@@ -25,7 +24,6 @@ import {
   FileText,
   Globe,
   MapPin,
-  Phone,
   Mail,
   Award,
   TrendingUp,
@@ -858,13 +856,6 @@ export default function BrokerApplyScreen() {
               >
                 <Mail size={16} color={Colors.primary} />
                 <Text style={styles.contactButtonText}>brokers@ivxholding.com</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.contactButton}
-                onPress={() => Linking.openURL('tel:+15616443503')}
-              >
-                <Phone size={16} color={Colors.primary} />
-                <Text style={styles.contactButtonText}>+1 (561) 644-3503</Text>
               </TouchableOpacity>
             </View>
           </View>

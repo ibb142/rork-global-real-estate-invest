@@ -159,7 +159,7 @@ export function useTeamMembers() {
         firstName: 'IVXHOLDINGS',
         lastName: 'CEO',
         avatar: '',
-        phone: '+1 (561) 644-3503',
+        phone: '',
         roleId: 'role-ceo',
         role: ADMIN_ROLES[0] as AdminRole,
         status: 'active' as const,

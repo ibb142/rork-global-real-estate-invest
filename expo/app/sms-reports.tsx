@@ -97,7 +97,7 @@ const DEFAULT_SMS_REPORT_STATUS: SMSReportStatus = {
   id: 'default',
   status: 'stopped',
   running: false,
-  phone: '+1 561-644-3503',
+  phone: '',
   total_sent: 0,
   total_failed: 0,
   total_simulated: 0,
@@ -888,7 +888,7 @@ export default function SMSReportsScreen() {
               <View>
                 <Text style={styles.statusLabel}>{isRunning ? "LIVE REPORTING" : "INACTIVE"}</Text>
                 <Text style={styles.statusPhone}>
-                  <Phone size={12} color={Colors.textSecondary} /> {status?.phone || "+1 561-644-3503"}
+                  <Phone size={12} color={Colors.textSecondary} /> {status?.phone || "No phone configured"}
                 </Text>
               </View>
             </View>

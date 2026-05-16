@@ -1,6 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { View, Text, StyleSheet, Animated, Dimensions, Platform } from 'react-native';
 import Colors from '@/constants/colors';
+import { renderSafeViewChildren } from '@/components/SafeViewChildren';
 import type { TrendDelta } from '@/lib/analytics-compute';
 import { ArrowUpRight, ArrowDownRight } from 'lucide-react-native';
 
@@ -70,7 +71,7 @@ export function AnimatedRing({ percent, size, strokeWidth, color, children }: {
         );
       })}
       <View style={{ position: 'absolute', alignItems: 'center', justifyContent: 'center' }}>
-        {children}
+        {renderSafeViewChildren(children)}
       </View>
     </View>
   );

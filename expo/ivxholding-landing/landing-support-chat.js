@@ -186,7 +186,7 @@
       'Facts:',
       '- Legal entity: IVX Holdings LLC',
       '- Investor relations: investors@ivxholding.com',
-      '- Phone: +1 (561) 644-3503',
+      '- Investor relations: investors@ivxholding.com',
       '- Business address: 1001 Brickell Bay Drive, Suite 2700, Miami, FL 33131',
       '- Public visitors can request investor access through the intake on this page.',
       '- Approved members move into registration, profile activation, wallet readiness, and transaction visibility.',
@@ -221,7 +221,7 @@
     }
 
     if (lowerText.indexOf('chatgpt') !== -1 || lowerText.indexOf('openai') !== -1 || lowerText.indexOf('gpt') !== -1) {
-      return 'For ChatGPT or OpenAI-style integration, the safest pattern is a controlled backend or approved toolkit layer, clear prompt rules, rate limits, fallbacks, and human-governed releases. I can explain the setup, but I should not claim autonomous deployment or self-healing code.';
+      return 'For ChatGPT or OpenAI-style integration, the safest pattern is a controlled backend or approved gateway layer, clear prompt rules, rate limits, fallbacks, and human-governed releases. I can explain the setup, but I should not claim autonomous deployment or self-healing code.';
     }
 
     if (lowerText.indexOf('aws') !== -1 || lowerText.indexOf('amazon') !== -1 || lowerText.indexOf('s3') !== -1 || lowerText.indexOf('cloudfront') !== -1 || lowerText.indexOf('bucket') !== -1) {
@@ -401,7 +401,7 @@
       }
 
       var ticketId = insertResult.data && insertResult.data.id ? String(insertResult.data.id) : 'pending';
-      appendMessage('support', 'Your live investor support request is in. Ticket #' + ticketId.slice(-6) + '. The IVX team will follow up through investor relations. You can also email investors@ivxholding.com or call +1 (561) 644-3503 if you want immediate contact.');
+      appendMessage('support', 'Your live investor support request is in. Ticket #' + ticketId.slice(-6) + '. The IVX team will follow up through investor relations. You can also email investors@ivxholding.com if you want immediate contact.');
       setStatus('Live support requested', 'Investor relations will follow up from the public queue.', 'connected');
 
       if (typeof window.fireAdEvent === 'function') {
@@ -413,8 +413,8 @@
       }
     } catch (error) {
       console.warn('[IVX Landing Chat] Live support request failed:', error && error.message ? error.message : error);
-      appendMessage('support', 'We could not create the live support ticket automatically right now. Please email investors@ivxholding.com or call +1 (561) 644-3503 and mention that you requested investor chat support on the landing page.');
-      setStatus('Direct investor contact recommended', 'Email or call IVX investor relations now.', 'warning');
+      appendMessage('support', 'We could not create the live support ticket automatically right now. Please email investors@ivxholding.com and mention that you requested investor chat support on the landing page.');
+      setStatus('Direct investor contact recommended', 'Email IVX investor relations now.', 'warning');
     } finally {
       state.busy = false;
       updateBusyState();

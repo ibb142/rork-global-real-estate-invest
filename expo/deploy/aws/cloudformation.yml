@@ -735,10 +735,16 @@ Resources:
 
 Outputs:
   ALBDNS:
-    Description: ALB DNS name — point your domain CNAME here
+    Description: ALB DNS name — point your Route53 alias A record here
     Value: !GetAtt ApplicationLoadBalancer.DNSName
     Export:
       Name: !Sub "${AppName}-alb-dns"
+
+  ALBCanonicalHostedZoneID:
+    Description: ALB canonical hosted zone ID for Route53 alias A records
+    Value: !GetAtt ApplicationLoadBalancer.CanonicalHostedZoneID
+    Export:
+      Name: !Sub "${AppName}-alb-hosted-zone-id"
 
   ECRRepositoryURI:
     Description: ECR repository URI for Docker pushes

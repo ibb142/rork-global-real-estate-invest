@@ -1,8 +1,16 @@
-import React from 'react';
+import React, { useMemo, useRef } from 'react';
 import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
 import { Stack } from 'expo-router';
 import Colors from '@/constants/colors';
 import { useAdminGuard } from '@/hooks/useAdminGuard';
+
+const ADMIN_GUARD_OPTIONS = { redirectOnFail: true } as const;
+
+const ADMIN_STACK_SCREEN_OPTIONS = {
+  headerShown: false,
+  contentStyle: { backgroundColor: Colors.background },
+  animation: 'slide_from_right' as const,
+} as const;
 
 const layoutStyles = StyleSheet.create({
   loading: {
@@ -19,7 +27,14 @@ const layoutStyles = StyleSheet.create({
 });
 
 export default function AdminLayout() {
-  const { isAdmin, isVerifying } = useAdminGuard({ redirectOnFail: true });
+  const renderCountRef = useRef(0);
+  renderCountRef.current += 1;
+  if (renderCountRef.current === 1 || renderCountRef.current % 10 === 0) {
+    console.log('[AdminLayout][render-trace] render count:', renderCountRef.current);
+  }
+
+  const guardOptions = useMemo(() => ADMIN_GUARD_OPTIONS, []);
+  const { isAdmin, isVerifying } = useAdminGuard(guardOptions);
 
   if (isVerifying) {
     return (
@@ -39,13 +54,7 @@ export default function AdminLayout() {
   }
 
   return (
-    <Stack
-      screenOptions={{
-        headerShown: false,
-        contentStyle: { backgroundColor: Colors.background },
-        animation: 'slide_from_right',
-      }}
-    >
+    <Stack screenOptions={ADMIN_STACK_SCREEN_OPTIONS}>
       <Stack.Screen name="index" />
       <Stack.Screen name="owner-controls" />
       <Stack.Screen name="members" />

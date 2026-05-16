@@ -487,8 +487,14 @@ export interface LoginResult {
   message: string;
   requiresTwoFactor?: boolean;
   failureReason?: LoginFailureReason;
+  /** Exact Supabase Auth error message returned by the password grant when present. */
+  supabaseErrorMessage?: string;
   /** Supabase Auth API code when present (e.g. invalid_credentials). */
   supabaseErrorCode?: string;
+  /** Supabase Auth HTTP status when present. */
+  supabaseErrorStatus?: number;
+  /** Supabase Auth error class/name when present. */
+  supabaseErrorName?: string;
 }
 
 type RegisterAccountType = 'investor' | 'owner';
@@ -605,7 +611,7 @@ async function fetchWithOwnerRegistrationTimeout(url: string, init: RequestInit)
 }
 
 function isOwnerRegistrationLookupSignIn(status: OwnerEmailLookupStatus | null | undefined): boolean {
-  return status?.authUserExists === true || status?.action === 'sign_in' || status?.safeToSignup === false && status?.authUserExists === true;
+  return status?.authUserExists === true || status?.action === 'sign_in';
 }
 
 async function checkOwnerRegistrationStatusThroughBackend(email: string): Promise<OwnerEmailLookupStatus | null> {
@@ -822,6 +828,24 @@ export interface OwnerDirectAccessAuditResult {
 type OwnerIdentityAuditStatus = 'verified_owner_authority' | 'trusted_device_owner_authority' | 'normal_user_account' | 'email_mismatch' | 'unverified';
 type OwnerIdentityAuditSource = ServerRoleResolutionSource | 'owner_ip_access' | 'local_session' | 'not_authenticated';
 
+function areAuthUsersEqual(left: AuthUser | null, right: AuthUser | null): boolean {
+  if (left === right) return true;
+  if (!left || !right) return false;
+  return left.id === right.id
+    && left.email === right.email
+    && left.firstName === right.firstName
+    && left.lastName === right.lastName
+    && left.kycStatus === right.kycStatus
+    && left.role === right.role
+    && left.emailVerified === right.emailVerified
+    && left.twoFactorEnabled === right.twoFactorEnabled
+    && left.phone === right.phone
+    && left.country === right.country
+    && left.avatar === right.avatar
+    && left.accountType === right.accountType
+    && left.accountStatus === right.accountStatus;
+}
+
 export interface OwnerIdentityAuditResult {
   requestedEmail: string | null;
   authenticatedUserId: string | null;
@@ -866,6 +890,10 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   const sessionWarmupKeyRef = useRef<string | null>(null);
   const ownerRepairKeyRef = useRef<string | null>(null);
   const activeSessionUserIdRef = useRef<string | null>(null);
+  const lastHandledSessionKeyRef = useRef<string | null>(null);
+  const lastHandledSessionResultRef = useRef<AuthSessionResult | null>(null);
+  const inFlightSessionKeyRef = useRef<string | null>(null);
+  const inFlightSessionPromiseRef = useRef<Promise<AuthSessionResult> | null>(null);
 
   const resolveServerRole = useCallback(async (userId: string): Promise<ServerRoleResolution> => {
     try {
@@ -1010,10 +1038,16 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         }
 
         console.log('[Auth] Background role hydration updating role for:', sessionUserId, 'from:', optimisticRole, 'to:', normalizedResolvedRole, 'source:', resolvedRole.source);
-        setUserRole(normalizedResolvedRole);
-        setUser((previousUser) => previousUser?.id === sessionUserId
-          ? { ...previousUser, role: normalizedResolvedRole }
-          : previousUser);
+        setUserRole((currentRole) => currentRole === normalizedResolvedRole ? currentRole : normalizedResolvedRole);
+        setUser((previousUser) => {
+          if (previousUser?.id !== sessionUserId) {
+            return previousUser;
+          }
+          if (previousUser.role === normalizedResolvedRole) {
+            return previousUser;
+          }
+          return { ...previousUser, role: normalizedResolvedRole };
+        });
         setAuthCredentials(null, sessionUserId, normalizedResolvedRole);
         await persistAuth({
           token: session.access_token,
@@ -1028,33 +1062,18 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   }, [resolveServerRole]);
 
   const clearTwoFactorState = useCallback(() => {
-    setRequiresTwoFactor(false);
-    setPendingTwoFactorEmail('');
-    setPendingTwoFactorFactor(null);
+    setRequiresTwoFactor((current) => current ? false : current);
+    setPendingTwoFactorEmail((currentEmail) => currentEmail ? '' : currentEmail);
+    setPendingTwoFactorFactor((currentFactor) => currentFactor === null ? currentFactor : null);
   }, []);
 
-  const requireTwoFactorIfNeeded = useCallback(async (session: Session, source: string): Promise<boolean> => {
-    try {
-      const requirement = await getMfaChallengeRequirement(supabase);
-      if (!requirement.required) {
-        clearTwoFactorState();
-        return false;
-      }
-
-      console.log('[Auth] MFA challenge required after', source, 'email:', session.user.email ?? session.user.id, 'factor:', requirement.factor?.friendlyName ?? 'unknown');
-      activeSessionUserIdRef.current = null;
-      setUser(null);
-      setIsAuthenticated(false);
-      setUserRole('investor');
-      await clearStoredAuth();
-      setPendingTwoFactorEmail(session.user.email ?? '');
-      setPendingTwoFactorFactor(requirement.factor);
-      setRequiresTwoFactor(true);
-      return true;
-    } catch (error) {
-      console.log('[Auth] MFA requirement check note:', (error as Error)?.message ?? 'unknown');
-      return false;
-    }
+  // 2FA gating disabled at the owner's request. Owner login must route
+  // directly to /admin/owner-controls without any MFA pending state.
+  // We always clear any stale 2FA state and never block the session.
+  const requireTwoFactorIfNeeded = useCallback(async (_session: Session, source: string): Promise<boolean> => {
+    console.log('[Auth] 2FA gating disabled — skipping MFA challenge after', source);
+    clearTwoFactorState();
+    return false;
   }, [clearTwoFactorState]);
 
   const doLogout = useCallback(async () => {
@@ -1067,12 +1086,16 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     sessionWarmupKeyRef.current = null;
     ownerRepairKeyRef.current = null;
     activeSessionUserIdRef.current = null;
+    lastHandledSessionKeyRef.current = null;
+    lastHandledSessionResultRef.current = null;
+    inFlightSessionKeyRef.current = null;
+    inFlightSessionPromiseRef.current = null;
     await clearStoredAuth();
-    setUser(null);
-    setIsAuthenticated(false);
-    setUserRole('investor');
+    setUser((previousUser) => previousUser === null ? previousUser : null);
+    setIsAuthenticated((current) => current ? false : current);
+    setUserRole((currentRole) => currentRole === 'investor' ? currentRole : 'investor');
     clearTwoFactorState();
-    setIsOwnerIPAccess(false);
+    setIsOwnerIPAccess((current) => current ? false : current);
     if (sessionMonitorCleanup.current) {
       sessionMonitorCleanup.current();
       sessionMonitorCleanup.current = null;
@@ -1182,13 +1205,26 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
 
   const handleSession = useCallback(async (session: Session): Promise<AuthSessionResult> => {
     const supaUser = session.user;
+    const sessionKey = `${supaUser.id}:${session.expires_at ?? 'no-expiry'}:${session.access_token ?? 'no-token'}`;
+    const lastSessionResult = lastHandledSessionResultRef.current;
+    if (lastHandledSessionKeyRef.current === sessionKey && lastSessionResult) {
+      console.log('[Auth] Duplicate completed session event ignored for:', supaUser.id);
+      return lastSessionResult;
+    }
+
+    if (inFlightSessionKeyRef.current === sessionKey && inFlightSessionPromiseRef.current) {
+      console.log('[Auth] Duplicate in-flight session event joined for:', supaUser.id);
+      return inFlightSessionPromiseRef.current;
+    }
+
+    const handleSessionWork = async (): Promise<AuthSessionResult> => {
     const meta = supaUser.user_metadata || {};
 
     if (ownerIPActiveRef.current) {
       console.log('[Auth] Replacing transient trusted-owner session with real Supabase session for:', supaUser.id);
     }
     ownerIPActiveRef.current = false;
-    setIsOwnerIPAccess(false);
+    setIsOwnerIPAccess((current) => current ? false : current);
 
     if (shouldRepairOwnerAfterLogin(session)) {
       const repairKey = `${supaUser.id}:${supaUser.updated_at ?? supaUser.email ?? 'owner'}`;
@@ -1215,7 +1251,21 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       null,
     );
     const resolvedSessionRole = roleBootstrap ?? await resolveLocalSessionRoleFallback(supaUser.id);
-    const role = normalizeRole(resolvedSessionRole.role);
+    let role = normalizeRole(resolvedSessionRole.role);
+
+    // Owner email allow-list: if the authenticated email matches the configured
+    // EXPO_PUBLIC_OWNER_EMAIL, force the role to 'owner'. This guarantees the
+    // owner account has full end-to-end admin access across every module
+    // (Home, Invest, Market, Portfolio, Chat, Profile, Owner Controls, Admin
+    // Hub, Revenue, Properties, Fees, Settings, Landing Control, Landing
+    // Analytics, Landing Submissions, Deploy Waitlist, Waitlist Admin,
+    // Banners, JV Deals, Land Partners, Users & Investors, Team, KYC,
+    // Broker/Agent Applications, Diagnostic modules, etc.) even when the
+    // Supabase profiles row is missing or drifted to investor.
+    if (isOwnerAdminEmail(supaUser.email) && role !== 'owner') {
+      console.log('[Auth] Owner email allow-list upgrade — promoting role from', role, 'to owner for:', sanitizeEmail(supaUser.email ?? 'unknown'));
+      role = 'owner';
+    }
 
     if (resolvedSessionRole.source === 'timeout_fallback') {
       console.log('[Auth] Session role bootstrap used timeout fallback for:', supaUser.id, 'role:', role);
@@ -1232,11 +1282,11 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       sessionWarmupKeyRef.current = null;
       ownerRepairKeyRef.current = null;
       activeSessionUserIdRef.current = null;
-      setUser(null);
-      setUserRole('investor');
-      setIsAuthenticated(false);
-      setIsOwnerIPAccess(false);
-      setDetectedIP(null);
+      setUser((previousUser) => previousUser === null ? previousUser : null);
+      setUserRole((currentRole) => currentRole === 'investor' ? currentRole : 'investor');
+      setIsAuthenticated((current) => current ? false : current);
+      setIsOwnerIPAccess((current) => current ? false : current);
+      setDetectedIP((currentIP) => currentIP === null ? currentIP : null);
       clearTwoFactorState();
       setAuthCredentials(null, null, 'investor');
       await clearStoredAuth();
@@ -1249,7 +1299,10 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       } catch (error) {
         console.log('[Auth] Admin access lock signOut note:', extractAuthErrorMessage(error) ?? 'unknown');
       }
-      return { accepted: false, role, blockedReason };
+      const blockedResult = { accepted: false, role, blockedReason };
+      lastHandledSessionKeyRef.current = sessionKey;
+      lastHandledSessionResultRef.current = blockedResult;
+      return blockedResult;
     }
 
     const authUser: AuthUser = {
@@ -1257,7 +1310,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       email: supaUser.email || '',
       firstName: meta.firstName || meta.first_name || '',
       lastName: meta.lastName || meta.last_name || '',
-      kycStatus: meta.kycStatus || meta.kyc_status || 'pending',
+      kycStatus: isAdminRole(role) ? 'approved' : (meta.kycStatus || meta.kyc_status || 'pending'),
       role,
       emailVerified: !!supaUser.email_confirmed_at,
       twoFactorEnabled: false,
@@ -1269,9 +1322,9 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
 
     clearTwoFactorState();
     activeSessionUserIdRef.current = supaUser.id;
-    setUser(authUser);
-    setUserRole(role);
-    setIsAuthenticated(true);
+    setUser((previousUser) => areAuthUsersEqual(previousUser, authUser) ? previousUser : authUser);
+    setUserRole((currentRole) => currentRole === role ? currentRole : role);
+    setIsAuthenticated((current) => current ? current : true);
 
     await persistAuth({
       token: session.access_token,
@@ -1288,7 +1341,21 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       hydrateResolvedRoleInBackground(session, role);
     }
 
-    return { accepted: true, role, blockedReason: null };
+    const acceptedResult = { accepted: true, role, blockedReason: null };
+    lastHandledSessionKeyRef.current = sessionKey;
+    lastHandledSessionResultRef.current = acceptedResult;
+    return acceptedResult;
+    };
+
+    const sessionPromise = handleSessionWork().finally(() => {
+      if (inFlightSessionKeyRef.current === sessionKey) {
+        inFlightSessionKeyRef.current = null;
+        inFlightSessionPromiseRef.current = null;
+      }
+    });
+    inFlightSessionKeyRef.current = sessionKey;
+    inFlightSessionPromiseRef.current = sessionPromise;
+    return sessionPromise;
   }, [clearTwoFactorState, hydrateResolvedRoleInBackground, resolveLocalSessionRoleFallback, resolveServerRole, startMonitor, warmSessionInBackground]);
 
   const activateOwnerIPSession = useCallback((ip: string, verifiedRole: string = 'owner', verifiedUserId?: string | null, verifiedEmail?: string | null) => {
@@ -1312,11 +1379,11 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     ownerIPActiveRef.current = true;
     sessionWarmupKeyRef.current = null;
     activeSessionUserIdRef.current = ownerUser.id;
-    setUser(ownerUser);
-    setUserRole(effectiveRole);
-    setIsAuthenticated(true);
-    setIsOwnerIPAccess(true);
-    setDetectedIP(ip);
+    setUser((previousUser) => areAuthUsersEqual(previousUser, ownerUser) ? previousUser : ownerUser);
+    setUserRole((currentRole) => currentRole === effectiveRole ? currentRole : effectiveRole);
+    setIsAuthenticated((current) => current ? current : true);
+    setIsOwnerIPAccess((current) => current ? current : true);
+    setDetectedIP((currentIP) => currentIP === ip ? currentIP : ip);
     setAuthCredentials(null, ownerUser.id, effectiveRole);
     console.log('[Auth] Trusted owner IP access activated for IP:', ip, 'role:', effectiveRole, 'userId:', ownerUser.id);
 
@@ -1354,7 +1421,8 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
 
       const shouldVerifyOwnerNetwork = ipEnabled && ownerDeviceVerified;
       const currentIP = shouldVerifyOwnerNetwork ? await fetchDeviceIP() : null;
-      setDetectedIP(currentIP ?? storedIP ?? null);
+      const nextDetectedIP = currentIP ?? storedIP ?? null;
+      setDetectedIP((currentDetectedIP) => currentDetectedIP === nextDetectedIP ? currentDetectedIP : nextDetectedIP);
       const trustedDeviceWindowActive = isTrustedOwnerDeviceWithinWindow(ownerDeviceMeta.verifiedAt);
       const hasTrustedWindowAccess = ipEnabled && ownerDeviceVerified && trustedDeviceWindowActive && isValidOwnerVerifiedUserId(ownerDeviceMeta.userId);
       const trustedRole = normalizeRole(ownerDeviceMeta.role);
@@ -1476,6 +1544,10 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         if (cancelled) {
           return;
         }
+        if (_event === 'INITIAL_SESSION') {
+          console.log('[Auth] State changed: INITIAL_SESSION — handled by startup bootstrap');
+          return;
+        }
         if (ownerIPActiveRef.current) {
           console.log('[Auth] State changed:', _event, '— IGNORED (owner IP active)');
           return;
@@ -1491,10 +1563,15 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
           }
         } else if (_event === 'SIGNED_OUT') {
           sessionWarmupKeyRef.current = null;
+          ownerRepairKeyRef.current = null;
           activeSessionUserIdRef.current = null;
-          setUser(null);
-          setIsAuthenticated(false);
-          setUserRole('investor');
+          lastHandledSessionKeyRef.current = null;
+          lastHandledSessionResultRef.current = null;
+          inFlightSessionKeyRef.current = null;
+          inFlightSessionPromiseRef.current = null;
+          setUser((previousUser) => previousUser === null ? previousUser : null);
+          setIsAuthenticated((current) => current ? false : current);
+          setUserRole((currentRole) => currentRole === 'investor' ? currentRole : 'investor');
           clearTwoFactorState();
           await clearStoredAuth();
           if (sessionMonitorCleanup.current) {
@@ -1542,6 +1619,12 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         const errorCode = typeof error === 'object' && error && 'code' in error
           ? String((error as { code?: string }).code ?? '')
           : '';
+        const errorStatus = typeof error === 'object' && error && 'status' in error
+          ? Number((error as { status?: number }).status)
+          : NaN;
+        const errorName = typeof error === 'object' && error && 'name' in error
+          ? String((error as { name?: string }).name ?? '')
+          : '';
         console.log('[Auth] Supabase signInWithPassword error (full):', serializeSupabaseAuthErrorForLog(error));
         const normalizedFailure = normalizeLoginFailureMessage(authErrorMessage);
         const displayMessage = (authErrorMessage?.trim() || normalizedFailure.message).trim();
@@ -1554,7 +1637,10 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
           success: false,
           message: displayMessage,
           failureReason: normalizedFailure.failureReason,
+          supabaseErrorMessage: displayMessage,
           ...(errorCode ? { supabaseErrorCode: errorCode } : {}),
+          ...(Number.isFinite(errorStatus) ? { supabaseErrorStatus: errorStatus } : {}),
+          ...(errorName ? { supabaseErrorName: errorName } : {}),
         };
       }
 
@@ -1585,6 +1671,15 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       return { success: false, message: 'Login failed because no active session was returned.', failureReason: 'unknown' };
     } catch (error: unknown) {
       const authErrorMessage = extractAuthErrorMessage(error);
+      const errorCode = typeof error === 'object' && error && 'code' in error
+        ? String((error as { code?: string }).code ?? '')
+        : '';
+      const errorStatus = typeof error === 'object' && error && 'status' in error
+        ? Number((error as { status?: number }).status)
+        : NaN;
+      const errorName = typeof error === 'object' && error && 'name' in error
+        ? String((error as { name?: string }).name ?? '')
+        : '';
       console.log('[Auth] Login exception (full):', serializeSupabaseAuthErrorForLog(error));
       const normalizedFailure = normalizeLoginFailureMessage(authErrorMessage);
       const displayMessage = (authErrorMessage?.trim() || normalizedFailure.message).trim();
@@ -1597,6 +1692,10 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         success: false,
         message: displayMessage,
         failureReason: normalizedFailure.failureReason,
+        supabaseErrorMessage: displayMessage,
+        ...(errorCode ? { supabaseErrorCode: errorCode } : {}),
+        ...(Number.isFinite(errorStatus) ? { supabaseErrorStatus: errorStatus } : {}),
+        ...(errorName ? { supabaseErrorName: errorName } : {}),
       };
     } finally {
       setLoginLoading(false);

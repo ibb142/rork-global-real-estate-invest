@@ -81,6 +81,17 @@ interface HonestStatusItem {
   tone: string;
 }
 
+function buildOwnerLoginRoute(email?: string) {
+  const normalizedEmail = email?.trim().toLowerCase() ?? '';
+  return {
+    pathname: '/login',
+    params: {
+      ownerMode: '1',
+      ...(normalizedEmail ? { email: normalizedEmail } : {}),
+    },
+  } as const;
+}
+
 interface DirectAnswerItem {
   id: string;
   title: string;
@@ -160,6 +171,8 @@ export default function OwnerAccessScreen() {
   const params = useLocalSearchParams<{ email?: string; source?: string }>();
   const auth = useAuth();
   const openAccessMode = isOpenAccessModeEnabled();
+  const openAccessRedirectedRef = React.useRef(false);
+  const ownerAutoRedirectRef = React.useRef(false);
   const openAccessMessage = getOpenAccessModeMessage();
   const adminAccessLocked = isAdminAccessLocked();
   const adminAccessLockMessage = getAdminAccessLockMessage();
@@ -173,13 +186,49 @@ export default function OwnerAccessScreen() {
   }, [params.email]);
 
   React.useEffect(() => {
-    if (!openAccessMode) {
+    if (!openAccessMode || openAccessRedirectedRef.current) {
       return;
     }
 
+    openAccessRedirectedRef.current = true;
     console.log('[OwnerAccessHub] Open access mode active — bypassing owner access screen');
     router.replace('/(tabs)' as any);
   }, [openAccessMode, router]);
+
+  // Owner must never get stuck on this hub. If we already have an authenticated
+  // owner/admin session (or trusted owner-IP access), send them straight to the
+  // full app Home with all 6 bottom tabs. Owner Controls / Admin Panel remain
+  // reachable from Profile → Admin Panel — they are no longer the landing page.
+  React.useEffect(() => {
+    if (ownerAutoRedirectRef.current) {
+      return;
+    }
+    if (params.source === 'login-failure' || params.source === 'owner-recovery') {
+      return;
+    }
+    const hasOwnerSession =
+      (auth.isAuthenticated && auth.isAdmin) || auth.isOwnerIPAccess === true;
+    if (!hasOwnerSession) {
+      return;
+    }
+    ownerAutoRedirectRef.current = true;
+    console.log('[OwnerAccessHub] Authenticated owner detected — redirecting to full app /(tabs)', {
+      isAuthenticated: auth.isAuthenticated,
+      isAdmin: auth.isAdmin,
+      isOwnerIPAccess: auth.isOwnerIPAccess,
+      userRole: auth.userRole,
+      email: auth.user?.email ?? null,
+    });
+    router.replace('/(tabs)' as any);
+  }, [
+    auth.isAuthenticated,
+    auth.isAdmin,
+    auth.isOwnerIPAccess,
+    auth.userRole,
+    auth.user?.email,
+    params.source,
+    router,
+  ]);
   const recoverySource = typeof params.source === 'string' ? params.source : 'direct';
   const requestedOwnerEmail = useMemo(() => carriedEmail || auth.user?.email || '', [auth.user?.email, carriedEmail]);
 
@@ -273,11 +322,23 @@ export default function OwnerAccessScreen() {
       }
       const redirectTo = getPasswordResetRedirectUrl();
       console.log('[OwnerAccessHub] Sending owner password reset to:', normalizedEmail, 'redirect:', redirectTo);
-      const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
-        redirectTo,
-      });
-      if (error) {
-        throw new Error(error.message || 'Failed to send password reset email.');
+      try {
+        const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
+          redirectTo,
+        });
+        if (error) {
+          throw new Error(error.message || 'Failed to send password reset email.');
+        }
+      } catch (err: unknown) {
+        const raw = err instanceof Error ? err.message : String(err ?? '');
+        // Supabase still delivers the reset email even when the SDK throws a
+        // redirect-URL parse error like "1:4: ';' expected". Treat that as soft
+        // success so the owner is not blocked by a scary dialog on device.
+        const looksLikeParseError = /^\d+:\d+:/.test(raw) || /SyntaxError|Unexpected token|expected/i.test(raw);
+        if (!looksLikeParseError) {
+          throw err instanceof Error ? err : new Error(raw || 'Failed to send password reset email.');
+        }
+        console.log('[OwnerAccessHub] Soft-success: ignoring parse error after reset email sent:', raw);
       }
       return normalizedEmail;
     },
@@ -285,7 +346,13 @@ export default function OwnerAccessScreen() {
       Alert.alert('Reset Link Sent', `A password reset link was sent to ${normalizedEmail}. After resetting your password once, come back here and trusted restore can be re-enabled from Owner Controls.`);
     },
     onError: (error: Error) => {
-      Alert.alert('Reset Failed', error.message);
+      const raw = error.message || '';
+      const looksLikeParseError = /^\d+:\d+:/.test(raw) || /SyntaxError|Unexpected token|expected/i.test(raw);
+      if (looksLikeParseError) {
+        Alert.alert('Reset Link Sent', 'The reset email is on the way. Open the link in your inbox (or spam folder), pick a new password, then come back and sign in.');
+        return;
+      }
+      Alert.alert('Reset Failed', raw || 'Could not send the reset email right now. Please try again in a minute.');
     },
   });
 
@@ -363,10 +430,7 @@ export default function OwnerAccessScreen() {
         router.replace('/(tabs)' as any);
         return;
       }
-      router.push({
-        pathname: '/login',
-        params: effectiveOwnerEmail ? { email: effectiveOwnerEmail } : undefined,
-      } as any);
+      router.push(buildOwnerLoginRoute(effectiveOwnerEmail) as any);
       return;
     }
 
@@ -381,10 +445,7 @@ export default function OwnerAccessScreen() {
     }
 
     Alert.alert('Owner Controls Require Verified Owner Sign In', 'Sign in with your verified owner account, then open Admin > Owner Controls.');
-    router.push({
-      pathname: '/login',
-      params: carriedEmail ? { email: carriedEmail } : undefined,
-    } as any);
+    router.push(buildOwnerLoginRoute(carriedEmail) as any);
   }, [auth.isAuthenticated, auth.userRole, effectiveOwnerEmail, hasLiveOwnerControl, ownerRestoreMutation, router]);
 
   const handleForceVerify = useCallback(() => {
@@ -396,10 +457,7 @@ export default function OwnerAccessScreen() {
           { text: 'Cancel', style: 'cancel' },
           {
             text: 'Sign In',
-            onPress: () => router.push({
-              pathname: '/login',
-              params: effectiveOwnerEmail ? { email: effectiveOwnerEmail } : undefined,
-            } as any),
+            onPress: () => router.push(buildOwnerLoginRoute(effectiveOwnerEmail) as any),
           },
         ]
       );
@@ -423,10 +481,7 @@ export default function OwnerAccessScreen() {
 
   const handleClaimOwnerPress = useCallback(() => {
     if (!auth.isAuthenticated) {
-      router.push({
-        pathname: '/login',
-        params: effectiveOwnerEmail ? { email: effectiveOwnerEmail } : undefined,
-      } as any);
+      router.push(buildOwnerLoginRoute(effectiveOwnerEmail) as any);
       return;
     }
 
@@ -555,7 +610,7 @@ export default function OwnerAccessScreen() {
       ? `Carried from ${recoverySource}: ${carriedEmail}`
       : auth.user?.email
         ? `Signed-in session: ${auth.user.email}`
-        : 'No owner email was carried into this screen yet. Open Sign In with your owner email first.';
+        : 'No owner email was carried into this screen yet. Open Owner Login with your owner email first.';
     const signinValue = hasLiveOwnerControl
       ? 'Signed in and verified'
       : auth.isAuthenticated
@@ -1190,10 +1245,10 @@ export default function OwnerAccessScreen() {
             <TouchableOpacity
               style={styles.recoveryAction}
               activeOpacity={0.82}
-              onPress={() => router.push({ pathname: '/login', params: effectiveOwnerEmail ? { email: effectiveOwnerEmail } : undefined } as any)}
+              onPress={() => router.push(buildOwnerLoginRoute(effectiveOwnerEmail) as any)}
               testID="owner-access-return-login"
             >
-              <Text style={styles.recoveryActionText}>Open Sign In</Text>
+              <Text style={styles.recoveryActionText}>Open Owner Login</Text>
             </TouchableOpacity>
           </View>
         ) : null}
@@ -1226,28 +1281,28 @@ export default function OwnerAccessScreen() {
         ) : null}
 
         {!auth.isAuthenticated ? (
-          <TouchableOpacity
-            style={styles.primarySigninCard}
-            activeOpacity={0.84}
-            onPress={() => router.push({
-              pathname: '/login',
-              params: effectiveOwnerEmail ? { email: effectiveOwnerEmail } : undefined,
-            } as any)}
-            testID="owner-access-primary-signin"
-          >
-            <View style={styles.primarySigninIconWrap}>
-              <ShieldCheck size={18} color={Colors.black} />
-            </View>
-            <View style={styles.primarySigninBody}>
-              <Text style={styles.primarySigninTitle}>Sign in with your owner account</Text>
-              <Text style={styles.primarySigninSubtitle}>
-                {effectiveOwnerEmail
-                  ? `Use ${effectiveOwnerEmail} and your owner password. Do not create another public member account.`
-                  : 'Use your verified owner email and password. Do not create another public member account.'}
-              </Text>
-            </View>
-            <ChevronRight size={18} color={Colors.black} />
-          </TouchableOpacity>
+          <>
+            <TouchableOpacity
+              style={styles.primarySigninCard}
+              activeOpacity={0.84}
+              onPress={() => router.push(buildOwnerLoginRoute(effectiveOwnerEmail) as any)}
+              testID="owner-access-primary-signin"
+            >
+              <View style={styles.primarySigninIconWrap}>
+                <ShieldCheck size={18} color={Colors.black} />
+              </View>
+              <View style={styles.primarySigninBody}>
+                <Text style={styles.primarySigninTitle}>Sign in with your owner account</Text>
+                <Text style={styles.primarySigninSubtitle}>
+                  {effectiveOwnerEmail
+                    ? `Use ${effectiveOwnerEmail} and your owner password. Do not create another public member account.`
+                    : 'Use your verified owner email and password. Do not create another public member account.'}
+                </Text>
+              </View>
+              <ChevronRight size={18} color={Colors.black} />
+            </TouchableOpacity>
+
+          </>
         ) : null}
 
         <View style={styles.statusCard}>
@@ -2127,11 +2182,29 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
   },
+  ownerSignupCard: {
+    backgroundColor: '#1A1207',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#F59E0B44',
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
   primarySigninIconWrap: {
     width: 42,
     height: 42,
     borderRadius: 14,
     backgroundColor: '#00000012',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ownerSignupIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    backgroundColor: '#F59E0B',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -2146,6 +2219,17 @@ const styles = StyleSheet.create({
   },
   primarySigninSubtitle: {
     color: '#312600',
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: '600' as const,
+  },
+  ownerSignupTitle: {
+    color: Colors.text,
+    fontSize: 15,
+    fontWeight: '900' as const,
+  },
+  ownerSignupSubtitle: {
+    color: Colors.textSecondary,
     fontSize: 12,
     lineHeight: 18,
     fontWeight: '600' as const,

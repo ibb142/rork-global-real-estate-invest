@@ -1,30 +1,38 @@
-import { generateText as toolkitGenerateText } from '@rork-ai/toolkit-sdk';
-import { IVX_OWNER_AI_PROFILE, IVX_OWNER_AI_ROOM_ID, IVX_OWNER_AI_ROOM_SLUG } from '@/constants/ivx-owner-ai';
-import { buildOwnerTrustPromptBlock } from '@/src/modules/ivx-owner-ai/services/ownerTrust';
+import { IVX_OWNER_AI_PROFILE } from '@/constants/ivx-owner-ai';
 import { getIVXOwnerAIConfigAudit } from '@/lib/ivx-supabase-client';
 import { isDevTestModeEnabled } from '@/lib/dev-test-mode';
-import { supabase } from '@/lib/supabase';
-import { isSupabaseConfigured } from '@/lib/supabase';
 import {
   getIVXOwnerAIErrorDiagnostics,
   ivxAIRequestService,
   type IVXOwnerAIProbeResult,
 } from '@/src/modules/ivx-owner-ai/services/ivxAIRequestService';
+import {
+  cancelInFlightAIRequest,
+  executeReliably,
+  type ReliabilityOptions,
+  type ReliabilityTrace,
+} from './aiReliability';
 import type {
   ChatMessage,
   ChatRoomRuntimeSignals,
   ServiceRuntimeHealth,
 } from '../types/chat';
+import type { IVXOwnerAIToolOutput } from '@/shared/ivx';
 
 type AIReplyResult = {
   answer: string;
   requestId: string;
   conversationId: string;
   model: string;
-  source: 'remote_api' | 'toolkit_fallback' | 'unknown';
+  source: 'remote_api' | 'local_app_brain' | 'provider_fallback' | 'unknown';
   endpoint?: string;
   deploymentMarker?: string;
+  selectedTool?: string | null;
+  toolOutputs?: IVXOwnerAIToolOutput[];
+  reliabilityTrace?: ReliabilityTrace;
 };
+
+export type RequestAIReplyOptions = ReliabilityOptions;
 
 type OwnerCommandResult = {
   command: string;
@@ -49,25 +57,6 @@ function safeString(value: unknown): string {
 
 function safeTrimARS(value: unknown): string {
   return safeString(value).trim();
-}
-
-function extractToolkitText(raw: unknown): string {
-  if (typeof raw === 'string') {
-    return raw.trim();
-  }
-  if (raw && typeof raw === 'object') {
-    const record = raw as Record<string, unknown>;
-    if (typeof record.text === 'string' && record.text.trim()) {
-      return record.text.trim();
-    }
-    if (typeof record.content === 'string' && record.content.trim()) {
-      return record.content.trim();
-    }
-    if (typeof record.answer === 'string' && record.answer.trim()) {
-      return record.answer.trim();
-    }
-  }
-  return '';
 }
 
 let cachedAIHealth: ServiceRuntimeHealth = 'inactive';
@@ -119,15 +108,6 @@ const OWNER_COMMANDS: Record<string, { description: string; handler: (args: stri
   },
 };
 
-function createLocalAIRequestId(prefix: string): string {
-  const cryptoRef = globalThis.crypto as { randomUUID?: () => string } | undefined;
-  if (cryptoRef?.randomUUID) {
-    return `${prefix}-${cryptoRef.randomUUID()}`;
-  }
-
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-}
-
 function createRequestUuid(): string {
   const cryptoRef = globalThis.crypto as { randomUUID?: () => string } | undefined;
   if (cryptoRef?.randomUUID) {
@@ -138,101 +118,6 @@ function createRequestUuid(): string {
   return `${seed.slice(0, 8)}-${seed.slice(8, 12)}-4${seed.slice(13, 16)}-a${seed.slice(17, 20)}-${seed.slice(20, 32)}`;
 }
 
-function buildToolkitPrompt(input: {
-  messageText: string;
-  conversationId: string;
-  senderLabel?: string | null;
-}): string {
-  const senderLabel = input.senderLabel?.trim() || 'Owner';
-  const ownerRoomAuthenticated = input.conversationId === IVX_OWNER_AI_ROOM_ID || input.conversationId === IVX_OWNER_AI_ROOM_SLUG;
-  const devTestMode = isDevTestModeEnabled();
-  const trustPolicy = buildOwnerTrustPromptBlock({
-    messageText: input.messageText,
-    ownerRoomAuthenticated: ownerRoomAuthenticated || devTestMode,
-    backendAdminVerified: devTestMode,
-    fallbackModeActive: !devTestMode,
-    devTestModeActive: devTestMode,
-  });
-  return [
-    `You are ${IVX_OWNER_AI_PROFILE.name}.`,
-    'Respond with concise owner-first guidance for IVX operations, chat, inbox, uploads, knowledge base, and owner commands.',
-    trustPolicy,
-    'You are running in the in-app fallback path, so do not claim server-side actions were completed unless the user already confirmed them.',
-    `Conversation ID: ${input.conversationId}`,
-    `Sender label: ${senderLabel}`,
-    `Owner request: ${input.messageText}`,
-  ].join('\n\n');
-}
-
-function shouldFallbackToToolkit(status: number | null, message: string): boolean {
-  if (status !== null && status !== 401 && status !== 403) {
-    return true;
-  }
-
-  const normalizedMessage = message.toLowerCase();
-  return normalizedMessage.includes('network request failed')
-    || normalizedMessage.includes('failed to fetch')
-    || normalizedMessage.includes('load failed')
-    || normalizedMessage.includes('not found')
-    || normalizedMessage.includes('abort')
-    || normalizedMessage.includes('unreachable')
-    || normalizedMessage.includes('timeout')
-    || normalizedMessage.includes('routing');
-}
-
-async function probeToolkitFallbackHealth(): Promise<ServiceRuntimeHealth> {
-  try {
-    const rawProbeAnswer = await toolkitGenerateText({
-      messages: [{ role: 'user', content: 'Reply with READY only.' }],
-    });
-    const answer = extractToolkitText(rawProbeAnswer);
-
-    if (!answer) {
-      console.log('[AIReplyService] Toolkit fallback probe returned empty output');
-      return 'inactive';
-    }
-
-    console.log('[AIReplyService] Toolkit fallback probe: available');
-    return 'degraded';
-  } catch (error) {
-    console.log('[AIReplyService] Toolkit fallback probe failed:', (error as Error)?.message ?? 'unknown');
-    return 'inactive';
-  }
-}
-
-async function requestToolkitAIReply(
-  messageText: string,
-  conversationId: string,
-  senderLabel?: string | null,
-): Promise<AIReplyResult> {
-  const prompt = buildToolkitPrompt({
-    messageText,
-    conversationId,
-    senderLabel,
-  });
-  const rawAnswer = await toolkitGenerateText({
-    messages: [{ role: 'user', content: prompt }],
-  });
-  const answer = extractToolkitText(rawAnswer);
-
-  if (!answer) {
-    console.log('[AIReplyService] Toolkit fallback returned non-usable output:', typeof rawAnswer, rawAnswer);
-    throw new Error('AI returned an empty fallback response.');
-  }
-
-  console.log('[AIReplyService] Toolkit fallback reply received, length:', answer.length);
-  cachedAIHealth = 'degraded';
-  lastProbeTimestamp = Date.now();
-
-  return {
-    answer,
-    requestId: createLocalAIRequestId('toolkit-ai'),
-    conversationId,
-    model: 'rork-toolkit-fallback',
-    source: 'toolkit_fallback',
-  };
-}
-
 export async function probeAIBackendHealth(): Promise<IVXOwnerAIProbeResult> {
   const now = Date.now();
   const routingAudit = getIVXOwnerAIConfigAudit();
@@ -241,7 +126,7 @@ export async function probeAIBackendHealth(): Promise<IVXOwnerAIProbeResult> {
     return {
       health: cachedAIHealth,
       roomStatus: null,
-      source: cachedAIHealth === 'degraded' ? 'toolkit_fallback' : 'remote_api',
+      source: 'local_app_brain',
       endpoint: null,
       deploymentMarker: null,
       capabilities: null,
@@ -249,20 +134,6 @@ export async function probeAIBackendHealth(): Promise<IVXOwnerAIProbeResult> {
   }
 
   console.log('[AIReplyService] Probing AI backend health...');
-
-  if (!isSupabaseConfigured()) {
-    console.log('[AIReplyService] Supabase not configured, probing toolkit fallback');
-    cachedAIHealth = await probeToolkitFallbackHealth();
-    lastProbeTimestamp = now;
-    return {
-      health: cachedAIHealth,
-      roomStatus: null,
-      source: 'toolkit_fallback',
-      endpoint: null,
-      deploymentMarker: null,
-      capabilities: null,
-    };
-  }
 
   try {
     const probe = await ivxAIRequestService.probeOwnerAIHealth();
@@ -277,28 +148,14 @@ export async function probeAIBackendHealth(): Promise<IVXOwnerAIProbeResult> {
     return probe;
   } catch (error) {
     const message = (error as Error)?.message ?? '';
-    if (routingAudit.currentEnvironment === 'development' && shouldFallbackToToolkit(null, message)) {
-      console.log('[AIReplyService] AI backend probe failed, trying toolkit fallback:', message);
-      cachedAIHealth = await probeToolkitFallbackHealth();
-      lastProbeTimestamp = now;
-      return {
-        health: cachedAIHealth,
-        roomStatus: null,
-        source: 'toolkit_fallback',
-        endpoint: null,
-        deploymentMarker: null,
-        capabilities: null,
-      };
-    }
-
     console.log('[AIReplyService] AI backend probe: inactive (error:', message, ')');
     cachedAIHealth = 'inactive';
     lastProbeTimestamp = now;
     return {
       health: 'inactive',
       roomStatus: null,
-      source: 'unknown',
-      endpoint: null,
+      source: 'remote_api',
+      endpoint: routingAudit.activeEndpoint,
       deploymentMarker: null,
       capabilities: null,
     };
@@ -309,6 +166,7 @@ export async function requestAIReply(
   messageText: string,
   conversationId: string,
   senderLabel?: string | null,
+  options?: RequestAIReplyOptions,
 ): Promise<AIReplyResult> {
   const safeMessageText = safeString(messageText);
   console.log('[AIReplyService] Requesting AI reply for:', safeMessageText.slice(0, 60));
@@ -316,16 +174,25 @@ export async function requestAIReply(
   const routingAudit = getIVXOwnerAIConfigAudit();
   try {
     const requestId = createRequestUuid();
-    const response = await ivxAIRequestService.requestOwnerAI({
-      requestId,
+    const { value: response, trace } = await executeReliably(
       conversationId,
-      message: messageText,
-      senderLabel: senderLabel ?? null,
-      mode: 'chat',
-      persistUserMessage: false,
-      persistAssistantMessage: true,
-      devTestModeActive: isDevTestModeEnabled(),
-    });
+      async (_signal, attempt) => {
+        if (attempt > 1) {
+          console.log('[AIReplyService] Retry attempt', attempt, 'for conversation', conversationId);
+        }
+        return await ivxAIRequestService.requestOwnerAI({
+          requestId,
+          conversationId,
+          message: messageText,
+          senderLabel: senderLabel ?? null,
+          mode: 'chat',
+          persistUserMessage: false,
+          persistAssistantMessage: true,
+          devTestModeActive: isDevTestModeEnabled(),
+        });
+      },
+      options,
+    );
 
     console.log('[AIReplyService] AI reply received:', {
       requestId: response.requestId,
@@ -334,10 +201,12 @@ export async function requestAIReply(
       endpoint: response.endpoint,
       deploymentMarker: response.deploymentMarker,
       model: response.model,
+      selectedTool: response.selectedTool ?? null,
+      toolOutputCount: response.toolOutputs?.length ?? 0,
       answerLength: response.answer.length,
     });
 
-    cachedAIHealth = response.source === 'remote_api' ? 'active' : 'degraded';
+    cachedAIHealth = response.source === 'remote_api' || response.source === 'local_app_brain' ? 'active' : 'degraded';
     lastProbeTimestamp = Date.now();
 
     return {
@@ -348,25 +217,23 @@ export async function requestAIReply(
       source: response.source ?? 'remote_api',
       endpoint: response.endpoint,
       deploymentMarker: response.deploymentMarker,
+      selectedTool: response.selectedTool ?? null,
+      toolOutputs: response.toolOutputs,
+      reliabilityTrace: trace,
     };
   } catch (error) {
     const msg = (error as Error)?.message ?? 'Unknown error';
     const diagnostics = getIVXOwnerAIErrorDiagnostics(error);
-    console.log('[AIReplyService] AI reply failed, falling back to toolkit:', {
+    console.log('[AIReplyService] AI reply request exhausted provider and local guard paths:', {
       message: msg,
+      stack: error instanceof Error ? error.stack ?? null : null,
       routingPolicy: routingAudit.routingPolicy,
       diagnostics,
+      raw: error,
     });
 
-    if (shouldFallbackToToolkit(null, msg)) {
-      console.log('[AIReplyService] Falling back to toolkit AI reply');
-      return await requestToolkitAIReply(messageText, conversationId, senderLabel);
-    }
-
-    if (msg.includes('abort') || msg.includes('timeout')) {
-      cachedAIHealth = 'degraded';
-    }
-
+    cachedAIHealth = 'inactive';
+    lastProbeTimestamp = Date.now();
     throw error;
   }
 }
@@ -435,20 +302,24 @@ export function invalidateAIHealthCache(): void {
   console.log('[AIReplyService] AI health cache invalidated');
 }
 
+/** Cancel any in-flight reliable AI request for the conversation. */
+export function cancelPendingAIReply(conversationId: string, reason: string = 'user_cancel'): void {
+  cancelInFlightAIRequest(conversationId, reason);
+}
+
 export function getCachedAIHealth(): ServiceRuntimeHealth {
   return cachedAIHealth;
 }
 
 export function buildRuntimeSignalsFromProbe(probe: IVXOwnerAIProbeResult): ChatRoomRuntimeSignals {
-  const ownerCommandHealth: ServiceRuntimeHealth = probe.health === 'active' ? 'active' : 'inactive';
-  const knowledgeHealth: ServiceRuntimeHealth = probe.health === 'active' ? 'active' : 'inactive';
+  const toHealth = (success: boolean | undefined): ServiceRuntimeHealth => success === true ? 'active' : 'inactive';
 
   return {
-    aiBackendHealth: probe.health,
+    aiBackendHealth: toHealth(probe.capabilities?.ai_chat) === 'active' ? probe.health : 'inactive',
     aiBackendSource: probe.source,
-    knowledgeBackendHealth: knowledgeHealth,
-    ownerCommandAvailability: ownerCommandHealth,
-    codeAwareServiceAvailability: 'inactive',
+    knowledgeBackendHealth: toHealth(probe.capabilities?.knowledge_answers),
+    ownerCommandAvailability: toHealth(probe.capabilities?.owner_commands),
+    codeAwareServiceAvailability: toHealth(probe.capabilities?.code_aware_support),
     aiResponseState: 'inactive',
   };
 }

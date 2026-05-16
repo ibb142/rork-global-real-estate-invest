@@ -1,6 +1,6 @@
 import { Linking } from 'react-native';
 
-export const DEEP_LINK_PREFIX = ['rork-app://', 'https://ivxholding.com'];
+export const DEEP_LINK_PREFIX = ['ivx-app://', 'https://ivxholding.com'];
 
 export interface DeepLinkConfig {
   screens: Record<string, string>;
@@ -35,7 +35,7 @@ export async function getInitialURL(): Promise<string | null> {
 export function parseDeepLink(url: string): { screen: string; params: Record<string, string> } | null {
   try {
     const stripped = url
-      .replace('rork-app://', '')
+      .replace('ivx-app://', '')
       .replace('https://ivxholding.com/', '')
       .replace(/^\//, '');
 

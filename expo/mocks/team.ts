@@ -16,7 +16,6 @@ export const leadershipTeam: TeamMember[] = [
     name: 'Ivan Perez',
     role: 'CEO',
     title: 'Chief Executive Officer',
-    phone: '+1 (561) 644-3503',
     email: 'ceo@ivxholding.com',
     status: 'active',
     avatarInitials: 'IP',

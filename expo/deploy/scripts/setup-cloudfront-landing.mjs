@@ -39,7 +39,7 @@ const DOMAIN = "ivxholding.com";
 const WWW_DOMAIN = "www.ivxholding.com";
 const S3_BUCKET = "ivxholding.com";
 const REGION = (process.env.AWS_REGION || "us-east-1").trim();
-const API_ORIGIN_URL = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || process.env.EXPO_PUBLIC_API_BASE_URL || "").trim().replace(/\/$/, "");
+const API_ORIGIN_URL = (process.env.EXPO_PUBLIC_API_BASE_URL || process.env.EXPO_PUBLIC_IVX_OWNER_AI_BASE_URL || "").trim().replace(/\/$/, "");
 const API_ORIGIN_HOST = API_ORIGIN_URL ? new URL(API_ORIGIN_URL).host : "";
 const CACHE_POLICY_CACHING_OPTIMIZED = "658327ea-f89d-4fab-a63d-7e88639e58f6";
 const CACHE_POLICY_CACHING_DISABLED = "4135ea2d-6df8-44a3-9df3-4b5a84be39ad";
@@ -249,7 +249,7 @@ async function createDistribution(certArn) {
   if (API_ORIGIN_HOST) {
     log(`API origin enabled for /api/* and /health*: ${API_ORIGIN_HOST}`);
   } else {
-    warn('API origin not configured — /api/* will continue to miss CloudFront bypass routing until EXPO_PUBLIC_RORK_API_BASE_URL is set');
+    warn('API origin not configured — /api/* will continue to miss CloudFront bypass routing until EXPO_PUBLIC_API_BASE_URL or EXPO_PUBLIC_IVX_OWNER_AI_BASE_URL is set');
   }
   log(`Aliases: ${DOMAIN}, ${WWW_DOMAIN}`);
   log(`SSL Certificate: ${certArn}`);

@@ -1,4 +1,4 @@
-import { IVX_OWNER_AI_BUCKET } from '../../expo/shared/ivx';
+import { IVX_CHAT_UPLOAD_BUCKET, IVX_OWNER_AI_BUCKET } from '../../expo/shared/ivx';
 import { assertIVXOwnerOnly, ownerOnlyJson, ownerOnlyOptions, type IVXOwnerRequestContext } from './owner-only';
 import {
   ensureOwnerConversation,
@@ -37,6 +37,14 @@ function nowIso(): string {
 
 function readTrimmed(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function resolveUploadBucket(value: unknown): typeof IVX_CHAT_UPLOAD_BUCKET | typeof IVX_OWNER_AI_BUCKET {
+  const requestedBucket = readTrimmed(value);
+  if (requestedBucket === IVX_OWNER_AI_BUCKET) {
+    return IVX_OWNER_AI_BUCKET;
+  }
+  return IVX_CHAT_UPLOAD_BUCKET;
 }
 
 async function getOwnerRoomContext(client: DBClient): Promise<OwnerRoomContext> {
@@ -219,21 +227,30 @@ export async function handleUploadPost(request: Request): Promise<Response> {
     const mimeType = readTrimmed(body.mimeType) || null;
     const { conversation } = await getOwnerRoomContext(ctx.client);
     const conversationId = readTrimmed(body.conversationId) || conversation.id;
+    const bucket = resolveUploadBucket(body.bucket);
     const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, '-');
-    const storagePath = `owner-room/${conversationId}/${Date.now()}-${safeName}`;
-    const signed = await ctx.client.storage.from(IVX_OWNER_AI_BUCKET).createSignedUploadUrl(storagePath);
+    const storagePath = bucket === IVX_CHAT_UPLOAD_BUCKET
+      ? `owner-chat/${ctx.userId}/${conversationId}/${Date.now()}-${safeName}`
+      : `owner-room/${conversationId}/${Date.now()}-${safeName}`;
+    const signed = await ctx.client.storage.from(bucket).createSignedUploadUrl(storagePath);
     if (signed.error || !signed.data) {
       throw new Error(signed.error?.message ?? 'Failed to create signed upload URL.');
     }
 
-    const readUrl = await ctx.client.storage.from(IVX_OWNER_AI_BUCKET).createSignedUrl(storagePath, 60 * 60);
+    const publicUrl = bucket === IVX_CHAT_UPLOAD_BUCKET
+      ? ctx.client.storage.from(bucket).getPublicUrl(storagePath).data.publicUrl
+      : null;
+    const readUrl = publicUrl
+      ? { data: { signedUrl: publicUrl }, error: null }
+      : await ctx.client.storage.from(bucket).createSignedUrl(storagePath, 60 * 60);
 
     return ownerOnlyJson({
-      bucket: IVX_OWNER_AI_BUCKET,
+      bucket,
       path: storagePath,
       signedUploadUrl: signed.data.signedUrl,
       token: signed.data.token,
       readUrl: readUrl.data?.signedUrl ?? null,
+      publicUrl,
       mimeType,
       fileName: safeName,
       deploymentMarker: DEPLOYMENT_MARKER,

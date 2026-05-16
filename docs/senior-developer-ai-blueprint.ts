@@ -250,7 +250,7 @@ export const AI_LAYERS: AILayer[] = [
       'scaling recommendation with proof',
       'tech debt prioritization',
     ],
-    ivxImplementation: 'IVX has a layered architecture: Expo frontend -> Expo API routes -> Hono backend -> Supabase. The AI must understand this request lifecycle end-to-end. Key architectural decisions: toolkit fallback for dev mode, multi-endpoint candidate routing, realtime subscription management, proof-backed state claims.',
+    ivxImplementation: 'IVX has a layered architecture: Expo frontend -> Expo API routes -> Hono backend -> Supabase. The AI must understand this request lifecycle end-to-end. Key architectural decisions: provider fallback for dev mode, multi-endpoint candidate routing, realtime subscription management, proof-backed state claims.',
   },
   {
     id: 'deployment_devops',
@@ -483,7 +483,7 @@ export const MEMORY_SCOPES: MemoryScope[] = [
     storage: 'docs/decisions/ + Supabase table: ivx_ai_decisions',
     maxEntries: 500,
     ttl: null,
-    ivxUsage: 'Why toolkit fallback exists. Why multi-endpoint candidate routing. Why proof-backed state claims. Why realtime subscription tracking. Why safe normalization helper pattern.',
+    ivxUsage: 'Why provider fallback exists. Why multi-endpoint candidate routing. Why proof-backed state claims. Why realtime subscription tracking. Why safe normalization helper pattern.',
   },
   {
     id: 'bug_history',
@@ -492,7 +492,7 @@ export const MEMORY_SCOPES: MemoryScope[] = [
     storage: 'Supabase table: ivx_ai_bug_history',
     maxEntries: 500,
     ttl: '180 days',
-    ivxUsage: 'rawText.trim crash: root cause was multiple send entry points bypassing normalization. Response delivery failure: toolkit fallback returning unexpected shape. Realtime subscription leak: missing cleanup on unmount.',
+    ivxUsage: 'rawText.trim crash: root cause was multiple send entry points bypassing normalization. Response delivery failure: provider fallback returning unexpected shape. Realtime subscription leak: missing cleanup on unmount.',
   },
   {
     id: 'deployment_history',
@@ -858,7 +858,7 @@ export const DOMAINS: Domain[] = [
       'expo/src/modules/chat/services/aiReplyService.ts',
     ],
     keyAbstractions: [
-      'Rork Toolkit SDK for AI generation',
+      'IVX AI Gateway for AI generation',
       'IVX Owner AI request service',
       'Multi-endpoint routing with fallback',
       'Response normalization and validation',
@@ -949,7 +949,7 @@ export const REASONING_MODEL: {
     id: 'find_root_cause',
     name: 'Find the Root Cause',
     description: 'Distinguish between the symptom and the underlying cause. The root cause is the earliest point in the chain where correct behavior diverged.',
-    ivxExample: 'Symptom: "reply failed" in UI. Root cause: toolkit fallback extractToolkitText received an object with neither .text nor .content nor .answer, returning empty string, triggering the empty response guard.',
+    ivxExample: 'Symptom: assistant response did not appear in UI. Root cause: a backup text extraction path received an unsupported object shape, returning empty text and triggering the empty response guard.',
   },
   {
     id: 'propose_fix',

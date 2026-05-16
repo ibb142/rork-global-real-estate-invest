@@ -41,7 +41,8 @@ import {
   Globe,
   ClipboardCheck,
 } from 'lucide-react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, Link } from 'expo-router';
+import { isAdminRole } from '@/lib/auth-helpers';
 import { useScreenFocusState } from '@/hooks/useScreenFocusState';
 import Colors from '@/constants/colors';
 import { getResponsiveSize, isCompactScreen, isExtraSmallScreen } from '@/lib/responsive';
@@ -60,6 +61,7 @@ import { formatCurrency, formatCurrencyCompact, formatCurrencyWithDecimals } fro
 import type { ParsedJVDeal } from '@/lib/parse-deal';
 import type { JVAgreement } from '@/types/jv';
 import { buildOwnershipSnapshot } from '@/lib/ownership-math';
+import { renderSafeViewChildren } from '@/components/SafeViewChildren';
 
 
 
@@ -336,7 +338,7 @@ const QuickActionCard = React.memo(function QuickActionCard({ icon, title, subti
       accessibilityHint="Opens details"
     >
       <View style={[styles.quickActionIcon, { backgroundColor: color + '15' }]}>
-        {icon}
+        {renderSafeViewChildren(icon)}
       </View>
       <Text style={styles.quickActionTitle}>{title}</Text>
       <Text style={styles.quickActionSubtitle} numberOfLines={2}>{subtitle}</Text>
@@ -1392,6 +1394,7 @@ function InvestorTestimonial({ t }: { t: (key: any) => string }) {
 export default function HomeScreen() {
   const router = useRouter();
   const { width } = useWindowDimensions();
+  const { isAuthenticated, isLoading: authLoading, userRole } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
   const [quickBuyVisible, setQuickBuyVisible] = useState(false);
   const [quickBuyDeal, setQuickBuyDeal] = useState<{
@@ -1413,7 +1416,7 @@ export default function HomeScreen() {
     priceChange2h?: number;
   } | null>(null);
   const { t } = useTranslation();
-  const { trackScreen } = useAnalytics();
+  const analytics = useAnalytics();
   const screenSize = getResponsiveSize(width);
   const isCompact = isCompactScreen(screenSize);
   const isXs = isExtraSmallScreen(screenSize);
@@ -1422,8 +1425,8 @@ export default function HomeScreen() {
   usePublicationWatchdog(true);
 
   useEffect(() => {
-    trackScreen('Home');
-  }, [trackScreen]);
+    analytics?.trackScreen?.('Home');
+  }, [analytics]);
 
   const isScreenFocused = useScreenFocusState(true);
   const publishedJV = usePublishedJVDeals({ refetchIntervalMs: isScreenFocused ? 1000 * 90 : false });
@@ -1569,6 +1572,36 @@ export default function HomeScreen() {
     });
     setQuickBuyVisible(true);
   }, []);
+
+  const handleOpenOwnerLogin = useCallback((): void => {
+    console.log('[Home] Open Owner Login pressed -> /login?ownerMode=1');
+    try {
+      router.push('/login?ownerMode=1' as any);
+    } catch (pushError) {
+      console.log('[Home] router.push failed:', pushError);
+    }
+  }, [router]);
+
+  // ── Boot router for the de-facto entry route `/`.
+  // The Supabase client (lib/supabase.ts) restores the persisted session from
+  // AsyncStorage on app start. Owners are NOT auto-redirected into
+  // /admin/owner-controls on cold start — they land on the normal app Home
+  // with bottom tabs and can open Owner Controls from Profile → Admin Panel
+  // or any of the in-app admin shortcuts. This preserves the full app
+  // experience (Home / Invest / Market / Portfolio / Chat / Profile) for
+  // owners while keeping admin access one tap away.
+  // Boot proof log (inline; previous hook was removed but call lingered → bundle crash).
+  useEffect(() => {
+    console.log('[Home] boot', { authLoading, isAuthenticated, userRole });
+  }, [authLoading, isAuthenticated, userRole]);
+
+  // NOTE: Previous design restored. The Home tab no longer hijacks unauthenticated
+  // visitors with an owner-only sign-in gate. The normal IVX Home (tagline,
+  // Portfolio Snapshot CTA, featured deals, coming soon, trust badges) renders
+  // for everyone; auth-only sections (e.g. PortfolioSnapshot) handle their own
+  // CTA-to-login internally. Owner Login remains reachable from Profile → Owner
+  // Controls and from /owner-access / /login?ownerMode=1.
+  void handleOpenOwnerLogin;
 
   return (
     <View style={styles.container}>
@@ -1724,24 +1757,32 @@ export default function HomeScreen() {
             </View>
           ) : null}
 
-          {/* 8. Owner CTA */}
+          {/* 8. In-app owner entry */}
           <View style={{ paddingHorizontal: isXs ? 16 : 20, marginBottom: 20 }}>
+            <Link
+              href={{ pathname: '/login', params: { ownerMode: '1' } } as any}
+              asChild
+            >
             <TouchableOpacity
               style={styles.ownerCTA}
-              onPress={() => router.push('/trust-center' as any)}
+              onPress={handleOpenOwnerLogin}
               activeOpacity={0.8}
+              testID="home-owner-login-entry"
+              accessibilityRole="button"
+              accessibilityLabel="Owner Login, direct owner sign in inside the app"
             >
               <View style={styles.ownerCTALeft}>
                 <View style={styles.ownerCTAIcon}>
                   <Shield size={20} color={Colors.primary} />
                 </View>
                 <View style={styles.ownerCTAMeta}>
-                  <Text style={styles.ownerCTATitle}>{t('propertyOwners')}</Text>
-                  <Text style={styles.ownerCTASubtitle}>{t('protectEquity')}</Text>
+                  <Text style={styles.ownerCTATitle}>Owner Login</Text>
+                  <Text style={styles.ownerCTASubtitle}>Direct approved-owner route inside the app — not the landing page.</Text>
                 </View>
               </View>
               <ChevronRight size={18} color={Colors.primary} />
             </TouchableOpacity>
+            </Link>
           </View>
 
           <View style={styles.bottomPadding} />
@@ -1764,6 +1805,50 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.background,
+  },
+  authRedirectContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.background,
+    gap: 12,
+    paddingHorizontal: 24,
+  },
+  authRedirectText: {
+    color: Colors.textSecondary,
+    fontSize: 14,
+    fontWeight: '700' as const,
+    textAlign: 'center' as const,
+  },
+  authRedirectButton: {
+    marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: Colors.primary,
+    borderRadius: 14,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    minHeight: 48,
+    minWidth: 190,
+    justifyContent: 'center',
+  },
+  authRedirectButtonText: {
+    color: Colors.black,
+    fontSize: 14,
+    fontWeight: '800' as const,
+  },
+  authRedirectSecondary: {
+    marginTop: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  authRedirectSecondaryText: {
+    color: Colors.primary,
+    fontSize: 12,
+    fontWeight: '600' as const,
+    textAlign: 'center' as const,
+    textDecorationLine: 'underline' as const,
   },
   safeArea: {
     flex: 1,

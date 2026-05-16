@@ -32,13 +32,22 @@ export type UploadableFile = {
   size?: number | null;
 };
 
+export type ChatReplyContext = {
+  messageId: string;
+  senderLabel: string;
+  previewText: string;
+};
+
 export type ChatMessage = {
   id: string;
   conversationId: string;
   senderId: string;
   senderLabel?: string | null;
   text?: string | null;
+  replyTo?: ChatReplyContext | null;
   fileUrl?: string | null;
+  fileStorageBucket?: string | null;
+  fileStoragePath?: string | null;
   fileType?: ChatFileType | null;
   fileName?: string | null;
   fileMime?: string | null;
@@ -51,6 +60,8 @@ export type ChatMessage = {
   sendStatus?: MessageSendStatus;
   optimistic?: boolean;
   retryPayload?: SendMessageInput;
+  toolUsed?: string | null;
+  toolOutputs?: unknown[] | null;
 };
 
 export type ChatConversation = {
@@ -87,7 +98,8 @@ export type AIResponseState = 'inactive' | 'idle' | 'responding';
 
 export type ChatRoomRuntimeSignals = {
   aiBackendHealth?: ServiceRuntimeHealth;
-  aiBackendSource?: 'remote_api' | 'toolkit_fallback' | 'unknown';
+  aiBackendSource?: 'remote_api' | 'local_app_brain' | 'provider_fallback' | 'unknown';
+  fileUploadAvailability?: ServiceRuntimeHealth;
   knowledgeBackendHealth?: ServiceRuntimeHealth;
   ownerCommandAvailability?: ServiceRuntimeHealth;
   codeAwareServiceAvailability?: ServiceRuntimeHealth;
@@ -110,6 +122,8 @@ export type SendMessageInput = {
   senderLabel?: string | null;
   text?: string;
   fileUrl?: string;
+  fileStorageBucket?: string | null;
+  fileStoragePath?: string | null;
   fileType?: ChatFileType;
   fileName?: string;
   fileMime?: string | null;
@@ -124,7 +138,7 @@ export type MessageSubscription = {
 
 export interface ChatProvider {
   listMessages(conversationId: string): Promise<ChatMessage[]>;
-  sendMessage(input: SendMessageInput): Promise<void>;
+  sendMessage(input: SendMessageInput): Promise<ChatMessage>;
   subscribeToMessages(
     conversationId: string,
     onMessage: (message: ChatMessage) => void,

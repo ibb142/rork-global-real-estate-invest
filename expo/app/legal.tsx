@@ -54,7 +54,7 @@ const COMPANY_ADDRESS = '1001 Brickell Bay Drive, Suite 2700, Miami, FL 33131';
 const COMPANY_EMAIL_LEGAL = 'legal@ivxholding.com';
 const COMPANY_EMAIL_PRIVACY = 'privacy@ivxholding.com';
 const COMPANY_EMAIL_COMPLIANCE = 'compliance@ivxholding.com';
-const COMPANY_PHONE = '+1 (561) 644-3503';
+const COMPANY_PHONE = 'Contact by email only';
 
 
 const LEGAL_DOCUMENTS: LegalDocument[] = [

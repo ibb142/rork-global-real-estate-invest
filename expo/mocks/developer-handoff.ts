@@ -1,6 +1,6 @@
 export type IntegrationPriority = 'critical' | 'high' | 'medium' | 'low';
 export type IntegrationStatus = 'not_started' | 'in_progress' | 'ready' | 'mock_only';
-export type IntegrationOwner = 'rork' | 'user' | 'shared';
+export type IntegrationOwner = 'ivx' | 'user' | 'shared';
 
 export interface EnvVariable {
   name: string;
@@ -54,9 +54,9 @@ const CONFIGURED_ENV_NAMES = new Set<string>([
   'AWS_REGION',
   'S3_BUCKET_NAME',
   'CLOUDFRONT_DISTRIBUTION_ID',
-  'EXPO_PUBLIC_RORK_AUTH_URL',
-  'EXPO_PUBLIC_RORK_API_BASE_URL',
-  'EXPO_PUBLIC_TOOLKIT_URL',
+  'EXPO_PUBLIC_IVX_AUTH_URL',
+  'EXPO_PUBLIC_IVX_API_BASE_URL',
+  'EXPO_PUBLIC_IVX_AI_GATEWAY_URL',
   'EXPO_PUBLIC_PROJECT_ID',
   'EXPO_PUBLIC_TEAM_ID',
 ]);
@@ -89,7 +89,7 @@ export const DEVELOPER_HANDOFF_CATEGORIES: IntegrationCategory[] = [
         description: 'Client app connectivity for landing, waitlist, and authenticated product flows.',
         priority: 'critical',
         status: 'ready',
-        owner: 'rork',
+        owner: 'ivx',
         category: 'platform-security',
         envVariables: [
           env('EXPO_PUBLIC_SUPABASE_URL', 'Supabase project URL used by the client app', 'https://project.supabase.co'),
@@ -107,7 +107,7 @@ export const DEVELOPER_HANDOFF_CATEGORIES: IntegrationCategory[] = [
         description: 'Validate live tables, access policies, and role separation for admin, public landing, and signed-in app usage.',
         priority: 'critical',
         status: 'in_progress',
-        owner: 'rork',
+        owner: 'ivx',
         category: 'platform-security',
         envVariables: [],
         endpoints: ['/admin/supabase-scripts', '/backend-audit', '/system-health'],
@@ -126,7 +126,7 @@ export const DEVELOPER_HANDOFF_CATEGORIES: IntegrationCategory[] = [
         category: 'platform-security',
         envVariables: [
           env('JWT_SECRET', 'JWT signing secret used by the auth layer', 'a-very-long-random-secret-value'),
-          env('EXPO_PUBLIC_RORK_AUTH_URL', 'Hosted auth endpoint used by the app', 'https://auth.example.com'),
+          env('EXPO_PUBLIC_IVX_AUTH_URL', 'Hosted auth endpoint used by the app', 'https://auth.example.com'),
         ],
         endpoints: ['/login', '/signup', '/admin'],
         docsUrl: 'https://supabase.com/docs/guides/auth',
@@ -134,21 +134,21 @@ export const DEVELOPER_HANDOFF_CATEGORIES: IntegrationCategory[] = [
         estimatedHours: 4,
       },
       {
-        id: 'platform-rork-bridge',
-        name: 'Rork Platform Bridge',
-        provider: 'Rork API',
-        description: 'Project-scoped API endpoints and auth bridge used by platform services already present in the app.',
+        id: 'platform-ivx-bridge',
+        name: 'IVX Holdings API Bridge',
+        provider: 'IVX Holdings API',
+        description: 'Project-scoped API endpoints and auth bridge used by IVX Holdings services already present in the app.',
         priority: 'critical',
         status: 'ready',
-        owner: 'rork',
+        owner: 'ivx',
         category: 'platform-security',
         envVariables: [
-          env('EXPO_PUBLIC_RORK_API_BASE_URL', 'Base URL for Rork platform API requests', 'https://api.rork.com'),
+          env('EXPO_PUBLIC_IVX_API_BASE_URL', 'Base URL for IVX Holdings API requests', 'https://api.ivxholding.com'),
           env('EXPO_PUBLIC_PROJECT_ID', 'Current project identifier', 'jh1qrutuhy6vu1bkysoln'),
           env('EXPO_PUBLIC_TEAM_ID', 'Current team identifier', 'team_123'),
         ],
         endpoints: ['/app-guide', '/system-health', '/analytics-report'],
-        docsUrl: 'https://rork.com',
+        docsUrl: 'https://ivxholding.com',
         notes: 'Configured in the project and available to the app.',
         estimatedHours: 0,
       },
@@ -206,22 +206,22 @@ export const DEVELOPER_HANDOFF_CATEGORIES: IntegrationCategory[] = [
     color: '#0EA5E9',
     items: [
       {
-        id: 'growth-toolkit',
-        name: 'Rork Toolkit Services',
-        provider: 'Rork Toolkit',
-        description: 'AI-capable project services and utilities configured for this project scope.',
+        id: 'growth-gateway',
+        name: 'IVX Holdings AI Gateway Services',
+        provider: 'IVX Holdings AI Gateway',
+        description: 'AI-capable owner services and utilities configured for the IVX Holdings project scope.',
         priority: 'high',
         status: 'ready',
-        owner: 'rork',
+        owner: 'ivx',
         category: 'growth-intelligence',
         envVariables: [
-          env('EXPO_PUBLIC_TOOLKIT_URL', 'Toolkit base URL used by the app', 'https://toolkit.rork.com'),
-          env('EXPO_PUBLIC_PROJECT_ID', 'Project identifier for toolkit-scoped requests', 'jh1qrutuhy6vu1bkysoln'),
-          env('EXPO_PUBLIC_TEAM_ID', 'Team identifier for toolkit-scoped requests', 'team_123'),
+          env('EXPO_PUBLIC_IVX_AI_GATEWAY_URL', 'AI gateway base URL used by the app', 'https://ai.ivxholding.com'),
+          env('EXPO_PUBLIC_PROJECT_ID', 'Project identifier for gateway-scoped requests', 'jh1qrutuhy6vu1bkysoln'),
+          env('EXPO_PUBLIC_TEAM_ID', 'Team identifier for gateway-scoped requests', 'team_123'),
         ],
         endpoints: ['/ai-gallery', '/ai-automation-report', '/global-intelligence'],
-        docsUrl: 'https://rork.com',
-        notes: 'Configured and available for project-scoped services.',
+        docsUrl: 'https://ivxholding.com',
+        notes: 'Configured and available for IVX Holdings project-scoped services.',
         estimatedHours: 0,
       },
       {
@@ -231,7 +231,7 @@ export const DEVELOPER_HANDOFF_CATEGORIES: IntegrationCategory[] = [
         description: 'Refresh analytics surfaces so the admin reports and landing metrics reflect the same active data path.',
         priority: 'high',
         status: 'in_progress',
-        owner: 'rork',
+        owner: 'ivx',
         category: 'growth-intelligence',
         envVariables: [],
         endpoints: ['/analytics-report', '/admin/landing-analytics', '/system-health'],
@@ -271,7 +271,7 @@ export const DEVELOPER_HANDOFF_CATEGORIES: IntegrationCategory[] = [
         description: 'Landing content and waitlist capture flow are aligned to the same public data path used by the app.',
         priority: 'high',
         status: 'ready',
-        owner: 'rork',
+        owner: 'ivx',
         category: 'launch-module-audit',
         envVariables: [
           env('EXPO_PUBLIC_SUPABASE_URL', 'Supabase project URL used by the landing and app', 'https://project.supabase.co'),
@@ -289,7 +289,7 @@ export const DEVELOPER_HANDOFF_CATEGORIES: IntegrationCategory[] = [
         description: 'Old static developer-module content has been cleared and replaced with a refreshed, project-based execution list.',
         priority: 'medium',
         status: 'ready',
-        owner: 'rork',
+        owner: 'ivx',
         category: 'launch-module-audit',
         envVariables: [],
         endpoints: ['/admin/developer-handoff'],
@@ -356,7 +356,7 @@ export function getRemainingItemsByOwner(owner: IntegrationOwner): IntegrationIt
 }
 
 export function getDeliverySummary(): Record<IntegrationOwner, DeliverySummaryBucket> {
-  const owners: IntegrationOwner[] = ['rork', 'user', 'shared'];
+  const owners: IntegrationOwner[] = ['ivx', 'user', 'shared'];
 
   return owners.reduce<Record<IntegrationOwner, DeliverySummaryBucket>>((accumulator, owner) => {
     const allItems = getAllIntegrations().filter((item) => item.owner === owner);
@@ -371,7 +371,7 @@ export function getDeliverySummary(): Record<IntegrationOwner, DeliverySummaryBu
 
     return accumulator;
   }, {
-    rork: { owner: 'rork', totalItems: 0, remainingItems: 0, remainingHours: 0 },
+    ivx: { owner: 'ivx', totalItems: 0, remainingItems: 0, remainingHours: 0 },
     user: { owner: 'user', totalItems: 0, remainingItems: 0, remainingHours: 0 },
     shared: { owner: 'shared', totalItems: 0, remainingItems: 0, remainingHours: 0 },
   });
@@ -394,7 +394,7 @@ export function generateHandoffTextReport(): string {
   report += `Generated: ${now}\n`;
   report += `Total items: ${allItems.length} | Ready: ${getReadyCount()} | In progress: ${getInProgressCount()} | Estimated hours: ${totalHours}h\n`;
   report += `Configured envs: ${configuredEnvCount}/${allEnvs.length}\n`;
-  report += `Rork remaining: ${deliverySummary.rork.remainingItems} items / ${deliverySummary.rork.remainingHours}h\n`;
+  report += `IVX remaining: ${deliverySummary.ivx.remainingItems} items / ${deliverySummary.ivx.remainingHours}h\n`;
   report += `User remaining: ${deliverySummary.user.remainingItems} items / ${deliverySummary.user.remainingHours}h\n`;
   report += `Shared remaining: ${deliverySummary.shared.remainingItems} items / ${deliverySummary.shared.remainingHours}h\n\n`;
 
@@ -456,7 +456,7 @@ export function generateHandoffHtmlReport(): string {
 
   const ownerColor = (owner: IntegrationOwner): string => {
     switch (owner) {
-      case 'rork':
+      case 'ivx':
         return '#FFD700';
       case 'user':
         return '#FF6B9D';
@@ -491,7 +491,7 @@ export function generateHandoffHtmlReport(): string {
   html += `<div class="stat"><div class="stat-num">${allItems.length}</div><div class="stat-label">Items</div></div>`;
   html += `<div class="stat"><div class="stat-num">${getReadyCount()}</div><div class="stat-label">Ready</div></div>`;
   html += `<div class="stat"><div class="stat-num">${configuredEnvCount}/${allEnvs.length}</div><div class="stat-label">Configured Envs</div></div>`;
-  html += `<div class="stat"><div class="stat-num">${deliverySummary.rork.remainingItems + deliverySummary.user.remainingItems + deliverySummary.shared.remainingItems}</div><div class="stat-label">Remaining Items</div></div>`;
+  html += `<div class="stat"><div class="stat-num">${deliverySummary.ivx.remainingItems + deliverySummary.user.remainingItems + deliverySummary.shared.remainingItems}</div><div class="stat-label">Remaining Items</div></div>`;
   html += '</div>';
 
   for (const category of DEVELOPER_HANDOFF_CATEGORIES) {

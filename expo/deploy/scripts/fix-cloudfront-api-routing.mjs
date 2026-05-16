@@ -8,14 +8,14 @@ import {
 
 const DOMAIN = 'ivxholding.com';
 const WWW_DOMAIN = 'www.ivxholding.com';
-const API_ORIGIN_URL = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || process.env.EXPO_PUBLIC_API_BASE_URL || '').trim().replace(/\/$/, '');
+const API_ORIGIN_URL = (process.env.EXPO_PUBLIC_API_BASE_URL || process.env.EXPO_PUBLIC_IVX_OWNER_AI_BASE_URL || '').trim().replace(/\/$/, '');
 const API_ORIGIN_HOST = API_ORIGIN_URL ? new URL(API_ORIGIN_URL).host : '';
 const DISTRIBUTION_ID = (process.env.CLOUDFRONT_DISTRIBUTION_ID || '').trim();
 const CACHE_POLICY_CACHING_DISABLED = '4135ea2d-6df8-44a3-9df3-4b5a84be39ad';
 const ORIGIN_REQUEST_POLICY_ALL_VIEWER = '216adef6-5c7f-47e4-b989-5492eafa07d3';
 
 if (!API_ORIGIN_HOST) {
-  console.error('[CloudFrontFix] Missing EXPO_PUBLIC_RORK_API_BASE_URL or EXPO_PUBLIC_API_BASE_URL');
+  console.error('[CloudFrontFix] Missing EXPO_PUBLIC_API_BASE_URL or EXPO_PUBLIC_IVX_OWNER_AI_BASE_URL');
   process.exit(1);
 }
 

@@ -6,7 +6,7 @@ export const chatService = {
     return getChatProvider().listMessages(conversationId);
   },
 
-  async sendMessage(input: SendMessageInput): Promise<void> {
+  async sendMessage(input: SendMessageInput): Promise<ChatMessage> {
     return getChatProvider().sendMessage(input);
   },
 

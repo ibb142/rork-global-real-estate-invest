@@ -18,7 +18,7 @@ const __dirname = dirname(__filename);
 
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
 const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
-const API_BASE_URL = process.env.EXPO_PUBLIC_RORK_API_BASE_URL || '';
+const API_BASE_URL = process.env.EXPO_PUBLIC_IVX_API_BASE_URL || '';
 const AWS_ACCESS_KEY_ID = process.env.AWS_ACCESS_KEY_ID || '';
 const AWS_SECRET_ACCESS_KEY = process.env.AWS_SECRET_ACCESS_KEY || '';
 const AWS_REGION = (process.env.AWS_REGION || 'us-east-1').trim();

@@ -1,5 +1,7 @@
 export type Environment = 'development' | 'staging' | 'production';
 
+const IVX_CANONICAL_API_BASE_URL = 'https://api.ivxholding.com';
+
 export interface EnvironmentConfig {
   name: Environment;
   apiBaseUrl: string;
@@ -24,7 +26,7 @@ export interface EnvironmentConfig {
 
 const developmentConfig: EnvironmentConfig = {
   name: 'development',
-  apiBaseUrl: process.env.EXPO_PUBLIC_API_BASE_URL || 'http://localhost:3000',
+  apiBaseUrl: process.env.EXPO_PUBLIC_API_BASE_URL || process.env.EXPO_PUBLIC_PRODUCTION_API_URL || IVX_CANONICAL_API_BASE_URL,
   enableDebugLogging: true,
   enableAnalytics: true,
   enableCrashReporting: false,
@@ -68,7 +70,7 @@ const stagingConfig: EnvironmentConfig = {
 
 const productionConfig: EnvironmentConfig = {
   name: 'production',
-  apiBaseUrl: process.env.EXPO_PUBLIC_PRODUCTION_API_URL || 'https://ivxholding.com',
+  apiBaseUrl: process.env.EXPO_PUBLIC_API_BASE_URL || process.env.EXPO_PUBLIC_PRODUCTION_API_URL || IVX_CANONICAL_API_BASE_URL,
   enableDebugLogging: false,
   enableAnalytics: true,
   enableCrashReporting: true,

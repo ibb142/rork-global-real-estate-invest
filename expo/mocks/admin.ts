@@ -46,7 +46,7 @@ import { ADMIN_ROLES } from '@/constants/platform-config';
 
 export const teamMembers: TeamMember[] = [{
   id: 'admin-1', email: 'ceo@ipxholding.com', firstName: 'IVXHOLDINGS', lastName: 'CEO',
-  avatar: '', phone: '+1 (561) 644-3503', roleId: 'role-ceo',
+  avatar: '', phone: '', roleId: 'role-ceo',
   role: ADMIN_ROLES[0] as AdminRole, status: 'active',
   lastLogin: new Date().toISOString(), createdAt: '2024-01-01T00:00:00Z',
 }];

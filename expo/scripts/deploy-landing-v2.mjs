@@ -14,7 +14,7 @@ const __dirname = dirname(__filename);
 
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
 const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
-const API_BASE_URL = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || '').trim();
+const API_BASE_URL = (process.env.EXPO_PUBLIC_IVX_API_BASE_URL || '').trim();
 const AWS_ACCESS_KEY_ID = process.env.AWS_ACCESS_KEY_ID || '';
 const AWS_SECRET_ACCESS_KEY = process.env.AWS_SECRET_ACCESS_KEY || '';
 const GOOGLE_ADS_KEY = process.env.EXPO_PUBLIC_GOOGLE_ADS_API_KEY || '';

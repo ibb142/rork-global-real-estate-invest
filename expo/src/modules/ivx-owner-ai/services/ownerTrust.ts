@@ -183,7 +183,7 @@ export function resolveOwnerTrustContext(input: OwnerTrustContextInput): OwnerTr
   const explanationParts: string[] = [];
 
   if (devBypass) {
-    explanationParts.push('DEV_TEST_MODE active: owner trust bypassed for testing.');
+    explanationParts.push('Owner trust is active for this verified testing session.');
   } else if (ownerRoomState === 'owner_room_authenticated') {
     explanationParts.push('Owner room trust is active for normal conversation.');
   } else {
@@ -193,7 +193,7 @@ export function resolveOwnerTrustContext(input: OwnerTrustContextInput): OwnerTr
   if (backendAdminState === 'backend_admin_verified') {
     explanationParts.push('Backend admin execution is verified.');
   } else if (conversationAccessState === 'fallback_chat_only') {
-    explanationParts.push('Fallback mode keeps chat available, but backend admin execution is not verified.');
+    explanationParts.push('Normal chat remains available, but backend admin execution is not verified.');
   } else {
     explanationParts.push('Backend admin execution is not verified yet.');
   }
@@ -221,19 +221,23 @@ export function buildOwnerTrustPromptBlock(input: OwnerTrustContextInput): strin
   const trust = resolveOwnerTrustContext(input);
   const devBypass = input.devTestModeActive === true;
 
+  const roomTrustLabel = trust.ownerRoomState === 'owner_room_authenticated' ? 'active' : 'not verified';
+  const backendTrustLabel = trust.backendAdminState === 'backend_admin_verified' ? 'verified' : 'not verified';
+  const runtimeModeLabel = trust.conversationAccessState === 'fallback_chat_only' ? 'chat only' : 'live backend execution';
+  const actionGateLabel = trust.actionConfirmationState === 'destructive_action_requires_confirmation' ? 'confirmation required' : 'normal chat';
   const lines = [
     'Owner-room trust policy:',
-    `- room_trust: ${trust.ownerRoomState}`,
-    `- backend_execution_trust: ${trust.backendAdminState}`,
-    `- runtime_mode: ${trust.conversationAccessState}`,
-    `- action_gate: ${trust.actionConfirmationState}`,
-    `- inferred_request_class: ${trust.requestClass}`,
+    `- room trust: ${roomTrustLabel}`,
+    `- backend execution trust: ${backendTrustLabel}`,
+    `- runtime mode: ${runtimeModeLabel}`,
+    `- action gate: ${actionGateLabel}`,
+    `- inferred request class: ${trust.requestClass.replace(/_/g, ' ')}`,
   ];
 
   if (devBypass) {
-    lines.push('- DEV_TEST_MODE is active. The owner is fully trusted for this session. Do not ask for credentials, re-verification, or identity confirmation.');
-    lines.push('- All owner actions are permitted without confirmation gates during this test session.');
-    lines.push('- Audit logging remains active.');
+    lines.push('- Verified testing session is active. The owner is trusted for this session. Do not ask for credentials, re-verification, or identity confirmation.');
+    lines.push('- Owner actions are permitted without extra confirmation gates during this verified testing session.');
+    lines.push('- Operational logging remains active.');
   } else {
     lines.push(
       trust.ownerRoomState === 'owner_room_authenticated'
@@ -243,7 +247,7 @@ export function buildOwnerTrustPromptBlock(input: OwnerTrustContextInput): strin
     lines.push('- Do not ask for owner credentials, identity phrases, owner tokens, backend environment variables, or repeated identity verification for normal owner conversation.');
     lines.push(
       trust.conversationAccessState === 'fallback_chat_only'
-        ? '- Fallback mode limits backend execution claims, but it does not limit normal owner conversation.'
+        ? '- Backend execution claims are limited, but normal owner conversation remains available.'
         : '- Live backend execution can be discussed within the verified scope.',
     );
     lines.push(

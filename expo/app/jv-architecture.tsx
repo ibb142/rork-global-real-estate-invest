@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { renderSafeViewChildren } from '@/components/SafeViewChildren';
 import {
   ArrowLeft,
   Database,
@@ -256,7 +257,7 @@ function LayerCard({
           </Text>
         </View>
       </View>
-      {children}
+      {renderSafeViewChildren(children)}
     </Animated.View>
   );
 }

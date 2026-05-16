@@ -25,7 +25,7 @@ describe('chatRuntimeState', () => {
 
   test('shows fallback only for actual fallback state', () => {
     const runtime = {
-      source: 'toolkit_fallback' as const,
+      source: 'provider_fallback' as const,
       requestStage: 'fallback_reply',
       failureClass: 'none',
       isFallback: true,
@@ -40,7 +40,7 @@ describe('chatRuntimeState', () => {
 
   test('normalizes unknown source labels safely', () => {
     expect(normalizeRuntimeSource('remote_api')).toBe('remote_api');
-    expect(normalizeRuntimeSource('toolkit_fallback')).toBe('toolkit_fallback');
+    expect(normalizeRuntimeSource('provider_fallback')).toBe('provider_fallback');
     expect(normalizeRuntimeSource('weird-provider')).toBe('unknown');
   });
 

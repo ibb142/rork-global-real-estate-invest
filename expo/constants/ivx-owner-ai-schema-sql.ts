@@ -264,10 +264,13 @@ create table if not exists public.messages (
   text text,
   body text,
   file_url text,
+  file_storage_bucket text,
+  file_storage_path text,
   file_type text,
   file_name text,
   file_mime text,
   file_size bigint,
+  client_message_id text,
   read_by text[] default '{}',
   created_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now())
@@ -284,7 +287,12 @@ create table if not exists public.conversation_participants (
   primary key (conversation_id, user_id)
 );
 
+alter table public.messages add column if not exists file_storage_bucket text;
+alter table public.messages add column if not exists file_storage_path text;
+alter table public.messages add column if not exists client_message_id text;
+
 create index if not exists idx_messages_conversation_created on public.messages(conversation_id, created_at);
+create index if not exists idx_messages_file_storage_path on public.messages(file_storage_bucket, file_storage_path);
 create index if not exists idx_conversation_participants_user on public.conversation_participants(user_id);
 
 alter table public.conversations enable row level security;
@@ -310,8 +318,8 @@ $;
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values (
-  'chat-uploads',
-  'chat-uploads',
+  'ivx-chat-uploads',
+  'ivx-chat-uploads',
   true,
   52428800,
   array['image/*', 'video/*', 'application/pdf', 'text/plain', 'application/json', 'application/zip']
@@ -342,10 +350,10 @@ begin
   drop policy if exists shared_chat_uploads_auth_write on storage.objects;
 
   create policy chat_uploads_public_read on storage.objects
-  for select to public using (bucket_id = 'chat-uploads');
+  for select to public using (bucket_id = 'ivx-chat-uploads');
 
   create policy chat_uploads_auth_write on storage.objects
-  for insert to authenticated with check (bucket_id = 'chat-uploads');
+  for insert to authenticated with check (bucket_id = 'ivx-chat-uploads');
 
   create policy shared_chat_uploads_public_read on storage.objects
   for select to public using (bucket_id = 'shared-chat-uploads');

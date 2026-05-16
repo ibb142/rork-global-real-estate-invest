@@ -76,10 +76,16 @@ This script will:
 
 ### 4. Point DNS
 
-Create a CNAME record:
+Create a Route53 A record with Alias enabled:
 ```
-api.ivxholding.com → ALB_DNS_NAME (from setup output)
+Name: api
+Type: A
+Alias: Yes
+Target: ALB_DNS_NAME (from setup output)
+Routing: Simple
 ```
+
+Use the ALB canonical hosted zone ID from the stack output when creating the alias target.
 
 ### 5. Verify
 

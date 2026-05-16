@@ -1,9 +1,17 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import * as Haptics from 'expo-haptics';
+import {
+  RecordingPresets,
+  requestRecordingPermissionsAsync,
+  setAudioModeAsync,
+  useAudioRecorder,
+  useAudioRecorderState,
+} from 'expo-audio';
 import { useMutation } from '@tanstack/react-query';
-import { FileText, ImageIcon, Send, Video } from 'lucide-react-native';
+import { FileText, ImageIcon, Mic, Send, Square, Video } from 'lucide-react-native';
 import Colors from '@/constants/colors';
+import { transcribeAudioRecording } from '@/src/modules/ivx-owner-ai/services/ivxMultimodalService';
 import { guessUploadFileType, uploadService } from '../services/uploadService';
 import type { CapabilityState, ChatFileType, UploadableFile } from '../types/chat';
 
@@ -71,6 +79,8 @@ export function Composer({
   const [text, setText] = useState<string>('');
   const textRef = useRef<string>('');
   const inputRef = useRef<TextInput | null>(null);
+  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const recorderState = useAudioRecorderState(audioRecorder);
 
   const pickAttachmentMutation = useMutation<UploadableFile | null, Error, UploadKind>({
     mutationFn: async (kind) => {
@@ -87,13 +97,44 @@ export function Composer({
     },
   });
 
+  const transcribeVoiceMutation = useMutation<string, Error, string>({
+    mutationFn: async (uri) => {
+      const result = await transcribeAudioRecording({
+        uri,
+        fileName: Platform.OS === 'web' ? 'voice.webm' : 'voice.m4a',
+        mimeType: Platform.OS === 'web' ? 'audio/webm' : 'audio/m4a',
+      });
+      return result.text;
+    },
+    onSuccess: (transcript) => {
+      const normalizedTranscript = normalizeComposerText(transcript).trim();
+      if (!normalizedTranscript) {
+        Alert.alert('Voice not transcribed', 'No speech was detected in that recording.');
+        return;
+      }
+
+      const currentText = normalizeComposerText(textRef.current).trim();
+      const nextText = currentText ? `${currentText}\n${normalizedTranscript}` : normalizedTranscript;
+      textRef.current = nextText;
+      setText(nextText);
+      onTyping?.();
+      inputRef.current?.focus();
+    },
+    onError: (error) => {
+      console.log('[Composer] Voice transcription error:', error.message);
+      Alert.alert('Voice transcription unavailable', error.message || 'We could not transcribe that recording. Please try again.');
+    },
+  });
+
   useEffect(() => {
     textRef.current = text;
   }, [text]);
 
-  const isBusy = sending || pickAttachmentMutation.isPending;
+  const isRecording = recorderState.isRecording;
+  const isTranscribing = transcribeVoiceMutation.isPending;
+  const isBusy = sending || pickAttachmentMutation.isPending || isTranscribing;
   const normalizedText = useMemo(() => normalizeComposerText(text), [text]);
-  const canSendText = useMemo(() => normalizedText.trim().length > 0 && !isBusy, [isBusy, normalizedText]);
+  const canSendText = useMemo(() => normalizedText.trim().length > 0 && !isBusy && !isRecording, [isBusy, isRecording, normalizedText]);
   const containerPaddingBottom = useMemo(() => Math.max(bottomInset, 8), [bottomInset]);
 
   const handleSend = useCallback(async (overrideText?: unknown) => {
@@ -121,7 +162,7 @@ export function Composer({
   }, [isBusy, onSend]);
 
   const handleAttachment = useCallback(async (kind: UploadKind) => {
-    if (isBusy) {
+    if (isBusy || isRecording) {
       return;
     }
 
@@ -147,7 +188,57 @@ export function Composer({
       console.log('[Composer] Attachment send error:', (error as Error)?.message ?? 'Unknown error');
       Alert.alert('Attachment not sent', 'We could not send that attachment. Please try again.');
     }
-  }, [isBusy, onSend, pickAttachmentMutation, text]);
+  }, [isBusy, isRecording, onSend, pickAttachmentMutation]);
+
+  const stopVoiceRecording = useCallback(async () => {
+    try {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      await audioRecorder.stop();
+      await setAudioModeAsync({ allowsRecording: false });
+      const uri = audioRecorder.uri;
+      if (!uri) {
+        Alert.alert('Voice not saved', 'No recording file was created. Please try again.');
+        return;
+      }
+      await transcribeVoiceMutation.mutateAsync(uri);
+    } catch (error) {
+      console.log('[Composer] Stop voice recording error:', (error as Error)?.message ?? 'Unknown error');
+      Alert.alert('Voice not transcribed', 'We could not stop or transcribe that recording. Please try again.');
+    }
+  }, [audioRecorder, transcribeVoiceMutation]);
+
+  const startVoiceRecording = useCallback(async () => {
+    if (isBusy || isRecording) {
+      return;
+    }
+
+    try {
+      const permission = await requestRecordingPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Microphone permission required', 'Please allow microphone access to use voice input.');
+        return;
+      }
+
+      await setAudioModeAsync({
+        allowsRecording: true,
+        playsInSilentMode: true,
+      });
+      await audioRecorder.prepareToRecordAsync();
+      audioRecorder.record({ forDuration: 120 });
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    } catch (error) {
+      console.log('[Composer] Start voice recording error:', (error as Error)?.message ?? 'Unknown error');
+      Alert.alert('Voice recording unavailable', 'We could not start recording. Please try again.');
+    }
+  }, [audioRecorder, isBusy, isRecording]);
+
+  const handleVoicePress = useCallback(async () => {
+    if (isRecording) {
+      await stopVoiceRecording();
+      return;
+    }
+    await startVoiceRecording();
+  }, [isRecording, startVoiceRecording, stopVoiceRecording]);
 
   return (
     <View style={[styles.container, { paddingBottom: containerPaddingBottom }]} testID="chat-composer">
@@ -198,11 +289,27 @@ export function Composer({
 
       <View style={styles.actionRow}>
         <Pressable
+          style={({ pressed }) => [
+            styles.actionButton,
+            isRecording ? styles.recordingButton : null,
+            pressed ? styles.pressed : null,
+          ]}
+          onPress={() => {
+            void handleVoicePress();
+          }}
+          disabled={isTranscribing || sending || pickAttachmentMutation.isPending}
+          testID="chat-composer-voice"
+        >
+          {isRecording ? <Square size={16} color={Colors.error} /> : <Mic size={16} color={Colors.primary} />}
+          <Text style={styles.actionText}>{isRecording ? 'Stop' : isTranscribing ? 'Transcribing…' : 'Voice'}</Text>
+        </Pressable>
+
+        <Pressable
           style={({ pressed }) => [styles.actionButton, pressed ? styles.pressed : null]}
           onPress={() => {
             void handleAttachment('image');
           }}
-          disabled={isBusy}
+          disabled={isBusy || isRecording}
           testID="chat-composer-image"
         >
           <ImageIcon size={16} color={Colors.primary} />
@@ -214,7 +321,7 @@ export function Composer({
           onPress={() => {
             void handleAttachment('video');
           }}
-          disabled={isBusy}
+          disabled={isBusy || isRecording}
           testID="chat-composer-video"
         >
           <Video size={16} color={Colors.primary} />
@@ -226,7 +333,7 @@ export function Composer({
           onPress={() => {
             void handleAttachment('document');
           }}
-          disabled={isBusy}
+          disabled={isBusy || isRecording}
           testID="chat-composer-document"
         >
           <FileText size={16} color={Colors.primary} />
@@ -299,6 +406,10 @@ const styles = StyleSheet.create({
     borderColor: Colors.surfaceBorder,
     paddingHorizontal: 7,
     paddingVertical: 3,
+  },
+  recordingButton: {
+    borderColor: Colors.error,
+    backgroundColor: 'rgba(239,68,68,0.12)',
   },
   actionText: {
     color: '#E2E8F0',

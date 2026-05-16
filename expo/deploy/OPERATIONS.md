@@ -118,21 +118,21 @@
 
 | Secret | Location | Access |
 |--------|----------|--------|
-| `EXPO_PUBLIC_SUPABASE_URL` | Rork project env vars | Client-side (public) |
-| `EXPO_PUBLIC_SUPABASE_ANON_KEY` | Rork project env vars | Client-side (public) |
-| `SUPABASE_SERVICE_ROLE_KEY` | AWS Secrets Manager + Rork env | Server-side only |
-| `SUPABASE_DB_PASSWORD` | AWS Secrets Manager + Rork env | Server-side only |
+| `EXPO_PUBLIC_SUPABASE_URL` | IVX project env vars | Client-side (public) |
+| `EXPO_PUBLIC_SUPABASE_ANON_KEY` | IVX project env vars | Client-side (public) |
+| `SUPABASE_SERVICE_ROLE_KEY` | AWS Secrets Manager + IVX env | Server-side only |
+| `SUPABASE_DB_PASSWORD` | AWS Secrets Manager + IVX env | Server-side only |
 | `JWT_SECRET` | AWS Secrets Manager | Server-side only |
-| `AWS_ACCESS_KEY_ID` | Rork env + AWS IAM | Server-side only |
-| `AWS_SECRET_ACCESS_KEY` | Rork env + AWS IAM | Server-side only |
-| `GITHUB_TOKEN` | AWS Secrets Manager + Rork env | CI/CD only |
+| `AWS_ACCESS_KEY_ID` | IVX env + AWS IAM | Server-side only |
+| `AWS_SECRET_ACCESS_KEY` | IVX env + AWS IAM | Server-side only |
+| `GITHUB_TOKEN` | AWS Secrets Manager + IVX env | CI/CD only |
 
 ### Rotating Secrets
 
-1. **Supabase anon key**: Rotate in Supabase Dashboard > Settings > API, then update `EXPO_PUBLIC_SUPABASE_ANON_KEY` in Rork env and AWS Secrets Manager
+1. **Supabase anon key**: Rotate in Supabase Dashboard > Settings > API, then update `EXPO_PUBLIC_SUPABASE_ANON_KEY` in IVX env and AWS Secrets Manager
 2. **Supabase service role key**: Same process, update `SUPABASE_SERVICE_ROLE_KEY`
 3. **JWT_SECRET**: Update in AWS Secrets Manager, redeploy ECS tasks
-4. **AWS credentials**: Rotate in IAM console, update Rork env vars
+4. **AWS credentials**: Rotate in IAM console, update IVX env vars
 
 ### Verifying Secrets Are Not Exposed
 - Run `expo/lib/env-config.ts` → `auditSecretExposure()` to check for misconfigurations

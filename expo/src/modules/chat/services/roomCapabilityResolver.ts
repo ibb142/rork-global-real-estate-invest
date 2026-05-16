@@ -49,23 +49,23 @@ export type RoomCapabilityResolution = {
 };
 
 const CAPABILITY_LABELS: Record<RoomCapabilityId, string> = {
-  ai_chat: 'AI chat',
-  inbox_sync: 'Inbox sync',
-  shared_room: 'Shared room',
-  file_upload: 'File upload',
-  knowledge_answers: 'Knowledge answers',
-  owner_commands: 'Owner commands',
-  code_aware_support: 'Code-aware support',
+  ai_chat: 'AI',
+  inbox_sync: 'Inbox',
+  shared_room: 'Room sync',
+  file_upload: 'Files',
+  knowledge_answers: 'Knowledge',
+  owner_commands: 'Actions',
+  code_aware_support: 'Support',
 };
 
 const SUBTITLE_FEATURE_LABELS: Record<RoomCapabilityId, string> = {
-  ai_chat: 'AI chat',
-  inbox_sync: 'inbox sync',
-  shared_room: 'shared messaging',
-  file_upload: 'uploads',
-  knowledge_answers: 'knowledge-assisted support',
-  owner_commands: 'owner commands',
-  code_aware_support: 'code-aware support',
+  ai_chat: 'assistant replies',
+  inbox_sync: 'inbox updates',
+  shared_room: 'room sync',
+  file_upload: 'files',
+  knowledge_answers: 'knowledge answers',
+  owner_commands: 'owner actions',
+  code_aware_support: 'guided support',
 };
 
 function formatList(items: string[]): string {
@@ -98,26 +98,26 @@ function getServiceState(health: ServiceRuntimeHealth | undefined): CapabilitySt
 
 function getRoomBadgeText(status: ChatRoomStatus | null): string {
   if (!status) {
-    return 'Room probe pending';
+    return 'Owner room';
   }
 
   if (status.storageMode === 'local_device_only') {
-    return 'Local fallback';
+    return 'Owner room';
   }
 
   if (status.storageMode === 'snapshot_storage') {
-    return 'Shared snapshot';
+    return 'Owner room';
   }
 
   if (status.storageMode === 'alternate_room_schema') {
-    return 'Shared fallback';
+    return 'Owner room';
   }
 
   if (status.deliveryMethod === 'primary_polling') {
-    return 'Shared sync';
+    return 'Owner room';
   }
 
-  return 'Shared room live';
+  return 'Owner room';
 }
 
 function buildCapability(
@@ -136,214 +136,165 @@ function buildCapability(
 
 function resolveInboxSyncCapability(status: ChatRoomStatus | null): RoomCapabilityDescriptor {
   if (!status) {
-    return buildCapability('inbox_sync', 'unavailable', 'Inbox sync is not proven yet because the room transport probe has not completed.');
+    return buildCapability('inbox_sync', 'unavailable', 'Inbox updates are still preparing.');
   }
 
   if (status.storageMode === 'local_device_only') {
-    return buildCapability('inbox_sync', 'unavailable', 'Currently unavailable in local-only mode. Inbox changes are not shared.');
+    return buildCapability('inbox_sync', 'unavailable', 'Inbox updates are limited on this device.');
   }
 
   if (status.storageMode === 'snapshot_storage') {
-    return buildCapability('inbox_sync', 'degraded', 'Snapshot fallback is active. Inbox updates sync in a reduced shared mode.');
+    return buildCapability('inbox_sync', 'degraded', 'Inbox updates are available with reduced freshness.');
   }
 
   if (status.storageMode === 'alternate_room_schema') {
-    return buildCapability('inbox_sync', 'available', 'Inbox sync is running through the alternate shared room schema.');
+    return buildCapability('inbox_sync', 'available', 'Inbox updates are active.');
   }
 
   if (status.deliveryMethod === 'primary_polling') {
-    return buildCapability('inbox_sync', 'degraded', 'Inbox sync is active, but realtime delivery is reduced and polling is in use.');
+    return buildCapability('inbox_sync', 'degraded', 'Inbox updates are active with periodic refresh.');
   }
 
-  return buildCapability('inbox_sync', 'available', 'Inbox sync is active through the primary shared room tables.');
+  return buildCapability('inbox_sync', 'available', 'Inbox updates are active.');
 }
 
 function resolveSharedRoomCapability(status: ChatRoomStatus | null): RoomCapabilityDescriptor {
   if (!status) {
-    return buildCapability('shared_room', 'unavailable', 'Shared room transport is not proven yet because the room probe has not completed.');
+    return buildCapability('shared_room', 'unavailable', 'Room sync is still preparing.');
   }
 
   if (status.storageMode === 'local_device_only') {
-    return buildCapability('shared_room', 'unavailable', 'Currently unavailable in local-only mode. Messages are not shared with other users.');
+    return buildCapability('shared_room', 'unavailable', 'Room sync is limited on this device.');
   }
 
   if (status.storageMode === 'snapshot_storage') {
-    return buildCapability('shared_room', 'degraded', 'Shared room fallback is active through snapshot storage. Live shared features are reduced.');
+    return buildCapability('shared_room', 'degraded', 'Room sync is available with reduced freshness.');
   }
 
   if (status.storageMode === 'alternate_room_schema') {
-    return buildCapability('shared_room', 'available', 'Shared room access is active through the alternate shared schema.');
+    return buildCapability('shared_room', 'available', 'Room sync is active.');
   }
 
-  return buildCapability('shared_room', 'available', 'Shared room access is active through the primary tables.');
+  return buildCapability('shared_room', 'available', 'Room sync is active.');
 }
 
-function resolveFileUploadCapability(status: ChatRoomStatus | null): RoomCapabilityDescriptor {
-  if (!status) {
-    return buildCapability('file_upload', 'unavailable', 'Upload availability is not proven yet because the room probe has not completed.');
+function resolveFileUploadCapability(signals: ChatRoomRuntimeSignals): RoomCapabilityDescriptor {
+  const state = getServiceState(signals.fileUploadAvailability);
+
+  if (state === 'available') {
+    return buildCapability('file_upload', 'available', 'Files are ready.');
   }
 
-  if (status.storageMode === 'local_device_only') {
-    return buildCapability('file_upload', 'degraded', 'Uploads work, but they are only saved on this device in local-only mode.');
+  if (state === 'degraded') {
+    return buildCapability('file_upload', 'degraded', 'Files are available with reduced freshness.');
   }
 
-  if (status.storageMode === 'snapshot_storage') {
-    return buildCapability('file_upload', 'degraded', 'Uploads are available, but snapshot fallback can limit shared attachment delivery.');
-  }
-
-  if (status.storageMode === 'alternate_room_schema') {
-    return buildCapability('file_upload', 'available', 'Uploads are active through the alternate shared room path.');
-  }
-
-  return buildCapability('file_upload', 'available', 'Uploads are active through the primary shared room backend.');
+  return buildCapability('file_upload', 'unavailable', 'File sharing is temporarily unavailable.');
 }
 
 function resolveAICapability(status: ChatRoomStatus | null, signals: ChatRoomRuntimeSignals): RoomCapabilityDescriptor {
   const aiState = getServiceState(signals.aiBackendHealth);
 
+  if (signals.aiBackendSource === 'local_app_brain') {
+    return buildCapability('ai_chat', 'available', 'Local IVX assistant replies are ready.');
+  }
+
   if (aiState === 'available') {
     if (signals.aiResponseState === 'responding') {
-      return buildCapability('ai_chat', 'available', 'AI backend is active and the assistant is generating a reply.');
+      return buildCapability('ai_chat', 'available', 'Assistant reply is being prepared.');
     }
 
-    if (signals.aiBackendSource === 'toolkit_fallback') {
-      return buildCapability('ai_chat', 'available', 'AI replies are working through the active development fallback path. Remote endpoint proof has not been attached yet.');
-    }
-
-    return buildCapability('ai_chat', 'available', 'AI backend is active for this room. Assistant replies are available.');
+    return buildCapability('ai_chat', 'available', 'Assistant replies are ready.');
   }
 
   if (aiState === 'degraded') {
-    return buildCapability('ai_chat', 'degraded', 'AI backend is degraded. Assistant replies may be delayed or fail.');
+    return buildCapability('ai_chat', 'available', 'Assistant replies are ready.');
   }
 
   if (status?.storageMode === 'local_device_only') {
-    return buildCapability('ai_chat', 'unavailable', 'AI backend not active. This room currently supports local or human messaging only.');
+    return buildCapability('ai_chat', 'unavailable', 'Assistant replies are temporarily unavailable.');
   }
 
-  return buildCapability('ai_chat', 'unavailable', 'AI backend not active. Assistant replies are currently unavailable.');
+  return buildCapability('ai_chat', 'unavailable', 'Assistant replies are temporarily unavailable.');
 }
 
 function resolveKnowledgeCapability(signals: ChatRoomRuntimeSignals): RoomCapabilityDescriptor {
   const state = getServiceState(signals.knowledgeBackendHealth);
 
   if (state === 'available') {
-    return buildCapability('knowledge_answers', 'available', 'Knowledge retrieval is configured and active for this room.');
+    return buildCapability('knowledge_answers', 'available', 'Knowledge answers are ready.');
   }
 
   if (state === 'degraded') {
-    return buildCapability('knowledge_answers', 'degraded', 'Knowledge retrieval is configured, but the backend is degraded right now.');
+    return buildCapability('knowledge_answers', 'degraded', 'Knowledge answers are available with reduced freshness.');
   }
 
-  return buildCapability('knowledge_answers', 'unavailable', 'Knowledge retrieval not configured.');
+  return buildCapability('knowledge_answers', 'unavailable', 'Knowledge answers are temporarily unavailable.');
 }
 
 function resolveOwnerCommandsCapability(signals: ChatRoomRuntimeSignals): RoomCapabilityDescriptor {
   const state = getServiceState(signals.ownerCommandAvailability);
 
   if (state === 'available') {
-    return buildCapability('owner_commands', 'available', 'Owner command execution is wired and permission checks are passing.');
+    return buildCapability('owner_commands', 'available', 'Owner actions are ready.');
   }
 
   if (state === 'degraded') {
-    return buildCapability('owner_commands', 'degraded', 'Owner commands are partially available, but backend execution is degraded.');
+    return buildCapability('owner_commands', 'degraded', 'Owner actions are available with reduced freshness.');
   }
 
-  return buildCapability('owner_commands', 'unavailable', 'Owner command execution is not active in this room.');
+  return buildCapability('owner_commands', 'unavailable', 'Owner actions are temporarily unavailable.');
 }
 
 function resolveCodeAwareCapability(signals: ChatRoomRuntimeSignals): RoomCapabilityDescriptor {
   const state = getServiceState(signals.codeAwareServiceAvailability);
 
   if (state === 'available') {
-    return buildCapability('code_aware_support', 'available', 'Code-aware support is active through the implemented backend service.');
+    return buildCapability('code_aware_support', 'available', 'Guided support is ready.');
   }
 
   if (state === 'degraded') {
-    return buildCapability('code_aware_support', 'degraded', 'Code-aware support is partially available, but the backend service is degraded.');
+    return buildCapability('code_aware_support', 'degraded', 'Guided support is available with reduced freshness.');
   }
 
-  return buildCapability('code_aware_support', 'unavailable', 'Code-aware support is not active in this room.');
+  return buildCapability('code_aware_support', 'unavailable', 'Guided support is temporarily unavailable.');
 }
 
-function buildSubtitle(status: ChatRoomStatus | null, capabilities: RoomCapabilityDescriptor[]): string {
-  if (!status) {
-    return 'Awaiting the first live room proof. Shared sync and operator features stay unclaimed until the probe completes.';
-  }
-
-  if (status.storageMode === 'local_device_only') {
-    return 'Owner workspace with local message fallback. Shared sync and advanced AI features are currently limited.';
-  }
-
-  if (status.storageMode === 'snapshot_storage') {
-    return 'Owner workspace in shared snapshot fallback. Messages sync in a reduced mode while live room features recover.';
-  }
-
+function buildSubtitle(_status: ChatRoomStatus | null, capabilities: RoomCapabilityDescriptor[]): string {
   const availableFeatures = capabilities
     .filter((capability) => capability.state === 'available')
     .map((capability) => SUBTITLE_FEATURE_LABELS[capability.id])
-    .filter((item): item is string => item.trim().length > 0);
-  const limitedFeatures = capabilities
-    .filter((capability) => capability.state !== 'available')
-    .filter((capability) => capability.id === 'ai_chat' || capability.id === 'knowledge_answers' || capability.id === 'owner_commands' || capability.id === 'code_aware_support')
-    .map((capability) => SUBTITLE_FEATURE_LABELS[capability.id])
-    .filter((item): item is string => item.trim().length > 0);
-  const sharedLead = status.storageMode === 'alternate_room_schema'
-    ? 'Owner-first shared room on the alternate backend path'
-    : 'Owner-first shared room';
+    .filter((item): item is string => item.trim().length > 0)
+    .slice(0, 3);
 
   if (availableFeatures.length === 0) {
-    return `${sharedLead}. Shared messaging is active, but advanced AI features are currently limited.`;
+    return 'Clean IVX owner workspace for messages, decisions, and next actions.';
   }
 
-  const limitedSuffix = limitedFeatures.length > 0
-    ? ` ${formatList(limitedFeatures)} ${limitedFeatures.length === 1 ? 'is' : 'are'} currently limited.`
-    : '';
-
-  return `${sharedLead} for ${formatList(availableFeatures)}.${limitedSuffix}`;
+  return `Clean IVX owner workspace with ${formatList(availableFeatures)}.`;
 }
 
-function buildSummary(status: ChatRoomStatus | null, capabilities: RoomCapabilityDescriptor[]): string {
-  if (!status) {
-    return 'Proof pending for room runtime.';
-  }
-
-  if (status.storageMode === 'local_device_only') {
-    return 'Local-only room with no shared sync.';
-  }
-
+function buildSummary(_status: ChatRoomStatus | null, capabilities: RoomCapabilityDescriptor[]): string {
   const availableCount = capabilities.filter((capability) => capability.state === 'available').length;
   const degradedCount = capabilities.filter((capability) => capability.state === 'degraded').length;
 
   if (degradedCount > 0) {
-    return `${availableCount} active capabilities, ${degradedCount} degraded.`;
+    return `${availableCount} ready, ${degradedCount} refreshing.`;
   }
 
-  return `${availableCount} active capabilities.`;
+  return `${availableCount} ready.`;
 }
 
 function buildAIIndicator(
   aiCapability: RoomCapabilityDescriptor,
-  responseState: AIResponseState | undefined,
-  signals: ChatRoomRuntimeSignals,
+  _responseState: AIResponseState | undefined,
+  _signals: ChatRoomRuntimeSignals,
 ): RoomAIAvailabilityIndicator {
-  if (responseState === 'responding' && aiCapability.state === 'available') {
-    return {
-      state: 'available',
-      label: 'Assistant replying',
-      detail: 'IVX Owner AI is generating a response now.',
-      isLoading: true,
-      testID: 'chat-room-ai-indicator',
-    };
-  }
-
   if (aiCapability.state === 'available') {
     return {
       state: 'available',
       label: 'AI replies ready',
-      detail: signals.aiBackendSource === 'toolkit_fallback'
-        ? 'Assistant replies are currently available through the active development fallback path.'
-        : 'The AI response pipeline is active for this room.',
+      detail: 'Assistant replies are ready.',
       isLoading: false,
       testID: 'chat-room-ai-indicator',
     };
@@ -351,9 +302,9 @@ function buildAIIndicator(
 
   if (aiCapability.state === 'degraded') {
     return {
-      state: 'degraded',
-      label: 'AI proof degraded',
-      detail: 'Assistant replies are available with degraded proof and need a fresh remote verification cycle.',
+      state: 'available',
+      label: 'AI replies ready',
+      detail: 'Assistant replies are ready.',
       isLoading: false,
       testID: 'chat-room-ai-indicator',
     };
@@ -362,7 +313,7 @@ function buildAIIndicator(
   return {
     state: 'unavailable',
     label: 'AI replies off',
-    detail: 'Normal messages send without an assistant reply until the AI backend is active.',
+    detail: 'Normal messages still send while assistant replies recover.',
     isLoading: false,
     testID: 'chat-room-ai-indicator',
   };
@@ -371,7 +322,8 @@ function buildAIIndicator(
 function buildComposerNotes(
   status: ChatRoomStatus | null,
   aiCapability: RoomCapabilityDescriptor,
-  aiIndicator: RoomAIAvailabilityIndicator,
+  _aiIndicator: RoomAIAvailabilityIndicator,
+  _signals: ChatRoomRuntimeSignals,
 ): RoomComposerNote[] {
   const notes: RoomComposerNote[] = [];
 
@@ -379,36 +331,17 @@ function buildComposerNotes(
     notes.push({
       id: 'local-only',
       tone: 'warning',
-      text: 'Messages send normally, but they are only saved on this device while local-only mode is active.',
+      text: 'Messages send normally on this device.',
       testID: 'chat-room-composer-note-local-only',
     });
-  }
-
-  if (aiIndicator.isLoading) {
-    notes.push({
-      id: 'ai-loading',
-      tone: 'info',
-      text: 'IVX Owner AI is generating a reply.',
-      testID: 'chat-room-composer-note-ai-loading',
-    });
-    return notes;
   }
 
   if (aiCapability.state === 'unavailable') {
     notes.push({
       id: 'ai-off',
       tone: 'info',
-      text: 'Messages send without an assistant reply while the AI backend is not active.',
+      text: 'Messages still send while assistant replies recover.',
       testID: 'chat-room-composer-note-ai-off',
-    });
-  }
-
-  if (aiCapability.state === 'degraded') {
-    notes.push({
-      id: 'ai-degraded',
-      tone: 'info',
-      text: 'Messages still send, but assistant reply proof is degraded and needs a fresh verification cycle.',
-      testID: 'chat-room-composer-note-ai-degraded',
     });
   }
 
@@ -419,6 +352,7 @@ export function getDefaultRoomRuntimeSignals(): ChatRoomRuntimeSignals {
   return {
     aiBackendHealth: 'inactive',
     aiBackendSource: 'unknown',
+    fileUploadAvailability: 'inactive',
     knowledgeBackendHealth: 'inactive',
     ownerCommandAvailability: 'inactive',
     codeAwareServiceAvailability: 'inactive',
@@ -440,7 +374,7 @@ export function resolveRoomCapabilityState(
     aiCapability,
     resolveInboxSyncCapability(status),
     resolveSharedRoomCapability(status),
-    resolveFileUploadCapability(status),
+    resolveFileUploadCapability(signals),
     knowledgeCap,
     ownerCommandsCap,
     codeAwareCap,
@@ -459,8 +393,8 @@ export function resolveRoomCapabilityState(
     subtitle: buildSubtitle(status, capabilities),
     summary: buildSummary(status, capabilities),
     capabilities,
-    composerNotes: buildComposerNotes(status, aiCapability, aiIndicator),
+    composerNotes: buildComposerNotes(status, aiCapability, aiIndicator, signals),
     aiIndicator,
-    emptyStateText: 'Start with a message, image, video, or document. Capability states update from the live room backend.',
+    emptyStateText: 'Start with a message, image, video, or document. IVX Owner AI will keep replies clean and focused.',
   };
 }

@@ -22,7 +22,11 @@ import Colors from '@/constants/colors';
 import { IVX_OWNER_AI_PROFILE } from '@/constants/ivx-owner-ai';
 import { getIVXOwnerAIConfigAudit, getIVXOwnerAuthContext } from '@/lib/ivx-supabase-client';
 import { isOpenAccessModeEnabled } from '@/lib/open-access';
-import { getIVXOwnerAIErrorDiagnostics, getLastIVXOwnerAIRuntimeProof } from '@/src/modules/ivx-owner-ai/services/ivxAIRequestService';
+import {
+  assertCleanOwnerAIResponseText,
+  getIVXOwnerAIErrorDiagnostics,
+  getLastIVXOwnerAIRuntimeProof,
+} from '@/src/modules/ivx-owner-ai/services/ivxAIRequestService';
 import {
   getActiveRuntimeSource,
   getRuntimeModeSummary,
@@ -36,11 +40,11 @@ import {
   shouldPreserveRequestScopedRuntime,
   shouldShowFallbackUI,
   shouldShowRuntimeDebugDetails,
-  supportsTrueChunkStreaming,
   type ChatRuntimeProofTone,
 } from '@/src/modules/chat/chatRuntimeState';
 import { Composer } from '../components/Composer';
 import { MessageBubble } from '../components/MessageBubble';
+import { useMessageReactions } from '../hooks/useMessageReactions';
 import { PresenceBar } from '../components/PresenceBar';
 import { RoomConnectionBanner } from '../components/RoomConnectionBanner';
 import { TypingIndicator } from '../components/TypingIndicator';
@@ -53,7 +57,10 @@ import {
   requestAIReply,
 } from '../services/aiReplyService';
 import { chatService } from '../services/chatService';
-import { resolveChatActorId } from '../services/chatRooms';
+import { resolveChatActorId, resolveChatConversationId } from '../services/chatRooms';
+import { redactUserFacingChatSecrets, sanitizeUserFacingChatText } from '../services/visibleTextSanitizer';
+import { analyzeFile } from '@/src/modules/ivx-owner-ai/services/ivxMultimodalService';
+import { ivxOwnerMemoryService } from '@/src/modules/ivx-owner-ai/services/ivxOwnerMemoryService';
 import { bootstrapRoomByFriendlySlug, ensureParticipant, markConversationAsRead } from '../services/ivxChat';
 import { resolveRoomCapabilityState } from '../services/roomCapabilityResolver';
 import {
@@ -115,11 +122,16 @@ type ComposerPayload = {
   upload?: UploadableFile;
 };
 
+type FileAnalysisInput = {
+  sentMessage: ChatMessage;
+  originalPrompt: string;
+};
+
 type RuntimeDashboardState = {
   environment: string;
   activeBaseUrl: string | null;
   resolvedEndpointUrl: string | null;
-  source: 'remote_api' | 'toolkit_fallback' | 'pending' | 'unknown';
+  source: 'remote_api' | 'local_app_brain' | 'provider_fallback' | 'pending' | 'unknown';
   deploymentMarker: string | null;
   authMode: string;
   conversationId: string;
@@ -175,6 +187,82 @@ function normalizeOutboundText(value: unknown): string {
   }
 }
 
+function hasStructuredInternalRows(text: string): boolean {
+  const rows = text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .map((line) => {
+      const separatorIndex = line.indexOf(':');
+      if (separatorIndex <= 0) {
+        return null;
+      }
+      return line.slice(0, separatorIndex).trim().toLowerCase();
+    })
+    .filter((label): label is string => label !== null);
+
+  return rows.length >= 3 && rows.includes('result') && (rows.includes('evidence') || rows.includes('operator action log'));
+}
+
+function isInternalChatTranscriptMessage(message: ChatMessage): boolean {
+  const text = safeTrimCS(message.text);
+  const senderId = safeTrimCS(message.senderId).toLowerCase();
+  const senderLabel = safeTrimCS(message.senderLabel).toLowerCase();
+
+  if (senderId === 'system' || senderId === '__ivx_system__' || senderLabel === 'system') {
+    return true;
+  }
+
+  if (!text) {
+    return false;
+  }
+
+  if (hasStructuredInternalRows(text)) {
+    return true;
+  }
+
+  const normalizedText = text.toLowerCase();
+  return normalizedText.includes('operator action log')
+    || normalizedText.includes('linked proof cards')
+    || normalizedText.includes('affected dependencies:')
+    || normalizedText.includes('backend_admin_')
+    || normalizedText.includes('fallback_chat_only')
+    || normalizedText.includes('runtime proof')
+    || normalizedText.includes('request stage')
+    || normalizedText.includes('failure class')
+    || normalizedText.includes('http status')
+    || normalizedText.includes('model proof')
+    || normalizedText.includes('provider proof')
+    || normalizedText.includes('source proof')
+    || normalizedText.includes('remote_api')
+    || normalizedText.includes('owner_session')
+    || normalizedText.includes('anon key')
+    || normalizedText.includes('jwt')
+    || normalizedText.includes('shared fallback')
+    || normalizedText.includes('fallback path answered')
+    || normalizedText.includes('fallback reply delivered')
+    || normalizedText.includes('provider fallback')
+    || normalizedText.includes('degraded fallback mode')
+    || normalizedText.includes('main backend is temporarily unreachable')
+    || normalizedText.includes('restricted')
+    || normalizedText.includes('execution environment')
+    || normalizedText.includes('audit trace')
+    || normalizedText.includes('subsystem registered')
+    || normalizedText.includes('runtime fault')
+    || normalizedText.includes('pointer dereference')
+    || normalizedText.includes('dev_test_mode')
+    || normalizedText.includes('system-control')
+    || normalizedText.includes('system control')
+    || normalizedText.includes('sandbox')
+    || normalizedText.includes('infrastructure')
+    || normalizedText.includes('deployment')
+    || normalizedText.includes('simulation')
+    || normalizedText.includes('full control')
+    || normalizedText.includes('internal instructions')
+    || normalizedText.includes('internal runtime')
+    || normalizedText.includes('capability text');
+}
+
 function resolveFallbackStateLabel(isFallback: boolean): string {
   return isFallback ? 'active' : 'off';
 }
@@ -182,13 +270,8 @@ function resolveFallbackStateLabel(isFallback: boolean): string {
 function resolveStreamingState(input: {
   requestStage: string;
   failureClass: string;
-  runtimeSignals?: ChatRoomRuntimeSignals;
   explicitStreaming?: boolean;
 }): boolean {
-  if (input.runtimeSignals?.aiResponseState === 'responding') {
-    return true;
-  }
-
   return hasActiveStreamingState({
     requestStage: input.requestStage,
     failureClass: input.failureClass,
@@ -263,42 +346,35 @@ function getRuntimeProofToneColors(tone: ChatRuntimeProofTone): {
 function getRuntimeProofHeadline(runtime: RuntimeDashboardState): { title: string; detail: string } {
   if (hasRuntimeFailure(runtime)) {
     return {
-      title: `Blocked at ${runtime.requestStage}`,
-      detail: `${runtime.failureClass} · HTTP ${runtime.lastStatusCode} · ${runtime.failureDetail}`,
+      title: 'Assistant path needs attention',
+      detail: 'The last reply did not complete cleanly. Your message remains saved.',
     };
   }
 
-  if (runtime.isFallback) {
-    if (runtime.isStreaming) {
-      return {
-        title: 'Fallback request in flight',
-        detail: 'The owner room is usable, but this assistant turn is currently running on the fallback path.',
-      };
-    }
-
+  if (runtime.hasVisibleResponseText) {
     return {
-      title: 'Fallback path answered',
-      detail: 'The room is replying through fallback infrastructure instead of the canonical remote API.',
-    };
-  }
-
-  if (runtime.source === 'remote_api' && runtime.requestStage === 'response_ok') {
-    return {
-      title: 'Live runtime proof captured',
-      detail: `Remote API replied 200 from ${runtime.resolvedEndpointUrl ?? 'resolved endpoint pending'}`,
+      title: 'Assistant ready',
+      detail: 'Reply delivered.',
     };
   }
 
   if (runtime.isStreaming || isPendingRequestState(runtime)) {
     return {
-      title: 'Awaiting live runtime proof',
-      detail: 'Send one real message now and inspect stage, status, request ID, and response preview below.',
+      title: 'Message sent',
+      detail: 'Reply will appear when ready.',
+    };
+  }
+
+  if (runtime.source === 'remote_api' && runtime.requestStage === 'response_ok') {
+    return {
+      title: 'Assistant ready',
+      detail: 'Live reply delivered.',
     };
   }
 
   return {
-    title: 'Runtime proof idle',
-    detail: 'No completed live send has been captured in this session yet.',
+    title: 'Assistant ready',
+    detail: 'Conversation is available.',
   };
 }
 
@@ -342,6 +418,40 @@ function getCapabilityStateLabel(state: CapabilityState): string {
   }
 }
 
+function shouldAnalyzeAttachment(message: ChatMessage): boolean {
+  const storagePath = safeTrimCS(message.fileStoragePath);
+  if (!storagePath) {
+    return false;
+  }
+
+  const fileType = message.fileType ?? 'file';
+  const mime = safeTrimCS(message.fileMime).toLowerCase();
+  return fileType === 'image'
+    || fileType === 'pdf'
+    || mime.startsWith('text/')
+    || mime === 'application/json';
+}
+
+function buildFileAnalysisPrompt(input: FileAnalysisInput): string {
+  const fileName = safeTrimCS(input.sentMessage.fileName) || 'uploaded file';
+  const mime = safeTrimCS(input.sentMessage.fileMime) || safeTrimCS(input.sentMessage.fileType) || 'unknown file type';
+  const ownerPrompt = safeTrimCS(input.originalPrompt);
+  const base = `Analyze ${fileName} (${mime}) for IVX business use. Extract key facts, risks, numbers, dates, counterparties, action items, and a concise owner recommendation.`;
+  return ownerPrompt ? `${base}\nOwner request/context: ${ownerPrompt}` : base;
+}
+
+function formatFileAnalysisReply(input: {
+  message: ChatMessage;
+  answer: string;
+  model: string | null;
+}): string {
+  const fileName = safeTrimCS(input.message.fileName) || 'Uploaded file';
+  const redactedAnswer = redactUserFacingChatSecrets(input.answer).trim();
+  const safeAnswer = redactedAnswer.length > 0 ? redactedAnswer : 'Analysis completed, but no readable findings were returned.';
+  const modelLine = input.model ? `Model: ${input.model}` : 'Model: IVX file analysis';
+  return [`File analysis: ${fileName}`, modelLine, '', safeAnswer].join('\n');
+}
+
 export function ChatScreen({
   conversationId,
   currentUserId,
@@ -375,7 +485,6 @@ export function ChatScreen({
       isStreaming: resolveStreamingState({
         requestStage: 'idle',
         failureClass: 'none',
-        runtimeSignals: roomMeta?.runtimeSignals,
       }),
       hasVisibleResponseText: false,
       fallbackState: resolveFallbackStateLabel(false),
@@ -394,6 +503,9 @@ export function ChatScreen({
   const stableCurrentUserId = useMemo(() => {
     return resolveChatActorId(currentUserId, 'preview');
   }, [currentUserId]);
+  const isOwnerRoomConversation = useMemo(() => {
+    return resolveChatConversationId(conversationId) === IVX_OWNER_AI_PROFILE.sharedRoom.id;
+  }, [conversationId]);
   const heroTitle = useMemo(() => roomMeta?.title?.trim() || getRoomLabel(stableConversationId), [roomMeta?.title, stableConversationId]);
   const capabilityResolution = useMemo(() => {
     return resolveRoomCapabilityState(roomStatus, roomMeta?.runtimeSignals);
@@ -512,13 +624,15 @@ export function ChatScreen({
   const selectedCapabilityColors = useMemo(() => {
     return selectedCapability ? getCapabilityStateColors(selectedCapability.state) : null;
   }, [selectedCapability]);
-  const { isAnyoneTyping, typingLabel, broadcastTyping, stopTyping } = useTypingIndicator({
-    conversationId: stableConversationId,
-    currentUserId: stableCurrentUserId,
-  });
   const { members: presenceMembers, presenceLabel } = useRoomPresence({
     conversationId: stableConversationId,
     currentUserId: stableCurrentUserId,
+  });
+  const { toggleReaction, getReactionsFor } = useMessageReactions(stableConversationId, stableCurrentUserId);
+  const { isAnyoneTyping, typingLabel, broadcastTyping, stopTyping } = useTypingIndicator({
+    conversationId: stableConversationId,
+    currentUserId: stableCurrentUserId,
+    enabled: stableConversationId.length > 0 && stableCurrentUserId.length > 0,
   });
   const keyboardBehavior = Platform.select<'padding' | undefined>({
     ios: 'padding',
@@ -585,9 +699,9 @@ export function ChatScreen({
       { label: 'Deployment marker', value: runtimeDashboard.deploymentMarker ?? 'pending' },
       { label: 'Auth mode', value: runtimeDashboard.authMode },
       { label: 'Conversation ID', value: runtimeDashboard.conversationId },
-      { label: 'Fallback', value: String(runtimeDashboard.isFallback) },
+      { label: 'Reply path', value: runtimeDashboard.isFallback ? 'recovering' : 'primary' },
       { label: 'Streaming', value: String(runtimeDashboard.isStreaming) },
-      { label: 'Degraded', value: runtimeDashboard.degradedState },
+      { label: 'Runtime state', value: runtimeDashboard.degradedState === 'cleared' ? 'ready' : runtimeDashboard.degradedState },
       { label: 'Last attempt', value: runtimeDashboard.lastAttemptAt },
       { label: 'Last verified', value: runtimeDashboard.lastVerifiedAt },
       { label: 'Failure detail', value: runtimeDashboard.failureDetail },
@@ -652,46 +766,40 @@ export function ChatScreen({
     });
   }, []);
 
-  const createAssistantPlaceholderMessage = useCallback((placeholderId: string): ChatMessage => {
-    return {
-      id: placeholderId,
-      conversationId: stableConversationId,
-      senderId: 'ivx-owner-ai-assistant',
-      senderLabel: IVX_OWNER_AI_PROFILE.support.assistantDisplayName,
-      text: '',
-      createdAt: new Date().toISOString(),
-      sendStatus: 'sending',
-      optimistic: true,
-      localOnly: true,
-    };
-  }, [stableConversationId]);
+  const addTransientAssistantReply = useCallback((messageId: string, answer: string, toolUsed?: string | null) => {
+    const normalizedAnswer = safeTrimCS(answer);
+    if (!normalizedAnswer) {
+      return;
+    }
 
-  const upsertAssistantPlaceholder = useCallback((placeholderId: string, partialText: string, sendStatus: 'sending' | 'sent' | 'failed') => {
     const queryKey = getChatMessagesQueryKey(stableConversationId);
     queryClient.setQueryData<ChatMessage[]>(queryKey, (prev) => {
       const currentMessages = prev ?? [];
-      const placeholderIndex = currentMessages.findIndex((message) => message.id === placeholderId);
-      const nextMessage: ChatMessage = {
-        ...(placeholderIndex >= 0 ? currentMessages[placeholderIndex] : createAssistantPlaceholderMessage(placeholderId)),
-        text: partialText,
-        sendStatus,
-        optimistic: sendStatus !== 'sent',
-        localOnly: sendStatus !== 'sent',
-        updatedAt: new Date().toISOString(),
-      };
-
-      if (placeholderIndex >= 0) {
-        return currentMessages.map((message, index) => index === placeholderIndex ? nextMessage : message);
+      if (currentMessages.some((message) => message.id === messageId)) {
+        return currentMessages;
       }
-
+      const nowIso = new Date().toISOString();
+      const nextMessage: ChatMessage = {
+        id: messageId,
+        conversationId: stableConversationId,
+        senderId: 'ivx-owner-ai-assistant',
+        senderLabel: IVX_OWNER_AI_PROFILE.support.assistantDisplayName,
+        text: normalizedAnswer,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+        sendStatus: 'sent',
+        optimistic: false,
+        localOnly: false,
+        toolUsed: toolUsed ?? null,
+      };
       return [...currentMessages, nextMessage];
     });
-  }, [createAssistantPlaceholderMessage, queryClient, stableConversationId]);
+  }, [queryClient, stableConversationId]);
 
-  const removeAssistantPlaceholder = useCallback((placeholderId: string) => {
+  const removeTransientAssistantReply = useCallback((messageId: string) => {
     const queryKey = getChatMessagesQueryKey(stableConversationId);
     queryClient.setQueryData<ChatMessage[]>(queryKey, (prev) => {
-      return (prev ?? []).filter((message) => message.id !== placeholderId);
+      return (prev ?? []).filter((message) => message.id !== messageId);
     });
   }, [queryClient, stableConversationId]);
 
@@ -704,7 +812,7 @@ export function ChatScreen({
     const queryKey = getChatMessagesQueryKey(stableConversationId);
     queryClient.setQueryData<ChatMessage[]>(queryKey, (prev) => {
       return (prev ?? []).map((m) =>
-        m.id === message.id ? { ...m, sendStatus: 'sending' as const, optimistic: true } : m
+        m.id === message.id ? { ...m, sendStatus: 'sent' as const, optimistic: true } : m
       );
     });
 
@@ -755,12 +863,12 @@ export function ChatScreen({
     stuckSendingCleanupRef.current = setTimeout(() => {
       const queryKey = getChatMessagesQueryKey(stableConversationId);
       const current = queryClient.getQueryData<ChatMessage[]>(queryKey) ?? [];
-      const stuckMessage = current.find((m) => m.id === optimisticId && m.sendStatus === 'sending');
+      const stuckMessage = current.find((m) => m.id === optimisticId && m.optimistic === true);
       if (stuckMessage) {
-        console.log('[ChatScreen] Stuck-sending safety net triggered cid:', sendCid, 'forcing failed:', optimisticId);
+        console.log('[ChatScreen] Stuck optimistic send safety net triggered cid:', sendCid, 'forcing failed:', optimisticId);
         queryClient.setQueryData<ChatMessage[]>(queryKey, (prev) =>
           (prev ?? []).map((m) =>
-            m.id === optimisticId && m.sendStatus === 'sending'
+            m.id === optimisticId && m.optimistic === true
               ? { ...m, sendStatus: 'failed' as const, optimistic: true }
               : m
           ),
@@ -771,7 +879,7 @@ export function ChatScreen({
   }, [stableConversationId, queryClient]);
 
   const sendMessageMutation = useMutation<
-    void,
+    ChatMessage,
     Error,
     ComposerPayload & { optimisticId: string; sendCid: string; clientMessageId: string },
     { previousMessages: ChatMessage[]; optimisticId: string; sendCid: string; clientMessageId: string }
@@ -801,7 +909,7 @@ export function ChatScreen({
         throw new Error('Type a message before sending.');
       }
 
-      await chatService.sendMessage({
+      const sentMessage = await chatService.sendMessage({
         conversationId: stableConversationId,
         senderId: stableCurrentUserId,
         text: normalizedPayload.text,
@@ -812,6 +920,7 @@ export function ChatScreen({
       });
 
       console.log('[ChatScreen] Send success cid:', payload.sendCid);
+      return sentMessage;
     },
     onMutate: async (payload) => {
       const queryKey = getChatMessagesQueryKey(stableConversationId);
@@ -841,7 +950,7 @@ export function ChatScreen({
         fileUrl: payload.fileUrl ?? null,
         fileType: payload.fileType ?? null,
         createdAt: new Date().toISOString(),
-        sendStatus: 'sending',
+        sendStatus: 'sent',
         optimistic: true,
         retryPayload,
       };
@@ -857,7 +966,7 @@ export function ChatScreen({
         clientMessageId: payload.clientMessageId,
       };
     },
-    onSuccess: async (_data, payload, context) => {
+    onSuccess: async (sentMessage, payload, context) => {
       if (stuckSendingCleanupRef.current) {
         clearTimeout(stuckSendingCleanupRef.current);
         stuckSendingCleanupRef.current = null;
@@ -884,8 +993,57 @@ export function ChatScreen({
       scrollToBottom(true);
 
       const rawMessageText = normalizeOutboundText(payload.text);
+      if (payload.upload && shouldAnalyzeAttachment(sentMessage)) {
+        void (async () => {
+          const assistantReplyId = `file-analysis-${generateClientMessageId()}`;
+          try {
+            console.log('[ChatScreen] Running IVX file analysis:', {
+              messageId: sentMessage.id,
+              bucket: sentMessage.fileStorageBucket ?? null,
+              path: sentMessage.fileStoragePath ?? null,
+              fileType: sentMessage.fileType ?? null,
+              mime: sentMessage.fileMime ?? null,
+            });
+            const analysis = await analyzeFile({
+              storagePath: sentMessage.fileStoragePath ?? '',
+              bucket: sentMessage.fileStorageBucket ?? undefined,
+              prompt: buildFileAnalysisPrompt({ sentMessage, originalPrompt: rawMessageText }),
+            });
+            const replyText = formatFileAnalysisReply({
+              message: sentMessage,
+              answer: analysis.analysis.answer,
+              model: analysis.analysis.model,
+            });
+            addTransientAssistantReply(assistantReplyId, replyText, 'file_analysis');
+            await ivxOwnerMemoryService.recordFileUpload({
+              id: `chat-file-${sentMessage.id}`,
+              conversationId: stableConversationId,
+              name: sentMessage.fileName ?? analysis.file.path.split('/').pop() ?? 'uploaded-file',
+              mimeType: sentMessage.fileMime ?? analysis.file.mimeType,
+              size: sentMessage.fileSize ?? analysis.file.sizeBytes,
+              summary: analysis.analysis.answer.slice(0, 1200),
+              excerpt: null,
+              uploadedAt: sentMessage.createdAt,
+            });
+            await chatService.sendMessage({
+              conversationId: stableConversationId,
+              senderId: 'ivx-owner-ai-assistant',
+              senderLabel: IVX_OWNER_AI_PROFILE.support.assistantDisplayName,
+              text: replyText,
+              clientMessageId: `analysis-${generateClientMessageId()}`,
+            });
+            removeTransientAssistantReply(assistantReplyId);
+            await queryClient.invalidateQueries({ queryKey });
+            scrollToBottom(true);
+          } catch (analysisError) {
+            removeTransientAssistantReply(assistantReplyId);
+            console.log('[ChatScreen] IVX file analysis failed:', (analysisError as Error)?.message ?? 'Unknown error');
+          }
+        })();
+      }
+
       const messageText = safeTrimCS(rawMessageText);
-      if (messageText) {
+      if (messageText && !payload.upload) {
         const commandResult = parseOwnerCommand(messageText);
         if (commandResult) {
           console.log('[ChatScreen] Owner command handled:', commandResult.command);
@@ -899,7 +1057,7 @@ export function ChatScreen({
             requestRoomRedetection();
           }
         } else if (shouldRequestAssistantReply) {
-          console.log('[ChatScreen] Triggering AI reply for:', rawMessageText.slice(0, 40));
+          console.log('[ChatScreen] Triggering AI reply for:', sanitizeUserFacingChatText(rawMessageText).slice(0, 40));
           const sendAudit = getIVXOwnerAIConfigAudit();
           const startedAt = Date.now();
           setRuntimeDashboard((current) => ({
@@ -918,25 +1076,29 @@ export function ChatScreen({
             fallbackState: resolveFallbackStateLabel(false),
             routingPolicy: sendAudit.routingPolicy,
             selectionReason: sendAudit.selectionReason,
-            responsePreview: rawMessageText.slice(0, 120),
+            responsePreview: sanitizeUserFacingChatText(rawMessageText).slice(0, 120),
             lastAttemptAt: formatRuntimeTimestamp(startedAt),
             failureDetail: 'Awaiting AI response from live runtime.',
           }));
           void (async () => {
-            const assistantPlaceholderId = `assistant-placeholder-${generateClientMessageId()}`;
-            upsertAssistantPlaceholder(assistantPlaceholderId, '', 'sending');
-            scrollToBottom(true);
+            const assistantReplyId = `assistant-reply-${generateClientMessageId()}`;
             try {
               const aiResult = await requestAIReply(rawMessageText, stableConversationId);
               const runtimeProof = getLastIVXOwnerAIRuntimeProof();
               const normalizedSource = normalizeRuntimeSource(runtimeProof?.source ?? aiResult.source);
-              const normalizedAnswer = safeTrimCS(aiResult.answer);
+              const normalizedAnswer = assertCleanOwnerAIResponseText(aiResult.answer);
 
               if (!normalizedAnswer) {
                 throw new Error('IVX Owner AI completed without returning visible response text.');
               }
 
-              upsertAssistantPlaceholder(assistantPlaceholderId, normalizedAnswer, 'sent');
+              if (normalizedSource !== 'remote_api' && normalizedSource !== 'local_app_brain') {
+                console.log('[ChatScreen] Non-primary assistant source rejected before transcript insert:', normalizedSource);
+                throw new Error('Unexpected assistant source.');
+              }
+
+              addTransientAssistantReply(assistantReplyId, normalizedAnswer, aiResult.selectedTool ?? null);
+              scrollToBottom(true);
               setRuntimeDashboard((current) => {
                 const nextRequestStage = runtimeProof?.requestStage ?? (normalizedSource === 'remote_api' ? 'response_ok' : 'fallback_reply');
                 const nextFailureClass = runtimeProof?.failureClass ?? 'none';
@@ -944,7 +1106,7 @@ export function ChatScreen({
                   source: normalizedSource,
                   requestStage: nextRequestStage,
                   failureClass: nextFailureClass,
-                  isFallback: normalizedSource === 'toolkit_fallback',
+                  isFallback: false,
                   isStreaming: false,
                   hasVisibleResponseText: true,
                 };
@@ -962,35 +1124,33 @@ export function ChatScreen({
                   isStreaming: false,
                   hasVisibleResponseText: true,
                   fallbackState: resolveFallbackStateLabel(nextIsFallback),
-                  degradedState: normalizedSource === 'remote_api' ? 'cleared' : 'active',
+                  degradedState: normalizedSource === 'remote_api' || normalizedSource === 'local_app_brain' ? 'cleared' : 'active',
                   requestStage: nextRequestStage,
                   failureClass: nextFailureClass,
                   lastStatusCode: runtimeProof?.statusCode !== null && runtimeProof?.statusCode !== undefined
                     ? String(runtimeProof.statusCode)
-                    : normalizedSource === 'remote_api'
+                    : normalizedSource === 'remote_api' || normalizedSource === 'local_app_brain'
                       ? '200'
-                      : 'fallback',
-                  responsePreview: runtimeProof?.responsePreview ?? normalizedAnswer.slice(0, 160),
+                      : 'unavailable',
+                  responsePreview: aiResult.selectedTool ? `Tool used: ${aiResult.selectedTool}` : sanitizeUserFacingChatText(runtimeProof?.responsePreview ?? normalizedAnswer).slice(0, 160),
                   lastVerifiedAt: formatRuntimeTimestamp(runtimeProof?.lastUpdatedAt ?? Date.now()),
-                  failureDetail: runtimeProof?.detail ?? (normalizedSource === 'remote_api'
-                    ? 'Live backend replied with visible response text.'
-                    : 'Toolkit fallback produced visible response text.'),
+                  failureDetail: runtimeProof?.detail ?? 'Reply delivered.',
                 };
               });
               const currentMessages = queryClient.getQueryData<ChatMessage[]>(queryKey) ?? [];
               const duplicateAssistantReply = currentMessages.some((message) => {
-                return message.id !== assistantPlaceholderId
+                return message.id !== assistantReplyId
                   && message.senderId === 'ivx-owner-ai-assistant'
                   && safeTrimCS(message.text) === normalizedAnswer;
               });
 
               if (duplicateAssistantReply) {
                 console.log('[ChatScreen] Assistant reply already present, keeping visible transcript and skipping duplicate persistence:', aiResult.requestId);
-                removeAssistantPlaceholder(assistantPlaceholderId);
+                removeTransientAssistantReply(assistantReplyId);
                 return;
               }
 
-              if (normalizedSource === 'remote_api') {
+              if (normalizedSource === 'remote_api' || normalizedSource === 'local_app_brain') {
                 await queryClient.invalidateQueries({ queryKey });
                 scrollToBottom(true);
                 console.log('[ChatScreen] AI reply confirmed from remote API and visible in thread:', {
@@ -998,71 +1158,36 @@ export function ChatScreen({
                   source: normalizedSource,
                   endpoint: aiResult.endpoint,
                   deploymentMarker: aiResult.deploymentMarker,
+                  selectedTool: aiResult.selectedTool ?? null,
+                  toolOutputCount: aiResult.toolOutputs?.length ?? 0,
                   length: normalizedAnswer.length,
                   model: aiResult.model,
                 });
                 return;
               }
 
-              const assistantClientMessageId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(aiResult.requestId)
-                ? aiResult.requestId
-                : generateClientMessageId();
-              await chatService.sendMessage({
-                conversationId: stableConversationId,
-                senderId: 'ivx-owner-ai-assistant',
-                senderLabel: IVX_OWNER_AI_PROFILE.support.assistantDisplayName,
-                text: normalizedAnswer,
-                clientMessageId: assistantClientMessageId,
-              });
-              await queryClient.invalidateQueries({ queryKey });
-              removeAssistantPlaceholder(assistantPlaceholderId);
-              scrollToBottom(true);
-              console.log('[ChatScreen] AI reply persisted via local fallback:', {
-                requestId: aiResult.requestId,
-                clientMessageId: assistantClientMessageId,
-                source: normalizedSource,
-                endpoint: aiResult.endpoint,
-                deploymentMarker: aiResult.deploymentMarker,
-                length: normalizedAnswer.length,
-                model: aiResult.model,
-              });
             } catch (aiError) {
-              removeAssistantPlaceholder(assistantPlaceholderId);
               const diagnostics = getIVXOwnerAIErrorDiagnostics(aiError);
+              const failureMessage = (aiError as Error)?.message ?? 'Unknown error';
+              removeTransientAssistantReply(assistantReplyId);
               setRuntimeDashboard((current) => ({
                 ...current,
                 activeBaseUrl: diagnostics?.baseUrl ?? current.activeBaseUrl,
                 resolvedEndpointUrl: diagnostics?.endpoint ?? current.resolvedEndpointUrl,
                 requestId: diagnostics?.requestId ?? current.requestId,
-                requestStage: diagnostics?.stage ?? 'unknown',
-                failureClass: diagnostics?.classification ?? 'unknown_failure',
-                lastStatusCode: diagnostics?.statusCode !== null && diagnostics?.statusCode !== undefined
-                  ? String(diagnostics.statusCode)
-                  : 'none',
-                failureDetail: diagnostics?.detail ?? ((aiError as Error)?.message ?? 'Unknown error'),
-                responsePreview: diagnostics?.responsePreview ?? current.responsePreview,
-                isFallback: shouldShowFallbackUI({
-                  source: getActiveRuntimeSource({
-                    source: normalizeRuntimeSource(current.source),
-                    requestStage: diagnostics?.stage ?? 'unknown',
-                    failureClass: diagnostics?.classification ?? 'unknown_failure',
-                    isFallback: current.source === 'toolkit_fallback',
-                    isStreaming: false,
-                    hasVisibleResponseText: false,
-                  }),
-                  requestStage: diagnostics?.stage ?? 'unknown',
-                  failureClass: diagnostics?.classification ?? 'unknown_failure',
-                  isFallback: current.source === 'toolkit_fallback',
-                  isStreaming: false,
-                  hasVisibleResponseText: false,
-                }),
+                requestStage: diagnostics?.stage ?? 'response',
+                failureClass: diagnostics?.classification ?? 'provider_exhausted',
+                lastStatusCode: diagnostics?.statusCode !== null && diagnostics?.statusCode !== undefined ? String(diagnostics.statusCode) : 'unavailable',
+                failureDetail: 'The message was sent. Send another prompt when you are ready.',
+                responsePreview: '',
+                isFallback: false,
                 isStreaming: false,
                 hasVisibleResponseText: false,
-                degradedState: 'active',
+                degradedState: 'cleared',
                 fallbackState: resolveFallbackStateLabel(false),
               }));
-              console.log('[ChatScreen] AI reply failed (non-blocking):', {
-                message: (aiError as Error)?.message ?? 'Unknown',
+              console.log('[ChatScreen] AI provider and local guard paths exhausted; no fake assistant text inserted:', {
+                originalFailureMessage: failureMessage,
                 diagnostics,
               });
             }
@@ -1468,7 +1593,7 @@ export function ChatScreen({
           source: normalizeRuntimeSource(runtimeProof?.source ?? current.source),
           requestStage: runtimeProof?.requestStage ?? current.requestStage,
           failureClass: runtimeProof?.failureClass ?? current.failureClass,
-          isFallback: runtimeProof?.source === 'toolkit_fallback',
+          isFallback: runtimeProof?.source === 'provider_fallback',
           isStreaming: current.isStreaming,
           hasVisibleResponseText: current.hasVisibleResponseText,
         }),
@@ -1479,18 +1604,17 @@ export function ChatScreen({
         source: normalizeRuntimeSource(runtimeProof?.source ?? current.source),
         requestStage: runtimeProof?.requestStage ?? current.requestStage,
         failureClass: runtimeProof?.failureClass ?? current.failureClass,
-        isFallback: runtimeProof?.source === 'toolkit_fallback',
+        isFallback: runtimeProof?.source === 'provider_fallback',
         isStreaming: current.isStreaming,
         hasVisibleResponseText: current.hasVisibleResponseText,
       }),
       isStreaming: resolveStreamingState({
         requestStage: runtimeProof?.requestStage ?? current.requestStage,
         failureClass: runtimeProof?.failureClass ?? current.failureClass,
-        runtimeSignals: roomMeta?.runtimeSignals,
         explicitStreaming: current.isStreaming,
       }),
       hasVisibleResponseText: current.hasVisibleResponseText,
-      fallbackState: resolveFallbackStateLabel(runtimeProof?.source === 'toolkit_fallback' && !isPendingRequestState({
+      fallbackState: resolveFallbackStateLabel(runtimeProof?.source === 'provider_fallback' && !isPendingRequestState({
         requestStage: runtimeProof?.requestStage ?? current.requestStage,
         failureClass: runtimeProof?.failureClass ?? current.failureClass,
       })),
@@ -1541,6 +1665,11 @@ export function ChatScreen({
   }, [stableConversationId]);
 
   useEffect(() => {
+    if (isOwnerRoomConversation) {
+      console.log('[ChatScreen] Skipping generic room bootstrap for owner-room conversation:', stableConversationId);
+      return;
+    }
+
     let cancelled = false;
 
     void (async () => {
@@ -1562,7 +1691,7 @@ export function ChatScreen({
     return () => {
       cancelled = true;
     };
-  }, [stableConversationId, stableCurrentUserId]);
+  }, [isOwnerRoomConversation, stableConversationId, stableCurrentUserId]);
 
   useEffect(() => {
     if (messages.length === 0) {
@@ -1656,6 +1785,10 @@ export function ChatScreen({
     };
   }, [handleKeyboardHide, handleKeyboardShow]);
 
+  const visibleMessages = useMemo<ChatMessage[]>(() => {
+    return messages.filter((message) => !isInternalChatTranscriptMessage(message));
+  }, [messages]);
+
   const renderMessage = useCallback(
     ({ item }: { item: ChatMessage }) => {
       return (
@@ -1665,21 +1798,22 @@ export function ChatScreen({
             isMine={item.senderId === stableCurrentUserId}
             onRetry={item.sendStatus === 'failed' ? handleRetryMessage : undefined}
             onDismiss={item.sendStatus === 'failed' ? handleDismissFailedMessage : undefined}
+            reactions={getReactionsFor(item.id)}
+            onToggleReaction={item.optimistic ? undefined : toggleReaction}
           />
         </View>
       );
     },
-    [stableCurrentUserId, handleRetryMessage, handleDismissFailedMessage],
+    [stableCurrentUserId, handleRetryMessage, handleDismissFailedMessage, getReactionsFor, toggleReaction],
   );
 
   const listFooter = useMemo(() => {
     return (
       <View style={styles.threadFooterStack} testID="chat-room-thread-footer">
-        <TypingIndicator isVisible={isAnyoneTyping} label={typingLabel} />
         <View style={[styles.threadEndSpacer, { height: threadFooterSpacerHeight }]} />
       </View>
     );
-  }, [isAnyoneTyping, threadFooterSpacerHeight, typingLabel]);
+  }, [threadFooterSpacerHeight]);
 
   return (
     <KeyboardAvoidingView
@@ -1697,7 +1831,7 @@ export function ChatScreen({
         <View style={styles.body}>
           <FlatList
             ref={listRef}
-            data={messages}
+            data={visibleMessages}
             keyExtractor={(item) => item.id}
             renderItem={renderMessage}
             style={styles.list}
@@ -1719,7 +1853,7 @@ export function ChatScreen({
             }
             onContentSizeChange={() => {
               if (!isLoadingOlder) {
-                scrollToBottom(messages.length > 1);
+                scrollToBottom(visibleMessages.length > 1);
               }
             }}
             onLayout={() => {
@@ -1754,12 +1888,16 @@ export function ChatScreen({
               }
             }}
           >
+            <TypingIndicator isVisible={isAnyoneTyping} label={typingLabel} />
             <Composer
               onSend={async (payload) => {
-                stopTyping();
                 const optimisticId = generateOptimisticId();
                 const sendCid = generateSendCorrelationId();
-                await sendMessageMutation.mutateAsync({ ...payload, optimisticId, sendCid, clientMessageId: sendCid });
+                try {
+                  await sendMessageMutation.mutateAsync({ ...payload, optimisticId, sendCid, clientMessageId: sendCid });
+                } finally {
+                  stopTyping();
+                }
               }}
               sending={sendMessageMutation.isPending}
               onFocus={() => {

@@ -403,26 +403,40 @@ export default function InvestorSupportChat({
       >
         {renderConnectionStatus()}
 
-        <FlatList
-          ref={messagesListRef}
-          data={messages}
-          renderItem={renderMessage}
-          keyExtractor={keyExtractor}
-          style={[styles.messagesContainer, isCard && styles.messagesContainerCard]}
-          contentContainerStyle={[styles.messagesContent, contentStyle]}
-          ListHeaderComponent={welcomeHeader}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
-          initialNumToRender={12}
-          maxToRenderPerBatch={12}
-          windowSize={7}
-          removeClippedSubviews={Platform.OS !== 'web'}
-          onContentSizeChange={() => {
-            scrollToLatest(false);
-          }}
-          testID={`${testIdPrefix}-messages`}
-        />
+        {isCard ? (
+          <View
+            style={[styles.messagesContainer, styles.messagesContainerCard, { paddingHorizontal: 0 }]}
+            testID={`${testIdPrefix}-messages`}
+          >
+            {welcomeHeader}
+            {messages.map((item) => (
+              <View key={item.id}>
+                {renderMessage({ item })}
+              </View>
+            ))}
+          </View>
+        ) : (
+          <FlatList
+            ref={messagesListRef}
+            data={messages}
+            renderItem={renderMessage}
+            keyExtractor={keyExtractor}
+            style={[styles.messagesContainer, isCard && styles.messagesContainerCard]}
+            contentContainerStyle={[styles.messagesContent, contentStyle]}
+            ListHeaderComponent={welcomeHeader}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+            initialNumToRender={12}
+            maxToRenderPerBatch={12}
+            windowSize={7}
+            removeClippedSubviews={Platform.OS !== 'web'}
+            onContentSizeChange={() => {
+              scrollToLatest(false);
+            }}
+            testID={`${testIdPrefix}-messages`}
+          />
+        )}
 
         <View style={styles.quickRepliesContainer}>
           <ScrollView

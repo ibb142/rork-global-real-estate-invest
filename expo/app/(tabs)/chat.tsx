@@ -58,7 +58,7 @@ function getRoomProofLabel(status: ChatRoomStatus | null): string {
     case 'primary_supabase_tables':
       return 'Live shared room';
     case 'alternate_room_schema':
-      return 'Shared fallback';
+      return 'Shared room';
     case 'snapshot_storage':
       return 'Snapshot mode';
     case 'local_device_only':
