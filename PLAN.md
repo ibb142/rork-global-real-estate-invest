@@ -1194,3 +1194,48 @@ All later phases depend on these tables existing and on the typed persistence la
   8. Production non-regression re-test — **PASS** for public chat ChatGPT, sessions/history, and upload auth guard.
   9. PLAN proof — **updated in this checkpoint**.
 - Final honest status: **Production backend remains healthy and Block 17 chat/history/upload contracts pass. Block 18 is complete in the workspace but still not deployed to the production phone bundle because GitHub main still lacks the Block 18 Expo files.**
+
+### Block 18G — Block 18 synced, Render live, final production verification (2026-05-16 22:20 UTC)
+
+- Files changed in this final verification block: `PLAN.md` proof update only. No new feature work was added.
+- Promotion action completed:
+  - Ran the existing GitHub sync path after dry-run confirmed only Block 18-related files were pending.
+  - GitHub `main` advanced to commit `5aead5b21b9424dd3216a2a17549a3230d462733`.
+  - Commit message: `feat: deploy Block 18 IVX IA developer workspace`.
+  - Synced files: `expo/app/admin/_layout.tsx`, `expo/app/admin/ivx-developer-workspace.tsx`, `expo/app/admin/owner-controls.tsx`, `expo/src/modules/ivx-developer/developerWorkspaceService.ts`, `expo/src/modules/ivx-owner-ai/services/ivxOwnerChatActionAuditService.ts`, `PLAN.md`.
+- Render deployment proof:
+  - Render service: `ivx-holdings-platform` (`srv-d7t9ivreo5us73ftose0`).
+  - Latest deploy: `dep-d84env57vvec73b7s16g`.
+  - Status: `live`.
+  - Commit deployed: `5aead5b21b9424dd3216a2a17549a3230d462733`.
+  - Finished at: `2026-05-16T22:15:04.617682Z`.
+- Production phone-bundle/source availability proof from GitHub main:
+  - `expo/app/admin/ivx-developer-workspace.tsx` → HTTP 200 from raw GitHub, 54,274 bytes, contains `PROJECT_FILE_REGISTRY` usage and `scanForSafetyIssues` usage.
+  - `expo/src/modules/ivx-developer/developerWorkspaceService.ts` → HTTP 200 from raw GitHub, 17,455 bytes, contains marker `ivx-developer-workspace-2026-05-16t-block18`, `PROJECT_FILE_REGISTRY`, `scanForSafetyIssues`, and AsyncStorage patch key `ivx.developer-workspace.patches.v1`.
+  - `expo/app/admin/_layout.tsx` → HTTP 200 from raw GitHub, contains `useAdminGuard` and the `ivx-developer-workspace` admin stack screen registration.
+  - `expo/app/admin/owner-controls.tsx` → HTTP 200 from raw GitHub, contains the Owner Controls link to `/admin/ivx-developer-workspace`.
+- Requested Block 18 gates:
+  1. Wait for Rork sync / Render deploy — **PASS**. GitHub sync completed and Render auto-deploy reached `live`.
+  2. `/admin/ivx-developer-workspace` in production phone bundle — **PASS by production source/deploy proof**. The route file and stack registration are on GitHub main and deployed by Render commit `5aead5b`.
+  3. Owner-only guard — **PASS by deployed source proof**. Admin stack remains wrapped by `useAdminGuard({ redirectOnFail: true })`; the workspace is registered only under `app/admin`.
+  4. Code Workspace curated files — **PASS by deployed source proof**. `PROJECT_FILE_REGISTRY` is present on GitHub main and used by the deployed workspace screen.
+  5. Ask IVX IA through `/api/ivx/owner-ai` — **BLOCKED / FAILING in live backend POST path**. `GET /api/ivx/owner-ai/proxy-status` returns HTTP 200, but authenticated `POST /api/ivx/owner-ai` returned HTTP 500 with preview `Error: Invalid state: ReadableStream is locked` for `health_probe`, simple `message`, and `prompt` probe shapes. This was not fixed here because the task explicitly said not to modify the working production AI/chat/auth/upload infrastructure.
+  6. Patch proposal flow saves without auto-applying — **PASS by deployed source proof**. Patch proposals persist only to local AsyncStorage key `ivx.developer-workspace.patches.v1`; explicit owner actions move status through proposed/approved/applied/failed/rejected. No code auto-apply path exists.
+  7. Safety scanner blocks secrets/destructive commands — **PASS by deployed source proof**. `scanForSafetyIssues` is present in the deployed service and called before assistant/pipeline persistence; `sanitizeForDisplay` redacts secret-shaped values.
+  8. Production non-regression retest — **PASS except owner-AI POST blocker above**:
+     - `POST https://ivx-holdings-platform.onrender.com/api/public/chat` with proof token `IVX_BLOCK18_FINAL_PROOF_1778969799250` and session `public-session-block18-final-1778969799250` → HTTP 200, `ok: true`, `source: "chatgpt"`, `model: "openai/gpt-4o-mini"`, endpoint `https://ai-gateway.vercel.sh/v3/ai/openai/gpt-4o-mini`, `persistence: "supabase"`, `block17Marker: "ivx-public-chat-history-2026-05-16t-block17"`, answer contained the exact proof token.
+     - `GET /api/public/chat/history?sessionId=public-session-block18-final-1778969799250&limit=20` → HTTP 200, `persistence: "supabase"`, `messageCount: 2`, roles `["user", "assistant"]`.
+     - `GET /api/public/chat/sessions?limit=5` → HTTP 200, `persistence: "supabase"`, `sessionCount: 1`, proof session listed.
+     - `POST /api/upload` without bearer → HTTP 401, `IVX auth guard failed: missing bearer token.` Upload route remains owner-auth guarded.
+     - Owner-authenticated `POST /api/upload` → HTTP 200, `bucket: "ivx-chat-uploads"`, signed upload URL returned, public/read URL returned, path prefix `owner-chat/{ownerId}/...`, marker `ivx-owner-routes-2026-04-24t0000z`.
+     - `GET /api/ivx/owner-ai/proxy-status` → HTTP 200, marker `ivx-owner-ai-proxy-2026-05-14t-render-validator-routes`, provider `chatgpt`, model `openai/gpt-4o-mini`, audit logging active, `totalRows: 148` at probe time.
+     - Auth probe for owner token via Supabase password session → HTTP 200; token was redacted and not printed.
+     - Authenticated `POST /api/ivx/owner-ai` → HTTP 500, preview `Error: Invalid state: ReadableStream is locked`.
+     - `GET /health` → HTTP 200, marker `ivx-owner-ai-hono-2026-05-14t-render-validator-routes`, `aiProvider: "chatgpt"`, `openAIModel: "openai/gpt-4o-mini"`.
+  9. PLAN proof — **updated in this checkpoint**.
+- Screenshot/log evidence available from this run:
+  - GitHub sync log: `Sync Complete`, commit `5aead5b`, `+2 new, ~4 modified`.
+  - Render API log: deploy `dep-d84env57vvec73b7s16g`, status `live`, commit `5aead5b21b9424dd3216a2a17549a3230d462733`.
+  - Production smoke-test JSON log: public chat/history/sessions/upload/owner-AI-status/health statuses listed above.
+  - No simulator screenshot was captured in this CLI verification run; proof is from deployed source, Render deploy status, and live HTTP/API logs.
+- Final honest status: **Block 18 is now synced to GitHub main and deployed to production source/phone-bundle surface. Public chat, sessions/history, upload guard, signed upload, health, and owner-AI proxy-status pass. The only requested production gate not passing is live Ask IVX IA via authenticated `POST /api/ivx/owner-ai`, which currently returns `ReadableStream is locked` and needs a separate backend bugfix approval because this task forbade modifying production AI infrastructure.**
