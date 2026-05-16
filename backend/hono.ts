@@ -1101,8 +1101,18 @@ app.options('/api/ivx/variables-tool/save', () => variablesToolOptions());
 app.post('/api/ivx/variables-tool/save', async (context) => handleIVXVariablesToolSaveRequest(context.req.raw));
 app.options('/api/ivx/owner-variables/status', () => ownerVariablesOptions());
 app.get('/api/ivx/owner-variables/status', async (context) => handleIVXOwnerVariablesStatusRequest(context.req.raw));
-app.options('/api/ivx-owner-variables/status', () => ownerVariablesOptions());
-app.get('/api/ivx-owner-variables/status', async (context) => handleIVXOwnerVariablesStatusRequest(context.req.raw));
+app.options('/api/ivx-owner-variables/status', () => publicJson({ ok: true }, 204));
+app.get('/api/ivx-owner-variables/status', () => publicJson({
+  ok: true,
+  ownerOnly: false,
+  routeRegistered: true,
+  authenticatedStatusRoute: '/api/ivx/owner-variables/status',
+  selfSyncRoute: '/api/ivx-owner-variables/self-sync',
+  selfSyncRequiresOwnerBearer: true,
+  secretValuesReturned: false,
+  deploymentMarker: DEPLOYMENT_MARKER,
+  timestamp: nowIso(),
+}));
 app.options('/api/ivx/owner-variables/save', () => ownerVariablesOptions());
 app.post('/api/ivx/owner-variables/save', async (context) => handleIVXOwnerVariablesSaveRequest(context.req.raw));
 app.options('/api/ivx/owner-variables/test', () => ownerVariablesOptions());

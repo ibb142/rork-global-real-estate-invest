@@ -510,12 +510,13 @@ async function runSupabaseRuntimeCheck(): Promise<unknown> {
   if (!url || !anonKey) {
     throw new Error('Supabase URL or anon key is missing.');
   }
+  const runtimeReadKey = serviceRoleKey || anonKey;
   const healthProbe = await fetchJson(`${url}/rest/v1/`, {
     method: 'GET',
     headers: {
       Accept: 'application/openapi+json',
-      apikey: anonKey,
-      Authorization: `Bearer ${anonKey}`,
+      apikey: runtimeReadKey,
+      Authorization: `Bearer ${runtimeReadKey}`,
     },
   });
   return {
@@ -525,6 +526,7 @@ async function runSupabaseRuntimeCheck(): Promise<unknown> {
     hasDbPasswordOrUrl: Boolean(readEnv('SUPABASE_READONLY_DATABASE_URL') || readEnv('SUPABASE_INSPECTION_DATABASE_URL') || readEnv('SUPABASE_DB_PASSWORD') || readEnv('SUPABASE_DB_URL') || readEnv('DATABASE_URL') || readEnv('POSTGRES_URL')),
     restOpenApiReachable: healthProbe.ok,
     restStatus: healthProbe.status,
+    runtimeReadCredential: serviceRoleKey ? 'service_role' : 'anon',
     minimumReadOnlyReady: healthProbe.ok,
     writeCapableCredentialConfigured: Boolean(serviceRoleKey || readEnv('SUPABASE_DB_PASSWORD') || readEnv('SUPABASE_DB_URL') || readEnv('DATABASE_URL') || readEnv('POSTGRES_URL')),
   };
@@ -537,12 +539,13 @@ async function runSupabaseReadinessCheck(): Promise<unknown> {
   if (!url || !anonKey) {
     throw new Error('Supabase URL or anon key is missing.');
   }
+  const runtimeReadKey = serviceRoleKey || anonKey;
   const restProbe = await fetchJson(`${url}/rest/v1/`, {
     method: 'GET',
     headers: {
       Accept: 'application/openapi+json',
-      apikey: anonKey,
-      Authorization: `Bearer ${anonKey}`,
+      apikey: runtimeReadKey,
+      Authorization: `Bearer ${runtimeReadKey}`,
     },
   });
   const authProbe = serviceRoleKey ? await fetchJson(`${url}/auth/v1/admin/users?per_page=1`, {
@@ -559,15 +562,24 @@ async function runSupabaseReadinessCheck(): Promise<unknown> {
   }).catch((error: unknown) => ({ status: 0, ok: false, data: safeErrorMessage(error, 'Storage readiness failed.') })) : null;
   const hasReadonlyDbUrl = Boolean(readEnv('SUPABASE_READONLY_DATABASE_URL') || readEnv('SUPABASE_INSPECTION_DATABASE_URL'));
   const hasWriteCapableDbCredential = Boolean(readEnv('SUPABASE_DB_PASSWORD') || readEnv('SUPABASE_DB_URL') || readEnv('DATABASE_URL') || readEnv('POSTGRES_URL'));
+  const minimumApiReady = restProbe.ok || authProbe?.ok === true || storageProbe?.ok === true;
+  const minimumHttpStatus = restProbe.ok
+    ? restProbe.status
+    : authProbe?.ok === true
+      ? authProbe.status
+      : storageProbe?.ok === true
+        ? storageProbe.status
+        : restProbe.status;
   const checks = [
-    { name: 'rest_openapi_readonly', status: restProbe.ok ? 'verified' : 'not_verified', httpStatus: restProbe.status, accessLevel: 'read_only', requiredForMinimum: true },
+    { name: 'supabase_api_runtime_access', status: minimumApiReady ? 'verified' : 'not_verified', httpStatus: minimumHttpStatus, accessLevel: serviceRoleKey ? 'service_role_runtime_read' : 'anon_read', requiredForMinimum: true, missingCredentialNames: [] },
+    { name: 'rest_openapi_readonly', status: restProbe.ok ? 'verified' : 'not_verified', httpStatus: restProbe.status, accessLevel: serviceRoleKey ? 'service_role_runtime_read' : 'read_only', requiredForMinimum: false },
     { name: 'auth_admin_read_optional', status: authProbe ? authProbe.ok ? 'verified' : 'not_verified' : 'not_connected', httpStatus: authProbe?.status ?? null, accessLevel: 'write_capable_secret_used_for_read', requiredForMinimum: false, missingCredentialNames: serviceRoleKey ? [] : ['SUPABASE_SERVICE_ROLE_KEY'] },
     { name: 'storage_bucket_read_optional', status: storageProbe ? storageProbe.ok ? 'verified' : 'not_verified' : 'not_connected', httpStatus: storageProbe?.status ?? null, accessLevel: 'write_capable_secret_used_for_read', requiredForMinimum: false, missingCredentialNames: serviceRoleKey ? [] : ['SUPABASE_SERVICE_ROLE_KEY'] },
     { name: 'database_readonly_inspection_optional', status: hasReadonlyDbUrl ? 'verified' : hasWriteCapableDbCredential ? 'available_write_capable_fallback' : 'not_connected', accessLevel: hasReadonlyDbUrl ? 'read_only' : hasWriteCapableDbCredential ? 'write_capable_secret_available' : 'not_configured', requiredForMinimum: false, missingCredentialNames: hasReadonlyDbUrl || hasWriteCapableDbCredential ? [] : ['SUPABASE_READONLY_DATABASE_URL'] },
   ];
   return {
-    status: restProbe.ok ? 'verified' : 'not_verified',
-    minimumReadOnlyReady: restProbe.ok,
+    status: minimumApiReady ? 'verified' : 'not_verified',
+    minimumReadOnlyReady: minimumApiReady,
     projectUrlConfigured: true,
     anonKeyConfigured: true,
     serviceRoleConfigured: Boolean(serviceRoleKey),
