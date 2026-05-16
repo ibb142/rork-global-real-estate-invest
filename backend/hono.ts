@@ -1101,6 +1101,8 @@ app.options('/api/ivx/variables-tool/save', () => variablesToolOptions());
 app.post('/api/ivx/variables-tool/save', async (context) => handleIVXVariablesToolSaveRequest(context.req.raw));
 app.options('/api/ivx/owner-variables/status', () => ownerVariablesOptions());
 app.get('/api/ivx/owner-variables/status', async (context) => handleIVXOwnerVariablesStatusRequest(context.req.raw));
+app.options('/api/ivx-owner-variables/status', () => ownerVariablesOptions());
+app.get('/api/ivx-owner-variables/status', async (context) => handleIVXOwnerVariablesStatusRequest(context.req.raw));
 app.options('/api/ivx/owner-variables/save', () => ownerVariablesOptions());
 app.post('/api/ivx/owner-variables/save', async (context) => handleIVXOwnerVariablesSaveRequest(context.req.raw));
 app.options('/api/ivx/owner-variables/test', () => ownerVariablesOptions());
@@ -1109,6 +1111,8 @@ app.options('/api/ivx/owner-variables/delete', () => ownerVariablesOptions());
 app.post('/api/ivx/owner-variables/delete', async (context) => handleIVXOwnerVariablesDeleteRequest(context.req.raw));
 app.options('/api/ivx/owner-variables/self-sync', () => ownerVariablesOptions());
 app.post('/api/ivx/owner-variables/self-sync', async (context) => handleIVXOwnerVariablesSelfSyncRequest(context.req.raw));
+app.options('/api/ivx-owner-variables/self-sync', () => ownerVariablesOptions());
+app.post('/api/ivx-owner-variables/self-sync', async (context) => handleIVXOwnerVariablesSelfSyncRequest(context.req.raw));
 app.options('/api/ivx/independence/status', () => independenceStatusOptions());
 app.get('/api/ivx/independence/status', async (context) => handleIVXIndependenceStatusRequest(context.req.raw));
 
