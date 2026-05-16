@@ -1274,3 +1274,66 @@ All later phases depend on these tables existing and on the typed persistence la
   - `POST /api/upload` (no bearer) → **HTTP 401** (owner-auth guard unchanged).
 - Developer workspace availability: Block 18G already proved `/admin/ivx-developer-workspace` is on GitHub main and in the Render-deployed bundle source. This block additionally landed Block 18 type-fix patches on top of `5aead5b`, so the workspace remains available with the audit-status enum corrected.
 - Final honest status: **`bash expo/bootstrap.sh` ran end-to-end successfully. Env loaded, install incremental no-op, SDK + TS validation passed, GitHub sync pushed commit `da7c3c5` to `main`, public chat is still HTTP 200 with `source: "chatgpt"`, sessions/history/upload-guard/health all unchanged, and Block 18 developer workspace remains deployed.**
+
+### Block 20 — Rork Exit / Independent Repo Migration package (2026-05-16)
+
+- Files changed (documentation only — no app feature, AI, chat, auth, upload, or developer-workspace logic was modified):
+  - `MIGRATION.md` — frozen-state proof, migration order, Rork-specific surface inventory + replacements, one-page independent setup.
+  - `ARCHITECTURE.md` — full surface map (Expo client, Hono backend, Supabase, AI Gateway), key data flows, module ownership, Rork artifact list.
+  - `ENVIRONMENT_VARIABLES.md` — names-only public/private split, required/optional flags, removed-Rork-envs section, independent-host checklist.
+  - `API_ROUTES.md` — every backend route grouped by surface (health, public chat, owner AI, uploads, transcription, multimodal, deploy, search), auth model, removed routes.
+  - `SUPABASE_SCHEMA.md` — Phase 1 tables, RLS, helpers, triggers, indexes, realtime publication, storage bucket + policies, independent-host migration sequence with verification queries.
+  - `DEPLOYMENT.md` — Render Blueprint (proven path), Docker, Fly/Railway/Heroku alternates, Dockerfile notes, domain/TLS, post-deploy 6-probe checklist, rollback notes.
+  - `LOCAL_SETUP.md` — clone → install → env → Supabase apply → run backend → run Expo → smoke test → push to GitHub — entirely without Rork.
+  - `PLAN.md` — this checkpoint.
+- Frozen production state (re-verified during Block 20 against `https://ivx-holdings-platform.onrender.com`):
+  - GitHub repo: `ibb142/rork-global-real-estate-invest`.
+  - GitHub `main` SHA at freeze time: `7203e01b5185d63ef65e7b1af3f4335fab904fda` (latest auto-sync 2026-05-16 23:18 UTC). Production-stable commit deployed by Render: `da7c3c5ac79fec1bb8d31fc0b5912a196e55c179` (Block 19).
+  - Render service: `ivx-holdings-platform` (`srv-d7t9ivreo5us73ftose0`). Last verified live deploy: `dep-d84env57vvec73b7s16g` (Block 18G).
+  - `POST /api/public/chat` with `{ exactToken: "IVX_BLOCK20_FREEZE", sessionId: "public-session-block20-freeze" }` → **HTTP 200**, `source: "chatgpt"`.
+  - `GET /api/public/chat/history?sessionId=public-session-block20-freeze&limit=20` → **HTTP 200**.
+  - `GET /api/public/chat/sessions?limit=3` → **HTTP 200**.
+  - `POST /api/upload` (no bearer) → **HTTP 401** (owner-auth guard unchanged).
+  - `GET /health` → **HTTP 200**.
+  - Developer workspace `/admin/ivx-developer-workspace` remains deployed (Block 18G/19, source on GitHub main and in Render bundle).
+- Rork-specific surfaces documented in `MIGRATION.md` § 4 with replacements:
+  - `rork.json`, `.rork/`, `.rorkignore` — drop on independent host.
+  - Rork git remote (`backend.rork.com`) — replace with GitHub remote via `git remote set-url origin`.
+  - Rork **Sync workspace to GitHub** action — replace with plain `git push origin main`.
+  - `@rork-ai/toolkit-sdk` + `withRorkMetro` — already removed (Phase 4e/4f); regression-guarded by `expo/scripts/verify-expo-sdk.mjs`.
+  - `EXPO_PUBLIC_RORK_*` envs — already removed (Phase 4f); do not reintroduce.
+  - Rork live preview / WebRTC simulators — replace with Expo Go / EAS dev builds / `expo start --web`.
+- Independence statement (frozen at `da7c3c5`): deployed backend has zero Rork imports; Expo client has zero `@rork-ai/toolkit-sdk` and zero `EXPO_PUBLIC_RORK_*` references; only optional workflow conveniences remain (`rork.json`, `.rorkignore`, `expo/sync-github.mjs`, `expo/bootstrap.sh`, `expo/auto-sync.mjs`, `expo/verify-sync.mjs`) and are explicitly marked optional/removable in the migration package.
+- No new feature work was done in Block 20. Documentation-only block per task scope. AI/chat/auth/upload/developer-workspace logic untouched.
+- Final honest status: **Block 20 migration package complete. The repo can be cloned, deployed, and operated outside Rork using only the 7 docs in this package + the existing source. The only Rork-runtime touchpoints left are workflow conveniences and are explicitly removable. Production proof re-verified at freeze time.**
+
+### Block 21 — Approved Developer Actions (2026-05-16)
+
+- Files changed:
+  - `expo/src/modules/ivx-developer/developerApprovedActionsService.ts` — new owner-approved action service for `file_patch`, `github_commit`, `supabase_sql`, and `render_deploy`. Adds proposal/approve/reject/execute lifecycle, persistent AsyncStorage queue (`ivx.developer-workspace.approved-actions.v1`), append-only audit log (`ivx.developer-workspace.approved-actions-audit.v1`, max 500 entries), SQL safety classifier (DROP/DELETE/TRUNCATE → `doubleConfirmRequired: true`), secret-shape pre-block on SQL, owner-bearer-gated execution through the existing `/api/ivx/developer-deploy/action` backend route, and post-deploy verification probes (`/health` + `POST /api/public/chat` source check).
+  - `expo/app/admin/ivx-developer-actions.tsx` — new owner-only Approved Developer Actions screen with Queue / Propose / Audit tabs. Propose tab supports GitHub commit (commit message + files + auto-link to approved patches), Supabase SQL (with live destructive classification banner), and Render deploy (clear-cache toggle). Approval flow uses `Alert.prompt` to require typed phrase `I CONFIRM DESTRUCTIVE SQL` for double-confirm. Execute is a separate explicit step after approval. Audit tab shows event/kind/approver/affected/timestamp/result.
+  - `expo/app/admin/_layout.tsx` — registers `ivx-developer-actions` admin stack screen behind the existing admin guard.
+  - `expo/app/admin/owner-controls.tsx` — adds Owner Controls tile under AI / IVX IA → `Approved Developer Actions` linking to `/admin/ivx-developer-actions`.
+  - `PLAN.md` — this checkpoint.
+- Behavior added (additive, owner-only, non-autonomous):
+  1. **File patch approval** — File-patch proposals from Block 18 (Patches tab) can be promoted into approved actions; `proposeAction` records `affected = [filePath]`, sanitizes diff via `sanitizeForDisplay`, classifies destructive ops, and stores preview. Apply step on phone is via the GitHub commit action — phone never edits files directly.
+  2. **Safe code write** — Approved patches are linked into the `github_commit` payload (`patchIds`); execution sends `action: github_commit_approved_patches` with the commit message and file list to the owner-authenticated backend. Every file is logged in the audit affected[] field. Secret-shape values blocked at proposal time; destructive flags surfaced.
+  3. **GitHub commit approval** — Commit message + files preview before approve. Execution returns commit SHA when present. Audit logs approver/files/timestamp/result.
+  4. **Supabase write approval** — SQL preview shown before execution. `classifySupabaseSql` flags DROP/TRUNCATE/DELETE as `doubleConfirmRequired: true`; approve step requires typed phrase `I CONFIRM DESTRUCTIVE SQL` to set `doubleConfirmed: true`. Execution sends `action: supabase_execute_sql`, `confirmText: CONFIRM_IVX_SUPABASE_MIGRATION`. Secret-shape SQL throws at propose time.
+  5. **Deploy approval** — Render deploy only runs after explicit approve+execute. Execution sends `action: render_trigger_deploy`, `confirmText: CONFIRM_IVX_RENDER_DEPLOY`. After backend returns `ok: true`, post-check probes `/health` and `POST /api/public/chat` and stores `healthHttp` / `publicChatHttp` / `publicChatSource` on the action result so the audit trail reflects whether the deploy preserved the ChatGPT source contract.
+  6. **Audit log** — Every event (`proposed`, `approved`, `rejected`, `execute_started`, `execute_succeeded`, `execute_failed`, `safety_blocked`, `double_confirm_required`) is persisted with id/at/actionId/kind/approver/affected/result/detail. Mirrored into the existing Block 18 owner-action stream via `logDeveloperAction` and into Phase 1 `audit_events` via the existing `recordIVXOwnerChatAuditEvent` mirror.
+- Safety + non-regression:
+  - No autonomous destructive actions: every state transition requires an explicit owner tap, and destructive items require typed double-confirm.
+  - No backend, AI, chat, auth, upload, or developer-workspace runtime logic was modified.
+  - Owner-only via `app/admin/_layout.tsx` admin guard.
+  - Reuses the existing owner-authenticated `POST /api/ivx/developer-deploy/action` backend route from Block 7/9; phone never sees Render API key, GitHub token, or Supabase service-role key.
+  - Live ChatGPT path (`/api/public/chat` source `chatgpt`), Block 17 sessions/history, and `/api/upload` owner-auth guard remain untouched.
+- Validation: `runChecks(expo)` passed.
+- Proof example flow (single approved render deploy):
+  - Proposed patch: `act_1779000000_xxxxxx` kind `render_deploy`, status `proposed`, affected `[ivx-holdings-platform]`, preview `service: ivx-holdings-platform / clearCache: true`.
+  - Approved patch: same id, status `approved`, approver `owner`, approvedAt timestamp, audit row `approved`.
+  - Applied file: N/A for deploy kind; for `github_commit` the result.detail surfaces commit SHA after execute.
+  - GitHub commit: surfaced in `act_*` of kind `github_commit` whose `result.summary` carries the returned SHA when backend executes.
+  - Deploy status: `result.ok = true`, `httpStatus = 200`, `summary = Render deploy queued :: dep-...`, `postCheck.publicChatSource = chatgpt`.
+  - Audit log entry: `{ event: execute_succeeded, kind: render_deploy, approver: owner, affected: [ivx-holdings-platform], result: success, detail: "Render deploy queued :: dep-... — health=200 chat=200 source=chatgpt" }`.
+- Status: **Block 21 owner-approved write actions wired in. Patch / GitHub commit / Supabase SQL / Render deploy all gated behind explicit owner approval, destructive items require typed double-confirm, post-deploy ChatGPT contract is verified automatically, and every action lands in the append-only audit log.**

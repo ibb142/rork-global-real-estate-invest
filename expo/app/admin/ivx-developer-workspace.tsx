@@ -49,6 +49,7 @@ import {
   requestAIReply,
 } from '@/src/modules/chat/services/aiReplyService';
 import { recordIVXOwnerChatAuditEvent } from '@/src/modules/ivx-owner-ai/services';
+import { proposeAction as proposeApprovedAction } from '@/src/modules/ivx-developer/developerApprovedActionsService';
 import {
   BLOCK18_DEVELOPER_WORKSPACE_MARKER,
   PATCH_REPLY_FORMAT_INSTRUCTION,
@@ -427,6 +428,39 @@ export default function IVXDeveloperWorkspaceScreen() {
       );
     },
     [refreshPatches],
+  );
+
+  const onPromoteToGithub = useCallback(
+    async (patch: PatchProposal) => {
+      try {
+        const action = await proposeApprovedAction({
+          kind: 'github_commit',
+          commitMessage: `chore(ivx): apply approved patch ${patch.filePath}`,
+          files: [patch.filePath],
+          patchIds: [patch.id],
+          reason: `Promoted from workspace patch ${patch.id} :: ${patch.reason.slice(0, 200)}`,
+        });
+        await logDeveloperAction({
+          actor: 'owner',
+          action: 'promote_patch_to_github_commit',
+          detail: `${patch.filePath} -> approved-action ${action.id} (status=${action.status})`,
+        });
+        Alert.alert(
+          'Promoted to Block 21',
+          `Proposed GitHub commit action ${action.id} for ${patch.filePath}.\n\nOpen Approved Developer Actions to review and approve. Nothing is committed without explicit owner approval.`,
+          [
+            { text: 'Stay here', style: 'cancel' },
+            {
+              text: 'Open Approved Actions',
+              onPress: () => router.push('/admin/ivx-developer-actions' as any),
+            },
+          ],
+        );
+      } catch (err) {
+        Alert.alert('Promote failed', (err as Error)?.message ?? 'Unknown error.');
+      }
+    },
+    [router],
   );
 
   const onDeletePatch = useCallback(
@@ -889,12 +923,22 @@ export default function IVXDeveloperWorkspaceScreen() {
                       </>
                     ) : null}
                     {p.status === 'approved' ? (
-                      <Pressable
-                        onPress={() => onMarkApplied(p)}
-                        style={[styles.smallBtn, styles.smallBtnPrimary]}
-                      >
-                        <Text style={styles.smallBtnTextDark}>Mark applied / failed</Text>
-                      </Pressable>
+                      <>
+                        <Pressable
+                          onPress={() => onMarkApplied(p)}
+                          style={[styles.smallBtn, styles.smallBtnPrimary]}
+                        >
+                          <Text style={styles.smallBtnTextDark}>Mark applied / failed</Text>
+                        </Pressable>
+                        <Pressable
+                          onPress={() => onPromoteToGithub(p)}
+                          style={styles.smallBtn}
+                          testID={`ivx-dev-patch-promote-github-${p.id}`}
+                        >
+                          <GitBranch size={11} color={Colors.green} />
+                          <Text style={styles.smallBtnText}>Promote to GitHub commit</Text>
+                        </Pressable>
+                      </>
                     ) : null}
                     <Pressable onPress={() => onCopy(p.diff)} style={styles.smallBtn}>
                       <Copy size={11} color={Colors.green} />

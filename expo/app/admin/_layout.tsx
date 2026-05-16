@@ -116,6 +116,7 @@ export default function AdminLayout() {
       <Stack.Screen name="quality-control" />
       <Stack.Screen name="control-tower" />
       <Stack.Screen name="ivx-developer-workspace" />
+      <Stack.Screen name="ivx-developer-actions" />
     </Stack>
   );
 }
