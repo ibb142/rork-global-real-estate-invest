@@ -16,6 +16,7 @@ export type IVXOwnerChatAuditAction =
   | 'developer_workspace_prompt'
   | 'developer_workspace_response'
   | 'developer_workspace_error'
+  | 'developer_workspace_action'
   | 'error';
 
 export type IVXOwnerChatAuditEvent = {

@@ -473,7 +473,7 @@ export async function logDeveloperAction(input: Omit<DeveloperActionLog, 'id' | 
   void recordIVXOwnerChatAuditEvent({
     action: 'developer_workspace_action',
     conversationId: 'ivx-owner-ai-developer-workspace',
-    status: input.actor === 'system' ? 'pending' : 'success',
+    status: input.actor === 'system' ? 'started' : 'success',
     summary: `[${input.actor}] ${input.action} :: ${input.detail.slice(0, 120)}`,
     metadata: {
       block: BLOCK18_DEVELOPER_WORKSPACE_MARKER,

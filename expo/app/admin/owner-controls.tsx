@@ -63,6 +63,7 @@ import {
   Briefcase,
   User as UserIcon,
   LayoutDashboard,
+  Code,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';

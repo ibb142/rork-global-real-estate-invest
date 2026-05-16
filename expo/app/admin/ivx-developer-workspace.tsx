@@ -296,7 +296,7 @@ export default function IVXDeveloperWorkspaceScreen() {
     void recordIVXOwnerChatAuditEvent({
       action: 'developer_workspace_prompt',
       conversationId: WORKSPACE_CONVERSATION_ID,
-      status: 'pending',
+      status: 'started',
       summary: `dev workspace prompt: ${assistantMode}`,
       metadata: {
         mode: assistantMode,
@@ -353,7 +353,7 @@ export default function IVXDeveloperWorkspaceScreen() {
       void recordIVXOwnerChatAuditEvent({
         action: 'developer_workspace_error',
         conversationId: WORKSPACE_CONVERSATION_ID,
-        status: 'error',
+        status: 'failed',
         summary: `dev workspace error: ${assistantMode}`,
         metadata: {
           mode: assistantMode,
