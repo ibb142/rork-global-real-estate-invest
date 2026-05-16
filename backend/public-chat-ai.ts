@@ -147,16 +147,14 @@ async function requestIVXAIAnswer(input: {
     requestId: input.sessionId,
     model: getPublicChatModel(),
     system: buildSystemPrompt(input.sessionId),
-    messages: [
-      ...input.history.map((item) => ({
-        role: item.role,
-        content: item.content,
-      })),
-      {
-        role: 'user' as const,
-        content: input.message,
-      },
-    ],
+    prompt: [
+      'Recent public chat transcript:',
+      buildTranscript(input.history),
+      '',
+      `User message: ${input.message}`,
+      '',
+      'Reply directly to the user message. If the user asks for an exact token or proof string, include it exactly.',
+    ].join('\n'),
   });
 
   return {

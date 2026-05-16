@@ -832,3 +832,76 @@ All later phases depend on these tables existing and on the typed persistence la
   1. Promote this Block 11 patch to GitHub main.
   2. Run a normal app/backend deployment cycle if production should reflect these local code changes.
   3. Re-run `bun deploy/scripts/chatgpt-e2e-audit.mjs` in an environment with a longer command timeout if a full generated JSON/MD artifact is required.
+
+### Production Block 12 — Block 11 promotion + Render deploy completed (2026-05-16)
+
+- Files changed:
+  - `expo/sync-github.mjs` — surgical sync pipeline fix.
+  - `PLAN.md` — this checkpoint.
+- Sync pipeline fix (root cause of every prior `Sync workspace to GitHub` failure since Block 1T):
+  - `expo/sync-github.mjs` now skips `.github/workflows/**` because the saved `GITHUB_TOKEN` is a `contents:write` token without the `workflow` scope. GitHub silently returned `POST /repos/.../git/trees → 404 Not Found` whenever a workflow file was in the tree, aborting every promotion attempt before commit/ref steps could run.
+  - Layered chunked tree creation (100 items per layered tree) added so future large workspace syncs never hit a single oversized tree payload.
+  - Added diagnostic logging on tree-create failure (chunk number, item count, first failing path, base_tree SHA) so the next regression surfaces the bad item immediately.
+  - `getAllFiles` now consults `isIgnoredRelativePath` for directories too, pruning `.github/workflows/` at directory level.
+- GitHub promotion proof:
+  - `https://api.github.com/repos/ibb142/rork-global-real-estate-invest/git/refs/heads/main` advanced from `a2a7c6197515de5e12d79e8d8895fad05720d280` to commit `13a339fc9a77ec3aa84130d6584b200d5fb974f0`.
+  - Sync stats: `+92 new, ~163 modified, -0 deleted`, layered tree chunks `100 + 100 + 55 = 255` items, total time ~27.1s.
+  - Commit message: `chore: promote Block 11 IVX IA ChatGPT cleanup (toolkit removal, remote_first, proof scripts)`.
+- Render deploy proof:
+  - `POST https://api.render.com/v1/services/srv-d7t9ivreo5us73ftose0/deploys` with `{ clearCache: "clear" }` returned HTTP 202.
+  - Deploy `dep-d845a4g7htvc73f8aekg` on commit `13a339fc9a77` progressed `queued → build_in_progress → update_in_progress → live` (final status reached at `11:32:24Z`).
+  - Render polled via the same `RENDER_API_KEY` already saved in `expo/.env`; the bad-shape `RENDER_SERVICE_ID` value saved in `expo/.env` was bypassed by using the verified ID `srv-d7t9ivreo5us73ftose0` directly.
+- Production health proof after deploy:
+  - `GET https://ivx-holdings-platform.onrender.com/health` → HTTP 200, marker `ivx-owner-ai-hono-2026-05-14t-render-validator-routes`, `aiEnabled: true`, model reported.
+  - `GET https://ivx-holdings-platform.onrender.com/api/ivx/owner-ai/proxy-status` → HTTP 200.
+  - `GET https://ivx-holdings-platform.onrender.com/api/ivx/supabase/owner-action-health` → HTTP 200.
+- Decisions per crash-safe rule:
+  - No new SQL migration ran (Phase 1 already applied in Block 9; only optional `storage.objects` dashboard policies remain).
+  - No client/runtime code beyond `expo/sync-github.mjs` was modified to land this promotion.
+  - No secret values were printed or requested.
+- Current status: Block 11 ChatGPT cleanup (toolkit removal, remote_first default, proof scripts) is now live on production (GitHub main + Render). The Rork workspace sync pipeline is fixed for all future syncs.
+- Remaining known issues (unchanged from prior blocks):
+  - Optional `storage.objects` policies `ivx_chat_uploads_public_select` / `ivx_chat_uploads_auth_insert` still require Supabase Dashboard SQL Editor execution by a true Supabase owner (not blocking phone uploads because they go through the backend-signed `/api/upload` route from Block 10).
+  - Provider-side ChatGPT free/unlimited billing remains a provider proof, not a repo proof.
+
+### Production Block 13 — Final production health proof + public-chat ChatGPT route fix prepared (2026-05-16)
+
+- Files changed:
+  - `backend/public-chat-ai.ts`
+  - `PLAN.md`
+- Final production route proof re-run against `https://ivx-holdings-platform.onrender.com`:
+  - `GET /health` → HTTP 200, marker `ivx-owner-ai-hono-2026-05-14t-render-validator-routes`, `aiEnabled: true`, `aiProvider: "chatgpt"`, `openAIModel: "openai/gpt-4o-mini"`.
+  - `GET /readiness` → HTTP 200.
+  - `GET /api/ivx/owner-ai/proxy-status` → HTTP 200, runtime `provider: "chatgpt"`, `gateway: "vercel_ai_gateway"`, `model: "openai/gpt-4o-mini"`, `gatewayKeyPresent: true`, `configured: true`, audit logging available with rows present.
+  - `GET /api/ivx/supabase/owner-action-health` → HTTP 200, `status: "verified"`, no missing env names.
+  - `GET /api/ivx-owner-variables/status` → HTTP 200, route registered, secret values not returned.
+  - `GET /api/multimodal/status` → HTTP 200, `status: "production_routes_registered"`.
+- Public chat probe result before this local patch:
+  - `POST /api/public/send-message` returned HTTP 201 and persisted the user + assistant messages, but `ai.source` was `"fallback"` even though the endpoint/model were configured.
+  - `GET /api/public/messages` for the proof room returned HTTP 200 with 2 messages and an assistant reply, proving public-room persistence/reload works.
+  - `POST /api/audio/transcribe` without bearer returned HTTP 401, proving the transcription route is live and owner-auth guarded.
+  - `POST /api/upload` without bearer returned HTTP 401, proving the upload route is live and owner-auth guarded.
+- Root cause found and fixed locally:
+  - `backend/public-chat-ai.ts` was using the gateway `messages` request shape, while the known-working owner AI route uses the prompt request shape.
+  - Public chat now builds a prompt containing recent transcript + current user message and calls `requestIVXAIText` through the same prompt-based IVX AI wrapper path.
+  - The prompt explicitly preserves exact proof tokens when requested.
+- Validation passed after the fix:
+  - Root/backend `bunx tsc --noEmit --pretty false` passed.
+  - Expo `bunx tsc --noEmit --pretty false` passed.
+  - `runChecks(expo)` passed.
+- Current deployment status:
+  - Production backend core health, owner AI proxy, Supabase owner-action health, multimodal route registry, route guards, Phase 1 public-schema migration, and public-room persistence are verified live.
+  - The public-chat ChatGPT fallback fix is validated locally but is not yet live until normal code promotion + Render deploy includes `backend/public-chat-ai.ts`.
+  - Do not claim public chat route is ChatGPT end-to-end live until a post-deploy probe returns `source: "chatgpt"` for `/api/public/chat` or `/api/public/send-message`.
+- Final known issues:
+  - Public chat ChatGPT route fix needs normal promotion/deploy.
+  - Optional Supabase `storage.objects` policies still need true Supabase-owner SQL if catalog-perfect storage RLS proof is required; backend-signed upload path remains the code-side unblock.
+  - Provider-side free/unlimited billing cannot be proven from repo/backend code; current proof remains app-side: no active app-side ChatGPT paywall/quota/Rork dependency enforcement.
+- Recommended next improvements:
+  1. Promote/deploy `backend/public-chat-ai.ts` and re-test public chat until `source: "chatgpt"`.
+  2. Run the two optional `storage.objects` policies from Supabase Dashboard SQL Editor for catalog-perfect storage proof.
+  3. Add a small public-chat health endpoint that reports last ChatGPT vs fallback result separately from `/health`.
+  4. Add automated production smoke tests for `/health`, `/api/ivx/owner-ai/proxy-status`, `/api/public/chat`, `/api/upload`, `/api/audio/transcribe`, and Supabase persistence probes.
+- Rollback notes:
+  - If the public-chat prompt-shape change causes unexpected behavior after deployment, revert only `backend/public-chat-ai.ts` to the prior `messages` payload path; the owner AI proxy, Supabase migration, upload route, voice route, and production health routes are independent and should not be rolled back.
+  - Current stable production commit before this local public-chat fix remains `13a339fc9a77ec3aa84130d6584b200d5fb974f0` from Production Block 12.
