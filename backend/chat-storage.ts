@@ -163,6 +163,61 @@ export class ChatStorage {
     return this.messages.length;
   }
 
+  /**
+   * Lists rooms whose roomId begins with the supplied prefix.
+   * Returns the room id, total message count, last activity timestamp,
+   * the last message preview (truncated to 160 chars), and the distinct usernames seen.
+   * Results are sorted by lastUpdatedAt descending.
+   */
+  listRoomsWithPrefix(prefix: string, limit: number = 50): Array<{
+    roomId: string;
+    messageCount: number;
+    lastUpdatedAt: string;
+    lastMessagePreview: string;
+    usernames: string[];
+  }> {
+    const safeLimit = Math.min(Math.max(Math.floor(limit), 1), 200);
+    const grouped = new Map<string, {
+      roomId: string;
+      messageCount: number;
+      lastUpdatedAt: string;
+      lastMessagePreview: string;
+      usernames: Set<string>;
+    }>();
+
+    for (const message of this.messages) {
+      if (!message.roomId.startsWith(prefix)) continue;
+      const entry = grouped.get(message.roomId);
+      if (!entry) {
+        grouped.set(message.roomId, {
+          roomId: message.roomId,
+          messageCount: 1,
+          lastUpdatedAt: message.createdAt,
+          lastMessagePreview: message.text.slice(0, 160),
+          usernames: new Set([message.username]),
+        });
+        continue;
+      }
+      entry.messageCount += 1;
+      entry.usernames.add(message.username);
+      if (message.createdAt.localeCompare(entry.lastUpdatedAt) > 0) {
+        entry.lastUpdatedAt = message.createdAt;
+        entry.lastMessagePreview = message.text.slice(0, 160);
+      }
+    }
+
+    return Array.from(grouped.values())
+      .map((entry) => ({
+        roomId: entry.roomId,
+        messageCount: entry.messageCount,
+        lastUpdatedAt: entry.lastUpdatedAt,
+        lastMessagePreview: entry.lastMessagePreview,
+        usernames: Array.from(entry.usernames),
+      }))
+      .sort((left, right) => right.lastUpdatedAt.localeCompare(left.lastUpdatedAt))
+      .slice(0, safeLimit);
+  }
+
   close(): void {
     console.log('[ChatStorage] Storage close requested', {
       databasePath: this.databasePath,

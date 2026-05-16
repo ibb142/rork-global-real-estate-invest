@@ -10,6 +10,7 @@ import { I18nProvider } from "@/lib/i18n-context";
 import { EarnProvider } from "@/lib/earn-context";
 import { IPXProvider } from "@/lib/ipx-context";
 import { WalletProvider } from "@/lib/wallet-context";
+import { PublicChatSessionProvider } from "@/lib/public-chat-session-context";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import AuthGate from "@/components/AuthGate";
 
@@ -46,23 +47,25 @@ export default function RootLayout() {
   return (
     <QueryClientProvider client={queryClient}>
       <GestureHandlerRootView style={{ flex: 1 }}>
-        <I18nProvider>
-          <AuthProvider>
-            <AnalyticsProvider>
-              <IPXProvider>
-                <WalletProvider>
-                  <EarnProvider>
-                    <ErrorBoundary>
-                      <AuthGate>
-                        <RootLayoutNav />
-                      </AuthGate>
-                    </ErrorBoundary>
-                  </EarnProvider>
-                </WalletProvider>
-              </IPXProvider>
-            </AnalyticsProvider>
-          </AuthProvider>
-        </I18nProvider>
+        <PublicChatSessionProvider>
+          <I18nProvider>
+            <AuthProvider>
+              <AnalyticsProvider>
+                <IPXProvider>
+                  <WalletProvider>
+                    <EarnProvider>
+                      <ErrorBoundary>
+                        <AuthGate>
+                          <RootLayoutNav />
+                        </AuthGate>
+                      </ErrorBoundary>
+                    </EarnProvider>
+                  </WalletProvider>
+                </IPXProvider>
+              </AnalyticsProvider>
+            </AuthProvider>
+          </I18nProvider>
+        </PublicChatSessionProvider>
       </GestureHandlerRootView>
     </QueryClientProvider>
   );

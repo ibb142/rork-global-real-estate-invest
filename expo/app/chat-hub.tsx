@@ -18,25 +18,23 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Lock, RefreshCw, Send, ShieldCheck, Sparkles, Users, Wifi, WifiOff } from 'lucide-react-native';
+import { Archive, MessageCirclePlus, RefreshCw, Send, ShieldCheck, Sparkles, Wifi, WifiOff } from 'lucide-react-native';
 import ChatBubble from '@/components/ChatBubble';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import Colors from '@/constants/colors';
 import {
-  createChatSocket,
-  fetchChatHealth,
-  fetchChatMessages,
-  fetchChatRoomState,
-  getChatApiBaseUrl,
-  getDefaultChatRoomId,
-  sendChatMessage,
-  type ChatRoomAIProvider,
-  type ChatRoomHealthResponse,
-  type ChatRoomMessage,
-  type ChatRoomSendResponse,
-  type ChatSocket,
-  type ChatSocketAcknowledgement,
-} from '@/lib/chat-room-client';
+  fetchPublicChatHealth,
+  fetchPublicChatHistory,
+  fetchPublicChatSessions,
+  sendPublicChatMessage,
+  type PublicChatApiResponse,
+  type PublicChatHistoryItem,
+  type PublicChatHistoryResponse,
+  type PublicChatSessionMessage,
+  type PublicChatSessionSummary,
+  type PublicHealthResponse,
+} from '@/lib/public-chat';
+import { usePublicChatSession } from '@/lib/public-chat-session-context';
 import type { ChatMessage } from '@/types';
 
 type ConnectionTone = 'live' | 'warn' | 'error';
@@ -44,13 +42,19 @@ type ConnectionTone = 'live' | 'warn' | 'error';
 type StatusChipProps = {
   label: string;
   tone: ConnectionTone;
-  icon: 'wifi' | 'users' | 'shield' | 'lock';
+  icon: 'wifi' | 'shield' | 'archive' | 'sparkles';
 };
 
-const WELCOME_COPY = 'Welcome to the IVX live chat room. Pick a guest name, join the room, and send messages in real time.';
+type SendMutationInput = {
+  text: string;
+  requestId: string;
+  history: PublicChatHistoryItem[];
+};
+
+const WELCOME_COPY = 'Ask IVX AI about onboarding, investment basics, product navigation, or production status. Your current session is saved and restores when you return.';
 const MAX_RENDERED_MESSAGES = 120;
-const GUEST_NAME = 'Guest';
-const REFRESH_LIMIT = 80;
+const HISTORY_LIMIT = 80;
+const SESSION_LIMIT = 20;
 
 function createId(prefix: string): string {
   const cryptoRef = globalThis.crypto as { randomUUID?: () => string } | undefined;
@@ -65,92 +69,83 @@ function readTrimmed(value: string): string {
   return value.trim();
 }
 
-function sanitizeUsername(value: string): string {
-  const normalized = readTrimmed(value).replace(/\s+/g, ' ').slice(0, 32);
-  return normalized || GUEST_NAME;
-}
-
 function sortMessages(messages: ChatMessage[]): ChatMessage[] {
-  return [...messages].sort((left, right) => {
-    return new Date(left.timestamp).getTime() - new Date(right.timestamp).getTime();
-  });
+  return [...messages].sort((left, right) => new Date(left.timestamp).getTime() - new Date(right.timestamp).getTime());
 }
 
 function trimMessages(messages: ChatMessage[]): ChatMessage[] {
   const sorted = sortMessages(messages);
-  if (sorted.length <= MAX_RENDERED_MESSAGES) {
-    return sorted;
-  }
-
-  return sorted.slice(sorted.length - MAX_RENDERED_MESSAGES);
+  return sorted.length <= MAX_RENDERED_MESSAGES ? sorted : sorted.slice(sorted.length - MAX_RENDERED_MESSAGES);
 }
 
 function mergeMessages(current: ChatMessage[], incoming: ChatMessage[]): ChatMessage[] {
   const map = new Map<string, ChatMessage>();
-  current.forEach((message) => {
-    map.set(message.id, message);
-  });
-  incoming.forEach((message) => {
-    map.set(message.id, message);
-  });
+  current.forEach((message) => map.set(message.id, message));
+  incoming.forEach((message) => map.set(message.id, message));
   return trimMessages(Array.from(map.values()));
 }
 
-function createSupportMessage(message: string): ChatMessage {
+function createWelcomeMessage(): ChatMessage {
   return {
-    id: createId('chat-support'),
-    senderId: 'ivx-chat-system',
-    senderName: 'IVX Room',
+    id: 'public-chat-welcome',
+    senderId: 'public-chat-system',
+    senderName: 'IVX AI',
     senderAvatar: '',
-    message,
+    message: WELCOME_COPY,
     timestamp: new Date().toISOString(),
     isSupport: true,
     status: 'read',
   };
 }
 
-function mapRoomMessageToChatMessage(message: ChatRoomMessage): ChatMessage {
+function mapPublicMessageToChatMessage(message: PublicChatSessionMessage): ChatMessage {
+  const role = message.role === 'assistant' ? 'assistant' : message.role === 'system' ? 'system' : 'user';
   return {
     id: message.id,
-    senderId: `${message.source}-${message.username}`,
-    senderName: message.username,
+    senderId: `public-chat-${role}`,
+    senderName: role === 'user' ? 'You' : 'IVX AI',
     senderAvatar: '',
-    message: message.text,
+    message: message.content ?? message.text,
     timestamp: message.createdAt,
-    isSupport: message.source !== 'user',
+    isSupport: role !== 'user',
     status: 'read',
   };
 }
 
-const StatusChip = React.memo(function StatusChip({ label, tone, icon }: StatusChipProps) {
-  const backgroundColor = tone === 'live'
-    ? 'rgba(34, 197, 94, 0.12)'
-    : tone === 'warn'
-      ? 'rgba(245, 158, 11, 0.14)'
-      : 'rgba(239, 68, 68, 0.14)';
-  const borderColor = tone === 'live'
-    ? 'rgba(34, 197, 94, 0.24)'
-    : tone === 'warn'
-      ? 'rgba(245, 158, 11, 0.24)'
-      : 'rgba(239, 68, 68, 0.24)';
-  const color = tone === 'live'
-    ? Colors.success
-    : tone === 'warn'
-      ? Colors.warning
-      : Colors.error;
+function buildHistoryPayload(messages: ChatMessage[]): PublicChatHistoryItem[] {
+  return messages
+    .filter((message) => message.id !== 'public-chat-welcome' && readTrimmed(message.message).length > 0)
+    .map((message) => ({
+      role: message.isSupport ? 'assistant' as const : 'user' as const,
+      content: message.message,
+    }))
+    .slice(-8);
+}
 
-  const chipIcon = icon === 'users'
-    ? <Users size={14} color={color} />
-    : icon === 'shield'
-      ? <ShieldCheck size={14} color={color} />
-      : icon === 'lock'
-        ? <Lock size={14} color={color} />
-        : tone === 'live'
-          ? <Wifi size={14} color={color} />
-          : <WifiOff size={14} color={color} />;
+function formatSessionLabel(session: PublicChatSessionSummary): string {
+  const preview = readTrimmed(session.lastMessagePreview);
+  if (preview) {
+    return preview.length > 42 ? `${preview.slice(0, 42)}…` : preview;
+  }
+  return `${session.messageCount} saved messages`;
+}
+
+const StatusChip = React.memo(function StatusChip({ label, tone, icon }: StatusChipProps) {
+  const color = tone === 'live' ? Colors.success : tone === 'warn' ? Colors.warning : Colors.error;
+  const backgroundColor = tone === 'live' ? 'rgba(34, 197, 94, 0.12)' : tone === 'warn' ? 'rgba(245, 158, 11, 0.14)' : 'rgba(239, 68, 68, 0.14)';
+  const borderColor = tone === 'live' ? 'rgba(34, 197, 94, 0.24)' : tone === 'warn' ? 'rgba(245, 158, 11, 0.24)' : 'rgba(239, 68, 68, 0.24)';
+  const chipIcon = icon === 'shield'
+    ? <ShieldCheck size={14} color={color} />
+    : icon === 'archive'
+      ? <Archive size={14} color={color} />
+      : icon === 'sparkles'
+        ? <Sparkles size={14} color={color} />
+        : tone === 'error'
+          ? <WifiOff size={14} color={color} />
+          : <Wifi size={14} color={color} />;
 
   return (
-    <View style={[styles.statusChip, { backgroundColor, borderColor }]} testID={`chat-room-status-${label.replace(/\s+/g, '-').toLowerCase()}`}>
+    <View style={[styles.statusChip, { backgroundColor, borderColor }]} testID={`public-chat-status-${label.replace(/\s+/g, '-').toLowerCase()}`}>
       {chipIcon}
       <Text style={[styles.statusChipText, { color }]}>{label}</Text>
     </View>
@@ -160,65 +155,37 @@ const StatusChip = React.memo(function StatusChip({ label, tone, icon }: StatusC
 export default function ChatHubScreen() {
   const { width } = useWindowDimensions();
   const isCompact = width < 430;
-  const roomId = useMemo<string>(() => getDefaultChatRoomId(), []);
   const listRef = useRef<FlatList<ChatMessage> | null>(null);
-  const socketRef = useRef<ChatSocket | null>(null);
   const pulse = useRef(new Animated.Value(0.96)).current;
-  const [usernameDraft, setUsernameDraft] = useState<string>(GUEST_NAME);
-  const [activeUsername, setActiveUsername] = useState<string>(GUEST_NAME);
+  const { sessionId, isHydrated, setActiveSession, startNewSession } = usePublicChatSession();
   const [composerValue, setComposerValue] = useState<string>('');
-  const [messages, setMessages] = useState<ChatMessage[]>(() => [createSupportMessage(WELCOME_COPY)]);
-  const [socketConnected, setSocketConnected] = useState<boolean>(false);
-  const [socketError, setSocketError] = useState<string | null>(null);
-  const [onlineCount, setOnlineCount] = useState<number>(0);
+  const [messages, setMessages] = useState<ChatMessage[]>(() => [createWelcomeMessage()]);
+  const [latestResponse, setLatestResponse] = useState<PublicChatApiResponse | null>(null);
+  const [localError, setLocalError] = useState<string | null>(null);
 
-  const healthQuery = useQuery<ChatRoomHealthResponse, Error>({
-    queryKey: ['chat-room', 'health'],
-    queryFn: fetchChatHealth,
+  const healthQuery = useQuery<PublicHealthResponse, Error>({
+    queryKey: ['public-chat', 'health'],
+    queryFn: fetchPublicChatHealth,
     staleTime: 20_000,
     refetchInterval: 30_000,
     retry: 1,
   });
 
-  const messagesQuery = useQuery({
-    queryKey: ['chat-room', 'messages', roomId],
-    queryFn: async () => fetchChatMessages(roomId, REFRESH_LIMIT),
-    staleTime: 10_000,
+  const historyQuery = useQuery<PublicChatHistoryResponse, Error>({
+    queryKey: ['public-chat', 'history', sessionId],
+    queryFn: async () => fetchPublicChatHistory(sessionId, HISTORY_LIMIT),
+    enabled: isHydrated && Boolean(sessionId),
+    staleTime: 5_000,
     retry: 1,
   });
 
-  const roomStateQuery = useQuery({
-    queryKey: ['chat-room', 'state', roomId],
-    queryFn: async () => fetchChatRoomState(roomId),
+  const sessionsQuery = useQuery({
+    queryKey: ['public-chat', 'sessions'],
+    queryFn: async () => fetchPublicChatSessions(SESSION_LIMIT),
+    enabled: isHydrated,
     staleTime: 10_000,
-    refetchInterval: 20_000,
     retry: 1,
   });
-
-  const appendIncomingMessage = useCallback((message: ChatMessage) => {
-    setMessages((current) => mergeMessages(current, [message]));
-  }, []);
-
-  const syncMessagesFromApi = useCallback((incomingMessages: ChatRoomMessage[]) => {
-    const nextMessages = incomingMessages.map(mapRoomMessageToChatMessage);
-    setMessages((current) => mergeMessages(current, nextMessages));
-  }, []);
-
-  useEffect(() => {
-    if (messagesQuery.data?.messages) {
-      console.log('[ChatHub] Syncing messages from API query', {
-        roomId,
-        count: messagesQuery.data.messages.length,
-      });
-      syncMessagesFromApi(messagesQuery.data.messages);
-    }
-  }, [messagesQuery.data?.messages, roomId, syncMessagesFromApi]);
-
-  useEffect(() => {
-    if (typeof roomStateQuery.data?.room.onlineCount === 'number') {
-      setOnlineCount(roomStateQuery.data.room.onlineCount);
-    }
-  }, [roomStateQuery.data?.room.onlineCount]);
 
   useEffect(() => {
     Animated.loop(
@@ -234,206 +201,150 @@ export default function ChatHubScreen() {
   }, [messages]);
 
   useEffect(() => {
-    console.log('[ChatHub] Creating realtime socket', {
-      roomId,
-      activeUsername,
-      apiBaseUrl: getChatApiBaseUrl(),
-    });
+    if (!historyQuery.data) return;
+    const restoredMessages = historyQuery.data.messages.map(mapPublicMessageToChatMessage);
+    setMessages(restoredMessages.length > 0 ? trimMessages(restoredMessages) : [createWelcomeMessage()]);
+    setLocalError(null);
+  }, [historyQuery.data]);
 
-    const socket = createChatSocket();
-    socketRef.current = socket;
-
-    socket.on('connect', () => {
-      console.log('[ChatHub] Socket connected', { roomId, activeUsername, socketId: socket.id });
-      setSocketConnected(true);
-      setSocketError(null);
-      socket.emit('room:join', { roomId, username: activeUsername });
-    });
-
-    socket.on('disconnect', (reason) => {
-      console.log('[ChatHub] Socket disconnected', { reason });
-      setSocketConnected(false);
-    });
-
-    socket.on('connect_error', (error) => {
-      console.log('[ChatHub] Socket connection error', error.message);
-      setSocketConnected(false);
-      setSocketError(error.message);
-    });
-
-    socket.on('chat:welcome', (payload) => {
-      console.log('[ChatHub] Socket welcome payload', payload);
-    });
-
-    socket.on('room:joined', (payload) => {
-      console.log('[ChatHub] Room joined', payload);
-      setOnlineCount(payload.onlineCount);
-    });
-
-    socket.on('room:state', (payload) => {
-      console.log('[ChatHub] Room state update', payload);
-      if (payload.roomId === roomId) {
-        setOnlineCount(payload.onlineCount);
-      }
-    });
-
-    socket.on('chat:message', (payload) => {
-      console.log('[ChatHub] Incoming realtime message', {
-        messageId: payload.id,
-        roomId: payload.roomId,
-        username: payload.username,
-      });
-      appendIncomingMessage(mapRoomMessageToChatMessage(payload));
-    });
-
-    socket.on('chat:error', (payload) => {
-      console.log('[ChatHub] Socket message error', payload);
-      setSocketError(payload.error);
-    });
-
-    return () => {
-      console.log('[ChatHub] Cleaning up realtime socket');
-      socket.removeAllListeners();
-      socket.disconnect();
-      socketRef.current = null;
-      setSocketConnected(false);
-    };
-  }, [activeUsername, appendIncomingMessage, roomId]);
-
-  const sendMutation = useMutation<ChatRoomSendResponse, Error, { text: string }>({
-    mutationKey: ['chat-room', 'send-message', roomId, activeUsername],
-    mutationFn: async ({ text }) => {
-      const payload = {
-        roomId,
-        username: activeUsername,
-        text,
-        source: 'user' as const,
+  const sendMutation = useMutation<PublicChatApiResponse, Error, SendMutationInput>({
+    mutationKey: ['public-chat', 'send', sessionId],
+    mutationFn: async ({ text, requestId, history }) => sendPublicChatMessage({
+      message: text,
+      history,
+      sessionId,
+      requestId,
+    }),
+    onMutate: async ({ text, requestId }) => {
+      const pendingMessage: ChatMessage = {
+        id: `${requestId}-user-pending`,
+        senderId: 'public-chat-user',
+        senderName: 'You',
+        senderAvatar: '',
+        message: text,
+        timestamp: new Date().toISOString(),
+        isSupport: false,
+        status: 'sent',
       };
-      const socket = socketRef.current;
-
-      if (socket?.connected) {
-        console.log('[ChatHub] Sending message through Socket.IO', {
-          roomId,
-          activeUsername,
-          preview: text.slice(0, 120),
-        });
-
-        return await new Promise<ChatRoomSendResponse>((resolve, reject) => {
-          let settled = false;
-          const timeoutHandle = setTimeout(() => {
-            if (settled) {
-              return;
-            }
-            settled = true;
-            reject(new Error('Realtime send timed out. Falling back to HTTP is recommended.'));
-          }, 6_000);
-
-          socket.emit('chat:send', payload, (acknowledgement?: ChatSocketAcknowledgement) => {
-            if (settled) {
-              return;
-            }
-
-            settled = true;
-            clearTimeout(timeoutHandle);
-
-            if (acknowledgement?.ok && acknowledgement.message) {
-              resolve({
-                ok: true,
-                message: acknowledgement.message,
-                deploymentMarker: 'socket-ack',
-              });
-              return;
-            }
-
-            reject(new Error(acknowledgement?.error ?? 'Realtime send failed.'));
-          });
-        });
-      }
-
-      console.log('[ChatHub] Socket unavailable, using HTTP message send fallback', {
-        roomId,
-        activeUsername,
-      });
-      const response = await sendChatMessage(payload);
-      return response;
-    },
-    onSuccess: async (response) => {
+      setMessages((current) => mergeMessages(current.filter((message) => message.id !== 'public-chat-welcome'), [pendingMessage]));
       setComposerValue('');
-      setSocketError(null);
-      appendIncomingMessage(mapRoomMessageToChatMessage(response.message));
-      if (response.assistantMessage) {
-        appendIncomingMessage(mapRoomMessageToChatMessage(response.assistantMessage));
-      }
+    },
+    onSuccess: async (response, variables) => {
+      setLatestResponse(response);
+      setLocalError(null);
+      const assistantMessage: ChatMessage = {
+        id: `${response.requestId}-assistant`,
+        senderId: 'public-chat-assistant',
+        senderName: 'IVX AI',
+        senderAvatar: '',
+        message: response.answer,
+        timestamp: response.timestamp,
+        isSupport: true,
+        status: 'read',
+      };
+      setMessages((current) => mergeMessages(current.filter((message) => message.id !== `${variables.requestId}-user-pending`), [
+        {
+          id: `${response.requestId}-user`,
+          senderId: 'public-chat-user',
+          senderName: 'You',
+          senderAvatar: '',
+          message: variables.text,
+          timestamp: response.timestamp,
+          isSupport: false,
+          status: 'read',
+        },
+        assistantMessage,
+      ]));
+      void historyQuery.refetch();
+      void sessionsQuery.refetch();
       await Haptics.selectionAsync();
     },
     onError: async (error) => {
-      console.log('[ChatHub] Send mutation failed', error.message);
-      setSocketError(error.message);
+      setLocalError(error.message);
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     },
   });
 
   const canSend = useMemo<boolean>(() => {
-    return readTrimmed(composerValue).length > 0 && !sendMutation.isPending;
-  }, [composerValue, sendMutation.isPending]);
+    return readTrimmed(composerValue).length > 0 && !sendMutation.isPending && isHydrated;
+  }, [composerValue, isHydrated, sendMutation.isPending]);
 
-  const isRefreshing = healthQuery.isRefetching || messagesQuery.isRefetching || roomStateQuery.isRefetching;
-  const deploymentMarker = healthQuery.data?.deploymentMarker ?? messagesQuery.data?.deploymentMarker ?? roomStateQuery.data?.deploymentMarker ?? null;
-  const aiProvider = (healthQuery.data?.aiProvider ?? (healthQuery.data?.aiEnabled ? 'chatgpt' : 'fallback')) as ChatRoomAIProvider;
-  const apiHealthLabel = healthQuery.data?.ok ? 'API healthy' : healthQuery.error ? 'API issue' : 'Checking API';
-  const socketLabel = socketConnected ? 'Realtime live' : socketError ? 'Realtime retrying' : 'Connecting room';
-  const securityLabel = aiProvider === 'chatgpt' && healthQuery.data?.aiEnabled ? 'ChatGPT connected' : 'Fallback mode';
-  const roomLabel = `Room ${roomId}`;
-
-  const handleApplyUsername = useCallback(async () => {
-    const nextUsername = sanitizeUsername(usernameDraft);
-    console.log('[ChatHub] Applying username', { nextUsername });
-    setActiveUsername(nextUsername);
-    await Haptics.selectionAsync();
-  }, [usernameDraft]);
-
-  const handleRefresh = useCallback(() => {
-    console.log('[ChatHub] Manual refresh requested');
-    void Promise.all([
-      healthQuery.refetch(),
-      messagesQuery.refetch(),
-      roomStateQuery.refetch(),
-    ]);
-  }, [healthQuery, messagesQuery, roomStateQuery]);
-
-  const handleSend = useCallback(async () => {
-    const nextText = readTrimmed(composerValue);
-    if (!nextText || sendMutation.isPending) {
-      return;
-    }
-
-    await sendMutation.mutateAsync({ text: nextText });
-  }, [composerValue, sendMutation]);
+  const aiProvider = healthQuery.data?.aiProvider ?? (healthQuery.data?.aiEnabled ? 'chatgpt' : 'fallback');
+  const source = latestResponse?.source ?? aiProvider;
+  const model = latestResponse?.model ?? healthQuery.data?.openAIModel ?? 'openai/gpt-4o-mini';
+  const persistence = latestResponse?.persistence ?? historyQuery.data?.persistence ?? sessionsQuery.data?.persistence ?? 'pending';
+  const deploymentMarker = latestResponse?.deploymentMarker ?? historyQuery.data?.deploymentMarker ?? healthQuery.data?.deploymentMarker ?? null;
+  const messageCount = historyQuery.data?.messageCount ?? messages.filter((message) => message.id !== 'public-chat-welcome').length;
+  const isRefreshing = healthQuery.isRefetching || historyQuery.isRefetching || sessionsQuery.isRefetching;
+  const statusError = localError ?? historyQuery.error?.message ?? sessionsQuery.error?.message ?? healthQuery.error?.message ?? null;
 
   const heroSubtitle = useMemo<string>(() => {
-    if (socketConnected && healthQuery.data?.ok) {
-      return 'Your shared room is live on the API, backed by SQLite, and ready for realtime chat.';
-    }
+    if (statusError) return statusError;
+    if (!isHydrated) return 'Restoring your saved public-chat session on this device.';
+    if (source === 'chatgpt') return 'Live ChatGPT is connected. Your current session is persisted and can be restored after reload.';
+    return 'Public chat is online; emergency fallback will be clearly labeled if the provider is unavailable.';
+  }, [isHydrated, source, statusError]);
 
-    if (socketError) {
-      return socketError;
-    }
+  const handleRefresh = useCallback(() => {
+    void Promise.all([
+      healthQuery.refetch(),
+      historyQuery.refetch(),
+      sessionsQuery.refetch(),
+    ]);
+  }, [healthQuery, historyQuery, sessionsQuery]);
 
-    if (healthQuery.error) {
-      return healthQuery.error.message;
-    }
+  const handleNewChat = useCallback(async () => {
+    const nextSessionId = await startNewSession();
+    console.log('[ChatHub] Started new public chat session', { sessionId: nextSessionId });
+    setMessages([createWelcomeMessage()]);
+    setLatestResponse(null);
+    setLocalError(null);
+    await Haptics.selectionAsync();
+    void sessionsQuery.refetch();
+  }, [sessionsQuery, startNewSession]);
 
-    return 'Connecting the room, checking health, and preparing the realtime channel.';
-  }, [healthQuery.data?.ok, healthQuery.error, socketConnected, socketError]);
+  const handleSelectSession = useCallback(async (nextSessionId: string) => {
+    if (nextSessionId === sessionId) return;
+    await setActiveSession(nextSessionId);
+    setMessages([createWelcomeMessage()]);
+    setLatestResponse(null);
+    setLocalError(null);
+    await Haptics.selectionAsync();
+  }, [sessionId, setActiveSession]);
 
-  const renderItem = useCallback(({ item }: { item: ChatMessage }) => {
+  const handleSend = useCallback(async () => {
+    const text = readTrimmed(composerValue);
+    if (!text || sendMutation.isPending) return;
+    const requestId = createId('public-chat-request');
+    await sendMutation.mutateAsync({
+      text,
+      requestId,
+      history: buildHistoryPayload(messages),
+    });
+  }, [composerValue, messages, sendMutation]);
+
+  const renderMessage = useCallback(({ item }: { item: ChatMessage }) => {
     return <ChatBubble message={item} />;
   }, []);
 
-  const keyExtractor = useCallback((item: ChatMessage) => item.id, []);
+  const renderSession = useCallback(({ item }: { item: PublicChatSessionSummary }) => {
+    const isActive = item.sessionId === sessionId;
+    return (
+      <Pressable
+        onPress={() => {
+          void handleSelectSession(item.sessionId);
+        }}
+        style={({ pressed }) => [styles.sessionPill, isActive && styles.sessionPillActive, pressed && styles.sessionPillPressed]}
+        testID={`public-chat-session-${item.sessionId}`}
+      >
+        <Text style={[styles.sessionPillTitle, isActive && styles.sessionPillTitleActive]} numberOfLines={1}>{formatSessionLabel(item)}</Text>
+        <Text style={[styles.sessionPillMeta, isActive && styles.sessionPillMetaActive]}>{item.messageCount} messages</Text>
+      </Pressable>
+    );
+  }, [handleSelectSession, sessionId]);
 
   return (
-    <ErrorBoundary fallbackTitle="IVX live chat room unavailable">
+    <ErrorBoundary fallbackTitle="IVX public chat unavailable">
       <View style={styles.screen}>
         <Stack.Screen options={{ headerShown: false }} />
         <LinearGradient
@@ -448,7 +359,7 @@ export default function ChatHubScreen() {
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           >
             <View style={styles.headerShell}>
-              <Animated.View style={[styles.heroCard, { transform: [{ scale: pulse }] }]} testID="chat-room-hero-card">
+              <Animated.View style={[styles.heroCard, { transform: [{ scale: pulse }] }]} testID="public-chat-hero-card">
                 <LinearGradient
                   colors={['rgba(255, 215, 0, 0.18)', 'rgba(255, 215, 0, 0.04)', 'rgba(17, 17, 17, 0.96)']}
                   start={{ x: 0, y: 0 }}
@@ -459,114 +370,109 @@ export default function ChatHubScreen() {
                   <View style={styles.heroTopRow}>
                     <View style={styles.heroTextWrap}>
                       <Text style={styles.eyebrow}>CHAT.IVXHOLDING.COM</Text>
-                      <Text style={styles.heroTitle}>Live chat room</Text>
+                      <Text style={styles.heroTitle}>IVX AI chat</Text>
                       <Text style={styles.heroSubtitle}>{heroSubtitle}</Text>
                     </View>
-                    <Pressable
-                      onPress={handleRefresh}
-                      style={({ pressed }) => [styles.refreshButton, pressed && styles.refreshButtonPressed]}
-                      testID="chat-room-refresh-button"
-                    >
-                      <RefreshCw size={16} color={Colors.text} />
-                    </Pressable>
+                    <View style={styles.heroActions}>
+                      <Pressable
+                        onPress={handleRefresh}
+                        style={({ pressed }) => [styles.iconButton, pressed && styles.iconButtonPressed]}
+                        testID="public-chat-refresh-button"
+                      >
+                        <RefreshCw size={16} color={Colors.text} />
+                      </Pressable>
+                      <Pressable
+                        onPress={() => {
+                          void handleNewChat();
+                        }}
+                        style={({ pressed }) => [styles.newChatButton, pressed && styles.newChatButtonPressed]}
+                        testID="public-chat-new-session-button"
+                      >
+                        <MessageCirclePlus size={16} color={Colors.black} />
+                        {!isCompact ? <Text style={styles.newChatText}>New chat</Text> : null}
+                      </Pressable>
+                    </View>
                   </View>
 
                   <View style={styles.chipRow}>
-                    <StatusChip label={apiHealthLabel} tone={healthQuery.data?.ok ? 'live' : healthQuery.error ? 'error' : 'warn'} icon="wifi" />
-                    <StatusChip label={socketLabel} tone={socketConnected ? 'live' : socketError ? 'error' : 'warn'} icon="wifi" />
+                    <StatusChip label={healthQuery.data?.ok ? 'API healthy' : healthQuery.error ? 'API issue' : 'Checking API'} tone={healthQuery.data?.ok ? 'live' : healthQuery.error ? 'error' : 'warn'} icon="wifi" />
+                    <StatusChip label={source === 'chatgpt' ? 'ChatGPT live' : 'Fallback visible'} tone={source === 'chatgpt' ? 'live' : 'warn'} icon="shield" />
                   </View>
                   <View style={styles.chipRow}>
-                    <StatusChip label={`${onlineCount} online`} tone="live" icon="users" />
-                    <StatusChip label={securityLabel} tone={healthQuery.data?.aiEnabled ? 'live' : 'warn'} icon="shield" />
+                    <StatusChip label={`${messageCount} saved`} tone="live" icon="archive" />
+                    <StatusChip label={String(persistence)} tone={persistence === 'supabase' || persistence === 'json' ? 'live' : 'warn'} icon="sparkles" />
                   </View>
                 </View>
               </Animated.View>
 
-              <View style={styles.setupCard} testID="chat-room-setup-card">
-                <View style={styles.setupHeaderRow}>
-                  <Text style={styles.setupTitle}>Room setup</Text>
-                  <Text style={styles.setupMeta}>{roomLabel}</Text>
-                </View>
-                <View style={[styles.identityRow, isCompact && styles.identityRowCompact]}>
-                  <View style={styles.identityInputWrap}>
-                    <Text style={styles.fieldLabel}>Guest name</Text>
-                    <TextInput
-                      value={usernameDraft}
-                      onChangeText={setUsernameDraft}
-                      onSubmitEditing={() => {
-                        void handleApplyUsername();
-                      }}
-                      autoCapitalize="words"
-                      autoCorrect={false}
-                      placeholder="Guest"
-                      placeholderTextColor={Colors.textTertiary}
-                      style={styles.identityInput}
-                      maxLength={32}
-                      testID="chat-room-username-input"
-                    />
+              <View style={styles.sessionCard} testID="public-chat-session-card">
+                <View style={styles.sessionHeaderRow}>
+                  <View>
+                    <Text style={styles.sessionTitle}>Current session</Text>
+                    <Text style={styles.sessionIdText} numberOfLines={1}>{sessionId}</Text>
                   </View>
-                  <Pressable
-                    onPress={() => {
-                      void handleApplyUsername();
-                    }}
-                    style={({ pressed }) => [styles.joinButton, pressed && styles.joinButtonPressed]}
-                    testID="chat-room-apply-username"
-                  >
-                    <Text style={styles.joinButtonText}>Join room</Text>
-                  </Pressable>
+                  <Text style={styles.sessionCountText}>{sessionsQuery.data?.sessionCount ?? 0} sessions</Text>
                 </View>
-                <View style={styles.setupFooterRow}>
-                  <Text style={styles.setupFooterText}>Posting as {activeUsername}</Text>
-                  <Text style={styles.setupFooterText}>API {getChatApiBaseUrl()}</Text>
-                </View>
+                <FlatList
+                  horizontal
+                  data={sessionsQuery.data?.sessions ?? []}
+                  renderItem={renderSession}
+                  keyExtractor={(item) => item.sessionId}
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.sessionListContent}
+                  ListEmptyComponent={(
+                    <Text style={styles.emptySessionText}>Saved sessions appear here after your first message.</Text>
+                  )}
+                  testID="public-chat-session-list"
+                />
               </View>
             </View>
 
-            <View style={styles.feedCard} testID="chat-room-feed-card">
+            <View style={styles.feedCard} testID="public-chat-feed-card">
               <View style={styles.feedHeaderRow}>
-                <Text style={styles.feedTitle}>Messages</Text>
-                <Text style={styles.feedMetaText}>{roomStateQuery.data?.room.messageCount ?? messages.length} total</Text>
+                <Text style={styles.feedTitle}>Chat history</Text>
+                <Text style={styles.feedMetaText}>{model}</Text>
               </View>
 
-              {socketError ? (
-                <View style={styles.errorBanner} testID="chat-room-error-banner">
+              {statusError ? (
+                <View style={styles.errorBanner} testID="public-chat-error-banner">
                   <WifiOff size={14} color={Colors.warning} />
-                  <Text style={styles.errorBannerText}>{socketError}</Text>
+                  <Text style={styles.errorBannerText}>{statusError}</Text>
                 </View>
               ) : null}
 
               <FlatList
                 ref={listRef}
                 data={messages}
-                renderItem={renderItem}
-                keyExtractor={keyExtractor}
+                renderItem={renderMessage}
+                keyExtractor={(item) => item.id}
                 contentContainerStyle={styles.listContent}
                 showsVerticalScrollIndicator={false}
                 refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} tintColor={Colors.primary} />}
-                ListFooterComponent={sendMutation.isPending ? (
-                  <View style={styles.typingRow} testID="chat-room-sending-state">
+                ListFooterComponent={sendMutation.isPending || historyQuery.isLoading ? (
+                  <View style={styles.typingRow} testID="public-chat-loading-state">
                     <ActivityIndicator size="small" color={Colors.primary} />
-                    <Text style={styles.typingText}>Sending your message…</Text>
+                    <Text style={styles.typingText}>{sendMutation.isPending ? 'ChatGPT is replying…' : 'Restoring history…'}</Text>
                   </View>
                 ) : <View style={styles.listFooterSpacing} />}
-                testID="chat-room-message-list"
+                testID="public-chat-message-list"
               />
             </View>
 
             <View style={styles.composerShell}>
-              <View style={styles.composerCard} testID="chat-room-composer-card">
+              <View style={styles.composerCard} testID="public-chat-composer-card">
                 <View style={styles.composerInputWrap}>
                   <Text style={styles.fieldLabel}>Message</Text>
                   <TextInput
                     value={composerValue}
                     onChangeText={setComposerValue}
-                    placeholder="Type a message to the room"
+                    placeholder="Ask IVX AI a question"
                     placeholderTextColor={Colors.textTertiary}
                     multiline
-                    maxLength={1200}
-                    editable={!sendMutation.isPending}
+                    maxLength={2000}
+                    editable={!sendMutation.isPending && isHydrated}
                     style={styles.composerInput}
-                    testID="chat-room-message-input"
+                    testID="public-chat-message-input"
                   />
                 </View>
                 <Pressable
@@ -575,14 +481,14 @@ export default function ChatHubScreen() {
                   }}
                   disabled={!canSend}
                   style={({ pressed }) => [styles.sendButton, !canSend && styles.sendButtonDisabled, pressed && canSend && styles.sendButtonPressed]}
-                  testID="chat-room-send-button"
+                  testID="public-chat-send-button"
                 >
                   <Send size={18} color={canSend ? Colors.black : Colors.textTertiary} />
                 </Pressable>
               </View>
               <View style={styles.bottomMetaRow}>
                 <Text style={styles.bottomMetaText}>{deploymentMarker ? `Deploy ${deploymentMarker}` : 'Deployment marker pending'}</Text>
-                <Text style={styles.bottomMetaText}>{`${healthQuery.data?.openAIModel ?? 'openai/gpt-4o-mini'} • ${aiProvider}`}</Text>
+                <Text style={styles.bottomMetaText}>{`${source} • ${latestResponse?.persistence ?? persistence}`}</Text>
               </View>
             </View>
           </KeyboardAvoidingView>
@@ -606,7 +512,7 @@ const styles = StyleSheet.create({
   headerShell: {
     paddingHorizontal: 16,
     paddingTop: 8,
-    gap: 14,
+    gap: 12,
   },
   heroCard: {
     position: 'relative',
@@ -650,7 +556,11 @@ const styles = StyleSheet.create({
     lineHeight: 21,
     marginTop: 10,
   },
-  refreshButton: {
+  heroActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  iconButton: {
     width: 40,
     height: 40,
     borderRadius: 14,
@@ -660,9 +570,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  refreshButtonPressed: {
+  iconButtonPressed: {
     opacity: 0.85,
     transform: [{ scale: 0.98 }],
+  },
+  newChatButton: {
+    height: 40,
+    borderRadius: 14,
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  newChatButtonPressed: {
+    opacity: 0.9,
+    transform: [{ scale: 0.98 }],
+  },
+  newChatText: {
+    color: Colors.black,
+    fontSize: 12,
+    fontWeight: '800' as const,
   },
   chipRow: {
     flexDirection: 'row',
@@ -682,89 +611,79 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700' as const,
   },
-  setupCard: {
+  sessionCard: {
     backgroundColor: 'rgba(14, 14, 14, 0.94)',
-    borderRadius: 24,
+    borderRadius: 22,
     borderWidth: 1,
     borderColor: Colors.surfaceBorder,
-    padding: 18,
-    gap: 14,
+    padding: 14,
+    gap: 12,
   },
-  setupHeaderRow: {
+  sessionHeaderRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
     gap: 12,
   },
-  setupTitle: {
-    color: Colors.text,
-    fontSize: 17,
-    fontWeight: '800' as const,
-  },
-  setupMeta: {
-    color: Colors.primary,
-    fontSize: 12,
-    fontWeight: '700' as const,
-  },
-  identityRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 12,
-  },
-  identityRowCompact: {
-    flexDirection: 'column',
-    alignItems: 'stretch',
-  },
-  identityInputWrap: {
-    flex: 1,
-    gap: 8,
-  },
-  fieldLabel: {
-    color: Colors.textTertiary,
-    fontSize: 11,
-    fontWeight: '700' as const,
-    letterSpacing: 0.8,
-    textTransform: 'uppercase',
-  },
-  identityInput: {
-    minHeight: 52,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: Colors.surfaceBorder,
-    backgroundColor: '#101010',
-    paddingHorizontal: 16,
+  sessionTitle: {
     color: Colors.text,
     fontSize: 15,
-    fontWeight: '600' as const,
+    fontWeight: '800' as const,
   },
-  joinButton: {
-    height: 52,
-    borderRadius: 18,
-    backgroundColor: Colors.primary,
-    paddingHorizontal: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
+  sessionIdText: {
+    color: Colors.textTertiary,
+    fontSize: 11,
+    marginTop: 3,
+    maxWidth: 260,
   },
-  joinButtonPressed: {
+  sessionCountText: {
+    color: Colors.primary,
+    fontSize: 12,
+    fontWeight: '800' as const,
+  },
+  sessionListContent: {
+    gap: 10,
+    paddingRight: 4,
+  },
+  sessionPill: {
+    width: 178,
+    borderRadius: 16,
+    backgroundColor: '#101010',
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 5,
+  },
+  sessionPillActive: {
+    backgroundColor: 'rgba(255, 215, 0, 0.12)',
+    borderColor: 'rgba(255, 215, 0, 0.35)',
+  },
+  sessionPillPressed: {
     opacity: 0.9,
     transform: [{ scale: 0.99 }],
   },
-  joinButtonText: {
-    color: Colors.black,
-    fontSize: 14,
-    fontWeight: '800' as const,
-  },
-  setupFooterRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 10,
-    flexWrap: 'wrap',
-  },
-  setupFooterText: {
-    color: Colors.textSecondary,
+  sessionPillTitle: {
+    color: Colors.text,
     fontSize: 12,
+    fontWeight: '700' as const,
+  },
+  sessionPillTitleActive: {
+    color: Colors.primary,
+  },
+  sessionPillMeta: {
+    color: Colors.textTertiary,
+    fontSize: 11,
     fontWeight: '600' as const,
+  },
+  sessionPillMetaActive: {
+    color: Colors.textSecondary,
+  },
+  emptySessionText: {
+    color: Colors.textTertiary,
+    fontSize: 12,
+    lineHeight: 18,
+    paddingVertical: 8,
   },
   feedCard: {
     flex: 1,
@@ -792,6 +711,8 @@ const styles = StyleSheet.create({
     fontWeight: '800' as const,
   },
   feedMetaText: {
+    flex: 1,
+    textAlign: 'right',
     color: Colors.textTertiary,
     fontSize: 12,
     fontWeight: '700' as const,
@@ -861,6 +782,13 @@ const styles = StyleSheet.create({
   composerInputWrap: {
     flex: 1,
     gap: 8,
+  },
+  fieldLabel: {
+    color: Colors.textTertiary,
+    fontSize: 11,
+    fontWeight: '700' as const,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
   },
   composerInput: {
     minHeight: 30,

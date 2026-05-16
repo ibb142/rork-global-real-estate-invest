@@ -905,3 +905,146 @@ All later phases depend on these tables existing and on the typed persistence la
 - Rollback notes:
   - If the public-chat prompt-shape change causes unexpected behavior after deployment, revert only `backend/public-chat-ai.ts` to the prior `messages` payload path; the owner AI proxy, Supabase migration, upload route, voice route, and production health routes are independent and should not be rolled back.
   - Current stable production commit before this local public-chat fix remains `13a339fc9a77ec3aa84130d6584b200d5fb974f0` from Production Block 12.
+
+### Production Block 14 — Public-chat fix deployed; AI Gateway credential blocker proven (2026-05-16)
+
+- Files changed before promotion:
+  - `backend/public-chat-ai.ts` — public chat now uses the prompt-based IVX AI runtime path and preserves exact proof tokens.
+  - `expo/package.json` — removed active `@rork-ai/toolkit-sdk` regression.
+  - `expo/metro.config.js` — restored plain Expo Metro config, no `withRorkMetro`.
+  - `PLAN.md` — checkpoint.
+- Validation before promotion:
+  - Root/backend `bunx tsc --noEmit --pretty false` passed.
+  - Expo `bunx tsc --noEmit --pretty false` passed.
+  - `bun scripts/verify-expo-sdk.mjs` passed and reported Rork bundler dependency absent.
+  - `runChecks(expo)` passed.
+- GitHub promotion proof:
+  - GitHub main advanced to commit `73821dd0fd4959a08d7c78c31e6aa8d3c078d59a`.
+  - Commit message: `fix: enable public chat ChatGPT prompt route`.
+  - Sync changed 4 files: `backend/public-chat-ai.ts`, `expo/package.json`, `expo/metro.config.js`, `PLAN.md`.
+- Render deploy proof:
+  - Render service `ivx-holdings-platform` (`srv-d7t9ivreo5us73ftose0`) deployed commit `73821dd0fd4959a08d7c78c31e6aa8d3c078d59a`.
+  - Deploy `dep-d84606g7htvc73f8okv0` reached `live` at `2026-05-16T12:18:54.177461Z`.
+- Production health proof after deploy:
+  - `GET https://ivx-holdings-platform.onrender.com/health` → HTTP 200, `ok: true`, marker `ivx-owner-ai-hono-2026-05-14t-render-validator-routes`.
+  - Health still reports `aiEnabled: true`, `aiProvider: "chatgpt"`, `openAIModel: "openai/gpt-4o-mini"`, endpoint `https://ai-gateway.vercel.sh/v3/ai/openai/gpt-4o-mini`.
+- Live public-chat proof after deploy:
+  - `POST https://ivx-holdings-platform.onrender.com/api/public/chat` → HTTP 200, `ok: true`.
+  - Response still returned `source: "fallback"`, `model: "openai/gpt-4o-mini"`, endpoint `https://ai-gateway.vercel.sh/v3/ai/openai/gpt-4o-mini`.
+  - Exact proof token requested: `IVX_PUBLIC_CHATGPT_LIVE_PROOF_1778933962`.
+  - `proofTokenPresentInAnswer: false`.
+  - Answer preview was the local fallback text, proving public chat is **not** ChatGPT-live yet.
+- Root cause isolated after deploy:
+  - Local reproduction with the saved backend env reached the IVX AI runtime and failed before generation with `GatewayAuthenticationError` / `Unauthenticated request to AI Gateway`.
+  - Direct Vercel AI Gateway HTTP probes using the same saved `AI_GATEWAY_API_KEY` returned HTTP 401 `authentication_error` from both `/v1/chat/completions` and `/v1/responses`.
+  - Secret values were not printed. The non-secret shape proof showed the saved key is present but length `26`, prefix `AI_G`, and does not start with `vck_` or `sk-`; Vercel rejects it.
+- Current honest status:
+  - Code path is promoted and Render is live.
+  - Rork toolkit app/bundler dependency is absent after the deployed patch.
+  - Public chat route registration, rate limiting, fallback, and endpoint/model metadata work.
+  - Public chat ChatGPT generation remains blocked by the saved AI Gateway credential being invalid/unauthenticated, not by GitHub, Render, route code, Supabase, or app-side paywall logic.
+- Required unblock:
+  - Replace Render/backend `AI_GATEWAY_API_KEY` with a valid Vercel AI Gateway API key, then redeploy/restart `ivx-holdings-platform` and rerun `POST /api/public/chat` until response returns `source: "chatgpt"` and includes the requested exact proof token.
+- Do not claim:
+  - Do not claim public chat is ChatGPT-live while `/api/public/chat` returns `source: "fallback"`.
+  - Do not claim provider-side ChatGPT is free/unlimited from repo proof; current proof remains app-side only: no active app-side ChatGPT paywall/quota/Rork dependency enforcement.
+- Optional Supabase issue remains unchanged:
+  - Catalog-perfect `storage.objects` policies still require Supabase owner SQL, but backend-signed upload path remains the app-side unblock.
+  - Current stable production code commit is now `73821dd0fd4959a08d7c78c31e6aa8d3c078d59a`; functional public-chat ChatGPT completion still requires the valid provider credential.
+
+### Production Block 15 — Public chat ChatGPT-live (2026-05-16)
+
+- New valid `AI_GATEWAY_API_KEY` (shape `vck_*`, length 60) was provided by the owner and saved to the workspace env.
+- Direct Vercel AI Gateway probe with the new key returned HTTP 200 and a real model completion (`PROOF_OK`), confirming the credential is authenticated.
+- Updated Render service `srv-d7t9ivreo5us73ftose0` env var `AI_GATEWAY_API_KEY` via `PUT https://api.render.com/v1/services/.../env-vars/AI_GATEWAY_API_KEY` (HTTP 200). Secret value was not printed.
+- Triggered clear-cache Render deploy `dep-d8493ut7vvec73f33rd0` on stable commit `73821dd0fd4959a08d7c78c31e6aa8d3c078d59a`; reached `live` status.
+- Live public-chat proof after deploy with new credential:
+  - `POST https://ivx-holdings-platform.onrender.com/api/public/chat` → HTTP 200.
+  - Response: `source: "chatgpt"`, `model: "openai/gpt-4o-mini"`, endpoint `https://ai-gateway.vercel.sh/v3/ai/openai/gpt-4o-mini`.
+  - Exact proof token requested: `IVX_PUBLIC_CHATGPT_LIVE_PROOF_2026D`.
+  - Answer returned exactly: `IVX_PUBLIC_CHATGPT_LIVE_PROOF_2026D` — proof token preserved end-to-end.
+- Status: **Public chat is now ChatGPT-live in production.** The previous AI Gateway credential blocker is resolved.
+- Remaining known non-blockers:
+  - Optional Supabase `storage.objects` policies still require Supabase Dashboard owner SQL for catalog-perfect storage RLS proof. Phone uploads continue to flow through the backend-signed `/api/upload` route from Block 10.
+  - Provider-side ChatGPT billing/unlimited claims remain provider-side, not repo-provable.
+
+### Production Block 16 — Post-resolution verification + hardening audit (2026-05-16)
+
+- Files changed: `PLAN.md` only. No backend, app, or migration code changed in this block; existing hardening was audited in place.
+- Production proof re-run against `https://ivx-holdings-platform.onrender.com`:
+  - `POST /api/public/chat` with `{ message, exactToken: "IVX_BLOCK16_PROOF" }` → HTTP 200.
+  - Response: `ok: true`, `source: "chatgpt"`, `model: "openai/gpt-4o-mini"`, endpoint `https://ai-gateway.vercel.sh/v3/ai/openai/gpt-4o-mini`, `deploymentMarker: "ivx-public-chat-2026-04-23t1200z"`.
+  - Answer returned exactly: `IVX_BLOCK16_PROOF` — exact proof token preserved end-to-end.
+  - Rate-limit headers present in response: `rateLimitRemaining: 18`, `rateLimitResetAt: "2026-05-16T16:00:44.544Z"` (active per-client rate limiter on public chat).
+  - Validation probe `POST /api/public/chat` with empty body → HTTP 400 with `error: "Message is required."` and same rate-limit metadata (no secret values leaked).
+  - `GET /health` → HTTP 200, `aiEnabled: true`, `aiProvider: "chatgpt"`, `openAIModel: "openai/gpt-4o-mini"`.
+  - `GET /api/ivx/supabase/owner-action-health` → HTTP 200, `status: "verified"`, service-role runtime access verified.
+- Stable production commit: `73821dd0fd4959a08d7c78c31e6aa8d3c078d59a`.
+- Latest live Render deploy: `dep-d8493ut7vvec73f33rd0` (from Block 15).
+
+1. Supabase storage policies — verified state unchanged.
+   - `ivx-chat-uploads` bucket exists, `public: true`, `file_size_limit: 52428800` (proven in Block 9 + Block 7 PDF byte test).
+   - Catalog-perfect `storage.objects` policies (`ivx_chat_uploads_public_select`, `ivx_chat_uploads_auth_insert`) still absent and still require Supabase Dashboard owner SQL.
+   - **Not weakened**: phone uploads bypass this gap via the owner-authenticated, service-role-backed `POST /api/upload` route (Block 10), which mints one-time signed upload URLs. No global storage RLS relaxation was added.
+
+2. Provider-side billing — confirmed active.
+   - Live `POST /api/public/chat` returned a real ChatGPT completion (`source: "chatgpt"`) with the working `AI_GATEWAY_API_KEY` (`vck_*`, 60 chars) saved in Block 15. No 401/403/429/quota errors observed.
+   - Provider quotas/billing remain enforced by Vercel AI Gateway / OpenAI, not by IVX code.
+
+3. Fallback behavior — verified production-safe.
+   - `backend/public-chat-ai.ts` only enters fallback inside a `try/catch` around the IVX AI request, and emits an explicit `console.log('[PublicChatAI] IVX AI request failed, falling back:', <reason>)` line before returning `source: "fallback"`. No silent fallback path exists.
+   - Live production response source is `"chatgpt"`; fallback is genuinely emergency-only.
+
+4. Production hardening — already in place (audited in code, no changes needed).
+   - Rate limiting: `backend/api/public-chat.ts` calls `consumeRateLimit(clientId)` per request, returns HTTP 429 with `rateLimitRemaining`/`rateLimitResetAt` on overflow, and surfaces remaining quota on every success/error response.
+   - Clear error messages without secrets: 400 for empty message, 429 for rate limit, 500 for unexpected errors; all responses include `deploymentMarker` for tracing but never include API keys or DB credentials.
+   - Server-side logging: `console.log('[IVXPublicChat] Incoming public chat request', { clientId, sessionId, requestId, messagePreview, historyCount, deploymentMarker })` on entry and `console.log('[IVXPublicChat] Response generated', { requestId, sessionId, model, source, endpoint, answerLength, deploymentMarker })` on completion. AI usage rows are additionally persisted to `public.ai_usage_logs` via `logIVXOwnerAIUsageRow` (Phase 4c).
+   - Cost/usage guardrails: Phase 1 `ai_usage_logs` table tracks per-request accounting; provider-side cost controls are managed in Vercel AI Gateway dashboard.
+
+5. Re-test production — pass.
+   - Endpoint: `POST https://ivx-holdings-platform.onrender.com/api/public/chat`.
+   - HTTP status: `200`.
+   - Response source: `"chatgpt"`.
+   - Model: `openai/gpt-4o-mini` via `https://ai-gateway.vercel.sh/v3/ai/openai/gpt-4o-mini`.
+   - Deploy ID: `dep-d8493ut7vvec73f33rd0` on commit `73821dd0fd4959a08d7c78c31e6aa8d3c078d59a`.
+   - No secret values observed in logs or UI; secrets are read from `process.env` server-side only.
+
+- Status: **AI Gateway / OpenAI blocker remains resolved.** Public chat is verified ChatGPT-live with hardening (rate-limit, structured logging, error sanitization, audit logging) already in place.
+- Remaining non-blockers (unchanged):
+  - Supabase `storage.objects` catalog-perfect policies still require Supabase Dashboard owner SQL (phone uploads continue via backend-signed `/api/upload`).
+  - Provider-side billing/claims verification is a Vercel/OpenAI dashboard activity, not repo-provable.
+  - Optional production hardening (automated smoke-test cron, public chat source-distribution metric, alerting on fallback rate > 0) is not yet wired.
+
+### Block 17 — Product Layer: Chat History + User Sessions (2026-05-16)
+
+- Files changed:
+  - `backend/chat-storage.ts` — added `listRoomsWithPrefix(prefix, limit)` helper (groups stored messages by `roomId`, returns message count, last-updated timestamp, last preview, and distinct usernames; sorted by recency).
+  - `backend/api/public-chat.ts` — wired session-scoped persistence on the public chat endpoint and added two new handlers.
+  - `backend/hono.ts` — registered the new routes and injected the shared `ChatStorage` instance into the public-chat module.
+- Behavior added (additive, no existing route changed):
+  - Public chat POST now persists both the user message and the assistant reply into the shared `ChatStorage` under a session-namespaced `roomId` (`pcs-<sessionId>`), tagged with the IP-derived `clientId` as `username`. Failures to persist are logged and never break the live ChatGPT response path.
+  - New `GET /public/chat/history?sessionId=...&limit=...` (+ `/api/public/chat/history`) returns the persisted message history for a given session, capped at 100 messages, no secrets exposed.
+  - New `GET /public/chat/sessions?limit=...` (+ `/api/public/chat/sessions`) returns up to 25 recent sessions associated with the requesting IP-derived `clientId`, including `sessionId`, `messageCount`, `lastUpdatedAt`, and `lastMessagePreview` (160 chars max).
+  - Each response carries the new `block17Marker: "ivx-public-chat-history-2026-05-16t-block17"` so post-deploy verification is unambiguous.
+- Safety + non-regression:
+  - The existing live ChatGPT path through `generatePublicChatAnswer` is untouched; persistence runs around it, never inside it.
+  - Existing rate limiting, error sanitization, deployment marker, and structured logging continue to apply.
+  - `sanitizeSessionId` constrains stored room ids to `[A-Za-z0-9_:-]` and max 80 chars; `clientId` resolution reuses the same helper as the POST handler, so history/sessions cannot leak across IPs.
+  - Storage layer continues to enforce its existing 5,000-message cap and atomic JSON rewrite; no schema or migration change required.
+- Additional hardening completed in this continuation:
+  - Caller-supplied `sessionId` is now sanitized on `POST /public/chat` / `POST /api/public/chat` before it is used as a storage room id.
+  - History reads now verify the requested session belongs to the same IP-derived `clientId` before returning messages; cross-client reads return HTTP 404 with no message leakage.
+  - Public-chat JSON responses now advertise `GET, POST, OPTIONS` in CORS methods for the new history/session reads.
+- Local proof:
+  - Direct handler proof with injected `ChatStorage` returned `postStatus: 200`, `historyStatus: 200`, `historyMessageCount: 2`, `sessionsStatus: 200`, `sessionCount: 1`, and `deniedOtherClientStatus: 404`.
+  - Local proof response carried `block17Marker: "ivx-public-chat-history-2026-05-16t-block17"`.
+  - Local direct-handler AI source was `fallback` only because the sandbox shell did not expose the production `AI_GATEWAY_API_KEY`; production ChatGPT path is intentionally unchanged and remains governed by Block 16 proof until this Block 17 code is deployed.
+- Validation:
+  - Root/backend `bunx tsc --noEmit --pretty false` passed after the Block 17 hardening.
+  - Expo `bunx tsc --noEmit --pretty false` passed after the Block 17 hardening.
+  - `runChecks(expo)` passed after the Block 17 hardening.
+- Production proof / deployment gate:
+  - Current GitHub main is still `73821dd0fd4959a08d7c78c31e6aa8d3c078d59a` (`fix: enable public chat ChatGPT prompt route`) and does not yet contain `/api/public/chat/history`, `/api/public/chat/sessions`, or `setPublicChatHistoryStorage` in `backend/hono.ts`.
+  - Current production backend marker remains `ivx-owner-ai-hono-2026-05-14t-render-validator-routes`; the new Block 17 GET routes are therefore not live yet and currently return HTTP 404 until normal code promotion + Render deploy includes this Block 17 patch.
+  - Do not rework the working AI Gateway/OpenAI integration for this block; deploy only the additive storage/session route changes, then re-test `POST /api/public/chat`, `GET /api/public/chat/history`, and `GET /api/public/chat/sessions`.
+- Status: **Block 17 code complete and validated locally; production activation pending normal GitHub promotion + Render deploy.** Once deployed, the POST path will persist public-chat sessions to the existing `ChatStorage` JSON file and the two new GET routes should return session history/list data with the `block17Marker` proof.

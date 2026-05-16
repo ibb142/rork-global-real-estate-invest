@@ -19,7 +19,12 @@ import { OPTIONS as ownerVariablesOptions, getIVXOwnerVariableRuntimeValue, hasI
 import { OPTIONS as independenceStatusOptions, handleIVXIndependenceStatusRequest } from './api/ivx-independence-status';
 import { OPTIONS as assistantOptions, POST as handleAssistantPost } from './api/assistant';
 import { OPTIONS as planCreatorOptions, POST as handlePlanCreatorPost } from './api/plan-creator';
-import { handlePublicChatPost } from './api/public-chat';
+import {
+  handlePublicChatPost,
+  handlePublicChatHistoryGet,
+  handlePublicChatSessionsGet,
+  setPublicChatHistoryStorage,
+} from './api/public-chat';
 import { ChatStorage } from './chat-storage';
 import type { ChatRoomMessage } from './chat-types';
 import {
@@ -107,6 +112,7 @@ const WEB_DIST_ROOT = path.join(SERVER_ROOT, 'expo', 'dist');
 const CHAT_DATABASE_PATH = (process.env.CHAT_DATABASE_PATH?.trim() || path.join(SERVER_ROOT, 'data', 'chat-room.sqlite'));
 const CHAT_DEFAULT_ROOM_ID = (process.env.CHAT_ROOM_ID?.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '-').replace(/-+/g, '-').slice(0, 40) || 'main-room');
 const publicChatStorage = new ChatStorage(CHAT_DATABASE_PATH);
+setPublicChatHistoryStorage(publicChatStorage);
 const publicRoomMembers = new Map<string, number>();
 type RenderProofToolName = 'time-now' | 'room-status' | 'supabase-tables' | 'storage-diagnostics' | 'github-status' | 'aws-status' | 'supabase-status' | 'render-status';
 
@@ -1204,6 +1210,10 @@ app.post('/api/plan-creator', async (context) => handlePlanCreatorPost(context.r
 
 app.options('/public/chat', (context) => context.body(null, 204));
 app.options('/api/public/chat', (context) => context.body(null, 204));
+app.options('/public/chat/history', (context) => context.body(null, 204));
+app.options('/api/public/chat/history', (context) => context.body(null, 204));
+app.options('/public/chat/sessions', (context) => context.body(null, 204));
+app.options('/api/public/chat/sessions', (context) => context.body(null, 204));
 app.options('/public/messages', (context) => context.body(null, 204));
 app.options('/api/public/messages', (context) => context.body(null, 204));
 app.options('/public/rooms', (context) => context.body(null, 204));
@@ -1212,6 +1222,10 @@ app.options('/public/send-message', (context) => context.body(null, 204));
 app.options('/api/public/send-message', (context) => context.body(null, 204));
 app.post('/public/chat', async (context) => handlePublicChatPost(context.req.raw));
 app.post('/api/public/chat', async (context) => handlePublicChatPost(context.req.raw));
+app.get('/public/chat/history', async (context) => handlePublicChatHistoryGet(context.req.raw));
+app.get('/api/public/chat/history', async (context) => handlePublicChatHistoryGet(context.req.raw));
+app.get('/public/chat/sessions', async (context) => handlePublicChatSessionsGet(context.req.raw));
+app.get('/api/public/chat/sessions', async (context) => handlePublicChatSessionsGet(context.req.raw));
 app.get('/public/messages', async (context) => handlePublicRoomMessages(context.req.raw));
 app.get('/api/public/messages', async (context) => handlePublicRoomMessages(context.req.raw));
 app.get('/public/rooms', async (context) => handlePublicRoomState(context.req.raw));

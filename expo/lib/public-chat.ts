@@ -15,10 +15,53 @@ export type PublicChatApiResponse = {
   model: string;
   source: 'chatgpt' | 'fallback';
   deploymentMarker: string;
+  block17Marker?: string;
   rateLimitRemaining: number;
   rateLimitResetAt: string;
   timestamp: string;
   endpoint: string | null;
+  persistence?: 'supabase' | 'json' | 'none';
+};
+
+export type PublicChatSessionMessage = {
+  id: string;
+  role: 'user' | 'assistant' | 'system';
+  text: string;
+  content?: string;
+  source?: string;
+  model?: string | null;
+  sessionId?: string;
+  createdAt: string;
+};
+
+export type PublicChatHistoryResponse = {
+  ok: true;
+  sessionId: string;
+  messageCount: number;
+  messages: PublicChatSessionMessage[];
+  persistence?: 'supabase' | 'json';
+  deploymentMarker: string;
+  block17Marker?: string;
+  timestamp: string;
+};
+
+export type PublicChatSessionSummary = {
+  sessionId: string;
+  messageCount: number;
+  lastUpdatedAt: string;
+  lastMessagePreview: string;
+  lastSource?: string | null;
+  lastModel?: string | null;
+};
+
+export type PublicChatSessionsResponse = {
+  ok: true;
+  sessionCount: number;
+  sessions: PublicChatSessionSummary[];
+  persistence?: 'supabase' | 'json';
+  deploymentMarker: string;
+  block17Marker?: string;
+  timestamp: string;
 };
 
 export type PublicHealthResponse = {
@@ -44,6 +87,10 @@ function readTrimmed(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function getPublicChatBaseUrl(): string {
+  return getDirectApiBaseUrl();
+}
+
 async function parseErrorResponse(response: Response): Promise<string> {
   const text = await response.text().catch(() => '');
   if (!text) {
@@ -59,7 +106,7 @@ async function parseErrorResponse(response: Response): Promise<string> {
 }
 
 export async function fetchPublicChatHealth(): Promise<PublicHealthResponse> {
-  const baseUrl = getDirectApiBaseUrl();
+  const baseUrl = getPublicChatBaseUrl();
   const url = `${baseUrl}/health`;
   console.log('[PublicChat] Fetching health from:', url);
 
@@ -75,12 +122,17 @@ export async function fetchPublicChatHealth(): Promise<PublicHealthResponse> {
   }
 
   const payload = await response.json() as PublicHealthResponse;
-  console.log('[PublicChat] Health response:', payload);
+  console.log('[PublicChat] Health response:', {
+    ok: payload.ok,
+    aiProvider: payload.aiProvider,
+    openAIModel: payload.openAIModel,
+    deploymentMarker: payload.deploymentMarker,
+  });
   return payload;
 }
 
 export async function sendPublicChatMessage(input: SendPublicChatInput): Promise<PublicChatApiResponse> {
-  const baseUrl = getDirectApiBaseUrl();
+  const baseUrl = getPublicChatBaseUrl();
   const url = `${baseUrl}/public/chat`;
   console.log('[PublicChat] Sending message to:', url, {
     requestId: input.requestId,
@@ -111,7 +163,60 @@ export async function sendPublicChatMessage(input: SendPublicChatInput): Promise
     requestId: payload.requestId,
     source: payload.source,
     model: payload.model,
+    persistence: payload.persistence,
     deploymentMarker: payload.deploymentMarker,
+    block17Marker: payload.block17Marker,
+  });
+  return payload;
+}
+
+export async function fetchPublicChatHistory(sessionId: string, limit: number = 80): Promise<PublicChatHistoryResponse> {
+  const baseUrl = getPublicChatBaseUrl();
+  const url = `${baseUrl}/public/chat/history?sessionId=${encodeURIComponent(sessionId)}&limit=${encodeURIComponent(String(limit))}`;
+  console.log('[PublicChat] Fetching history:', { sessionId, limit });
+
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseErrorResponse(response));
+  }
+
+  const payload = await response.json() as PublicChatHistoryResponse;
+  console.log('[PublicChat] History response:', {
+    sessionId: payload.sessionId,
+    messageCount: payload.messageCount,
+    persistence: payload.persistence,
+    block17Marker: payload.block17Marker,
+  });
+  return payload;
+}
+
+export async function fetchPublicChatSessions(limit: number = 20): Promise<PublicChatSessionsResponse> {
+  const baseUrl = getPublicChatBaseUrl();
+  const url = `${baseUrl}/public/chat/sessions?limit=${encodeURIComponent(String(limit))}`;
+  console.log('[PublicChat] Fetching sessions:', { limit });
+
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseErrorResponse(response));
+  }
+
+  const payload = await response.json() as PublicChatSessionsResponse;
+  console.log('[PublicChat] Sessions response:', {
+    sessionCount: payload.sessionCount,
+    persistence: payload.persistence,
+    block17Marker: payload.block17Marker,
   });
   return payload;
 }
