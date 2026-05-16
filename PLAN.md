@@ -1018,33 +1018,179 @@ All later phases depend on these tables existing and on the typed persistence la
 ### Block 17 — Product Layer: Chat History + User Sessions (2026-05-16)
 
 - Files changed:
-  - `backend/chat-storage.ts` — added `listRoomsWithPrefix(prefix, limit)` helper (groups stored messages by `roomId`, returns message count, last-updated timestamp, last preview, and distinct usernames; sorted by recency).
-  - `backend/api/public-chat.ts` — wired session-scoped persistence on the public chat endpoint and added two new handlers.
-  - `backend/hono.ts` — registered the new routes and injected the shared `ChatStorage` instance into the public-chat module.
-- Behavior added (additive, no existing route changed):
-  - Public chat POST now persists both the user message and the assistant reply into the shared `ChatStorage` under a session-namespaced `roomId` (`pcs-<sessionId>`), tagged with the IP-derived `clientId` as `username`. Failures to persist are logged and never break the live ChatGPT response path.
-  - New `GET /public/chat/history?sessionId=...&limit=...` (+ `/api/public/chat/history`) returns the persisted message history for a given session, capped at 100 messages, no secrets exposed.
-  - New `GET /public/chat/sessions?limit=...` (+ `/api/public/chat/sessions`) returns up to 25 recent sessions associated with the requesting IP-derived `clientId`, including `sessionId`, `messageCount`, `lastUpdatedAt`, and `lastMessagePreview` (160 chars max).
-  - Each response carries the new `block17Marker: "ivx-public-chat-history-2026-05-16t-block17"` so post-deploy verification is unambiguous.
+  - `backend/chat-storage.ts` — retained JSON fallback support and room-prefix listing for emergency/local persistence.
+  - `backend/public-chat-supabase-store.ts` — added Supabase-first public chat persistence for `public_chat_sessions` and `public_chat_messages`, with service-role-only backend access, hashed client identity, session ownership checks, and schema bootstrap through the existing guarded SQL RPC.
+  - `backend/api/public-chat.ts` — persists every public-chat user/assistant turn around the existing live ChatGPT path; adds history/session responses with `persistence` and `block17Marker` proof.
+  - `backend/hono.ts` — registers `GET /public/chat/history`, `GET /api/public/chat/history`, `GET /public/chat/sessions`, and `GET /api/public/chat/sessions`.
+  - `expo/lib/public-chat.ts` — adds typed public-chat send/history/session API client helpers.
+  - `expo/lib/public-chat-session-context.tsx` — adds AsyncStorage-backed session context using `@nkzw/create-context-hook` so the current public visitor session restores after reload.
+  - `expo/app/_layout.tsx` — wraps the app in `PublicChatSessionProvider` beneath the top-level React Query provider.
+  - `expo/app/chat-hub.tsx` — replaces the old room-style chat hub with the session-aware public ChatGPT UI: previous messages, saved sessions strip, reload restoration, and New Chat button.
+- Behavior added (additive, no production ChatGPT route rework):
+  - Each public visitor/device has a persistent `sessionId` saved locally and sent to `POST /api/public/chat`.
+  - Public chat stores both user and assistant messages with `session_id`, `role`, `content`, `source`, `model`, and `created_at`.
+  - Supabase is the primary backend persistence layer; JSON `ChatStorage` remains only as an emergency fallback if Supabase persistence is unavailable.
+  - `GET /api/public/chat/history?sessionId=...&limit=...` restores current-session history.
+  - `GET /api/public/chat/sessions?limit=...` lists recent sessions for the same hashed client identity.
+  - The UI appends new messages to the current conversation, restores history on reload, and starts fresh sessions through the New Chat button while old sessions remain stored.
 - Safety + non-regression:
-  - The existing live ChatGPT path through `generatePublicChatAnswer` is untouched; persistence runs around it, never inside it.
-  - Existing rate limiting, error sanitization, deployment marker, and structured logging continue to apply.
-  - `sanitizeSessionId` constrains stored room ids to `[A-Za-z0-9_:-]` and max 80 chars; `clientId` resolution reuses the same helper as the POST handler, so history/sessions cannot leak across IPs.
-  - Storage layer continues to enforce its existing 5,000-message cap and atomic JSON rewrite; no schema or migration change required.
-- Additional hardening completed in this continuation:
-  - Caller-supplied `sessionId` is now sanitized on `POST /public/chat` / `POST /api/public/chat` before it is used as a storage room id.
-  - History reads now verify the requested session belongs to the same IP-derived `clientId` before returning messages; cross-client reads return HTTP 404 with no message leakage.
-  - Public-chat JSON responses now advertise `GET, POST, OPTIONS` in CORS methods for the new history/session reads.
-- Local proof:
-  - Direct handler proof with injected `ChatStorage` returned `postStatus: 200`, `historyStatus: 200`, `historyMessageCount: 2`, `sessionsStatus: 200`, `sessionCount: 1`, and `deniedOtherClientStatus: 404`.
-  - Local proof response carried `block17Marker: "ivx-public-chat-history-2026-05-16t-block17"`.
-  - Local direct-handler AI source was `fallback` only because the sandbox shell did not expose the production `AI_GATEWAY_API_KEY`; production ChatGPT path is intentionally unchanged and remains governed by Block 16 proof until this Block 17 code is deployed.
+  - The working AI Gateway/OpenAI generation path remains through `generatePublicChatAnswer`; Block 17 only wraps persistence around it.
+  - Live production responses preserve `source: "chatgpt"` and model `openai/gpt-4o-mini`.
+  - No secrets are returned to UI; Supabase service-role and AI Gateway keys stay server-side.
+  - Session reads are constrained by hashed IP-derived client identity and sanitized `sessionId` values.
+  - Fallback remains explicit: persistence failures are logged; AI fallback remains clearly labeled as `source: "fallback"` only if provider generation fails.
 - Validation:
-  - Root/backend `bunx tsc --noEmit --pretty false` passed after the Block 17 hardening.
-  - Expo `bunx tsc --noEmit --pretty false` passed after the Block 17 hardening.
-  - `runChecks(expo)` passed after the Block 17 hardening.
-- Production proof / deployment gate:
-  - Current GitHub main is still `73821dd0fd4959a08d7c78c31e6aa8d3c078d59a` (`fix: enable public chat ChatGPT prompt route`) and does not yet contain `/api/public/chat/history`, `/api/public/chat/sessions`, or `setPublicChatHistoryStorage` in `backend/hono.ts`.
-  - Current production backend marker remains `ivx-owner-ai-hono-2026-05-14t-render-validator-routes`; the new Block 17 GET routes are therefore not live yet and currently return HTTP 404 until normal code promotion + Render deploy includes this Block 17 patch.
-  - Do not rework the working AI Gateway/OpenAI integration for this block; deploy only the additive storage/session route changes, then re-test `POST /api/public/chat`, `GET /api/public/chat/history`, and `GET /api/public/chat/sessions`.
-- Status: **Block 17 code complete and validated locally; production activation pending normal GitHub promotion + Render deploy.** Once deployed, the POST path will persist public-chat sessions to the existing `ChatStorage` JSON file and the two new GET routes should return session history/list data with the `block17Marker` proof.
+  - Root/backend `bunx tsc --noEmit --pretty false` passed.
+  - Expo `bunx tsc --noEmit --pretty false` passed.
+  - `runChecks(expo)` passed.
+- GitHub + Render deployment:
+  - GitHub main advanced to `40314cb201eba323075e918827ff4a6b445aae34`.
+  - Commit message: `feat: add Block 17 public chat sessions and history`.
+  - Render backend service `ivx-holdings-platform` (`srv-d7t9ivreo5us73ftose0`) deployed commit `40314cb201eba323075e918827ff4a6b445aae34`.
+  - Live deploy ID: `dep-d84a92qviibs73bca0c0`, status `live`, finished `2026-05-16T17:12:07.260713Z`.
+- Production proof:
+  - Endpoint tested: `POST https://ivx-holdings-platform.onrender.com/api/public/chat`.
+  - HTTP status: `200`.
+  - Response source: `"chatgpt"`.
+  - Model: `openai/gpt-4o-mini`.
+  - Gateway endpoint: `https://ai-gateway.vercel.sh/v3/ai/openai/gpt-4o-mini`.
+  - Persistence: `"supabase"`.
+  - Block marker: `ivx-public-chat-history-2026-05-16t-block17`.
+  - Proof session: `public-session-block17-proof-1778951458`.
+  - Proof token: `IVX_BLOCK17_HISTORY_PROOF_1778951458` appeared in the live ChatGPT answer.
+  - `GET /api/public/chat/history?sessionId=public-session-block17-proof-1778951458&limit=20` → HTTP 200, `persistence: "supabase"`, `messageCount: 2`, roles `["user", "assistant"]`, user token and assistant token present.
+  - `GET /api/public/chat/sessions?limit=20` → HTTP 200, `persistence: "supabase"`, proof session listed, `sessionCount: 1` for the proof client.
+  - Secret leak check: response proof used payload keys/metadata only; no secret values were exposed in UI/API responses.
+- Status: **Block 17 complete and live.** Public chat remains ChatGPT-live and now has persistent Supabase-backed sessions, history restore, and New Chat/reset behavior.
+- Remaining non-blockers:
+  - Optional Supabase `storage.objects` catalog-perfect policies still require Supabase Dashboard owner SQL; not blocking this Block 17 chat-history persistence.
+  - Provider-side billing/claims verification remains a Vercel/OpenAI dashboard activity, not repo-provable.
+  - Optional future hardening: automated production smoke-test cron and fallback-rate alerting.
+
+### Block 18 — IVX IA Code Developer Workspace (2026-05-16)
+
+- Files changed:
+  - `expo/src/modules/ivx-developer/developerWorkspaceService.ts` — new service layer (project file/route/module registry, patch proposal store with status proposed/approved/applied/failed/rejected, safety scanner blocking secrets and flagging destructive ops, action audit hook, AI tagged-patch parser, sanitization helpers).
+  - `expo/app/admin/ivx-developer-workspace.tsx` — expanded owner-only Code Developer Workspace with tabs Files / Assistant / Patches / Tests.
+  - `expo/app/admin/_layout.tsx` — registers the admin stack screen.
+  - `expo/app/admin/owner-controls.tsx` — links the workspace from the AI / IVX IA module category.
+  - `PLAN.md` — this checkpoint.
+- Behavior added (additive, owner-only, crash-safe):
+  1. **Code Workspace screen** — owner-gated at `/admin/ivx-developer-workspace` via `useAdminGuard`. Files tab lists 21 curated routes/screens/services/migrations/configs/docs from `PROJECT_FILE_REGISTRY`, organized by category, with full-text search across path/title/summary/tags and kind filter chips (Routes/Screens/Services/Backend/Migrations/Config/Docs). File detail card shows path, kind pill, owner-only shield, summary, tags, and an **Ask IVX IA about this file** action that attaches the file to the assistant.
+  2. **AI code assistant mode** — Assistant tab supports five modes: Review, Debug, Plan, Patch, Analyze. Owner can attach a file from the Files tab; the wrapped prompt explicitly forbids silent code modification, secret exposure, and destructive ops without confirmation, and pins the contract that `/api/public/chat` source=chatgpt and Block 17 sessions/history must keep working. Composer routes through `requestAIReply` → `executeReliably` → deployed `/api/ivx/owner-ai`. Cancel calls `cancelPendingAIReply`.
+  3. **Patch proposal flow** — Patch mode asks the AI to reply in tagged XML-style format (`<file>`, `<reason>`, `<old_behavior>`, `<new_behavior>`, `<risk>`, `<diff>`, `<test_plan>`, `<rollback>`). `tryParseAIPatchReply` parses the reply into a structured proposal stored via `createPatch` (AsyncStorage key `ivx.developer-workspace.patches.v1`, max 50). Patches tab shows status dot (proposed/approved/applied/failed/rejected), risk pill, destructive flag, file path, reason, OLD/NEW behavior side-by-side, diff preview (selectable, monospace), and explicit owner controls: Approve (with destructive double-confirm), Reject, Mark applied / failed (separate explicit step after manual apply), Copy diff, Delete. AI proposals never auto-apply.
+  4. **Safety controls** — `scanForSafetyIssues` blocks AWS/Vercel/OpenAI/Supabase/GitHub/Render secret-shaped values (input is rejected with an alert and an audit row before any AI call). Destructive patterns (`DROP TABLE`, `DROP SCHEMA`, `TRUNCATE`, `DELETE FROM ... ;` without WHERE, `rm -rf`, `git push --force`) trigger a blocking confirm dialog. `sanitizeForDisplay` redacts any secret-shaped value before output is rendered or saved into a patch diff. All owner/AI/system actions are logged to `ivx.developer-workspace.actions.v1` (max 200) and mirrored to existing owner audit pipeline via `recordIVXOwnerChatAuditEvent` with block marker `ivx-developer-workspace-2026-05-16t-block18`. Action log is visible at the bottom of the Patches tab.
+  5. **Test/build assistant** — Tests tab shows live counts per status (Proposed / Approved / Applied / Failed) sourced from the patch store, plus a one-tap shortcut to Assistant → Analyze mode for triaging build/test errors. Status reflects the current proposed → approved → applied/failed lifecycle. Production retest card on the Tests tab confirms Block 17 contract.
+  - Distinctive terminal/code aesthetic (mono font, green accents on black) — avoids the generic AI-card look used elsewhere.
+- Safety + non-regression:
+  - No backend, Supabase, or AI route was modified. Live ChatGPT path (`/api/public/chat`, `/api/ivx/owner-ai`) is untouched.
+  - No secrets read or rendered; secret-shaped values entered by the owner are redacted before display, save, or audit.
+  - Owner-only via `app/admin/_layout.tsx` admin guard; no public route exposure.
+  - Pure additive: no rename, no removal of existing modules.
+- Production re-test (re-run in this block):
+  - `POST https://ivx-holdings-platform.onrender.com/api/public/chat` with `{ exactToken: "IVX_BLOCK18_RETEST", sessionId: "public-session-block18-retest" }` → HTTP 200, `ok: true`, `source: "chatgpt"`, `model: "openai/gpt-4o-mini"`, endpoint `https://ai-gateway.vercel.sh/v3/ai/openai/gpt-4o-mini`, `persistence: "supabase"`, `block17Marker: "ivx-public-chat-history-2026-05-16t-block17"`, `deploymentMarker: "ivx-public-chat-2026-04-23t1200z"`, `rateLimitRemaining: 19`. Answer returned exactly `IVX_BLOCK18_RETEST`.
+  - Block 17 sessions/history routes remain live (verified in Block 17, untouched here).
+  - Owner-authenticated `POST /api/upload` continues to mint signed URLs for `ivx-chat-uploads` (verified in Block 10/Block 7; route registration unchanged here).
+- Validation:
+  - Expo `bunx tsc --noEmit` passed via `runChecks(expo)`.
+- Status: **Block 18 expanded scope complete locally** — Files browser + search + detail, Assistant with file attach, Patch proposal flow with owner approval, Tests tab, secret/destructive safety controls, action audit log, and production retest pass. Awaiting normal Rork-managed sync + Render deploy cycle for production phone bundle.
+- Remaining non-blockers (unchanged):
+  - Optional `storage.objects` policies still require Supabase Dashboard owner SQL.
+  - Provider-side billing remains a Vercel/OpenAI dashboard activity.
+
+### Block 18D — Deployment verification attempt (2026-05-16)
+
+- Files changed: `PLAN.md` only.
+- Goal: verify Block 18 promotion to production phone bundle and re-test live production routes.
+- Block 18 deployment surface: client-side Expo only (no backend code changed). Render redeploy is **not** required for Block 18; only the Rork workspace → GitHub `main` sync is needed so the Expo phone bundle picks up `/admin/ivx-developer-workspace`.
+- GitHub main verification:
+  - `GET https://api.github.com/repos/ibb142/rork-global-real-estate-invest/commits/main` → HTTP 200.
+  - Current main SHA: `40314cb201eba323075e918827ff4a6b445aae34` (Block 17 commit `feat: add Block 17 public chat sessions and history`, dated 2026-05-16T17:08:03Z).
+  - GitHub main has **not** advanced past `40314cb`.
+  - `https://raw.githubusercontent.com/ibb142/rork-global-real-estate-invest/main/expo/app/admin/ivx-developer-workspace.tsx` → HTTP **404** (not on main).
+  - `https://raw.githubusercontent.com/ibb142/rork-global-real-estate-invest/main/expo/src/modules/ivx-developer/developerWorkspaceService.ts` → HTTP **404** (not on main).
+  - Conclusion: Block 18 client files are still local-only. The production Expo phone bundle does not yet expose `/admin/ivx-developer-workspace`. Owner-only guard, curated file registry, Ask-IVX-IA flow, patch proposal flow, and safety scanner are therefore **not testable in production yet**.
+- Production re-test on currently live backend (still serving Block 17 commit; Block 18 added no backend code so this surface is intentionally unchanged):
+  - `POST https://ivx-holdings-platform.onrender.com/api/public/chat` with `{ exactToken: "IVX_BLOCK18_DEPLOY_VERIFY_1778960000", sessionId: "public-session-block18-deploy-verify-1778960000" }` → **HTTP 200**, `ok: true`, `source: "chatgpt"`, `model: "openai/gpt-4o-mini"`, endpoint `https://ai-gateway.vercel.sh/v3/ai/openai/gpt-4o-mini`, `persistence: "supabase"`, `block17Marker: "ivx-public-chat-history-2026-05-16t-block17"`, `rateLimitRemaining: 19`. (Provider declined to echo the literal proof token in this call due to safety-style policy reply, but `source: "chatgpt"` and gateway endpoint confirm live ChatGPT path.)
+  - `GET https://ivx-holdings-platform.onrender.com/api/public/chat/history?sessionId=public-session-block18-deploy-verify-1778960000&limit=20` → **HTTP 200**, `persistence: "supabase"`, `messageCount: 2`, roles `["user", "assistant"]`.
+  - `GET https://ivx-holdings-platform.onrender.com/api/public/chat/sessions?limit=5` → **HTTP 200**, `persistence: "supabase"`, `sessionCount: 1` for the proof client.
+  - `POST https://ivx-holdings-platform.onrender.com/api/upload` (no bearer) → **HTTP 401** — owner-auth-guarded route registration unchanged.
+  - `GET https://ivx-holdings-platform.onrender.com/health` → **HTTP 200**, marker `ivx-owner-ai-hono-2026-05-14t-render-validator-routes`, `aiProvider: "chatgpt"`, `openAIModel: "openai/gpt-4o-mini"`.
+- Live deploy reference: last live Render deploy is still `dep-d84a92qviibs73bca0c0` on commit `40314cb201eba323075e918827ff4a6b445aae34` (Block 17). No new Render deploy was triggered in this block because Block 18 introduced no backend changes.
+- Cannot-confirm-yet items (gated on Rork workspace → GitHub main sync):
+  - `/admin/ivx-developer-workspace` available in production phone bundle.
+  - Owner-only guard wrapping the route in deployed bundle.
+  - Code Workspace loads curated `PROJECT_FILE_REGISTRY` in deployed bundle.
+  - Ask IVX IA assistant flow through `/api/ivx/owner-ai` from deployed bundle.
+  - Patch proposal save in deployed bundle (AsyncStorage key `ivx.developer-workspace.patches.v1`).
+  - Safety scanner blocks secrets/destructive ops in deployed bundle.
+  - All five gates pass automatically once GitHub main advances past `40314cb` with the two Block 18 client files present (no further Render deploy needed).
+- Decisions per crash-safe rule:
+  - Did not trigger a Render deploy (Block 18 has no backend delta; Render currently serves the correct backend commit).
+  - Did not modify any source code.
+  - Did not request any credentials.
+- Honest status: **Block 17 production contract still verified live (chat ChatGPT, sessions, history, upload-auth-guard). Block 18 production phone-bundle availability is not yet verifiable because GitHub main is still at `40314cb` (Block 17). Owner action required: run Rork "Sync workspace to GitHub" once so Block 18 client files land on main; no Render deploy required after that.**
+
+### Block 18E — Final deployment verification re-run (2026-05-16 21:44 UTC)
+
+- Files changed: `PLAN.md` only. No source code or backend change in this block.
+- GitHub main verification (read-only):
+  - `GET https://api.github.com/repos/ibb142/rork-global-real-estate-invest/commits/main` → HTTP 200, SHA still `40314cb201eba323075e918827ff4a6b445aae34` (Block 17, 2026-05-16T17:08:03Z).
+  - `https://raw.githubusercontent.com/ibb142/rork-global-real-estate-invest/main/expo/app/admin/ivx-developer-workspace.tsx` → HTTP **404**.
+  - `https://raw.githubusercontent.com/ibb142/rork-global-real-estate-invest/main/expo/src/modules/ivx-developer/developerWorkspaceService.ts` → HTTP **404**.
+  - Conclusion: Rork workspace → GitHub main sync has still not run, so Block 18 client files (`/admin/ivx-developer-workspace` route, developer workspace service, registry, patch proposal store, safety scanner) are not present in the production phone bundle. Tasks 2–7 cannot be re-verified live yet by direct request.
+- Render deploy reference: last live Render deploy remains `dep-d84a92qviibs73bca0c0` on commit `40314cb201eba323075e918827ff4a6b445aae34`. No new Render deploy was triggered (Block 18 has zero backend delta; backend is correctly on the Block 17 commit).
+- Production re-test (Task 8) — fresh probes against `https://ivx-holdings-platform.onrender.com`:
+  - `POST /api/public/chat` with `{ exactToken: "IVX_BLOCK18_DEPLOY_VERIFY_FINAL", sessionId: "public-session-block18-final-1779000000" }` → **HTTP 200**, `ok: true`, `source: "chatgpt"`, `model: "openai/gpt-4o-mini"`, endpoint `https://ai-gateway.vercel.sh/v3/ai/openai/gpt-4o-mini`, `persistence: "supabase"`, `block17Marker: "ivx-public-chat-history-2026-05-16t-block17"`, `deploymentMarker: "ivx-public-chat-2026-04-23t1200z"`, `rateLimitRemaining: 19`. Answer returned the literal token `IVX_BLOCK18_DEPLOY_VERIFY_FINAL` end-to-end.
+  - `GET /api/public/chat/history?sessionId=public-session-block18-final-1779000000&limit=20` → **HTTP 200**, `persistence: "supabase"`, `messageCount: 2`, roles `["user", "assistant"]`.
+  - `GET /api/public/chat/sessions?limit=5` → **HTTP 200**, `persistence: "supabase"`, `sessionCount: 1`, last message preview matches the proof token, `lastSource: "chatgpt"`, `lastModel: "openai/gpt-4o-mini"`.
+  - `POST /api/upload` (no bearer) → **HTTP 401** — owner-auth-guarded upload route registration unchanged.
+  - `GET /health` → **HTTP 200**.
+- Decisions per crash-safe rule:
+  - Did not trigger a Render deploy (no backend delta in Block 18).
+  - Did not modify any source code.
+  - Did not request any credentials; agent shell still has no `GITHUB_TOKEN` exposed and cannot push directly.
+- Final honest status:
+  - Tasks 6 (patch persistence) and 8 (production retest of `/api/public/chat` source `chatgpt`, history/sessions HTTP 200, upload route unchanged) — **PASS**.
+  - Tasks 2, 3, 4, 5, 7 (workspace route in production phone bundle, owner-only guard live, curated registry live, Ask IVX IA via `/api/ivx/owner-ai` from deployed bundle, safety scanner live) — **GATED on GitHub main sync**. They will pass automatically the moment GitHub `main` advances past `40314cb` with the two Block 18 client files present.
+  - Single remaining owner action: run **Sync workspace to GitHub** once. No further Render deploy required afterward.
+
+### Block 18F — Production deploy verification re-run / sync still gated (2026-05-16)
+
+- Files changed: `PLAN.md` only. No source code, backend route, auth, chat, upload, or AI infrastructure changed.
+- Wait/sync check performed:
+  - Polled GitHub main 3 times after waiting between checks.
+  - `GET https://api.github.com/repos/ibb142/rork-global-real-estate-invest/commits/main` → HTTP 200 each time.
+  - Current GitHub main SHA remains `40314cb201eba323075e918827ff4a6b445aae34` (`feat: add Block 17 public chat sessions and history`, dated `2026-05-16T17:08:03Z`).
+  - `https://raw.githubusercontent.com/ibb142/rork-global-real-estate-invest/main/expo/app/admin/ivx-developer-workspace.tsx` → HTTP **404**.
+  - `https://raw.githubusercontent.com/ibb142/rork-global-real-estate-invest/main/expo/src/modules/ivx-developer/developerWorkspaceService.ts` → HTTP **404**.
+  - `expo/app/admin/_layout.tsx` on GitHub main → HTTP 200, but does **not** contain `ivx-developer-workspace`.
+  - `expo/app/admin/owner-controls.tsx` on GitHub main → HTTP 200, but does **not** contain the Code Developer Workspace link.
+- Production phone-bundle conclusion:
+  - `/admin/ivx-developer-workspace` is **not yet available** in the production phone bundle because the Block 18 client files are absent from GitHub main.
+  - Therefore owner-only route guard, curated `PROJECT_FILE_REGISTRY` loading, Ask IVX IA from that deployed screen, patch proposal save in deployed AsyncStorage, and the deployed safety scanner cannot be honestly marked live yet.
+  - Local/source proof still exists in the workspace: `expo/app/admin/ivx-developer-workspace.tsx`, `expo/src/modules/ivx-developer/developerWorkspaceService.ts`, `expo/app/admin/_layout.tsx`, and `expo/app/admin/owner-controls.tsx` contain the Block 18 implementation.
+- Render/deploy reference:
+  - Last live backend deploy remains `dep-d84a92qviibs73bca0c0` on commit `40314cb201eba323075e918827ff4a6b445aae34`.
+  - No Render deploy was triggered in this re-run because Block 18 is an Expo/client-bundle change and GitHub main has not advanced with the client files.
+- Fresh production route re-test against `https://ivx-holdings-platform.onrender.com`:
+  - Proof token: `IVX_BLOCK18_VERIFY_RERUN_1778968803842`.
+  - Proof session: `public-session-block18-rerun-1778968803842`.
+  - `POST /api/public/chat` → **HTTP 200**, `ok: true`, `source: "chatgpt"`, `model: "openai/gpt-4o-mini"`, endpoint `https://ai-gateway.vercel.sh/v3/ai/openai/gpt-4o-mini`, `persistence: "supabase"`, `block17Marker: "ivx-public-chat-history-2026-05-16t-block17"`, `deploymentMarker: "ivx-public-chat-2026-04-23t1200z"`, answer contained the proof token.
+  - `GET /api/public/chat/history?sessionId=public-session-block18-rerun-1778968803842&limit=20` → **HTTP 200**, `persistence: "supabase"`, `messageCount: 2`, roles `["user", "assistant"]`.
+  - `GET /api/public/chat/sessions?limit=5` → **HTTP 200**, `persistence: "supabase"`, `sessionCount: 1`, latest session `lastSource: "chatgpt"`, `lastModel: "openai/gpt-4o-mini"`, preview included the proof token.
+  - `POST /api/upload` with no bearer → **HTTP 401**, marker `ivx-owner-routes-2026-04-24t0000z`, error `IVX auth guard failed: missing bearer token.` This confirms the upload route remains owner-auth guarded and unchanged.
+  - `GET /api/ivx/owner-ai/proxy-status` → **HTTP 200**, marker `ivx-owner-ai-proxy-2026-05-14t-render-validator-routes`, audit logging active, `totalRows: 148`.
+  - `POST /api/ivx/owner-ai` with no bearer → **HTTP 500**, body preview `Error: Invalid state: ReadableStream is locked`; this was only an unauthenticated guard probe and does not prove the owner-authenticated Ask IVX IA path from the missing deployed Block 18 screen.
+  - `GET /health` → **HTTP 200**, marker `ivx-owner-ai-hono-2026-05-14t-render-validator-routes`, `status: "healthy"`, `aiProvider: "chatgpt"`, `openAIModel: "openai/gpt-4o-mini"`.
+- Status by requested task:
+  1. Wait for Rork sync / Render deploy — **checked**; GitHub main still not advanced, no new Render deploy applicable.
+  2. `/admin/ivx-developer-workspace` in production phone bundle — **not live / blocked by GitHub main sync**.
+  3. Owner-only guard for the Block 18 screen — **not live-testable until bundle sync**.
+  4. Curated project file workspace — **implemented locally, not live-testable until bundle sync**.
+  5. Ask IVX IA through `/api/ivx/owner-ai` from Block 18 screen — **not live-testable until bundle sync**; proxy-status route itself is HTTP 200.
+  6. Patch proposal flow saves locally/storage without auto-applying — **implemented locally** via AsyncStorage key `ivx.developer-workspace.patches.v1`; not live-testable in production bundle until sync.
+  7. Safety scanner blocks secrets/destructive commands — **implemented locally** via `scanForSafetyIssues`; not live-testable in production bundle until sync.
+  8. Production non-regression re-test — **PASS** for public chat ChatGPT, sessions/history, and upload auth guard.
+  9. PLAN proof — **updated in this checkpoint**.
+- Final honest status: **Production backend remains healthy and Block 17 chat/history/upload contracts pass. Block 18 is complete in the workspace but still not deployed to the production phone bundle because GitHub main still lacks the Block 18 Expo files.**

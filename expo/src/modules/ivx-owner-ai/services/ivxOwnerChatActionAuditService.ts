@@ -13,6 +13,9 @@ export type IVXOwnerChatAuditAction =
   | 'template_apply'
   | 'control_action'
   | 'sync_probe'
+  | 'developer_workspace_prompt'
+  | 'developer_workspace_response'
+  | 'developer_workspace_error'
   | 'error';
 
 export type IVXOwnerChatAuditEvent = {

@@ -1444,6 +1444,7 @@ export default function OwnerControlsScreen() {
     { id: 'engagement', name: 'Engagement', desc: 'Active user metrics', route: '/admin/engagement', category: 'Analytics', color: '#A78BFA', icon: Activity },
     { id: 'visitor-intelligence', name: 'Visitor Intelligence', desc: 'Behavior & heatmap', route: '/admin/visitor-intelligence', category: 'Analytics', color: '#A78BFA', icon: Eye },
 
+    { id: 'ivx-developer-workspace', name: 'Code Developer Workspace', desc: 'IVX IA senior-developer console', route: '/admin/ivx-developer-workspace', category: 'AI / IVX IA', color: '#22C55E', icon: Code },
     { id: 'ai-outreach', name: 'AI Outreach', desc: 'Automated drip campaigns', route: '/admin/ai-outreach', category: 'AI / IVX IA', color: '#A78BFA', icon: Bot },
     { id: 'ai-video', name: 'AI Video', desc: 'Generate AI video', route: '/admin/ai-video', category: 'AI / IVX IA', color: '#A78BFA', icon: Bot },
     { id: 'ai-gallery', name: 'AI Gallery', desc: 'Generated assets', route: '/ai-gallery', category: 'AI / IVX IA', color: '#A78BFA', icon: LayoutGrid },
