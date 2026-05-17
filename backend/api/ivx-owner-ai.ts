@@ -1327,16 +1327,15 @@ function resolveOwnerRoomDataIntent(prompt: string): boolean {
 
 function hasNoSchemaInspectionDirective(prompt: string): boolean {
   const normalized = prompt.trim().toLowerCase();
-  return /\b(no|without|skip|disable|block|hard[-\s]?block)\s+(?:supabase\s+)?schema\s+inspection\b/.test(normalized)
-    || /\bno\s+(?:supabase\s+)?schema\b/.test(normalized)
+  return /\b(no|without|skip)\s+(?:supabase\s+)?schema\s+inspection\b/.test(normalized)
     || /\bdo\s+not\s+inspect\s+(?:supabase\s+)?schema\b/.test(normalized)
     || /\bdon't\s+inspect\s+(?:supabase\s+)?schema\b/.test(normalized)
     || /\bdont\s+inspect\s+(?:supabase\s+)?schema\b/.test(normalized);
 }
 
-function hasRuntimeWorkerTestSignal(prompt: string): boolean {
+function hasRuntimeWorkerTestDirective(prompt: string): boolean {
   const normalized = prompt.trim().toLowerCase();
-  return /\b(runtime|production|test|worker|job|queue|background|server[-\s]?side|block\s*22)\b/.test(normalized);
+  return /\b(production[-\s]?runtime|runtime|worker|job|queue|test)\b/.test(normalized);
 }
 
 function hasManualAnswerDirective(prompt: string): boolean {
@@ -1375,7 +1374,7 @@ function explicitlyRequestsToolUse(prompt: string): boolean {
 }
 
 function resolveManualAnswerIntent(prompt: string): OwnerRouterIntent | null {
-  if (hasNoSchemaInspectionDirective(prompt) && hasRuntimeWorkerTestSignal(prompt)) {
+  if (hasNoSchemaInspectionDirective(prompt) && hasRuntimeWorkerTestDirective(prompt)) {
     return 'infrastructure_runtime';
   }
   if (isBlock22WorkerQuestion(prompt)) {
@@ -2367,7 +2366,7 @@ async function runOwnerSystemTools(prompt: string): Promise<{
   toolOutputs: OwnerToolOutput[];
 } | null> {
   const normalized = prompt.trim().toLowerCase();
-  if (!normalized || resolveManualAnswerIntent(prompt) || resolveSupabaseInspectionIntent(prompt) || resolveSupabaseOwnerActionIntent(prompt)) {
+  if (!normalized || hasNoSchemaInspectionDirective(prompt) || resolveManualAnswerIntent(prompt) || resolveSupabaseInspectionIntent(prompt) || resolveSupabaseOwnerActionIntent(prompt)) {
     return null;
   }
 
@@ -2598,7 +2597,7 @@ function pushUniqueAIBrainRoute(routes: AIBrainToolRoute[], route: AIBrainToolRo
 
 function resolveAIBrainToolRoutes(prompt: string): AIBrainToolRoute[] {
   const normalized = prompt.trim().toLowerCase();
-  if (!normalized || resolveManualAnswerIntent(prompt) || resolveSupabaseInspectionIntent(prompt) || resolveSupabaseOwnerActionIntent(prompt)) {
+  if (!normalized || hasNoSchemaInspectionDirective(prompt) || resolveManualAnswerIntent(prompt) || resolveSupabaseInspectionIntent(prompt) || resolveSupabaseOwnerActionIntent(prompt)) {
     return [];
   }
 
@@ -2830,10 +2829,6 @@ async function runSupabaseInspectionTool(prompt: string): Promise<{
   answer: string;
   toolName: string;
 } | null> {
-  if (hasNoSchemaInspectionDirective(prompt)) {
-    console.log('[IVXOwnerAIBackend] Supabase inspection hard-blocked by owner prompt directive.');
-    return null;
-  }
   const intent = resolveSupabaseInspectionIntent(prompt);
   if (!intent) {
     return null;

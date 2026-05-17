@@ -338,24 +338,10 @@ type OwnerCapabilityIntent = 'self_report' | 'supabase_schema_access' | 'backend
 type OwnerDevelopmentActionIntent = 'keyboard_overlap_fix' | 'implementation_task' | 'owner_brain_proof' | 'public_deploy';
 type OwnerManualRouterIntent = 'manual_answer' | 'infrastructure_runtime' | 'aws' | 'block22_worker_diagnosis';
 
-function hasNoSchemaInspectionDirective(value: unknown): boolean {
-  const text = typeof value === 'string' ? value.trim().toLowerCase() : '';
-  return /\b(no|without|skip|disable|block|hard[-\s]?block)\s+(?:supabase\s+)?schema\s+inspection\b/.test(text)
-    || /\bno\s+(?:supabase\s+)?schema\b/.test(text)
-    || /\bdo\s+not\s+inspect\s+(?:supabase\s+)?schema\b/.test(text)
-    || /\bdon't\s+inspect\s+(?:supabase\s+)?schema\b/.test(text)
-    || /\bdont\s+inspect\s+(?:supabase\s+)?schema\b/.test(text);
-}
-
-function hasRuntimeWorkerTestSignal(value: unknown): boolean {
-  const text = typeof value === 'string' ? value.trim().toLowerCase() : '';
-  return /\b(runtime|production|test|worker|job|queue|background|server[-\s]?side|block\s*22)\b/.test(text);
-}
-
 function hasManualAnswerDirective(value: unknown): boolean {
   const text = typeof value === 'string' ? value.trim().toLowerCase() : '';
   return /\b(no\s+tools?|without\s+tools?|manual\s+answer|answer\s+manually|plain\s+text|do\s+not\s+(?:use\s+tools?|inspect)|don't\s+(?:use\s+tools?|inspect)|dont\s+(?:use\s+tools?|inspect))\b/.test(text)
-    || hasNoSchemaInspectionDirective(value)
+    || /\b(no|without|skip)\s+(?:supabase\s+)?schema\s+inspection\b/.test(text)
     || /\bno\s+unrelated\s+audits?\b/.test(text)
     || /\bproduction[-\s]?runtime\s+test\s+only\b/.test(text);
 }
@@ -386,7 +372,6 @@ function explicitlyRequestsToolUse(value: unknown): boolean {
 }
 
 function resolveManualAnswerIntent(value: unknown): OwnerManualRouterIntent | null {
-  if (hasNoSchemaInspectionDirective(value) && hasRuntimeWorkerTestSignal(value)) return 'infrastructure_runtime';
   if (isBlock22WorkerQuestion(value)) return 'block22_worker_diagnosis';
   if (isInfrastructureRuntimeQuestion(value)) return 'infrastructure_runtime';
   if (isAWSQuestion(value) && !explicitlyRequestsToolUse(value)) return 'aws';
@@ -979,7 +964,7 @@ function resolveSupabaseOwnerActionIntent(value: unknown): SupabaseOwnerActionIn
 
 function resolveSupabaseInspectionIntent(value: unknown): SupabaseInspectionIntent | null {
   const text = typeof value === 'string' ? value.trim().toLowerCase() : '';
-  if (!text || hasNoSchemaInspectionDirective(text) || resolveManualAnswerIntent(text)) {
+  if (!text || resolveManualAnswerIntent(text)) {
     return null;
   }
 
@@ -2627,13 +2612,6 @@ async function requestSupabaseInspectionTool(
   payload: OwnerAIRequestPayload,
   audit: IVXOwnerAIConfigAudit,
 ): Promise<IVXOwnerAIResponse | null> {
-  if (hasNoSchemaInspectionDirective(payload.message)) {
-    console.log('[IVXAIRequestService] Supabase inspection hard-blocked by owner prompt directive:', {
-      requestId: payload.requestId,
-      conversationId: payload.conversationId,
-    });
-    return null;
-  }
   const intent = resolveSupabaseInspectionIntent(payload.message);
   if (!intent) {
     return null;
