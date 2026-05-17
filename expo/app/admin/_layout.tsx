@@ -117,6 +117,7 @@ export default function AdminLayout() {
       <Stack.Screen name="control-tower" />
       <Stack.Screen name="ivx-developer-workspace" />
       <Stack.Screen name="ivx-developer-actions" />
+      <Stack.Screen name="ivx-agent-jobs" />
     </Stack>
   );
 }

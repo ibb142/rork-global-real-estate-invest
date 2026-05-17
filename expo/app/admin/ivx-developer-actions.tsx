@@ -188,7 +188,7 @@ export default function IVXDeveloperActionsScreen() {
               {
                 text: 'Confirm',
                 style: 'destructive',
-                onPress: async (typed) => {
+                onPress: async (typed?: string) => {
                   if (typed?.trim() === SUPABASE_DOUBLE_CONFIRM_PHRASE) {
                     await approveAction(action.id, { approver: OWNER_LABEL, doubleConfirmed: true });
                     await refresh();

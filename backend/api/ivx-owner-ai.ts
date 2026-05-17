@@ -137,6 +137,7 @@ type IVXAIRequestRow = {
 
 type SupabaseInspectionIntent = 'tables' | 'schema' | 'columns' | 'rls' | 'capability';
 type SupabaseOwnerActionIntent = 'insert' | 'update' | 'delete' | 'owner_approved_action' | 'capability';
+type OwnerRouterIntent = 'manual_answer' | 'infrastructure_runtime' | 'supabase_schema' | 'aws' | 'block22_worker_diagnosis' | 'owner_backend_command' | 'ai_brain_tool' | 'owner_system_tool' | 'supabase_owner_action' | 'development_action' | 'development_audit' | 'owner_room_data' | 'live_grounding' | 'limits' | 'audit_report' | 'generic_ai_chat';
 type OwnerSystemToolName = 'get_current_time' | 'read_database_schema' | 'query_database' | 'read_logs' | 'search_code' | 'inspect_supabase_schema' | 'inspect_rls_policies' | 'run_select_query' | 'run_write_query' | 'list_storage_buckets' | 'inspect_edge_functions' | 'inspect_auth_users' | 'execute_rpc' | 'apply_migration';
 type OwnerToolOutput = {
   tool: OwnerSystemToolName;
@@ -413,7 +414,7 @@ function assertVisibleOwnerAIAnswer(value: string): string {
 }
 
 type SafeOwnerAIResponsePayload = Pick<IVXOwnerAIResponse, 'requestId' | 'conversationId' | 'answer' | 'model' | 'status'>;
-type OwnerAIInternalMetadata = Partial<Pick<IVXOwnerAIResponse, 'source' | 'provider' | 'endpoint' | 'deploymentMarker' | 'assistantMessageId' | 'assistantPersisted' | 'selectedTool' | 'toolInput' | 'toolOutput' | 'fallbackUsed' | 'toolOutputs'>>;
+type OwnerAIInternalMetadata = Partial<Pick<IVXOwnerAIResponse, 'source' | 'provider' | 'endpoint' | 'deploymentMarker' | 'assistantMessageId' | 'assistantPersisted' | 'selectedIntent' | 'selectedTool' | 'routerDebug' | 'toolInput' | 'toolOutput' | 'fallbackUsed' | 'toolOutputs'>>;
 
 function buildOwnerAIResponsePayload(
   safePayload: SafeOwnerAIResponsePayload,
@@ -429,7 +430,9 @@ function buildOwnerAIResponsePayload(
     deploymentMarker: internalMetadata.deploymentMarker,
     assistantMessageId: internalMetadata.assistantMessageId,
     assistantPersisted: internalMetadata.assistantPersisted,
+    selectedIntent: internalMetadata.selectedIntent,
     selectedTool: internalMetadata.selectedTool,
+    routerDebug: internalMetadata.routerDebug,
     toolInput: internalMetadata.toolInput,
     toolOutput: internalMetadata.toolOutput,
     fallbackUsed: internalMetadata.fallbackUsed,
@@ -1322,6 +1325,96 @@ function resolveOwnerRoomDataIntent(prompt: string): boolean {
     || (/\bwhat\b/.test(normalized) && /\b(owner|ivx|room)\b/.test(normalized) && /\bdata\b/.test(normalized) && /\bavailable\b/.test(normalized));
 }
 
+function hasManualAnswerDirective(prompt: string): boolean {
+  const normalized = prompt.trim().toLowerCase();
+  return /\b(no\s+tools?|without\s+tools?|manual\s+answer|answer\s+manually|plain\s+text|do\s+not\s+(?:use\s+tools?|inspect)|don't\s+(?:use\s+tools?|inspect)|dont\s+(?:use\s+tools?|inspect))\b/.test(normalized);
+}
+
+function isBlock22WorkerQuestion(prompt: string): boolean {
+  const normalized = prompt.trim().toLowerCase();
+  return /\b(block\s*22|autonomous\s+worker|background\s+job|worker\s+job|job\s+queue|queued\s+job|server[-\s]?side\s+worker)\b/.test(normalized);
+}
+
+function isInfrastructureRuntimeQuestion(prompt: string): boolean {
+  const normalized = prompt.trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+
+  const mentionsRuntimeSubject = /\b(phone\s+(?:is\s+)?off|phone\s+screen|app\s+(?:is\s+)?(?:closed|open)|24\/7|always\s+on|background|server[-\s]?side|backend|render|production|runtime|infrastructure|worker|cron|queue)\b/.test(normalized);
+  const asksOperationalQuestion = /\b(can|could|will|would|does|do|is|are|work|run|continue|depend|needs?|require|complete|operate)\b/.test(normalized);
+  return mentionsRuntimeSubject && asksOperationalQuestion;
+}
+
+function isAWSQuestion(prompt: string): boolean {
+  return /\b(aws|amazon|route\s?53|cloudfront|\bs3\b|\bec2\b|\becs\b|fargate|load\s+balancer|\balb\b|\belb\b|iam|acm|certificate|ssm|parameter\s+store)\b/i.test(prompt);
+}
+
+function explicitlyRequestsToolUse(prompt: string): boolean {
+  const normalized = prompt.trim().toLowerCase();
+  return /\b(use|run|call|execute|inspect|query|scan|check|list|verify)\b.{0,48}\b(tools?|aws|supabase|schema|database|tables?|route\s?53|cloudfront|s3|ec2|ecs|iam)\b/.test(normalized)
+    || /\b(tools?)\b.{0,48}\b(use|run|call|execute|inspect|query|scan|check|list|verify)\b/.test(normalized);
+}
+
+function resolveManualAnswerIntent(prompt: string): OwnerRouterIntent | null {
+  if (isBlock22WorkerQuestion(prompt)) {
+    return 'block22_worker_diagnosis';
+  }
+  if (isInfrastructureRuntimeQuestion(prompt)) {
+    return 'infrastructure_runtime';
+  }
+  if (isAWSQuestion(prompt) && !explicitlyRequestsToolUse(prompt)) {
+    return 'aws';
+  }
+  return hasManualAnswerDirective(prompt) ? 'manual_answer' : null;
+}
+
+function buildRouterDebug(input: {
+  selectedIntent: OwnerRouterIntent;
+  selectedTool: string | null;
+  route: string;
+  reason: string;
+  manualMode?: boolean;
+}): NonNullable<IVXOwnerAIResponse['routerDebug']> {
+  return {
+    selectedIntent: input.selectedIntent,
+    selectedTool: input.selectedTool,
+    manualMode: input.manualMode === true,
+    route: input.route,
+    reason: input.reason,
+  };
+}
+
+function formatManualOwnerAnswer(prompt: string, intent: OwnerRouterIntent): string {
+  if (intent === 'block22_worker_diagnosis') {
+    return [
+      'Block 22 should be judged as a backend-worker problem, not a schema-inspection problem.',
+      'For IVX IA to run jobs while your phone is off, the job runner must live on the backend with a queue, job table, logs table, and a deployed worker or scheduled process. The mobile app can create or approve work, but it must not be the worker.',
+      'If the worker is only running inside the phone session or this chat session, it is not 24/7. If it is deployed on Render or another always-on backend, it can continue without the phone screen or app being open.',
+    ].join('\n');
+  }
+
+  if (intent === 'infrastructure_runtime') {
+    return [
+      'Yes, IVX IA can work 24/7 while your phone is off only if the work is running on backend infrastructure.',
+      'The correct setup is: the phone sends a request or approval, the backend stores the job, and a deployed worker processes it independently. In that setup, the phone screen, mobile app, and this chat do not need to stay open.',
+      'If the logic exists only inside the mobile app or a live chat session, then it will stop when the app/session stops. So the answer is: backend worker yes; phone-dependent workflow no.',
+    ].join('\n');
+  }
+
+  if (intent === 'aws') {
+    return [
+      'Manual AWS answer: AWS can host IVX pieces like DNS, storage, CDN, compute, and certificates, but I will not inspect AWS unless you explicitly ask me to use AWS tools.',
+      'For planning, treat AWS as infrastructure around the app. For live verification, ask for the specific AWS check you want, such as S3, CloudFront, Route 53, IAM, or EC2.',
+    ].join('\n');
+  }
+
+  return [
+    'Manual answer mode is active. I will answer in plain text and will not inspect Supabase, AWS, code, logs, or other tools for this request.',
+    'Ask the infrastructure/runtime question directly and I will answer from the known IVX architecture boundaries first.',
+  ].join('\n');
+}
+
 function resolveSupabaseOwnerActionIntent(prompt: string): SupabaseOwnerActionIntent | null {
   const normalized = prompt.trim().toLowerCase();
   if (!normalized) {
@@ -1372,7 +1465,7 @@ function parseOwnerActionInsertPrompt(prompt: string): { schema: string; table: 
 
 function resolveSupabaseInspectionIntent(prompt: string): SupabaseInspectionIntent | null {
   const normalized = prompt.trim().toLowerCase();
-  if (!normalized) {
+  if (!normalized || resolveManualAnswerIntent(prompt)) {
     return null;
   }
 
@@ -2253,7 +2346,7 @@ async function runOwnerSystemTools(prompt: string): Promise<{
   toolOutputs: OwnerToolOutput[];
 } | null> {
   const normalized = prompt.trim().toLowerCase();
-  if (!normalized) {
+  if (!normalized || resolveManualAnswerIntent(prompt) || resolveSupabaseInspectionIntent(prompt) || resolveSupabaseOwnerActionIntent(prompt)) {
     return null;
   }
 
@@ -2484,7 +2577,7 @@ function pushUniqueAIBrainRoute(routes: AIBrainToolRoute[], route: AIBrainToolRo
 
 function resolveAIBrainToolRoutes(prompt: string): AIBrainToolRoute[] {
   const normalized = prompt.trim().toLowerCase();
-  if (!normalized) {
+  if (!normalized || resolveManualAnswerIntent(prompt) || resolveSupabaseInspectionIntent(prompt) || resolveSupabaseOwnerActionIntent(prompt)) {
     return [];
   }
 
@@ -4568,7 +4661,8 @@ export async function handleIVXOwnerAIToolRequest(request: Request): Promise<Res
 
 export async function handleIVXOwnerAIRequest(request: Request): Promise<Response> {
   const startedAt = Date.now();
-  const requestClone = request.clone();
+  const requestBodyForAudit = request.clone();
+  const requestAuthForAudit = request.clone();
   const response = await handleIVXOwnerAIRequestInternal(request);
 
   // Phase 4c — fire-and-forget audit log to public.ai_usage_logs. Never blocks.
@@ -4578,11 +4672,11 @@ export async function handleIVXOwnerAIRequest(request: Request): Promise<Respons
     let userId: string | null = null;
     let surface = 'ivx_ia';
     try {
-      const reqBody = await requestClone.json().catch(() => ({} as Record<string, unknown>));
+      const reqBody = await requestBodyForAudit.json().catch(() => ({} as Record<string, unknown>));
       requestId = typeof reqBody.requestId === 'string' && reqBody.requestId ? reqBody.requestId : null;
       surface = typeof reqBody.surface === 'string' && reqBody.surface ? reqBody.surface : 'ivx_ia';
       try {
-        const ctx = await assertIVXOwnerOnly(requestClone.clone()).catch(() => null);
+        const ctx = await assertIVXOwnerOnly(requestAuthForAudit).catch(() => null);
         userId = ctx?.userId ?? null;
       } catch {
         userId = null;
@@ -4627,6 +4721,7 @@ export async function handleIVXOwnerAIRequest(request: Request): Promise<Respons
 
 async function handleIVXOwnerAIRequestInternal(request: Request): Promise<Response> {
   try {
+    const authRequest = request.clone();
     const body = await request.json() as IVXOwnerAIRequest;
     const prompt = readTrimmedString(body.message);
     const mode = body.mode === 'command' ? 'command' : 'chat';
@@ -4636,6 +4731,43 @@ async function handleIVXOwnerAIRequestInternal(request: Request): Promise<Respon
 
     if (!prompt) {
       return ownerOnlyJson({ error: 'Message is required.' }, 400);
+    }
+
+    const manualAnswerIntent = resolveManualAnswerIntent(prompt);
+    if (manualAnswerIntent) {
+      const requestId = readTrimmedString(body.requestId) || createRequestId();
+      const answer = assertVisibleOwnerAIAnswer(formatManualOwnerAnswer(prompt, manualAnswerIntent));
+      const routerDebug = buildRouterDebug({
+        selectedIntent: manualAnswerIntent,
+        selectedTool: null,
+        route: 'manual_answer',
+        reason: hasManualAnswerDirective(prompt)
+          ? 'User explicitly requested no tools/manual/plain-text response.'
+          : 'Runtime/infrastructure intent is answered manually before tool routing.',
+        manualMode: true,
+      });
+      console.log('[IVXOwnerAIBackend] Manual answer mode selected:', { requestId, selectedIntent: manualAnswerIntent, selectedTool: null });
+      return ownerOnlyJson(buildOwnerAIResponsePayload({
+        requestId,
+        conversationId: readTrimmedString(body.conversationId) || 'ivx-owner-ai-manual-answer',
+        answer,
+        model: 'ivx_manual_answer_router',
+        status: 'ok',
+      }, {
+        source: 'remote_api',
+        provider: 'chatgpt',
+        endpoint: '/api/ivx/owner-ai/manual-answer',
+        deploymentMarker: DEPLOYMENT_MARKER,
+        assistantMessageId: null,
+        assistantPersisted: false,
+        selectedIntent: manualAnswerIntent,
+        selectedTool: null,
+        routerDebug,
+        toolInput: [],
+        toolOutput: [],
+        fallbackUsed: false,
+        toolOutputs: [],
+      }, body.devTestModeActive === true) as unknown as Record<string, unknown>);
     }
 
     const preAuthCommand = resolveOwnerBackendCommand(prompt);
@@ -4824,7 +4956,7 @@ async function handleIVXOwnerAIRequestInternal(request: Request): Promise<Respon
       }
     }
 
-    const ownerContext = await assertIVXOwnerOnly(request);
+    const ownerContext = await assertIVXOwnerOnly(authRequest);
     console.log('[IVXOwnerAIBackend] Owner AI incoming message:', {
       requestUrl: request.url,
       incomingMessage: prompt,

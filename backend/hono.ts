@@ -17,6 +17,7 @@ import { OPTIONS as developerDeployOptions, handleIVXDeveloperDeployActionReques
 import { OPTIONS as variablesToolOptions, handleIVXVariablesToolSaveRequest, handleIVXVariablesToolStatusRequest } from './api/ivx-variables-tool';
 import { OPTIONS as ownerVariablesOptions, getIVXOwnerVariableRuntimeValue, hasIVXOwnerVariableRuntimeValue, handleIVXOwnerVariablesDeleteRequest, handleIVXOwnerVariablesSaveRequest, handleIVXOwnerVariablesSelfSyncRequest, handleIVXOwnerVariablesStatusRequest, handleIVXOwnerVariablesTestRequest } from './api/ivx-owner-variables';
 import { OPTIONS as independenceStatusOptions, handleIVXIndependenceStatusRequest } from './api/ivx-independence-status';
+import { OPTIONS as agentJobsOptions, handleIVXAgentJobActionRequest, handleIVXAgentJobsCreateRequest, handleIVXAgentJobsListRequest, handleIVXAgentJobsStatusRequest, handleIVXAgentWorkerRunOnceRequest } from './api/ivx-agent-jobs';
 import { OPTIONS as assistantOptions, POST as handleAssistantPost } from './api/assistant';
 import { OPTIONS as planCreatorOptions, POST as handlePlanCreatorPost } from './api/plan-creator';
 import {
@@ -1020,6 +1021,13 @@ app.get('/health', (context) => {
       'POST /api/ivx/owner-variables/delete',
       'POST /api/ivx/owner-variables/self-sync',
       'GET /api/ivx/independence/status',
+      'GET /api/ivx/agent-jobs/status',
+      'GET /api/ivx/agent-jobs',
+      'POST /api/ivx/agent-jobs',
+      'POST /api/ivx/agent-jobs/:jobId/retry',
+      'POST /api/ivx/agent-jobs/:jobId/cancel',
+      'POST /api/ivx/agent-jobs/:jobId/approve',
+      'POST /api/ivx/agent-worker/run-once',
       'GET /api/ivx/ai-brain/tools',
       'POST /api/ivx/ai-brain/tools',
       'POST /api/ivx/ai-brain/tools/execute',
@@ -1131,6 +1139,20 @@ app.options('/api/ivx-owner-variables/self-sync', () => ownerVariablesOptions())
 app.post('/api/ivx-owner-variables/self-sync', async (context) => handleIVXOwnerVariablesSelfSyncRequest(context.req.raw));
 app.options('/api/ivx/independence/status', () => independenceStatusOptions());
 app.get('/api/ivx/independence/status', async (context) => handleIVXIndependenceStatusRequest(context.req.raw));
+
+app.options('/api/ivx/agent-jobs/status', () => agentJobsOptions());
+app.get('/api/ivx/agent-jobs/status', async (context) => handleIVXAgentJobsStatusRequest(context.req.raw));
+app.options('/api/ivx/agent-jobs', () => agentJobsOptions());
+app.get('/api/ivx/agent-jobs', async (context) => handleIVXAgentJobsListRequest(context.req.raw));
+app.post('/api/ivx/agent-jobs', async (context) => handleIVXAgentJobsCreateRequest(context.req.raw));
+app.options('/api/ivx/agent-jobs/:jobId/retry', () => agentJobsOptions());
+app.post('/api/ivx/agent-jobs/:jobId/retry', async (context) => handleIVXAgentJobActionRequest(context.req.raw, context.req.param('jobId'), 'retry'));
+app.options('/api/ivx/agent-jobs/:jobId/cancel', () => agentJobsOptions());
+app.post('/api/ivx/agent-jobs/:jobId/cancel', async (context) => handleIVXAgentJobActionRequest(context.req.raw, context.req.param('jobId'), 'cancel'));
+app.options('/api/ivx/agent-jobs/:jobId/approve', () => agentJobsOptions());
+app.post('/api/ivx/agent-jobs/:jobId/approve', async (context) => handleIVXAgentJobActionRequest(context.req.raw, context.req.param('jobId'), 'approve'));
+app.options('/api/ivx/agent-worker/run-once', () => agentJobsOptions());
+app.post('/api/ivx/agent-worker/run-once', async (context) => handleIVXAgentWorkerRunOnceRequest(context.req.raw));
 
 app.options('/api/ivx/ai-brain/tools', () => aiBrainToolsOptions());
 app.get('/api/ivx/ai-brain/tools', async (context) => handleIVXAIBrainToolsListRequest(context.req.raw));

@@ -36,7 +36,7 @@ import { useAuth } from '@/lib/auth-context';
 import { resolveDevTestModeContext } from '@/lib/dev-test-mode';
 import { getIVXOwnerAIConfigAudit, type IVXOwnerAIConfigAudit } from '@/lib/ivx-supabase-client';
 import { isOpenAccessModeEnabled } from '@/lib/open-access';
-import type { IVXMessage, IVXOwnerAIToolOutput, IVXUploadInput } from '@/shared/ivx';
+import type { IVXMessage, IVXOwnerAIRouterDebug, IVXOwnerAIToolOutput, IVXUploadInput } from '@/shared/ivx';
 import { assertCleanOwnerAIResponseText, isIVXServiceUnavailableDiagnostics } from '@/src/modules/ivx-owner-ai/services/ivxAIRequestService';
 import {
   getActiveRuntimeSource,
@@ -146,6 +146,8 @@ type RuntimeDebugSnapshot = {
   source: 'remote_api' | 'local_app_brain' | 'provider_fallback' | 'pending' | 'unknown';
   endpoint: string | null;
   deploymentMarker: string | null;
+  selectedIntent: string | null;
+  selectedTool: string | null;
   requestStage: string;
   failureClass: string;
   httpStatus: string;
@@ -1365,6 +1367,8 @@ export default function IVXOwnerChatRoute() {
     source: 'unknown',
     endpoint: ownerAIConfigAudit.activeEndpoint ?? null,
     deploymentMarker: null,
+    selectedIntent: null,
+    selectedTool: null,
     requestStage: 'idle',
     failureClass: 'none',
     httpStatus: 'pending',
@@ -1619,6 +1623,7 @@ export default function IVXOwnerChatRoute() {
         const normalizedSource = normalizeRuntimeSource(runtimeProof?.source ?? aiResult.source);
         const normalizedAnswer = assertCleanOwnerAIResponseText(aiResult.answer);
         const responseToolOutputs = aiResult.toolOutputs ?? [];
+        const routerDebug: IVXOwnerAIRouterDebug | undefined = aiResult.routerDebug;
         setLastToolOutputs(responseToolOutputs);
         const toolUsedLabel = responseToolOutputs.length > 0
           ? `Tool used: ${responseToolOutputs.map((output) => output.tool).join(', ')}`
@@ -1687,6 +1692,8 @@ export default function IVXOwnerChatRoute() {
             source: normalizedSource,
             endpoint: aiResult.endpoint ?? runtimeProof?.endpoint ?? current.endpoint,
             deploymentMarker: aiResult.deploymentMarker ?? runtimeProof?.deploymentMarker ?? current.deploymentMarker,
+            selectedIntent: routerDebug?.selectedIntent ?? aiResult.selectedIntent ?? current.selectedIntent,
+            selectedTool: routerDebug?.selectedTool ?? aiResult.selectedTool ?? (responseToolOutputs.length > 0 ? responseToolOutputs.map((output) => output.tool).join(', ') : current.selectedTool),
             requestStage: nextRequestStage,
             failureClass: 'none',
             httpStatus: (runtimeProof?.failureClass === 'none' && runtimeProof?.statusCode !== null && runtimeProof?.statusCode !== undefined)
@@ -4095,6 +4102,8 @@ export default function IVXOwnerChatRoute() {
                 <AuditInfoRow label="Request class" value={currentOwnerTrust.requestClass} testID="ivx-owner-runtime-request-class" />
                 <AuditInfoRow label="Owner/dev bypass enabled" value={runtimeDebugSnapshot.ownerBypassEnabled ? 'yes' : 'no'} />
                 <AuditInfoRow label="Conversation ID" value={runtimeDebugSnapshot.conversationId ?? 'pending'} />
+                <AuditInfoRow label="Selected intent" value={runtimeDebugSnapshot.selectedIntent ?? 'pending'} testID="ivx-owner-runtime-selected-intent" />
+                <AuditInfoRow label="Selected tool" value={runtimeDebugSnapshot.selectedTool ?? (lastToolOutputs.length > 0 ? lastToolOutputs.map((output) => output.tool).join(', ') : 'none')} testID="ivx-owner-runtime-selected-tool" />
                 <AuditInfoRow label="Tool used" value={lastToolOutputs.length > 0 ? lastToolOutputs.map((output) => output.tool).join(', ') : 'none'} testID="ivx-owner-runtime-tool-used" />
                 <AuditInfoRow label="Tool output" value={lastToolOutputs.length > 0 ? JSON.stringify(lastToolOutputs[0]?.output ?? lastToolOutputs[0]?.error ?? null).slice(0, 220) : 'none'} testID="ivx-owner-runtime-tool-output" />
                 <AuditInfoRow

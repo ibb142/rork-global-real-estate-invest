@@ -336,6 +336,92 @@ function buildIVXOwnerAISystemPrompt(memory: IVXOwnerMemoryState | null, payload
 
 type OwnerCapabilityIntent = 'self_report' | 'supabase_schema_access' | 'backend_access_check' | 'development_audit' | 'limits_report';
 type OwnerDevelopmentActionIntent = 'keyboard_overlap_fix' | 'implementation_task' | 'owner_brain_proof' | 'public_deploy';
+type OwnerManualRouterIntent = 'manual_answer' | 'infrastructure_runtime' | 'aws' | 'block22_worker_diagnosis';
+
+function hasManualAnswerDirective(value: unknown): boolean {
+  const text = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  return /\b(no\s+tools?|without\s+tools?|manual\s+answer|answer\s+manually|plain\s+text|do\s+not\s+(?:use\s+tools?|inspect)|don't\s+(?:use\s+tools?|inspect)|dont\s+(?:use\s+tools?|inspect))\b/.test(text);
+}
+
+function isBlock22WorkerQuestion(value: unknown): boolean {
+  const text = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  return /\b(block\s*22|autonomous\s+worker|background\s+job|worker\s+job|job\s+queue|queued\s+job|server[-\s]?side\s+worker)\b/.test(text);
+}
+
+function isInfrastructureRuntimeQuestion(value: unknown): boolean {
+  const text = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  if (!text) return false;
+  const mentionsRuntimeSubject = /\b(phone\s+(?:is\s+)?off|phone\s+screen|app\s+(?:is\s+)?(?:closed|open)|24\/7|always\s+on|background|server[-\s]?side|backend|render|production|runtime|infrastructure|worker|cron|queue)\b/.test(text);
+  const asksOperationalQuestion = /\b(can|could|will|would|does|do|is|are|work|run|continue|depend|needs?|require|complete|operate)\b/.test(text);
+  return mentionsRuntimeSubject && asksOperationalQuestion;
+}
+
+function isAWSQuestion(value: unknown): boolean {
+  const text = typeof value === 'string' ? value : '';
+  return /\b(aws|amazon|route\s?53|cloudfront|\bs3\b|\bec2\b|\becs\b|fargate|load\s+balancer|\balb\b|\belb\b|iam|acm|certificate|ssm|parameter\s+store)\b/i.test(text);
+}
+
+function explicitlyRequestsToolUse(value: unknown): boolean {
+  const text = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  return /\b(use|run|call|execute|inspect|query|scan|check|list|verify)\b.{0,48}\b(tools?|aws|supabase|schema|database|tables?|route\s?53|cloudfront|s3|ec2|ecs|iam)\b/.test(text)
+    || /\b(tools?)\b.{0,48}\b(use|run|call|execute|inspect|query|scan|check|list|verify)\b/.test(text);
+}
+
+function resolveManualAnswerIntent(value: unknown): OwnerManualRouterIntent | null {
+  if (isBlock22WorkerQuestion(value)) return 'block22_worker_diagnosis';
+  if (isInfrastructureRuntimeQuestion(value)) return 'infrastructure_runtime';
+  if (isAWSQuestion(value) && !explicitlyRequestsToolUse(value)) return 'aws';
+  return hasManualAnswerDirective(value) ? 'manual_answer' : null;
+}
+
+function formatManualOwnerAnswer(intent: OwnerManualRouterIntent): string {
+  if (intent === 'block22_worker_diagnosis') {
+    return [
+      'Block 22 is a backend-worker runtime question, not a Supabase schema question.',
+      'IVX IA can run 24/7 only when jobs are stored in backend job tables and processed by a deployed server-side worker. The phone can create or approve jobs, but the phone screen/app/Rork chat must not be the worker.',
+      'Correct proof is: queued job created, backend worker picks it, status moves running then completed or failed, logs are saved, and the result appears even if the app is closed.',
+    ].join('\n');
+  }
+  if (intent === 'infrastructure_runtime') {
+    return [
+      'Yes — IVX IA can work while your phone is off if the runtime is deployed on backend infrastructure.',
+      'The phone should only submit requests or approvals. The backend stores the job and a server-side worker processes it independently, so the phone screen, app, and this chat do not need to stay open.',
+      'If work is only running inside the app or chat session, it is not 24/7.',
+    ].join('\n');
+  }
+  if (intent === 'aws') {
+    return 'Manual AWS answer: I will not inspect AWS unless you explicitly ask me to use AWS tools. AWS can host DNS/CDN/storage/compute around IVX, but live checks should be requested by service name.';
+  }
+  return 'Manual answer mode is active. I will answer in plain text and will not inspect Supabase, AWS, code, logs, or any tools for this request.';
+}
+
+function buildManualOwnerAIResponse(payload: OwnerAIRequestPayload, intent: OwnerManualRouterIntent): IVXOwnerAIResponse {
+  const answer = assertCleanOwnerAIResponseText(formatManualOwnerAnswer(intent));
+  return {
+    requestId: payload.requestId,
+    conversationId: payload.conversationId,
+    answer,
+    model: 'ivx_manual_answer_router',
+    status: 'ok',
+    source: 'local_app_brain',
+    deploymentMarker: 'ivx-owner-ai-manual-router-2026-05-17',
+    selectedIntent: intent,
+    selectedTool: null,
+    routerDebug: {
+      selectedIntent: intent,
+      selectedTool: null,
+      manualMode: true,
+      route: 'manual_answer',
+      reason: hasManualAnswerDirective(payload.message)
+        ? 'User explicitly requested no tools/manual/plain-text response.'
+        : 'Runtime/infrastructure intent is answered manually before tool routing.',
+    },
+    toolInput: [],
+    toolOutput: [],
+    toolOutputs: [],
+    fallbackUsed: false,
+  };
+}
 
 function resolveOwnerDevelopmentActionIntent(value: unknown): OwnerDevelopmentActionIntent | null {
   const text = typeof value === 'string' ? value.trim().toLowerCase() : '';
@@ -874,7 +960,7 @@ function resolveSupabaseOwnerActionIntent(value: unknown): SupabaseOwnerActionIn
 
 function resolveSupabaseInspectionIntent(value: unknown): SupabaseInspectionIntent | null {
   const text = typeof value === 'string' ? value.trim().toLowerCase() : '';
-  if (!text) {
+  if (!text || resolveManualAnswerIntent(text)) {
     return null;
   }
 
@@ -1158,7 +1244,17 @@ function validateCanonicalOwnerAIResponse(
   const provider = payload.provider;
   const assistantMessageId = payload.assistantMessageId;
   const assistantPersisted = payload.assistantPersisted;
+  const selectedIntent = payload.selectedIntent;
   const selectedTool = payload.selectedTool;
+  const routerDebug = payload.routerDebug;
+  const normalizedRouterDebug = isRecord(routerDebug)
+    && typeof routerDebug.selectedIntent === 'string'
+    && (typeof routerDebug.selectedTool === 'string' || routerDebug.selectedTool === null)
+    && typeof routerDebug.manualMode === 'boolean'
+    && typeof routerDebug.route === 'string'
+    && typeof routerDebug.reason === 'string'
+      ? routerDebug as IVXOwnerAIResponse['routerDebug']
+      : undefined;
   const toolInput = Array.isArray(payload.toolInput) ? payload.toolInput : undefined;
   const toolOutput = Array.isArray(payload.toolOutput) ? payload.toolOutput : undefined;
   const fallbackUsed = payload.fallbackUsed;
@@ -1211,7 +1307,9 @@ function validateCanonicalOwnerAIResponse(
       deploymentMarker: typeof deploymentMarker === 'string' && deploymentMarker.trim() ? deploymentMarker.trim() : undefined,
       assistantMessageId: typeof assistantMessageId === 'string' && assistantMessageId.trim() ? assistantMessageId.trim() : assistantMessageId === null ? null : undefined,
       assistantPersisted: typeof assistantPersisted === 'boolean' ? assistantPersisted : undefined,
-      selectedTool: typeof selectedTool === 'string' && selectedTool.trim() ? selectedTool.trim() : selectedTool === null ? null : undefined,
+      selectedIntent: typeof selectedIntent === 'string' && selectedIntent.trim() ? selectedIntent.trim() : selectedIntent === null ? null : normalizedRouterDebug?.selectedIntent,
+      selectedTool: typeof selectedTool === 'string' && selectedTool.trim() ? selectedTool.trim() : selectedTool === null ? null : normalizedRouterDebug?.selectedTool,
+      routerDebug: normalizedRouterDebug,
       toolInput: toolInput as IVXOwnerAIResponse['toolInput'],
       toolOutput: toolOutput as IVXOwnerAIResponse['toolOutput'],
       fallbackUsed: typeof fallbackUsed === 'boolean' ? fallbackUsed : undefined,
@@ -1271,6 +1369,18 @@ function extractCompatibilityOwnerAIResponse(
     resultRecord?.deploymentMarker,
     resultRecord?.deployment_marker,
   ].find((value) => typeof value === 'string' && value.trim().length > 0);
+  const selectedIntentCandidate = [
+    record?.selectedIntent,
+    record?.selected_intent,
+    resultRecord?.selectedIntent,
+    resultRecord?.selected_intent,
+  ].find((value) => typeof value === 'string' && value.trim().length > 0);
+  const selectedToolCandidate = [
+    record?.selectedTool,
+    record?.selected_tool,
+    resultRecord?.selectedTool,
+    resultRecord?.selected_tool,
+  ].find((value) => typeof value === 'string' && value.trim().length > 0);
 
   if (
     typeof conversationIdCandidate !== 'string'
@@ -1298,6 +1408,8 @@ function extractCompatibilityOwnerAIResponse(
     deploymentMarker: typeof deploymentMarkerCandidate === 'string' && deploymentMarkerCandidate.trim()
       ? deploymentMarkerCandidate.trim()
       : undefined,
+    selectedIntent: typeof selectedIntentCandidate === 'string' ? selectedIntentCandidate.trim() : undefined,
+    selectedTool: typeof selectedToolCandidate === 'string' ? selectedToolCandidate.trim() : undefined,
   };
 }
 
@@ -1905,7 +2017,7 @@ function getIVXBackendAuditIntentRoute(intent: IVXBackendAuditIntent | null): st
 
 function logIVXOwnerAuditRoutingPath(input: {
   promptText: string;
-  detectedIntent: IVXBackendAuditIntent | SupabaseInspectionIntent | OwnerCapabilityIntent | 'development_action' | 'deployment_action' | null;
+  detectedIntent: IVXBackendAuditIntent | SupabaseInspectionIntent | OwnerCapabilityIntent | OwnerManualRouterIntent | 'development_action' | 'deployment_action' | null;
   selectedRoute: string;
   auditEndpointCalled: boolean;
   returnedPayload?: unknown;
@@ -2737,6 +2849,37 @@ export const ivxAIRequestService = {
     const payload = buildRequestPayload(input);
     const routingAudit = getIVXOwnerAIConfigAudit();
     const useLocalAppBrain = isIVXLocalFirstChatEnabled();
+    const manualAnswerIntent = resolveManualAnswerIntent(payload.message);
+    if (manualAnswerIntent) {
+      const manualResponse = buildManualOwnerAIResponse(payload, manualAnswerIntent);
+      logIVXOwnerAuditRoutingPath({
+        promptText: payload.message,
+        detectedIntent: manualAnswerIntent,
+        selectedRoute: 'manual_answer',
+        auditEndpointCalled: false,
+        renderedFinalAnswer: manualResponse.answer,
+      });
+      await ivxOwnerMemoryService.recordConversationTurn({
+        conversationId: payload.conversationId,
+        ownerText: payload.message,
+        assistantText: manualResponse.answer,
+      });
+      setLastOwnerAIRuntimeProof({
+        source: 'local_app_brain',
+        requestStage: 'manual_answer_router',
+        failureClass: 'none',
+        statusCode: 200,
+        endpoint: null,
+        baseUrl: routingAudit.activeBaseUrl,
+        requestId: payload.requestId,
+        detail: 'Manual-answer mode bypassed all tool routes.',
+        responsePreview: `Intent: ${manualResponse.routerDebug?.selectedIntent}; Tool: none`,
+        deploymentMarker: manualResponse.deploymentMarker ?? null,
+        provider: null,
+        lastUpdatedAt: Date.now(),
+      });
+      return manualResponse;
+    }
     const initialSupabaseIntent = resolveSupabaseInspectionIntent(payload.message);
     const initialDevelopmentActionIntent = initialSupabaseIntent ? null : resolveOwnerDevelopmentActionIntent(payload.message);
     const initialAuditIntent = initialSupabaseIntent || initialDevelopmentActionIntent ? null : resolveIVXBackendAuditReportIntent(payload.message);
@@ -2992,7 +3135,11 @@ export const ivxAIRequestService = {
           baseUrl: routingAudit.activeBaseUrl,
           requestId: data.requestId,
           detail: 'Remote IVX endpoint replied with the canonical contract.',
-          responsePreview: data.selectedTool ? `Tool used: ${data.selectedTool}` : data.answer.slice(0, 240),
+          responsePreview: data.routerDebug
+            ? `Intent: ${data.routerDebug.selectedIntent}; Tool: ${data.routerDebug.selectedTool ?? 'none'}`
+            : data.selectedTool
+              ? `Tool used: ${data.selectedTool}`
+              : data.answer.slice(0, 240),
           deploymentMarker: data.deploymentMarker ?? null,
           provider: data.provider ?? 'chatgpt',
           lastUpdatedAt: Date.now(),

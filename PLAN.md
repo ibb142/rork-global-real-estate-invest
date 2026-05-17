@@ -1337,3 +1337,75 @@ All later phases depend on these tables existing and on the typed persistence la
   - Deploy status: `result.ok = true`, `httpStatus = 200`, `summary = Render deploy queued :: dep-...`, `postCheck.publicChatSource = chatgpt`.
   - Audit log entry: `{ event: execute_succeeded, kind: render_deploy, approver: owner, affected: [ivx-holdings-platform], result: success, detail: "Render deploy queued :: dep-... — health=200 chat=200 source=chatgpt" }`.
 - Status: **Block 21 owner-approved write actions wired in. Patch / GitHub commit / Supabase SQL / Render deploy all gated behind explicit owner approval, destructive items require typed double-confirm, post-deploy ChatGPT contract is verified automatically, and every action lands in the append-only audit log.**
+
+### Block 21P — Block 21 promoted to production + Rork freeze (2026-05-16)
+
+- Files changed:
+  - `expo/app/admin/ivx-developer-workspace.tsx` — added owner-only "Promote to GitHub commit" shortcut visible on `approved` patches in the Patches tab. The shortcut calls Block 21 `proposeAction({ kind: 'github_commit', files: [patch.filePath], patchIds: [patch.id] })` to create a `proposed` action and routes the owner to `/admin/ivx-developer-actions`. **Approval is not bypassed**: the action lands in `proposed` status; explicit owner approve + execute are still required, and destructive items still demand the typed double-confirm. Every promotion writes a `promote_patch_to_github_commit` developer-action audit row.
+  - `PLAN.md` — this checkpoint.
+- Validation: `runChecks(expo)` passed.
+- GitHub sync proof:
+  - Pushed via `expo/sync-github.mjs` (auto-loaded `expo/.env`).
+  - GitHub `main` advanced to commit `06f4e8b35a4362143243eec633bf0f7efb6d5290`.
+  - URL: `https://github.com/ibb142/rork-global-real-estate-invest/commit/06f4e8b35a4362143243eec633bf0f7efb6d5290`.
+  - Files in this sync: `+8 new, ~7 modified, -0 deleted` (all Block 21 + Block 20 docs + workspace shortcut + PLAN).
+- Render deploy proof:
+  - `POST https://api.render.com/v1/services/srv-d7t9ivreo5us73ftose0/deploys` `{ clearCache: "clear" }` → HTTP 202.
+  - Latest deploy: `dep-d84g05o76n1s73bgjoeg` on commit `06f4e8b35a43`, polled `queued → build_in_progress → update_in_progress → live`.
+  - Status: **live**.
+- Production retest (against `https://ivx-holdings-platform.onrender.com`):
+  - `POST /api/public/chat` with `{ exactToken: "IVX_BLOCK21_FINAL_PROOF_<ts>", sessionId: "public-session-block21-final-<ts>" }` → **HTTP 200**, `source: "chatgpt"`, `persistence: "supabase"`, answer contained the exact proof token end-to-end.
+  - `GET /api/public/chat/history?sessionId=public-session-block21-final-<ts>&limit=20` → **HTTP 200**, `messageCount: 2`, `persistence: "supabase"`.
+  - `GET /api/public/chat/sessions?limit=3` → **HTTP 200**.
+  - `POST /api/upload` (no bearer) → **HTTP 401** (owner-auth guard unchanged).
+  - `GET /health` → **HTTP 200**, `aiProvider: "chatgpt"`, `openAIModel: "openai/gpt-4o-mini"`.
+  - `GET /api/ivx/owner-ai/proxy-status` → **HTTP 200**.
+- Block 21 surface availability:
+  - `/admin/ivx-developer-actions` (Queue / Propose / Audit tabs) is on GitHub `main` and in the Render-deployed bundle source as of commit `06f4e8b`.
+  - Propose, approve (with destructive double-confirm), execute (only after approval), and audit log all require owner taps — no autonomous path exists.
+  - "Promote to GitHub commit" shortcut from the Block 18 workspace creates a `proposed` Block 21 action and never bypasses owner approval.
+- Status: **Block 21 is live in production. GitHub `main` = `06f4e8b`, Render deploy `dep-d84g05o76n1s73bgjoeg` = `live`, public chat ChatGPT contract preserved, owner-approved write actions available end-to-end.**
+
+### Rork freeze (2026-05-16)
+
+- **No further new feature work will be performed inside Rork.** The repo is now operated as an independent codebase per Block 20 (`MIGRATION.md`, `ARCHITECTURE.md`, `ENVIRONMENT_VARIABLES.md`, `API_ROUTES.md`, `SUPABASE_SCHEMA.md`, `DEPLOYMENT.md`, `LOCAL_SETUP.md`).
+- Frozen production state:
+  - GitHub `main`: `06f4e8b35a4362143243eec633bf0f7efb6d5290` (Block 21P).
+  - Render deploy: `dep-d84g05o76n1s73bgjoeg` (`live`) on `srv-d7t9ivreo5us73ftose0`.
+  - Public chat: ChatGPT-live, Supabase persistence, sessions/history HTTP 200, upload owner-auth guard intact, owner-AI proxy live.
+  - Block 18 developer workspace + Block 21 approved actions deployed and owner-only.
+- Anything that requires new features, schema changes, or backend logic should be done outside Rork (clone repo, edit, push to GitHub `main`, Render auto-deploys), or routed through the Block 21 approved-action flow inside the deployed app.
+
+### Block 22 — Owner AI router fix + autonomous worker runtime prepared locally (2026-05-17)
+
+- Files changed:
+  - `backend/api/ivx-owner-ai.ts` — server-side manual-answer router exists and routes `no tools`, `manual answer`, `plain text`, `do not inspect`, infrastructure/runtime, AWS, and Block 22 worker questions before Supabase/schema tooling. Responses include visible `selectedIntent`, `selectedTool`, and `routerDebug` fields.
+  - `expo/src/modules/ivx-owner-ai/services/ivxAIRequestService.ts` — added client-side manual-answer routing before local Supabase inspection/audit interception so the app cannot turn “no tools/manual/plain text/do not inspect” prompts into Supabase schema metadata.
+  - `backend/api/ivx-agent-jobs.ts` — added Block 22 server-side job runtime. It creates/ensures `public.ivx_agent_jobs` and `public.ivx_agent_job_logs`, supports `queued`, `running`, `waiting_approval`, `completed`, `failed`, and `canceled`, logs worker steps, picks queued jobs, updates running/completed/failed, supports retry/cancel/approve, and starts a backend worker loop independent of phone/app/Rork chat.
+  - `backend/hono.ts` — added Block 22 owner-authenticated backend routes:
+    - `GET /api/ivx/agent-jobs/status`
+    - `GET /api/ivx/agent-jobs`
+    - `POST /api/ivx/agent-jobs`
+    - `POST /api/ivx/agent-jobs/:jobId/retry`
+    - `POST /api/ivx/agent-jobs/:jobId/cancel`
+    - `POST /api/ivx/agent-jobs/:jobId/approve`
+    - `POST /api/ivx/agent-worker/run-once`
+  - `expo/src/modules/ivx-developer/agentJobsService.ts` — typed owner-authenticated API client for Block 22 jobs/status/actions.
+  - `expo/app/admin/ivx-agent-jobs.tsx` — new owner admin screen `/admin/ivx-agent-jobs` with worker status, status filters, create proof job, run worker once, retry/cancel/approve, job results, and saved logs.
+  - `expo/app/admin/_layout.tsx` — registered `ivx-agent-jobs` under the existing admin guard.
+  - `expo/app/admin/owner-controls.tsx` — added Owner Controls tile for IVX Agent Jobs.
+  - `PLAN.md` — this checkpoint.
+- Required tables created by the Block 22 runtime on first backend route/worker execution:
+  - `public.ivx_agent_jobs`
+  - `public.ivx_agent_job_logs`
+- Router proof prompt expected after deploy:
+  - Prompt: `No tools. Answer manually: can IVX IA work 24/7 if my phone is off?`
+  - Expected response: plain-text infrastructure/runtime answer, no Supabase schema output, `selectedIntent: infrastructure_runtime`, `selectedTool: null`, `routerDebug.manualMode: true`.
+- Validation passed locally:
+  - Root/backend `bunx tsc --noEmit --pretty false --noErrorTruncation` passed.
+  - Expo `bunx tsc --noEmit --pretty false --noErrorTruncation` passed.
+  - `runChecks(expo)` passed.
+- Production status at this checkpoint:
+  - Local implementation is complete and validated.
+  - GitHub/Render production proof is not complete until these changed files are promoted to GitHub `main`, Render deploy reaches `live`, and live `/api/ivx/agent-jobs/status` returns HTTP 200 for an authenticated owner.
+  - Do not claim Block 22 production completion until one real queued job is created, the server-side worker completes it after the phone/app can be ignored, job logs are saved, and public chat still returns `source: "chatgpt"`.

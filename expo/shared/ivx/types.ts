@@ -112,6 +112,14 @@ export type IVXOwnerAIToolOutput = {
   timestamp: string;
 };
 
+export type IVXOwnerAIRouterDebug = {
+  selectedIntent: string;
+  selectedTool: string | null;
+  manualMode: boolean;
+  route: string;
+  reason: string;
+};
+
 export type IVXOwnerAIResponse = {
   requestId: string;
   conversationId: string;
@@ -124,7 +132,9 @@ export type IVXOwnerAIResponse = {
   deploymentMarker?: string;
   assistantMessageId?: string | null;
   assistantPersisted?: boolean;
+  selectedIntent?: string | null;
   selectedTool?: string | null;
+  routerDebug?: IVXOwnerAIRouterDebug;
   toolInput?: Record<string, unknown>[];
   toolOutput?: unknown[];
   fallbackUsed?: boolean;
@@ -142,7 +152,9 @@ export type IVXOwnerAICanonicalResponse = {
   deploymentMarker?: string;
   assistantMessageId?: string | null;
   assistantPersisted?: boolean;
+  selectedIntent?: string | null;
   selectedTool?: string | null;
+  routerDebug?: IVXOwnerAIRouterDebug;
   toolInput?: Record<string, unknown>[];
   toolOutput?: unknown[];
   fallbackUsed?: boolean;
