@@ -4661,22 +4661,22 @@ export async function handleIVXOwnerAIToolRequest(request: Request): Promise<Res
 
 export async function handleIVXOwnerAIRequest(request: Request): Promise<Response> {
   const startedAt = Date.now();
-  const requestBodyForAudit = request.clone();
-  const requestAuthForAudit = request.clone();
+  const auditAuthRequest = new Request(request.url, {
+    method: request.method,
+    headers: request.headers,
+  });
   const response = await handleIVXOwnerAIRequestInternal(request);
 
   // Phase 4c — fire-and-forget audit log to public.ai_usage_logs. Never blocks.
+  // Do not clone/read the request body here; the owner chat handler consumes it once.
   void (async () => {
     let requestId: string | null = null;
     let model = '';
     let userId: string | null = null;
-    let surface = 'ivx_ia';
+    const surface = 'ivx_ia';
     try {
-      const reqBody = await requestBodyForAudit.json().catch(() => ({} as Record<string, unknown>));
-      requestId = typeof reqBody.requestId === 'string' && reqBody.requestId ? reqBody.requestId : null;
-      surface = typeof reqBody.surface === 'string' && reqBody.surface ? reqBody.surface : 'ivx_ia';
       try {
-        const ctx = await assertIVXOwnerOnly(requestAuthForAudit).catch(() => null);
+        const ctx = await assertIVXOwnerOnly(auditAuthRequest).catch(() => null);
         userId = ctx?.userId ?? null;
       } catch {
         userId = null;
@@ -4721,7 +4721,10 @@ export async function handleIVXOwnerAIRequest(request: Request): Promise<Respons
 
 async function handleIVXOwnerAIRequestInternal(request: Request): Promise<Response> {
   try {
-    const authRequest = request.clone();
+    const authRequest = new Request(request.url, {
+      method: request.method,
+      headers: request.headers,
+    });
     const body = await request.json() as IVXOwnerAIRequest;
     const prompt = readTrimmedString(body.message);
     const mode = body.mode === 'command' ? 'command' : 'chat';

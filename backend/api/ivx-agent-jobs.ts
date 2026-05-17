@@ -418,6 +418,10 @@ async function runJobPayload(job: AgentJobRow): Promise<Record<string, unknown>>
     await appendJobLog(job.id, 'waiting_approval', 'Job requires owner approval before execution can continue.', { workerId: WORKER_ID }, 'warn');
     return { waitingApproval: true };
   }
+  if (job.payload.forceFail === true || job.type === 'block22_force_fail') {
+    await appendJobLog(job.id, 'forced_failure', 'Intentional Block 22 proof failure requested.', { workerId: WORKER_ID }, 'warn');
+    throw new Error('Intentional Block 22 proof failure requested.');
+  }
   await appendJobLog(job.id, 'work_step', 'Executed Block 22 backend proof step.', { type: job.type, payloadKeys: Object.keys(job.payload).sort() });
   return {
     ok: true,
