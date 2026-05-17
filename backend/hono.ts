@@ -18,6 +18,76 @@ import { OPTIONS as variablesToolOptions, handleIVXVariablesToolSaveRequest, han
 import { OPTIONS as ownerVariablesOptions, getIVXOwnerVariableRuntimeValue, hasIVXOwnerVariableRuntimeValue, handleIVXOwnerVariablesDeleteRequest, handleIVXOwnerVariablesSaveRequest, handleIVXOwnerVariablesSelfSyncRequest, handleIVXOwnerVariablesStatusRequest, handleIVXOwnerVariablesTestRequest } from './api/ivx-owner-variables';
 import { OPTIONS as independenceStatusOptions, handleIVXIndependenceStatusRequest } from './api/ivx-independence-status';
 import { OPTIONS as agentJobsOptions, handleIVXAgentJobActionRequest, handleIVXAgentJobsCreateRequest, handleIVXAgentJobsListRequest, handleIVXAgentJobsStatusRequest, handleIVXAgentWorkerRunOnceRequest } from './api/ivx-agent-jobs';
+import {
+  OPTIONS as opMemoryOptions,
+  handleStatus as handleOpMemoryStatus,
+  handleSearch as handleOpMemorySearch,
+  handleList as handleOpMemoryList,
+  handleUpsert as handleOpMemoryUpsert,
+  handleReindex as handleOpMemoryReindex,
+  handleLoopRun as handleOpMemoryLoopRun,
+  handleTasksList as handleOpMemoryTasksList,
+  handleTaskGet as handleOpMemoryTaskGet,
+  handleRollback as handleOpMemoryRollback,
+  handleSnapshot as handleOpMemorySnapshot,
+} from './api/ivx-operational-memory';
+import {
+  OPTIONS as engIntelOptions,
+  handleStatus as handleEngIntelStatus,
+  handleDashboard as handleEngIntelDashboard,
+  handleDetect as handleEngIntelDetect,
+  handleListIncidents as handleEngIntelListIncidents,
+  handleListDecisions as handleEngIntelListDecisions,
+  handleListFixOutcomes as handleEngIntelListFixOutcomes,
+  handleListSnapshots as handleEngIntelListSnapshots,
+  handleTelemetryIngest as handleEngIntelTelemetryIngest,
+  handleTelemetryStats as handleEngIntelTelemetryStats,
+  handleConfidence as handleEngIntelConfidence,
+  handleGate as handleEngIntelGate,
+  handleRecordIncident as handleEngIntelRecordIncident,
+  handleRecordDecision as handleEngIntelRecordDecision,
+  handleRecordFixOutcome as handleEngIntelRecordFixOutcome,
+  handleSnapshotCapture as handleEngIntelSnapshotCapture,
+  handleSimulate as handleEngIntelSimulate,
+} from './api/ivx-engineering-intelligence';
+import {
+  OPTIONS as multiAgentOptions,
+  handleStatus as handleMultiAgentStatus,
+  handleListActiveAgents as handleMultiAgentActive,
+  handleDispatch as handleMultiAgentDispatch,
+  handleListTasks as handleMultiAgentListTasks,
+  handleGetTask as handleMultiAgentGetTask,
+  handleHandoff as handleMultiAgentHandoff,
+  handleListHandoffs as handleMultiAgentListHandoffs,
+  handleAudit as handleMultiAgentAudit,
+  handleMemoryWrite as handleMultiAgentMemoryWrite,
+  handleMemoryRead as handleMultiAgentMemoryRead,
+  handleComplete as handleMultiAgentComplete,
+  handleFail as handleMultiAgentFail,
+  handleRoutePreview as handleMultiAgentRoutePreview,
+  handleValidate as handleMultiAgentValidate,
+} from './api/ivx-multi-agent';
+import {
+  OPTIONS as selfExecOptions,
+  handleRunSelfExecution as handleSelfExecRun,
+  handleGetSelfExecutionResult as handleSelfExecResult,
+} from './api/ivx-agent-self-execution';
+import {
+  OPTIONS as parallelAgentsOptions,
+  handleParallelDispatch,
+  handleParallelList,
+  handleParallelGet,
+  handleParallelGetTree,
+  handleParallelDecomposePreview,
+  handleParallelValidate,
+} from './api/ivx-parallel-agents';
+import {
+  OPTIONS as ctoDashboardOptions,
+  handleDashboardOverview as handleCTODashboardOverview,
+  handleParentTree as handleCTODashboardParentTree,
+  handleAuditSearch as handleCTODashboardAuditSearch,
+  handleControlAction as handleCTODashboardControl,
+} from './api/ivx-cto-dashboard';
 import { OPTIONS as assistantOptions, POST as handleAssistantPost } from './api/assistant';
 import { OPTIONS as planCreatorOptions, POST as handlePlanCreatorPost } from './api/plan-creator';
 import {
@@ -1153,6 +1223,115 @@ app.options('/api/ivx/agent-jobs/:jobId/approve', () => agentJobsOptions());
 app.post('/api/ivx/agent-jobs/:jobId/approve', async (context) => handleIVXAgentJobActionRequest(context.req.raw, context.req.param('jobId'), 'approve'));
 app.options('/api/ivx/agent-worker/run-once', () => agentJobsOptions());
 app.post('/api/ivx/agent-worker/run-once', async (context) => handleIVXAgentWorkerRunOnceRequest(context.req.raw));
+
+// Block 23 — Operational memory (pgvector) + autonomous execution loop
+app.options('/api/ivx/operational-memory/status', () => opMemoryOptions());
+app.get('/api/ivx/operational-memory/status', async (context) => handleOpMemoryStatus(context.req.raw));
+app.options('/api/ivx/operational-memory/search', () => opMemoryOptions());
+app.get('/api/ivx/operational-memory/search', async (context) => handleOpMemorySearch(context.req.raw));
+app.options('/api/ivx/operational-memory/list', () => opMemoryOptions());
+app.get('/api/ivx/operational-memory/list', async (context) => handleOpMemoryList(context.req.raw));
+app.options('/api/ivx/operational-memory', () => opMemoryOptions());
+app.post('/api/ivx/operational-memory', async (context) => handleOpMemoryUpsert(context.req.raw));
+app.options('/api/ivx/operational-memory/reindex', () => opMemoryOptions());
+app.post('/api/ivx/operational-memory/reindex', async (context) => handleOpMemoryReindex(context.req.raw));
+app.options('/api/ivx/operational-memory/snapshot', () => opMemoryOptions());
+app.get('/api/ivx/operational-memory/snapshot', async (context) => handleOpMemorySnapshot(context.req.raw));
+app.options('/api/ivx/operational-memory/loop', () => opMemoryOptions());
+app.post('/api/ivx/operational-memory/loop', async (context) => handleOpMemoryLoopRun(context.req.raw));
+app.options('/api/ivx/operational-memory/tasks', () => opMemoryOptions());
+app.get('/api/ivx/operational-memory/tasks', async (context) => handleOpMemoryTasksList(context.req.raw));
+app.options('/api/ivx/operational-memory/tasks/:taskId', () => opMemoryOptions());
+app.get('/api/ivx/operational-memory/tasks/:taskId', async (context) => handleOpMemoryTaskGet(context.req.raw, context.req.param('taskId')));
+app.options('/api/ivx/operational-memory/tasks/:taskId/rollback', () => opMemoryOptions());
+app.post('/api/ivx/operational-memory/tasks/:taskId/rollback', async (context) => handleOpMemoryRollback(context.req.raw, context.req.param('taskId')));
+
+// Block 24 — Active Engineering Intelligence
+const engIntelRoutes: Array<[string, 'GET' | 'POST', (request: Request) => Promise<Response>]> = [
+  ['/api/ivx/engineering/status', 'GET', handleEngIntelStatus],
+  ['/api/ivx/engineering/dashboard', 'GET', handleEngIntelDashboard],
+  ['/api/ivx/engineering/detect', 'GET', handleEngIntelDetect],
+  ['/api/ivx/engineering/incidents', 'GET', handleEngIntelListIncidents],
+  ['/api/ivx/engineering/decisions', 'GET', handleEngIntelListDecisions],
+  ['/api/ivx/engineering/fix-outcomes', 'GET', handleEngIntelListFixOutcomes],
+  ['/api/ivx/engineering/snapshots', 'GET', handleEngIntelListSnapshots],
+  ['/api/ivx/engineering/telemetry', 'POST', handleEngIntelTelemetryIngest],
+  ['/api/ivx/engineering/telemetry/stats', 'GET', handleEngIntelTelemetryStats],
+  ['/api/ivx/engineering/confidence', 'GET', handleEngIntelConfidence],
+  ['/api/ivx/engineering/gate', 'GET', handleEngIntelGate],
+  ['/api/ivx/engineering/incidents/record', 'POST', handleEngIntelRecordIncident],
+  ['/api/ivx/engineering/decisions/record', 'POST', handleEngIntelRecordDecision],
+  ['/api/ivx/engineering/fix-outcomes/record', 'POST', handleEngIntelRecordFixOutcome],
+  ['/api/ivx/engineering/snapshots/capture', 'POST', handleEngIntelSnapshotCapture],
+  ['/api/ivx/engineering/simulate', 'POST', handleEngIntelSimulate],
+];
+for (const [routePath, method, handler] of engIntelRoutes) {
+  app.options(routePath, () => engIntelOptions());
+  if (method === 'GET') {
+    app.get(routePath, async (context) => handler(context.req.raw));
+  } else {
+    app.post(routePath, async (context) => handler(context.req.raw));
+  }
+}
+
+// Block 25: Multi-Agent Framework (owner-only)
+const multiAgentGetRoutes: Array<[string, (request: Request) => Promise<Response>]> = [
+  ['/api/ivx/agents/status', handleMultiAgentStatus],
+  ['/api/ivx/agents/active', handleMultiAgentActive],
+  ['/api/ivx/agents/tasks', handleMultiAgentListTasks],
+  ['/api/ivx/agents/handoffs', handleMultiAgentListHandoffs],
+  ['/api/ivx/agents/audit', handleMultiAgentAudit],
+  ['/api/ivx/agents/memory', handleMultiAgentMemoryRead],
+  ['/api/ivx/agents/validate', handleMultiAgentValidate],
+];
+const multiAgentPostRoutes: Array<[string, (request: Request) => Promise<Response>]> = [
+  ['/api/ivx/agents/dispatch', handleMultiAgentDispatch],
+  ['/api/ivx/agents/handoff', handleMultiAgentHandoff],
+  ['/api/ivx/agents/memory', handleMultiAgentMemoryWrite],
+  ['/api/ivx/agents/complete', handleMultiAgentComplete],
+  ['/api/ivx/agents/fail', handleMultiAgentFail],
+  ['/api/ivx/agents/route-preview', handleMultiAgentRoutePreview],
+];
+for (const [routePath, handler] of multiAgentGetRoutes) {
+  app.options(routePath, () => multiAgentOptions());
+  app.get(routePath, async (context) => handler(context.req.raw));
+}
+for (const [routePath, handler] of multiAgentPostRoutes) {
+  app.options(routePath, () => multiAgentOptions());
+  app.post(routePath, async (context) => handler(context.req.raw));
+}
+app.options('/api/ivx/agents/tasks/:taskId', () => multiAgentOptions());
+app.get('/api/ivx/agents/tasks/:taskId', async (context) => handleMultiAgentGetTask(context.req.raw, context.req.param('taskId')));
+
+// Block 26: Agent Self-Execution Test (owner-only)
+app.options('/api/ivx/agents/self-execute', () => selfExecOptions());
+app.post('/api/ivx/agents/self-execute', async (context) => handleSelfExecRun(context.req.raw));
+app.options('/api/ivx/agents/self-execute/result', () => selfExecOptions());
+app.get('/api/ivx/agents/self-execute/result', async (context) => handleSelfExecResult(context.req.raw));
+
+// Block 27: Parallel Agent Execution (owner-only)
+app.options('/api/ivx/agents/parallel/dispatch', () => parallelAgentsOptions());
+app.post('/api/ivx/agents/parallel/dispatch', async (context) => handleParallelDispatch(context.req.raw));
+app.options('/api/ivx/agents/parallel/list', () => parallelAgentsOptions());
+app.get('/api/ivx/agents/parallel/list', async (context) => handleParallelList(context.req.raw));
+app.options('/api/ivx/agents/parallel/decompose', () => parallelAgentsOptions());
+app.post('/api/ivx/agents/parallel/decompose', async (context) => handleParallelDecomposePreview(context.req.raw));
+app.options('/api/ivx/agents/parallel/validate', () => parallelAgentsOptions());
+app.post('/api/ivx/agents/parallel/validate', async (context) => handleParallelValidate(context.req.raw));
+app.options('/api/ivx/agents/parallel/:parentId', () => parallelAgentsOptions());
+app.get('/api/ivx/agents/parallel/:parentId', async (context) => handleParallelGet(context.req.raw, context.req.param('parentId')));
+app.options('/api/ivx/agents/parallel/:parentId/tree', () => parallelAgentsOptions());
+app.get('/api/ivx/agents/parallel/:parentId/tree', async (context) => handleParallelGetTree(context.req.raw, context.req.param('parentId')));
+
+// Block 28: CTO Operational Dashboard (owner-only)
+app.options('/api/ivx/cto-dashboard/overview', () => ctoDashboardOptions());
+app.get('/api/ivx/cto-dashboard/overview', async (context) => handleCTODashboardOverview(context.req.raw));
+app.options('/api/ivx/cto-dashboard/audit', () => ctoDashboardOptions());
+app.get('/api/ivx/cto-dashboard/audit', async (context) => handleCTODashboardAuditSearch(context.req.raw));
+app.options('/api/ivx/cto-dashboard/control', () => ctoDashboardOptions());
+app.post('/api/ivx/cto-dashboard/control', async (context) => handleCTODashboardControl(context.req.raw));
+app.options('/api/ivx/cto-dashboard/parent/:parentId/tree', () => ctoDashboardOptions());
+app.get('/api/ivx/cto-dashboard/parent/:parentId/tree', async (context) => handleCTODashboardParentTree(context.req.raw, context.req.param('parentId')));
 
 app.options('/api/ivx/ai-brain/tools', () => aiBrainToolsOptions());
 app.get('/api/ivx/ai-brain/tools', async (context) => handleIVXAIBrainToolsListRequest(context.req.raw));

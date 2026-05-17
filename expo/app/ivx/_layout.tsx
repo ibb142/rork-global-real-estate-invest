@@ -17,6 +17,7 @@ const IVX_INDEPENDENCE_OPTIONS = { title: 'Independence Tracker' } as const;
 const IVX_FILES_OPTIONS = { title: 'Files & Multimodal' } as const;
 const IVX_DIAGNOSTICS_OPTIONS = { title: 'IVX Diagnostics' } as const;
 const IVX_SEARCH_OPTIONS = { title: 'Search Owner Room' } as const;
+const IVX_CTO_DASHBOARD_OPTIONS = { title: 'CTO Operational Dashboard' } as const;
 
 export default function IVXOwnerLayout() {
   return (
@@ -28,6 +29,7 @@ export default function IVXOwnerLayout() {
       <Stack.Screen name="files" options={IVX_FILES_OPTIONS} />
       <Stack.Screen name="diagnostics" options={IVX_DIAGNOSTICS_OPTIONS} />
       <Stack.Screen name="search" options={IVX_SEARCH_OPTIONS} />
+      <Stack.Screen name="cto-dashboard" options={IVX_CTO_DASHBOARD_OPTIONS} />
     </Stack>
   );
 }
