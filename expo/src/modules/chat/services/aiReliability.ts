@@ -74,7 +74,11 @@ export type ReliabilityOptions = {
 
 const DEFAULTS = {
   totalTimeoutMs: 45_000,
-  maxAttempts: 3,
+  // Block 22R fix: cap retry attempts at 2 (one retry) to prevent storms on
+  // transient 5xx. Combined with the narrowed retry classifier (502/503/504/429
+  // only), this ensures a single failed AI request cannot duplicate assistant
+  // messages on the chat surface.
+  maxAttempts: 2,
   baseDelayMs: 600,
   maxDelayMs: 4_000,
 } as const;
@@ -92,8 +96,11 @@ export function classifyForRetry(error: unknown): { retry: boolean; reason: stri
   const status = diagnostics?.statusCode ?? null;
   const classification = diagnostics?.classification ?? null;
 
-  // Transient HTTP — retry.
-  if (status === 429 || (typeof status === 'number' && status >= 500 && status <= 599)) {
+  // Transient HTTP — retry only on 429 and gateway 502/503/504. We deliberately
+  // do NOT retry on raw HTTP 500: those are server-internal errors (often the
+  // same error per attempt) and retrying them caused an AI retry storm that
+  // duplicated assistant messages. 500s now fail fast.
+  if (status === 429 || status === 502 || status === 503 || status === 504) {
     return { retry: true, reason: `transient_http_${status}`, statusCode: status };
   }
 

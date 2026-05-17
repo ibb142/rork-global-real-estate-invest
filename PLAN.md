@@ -1470,3 +1470,26 @@ All later phases depend on these tables existing and on the typed persistence la
   - `model: "openai/gpt-4o-mini"`.
   - Proof token was returned in the answer.
 - Final status: **Block 22 is complete in production. Owner AI no-tools/manual/infrastructure prompts no longer route into Supabase schema inspection, Block 22 backend worker jobs run server-side on Render, job state/log tables exist and contain completed/waiting/failed proof rows, and public chat remains ChatGPT-live.**
+
+### Block 22S — Owner AI response sanitizer/formatter (2026-05-17)
+
+- Files changed:
+  - `backend/api/ivx-owner-ai.ts` — added owner AI response sanitizer/formatter so internal tool outputs are humanized before they reach the chat surface.
+  - `PLAN.md` — this checkpoint.
+- Root cause: Owner AI tool-result formatters emitted raw internal labels ("IVX AI Brain tool executor results:", `logs_status_summary`, `fix_queue_status`, `get_current_time`, raw `Tool used:` headers, and full JSON.stringify of `toolOutputs`) directly into the visible chat answer, which exposed backend-style phrasing and tool identifiers to the user.
+- Sanitizer/formatter added:
+  - `humanizeInternalToolName` — maps every Owner AI tool / AI Brain tool / AWS readiness tool to a senior-developer label (e.g. `logs_status_summary` → “Backend log access”, `fix_queue_status` → “Queue runtime check”, `get_current_time` → “Current time”).
+  - `formatOwnerToolAnswerHumanReadable` replaces the previous `formatStructuredToolAnswer` JSON dump with bulleted natural sentences, including a per-output safety line and a closing “No secrets were exposed.” statement; raw `toolOutputs`, `selectedTool`, and `selectedIntent` no longer appear in chat text.
+  - `summarizeAIBrainToolResult` and `formatAIBrainToolAnswer` rebuilt: removed the “IVX AI Brain tool executor results:” header, removed `${result.tool}:` line prefixes, and consolidated missing-access blockers into one human-readable sentence.
+  - `summarizeAIBrainToolResultNatural` + `sanitizeRawToolNamesInText` strip any residual raw tool identifiers from per-result summaries via a hardened regex covering all known internal tools.
+  - `sanitizeOwnerAIAnswerForChat` runs a final pass on every visible owner AI answer to strip leaked debug headers (`IVX AI Brain tool executor results:`, `Tool used: ...`, `selectedIntent: ...`, `selectedTool: ...`) and humanize any remaining tool identifiers; wired into `assertVisibleOwnerAIAnswer` so all owner AI return paths receive the same scrub before persistence and the response payload.
+  - `/time-now` pre-auth tool path no longer returns `JSON.stringify({ tool, status, result })`; it now returns a natural sentence such as `Current time (UTC): ….`.
+- Internal data preservation: `toolOutputs`, `selectedTool`, `selectedIntent`, `routerDebug`, `toolInput`, `toolOutput` are still attached to the API response payload metadata (used by audit/admin/diagnostics surfaces) and to backend `console.log`/audit rows. Only the chat-visible `answer` text is humanized.
+- Block 22 manual/no-tools router behavior preserved (the `manualMode` / infrastructure_runtime / block22_worker_diagnosis paths produce plain-text answers that pass through the sanitizer untouched). Public chat path is not touched.
+- Validation: `runChecks(expo)` passed.
+- Expected sanitized chat outputs (post-sanitizer):
+  - “Are you working?” → plain progress sentence (no JSON, no tool names).
+  - “How much time will it take?” → plain estimate (no `get_current_time` raw output).
+  - “Check Block 22 worker status.” → senior-dev summary, no raw tool labels.
+  - “No tools, answer manually.” → plain text only via Block 22 manual router.
+- Production status: local code change validated and ready for normal Rork sync → GitHub `main` → Render redeploy. Public chat (`/api/public/chat` source `chatgpt`) was not modified and remains live.

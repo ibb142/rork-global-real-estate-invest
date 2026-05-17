@@ -14,6 +14,7 @@ import { useRouter } from 'expo-router';
 import {
   Alert,
   FlatList,
+  Image,
   Keyboard,
   KeyboardAvoidingView,
   type LayoutChangeEvent,
@@ -854,6 +855,7 @@ export default function IVXOwnerChatRoute() {
   const [missingReplyMessageId, setMissingReplyMessageId] = useState<string | null>(null);
   const pinnedMessagesRestoreCompletedRef = useRef<boolean>(false);
   const [isPickingFile, setIsPickingFile] = useState<boolean>(false);
+  const [draftAttachment, setDraftAttachment] = useState<{ upload: IVXUploadInput; isImage: boolean } | null>(null);
   const [composerHeight, setComposerHeight] = useState<number>(0);
   const [composerInputHeight, setComposerInputHeight] = useState<number>(44);
   const [keyboardInset, setKeyboardInset] = useState<number>(0);
@@ -2513,7 +2515,12 @@ export default function IVXOwnerChatRoute() {
   }, [conversationQuery.data?.id, displayedMessages.length]);
 
   const handleSend = useCallback((submittedText?: unknown) => {
-    if (messageSendPending || attachmentMutation.isPending || isPickingFile || !composerHasText) return;
+    if (messageSendPending || attachmentMutation.isPending || isPickingFile) return;
+    if (draftAttachment) {
+      void sendDraftAttachment();
+      return;
+    }
+    if (!composerHasText) return;
     const normalizedText = normalizeComposerText(submittedText, composerValueRef.current);
     const text = safeTrim(normalizedText);
     if (!text) {
@@ -2529,7 +2536,7 @@ export default function IVXOwnerChatRoute() {
     setSelectedReplyContext(null);
     console.log('[IVXOwnerChatRoute] handleSend mode:', mode, 'isCommand:', isCommand, 'aiReachable:', aiReachableRef.current, 'length:', text.length, 'clientId:', clientId, 'replyTo:', replyTo?.messageId ?? null);
     sendMessageMutation.mutate({ text, mode: mode as 'send_only' | 'send_and_ai', clientId, capturedText: normalizedText, replyTo });
-  }, [attachmentMutation.isPending, composerHasText, isPickingFile, localFirstChatMode, messageSendPending, selectedReplyContext, sendMessageMutation]);
+  }, [attachmentMutation.isPending, composerHasText, draftAttachment, isPickingFile, localFirstChatMode, messageSendPending, selectedReplyContext, sendDraftAttachment, sendMessageMutation]);
 
   const handleAskAI = useCallback((submittedText?: unknown) => {
     if (messageSendPending || aiReplyPending || attachmentMutation.isPending || isPickingFile || !composerHasText) return;
@@ -2604,13 +2611,12 @@ export default function IVXOwnerChatRoute() {
   }, []);
 
   const handlePickFile = useCallback(async () => {
-    if (attachmentMutation.isPending || isPickingFile) {
+    if (attachmentMutation.isPending || isPickingFile || draftAttachment) {
       return;
     }
 
     try {
       await Haptics.selectionAsync();
-      Keyboard.dismiss();
       setIsPickingFile(true);
       const pickerResult = await DocumentPicker.getDocumentAsync({
         copyToCacheDirectory: true,
@@ -2636,6 +2642,37 @@ export default function IVXOwnerChatRoute() {
             : null,
       };
 
+      const mime = (upload.type ?? '').toLowerCase();
+      const nameLower = upload.name.toLowerCase();
+      const isImage = mime.startsWith('image/') || /\.(png|jpe?g|gif|webp|heic|heif|bmp)$/.test(nameLower);
+      console.log('[IVXOwnerChatRoute] Attachment selected as draft:', upload.name, 'isImage:', isImage);
+      setDraftAttachment({ upload, isImage });
+      composerInputRef.current?.focus();
+    } catch (error) {
+      console.log('[IVXOwnerChatRoute] Attachment picker failed:', error instanceof Error ? error.message : 'unknown');
+      Alert.alert('File pick failed', error instanceof Error ? error.message : 'Unknown file picker error.');
+    } finally {
+      setIsPickingFile(false);
+    }
+  }, [attachmentMutation.isPending, draftAttachment, isPickingFile]);
+
+  const handleClearDraftAttachment = useCallback(() => {
+    console.log('[IVXOwnerChatRoute] Cleared draft attachment');
+    setDraftAttachment(null);
+  }, []);
+
+  const sendDraftAttachment = useCallback(async () => {
+    if (!draftAttachment) return;
+    const { upload, isImage } = draftAttachment;
+    const composerText = normalizeComposerText(composerValueRef.current);
+    const trimmed = safeTrim(composerText);
+    const captionText = trimmed.length > 0
+      ? composerText
+      : (isImage ? 'Analyze this image.' : 'Analyze this attachment.');
+    const clientId = createTransientMessageId('ivx-owner-attachment');
+    const replyTo = selectedReplyContext;
+
+    try {
       const fileInsight = await ivxOwnerMemoryService.summarizePickedFile({
         uri: upload.uri ?? null,
         name: upload.name,
@@ -2645,12 +2682,9 @@ export default function IVXOwnerChatRoute() {
       });
       await ivxOwnerMemoryService.recordFileUpload(fileInsight);
 
-      const clientId = createTransientMessageId('ivx-owner-attachment');
-      const capturedBody = normalizeComposerText(composerValueRef.current);
-      const replyTo = selectedReplyContext;
       setPendingOwnerMessages((current) => [...current, {
         clientId,
-        text: capturedBody,
+        text: captionText,
         createdAt: new Date().toISOString(),
         mode: 'attachment',
         status: 'uploading',
@@ -2663,22 +2697,29 @@ export default function IVXOwnerChatRoute() {
         setSelectedReplyContext(null);
       }
       startUploadProgressTimer(clientId);
-      console.log('[IVXOwnerChatRoute] Sending file upload:', upload.name, 'clientId:', clientId, 'replyTo:', replyTo?.messageId ?? null);
-      await attachmentMutation.mutateAsync({ upload, clientId, capturedBody, replyTo });
-      console.log('[IVXOwnerChatRoute] Owner attachment upload completed:', upload.name, 'clientId:', clientId);
+      // Clear composer + draft immediately for snappy UX
+      composerValueRef.current = '';
+      setComposerValue('');
+      setDraftAttachment(null);
+      composerInputRef.current?.clear();
+      Keyboard.dismiss();
+
+      await attachmentMutation.mutateAsync({ upload, clientId, capturedBody: captionText, replyTo });
+      console.log('[IVXOwnerChatRoute] Draft attachment sent with caption length:', captionText.length);
+      const analysisPrompt = trimmed.length > 0
+        ? `${captionText}\n\n${createIVXOwnerFileUnderstandingPrompt(fileInsight)}`
+        : createIVXOwnerFileUnderstandingPrompt(fileInsight);
       await assistantReplyMutation.mutateAsync({
-        text: createIVXOwnerFileUnderstandingPrompt(fileInsight),
+        text: analysisPrompt,
         nonBlocking: true,
       });
     } catch (error) {
-      console.log('[IVXOwnerChatRoute] Attachment picker/send flow failed:', error instanceof Error ? error.message : 'unknown');
+      console.log('[IVXOwnerChatRoute] Draft attachment send failed:', error instanceof Error ? error.message : 'unknown');
       if (!attachmentMutation.isError) {
-        Alert.alert('File pick failed', error instanceof Error ? error.message : 'Unknown file picker error.');
+        Alert.alert('Attachment send failed', error instanceof Error ? error.message : 'Unknown attachment error.');
       }
-    } finally {
-      setIsPickingFile(false);
     }
-  }, [assistantReplyMutation, attachmentMutation, isPickingFile, selectedReplyContext, startUploadProgressTimer]);
+  }, [assistantReplyMutation, attachmentMutation, draftAttachment, selectedReplyContext, startUploadProgressTimer]);
 
   const handleStartReplyToMessage = useCallback((message: ChatMessage) => {
     const previewText = safeTrim(message.text) || safeTrim(message.fileName) || 'Attachment';
@@ -2887,7 +2928,14 @@ export default function IVXOwnerChatRoute() {
   const isRecordingVoice = recorderState.isRecording;
   const isTranscribingVoice = transcribeVoiceMutation.isPending;
   const isBusy = messageSendPending || attachmentMutation.isPending || isPickingFile || isRecordingVoice || isTranscribingVoice;
-  const sendingDisabled = !composerHasText || isBusy;
+  const sendingDisabled = (!composerHasText && !draftAttachment) || isBusy;
+  const isAIWorking = aiReplyPending || messageSendPending || attachmentMutation.isPending;
+  const aiWorkingMessage = useMemo<string>(() => {
+    if (attachmentMutation.isPending) return 'Uploading attachment...';
+    if (messageSendPending) return 'Delivering your message...';
+    if (aiReplyPending) return 'IVX IA is working...';
+    return '';
+  }, [aiReplyPending, attachmentMutation.isPending, messageSendPending]);
   const attachmentDisabled = attachmentMutation.isPending || isPickingFile || isRecordingVoice || isTranscribingVoice;
   const composerPlaceholder = attachmentMutation.isPending
     ? 'Uploading attachment...'
@@ -4436,6 +4484,46 @@ export default function IVXOwnerChatRoute() {
                 }
               }}
             >
+              {isAIWorking ? (
+                <View style={styles.typingIndicator} testID="ivx-owner-typing-indicator" accessibilityLiveRegion="polite">
+                  <View style={styles.typingDot} />
+                  <View style={[styles.typingDot, styles.typingDotMid]} />
+                  <View style={styles.typingDot} />
+                  <Text style={styles.typingText} numberOfLines={1}>{aiWorkingMessage}</Text>
+                </View>
+              ) : null}
+              {draftAttachment ? (
+                <View style={styles.draftAttachmentRow} testID="ivx-owner-draft-attachment">
+                  {draftAttachment.isImage && draftAttachment.upload.uri ? (
+                    <Image
+                      source={{ uri: draftAttachment.upload.uri }}
+                      style={styles.draftAttachmentThumb}
+                      resizeMode="cover"
+                      accessibilityLabel="Attached image preview"
+                    />
+                  ) : (
+                    <View style={[styles.draftAttachmentThumb, styles.draftAttachmentFileIcon]}>
+                      <Paperclip size={20} color={Colors.primary} />
+                    </View>
+                  )}
+                  <View style={styles.draftAttachmentMeta}>
+                    <Text style={styles.draftAttachmentName} numberOfLines={1}>{draftAttachment.upload.name}</Text>
+                    <Text style={styles.draftAttachmentHint} numberOfLines={1}>
+                      {draftAttachment.isImage ? 'Add a question or tap send to analyze.' : 'Add instructions or tap send to analyze.'}
+                    </Text>
+                  </View>
+                  <Pressable
+                    style={({ pressed }) => [styles.draftAttachmentClose, pressed ? { opacity: 0.6 } : null]}
+                    onPress={handleClearDraftAttachment}
+                    accessibilityRole="button"
+                    accessibilityLabel="Remove attached file"
+                    testID="ivx-owner-draft-attachment-clear"
+                    hitSlop={8}
+                  >
+                    <X size={14} color={Colors.text} />
+                  </Pressable>
+                </View>
+              ) : null}
               {selectedReplyContext ? (
                 <View style={styles.replyComposerPreview} testID="ivx-owner-reply-preview">
                   <View style={styles.replyComposerAccent} />
@@ -5923,6 +6011,83 @@ const styles = StyleSheet.create({
     color: Colors.text,
     fontSize: 12,
     fontWeight: '600' as const,
+  },
+  typingIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+    backgroundColor: 'rgba(246,200,95,0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(246,200,95,0.28)',
+    marginBottom: 4,
+  },
+  typingDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 999,
+    backgroundColor: '#F6C85F',
+    opacity: 0.55,
+  },
+  typingDotMid: {
+    opacity: 0.85,
+  },
+  typingText: {
+    flex: 1,
+    color: '#F6C85F',
+    fontSize: 11,
+    fontWeight: '700' as const,
+    letterSpacing: 0.2,
+    marginLeft: 4,
+  },
+  draftAttachmentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    padding: 8,
+    borderRadius: 13,
+    borderWidth: 1,
+    borderColor: 'rgba(246,200,95,0.30)',
+    backgroundColor: 'rgba(246,200,95,0.06)',
+    marginBottom: 4,
+  },
+  draftAttachmentThumb: {
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    backgroundColor: '#12161C',
+    overflow: 'hidden',
+  },
+  draftAttachmentFileIcon: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(246,200,95,0.28)',
+  },
+  draftAttachmentMeta: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  draftAttachmentName: {
+    color: Colors.text,
+    fontSize: 13,
+    fontWeight: '700' as const,
+  },
+  draftAttachmentHint: {
+    color: '#B8C0CC',
+    fontSize: 10,
+    fontWeight: '600' as const,
+  },
+  draftAttachmentClose: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.06)',
   },
   composerDock: {
     paddingHorizontal: 10,

@@ -1645,6 +1645,23 @@ async function subscribeToOwnerMessages(
   const channelName = `ivx-owner-room:${conversation.id}`;
   const teardownKey = `${channelName}:${tables.messages}:${realtimeSchema}`;
   const realtimeConversationField = tables.schema === 'generic' ? 'room_id' : 'conversation_id';
+
+  // Block 22R fix: prevent realtime channel duplication on reconnect/remount.
+  // If a previous subscription with the same teardownKey is still registered,
+  // tear it down on the supabase client AND wait for the in-flight teardown
+  // promise to settle before creating a fresh channel. Without this, fast
+  // remounts/reconnects produced N parallel channels that each delivered the
+  // same INSERT and duplicated assistant messages on the chat surface.
+  if (activeOwnerRealtimeSubscriptions.has(teardownKey)) {
+    console.log('[IVXChatService] Pre-existing owner realtime channel detected, removing before resubscribe:', teardownKey, 'activeChannelCount:', activeOwnerRealtimeSubscriptions.size);
+    try {
+      await client.removeChannel(client.channel(channelName) as never);
+    } catch (preTeardownError) {
+      console.log('[IVXChatService] Pre-resubscribe teardown note:', preTeardownError instanceof Error ? preTeardownError.message : 'unknown');
+    }
+    activeOwnerRealtimeSubscriptions.delete(teardownKey);
+  }
+
   const channel = client.channel(channelName).on('postgres_changes', {
     event: 'INSERT',
     schema: realtimeSchema,

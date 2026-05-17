@@ -348,15 +348,87 @@ function readNullableString(value: unknown): string | null {
 }
 
 function formatStructuredToolAnswer(summary: string, toolOutputs: OwnerToolOutput[]): string {
-  const toolNames = Array.from(new Set(toolOutputs.map((output) => output.tool))).join('+');
-  return [
-    `Tool used: ${toolNames}`,
-    '',
-    JSON.stringify({
-      summary,
-      toolOutputs,
-    }, null, 2),
-  ].join('\n');
+  return formatOwnerToolAnswerHumanReadable(summary, toolOutputs);
+}
+
+const INTERNAL_TOOL_NAME_TO_LABEL: Record<string, string> = {
+  logs_status_summary: 'Backend log access',
+  fix_queue_status: 'Queue runtime check',
+  get_current_time: 'Current time',
+  read_database_schema: 'Database schema review',
+  inspect_supabase_schema: 'Database schema review',
+  inspect_rls_policies: 'Database access policy review',
+  query_database: 'Database read query',
+  run_select_query: 'Database read query',
+  run_write_query: 'Database write request',
+  read_logs: 'Service log access',
+  search_code: 'Codebase search',
+  list_storage_buckets: 'Storage bucket review',
+  inspect_edge_functions: 'Edge function review',
+  inspect_auth_users: 'Auth user review',
+  execute_rpc: 'RPC execution request',
+  apply_migration: 'Migration application request',
+  github_repo_status: 'GitHub repository check',
+  deployment_health_check: 'Deployment health check',
+  dns_tls_check: 'DNS/TLS check',
+  setup_export: 'Setup export',
+  project_registry: 'Project registry',
+  project_surface_health: 'Project surface health',
+  code_repo_control_status: 'Repository control status',
+  deployment_readiness_matrix: 'Deployment readiness',
+  owner_control_audit: 'Owner control audit',
+  owner_control_readiness_report: 'Owner control readiness',
+  final_completion_report: 'Final completion report',
+  run_verification_tests: 'Verification tests',
+  environment_checklist: 'Environment checklist',
+  credential_request_manifest: 'Credential request manifest',
+  supabase_readiness_check: 'Supabase readiness',
+  aws_deployment_inventory: 'AWS deployment inventory',
+};
+
+function humanizeInternalToolName(tool: string): string {
+  if (INTERNAL_TOOL_NAME_TO_LABEL[tool]) {
+    return INTERNAL_TOOL_NAME_TO_LABEL[tool];
+  }
+  if (tool.startsWith('aws_')) return 'AWS readiness check';
+  return tool.replace(/_/g, ' ').replace(/\b\w/g, (m) => m.toUpperCase());
+}
+
+function describeOwnerToolOutputHumanReadable(output: OwnerToolOutput): string {
+  const label = humanizeInternalToolName(output.tool);
+  if (!output.ok) {
+    const reason = readTrimmedString(output.error) || 'tool did not complete';
+    return `${label} could not complete: ${reason}.`;
+  }
+  if (output.tool === 'get_current_time') {
+    const data = output.output && typeof output.output === 'object' ? output.output as Record<string, unknown> : {};
+    const formatted = readTrimmedString(data.formatted);
+    const timezone = readTrimmedString(data.timezone) || 'UTC';
+    return formatted ? `Current time (${timezone}): ${formatted}.` : `Current time read in ${timezone}.`;
+  }
+  if (output.tool === 'read_logs') {
+    const data = output.output && typeof output.output === 'object' ? output.output as Record<string, unknown> : {};
+    const available = data.available === true;
+    return available
+      ? `${label} completed.`
+      : `${label}: backend console logs are available internally, but external hosted log viewer is not connected yet.`;
+  }
+  if (output.tool === 'inspect_supabase_schema' || output.tool === 'inspect_rls_policies') {
+    return `${label} completed; details kept in internal logs only.`;
+  }
+  return `${label} completed.`;
+}
+
+function formatOwnerToolAnswerHumanReadable(summary: string, toolOutputs: OwnerToolOutput[]): string {
+  const lines: string[] = [];
+  if (readTrimmedString(summary)) {
+    lines.push(readTrimmedString(summary));
+  }
+  for (const output of toolOutputs) {
+    lines.push(`- ${describeOwnerToolOutputHumanReadable(output)}`);
+  }
+  lines.push('No secrets were exposed.');
+  return lines.join('\n');
 }
 
 function hasStructuredInternalRows(value: string): boolean {
@@ -410,7 +482,10 @@ function assertVisibleOwnerAIAnswer(value: string): string {
     return CLEAN_OWNER_AI_RECOVERY_ANSWER;
   }
 
-  return trimmed;
+  // Final sanitizer: strip internal tool names, debug headers, and raw JSON markers from the visible chat answer.
+  // Raw tool data still flows through internal toolOutputs/audit logs; only chat-surface text is humanized here.
+  const sanitized = sanitizeOwnerAIAnswerForChat(trimmed);
+  return sanitized || CLEAN_OWNER_AI_RECOVERY_ANSWER;
 }
 
 type SafeOwnerAIResponsePayload = Pick<IVXOwnerAIResponse, 'requestId' | 'conversationId' | 'answer' | 'model' | 'status'>;
@@ -2729,9 +2804,10 @@ function resolveAIBrainToolRoutes(prompt: string): AIBrainToolRoute[] {
 }
 
 function summarizeAIBrainToolResult(result: IVXAIBrainToolResult): string {
-  const missing = result.missingEnvNames.length > 0 ? ` Missing access: ${result.missingEnvNames.join(', ')}.` : '';
+  const label = humanizeInternalToolName(result.tool);
+  const missing = result.missingEnvNames.length > 0 ? ` One requirement is missing: ${result.missingEnvNames.join(', ')}.` : '';
   if (!result.ok) {
-    return `${result.tool}: not verified. ${result.error ?? 'Tool did not complete.'}${missing}`;
+    return `${label} could not be verified. ${result.error ?? 'It did not complete.'}${missing}`;
   }
   const output = result.output && typeof result.output === 'object' && !Array.isArray(result.output) ? result.output as Record<string, unknown> : {};
   if (result.tool === 'environment_checklist') {
@@ -2800,11 +2876,43 @@ function summarizeAIBrainToolResult(result: IVXAIBrainToolResult): string {
 }
 
 function formatAIBrainToolAnswer(results: IVXAIBrainToolResult[]): string {
-  return [
-    'IVX AI Brain tool executor results:',
-    ...results.map((result, index) => `${index + 1}. ${summarizeAIBrainToolResult(result)}`),
-    'No secret values are shown. Missing access is listed by environment variable name only.',
-  ].join('\n');
+  const lines: string[] = ['Here is what I checked:'];
+  for (const result of results) {
+    lines.push(`- ${summarizeAIBrainToolResultNatural(result)}`);
+  }
+  const missingAccess = Array.from(new Set(results.flatMap((r) => r.missingEnvNames))).filter(Boolean);
+  if (missingAccess.length > 0) {
+    lines.push(`One or more checks are blocked until these access requirements are configured: ${missingAccess.join(', ')}.`);
+  }
+  lines.push('No secrets were exposed.');
+  return lines.join('\n');
+}
+
+function summarizeAIBrainToolResultNatural(result: IVXAIBrainToolResult): string {
+  // summarizeAIBrainToolResult already returns a label + status sentence per tool.
+  // Strip any residual raw tool-name prefix and normalize for natural reading.
+  const raw = summarizeAIBrainToolResult(result);
+  return sanitizeRawToolNamesInText(raw);
+}
+
+const RAW_TOOL_NAME_PATTERN = /\b(logs_status_summary|fix_queue_status|get_current_time|read_database_schema|inspect_supabase_schema|inspect_rls_policies|query_database|run_select_query|run_write_query|read_logs|search_code|list_storage_buckets|inspect_edge_functions|inspect_auth_users|execute_rpc|apply_migration|github_repo_status|deployment_health_check|dns_tls_check|setup_export|project_registry|project_surface_health|code_repo_control_status|deployment_readiness_matrix|owner_control_audit|owner_control_readiness_report|final_completion_report|run_verification_tests|environment_checklist|credential_request_manifest|supabase_readiness_check|aws_deployment_inventory|iam_readiness_check|s3_readiness_check|cloudfront_readiness_check|route53_dns_check|aws_ssm_readiness_check|aws_organizations_check)\b/g;
+
+function sanitizeRawToolNamesInText(value: string): string {
+  return value.replace(RAW_TOOL_NAME_PATTERN, (match) => humanizeInternalToolName(match));
+}
+
+function sanitizeOwnerAIAnswerForChat(value: string): string {
+  if (!value) return value;
+  let output = value;
+  // Strip leaked debug headers.
+  output = output.replace(/^IVX AI Brain tool executor results:\s*/gim, 'Here is what I checked:\n');
+  output = output.replace(/^Tool used:[^\n]*\n?/gim, '');
+  output = output.replace(/^selected(?:Intent|Tool):[^\n]*\n?/gim, '');
+  // Replace raw tool identifiers with human labels.
+  output = sanitizeRawToolNamesInText(output);
+  // Drop bare numeric prefixes like "1. " left from the old executor format on otherwise-empty lines.
+  output = output.replace(/^\s*\d+\.\s*$/gm, '');
+  return output.trim();
 }
 
 async function runAIBrainToolsForPrompt(prompt: string): Promise<{
@@ -4738,7 +4846,21 @@ async function handleIVXOwnerAIRequestInternal(request: Request): Promise<Respon
       method: request.method,
       headers: request.headers,
     });
-    const body = await request.json() as IVXOwnerAIRequest;
+    // Block 22R fix: read the body once, defensively. Empty/invalid bodies
+    // (e.g. unauthenticated probes, double-consumed streams from upstream
+    // middleware) previously surfaced as `Invalid state: ReadableStream is
+    // locked` HTTP 500. We now coerce any read failure to a clean 400.
+    let body: IVXOwnerAIRequest;
+    try {
+      const parsed = await request.json().catch(() => null);
+      if (!parsed || typeof parsed !== 'object') {
+        return ownerOnlyJson({ error: 'Invalid or empty JSON body.' }, 400);
+      }
+      body = parsed as IVXOwnerAIRequest;
+    } catch (bodyError) {
+      console.log('[IVXOwnerAIBackend] Request body unreadable, returning 400:', bodyError instanceof Error ? bodyError.message : 'unknown');
+      return ownerOnlyJson({ error: 'Request body unreadable.' }, 400);
+    }
     const prompt = readTrimmedString(body.message);
     const mode = body.mode === 'command' ? 'command' : 'chat';
     const persistUserMessage = body.persistUserMessage === true;
@@ -4800,14 +4922,19 @@ async function handleIVXOwnerAIRequestInternal(request: Request): Promise<Respon
         command: preAuthCommand,
         status: commandResult.status,
       });
+      const timeAnswer = (() => {
+        const r = commandResult.result as Record<string, unknown> | null | undefined;
+        const formatted = r && typeof r === 'object' ? readTrimmedString((r as Record<string, unknown>).formatted) : '';
+        const tz = r && typeof r === 'object' ? readTrimmedString((r as Record<string, unknown>).timezone) || 'UTC' : 'UTC';
+        if (commandResult.status === 'success' && formatted) {
+          return `Current time (${tz}): ${formatted}.`;
+        }
+        return commandResult.status === 'success' ? `Current time read in ${tz}.` : 'Current time check could not complete.';
+      })();
       return ownerOnlyJson({
         requestId,
         conversationId: 'runtime-time-tool',
-        answer: JSON.stringify({
-          tool: preAuthCommand,
-          status: commandResult.status,
-          result: commandResult.result,
-        }, null, 2),
+        answer: timeAnswer,
         model: 'executeTool:/time-now',
         status: 'ok',
         source: 'remote_api',
