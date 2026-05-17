@@ -1409,3 +1409,64 @@ All later phases depend on these tables existing and on the typed persistence la
   - Local implementation is complete and validated.
   - GitHub/Render production proof is not complete until these changed files are promoted to GitHub `main`, Render deploy reaches `live`, and live `/api/ivx/agent-jobs/status` returns HTTP 200 for an authenticated owner.
   - Do not claim Block 22 production completion until one real queued job is created, the server-side worker completes it after the phone/app can be ignored, job logs are saved, and public chat still returns `source: "chatgpt"`.
+
+### Block 22P — Production proof complete (2026-05-17)
+
+- Files changed for Block 22 code + proof:
+  - `backend/api/ivx-owner-ai.ts` — fixed the owner AI tool-router loop and hardened POST request handling so manual/no-tools prompts are answered before tool routing without re-reading a locked request body.
+  - `expo/src/modules/ivx-owner-ai/services/ivxAIRequestService.ts` — client-side manual-answer mode mirrors server routing before local tool/schema interception.
+  - `backend/api/ivx-agent-jobs.ts` — server-side Block 22 job queue/worker runtime, logs, retry/cancel/approve, automatic backend loop, plus intentional forced-failure proof path.
+  - `backend/hono.ts` — registered Block 22 job and worker routes.
+  - `expo/src/modules/ivx-developer/agentJobsService.ts` — typed owner-authenticated job API client.
+  - `expo/app/admin/ivx-agent-jobs.tsx` — owner admin screen `/admin/ivx-agent-jobs` for queue/status/logs/actions.
+  - `expo/app/admin/_layout.tsx` — admin stack registration.
+  - `expo/app/admin/owner-controls.tsx` — Owner Controls tile.
+  - `expo/app/admin/ivx-developer-actions.tsx`, `expo/app/ivx/chat.tsx`, `expo/shared/ivx/types.ts`, `PLAN.md` — supporting router debug / admin / proof updates from the Block 22 sync set.
+- Validation before production promotion:
+  - Root/backend `bunx tsc --noEmit --pretty false --noErrorTruncation` passed.
+  - Expo `bunx tsc --noEmit --pretty false --noErrorTruncation` passed.
+  - `runChecks(expo)` passed.
+- GitHub promotion proof:
+  - Initial Block 22 commit: `9b176016d830e30beb317b7820afb3f4efbf208f` (`feat: add Block 22 owner AI router and agent worker runtime`).
+  - Final hardening commit: `55a3a36a5815d17dc2fa7b3a5633211cdb2018bb` (`fix: harden Block 22 owner AI request and worker failure proof`).
+  - GitHub repo: `ibb142/rork-global-real-estate-invest`, branch `main`.
+- Render deploy proof:
+  - Service: `ivx-holdings-platform` (`srv-d7t9ivreo5us73ftose0`).
+  - Final live deploy: `dep-d84kkhuq1p3s73fbbb70`.
+  - Commit deployed: `55a3a36a5815d17dc2fa7b3a5633211cdb2018bb`.
+  - Status: `live`.
+  - Health check: `GET https://ivx-holdings-platform.onrender.com/health` → HTTP 200, `ok: true`, marker `ivx-owner-ai-hono-2026-05-14t-render-validator-routes`.
+- Tables created/proven by live backend runtime:
+  - `public.ivx_agent_jobs`.
+  - `public.ivx_agent_job_logs`.
+  - Live `/api/ivx/agent-jobs/status` returned `tables: ["ivx_agent_jobs", "ivx_agent_job_logs"]`.
+- Routes added and production-tested with owner bearer auth:
+  - `GET /api/ivx/agent-jobs/status`.
+  - `GET /api/ivx/agent-jobs`.
+  - `POST /api/ivx/agent-jobs`.
+  - `POST /api/ivx/agent-jobs/:jobId/retry`.
+  - `POST /api/ivx/agent-jobs/:jobId/cancel`.
+  - `POST /api/ivx/agent-jobs/:jobId/approve`.
+  - `POST /api/ivx/agent-worker/run-once`.
+- Owner AI router production proof:
+  - Prompt: `No tools. Answer manually: can IVX IA work 24/7 if my phone is off?`
+  - HTTP 200.
+  - `selectedIntent: "infrastructure_runtime"`.
+  - `selectedTool: null`.
+  - `routerDebug.manualMode: true`.
+  - `routerDebug.route: "manual_answer"`.
+  - Answer was plain-text infrastructure/runtime guidance.
+  - `containsSupabaseSchemaMetadata: false`.
+- Worker production proof:
+  - Worker status returned `serverSide: true`, `loopStarted: true`, `intervalMs: 15000`, `independentOfPhone: true`, `independentOfRorkChat: true`, `independentOfAppOpen: true`.
+  - Completed job created: `495a5806-128a-47c8-b0e4-674f11a653dd` → `status: completed`, result includes `serverSide: true`, `independentOfPhone: true`, `independentOfAppOpen: true`, `independentOfRorkChat: true`, marker `ivx-agent-worker-2026-05-17t-block22`.
+  - Completed job logs saved in `ivx_agent_job_logs`: `created`, `picked`, `running`, `work_step`, `completed`.
+  - Waiting-approval job created: `d9e0cc1f-5d28-4b0b-a391-f090062e2388` → `status: waiting_approval`, `approvalRequired: true`, log `created`.
+  - Failed job created: `d1488818-5b67-4fa1-a565-85001a8a1f4a` → `status: failed`, error `Intentional Block 22 proof failure requested.`, logs `created`, `picked`, `running`, `forced_failure`, `failed`.
+  - Proof elapsed time: ~28.9s from job creation to completed/waiting/failed proof; no phone screen, app session, or Rork chat loop was used as the worker.
+- Public chat non-regression proof:
+  - `POST /api/public/chat` returned HTTP 200.
+  - `source: "chatgpt"`.
+  - `model: "openai/gpt-4o-mini"`.
+  - Proof token was returned in the answer.
+- Final status: **Block 22 is complete in production. Owner AI no-tools/manual/infrastructure prompts no longer route into Supabase schema inspection, Block 22 backend worker jobs run server-side on Render, job state/log tables exist and contain completed/waiting/failed proof rows, and public chat remains ChatGPT-live.**
