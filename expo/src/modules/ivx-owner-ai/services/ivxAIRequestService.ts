@@ -338,14 +338,32 @@ type OwnerCapabilityIntent = 'self_report' | 'supabase_schema_access' | 'backend
 type OwnerDevelopmentActionIntent = 'keyboard_overlap_fix' | 'implementation_task' | 'owner_brain_proof' | 'public_deploy';
 type OwnerManualRouterIntent = 'manual_answer' | 'infrastructure_runtime' | 'aws' | 'block22_worker_diagnosis';
 
+function hasNoSchemaInspectionDirective(value: unknown): boolean {
+  const text = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  return /\b(no|without|skip|disable|block|hard[-\s]?block)\s+(?:supabase\s+)?schema\s+inspection\b/.test(text)
+    || /\bno\s+(?:supabase\s+)?schema\b/.test(text)
+    || /\bdo\s+not\s+inspect\s+(?:supabase\s+)?schema\b/.test(text)
+    || /\bdon't\s+inspect\s+(?:supabase\s+)?schema\b/.test(text)
+    || /\bdont\s+inspect\s+(?:supabase\s+)?schema\b/.test(text);
+}
+
+function hasRuntimeWorkerTestSignal(value: unknown): boolean {
+  const text = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  return /\b(runtime|production|test|worker|job|queue|background|server[-\s]?side|block\s*22)\b/.test(text);
+}
+
 function hasManualAnswerDirective(value: unknown): boolean {
   const text = typeof value === 'string' ? value.trim().toLowerCase() : '';
-  return /\b(no\s+tools?|without\s+tools?|manual\s+answer|answer\s+manually|plain\s+text|do\s+not\s+(?:use\s+tools?|inspect)|don't\s+(?:use\s+tools?|inspect)|dont\s+(?:use\s+tools?|inspect))\b/.test(text);
+  return /\b(no\s+tools?|without\s+tools?|manual\s+answer|answer\s+manually|plain\s+text|do\s+not\s+(?:use\s+tools?|inspect)|don't\s+(?:use\s+tools?|inspect)|dont\s+(?:use\s+tools?|inspect))\b/.test(text)
+    || hasNoSchemaInspectionDirective(value)
+    || /\bno\s+unrelated\s+audits?\b/.test(text)
+    || /\bproduction[-\s]?runtime\s+test\s+only\b/.test(text);
 }
 
 function isBlock22WorkerQuestion(value: unknown): boolean {
   const text = typeof value === 'string' ? value.trim().toLowerCase() : '';
-  return /\b(block\s*22|autonomous\s+worker|background\s+job|worker\s+job|job\s+queue|queued\s+job|server[-\s]?side\s+worker)\b/.test(text);
+  return /\b(block\s*22|autonomous\s+worker|background\s+job|worker\s+job|job\s+queue|queued\s+job|server[-\s]?side\s+worker)\b/.test(text)
+    || /\b(restart\/?redeploy\s+worker|queued\s+jobs?\s+survive\s+restart|queue\s+corruption|approval[-\s]?gated\s+action|production[-\s]?runtime\s+test)\b/.test(text);
 }
 
 function isInfrastructureRuntimeQuestion(value: unknown): boolean {
@@ -368,6 +386,7 @@ function explicitlyRequestsToolUse(value: unknown): boolean {
 }
 
 function resolveManualAnswerIntent(value: unknown): OwnerManualRouterIntent | null {
+  if (hasNoSchemaInspectionDirective(value) && hasRuntimeWorkerTestSignal(value)) return 'infrastructure_runtime';
   if (isBlock22WorkerQuestion(value)) return 'block22_worker_diagnosis';
   if (isInfrastructureRuntimeQuestion(value)) return 'infrastructure_runtime';
   if (isAWSQuestion(value) && !explicitlyRequestsToolUse(value)) return 'aws';
@@ -377,9 +396,9 @@ function resolveManualAnswerIntent(value: unknown): OwnerManualRouterIntent | nu
 function formatManualOwnerAnswer(intent: OwnerManualRouterIntent): string {
   if (intent === 'block22_worker_diagnosis') {
     return [
-      'Block 22 is a backend-worker runtime question, not a Supabase schema question.',
-      'IVX IA can run 24/7 only when jobs are stored in backend job tables and processed by a deployed server-side worker. The phone can create or approve jobs, but the phone screen/app/Rork chat must not be the worker.',
-      'Correct proof is: queued job created, backend worker picks it, status moves running then completed or failed, logs are saved, and the result appears even if the app is closed.',
+      'Block 22 is a production-runtime worker issue, not a Supabase schema-inspection issue.',
+      'Senior-dev routing: verify the backend job tables, worker status, queued/running/waiting_approval/completed/failed transitions, and saved job logs through the Block 22 worker routes. Do not inspect schema just because the owner wrote “no schema inspection.”',
+      'Correct proof: create a queued job, let the Render-side worker pick it up, confirm running then completed or failed, confirm logs are saved, and confirm the result is independent of the phone screen, app session, and Rork chat.',
     ].join('\n');
   }
   if (intent === 'infrastructure_runtime') {
@@ -960,7 +979,7 @@ function resolveSupabaseOwnerActionIntent(value: unknown): SupabaseOwnerActionIn
 
 function resolveSupabaseInspectionIntent(value: unknown): SupabaseInspectionIntent | null {
   const text = typeof value === 'string' ? value.trim().toLowerCase() : '';
-  if (!text || resolveManualAnswerIntent(text)) {
+  if (!text || hasNoSchemaInspectionDirective(text) || resolveManualAnswerIntent(text)) {
     return null;
   }
 
@@ -2608,6 +2627,13 @@ async function requestSupabaseInspectionTool(
   payload: OwnerAIRequestPayload,
   audit: IVXOwnerAIConfigAudit,
 ): Promise<IVXOwnerAIResponse | null> {
+  if (hasNoSchemaInspectionDirective(payload.message)) {
+    console.log('[IVXAIRequestService] Supabase inspection hard-blocked by owner prompt directive:', {
+      requestId: payload.requestId,
+      conversationId: payload.conversationId,
+    });
+    return null;
+  }
   const intent = resolveSupabaseInspectionIntent(payload.message);
   if (!intent) {
     return null;

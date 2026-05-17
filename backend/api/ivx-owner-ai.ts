@@ -1325,14 +1325,32 @@ function resolveOwnerRoomDataIntent(prompt: string): boolean {
     || (/\bwhat\b/.test(normalized) && /\b(owner|ivx|room)\b/.test(normalized) && /\bdata\b/.test(normalized) && /\bavailable\b/.test(normalized));
 }
 
+function hasNoSchemaInspectionDirective(prompt: string): boolean {
+  const normalized = prompt.trim().toLowerCase();
+  return /\b(no|without|skip|disable|block|hard[-\s]?block)\s+(?:supabase\s+)?schema\s+inspection\b/.test(normalized)
+    || /\bno\s+(?:supabase\s+)?schema\b/.test(normalized)
+    || /\bdo\s+not\s+inspect\s+(?:supabase\s+)?schema\b/.test(normalized)
+    || /\bdon't\s+inspect\s+(?:supabase\s+)?schema\b/.test(normalized)
+    || /\bdont\s+inspect\s+(?:supabase\s+)?schema\b/.test(normalized);
+}
+
+function hasRuntimeWorkerTestSignal(prompt: string): boolean {
+  const normalized = prompt.trim().toLowerCase();
+  return /\b(runtime|production|test|worker|job|queue|background|server[-\s]?side|block\s*22)\b/.test(normalized);
+}
+
 function hasManualAnswerDirective(prompt: string): boolean {
   const normalized = prompt.trim().toLowerCase();
-  return /\b(no\s+tools?|without\s+tools?|manual\s+answer|answer\s+manually|plain\s+text|do\s+not\s+(?:use\s+tools?|inspect)|don't\s+(?:use\s+tools?|inspect)|dont\s+(?:use\s+tools?|inspect))\b/.test(normalized);
+  return /\b(no\s+tools?|without\s+tools?|manual\s+answer|answer\s+manually|plain\s+text|do\s+not\s+(?:use\s+tools?|inspect)|don't\s+(?:use\s+tools?|inspect)|dont\s+(?:use\s+tools?|inspect))\b/.test(normalized)
+    || hasNoSchemaInspectionDirective(prompt)
+    || /\bno\s+unrelated\s+audits?\b/.test(normalized)
+    || /\bproduction[-\s]?runtime\s+test\s+only\b/.test(normalized);
 }
 
 function isBlock22WorkerQuestion(prompt: string): boolean {
   const normalized = prompt.trim().toLowerCase();
-  return /\b(block\s*22|autonomous\s+worker|background\s+job|worker\s+job|job\s+queue|queued\s+job|server[-\s]?side\s+worker)\b/.test(normalized);
+  return /\b(block\s*22|autonomous\s+worker|background\s+job|worker\s+job|job\s+queue|queued\s+job|server[-\s]?side\s+worker)\b/.test(normalized)
+    || /\b(restart\/?redeploy\s+worker|queued\s+jobs?\s+survive\s+restart|queue\s+corruption|approval[-\s]?gated\s+action|production[-\s]?runtime\s+test)\b/.test(normalized);
 }
 
 function isInfrastructureRuntimeQuestion(prompt: string): boolean {
@@ -1357,6 +1375,9 @@ function explicitlyRequestsToolUse(prompt: string): boolean {
 }
 
 function resolveManualAnswerIntent(prompt: string): OwnerRouterIntent | null {
+  if (hasNoSchemaInspectionDirective(prompt) && hasRuntimeWorkerTestSignal(prompt)) {
+    return 'infrastructure_runtime';
+  }
   if (isBlock22WorkerQuestion(prompt)) {
     return 'block22_worker_diagnosis';
   }
@@ -1388,9 +1409,9 @@ function buildRouterDebug(input: {
 function formatManualOwnerAnswer(prompt: string, intent: OwnerRouterIntent): string {
   if (intent === 'block22_worker_diagnosis') {
     return [
-      'Block 22 should be judged as a backend-worker problem, not a schema-inspection problem.',
-      'For IVX IA to run jobs while your phone is off, the job runner must live on the backend with a queue, job table, logs table, and a deployed worker or scheduled process. The mobile app can create or approve work, but it must not be the worker.',
-      'If the worker is only running inside the phone session or this chat session, it is not 24/7. If it is deployed on Render or another always-on backend, it can continue without the phone screen or app being open.',
+      'Block 22 is a production-runtime worker issue, not a Supabase schema-inspection issue.',
+      'Senior-dev routing: verify the backend job tables, worker status, queued/running/waiting_approval/completed/failed transitions, and saved job logs through the Block 22 worker routes. Do not inspect schema just because the owner wrote “no schema inspection.”',
+      'Correct proof: create a queued job, let the Render-side worker pick it up, confirm running then completed or failed, confirm logs are saved, and confirm the result is independent of the phone screen, app session, and Rork chat.',
     ].join('\n');
   }
 
@@ -1465,7 +1486,7 @@ function parseOwnerActionInsertPrompt(prompt: string): { schema: string; table: 
 
 function resolveSupabaseInspectionIntent(prompt: string): SupabaseInspectionIntent | null {
   const normalized = prompt.trim().toLowerCase();
-  if (!normalized || resolveManualAnswerIntent(prompt)) {
+  if (!normalized || hasNoSchemaInspectionDirective(prompt) || resolveManualAnswerIntent(prompt)) {
     return null;
   }
 
@@ -2809,6 +2830,10 @@ async function runSupabaseInspectionTool(prompt: string): Promise<{
   answer: string;
   toolName: string;
 } | null> {
+  if (hasNoSchemaInspectionDirective(prompt)) {
+    console.log('[IVXOwnerAIBackend] Supabase inspection hard-blocked by owner prompt directive.');
+    return null;
+  }
   const intent = resolveSupabaseInspectionIntent(prompt);
   if (!intent) {
     return null;
@@ -4681,34 +4706,27 @@ export async function handleIVXOwnerAIRequest(request: Request): Promise<Respons
       } catch {
         userId = null;
       }
-      let respPayload: Record<string, unknown> = {};
-      try {
-        respPayload = await response.clone().json().catch(() => ({})) as Record<string, unknown>;
-      } catch {
-        respPayload = {};
-      }
-      model = typeof respPayload.model === 'string' ? respPayload.model : '';
-      if (!requestId && typeof respPayload.requestId === 'string') {
-        requestId = respPayload.requestId;
-      }
+      // Do not clone/read the response body here. In the deployed runtime,
+      // reading a cloned response stream can lock the original stream before
+      // Hono sends it to the client, causing `ReadableStream is locked`.
       const httpOk = response.status >= 200 && response.status < 300;
       const status: 'success' | 'error' | 'rate_limited' = response.status === 429 ? 'rate_limited' : httpOk ? 'success' : 'error';
-      const errText = typeof respPayload.error === 'string' ? respPayload.error : (httpOk ? null : `http_${response.status}`);
       await logIVXOwnerAIUsageRow({
         requestId,
         userId,
-        provider: typeof respPayload.provider === 'string' ? respPayload.provider : 'chatgpt',
+        provider: 'chatgpt',
         model,
         status,
         latencyMs: Date.now() - startedAt,
-        error: errText,
+        error: httpOk ? null : `http_${response.status}`,
         surface,
         metadata: {
           httpStatus: response.status,
-          endpoint: typeof respPayload.endpoint === 'string' ? respPayload.endpoint : '/api/ivx/owner-ai',
-          source: typeof respPayload.source === 'string' ? respPayload.source : null,
-          fallbackUsed: respPayload.fallbackUsed === true,
+          endpoint: '/api/ivx/owner-ai',
+          source: null,
+          fallbackUsed: false,
           deploymentMarker: DEPLOYMENT_MARKER,
+          responseBodyRead: false,
         },
       });
     } catch (error) {
