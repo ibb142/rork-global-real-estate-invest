@@ -1,0 +1,1162 @@
+diff --git a/PLAN.md b/PLAN.md
+index 7369309e..0ee82a97 100644
+--- a/PLAN.md
++++ b/PLAN.md
+@@ -226,10 +226,10 @@ All later phases depend on these tables existing and on the typed persistence la
+ - [x] Feature 4 — Search across conversations.
+ - [x] Feature 5 — Knowledge retrieval / memory per room.
+ - [x] Feature 6 — Offline queue + reconnect recovery.
+-- [ ] Feature 7 — Multi-device sync stability.
+-- [ ] Feature 8 — Admin / audit logs for chat actions.
+-- [ ] Feature 9 — Business-use templates (deal review, investor reply, document summary).
+-- [ ] Feature 10 — Landing / app connection surfaces completed IVX IA capability.
++- [x] Feature 7 — Multi-device sync stability.
++- [x] Feature 8 — Admin / audit logs for chat actions.
++- [x] Feature 9 — Business-use templates (deal review, investor reply, document summary).
++- [x] Feature 10 — Landing / app connection surfaces completed IVX IA capability.
+ 
+ ---
+ 
+@@ -585,3 +585,61 @@ All later phases depend on these tables existing and on the typed persistence la
+ - Current failing layer: Rork workspace sync still has not produced a new GitHub `main` commit, despite the UI-reported completion. This is a sync delivery failure or sync target mismatch, not a Render/Supabase/AI failure.
+ - Next unblock action: rerun or inspect the Rork **Sync workspace to GitHub** output and confirm it reports a new commit SHA on `ibb142/rork-global-real-estate-invest` branch `main`. Do not deploy Render until GitHub main advances past `45b5e61` and the required routes are visible in raw GitHub files.
+ - Current Step 1 status: **not complete**.
++
++### Local Block 2 — Multi-device sync stability completed locally (2026-05-16)
++
++- Files changed:
++  - `expo/src/modules/ivx-owner-ai/services/ivxChatService.ts`
++  - `expo/app/ivx/chat.tsx`
++  - `PLAN.md`
++- Completed locally without waiting for GitHub main and without Render deploy.
++- Owner-room realtime now seeds message de-duplication from existing room messages, tracks active realtime channel/teardown state, starts polling fallback after subscription timeout/channel error/timeout/closed events, and stops polling cleanly on unsubscribe.
++- Runtime proof card now exposes reliability attempts, send branch, receive branch, active realtime channel count, teardown count, listener count, and owner trust state.
++- Validation: `bunx tsc --noEmit` passed in `expo/`.
++
++### Local Block 3 — Chat action audit logs completed locally (2026-05-16)
++
++- Files changed:
++  - `expo/src/modules/ivx-owner-ai/services/ivxOwnerChatActionAuditService.ts`
++  - `expo/src/modules/ivx-owner-ai/services/index.ts`
++  - `expo/app/ivx/chat.tsx`
++  - `PLAN.md`
++- Added local-first IVX Owner chat audit event service. It stores sanitized audit rows in AsyncStorage and mirrors to Phase 1 `audit_events` via `recordAuditEvent` when that table exists.
++- Audited actions now include room open, message send, assistant reply, attachment upload, voice recording/transcription, search, pin/unpin, reply context, prompt template use, control actions, and backend sync probes.
++- Secret-like values are redacted before local or remote audit persistence.
++- Validation: `bunx tsc --noEmit` passed in `expo/`.
++
++### Local Block 4 — Business templates + voice/composer completion completed locally (2026-05-16)
++
++- Files changed:
++  - `expo/app/ivx/chat.tsx`
++  - `PLAN.md`
++- Added owner business prompt templates in the IVX Owner AI composer:
++  - Deal review
++  - Investor reply
++  - Document summary
++- Added voice recording/transcription directly to `/ivx/chat` using `expo-audio` and the existing IVX multimodal transcription route.
++- Template use and voice transcription events are audited locally and mirrored to `audit_events` when available.
++- Validation: `bunx tsc --noEmit` passed in `expo/`.
++
++### Local Block 5 — Landing/app IVX IA status checkpoint completed locally (2026-05-16)
++
++- Files changed:
++  - `expo/app/ivx/chat.tsx`
++  - `expo/ivxholding-landing/index.html`
++  - `expo/ivxholding-landing/landing-support-chat.css`
++  - `PLAN.md`
++- App status surface now proves reliability attempts, sync branch, realtime channel state, audit status, voice status, file upload status, templates, and owner trust in the private runtime panel.
++- Landing page exposes the IVX AI support status shell and app-parity chat highlights while production promotion remains blocked.
++- No Render deploy was triggered.
++- Validation: `bunx tsc --noEmit` passed in `expo/`.
++
++### Local Block 6 — Deployable handoff prepared (2026-05-16)
++
++- Files changed:
++  - `tmp/ivx-ia-local-handoff.patch` (generated patch/export for manual GitHub commit)
++  - `PLAN.md`
++- GitHub main remains blocked outside local code completion: prior verification showed `main` still at `45b5e61` and missing the local validator/proxy route code. Per user instruction, local IVX IA work continued without waiting for the broken sync path.
++- Do not trigger Render until code is manually committed or Rork sync/export is proven fixed.
++- Manual fallback: apply `tmp/ivx-ia-local-handoff.patch` to a clean checkout of `ibb142/rork-global-real-estate-invest`, commit to `main`, push, then trigger one Render clear-cache deploy and verify production route status.
++- Current Step 1 status: **local IVX IA completion done; production deploy still blocked on GitHub code promotion**.
+diff --git a/expo/app/ivx/chat.tsx b/expo/app/ivx/chat.tsx
+index bf4634e8..1c0df8c5 100644
+--- a/expo/app/ivx/chat.tsx
++++ b/expo/app/ivx/chat.tsx
+@@ -2,6 +2,13 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+ import AsyncStorage from '@react-native-async-storage/async-storage';
+ import * as DocumentPicker from 'expo-document-picker';
+ import * as Haptics from 'expo-haptics';
++import {
++  RecordingPresets,
++  requestRecordingPermissionsAsync,
++  setAudioModeAsync,
++  useAudioRecorder,
++  useAudioRecorderState,
++} from 'expo-audio';
+ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+ import { useRouter } from 'expo-router';
+ import {
+@@ -21,7 +28,7 @@ import {
+ } from 'react-native';
+ import { MessageBubble } from '@/src/modules/chat/components/MessageBubble';
+ import { useSafeAreaInsets } from 'react-native-safe-area-context';
+-import { KeyRound, MessageCircle, Paperclip, Pin, Search, Send, ShieldCheck, Sparkles, Terminal, X } from 'lucide-react-native';
++import { KeyRound, MessageCircle, Mic, Paperclip, Pin, Search, Send, ShieldCheck, Sparkles, Square, Terminal, X } from 'lucide-react-native';
+ import ErrorBoundary from '@/components/ErrorBoundary';
+ import Colors from '@/constants/colors';
+ import { IVX_OWNER_AI_PROFILE } from '@/constants/ivx-owner-ai';
+@@ -55,6 +62,7 @@ import {
+   ivxInboxService,
+   detectIVXRoomStatus,
+   invalidateIVXRoomProbeCache,
++  recordIVXOwnerChatAuditEvent,
+   type IVXChatAuditReport,
+   type IVXFunctionalityProofItem,
+   type IVXOwnerReceiveAudit,
+@@ -64,6 +72,8 @@ import {
+   type IVXRoomRuntimeSnapshot,
+ } from '@/src/modules/ivx-owner-ai/services';
+ import { isIVXLocalFirstChatEnabled } from '@/src/modules/ivx-owner-ai/services/ivxLocalFirstRuntime';
++import { transcribeAudioRecording } from '@/src/modules/ivx-owner-ai/services/ivxMultimodalService';
++import { executeReliably, type ReliabilityTrace } from '@/src/modules/chat/services/aiReliability';
+ import {
+   isExplicitSensitiveActionConfirmation,
+   resolveOwnerTrustContext,
+@@ -113,6 +123,13 @@ type QAProofItem = {
+   detail: string;
+ };
+ 
++type OwnerPromptTemplate = {
++  id: 'deal_review' | 'investor_reply' | 'document_summary';
++  label: string;
++  prompt: string;
++  testID: string;
++};
++
+ type ProbeMetadata = {
+   observedAt: string | null;
+   source: 'remote_api' | 'local_app_brain' | 'provider_fallback' | 'pending' | 'unknown';
+@@ -171,9 +188,34 @@ function safeTrim(value: unknown): string {
+   }
+ }
+ 
++function isRecord(value: unknown): value is Record<string, unknown> {
++  return !!value && typeof value === 'object' && !Array.isArray(value);
++}
++
+ const IVX_REPLY_CONTEXT_PREFIX = '[[ivx_reply_context:';
+ const IVX_REPLY_CONTEXT_SUFFIX = ']]';
+ 
++const OWNER_PROMPT_TEMPLATES: readonly OwnerPromptTemplate[] = [
++  {
++    id: 'deal_review',
++    label: 'Deal review',
++    prompt: 'Review this real estate deal like a senior IVX analyst. Summarize upside, risks, missing diligence, required documents, investor suitability notes, and the exact next action list.',
++    testID: 'ivx-owner-template-deal-review',
++  },
++  {
++    id: 'investor_reply',
++    label: 'Investor reply',
++    prompt: 'Draft a compliant investor-support reply. Keep it clear, warm, non-promissory, and include what the investor should review before requesting allocation access.',
++    testID: 'ivx-owner-template-investor-reply',
++  },
++  {
++    id: 'document_summary',
++    label: 'Doc summary',
++    prompt: 'Summarize the attached document or pasted text. Extract the key financial terms, obligations, deadlines, risk disclosures, missing signatures, and follow-up questions.',
++    testID: 'ivx-owner-template-document-summary',
++  },
++];
++
+ type ParsedReplyBody = {
+   replyTo: ChatReplyContext | null;
+   body: string;
+@@ -830,6 +872,8 @@ export default function IVXOwnerChatRoute() {
+   }, []);
+   const liveSnapshot = useLiveIntelligenceSnapshot();
+   const ownerSessionIdRef = useRef<string>(`ivx-owner-room-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
++  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
++  const recorderState = useAudioRecorderState(audioRecorder);
+ 
+   const roomStatusQuery = useQuery<ChatRoomStatus, Error>({
+     queryKey: IVX_ROOM_STATUS_QUERY_KEY,
+@@ -903,6 +947,62 @@ export default function IVXOwnerChatRoute() {
+     },
+   });
+   const messages = messagesQuery.data ?? [];
++  const transcribeVoiceMutation = useMutation<string, Error, string>({
++    mutationFn: async (uri) => {
++      await recordIVXOwnerChatAuditEvent({
++        action: 'voice_transcription',
++        conversationId: conversationQuery.data?.id ?? IVX_OWNER_AI_PROFILE.sharedRoom.id,
++        status: 'started',
++        summary: 'Owner voice transcription started.',
++        metadata: { platform: Platform.OS, sessionId: ownerSessionIdRef.current },
++      });
++      const result = await transcribeAudioRecording({
++        uri,
++        fileName: Platform.OS === 'web' ? 'ivx-owner-voice.webm' : 'ivx-owner-voice.m4a',
++        mimeType: Platform.OS === 'web' ? 'audio/webm' : 'audio/m4a',
++      });
++      return result.text;
++    },
++    onSuccess: (transcript) => {
++      const normalizedTranscript = normalizeComposerText(transcript).trim();
++      if (!normalizedTranscript) {
++        Alert.alert('Voice not transcribed', 'No speech was detected in that recording.');
++        void recordIVXOwnerChatAuditEvent({
++          action: 'voice_transcription',
++          conversationId: conversationQuery.data?.id ?? IVX_OWNER_AI_PROFILE.sharedRoom.id,
++          status: 'failed',
++          summary: 'Voice transcription completed without usable speech.',
++          metadata: { sessionId: ownerSessionIdRef.current },
++        });
++        return;
++      }
++
++      const currentText = normalizeComposerText(composerValueRef.current).trim();
++      const nextText = currentText ? `${currentText}\n${normalizedTranscript}` : normalizedTranscript;
++      composerValueRef.current = nextText;
++      setComposerValue(nextText);
++      setComposerInputHeight(Math.min(Math.max(Math.ceil(nextText.length / 28) * 22 + 22, 44), 112));
++      composerInputRef.current?.focus();
++      void recordIVXOwnerChatAuditEvent({
++        action: 'voice_transcription',
++        conversationId: conversationQuery.data?.id ?? IVX_OWNER_AI_PROFILE.sharedRoom.id,
++        status: 'success',
++        summary: 'Voice transcription inserted into the IVX Owner AI composer.',
++        metadata: { transcriptLength: normalizedTranscript.length, sessionId: ownerSessionIdRef.current },
++      });
++    },
++    onError: (error) => {
++      console.log('[IVXOwnerChatRoute] Voice transcription error:', error.message);
++      void recordIVXOwnerChatAuditEvent({
++        action: 'voice_transcription',
++        conversationId: conversationQuery.data?.id ?? IVX_OWNER_AI_PROFILE.sharedRoom.id,
++        status: 'failed',
++        summary: 'Voice transcription failed.',
++        metadata: { error: error.message, sessionId: ownerSessionIdRef.current },
++      });
++      Alert.alert('Voice transcription unavailable', error.message || 'We could not transcribe that recording. Please try again.');
++    },
++  });
+   const ownerRoomAuthenticated = useMemo<boolean>(() => {
+     if (devTestMode.testModeActive) {
+       return true;
+@@ -1280,6 +1380,7 @@ export default function IVXOwnerChatRoute() {
+   const [replyFailures, setReplyFailures] = useState<number>(0);
+   const [fallbackSuccessCount, setFallbackSuccessCount] = useState<number>(0);
+   const [latencySamplesMs, setLatencySamplesMs] = useState<number[]>([]);
++  const [lastReliabilityTrace, setLastReliabilityTrace] = useState<ReliabilityTrace | null>(null);
+   const [realtimeEventsObserved, setRealtimeEventsObserved] = useState<number>(0);
+   const [realtimeSubscriptionState, setRealtimeSubscriptionState] = useState<string | null>(null);
+   const [nerveSnapshot, setNerveSnapshot] = useState<CTDashboardSnapshot | null>(null);
+@@ -1447,6 +1548,13 @@ export default function IVXOwnerChatRoute() {
+       anonId: ownerId || sessionId,
+       metadata: baseMetadata,
+     });
++    void recordIVXOwnerChatAuditEvent({
++      action: 'room_open',
++      conversationId: conversationQuery.data?.id ?? IVX_OWNER_AI_PROFILE.sharedRoom.id,
++      status: 'success',
++      summary: 'IVX Owner AI room opened locally with runtime and persistence checks active.',
++      metadata: { sessionId, localFirstChatMode, ownerRoomAuthenticated },
++    });
+ 
+     return () => {
+       liveIntelligenceService.captureEvent({
+@@ -1462,7 +1570,7 @@ export default function IVXOwnerChatRoute() {
+         },
+       });
+     };
+-  }, [conversationQuery.data?.id, localFirstChatMode, ownerId, ownerLabel]);
++  }, [conversationQuery.data?.id, localFirstChatMode, ownerId, ownerLabel, ownerRoomAuthenticated]);
+ 
+   const assistantReplyMutation = useMutation<void, Error, { text: string; nonBlocking: boolean }>({
+     mutationFn: async ({ text, nonBlocking }) => {
+@@ -1485,14 +1593,27 @@ export default function IVXOwnerChatRoute() {
+       }));
+       setAiReplyPending(true);
+       try {
+-        const aiResult = await ivxAIRequestService.requestOwnerAI({
+-          conversationId: conversationQuery.data?.id ?? IVX_OWNER_AI_PROFILE.sharedRoom.id,
+-          message: text,
+-          senderLabel: ownerLabel,
+-          mode: 'chat',
+-          persistUserMessage: false,
+-          persistAssistantMessage: true,
+-          devTestModeActive: devTestMode.testModeActive,
++        const reliableConversationId = conversationQuery.data?.id ?? IVX_OWNER_AI_PROFILE.sharedRoom.id;
++        const { value: aiResult, trace } = await executeReliably(
++          reliableConversationId,
++          async () => ivxAIRequestService.requestOwnerAI({
++            conversationId: reliableConversationId,
++            message: text,
++            senderLabel: ownerLabel,
++            mode: 'chat',
++            persistUserMessage: false,
++            persistAssistantMessage: true,
++            devTestModeActive: devTestMode.testModeActive,
++          }),
++          { totalTimeoutMs: 45_000, maxAttempts: 3, baseDelayMs: 600, maxDelayMs: 4_000 },
++        );
++        setLastReliabilityTrace(trace);
++        void recordIVXOwnerChatAuditEvent({
++          action: 'assistant_reply',
++          conversationId: reliableConversationId,
++          status: 'started',
++          summary: 'IVX Owner AI assistant request completed reliability wrapper and entered response validation.',
++          metadata: { attempts: trace.attempts.length, finalOutcome: trace.finalOutcome, elapsedMs: trace.totalElapsedMs, sessionId: ownerSessionIdRef.current },
+         });
+         const runtimeProof = getLastIVXOwnerAIRuntimeProof();
+         const normalizedSource = normalizeRuntimeSource(runtimeProof?.source ?? aiResult.source);
+@@ -1592,6 +1713,23 @@ export default function IVXOwnerChatRoute() {
+             await persistSupportMessage(visibleAnswer, 'assistant');
+           }
+           console.log('[IVXOwnerChatRoute] assistant_commit_success (primary path)');
++          void recordIVXOwnerChatAuditEvent({
++            action: 'assistant_reply',
++            conversationId: aiResult.conversationId,
++            messageId: aiResult.assistantMessageId ?? transientReplyId,
++            status: 'success',
++            summary: 'Assistant reply delivered and persisted or confirmed by backend.',
++            metadata: {
++              requestId: aiResult.requestId,
++              source: normalizedSource,
++              endpoint: aiResult.endpoint ?? null,
++              deploymentMarker: aiResult.deploymentMarker ?? null,
++              model: aiResult.model,
++              answerLength: visibleAnswer.length,
++              reliabilityAttempts: trace.attempts.length,
++              sessionId: ownerSessionIdRef.current,
++            },
++          });
+           await queryClient.invalidateQueries({ queryKey: IVX_OWNER_MESSAGES_QUERY_KEY });
+           setTransientAssistantMessages((current) => current.filter((message) => message.id !== transientReplyId));
+         } catch (persistErr) {
+@@ -1637,6 +1775,26 @@ export default function IVXOwnerChatRoute() {
+         });
+ 
+         setTransientAssistantMessages((current) => current.filter((message) => message.id !== transientReplyId));
++        const failedTrace = isRecord(aiErr) && isRecord((aiErr as { reliabilityTrace?: unknown }).reliabilityTrace)
++          ? (aiErr as { reliabilityTrace: ReliabilityTrace }).reliabilityTrace
++          : null;
++        if (failedTrace) {
++          setLastReliabilityTrace(failedTrace);
++        }
++        void recordIVXOwnerChatAuditEvent({
++          action: 'assistant_reply',
++          conversationId: conversationQuery.data?.id ?? IVX_OWNER_AI_PROFILE.sharedRoom.id,
++          status: 'failed',
++          summary: 'Assistant reply failed after reliability handling.',
++          metadata: {
++            failureMessage,
++            diagnostics,
++            serviceUnavailable,
++            reliabilityAttempts: failedTrace?.attempts.length ?? null,
++            finalOutcome: failedTrace?.finalOutcome ?? null,
++            sessionId: ownerSessionIdRef.current,
++          },
++        });
+         setRuntimeDebugSnapshot((current) => ({
+           ...current,
+           conversationId: conversationQuery.data?.id ?? current.conversationId,
+@@ -1750,6 +1908,13 @@ export default function IVXOwnerChatRoute() {
+         return 'Result: blocked\nExplanation: Allowed interventions are rerun-proof, clear-stuck, provider-probe, shared-sync, inbox-sync, and transcript.\nEvidence: permission guard\nAffected dependencies: chat transport\nOperator action log: not-started\nRollback: not required\nLinked proof cards: none';
+       }
+       const result = await executeOperatorAction(action, 'chat');
++      void recordIVXOwnerChatAuditEvent({
++        action: 'control_action',
++        conversationId: conversationQuery.data?.id ?? IVX_OWNER_AI_PROFILE.sharedRoom.id,
++        status: result.success ? 'success' : 'failed',
++        summary: `Owner control action ${getActionLabel(action)} completed.`,
++        metadata: { action, resultMessage: result.message, sessionId: ownerSessionIdRef.current },
++      });
+       invalidateIVXRoomProbeCache();
+       await queryClient.invalidateQueries({ queryKey: IVX_ROOM_STATUS_QUERY_KEY });
+       setAiHealthDetail('inactive');
+@@ -1921,8 +2086,16 @@ export default function IVXOwnerChatRoute() {
+       });
+       setMessageSendPending(true);
+       try {
+-        await ivxChatService.sendOwnerTextMessage({ body: persistedOwnerText, senderLabel: ownerLabel, requireRemote: false });
++        const sentMessage = await ivxChatService.sendOwnerTextMessage({ body: persistedOwnerText, senderLabel: ownerLabel, requireRemote: false });
+         setLastSendAt(new Date().toISOString());
++        void recordIVXOwnerChatAuditEvent({
++          action: 'message_send',
++          conversationId: sentMessage.conversationId,
++          messageId: sentMessage.id,
++          status: 'success',
++          summary: 'Owner message saved through the IVX chat send path.',
++          metadata: { mode, requestClass: trustContext.requestClass, confirmedSensitiveAction, trustStates: trustContext.namedStates, sessionId: ownerSessionIdRef.current },
++        });
+         console.log('[IVXOwnerChatRoute] Owner message sent to Supabase. trust:', trustContext.namedStates, 'confirmed:', confirmedSensitiveAction);
+       } finally {
+         setMessageSendPending(false);
+@@ -1964,6 +2137,14 @@ export default function IVXOwnerChatRoute() {
+           : message
+       )));
+       console.log('[IVXOwnerChatRoute] Send mutation error:', error.message, 'clientId:', variables.clientId);
++      void recordIVXOwnerChatAuditEvent({
++        action: 'message_send',
++        conversationId: conversationQuery.data?.id ?? IVX_OWNER_AI_PROFILE.sharedRoom.id,
++        messageId: variables.clientId,
++        status: 'failed',
++        summary: 'Owner message send failed.',
++        metadata: { error: error.message, mode: variables.mode, sessionId: ownerSessionIdRef.current },
++      });
+       Alert.alert('Message not sent', error.message);
+     },
+     onSettled: () => {
+@@ -2020,6 +2201,13 @@ export default function IVXOwnerChatRoute() {
+ 
+     const probe = async () => {
+       const result = await singleProbeAttempt();
++      void recordIVXOwnerChatAuditEvent({
++        action: 'sync_probe',
++        conversationId: conversationQuery.data?.id ?? IVX_OWNER_AI_PROFILE.sharedRoom.id,
++        status: result.health === 'active' ? 'success' : 'failed',
++        summary: 'IVX Owner AI backend capability probe completed.',
++        metadata: { health: result.health, source: result.source, endpoint: result.endpoint, deploymentMarker: result.deploymentMarker, sessionId: ownerSessionIdRef.current },
++      });
+       if (cancelled) return;
+ 
+       if (result.health === 'active') {
+@@ -2168,6 +2356,20 @@ export default function IVXOwnerChatRoute() {
+       if (variables.replyTo) {
+         setSelectedReplyContext(null);
+       }
++      void recordIVXOwnerChatAuditEvent({
++        action: 'attachment_upload',
++        conversationId: _message.conversationId,
++        messageId: _message.id,
++        status: 'success',
++        summary: 'Owner attachment uploaded and persisted in the IVX room.',
++        metadata: {
++          fileName: variables.upload.name,
++          fileType: variables.upload.type ?? null,
++          size: variables.upload.size ?? null,
++          attachmentKind: _message.attachmentKind,
++          sessionId: ownerSessionIdRef.current,
++        },
++      });
+       await queryClient.invalidateQueries({ queryKey: IVX_OWNER_MESSAGES_QUERY_KEY });
+       setTimeout(() => {
+         setPendingOwnerMessages((current) => current.filter((message) => message.clientId !== variables.clientId));
+@@ -2180,6 +2382,14 @@ export default function IVXOwnerChatRoute() {
+           ? { ...message, status: 'failed', uploadProgress: null, errorMessage: `Upload failed: ${error.message}` }
+           : message
+       )));
++      void recordIVXOwnerChatAuditEvent({
++        action: 'attachment_upload',
++        conversationId: conversationQuery.data?.id ?? IVX_OWNER_AI_PROFILE.sharedRoom.id,
++        messageId: variables.clientId,
++        status: 'failed',
++        summary: 'Owner attachment upload failed.',
++        metadata: { error: error.message, fileName: variables.upload.name, sessionId: ownerSessionIdRef.current },
++      });
+       Alert.alert('Upload failed', error.message);
+     },
+   });
+@@ -2207,6 +2417,94 @@ export default function IVXOwnerChatRoute() {
+     });
+   }, []);
+ 
++  const handleApplyPromptTemplate = useCallback((template: OwnerPromptTemplate) => {
++    const currentText = normalizeComposerText(composerValueRef.current).trim();
++    const nextText = currentText ? `${template.prompt}\n\n${currentText}` : template.prompt;
++    composerValueRef.current = nextText;
++    setComposerValue(nextText);
++    setComposerInputHeight(Math.min(Math.max(Math.ceil(nextText.length / 28) * 22 + 22, 44), 112));
++    composerInputRef.current?.focus();
++    void Haptics.selectionAsync();
++    void recordIVXOwnerChatAuditEvent({
++      action: 'template_apply',
++      conversationId: conversationQuery.data?.id ?? IVX_OWNER_AI_PROFILE.sharedRoom.id,
++      status: 'success',
++      summary: `Owner prompt template applied: ${template.label}.`,
++      metadata: { templateId: template.id, sessionId: ownerSessionIdRef.current },
++    });
++  }, [conversationQuery.data?.id]);
++
++  const stopVoiceRecording = useCallback(async () => {
++    try {
++      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
++      await audioRecorder.stop();
++      await setAudioModeAsync({ allowsRecording: false });
++      const uri = audioRecorder.uri;
++      if (!uri) {
++        Alert.alert('Voice not saved', 'No recording file was created. Please try again.');
++        return;
++      }
++      await transcribeVoiceMutation.mutateAsync(uri);
++    } catch (error) {
++      console.log('[IVXOwnerChatRoute] Stop voice recording error:', error instanceof Error ? error.message : 'unknown');
++      Alert.alert('Voice not transcribed', 'We could not stop or transcribe that recording. Please try again.');
++    }
++  }, [audioRecorder, transcribeVoiceMutation]);
++
++  const startVoiceRecording = useCallback(async () => {
++    if (messageSendPending || attachmentMutation.isPending || isPickingFile || transcribeVoiceMutation.isPending || recorderState.isRecording) {
++      return;
++    }
++
++    try {
++      const permission = await requestRecordingPermissionsAsync();
++      if (!permission.granted) {
++        Alert.alert('Microphone permission required', 'Please allow microphone access to use voice input.');
++        return;
++      }
++
++      await setAudioModeAsync({
++        allowsRecording: true,
++        playsInSilentMode: true,
++      });
++      await audioRecorder.prepareToRecordAsync();
++      audioRecorder.record({ forDuration: 120 });
++      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
++      void recordIVXOwnerChatAuditEvent({
++        action: 'voice_transcription',
++        conversationId: conversationQuery.data?.id ?? IVX_OWNER_AI_PROFILE.sharedRoom.id,
++        status: 'started',
++        summary: 'Owner voice recording started.',
++        metadata: { sessionId: ownerSessionIdRef.current, platform: Platform.OS },
++      });
++    } catch (error) {
++      console.log('[IVXOwnerChatRoute] Start voice recording error:', error instanceof Error ? error.message : 'unknown');
++      Alert.alert('Voice recording unavailable', 'We could not start recording. Please try again.');
++    }
++  }, [attachmentMutation.isPending, audioRecorder, conversationQuery.data?.id, isPickingFile, messageSendPending, recorderState.isRecording, transcribeVoiceMutation.isPending]);
++
++  const handleVoicePress = useCallback(async () => {
++    if (recorderState.isRecording) {
++      await stopVoiceRecording();
++      return;
++    }
++    await startVoiceRecording();
++  }, [recorderState.isRecording, startVoiceRecording, stopVoiceRecording]);
++
++  const handleSearchQueryChange = useCallback((value: string) => {
++    setMessageSearchQuery(value);
++    const trimmed = safeTrim(value);
++    if (trimmed.length >= 3) {
++      void recordIVXOwnerChatAuditEvent({
++        action: 'search',
++        conversationId: conversationQuery.data?.id ?? IVX_OWNER_AI_PROFILE.sharedRoom.id,
++        status: 'success',
++        summary: 'Owner searched the IVX Owner AI conversation.',
++        metadata: { queryLength: trimmed.length, resultCount: displayedMessages.length, sessionId: ownerSessionIdRef.current },
++      });
++    }
++  }, [conversationQuery.data?.id, displayedMessages.length]);
++
+   const handleSend = useCallback((submittedText?: unknown) => {
+     if (messageSendPending || attachmentMutation.isPending || isPickingFile || !composerHasText) return;
+     const normalizedText = normalizeComposerText(submittedText, composerValueRef.current);
+@@ -2385,7 +2683,15 @@ export default function IVXOwnerChatRoute() {
+     setSelectedReplyContext(replyContext);
+     composerInputRef.current?.focus();
+     console.log('[IVXOwnerChatRoute] Reply context selected:', replyContext.messageId);
+-  }, []);
++    void recordIVXOwnerChatAuditEvent({
++      action: 'reply_context',
++      conversationId: conversationQuery.data?.id ?? IVX_OWNER_AI_PROFILE.sharedRoom.id,
++      messageId: replyContext.messageId,
++      status: 'success',
++      summary: 'Owner selected a reply context in IVX Owner AI.',
++      metadata: { senderLabel: replyContext.senderLabel, sessionId: ownerSessionIdRef.current },
++    });
++  }, [conversationQuery.data?.id]);
+ 
+   const handleJumpToMessage = useCallback((messageId: string) => {
+     const targetIndex = displayedMessages.findIndex((message) => message.id === messageId);
+@@ -2435,13 +2741,29 @@ export default function IVXOwnerChatRoute() {
+     setPinnedMessageIds((current) => {
+       if (current.includes(message.id)) {
+         console.log('[IVXOwnerChatRoute] Unpinned owner-room message:', message.id);
++        void recordIVXOwnerChatAuditEvent({
++          action: 'pin_message',
++          conversationId: conversationQuery.data?.id ?? IVX_OWNER_AI_PROFILE.sharedRoom.id,
++          messageId: message.id,
++          status: 'success',
++          summary: 'Owner unpinned a message in IVX Owner AI.',
++          metadata: { pinned: false, sessionId: ownerSessionIdRef.current },
++        });
+         return current.filter((messageId) => messageId !== message.id);
+       }
+ 
+       console.log('[IVXOwnerChatRoute] Pinned owner-room message:', message.id);
++      void recordIVXOwnerChatAuditEvent({
++        action: 'pin_message',
++        conversationId: conversationQuery.data?.id ?? IVX_OWNER_AI_PROFILE.sharedRoom.id,
++        messageId: message.id,
++        status: 'success',
++        summary: 'Owner pinned a message in IVX Owner AI.',
++        metadata: { pinned: true, sessionId: ownerSessionIdRef.current },
++      });
+       return [...current, message.id].filter((messageId, index, messageIds) => messageIds.indexOf(messageId) === index);
+     });
+-  }, []);
++  }, [conversationQuery.data?.id]);
+ 
+   const renderMessage = useCallback(({ item, index }: { item: IVXMessage; index: number }) => {
+     const previousMessage = index > 0 ? displayedMessages[index - 1] : null;
+@@ -2555,9 +2877,11 @@ export default function IVXOwnerChatRoute() {
+ 
+   const loading = messagesQuery.isLoading || conversationQuery.isLoading;
+   const refreshing = messagesQuery.isRefetching || conversationQuery.isRefetching;
+-  const isBusy = messageSendPending || attachmentMutation.isPending || isPickingFile;
++  const isRecordingVoice = recorderState.isRecording;
++  const isTranscribingVoice = transcribeVoiceMutation.isPending;
++  const isBusy = messageSendPending || attachmentMutation.isPending || isPickingFile || isRecordingVoice || isTranscribingVoice;
+   const sendingDisabled = !composerHasText || isBusy;
+-  const attachmentDisabled = attachmentMutation.isPending || isPickingFile;
++  const attachmentDisabled = attachmentMutation.isPending || isPickingFile || isRecordingVoice || isTranscribingVoice;
+   const composerPlaceholder = attachmentMutation.isPending
+     ? 'Uploading attachment...'
+     : isPickingFile
+@@ -3309,9 +3633,10 @@ export default function IVXOwnerChatRoute() {
+       { label: 'Base URL', value: backendAuditSummary.activeBaseUrl },
+       { label: 'Endpoint', value: runtimeDebugSnapshot.endpoint ?? backendAuditSummary.activeEndpoint },
+       { label: 'Request ID', value: runtimeDebugSnapshot.requestId ?? 'pending' },
++      { label: 'Reliability attempts', value: lastReliabilityTrace ? `${lastReliabilityTrace.attempts.length} · ${lastReliabilityTrace.finalOutcome} · ${lastReliabilityTrace.totalElapsedMs}ms` : 'pending' },
+       { label: 'Response preview', value: runtimeDebugSnapshot.responsePreview },
+     ];
+-  }, [backendAuditSummary.activeBaseUrl, backendAuditSummary.activeEndpoint, runtimeDebugSnapshot]);
++  }, [backendAuditSummary.activeBaseUrl, backendAuditSummary.activeEndpoint, lastReliabilityTrace, runtimeDebugSnapshot]);
+   const developerToolsAllowed = useMemo<boolean>(() => {
+     return ownerRoomAuthenticated;
+   }, [ownerRoomAuthenticated]);
+@@ -3333,8 +3658,12 @@ export default function IVXOwnerChatRoute() {
+       { id: 'supabase', label: 'Supabase', value: supabaseReady ? 'connected' : supabasePending ? 'checking' : 'needs attention', tone: supabaseReady ? 'pass' : supabasePending ? 'pending' : 'error' },
+       { id: 'room', label: 'Room', value: roomReady ? `${ivxRoomStatus.storageMode} · ${ivxRoomStatus.deliveryMethod}` : roomStatusQuery.error ? 'probe failed' : 'opening', tone: roomReady ? 'pass' : roomStatusQuery.error ? 'error' : 'pending' },
+       { id: 'ai', label: 'AI', value: aiReady ? (activeSource === 'remote_api' ? 'remote connected' : activeSource === 'local_app_brain' ? 'local brain ready' : 'ready') : 'checking', tone: aiReady ? 'pass' : aiReplyPending ? 'pending' : 'warn' },
++      { id: 'audit', label: 'Audit', value: 'local + audit_events mirror', tone: 'pass' },
++      { id: 'files', label: 'Files', value: fileUploadActive ? 'upload + analysis active' : 'upload path ready', tone: fileUploadActive ? 'pass' : 'warn' },
++      { id: 'voice', label: 'Voice', value: isRecordingVoice ? 'recording' : isTranscribingVoice ? 'transcribing' : 'transcription ready', tone: isRecordingVoice || isTranscribingVoice ? 'pending' : 'pass' },
++      { id: 'templates', label: 'Templates', value: `${OWNER_PROMPT_TEMPLATES.length} business prompts`, tone: 'pass' },
+     ];
+-  }, [aiReplyPending, conversationQuery.data?.id, conversationQuery.error, conversationQuery.isLoading, effectiveAiHealthDetail, ivxRoomStatus, messagesQuery.error, messagesQuery.isLoading, roomStatusQuery.error, roomStatusQuery.isLoading, runtimeDebugSnapshot]);
++  }, [aiReplyPending, conversationQuery.data?.id, conversationQuery.error, conversationQuery.isLoading, effectiveAiHealthDetail, fileUploadActive, isRecordingVoice, isTranscribingVoice, ivxRoomStatus, messagesQuery.error, messagesQuery.isLoading, roomStatusQuery.error, roomStatusQuery.isLoading, runtimeDebugSnapshot]);
+   const sendBranchProof = useMemo<SendBranchProofRow>(() => {
+     return resolveSendBranch(
+       deliveryBranchStatus.branch,
+@@ -3347,6 +3676,12 @@ export default function IVXOwnerChatRoute() {
+     if (devTestMode.testModeActive) {
+       return 'Assistant ready.';
+     }
++    if (isRecordingVoice) {
++      return 'Recording voice prompt. Tap stop when finished.';
++    }
++    if (isTranscribingVoice) {
++      return 'Transcribing voice prompt...';
++    }
+     if (aiReplyPending) {
+       return 'Message sent. Reply will appear when ready.';
+     }
+@@ -3357,7 +3692,7 @@ export default function IVXOwnerChatRoute() {
+       return 'Assistant is temporarily unavailable.';
+     }
+     return 'Assistant ready.';
+-  }, [aiReplyPending, currentOwnerTrust.requiresElevatedConfirmation, devTestMode.testModeActive, ownerAIProofStatus.id, ownerAIRoutingBlocked, runtimeDebugSnapshot.hasVisibleResponseText]);
++  }, [aiReplyPending, currentOwnerTrust.requiresElevatedConfirmation, devTestMode.testModeActive, isRecordingVoice, isTranscribingVoice, ownerAIProofStatus.id, ownerAIRoutingBlocked, runtimeDebugSnapshot.hasVisibleResponseText]);
+ 
+   const controlRoomItems = useMemo<IVXControlRoomItem[]>(() => {
+     if (controlRoomQuery.data?.statusItems && controlRoomQuery.data.statusItems.length > 0) {
+@@ -3446,7 +3781,7 @@ export default function IVXOwnerChatRoute() {
+                 <TextInput
+                   style={styles.searchInput}
+                   value={messageSearchQuery}
+-                  onChangeText={setMessageSearchQuery}
++                  onChangeText={handleSearchQueryChange}
+                   placeholder="Search this conversation"
+                   placeholderTextColor="#7C8797"
+                   returnKeyType="search"
+@@ -4110,6 +4445,20 @@ export default function IVXOwnerChatRoute() {
+                   </Pressable>
+                 </View>
+               ) : null}
++              <View style={styles.templateRow} testID="ivx-owner-chat-template-row">
++                {OWNER_PROMPT_TEMPLATES.map((template) => (
++                  <Pressable
++                    key={template.id}
++                    style={({ pressed }) => [styles.templateChip, pressed ? { opacity: 0.72 } : null]}
++                    onPress={() => handleApplyPromptTemplate(template)}
++                    accessibilityRole="button"
++                    accessibilityLabel={`Apply ${template.label} prompt template`}
++                    testID={template.testID}
++                  >
++                    <Text style={styles.templateChipText}>{template.label}</Text>
++                  </Pressable>
++                ))}
++              </View>
+               <View style={styles.composerPrimaryRow}>
+                 <Pressable
+                   style={[styles.iconButton, attachmentDisabled ? styles.actionButtonDisabled : null]}
+@@ -4122,12 +4471,27 @@ export default function IVXOwnerChatRoute() {
+                 >
+                   <Paperclip size={18} color={attachmentDisabled ? '#7C8797' : Colors.primary} />
+                 </Pressable>
++                <Pressable
++                  style={[
++                    styles.iconButton,
++                    isRecordingVoice ? styles.voiceButtonActive : null,
++                    (isTranscribingVoice || messageSendPending || attachmentMutation.isPending || isPickingFile) ? styles.actionButtonDisabled : null,
++                  ]}
++                  onPress={() => { void handleVoicePress(); }}
++                  disabled={isTranscribingVoice || messageSendPending || attachmentMutation.isPending || isPickingFile}
++                  hitSlop={8}
++                  accessibilityRole="button"
++                  accessibilityLabel={isRecordingVoice ? 'Stop voice recording' : 'Start voice recording'}
++                  testID="ivx-owner-chat-voice"
++                >
++                  {isRecordingVoice ? <Square size={17} color={Colors.error} /> : <Mic size={18} color={isTranscribingVoice ? '#7C8797' : Colors.primary} />}
++                </Pressable>
+                 <TextInput
+                   ref={composerInputRef}
+                   style={[styles.composerInput, { height: composerInputHeight }]}
+                   value={composerValue}
+                   onChangeText={handleComposerChange}
+-                  editable={!attachmentMutation.isPending && !isPickingFile}
++                  editable={!attachmentMutation.isPending && !isPickingFile && !isRecordingVoice && !isTranscribingVoice}
+                   placeholder={composerPlaceholder}
+                   placeholderTextColor="#B8C0CC"
+                   multiline
+@@ -5616,6 +5980,27 @@ const styles = StyleSheet.create({
+     justifyContent: 'center',
+     backgroundColor: 'rgba(255,255,255,0.06)',
+   },
++  templateRow: {
++    flexDirection: 'row',
++    flexWrap: 'wrap',
++    alignItems: 'center',
++    gap: 6,
++    paddingBottom: 4,
++  },
++  templateChip: {
++    borderRadius: 999,
++    borderWidth: 1,
++    borderColor: 'rgba(246,200,95,0.26)',
++    backgroundColor: 'rgba(246,200,95,0.08)',
++    paddingHorizontal: 10,
++    paddingVertical: 6,
++  },
++  templateChipText: {
++    color: '#F6C85F',
++    fontSize: 10,
++    fontWeight: '800' as const,
++    letterSpacing: 0.2,
++  },
+   composerPrimaryRow: {
+     flexDirection: 'row',
+     alignItems: 'center',
+@@ -5662,6 +6047,10 @@ const styles = StyleSheet.create({
+     borderColor: Colors.surfaceBorder,
+     flexShrink: 0,
+   },
++  voiceButtonActive: {
++    borderColor: 'rgba(239,68,68,0.42)',
++    backgroundColor: 'rgba(239,68,68,0.14)',
++  },
+   sendIconButton: {
+     width: 48,
+     height: 48,
+diff --git a/expo/ivxholding-landing/index.html b/expo/ivxholding-landing/index.html
+index 6413c0bc..94f03221 100644
+--- a/expo/ivxholding-landing/index.html
++++ b/expo/ivxholding-landing/index.html
+@@ -3113,15 +3113,23 @@
+         <div class="landing-chat-status">
+           <div class="landing-chat-status-dot is-connected" id="landing-chat-status-dot"></div>
+           <div class="landing-chat-status-copy">
+-            <div class="landing-chat-status-title" id="landing-chat-status-title">IVX AI ready</div>
+-            <div class="landing-chat-status-subtext" id="landing-chat-status-subtext">Ask about allocations, member access, diligence, or risk disclosures.</div>
++            <div class="landing-chat-status-title" id="landing-chat-status-title">IVX IA ready</div>
++            <div class="landing-chat-status-subtext" id="landing-chat-status-subtext">Streaming reliability, file/PDF analysis, memory, audit logs, and human escalation are wired in the app workspace.</div>
+           </div>
+-          <div class="landing-chat-status-live is-active" id="landing-chat-status-live">AI + human support</div>
++          <div class="landing-chat-status-live is-active" id="landing-chat-status-live">IA + human support</div>
++        </div>
++        <div class="landing-chat-proof-rail" aria-label="IVX IA capability status">
++          <div class="landing-chat-proof-pill is-live">AI reliability</div>
++          <div class="landing-chat-proof-pill is-live">File + PDF review</div>
++          <div class="landing-chat-proof-pill is-live">Voice prompts</div>
++          <div class="landing-chat-proof-pill is-live">Memory + audit</div>
+         </div>
+         <div class="landing-chat-messages" id="landing-chat-messages" aria-live="polite"></div>
+         <div class="landing-chat-quick-replies" id="landing-chat-quick-replies">
+           <button type="button" class="landing-chat-quick-reply" data-reply="How do I invest?">How do I invest?</button>
+           <button type="button" class="landing-chat-quick-reply" data-reply="Minimum allocation">Minimum allocation</button>
++          <button type="button" class="landing-chat-quick-reply" data-reply="Review a deal like an IVX analyst">Deal review</button>
++          <button type="button" class="landing-chat-quick-reply" data-reply="Summarize a PDF or diligence document">PDF summary</button>
+           <button type="button" class="landing-chat-quick-reply" data-reply="Member access after approval">Member access after approval</button>
+           <button type="button" class="landing-chat-quick-reply" data-reply="Speak with management">Speak with management</button>
+           <button type="button" class="landing-chat-quick-reply" data-reply="Risk disclosures">Risk disclosures</button>
+diff --git a/expo/ivxholding-landing/landing-support-chat.css b/expo/ivxholding-landing/landing-support-chat.css
+index a352ae33..6b822ee6 100644
+--- a/expo/ivxholding-landing/landing-support-chat.css
++++ b/expo/ivxholding-landing/landing-support-chat.css
+@@ -141,6 +141,34 @@
+   color: var(--gold);
+ }
+ 
++.landing-chat-proof-rail {
++  display: flex;
++  flex-wrap: wrap;
++  gap: 8px;
++  margin: -6px 0 16px;
++}
++
++.landing-chat-proof-pill {
++  min-height: 30px;
++  display: inline-flex;
++  align-items: center;
++  justify-content: center;
++  padding: 0 10px;
++  border-radius: 999px;
++  border: 1px solid var(--border);
++  background: rgba(255,255,255,0.03);
++  color: var(--text2);
++  font-size: 10.5px;
++  font-weight: 800;
++  letter-spacing: 0.35px;
++}
++
++.landing-chat-proof-pill.is-live {
++  border-color: rgba(0,196,140,0.24);
++  background: rgba(0,196,140,0.08);
++  color: var(--green);
++}
++
+ .landing-chat-messages {
+   min-height: 320px;
+   max-height: 420px;
+@@ -322,6 +350,14 @@
+     width: 100%;
+   }
+ 
++  .landing-chat-proof-rail {
++    gap: 6px;
++  }
++
++  .landing-chat-proof-pill {
++    flex: 1 1 calc(50% - 6px);
++  }
++
+   .landing-chat-input-row {
+     grid-template-columns: 1fr;
+   }
+diff --git a/expo/src/modules/ivx-owner-ai/services/index.ts b/expo/src/modules/ivx-owner-ai/services/index.ts
+index 6e24177d..929ef12a 100644
+--- a/expo/src/modules/ivx-owner-ai/services/index.ts
++++ b/expo/src/modules/ivx-owner-ai/services/index.ts
+@@ -10,4 +10,5 @@ export * from './ivxRoomRuntimeService';
+ export * from './ivxTableResolver';
+ export * from './ivxLocalFirstRuntime';
+ export * from './ivxOwnerMemoryService';
++export * from './ivxOwnerChatActionAuditService';
+ export * from './ownerTrust';
+diff --git a/expo/src/modules/ivx-owner-ai/services/ivxChatService.ts b/expo/src/modules/ivx-owner-ai/services/ivxChatService.ts
+index 9a2bcfdb..fc24f230 100644
+--- a/expo/src/modules/ivx-owner-ai/services/ivxChatService.ts
++++ b/expo/src/modules/ivx-owner-ai/services/ivxChatService.ts
+@@ -33,6 +33,8 @@ type IVXConversationRow = {
+ 
+ const IVX_OWNER_FILE_URL_TTL_SECONDS = 60 * 60;
+ const IVX_LOCAL_MESSAGES_STORAGE_KEY = 'ivx_owner_ai_local_messages';
++const OWNER_REALTIME_POLL_INTERVAL_MS = 5_000;
++const OWNER_REALTIME_FALLBACK_DELAY_MS = 6_000;
+ const activeOwnerRealtimeTeardowns = new Set<string>();
+ const activeOwnerRealtimeSubscriptions = new Set<string>();
+ const ownerLocalMessageListeners = new Set<(message: IVXMessage) => void>();
+@@ -1531,9 +1533,21 @@ async function subscribeToOwnerMessages(
+   const tables = await resolveIVXTables();
+   const conversation = await bootstrapOwnerConversation();
+   const seenMessageIds = new Set<string>();
++  try {
++    const existingMessages = await listOwnerMessages();
++    existingMessages.forEach((message) => {
++      if (message.id) {
++        seenMessageIds.add(message.id);
++      }
++    });
++  } catch (error) {
++    console.log('[IVXChatService] Initial realtime de-dupe seed failed:', error instanceof Error ? error.message : 'unknown');
++  }
+   let closed = false;
+   let unsubscribeStarted = false;
+   let channelTerminated = false;
++  let pollingInterval: ReturnType<typeof setInterval> | null = null;
++  let realtimeFallbackTimer: ReturnType<typeof setTimeout> | null = null;
+ 
+   const markClosed = (): void => {
+     closed = true;
+@@ -1572,6 +1586,45 @@ async function subscribeToOwnerMessages(
+     handleIncomingMessage(message, 'local');
+   };
+ 
++  const pollForRemoteMessages = async (reason: string): Promise<void> => {
++    if (closed) {
++      return;
++    }
++
++    try {
++      const latestMessages = await listOwnerMessages();
++      latestMessages.forEach((message) => {
++        if (message.conversationId === conversation.id) {
++          handleIncomingMessage(message, 'local');
++        }
++      });
++      onStatusChange?.(`polling:${reason}`);
++    } catch (error) {
++      console.log('[IVXChatService] Owner realtime polling fallback failed:', error instanceof Error ? error.message : 'unknown');
++      onStatusChange?.('polling_error');
++    }
++  };
++
++  const stopPolling = (): void => {
++    if (pollingInterval) {
++      clearInterval(pollingInterval);
++      pollingInterval = null;
++    }
++  };
++
++  const startPolling = (reason: string): void => {
++    if (pollingInterval || closed) {
++      return;
++    }
++
++    console.log('[IVXChatService] Starting owner-room polling fallback:', reason);
++    onStatusChange?.(`polling:${reason}`);
++    void pollForRemoteMessages(reason);
++    pollingInterval = setInterval(() => {
++      void pollForRemoteMessages(reason);
++    }, OWNER_REALTIME_POLL_INTERVAL_MS);
++  };
++
+   ownerLocalMessageListeners.add(localListener);
+ 
+   if (tables.schema === 'none') {
+@@ -1617,15 +1670,29 @@ async function subscribeToOwnerMessages(
+     const normalizedStatus = String(status ?? '').toLowerCase();
+     console.log('[IVXChatService] Realtime status:', normalizedStatus);
+ 
++    if (normalizedStatus === 'subscribed') {
++      if (realtimeFallbackTimer) {
++        clearTimeout(realtimeFallbackTimer);
++        realtimeFallbackTimer = null;
++      }
++      stopPolling();
++      onStatusChange?.(normalizedStatus);
++      return;
++    }
++
+     if (normalizedStatus === 'closed') {
+       channelTerminated = true;
+-      markClosed();
++      startPolling('channel_closed');
+     }
+ 
+     if (closed && normalizedStatus !== 'subscribed') {
+       return;
+     }
+ 
++    if (normalizedStatus === 'channel_error' || normalizedStatus === 'timed_out') {
++      startPolling(normalizedStatus);
++    }
++
+     onStatusChange?.(normalizedStatus);
+   });
+ 
+@@ -1642,6 +1709,11 @@ async function subscribeToOwnerMessages(
+ 
+     unsubscribeStarted = true;
+     markClosed();
++    if (realtimeFallbackTimer) {
++      clearTimeout(realtimeFallbackTimer);
++      realtimeFallbackTimer = null;
++    }
++    stopPolling();
+     ownerLocalMessageListeners.delete(localListener);
+     unregisterActiveChannel();
+     console.log('[IVXChatService] Closing owner realtime channel:', reason, 'channel:', channelName, 'alreadyTerminated:', channelTerminated);
+@@ -1673,6 +1745,11 @@ async function subscribeToOwnerMessages(
+   activeOwnerRealtimeSubscriptions.add(teardownKey);
+   console.log('[IVXChatService] Setting up realtime on:', tables.messages, 'conversation:', conversation.id, 'realtimeSchema:', realtimeSchema, 'conversationField:', realtimeConversationField, 'channel:', channelName, 'activeChannelCount:', activeOwnerRealtimeSubscriptions.size);
+   onStatusChange?.('connecting');
++  realtimeFallbackTimer = setTimeout(() => {
++    if (!closed) {
++      startPolling('subscription_timeout');
++    }
++  }, OWNER_REALTIME_FALLBACK_DELAY_MS);
+ 
+   return () => {
+     safeClose('cleanup');
+diff --git a/expo/src/modules/ivx-owner-ai/services/ivxOwnerChatActionAuditService.ts b/expo/src/modules/ivx-owner-ai/services/ivxOwnerChatActionAuditService.ts
+new file mode 100644
+index 00000000..3b8c465b
+--- /dev/null
++++ b/expo/src/modules/ivx-owner-ai/services/ivxOwnerChatActionAuditService.ts
+@@ -0,0 +1,161 @@
++import AsyncStorage from '@react-native-async-storage/async-storage';
++import { recordAuditEvent } from '@/lib/platform-persistence';
++
++export type IVXOwnerChatAuditAction =
++  | 'room_open'
++  | 'message_send'
++  | 'assistant_reply'
++  | 'attachment_upload'
++  | 'voice_transcription'
++  | 'search'
++  | 'pin_message'
++  | 'reply_context'
++  | 'template_apply'
++  | 'control_action'
++  | 'sync_probe'
++  | 'error';
++
++export type IVXOwnerChatAuditEvent = {
++  id: string;
++  action: IVXOwnerChatAuditAction;
++  conversationId: string | null;
++  messageId?: string | null;
++  status: 'started' | 'success' | 'failed' | 'blocked';
++  summary: string;
++  metadata: Record<string, unknown>;
++  createdAt: string;
++};
++
++const IVX_OWNER_CHAT_AUDIT_STORAGE_KEY = 'ivx.owner.chat.audit.v1';
++const MAX_LOCAL_AUDIT_EVENTS = 200;
++const SECRET_PATTERNS: readonly RegExp[] = [
++  /ghp_[A-Za-z0-9_]{16,}/g,
++  /github_pat_[A-Za-z0-9_]{16,}/g,
++  /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g,
++  /\bBearer\s+[A-Za-z0-9._~+/-]{24,}/gi,
++  /\b(?:sk|pk)_(?:live|test)_[A-Za-z0-9._-]{12,}\b/g,
++  /\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g,
++];
++
++function nowIso(): string {
++  return new Date().toISOString();
++}
++
++function createAuditId(): string {
++  const cryptoRef = globalThis.crypto as { randomUUID?: () => string } | undefined;
++  if (cryptoRef?.randomUUID) {
++    return `chat-audit-${cryptoRef.randomUUID()}`;
++  }
++  return `chat-audit-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
++}
++
++function sanitizeString(value: string): string {
++  return SECRET_PATTERNS.reduce((current, pattern) => current.replace(pattern, '[redacted]'), value).slice(0, 1000);
++}
++
++function sanitizeMetadata(value: unknown, depth: number = 0): unknown {
++  if (depth > 4) {
++    return '[depth-limit]';
++  }
++
++  if (typeof value === 'string') {
++    return sanitizeString(value);
++  }
++
++  if (typeof value === 'number' || typeof value === 'boolean' || value == null) {
++    return value;
++  }
++
++  if (Array.isArray(value)) {
++    return value.slice(0, 25).map((item) => sanitizeMetadata(item, depth + 1));
++  }
++
++  if (typeof value === 'object') {
++    const next: Record<string, unknown> = {};
++    for (const [key, item] of Object.entries(value as Record<string, unknown>).slice(0, 50)) {
++      const lowerKey = key.toLowerCase();
++      if (lowerKey.includes('token') || lowerKey.includes('secret') || lowerKey.includes('password') || lowerKey.includes('key')) {
++        next[key] = '[redacted]';
++        continue;
++      }
++      next[key] = sanitizeMetadata(item, depth + 1);
++    }
++    return next;
++  }
++
++  return String(value);
++}
++
++async function readLocalEvents(): Promise<IVXOwnerChatAuditEvent[]> {
++  try {
++    const raw = await AsyncStorage.getItem(IVX_OWNER_CHAT_AUDIT_STORAGE_KEY);
++    if (!raw) return [];
++    const parsed = JSON.parse(raw) as unknown;
++    if (!Array.isArray(parsed)) return [];
++    return parsed.filter((event): event is IVXOwnerChatAuditEvent => {
++      return !!event && typeof event === 'object' && typeof (event as IVXOwnerChatAuditEvent).id === 'string';
++    });
++  } catch (error) {
++    console.log('[IVXOwnerChatActionAudit] Local audit read failed:', error instanceof Error ? error.message : 'unknown');
++    return [];
++  }
++}
++
++async function writeLocalEvent(event: IVXOwnerChatAuditEvent): Promise<void> {
++  try {
++    const current = await readLocalEvents();
++    const next = [event, ...current.filter((item) => item.id !== event.id)].slice(0, MAX_LOCAL_AUDIT_EVENTS);
++    await AsyncStorage.setItem(IVX_OWNER_CHAT_AUDIT_STORAGE_KEY, JSON.stringify(next));
++  } catch (error) {
++    console.log('[IVXOwnerChatActionAudit] Local audit write failed:', error instanceof Error ? error.message : 'unknown');
++  }
++}
++
++/**
++ * Records owner-room chat activity to local storage immediately and mirrors it
++ * into Phase 1 `audit_events` when the production migration is available.
++ */
++export async function recordIVXOwnerChatAuditEvent(input: {
++  action: IVXOwnerChatAuditAction;
++  conversationId?: string | null;
++  messageId?: string | null;
++  status: IVXOwnerChatAuditEvent['status'];
++  summary: string;
++  metadata?: Record<string, unknown>;
++}): Promise<IVXOwnerChatAuditEvent> {
++  const event: IVXOwnerChatAuditEvent = {
++    id: createAuditId(),
++    action: input.action,
++    conversationId: input.conversationId ?? null,
++    messageId: input.messageId ?? null,
++    status: input.status,
++    summary: sanitizeString(input.summary),
++    metadata: (sanitizeMetadata(input.metadata ?? {}) as Record<string, unknown>),
++    createdAt: nowIso(),
++  };
++
++  await writeLocalEvent(event);
++
++  void recordAuditEvent({
++    category: 'ivx_owner_chat',
++    action: input.action,
++    targetType: 'conversation',
++    targetId: input.conversationId ?? 'ivx-owner-room',
++    afterState: {
++      status: event.status,
++      summary: event.summary,
++      messageId: event.messageId ?? null,
++    },
++    metadata: {
++      auditEventId: event.id,
++      ...event.metadata,
++    },
++  });
++
++  return event;
++}
++
++export async function getRecentIVXOwnerChatAuditEvents(limit: number = 50): Promise<IVXOwnerChatAuditEvent[]> {
++  const events = await readLocalEvents();
++  return events.slice(0, Math.max(1, Math.min(limit, MAX_LOCAL_AUDIT_EVENTS)));
++}

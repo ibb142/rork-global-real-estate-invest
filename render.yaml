@@ -1,0 +1,223 @@
+services:
+  - type: web
+    name: ivx-holdings-platform
+    branch: main
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: node /app/node_modules/tsx/dist/cli.mjs /app/server.ts
+    plan: starter
+    autoDeployTrigger: commit
+    healthCheckPath: /health
+    domains:
+      - api.ivxholding.com
+    renderSubdomainPolicy: disabled
+    disk:
+      name: ivx-holdings-data
+      mountPath: /app/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      - key: PORT
+        value: 3000
+      - key: CHAT_DATABASE_PATH
+        value: /app/data/chat-room.sqlite
+      - key: IVX_DATA_DIR
+        value: /app/data
+      - key: CHAT_ALLOWED_ORIGINS
+        value: https://chat.ivxholding.com,https://api.ivxholding.com,https://ivx-holdings-platform.onrender.com,https://ivx-holdings-chat-frontend.onrender.com
+      - key: EXPO_PUBLIC_CHAT_SOCKET_PATH
+        value: /socket.io
+      - key: EXPO_PUBLIC_APP_ENV
+        value: production
+      - key: API_BASE_URL
+        value: https://api.ivxholding.com
+      - key: EXPO_PUBLIC_API_BASE_URL
+        value: https://api.ivxholding.com
+      - key: EXPO_PUBLIC_IVX_API_BASE_URL
+        value: https://api.ivxholding.com
+      - key: EXPO_PUBLIC_API_URL
+        value: https://api.ivxholding.com
+      - key: EXPO_PUBLIC_PRODUCTION_API_URL
+        value: https://api.ivxholding.com
+      - key: EXPO_PUBLIC_APP_URL
+        value: https://chat.ivxholding.com
+      - key: CHAT_ROOM_ID
+        value: main-room
+      - key: EXPO_PUBLIC_CHAT_DEFAULT_ROOM_ID
+        value: main-room
+      - key: JWT_SECRET
+        sync: false
+      - key: APP_SECRET
+        generateValue: true
+      - key: STRIPE_API_KEY
+        sync: false
+      - key: EXPO_PUBLIC_GOOGLE_ADS_API_KEY
+        sync: false
+      - key: EXPO_PUBLIC_SUPABASE_URL
+        sync: false
+      - key: SUPABASE_DB_PASSWORD
+        sync: false
+      - key: EXPO_PUBLIC_SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: AWS_REGION
+        sync: false
+      - key: S3_BUCKET_NAME
+        sync: false
+      - key: MINIO_HOST
+        fromService:
+          name: minio
+          type: pserv
+          property: host
+      - key: MINIO_PASSWORD
+        fromService:
+          name: minio
+          type: pserv
+          envVarKey: MINIO_ROOT_PASSWORD
+      - key: CLOUDFRONT_DISTRIBUTION_ID
+        sync: false
+      - key: AI_GATEWAY_API_KEY
+        sync: false
+      - key: EXPO_PUBLIC_IVX_AI_GATEWAY_URL
+        sync: false
+      - key: GITHUB_TOKEN
+        sync: false
+      - key: GITHUB_REPO_URL
+        sync: false
+      - key: RENDER_API_KEY
+        sync: false
+      - key: RENDER_SERVICE_ID
+        sync: false
+      - key: RENDER_SERVICE_NAME
+        value: ivx-holdings-platform
+      - key: OWNER_NEW_PASSWORD
+        sync: false
+      - key: SUPABASE_DB_URL
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: mydatabase
+          property: connectionString
+      - key: POSTGRES_URL
+        sync: false
+      - key: EXPO_PUBLIC_PROJECT_ID
+        sync: false
+      - key: EXPO_PUBLIC_TEAM_ID
+        sync: false
+      - key: EXPO_PUBLIC_CHAT_API_URL
+        value: https://api.ivxholding.com
+      - key: EXPO_PUBLIC_IVX_OWNER_AI_BASE_URL
+        value: https://api.ivxholding.com
+      - fromGroup: my-env-group
+
+  - type: web
+    name: ivx-holdings-chat-frontend
+    branch: main
+    runtime: static
+    rootDir: expo
+    buildCommand: |
+      set -e
+      export BUN_INSTALL="$HOME/.bun"
+      export PATH="$BUN_INSTALL/bin:$PATH"
+      if ! command -v bun >/dev/null 2>&1; then
+        echo "bun not found on PATH — bootstrapping bun locally for this build"
+        if command -v curl >/dev/null 2>&1; then
+          curl -fsSL https://bun.sh/install | bash
+        elif command -v wget >/dev/null 2>&1; then
+          wget -qO- https://bun.sh/install | bash
+        else
+          echo "ERROR: neither curl nor wget is available to install bun" >&2
+          exit 1
+        fi
+        export PATH="$BUN_INSTALL/bin:$PATH"
+      fi
+      if ! command -v bun >/dev/null 2>&1; then
+        echo "ERROR: bun installation failed; bun is still not on PATH" >&2
+        exit 1
+      fi
+      bun --version
+      bun install
+      bunx expo export --platform web
+    staticPublishPath: ./dist
+    autoDeployTrigger: commit
+    domains:
+      - chat.ivxholding.com
+    renderSubdomainPolicy: disabled
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: EXPO_PUBLIC_APP_ENV
+        value: production
+      - key: EXPO_PUBLIC_API_BASE_URL
+        value: https://api.ivxholding.com
+      - key: EXPO_PUBLIC_IVX_API_BASE_URL
+        value: https://api.ivxholding.com
+      - key: EXPO_PUBLIC_API_URL
+        value: https://api.ivxholding.com
+      - key: EXPO_PUBLIC_PRODUCTION_API_URL
+        value: https://api.ivxholding.com
+      - key: EXPO_PUBLIC_CHAT_API_URL
+        value: https://api.ivxholding.com
+      - key: EXPO_PUBLIC_IVX_OWNER_AI_BASE_URL
+        value: https://api.ivxholding.com
+      - key: EXPO_PUBLIC_APP_URL
+        value: https://chat.ivxholding.com
+      - key: EXPO_PUBLIC_CHAT_DEFAULT_ROOM_ID
+        value: main-room
+      - key: EXPO_PUBLIC_CHAT_SOCKET_PATH
+        value: /socket.io
+      - key: EXPO_PUBLIC_GOOGLE_ADS_API_KEY
+        sync: false
+      - key: EXPO_PUBLIC_SUPABASE_URL
+        sync: false
+      - key: EXPO_PUBLIC_SUPABASE_ANON_KEY
+        sync: false
+      - key: EXPO_PUBLIC_PROJECT_ID
+        sync: false
+      - key: EXPO_PUBLIC_TEAM_ID
+        sync: false
+
+  - type: pserv
+    name: minio
+    runtime: docker
+    repo: https://github.com/render-examples/minio.git
+    plan: starter
+    autoDeployTrigger: commit
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: MINIO_ROOT_USER
+        sync: false
+      - key: MINIO_ROOT_PASSWORD
+        generateValue: true
+    disk:
+      name: minio-data
+      mountPath: /data
+      sizeGB: 10
+
+databases:
+  - name: mydatabase
+    plan: basic-256mb
+    databaseName: ivx
+    user: ivx
+    postgresMajorVersion: "16"
+    ipAllowList: []
+
+envVarGroups:
+  - name: my-env-group
+    envVars:
+      - key: IVX_ENV_GROUP_ATTACHED
+        value: "true"
+      - key: IVX_ENV_GROUP_NAME
+        value: my-env-group
