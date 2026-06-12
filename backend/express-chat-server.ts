@@ -199,6 +199,7 @@ async function handlePublicChat(request: Request, response: Response): Promise<v
       message: prompt || 'Hello from chat.ivxholding.com',
       history,
       sessionId,
+      rawAttachments: request.body,
     });
 
     response.json({

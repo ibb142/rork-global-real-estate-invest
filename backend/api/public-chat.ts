@@ -373,6 +373,7 @@ export async function handlePublicChatPost(request: Request): Promise<Response> 
       sessionId,
       images,
       documents,
+      rawAttachments: body,
     });
 
     const assistantPersistence = await persistPublicTurn({

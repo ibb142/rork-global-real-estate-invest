@@ -17,6 +17,8 @@ import {
   registerAndVerifyAppGeneratorTool,
   validateAppSpec,
   type AppGeneratorSpec,
+  type GeneratedAppBlueprint,
+  type GeneratedFile,
 } from '../services/ivx-app-generator';
 
 export const OPTIONS = (): Response => ownerOnlyOptions();
@@ -76,6 +78,152 @@ export async function handleAppGeneratorGenerateRequest(request: Request): Promi
   } catch (error) {
     return ownerOnlyJson({ ok: false, error: error instanceof Error ? error.message : 'App generation failed.' }, 500);
   }
+}
+
+/**
+ * Shared helper: validate the request body's `spec` and return a generated
+ * blueprint, or an error Response. Keeps plan/files-preview/deploy-request DRY.
+ */
+async function blueprintFromRequest(
+  request: Request,
+): Promise<{ ok: true; blueprint: GeneratedAppBlueprint } | { ok: false; response: Response }> {
+  let body: { spec?: unknown };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return { ok: false, response: ownerOnlyJson({ ok: false, error: 'Invalid JSON body.' }, 400) };
+  }
+  const validation = validateAppSpec(body.spec);
+  if (!validation.ok) {
+    return { ok: false, response: ownerOnlyJson({ ok: false, error: validation.error }, 400) };
+  }
+  try {
+    const blueprint = generateApp(body.spec as AppGeneratorSpec);
+    return { ok: true, blueprint };
+  } catch (error) {
+    return { ok: false, response: ownerOnlyJson({ ok: false, error: error instanceof Error ? error.message : 'App generation failed.' }, 500) };
+  }
+}
+
+function fileSummary(file: GeneratedFile): { path: string; kind: GeneratedFile['kind']; purpose: string } {
+  return { path: file.path, kind: file.kind, purpose: file.purpose };
+}
+
+/**
+ * POST /api/ivx/app-generator/plan — owner-gated. Returns the product/architecture
+ * plan derived from a spec: brief, architecture, file tree, screens, routes,
+ * schema, deployment plan and rollback plan. PROPOSAL ONLY — no writes.
+ */
+export async function handleAppGeneratorPlanRequest(request: Request): Promise<Response> {
+  const auth = await requireOwner(request);
+  if (!auth.ok) return auth.response;
+  const result = await blueprintFromRequest(request);
+  if (!result.ok) return result.response;
+  const b = result.blueprint;
+  return ownerOnlyJson({
+    ok: true,
+    marker: b.marker,
+    appId: b.appId,
+    generatedAt: b.generatedAt,
+    plan: {
+      productBrief: {
+        name: b.spec.name,
+        kind: b.spec.kind,
+        description: b.spec.description ?? null,
+        features: b.spec.features ?? [],
+      },
+      architecture: b.architecture,
+      fileTree: [...b.frontend, ...b.backend, ...b.tests].map(fileSummary),
+      screens: b.frontend.map(fileSummary),
+      backendRoutes: b.backend.map(fileSummary),
+      databaseSchema: b.database,
+      deploymentPlan: b.deploymentPlan,
+      rollbackPlan: buildRollbackPlan(b),
+      validation: b.validation,
+      fileCount: b.fileCount,
+    },
+  });
+}
+
+/**
+ * POST /api/ivx/app-generator/files-preview — owner-gated. Returns the full set
+ * of generated files (path, kind, purpose, contents). PROPOSAL ONLY — nothing is
+ * written to disk.
+ */
+export async function handleAppGeneratorFilesPreviewRequest(request: Request): Promise<Response> {
+  const auth = await requireOwner(request);
+  if (!auth.ok) return auth.response;
+  const result = await blueprintFromRequest(request);
+  if (!result.ok) return result.response;
+  const b = result.blueprint;
+  const files: GeneratedFile[] = [...b.frontend, ...b.backend, ...b.tests];
+  return ownerOnlyJson({
+    ok: true,
+    appId: b.appId,
+    fileCount: files.length,
+    writesPerformed: false,
+    files: files as unknown as Record<string, unknown>[],
+  });
+}
+
+/**
+ * POST /api/ivx/app-generator/deploy-request — owner-gated. Returns a dry-run
+ * deployment request: files that WOULD change, the owner-approval gates, the
+ * deployment plan and a rollback plan. Never writes or deploys; honors
+ * `{ dryRun: true }` (the only supported mode — non-dry-run is explicitly
+ * rejected because applying stays in the GitHub/Render owner lifecycle).
+ */
+export async function handleAppGeneratorDeployRequest(request: Request): Promise<Response> {
+  const auth = await requireOwner(request);
+  if (!auth.ok) return auth.response;
+
+  let raw: { spec?: unknown; dryRun?: unknown };
+  try {
+    raw = (await request.clone().json()) as typeof raw;
+  } catch {
+    return ownerOnlyJson({ ok: false, error: 'Invalid JSON body.' }, 400);
+  }
+  const dryRun = raw.dryRun !== false; // default to dry-run
+  if (!dryRun) {
+    return ownerOnlyJson({
+      ok: false,
+      error: 'Non-dry-run deployment is not performed here. Applying a blueprint stays owner-gated through the GitHub/Render lifecycle.',
+      requiresOwnerLifecycle: true,
+    }, 409);
+  }
+
+  const result = await blueprintFromRequest(request);
+  if (!result.ok) return result.response;
+  const b = result.blueprint;
+  const files: GeneratedFile[] = [...b.frontend, ...b.backend, ...b.tests];
+  return ownerOnlyJson({
+    ok: true,
+    dryRun: true,
+    writesPerformed: false,
+    deployPerformed: false,
+    appId: b.appId,
+    filesChanged: files.map(fileSummary),
+    fileCount: files.length,
+    validation: b.validation,
+    deploymentPlan: b.deploymentPlan,
+    rollbackPlan: buildRollbackPlan(b),
+    ownerApprovalRequired: true,
+    securityGates: [
+      'Owner authentication enforced (assertIVXOwnerOnly).',
+      'Dry-run only — no file writes, no GitHub commit, no Render deploy.',
+      'Database migrations and merge/deploy steps require explicit owner approval.',
+    ],
+  });
+}
+
+/** Build a deterministic rollback plan for a generated blueprint. */
+function buildRollbackPlan(blueprint: GeneratedAppBlueprint): { step: number; title: string; detail: string }[] {
+  return [
+    { step: 1, title: 'Revert PR', detail: `Revert the feature branch / PR for ${blueprint.appId} before merge if validation fails.` },
+    { step: 2, title: 'Roll back migrations', detail: `Drop the ${blueprint.database.tables.length} generated table(s): ${blueprint.database.tables.map((t) => t.name).join(', ') || 'none'}.` },
+    { step: 3, title: 'Redeploy previous commit', detail: 'Trigger a Render deploy of the last known-good commit if production regressed.' },
+    { step: 4, title: 'Verify /health', detail: 'Confirm /health reports the restored commit and the app is healthy.' },
+  ];
 }
 
 /** POST /api/ivx/app-generator/register — register + self-verify the tool. */

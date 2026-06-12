@@ -12,6 +12,7 @@
  */
 import { assertIVXOwnerOnly, ownerOnlyJson, ownerOnlyOptions } from './owner-only';
 import {
+  buildDailyExecutiveReport,
   generateAndStoreDailyReport,
   getLatestReport,
   listReportHistory,
@@ -50,6 +51,23 @@ export async function handleDailyReportGenerate(request: Request): Promise<Respo
   if (denied) return denied;
   const entry = await generateAndStoreDailyReport({ trigger: 'owner' });
   return ownerOnlyJson({ ok: true, report: entry.report as unknown as Record<string, unknown> });
+}
+
+/**
+ * POST /api/ivx/daily-report/preview — build a fresh report WITHOUT storing it.
+ * Owner-only, read/derive only: composes the same engines as the stored report
+ * but never persists, so it leaves no entry in history.
+ */
+export async function handleDailyReportPreview(request: Request): Promise<Response> {
+  const denied = await requireOwner(request);
+  if (denied) return denied;
+  const report = await buildDailyExecutiveReport({ trigger: 'owner' });
+  return ownerOnlyJson({
+    ok: true,
+    preview: true,
+    stored: false,
+    report: report as unknown as Record<string, unknown>,
+  });
 }
 
 /** GET — report history (proof trail). */

@@ -19,6 +19,13 @@ import {
   extractPublicChatImages,
   type PublicChatImageAttachment,
 } from './services/ivx-public-chat-vision';
+import {
+  buildVideoUnderstandingBlock,
+  extractVideoAttachments,
+  ocrDocumentBytes,
+  understandVideos,
+  type VideoUnderstanding,
+} from './services/ivx-media-understanding';
 import { applyReportEvidenceGate } from './services/ivx-report-evidence-gate';
 import { conversationHasRealDeliverable } from './services/ivx-deliverable-store';
 import type { ChatRoomMessage } from './chat-types';
@@ -132,6 +139,7 @@ function buildSystemPrompt(
   hasImages: boolean,
   documents: DealDocumentAttachment[],
   extractedContentBlock: string | null,
+  videoContentBlock: string | null,
 ): string {
   const parts = [
     `You are ${IVX_OWNER_AI_PROFILE.name}, the IVX AI assistant for the IVX public chat room.`,
@@ -152,6 +160,10 @@ function buildSystemPrompt(
 
   if (extractedContentBlock) {
     parts.push(extractedContentBlock);
+  }
+
+  if (videoContentBlock) {
+    parts.push(videoContentBlock);
   }
 
   parts.push(`Session: ${sessionId}`);
@@ -188,6 +200,7 @@ async function requestIVXAIAnswer(input: {
   images: PublicChatImageAttachment[];
   documents: DealDocumentAttachment[];
   extractedDocuments: ExtractedDocument[];
+  videoUnderstandings: VideoUnderstanding[];
 }): Promise<PublicChatAnswerResult> {
   const endpoint = getGatewayModelEndpoint();
   if (!isPublicChatAIConfigured() || !endpoint) {
@@ -220,6 +233,10 @@ async function requestIVXAIAnswer(input: {
   if (extractedContentBlock) {
     promptParts.push(extractedContentBlock, '');
   }
+  const videoContentBlock = buildVideoUnderstandingBlock(input.videoUnderstandings);
+  if (videoContentBlock) {
+    promptParts.push(videoContentBlock, '');
+  }
   promptParts.push(
     `User message: ${input.message || (input.images.length > 0 ? 'Analyze the attached image(s).' : '')}`,
     '',
@@ -230,7 +247,13 @@ async function requestIVXAIAnswer(input: {
     module: 'public-chat',
     requestId: input.sessionId,
     model: getPublicChatModel(),
-    system: buildSystemPrompt(input.sessionId, input.images.length > 0, input.documents, extractedContentBlock),
+    system: buildSystemPrompt(
+      input.sessionId,
+      input.images.length > 0,
+      input.documents,
+      extractedContentBlock,
+      videoContentBlock,
+    ),
     prompt: promptParts.join('\n'),
     images: input.images.length > 0 ? input.images : undefined,
   });
@@ -251,12 +274,15 @@ export async function generatePublicChatAnswer(input: {
   sessionId: string;
   images?: PublicChatImageAttachment[];
   documents?: DealDocumentAttachment[];
+  /** Raw attachment payload used to detect video attachments for video reading. */
+  rawAttachments?: unknown;
 }): Promise<PublicChatAnswerResult> {
   const history = sanitizePublicChatHistory(input.history);
   const images = (input.images ?? [])
     .map((img) => ({ url: typeof img.url === 'string' ? img.url.trim() : '', mimeType: img.mimeType ?? null }))
     .filter((img) => img.url.length > 0);
   const documents = (input.documents ?? []).filter((doc) => typeof doc.url === 'string' && doc.url.trim().length > 0);
+  const videos = extractVideoAttachments(input.rawAttachments ?? { videos: [], attachments: [] });
 
   // BLOCK 62 — Report Evidence Gate. `/public/chat` (the endpoint the in-app
   // Chat tab AND the IVX Owner AI chat fall back to) had NO fake-deliverable
@@ -317,7 +343,9 @@ export async function generatePublicChatAnswer(input: {
   let extractedDocuments: ExtractedDocument[] = [];
   if (documents.length > 0) {
     try {
-      extractedDocuments = await extractDealDocumentsContent(documents);
+      // Real OCR for scanned/image-only PDFs: the extractor calls back into the
+      // vision model with the raw bytes when a PDF has no text layer.
+      extractedDocuments = await extractDealDocumentsContent(documents, { ocrDocument: ocrDocumentBytes });
       console.log('[PublicChatAI] Deal documents extracted:', {
         total: extractedDocuments.length,
         readable: extractedDocuments.filter((doc) => doc.status === 'extracted').length,
@@ -327,6 +355,22 @@ export async function generatePublicChatAnswer(input: {
       });
     } catch (extractionError) {
       console.log('[PublicChatAI] Document extraction skipped:', extractionError instanceof Error ? extractionError.message : 'unknown');
+    }
+  }
+
+  // Real video reading: hand each attached video to a video-capable model and
+  // ground the answer on what it actually shows. Never blocks the reply.
+  let videoUnderstandings: VideoUnderstanding[] = [];
+  if (videos.length > 0) {
+    try {
+      videoUnderstandings = await understandVideos(videos);
+      console.log('[PublicChatAI] Videos analyzed:', {
+        total: videoUnderstandings.length,
+        understood: videoUnderstandings.filter((video) => video.status === 'understood').length,
+        failed: videoUnderstandings.filter((video) => video.status === 'failed').length,
+      });
+    } catch (videoError) {
+      console.log('[PublicChatAI] Video understanding skipped:', videoError instanceof Error ? videoError.message : 'unknown');
     }
   }
 
@@ -340,6 +384,7 @@ export async function generatePublicChatAnswer(input: {
         images,
         documents,
         extractedDocuments,
+        videoUnderstandings,
       });
       console.log('[PublicChatAI] IVX AI reply generated:', {
         model: result.model,

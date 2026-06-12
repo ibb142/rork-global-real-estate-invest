@@ -16,6 +16,17 @@ export type IVXAIImageAttachment = {
   mimeType?: string | null;
 };
 
+/**
+ * A non-image binary attachment (PDF for OCR, video for understanding) passed to
+ * a multimodal model as a `file` content part. `data` may be a URL, a base64
+ * string, or raw bytes.
+ */
+export type IVXAIFileAttachment = {
+  data: string | Uint8Array | ArrayBuffer;
+  mediaType: string;
+  filename?: string | null;
+};
+
 export type IVXAIProviderMetadata = {
   provider: 'chatgpt';
   source: 'remote_api';
@@ -291,6 +302,7 @@ export async function requestIVXAIText(input: {
   prompt?: string | null;
   messages?: IVXAITextMessage[];
   images?: IVXAIImageAttachment[];
+  files?: IVXAIFileAttachment[];
   maxOutputTokens?: number;
 }): Promise<IVXAITextResult> {
   const model = resolveIVXAIModel(input.model);
@@ -301,6 +313,9 @@ export async function requestIVXAIText(input: {
   const images = (input.images ?? [])
     .map((img) => ({ url: readTrimmed(img.url), mimeType: readTrimmed(img.mimeType ?? '') || null }))
     .filter((img) => img.url.length > 0);
+  const files = (input.files ?? []).filter(
+    (file) => readTrimmed(file.mediaType).length > 0 && file.data != null,
+  );
 
   if (!prompt && messages.length === 0) {
     throw new Error('IVX AI request requires a prompt or messages.');
@@ -349,21 +364,23 @@ export async function requestIVXAIText(input: {
         baseURL,
       });
       const callTimeoutMs = adaptiveTimeoutMs;
-      if (images.length > 0) {
-        // Multimodal request: build a single user message with text + image parts so
-        // vision-capable models (gpt-4o family) can actually see the attachments.
+      if (images.length > 0 || files.length > 0) {
+        // Multimodal request: build a single user message with text + image/file
+        // parts so multimodal models (gpt-4o family for images/PDF OCR, video-
+        // capable models for video) can actually see the attachments.
         const baseMessages = messages.length > 0
           ? messages.slice(0, -1)
           : [];
         const lastTextMessage = messages.length > 0 ? messages[messages.length - 1] : null;
         const userText = readTrimmed(
           (lastTextMessage && lastTextMessage.role === 'user' ? lastTextMessage.content : '') || prompt
-        ) || 'Describe the attached image(s).';
+        ) || 'Describe the attached file(s).';
         const multimodalUser = {
           role: 'user' as const,
           content: [
             { type: 'text' as const, text: userText },
             ...images.map((img) => ({ type: 'image' as const, image: img.url })),
+            ...files.map((file) => ({ type: 'file' as const, data: file.data, mediaType: file.mediaType })),
           ],
         };
         const finalMessages = lastTextMessage && lastTextMessage.role === 'user'

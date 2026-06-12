@@ -85,6 +85,9 @@ import {
   handleAppGeneratorStatusRequest,
   handleAppGeneratorGenerateRequest,
   handleAppGeneratorRegisterRequest,
+  handleAppGeneratorPlanRequest,
+  handleAppGeneratorFilesPreviewRequest,
+  handleAppGeneratorDeployRequest,
 } from './api/ivx-app-generator';
 import {
   OPTIONS as credentialReadinessOptions,
@@ -142,6 +145,7 @@ import {
   handleDailyReportLatest,
   handleDailyReportGenerate,
   handleDailyReportHistory,
+  handleDailyReportPreview,
 } from './api/ivx-daily-report';
 import {
   OPTIONS as technologyDiscoveryOptions,
@@ -1762,8 +1766,16 @@ app.get('/api/ivx/readiness', async (context) => handleReadinessRequest(context.
 // Universal App Generator (owner-only) — generate full app/module scaffold blueprints.
 app.options('/api/ivx/app-generator', () => appGeneratorOptions());
 app.get('/api/ivx/app-generator', async (context) => handleAppGeneratorStatusRequest(context.req.raw));
+app.options('/api/ivx/app-generator/status', () => appGeneratorOptions());
+app.get('/api/ivx/app-generator/status', async (context) => handleAppGeneratorStatusRequest(context.req.raw));
 app.options('/api/ivx/app-generator/generate', () => appGeneratorOptions());
 app.post('/api/ivx/app-generator/generate', async (context) => handleAppGeneratorGenerateRequest(context.req.raw));
+app.options('/api/ivx/app-generator/plan', () => appGeneratorOptions());
+app.post('/api/ivx/app-generator/plan', async (context) => handleAppGeneratorPlanRequest(context.req.raw));
+app.options('/api/ivx/app-generator/files-preview', () => appGeneratorOptions());
+app.post('/api/ivx/app-generator/files-preview', async (context) => handleAppGeneratorFilesPreviewRequest(context.req.raw));
+app.options('/api/ivx/app-generator/deploy-request', () => appGeneratorOptions());
+app.post('/api/ivx/app-generator/deploy-request', async (context) => handleAppGeneratorDeployRequest(context.req.raw));
 app.options('/api/ivx/app-generator/register', () => appGeneratorOptions());
 app.post('/api/ivx/app-generator/register', async (context) => handleAppGeneratorRegisterRequest(context.req.raw));
 // Credential Readiness (owner-only) — presence/diagnostics/approval-gate/deploy-token/fallback.
@@ -2017,6 +2029,8 @@ app.get('/api/ivx/executive-layer', async (context) => handleExecutiveLayerReque
 app.options('/api/ivx/daily-report', () => dailyReportOptions());
 app.get('/api/ivx/daily-report', async (context) => handleDailyReportLatest(context.req.raw));
 app.post('/api/ivx/daily-report', async (context) => handleDailyReportGenerate(context.req.raw));
+app.options('/api/ivx/daily-report/preview', () => dailyReportOptions());
+app.post('/api/ivx/daily-report/preview', async (context) => handleDailyReportPreview(context.req.raw));
 app.options('/api/ivx/daily-report/history', () => dailyReportOptions());
 app.get('/api/ivx/daily-report/history', async (context) => handleDailyReportHistory(context.req.raw));
 app.options('/api/ivx/technology-discovery', () => technologyDiscoveryOptions());

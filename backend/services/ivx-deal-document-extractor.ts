@@ -25,6 +25,9 @@ import type { DealDocumentAttachment, DealDocumentKind } from './ivx-deal-docume
 /** Outcome of attempting to read one deal-room document. */
 export type DocumentExtractionStatus = 'extracted' | 'scanned' | 'unsupported' | 'too-large' | 'failed';
 
+/** Office Open XML document family we can extract text from (DOCX/XLSX/PPTX). */
+export type OfficeDocumentType = 'docx' | 'xlsx' | 'pptx';
+
 export type ExtractedDocument = {
   url: string;
   name: string | null;
@@ -48,6 +51,14 @@ export type DocumentExtractorDeps = {
   fetchBytes?: (url: string) => Promise<FetchedBytes | null>;
   /** Parse a PDF into text + page count. Defaults to unpdf. */
   parsePdf?: (bytes: Uint8Array) => Promise<{ text: string; pageCount: number }>;
+  /** Parse a DOCX/XLSX/PPTX file into text. Defaults to mammoth/xlsx/fflate. */
+  parseOffice?: (bytes: Uint8Array, type: OfficeDocumentType) => Promise<{ text: string; pageCount: number | null }>;
+  /**
+   * OCR a scanned/image-only PDF (or other image-only document) into text using a
+   * vision model. Defaults to the IVX AI runtime file-part OCR. Returns null when
+   * OCR is unavailable, so the caller falls back to the honest scanned flag.
+   */
+  ocrDocument?: (bytes: Uint8Array, mediaType: string, name: string | null) => Promise<string | null>;
 };
 
 /** Max document size we will download for extraction (12 MB). */
@@ -93,6 +104,25 @@ function isTextDocument(doc: { name: string | null; mimeType: string | null }): 
     name.endsWith('.txt') ||
     name.endsWith('.tsv')
   );
+}
+
+/**
+ * Detect an Office Open XML document (DOCX/XLSX/PPTX) from its mime/filename and
+ * return which family it is, or null when it is not an Office file.
+ */
+export function detectOfficeDocumentType(doc: { name: string | null; mimeType: string | null }): OfficeDocumentType | null {
+  const mime = (doc.mimeType ?? '').toLowerCase();
+  const name = (doc.name ?? '').toLowerCase();
+  if (name.endsWith('.docx') || mime.includes('wordprocessingml')) {
+    return 'docx';
+  }
+  if (name.endsWith('.xlsx') || name.endsWith('.xlsm') || mime.includes('spreadsheetml')) {
+    return 'xlsx';
+  }
+  if (name.endsWith('.pptx') || mime.includes('presentationml')) {
+    return 'pptx';
+  }
+  return null;
 }
 
 /** Collapse runs of whitespace and trim — keeps extracted text compact. */
@@ -169,6 +199,81 @@ async function defaultParsePdf(bytes: Uint8Array): Promise<{ text: string; pageC
   return { text: merged ?? '', pageCount: totalPages ?? 0 };
 }
 
+/** Extract readable text from the XML payload of a PPTX/DOCX part (`<a:t>`/`<w:t>`/`<t>` runs). */
+export function extractOoxmlTextNodes(xml: string): string {
+  const matches = xml.match(/<(?:a:t|w:t|t)[^>]*>([\s\S]*?)<\/(?:a:t|w:t|t)>/g);
+  if (!matches) {
+    return '';
+  }
+  return matches
+    .map((node) =>
+      node
+        .replace(/<[^>]+>/g, '')
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;|&apos;/g, "'"),
+    )
+    .join(' ');
+}
+
+/**
+ * Default Office (DOCX/XLSX/PPTX) parser. DOCX uses mammoth's raw-text path,
+ * XLSX is rendered sheet-by-sheet to CSV via SheetJS, and PPTX is unzipped with
+ * fflate and each slide's text runs are concatenated. Lazy-imported so these
+ * heavy parsers stay out of the read-only/test paths.
+ */
+async function defaultParseOffice(
+  bytes: Uint8Array,
+  type: OfficeDocumentType,
+): Promise<{ text: string; pageCount: number | null }> {
+  if (type === 'docx') {
+    const mammoth = await import('mammoth');
+    const result = await mammoth.extractRawText({ buffer: Buffer.from(bytes) });
+    return { text: result.value ?? '', pageCount: null };
+  }
+
+  if (type === 'xlsx') {
+    const XLSX = await import('xlsx');
+    const workbook = XLSX.read(bytes, { type: 'array' });
+    const sheets = workbook.SheetNames.map((sheetName) => {
+      const csv = XLSX.utils.sheet_to_csv(workbook.Sheets[sheetName]);
+      return `### Sheet: ${sheetName}\n${csv}`;
+    });
+    return { text: sheets.join('\n\n'), pageCount: workbook.SheetNames.length };
+  }
+
+  // pptx — unzip and read each slide's text runs in slide order.
+  const { unzipSync, strFromU8 } = await import('fflate');
+  const archive = unzipSync(bytes);
+  const slidePaths = Object.keys(archive)
+    .filter((path) => /^ppt\/slides\/slide\d+\.xml$/.test(path))
+    .sort((a, b) => {
+      const numA = Number.parseInt(a.replace(/\D/g, ''), 10);
+      const numB = Number.parseInt(b.replace(/\D/g, ''), 10);
+      return numA - numB;
+    });
+  const slides = slidePaths.map((path, index) => {
+    const text = extractOoxmlTextNodes(strFromU8(archive[path]));
+    return `### Slide ${index + 1}\n${text}`;
+  });
+  return { text: slides.join('\n\n'), pageCount: slidePaths.length };
+}
+
+/** Guess an OCR mediaType for the document bytes (defaults to PDF). */
+function ocrMediaType(doc: { mimeType: string | null; name: string | null }): string {
+  const mime = (doc.mimeType ?? '').toLowerCase();
+  if (mime.startsWith('image/') || mime === 'application/pdf') {
+    return mime;
+  }
+  const name = (doc.name ?? '').toLowerCase();
+  if (name.endsWith('.png')) return 'image/png';
+  if (name.endsWith('.jpg') || name.endsWith('.jpeg')) return 'image/jpeg';
+  if (name.endsWith('.webp')) return 'image/webp';
+  return 'application/pdf';
+}
+
 /**
  * Read and extract the text of a single deal-room document. Never throws — any
  * failure is reported as an `ExtractedDocument` with a `failed`/`scanned`/
@@ -180,6 +285,7 @@ export async function extractDealDocumentContent(
 ): Promise<ExtractedDocument> {
   const fetchBytes = deps.fetchBytes ?? defaultFetchBytes;
   const parsePdf = deps.parsePdf ?? defaultParsePdf;
+  const parseOffice = deps.parseOffice ?? defaultParseOffice;
 
   const base = {
     url: doc.url,
@@ -190,14 +296,15 @@ export async function extractDealDocumentContent(
     pageCount: null as number | null,
   };
 
-  const isPdf = isPdfDocument(doc);
-  const isText = isTextDocument(doc);
+  const officeType = detectOfficeDocumentType(doc);
+  const isPdf = !officeType && isPdfDocument(doc);
+  const isText = !officeType && isTextDocument(doc);
 
-  if (!isPdf && !isText) {
+  if (!officeType && !isPdf && !isText) {
     return {
       ...base,
       status: 'unsupported',
-      reason: `Unsupported document type (${doc.mimeType ?? 'unknown'}). Text extraction supports PDF, CSV, and TXT.`,
+      reason: `Unsupported document type (${doc.mimeType ?? 'unknown'}). Text extraction supports PDF, DOCX, XLSX, PPTX, CSV, and TXT.`,
     };
   }
 
@@ -227,7 +334,19 @@ export async function extractDealDocumentContent(
   let rawText = '';
   let pageCount: number | null = null;
 
-  if (isPdf) {
+  if (officeType) {
+    try {
+      const parsed = await parseOffice(fetched.bytes, officeType);
+      rawText = parsed.text;
+      pageCount = parsed.pageCount;
+    } catch (error) {
+      return {
+        ...base,
+        status: 'failed',
+        reason: `${officeType.toUpperCase()} could not be parsed: ${error instanceof Error ? error.message : 'unknown error'}.`,
+      };
+    }
+  } else if (isPdf) {
     try {
       const parsed = await parsePdf(fetched.bytes);
       rawText = parsed.text;
@@ -244,15 +363,37 @@ export async function extractDealDocumentContent(
   }
 
   const normalized = normalizeExtractedText(rawText);
-  const status = classifyExtractionStatus({ isPdf, isText, normalizedText: normalized });
+  const status = classifyExtractionStatus({ isPdf, isText: isText || officeType !== null, normalizedText: normalized });
 
   if (status === 'scanned') {
+    // Real OCR path: a scanned/image-only PDF has no text layer, so hand the raw
+    // bytes to the vision model for true OCR instead of only flagging it. Falls
+    // back to the honest scanned message when OCR is unavailable or empty.
+    if (deps.ocrDocument) {
+      try {
+        const ocrText = await deps.ocrDocument(fetched.bytes, ocrMediaType(doc), doc.name);
+        const normalizedOcr = normalizeExtractedText(ocrText ?? '');
+        if (normalizedOcr.replace(/\s/g, '').length >= SCANNED_TEXT_THRESHOLD) {
+          const cappedOcr = truncateExtractedText(normalizedOcr);
+          return {
+            ...base,
+            status: 'extracted',
+            text: cappedOcr,
+            charCount: cappedOcr.length,
+            pageCount,
+            reason: 'Extracted via OCR (scanned/image-only PDF read by the vision model).',
+          };
+        }
+      } catch (error) {
+        console.log('[DocExtractor] OCR fallback failed:', error instanceof Error ? error.message : 'unknown');
+      }
+    }
     return {
       ...base,
       status,
       pageCount,
       reason:
-        'This PDF has no selectable text layer (it looks scanned / image-only), so its figures cannot be read directly. ' +
+        'This PDF has no selectable text layer (it looks scanned / image-only) and OCR could not read it. ' +
         'To analyze it, export the page(s) as an image (PNG/JPG) and attach the image — the vision layer will OCR it.',
     };
   }
