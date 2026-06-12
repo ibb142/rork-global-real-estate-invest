@@ -130,8 +130,8 @@ describe('opportunity derivation', () => {
     const deal = opps.find((o) => o.title.includes('Casa Rosario'));
     expect(deal).toBeDefined();
     expect(deal!.evidence).toContain('Casa Rosario');
-    expect(deal!.profitLadder.length).toBe(8);
-    expect(deal!.executionPlan.nextThreeActions.length).toBe(3);
+    expect((deal?.profitLadder ?? []).length).toBe(8);
+    expect((deal?.executionPlan?.nextThreeActions ?? []).length).toBe(3);
   });
 
   it('never fabricates upside when price or ROI is missing', () => {

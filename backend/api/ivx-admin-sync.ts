@@ -51,7 +51,7 @@ async function readEnvOrOwnerVar(envName: string): Promise<string> {
   const direct = (process.env[envName] ?? '').trim();
   if (direct) return direct;
   try {
-    const v = await getIVXOwnerVariableRuntimeValue(envName);
+    const v = await getIVXOwnerVariableRuntimeValue(envName as Parameters<typeof getIVXOwnerVariableRuntimeValue>[0]);
     return (v ?? '').trim();
   } catch {
     return '';

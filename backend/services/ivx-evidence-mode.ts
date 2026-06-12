@@ -42,13 +42,13 @@ export async function buildEvidenceMode(opts: { includeTypecheck?: boolean; repo
 
   let recentIncidents: EvidenceMode['recentIncidents'] = [];
   try {
-    const rows = await listIncidents({ limit: 20 });
+    const rows = await Promise.resolve(listIncidents(20));
     recentIncidents = rows.map((r) => ({
       id: r.id,
       severity: r.severity,
       status: r.status,
       createdAt: r.createdAt,
-      checkpoint: r.checkpoint,
+      checkpoint: r.checkpoint ?? '',
     }));
   } catch {
     recentIncidents = [];

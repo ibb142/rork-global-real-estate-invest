@@ -72,7 +72,7 @@ export function isIVXOwnerAllowlistedEmail(email: string | null | undefined): bo
 }
 
 export type IVXAccessRuntime = 'development' | 'production';
-export type IVXAccessSecurityMode = 'strict' | 'test_open_access';
+export type IVXAccessSecurityMode = 'strict' | 'test_open_access' | 'system_bypass';
 export type IVXGuardFailureStage = 'token' | 'session' | 'profile' | 'role' | 'config';
 
 type IVXOwnerProfileRow = Record<string, unknown> & {

@@ -45,5 +45,5 @@ export async function handleDealPipelineSeedRequest(request: Request): Promise<R
       result.missingEnv.length > 0 ? 503 : 502,
     );
   }
-  return ownerOnlyJson({ ok: true, ...result }, 201);
+  return ownerOnlyJson({ ...result, ok: true }, 201);
 }

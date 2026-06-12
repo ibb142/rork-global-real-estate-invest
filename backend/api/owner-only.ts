@@ -65,13 +65,7 @@ export function ownerOnlyOptions(): Response {
 
 export async function assertIVXOwnerOnly(request: Request): Promise<IVXOwnerRequestContext> {
   if (checkIVXAISystemKey(request)) {
-    return {
-      userId: 'ivx-ai-system',
-      email: 'system@ivx.ai',
-      role: 'system',
-      accessToken: 'system',
-      guardMode: 'system_bypass',
-    };
+    return makeSystemOwnerRequestContext();
   }
   return await resolveIVXAuthenticatedRequest(request, '[IVXOwnerOnly]');
 }
@@ -177,6 +171,21 @@ export function evaluateIVXRegisteredOwnerBearerContext(
   };
 }
 
+/**
+ * Synthetic owner context for the trusted X-IVX-System-Key bypass path. This
+ * identity is internal (no Supabase-authenticated user), so it intentionally has
+ * no real `client`/`roleAudit`; callers on the system path never touch those.
+ */
+function makeSystemOwnerRequestContext(): IVXOwnerRequestContext {
+  return {
+    userId: 'ivx-ai-system',
+    email: 'system@ivx.ai',
+    role: 'system',
+    accessToken: 'system',
+    guardMode: 'system_bypass',
+  } as unknown as IVXOwnerRequestContext;
+}
+
 const IVX_AI_SYSTEM_SECRET = process.env.IVX_AI_SYSTEM_SECRET?.trim() ?? '';
 
 function checkIVXAISystemKey(request: Request): boolean {
@@ -206,15 +215,8 @@ export async function assertIVXRegisteredOwnerBearer(
   action: string,
 ): Promise<{ context: IVXOwnerRequestContext; approval: IVXOwnerMutationApprovalProof }> {
   if (checkIVXAISystemKey(request)) {
-    const systemContext: IVXOwnerRequestContext = {
-      userId: 'ivx-ai-system',
-      email: 'system@ivx.ai',
-      role: 'system',
-      accessToken: 'system',
-      guardMode: 'system_bypass',
-    };
     return {
-      context: systemContext,
+      context: makeSystemOwnerRequestContext(),
       approval: makeSystemMutationApprovalProof(action),
     };
   }

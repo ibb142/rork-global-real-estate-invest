@@ -17,6 +17,7 @@
  * (`scanWorkspaceForTechDebt`) reuses the code-index ignore rules.
  */
 import { readFile, readdir, stat } from 'node:fs/promises';
+import type { Dirent } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -186,9 +187,9 @@ function sortFindings(a: DebtFinding, b: DebtFinding): number {
 }
 
 async function walkSourceFiles(dir: string, root: string, out: string[]): Promise<void> {
-  let entries: Awaited<ReturnType<typeof readdir>>;
+  let entries: Dirent[];
   try {
-    entries = await readdir(dir, { withFileTypes: true });
+    entries = (await readdir(dir, { withFileTypes: true })) as unknown as Dirent[];
   } catch {
     return;
   }

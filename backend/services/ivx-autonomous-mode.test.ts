@@ -89,7 +89,7 @@ function fakeSelfHeal(allVerified: boolean): SelfHealCycleReport {
     allVerified,
     blocker: { found: false, tier: null, title: null, source: null, reference: null },
     prioritization: { totalOpen: 0, tierCounts: { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0 } },
-    tests: [{ suite: 'typecheck', ok: allVerified, exitCode: allVerified ? 0 : 1, durationMs: 1, error: null } as SelfHealCycleReport['tests'][number]],
+    tests: [{ suite: 'typecheck', ok: allVerified, exitCode: allVerified ? 0 : 1, durationMs: 1, error: null } as unknown as SelfHealCycleReport['tests'][number]],
     production: fakeProduction(!allVerified),
     rollback: null,
     resumeQueue: [],

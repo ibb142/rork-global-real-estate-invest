@@ -258,10 +258,10 @@ export async function inspect(): Promise<{ inspection: ScaleInspection; dashboar
   const health = getProductionHealth();
   const incidents = listIncidents(300);
   const watchdogFailures = incidents.filter(
-    (i) => i.source === 'watchdog' || i.source === 'backend' || /watchdog|stall|silent/i.test(i.message),
+    (i) => i.source === 'backend' || /watchdog|stall|silent/i.test(i.message),
   ).length;
   const chatFailures = incidents.filter(
-    (i) => i.source === 'chat' || /chat|conversation|message/i.test(i.message),
+    (i) => /chat|conversation|message/i.test(i.message),
   ).length;
 
   const inspection: ScaleInspection = {

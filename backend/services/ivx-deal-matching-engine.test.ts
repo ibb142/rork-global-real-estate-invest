@@ -29,6 +29,7 @@ function contact(overrides: Partial<InvestorRecord> = {}): InvestorRecord {
   return {
     id: overrides.id ?? 'investor-1',
     name: overrides.name ?? 'Jane Capital',
+    partyType: overrides.partyType ?? 'investor',
     company: overrides.company ?? 'Capital Partners',
     email: '', phone: '', location: '',
     investmentType: overrides.investmentType ?? 'Family office',

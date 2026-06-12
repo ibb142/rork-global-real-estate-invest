@@ -71,6 +71,7 @@ import {
   type IVXOwnerAIHealthProbeResponse,
   type IVXOwnerAIRequest,
   type IVXOwnerAIResponse,
+  type IVXOwnerAIToolOutput,
 } from '../../expo/shared/ivx';
 import {
   assertIVXOwnerOnly,
@@ -183,7 +184,7 @@ type IVXAIRequestRow = {
 
 type SupabaseInspectionIntent = 'tables' | 'schema' | 'columns' | 'rls' | 'capability';
 type SupabaseOwnerActionIntent = 'insert' | 'update' | 'delete' | 'owner_approved_action' | 'capability';
-type OwnerRouterIntent = 'manual_answer' | 'infrastructure_runtime' | 'supabase_schema' | 'aws' | 'block22_worker_diagnosis' | 'owner_backend_command' | 'ai_brain_tool' | 'owner_system_tool' | 'supabase_owner_action' | 'development_action' | 'development_audit' | 'owner_room_data' | 'live_grounding' | 'location_clarification' | 'limits' | 'audit_report' | 'generic_ai_chat';
+type OwnerRouterIntent = 'manual_answer' | 'infrastructure_runtime' | 'supabase_schema' | 'aws' | 'block22_worker_diagnosis' | 'owner_backend_command' | 'ai_brain_tool' | 'owner_system_tool' | 'supabase_owner_action' | 'development_action' | 'development_audit' | 'owner_room_data' | 'live_grounding' | 'location_clarification' | 'limits' | 'audit_report' | 'generic_ai_chat' | 'exact_echo';
 type OwnerSystemToolName = 'get_current_time' | 'read_database_schema' | 'query_database' | 'read_logs' | 'search_code' | 'inspect_supabase_schema' | 'inspect_rls_policies' | 'run_select_query' | 'run_write_query' | 'list_storage_buckets' | 'inspect_edge_functions' | 'inspect_auth_users' | 'execute_rpc' | 'apply_migration';
 type OwnerToolOutput = {
   tool: OwnerSystemToolName;
@@ -5680,14 +5681,14 @@ async function handleIVXOwnerAIRequestInternal(request: Request): Promise<Respon
     // Purpose: prove the /api/ivx/owner-ai route can return ANY JSON within the
     // 18s client timeout. If this returns -> route healthy, hang is in upstream
     // (auth/planner/AI gateway). If this also hangs -> Render/Hono routing problem.
-    const isBackendPing = body.devPing === true || prompt === '__BACKEND_PING__' || prompt.toLowerCase() === 'ping';
+    const isBackendPing = (body as { devPing?: boolean }).devPing === true || prompt === '__BACKEND_PING__' || prompt.toLowerCase() === 'ping';
     if (isBackendPing) {
       const pingRequestId = readTrimmedString(body.requestId) || createRequestId();
       const pingLatencyMs = Date.now() - startedAt;
       console.log('[IVXOwnerAIBackend] BACKEND_PING bypass hit:', {
         requestId: pingRequestId,
         prompt,
-        devPing: body.devPing === true,
+        devPing: (body as { devPing?: boolean }).devPing === true,
         latencyMs: pingLatencyMs,
       });
       return ownerOnlyJson({
@@ -6574,7 +6575,6 @@ async function handleIVXOwnerAIRequestInternal(request: Request): Promise<Respon
         deploymentMarker: DEPLOYMENT_MARKER,
         assistantMessageId,
         assistantPersisted: Boolean(assistantMessageId),
-        taskId: start.task.id,
       }, body.devTestModeActive === true));
     }
 
@@ -6744,7 +6744,7 @@ async function handleIVXOwnerAIRequestInternal(request: Request): Promise<Respon
     }
 
     if (asksToFindBestInvestor(prompt)) {
-      const workflow = await runBestInvestorWorkflow({ dealQuery: prompt, senderName: ownerContext.email });
+      const workflow = await runBestInvestorWorkflow({ dealQuery: prompt, senderName: ownerContext.email ?? undefined });
       console.log('[IVXOwnerAIBackend] Best-investor workflow grounding:', {
         requestId,
         deal: workflow.deal?.dealName ?? null,
@@ -6815,7 +6815,7 @@ async function handleIVXOwnerAIRequestInternal(request: Request): Promise<Respon
         assistantPersisted: Boolean(assistantMessageId),
         selectedIntent: 'find_best_investor',
         selectedTool: 'find_best_investor',
-        toolOutputs: [{ bestInvestor: workflow.bestInvestor }, { deal: workflow.deal }, { introEmailDraft: workflow.introEmail }, { followUpTask: workflow.followUpTask }],
+        toolOutputs: [{ bestInvestor: workflow.bestInvestor }, { deal: workflow.deal }, { introEmailDraft: workflow.introEmail }, { followUpTask: workflow.followUpTask }] as unknown as IVXOwnerAIToolOutput[],
         fallbackUsed: false,
       }, body.devTestModeActive === true));
     }
@@ -6887,7 +6887,7 @@ async function handleIVXOwnerAIRequestInternal(request: Request): Promise<Respon
         assistantPersisted: Boolean(assistantMessageId),
         selectedIntent: 'opportunity_intelligence',
         selectedTool: 'opportunity_intelligence',
-        toolOutputs: [{ bestOpportunityToday: best }, { ranked: scan.opportunities.slice(0, 6) }],
+        toolOutputs: [{ bestOpportunityToday: best }, { ranked: scan.opportunities.slice(0, 6) }] as unknown as IVXOwnerAIToolOutput[],
         fallbackUsed: false,
       }, body.devTestModeActive === true));
     }
@@ -6963,7 +6963,7 @@ async function handleIVXOwnerAIRequestInternal(request: Request): Promise<Respon
         assistantPersisted: Boolean(assistantMessageId),
         selectedIntent: 'landing_inspection',
         selectedTool: 'inspect_landing_page',
-        toolOutputs: [{ authoritativeProjectSource: projectData }, { liveLandingPageScrape: landing }],
+        toolOutputs: [{ authoritativeProjectSource: projectData }, { liveLandingPageScrape: landing }] as unknown as IVXOwnerAIToolOutput[],
         fallbackUsed: false,
       }, body.devTestModeActive === true));
     }

@@ -20,7 +20,7 @@ export const OPTIONS = (): Response => ownerOnlyOptions();
 
 export async function handleIVXAIJobStartRequest(request: Request): Promise<Response> {
   const owner = await assertIVXOwnerOnly(request);
-  if (!owner.ok) return ownerOnlyJson({ ok: false, error: owner.error }, owner.status);
+  if (!owner.userId) return ownerOnlyJson({ ok: false, error: 'IVX owner authentication required.' }, 401);
 
   let body: Record<string, unknown> = {};
   try {
@@ -56,7 +56,7 @@ export async function handleIVXAIJobStartRequest(request: Request): Promise<Resp
 
 export async function handleIVXAIJobStatusRequest(request: Request, jobId: string): Promise<Response> {
   const owner = await assertIVXOwnerOnly(request);
-  if (!owner.ok) return ownerOnlyJson({ ok: false, error: owner.error }, owner.status);
+  if (!owner.userId) return ownerOnlyJson({ ok: false, error: 'IVX owner authentication required.' }, 401);
 
   const job = getAIJob(jobId);
   if (!job) return ownerOnlyJson({ ok: false, error: 'job not found' }, 404);
@@ -78,13 +78,13 @@ export async function handleIVXAIJobStatusRequest(request: Request, jobId: strin
 
 export async function handleIVXAIJobsListRequest(request: Request): Promise<Response> {
   const owner = await assertIVXOwnerOnly(request);
-  if (!owner.ok) return ownerOnlyJson({ ok: false, error: owner.error }, owner.status);
+  if (!owner.userId) return ownerOnlyJson({ ok: false, error: 'IVX owner authentication required.' }, 401);
   return ownerOnlyJson({ ok: true, jobs: listAIJobs(20) });
 }
 
 export async function handleIVXAIRuntimeObservabilityRequest(request: Request): Promise<Response> {
   const owner = await assertIVXOwnerOnly(request);
-  if (!owner.ok) return ownerOnlyJson({ ok: false, error: owner.error }, owner.status);
+  if (!owner.userId) return ownerOnlyJson({ ok: false, error: 'IVX owner authentication required.' }, 401);
 
   return ownerOnlyJson({
     ok: true,

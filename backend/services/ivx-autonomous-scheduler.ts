@@ -346,7 +346,7 @@ async function runDailyReportJob(): Promise<ScheduledJobResult> {
     const entry = await generateAndStoreDailyReport({ trigger: 'scheduler' });
 
     await rememberSafely({
-      kind: 'note',
+      kind: 'execution_history',
       title: `Daily executive report ${entry.reportDate}`,
       summary: entry.headline,
       data: {

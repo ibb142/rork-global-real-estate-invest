@@ -13,6 +13,7 @@ function baseRecord(overrides: Partial<InvestorRecord> = {}): InvestorRecord {
   return {
     id: overrides.id ?? 'investor-1',
     name: overrides.name ?? 'Jane Capital',
+    partyType: overrides.partyType ?? 'investor',
     company: overrides.company ?? 'Capital Partners',
     email: overrides.email ?? '',
     phone: overrides.phone ?? '',

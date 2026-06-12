@@ -549,7 +549,10 @@ export async function runSeniorDeveloperAudit(): Promise<SeniorDevAuditReport> {
     });
   }
 
-  if (!smoke.ok) topIssues.push({ area: 'backend', finding: `/health probe failed (${smoke.status ?? smoke.error})`, severity: 'critical', nextAction: 'Check Render deploy & PRODUCTION_BASE_URL' });
+  if (!smoke.ok) {
+    const smokeDetail = smoke as { status?: number | string; error?: string };
+    topIssues.push({ area: 'backend', finding: `/health probe failed (${smokeDetail.status ?? smokeDetail.error ?? 'unknown'})`, severity: 'critical', nextAction: 'Check Render deploy & PRODUCTION_BASE_URL' });
+  }
 
   return {
     marker: IVX_SENIOR_DEV_TOOLS_MARKER,

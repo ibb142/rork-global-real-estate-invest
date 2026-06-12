@@ -58,7 +58,7 @@ describe('validateCreateDeal (no fabrication rule)', () => {
 
 describe('deal tracking CRUD + milestones', () => {
   it('creates, increments milestones, advances status, and deletes', async () => {
-    const created = await createDeal(baseInput({ counterparty: 'IVX Holdings', capitalTarget: '$1,000,000' }));
+    const created = await createDeal(baseInput({ counterparty: 'IVX Holdings', capitalTarget: '$1,000,000' as unknown as number }));
     expect(created.ok).toBe(true);
     if (!created.ok) return;
     const id = created.deal.id;

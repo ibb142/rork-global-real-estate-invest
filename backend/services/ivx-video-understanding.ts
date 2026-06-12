@@ -76,8 +76,10 @@ const GOAL_INSTRUCTIONS: Record<VideoUnderstandingGoal, string> = {
 };
 
 /** Normalize + order frames into a bounded, timestamp-sorted timeline. */
+type OrderedVideoFrame = { url: string; timestampSeconds: number | null; mimeType: string | null };
+
 export function buildVideoTimeline(frames: VideoFrame[]): {
-  ordered: VideoFrame[];
+  ordered: OrderedVideoFrame[];
   timeline: { index: number; timestampSeconds: number | null; url: string }[];
 } {
   const valid = (frames ?? [])

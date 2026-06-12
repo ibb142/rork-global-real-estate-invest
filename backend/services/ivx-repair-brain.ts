@@ -203,7 +203,7 @@ export async function diagnoseIncident(incidentId: string): Promise<DiagnoseResu
       maxOutputTokens: 1200,
     });
     raw = result.text ?? '';
-    model = result.model ?? null;
+    model = result.providerMetadata?.model ?? null;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     updateIncident(incidentId, { status: 'open' });

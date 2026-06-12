@@ -339,6 +339,7 @@ import { handleIVXDevelopmentActionRequest, handleIVXDevelopmentControlRequest, 
 import { OPTIONS as aiBrainToolsOptions, handleIVXAIBrainToolExecuteRequest, handleIVXAIBrainToolsListRequest } from './api/ivx-ai-brain-tools';
 import { OPTIONS as controlRoomStatusOptions, handleIVXControlRoomStatusRequest } from './api/ivx-control-room-status';
 import { OPTIONS as developerDeployOptions, handleIVXDeveloperDeployActionRequest, handleIVXDeveloperDeployStatusRequest } from './api/ivx-developer-deploy-control';
+import { handleIVXOwnerAuditOptions, handleIVXOwnerAuditRecentConversationsRequest } from './api/ivx-owner-audit';
 import { OPTIONS as variablesToolOptions, handleIVXVariablesToolSaveRequest, handleIVXVariablesToolStatusRequest } from './api/ivx-variables-tool';
 import { OPTIONS as ownerVariablesOptions, getIVXOwnerVariableRuntimeValue, hasIVXOwnerVariableRuntimeValue, handleIVXOwnerVariablesDeleteRequest, handleIVXOwnerVariablesSaveRequest, handleIVXOwnerVariablesSelfSyncRequest, handleIVXOwnerVariablesStatusRequest, handleIVXOwnerVariablesTestRequest } from './api/ivx-owner-variables';
 import { OPTIONS as independenceStatusOptions, handleIVXIndependenceStatusRequest } from './api/ivx-independence-status';

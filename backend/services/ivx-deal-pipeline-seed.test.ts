@@ -15,7 +15,7 @@ function project(overrides: Partial<ProjectRecord> = {}): ProjectRecord {
     id: overrides.id ?? 'casa-rosario-001',
     name: overrides.name ?? 'Casa Rosario',
     location: overrides.location ?? 'Pembroke Pines, FL',
-    price: 'price' in overrides ? overrides.price : '$1,400,000',
+    price: 'price' in overrides ? (overrides.price ?? null) : '$1,400,000',
     roi: overrides.roi ?? '30%',
     timeline: overrides.timeline ?? '14-24 months',
     ownershipMinimum: overrides.ownershipMinimum ?? '$50',

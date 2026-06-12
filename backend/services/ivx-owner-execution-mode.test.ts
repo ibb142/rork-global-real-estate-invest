@@ -88,7 +88,7 @@ describe('classifyOwnerExecutionCommand — non-commands route normally', () => 
 describe('listOwnerApprovalGates', () => {
   test('exposes exactly the six guarded categories', () => {
     const gates = listOwnerApprovalGates();
-    expect(gates.map((gate) => gate.category).sort()).toEqual(
+    expect(gates.map((gate) => gate.category as string).sort()).toEqual(
       [
         'change_billing',
         'delete_data',

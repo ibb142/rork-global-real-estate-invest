@@ -77,8 +77,8 @@ describe('deriveProspects', () => {
       expect(p.evidence).toContain('Casa Rosario');
       expect(p.publicSource.trim().length).toBeGreaterThan(0);
       expect(p.nextAction.trim().length).toBeGreaterThan(0);
-      expect(p.complianceNote.toLowerCase()).toContain('never invents');
-      expect(p.matchedDealNames).toContain('Casa Rosario');
+      expect((p.complianceNote ?? '').toLowerCase()).toContain('never invents');
+      expect(p.matchedDealNames ?? []).toContain('Casa Rosario');
       for (const v of [p.scores.confidence, p.scores.relevance, p.scores.dealFit]) {
         expect(v).toBeGreaterThanOrEqual(0);
         expect(v).toBeLessThanOrEqual(100);
@@ -106,7 +106,7 @@ describe('deriveProspects', () => {
     const genericInvestor = generic.find((p) => p.type === 'investor');
     expect(sflaInvestor).toBeDefined();
     expect(genericInvestor).toBeDefined();
-    expect(sflaInvestor!.scores.relevance).toBeGreaterThan(genericInvestor!.scores.relevance);
+    expect(sflaInvestor!.scores.relevance).toBeGreaterThan(genericInvestor!.scores.relevance ?? 0);
   });
 
   it('de-dupes a segment across deals and accumulates matched deal names', () => {
@@ -120,7 +120,7 @@ describe('deriveProspects', () => {
     // No duplicate (type, segment) keys.
     expect(new Set(segments).size).toBe(segments.length);
     // At least one profile is matched to both deals.
-    const multi = out.find((p) => p.matchedDealNames.length >= 2);
+    const multi = out.find((p) => (p.matchedDealNames ?? []).length >= 2);
     expect(multi).toBeDefined();
     expect(multi!.matchedDealNames).toContain('Casa Rosario');
     expect(multi!.matchedDealNames).toContain('Bayfront Tower');

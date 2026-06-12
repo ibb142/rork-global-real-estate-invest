@@ -196,7 +196,7 @@ export async function buildDailyExecutiveReport(
 
   // ── 2. Fixes proposed ────────────────────────────────────────────────────────
   const proposedJobs = repairJobs.filter(
-    (j) => j.stage === 'awaiting_approval' || j.stage === 'staging_passed' || j.stage === 'replaying',
+    (j) => j.stage === 'awaiting_approval' || j.stage === 'running_checks' || j.stage === 'replaying',
   );
   const diagnosedIncidents = incidents.filter(
     (i) => i.status === 'fix_proposed' || i.status === 'awaiting_approval',

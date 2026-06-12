@@ -199,7 +199,7 @@ function hasActiveProductionIncident(): { active: boolean; sample: { id: string;
   for (const inc of recent) {
     const ts = Date.parse(inc.createdAt);
     if (!Number.isFinite(ts) || ts < cutoff) continue;
-    if (inc.severity === 'critical' && (inc.status === 'open' || inc.status === 'in_review')) {
+    if (inc.severity === 'critical' && (inc.status === 'open' || inc.status === 'diagnosing')) {
       return { active: true, sample: { id: inc.id, message: inc.message.slice(0, 120) } };
     }
   }
@@ -393,7 +393,7 @@ export async function runNightOpsCycle(options: { force?: boolean } = {}): Promi
 
   // 3. autonomous diagnosis on top open incidents
   const openIncidents = listIncidents(200)
-    .filter((i) => i.status === 'open' || i.status === 'in_review' || i.status === 'awaiting_diagnosis')
+    .filter((i) => i.status === 'open' || i.status === 'diagnosing')
     .slice(0, state.config.diagnosePerRun);
 
   const diagnoses: NightOpsRunReport['diagnoses'] = [];

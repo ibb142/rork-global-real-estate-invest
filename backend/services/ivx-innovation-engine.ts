@@ -100,7 +100,7 @@ export async function collectInnovationSignals(
   const publishedProjects = projects?.publishedCount ?? projects?.projects.length ?? 0;
   const projectsWithoutMedia = projects?.projects.filter((p) => (p.mediaCount ?? 0) === 0).length ?? 0;
   const rois = (projects?.projects ?? [])
-    .map((p) => parseRoiPercent(p.expectedRoi))
+    .map((p) => parseRoiPercent(p.roi))
     .filter((value): value is number => value !== null);
   const avgRoiPercent = rois.length > 0 ? Math.round(rois.reduce((a, b) => a + b, 0) / rois.length) : null;
 

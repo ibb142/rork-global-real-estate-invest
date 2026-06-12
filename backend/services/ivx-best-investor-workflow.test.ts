@@ -29,6 +29,7 @@ function investor(overrides: Partial<InvestorRecord> = {}): InvestorRecord {
   return {
     id: 'investor-1',
     name: 'Jane Capital',
+    partyType: 'investor',
     company: 'Capital Co',
     email: '',
     phone: '',

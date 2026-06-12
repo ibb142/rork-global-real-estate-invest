@@ -48,6 +48,17 @@ function makeScheduler(overrides: Partial<SchedulerState> = {}): SchedulerState 
         runCount: 0,
         failureCount: 0,
       },
+      daily_executive_report: {
+        kind: 'daily_executive_report',
+        intervalMs: 86400000,
+        lastRunAt: null,
+        nextDueAt: new Date().toISOString(),
+        lastStatus: 'never',
+        lastDurationMs: null,
+        lastSummary: 'Not run yet.',
+        runCount: 0,
+        failureCount: 0,
+      },
     },
   };
   return { ...base, ...overrides };

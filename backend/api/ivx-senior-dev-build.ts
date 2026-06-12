@@ -170,7 +170,7 @@ export async function handleExecutionStreamRequest(request: Request): Promise<Re
       openIncidents = rows
         .filter((r) => r.status === 'open' || r.status === 'awaiting_approval' || r.status === 'awaiting_production_approval')
         .slice(0, 12)
-        .map((r) => ({ id: r.id, severity: r.severity, status: r.status, checkpoint: r.checkpoint, fileLine: r.fileLine, createdAt: r.createdAt }));
+        .map((r) => ({ id: r.id, severity: r.severity as string, status: r.status as string, checkpoint: r.checkpoint ?? '', fileLine: r.fileLine, createdAt: r.createdAt }));
     } catch { /* ignore */ }
     return ownerOnlyJson({ ...snapshot, repairJobs, openIncidents } as unknown as Record<string, unknown>);
   } catch (error) {
@@ -202,7 +202,7 @@ export async function handleExecutionRecordRequest(request: Request): Promise<Re
       status: statusAllowed.has(statusVal) ? (statusVal as 'info') : 'info',
       confidence: asNumber(body.confidence),
       progressPct: asNumber(body.progressPct),
-      meta: body.meta && typeof body.meta === 'object' ? (body.meta as Record<string, unknown>) : undefined,
+      meta: body.meta && typeof body.meta === 'object' ? (body.meta as Record<string, string | number | boolean | null> & Record<string, unknown>) : undefined,
     });
     return ownerOnlyJson({ ok: true, event: event as unknown as Record<string, unknown> });
   } catch (error) {
