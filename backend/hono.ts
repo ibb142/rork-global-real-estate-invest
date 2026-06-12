@@ -193,6 +193,16 @@ import {
   handleInvestorDiscoveryScanRequest,
 } from './api/ivx-investor-discovery';
 import {
+  OPTIONS as buyerDiscoveryOptions,
+  handleBuyerDiscoveryGetRequest,
+  handleBuyerDiscoveryScanRequest,
+} from './api/ivx-buyer-discovery';
+import {
+  OPTIONS as bizDevOrchestratorOptions,
+  handleBizDevStatusRequest,
+  handleBizDevRunRequest,
+} from './api/ivx-bizdev-orchestrator';
+import {
   OPTIONS as executionTraceOptions,
   handleExecutionTraceListRequest,
   handleExecutionTraceGetRequest,
@@ -1886,6 +1896,16 @@ app.options('/api/ivx/investor-discovery', () => investorDiscoveryOptions());
 app.get('/api/ivx/investor-discovery', async (context) => handleInvestorDiscoveryGetRequest(context.req.raw));
 app.options('/api/ivx/investor-discovery/scan', () => investorDiscoveryOptions());
 app.post('/api/ivx/investor-discovery/scan', async (context) => handleInvestorDiscoveryScanRequest(context.req.raw));
+
+app.options('/api/ivx/buyer-discovery', () => buyerDiscoveryOptions());
+app.get('/api/ivx/buyer-discovery', async (context) => handleBuyerDiscoveryGetRequest(context.req.raw));
+app.options('/api/ivx/buyer-discovery/scan', () => buyerDiscoveryOptions());
+app.post('/api/ivx/buyer-discovery/scan', async (context) => handleBuyerDiscoveryScanRequest(context.req.raw));
+
+app.options('/api/ivx/bizdev/status', () => bizDevOrchestratorOptions());
+app.get('/api/ivx/bizdev/status', async (context) => handleBizDevStatusRequest(context.req.raw));
+app.options('/api/ivx/bizdev/run', () => bizDevOrchestratorOptions());
+app.post('/api/ivx/bizdev/run', async (context) => handleBizDevRunRequest(context.req.raw));
 
 app.options('/api/ivx/capital-network/dashboard', () => capitalNetworkOptions());
 app.get('/api/ivx/capital-network/dashboard', async (context) => handleCapitalNetworkDashboardRequest(context.req.raw));
