@@ -60,7 +60,11 @@ export type IVXAIConfigurationSnapshot = {
 };
 
 const GATEWAY_BASE_PATH = '/v3/ai';
-const DEFAULT_IVX_AI_MODEL = 'openai/gpt-4o-mini';
+// Full multimodal model billed against the paid Vercel AI Gateway balance.
+// gpt-4o-mini is a free-tier model that Vercel rate-limits and is the weakest
+// vision model; gpt-4o gives real image + document analysis with no free-tier
+// caps. Override with IVX_AI_MODEL / PUBLIC_CHAT_MODEL / OPENAI_MODEL if needed.
+const DEFAULT_IVX_AI_MODEL = readTrimmed(process.env.IVX_AI_MODEL) || 'openai/gpt-4o';
 
 // Adaptive timeout floor / ceiling. Short prompts resolve fast (floor), large
 // reports get more headroom (ceiling). Tuned so a 12k-token report has ~90s

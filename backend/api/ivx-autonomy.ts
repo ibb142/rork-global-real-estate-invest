@@ -26,8 +26,7 @@ import { getIVXProviderChainSnapshot } from '../services/ivx-ai-provider-fallbac
 import { triggerProductionRollback, getProductionHealth } from '../services/ivx-production-guard';
 import { getIVXOwnerVariableRuntimeValue } from './ivx-owner-variables';
 import { assertIVXOwnerOnly, ownerOnlyJson, ownerOnlyOptions } from './owner-only';
-import { spawn } from 'child_process';
-import * as path from 'path';
+import { runGithubSyncInProcess } from '../services/ivx-github-sync';
 
 export const IVX_AUTONOMY_MARKER = 'ivx-autonomy-routes-2026-05-27';
 
@@ -599,26 +598,38 @@ async function githubApi(token: string, urlPath: string): Promise<{ ok: boolean;
   }
 }
 
-function runSyncGithubScript(env: NodeJS.ProcessEnv, dryRun: boolean, message: string, timeoutMs: number): Promise<{ exitCode: number; stdout: string; stderr: string; timedOut: boolean }> {
-  return new Promise((resolve) => {
-    const scriptPath = path.resolve(process.cwd(), 'expo/sync-github.mjs');
-    const args = [scriptPath];
-    if (dryRun) args.push('--dry-run');
-    if (message) { args.push('--message', message); }
-    const child = spawn(process.execPath, args, {
-      env,
-      cwd: path.resolve(process.cwd(), 'expo'),
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    let stdout = '';
-    let stderr = '';
-    let timedOut = false;
-    const timer = setTimeout(() => { timedOut = true; try { child.kill('SIGKILL'); } catch {} }, timeoutMs);
-    child.stdout.on('data', (chunk) => { stdout += String(chunk); if (stdout.length > 200_000) stdout = stdout.slice(-200_000); });
-    child.stderr.on('data', (chunk) => { stderr += String(chunk); if (stderr.length > 50_000) stderr = stderr.slice(-50_000); });
-    child.on('close', (code) => { clearTimeout(timer); resolve({ exitCode: code ?? -1, stdout, stderr, timedOut }); });
-    child.on('error', (err) => { clearTimeout(timer); resolve({ exitCode: -1, stdout, stderr: stderr + String(err?.message ?? err), timedOut }); });
+/**
+ * Runs the GitHub sync entirely in-process via `runGithubSyncInProcess`
+ * (backend-native port of the old `expo/sync-github.mjs`). The previous
+ * implementation spawned `node expo/sync-github.mjs`, which failed in the
+ * production image with `MODULE_NOT_FOUND: /app/expo/sync-github.mjs` because
+ * that file was never copied into the runtime container. The sync logic now
+ * lives under `backend/` (always shipped via `COPY backend ./backend`), so the
+ * route no longer depends on any external `expo/*.mjs` file.
+ *
+ * Returns the same CLI-compatible shape the caller already consumes.
+ */
+async function runSyncGithubScript(
+  creds: { token: string; repoSlug: string; branch: string },
+  dryRun: boolean,
+  message: string,
+  timeoutMs: number,
+): Promise<{ exitCode: number; stdout: string; stderr: string; timedOut: boolean }> {
+  const result = await runGithubSyncInProcess({
+    token: creds.token,
+    repoSlug: creds.repoSlug,
+    branch: creds.branch,
+    dryRun,
+    message,
+    deleteRemote: process.env.SYNC_DELETE_REMOTE === 'true',
+    timeoutMs,
   });
+  return {
+    exitCode: result.exitCode,
+    stdout: result.stdout,
+    stderr: result.stderr,
+    timedOut: result.timedOut,
+  };
 }
 
 function redactSecretsFromString(input: string, secrets: string[]): string {
@@ -693,14 +704,10 @@ export async function handleIVXAutonomyGithubSyncRequest(request: Request): Prom
       : null;
 
     // Run the existing sync script with credentials injected into env only.
-    const childEnv: NodeJS.ProcessEnv = {
-      ...process.env,
-      GITHUB_TOKEN: token,
-      GITHUB_REPO_URL: repoUrl,
-      GITHUB_REPO: repoSlug,
-      GITHUB_BRANCH: branch,
-    };
-    const exec = await runSyncGithubScript(childEnv, !apply, message, timeoutMs);
+    // Explicit owner approval flags are set so the push never depends on the
+    // background kill-switch (RORK_AUTO_SYNC_ENABLED): this is a single,
+    // owner-authenticated, on-demand push, not background auto-sync.
+    const exec = await runSyncGithubScript({ token, repoSlug, branch }, !apply, message, timeoutMs);
     const secrets = [token].filter(Boolean) as string[];
     const stdoutSafe = redactSecretsFromString(exec.stdout, secrets).split('\n').slice(-60).join('\n');
     const stderrSafe = redactSecretsFromString(exec.stderr, secrets).split('\n').slice(-60).join('\n');

@@ -47,11 +47,12 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 /** Ticker cadence — the per-job interval gates whether work actually runs. */
 const TICK_MS = 5 * 60 * 1000;
 
-export type ScheduledJobKind = 'daily_self_audit' | 'daily_drift_detection';
+export type ScheduledJobKind = 'daily_self_audit' | 'daily_drift_detection' | 'daily_executive_report';
 
 export const SCHEDULED_JOB_KINDS: readonly ScheduledJobKind[] = [
   'daily_self_audit',
   'daily_drift_detection',
+  'daily_executive_report',
 ];
 
 export type JobRunStatus = 'never' | 'ok' | 'failed';
@@ -117,6 +118,7 @@ export function freshSchedulerState(now: number = Date.now()): SchedulerState {
     jobs: {
       daily_self_audit: freshJobState('daily_self_audit', now),
       daily_drift_detection: freshJobState('daily_drift_detection', now),
+      daily_executive_report: freshJobState('daily_executive_report', now),
     },
   };
 }
@@ -161,6 +163,11 @@ function normalizeState(parsed: unknown): SchedulerState {
         ...fresh.jobs.daily_drift_detection,
         ...(jobs.daily_drift_detection ?? {}),
         kind: 'daily_drift_detection',
+      },
+      daily_executive_report: {
+        ...fresh.jobs.daily_executive_report,
+        ...(jobs.daily_executive_report ?? {}),
+        kind: 'daily_executive_report',
       },
     },
   };
@@ -332,6 +339,46 @@ async function runSelfAuditJob(deps: SelfAuditDeps = {}): Promise<ScheduledJobRe
   }
 }
 
+async function runDailyReportJob(): Promise<ScheduledJobResult> {
+  const start = Date.now();
+  try {
+    const { generateAndStoreDailyReport } = await import('./ivx-daily-executive-report');
+    const entry = await generateAndStoreDailyReport({ trigger: 'scheduler' });
+
+    await rememberSafely({
+      kind: 'note',
+      title: `Daily executive report ${entry.reportDate}`,
+      summary: entry.headline,
+      data: {
+        reportId: entry.reportId,
+        reportDate: entry.reportDate,
+        sourcesScanned: entry.report.sourcesScanned,
+        sectionCounts: Object.fromEntries(
+          Object.values(entry.report.sections).map((s) => [s.key, s.count]),
+        ),
+      },
+      tags: ['daily-report', 'executive', 'autonomous'],
+      source: 'autonomous_mode',
+      status: 'active',
+    });
+
+    return {
+      kind: 'daily_executive_report',
+      ok: true,
+      durationMs: Date.now() - start,
+      summary: entry.headline,
+    };
+  } catch (error) {
+    return {
+      kind: 'daily_executive_report',
+      ok: false,
+      durationMs: Date.now() - start,
+      summary: 'Daily executive report failed.',
+      error: error instanceof Error ? error.message : 'Daily executive report failed.',
+    };
+  }
+}
+
 async function runDriftJob(deps: DriftDeps = {}): Promise<ScheduledJobResult> {
   const start = Date.now();
   try {
@@ -382,7 +429,9 @@ export async function runScheduledJob(
     const result =
       kind === 'daily_self_audit'
         ? await runSelfAuditJob(deps.selfAudit)
-        : await runDriftJob(deps.drift);
+        : kind === 'daily_executive_report'
+          ? await runDailyReportJob()
+          : await runDriftJob(deps.drift);
 
     await patchJobState(kind, (job, now) => ({
       ...job,

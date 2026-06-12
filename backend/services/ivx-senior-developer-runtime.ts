@@ -1047,8 +1047,11 @@ async function commitFilesToGithub(projectRoot: string, filePaths: string[], bra
 
   const branch = branchOverride || readTrimmedEnv('GITHUB_DEFAULT_BRANCH') || GITHUB_DEFAULT_BRANCH;
   const headers = githubHeaders(token);
-  const refPath = `${GITHUB_API_BASE_URL}/repos/${repoInfo.owner}/${repoInfo.repo}/git/ref/heads/${encodeURIComponent(branch)}`;
-  const ref = await fetchJson(refPath, { method: 'GET', headers });
+  // GitHub uses singular `git/ref/{ref}` to READ a single reference, but plural
+  // `git/refs/{ref}` to UPDATE it. Mixing them up makes the PATCH 404.
+  const readRefPath = `${GITHUB_API_BASE_URL}/repos/${repoInfo.owner}/${repoInfo.repo}/git/ref/heads/${encodeURIComponent(branch)}`;
+  const updateRefPath = `${GITHUB_API_BASE_URL}/repos/${repoInfo.owner}/${repoInfo.repo}/git/refs/heads/${encodeURIComponent(branch)}`;
+  const ref = await fetchJson(readRefPath, { method: 'GET', headers });
   if (!ref.ok) throw new Error(externalFailureMessage('GitHub', 'branch ref lookup', ref));
   const baseCommitSha = readString(readRecord(readRecord(ref.data).object).sha);
   if (!baseCommitSha) throw new Error('GitHub branch ref response did not include a commit SHA.');
@@ -1087,7 +1090,7 @@ async function commitFilesToGithub(projectRoot: string, filePaths: string[], bra
   const commitSha = readString(readRecord(commit.data).sha);
   if (!commitSha) throw new Error('GitHub commit creation response did not include a commit SHA.');
 
-  const updateRef = await fetchJson(refPath, {
+  const updateRef = await fetchJson(updateRefPath, {
     method: 'PATCH',
     headers,
     body: JSON.stringify({ sha: commitSha, force: false }),
@@ -1108,11 +1111,36 @@ async function triggerRenderDeploy(commitSha: string): Promise<{ deployId: strin
   if (!apiKey) throw new Error('RENDER_API_KEY is missing.');
   if (!serviceId) throw new Error('RENDER_SERVICE_ID is missing.');
 
-  const response = await fetchJson(`${RENDER_API_BASE_URL}/services/${encodeURIComponent(serviceId)}/deploys`, {
+  // Render ingests the GitHub commit asynchronously (webhook), so pinning the
+  // deploy to the freshly-pushed SHA can 404 with "service does not have a
+  // commit ..." before the sync completes. Retry the pinned trigger a few times,
+  // then fall back to deploying the branch HEAD (no commitId) so we still capture
+  // a real Render deploy ID instead of relying only on auto-deploy-on-commit.
+  const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+  let response = await fetchJson(`${RENDER_API_BASE_URL}/services/${encodeURIComponent(serviceId)}/deploys`, {
     method: 'POST',
     headers: renderHeaders(apiKey),
     body: JSON.stringify({ commitId: commitSha }),
   });
+  const commitNotYetIngested = (resp: typeof response): boolean =>
+    resp.status === 404 && JSON.stringify(resp.data ?? '').toLowerCase().includes('does not have a commit');
+  for (let attempt = 0; attempt < 4 && commitNotYetIngested(response); attempt += 1) {
+    await sleep(2500);
+    response = await fetchJson(`${RENDER_API_BASE_URL}/services/${encodeURIComponent(serviceId)}/deploys`, {
+      method: 'POST',
+      headers: renderHeaders(apiKey),
+      body: JSON.stringify({ commitId: commitSha }),
+    });
+  }
+  if (commitNotYetIngested(response)) {
+    // The pinned commit still has not synced; deploy the branch HEAD so Render
+    // returns a concrete deploy ID. render.yaml auto-deploy still covers the SHA.
+    response = await fetchJson(`${RENDER_API_BASE_URL}/services/${encodeURIComponent(serviceId)}/deploys`, {
+      method: 'POST',
+      headers: renderHeaders(apiKey),
+      body: JSON.stringify({}),
+    });
+  }
   if (!response.ok) {
     // render.yaml configures `autoDeployTrigger: commit`, so the GitHub commit we
     // just pushed already triggers a production deploy on its own. When the Render

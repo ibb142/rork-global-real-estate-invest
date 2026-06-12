@@ -62,12 +62,16 @@ export type IVXSeniorDeveloperSelfProof = {
     commitUrl: string | null;
     branch: string | null;
     committedPaths: string[];
+    /** Raw GitHub API failure (status + message + docs url), secret-free, when the commit fails. */
+    error: string | null;
   };
   /** 4. Render deployment triggered */
   render: {
     deployTriggered: boolean;
     deployId: string | null;
     deployStatus: string | null;
+    /** Raw Render API failure, secret-free, when the deploy trigger fails. */
+    error: string | null;
   };
   /** 5. Production HTTP 200 from the live feature subsystem */
   production: {
@@ -197,11 +201,13 @@ async function executeRealProof(goal: string): Promise<IVXSeniorDeveloperSelfPro
       commitUrl: asString(github.commitUrl),
       branch: asString(github.branch),
       committedPaths: asStringArray(github.committedPaths),
+      error: asString(github.error),
     },
     render: {
       deployTriggered: Boolean(render.deployAttempted),
       deployId: asString(render.deployId),
       deployStatus: asString(render.deployStatus),
+      error: asString(render.error),
     },
     production: {
       healthHttpStatus: asNumber(productionVerification.httpStatus),
@@ -214,7 +220,9 @@ async function executeRealProof(goal: string): Promise<IVXSeniorDeveloperSelfPro
     changedFiles,
     blocker: ok
       ? null
-      : (asString(gitDeployOperator.reason)
+      : (asString(github.error)
+        || asString(render.error)
+        || asString(gitDeployOperator.reason)
         || asString(productionVerification.error)
         || 'Senior developer self-proof did not complete end-to-end.'),
     ranAt: nowIso(),

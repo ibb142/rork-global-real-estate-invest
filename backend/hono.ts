@@ -138,6 +138,17 @@ import {
   handleRorkIndependenceRequest,
 } from './api/ivx-rork-independence';
 import {
+  OPTIONS as dailyReportOptions,
+  handleDailyReportLatest,
+  handleDailyReportGenerate,
+  handleDailyReportHistory,
+} from './api/ivx-daily-report';
+import {
+  OPTIONS as technologyDiscoveryOptions,
+  handleTechnologyDiscoveryStatusRequest,
+  handleTechnologyDiscoveryScanRequest,
+} from './api/ivx-technology-discovery';
+import {
   OPTIONS as unifiedMemoryOptions,
   handleMemoryListRequest,
   handleMemorySummaryRequest,
@@ -398,6 +409,10 @@ import {
   handleIVXAutonomyDeployRollbackRequest,
   handleIVXAutonomyGithubSyncRequest,
 } from './api/ivx-autonomy';
+import {
+  OPTIONS as adminSyncOptions,
+  handleIVXAdminSyncRorkToGithubRequest,
+} from './api/ivx-admin-sync';
 import { handleIVXRepairJobStart, handleIVXRepairJobList, handleIVXRepairJobGet, handleIVXRepairJobByIncident } from './api/ivx-repair-jobs';
 import {
   OPTIONS as nightOpsOptions,
@@ -597,7 +612,10 @@ async function handleRoute53Request(
 }
 
 const app = new Hono();
-const DEPLOYMENT_MARKER = 'ivx-owner-ai-hono-2026-06-07t-landing-seo-autodeploy-live-v1';
+// NOTE: This is a static build label, NOT a deploy timestamp. Do not read freshness
+// from this string. Use the `commit` (RENDER_GIT_COMMIT) and `bootTime` fields on
+// /health for actual deploy verification.
+const DEPLOYMENT_MARKER = 'ivx-owner-ai-hono-autodeploy-live (see commit+bootTime for freshness)';
 /**
  * Live build proof. Render injects RENDER_GIT_COMMIT at deploy time; we surface it on
  * /health so the deployed commit is verifiable from the outside. Falls back to other
@@ -1995,6 +2013,15 @@ app.options('/api/ivx/business-impact/dashboard', () => businessImpactOptions())
 app.get('/api/ivx/business-impact/dashboard', async (context) => handleBusinessImpactDashboardRequest(context.req.raw));
 app.options('/api/ivx/executive-layer', () => executiveLayerOptions());
 app.get('/api/ivx/executive-layer', async (context) => handleExecutiveLayerRequest(context.req.raw));
+app.options('/api/ivx/daily-report', () => dailyReportOptions());
+app.get('/api/ivx/daily-report', async (context) => handleDailyReportLatest(context.req.raw));
+app.post('/api/ivx/daily-report', async (context) => handleDailyReportGenerate(context.req.raw));
+app.options('/api/ivx/daily-report/history', () => dailyReportOptions());
+app.get('/api/ivx/daily-report/history', async (context) => handleDailyReportHistory(context.req.raw));
+app.options('/api/ivx/technology-discovery', () => technologyDiscoveryOptions());
+app.get('/api/ivx/technology-discovery', async (context) => handleTechnologyDiscoveryStatusRequest(context.req.raw));
+app.options('/api/ivx/technology-discovery/scan', () => technologyDiscoveryOptions());
+app.post('/api/ivx/technology-discovery/scan', async (context) => handleTechnologyDiscoveryScanRequest(context.req.raw));
 app.options('/api/ivx/rork-independence', () => rorkIndependenceOptions());
 app.get('/api/ivx/rork-independence', async (context) => handleRorkIndependenceRequest(context.req.raw));
 
@@ -2246,6 +2273,9 @@ app.options('/api/ivx/autonomy/deploy/rollback', () => autonomyOptions());
 app.post('/api/ivx/autonomy/deploy/rollback', async (c) => handleIVXAutonomyDeployRollbackRequest(c.req.raw));
 app.options('/api/ivx/autonomy/github/sync', () => autonomyOptions());
 app.post('/api/ivx/autonomy/github/sync', async (c) => handleIVXAutonomyGithubSyncRequest(c.req.raw));
+// Owner-only one-shot delivery chain: Rork workspace → GitHub push → Render deploy → live /health verify.
+app.options('/api/ivx/admin/sync-rork-to-github', () => adminSyncOptions());
+app.post('/api/ivx/admin/sync-rork-to-github', async (c) => handleIVXAdminSyncRorkToGithubRequest(c.req.raw));
 app.options('/api/ivx/night-ops/status', () => nightOpsOptions());
 app.get('/api/ivx/night-ops/status', async (c) => handleIVXNightOpsStatusRequest(c.req.raw));
 app.options('/api/ivx/night-ops/config', () => nightOpsOptions());

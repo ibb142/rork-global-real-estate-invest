@@ -208,11 +208,11 @@ function getGatewayBaseUrl(): string {
 }
 
 function getVisionModel(): string {
-  return readTrimmed(process.env.IVX_OWNER_AI_VISION_MODEL) || 'openai/gpt-4o-mini';
+  return readTrimmed(process.env.IVX_OWNER_AI_VISION_MODEL) || 'openai/gpt-4o';
 }
 
 function getTextModel(): string {
-  return readTrimmed(process.env.IVX_OWNER_AI_MODEL) || 'openai/gpt-4o-mini';
+  return readTrimmed(process.env.IVX_OWNER_AI_MODEL) || 'openai/gpt-4o';
 }
 
 function ensureGatewayConfigured(): void {

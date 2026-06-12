@@ -14,11 +14,47 @@ import { getIVXAIConfigurationSnapshot } from '../ivx-ai-runtime';
 import { inspectSupabaseColumns, inspectSupabaseRls, inspectSupabaseSchema, inspectSupabaseTables } from './ivx-supabase-inspection';
 import { assertIVXOwnerOnly, ownerOnlyJson, ownerOnlyOptions, type IVXOwnerRequestContext } from './owner-only';
 
+type AuditCheckStatus = 'ok' | 'permission_gap' | 'transient' | 'error';
+
 type AuditCheck<T = unknown> = {
   ok: boolean;
+  status: AuditCheckStatus;
   value: T | null;
   error: string | null;
 };
+
+/**
+ * Classifies an AWS SDK error so the audit can tell apart a genuine broken
+ * credential (a real blocker) from an expected least-privilege permission gap
+ * or a transient timeout/throttle. Without this, every failure was counted the
+ * same, so the pass/fail tally flapped between runs ("up then down").
+ */
+function classifyAuditError(error: unknown): AuditCheckStatus {
+  const message = safeErrorMessage(error).toLowerCase();
+  const name = error instanceof Error ? error.name.toLowerCase() : '';
+  const combined = `${name} ${message}`;
+  if (
+    combined.includes('accessdenied')
+    || combined.includes('access denied')
+    || combined.includes('not authorized')
+    || combined.includes('unauthorizedoperation')
+    || combined.includes('forbidden')
+  ) {
+    return 'permission_gap';
+  }
+  if (
+    combined.includes('timed out')
+    || combined.includes('timeout')
+    || combined.includes('throttl')
+    || combined.includes('etimedout')
+    || combined.includes('econnreset')
+    || combined.includes('rate exceeded')
+    || combined.includes('slowdown')
+  ) {
+    return 'transient';
+  }
+  return 'error';
+}
 
 type AWSClientConfig = {
   region: string;
@@ -86,9 +122,9 @@ function safeErrorMessage(error: unknown): string {
 
 async function capture<T>(fn: () => Promise<T>): Promise<AuditCheck<T>> {
   try {
-    return { ok: true, value: await fn(), error: null };
+    return { ok: true, status: 'ok', value: await fn(), error: null };
   } catch (error) {
-    return { ok: false, value: null, error: safeErrorMessage(error) };
+    return { ok: false, status: classifyAuditError(error), value: null, error: safeErrorMessage(error) };
   }
 }
 
@@ -398,7 +434,12 @@ async function buildAmazonAudit(): Promise<Record<string, unknown>> {
 
   const checkValues = Object.values(checks);
   const passed = checkValues.filter((check) => check.ok).length;
-  const failed = checkValues.length - passed;
+  const permissionGaps = checkValues.filter((check) => check.status === 'permission_gap').length;
+  const transient = checkValues.filter((check) => check.status === 'transient').length;
+  // Only genuine credential/connectivity errors are real, stable blockers.
+  // Permission gaps (expected with least-privilege keys) and transient
+  // timeouts/throttles no longer flip the verdict between runs.
+  const failed = checkValues.filter((check) => check.status === 'error').length;
 
   return {
     config: {
@@ -416,6 +457,11 @@ async function buildAmazonAudit(): Promise<Record<string, unknown>> {
       total: checkValues.length,
       passed,
       failed,
+      permissionGaps,
+      transient,
+      // The report is stable/certifiable when no remaining failures are
+      // transient — i.e. re-running would not change the tally.
+      stable: transient === 0,
     },
   };
 }

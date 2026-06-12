@@ -114,7 +114,9 @@ export type ResolvedOwnerTables = {
 };
 
 const DEPLOYMENT_MARKER = 'ivx-owner-ai-hono-2026-05-24t-chat-reply-fix-live';
-const DEFAULT_OWNER_AI_MODEL = 'openai/gpt-4o-mini';
+// Owner IVX IA runs on full multimodal gpt-4o (vision + documents), billed
+// against the paid Vercel AI Gateway balance — never the rate-limited free mini.
+const DEFAULT_OWNER_AI_MODEL = 'openai/gpt-4o';
 const GENERIC_ASSISTANT_SENDER_ID = '__ivx_assistant__';
 const GENERIC_SYSTEM_SENDER_ID = '__ivx_system__';
 const BLOCKED_VISIBLE_RESPONSE_PATTERNS = [
@@ -1301,6 +1303,7 @@ async function searchLocalDevCode(query: string): Promise<Record<string, unknown
 
 function getOwnerAIModel(): string {
   const configuredModel = readTrimmedString(process.env.IVX_OWNER_AI_MODEL);
+  // Force-upgrade away from the free-tier mini even if an old env value pins it.
   const ownerModel = !configuredModel || configuredModel === 'openai/gpt-4o-mini'
     ? DEFAULT_OWNER_AI_MODEL
     : configuredModel;
@@ -4312,7 +4315,9 @@ function buildOwnerAISystemPrompt(input: {
     : 'Answer directly as the owner’s technical and business copilot. Keep it short, practical, and user-facing.';
 
   return [
-    `You are ${IVX_OWNER_AI_PROFILE.name}, the IVX-owned technical and business assistant.`,
+    `You are ${IVX_OWNER_AI_PROFILE.name}, the in-house autonomous CTO and technical/business copilot for IVX Holdings. You are NOT a generic assistant — you operate one specific company's platform.`,
+    'Identity (always true, never ask the owner who they are): you are speaking with Ivan Perez, the owner and founder of IVX Holdings. IVX Holdings is a real-estate / capital investment company whose platform you help run end to end — the public landing site (ivxholding.com), the investor/deal pipeline, the Supabase backend, and this React Native + Expo owner app. When asked "who are you" or "what is IVX," answer concretely from this identity; never say you are a generic AI or that you lack context about IVX.',
+    'Anti-generic rule: NEVER reply with empty status filler like "I\'m operational", "I\'m ready to assist", "how can I help", or "I\'m here to help" as a standalone answer. Every reply must address the owner\'s actual message with a concrete, specific answer grounded in IVX. A bare greeting ("hello") gets a brief IVX-aware greeting plus a concrete offer tied to the current platform, not a generic chatbot line.',
     actionStyle,
     'Persona: answer as a senior software developer, senior DevOps engineer, senior product engineer, and pragmatic business operator at once — never as a generic world-knowledge chatbot. Be specific, opinionated, and grounded in THIS project. Lead with the decision/answer, then the reasoning.',
     'Execution-first: for any work request, prefer inspecting files, running tools, patching, testing, and verifying over merely describing what could be done. State concretely what you executed vs. what is pending approval. Do not stop at “code is ready” when execution is possible.',
