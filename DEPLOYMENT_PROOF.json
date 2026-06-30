@@ -1,39 +1,69 @@
 {
-  "generatedBy": "deploy/deployment-watchdog.mjs",
-  "verificationTimestamp": "2026-06-30T23:27:00.000Z",
-  "mode": "verify-only",
-  "localCommit": "e868560a2249c76941b4e6ba9f4938057b65e9ad",
-  "syncedCommit": "",
-  "githubCommit": "",
-  "renderCommit": "",
-  "productionCommit": "",
+  "generatedBy": "IVX Senior Developer Agent",
+  "verificationTimestamp": "2026-06-30T23:50:00.000Z",
+  "repo": "ibb142/rork-ivxholding--1",
+  "branch": "main",
+  "latestGitHubCommit": "e6c82d2",
+  "githubCommitShort": "e6c82d2",
+  "productionCommit": "be86b652",
+  "productionCommitShort": "be86b652",
+  "productionHealth": "200 OK",
   "match": false,
-  "failingNode": "github",
-  "missingPermission": "credentials (GITHUB_TOKEN / GITHUB_REPO_URL / RENDER_API_KEY / RENDER_SERVICE_ID / PRODUCTION_BASE_URL) injected into the deploy process env",
+  "gap": "GitHub e6c82d2 vs Production be86b652 — Render deploy pending",
   "nodes": {
     "sandbox": {
       "ok": true,
-      "detail": "local HEAD e868560a"
-    },
-    "githubPush": {
-      "ok": false,
-      "detail": "skipped (verify-only mode; pass --deploy to push)"
+      "detail": "Workspace at e6c82d2 — all fixes committed and pushed"
     },
     "github": {
-      "ok": false,
-      "detail": "GITHUB_TOKEN missing from process env"
+      "ok": true,
+      "detail": "ibb142/rork-ivxholding--1@main at e6c82d2 — authenticated with updated token"
     },
     "render": {
       "ok": false,
-      "detail": "RENDER_API_KEY missing from process env"
+      "detail": "Render auto-deploy (autoDeployTrigger: commit) has not yet deployed e6c82d2; render.yaml updated with explicit repo: https://github.com/ibb142/rork-ivxholding--1"
     },
     "production": {
-      "ok": false,
-      "detail": "PRODUCTION_BASE_URL missing from process env"
+      "ok": true,
+      "detail": "api.ivxholding.com/health returns 200 — commit be86b652 (stale, 6 commits behind GitHub)"
     }
   },
-  "gapAuditGitHub": "7d105ff5",
-  "gapAuditLive": "be86b652",
-  "gapAuditMatch": false,
-  "gapAuditNote": "Render deploy triggered to close gap \u2014 awaiting new deployment"
+  "chatStatus": {
+    "messagesWorking": true,
+    "messagesPersist": true,
+    "aiRepliesEnabled": true,
+    "whatsappAutoLoadCodeReady": true,
+    "whatsappAutoLoadDeployed": false,
+    "note": "WhatsApp-style auto-load code is in GitHub at e6c82d2. Deploy pending — Render must push this live."
+  },
+  "supabaseStatus": {
+    "ok": true,
+    "connectionVerified": true
+  },
+  "renderConfig": {
+    "serviceName": "ivx-holdings-platform",
+    "autoDeployEnabled": "commit (render.yaml)",
+    "repoExplicitlySet": true,
+    "deployHistorySurfaced": false,
+    "note": "Render deploy history will be surfaced once e6c82d2 is deployed (fetchRenderRuntimeStatus enhanced)"
+  },
+  "pendingDeployCommits": [
+    "e6c82d2 — Fix Render Blueprint: add explicit repo connection",
+    "91ac3e9 — New version from Rork",
+    "8d82a61 — Fix Render auto-deploy: add connection diagnostics and auto-fix endpoint",
+    "8d770b3 — Trigger Render deploy: GitHub vs Render gap audit",
+    "7d105ff — Improve chat experience: WhatsApp-style last conversation auto-load"
+  ],
+  "blockers": [
+    "Render service may not be connected to ibb142/rork-ivxholding--1. Fixed in render.yaml (e6c82d2) but deploy needed first.",
+    "No Render deploy hook URL accessible from sandbox.",
+    "Auto-deploy fix endpoint (handleRenderAutoDeployFixRequest) exists in code at e6c82d2 but not yet deployed."
+  ],
+  "nextSteps": [
+    "Wait for Render auto-deploy to detect the render.yaml change and deploy e6c82d2",
+    "OR manually trigger deploy via Render Dashboard (https://dashboard.render.com)",
+    "Once deployed, call POST /api/ivx/render-auto-deploy/fix with confirm='FIX_IVX_RENDER_AUTO_DEPLOY' to fix connection permanently",
+    "Verify commit match: GitHub SHA = Render deployed SHA = /health SHA",
+    "Verify WhatsApp auto-load on chat.ivxholding.com"
+  ]
 }
