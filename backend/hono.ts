@@ -1093,6 +1093,14 @@ async function fetchRenderRuntimeStatus(): Promise<{ ok: boolean; status: 'verif
     ]);
 
     // Parse deploy history from Render API response
+    const deploysHttpOk = deploysResponse?.ok ?? false;
+    const deploysHttpStatus = deploysResponse?.status ?? 0;
+    let deploysRawText = '';
+    try { deploysRawText = await deploysResponse?.text() ?? ''; } catch { /* already consumed */ }
+    let deploysParseError: string | undefined;
+    if (deploysHttpOk && typeof deploysData === 'string' && deploysData) {
+      deploysParseError = `deploys endpoint returned non-JSON: ${deploysData.slice(0, 200)}`;
+    }
     const deploysRaw = Array.isArray(deploysData)
       ? deploysData
       : Array.isArray(readObject(deploysData).deploys)
@@ -1114,12 +1122,19 @@ async function fetchRenderRuntimeStatus(): Promise<{ ok: boolean; status: 'verif
         finishedAt,
         durationMs,
         failureReason: readTrimmed(d.failureReason) || undefined,
+        imageUrl: readTrimmed(d.image?.registryCredential?.registry) || undefined,
       };
     });
     const latestDeploy = deployHistory[0] ?? null;
     const latestLiveDeploy = deployHistory.find((d) => d.status.toLowerCase().includes('live')) ?? latestDeploy;
-    const deploysHttpOk = deploysResponse?.ok ?? false;
     const serviceRecord = readObject(readObject(serviceData).service ?? serviceData);
+    // IVX: Surface GitHub connection details from Render service record
+    const connectedRepo = readTrimmed(serviceRecord.repo) || null;
+    const connectedBranch = readTrimmed(serviceRecord.branch) || null;
+    const autoDeployEnabled = readTrimmed(serviceRecord.autoDeploy) === 'yes';
+    const serviceCreatedAt = readTrimmed(serviceRecord.createdAt) || null;
+    const serviceUpdatedAt = readTrimmed(serviceRecord.updatedAt) || null;
+    const deployHookUrl = readTrimmed(serviceRecord.deployHookUrl) || null;
     const envVarKeys = extractRenderEnvVarKeyNames(envVarsData);
     const envVarKeySet = new Set(envVarKeys);
     const envGroupRows = Array.isArray(envGroupsData) ? envGroupsData : Array.isArray(readObject(envGroupsData).envGroups) ? readObject(envGroupsData).envGroups as unknown[] : [];
@@ -1148,7 +1163,17 @@ async function fetchRenderRuntimeStatus(): Promise<{ ok: boolean; status: 'verif
         serviceSuspended: serviceRecord.suspended === true,
         envGroupExists,
         envGroupMarkerPresent,
+        // GitHub connection status from Render
+        connectedRepo,
+        connectedBranch,
+        autoDeployEnabled,
+        deployHookUrl,
+        serviceCreatedAt,
+        serviceUpdatedAt,
         // Deploy history — surfaced for commit matching and deployment proof
+        deploysHttpStatus,
+        deploysParseError: deploysParseError ?? null,
+        deploysRawResponsePreview: deploysRawText.slice(0, 500) || null,
         deployId: latestDeploy?.deployId ?? null,
         deployStatus: latestDeploy?.status ?? null,
         deployedCommitSha: latestDeploy?.commitSha ?? null,
@@ -1160,6 +1185,7 @@ async function fetchRenderRuntimeStatus(): Promise<{ ok: boolean; status: 'verif
         liveDeployCommitSha: latestLiveDeploy?.commitSha ?? null,
         deployHistory,
         deployHistoryAvailable: deploysAvailable,
+        deployHistoryCount: deployHistory.length,
         requestedCredentialPresentByNameOnly: Object.fromEntries(REQUESTED_PRODUCTION_ACCESS_ENV_NAMES.map((name) => [name, name === 'RENDER_API_KEY' ? Boolean(apiKey) : name === 'RENDER_SERVICE_ID' ? Boolean(serviceId) : Boolean(readTrimmed(process.env[name]))])),
         requiredEnvVarsPresentInRender,
         requiredEnvVarsMissingInRender,
@@ -1211,6 +1237,274 @@ async function buildRenderEnvDebugPayload(): Promise<Record<string, unknown>> {
     loadedAtRuntime: exists,
     secretValuesReturned: false,
   };
+}
+
+// ---- IVX Render Auto-Deploy Fix Handlers ----
+
+function getRenderCredentials(): { apiKey: string; serviceId: string } | null {
+  const apiKey = readTrimmed(process.env.RENDER_API_KEY);
+  const serviceId = readTrimmed(process.env.RENDER_SERVICE_ID);
+  if (!apiKey || !serviceId) return null;
+  return { apiKey, serviceId };
+}
+
+function buildRenderHeaders(apiKey: string): HeadersInit {
+  return {
+    Accept: 'application/json',
+    Authorization: `Bearer ${apiKey}`,
+    'Content-Type': 'application/json',
+  };
+}
+
+const TARGET_GITHUB_REPO = 'ibb142/rork-ivxholding--1';
+const TARGET_GITHUB_REPO_URL = `https://github.com/${TARGET_GITHUB_REPO}`;
+const TARGET_BRANCH = 'main';
+
+async function handleRenderAutoDeployStatusRequest(req: Request): Promise<Response> {
+  const creds = getRenderCredentials();
+  if (!creds) {
+    return Response.json({
+      ok: false,
+      error: 'Render API credentials not configured in backend runtime.',
+      renderConfigured: false,
+      timestamp: new Date().toISOString(),
+    }, { status: 503 });
+  }
+
+  try {
+    const headers = buildRenderHeaders(creds.apiKey);
+    const serviceUrl = `${RENDER_API_BASE_URL}/services/${encodeURIComponent(creds.serviceId)}`;
+    const deployHookUrl = `${RENDER_API_BASE_URL}/services/${encodeURIComponent(creds.serviceId)}/deploy-hook`;
+
+    const [serviceRes, deploysRes, deployHookRes] = await Promise.all([
+      fetch(serviceUrl, { headers }),
+      fetch(`${RENDER_API_BASE_URL}/services/${encodeURIComponent(creds.serviceId)}/deploys?limit=5`, { headers }).catch(() => null),
+      fetch(deployHookUrl, { headers }).catch(() => null),
+    ]);
+
+    const serviceData: Record<string, unknown> = serviceRes.ok
+      ? await serviceRes.json().catch(() => ({})) as Record<string, unknown>
+      : {};
+    const serviceRecord = readObject(serviceData.service ?? serviceData);
+    const deploysData: unknown[] = deploysRes?.ok
+      ? await deploysRes!.json().catch(() => []) as unknown[]
+      : [];
+    const deployHookData: Record<string, unknown> = deployHookRes?.ok
+      ? await deployHookRes!.json().catch(() => ({})) as Record<string, unknown>
+      : {};
+
+    const connectedRepo = readTrimmed(serviceRecord.repo) || null;
+    const connectedBranch = readTrimmed(serviceRecord.branch) || null;
+    const autoDeploy = readTrimmed(serviceRecord.autoDeploy) || null;
+    const autoDeployEnabled = autoDeploy === 'yes';
+    const repoMatch = connectedRepo
+      ? connectedRepo.replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, '') === TARGET_GITHUB_REPO
+      : false;
+    const branchMatch = connectedBranch === TARGET_BRANCH;
+
+    // Parse deploy history
+    const deploys = Array.isArray(deploysData) ? deploysData : [];
+    const deployHistory = deploys.map((item: unknown) => {
+      const d = readObject(item).deploy ?? readObject(item);
+      return {
+        deployId: readTrimmed(d.id),
+        status: readTrimmed(d.status),
+        commitSha: readTrimmed(d.commit?.id) || readTrimmed(d.commitId) || '',
+        createdAt: readTrimmed(d.createdAt) || '',
+        finishedAt: readTrimmed(d.finishedAt) || '',
+        failureReason: readTrimmed(d.failureReason) || undefined,
+      };
+    });
+
+    const latestDeploy = deployHistory[0] ?? null;
+    const deployHookUrl_ = readTrimmed(deployHookData.deployHookUrl) || readTrimmed(serviceRecord.deployHookUrl) || null;
+    const deployHookAvailable = Boolean(deployHookUrl_);
+
+    return Response.json({
+      ok: true,
+      renderConfigured: true,
+      serviceIdSuffix: creds.serviceId.slice(-6).padStart(creds.serviceId.length, '*'),
+      serviceName: readTrimmed(serviceRecord.name) || 'ivx-holdings-platform',
+      serviceType: readTrimmed(serviceRecord.type) || 'web_service',
+      targetRepo: TARGET_GITHUB_REPO,
+      targetRepoUrl: TARGET_GITHUB_REPO_URL,
+      targetBranch: TARGET_BRANCH,
+      connectedRepo,
+      connectedBranch,
+      repoMatch,
+      branchMatch,
+      autoDeployEnabled,
+      deployHookAvailable,
+      deployHookUrl: deployHookUrl_ ? `${deployHookUrl_!.slice(0, 8)}...` : null,
+      latestDeployId: latestDeploy?.deployId ?? null,
+      latestDeployStatus: latestDeploy?.status ?? null,
+      latestDeployCommit: latestDeploy?.commitSha?.slice(0, 8) ?? null,
+      deployHistoryCount: deployHistory.length,
+      deployHistory: deployHistory.slice(0, 5),
+      serviceHttpStatus: serviceRes.status,
+      deploysHttpStatus: deploysRes?.status ?? 0,
+      needsFix: !repoMatch || !branchMatch || !autoDeployEnabled,
+      fixActions: [
+        ...(!repoMatch ? [`connect repo → ${TARGET_GITHUB_REPO}`] : []),
+        ...(!branchMatch ? [`set branch → ${TARGET_BRANCH}`] : []),
+        ...(!autoDeployEnabled ? ['enable auto-deploy'] : []),
+      ],
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    return Response.json({
+      ok: false,
+      error: error instanceof Error ? error.message : 'Render auto-deploy status check failed.',
+      renderConfigured: true,
+      timestamp: new Date().toISOString(),
+    }, { status: 500 });
+  }
+}
+
+async function handleRenderAutoDeployFixRequest(req: Request): Promise<Response> {
+  const creds = getRenderCredentials();
+  if (!creds) {
+    return Response.json({
+      ok: false,
+      error: 'Render API credentials not configured in backend runtime.',
+      renderConfigured: false,
+      timestamp: new Date().toISOString(),
+    }, { status: 503 });
+  }
+
+  let body: Record<string, unknown> = {};
+  try { body = await req.json().catch(() => ({})) as Record<string, unknown>; } catch { /* empty body ok */ }
+  const confirmText = readTrimmed(body.confirm);
+  if (confirmText !== 'FIX_IVX_RENDER_AUTO_DEPLOY') {
+    return Response.json({
+      ok: false,
+      error: 'Confirmation required. Send {"confirm": "FIX_IVX_RENDER_AUTO_DEPLOY"} to proceed.',
+      timestamp: new Date().toISOString(),
+    }, { status: 400 });
+  }
+
+  const results: Record<string, unknown> = {};
+  const headers = buildRenderHeaders(creds.apiKey);
+  const serviceUrl = `${RENDER_API_BASE_URL}/services/${encodeURIComponent(creds.serviceId)}`;
+
+  try {
+    // Step 1: Get current service details
+    const getRes = await fetch(serviceUrl, { headers });
+    const serviceData: Record<string, unknown> = getRes.ok
+      ? await getRes.json().catch(() => ({})) as Record<string, unknown>
+      : {};
+    const serviceRecord = readObject(serviceData.service ?? serviceData);
+    const currentRepo = readTrimmed(serviceRecord.repo);
+    const currentBranch = readTrimmed(serviceRecord.branch);
+    const currentAutoDeploy = readTrimmed(serviceRecord.autoDeploy);
+
+    results.beforeRepo = currentRepo || null;
+    results.beforeBranch = currentBranch || null;
+    results.beforeAutoDeploy = currentAutoDeploy || null;
+
+    // Step 2: Update source repo and enable auto-deploy
+    const patchBody: Record<string, unknown> = {
+      repo: TARGET_GITHUB_REPO_URL,
+      branch: TARGET_BRANCH,
+      autoDeploy: 'yes',
+    };
+
+    console.log('[IVX Render Auto-Deploy Fix] Patching service with:', {
+      serviceId: creds.serviceId.slice(-6),
+      repo: TARGET_GITHUB_REPO_URL,
+      branch: TARGET_BRANCH,
+      autoDeploy: 'yes',
+    });
+
+    const patchRes = await fetch(serviceUrl, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify(patchBody),
+    });
+
+    if (!patchRes.ok) {
+      const errorBody = await patchRes.text().catch(() => '');
+      console.error('[IVX Render Auto-Deploy Fix] PATCH failed:', patchRes.status, errorBody.slice(0, 500));
+      return Response.json({
+        ok: false,
+        error: `Render source update failed with HTTP ${patchRes.status}. Render may not have GitHub access to ${TARGET_GITHUB_REPO}. Go to Render dashboard → ${serviceRecord.name ?? 'service'} → Settings → Repository and connect it manually.`,
+        details: errorBody.slice(0, 300) || null,
+        ...results,
+        sourceUpdated: false,
+        timestamp: new Date().toISOString(),
+      }, { status: 502 });
+    }
+
+    const patchedData: Record<string, unknown> = await patchRes.json().catch(() => ({})) as Record<string, unknown>;
+    const patchedRecord = readObject(patchedData.service ?? patchedData);
+    results.afterRepo = readTrimmed(patchedRecord.repo) || null;
+    results.afterBranch = readTrimmed(patchedRecord.branch) || null;
+    results.afterAutoDeploy = readTrimmed(patchedRecord.autoDeploy) || null;
+    results.sourceUpdated = true;
+
+    console.log('[IVX Render Auto-Deploy Fix] Source updated:', results.afterRepo, results.afterBranch, results.afterAutoDeploy);
+
+    // Step 3: Trigger a deploy from the latest commit
+    const deployBody: Record<string, unknown> = { clearCache: 'clear' };
+    const deployRes = await fetch(`${RENDER_API_BASE_URL}/services/${encodeURIComponent(creds.serviceId)}/deploys`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(deployBody),
+    });
+
+    if (!deployRes.ok) {
+      const deployErrorBody = await deployRes.text().catch(() => '');
+      console.error('[IVX Render Auto-Deploy Fix] Deploy trigger failed:', deployRes.status, deployErrorBody.slice(0, 500));
+      return Response.json({
+        ok: true,
+        warning: 'Source updated successfully but deploy trigger failed. Render will auto-deploy on next push to main.',
+        deployTriggered: false,
+        deployError: deployErrorBody.slice(0, 300) || `HTTP ${deployRes.status}`,
+        ...results,
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    const deployData: Record<string, unknown> = await deployRes.json().catch(() => ({})) as Record<string, unknown>;
+    const deployRecord = readObject(deployData.deploy ?? deployData);
+    const deployId = readTrimmed(deployRecord.id) || null;
+    const deployStatus = readTrimmed(deployRecord.status) || 'created';
+
+    console.log('[IVX Render Auto-Deploy Fix] Deploy triggered:', deployId, deployStatus);
+
+    // Step 4: Also try to get/create the deploy hook
+    let deployHookUrl: string | null = null;
+    try {
+      const hookRes = await fetch(`${RENDER_API_BASE_URL}/services/${encodeURIComponent(creds.serviceId)}/deploy-hook`, { headers });
+      const hookData: Record<string, unknown> = hookRes.ok ? await hookRes.json().catch(() => ({})) as Record<string, unknown> : {};
+      deployHookUrl = readTrimmed(hookData.deployHookUrl) || null;
+    } catch { /* best-effort */ }
+
+    return Response.json({
+      ok: true,
+      sourceUpdated: true,
+      deployTriggered: true,
+      deployId,
+      deployStatus,
+      deployHookUrl: deployHookUrl ? `${deployHookUrl.slice(0, 8)}...` : null,
+      autoDeployEnabled: true,
+      ...results,
+      nextSteps: [
+        'Push to GitHub main branch to trigger auto-deploy',
+        `Monitor deploy at: https://dashboard.render.com/web/${creds.serviceId}`,
+        `Verify health: https://api.ivxholding.com/health`,
+      ],
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error('[IVX Render Auto-Deploy Fix] Unexpected error:', error instanceof Error ? error.message : error);
+    return Response.json({
+      ok: false,
+      error: error instanceof Error ? error.message : 'Render auto-deploy fix failed with unexpected error.',
+      ...results,
+      timestamp: new Date().toISOString(),
+    }, { status: 500 });
+  }
 }
 
 async function fetchSupabaseStorageDiagnostics(): Promise<{ ok: boolean; status: 'verified' | 'not_verified' | 'missing_access'; data: Record<string, unknown>; missingEnvNames: string[]; error?: string }> {
@@ -2366,6 +2660,11 @@ app.options('/api/ivx/developer-deploy/status', () => developerDeployOptions());
 app.get('/api/ivx/developer-deploy/status', async (context) => handleIVXDeveloperDeployStatusRequest(context.req.raw));
 app.options('/api/ivx/developer-deploy/action', () => developerDeployOptions());
 app.post('/api/ivx/developer-deploy/action', async (context) => handleIVXDeveloperDeployActionRequest(context.req.raw));
+// ---- IVX Render Auto-Deploy Fix — public status + owner-approved fix ----
+app.options('/api/ivx/render-auto-deploy/status', () => publicJson({ ok: true }, 204));
+app.get('/api/ivx/render-auto-deploy/status', async (context) => handleRenderAutoDeployStatusRequest(context.req.raw));
+app.options('/api/ivx/render-auto-deploy/fix', () => publicJson({ ok: true }, 204));
+app.post('/api/ivx/render-auto-deploy/fix', async (context) => handleRenderAutoDeployFixRequest(context.req.raw));
 app.options('/api/ivx/senior-developer/status', () => seniorDeveloperOptions());
 app.get('/api/ivx/senior-developer/status', async (context) => handleIVXSeniorDeveloperStatusRequest(context.req.raw));
 app.options('/api/ivx/senior-developer/github-audit', () => seniorDeveloperOptions());
