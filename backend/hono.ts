@@ -1071,6 +1071,16 @@ async function fetchRenderRuntimeStatus(): Promise<{ ok: boolean; status: 'verif
   };
 
   try {
+    // Fetch deploys list in parallel with service/env-vars for deploy-history visibility
+    let deploysResponse: Response | null = null;
+    let deploysData: unknown = [];
+    try {
+      deploysResponse = await fetch(`${RENDER_API_BASE_URL}/services/${encodeURIComponent(serviceId)}/deploys?limit=10`, { headers });
+      deploysData = await deploysResponse.text().then((text) => text ? JSON.parse(text) as unknown : []).catch(() => []);
+    } catch {
+      deploysData = [];
+    }
+
     const [serviceResponse, envVarsResponse, envGroupsResponse] = await Promise.all([
       fetch(`${RENDER_API_BASE_URL}/services/${encodeURIComponent(serviceId)}`, { headers }),
       fetch(`${RENDER_API_BASE_URL}/services/${encodeURIComponent(serviceId)}/env-vars?limit=100`, { headers }),
@@ -1081,6 +1091,34 @@ async function fetchRenderRuntimeStatus(): Promise<{ ok: boolean; status: 'verif
       envVarsResponse.text().then((text) => text ? JSON.parse(text) as unknown : []).catch(() => []),
       envGroupsResponse?.text().then((text) => text ? JSON.parse(text) as unknown : []).catch(() => []) ?? Promise.resolve([]),
     ]);
+
+    // Parse deploy history from Render API response
+    const deploysRaw = Array.isArray(deploysData)
+      ? deploysData
+      : Array.isArray(readObject(deploysData).deploys)
+        ? readObject(deploysData).deploys as unknown[]
+        : [];
+    const deployHistory = deploysRaw.map((item) => {
+      const d = readObject(item).deploy ?? readObject(item);
+      const createdAt = readTrimmed(d.createdAt) || readTrimmed(d.finishedAt) || '';
+      const finishedAt = readTrimmed(d.finishedAt) || '';
+      const durationMs = createdAt && finishedAt
+        ? Math.max(0, new Date(finishedAt).getTime() - new Date(createdAt).getTime())
+        : 0;
+      return {
+        deployId: readTrimmed(d.id),
+        status: readTrimmed(d.status),
+        commitSha: readTrimmed(d.commit?.id) || readTrimmed(d.commitId) || '',
+        commitShort: (readTrimmed(d.commit?.id) || readTrimmed(d.commitId) || '').slice(0, 8),
+        createdAt,
+        finishedAt,
+        durationMs,
+        failureReason: readTrimmed(d.failureReason) || undefined,
+      };
+    });
+    const latestDeploy = deployHistory[0] ?? null;
+    const latestLiveDeploy = deployHistory.find((d) => d.status.toLowerCase().includes('live')) ?? latestDeploy;
+    const deploysHttpOk = deploysResponse?.ok ?? false;
     const serviceRecord = readObject(readObject(serviceData).service ?? serviceData);
     const envVarKeys = extractRenderEnvVarKeyNames(envVarsData);
     const envVarKeySet = new Set(envVarKeys);
@@ -1091,6 +1129,7 @@ async function fetchRenderRuntimeStatus(): Promise<{ ok: boolean; status: 'verif
     const optionalEnvVarsPresentInRender = OPTIONAL_PRODUCTION_ACCESS_ENV_NAMES.filter((name) => envVarKeySet.has(name));
     const optionalEnvVarsMissingInRender = OPTIONAL_PRODUCTION_ACCESS_ENV_NAMES.filter((name) => !envVarKeySet.has(name));
     const renderApiAuthorized = serviceResponse.ok && envVarsResponse.ok;
+    const deploysAvailable = deploysHttpOk && deployHistory.length > 0;
 
     return {
       ok: renderApiAuthorized && runtimeMissing.length === 0,
@@ -1100,6 +1139,7 @@ async function fetchRenderRuntimeStatus(): Promise<{ ok: boolean; status: 'verif
         renderApiAuthorized,
         serviceHttpStatus: serviceResponse.status,
         envVarsHttpStatus: envVarsResponse.status,
+        deploysHttpOk,
         serviceIdConfigured: true,
         credentialSource: renderCredentialSource,
         serviceIdSuffix: serviceId.slice(-6).padStart(serviceId.length, '*'),
@@ -1108,6 +1148,18 @@ async function fetchRenderRuntimeStatus(): Promise<{ ok: boolean; status: 'verif
         serviceSuspended: serviceRecord.suspended === true,
         envGroupExists,
         envGroupMarkerPresent,
+        // Deploy history — surfaced for commit matching and deployment proof
+        deployId: latestDeploy?.deployId ?? null,
+        deployStatus: latestDeploy?.status ?? null,
+        deployedCommitSha: latestDeploy?.commitSha ?? null,
+        deployedCommitShort: latestDeploy?.commitShort ?? null,
+        deployCreatedAt: latestDeploy?.createdAt ?? null,
+        deployFinishedAt: latestDeploy?.finishedAt ?? null,
+        deployDurationMs: latestDeploy?.durationMs ?? 0,
+        liveDeployId: latestLiveDeploy?.deployId ?? null,
+        liveDeployCommitSha: latestLiveDeploy?.commitSha ?? null,
+        deployHistory,
+        deployHistoryAvailable: deploysAvailable,
         requestedCredentialPresentByNameOnly: Object.fromEntries(REQUESTED_PRODUCTION_ACCESS_ENV_NAMES.map((name) => [name, name === 'RENDER_API_KEY' ? Boolean(apiKey) : name === 'RENDER_SERVICE_ID' ? Boolean(serviceId) : Boolean(readTrimmed(process.env[name]))])),
         requiredEnvVarsPresentInRender,
         requiredEnvVarsMissingInRender,

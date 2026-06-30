@@ -375,19 +375,37 @@ async function checkRenderEvidence(
 
     const renderData = data.data as Record<string, unknown> | undefined;
     const serviceName = (renderData?.serviceName as string) || 'ivx-holdings-platform';
-    const deployedSha = (data.commit as string)
+
+    // Primary: use the newly-surfaced deployId/deployedCommitSha from the backend
+    const deployedSha = (renderData?.deployedCommitSha as string)
+      || (renderData?.liveDeployCommitSha as string)
+      || (data.commit as string)
       || (renderData?.commit as string)
-      || (renderData?.deployedCommit as string)
       || '';
 
-    const deployId = (data.deployId as string)
-      || (renderData?.deployId as string)
-      || (data.id as string)
+    const backendDeployId = (renderData?.deployId as string)
+      || (renderData?.liveDeployId as string)
       || '';
+
+    // Backend now returns deployHistory directly — use it
+    const backendDeployHistory = renderData?.deployHistory as Array<Record<string, unknown>> | undefined;
+    if (backendDeployHistory && Array.isArray(backendDeployHistory)) {
+      deployHistory = backendDeployHistory.map((d: Record<string, unknown>) => ({
+        deployId: (d.deployId as string) || (d.id as string) || '',
+        status: (d.status as string) || 'unknown',
+        commitSha: (d.commitSha as string) || (d.commit as string) || '',
+        timestamp: (d.createdAt as string) || (d.finishedAt as string) || (d.timestamp as string) || '',
+        durationMs: (d.durationMs as number) || (d.duration as number) || 0,
+        failureReason: d.failureReason as string | undefined,
+      }));
+    }
 
     // If we have a deploy history but no deployId, take the latest from history
-    const effectiveDeployId = deployId || (deployHistory[0]?.deployId ?? '');
-    const effectiveDeployStatus = (renderData?.serviceSuspended as boolean) ? 'suspended' : 'live';
+    const effectiveDeployId = backendDeployId || (deployHistory[0]?.deployId ?? '');
+    const backendDeployStatus = (renderData?.deployStatus as string) || '';
+    const effectiveDeployStatus = (renderData?.serviceSuspended as boolean)
+      ? 'suspended'
+      : backendDeployStatus || 'live';
 
     const result: RenderEvidenceResult = {
       status: ok ? 'ok' : 'fail',
