@@ -1569,9 +1569,17 @@ export default function IVXOwnerChatRoute() {
     if (isConversationSwitch) {
       lastScrolledConversationIdRef.current = activeConversationId;
       ivxDiagnostics.recordAutoScroll('conversation-load');
+      // WhatsApp-style: scroll to the newest message immediately, then again
+      // after the FlatList has fully committed its layout (handles race with
+      // onContentSizeChange + dynamic message bubble heights).
       requestAnimationFrame(() => {
         flatListRef.current?.scrollToEnd({ animated: false });
       });
+      // Fallback: retry after layout settles (especially on Android where
+      // FlatList measurements can lag behind data arrival).
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: false });
+      }, 300);
     }
 
     if (!localFirstChatMode) {

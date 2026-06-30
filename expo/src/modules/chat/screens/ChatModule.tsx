@@ -436,20 +436,29 @@ export function ChatModule({
     openConversation(devRoomConversation);
   }, [devRoomConversation, openConversation]);
 
+  // WhatsApp-style: auto-open the most recent conversation on inbox load.
+  // When conversations finish loading and the user hasn't manually selected one,
+  // jump straight into the last-active conversation — no inbox tap required.
   useEffect(() => {
-    if (!isOpenAccessModeEnabled()) {
-      return;
-    }
-
+    // Already in a conversation or still loading — nothing to do.
     if (selectedConversation || inboxQuery.isPending) {
       return;
     }
 
-    if (conversations.length === 0 || !!inboxQuery.error) {
+    // Conversations loaded — auto-open the most recent one (sorted DESC by lastMessageAt).
+    if (conversations.length > 0 && !inboxQuery.error) {
+      console.log('[ChatModule] WhatsApp-style auto-open: most recent conversation', conversations[0].id);
+      setSelectedConversation(conversations[0]);
+      return;
+    }
+
+    // No conversations found. If open-access dev mode is enabled, fall back to the
+    // dev room so the owner can still chat while the shared inbox catches up.
+    if (isOpenAccessModeEnabled()) {
       console.log('[ChatModule] Open-access dev fallback activated for owner room');
       setSelectedConversation(devRoomConversation);
     }
-  }, [conversations.length, devRoomConversation, inboxQuery.error, inboxQuery.isPending, selectedConversation]);
+  }, [conversations, devRoomConversation, inboxQuery.error, inboxQuery.isPending, selectedConversation]);
 
   const renderConversation = useCallback(({ item }: { item: ChatConversation }) => {
     const unreadCount = item.unreadCount ?? 0;
