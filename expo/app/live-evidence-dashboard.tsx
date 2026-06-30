@@ -9,7 +9,10 @@ import {
   Animated,
   Dimensions,
   Platform,
+  Alert,
+  Share,
 } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, Stack } from 'expo-router';
 import {
@@ -35,21 +38,38 @@ import {
   ExternalLink,
   Cloud,
   HardDrive,
+  Copy,
+  Download,
+  History,
+  Timer,
+  Wifi,
+  WifiOff,
+  SignalHigh,
+  SignalLow,
+  SignalZero,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import {
   runFullEvidenceCheck,
   runSingleEvidenceCheck,
+  loadEvidenceHistory,
+  exportReportJSON,
+  exportReportCompact,
+  isEvidenceComplete,
+  buildProofReport,
   type LiveEvidenceReport,
   type EvidenceStatus,
   type EvidenceFinalStatus,
+  type DataFreshness,
   type StreamEvent,
   type GitHubEvidenceResult,
   type RenderEvidenceResult,
+  type RenderDeployHistoryEntry,
   type HealthEvidenceResult,
   type ChatEvidenceResult,
   type SupabaseEvidenceResult,
   type FrontendEvidenceResult,
+  type EvidenceHistoryEntry,
 } from '@/lib/live-evidence';
 
 // ---------------------------------------------------------------------------
@@ -59,6 +79,7 @@ import {
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_PADDING = 16;
 const CARD_GAP = 10;
+const AUTO_REFRESH_MS = 60_000; // 60 seconds
 
 const STATUS_CONFIG: Record<EvidenceStatus, { icon: typeof CheckCircle; color: string; label: string }> = {
   ok: { icon: CheckCircle, color: '#22C55E', label: 'OK' },
@@ -72,6 +93,12 @@ const FINAL_STATUS_CONFIG: Record<EvidenceFinalStatus, { color: string; bg: stri
   BLOCKED: { color: '#EF4444', bg: 'rgba(239,68,68,0.12)' },
   'LOCAL ONLY': { color: '#F59E0B', bg: 'rgba(245,158,11,0.12)' },
   UNVERIFIED: { color: '#6366F1', bg: 'rgba(99,102,241,0.12)' },
+};
+
+const FRESHNESS_CONFIG: Record<DataFreshness, { icon: typeof SignalHigh; color: string; label: string; bg: string }> = {
+  LIVE: { icon: SignalHigh, color: '#22C55E', label: 'LIVE', bg: 'rgba(34,197,94,0.12)' },
+  STALE: { icon: SignalLow, color: '#F59E0B', label: 'STALE', bg: 'rgba(245,158,11,0.12)' },
+  FAILED: { icon: SignalZero, color: '#EF4444', label: 'FAILED', bg: 'rgba(239,68,68,0.12)' },
 };
 
 const TOOL_ICONS: Record<string, typeof Activity> = {
@@ -124,6 +151,34 @@ const statusBadgeStyles = StyleSheet.create({
   },
 });
 
+function FreshnessBadge({ freshness }: { freshness: DataFreshness }) {
+  const cfg = FRESHNESS_CONFIG[freshness];
+  const Icon = cfg.icon;
+  return (
+    <View style={[freshnessBadgeStyles.badge, { backgroundColor: cfg.bg }]}>
+      <Icon size={12} color={cfg.color} strokeWidth={2.5} />
+      <Text style={[freshnessBadgeStyles.label, { color: cfg.color }]}>{cfg.label}</Text>
+    </View>
+  );
+}
+
+const freshnessBadgeStyles = StyleSheet.create({
+  badge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  label: {
+    fontSize: 11,
+    fontWeight: '800' as const,
+    letterSpacing: 0.5,
+    textTransform: 'uppercase' as const,
+  },
+});
+
 function ToolCard({
   tool,
   icon,
@@ -144,8 +199,8 @@ function ToolCard({
     if (status === 'checking') {
       const loop = Animated.loop(
         Animated.sequence([
-          Animated.timing(pulseAnim, { toValue: 0.5, duration: 600, useNativeDriver: true }),
-          Animated.timing(pulseAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 0.4, duration: 500, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
         ]),
       );
       loop.start();
@@ -204,13 +259,17 @@ const toolCardStyles = StyleSheet.create({
   },
 });
 
-function EvidenceRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+function EvidenceRow({ label, value, mono, color }: { label: string; value: string; mono?: boolean; color?: string }) {
   if (!value && value !== '0') return null;
   return (
     <View style={evidenceRowStyles.row}>
       <Text style={evidenceRowStyles.label}>{label}</Text>
       <Text
-        style={[evidenceRowStyles.value, mono && evidenceRowStyles.mono]}
+        style={[
+          evidenceRowStyles.value,
+          mono && evidenceRowStyles.mono,
+          color ? { color } : undefined,
+        ]}
         numberOfLines={1}
       >
         {value}
@@ -242,6 +301,48 @@ const evidenceRowStyles = StyleSheet.create({
     fontFamily: Platform.select({ ios: 'Menlo', default: 'monospace' }),
     fontSize: 11,
     color: Colors.gold,
+  },
+});
+
+function MatchBadge({ matches }: { matches: boolean }) {
+  return (
+    <View
+      style={[
+        matchBadgeStyles.badge,
+        { backgroundColor: matches ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)' },
+      ]}
+    >
+      {matches ? (
+        <CheckCircle size={10} color="#22C55E" strokeWidth={3} />
+      ) : (
+        <XCircle size={10} color="#EF4444" strokeWidth={3} />
+      )}
+      <Text
+        style={[
+          matchBadgeStyles.text,
+          { color: matches ? '#22C55E' : '#EF4444' },
+        ]}
+      >
+        {matches ? 'MATCH' : 'MISMATCH'}
+      </Text>
+    </View>
+  );
+}
+
+const matchBadgeStyles = StyleSheet.create({
+  badge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+  },
+  text: {
+    fontSize: 10,
+    fontWeight: '800' as const,
+    letterSpacing: 0.4,
   },
 });
 
@@ -311,6 +412,139 @@ const streamLogStyles = StyleSheet.create({
   },
 });
 
+function HistoryEntryRow({ entry }: { entry: EvidenceHistoryEntry }) {
+  const cfg = FINAL_STATUS_CONFIG[entry.finalStatus];
+  return (
+    <View style={historyRowStyles.row}>
+      <View style={[historyRowStyles.statusDot, { backgroundColor: cfg.color }]} />
+      <View style={historyRowStyles.content}>
+        <Text style={historyRowStyles.time}>
+          {new Date(entry.timestamp).toLocaleString()}
+        </Text>
+        {entry.commitSha ? (
+          <Text style={historyRowStyles.commit} numberOfLines={1}>
+            Commit: {entry.commitSha.slice(0, 8)}
+          </Text>
+        ) : null}
+        <View style={historyRowStyles.results}>
+          <View style={[historyRowStyles.miniBadge, { backgroundColor: entry.healthResult === 'ok' ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)' }]}>
+            <Activity size={8} color={entry.healthResult === 'ok' ? '#22C55E' : '#EF4444'} strokeWidth={3} />
+            <Text style={[historyRowStyles.miniText, { color: entry.healthResult === 'ok' ? '#22C55E' : '#EF4444' }]}>Health</Text>
+          </View>
+          <View style={[historyRowStyles.miniBadge, { backgroundColor: entry.chatResult === 'ok' ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)' }]}>
+            <MessageCircle size={8} color={entry.chatResult === 'ok' ? '#22C55E' : '#EF4444'} strokeWidth={3} />
+            <Text style={[historyRowStyles.miniText, { color: entry.chatResult === 'ok' ? '#22C55E' : '#EF4444' }]}>Chat</Text>
+          </View>
+          <View style={[historyRowStyles.miniBadge, { backgroundColor: entry.supabaseResult === 'ok' ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)' }]}>
+            <Database size={8} color={entry.supabaseResult === 'ok' ? '#22C55E' : '#EF4444'} strokeWidth={3} />
+            <Text style={[historyRowStyles.miniText, { color: entry.supabaseResult === 'ok' ? '#22C55E' : '#EF4444' }]}>DB</Text>
+          </View>
+        </View>
+      </View>
+      <View style={[historyRowStyles.finalBadge, { backgroundColor: cfg.bg }]}>
+        <Text style={[historyRowStyles.finalText, { color: cfg.color }]}>{entry.finalStatus}</Text>
+      </View>
+    </View>
+  );
+}
+
+const historyRowStyles = StyleSheet.create({
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 2,
+    borderBottomWidth: 0.5,
+    borderBottomColor: Colors.surfaceBorder,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  content: {
+    flex: 1,
+  },
+  time: {
+    fontSize: 11,
+    color: Colors.textSecondary,
+    fontWeight: '600' as const,
+  },
+  commit: {
+    fontSize: 10,
+    color: Colors.textTertiary,
+    fontFamily: Platform.select({ ios: 'Menlo', default: 'monospace' }),
+    marginTop: 2,
+  },
+  results: {
+    flexDirection: 'row',
+    gap: 6,
+    marginTop: 4,
+  },
+  miniBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  miniText: {
+    fontSize: 9,
+    fontWeight: '700' as const,
+  },
+  finalBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  finalText: {
+    fontSize: 10,
+    fontWeight: '800' as const,
+  },
+});
+
+function DeployHistoryRow({ entry }: { entry: RenderDeployHistoryEntry }) {
+  const statusColor = entry.status === 'live' || entry.status === 'successful' ? '#22C55E'
+    : entry.status === 'failed' ? '#EF4444'
+    : '#F59E0B';
+  return (
+    <View style={deployRowStyles.row}>
+      <View style={[deployRowStyles.statusDot, { backgroundColor: statusColor }]} />
+      <View style={deployRowStyles.content}>
+        <Text style={deployRowStyles.deployId} numberOfLines={1}>{entry.deployId.slice(0, 12)}</Text>
+        <Text style={deployRowStyles.meta}>
+          {entry.commitSha.slice(0, 8)} · {entry.durationMs > 0 ? `${(entry.durationMs / 1000).toFixed(1)}s` : 'N/A'}
+        </Text>
+      </View>
+      <Text style={[deployRowStyles.status, { color: statusColor }]}>{entry.status}</Text>
+      <Text style={deployRowStyles.time}>
+        {entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString('en-US', { hour12: false }) : ''}
+      </Text>
+    </View>
+  );
+}
+
+const deployRowStyles = StyleSheet.create({
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 6,
+  },
+  statusDot: { width: 6, height: 6, borderRadius: 3 },
+  content: { flex: 1 },
+  deployId: {
+    fontSize: 11,
+    color: Colors.textSecondary,
+    fontFamily: Platform.select({ ios: 'Menlo', default: 'monospace' }),
+  },
+  meta: { fontSize: 9, color: Colors.textTertiary, marginTop: 1 },
+  status: { fontSize: 10, fontWeight: '700' as const },
+  time: { fontSize: 9, color: Colors.textTertiary },
+});
+
 function ActionButton({
   label,
   icon,
@@ -322,23 +556,29 @@ function ActionButton({
   icon: typeof RefreshCw;
   onPress: () => void;
   disabled?: boolean;
-  variant?: 'primary' | 'secondary';
+  variant?: 'primary' | 'secondary' | 'export';
 }) {
   const Icon = icon;
-  const isPrimary = variant !== 'secondary';
+  const isPrimary = variant === 'primary';
+  const isExport = variant === 'export';
   return (
     <TouchableOpacity
       style={[
         actionButtonStyles.button,
-        isPrimary ? actionButtonStyles.primary : actionButtonStyles.secondary,
+        isPrimary ? actionButtonStyles.primary : isExport ? actionButtonStyles.export : actionButtonStyles.secondary,
         disabled && actionButtonStyles.disabled,
       ]}
       onPress={onPress}
       disabled={disabled}
       activeOpacity={0.7}
     >
-      <Icon size={15} color={isPrimary ? '#000' : Colors.gold} strokeWidth={2.2} />
-      <Text style={[actionButtonStyles.label, { color: isPrimary ? '#000' : Colors.gold }]}>
+      <Icon size={14} color={isPrimary ? '#000' : isExport ? '#22C55E' : Colors.gold} strokeWidth={2.2} />
+      <Text
+        style={[
+          actionButtonStyles.label,
+          { color: isPrimary ? '#000' : isExport ? '#22C55E' : Colors.gold },
+        ]}
+      >
         {label}
       </Text>
     </TouchableOpacity>
@@ -350,28 +590,45 @@ const actionButtonStyles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
     borderRadius: 10,
     flex: 1,
     minHeight: 44,
   },
-  primary: {
-    backgroundColor: Colors.gold,
-  },
+  primary: { backgroundColor: Colors.gold },
   secondary: {
     backgroundColor: 'transparent',
     borderWidth: 1,
     borderColor: Colors.gold + '50',
   },
-  disabled: {
-    opacity: 0.4,
+  export: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: '#22C55E50',
   },
-  label: {
-    fontSize: 12,
-    fontWeight: '700' as const,
-    letterSpacing: 0.3,
+  disabled: { opacity: 0.4 },
+  label: { fontSize: 11, fontWeight: '700' as const, letterSpacing: 0.3 },
+});
+
+function SectionHeader({ icon: Icon, title }: { icon: typeof Shield; title: string }) {
+  return (
+    <View style={sectionHeaderStyles.row}>
+      <Icon size={16} color={Colors.gold} strokeWidth={2} />
+      <Text style={sectionHeaderStyles.title}>{title}</Text>
+    </View>
+  );
+}
+
+const sectionHeaderStyles = StyleSheet.create({
+  row: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
+  title: {
+    fontSize: 13,
+    fontWeight: '800' as const,
+    color: Colors.gold,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase' as const,
   },
 });
 
@@ -389,11 +646,14 @@ export default function LiveEvidenceDashboard() {
   const [streamEvents, setStreamEvents] = useState<StreamEvent[]>([]);
   const [showStream, setShowStream] = useState(true);
   const [lastCheckTime, setLastCheckTime] = useState<string>('');
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [history, setHistory] = useState<EvidenceHistoryEntry[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
+  const [showDeployHistory, setShowDeployHistory] = useState(false);
 
   const handleStreamEvent = useCallback((event: StreamEvent) => {
     setStreamEvents((prev) => {
       const next = [...prev, event];
-      // Keep last 100 events
       if (next.length > 100) return next.slice(-100);
       return next;
     });
@@ -407,7 +667,8 @@ export default function LiveEvidenceDashboard() {
     try {
       const result = await runFullEvidenceCheck({}, handleStreamEvent);
       setReport(result);
-      setLastCheckTime(new Date().toISOString());
+      const now = new Date().toISOString();
+      setLastCheckTime(now);
     } catch (err) {
       console.warn('[LiveEvidence] Full check failed:', err);
     } finally {
@@ -421,7 +682,8 @@ export default function LiveEvidenceDashboard() {
     try {
       const result = await runSingleEvidenceCheck(tool, handleStreamEvent);
       setReport(result);
-      setLastCheckTime(new Date().toISOString());
+      const now = new Date().toISOString();
+      setLastCheckTime(now);
     } catch (err) {
       console.warn('[LiveEvidence] Tool check failed:', tool, err);
     } finally {
@@ -429,12 +691,106 @@ export default function LiveEvidenceDashboard() {
     }
   }, [handleStreamEvent]);
 
+  // Load evidence history on mount
+  useEffect(() => {
+    loadEvidenceHistory().then(setHistory).catch(() => {});
+  }, []);
+
   // Auto-run on mount
   useEffect(() => {
     runAllChecks();
   }, [runAllChecks]);
 
+  // Auto-refresh every 60s
+  useEffect(() => {
+    if (!autoRefresh) return;
+    const interval = setInterval(() => {
+      runAllChecks().then(() => {
+        loadEvidenceHistory().then(setHistory).catch(() => {});
+      });
+    }, AUTO_REFRESH_MS);
+    return () => clearInterval(interval);
+  }, [autoRefresh, runAllChecks]);
+
+  // Export handlers
+  const handleExportJSON = useCallback(async () => {
+    if (!report) return;
+    const json = exportReportJSON(report);
+    try {
+      await Clipboard.setStringAsync(json);
+      Alert.alert('Exported', 'Proof report JSON copied to clipboard.');
+    } catch {
+      // Share fallback
+      try {
+        await Share.share({ message: json });
+      } catch {
+        Alert.alert('Export Error', 'Could not export the report.');
+      }
+    }
+  }, [report]);
+
+  const handleCopyReport = useCallback(async () => {
+    if (!report) return;
+    const text = exportReportCompact(report);
+    try {
+      await Clipboard.setStringAsync(text);
+      Alert.alert('Copied', 'Proof report copied to clipboard.');
+    } catch {
+      Alert.alert('Copy Error', 'Could not copy to clipboard.');
+    }
+  }, [report]);
+
   const finalStatusConfig = report ? FINAL_STATUS_CONFIG[report.finalStatus] : null;
+  const freshness = report?.freshness ?? 'FAILED';
+
+  // --- Render sections --- //
+
+  const renderCommitMatchSection = () => {
+    if (!report) return null;
+    const { github, render, health } = report;
+
+    return (
+      <View style={commitMatchStyles.section}>
+        <SectionHeader icon={GitBranch} title="COMMIT MATCH" />
+        <View style={commitMatchStyles.card}>
+          <View style={commitMatchStyles.shaRow}>
+            <View style={commitMatchStyles.shaBlock}>
+              <Text style={commitMatchStyles.shaLabel}>GitHub</Text>
+              <Text style={commitMatchStyles.shaValue} numberOfLines={1}>
+                {github.commitShort || github.latestCommitSha.slice(0, 8) || 'N/A'}
+              </Text>
+            </View>
+            <View style={commitMatchStyles.arrowCol}>
+              <View style={commitMatchStyles.arrowLine} />
+            </View>
+            <View style={commitMatchStyles.shaBlock}>
+              <Text style={commitMatchStyles.shaLabel}>Live (/health)</Text>
+              <Text style={commitMatchStyles.shaValue} numberOfLines={1}>
+                {health.liveCommitSha.slice(0, 8) || 'N/A'}
+              </Text>
+            </View>
+            <View style={commitMatchStyles.arrowCol}>
+              <View style={commitMatchStyles.arrowLine} />
+            </View>
+            <View style={commitMatchStyles.shaBlock}>
+              <Text style={commitMatchStyles.shaLabel}>Render</Text>
+              <Text style={commitMatchStyles.shaValue} numberOfLines={1}>
+                {render.deployedCommitSha.slice(0, 8) || 'N/A'}
+              </Text>
+            </View>
+          </View>
+          <View style={commitMatchStyles.matchRow}>
+            <MatchBadge matches={render.commitMatch} />
+            <Text style={commitMatchStyles.matchHint}>
+              {render.commitMatch
+                ? 'All commit SHAs match across GitHub, live backend, and Render.'
+                : 'Commit SHAs differ — a deploy may be pending.'}
+            </Text>
+          </View>
+        </View>
+      </View>
+    );
+  };
 
   const renderMonitorSection = () => {
     if (!report) return null;
@@ -448,19 +804,28 @@ export default function LiveEvidenceDashboard() {
             <Shield size={18} color={Colors.gold} strokeWidth={2} />
             <Text style={monitorStyles.sectionTitle}>LIVE DEPLOYMENT EVIDENCE</Text>
           </View>
-          {finalStatusConfig && (
-            <View style={[monitorStyles.finalBadge, { backgroundColor: finalStatusConfig.bg }]}>
-              <Text style={[monitorStyles.finalBadgeText, { color: finalStatusConfig.color }]}>
-                {report.finalStatus}
-              </Text>
-            </View>
-          )}
+          <View style={monitorStyles.statusRow}>
+            <FreshnessBadge freshness={freshness} />
+            {finalStatusConfig && (
+              <View style={[monitorStyles.finalBadge, { backgroundColor: finalStatusConfig.bg }]}>
+                <Text style={[monitorStyles.finalBadgeText, { color: finalStatusConfig.color }]}>
+                  {report.finalStatus}
+                </Text>
+              </View>
+            )}
+          </View>
         </View>
 
         {lastCheckTime ? (
-          <Text style={monitorStyles.lastCheck}>
-            Last verified: {new Date(lastCheckTime).toLocaleString()}
-          </Text>
+          <View style={monitorStyles.lastCheckRow}>
+            <Clock size={10} color={Colors.textTertiary} strokeWidth={1.5} />
+            <Text style={monitorStyles.lastCheck}>
+              Last checked: {new Date(lastCheckTime).toLocaleString()}
+            </Text>
+            {autoRefresh && (
+              <Text style={monitorStyles.autoRefreshLabel}>· auto-refresh 60s</Text>
+            )}
+          </View>
         ) : null}
 
         {/* GitHub Evidence */}
@@ -469,11 +834,9 @@ export default function LiveEvidenceDashboard() {
             <>
               <EvidenceRow label="Repository" value={github.repo} mono />
               <EvidenceRow label="Branch" value={github.branch} mono />
-              <EvidenceRow label="Latest Commit SHA" value={github.commitShort || github.latestCommitSha.slice(0, 8)} mono />
+              <EvidenceRow label="Latest Commit SHA" value={github.latestCommitSha.slice(0, 8)} mono />
               <EvidenceRow label="Commit Timestamp" value={github.commitTimestamp ? new Date(github.commitTimestamp).toLocaleString() : ''} />
-              {github.error ? (
-                <Text style={monitorStyles.errorText}>{github.error}</Text>
-              ) : null}
+              {github.error ? <Text style={monitorStyles.errorText}>{github.error}</Text> : null}
             </>
           )}
         </ToolCard>
@@ -483,14 +846,40 @@ export default function LiveEvidenceDashboard() {
           {render.status !== 'skipped' && (
             <>
               <EvidenceRow label="Service" value={render.service} />
-              <EvidenceRow label="Deploy ID" value={render.deployId} mono />
+              <EvidenceRow label="Deploy ID" value={render.deployId.slice(0, 20)} mono />
               <EvidenceRow label="Deploy Status" value={render.deployStatus} />
               <EvidenceRow label="Deployed Commit" value={render.deployedCommitSha.slice(0, 8)} mono />
               <EvidenceRow label="Deploy Timestamp" value={render.deployTimestamp ? new Date(render.deployTimestamp).toLocaleString() : ''} />
-              <EvidenceRow label="Commit Match" value={render.commitMatch ? 'YES' : 'NO'} />
-              {render.error ? (
-                <Text style={monitorStyles.errorText}>{render.error}</Text>
-              ) : null}
+              <View style={monitorStyles.matchLabel}>
+                <Text style={evidenceRowStyles.label}>Commit Match</Text>
+                <MatchBadge matches={render.commitMatch} />
+              </View>
+              {render.error ? <Text style={monitorStyles.errorText}>{render.error}</Text> : null}
+
+              {/* Deploy History subsection */}
+              {render.deployHistory.length > 0 && (
+                <View style={monitorStyles.deployHistoryContainer}>
+                  <TouchableOpacity
+                    style={monitorStyles.deployHistoryToggle}
+                    onPress={() => setShowDeployHistory(!showDeployHistory)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={monitorStyles.deployHistoryTitle}>
+                      Deploy History ({render.deployHistory.length})
+                    </Text>
+                    <ChevronRight
+                      size={14}
+                      color={Colors.textTertiary}
+                      strokeWidth={2}
+                      style={{ transform: [{ rotate: showDeployHistory ? '90deg' : '0deg' }] }}
+                    />
+                  </TouchableOpacity>
+                  {showDeployHistory &&
+                    render.deployHistory.slice(0, 10).map((entry, i) => (
+                      <DeployHistoryRow key={entry.deployId || String(i)} entry={entry} />
+                    ))}
+                </View>
+              )}
             </>
           )}
         </ToolCard>
@@ -499,22 +888,20 @@ export default function LiveEvidenceDashboard() {
         <ToolCard tool="Health" icon={Activity} color={TOOL_COLORS.Health} status={health.status}>
           {health.status !== 'skipped' && (
             <>
-              <EvidenceRow label="HTTP Status" value={String(health.httpStatus)} />
+              <EvidenceRow label="HTTP Status" value={String(health.httpStatus)} color={health.httpStatus === 200 ? '#22C55E' : '#EF4444'} />
               <EvidenceRow label="Response Time" value={`${health.responseTimeMs}ms`} />
+              <EvidenceRow label="Uptime" value={health.uptime} />
               <EvidenceRow label="Live Commit SHA" value={health.liveCommitSha.slice(0, 8)} mono />
-              {health.error ? (
-                <Text style={monitorStyles.errorText}>{health.error}</Text>
-              ) : null}
+              {health.lastFailedCheck && (
+                <EvidenceRow label="Last Failed" value={new Date(health.lastFailedCheck).toLocaleString()} />
+              )}
+              {health.error ? <Text style={monitorStyles.errorText}>{health.error}</Text> : null}
               {health.responseBody && Object.keys(health.responseBody).length > 0 && (
-                <TouchableOpacity
-                  style={monitorStyles.responseBodyToggle}
-                  onPress={() => {}}
-                  activeOpacity={0.7}
-                >
-                  <Text style={monitorStyles.responseBodyText} numberOfLines={3}>
-                    {JSON.stringify(health.responseBody, null, 0).slice(0, 300)}
+                <View style={monitorStyles.responseBodyBox}>
+                  <Text style={monitorStyles.responseBodyText} numberOfLines={5}>
+                    {JSON.stringify(health.responseBody, null, 0).slice(0, 500)}
                   </Text>
-                </TouchableOpacity>
+                </View>
               )}
             </>
           )}
@@ -528,9 +915,17 @@ export default function LiveEvidenceDashboard() {
               <EvidenceRow label="Messages Sent" value={String(chat.messageIds.length)} />
               <EvidenceRow label="Assistant Replied" value={chat.assistantReplied ? 'YES' : 'NO'} />
               <EvidenceRow label="Message Saved" value={chat.messageSaved ? 'YES' : 'NO'} />
-              {chat.error ? (
-                <Text style={monitorStyles.errorText}>{chat.error}</Text>
-              ) : null}
+              <EvidenceRow label="Persisted on Reload" value={chat.messagePersistedAfterReload ? 'YES' : 'NO'} />
+              {chat.proofMessages.length > 0 && (
+                <View style={monitorStyles.proofMsgs}>
+                  {chat.proofMessages.map((m) => (
+                    <Text key={m.id} style={monitorStyles.proofMsg} numberOfLines={2}>
+                      [{m.role}] {m.id.slice(0, 8)}: {m.text.slice(0, 80)}
+                    </Text>
+                  ))}
+                </View>
+              )}
+              {chat.error ? <Text style={monitorStyles.errorText}>{chat.error}</Text> : null}
             </>
           )}
         </ToolCard>
@@ -547,15 +942,18 @@ export default function LiveEvidenceDashboard() {
               <EvidenceRow label="Chat Messages" value={String(supabase.chatMessagesCount)} />
               <EvidenceRow label="Insert Works" value={supabase.insertWorks ? 'YES' : 'NO'} />
               <EvidenceRow label="Read Works" value={supabase.readWorks ? 'YES' : 'NO'} />
+              <EvidenceRow label="RLS" value={supabase.rlsEnabled ? 'ENABLED' : 'DISABLED'} />
+              <EvidenceRow label="Auth Status" value={supabase.authStatus} />
+              {supabase.lastInsertReadTest && (
+                <EvidenceRow label="Last Read Test" value={new Date(supabase.lastInsertReadTest).toLocaleString()} />
+              )}
               {supabase.tables.length > 0 && (
                 <Text style={monitorStyles.tablesList} numberOfLines={3}>
                   Tables: {supabase.tables.slice(0, 10).join(', ')}
                   {supabase.tables.length > 10 ? ` +${supabase.tables.length - 10} more` : ''}
                 </Text>
               )}
-              {supabase.error ? (
-                <Text style={monitorStyles.errorText}>{supabase.error}</Text>
-              ) : null}
+              {supabase.error ? <Text style={monitorStyles.errorText}>{supabase.error}</Text> : null}
             </>
           )}
         </ToolCard>
@@ -568,9 +966,7 @@ export default function LiveEvidenceDashboard() {
               <EvidenceRow label="Owner Chat Works" value={frontend.ownerChatWorks ? 'YES' : 'NO'} />
               <EvidenceRow label="Monitor Loads" value={frontend.monitorLoads ? 'YES' : 'NO'} />
               <EvidenceRow label="No TypeError" value={frontend.noTypeError ? 'YES' : 'NO'} />
-              {frontend.error ? (
-                <Text style={monitorStyles.errorText}>{frontend.error}</Text>
-              ) : null}
+              {frontend.error ? <Text style={monitorStyles.errorText}>{frontend.error}</Text> : null}
             </>
           )}
         </ToolCard>
@@ -580,11 +976,11 @@ export default function LiveEvidenceDashboard() {
           <View style={monitorStyles.alertBox}>
             <XCircle size={14} color="#EF4444" strokeWidth={2.2} />
             <View style={{ flex: 1 }}>
-              <Text style={monitorStyles.alertTitle}>ERRORS ({report.errors.length})</Text>
+              <Text style={monitorStyles.alertTitle}>
+                ERRORS ({report.errors.length})
+              </Text>
               {report.errors.map((e, i) => (
-                <Text key={i} style={monitorStyles.alertText} numberOfLines={2}>
-                  {e}
-                </Text>
+                <Text key={i} style={monitorStyles.alertText} numberOfLines={2}>{e}</Text>
               ))}
             </View>
           </View>
@@ -594,11 +990,11 @@ export default function LiveEvidenceDashboard() {
           <View style={[monitorStyles.alertBox, { borderColor: '#F59E0B40' }]}>
             <AlertTriangle size={14} color="#F59E0B" strokeWidth={2.2} />
             <View style={{ flex: 1 }}>
-              <Text style={[monitorStyles.alertTitle, { color: '#F59E0B' }]}>BLOCKERS ({report.blockers.length})</Text>
+              <Text style={[monitorStyles.alertTitle, { color: '#F59E0B' }]}>
+                BLOCKERS ({report.blockers.length})
+              </Text>
               {report.blockers.map((b, i) => (
-                <Text key={i} style={monitorStyles.alertText} numberOfLines={2}>
-                  {b}
-                </Text>
+                <Text key={i} style={monitorStyles.alertText} numberOfLines={2}>{b}</Text>
               ))}
             </View>
           </View>
@@ -606,6 +1002,37 @@ export default function LiveEvidenceDashboard() {
       </View>
     );
   };
+
+  const renderHistorySection = () => (
+    <View style={historySectionStyles.section}>
+      <TouchableOpacity
+        style={historySectionStyles.toggle}
+        onPress={() => setShowHistory(!showHistory)}
+        activeOpacity={0.7}
+      >
+        <SectionHeader icon={History} title="EVIDENCE HISTORY" />
+        <View style={historySectionStyles.countBadge}>
+          <Text style={historySectionStyles.countText}>{history.length}</Text>
+        </View>
+      </TouchableOpacity>
+      {showHistory && (
+        <View style={historySectionStyles.container}>
+          {history.length === 0 ? (
+            <View style={historySectionStyles.empty}>
+              <Clock size={20} color={Colors.textTertiary} strokeWidth={1.5} />
+              <Text style={historySectionStyles.emptyText}>
+                No evidence runs yet. Run a check to populate history.
+              </Text>
+            </View>
+          ) : (
+            history.slice(0, 20).map((entry, i) => (
+              <HistoryEntryRow key={entry.timestamp + i} entry={entry} />
+            ))
+          )}
+        </View>
+      )}
+    </View>
+  );
 
   const renderStreamSection = () => (
     <View style={streamSectionStyles.section}>
@@ -644,11 +1071,9 @@ export default function LiveEvidenceDashboard() {
 
   const renderLiveWorkSection = () => (
     <View style={liveWorkStyles.section}>
-      <View style={liveWorkStyles.titleGroup}>
-        <Play size={16} color={Colors.gold} strokeWidth={2.2} />
-        <Text style={liveWorkStyles.sectionTitle}>LIVE WORK ACTIONS</Text>
-      </View>
+      <SectionHeader icon={Play} title="LIVE WORK ACTIONS" />
 
+      {/* Primary */}
       <View style={liveWorkStyles.buttonRow}>
         <ActionButton
           label="Run Full Evidence Check"
@@ -659,6 +1084,7 @@ export default function LiveEvidenceDashboard() {
         />
       </View>
 
+      {/* Row 1: verify + deploy */}
       <View style={liveWorkStyles.buttonGrid}>
         <ActionButton
           label="Verify GitHub"
@@ -668,7 +1094,7 @@ export default function LiveEvidenceDashboard() {
           variant="secondary"
         />
         <ActionButton
-          label="Trigger Render Deploy"
+          label="Verify Render"
           icon={Cloud}
           onPress={() => runToolCheck('render')}
           disabled={checkingTool !== null}
@@ -676,6 +1102,7 @@ export default function LiveEvidenceDashboard() {
         />
       </View>
 
+      {/* Row 2: chat + supabase */}
       <View style={liveWorkStyles.buttonGrid}>
         <ActionButton
           label="Test Chat Room"
@@ -693,6 +1120,7 @@ export default function LiveEvidenceDashboard() {
         />
       </View>
 
+      {/* Row 3: health + frontend */}
       <View style={liveWorkStyles.buttonGrid}>
         <ActionButton
           label="Verify Health"
@@ -710,20 +1138,40 @@ export default function LiveEvidenceDashboard() {
         />
       </View>
 
-      <View style={liveWorkStyles.buttonRow}>
+      {/* Export row */}
+      <View style={liveWorkStyles.buttonGrid}>
         <ActionButton
-          label="Generate Proof Report"
-          icon={FileText}
-          onPress={() => {
-            if (report) {
-              const proof = buildProofReport(report);
-              // Log the proof report for now
-              console.log('[IVX Proof Report]', JSON.stringify(proof, null, 2));
-            }
-          }}
+          label="Export JSON"
+          icon={Download}
+          onPress={handleExportJSON}
           disabled={!report}
-          variant="secondary"
+          variant="export"
         />
+        <ActionButton
+          label="Copy Report"
+          icon={Copy}
+          onPress={handleCopyReport}
+          disabled={!report}
+          variant="export"
+        />
+      </View>
+
+      {/* Auto-refresh toggle */}
+      <View style={liveWorkStyles.buttonRow}>
+        <TouchableOpacity
+          style={[
+            actionButtonStyles.button,
+            actionButtonStyles.secondary,
+            { flex: 0, paddingHorizontal: 20 },
+          ]}
+          onPress={() => setAutoRefresh(!autoRefresh)}
+          activeOpacity={0.7}
+        >
+          <Timer size={14} color={autoRefresh ? '#22C55E' : Colors.textTertiary} strokeWidth={2.2} />
+          <Text style={[actionButtonStyles.label, { color: autoRefresh ? '#22C55E' : Colors.textTertiary }]}>
+            Auto-Refresh: {autoRefresh ? 'ON' : 'OFF'}
+          </Text>
+        </TouchableOpacity>
       </View>
 
       {checking && (
@@ -768,7 +1216,9 @@ export default function LiveEvidenceDashboard() {
         contentContainerStyle={screenStyles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
+        {renderCommitMatchSection()}
         {renderMonitorSection()}
+        {renderHistorySection()}
         {renderStreamSection()}
         {renderLiveWorkSection()}
 
@@ -779,46 +1229,11 @@ export default function LiveEvidenceDashboard() {
 }
 
 // ---------------------------------------------------------------------------
-// Proof Report Builder
-// ---------------------------------------------------------------------------
-
-function buildProofReport(report: LiveEvidenceReport): Record<string, unknown> {
-  return {
-    REPO: report.github.repo || 'ibb142/rork-ivxholding--1',
-    BRANCH: report.github.branch || 'main',
-    LATEST_GITHUB_COMMIT: report.github.latestCommitSha || report.health.liveCommitSha,
-    RENDER_SERVICE: report.render.service,
-    RENDER_DEPLOY_ID: report.render.deployId,
-    RENDER_STATUS: report.render.deployStatus,
-    RENDER_DEPLOYED_COMMIT: report.render.deployedCommitSha,
-    COMMIT_MATCH: report.render.commitMatch ? 'YES' : 'NO',
-    HEALTH_STATUS: report.health.status === 'ok' ? '200 OK' : 'FAIL',
-    HEALTH_RESPONSE_BODY: report.health.responseBody,
-    CHAT_API_STATUS: report.chat.status === 'ok' ? 'OK' : 'FAIL',
-    CHAT_SAVE_STATUS: report.chat.messageSaved ? 'OK' : 'FAIL',
-    CHAT_LOAD_STATUS: report.chat.messageSaved ? 'OK' : 'FAIL',
-    SUPABASE_STATUS: report.supabase.status === 'ok' ? 'OK' : 'FAIL',
-    MEMBERS_COUNT: report.supabase.membersCount,
-    WAITLIST_COUNT: report.supabase.waitlistCount,
-    FRONTEND_STATUS: report.frontend.status === 'ok' ? 'OK' : 'FAIL',
-    MONITOR_STATUS: 'OK',
-    STREAM_STATUS: 'OK',
-    LIVE_WORK_STATUS: 'OK',
-    ERRORS: report.errors,
-    BLOCKERS: report.blockers,
-    FINAL_STATUS: report.finalStatus,
-  };
-}
-
-// ---------------------------------------------------------------------------
 // Styles
 // ---------------------------------------------------------------------------
 
 const screenStyles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: Colors.background,
-  },
+  root: { flex: 1, backgroundColor: Colors.background },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -836,20 +1251,9 @@ const screenStyles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: Colors.surfaceElevated,
   },
-  headerCenter: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  headerTitle: {
-    fontSize: 17,
-    fontWeight: '700' as const,
-    color: Colors.text,
-  },
-  headerSubtitle: {
-    fontSize: 11,
-    color: Colors.textTertiary,
-    marginTop: 1,
-  },
+  headerCenter: { flex: 1, alignItems: 'center' },
+  headerTitle: { fontSize: 17, fontWeight: '700' as const, color: Colors.text },
+  headerSubtitle: { fontSize: 11, color: Colors.textTertiary, marginTop: 1 },
   refreshButton: {
     width: 40,
     height: 40,
@@ -858,33 +1262,71 @@ const screenStyles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: Colors.surfaceElevated,
   },
-  scroll: {
-    flex: 1,
-  },
-  scrollContent: {
+  scroll: { flex: 1 },
+  scrollContent: { padding: CARD_PADDING, paddingTop: 12 },
+  footer: { height: 40 },
+});
+
+const commitMatchStyles = StyleSheet.create({
+  section: { marginBottom: 16 },
+  card: {
+    backgroundColor: Colors.surfaceElevated,
+    borderRadius: 12,
+    borderWidth: 0.5,
+    borderColor: Colors.surfaceBorder,
     padding: CARD_PADDING,
-    paddingTop: 12,
   },
-  footer: {
-    height: 40,
+  shaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 10,
+  },
+  shaBlock: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  shaLabel: { fontSize: 9, color: Colors.textTertiary, marginBottom: 4, letterSpacing: 0.5 },
+  shaValue: {
+    fontSize: 11,
+    color: Colors.gold,
+    fontFamily: Platform.select({ ios: 'Menlo', default: 'monospace' }),
+    fontWeight: '700' as const,
+  },
+  arrowCol: {
+    width: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  arrowLine: {
+    width: 16,
+    height: 1.5,
+    backgroundColor: Colors.surfaceBorder,
+  },
+  matchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  matchHint: {
+    fontSize: 10,
+    color: Colors.textTertiary,
+    flex: 1,
+    lineHeight: 14,
   },
 });
 
 const monitorStyles = StyleSheet.create({
-  section: {
-    marginBottom: 20,
-  },
+  section: { marginBottom: 20 },
   headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 4,
-  },
-  titleGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexWrap: 'wrap',
     gap: 8,
   },
+  titleGroup: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   sectionTitle: {
     fontSize: 13,
     fontWeight: '800' as const,
@@ -892,21 +1334,23 @@ const monitorStyles = StyleSheet.create({
     letterSpacing: 0.8,
     textTransform: 'uppercase' as const,
   },
-  finalBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  finalBadgeText: {
-    fontSize: 11,
-    fontWeight: '800' as const,
-    letterSpacing: 0.5,
-  },
-  lastCheck: {
-    fontSize: 11,
-    color: Colors.textTertiary,
+  statusRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  finalBadge: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 8 },
+  finalBadgeText: { fontSize: 11, fontWeight: '800' as const, letterSpacing: 0.5 },
+  lastCheckRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
     marginBottom: 12,
     paddingLeft: 26,
+  },
+  lastCheck: { fontSize: 11, color: Colors.textTertiary },
+  autoRefreshLabel: { fontSize: 10, color: '#22C55E', fontWeight: '600' as const },
+  matchLabel: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 4,
   },
   errorText: {
     fontSize: 11,
@@ -914,7 +1358,15 @@ const monitorStyles = StyleSheet.create({
     marginTop: 4,
     fontFamily: Platform.select({ ios: 'Menlo', default: 'monospace' }),
   },
-  responseBodyToggle: {
+  deployHistoryContainer: { marginTop: 8, borderTopWidth: 0.5, borderTopColor: Colors.surfaceBorder, paddingTop: 8 },
+  deployHistoryToggle: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  deployHistoryTitle: { fontSize: 12, color: Colors.textSecondary, fontWeight: '600' as const },
+  responseBodyBox: {
     marginTop: 6,
     padding: 8,
     backgroundColor: Colors.background,
@@ -925,6 +1377,14 @@ const monitorStyles = StyleSheet.create({
     color: Colors.textTertiary,
     fontFamily: Platform.select({ ios: 'Menlo', default: 'monospace' }),
     lineHeight: 14,
+  },
+  proofMsgs: { marginTop: 6, padding: 8, backgroundColor: Colors.background, borderRadius: 6 },
+  proofMsg: {
+    fontSize: 10,
+    color: Colors.textTertiary,
+    fontFamily: Platform.select({ ios: 'Menlo', default: 'monospace' }),
+    lineHeight: 14,
+    marginBottom: 2,
   },
   tablesList: {
     fontSize: 10,
@@ -943,12 +1403,7 @@ const monitorStyles = StyleSheet.create({
     padding: 12,
     marginBottom: 8,
   },
-  alertTitle: {
-    fontSize: 11,
-    fontWeight: '700' as const,
-    color: '#EF4444',
-    marginBottom: 4,
-  },
+  alertTitle: { fontSize: 11, fontWeight: '700' as const, color: '#EF4444', marginBottom: 4 },
   alertText: {
     fontSize: 10,
     color: Colors.textSecondary,
@@ -957,21 +1412,42 @@ const monitorStyles = StyleSheet.create({
   },
 });
 
-const streamSectionStyles = StyleSheet.create({
-  section: {
-    marginBottom: 20,
+const historySectionStyles = StyleSheet.create({
+  section: { marginBottom: 20 },
+  toggle: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
+  countBadge: {
+    backgroundColor: Colors.surfaceElevated,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    marginBottom: 12,
+  },
+  countText: { fontSize: 11, fontWeight: '700' as const, color: Colors.gold },
+  container: {
+    backgroundColor: Colors.surface,
+    borderRadius: 10,
+    borderWidth: 0.5,
+    borderColor: Colors.surfaceBorder,
+    padding: 10,
+    maxHeight: 280,
+  },
+  empty: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 16 },
+  emptyText: { fontSize: 12, color: Colors.textTertiary },
+});
+
+const streamSectionStyles = StyleSheet.create({
+  section: { marginBottom: 20 },
   toggle: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingVertical: 8,
   },
-  titleGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
+  titleGroup: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   sectionTitle: {
     fontSize: 13,
     fontWeight: '800' as const,
@@ -985,11 +1461,7 @@ const streamSectionStyles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 3,
   },
-  countText: {
-    fontSize: 11,
-    fontWeight: '700' as const,
-    color: Colors.gold,
-  },
+  countText: { fontSize: 11, fontWeight: '700' as const, color: Colors.gold },
   logContainer: {
     backgroundColor: Colors.surface,
     borderRadius: 10,
@@ -998,43 +1470,14 @@ const streamSectionStyles = StyleSheet.create({
     padding: 10,
     maxHeight: 300,
   },
-  emptyState: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    padding: 16,
-  },
-  emptyText: {
-    fontSize: 12,
-    color: Colors.textTertiary,
-  },
+  emptyState: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 16 },
+  emptyText: { fontSize: 12, color: Colors.textTertiary },
 });
 
 const liveWorkStyles = StyleSheet.create({
-  section: {
-    marginBottom: 20,
-  },
-  titleGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 12,
-  },
-  sectionTitle: {
-    fontSize: 13,
-    fontWeight: '800' as const,
-    color: Colors.gold,
-    letterSpacing: 0.8,
-    textTransform: 'uppercase' as const,
-  },
-  buttonRow: {
-    marginBottom: 8,
-  },
-  buttonGrid: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 8,
-  },
+  section: { marginBottom: 20 },
+  buttonRow: { marginBottom: 8, alignItems: 'center' },
+  buttonGrid: { flexDirection: 'row', gap: 8, marginBottom: 8 },
   checkingBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1045,9 +1488,5 @@ const liveWorkStyles = StyleSheet.create({
     borderRadius: 10,
     marginTop: 8,
   },
-  checkingText: {
-    fontSize: 13,
-    color: Colors.gold,
-    fontWeight: '600' as const,
-  },
+  checkingText: { fontSize: 13, color: Colors.gold, fontWeight: '600' as const },
 });
