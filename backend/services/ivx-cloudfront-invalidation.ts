@@ -1,0 +1,198 @@
+/**
+ * CloudFront Invalidation Agent
+ *
+ * Surgical wrapper around the AWS CloudFront API. Performs path invalidation
+ * via SigV4-signed HTTPS request. Owner approval is enforced by callers, not here.
+ *
+ * No new deps: uses the global crypto + fetch.
+ */
+
+import { createHash, createHmac } from 'node:crypto';
+
+const AWS_SERVICE = 'cloudfront';
+const AWS_REGION = 'us-east-1';
+const CLOUDFRONT_HOST = 'cloudfront.amazonaws.com';
+const CLOUDFRONT_API_VERSION = '2020-05-31';
+
+export type CloudFrontInvalidationResult = {
+  ok: boolean;
+  status: 'invalidated' | 'missing_access' | 'failed';
+  invalidationId?: string;
+  paths: string[];
+  distributionId?: string;
+  httpStatus?: number;
+  error?: string;
+  missingEnvNames: string[];
+  createdAt: string;
+};
+
+function readEnv(name: string): string {
+  const v = process.env[name];
+  return typeof v === 'string' ? v.trim() : '';
+}
+
+function hash(payload: string): string {
+  return createHash('sha256').update(payload, 'utf8').digest('hex');
+}
+
+function hmac(key: Buffer | string, data: string): Buffer {
+  return createHmac('sha256', key).update(data, 'utf8').digest();
+}
+
+function buildSigningKey(secret: string, dateStamp: string): Buffer {
+  const kDate = hmac(`AWS4${secret}`, dateStamp);
+  const kRegion = hmac(kDate, AWS_REGION);
+  const kService = hmac(kRegion, AWS_SERVICE);
+  return hmac(kService, 'aws4_request');
+}
+
+function escapeXml(value: string): string {
+  return value.replace(/[<>&'"]/g, (c) => {
+    switch (c) {
+      case '<': return '&lt;';
+      case '>': return '&gt;';
+      case '&': return '&amp;';
+      case "'": return '&apos;';
+      case '"': return '&quot;';
+      default: return c;
+    }
+  });
+}
+
+function buildInvalidationXml(paths: string[], callerReference: string): string {
+  const items = paths.map((p) => `<Path>${escapeXml(p)}</Path>`).join('');
+  return `<?xml version="1.0" encoding="UTF-8"?><InvalidationBatch xmlns="http://cloudfront.amazonaws.com/doc/${CLOUDFRONT_API_VERSION}/"><Paths><Quantity>${paths.length}</Quantity><Items>${items}</Items></Paths><CallerReference>${escapeXml(callerReference)}</CallerReference></InvalidationBatch>`;
+}
+
+function normalizePaths(input: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const raw of input) {
+    if (typeof raw !== 'string') continue;
+    const trimmed = raw.trim();
+    if (!trimmed) continue;
+    const normalized = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+    if (!seen.has(normalized)) {
+      seen.add(normalized);
+      result.push(normalized);
+    }
+  }
+  return result;
+}
+
+/** Create a CloudFront invalidation. Returns structured status; never throws. */
+export async function createCloudFrontInvalidation(input: {
+  paths: readonly string[];
+  callerReference?: string;
+  distributionId?: string;
+}): Promise<CloudFrontInvalidationResult> {
+  const createdAt = new Date().toISOString();
+  const distributionId = (input.distributionId?.trim() || readEnv('CLOUDFRONT_DISTRIBUTION_ID'));
+  const accessKey = readEnv('AWS_ACCESS_KEY_ID');
+  const secretKey = readEnv('AWS_SECRET_ACCESS_KEY');
+  const sessionToken = readEnv('AWS_SESSION_TOKEN');
+  const paths = normalizePaths(input.paths);
+
+  const missingEnvNames: string[] = [];
+  if (!distributionId) missingEnvNames.push('CLOUDFRONT_DISTRIBUTION_ID');
+  if (!accessKey) missingEnvNames.push('AWS_ACCESS_KEY_ID');
+  if (!secretKey) missingEnvNames.push('AWS_SECRET_ACCESS_KEY');
+
+  if (missingEnvNames.length > 0) {
+    return {
+      ok: false,
+      status: 'missing_access',
+      paths,
+      distributionId: distributionId || undefined,
+      missingEnvNames,
+      createdAt,
+      error: 'CloudFront credentials not configured.',
+    };
+  }
+  if (paths.length === 0) {
+    return {
+      ok: false,
+      status: 'failed',
+      paths,
+      distributionId,
+      missingEnvNames,
+      createdAt,
+      error: 'No invalidation paths supplied.',
+    };
+  }
+
+  const callerReference = (input.callerReference?.trim()) || `ivx-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  const body = buildInvalidationXml(paths, callerReference);
+  const bodyHash = hash(body);
+
+  const now = new Date();
+  const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, '');
+  const dateStamp = amzDate.slice(0, 8);
+  const canonicalUri = `/${CLOUDFRONT_API_VERSION}/distribution/${encodeURIComponent(distributionId)}/invalidation`;
+  const canonicalQuery = '';
+  const headerLines: [string, string][] = [
+    ['host', CLOUDFRONT_HOST],
+    ['x-amz-content-sha256', bodyHash],
+    ['x-amz-date', amzDate],
+  ];
+  if (sessionToken) headerLines.push(['x-amz-security-token', sessionToken]);
+  const canonicalHeaders = headerLines.map(([k, v]) => `${k}:${v}\n`).join('');
+  const signedHeaders = headerLines.map(([k]) => k).join(';');
+  const canonicalRequest = ['POST', canonicalUri, canonicalQuery, canonicalHeaders, signedHeaders, bodyHash].join('\n');
+  const credentialScope = `${dateStamp}/${AWS_REGION}/${AWS_SERVICE}/aws4_request`;
+  const stringToSign = ['AWS4-HMAC-SHA256', amzDate, credentialScope, hash(canonicalRequest)].join('\n');
+  const signingKey = buildSigningKey(secretKey, dateStamp);
+  const signature = createHmac('sha256', signingKey).update(stringToSign, 'utf8').digest('hex');
+  const authorization = `AWS4-HMAC-SHA256 Credential=${accessKey}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/xml',
+    Host: CLOUDFRONT_HOST,
+    'X-Amz-Content-Sha256': bodyHash,
+    'X-Amz-Date': amzDate,
+    Authorization: authorization,
+  };
+  if (sessionToken) headers['X-Amz-Security-Token'] = sessionToken;
+
+  try {
+    const response = await fetch(`https://${CLOUDFRONT_HOST}${canonicalUri}`, {
+      method: 'POST',
+      headers,
+      body,
+    });
+    const text = await response.text();
+    if (!response.ok) {
+      return {
+        ok: false,
+        status: 'failed',
+        paths,
+        distributionId,
+        httpStatus: response.status,
+        missingEnvNames,
+        createdAt,
+        error: text.slice(0, 400) || `CloudFront responded ${response.status}`,
+      };
+    }
+    const idMatch = /<Id>([^<]+)<\/Id>/.exec(text);
+    return {
+      ok: true,
+      status: 'invalidated',
+      paths,
+      distributionId,
+      invalidationId: idMatch ? idMatch[1] : undefined,
+      httpStatus: response.status,
+      missingEnvNames,
+      createdAt,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      status: 'failed',
+      paths,
+      distributionId,
+      missingEnvNames,
+      createdAt,
+      error: error instanceof Error ? error.message : 'CloudFront invalidation request failed.',
+    };
+  }
+}
