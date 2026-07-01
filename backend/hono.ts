@@ -426,6 +426,18 @@ import { handleProjectDashboardRequest, projectDashboardOptions } from './api/iv
 import { OPTIONS as renderDiagnosticOptions, handleIVXRenderDiagnosticRequest } from './api/ivx-render-diagnostic';
 import { OPTIONS as renderDeployLatestOptions, handleIVXRenderDeployLatestRequest } from './api/ivx-render-deploy-latest';
 import {
+  OPTIONS as deployEngineOptions,
+  handleDeployStatus,
+  handleDeployEvidence,
+  handleDeployTrigger,
+  handleDeployVerify,
+  handleDeployCycle,
+  handleDeployCredentialsAudit,
+  handleDeployMonitorStart,
+  handleDeployMonitorStop,
+  handleDeployHealth,
+} from './api/ivx-deployment-engine';
+import {
   enterpriseOrchestratorOptions,
   handleEnterpriseStateGet,
   handleEnterpriseKPIsGet,
@@ -3100,6 +3112,26 @@ app.options('/api/ivx/render-diagnostic', () => renderDiagnosticOptions());
 app.get('/api/ivx/render-diagnostic', async (context) => handleIVXRenderDiagnosticRequest(context.req.raw));
 app.options('/api/ivx/render-deploy-latest', () => renderDeployLatestOptions());
 app.post('/api/ivx/render-deploy-latest', async (context) => handleIVXRenderDeployLatestRequest(context.req.raw));
+
+// Block 22b — IVX Enterprise Deployment Engine v3 (public + owner-auth)
+app.options('/api/ivx/deploy/status', () => deployEngineOptions());
+app.get('/api/ivx/deploy/status', async () => handleDeployStatus());
+app.options('/api/ivx/deploy/evidence', () => deployEngineOptions());
+app.get('/api/ivx/deploy/evidence', async () => handleDeployEvidence());
+app.options('/api/ivx/deploy/health', () => deployEngineOptions());
+app.get('/api/ivx/deploy/health', async () => handleDeployHealth());
+app.options('/api/ivx/deploy/trigger', () => deployEngineOptions());
+app.post('/api/ivx/deploy/trigger', async (context) => handleDeployTrigger(context.req.raw));
+app.options('/api/ivx/deploy/verify', () => deployEngineOptions());
+app.post('/api/ivx/deploy/verify', async (context) => handleDeployVerify(context.req.raw));
+app.options('/api/ivx/deploy/cycle', () => deployEngineOptions());
+app.post('/api/ivx/deploy/cycle', async (context) => handleDeployCycle(context.req.raw));
+app.options('/api/ivx/deploy/credentials', () => deployEngineOptions());
+app.post('/api/ivx/deploy/credentials', async (context) => handleDeployCredentialsAudit(context.req.raw));
+app.options('/api/ivx/deploy/monitor/start', () => deployEngineOptions());
+app.post('/api/ivx/deploy/monitor/start', async (context) => handleDeployMonitorStart(context.req.raw));
+app.options('/api/ivx/deploy/monitor/stop', () => deployEngineOptions());
+app.post('/api/ivx/deploy/monitor/stop', async (context) => handleDeployMonitorStop(context.req.raw));
 
 // Block 23 — Operational memory (pgvector) + autonomous execution loop
 app.options('/api/ivx/operational-memory/status', () => opMemoryOptions());

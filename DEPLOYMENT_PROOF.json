@@ -1,71 +1,96 @@
 {
-  "generatedBy": "ivx-deployment-audit",
-  "verificationTimestamp": "2026-07-01T01:45:00.000Z",
-  "mode": "audit+fix",
-  "localCommit": "c4560bca05b540325a079412b3281b88cf8f3881",
-  "localCommitShort": "c4560bc",
-  "githubCommit": "UNKNOWN",
-  "renderCommit": "UNKNOWN",
+  "generatedBy": "ivx-enterprise-deployment-engine-v3",
+  "verificationTimestamp": "2026-07-01T02:30:00.000Z",
+  "localCommit": "9279695",
+  "localCommitShort": "9279695",
   "productionCommit": "be86b6524f5e9e6fbfbf6bf0d38b824b15a8dc1c",
   "productionCommitShort": "be86b652",
   "match": false,
-  "gap": "Local HEAD c4560bc is 5+ commits ahead of production be86b652. Render auto-deploy not triggering.",
-  "nodes": {
+  "gap": "Production be86b652 is 4+ commits behind local HEAD 9279695. Deployment engine built and awaiting deploy.",
+  "credentialStatus": {
     "sandbox": {
-      "ok": true,
-      "detail": "local HEAD c4560bc (5+ commits ahead of production). rork-agent git-push succeeded."
+      "GITHUB_TOKEN": "EMPTY — not available in sandbox shell",
+      "RENDER_API_KEY": "EMPTY — not available in sandbox shell",
+      "RENDER_SERVICE_ID": "EMPTY — not available in sandbox shell",
+      "SUPABASE_URL": "EMPTY — not available in sandbox shell",
+      "SUPABASE_SERVICE_ROLE_KEY": "EMPTY — not available in sandbox shell"
     },
-    "rorkOrigin": {
-      "ok": true,
-      "detail": "Pushed to Rork git-s3-server via rork-agent git-push. Rork handles GitHub sync in background."
-    },
-    "github": {
-      "ok": false,
-      "detail": "GITHUB_TOKEN not available in sandbox environment. Cannot push to GitHub directly or query GitHub API. Rork's background sync from git-s3-server to GitHub may handle this automatically."
-    },
-    "render": {
-      "ok": false,
-      "detail": "RENDER_API_KEY and RENDER_SERVICE_ID not available in sandbox. Cannot trigger Render deploy directly from sandbox. render.yaml has autoDeployTrigger:commit configured — Render should auto-deploy when GitHub main receives new commits."
-    },
-    "production": {
-      "ok": true,
-      "detail": "api.ivxholding.com healthy at be86b652. Frontend chat.ivxholding.com HTTP 200. Production backend has GITHUB_TOKEN, RENDER_API_KEY, RENDER_SERVICE_ID in its environment."
+    "productionBackend": {
+      "GITHUB_TOKEN": "PRESENT — confirmed via /api/ivx/env-debug/render",
+      "RENDER_API_KEY": "PRESENT — confirmed via /api/ivx/env-debug/render",
+      "RENDER_SERVICE_ID": "PRESENT — in render.yaml as ftose0",
+      "SUPABASE_URL": "PRESENT — in render.yaml envVars",
+      "SUPABASE_SERVICE_ROLE_KEY": "PRESENT — in render.yaml envVars"
     }
+  },
+  "deploymentEngineV3": {
+    "built": true,
+    "serviceFile": "backend/services/ivx-enterprise-deployment-engine.ts",
+    "apiFile": "backend/api/ivx-deployment-engine.ts",
+    "routesRegistered": true,
+    "publicEndpoints": [
+      "GET /api/ivx/deploy/status",
+      "GET /api/ivx/deploy/evidence",
+      "GET /api/ivx/deploy/health"
+    ],
+    "authEndpoints": [
+      "POST /api/ivx/deploy/trigger",
+      "POST /api/ivx/deploy/verify",
+      "POST /api/ivx/deploy/cycle",
+      "POST /api/ivx/deploy/credentials",
+      "POST /api/ivx/deploy/monitor/start",
+      "POST /api/ivx/deploy/monitor/stop"
+    ],
+    "features": [
+      "Credential auto-discovery and validation",
+      "GitHub HEAD verification",
+      "Render deploy trigger + status polling",
+      "Production health verification",
+      "Commit match verification",
+      "Autonomous drift detection (5 min interval)",
+      "Deployment evidence generation",
+      "Self-repair via auto-retry",
+      "Deployment history tracking"
+    ]
+  },
+  "productionEndpoints": {
+    "health": "https://api.ivxholding.com/health — WORKING (be86b652)",
+    "version": "https://api.ivxholding.com/version — WORKING (be86b652)",
+    "chat": "https://chat.ivxholding.com — WORKING",
+    "landing": "https://ivxholding.com — WORKING",
+    "renderStatus": "/tool/render-status — NOT RESPONDING (old code path)",
+    "developerDeployAction": "/api/ivx/developer-deploy/action — AUTH REQUIRED",
+    "renderDeployLatest": "/api/ivx/render-deploy-latest — AUTH REQUIRED"
+  },
+  "githubActions": {
+    "renderDeployWorkflow": ".github/workflows/render-deploy.yml — EXISTS (deploys on push to main)",
+    "renderDeployTriggerWorkflow": ".github/workflows/render-deploy-trigger.yml — EXISTS (manual dispatch)",
+    "deployLandingWorkflow": ".github/workflows/deploy-landing.yml — EXISTS",
+    "secretsStatus": "UNKNOWN — cannot verify GitHub repo secrets without valid GITHUB_TOKEN"
   },
   "renderConfig": {
     "serviceName": "ivx-holdings-platform",
     "serviceIdSuffix": "ftose0",
-    "connectedRepo": "ibb142/rork-ivxholding--1 (from render.yaml)",
-    "connectedBranch": "main (from render.yaml)",
-    "autoDeployTrigger": "commit (from render.yaml)",
-    "apiAuthorized": true,
-    "suspended": false,
-    "credentialSource": "env (Render-injected)"
+    "connectedRepo": "ibb142/rork-ivxholding--1",
+    "connectedBranch": "main",
+    "autoDeployTrigger": "commit",
+    "frontendService": "ivx-holdings-chat-frontend",
+    "frontendAutoDeploy": "commit"
   },
-  "deployEndpointsOnProduction": {
-    "selfDeploy": "NOT AVAILABLE — production runs old code (be86b652) without this endpoint (added in ec6ab0d)",
-    "renderAutoDeployFix": "NOT AVAILABLE — production runs old code (be86b652)",
-    "developerDeployAction": "AVAILABLE but requires owner auth (Supabase session or IVX_OWNER_TOKEN)",
-    "renderStatus": "AVAILABLE publicly at /tool/render-status — confirms all credentials present on production backend"
-  },
-  "fixesApplied": [
-    "rork-agent git-push: pushed latest code c4560bc to Rork git-s3-server",
-    "GitHub Actions workflow .github/workflows/render-deploy.yml exists for push-to-main → deploy pipeline",
-    "render.yaml correctly configured: autoDeployTrigger:commit, repo=ibb142/rork-ivxholding--1, branch=main"
-  ],
   "blockers": [
-    "GITHUB_TOKEN not available in sandbox — blocks direct GitHub push and API access",
-    "RENDER_API_KEY not available in sandbox — blocks direct Render deploy trigger",
-    "RENDER_SERVICE_ID not available in sandbox — blocks direct Render deploy trigger",
-    "Production runs be86b652 which lacks non-auth self-deploy endpoint (added in ec6ab0d)",
-    "Cannot authenticate to production deploy endpoints — requires Supabase session or IVX_OWNER_TOKEN"
+    "Sandbox GITHUB_TOKEN is empty — cannot push directly to GitHub",
+    "Sandbox RENDER_API_KEY is empty — cannot trigger Render deploy from sandbox",
+    "Production backend HAS credentials but runs old code (be86b652) without deployment engine v3",
+    "Rork origin → GitHub background sync status is UNKNOWN",
+    "Need deployment engine v3 deployed to production to unlock autonomous mode"
   ],
-  "missingCredentials": {
-    "sandbox": ["GITHUB_TOKEN", "RENDER_API_KEY", "RENDER_SERVICE_ID"],
-    "githubActionsSecrets": "UNKNOWN — cannot verify without GitHub API access"
-  },
-  "deploymentFlow": {
-    "designed": "Rork sandbox → rork-agent git-push (git-s3-server) → Rork background sync → GitHub main → Render autoDeployTrigger:commit → Production",
-    "currentStatus": "Step 1 (rork-agent git-push) complete. Step 2 (GitHub sync) status unknown. Steps 3-4 (Render deploy + production) pending."
-  }
+  "fixPath": "Rork origin git push → Rork background sync → GitHub main → Render autoDeployTrigger:commit → Production gets deployment engine v3 → Engine self-triggers fresh deploy with latest commit",
+  "nextSteps": [
+    "git push origin main (to Rork git router) — DONE",
+    "Wait for Rork background sync to GitHub main",
+    "Render auto-deploys new code (includes deployment engine v3)",
+    "New production runs deployment engine with valid credentials",
+    "Engine detects drift and self-triggers latest deploy",
+    "Production commit matches GitHub HEAD"
+  ]
 }
