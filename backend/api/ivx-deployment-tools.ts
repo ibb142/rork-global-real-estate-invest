@@ -270,6 +270,205 @@ export async function handleCredentials(): Promise<Response> {
   }
 }
 
+// ─── UNIFIED TOOLS INVOKE (independent + autonomous) ──────────────────
+
+/**
+ * POST /api/ivx/deploy-tools/invoke
+ *
+ * Unified endpoint that lets IVX call ANY deployment tool independently.
+ * Body: { tool: "github"|"render"|"supabase"|"vercel"|"evidence"|"credentials"|"brain"|"deploy", action?: string, params?: {} }
+ *
+ * This is the single entry point for both manual (owner-triggered) and
+ * autonomous (IVX self-triggered) deployment operations.
+ */
+export async function handleInvoke(request: Request): Promise<Response> {
+  let body: { tool?: unknown; action?: unknown; params?: unknown };
+  try {
+    body = await request.json().catch(() => ({})) as typeof body;
+  } catch {
+    return publicJson({ ok: false, error: 'Invalid JSON body. Send { tool, action?, params? }' }, 400);
+  }
+
+  const tool = typeof body.tool === 'string' ? body.tool.trim().toLowerCase() : '';
+  const action = typeof body.action === 'string' ? body.action.trim().toLowerCase() : 'status';
+  const params = (body.params && typeof body.params === 'object' ? body.params : {}) as Record<string, unknown>;
+
+  if (!tool) {
+    return publicJson({ ok: false, error: 'tool is required. Available: github, render, supabase, vercel, evidence, credentials, brain, deploy, sync' }, 400);
+  }
+
+  try {
+    switch (tool) {
+      case 'github': {
+        if (action === 'status' || action === 'full') {
+          const result = await GitHubTool.getFullGitHubStatus();
+          return publicJson({ ok: true, tool: 'github', action, result });
+        }
+        if (action === 'commit') {
+          const result = await GitHubTool.getLatestCommit(typeof params.branch === 'string' ? params.branch : undefined);
+          return publicJson({ ok: true, tool: 'github', action, result });
+        }
+        if (action === 'branches') {
+          const result = await GitHubTool.getBranches();
+          return publicJson({ ok: true, tool: 'github', action, result });
+        }
+        if (action === 'permissions') {
+          const result = await GitHubTool.verifyPermissions();
+          return publicJson({ ok: true, tool: 'github', action, result });
+        }
+        if (action === 'workflows') {
+          const result = await GitHubTool.getWorkflowRuns(typeof params.limit === 'number' ? params.limit : 10);
+          return publicJson({ ok: true, tool: 'github', action, result });
+        }
+        if (action === 'secrets') {
+          const result = await GitHubTool.getSecrets();
+          return publicJson({ ok: true, tool: 'github', action, result });
+        }
+        return publicJson({ ok: false, error: `Unknown action '${action}' for github. Try: status, commit, branches, permissions, workflows, secrets` }, 400);
+      }
+
+      case 'render': {
+        if (action === 'status' || action === 'full') {
+          const result = await RenderTool.getFullRenderStatus();
+          return publicJson({ ok: true, tool: 'render', action, result });
+        }
+        if (action === 'deploy') {
+          const result = await RenderTool.triggerDeploy(params.clearCache === true);
+          return publicJson({ ok: true, tool: 'render', action, result });
+        }
+        if (action === 'deploys') {
+          const result = await RenderTool.listDeploys(typeof params.limit === 'number' ? params.limit : 5);
+          return publicJson({ ok: true, tool: 'render', action, result });
+        }
+        if (action === 'rollback') {
+          const deployId = typeof params.deployId === 'string' ? params.deployId : '';
+          if (!deployId) return publicJson({ ok: false, error: 'deployId param required for rollback' }, 400);
+          const result = await RenderTool.rollbackDeploy(deployId);
+          return publicJson({ ok: true, tool: 'render', action, result });
+        }
+        if (action === 'auto-deploy') {
+          const result = await RenderTool.setAutoDeploy(params.enabled !== false);
+          return publicJson({ ok: true, tool: 'render', action, result });
+        }
+        if (action === 'service') {
+          const result = await RenderTool.getService();
+          return publicJson({ ok: true, tool: 'render', action, result });
+        }
+        return publicJson({ ok: false, error: `Unknown action '${action}' for render. Try: status, deploy, deploys, rollback, auto-deploy, service` }, 400);
+      }
+
+      case 'supabase': {
+        if (action === 'status' || action === 'full') {
+          const [connections, tables, auth, rw, critical] = await Promise.all([
+            SupabaseTool.testConnections(),
+            SupabaseTool.listTables(),
+            SupabaseTool.checkAuth(),
+            SupabaseTool.testReadWrite(),
+            SupabaseTool.checkCriticalTables(),
+          ]);
+          return publicJson({ ok: true, tool: 'supabase', action, result: { connections, tables, auth, rw, critical } });
+        }
+        if (action === 'connection') {
+          const result = await SupabaseTool.testConnections();
+          return publicJson({ ok: true, tool: 'supabase', action, result });
+        }
+        if (action === 'tables') {
+          const result = await SupabaseTool.listTables();
+          return publicJson({ ok: true, tool: 'supabase', action, result });
+        }
+        if (action === 'rw') {
+          const result = await SupabaseTool.testReadWrite();
+          return publicJson({ ok: true, tool: 'supabase', action, result });
+        }
+        return publicJson({ ok: false, error: `Unknown action '${action}' for supabase. Try: status, connection, tables, rw` }, 400);
+      }
+
+      case 'vercel': {
+        if (action === 'status' || action === 'full') {
+          const result = await VercelTool.getFullVercelStatus();
+          return publicJson({ ok: true, tool: 'vercel', action, result });
+        }
+        return publicJson({ ok: false, error: `Unknown action '${action}' for vercel. Try: status` }, 400);
+      }
+
+      case 'evidence': {
+        const evidence = await ProductionEvidence.generateFullEvidence();
+        return publicJson({ ok: true, tool: 'evidence', action, evidence });
+      }
+
+      case 'credentials': {
+        const creds = await CredentialSync.discoverAllCredentials();
+        return publicJson({ ok: true, tool: 'credentials', action, creds });
+      }
+
+      case 'brain': {
+        const brainData = await assessDeploymentBrain();
+        return publicJson({ ok: true, tool: 'brain', action, brainData });
+      }
+
+      case 'deploy': {
+        // Full deployment cycle: assess → trigger if drift → wait → verify
+        if (action === 'cycle' || action === 'full') {
+          const { runDeploymentCycle } = await import('../services/ivx-enterprise-deployment-engine');
+          const result = await runDeploymentCycle();
+          return publicJson({ ok: true, tool: 'deploy', action, result });
+        }
+        if (action === 'trigger') {
+          const { triggerRenderDeploy } = await import('../services/ivx-enterprise-deployment-engine');
+          const result = await triggerRenderDeploy(params.clearCache === true);
+          return publicJson({ ok: true, tool: 'deploy', action, result });
+        }
+        if (action === 'verify') {
+          const { verifyCommitMatch, getGitHubHeadSha, getProductionHealth } = await import('../services/ivx-enterprise-deployment-engine');
+          const [match, github, prod] = await Promise.all([verifyCommitMatch(), getGitHubHeadSha(), getProductionHealth()]);
+          return publicJson({ ok: true, tool: 'deploy', action, result: { match, github, production: prod } });
+        }
+        return publicJson({ ok: false, error: `Unknown action '${action}' for deploy. Try: cycle, trigger, verify` }, 400);
+      }
+
+      case 'sync': {
+        // Full autonomous sync: brain → drift check → deploy if needed → evidence
+        const [brainData, evidence] = await Promise.all([
+          assessDeploymentBrain(),
+          ProductionEvidence.generateFullEvidence(),
+        ]);
+
+        let deployResult: { ok: boolean; deploy: unknown; error: string | null } | null = null;
+        if (!brainData.commitMatch && brainData.decision === 'deploy_now' && brainData.autoRepairAvailable) {
+          const { triggerRenderDeploy } = await import('../services/ivx-enterprise-deployment-engine');
+          const trigger = await triggerRenderDeploy(false);
+          deployResult = trigger.ok && trigger.deploy
+            ? { ok: true, deploy: { id: trigger.deploy.id, status: trigger.deploy.status }, error: null }
+            : { ok: false, deploy: null, error: trigger.error };
+        }
+
+        return publicJson({
+          ok: true,
+          tool: 'sync',
+          action,
+          brainStatus: brainData.overallStatus,
+          decision: brainData.decision,
+          commitMatch: brainData.commitMatch,
+          commits: brainData.commits,
+          deployTriggered: deployResult !== null,
+          deployResult,
+          evidence: evidence.endpoints.map(e => ({ name: e.name, ok: e.ok, status: e.status })),
+          nextAction: brainData.nextAction,
+          timestamp: new Date().toISOString(),
+        });
+      }
+
+      default:
+        return publicJson({
+          ok: false,
+          error: `Unknown tool '${tool}'. Available: github, render, supabase, vercel, evidence, credentials, brain, deploy, sync`,
+        }, 400);
+    }
+  } catch (err) {
+    return publicJson({ ok: false, error: err instanceof Error ? err.message : String(err) }, 500);
+  }
+}
+
 // ─── UNIFIED DASHBOARD ──────────────────────────────────────────────────
 
 export async function handleDashboard(): Promise<Response> {

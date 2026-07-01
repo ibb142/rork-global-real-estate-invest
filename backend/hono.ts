@@ -448,10 +448,12 @@ import {
   handleRenderAutoDeploy,
   handleSupabaseStatus,
   handleVercelStatus,
+  handleInvoke,
   handleEvidence,
   handleCredentials,
   handleDashboard,
 } from './api/ivx-deployment-tools';
+import { startAutonomousMonitor } from './services/ivx-enterprise-deployment-engine';
 import {
   enterpriseOrchestratorOptions,
   handleEnterpriseStateGet,
@@ -3650,6 +3652,7 @@ app.get('/api/ivx/deploy-tools/vercel', async (c) => handleVercelStatus());
 app.get('/api/ivx/deploy-tools/evidence', async (c) => handleEvidence());
 app.get('/api/ivx/deploy-tools/credentials', async (c) => handleCredentials());
 app.get('/api/ivx/deploy-tools/dashboard', async (c) => handleDashboard());
+app.post('/api/ivx/deploy-tools/invoke', async (c) => handleInvoke(c.req.raw));
 
 app.onError((error, context) => {
   const message = error instanceof Error ? error.message : 'unknown';
@@ -3705,5 +3708,6 @@ try { startAutonomousScheduler(); } catch (err) { console.warn('[IVXOwnerAI-Hono
 try { startScaleLoopScheduler(); } catch (err) { console.warn('[IVXOwnerAI-Hono] scale loop scheduler failed to start:', err instanceof Error ? err.message : err); }
 try { startRoleAgentScheduler(); } catch (err) { console.warn('[IVXOwnerAI-Hono] role-agent run loop failed to start:', err instanceof Error ? err.message : err); }
 try { startLandingSeoAutodeploy(); } catch (err) { console.warn('[IVXOwnerAI-Hono] landing SEO autodeploy failed to start:', err instanceof Error ? err.message : err); }
+try { startAutonomousMonitor(); } catch (err) { console.warn('[IVXOwnerAI-Hono] autonomous deploy monitor failed to start:', err instanceof Error ? err.message : err); }
 
 export default app;

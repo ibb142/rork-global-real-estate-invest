@@ -62,7 +62,8 @@ export type ScheduledJobKind =
   | 'daily_jv_engine'
   | 'daily_tokenized_buyer_engine'
   | 'daily_technology_ideas'
-  | 'daily_capital_outreach';
+  | 'daily_capital_outreach'
+  | 'daily_deploy_monitor';
 
 export const SCHEDULED_JOB_KINDS: readonly ScheduledJobKind[] = [
   'daily_self_audit',
@@ -74,6 +75,7 @@ export const SCHEDULED_JOB_KINDS: readonly ScheduledJobKind[] = [
   'daily_tokenized_buyer_engine',
   'daily_technology_ideas',
   'daily_capital_outreach',
+  'daily_deploy_monitor',
 ];
 
 export type JobRunStatus = 'never' | 'ok' | 'failed';
@@ -146,6 +148,7 @@ export function freshSchedulerState(now: number = Date.now()): SchedulerState {
       daily_tokenized_buyer_engine: freshJobState('daily_tokenized_buyer_engine', now),
       daily_technology_ideas: freshJobState('daily_technology_ideas', now),
       daily_capital_outreach: freshJobState('daily_capital_outreach', now),
+      daily_deploy_monitor: { ...freshJobState('daily_deploy_monitor', now), intervalMs: 5 * 60 * 60 * 1000 },
     },
   };
 }
@@ -225,6 +228,11 @@ function normalizeState(parsed: unknown): SchedulerState {
         ...fresh.jobs.daily_capital_outreach,
         ...(jobs.daily_capital_outreach ?? {}),
         kind: 'daily_capital_outreach',
+      },
+      daily_deploy_monitor: {
+        ...fresh.jobs.daily_deploy_monitor,
+        ...(jobs.daily_deploy_monitor ?? {}),
+        kind: 'daily_deploy_monitor',
       },
     },
   };
@@ -567,6 +575,61 @@ async function runTechnologyIdeasJob(): Promise<ScheduledJobResult> {
   }
 }
 
+/** Deploy monitor — runs the deployment brain, detects drift, and auto-triggers deploy if stale. */
+async function runDeployMonitorJob(): Promise<ScheduledJobResult> {
+  const start = Date.now();
+  try {
+    const { assessDeploymentBrain } = await import('./ivx-deployment-tools/deployment-brain');
+    const { verifyCommitMatch, triggerRenderDeploy } = await import('./ivx-enterprise-deployment-engine');
+
+    const brain = await assessDeploymentBrain();
+    const match = await verifyCommitMatch();
+
+    let deployTriggered = false;
+    let deployId: string | null = null;
+
+    if (!brain.commitMatch && brain.decision === 'deploy_now' && brain.autoRepairAvailable) {
+      const trigger = await triggerRenderDeploy(false);
+      if (trigger.ok && trigger.deploy) {
+        deployTriggered = true;
+        deployId = trigger.deploy.id;
+      }
+    }
+
+    await rememberSafely({
+      kind: 'execution_history',
+      title: `Deploy monitor ${new Date().toISOString().slice(0, 10)}`,
+      summary: brain.nextAction,
+      data: {
+        overallStatus: brain.overallStatus,
+        decision: brain.decision,
+        commitMatch: brain.commitMatch,
+        commits: brain.commits,
+        deployTriggered,
+        deployId,
+        platforms: brain.platforms.map(p => ({ platform: p.platform, ok: p.ok })),
+      },
+      tags: ['deploy-monitor', 'autonomous'],
+      source: 'autonomous_mode',
+      status: brain.overallStatus === 'healthy' ? 'active' : 'open',
+    });
+
+    const summary = deployTriggered
+      ? `Deploy monitor: drift detected → triggered deploy ${deployId}`
+      : `Deploy monitor: ${brain.overallStatus} — ${brain.nextAction}`;
+
+    return { kind: 'daily_deploy_monitor', ok: true, durationMs: Date.now() - start, summary };
+  } catch (error) {
+    return {
+      kind: 'daily_deploy_monitor',
+      ok: false,
+      durationMs: Date.now() - start,
+      summary: 'Deploy monitor failed.',
+      error: error instanceof Error ? error.message : 'Deploy monitor failed.',
+    };
+  }
+}
+
 async function runDriftJob(deps: DriftDeps = {}): Promise<ScheduledJobResult> {
   const start = Date.now();
   try {
@@ -621,8 +684,10 @@ export async function runScheduledJob(
           ? await runDailyReportJob()
           : kind === 'daily_drift_detection'
             ? await runDriftJob(deps.drift)
-            : kind === 'daily_technology_ideas'
-              ? await runTechnologyIdeasJob()
+          : kind === 'daily_technology_ideas'
+            ? await runTechnologyIdeasJob()
+            : kind === 'daily_deploy_monitor'
+              ? await runDeployMonitorJob()
               : await runExecutionEngineJob(kind);
 
     await patchJobState(kind, (job, now) => ({
