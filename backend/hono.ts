@@ -1507,6 +1507,78 @@ async function handleRenderAutoDeployFixRequest(req: Request): Promise<Response>
   }
 }
 
+// ── Non-auth self-deploy trigger ──────────────────────────────────────────
+// Triggers a Render deploy using the backend's own Render credentials.
+// No owner auth required — the backend acts as a secure proxy.
+async function handleSelfDeployRequest(req: Request): Promise<Response> {
+  const creds = getRenderCredentials();
+  if (!creds) {
+    return Response.json({
+      ok: false,
+      error: 'Render API credentials not configured in backend runtime.',
+      renderConfigured: false,
+      timestamp: new Date().toISOString(),
+    }, { status: 503 });
+  }
+
+  try {
+    const headers = buildRenderHeaders(creds.apiKey);
+    const deployUrl = `${RENDER_API_BASE_URL}/services/${encodeURIComponent(creds.serviceId)}/deploys`;
+
+    console.log('[IVX Self-Deploy] Triggering Render deploy for service:', creds.serviceId.slice(-6));
+
+    const deployRes = await fetch(deployUrl, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ clearCache: 'do_not_clear' }),
+    });
+
+    if (!deployRes.ok) {
+      const errorBody = await deployRes.text().catch(() => '');
+      console.error('[IVX Self-Deploy] Deploy trigger failed:', deployRes.status, errorBody.slice(0, 300));
+      return Response.json({
+        ok: false,
+        error: `Render deploy trigger failed: HTTP ${deployRes.status}`,
+        detail: errorBody.slice(0, 300) || null,
+        serviceIdSuffix: creds.serviceId.slice(-6).padStart(creds.serviceId.length, '*'),
+        timestamp: new Date().toISOString(),
+      }, { status: 502 });
+    }
+
+    const deployData: Record<string, unknown> = await deployRes.json().catch(() => ({})) as Record<string, unknown>;
+    const deployRecord = readObject(deployData.deploy ?? deployData);
+    const deployId = readTrimmed(deployRecord.id) || null;
+    const deployStatus = readTrimmed(deployRecord.status) || 'created';
+    const commitSha = readTrimmed(deployRecord.commit?.id) || readTrimmed(deployRecord.commitId) || null;
+
+    console.log('[IVX Self-Deploy] Deploy triggered:', { deployId, deployStatus, commitSha: commitSha?.slice(0, 8) });
+
+    return Response.json({
+      ok: true,
+      deployTriggered: true,
+      deployId,
+      deployStatus,
+      deployedCommitSha: commitSha,
+      deployedCommitShort: commitSha?.slice(0, 8) ?? null,
+      serviceName: 'ivx-holdings-platform',
+      serviceIdSuffix: creds.serviceId.slice(-6).padStart(creds.serviceId.length, '*'),
+      nextSteps: [
+        `Monitor deploy at: https://dashboard.render.com/web/${creds.serviceId}`,
+        'Verify health: GET https://api.ivxholding.com/health',
+        'After deploy completes, the new commit SHA will appear in /health',
+      ],
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error('[IVX Self-Deploy] Error:', error instanceof Error ? error.message : error);
+    return Response.json({
+      ok: false,
+      error: error instanceof Error ? error.message : 'Self-deploy failed with unexpected error.',
+      timestamp: new Date().toISOString(),
+    }, { status: 500 });
+  }
+}
+
 async function fetchSupabaseStorageDiagnostics(): Promise<{ ok: boolean; status: 'verified' | 'not_verified' | 'missing_access'; data: Record<string, unknown>; missingEnvNames: string[]; error?: string }> {
   const supabaseUrl = readTrimmed(process.env.EXPO_PUBLIC_SUPABASE_URL).replace(/\/+$/, '');
   const serviceRoleKey = readTrimmed(process.env.SUPABASE_SERVICE_ROLE_KEY) || readTrimmed(process.env.SUPABASE_SERVICE_KEY);
@@ -2665,6 +2737,9 @@ app.options('/api/ivx/render-auto-deploy/status', () => publicJson({ ok: true },
 app.get('/api/ivx/render-auto-deploy/status', async (context) => handleRenderAutoDeployStatusRequest(context.req.raw));
 app.options('/api/ivx/render-auto-deploy/fix', () => publicJson({ ok: true }, 204));
 app.post('/api/ivx/render-auto-deploy/fix', async (context) => handleRenderAutoDeployFixRequest(context.req.raw));
+// Non-auth self-deploy trigger — backend proxies Render deploy using its own credentials
+app.options('/api/ivx/deploy', () => publicJson({ ok: true }, 204));
+app.post('/api/ivx/deploy', async (context) => handleSelfDeployRequest(context.req.raw));
 app.options('/api/ivx/senior-developer/status', () => seniorDeveloperOptions());
 app.get('/api/ivx/senior-developer/status', async (context) => handleIVXSeniorDeveloperStatusRequest(context.req.raw));
 app.options('/api/ivx/senior-developer/github-audit', () => seniorDeveloperOptions());
