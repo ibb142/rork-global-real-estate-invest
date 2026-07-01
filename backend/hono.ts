@@ -714,6 +714,24 @@ import {
   handleIVXMediaJobsGetRequest,
   ivxMediaJobsOptions,
 } from './api/ivx-media-jobs';
+import {
+  projectEngagementOptions,
+  handleProjectMediaGet,
+  handleProjectMediaUpload,
+  handleProjectMediaDelete,
+  handleProjectVideoPin,
+  handleProjectLikeToggle,
+  handleProjectCommentsGet,
+  handleProjectCommentAdd,
+  handleProjectCommentDelete,
+  handleProjectCommentApprove,
+  handleProjectEngagementGet,
+  handleProjectBulkEngagementGet,
+  handleProjectAnalyticsGet,
+  handleProjectTrackClick,
+  handleProjectShareTrack,
+  handleProjectSaveToggle,
+} from './api/ivx-project-engagement';
 
 async function loadRoute53Module() {
   try {
@@ -3543,6 +3561,33 @@ app.post('/api/ivx/enterprise/reports/generate', async (c) => handleEnterpriseRe
 app.get('/api/ivx/enterprise/reports/list', async (c) => handleEnterpriseReportsListGet(c.req.raw));
 app.get('/api/ivx/enterprise/validate', async (c) => handleEnterpriseValidateGet(c.req.raw));
 app.post('/api/ivx/enterprise/health', async (c) => handleEnterpriseHealthPost(c.req.raw));
+
+// ── Project Engagement (Instagram-Style Cards) ───────────────────────
+const PROJECT_ENGAGEMENT_PATH = '/api/projects/:projectId/engagement';
+app.options(`${PROJECT_ENGAGEMENT_PATH}`, (c) => projectEngagementOptions(c));
+app.get(`${PROJECT_ENGAGEMENT_PATH}`, (c) => handleProjectEngagementGet(c));
+app.get('/api/projects/engagement/bulk', (c) => handleProjectBulkEngagementGet(c));
+app.options('/api/projects/:projectId/media', (c) => projectEngagementOptions(c));
+app.get('/api/projects/:projectId/media', (c) => handleProjectMediaGet(c));
+app.post('/api/projects/:projectId/media', (c) => handleProjectMediaUpload(c));
+app.delete('/api/projects/:projectId/media/:mediaId', (c) => handleProjectMediaDelete(c));
+app.options('/api/projects/:projectId/videos/:videoId/pin', (c) => projectEngagementOptions(c));
+app.post('/api/projects/:projectId/videos/:videoId/pin', (c) => handleProjectVideoPin(c));
+app.options('/api/projects/:projectId/like', (c) => projectEngagementOptions(c));
+app.post('/api/projects/:projectId/like', (c) => handleProjectLikeToggle(c));
+app.options('/api/projects/:projectId/comments', (c) => projectEngagementOptions(c));
+app.get('/api/projects/:projectId/comments', (c) => handleProjectCommentsGet(c));
+app.post('/api/projects/:projectId/comments', (c) => handleProjectCommentAdd(c));
+app.options('/api/projects/:projectId/comments/:commentId', (c) => projectEngagementOptions(c));
+app.delete('/api/projects/:projectId/comments/:commentId', (c) => handleProjectCommentDelete(c));
+app.post('/api/projects/:projectId/comments/:commentId/approve', (c) => handleProjectCommentApprove(c));
+app.options('/api/projects/:projectId/share', (c) => projectEngagementOptions(c));
+app.post('/api/projects/:projectId/share', (c) => handleProjectShareTrack(c));
+app.options('/api/projects/:projectId/save', (c) => projectEngagementOptions(c));
+app.post('/api/projects/:projectId/save', (c) => handleProjectSaveToggle(c));
+app.options('/api/projects/:projectId/analytics', (c) => projectEngagementOptions(c));
+app.get('/api/projects/:projectId/analytics', (c) => handleProjectAnalyticsGet(c));
+app.post('/api/projects/:projectId/click', (c) => handleProjectTrackClick(c));
 
 app.onError((error, context) => {
   const message = error instanceof Error ? error.message : 'unknown';

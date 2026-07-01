@@ -57,6 +57,7 @@ import type { PublishedDealCardModel } from '@/lib/published-deal-card-model';
 import type { ParsedJVDeal } from '@/lib/parse-deal';
 import InvestorIntakeForm from '@/components/InvestorIntakeForm';
 import TrustDealCard from '@/components/TrustDealCard';
+import InstagramProjectCard from '@/components/InstagramProjectCard';
 import InvestorSupportChat, { type HumanSupportRequestResult } from '@/components/InvestorSupportChat';
 import {
   diagnoseDealPhotos,
@@ -365,8 +366,24 @@ function buildLandingShowcaseDeal(deal: LandingShowcaseDeal): ParsedJVDeal {
 
 function LandingDealsShowcase({ scrollToForm }: { scrollToForm: () => void }) {
   const router = useRouter();
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const [userId, setUserId] = useState<string | null>(null);
   const { width: screenWidth } = useWindowDimensions();
   const cardWidth = Math.min(screenWidth - 48, 380);
+
+  // Resolve user ID for engagement tracking
+  useEffect(() => {
+    let cancelled = false;
+    const resolve = async () => {
+      try {
+        const { supabase } = await import('@/lib/supabase');
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!cancelled && session?.user?.id) setUserId(session.user.id);
+      } catch {}
+    };
+    if (isAuthenticated) void resolve();
+    return () => { cancelled = true; };
+  }, [isAuthenticated]);
 
   const dealsQuery = useQuery<LandingShowcaseDeal[]>({
     queryKey: ['landing-deals-showcase'],
@@ -453,9 +470,11 @@ function LandingDealsShowcase({ scrollToForm }: { scrollToForm: () => void }) {
 
               return (
                 <View key={deal.id || `deal-${idx}`} style={{ width: cardWidth, marginRight: idx < deals.length - 1 ? 14 : 0 }} testID={`landing-deal-card-${deal.id || idx}`}>
-                  <TrustDealCard
+                  <InstagramProjectCard
                     deal={sharedDeal}
+                    userId={userId}
                     galleryWidth={cardWidth}
+                    showVideo={true}
                     onViewDetails={(selectedDeal) => {
                       router.push(`/jv-invest?jvId=${selectedDeal.id}` as any);
                     }}
