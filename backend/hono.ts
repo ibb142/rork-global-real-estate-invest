@@ -399,6 +399,37 @@ import { handleProjectDashboardRequest, projectDashboardOptions } from './api/iv
 import { OPTIONS as renderDiagnosticOptions, handleIVXRenderDiagnosticRequest } from './api/ivx-render-diagnostic';
 import { OPTIONS as renderDeployLatestOptions, handleIVXRenderDeployLatestRequest } from './api/ivx-render-deploy-latest';
 import {
+  enterpriseOrchestratorOptions,
+  handleEnterpriseStateGet,
+  handleEnterpriseKPIsGet,
+  handleEnterpriseCyclePost,
+  handleEnterpriseDispatchPost,
+  handleEnterpriseTaskCompletePost,
+  handleEnterpriseTaskFailPost,
+  handleEnterpriseAgentsGet,
+  handleEnterpriseAgentGet,
+  handleEnterpriseResearchGet,
+  handleEnterpriseResearchReportsGet,
+  handleEnterpriseOpportunitiesGet,
+  handleEnterpriseOpportunitiesByTypeGet,
+  handleEnterpriseOpportunityStatusPost,
+  handleEnterpriseImprovementGet,
+  handleEnterpriseImprovementPost,
+  handleEnterpriseImprovementResolvePost,
+  handleEnterpriseMemoryGet,
+  handleEnterpriseMemorySearchGet,
+  handleEnterpriseMemoryPost,
+  handleEnterpriseGovernanceGet,
+  handleEnterpriseGovernanceActionPost,
+  handleEnterpriseGovernanceApprovePost,
+  handleEnterpriseGovernanceBlockPost,
+  handleEnterpriseReportsGet,
+  handleEnterpriseReportsGeneratePost,
+  handleEnterpriseReportsListGet,
+  handleEnterpriseValidateGet,
+  handleEnterpriseHealthPost,
+} from './api/ivx-enterprise-orchestrator';
+import {
   handleIVXIncidentIngest,
   handleIVXIncidentsList,
   handleIVXIncidentGet,
@@ -3381,6 +3412,63 @@ app.post('/api/ivx/repair-jobs', async (c) => handleIVXRepairJobStart(c.req.raw)
 app.get('/api/ivx/repair-jobs', async (c) => handleIVXRepairJobList(c.req.raw));
 app.get('/api/ivx/repair-jobs/:id', async (c) => handleIVXRepairJobGet(c.req.raw, c.req.param('id')));
 app.get('/api/ivx/repair-jobs/by-incident/:incidentId', async (c) => handleIVXRepairJobByIncident(c.req.raw, c.req.param('incidentId')));
+
+// ---- IVX Enterprise Orchestrator (Phase 1–9 unified governance) ----
+app.options('/api/ivx/enterprise/state', () => enterpriseOrchestratorOptions());
+app.options('/api/ivx/enterprise/kpis', () => enterpriseOrchestratorOptions());
+app.options('/api/ivx/enterprise/cycle', () => enterpriseOrchestratorOptions());
+app.options('/api/ivx/enterprise/dispatch', () => enterpriseOrchestratorOptions());
+app.options('/api/ivx/enterprise/dispatch/:taskId/complete', () => enterpriseOrchestratorOptions());
+app.options('/api/ivx/enterprise/dispatch/:taskId/fail', () => enterpriseOrchestratorOptions());
+app.options('/api/ivx/enterprise/agents', () => enterpriseOrchestratorOptions());
+app.options('/api/ivx/enterprise/agents/:agentId', () => enterpriseOrchestratorOptions());
+app.options('/api/ivx/enterprise/research', () => enterpriseOrchestratorOptions());
+app.options('/api/ivx/enterprise/research/reports', () => enterpriseOrchestratorOptions());
+app.options('/api/ivx/enterprise/opportunities', () => enterpriseOrchestratorOptions());
+app.options('/api/ivx/enterprise/opportunities/:type', () => enterpriseOrchestratorOptions());
+app.options('/api/ivx/enterprise/opportunities/:id/status', () => enterpriseOrchestratorOptions());
+app.options('/api/ivx/enterprise/improvement', () => enterpriseOrchestratorOptions());
+app.options('/api/ivx/enterprise/improvement/:id/resolve', () => enterpriseOrchestratorOptions());
+app.options('/api/ivx/enterprise/memory', () => enterpriseOrchestratorOptions());
+app.options('/api/ivx/enterprise/memory/search', () => enterpriseOrchestratorOptions());
+app.options('/api/ivx/enterprise/governance', () => enterpriseOrchestratorOptions());
+app.options('/api/ivx/enterprise/governance/action', () => enterpriseOrchestratorOptions());
+app.options('/api/ivx/enterprise/governance/action/:id/approve', () => enterpriseOrchestratorOptions());
+app.options('/api/ivx/enterprise/governance/action/:id/block', () => enterpriseOrchestratorOptions());
+app.options('/api/ivx/enterprise/reports', () => enterpriseOrchestratorOptions());
+app.options('/api/ivx/enterprise/reports/generate', () => enterpriseOrchestratorOptions());
+app.options('/api/ivx/enterprise/reports/list', () => enterpriseOrchestratorOptions());
+app.options('/api/ivx/enterprise/validate', () => enterpriseOrchestratorOptions());
+app.options('/api/ivx/enterprise/health', () => enterpriseOrchestratorOptions());
+
+app.get('/api/ivx/enterprise/state', async (c) => handleEnterpriseStateGet(c.req.raw));
+app.get('/api/ivx/enterprise/kpis', async (c) => handleEnterpriseKPIsGet(c.req.raw));
+app.post('/api/ivx/enterprise/cycle', async (c) => handleEnterpriseCyclePost(c.req.raw));
+app.post('/api/ivx/enterprise/dispatch', async (c) => handleEnterpriseDispatchPost(c.req.raw));
+app.post('/api/ivx/enterprise/dispatch/:taskId/complete', async (c) => handleEnterpriseTaskCompletePost(c.req.raw));
+app.post('/api/ivx/enterprise/dispatch/:taskId/fail', async (c) => handleEnterpriseTaskFailPost(c.req.raw));
+app.get('/api/ivx/enterprise/agents', async (c) => handleEnterpriseAgentsGet(c.req.raw));
+app.get('/api/ivx/enterprise/agents/:agentId', async (c) => handleEnterpriseAgentGet(c.req.raw));
+app.get('/api/ivx/enterprise/research', async (c) => handleEnterpriseResearchGet(c.req.raw));
+app.get('/api/ivx/enterprise/research/reports', async (c) => handleEnterpriseResearchReportsGet(c.req.raw));
+app.get('/api/ivx/enterprise/opportunities', async (c) => handleEnterpriseOpportunitiesGet(c.req.raw));
+app.get('/api/ivx/enterprise/opportunities/:type', async (c) => handleEnterpriseOpportunitiesByTypeGet(c.req.raw));
+app.post('/api/ivx/enterprise/opportunities/:id/status', async (c) => handleEnterpriseOpportunityStatusPost(c.req.raw));
+app.get('/api/ivx/enterprise/improvement', async (c) => handleEnterpriseImprovementGet(c.req.raw));
+app.post('/api/ivx/enterprise/improvement', async (c) => handleEnterpriseImprovementPost(c.req.raw));
+app.post('/api/ivx/enterprise/improvement/:id/resolve', async (c) => handleEnterpriseImprovementResolvePost(c.req.raw));
+app.get('/api/ivx/enterprise/memory', async (c) => handleEnterpriseMemoryGet(c.req.raw));
+app.get('/api/ivx/enterprise/memory/search', async (c) => handleEnterpriseMemorySearchGet(c.req.raw));
+app.post('/api/ivx/enterprise/memory', async (c) => handleEnterpriseMemoryPost(c.req.raw));
+app.get('/api/ivx/enterprise/governance', async (c) => handleEnterpriseGovernanceGet(c.req.raw));
+app.post('/api/ivx/enterprise/governance/action', async (c) => handleEnterpriseGovernanceActionPost(c.req.raw));
+app.post('/api/ivx/enterprise/governance/action/:id/approve', async (c) => handleEnterpriseGovernanceApprovePost(c.req.raw));
+app.post('/api/ivx/enterprise/governance/action/:id/block', async (c) => handleEnterpriseGovernanceBlockPost(c.req.raw));
+app.get('/api/ivx/enterprise/reports', async (c) => handleEnterpriseReportsGet(c.req.raw));
+app.post('/api/ivx/enterprise/reports/generate', async (c) => handleEnterpriseReportsGeneratePost(c.req.raw));
+app.get('/api/ivx/enterprise/reports/list', async (c) => handleEnterpriseReportsListGet(c.req.raw));
+app.get('/api/ivx/enterprise/validate', async (c) => handleEnterpriseValidateGet(c.req.raw));
+app.post('/api/ivx/enterprise/health', async (c) => handleEnterpriseHealthPost(c.req.raw));
 
 app.onError((error, context) => {
   const message = error instanceof Error ? error.message : 'unknown';

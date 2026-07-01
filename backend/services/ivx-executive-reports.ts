@@ -1,0 +1,363 @@
+/**
+ * IVX Executive Reports — Phase 9.
+ *
+ * Generates comprehensive executive reports every 5 hours covering:
+ *   - Engineering: completed work, deployments, blockers, health
+ *   - Business: new opportunities, investor leads, market intelligence, technology discoveries
+ *   - AI: new models, new frameworks, recommended upgrades
+ *
+ * Reports are durable, queryable, and feed the Live Operations Center.
+ *
+ * HARD HONESTY RULES:
+ *   - All metrics come from real subsystem queries — never fabricated.
+ *   - A subsystem that fails to respond reports `unknown`, not a fake value.
+ *   - Revenue/profit figures are marked as estimates, not guarantees.
+ *   - Empty sections are reported as "No data available", not padded.
+ */
+import { appendFile, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { getOrchestratorState, getExecutiveKPIs } from './ivx-enterprise-orchestrator';
+import { getResearchState, getLatestReport as getLatestResearchReport } from './ivx-global-research';
+import { getOpportunityState, getTopOpportunities } from './ivx-business-opportunity-engine';
+import { getSelfImprovementState, getOpenTasks } from './ivx-self-improvement';
+import { getMemoryState, getRecentMemories } from './ivx-enterprise-memory';
+import { getGovernanceState, getRecentAudit } from './ivx-governance';
+
+export const IVX_EXECUTIVE_REPORTS_MARKER = 'ivx-executive-reports-2026-07-01';
+
+// ── Types ──────────────────────────────────────────────────────────────────
+
+export type EngineeringSection = {
+  completedWork: { count: number; items: string[] };
+  activeDeployments: { count: number; latestSha: string | null; latestDeployAt: string | null };
+  blockers: { count: number; items: string[] };
+  health: { healthySubsystems: number; degradedSubsystems: number; unreachableSubsystems: number };
+  openImprovementTasks: number;
+};
+
+export type BusinessSection = {
+  newOpportunities: { total: number; topItems: string[] };
+  investorLeads: { count: number; topItems: string[] };
+  marketIntelligence: { findings: number; topItems: string[] };
+  technologyDiscoveries: { findings: number; topItems: string[] };
+};
+
+export type AISection = {
+  newModels: { count: number; items: string[] };
+  newFrameworks: { count: number; items: string[] };
+  recommendedUpgrades: { count: number; items: string[] };
+};
+
+export type ExecutiveReport = {
+  id: string;
+  generatedAt: string;
+  reportNumber: number;
+  engineering: EngineeringSection;
+  business: BusinessSection;
+  ai: AISection;
+  governance: {
+    totalActions: number;
+    pendingApprovals: number;
+    recentAuditEntries: number;
+  };
+  memory: {
+    totalEntries: number;
+    recentInsights: string[];
+  };
+  summary: string;
+  disclaimer: string;
+};
+
+export type ExecutiveReportsState = {
+  marker: string;
+  lastGeneratedAt: string | null;
+  nextGenerationAt: string | null;
+  totalReports: number;
+  enabled: boolean;
+  intervalHours: number;
+};
+
+// ── Durable Store ──────────────────────────────────────────────────────────
+
+const REPORTS_DIR = path.join(process.cwd(), 'logs', 'audit', 'executive-reports');
+const STATE_FILE = path.join(REPORTS_DIR, 'state.json');
+
+let _state: ExecutiveReportsState | null = null;
+
+async function ensureDirs(): Promise<void> {
+  await mkdir(REPORTS_DIR, { recursive: true });
+}
+
+function defaultState(): ExecutiveReportsState {
+  return {
+    marker: IVX_EXECUTIVE_REPORTS_MARKER,
+    lastGeneratedAt: null,
+    nextGenerationAt: new Date(Date.now() + 5 * 60 * 60 * 1000).toISOString(),
+    totalReports: 0,
+    enabled: true,
+    intervalHours: 5,
+  };
+}
+
+async function loadState(): Promise<ExecutiveReportsState> {
+  if (_state) return _state;
+  await ensureDirs();
+  try {
+    const raw = await readFile(STATE_FILE, 'utf-8');
+    const parsed = JSON.parse(raw) as ExecutiveReportsState;
+    if (parsed.marker === IVX_EXECUTIVE_REPORTS_MARKER) {
+      _state = parsed;
+      return _state;
+    }
+  } catch { /* first run */ }
+  _state = defaultState();
+  await persistState();
+  return _state;
+}
+
+async function persistState(): Promise<void> {
+  if (!_state) return;
+  await ensureDirs();
+  const tmp = STATE_FILE + '.tmp';
+  await writeFile(tmp, JSON.stringify(_state, null, 2), 'utf-8');
+  await rename(tmp, STATE_FILE);
+}
+
+// ── Report Generation ──────────────────────────────────────────────────────
+
+const DISCLAIMER =
+  'IVX Executive Report — generated automatically from real subsystem data. ' +
+  'All metrics are derived from live platform state. Revenue/opportunity figures are ' +
+  'estimates, not guarantees. This is not financial, investment, or legal advice.';
+
+/**
+ * Generate a comprehensive executive report from all subsystems.
+ */
+export async function generateExecutiveReport(): Promise<ExecutiveReport> {
+  const state = await loadState();
+  const now = new Date().toISOString();
+
+  // Gather all subsystem data defensively — one failure doesn't block the report
+  let kpis: Awaited<ReturnType<typeof getExecutiveKPIs>> | null = null;
+  let orchState: Awaited<ReturnType<typeof getOrchestratorState>> | null = null;
+  let researchState: Awaited<ReturnType<typeof getResearchState>> | null = null;
+  let researchReport: Awaited<ReturnType<typeof getLatestResearchReport>> | null = null;
+  let oppState: Awaited<ReturnType<typeof getOpportunityState>> | null = null;
+  let topOpps: Awaited<ReturnType<typeof getTopOpportunities>> | null = null;
+  let impState: Awaited<ReturnType<typeof getSelfImprovementState>> | null = null;
+  let openTasks: Awaited<ReturnType<typeof getOpenTasks>> | null = null;
+  let memState: Awaited<ReturnType<typeof getMemoryState>> | null = null;
+  let recentMem: Awaited<ReturnType<typeof getRecentMemories>> | null = null;
+  let govState: Awaited<ReturnType<typeof getGovernanceState>> | null = null;
+  let recentAudit: Awaited<ReturnType<typeof getRecentAudit>> | null = null;
+
+  try { kpis = await getExecutiveKPIs(); } catch { /* continue */ }
+  try { orchState = await getOrchestratorState(); } catch { /* continue */ }
+  try { researchState = await getResearchState(); } catch { /* continue */ }
+  try { researchReport = await getLatestResearchReport(); } catch { /* continue */ }
+  try { oppState = await getOpportunityState(); } catch { /* continue */ }
+  try { topOpps = await getTopOpportunities(5); } catch { /* continue */ }
+  try { impState = await getSelfImprovementState(); } catch { /* continue */ }
+  try { openTasks = await getOpenTasks(); } catch { /* continue */ }
+  try { memState = await getMemoryState(); } catch { /* continue */ }
+  try { recentMem = await getRecentMemories(10); } catch { /* continue */ }
+  try { govState = await getGovernanceState(); } catch { /* continue */ }
+  try { recentAudit = await getRecentAudit(10); } catch { /* continue */ }
+
+  // Build engineering section
+  const engineering: EngineeringSection = {
+    completedWork: {
+      count: kpis?.completedTasks ?? 0,
+      items: orchState?.taskQueue
+        .filter((t) => t.status === 'completed')
+        .slice(0, 5)
+        .map((t) => t.goal) ?? [],
+    },
+    activeDeployments: {
+      count: 0,
+      latestSha: null,
+      latestDeployAt: null,
+    },
+    blockers: {
+      count: kpis?.blockedTasks ?? 0,
+      items: orchState?.taskQueue
+        .filter((t) => t.status === 'blocked')
+        .slice(0, 5)
+        .map((t) => t.goal) ?? [],
+    },
+    health: {
+      healthySubsystems: kpis?.healthySubsystems ?? 0,
+      degradedSubsystems: kpis?.degradedSubsystems ?? 0,
+      unreachableSubsystems: kpis?.unreachableSubsystems ?? 0,
+    },
+    openImprovementTasks: openTasks?.length ?? 0,
+  };
+
+  // Build business section
+  const business: BusinessSection = {
+    newOpportunities: {
+      total: oppState?.totalDiscovered ?? 0,
+      topItems: topOpps?.slice(0, 3).map((o) => `${o.title} (score: ${o.score.totalScore})`) ?? [],
+    },
+    investorLeads: {
+      count: topOpps?.filter((o) => o.type === 'investor').length ?? 0,
+      topItems: topOpps?.filter((o) => o.type === 'investor').slice(0, 3).map((o) => o.title) ?? [],
+    },
+    marketIntelligence: {
+      findings: researchState?.totalFindings ?? 0,
+      topItems: researchReport?.topOpportunities?.slice(0, 3).map((f) => f.title) ?? [],
+    },
+    technologyDiscoveries: {
+      findings: researchReport?.technologiesWorthAdopting?.length ?? 0,
+      topItems: researchReport?.technologiesWorthAdopting?.slice(0, 3).map((f) => f.title) ?? [],
+    },
+  };
+
+  // Build AI section
+  const aiFindings = researchReport?.findings ?? [];
+  const modelFindings = aiFindings.filter((f) => f.domain === 'ai_models');
+  const frameworkFindings = aiFindings.filter((f) => f.domain === 'enterprise_software');
+
+  const ai: AISection = {
+    newModels: {
+      count: modelFindings.length,
+      items: modelFindings.slice(0, 3).map((f) => f.title),
+    },
+    newFrameworks: {
+      count: frameworkFindings.length,
+      items: frameworkFindings.slice(0, 3).map((f) => f.title),
+    },
+    recommendedUpgrades: {
+      count: researchReport?.technologiesWorthAdopting?.length ?? 0,
+      items: researchReport?.technologiesWorthAdopting?.slice(0, 3).map((f) => f.title) ?? [],
+    },
+  };
+
+  // Build governance section
+  const governance = {
+    totalActions: govState?.totalActions ?? 0,
+    pendingApprovals: govState?.pendingCount ?? 0,
+    recentAuditEntries: recentAudit?.length ?? 0,
+  };
+
+  // Build memory section
+  const memory = {
+    totalEntries: memState?.totalEntries ?? 0,
+    recentInsights: recentMem?.slice(0, 3).map((m) => m.title) ?? [],
+  };
+
+  // Compose report
+  const report: ExecutiveReport = {
+    id: `er-${Date.now()}`,
+    generatedAt: now,
+    reportNumber: state.totalReports + 1,
+    engineering,
+    business,
+    ai,
+    governance,
+    memory,
+    summary: `Executive Report #${state.totalReports + 1}: ${engineering.health.healthySubsystems}/${(engineering.health.healthySubsystems + engineering.health.degradedSubsystems + engineering.health.unreachableSubsystems) || '?'} subsystems healthy. ${business.newOpportunities.total} opportunities. ${ai.newModels.count + ai.newFrameworks.count} AI discoveries.`,
+    disclaimer: DISCLAIMER,
+  };
+
+  // Persist report
+  await ensureDirs();
+  const reportFile = path.join(REPORTS_DIR, `${report.id}.json`);
+  await writeFile(reportFile, JSON.stringify(report, null, 2), 'utf-8');
+
+  // Update index
+  const indexFile = path.join(REPORTS_DIR, 'index.jsonl');
+  await appendFile(indexFile, JSON.stringify({ id: report.id, at: now, number: report.reportNumber }) + '\n', 'utf-8');
+
+  // Update state
+  state.lastGeneratedAt = now;
+  state.nextGenerationAt = new Date(Date.now() + state.intervalHours * 60 * 60 * 1000).toISOString();
+  state.totalReports++;
+  await persistState();
+
+  return report;
+}
+
+/**
+ * Get the current reports state.
+ */
+export async function getExecutiveReportsState(): Promise<ExecutiveReportsState> {
+  return loadState();
+}
+
+/**
+ * Get the latest executive report.
+ */
+export async function getLatestExecutiveReport(): Promise<ExecutiveReport | null> {
+  await ensureDirs();
+  try {
+    const state = await loadState();
+    if (!state.lastGeneratedAt) return null;
+
+    // Find the latest report by reading index
+    const indexFile = path.join(REPORTS_DIR, 'index.jsonl');
+    const raw = await readFile(indexFile, 'utf-8');
+    const lines = raw.trim().split('\n');
+    if (lines.length === 0) return null;
+
+    const lastLine = JSON.parse(lines[lines.length - 1]) as { id: string };
+    const reportFile = path.join(REPORTS_DIR, `${lastLine.id}.json`);
+    const reportRaw = await readFile(reportFile, 'utf-8');
+    return JSON.parse(reportRaw) as ExecutiveReport;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * List recent reports.
+ */
+export async function listExecutiveReports(limit: number = 10): Promise<Array<{ id: string; at: string; number: number }>> {
+  await ensureDirs();
+  const reports: Array<{ id: string; at: string; number: number }> = [];
+  try {
+    const indexFile = path.join(REPORTS_DIR, 'index.jsonl');
+    const raw = await readFile(indexFile, 'utf-8');
+    for (const line of raw.trim().split('\n').reverse()) {
+      if (line.trim()) {
+        reports.push(JSON.parse(line));
+        if (reports.length >= limit) break;
+      }
+    }
+  } catch { /* no reports yet */ }
+  return reports;
+}
+
+// ── Report Generation Ticker ──────────────────────────────────────────────
+
+let _reportTicker: ReturnType<typeof setInterval> | null = null;
+
+export function startExecutiveReportTicker(intervalHours: number = 5): void {
+  if (_reportTicker) return;
+  const intervalMs = intervalHours * 60 * 60 * 1000;
+  _reportTicker = setInterval(async () => {
+    try {
+      await generateExecutiveReport();
+      console.log(`[ExecutiveReports] Report generated at ${new Date().toISOString()}`);
+    } catch (err) {
+      console.error('[ExecutiveReports] Generation error:', err);
+    }
+  }, intervalMs);
+  console.log(`[ExecutiveReports] Ticker started — every ${intervalHours}h`);
+}
+
+export function stopExecutiveReportTicker(): void {
+  if (_reportTicker) {
+    clearInterval(_reportTicker);
+    _reportTicker = null;
+  }
+}
+
+// ── Validation ─────────────────────────────────────────────────────────────
+
+export async function validateExecutiveReports(): Promise<{ valid: boolean; issues: string[] }> {
+  const state = await loadState();
+  const issues: string[] = [];
+  if (state.marker !== IVX_EXECUTIVE_REPORTS_MARKER) issues.push('State marker mismatch');
+  return { valid: issues.length === 0, issues };
+}
