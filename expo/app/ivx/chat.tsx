@@ -2860,11 +2860,13 @@ export default function IVXOwnerChatRoute() {
       // owner-approved job. A pending draft is executed on /confirm. Database
       // inspection only happens when the owner explicitly asks for it.
       const isConfirmReply = isExplicitSensitiveActionConfirmation(text);
+      const wdSenior = watchdogTraceId ? activeWatchdogTracesRef.current.get(watchdogTraceId) ?? null : null;
       if (isConfirmReply && pendingBuildDraftRef.current) {
         const approvedDraft = pendingBuildDraftRef.current;
         pendingBuildDraftRef.current = null;
         await sendQueue.mutateAsync({ text: persistedOwnerText, mode, clientId, replyTo, senderLabel: ownerLabel, capturedText });
         setLastSendAt(new Date().toISOString());
+        wdSenior?.pass('AI_TRIGGER_DECISION', 'branch=senior_developer_confirm');
         await runSeniorDeveloperWorkerFromChat(approvedDraft);
         return;
       }
@@ -2873,15 +2875,18 @@ export default function IVXOwnerChatRoute() {
         pendingBuildDraftRef.current = draft;
         await sendQueue.mutateAsync({ text: persistedOwnerText, mode, clientId, replyTo, senderLabel: ownerLabel, capturedText });
         setLastSendAt(new Date().toISOString());
+        wdSenior?.pass('AI_TRIGGER_DECISION', 'branch=senior_developer_build');
         await persistSupportMessage(buildSeniorDeveloperApprovalCard(draft), 'system');
         return;
       }
 
       if (localFirstChatMode) {
+        const wdLF = watchdogTraceId ? activeWatchdogTracesRef.current.get(watchdogTraceId) ?? null : null;
         try {
           await sendQueue.mutateAsync({ text: persistedOwnerText, mode, clientId, replyTo, senderLabel: ownerLabel, capturedText });
           setLastSendAt(new Date().toISOString());
           if (trustContext.requiresElevatedConfirmation && !confirmedSensitiveAction) {
+            wdLF?.pass('AI_TRIGGER_DECISION', 'branch=local_first_elevated_confirmation');
             await persistSupportMessage(buildLocalSafeActionConfirmationMessage({
               normalizedText: effectiveText,
               requestClass: trustContext.requestClass,
@@ -2889,18 +2894,23 @@ export default function IVXOwnerChatRoute() {
             return;
           }
         } catch (sendError) {
+          wdLF?.fail('AI_TRIGGER_DECISION', `sendQueue failed in localFirst: ${sendError instanceof Error ? sendError.message : String(sendError)}`);
           throw sendError instanceof Error ? sendError : new Error(String(sendError));
         }
 
         if (mode === 'send_and_ai' || mode === 'ai_only') {
           console.log('[IVX_TRACE] 2.2_AI_TRIGGER_LOCAL_FIRST', { clientId, mode });
-          const traceLF = watchdogTraceId ? activeWatchdogTracesRef.current.get(watchdogTraceId) ?? null : null;
-          traceLF?.pass('AI_TRIGGER_DECISION', `branch=local_first mode=${mode}`);
-          await assistantReplyMutation.mutateAsync({ text: effectiveText, nonBlocking: mode === 'send_and_ai', watchdogTraceId });
+          wdLF?.pass('AI_TRIGGER_DECISION', `branch=local_first mode=${mode}`);
+          // Retry-once guard: catch the first rejection, log it, and retry once
+          try {
+            await assistantReplyMutation.mutateAsync({ text: effectiveText, nonBlocking: mode === 'send_and_ai', watchdogTraceId });
+          } catch (aiErr) {
+            console.log('[IVX_TRACE] 2.X_LOCAL_FIRST_AI_RETRY_1', { clientId, err: aiErr instanceof Error ? aiErr.message : String(aiErr) });
+            await assistantReplyMutation.mutateAsync({ text: effectiveText, nonBlocking: mode === 'send_and_ai', watchdogTraceId });
+          }
         } else {
           console.log('[IVX_TRACE] 2.X_LOCAL_FIRST_NO_AI_BRANCH', { clientId, mode });
-          const traceNo = watchdogTraceId ? activeWatchdogTracesRef.current.get(watchdogTraceId) ?? null : null;
-          traceNo?.fail('AI_TRIGGER_DECISION', `local_first did not enter AI branch (mode=${mode})`);
+          wdLF?.pass('AI_TRIGGER_DECISION', `branch=local_first_send_only mode=${mode}`);
         }
         return;
       }
@@ -2935,7 +2945,9 @@ export default function IVXOwnerChatRoute() {
             }), 'system');
             return;
           }
+          const wdCmd = watchdogTraceId ? activeWatchdogTracesRef.current.get(watchdogTraceId) ?? null : null;
           if (trustContext.requiresElevatedConfirmation && !confirmedSensitiveAction) {
+            wdCmd?.pass('AI_TRIGGER_DECISION', 'branch=owner_command_elevated_confirmation');
             await persistSupportMessage(buildSensitiveActionConfirmationMessage({
               normalizedText: effectiveText,
               requestClass: trustContext.requestClass,
@@ -2944,6 +2956,7 @@ export default function IVXOwnerChatRoute() {
             }), 'system');
             return;
           }
+          wdCmd?.pass('AI_TRIGGER_DECISION', `branch=owner_command command=${commandResult.command}`);
           const structuredResponse = await buildCommandContractResponse(commandResult.command, commandResult.args);
           await persistSupportMessage(structuredResponse ?? commandResult.response, 'system');
         } catch (sendError) {
@@ -2994,11 +3007,16 @@ export default function IVXOwnerChatRoute() {
         console.log('[IVXOwnerChatRoute] Owner message sent to Supabase. trust:', trustContext.namedStates, 'confirmed:', confirmedSensitiveAction);
       } catch (sendError) {
         console.log('[IVX_TRACE] 2.X_SEND_QUEUE_THREW_NO_AI_TRIGGER', { clientId, errorMessage: sendError instanceof Error ? sendError.message : String(sendError) });
+        const wdSendFail = watchdogTraceId ? activeWatchdogTracesRef.current.get(watchdogTraceId) ?? null : null;
+        wdSendFail?.fail('AI_TRIGGER_DECISION', `sendQueue threw: ${sendError instanceof Error ? sendError.message : String(sendError)}`);
         throw sendError instanceof Error ? sendError : new Error(String(sendError));
       }
 
+      const watchdogTrace = watchdogTraceId ? activeWatchdogTracesRef.current.get(watchdogTraceId) ?? null : null;
+
       if (trustContext.requiresElevatedConfirmation && !confirmedSensitiveAction) {
         console.log('[IVX_TRACE] 2.X_ELEVATED_CONFIRMATION_EARLY_RETURN', { clientId, requestClass: trustContext.requestClass, namedStates: trustContext.namedStates });
+        watchdogTrace?.pass('AI_TRIGGER_DECISION', `branch=elevated_confirmation class=${trustContext.requestClass}`);
         await persistSupportMessage(buildSensitiveActionConfirmationMessage({
           normalizedText: effectiveText,
           requestClass: trustContext.requestClass,
@@ -3007,8 +3025,6 @@ export default function IVXOwnerChatRoute() {
         }), 'system');
         return;
       }
-
-      const watchdogTrace = watchdogTraceId ? activeWatchdogTracesRef.current.get(watchdogTraceId) ?? null : null;
       if (mode === 'ai_only') {
         console.log('[IVX_TRACE] 2.2_AI_TRIGGER_AI_ONLY', { clientId });
         watchdogTrace?.pass('AI_TRIGGER_DECISION', 'branch=ai_only');
@@ -3020,11 +3036,24 @@ export default function IVXOwnerChatRoute() {
         console.log('[IVX_TRACE] 2.2_AI_TRIGGER_SEND_AND_AI', { clientId, aiReachable: aiReachableRef.current, trust: trustContext.namedStates });
         console.log('[IVXOwnerChatRoute] Auto-triggering AI reply after send, aiReachable:', aiReachableRef.current, 'trust:', trustContext.namedStates);
         watchdogTrace?.pass('AI_TRIGGER_DECISION', 'branch=send_and_ai');
-        assistantReplyMutation.mutateAsync({ text: effectiveText, nonBlocking: true, watchdogTraceId }).catch((err) => {
-          console.log('[IVX_TRACE] 2.X_AI_TRIGGER_REJECTED_SWALLOWED', { clientId, errorMessage: err instanceof Error ? err.message : String(err) });
-          watchdogTrace?.fail('AI_MUTATION_STARTED', `assistantReplyMutation rejected before/at start: ${err instanceof Error ? err.message : String(err)}`);
-        });
+        // Retry-once wrapper: if the first AI mutation attempt fails, retry once
+        // before surfacing the error. The watchdog still records each attempt.
+        const triggerAIWithRetry = async () => {
+          try {
+            await assistantReplyMutation.mutateAsync({ text: effectiveText, nonBlocking: true, watchdogTraceId });
+          } catch (firstErr) {
+            console.log('[IVX_TRACE] 2.X_AI_TRIGGER_RETRY_1', { clientId, err: firstErr instanceof Error ? firstErr.message : String(firstErr) });
+            try {
+              await assistantReplyMutation.mutateAsync({ text: effectiveText, nonBlocking: true, watchdogTraceId });
+            } catch (secondErr) {
+              console.log('[IVX_TRACE] 2.X_AI_TRIGGER_BOTH_FAILED', { clientId, err: secondErr instanceof Error ? secondErr.message : String(secondErr) });
+              watchdogTrace?.fail('AI_MUTATION_STARTED', `assistantReplyMutation rejected twice: ${secondErr instanceof Error ? secondErr.message : String(secondErr)}`);
+            }
+          }
+        };
+        void triggerAIWithRetry();
       } else if (mode === 'send_only') {
+        watchdogTrace?.pass('AI_TRIGGER_DECISION', 'branch=send_only_no_ai');
         watchdogTrace?.complete('SUCCESS');
       }
     },
