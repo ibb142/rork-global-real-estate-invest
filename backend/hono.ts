@@ -674,6 +674,7 @@ import {
   getPublicChatHealthSnapshot,
   mapRoomMessagesToPublicChatHistory,
 } from './public-chat-ai';
+import { routeDeploymentCommand, isDeploymentCommand } from './services/ivx-deployment-chat-brain';
 import {
   handleChatPost,
   handleDiagnosticsGet,
@@ -1948,6 +1949,38 @@ async function handlePublicRoomSend(request: Request): Promise<Response> {
     messageId: message.id,
     marker: DEPLOYMENT_MARKER,
   });
+
+  // Route deployment commands through the deployment brain
+  if (text && isDeploymentCommand(text)) {
+    const brainResult = await routeDeploymentCommand(text);
+    if (brainResult) {
+      const brainMessage: ChatRoomMessage = publicChatStorage.createMessage({
+        roomId,
+        username: 'IVX Deployment Brain',
+        text: brainResult,
+        source: 'assistant',
+      });
+      console.log('[IVXOwnerAI-Hono] Deployment brain response stored', {
+        roomId,
+        messageId: brainMessage.id,
+        marker: DEPLOYMENT_MARKER,
+      });
+      return publicJson({
+        ok: true,
+        message,
+        assistantMessage: brainMessage,
+        ai: {
+          source: 'deployment-brain' as const,
+          model: 'ivx-deployment-brain',
+          endpoint: null,
+        },
+        requestId: createId('deploy-brain-request'),
+        room: getPublicRoomSnapshot(roomId),
+        deploymentMarker: DEPLOYMENT_MARKER,
+        timestamp: nowIso(),
+      }, 201);
+    }
+  }
 
   const roomMessages = publicChatStorage
     .listMessages(roomId, 24)

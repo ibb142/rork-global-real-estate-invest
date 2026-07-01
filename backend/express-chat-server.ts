@@ -11,6 +11,7 @@ import {
   sanitizePublicChatHistory,
   type PublicChatHistoryItem,
 } from './public-chat-ai';
+import { routeDeploymentCommand, isDeploymentCommand } from './services/ivx-deployment-chat-brain';
 
 type JoinRoomPayload = {
   roomId?: unknown;
@@ -194,6 +195,27 @@ async function handlePublicChat(request: Request, response: Response): Promise<v
     const sessionId = sanitizeRoomId((request.body as { sessionId?: unknown } | undefined)?.sessionId) || DEFAULT_ROOM_ID;
     const requestId = `public-${Date.now()}`;
     const history = normalizePublicChatHistory((request.body as { history?: unknown } | undefined)?.history);
+
+    // Route deployment commands through the deployment brain
+    if (prompt && isDeploymentCommand(prompt)) {
+      const brainResult = await routeDeploymentCommand(prompt);
+      if (brainResult) {
+        response.json({
+          ok: true,
+          requestId,
+          sessionId,
+          answer: brainResult,
+          model: 'ivx-deployment-brain',
+          source: 'deployment-brain' as const,
+          endpoint: null,
+          deploymentMarker: DEPLOYMENT_MARKER,
+          rateLimitRemaining: 999,
+          rateLimitResetAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+          timestamp: nowIso(),
+        });
+        return;
+      }
+    }
 
     const result = await generatePublicChatAnswer({
       message: prompt || 'Hello from chat.ivxholding.com',
