@@ -177,6 +177,17 @@ import {
   handleActionLoopOutcomeRequest,
 } from './api/ivx-executive-action-loop';
 import {
+  membersOptions,
+  handleMemberRegister,
+  handleSendEmailCode,
+  handleVerifyEmail,
+  handleSendPhoneCode,
+  handleVerifyPhone,
+  handleGetMemberProfile,
+  handleStartKYC,
+  handleVerificationStatus,
+} from './api/ivx-members';
+import {
   OPTIONS as capitalNetworkOptions,
   handleCapitalNetworkDashboardRequest,
   handleCapitalNetworkScanRequest,
@@ -3412,6 +3423,25 @@ app.post('/api/ivx/repair-jobs', async (c) => handleIVXRepairJobStart(c.req.raw)
 app.get('/api/ivx/repair-jobs', async (c) => handleIVXRepairJobList(c.req.raw));
 app.get('/api/ivx/repair-jobs/:id', async (c) => handleIVXRepairJobGet(c.req.raw, c.req.param('id')));
 app.get('/api/ivx/repair-jobs/by-incident/:incidentId', async (c) => handleIVXRepairJobByIncident(c.req.raw, c.req.param('incidentId')));
+
+// ---- IVX Member Registration + Verification ----
+app.options('/api/members/register', () => membersOptions());
+app.options('/api/members/send-email-code', () => membersOptions());
+app.options('/api/members/verify-email', () => membersOptions());
+app.options('/api/members/send-phone-code', () => membersOptions());
+app.options('/api/members/verify-phone', () => membersOptions());
+app.options('/api/members/me', () => membersOptions());
+app.options('/api/members/start-kyc', () => membersOptions());
+app.options('/api/members/verification-status', () => membersOptions());
+
+app.post('/api/members/register', async (c) => handleMemberRegister(c.req.raw));
+app.post('/api/members/send-email-code', async (c) => handleSendEmailCode(c.req.raw));
+app.post('/api/members/verify-email', async (c) => handleVerifyEmail(c.req.raw));
+app.post('/api/members/send-phone-code', async (c) => handleSendPhoneCode(c.req.raw));
+app.post('/api/members/verify-phone', async (c) => handleVerifyPhone(c.req.raw));
+app.get('/api/members/me', async (c) => handleGetMemberProfile(c.req.raw));
+app.post('/api/members/start-kyc', async (c) => handleStartKYC(c.req.raw));
+app.get('/api/members/verification-status', async (c) => handleVerificationStatus(c.req.raw));
 
 // ---- IVX Enterprise Orchestrator (Phase 1–9 unified governance) ----
 app.options('/api/ivx/enterprise/state', () => enterpriseOrchestratorOptions());

@@ -1149,6 +1149,17 @@ export default function LandingScreen() {
                       </TouchableOpacity>
                     ) : null}
                     <TouchableOpacity
+                      style={styles.memberRegisterButton}
+                      onPress={() => {
+                        try { landingTracker.trackCtaClick('member_register'); } catch {}
+                        router.push('/member-register' as any);
+                      }}
+                      activeOpacity={0.7}
+                      testID="landing-member-register"
+                    >
+                      <Text style={styles.memberRegisterButtonText}>Create Free Account</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
                       style={styles.loginLink}
                       onPress={() => {
                         try { landingTracker.trackCtaClick('sign_in'); } catch {}
@@ -2036,6 +2047,17 @@ const styles = StyleSheet.create({
     color: GOLD,
     fontSize: 13,
     fontWeight: '700' as const,
+  },
+  memberRegisterButton: {
+    backgroundColor: GOLD,
+    borderRadius: 12,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+  },
+  memberRegisterButtonText: {
+    color: '#000000',
+    fontSize: 13,
+    fontWeight: '800' as const,
   },
   heroSection: {
     alignItems: 'center',
