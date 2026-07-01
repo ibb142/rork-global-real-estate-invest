@@ -762,6 +762,24 @@ import {
   handleProjectShareTrack,
   handleProjectSaveToggle,
 } from './api/ivx-project-engagement';
+import {
+  publicFeatureOptions,
+  handleFeaturedProperties,
+  handlePropertyDetails,
+  handleMembersDashboard,
+  handleInvestorsDashboard,
+  handleCRMMain,
+  handleJVDealsList,
+  handlePropertyAdminList,
+  handlePropertyAdminCreate,
+  handleMediaUpload,
+  handleInstagramCards,
+  handleEngagementLikes,
+  handleEngagementComments,
+  handleEngagementShares,
+  handleEngagementSaves,
+  handleAnalytics,
+} from './api/ivx-public-features';
 
 async function loadRoute53Module() {
   try {
@@ -3670,6 +3688,67 @@ app.post('/api/projects/:projectId/save', (c) => handleProjectSaveToggle(c));
 app.options('/api/projects/:projectId/analytics', (c) => projectEngagementOptions(c));
 app.get('/api/projects/:projectId/analytics', (c) => handleProjectAnalyticsGet(c));
 app.post('/api/projects/:projectId/click', (c) => handleProjectTrackClick(c));
+
+// ── Public Feature API /api/ivx/* ────────────────────────────────────────
+
+// Featured Properties
+app.options('/api/ivx/properties/featured', () => publicFeatureOptions());
+app.get('/api/ivx/properties/featured', async (c) => handleFeaturedProperties(c.req.raw));
+
+// Property Details
+app.options('/api/ivx/properties/:propertyId', () => publicFeatureOptions());
+app.get('/api/ivx/properties/:propertyId', async (c) => handlePropertyDetails(c.req.raw, c.req.param('propertyId')));
+
+// Auth aliases (delegate to member handlers)
+app.options('/api/ivx/auth/register', () => membersOptions());
+app.post('/api/ivx/auth/register', async (c) => handleMemberRegister(c.req.raw));
+app.options('/api/ivx/auth/verify-email', () => membersOptions());
+app.post('/api/ivx/auth/verify-email', async (c) => handleVerifyEmail(c.req.raw));
+app.options('/api/ivx/auth/verify-sms', () => membersOptions());
+app.post('/api/ivx/auth/verify-sms', async (c) => handleVerifyPhone(c.req.raw));
+
+// Members Dashboard
+app.options('/api/ivx/members/dashboard', () => publicFeatureOptions());
+app.get('/api/ivx/members/dashboard', async (c) => handleMembersDashboard(c.req.raw));
+
+// Investors Dashboard
+app.options('/api/ivx/investors/dashboard', () => publicFeatureOptions());
+app.get('/api/ivx/investors/dashboard', async (c) => handleInvestorsDashboard(c.req.raw));
+
+// CRM Main
+app.options('/api/ivx/crm', () => publicFeatureOptions());
+app.get('/api/ivx/crm', async (c) => handleCRMMain(c.req.raw));
+
+// JV Deals
+app.options('/api/ivx/jv-deals', () => publicFeatureOptions());
+app.get('/api/ivx/jv-deals', async (c) => handleJVDealsList(c.req.raw));
+
+// Property Admin
+app.options('/api/ivx/admin/properties', () => publicFeatureOptions());
+app.get('/api/ivx/admin/properties', async (c) => handlePropertyAdminList(c.req.raw));
+app.post('/api/ivx/admin/properties', async (c) => handlePropertyAdminCreate(c.req.raw));
+
+// Media Upload
+app.options('/api/ivx/media/upload', () => publicFeatureOptions());
+app.post('/api/ivx/media/upload', async (c) => handleMediaUpload(c.req.raw));
+
+// Instagram Cards
+app.options('/api/ivx/social/instagram-cards', () => publicFeatureOptions());
+app.get('/api/ivx/social/instagram-cards', async (c) => handleInstagramCards(c.req.raw));
+
+// Engagement
+app.options('/api/ivx/engagement/likes', () => publicFeatureOptions());
+app.get('/api/ivx/engagement/likes', async (c) => handleEngagementLikes(c.req.raw));
+app.options('/api/ivx/engagement/comments', () => publicFeatureOptions());
+app.get('/api/ivx/engagement/comments', async (c) => handleEngagementComments(c.req.raw));
+app.options('/api/ivx/engagement/shares', () => publicFeatureOptions());
+app.get('/api/ivx/engagement/shares', async (c) => handleEngagementShares(c.req.raw));
+app.options('/api/ivx/engagement/saves', () => publicFeatureOptions());
+app.get('/api/ivx/engagement/saves', async (c) => handleEngagementSaves(c.req.raw));
+
+// Analytics
+app.options('/api/ivx/analytics', () => publicFeatureOptions());
+app.get('/api/ivx/analytics', async (c) => handleAnalytics(c.req.raw));
 
 // ── IVX Deployment Tools Brain (Unified Dashboard) ──────────────────
 app.options('/api/ivx/deploy-tools/*', () => deployToolsOptions());
