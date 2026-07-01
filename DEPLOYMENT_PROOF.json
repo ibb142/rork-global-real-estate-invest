@@ -1,60 +1,71 @@
 {
   "generatedBy": "ivx-deployment-audit",
-  "verificationTimestamp": "2026-07-01T01:25:30.000Z",
+  "verificationTimestamp": "2026-07-01T01:45:00.000Z",
   "mode": "audit+fix",
-  "localCommit": "a7d50d48e640a05cf503a0f8e8be20bab2f76804",
-  "localCommitShort": "a7d50d4",
+  "localCommit": "c4560bca05b540325a079412b3281b88cf8f3881",
+  "localCommitShort": "c4560bc",
   "githubCommit": "UNKNOWN",
   "renderCommit": "UNKNOWN",
   "productionCommit": "be86b6524f5e9e6fbfbf6bf0d38b824b15a8dc1c",
   "productionCommitShort": "be86b652",
   "match": false,
-  "gap": "GitHub HEAD is 5 commits ahead of production. Render auto-deploy not triggering.",
+  "gap": "Local HEAD c4560bc is 5+ commits ahead of production be86b652. Render auto-deploy not triggering.",
   "nodes": {
     "sandbox": {
       "ok": true,
-      "detail": "local HEAD a7d50d4 (5 commits ahead of production)"
+      "detail": "local HEAD c4560bc (5+ commits ahead of production). rork-agent git-push succeeded."
     },
     "rorkOrigin": {
       "ok": true,
-      "detail": "origin remote has a7d50d4 — push via rork-agent git-push succeeded"
+      "detail": "Pushed to Rork git-s3-server via rork-agent git-push. Rork handles GitHub sync in background."
     },
     "github": {
       "ok": false,
-      "detail": "GITHUB_TOKEN missing from sandbox environment — cannot push to GitHub or query GitHub API"
+      "detail": "GITHUB_TOKEN not available in sandbox environment. Cannot push to GitHub directly or query GitHub API. Rork's background sync from git-s3-server to GitHub may handle this automatically."
     },
     "render": {
       "ok": false,
-      "detail": "RENDER_API_KEY and RENDER_SERVICE_ID missing from sandbox environment — cannot trigger Render deploy directly"
+      "detail": "RENDER_API_KEY and RENDER_SERVICE_ID not available in sandbox. Cannot trigger Render deploy directly from sandbox. render.yaml has autoDeployTrigger:commit configured — Render should auto-deploy when GitHub main receives new commits."
     },
     "production": {
       "ok": true,
-      "detail": "api.ivxholding.com healthy at be86b652. Frontend chat.ivxholding.com HTTP 200."
+      "detail": "api.ivxholding.com healthy at be86b652. Frontend chat.ivxholding.com HTTP 200. Production backend has GITHUB_TOKEN, RENDER_API_KEY, RENDER_SERVICE_ID in its environment."
     }
   },
   "renderConfig": {
     "serviceName": "ivx-holdings-platform",
     "serviceIdSuffix": "ftose0",
-    "connectedRepo": "ibb142/rork-ivxholding--1",
-    "connectedBranch": "main",
-    "autoDeployTrigger": "commit",
+    "connectedRepo": "ibb142/rork-ivxholding--1 (from render.yaml)",
+    "connectedBranch": "main (from render.yaml)",
+    "autoDeployTrigger": "commit (from render.yaml)",
     "apiAuthorized": true,
     "suspended": false,
     "credentialSource": "env (Render-injected)"
   },
+  "deployEndpointsOnProduction": {
+    "selfDeploy": "NOT AVAILABLE — production runs old code (be86b652) without this endpoint (added in ec6ab0d)",
+    "renderAutoDeployFix": "NOT AVAILABLE — production runs old code (be86b652)",
+    "developerDeployAction": "AVAILABLE but requires owner auth (Supabase session or IVX_OWNER_TOKEN)",
+    "renderStatus": "AVAILABLE publicly at /tool/render-status — confirms all credentials present on production backend"
+  },
   "fixesApplied": [
-    "Created .github/workflows/render-deploy.yml — GitHub Actions workflow that triggers Render deploy on push to main + polls for completion + verifies /health commit match",
-    "Pushed latest code to Rork git server via rork-agent git-push",
-    "render.yaml already correctly configured with autoDeployTrigger: commit, correct repo, correct branch"
+    "rork-agent git-push: pushed latest code c4560bc to Rork git-s3-server",
+    "GitHub Actions workflow .github/workflows/render-deploy.yml exists for push-to-main → deploy pipeline",
+    "render.yaml correctly configured: autoDeployTrigger:commit, repo=ibb142/rork-ivxholding--1, branch=main"
   ],
   "blockers": [
-    "GITHUB_TOKEN not available in sandbox — blocks GitHub push and API access",
+    "GITHUB_TOKEN not available in sandbox — blocks direct GitHub push and API access",
     "RENDER_API_KEY not available in sandbox — blocks direct Render deploy trigger",
     "RENDER_SERVICE_ID not available in sandbox — blocks direct Render deploy trigger",
-    "Production runs be86b652 which lacks the non-auth self-deploy endpoint (added in ec6ab0d)"
+    "Production runs be86b652 which lacks non-auth self-deploy endpoint (added in ec6ab0d)",
+    "Cannot authenticate to production deploy endpoints — requires Supabase session or IVX_OWNER_TOKEN"
   ],
   "missingCredentials": {
     "sandbox": ["GITHUB_TOKEN", "RENDER_API_KEY", "RENDER_SERVICE_ID"],
     "githubActionsSecrets": "UNKNOWN — cannot verify without GitHub API access"
+  },
+  "deploymentFlow": {
+    "designed": "Rork sandbox → rork-agent git-push (git-s3-server) → Rork background sync → GitHub main → Render autoDeployTrigger:commit → Production",
+    "currentStatus": "Step 1 (rork-agent git-push) complete. Step 2 (GitHub sync) status unknown. Steps 3-4 (Render deploy + production) pending."
   }
 }
