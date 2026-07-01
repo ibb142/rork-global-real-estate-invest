@@ -438,6 +438,21 @@ import {
   handleDeployHealth,
 } from './api/ivx-deployment-engine';
 import {
+  OPTIONS as deployToolsOptions,
+  handleBrain,
+  handleBrainHealth,
+  handleGitHubStatus,
+  handleRenderStatus,
+  handleRenderDeploy as handleRenderDeployTool,
+  handleRenderRollback,
+  handleRenderAutoDeploy,
+  handleSupabaseStatus,
+  handleVercelStatus,
+  handleEvidence,
+  handleCredentials,
+  handleDashboard,
+} from './api/ivx-deployment-tools';
+import {
   enterpriseOrchestratorOptions,
   handleEnterpriseStateGet,
   handleEnterpriseKPIsGet,
@@ -3620,6 +3635,21 @@ app.post('/api/projects/:projectId/save', (c) => handleProjectSaveToggle(c));
 app.options('/api/projects/:projectId/analytics', (c) => projectEngagementOptions(c));
 app.get('/api/projects/:projectId/analytics', (c) => handleProjectAnalyticsGet(c));
 app.post('/api/projects/:projectId/click', (c) => handleProjectTrackClick(c));
+
+// ── IVX Deployment Tools Brain (Unified Dashboard) ──────────────────
+app.options('/api/ivx/deploy-tools/*', () => deployToolsOptions());
+app.get('/api/ivx/deploy-tools/brain', async (c) => handleBrain());
+app.get('/api/ivx/deploy-tools/brain/health', async (c) => handleBrainHealth());
+app.get('/api/ivx/deploy-tools/github', async (c) => handleGitHubStatus());
+app.get('/api/ivx/deploy-tools/render', async (c) => handleRenderStatus());
+app.post('/api/ivx/deploy-tools/render/deploy', async (c) => handleRenderDeployTool(c.req.raw));
+app.post('/api/ivx/deploy-tools/render/rollback', async (c) => handleRenderRollback(c.req.raw));
+app.post('/api/ivx/deploy-tools/render/auto-deploy', async (c) => handleRenderAutoDeploy(c.req.raw));
+app.get('/api/ivx/deploy-tools/supabase', async (c) => handleSupabaseStatus());
+app.get('/api/ivx/deploy-tools/vercel', async (c) => handleVercelStatus());
+app.get('/api/ivx/deploy-tools/evidence', async (c) => handleEvidence());
+app.get('/api/ivx/deploy-tools/credentials', async (c) => handleCredentials());
+app.get('/api/ivx/deploy-tools/dashboard', async (c) => handleDashboard());
 
 app.onError((error, context) => {
   const message = error instanceof Error ? error.message : 'unknown';
