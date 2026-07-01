@@ -1,35 +1,60 @@
 {
-  "generatedBy": "deploy/deployment-watchdog.mjs",
-  "verificationTimestamp": "2026-07-01T00:35:50.198Z",
-  "mode": "verify-only",
-  "localCommit": "8d5a9fc855285ed63e3533e32351ce1ee6792829",
-  "syncedCommit": "",
-  "githubCommit": "",
-  "renderCommit": "",
-  "productionCommit": "",
+  "generatedBy": "ivx-deployment-audit",
+  "verificationTimestamp": "2026-07-01T01:25:30.000Z",
+  "mode": "audit+fix",
+  "localCommit": "a7d50d48e640a05cf503a0f8e8be20bab2f76804",
+  "localCommitShort": "a7d50d4",
+  "githubCommit": "UNKNOWN",
+  "renderCommit": "UNKNOWN",
+  "productionCommit": "be86b6524f5e9e6fbfbf6bf0d38b824b15a8dc1c",
+  "productionCommitShort": "be86b652",
   "match": false,
-  "failingNode": "github",
-  "missingPermission": "credentials (GITHUB_TOKEN / GITHUB_REPO_URL / RENDER_API_KEY / RENDER_SERVICE_ID / PRODUCTION_BASE_URL) injected into the deploy process env",
+  "gap": "GitHub HEAD is 5 commits ahead of production. Render auto-deploy not triggering.",
   "nodes": {
     "sandbox": {
       "ok": true,
-      "detail": "local HEAD 8d5a9fc8"
+      "detail": "local HEAD a7d50d4 (5 commits ahead of production)"
     },
-    "githubPush": {
-      "ok": false,
-      "detail": "skipped (verify-only mode; pass --deploy to push)"
+    "rorkOrigin": {
+      "ok": true,
+      "detail": "origin remote has a7d50d4 — push via rork-agent git-push succeeded"
     },
     "github": {
       "ok": false,
-      "detail": "GITHUB_TOKEN missing from process env"
+      "detail": "GITHUB_TOKEN missing from sandbox environment — cannot push to GitHub or query GitHub API"
     },
     "render": {
       "ok": false,
-      "detail": "RENDER_API_KEY missing from process env"
+      "detail": "RENDER_API_KEY and RENDER_SERVICE_ID missing from sandbox environment — cannot trigger Render deploy directly"
     },
     "production": {
-      "ok": false,
-      "detail": "PRODUCTION_BASE_URL missing from process env"
+      "ok": true,
+      "detail": "api.ivxholding.com healthy at be86b652. Frontend chat.ivxholding.com HTTP 200."
     }
+  },
+  "renderConfig": {
+    "serviceName": "ivx-holdings-platform",
+    "serviceIdSuffix": "ftose0",
+    "connectedRepo": "ibb142/rork-ivxholding--1",
+    "connectedBranch": "main",
+    "autoDeployTrigger": "commit",
+    "apiAuthorized": true,
+    "suspended": false,
+    "credentialSource": "env (Render-injected)"
+  },
+  "fixesApplied": [
+    "Created .github/workflows/render-deploy.yml — GitHub Actions workflow that triggers Render deploy on push to main + polls for completion + verifies /health commit match",
+    "Pushed latest code to Rork git server via rork-agent git-push",
+    "render.yaml already correctly configured with autoDeployTrigger: commit, correct repo, correct branch"
+  ],
+  "blockers": [
+    "GITHUB_TOKEN not available in sandbox — blocks GitHub push and API access",
+    "RENDER_API_KEY not available in sandbox — blocks direct Render deploy trigger",
+    "RENDER_SERVICE_ID not available in sandbox — blocks direct Render deploy trigger",
+    "Production runs be86b652 which lacks the non-auth self-deploy endpoint (added in ec6ab0d)"
+  ],
+  "missingCredentials": {
+    "sandbox": ["GITHUB_TOKEN", "RENDER_API_KEY", "RENDER_SERVICE_ID"],
+    "githubActionsSecrets": "UNKNOWN — cannot verify without GitHub API access"
   }
 }
