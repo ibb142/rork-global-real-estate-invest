@@ -49,7 +49,8 @@ export type SubsystemId =
   | 'self_improvement'
   | 'enterprise_memory'
   | 'governance'
-  | 'executive_reports';
+  | 'executive_reports'
+  | 'global_intelligence';
 
 export type SubsystemHealth = 'healthy' | 'degraded' | 'unreachable' | 'stopped';
 
@@ -149,6 +150,7 @@ function defaultOrchestratorState(): EnterpriseOrchestratorState {
       enterprise_memory: defaultSubsystemStatus('enterprise_memory', 'Enterprise Memory'),
       governance: defaultSubsystemStatus('governance', 'Governance'),
       executive_reports: defaultSubsystemStatus('executive_reports', 'Executive Reports'),
+      global_intelligence: defaultSubsystemStatus('global_intelligence', 'Global Intelligence Engine'),
     },
     taskQueue: [],
     recoveryLog: [],
@@ -545,7 +547,7 @@ export async function validateEnterpriseOrchestrator(): Promise<{
     'agent_framework', 'role_agents', 'autonomous_scheduler', 'autonomous_cycles',
     'task_orchestrator', 'senior_developer_worker', 'executive_layer', 'business_impact',
     'capital_command', 'global_research', 'opportunity_engine', 'self_improvement',
-    'enterprise_memory', 'governance', 'executive_reports',
+    'enterprise_memory', 'governance', 'executive_reports', 'global_intelligence',
   ];
 
   for (const id of requiredSubsystems) {

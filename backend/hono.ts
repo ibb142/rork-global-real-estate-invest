@@ -244,6 +244,22 @@ import {
   handleOwnerOperationsRorkRemovalPreflightRequest,
 } from './api/ivx-owner-operations';
 import {
+  OPTIONS as globalIntelligenceOptions,
+  handleIntelligenceStateRequest,
+  handleIntelligenceRunAllRequest,
+  handleIntelligenceRunEngineRequest,
+  handleIntelligenceRunCategoryRequest,
+  handleIntelligenceReportRequest,
+  handleIntelligenceReportsListRequest,
+  handleIntelligenceTargetsRequest,
+  handleIntelligenceRecordsRequest,
+  handleIntelligenceTopRequest,
+  handleIntelligenceJVMatchRequest,
+  handleIntelligenceZipSearchRequest,
+  handleIntelligenceEnginesRequest,
+  handleIntelligenceValidateRequest,
+} from './api/ivx-global-intelligence';
+import {
   OPTIONS as continuousImprovementOptions,
   handleContinuousImprovementDashboardRequest,
   handleContinuousImprovementSelfAuditRequest,
@@ -2488,6 +2504,34 @@ app.options('/api/ivx/capital-network/:prospectId/research', () => capitalNetwor
 app.post('/api/ivx/capital-network/:prospectId/research', async (context) => handleCapitalProspectResearchRequest(context.req.raw, context.req.param('prospectId')));
 app.options('/api/ivx/capital-network/:prospectId/outreach-draft', () => capitalNetworkOptions());
 app.post('/api/ivx/capital-network/:prospectId/outreach-draft', async (context) => handleCapitalProspectOutreachDraftRequest(context.req.raw, context.req.param('prospectId')));
+
+// ── Global Opportunity Intelligence Engine (all 9 engines) ────────────────
+app.options('/api/ivx/intelligence/state', () => globalIntelligenceOptions());
+app.get('/api/ivx/intelligence/state', async (context) => handleIntelligenceStateRequest(context.req.raw));
+app.options('/api/ivx/intelligence/run-all', () => globalIntelligenceOptions());
+app.post('/api/ivx/intelligence/run-all', async (context) => handleIntelligenceRunAllRequest(context.req.raw));
+app.options('/api/ivx/intelligence/run/:engineId', () => globalIntelligenceOptions());
+app.post('/api/ivx/intelligence/run/:engineId', async (context) => handleIntelligenceRunEngineRequest(context.req.raw, context.req.param('engineId')));
+app.options('/api/ivx/intelligence/run-category/:category', () => globalIntelligenceOptions());
+app.post('/api/ivx/intelligence/run-category/:category', async (context) => handleIntelligenceRunCategoryRequest(context.req.raw, context.req.param('category')));
+app.options('/api/ivx/intelligence/report', () => globalIntelligenceOptions());
+app.get('/api/ivx/intelligence/report', async (context) => handleIntelligenceReportRequest(context.req.raw));
+app.options('/api/ivx/intelligence/reports', () => globalIntelligenceOptions());
+app.get('/api/ivx/intelligence/reports', async (context) => handleIntelligenceReportsListRequest(context.req.raw));
+app.options('/api/ivx/intelligence/targets', () => globalIntelligenceOptions());
+app.get('/api/ivx/intelligence/targets', async (context) => handleIntelligenceTargetsRequest(context.req.raw));
+app.options('/api/ivx/intelligence/records', () => globalIntelligenceOptions());
+app.get('/api/ivx/intelligence/records', async (context) => handleIntelligenceRecordsRequest(context.req.raw));
+app.options('/api/ivx/intelligence/top', () => globalIntelligenceOptions());
+app.get('/api/ivx/intelligence/top', async (context) => handleIntelligenceTopRequest(context.req.raw));
+app.options('/api/ivx/intelligence/jv-match', () => globalIntelligenceOptions());
+app.post('/api/ivx/intelligence/jv-match', async (context) => handleIntelligenceJVMatchRequest(context.req.raw));
+app.options('/api/ivx/intelligence/zip-search', () => globalIntelligenceOptions());
+app.post('/api/ivx/intelligence/zip-search', async (context) => handleIntelligenceZipSearchRequest(context.req.raw));
+app.options('/api/ivx/intelligence/engines', () => globalIntelligenceOptions());
+app.get('/api/ivx/intelligence/engines', async (context) => handleIntelligenceEnginesRequest(context.req.raw));
+app.options('/api/ivx/intelligence/validate', () => globalIntelligenceOptions());
+app.post('/api/ivx/intelligence/validate', async (context) => handleIntelligenceValidateRequest(context.req.raw));
 
 app.options('/api/ivx/investors', () => investorCrmOptions());
 app.get('/api/ivx/investors', async (context) => handleInvestorListRequest(context.req.raw));

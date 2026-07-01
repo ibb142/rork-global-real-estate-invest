@@ -22,6 +22,7 @@ import { getOpportunityState, getTopOpportunities } from './ivx-business-opportu
 import { getSelfImprovementState, getOpenTasks } from './ivx-self-improvement';
 import { getMemoryState, getRecentMemories } from './ivx-enterprise-memory';
 import { getGovernanceState, getRecentAudit } from './ivx-governance';
+import { getDailyTargets, getIntelligenceState, CATEGORY_LABELS } from './ivx-global-opportunity-intelligence';
 
 export const IVX_EXECUTIVE_REPORTS_MARKER = 'ivx-executive-reports-2026-07-01';
 
@@ -48,6 +49,20 @@ export type AISection = {
   recommendedUpgrades: { count: number; items: string[] };
 };
 
+export type OpportunityIntelligenceSection = {
+  dailyTargets: Array<{
+    category: string;
+    label: string;
+    target: number;
+    found: number;
+    percentage: number;
+    status: string;
+  }>;
+  totalFoundToday: number;
+  topCategories: string[];
+  behindTarget: string[];
+};
+
 export type ExecutiveReport = {
   id: string;
   generatedAt: string;
@@ -55,6 +70,7 @@ export type ExecutiveReport = {
   engineering: EngineeringSection;
   business: BusinessSection;
   ai: AISection;
+  opportunityIntelligence: OpportunityIntelligenceSection;
   governance: {
     totalActions: number;
     pendingApprovals: number;
@@ -150,6 +166,8 @@ export async function generateExecutiveReport(): Promise<ExecutiveReport> {
   let recentMem: Awaited<ReturnType<typeof getRecentMemories>> | null = null;
   let govState: Awaited<ReturnType<typeof getGovernanceState>> | null = null;
   let recentAudit: Awaited<ReturnType<typeof getRecentAudit>> | null = null;
+  let intelTargets: Awaited<ReturnType<typeof getDailyTargets>> | null = null;
+  let intelState: Awaited<ReturnType<typeof getIntelligenceState>> | null = null;
 
   try { kpis = await getExecutiveKPIs(); } catch { /* continue */ }
   try { orchState = await getOrchestratorState(); } catch { /* continue */ }
@@ -163,6 +181,8 @@ export async function generateExecutiveReport(): Promise<ExecutiveReport> {
   try { recentMem = await getRecentMemories(10); } catch { /* continue */ }
   try { govState = await getGovernanceState(); } catch { /* continue */ }
   try { recentAudit = await getRecentAudit(10); } catch { /* continue */ }
+  try { intelTargets = await getDailyTargets(); } catch { /* continue */ }
+  try { intelState = await getIntelligenceState(); } catch { /* continue */ }
 
   // Build engineering section
   const engineering: EngineeringSection = {
@@ -233,6 +253,27 @@ export async function generateExecutiveReport(): Promise<ExecutiveReport> {
     },
   };
 
+  // Build opportunity intelligence section
+  const oppIntel: OpportunityIntelligenceSection = {
+    dailyTargets: (intelTargets ?? []).map((t) => ({
+      category: t.category,
+      label: CATEGORY_LABELS[t.category] ?? t.category,
+      target: t.target,
+      found: t.found,
+      percentage: t.percentage,
+      status: t.status,
+    })),
+    totalFoundToday: intelState ? Object.values(intelState.todayTotals).reduce((a, b) => a + b, 0) : 0,
+    topCategories: (intelTargets ?? [])
+      .filter((t) => t.status === 'exceeded' || t.status === 'on_track')
+      .sort((a, b) => b.percentage - a.percentage)
+      .slice(0, 3)
+      .map((t) => CATEGORY_LABELS[t.category] ?? t.category),
+    behindTarget: (intelTargets ?? [])
+      .filter((t) => t.status === 'behind' || t.status === 'not_started')
+      .map((t) => CATEGORY_LABELS[t.category] ?? t.category),
+  };
+
   // Build governance section
   const governance = {
     totalActions: govState?.totalActions ?? 0,
@@ -254,9 +295,10 @@ export async function generateExecutiveReport(): Promise<ExecutiveReport> {
     engineering,
     business,
     ai,
+    opportunityIntelligence: oppIntel,
     governance,
     memory,
-    summary: `Executive Report #${state.totalReports + 1}: ${engineering.health.healthySubsystems}/${(engineering.health.healthySubsystems + engineering.health.degradedSubsystems + engineering.health.unreachableSubsystems) || '?'} subsystems healthy. ${business.newOpportunities.total} opportunities. ${ai.newModels.count + ai.newFrameworks.count} AI discoveries.`,
+    summary: `Executive Report #${state.totalReports + 1}: ${engineering.health.healthySubsystems}/${(engineering.health.healthySubsystems + engineering.health.degradedSubsystems + engineering.health.unreachableSubsystems) || '?'} subsystems healthy. ${business.newOpportunities.total} opportunities. ${oppIntel.totalFoundToday} intelligence records today (${oppIntel.behindTarget.length} categories behind target). ${ai.newModels.count + ai.newFrameworks.count} AI discoveries.`,
     disclaimer: DISCLAIMER,
   };
 
