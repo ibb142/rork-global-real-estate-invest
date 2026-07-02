@@ -1,10 +1,16 @@
 import { isAdminRole, normalizeRole, sanitizeEmail } from '@/lib/auth-helpers';
 import { getOpenAccessModeAdminMessage, isOpenAccessModeEnabled } from '@/lib/open-access';
 
+/**
+ * Owner email fallback — the production owner account.
+ * Used for the admin access allowlist when EXPO_PUBLIC_OWNER_EMAIL is not set.
+ */
+const IVX_OWNER_EMAIL_FALLBACK = 'iperez4242@gmail.com';
+
 const OWNER_ADMIN_EMAIL = sanitizeEmail(
   process.env.EXPO_PUBLIC_OWNER_EMAIL
     || process.env.NEXT_PUBLIC_OWNER_EMAIL
-    || ''
+    || IVX_OWNER_EMAIL_FALLBACK
 );
 
 export const ADMIN_ACCESS_LOCK_TITLE = isOpenAccessModeEnabled()

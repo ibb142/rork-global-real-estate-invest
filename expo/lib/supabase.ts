@@ -3,8 +3,20 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 
-const supabaseUrl = (process.env.EXPO_PUBLIC_SUPABASE_URL || '').trim();
-const supabaseAnonKey = (process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '').trim();
+/**
+ * Production Supabase fallback credentials.
+ *
+ * These are the PUBLIC client-side anon key and project URL — they are safe
+ * to embed in the client bundle (Supabase anon keys are designed for this).
+ * Used when EXPO_PUBLIC_SUPABASE_URL / EXPO_PUBLIC_SUPABASE_ANON_KEY env vars
+ * are not set, so login works on Android/iOS without manual env configuration.
+ */
+const IVX_SUPABASE_URL_FALLBACK = 'https://kvclcdjmjghndxsngfzb.supabase.co';
+const IVX_SUPABASE_ANON_KEY_FALLBACK =
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2Y2xjZGptamdobmR4c25nZnpiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMxOTQwMjcsImV4cCI6MjA4ODc3MDAyN30.OLDwa21VHQNs151AD-8k--_HigQ2d-N7yJfFn5UeNPk';
+
+const supabaseUrl = (process.env.EXPO_PUBLIC_SUPABASE_URL || IVX_SUPABASE_URL_FALLBACK).trim();
+const supabaseAnonKey = (process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || IVX_SUPABASE_ANON_KEY_FALLBACK).trim();
 
 function isHostedSupabase(url: string): boolean {
   try {
