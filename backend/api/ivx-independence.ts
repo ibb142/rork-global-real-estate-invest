@@ -113,7 +113,7 @@ independenceRoutes.get('/status', async (c) => {
 // ─── OPTIONS (CORS preflight) ───────────────────────────────────────
 
 independenceRoutes.options('*', (c) => {
-  return c.text('', 204);
+  return c.body(null, 204);
 });
 
 export { independenceRoutes };

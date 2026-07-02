@@ -1232,7 +1232,8 @@ async function fetchRenderRuntimeStatus(): Promise<{ ok: boolean; status: 'verif
         ? readObject(deploysData).deploys as unknown[]
         : [];
     const deployHistory = deploysRaw.map((item) => {
-      const d = readObject(item).deploy ?? readObject(item);
+      const d = readObject(readObject(item).deploy ?? readObject(item));
+      const commitObj = readObject(d.commit);
       const createdAt = readTrimmed(d.createdAt) || readTrimmed(d.finishedAt) || '';
       const finishedAt = readTrimmed(d.finishedAt) || '';
       const durationMs = createdAt && finishedAt
@@ -1241,13 +1242,13 @@ async function fetchRenderRuntimeStatus(): Promise<{ ok: boolean; status: 'verif
       return {
         deployId: readTrimmed(d.id),
         status: readTrimmed(d.status),
-        commitSha: readTrimmed(d.commit?.id) || readTrimmed(d.commitId) || '',
-        commitShort: (readTrimmed(d.commit?.id) || readTrimmed(d.commitId) || '').slice(0, 8),
+        commitSha: readTrimmed(commitObj.id) || readTrimmed(d.commitId) || '',
+        commitShort: (readTrimmed(commitObj.id) || readTrimmed(d.commitId) || '').slice(0, 8),
         createdAt,
         finishedAt,
         durationMs,
         failureReason: readTrimmed(d.failureReason) || undefined,
-        imageUrl: readTrimmed(d.image?.registryCredential?.registry) || undefined,
+        imageUrl: readTrimmed(readObject(readObject(d.image).registryCredential).registry) || undefined,
       };
     });
     const latestDeploy = deployHistory[0] ?? null;
@@ -1430,11 +1431,12 @@ async function handleRenderAutoDeployStatusRequest(req: Request): Promise<Respon
     // Parse deploy history
     const deploys = Array.isArray(deploysData) ? deploysData : [];
     const deployHistory = deploys.map((item: unknown) => {
-      const d = readObject(item).deploy ?? readObject(item);
+      const d = readObject(readObject(item).deploy ?? readObject(item));
+      const commitObj = readObject(d.commit);
       return {
         deployId: readTrimmed(d.id),
         status: readTrimmed(d.status),
-        commitSha: readTrimmed(d.commit?.id) || readTrimmed(d.commitId) || '',
+        commitSha: readTrimmed(commitObj.id) || readTrimmed(d.commitId) || '',
         createdAt: readTrimmed(d.createdAt) || '',
         finishedAt: readTrimmed(d.finishedAt) || '',
         failureReason: readTrimmed(d.failureReason) || undefined,
@@ -1591,7 +1593,7 @@ async function handleRenderAutoDeployFixRequest(req: Request): Promise<Response>
     }
 
     const deployData: Record<string, unknown> = await deployRes.json().catch(() => ({})) as Record<string, unknown>;
-    const deployRecord = readObject(deployData.deploy ?? deployData);
+    const deployRecord = readObject(readObject(deployData).deploy ?? deployData);
     const deployId = readTrimmed(deployRecord.id) || null;
     const deployStatus = readTrimmed(deployRecord.status) || 'created';
 
@@ -1671,10 +1673,10 @@ async function handleSelfDeployRequest(req: Request): Promise<Response> {
     }
 
     const deployData: Record<string, unknown> = await deployRes.json().catch(() => ({})) as Record<string, unknown>;
-    const deployRecord = readObject(deployData.deploy ?? deployData);
+    const deployRecord = readObject(readObject(deployData).deploy ?? deployData);
     const deployId = readTrimmed(deployRecord.id) || null;
     const deployStatus = readTrimmed(deployRecord.status) || 'created';
-    const commitSha = readTrimmed(deployRecord.commit?.id) || readTrimmed(deployRecord.commitId) || null;
+    const commitSha = readTrimmed(readObject(deployRecord.commit).id) || readTrimmed(deployRecord.commitId) || null;
 
     console.log('[IVX Self-Deploy] Deploy triggered:', { deployId, deployStatus, commitSha: commitSha?.slice(0, 8) });
 

@@ -125,6 +125,17 @@ function makeScheduler(overrides: Partial<SchedulerState> = {}): SchedulerState 
         runCount: 0,
         failureCount: 0,
       },
+      daily_deploy_monitor: {
+        kind: 'daily_deploy_monitor',
+        intervalMs: 86400000,
+        lastRunAt: null,
+        nextDueAt: new Date().toISOString(),
+        lastStatus: 'never',
+        lastDurationMs: null,
+        lastSummary: 'Not run yet.',
+        runCount: 0,
+        failureCount: 0,
+      },
     },
   };
   return { ...base, ...overrides };

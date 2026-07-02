@@ -4,7 +4,7 @@ import type {
   IPXFeeConfig,
   Influencer,
   InfluencerApplication,
-} from '@/types';
+} from '../types';
 
 export type VIPTierLevel = 'bronze' | 'silver' | 'gold' | 'platinum';
 

@@ -291,14 +291,18 @@ export async function dispatchEnterpriseTask(
 
   // 2. Dispatch through the multi-agent framework
   const risk = classifyTaskRisk(goal);
-  const frameworkTask = dispatchTask(goal, agent.frameworkAgent, risk);
+  const frameworkTask = dispatchTask({
+    goal,
+    forceAgent: agent.frameworkAgent,
+    metadata: { risk, enterpriseAgent: agentId },
+  });
 
   return {
     enterpriseTaskId: orchTask.id,
     agentId,
     goal,
     status: 'dispatched',
-    frameworkTaskId: frameworkTask?.id ?? null,
+    frameworkTaskId: frameworkTask?.task?.id ?? null,
     error: null,
   };
 }
@@ -312,7 +316,7 @@ export async function completeEnterpriseTask(
 ): Promise<void> {
   await orchestratorComplete(enterpriseTaskId);
   if (frameworkTaskId) {
-    completeAgentTask(frameworkTaskId);
+    completeAgentTask(frameworkTaskId, { completed: true });
   }
 }
 
@@ -339,7 +343,7 @@ export async function writeEnterpriseMemory(
   metadata?: Record<string, unknown>,
 ): Promise<void> {
   const agent = getEnterpriseAgent(agentId);
-  await writeAgentMemory(agent.frameworkAgent, `enterprise:${agentId}`, key, value, metadata);
+  await writeAgentMemory(agent.frameworkAgent, `enterprise:${agentId}:${key}`, value, metadata);
 }
 
 // ── Validation ─────────────────────────────────────────────────────────────

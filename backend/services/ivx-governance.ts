@@ -227,8 +227,7 @@ export async function requestAction(
   await appendFile(ACTIONS_FILE, JSON.stringify(action) + '\n', 'utf-8');
 
   state.totalActions++;
-  if (decision === 'approved' || decision === 'auto_approved') state.approvedCount++;
-  else if (decision === 'blocked') state.blockedCount++;
+  if (decision === 'auto_approved') state.approvedCount++;
   else state.pendingCount++;
   state.lastActionAt = action.requestedAt;
   await persistState();

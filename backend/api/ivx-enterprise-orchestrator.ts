@@ -164,7 +164,7 @@ export async function handleEnterpriseTaskFailPost(req: Request): Promise<Respon
 export async function handleEnterpriseAgentsGet(req: Request): Promise<Response> {
   assertIVXOwnerOnly(req);
   const summary = getEnterpriseAgentSummary();
-  return ownerOnlyJson(summary);
+  return ownerOnlyJson({ agents: summary });
 }
 
 // ── GET /api/ivx/enterprise/agents/:agentId ───────────────────────────────
@@ -195,7 +195,7 @@ export async function handleEnterpriseResearchGet(req: Request): Promise<Respons
 export async function handleEnterpriseResearchReportsGet(req: Request): Promise<Response> {
   assertIVXOwnerOnly(req);
   const reports = await listResearchReports(20);
-  return ownerOnlyJson(reports);
+  return ownerOnlyJson({ reports });
 }
 
 // ── GET /api/ivx/enterprise/opportunities ─────────────────────────────────
@@ -293,7 +293,7 @@ export async function handleEnterpriseMemorySearchGet(req: Request): Promise<Res
   const category = url.searchParams.get('category') as MemoryCategory | null;
   if (!q) return ownerOnlyJson({ error: 'q parameter required' }, 400);
   const results = await searchMemory(q, { category: category ?? undefined, limit: 20 });
-  return ownerOnlyJson(results);
+  return ownerOnlyJson({ results });
 }
 
 // ── POST /api/ivx/enterprise/memory ───────────────────────────────────────
@@ -393,7 +393,7 @@ export async function handleEnterpriseReportsGeneratePost(req: Request): Promise
 export async function handleEnterpriseReportsListGet(req: Request): Promise<Response> {
   assertIVXOwnerOnly(req);
   const reports = await listExecutiveReports(30);
-  return ownerOnlyJson(reports);
+  return ownerOnlyJson({ reports });
 }
 
 // ── GET /api/ivx/enterprise/validate ──────────────────────────────────────
