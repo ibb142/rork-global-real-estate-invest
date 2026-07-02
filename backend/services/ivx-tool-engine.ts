@@ -29,6 +29,9 @@ import * as GitHubTool from './ivx-deployment-tools/github-tool';
 import * as RenderTool from './ivx-deployment-tools/render-tool';
 import * as SupabaseTool from './ivx-deployment-tools/supabase-tool';
 import * as VercelTool from './ivx-deployment-tools/vercel-tool';
+import * as AwsTool from './ivx-deployment-tools/aws-tool';
+import * as GooglePlayTool from './ivx-deployment-tools/google-play-tool';
+import * as AppleStoreTool from './ivx-deployment-tools/apple-store-tool';
 import * as EvidenceTool from './ivx-deployment-tools/production-evidence';
 
 export const TOOL_ENGINE_MARKER = 'ivx-tool-engine-2026-07-02';
@@ -80,6 +83,14 @@ function supabaseServiceRole(): string {
 
 function vercelToken(): string {
   return getVaultValue('IVX_VERCEL_TOKEN', 'VERCEL_TOKEN');
+}
+
+function awsAccessKey(): string {
+  return getVaultValue('IVX_AWS_ACCESS_KEY_ID', 'AWS_ACCESS_KEY_ID');
+}
+
+function awsSecretKey(): string {
+  return getVaultValue('IVX_AWS_SECRET_ACCESS_KEY', 'AWS_SECRET_ACCESS_KEY');
 }
 
 // ─── Tool Implementations ────────────────────────────────────────────
@@ -413,6 +424,159 @@ export const TOOL_CATALOG: ToolDef[] = [
     requiresCredentials: [],
     handler: evidenceArchive,
   },
+  {
+    name: 'vercel.status',
+    category: 'vercel',
+    purpose: 'Get Vercel project, deployment, and env var status',
+    requiresCredentials: ['IVX_VERCEL_TOKEN'],
+    handler: async () => {
+      try {
+        const result = await VercelTool.getFullVercelStatus();
+        return { ok: result.ok, error: result.error, data: result };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err), data: null };
+      }
+    },
+  },
+  {
+    name: 'vercel.deploy',
+    category: 'vercel',
+    purpose: 'Trigger a Vercel deploy (requires deploy hook or Git push)',
+    requiresCredentials: ['IVX_VERCEL_TOKEN'],
+    handler: async (input: { projectId?: string }) => {
+      try {
+        const result = await VercelTool.triggerVercelDeploy(input.projectId ?? '');
+        return { ok: result.ok, error: result.error, data: result };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err), data: null };
+      }
+    },
+  },
+  {
+    name: 'vercel.rollback',
+    category: 'vercel',
+    purpose: 'Rollback a Vercel deployment to a previous version',
+    requiresCredentials: ['IVX_VERCEL_TOKEN'],
+    handler: async (input: { projectId?: string; deployId?: string }) => {
+      try {
+        if (!input.deployId) return { ok: false, error: 'deployId is required for rollback', data: null };
+        const result = await VercelTool.rollbackVercelDeploy(input.projectId ?? '', input.deployId);
+        return { ok: result.ok, error: result.error, data: result };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err), data: null };
+      }
+    },
+  },
+  {
+    name: 'aws.status',
+    category: 'aws',
+    purpose: 'Get AWS identity, S3 buckets, CloudFront distributions, Route53 zones, ACM certs',
+    requiresCredentials: ['IVX_AWS_ACCESS_KEY_ID', 'IVX_AWS_SECRET_ACCESS_KEY'],
+    handler: async () => {
+      try {
+        const result = await AwsTool.getFullAwsStatus();
+        return { ok: result.ok, error: result.error, data: result };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err), data: null };
+      }
+    },
+  },
+  {
+    name: 'aws.invalidate',
+    category: 'aws',
+    purpose: 'Create a CloudFront cache invalidation for a distribution',
+    requiresCredentials: ['IVX_AWS_ACCESS_KEY_ID', 'IVX_AWS_SECRET_ACCESS_KEY'],
+    handler: async (input: { distributionId?: string; paths?: string[] }) => {
+      try {
+        if (!input.distributionId) return { ok: false, error: 'distributionId is required', data: null };
+        if (!input.paths || input.paths.length === 0) return { ok: false, error: 'paths array is required', data: null };
+        const result = await AwsTool.createInvalidation(input.distributionId, input.paths);
+        return { ok: result.ok, error: result.error, data: result };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err), data: null };
+      }
+    },
+  },
+  {
+    name: 'aws.s3_list',
+    category: 'aws',
+    purpose: 'List S3 buckets and optionally objects in a specific bucket',
+    requiresCredentials: ['IVX_AWS_ACCESS_KEY_ID', 'IVX_AWS_SECRET_ACCESS_KEY'],
+    handler: async (input: { bucketName?: string }) => {
+      try {
+        if (input.bucketName) {
+          const result = await AwsTool.listBucketObjects(input.bucketName);
+          return { ok: result.ok, error: result.error, data: result };
+        }
+        const result = await AwsTool.listBuckets();
+        return { ok: result.ok, error: result.error, data: result };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err), data: null };
+      }
+    },
+  },
+  {
+    name: 'google_play.status',
+    category: 'google_play',
+    purpose: 'Verify Google Play service account and list app tracks',
+    requiresCredentials: ['IVX_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON'],
+    handler: async () => {
+      try {
+        const result = await GooglePlayTool.getFullGooglePlayStatus();
+        return { ok: result.ok, error: result.error, data: result };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err), data: null };
+      }
+    },
+  },
+  {
+    name: 'google_play.tracks',
+    category: 'google_play',
+    purpose: 'List active tracks (production, beta, alpha, internal) for a Google Play app',
+    requiresCredentials: ['IVX_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON'],
+    handler: async (input: { packageName?: string }) => {
+      try {
+        const pkg = input.packageName ?? process.env.IVX_GOOGLE_PLAY_PACKAGE_NAME ?? process.env.GOOGLE_PLAY_PACKAGE_NAME ?? '';
+        if (!pkg) return { ok: false, error: 'packageName is required (set IVX_GOOGLE_PLAY_PACKAGE_NAME or pass it in input)', data: null };
+        const result = await GooglePlayTool.listTracks(pkg);
+        return { ok: result.ok, error: result.error, data: result };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err), data: null };
+      }
+    },
+  },
+  {
+    name: 'apple_store.status',
+    category: 'apple_store',
+    purpose: 'Verify App Store Connect API key and list apps, builds, and versions',
+    requiresCredentials: ['IVX_APPSTORE_KEY_ID', 'IVX_APPSTORE_ISSUER_ID', 'IVX_APPSTORE_PRIVATE_KEY'],
+    handler: async () => {
+      try {
+        const result = await AppleStoreTool.getFullAppleStoreStatus();
+        return { ok: result.ok, error: result.error, data: result };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err), data: null };
+      }
+    },
+  },
+  {
+    name: 'apple_store.builds',
+    category: 'apple_store',
+    purpose: 'List recent builds and their processing state for an App Store Connect app',
+    requiresCredentials: ['IVX_APPSTORE_KEY_ID', 'IVX_APPSTORE_ISSUER_ID', 'IVX_APPSTORE_PRIVATE_KEY'],
+    handler: async (input: { appId?: string }) => {
+      try {
+        const verify = await AppleStoreTool.verifyCredentials();
+        if (!verify.ok) return { ok: false, error: verify.error, data: null };
+        const appId = input.appId ?? verify.apps?.[0]?.id ?? '';
+        if (!appId) return { ok: false, error: 'appId is required (no apps found in account)', data: null };
+        const result = await AppleStoreTool.listBuilds(appId);
+        return { ok: result.ok, error: result.error, data: result };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err), data: null };
+      }
+    },
+  },
 ];
 
 // Additionally, expose the existing github.write and github.commit via the runtime
@@ -518,6 +682,10 @@ export async function runIndependenceCheck(): Promise<ToolResult[]> {
     'production.health',
     'production.version',
     'commit.match',
+    'vercel.status',
+    'aws.status',
+    'google_play.status',
+    'apple_store.status',
   ];
 
   const results: ToolResult[] = [];

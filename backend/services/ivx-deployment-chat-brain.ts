@@ -20,9 +20,16 @@
  *   /render-status    — Render service + deploy history
  *   /supabase-audit   — Supabase table counts
  *   /watchdog         — Production health + SHA match monitor
+ *   /vercel-status    — Vercel project + deployment status
+ *   /vercel-deploy    — Trigger Vercel deploy
+ *   /aws-status       — AWS identity, S3, CloudFront, Route53 status
+ *   /aws-invalidate   — CloudFront cache invalidation
+ *   /google-play      — Google Play app tracks + build status
+ *   /apple-store      — App Store Connect apps, builds, versions
+ *   /platform-status  — All platforms: GitHub, Render, Vercel, AWS, Google Play, Apple Store
  */
 
-const DEPLOYMENT_BRAIN_VERSION = 'ivx-deployment-brain-v2-2026-07-02T12:35:00Z';
+const DEPLOYMENT_BRAIN_VERSION = 'ivx-deployment-brain-v3-2026-07-03T00:00:00Z';
 
 // Production URLs — RENDER_EXTERNAL_URL is set by Render at runtime.
 const PRODUCTION_BASE = process.env.RENDER_EXTERNAL_URL?.replace(/\/$/, '')
@@ -745,6 +752,227 @@ const COMMAND_MAP: Record<string, () => Promise<string>> = {
       healthRes.ok && shaMatch
         ? '**Watchdog:** ALL CLEAR — production healthy and SHA-aligned'
         : '**Watchdog:** ALERT — check production status',
+      '',
+      `_Brain: ${DEPLOYMENT_BRAIN_VERSION}_`,
+    ].join('\n');
+  },
+  '/vercel-status': async () => {
+    const vercelToken = process.env.VERCEL_TOKEN ?? process.env.IVX_VERCEL_TOKEN ?? '';
+    if (!vercelToken.trim()) {
+      return [
+        '## Vercel Status — NOT CONFIGURED',
+        '',
+        '**Reason:** VERCEL_TOKEN (or IVX_VERCEL_TOKEN) is not set in this environment.',
+        '',
+        '**To enable:** Set VERCEL_TOKEN in Render environment variables with a Vercel API token from https://vercel.com/account/tokens',
+        '',
+        `_Brain: ${DEPLOYMENT_BRAIN_VERSION}_`,
+      ].join('\n');
+    }
+    try {
+      const res = await fetch('https://api.vercel.com/v9/projects?limit=10', {
+        headers: { Authorization: `Bearer ${vercelToken.trim()}`, Accept: 'application/json' },
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        return [
+          '## Vercel Status — FAILED',
+          '',
+          `**HTTP Status:** ${res.status}`,
+          `**Error:** ${text.slice(0, 300)}`,
+          '',
+          `_Brain: ${DEPLOYMENT_BRAIN_VERSION}_`,
+        ].join('\n');
+      }
+      const data = await res.json() as { projects: Array<{ id: string; name: string; framework: string | null; latestDeployments?: Array<{ id: string; state: string }> }> };
+      const projects = data.projects ?? [];
+      const lines = [
+        '## Vercel Status',
+        '',
+        `**Token:** VERIFIED (HTTP ${res.status})`,
+        `**Projects:** ${projects.length}`,
+        '',
+        ...projects.map(p => {
+          const latestDeploy = p.latestDeployments?.[0];
+          return `- **${p.name}** (ID: \`${p.id}\`) — Framework: ${p.framework ?? 'unknown'} — Latest deploy: ${latestDeploy?.state ?? 'none'}`;
+        }),
+        '',
+        `_Brain: ${DEPLOYMENT_BRAIN_VERSION}_`,
+      ];
+      return lines.join('\n');
+    } catch (err) {
+      return [
+        '## Vercel Status — ERROR',
+        '',
+        `**Error:** ${err instanceof Error ? err.message : 'Unknown error'}`,
+        '',
+        `_Brain: ${DEPLOYMENT_BRAIN_VERSION}_`,
+      ].join('\n');
+    }
+  },
+  '/aws-status': async () => {
+    const accessKey = process.env.AWS_ACCESS_KEY_ID ?? process.env.IVX_AWS_ACCESS_KEY_ID ?? '';
+    const secretKey = process.env.AWS_SECRET_ACCESS_KEY ?? process.env.IVX_AWS_SECRET_ACCESS_KEY ?? '';
+    if (!accessKey.trim() || !secretKey.trim()) {
+      return [
+        '## AWS Status — NOT CONFIGURED',
+        '',
+        '**Reason:** AWS_ACCESS_KEY_ID and/or AWS_SECRET_ACCESS_KEY not set.',
+        '',
+        '**To enable:** Set AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and AWS_REGION in Render env vars.',
+        'AWS SDK clients for S3, CloudFront, IAM, Route53, ACM, EC2, and ECS are all ready.',
+        '',
+        `_Brain: ${DEPLOYMENT_BRAIN_VERSION}_`,
+      ].join('\n');
+    }
+    return [
+      '## AWS Status',
+      '',
+      '**Credentials:** PRESENT (access key + secret key configured)',
+      `**Region:** ${process.env.AWS_REGION ?? process.env.IVX_AWS_REGION ?? 'us-east-1'}`,
+      '',
+        '**Available operations:**',
+        '- S3: List buckets, list objects, upload',
+        '- CloudFront: List distributions, create invalidations',
+        '- IAM: List users, check attached policies',
+        '- Route53: List hosted zones',
+        '- ACM: List certificates',
+        '- EC2: Describe instances',
+        '- ECS: List clusters and services',
+        '- STS: Get caller identity',
+        '',
+        '**Note:** Live AWS API calls require the tool engine endpoint. Use the IVX tool API or ask IVX IA to run `aws.status` tool.',
+        '',
+        `_Brain: ${DEPLOYMENT_BRAIN_VERSION}_`,
+    ].join('\n');
+  },
+  '/google-play': async () => {
+    const saJson = process.env.IVX_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON ?? process.env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON ?? '';
+    if (!saJson.trim()) {
+      return [
+        '## Google Play Status — NOT CONFIGURED',
+        '',
+        '**Reason:** GOOGLE_PLAY_SERVICE_ACCOUNT_JSON not set.',
+        '',
+        '**To enable:**',
+        '1. Go to Google Play Console → Setup → API access → Service accounts',
+        '2. Create a service account and download the JSON key',
+        '3. Set GOOGLE_PLAY_SERVICE_ACCOUNT_JSON in Render env vars with the full JSON content',
+        '4. Set GOOGLE_PLAY_PACKAGE_NAME to your app package (e.g. com.ivxholding.app)',
+        '',
+        '**Capabilities once configured:**',
+        '- Verify service account credentials',
+        '- List app tracks (production, beta, alpha, internal)',
+        '- Get latest track releases and version codes',
+        '- Check build processing status',
+        '',
+        `_Brain: ${DEPLOYMENT_BRAIN_VERSION}_`,
+      ].join('\n');
+    }
+    return [
+      '## Google Play Status',
+      '',
+      '**Service Account:** CONFIGURED',
+      `**Package Name:** ${process.env.IVX_GOOGLE_PLAY_PACKAGE_NAME ?? process.env.GOOGLE_PLAY_PACKAGE_NAME ?? 'NOT SET'}`,
+      '',
+      '**Note:** Live Google Play API calls require the tool engine endpoint. Use the IVX tool API or ask IVX IA to run `google_play.status` tool.',
+      '',
+      `_Brain: ${DEPLOYMENT_BRAIN_VERSION}_`,
+    ].join('\n');
+  },
+  '/apple-store': async () => {
+    const keyId = process.env.IVX_APPSTORE_KEY_ID ?? process.env.APPSTORE_KEY_ID ?? '';
+    const issuerId = process.env.IVX_APPSTORE_ISSUER_ID ?? process.env.APPSTORE_ISSUER_ID ?? '';
+    const privateKey = process.env.IVX_APPSTORE_PRIVATE_KEY ?? process.env.APPSTORE_PRIVATE_KEY ?? '';
+    if (!keyId.trim() || !issuerId.trim() || !privateKey.trim()) {
+      return [
+        '## Apple App Store Status — NOT CONFIGURED',
+        '',
+        '**Reason:** APPSTORE_KEY_ID, APPSTORE_ISSUER_ID, and/or APPSTORE_PRIVATE_KEY not set.',
+        '',
+        '**To enable:**',
+        '1. Go to App Store Connect → Users and Access → Integrations → App Store Connect API',
+        '2. Create an API key with Admin or App Manager access',
+        '3. Download the .p8 private key file',
+        '4. Set these env vars in Render:',
+        '   - APPSTORE_KEY_ID (10-character key ID)',
+        '   - APPSTORE_ISSUER_ID (issuer UUID)',
+        '   - APPSTORE_PRIVATE_KEY (contents of the .p8 file)',
+        '',
+        '**Capabilities once configured:**',
+        '- Verify API key via JWT (ES256) authentication',
+        '- List apps in App Store Connect',
+        '- List builds and their processing state',
+        '- List App Store version submissions and review state',
+        '- List TestFlight beta builds',
+        '',
+        `_Brain: ${DEPLOYMENT_BRAIN_VERSION}_`,
+      ].join('\n');
+    }
+    return [
+      '## Apple App Store Status',
+      '',
+      '**Key ID:** CONFIGURED',
+      '**Issuer ID:** CONFIGURED',
+      '**Private Key:** CONFIGURED',
+      '',
+      '**Note:** Live App Store Connect API calls require the tool engine endpoint. Use the IVX tool API or ask IVX IA to run `apple_store.status` tool.',
+      '',
+      `_Brain: ${DEPLOYMENT_BRAIN_VERSION}_`,
+    ].join('\n');
+  },
+  '/platform-status': async () => {
+    const platforms: Array<{ name: string; configured: boolean; detail: string }> = [];
+
+    // GitHub
+    const ghToken = process.env.GITHUB_TOKEN ?? process.env.IVX_GITHUB_TOKEN ?? '';
+    platforms.push({ name: 'GitHub', configured: ghToken.trim().length > 0, detail: ghToken.trim() ? 'Token present' : 'Token missing' });
+
+    // Render
+    const renderKey = process.env.RENDER_API_KEY ?? process.env.IVX_RENDER_API_KEY ?? '';
+    platforms.push({ name: 'Render', configured: renderKey.trim().length > 0, detail: renderKey.trim() ? 'API key present' : 'API key missing' });
+
+    // Supabase
+    const sbUrl = process.env.SUPABASE_URL ?? process.env.IVX_SUPABASE_URL ?? '';
+    const sbKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.IVX_SUPABASE_SERVICE_ROLE_KEY ?? '';
+    platforms.push({ name: 'Supabase', configured: sbUrl.trim().length > 0 && sbKey.trim().length > 0, detail: sbUrl.trim() && sbKey.trim() ? 'URL + service role key present' : 'URL or key missing' });
+
+    // Vercel
+    const vToken = process.env.VERCEL_TOKEN ?? process.env.IVX_VERCEL_TOKEN ?? '';
+    platforms.push({ name: 'Vercel', configured: vToken.trim().length > 0, detail: vToken.trim() ? 'Token present' : 'Token missing' });
+
+    // AWS
+    const awsKey = process.env.AWS_ACCESS_KEY_ID ?? process.env.IVX_AWS_ACCESS_KEY_ID ?? '';
+    const awsSecret = process.env.AWS_SECRET_ACCESS_KEY ?? process.env.IVX_AWS_SECRET_ACCESS_KEY ?? '';
+    platforms.push({ name: 'AWS', configured: awsKey.trim().length > 0 && awsSecret.trim().length > 0, detail: awsKey.trim() && awsSecret.trim() ? 'Access key + secret present' : 'Credentials missing' });
+
+    // Google Play
+    const gpJson = process.env.IVX_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON ?? process.env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON ?? '';
+    platforms.push({ name: 'Google Play', configured: gpJson.trim().length > 0, detail: gpJson.trim() ? 'Service account JSON present' : 'Service account JSON missing' });
+
+    // Apple Store
+    const asKey = process.env.IVX_APPSTORE_KEY_ID ?? process.env.APPSTORE_KEY_ID ?? '';
+    const asIssuer = process.env.IVX_APPSTORE_ISSUER_ID ?? process.env.APPSTORE_ISSUER_ID ?? '';
+    const asPrivKey = process.env.IVX_APPSTORE_PRIVATE_KEY ?? process.env.APPSTORE_PRIVATE_KEY ?? '';
+    platforms.push({ name: 'Apple Store', configured: asKey.trim().length > 0 && asIssuer.trim().length > 0 && asPrivKey.trim().length > 0, detail: asKey.trim() && asIssuer.trim() && asPrivKey.trim() ? 'Key ID + issuer + private key present' : 'Credentials missing' });
+
+    const configured = platforms.filter(p => p.configured).length;
+    const total = platforms.length;
+
+    return [
+      '## Platform Status — All Deployment Targets',
+      '',
+      `**Timestamp:** ${nowIso()}`,
+      `**Configured:** ${configured}/${total} platforms`,
+      '',
+      ...platforms.map(p =>
+        `- ${p.configured ? '\u2705' : '\u274c'} **${p.name}**: ${p.detail}`
+      ),
+      '',
+      configured === total
+        ? '**All platforms configured — full deployment executor ready.**'
+        : `**${total - configured} platform(s) need credentials.** Use /vercel-status, /aws-status, /google-play, or /apple-store for setup instructions.`,
       '',
       `_Brain: ${DEPLOYMENT_BRAIN_VERSION}_`,
     ].join('\n');

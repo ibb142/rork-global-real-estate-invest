@@ -26,7 +26,7 @@ const VAULT_MARKER = 'ivx-secure-vault-2026-07-02';
 
 // ─── Vault Entry Definitions ────────────────────────────────────────
 
-export type VaultCategory = 'github' | 'render' | 'supabase' | 'aws' | 'vercel' | 'auth' | 'other';
+export type VaultCategory = 'github' | 'render' | 'supabase' | 'aws' | 'vercel' | 'google_play' | 'apple_store' | 'auth' | 'other';
 
 export type VaultEntry = {
   /** IVX-prefixed variable name (e.g. IVX_GITHUB_TOKEN) */
@@ -283,6 +283,65 @@ const VAULT_REGISTRY: VaultEntry[] = [
     required: false,
     purpose: 'Owner service token for owner-gated API routes',
     test: testOwnerToken,
+  },
+  {
+    ivxName: 'IVX_AWS_REGION',
+    fallbackName: 'AWS_REGION',
+    category: 'aws',
+    required: false,
+    purpose: 'AWS region for S3, CloudFront, and other AWS service calls',
+    test: async (v: string) => ({ ok: v.length > 0, detail: v.length > 0 ? 'region set' : 'empty' }),
+  },
+  {
+    ivxName: 'IVX_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON',
+    fallbackName: 'GOOGLE_PLAY_SERVICE_ACCOUNT_JSON',
+    category: 'google_play',
+    required: false,
+    purpose: 'Google Play service account JSON for Play Developer API access (app tracks, builds, releases)',
+    test: async (v: string) => {
+      if (v.length < 50) return { ok: false, detail: 'too short to be a valid service account JSON' };
+      try {
+        const parsed = JSON.parse(v);
+        if (parsed.type === 'service_account' && parsed.private_key && parsed.client_email) {
+          return { ok: true, detail: 'valid service account JSON structure' };
+        }
+        return { ok: false, detail: 'JSON does not contain required service_account fields' };
+      } catch {
+        return { ok: false, detail: 'not valid JSON' };
+      }
+    },
+  },
+  {
+    ivxName: 'IVX_GOOGLE_PLAY_PACKAGE_NAME',
+    fallbackName: 'GOOGLE_PLAY_PACKAGE_NAME',
+    category: 'google_play',
+    required: false,
+    purpose: 'Google Play app package name for track and build queries',
+    test: async (v: string) => ({ ok: /^[a-z0-9]+(\.[a-z0-9]+)+$/i.test(v), detail: /^[a-z0-9]+(\.[a-z0-9]+)+$/i.test(v) ? 'valid package name format' : 'invalid format' }),
+  },
+  {
+    ivxName: 'IVX_APPSTORE_KEY_ID',
+    fallbackName: 'APPSTORE_KEY_ID',
+    category: 'apple_store',
+    required: false,
+    purpose: 'App Store Connect API key ID for JWT authentication',
+    test: async (v: string) => ({ ok: v.length === 10, detail: v.length === 10 ? 'valid key ID format' : 'key ID should be 10 chars' }),
+  },
+  {
+    ivxName: 'IVX_APPSTORE_ISSUER_ID',
+    fallbackName: 'APPSTORE_ISSUER_ID',
+    category: 'apple_store',
+    required: false,
+    purpose: 'App Store Connect issuer ID for JWT authentication',
+    test: async (v: string) => ({ ok: v.length > 0, detail: v.length > 0 ? 'issuer ID present' : 'empty' }),
+  },
+  {
+    ivxName: 'IVX_APPSTORE_PRIVATE_KEY',
+    fallbackName: 'APPSTORE_PRIVATE_KEY',
+    category: 'apple_store',
+    required: false,
+    purpose: 'App Store Connect private key (P-256, .p8 content) for ES256 JWT signing',
+    test: async (v: string) => ({ ok: v.length > 100, detail: v.length > 100 ? 'key present (length check)' : 'too short for a valid P-256 key' }),
   },
 ];
 

@@ -11,7 +11,7 @@
  */
 
 const GITHUB_API = 'https://api.github.com';
-const DEFAULT_REPO = 'ibb142/rork-ivxholding--1';
+const DEFAULT_REPO = 'ibb142/rork-global-real-estate-invest';
 const DEFAULT_BRANCH = 'main';
 
 // ─── Types ───────────────────────────────────────────────────────────
