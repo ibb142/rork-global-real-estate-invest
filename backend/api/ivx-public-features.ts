@@ -60,9 +60,14 @@ export async function handleFeaturedProperties(req: Request): Promise<Response> 
 export async function handlePropertyDetails(req: Request, propertyId: string): Promise<Response> {
   try {
     const sb = await getSB();
-    const { data, error } = await sb.from('properties').select('*').eq('id', propertyId).single();
-    if (error) return json({ error: error.message, deploymentMarker: DEPLOYMENT_MARKER }, 404);
-    return json({ property: data, deploymentMarker: DEPLOYMENT_MARKER });
+    // Try properties table first, fall back to jv_deals (featured properties live there)
+    const { data, error } = await sb.from('properties').select('*').eq('id', propertyId).maybeSingle();
+    if (!error && data) return json({ property: data, deploymentMarker: DEPLOYMENT_MARKER });
+    // Fallback: search jv_deals by id
+    const { data: dealData, error: dealError } = await sb.from('jv_deals').select('*').eq('id', propertyId).maybeSingle();
+    if (!dealError && dealData) return json({ property: dealData, source: 'jv_deals', deploymentMarker: DEPLOYMENT_MARKER });
+    // Not found in either table
+    return json({ error: `Property '${propertyId}' not found.`, deploymentMarker: DEPLOYMENT_MARKER }, 404);
   } catch (err: any) { return json({ error: err.message, deploymentMarker: DEPLOYMENT_MARKER }, 500); }
 }
 
@@ -157,7 +162,7 @@ export async function handleMediaUpload(req: Request): Promise<Response> {
     const mediaUrl = safeStr(body.url || body.mediaUrl || body.media_url);
     const mediaType = safeStr(body.type || body.mediaType || body.media_type, 'image');
     if (!projectId || !mediaUrl) return json({ error: 'projectId and url required', deploymentMarker: DEPLOYMENT_MARKER }, 400);
-    const { data, error } = await sb.from('project_media').insert({ project_id: projectId, media_url: mediaUrl, media_type: mediaType, is_approved: true }).select().single();
+    const { data, error } = await sb.from('project_media').insert({ project_id: projectId, url: mediaUrl, media_type: mediaType, is_approved: true }).select().single();
     if (error) return json({ error: error.message, deploymentMarker: DEPLOYMENT_MARKER }, 500);
     return json({ media: data, deploymentMarker: DEPLOYMENT_MARKER }, 201);
   } catch (err: any) { return json({ error: err.message, deploymentMarker: DEPLOYMENT_MARKER }, 500); }

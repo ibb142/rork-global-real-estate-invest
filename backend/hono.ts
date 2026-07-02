@@ -2770,6 +2770,9 @@ app.get('/api/ivx/investors', async (context) => handleInvestorListRequest(conte
 app.post('/api/ivx/investors', async (context) => handleInvestorCreateRequest(context.req.raw));
 app.options('/api/ivx/investors/import', () => investorCrmOptions());
 app.post('/api/ivx/investors/import', async (context) => handleInvestorImportRequest(context.req.raw));
+// Dashboard must be registered BEFORE :investorId to avoid route shadowing
+app.options('/api/ivx/investors/dashboard', () => publicFeatureOptions());
+app.get('/api/ivx/investors/dashboard', async (c) => handleInvestorsDashboard(c.req.raw));
 app.options('/api/ivx/investors/:investorId', () => investorCrmOptions());
 app.get('/api/ivx/investors/:investorId', async (context) => handleInvestorGetRequest(context.req.raw, context.req.param('investorId')));
 app.post('/api/ivx/investors/:investorId', async (context) => handleInvestorUpdateRequest(context.req.raw, context.req.param('investorId')));
@@ -3860,10 +3863,6 @@ app.post('/api/ivx/auth/verify-sms', async (c) => handleVerifyPhone(c.req.raw));
 // Members Dashboard
 app.options('/api/ivx/members/dashboard', () => publicFeatureOptions());
 app.get('/api/ivx/members/dashboard', async (c) => handleMembersDashboard(c.req.raw));
-
-// Investors Dashboard
-app.options('/api/ivx/investors/dashboard', () => publicFeatureOptions());
-app.get('/api/ivx/investors/dashboard', async (c) => handleInvestorsDashboard(c.req.raw));
 
 // CRM Main
 app.options('/api/ivx/crm', () => publicFeatureOptions());
