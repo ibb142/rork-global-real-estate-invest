@@ -176,47 +176,57 @@ export async function handleInstagramCards(req: Request): Promise<Response> {
 // ── Engagement Aliases (delegate to project engagement with query params) ──
 export async function handleEngagementLikes(req: Request): Promise<Response> {
   const url = new URL(req.url);
-  const projectId = url.searchParams.get('projectId') || url.searchParams.get('project_id') || 'default';
+  const projectId = url.searchParams.get('projectId') || url.searchParams.get('project_id') || null;
   const sb = await getSB();
-  const { data, error } = await sb.from('project_likes').select('*').eq('project_id', projectId);
+  let query = sb.from('project_likes').select('*');
+  if (projectId) query = query.eq('project_id', projectId);
+  const { data, error } = await query.order('created_at', { ascending: false }).limit(100);
   if (error) return json({ error: error.message, deploymentMarker: DEPLOYMENT_MARKER }, 500);
   return json({ likes: data || [], count: data?.length || 0, projectId, deploymentMarker: DEPLOYMENT_MARKER });
 }
 
 export async function handleEngagementComments(req: Request): Promise<Response> {
   const url = new URL(req.url);
-  const projectId = url.searchParams.get('projectId') || url.searchParams.get('project_id') || 'default';
+  const projectId = url.searchParams.get('projectId') || url.searchParams.get('project_id') || null;
   const sb = await getSB();
-  const { data, error } = await sb.from('project_comments').select('*').eq('project_id', projectId).order('created_at', { ascending: false });
+  let query = sb.from('project_comments').select('*');
+  if (projectId) query = query.eq('project_id', projectId);
+  const { data, error } = await query.order('created_at', { ascending: false }).limit(100);
   if (error) return json({ error: error.message, deploymentMarker: DEPLOYMENT_MARKER }, 500);
   return json({ comments: data || [], count: data?.length || 0, projectId, deploymentMarker: DEPLOYMENT_MARKER });
 }
 
 export async function handleEngagementShares(req: Request): Promise<Response> {
   const url = new URL(req.url);
-  const projectId = url.searchParams.get('projectId') || url.searchParams.get('project_id') || 'default';
+  const projectId = url.searchParams.get('projectId') || url.searchParams.get('project_id') || null;
   const sb = await getSB();
-  const { data, error } = await sb.from('project_shares').select('*').eq('project_id', projectId);
+  let query = sb.from('project_shares').select('*');
+  if (projectId) query = query.eq('project_id', projectId);
+  const { data, error } = await query.order('created_at', { ascending: false }).limit(100);
   if (error) return json({ error: error.message, deploymentMarker: DEPLOYMENT_MARKER }, 500);
   return json({ shares: data || [], count: data?.length || 0, projectId, deploymentMarker: DEPLOYMENT_MARKER });
 }
 
 export async function handleEngagementSaves(req: Request): Promise<Response> {
   const url = new URL(req.url);
-  const projectId = url.searchParams.get('projectId') || url.searchParams.get('project_id') || 'default';
+  const projectId = url.searchParams.get('projectId') || url.searchParams.get('project_id') || null;
   const sb = await getSB();
-  const { data, error } = await sb.from('project_saves').select('*').eq('project_id', projectId);
+  let query = sb.from('project_saves').select('*');
+  if (projectId) query = query.eq('project_id', projectId);
+  const { data, error } = await query.order('created_at', { ascending: false }).limit(100);
   if (error) return json({ error: error.message, deploymentMarker: DEPLOYMENT_MARKER }, 500);
   return json({ saves: data || [], count: data?.length || 0, projectId, deploymentMarker: DEPLOYMENT_MARKER });
 }
 
 export async function handleAnalytics(req: Request): Promise<Response> {
   const url = new URL(req.url);
-  const projectId = url.searchParams.get('projectId') || url.searchParams.get('project_id') || 'default';
+  const projectId = url.searchParams.get('projectId') || url.searchParams.get('project_id') || null;
   const days = parseInt(url.searchParams.get('days') || '30', 10);
   const sb = await getSB();
   const since = new Date(Date.now() - days * 86400000).toISOString();
-  const { data, error, count } = await sb.from('project_analytics').select('*', { count: 'exact', head: false }).eq('project_id', projectId).gte('date', since.split('T')[0]).order('date', { ascending: false }).limit(100);
+  let query = sb.from('project_analytics').select('*', { count: 'exact', head: false }).gte('date', since.split('T')[0]);
+  if (projectId) query = query.eq('project_id', projectId);
+  const { data, error, count } = await query.order('date', { ascending: false }).limit(100);
   if (error) return json({ error: error.message, deploymentMarker: DEPLOYMENT_MARKER }, 500);
   return json({ events: data || [], count: count || 0, projectId, days, deploymentMarker: DEPLOYMENT_MARKER });
 }
