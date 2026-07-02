@@ -38,18 +38,21 @@ export const publicFeatureOptions = (): Response => {
 export async function handleFeaturedProperties(req: Request): Promise<Response> {
   try {
     const sb = await getSB();
-    // Try direct column first, fall back to property_controls join
-    let { data, error } = await sb.from('properties').select('*').eq('is_featured', true).order('created_at', { ascending: false }).limit(20);
+    // Query jv_deals with published=true as featured, fall back to properties
+    const { data, error } = await sb.from('jv_deals').select('*').eq('published', true).eq('status', 'active').order('created_at', { ascending: false }).limit(20);
     if (error) {
-      // Fallback: query property_controls for featured IDs, then fetch properties
+      // Fallback: try property_controls for featured IDs
       const { data: featuredIds } = await sb.from('property_controls').select('property_id').eq('is_featured', true);
       if (featuredIds && featuredIds.length > 0) {
         const ids = featuredIds.map((r: any) => r.property_id);
         const { data: props } = await sb.from('properties').select('*').in('id', ids).order('created_at', { ascending: false }).limit(20);
         return json({ properties: props || [], count: props?.length || 0, deploymentMarker: DEPLOYMENT_MARKER });
       }
-      return json({ properties: [], count: 0, deploymentMarker: DEPLOYMENT_MARKER });
+      // Last fallback: all properties
+      const { data: allProps } = await sb.from('properties').select('*').order('created_at', { ascending: false }).limit(20);
+      return json({ properties: allProps || [], count: allProps?.length || 0, deploymentMarker: DEPLOYMENT_MARKER });
     }
+    return json({ properties: data || [], count: data?.length || 0, deploymentMarker: DEPLOYMENT_MARKER });
   } catch (err: any) { return json({ error: err.message, deploymentMarker: DEPLOYMENT_MARKER }, 500); }
 }
 
@@ -86,7 +89,7 @@ export async function handleInvestorsDashboard(req: Request): Promise<Response> 
     const sb = await getSB();
     const [investorsRes, dealsRes] = await Promise.all([
       sb.from('investors').select('*', { count: 'exact', head: false }).order('created_at', { ascending: false }).limit(50),
-      sb.from('deal_tracking').select('*', { count: 'exact', head: true }),
+      sb.from('jv_deals').select('*', { count: 'exact', head: true }).eq('published', true),
     ]);
     return json({
       investors: investorsRes.data || [],
@@ -119,7 +122,7 @@ export async function handleCRMMain(req: Request): Promise<Response> {
 export async function handleJVDealsList(req: Request): Promise<Response> {
   try {
     const sb = await getSB();
-    const { data, error, count } = await sb.from('deal_tracking').select('*', { count: 'exact', head: false }).order('created_at', { ascending: false }).limit(50);
+    const { data, error, count } = await sb.from('jv_deals').select('*', { count: 'exact', head: false }).eq('published', true).order('created_at', { ascending: false }).limit(50);
     if (error) return json({ error: error.message, deploymentMarker: DEPLOYMENT_MARKER }, 500);
     return json({ deals: data || [], count: count || 0, deploymentMarker: DEPLOYMENT_MARKER });
   } catch (err: any) { return json({ error: err.message, deploymentMarker: DEPLOYMENT_MARKER }, 500); }
