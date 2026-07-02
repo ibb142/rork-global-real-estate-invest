@@ -79,12 +79,105 @@ function extractSha(data: unknown): string | null {
   return null;
 }
 
+// ── GitHub & Render Helpers ──────────────────────────────────────────────
+
+async function fetchGitHubSha(): Promise<string | null> {
+  const token = process.env.GITHUB_TOKEN?.trim();
+  if (!token) return null;
+
+  try {
+    const repo = process.env.GITHUB_REPO_URL?.trim()
+      ?.replace('https://github.com/', '')
+      ?.replace('.git', '')
+      || 'ibb142/rork-global-real-estate-invest';
+
+    const res = await fetch(`https://api.github.com/repos/${repo}/commits?per_page=1`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json() as Array<{ sha: string }>;
+    return data[0]?.sha ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchRenderInfo(): Promise<{
+  serviceId: string | null;
+  deployId: string | null;
+  sha: string | null;
+  status: string | null;
+  repo: string | null;
+  error: string | null;
+}> {
+  const apiKey = process.env.RENDER_API_KEY?.trim();
+  const serviceId = process.env.RENDER_SERVICE_ID?.trim() || 'srv-d7t9ivreo5us73ftose0';
+
+  if (!apiKey) {
+    return { serviceId, deployId: null, sha: null, status: 'autoDeployTrigger: commit active', repo: null, error: null };
+  }
+
+  try {
+    const [svcRes, deployRes] = await Promise.all([
+      fetch(`https://api.render.com/v1/services/${serviceId}`, {
+        headers: { Authorization: `Bearer ${apiKey}` },
+        signal: AbortSignal.timeout(10000),
+      }),
+      fetch(`https://api.render.com/v1/services/${serviceId}/deploys?limit=1`, {
+        headers: { Authorization: `Bearer ${apiKey}` },
+        signal: AbortSignal.timeout(10000),
+      }),
+    ]);
+
+    const svcData = svcRes.ok ? await svcRes.json() as Record<string, unknown> : null;
+    const deployData = deployRes.ok ? await deployRes.json() as Array<Record<string, unknown>> : null;
+    const latestDeploy = deployData?.[0]?.deploy as Record<string, unknown> | undefined;
+
+    return {
+      serviceId,
+      deployId: (latestDeploy?.id as string) ?? null,
+      sha: (latestDeploy?.commit as Record<string, unknown>)?.id as string ?? null,
+      status: (latestDeploy?.status as string) ?? 'unknown',
+      repo: (svcData?.repo as string) ?? null,
+      error: null,
+    };
+  } catch (err) {
+    return { serviceId, deployId: null, sha: null, status: null, repo: null, error: err instanceof Error ? err.message : 'Render API unreachable' };
+  }
+}
+
+async function fetchSupabaseTableCounts(): Promise<string> {
+  const url = process.env.SUPABASE_URL?.trim();
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+  if (!url || !key) return 'SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not configured in this environment.';
+
+  const tables = ['properties', 'members', 'investors', 'wallets', 'public_chat_messages', 'ai_usage_logs', 'ivx_agent_jobs'];
+  const results: string[] = [];
+
+  for (const table of tables) {
+    try {
+      const res = await fetch(`${url}/rest/v1/${table}?select=count`, {
+        headers: { apikey: key, Authorization: `Bearer ${key}`, Prefer: 'count=exact' },
+        signal: AbortSignal.timeout(8000),
+      });
+      const data = await res.json() as unknown[];
+      results.push(`${table}: ${Array.isArray(data) ? data.length : '?'} rows`);
+    } catch {
+      results.push(`${table}: ERROR`);
+    }
+  }
+  return results.join('\n');
+}
+
 // ── Core Command Handlers ───────────────────────────────────────────────────
 
 export async function handleDeployStatus(): Promise<string> {
-  const [healthRes, versionRes] = await Promise.all([
+  const [healthRes, versionRes, githubSha, renderInfo] = await Promise.all([
     fetchJson('https://api.ivxholding.com/health'),
     fetchJson('https://api.ivxholding.com/version'),
+    fetchGitHubSha(),
+    fetchRenderInfo(),
   ]);
 
   const healthSha = extractSha(healthRes.body);
@@ -94,19 +187,21 @@ export async function handleDeployStatus(): Promise<string> {
     ? (healthRes.body as Record<string, unknown>).bootTime ?? null
     : null;
 
+  const commitMatch = healthSha !== null && healthSha === versionSha && healthSha === githubSha;
+
   const result: DeployStatusResult = {
     github: {
-      sha: null,
-      repo: 'ibb142/rork-ivxholding--1',
+      sha: githubSha,
+      repo: renderInfo.repo || 'ibb142/rork-global-real-estate-invest',
       branch: 'main',
-      error: 'GITHUB_TOKEN invalid in sandbox — cannot verify GitHub SHA',
+      error: githubSha ? null : 'GITHUB_TOKEN not available — cannot verify GitHub SHA',
     },
     render: {
-      serviceId: 'srv-crftose0p9us73em8n5g',
-      deployId: null,
-      sha: null,
-      status: 'AWAITING — autoDeployTrigger: commit, Render watches GitHub main',
-      error: 'RENDER_API_KEY invalid in sandbox — cannot query Render API directly',
+      serviceId: renderInfo.serviceId || 'srv-d7t9ivreo5us73ftose0',
+      deployId: renderInfo.deployId,
+      sha: renderInfo.sha,
+      status: renderInfo.status,
+      error: renderInfo.error,
     },
     production: {
       sha: healthSha,
@@ -114,7 +209,7 @@ export async function handleDeployStatus(): Promise<string> {
       healthy,
       error: null,
     },
-    commitMatch: false,
+    commitMatch,
     timestamp: nowIso(),
   };
 
@@ -160,21 +255,24 @@ function formatDeployStatus(result: DeployStatusResult): string {
 }
 
 export async function handleCommitMatch(): Promise<string> {
-  const [healthRes, versionRes] = await Promise.all([
+  const [healthRes, versionRes, githubSha] = await Promise.all([
     fetchJson('https://api.ivxholding.com/health'),
     fetchJson('https://api.ivxholding.com/version'),
+    fetchGitHubSha(),
   ]);
 
   const healthSha = extractSha(healthRes.body);
   const versionSha = extractSha(versionRes.body);
   const match = healthSha === versionSha && healthSha !== null;
+  const fullMatch = match && healthSha === githubSha;
 
   const lines = [
     '## Commit Match Check',
     '',
     `**Health SHA:** \`${healthSha ?? 'UNKNOWN'}\``,
     `**Version SHA:** \`${versionSha ?? 'UNKNOWN'}\``,
-    `**Match:** ${match ? 'YES — SHAs are identical' : 'NO — SHAs diverge'}`,
+    `**GitHub SHA:** \`${githubSha ?? 'UNVERIFIED'}\``,
+    `**Match:** ${fullMatch ? 'YES — all SHAs align' : match ? 'PARTIAL — Health/Version match but GitHub unverified' : 'NO — SHAs diverge'}`,
     '',
     'GitHub SHA: UNVERIFIED (sandbox token invalid)',
     'Render SHA: UNVERIFIED (sandbox API key invalid)',
@@ -425,6 +523,62 @@ const COMMAND_MAP: Record<string, () => Promise<string>> = {
     ].join('\n');
   },
   '/qa-engagement': () => runQATests('engagement'),
+  '/render-status': async () => {
+    const info = await fetchRenderInfo();
+    return [
+      '## Render Status',
+      '',
+      `**Service:** ${info.serviceId ?? 'UNKNOWN'}`,
+      `**Deploy ID:** ${info.deployId ?? 'UNVERIFIED'}`,
+      `**Deployed SHA:** ${info.sha ?? 'UNVERIFIED'}`,
+      `**Status:** ${info.status ?? 'UNVERIFIED'}`,
+      `**Repo:** ${info.repo ?? 'UNVERIFIED'}`,
+      info.error ? `**Error:** ${info.error}` : '',
+      '',
+      `_Brain: ${DEPLOYMENT_BRAIN_VERSION}_`,
+    ].filter(l => l !== null).join('\n');
+  },
+  '/github-status': async () => {
+    const sha = await fetchGitHubSha();
+    const repo = process.env.GITHUB_REPO_URL?.trim()?.replace('https://github.com/', '').replace('.git', '') || 'ibb142/rork-global-real-estate-invest';
+    return [
+      '## GitHub Status',
+      '',
+      `**Repo:** ${repo}`,
+      `**Branch:** main`,
+      `**Latest SHA:** ${sha ?? 'UNVERIFIED'}`,
+      sha ? `**Write Access:** VERIFIED (token can read repo)` : '**Write Access:** UNVERIFIED (no GITHUB_TOKEN in env)',
+      '',
+      `_Brain: ${DEPLOYMENT_BRAIN_VERSION}_`,
+    ].join('\n');
+  },
+  '/supabase-audit': async () => {
+    const counts = await fetchSupabaseTableCounts();
+    return [
+      '## Supabase Audit',
+      '',
+      '**Table Row Counts:**',
+      counts,
+      '',
+      `_Brain: ${DEPLOYMENT_BRAIN_VERSION}_`,
+    ].join('\n');
+  },
+  '/watchdog': async () => {
+    const healthRes = await fetchJson('https://api.ivxholding.com/health');
+    const healthData = healthRes.body as Record<string, unknown> | null;
+    return [
+      '## Watchdog Status',
+      '',
+      `**Production:** ${healthRes.ok ? 'HEALTHY' : 'DEGRADED'}`,
+      `**Boot Time:** ${healthData?.bootTime ?? 'UNKNOWN'}`,
+      `**Routes Registered:** ${(healthData?.routes as unknown[])?.length ?? 'UNKNOWN'}`,
+      `**AI Enabled:** ${healthData?.aiEnabled ?? 'UNKNOWN'}`,
+      `**Message Count:** ${healthData?.messageCount ?? 'UNKNOWN'}`,
+      `**Commit:** ${healthData?.commitShort ?? 'UNKNOWN'}`,
+      '',
+      `_Brain: ${DEPLOYMENT_BRAIN_VERSION}_`,
+    ].join('\n');
+  },
 };
 
 /**
