@@ -23,6 +23,8 @@ import { useAuth } from '@/lib/auth-context';
 import { checkAuthRateLimit, recordAuthAttempt, getRateLimitMessage, clearAuthAttempts } from '@/lib/auth-rate-limiter';
 import { validateEmail, sanitizeEmail } from '@/lib/auth-helpers';
 import { getPasswordResetRedirectUrl, inspectPasswordResetRedirect } from '@/lib/auth-password-recovery';
+import { proxyRecover as proxyRecoverBackend, proxyRepair as proxyRepairBackend } from '@/lib/ivx-auth-proxy';
+import { isSupabaseConfigured } from '@/lib/supabase';
 import {
   buildRepairIssueItems,
   fetchOwnerRepairReadiness,
@@ -679,27 +681,58 @@ export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProp
 
     setPasswordResetLoading(true);
     try {
-      // ── RUNTIME PROOF: redirect URL diagnostics (live reset flow) ──
+      const supabaseReady = isSupabaseConfigured();
+      console.log('[Login] Password reset for:', resetTarget, 'supabaseConfigured=', supabaseReady);
+
+      // ── Path 1: Backend proxy (works without anon key) ──
+      if (!supabaseReady) {
+        console.log('[Login] Supabase not configured — using backend proxy for password reset');
+        const audit = inspectPasswordResetRedirect();
+        const redirectTo: string = audit.resolvedUrl;
+        const proxyResult = await proxyRecoverBackend(resetTarget, redirectTo);
+        console.log('[Login] Backend proxy recover result: ok=', proxyResult.ok, 'sent=', proxyResult.sent);
+
+        if (proxyResult.ok && proxyResult.sent) {
+          const cooldownWasCleared = clearAuthAttempts(resetTarget) || (normalizedEmail ? clearAuthAttempts(normalizedEmail) : false);
+          setLastFailureReason(null);
+          setFailedLoginMessage(null);
+          const baseDetail = ownerRecoveryAudit?.emailMismatch && ownerRecoveryAudit.verifiedEmail === resetTarget
+            ? `A reset link was sent to the verified owner email ${resetTarget} saved on this device.`
+            : `A reset link was sent to ${resetTarget}.`;
+          const detail = `${baseDetail} Open the link, pick a new password (something simple you'll remember), then come back here and sign in.`;
+          setAttemptState({
+            status: 'success',
+            title: 'Verify your email',
+            detail,
+            email: resetTarget,
+            tone: 'success',
+            cooldownCleared: cooldownWasCleared,
+            kind: 'reset-sent',
+          });
+          const alertSuffix = cooldownWasCleared
+            ? '\n\nDevice cooldown cleared — you can sign in as soon as you set the new password.'
+            : '';
+          Alert.alert(effectiveOwnerMode ? 'Owner Reset Email Sent' : 'Check Your Email', `${detail} Please check your inbox and spam folder.${alertSuffix}`);
+          return;
+        }
+
+        // Proxy failed — surface the error
+        const proxyError = proxyResult.error ?? 'Could not send reset email through the backend.';
+        setAttemptState({
+          status: 'failed',
+          title: 'Password reset email could not be sent',
+          detail: proxyError,
+          email: resetTarget,
+          tone: 'warning',
+        });
+        Alert.alert('Reset Email Failed', proxyError);
+        return;
+      }
+
+      // ── Path 2: Direct Supabase reset (when configured) ──
       const rawEnvAuthUrl: string = (process.env.EXPO_PUBLIC_IVX_AUTH_URL ?? '') as string;
       const audit = inspectPasswordResetRedirect();
       const redirectTo: string = audit.resolvedUrl;
-      const protocolMatches = redirectTo.match(/https?:\/\//g) ?? [];
-      const duplicatedProtocol = protocolMatches.length > 1;
-      const duplicatedResetPath = (redirectTo.match(/\/reset-password/g) ?? []).length > 1;
-      const hasWhitespace = /\s/.test(redirectTo);
-      const hasControlChars = /[\u0000-\u001F\u007F]/.test(redirectTo);
-      const charCodes = Array.from(redirectTo).slice(0, 8).map((c) => c.charCodeAt(0));
-      let parseOk = false;
-      let parseError: string | null = null;
-      try { new URL(redirectTo); parseOk = true; } catch (e) { parseError = e instanceof Error ? e.message : String(e); }
-      console.log('[ResetRedirectProof] ───── RESET REDIRECT RUNTIME PROOF ─────');
-      console.log('[ResetRedirectProof] 1. EXPO_PUBLIC_IVX_AUTH_URL (raw env):', JSON.stringify(rawEnvAuthUrl), 'length=', rawEnvAuthUrl.length);
-      console.log('[ResetRedirectProof] 2. resolvedUrl (getPasswordResetRedirectUrl):', JSON.stringify(audit.resolvedUrl));
-      console.log('[ResetRedirectProof]    usesDefault=', audit.usesDefault, 'rejectedConfiguredUrl=', audit.rejectedConfiguredUrl, 'rejectionReason=', audit.rejectionReason);
-      console.log('[ResetRedirectProof] 3. exact redirectTo sent to Supabase:', JSON.stringify(redirectTo));
-      console.log('[ResetRedirectProof]    first 8 char codes:', charCodes.join(','));
-      console.log('[ResetRedirectProof] 4. malformed checks → duplicatedProtocol=', duplicatedProtocol, 'duplicatedResetPath=', duplicatedResetPath, 'whitespace=', hasWhitespace, 'controlChars=', hasControlChars, 'URLparseOk=', parseOk, 'parseError=', parseError);
-      console.log('[ResetRedirectProof] ─────────────────────────────────────────');
       console.log('[Login] Sending password reset email to:', resetTarget, 'redirect:', redirectTo);
       const { error } = await supabase.auth.resetPasswordForEmail(resetTarget, {
         redirectTo,

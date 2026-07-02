@@ -413,7 +413,7 @@ import { OPTIONS as supabaseInspectionOptions, handleIVXSupabaseInspectionReques
 import { executeIVXAIBrainTool } from './services/ivx-ai-brain-tool-executor';
 import { OPTIONS as supabaseOwnerActionOptions, handleIVXSupabaseOwnerActionRequest } from './api/ivx-supabase-owner-actions';
 import { OPTIONS as ownerRegistrationOptions, handleIVXOwnerAccessRepairRequest, handleIVXOwnerAccessRepairStatusRequest, handleIVXOwnerRegistrationRepairRequest, handleIVXOwnerRegistrationRequest, handleIVXOwnerRegistrationStatusRequest, handleIVXOwnerSignupAuditRequest } from './api/ivx-owner-registration';
-import { ownerAuthProxyOptions, handleIVXOwnerAuthDiagnostic, handleIVXOwnerAuthLogin, handleIVXOwnerAuthRefresh, handleIVXOwnerAuthRecover, handleIVXOwnerAuthRepair } from './api/ivx-owner-auth-proxy';
+import { ownerAuthProxyOptions, handleIVXOwnerAuthDiagnostic, handleIVXOwnerAuthLogin, handleIVXOwnerAuthRefresh, handleIVXOwnerAuthRecover, handleIVXOwnerAuthRepair, handleIVXOwnerAuthExchangeRecovery, handleIVXOwnerAuthUpdatePassword } from './api/ivx-owner-auth-proxy';
 import { handleIVXDevelopmentActionRequest, handleIVXDevelopmentControlRequest, ivxDevelopmentControlOptions } from './api/ivx-development-control';
 import { OPTIONS as aiBrainToolsOptions, handleIVXAIBrainToolExecuteRequest, handleIVXAIBrainToolsListRequest } from './api/ivx-ai-brain-tools';
 import { OPTIONS as controlRoomStatusOptions, handleIVXControlRoomStatusRequest } from './api/ivx-control-room-status';
@@ -3557,11 +3557,15 @@ app.options('/api/ivx/owner-auth/login', () => ownerAuthProxyOptions());
 app.options('/api/ivx/owner-auth/refresh', () => ownerAuthProxyOptions());
 app.options('/api/ivx/owner-auth/recover', () => ownerAuthProxyOptions());
 app.options('/api/ivx/owner-auth/repair', () => ownerAuthProxyOptions());
+app.options('/api/ivx/owner-auth/exchange-recovery', () => ownerAuthProxyOptions());
+app.options('/api/ivx/owner-auth/update-password', () => ownerAuthProxyOptions());
 app.get('/api/ivx/owner-auth/diagnostic', () => handleIVXOwnerAuthDiagnostic());
 app.post('/api/ivx/owner-auth/login', async (c) => handleIVXOwnerAuthLogin(c.req.raw));
 app.post('/api/ivx/owner-auth/refresh', async (c) => handleIVXOwnerAuthRefresh(c.req.raw));
 app.post('/api/ivx/owner-auth/recover', async (c) => handleIVXOwnerAuthRecover(c.req.raw));
 app.post('/api/ivx/owner-auth/repair', async (c) => handleIVXOwnerAuthRepair(c.req.raw));
+app.post('/api/ivx/owner-auth/exchange-recovery', async (c) => handleIVXOwnerAuthExchangeRecovery(c.req.raw));
+app.post('/api/ivx/owner-auth/update-password', async (c) => handleIVXOwnerAuthUpdatePassword(c.req.raw));
 
 app.options('/assistant', () => assistantOptions());
 app.options('/api/assistant', () => assistantOptions());

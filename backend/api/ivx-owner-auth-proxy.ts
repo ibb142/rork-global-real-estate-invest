@@ -395,6 +395,170 @@ export async function handleIVXOwnerAuthRecover(request: Request): Promise<Respo
   }
 }
 
+type ExchangeRecoveryPayload = { code?: unknown; type?: unknown };
+type UpdatePasswordPayload = { accessToken?: unknown; newPassword?: unknown };
+
+/**
+ * POST /api/ivx/owner-auth/exchange-recovery
+ * Body: { code }
+ * Exchanges a Supabase password recovery code for a session.
+ * This lets the mobile app complete the reset-password flow without the anon key.
+ */
+export async function handleIVXOwnerAuthExchangeRecovery(request: Request): Promise<Response> {
+  try {
+    if (request.method !== 'POST') {
+      return json({ ok: false, error: 'Method not allowed.' }, 405);
+    }
+
+    const body = await request.json().catch(() => ({})) as ExchangeRecoveryPayload;
+    const code = readTrimmed(body.code);
+
+    if (!code) {
+      return json({ ok: false, error: 'A recovery code is required.' }, 400);
+    }
+
+    const ip = readClientIp(request);
+    assertRateLimit(`exchange:${ip}`);
+
+    const supabaseUrl = getSupabaseUrl();
+    const serviceKey = getServiceRoleKey();
+
+    // Exchange the recovery code for a session using GoTrue's token endpoint
+    const response = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=pkce`, {
+      method: 'POST',
+      headers: {
+        'apikey': serviceKey,
+        'Authorization': `Bearer ${serviceKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ auth_code: code }),
+      signal: AbortSignal.timeout(15000),
+    });
+
+    const data = await response.json().catch(() => ({})) as Record<string, unknown>;
+
+    if (!response.ok) {
+      return json({
+        ok: false,
+        error: typeof data.error_description === 'string'
+          ? data.error_description
+          : typeof data.message === 'string'
+            ? data.message
+            : `Recovery code exchange failed (HTTP ${response.status}).`,
+        httpStatus: response.status,
+        deploymentMarker: DEPLOYMENT_MARKER,
+        secretValuesReturned: false,
+        timestamp: nowIso(),
+      }, response.status);
+    }
+
+    const accessToken = typeof data.access_token === 'string' ? data.access_token : null;
+    const refreshToken = typeof data.refresh_token === 'string' ? data.refresh_token : null;
+    const expiresAt = typeof data.expires_at === 'number' ? data.expires_at : null;
+    const user = data.user as Record<string, unknown> | undefined;
+    const userEmail = typeof user?.email === 'string' ? user.email : null;
+
+    return json({
+      ok: true,
+      session: {
+        accessToken,
+        refreshToken,
+        expiresAt,
+        expiresInSeconds: typeof data.expires_in === 'number' ? data.expires_in : null,
+        tokenType: typeof data.token_type === 'string' ? data.token_type : 'bearer',
+      },
+      user: user ? {
+        id: typeof user.id === 'string' ? user.id : null,
+        email: userEmail,
+        emailConfirmed: Boolean(user.email_confirmed_at || user.confirmed_at),
+      } : null,
+      maskedEmail: userEmail ? maskEmail(userEmail) : null,
+      deploymentMarker: DEPLOYMENT_MARKER,
+      secretValuesReturned: false,
+      timestamp: nowIso(),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Recovery code exchange failed.';
+    return json({ ok: false, error: message, deploymentMarker: DEPLOYMENT_MARKER, secretValuesReturned: false, timestamp: nowIso() }, 500);
+  }
+}
+
+/**
+ * POST /api/ivx/owner-auth/update-password
+ * Body: { accessToken, newPassword }
+ * Updates the user's password using their existing access token (from recovery exchange).
+ */
+export async function handleIVXOwnerAuthUpdatePassword(request: Request): Promise<Response> {
+  try {
+    if (request.method !== 'POST') {
+      return json({ ok: false, error: 'Method not allowed.' }, 405);
+    }
+
+    const body = await request.json().catch(() => ({})) as UpdatePasswordPayload;
+    const accessToken = readTrimmed(body.accessToken);
+    const newPassword = readTrimmed(body.newPassword);
+
+    if (!accessToken) {
+      return json({ ok: false, error: 'An access token is required.' }, 400);
+    }
+
+    const passwordError = validatePassword(newPassword);
+    if (passwordError) {
+      return json({ ok: false, error: passwordError }, 400);
+    }
+
+    const ip = readClientIp(request);
+    assertRateLimit(`updatepw:${ip}`);
+
+    const supabaseUrl = getSupabaseUrl();
+    const serviceKey = getServiceRoleKey();
+
+    const response = await fetch(`${supabaseUrl}/auth/v1/user`, {
+      method: 'PUT',
+      headers: {
+        'apikey': serviceKey,
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ password: newPassword }),
+      signal: AbortSignal.timeout(15000),
+    });
+
+    const data = await response.json().catch(() => ({})) as Record<string, unknown>;
+
+    if (!response.ok) {
+      return json({
+        ok: false,
+        error: typeof data.error_description === 'string'
+          ? data.error_description
+          : typeof data.message === 'string'
+            ? data.message
+            : `Password update failed (HTTP ${response.status}).`,
+        httpStatus: response.status,
+        deploymentMarker: DEPLOYMENT_MARKER,
+        secretValuesReturned: false,
+        timestamp: nowIso(),
+      }, response.status);
+    }
+
+    const user = data as Record<string, unknown> | undefined;
+    const userEmail = typeof user?.email === 'string' ? user.email : null;
+
+    return json({
+      ok: true,
+      passwordUpdated: true,
+      maskedEmail: userEmail ? maskEmail(userEmail) : null,
+      message: 'Password updated successfully. You can now sign in with your new password.',
+      deploymentMarker: DEPLOYMENT_MARKER,
+      secretValuesReturned: false,
+      timestamp: nowIso(),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Password update failed.';
+    return json({ ok: false, error: message, deploymentMarker: DEPLOYMENT_MARKER, secretValuesReturned: false, timestamp: nowIso() }, 500);
+  }
+}
+
 /**
  * POST /api/ivx/owner-auth/repair
  * Body: { email, newPassword, phone? }

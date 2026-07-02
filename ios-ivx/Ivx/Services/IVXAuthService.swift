@@ -11,6 +11,8 @@ import Foundation
 ///   POST /api/ivx/owner-auth/refresh   — refresh token → new session
 ///   POST /api/ivx/owner-auth/recover   — email → reset email
 ///   POST /api/ivx/owner-auth/repair    — email + newPassword → V7 repair
+///   POST /api/ivx/owner-auth/exchange-recovery — code → session (reset flow)
+///   POST /api/ivx/owner-auth/update-password — accessToken + newPassword
 ///   GET  /api/ivx/owner-auth/diagnostic — backend readiness
 final class IVXAuthService {
     static let shared = IVXAuthService()
@@ -104,6 +106,42 @@ final class IVXAuthService {
             throw IVXAuthError.repairFailed(response.error ?? "Owner repair failed.")
         }
         return response.message ?? "Owner password reset. You can now sign in."
+    }
+
+    // MARK: - Exchange Recovery Code
+
+    func exchangeRecoveryCode(_ code: String) async throws -> OwnerSession {
+        let body: [String: Any] = ["code": code]
+        let data = try await postJSON("/api/ivx/owner-auth/exchange-recovery", body: body)
+        let response = try JSONDecoder().decode(AuthLoginResponse.self, from: data)
+        guard response.ok, let session = response.session else {
+            throw IVXAuthError.loginFailed(response.error ?? "Recovery code exchange failed.")
+        }
+        return OwnerSession(
+            accessToken: session.accessToken,
+            refreshToken: session.refreshToken,
+            expiresAt: session.expiresAt,
+            tokenType: session.tokenType ?? "bearer",
+            userId: response.user?.id,
+            email: response.user?.email,
+            emailConfirmed: response.user?.emailConfirmed,
+            role: nil, accountType: nil, firstName: nil, lastName: nil
+        )
+    }
+
+    // MARK: - Update Password (with access token from recovery)
+
+    func updatePassword(accessToken: String, newPassword: String) async throws -> String {
+        let body: [String: Any] = [
+            "accessToken": accessToken,
+            "newPassword": newPassword,
+        ]
+        let data = try await postJSON("/api/ivx/owner-auth/update-password", body: body)
+        let response = try JSONDecoder().decode(AuthSimpleResponse.self, from: data)
+        guard response.ok else {
+            throw IVXAuthError.repairFailed(response.error ?? "Password update failed.")
+        }
+        return response.message ?? "Password updated."
     }
 
     // MARK: - Diagnostic

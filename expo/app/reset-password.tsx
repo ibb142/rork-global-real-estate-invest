@@ -13,8 +13,9 @@ import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useMutation } from '@tanstack/react-query';
 import { AlertTriangle, CheckCircle2, Eye, EyeOff, KeyRound, ShieldCheck } from 'lucide-react-native';
 import Colors from '@/constants/colors';
-import { supabase } from '@/lib/supabase';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { validatePassword } from '@/lib/auth-helpers';
+import { proxyExchangeRecovery, proxyUpdatePassword } from '@/lib/ivx-auth-proxy';
 
 type RecoveryBootstrapState = 'checking' | 'ready' | 'failed';
 
@@ -56,6 +57,7 @@ export default function ResetPasswordScreen() {
   const refreshToken = pickFirstParam(params.refresh_token);
   const recoveryError = pickFirstParam(params.error_description) || pickFirstParam(params.error);
   const recoveryType = pickFirstParam(params.type);
+  const [proxyAccessToken, setProxyAccessToken] = useState<string>('');
 
   const bootstrapRecoverySession = useCallback(async () => {
     setBootstrapState('checking');
@@ -70,6 +72,41 @@ export default function ResetPasswordScreen() {
         return;
       }
 
+      const supabaseReady = isSupabaseConfigured();
+
+      // ── Path 1: Backend proxy (when Supabase not configured) ──
+      if (!supabaseReady) {
+        console.log('[ResetPassword] Supabase not configured — using backend proxy');
+
+        if (recoveryCode) {
+          console.log('[ResetPassword] Exchanging recovery code via backend proxy. Type:', recoveryType || 'unknown');
+          const proxyResult = await proxyExchangeRecovery(recoveryCode);
+          if (proxyResult.ok && proxyResult.session?.accessToken) {
+            const sessionEmail = proxyResult.user?.email?.trim().toLowerCase() || '';
+            setProxyAccessToken(proxyResult.session.accessToken);
+            setResolvedEmail(sessionEmail);
+            setBootstrapState('ready');
+            setBootstrapMessage('Recovery session verified. Enter your new password below.');
+            return;
+          }
+          throw new Error(proxyResult.error || 'This password reset link could not be exchanged for a session.');
+        }
+
+        if (accessToken && refreshToken) {
+          console.log('[ResetPassword] Using URL tokens via backend proxy. Type:', recoveryType || 'unknown');
+          setProxyAccessToken(accessToken);
+          setResolvedEmail('');
+          setBootstrapState('ready');
+          setBootstrapMessage('Recovery session verified. Enter your new password below.');
+          return;
+        }
+
+        setBootstrapState('failed');
+        setBootstrapMessage('This password recovery link is incomplete or expired. Request a new reset email from Sign In or Owner Access.');
+        return;
+      }
+
+      // ── Path 2: Direct Supabase (when configured) ──
       const existingSessionResult = await supabase.auth.getSession();
       const existingSession = existingSessionResult.data.session;
       if (existingSession) {
@@ -138,6 +175,19 @@ export default function ResetPasswordScreen() {
         throw new Error('New passwords do not match.');
       }
 
+      const supabaseReady = isSupabaseConfigured();
+
+      // ── Path 1: Backend proxy (when Supabase not configured) ──
+      if (!supabaseReady && proxyAccessToken) {
+        console.log('[ResetPassword] Updating password via backend proxy');
+        const proxyResult = await proxyUpdatePassword(proxyAccessToken, newPassword);
+        if (!proxyResult.ok) {
+          throw new Error(proxyResult.error || 'Password update failed through the backend.');
+        }
+        return { email: resolvedEmail };
+      }
+
+      // ── Path 2: Direct Supabase ──
       const { data: sessionData } = await supabase.auth.getSession();
       const session = sessionData.session;
       if (!session) {
@@ -163,12 +213,17 @@ export default function ResetPasswordScreen() {
           {
             text: 'Continue',
             onPress: () => {
-              void supabase.auth.signOut().finally(() => {
+              const navigateToLogin = () => {
                 router.replace({
                   pathname: '/login',
                   params: email ? { email } : undefined,
                 } as any);
-              });
+              };
+              if (isSupabaseConfigured()) {
+                void supabase.auth.signOut().finally(navigateToLogin);
+              } else {
+                navigateToLogin();
+              }
             },
           },
         ]
@@ -189,9 +244,14 @@ export default function ResetPasswordScreen() {
             {
               text: 'Continue',
               onPress: () => {
-                void supabase.auth.signOut().finally(() => {
+                const navLogin = () => {
                   router.replace({ pathname: '/login', params: resolvedEmail ? { email: resolvedEmail } : undefined } as any);
-                });
+                };
+                if (isSupabaseConfigured()) {
+                  void supabase.auth.signOut().finally(navLogin);
+                } else {
+                  navLogin();
+                }
               },
             },
           ]

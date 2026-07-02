@@ -5,6 +5,8 @@ import { supabase } from './supabase';
 import { persistAuth, loadStoredAuth, clearStoredAuth, setAuthCredentials } from './auth-store';
 import { canonicalizeRole, isAdminRole, normalizeRole, sanitizeEmail } from './auth-helpers';
 import { signInWithEmailPassword } from './auth-password-sign-in';
+import { proxyLogin, proxyRecover, proxyRepair, type ProxyLoginResult } from './ivx-auth-proxy';
+import { isSupabaseConfigured } from './supabase';
 import { extractChallengeId, extractFirstVerifiedMfaFactor, getMfaChallengeRequirement, type ParsedMfaFactor } from './auth-mfa';
 import { startSessionMonitor } from './session-timeout';
 import { initializeSync, syncOwnerData, syncUserData } from './supabase-sync';
@@ -1604,6 +1606,81 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         setIsOwnerIPAccess(false);
       }
 
+      const normalizedEmail = sanitizeEmail(email);
+      const trimmedPassword = password.trim();
+      const supabaseConfigured = isSupabaseConfigured();
+      console.log('[Auth] Login attempt: email=', normalizedEmail, 'supabaseConfigured=', supabaseConfigured);
+
+      // ── Path 1: Backend auth proxy (primary) ──
+      // Works without EXPO_PUBLIC_SUPABASE_ANON_KEY by using the service role key on the backend.
+      // Try this first when Supabase is not configured, or as a fallback when direct sign-in fails.
+      if (!supabaseConfigured) {
+        console.log('[Auth] Supabase not configured — using backend auth proxy for login');
+        const proxyResult = await proxyLogin(normalizedEmail, trimmedPassword);
+        console.log('[Auth] Proxy login result: ok=', proxyResult.ok, 'httpStatus=', proxyResult.httpStatus ?? 'n/a');
+
+        if (proxyResult.ok && proxyResult.session?.accessToken) {
+          const proxyUser = proxyResult.user;
+          const syntheticSession = {
+            provider_token: null,
+            provider_refresh_token: null,
+            access_token: proxyResult.session.accessToken,
+            refresh_token: proxyResult.session.refreshToken ?? '',
+            expires_in: proxyResult.session.expiresInSeconds ?? 3600,
+            expires_at: proxyResult.session.expiresAt ?? null,
+            token_type: proxyResult.session.tokenType ?? 'bearer',
+            user: {
+              id: proxyUser?.id ?? '',
+              aud: 'authenticated',
+              role: 'authenticated',
+              email: proxyUser?.email ?? normalizedEmail,
+              email_confirmed_at: proxyUser?.emailConfirmed ? new Date().toISOString() : null,
+              phone: '',
+              confirmed_at: proxyUser?.emailConfirmed ? new Date().toISOString() : null,
+              last_sign_in_at: new Date().toISOString(),
+              app_metadata: {
+                provider: 'email',
+                role: proxyUser?.role ?? 'investor',
+                accountType: proxyUser?.accountType ?? 'investor',
+              },
+              user_metadata: {
+                firstName: proxyUser?.firstName ?? '',
+                lastName: proxyUser?.lastName ?? '',
+                role: proxyUser?.role ?? 'investor',
+                accountType: proxyUser?.accountType ?? 'investor',
+              },
+              identities: [],
+              created_at: proxyUser?.createdAt ?? new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            },
+          } as unknown as Session;
+
+          console.log('[Auth] Proxy login succeeded for:', proxyUser?.email ?? normalizedEmail, 'user:', proxyUser?.id);
+          const handledSession = await handleSession(syntheticSession);
+          if (!handledSession.accepted) {
+            return {
+              success: false,
+              message: handledSession.blockedReason ?? getAdminAccessLockMessage(),
+              failureReason: 'admin_access_locked',
+            };
+          }
+          return { success: true, message: 'Login successful' };
+        }
+
+        // Proxy failed — map the error
+        const proxyError = proxyResult.error ?? 'Login failed through the backend auth proxy.';
+        const isInvalidCreds = proxyResult.httpStatus === 400 || proxyResult.httpStatus === 401;
+        const normalizedFailure = normalizeLoginFailureMessage(proxyError);
+        return {
+          success: false,
+          message: isInvalidCreds ? 'Invalid email or password.' : proxyError,
+          failureReason: isInvalidCreds ? 'invalid_credentials' : normalizedFailure.failureReason,
+          supabaseErrorMessage: proxyError,
+          ...(proxyResult.httpStatus ? { supabaseErrorStatus: proxyResult.httpStatus } : {}),
+        };
+      }
+
+      // ── Path 2: Direct Supabase sign-in (when configured) ──
       const signInResult = await signInWithEmailPassword(supabase, email, password);
       const { credentials } = signInResult;
       console.log(
@@ -1626,7 +1703,45 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
           ? String((error as { name?: string }).name ?? '')
           : '';
         console.log('[Auth] Supabase signInWithPassword error (full):', serializeSupabaseAuthErrorForLog(error));
+
+        // Try backend proxy as fallback for service_unavailable errors
         const normalizedFailure = normalizeLoginFailureMessage(authErrorMessage);
+        if (normalizedFailure.failureReason === 'service_unavailable') {
+          console.log('[Auth] Supabase unavailable — trying backend auth proxy fallback');
+          const proxyResult = await proxyLogin(normalizedEmail, trimmedPassword);
+          if (proxyResult.ok && proxyResult.session?.accessToken) {
+            const proxyUser = proxyResult.user;
+            const syntheticSession = {
+              provider_token: null,
+              provider_refresh_token: null,
+              access_token: proxyResult.session.accessToken,
+              refresh_token: proxyResult.session.refreshToken ?? '',
+              expires_in: proxyResult.session.expiresInSeconds ?? 3600,
+              expires_at: proxyResult.session.expiresAt ?? null,
+              token_type: proxyResult.session.tokenType ?? 'bearer',
+              user: {
+                id: proxyUser?.id ?? '',
+                aud: 'authenticated',
+                role: 'authenticated',
+                email: proxyUser?.email ?? normalizedEmail,
+                email_confirmed_at: proxyUser?.emailConfirmed ? new Date().toISOString() : null,
+                phone: '',
+                confirmed_at: proxyUser?.emailConfirmed ? new Date().toISOString() : null,
+                last_sign_in_at: new Date().toISOString(),
+                app_metadata: { provider: 'email', role: proxyUser?.role ?? 'investor', accountType: proxyUser?.accountType ?? 'investor' },
+                user_metadata: { firstName: proxyUser?.firstName ?? '', lastName: proxyUser?.lastName ?? '', role: proxyUser?.role ?? 'investor', accountType: proxyUser?.accountType ?? 'investor' },
+                identities: [],
+                created_at: proxyUser?.createdAt ?? new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+              },
+            } as unknown as Session;
+            const handledSession = await handleSession(syntheticSession);
+            if (handledSession.accepted) {
+              return { success: true, message: 'Login successful' };
+            }
+          }
+        }
+
         const displayMessage = (authErrorMessage?.trim() || normalizedFailure.message).trim();
         if (normalizedFailure.isExpectedFailure) {
           console.log('[Auth] Login rejected:', normalizedFailure.failureReason, 'email:', credentials.email, 'displayMessage:', displayMessage);
@@ -1701,6 +1816,32 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       setLoginLoading(false);
     }
   }, [handleSession, isOwnerIPAccess, requireTwoFactorIfNeeded]);
+
+  /** Backend-proxy password reset — works without anon key. */
+  const sendPasswordReset = useCallback(async (email: string, redirectTo?: string): Promise<{ success: boolean; message: string }> => {
+    try {
+      const result = await proxyRecover(email, redirectTo);
+      if (result.ok && result.sent) {
+        return { success: true, message: result.message ?? 'Password reset email sent.' };
+      }
+      return { success: false, message: result.error ?? result.message ?? 'Could not send reset email.' };
+    } catch (error) {
+      return { success: false, message: error instanceof Error ? error.message : 'Reset email request failed.' };
+    }
+  }, []);
+
+  /** Backend-proxy owner repair — full V7 password reset without email. */
+  const repairOwnerPassword = useCallback(async (email: string, newPassword: string, phone?: string): Promise<{ success: boolean; message: string }> => {
+    try {
+      const result = await proxyRepair(email, newPassword, phone);
+      if (result.ok) {
+        return { success: true, message: result.message ?? 'Owner password repaired.' };
+      }
+      return { success: false, message: result.error ?? 'Owner repair failed.' };
+    } catch (error) {
+      return { success: false, message: error instanceof Error ? error.message : 'Owner repair failed.' };
+    }
+  }, []);
 
   const verify2FA = useCallback(async (code: string): Promise<LoginResult> => {
     setVerify2FALoading(true);
@@ -2601,6 +2742,8 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     cancelTwoFactor,
     requiresTwoFactor,
     refreshSession,
+    sendPasswordReset,
+    repairOwnerPassword,
     activateOwnerAccess,
     activatingOwner,
     auditOwnerDirectAccess,
@@ -2620,6 +2763,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   }), [
     user, isAuthenticated, isLoading, userRole, login, register, doLogout,
     verify2FA, cancelTwoFactor, requiresTwoFactor, refreshSession,
+    sendPasswordReset, repairOwnerPassword,
     activateOwnerAccess, activatingOwner, auditOwnerDirectAccess, auditOwnerIdentity, ownerDirectAccess, claimOwnerDevice, ownerAccessLoading, loginLoading, verify2FALoading, registerLoading,
     refetchProfile, isOwnerIPAccess, detectedIP, pendingTwoFactorEmail, pendingTwoFactorFactor,
   ]);
