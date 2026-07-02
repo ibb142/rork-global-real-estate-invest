@@ -6,6 +6,7 @@ import {
   type PublicChatSource,
 } from '../public-chat-ai';
 import { extractDealDocuments } from '../services/ivx-deal-documents';
+import { isDeploymentCommand, routeDeploymentCommand } from '../services/ivx-deployment-chat-brain';
 import type { ChatStorage } from '../chat-storage';
 import type { ChatRoomMessage } from '../chat-types';
 import {
@@ -384,6 +385,50 @@ export async function handlePublicChatPost(request: Request): Promise<Response> 
       source: 'user',
       model: null,
     });
+
+    // ── Deployment Command Routing ──────────────────────────────────────────
+    // Route /deploy-* and /qa-* commands through the deployment brain BEFORE
+    // calling the AI model. This gives the chat room real deployment executor
+    // capabilities: GitHub status, Render deploys, Supabase audits, commit
+    // matching, QA smoke tests, and production evidence — all with live results.
+    if (message && isDeploymentCommand(message)) {
+      const brainResult = await routeDeploymentCommand(message);
+      if (brainResult) {
+        console.log('[IVXPublicChat] Deployment command routed:', {
+          command: message.split(/\s+/)[0],
+          sessionId,
+          requestId,
+          marker: BLOCK17_MARKER,
+        });
+
+        await persistPublicTurn({
+          sessionId,
+          clientId,
+          role: 'assistant',
+          content: brainResult,
+          source: 'deployment-brain',
+          model: 'ivx-deployment-brain',
+        });
+
+        return jsonResponse({
+          ok: true,
+          requestId,
+          sessionId,
+          answer: brainResult,
+          model: 'ivx-deployment-brain',
+          source: 'deployment-brain' as PublicChatSource,
+          deploymentMarker: DEPLOYMENT_MARKER,
+          commit: LIVE_COMMIT_SHA,
+          commitShort: LIVE_COMMIT_SHORT,
+          rateLimitRemaining: rateLimit.remaining,
+          rateLimitResetAt: rateLimit.resetAt,
+          timestamp: nowIso(),
+          endpoint: null,
+          persistence: userPersistence,
+          block17Marker: BLOCK17_MARKER,
+        });
+      }
+    }
 
     const result = await generatePublicChatAnswer({
       message,
