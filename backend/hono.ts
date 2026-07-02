@@ -421,6 +421,7 @@ import { OPTIONS as variablesToolOptions, handleIVXVariablesToolSaveRequest, han
 import { OPTIONS as ownerVariablesOptions, getIVXOwnerVariableRuntimeValue, hasIVXOwnerVariableRuntimeValue, handleIVXOwnerVariablesDeleteRequest, handleIVXOwnerVariablesDeploymentStatusRequest, handleIVXOwnerVariablesSaveRequest, handleIVXOwnerVariablesSelfSyncRequest, handleIVXOwnerVariablesStatusRequest, handleIVXOwnerVariablesSyncFromProjectStoreRequest, handleIVXOwnerVariablesTestRequest } from './api/ivx-owner-variables';
 import { OPTIONS as independenceStatusOptions, handleIVXIndependenceStatusRequest } from './api/ivx-independence-status';
 import { handleProofTestRequest, proofTestOptions } from './api/proof-test';
+import { independenceRoutes } from './api/ivx-independence';
 import { chatDurabilityProofOptions, handleChatDurabilityProofRequest } from './api/chat-durability-proof';
 import { handleProjectDashboardRequest, projectDashboardOptions } from './api/ivx-project-dashboard';
 import { OPTIONS as renderDiagnosticOptions, handleIVXRenderDiagnosticRequest } from './api/ivx-render-diagnostic';
@@ -3765,6 +3766,9 @@ app.get('/api/ivx/deploy-tools/evidence', async (c) => handleEvidence());
 app.get('/api/ivx/deploy-tools/credentials', async (c) => handleCredentials());
 app.get('/api/ivx/deploy-tools/dashboard', async (c) => handleDashboard());
 app.post('/api/ivx/deploy-tools/invoke', async (c) => handleInvoke(c.req.raw));
+
+// ── IVX Independence Layer (self-hosted variables, tools, brain, scanner, verifier) ──
+app.route('/api/ivx/independence', independenceRoutes);
 
 app.onError((error, context) => {
   const message = error instanceof Error ? error.message : 'unknown';
