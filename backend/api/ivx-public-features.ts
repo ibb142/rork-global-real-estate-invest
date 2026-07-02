@@ -38,9 +38,18 @@ export const publicFeatureOptions = (): Response => {
 export async function handleFeaturedProperties(req: Request): Promise<Response> {
   try {
     const sb = await getSB();
-    const { data, error } = await sb.from('properties').select('*').eq('is_featured', true).order('created_at', { ascending: false }).limit(20);
-    if (error) return json({ error: error.message, deploymentMarker: DEPLOYMENT_MARKER }, 500);
-    return json({ properties: data || [], count: data?.length || 0, deploymentMarker: DEPLOYMENT_MARKER });
+    // Try direct column first, fall back to property_controls join
+    let { data, error } = await sb.from('properties').select('*').eq('is_featured', true).order('created_at', { ascending: false }).limit(20);
+    if (error) {
+      // Fallback: query property_controls for featured IDs, then fetch properties
+      const { data: featuredIds } = await sb.from('property_controls').select('property_id').eq('is_featured', true);
+      if (featuredIds && featuredIds.length > 0) {
+        const ids = featuredIds.map((r: any) => r.property_id);
+        const { data: props } = await sb.from('properties').select('*').in('id', ids).order('created_at', { ascending: false }).limit(20);
+        return json({ properties: props || [], count: props?.length || 0, deploymentMarker: DEPLOYMENT_MARKER });
+      }
+      return json({ properties: [], count: 0, deploymentMarker: DEPLOYMENT_MARKER });
+    }
   } catch (err: any) { return json({ error: err.message, deploymentMarker: DEPLOYMENT_MARKER }, 500); }
 }
 
@@ -166,7 +175,7 @@ export async function handleEngagementLikes(req: Request): Promise<Response> {
   const url = new URL(req.url);
   const projectId = url.searchParams.get('projectId') || url.searchParams.get('project_id') || 'default';
   const sb = await getSB();
-  const { data, error } = await sb.from('engagement_likes').select('*').eq('project_id', projectId);
+  const { data, error } = await sb.from('project_likes').select('*').eq('project_id', projectId);
   if (error) return json({ error: error.message, deploymentMarker: DEPLOYMENT_MARKER }, 500);
   return json({ likes: data || [], count: data?.length || 0, projectId, deploymentMarker: DEPLOYMENT_MARKER });
 }
@@ -175,7 +184,7 @@ export async function handleEngagementComments(req: Request): Promise<Response> 
   const url = new URL(req.url);
   const projectId = url.searchParams.get('projectId') || url.searchParams.get('project_id') || 'default';
   const sb = await getSB();
-  const { data, error } = await sb.from('engagement_comments').select('*').eq('project_id', projectId).order('created_at', { ascending: false });
+  const { data, error } = await sb.from('project_comments').select('*').eq('project_id', projectId).order('created_at', { ascending: false });
   if (error) return json({ error: error.message, deploymentMarker: DEPLOYMENT_MARKER }, 500);
   return json({ comments: data || [], count: data?.length || 0, projectId, deploymentMarker: DEPLOYMENT_MARKER });
 }
@@ -184,7 +193,7 @@ export async function handleEngagementShares(req: Request): Promise<Response> {
   const url = new URL(req.url);
   const projectId = url.searchParams.get('projectId') || url.searchParams.get('project_id') || 'default';
   const sb = await getSB();
-  const { data, error } = await sb.from('engagement_shares').select('*').eq('project_id', projectId);
+  const { data, error } = await sb.from('project_shares').select('*').eq('project_id', projectId);
   if (error) return json({ error: error.message, deploymentMarker: DEPLOYMENT_MARKER }, 500);
   return json({ shares: data || [], count: data?.length || 0, projectId, deploymentMarker: DEPLOYMENT_MARKER });
 }
@@ -193,7 +202,7 @@ export async function handleEngagementSaves(req: Request): Promise<Response> {
   const url = new URL(req.url);
   const projectId = url.searchParams.get('projectId') || url.searchParams.get('project_id') || 'default';
   const sb = await getSB();
-  const { data, error } = await sb.from('engagement_saves').select('*').eq('project_id', projectId);
+  const { data, error } = await sb.from('project_saves').select('*').eq('project_id', projectId);
   if (error) return json({ error: error.message, deploymentMarker: DEPLOYMENT_MARKER }, 500);
   return json({ saves: data || [], count: data?.length || 0, projectId, deploymentMarker: DEPLOYMENT_MARKER });
 }
@@ -204,7 +213,7 @@ export async function handleAnalytics(req: Request): Promise<Response> {
   const days = parseInt(url.searchParams.get('days') || '30', 10);
   const sb = await getSB();
   const since = new Date(Date.now() - days * 86400000).toISOString();
-  const { data, error, count } = await sb.from('analytics_events').select('*', { count: 'exact', head: false }).eq('project_id', projectId).gte('created_at', since).order('created_at', { ascending: false }).limit(100);
+  const { data, error, count } = await sb.from('project_analytics').select('*', { count: 'exact', head: false }).eq('project_id', projectId).gte('date', since.split('T')[0]).order('date', { ascending: false }).limit(100);
   if (error) return json({ error: error.message, deploymentMarker: DEPLOYMENT_MARKER }, 500);
   return json({ events: data || [], count: count || 0, projectId, days, deploymentMarker: DEPLOYMENT_MARKER });
 }
