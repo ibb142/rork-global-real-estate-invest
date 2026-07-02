@@ -26,7 +26,7 @@ const VAULT_MARKER = 'ivx-secure-vault-2026-07-02';
 
 // ─── Vault Entry Definitions ────────────────────────────────────────
 
-export type VaultCategory = 'github' | 'render' | 'supabase' | 'aws' | 'vercel' | 'google_play' | 'apple_store' | 'auth' | 'other';
+export type VaultCategory = 'github' | 'render' | 'supabase' | 'aws' | 'vercel' | 'google_play' | 'apple_store' | 'cloudflare' | 'stripe' | 'email_sms' | 'auth' | 'other';
 
 export type VaultEntry = {
   /** IVX-prefixed variable name (e.g. IVX_GITHUB_TOKEN) */
@@ -209,6 +209,98 @@ async function testOwnerToken(token: string): Promise<{ ok: boolean; detail: str
   return { ok: true, detail: 'shape check passed' };
 }
 
+async function testCloudflareToken(token: string): Promise<{ ok: boolean; detail: string }> {
+  try {
+    const res = await fetch('https://api.cloudflare.com/client/v4/user/tokens/verify', {
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+      signal: AbortSignal.timeout(10000),
+    });
+    const data = await res.json().catch(() => null) as { success?: boolean; errors?: Array<{ message?: string }> } | null;
+    if (res.status === 200 && data?.success) return { ok: true, detail: 'token verified' };
+    if (res.status === 401) return { ok: false, detail: 'HTTP 401 — token invalid' };
+    if (res.status === 403) return { ok: false, detail: 'HTTP 403 — insufficient permissions' };
+    const msg = data?.errors?.[0]?.message ?? `HTTP ${res.status}`;
+    return { ok: false, detail: msg };
+  } catch (err) {
+    return { ok: false, detail: `network error: ${err instanceof Error ? err.message : String(err)}` };
+  }
+}
+
+async function testCloudflareAccountId(id: string): Promise<{ ok: boolean; detail: string }> {
+  if (id.length < 10) return { ok: false, detail: 'too short for a Cloudflare account ID (32 hex chars expected)' };
+  return { ok: true, detail: 'shape check passed' };
+}
+
+async function testStripeKey(key: string): Promise<{ ok: boolean; detail: string }> {
+  if (!key.startsWith('sk_')) return { ok: false, detail: 'must start with sk_ (secret key)' };
+  try {
+    const res = await fetch('https://api.stripe.com/v1/balance', {
+      headers: { Authorization: `Bearer ${key}`, Accept: 'application/json' },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (res.status === 200) return { ok: true, detail: 'authenticated — balance retrieved' };
+    if (res.status === 401) return { ok: false, detail: 'HTTP 401 — key invalid' };
+    return { ok: false, detail: `HTTP ${res.status}` };
+  } catch (err) {
+    return { ok: false, detail: `network error: ${err instanceof Error ? err.message : String(err)}` };
+  }
+}
+
+async function testStripeWebhookSecret(secret: string): Promise<{ ok: boolean; detail: string }> {
+  if (!secret.startsWith('whsec_')) return { ok: false, detail: 'must start with whsec_' };
+  return { ok: true, detail: 'shape check passed' };
+}
+
+async function testSendGridKey(key: string): Promise<{ ok: boolean; detail: string }> {
+  if (!key.startsWith('SG.')) return { ok: false, detail: 'must start with SG.' };
+  try {
+    const res = await fetch('https://api.sendgrid.com/v3/user/account', {
+      headers: { Authorization: `Bearer ${key}`, Accept: 'application/json' },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (res.status === 200) return { ok: true, detail: 'authenticated' };
+    if (res.status === 401) return { ok: false, detail: 'HTTP 401 — key invalid' };
+    return { ok: false, detail: `HTTP ${res.status}` };
+  } catch (err) {
+    return { ok: false, detail: `network error: ${err instanceof Error ? err.message : String(err)}` };
+  }
+}
+
+async function testTwilioCreds(credential: string): Promise<{ ok: boolean; detail: string }> {
+  // The credential is formatted as "AccountSID:AuthToken"
+  const parts = credential.split(':');
+  if (parts.length < 2) return { ok: false, detail: 'format must be AccountSID:AuthToken' };
+  const [sid, token] = parts;
+  if (!sid.startsWith('AC')) return { ok: false, detail: 'Account SID must start with AC' };
+  try {
+    const auth = Buffer.from(`${sid}:${token}`).toString('base64');
+    const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}.json`, {
+      headers: { Authorization: `Basic ${auth}`, Accept: 'application/json' },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (res.status === 200) return { ok: true, detail: 'authenticated' };
+    if (res.status === 401) return { ok: false, detail: 'HTTP 401 — credentials invalid' };
+    return { ok: false, detail: `HTTP ${res.status}` };
+  } catch (err) {
+    return { ok: false, detail: `network error: ${err instanceof Error ? err.message : String(err)}` };
+  }
+}
+
+async function testResendKey(key: string): Promise<{ ok: boolean; detail: string }> {
+  if (!key.startsWith('re_')) return { ok: false, detail: 'must start with re_' };
+  try {
+    const res = await fetch('https://api.resend.com/domains', {
+      headers: { Authorization: `Bearer ${key}`, Accept: 'application/json' },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (res.status === 200) return { ok: true, detail: 'authenticated — domains listed' };
+    if (res.status === 401) return { ok: false, detail: 'HTTP 401 — key invalid' };
+    return { ok: false, detail: `HTTP ${res.status}` };
+  } catch (err) {
+    return { ok: false, detail: `network error: ${err instanceof Error ? err.message : String(err)}` };
+  }
+}
+
 // ─── Vault Registry ──────────────────────────────────────────────────
 
 const VAULT_REGISTRY: VaultEntry[] = [
@@ -342,6 +434,97 @@ const VAULT_REGISTRY: VaultEntry[] = [
     required: false,
     purpose: 'App Store Connect private key (P-256, .p8 content) for ES256 JWT signing',
     test: async (v: string) => ({ ok: v.length > 100, detail: v.length > 100 ? 'key present (length check)' : 'too short for a valid P-256 key' }),
+  },
+  // ── Cloudflare ──
+  {
+    ivxName: 'IVX_CLOUDFLARE_API_TOKEN',
+    fallbackName: 'CLOUDFLARE_API_TOKEN',
+    category: 'cloudflare',
+    required: false,
+    purpose: 'Cloudflare API token for DNS, Workers, Pages, R2, and cache management',
+    test: testCloudflareToken,
+  },
+  {
+    ivxName: 'IVX_CLOUDFLARE_ACCOUNT_ID',
+    fallbackName: 'CLOUDFLARE_ACCOUNT_ID',
+    category: 'cloudflare',
+    required: false,
+    purpose: 'Cloudflare account ID for account-scoped API calls (Workers, R2, Pages)',
+    test: testCloudflareAccountId,
+  },
+  {
+    ivxName: 'IVX_CLOUDFLARE_ZONE_ID',
+    fallbackName: 'CLOUDFLARE_ZONE_ID',
+    category: 'cloudflare',
+    required: false,
+    purpose: 'Cloudflare zone ID for DNS record and cache rule management',
+    test: testCloudflareAccountId,
+  },
+  // ── Stripe ──
+  {
+    ivxName: 'IVX_STRIPE_SECRET_KEY',
+    fallbackName: 'STRIPE_SECRET_KEY',
+    category: 'stripe',
+    required: false,
+    purpose: 'Stripe secret API key for payment processing, subscriptions, and webhook signatures',
+    test: testStripeKey,
+  },
+  {
+    ivxName: 'IVX_STRIPE_WEBHOOK_SECRET',
+    fallbackName: 'STRIPE_WEBHOOK_SECRET',
+    category: 'stripe',
+    required: false,
+    purpose: 'Stripe webhook signing secret for verifying incoming webhook events',
+    test: testStripeWebhookSecret,
+  },
+  {
+    ivxName: 'IVX_STRIPE_PUBLISHABLE_KEY',
+    fallbackName: 'STRIPE_PUBLISHABLE_KEY',
+    category: 'stripe',
+    required: false,
+    purpose: 'Stripe publishable key for client-side payment intents',
+    test: async (v: string) => ({ ok: v.startsWith('pk_'), detail: v.startsWith('pk_') ? 'valid format' : 'must start with pk_' }),
+  },
+  // ── Email/SMS Providers ──
+  {
+    ivxName: 'IVX_SENDGRID_API_KEY',
+    fallbackName: 'SENDGRID_API_KEY',
+    category: 'email_sms',
+    required: false,
+    purpose: 'SendGrid API key for transactional email delivery and template management',
+    test: testSendGridKey,
+  },
+  {
+    ivxName: 'IVX_SENDGRID_FROM_EMAIL',
+    fallbackName: 'SENDGRID_FROM_EMAIL',
+    category: 'email_sms',
+    required: false,
+    purpose: 'Verified sender email address for SendGrid outgoing email',
+    test: async (v: string) => ({ ok: /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v), detail: /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v) ? 'valid email format' : 'invalid email format' }),
+  },
+  {
+    ivxName: 'IVX_TWILIO_CREDENTIALS',
+    fallbackName: 'TWILIO_CREDENTIALS',
+    category: 'email_sms',
+    required: false,
+    purpose: 'Twilio credentials formatted as AccountSID:AuthToken for SMS and voice',
+    test: testTwilioCreds,
+  },
+  {
+    ivxName: 'IVX_TWILIO_PHONE_NUMBER',
+    fallbackName: 'TWILIO_PHONE_NUMBER',
+    category: 'email_sms',
+    required: false,
+    purpose: 'Twilio phone number for sending SMS messages (E.164 format)',
+    test: async (v: string) => ({ ok: /^\+[0-9]{8,15}$/.test(v), detail: /^\+[0-9]{8,15}$/.test(v) ? 'valid E.164 format' : 'must be E.164 format (+country number)' }),
+  },
+  {
+    ivxName: 'IVX_RESEND_API_KEY',
+    fallbackName: 'RESEND_API_KEY',
+    category: 'email_sms',
+    required: false,
+    purpose: 'Resend API key for email delivery via the Resend API',
+    test: testResendKey,
   },
 ];
 

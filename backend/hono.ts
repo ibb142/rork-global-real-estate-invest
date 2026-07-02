@@ -96,6 +96,7 @@ import {
   handleCredentialDeploymentRequest,
   handleCredentialApprovalGateRequest,
 } from './api/ivx-credential-readiness';
+import { auditVault, inspectVaultVariable, buildVaultStatus, VAULT_REGISTRY } from './services/ivx-secure-vault';
 import {
   OPTIONS as toolSystemOptions,
   handleToolSystemDashboardRequest,
@@ -2474,6 +2475,135 @@ app.options('/api/ivx/credentials/deployment', () => credentialReadinessOptions(
 app.get('/api/ivx/credentials/deployment', async (context) => handleCredentialDeploymentRequest(context.req.raw));
 app.options('/api/ivx/credentials/approval-gate', () => credentialReadinessOptions());
 app.post('/api/ivx/credentials/approval-gate', async (context) => handleCredentialApprovalGateRequest(context.req.raw));
+// IVX Secure Vault — full credential audit, individual sync, and platform status.
+app.options('/api/ivx/vault/audit', () => credentialReadinessOptions());
+app.get('/api/ivx/vault/audit', async (context) => {
+  try {
+    const audit = await auditVault();
+    return context.json(audit as unknown as Record<string, unknown>);
+  } catch (err) {
+    return context.json({ ok: false, error: err instanceof Error ? err.message : 'Vault audit failed' }, 500);
+  }
+});
+app.options('/api/ivx/vault/status', () => credentialReadinessOptions());
+app.get('/api/ivx/vault/status', async (context) => {
+  try {
+    const status = buildVaultStatus();
+    return context.json(status as unknown as Record<string, unknown>);
+  } catch (err) {
+    return context.json({ ok: false, error: err instanceof Error ? err.message : 'Vault status failed' }, 500);
+  }
+});
+app.options('/api/ivx/vault/inspect/:name', () => credentialReadinessOptions());
+app.get('/api/ivx/vault/inspect/:name', async (context) => {
+  const name = context.req.param('name');
+  try {
+    const result = await inspectVaultVariable(name);
+    if (!result) return context.json({ ok: false, error: `Variable ${name} not found in vault registry` }, 404);
+    return context.json(result as unknown as Record<string, unknown>);
+  } catch (err) {
+    return context.json({ ok: false, error: err instanceof Error ? err.message : 'Inspect failed' }, 500);
+  }
+});
+app.options('/api/ivx/vault/registry', () => credentialReadinessOptions());
+app.get('/api/ivx/vault/registry', async (context) => {
+  const registry = VAULT_REGISTRY.map(e => ({
+    ivxName: e.ivxName,
+    fallbackName: e.fallbackName,
+    category: e.category,
+    required: e.required,
+    purpose: e.purpose,
+  }));
+  return context.json({ ok: true, total: registry.length, variables: registry });
+});
+app.options('/api/ivx/vault/sync/:category', () => credentialReadinessOptions());
+app.get('/api/ivx/vault/sync/:category', async (context) => {
+  const category = context.req.param('category') as string;
+  const categoryMap: Record<string, string[]> = {
+    github: ['IVX_GITHUB_TOKEN'],
+    render: ['IVX_RENDER_API_KEY', 'IVX_RENDER_SERVICE_ID'],
+    supabase: ['IVX_SUPABASE_URL', 'IVX_SUPABASE_SERVICE_ROLE_KEY'],
+    aws: ['IVX_AWS_ACCESS_KEY_ID', 'IVX_AWS_SECRET_ACCESS_KEY', 'IVX_AWS_REGION'],
+    vercel: ['IVX_VERCEL_TOKEN'],
+    google_play: ['IVX_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON', 'IVX_GOOGLE_PLAY_PACKAGE_NAME'],
+    apple_store: ['IVX_APPSTORE_KEY_ID', 'IVX_APPSTORE_ISSUER_ID', 'IVX_APPSTORE_PRIVATE_KEY'],
+    cloudflare: ['IVX_CLOUDFLARE_API_TOKEN', 'IVX_CLOUDFLARE_ACCOUNT_ID', 'IVX_CLOUDFLARE_ZONE_ID'],
+    stripe: ['IVX_STRIPE_SECRET_KEY', 'IVX_STRIPE_WEBHOOK_SECRET', 'IVX_STRIPE_PUBLISHABLE_KEY'],
+    email_sms: ['IVX_SENDGRID_API_KEY', 'IVX_SENDGRID_FROM_EMAIL', 'IVX_TWILIO_CREDENTIALS', 'IVX_TWILIO_PHONE_NUMBER', 'IVX_RESEND_API_KEY'],
+  };
+  const varNames = categoryMap[category];
+  if (!varNames) {
+    return context.json({ ok: false, error: `Unknown category: ${category}. Available: ${Object.keys(categoryMap).join(', ')}` }, 400);
+  }
+  try {
+    const results = await Promise.all(varNames.map(name => inspectVaultVariable(name)));
+    const variables = results.filter(r => r !== null);
+    const present = variables.filter(v => v?.present).length;
+    const passed = variables.filter(v => v?.tested && v?.testOk === true).length;
+    const failed = variables.filter(v => v?.tested && v?.testOk === false).length;
+    return context.json({
+      ok: true,
+      category,
+      timestamp: new Date().toISOString(),
+      total: variables.length,
+      present,
+      passed,
+      failed,
+      variables,
+      secretValuesReturned: false,
+    });
+  } catch (err) {
+    return context.json({ ok: false, error: err instanceof Error ? err.message : 'Sync failed' }, 500);
+  }
+});
+app.options('/api/ivx/vault/platform-status', () => credentialReadinessOptions());
+app.get('/api/ivx/vault/platform-status', async (context) => {
+  const categories: Array<{ name: string; category: string }> = [
+    { name: 'GitHub', category: 'github' },
+    { name: 'Render', category: 'render' },
+    { name: 'Supabase', category: 'supabase' },
+    { name: 'Vercel', category: 'vercel' },
+    { name: 'AWS', category: 'aws' },
+    { name: 'Google Play', category: 'google_play' },
+    { name: 'Apple Store', category: 'apple_store' },
+    { name: 'Cloudflare', category: 'cloudflare' },
+    { name: 'Stripe', category: 'stripe' },
+    { name: 'Email/SMS', category: 'email_sms' },
+  ];
+  try {
+    const audit = await auditVault();
+    const platforms = categories.map(c => {
+      const vars = audit.variables.filter(v => v.category === c.category);
+      const present = vars.filter(v => v.present).length;
+      const passed = vars.filter(v => v.tested && v.testOk === true).length;
+      const required = vars.filter(v => v.required);
+      const requiredPresent = required.every(v => v.present);
+      return {
+        name: c.name,
+        category: c.category,
+        configured: present > 0 && requiredPresent,
+        tested: vars.filter(v => v.tested).length,
+        passed,
+        failed: vars.filter(v => v.tested && v.testOk === false).length,
+        total: vars.length,
+        requiredPresent,
+      };
+    });
+    const configured = platforms.filter(p => p.configured).length;
+    return context.json({
+      ok: true,
+      timestamp: audit.generatedAt,
+      totalPlatforms: platforms.length,
+      configured,
+      notConfigured: platforms.length - configured,
+      platforms,
+      blockers: audit.blockers,
+      secretValuesReturned: false,
+    });
+  } catch (err) {
+    return context.json({ ok: false, error: err instanceof Error ? err.message : 'Platform status failed' }, 500);
+  }
+});
 // Multimodal stack — image/video understanding, image + 3D generation (owner-only).
 app.options('/api/ivx/multimodal/status', () => multimodalStackOptions());
 app.get('/api/ivx/multimodal/status', async (context) => handleMultimodalStatusRequest(context.req.raw));

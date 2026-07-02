@@ -1,10 +1,10 @@
 /**
- * IVX Deployment Chat Brain — Senior Deployment Executor v2
+ * IVX Deployment Chat Brain — Senior Deployment Executor v4
  *
- * Intercepts /deploy-* and /qa-* commands from the chat and returns
+ * Intercepts /deploy-* /qa-* /vault-* /sync-* commands from the chat and returns
  * live production evidence. No placeholder responses. No fake verified.
  *
- * Commands:
+ * Deployment Commands:
  *   /deploy-status    — GitHub, Render, Production SHA comparison
  *   /deploy-now       — Trigger Render deploy via API
  *   /deploy-evidence  — Full deployment proof dump
@@ -26,10 +26,27 @@
  *   /aws-invalidate   — CloudFront cache invalidation
  *   /google-play      — Google Play app tracks + build status
  *   /apple-store      — App Store Connect apps, builds, versions
- *   /platform-status  — All platforms: GitHub, Render, Vercel, AWS, Google Play, Apple Store
+ *   /platform-status  — All platforms: GitHub, Render, Supabase, Vercel, AWS, Google Play, Apple Store, Cloudflare, Stripe, Email/SMS
+ *
+ * Vault Commands:
+ *   /vault-status     — Full vault audit: all credentials, presence, test results
+ *   /vault-sync       — Auto-discover credentials across all sources
+ *   /vault-test       — Live test every credential in the vault
+ *   /github-sync      — Test GitHub token: read, write, repo access
+ *   /render-sync      — Test Render API key: deploy, rollback, logs
+ *   /supabase-sync    — Test Supabase URL + service role key
+ *   /aws-sync         — Test AWS access key + secret key
+ *   /vercel-sync      — Test Vercel API token
+ *   /google-play-sync — Test Google Play service account JSON
+ *   /apple-store-sync — Test App Store Connect API key + issuer + private key
+ *   /cloudflare-sync  — Test Cloudflare API token + account ID
+ *   /stripe-sync      — Test Stripe secret key + webhook secret
+ *   /email-sms-sync   — Test SendGrid, Twilio, Resend credentials
  */
 
-const DEPLOYMENT_BRAIN_VERSION = 'ivx-deployment-brain-v3-2026-07-03T00:00:00Z';
+import { auditVault, inspectVaultVariable, getVaultValue, buildVaultStatus, VAULT_REGISTRY } from './ivx-secure-vault';
+
+const DEPLOYMENT_BRAIN_VERSION = 'ivx-deployment-brain-v4-2026-07-03T12:00:00Z';
 
 // Production URLs — RENDER_EXTERNAL_URL is set by Render at runtime.
 const PRODUCTION_BASE = process.env.RENDER_EXTERNAL_URL?.replace(/\/$/, '')
@@ -957,6 +974,21 @@ const COMMAND_MAP: Record<string, () => Promise<string>> = {
     const asPrivKey = process.env.IVX_APPSTORE_PRIVATE_KEY ?? process.env.APPSTORE_PRIVATE_KEY ?? '';
     platforms.push({ name: 'Apple Store', configured: asKey.trim().length > 0 && asIssuer.trim().length > 0 && asPrivKey.trim().length > 0, detail: asKey.trim() && asIssuer.trim() && asPrivKey.trim() ? 'Key ID + issuer + private key present' : 'Credentials missing' });
 
+    // Cloudflare
+    const cfToken = process.env.IVX_CLOUDFLARE_API_TOKEN ?? process.env.CLOUDFLARE_API_TOKEN ?? '';
+    platforms.push({ name: 'Cloudflare', configured: cfToken.trim().length > 0, detail: cfToken.trim() ? 'API token present' : 'API token missing' });
+
+    // Stripe
+    const stripeKey = process.env.IVX_STRIPE_SECRET_KEY ?? process.env.STRIPE_SECRET_KEY ?? '';
+    platforms.push({ name: 'Stripe', configured: stripeKey.trim().length > 0, detail: stripeKey.trim() ? 'Secret key present' : 'Secret key missing' });
+
+    // Email/SMS
+    const sendgridKey = process.env.IVX_SENDGRID_API_KEY ?? process.env.SENDGRID_API_KEY ?? '';
+    const twilioCreds = process.env.IVX_TWILIO_CREDENTIALS ?? process.env.TWILIO_CREDENTIALS ?? '';
+    const resendKey = process.env.IVX_RESEND_API_KEY ?? process.env.RESEND_API_KEY ?? '';
+    const emailSmsConfigured = sendgridKey.trim() || twilioCreds.trim() || resendKey.trim();
+    platforms.push({ name: 'Email/SMS', configured: emailSmsConfigured.length > 0, detail: emailSmsConfigured ? 'Provider credentials present' : 'No email/SMS provider configured' });
+
     const configured = platforms.filter(p => p.configured).length;
     const total = platforms.length;
 
@@ -972,10 +1004,416 @@ const COMMAND_MAP: Record<string, () => Promise<string>> = {
       '',
       configured === total
         ? '**All platforms configured — full deployment executor ready.**'
-        : `**${total - configured} platform(s) need credentials.** Use /vercel-status, /aws-status, /google-play, or /apple-store for setup instructions.`,
+        : `**${total - configured} platform(s) need credentials.** Use /vault-status for the full audit or /<platform>-sync for individual tests.`,
       '',
       `_Brain: ${DEPLOYMENT_BRAIN_VERSION}_`,
     ].join('\n');
+  },
+  // ── Vault Commands ────────────────────────────────────────────────────
+  '/vault-status': async () => {
+    const audit = await auditVault();
+    const lines = [
+      '## IVX Secure Vault — Status',
+      '',
+      `**Marker:** ${audit.marker}`,
+      `**Generated:** ${audit.generatedAt}`,
+      `**Total Variables:** ${audit.total}`,
+      `**Present:** ${audit.present}`,
+      `**Missing:** ${audit.missing}`,
+      `**Tested:** ${audit.tested} (Passed: ${audit.passed}, Failed: ${audit.failed})`,
+      `**Required Present:** ${audit.requiredPresent ? 'YES' : 'NO'}`,
+      `**Secrets Exposed:** NEVER (secretValuesReturned: false)`,
+      '',
+      '### Variables',
+      '',
+      ...audit.variables.map(v => {
+        const icon = !v.present ? '\u274c' : v.tested && v.testOk === true ? '\u2705' : v.tested && v.testOk === false ? '\u26a0\ufe0f' : '\u2796';
+        const req = v.required ? ' (REQUIRED)' : '';
+        const src = v.source === 'none' ? 'NOT SET' : `src: ${v.sourceVar}`;
+        const test = v.tested ? `test: ${v.testOk ? 'PASS' : 'FAIL'} — ${v.testDetail}` : 'test: not run';
+        return `- ${icon} **${v.name}**${req} — ${v.purpose}\n  ${src} | len=${v.valueLength} | ${test}`;
+      }),
+      '',
+      audit.blockers.length > 0
+        ? '### Blockers\n' + audit.blockers.map(b => `- \u26a0\ufe0f ${b}`).join('\n')
+        : '**No blockers.** All required credentials present and tested.',
+      '',
+      `_Brain: ${DEPLOYMENT_BRAIN_VERSION}_`,
+    ];
+    return lines.join('\n');
+  },
+  '/vault-sync': async () => {
+    const audit = await auditVault();
+    const byCategory: Record<string, { present: number; total: number; passed: number; failed: number }> = {};
+    for (const v of audit.variables) {
+      if (!byCategory[v.category]) byCategory[v.category] = { present: 0, total: 0, passed: 0, failed: 0 };
+      byCategory[v.category].total++;
+      if (v.present) byCategory[v.category].present++;
+      if (v.tested && v.testOk === true) byCategory[v.category].passed++;
+      if (v.tested && v.testOk === false) byCategory[v.category].failed++;
+    }
+    const lines = [
+      '## IVX Vault Sync — Auto-Discovery',
+      '',
+      `**Timestamp:** ${audit.generatedAt}`,
+      `**Total Credentials:** ${audit.total}`,
+      `**Present:** ${audit.present} / ${audit.total}`,
+      `**Tested & Passed:** ${audit.passed}`,
+      `**Tested & Failed:** ${audit.failed}`,
+      `**Untested:** ${audit.total - audit.tested}`,
+      '',
+      '### By Category',
+      '',
+      ...Object.entries(byCategory).map(([cat, stats]) =>
+        `- **${cat}**: ${stats.present}/${stats.total} present, ${stats.passed} passed, ${stats.failed} failed`
+      ),
+      '',
+      audit.requiredMissing.length > 0
+        ? `### Required Missing\n${audit.requiredMissing.map(m => `- \u274c ${m}`).join('\n')}`
+        : '### Required Credentials: ALL PRESENT',
+      '',
+      audit.blockers.length > 0
+        ? '### Blockers\n' + audit.blockers.map(b => `- \u26a0\ufe0f ${b}`).join('\n')
+        : '**No blockers detected.**',
+      '',
+      `_Brain: ${DEPLOYMENT_BRAIN_VERSION}_`,
+    ];
+    return lines.join('\n');
+  },
+  '/vault-test': async () => {
+    const audit = await auditVault();
+    const tested = audit.variables.filter(v => v.tested);
+    const passed = tested.filter(v => v.testOk === true);
+    const failed = tested.filter(v => v.testOk === false);
+    const notPresent = audit.variables.filter(v => !v.present);
+    const lines = [
+      '## IVX Vault Test — Live Credential Tests',
+      '',
+      `**Timestamp:** ${audit.generatedAt}`,
+      `**Tests Run:** ${tested.length}`,
+      `**Passed:** ${passed.length}`,
+      `**Failed:** ${failed.length}`,
+      `**Not Present:** ${notPresent.length}`,
+      '',
+      '### Results',
+      '',
+      ...passed.map(v => `- \u2705 **${v.name}**: ${v.testDetail}`),
+      ...failed.map(v => `- \u274c **${v.name}**: ${v.testDetail} (source: ${v.sourceVar})`),
+      ...notPresent.map(v => `- \u2796 **${v.name}**: NOT SET — ${v.purpose}`),
+      '',
+      failed.length === 0 && notPresent.filter(v => v.required).length === 0
+        ? '**All present credentials passed live tests.**'
+        : `**${failed.length} credential(s) failed, ${notPresent.filter(v => v.required).length} required credential(s) missing.**`,
+      '',
+      `_Brain: ${DEPLOYMENT_BRAIN_VERSION}_`,
+    ];
+    return lines.join('\n');
+  },
+  '/github-sync': async () => {
+    const v = await inspectVaultVariable('IVX_GITHUB_TOKEN');
+    if (!v) return `## GitHub Sync — ERROR\n\nVariable not found in vault registry.\n\n_Brain: ${DEPLOYMENT_BRAIN_VERSION}_`;
+    const lines = [
+      '## GitHub Sync',
+      '',
+      `**Variable:** ${v.name}`,
+      `**Exists:** ${v.present ? 'YES' : 'NO'}`,
+      `**Source:** ${v.sourceVar ?? 'NONE'}`,
+      `**Value Length:** ${v.valueLength}`,
+      `**Auth Test:** ${v.tested ? (v.testOk ? 'PASS' : 'FAIL') : 'NOT RUN'}`,
+      `**Detail:** ${v.testDetail ?? 'N/A'}`,
+      `**Required:** ${v.required ? 'YES' : 'NO'}`,
+      '',
+      v.present && v.testOk
+        ? '**GITHUB_WRITE:** READY — token valid, read/write access available.'
+        : v.present && !v.testOk
+          ? `**GITHUB_WRITE:** BLOCKED — token present but invalid: ${v.testDetail}`
+          : '**GITHUB_WRITE:** BLOCKED — IVX_GITHUB_TOKEN (or GITHUB_TOKEN fallback) not set. Set in Render env vars.',
+      '',
+      `_Brain: ${DEPLOYMENT_BRAIN_VERSION}_`,
+    ];
+    return lines.join('\n');
+  },
+  '/render-sync': async () => {
+    const [apiKey, serviceId] = await Promise.all([
+      inspectVaultVariable('IVX_RENDER_API_KEY'),
+      inspectVaultVariable('IVX_RENDER_SERVICE_ID'),
+    ]);
+    const lines = [
+      '## Render Sync',
+      '',
+      '### API Key',
+      `**Variable:** IVX_RENDER_API_KEY`,
+      `**Exists:** ${apiKey?.present ? 'YES' : 'NO'}`,
+      `**Source:** ${apiKey?.sourceVar ?? 'NONE'}`,
+      `**Auth Test:** ${apiKey?.tested ? (apiKey?.testOk ? 'PASS' : 'FAIL') : 'NOT RUN'}`,
+      `**Detail:** ${apiKey?.testDetail ?? 'N/A'}`,
+      '',
+      '### Service ID',
+      `**Variable:** IVX_RENDER_SERVICE_ID`,
+      `**Exists:** ${serviceId?.present ? 'YES' : 'NO'}`,
+      `**Source:** ${serviceId?.sourceVar ?? 'NONE'}`,
+      `**Detail:** ${serviceId?.testDetail ?? 'N/A'}`,
+      '',
+      apiKey?.present && apiKey?.testOk
+        ? '**RENDER_DEPLOY:** READY — API key valid, deploy/rollback/logs available.'
+        : `**RENDER_DEPLOY:** BLOCKED — ${!apiKey?.present ? 'API key not set' : `key invalid: ${apiKey?.testDetail}`}. Set IVX_RENDER_API_KEY in Render env vars.`,
+      '',
+      `_Brain: ${DEPLOYMENT_BRAIN_VERSION}_`,
+    ];
+    return lines.join('\n');
+  },
+  '/supabase-sync': async () => {
+    const [url, key] = await Promise.all([
+      inspectVaultVariable('IVX_SUPABASE_URL'),
+      inspectVaultVariable('IVX_SUPABASE_SERVICE_ROLE_KEY'),
+    ]);
+    const lines = [
+      '## Supabase Sync',
+      '',
+      '### URL',
+      `**Variable:** IVX_SUPABASE_URL`,
+      `**Exists:** ${url?.present ? 'YES' : 'NO'}`,
+      `**Source:** ${url?.sourceVar ?? 'NONE'}`,
+      `**Auth Test:** ${url?.tested ? (url?.testOk ? 'PASS' : 'FAIL') : 'NOT RUN'}`,
+      `**Detail:** ${url?.testDetail ?? 'N/A'}`,
+      '',
+      '### Service Role Key',
+      `**Variable:** IVX_SUPABASE_SERVICE_ROLE_KEY`,
+      `**Exists:** ${key?.present ? 'YES' : 'NO'}`,
+      `**Source:** ${key?.sourceVar ?? 'NONE'}`,
+      `**Auth Test:** ${key?.tested ? (key?.testOk ? 'PASS' : 'FAIL') : 'NOT RUN'}`,
+      `**Detail:** ${key?.testDetail ?? 'N/A'}`,
+      '',
+      url?.present && url?.testOk && key?.present && key?.testOk
+        ? '**SUPABASE_WRITE:** READY — URL and service role key valid.'
+        : `**SUPABASE_WRITE:** BLOCKED — ${!url?.present ? 'URL missing' : !url?.testOk ? `URL invalid: ${url?.testDetail}` : !key?.present ? 'Service role key missing' : `Key invalid: ${key?.testDetail}`}. Set IVX_SUPABASE_URL and IVX_SUPABASE_SERVICE_ROLE_KEY in Render env vars.`,
+      '',
+      `_Brain: ${DEPLOYMENT_BRAIN_VERSION}_`,
+    ];
+    return lines.join('\n');
+  },
+  '/aws-sync': async () => {
+    const [accessKey, secretKey, region] = await Promise.all([
+      inspectVaultVariable('IVX_AWS_ACCESS_KEY_ID'),
+      inspectVaultVariable('IVX_AWS_SECRET_ACCESS_KEY'),
+      inspectVaultVariable('IVX_AWS_REGION'),
+    ]);
+    const lines = [
+      '## AWS Sync',
+      '',
+      '### Access Key ID',
+      `**Variable:** IVX_AWS_ACCESS_KEY_ID`,
+      `**Exists:** ${accessKey?.present ? 'YES' : 'NO'}`,
+      `**Source:** ${accessKey?.sourceVar ?? 'NONE'}`,
+      `**Auth Test:** ${accessKey?.tested ? (accessKey?.testOk ? 'PASS' : 'FAIL') : 'NOT RUN'}`,
+      `**Detail:** ${accessKey?.testDetail ?? 'N/A'}`,
+      '',
+      '### Secret Access Key',
+      `**Variable:** IVX_AWS_SECRET_ACCESS_KEY`,
+      `**Exists:** ${secretKey?.present ? 'YES' : 'NO'}`,
+      `**Source:** ${secretKey?.sourceVar ?? 'NONE'}`,
+      `**Detail:** ${secretKey?.testDetail ?? 'N/A'}`,
+      '',
+      '### Region',
+      `**Variable:** IVX_AWS_REGION`,
+      `**Exists:** ${region?.present ? 'YES' : 'NO'}`,
+      `**Value:** ${region?.present ? region?.testDetail : 'NOT SET'}`,
+      '',
+      accessKey?.present && accessKey?.testOk && secretKey?.present
+        ? '**AWS_ACCESS:** READY — credentials present and shape-verified. Use /aws-status for live API calls.'
+        : '**AWS_ACCESS:** BLOCKED — Set IVX_AWS_ACCESS_KEY_ID and IVX_AWS_SECRET_ACCESS_KEY in Render env vars.',
+      '',
+      `_Brain: ${DEPLOYMENT_BRAIN_VERSION}_`,
+    ];
+    return lines.join('\n');
+  },
+  '/vercel-sync': async () => {
+    const v = await inspectVaultVariable('IVX_VERCEL_TOKEN');
+    const lines = [
+      '## Vercel Sync',
+      '',
+      `**Variable:** IVX_VERCEL_TOKEN`,
+      `**Exists:** ${v?.present ? 'YES' : 'NO'}`,
+      `**Source:** ${v?.sourceVar ?? 'NONE'}`,
+      `**Auth Test:** ${v?.tested ? (v?.testOk ? 'PASS' : 'FAIL') : 'NOT RUN'}`,
+      `**Detail:** ${v?.testDetail ?? 'N/A'}`,
+      '',
+      v?.present && v?.testOk
+        ? '**VERCEL_DEPLOY:** READY — token valid, deploy/rollback/env management available.'
+        : '**VERCEL_DEPLOY:** BLOCKED — Set IVX_VERCEL_TOKEN (or VERCEL_TOKEN) in Render env vars. Get a token at https://vercel.com/account/tokens',
+      '',
+      `_Brain: ${DEPLOYMENT_BRAIN_VERSION}_`,
+    ];
+    return lines.join('\n');
+  },
+  '/google-play-sync': async () => {
+    const [sa, pkg] = await Promise.all([
+      inspectVaultVariable('IVX_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON'),
+      inspectVaultVariable('IVX_GOOGLE_PLAY_PACKAGE_NAME'),
+    ]);
+    const lines = [
+      '## Google Play Sync',
+      '',
+      '### Service Account JSON',
+      `**Variable:** IVX_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`,
+      `**Exists:** ${sa?.present ? 'YES' : 'NO'}`,
+      `**Source:** ${sa?.sourceVar ?? 'NONE'}`,
+      `**Auth Test:** ${sa?.tested ? (sa?.testOk ? 'PASS' : 'FAIL') : 'NOT RUN'}`,
+      `**Detail:** ${sa?.testDetail ?? 'N/A'}`,
+      '',
+      '### Package Name',
+      `**Variable:** IVX_GOOGLE_PLAY_PACKAGE_NAME`,
+      `**Exists:** ${pkg?.present ? 'YES' : 'NO'}`,
+      `**Detail:** ${pkg?.testDetail ?? 'N/A'}`,
+      '',
+      sa?.present && sa?.testOk
+        ? '**GOOGLE_PLAY_ACCESS:** READY — service account JSON valid. Use /google-play for live API calls.'
+        : '**GOOGLE_PLAY_ACCESS:** BLOCKED — Set IVX_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON in Render env vars. Go to Play Console → Setup → API access → Service accounts.',
+      '',
+      `_Brain: ${DEPLOYMENT_BRAIN_VERSION}_`,
+    ];
+    return lines.join('\n');
+  },
+  '/apple-store-sync': async () => {
+    const [keyId, issuerId, privKey] = await Promise.all([
+      inspectVaultVariable('IVX_APPSTORE_KEY_ID'),
+      inspectVaultVariable('IVX_APPSTORE_ISSUER_ID'),
+      inspectVaultVariable('IVX_APPSTORE_PRIVATE_KEY'),
+    ]);
+    const lines = [
+      '## Apple App Store Sync',
+      '',
+      '### Key ID',
+      `**Variable:** IVX_APPSTORE_KEY_ID`,
+      `**Exists:** ${keyId?.present ? 'YES' : 'NO'}`,
+      `**Auth Test:** ${keyId?.tested ? (keyId?.testOk ? 'PASS' : 'FAIL') : 'NOT RUN'}`,
+      `**Detail:** ${keyId?.testDetail ?? 'N/A'}`,
+      '',
+      '### Issuer ID',
+      `**Variable:** IVX_APPSTORE_ISSUER_ID`,
+      `**Exists:** ${issuerId?.present ? 'YES' : 'NO'}`,
+      `**Detail:** ${issuerId?.testDetail ?? 'N/A'}`,
+      '',
+      '### Private Key',
+      `**Variable:** IVX_APPSTORE_PRIVATE_KEY`,
+      `**Exists:** ${privKey?.present ? 'YES' : 'NO'}`,
+      `**Detail:** ${privKey?.testDetail ?? 'N/A'}`,
+      '',
+      keyId?.present && keyId?.testOk && issuerId?.present && privKey?.present
+        ? '**APPLE_STORE_ACCESS:** READY — Key ID, issuer ID, and private key present. Use /apple-store for live API calls.'
+        : '**APPLE_STORE_ACCESS:** BLOCKED — Set IVX_APPSTORE_KEY_ID, IVX_APPSTORE_ISSUER_ID, and IVX_APPSTORE_PRIVATE_KEY in Render env vars. Go to App Store Connect → Users and Access → Integrations → API.',
+      '',
+      `_Brain: ${DEPLOYMENT_BRAIN_VERSION}_`,
+    ];
+    return lines.join('\n');
+  },
+  '/cloudflare-sync': async () => {
+    const [token, accountId, zoneId] = await Promise.all([
+      inspectVaultVariable('IVX_CLOUDFLARE_API_TOKEN'),
+      inspectVaultVariable('IVX_CLOUDFLARE_ACCOUNT_ID'),
+      inspectVaultVariable('IVX_CLOUDFLARE_ZONE_ID'),
+    ]);
+    const lines = [
+      '## Cloudflare Sync',
+      '',
+      '### API Token',
+      `**Variable:** IVX_CLOUDFLARE_API_TOKEN`,
+      `**Exists:** ${token?.present ? 'YES' : 'NO'}`,
+      `**Source:** ${token?.sourceVar ?? 'NONE'}`,
+      `**Auth Test:** ${token?.tested ? (token?.testOk ? 'PASS' : 'FAIL') : 'NOT RUN'}`,
+      `**Detail:** ${token?.testDetail ?? 'N/A'}`,
+      '',
+      '### Account ID',
+      `**Variable:** IVX_CLOUDFLARE_ACCOUNT_ID`,
+      `**Exists:** ${accountId?.present ? 'YES' : 'NO'}`,
+      `**Detail:** ${accountId?.testDetail ?? 'N/A'}`,
+      '',
+      '### Zone ID',
+      `**Variable:** IVX_CLOUDFLARE_ZONE_ID`,
+      `**Exists:** ${zoneId?.present ? 'YES' : 'NO'}`,
+      `**Detail:** ${zoneId?.testDetail ?? 'N/A'}`,
+      '',
+      token?.present && token?.testOk
+        ? '**CLOUDFLARE_ACCESS:** READY — API token valid, DNS/Workers/Pages/R2 available.'
+        : '**CLOUDFLARE_ACCESS:** BLOCKED — Set IVX_CLOUDFLARE_API_TOKEN in Render env vars. Create a token at https://dash.cloudflare.com/profile/api-tokens',
+      '',
+      `_Brain: ${DEPLOYMENT_BRAIN_VERSION}_`,
+    ];
+    return lines.join('\n');
+  },
+  '/stripe-sync': async () => {
+    const [secretKey, webhookSecret, pubKey] = await Promise.all([
+      inspectVaultVariable('IVX_STRIPE_SECRET_KEY'),
+      inspectVaultVariable('IVX_STRIPE_WEBHOOK_SECRET'),
+      inspectVaultVariable('IVX_STRIPE_PUBLISHABLE_KEY'),
+    ]);
+    const lines = [
+      '## Stripe Sync',
+      '',
+      '### Secret Key',
+      `**Variable:** IVX_STRIPE_SECRET_KEY`,
+      `**Exists:** ${secretKey?.present ? 'YES' : 'NO'}`,
+      `**Source:** ${secretKey?.sourceVar ?? 'NONE'}`,
+      `**Auth Test:** ${secretKey?.tested ? (secretKey?.testOk ? 'PASS' : 'FAIL') : 'NOT RUN'}`,
+      `**Detail:** ${secretKey?.testDetail ?? 'N/A'}`,
+      '',
+      '### Webhook Secret',
+      `**Variable:** IVX_STRIPE_WEBHOOK_SECRET`,
+      `**Exists:** ${webhookSecret?.present ? 'YES' : 'NO'}`,
+      `**Detail:** ${webhookSecret?.testDetail ?? 'N/A'}`,
+      '',
+      '### Publishable Key',
+      `**Variable:** IVX_STRIPE_PUBLISHABLE_KEY`,
+      `**Exists:** ${pubKey?.present ? 'YES' : 'NO'}`,
+      `**Detail:** ${pubKey?.testDetail ?? 'N/A'}`,
+      '',
+      secretKey?.present && secretKey?.testOk
+        ? '**STRIPE_ACCESS:** READY — secret key valid, payment processing available.'
+        : '**STRIPE_ACCESS:** BLOCKED — Set IVX_STRIPE_SECRET_KEY in Render env vars. Get keys at https://dashboard.stripe.com/apikeys',
+      '',
+      `_Brain: ${DEPLOYMENT_BRAIN_VERSION}_`,
+    ];
+    return lines.join('\n');
+  },
+  '/email-sms-sync': async () => {
+    const [sendgrid, fromEmail, twilio, twilioPhone, resend] = await Promise.all([
+      inspectVaultVariable('IVX_SENDGRID_API_KEY'),
+      inspectVaultVariable('IVX_SENDGRID_FROM_EMAIL'),
+      inspectVaultVariable('IVX_TWILIO_CREDENTIALS'),
+      inspectVaultVariable('IVX_TWILIO_PHONE_NUMBER'),
+      inspectVaultVariable('IVX_RESEND_API_KEY'),
+    ]);
+    const providers: string[] = [];
+    if (sendgrid?.present) providers.push('SendGrid');
+    if (twilio?.present) providers.push('Twilio');
+    if (resend?.present) providers.push('Resend');
+    const lines = [
+      '## Email/SMS Provider Sync',
+      '',
+      '### SendGrid',
+      `**API Key:** ${sendgrid?.present ? 'PRESENT' : 'NOT SET'}`,
+      `**Auth Test:** ${sendgrid?.tested ? (sendgrid?.testOk ? 'PASS' : 'FAIL') : 'N/A'}`,
+      `**Detail:** ${sendgrid?.testDetail ?? 'N/A'}`,
+      `**From Email:** ${fromEmail?.present ? fromEmail?.testDetail : 'NOT SET'}`,
+      '',
+      '### Twilio',
+      `**Credentials:** ${twilio?.present ? 'PRESENT' : 'NOT SET'}`,
+      `**Auth Test:** ${twilio?.tested ? (twilio?.testOk ? 'PASS' : 'FAIL') : 'N/A'}`,
+      `**Detail:** ${twilio?.testDetail ?? 'N/A'}`,
+      `**Phone Number:** ${twilioPhone?.present ? twilioPhone?.testDetail : 'NOT SET'}`,
+      '',
+      '### Resend',
+      `**API Key:** ${resend?.present ? 'PRESENT' : 'NOT SET'}`,
+      `**Auth Test:** ${resend?.tested ? (resend?.testOk ? 'PASS' : 'FAIL') : 'N/A'}`,
+      `**Detail:** ${resend?.testDetail ?? 'N/A'}`,
+      '',
+      providers.length > 0
+        ? `**EMAIL_SMS_ACCESS:** ${providers.length} provider(s) configured: ${providers.join(', ')}`
+        : '**EMAIL_SMS_ACCESS:** BLOCKED — No email/SMS provider configured. Set IVX_SENDGRID_API_KEY, IVX_TWILIO_CREDENTIALS, or IVX_RESEND_API_KEY in Render env vars.',
+      '',
+      `_Brain: ${DEPLOYMENT_BRAIN_VERSION}_`,
+    ];
+    return lines.join('\n');
   },
 };
 
