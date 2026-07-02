@@ -1,17 +1,13 @@
-//
-//  IvxApp.swift
-//  Ivx
-//
-//  Created by Rork on June 30, 2026.
-//
-
 import SwiftUI
 
 @main
 struct IvxApp: App {
+    @State private var authVM = AuthViewModel()
+
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            AuthGateView()
+                .environment(authVM)
         }
     }
 }
