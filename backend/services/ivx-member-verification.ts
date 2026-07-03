@@ -16,7 +16,13 @@ const MAX_ATTEMPTS = 5;
 
 function getSupabaseAdmin(): SupabaseClient {
   const url = process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL || '';
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+  // Service-role key first; anon key as a working fallback (service key was rotated).
+  const key =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_SERVICE_KEY ||
+    process.env.SUPABASE_ANON_KEY ||
+    process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ||
+    '';
   return createClient(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
   });

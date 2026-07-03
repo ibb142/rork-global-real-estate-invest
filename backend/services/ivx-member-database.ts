@@ -11,10 +11,20 @@ const DEPLOYMENT_MARKER = 'ivx-member-database-v1';
 
 function getSupabaseAdmin(): SupabaseClient {
   const url = process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL || '';
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+  // Service-role key first; anon key as a working fallback (service key was rotated).
+  const key =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_SERVICE_KEY ||
+    process.env.SUPABASE_ANON_KEY ||
+    process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ||
+    '';
   return createClient(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
+}
+
+function hasServiceRoleKey(): boolean {
+  return Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY);
 }
 
 export interface MemberRegistrationInput {
@@ -41,22 +51,44 @@ export interface MemberRegistrationResult {
 export async function registerMember(input: MemberRegistrationInput): Promise<MemberRegistrationResult> {
   const supabase = getSupabaseAdmin();
 
+  const userMetadata = {
+    first_name: input.firstName,
+    last_name: input.lastName,
+    phone: input.phone,
+    country: input.country,
+    zip_code: input.zipCode ?? '',
+    role_interests: input.roles ?? [],
+    member_status: 'free_member',
+  };
+
   try {
-    // 1. Create Supabase Auth user
-    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-      email: input.email,
-      password: input.password,
-      email_confirm: false, // We handle verification ourselves
-      user_metadata: {
-        first_name: input.firstName,
-        last_name: input.lastName,
-        phone: input.phone,
-        country: input.country,
-        zip_code: input.zipCode ?? '',
-        role_interests: input.roles ?? [],
-        member_status: 'free_member',
-      },
-    });
+    // 1. Create Supabase Auth user — admin API when a service-role key exists,
+    //    otherwise public signUp with the anon key (admin API requires service role).
+    let authUserId: string | undefined;
+    let authError: { message: string } | null = null;
+
+    if (hasServiceRoleKey()) {
+      const { data: authData, error } = await supabase.auth.admin.createUser({
+        email: input.email,
+        password: input.password,
+        email_confirm: false, // We handle verification ourselves
+        user_metadata: userMetadata,
+      });
+      authUserId = authData.user?.id;
+      authError = error ? { message: error.message } : null;
+    } else {
+      const { data: signUpData, error } = await supabase.auth.signUp({
+        email: input.email,
+        password: input.password,
+        options: { data: userMetadata },
+      });
+      authUserId = signUpData.user?.id;
+      authError = error ? { message: error.message } : null;
+      // Supabase returns an obfuscated user with empty identities for existing emails.
+      if (!authError && signUpData.user && Array.isArray(signUpData.user.identities) && signUpData.user.identities.length === 0) {
+        authError = { message: 'User already registered' };
+      }
+    }
 
     if (authError) {
       console.error('[MemberDB] Auth user creation failed:', authError.message);
@@ -76,7 +108,7 @@ export async function registerMember(input: MemberRegistrationInput): Promise<Me
       };
     }
 
-    const userId = authData.user?.id;
+    const userId = authUserId;
     if (!userId) {
       return {
         success: false,
