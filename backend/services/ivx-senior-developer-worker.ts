@@ -214,6 +214,20 @@ async function appendLedger(result: IVXWorkerJobResult): Promise<void> {
 }
 
 /**
+ * Archive an externally-produced deployment proof (e.g. from the chat
+ * deployment brain's /deploy-pipeline) into the same durable proof ledger the
+ * worker writes, so /senior-proof and /senior-ledger surface it.
+ */
+export async function archiveDeploymentProofToLedger(entry: IVXWorkerJobResult): Promise<boolean> {
+  try {
+    await appendLedger(entry);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Derive a secret-safe proof summary from a full senior-developer run proof and
  * the optional deploy-match verification.
  */

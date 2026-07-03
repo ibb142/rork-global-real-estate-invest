@@ -24,7 +24,7 @@
  *   /qa-production /qa-chat /qa-members /qa-landing /qa-engagement
  */
 
-const DEPLOYMENT_BRAIN_VERSION = 'ivx-deployment-brain-v2-senior-dev-2026-07-03';
+const DEPLOYMENT_BRAIN_VERSION = 'ivx-deployment-brain-v3-qa-final-2026-07-03';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -223,9 +223,21 @@ async function triggerRenderDeploy(): Promise<{ ok: boolean; deployId: string | 
     const text = await res.text();
     let body: Record<string, unknown> = {};
     try { body = JSON.parse(text) as Record<string, unknown>; } catch {}
+
+    let deployId: string | null = (body.id as string)
+      ?? ((body.deploy as Record<string, unknown> | undefined)?.id as string)
+      ?? null;
+
+    // Render's trigger endpoint can answer 202 with an EMPTY body. The deploy
+    // is still created — recover its ID from the deploys list.
+    if (res.ok && !deployId) {
+      const latest = await fetchRenderInfo();
+      deployId = latest.deployId;
+    }
+
     return {
       ok: res.ok,
-      deployId: (body.id as string) ?? null,
+      deployId,
       status: (body.status as string) ?? 'created',
       httpStatus: res.status,
       error: res.ok ? null : `Render API HTTP ${res.status}: ${text.slice(0, 300)}`,
@@ -486,6 +498,45 @@ export async function handleDeployPipeline(): Promise<string> {
     && shasAgree(postHealthSha, postVersionSha)
     && shasAgree(github.sha, postHealthSha);
 
+  // 5. Archive the evidence chain into the senior developer proof ledger so
+  //    /senior-proof and /senior-ledger surface this pipeline run.
+  let ledgerArchived = false;
+  try {
+    const { archiveDeploymentProofToLedger } = await import('./ivx-senior-developer-worker');
+    ledgerArchived = await archiveDeploymentProofToLedger({
+      jobId: `chat-deploy-pipeline-${Date.now()}`,
+      goal: 'Chat /deploy-pipeline — trigger, poll, verify production, archive evidence',
+      ok: poll.terminal && poll.status === 'live',
+      endToEndProductionComplete: liveMatch,
+      changedFiles: [],
+      testsRun: false,
+      testsPassed: false,
+      typecheckRun: false,
+      buildRun: true,
+      commitCreated: false,
+      commitSha: github.sha,
+      commitUrl: github.sha ? `https://github.com/${githubRepo()}/commit/${github.sha}` : null,
+      pushed: false,
+      branch: 'main',
+      deployId: trigger.deployId,
+      deployStatus: poll.status,
+      deployVerified: liveMatch,
+      liveCommit: postHealthSha,
+      commitMatch: liveMatch,
+      healthOk: postHealth.status === 200,
+      healthStatus: postHealth.status,
+      versionEndpoint: postVersionSha,
+      generatedFeatureSlug: null,
+      auditFiles: { json: 'chat-deploy-pipeline', jsonl: 'chat-deploy-pipeline' },
+      finalStatus: liveMatch ? 'COMPLETE' : poll.terminal ? 'FAILED' : 'LOCAL_ONLY',
+      error: liveMatch ? null : poll.terminal ? `Deploy terminal state: ${poll.status}` : 'Deploy still building at poll budget expiry',
+      durable: true,
+      generatedAt: nowIso(),
+    });
+  } catch {
+    ledgerArchived = false;
+  }
+
   return [
     '## Deploy Pipeline — Evidence Chain',
     '',
@@ -505,6 +556,9 @@ export async function handleDeployPipeline(): Promise<string> {
     '### 4. Production verification',
     `- /health: HTTP ${postHealth.status} → \`${short(postHealthSha)}\``,
     `- /version: HTTP ${postVersion.status} → \`${short(postVersionSha)}\``,
+    '',
+    '### 5. Senior ledger',
+    `- Evidence archived: ${ledgerArchived ? 'YES — visible via /senior-ledger and /senior-proof' : 'NO (ledger write failed)'}`,
     '',
     `### Verdict: ${liveMatch
       ? 'VERIFIED — deploy live and production serves the GitHub HEAD commit'
