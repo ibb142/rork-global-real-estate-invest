@@ -39,9 +39,31 @@ import {
   isAdminAccessLocked,
 } from '@/lib/admin-access-lock';
 import { getOpenAccessModeMessage, isOpenAccessModeEnabled } from '@/lib/open-access';
-import { supabase } from '@/lib/supabase';
+import { supabase, isSupabaseConfigured, getSupabaseConfigAudit, SUPABASE_USING_PRODUCTION_FALLBACK, SUPABASE_NOT_CONFIGURED_MESSAGE } from '@/lib/supabase';
 
-const OWNER_LOGIN_PHONE_PROOF_BUILD = 'OWNER_RENDER_DIRECT_REPAIR_UI_V7 · 2026-05-11';
+/** Hardcoded git SHA for the current fix commit.
+ * EXPO_PUBLIC_GIT_SHA is not injected as an env var in this project,
+ * so we hardcode the SHA to guarantee the marker always shows the
+ * correct version. If this marker says OWNER_LOGIN_V11_LIVE_PROXY,
+ * the bundle is current. Older markers mean the bundle is stale. */
+const BUNDLE_GIT_SHA = '1ce2b16';
+const OWNER_LOGIN_PHONE_PROOF_BUILD = `OWNER_LOGIN_V12_LIVE_EVIDENCE · ${BUNDLE_GIT_SHA} · 2026-07-02`;
+
+/** True when the Supabase client failed to initialize (URL/key missing).
+ * This is the root cause of the "Supabase URL is required" AuthError. */
+const SUPABASE_CONFIG_OK = isSupabaseConfigured();
+
+/** Short domain-only hint shown on the login screen so users can verify
+ * the bundle loaded the correct Supabase project at a glance. */
+const SUPABASE_HOST_HINT = (() => {
+  try {
+    const url = (process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://kvclcdjmjghndxsngfzb.supabase.co').trim();
+    return new URL(url).hostname;
+  } catch {
+    return 'kvclcdjmjghndxsngfzb.supabase.co';
+  }
+})();
+const SUPABASE_CONFIG_SOURCE: 'env' | 'fallback' = SUPABASE_USING_PRODUCTION_FALLBACK ? 'fallback' : 'env';
 const OWNER_REPAIR_ENDPOINT_PATH = '/api/ivx/owner-access-repair';
 const OWNER_REPAIR_API_BASE_URL = 'https://ivx-holdings-platform.onrender.com';
 const OWNER_REPAIR_EXPECTED_BACKEND_VERSION = 'V7';
@@ -1049,6 +1071,31 @@ export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProp
         }
 
         const exactMessage = signInResult.supabaseErrorMessage ?? signInResult.message;
+        const isConfigError = exactMessage.toLowerCase().includes('supabase url is required')
+          || exactMessage.toLowerCase().includes('not configured')
+          || signInResult.failureReason === 'service_unavailable';
+
+        if (isConfigError) {
+          // The real problem is missing Supabase config, not a password mismatch.
+          // Show a clear config error instead of the misleading "Same-Value Sign-In Failed".
+          setAttemptState({
+            status: 'failed',
+            title: 'Supabase config missing — not a password problem',
+            detail: 'The backend updated the password, but this app bundle could not reach Supabase for sign-in because the Supabase URL was not loaded. Clear the Expo Go cache and reload — the latest bundle has built-in production fallbacks.',
+            email: target,
+            tone: 'warning',
+            supabaseErrorMessage: exactMessage,
+            supabaseErrorCode: signInResult.supabaseErrorCode,
+            supabaseErrorStatus: signInResult.supabaseErrorStatus,
+            supabaseErrorName: signInResult.supabaseErrorName,
+          });
+          Alert.alert(
+            'App Config Issue — Not a Password Problem',
+            `The backend accepted your new password, but this Expo Go bundle could not connect to Supabase to sign you in.\n\nError: ${exactMessage}\n\nFix: Close Expo Go fully, reopen it, and reload the app. The latest code has production fallbacks that always load the Supabase URL.`
+          );
+          return;
+        }
+
         const mismatchDetail = `Backend reported passwordUpdatedFromClientRequest=true, but Supabase still rejected immediate sign-in with the same phone password. Exact Supabase sign-in error: ${exactMessage}${signInResult.supabaseErrorCode ? ` (code: ${signInResult.supabaseErrorCode})` : ''}${signInResult.supabaseErrorStatus ? ` (HTTP ${signInResult.supabaseErrorStatus})` : ''}. Check that the mobile app and Render API point at the same Supabase project shown in the repair response.`;
         setAttemptState({
           status: 'failed',
@@ -1183,6 +1230,39 @@ export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProp
       tone: 'neutral',
     });
     setFailedLoginMessage(null);
+
+    // Pre-flight: catch missing Supabase config BEFORE submitting to avoid
+    // the confusing "Supabase URL is required" AuthError that looks like a
+    // password failure to the user.
+    if (!SUPABASE_CONFIG_OK) {
+      // Runtime guard: try to re-initialize in case the module-level init
+      // failed in a stale bundle. If it still fails, surface a clear config
+      // error instead of the misleading "Same-Value Sign-In Failed" alert.
+      const runtimeOk = isSupabaseConfigured();
+      const audit = getSupabaseConfigAudit();
+      if (!runtimeOk) {
+        shake();
+        setAttemptState({
+          status: 'failed',
+          title: 'Supabase config missing',
+          detail: `This app bundle could not connect to Supabase. Audit: url=${audit.urlConfigured} key=${audit.keyConfigured} fallback=${audit.usingFallback} host=${audit.host}. Clear the Expo Go cache and reload — the latest bundle has built-in production fallbacks that fix this.`,
+          email: identifier,
+          tone: 'warning',
+          supabaseErrorMessage: SUPABASE_NOT_CONFIGURED_MESSAGE,
+          supabaseErrorName: 'AuthError',
+          supabaseErrorStatus: 500,
+        });
+        setFailedLoginMessage('Supabase is not configured in this bundle. Clear Expo Go cache and try again.');
+        setLastFailureReason('service_unavailable');
+        Alert.alert(
+          'App Config Issue — Not a Password Problem',
+          `This Expo Go bundle is missing the Supabase URL. Your password was NOT sent to Supabase.\n\nAudit: URL loaded=${audit.urlConfigured}, key loaded=${audit.keyConfigured}, fallback=${audit.usingFallback}, host=${audit.host}\n\nFix: Close Expo Go fully, reopen it, and reload the app. The latest code has production fallbacks that always load the Supabase URL.\n\nIf you still see this after reloading, the bundle is stale — use the Expo Go shake gesture or clear app data.`
+        );
+        return;
+      }
+      // If runtime re-init succeeded, keep going with the real client.
+      console.log('[Login] Supabase config recovered at runtime:', audit);
+    }
 
     const result = await login(identifier, passwordForSignIn);
     if (result.success || result.requiresTwoFactor) {
@@ -1591,6 +1671,18 @@ export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProp
                 <Text style={styles.authVersionBadgeText}>{OWNER_LOGIN_PHONE_PROOF_BUILD}</Text>
               </View>
 
+              {/* Runtime Supabase config status — catches stale bundles before login */}
+              <View
+                style={[styles.configStatusBanner, SUPABASE_CONFIG_OK ? styles.configStatusOk : styles.configStatusError]}
+                testID="login-supabase-config-status"
+              >
+                <Text style={styles.configStatusText}>
+                  {SUPABASE_CONFIG_OK
+                    ? `Supabase OK · ${SUPABASE_CONFIG_SOURCE} · ${SUPABASE_HOST_HINT}`
+                    : 'Supabase NOT configured — clear Expo Go cache & reload'}
+                </Text>
+              </View>
+
               {adminAccessLocked ? (
                 <View style={styles.adminLockCard} testID="login-admin-lock-card">
                   <View style={styles.authAuditHeader}>
@@ -1721,7 +1813,12 @@ export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProp
                     <Text style={styles.passwordPolicyHint}>8+ chars · uppercase · number</Text>
                   ) : (
                     <TouchableOpacity
-                      onPress={() => { void handlePasswordReset(); }}
+                      onPress={() => {
+                        router.push({
+                          pathname: '/forgot-password',
+                          params: normalizedEmail ? { email: normalizedEmail } : undefined,
+                        } as Href);
+                      }}
                       disabled={passwordResetLoading}
                     >
                       <Text style={styles.forgotLink}>{passwordResetLoading ? 'Sending…' : 'Forgot?'}</Text>
@@ -2213,6 +2310,27 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '800' as const,
     letterSpacing: 1,
+  },
+  configStatusBanner: {
+    alignSelf: 'stretch' as const,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginBottom: 16,
+  },
+  configStatusOk: {
+    borderColor: Colors.success + '44',
+    backgroundColor: Colors.success + '12',
+  },
+  configStatusError: {
+    borderColor: Colors.error + '66',
+    backgroundColor: Colors.error + '14',
+  },
+  configStatusText: {
+    fontSize: 11,
+    fontWeight: '600' as const,
+    color: Colors.textSecondary,
   },
   authAuditCard: {
     borderRadius: 18,

@@ -1,7 +1,7 @@
 import createContextHook from '@nkzw/create-context-hook';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import * as SecureStore from 'expo-secure-store';
-import { supabase } from './supabase';
+import { supabase, ensureSupabaseClient, getSupabaseConfigAudit, SUPABASE_NOT_CONFIGURED_MESSAGE } from './supabase';
 import { persistAuth, loadStoredAuth, clearStoredAuth, setAuthCredentials } from './auth-store';
 import { canonicalizeRole, isAdminRole, normalizeRole, sanitizeEmail } from './auth-helpers';
 import { signInWithEmailPassword } from './auth-password-sign-in';
@@ -16,7 +16,7 @@ import {
   syncMemberRegistryFromSupabase,
   upsertStoredMemberRegistryRecord,
 } from './member-registry';
-import type { Session } from '@supabase/supabase-js';
+import type { Session, SupabaseClient } from '@supabase/supabase-js';
 import { fetchPublicIpAddress } from './public-geo';
 import {
   getAdminAccessLockMessage,
@@ -1598,13 +1598,37 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   const login = useCallback(async (email: string, password: string): Promise<LoginResult> => {
     setLoginLoading(true);
     try {
+      // Runtime safety: if the Expo Go bundle loaded the stale module-level
+      // noop client, force re-initialization before any auth call. This catches
+      // the "Supabase URL is required" AuthError that comes from a stale bundle
+      // even though the current code has production fallbacks.
+      // We capture the fresh client and pass it to signInWithEmailPassword so
+      // we never accidentally use the noop client even if the export snapshot
+      // was bound before the fallback constants loaded.
+      let freshClient: SupabaseClient;
+      try {
+        freshClient = ensureSupabaseClient();
+      } catch (configError) {
+        const configAudit = getSupabaseConfigAudit();
+        console.log('[Auth] Supabase client not configured at login time:', configAudit);
+        return {
+          success: false,
+          message: SUPABASE_NOT_CONFIGURED_MESSAGE,
+          failureReason: 'service_unavailable',
+          supabaseErrorMessage: SUPABASE_NOT_CONFIGURED_MESSAGE,
+          supabaseErrorCode: 'not_configured',
+          supabaseErrorStatus: 500,
+          supabaseErrorName: 'AuthError',
+        };
+      }
+
       if (ownerIPActiveRef.current || isOwnerIPAccess) {
         console.log('[Auth] Clearing transient trusted-owner access before password sign-in');
         ownerIPActiveRef.current = false;
         setIsOwnerIPAccess(false);
       }
 
-      const signInResult = await signInWithEmailPassword(supabase, email, password);
+      const signInResult = await signInWithEmailPassword(freshClient, email, password);
       const { credentials } = signInResult;
       console.log(
         '[Auth] Password sign-in attempt: email=',

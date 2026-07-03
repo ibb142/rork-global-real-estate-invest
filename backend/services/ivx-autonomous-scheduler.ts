@@ -63,7 +63,8 @@ export type ScheduledJobKind =
   | 'daily_tokenized_buyer_engine'
   | 'daily_technology_ideas'
   | 'daily_capital_outreach'
-  | 'daily_deploy_monitor';
+  | 'daily_deploy_monitor'
+  | 'daily_enterprise_os';
 
 export const SCHEDULED_JOB_KINDS: readonly ScheduledJobKind[] = [
   'daily_self_audit',
@@ -76,6 +77,7 @@ export const SCHEDULED_JOB_KINDS: readonly ScheduledJobKind[] = [
   'daily_technology_ideas',
   'daily_capital_outreach',
   'daily_deploy_monitor',
+  'daily_enterprise_os',
 ];
 
 export type JobRunStatus = 'never' | 'ok' | 'failed';
@@ -149,6 +151,7 @@ export function freshSchedulerState(now: number = Date.now()): SchedulerState {
       daily_technology_ideas: freshJobState('daily_technology_ideas', now),
       daily_capital_outreach: freshJobState('daily_capital_outreach', now),
       daily_deploy_monitor: { ...freshJobState('daily_deploy_monitor', now), intervalMs: 5 * 60 * 60 * 1000 },
+      daily_enterprise_os: freshJobState('daily_enterprise_os', now),
     },
   };
 }
@@ -233,6 +236,11 @@ function normalizeState(parsed: unknown): SchedulerState {
         ...fresh.jobs.daily_deploy_monitor,
         ...(jobs.daily_deploy_monitor ?? {}),
         kind: 'daily_deploy_monitor',
+      },
+      daily_enterprise_os: {
+        ...fresh.jobs.daily_enterprise_os,
+        ...(jobs.daily_enterprise_os ?? {}),
+        kind: 'daily_enterprise_os',
       },
     },
   };
@@ -630,6 +638,54 @@ async function runDeployMonitorJob(): Promise<ScheduledJobResult> {
   }
 }
 
+/**
+ * ENTERPRISE OS SNAPSHOT job — build the live Executive Command Center from
+ * every real subsystem (deployment brain, scheduler, CRM, capital pipeline,
+ * growth engine, enterprise memory) and persist the grounded snapshot into
+ * unified memory so every brain sees the same enterprise state. Never fabricated.
+ */
+async function runEnterpriseOsSnapshotJob(): Promise<ScheduledJobResult> {
+  const start = Date.now();
+  try {
+    const { buildExecutiveCommandCenter } = await import('./ivx-enterprise-business-os');
+    const cc = await buildExecutiveCommandCenter();
+
+    await rememberSafely({
+      kind: 'execution_history',
+      title: `Enterprise OS snapshot ${new Date().toISOString().slice(0, 10)}`,
+      summary: cc.headline,
+      data: {
+        commitMatch: cc.deployment.commitMatch,
+        githubSha: cc.deployment.githubSha,
+        productionSha: cc.deployment.productionSha,
+        autonomousJobs: cc.autonomousJobs.total,
+        failingJobs: cc.autonomousJobs.failing,
+        crmTotal: cc.revenue?.crmTotal ?? null,
+        openPipeline: cc.capital?.totalPipeline ?? null,
+        alerts: cc.alerts.map((a) => `${a.severity}:${a.title}`).slice(0, 10),
+      },
+      tags: ['enterprise-os', 'command-center', 'autonomous'],
+      source: 'autonomous_mode',
+      status: cc.alerts.some((a) => a.severity === 'critical') ? 'open' : 'active',
+    });
+
+    return {
+      kind: 'daily_enterprise_os',
+      ok: true,
+      durationMs: Date.now() - start,
+      summary: `Enterprise OS: ${cc.headline} (${cc.alerts.length} alert(s)).`,
+    };
+  } catch (error) {
+    return {
+      kind: 'daily_enterprise_os',
+      ok: false,
+      durationMs: Date.now() - start,
+      summary: 'Enterprise OS snapshot failed.',
+      error: error instanceof Error ? error.message : 'Enterprise OS snapshot failed.',
+    };
+  }
+}
+
 async function runDriftJob(deps: DriftDeps = {}): Promise<ScheduledJobResult> {
   const start = Date.now();
   try {
@@ -688,7 +744,9 @@ export async function runScheduledJob(
             ? await runTechnologyIdeasJob()
             : kind === 'daily_deploy_monitor'
               ? await runDeployMonitorJob()
-              : await runExecutionEngineJob(kind);
+              : kind === 'daily_enterprise_os'
+                ? await runEnterpriseOsSnapshotJob()
+                : await runExecutionEngineJob(kind);
 
     await patchJobState(kind, (job, now) => ({
       ...job,

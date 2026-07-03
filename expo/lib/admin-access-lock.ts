@@ -1,10 +1,13 @@
 import { isAdminRole, normalizeRole, sanitizeEmail } from '@/lib/auth-helpers';
 import { getOpenAccessModeAdminMessage, isOpenAccessModeEnabled } from '@/lib/open-access';
 
+/** Production owner email fallback for admin access lock. */
+const PRODUCTION_OWNER_EMAIL = 'iperez4242@gmail.com';
+
 const OWNER_ADMIN_EMAIL = sanitizeEmail(
   process.env.EXPO_PUBLIC_OWNER_EMAIL
     || process.env.NEXT_PUBLIC_OWNER_EMAIL
-    || ''
+    || PRODUCTION_OWNER_EMAIL
 );
 
 export const ADMIN_ACCESS_LOCK_TITLE = isOpenAccessModeEnabled()

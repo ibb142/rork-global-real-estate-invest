@@ -622,6 +622,14 @@ import {
   handleGetSelfExecutionResult as handleSelfExecResult,
 } from './api/ivx-agent-self-execution';
 import {
+  OPTIONS as enterpriseOsOptions,
+  handleEnterpriseOsHealth,
+  handleEnterpriseOsCommandCenter,
+  handleEnterpriseOsAgents,
+  handleEnterpriseOsRunAgent,
+  handleEnterpriseOsAudit,
+} from './api/ivx-enterprise-business-os';
+import {
   OPTIONS as roleAgentsOptions,
   handleRoleAgentRegistry,
   handleRoleAgentState,
@@ -3664,6 +3672,18 @@ app.post('/api/ivx/enterprise/reports/generate', async (c) => handleEnterpriseRe
 app.get('/api/ivx/enterprise/reports/list', async (c) => handleEnterpriseReportsListGet(c.req.raw));
 app.get('/api/ivx/enterprise/validate', async (c) => handleEnterpriseValidateGet(c.req.raw));
 app.post('/api/ivx/enterprise/health', async (c) => handleEnterpriseHealthPost(c.req.raw));
+
+// ── Enterprise Business OS — Phase 1 (Executive Command Center) ───────
+app.options('/api/ivx/enterprise-os/health', () => enterpriseOsOptions());
+app.options('/api/ivx/enterprise-os/command-center', () => enterpriseOsOptions());
+app.options('/api/ivx/enterprise-os/agents', () => enterpriseOsOptions());
+app.options('/api/ivx/enterprise-os/agents/:agentId/run', () => enterpriseOsOptions());
+app.options('/api/ivx/enterprise-os/audit', () => enterpriseOsOptions());
+app.get('/api/ivx/enterprise-os/health', () => handleEnterpriseOsHealth());
+app.get('/api/ivx/enterprise-os/command-center', async (c) => handleEnterpriseOsCommandCenter(c.req.raw));
+app.get('/api/ivx/enterprise-os/agents', async (c) => handleEnterpriseOsAgents(c.req.raw));
+app.post('/api/ivx/enterprise-os/agents/:agentId/run', async (c) => handleEnterpriseOsRunAgent(c.req.raw, c.req.param('agentId')));
+app.get('/api/ivx/enterprise-os/audit', async (c) => handleEnterpriseOsAudit(c.req.raw));
 
 // ── Project Engagement (Instagram-Style Cards) ───────────────────────
 const PROJECT_ENGAGEMENT_PATH = '/api/projects/:projectId/engagement';

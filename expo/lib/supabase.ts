@@ -3,8 +3,25 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 
-const supabaseUrl = (process.env.EXPO_PUBLIC_SUPABASE_URL || '').trim();
-const supabaseAnonKey = (process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '').trim();
+/**
+ * Production Supabase fallback for project kvclcdjmjghndxsngfzb.
+ *
+ * The anon key is a PUBLIC key designed to be embedded in client apps.
+ * It is protected by Row Level Security (RLS) policies on the database,
+ * not by secrecy. This is the standard Supabase client pattern.
+ *
+ * These constants ensure the Supabase client always initializes in
+ * production builds even when EXPO_PUBLIC_SUPABASE_URL / ANON_KEY are
+ * not injected as environment variables at build time.
+ */
+const PRODUCTION_SUPABASE_URL = 'https://kvclcdjmjghndxsngfzb.supabase.co';
+const PRODUCTION_SUPABASE_ANON_KEY =
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2Y2xjZGptamdobmR4c25nZnpiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMxOTQwMjcsImV4cCI6MjA4ODc3MDAyN30.OLDwa21VHQNs151AD-8k--_HigQ2d-N7yJfFn5UeNPk';
+
+const envUrl = (process.env.EXPO_PUBLIC_SUPABASE_URL ?? '').trim();
+const envKey = (process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '').trim();
+const supabaseUrl = envUrl || PRODUCTION_SUPABASE_URL;
+const supabaseAnonKey = envKey || PRODUCTION_SUPABASE_ANON_KEY;
 
 function isHostedSupabase(url: string): boolean {
   try {
@@ -79,6 +96,12 @@ function logAuthTokenRequestIfDev(urlStr: string, init: RequestInit | undefined)
 export const SUPABASE_NOT_CONFIGURED_MESSAGE =
   'Supabase URL is required. Add EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY to your environment variables. Restart the dev server after changing env.';
 
+/** True when the URL/key came from the production fallback constants. */
+export const SUPABASE_USING_PRODUCTION_FALLBACK = !envUrl && !envKey;
+
+/** Source of the Supabase config for diagnostics. */
+export const SUPABASE_CONFIG_SOURCE: 'env' | 'fallback' = SUPABASE_USING_PRODUCTION_FALLBACK ? 'fallback' : 'env';
+
 /**
  * Supabase session storage adapter.
  *
@@ -143,8 +166,14 @@ const AsyncStorageAdapter = {
 };
 
 let _client: SupabaseClient | null = null;
-if (supabaseUrl && supabaseAnonKey) {
-  _client = createClient(effectiveUrl, supabaseAnonKey, {
+let _clientInitAttempted = false;
+let _clientInitError: string | null = null;
+
+function buildSupabaseClient(url: string, key: string): SupabaseClient {
+  const selfHosted = !isHostedSupabase(url);
+  const effective = getEffectiveUrl(url);
+
+  return createClient(effective, key, {
     auth: {
       storage: AsyncStorageAdapter,
       autoRefreshToken: true,
@@ -157,7 +186,7 @@ if (supabaseUrl && supabaseAnonKey) {
     },
     global: {
       headers: {
-        ...(isSelfHosted ? {} : { 'x-connection-pool': 'true' }),
+        ...(selfHosted ? {} : { 'x-connection-pool': 'true' }),
         'x-client-info': `ivx-app/${Platform.OS}`,
       },
       fetch: ((url: RequestInfo | URL, options?: RequestInit) => {
@@ -165,7 +194,7 @@ if (supabaseUrl && supabaseAnonKey) {
         const nextOptions = stripConnectionPoolHeaderForAuth(urlStr, options);
         logAuthTokenRequestIfDev(urlStr, nextOptions);
         const controller = new AbortController();
-        const timeoutMs = isSelfHosted ? 20000 : 15000;
+        const timeoutMs = selfHosted ? 20000 : 15000;
         const timeout = setTimeout(() => controller.abort(), timeoutMs);
         return fetch(url, {
           ...nextOptions,
@@ -175,9 +204,9 @@ if (supabaseUrl && supabaseAnonKey) {
     },
     realtime: {
       params: {
-        eventsPerSecond: isSelfHosted ? 5 : 2,
+        eventsPerSecond: selfHosted ? 5 : 2,
       },
-      heartbeatIntervalMs: isSelfHosted ? 30000 : 45000,
+      heartbeatIntervalMs: selfHosted ? 30000 : 45000,
       reconnectAfterMs: (tries: number) => {
         const baseDelay = Math.min(3000 * Math.pow(2, tries), 60000);
         const jitter = Math.random() * 2000;
@@ -185,19 +214,56 @@ if (supabaseUrl && supabaseAnonKey) {
       },
     },
   });
-  console.log(`[Supabase] Client initialized (${isSelfHosted ? 'self-hosted' : 'hosted+pooler'}), ${isSelfHosted ? 5 : 2} events/sec`);
-  if (typeof __DEV__ !== 'undefined' && __DEV__) {
+}
+
+function initializeClient(): void {
+  // Allow retry when _client is still null. This is critical for stale Expo
+  // Go bundles where the first init ran before production fallback constants
+  // were available, leaving _client null. Only skip if we already have a
+  // working client.
+  if (_client) return;
+  _clientInitAttempted = true;
+  _clientInitError = null;
+
+  if (supabaseUrl && supabaseAnonKey) {
     try {
-      const host = new URL(effectiveUrl).hostname;
-      const key = supabaseAnonKey;
-      const keyHint = key.length > 12 ? `${key.slice(0, 8)}…${key.slice(-4)}` : '(short key)';
-      console.log('[Supabase] Config check (preview/dev): host=', host, 'anonKeyHint=', keyHint);
-    } catch {
-      console.log('[Supabase] Config check: URL parse failed for logging');
+      _client = buildSupabaseClient(supabaseUrl, supabaseAnonKey);
+      console.log(`[Supabase] Client initialized (${isSelfHosted ? 'self-hosted' : 'hosted+pooler'}), ${isSelfHosted ? 5 : 2} events/sec`);
+      if (typeof __DEV__ !== 'undefined' && __DEV__) {
+        try {
+          const host = new URL(effectiveUrl).hostname;
+          const key = supabaseAnonKey;
+          const keyHint = key.length > 12 ? `${key.slice(0, 8)}…${key.slice(-4)}` : '(short key)';
+          console.log('[Supabase] Config check (preview/dev): host=', host, 'anonKeyHint=', keyHint);
+        } catch {
+          console.log('[Supabase] Config check: URL parse failed for logging');
+        }
+      }
+    } catch (error) {
+      _clientInitError = (error as Error)?.message ?? 'unknown initialization error';
+      console.warn('[Supabase] Client initialization failed:', _clientInitError);
     }
+  } else {
+    _clientInitError = SUPABASE_NOT_CONFIGURED_MESSAGE;
+    console.warn('[Supabase]', SUPABASE_NOT_CONFIGURED_MESSAGE);
   }
-} else {
-  console.warn('[Supabase]', SUPABASE_NOT_CONFIGURED_MESSAGE);
+}
+
+initializeClient();
+
+/** Re-initialize the Supabase client at runtime if it is not already configured.
+ * This is a safety net for stale Expo Go bundles where the module-level init
+ * may have failed or run with missing env vars before the fix was loaded. */
+export function ensureSupabaseClient(): SupabaseClient {
+  if (_client) return _client;
+  // Reset the init flag so initializeClient() will retry. In stale Expo Go
+  // bundles, the first init may have failed before production fallback
+  // constants were loaded, leaving _client null and _clientInitAttempted true.
+  _clientInitAttempted = false;
+  _clientInitError = null;
+  initializeClient();
+  if (_client) return _client;
+  throw new Error(_clientInitError || SUPABASE_NOT_CONFIGURED_MESSAGE);
 }
 
 const _noopAuth = {
@@ -280,6 +346,8 @@ const _noopClient = {
 } as unknown as SupabaseClient;
 
 export function isSupabaseConfigured(): boolean {
+  if (_client) return true;
+  initializeClient();
   return !!_client;
 }
 
@@ -287,9 +355,45 @@ export function isSelfHostedSupabase(): boolean {
   return isSelfHosted;
 }
 
-export const supabase: SupabaseClient = _client ?? _noopClient;
+export function getSupabaseConfigAudit(): {
+  urlConfigured: boolean;
+  keyConfigured: boolean;
+  usingFallback: boolean;
+  host: string;
+  initError: string | null;
+} {
+  return {
+    urlConfigured: !!supabaseUrl,
+    keyConfigured: !!supabaseAnonKey,
+    usingFallback: SUPABASE_USING_PRODUCTION_FALLBACK,
+    host: (() => {
+      try { return new URL(effectiveUrl).hostname; } catch { return 'unknown'; }
+    })(),
+    initError: _clientInitError,
+  };
+}
+
+/**
+ * Live Supabase client that always delegates to the current _client.
+ *
+ * This fixes the root cause of "Supabase URL is required" in stale Expo Go
+ * bundles. The old `const supabase = _client ?? _noopClient` was a snapshot
+ * taken at module load time — if _client was null when the module first
+ * loaded, supabase was permanently bound to _noopClient. Even after
+ * ensureSupabaseClient() created a real client, the export never updated.
+ *
+ * The Proxy lazily delegates every property access to the current _client,
+ * so once ensureSupabaseClient() (or initializeClient()) sets _client, all
+ * existing references to `supabase` automatically use the real client.
+ */
+export const supabase: SupabaseClient = new Proxy(_noopClient, {
+  get(_target, prop) {
+    const target = _client ?? _noopClient;
+    const value = Reflect.get(target, prop);
+    return typeof value === 'function' ? value.bind(target) : value;
+  },
+}) as SupabaseClient;
 
 export function getSupabaseClient(): SupabaseClient {
-  if (_client) return _client;
-  throw new Error(SUPABASE_NOT_CONFIGURED_MESSAGE);
+  return ensureSupabaseClient();
 }

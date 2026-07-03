@@ -1,6 +1,9 @@
 const IVX_CANONICAL_API_BASE_URL = 'https://api.ivxholding.com';
 
-const _supabaseUrl = (process.env.EXPO_PUBLIC_SUPABASE_URL || '').trim().replace(/\/$/, '');
+/** Production Supabase fallback for project kvclcdjmjghndxsngfzb. */
+const PRODUCTION_SUPABASE_URL = 'https://kvclcdjmjghndxsngfzb.supabase.co';
+
+const _supabaseUrl = (process.env.EXPO_PUBLIC_SUPABASE_URL || PRODUCTION_SUPABASE_URL).trim().replace(/\/$/, '');
 const _directApiBaseUrl = (process.env.EXPO_PUBLIC_API_BASE_URL || IVX_CANONICAL_API_BASE_URL).trim().replace(/\/$/, '');
 
 export function getDirectApiBaseUrl(): string {
@@ -44,10 +47,14 @@ export function isApiConfigured(): boolean {
   return !!_directApiBaseUrl || !!_supabaseUrl;
 }
 
+/** Production anon key fallback (public key, RLS-protected). */
+const PRODUCTION_SUPABASE_ANON_KEY =
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2Y2xjZGptamdobmR4c25nZnpiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMxOTQwMjcsImV4cCI6MjA4ODc3MDAyN30.OLDwa21VHQNs151AD-8k--_HigQ2d-N7yJfFn5UeNPk';
+
 export function getAuthHeaders(accessToken?: string): Record<string, string> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    'apikey': process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '',
+    'apikey': process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || PRODUCTION_SUPABASE_ANON_KEY,
   };
   if (accessToken) {
     headers['Authorization'] = `Bearer ${accessToken}`;
