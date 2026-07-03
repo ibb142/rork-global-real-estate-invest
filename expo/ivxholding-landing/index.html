@@ -2879,6 +2879,520 @@
 <!-- Live deals loading indicator (hidden, used by JS) -->
 <div id="live-deals-loading" style="display:none;"></div>
 
+<!-- PROJECT VIDEOS — Instagram-style feed (like / comment / share / download) -->
+<style>
+  .vx-section { padding: 80px 24px 0; }
+  .vx-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 22px; margin-top: 26px; }
+  .vx-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 18px; overflow: hidden; display: flex; flex-direction: column; }
+  .vx-media { position: relative; background: #000; aspect-ratio: 4 / 5; overflow: hidden; cursor: pointer; }
+  .vx-media video { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .vx-live-tag { position: absolute; top: 12px; left: 12px; background: rgba(0,0,0,0.55); color: #fff; font-size: 10px; font-weight: 700; letter-spacing: 1.5px; padding: 5px 10px; border-radius: 20px; display: flex; align-items: center; gap: 6px; z-index: 3; }
+  .vx-live-dot { width: 6px; height: 6px; border-radius: 50%; background: #00C48C; animation: vxPulse 1.4s infinite; }
+  @keyframes vxPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+  .vx-mute-btn { position: absolute; bottom: 12px; right: 12px; width: 36px; height: 36px; border-radius: 50%; background: rgba(0,0,0,0.55); border: none; color: #fff; font-size: 15px; cursor: pointer; z-index: 3; }
+  .vx-play-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 2; pointer-events: none; transition: opacity 0.25s; }
+  .vx-play-overlay span { width: 62px; height: 62px; border-radius: 50%; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; font-size: 22px; color: #fff; }
+  .vx-heart-burst { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 4; pointer-events: none; font-size: 84px; opacity: 0; transform: scale(0.4); }
+  .vx-heart-burst.vx-burst { animation: vxBurst 0.9s ease forwards; }
+  @keyframes vxBurst { 0% { opacity: 0; transform: scale(0.4); } 25% { opacity: 1; transform: scale(1.15); } 60% { opacity: 1; transform: scale(1); } 100% { opacity: 0; transform: scale(1.25); } }
+  .vx-body { padding: 14px 16px 16px; }
+  .vx-title { font-size: 15px; font-weight: 700; color: #fff; margin: 0 0 10px; }
+  .vx-actions { display: flex; align-items: center; gap: 18px; }
+  .vx-act { display: flex; align-items: center; gap: 6px; background: none; border: none; cursor: pointer; color: var(--text2, #b9b9b9); font-size: 13px; font-weight: 600; padding: 6px 2px; transition: transform 0.12s ease, color 0.15s; }
+  .vx-act:active { transform: scale(0.86); }
+  .vx-act svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .vx-act.vx-liked { color: #FF4B6E; }
+  .vx-act.vx-liked svg { fill: #FF4B6E; stroke: #FF4B6E; }
+  .vx-act-dl { margin-left: auto; color: var(--gold); }
+  .vx-comments { border-top: 1px solid var(--border); margin-top: 12px; padding-top: 12px; display: none; }
+  .vx-comments.vx-open { display: block; }
+  .vx-comment-list { max-height: 180px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+  .vx-comment { font-size: 13px; color: var(--text2, #b9b9b9); line-height: 1.45; }
+  .vx-comment b { color: var(--gold); font-weight: 700; margin-right: 6px; }
+  .vx-comment-time { font-size: 10px; color: var(--text3, #777); margin-left: 6px; }
+  .vx-comment-form { display: flex; gap: 8px; }
+  .vx-comment-input { flex: 1; background: rgba(255,255,255,0.05); border: 1px solid var(--border); border-radius: 22px; padding: 9px 14px; color: #fff; font-size: 13px; outline: none; }
+  .vx-comment-input:focus { border-color: var(--gold-border); }
+  .vx-comment-send { background: var(--gold); color: #000; border: none; border-radius: 22px; padding: 0 16px; font-weight: 800; font-size: 13px; cursor: pointer; }
+  .vx-comment-send:disabled { opacity: 0.5; }
+  .vx-toast { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%) translateY(80px); background: #111; border: 1px solid var(--gold-border); color: #fff; font-size: 13px; font-weight: 600; padding: 12px 20px; border-radius: 30px; z-index: 9999; opacity: 0; transition: all 0.3s ease; pointer-events: none; }
+  .vx-toast.vx-show { transform: translateX(-50%) translateY(0); opacity: 1; }
+  /* Member registration */
+  .mreg-cta-band { margin: 60px auto 0; max-width: 860px; border: 1px solid var(--gold-border); background: linear-gradient(135deg, rgba(255,215,0,0.08), rgba(255,215,0,0.02)); border-radius: 20px; padding: 34px 28px; text-align: center; }
+  .mreg-cta-band h3 { font-size: 24px; color: #fff; margin: 0 0 8px; }
+  .mreg-cta-band p { font-size: 14px; color: var(--text2, #b9b9b9); margin: 0 0 18px; }
+  .mreg-cta-btn { background: var(--gold); color: #000; font-weight: 800; font-size: 15px; border: none; border-radius: 30px; padding: 14px 34px; cursor: pointer; transition: transform 0.15s ease; }
+  .mreg-cta-btn:active { transform: scale(0.95); }
+  .mreg-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.78); z-index: 10000; display: none; align-items: flex-end; justify-content: center; }
+  .mreg-overlay.mreg-open { display: flex; }
+  @media (min-width: 640px) { .mreg-overlay.mreg-open { align-items: center; } }
+  .mreg-card { background: #101010; border: 1px solid var(--gold-border); border-radius: 22px 22px 0 0; width: 100%; max-width: 460px; max-height: 92vh; overflow-y: auto; padding: 26px 24px 30px; }
+  @media (min-width: 640px) { .mreg-card { border-radius: 22px; } }
+  .mreg-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+  .mreg-head h3 { font-size: 20px; color: #fff; margin: 0; }
+  .mreg-close { background: none; border: none; color: var(--text3, #888); font-size: 22px; cursor: pointer; padding: 4px 8px; }
+  .mreg-sub { font-size: 13px; color: var(--text2, #b9b9b9); margin: 0 0 18px; }
+  .mreg-row { display: flex; gap: 10px; }
+  .mreg-input { width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--border); border-radius: 12px; padding: 13px 14px; color: #fff; font-size: 14px; outline: none; margin-bottom: 12px; box-sizing: border-box; }
+  .mreg-input:focus { border-color: var(--gold-border); }
+  .mreg-terms { display: flex; align-items: flex-start; gap: 9px; font-size: 12px; color: var(--text2, #b9b9b9); margin: 4px 0 16px; line-height: 1.5; }
+  .mreg-terms input { margin-top: 2px; }
+  .mreg-submit { width: 100%; background: var(--gold); color: #000; font-weight: 800; font-size: 15px; border: none; border-radius: 14px; padding: 15px; cursor: pointer; }
+  .mreg-submit:disabled { opacity: 0.55; }
+  .mreg-error { color: #FF6B6B; font-size: 12.5px; min-height: 16px; margin: 0 0 10px; }
+  .mreg-success { text-align: center; padding: 12px 0; }
+  .mreg-success-ico { font-size: 46px; margin-bottom: 10px; }
+  .mreg-success h4 { color: #fff; font-size: 18px; margin: 0 0 8px; }
+  .mreg-success p { color: var(--text2, #b9b9b9); font-size: 13.5px; line-height: 1.55; margin: 0 0 16px; }
+</style>
+<section id="videos" class="vx-section" style="display:none;">
+  <div class="wrap">
+    <div class="live-deals-header reveal">
+      <div class="live-deals-title-row">
+        <span style="font-size:22px;">&#127916;</span>
+        <h2 class="live-deals-title">Inside Our Projects</h2>
+      </div>
+      <div class="live-deals-badge">
+        <div class="live-deals-pulse"></div>
+        <span id="vx-live-count">LIVE</span>
+      </div>
+    </div>
+    <p class="live-deals-sub reveal">Real footage from active developments. Like, comment, share &mdash; or download in full quality.</p>
+    <div class="vx-grid" id="vx-grid"></div>
+  </div>
+</section>
+
+<!-- MEMBER REGISTRATION CTA + MODAL -->
+<section id="join" style="padding: 40px 24px 0;">
+  <div class="wrap">
+    <div class="mreg-cta-band reveal">
+      <h3>Become an IVX Member &mdash; Free</h3>
+      <p>Create your free member account to follow live projects, save deals, and unlock the full investor flow in the app.</p>
+      <button class="mreg-cta-btn" onclick="openMemberReg()">Create Free Account &#8594;</button>
+    </div>
+  </div>
+</section>
+<div class="mreg-overlay" id="mreg-overlay" onclick="if(event.target===this)closeMemberReg()">
+  <div class="mreg-card">
+    <div class="mreg-head">
+      <h3 id="mreg-title">Create Free Account</h3>
+      <button class="mreg-close" onclick="closeMemberReg()" aria-label="Close">&#10005;</button>
+    </div>
+    <div id="mreg-form-view">
+      <p class="mreg-sub">Free membership. Email + phone verification. No payment required.</p>
+      <form id="mreg-form" onsubmit="submitMemberReg(event)">
+        <div class="mreg-row">
+          <input class="mreg-input" id="mreg-first" placeholder="First name" required autocomplete="given-name" />
+          <input class="mreg-input" id="mreg-last" placeholder="Last name" required autocomplete="family-name" />
+        </div>
+        <input class="mreg-input" type="email" id="mreg-email" placeholder="Email address" required autocomplete="email" />
+        <input class="mreg-input" type="tel" id="mreg-phone" placeholder="Phone number (incl. country code)" required autocomplete="tel" />
+        <input class="mreg-input" id="mreg-country" placeholder="Country" autocomplete="country-name" />
+        <input class="mreg-input" type="password" id="mreg-password" placeholder="Password (8+ chars, 1 uppercase, 1 number)" required minlength="8" autocomplete="new-password" />
+        <label class="mreg-terms"><input type="checkbox" id="mreg-terms" required /> <span>I accept the <a href="/legal/terms.html" target="_blank" style="color:var(--gold);">Terms of Service</a> and <a href="/legal/privacy.html" target="_blank" style="color:var(--gold);">Privacy Policy</a>.</span></label>
+        <p class="mreg-error" id="mreg-error"></p>
+        <button type="submit" class="mreg-submit" id="mreg-submit">Create Free Account &#8594;</button>
+      </form>
+    </div>
+    <div id="mreg-verify-view" style="display:none;">
+      <div class="mreg-success">
+        <div class="mreg-success-ico">&#128231;</div>
+        <h4>Verify your email</h4>
+        <p>Your account was created. We sent a 6-digit verification code to <b id="mreg-verify-email" style="color:var(--gold);"></b>. Enter it below to activate your membership.</p>
+      </div>
+      <input class="mreg-input" id="mreg-code" placeholder="6-digit code" inputmode="numeric" maxlength="6" style="text-align:center;letter-spacing:8px;font-size:18px;" />
+      <p class="mreg-error" id="mreg-verify-error"></p>
+      <button class="mreg-submit" id="mreg-verify-btn" onclick="submitMemberVerify()">Verify Email &#8594;</button>
+      <p style="font-size:11.5px;color:var(--text3,#888);text-align:center;margin-top:12px;">You can also verify later inside the IVX app with the same login.</p>
+    </div>
+    <div id="mreg-done-view" style="display:none;">
+      <div class="mreg-success">
+        <div class="mreg-success-ico">&#127881;</div>
+        <h4>Welcome to IVX Holdings</h4>
+        <p>Your member account is active. Open the IVX app and sign in with your email and password to complete phone verification and KYC.</p>
+        <button class="mreg-submit" onclick="closeMemberReg()">Done</button>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="vx-toast" id="vx-toast"></div>
+<script>
+(function () {
+  'use strict';
+  // ── API base resolution (placeholder replaced at deploy; meta tags as fallback)
+  var _vxApi = '__IVX_BACKEND_URL__';
+  function _vxIsPlaceholder(v) { return !v || v.indexOf('__IVX_') === 0 || v.length < 10; }
+  function vxApi() {
+    if (!_vxIsPlaceholder(_vxApi)) return _vxApi.replace(/\/$/, '');
+    var m = document.querySelector('meta[name="ivx-backend-url"]');
+    if (m && m.content && !_vxIsPlaceholder(m.content)) return m.content.replace(/\/$/, '');
+    var m2 = document.querySelector('meta[name="ivx-api-url"]');
+    if (m2 && m2.content && !_vxIsPlaceholder(m2.content)) return m2.content.replace(/\/$/, '');
+    return '';
+  }
+  // ── Guest identity for likes/shares
+  function vxGuestId() {
+    try {
+      var g = localStorage.getItem('ivx_guest_id');
+      if (!g) { g = 'g-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10); localStorage.setItem('ivx_guest_id', g); }
+      return g;
+    } catch (e) { return 'g-anon'; }
+  }
+  function vxLikedSet() {
+    try { return JSON.parse(localStorage.getItem('ivx_vx_likes') || '[]'); } catch (e) { return []; }
+  }
+  function vxSetLiked(id, liked) {
+    try {
+      var s = vxLikedSet();
+      var i = s.indexOf(id);
+      if (liked && i === -1) s.push(id);
+      if (!liked && i !== -1) s.splice(i, 1);
+      localStorage.setItem('ivx_vx_likes', JSON.stringify(s));
+    } catch (e) {}
+  }
+  function vxToast(msg) {
+    var t = document.getElementById('vx-toast');
+    if (!t) return;
+    t.textContent = msg;
+    t.classList.add('vx-show');
+    clearTimeout(t._vxTimer);
+    t._vxTimer = setTimeout(function () { t.classList.remove('vx-show'); }, 2600);
+  }
+  function vxEsc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (ch) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch];
+    });
+  }
+  function vxNum(n) {
+    n = Number(n) || 0;
+    if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+    if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+    return String(n);
+  }
+  var HEART_SVG = '<svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>';
+  var COMMENT_SVG = '<svg viewBox="0 0 24 24"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>';
+  var SHARE_SVG = '<svg viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>';
+  var DL_SVG = '<svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
+
+  var _vxVideos = [];
+
+  function vxRender() {
+    var grid = document.getElementById('vx-grid');
+    var section = document.getElementById('videos');
+    if (!grid || !section) return;
+    if (_vxVideos.length === 0) { section.style.display = 'none'; return; }
+    section.style.display = '';
+    var liveCount = document.getElementById('vx-live-count');
+    if (liveCount) liveCount.textContent = _vxVideos.length + ' LIVE';
+    var liked = vxLikedSet();
+    grid.innerHTML = _vxVideos.map(function (v) {
+      var isLiked = liked.indexOf(v.id) !== -1;
+      var poster = v.thumbnail_url || v.cover_url || '';
+      return '<div class="vx-card" data-vid="' + vxEsc(v.id) + '">' +
+        '<div class="vx-media" onclick="vxTapVideo(event, \'' + vxEsc(v.id) + '\')">' +
+          '<div class="vx-live-tag"><div class="vx-live-dot"></div>PROJECT</div>' +
+          '<video src="' + vxEsc(v.video_url) + '"' + (poster ? ' poster="' + vxEsc(poster) + '"' : '') + ' preload="metadata" muted loop playsinline></video>' +
+          '<div class="vx-play-overlay"><span>&#9654;</span></div>' +
+          '<div class="vx-heart-burst">&#10084;&#65039;</div>' +
+          '<button class="vx-mute-btn" onclick="vxToggleMute(event, \'' + vxEsc(v.id) + '\')" aria-label="Toggle sound">&#128263;</button>' +
+        '</div>' +
+        '<div class="vx-body">' +
+          (v.title ? '<p class="vx-title">' + vxEsc(v.title) + '</p>' : '') +
+          '<div class="vx-actions">' +
+            '<button class="vx-act vx-act-like' + (isLiked ? ' vx-liked' : '') + '" onclick="vxLike(\'' + vxEsc(v.id) + '\')">' + HEART_SVG + '<span class="vx-like-count">' + vxNum(v.like_count) + '</span></button>' +
+            '<button class="vx-act vx-act-comment" onclick="vxToggleComments(\'' + vxEsc(v.id) + '\')">' + COMMENT_SVG + '<span class="vx-comment-count">' + vxNum(v.comment_count) + '</span></button>' +
+            '<button class="vx-act vx-act-share" onclick="vxShare(\'' + vxEsc(v.id) + '\')">' + SHARE_SVG + '<span class="vx-share-count">' + vxNum(v.share_count) + '</span></button>' +
+            '<button class="vx-act vx-act-dl" onclick="vxDownload(\'' + vxEsc(v.id) + '\')" title="Download full quality">' + DL_SVG + '<span>HD</span></button>' +
+          '</div>' +
+          '<div class="vx-comments">' +
+            '<div class="vx-comment-list"></div>' +
+            '<form class="vx-comment-form" onsubmit="vxAddComment(event, \'' + vxEsc(v.id) + '\')">' +
+              '<input class="vx-comment-input" placeholder="Add a comment..." maxlength="2000" required />' +
+              '<button type="submit" class="vx-comment-send">Post</button>' +
+            '</form>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+    vxObserveAutoplay();
+  }
+
+  function vxCard(id) { return document.querySelector('.vx-card[data-vid="' + id + '"]'); }
+  function vxVideoEl(id) { var c = vxCard(id); return c ? c.querySelector('video') : null; }
+
+  function vxObserveAutoplay() {
+    if (!('IntersectionObserver' in window)) return;
+    var obs = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        var vid = entry.target;
+        var overlay = vid.parentElement.querySelector('.vx-play-overlay');
+        if (entry.intersectionRatio >= 0.55) {
+          var p = vid.play();
+          if (p && p.catch) p.catch(function () {});
+          if (overlay) overlay.style.opacity = '0';
+        } else {
+          vid.pause();
+          if (overlay) overlay.style.opacity = '1';
+        }
+      });
+    }, { threshold: [0, 0.55] });
+    document.querySelectorAll('#vx-grid video').forEach(function (v) { obs.observe(v); });
+  }
+
+  var _vxLastTap = {};
+  window.vxTapVideo = function (event, id) {
+    if (event.target && event.target.closest && event.target.closest('.vx-mute-btn')) return;
+    var now = Date.now();
+    var last = _vxLastTap[id] || 0;
+    _vxLastTap[id] = now;
+    if (now - last < 320) { // double-tap → like (Instagram behavior)
+      var card = vxCard(id);
+      if (card) {
+        var burst = card.querySelector('.vx-heart-burst');
+        if (burst) { burst.classList.remove('vx-burst'); void burst.offsetWidth; burst.classList.add('vx-burst'); }
+      }
+      if (vxLikedSet().indexOf(id) === -1) window.vxLike(id);
+      return;
+    }
+    setTimeout(function () {
+      if (_vxLastTap[id] !== now) return; // a second tap happened
+      var vid = vxVideoEl(id);
+      if (!vid) return;
+      var overlay = vid.parentElement.querySelector('.vx-play-overlay');
+      if (vid.paused) { var p = vid.play(); if (p && p.catch) p.catch(function () {}); if (overlay) overlay.style.opacity = '0'; }
+      else { vid.pause(); if (overlay) overlay.style.opacity = '1'; }
+    }, 330);
+  };
+
+  window.vxToggleMute = function (event, id) {
+    event.stopPropagation();
+    var vid = vxVideoEl(id);
+    if (!vid) return;
+    vid.muted = !vid.muted;
+    event.currentTarget.innerHTML = vid.muted ? '&#128263;' : '&#128266;';
+  };
+
+  window.vxLike = function (id) {
+    var api = vxApi();
+    if (!api) { vxToast('Connecting… try again in a moment'); return; }
+    var card = vxCard(id);
+    var btn = card ? card.querySelector('.vx-act-like') : null;
+    var countEl = btn ? btn.querySelector('.vx-like-count') : null;
+    var wasLiked = vxLikedSet().indexOf(id) !== -1;
+    // Optimistic UI
+    vxSetLiked(id, !wasLiked);
+    if (btn) btn.classList.toggle('vx-liked', !wasLiked);
+    fetch(api + '/api/projects/' + encodeURIComponent(id) + '/like', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ guest_id: vxGuestId() }),
+    }).then(function (r) { return r.json(); }).then(function (d) {
+      if (typeof d.like_count === 'number' && countEl) countEl.textContent = vxNum(d.like_count);
+      if (typeof d.liked === 'boolean') { vxSetLiked(id, d.liked); if (btn) btn.classList.toggle('vx-liked', d.liked); }
+    }).catch(function () {});
+  };
+
+  window.vxToggleComments = function (id) {
+    var card = vxCard(id);
+    if (!card) return;
+    var panel = card.querySelector('.vx-comments');
+    var isOpen = panel.classList.toggle('vx-open');
+    if (isOpen) vxLoadComments(id);
+  };
+
+  function vxLoadComments(id) {
+    var api = vxApi();
+    var card = vxCard(id);
+    if (!api || !card) return;
+    var list = card.querySelector('.vx-comment-list');
+    list.innerHTML = '<p class="vx-comment" style="opacity:0.6;">Loading comments…</p>';
+    fetch(api + '/api/projects/' + encodeURIComponent(id) + '/comments?limit=30')
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        var comments = d.comments || [];
+        var countEl = card.querySelector('.vx-comment-count');
+        if (countEl && typeof d.total === 'number') countEl.textContent = vxNum(d.total);
+        if (comments.length === 0) { list.innerHTML = '<p class="vx-comment" style="opacity:0.6;">No comments yet. Be the first.</p>'; return; }
+        list.innerHTML = comments.map(function (cm) {
+          var name = cm.guest_name || (cm.is_owner_reply ? 'IVX Holdings' : 'Member');
+          var when = cm.created_at ? new Date(cm.created_at).toLocaleDateString() : '';
+          return '<p class="vx-comment"><b>' + vxEsc(name) + '</b>' + vxEsc(cm.body) + '<span class="vx-comment-time">' + vxEsc(when) + '</span></p>';
+        }).join('');
+      })
+      .catch(function () { list.innerHTML = '<p class="vx-comment" style="opacity:0.6;">Could not load comments.</p>'; });
+  }
+
+  window.vxAddComment = function (event, id) {
+    event.preventDefault();
+    var api = vxApi();
+    if (!api) { vxToast('Connecting… try again in a moment'); return; }
+    var form = event.currentTarget;
+    var input = form.querySelector('.vx-comment-input');
+    var sendBtn = form.querySelector('.vx-comment-send');
+    var text = (input.value || '').trim();
+    if (!text) return;
+    sendBtn.disabled = true;
+    var guestName = '';
+    try { guestName = localStorage.getItem('ivx_member_name') || ''; } catch (e) {}
+    fetch(api + '/api/projects/' + encodeURIComponent(id) + '/comments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ body: text, guest_name: guestName || 'Guest' }),
+    }).then(function (r) { return r.json(); }).then(function (d) {
+      sendBtn.disabled = false;
+      if (d && d.success) { input.value = ''; vxLoadComments(id); vxToast('Comment posted'); }
+      else vxToast(d && d.error ? d.error : 'Could not post comment');
+    }).catch(function () { sendBtn.disabled = false; vxToast('Could not post comment'); });
+  };
+
+  window.vxShare = function (id) {
+    var api = vxApi();
+    var video = null;
+    for (var i = 0; i < _vxVideos.length; i++) { if (_vxVideos[i].id === id) { video = _vxVideos[i]; break; } }
+    var shareUrl = location.origin + location.pathname + '#videos';
+    var title = (video && video.title) ? video.title : 'IVX Holdings — Project Video';
+    function track(type) {
+      if (!api) return;
+      fetch(api + '/api/projects/' + encodeURIComponent(id) + '/share', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ guest_id: vxGuestId(), share_type: type, share_url: shareUrl }),
+      }).then(function (r) { return r.json(); }).then(function (d) {
+        var card = vxCard(id);
+        var countEl = card ? card.querySelector('.vx-share-count') : null;
+        if (countEl && typeof d.share_count === 'number') countEl.textContent = vxNum(d.share_count);
+      }).catch(function () {});
+    }
+    if (navigator.share) {
+      navigator.share({ title: title, text: title, url: shareUrl }).then(function () { track('social'); }).catch(function () {});
+    } else if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(shareUrl).then(function () { vxToast('Link copied to clipboard'); track('copy_link'); }).catch(function () { track('copy_link'); });
+    } else {
+      track('copy_link');
+      vxToast('Share link: ' + shareUrl);
+    }
+  };
+
+  window.vxDownload = function (id) {
+    var api = vxApi();
+    if (!api) { vxToast('Connecting… try again in a moment'); return; }
+    vxToast('Downloading in full quality…');
+    var a = document.createElement('a');
+    a.href = api + '/api/ivx/videos/' + encodeURIComponent(id) + '/download';
+    a.download = '';
+    a.rel = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () { document.body.removeChild(a); }, 1200);
+  };
+
+  function vxLoadFeed() {
+    var api = vxApi();
+    if (!api) { setTimeout(vxLoadFeed, 2500); return; }
+    fetch(api + '/api/ivx/videos/feed?limit=24')
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        _vxVideos = (d && d.videos) ? d.videos : [];
+        vxRender();
+      })
+      .catch(function () { /* backend cold start — retry once */ setTimeout(function () {
+        fetch(api + '/api/ivx/videos/feed?limit=24').then(function (r) { return r.json(); }).then(function (d) {
+          _vxVideos = (d && d.videos) ? d.videos : [];
+          vxRender();
+        }).catch(function () {});
+      }, 6000); });
+  }
+
+  // ── Member registration ──────────────────────────────────────────
+  var _mregUserId = '';
+  window.openMemberReg = function () {
+    var o = document.getElementById('mreg-overlay');
+    if (o) { o.classList.add('mreg-open'); document.body.style.overflow = 'hidden'; }
+  };
+  window.closeMemberReg = function () {
+    var o = document.getElementById('mreg-overlay');
+    if (o) { o.classList.remove('mreg-open'); document.body.style.overflow = ''; }
+  };
+  window.submitMemberReg = function (event) {
+    event.preventDefault();
+    var api = vxApi();
+    var errEl = document.getElementById('mreg-error');
+    var btn = document.getElementById('mreg-submit');
+    if (!api) { errEl.textContent = 'Still connecting to the server — please try again in a few seconds.'; return; }
+    errEl.textContent = '';
+    btn.disabled = true;
+    btn.textContent = 'Creating account…';
+    var firstName = document.getElementById('mreg-first').value.trim();
+    var lastName = document.getElementById('mreg-last').value.trim();
+    var email = document.getElementById('mreg-email').value.trim();
+    var payload = {
+      firstName: firstName,
+      lastName: lastName,
+      email: email,
+      phone: document.getElementById('mreg-phone').value.trim(),
+      country: document.getElementById('mreg-country').value.trim(),
+      password: document.getElementById('mreg-password').value,
+      acceptTerms: document.getElementById('mreg-terms').checked,
+    };
+    fetch(api + '/api/members/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }).then(function (r) { return r.json(); }).then(function (d) {
+      btn.disabled = false;
+      btn.innerHTML = 'Create Free Account &#8594;';
+      if (d && d.success) {
+        _mregUserId = d.userId || '';
+        try { localStorage.setItem('ivx_member_name', firstName); localStorage.setItem('ivx_member_email', email); if (_mregUserId) localStorage.setItem('ivx_member_id', _mregUserId); } catch (e) {}
+        document.getElementById('mreg-form-view').style.display = 'none';
+        document.getElementById('mreg-verify-email').textContent = email;
+        document.getElementById('mreg-verify-view').style.display = '';
+        document.getElementById('mreg-title').textContent = 'Verify Email';
+      } else {
+        errEl.textContent = (d && d.message) ? d.message : 'Registration failed. Please try again.';
+      }
+    }).catch(function () {
+      btn.disabled = false;
+      btn.innerHTML = 'Create Free Account &#8594;';
+      errEl.textContent = 'Network error — please try again.';
+    });
+  };
+  window.submitMemberVerify = function () {
+    var api = vxApi();
+    var errEl = document.getElementById('mreg-verify-error');
+    var btn = document.getElementById('mreg-verify-btn');
+    var code = (document.getElementById('mreg-code').value || '').trim();
+    if (!api) { errEl.textContent = 'Still connecting — try again shortly.'; return; }
+    if (code.length < 4) { errEl.textContent = 'Enter the code from your email.'; return; }
+    errEl.textContent = '';
+    btn.disabled = true;
+    btn.textContent = 'Verifying…';
+    fetch(api + '/api/members/verify-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: _mregUserId, code: code }),
+    }).then(function (r) { return r.json(); }).then(function (d) {
+      btn.disabled = false;
+      btn.innerHTML = 'Verify Email &#8594;';
+      if (d && (d.success || d.verified)) {
+        document.getElementById('mreg-verify-view').style.display = 'none';
+        document.getElementById('mreg-done-view').style.display = '';
+        document.getElementById('mreg-title').textContent = 'Welcome';
+      } else {
+        errEl.textContent = (d && d.message) ? d.message : 'Invalid code. Please try again.';
+      }
+    }).catch(function () {
+      btn.disabled = false;
+      btn.innerHTML = 'Verify Email &#8594;';
+      errEl.textContent = 'Network error — please try again.';
+    });
+  };
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', vxLoadFeed);
+  else vxLoadFeed();
+})();
+</script>
+
 <!-- FEATURES -->
 <section style="background:var(--bg2); border-top:1px solid var(--border); border-bottom:1px solid var(--border);">
   <div class="wrap">

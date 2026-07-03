@@ -789,6 +789,11 @@ import {
   handleEngagementSaves,
   handleAnalytics,
 } from './api/ivx-public-features';
+import {
+  videoFeedOptions,
+  handleVideoFeed,
+  handleVideoDownload,
+} from './api/ivx-video-feed';
 
 async function loadRoute53Module() {
   try {
@@ -3772,6 +3777,12 @@ app.get('/api/ivx/engagement/saves', async (c) => handleEngagementSaves(c.req.ra
 // Analytics
 app.options('/api/ivx/analytics', () => publicFeatureOptions());
 app.get('/api/ivx/analytics', async (c) => handleAnalytics(c.req.raw));
+
+// ── IVX Video Feed (Instagram-style videos: feed + HQ download) ─────────
+app.options('/api/ivx/videos/feed', () => videoFeedOptions());
+app.get('/api/ivx/videos/feed', async (c) => handleVideoFeed(c.req.raw));
+app.options('/api/ivx/videos/:videoId/download', () => videoFeedOptions());
+app.get('/api/ivx/videos/:videoId/download', async (c) => handleVideoDownload(c.req.raw, c.req.param('videoId')));
 
 // ── IVX Deployment Tools Brain (Unified Dashboard) ──────────────────
 app.options('/api/ivx/deploy-tools/*', () => deployToolsOptions());

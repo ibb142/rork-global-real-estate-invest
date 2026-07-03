@@ -154,17 +154,24 @@ export async function handleProjectLikeToggle(c: Context): Promise<Response> {
   const projectId = c.req.param('projectId');
   const body = await readBody(c.req.raw as unknown as Request);
   const userId = safeStr(body.user_id);
+  const guestId = safeStr(body.guest_id);
 
-  if (!userId) return json({ error: 'user_id required' }, 400);
+  if (!userId && !guestId) return json({ error: 'user_id or guest_id required' }, 400);
 
   try {
     const sb = await getSupabaseAdmin();
-    const { data: existing } = await sb.from('project_likes').select('id').eq('project_id', projectId).eq('user_id', userId).maybeSingle();
+    let existingQuery = sb.from('project_likes').select('id').eq('project_id', projectId);
+    existingQuery = userId ? existingQuery.eq('user_id', userId) : existingQuery.eq('guest_id', guestId);
+    const { data: existing } = await existingQuery.maybeSingle();
 
     if (existing) {
       await sb.from('project_likes').delete().eq('id', existing.id);
     } else {
-      await sb.from('project_likes').insert({ project_id: projectId, user_id: userId });
+      const row = userId
+        ? { project_id: projectId, user_id: userId }
+        : { project_id: projectId, guest_id: guestId };
+      const { error: insertError } = await sb.from('project_likes').insert(row);
+      if (insertError) return json({ error: insertError.message }, 500);
     }
 
     const { count } = await sb.from('project_likes').select('*', { count: 'exact', head: true }).eq('project_id', projectId);
@@ -383,12 +390,17 @@ export async function handleProjectShareTrack(c: Context): Promise<Response> {
   const body = await readBody(c.req.raw as unknown as Request);
   const shareType = safeStr(body.share_type) || 'other';
 
+  const ALLOWED_SHARE_TYPES = new Set(['copy_link', 'whatsapp', 'sms', 'email', 'social', 'referral', 'other']);
+  const normalizedType = ALLOWED_SHARE_TYPES.has(shareType) ? shareType : 'other';
+
   try {
     const sb = await getSupabaseAdmin();
     await sb.from('project_shares').insert({
       project_id: projectId,
       user_id: safeStr(body.user_id) || null,
-      share_type: shareType,
+      guest_id: safeStr(body.guest_id) || null,
+      share_type: normalizedType,
+      share_url: safeStr(body.share_url) || (ALLOWED_SHARE_TYPES.has(shareType) ? null : shareType),
     });
 
     const { count } = await sb.from('project_shares').select('*', { count: 'exact', head: true }).eq('project_id', projectId);
@@ -404,17 +416,23 @@ export async function handleProjectSaveToggle(c: Context): Promise<Response> {
   const projectId = c.req.param('projectId');
   const body = await readBody(c.req.raw as unknown as Request);
   const userId = safeStr(body.user_id);
+  const guestId = safeStr(body.guest_id);
 
-  if (!userId) return json({ error: 'user_id required' }, 400);
+  if (!userId && !guestId) return json({ error: 'user_id or guest_id required' }, 400);
 
   try {
     const sb = await getSupabaseAdmin();
-    const { data: existing } = await sb.from('project_saves').select('id').eq('project_id', projectId).eq('user_id', userId).maybeSingle();
+    let existingQuery = sb.from('project_saves').select('id').eq('project_id', projectId);
+    existingQuery = userId ? existingQuery.eq('user_id', userId) : existingQuery.eq('guest_id', guestId);
+    const { data: existing } = await existingQuery.maybeSingle();
 
     if (existing) {
       await sb.from('project_saves').delete().eq('id', existing.id);
     } else {
-      await sb.from('project_saves').insert({ project_id: projectId, user_id: userId });
+      const row = userId
+        ? { project_id: projectId, user_id: userId }
+        : { project_id: projectId, guest_id: guestId };
+      await sb.from('project_saves').insert(row);
     }
 
     const { count } = await sb.from('project_saves').select('*', { count: 'exact', head: true }).eq('project_id', projectId);
