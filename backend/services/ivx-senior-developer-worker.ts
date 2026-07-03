@@ -181,6 +181,14 @@ async function saveQueue(doc: QueueDoc): Promise<void> {
 async function loadLedger(): Promise<LedgerDoc> {
   const durable = isDurableStoreConfigured();
   if (!durable) {
+    if (memoryLedger && memoryLedger.entries.length > 0) return memoryLedger;
+    // Diskless restart fallback: recover the ledger persisted to the GitHub
+    // side branch so proof survives Render deploy restarts without Supabase.
+    const fromGitHub = await githubLedgerRead();
+    if (fromGitHub) {
+      memoryLedger = fromGitHub;
+      return fromGitHub;
+    }
     if (!memoryLedger) memoryLedger = emptyLedger(false);
     return memoryLedger;
   }
@@ -190,6 +198,115 @@ async function loadLedger(): Promise<LedgerDoc> {
   } catch {
     if (!memoryLedger) memoryLedger = emptyLedger(false);
     return memoryLedger;
+  }
+}
+
+// ── GitHub side-branch ledger persistence (no Supabase service key needed) ──
+// The ledger is committed to a NON-deploy branch so Render autoDeploy (which
+// watches main) never fires from a ledger write. No secrets are stored.
+
+const LEDGER_GITHUB_BRANCH = 'ivx-proof-ledger';
+const DEFAULT_LEDGER_REPO = 'ibb142/rork-global-real-estate-invest';
+
+function ledgerGithubToken(): string {
+  return typeof process.env.GITHUB_TOKEN === 'string' ? process.env.GITHUB_TOKEN.trim() : '';
+}
+
+function ledgerGithubRepo(): string {
+  const raw = typeof process.env.GITHUB_REPO === 'string' ? process.env.GITHUB_REPO.trim() : '';
+  const match = raw.match(/([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+?)(?:\.git)?$/);
+  if (match && match[1].includes('/')) return match[1];
+  return DEFAULT_LEDGER_REPO;
+}
+
+function ledgerGithubHeaders(): Record<string, string> {
+  return {
+    Authorization: `Bearer ${ledgerGithubToken()}`,
+    Accept: 'application/vnd.github+json',
+    'Content-Type': 'application/json',
+  };
+}
+
+async function githubLedgerRead(): Promise<LedgerDoc | null> {
+  const token = ledgerGithubToken();
+  if (!token) return null;
+  try {
+    const res = await fetch(
+      `https://api.github.com/repos/${ledgerGithubRepo()}/contents/${LEDGER_FILE}?ref=${LEDGER_GITHUB_BRANCH}`,
+      { headers: ledgerGithubHeaders(), signal: AbortSignal.timeout(10000) },
+    );
+    if (!res.ok) return null;
+    const data = await res.json() as { content?: string };
+    if (!data.content) return null;
+    const decoded = Buffer.from(data.content, 'base64').toString('utf8');
+    const doc = JSON.parse(decoded) as LedgerDoc;
+    if (!Array.isArray(doc.entries)) return null;
+    return { ...doc, marker: IVX_SENIOR_DEV_WORKER_MARKER, durable: true };
+  } catch {
+    return null;
+  }
+}
+
+async function githubEnsureLedgerBranch(): Promise<boolean> {
+  const repo = ledgerGithubRepo();
+  try {
+    const refRes = await fetch(
+      `https://api.github.com/repos/${repo}/git/ref/heads/${LEDGER_GITHUB_BRANCH}`,
+      { headers: ledgerGithubHeaders(), signal: AbortSignal.timeout(10000) },
+    );
+    if (refRes.ok) return true;
+    const mainRes = await fetch(
+      `https://api.github.com/repos/${repo}/git/ref/heads/main`,
+      { headers: ledgerGithubHeaders(), signal: AbortSignal.timeout(10000) },
+    );
+    if (!mainRes.ok) return false;
+    const mainData = await mainRes.json() as { object?: { sha?: string } };
+    const baseSha = mainData.object?.sha;
+    if (!baseSha) return false;
+    const createRes = await fetch(`https://api.github.com/repos/${repo}/git/refs`, {
+      method: 'POST',
+      headers: ledgerGithubHeaders(),
+      body: JSON.stringify({ ref: `refs/heads/${LEDGER_GITHUB_BRANCH}`, sha: baseSha }),
+      signal: AbortSignal.timeout(10000),
+    });
+    return createRes.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function githubLedgerWrite(doc: LedgerDoc): Promise<boolean> {
+  const token = ledgerGithubToken();
+  if (!token) return false;
+  const repo = ledgerGithubRepo();
+  try {
+    if (!(await githubEnsureLedgerBranch())) return false;
+    let existingSha: string | undefined;
+    const currentRes = await fetch(
+      `https://api.github.com/repos/${repo}/contents/${LEDGER_FILE}?ref=${LEDGER_GITHUB_BRANCH}`,
+      { headers: ledgerGithubHeaders(), signal: AbortSignal.timeout(10000) },
+    );
+    if (currentRes.ok) {
+      const current = await currentRes.json() as { sha?: string };
+      existingSha = current.sha;
+    }
+    const putRes = await fetch(
+      `https://api.github.com/repos/${repo}/contents/${LEDGER_FILE}`,
+      {
+        method: 'PUT',
+        headers: ledgerGithubHeaders(),
+        body: JSON.stringify({
+          message: `chore(ledger): proof ledger update ${nowIso()}`,
+          content: Buffer.from(JSON.stringify(doc, null, 2), 'utf8').toString('base64'),
+          branch: LEDGER_GITHUB_BRANCH,
+          ...(existingSha ? { sha: existingSha } : {}),
+        }),
+        signal: AbortSignal.timeout(15000),
+      },
+    );
+    return putRes.ok;
+  } catch {
+    return false;
   }
 }
 
@@ -210,6 +327,10 @@ async function appendLedger(result: IVXWorkerJobResult): Promise<void> {
     } catch {
       // Durable write failed — in-memory ledger still holds the entry.
     }
+  } else {
+    // No Supabase service key in this runtime — persist to the GitHub side
+    // branch so proof survives Render's diskless deploy restarts.
+    await githubLedgerWrite({ ...doc, durable: true });
   }
 }
 
