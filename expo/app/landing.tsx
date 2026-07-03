@@ -44,6 +44,7 @@ import {
   Linkedin,
   ExternalLink,
   ScanLine,
+  Play,
 } from 'lucide-react-native';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { landingTracker } from '@/lib/landing-tracker';
@@ -1117,6 +1118,18 @@ export default function LandingScreen() {
                     <TouchableOpacity
                       style={styles.loginLink}
                       onPress={() => {
+                        try { landingTracker.trackCtaClick('videos'); } catch {}
+                        router.push('/videos' as any);
+                      }}
+                      activeOpacity={0.7}
+                      testID="landing-videos"
+                    >
+                      <Play size={13} color={GOLD} />
+                      <Text style={styles.loginLinkText}>Videos</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.loginLink}
+                      onPress={() => {
                         try { landingTracker.trackCtaClick('open_app'); } catch {}
                         router.push('/(tabs)/(home)/home' as any);
                       }}
@@ -1167,6 +1180,18 @@ export default function LandingScreen() {
                         <Text style={styles.ownerEntryLinkText}>Restore</Text>
                       </TouchableOpacity>
                     ) : null}
+                    <TouchableOpacity
+                      style={styles.loginLink}
+                      onPress={() => {
+                        try { landingTracker.trackCtaClick('videos'); } catch {}
+                        router.push('/videos' as any);
+                      }}
+                      activeOpacity={0.7}
+                      testID="landing-videos-guest"
+                    >
+                      <Play size={13} color={GOLD} />
+                      <Text style={styles.loginLinkText}>Videos</Text>
+                    </TouchableOpacity>
                     <TouchableOpacity
                       style={styles.memberRegisterButton}
                       onPress={() => {
