@@ -33,7 +33,7 @@ async function getSupabaseAdmin() {
   if (_supabaseAdmin) return _supabaseAdmin;
   const { createClient } = await import('@supabase/supabase-js');
   const url = (process.env.EXPO_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '').trim();
-  const key = (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || '').trim();
+  const key = (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '').trim();
   _supabaseAdmin = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
   return _supabaseAdmin;
 }
