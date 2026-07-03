@@ -164,8 +164,12 @@ export async function handleProjectLikeToggle(c: Context): Promise<Response> {
     existingQuery = userId ? existingQuery.eq('user_id', userId) : existingQuery.eq('guest_id', guestId);
     const { data: existing } = await existingQuery.maybeSingle();
 
+    let liked = !existing;
     if (existing) {
-      await sb.from('project_likes').delete().eq('id', existing.id);
+      // Verify the delete actually removed the row (RLS can silently block it
+      // when running on the anon key) so the client never shows a false state.
+      const { data: deleted } = await sb.from('project_likes').delete().eq('id', existing.id).select('id');
+      if (!deleted || deleted.length === 0) liked = true;
     } else {
       const row = userId
         ? { project_id: projectId, user_id: userId }
@@ -175,7 +179,7 @@ export async function handleProjectLikeToggle(c: Context): Promise<Response> {
     }
 
     const { count } = await sb.from('project_likes').select('*', { count: 'exact', head: true }).eq('project_id', projectId);
-    return json({ liked: !existing, like_count: count ?? 0 });
+    return json({ liked, like_count: count ?? 0 });
   } catch (err: any) {
     return json({ error: err.message }, 500);
   }
@@ -426,8 +430,10 @@ export async function handleProjectSaveToggle(c: Context): Promise<Response> {
     existingQuery = userId ? existingQuery.eq('user_id', userId) : existingQuery.eq('guest_id', guestId);
     const { data: existing } = await existingQuery.maybeSingle();
 
+    let saved = !existing;
     if (existing) {
-      await sb.from('project_saves').delete().eq('id', existing.id);
+      const { data: deleted } = await sb.from('project_saves').delete().eq('id', existing.id).select('id');
+      if (!deleted || deleted.length === 0) saved = true;
     } else {
       const row = userId
         ? { project_id: projectId, user_id: userId }
@@ -436,7 +442,7 @@ export async function handleProjectSaveToggle(c: Context): Promise<Response> {
     }
 
     const { count } = await sb.from('project_saves').select('*', { count: 'exact', head: true }).eq('project_id', projectId);
-    return json({ saved: !existing, save_count: count ?? 0 });
+    return json({ saved, save_count: count ?? 0 });
   } catch (err: any) {
     return json({ error: err.message }, 500);
   }
