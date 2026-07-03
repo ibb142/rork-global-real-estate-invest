@@ -9,6 +9,14 @@ const API_BASE = process.env.EXPO_PUBLIC_RORK_API_BASE_URL
   ? process.env.EXPO_PUBLIC_RORK_API_BASE_URL.replace(/\/+$/, '')
   : 'https://api.ivxholding.com';
 
+export type MemberRoleInterest =
+  | 'buyer'
+  | 'investor'
+  | 'jv_partner'
+  | 'broker'
+  | 'agent'
+  | 'land_owner';
+
 export interface RegisterPayload {
   email: string;
   password: string;
@@ -16,6 +24,8 @@ export interface RegisterPayload {
   lastName: string;
   phone: string;
   country: string;
+  zipCode: string;
+  roles: MemberRoleInterest[];
   acceptTerms: boolean;
 }
 
@@ -120,4 +130,99 @@ export async function getVerificationStatus(userId: string): Promise<Verificatio
 
 export async function startKYC(userId: string): Promise<{ success: boolean; message: string; kycStatus?: string }> {
   return apiPost('/api/members/start-kyc', { userId });
+}
+
+// ---------------------------------------------------------------------------
+// PHASE 2 — Real Investor Activation
+// ---------------------------------------------------------------------------
+
+export type InvestmentRange =
+  | '10k' | '25k' | '50k' | '100k' | '250k' | '500k' | '1m' | '5m' | '10m_plus';
+
+export type PropertyInterest =
+  | 'multifamily' | 'luxury' | 'land' | 'commercial' | 'hotels' | 'industrial' | 'development';
+
+export type InvestmentGoal =
+  | 'cash_flow' | 'appreciation' | 'development' | 'tokenized_assets' | 'jv_deals';
+
+export interface InvestorApplicationPayload {
+  userId: string;
+  address: string;
+  dateOfBirth: string;
+  entityName: string;
+  taxCountry: string;
+  netWorthRange: string;
+  accreditedInvestor: boolean;
+  investmentRange: InvestmentRange;
+  interests: PropertyInterest[];
+  countries: string[];
+  states: string[];
+  cities: string[];
+  zipCodes: string[];
+  radiusMiles: number;
+  goals: InvestmentGoal[];
+  governmentIdProvided: boolean;
+  kycConsent: boolean;
+  amlConsent: boolean;
+  entityDocsProvided: boolean;
+}
+
+export interface AIReview {
+  score: number;
+  decision: string;
+  reasons: string[];
+  reviewedAt: string;
+}
+
+export interface MatchCandidate {
+  matchId: string;
+  matchedName: string;
+  matchedPartyType: string;
+  matchType: string;
+  score: number;
+  evidence: string[];
+}
+
+export interface AlertSubscription {
+  alertId: string;
+  kind: string;
+  target: string;
+  active: boolean;
+}
+
+export interface InvestorApplication extends InvestorApplicationPayload {
+  applicationId: string;
+  status: 'investor_pending' | 'investor_verified' | 'manual_review' | 'investor_rejected';
+  aiReview: AIReview | null;
+  matches: MatchCandidate[];
+  alerts: AlertSubscription[];
+  submittedAt: string;
+  updatedAt: string;
+}
+
+export interface ApplicationResult {
+  success: boolean;
+  message?: string;
+  memberStatus?: string;
+  application?: InvestorApplication | null;
+}
+
+export async function submitInvestorApplication(payload: InvestorApplicationPayload): Promise<ApplicationResult> {
+  return apiPost<ApplicationResult>('/api/members/investor-application', payload as unknown as Record<string, unknown>);
+}
+
+export async function getInvestorApplication(userId: string): Promise<ApplicationResult> {
+  return apiGet<ApplicationResult>('/api/members/investor-application', { userId });
+}
+
+export async function rerunInvestorReview(userId: string): Promise<ApplicationResult> {
+  return apiPost<ApplicationResult>('/api/members/investor-application/review', { userId });
+}
+
+export async function recordFunnelVisitor(source: string): Promise<void> {
+  try {
+    await apiPost('/api/members/funnel/visitor', { source });
+  } catch {
+    // analytics only — never block UX
+  }
 }

@@ -28,6 +28,8 @@ import {
   X,
   Search,
   Shield,
+  MapPin,
+  TrendingUp,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { COUNTRIES, Country } from '@/constants/countries';
@@ -36,6 +38,15 @@ import * as MemberService from '@/lib/member-service';
 
 const STEPS = ['Register', 'Verify', 'Dashboard'] as const;
 type Step = (typeof STEPS)[number];
+
+const ROLE_OPTIONS: { id: MemberService.MemberRoleInterest; label: string }[] = [
+  { id: 'buyer', label: 'Buyer' },
+  { id: 'investor', label: 'Investor' },
+  { id: 'jv_partner', label: 'JV Partner' },
+  { id: 'broker', label: 'Broker' },
+  { id: 'agent', label: 'Agent' },
+  { id: 'land_owner', label: 'Land Owner' },
+];
 
 export default function MemberRegisterScreen() {
   const router = useRouter();
@@ -55,8 +66,16 @@ export default function MemberRegisterScreen() {
     country: 'United States',
     countryCode: 'US',
     dialCode: '+1',
+    zipCode: '',
     acceptTerms: false,
   });
+  const [selectedRoles, setSelectedRoles] = useState<MemberService.MemberRoleInterest[]>([]);
+
+  const toggleRole = (role: MemberService.MemberRoleInterest) => {
+    setSelectedRoles((prev) =>
+      prev.includes(role) ? prev.filter((r) => r !== role) : [...prev, role]
+    );
+  };
 
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -121,6 +140,8 @@ export default function MemberRegisterScreen() {
         lastName: formData.lastName,
         phone: formData.phone,
         country: formData.country,
+        zipCode: formData.zipCode,
+        roles: selectedRoles,
         acceptTerms: formData.acceptTerms,
       });
 
@@ -324,6 +345,44 @@ export default function MemberRegisterScreen() {
         </Text>
         <ChevronDown size={18} color={Colors.muted} />
       </TouchableOpacity>
+
+      {/* Zip Code */}
+      <Text style={styles.label}>Zip Code</Text>
+      <View style={styles.inputContainer}>
+        <MapPin size={18} color={Colors.muted} style={styles.inputIcon} />
+        <TextInput
+          style={styles.input}
+          placeholder="e.g. 33131"
+          placeholderTextColor={Colors.muted}
+          value={formData.zipCode}
+          onChangeText={(v) => updateForm('zipCode', v.replace(/[^0-9-]/g, ''))}
+          keyboardType="number-pad"
+          maxLength={10}
+        />
+      </View>
+
+      {/* Optional Role Interests */}
+      <Text style={styles.label}>I am a... (optional)</Text>
+      <View style={styles.roleGrid}>
+        {ROLE_OPTIONS.map((role) => {
+          const active = selectedRoles.includes(role.id);
+          return (
+            <TouchableOpacity
+              key={role.id}
+              style={[styles.roleChip, active && styles.roleChipActive]}
+              onPress={() => toggleRole(role.id)}
+              testID={`role-${role.id}`}
+            >
+              <View style={[styles.checkbox, active && styles.checkboxChecked]}>
+                {active && <Check size={12} color="#000000" />}
+              </View>
+              <Text style={[styles.roleChipText, active && styles.roleChipTextActive]}>
+                {role.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
 
       {/* Terms */}
       <TouchableOpacity
@@ -816,6 +875,26 @@ function MemberDashboardContent({
         </View>
       </View>
 
+      {/* Become an Investor — Phase 2 activation */}
+      <View style={styles.investCard}>
+        <View style={styles.investorBadgeRow}>
+          <TrendingUp size={18} color={Colors.gold} />
+          <Text style={styles.investorBadgeText}>REAL INVESTOR ACTIVATION</Text>
+        </View>
+        <Text style={styles.investCardTitle}>Become an Investor</Text>
+        <Text style={styles.investCardSubtitle}>
+          Unlock investor-only opportunities: off-market deals, ZIP-code alerts,
+          AI matching with buyers, sellers, and JV partners.
+        </Text>
+        <TouchableOpacity
+          style={styles.submitButton}
+          onPress={() => router.push(`/become-investor?userId=${userId}` as Href)}
+          testID="become-investor-cta"
+        >
+          <Text style={styles.submitButtonText}>Become an Investor</Text>
+        </TouchableOpacity>
+      </View>
+
       {/* Invest Now */}
       <View style={styles.investCard}>
         <Text style={styles.investCardTitle}>Ready to Start Investing?</Text>
@@ -1018,6 +1097,48 @@ const styles = StyleSheet.create({
   termsLink: {
     color: Colors.gold,
     fontWeight: '600' as const,
+  },
+
+  // Role interests
+  roleGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  roleChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    backgroundColor: Colors.backgroundSecondary,
+    minWidth: '30%' as const,
+  },
+  roleChipActive: {
+    borderColor: Colors.gold,
+  },
+  roleChipText: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    fontWeight: '600' as const,
+  },
+  roleChipTextActive: {
+    color: Colors.gold,
+  },
+  investorBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  investorBadgeText: {
+    fontSize: 11,
+    fontWeight: '800' as const,
+    color: Colors.gold,
+    letterSpacing: 1.2,
   },
 
   // Buttons

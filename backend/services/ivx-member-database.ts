@@ -24,6 +24,8 @@ export interface MemberRegistrationInput {
   lastName: string;
   phone: string;
   country: string;
+  zipCode?: string;
+  roles?: string[];
   acceptTerms: boolean;
 }
 
@@ -50,6 +52,9 @@ export async function registerMember(input: MemberRegistrationInput): Promise<Me
         last_name: input.lastName,
         phone: input.phone,
         country: input.country,
+        zip_code: input.zipCode ?? '',
+        role_interests: input.roles ?? [],
+        member_status: 'free_member',
       },
     });
 

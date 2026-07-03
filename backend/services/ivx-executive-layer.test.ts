@@ -37,6 +37,17 @@ function makeScheduler(overrides: Partial<SchedulerState> = {}): SchedulerState 
         runCount: 4,
         failureCount: 0,
       },
+      daily_enterprise_os: {
+        kind: 'daily_enterprise_os',
+        intervalMs: 86400000,
+        lastRunAt: null,
+        nextDueAt: new Date().toISOString(),
+        lastStatus: 'never',
+        lastDurationMs: null,
+        lastSummary: 'Not run yet.',
+        runCount: 0,
+        failureCount: 0,
+      },
       daily_drift_detection: {
         kind: 'daily_drift_detection',
         intervalMs: 86400000,

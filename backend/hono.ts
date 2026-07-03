@@ -188,6 +188,16 @@ import {
   handleVerificationStatus,
 } from './api/ivx-members';
 import {
+  memberInvestorOptions,
+  memberAdminOptions,
+  handleInvestorApplicationSubmit,
+  handleInvestorApplicationGet,
+  handleInvestorApplicationReview,
+  handleFunnelVisitor,
+  handleMemberAdminDashboard,
+  handleMemberAdminInvestors,
+} from './api/ivx-member-investor-system';
+import {
   OPTIONS as capitalNetworkOptions,
   handleCapitalNetworkDashboardRequest,
   handleCapitalNetworkScanRequest,
@@ -3620,6 +3630,20 @@ app.post('/api/members/verify-phone', async (c) => handleVerifyPhone(c.req.raw))
 app.get('/api/members/me', async (c) => handleGetMemberProfile(c.req.raw));
 app.post('/api/members/start-kyc', async (c) => handleStartKYC(c.req.raw));
 app.get('/api/members/verification-status', async (c) => handleVerificationStatus(c.req.raw));
+
+// ---- IVX Two-Stage Member & Investor System (Phase 2 activation + admin funnel) ----
+app.options('/api/members/investor-application', () => memberInvestorOptions());
+app.options('/api/members/investor-application/review', () => memberInvestorOptions());
+app.options('/api/members/funnel/visitor', () => memberInvestorOptions());
+app.options('/api/ivx/member-admin/dashboard', () => memberAdminOptions());
+app.options('/api/ivx/member-admin/investors', () => memberAdminOptions());
+
+app.post('/api/members/investor-application', async (c) => handleInvestorApplicationSubmit(c.req.raw));
+app.get('/api/members/investor-application', async (c) => handleInvestorApplicationGet(c.req.raw));
+app.post('/api/members/investor-application/review', async (c) => handleInvestorApplicationReview(c.req.raw));
+app.post('/api/members/funnel/visitor', async (c) => handleFunnelVisitor(c.req.raw));
+app.get('/api/ivx/member-admin/dashboard', async (c) => handleMemberAdminDashboard(c.req.raw));
+app.get('/api/ivx/member-admin/investors', async (c) => handleMemberAdminInvestors(c.req.raw));
 
 // ---- IVX Enterprise Orchestrator (Phase 1–9 unified governance) ----
 app.options('/api/ivx/enterprise/state', () => enterpriseOrchestratorOptions());

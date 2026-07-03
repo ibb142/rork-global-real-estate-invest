@@ -13,6 +13,7 @@
 
 import { registerMember, getMemberProfile, updateMemberKYCStatus, updateMemberLastLogin } from '../services/ivx-member-database';
 import { storeVerificationCode, verifyCode, checkVerificationStatus } from '../services/ivx-member-verification';
+import { onboardNewMember, VALID_ROLE_INTERESTS, type MemberRoleInterest } from '../services/ivx-member-investor-system';
 
 const DEPLOYMENT_MARKER = 'ivx-members-api-v1';
 
@@ -72,6 +73,12 @@ export async function handleMemberRegister(request: Request): Promise<Response> 
   const lastName = asString(body.lastName);
   const phone = asString(body.phone);
   const country = asString(body.country);
+  const zipCode = asString(body.zipCode);
+  const roles: MemberRoleInterest[] = Array.isArray(body.roles)
+    ? (body.roles.filter(
+        (r): r is MemberRoleInterest => typeof r === 'string' && VALID_ROLE_INTERESTS.has(r as MemberRoleInterest)
+      ))
+    : [];
   const acceptTerms = !!body.acceptTerms;
 
   // Validation
@@ -99,6 +106,8 @@ export async function handleMemberRegister(request: Request): Promise<Response> 
     lastName,
     phone,
     country,
+    zipCode,
+    roles,
     acceptTerms,
   });
 
@@ -106,6 +115,23 @@ export async function handleMemberRegister(request: Request): Promise<Response> 
     // Auto-send verification codes
     await storeVerificationCode({ userId: result.userId, type: 'email' });
     await storeVerificationCode({ userId: result.userId, type: 'phone' });
+
+    // Onboarding fanout: member profile + CRM lead + marketing profile +
+    // AI profile + newsletter + app account → status FREE MEMBER.
+    try {
+      await onboardNewMember({
+        userId: result.userId,
+        firstName,
+        lastName,
+        email,
+        phone,
+        country,
+        zipCode,
+        roles,
+      });
+    } catch (fanoutErr) {
+      console.error('[Members] Onboarding fanout failed (non-fatal):', fanoutErr);
+    }
 
     return jsonResponse({
       success: true,

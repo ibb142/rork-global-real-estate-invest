@@ -2987,8 +2987,20 @@
         </div>
         <input class="mreg-input" type="email" id="mreg-email" placeholder="Email address" required autocomplete="email" />
         <input class="mreg-input" type="tel" id="mreg-phone" placeholder="Phone number (incl. country code)" required autocomplete="tel" />
-        <input class="mreg-input" id="mreg-country" placeholder="Country" autocomplete="country-name" />
+        <div class="mreg-row">
+          <input class="mreg-input" id="mreg-country" placeholder="Country" autocomplete="country-name" />
+          <input class="mreg-input" id="mreg-zip" placeholder="Zip code" autocomplete="postal-code" inputmode="numeric" maxlength="10" />
+        </div>
         <input class="mreg-input" type="password" id="mreg-password" placeholder="Password (8+ chars, 1 uppercase, 1 number)" required minlength="8" autocomplete="new-password" />
+        <p style="font-size:11.5px;color:var(--text3,#888);margin:10px 0 6px;">I am a… (optional)</p>
+        <div id="mreg-roles" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:6px;">
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text2,#bbb);cursor:pointer;"><input type="checkbox" class="mreg-role" value="buyer" /> Buyer</label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text2,#bbb);cursor:pointer;"><input type="checkbox" class="mreg-role" value="investor" /> Investor</label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text2,#bbb);cursor:pointer;"><input type="checkbox" class="mreg-role" value="jv_partner" /> JV Partner</label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text2,#bbb);cursor:pointer;"><input type="checkbox" class="mreg-role" value="broker" /> Broker</label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text2,#bbb);cursor:pointer;"><input type="checkbox" class="mreg-role" value="agent" /> Agent</label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text2,#bbb);cursor:pointer;"><input type="checkbox" class="mreg-role" value="land_owner" /> Land Owner</label>
+        </div>
         <label class="mreg-terms"><input type="checkbox" id="mreg-terms" required /> <span>I accept the <a href="/legal/terms.html" target="_blank" style="color:var(--gold);">Terms of Service</a> and <a href="/legal/privacy.html" target="_blank" style="color:var(--gold);">Privacy Policy</a>.</span></label>
         <p class="mreg-error" id="mreg-error"></p>
         <button type="submit" class="mreg-submit" id="mreg-submit">Create Free Account &#8594;</button>
@@ -3009,7 +3021,7 @@
       <div class="mreg-success">
         <div class="mreg-success-ico">&#127881;</div>
         <h4>Welcome to IVX Holdings</h4>
-        <p>Your member account is active. Open the IVX app and sign in with your email and password to complete phone verification and KYC.</p>
+        <p>Your <b style="color:var(--gold);">FREE MEMBER</b> account is active. Open the IVX app and sign in with your email and password to complete phone verification &mdash; then tap <b style="color:var(--gold);">Become an Investor</b> to unlock investor-only opportunities, ZIP-code alerts, and AI deal matching.</p>
         <button class="mreg-submit" onclick="closeMemberReg()">Done</button>
       </div>
     </div>
@@ -3331,6 +3343,8 @@
       email: email,
       phone: document.getElementById('mreg-phone').value.trim(),
       country: document.getElementById('mreg-country').value.trim(),
+      zipCode: (document.getElementById('mreg-zip') ? document.getElementById('mreg-zip').value.trim() : ''),
+      roles: Array.prototype.slice.call(document.querySelectorAll('.mreg-role:checked')).map(function (el) { return el.value; }),
       password: document.getElementById('mreg-password').value,
       acceptTerms: document.getElementById('mreg-terms').checked,
     };
