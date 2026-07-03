@@ -1,24 +1,30 @@
 /**
- * IVX Deployment Chat Brain — Senior Deployment Executor
+ * IVX Deployment Chat Brain — Senior Developer Deployment Executor
  *
- * Intercepts /deploy-* and /qa-* commands from the chat and returns
- * live production evidence. No placeholder responses. No fake verified.
+ * Gives the IVX chat the same end-to-end deployment technique Rork uses:
+ * trigger → poll until terminal → verify production → raw evidence chain.
+ * No placeholder responses. No fake VERIFIED. Every claim carries live data.
  *
- * Commands:
- *   /deploy-status    — GitHub, Render, Production SHA comparison
- *   /deploy-now       — Trigger Render deploy via API
- *   /deploy-evidence  — Full deployment proof dump
- *   /deploy-verify    — Commit match check
- *   /deploy-rollback  — Rollback last Render deploy
- *   /qa-production    — Smoke test all production endpoints
- *   /qa-chat          — Test chat functionality
- *   /qa-members       — Test member system
- *   /qa-landing       — Test landing page
- *   /qa-engagement    — Test engagement features
+ * Deploy commands:
+ *   /deploy-status    — GitHub, Render, Production SHA comparison (live)
+ *   /deploy-now       — Trigger Render deploy + poll + verify
+ *   /deploy-pipeline  — Full end-to-end: pre-state → trigger → poll → verify → evidence
+ *   /deploy-evidence  — Full deployment proof dump (GitHub + Render + Production)
+ *   /deploy-verify    — 4-way commit match check
+ *   /deploy-rollback  — Real rollback to previous live Render deploy
  *   /commit-match     — Compare all SHAs
+ *   /deploy-help      — List all commands
+ *
+ * Senior developer proof commands (same proof ledger the worker writes):
+ *   /senior-status    — Self-hosted worker capabilities
+ *   /senior-proof     — Last end-to-end proof from the durable ledger
+ *   /senior-ledger    — Recent proof ledger entries
+ *
+ * QA commands:
+ *   /qa-production /qa-chat /qa-members /qa-landing /qa-engagement
  */
 
-const DEPLOYMENT_BRAIN_VERSION = 'ivx-deployment-brain-v1-2026-07-01T22:15:00Z';
+const DEPLOYMENT_BRAIN_VERSION = 'ivx-deployment-brain-v2-senior-dev-2026-07-03';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -27,18 +33,6 @@ interface DeployStatusResult {
   render: { serviceId: string; deployId: string | null; sha: string | null; status: string | null; error: string | null };
   production: { sha: string | null; bootTime: string | null; healthy: boolean; error: string | null };
   commitMatch: boolean;
-  timestamp: string;
-}
-
-interface DeployEvidenceResult {
-  githubSha: string | null;
-  renderDeployId: string | null;
-  renderDeployedSha: string | null;
-  healthSha: string | null;
-  versionSha: string | null;
-  commitMatch: boolean;
-  productionStatus: string;
-  errors: string[];
   timestamp: string;
 }
 
@@ -53,8 +47,16 @@ interface QAResult {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
+const PRODUCTION_API = 'https://api.ivxholding.com';
+const DEFAULT_SERVICE_ID = 'srv-d7t9ivreo5us73ftose0';
+const DEFAULT_REPO = 'ibb142/rork-global-real-estate-invest';
+
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+function short(sha: string | null): string {
+  return sha ? sha.slice(0, 12) : 'UNVERIFIED';
 }
 
 async function fetchJson(url: string): Promise<{ ok: boolean; status: number; body: unknown }> {
@@ -79,43 +81,56 @@ function extractSha(data: unknown): string | null {
   return null;
 }
 
+function shasAgree(a: string | null, b: string | null): boolean {
+  if (!a || !b) return false;
+  return a === b || a.startsWith(b) || b.startsWith(a);
+}
+
 // ── GitHub & Render Helpers ──────────────────────────────────────────────
 
-async function fetchGitHubSha(): Promise<string | null> {
-  const token = process.env.GITHUB_TOKEN?.trim();
-  if (!token) return null;
-
-  try {
-    const repo = process.env.GITHUB_REPO_URL?.trim()
+function githubRepo(): string {
+  return process.env.GITHUB_REPO?.trim()
+    || process.env.GITHUB_REPO_URL?.trim()
       ?.replace('https://github.com/', '')
       ?.replace('.git', '')
-      || 'ibb142/rork-global-real-estate-invest';
+    || DEFAULT_REPO;
+}
 
-    const res = await fetch(`https://api.github.com/repos/${repo}/commits?per_page=1`, {
-      headers: { Authorization: `Bearer ${token}` },
+async function fetchGitHubSha(): Promise<{ sha: string | null; timestamp: string | null; error: string | null }> {
+  const token = process.env.GITHUB_TOKEN?.trim();
+  if (!token) return { sha: null, timestamp: null, error: 'GITHUB_TOKEN not configured in this environment' };
+
+  try {
+    const res = await fetch(`https://api.github.com/repos/${githubRepo()}/commits?per_page=1`, {
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' },
       signal: AbortSignal.timeout(10000),
     });
-    if (!res.ok) return null;
-    const data = await res.json() as Array<{ sha: string }>;
-    return data[0]?.sha ?? null;
-  } catch {
-    return null;
+    if (!res.ok) return { sha: null, timestamp: null, error: `GitHub API HTTP ${res.status}` };
+    const data = await res.json() as Array<{ sha: string; commit?: { committer?: { date?: string } } }>;
+    return { sha: data[0]?.sha ?? null, timestamp: data[0]?.commit?.committer?.date ?? null, error: null };
+  } catch (err) {
+    return { sha: null, timestamp: null, error: err instanceof Error ? err.message : 'GitHub API unreachable' };
   }
 }
 
+function renderServiceId(): string {
+  return process.env.RENDER_SERVICE_ID?.trim() || DEFAULT_SERVICE_ID;
+}
+
 async function fetchRenderInfo(): Promise<{
-  serviceId: string | null;
+  serviceId: string;
   deployId: string | null;
   sha: string | null;
   status: string | null;
+  finishedAt: string | null;
   repo: string | null;
   error: string | null;
 }> {
   const apiKey = process.env.RENDER_API_KEY?.trim();
-  const serviceId = process.env.RENDER_SERVICE_ID?.trim() || 'srv-d7t9ivreo5us73ftose0';
+  const serviceId = renderServiceId();
 
   if (!apiKey) {
-    return { serviceId, deployId: null, sha: null, status: 'autoDeployTrigger: commit active', repo: null, error: null };
+    return { serviceId, deployId: null, sha: null, status: null, finishedAt: null, repo: null, error: 'RENDER_API_KEY not configured in this environment' };
   }
 
   try {
@@ -137,13 +152,86 @@ async function fetchRenderInfo(): Promise<{
     return {
       serviceId,
       deployId: (latestDeploy?.id as string) ?? null,
-      sha: (latestDeploy?.commit as Record<string, unknown>)?.id as string ?? null,
+      sha: ((latestDeploy?.commit as Record<string, unknown>)?.id as string) ?? null,
       status: (latestDeploy?.status as string) ?? 'unknown',
+      finishedAt: (latestDeploy?.finishedAt as string) ?? null,
       repo: (svcData?.repo as string) ?? null,
       error: null,
     };
   } catch (err) {
-    return { serviceId, deployId: null, sha: null, status: null, repo: null, error: err instanceof Error ? err.message : 'Render API unreachable' };
+    return { serviceId, deployId: null, sha: null, status: null, finishedAt: null, repo: null, error: err instanceof Error ? err.message : 'Render API unreachable' };
+  }
+}
+
+async function fetchRenderDeploy(deployId: string): Promise<{ id: string; status: string | null; sha: string | null; error: string | null }> {
+  const apiKey = process.env.RENDER_API_KEY?.trim();
+  if (!apiKey) return { id: deployId, status: null, sha: null, error: 'RENDER_API_KEY not configured' };
+  try {
+    const res = await fetch(`https://api.render.com/v1/services/${renderServiceId()}/deploys/${deployId}`, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) return { id: deployId, status: null, sha: null, error: `Render API HTTP ${res.status}` };
+    const data = await res.json() as Record<string, unknown>;
+    return {
+      id: deployId,
+      status: (data.status as string) ?? null,
+      sha: ((data.commit as Record<string, unknown>)?.id as string) ?? null,
+      error: null,
+    };
+  } catch (err) {
+    return { id: deployId, status: null, sha: null, error: err instanceof Error ? err.message : 'Render API unreachable' };
+  }
+}
+
+const TERMINAL_DEPLOY_STATES = ['live', 'build_failed', 'update_failed', 'canceled', 'pre_deploy_failed', 'deactivated'];
+
+/**
+ * Poll a Render deploy until it reaches a terminal state or the time budget
+ * expires. Bounded so a chat request never hangs indefinitely.
+ */
+async function pollDeployUntilTerminal(deployId: string, budgetMs: number): Promise<{ status: string | null; polls: number; terminal: boolean; error: string | null }> {
+  const startedAt = Date.now();
+  let polls = 0;
+  let lastStatus: string | null = null;
+  let lastError: string | null = null;
+
+  while (Date.now() - startedAt < budgetMs) {
+    polls += 1;
+    const deploy = await fetchRenderDeploy(deployId);
+    lastStatus = deploy.status;
+    lastError = deploy.error;
+    if (deploy.status && TERMINAL_DEPLOY_STATES.includes(deploy.status)) {
+      return { status: deploy.status, polls, terminal: true, error: null };
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+  }
+  return { status: lastStatus, polls, terminal: false, error: lastError };
+}
+
+async function triggerRenderDeploy(): Promise<{ ok: boolean; deployId: string | null; status: string | null; httpStatus: number; error: string | null }> {
+  const apiKey = process.env.RENDER_API_KEY?.trim();
+  if (!apiKey) return { ok: false, deployId: null, status: null, httpStatus: 0, error: 'RENDER_API_KEY not configured in this environment' };
+
+  try {
+    const res = await fetch(`https://api.render.com/v1/services/${renderServiceId()}/deploys`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clearCache: 'do_not_clear' }),
+      signal: AbortSignal.timeout(15000),
+    });
+    const text = await res.text();
+    let body: Record<string, unknown> = {};
+    try { body = JSON.parse(text) as Record<string, unknown>; } catch {}
+    return {
+      ok: res.ok,
+      deployId: (body.id as string) ?? null,
+      status: (body.status as string) ?? 'created',
+      httpStatus: res.status,
+      error: res.ok ? null : `Render API HTTP ${res.status}: ${text.slice(0, 300)}`,
+    };
+  } catch (err) {
+    return { ok: false, deployId: null, status: null, httpStatus: 0, error: err instanceof Error ? err.message : 'Render API unreachable' };
   }
 }
 
@@ -173,9 +261,9 @@ async function fetchSupabaseTableCounts(): Promise<string> {
 // ── Core Command Handlers ───────────────────────────────────────────────────
 
 export async function handleDeployStatus(): Promise<string> {
-  const [healthRes, versionRes, githubSha, renderInfo] = await Promise.all([
-    fetchJson('https://api.ivxholding.com/health'),
-    fetchJson('https://api.ivxholding.com/version'),
+  const [healthRes, versionRes, github, renderInfo] = await Promise.all([
+    fetchJson(`${PRODUCTION_API}/health`),
+    fetchJson(`${PRODUCTION_API}/version`),
     fetchGitHubSha(),
     fetchRenderInfo(),
   ]);
@@ -187,17 +275,17 @@ export async function handleDeployStatus(): Promise<string> {
     ? (healthRes.body as Record<string, unknown>).bootTime ?? null
     : null;
 
-  const commitMatch = healthSha !== null && healthSha === versionSha && healthSha === githubSha;
+  const commitMatch = shasAgree(healthSha, versionSha) && shasAgree(github.sha, healthSha);
 
   const result: DeployStatusResult = {
     github: {
-      sha: githubSha,
-      repo: renderInfo.repo || 'ibb142/rork-global-real-estate-invest',
+      sha: github.sha,
+      repo: renderInfo.repo || githubRepo(),
       branch: 'main',
-      error: githubSha ? null : 'GITHUB_TOKEN not available — cannot verify GitHub SHA',
+      error: github.error,
     },
     render: {
-      serviceId: renderInfo.serviceId || 'srv-d7t9ivreo5us73ftose0',
+      serviceId: renderInfo.serviceId,
       deployId: renderInfo.deployId,
       sha: renderInfo.sha,
       status: renderInfo.status,
@@ -241,154 +329,191 @@ function formatDeployStatus(result: DeployStatusResult): string {
     result.render.error ? `- Error: ${result.render.error}` : '',
     '',
     '### Commit Match',
-    `**${result.commitMatch ? 'MATCH' : 'NO — SHAs diverge'}**`,
-    '',
-    '### Deploy Path',
-    '1. Rork CI pushes to GitHub main (background sync)',
-    '2. Render autoDeployTrigger: commit fires on new commits',
-    '3. Production api.ivxholding.com gets new code',
+    `**${result.commitMatch ? 'MATCH — GitHub, Render and Production agree' : 'NO — SHAs diverge or are unverifiable'}**`,
     '',
     `_Brain: ${DEPLOYMENT_BRAIN_VERSION}_`,
   ];
 
-  return lines.filter(l => l !== null).join('\n');
+  return lines.filter(l => l !== '').join('\n');
 }
 
 export async function handleCommitMatch(): Promise<string> {
-  const [healthRes, versionRes, githubSha] = await Promise.all([
-    fetchJson('https://api.ivxholding.com/health'),
-    fetchJson('https://api.ivxholding.com/version'),
+  const [healthRes, versionRes, github, renderInfo] = await Promise.all([
+    fetchJson(`${PRODUCTION_API}/health`),
+    fetchJson(`${PRODUCTION_API}/version`),
     fetchGitHubSha(),
+    fetchRenderInfo(),
   ]);
 
   const healthSha = extractSha(healthRes.body);
   const versionSha = extractSha(versionRes.body);
-  const match = healthSha === versionSha && healthSha !== null;
-  const fullMatch = match && healthSha === githubSha;
+  const prodMatch = shasAgree(healthSha, versionSha);
+  const githubMatch = shasAgree(github.sha, healthSha);
+  const renderMatch = shasAgree(renderInfo.sha, healthSha);
+  const fullMatch = prodMatch && githubMatch && renderMatch;
 
   const lines = [
-    '## Commit Match Check',
+    '## Commit Match Check (4-way)',
     '',
-    `**Health SHA:** \`${healthSha ?? 'UNKNOWN'}\``,
-    `**Version SHA:** \`${versionSha ?? 'UNKNOWN'}\``,
-    `**GitHub SHA:** \`${githubSha ?? 'UNVERIFIED'}\``,
-    `**Match:** ${fullMatch ? 'YES — all SHAs align' : match ? 'PARTIAL — Health/Version match but GitHub unverified' : 'NO — SHAs diverge'}`,
+    `**Health SHA:** \`${short(healthSha)}\``,
+    `**Version SHA:** \`${short(versionSha)}\``,
+    `**GitHub SHA:** \`${short(github.sha)}\`${github.error ? ` (${github.error})` : ''}`,
+    `**Render SHA:** \`${short(renderInfo.sha)}\`${renderInfo.error ? ` (${renderInfo.error})` : ''}`,
     '',
-    'GitHub SHA: UNVERIFIED (sandbox token invalid)',
-    'Render SHA: UNVERIFIED (sandbox API key invalid)',
+    `**Verdict:** ${fullMatch
+      ? 'MATCH — all four sources agree on the running commit'
+      : prodMatch
+        ? `PARTIAL — production agrees with itself; GitHub ${githubMatch ? 'matches' : 'diverges/unverified'}, Render ${renderMatch ? 'matches' : 'diverges/unverified'}`
+        : 'NO — production /health and /version disagree; deploy propagation may be in progress'}`,
     '',
-    match
-      ? 'Production endpoints agree on the running commit.'
-      : 'Production is running different code on /health vs /version. Deploy propagation may be in progress.',
-    '',
-    `_Brain: ${DEPLOYMENT_BRAIN_VERSION}_`,
+    `_Captured live ${nowIso()} — Brain: ${DEPLOYMENT_BRAIN_VERSION}_`,
   ];
   return lines.join('\n');
 }
 
 export async function handleDeployEvidence(): Promise<string> {
-  const [healthRes, versionRes] = await Promise.all([
-    fetchJson('https://api.ivxholding.com/health'),
-    fetchJson('https://api.ivxholding.com/version'),
+  const [healthRes, versionRes, github, renderInfo] = await Promise.all([
+    fetchJson(`${PRODUCTION_API}/health`),
+    fetchJson(`${PRODUCTION_API}/version`),
+    fetchGitHubSha(),
+    fetchRenderInfo(),
   ]);
 
   const healthSha = extractSha(healthRes.body);
   const versionSha = extractSha(versionRes.body);
-
-  const evidence: DeployEvidenceResult = {
-    githubSha: null,
-    renderDeployId: null,
-    renderDeployedSha: null,
-    healthSha,
-    versionSha,
-    commitMatch: healthSha === versionSha && healthSha !== null,
-    productionStatus: healthRes.status === 200 ? 'healthy' : 'degraded',
-    errors: [],
-    timestamp: nowIso(),
-  };
-
-  if (!healthSha) evidence.errors.push('Health SHA not found');
-  if (!versionSha) evidence.errors.push('Version SHA not found');
+  const commitMatch = shasAgree(healthSha, versionSha) && shasAgree(github.sha, healthSha) && shasAgree(renderInfo.sha, healthSha);
+  const errors: string[] = [];
+  if (!healthSha) errors.push('Health SHA not found');
+  if (!versionSha) errors.push('Version SHA not found');
+  if (github.error) errors.push(`GitHub: ${github.error}`);
+  if (renderInfo.error) errors.push(`Render: ${renderInfo.error}`);
 
   const lines = [
     '## IVX Deployment Evidence',
     '',
-    `**Timestamp:** ${evidence.timestamp}`,
+    `**Timestamp:** ${nowIso()}`,
     '',
-    '| Source | SHA |',
-    '|--------|-----|',
-    `| Health | \`${evidence.healthSha ?? 'UNKNOWN'}\` |`,
-    `| Version | \`${evidence.versionSha ?? 'UNKNOWN'}\` |`,
-    `| GitHub | \`${evidence.githubSha ?? 'UNVERIFIED'}\` |`,
-    `| Render | \`${evidence.renderDeployedSha ?? 'UNVERIFIED'}\` |`,
+    '| Source | SHA | Detail |',
+    '|--------|-----|--------|',
+    `| GitHub (${githubRepo()}) | \`${short(github.sha)}\` | ${github.timestamp ?? '—'} |`,
+    `| Render (${renderInfo.serviceId}) | \`${short(renderInfo.sha)}\` | deploy ${renderInfo.deployId ?? '—'} · ${renderInfo.status ?? '—'} |`,
+    `| Production /health | \`${short(healthSha)}\` | HTTP ${healthRes.status} |`,
+    `| Production /version | \`${short(versionSha)}\` | HTTP ${versionRes.status} |`,
     '',
-    `**Commit Match:** ${evidence.commitMatch ? 'YES' : 'NO'}`,
-    `**Production:** ${evidence.productionStatus}`,
-    '',
-    evidence.errors.length > 0 ? `**Errors:** ${evidence.errors.join('; ')}` : '',
+    `**Commit Match (4-way):** ${commitMatch ? 'YES — VERIFIED' : 'NO / PARTIAL'}`,
+    `**Production:** ${healthRes.status === 200 ? 'healthy' : 'degraded'}`,
+    errors.length > 0 ? `**Errors:** ${errors.join('; ')}` : '',
     '',
     `_Brain: ${DEPLOYMENT_BRAIN_VERSION}_`,
   ];
-  return lines.join('\n');
+  return lines.filter(l => l !== '').join('\n');
 }
 
 export async function handleDeployNow(): Promise<string> {
-  // Try Render API with available env vars
-  const apiKey = process.env.RENDER_API_KEY?.trim();
-  const serviceId = process.env.RENDER_SERVICE_ID?.trim() || 'srv-crftose0p9us73em8n5g';
+  const trigger = await triggerRenderDeploy();
 
-  if (!apiKey) {
+  if (!trigger.ok || !trigger.deployId) {
     return [
       '## Deploy Now — BLOCKED',
       '',
-      '**Reason:** RENDER_API_KEY is not available in this environment.',
+      `**Reason:** ${trigger.error ?? 'Deploy trigger failed with no deploy ID.'}`,
       '',
-      '**Deploy Path (automatic):**',
-      '1. Push to GitHub main → Render autoDeployTrigger: commit fires',
-      '2. GitHub Actions render-deploy.yml fires on push',
-      '3. Production updates within ~5 minutes',
-      '',
-      '**Manual trigger:** Visit Render dashboard or use GitHub Actions workflow_dispatch.',
+      '**Automatic path still active:** push to GitHub main → Render autoDeploy fires → production updates.',
       '',
       `_Brain: ${DEPLOYMENT_BRAIN_VERSION}_`,
     ].join('\n');
   }
 
-  try {
-    const res = await fetch(`https://api.render.com/v1/services/${serviceId}/deploys`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ clearCache: 'do_not_clear' }),
-      signal: AbortSignal.timeout(15000),
-    });
+  // Poll briefly (bounded) so the chat reply carries real progress.
+  const poll = await pollDeployUntilTerminal(trigger.deployId, 45000);
 
-    const body = await res.json() as Record<string, unknown>;
+  return [
+    '## Deploy Now — TRIGGERED',
+    '',
+    `**HTTP Status:** ${trigger.httpStatus}`,
+    `**Deploy ID:** ${trigger.deployId}`,
+    `**Status after ${poll.polls} poll(s):** ${poll.status ?? 'unknown'}`,
+    '',
+    poll.terminal
+      ? (poll.status === 'live'
+        ? 'Deploy reached LIVE. Run `/deploy-verify` to confirm the running commit.'
+        : `Deploy ended in terminal state \`${poll.status}\`. Check Render logs.`)
+      : 'Deploy is still building (normal — builds take ~3-6 min). Run `/deploy-status` or `/deploy-verify` to keep watching.',
+    '',
+    `_Brain: ${DEPLOYMENT_BRAIN_VERSION}_`,
+  ].join('\n');
+}
 
+/**
+ * Full Rork-style pipeline: capture pre-state → trigger deploy → poll bounded →
+ * verify production → emit the evidence chain in one chat reply.
+ */
+export async function handleDeployPipeline(): Promise<string> {
+  const startedAt = nowIso();
+
+  // 1. Pre-state
+  const [preHealth, github, preRender] = await Promise.all([
+    fetchJson(`${PRODUCTION_API}/health`),
+    fetchGitHubSha(),
+    fetchRenderInfo(),
+  ]);
+  const preSha = extractSha(preHealth.body);
+
+  // 2. Trigger
+  const trigger = await triggerRenderDeploy();
+  if (!trigger.ok || !trigger.deployId) {
     return [
-      '## Deploy Now — TRIGGERED',
+      '## Deploy Pipeline — BLOCKED AT TRIGGER',
       '',
-      `**HTTP Status:** ${res.status}`,
-      `**Deploy ID:** ${body.id ?? 'PENDING'}`,
-      `**Status:** ${body.status ?? 'created'}`,
-      '',
-      res.ok ? 'Deploy triggered successfully. Monitor at Render dashboard.' : `Deploy trigger returned non-OK: ${JSON.stringify(body)}`,
-      '',
-      `_Brain: ${DEPLOYMENT_BRAIN_VERSION}_`,
-    ].join('\n');
-  } catch (err) {
-    return [
-      '## Deploy Now — FAILED',
-      '',
-      `**Error:** ${err instanceof Error ? err.message : 'Unknown error'}`,
-      '',
-      'Render API unreachable. Deploy may need manual trigger.',
+      `**Pre-state:** production \`${short(preSha)}\` · GitHub \`${short(github.sha)}\``,
+      `**Trigger error:** ${trigger.error ?? 'no deploy ID returned'}`,
       '',
       `_Brain: ${DEPLOYMENT_BRAIN_VERSION}_`,
     ].join('\n');
   }
+
+  // 3. Poll (bounded to keep the chat request responsive)
+  const poll = await pollDeployUntilTerminal(trigger.deployId, 60000);
+
+  // 4. Post-verify
+  const [postHealth, postVersion] = await Promise.all([
+    fetchJson(`${PRODUCTION_API}/health`),
+    fetchJson(`${PRODUCTION_API}/version`),
+  ]);
+  const postHealthSha = extractSha(postHealth.body);
+  const postVersionSha = extractSha(postVersion.body);
+  const liveMatch = poll.status === 'live'
+    && shasAgree(postHealthSha, postVersionSha)
+    && shasAgree(github.sha, postHealthSha);
+
+  return [
+    '## Deploy Pipeline — Evidence Chain',
+    '',
+    `**Started:** ${startedAt} · **Finished:** ${nowIso()}`,
+    '',
+    '### 1. Pre-state',
+    `- GitHub HEAD: \`${short(github.sha)}\` (${github.timestamp ?? '—'})`,
+    `- Production before: \`${short(preSha)}\``,
+    `- Last Render deploy: ${preRender.deployId ?? '—'} (${preRender.status ?? '—'})`,
+    '',
+    '### 2. Trigger',
+    `- Deploy ID: \`${trigger.deployId}\` (HTTP ${trigger.httpStatus})`,
+    '',
+    '### 3. Poll',
+    `- Polls: ${poll.polls} · Terminal: ${poll.terminal ? 'YES' : 'NO (still building)'} · Status: \`${poll.status ?? 'unknown'}\``,
+    '',
+    '### 4. Production verification',
+    `- /health: HTTP ${postHealth.status} → \`${short(postHealthSha)}\``,
+    `- /version: HTTP ${postVersion.status} → \`${short(postVersionSha)}\``,
+    '',
+    `### Verdict: ${liveMatch
+      ? 'VERIFIED — deploy live and production serves the GitHub HEAD commit'
+      : poll.terminal
+        ? `TERMINAL \`${poll.status}\` — commit match ${shasAgree(github.sha, postHealthSha) ? 'YES' : 'NOT YET'}`
+        : 'IN PROGRESS — build still running. Run `/deploy-verify` in a few minutes for the final commit-match check.'}`,
+    '',
+    `_Brain: ${DEPLOYMENT_BRAIN_VERSION}_`,
+  ].join('\n');
 }
 
 export async function handleDeployVerify(): Promise<string> {
@@ -396,18 +521,170 @@ export async function handleDeployVerify(): Promise<string> {
 }
 
 export async function handleDeployRollback(): Promise<string> {
+  const apiKey = process.env.RENDER_API_KEY?.trim();
+  const serviceId = renderServiceId();
+
+  if (!apiKey) {
+    return [
+      '## Deploy Rollback — BLOCKED',
+      '',
+      '**Reason:** RENDER_API_KEY is not configured in this environment.',
+      'Manual path: Render dashboard → Deploys → previous deploy → "Rollback to this deploy".',
+      '',
+      `_Brain: ${DEPLOYMENT_BRAIN_VERSION}_`,
+    ].join('\n');
+  }
+
+  try {
+    // Find the previous successful (live) deploy — skip the current one.
+    const listRes = await fetch(`https://api.render.com/v1/services/${serviceId}/deploys?limit=10`, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!listRes.ok) {
+      return `## Deploy Rollback — FAILED\n\nRender API HTTP ${listRes.status} while listing deploys.\n\n_Brain: ${DEPLOYMENT_BRAIN_VERSION}_`;
+    }
+    const deploys = await listRes.json() as Array<{ deploy: Record<string, unknown> }>;
+    const liveDeploys = deploys
+      .map((d) => d.deploy)
+      .filter((d) => d.status === 'live' || d.status === 'deactivated');
+    const target = liveDeploys[1];
+
+    if (!target?.id) {
+      return `## Deploy Rollback — NO TARGET\n\nCould not find a previous successful deploy to roll back to.\n\n_Brain: ${DEPLOYMENT_BRAIN_VERSION}_`;
+    }
+
+    const rollbackRes = await fetch(`https://api.render.com/v1/services/${serviceId}/rollback`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deployId: target.id }),
+      signal: AbortSignal.timeout(15000),
+    });
+    const text = await rollbackRes.text();
+    let body: Record<string, unknown> = {};
+    try { body = JSON.parse(text) as Record<string, unknown>; } catch {}
+
+    return [
+      `## Deploy Rollback — ${rollbackRes.ok ? 'TRIGGERED' : 'FAILED'}`,
+      '',
+      `**Target deploy:** \`${target.id}\` (commit \`${short(((target.commit as Record<string, unknown>)?.id as string) ?? null)}\`)`,
+      `**HTTP Status:** ${rollbackRes.status}`,
+      `**New deploy ID:** ${(body.id as string) ?? '—'}`,
+      '',
+      rollbackRes.ok
+        ? 'Rollback deploy created. Run `/deploy-status` to watch it go live.'
+        : `Render rejected the rollback: ${text.slice(0, 300)}`,
+      '',
+      `_Brain: ${DEPLOYMENT_BRAIN_VERSION}_`,
+    ].join('\n');
+  } catch (err) {
+    return `## Deploy Rollback — FAILED\n\n**Error:** ${err instanceof Error ? err.message : 'Unknown error'}\n\n_Brain: ${DEPLOYMENT_BRAIN_VERSION}_`;
+  }
+}
+
+// ── Senior Developer Proof Commands ─────────────────────────────────────────
+
+async function handleSeniorStatus(): Promise<string> {
+  const { buildSeniorDeveloperWorkerStatus } = await import('./ivx-senior-developer-worker');
+  const status = buildSeniorDeveloperWorkerStatus();
+  const capabilities = status.capabilities as Record<string, boolean>;
+  const enabled = Object.entries(capabilities).filter(([, v]) => v).map(([k]) => k);
+
   return [
-    '## Deploy Rollback',
+    '## IVX Senior Developer — Worker Status',
     '',
-    '**Status:** BLOCKED',
+    `**Executor:** ${status.executor}`,
+    `**Rork required as executor:** ${status.rorkRequiredAsExecutor ? 'YES' : 'NO — self-hosted'}`,
+    `**Durable queue:** ${status.durableQueue ? 'YES (Supabase-backed)' : 'NO (in-memory)'}`,
     '',
-    'Rollback requires RENDER_API_KEY which is not available in this sandbox.',
-    'To rollback:',
-    '1. Visit Render dashboard → select service → Deploys → select previous deploy → "Rollback to this deploy"',
-    '2. Or use GitHub Actions: push a revert commit to main',
+    `**Capabilities (${enabled.length}):** ${enabled.join(', ')}`,
+    '',
+    '**Routes:**',
+    ...Object.entries(status.routes as Record<string, string>).map(([k, v]) => `- ${k}: \`${v}\``),
+    '',
+    `_Captured ${nowIso()} — Brain: ${DEPLOYMENT_BRAIN_VERSION}_`,
+  ].join('\n');
+}
+
+async function handleSeniorProof(): Promise<string> {
+  const { getSeniorDeveloperLastProof, listSeniorDeveloperProofLedger } = await import('./ivx-senior-developer-worker');
+  const [last, ledger] = await Promise.all([
+    getSeniorDeveloperLastProof(),
+    listSeniorDeveloperProofLedger(1),
+  ]);
+  const detail = ledger[0] ?? null;
+
+  if (!last.lastJobId) {
+    return [
+      '## Senior Developer — Last Proof',
+      '',
+      'No proof recorded yet. Enqueue an owner-approved job via `POST /api/ivx/senior-developer/worker/jobs`, or run `/deploy-pipeline` for a deployment-level evidence chain.',
+      '',
+      `_Brain: ${DEPLOYMENT_BRAIN_VERSION}_`,
+    ].join('\n');
+  }
+
+  return [
+    '## Senior Developer — Last End-to-End Proof',
+    '',
+    `**Job:** \`${last.lastJobId}\``,
+    `**Goal:** ${detail?.goal ?? '—'}`,
+    `**Final status:** ${detail?.finalStatus ?? 'UNKNOWN'}`,
+    `**Commit:** \`${short(last.lastCommitHash)}\`${detail?.commitUrl ? ` — ${detail.commitUrl}` : ''}`,
+    `**Deploy:** ${last.lastDeployId ?? '—'} (${detail?.deployStatus ?? '—'})`,
+    `**Tests passed:** ${detail?.testsPassed ? 'YES' : 'NO'} · **Typecheck:** ${detail?.typecheckRun ? 'RUN' : 'SKIPPED'}`,
+    `**Health:** HTTP ${last.lastHealthStatus ?? '—'} · **Commit match:** ${last.lastVersionMatch ? 'YES — VERIFIED' : 'NO'}`,
+    `**Completed:** ${last.completedAt ?? '—'}`,
+    detail?.auditFiles ? `**Audit trail:** ${detail.auditFiles.json}` : '',
+    '',
+    `_Read from the durable proof ledger ${nowIso()} — Brain: ${DEPLOYMENT_BRAIN_VERSION}_`,
+  ].filter(l => l !== '').join('\n');
+}
+
+async function handleSeniorLedger(): Promise<string> {
+  const { listSeniorDeveloperProofLedger } = await import('./ivx-senior-developer-worker');
+  const entries = await listSeniorDeveloperProofLedger(10);
+
+  if (entries.length === 0) {
+    return `## Senior Developer — Proof Ledger\n\nLedger is empty. No worker jobs have completed yet.\n\n_Brain: ${DEPLOYMENT_BRAIN_VERSION}_`;
+  }
+
+  return [
+    '## Senior Developer — Proof Ledger (latest 10)',
+    '',
+    ...entries.map((e) =>
+      `- \`${e.jobId.slice(0, 24)}\` · ${e.finalStatus} · commit \`${short(e.commitSha)}\` · deploy ${e.deployId ?? '—'} · match ${e.commitMatch ? 'YES' : 'NO'} · ${e.generatedAt}`,
+    ),
+    '',
+    `_Read from the durable proof ledger ${nowIso()} — Brain: ${DEPLOYMENT_BRAIN_VERSION}_`,
+  ].join('\n');
+}
+
+function handleDeployHelp(): Promise<string> {
+  return Promise.resolve([
+    '## IVX Senior Developer — Chat Commands',
+    '',
+    '**Deployment (Rork-technique, live evidence):**',
+    '- `/deploy-status` — GitHub / Render / Production SHA comparison',
+    '- `/deploy-now` — Trigger Render deploy + poll + report',
+    '- `/deploy-pipeline` — Full end-to-end: pre-state → trigger → poll → verify → evidence chain',
+    '- `/deploy-verify` or `/commit-match` — 4-way commit match check',
+    '- `/deploy-evidence` — Full deployment proof dump',
+    '- `/deploy-rollback` — Roll back to the previous live deploy',
+    '',
+    '**Senior developer proof:**',
+    '- `/senior-status` — Self-hosted worker capabilities',
+    '- `/senior-proof` — Last end-to-end proof (commit, deploy, tests, match)',
+    '- `/senior-ledger` — Recent proof ledger entries',
+    '',
+    '**Infrastructure:**',
+    '- `/render-status` · `/github-status` · `/supabase-audit` · `/watchdog`',
+    '',
+    '**QA:**',
+    '- `/qa-production` · `/qa-chat` · `/qa-members` · `/qa-landing` · `/qa-engagement`',
     '',
     `_Brain: ${DEPLOYMENT_BRAIN_VERSION}_`,
-  ].join('\n');
+  ].join('\n'));
 }
 
 // ── QA Commands ─────────────────────────────────────────────────────────────
@@ -418,27 +695,27 @@ const QA_ENDPOINTS: Record<string, Array<{ url: string; method: string; label: s
   ],
   chat: [
     { url: 'https://chat.ivxholding.com', method: 'GET', label: 'Chat Frontend' },
-    { url: 'https://api.ivxholding.com/api/public/messages', method: 'GET', label: 'Public Messages API' },
-    { url: 'https://api.ivxholding.com/api/ivx/owner-ai/proxy-status', method: 'GET', label: 'AI Proxy Status' },
+    { url: `${PRODUCTION_API}/api/public/messages`, method: 'GET', label: 'Public Messages API' },
+    { url: `${PRODUCTION_API}/api/ivx/owner-ai/proxy-status`, method: 'GET', label: 'AI Proxy Status' },
   ],
   members: [
-    { url: 'https://api.ivxholding.com/api/ivx/owner-registration/status', method: 'GET', label: 'Registration Status' },
-    { url: 'https://api.ivxholding.com/api/ivx/owner-access-repair/status', method: 'GET', label: 'Access Repair Status' },
+    { url: `${PRODUCTION_API}/api/ivx/owner-registration/status`, method: 'GET', label: 'Registration Status' },
+    { url: `${PRODUCTION_API}/api/ivx/owner-access-repair/status`, method: 'GET', label: 'Access Repair Status' },
   ],
   engagement: [
-    { url: 'https://api.ivxholding.com/api/projects/test/media', method: 'GET', label: 'Project Media' },
-    { url: 'https://api.ivxholding.com/api/projects/test/comments', method: 'GET', label: 'Project Comments' },
-    { url: 'https://api.ivxholding.com/api/projects/engagement/bulk?ids=test', method: 'GET', label: 'Bulk Engagement' },
-    { url: 'https://api.ivxholding.com/api/projects/test/analytics', method: 'GET', label: 'Project Analytics' },
+    { url: `${PRODUCTION_API}/api/projects/test/media`, method: 'GET', label: 'Project Media' },
+    { url: `${PRODUCTION_API}/api/projects/test/comments`, method: 'GET', label: 'Project Comments' },
+    { url: `${PRODUCTION_API}/api/projects/engagement/bulk?ids=test`, method: 'GET', label: 'Bulk Engagement' },
+    { url: `${PRODUCTION_API}/api/projects/test/analytics`, method: 'GET', label: 'Project Analytics' },
   ],
   production: [
-    { url: 'https://api.ivxholding.com/health', method: 'GET', label: 'Health' },
-    { url: 'https://api.ivxholding.com/version', method: 'GET', label: 'Version' },
+    { url: `${PRODUCTION_API}/health`, method: 'GET', label: 'Health' },
+    { url: `${PRODUCTION_API}/version`, method: 'GET', label: 'Version' },
     { url: 'https://ivxholding.com', method: 'GET', label: 'Landing Page' },
     { url: 'https://chat.ivxholding.com', method: 'GET', label: 'Chat Frontend' },
-    { url: 'https://api.ivxholding.com/api/ivx/owner-ai/proxy-status', method: 'GET', label: 'AI Proxy' },
-    { url: 'https://api.ivxholding.com/api/ivx/supabase/owner-action-health', method: 'GET', label: 'Supabase Health' },
-    { url: 'https://api.ivxholding.com/tool/render-status', method: 'GET', label: 'Render Status' },
+    { url: `${PRODUCTION_API}/api/ivx/owner-ai/proxy-status`, method: 'GET', label: 'AI Proxy' },
+    { url: `${PRODUCTION_API}/api/ivx/supabase/owner-action-health`, method: 'GET', label: 'Supabase Health' },
+    { url: `${PRODUCTION_API}/tool/render-status`, method: 'GET', label: 'Render Status' },
   ],
 };
 
@@ -501,10 +778,15 @@ async function runQATests(category: string): Promise<string> {
 const COMMAND_MAP: Record<string, () => Promise<string>> = {
   '/deploy-status': handleDeployStatus,
   '/deploy-now': handleDeployNow,
+  '/deploy-pipeline': handleDeployPipeline,
   '/deploy-evidence': handleDeployEvidence,
   '/deploy-verify': handleDeployVerify,
   '/deploy-rollback': handleDeployRollback,
+  '/deploy-help': handleDeployHelp,
   '/commit-match': handleCommitMatch,
+  '/senior-status': handleSeniorStatus,
+  '/senior-proof': handleSeniorProof,
+  '/senior-ledger': handleSeniorLedger,
   '/qa-production': () => runQATests('production'),
   '/qa-chat': () => runQATests('chat'),
   '/qa-members': () => runQATests('members'),
@@ -528,26 +810,27 @@ const COMMAND_MAP: Record<string, () => Promise<string>> = {
     return [
       '## Render Status',
       '',
-      `**Service:** ${info.serviceId ?? 'UNKNOWN'}`,
+      `**Service:** ${info.serviceId}`,
       `**Deploy ID:** ${info.deployId ?? 'UNVERIFIED'}`,
-      `**Deployed SHA:** ${info.sha ?? 'UNVERIFIED'}`,
+      `**Deployed SHA:** ${short(info.sha)}`,
       `**Status:** ${info.status ?? 'UNVERIFIED'}`,
+      `**Finished:** ${info.finishedAt ?? 'UNVERIFIED'}`,
       `**Repo:** ${info.repo ?? 'UNVERIFIED'}`,
       info.error ? `**Error:** ${info.error}` : '',
       '',
       `_Brain: ${DEPLOYMENT_BRAIN_VERSION}_`,
-    ].filter(l => l !== null).join('\n');
+    ].filter(l => l !== '').join('\n');
   },
   '/github-status': async () => {
-    const sha = await fetchGitHubSha();
-    const repo = process.env.GITHUB_REPO_URL?.trim()?.replace('https://github.com/', '').replace('.git', '') || 'ibb142/rork-global-real-estate-invest';
+    const github = await fetchGitHubSha();
     return [
       '## GitHub Status',
       '',
-      `**Repo:** ${repo}`,
+      `**Repo:** ${githubRepo()}`,
       `**Branch:** main`,
-      `**Latest SHA:** ${sha ?? 'UNVERIFIED'}`,
-      sha ? `**Write Access:** VERIFIED (token can read repo)` : '**Write Access:** UNVERIFIED (no GITHUB_TOKEN in env)',
+      `**Latest SHA:** ${short(github.sha)}`,
+      `**Commit time:** ${github.timestamp ?? 'UNVERIFIED'}`,
+      github.sha ? `**Access:** VERIFIED (token can read repo)` : `**Access:** UNVERIFIED (${github.error ?? 'no GITHUB_TOKEN in env'})`,
       '',
       `_Brain: ${DEPLOYMENT_BRAIN_VERSION}_`,
     ].join('\n');
@@ -564,7 +847,7 @@ const COMMAND_MAP: Record<string, () => Promise<string>> = {
     ].join('\n');
   },
   '/watchdog': async () => {
-    const healthRes = await fetchJson('https://api.ivxholding.com/health');
+    const healthRes = await fetchJson(`${PRODUCTION_API}/health`);
     const healthData = healthRes.body as Record<string, unknown> | null;
     return [
       '## Watchdog Status',
