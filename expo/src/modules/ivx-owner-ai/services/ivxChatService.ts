@@ -1190,7 +1190,45 @@ async function listOwnerMessages(): Promise<IVXMessage[]> {
     return localMessages;
   }
 
-  const remoteMessages = await Promise.all((messageResult.data ?? []).map((row) => mapMessage(row as Record<string, unknown>)));
+  let remoteMessages = await Promise.all((messageResult.data ?? []).map((row) => mapMessage(row as Record<string, unknown>)));
+
+  // DISAPPEAR-FIX (2026-07-05): when the primary conversation-id query returns
+  // empty but the durable local mirror has messages, the canonical conversation
+  // id has diverged from the id the messages were saved under. Recover by
+  // querying recent messages across ALL conversations (capped) and merging with
+  // the local mirror, so the owner never sees an empty room over a saved thread.
+  if (remoteMessages.length === 0 && localMessages.length > 0) {
+    console.log('[IVXChatService] Primary conversation returned 0 remote messages but local mirror has', localMessages.length, '- attempting cross-conversation recovery');
+    try {
+      const recoveryResult = await scopedClient.from(tables.messages)
+        .select('*')
+        .order('created_at', { ascending: true })
+        .limit(200);
+      if (!recoveryResult.error && recoveryResult.data && recoveryResult.data.length > 0) {
+        const recoveredRemote = await Promise.all(recoveryResult.data.map((row) => mapMessage(row as Record<string, unknown>)));
+        // Only keep messages whose signature matches one in the local mirror —
+        // this is the owner's own thread, recovered from wherever it was saved.
+        const localSignatures = new Set(localMessages.map((m) =>
+          [String(m.conversationId ?? '').trim().toLowerCase(),
+           String(m.senderRole ?? '').trim().toLowerCase(),
+           String(m.body ?? '').trim().toLowerCase()].join('::')
+        ));
+        const matchedRecovered = recoveredRemote.filter((m) => {
+          const sig = [String(m.conversationId ?? '').trim().toLowerCase(),
+                       String(m.senderRole ?? '').trim().toLowerCase(),
+                       String(m.body ?? '').trim().toLowerCase()].join('::');
+          return localSignatures.has(sig);
+        });
+        if (matchedRecovered.length > 0) {
+          console.log('[IVXChatService] Cross-conversation recovery matched', matchedRecovered.length, 'of', recoveredRemote.length, 'recent remote messages');
+          remoteMessages = matchedRecovered;
+        }
+      }
+    } catch (recoveryError) {
+      console.log('[IVXChatService] Cross-conversation recovery failed:', recoveryError instanceof Error ? recoveryError.message : 'unknown');
+    }
+  }
+
   const mergedMessages = mergeOwnerMessages(remoteMessages, localMessages);
 
   console.log('[IVXChatService] Owner message list resolved:', {

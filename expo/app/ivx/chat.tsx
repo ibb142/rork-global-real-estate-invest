@@ -949,6 +949,13 @@ export default function IVXOwnerChatRoute() {
 
   const ivxRoomStatus: ChatRoomStatus | null = roomStatusQuery.data ?? null;
 
+  // DISAPPEAR-FIX (2026-07-05): ref mirror of the last non-empty messages data.
+  // Used by the messagesQuery `select` to keep the prior thread visible when a
+  // transient empty refetch lands (e.g. canonical conversation id briefly
+  // diverged from the id messages were saved under). Prevents the chat from
+  // blanking while the service-layer recovery repopulates the canonical id.
+  const lastNonEmptyMessagesRef = useRef<IVXMessage[] | null>(null);
+
   const messagesQuery = useQuery<IVXMessage[], Error>({
     queryKey: IVX_OWNER_MESSAGES_QUERY_KEY,
     queryFn: async () => {
@@ -983,6 +990,25 @@ export default function IVXOwnerChatRoute() {
     gcTime: 24 * 60 * 60 * 1000,
     staleTime: 15_000,
     placeholderData: (previous) => previous,
+    // DISAPPEAR-FIX (2026-07-05): a transient empty refetch (e.g. the canonical
+    // conversation id briefly diverging from the id messages were saved under)
+    // must NEVER blank the rendered thread. If a fresh fetch returns an empty
+    // array while we already have non-empty cached data, keep the cached data
+    // visible. The durable local mirror + cross-conversation recovery in the
+    // service layer will repopulate the canonical id on the next successful load.
+    select: (data: IVXMessage[]) => {
+      if (data.length > 0) {
+        lastNonEmptyMessagesRef.current = data;
+        return data;
+      }
+      if (lastNonEmptyMessagesRef.current && lastNonEmptyMessagesRef.current.length > 0) {
+        console.log('[IVXChatStateProof] preserving cached messages over empty refetch', {
+          cachedCount: lastNonEmptyMessagesRef.current.length,
+        });
+        return lastNonEmptyMessagesRef.current;
+      }
+      return data;
+    },
   });
   const conversationQuery = useQuery({
     queryKey: IVX_OWNER_CONVERSATION_QUERY_KEY,
@@ -1576,10 +1602,17 @@ export default function IVXOwnerChatRoute() {
         flatListRef.current?.scrollToEnd({ animated: false });
       });
       // Fallback: retry after layout settles (especially on Android where
-      // FlatList measurements can lag behind data arrival).
+      // FlatList measurements can lag behind data arrival). Multiple retries
+      // because the FlatList may not have measured yet on the first tick.
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: false });
+      }, 150);
       setTimeout(() => {
         flatListRef.current?.scrollToEnd({ animated: false });
       }, 300);
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: false });
+      }, 600);
     }
 
     if (!localFirstChatMode) {
@@ -6038,7 +6071,6 @@ export default function IVXOwnerChatRoute() {
                   flatListRef.current?.scrollToEnd({ animated: false });
                 }
               }}
-              maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
               onScrollToIndexFailed={(info) => {
                 suppressAutoScrollUntilRef.current = Date.now() + 1800;
                 flatListRef.current?.scrollToOffset({ offset: Math.max(0, info.averageItemLength * info.index), animated: true });
