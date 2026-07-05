@@ -26,10 +26,49 @@ const rawRegion = (process.env.AWS_REGION || '').trim();
 const REGION = /^[a-z]{2}-[a-z]+-[0-9]$/.test(rawRegion) ? rawRegion : 'us-east-1';
 const ACCESS_KEY = (process.env.AWS_ACCESS_KEY_ID || '').trim();
 const SECRET_KEY = (process.env.AWS_SECRET_ACCESS_KEY || '').trim();
+const PRODUCTION_BACKEND_URL = 'https://api.ivxholding.com';
 const LANDING_HTML_CACHE_CONTROL = 'no-cache, no-store, must-revalidate';
 const LANDING_CONFIG_CACHE_CONTROL = 'no-cache, no-store, must-revalidate';
 const LANDING_API_CACHE_CONTROL = 'public, max-age=60, s-maxage=300, stale-while-revalidate=600';
 const LANDING_HEALTH_CACHE_CONTROL = 'public, max-age=30, s-maxage=60, stale-while-revalidate=120';
+
+function isLocalDevCredential(value) {
+  const v = String(value || '').toLowerCase();
+  return v.includes('127.0.0.1') || v.includes('localhost') || v.includes('::1') ||
+    v.includes('supabase local development') || v.includes('super-secret-jwt') ||
+    v.includes('54321') || v.includes('54322') || v.includes('54323');
+}
+
+function isValidSupabaseUrl(url) {
+  return /^https:\/\/[a-z0-9-]+\.supabase\.co$/i.test(String(url || '').trim());
+}
+
+function isValidSupabaseAnonKey(key) {
+  const k = String(key || '').trim();
+  return k.startsWith('eyJ') && k.length > 30 && !isLocalDevCredential(k);
+}
+
+function sanitizeBackendUrl(url) {
+  const u = String(url || '').trim().replace(/\/$/, '');
+  if (!u) return PRODUCTION_BACKEND_URL;
+  if (isLocalDevCredential(u)) return PRODUCTION_BACKEND_URL;
+  if (u.includes('ivxholding.com')) return u;
+  // Prefer production API over legacy Render URLs
+  if (u.includes('onrender.com')) return PRODUCTION_BACKEND_URL;
+  return u;
+}
+
+function sanitizeSupabaseUrl(url) {
+  const u = String(url || '').trim();
+  if (isLocalDevCredential(u) || !isValidSupabaseUrl(u)) return '';
+  return u;
+}
+
+function sanitizeSupabaseAnonKey(key) {
+  const k = String(key || '').trim();
+  if (isLocalDevCredential(k) || !isValidSupabaseAnonKey(k)) return '';
+  return k;
+}
 
 const s3 = new S3Client({
   region: REGION,
@@ -188,21 +227,22 @@ async function deploy() {
   console.log('   ✅ www redirect configured');
 
   console.log('\n📤 Uploading index.html...');
-  const apiBaseUrl = (
+  const rawApiBaseUrl = (
     process.env.EXPO_PUBLIC_API_BASE_URL ||
     process.env.EXPO_PUBLIC_IVX_API_BASE_URL ||
     'https://ivxholding.com'
   ).trim().replace(/\/$/, '');
-  const supabaseUrl = (
+  const apiBaseUrl = sanitizeBackendUrl(rawApiBaseUrl);
+  const supabaseUrl = sanitizeSupabaseUrl(
     process.env.EXPO_PUBLIC_SUPABASE_URL ||
     process.env.SUPABASE_URL ||
     ''
-  ).trim();
-  const supabaseAnonKey = (
+  );
+  const supabaseAnonKey = sanitizeSupabaseAnonKey(
     process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ||
     process.env.SUPABASE_ANON_KEY ||
     ''
-  ).trim();
+  );
   const appUrl = (
     process.env.EXPO_PUBLIC_APP_URL ||
     process.env.EXPO_PUBLIC_IVX_API_BASE_URL ||
@@ -210,9 +250,9 @@ async function deploy() {
   ).trim().replace(/\/$/, '');
 
   if (!supabaseUrl || !supabaseAnonKey) {
-    console.error('\n❌ CRITICAL: Supabase credentials are MISSING!');
-    console.error('   EXPO_PUBLIC_SUPABASE_URL =', supabaseUrl || '(empty)');
-    console.error('   EXPO_PUBLIC_SUPABASE_ANON_KEY =', supabaseAnonKey ? '(set)' : '(empty)');
+    console.error('\n❌ CRITICAL: Supabase credentials are MISSING or invalid!');
+    console.error('   EXPO_PUBLIC_SUPABASE_URL =', process.env.EXPO_PUBLIC_SUPABASE_URL ? '(provided)' : '(empty)');
+    console.error('   EXPO_PUBLIC_SUPABASE_ANON_KEY =', process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ? '(provided)' : '(empty)');
     console.error('\n   Without these, live deals will NOT load on the landing page.');
     console.error('   Set them before deploying:');
     console.error('     EXPO_PUBLIC_SUPABASE_URL="https://xxx.supabase.co" \\');
@@ -223,10 +263,10 @@ async function deploy() {
     console.error('');
   }
 
-  const backendUrl = (
+  const backendUrl = sanitizeBackendUrl(
     process.env.EXPO_PUBLIC_IVX_API_BASE_URL ||
     'https://api.ivxholding.com'
-  ).trim().replace(/\/$/, '');
+  );
 
   const googleAdsKey = (
     process.env.EXPO_PUBLIC_GOOGLE_ADS_API_KEY ||

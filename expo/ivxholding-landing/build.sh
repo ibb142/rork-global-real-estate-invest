@@ -4,11 +4,41 @@ echo "[IVX Build] Injecting environment variables into index.html..."
 if [ -f "index.html" ]; then
   cp index.html index.html.bak
 
+  PRODUCTION_BACKEND_URL="https://api.ivxholding.com"
+
   SUPABASE_URL="${EXPO_PUBLIC_SUPABASE_URL:-}"
   SUPABASE_KEY="${EXPO_PUBLIC_SUPABASE_ANON_KEY:-}"
   API_URL="${EXPO_PUBLIC_API_BASE_URL:-https://ivxholding.com}"
   APP_URL="${EXPO_PUBLIC_APP_URL:-${EXPO_PUBLIC_IVX_API_BASE_URL:-}}"
   BACKEND_URL="${EXPO_PUBLIC_IVX_API_BASE_URL:-https://api.ivxholding.com}"
+
+  # Reject local/dev Supabase credentials or legacy local dev strings
+  is_local_dev() {
+    case "$1" in
+      *127.0.0.1*|*localhost*|*::1*|*supabase local development*|*super-secret-jwt*|*54321*|*54322*|*54323*)
+        return 0 ;;
+      *)
+        return 1 ;;
+    esac
+  }
+
+  if [ -n "$SUPABASE_URL" ] && is_local_dev "$SUPABASE_URL"; then
+    echo "[IVX Build] WARNING: Supabase URL contains local/dev values — clearing it"
+    SUPABASE_URL=""
+  fi
+  if [ -n "$SUPABASE_KEY" ] && is_local_dev "$SUPABASE_KEY"; then
+    echo "[IVX Build] WARNING: Supabase key contains local/dev values — clearing it"
+    SUPABASE_KEY=""
+  fi
+
+  # Prefer production API over legacy Render URLs
+  if [ -n "$BACKEND_URL" ] && [[ "$BACKEND_URL" == *"onrender.com"* ]]; then
+    echo "[IVX Build] WARNING: Legacy Render backend URL detected — switching to ${PRODUCTION_BACKEND_URL}"
+    BACKEND_URL="${PRODUCTION_BACKEND_URL}"
+  fi
+  if [ -n "$API_URL" ] && [[ "$API_URL" == *"onrender.com"* ]]; then
+    API_URL="${PRODUCTION_BACKEND_URL}"
+  fi
 
   echo "[IVX Build] Backend URL: ${BACKEND_URL}"
   echo "[IVX Build] Supabase URL set: $([ -n "$SUPABASE_URL" ] && echo 'YES' || echo 'NO')"
@@ -83,6 +113,7 @@ if [ -f "index.html" ]; then
   "builtAt": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 }
 EOF
+  echo "[IVX Build] ivx-config.json generated"
   echo "[IVX Build] ivx-config.json generated"
 
   if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_KEY" ]; then
