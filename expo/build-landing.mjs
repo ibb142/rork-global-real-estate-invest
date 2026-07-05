@@ -3,19 +3,58 @@ import { fetchStaticLandingApiPayloads } from './scripts/landing-static-api.mjs'
 import { injectLandingCardRenderer } from './scripts/landing-card-renderer-injector.mjs';
 import { sanitizeLandingHtml } from './scripts/landing-html-sanitizer.mjs';
 
-const SUPABASE_URL = (process.env.EXPO_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '').trim();
-const SUPABASE_ANON_KEY = (process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '').trim();
-const API_BASE_URL = (process.env.EXPO_PUBLIC_IVX_API_BASE_URL || process.env.EXPO_PUBLIC_API_BASE_URL || 'https://ivxholding.com').trim().replace(/\/$/, '');
-const APP_URL = (process.env.EXPO_PUBLIC_APP_URL || process.env.EXPO_PUBLIC_IVX_API_BASE_URL || '').trim().replace(/\/$/, '');
-const BACKEND_URL = (process.env.EXPO_PUBLIC_IVX_API_BASE_URL || '').trim().replace(/\/$/, '');
-const GOOGLE_ADS_KEY = (process.env.EXPO_PUBLIC_GOOGLE_ADS_API_KEY || '').trim();
-const META_PIXEL_ID = (process.env.META_PIXEL_ID || '').trim();
-const TIKTOK_PIXEL_ID = (process.env.TIKTOK_PIXEL_ID || '').trim();
-const LINKEDIN_PARTNER_ID = (process.env.LINKEDIN_PARTNER_ID || '').trim();
+const PRODUCTION_BACKEND_URL = 'https://api.ivxholding.com';
 const LANDING_HTML_CACHE_CONTROL = 'no-cache, no-store, must-revalidate';
 const LANDING_CONFIG_CACHE_CONTROL = 'no-cache, no-store, must-revalidate';
 const LANDING_API_CACHE_CONTROL = 'public, max-age=60, s-maxage=300, stale-while-revalidate=600';
 const LANDING_HEALTH_CACHE_CONTROL = 'public, max-age=30, s-maxage=60, stale-while-revalidate=120';
+
+function isLocalDevCredential(value) {
+  const v = String(value || '').toLowerCase();
+  return v.includes('127.0.0.1') || v.includes('localhost') || v.includes('::1') ||
+    v.includes('supabase local development') || v.includes('super-secret-jwt') ||
+    v.includes('54321') || v.includes('54322') || v.includes('54323');
+}
+
+function isValidSupabaseUrl(url) {
+  return /^https:\/\/[a-z0-9-]+\.supabase\.co$/i.test(String(url || '').trim());
+}
+
+function isValidSupabaseAnonKey(key) {
+  const k = String(key || '').trim();
+  return k.startsWith('eyJ') && k.length > 30 && !isLocalDevCredential(k);
+}
+
+function sanitizeBackendUrl(url) {
+  const u = String(url || '').trim().replace(/\/$/, '');
+  if (!u) return PRODUCTION_BACKEND_URL;
+  if (isLocalDevCredential(u)) return PRODUCTION_BACKEND_URL;
+  if (u.includes('ivxholding.com')) return u;
+  if (u.includes('onrender.com')) return PRODUCTION_BACKEND_URL;
+  return u;
+}
+
+function sanitizeSupabaseUrl(url) {
+  const u = String(url || '').trim();
+  if (isLocalDevCredential(u) || !isValidSupabaseUrl(u)) return '';
+  return u;
+}
+
+function sanitizeSupabaseAnonKey(key) {
+  const k = String(key || '').trim();
+  if (isLocalDevCredential(k) || !isValidSupabaseAnonKey(k)) return '';
+  return k;
+}
+
+const SUPABASE_URL = sanitizeSupabaseUrl(process.env.EXPO_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '');
+const SUPABASE_ANON_KEY = sanitizeSupabaseAnonKey(process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '');
+const API_BASE_URL = sanitizeBackendUrl((process.env.EXPO_PUBLIC_IVX_API_BASE_URL || process.env.EXPO_PUBLIC_API_BASE_URL || 'https://ivxholding.com').trim().replace(/\/$/, ''));
+const APP_URL = (process.env.EXPO_PUBLIC_APP_URL || process.env.EXPO_PUBLIC_IVX_API_BASE_URL || '').trim().replace(/\/$/, '');
+const BACKEND_URL = sanitizeBackendUrl((process.env.EXPO_PUBLIC_IVX_API_BASE_URL || '').trim().replace(/\/$/, ''));
+const GOOGLE_ADS_KEY = (process.env.EXPO_PUBLIC_GOOGLE_ADS_API_KEY || '').trim();
+const META_PIXEL_ID = (process.env.META_PIXEL_ID || '').trim();
+const TIKTOK_PIXEL_ID = (process.env.TIKTOK_PIXEL_ID || '').trim();
+const LINKEDIN_PARTNER_ID = (process.env.LINKEDIN_PARTNER_ID || '').trim();
 
 console.log('🔨 Building IVX Holdings landing page with credentials...');
 console.log('   Supabase URL:', SUPABASE_URL ? SUPABASE_URL.substring(0, 40) + '...' : '❌ NOT SET');

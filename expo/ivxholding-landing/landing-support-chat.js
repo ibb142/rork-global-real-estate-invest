@@ -65,7 +65,7 @@
       } catch (error) { /* noop */ }
     }
     if (isPlaceholder(url)) {
-      url = 'https://ivx-holdings-platform.onrender.com';
+      url = 'https://api.ivxholding.com';
     }
     return String(url || '').replace(/\/+$/, '');
   }
