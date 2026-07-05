@@ -1,13 +1,11 @@
-import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Image,
   RefreshControl,
-  Animated,
   ActivityIndicator,
   useWindowDimensions,
   Platform,
@@ -21,8 +19,14 @@ import {
   TrendingUp,
   Award,
   CheckCircle2,
-  ArrowUpRight,
-  Wallet,
+  Users,
+  Building2,
+  Brain,
+  BarChart3,
+  Home,
+  Handshake,
+  Sparkles,
+  Lock,
 } from 'lucide-react-native';
 import { useRouter, Link } from 'expo-router';
 import { useScreenFocusState } from '@/hooks/useScreenFocusState';
@@ -34,19 +38,12 @@ import { supabase } from '@/lib/supabase';
 import { useJVRealtime, usePublicationWatchdog } from '@/lib/jv-realtime';
 import { useTranslation } from '@/lib/i18n-context';
 import { useAnalytics } from '@/lib/analytics-context';
-import { useIPX } from '@/lib/ipx-context';
 import { useAuth } from '@/lib/auth-context';
+import { isOpenAccessModeEnabled } from '@/lib/open-access';
 import QuickBuyModal from '@/components/QuickBuyModal';
 import InvestorFirstFeed from '@/components/InvestorFirstFeed';
-import { formatCurrency } from '@/lib/formatters';
+import { fetchIvxHomeStats, type IvxHomeStats } from '@/lib/home-stats';
 import type { JVAgreement } from '@/types/jv';
-import { IVX_LOGO_SOURCE } from '@/constants/brand';
-
-
-
-
-
-
 
 function getPrimaryDealPhoto(deal: JVAgreement): string | undefined {
   const primaryPhoto = resolvePrimaryDealPhoto({
@@ -69,208 +66,288 @@ function getPrimaryDealPhoto(deal: JVAgreement): string | undefined {
   return primaryPhoto;
 }
 
-function PortfolioSnapshot({ router }: { router: ReturnType<typeof useRouter> }) {
-  const { holdings, getTotalIPXValue, getTotalIPXPnL, getTotalIPXPnLPercent } = useIPX();
-  const { isAuthenticated } = useAuth();
-  const scaleAnim = useRef(new Animated.Value(0.97)).current;
-  const opacityAnim = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    Animated.parallel([
-      Animated.spring(scaleAnim, { toValue: 1, friction: 8, tension: 40, useNativeDriver: true }),
-      Animated.timing(opacityAnim, { toValue: 1, duration: 400, useNativeDriver: true }),
-    ]).start();
-  }, [scaleAnim, opacityAnim]);
-
-  const hasHoldings = holdings.length > 0 && isAuthenticated;
-  const totalValue = getTotalIPXValue;
-  const totalPnL = getTotalIPXPnL;
-  const pnlPercent = getTotalIPXPnLPercent;
-  const isPositive = totalPnL >= 0;
-
-  const mode = !isAuthenticated ? 'signup' : !hasHoldings ? 'explore' : 'portfolio';
-
-  const ctaTitle = mode === 'signup' ? 'Start Investing Today' : mode === 'explore' ? 'Build Your Portfolio' : '';
-  const ctaSubtitle = mode === 'signup' ? 'Own real estate globally with curated access' : mode === 'explore' ? 'Browse properties and start earning' : '';
-  const ctaBtnText = mode === 'signup' ? 'Get Started' : 'Explore';
-  const ctaIconColor = mode === 'signup' ? Colors.primary : Colors.success;
-  const ctaTestId = mode === 'signup' ? 'portfolio-cta-signup' : 'portfolio-cta-invest';
-  const ctaOnPress = mode === 'signup'
-    ? () => router.push('/signup' as any)
-    : () => router.push('/(tabs)/market' as any);
-
+function StatCard({
+  icon,
+  value,
+  label,
+  isLoading,
+  tint = Colors.primary,
+}: {
+  icon: React.ReactNode;
+  value: string | number;
+  label: string;
+  isLoading?: boolean;
+  tint?: string;
+}) {
   return (
-    <Animated.View style={[psStyles.container, mode !== 'portfolio' ? psStyles.ctaContainer : undefined, { opacity: opacityAnim, transform: [{ scale: scaleAnim }] }]}>
-      {mode !== 'portfolio' ? (
-        <View style={psStyles.ctaInner}>
-          <View style={psStyles.ctaLeft}>
-            <View style={psStyles.ctaIconWrap}>
-              {mode === 'signup' ? (
-                <Wallet size={22} color={ctaIconColor} />
-              ) : (
-                <TrendingUp size={22} color={ctaIconColor} />
-              )}
-            </View>
-            <View style={psStyles.ctaTextWrap}>
-              <Text style={psStyles.ctaTitle}>{ctaTitle}</Text>
-              <Text style={psStyles.ctaSubtitle}>{ctaSubtitle}</Text>
-            </View>
-          </View>
-          <TouchableOpacity
-            style={psStyles.ctaButton}
-            onPress={ctaOnPress}
-            activeOpacity={0.8}
-            testID={ctaTestId}
-          >
-            <Text style={psStyles.ctaButtonText}>{ctaBtnText}</Text>
-            <ArrowUpRight size={14} color={Colors.black} />
-          </TouchableOpacity>
-        </View>
+    <View style={statCardStyles.card}>
+      <View style={[statCardStyles.iconWrap, { backgroundColor: tint + '15' }]}>
+        {icon}
+      </View>
+      {isLoading ? (
+        <ActivityIndicator size="small" color={tint} style={statCardStyles.loader} />
       ) : (
-        <TouchableOpacity
-          style={psStyles.portfolioCard}
-          onPress={() => router.push('/(tabs)/portfolio' as any)}
-          activeOpacity={0.85}
-          testID="portfolio-snapshot"
-        >
-          <View style={psStyles.portfolioHeader}>
-            <Text style={psStyles.portfolioLabel}>Your Portfolio</Text>
-            <View style={psStyles.holdingsCount}>
-              <Text style={psStyles.holdingsCountText}>{holdings.length} {holdings.length === 1 ? 'property' : 'properties'}</Text>
-            </View>
-          </View>
-          <Text style={psStyles.portfolioValue}>{formatCurrency(totalValue)}</Text>
-          <View style={psStyles.pnlRow}>
-            <View style={[psStyles.pnlBadge, { backgroundColor: isPositive ? Colors.success + '18' : Colors.error + '18' }]}>
-              <TrendingUp size={12} color={isPositive ? Colors.success : Colors.error} />
-              <Text style={[psStyles.pnlText, { color: isPositive ? Colors.success : Colors.error }]}>
-                {isPositive ? '+' : ''}{formatCurrency(totalPnL)} ({pnlPercent.toFixed(2)}%)
-              </Text>
-            </View>
-            <Text style={psStyles.pnlLabel}>All time</Text>
-          </View>
-        </TouchableOpacity>
+        <Text style={[statCardStyles.value, { color: tint }]}>{value}</Text>
       )}
-    </Animated.View>
+      <Text style={statCardStyles.label}>{label}</Text>
+    </View>
+  );
+}
+
+const statCardStyles = StyleSheet.create({
+  card: {
+    flex: 1,
+    minWidth: '46%',
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    padding: 14,
+    gap: 6,
+  },
+  iconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  value: {
+    fontSize: 24,
+    fontWeight: '800' as const,
+    letterSpacing: -0.5,
+  },
+  label: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '600' as const,
+  },
+  loader: {
+    marginVertical: 6,
+  },
+});
+
+function PortfolioSnapshot({
+  stats,
+  isLoading,
+}: {
+  stats: IvxHomeStats | undefined;
+  isLoading: boolean;
+}) {
+  return (
+    <View style={psStyles.container}>
+      <View style={psStyles.header}>
+        <Text style={psStyles.title}>Your Portfolio</Text>
+        <Text style={psStyles.subtitle}>All time</Text>
+      </View>
+      <View style={psStyles.grid}>
+        <StatCard
+          icon={<Users size={20} color={Colors.primary} />}
+          value={isLoading ? '—' : stats?.members ?? '—'}
+          label="Members"
+          isLoading={isLoading}
+          tint={Colors.primary}
+        />
+        <StatCard
+          icon={<Users size={20} color={Colors.primary} />}
+          value={isLoading ? '—' : stats?.investors ?? '—'}
+          label="Investors"
+          isLoading={isLoading}
+          tint={Colors.primary}
+        />
+        <StatCard
+          icon={<Building2 size={20} color={Colors.primary} />}
+          value={isLoading ? '—' : stats?.liveDeals ?? '—'}
+          label="Live Deals"
+          isLoading={isLoading}
+          tint={Colors.primary}
+        />
+        <StatCard
+          icon={<TrendingUp size={20} color={Colors.primary} />}
+          value={isLoading ? '—' : stats?.annualReturns ?? '—'}
+          label="Annual Returns"
+          isLoading={isLoading}
+          tint={Colors.primary}
+        />
+      </View>
+    </View>
   );
 }
 
 const psStyles = StyleSheet.create({
   container: {
     paddingHorizontal: 20,
-    marginBottom: 20,
+    marginBottom: 24,
   },
-  ctaContainer: {
-    backgroundColor: Colors.surface,
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: Colors.primary + '30',
-    paddingHorizontal: 16,
-    marginHorizontal: 0,
-  },
-  ctaInner: {
+  header: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-  },
-  ctaLeft: {
-    flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    flex: 1,
+    marginBottom: 12,
   },
-  ctaIconWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    backgroundColor: Colors.primary + '15',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  ctaTextWrap: {
-    flex: 1,
-  },
-  ctaTitle: {
+  title: {
     color: Colors.text,
-    fontSize: 15,
+    fontSize: 17,
     fontWeight: '700' as const,
   },
-  ctaSubtitle: {
-    color: Colors.textSecondary,
+  subtitle: {
+    color: Colors.textTertiary,
     fontSize: 12,
-    marginTop: 2,
+    fontWeight: '600' as const,
   },
-  ctaButton: {
+  grid: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: Colors.primary,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 10,
+    flexWrap: 'wrap',
+    gap: 12,
   },
-  ctaButtonText: {
-    color: Colors.black,
-    fontSize: 13,
+});
+
+function ExploreDealsSection({ router }: { router: ReturnType<typeof useRouter> }) {
+  const actions = useMemo(
+    () => [
+      {
+        icon: Home,
+        title: 'Buy Property Shares',
+        subtitle: 'Fractional ownership in premium real estate',
+        tint: Colors.gold,
+        onPress: () => router.push('/(tabs)/market' as any),
+        testID: 'explore-buy-shares',
+      },
+      {
+        icon: Handshake,
+        title: 'JV Partnerships',
+        subtitle: 'View JV Deals',
+        tint: Colors.blue,
+        onPress: () => router.push('/(tabs)/invest' as any),
+        testID: 'explore-jv-partnerships',
+      },
+      {
+        icon: Brain,
+        title: 'Smart Investing',
+        subtitle: 'Get Started',
+        tint: Colors.green,
+        onPress: () => router.push('/(tabs)/chat' as any),
+        testID: 'explore-smart-investing',
+      },
+      {
+        icon: BarChart3,
+        title: 'Investor Dashboard',
+        subtitle: 'Track performance & distributions',
+        tint: Colors.orange,
+        onPress: () => router.push('/(tabs)/portfolio' as any),
+        testID: 'explore-investor-dashboard',
+      },
+    ],
+    [router],
+  );
+
+  return (
+    <View style={exploreStyles.container}>
+      <View style={exploreStyles.header}>
+        <Text style={exploreStyles.title}>Explore Deals</Text>
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={() => router.push('/(tabs)/market' as any)}
+          testID="explore-all-options"
+        >
+          <View style={exploreStyles.seeAll}>
+            <Text style={exploreStyles.seeAllText}>All Options</Text>
+            <ChevronRight size={14} color={Colors.primary} />
+          </View>
+        </TouchableOpacity>
+      </View>
+      <View style={exploreStyles.grid}>
+        {actions.map((action) => {
+          const Icon = action.icon;
+          return (
+            <TouchableOpacity
+              key={action.testID}
+              style={exploreStyles.card}
+              activeOpacity={0.7}
+              onPress={action.onPress}
+              testID={action.testID}
+              accessibilityRole="button"
+              accessibilityLabel={action.title}
+            >
+              <View style={[exploreStyles.iconWrap, { backgroundColor: action.tint + '15' }]}>
+                <Icon size={22} color={action.tint} />
+              </View>
+              <Text style={exploreStyles.cardTitle}>{action.title}</Text>
+              <Text style={exploreStyles.cardSubtitle}>{action.subtitle}</Text>
+              <ChevronRight size={16} color={Colors.textTertiary} style={exploreStyles.cardArrow} />
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
+const exploreStyles = StyleSheet.create({
+  container: {
+    paddingHorizontal: 20,
+    marginBottom: 24,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  title: {
+    color: Colors.text,
+    fontSize: 17,
     fontWeight: '700' as const,
   },
-  portfolioCard: {
-    backgroundColor: Colors.surface,
-    borderRadius: 16,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: Colors.surfaceBorder,
-  },
-  portfolioHeader: {
+  seeAll: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 6,
+    gap: 2,
   },
-  portfolioLabel: {
-    color: Colors.textSecondary,
+  seeAllText: {
+    color: Colors.primary,
     fontSize: 13,
     fontWeight: '600' as const,
   },
-  holdingsCount: {
-    backgroundColor: Colors.primary + '15',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
+  grid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
   },
-  holdingsCountText: {
-    color: Colors.primary,
-    fontSize: 11,
-    fontWeight: '700' as const,
+  card: {
+    flex: 1,
+    minWidth: '46%',
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    padding: 14,
   },
-  portfolioValue: {
+  iconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  cardTitle: {
     color: Colors.text,
-    fontSize: 32,
-    fontWeight: '800' as const,
-    letterSpacing: -1,
-    marginBottom: 8,
-  },
-  pnlRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  pnlBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  pnlText: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '700' as const,
+    marginBottom: 4,
+    paddingRight: 18,
   },
-  pnlLabel: {
+  cardSubtitle: {
     color: Colors.textTertiary,
-    fontSize: 12,
+    fontSize: 11,
+    lineHeight: 16,
+  },
+  cardArrow: {
+    position: 'absolute',
+    top: 14,
+    right: 14,
   },
 });
 
@@ -294,6 +371,53 @@ function InlineTrustBadges({ t }: { t: (key: any) => string }) {
     </View>
   );
 }
+
+function TrustBadge({ icon, title, subtitle }: { icon: React.ReactNode; title: string; subtitle: string }) {
+  return (
+    <View style={trustStyles.row}>
+      <View style={trustStyles.iconWrap}>{icon}</View>
+      <View style={trustStyles.text}>
+        <Text style={trustStyles.title}>{title}</Text>
+        <Text style={trustStyles.subtitle}>{subtitle}</Text>
+      </View>
+    </View>
+  );
+}
+
+const trustStyles = StyleSheet.create({
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: Colors.surface,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    padding: 14,
+    marginBottom: 8,
+  },
+  iconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: Colors.primary + '15',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  text: {
+    flex: 1,
+  },
+  title: {
+    color: Colors.text,
+    fontSize: 14,
+    fontWeight: '700' as const,
+  },
+  subtitle: {
+    color: Colors.textTertiary,
+    fontSize: 12,
+    marginTop: 2,
+  },
+});
 
 class JVErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean }> {
   state = { hasError: false };
@@ -390,6 +514,14 @@ export default function HomeScreen() {
     }
   }, [publishedJV.deals]);
 
+  const homeStatsQuery = useQuery({
+    queryKey: ['ivx-home-stats'],
+    queryFn: fetchIvxHomeStats,
+    retry: 1,
+    staleTime: 1000 * 60 * 2,
+    refetchOnWindowFocus: true,
+  });
+
   const queryClient = useQueryClient();
 
   const unreadQuery = useQuery({
@@ -417,6 +549,7 @@ export default function HomeScreen() {
       await Promise.all([
         unreadQuery.refetch(),
         publishedJV.refetch(),
+        homeStatsQuery.refetch(),
         queryClient.invalidateQueries({ queryKey: ['ivx-home-feed'] }),
       ]);
       console.log('[Home] Pull-to-refresh complete — data is fresh from Supabase');
@@ -425,7 +558,7 @@ export default function HomeScreen() {
     } finally {
       setRefreshing(false);
     }
-  }, [unreadQuery, publishedJV, queryClient]);
+  }, [unreadQuery, publishedJV, homeStatsQuery, queryClient]);
 
   const openQuickBuy = useCallback((deal: JVAgreement) => {
     const primaryPhoto = getPrimaryDealPhoto(deal);
@@ -474,43 +607,29 @@ export default function HomeScreen() {
     }
   }, [router]);
 
-  // ── Boot router for the de-facto entry route `/`.
-  // The Supabase client (lib/supabase.ts) restores the persisted session from
-  // AsyncStorage on app start. Owners are NOT auto-redirected into
-  // /admin/owner-controls on cold start — they land on the normal app Home
-  // with bottom tabs and can open Owner Controls from Profile → Admin Panel
-  // or any of the in-app admin shortcuts. This preserves the full app
-  // experience (Home / Invest / Market / Portfolio / Chat / Profile) for
-  // owners while keeping admin access one tap away.
-  // Boot proof log (inline; previous hook was removed but call lingered → bundle crash).
   useEffect(() => {
     console.log('[Home] boot', { authLoading, isAuthenticated, userRole });
   }, [authLoading, isAuthenticated, userRole]);
 
-  // NOTE: Previous design restored. The Home tab no longer hijacks unauthenticated
-  // visitors with an owner-only sign-in gate. The normal IVX Home (tagline,
-  // Portfolio Snapshot CTA, featured deals, coming soon, trust badges) renders
-  // for everyone; auth-only sections (e.g. PortfolioSnapshot) handle their own
-  // CTA-to-login internally. Owner Login remains reachable from Profile → Owner
-  // Controls and from /owner-access / /login?ownerMode=1.
   void handleOpenOwnerLogin;
+
+  const isOwner = useMemo(() => {
+    if (isOpenAccessModeEnabled()) return true;
+    const role = (userRole ?? '').toLowerCase();
+    return role === 'owner' || role === 'admin';
+  }, [userRole]);
 
   return (
     <View style={styles.container}>
       <SafeAreaView edges={['top']} style={styles.safeArea}>
-        <View style={[styles.header, { paddingHorizontal: isXs ? 12 : 16 }]}>
+        <View style={[styles.header, { paddingHorizontal: isXs ? 16 : 16 }]}>
           <View style={styles.brandContainer}>
-            <Image
-              source={IVX_LOGO_SOURCE}
-              style={[styles.brandLogo, { width: isXs ? 44 : 55, height: isXs ? 44 : 55 }]}
-              resizeMode="contain"
-              accessibilityLabel="IVX HOLDINGS LLC logo"
-            />
-            <Text style={[styles.brandName, { fontSize: isXs ? 14 : isCompact ? 16 : 18 }]}>IVX HOLDINGS LLC</Text>
+            <Text style={styles.brandTitle}>IVXHOLDINGS</Text>
+            <Text style={styles.brandSubtitle}>Institutional Real Estate Investment</Text>
           </View>
           <View style={styles.headerActions}>
             <TouchableOpacity
-              style={styles.reelsButton}
+              style={styles.iconButton}
               onPress={() => router.push({ pathname: '/videos', params: { type: 'reel' } } as any)}
               accessible={true}
               accessibilityRole="button"
@@ -518,10 +637,10 @@ export default function HomeScreen() {
               accessibilityHint="Opens the dedicated Project Reels module — construction updates and drone footage"
               testID="home-reels-button"
             >
-              <Clapperboard size={isXs ? 22 : 26} color={Colors.primary} />
+              <Clapperboard size={isXs ? 22 : 24} color={Colors.primary} />
             </TouchableOpacity>
             <TouchableOpacity
-              style={styles.notificationButton}
+              style={styles.iconButton}
               onPress={() => router.push('/notifications' as any)}
               accessible={true}
               accessibilityRole="button"
@@ -529,7 +648,7 @@ export default function HomeScreen() {
               accessibilityHint="Opens notifications screen"
               testID="home-notification-button"
             >
-              <Bell size={isXs ? 22 : 26} color={Colors.text} />
+              <Bell size={isXs ? 22 : 24} color={Colors.text} />
               {unreadNotifications > 0 ? (
                 <View style={styles.notificationBadge}>
                   <Text style={styles.notificationBadgeText}>{unreadNotifications}</Text>
@@ -550,20 +669,14 @@ export default function HomeScreen() {
             />
           }
         >
-          {/* 1. Tagline + Inline Trust */}
           <View style={[styles.welcomeSection, { paddingHorizontal: isXs ? 16 : 20 }]}>
-            <Text style={[styles.welcomeText, { fontSize: isXs ? 22 : isCompact ? 24 : 28 }]}>{t('ownRealEstate')}</Text>
-            <Text style={[styles.welcomeHighlight, { fontSize: isXs ? 22 : isCompact ? 24 : 28 }]}>{t('tradeLikeCrypto')}</Text>
             <InlineTrustBadges t={t} />
           </View>
 
-          {/* 2. Portfolio Snapshot / CTA */}
-          <PortfolioSnapshot router={router} />
+          <PortfolioSnapshot stats={homeStatsQuery.data} isLoading={homeStatsQuery.isLoading} />
 
-          {/* 3+4. Investor-first feed — 3 featured deals → 1 featured project video → repeat.
-              Canonical order from /api/ivx/video-platform/home-feed (same sequence as
-              landing page + iOS). Replaces Property Reels + Featured Properties + JV carousel
-              so no duplicate or random videos appear. */}
+          <ExploreDealsSection router={router} />
+
           <JVErrorBoundary>
             <InvestorFirstFeed
               jvDeals={jvDeals}
@@ -574,33 +687,59 @@ export default function HomeScreen() {
             />
           </JVErrorBoundary>
 
-          {/* 5. In-app owner entry */}
-          <View style={{ paddingHorizontal: isXs ? 16 : 20, marginBottom: 20 }}>
-            <Link
-              href={{ pathname: '/login', params: { ownerMode: '1' } } as any}
-              asChild
-            >
-            <TouchableOpacity
-              style={styles.ownerCTA}
-              onPress={handleOpenOwnerLogin}
-              activeOpacity={0.8}
-              testID="home-owner-login-entry"
-              accessibilityRole="button"
-              accessibilityLabel="Owner Login, direct owner sign in inside the app"
-            >
-              <View style={styles.ownerCTALeft}>
-                <View style={styles.ownerCTAIcon}>
-                  <Shield size={20} color={Colors.primary} />
-                </View>
-                <View style={styles.ownerCTAMeta}>
-                  <Text style={styles.ownerCTATitle}>Owner Login</Text>
-                  <Text style={styles.ownerCTASubtitle}>Direct approved-owner route inside the app — not the landing page.</Text>
-                </View>
-              </View>
-              <ChevronRight size={18} color={Colors.primary} />
-            </TouchableOpacity>
-            </Link>
+          <View style={{ paddingHorizontal: isXs ? 16 : 20, marginBottom: 24 }}>
+            <TrustBadge
+              icon={<Sparkles size={20} color={Colors.primary} />}
+              title="AI Investing"
+              subtitle="Smart analysis picks the best deals for you"
+            />
+            <TrustBadge
+              icon={<Lock size={20} color={Colors.primary} />}
+              title="Secure Escrow"
+              subtitle="Escrow-protected funds on every investment"
+            />
+            <TrustBadge
+              icon={<BarChart3 size={20} color={Colors.primary} />}
+              title="Beating Markets"
+              subtitle="Performance-focused real estate strategies"
+            />
+            <TrustBadge
+              icon={<TrendingUp size={20} color={Colors.primary} />}
+              title="Instant Liquidity"
+              subtitle="Trade shares 24/7 — no lockup periods"
+            />
           </View>
+
+          {isOwner && (
+            <View style={{ paddingHorizontal: isXs ? 16 : 20, marginBottom: 20 }}>
+              <Link
+                href={{ pathname: '/login', params: { ownerMode: '1' } } as any}
+                asChild
+              >
+                <TouchableOpacity
+                  style={styles.ownerCTA}
+                  onPress={handleOpenOwnerLogin}
+                  activeOpacity={0.8}
+                  testID="home-owner-login-entry"
+                  accessibilityRole="button"
+                  accessibilityLabel="Owner Login, direct owner sign in inside the app"
+                >
+                  <View style={styles.ownerCTALeft}>
+                    <View style={styles.ownerCTAIcon}>
+                      <Shield size={20} color={Colors.primary} />
+                    </View>
+                    <View style={styles.ownerCTAMeta}>
+                      <Text style={styles.ownerCTATitle}>Owner Login</Text>
+                      <Text style={styles.ownerCTASubtitle}>Direct approved-owner route inside the app.</Text>
+                    </View>
+                  </View>
+                  <ChevronRight size={18} color={Colors.primary} />
+                </TouchableOpacity>
+              </Link>
+            </View>
+          )}
+
+          <Text style={styles.footer}>IVX HOLDINGS LLC</Text>
 
           <View style={styles.bottomPadding} />
         </ScrollView>
@@ -623,50 +762,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.background,
   },
-  authRedirectContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.background,
-    gap: 12,
-    paddingHorizontal: 24,
-  },
-  authRedirectText: {
-    color: Colors.textSecondary,
-    fontSize: 14,
-    fontWeight: '700' as const,
-    textAlign: 'center' as const,
-  },
-  authRedirectButton: {
-    marginTop: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: Colors.primary,
-    borderRadius: 14,
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-    minHeight: 48,
-    minWidth: 190,
-    justifyContent: 'center',
-  },
-  authRedirectButtonText: {
-    color: Colors.black,
-    fontSize: 14,
-    fontWeight: '800' as const,
-  },
-  authRedirectSecondary: {
-    marginTop: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  authRedirectSecondaryText: {
-    color: Colors.primary,
-    fontSize: 12,
-    fontWeight: '600' as const,
-    textAlign: 'center' as const,
-    textDecorationLine: 'underline' as const,
-  },
   safeArea: {
     flex: 1,
   },
@@ -677,42 +772,34 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   brandContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
+    flexDirection: 'column',
+    justifyContent: 'center',
   },
-  brandLogo: {
-    borderRadius: 12,
+  brandTitle: {
+    fontSize: 20,
+    fontWeight: '900' as const,
+    color: Colors.primary,
+    letterSpacing: 0.5,
   },
-  brandName: {
-    fontWeight: '800' as const,
-    color: Colors.text,
-    letterSpacing: 1,
+  brandSubtitle: {
+    fontSize: 11,
+    color: Colors.textSecondary,
+    marginTop: 2,
   },
   headerActions: {
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
-    gap: 4,
+    gap: 10,
   },
-  reelsButton: {
+  iconButton: {
     width: 40,
     height: 40,
-    borderRadius: 12,
-    backgroundColor: Colors.primary + '15',
+    borderRadius: 20,
+    backgroundColor: Colors.surface,
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
     borderWidth: 1,
-    borderColor: Colors.primary + '30',
-  },
-  auditButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: Colors.primary + '15',
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
-    borderWidth: 1,
-    borderColor: Colors.primary + '30',
+    borderColor: Colors.surfaceBorder,
   },
   notificationButton: {
     position: 'relative' as const,
@@ -736,18 +823,8 @@ const styles = StyleSheet.create({
     fontWeight: '700' as const,
   },
   welcomeSection: {
-    paddingTop: 8,
+    paddingTop: 4,
     paddingBottom: 8,
-  },
-  welcomeText: {
-    fontWeight: '800' as const,
-    color: Colors.text,
-    lineHeight: 32,
-  },
-  welcomeHighlight: {
-    fontWeight: '800' as const,
-    color: Colors.primary,
-    lineHeight: 32,
   },
   inlineTrustRow: {
     flexDirection: 'row',
@@ -771,137 +848,6 @@ const styles = StyleSheet.create({
     height: 3,
     borderRadius: 1.5,
     backgroundColor: Colors.textTertiary,
-  },
-  comingSoonSection: {
-    marginBottom: 20,
-  },
-  featuredSection: {
-    marginBottom: 20,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 14,
-  },
-  sectionTitleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  sectionTitle: {
-    fontWeight: '700' as const,
-    color: Colors.text,
-  },
-  seeAllButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  seeAllText: {
-    color: Colors.primary,
-    fontWeight: '600' as const,
-  },
-  featuredScroll: {
-    gap: 0,
-  },
-  whySection: {
-    marginBottom: 8,
-  },
-  whySectionTitle: {
-    fontSize: 18,
-    fontWeight: '700' as const,
-    color: Colors.text,
-    marginBottom: 14,
-  },
-  quickActionsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  quickAction: {
-    backgroundColor: Colors.surface,
-    borderRadius: 14,
-    padding: 14,
-    width: '48%' as any,
-    borderWidth: 1,
-    borderColor: Colors.surfaceBorder,
-  },
-  quickActionIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 10,
-  },
-  quickActionTitle: {
-    color: Colors.text,
-    fontSize: 13,
-    fontWeight: '700' as const,
-    marginBottom: 4,
-    paddingRight: 16,
-  },
-  quickActionSubtitle: {
-    color: Colors.textTertiary,
-    fontSize: 11,
-    lineHeight: 16,
-  },
-  quickActionArrow: {
-    position: 'absolute',
-    top: 14,
-    right: 14,
-  },
-  testimonialCard: {
-    backgroundColor: Colors.surface,
-    borderRadius: 16,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: Colors.surfaceBorder,
-  },
-  testimonialHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 10,
-  },
-  testimonialSectionTitle: {
-    color: Colors.text,
-    fontSize: 15,
-    fontWeight: '700' as const,
-  },
-  testimonialStars: {
-    flexDirection: 'row',
-    gap: 3,
-    marginBottom: 8,
-  },
-  testimonialText: {
-    color: Colors.textSecondary,
-    fontSize: 14,
-    lineHeight: 20,
-    fontStyle: 'italic',
-    marginBottom: 8,
-  },
-  testimonialAuthor: {
-    color: Colors.textTertiary,
-    fontSize: 12,
-    fontWeight: '600' as const,
-  },
-  testimonialDots: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 6,
-    marginTop: 12,
-  },
-  testimonialDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: Colors.surfaceBorder,
-  },
-  testimonialDotActive: {
-    backgroundColor: Colors.primary,
-    width: 18,
   },
   ownerCTA: {
     backgroundColor: Colors.surface,
@@ -940,6 +886,13 @@ const styles = StyleSheet.create({
     color: Colors.textTertiary,
     fontSize: 12,
     marginTop: 2,
+  },
+  footer: {
+    color: Colors.textTertiary,
+    fontSize: 11,
+    fontWeight: '700' as const,
+    textAlign: 'center',
+    marginTop: 8,
   },
   bottomPadding: {
     height: 120,

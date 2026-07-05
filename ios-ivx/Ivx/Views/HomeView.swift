@@ -14,6 +14,7 @@ struct HomeView: View {
     @State private var homeFeedModel = HomeFeedViewModel()
     @State private var liveMemberTotal: Int?
     @State private var liveInvestorTotal: Int?
+    @State private var liveDealTotal: Int?
     @State private var showProjectReels = false
 
     var body: some View {
@@ -112,7 +113,7 @@ struct HomeView: View {
                 )
                 StatCard(
                     title: "Live Deals",
-                    value: dealsModel.deals.isEmpty && dealsModel.isLoading ? "—" : String(dealsModel.deals.count),
+                    value: liveDealTotal.map(String.init) ?? "—",
                     icon: "building.2"
                 )
                 StatCard(title: "Annual Returns", value: "Up to 22%", icon: "arrow.up.right")
@@ -248,11 +249,10 @@ struct HomeView: View {
 
     private func loadLiveStats() async {
         do {
-            let response = try await MembersRegistryService.fetchRegistry()
-            liveMemberTotal = response.total ?? response.members.count
-            liveInvestorTotal = response.members
-                .filter { ($0.memberType ?? "").lowercased() == "investor" }
-                .count
+            let counts = try await MembersRegistryService.fetchCounts()
+            liveMemberTotal = counts.members
+            liveInvestorTotal = counts.investors
+            liveDealTotal = counts.liveDeals
         } catch {
             print("[Home] Live stats fetch failed: \(error.localizedDescription)")
         }

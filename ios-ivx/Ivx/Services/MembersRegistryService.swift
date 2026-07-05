@@ -29,6 +29,8 @@ nonisolated enum MembersRegistryError: LocalizedError {
 nonisolated struct MembersRegistryService {
     static let apiBaseURL = "https://api.ivxholding.com"
     static let registryPath = "/api/ivx/members/registry"
+    static let countPath = "/api/ivx/members/count"
+    static let dealsPath = "/api/ivx/jv-deals"
 
     static func fetchRegistry(limit: Int = 1000) async throws -> MembersRegistryResponse {
         guard var components = URLComponents(string: apiBaseURL + registryPath) else {
@@ -50,6 +52,53 @@ nonisolated struct MembersRegistryService {
 
         do {
             return try JSONDecoder().decode(MembersRegistryResponse.self, from: data)
+        } catch {
+            throw MembersRegistryError.decodingFailed
+        }
+    }
+
+    static func fetchCounts() async throws -> MembersCountsResponse {
+        guard let url = URL(string: apiBaseURL + countPath) else {
+            throw MembersRegistryError.invalidURL
+        }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 20
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+            throw MembersRegistryError.httpError(http.statusCode)
+        }
+
+        let counts = try JSONDecoder().decode(MembersCountsResponse.self, from: data)
+        let deals = try await fetchLiveDealCount()
+        return MembersCountsResponse(
+            ok: counts.ok,
+            members: counts.members,
+            waitlist: counts.waitlist,
+            investors: counts.investors,
+            buyers: counts.buyers,
+            total: counts.total,
+            liveDeals: deals
+        )
+    }
+
+    static func fetchLiveDealCount() async throws -> Int {
+        guard let url = URL(string: apiBaseURL + dealsPath) else {
+            throw MembersRegistryError.invalidURL
+        }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 20
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+            throw MembersRegistryError.httpError(http.statusCode)
+        }
+
+        do {
+            let payload = try JSONDecoder().decode(JVDealsCountResponse.self, from: data)
+            return payload.count ?? payload.deals.count
         } catch {
             throw MembersRegistryError.decodingFailed
         }

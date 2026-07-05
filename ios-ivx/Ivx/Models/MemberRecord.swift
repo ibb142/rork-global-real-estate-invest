@@ -14,6 +14,25 @@ nonisolated struct MembersRegistryResponse: Codable {
     let members: [MemberRecord]
 }
 
+nonisolated struct MembersCountsResponse: Codable {
+    let ok: Bool
+    let members: Int
+    let waitlist: Int
+    let investors: Int
+    let buyers: Int
+    let total: Int
+    let liveDeals: Int?
+}
+
+nonisolated struct JVDealsCountResponse: Codable {
+    let deals: [JVDealCountItem]
+    let count: Int?
+}
+
+nonisolated struct JVDealCountItem: Codable {
+    let id: String
+}
+
 nonisolated struct MemberRecord: Codable, Identifiable, Hashable {
     let memberId: String
     let fullName: String?
