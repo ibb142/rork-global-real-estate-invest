@@ -38,7 +38,9 @@ import {
   appendDurableEvent,
 } from '../ivx-durable-store';
 import { appendFile, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 
 export const ROLE_AGENTS_MARKER = 'ivx-role-agent-cloning-2026-06-15';
 
@@ -330,9 +332,22 @@ async function writeRoleAgentsState(state: RoleAgentsState): Promise<void> {
     await writeDurableJson(STATE_PATH, next);
     return;
   }
+  // Robust atomic write: temp file lives in os.tmpdir() so parallel test
+  // directory deletion cannot erase it before the final rename.
+  const tmp = path.join(os.tmpdir(), `ivx-role-agents-${randomUUID()}.tmp`);
   await mkdir(DIR, { recursive: true });
-  await writeFile(TMP_PATH, JSON.stringify(next, null, 2), 'utf8');
-  await rename(TMP_PATH, STATE_PATH);
+  await writeFile(tmp, JSON.stringify(next, null, 2), 'utf8');
+  try {
+    await rename(tmp, STATE_PATH);
+  } catch (error) {
+    const code = (error as { code?: string }).code;
+    if (code === 'ENOENT') {
+      await mkdir(DIR, { recursive: true });
+      await rename(tmp, STATE_PATH);
+      return;
+    }
+    throw error;
+  }
 }
 
 async function appendRunLog(event: Record<string, unknown>): Promise<void> {

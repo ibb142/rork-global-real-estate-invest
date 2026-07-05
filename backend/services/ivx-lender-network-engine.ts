@@ -24,6 +24,7 @@
  * signals (lazy-imported), no AI/network of its own, fully unit-testable.
  */
 import { rankDeals, type DealScore } from './ivx-deal-intelligence';
+import { readLandingProjects, type ProjectRecord } from './ivx-project-data';
 import {
   upsertLenders,
   listLenders,
@@ -64,45 +65,34 @@ export type LenderSignalSnapshot = {
 async function readRankedDeals(): Promise<LenderSignalSnapshot> {
   const scannedAt = new Date().toISOString();
   try {
-    const { listJvDeals } = await import('./ivx-deal-tracking-store');
-    const rawDeals = await listJvDeals();
+    const projectResult = await readLandingProjects();
+    const rawDeals = projectResult.projects;
     if (rawDeals.length === 0) {
       return { scannedAt, ok: true, reason: 'No jv_deals rows; lender engine returned segment defaults.', deals: [] };
     }
-    const projectIds = Array.from(new Set(rawDeals.map((d) => d.projectId).filter(Boolean))) as string[];
-    let projectNameById = new Map<string, string>();
-    let projectLocationById = new Map<string, string | null>();
-    if (projectIds.length > 0) {
-      try {
-        const { listProjects } = await import('./ivx-project-data');
-        const projects = await listProjects();
-        projectNameById = new Map(projects.map((p) => [p.id, p.name]));
-        projectLocationById = new Map(projects.map((p) => [p.id, p.location ?? null]));
-      } catch {
-        // Projects are enrichment; deals still work without them.
-      }
-    }
+    const projectNameById = new Map(rawDeals.map((p) => [p.id, p.name]));
+    const projectLocationById = new Map(rawDeals.map((p) => [p.id, p.location ?? null]));
     const scores = rankDeals(rawDeals);
     const deals: LenderDeal[] = scores.map((s: DealScore) => {
-      const raw = rawDeals.find((d) => d.id === s.id);
-      const projectId = raw?.projectId ?? null;
-      const location = projectId ? (projectLocationById.get(projectId) ?? null) : null;
-      const name = (projectId ? projectNameById.get(projectId) : null) ?? raw?.title ?? s.name;
+      const projectId = s.id;
+      const location = projectLocationById.get(projectId) ?? null;
+      const name = projectNameById.get(projectId) ?? s.name;
       const lower = `${name} ${location ?? ''}`.toLowerCase();
+      const metrics = s.metrics;
       const isSouthFlorida = /(miami|fort lauderdale|naples|west palm|palm beach|brickell|coral gables|sunny isles|aventura|boca|south florida|broward|miami-dade)/.test(lower);
-      const isLuxury = s.priceUsd !== null && s.priceUsd >= 1_000_000 || /(waterfront|penthouse|luxury|condo|estate)/.test(lower);
-      const isFractional = s.minOwnershipUsd !== null && s.minOwnershipUsd < 100_000;
+      const isLuxury = metrics.priceUsd !== null && metrics.priceUsd >= 1_000_000 || /(waterfront|penthouse|luxury|condo|estate)/.test(lower);
+      const isFractional = metrics.minOwnershipUsd !== null && metrics.minOwnershipUsd < 100_000;
       const isDevelopment = /(development|construction|ground-up|renovation|value-add|distressed|redevelopment)/.test(lower);
       return {
         id: s.id,
         name,
         location,
-        priceUsd: s.priceUsd,
-        roiPercent: s.roiPercent,
-        minOwnershipUsd: s.minOwnershipUsd,
+        priceUsd: metrics.priceUsd,
+        roiPercent: metrics.roiPercent,
+        minOwnershipUsd: metrics.minOwnershipUsd,
         weightedScore: s.weightedScore,
         completionScore: s.completionScore,
-        dataCompleteness: s.dataCompleteness,
+        dataCompleteness: metrics.dataCompleteness,
         isSouthFlorida,
         isLuxury,
         isFractional,

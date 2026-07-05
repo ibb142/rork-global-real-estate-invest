@@ -100,6 +100,7 @@ export { applySeniorDeveloperNarrativeGate } from '../services/ivx-senior-develo
 export { applyAccessStatusNarrativeGate } from '../services/ivx-access-status-narrative-gate';
 export { applyIVXIAReliabilityGate } from '../services/ivx-ia-reliability-gate';
 import { generateIVX3DModel } from '../services/ivx-model3d-generation';
+import { detectDeveloperModeRequest, buildDeveloperModeBlockedExplanation } from '../services/ivx-owner-ai-dev-mode';
 
 import { classifyOwnerExecutionCommand, type IVXOwnerExecutionDecision } from '../services/ivx-owner-execution-mode';
 import { startDailyImprovementTask, type DailyImprovementStart } from '../services/ivx-daily-improvement';
@@ -5786,6 +5787,27 @@ async function handleIVXOwnerAIRequestInternal(request: Request): Promise<Respon
       return ownerOnlyJson({ error: 'Request body unreadable.' }, 400);
     }
     const prompt = readTrimmedString(body.message);
+    // Developer-mode request: the owner asks for deploy/audit/fix work. We never
+    // fabricate proof; we explain the exact blocker so the chat stops returning
+    // generic BLOCKED-only messages.
+    if (detectDeveloperModeRequest(prompt)) {
+      return ownerOnlyJson({
+        ok: false,
+        status: 'blocked',
+        source: 'ivx-owner-ai-dev-mode',
+        answer: buildDeveloperModeBlockedExplanation('Developer-mode task requires owner-signed senior-developer execution with real GitHub/Render/Supabase credentials.'),
+        model: 'ivx_backend',
+        provider: 'chatgpt',
+        deploymentMarker: DEPLOYMENT_MARKER,
+        assistantMessageId: null,
+        assistantPersisted: false,
+        selectedTool: null,
+        toolInput: [],
+        toolOutput: [],
+        fallbackUsed: false,
+        toolOutputs: [],
+      }, 200);
+    }
     const mode = body.mode === 'command' ? 'command' : 'chat';
     // Persistence is ON by default for the owner conversation. The owner chat is a
     // durable thread that must survive refresh/app-reopen/Render-restart, so the
