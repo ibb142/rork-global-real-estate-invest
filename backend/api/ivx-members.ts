@@ -81,6 +81,7 @@ export async function handleMemberRegister(request: Request): Promise<Response> 
       ))
     : [];
   const acceptTerms = !!body.acceptTerms;
+  const pictureUrl = asString(body.pictureUrl);
 
   // Validation
   if (!firstName || !lastName) {
@@ -110,6 +111,7 @@ export async function handleMemberRegister(request: Request): Promise<Response> 
     zipCode,
     roles,
     acceptTerms,
+    pictureUrl,
   });
 
   if (result.success && result.userId) {
@@ -129,6 +131,7 @@ export async function handleMemberRegister(request: Request): Promise<Response> 
         country,
         zipCode,
         roles,
+        pictureUrl,
       });
     } catch (fanoutErr) {
       console.error('[Members] Onboarding fanout failed (non-fatal):', fanoutErr);
@@ -145,6 +148,7 @@ export async function handleMemberRegister(request: Request): Promise<Response> 
         sourceDetail: 'members/register',
         investorInterest: roles.join(', '),
         preferredZipcode: zipCode,
+        pictureUrl,
         authUserId: result.userId,
       });
     } catch (syncErr) {

@@ -208,35 +208,6 @@ export default function ChatHubScreen() {
   // "disappearing chat" bug). We only let history fully replace the local list
   // when no send is pending; otherwise we merge so the optimistic bubbles win.
   const sendInFlightRef = useRef(false);
-  useEffect(() => {
-    sendInFlightRef.current = sendMutation.isPending;
-  }, [sendMutation.isPending]);
-
-  useEffect(() => {
-    if (!historyQuery.data) return;
-    const restoredMessages = historyQuery.data.messages.map(mapPublicMessageToChatMessage);
-    if (restoredMessages.length === 0) {
-      // Only fall back to the welcome message when we are not mid-send;
-      // otherwise keep the optimistic bubbles visible until the send settles.
-      if (!sendInFlightRef.current) {
-        setMessages([createWelcomeMessage()]);
-      }
-      setLocalError(null);
-      return;
-    }
-    const incoming = trimMessages(restoredMessages);
-    setMessages((current) => {
-      // If a send is in-flight, preserve optimistic assistant + user bubbles
-      // that history may not have persisted yet. Merge by id so persisted
-      // duplicates replace their optimistic counterparts, but never drop a
-      // local-only optimistic bubble.
-      if (sendInFlightRef.current) {
-        return mergeMessages(current, incoming);
-      }
-      return incoming;
-    });
-    setLocalError(null);
-  }, [historyQuery.data]);
 
   const sendMutation = useMutation<PublicChatApiResponse, Error, SendMutationInput>({
     mutationKey: ['public-chat', 'send', sessionId],
@@ -300,6 +271,38 @@ export default function ChatHubScreen() {
   const canSend = useMemo<boolean>(() => {
     return readTrimmed(composerValue).length > 0 && !sendMutation.isPending && isHydrated;
   }, [composerValue, isHydrated, sendMutation.isPending]);
+
+  // Sync the in-flight ref now that sendMutation exists.
+  useEffect(() => {
+    sendInFlightRef.current = sendMutation.isPending;
+  }, [sendMutation.isPending]);
+
+  // History restoration — preserve optimistic bubbles while a send is pending.
+  useEffect(() => {
+    if (!historyQuery.data) return;
+    const restoredMessages = historyQuery.data.messages.map(mapPublicMessageToChatMessage);
+    if (restoredMessages.length === 0) {
+      // Only fall back to the welcome message when we are not mid-send;
+      // otherwise keep the optimistic bubbles visible until the send settles.
+      if (!sendInFlightRef.current) {
+        setMessages([createWelcomeMessage()]);
+      }
+      setLocalError(null);
+      return;
+    }
+    const incoming = trimMessages(restoredMessages);
+    setMessages((current) => {
+      // If a send is in-flight, preserve optimistic assistant + user bubbles
+      // that history may not have persisted yet. Merge by id so persisted
+      // duplicates replace their optimistic counterparts, but never drop a
+      // local-only optimistic bubble.
+      if (sendInFlightRef.current) {
+        return mergeMessages(current, incoming);
+      }
+      return incoming;
+    });
+    setLocalError(null);
+  }, [historyQuery.data]);
 
   const aiProvider = healthQuery.data?.aiProvider ?? (healthQuery.data?.aiEnabled ? 'chatgpt' : 'fallback');
   const source = latestResponse?.source ?? aiProvider;

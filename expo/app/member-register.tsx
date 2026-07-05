@@ -11,9 +11,13 @@ import {
   Platform,
   Modal,
   FlatList,
+  Image as RNImage,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, Href } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 import {
   Mail,
   Lock,
@@ -30,22 +34,23 @@ import {
   Shield,
   MapPin,
   TrendingUp,
+  Camera,
+  Image as ImageIcon,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { COUNTRIES, Country } from '@/constants/countries';
 import { validateEmail, validatePassword, validatePhone } from '@/lib/auth-helpers';
+import { supabase } from '@/lib/supabase';
 import * as MemberService from '@/lib/member-service';
 
 const STEPS = ['Register', 'Verify', 'Dashboard'] as const;
 type Step = (typeof STEPS)[number];
 
-const ROLE_OPTIONS: { id: MemberService.MemberRoleInterest; label: string }[] = [
-  { id: 'buyer', label: 'Buyer' },
+const MARKET_INTEREST_OPTIONS: { id: MemberService.MemberRoleInterest; label: string }[] = [
   { id: 'investor', label: 'Investor' },
-  { id: 'jv_partner', label: 'JV Partner' },
-  { id: 'broker', label: 'Broker' },
-  { id: 'agent', label: 'Agent' },
-  { id: 'land_owner', label: 'Land Owner' },
+  { id: 'buyer', label: 'Buyer' },
+  { id: 'jv_deals', label: 'JV Deals' },
+  { id: 'tokenized', label: 'Tokenized' },
 ];
 
 export default function MemberRegisterScreen() {
@@ -69,12 +74,106 @@ export default function MemberRegisterScreen() {
     zipCode: '',
     acceptTerms: false,
   });
-  const [selectedRoles, setSelectedRoles] = useState<MemberService.MemberRoleInterest[]>([]);
+  const [selectedInterest, setSelectedInterest] = useState<MemberService.MemberRoleInterest | null>(null);
+  const [pictureUri, setPictureUri] = useState<string | null>(null);
+  const [pictureUploading, setPictureUploading] = useState(false);
+  const [uploadedPictureUrl, setUploadedPictureUrl] = useState<string | null>(null);
 
-  const toggleRole = (role: MemberService.MemberRoleInterest) => {
-    setSelectedRoles((prev) =>
-      prev.includes(role) ? prev.filter((r) => r !== role) : [...prev, role]
-    );
+  const selectInterest = (role: MemberService.MemberRoleInterest) => {
+    setSelectedInterest((prev) => (prev === role ? null : role));
+  };
+
+  const pickMemberPicture = async () => {
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Permission Required', 'Please allow photo library access to upload a profile picture.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.85,
+      });
+      if (result.canceled || !result.assets || result.assets.length === 0) return;
+      const uri = result.assets[0].uri;
+      setPictureUri(uri);
+      await uploadMemberPicture(uri);
+    } catch (err) {
+      const message = (err as Error)?.message || 'Failed to pick picture';
+      Alert.alert('Picture Error', message);
+    }
+  };
+
+  const uploadMemberPicture = async (uri: string): Promise<void> => {
+    setPictureUploading(true);
+    try {
+      const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
+      const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
+      if (!supabaseUrl || !anonKey) {
+        throw new Error('Supabase storage is not configured.');
+      }
+      const bucket = 'member-pictures';
+      const lower = uri.toLowerCase();
+      const ext = lower.includes('.png') ? 'png' : 'webp';
+      const fileName = `member_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
+      const filePath = `${fileName}`;
+      const uploadUrl = `${supabaseUrl}/storage/v1/object/${bucket}/${filePath}`;
+      const headers: Record<string, string> = { apikey: anonKey, Authorization: `Bearer ${anonKey}` };
+      let uploadResult: { success: boolean; error?: string };
+      if (Platform.OS === 'web') {
+        const resp = await fetch(uri);
+        const blob = await resp.blob();
+        headers['Content-Type'] = blob.type || 'image/jpeg';
+        const response = await fetch(uploadUrl, { method: 'POST', headers, body: blob });
+        uploadResult = response.ok ? { success: true } : { success: false, error: `HTTP ${response.status}` };
+      } else {
+        const localUri = await ensureLocalFile(uri);
+        headers['Content-Type'] = 'image/jpeg';
+        const result = await FileSystem.uploadAsync(uploadUrl, localUri, {
+          httpMethod: 'POST',
+          uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+          fieldName: 'file',
+          mimeType: 'image/jpeg',
+          headers,
+        });
+        uploadResult = result.status >= 200 && result.status < 300 ? { success: true } : { success: false, error: `HTTP ${result.status}` };
+      }
+      if (!uploadResult.success) {
+        throw new Error(uploadResult.error || 'Upload failed');
+      }
+      const { data: publicUrlData } = supabase.storage.from(bucket).getPublicUrl(filePath);
+      const publicUrl = publicUrlData?.publicUrl || `${supabaseUrl}/storage/v1/object/public/${bucket}/${filePath}`;
+      setUploadedPictureUrl(publicUrl);
+      console.log('[MemberRegister] Picture uploaded:', publicUrl);
+    } catch (err) {
+      const message = (err as Error)?.message || 'Picture upload failed';
+      console.log('[MemberRegister] Picture upload failed:', message);
+      setPictureUri(null);
+      setUploadedPictureUrl(null);
+      Alert.alert('Picture Upload Failed', 'Could not upload the picture. You can try again or skip — picture is optional.');
+    } finally {
+      setPictureUploading(false);
+    }
+  };
+
+  const ensureLocalFile = async (uri: string): Promise<string> => {
+    if (uri.startsWith('file://')) return uri;
+    if (uri.startsWith('data:image/')) {
+      const match = uri.match(/^data:(image\/[^;]+);base64,(.+)$/);
+      if (match) {
+        const tempPath = `${FileSystem.cacheDirectory}member_pic_${Date.now()}.jpg`;
+        await FileSystem.writeAsStringAsync(tempPath, match[2] || '', { encoding: FileSystem.EncodingType.Base64 });
+        return tempPath;
+      }
+    }
+    if (uri.startsWith('content://') || uri.startsWith('ph://')) {
+      const tempPath = `${FileSystem.cacheDirectory}member_pic_${Date.now()}.jpg`;
+      await FileSystem.copyAsync({ from: uri, to: tempPath });
+      return tempPath;
+    }
+    return uri;
   };
 
   const [showPassword, setShowPassword] = useState(false);
@@ -126,6 +225,14 @@ export default function MemberRegisterScreen() {
       Alert.alert('Invalid Phone', 'Please enter a valid phone number.');
       return;
     }
+    if (!formData.zipCode.trim()) {
+      Alert.alert('Zip Code Required', 'Please enter your zip/postal code.');
+      return;
+    }
+    if (!selectedInterest) {
+      Alert.alert('Market Interest Required', 'Please select one market interest.');
+      return;
+    }
     if (!formData.acceptTerms) {
       Alert.alert('Terms Required', 'Please accept the Terms of Service.');
       return;
@@ -141,8 +248,9 @@ export default function MemberRegisterScreen() {
         phone: formData.phone,
         country: formData.country,
         zipCode: formData.zipCode,
-        roles: selectedRoles,
+        roles: selectedInterest ? [selectedInterest] : [],
         acceptTerms: formData.acceptTerms,
+        pictureUrl: uploadedPictureUrl ?? undefined,
       });
 
       if (result.success && result.userId) {
@@ -226,7 +334,7 @@ export default function MemberRegisterScreen() {
       {/* Name Row */}
       <View style={styles.row}>
         <View style={styles.halfField}>
-          <Text style={styles.label}>First Name</Text>
+          <Text style={styles.label}>First Name *</Text>
           <View style={styles.inputContainer}>
             <User size={18} color={Colors.muted} style={styles.inputIcon} />
             <TextInput
@@ -240,7 +348,7 @@ export default function MemberRegisterScreen() {
           </View>
         </View>
         <View style={styles.halfField}>
-          <Text style={styles.label}>Last Name</Text>
+          <Text style={styles.label}>Last Name *</Text>
           <View style={styles.inputContainer}>
             <User size={18} color={Colors.muted} style={styles.inputIcon} />
             <TextInput
@@ -256,7 +364,7 @@ export default function MemberRegisterScreen() {
       </View>
 
       {/* Email */}
-      <Text style={styles.label}>Email</Text>
+      <Text style={styles.label}>Email *</Text>
       <View style={styles.inputContainer}>
         <Mail size={18} color={Colors.muted} style={styles.inputIcon} />
         <TextInput
@@ -320,7 +428,7 @@ export default function MemberRegisterScreen() {
       </View>
 
       {/* Phone */}
-      <Text style={styles.label}>Mobile Phone</Text>
+      <Text style={styles.label}>Mobile Phone *</Text>
       <View style={styles.inputContainer}>
         <Phone size={18} color={Colors.muted} style={styles.inputIcon} />
         <TextInput
@@ -347,7 +455,7 @@ export default function MemberRegisterScreen() {
       </TouchableOpacity>
 
       {/* Zip Code */}
-      <Text style={styles.label}>Zip Code</Text>
+      <Text style={styles.label}>Zip Code *</Text>
       <View style={styles.inputContainer}>
         <MapPin size={18} color={Colors.muted} style={styles.inputIcon} />
         <TextInput
@@ -361,24 +469,66 @@ export default function MemberRegisterScreen() {
         />
       </View>
 
-      {/* Optional Role Interests */}
-      <Text style={styles.label}>I am a... (optional)</Text>
-      <View style={styles.roleGrid}>
-        {ROLE_OPTIONS.map((role) => {
-          const active = selectedRoles.includes(role.id);
+      {/* Member Picture (optional) */}
+      <Text style={styles.label}>Member Picture (optional)</Text>
+      <View style={styles.pictureRow}>
+        <View style={styles.picturePreview}>
+          {pictureUri ? (
+            <RNImage source={{ uri: pictureUri }} style={styles.pictureImage} />
+          ) : (
+            <User size={28} color={Colors.muted} />
+          )}
+          {pictureUploading && (
+            <View style={styles.pictureLoadingOverlay}>
+              <ActivityIndicator size="small" color={Colors.gold} />
+            </View>
+          )}
+        </View>
+        <TouchableOpacity
+          style={styles.pictureButton}
+          onPress={pickMemberPicture}
+          disabled={pictureUploading}
+          testID="pick-member-picture"
+        >
+          <Camera size={16} color={Colors.gold} />
+          <Text style={styles.pictureButtonText}>
+            {pictureUri ? 'Change Picture' : 'Upload Picture'}
+          </Text>
+        </TouchableOpacity>
+        {pictureUri && !pictureUploading && (
+          <TouchableOpacity
+            style={styles.pictureClear}
+            onPress={() => {
+              setPictureUri(null);
+              setUploadedPictureUrl(null);
+            }}
+            testID="clear-member-picture"
+          >
+            <X size={14} color={Colors.muted} />
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* Market Interest — single select only */}
+      <Text style={styles.label}>Market Interest *</Text>
+      <Text style={styles.helperText}>Select one option only.</Text>
+      <View style={styles.interestList}>
+        {MARKET_INTEREST_OPTIONS.map((opt) => {
+          const active = selectedInterest === opt.id;
           return (
             <TouchableOpacity
-              key={role.id}
-              style={[styles.roleChip, active && styles.roleChipActive]}
-              onPress={() => toggleRole(role.id)}
-              testID={`role-${role.id}`}
+              key={opt.id}
+              style={[styles.interestRow, active && styles.interestRowActive]}
+              onPress={() => selectInterest(opt.id)}
+              testID={`interest-${opt.id}`}
             >
-              <View style={[styles.checkbox, active && styles.checkboxChecked]}>
-                {active && <Check size={12} color="#000000" />}
+              <View style={[styles.radioButton, active && styles.radioButtonActive]}>
+                {active && <View style={styles.radioButtonDot} />}
               </View>
-              <Text style={[styles.roleChipText, active && styles.roleChipTextActive]}>
-                {role.label}
+              <Text style={[styles.interestRowText, active && styles.interestRowTextActive]}>
+                {opt.label}
               </Text>
+              {active && <Check size={14} color={Colors.gold} />}
             </TouchableOpacity>
           );
         })}
@@ -1099,34 +1249,113 @@ const styles = StyleSheet.create({
     fontWeight: '600' as const,
   },
 
-  // Role interests
-  roleGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
+  // Market interest (single-select)
+  interestList: {
+    gap: 10,
+    marginTop: 4,
   },
-  roleChip: {
+  interestRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 10,
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: Colors.surfaceBorder,
     backgroundColor: Colors.backgroundSecondary,
-    minWidth: '30%' as const,
   },
-  roleChipActive: {
+  interestRowActive: {
     borderColor: Colors.gold,
+    backgroundColor: 'rgba(255, 215, 0, 0.08)',
   },
-  roleChipText: {
-    fontSize: 13,
+  interestRowText: {
+    flex: 1,
+    fontSize: 15,
     color: Colors.textSecondary,
     fontWeight: '600' as const,
   },
-  roleChipTextActive: {
+  interestRowTextActive: {
     color: Colors.gold,
+  },
+  radioButton: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: Colors.surfaceBorder,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  radioButtonActive: {
+    borderColor: Colors.gold,
+  },
+  radioButtonDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: Colors.gold,
+  },
+  helperText: {
+    fontSize: 12,
+    color: Colors.muted,
+    marginTop: -2,
+    marginBottom: 6,
+    fontWeight: '500' as const,
+  },
+
+  // Member picture upload
+  pictureRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    marginTop: 4,
+  },
+  picturePreview: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: Colors.backgroundSecondary,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  pictureImage: {
+    width: '100%' as const,
+    height: '100%' as const,
+    borderRadius: 36,
+  },
+  pictureLoadingOverlay: {
+    position: 'absolute' as const,
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 36,
+  },
+  pictureButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.gold,
+    backgroundColor: 'rgba(255, 215, 0, 0.05)',
+  },
+  pictureButtonText: {
+    fontSize: 14,
+    color: Colors.gold,
+    fontWeight: '600' as const,
+  },
+  pictureClear: {
+    padding: 8,
   },
   investorBadgeRow: {
     flexDirection: 'row',

@@ -15,7 +15,9 @@ export type MemberRoleInterest =
   | 'jv_partner'
   | 'broker'
   | 'agent'
-  | 'land_owner';
+  | 'land_owner'
+  | 'jv_deals'
+  | 'tokenized';
 
 export interface RegisterPayload {
   email: string;
@@ -27,6 +29,7 @@ export interface RegisterPayload {
   zipCode: string;
   roles: MemberRoleInterest[];
   acceptTerms: boolean;
+  pictureUrl?: string;
 }
 
 export interface RegisterResult {

@@ -30,6 +30,7 @@ export interface CanonicalMemberInput {
   budgetRange?: string;
   authUserId?: string;
   landingSubmissionId?: string;
+  pictureUrl?: string;
   createdAt?: string;
 }
 
@@ -47,6 +48,7 @@ export interface CanonicalMemberRow {
   investor_interest: string;
   preferred_zipcode: string;
   budget_range: string;
+  picture_url: string;
   auth_user_id: string | null;
   landing_submission_id: string | null;
   created_at: string;
@@ -129,6 +131,7 @@ function nowIso(): string {
 const VALID_MEMBER_TYPES = new Set([
   'member', 'investor', 'buyer', 'realtor', 'influencer', 'jv_partner',
   'seller', 'builder', 'developer', 'lender', 'land_owner', 'broker', 'owner',
+  'jv_deals', 'tokenized',
 ]);
 
 function normalizeMemberType(value: unknown): string {
@@ -201,6 +204,7 @@ export async function upsertCanonicalMember(
             investor_interest: (input.investorInterest || '').trim(),
             preferred_zipcode: (input.preferredZipcode || '').trim(),
             budget_range: (input.budgetRange || '').trim(),
+            picture_url: (input.pictureUrl || '').trim(),
             auth_user_id: (input.authUserId || '').trim() || null,
             landing_submission_id: (input.landingSubmissionId || '').trim() || null,
             created_at: createdAt,
@@ -224,6 +228,7 @@ export async function upsertCanonicalMember(
     if (!existing.investor_interest && (input.investorInterest || '').trim()) patch.investor_interest = (input.investorInterest || '').trim();
     if (!existing.preferred_zipcode && (input.preferredZipcode || '').trim()) patch.preferred_zipcode = (input.preferredZipcode || '').trim();
     if (!existing.budget_range && (input.budgetRange || '').trim()) patch.budget_range = (input.budgetRange || '').trim();
+    if (!existing.picture_url && (input.pictureUrl || '').trim()) patch.picture_url = (input.pictureUrl || '').trim();
     if (!existing.auth_user_id && (input.authUserId || '').trim()) patch.auth_user_id = (input.authUserId || '').trim();
     if (!existing.landing_submission_id && (input.landingSubmissionId || '').trim()) patch.landing_submission_id = (input.landingSubmissionId || '').trim();
     if (input.smsVerified === true && !existing.sms_verified) patch.sms_verified = true;
