@@ -190,10 +190,6 @@ export default function IVXOwnerInboxRoute() {
     router.push('/ivx/github-sync');
   }, [router]);
 
-  const handleOpenSecurityBox = useCallback(() => {
-    router.push('/ivx/security-box');
-  }, [router]);
-
   const handleOpenWorkerProof = useCallback(() => {
     router.push('/ivx/worker-proof');
   }, [router]);
@@ -427,17 +423,6 @@ export default function IVXOwnerInboxRoute() {
           >
             <Github size={16} color={Colors.primary} />
             <Text style={styles.diagnosticsLinkText}>Sync code to GitHub</Text>
-            <ChevronRight size={16} color={Colors.primary} />
-          </Pressable>
-          <Pressable
-            style={styles.diagnosticsLink}
-            onPress={handleOpenSecurityBox}
-            accessibilityRole="button"
-            accessibilityLabel="Open Security Box for GitHub and Render"
-            testID="ivx-owner-inbox-open-security-box"
-          >
-            <ShieldCheck size={16} color={Colors.primary} />
-            <Text style={styles.diagnosticsLinkText}>Security Box · GitHub + Render</Text>
             <ChevronRight size={16} color={Colors.primary} />
           </Pressable>
         </View>
