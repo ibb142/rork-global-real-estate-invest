@@ -84,6 +84,11 @@ import {
 import { runIVXSeniorDeveloperTask, type IVXSeniorDeveloperRunProof } from '../services/ivx-senior-developer-runtime';
 import { buildSeniorDeveloperExecutionAnswer } from '../services/ivx-senior-developer-answer-format';
 import { enforceDeveloperExecutionAnswer } from '../services/ivx-developer-execution-guard';
+import {
+  runSeniorDeveloperAutonomousMode,
+  renderFinalAutonomousReport,
+  type FinalAutonomousReport,
+} from '../services/ivx-senior-developer-autonomous-mode';
 import { branchLabel, routeIVXChatIntent, type IVXChatBranch, type IVXChatIntent } from '../services/ivx-chat-intent-router';
 import { runIVXUnifiedGatePipeline, describeIVXGatePipelineRun, IVX_UNIFIED_GATE_PIPELINE_MARKER } from '../services/ivx-unified-ai-gate-pipeline';
 // The per-gate imports below are retained for backward compatibility with any
@@ -6761,8 +6766,20 @@ async function handleIVXOwnerAIRequestInternal(request: Request): Promise<Respon
       if (enforcedDeveloper.enforced) {
         console.log('[IVXOwnerAIBackend] Developer-execution guard blocked a non-compliant image-then-developer answer:', enforcedDeveloper.result.violations);
       }
+      // ── SYNC: image_then_developer chat path → Autonomous Mode ────────────
+      let imageAutonomousReport: FinalAutonomousReport | null = null;
+      try {
+        imageAutonomousReport = await runSeniorDeveloperAutonomousMode(groundedGoal, {
+          conversationId: conversation.id,
+        });
+      } catch (error) {
+        console.log('[IVXOwnerAIBackend] image_then_developer autonomous sync failed (non-blocking):', error instanceof Error ? error.message : 'unknown');
+      }
+      const imageAutonomousBlock = imageAutonomousReport
+        ? `\n\n${renderFinalAutonomousReport(imageAutonomousReport)}`
+        : '';
       const developerAnswer = assertVisibleOwnerAIAnswer(
-        [imageAnalysisAnswer, '', enforcedDeveloper.answer].join('\n'),
+        [imageAnalysisAnswer, '', `${enforcedDeveloper.answer}${imageAutonomousBlock}`].join('\n'),
       );
       let devAssistantMessageId: string | null = null;
       if (persistAssistantMessage) {
@@ -6938,7 +6955,28 @@ async function handleIVXOwnerAIRequestInternal(request: Request): Promise<Respon
     // --- Daily Self-Improvement: start the autonomous loop as a durable task ---
     if (plannerDecision.route === 'self_improvement') {
       const start = await startDailyImprovementTask({ autoStart: true });
-      const answer = assertVisibleOwnerAIAnswer(buildDailyImprovementStartAnswer(start));
+      const baseImprovementAnswer = buildDailyImprovementStartAnswer(start);
+      // ── SYNC: autonomous_jobs chat path → Autonomous Mode ────────────────
+      // The daily-improvement branch is an autonomous_jobs route. Run the same
+      // autonomous pipeline the /api/ivx/senior-developer/autonomous-mode/run
+      // endpoint runs so the chat room and the dedicated endpoint return the
+      // SAME TASK_ID/STATE/.../NEXT_ACTION proof.
+      let dailyAutonomousReport: FinalAutonomousReport | null = null;
+      try {
+        dailyAutonomousReport = await runSeniorDeveloperAutonomousMode(prompt, {
+          conversationId: conversation.id,
+        });
+        console.log('[IVXOwnerAIBackend] daily-improvement autonomous sync report:', {
+          taskId: dailyAutonomousReport.TASK_ID,
+          state: dailyAutonomousReport.STATE,
+        });
+      } catch (error) {
+        console.log('[IVXOwnerAIBackend] daily-improvement autonomous sync failed (non-blocking):', error instanceof Error ? error.message : 'unknown');
+      }
+      const dailyAutonomousBlock = dailyAutonomousReport
+        ? `\n\n${renderFinalAutonomousReport(dailyAutonomousReport)}`
+        : '';
+      const answer = assertVisibleOwnerAIAnswer(`${baseImprovementAnswer}${dailyAutonomousBlock}`);
       let assistantMessageId: string | null = existingAIRequest?.response_message_id ?? null;
       if (persistAssistantMessage && !assistantMessageId) {
         try {
@@ -7022,7 +7060,30 @@ async function handleIVXOwnerAIRequestInternal(request: Request): Promise<Respon
       if (enforcedExecution.enforced) {
         console.log('[IVXOwnerAIBackend] Developer-execution guard blocked a non-compliant answer:', enforcedExecution.result.violations);
       }
-      const answer = assertVisibleOwnerAIAnswer(enforcedExecution.answer);
+      // ── SYNC: IVX IA chat room → Senior Developer Autonomous Mode ─────────
+      // Run the same autonomous pipeline the dedicated
+      // /api/ivx/senior-developer/autonomous-mode/run endpoint runs, then
+      // append the strict TASK_ID/STATE/.../NEXT_ACTION report so the chat
+      // room and the autonomous-mode endpoint return IDENTICAL proof.
+      let autonomousReport: FinalAutonomousReport | null = null;
+      try {
+        autonomousReport = await runSeniorDeveloperAutonomousMode(prompt, {
+          conversationId: conversation.id,
+        });
+        console.log('[IVXOwnerAIBackend] Autonomous-mode sync report:', {
+          taskId: autonomousReport.TASK_ID,
+          state: autonomousReport.STATE,
+          filesChanged: autonomousReport.FILES_CHANGED.length,
+          githubSha: autonomousReport.GITHUB_SHA,
+          renderDeployId: autonomousReport.RENDER_DEPLOY_ID,
+        });
+      } catch (error) {
+        console.log('[IVXOwnerAIBackend] Autonomous-mode sync failed (non-blocking):', error instanceof Error ? error.message : 'unknown');
+      }
+      const autonomousBlock = autonomousReport
+        ? `\n\n${renderFinalAutonomousReport(autonomousReport)}`
+        : '';
+      const answer = assertVisibleOwnerAIAnswer(`${enforcedExecution.answer}${autonomousBlock}`);
       let assistantMessageId: string | null = existingAIRequest?.response_message_id ?? null;
       if (persistAssistantMessage && !assistantMessageId) {
         try {
