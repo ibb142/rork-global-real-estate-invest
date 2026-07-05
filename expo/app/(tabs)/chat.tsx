@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'expo-router';
 import {
+  Animated,
   View,
   Text,
   StyleSheet,
@@ -13,7 +14,7 @@ import * as Haptics from 'expo-haptics';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { ArrowUpRight, Clock, HelpCircle, MessageCircle, Radio, ScanLine, User } from 'lucide-react-native';
+import { ArrowUpRight, Clock, HelpCircle, MessageCircle, Radio, ScanLine, User, X, Sparkles } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useTranslation } from '@/lib/i18n-context';
 import { getResponsiveSize, isExtraSmallScreen } from '@/lib/responsive';
@@ -132,6 +133,13 @@ export default function ChatScreen() {
   const [viewMode, setViewMode] = useState<ViewMode>('chat');
   const [roomStatus, setRoomStatus] = useState<ChatRoomStatus | null>(() => getCurrentChatRoomStatus());
 
+  // "Welcome to IVX" auto-dismissing banner — visible for 5–10s, then fades out.
+  const [showWelcomeBanner, setShowWelcomeBanner] = useState<boolean>(true);
+  const welcomeFadeAnim = useRef<Animated.Value>(new Animated.Value(1)).current;
+  const welcomeSlideAnim = useRef<Animated.Value>(new Animated.Value(0)).current;
+  const welcomeDismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const welcomeHasDismissedRef = useRef<boolean>(false);
+
   const screenSize = getResponsiveSize(width);
   const isXs = isExtraSmallScreen(screenSize);
   const chatBottomInset = useMemo(() => {
@@ -211,6 +219,40 @@ export default function ChatScreen() {
 
     return unsubscribe;
   }, []);
+
+  // "Welcome to IVX" banner — auto-dismiss after 7s (5s visible + 2s fade).
+  const dismissWelcomeBanner = useCallback(() => {
+    if (welcomeHasDismissedRef.current) return;
+    welcomeHasDismissedRef.current = true;
+    if (welcomeDismissTimerRef.current) {
+      clearTimeout(welcomeDismissTimerRef.current);
+      welcomeDismissTimerRef.current = null;
+    }
+    Animated.parallel([
+      Animated.timing(welcomeFadeAnim, {
+        toValue: 0,
+        duration: 1800,
+        useNativeDriver: true,
+      }),
+      Animated.timing(welcomeSlideAnim, {
+        toValue: -40,
+        duration: 1800,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      setShowWelcomeBanner(false);
+    });
+  }, [welcomeFadeAnim, welcomeSlideAnim]);
+
+  useEffect(() => {
+    welcomeDismissTimerRef.current = setTimeout(dismissWelcomeBanner, 5000);
+    return () => {
+      if (welcomeDismissTimerRef.current) {
+        clearTimeout(welcomeDismissTimerRef.current);
+        welcomeDismissTimerRef.current = null;
+      }
+    };
+  }, [dismissWelcomeBanner]);
 
   const getTicketStatusColor = useCallback((status: TicketStatus) => {
     switch (status) {
@@ -315,6 +357,37 @@ export default function ChatScreen() {
           </View>
           <Text style={[styles.headerSubtitle, { fontSize: isXs ? 12 : 14 }]}>{t('customerCare')}</Text>
         </View>
+
+        {showWelcomeBanner ? (
+          <Animated.View
+            style={[
+              styles.welcomeBanner,
+              {
+                marginHorizontal: isXs ? 16 : 20,
+                opacity: welcomeFadeAnim,
+                transform: [{ translateY: welcomeSlideAnim }],
+              },
+            ]}
+            testID="ivx-welcome-banner"
+          >
+            <View style={styles.welcomeIcon}>
+              <Sparkles size={isXs ? 18 : 20} color={Colors.black} />
+            </View>
+            <View style={styles.welcomeTextCol}>
+              <Text style={[styles.welcomeTitle, { fontSize: isXs ? 15 : 17 }]}>Welcome to IVX</Text>
+              <Text style={[styles.welcomeSubtitle, { fontSize: isXs ? 11 : 13 }]}>Owner AI room is live. Ask anything about your deals.</Text>
+            </View>
+            <TouchableOpacity
+              style={styles.welcomeClose}
+              onPress={dismissWelcomeBanner}
+              accessibilityLabel="Dismiss welcome banner"
+              accessibilityRole="button"
+              testID="ivx-welcome-banner-close"
+            >
+              <X size={isXs ? 14 : 16} color={Colors.textSecondary} />
+            </TouchableOpacity>
+          </Animated.View>
+        ) : null}
 
         <View style={[styles.moduleCard, { marginHorizontal: isXs ? 16 : 20, padding: isXs ? 14 : 16 }]}>
           <View style={styles.moduleCardHeader}>
@@ -759,5 +832,44 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 20,
     textAlign: 'center',
+  },
+  welcomeBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.primary,
+    marginBottom: 12,
+  },
+  welcomeIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  welcomeTextCol: {
+    flex: 1,
+    gap: 2,
+  },
+  welcomeTitle: {
+    color: Colors.text,
+    fontWeight: '800' as const,
+  },
+  welcomeSubtitle: {
+    color: Colors.textSecondary,
+  },
+  welcomeClose: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: Colors.backgroundSecondary,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

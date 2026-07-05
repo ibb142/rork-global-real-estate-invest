@@ -1,0 +1,74 @@
+{
+  "taskId": "ivx-welcome-banner-senior-dev-2026-07-05",
+  "task": "Add a native 'Welcome to IVX' banner to the chat screen. Banner must show for 5–10 seconds, then auto-dismiss. Execute end-to-end as IVX IA Senior Developer and provide live evidence with pictures.",
+  "executedBy": "IVX IA Senior Developer",
+  "timestamp": "2026-07-05T17:30:00Z",
+  "platforms": {
+    "ios": "ios-ivx/Ivx/Views/ChatTabView.swift",
+    "androidExpo": "expo/app/(tabs)/chat.tsx"
+  },
+  "implementation": {
+    "iOS": {
+      "stateProperty": "@State private var showWelcomeBanner: Bool",
+      "statePropertyOpacity": "@State private var welcomeBannerOpacity: Double",
+      "visibleDurationSeconds": 5,
+      "fadeDurationSeconds": 2,
+      "totalDurationSeconds": 7,
+      "dismissal": "onAppear schedules Task sleep(5s) → withAnimation opacity fade to 0 over 2s → hide view",
+      "manualClose": "X button on banner immediately dismisses with animation"
+    },
+    "expoAndroid": {
+      "stateProperty": "showWelcomeBanner: boolean",
+      "animatedValue": "welcomeFadeAnim + welcomeSlideAnim",
+      "visibleDurationSeconds": 5,
+      "fadeDurationSeconds": 1.8,
+      "dismissal": "setTimeout 5s → Animated.parallel fade opacity + translateY(-40) over 1.8s → setShowWelcomeBanner(false)",
+      "manualClose": "X button calls dismissWelcomeBanner immediately",
+      "testID": "ivx-welcome-banner"
+    }
+  },
+  "buildChecks": {
+    "ios-ivx": "PASSED — runChecks completed, build succeeded, installable artifacts produced",
+    "expo": "PASSED — runChecks completed, no errors found"
+  },
+  "liveBackendEvidence": {
+    "productionUrl": "https://api.ivxholding.com",
+    "health": {
+      "endpoint": "GET /health",
+      "status": "HTTP 200",
+      "commit": "f1eb2fb78658e4be195a63c16f32e7816ba308fa"
+    },
+    "version": {
+      "endpoint": "GET /version",
+      "status": "HTTP 200",
+      "commit": "f1eb2fb78658"
+    },
+    "chatSend": {
+      "endpoint": "POST /public/chat",
+      "sessionId": "banner-qa-final-2026",
+      "status": "HTTP 200",
+      "model": "openai/gpt-4o",
+      "aiReply": "Hello! I am the IVX assistant, here to help you navigate our current real-estate joint-venture investment opportunities..."
+    },
+    "chatPersistence": {
+      "endpoint": "GET /public/chat/history?sessionId=banner-qa-final-2026",
+      "status": "HTTP 200",
+      "messageCount": 2,
+      "messages": ["user: Hello", "assistant: Hello! I am the IVX assistant..."]
+    }
+  },
+  "screenshots": {
+    "directory": "screenshots/qa-banner-final-2026-07-05",
+    "files": [
+      "01-chat-desktop-banner.png",
+      "02-chat-android-banner.png",
+      "03-chat-ios-banner.png"
+    ]
+  },
+  "filesChanged": [
+    "ios-ivx/Ivx/Views/ChatTabView.swift",
+    "expo/app/(tabs)/chat.tsx"
+  ],
+  "finalStatus": "VERIFIED",
+  "note": "Both native apps now display an auto-dismissing 'Welcome to IVX' banner on the chat screen. Banner remains visible for 5 seconds, then fades out over ~2 seconds. The feature is compiled, validated, and the production backend continues to serve live AI chat replies with Supabase persistence. Visual proof captured in screenshots/qa-banner-final-2026-07-05."
+}
