@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
+  TextInput,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useMutation, useQuery } from '@tanstack/react-query';
@@ -26,6 +27,7 @@ import {
   RefreshCw,
   Zap,
   Globe,
+  Smartphone,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useAuth } from '@/lib/auth-context';
@@ -47,6 +49,12 @@ import {
   isAdminAccessLocked,
 } from '@/lib/admin-access-lock';
 import { getOpenAccessModeMessage, isOpenAccessModeEnabled } from '@/lib/open-access';
+import {
+  fetchOwnerRecoverySmsStatus,
+  requestOwnerRecoverySms,
+  verifyOwnerRecoverySms,
+  type OwnerRecoveryStatus,
+} from '@/lib/owner-recovery-sms';
 
 interface AccessRouteCard {
   id: string;
@@ -312,6 +320,81 @@ export default function OwnerAccessScreen() {
       Alert.alert('Claim Failed', error.message);
     },
   });
+
+  // ── Owner login recovery via AWS SNS SMS (secondary access path) ──
+  const [recoverySmsStatus, setRecoverySmsStatus] = React.useState<OwnerRecoveryStatus | null>(null);
+  const [recoverySmsCode, setRecoverySmsCode] = React.useState('');
+  const [recoverySmsNewPassword, setRecoverySmsNewPassword] = React.useState('');
+  const [recoverySmsRequested, setRecoverySmsRequested] = React.useState(false);
+
+  const recoverySmsStatusQuery = useQuery({
+    queryKey: ['owner-recovery-sms-status'],
+    queryFn: () => fetchOwnerRecoverySmsStatus(),
+    staleTime: 30000,
+    refetchOnWindowFocus: true,
+  });
+
+  React.useEffect(() => {
+    if (recoverySmsStatusQuery.data) {
+      setRecoverySmsStatus(recoverySmsStatusQuery.data);
+    }
+  }, [recoverySmsStatusQuery.data]);
+
+  const recoverySmsRequestMutation = useMutation({
+    mutationFn: () => requestOwnerRecoverySms(effectiveOwnerEmail || auth.user?.email || ''),
+    onSuccess: (result) => {
+      if (result.ok) {
+        setRecoverySmsRequested(true);
+        Alert.alert(
+          'Recovery Code Sent',
+          `A 6-digit code was texted to ${result.phoneMasked ?? 'your owner phone'}. It expires in ${result.codeTtlSeconds ?? 300} seconds. Enter it below to restore access.`,
+        );
+      } else {
+        setRecoverySmsRequested(false);
+        Alert.alert('Recovery SMS Failed', result.message);
+      }
+    },
+    onError: (error: Error) => {
+      setRecoverySmsRequested(false);
+      Alert.alert('Recovery SMS Failed', error.message);
+    },
+  });
+
+  const recoverySmsVerifyMutation = useMutation({
+    mutationFn: () => verifyOwnerRecoverySms(
+      effectiveOwnerEmail || auth.user?.email || '',
+      recoverySmsCode.trim(),
+      recoverySmsNewPassword.trim() || undefined,
+    ),
+    onSuccess: (result) => {
+      if (result.ok) {
+        setRecoverySmsCode('');
+        setRecoverySmsNewPassword('');
+        setRecoverySmsRequested(false);
+        if (result.passwordRepaired) {
+          Alert.alert(
+            'Owner Access Restored',
+            'Your owner password was reset to the value you entered. Sign in now with your owner email and the new password.',
+            [{ text: 'Sign In Now', onPress: () => router.push(buildOwnerLoginRoute(effectiveOwnerEmail) as any) }],
+          );
+        } else {
+          Alert.alert(
+            'Recovery Code Verified',
+            'Your owner identity was verified via SMS. Use the recovery token to complete profile/wallet repair if needed.',
+            [{ text: 'Open Sign In', onPress: () => router.push(buildOwnerLoginRoute(effectiveOwnerEmail) as any) }],
+          );
+        }
+      } else {
+        Alert.alert('Verification Failed', result.message);
+      }
+    },
+    onError: (error: Error) => {
+      Alert.alert('Verification Failed', error.message);
+    },
+  });
+
+  const recoverySmsReady = recoverySmsStatus?.ready === true;
+  const recoverySmsEnabled = Boolean(effectiveOwnerEmail || auth.user?.email) && recoverySmsReady;
 
   const ownerPasswordResetMutation = useMutation({
     mutationFn: async () => {
@@ -1252,6 +1335,91 @@ export default function OwnerAccessScreen() {
             </TouchableOpacity>
           </View>
         ) : null}
+
+        {/* ── Secondary owner access: AWS SNS SMS recovery ── */}
+        <View style={styles.smsRecoveryCard} testID="owner-access-sms-recovery-card">
+          <View style={styles.smsRecoveryHeader}>
+            <View style={styles.smsRecoveryIconWrap}>
+              <Smartphone size={18} color={Colors.black} />
+            </View>
+            <View style={styles.smsRecoveryHeaderText}>
+              <Text style={styles.smsRecoveryTitle}>Secondary owner access · SMS recovery</Text>
+              <Text style={styles.smsRecoverySubtitle}>
+                {recoverySmsReady
+                  ? 'A 6-digit code will be texted to your registered owner phone via AWS SNS. Verify it here to restore owner login even if email/password is broken.'
+                  : 'AWS SNS SMS recovery is not fully configured on the backend yet. Set AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION, and IVX_OWNER_RECOVERY_PHONE. Twilio integration is pending; AWS SNS is active.'}
+              </Text>
+            </View>
+          </View>
+
+          {recoverySmsReady ? (
+            <>
+              <TouchableOpacity
+                style={[styles.smsRecoveryPrimaryBtn, recoverySmsRequestMutation.isPending && styles.smsRecoveryBtnDisabled]}
+                activeOpacity={0.84}
+                onPress={() => recoverySmsRequestMutation.mutate()}
+                disabled={recoverySmsRequestMutation.isPending || !recoverySmsEnabled}
+                testID="owner-access-sms-request-code"
+              >
+                {recoverySmsRequestMutation.isPending ? (
+                  <ActivityIndicator color={Colors.black} size="small" />
+                ) : (
+                  <Text style={styles.smsRecoveryPrimaryBtnText}>
+                    {recoverySmsRequested ? 'Resend recovery code' : 'Text me a recovery code'}
+                  </Text>
+                )}
+              </TouchableOpacity>
+
+              {recoverySmsRequested ? (
+                <View style={styles.smsRecoveryVerifyWrap} testID="owner-access-sms-verify-wrap">
+                  <Text style={styles.smsRecoveryLabel}>6-digit code from SMS</Text>
+                  <TextInput
+                    style={styles.smsRecoveryInput}
+                    value={recoverySmsCode}
+                    onChangeText={(v) => setRecoverySmsCode(v.replace(/\D/g, '').slice(0, 6))}
+                    placeholder="123456"
+                    placeholderTextColor={Colors.textSecondary}
+                    keyboardType="number-pad"
+                    maxLength={6}
+                    testID="owner-access-sms-code-input"
+                  />
+                  <Text style={styles.smsRecoveryLabel}>New owner password (optional)</Text>
+                  <TextInput
+                    style={styles.smsRecoveryInput}
+                    value={recoverySmsNewPassword}
+                    onChangeText={setRecoverySmsNewPassword}
+                    placeholder="New password (8+ chars, 1 uppercase, 1 number)"
+                    placeholderTextColor={Colors.textSecondary}
+                    secureTextEntry
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    testID="owner-access-sms-password-input"
+                  />
+                  <TouchableOpacity
+                    style={[styles.smsRecoveryVerifyBtn, recoverySmsVerifyMutation.isPending && styles.smsRecoveryBtnDisabled]}
+                    activeOpacity={0.84}
+                    onPress={() => recoverySmsVerifyMutation.mutate()}
+                    disabled={recoverySmsVerifyMutation.isPending || recoverySmsCode.length !== 6}
+                    testID="owner-access-sms-verify-btn"
+                  >
+                    {recoverySmsVerifyMutation.isPending ? (
+                      <ActivityIndicator color={Colors.black} size="small" />
+                    ) : (
+                      <Text style={styles.smsRecoveryPrimaryBtnText}>Verify code & restore access</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              ) : null}
+            </>
+          ) : (
+            <View style={styles.smsRecoveryPendingRow} testID="owner-access-sms-pending">
+              <Text style={styles.smsRecoveryPendingText}>
+                Transport: AWS SNS (active · free SMS tier). Twilio: pending. Backend status:{' '}
+                {recoverySmsStatus ? `${recoverySmsStatus.awsRegion} · sns=${recoverySmsStatus.snsConfigured ? 'on' : 'off'} · phone=${recoverySmsStatus.recoveryPhoneConfigured ? 'on' : 'off'}` : 'loading…'}
+              </Text>
+            </View>
+          )}
+        </View>
 
         {!trustedReady ? (
           <TouchableOpacity
@@ -2477,5 +2645,93 @@ const styles = StyleSheet.create({
     color: Colors.primary,
     fontSize: 14,
     fontWeight: '800' as const,
+  },
+  smsRecoveryCard: {
+    backgroundColor: '#0B1220',
+    borderRadius: 20,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#1E3A5F',
+    gap: 14,
+  },
+  smsRecoveryHeader: {
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'flex-start',
+  },
+  smsRecoveryIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    backgroundColor: Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  smsRecoveryHeaderText: {
+    flex: 1,
+    gap: 4,
+  },
+  smsRecoveryTitle: {
+    color: Colors.text,
+    fontSize: 14,
+    fontWeight: '800' as const,
+  },
+  smsRecoverySubtitle: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  smsRecoveryPrimaryBtn: {
+    backgroundColor: Colors.primary,
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  smsRecoveryBtnDisabled: {
+    opacity: 0.6,
+  },
+  smsRecoveryPrimaryBtnText: {
+    color: Colors.black,
+    fontSize: 14,
+    fontWeight: '900' as const,
+  },
+  smsRecoveryVerifyWrap: {
+    gap: 10,
+  },
+  smsRecoveryLabel: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '700' as const,
+  },
+  smsRecoveryInput: {
+    backgroundColor: '#111827',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    color: Colors.text,
+    fontSize: 15,
+    borderWidth: 1,
+    borderColor: '#1F3A5F',
+  },
+  smsRecoveryVerifyBtn: {
+    backgroundColor: '#22C55E',
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 4,
+  },
+  smsRecoveryPendingRow: {
+    backgroundColor: '#111827',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#1F3A5F',
+  },
+  smsRecoveryPendingText: {
+    color: Colors.textSecondary,
+    fontSize: 11,
+    lineHeight: 16,
   },
 });
