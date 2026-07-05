@@ -19,15 +19,21 @@ WORKDIR /app
 # ffmpeg + ffprobe power the IVX video pipeline (HLS transcode ladder, thumbnails,
 # posters) in backend/services/ivx-video-pipeline.ts and unlock the video worker
 # (backend/services/ivx-video-worker.ts). Alpine's ffmpeg package ships both binaries.
-#
-# Chromium + nss/freetetype/harfbuzz/fontconfig power the IVX Browser Automation
-# QA service (backend/services/ivx-browser-automation.ts). The service uses
-# `playwright-core` (no bundled browser download) pointed at this system binary
-# via PLAYWRIGHT_CHROMIUM_PATH, so the backend can produce real user-visible
-# screenshots + DOM transcripts for owner-requested live QA. The --no-sandbox/
-# --disable-setuid-sandbox flags are required because Render runs the container
-# as non-root without seccomp privileges.
-RUN apk add --no-cache ffmpeg chromium nss freetype harfbuzz ttf-freefont fontconfig noto-fonts-emoji
+RUN apk add --no-cache ffmpeg
+
+# Chromium + deps power the IVX Browser Automation QA service. The install is
+# intentionally non-fatal: if the Alpine package names/versions don't align with
+# the current node:22-alpine base image, the container still builds successfully
+# and the QA service degrades gracefully to status-only until the browser is
+# available. The QA engine points to the system Chromium path and uses
+# --no-sandbox / --disable-setuid-sandbox (required for the non-root Render runtime).
+# NOTE: package names vary across Alpine versions (font-noto-emoji vs noto-fonts-emoji,
+# ttf-freefont vs font-freefont). Try the known set, then a smaller fallback set.
+RUN apk add --no-cache chromium nss freetype harfbuzz fontconfig font-noto-emoji font-freefont ttf-freefont noto-fonts-emoji 2>/dev/null \
+    || apk add --no-cache chromium nss freetype harfbuzz fontconfig font-noto-emoji 2>/dev/null \
+    || apk add --no-cache chromium nss freetype harfbuzz fontconfig noto-fonts-emoji 2>/dev/null \
+    || apk add --no-cache chromium nss freetype harfbuzz fontconfig 2>/dev/null \
+    || echo "[IVX-QA] Optional Chromium install failed; QA service will run in status-only mode"
 ENV PLAYWRIGHT_CHROMIUM_PATH=/usr/bin/chromium
 
 ENV NODE_ENV=production
