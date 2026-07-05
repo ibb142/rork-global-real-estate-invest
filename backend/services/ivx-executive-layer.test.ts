@@ -407,7 +407,7 @@ describe('ivx-executive-layer', () => {
     expect(view.totalRuns).toBe(4);
     expect(view.loopsRun).toBe(5);
     expect(view.outcomesRecorded).toBe(3);
-    expect(view.actions.length).toBe(9);
+    expect(view.actions.length).toBe(Object.keys(makeScheduler().jobs).length);
     expect(view.actions.some((a) => a.label === 'Daily self-audit')).toBe(true);
   });
 
