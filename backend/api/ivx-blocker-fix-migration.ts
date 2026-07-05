@@ -244,7 +244,7 @@ export async function handleBlockerFixRunMigration(request: Request): Promise<Re
     }
     const sql = MIGRATION_SQL;
     const connectionString = getSupabaseDatabaseUrl();
-    const pgModule = await import('pg') as { Pool: PgPoolConstructor };
+    const pgModule = (await import('pg')) as unknown as { Pool: PgPoolConstructor };
     const pool = new pgModule.Pool({
       connectionString,
       ssl: { rejectUnauthorized: false },
@@ -294,7 +294,7 @@ export async function handleBlockerFixVerifyTables(request: Request): Promise<Re
       }
     }
     const connectionString = getSupabaseDatabaseUrl();
-    const pgModule = await import('pg') as { Pool: PgPoolConstructor };
+    const pgModule = (await import('pg')) as unknown as { Pool: PgPoolConstructor };
     const pool = new pgModule.Pool({
       connectionString,
       ssl: { rejectUnauthorized: false },

@@ -43,6 +43,7 @@ type PWContext = {
 };
 type PWPage = {
   goto(url: string, opts?: Record<string, unknown>): Promise<unknown>;
+  url(): string;
   screenshot(opts?: Record<string, unknown>): Promise<Buffer>;
   title(): Promise<string>;
   content(): Promise<string>;
@@ -71,9 +72,11 @@ let _browser: PWBrowser | null = null;
 let _launchPromise: Promise<PWBrowser> | null = null;
 let _availabilityCache: BrowserAvailability | null = null;
 
+export type BrowserUnavailableReason = 'playwrightNotInstalled' | 'chromiumNotFound' | 'launchFailed';
+
 export type BrowserAvailability =
   | { available: true; executablePath: string; version: string }
-  | { available: false; reason: 'playwrightNotInstalled' | 'chromiumNotFound' | 'launchFailed'; detail: string };
+  | { available: false; reason: BrowserUnavailableReason; detail: string };
 
 export type Viewport = { width: number; height: number };
 
@@ -86,7 +89,7 @@ export type ScreenshotInput = {
 
 export type ScreenshotResult =
   | { ok: true; url: string; title: string; pngBase64: string; savedPath: string; viewport: Viewport; takenAt: string }
-  | { ok: false; error: string; reason: BrowserAvailability['reason'] | 'navigationFailed' | 'screenshotFailed' };
+  | { ok: false; error: string; reason: BrowserUnavailableReason | 'navigationFailed' | 'screenshotFailed' };
 
 export type QARunInput = {
   flow: 'ownerChat' | 'landing' | 'members' | 'androidLayout' | 'iosLayout' | 'custom';
@@ -122,7 +125,7 @@ export type QARunResult =
       finishedAt: string;
       totalDurationMs: number;
     }
-  | { ok: false; flow: QARunInput['flow']; error: string; reason: BrowserAvailability['reason'] | 'flowFailed' };
+  | { ok: false; flow: QARunInput['flow']; error: string; reason: BrowserUnavailableReason | 'flowFailed' };
 
 const DEFAULT_DESKTOP: Viewport = { width: 1280, height: 800 };
 const DEFAULT_ANDROID: Viewport = { width: 412, height: 915 };
@@ -430,7 +433,7 @@ async function runOwnerChatFlow(page: PWPage, input: QARunInput, steps: QAStep[]
   {
     const t0 = Date.now();
     try {
-      await page.goto(page.url ? await page.url : resolveDefaultUrl('ownerChat'), { waitUntil: 'domcontentloaded', timeout: 30_000 });
+      await page.goto(page.url(), { waitUntil: 'domcontentloaded', timeout: 30_000 });
       await page.waitForTimeout(2000);
       await captureStep(page, steps, 'refresh-persist', 'Page refreshed', true, t0);
     } catch (error) {

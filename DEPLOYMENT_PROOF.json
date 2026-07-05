@@ -1,39 +1,17 @@
 {
-  "task": "IVX OWNER CHAT AUTH BUG — issuer_mismatch FIX",
-  "timestamp": "2026-07-04T14:36:53Z",
-  "rootCause": "Stale cached Supabase session on device — token iss claim from a previous build/project does not match the production Supabase project (kvclcdjmjghndxsngfzb). The corrupted expo/.env also kept re-introducing ambiguity, and the preflight treated issuer_mismatch as a SOFT warning (passed the stale token to the backend, which rejected it → surfaced as the misleading 'No real owner session is signed in on this device (issuer_mismatch)' banner).",
-  "fixApplied": {
-    "frontendEnv": "expo/.env cleaned — only production values (api.ivxholding.com, kvclcdjmjghndxsngfzb.supabase.co, valid anon key). Removed 127.0.0.1, localhost, pasted terminal label text, service_role key, junk GitHub/Render values.",
-    "preflightHardening": "expo/src/modules/ivx-owner-ai/services/ownerSessionPreflight.ts — issuer_mismatch is now a HARD block (was soft). Returns an explicit OWNER_SESSION_REQUIRED result with the precise reason + names the Clear Stale Session recovery path. No more wasted round-trip to the backend with a guaranteed-rejected token.",
-    "clearStaleSessionAction": "expo/src/modules/ivx-developer/authDiagnosticsService.ts — new clearStaleOwnerSession() function. Signs out + wipes the known Supabase AsyncStorage slots (sb-<ref>-auth-token, supabase.auth.token, legacy keys) so a stale token can never rehydrate. Next sign-in mints a fresh token from the production project.",
-    "authDiagnosticsScreen": "expo/app/ivx/auth-diagnostics.tsx — added a primary 'Clear Stale Session (issuer_mismatch fix)' button in the one-tap recovery card + a 'Clear stale session' action button in the recovery actions row. Both call clearStaleOwnerSession() and re-run the diagnostic."
+  "deployId": "live-deploy-2026-07-05T22:11:38.917Z",
+  "githubSha": "9bbbc7c9d2578db6a8dd4bd8dfae62e950adc875",
+  "githubShaShort": "9bbbc7c9",
+  "renderServiceId": "srv-d7t9ivreo5us73ftose0",
+  "liveUrl": "https://api.ivxholding.com",
+  "bootTime": "2026-07-05T22:11:38.917Z",
+  "liveHealth": "HTTP 200 /healthy",
+  "liveVersion": "9bbbc7c9d2578db6a8dd4bd8dfae62e950adc875",
+  "membersReal": {
+    "members": 24,
+    "investors": 6,
+    "buyers": 5,
+    "total": 38
   },
-  "filesChanged": [
-    "expo/.env",
-    "expo/src/modules/ivx-owner-ai/services/ownerSessionPreflight.ts",
-    "expo/src/modules/ivx-developer/authDiagnosticsService.ts",
-    "expo/app/ivx/auth-diagnostics.tsx"
-  ],
-  "headSha": "b836089bf0791e383f3be0be91ace8344fe2ca5a",
-  "validation": {
-    "typecheck": "PASSED — bun run typecheck, 0 errors",
-    "runChecksExpo": "PASSED — Checks passed. No errors found."
-  },
-  "liveBackendProof": {
-    "GET /health": "HTTP 200 | 0.121s — {ok:true, status:healthy, service:ivx-owner-ai-backend, commit:350a2be3}",
-    "GET /api/ivx/version": "HTTP 200 | 0.077s — {ok:true, commit:350a2be3, environment:production}",
-    "GET /api/ivx/owner-ai/status": "HTTP 200 | 0.296s — {ok:true, ownerSessionRequired:true}",
-    "GET /api/ivx/owner-ai/auth-diagnostic": "HTTP 200 — expectedTokenIssuer:https://kvclcdjmjghndxsngfzb.supabase.co/auth/v1, supabaseProjectRef:kvclcdjmjghndxsngfzb, anonKeyPresent:true, serviceRoleKeyPresent:true, nodeEnv:production"
-  },
-  "issuerAlignmentProof": {
-    "frontendSupabaseUrl": "https://kvclcdjmjghndxsngfzb.supabase.co",
-    "backendExpectedTokenIssuer": "https://kvclcdjmjghndxsngfzb.supabase.co/auth/v1",
-    "anonKeyRefClaim": "kvclcdjmjghndxsngfzb",
-    "anonKeyRoleClaim": "anon",
-    "frontendBackendAligned": true,
-    "remainingIssuerMismatchCause": "STALE CACHED SESSION on device — old token from a previous build/project in AsyncStorage. Fix: Clear Stale Session button (now added) wipes the cached token; next sign-in mints a fresh token from the production project."
-  },
-  "deviceRecoveryPath": "On the phone showing issuer_mismatch: open IVX → Auth Diagnostics → tap 'Clear Stale Session (issuer_mismatch fix)' → tap 'Re-authenticate' → sign in with the IVX owner email (iperez4242@gmail.com). The next token's iss claim will be https://kvclcdjmjghndxsngfzb.supabase.co/auth/v1, which the backend accepts. Then send 'Hi' to the owner chat — POST /api/ivx/owner-ai returns HTTP 200.",
-  "honestConstraint": "I run inside the Rork sandbox. I cannot tap the physical phone. The code fix is complete, validated, and the backend is live. The device-side recovery (Clear Stale Session → Re-authenticate → send message) must be performed on the phone by the owner. The Auth Diagnostics screen now provides the exact buttons to do this.",
-  "finalStatus": "AUTH FIX DEPLOYED — code complete, validated, backend live. Device-side recovery path is the Clear Stale Session button now in Auth Diagnostics."
+  "timestamp": "2026-07-05T22:16:40Z"
 }

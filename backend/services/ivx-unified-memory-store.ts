@@ -34,7 +34,9 @@
  * break the action that produced the memory.
  */
 import { appendFile, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import {
   isDurableStoreConfigured,
   readDurableJson,
@@ -191,10 +193,22 @@ async function writeState(records: MemoryRecord[]): Promise<void> {
     await writeDurableJson(STATE_PATH, bounded);
     return;
   }
+  // Robust atomic write: temp file lives in os.tmpdir() so parallel test
+  // directory deletion cannot erase it before the final rename.
+  const tmp = path.join(os.tmpdir(), `ivx-unified-memory-${randomUUID()}.tmp`);
   await ensureDir();
-  // Atomic temp-file + rename so a crash mid-write can't corrupt the JSON.
-  await writeFile(TMP_PATH, JSON.stringify(bounded, null, 2), 'utf8');
-  await rename(TMP_PATH, STATE_PATH);
+  await writeFile(tmp, JSON.stringify(bounded, null, 2), 'utf8');
+  try {
+    await rename(tmp, STATE_PATH);
+  } catch (error) {
+    const code = (error as { code?: string }).code;
+    if (code === 'ENOENT') {
+      await ensureDir();
+      await rename(tmp, STATE_PATH);
+      return;
+    }
+    throw error;
+  }
 }
 
 async function appendEvent(event: Record<string, unknown>): Promise<void> {

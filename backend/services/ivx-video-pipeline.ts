@@ -544,6 +544,58 @@ async function registerInFeed(record: VideoPipelineRecord): Promise<{ rowId: str
   }
 }
 
+export type RegisterStoredVideoInput = {
+  videoId: string;
+  storagePath: string;
+  fileSize: number;
+  userId: string | null;
+  projectId: string | null;
+  title: string | null;
+};
+
+/**
+ * Register a video that was already uploaded via the resumable upload path.
+ * Creates the metadata record, registers it in the feed, and returns the record.
+ */
+export async function registerStoredVideo(input: RegisterStoredVideoInput): Promise<VideoPipelineRecord> {
+  const record: VideoPipelineRecord = {
+    video_id: input.videoId,
+    user_id: input.userId,
+    project_id: input.projectId,
+    title: input.title,
+    original_url: publicUrl(input.storagePath),
+    storage_path: input.storagePath,
+    file_size: input.fileSize,
+    duration: null,
+    width: null,
+    height: null,
+    source_codec: null,
+    has_audio: false,
+    status: 'uploaded',
+    error: null,
+    attempts: 0,
+    hls_master_url: null,
+    hls_master_path: null,
+    renditions: [],
+    thumbnail_url: null,
+    poster_url: null,
+    preview_blur_url: null,
+    db_row_id: null,
+    db_table: null,
+    db_error: null,
+    processing_started_at: null,
+    ready_at: null,
+    created_at: nowIso(),
+    updated_at: nowIso(),
+    marker: VIDEO_PIPELINE_MARKER,
+  };
+  await saveVideoRecord(record);
+  void processVideo(input.videoId).catch((error) => {
+    console.log(`[VideoPipeline] background processing crashed for ${input.videoId}:`, error instanceof Error ? error.message : error);
+  });
+  return record;
+}
+
 /* ---------------- pipeline orchestration ---------------- */
 
 const inFlight = new Set<string>();

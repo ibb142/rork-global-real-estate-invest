@@ -11,7 +11,29 @@ import {
 } from './services/ivx-developer-proof-standard';
 import {
   evaluateIVXRegisteredOwnerBearerContext,
+  type IVXOwnerRequestContext,
 } from './api/owner-only';
+
+function makeFakeContext(input: { userId: string; email: string; accessToken: string; source: 'profiles' | 'open_access' }): IVXOwnerRequestContext {
+  return {
+    userId: input.userId,
+    email: input.email,
+    role: 'owner',
+    accessToken: input.accessToken,
+    guardMode: 'strict',
+    client: {} as never,
+    roleAudit: {
+      profileRoleRaw: 'owner',
+      profileRole: 'owner',
+      appMetadataRole: null,
+      userMetadataRole: null,
+      rawRole: 'owner',
+      normalizedRole: 'owner',
+      profileFound: true,
+      profileLookupError: null,
+    },
+  };
+}
 
 describe('Blocker #1 — Property Details coercion regression', () => {
   // The fix replaced .single() with .maybeSingle() and added explicit null
@@ -44,15 +66,12 @@ describe('Blocker #1 — Property Details coercion regression', () => {
 
 describe('Blocker #2 — Auth guard 500 -> 403 (allowlist not configured)', () => {
   it('returns 403 (not 500) when IVX_OWNER_REGISTRATION_EMAILS is not configured', () => {
-    const fakeContext = {
+    const fakeContext = makeFakeContext({
       userId: 'user-1',
       email: 'iperez4242@gmail.com',
-      role: 'owner',
       accessToken: 'eyJ.fake.jwt',
-      guardMode: 'production' as const,
-      client: {} as never,
-      roleAudit: { rawRole: 'owner', normalizedRole: 'owner' as const, source: 'profiles' as const },
-    };
+      source: 'profiles',
+    });
     // Pass undefined -> empty allowlist -> status must be 403, not 500
     const evaluation = evaluateIVXRegisteredOwnerBearerContext(
       fakeContext,
@@ -65,15 +84,12 @@ describe('Blocker #2 — Auth guard 500 -> 403 (allowlist not configured)', () =
   });
 
   it('returns 401 when bearer is not a Supabase JWT (dev token)', () => {
-    const fakeContext = {
+    const fakeContext = makeFakeContext({
       userId: 'ivx-open-access-owner',
       email: 'owner@ivx.dev',
-      role: 'owner',
       accessToken: 'ivx_owner_dev_token_2026',
-      guardMode: 'production' as const,
-      client: {} as never,
-      roleAudit: { rawRole: 'owner', normalizedRole: 'owner' as const, source: 'open_access' as const },
-    };
+      source: 'open_access',
+    });
     const evaluation = evaluateIVXRegisteredOwnerBearerContext(
       fakeContext,
       'test-action',
@@ -84,15 +100,12 @@ describe('Blocker #2 — Auth guard 500 -> 403 (allowlist not configured)', () =
   });
 
   it('returns 403 when email does not match allowlist', () => {
-    const fakeContext = {
+    const fakeContext = makeFakeContext({
       userId: 'user-2',
       email: 'other@gmail.com',
-      role: 'owner',
       accessToken: 'eyJ.real.jwt',
-      guardMode: 'production' as const,
-      client: {} as never,
-      roleAudit: { rawRole: 'owner', normalizedRole: 'owner' as const, source: 'profiles' as const },
-    };
+      source: 'profiles',
+    });
     const evaluation = evaluateIVXRegisteredOwnerBearerContext(
       fakeContext,
       'test-action',
@@ -103,15 +116,12 @@ describe('Blocker #2 — Auth guard 500 -> 403 (allowlist not configured)', () =
   });
 
   it('approves when email matches allowlist with valid JWT', () => {
-    const fakeContext = {
+    const fakeContext = makeFakeContext({
       userId: 'user-3',
       email: 'iperez4242@gmail.com',
-      role: 'owner',
       accessToken: 'eyJ.real.jwt',
-      guardMode: 'production' as const,
-      client: {} as never,
-      roleAudit: { rawRole: 'owner', normalizedRole: 'owner' as const, source: 'profiles' as const },
-    };
+      source: 'profiles',
+    });
     const evaluation = evaluateIVXRegisteredOwnerBearerContext(
       fakeContext,
       'test-action',

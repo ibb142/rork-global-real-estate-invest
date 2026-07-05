@@ -23,6 +23,8 @@ const PRODUCTION_SUPABASE_PROJECT_REF = 'kvclcdjmjghndxsngfzb';
 const HOSTED_SUPABASE_URL_PATTERN = /https:\/\/[a-z0-9-]+\.supabase\.co\b/i;
 const JWT_PATTERN = /eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g;
 
+declare const __DEV__: boolean | undefined;
+
 function decodeJwtPayload(token: string): Record<string, unknown> | null {
   try {
     const payloadSegment = token.split('.')[1] ?? '';
