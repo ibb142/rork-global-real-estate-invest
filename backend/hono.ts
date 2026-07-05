@@ -192,6 +192,13 @@ import {
   handleVerificationStatus,
 } from './api/ivx-members';
 import {
+  OPTIONS as ownerRecoverySmsOptions,
+  handleOwnerRecoveryStatusRequest,
+  handleOwnerRecoveryRequestRequest,
+  handleOwnerRecoveryVerifyRequest,
+  handleOwnerRecoveryResolveTokenRequest,
+} from './api/ivx-owner-recovery-sms';
+import {
   handleCanonicalMembersRegistry,
   handleCanonicalMembersSummary,
   handleCanonicalMembersBackfill,
@@ -3649,6 +3656,10 @@ app.options('/api/ivx/owner-registration/status', () => ownerRegistrationOptions
 app.options('/api/ivx/owner-registration/repair', () => ownerRegistrationOptions());
 app.options('/api/ivx/owner-access-repair', () => ownerRegistrationOptions());
 app.options('/api/ivx/owner-access-repair/status', () => ownerRegistrationOptions());
+app.options('/api/ivx/owner-recovery/status', () => ownerRecoverySmsOptions());
+app.options('/api/ivx/owner-recovery/request', () => ownerRecoverySmsOptions());
+app.options('/api/ivx/owner-recovery/verify', () => ownerRecoverySmsOptions());
+app.options('/api/ivx/owner-recovery/resolve-token', () => ownerRecoverySmsOptions());
 app.options('/api/ivx/owner-signup-audit', () => ownerRegistrationOptions());
 app.get('/api/ivx/owner-registration/status', async (context) => handleIVXOwnerRegistrationStatusRequest(context.req.raw));
 app.get('/api/ivx/owner-access-repair/status', async (context) => handleIVXOwnerAccessRepairStatusRequest(context.req.raw));
@@ -3656,6 +3667,10 @@ app.get('/api/ivx/owner-signup-audit', async (context) => handleIVXOwnerSignupAu
 app.post('/api/ivx/owner-registration', async (context) => handleIVXOwnerRegistrationRequest(context.req.raw));
 app.post('/api/ivx/owner-registration/repair', async (context) => handleIVXOwnerRegistrationRepairRequest(context.req.raw));
 app.post('/api/ivx/owner-access-repair', async (context) => handleIVXOwnerAccessRepairRequest(context.req.raw));
+app.get('/api/ivx/owner-recovery/status', async (context) => handleOwnerRecoveryStatusRequest(context.req.raw));
+app.post('/api/ivx/owner-recovery/request', async (context) => handleOwnerRecoveryRequestRequest(context.req.raw));
+app.post('/api/ivx/owner-recovery/verify', async (context) => handleOwnerRecoveryVerifyRequest(context.req.raw));
+app.get('/api/ivx/owner-recovery/resolve-token', async (context) => handleOwnerRecoveryResolveTokenRequest(context.req.raw));
 
 app.options('/assistant', () => assistantOptions());
 app.options('/api/assistant', () => assistantOptions());

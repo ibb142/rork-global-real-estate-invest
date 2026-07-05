@@ -1,0 +1,50 @@
+{
+  "taskId": "ivx-owner-login-security-sms-recovery-aws-sns",
+  "timestamp": "2026-07-05T18:31:00Z",
+  "request": "Owner login security + secondary access path via SMS (text message) to 561-644-3503. Use AWS for now (10 messages free). Twilio pending.",
+  "executedBy": "Rork agent",
+  "transport": "aws_sns",
+  "twilioStatus": "pending",
+  "builds": {
+    "ios-ivx": { "runChecks": "PASSED", "note": "No iOS UI changes required for SMS recovery; owner-access hub already covers recovery. iOS can call the same backend endpoints." },
+    "expo": { "runChecks": "PASSED", "note": "Owner-access screen now has full SMS recovery card: request code, verify code, optional new password." },
+    "backend": { "tsc": "PASSED (new files clean; pre-existing unrelated errors in ivx-blocker-fix-migration.ts etc.)" }
+  },
+  "filesChanged": [
+    "backend/services/ivx-sns-sms.ts (NEW) — AWS SNS SMS sender, SigV4-signed, no new deps, free-tier friendly",
+    "backend/api/ivx-owner-recovery-sms.ts (NEW) — request/verify/status/resolve-token endpoints, 6-digit codes, 5-min TTL, rate-limited, owner-allowlisted",
+    "backend/hono.ts — registered 4 new routes under /api/ivx/owner-recovery/*",
+    "expo/lib/owner-recovery-sms.ts (NEW) — React Native client for the recovery endpoints",
+    "expo/app/owner-access.tsx — SMS recovery card UI (request code, enter code, optional new password, verify)",
+    ".env.example — documented IVX_OWNER_RECOVERY_PHONE"
+  ],
+  "routesRegistered": [
+    "GET  /api/ivx/owner-recovery/status",
+    "POST /api/ivx/owner-recovery/request",
+    "POST /api/ivx/owner-recovery/verify",
+    "GET  /api/ivx/owner-recovery/resolve-token"
+  ],
+  "security": {
+    "codeLength": 6,
+    "codeTtlSeconds": 300,
+    "maxVerifyAttempts": 3,
+    "requestRateLimit": "5 per email+IP per 15 min",
+    "recoveryTokenTtlSeconds": 600,
+    "recoveryTokenSingleUse": true,
+    "ownerEmailAllowlistGated": true,
+    "passwordNeverReturned": true
+  },
+  "liveBackendProbe": {
+    "health": "HTTP 200",
+    "version": "HTTP 200, commit f1eb2fb78658",
+    "ownerAccessRepairStatus": "HTTP 200, V7 live (control)",
+    "ownerRecoveryStatus": "HTTP 404 — route not yet deployed to Render (code is in repo, awaiting redeploy + AWS env vars)"
+  },
+  "blockers": [
+    "Render redeploy required for the 4 new /api/ivx/owner-recovery/* routes to be live. The code is committed and routes are wired in hono.ts; production currently serves commit f1eb2fb78658 which predates this change.",
+    "AWS env vars must be set on Render: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION (e.g. us-east-1), and IVX_OWNER_RECOVERY_PHONE=+15616443503.",
+    "AWS SNS SMS sandbox: new AWS accounts are in the SMS sandbox and can only send to verified destination numbers. The owner phone (561-644-3503) must be added as a verified SMS destination in the AWS SNS console (us-east-1) until the account is moved out of the sandbox. This is an AWS-side prerequisite, not a code issue.",
+    "AWS free tier: SNS outbound SMS has a small monthly free grant (~200 US messages on the sandbox tier). Owner-only recovery uses far less than that."
+  ],
+  "honestStatus": "Code complete and builds clean on both apps + backend. NOT yet live end-to-end because (1) Render has not redeployed the new routes and (2) AWS SNS env vars + verified destination phone are not yet configured in the AWS account. SMS delivery cannot be tested from this sandbox because there are no AWS credentials here. Once Render redeploys and AWS env vars are set, the owner can text himself a recovery code from the Owner Access screen."
+}
