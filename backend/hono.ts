@@ -247,6 +247,41 @@ import {
   handleTreasuryAIFinance,
 } from './api/ivx-treasury';
 import {
+  OPTIONS as ivxProtectionOptions,
+  handleProtectionDashboardRequest,
+  handleProtectionAuditLogRequest,
+  handleProtectionLedgerIntegrityRequest,
+  handleProtectionAccountStatesListRequest,
+  handleProtectionAccountStateGetRequest,
+  handleProtectionAccountStateTransitionRequest,
+  handleProtectionUnlockAccountRequest,
+  handleProtectionDeletionListRequest,
+  handleProtectionDeletionCreateRequest,
+  handleProtectionDeletionApproveRequest,
+  handleProtectionDeletionConfirmRequest,
+  handleProtectionRecoveryListRequest,
+  handleProtectionRecoveryStartRequest,
+  handleProtectionRecoveryVerifyRequest,
+  handleProtectionRecoveryCompleteRequest,
+  handleProtectionSessionsListRequest,
+  handleProtectionSessionRegisterRequest,
+  handleProtectionSessionRevokeRequest,
+  handleProtectionInvestmentsListRequest,
+  handleProtectionInvestmentCreateRequest,
+  handleProtectionInvestmentValuationRequest,
+  handleProtectionWithdrawalsListRequest,
+  handleProtectionWithdrawalCreateRequest,
+  handleProtectionWithdrawalTransitionRequest,
+  handleProtectionWiresListRequest,
+  handleProtectionWireCreateRequest,
+  handleProtectionWireTransitionRequest,
+  handleProtectionWireQueueRequest,
+  handleProtectionComplianceListRequest,
+  handleProtectionComplianceUpsertRequest,
+  handleProtectionWalletRequest,
+  handleProtectionReportsRequest,
+} from './api/ivx-investor-protection';
+import {
   OPTIONS as capitalNetworkOptions,
   handleCapitalNetworkDashboardRequest,
   handleCapitalNetworkScanRequest,
@@ -3962,6 +3997,69 @@ app.post('/api/ivx/treasury/reconciliation/run', async (c) => handleTreasuryReco
 app.get('/api/ivx/treasury/dashboard', async (c) => handleTreasuryDashboard(c.req.raw));
 app.get('/api/ivx/treasury/reports', async (c) => handleTreasuryReports(c.req.raw));
 app.get('/api/ivx/treasury/ai-finance', async (c) => handleTreasuryAIFinance(c.req.raw));
+
+// ---- IVX Enterprise Investor Protection System (2026-07-05) ----
+const protectionOpts = () => ivxProtectionOptions();
+app.options('/api/ivx/protection/dashboard', protectionOpts);
+app.options('/api/ivx/protection/audit-log', protectionOpts);
+app.options('/api/ivx/protection/ledger-integrity', protectionOpts);
+app.options('/api/ivx/protection/account-states', protectionOpts);
+app.options('/api/ivx/protection/account-state', protectionOpts);
+app.options('/api/ivx/protection/account-states/transition', protectionOpts);
+app.options('/api/ivx/protection/account/unlock', protectionOpts);
+app.options('/api/ivx/protection/deletion-requests', protectionOpts);
+app.options('/api/ivx/protection/deletion-requests/approve', protectionOpts);
+app.options('/api/ivx/protection/deletion-requests/confirm', protectionOpts);
+app.options('/api/ivx/protection/recovery', protectionOpts);
+app.options('/api/ivx/protection/recovery/start', protectionOpts);
+app.options('/api/ivx/protection/recovery/verify', protectionOpts);
+app.options('/api/ivx/protection/recovery/complete', protectionOpts);
+app.options('/api/ivx/protection/sessions', protectionOpts);
+app.options('/api/ivx/protection/sessions/register', protectionOpts);
+app.options('/api/ivx/protection/sessions/revoke', protectionOpts);
+app.options('/api/ivx/protection/investments', protectionOpts);
+app.options('/api/ivx/protection/investments/valuation', protectionOpts);
+app.options('/api/ivx/protection/withdrawals', protectionOpts);
+app.options('/api/ivx/protection/withdrawals/transition', protectionOpts);
+app.options('/api/ivx/protection/wires', protectionOpts);
+app.options('/api/ivx/protection/wires/transition', protectionOpts);
+app.options('/api/ivx/protection/wire-queue', protectionOpts);
+app.options('/api/ivx/protection/compliance', protectionOpts);
+app.options('/api/ivx/protection/wallet', protectionOpts);
+app.options('/api/ivx/protection/reports', protectionOpts);
+
+app.get('/api/ivx/protection/dashboard', async (c) => handleProtectionDashboardRequest(c.req.raw));
+app.get('/api/ivx/protection/audit-log', async (c) => handleProtectionAuditLogRequest(c.req.raw));
+app.get('/api/ivx/protection/ledger-integrity', async (c) => handleProtectionLedgerIntegrityRequest(c.req.raw));
+app.get('/api/ivx/protection/account-states', async (c) => handleProtectionAccountStatesListRequest(c.req.raw));
+app.get('/api/ivx/protection/account-state', async (c) => handleProtectionAccountStateGetRequest(c.req.raw));
+app.post('/api/ivx/protection/account-states/transition', async (c) => handleProtectionAccountStateTransitionRequest(c.req.raw));
+app.post('/api/ivx/protection/account/unlock', async (c) => handleProtectionUnlockAccountRequest(c.req.raw));
+app.get('/api/ivx/protection/deletion-requests', async (c) => handleProtectionDeletionListRequest(c.req.raw));
+app.post('/api/ivx/protection/deletion-requests', async (c) => handleProtectionDeletionCreateRequest(c.req.raw));
+app.post('/api/ivx/protection/deletion-requests/approve', async (c) => handleProtectionDeletionApproveRequest(c.req.raw));
+app.post('/api/ivx/protection/deletion-requests/confirm', async (c) => handleProtectionDeletionConfirmRequest(c.req.raw));
+app.get('/api/ivx/protection/recovery', async (c) => handleProtectionRecoveryListRequest(c.req.raw));
+app.post('/api/ivx/protection/recovery/start', async (c) => handleProtectionRecoveryStartRequest(c.req.raw));
+app.post('/api/ivx/protection/recovery/verify', async (c) => handleProtectionRecoveryVerifyRequest(c.req.raw));
+app.post('/api/ivx/protection/recovery/complete', async (c) => handleProtectionRecoveryCompleteRequest(c.req.raw));
+app.get('/api/ivx/protection/sessions', async (c) => handleProtectionSessionsListRequest(c.req.raw));
+app.post('/api/ivx/protection/sessions/register', async (c) => handleProtectionSessionRegisterRequest(c.req.raw));
+app.post('/api/ivx/protection/sessions/revoke', async (c) => handleProtectionSessionRevokeRequest(c.req.raw));
+app.get('/api/ivx/protection/investments', async (c) => handleProtectionInvestmentsListRequest(c.req.raw));
+app.post('/api/ivx/protection/investments', async (c) => handleProtectionInvestmentCreateRequest(c.req.raw));
+app.post('/api/ivx/protection/investments/valuation', async (c) => handleProtectionInvestmentValuationRequest(c.req.raw));
+app.get('/api/ivx/protection/withdrawals', async (c) => handleProtectionWithdrawalsListRequest(c.req.raw));
+app.post('/api/ivx/protection/withdrawals', async (c) => handleProtectionWithdrawalCreateRequest(c.req.raw));
+app.post('/api/ivx/protection/withdrawals/transition', async (c) => handleProtectionWithdrawalTransitionRequest(c.req.raw));
+app.get('/api/ivx/protection/wires', async (c) => handleProtectionWiresListRequest(c.req.raw));
+app.post('/api/ivx/protection/wires', async (c) => handleProtectionWireCreateRequest(c.req.raw));
+app.post('/api/ivx/protection/wires/transition', async (c) => handleProtectionWireTransitionRequest(c.req.raw));
+app.get('/api/ivx/protection/wire-queue', async (c) => handleProtectionWireQueueRequest(c.req.raw));
+app.get('/api/ivx/protection/compliance', async (c) => handleProtectionComplianceListRequest(c.req.raw));
+app.post('/api/ivx/protection/compliance', async (c) => handleProtectionComplianceUpsertRequest(c.req.raw));
+app.get('/api/ivx/protection/wallet', async (c) => handleProtectionWalletRequest(c.req.raw));
+app.get('/api/ivx/protection/reports', async (c) => handleProtectionReportsRequest(c.req.raw));
 
 // ---- IVX Enterprise Orchestrator (Phase 1–9 unified governance) ----
 app.options('/api/ivx/enterprise/state', () => enterpriseOrchestratorOptions());
