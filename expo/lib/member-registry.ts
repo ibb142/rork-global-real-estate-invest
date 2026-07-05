@@ -26,6 +26,7 @@ export interface MemberRegistryRecord {
   emailVerified?: boolean;
   verificationStatus?: string;
   registrationSource?: string;
+  pictureUrl?: string;
 }
 
 function asString(value: unknown): string {
@@ -119,6 +120,7 @@ export function normalizeMemberRegistryRecord(input: Record<string, unknown>): M
     emailVerified: input.emailVerified === true || input.email_verified === true,
     verificationStatus: asString(input.verificationStatus ?? input.verification_status).trim() || undefined,
     registrationSource: asString(input.registrationSource ?? input.registration_source ?? input.source_detail).trim() || undefined,
+    pictureUrl: asString(input.pictureUrl ?? input.picture_url).trim() || undefined,
   };
 }
 

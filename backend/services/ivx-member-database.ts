@@ -45,6 +45,7 @@ export interface MemberRegistrationInput {
   zipCode?: string;
   roles?: string[];
   acceptTerms: boolean;
+  pictureUrl?: string;
 }
 
 export interface MemberRegistrationResult {
@@ -67,6 +68,7 @@ export async function registerMember(input: MemberRegistrationInput): Promise<Me
     zip_code: input.zipCode ?? '',
     role_interests: input.roles ?? [],
     member_status: 'free_member',
+    picture_url: input.pictureUrl ?? '',
   };
 
   try {
@@ -150,6 +152,7 @@ export async function registerMember(input: MemberRegistrationInput): Promise<Me
         kyc_status: 'not_started',
         total_invested: 0,
         total_returns: 0,
+        picture_url: input.pictureUrl ?? '',
         created_at: now,
         updated_at: now,
       },
@@ -235,6 +238,7 @@ interface FallbackMemberRecord {
   memberStatus: string;
   emailVerified: boolean;
   phoneVerified: boolean;
+  pictureUrl: string;
   source: string;
   createdAt: string;
   updatedAt: string;
@@ -322,6 +326,7 @@ async function registerFallbackMember(input: MemberRegistrationInput): Promise<M
       memberStatus: 'free_member',
       emailVerified: false,
       phoneVerified: false,
+      pictureUrl: input.pictureUrl ?? '',
       source: 'fallback_supabase_email_rate_limit',
       createdAt: now,
       updatedAt: now,
@@ -341,6 +346,7 @@ async function registerFallbackMember(input: MemberRegistrationInput): Promise<M
           country: input.country,
           role: 'investor',
           kyc_status: 'not_started',
+          picture_url: input.pictureUrl ?? '',
           created_at: now,
           updated_at: now,
         },
@@ -391,6 +397,7 @@ export interface MemberProfile {
   phoneVerified: boolean;
   totalInvested: number;
   totalReturns: number;
+  pictureUrl: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -422,6 +429,7 @@ export async function getMemberProfile(userId: string): Promise<MemberProfile | 
           phoneVerified: fallback.phoneVerified,
           totalInvested: 0,
           totalReturns: 0,
+          pictureUrl: fallback.pictureUrl ?? '',
           createdAt: fallback.createdAt,
           updatedAt: fallback.updatedAt,
         };
@@ -444,6 +452,7 @@ export async function getMemberProfile(userId: string): Promise<MemberProfile | 
       phoneVerified: !!(p.phone_verified),
       totalInvested: Number(p.total_invested ?? 0),
       totalReturns: Number(p.total_returns ?? 0),
+      pictureUrl: p.picture_url ?? '',
       createdAt: p.created_at ?? '',
       updatedAt: p.updated_at ?? '',
     };

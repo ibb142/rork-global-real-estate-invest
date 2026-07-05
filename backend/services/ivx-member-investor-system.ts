@@ -52,10 +52,12 @@ export type MemberRoleInterest =
   | 'jv_partner'
   | 'broker'
   | 'agent'
-  | 'land_owner';
+  | 'land_owner'
+  | 'jv_deals'
+  | 'tokenized';
 
 export const VALID_ROLE_INTERESTS: ReadonlySet<MemberRoleInterest> = new Set([
-  'buyer', 'investor', 'jv_partner', 'broker', 'agent', 'land_owner',
+  'buyer', 'investor', 'jv_partner', 'broker', 'agent', 'land_owner', 'jv_deals', 'tokenized',
 ]);
 
 export type MemberStatus =
@@ -86,6 +88,7 @@ export interface MemberRecord {
   status: MemberStatus;
   onboarding: OnboardingFanout;
   investmentMade: boolean;
+  pictureUrl: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -243,6 +246,7 @@ export interface OnboardMemberInput {
   country: string;
   zipCode: string;
   roles: MemberRoleInterest[];
+  pictureUrl?: string;
 }
 
 /**
@@ -276,6 +280,7 @@ export async function onboardNewMember(input: OnboardMemberInput): Promise<Membe
     status: existing?.status ?? 'free_member',
     onboarding: fanout,
     investmentMade: existing?.investmentMade ?? false,
+    pictureUrl: input.pictureUrl ?? existing?.pictureUrl ?? '',
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   };
