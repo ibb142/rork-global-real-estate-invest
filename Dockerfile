@@ -19,7 +19,16 @@ WORKDIR /app
 # ffmpeg + ffprobe power the IVX video pipeline (HLS transcode ladder, thumbnails,
 # posters) in backend/services/ivx-video-pipeline.ts and unlock the video worker
 # (backend/services/ivx-video-worker.ts). Alpine's ffmpeg package ships both binaries.
-RUN apk add --no-cache ffmpeg
+#
+# Chromium + nss/freetetype/harfbuzz/fontconfig power the IVX Browser Automation
+# QA service (backend/services/ivx-browser-automation.ts). The service uses
+# `playwright-core` (no bundled browser download) pointed at this system binary
+# via PLAYWRIGHT_CHROMIUM_PATH, so the backend can produce real user-visible
+# screenshots + DOM transcripts for owner-requested live QA. The --no-sandbox/
+# --disable-setuid-sandbox flags are required because Render runs the container
+# as non-root without seccomp privileges.
+RUN apk add --no-cache ffmpeg chromium nss freetype harfbuzz ttf-freefont fontconfig noto-fonts-emoji
+ENV PLAYWRIGHT_CHROMIUM_PATH=/usr/bin/chromium
 
 ENV NODE_ENV=production
 ENV PORT=3000

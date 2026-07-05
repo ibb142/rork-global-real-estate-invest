@@ -513,6 +513,13 @@ import {
   handleExecutorStatus,
   handleExecutorTasks,
 } from './api/ivx-executor-routes';
+import {
+  handleQaCloseRequest,
+  handleQaRunRequest,
+  handleQaScreenshotRequest,
+  handleQaStatusRequest,
+  OPTIONS as qaOptions,
+} from './api/ivx-browser-automation';
 import { independenceRoutes } from './api/ivx-independence';
 import { chatDurabilityProofOptions, handleChatDurabilityProofRequest } from './api/chat-durability-proof';
 import { handleProjectDashboardRequest, projectDashboardOptions } from './api/ivx-project-dashboard';
@@ -4205,6 +4212,19 @@ app.options('/api/ivx/executor/deploy', () => ivxExecutorOptions());
 app.post('/api/ivx/executor/deploy', (c) => handleExecutorDeploy(c.req.raw));
 app.get('/api/ivx/executor/status/:taskId', (c) => handleExecutorStatus(c.req.raw, c.req.param('taskId')));
 app.get('/api/ivx/executor/proof/:taskId', (c) => handleExecutorProof(c.req.raw, c.req.param('taskId')));
+
+// IVX Browser Automation — Playwright-core QA + screenshot endpoints (owner-only).
+// Surfaced for the FINAL LIVE USER QA block: real headless Chromium on the
+// Render backend produces genuine user-visible evidence (PNGs + DOM transcripts)
+// for ownerChat / landing / members / androidLayout / iosLayout flows.
+app.options('/api/ivx/qa/status', () => qaOptions());
+app.options('/api/ivx/qa/screenshot', () => qaOptions());
+app.options('/api/ivx/qa/run', () => qaOptions());
+app.options('/api/ivx/qa/close', () => qaOptions());
+app.get('/api/ivx/qa/status', (c) => handleQaStatusRequest(c.req.raw));
+app.post('/api/ivx/qa/screenshot', (c) => handleQaScreenshotRequest(c.req.raw));
+app.post('/api/ivx/qa/run', (c) => handleQaRunRequest(c.req.raw));
+app.post('/api/ivx/qa/close', (c) => handleQaCloseRequest(c.req.raw));
 
 app.onError((error, context) => {
   const message = error instanceof Error ? error.message : 'unknown';
