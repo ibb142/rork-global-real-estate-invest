@@ -1,0 +1,64 @@
+{
+  "TASK_ID": "ivx-previous-task-deploy-live-verify-2026-07-05T14:16Z",
+  "PREVIOUS_TASK": "IVX super speed: remove owner banner from chat, strip 100% verifier, optimize chat loading (commit 227a5bb3)",
+  "TIMESTAMP": "2026-07-05T14:16:35Z",
+  "METHOD": "Live backend Security Box + GitHub API + Render status (no Rork sandbox shell credentials used for proof)",  "CREDENTIALS_AUDIT": {
+    "GITHUB_TOKEN_PROVIDED_BY_OWNER": "yes — new PAT ghp_...z3fQTOt (plaintext in chat, owner-authorized)",
+    "GITHUB_TOKEN_VERIFIED_AGAINST_GITHUB_API": "yes — 200 OK, login=ibb142",
+    "GITHUB_TOKEN_SAVED_TO_RORK_ENV_STORE": "no — not visible to sandbox shell (printenv empty); used only for live GitHub API verification in this turn",
+    "GITHUB_TOKEN_IN_LIVE_BACKEND": "STALE — backend /credentials endpoint reports GITHUB_TOKEN auth_failed: 401 (old token still stored in owner_variables/render_env)",
+    "RENDER_API_KEY_IN_LIVE_BACKEND": "valid — authenticated (credentialSource: env)",
+    "RENDER_SERVICE_ID_IN_LIVE_BACKEND": "valid — present (credentialSource: env, suffix ...ftose0)",
+    "GITHUB_REPO_URL_IN_LIVE_BACKEND": "MISSING from all sources (process.env, owner_variables) — but Render connectedRepo confirms https://github.com/ibb142/rork-global-real-estate-invest",
+    "SUPABASE_URL_IN_LIVE_BACKEND": "valid (per /credentials endpoint)",
+    "SUPABASE_SERVICE_ROLE_KEY_IN_LIVE_BACKEND": "valid (per /credentials endpoint)"
+  },
+  "GITHUB_PUSH_RESULT": "NO NEW PUSH REQUIRED — previous task commit 227a5bb3 is already HEAD of github.com/ibb142/rork-global-real-estate-invest/main (verified via GitHub API)",
+  "GITHUB_SHA": "227a5bb376b42157f86b0346c5d4f937a64878e2",
+  "GITHUB_COMMIT_MESSAGE": "IVX super speed: remove owner banner from chat, strip 100% verifier, optimize chat loading",
+  "GITHUB_COMMIT_DATE": "2026-07-05T03:42:22Z",
+  "RENDER_DEPLOY_ID": "dep-d94tfkkvikkc73cvkh90",
+  "RENDER_DEPLOY_STATUS": "live",
+  "RENDER_DEPLOYED_COMMIT_SHA": "227a5bb376b42157f86b0346c5d4f937a64878e2",
+  "RENDER_DEPLOY_CREATED_AT": "2026-07-05T04:04:34.448479Z",
+  "RENDER_DEPLOY_FINISHED_AT": "2026-07-05T04:05:49.131787Z",
+  "RENDER_DEPLOY_DURATION_MS": 74683,
+  "RENDER_CONNECTED_REPO": "https://github.com/ibb142/rork-global-real-estate-invest",
+  "RENDER_CONNECTED_BRANCH": "main",
+  "HEALTH_RESPONSE": {
+    "url": "https://api.ivxholding.com/health",
+    "http": 200,
+    "status": "healthy",
+    "service": "ivx-owner-ai-backend",
+    "commit": "227a5bb376b42157f86b0346c5d4f937a64878e2",
+    "bootTime": "2026-07-05T04:05:42.889Z"
+  },
+  "VERSION_RESPONSE": {
+    "url": "https://api.ivxholding.com/api/ivx/version",
+    "http": 200,
+    "ok": true,
+    "commit": "227a5bb376b42157f86b0346c5d4f937a64878e2",
+    "commitShort": "227a5bb3",
+    "environment": "production"
+  },
+  "COMMIT_MATCH": {
+    "githubHeadSha": "227a5bb376b42157f86b0346c5d4f937a64878e2",
+    "renderLiveDeployCommitSha": "227a5bb376b42157f86b0346c5d4f937a64878e2",
+    "backendHealthCommit": "227a5bb376b42157f86b0346c5d4f937a64878e2",
+    "backendVersionCommit": "227a5bb376b42157f86b0346c5d4f937a64878e2",
+    "allFourMatch": true
+  },
+  "LIVE_OWNER_CHAT_TEST": {
+    "endpoint": "POST https://api.ivxholding.com/api/ivx/owner-ai",
+    "probeResult": "401 — IVX auth guard failed: missing bearer token",
+    "interpretation": "Endpoint is LIVE and enforcing owner auth (expected behavior — proof probe had no real owner session bearer). The owner must send a message from the signed-in IVX app (chat.ivxholding.com). Backend is reachable and guarding correctly. NOT a deployment failure."
+  },
+  "BLOCKERS_REMAINING": [
+    "Backend /credentials still shows GITHUB_TOKEN=auth_failed (old token). To update the live Security Box store, the new token must be saved via POST /api/ivx/owner-variables/save with a valid owner bearer token — the Rork sandbox cannot write to the live owner_variables store without owner auth.",
+    "GITHUB_REPO_URL is missing from owner_variables — add it (https://github.com/ibb142/rork-global-real-estate-invest) via the same save endpoint for the Security Box UI to show green.",
+    "Owner chat 200 test requires a real owner session on the device (Clear Stale Session → sign in as iperez4242@gmail.com → send 'Hi')."
+  ],
+  "PROOF_LEDGER_ENTRY": "logs/audit/deploy-proof/2026-07-05T141635Z-live-verify-227a5bb3/proof.json",
+  "FINAL_STATUS": "PREVIOUS_TASK_DEPLOYED_AND_VERIFIED_LIVE",
+  "FINAL_STATUS_DETAIL": "Commit 227a5bb3 (previous task) is confirmed LIVE across GitHub HEAD, Render live deploy (dep-d94tfkkvikkc73cvkh90), backend /health, and backend /version — all four SHA references match exactly. No new push or deploy was needed; the previous task was already deployed. The only remaining items are housekeeping in the Security Box credential store (refresh stale GITHUB_TOKEN + add GITHUB_REPO_URL) and a device-side owner chat test — neither blocks the live deployment status."
+}
