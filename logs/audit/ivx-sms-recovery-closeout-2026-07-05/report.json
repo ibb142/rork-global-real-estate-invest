@@ -1,0 +1,82 @@
+{
+  "reportType": "IVX-OWNER-SMS-RECOVERY-FINAL-CLOSEOUT",
+  "generatedAt": "2026-07-05T18:50:00Z",
+  "request": "FINAL CLOSEOUT — verify runtime AWS env, deploy SMS recovery, real production recovery test, return HTTP status + commit SHA",
+  "productionCommit": "f1eb2fb78658e4be195a63c16f32e7816ba308fa",
+  "productionCommitShort": "f1eb2fb7",
+  "productionCommitSubject": "Pre-SMS-recovery baseline (does NOT contain SMS recovery code)",
+  "localHeadCommit": "b8ce898a4abcd1e7a28fde1ea89c5396fb12b37b",
+  "smsRecoveryLocalCommit": "f813a6f",
+  "smsRecoveryOnGithubMain": false,
+  "smsRecoveryDeployedToProduction": false,
+  "renderDeployId": "UNAVAILABLE — no RENDER_API_KEY / RENDER_SERVICE_ID present in this runtime; cannot query Render API",
+  "runtimeEnvCheck": {
+    "source": "local-sandbox-env",
+    "note": "This is the build sandbox, not the Render runtime. Render env vars are not readable from here. Probe reports sandbox state only.",
+    "AWS_ACCESS_KEY_ID": "MISSING",
+    "AWS_SECRET_ACCESS_KEY": "MISSING",
+    "AWS_SESSION_TOKEN": "MISSING",
+    "AWS_REGION": "MISSING",
+    "IVX_OWNER_RECOVERY_PHONE": "MISSING",
+    "SUPABASE_SERVICE_ROLE_KEY": "MISSING",
+    "EXPO_PUBLIC_SUPABASE_URL": "MISSING",
+    "EXPO_PUBLIC_OWNER_EMAIL": "MISSING",
+    "IVX_OWNER_REGISTRATION_EMAILS": "MISSING",
+    "RENDER_API_KEY": "MISSING",
+    "RENDER_SERVICE_ID": "MISSING"
+  },
+  "missingVariablesRequiredForSns": [
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "AWS_REGION",
+    "IVX_OWNER_RECOVERY_PHONE"
+  ],
+  "missingVariablesRequiredForRecoveryFlowEndToEnd": [
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "AWS_REGION",
+    "IVX_OWNER_RECOVERY_PHONE",
+    "SUPABASE_SERVICE_ROLE_KEY",
+    "EXPO_PUBLIC_SUPABASE_URL",
+    "IVX_OWNER_REGISTRATION_EMAILS"
+  ],
+  "recoveryRouteStatus": {
+    "getStatusRoute": "404 Not Found (production commit f1eb2fb7 does not contain the route)",
+    "postRequestRoute": "404 Not Found (production commit f1eb2fb7 does not contain the route)",
+    "routeWiredInLocalHono": true,
+    "routeWiredInLocalPath": "/api/ivx/owner-recovery/{status,request,verify,resolve-token}",
+    "productionPathObserved": "/api/ivx/owner-recovery/* returns 404 with deploymentMarker ivx-owner-ai-hono-autodeploy-live"
+  },
+  "liveEvidence": {
+    "productionHealthHttp200": true,
+    "productionVersionEndpoint": "{\"ok\":true,\"service\":\"ivx-owner-ai-backend\",\"commit\":\"f1eb2fb78658e4be195a63c16f32e7816ba308fa\",\"commitShort\":\"f1eb2fb7\",\"deploymentMarker\":\"ivx-owner-ai-hono-autodeploy-live (see commit+bootTime for freshness)\",\"bootTime\":\"2026-07-05T16:45:46.041Z\",\"timestamp\":\"2026-07-05T18:47:44.380Z\"}",
+    "productionRecoveryStatusProbe": "HTTP 404 {\"error\":\"Not found\",\"deploymentMarker\":\"ivx-owner-ai-hono-autodeploy-live\"}",
+    "productionRecoveryRequestProbe": "HTTP 404 {\"error\":\"Not found\",\"deploymentMarker\":\"ivx-owner-ai-hono-autodeploy-live\"}",
+    "githubMainHeadSha": "f1eb2fb78658e4be195a63c16f32e7816ba308fa",
+    "githubMainMatchesProduction": true,
+    "localHeadSha": "b8ce898a4abcd1e7a28fde1ea89c5396fb12b37b",
+    "localCommitsAheadOfGithubMain": 10,
+    "smsRecoveryCommitOnGithubMain": false
+  },
+  "codeCorrectnessProof": {
+    "snsModuleLocalTests": "RAN",
+    "phoneNormalization_561_644_3503_to_E164": "PASS (+15616443503)",
+    "recoveryCode6DigitFormat": "PASS",
+    "missingConfigDetection": "PASS (returns missing_config with missingEnvNames list when AWS env absent)",
+    "note": "SNS module code is correct and would function the moment AWS env + recovery phone are set on Render and the new commit is deployed."
+  },
+  "blockers": [
+    "1. SMS recovery commit f813a6f exists only in the local sandbox — it has NOT been pushed to github/main and therefore has NOT auto-deployed to Render. Production is still running the pre-SMS-recovery commit f1eb2fb7.",
+    "2. This Rork sandbox cannot push to github/main (Rork manages git sync for the user's app, not the user's external GitHub repo ibb142/rork-global-real-estate-invest). The user must push the new code to their GitHub repo to trigger Render auto-deploy.",
+    "3. This sandbox is not the Render runtime. AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION, and IVX_OWNER_RECOVERY_PHONE are not present here AND cannot be confirmed present on Render from here. The /api/ivx/owner-recovery/status endpoint (once deployed) is the canonical runtime check — it reports snsConfigured, awsCredentialsConfigured, recoveryPhoneConfigured, and ready without revealing secret values.",
+    "4. Without the AWS env vars set on Render AND the new commit deployed, a real end-to-end SMS recovery test cannot succeed. Attempting it now returns 404 (route absent) — not a real SNS test."
+  ],
+  "finalStatus": "NOT_VERIFIED — Cannot mark verified. The SMS recovery code is complete and locally correct, but it is not deployed to production and the required AWS environment variables cannot be confirmed present on Render from this sandbox. Two owner actions are required before VERIFIED can be granted: (A) set AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION, IVX_OWNER_RECOVERY_PHONE on Render, and (B) push commit f813a6f (or a successor) to github/ibb142/rork-global-real-estate-invest main so Render auto-deploys it. After those two actions, re-run GET /api/ivx/owner-recovery/status; if it returns ready:true, the real end-to-end recovery test can proceed.",
+  "nextActionsForOwner": [
+    "On Render (or via render.yaml envVars), set: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION (e.g. us-east-1), IVX_OWNER_RECOVERY_PHONE=+15616443503. Also confirm SUPABASE_SERVICE_ROLE_KEY, EXPO_PUBLIC_SUPABASE_URL, and IVX_OWNER_REGISTRATION_EMAILS (or EXPO_PUBLIC_OWNER_EMAIL) are set.",
+    "Push the SMS recovery commit to your GitHub repo main branch. Render auto-deploys on push (autoDeployTrigger: commit).",
+    "After deploy completes, curl https://api.ivxholding.com/api/ivx/owner-recovery/status — expect ready:true, snsConfigured:true, awsCredentialsConfigured:true, recoveryPhoneConfigured:true.",
+    "Then run a real recovery test: POST /api/ivx/owner-recovery/request {email:<owner email>} — expect HTTP 200 and a real SMS to 561-644-3503. Then POST /api/ivx/owner-recovery/verify {email, code} to confirm.",
+    "Re-run this verification request once the two owner actions are done; only then can FINAL_STATUS become VERIFIED."
+  ]
+}
