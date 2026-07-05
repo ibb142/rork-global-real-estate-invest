@@ -4087,7 +4087,6 @@ export default function IVXOwnerChatRoute() {
     console.log('[IVXOwnerChatRoute] Completed pending reply context jump:', pendingMessageId, 'index:', targetIndex);
   }, [displayedMessages]);
 
-  const loading = messagesQuery.isLoading || conversationQuery.isLoading;
   const refreshing = messagesQuery.isRefetching || conversationQuery.isRefetching;
   const isRecordingVoice = recorderState.isRecording;
   const isTranscribingVoice = transcribeVoiceMutation.isPending;
@@ -4147,17 +4146,16 @@ export default function IVXOwnerChatRoute() {
     isStreaming: hasActiveStreamingState(runtimeDebugSnapshot),
     hasVisibleResponseText: runtimeDebugSnapshot.hasVisibleResponseText,
   });
-  const primaryState = useMemo<'loading' | 'room_error' | 'ready'>(() => {
-    if (loading && allMessages.length === 0) {
-      return 'loading';
-    }
-
+  // Loading state is fully removed: the room renders immediately as 'ready',
+  // backed by the durable local mirror + cached query placeholder data so the
+  // thread never blanks while the network refetch lands.
+  const primaryState = useMemo<'room_error' | 'ready'>(() => {
     if ((messagesQuery.error || conversationQuery.error) && allMessages.length === 0) {
       return 'room_error';
     }
 
     return 'ready';
-  }, [allMessages.length, conversationQuery.error, loading, messagesQuery.error]);
+  }, [allMessages.length, conversationQuery.error, messagesQuery.error]);
   const messageAudit = useMemo(() => {
     const ownerMessages = allMessages.filter((message) => isOwnMessage(message, ownerId)).length;
     const assistantMessages = allMessages.filter((message) => message.senderRole === 'assistant').length;
@@ -5123,7 +5121,7 @@ export default function IVXOwnerChatRoute() {
         <View style={[styles.androidStatusSpacer, { height: androidTopSpacerHeight }]} testID="ivx-owner-chat-android-status-spacer" />
 
         <View style={styles.content}>
-          {primaryState !== 'loading' && primaryState !== 'room_error' ? (
+          {primaryState !== 'room_error' ? (
             <View style={styles.topSearchRail} testID="ivx-owner-chat-top-search-rail">
               {searchOpen || searchActive ? (
                 <View style={styles.searchBarWrap} testID="ivx-owner-chat-search-wrap">
@@ -5948,12 +5946,7 @@ export default function IVXOwnerChatRoute() {
             </ScrollView>
           ) : null}
 
-          {showDiagnostics && developerToolsAllowed ? null : primaryState === 'loading' ? (
-            <View style={styles.loadingState} testID="ivx-owner-chat-loading">
-              <Text style={styles.loadingEyebrow}>Owner room opening</Text>
-              <Text style={styles.loadingText}>Loading IVX Owner AI room…</Text>
-            </View>
-          ) : primaryState === 'room_error' ? (
+          {showDiagnostics && developerToolsAllowed ? null : primaryState === 'room_error' ? (
             <View style={styles.errorState} testID="ivx-owner-chat-error">
               <Text style={styles.errorTitle}>Unable to load the owner room.</Text>
               <Text style={styles.errorText}>{messagesQuery.error?.message ?? conversationQuery.error?.message ?? 'Please try again.'}</Text>
@@ -6084,7 +6077,7 @@ export default function IVXOwnerChatRoute() {
           )}
         </View>
 
-        {primaryState !== 'loading' && primaryState !== 'room_error' ? (
+        {primaryState !== 'room_error' ? (
           <View
             style={[
               styles.composerDock,
@@ -7643,24 +7636,6 @@ const styles = StyleSheet.create({
     color: Colors.textTertiary,
     fontSize: 11,
     lineHeight: 16,
-  },
-  loadingState: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 12,
-    paddingHorizontal: 24,
-  },
-  loadingEyebrow: {
-    color: Colors.primary,
-    fontSize: 11,
-    fontWeight: '800' as const,
-    letterSpacing: 0.6,
-    textTransform: 'uppercase' as const,
-  },
-  loadingText: {
-    color: Colors.textSecondary,
-    fontSize: 14,
   },
   errorState: {
     flex: 1,
