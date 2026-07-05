@@ -295,6 +295,11 @@ import {
   handleAutonomousModeRunRequest,
 } from './api/ivx-autonomous-mode';
 import {
+  OPTIONS as seniorDevAutonomousOptions,
+  handleSeniorDevAutonomousStatusRequest,
+  handleSeniorDevAutonomousRunRequest,
+} from './api/ivx-senior-developer-autonomous-mode';
+import {
   OPTIONS as ownerOperationsOptions,
   handleOwnerOperationsDashboardRequest,
   handleOwnerOperationsConnectionsRequest,
@@ -3057,6 +3062,10 @@ app.options('/api/ivx/autonomous-mode/tools', () => autonomousModeOptions());
 app.get('/api/ivx/autonomous-mode/tools', async (context) => handleAutonomousModeToolsRequest(context.req.raw));
 app.options('/api/ivx/autonomous-mode/run', () => autonomousModeOptions());
 app.post('/api/ivx/autonomous-mode/run', async (context) => handleAutonomousModeRunRequest(context.req.raw));
+app.options('/api/ivx/senior-developer/autonomous-mode/status', () => seniorDevAutonomousOptions());
+app.get('/api/ivx/senior-developer/autonomous-mode/status', async (context) => handleSeniorDevAutonomousStatusRequest(context.req.raw));
+app.options('/api/ivx/senior-developer/autonomous-mode/run', () => seniorDevAutonomousOptions());
+app.post('/api/ivx/senior-developer/autonomous-mode/run', async (context) => handleSeniorDevAutonomousRunRequest(context.req.raw));
 
 app.options('/api/ivx/owner-operations/dashboard', () => ownerOperationsOptions());
 app.get('/api/ivx/owner-operations/dashboard', async (context) => handleOwnerOperationsDashboardRequest(context.req.raw));
