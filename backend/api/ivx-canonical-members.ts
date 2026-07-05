@@ -13,6 +13,7 @@ import {
   countCanonicalMembers,
   isCanonicalMembersConfigured,
   type ListMembersOptions,
+  type CanonicalMemberRow,
 } from '../services/ivx-canonical-members';
 
 const DEPLOYMENT_MARKER = 'ivx-canonical-members-api-v1';
@@ -65,6 +66,60 @@ export async function handleCanonicalMembersSummary(): Promise<Response> {
     bySource,
     smsVerified,
     verified,
+    deploymentMarker: DEPLOYMENT_MARKER,
+  });
+}
+
+/**
+ * GET /api/ivx/members — real members list with filters + counts.
+ *
+ * Query params:
+ *   search   — name/email/phone substring
+ *   type     — member_type filter (investor|buyer|jv_deals|tokenized|member|all)
+ *   verified — verified|unverified|sms_verified|all
+ *   limit    — 1..2000 (default 1000)
+ *
+ * Returns ONLY rows from the canonical public.members table (real database
+ * members). No fake, demo, or chatbot members are ever injected here.
+ */
+export async function handleCanonicalMembersList(request: Request): Promise<Response> {
+  const url = new URL(request.url);
+  const options: ListMembersOptions = {
+    search: url.searchParams.get('search') || undefined,
+    memberType: url.searchParams.get('type') || undefined,
+    verified: (url.searchParams.get('verified') as ListMembersOptions['verified']) || undefined,
+    limit: Number(url.searchParams.get('limit') || '1000') || 1000,
+  };
+  const configured = isCanonicalMembersConfigured();
+  if (!configured) {
+    return jsonResponse({
+      ok: false,
+      configured: false,
+      message: 'Supabase credentials not configured on this runtime. Set SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY.',
+      total: 0,
+      counts: { members: 0, investors: 0, buyers: 0, jvDeals: 0, tokenized: 0, total: 0 },
+      members: [],
+      deploymentMarker: DEPLOYMENT_MARKER,
+    }, 503);
+  }
+  const members: CanonicalMemberRow[] = await listCanonicalMembers(options);
+  const counts = { members: 0, investors: 0, buyers: 0, jvDeals: 0, tokenized: 0, total: 0 };
+  for (const m of members) {
+    counts.total += 1;
+    if (m.member_type === 'investor') counts.investors += 1;
+    if (m.member_type === 'buyer') counts.buyers += 1;
+    if (m.member_type === 'jv_deals') counts.jvDeals += 1;
+    if (m.member_type === 'tokenized') counts.tokenized += 1;
+    if (m.member_type === 'member' || m.member_type === 'user') counts.members += 1;
+  }
+  return jsonResponse({
+    ok: true,
+    configured: true,
+    realMembersOnly: true,
+    containsFakeOrDemoData: false,
+    total: members.length,
+    counts,
+    members,
     deploymentMarker: DEPLOYMENT_MARKER,
   });
 }

@@ -202,6 +202,7 @@ import {
   handleCanonicalMembersRegistry,
   handleCanonicalMembersSummary,
   handleCanonicalMembersBackfill,
+  handleCanonicalMembersList,
 } from './api/ivx-canonical-members';
 import {
   memberInvestorOptions,
@@ -3864,8 +3865,10 @@ app.get('/api/members/verification-status', async (c) => handleVerificationStatu
 app.options('/api/ivx/members/registry', () => membersOptions());
 app.options('/api/ivx/members/summary', () => membersOptions());
 app.options('/api/ivx/members/backfill', () => membersOptions());
+app.options('/api/ivx/members', () => membersOptions());
 app.get('/api/ivx/members/registry', async (c) => handleCanonicalMembersRegistry(c.req.raw));
 app.get('/api/ivx/members/summary', async () => handleCanonicalMembersSummary());
+app.get('/api/ivx/members', async (c) => handleCanonicalMembersList(c.req.raw));
 app.post('/api/ivx/members/backfill', async () => handleCanonicalMembersBackfill());
 
 // IVX canonical members count — compact counts endpoint for executor verification
