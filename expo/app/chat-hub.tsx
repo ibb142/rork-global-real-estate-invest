@@ -200,10 +200,41 @@ export default function ChatHubScreen() {
     listRef.current?.scrollToEnd({ animated: true });
   }, [messages]);
 
+  // Track whether a send is in-flight so the history-restoration effect does
+  // NOT clobber the optimistic user + assistant bubbles we just placed. Without
+  // this guard, the `historyQuery.refetch()` call inside `sendMutation.onSuccess`
+  // resolves with a history snapshot that may not yet include the just-persisted
+  // assistant reply, causing the assistant message to vanish from the UI (the
+  // "disappearing chat" bug). We only let history fully replace the local list
+  // when no send is pending; otherwise we merge so the optimistic bubbles win.
+  const sendInFlightRef = useRef(false);
+  useEffect(() => {
+    sendInFlightRef.current = sendMutation.isPending;
+  }, [sendMutation.isPending]);
+
   useEffect(() => {
     if (!historyQuery.data) return;
     const restoredMessages = historyQuery.data.messages.map(mapPublicMessageToChatMessage);
-    setMessages(restoredMessages.length > 0 ? trimMessages(restoredMessages) : [createWelcomeMessage()]);
+    if (restoredMessages.length === 0) {
+      // Only fall back to the welcome message when we are not mid-send;
+      // otherwise keep the optimistic bubbles visible until the send settles.
+      if (!sendInFlightRef.current) {
+        setMessages([createWelcomeMessage()]);
+      }
+      setLocalError(null);
+      return;
+    }
+    const incoming = trimMessages(restoredMessages);
+    setMessages((current) => {
+      // If a send is in-flight, preserve optimistic assistant + user bubbles
+      // that history may not have persisted yet. Merge by id so persisted
+      // duplicates replace their optimistic counterparts, but never drop a
+      // local-only optimistic bubble.
+      if (sendInFlightRef.current) {
+        return mergeMessages(current, incoming);
+      }
+      return incoming;
+    });
     setLocalError(null);
   }, [historyQuery.data]);
 

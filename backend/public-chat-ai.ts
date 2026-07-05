@@ -417,30 +417,37 @@ export async function generatePublicChatAnswer(input: {
     }
 
     // ── Unified IVX IA Gate Pipeline (Stabilization Sprint) ────────────────
-    // Single source of truth for the deterministic gate sequence every IVX IA
-    // chat reply must pass through. Both the Owner AI path and this public chat
-    // path call the IDENTICAL pipeline so there is one personality, one gate
-    // order, and one final status per task. Gate order (first match wins):
-    //   1. Fake Execution Gate        — developer request without proof → BLOCKED
-    //   2. Senior Developer Narrative  — fabricated patch/dev/deploy narrative
-    //   3. Access-Status Narrative      — fabricated Yes/No access checklist
-    //   4. Reliability (single state)   — runs LAST, has the final word on state
-    // This replaces the previously scattered per-gate calls and ensures the
-    // fake-execution gate (which the owner AI path was missing) now runs on
-    // every IVX IA reply.
-    const pipeline = runIVXUnifiedGatePipeline({
-      message: input.message,
-      answer: result.answer,
-      ownerSessionPresent,
-      proof: developerProof,
-    });
-    if (pipeline.gated) {
-      console.log('[PublicChatAI] Unified IVX IA gate pipeline intervened:', {
-        sessionId: input.sessionId,
-        pipelineMarker: IVX_UNIFIED_GATE_PIPELINE_MARKER,
-        ...describeIVXGatePipelineRun(pipeline),
+    // The unified gate pipeline (fake-execution, senior-developer narrative,
+    // access-status narrative, reliability) is designed for DEVELOPER and
+    // OWNER-EXECUTION requests where success claims about code/deploy/test
+    // must carry proof evidence. Running it on general_ai investor answers
+    // causes false-positive BLOCKED rewrites: normal words like "verified"
+    // (in KYC/registration context) or "completed" (in onboarding steps)
+    // trip the reliability gate's success-assertion patterns and replace the
+    // answer with "STATE: BLOCKED — MISSING EVIDENCE: Commit SHA, Render
+    // Deploy ID". This was confirmed live: "What are the steps to become a
+    // member?" and "How long does verification take?" were both blocked.
+    //
+    // Fix: only run the developer-evidence gate pipeline on branches that
+    // actually involve execution/developer/owner claims. The general_ai
+    // branch (normal investor questions) is still protected by the
+    // query-narrative gate and report-evidence gate above.
+    const isGeneralAiBranch = routeDecision.branch === 'general_ai';
+    if (!isGeneralAiBranch) {
+      const pipeline = runIVXUnifiedGatePipeline({
+        message: input.message,
+        answer: result.answer,
+        ownerSessionPresent,
+        proof: developerProof,
       });
-      return { ...result, answer: pipeline.answer };
+      if (pipeline.gated) {
+        console.log('[PublicChatAI] Unified IVX IA gate pipeline intervened:', {
+          sessionId: input.sessionId,
+          pipelineMarker: IVX_UNIFIED_GATE_PIPELINE_MARKER,
+          ...describeIVXGatePipelineRun(pipeline),
+        });
+        return { ...result, answer: pipeline.answer };
+      }
     }
     return result;
   };
