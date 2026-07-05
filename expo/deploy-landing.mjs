@@ -277,6 +277,8 @@ async function deploy() {
   const linkedinPartnerId = (process.env.LINKEDIN_PARTNER_ID || '').trim();
 
   let html = readFileSync('./ivxholding-landing/index.html', 'utf-8');
+  console.log('   [DEBUG] index.html read bytes:', Buffer.byteLength(html, 'utf-8'));
+  console.log('   [DEBUG] index.html contains overscroll removal:', html.includes('overscroll-behavior-y: none; REMOVED'));
   const sanitizedLandingHtml = sanitizeLandingHtml(html);
   html = sanitizedLandingHtml.html;
   if (sanitizedLandingHtml.duplicateBlockCount > 0) {
