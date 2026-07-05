@@ -10,6 +10,9 @@
 import SwiftUI
 
 struct ChatTabView: View {
+    @State private var showWelcomeBanner: Bool = true
+    @State private var welcomeBannerOpacity: Double = 1.0
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -24,6 +27,12 @@ struct ChatTabView: View {
                             .foregroundStyle(Color.ivxTextSecondary)
                     }
                     .padding(.horizontal)
+
+                    if showWelcomeBanner {
+                        welcomeBanner
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                            .opacity(welcomeBannerOpacity)
+                    }
 
                     ownerAIRoomCard
 
@@ -68,7 +77,78 @@ struct ChatTabView: View {
             }
             .background(Color.ivxBackground)
             .toolbar(.hidden, for: .navigationBar)
+            .onAppear { startWelcomeBannerAutoDismiss() }
         }
+    }
+
+    /// Auto-dismisses the welcome banner after 7 seconds with a fade-out animation.
+    private func startWelcomeBannerAutoDismiss() {
+        guard showWelcomeBanner else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(5))
+            withAnimation(.easeOut(duration: 2.0)) {
+                welcomeBannerOpacity = 0.0
+            }
+            try? await Task.sleep(for: .seconds(2))
+            withAnimation(.easeInOut(duration: 0.4)) {
+                showWelcomeBanner = false
+            }
+        }
+    }
+
+    /// "Welcome to IVX" banner — shown for 5–10 seconds then auto-dismisses.
+    /// Mirrors the Expo/Android chat banner so both native apps stay in sync.
+    private var welcomeBanner: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "sparkles")
+                .font(.body.weight(.bold))
+                .foregroundStyle(.black)
+                .frame(width: 36, height: 36)
+                .background(Color.ivxGold)
+                .clipShape(.rect(cornerRadius: 10))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Welcome to IVX")
+                    .font(.headline)
+                    .fontWeight(.bold)
+                    .foregroundStyle(.white)
+                Text("Owner AI room is live. Ask anything about your deals.")
+                    .font(.caption)
+                    .foregroundStyle(Color.ivxTextSecondary)
+                    .lineLimit(2)
+            }
+
+            Spacer(minLength: 4)
+
+            Button {
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    showWelcomeBanner = false
+                }
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.ivxTextSecondary)
+                    .frame(width: 28, height: 28)
+                    .background(Color.ivxSurfaceTertiary)
+                    .clipShape(Circle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 14)
+        .background(
+            LinearGradient(
+                colors: [Color.ivxCard, Color.ivxCard.opacity(0.92)],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+        )
+        .clipShape(.rect(cornerRadius: 14))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(Color.ivxGold.opacity(0.45), lineWidth: 1)
+        )
+        .padding(.horizontal)
     }
 
     /// Mirrors Android's "IVX Owner AI room" card with the Open room action.
