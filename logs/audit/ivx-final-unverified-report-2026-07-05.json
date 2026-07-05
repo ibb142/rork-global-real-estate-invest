@@ -1,0 +1,34 @@
+{
+  "TASK_ID": "ivx-final-unverified-complete-e2e",
+  "STATE": "FAILED",
+  "GITHUB_SHA": "e2b015590abf136a7751192459ce1a2a48c53d90",
+  "LOCAL_HEAD": "6455ba8424a19d44db0b4cc446cf6219d023abf3",
+  "RENDER_DEPLOY_ID": "UNAVAILABLE",
+  "RENDER_SERVICE": "ivx-backend.onrender.com",
+  "GITHUB_ACTION_STATUS": "NOT_RUN",
+  "RENDER_WEBHOOK_STATUS": "UNVERIFIABLE",
+  "HEALTH_STATUS": "FAILED",
+  "HEALTH_PROOF": "curl https://ivx-backend.onrender.com/health -> HTTP/2 404, body 'Not Found', header x-render-routing: no-server (Render has no running service at this URL)",
+  "VERSION_STATUS": "FAILED",
+  "VERSION_PROOF": "curl https://ivx-backend.onrender.com/version -> HTTP/2 404, body 'Not Found'",
+  "ANDROID_STATUS": "UNVERIFIABLE (backend down, cannot exercise sync)",
+  "IOS_STATUS": "UNVERIFIABLE (backend down, cannot exercise chat/autonomous)",
+  "CHAT_STATUS": "FAILED (live backend returns 404 on all routes)",
+  "MEMBERS_STATUS": "UNVERIFIABLE (backend down)",
+  "LANDING_STATUS": "UNVERIFIABLE (backend down)",
+  "ADMIN_STATUS": "UNVERIFIABLE (backend down)",
+  "AUTONOMOUS_MODE_ROUTE": "Present in local code (backend/hono.ts line 301, /api/ivx/senior-developer-autonomous-mode), but live backend 404 — service is down",
+  "BLOCKERS": [
+    "Render service ivx-backend.onrender.com is not running (x-render-routing: no-server on all routes). Cannot restart from sandbox: RENDER_API_KEY is not present in the runtime environment.",
+    "Local HEAD 6455ba8 is 26 commits ahead of GitHub main e2b015590. Recent autonomous-mode + sync work has not been pushed to GitHub.",
+    "Push is non-trivial: github/main and local branch have diverged (local 26 ahead, github 241 ahead). A force-push is destructive (would wipe 241 commits) and requires explicit owner approval per the autonomous-mode owner policy.",
+    "GitHub Actions workflow render-deploy-trigger.yml requires RENDER_API_KEY + RENDER_SERVICE_ID repo secrets; previous run showed these are NOT configured in the GitHub repo."
+  ],
+  "NEXT_ACTIONS_REQUIRING_OWNER": [
+    "1. Provide RENDER_API_KEY (or confirm Render service ivx-backend still exists and is not suspended/deleted). Without it the service cannot be restarted or redeployed from here.",
+    "2. Approve ONE of: (a) force-push local main to GitHub (destructive — wipes 241 commits on github/main), or (b) cherry-pick only the autonomous-mode + sync commits onto github/main and push forward (safe, non-destructive). Recommended: (b).",
+    "3. Configure RENDER_API_KEY and RENDER_SERVICE_ID as secrets in the GitHub repo ibb142/rork-global-real-estate-invest so the render-deploy-trigger workflow can fire."
+  ],
+  "FINAL_STATUS": "FAILED",
+  "REASON": "Live backend is down (404 / no-server on every route). Cannot verify health, version, chat, members, landing, admin, or mobile production. Cannot restart Render or trigger deploy without RENDER_API_KEY, which is not in the sandbox env. Per owner policy, production deploy + secret changes require owner approval. No fake proof has been produced — every FAILED/UNVERIFIABLE item above is backed by a live probe in this file."
+}
