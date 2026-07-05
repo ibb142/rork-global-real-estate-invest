@@ -38,6 +38,7 @@ const IVX_LEAD_AUDIT_LOG_OPTIONS = { title: 'Lead Audit Log' } as const;
 const IVX_DAILY_REPORT_OPTIONS = { title: 'Daily Report' } as const;
 const IVX_GITHUB_SYNC_OPTIONS = { title: 'Sync to GitHub' } as const;
 const IVX_CAMPAIGN_OPTIONS = { title: 'Campaign Report' } as const;
+const IVX_SECURITY_BOX_OPTIONS = { title: 'Security Box · GitHub + Render' } as const;
 
 export default function IVXOwnerLayout() {
   return (
@@ -66,6 +67,7 @@ export default function IVXOwnerLayout() {
       <Stack.Screen name="daily-report" options={IVX_DAILY_REPORT_OPTIONS} />
       <Stack.Screen name="github-sync" options={IVX_GITHUB_SYNC_OPTIONS} />
       <Stack.Screen name="campaign" options={IVX_CAMPAIGN_OPTIONS} />
+      <Stack.Screen name="security-box" options={IVX_SECURITY_BOX_OPTIONS} />
     </Stack>
   );
 }
