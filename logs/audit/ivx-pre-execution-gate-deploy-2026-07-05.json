@@ -1,0 +1,169 @@
+{
+  "taskId": "ivx-pre-execution-gate-deploy-2026-07-05",
+  "generatedAt": "2026-07-05T02:55:00.000Z",
+  "marker": "ivx-pre-execution-feasibility-gate-2026-07-05-v1",
+  "finalStatus": "NOT_VERIFIED",
+  "exactRemainingBlocker": "GITHUB_TOKEN_REVOKED — cannot push gate wiring to GitHub main, so Render cannot deploy the wired gate",
+  "steps": {
+    "1_wire_gate_into_live_entry_points": {
+      "status": "DONE_LOCALLY",
+      "entryPointsWired": [
+        "backend/api/ivx-owner-ai.ts (handleIVXOwnerAIRequestInternal) — owner-ai",
+        "backend/api/public-chat.ts (handlePublicChatPost) — public-chat",
+        "backend/api/ivx-senior-developer-runtime.ts (handleIVXSeniorDeveloperRunRequest) — senior-developer-run",
+        "backend/api/ivx-developer-deploy-control.ts (handleIVXDeveloperDeployActionRequest) — developer-deploy-action",
+        "backend/api/ivx-autonomous-cycle.ts (handleRun) — autonomous-cycle-run",
+        "backend/api/ivx-autonomous-mode.ts (handleAutonomousModeRunRequest) — autonomous-mode-run",
+        "backend/api/ivx-autonomous-scale.ts (handleScaleRunRequest) — autonomous-scale-run",
+        "backend/api/ivx-agent-jobs.ts (handleIVXAgentJobsCreateRequest) — agent-jobs-create",
+        "backend/api/ivx-owner-ai-jobs.ts (handleIVXAIJobStartRequest) — owner-ai-jobs-start",
+        "backend/api/ivx-agent-self-execution.ts (handleRunSelfExecution) — agent-self-execution-run"
+      ],
+      "newFile": "backend/services/ivx-pre-execution-gate-middleware.ts",
+      "gateRunsBefore": [
+        "model response",
+        "patch generation",
+        "file write",
+        "tests",
+        "git commit",
+        "git push",
+        "Render deploy",
+        "Supabase migration",
+        "proof claim"
+      ],
+      "blockedBehavior": "Returns 409 with STATE: BLOCKED, BLOCKER_CODE, FAILED_CAPABILITY, EXACT_REASON, NEXT_OWNER_ACTION — execution does not continue"
+    },
+    "2_required_behavior": {
+      "status": "DONE_LOCALLY",
+      "checksImplemented": [
+        "owner session",
+        "required credential exists",
+        "credential loaded in runtime",
+        "GitHub reachable (live probe)",
+        "Render reachable (live probe)",
+        "Supabase reachable (live probe)",
+        "required tool exists",
+        "approval present if needed"
+      ],
+      "blockedPayloadFields": [
+        "STATE: BLOCKED",
+        "BLOCKER_CODE",
+        "FAILED_CAPABILITY",
+        "EXACT_REASON",
+        "NEXT_OWNER_ACTION"
+      ]
+    },
+    "3_typescript_errors": {
+      "status": "AUDITED",
+      "totalErrors": 23,
+      "gateCriticalFiles": {
+        "owner-ai": 0,
+        "public-chat": 0,
+        "unified gate": 0,
+        "pre-execution gate": 0,
+        "pre-execution gate middleware": 0,
+        "executor (senior-developer-runtime)": 0,
+        "proof ledger": 0,
+        "agent-jobs": 0,
+        "autonomous-cycle": 0,
+        "autonomous-mode": 0,
+        "autonomous-scale": 0,
+        "agent-self-execution": 0
+      },
+      "unrelatedErrors": [
+        "backend/api/ivx-blocker-fix-migration.ts (2) — pg Pool type mismatch, pre-existing",
+        "backend/ivx-blocker-fix.test.ts (4) — PrivilegedIVXRole string narrowing, pre-existing test fixture",
+        "backend/services/ivx-lender-network-engine.ts (14) — listJvDeals/listProjects/DealScore property mismatch, pre-existing growth-engine module",
+        "backend/services/ivx-video-resumable.ts (1) — registerStoredVideo missing on ivx-video-pipeline, pre-existing",
+        "expo/lib/supabase-env.ts (2) — __DEV__ global not typed, pre-existing React Native ambient"
+      ],
+      "verdict": "All 23 errors are pre-existing and unrelated to the gate wiring. Zero TS errors in any gate-critical file. No fixes required for deployment."
+    },
+    "4_tests": {
+      "status": "DONE_LOCALLY",
+      "commands": [
+        {
+          "command": "bun test backend/services/ivx-pre-execution-feasibility-gate.test.ts",
+          "pass": 52,
+          "fail": 0,
+          "failedTestNames": []
+        },
+        {
+          "command": "bun test backend/services/ivx-unified-ai-gate-pipeline.test.ts",
+          "pass": 18,
+          "fail": 0,
+          "failedTestNames": []
+        },
+        {
+          "command": "bun test backend/services/ivx-fake-execution-gate.test.ts backend/services/ivx-developer-proof-standard.test.ts backend/ivx-blocker-fix.test.ts",
+          "pass": 12,
+          "fail": 0,
+          "failedTestNames": []
+        }
+      ],
+      "totals": { "pass": 82, "fail": 0 }
+    },
+    "5_deploy": {
+      "status": "BLOCKED",
+      "blockerCode": "GITHUB_TOKEN_REVOKED",
+      "evidence": {
+        "shellGITHUB_TOKENLength": 0,
+        "envFileTokenHttpStatus": 401,
+        "envFileTokenApiResponse": "Bad credentials",
+        "note": "The token in expo/.env is the OLD dead token (ghp_j1rP...). The new token the owner saved ~300 times in the Rork security box is NOT being injected into this sandbox shell (platform injection broken this session). Without a working GitHub token, no push to GitHub main can occur, so Render cannot autodeploy the wired gate."
+      }
+    },
+    "6_verify_production": {
+      "status": "OLD_COMMIT",
+      "healthResponse": {
+        "ok": true,
+        "status": "healthy",
+        "commit": "f8a66adcf32c3bdc59ca274cadf87995fdd5d6fd",
+        "commitShort": "f8a66adc",
+        "bootTime": "2026-07-05T01:27:16.794Z"
+      },
+      "versionResponse": {
+        "ok": true,
+        "commit": "f8a66adcf32c3bdc59ca274cadf87995fdd5d6fd",
+        "commitShort": "f8a66adc",
+        "bootTime": "2026-07-05T01:27:16.794Z"
+      },
+      "verdict": "Production is healthy but on the OLD commit f8a66adc — the wired gate is NOT yet deployed. SHA match: GitHub=NOT_PUSHED, Render=f8a66adc, /health=f8a66adc, /version=f8a66adc."
+    },
+    "7_live_chat_test": {
+      "status": "BLOCKED",
+      "reason": "Cannot run live acceptance prompts against the wired gate because the gate is not yet deployed to production. Running them against the old commit would test the OLD runtime, not the wired gate. Local unit tests cover all 7 spec prompts (see step 4 — 52 passing tests include the live acceptance prompt suite)."
+    },
+    "8_blocker_memory": {
+      "status": "DONE_LOCALLY",
+      "blockerMemoryImplemented": true,
+      "threshold": 2,
+      "testCoverage": "repeated blocker stops loop — covered in ivx-pre-execution-feasibility-gate.test.ts"
+    }
+  },
+  "filesChanged": [
+    "backend/services/ivx-pre-execution-gate-middleware.ts (NEW — shared adapter)",
+    "backend/api/ivx-owner-ai.ts (gate wired into handleIVXOwnerAIRequestInternal)",
+    "backend/api/public-chat.ts (gate wired into handlePublicChatPost)",
+    "backend/api/ivx-senior-developer-runtime.ts (gate wired into handleIVXSeniorDeveloperRunRequest)",
+    "backend/api/ivx-developer-deploy-control.ts (gate wired into handleIVXDeveloperDeployActionRequest)",
+    "backend/api/ivx-autonomous-cycle.ts (gate wired into handleRun)",
+    "backend/api/ivx-autonomous-mode.ts (gate wired into handleAutonomousModeRunRequest)",
+    "backend/api/ivx-autonomous-scale.ts (gate wired into handleScaleRunRequest)",
+    "backend/api/ivx-agent-jobs.ts (gate wired into handleIVXAgentJobsCreateRequest)",
+    "backend/api/ivx-owner-ai-jobs.ts (gate wired into handleIVXAIJobStartRequest)",
+    "backend/api/ivx-agent-self-execution.ts (gate wired into handleRunSelfExecution)"
+  ],
+  "typescriptResult": "23 errors total, 0 in gate-critical files, all 23 pre-existing and unrelated",
+  "testResult": "82 pass, 0 fail across pre-execution gate, unified AI gate, fake execution gate, proof standard, blocker fix suites",
+  "githubSha": "NOT_PUSHED — GITHUB_TOKEN_REVOKED",
+  "renderDeployId": "NOT_TRIGGERED — no new commit on GitHub main",
+  "healthResponse": "ok=true, healthy, commit=f8a66adc (OLD — gate not yet deployed)",
+  "versionResponse": "ok=true, commit=f8a66adc (OLD — gate not yet deployed)",
+  "liveChatTests": "BLOCKED — gate not yet in production; 7 spec prompts covered by 52 passing local tests instead",
+  "blockerMemory": "Implemented + tested (threshold=2, spin-loop prevention verified)",
+  "proofLedgerEntry": "this file — logs/audit/ivx-pre-execution-gate-deploy-2026-07-05.json",
+  "finalStatus": "NOT_VERIFIED",
+  "exactRemainingBlocker": "GITHUB_TOKEN_REVOKED — the token in expo/.env returns HTTP 401 Bad credentials, and the new token saved in the Rork security box is not being injected into the sandbox shell this session (0 bytes). Replace the GITHUB_TOKEN in expo/.env (or fix the Rork security-box injection into this sandbox) with a valid GitHub token that has repo write permission, then re-run this deploy step. Once a working token is present, the push + Render autodeploy + production verify + live chat tests can all complete in one pass — the gate wiring, tests, and TypeScript are already clean.",
+  "secretValuesReturned": false
+}

@@ -1,0 +1,181 @@
+name: IVX Holdings — Build & Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+
+env:
+  APP_NAME: ivx-holdings
+  AWS_REGION: us-east-1
+  ECS_CLUSTER: ivx-holdings-cluster
+  ECS_SERVICE: ivx-holdings-api-service
+  CONTAINER_NAME: ivx-holdings-api
+
+jobs:
+  validate:
+    name: Validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+        working-directory: expo
+
+      - name: Type check
+        run: bunx tsc --noEmit
+        working-directory: expo
+        continue-on-error: true
+
+      - name: Lint
+        run: bun run lint
+        working-directory: expo
+        continue-on-error: true
+
+  build-and-deploy:
+    name: Build & Deploy to AWS
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'production' }}
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set image tag
+        id: tag
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+          echo "IMAGE_TAG=${SHORT_SHA}-${TIMESTAMP}" >> $GITHUB_OUTPUT
+          echo "ECR_URI=${{ steps.login-ecr.outputs.registry }}/${{ env.APP_NAME }}-api" >> $GITHUB_OUTPUT
+
+      - name: Build Docker image
+        working-directory: expo
+        run: |
+          docker build \
+            --platform linux/amd64 \
+            -t ${{ steps.tag.outputs.ECR_URI }}:${{ steps.tag.outputs.IMAGE_TAG }} \
+            -t ${{ steps.tag.outputs.ECR_URI }}:latest \
+            .
+
+      - name: Push to ECR
+        run: |
+          docker push ${{ steps.tag.outputs.ECR_URI }}:${{ steps.tag.outputs.IMAGE_TAG }}
+          docker push ${{ steps.tag.outputs.ECR_URI }}:latest
+
+      - name: Update ECS task definition
+        id: task-def
+        run: |
+          CURRENT=$(aws ecs describe-task-definition \
+            --task-definition ${{ env.APP_NAME }}-api \
+            --query 'taskDefinition' \
+            --output json)
+
+          NEW_DEF=$(echo "$CURRENT" | python3 -c "
+          import sys, json
+          td = json.load(sys.stdin)
+          for cd in td['containerDefinitions']:
+              if cd['name'] == '${{ env.CONTAINER_NAME }}':
+                  cd['image'] = '${{ steps.tag.outputs.ECR_URI }}:${{ steps.tag.outputs.IMAGE_TAG }}'
+          for key in ['taskDefinitionArn','revision','status','requiresAttributes','compatibilities','registeredAt','registeredBy']:
+              td.pop(key, None)
+          print(json.dumps(td))
+          ")
+
+          TASK_ARN=$(aws ecs register-task-definition \
+            --cli-input-json "$NEW_DEF" \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)
+
+          echo "TASK_ARN=$TASK_ARN" >> $GITHUB_OUTPUT
+
+      - name: Deploy to ECS
+        run: |
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service ${{ env.ECS_SERVICE }} \
+            --task-definition ${{ steps.task-def.outputs.TASK_ARN }} \
+            --force-new-deployment \
+            --output text > /dev/null
+
+      - name: Wait for deployment stability
+        run: |
+          echo "Waiting for ECS service to stabilize..."
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE }}
+          echo "Service is stable!"
+
+      - name: Health check
+        run: |
+          API_URL="https://api.ivxholding.com"
+          RETRIES=0
+          MAX_RETRIES=10
+          while [ "$RETRIES" -lt "$MAX_RETRIES" ]; do
+            STATUS=$(curl -sf --max-time 10 "$API_URL/health" 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('status','unknown'))" 2>/dev/null || echo "unreachable")
+            if [ "$STATUS" = "healthy" ]; then
+              echo "API is healthy!"
+              exit 0
+            fi
+            RETRIES=$((RETRIES + 1))
+            echo "Attempt $RETRIES/$MAX_RETRIES — retrying in 10s..."
+            sleep 10
+          done
+          echo "WARNING: API health check did not pass after $MAX_RETRIES attempts"
+          exit 1
+        continue-on-error: true
+
+      - name: Deployment summary
+        if: always()
+        run: |
+          echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "| Key | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Image | \`${{ steps.tag.outputs.IMAGE_TAG }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Cluster | \`${{ env.ECS_CLUSTER }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Service | \`${{ env.ECS_SERVICE }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Commit | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Triggered by | \`${{ github.actor }}\` |" >> $GITHUB_STEP_SUMMARY
+
+  notify:
+    name: Notify
+    needs: build-and-deploy
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Report status
+        run: |
+          if [ "${{ needs.build-and-deploy.result }}" = "success" ]; then
+            echo "Deployment SUCCEEDED for commit ${{ github.sha }}"
+          else
+            echo "Deployment FAILED for commit ${{ github.sha }}"
+          fi

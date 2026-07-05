@@ -1,0 +1,185 @@
+name: Render Auto-Deploy on Push
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      clear_cache:
+        description: 'Clear build cache'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  deploy:
+    name: Deploy to Render
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Validate secrets
+        id: secrets
+        run: |
+          MISSING=""
+          if [ -z "${{ secrets.RENDER_API_KEY }}" ]; then
+            echo "MISSING_SECRET: RENDER_API_KEY"
+            MISSING="${MISSING} RENDER_API_KEY"
+          fi
+          if [ -z "${{ secrets.RENDER_SERVICE_ID }}" ]; then
+            echo "MISSING_SECRET: RENDER_SERVICE_ID"
+            MISSING="${MISSING} RENDER_SERVICE_ID"
+          fi
+          if [ -n "${MISSING}" ]; then
+            echo "status=blocked" >> $GITHUB_OUTPUT
+            echo "missing=${MISSING}" >> $GITHUB_OUTPUT
+            echo "::error::Missing secrets:${MISSING}"
+          else
+            echo "status=ready" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Trigger Render Deploy
+        if: steps.secrets.outputs.status == 'ready'
+        id: deploy
+        run: |
+          SERVICE_ID="${{ secrets.RENDER_SERVICE_ID }}"
+          CLEAR_CACHE="${{ github.event.inputs.clear_cache == 'true' && 'clear' || 'do_not_clear' }}"
+
+          echo "Triggering Render deploy for service: ${SERVICE_ID}"
+          echo "GitHub SHA: ${{ github.sha }}"
+
+          RESPONSE=$(curl -sS --connect-timeout 10 --max-time 30 \
+            -X POST "https://api.render.com/v1/services/${SERVICE_ID}/deploys" \
+            -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -H "Accept: application/json" \
+            -d "{\"clearCache\": \"${CLEAR_CACHE}\"}")
+
+          echo "Render API response:"
+          echo "$RESPONSE" | python3 -m json.tool 2>/dev/null || echo "$RESPONSE"
+
+          DEPLOY_ID=$(echo "$RESPONSE" | python3 -c "
+          import sys,json
+          d = json.load(sys.stdin)
+          deploy = d.get('deploy', d)
+          print(deploy.get('id', ''))
+          " 2>/dev/null || echo "")
+
+          DEPLOY_STATUS=$(echo "$RESPONSE" | python3 -c "
+          import sys,json
+          d = json.load(sys.stdin)
+          deploy = d.get('deploy', d)
+          print(deploy.get('status', ''))
+          " 2>/dev/null || echo "")
+
+          echo "deploy_id=${DEPLOY_ID}" >> $GITHUB_OUTPUT
+          echo "deploy_status=${DEPLOY_STATUS}" >> $GITHUB_OUTPUT
+
+          if [ -n "${DEPLOY_ID}" ]; then
+            echo "Deploy triggered: ${DEPLOY_ID} (${DEPLOY_STATUS})"
+          else
+            echo "::error::Could not parse deploy ID from Render response"
+            exit 1
+          fi
+
+      - name: Wait for Deploy
+        if: steps.deploy.outputs.deploy_id != ''
+        id: wait
+        run: |
+          DEPLOY_ID="${{ steps.deploy.outputs.deploy_id }}"
+          SERVICE_ID="${{ secrets.RENDER_SERVICE_ID }}"
+          MAX_WAIT=600
+          WAITED=0
+          INTERVAL=10
+
+          echo "Waiting for deploy ${DEPLOY_ID} to complete..."
+          while [ $WAITED -lt $MAX_WAIT ]; do
+            RESPONSE=$(curl -sS --connect-timeout 10 --max-time 15 \
+              "https://api.render.com/v1/services/${SERVICE_ID}/deploys/${DEPLOY_ID}" \
+              -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
+              -H "Accept: application/json")
+
+            STATUS=$(echo "$RESPONSE" | python3 -c "
+            import sys,json
+            d = json.load(sys.stdin)
+            print(d.get('status', ''))
+            " 2>/dev/null || echo "unknown")
+
+            COMMIT_SHA=$(echo "$RESPONSE" | python3 -c "
+            import sys,json
+            d = json.load(sys.stdin)
+            commit = d.get('commit', {}) or {}
+            sha = commit.get('id', '') if isinstance(commit, dict) else ''
+            print(sha[:8] if sha else '?')
+            " 2>/dev/null || echo "?")
+
+            echo "[${WAITED}s] Status: ${STATUS} | Commit: ${COMMIT_SHA}"
+
+            case "${STATUS}" in
+              live)
+                echo "Deploy is LIVE at commit ${COMMIT_SHA}!"
+                echo "deploy_commit=${COMMIT_SHA}" >> $GITHUB_OUTPUT
+                echo "deploy_final_status=live" >> $GITHUB_OUTPUT
+                exit 0
+                ;;
+              build_failed|update_failed|canceled|deactivated)
+                echo "::error::Deploy failed: ${STATUS}"
+                echo "deploy_final_status=${STATUS}" >> $GITHUB_OUTPUT
+                exit 1
+                ;;
+            esac
+
+            sleep $INTERVAL
+            WAITED=$((WAITED + INTERVAL))
+          done
+
+          echo "::error::Timeout waiting for deploy (${MAX_WAIT}s)"
+          echo "deploy_final_status=timeout" >> $GITHUB_OUTPUT
+          exit 1
+
+      - name: Verify Production Health
+        if: always()
+        run: |
+          echo "Checking production health..."
+          GITHUB_SHA_SHORT=$(echo "${{ github.sha }}" | cut -c1-8)
+
+          for i in 1 2 3 4 5; do
+            HEALTH=$(curl -sS --connect-timeout 10 --max-time 15 \
+              https://api.ivxholding.com/health 2>/dev/null || echo '{"status":"unreachable"}')
+
+            STATUS=$(echo "$HEALTH" | python3 -c "
+            import sys,json
+            print(json.load(sys.stdin).get('status','?'))
+            " 2>/dev/null || echo "?")
+
+            COMMIT=$(echo "$HEALTH" | python3 -c "
+            import sys,json
+            print(json.load(sys.stdin).get('commitShort','?'))
+            " 2>/dev/null || echo "?")
+
+            echo "Health check $i: status=${STATUS} commit=${COMMIT}"
+
+            if [ "$STATUS" = "healthy" ]; then
+              if [ "$COMMIT" = "${GITHUB_SHA_SHORT}" ]; then
+                echo "COMMIT_MATCH: YES — production commit ${COMMIT} matches GitHub ${GITHUB_SHA_SHORT}"
+              else
+                echo "COMMIT_MATCH: NO — production=${COMMIT} github=${GITHUB_SHA_SHORT}"
+              fi
+              break
+            fi
+            sleep 10
+          done
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Render Auto-Deploy Summary"
+            echo ""
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| GitHub SHA | \`${{ github.sha }}\` |"
+            echo "| Deploy ID | \`${{ steps.deploy.outputs.deploy_id || 'N/A' }}\` |"
+            echo "| Deploy Status | \`${{ steps.wait.outputs.deploy_final_status || steps.deploy.outputs.deploy_status || 'N/A' }}\` |"
+            echo "| Deployed Commit | \`${{ steps.wait.outputs.deploy_commit || 'N/A' }}\` |"
+            echo "| Trigger | \`${{ github.event_name }}\` |"
+          } >> $GITHUB_STEP_SUMMARY
