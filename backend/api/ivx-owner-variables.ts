@@ -32,6 +32,7 @@ export type OwnerVariableName = OwnerVariableMetadata['name'];
 type OwnerVariableProvider = OwnerVariableMetadata['provider'];
 type OwnerVariableStatus = 'missing' | 'saved' | 'tested' | 'invalid';
 type TestResult = 'tested' | 'invalid' | 'missing';
+type OwnerVariableRuntimeSource = 'process_env' | 'owner_variables_store' | 'unavailable';
 
 type PgPool = import('pg').Pool;
 type PgPoolClient = import('pg').PoolClient;
@@ -617,21 +618,38 @@ async function auditOwnerVariableAction(input: {
   }
 }
 
+function resolveEnvPresence(name: OwnerVariableName): { present: boolean; source: 'process_env' | 'owner_variables_store' | 'unavailable'; maskedPreview: string | null } {
+  const envValue = readEnv(name);
+  if (envValue) {
+    return { present: true, source: 'process_env', maskedPreview: maskValue(name, envValue) };
+  }
+  return { present: false, source: 'unavailable', maskedPreview: null };
+}
+
 function buildVariableStatuses(rows: OwnerVariableRow[]) {
   const rowByName = new Map(rows.map((row) => [row.name, row]));
   return OWNER_VARIABLES.map((metadata) => {
     const row = rowByName.get(metadata.name);
+    const envPresence = resolveEnvPresence(metadata.name);
+    const isSaved = Boolean(row);
+    const isPresent = isSaved || envPresence.present;
+    // Status precedence: explicit tested/invalid from store > saved (store or env) > missing.
+    // If the variable is in process.env but not in the encrypted store, report 'saved'
+    // (runtime-readable) with source=process_env so the UI stops saying MISSING.
+    const status: OwnerVariableStatus = row?.status ?? (envPresence.present ? 'saved' : 'missing');
     return {
       name: metadata.name,
       provider: metadata.provider,
       required: metadata.required,
       secret: metadata.secret,
-      status: row?.status ?? 'missing',
-      saved: Boolean(row),
+      status,
+      saved: isPresent,
+      presentInRuntime: envPresence.present,
+      runtimeSource: envPresence.source,
       lastTestedAt: row?.last_tested_at ?? null,
-      maskedPreview: row?.masked_preview ?? null,
+      maskedPreview: row?.masked_preview ?? envPresence.maskedPreview ?? null,
       description: metadata.description,
-      secretValuesReturned: false,
+      secretValuesReturned: false as const,
     };
   });
 }
@@ -641,8 +659,9 @@ function buildProviderReadiness(rows: OwnerVariableRow[]): Record<OwnerVariableP
   const providers = Array.from(new Set(OWNER_VARIABLES.map((item) => item.provider))) as OwnerVariableProvider[];
   return Object.fromEntries(providers.map((provider) => {
     const required = OWNER_VARIABLES.filter((item) => item.provider === provider && item.required).map((item) => item.name);
-    const saved = required.filter((name) => rowByName.has(name));
-    const missing = required.filter((name) => !rowByName.has(name));
+    // A required variable is satisfied if it's in the encrypted store OR in the backend runtime env.
+    const saved = required.filter((name) => rowByName.has(name) || readEnv(name));
+    const missing = required.filter((name) => !rowByName.has(name) && !readEnv(name));
     const providerRows = OWNER_VARIABLES.filter((item) => item.provider === provider).map((item) => rowByName.get(item.name)).filter((row): row is OwnerVariableRow => Boolean(row));
     const hasInvalid = providerRows.some((row) => row.status === 'invalid');
     const hasTested = required.length > 0 && required.every((name) => rowByName.get(name)?.status === 'tested');
@@ -659,7 +678,7 @@ function buildProviderReadiness(rows: OwnerVariableRow[]): Record<OwnerVariableP
       savedVariableNames: saved,
       missingVariableNames: missing,
       lastTestedAt,
-      secretValuesReturned: false,
+      secretValuesReturned: false as const,
     }];
   })) as Record<OwnerVariableProvider, ProviderReadiness>;
 }

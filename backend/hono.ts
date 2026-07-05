@@ -418,6 +418,7 @@ import {
   handleRuntimeVariablesSaveRequest,
   handleRuntimeVariablesAuditRequest,
 } from './api/ivx-runtime-variables';
+import { buildRuntimeVariablesReport } from './services/ivx-runtime-variables';
 import {
   OPTIONS as investorCrmOptions,
   handleInvestorListRequest,
@@ -3387,6 +3388,41 @@ app.get('/api/ivx/env-debug/render', async (context) => context.json(await build
   'Cache-Control': 'no-store',
   'Access-Control-Allow-Origin': '*',
 }));
+// Public-safe masked variable presence report (no secrets, no auth).
+// Mirrors the safety model of /api/ivx/env-debug/render: returns only
+// name/provider/present/masked/source/status per variable.
+app.options('/api/ivx/variables-presence', () => publicJson({ ok: true }, 204));
+app.get('/api/ivx/variables-presence', async (context) => {
+  try {
+    const report = buildRuntimeVariablesReport();
+    const items = report.variables.map((v) => ({
+      name: v.name,
+      provider: v.verifyKind,
+      present: v.present,
+      masked: v.masked,
+      source: v.resolvedFrom ? (v.publicWarning ? 'process_env_public' : 'process_env') : 'unavailable',
+      status: v.status,
+      isPublic: v.isPublic,
+      description: v.description,
+    }));
+    return context.json({
+      ok: true,
+      marker: report.marker,
+      generatedAt: report.generatedAt,
+      runtimeLabel: report.runtimeLabel,
+      total: report.total,
+      present: report.present,
+      missing: report.missing,
+      variables: items,
+      secretValuesReturned: false as const,
+    }, 200, {
+      'Cache-Control': 'no-store',
+      'Access-Control-Allow-Origin': '*',
+    });
+  } catch (error) {
+    return context.json({ ok: false, error: error instanceof Error ? error.message : 'variables-presence failed', secretValuesReturned: false }, 500);
+  }
+});
 app.options('/api/ivx/variables-tool/status', () => variablesToolOptions());
 app.get('/api/ivx/variables-tool/status', async (context) => handleIVXVariablesToolStatusRequest(context.req.raw));
 app.options('/api/ivx/variables-tool/save', () => variablesToolOptions());

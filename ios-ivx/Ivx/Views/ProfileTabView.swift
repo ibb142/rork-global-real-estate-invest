@@ -24,6 +24,39 @@ struct ProfileTabView: View {
                         VStack(spacing: 8) {
                             profileRow(icon: "sparkles", title: "IVX Owner AI", subtitle: "AI replies · Room sync", url: "https://chat.ivxholding.com")
                             profileRow(icon: "gearshape.2", title: "Automation Center", subtitle: "Deploy · GitHub · Proof", url: "https://chat.ivxholding.com")
+                            NavigationLink {
+                                VariablesView()
+                            } label: {
+                                HStack(spacing: 12) {
+                                    Image(systemName: "key.horizontal.fill")
+                                        .font(.body)
+                                        .foregroundStyle(Color.ivxGold)
+                                        .frame(width: 36, height: 36)
+                                        .background(Color.ivxSurface)
+                                        .clipShape(.rect(cornerRadius: 8))
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text("Variables / Credentials")
+                                            .font(.subheadline)
+                                            .fontWeight(.semibold)
+                                            .foregroundStyle(.white)
+                                        Text("GitHub · Render · Supabase · AWS")
+                                            .font(.caption)
+                                            .foregroundStyle(Color.ivxTextSecondary)
+                                    }
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption)
+                                        .foregroundStyle(Color.ivxTextTertiary)
+                                }
+                                .padding(12)
+                                .background(Color.ivxCard)
+                                .clipShape(.rect(cornerRadius: 10))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 10)
+                                        .stroke(Color.ivxBorder, lineWidth: 1)
+                                )
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
 
