@@ -93,8 +93,9 @@ export async function runRecoveryDrill(): Promise<DrillReport> {
       if (createRes.ok) {
         const rows = (await createRes.json()) as Record<string, unknown>[];
         if (rows.length > 0) {
-          testMemberId = String(rows[0].member_id ?? rows[0].email ?? testEmail);
-          testMemberPk = String(rows[0].member_id ?? '');
+          const createdRow = rows[0];
+          testMemberId = String(createdRow.member_id ?? createdRow.email ?? testEmail);
+          testMemberPk = String(createdRow.member_id ?? '');
           steps.push({ step: 'create_test_member', passed: true, detail: `Created test member member_id=${testMemberId}`, evidence: { email: testEmail, member_id: testMemberId } });
         } else {
           steps.push({ step: 'create_test_member', passed: false, detail: 'No rows returned after insert', evidence: { email: testEmail } });
@@ -142,11 +143,24 @@ export async function runRecoveryDrill(): Promise<DrillReport> {
 
   // ── Step 4: capture test row into data_vault table ───────────────────────
   if (testMemberPk !== null) {
+    // Fetch the current member row so the vault capture contains the real schema.
+    let memberRow: Record<string, unknown> | null = null;
+    try {
+      const rowRes = await fetch(`${supa.url}/rest/v1/members?member_id=eq.${encodeURIComponent(testMemberPk)}&limit=1`, {
+        headers: { apikey: supa.key, Authorization: `Bearer ${supa.key}`, Accept: 'application/json' },
+      });
+      if (rowRes.ok) {
+        const rows = (await rowRes.json()) as Record<string, unknown>[];
+        if (rows.length > 0) memberRow = rows[0];
+      }
+    } catch {
+      // fallback to partial capture below
+    }
     const cap = await captureToVault({
       table: 'members',
       recordId: testMemberPk,
       action: 'DELETE',
-      oldData: { member_id: testMemberPk, email: `ivx-drill-${testMemberPk}@recovery.test`, drill: true },
+      oldData: memberRow ?? { member_id: testMemberPk, email: `ivx-drill-${testMemberPk}@recovery.test` },
       userId: 'recovery-drill',
       reason: 'Drill capture — test vault restore',
     });
@@ -224,12 +238,15 @@ export async function runRecoveryDrill(): Promise<DrillReport> {
     });
   }
 
-  // ── Cleanup: remove the test member so we don't pollute the table ────────
+  // ── Cleanup: soft-delete the test member so we never hard-delete production data ─
   if (testMemberPk !== null) {
     try {
-      await fetch(`${supa.url}/rest/v1/members?member_id=eq.${encodeURIComponent(testMemberPk)}`, {
-        method: 'DELETE',
-        headers: { apikey: supa.key, Authorization: `Bearer ${supa.key}` },
+      await softDeleteRow({
+        table: 'members',
+        recordId: testMemberPk,
+        pkColumn: pkCol,
+        deletedBy: 'recovery-drill',
+        reason: 'Automated drill cleanup — test row archived, not deleted',
       });
     } catch {
       // best-effort cleanup
