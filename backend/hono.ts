@@ -1041,6 +1041,9 @@ import {
   handlePlatformModerationDecision,
   handlePlatformHomeFeed,
   handlePlatformDealMeta,
+  handlePlatformAdminListVideos,
+  handlePlatformAdminAddReel,
+  handlePlatformAdminUpdateVideo,
 } from './api/ivx-video-platform';
 
 async function loadRoute53Module() {
@@ -4500,6 +4503,11 @@ app.post('/api/ivx/video-platform/live/:sessionId/moderate', async (c) => handle
 app.get('/api/ivx/video-platform/creator/:creatorId/dashboard', async (c) => handlePlatformCreatorDashboard(c.req.param('creatorId')));
 app.get('/api/ivx/video-platform/moderation/queue', async () => handlePlatformModerationQueue());
 app.post('/api/ivx/video-platform/moderation/:videoId', async (c) => handlePlatformModerationDecision(c.req.raw, c.req.param('videoId')));
+
+// ── Admin Reels Management (2026-07-06) — owner adds/manages videos without a developer ──
+app.get('/api/ivx/video-platform/admin/videos', async (c) => handlePlatformAdminListVideos(c.req.raw));
+app.post('/api/ivx/video-platform/admin/add-reel', async (c) => handlePlatformAdminAddReel(c.req.raw));
+app.post('/api/ivx/video-platform/admin/videos/:videoId', async (c) => handlePlatformAdminUpdateVideo(c.req.raw, c.req.param('videoId')));
 
 // ── IVX Global Intent Capture Engine (2026-07-06) — 8-phase search acquisition ──
 // Phase 1-8: keyword discovery, intent clustering, auto landing pages, AI content,

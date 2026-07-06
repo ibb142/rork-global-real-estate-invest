@@ -1024,6 +1024,166 @@ export async function handlePlatformModerationQueue(): Promise<Response> {
   }
 }
 
+/** GET /api/ivx/video-platform/admin/videos — ALL videos (including hidden/draft) for admin management. */
+export async function handlePlatformAdminListVideos(req: Request): Promise<Response> {
+  try {
+    const url = new URL(req.url);
+    const typeFilter = str(url.searchParams.get('type')).toLowerCase();
+    const sb = await getSB();
+    let query = sb
+      .from('project_videos')
+      .select('id,project_id,video_url,thumbnail_url,cover_url,title,duration_sec,width,height,orientation,is_approved,is_pinned,created_at')
+      .order('created_at', { ascending: false })
+      .limit(500);
+    if (typeFilter === 'reel' || typeFilter === 'deal') {
+      // type is stored in platform meta, not in project_videos — filter after join
+    }
+    const { data: vids, error } = await query;
+    if (error) return json({ error: error.message, marker: VIDEO_PLATFORM_MARKER }, 500);
+
+    const [playback, metaDoc] = await Promise.all([loadPlaybackIndex(), getMetaDoc()]);
+    const videos = (vids ?? []).map((v: any) => {
+      const id = String(v.id);
+      const m = normalizeVideoMeta(metaDoc[id]);
+      const pb = playback[id];
+      return {
+        id,
+        project_id: v.project_id ?? null,
+        video_url: v.video_url,
+        hls_url: pb?.status === 'ready' ? pb.hls_url : null,
+        poster_url: pb?.poster_url ?? v.cover_url ?? v.thumbnail_url ?? null,
+        thumbnail_url: v.thumbnail_url ?? pb?.thumbnail_url ?? null,
+        title: v.title ?? null,
+        duration_sec: v.duration_sec ?? 0,
+        width: v.width ?? null,
+        height: v.height ?? null,
+        orientation: v.orientation ?? null,
+        is_approved: v.is_approved ?? false,
+        is_pinned: v.is_pinned ?? false,
+        created_at: v.created_at,
+        video_type: m.video_type,
+        is_featured: m.is_featured,
+        is_hidden: m.is_hidden,
+        status: m.status,
+        display_order: m.display_order,
+      };
+    });
+
+    const filtered = typeFilter === 'reel' || typeFilter === 'deal'
+      ? videos.filter((v: any) => v.video_type === typeFilter)
+      : videos;
+
+    return json({
+      ok: true,
+      videos: filtered,
+      count: filtered.length,
+      total: videos.length,
+      marker: VIDEO_PLATFORM_MARKER,
+    });
+  } catch (err) {
+    return json({ error: err instanceof Error ? err.message : 'admin list failed', marker: VIDEO_PLATFORM_MARKER }, 500);
+  }
+}
+
+/** POST /api/ivx/video-platform/admin/add-reel — owner adds a video by URL (no developer needed). */
+export async function handlePlatformAdminAddReel(req: Request): Promise<Response> {
+  try {
+    const body = await readBody(req);
+    const videoUrl = str(body.video_url);
+    if (!videoUrl || !/^https?:\/\//i.test(videoUrl)) {
+      return json({ ok: false, error: 'video_url is required and must be a valid http(s) URL', marker: VIDEO_PLATFORM_MARKER }, 400);
+    }
+    const title = str(body.title) || 'IVX Project Reel';
+    const videoType = str(body.video_type) === 'reel' ? 'reel' : 'deal';
+    const projectId = str(body.project_id) || null;
+    const posterUrl = str(body.poster_url) || null;
+    const thumbnailUrl = str(body.thumbnail_url) || null;
+    const durationSec = Number(body.duration_sec) || 0;
+    const width = Number(body.width) || null;
+    const height = Number(body.height) || null;
+
+    const { randomUUID } = await import('node:crypto');
+    const videoId = body.video_id ? str(body.video_id) : randomUUID();
+
+    const sb = await getSB();
+    const orientation = (width && height && height > width) ? 'portrait' : 'landscape';
+    const row = {
+      id: videoId,
+      project_id: projectId || videoId,
+      video_url: videoUrl,
+      thumbnail_url: thumbnailUrl,
+      cover_url: posterUrl,
+      title,
+      duration_sec: durationSec,
+      width,
+      height,
+      orientation,
+      is_approved: true,
+    };
+    const { data, error } = await sb.from('project_videos').upsert(row, { onConflict: 'id' }).select('id').maybeSingle();
+    if (error) {
+      return json({ ok: false, error: `Supabase insert failed: ${error.message}`, marker: VIDEO_PLATFORM_MARKER }, 500);
+    }
+
+    // Set platform meta: type (reel or deal), status published, visible
+    const meta = await upsertVideoMeta(videoId, {
+      video_type: videoType,
+      is_hidden: false,
+      status: 'published',
+      property_id: projectId || undefined,
+    });
+
+    return json({
+      ok: true,
+      video_id: videoId,
+      title,
+      video_type: videoType,
+      video_url: videoUrl,
+      poster_url: posterUrl,
+      project_id: projectId,
+      meta,
+      marker: VIDEO_PLATFORM_MARKER,
+    }, 201);
+  } catch (err) {
+    return json({ error: err instanceof Error ? err.message : 'add reel failed', marker: VIDEO_PLATFORM_MARKER }, 500);
+  }
+}
+
+/** POST /api/ivx/video-platform/admin/videos/:videoId — update video (hide/show, type, order, delete). */
+export async function handlePlatformAdminUpdateVideo(req: Request, videoId: string): Promise<Response> {
+  try {
+    if (!videoId) return json({ error: 'videoId required', marker: VIDEO_PLATFORM_MARKER }, 400);
+    const body = await readBody(req);
+    const action = str(body.action) || 'update';
+
+    if (action === 'delete') {
+      const sb = await getSB();
+      const { error } = await sb.from('project_videos').delete().eq('id', videoId);
+      if (error) return json({ ok: false, error: `delete failed: ${error.message}`, marker: VIDEO_PLATFORM_MARKER }, 500);
+      return json({ ok: true, video_id: videoId, deleted: true, marker: VIDEO_PLATFORM_MARKER });
+    }
+
+    // Update platform meta (hide/show, type, featured, order, status)
+    const meta = await upsertVideoMeta(videoId, {
+      video_type: body.video_type !== undefined ? (str(body.video_type) === 'reel' ? 'reel' : 'deal') : undefined,
+      is_hidden: body.is_hidden !== undefined ? body.is_hidden === true : undefined,
+      is_featured: body.is_featured !== undefined ? body.is_featured === true : undefined,
+      display_order: body.display_order !== undefined ? (body.display_order === null ? null : Number(body.display_order)) : undefined,
+      status: body.status !== undefined ? (str(body.status) === 'draft' ? 'draft' : 'published') : undefined,
+    });
+
+    // Optional: update title in project_videos
+    if (body.title !== undefined) {
+      const sb = await getSB();
+      await sb.from('project_videos').update({ title: str(body.title) }).eq('id', videoId);
+    }
+
+    return json({ ok: true, video_id: videoId, meta, marker: VIDEO_PLATFORM_MARKER });
+  } catch (err) {
+    return json({ error: err instanceof Error ? err.message : 'update failed', marker: VIDEO_PLATFORM_MARKER }, 500);
+  }
+}
+
 /** POST /api/ivx/video-platform/moderation/:videoId — approve | reject | flag. */
 export async function handlePlatformModerationDecision(req: Request, videoId: string): Promise<Response> {
   try {

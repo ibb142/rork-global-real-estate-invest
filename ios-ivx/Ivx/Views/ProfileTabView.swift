@@ -25,6 +25,12 @@ struct ProfileTabView: View {
                             profileRow(icon: "sparkles", title: "IVX Owner AI", subtitle: "AI replies · Room sync", url: "https://chat.ivxholding.com")
                             profileRow(icon: "gearshape.2", title: "Automation Center", subtitle: "Deploy · GitHub · Proof", url: "https://chat.ivxholding.com")
                             NavigationLink {
+                                AdminReelsView()
+                            } label: {
+                                navRow(icon: "film.stack.fill", title: "Manage Reels & Videos", subtitle: "Add unlimited videos · No developer")
+                            }
+                            .buttonStyle(.plain)
+                            NavigationLink {
                                 VariablesView()
                             } label: {
                                 navRow(icon: "key.horizontal.fill", title: "Variables / Credentials", subtitle: "GitHub · Render · Supabase · AWS")
