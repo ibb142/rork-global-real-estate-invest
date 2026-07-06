@@ -19,6 +19,9 @@ import {
   Volume2,
   VolumeX,
   MoreHorizontal,
+  Hexagon,
+  Users,
+  Home,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
@@ -43,6 +46,40 @@ function Chip({ label, value, tint }: { label: string; value: string; tint: stri
     <View style={styles.chip}>
       <Text style={styles.chipLabel}>{label}</Text>
       <Text style={[styles.chipValue, { color: tint }]}>{value}</Text>
+    </View>
+  );
+}
+
+type InvestmentOption = { id: string; label: string; subtitle: string; icon: React.ReactNode; tint: string };
+
+function useInvestmentOptions(dealType: string | null | undefined): InvestmentOption[] {
+  const t = (dealType ?? '').toLowerCase();
+  const tokenized: InvestmentOption = { id: 'tokenized', label: 'Tokenized', subtitle: 'Fractional ownership', icon: <Hexagon size={16} color={Colors.primary} />, tint: Colors.primary };
+  const jvDeals: InvestmentOption = { id: 'jvDeals', label: 'JV Deal', subtitle: 'JV partnership', icon: <Users size={16} color='#448AFF' />, tint: '#448AFF' };
+  const buyers: InvestmentOption = { id: 'buyers', label: 'Buyer', subtitle: 'Direct purchase', icon: <Home size={16} color='#22C55E' />, tint: '#22C55E' };
+  switch (t) {
+    case 'jv':
+    case 'equity_split':
+    case 'hybrid':
+      return [tokenized, jvDeals, buyers];
+    case 'development':
+    case 'new_construction':
+    case 'rehab_construction':
+      return [jvDeals, tokenized, buyers];
+    case 'profit_sharing':
+      return [tokenized, buyers, jvDeals];
+    default:
+      return [jvDeals, tokenized, buyers];
+  }
+}
+
+function OptionIcon({ option }: { option: InvestmentOption }) {
+  return (
+    <View style={styles.optionIcon}>
+      <View style={[styles.optionIconCircle, { borderColor: option.tint + '66' }]}>
+        {option.icon}
+      </View>
+      <Text style={styles.optionIconLabel}>{option.label}</Text>
     </View>
   );
 }
@@ -146,6 +183,11 @@ export default function DealVideoCard({ video }: { video: FeedVideo }) {
             {deal.min_investment && deal.min_investment > 0 ? (
               <Chip label="Min" value={compactCurrency(deal.min_investment)} tint="#fff" />
             ) : null}
+          </View>
+          <View style={styles.optionsRow}>
+            {useInvestmentOptions(deal.deal_type).map((option) => (
+              <OptionIcon key={option.id} option={option} />
+            ))}
           </View>
           <TouchableOpacity
             style={styles.viewDealBtn}
@@ -257,6 +299,29 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+  },
+  optionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+  optionIcon: {
+    alignItems: 'center',
+    gap: 3,
+  },
+  optionIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+  },
+  optionIconLabel: {
+    color: Colors.text,
+    fontSize: 9,
+    fontWeight: '600' as const,
   },
   chip: {
     flexDirection: 'row',

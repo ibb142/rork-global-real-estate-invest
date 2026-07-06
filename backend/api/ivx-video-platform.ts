@@ -554,11 +554,24 @@ export async function handlePlatformHomeFeed(req: Request): Promise<Response> {
 
     // Deal attachment is REQUIRED — a video must belong to one project.
     const dealById = new Map(orderedDeals.map((d) => [d.id, d]));
-    const attached = rankable.filter((r) => {
+    // Fallback: match a video to a deal by name when project_id/property_id are UUIDs or missing.
+    const titleToDealId = new Map<string, string>();
+    for (const d of orderedDeals) {
+      const name = (d.name ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (name) titleToDealId.set(name, d.id);
+    }
+    function resolveAttachedDeal(r: (typeof rankable)[number]): { attached: boolean; dealId: string | null } {
       const pid = r.meta.property_id ? String(r.meta.property_id) : null;
       const proj = r.row.project_id ? String(r.row.project_id) : null;
-      return (pid && dealById.has(pid)) || (proj && dealById.has(proj));
-    });
+      if (pid && dealById.has(pid)) return { attached: true, dealId: pid };
+      if (proj && dealById.has(proj)) return { attached: true, dealId: proj };
+      const title = String(r.row.title ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      for (const [name, dealId] of titleToDealId) {
+        if (title.includes(name) || name.includes(title)) return { attached: true, dealId };
+      }
+      return { attached: false, dealId: null };
+    }
+    const attached = rankable.filter((r) => resolveAttachedDeal(r).attached);
     // Featured project videos only; if none are flagged featured yet, fall back
     // to pinned deal-attached videos so the layout still renders end to end.
     const flagged = attached.filter((r) => r.meta.is_featured);
@@ -568,12 +581,13 @@ export async function handlePlatformHomeFeed(req: Request): Promise<Response> {
     const usedProjects = new Set<string>();
     const featuredVideos: any[] = [];
     for (const r of featuredPool) {
-      const projectKey = String(r.meta.property_id ?? r.row.project_id);
+      const resolved = resolveAttachedDeal(r);
+      const projectKey = resolved.dealId ?? String(r.meta.property_id ?? r.row.project_id);
       if (usedProjects.has(projectKey)) continue;
       usedProjects.add(projectKey);
       const pb = playback[r.id];
       const stats = analyticsDoc.videos[r.id];
-      const deal = dealById.get(String(r.meta.property_id ?? '')) ?? dealById.get(String(r.row.project_id ?? '')) ?? null;
+      const deal = resolved.dealId ? dealById.get(resolved.dealId) ?? null : null;
       featuredVideos.push({
         id: r.id,
         project_id: r.row.project_id ? String(r.row.project_id) : null,
@@ -597,7 +611,7 @@ export async function handlePlatformHomeFeed(req: Request): Promise<Response> {
         view_count: stats?.views ?? 0,
         video_type: r.meta.video_type,
         is_featured: true,
-        property_id: r.meta.property_id,
+        property_id: resolved.dealId ?? r.meta.property_id,
         deal,
       });
     }
@@ -1163,19 +1177,23 @@ export async function handlePlatformAdminUpdateVideo(req: Request, videoId: stri
       return json({ ok: true, video_id: videoId, deleted: true, marker: VIDEO_PLATFORM_MARKER });
     }
 
-    // Update platform meta (hide/show, type, featured, order, status)
+    // Update platform meta (hide/show, type, featured, order, status, property_id)
     const meta = await upsertVideoMeta(videoId, {
       video_type: body.video_type !== undefined ? (str(body.video_type) === 'reel' ? 'reel' : 'deal') : undefined,
       is_hidden: body.is_hidden !== undefined ? body.is_hidden === true : undefined,
       is_featured: body.is_featured !== undefined ? body.is_featured === true : undefined,
       display_order: body.display_order !== undefined ? (body.display_order === null ? null : Number(body.display_order)) : undefined,
       status: body.status !== undefined ? (str(body.status) === 'draft' ? 'draft' : 'published') : undefined,
+      property_id: body.property_id !== undefined ? (str(body.property_id) || null) : undefined,
     });
 
-    // Optional: update title in project_videos
-    if (body.title !== undefined) {
+    // Optional: update project_videos row (title, project_id)
+    const projectIdUpdate: Record<string, unknown> = {};
+    if (body.title !== undefined) projectIdUpdate.title = str(body.title);
+    if (body.project_id !== undefined) projectIdUpdate.project_id = str(body.project_id) || null;
+    if (Object.keys(projectIdUpdate).length > 0) {
       const sb = await getSB();
-      await sb.from('project_videos').update({ title: str(body.title) }).eq('id', videoId);
+      await sb.from('project_videos').update(projectIdUpdate).eq('id', videoId);
     }
 
     return json({ ok: true, video_id: videoId, meta, marker: VIDEO_PLATFORM_MARKER });
