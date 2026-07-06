@@ -587,14 +587,16 @@ export async function summarizeDeals(): Promise<DealTrackingMetrics> {
   let totalInvestedByParticipants = 0;
 
   for (const item of items) {
+    if (!item || typeof item !== 'object') continue;
     byStatus[item.status] = (byStatus[item.status] ?? 0) + 1;
     byType[item.dealType] = (byType[item.dealType] ?? 0) + 1;
-    investorsContacted += item.investorsContacted;
-    investorsResponded += item.investorsResponded;
-    totalMeetings += item.meetingsScheduled;
-    totalOffers += item.offersReceived;
-    totalParticipants += item.participants.length;
-    totalInvestedByParticipants += item.participants.reduce((sum, p) => sum + p.investedAmount, 0);
+    investorsContacted += item.investorsContacted ?? 0;
+    investorsResponded += item.investorsResponded ?? 0;
+    totalMeetings += item.meetingsScheduled ?? 0;
+    totalOffers += item.offersReceived ?? 0;
+    const participants = Array.isArray(item.participants) ? item.participants : [];
+    totalParticipants += participants.length;
+    totalInvestedByParticipants += participants.reduce((sum, p) => sum + (p?.investedAmount ?? 0), 0);
     if (item.status === 'closed_won') {
       if (item.capitalCommitted !== null) {
         capitalRaised += item.capitalCommitted;
