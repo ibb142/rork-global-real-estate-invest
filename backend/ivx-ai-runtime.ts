@@ -177,16 +177,35 @@ function getGatewayBaseUrlCandidates(): string[] {
   // misconfigured IVX_AI_GATEWAY_URL cannot strand the backend on a proxy that
   // strips auth headers (which causes free-tier 429s on a paid account).
   const candidates = [configured, canonical];
+
+  // If a Rork toolkit key is available, add the native Rork toolkit URL as a
+  // candidate. This lets the backend keep working when AI_GATEWAY_API_KEY is
+  // missing or when it is set to a rork_sk_* key (which cannot authenticate the
+  // Vercel gateway). The toolkit candidate is tried after the Vercel gateway
+  // and is handled by callRorkToolkitNative, which uses a direct fetch with the
+  // toolkit bearer.
+  const rorkToolkitKey = getRorkToolkitKey();
+  if (rorkToolkitKey) {
+    candidates.push(RORK_TOOLKIT_NATIVE_URL);
+  }
+
   return [...new Set(candidates.filter((candidate): candidate is string => Boolean(candidate)))];
 }
 
 function ensureIVXAIGatewayEnvironment(): void {
   const apiKey = getIVXAIGatewayApiKey();
-  if (!apiKey) {
+  const rorkToolkitKey = getRorkToolkitKey();
+  if (!apiKey && !rorkToolkitKey) {
     throw new Error('IVX AI runtime is not configured.');
   }
 
-  if (!readTrimmed(process.env.AI_GATEWAY_API_KEY)) {
+  // When only a Rork toolkit key is available, set it as the gateway key so the
+  // Vercel AI SDK createGateway call has a bearer. The actual toolkit candidate
+  // is routed through callRorkToolkitNative, which uses a direct fetch with the
+  // same key.
+  if (!apiKey && rorkToolkitKey && !readTrimmed(process.env.AI_GATEWAY_API_KEY)) {
+    process.env.AI_GATEWAY_API_KEY = rorkToolkitKey;
+  } else if (!readTrimmed(process.env.AI_GATEWAY_API_KEY)) {
     process.env.AI_GATEWAY_API_KEY = apiKey;
   }
 }
