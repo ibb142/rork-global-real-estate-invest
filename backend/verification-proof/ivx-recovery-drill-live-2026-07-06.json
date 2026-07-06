@@ -1,78 +1,74 @@
 {
-  "marker": "ivx-recovery-drill-2026-07-06",
-  "startedAt": "2026-07-06T14:22:14.921Z",
-  "finishedAt": "2026-07-06T14:22:16.610Z",
-  "durationMs": 1689,
-  "overallPassed": false,
+  "timestamp": "2026-07-06T14:45:38.885Z",
+  "overallPassed": true,
+  "summary": {
+    "passed": 8,
+    "failed": 0,
+    "total": 8
+  },
   "steps": [
     {
       "step": "create_test_member",
       "passed": true,
-      "detail": "Created test member member_id=c502e87c-e9db-4452-9617-1cbf6bda30f6",
-      "evidence": {
-        "email": "ivx-drill-1783347734922@recovery.test",
-        "member_id": "c502e87c-e9db-4452-9617-1cbf6bda30f6"
-      }
+      "detail": "Created member 876466dd-f2e9-4f09-a4dd-96ad2442ccf8"
     },
     {
-      "step": "soft_delete_test_member",
-      "passed": false,
-      "detail": "HTTP_400: {\"code\":\"PGRST204\",\"details\":null,\"hint\":null,\"message\":\"Could not find the 'delete_reason' column of 'members' in the schema cache\"}",
-      "evidence": {
-        "status": 400,
-        "timestamp": "2026-07-06T14:22:15.019Z"
-      }
-    },
-    {
-      "step": "restore_soft_deleted_member",
-      "passed": false,
-      "detail": "HTTP_400: {\"code\":\"PGRST204\",\"details\":null,\"hint\":null,\"message\":\"Could not find the 'delete_reason' column of 'members' in the schema cache\"}",
-      "evidence": {
-        "status": 400,
-        "timestamp": "2026-07-06T14:22:15.099Z"
-      }
-    },
-    {
-      "step": "capture_to_vault_table",
-      "passed": false,
-      "detail": "HTTP_404: {\"code\":\"PGRST205\",\"details\":null,\"hint\":\"Perhaps you meant the table 'public.capital_accounts'\",\"message\":\"Could not find the table 'public.data_vault' in the schema cache\"}",
-      "evidence": {
-        "vaultId": "vault-1783347735162-61dwqe2k",
-        "status": 404
-      }
-    },
-    {
-      "step": "restore_from_vault_table",
-      "passed": false,
-      "detail": "Skipped — capture failed",
-      "evidence": {}
-    },
-    {
-      "step": "hard_delete_blocked_by_guard",
+      "step": "soft_delete_member",
       "passed": true,
-      "detail": "BLOCKED by data-loss guard ✓",
-      "evidence": {
-        "blocker": "BLOCKED: Autonomous systems cannot run destructive operations on protected table \"members\". This guard was added after the 2026-07-06 data-loss incident. An owner must run this manually with explicit approval.",
-        "snapshotId": null
-      }
+      "detail": "Soft-deleted at 2026-07-06T14:45:37.955+00:00"
     },
     {
-      "step": "ledger_correction_entry",
+      "step": "hidden_from_normal_ui",
       "passed": true,
-      "detail": "Correction entry txn_mr9b73y7_w6h35vfu appended (hash=dad1d9249998…) — original preserved",
-      "evidence": {
-        "transactionId": "txn_mr9b73y7_w6h35vfu",
-        "hash": "dad1d9249998ed68b057b7f947811b1dfeceb6f436fb676728c2eb519f415bff",
-        "previousHash": "6263076b362bd15ca5380f4c1f4377f7ac1500284c5a404bcb68e19f23217d93",
-        "beforeCount": 1,
-        "afterCount": 1
-      }
+      "detail": "Soft-deleted member hidden from active query"
+    },
+    {
+      "step": "restore_member",
+      "passed": true,
+      "detail": "Member restored - deleted_at cleared"
+    },
+    {
+      "step": "visible_after_restore",
+      "passed": true,
+      "detail": "Member visible in active query after restore"
+    },
+    {
+      "step": "data_vault_capture",
+      "passed": true,
+      "detail": "Vault record written successfully"
+    },
+    {
+      "step": "vault_retrieval",
+      "passed": true,
+      "detail": "Found 1 vault record(s)"
+    },
+    {
+      "step": "snapshot_captured",
+      "passed": true,
+      "detail": "Snapshot taken: 896 total rows across 10 tables"
     }
   ],
-  "summary": {
-    "passed": 3,
-    "failed": 4,
-    "total": 7
+  "snapshot": {
+    "tables": {
+      "members": 4,
+      "investors": 879,
+      "buyers": 0,
+      "waitlist": 1,
+      "wallets": 2,
+      "ledger": 0,
+      "transactions": 1,
+      "messages": 0,
+      "analytics_events": 9,
+      "landing_analytics": 0
+    },
+    "totalRows": 896
   },
-  "testMemberId": "c502e87c-e9db-4452-9617-1cbf6bda30f6"
+  "environment": {
+    "supabaseUrl": "https://kvclcdjmjghndxsngfzb.supabase.co",
+    "dataVaultTable": true,
+    "snapshotMetadataTable": true,
+    "deleteApprovalsTable": true,
+    "softDeleteColumns": 12,
+    "ledgerImmutable": true
+  }
 }
