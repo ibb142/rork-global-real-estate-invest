@@ -6,7 +6,7 @@ const BACKEND_SVC = 'srv-d7t9ivreo5us73ftose0';
 const FRONTEND_SVC = 'srv-d7t9j00sfn5c738a18j0';
 const BACKEND_URL = 'https://api.ivxholding.com';
 const FRONTEND_URL = 'https://chat.ivxholding.com';
-const EXPECTED_SHA = 'e89ce1e8f980f0c9dc7898892346ebd337f02601';
+const EXPECTED_SHA = (process.env.EXPECTED_SHA || '8720b10').slice(0, 7);
 const SHORT_SHA = EXPECTED_SHA.slice(0, 7);
 
 function fetch(url, opts = {}, timeout = 15000) {
