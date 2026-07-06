@@ -103,6 +103,7 @@ import { generateIVX3DModel } from '../services/ivx-model3d-generation';
 import { detectDeveloperModeRequest, buildDeveloperModeBlockedExplanation, detectSeniorDeveloperModeStatusRequest, buildSeniorDeveloperModeStatusAnswer, detectSeniorDeveloperBrainRequest, buildSeniorDeveloperBrainAnswer } from '../services/ivx-owner-ai-dev-mode';
 import { resolveIVXIdentityAnswer, IVX_IA_IDENTITY_MARKER } from '../services/ivx-ia-identity-brain';
 import { resolveIVXConversationAnswer, IVX_IA_CONVERSATION_MARKER } from '../services/ivx-ia-conversation-brain';
+import { detectCountIntent, runDbCounts, buildCountGroundingBlock } from '../services/ivx-db-count';
 
 import { classifyOwnerExecutionCommand, type IVXOwnerExecutionDecision } from '../services/ivx-owner-execution-mode';
 import { startDailyImprovementTask, type DailyImprovementStart } from '../services/ivx-daily-improvement';
@@ -4390,11 +4391,13 @@ function buildOwnerAISystemPrompt(input: {
     // ───── IVX TRUTH-FIRST POLICY (hard rules, override anything that conflicts) ─────
     'TRUTH-FIRST — EVIDENCE GATE (hard rule): before answering any operational, deployment, AWS, Supabase, GitHub, database, memory, logs, or infrastructure question, you MUST inspect the live system first via the available tools. If inspection cannot run or returns nothing, reply exactly "UNVERIFIED - NO EVIDENCE AVAILABLE." and name the missing access — do NOT answer from inference.',
     'TRUTH-FIRST — NO NARRATIVE FALLBACK (hard rule): NEVER generate, guess, or "reconstruct" deployment histories, commit lists, deploy IDs, logs, metrics, database contents, memory records, or infrastructure status from language-model inference. These values only ever come from a real tool/API read. If the data is unavailable, say so plainly. If a response would require inventing any fact, stop and return exactly "NO VERIFIED DATA AVAILABLE."',
+    'TRUTH-FIRST — MEMBER/VISITOR COUNTS (hard rule): when asked about member counts, visitor counts, waitlist counts, investor counts, or any database row count, you MUST use ONLY the numbers provided in the LIVE DATABASE COUNTS grounding block (if present). If no grounding block is present, you MUST say exactly: "I do not have a live count for that — no DB count query ran for this request." NEVER invent, estimate, round, or hallucinate any count. NEVER say "1,050 members" or any similar number unless it appears in the LIVE DATABASE COUNTS block from a real count=exact query. A fabricated count is the most serious honesty violation and is always blocked.',,
     'TRUTH-FIRST — VERIFICATION LABELS (hard rule): use these labels precisely. VERIFIED = evidence retrieved from a real system this turn. UNVERIFIED = not checked. FAILED = checked and the check failed. Never write VERIFIED without the supporting evidence in the same reply. Never prepend a "VERIFIED" badge or claim to a chat response that is not backed by a real tool execution this turn.',
     'TRUTH-FIRST — DEPLOYMENT QUERIES (hard rule): deployment answers must come from the Render and/or GitHub APIs only, and must include deployment ID, commit SHA, timestamp, status, and environment. If any of those fields is missing, mark the answer UNVERIFIED and name what is missing — never fill gaps with plausible-looking values.',
     'TRUTH-FIRST — MEMORY QUERIES (hard rule): memory answers must come from an actual database read. Never infer or summarize memory contents from conversation; if the read is unavailable, say so.',
     'TRUTH-FIRST — AWS/SUPABASE QUERIES (hard rule): answer only from real tool/API inspection. If access is unavailable, state the exact missing permission/credential rather than guessing.',
     'TRUTH-FIRST — AUDIT TRAIL (hard rule): every operational answer must include a short audit trail: the source inspected, the timestamp of the read, and a one-line evidence summary.',
+    'TRUTH-FIRST — MEMBER/VISITOR COUNTS (hard rule): when asked about member counts, visitor counts, waitlist counts, investor counts, or any database row count, you MUST use ONLY the numbers provided in the LIVE DATABASE COUNTS grounding block (if present). If no grounding block is present, you MUST say exactly: "I do not have a live count for that — no DB count query ran for this request." NEVER invent, estimate, round, or hallucinate any count. NEVER say "1,050 members" or any similar number unless it appears in the LIVE DATABASE COUNTS block from a real count=exact query. A fabricated count is the most serious honesty violation and is always blocked.',
     'SINGLE-TURN COMPLETENESS — CRITICAL: you reply exactly once per message and you CANNOT send a follow-up message later. NEVER promise future delivery. Banned phrasing includes: "hold on", "please wait", "one moment", "I will update you shortly", "I\'ll get back to you", "executing that now", "checking now and will report", "stand by", "give me a moment". Any tool/inspection you can run, you already ran before composing this reply — so deliver the actual findings, numbers, IDs, and results in THIS message. If a tool result is in your context, report it now. If you truly cannot obtain something, state the exact missing access/credential/tool in this same reply — do not defer it.',
     'CHAT ANSWER FORMAT — NEVER output the Senior Developer strict proof format (TASK UNDERSTOOD / FILES INSPECTED / FILES CHANGED / COMMANDS RUN / TEST RESULT / TYPECHECK RESULT / STATUS / PROOF) in a chat reply unless the message is literally the raw output of a real, executed Senior Developer run. That structured format is real execution evidence only; using it in a normal chat response fabricates verification and is blocked. For normal chat answers, keep the concise Developer Action Mode sections (What changed, Files changed, Checks run, Remaining risks, Deploy authorization needed) or reply naturally.',
     'When the owner references a marker, test id, log entry, deploy, or status (e.g. MANUAL_TEST_921PM), answer with the concrete finding right now: what was found, the values, and YES/NO — never "I will look" or "executing that now". If the lookup is not available to you, say precisely which source/credential is missing in this reply.',
@@ -8073,8 +8076,34 @@ async function handleIVXOwnerAIRequestInternal(request: Request): Promise<Respon
       mode,
       devTestModeActive: body.devTestModeActive === true,
     });
+    // ── Real DB count grounding ────────────────────────────────────────────
+    // If the owner asks "how many members/visitors/investors/etc", run a REAL
+    // count=exact query against Supabase and inject the exact numbers into the
+    // prompt so the AI model answers from real data, never hallucinated counts.
+    let dbCountGroundingBlock: string | null = null;
+    let dbCountReport: Awaited<ReturnType<typeof runDbCounts>> | null = null;
+    try {
+      const countTargets = detectCountIntent(prompt);
+      if (countTargets.length > 0) {
+        dbCountReport = await runDbCounts(countTargets);
+        dbCountGroundingBlock = buildCountGroundingBlock(dbCountReport);
+        if (dbCountGroundingBlock) {
+          console.log('[IVXOwnerAIBackend] DB count grounding injected:', {
+            requestId,
+            targets: countTargets,
+            anyOk: dbCountReport.anyOk,
+            anyExecuted: dbCountReport.anyExecuted,
+          });
+        }
+      }
+    } catch (countError) {
+      console.log('[IVXOwnerAIBackend] DB count grounding failed:', countError instanceof Error ? countError.message : 'unknown');
+    }
+    const groundedPromptText = dbCountGroundingBlock
+      ? `${promptText}\n\n${dbCountGroundingBlock}`
+      : promptText;
     const aiResult = await generateOwnerAIAnswer({
-      promptText,
+      promptText: groundedPromptText,
       sessionId: conversation.id,
       mode,
       devTestModeActive: body.devTestModeActive === true,

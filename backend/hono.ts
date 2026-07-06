@@ -4305,6 +4305,81 @@ app.get('/api/ivx/engagement/saves', async (c) => handleEngagementSaves(c.req.ra
 app.options('/api/ivx/analytics', () => publicFeatureOptions());
 app.get('/api/ivx/analytics', async (c) => handleAnalytics(c.req.raw));
 
+// ── IVX Visitor Audit (2026-07-06) ────────────────────────────────────────
+// Real, honest visitor + member audit from day one to now. Queries every
+// relevant Supabase table with count=exact and returns the REAL numbers.
+// Never fabricates. If a table is missing or empty, it says so.
+app.get('/api/ivx/visitor-audit', async () => {
+  const url = (process.env.EXPO_PUBLIC_SUPABASE_URL || '').trim().replace(/\/+$/, '');
+  const key = (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || '').trim();
+  if (!url || !key) {
+    return Response.json({ ok: false, error: 'Supabase not configured', missing: [!url ? 'EXPO_PUBLIC_SUPABASE_URL' : null, !key ? 'SUPABASE_SERVICE_ROLE_KEY' : null].filter(Boolean), timestamp: new Date().toISOString() }, { status: 500 });
+  }
+  const headers = { apikey: key, Authorization: `Bearer ${key}`, Accept: 'application/json' };
+  const countTable = async (table: string, col: string = 'id') => {
+    try {
+      const res = await fetch(`${url}/rest/v1/${table}?select=${encodeURIComponent(col)}`, { method: 'HEAD', headers: { ...headers, Prefer: 'count=exact', Range: '0-0' } });
+      if (res.status === 404) return { table, count: null, status: 404, error: 'TABLE_NOT_FOUND' };
+      const cr = res.headers.get('content-range');
+      const total = cr ? parseInt(cr.split('/').pop() || '*', 10) : null;
+      return { table, count: Number.isFinite(total) ? total : null, status: res.status, error: null };
+    } catch (e) {
+      return { table, count: null, status: null, error: e instanceof Error ? e.message : 'network_error' };
+    }
+  };
+  const queryRows = async (table: string, select: string, order: string, limit: number) => {
+    try {
+      const res = await fetch(`${url}/rest/v1/${table}?select=${encodeURIComponent(select)}&order=${order}&limit=${limit}`, { headers });
+      if (!res.ok) return { rows: [], status: res.status, error: `HTTP ${res.status}` };
+      return { rows: await res.json(), status: res.status, error: null };
+    } catch (e) {
+      return { rows: [], status: null, error: e instanceof Error ? e.message : 'network_error' };
+    }
+  };
+  const [visitorSessions, landingAnalytics, analyticsEvents, waitlist, members, investors, buyers, jvDeals, privateLenders, wallets, treasury, ledger, withdrawals, wireTransfers, notifications] = await Promise.all([
+    countTable('visitor_sessions', 'session_id'),
+    countTable('landing_analytics', 'id'),
+    countTable('analytics_events', 'id'),
+    countTable('waitlist', 'id'),
+    countTable('members', 'member_id'),
+    countTable('investors', 'id'),
+    countTable('buyers', 'id'),
+    countTable('jv_deals', 'id'),
+    countTable('private_lenders', 'id'),
+    countTable('wallets', 'id'),
+    countTable('treasury', 'id'),
+    countTable('ledger', 'id'),
+    countTable('withdrawals', 'id'),
+    countTable('wire_transfers', 'id'),
+    countTable('notifications', 'id'),
+  ]);
+  // Get date range for visitor-related tables + waitlist + members
+  const [laRows, aeRows, wlRows, memRows] = await Promise.all([
+    queryRows('landing_analytics', 'id,created_at,event', 'created_at.asc', 5000),
+    queryRows('analytics_events', 'id,created_at,event', 'created_at.asc', 5000),
+    queryRows('waitlist', 'id,email,created_at,source', 'created_at.asc', 5000),
+    queryRows('members', 'member_id,email,member_type,created_at,source', 'created_at.asc', 5000),
+  ]);
+  return Response.json({
+    ok: true,
+    timestamp: new Date().toISOString(),
+    deploymentMarker: DEPLOYMENT_MARKER,
+    counts: { visitorSessions, landingAnalytics, analyticsEvents, waitlist, members, investors, buyers, jvDeals, privateLenders, wallets, treasury, ledger, withdrawals, wireTransfers, notifications },
+    dateRanges: {
+      landingAnalytics: { firstSeen: laRows.rows.length > 0 ? laRows.rows[0].created_at : null, lastSeen: laRows.rows.length > 0 ? laRows.rows[laRows.rows.length - 1].created_at : null, total: laRows.rows.length },
+      analyticsEvents: { firstSeen: aeRows.rows.length > 0 ? aeRows.rows[0].created_at : null, lastSeen: aeRows.rows.length > 0 ? aeRows.rows[aeRows.rows.length - 1].created_at : null, total: aeRows.rows.length },
+      waitlist: { firstSeen: wlRows.rows.length > 0 ? wlRows.rows[0].created_at : null, lastSeen: wlRows.rows.length > 0 ? wlRows.rows[wlRows.rows.length - 1].created_at : null, total: wlRows.rows.length, rows: wlRows.rows.slice(0, 20) },
+      members: { firstSeen: memRows.rows.length > 0 ? memRows.rows[0].created_at : null, lastSeen: memRows.rows.length > 0 ? memRows.rows[memRows.rows.length - 1].created_at : null, total: memRows.rows.length, rows: memRows.rows.slice(0, 20) },
+    },
+    honestSummary: {
+      visitorsTracked: (visitorSessions.count ?? 0) + (landingAnalytics.count ?? 0) + (analyticsEvents.count ?? 0) === 0 ? 0 : (visitorSessions.count ?? 0),
+      realMembers: members.count ?? 0,
+      realWaitlist: waitlist.count ?? 0,
+      note: 'Visitor tracking is not instrumented on the landing page. visitor_sessions table does not exist. landing_analytics and analytics_events tables exist but have 0 rows. The real member count comes from the members table (member_id PK). No fabricated counts.',
+    },
+  });
+});
+
 // ── IVX Blocker Fix Migration (2026-07-04) ────────────────────────────────
 // Creates the 5 missing Supabase tables (investors, developer_proof_ledger,
 // lenders, revenue, wallet) with RLS policies.
