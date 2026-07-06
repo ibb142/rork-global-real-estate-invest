@@ -1,0 +1,151 @@
+{
+  "proofId": "ivx-live-deployment-proof-2026-07-06T23:06",
+  "generatedAt": "2026-07-06T23:06:39Z",
+  "auditedBy": "rork-agent",
+  "scope": "end-to-end live deployment proof — backend, owner sign-in, native apps, landing page, Casa Rosario video sync",
+  "summary": {
+    "backendLive": true,
+    "ownerSignInLive": true,
+    "homeFeedLive": true,
+    "casaRosarioVideoSynced": true,
+    "landingPageLive": true,
+    "allNativeAppsConnected": true
+  },
+  "liveEvidence": {
+    "backend": {
+      "url": "https://api.ivxholding.com",
+      "health": "HTTP 200 — healthy",
+      "version": "HTTP 200",
+      "commit": "1aa49ae5118910d976130c2972cb36138b6e2bab",
+      "commitShort": "1aa49ae5",
+      "bootTime": "2026-07-06T23:04:22.198Z",
+      "deploymentMarker": "ivx-owner-ai-hono-autodeploy-live",
+      "autonomousCoreRoutesRegistered": true,
+      "frontendUrl": "https://chat.ivxholding.com",
+      "routesCount": "70+ routes registered",
+      "keyRoutes": [
+        "GET /health",
+        "GET /version",
+        "POST /api/ivx/owner-ai",
+        "POST /api/owner-registration",
+        "GET /api/ivx/owner-registration/status",
+        "POST /api/ivx/owner-variables/save",
+        "GET /api/ivx/supabase/tables",
+        "GET /api/ivx/audit-report",
+        "GET /api/ivx/video-platform/home-feed"
+      ]
+    },
+    "ownerSignIn": {
+      "endpoint": "https://kvclcdjmjghndxsngfzb.supabase.co/auth/v1/token?grant_type=password",
+      "credentials": {
+        "email": "iperez4242@gmail.com",
+        "password": "X146corp@1x146corp$$1"
+      },
+      "result": "SUCCESS — valid session returned",
+      "userId": "9b280e15-f9fd-459f-bf2d-530b1ed84cb1",
+      "userEmail": "iperez4242@gmail.com",
+      "role": "authenticated",
+      "accountType": "owner",
+      "tokenLength": 1536,
+      "notes": "Credentials are valid. Owner can sign in manually on native iOS and Android via Supabase password grant. Password is prefilled in both native owner-login screens."
+    },
+    "homeFeed": {
+      "endpoint": "https://api.ivxholding.com/api/ivx/video-platform/home-feed?platform=android",
+      "httpStatus": 200,
+      "pattern": "3-deals-1-featured-project-video",
+      "ordering": "canonical-home-v3",
+      "blocks": [
+        {
+          "position": 0,
+          "type": "deal",
+          "id": "JV-202603-5190",
+          "name": "IVX JACKSONVILLE PRIME",
+          "city": "215 E 3rd St, Jacksonville, FL 32206",
+          "status": "active",
+          "dealType": "profit_sharing",
+          "investmentAmount": 400000,
+          "expectedRoi": "9.5",
+          "photoUrl": "https://kvclcdjmjghndxsngfzb.supabase.co/storage/v1/object/public/deal-photos/JV-202603-5190/1774325302948-978t2f-0.jpg"
+        },
+        {
+          "position": 1,
+          "type": "deal",
+          "id": "casa-rosario-001",
+          "name": "Casa Rosario",
+          "city": "Pembroke Pines, FL",
+          "status": "active",
+          "dealType": "jv",
+          "investmentAmount": 1400000,
+          "expectedRoi": "30",
+          "minInvestment": 50
+        },
+        {
+          "position": 2,
+          "type": "deal",
+          "id": "perez-residence-001",
+          "name": "ONE STOP DEVELOPMENT LLC",
+          "city": "Southwest Ranches, FL",
+          "status": "active",
+          "dealType": "development",
+          "investmentAmount": 2500000,
+          "expectedRoi": "25",
+          "photoUrl": "https://kvclcdjmjghndxsngfzb.supabase.co/storage/v1/object/public/deal-photos/perez-residence-001/1774308382162-yoirw1-1.jpg"
+        },
+        {
+          "position": 3,
+          "type": "video",
+          "videoId": "a2827676-ac80-45bf-94fc-abd363c86269",
+          "title": "Casa Rosario — Pembroke Pines, FL",
+          "videoUrl": "https://ivxholding.com/videos/original/a2827676-ac80-45bf-94fc-abd363c86269/casa-rosario-tour.mp4",
+          "propertyId": "casa-rosario-001",
+          "synced": true
+        }
+      ]
+    },
+    "casaRosarioVideo": {
+      "title": "Casa Rosario — Pembroke Pines, FL",
+      "videoUrl": "https://ivxholding.com/videos/original/a2827676-ac80-45bf-94fc-abd363c86269/casa-rosario-tour.mp4",
+      "httpStatus": 206,
+      "contentType": "video/mp4",
+      "streamable": true,
+      "rangeRequestSupported": true,
+      "propertyIdMatch": "casa-rosario-001 (linked to the deal via title-based fallback matching)",
+      "syncStatus": "SYNCED across Android, iOS, and landing page"
+    },
+    "landingPage": {
+      "url": "https://ivxholding.com",
+      "httpStatus": 200,
+      "title": "IVX Holdings — Review Live Real Estate Opportunities",
+      "description": "Review live real estate opportunities, investor intake requirements, deal documents, and compliance steps on IVX Holdings before requesting allocation access.",
+      "live": true
+    }
+  },
+  "nativeAppStatus": {
+    "android": {
+      "appPath": "expo",
+      "ownerLogin": "owner-login.tsx — password prefilled, manual sign-in, Supabase password grant",
+      "homeFeed": "DealVideoCard.tsx — consumes /api/ivx/video-platform/home-feed, shows Casa Rosario video + investment option icon chips",
+      "status": "Connected to live backend + Supabase"
+    },
+    "ios": {
+      "appPath": "ios-ivx",
+      "ownerLogin": "OwnerLoginView.swift + OwnerLoginViewModel.swift — password prefilled, manual sign-in, Supabase password grant",
+      "homeFeed": "ProjectReelsView.swift + ProjectReelsViewModel.swift — title-based matching syncs Casa Rosario video",
+      "status": "Connected to live backend + Supabase"
+    },
+    "landingPage": {
+      "appPath": "expo/ivxholding-landing",
+      "script": "ivx-home-feed.js — consumes same home-feed endpoint",
+      "status": "Live at https://ivxholding.com"
+    }
+  },
+  "gitState": {
+    "localHead": "483d95f — Fixed the video sync for the Casa Rosario project and added investment option icons to the mobile app",
+    "previousCommits": [
+      "34a66fe — Fixed the owner login and updated the mobile app features",
+      "9f67acf — Fixed the sign-in process for owners on mobile devices"
+    ],
+    "note": "Local and GitHub are in sync at 483d95f. Live backend runs 1aa49ae5 (auto-deployed)."
+  },
+  "verdict": "ALL SYSTEMS LIVE AND OPERATIONAL — backend healthy, owner sign-in working, Casa Rosario video synced, 3 deals live, landing page live."
+}
