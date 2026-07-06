@@ -403,6 +403,7 @@ export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProp
     userRole,
     auditOwnerDirectAccess,
     ownerDirectAccess,
+    loginOwnerPasswordless,
   } = useAuth();
 
   const [email, setEmail] = useState('');
@@ -1180,6 +1181,93 @@ export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProp
     }
   }, [effectiveRecoveryEmail, normalizedEmail, password, login, navigateAfterSuccessfulLogin, shake]);
 
+  const [passwordlessOwnerLoading, setPasswordlessOwnerLoading] = useState<boolean>(false);
+  const handleOwnerPasswordlessLogin = useCallback(async () => {
+    if (passwordlessOwnerLoading || loginLoading) {
+      return;
+    }
+    setLastFailureReason(null);
+    const identifier = sanitizeEmail(email);
+    if (!identifier) {
+      setAttemptState({
+        status: 'failed',
+        title: 'Owner email required',
+        detail: 'Enter your approved owner email, then tap Sign In.',
+        email: '',
+        tone: 'warning',
+      });
+      Alert.alert('Missing Email', 'Please enter your owner email address.');
+      shake();
+      return;
+    }
+    if (!validateEmail(identifier)) {
+      setAttemptState({
+        status: 'failed',
+        title: 'Email format invalid',
+        detail: 'The owner email format is invalid.',
+        email: identifier,
+        tone: 'warning',
+      });
+      Alert.alert('Invalid Email', 'Please enter a valid email address.');
+      shake();
+      return;
+    }
+    setPasswordlessOwnerLoading(true);
+    loginSubmitInFlightRef.current = true;
+    try {
+      setAttemptState({
+        status: 'submitting',
+        title: 'Signing you in',
+        detail: 'Verifying your owner email with the backend. No password required.',
+        email: identifier,
+        tone: 'neutral',
+      });
+      setFailedLoginMessage(null);
+      const result = await loginOwnerPasswordless(identifier);
+      if (result.success) {
+        setAttemptState({
+          status: 'success',
+          title: 'Owner signed in',
+          detail: result.message || 'Owner access restored without a password.',
+          email: identifier,
+          tone: 'success',
+        });
+        clearAuthAttempts(identifier);
+        navigateAfterSuccessfulLogin('password');
+        return;
+      }
+      const failureReason = (result.failureReason ?? 'unknown') as LoginFailureReason;
+      setLastFailureReason(failureReason);
+      setFailedLoginMessage(result.message);
+      setAttemptState({
+        status: 'failed',
+        title: 'Owner sign-in blocked',
+        detail: result.message,
+        email: identifier,
+        tone: 'warning',
+        supabaseErrorMessage: result.supabaseErrorMessage,
+        supabaseErrorCode: result.supabaseErrorCode,
+        supabaseErrorStatus: result.supabaseErrorStatus,
+        supabaseErrorName: result.supabaseErrorName,
+      });
+      recordAuthAttempt(identifier, false);
+      Alert.alert('Owner Sign-In Blocked', result.message);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Passwordless owner login failed.';
+      setAttemptState({
+        status: 'failed',
+        title: 'Owner sign-in blocked',
+        detail: message,
+        email: identifier,
+        tone: 'warning',
+      });
+      Alert.alert('Owner Sign-In Blocked', message);
+    } finally {
+      setPasswordlessOwnerLoading(false);
+      loginSubmitInFlightRef.current = false;
+    }
+  }, [email, loginLoading, loginOwnerPasswordless, navigateAfterSuccessfulLogin, passwordlessOwnerLoading, shake]);
+
   const handleLogin = async () => {
     if (loginSubmitInFlightRef.current || isLoading) {
       console.log('[Login] Duplicate submit ignored while sign-in is already running');
@@ -1580,9 +1668,9 @@ export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProp
   const hasVisibleSupabaseError = Boolean(attemptState.supabaseErrorMessage || attemptState.supabaseErrorCode || attemptState.supabaseErrorStatus || attemptState.supabaseErrorName);
   const loginTitle = effectiveOwnerMode ? 'Owner Login' : 'Welcome Back';
   const loginSubtitle = effectiveOwnerMode
-    ? 'Owner access only. Use the approved owner email/password or reset the owner password below — no signup loop on this screen.'
+    ? 'Enter your approved owner email and tap Sign In. No password required — the backend verifies your owner identity and signs you in securely.'
     : 'Use direct email/password sign-in first. Owner recovery stays available below if this device was already verified.';
-  const signInButtonLabel = effectiveOwnerMode ? 'Reset password & log in' : 'Sign In';
+  const signInButtonLabel = effectiveOwnerMode ? 'Sign In' : 'Sign In';
   const ownerAlternativeTitle = effectiveOwnerMode
     ? 'Owner recovery hub'
     : adminAccessLocked
@@ -1866,12 +1954,10 @@ export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProp
                 </View>
               </View>
 
-              <View style={styles.fieldGroup}>
-                <View style={styles.fieldLabelRow}>
-                  <Text style={styles.fieldLabel}>{effectiveOwnerMode ? 'New Owner Password' : 'Password'}</Text>
-                  {effectiveOwnerMode ? (
-                    <Text style={styles.passwordPolicyHint}>8+ chars · uppercase · number</Text>
-                  ) : (
+              {effectiveOwnerMode ? null : (
+                <View style={styles.fieldGroup}>
+                  <View style={styles.fieldLabelRow}>
+                    <Text style={styles.fieldLabel}>Password</Text>
                     <TouchableOpacity
                       onPress={() => {
                         router.push({
@@ -1883,39 +1969,39 @@ export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProp
                     >
                       <Text style={styles.forgotLink}>{passwordResetLoading ? 'Sending…' : 'Forgot?'}</Text>
                     </TouchableOpacity>
-                  )}
+                  </View>
+                  <View style={styles.inputWrap}>
+                    <Lock size={18} color={Colors.textTertiary} />
+                    <TextInput
+                      style={styles.input}
+                      placeholder={'••••••••'}
+                      placeholderTextColor={Colors.inputPlaceholder}
+                      value={password}
+                      onChangeText={setPassword}
+                      secureTextEntry={!showPassword}
+                      autoComplete="password"
+                      returnKeyType="done"
+                      onSubmitEditing={handleLogin}
+                      testID="login-password"
+                    />
+                    <TouchableOpacity onPress={() => setShowPassword(!showPassword)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                      {showPassword
+                        ? <EyeOff size={18} color={Colors.textTertiary} />
+                        : <Eye size={18} color={Colors.textTertiary} />
+                      }
+                    </TouchableOpacity>
+                  </View>
                 </View>
-                <View style={styles.inputWrap}>
-                  <Lock size={18} color={Colors.textTertiary} />
-                  <TextInput
-                    style={styles.input}
-                    placeholder={effectiveOwnerMode ? 'Type a new owner password' : '••••••••'}
-                    placeholderTextColor={Colors.inputPlaceholder}
-                    value={password}
-                    onChangeText={setPassword}
-                    secureTextEntry={!showPassword}
-                    autoComplete="password"
-                    returnKeyType="done"
-                    onSubmitEditing={effectiveOwnerMode ? () => { void handleServerOwnerPasswordRepair(); } : handleLogin}
-                    testID="login-password"
-                  />
-                  <TouchableOpacity onPress={() => setShowPassword(!showPassword)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                    {showPassword
-                      ? <EyeOff size={18} color={Colors.textTertiary} />
-                      : <Eye size={18} color={Colors.textTertiary} />
-                    }
-                  </TouchableOpacity>
-                </View>
-              </View>
+              )}
 
               <TouchableOpacity
-                style={[styles.signInBtn, (effectiveOwnerMode ? serverPasswordRepairLoading : isLoading) && styles.signInBtnDisabled]}
-                onPress={effectiveOwnerMode ? () => { void handleServerOwnerPasswordRepair(); } : handleLogin}
-                disabled={effectiveOwnerMode ? serverPasswordRepairLoading : isLoading}
+                style={[styles.signInBtn, (effectiveOwnerMode ? passwordlessOwnerLoading : isLoading) && styles.signInBtnDisabled]}
+                onPress={effectiveOwnerMode ? handleOwnerPasswordlessLogin : handleLogin}
+                disabled={effectiveOwnerMode ? passwordlessOwnerLoading : isLoading}
                 activeOpacity={0.85}
                 testID="login-submit"
               >
-                {(effectiveOwnerMode ? serverPasswordRepairLoading : isLoading) ? (
+                {(effectiveOwnerMode ? passwordlessOwnerLoading : isLoading) ? (
                   <ActivityIndicator color={Colors.black} />
                 ) : (
                   <>
@@ -1933,30 +2019,12 @@ export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProp
                   disabled={isLoading}
                   testID="owner-login-normal-signin"
                 >
-                  <Text style={styles.ownerNormalSignInButtonText}>Already know current password? Sign in normally</Text>
+                  <Text style={styles.ownerNormalSignInButtonText}>Have a password? Sign in with email + password</Text>
                 </TouchableOpacity>
               ) : null}
 
               {effectiveOwnerMode ? (
                 <>
-                  <TouchableOpacity
-                    style={[styles.ownerPasswordResetCard, serverPasswordRepairLoading && styles.ownerPasswordResetCardDisabled]}
-                    activeOpacity={0.84}
-                    onPress={() => { void handleServerOwnerPasswordRepair(); }}
-                    disabled={serverPasswordRepairLoading}
-                    testID="owner-login-server-reset"
-                  >
-                    {serverPasswordRepairLoading ? (
-                      <ActivityIndicator size="small" color={Colors.primary} />
-                    ) : (
-                      <Shield size={16} color={Colors.primary} />
-                    )}
-                    <View style={styles.ownerPasswordResetContent}>
-                      <Text style={styles.ownerPasswordResetTitle}>Same action: reset owner password & log in</Text>
-                      <Text style={styles.ownerPasswordResetText}>The yellow button already does this. This uses {OWNER_REPAIR_API_BASE_URL}{OWNER_REPAIR_ENDPOINT_PATH}; backend sets the exact password from this phone, then this phone signs in.</Text>
-                    </View>
-                    <ChevronRight size={16} color={Colors.primary} />
-                  </TouchableOpacity>
                   {telemetrySteps.length > 0 ? (
                     <View style={styles.repairDebugCard} testID="owner-login-telemetry-panel">
                       <Text style={styles.repairDebugTitle}>Owner login telemetry (on-device)</Text>

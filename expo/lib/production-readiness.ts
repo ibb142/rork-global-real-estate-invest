@@ -38,8 +38,8 @@ export function checkProductionReadiness(): ProductionReadinessReport {
     status: paymentStatus.configured ? 'ready' : 'not_ready',
     message: paymentStatus.configured
       ? `Payment provider configured (${paymentStatus.mode})`
-      : 'No real-time payment provider configured — pending transactions are created for owner/wire confirmation',
-    action: paymentStatus.configured ? undefined : 'Connect Stripe, Plaid, or PayPal before processing automated real-time payments',
+      : 'No payment provider configured — transactions are simulated',
+    action: paymentStatus.configured ? undefined : 'Connect Stripe, Plaid, or PayPal before accepting real payments',
   });
 
   const verificationStatus = getVerificationProviderStatus();
