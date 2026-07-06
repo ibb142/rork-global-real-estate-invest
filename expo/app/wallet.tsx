@@ -29,7 +29,6 @@ import {
   Info,
   Zap,
   Shield,
-  TestTube2,
   ChevronRight,
   Globe,
   Banknote,
@@ -544,12 +543,7 @@ export default function WalletScreen() {
               </TouchableOpacity>
             </View>
 
-            {!showResult && !balanceFromAPI && __DEV__ && (
-              <View style={styles.testModeBanner}>
-                <TestTube2 size={16} color={Colors.warning} />
-                <Text style={styles.testModeText}>Demo Mode - Connect payment provider for live transactions</Text>
-              </View>
-            )}
+
 
             {showResult && paymentResult ? (
               <ScrollView showsVerticalScrollIndicator={false}>

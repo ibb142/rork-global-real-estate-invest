@@ -5,30 +5,18 @@ import {
   StyleSheet,
   TouchableOpacity,
 } from 'react-native';
-import { AlertTriangle, ChevronDown, ChevronUp, Shield } from 'lucide-react-native';
+import { ChevronDown, ChevronUp, Shield } from 'lucide-react-native';
 import Colors from '@/constants/colors';
-import { paymentService } from '@/lib/payment-service';
 
 interface InvestorDisclosureProps {
   compact?: boolean;
-  showSimulatedWarning?: boolean;
 }
 
-export default function InvestorDisclosure({ compact = false, showSimulatedWarning = true }: InvestorDisclosureProps) {
+export default function InvestorDisclosure({ compact = false }: InvestorDisclosureProps) {
   const [expanded, setExpanded] = useState(!compact);
-  const isSimulated = paymentService.isSimulated();
 
   return (
     <View style={styles.container}>
-      {isSimulated && showSimulatedWarning && (
-        <View style={styles.simulatedBanner}>
-          <AlertTriangle size={16} color={Colors.warning} />
-          <Text style={styles.simulatedText}>
-            Payment processing is in demo mode. No real funds will be moved. Connect a payment provider (Stripe/Plaid) to enable live transactions.
-          </Text>
-        </View>
-      )}
-
       <TouchableOpacity
         style={styles.header}
         onPress={() => setExpanded(!expanded)}
@@ -62,24 +50,6 @@ export default function InvestorDisclosure({ compact = false, showSimulatedWarni
 const styles = StyleSheet.create({
   container: {
     marginVertical: 8,
-  },
-  simulatedBanner: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: Colors.warning + '18',
-    padding: 12,
-    borderRadius: 10,
-    gap: 10,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: Colors.warning + '30',
-  },
-  simulatedText: {
-    flex: 1,
-    fontSize: 12,
-    color: Colors.warning,
-    fontWeight: '500' as const,
-    lineHeight: 17,
   },
   header: {
     flexDirection: 'row',
