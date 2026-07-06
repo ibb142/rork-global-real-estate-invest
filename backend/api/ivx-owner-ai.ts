@@ -101,6 +101,7 @@ export { applyAccessStatusNarrativeGate } from '../services/ivx-access-status-na
 export { applyIVXIAReliabilityGate } from '../services/ivx-ia-reliability-gate';
 import { generateIVX3DModel } from '../services/ivx-model3d-generation';
 import { detectDeveloperModeRequest, buildDeveloperModeBlockedExplanation, detectSeniorDeveloperModeStatusRequest, buildSeniorDeveloperModeStatusAnswer, detectSeniorDeveloperBrainRequest, buildSeniorDeveloperBrainAnswer } from '../services/ivx-owner-ai-dev-mode';
+import { resolveIVXIdentityAnswer, IVX_IA_IDENTITY_MARKER } from '../services/ivx-ia-identity-brain';
 
 import { classifyOwnerExecutionCommand, type IVXOwnerExecutionDecision } from '../services/ivx-owner-execution-mode';
 import { startDailyImprovementTask, type DailyImprovementStart } from '../services/ivx-daily-improvement';
@@ -4367,8 +4368,10 @@ function buildOwnerAISystemPrompt(input: {
     : 'Answer directly as the owner’s technical and business copilot. Keep it short, practical, and user-facing.';
 
   return [
-    `You are ${IVX_OWNER_AI_PROFILE.name}, the in-house autonomous CTO and technical/business copilot for IVX Holdings. You are NOT a generic assistant — you operate one specific company's platform.`,
-    'Identity (always true, never ask the owner who they are): you are speaking with Ivan Perez, the owner and founder of IVX Holdings. IVX Holdings is a real-estate / capital investment company whose platform you help run end to end — the public landing site (ivxholding.com), the investor/deal pipeline, the Supabase backend, and this React Native + Expo owner app. When asked "who are you" or "what is IVX," answer concretely from this identity; never say you are a generic AI or that you lack context about IVX.',
+    `You are IVX IA, the in-house autonomous CTO and technical/business copilot for IVXHOLDINGS. You are NOT a generic assistant — you operate one specific company's platform.`,
+    'IDENTITY (always true, never ask the owner who they are): Your name is IVX IA. You were created by Ivan Perez, the owner and founder of IVXHOLDINGS. You are speaking with Ivan Perez, the owner and founder of IVXHOLDINGS. IVXHOLDINGS is a real-estate / capital investment company whose platform you help run end to end — the public landing site (ivxholding.com), the investor/deal pipeline, the Supabase backend, and this React Native + Expo owner app. When asked "what is your name", answer "IVX IA". When asked "who created you", "who made you", "who is your owner", or "who are you", answer that you were created by Ivan Perez, the owner of IVXHOLDINGS. When asked "what is IVX" or "what is IVXHOLDINGS", answer concretely from this identity; never say you are a generic AI or that you lack context about IVX.',
+    'IVXHOLDINGS QUESTIONS — NO LIMITS: when the owner (or any user) asks about IVXHOLDINGS, the projects, the investment process, returns, ROI, minimum buy-in, deal timelines, risks, Casa Rosario, or any other project, answer fully and directly. Do NOT limit, refuse, or deflect these questions. They are informational and you answer them completely.',
+    'REGULAR CONVERSATION: you can have a normal conversation and answer any type of question — general knowledge, technical, business, investing, real estate, or anything else. Be helpful, direct, and grounded.',
     'Anti-generic rule: NEVER reply with empty status filler like "I\'m operational", "I\'m ready to assist", "how can I help", or "I\'m here to help" as a standalone answer. Every reply must address the owner\'s actual message with a concrete, specific answer grounded in IVX. A bare greeting ("hello") gets a brief IVX-aware greeting plus a concrete offer tied to the current platform, not a generic chatbot line.',
     actionStyle,
     'Persona: answer as a senior software developer, senior DevOps engineer, senior product engineer, and pragmatic business operator at once — never as a generic world-knowledge chatbot. Be specific, opinionated, and grounded in THIS project. Lead with the decision/answer, then the reasoning.',
@@ -5787,6 +5790,30 @@ async function handleIVXOwnerAIRequestInternal(request: Request): Promise<Respon
       return ownerOnlyJson({ error: 'Request body unreadable.' }, 400);
     }
     const prompt = readTrimmedString(body.message);
+    // ── IVX IA Identity Brain ───────────────────────────────────────────────
+    // Direct, deterministic answers for identity / ownership / IVXHOLDINGS project
+    // questions: "what is your name" → IVX IA; "who created you / who is your owner"
+    // → Ivan Perez, owner of IVXHOLDINGS; full answers for project & investment
+    // questions (never limited). This is a fast path that never blocks.
+    const identityAnswer = resolveIVXIdentityAnswer(prompt);
+    if (identityAnswer) {
+      return ownerOnlyJson({
+        ok: true,
+        status: 'ok',
+        source: 'ivx-owner-ai-identity-brain',
+        answer: identityAnswer,
+        model: 'ivx_backend',
+        provider: 'chatgpt',
+        deploymentMarker: IVX_IA_IDENTITY_MARKER,
+        assistantMessageId: null,
+        assistantPersisted: false,
+        selectedTool: null,
+        toolInput: [],
+        toolOutput: [],
+        fallbackUsed: false,
+        toolOutputs: [],
+      }, 200);
+    }
     // Senior-developer mode STATUS questions (e.g. "Do you in a senior developer mode?")
     // are answered positively and routed to the real senior-developer system. They are
     // NOT blocked, so the owner can confirm the capability is live.
