@@ -271,12 +271,20 @@ export function buildIVXIdentityAnswer(type: IVXIdentityQuestionType): string | 
 }
 
 /**
- * Full identity+brain check. Returns the answer string if the message is an
- * identity/ownership/IVXHOLDINGS question, or null if it should flow through the
- * normal chat path.
+ * Full identity+brain check. Returns the answer string if the message is a pure
+ * identity/ownership question (name, creator, owner, what-is-IVX), or null if it
+ * should flow through the normal AI gateway path.
+ *
+ * IMPORTANT: Project and investment questions (ivx_project, ivx_investment) are
+ * intentionally NOT intercepted here. Those must reach the real AI gateway,
+ * which has the full business context (Casa Rosario details, ROI, price, location,
+ * timeline, risks) loaded per-request. Interception returned a generic canned
+ * answer that blocked real deal-specific data from ever reaching the user.
  */
 export function resolveIVXIdentityAnswer(message: string): string | null {
   const type = detectIVXIdentityQuestion(message);
-  if (type === 'none') return null;
+  if (type === 'none' || type === 'ivx_project' || type === 'ivx_investment') {
+    return null;
+  }
   return buildIVXIdentityAnswer(type);
 }
