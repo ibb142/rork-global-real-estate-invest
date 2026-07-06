@@ -723,6 +723,26 @@ import {
   handleIVXNightOpsRoadmapAdvanceRequest,
 } from './api/ivx-night-ops';
 import { startNightOpsScheduler } from './services/ivx-night-ops';
+import {
+  handleDataVaultStatus,
+  handleDataVaultConfigUpdate,
+  handleDataVaultSnapshotTrigger,
+  handleDataVaultSnapshotsList,
+  handleDataVaultSnapshotGet,
+  handleDataVaultSnapshotTable,
+  handleDataVaultRestore,
+  handleDataVaultLossDetection,
+  handleDataVaultManifest,
+  dataVaultOptions,
+} from './api/ivx-data-vault';
+import {
+  handleDataGuardEvaluate,
+  handleDataGuardAudit,
+  handleDataGuardProtectedTables,
+  handleDataGuardCheck,
+  dataGuardOptions,
+} from './api/ivx-data-loss-guard';
+import { startDataVaultScheduler, bootstrapDataVault } from './services/ivx-data-vault';
 import { startContinuousExecutionScheduler } from './services/ivx-continuous-execution';
 import {
   OPTIONS as opMemoryOptions,
@@ -4442,6 +4462,30 @@ app.get('/api/ivx/video-platform/creator/:creatorId/dashboard', async (c) => han
 app.get('/api/ivx/video-platform/moderation/queue', async () => handlePlatformModerationQueue());
 app.post('/api/ivx/video-platform/moderation/:videoId', async (c) => handlePlatformModerationDecision(c.req.raw, c.req.param('videoId')));
 
+// ── IVX Data Vault (2026-07-06) — independent backup & recovery ─────────────
+// Snapshots critical Supabase tables to the backend's own filesystem so data
+// can always be recovered even if Supabase loses it. Owner-only endpoints.
+app.options('/api/ivx/data-vault/*', () => dataVaultOptions());
+app.get('/api/ivx/data-vault/status', async (c) => handleDataVaultStatus(c.req.raw));
+app.post('/api/ivx/data-vault/config', async (c) => handleDataVaultConfigUpdate(c.req.raw));
+app.post('/api/ivx/data-vault/snapshot', async (c) => handleDataVaultSnapshotTrigger(c.req.raw));
+app.get('/api/ivx/data-vault/snapshots', async (c) => handleDataVaultSnapshotsList(c.req.raw));
+app.get('/api/ivx/data-vault/snapshots/:snapshotId', async (c) => handleDataVaultSnapshotGet(c.req.raw, c.req.param('snapshotId') ?? ''));
+app.get('/api/ivx/data-vault/snapshots/:snapshotId/tables/:table', async (c) => handleDataVaultSnapshotTable(c.req.raw, c.req.param('snapshotId') ?? '', c.req.param('table') ?? ''));
+app.post('/api/ivx/data-vault/restore', async (c) => handleDataVaultRestore(c.req.raw));
+app.get('/api/ivx/data-vault/loss-detection', async (c) => handleDataVaultLossDetection(c.req.raw));
+app.get('/api/ivx/data-vault/manifest', async (c) => handleDataVaultManifest(c.req.raw));
+
+// ── IVX Data-Loss Guard (2026-07-06) — destructive op interception ──────────
+// Prevents autonomous cleanup/migration scripts from deleting production data.
+// Every destructive op (DELETE/TRUNCATE/DROP) on protected tables requires
+// owner approval + reason and triggers a pre-snapshot.
+app.options('/api/ivx/data-guard/*', () => dataGuardOptions());
+app.post('/api/ivx/data-guard/evaluate', async (c) => handleDataGuardEvaluate(c.req.raw));
+app.get('/api/ivx/data-guard/audit', async (c) => handleDataGuardAudit(c.req.raw));
+app.get('/api/ivx/data-guard/protected-tables', async (c) => handleDataGuardProtectedTables(c.req.raw));
+app.post('/api/ivx/data-guard/check', async (c) => handleDataGuardCheck(c.req.raw));
+
 // ── IVX Deployment Tools Brain (Unified Dashboard) ──────────────────
 app.options('/api/ivx/deploy-tools/*', () => deployToolsOptions());
 app.get('/api/ivx/deploy-tools/brain', async (c) => handleBrain());
@@ -4545,6 +4589,7 @@ app.notFound(async (context) => {
 });
 
 try { startNightOpsScheduler(); } catch (err) { console.warn('[IVXOwnerAI-Hono] night ops scheduler failed to start:', err instanceof Error ? err.message : err); }
+try { void bootstrapDataVault(); startDataVaultScheduler(); } catch (err) { console.warn('[IVXOwnerAI-Hono] data vault scheduler failed to start:', err instanceof Error ? err.message : err); }
 try { startContinuousExecutionScheduler(); } catch (err) { console.warn('[IVXOwnerAI-Hono] continuous execution scheduler failed to start:', err instanceof Error ? err.message : err); }
 try { startAutonomousScheduler(); } catch (err) { console.warn('[IVXOwnerAI-Hono] autonomous scheduler failed to start:', err instanceof Error ? err.message : err); }
 try { startScaleLoopScheduler(); } catch (err) { console.warn('[IVXOwnerAI-Hono] scale loop scheduler failed to start:', err instanceof Error ? err.message : err); }
