@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import { supabase, ensureSupabaseClient, getSupabaseConfigAudit, SUPABASE_NOT_CONFIGURED_MESSAGE, forceProductionSupabaseClient } from './supabase';
 import { persistAuth, loadStoredAuth, clearStoredAuth, setAuthCredentials } from './auth-store';
+import { clearOwnerResilientSession, storeOwnerResilientSession } from './owner-session-resilience';
 import { canonicalizeRole, isAdminRole, normalizeRole, sanitizeEmail } from './auth-helpers';
 import { signInWithEmailPassword } from './auth-password-sign-in';
 import { extractChallengeId, extractFirstVerifiedMfaFactor, getMfaChallengeRequirement, type ParsedMfaFactor } from './auth-mfa';
@@ -1091,6 +1092,9 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     inFlightSessionKeyRef.current = null;
     inFlightSessionPromiseRef.current = null;
     await clearStoredAuth();
+    await clearOwnerResilientSession().catch((error: unknown) => {
+      console.log('[Auth] Resilient owner session clear note:', error instanceof Error ? error.message : 'unknown');
+    });
     setUser((previousUser) => previousUser === null ? previousUser : null);
     setIsAuthenticated((current) => current ? false : current);
     setUserRole((currentRole) => currentRole === 'investor' ? currentRole : 'investor');

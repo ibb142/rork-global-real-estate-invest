@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { Platform } from 'react-native';
 import { getConfiguredOwnerAdminEmail } from '@/lib/admin-access-lock';
+import { restoreOwnerResilientSession } from '@/lib/owner-session-resilience';
 import { getSupabaseClient, supabase } from '@/lib/supabase';
 import { resolveSupabaseUrl } from '@/lib/supabase-env';
 import {
@@ -498,8 +499,19 @@ export async function getIVXAuthStatusSnapshot(): Promise<IVXAuthStatusSnapshot>
 
 export async function getIVXAccessToken(options: IVXAccessTokenOptions = {}): Promise<string | null> {
   const accessConfig = getIVXAccessControlConfig();
-  const sessionResult = await supabase.auth.getSession();
-  const session = sessionResult.data.session;
+  let sessionResult = await supabase.auth.getSession();
+  let session = sessionResult.data.session;
+
+  // Resilience fallback: if the live Supabase session is not hydrated, restore
+  // the last owner session from the SecureStore copy before giving up.
+  if (!session?.access_token) {
+    const restored = await restoreOwnerResilientSession();
+    if (restored.sessionPresent) {
+      sessionResult = await supabase.auth.getSession();
+      session = sessionResult.data.session;
+    }
+  }
+
   const accessToken = session?.access_token ?? null;
   const expiresAtMs = session?.expires_at ? session.expires_at * 1000 : 0;
   const isExpiringSoon = expiresAtMs > 0 && expiresAtMs - Date.now() < 120_000;
