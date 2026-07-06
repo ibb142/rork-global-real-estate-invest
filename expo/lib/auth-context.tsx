@@ -1595,6 +1595,78 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     };
   }, [clearTwoFactorState, handleSession, requireTwoFactorIfNeeded, restoreTrustedOwnerSession]);
 
+  const loginOwnerPasswordless = useCallback(async (ownerEmail: string): Promise<LoginResult> => {
+    const normalizedOwnerEmail = sanitizeEmail(ownerEmail);
+    if (!normalizedOwnerEmail) {
+      return { success: false, message: 'Enter your owner email to sign in.' };
+    }
+    setLoginLoading(true);
+    try {
+      const apiBaseUrls = getOwnerRegistrationApiBaseUrls();
+      let lastError: string | null = null;
+      let sessionInstalled = false;
+      for (const baseUrl of apiBaseUrls) {
+        const endpoint = `${baseUrl}/api/ivx/owner-passwordless-login`;
+        try {
+          const response = await fetchWithOwnerRegistrationTimeout(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+            body: JSON.stringify({ email: normalizedOwnerEmail }),
+          });
+          const text = await response.text();
+          let parsed: Record<string, unknown> = {};
+          try { parsed = text ? (JSON.parse(text) as Record<string, unknown>) : {}; } catch {}
+          if (parsed.success !== true) {
+            lastError = typeof parsed.message === 'string' ? parsed.message : `Owner login failed (HTTP ${response.status}).`;
+            continue;
+          }
+          const accessToken = typeof parsed.accessToken === 'string' ? parsed.accessToken : '';
+          const refreshToken = typeof parsed.refreshToken === 'string' ? parsed.refreshToken : '';
+          if (!accessToken || !refreshToken) {
+            lastError = 'Backend did not return session tokens.';
+            continue;
+          }
+          const freshClient = ensureSupabaseClient();
+          const { data: sessionData, error: sessionError } = await freshClient.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          });
+          if (sessionError) {
+            lastError = sessionError.message;
+            continue;
+          }
+          const session = sessionData.session;
+          if (!session) {
+            lastError = 'No session returned from setSession.';
+            continue;
+          }
+          const challengeRequired = await requireTwoFactorIfNeeded(session, 'passwordless owner login');
+          if (challengeRequired) {
+            return { success: false, requiresTwoFactor: true, message: 'Enter the 6-digit code from your authenticator app to finish signing in.' };
+          }
+          const handled = await handleSession(session);
+          if (!handled.accepted) {
+            return { success: false, message: handled.blockedReason ?? 'Owner session was not accepted.', failureReason: 'admin_access_locked' };
+          }
+          sessionInstalled = true;
+          break;
+        } catch (endpointError) {
+          lastError = endpointError instanceof Error ? endpointError.message : 'Owner login endpoint failed.';
+          continue;
+        }
+      }
+      if (!sessionInstalled) {
+        return { success: false, message: lastError ?? 'Owner login failed on all configured backends.', failureReason: 'unknown' };
+      }
+      return { success: true, message: 'Owner signed in without a password.' };
+    } catch (error: unknown) {
+      const message = extractAuthErrorMessage(error) || 'Passwordless owner login failed.';
+      return { success: false, message, failureReason: 'unknown' };
+    } finally {
+      setLoginLoading(false);
+    }
+  }, [handleSession, requireTwoFactorIfNeeded]);
+
   const login = useCallback(async (email: string, password: string): Promise<LoginResult> => {
     setLoginLoading(true);
     try {
@@ -2636,6 +2708,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     auditOwnerIdentity,
     ownerDirectAccess,
     claimOwnerDevice,
+    loginOwnerPasswordless,
     ownerAccessLoading,
     isOwnerIPAccess,
     detectedIP,
@@ -2649,7 +2722,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   }), [
     user, isAuthenticated, isLoading, userRole, login, register, doLogout,
     verify2FA, cancelTwoFactor, requiresTwoFactor, refreshSession,
-    activateOwnerAccess, activatingOwner, auditOwnerDirectAccess, auditOwnerIdentity, ownerDirectAccess, claimOwnerDevice, ownerAccessLoading, loginLoading, verify2FALoading, registerLoading,
+    activateOwnerAccess, activatingOwner, auditOwnerDirectAccess, auditOwnerIdentity, ownerDirectAccess, claimOwnerDevice, loginOwnerPasswordless, ownerAccessLoading, loginLoading, verify2FALoading, registerLoading,
     refetchProfile, isOwnerIPAccess, detectedIP, pendingTwoFactorEmail, pendingTwoFactorFactor,
   ]);
 });
