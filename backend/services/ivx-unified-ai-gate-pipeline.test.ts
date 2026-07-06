@@ -223,16 +223,16 @@ describe('runIVXUnifiedGatePipeline — IVX IA Stabilization Sprint', () => {
         ownerSessionPresent: true,
         proof: PROOF_FULL,
       });
-      // The fake-execution gate passes through when real proof is attached;
-      // the senior-developer gate produces the strict proof block; the
-      // reliability gate resolves to VERIFIED when all evidence is present.
+      // The fake-execution gate passes through when real proof is attached.
+      // The senior-developer gate no longer rewrites execution commands, so the
+      // original VERIFIED answer flows through unchanged. The reliability gate
+      // resolves to VERIFIED because all evidence is present.
       expect(result.state).toBe('VERIFIED');
-      // The strict proof block surfaces the commit sha, render deploy id, and
-      // the VERIFIED final status — the evidence fields the owner requires.
-      expect(result.answer).toContain('OWNER_AUTH_ACCEPTED=true');
-      expect(result.answer).toContain('0123456789abcdef0123456789abcdef01234567');
-      expect(result.answer).toContain('dep-xyz789');
-      expect(result.answer).toContain('FINAL_STATUS=VERIFIED');
+      expect(result.answer).toContain('STATE: VERIFIED');
+      expect(result.answer).toContain('Task ID: ivx-task-abc123');
+      expect(result.answer).toContain('Commit SHA: 0123456789abcdef0123456789abcdef01234567');
+      expect(result.answer).toContain('Render Deploy ID: dep-xyz789');
+      expect(result.answer).toContain('Live verification: HTTP 200');
     });
   });
 

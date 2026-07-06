@@ -4,12 +4,28 @@
  * Uses the service role key to update the auth.users password via the GoTrue
  * admin API. After reset, performs a password sign-in to verify the change.
  */
+import { readFileSync } from 'node:fs';
 
-const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL ?? 'https://kvclcdjmjghndxsngfzb.supabase.co';
-const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
-const ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
-const OWNER_EMAIL = (process.env.IVX_OWNER_EMAIL ?? '').trim().toLowerCase();
-const OWNER_PASSWORD = process.env.IVX_OWNER_PASSWORD ?? '';
+function loadEnv() {
+  const path = new URL('../../expo/.env', import.meta.url);
+  const text = readFileSync(path, 'utf8');
+  const env = {};
+  for (const line of text.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const idx = trimmed.indexOf('=');
+    if (idx === -1) continue;
+    env[trimmed.slice(0, idx)] = trimmed.slice(idx + 1).replace(/^['"]/, '').replace(/['"]$/, '');
+  }
+  return env;
+}
+
+const env = loadEnv();
+const SUPABASE_URL = env.EXPO_PUBLIC_SUPABASE_URL ?? 'https://kvclcdjmjghndxsngfzb.supabase.co';
+const SERVICE_ROLE_KEY = env.SUPABASE_SERVICE_ROLE_KEY ?? '';
+const ANON_KEY = env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
+const OWNER_EMAIL = (env.IVX_OWNER_EMAIL ?? '').trim().toLowerCase();
+const OWNER_PASSWORD = env.IVX_OWNER_PASSWORD ?? '';
 
 async function findOwnerUser() {
   const response = await fetch(`${SUPABASE_URL}/auth/v1/admin/users?per_page=100`, {
