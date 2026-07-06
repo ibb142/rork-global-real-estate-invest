@@ -6669,51 +6669,98 @@
     if (btn) { btn.textContent = 'Submitting...'; btn.disabled = true; }
     fireAdEvent('initiate_checkout', { content_name: 'Investment Intent: ' + _investState.dealTitle, value: _investState.amount });
 
-    var intentId = 'INT-' + Date.now().toString(36).toUpperCase() + '-' + Math.random().toString(36).substr(2,4).toUpperCase();
     var payLabels = { bank: 'Bank Transfer (ACH)', wire: 'Wire Transfer', wallet: 'Wallet Balance' };
-    var investmentRecord = {
-      intent_id: intentId,
-      deal_id: _investState.dealId,
-      deal_title: _investState.dealTitle,
-      investment_type: _investState.pool === 'token_shares' ? 'Fractional Shares' : 'JV Direct Investment',
-      amount: _investState.amount,
-      ownership_pct: _investState.dealTotal > 0 ? parseFloat(((_investState.amount / _investState.dealTotal) * 100).toFixed(4)) : 0,
-      expected_roi: _investState.dealROI,
-      payment_method: payLabels[_investState.paymentMethod] || 'Bank Transfer (ACH)',
-      investor_email: _investState.userEmail,
-      investor_id: _investState.userId || null,
-      status: 'pending_payment',
-      terms_accepted: true,
-      source: 'landing_page',
-      created_at: new Date().toISOString()
-    };
-
+    var syncResult = null;
     var saved = false;
+
+    // PRIMARY PATH: create a real payment transaction through the IVX backend.
+    // This writes to both `transactions` and `landing_investments` with audit logging.
     try {
-      if (_investState._authSb && _investState.userToken) {
-        var restUrl = SUPABASE_URL.replace(/\/+$/, '') + '/rest/v1/landing_investments';
-        var resp = await fetch(restUrl, {
+      var apiBase = (window.__IVX_API_BASE || IVX_API || '').replace(/\/+$/, '');
+      if (!apiBase || apiBase.indexOf('http') !== 0) {
+        // Fallback to the configured backend URL if available.
+        apiBase = (window.__IVX_BACKEND_URL || '').replace(/\/+$/, '');
+      }
+      if (apiBase && apiBase.indexOf('http') === 0) {
+        var syncResp = await fetch(apiBase + '/api/ivx/payments/landing-intent', {
           method: 'POST',
-          headers: {
-            'apikey': SUPABASE_ANON_KEY,
-            'Authorization': 'Bearer ' + _investState.userToken,
-            'Content-Type': 'application/json',
-            'Prefer': 'return=representation'
-          },
-          body: JSON.stringify(investmentRecord)
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            dealId: _investState.dealId,
+            dealTitle: _investState.dealTitle,
+            investmentType: _investState.pool === 'token_shares' ? 'Fractional Shares' : 'JV Direct Investment',
+            amount: _investState.amount,
+            expectedRoi: _investState.dealROI,
+            ownershipPct: _investState.dealTotal > 0 ? parseFloat(((_investState.amount / _investState.dealTotal) * 100).toFixed(4)) : 0,
+            paymentMethod: _investState.paymentMethod,
+            investorEmail: _investState.userEmail,
+            investorId: _investState.userId || null,
+            investorName: ((_investState.firstName || '') + ' ' + (_investState.lastName || '')).trim(),
+            termsAccepted: true,
+            source: 'landing_page'
+          })
         });
-        if (resp.ok || resp.status === 201) {
-          saved = true;
-          console.log('[IVX Invest] Investment intent saved to Supabase:', intentId);
+        if (syncResp.ok) {
+          syncResult = await syncResp.json();
+          if (syncResult && syncResult.ok) {
+            saved = true;
+            console.log('[IVX Invest] Real payment transaction synced via backend:', syncResult.transactionId, syncResult.intentId);
+          }
         } else {
-          var errBody = await resp.text();
-          console.warn('[IVX Invest] Supabase insert failed (' + resp.status + '):', errBody);
+          console.warn('[IVX Invest] Backend sync failed (' + syncResp.status + '):', await syncResp.text());
         }
       }
-    } catch(saveErr) {
-      console.warn('[IVX Invest] Save error:', saveErr.message);
+    } catch(syncErr) {
+      console.warn('[IVX Invest] Backend sync error:', syncErr.message);
     }
 
+    // FALLBACK: direct Supabase landing_investments insert when backend is unreachable.
+    // This still creates a real record, but without the canonical transactions table link.
+    var intentId = (syncResult && syncResult.intentId) ? syncResult.intentId : 'INT-' + Date.now().toString(36).toUpperCase() + '-' + Math.random().toString(36).substr(2,4).toUpperCase();
+    if (!saved) {
+      var investmentRecord = {
+        intent_id: intentId,
+        deal_id: _investState.dealId,
+        deal_title: _investState.dealTitle,
+        investment_type: _investState.pool === 'token_shares' ? 'Fractional Shares' : 'JV Direct Investment',
+        amount: _investState.amount,
+        ownership_pct: _investState.dealTotal > 0 ? parseFloat(((_investState.amount / _investState.dealTotal) * 100).toFixed(4)) : 0,
+        expected_roi: _investState.dealROI,
+        payment_method: payLabels[_investState.paymentMethod] || 'Bank Transfer (ACH)',
+        investor_email: _investState.userEmail,
+        investor_id: _investState.userId || null,
+        status: 'pending_payment',
+        terms_accepted: true,
+        source: 'landing_page',
+        created_at: new Date().toISOString()
+      };
+      try {
+        if (_investState._authSb && _investState.userToken) {
+          var restUrl = SUPABASE_URL.replace(/\/+$/, '') + '/rest/v1/landing_investments';
+          var resp = await fetch(restUrl, {
+            method: 'POST',
+            headers: {
+              'apikey': SUPABASE_ANON_KEY,
+              'Authorization': 'Bearer ' + _investState.userToken,
+              'Content-Type': 'application/json',
+              'Prefer': 'return=representation'
+            },
+            body: JSON.stringify(investmentRecord)
+          });
+          if (resp.ok || resp.status === 201) {
+            saved = true;
+            console.log('[IVX Invest] Investment intent saved to Supabase fallback:', intentId);
+          } else {
+            var errBody = await resp.text();
+            console.warn('[IVX Invest] Supabase insert failed (' + resp.status + '):', errBody);
+          }
+        }
+      } catch(saveErr) {
+        console.warn('[IVX Invest] Save error:', saveErr.message);
+      }
+    }
+
+    // LAST-RESORT FALLBACK: waitlist capture so the lead is never lost.
     if (!saved) {
       try {
         await trpcCall('waitlist.join', {
@@ -6733,13 +6780,15 @@
 
     ivxTrack('investment_intent', {
       intentId: intentId,
+      backendTransactionId: syncResult ? syncResult.transactionId : null,
       dealId: _investState.dealId,
       dealTitle: _investState.dealTitle,
       amount: _investState.amount,
       pool: _investState.pool,
       paymentMethod: _investState.paymentMethod,
       email: _investState.userEmail,
-      saved: saved
+      saved: saved,
+      synced: !!syncResult
     });
 
     var el = function(id) { return document.getElementById(id); };
@@ -6752,6 +6801,10 @@
     if (el('success-roi')) el('success-roi').textContent = '+' + _investState.dealROI + '% ($' + (_investState.amount * _investState.dealROI / 100).toLocaleString() + ')';
     if (el('success-confirmation')) el('success-confirmation').textContent = intentId;
     if (el('success-investor-email')) el('success-investor-email').textContent = _investState.userEmail;
+    if (syncResult && syncResult.transactionId) {
+      var txNote = el('success-transaction-note');
+      if (txNote) txNote.textContent = 'Payment transaction ' + syncResult.transactionId + ' created and pending confirmation.';
+    }
 
     FALLBACK_DEAL_DATA[_investState.dealId] = {
       title: _investState.dealTitle,
