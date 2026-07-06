@@ -102,6 +102,7 @@ export { applyIVXIAReliabilityGate } from '../services/ivx-ia-reliability-gate';
 import { generateIVX3DModel } from '../services/ivx-model3d-generation';
 import { detectDeveloperModeRequest, buildDeveloperModeBlockedExplanation, detectSeniorDeveloperModeStatusRequest, buildSeniorDeveloperModeStatusAnswer, detectSeniorDeveloperBrainRequest, buildSeniorDeveloperBrainAnswer } from '../services/ivx-owner-ai-dev-mode';
 import { resolveIVXIdentityAnswer, IVX_IA_IDENTITY_MARKER } from '../services/ivx-ia-identity-brain';
+import { resolveIVXConversationAnswer, IVX_IA_CONVERSATION_MARKER } from '../services/ivx-ia-conversation-brain';
 
 import { classifyOwnerExecutionCommand, type IVXOwnerExecutionDecision } from '../services/ivx-owner-execution-mode';
 import { startDailyImprovementTask, type DailyImprovementStart } from '../services/ivx-daily-improvement';
@@ -5848,6 +5849,30 @@ async function handleIVXOwnerAIRequestInternal(request: Request): Promise<Respon
         model: 'ivx_backend',
         provider: 'chatgpt',
         deploymentMarker: DEPLOYMENT_MARKER,
+        assistantMessageId: null,
+        assistantPersisted: false,
+        selectedTool: null,
+        toolInput: [],
+        toolOutput: [],
+        fallbackUsed: false,
+        toolOutputs: [],
+      }, 200);
+    }
+    // ── IVX IA Conversation Brain ──────────────────────────────────────────
+    // General conversation questions (math, greetings, help, capabilities, thanks)
+    // are answered directly here. This runs BEFORE the Supabase-bearer-guarded
+    // main pipeline so owner-token-only requests get a real answer instead of 401.
+    // It never blocks and never asks for proof — it is the IVX IA persona.
+    const conversationAnswer = resolveIVXConversationAnswer(prompt);
+    if (conversationAnswer) {
+      return ownerOnlyJson({
+        ok: true,
+        status: 'ok',
+        source: 'ivx-ia-conversation-brain',
+        answer: conversationAnswer,
+        model: 'ivx_backend',
+        provider: 'chatgpt',
+        deploymentMarker: IVX_IA_CONVERSATION_MARKER,
         assistantMessageId: null,
         assistantPersisted: false,
         selectedTool: null,

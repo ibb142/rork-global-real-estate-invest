@@ -92,6 +92,22 @@ function badRequest(message: string, status = 400): Response {
   return ownerOnlyJson({ ok: false, marker: IVX_INVESTOR_PROTECTION_MARKER, error: message }, status);
 }
 
+/** Auth-guard failures must return 401, not 500, so callers can distinguish
+ *  missing/invalid owner session from a real server error. */
+function errorStatus(error: unknown, fallback = 500): number {
+  const msg = error instanceof Error ? error.message.toLowerCase() : '';
+  if (msg.includes('auth') || msg.includes('owner') || msg.includes('bearer') || msg.includes('token') || msg.includes('unauthorized') || msg.includes('forbidden')) {
+    return 401;
+  }
+  return fallback;
+}
+
+/** Build the error response with the correct status code (401 for auth, 500 otherwise). */
+function errorResponse(error: unknown, fallbackMessage: string, fallbackStatus = 500): Response {
+  const message = error instanceof Error ? error.message : fallbackMessage;
+  return badRequest(message, errorStatus(error, fallbackStatus));
+}
+
 function ok(payload: Record<string, unknown>): Response {
   return ownerOnlyJson({ ok: true, marker: IVX_INVESTOR_PROTECTION_MARKER, ...payload });
 }
@@ -163,7 +179,7 @@ export async function handleProtectionAuditLogRequest(request: Request): Promise
     const entries = await listProtectionAudit({ targetUserId, action, limit });
     return ok({ entries, count: entries.length });
   } catch (error) {
-    return badRequest(error instanceof Error ? error.message : 'Audit log failed.', 500);
+    return errorResponse(error, 'Audit log failed.');
   }
 }
 
@@ -183,7 +199,7 @@ export async function handleProtectionLedgerIntegrityRequest(request: Request): 
       message: 'Ledger is append-only and hash-chained. No entry can be deleted.',
     });
   } catch (error) {
-    return badRequest(error instanceof Error ? error.message : 'Ledger integrity check failed.', 500);
+    return errorResponse(error, 'Ledger integrity check failed.');
   }
 }
 
@@ -199,7 +215,7 @@ export async function handleProtectionAccountStatesListRequest(request: Request)
     const states = await listAccountStates(stateParam && VALID_ACCOUNT_STATES.has(stateParam) ? { state: stateParam } : undefined);
     return ok({ states, count: states.length });
   } catch (error) {
-    return badRequest(error instanceof Error ? error.message : 'List account states failed.', 500);
+    return errorResponse(error, 'List account states failed.');
   }
 }
 
@@ -212,7 +228,7 @@ export async function handleProtectionAccountStateGetRequest(request: Request): 
     const record = await getAccountStateRecord(userId);
     return ok({ record });
   } catch (error) {
-    return badRequest(error instanceof Error ? error.message : 'Get account state failed.', 500);
+    return errorResponse(error, 'Get account state failed.');
   }
 }
 
@@ -258,7 +274,7 @@ export async function handleProtectionUnlockAccountRequest(request: Request): Pr
     });
     return ok({ record });
   } catch (error) {
-    return badRequest(error instanceof Error ? error.message : 'Unlock failed.', 500);
+    return errorResponse(error, 'Unlock failed.');
   }
 }
 
@@ -268,7 +284,7 @@ export async function handleProtectionDeletionListRequest(request: Request): Pro
     const requests = await listDeletionRequests();
     return ok({ requests, count: requests.length });
   } catch (error) {
-    return badRequest(error instanceof Error ? error.message : 'List deletion requests failed.', 500);
+    return errorResponse(error, 'List deletion requests failed.');
   }
 }
 
@@ -293,7 +309,7 @@ export async function handleProtectionDeletionCreateRequest(request: Request): P
     });
     return ok({ record });
   } catch (error) {
-    return badRequest(error instanceof Error ? error.message : 'Deletion request failed.', 500);
+    return errorResponse(error, 'Deletion request failed.');
   }
 }
 
@@ -312,7 +328,7 @@ export async function handleProtectionDeletionApproveRequest(request: Request): 
     });
     return ok({ record });
   } catch (error) {
-    return badRequest(error instanceof Error ? error.message : 'Approve deletion failed.', 500);
+    return errorResponse(error, 'Approve deletion failed.');
   }
 }
 
@@ -331,7 +347,7 @@ export async function handleProtectionDeletionConfirmRequest(request: Request): 
     });
     return ok({ record });
   } catch (error) {
-    return badRequest(error instanceof Error ? error.message : 'Second confirm failed.', 500);
+    return errorResponse(error, 'Second confirm failed.');
   }
 }
 
@@ -345,7 +361,7 @@ export async function handleProtectionRecoveryListRequest(request: Request): Pro
     const requests = await listRecoveryRequests();
     return ok({ requests, count: requests.length });
   } catch (error) {
-    return badRequest(error instanceof Error ? error.message : 'List recovery failed.', 500);
+    return errorResponse(error, 'List recovery failed.');
   }
 }
 
@@ -368,7 +384,7 @@ export async function handleProtectionRecoveryStartRequest(request: Request): Pr
     // The code is returned once to the operator for delivery via the chosen channel.
     return ok({ record, verificationCode: code });
   } catch (error) {
-    return badRequest(error instanceof Error ? error.message : 'Recovery start failed.', 500);
+    return errorResponse(error, 'Recovery start failed.');
   }
 }
 
@@ -386,7 +402,7 @@ export async function handleProtectionRecoveryVerifyRequest(request: Request): P
     });
     return ok({ record });
   } catch (error) {
-    return badRequest(error instanceof Error ? error.message : 'Verify failed.', 500);
+    return errorResponse(error, 'Verify failed.');
   }
 }
 
@@ -405,7 +421,7 @@ export async function handleProtectionRecoveryCompleteRequest(request: Request):
     });
     return ok({ record });
   } catch (error) {
-    return badRequest(error instanceof Error ? error.message : 'Recovery complete failed.', 500);
+    return errorResponse(error, 'Recovery complete failed.');
   }
 }
 
@@ -418,7 +434,7 @@ export async function handleProtectionSessionsListRequest(request: Request): Pro
     const sessions = await listSessions(userId, onlyActive);
     return ok({ sessions, count: sessions.length });
   } catch (error) {
-    return badRequest(error instanceof Error ? error.message : 'List sessions failed.', 500);
+    return errorResponse(error, 'List sessions failed.');
   }
 }
 
@@ -438,7 +454,7 @@ export async function handleProtectionSessionRegisterRequest(request: Request): 
     });
     return ok({ session });
   } catch (error) {
-    return badRequest(error instanceof Error ? error.message : 'Register session failed.', 500);
+    return errorResponse(error, 'Register session failed.');
   }
 }
 
@@ -454,7 +470,7 @@ export async function handleProtectionSessionRevokeRequest(request: Request): Pr
     });
     return ok({ session });
   } catch (error) {
-    return badRequest(error instanceof Error ? error.message : 'Revoke session failed.', 500);
+    return errorResponse(error, 'Revoke session failed.');
   }
 }
 
@@ -476,7 +492,7 @@ export async function handleProtectionInvestmentsListRequest(request: Request): 
     });
     return ok({ investments, count: investments.length });
   } catch (error) {
-    return badRequest(error instanceof Error ? error.message : 'List investments failed.', 500);
+    return errorResponse(error, 'List investments failed.');
   }
 }
 
@@ -513,7 +529,7 @@ export async function handleProtectionInvestmentCreateRequest(request: Request):
     });
     return ok({ investment });
   } catch (error) {
-    return badRequest(error instanceof Error ? error.message : 'Create investment failed.', 500);
+    return errorResponse(error, 'Create investment failed.');
   }
 }
 
@@ -538,7 +554,7 @@ export async function handleProtectionInvestmentValuationRequest(request: Reques
     });
     return ok({ investment });
   } catch (error) {
-    return badRequest(error instanceof Error ? error.message : 'Valuation update failed.', 500);
+    return errorResponse(error, 'Valuation update failed.');
   }
 }
 
@@ -558,7 +574,7 @@ export async function handleProtectionWithdrawalsListRequest(request: Request): 
     });
     return ok({ withdrawals, count: withdrawals.length });
   } catch (error) {
-    return badRequest(error instanceof Error ? error.message : 'List withdrawals failed.', 500);
+    return errorResponse(error, 'List withdrawals failed.');
   }
 }
 
@@ -610,7 +626,7 @@ export async function handleProtectionWithdrawalTransitionRequest(request: Reque
     });
     return ok({ withdrawal });
   } catch (error) {
-    return badRequest(error instanceof Error ? error.message : 'Withdrawal transition failed.', 500);
+    return errorResponse(error, 'Withdrawal transition failed.');
   }
 }
 
@@ -626,7 +642,7 @@ export async function handleProtectionWiresListRequest(request: Request): Promis
     });
     return ok({ wires, count: wires.length });
   } catch (error) {
-    return badRequest(error instanceof Error ? error.message : 'List wires failed.', 500);
+    return errorResponse(error, 'List wires failed.');
   }
 }
 
@@ -660,7 +676,7 @@ export async function handleProtectionWireCreateRequest(request: Request): Promi
     });
     return ok({ wire });
   } catch (error) {
-    return badRequest(error instanceof Error ? error.message : 'Create wire failed.', 500);
+    return errorResponse(error, 'Create wire failed.');
   }
 }
 
@@ -686,7 +702,7 @@ export async function handleProtectionWireTransitionRequest(request: Request): P
     });
     return ok({ wire });
   } catch (error) {
-    return badRequest(error instanceof Error ? error.message : 'Wire transition failed.', 500);
+    return errorResponse(error, 'Wire transition failed.');
   }
 }
 
@@ -696,7 +712,7 @@ export async function handleProtectionWireQueueRequest(request: Request): Promis
     const queue = await wireQueue();
     return ok({ queue, count: queue.length });
   } catch (error) {
-    return badRequest(error instanceof Error ? error.message : 'Wire queue failed.', 500);
+    return errorResponse(error, 'Wire queue failed.');
   }
 }
 
@@ -716,7 +732,7 @@ export async function handleProtectionComplianceListRequest(request: Request): P
     const records = await listCompliance();
     return ok({ records, count: records.length });
   } catch (error) {
-    return badRequest(error instanceof Error ? error.message : 'List compliance failed.', 500);
+    return errorResponse(error, 'List compliance failed.');
   }
 }
 
@@ -743,7 +759,7 @@ export async function handleProtectionComplianceUpsertRequest(request: Request):
     });
     return ok({ record });
   } catch (error) {
-    return badRequest(error instanceof Error ? error.message : 'Compliance upsert failed.', 500);
+    return errorResponse(error, 'Compliance upsert failed.');
   }
 }
 
@@ -756,7 +772,7 @@ export async function handleProtectionWalletRequest(request: Request): Promise<R
     const summary = await getInvestorWalletSummary(userId, null);
     return ok({ wallet: summary });
   } catch (error) {
-    return badRequest(error instanceof Error ? error.message : 'Wallet summary failed.', 500);
+    return errorResponse(error, 'Wallet summary failed.');
   }
 }
 
@@ -768,6 +784,6 @@ export async function handleProtectionReportsRequest(request: Request): Promise<
     const report = await generateOwnerReport(reportType, operator.operatorId);
     return ok({ report });
   } catch (error) {
-    return badRequest(error instanceof Error ? error.message : 'Report failed.', 500);
+    return errorResponse(error, 'Report failed.');
   }
 }

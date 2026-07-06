@@ -36,6 +36,7 @@ import { runIVXUnifiedGatePipeline, describeIVXGatePipelineRun, IVX_UNIFIED_GATE
 export { applyIVXFakeExecutionGate } from './services/ivx-fake-execution-gate';
 import { detectCountIntent, runDbCounts, buildCountGroundingBlock, type DbCountReport } from './services/ivx-db-count';
 import { resolveIVXIdentityAnswer, IVX_IA_IDENTITY_MARKER } from './services/ivx-ia-identity-brain';
+import { resolveIVXConversationAnswer, IVX_IA_CONVERSATION_MARKER } from './services/ivx-ia-conversation-brain';
 import type { ChatRoomMessage } from './chat-types';
 
 export { buildImageFallbackAnswer, extractPublicChatImages, extractDealDocuments };
@@ -325,6 +326,24 @@ export async function generatePublicChatAnswer(input: {
     return {
       answer: identityAnswer,
       model: 'ivx-ia-identity-brain',
+      source: 'fallback',
+      endpoint: null,
+      imageCount: images.length,
+    };
+  }
+
+  // ── IVX IA Conversation Brain ───────────────────────────────────────────
+  // General conversation questions (math, greetings, help, capabilities, thanks)
+  // answered directly — never blocks, never asks for proof.
+  const conversationAnswer = resolveIVXConversationAnswer(input.message);
+  if (conversationAnswer) {
+    console.log('[PublicChatAI] Conversation brain answered:', {
+      sessionId: input.sessionId,
+      marker: IVX_IA_CONVERSATION_MARKER,
+    });
+    return {
+      answer: conversationAnswer,
+      model: 'ivx-ia-conversation-brain',
       source: 'fallback',
       endpoint: null,
       imageCount: images.length,
