@@ -29,24 +29,86 @@ function readTrimmed(value: unknown): string {
 const FETCH_TIMEOUT_MS = 12_000;
 
 /** A countable IVX entity the chat can be asked about. */
-export type CountTarget = 'investors' | 'buyers' | 'jv_deals';
+export type CountTarget =
+  | 'members'
+  | 'waitlist'
+  | 'investors'
+  | 'buyers'
+  | 'jv_deals'
+  | 'private_lenders'
+  | 'tokenized_investments'
+  | 'wallets'
+  | 'treasury'
+  | 'ledger'
+  | 'withdrawals'
+  | 'wire_transfers'
+  | 'notifications'
+  | 'visitors'
+  | 'landing_analytics'
+  | 'analytics_events';
 
 /**
  * Candidate Supabase table name(s) for each target, tried in order. The first
- * table that exists (does not 404) is used. JV-deals is the authoritative
- * `jv_deals` table; investors/buyers are attempted against their conventional
- * table names and honestly reported as missing if absent.
+ * table that exists (does not 404) is used. The `selectColumn` is the PK or
+ * first column used for the HEAD count request — some tables use `member_id`
+ * instead of `id`, so we must use the right column or PostgREST returns 400.
  */
 const TARGET_TABLES: Record<CountTarget, string[]> = {
+  members: ['members'],
+  waitlist: ['waitlist'],
   investors: ['investors', 'crm_investors'],
   buyers: ['buyers', 'crm_buyers'],
   jv_deals: ['jv_deals'],
+  private_lenders: ['private_lenders'],
+  tokenized_investments: ['tokenized_investments'],
+  wallets: ['wallets'],
+  treasury: ['treasury'],
+  ledger: ['ledger'],
+  withdrawals: ['withdrawals'],
+  wire_transfers: ['wire_transfers'],
+  notifications: ['notifications'],
+  visitors: ['visitor_sessions'],
+  landing_analytics: ['landing_analytics'],
+  analytics_events: ['analytics_events'],
+};
+
+/** The column to select for the HEAD count. Most tables use `id`; `members` uses `member_id`. */
+const TARGET_SELECT_COLUMN: Record<CountTarget, string> = {
+  members: 'member_id',
+  waitlist: 'id',
+  investors: 'id',
+  buyers: 'id',
+  jv_deals: 'id',
+  private_lenders: 'id',
+  tokenized_investments: 'id',
+  wallets: 'id',
+  treasury: 'id',
+  ledger: 'id',
+  withdrawals: 'id',
+  wire_transfers: 'id',
+  notifications: 'id',
+  visitors: 'session_id',
+  landing_analytics: 'id',
+  analytics_events: 'id',
 };
 
 const TARGET_LABEL: Record<CountTarget, string> = {
+  members: 'members',
+  waitlist: 'waitlist entries',
   investors: 'investors',
   buyers: 'buyers',
   jv_deals: 'JV deals (projects)',
+  private_lenders: 'private lenders',
+  tokenized_investments: 'tokenized investments',
+  wallets: 'wallets',
+  treasury: 'treasury records',
+  ledger: 'ledger entries',
+  withdrawals: 'withdrawals',
+  wire_transfers: 'wire transfers',
+  notifications: 'notifications',
+  visitors: 'visitors (visitor_sessions)',
+  landing_analytics: 'landing analytics events',
+  analytics_events: 'analytics events',
 };
 
 export type CountQueryResult = {
@@ -124,12 +186,24 @@ export function detectCountIntent(message: string): CountTarget[] {
   const normalized = readTrimmed(message).toLowerCase();
   if (!normalized) return [];
 
+  const mentionsMembers = /\bmembers?\b/.test(normalized);
+  const mentionsWaitlist = /\bwaitlist\b/.test(normalized);
   const mentionsInvestors = /\binvestors?\b/.test(normalized);
   const mentionsBuyers = /\bbuyers?\b/.test(normalized);
   const mentionsDeals = /\b(jv\s*deals?|joint\s*ventures?|deals?|projects?|properties|property)\b/.test(normalized);
+  const mentionsLenders = /\b(private\s+)?lenders?\b/.test(normalized);
+  const mentionsTokenized = /\btokeni[sz]ed\b/.test(normalized);
+  const mentionsWallets = /\bwallets?\b/.test(normalized);
+  const mentionsTreasury = /\btreasury\b/.test(normalized);
+  const mentionsLedger = /\bledger\b/.test(normalized);
+  const mentionsWithdrawals = /\bwithdrawals?\b/.test(normalized);
+  const mentionsWires = /\b(wire\s+transfers?|wires?|transfers?)\b/.test(normalized);
+  const mentionsNotifications = /\bnotifications?\b/.test(normalized);
+  const mentionsVisitors = /\bvisitors?\b/.test(normalized);
+  const mentionsAnalytics = /\banalytics?\b/.test(normalized);
 
   // Only treat as a count request when count language is present, OR a clear
-  // "do I have / are there ... investors/buyers/deals" phrasing is used.
+  // "do I have / are there ... X" phrasing is used.
   const hasCountLanguage =
     COUNT_QUESTION_REGEX.test(normalized) ||
     /\b(?:do\s+(?:i|we)\s+have|are\s+there|have\s+(?:i|we)\s+got)\b/.test(normalized);
@@ -137,9 +211,28 @@ export function detectCountIntent(message: string): CountTarget[] {
   if (!hasCountLanguage) return [];
 
   const targets: CountTarget[] = [];
+  if (mentionsMembers) targets.push('members');
+  if (mentionsWaitlist) targets.push('waitlist');
   if (mentionsInvestors) targets.push('investors');
   if (mentionsBuyers) targets.push('buyers');
   if (mentionsDeals) targets.push('jv_deals');
+  if (mentionsLenders) targets.push('private_lenders');
+  if (mentionsTokenized) targets.push('tokenized_investments');
+  if (mentionsWallets) targets.push('wallets');
+  if (mentionsTreasury) targets.push('treasury');
+  if (mentionsLedger) targets.push('ledger');
+  if (mentionsWithdrawals) targets.push('withdrawals');
+  if (mentionsWires) targets.push('wire_transfers');
+  if (mentionsNotifications) targets.push('notifications');
+  if (mentionsVisitors) targets.push('visitors');
+  if (mentionsAnalytics) { targets.push('visitors'); targets.push('landing_analytics'); targets.push('analytics_events'); }
+
+  // If the user asks "how many X do we have" without naming a specific entity,
+  // or asks a broad audit question, run the full set so the answer is complete.
+  if (targets.length === 0 && /\b(?:everything|all|full|audit|overview|summary|status\s+of)\b/.test(normalized)) {
+    return ['members', 'waitlist', 'investors', 'buyers', 'jv_deals', 'private_lenders', 'wallets', 'visitors'];
+  }
+
   return Array.from(new Set(targets));
 }
 
@@ -147,13 +240,14 @@ async function countOneTable(
   baseUrl: string,
   key: string,
   table: string,
+  selectColumn: string = 'id',
 ): Promise<{ count: number | null; httpStatus: number | null; notFound: boolean; error: string | null }> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
     // HEAD request with count=exact: PostgREST returns the exact total in the
     // content-range header without transferring any rows.
-    const response = await fetch(`${baseUrl}/rest/v1/${table}?select=id`, {
+    const response = await fetch(`${baseUrl}/rest/v1/${table}?select=${encodeURIComponent(selectColumn)}`, {
       method: 'HEAD',
       signal: controller.signal,
       headers: {
@@ -185,12 +279,13 @@ async function countOneTable(
 async function countTarget(baseUrl: string, key: string, target: CountTarget): Promise<CountQueryResult> {
   const queriedAt = new Date().toISOString();
   const candidates = TARGET_TABLES[target];
+  const selectColumn = TARGET_SELECT_COLUMN[target] ?? 'id';
   let lastHttpStatus: number | null = null;
   let allNotFound = true;
   let lastError: string | null = null;
 
   for (const table of candidates) {
-    const result = await countOneTable(baseUrl, key, table);
+    const result = await countOneTable(baseUrl, key, table, selectColumn);
     lastHttpStatus = result.httpStatus ?? lastHttpStatus;
     if (result.notFound) {
       lastError = result.error;
