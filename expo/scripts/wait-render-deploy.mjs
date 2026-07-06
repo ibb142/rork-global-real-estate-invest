@@ -1,76 +1,89 @@
-// Poll Render deploy status until the service is live on the target commit.
-// Run: node expo/scripts/wait-render-deploy.mjs <commit-sha>
+/**
+ * Poll a Render deploy until it reaches a terminal state.
+ */
 import { readFileSync } from 'node:fs';
 
-const ENV_PATH = new URL('../.env', import.meta.url).pathname;
-const rawEnv = readFileSync(ENV_PATH, 'utf8');
-const env = {};
-for (const line of rawEnv.split('\n')) {
-  const t = line.trim();
-  if (!t || t.startsWith('#') || !t.includes('=')) continue;
-  const i = t.indexOf('=');
-  env[t.slice(0, i).trim()] = t.slice(i + 1).trim().replace(/^["']|["']$/g, '');
+function loadEnv() {
+  const path = new URL('../../expo/.env', import.meta.url);
+  const text = readFileSync(path, 'utf8');
+  const env = {};
+  for (const line of text.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const idx = trimmed.indexOf('=');
+    if (idx === -1) continue;
+    env[trimmed.slice(0, idx)] = trimmed.slice(idx + 1).replace(/^['"]/, '').replace(/['"]$/, '');
+  }
+  return env;
 }
 
-const RENDER_KEY = env.RENDER_API_KEY || '';
-const SERVICE_ID = env.RENDER_SERVICE_ID || '';
-const targetCommit = process.argv[2] || '';
-
-if (!RENDER_KEY || !SERVICE_ID) {
-  console.error('Missing RENDER_API_KEY or RENDER_SERVICE_ID');
-  process.exit(1);
-}
+const env = loadEnv();
+const RENDER_API_KEY = env.RENDER_API_KEY ?? '';
+const SERVICE_ID = env.RENDER_SERVICE_ID ?? 'srv-d7t9ivreo5us73ftose0';
+const API_BASE = 'https://api.ivxholding.com';
 
 async function getLatestDeploy() {
-  const r = await fetch(`https://api.render.com/v1/services/${SERVICE_ID}/deploys?limit=1`, {
-    headers: { Authorization: `Bearer ${RENDER_KEY}`, Accept: 'application/json' },
+  const res = await fetch(`https://api.render.com/v1/services/${SERVICE_ID}/deploys?limit=1`, {
+    headers: { Accept: 'application/json', Authorization: `Bearer ${RENDER_API_KEY}` },
   });
-  const text = await r.text();
-  let j = {};
-  try { j = JSON.parse(text); } catch {}
-  const first = Array.isArray(j) ? j[0] : null;
-  const deploy = first?.deploy || first;
-  return deploy || null;
+  const data = await res.json().catch(() => []);
+  return Array.isArray(data) && data.length > 0 ? data[0] : null;
 }
 
-async function getBackendHealth() {
+async function getLiveCommit() {
   try {
-    const r = await fetch('https://api.ivxholding.com/health');
-    const text = await r.text();
-    let j = {};
-    try { j = JSON.parse(text); } catch {}
-    return { ok: r.ok, status: r.status, commit: j.commit, status2: j.status, bootTime: j.bootTime };
-  } catch (e) {
-    return { ok: false, error: String(e) };
+    const res = await fetch(`${API_BASE}/health`, { headers: { Accept: 'application/json' } });
+    const data = await res.json().catch(() => ({}));
+    return data.commit ?? null;
+  } catch {
+    return null;
   }
 }
 
 async function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return new Promise((r) => setTimeout(r, ms));
 }
 
 async function main() {
-  console.log(`Waiting for Render service ${SERVICE_ID} to deploy commit ${targetCommit || 'latest'}`);
-  const start = Date.now();
-  const deadline = start + 300_000; // 5 minutes
-  while (Date.now() < deadline) {
+  const targetCommit = process.argv[2];
+  if (!targetCommit) {
+    console.error('Usage: node wait-render-deploy.mjs <target-commit-sha>');
+    process.exit(1);
+  }
+
+  console.log(`Waiting for Render deploy to reach commit ${targetCommit.slice(0, 8)}...`);
+  let attempts = 0;
+  const maxAttempts = 60;
+
+  while (attempts < maxAttempts) {
+    attempts++;
     const deploy = await getLatestDeploy();
-    const health = await getBackendHealth();
-    console.log({
-      elapsed: Math.round((Date.now() - start) / 1000),
-      deployStatus: deploy?.status || null,
-      deployCommit: deploy?.commit?.id || null,
-      backendCommit: health.commit || null,
-      backendHealth: health.status2 || null,
-    });
-    if (health.ok && health.status2 === 'healthy' && (!targetCommit || health.commit === targetCommit)) {
-      console.log('Deploy verified live.');
+    const liveCommit = await getLiveCommit();
+    const deployStatus = deploy?.deploy?.status ?? deploy?.status ?? 'unknown';
+    const deployId = deploy?.id ?? deploy?.deploy?.id ?? 'unknown';
+
+    console.log(`[${attempts}] deploy=${deployId} status=${deployStatus} liveCommit=${liveCommit?.slice(0, 8) ?? 'unknown'}`);
+
+    if (liveCommit && liveCommit.startsWith(targetCommit)) {
+      console.log(JSON.stringify({ ok: true, liveCommit, deployId, deployStatus }, null, 2));
       process.exit(0);
     }
+
+    if (['live', 'deactivated', 'build_failed', 'canceled'].includes(deployStatus) && attempts > 5) {
+      if (deployStatus !== 'live') {
+        console.log(JSON.stringify({ ok: false, deployId, deployStatus, liveCommit }, null, 2));
+        process.exit(1);
+      }
+    }
+
     await sleep(15_000);
   }
-  console.error('Timeout waiting for deploy.');
+
+  console.log(JSON.stringify({ ok: false, reason: 'timeout waiting for deploy' }, null, 2));
   process.exit(1);
 }
 
-main().catch((e) => { console.error(e); process.exit(1); });
+main().catch((e) => {
+  console.error(e instanceof Error ? e.message : String(e));
+  process.exit(1);
+});

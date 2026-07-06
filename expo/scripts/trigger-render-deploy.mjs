@@ -1,43 +1,42 @@
-// Trigger a new deploy on Render for the IVX backend service.
-// Run: node expo/scripts/trigger-render-deploy.mjs <commit-sha>
+/**
+ * Trigger a Render deploy for the IVX backend service.
+ */
 import { readFileSync } from 'node:fs';
 
-const ENV_PATH = new URL('../.env', import.meta.url).pathname;
-const rawEnv = readFileSync(ENV_PATH, 'utf8');
-const env = {};
-for (const line of rawEnv.split('\n')) {
-  const t = line.trim();
-  if (!t || t.startsWith('#') || !t.includes('=')) continue;
-  const i = t.indexOf('=');
-  env[t.slice(0, i).trim()] = t.slice(i + 1).trim().replace(/^["']|["']$/g, '');
+function loadEnv() {
+  const path = new URL('../../expo/.env', import.meta.url);
+  const text = readFileSync(path, 'utf8');
+  const env = {};
+  for (const line of text.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const idx = trimmed.indexOf('=');
+    if (idx === -1) continue;
+    env[trimmed.slice(0, idx)] = trimmed.slice(idx + 1).replace(/^['"]/, '').replace(/['"]$/, '');
+  }
+  return env;
 }
 
-const RENDER_KEY = env.RENDER_API_KEY || '';
-const SERVICE_ID = env.RENDER_SERVICE_ID || '';
-const commitSha = process.argv[2] || '';
-
-if (!RENDER_KEY || !SERVICE_ID) {
-  console.error('Missing RENDER_API_KEY or RENDER_SERVICE_ID');
-  process.exit(1);
-}
+const env = loadEnv();
+const RENDER_API_KEY = env.RENDER_API_KEY ?? '';
+const SERVICE_ID = env.RENDER_SERVICE_ID ?? 'srv-d7t9ivreo5us73ftose0';
 
 async function main() {
-  const url = `https://api.render.com/v1/services/${SERVICE_ID}/deploys`;
-  const body = commitSha ? { commitId: commitSha } : {};
-  const r = await fetch(url, {
+  const res = await fetch(`https://api.render.com/v1/services/${SERVICE_ID}/deploys`, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${RENDER_KEY}`,
       Accept: 'application/json',
+      Authorization: `Bearer ${RENDER_API_KEY}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ clearCache: 'do_not_clear' }),
   });
-  const text = await r.text();
-  let j = {};
-  try { j = JSON.parse(text); } catch {}
-  console.log({ ok: r.ok, status: r.status, payload: j });
-  if (!r.ok) process.exit(1);
+  const data = await res.json().catch(() => ({}));
+  console.log(JSON.stringify({ status: res.status, data }, null, 2));
+  if (!res.ok) process.exit(1);
 }
 
-main().catch((e) => { console.error(e); process.exit(1); });
+main().catch((e) => {
+  console.error(e instanceof Error ? e.message : String(e));
+  process.exit(1);
+});
