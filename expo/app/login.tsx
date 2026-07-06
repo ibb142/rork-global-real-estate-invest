@@ -1668,7 +1668,7 @@ export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProp
   const hasVisibleSupabaseError = Boolean(attemptState.supabaseErrorMessage || attemptState.supabaseErrorCode || attemptState.supabaseErrorStatus || attemptState.supabaseErrorName);
   const loginTitle = effectiveOwnerMode ? 'Owner Login' : 'Welcome Back';
   const loginSubtitle = effectiveOwnerMode
-    ? 'Enter your approved owner email and tap Sign In. No password required — the backend verifies your owner identity and signs you in securely.'
+    ? 'Enter your approved owner email and password, then tap Sign In. Manual login is the default. SMS recovery is available if you lost your password.'
     : 'Use direct email/password sign-in first. Owner recovery stays available below if this device was already verified.';
   const signInButtonLabel = effectiveOwnerMode ? 'Sign In' : 'Sign In';
   const ownerAlternativeTitle = effectiveOwnerMode
@@ -1954,10 +1954,10 @@ export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProp
                 </View>
               </View>
 
-              {effectiveOwnerMode ? null : (
-                <View style={styles.fieldGroup}>
-                  <View style={styles.fieldLabelRow}>
-                    <Text style={styles.fieldLabel}>Password</Text>
+              <View style={styles.fieldGroup}>
+                <View style={styles.fieldLabelRow}>
+                  <Text style={styles.fieldLabel}>Password</Text>
+                  {!effectiveOwnerMode ? (
                     <TouchableOpacity
                       onPress={() => {
                         router.push({
@@ -1969,39 +1969,39 @@ export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProp
                     >
                       <Text style={styles.forgotLink}>{passwordResetLoading ? 'Sending…' : 'Forgot?'}</Text>
                     </TouchableOpacity>
-                  </View>
-                  <View style={styles.inputWrap}>
-                    <Lock size={18} color={Colors.textTertiary} />
-                    <TextInput
-                      style={styles.input}
-                      placeholder={'••••••••'}
-                      placeholderTextColor={Colors.inputPlaceholder}
-                      value={password}
-                      onChangeText={setPassword}
-                      secureTextEntry={!showPassword}
-                      autoComplete="password"
-                      returnKeyType="done"
-                      onSubmitEditing={handleLogin}
-                      testID="login-password"
-                    />
-                    <TouchableOpacity onPress={() => setShowPassword(!showPassword)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                      {showPassword
-                        ? <EyeOff size={18} color={Colors.textTertiary} />
-                        : <Eye size={18} color={Colors.textTertiary} />
-                      }
-                    </TouchableOpacity>
-                  </View>
+                  ) : null}
                 </View>
-              )}
+                <View style={styles.inputWrap}>
+                  <Lock size={18} color={Colors.textTertiary} />
+                  <TextInput
+                    style={styles.input}
+                    placeholder={'••••••••'}
+                    placeholderTextColor={Colors.inputPlaceholder}
+                    value={password}
+                    onChangeText={setPassword}
+                    secureTextEntry={!showPassword}
+                    autoComplete="password"
+                    returnKeyType="done"
+                    onSubmitEditing={handleLogin}
+                    testID="login-password"
+                  />
+                  <TouchableOpacity onPress={() => setShowPassword(!showPassword)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                    {showPassword
+                      ? <EyeOff size={18} color={Colors.textTertiary} />
+                      : <Eye size={18} color={Colors.textTertiary} />
+                    }
+                  </TouchableOpacity>
+                </View>
+              </View>
 
               <TouchableOpacity
-                style={[styles.signInBtn, (effectiveOwnerMode ? passwordlessOwnerLoading : isLoading) && styles.signInBtnDisabled]}
-                onPress={effectiveOwnerMode ? handleOwnerPasswordlessLogin : handleLogin}
-                disabled={effectiveOwnerMode ? passwordlessOwnerLoading : isLoading}
+                style={[styles.signInBtn, isLoading && styles.signInBtnDisabled]}
+                onPress={handleLogin}
+                disabled={isLoading}
                 activeOpacity={0.85}
                 testID="login-submit"
               >
-                {(effectiveOwnerMode ? passwordlessOwnerLoading : isLoading) ? (
+                {isLoading ? (
                   <ActivityIndicator color={Colors.black} />
                 ) : (
                   <>
@@ -2013,13 +2013,24 @@ export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProp
 
               {effectiveOwnerMode ? (
                 <TouchableOpacity
+                  style={styles.ownerSmsRecoveryButton}
+                  activeOpacity={0.84}
+                  onPress={() => router.push({ pathname: '/owner-sms-recovery', params: { email: normalizedEmail } } as Href)}
+                  testID="owner-login-sms-recovery"
+                >
+                  <Text style={styles.ownerSmsRecoveryButtonText}>Lost password? Recover via SMS</Text>
+                </TouchableOpacity>
+              ) : null}
+
+              {effectiveOwnerMode ? (
+                <TouchableOpacity
                   style={styles.ownerNormalSignInButton}
                   activeOpacity={0.84}
-                  onPress={handleLogin}
-                  disabled={isLoading}
-                  testID="owner-login-normal-signin"
+                  onPress={() => { void loginOwnerPasswordless(normalizedEmail); }}
+                  disabled={passwordlessOwnerLoading}
+                  testID="owner-login-passwordless"
                 >
-                  <Text style={styles.ownerNormalSignInButtonText}>Have a password? Sign in with email + password</Text>
+                  <Text style={styles.ownerNormalSignInButtonText}>Use passwordless owner sign-in</Text>
                 </TouchableOpacity>
               ) : null}
 
@@ -2723,6 +2734,22 @@ const styles = StyleSheet.create({
   },
   ownerNormalSignInButtonText: {
     color: Colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '800' as const,
+  },
+  ownerSmsRecoveryButton: {
+    marginTop: 10,
+    minHeight: 42,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.primary + '40',
+    backgroundColor: Colors.primary + '10',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+  ownerSmsRecoveryButtonText: {
+    color: Colors.primary,
     fontSize: 12,
     fontWeight: '800' as const,
   },

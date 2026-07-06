@@ -26,6 +26,7 @@
  */
 import { createClient, type SupabaseClient, type User } from '@supabase/supabase-js';
 import { sendSnsSms, isSnsSmsConfigured, generateRecoveryCode, resolveOwnerRecoveryPhone, normalizePhoneToE164 } from '../services/ivx-sns-sms';
+import { appendRecoveryAudit, hashToken, hashPhone, generateSecureRecoveryToken } from '../services/ivx-owner-recovery-audit';
 
 const RECOVERY_BACKEND_VERSION = 'V1-SNS';
 const CODE_TTL_MS = 5 * 60 * 1000; // 5 minutes
@@ -46,7 +47,8 @@ type RecoveryCodeRecord = {
 type RecoveryTokenRecord = {
   email: string;
   userId: string;
-  token: string;
+  /** SHA-256 hash of the raw token. The raw token is never stored. */
+  tokenHash: string;
   expiresAt: number;
   used: boolean;
 };
@@ -142,9 +144,7 @@ function assertRequestRateLimit(key: string): void {
 }
 
 function randomToken(): string {
-  const bytes = new Uint8Array(32);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
+  return generateSecureRecoveryToken();
 }
 
 function getServiceRoleKey(): string {
@@ -251,16 +251,44 @@ export async function handleOwnerRecoveryRequestRequest(request: Request): Promi
   if (request.method !== 'POST') {
     return json({ ok: false, message: 'Method not allowed.', backendVersion: RECOVERY_BACKEND_VERSION }, 405);
   }
+  const clientIp = readClientIp(request);
+  const userAgent = readTrimmed(request.headers.get('user-agent')) || 'unknown';
   try {
     const body = await request.json().catch(() => ({})) as { email?: unknown };
     const email = sanitizeEmail(body.email);
     if (!isValidEmail(email)) {
+      await appendRecoveryAudit({
+        action: 'blocked',
+        email: email || 'unknown',
+        phoneHash: hashPhone(resolveOwnerRecoveryPhone() || ''),
+        tokenHash: null,
+        ip: clientIp,
+        device: userAgent,
+        success: false,
+        expiresAt: null,
+        usedAt: null,
+        operator: 'system',
+        reason: 'Invalid email submitted to owner recovery request.',
+      });
       return json({ ok: false, message: 'A valid owner email is required.', backendVersion: RECOVERY_BACKEND_VERSION }, 400);
     }
     assertOwnerEmailAllowed(email);
-    assertRequestRateLimit(`${email}:${readClientIp(request)}`);
+    assertRequestRateLimit(`${email}:${clientIp}`);
 
     if (!isSnsSmsConfigured()) {
+      await appendRecoveryAudit({
+        action: 'blocked',
+        email,
+        phoneHash: hashPhone(resolveOwnerRecoveryPhone() || ''),
+        tokenHash: null,
+        ip: clientIp,
+        device: userAgent,
+        success: false,
+        expiresAt: null,
+        usedAt: null,
+        operator: 'system',
+        reason: 'AWS SNS SMS not configured; missing env vars.',
+      });
       return json({
         ok: false,
         message: 'AWS SNS SMS is not configured on the backend. Set AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION, and IVX_OWNER_RECOVERY_PHONE.',
@@ -285,6 +313,19 @@ export async function handleOwnerRecoveryRequestRequest(request: Request): Promi
 
     const normalizedPhone = normalizePhoneToE164(phone);
     if (!normalizedPhone) {
+      await appendRecoveryAudit({
+        action: 'blocked',
+        email,
+        phoneHash: hashPhone(phone || ''),
+        tokenHash: null,
+        ip: clientIp,
+        device: userAgent,
+        success: false,
+        expiresAt: null,
+        usedAt: null,
+        operator: 'system',
+        reason: 'No owner phone available for SMS recovery.',
+      });
       return json({
         ok: false,
         message: 'No owner phone is available for SMS recovery. Set IVX_OWNER_RECOVERY_PHONE on the backend.',
@@ -315,6 +356,20 @@ export async function handleOwnerRecoveryRequestRequest(request: Request): Promi
       snsStatus: smsResult.status,
       userId,
       timestamp: nowIso(),
+    });
+
+    await appendRecoveryAudit({
+      action: 'request',
+      email,
+      phoneHash: hashPhone(normalizedPhone),
+      tokenHash: null,
+      ip: clientIp,
+      device: userAgent,
+      success: smsResult.ok,
+      expiresAt: new Date(now + CODE_TTL_MS).toISOString(),
+      usedAt: null,
+      operator: 'owner',
+      reason: smsResult.ok ? 'Recovery code dispatched via AWS SNS.' : `SMS transport failed: ${smsResult.status}`,
     });
 
     if (!smsResult.ok) {
@@ -353,6 +408,19 @@ export async function handleOwnerRecoveryRequestRequest(request: Request): Promi
       : lower.includes('limited to the configured owner email') ? 403
         : lower.includes('not configured') || lower.includes('service-role') ? 503 : 500;
     console.log('[OwnerRecoverySMS] Request failed:', message);
+    await appendRecoveryAudit({
+      action: lower.includes('rate limited') ? 'rate_limited' : 'blocked',
+      email: (typeof (request.json() as unknown) === 'object' ? (request.json() as { email?: string }).email : '') || 'unknown',
+      phoneHash: hashPhone(resolveOwnerRecoveryPhone() || ''),
+      tokenHash: null,
+      ip: clientIp,
+      device: userAgent,
+      success: false,
+      expiresAt: null,
+      usedAt: null,
+      operator: 'system',
+      reason: message,
+    }).catch(() => {});
     return json({ ok: false, message, backendVersion: RECOVERY_BACKEND_VERSION, secretValuesReturned: false, timestamp: nowIso() }, status);
   }
 }
@@ -370,6 +438,8 @@ export async function handleOwnerRecoveryVerifyRequest(request: Request): Promis
   if (request.method !== 'POST') {
     return json({ ok: false, message: 'Method not allowed.', backendVersion: RECOVERY_BACKEND_VERSION }, 405);
   }
+  const clientIp = readClientIp(request);
+  const userAgent = readTrimmed(request.headers.get('user-agent')) || 'unknown';
   try {
     const body = await request.json().catch(() => ({})) as { email?: unknown; code?: unknown; newPassword?: unknown };
     const email = sanitizeEmail(body.email);
@@ -377,21 +447,87 @@ export async function handleOwnerRecoveryVerifyRequest(request: Request): Promis
     const newPassword = readTrimmed(body.newPassword);
 
     if (!isValidEmail(email) || !/^\d{6}$/.test(code)) {
+      await appendRecoveryAudit({
+        action: 'verify_fail',
+        email: email || 'unknown',
+        phoneHash: hashPhone(resolveOwnerRecoveryPhone() || ''),
+        tokenHash: null,
+        ip: clientIp,
+        device: userAgent,
+        success: false,
+        expiresAt: null,
+        usedAt: null,
+        operator: 'system',
+        reason: 'Invalid email or code format submitted to verify.',
+      });
       return json({ ok: false, message: 'Owner email and 6-digit code are required.', backendVersion: RECOVERY_BACKEND_VERSION }, 400);
     }
     assertOwnerEmailAllowed(email);
 
     const record = recoveryCodes.get(email);
     if (!record) {
+      await appendRecoveryAudit({
+        action: 'verify_fail',
+        email,
+        phoneHash: hashPhone(resolveOwnerRecoveryPhone() || ''),
+        tokenHash: null,
+        ip: clientIp,
+        device: userAgent,
+        success: false,
+        expiresAt: null,
+        usedAt: null,
+        operator: 'system',
+        reason: 'No active recovery code found for this email.',
+      });
       return json({ ok: false, message: 'No active recovery code for this email. Request a new code.', backendVersion: RECOVERY_BACKEND_VERSION }, 404);
     }
     if (Date.now() > record.expiresAt) {
       recoveryCodes.delete(email);
+      await appendRecoveryAudit({
+        action: 'verify_fail',
+        email,
+        phoneHash: hashPhone(record.phone),
+        tokenHash: null,
+        ip: clientIp,
+        device: userAgent,
+        success: false,
+        expiresAt: new Date(record.expiresAt).toISOString(),
+        usedAt: null,
+        operator: 'system',
+        reason: 'Recovery code expired before verify.',
+      });
       return json({ ok: false, message: 'Recovery code expired. Request a new code.', backendVersion: RECOVERY_BACKEND_VERSION }, 410);
     }
     record.attempts += 1;
+    await appendRecoveryAudit({
+      action: 'verify_attempt',
+      email,
+      phoneHash: hashPhone(record.phone),
+      tokenHash: null,
+      ip: clientIp,
+      device: userAgent,
+      success: false,
+      expiresAt: new Date(record.expiresAt).toISOString(),
+      usedAt: null,
+      operator: 'owner',
+      reason: `Recovery code verify attempt ${record.attempts}/${MAX_VERIFY_ATTEMPTS}.`,
+      attemptCount: record.attempts,
+    });
     if (record.attempts > MAX_VERIFY_ATTEMPTS) {
       recoveryCodes.delete(email);
+      await appendRecoveryAudit({
+        action: 'blocked',
+        email,
+        phoneHash: hashPhone(record.phone),
+        tokenHash: null,
+        ip: clientIp,
+        device: userAgent,
+        success: false,
+        expiresAt: new Date(record.expiresAt).toISOString(),
+        usedAt: null,
+        operator: 'system',
+        reason: 'Too many incorrect recovery code attempts.',
+      });
       return json({ ok: false, message: 'Too many incorrect attempts. Request a new code.', backendVersion: RECOVERY_BACKEND_VERSION }, 429);
     }
     if (record.code !== code) {
@@ -411,6 +547,19 @@ export async function handleOwnerRecoveryVerifyRequest(request: Request): Promis
     if (newPassword) {
       const passwordError = validatePassword(newPassword);
       if (passwordError) {
+        await appendRecoveryAudit({
+          action: 'verify_fail',
+          email,
+          phoneHash: hashPhone(record.phone),
+          tokenHash: null,
+          ip: clientIp,
+          device: userAgent,
+          success: false,
+          expiresAt: null,
+          usedAt: null,
+          operator: 'system',
+          reason: `Password validation failed: ${passwordError}`,
+        });
         return json({ ok: false, message: passwordError, backendVersion: RECOVERY_BACKEND_VERSION }, 400);
       }
       try {
@@ -425,9 +574,35 @@ export async function handleOwnerRecoveryVerifyRequest(request: Request): Promis
             app_metadata: { ...(authUser.app_metadata ?? {}), accountType: 'owner', role: 'owner', requestedRole: 'owner' },
           });
           if (error) {
+            await appendRecoveryAudit({
+              action: 'verify_fail',
+              email,
+              phoneHash: hashPhone(record.phone),
+              tokenHash: null,
+              ip: clientIp,
+              device: userAgent,
+              success: false,
+              expiresAt: null,
+              usedAt: null,
+              operator: 'system',
+              reason: `Password repair failed after code verification: ${error.message}`,
+            });
             return json({ ok: false, message: `Code verified but password repair failed: ${error.message}`, backendVersion: RECOVERY_BACKEND_VERSION }, 502);
           }
           passwordRepaired = true;
+          await appendRecoveryAudit({
+            action: 'password_repair',
+            email,
+            phoneHash: hashPhone(record.phone),
+            tokenHash: null,
+            ip: clientIp,
+            device: userAgent,
+            success: true,
+            expiresAt: null,
+            usedAt: null,
+            operator: 'owner',
+            reason: 'Owner password repaired via verified recovery code.',
+          });
         } else {
           // No auth user yet — create one with the recovery password.
           const { data, error } = await client.auth.admin.createUser({
@@ -439,24 +614,68 @@ export async function handleOwnerRecoveryVerifyRequest(request: Request): Promis
             app_metadata: { accountType: 'owner', requestedRole: 'owner', role: 'owner' },
           });
           if (error || !data.user) {
+            await appendRecoveryAudit({
+              action: 'verify_fail',
+              email,
+              phoneHash: hashPhone(record.phone),
+              tokenHash: null,
+              ip: clientIp,
+              device: userAgent,
+              success: false,
+              expiresAt: null,
+              usedAt: null,
+              operator: 'system',
+              reason: `Owner auth user creation failed after code verification: ${error?.message ?? 'unknown'}`,
+            });
             return json({ ok: false, message: `Code verified but owner create failed: ${error?.message ?? 'unknown'}`, backendVersion: RECOVERY_BACKEND_VERSION }, 502);
           }
           userId = data.user.id;
           passwordRepaired = true;
+          await appendRecoveryAudit({
+            action: 'password_repair',
+            email,
+            phoneHash: hashPhone(record.phone),
+            tokenHash: null,
+            ip: clientIp,
+            device: userAgent,
+            success: true,
+            expiresAt: null,
+            usedAt: null,
+            operator: 'owner',
+            reason: 'Owner auth user created via verified recovery code.',
+          });
         }
       } catch (err) {
         console.log('[OwnerRecoverySMS] Password repair skipped:', err instanceof Error ? err.message : err);
       }
     }
 
-    // Issue a single-use recovery token.
-    const token = randomToken();
-    recoveryTokens.set(token, {
+    // Issue a single-use recovery token. Store the hash only; return the raw token once.
+    const rawToken = randomToken();
+    const tokenHash = hashToken(rawToken);
+    const expiresAt = Date.now() + RECOVERY_TOKEN_TTL_MS;
+    recoveryTokens.set(tokenHash, {
       email,
       userId: userId ?? '',
-      token,
-      expiresAt: Date.now() + RECOVERY_TOKEN_TTL_MS,
+      tokenHash,
+      expiresAt,
       used: false,
+    });
+
+    await appendRecoveryAudit({
+      action: 'verify_success',
+      email,
+      phoneHash: hashPhone(record.phone),
+      tokenHash,
+      ip: clientIp,
+      device: userAgent,
+      success: true,
+      expiresAt: new Date(expiresAt).toISOString(),
+      usedAt: null,
+      operator: 'owner',
+      reason: passwordRepaired
+        ? 'Recovery code verified and owner password repaired; recovery token issued.'
+        : 'Recovery code verified; recovery token issued for profile/wallet repair.',
     });
 
     return json({
@@ -465,7 +684,7 @@ export async function handleOwnerRecoveryVerifyRequest(request: Request): Promis
         ? 'Recovery code verified. Owner password was reset to the submitted value. Sign in now with the new password.'
         : 'Recovery code verified. Use the recoveryToken with POST /api/ivx/owner-registration/repair to restore profile/wallet.',
       backendVersion: RECOVERY_BACKEND_VERSION,
-      recoveryToken: token,
+      recoveryToken: rawToken,
       recoveryTokenTtlSeconds: Math.floor(RECOVERY_TOKEN_TTL_MS / 1000),
       passwordRepaired,
       phoneMasked: maskPhone(record.phone),
@@ -478,6 +697,19 @@ export async function handleOwnerRecoveryVerifyRequest(request: Request): Promis
     const status = lower.includes('limited to the configured owner email') ? 403
       : lower.includes('not configured') || lower.includes('service-role') ? 503 : 500;
     console.log('[OwnerRecoverySMS] Verify failed:', message);
+    await appendRecoveryAudit({
+      action: 'verify_fail',
+      email: 'unknown',
+      phoneHash: hashPhone(resolveOwnerRecoveryPhone() || ''),
+      tokenHash: null,
+      ip: clientIp,
+      device: userAgent,
+      success: false,
+      expiresAt: null,
+      usedAt: null,
+      operator: 'system',
+      reason: message,
+    }).catch(() => {});
     return json({ ok: false, message, backendVersion: RECOVERY_BACKEND_VERSION, secretValuesReturned: false, timestamp: nowIso() }, status);
   }
 }
@@ -493,20 +725,66 @@ export async function handleOwnerRecoveryResolveTokenRequest(request: Request): 
   if (request.method !== 'GET') {
     return json({ ok: false, message: 'Method not allowed.', backendVersion: RECOVERY_BACKEND_VERSION }, 405);
   }
+  const clientIp = readClientIp(request);
+  const userAgent = readTrimmed(request.headers.get('user-agent')) || 'unknown';
   const token = readBearerToken(request);
   if (!token) {
+    await appendRecoveryAudit({
+      action: 'blocked',
+      email: 'unknown',
+      phoneHash: hashPhone(resolveOwnerRecoveryPhone() || ''),
+      tokenHash: null,
+      ip: clientIp,
+      device: userAgent,
+      success: false,
+      expiresAt: null,
+      usedAt: null,
+      operator: 'system',
+      reason: 'Recovery token missing from Authorization header.',
+    }).catch(() => {});
     return json({ ok: false, message: 'Recovery token is required.', backendVersion: RECOVERY_BACKEND_VERSION }, 401);
   }
-  const record = recoveryTokens.get(token);
+  const tokenHash = hashToken(token);
+  const record = recoveryTokens.get(tokenHash);
   if (!record || record.used || Date.now() > record.expiresAt) {
-    if (record) recoveryTokens.delete(token);
+    if (record) recoveryTokens.delete(tokenHash);
+    await appendRecoveryAudit({
+      action: 'blocked',
+      email: record?.email ?? 'unknown',
+      phoneHash: hashPhone(resolveOwnerRecoveryPhone() || ''),
+      tokenHash,
+      ip: clientIp,
+      device: userAgent,
+      success: false,
+      expiresAt: record ? new Date(record.expiresAt).toISOString() : null,
+      usedAt: record?.used ? new Date().toISOString() : null,
+      operator: 'system',
+      reason: !record ? 'Recovery token not found (hash mismatch).' : record.used ? 'Recovery token already used.' : 'Recovery token expired.',
+    }).catch(() => {});
     return json({ ok: false, message: 'Recovery token is invalid or expired.', backendVersion: RECOVERY_BACKEND_VERSION }, 401);
   }
+  record.used = true;
+  recoveryTokens.delete(tokenHash);
+  const usedAt = new Date().toISOString();
+  await appendRecoveryAudit({
+    action: 'resolve_token',
+    email: record.email,
+    phoneHash: hashPhone(resolveOwnerRecoveryPhone() || ''),
+    tokenHash,
+    ip: clientIp,
+    device: userAgent,
+    success: true,
+    expiresAt: new Date(record.expiresAt).toISOString(),
+    usedAt,
+    operator: 'owner',
+    reason: 'Recovery token resolved successfully and marked as used.',
+  }).catch(() => {});
   return json({
     ok: true,
     email: record.email,
     userId: record.userId,
     expiresAt: new Date(record.expiresAt).toISOString(),
+    usedAt,
     backendVersion: RECOVERY_BACKEND_VERSION,
     secretValuesReturned: false,
     timestamp: nowIso(),
