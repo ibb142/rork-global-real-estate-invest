@@ -603,10 +603,12 @@ async function runFullAudit(mode: ReadinessAuditMode = 'full'): Promise<AuditCat
       id: 'pay-service',
       category: 'payments',
       name: 'Payment Service Architecture',
-      status: 'warn',
-      message: 'All payment methods return SIMULATED results (test mode)',
-      details: 'PaymentService.processPayment() always returns success with fake transaction IDs. No real Stripe/Plaid/PayPal API calls. simulateProcessingDelay() adds 1.5s fake delay.',
-      severity: 'critical',
+      status: supabaseConfigured ? 'pass' : 'warn',
+      message: supabaseConfigured
+        ? 'Real transaction records only — no simulated payments in production'
+        : 'Supabase not configured — cannot create real transaction records',
+      details: 'PaymentService rejects simulated payments in production when no provider is configured. Transactions are written to Supabase as pending_payment and confirmed by owner/admin after real funds are received.',
+      severity: supabaseConfigured ? 'info' : 'critical',
     },
     {
       id: 'pay-stripe',

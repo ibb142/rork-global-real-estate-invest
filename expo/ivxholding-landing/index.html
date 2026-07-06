@@ -6682,9 +6682,11 @@
         apiBase = (window.__IVX_BACKEND_URL || '').replace(/\/+$/, '');
       }
       if (apiBase && apiBase.indexOf('http') === 0) {
+        var syncHeaders = { 'Content-Type': 'application/json' };
+        if (_investState.userToken) syncHeaders['Authorization'] = 'Bearer ' + _investState.userToken;
         var syncResp = await fetch(apiBase + '/api/ivx/payments/landing-intent', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: syncHeaders,
           body: JSON.stringify({
             dealId: _investState.dealId,
             dealTitle: _investState.dealTitle,
