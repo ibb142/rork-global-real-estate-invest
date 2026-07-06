@@ -159,8 +159,8 @@ export default function ProfileScreen() {
       router.push('/admin/ivx-developer-workspace' as any);
       return;
     }
-    console.log(`[Profile] Owner Login (${source}) tapped -> /login?ownerMode=1`);
-    router.push({ pathname: '/login', params: { ownerMode: '1' } } as any);
+    console.log(`[Profile] Owner Login (${source}) tapped -> /owner-login`);
+    router.push('/owner-login' as any);
   };
 
   // ── OWNER LOGIN DEVICE FIX v5 ─ diagnostic build stamp ───────────────────

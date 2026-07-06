@@ -1099,7 +1099,7 @@ export default function LandingScreen() {
                   <>
                     <TouchableOpacity
                       style={[styles.ownerConsoleLink, styles.ownerConsoleLinkReady]}
-                      onPress={() => router.push({ pathname: '/login', params: { ownerMode: '1' } } as any)}
+                      onPress={() => router.push('/owner-login' as any)}
                       activeOpacity={0.7}
                       testID="landing-owner-login"
                     >
@@ -1147,7 +1147,7 @@ export default function LandingScreen() {
                         styles.ownerConsoleLink,
                         (ownerAccessAudit?.eligible || isOwnerIPAccess || (isAuthenticated && isAdmin)) && styles.ownerConsoleLinkReady,
                       ]}
-                      onPress={() => router.push({ pathname: '/login', params: { ownerMode: '1' } } as any)}
+                      onPress={() => router.push('/owner-login' as any)}
                       activeOpacity={0.7}
                       testID="landing-owner-login"
                     >
@@ -1330,7 +1330,7 @@ export default function LandingScreen() {
                 style={styles.openOwnerLoginBtn}
                 onPress={() => {
                   try { landingTracker.trackCtaClick('open_owner_login'); } catch {}
-                  router.push({ pathname: '/login', params: { ownerMode: '1' } } as any);
+                  router.push('/owner-login' as any);
                 }}
                 activeOpacity={0.85}
                 testID="open-owner-login"
