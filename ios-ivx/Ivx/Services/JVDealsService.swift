@@ -4,7 +4,9 @@
 //
 //  Reads published deals from the SAME production Supabase table
 //  (`jv_deals`) that the Android app renders (expo/lib/jv-storage.ts),
-//  so both apps show identical live data end to end.
+//  so both apps show identical live data end to end — including the full
+//  professional detail set (description, partner info, legal terms, fees,
+//  photos gallery, timeline).
 //
 
 import Foundation
@@ -43,9 +45,11 @@ struct JVDealsService {
         return fallbackAnonKey
     }
 
-    /// Fetches all published JV deals, newest first — same query the Android app runs.
+    /// Fetches all published JV deals with full professional details, newest first.
+    /// Same table the Android app queries — now includes description, partner info,
+    /// legal terms, fees, timeline, and the complete photos array.
     static func fetchPublishedDeals() async throws -> [JVDeal] {
-        let select = "id,title,project_name,type,status,min_investment,expected_roi,profit_split,city,state,property_address,first_photo:photos-%3E0"
+        let select = "id,title,project_name,type,status,description,min_investment,expected_roi,total_investment,estimated_value,profit_split,city,state,country,property_address,property_type,lot_size,lot_size_unit,zoning,term_months,distribution_frequency,exit_strategy,start_date,end_date,governing_law,dispute_resolution,management_fee,performance_fee,minimum_hold_period,partner_name,partner_email,partner_phone,partner_type,photos,published"
         let urlString = "\(baseURL)/rest/v1/jv_deals?select=\(select)&published=eq.true&order=created_at.desc&limit=50"
         guard let url = URL(string: urlString) else {
             throw JVDealsServiceError.badURL

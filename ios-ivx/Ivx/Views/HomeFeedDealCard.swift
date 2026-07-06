@@ -12,6 +12,7 @@ import SwiftUI
 
 struct HomeFeedDealCard: View {
     let deal: HomeFeedDeal
+    var onTapDetail: (() -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -43,6 +44,10 @@ struct HomeFeedDealCard: View {
             RoundedRectangle(cornerRadius: 14)
                 .stroke(Color.ivxBorder, lineWidth: 1)
         )
+        .contentShape(Rectangle())
+        .onTapGesture {
+            onTapDetail?()
+        }
     }
 
     private var badgeRow: some View {
@@ -102,7 +107,9 @@ struct HomeFeedDealCard: View {
 
     private var ctaRow: some View {
         HStack(spacing: 8) {
-            Link(destination: dealURL) {
+            Button {
+                onTapDetail?()
+            } label: {
                 Text("View Deal")
                     .font(.subheadline)
                     .fontWeight(.semibold)
@@ -112,6 +119,8 @@ struct HomeFeedDealCard: View {
                     .background(Color.ivxSurfaceTertiary)
                     .clipShape(.rect(cornerRadius: 8))
             }
+            .buttonStyle(.plain)
+
             Link(destination: URL(string: "https://chat.ivxholding.com/investor")!) {
                 Text("Invest Now")
                     .font(.subheadline)

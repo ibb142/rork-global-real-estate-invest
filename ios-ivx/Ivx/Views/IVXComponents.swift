@@ -120,24 +120,29 @@ struct DealPhotoView: View {
 }
 
 /// JV deal card — mirrors Android's JVPropertyCard (photo, badge, name,
-/// location, ROI row, Details + Invest Now buttons).
+/// location, ROI row, investment option icons, Details + Invest Now buttons).
+/// Tapping the card opens the full professional detail view.
 struct JVDealCard: View {
     let deal: JVDeal
     var width: CGFloat? = nil
+    var onTapDetail: (() -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             DealPhotoView(photo: deal.firstPhoto, height: 150)
 
             VStack(alignment: .leading, spacing: 6) {
-                Text(deal.typeLabel.uppercased())
-                    .font(.caption2)
-                    .fontWeight(.bold)
-                    .foregroundStyle(Color.ivxGold)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(Color.ivxGold.opacity(0.12))
-                    .clipShape(.rect(cornerRadius: 4))
+                HStack(spacing: 6) {
+                    Text(deal.typeLabel.uppercased())
+                        .font(.caption2)
+                        .fontWeight(.bold)
+                        .foregroundStyle(Color.ivxGold)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Color.ivxGold.opacity(0.12))
+                        .clipShape(.rect(cornerRadius: 4))
+                    Spacer()
+                }
 
                 Text(deal.displayName)
                     .font(.headline)
@@ -163,12 +168,12 @@ struct JVDealCard: View {
                                 .foregroundStyle(Color.ivxGreen)
                         }
                     }
-                    if let min = deal.minInvestment, min > 0 {
+                    if let total = deal.totalInvestment, total > 0 {
                         VStack(alignment: .leading, spacing: 1) {
-                            Text("Min Invest")
+                            Text("Total")
                                 .font(.caption2)
                                 .foregroundStyle(Color.ivxTextTertiary)
-                            Text("$\(min.formatted(.number.precision(.fractionLength(0))))")
+                            Text(compactCurrency(total))
                                 .font(.subheadline)
                                 .fontWeight(.bold)
                                 .foregroundStyle(.white)
@@ -178,8 +183,31 @@ struct JVDealCard: View {
                 }
                 .padding(.top, 2)
 
+                // Investment option icons — tokenized / JV / buyer
                 HStack(spacing: 8) {
-                    Link(destination: URL(string: "https://ivxholding.com/properties")!) {
+                    ForEach(deal.investmentOptions) { option in
+                        HStack(spacing: 3) {
+                            Image(systemName: option.icon)
+                                .font(.system(size: 10))
+                                .foregroundStyle(option.tint.color)
+                            Text(option.label)
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(.white.opacity(0.85))
+                        }
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 4)
+                        .background(option.tint.color.opacity(0.1))
+                        .clipShape(Capsule())
+                        .overlay(Capsule().stroke(option.tint.color.opacity(0.2), lineWidth: 0.5))
+                    }
+                    Spacer()
+                }
+                .padding(.top, 2)
+
+                HStack(spacing: 8) {
+                    Button {
+                        onTapDetail?()
+                    } label: {
                         Text("Details")
                             .font(.subheadline)
                             .fontWeight(.semibold)
@@ -189,6 +217,8 @@ struct JVDealCard: View {
                             .background(Color.ivxSurfaceTertiary)
                             .clipShape(.rect(cornerRadius: 8))
                     }
+                    .buttonStyle(.plain)
+
                     Link(destination: URL(string: "https://chat.ivxholding.com/investor")!) {
                         Text("Invest Now")
                             .font(.subheadline)
@@ -211,6 +241,22 @@ struct JVDealCard: View {
             RoundedRectangle(cornerRadius: 14)
                 .stroke(Color.ivxBorder, lineWidth: 1)
         )
+        .contentShape(Rectangle())
+        .onTapGesture {
+            onTapDetail?()
+        }
+    }
+
+    private func compactCurrency(_ value: Double) -> String {
+        if value >= 1_000_000 {
+            let millions = value / 1_000_000
+            return "$\(millions.formatted(.number.precision(.fractionLength(0...1))))M"
+        }
+        if value >= 1_000 {
+            let thousands = value / 1_000
+            return "$\(thousands.formatted(.number.precision(.fractionLength(0...1))))K"
+        }
+        return "$\(value.formatted(.number.precision(.fractionLength(0))))"
     }
 }
 

@@ -16,6 +16,7 @@ struct HomeView: View {
     @State private var liveInvestorTotal: Int?
     @State private var liveDealTotal: Int?
     @State private var showProjectReels = false
+    @State private var selectedDeal: JVDeal?
 
     var body: some View {
         NavigationStack {
@@ -44,6 +45,9 @@ struct HomeView: View {
             .toolbar(.hidden, for: .navigationBar)
             .fullScreenCover(isPresented: $showProjectReels) {
                 ProjectReelsView()
+            }
+            .navigationDestination(item: $selectedDeal) { deal in
+                JVDealDetailView(deal: deal)
             }
         }
     }
@@ -192,7 +196,9 @@ struct HomeView: View {
                         if block.isVideo, let video = block.video {
                             DealVideoCard(video: video)
                         } else if block.isDeal, let deal = block.deal {
-                            HomeFeedDealCard(deal: deal)
+                            HomeFeedDealCard(deal: deal) {
+                                openDealById(deal.id)
+                            }
                         }
                     }
                 }
@@ -220,7 +226,9 @@ struct HomeView: View {
         } else {
             LazyVStack(spacing: 14) {
                 ForEach(dealsModel.deals) { deal in
-                    JVDealCard(deal: deal)
+                    JVDealCard(deal: deal) {
+                        selectedDeal = deal
+                    }
                 }
             }
             .padding(.horizontal)
@@ -245,6 +253,13 @@ struct HomeView: View {
             .foregroundStyle(Color.ivxTextTertiary)
             .frame(maxWidth: .infinity)
             .padding(.top, 8)
+    }
+
+    /// Match a home-feed deal id to a full JVDeal and open the detail view.
+    private func openDealById(_ id: String) {
+        if let match = dealsModel.deals.first(where: { $0.id == id }) {
+            selectedDeal = match
+        }
     }
 
     private func loadLiveStats() async {

@@ -11,6 +11,7 @@ import SwiftUI
 
 struct InvestView: View {
     @State private var dealsModel = JVDealsViewModel()
+    @State private var selectedDeal: JVDeal?
 
     var body: some View {
         NavigationStack {
@@ -52,6 +53,9 @@ struct InvestView: View {
             .refreshable { await dealsModel.load() }
             .task { await dealsModel.load() }
             .toolbar(.hidden, for: .navigationBar)
+            .navigationDestination(item: $selectedDeal) { deal in
+                JVDealDetailView(deal: deal)
+            }
         }
     }
 
@@ -121,7 +125,9 @@ struct InvestView: View {
             } else {
                 VStack(spacing: 12) {
                     ForEach(dealsModel.deals) { deal in
-                        JVDealCard(deal: deal)
+                        JVDealCard(deal: deal) {
+                            selectedDeal = deal
+                        }
                     }
                 }
                 .padding(.horizontal)
