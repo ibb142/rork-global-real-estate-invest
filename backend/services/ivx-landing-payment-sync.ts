@@ -154,7 +154,25 @@ export async function createLandingPaymentTransaction(
 
   const supabase = getSupabaseAdmin();
 
-  const userId = input.investorId || '00000000-0000-0000-0000-000000000000';
+  // Resolve the canonical user_id. The landing page authenticates the investor,
+  // so a valid investorId is normally present. If it is missing, fall back to an
+  // auth.users lookup by email. A real transaction must be tied to a real user.
+  let userId = input.investorId || '';
+  if (!userId || !/^[0-9a-f-]{36}$/i.test(userId)) {
+    try {
+      const { data: users, error: usersError } = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 });
+      if (!usersError && users?.users) {
+        const match = users.users.find((u) => u.email?.toLowerCase() === input.investorEmail.toLowerCase());
+        if (match?.id) userId = match.id;
+      }
+    } catch (lookupErr) {
+      console.warn('[LandingPaymentSync] User lookup by email failed:', (lookupErr as Error)?.message);
+    }
+  }
+  if (!userId) {
+    return { ...resultBase, error: 'Investor must be authenticated before creating a real payment transaction.' };
+  }
+
   const description = `${paymentMethodLabel(input.paymentMethod)} — ${input.dealTitle || 'Landing Deal'}`;
 
   const auditPayload = {
@@ -181,10 +199,9 @@ export async function createLandingPaymentTransaction(
       user_id: userId,
       type: 'buy',
       amount: input.amount,
-      currency: 'USD',
-      status: 'pending_payment',
+      status: 'pending',
       description,
-      property_id: input.dealId,
+      property_id: /^[0-9a-f-]{36}$/i.test(input.dealId) ? input.dealId : null,
       property_name: input.dealTitle,
       created_at: nowIso(),
     });
@@ -196,25 +213,24 @@ export async function createLandingPaymentTransaction(
     }
 
     // 2. Insert the landing_investments record linked to the transaction.
+    // Use the exact column set the existing landing page inserts so we stay
+    // compatible with the live Supabase schema. Extra columns are omitted to
+    // avoid "column not found" schema-cache errors.
     const { error: liError } = await supabase.from('landing_investments').insert({
       id: landingInvestmentId,
+      intent_id: intentId,
       deal_id: input.dealId,
       deal_title: input.dealTitle,
-      investor_id: userId,
-      investor_email: input.investorEmail.toLowerCase(),
-      investor_name: input.investorName || '',
       investment_type: input.investmentType,
       amount: input.amount,
-      expected_roi: input.expectedRoi ?? 0,
       ownership_pct: input.ownershipPct ?? 0,
+      expected_roi: input.expectedRoi ?? 0,
       payment_method: paymentMethodLabel(input.paymentMethod),
+      investor_email: input.investorEmail.toLowerCase(),
+      investor_id: userId,
       status: 'pending_payment',
       terms_accepted: input.termsAccepted,
-      transaction_id: transactionId,
-      intent_id: intentId,
       source: input.source || 'landing_page',
-      ip_address: input.ip || '',
-      user_agent: input.userAgent || '',
       created_at: nowIso(),
     });
 
