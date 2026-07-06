@@ -33,38 +33,29 @@ export const IVX_SENIOR_DEVELOPER_NARRATIVE_GATE_MARKER =
  * free-text patch/dev narrative — it must return real proof or BLOCKED.
  */
 const SENIOR_DEVELOPER_PROMPT_PATTERNS: RegExp[] = [
-  /\bsenior developer\b/i,
+  // Only route to proof mode when the owner is explicitly asking for PROOF of
+  // prior execution (recent patches, files changed, what changed, commit/deploy
+  // evidence). General technical chat ("senior developer", "fix", "audit", "github",
+  // "render", "verify") is now handled by the senior-developer brain path.
   /\brecent patches\b/i,
-  /\bpatches?\b/i,
+  /\brecent senior developer\b/i,
   /\bworkspace inspection\b/i,
   /\bfiles? changed\b/i,
   /\bwhat changed\b/i,
-  /\bdeploy(?:ed|ment|s)?\b/i,
-  /\bqa\b/i,
-  /\bquality assurance\b/i,
-  /\bfix(?:es|ed)?\b/i,
-  /\bbuild(?:s|ing)?\b/i,
-  /\blogs?\b/i,
-  /\bverification\b/i,
-  /\bverify\b/i,
-  /\bcommit(?:s|ted)?\b/i,
-  // Deployment / GitHub / Render / verification surface — every path the owner
-  // listed must route to real proof or BLOCKED, never a free-text narrative.
-  /\bgithub\b/i,
-  /\brender\b/i,
-  /\brollback\b/i,
-  /\bredeploy\b/i,
-  /\bpipeline\b/i,
-  /\bci\/?cd\b/i,
-  /\bpull request\b/i,
-  /\bmerged?\b/i,
-  /\brelease[ds]?\b/i,
+  /\bwhat did you change\b/i,
+  /\bwhat did you deploy\b/i,
+  /\bwhat did you commit\b/i,
+  /\bshow me the proof\b/i,
+  /\bshow me the commit\b/i,
+  /\bshow me the deploy\b/i,
   /\bcommit_?sha\b/i,
   /\blive_?commit\b/i,
   /\bcommit_?match\b/i,
+  /\brender\s+deploy(?:ment)?\s+id\b/i,
   /\bdeploy_?id\b/i,
-  /\/version\b/i,
-  /\bproduction\b/i,
+  /\bdeploy\s+proof\b/i,
+  /\bpatch\s+proof\b/i,
+  /\bcode\s+proof\b/i,
 ];
 
 /**

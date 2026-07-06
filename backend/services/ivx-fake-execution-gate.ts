@@ -92,23 +92,18 @@ const CONFESSION_APOLOGY_SECRETARY_MARKERS: { marker: RegExp; label: string }[] 
 ];
 
 const DEVELOPER_REQUEST_PATTERNS: RegExp[] = [
+  // Immediate, owner-gated execution commands only. General technical conversation
+  // ("audit my code", "fix the chat bug", "explain this file", "senior developer")
+  // is now handled by the senior-developer brain path, not blocked here.
   /\bdeploy\s+now\b/i,
+  /\bdeploy\s+live\s+now\b/i,
+  /\bpush\s+to\s+production\s+now\b/i,
   /\bfix\s+owner\s+login\b/i,
   /\bremove\s+rork\b/i,
   /\bfix\s+supabase\b/i,
   /\baudit\s+landing\s+page\b/i,
-  /\bdeploy\b/i,
-  /\bfix\b/i,
-  /\baudit\b/i,
-  /\bremove\b/i,
-  /\bpatch\b/i,
-  /\bcode\b/i,
-  /\bgithub\b/i,
-  /\brender\b/i,
-  /\bsupabase\b/i,
-  /\bsenior\s+developer\b/i,
-  /\bdeveloper\s+workspace\b/i,
-  /\bproof\s+ledger\b/i,
+  /\brun\s+senior\s+developer\s+task\b/i,
+  /\bexecute\s+now\b/i,
 ];
 
 /**

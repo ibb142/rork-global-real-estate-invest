@@ -100,7 +100,7 @@ export { applySeniorDeveloperNarrativeGate } from '../services/ivx-senior-develo
 export { applyAccessStatusNarrativeGate } from '../services/ivx-access-status-narrative-gate';
 export { applyIVXIAReliabilityGate } from '../services/ivx-ia-reliability-gate';
 import { generateIVX3DModel } from '../services/ivx-model3d-generation';
-import { detectDeveloperModeRequest, buildDeveloperModeBlockedExplanation, detectSeniorDeveloperModeStatusRequest, buildSeniorDeveloperModeStatusAnswer } from '../services/ivx-owner-ai-dev-mode';
+import { detectDeveloperModeRequest, buildDeveloperModeBlockedExplanation, detectSeniorDeveloperModeStatusRequest, buildSeniorDeveloperModeStatusAnswer, detectSeniorDeveloperBrainRequest, buildSeniorDeveloperBrainAnswer } from '../services/ivx-owner-ai-dev-mode';
 
 import { classifyOwnerExecutionCommand, type IVXOwnerExecutionDecision } from '../services/ivx-owner-execution-mode';
 import { startDailyImprovementTask, type DailyImprovementStart } from '../services/ivx-daily-improvement';
@@ -5808,9 +5808,31 @@ async function handleIVXOwnerAIRequestInternal(request: Request): Promise<Respon
         toolOutputs: [],
       }, 200);
     }
-    // Developer-mode EXECUTION request: the owner asks for deploy/audit/fix work. We
-    // never fabricate proof; we explain the exact blocker so the chat stops returning
-    // generic BLOCKED-only messages.
+    // Senior-developer BRAIN request: the owner wants the AI to answer, audit, or reason
+    // like a real senior developer ("same brain as you", "act as senior developer",
+    // "audit and fix senior developer"). This is conversational/advisory, not execution,
+    // so it returns a direct, useful answer instead of a BLOCKED proof-ledger message.
+    if (detectSeniorDeveloperBrainRequest(prompt)) {
+      return ownerOnlyJson({
+        ok: true,
+        status: 'ok',
+        source: 'ivx-owner-ai-senior-dev-brain',
+        answer: buildSeniorDeveloperBrainAnswer(),
+        model: 'ivx_backend',
+        provider: 'chatgpt',
+        deploymentMarker: DEPLOYMENT_MARKER,
+        assistantMessageId: null,
+        assistantPersisted: false,
+        selectedTool: null,
+        toolInput: [],
+        toolOutput: [],
+        fallbackUsed: false,
+        toolOutputs: [],
+      }, 200);
+    }
+    // Developer-mode EXECUTION request: only explicit immediate execution commands are
+    // blocked here (e.g. "deploy now"). General audit/fix/chat is handled by the
+    // senior-developer brain path above.
     if (detectDeveloperModeRequest(prompt)) {
       return ownerOnlyJson({
         ok: false,

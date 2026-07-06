@@ -38,29 +38,31 @@ const FORBIDDEN_STRINGS = [
 ];
 
 describe('isSeniorDeveloperProofPrompt', () => {
-  test('routes dev/patch/QA/deploy prompts', () => {
+  test('routes proof-of-prior-execution prompts', () => {
     expect(isSeniorDeveloperProofPrompt('show me recent patches')).toBe(true);
     expect(isSeniorDeveloperProofPrompt('what files changed?')).toBe(true);
     expect(isSeniorDeveloperProofPrompt('run a workspace inspection')).toBe(true);
-    expect(isSeniorDeveloperProofPrompt('did the deploy go out?')).toBe(true);
-    expect(isSeniorDeveloperProofPrompt('run QA')).toBe(true);
-    expect(isSeniorDeveloperProofPrompt('fix the build')).toBe(true);
-    expect(isSeniorDeveloperProofPrompt('act as senior developer')).toBe(true);
-    expect(isSeniorDeveloperProofPrompt('what changed?')).toBe(true);
-    expect(isSeniorDeveloperProofPrompt('show the logs')).toBe(true);
-    expect(isSeniorDeveloperProofPrompt('verification please')).toBe(true);
-  });
-
-  test('routes github/render/commit/verification prompts', () => {
-    expect(isSeniorDeveloperProofPrompt('did the github push land?')).toBe(true);
-    expect(isSeniorDeveloperProofPrompt('check the render deploy')).toBe(true);
+    expect(isSeniorDeveloperProofPrompt('what did you deploy?')).toBe(true);
+    expect(isSeniorDeveloperProofPrompt('what did you commit?')).toBe(true);
+    expect(isSeniorDeveloperProofPrompt('show me the proof')).toBe(true);
     expect(isSeniorDeveloperProofPrompt('what is the COMMIT_SHA?')).toBe(true);
     expect(isSeniorDeveloperProofPrompt('show LIVE_COMMIT')).toBe(true);
     expect(isSeniorDeveloperProofPrompt('is COMMIT_MATCH true?')).toBe(true);
-    expect(isSeniorDeveloperProofPrompt('open the /version endpoint')).toBe(true);
-    expect(isSeniorDeveloperProofPrompt('rollback production')).toBe(true);
-    expect(isSeniorDeveloperProofPrompt('merge the pull request')).toBe(true);
-    expect(isSeniorDeveloperProofPrompt('redeploy the pipeline')).toBe(true);
+  });
+
+  test('does NOT route general senior-dev conversation', () => {
+    // These now go through the senior-developer brain path, not the proof gate.
+    expect(isSeniorDeveloperProofPrompt('act as senior developer')).toBe(false);
+    expect(isSeniorDeveloperProofPrompt('run senior developer')).toBe(false);
+    expect(isSeniorDeveloperProofPrompt('fix the build')).toBe(false);
+    expect(isSeniorDeveloperProofPrompt('run QA')).toBe(false);
+    expect(isSeniorDeveloperProofPrompt('show the logs')).toBe(false);
+    expect(isSeniorDeveloperProofPrompt('verification please')).toBe(false);
+    expect(isSeniorDeveloperProofPrompt('did the github push land?')).toBe(false);
+    expect(isSeniorDeveloperProofPrompt('check the render deploy')).toBe(false);
+    expect(isSeniorDeveloperProofPrompt('rollback production')).toBe(false);
+    expect(isSeniorDeveloperProofPrompt('merge the pull request')).toBe(false);
+    expect(isSeniorDeveloperProofPrompt('redeploy the pipeline')).toBe(false);
   });
 
   test('ignores unrelated chat', () => {
@@ -185,7 +187,7 @@ describe('applySeniorDeveloperNarrativeGate — regression on the exact bad resp
       finalStatus: 'COMPLETE',
     };
     const result = applySeniorDeveloperNarrativeGate({
-      message: 'run senior developer',
+      message: 'what files changed in the last deploy?',
       answer: 'irrelevant model text',
       proof,
     });

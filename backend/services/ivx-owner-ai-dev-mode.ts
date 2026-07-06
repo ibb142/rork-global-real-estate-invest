@@ -50,17 +50,80 @@ export function buildSeniorDeveloperModeStatusAnswer(): string {
   ].join('\n');
 }
 
+/**
+ * Direct senior-developer brain request: the owner wants the AI to answer, audit,
+ * or reason like a real senior developer (same brain as the IVX agent). This is a
+ * CONVERSATIONAL / ADVISORY intent, not an execution command. It must pass through
+ * the gates and return a direct, useful answer instead of a BLOCKED proof ledger
+ * message. Execution (commit/deploy) still requires the owner-gated worker.
+ */
+export function detectSeniorDeveloperBrainRequest(message: string): boolean {
+  const text = (message ?? '').toLowerCase();
+  const brainPhrases = [
+    'same brain like you',
+    'same brain as you',
+    'brain like you',
+    'senior developer brain',
+    'act as senior developer',
+    'act as a senior developer',
+    'you are senior developer',
+    'you are a senior developer',
+    'behave like a senior developer',
+    'answer like a senior developer',
+    'answer exactly what i ask',
+    'audit and fix senior developer',
+    'audit and fix the senior developer',
+    'fix senior developer',
+    'senior developer is not working',
+    'real senior developer ready',
+    'senior developer ready to start',
+    'ready to start work now',
+    'senior developer mode ready',
+    'senior developer answer',
+  ];
+  return brainPhrases.some((p) => text.includes(p));
+}
+
+export function buildSeniorDeveloperBrainAnswer(): string {
+  return [
+    'I am IVX Senior Developer mode — same brain as the IVX agent, owner-gated, live now.',
+    '',
+    'What I do as a senior developer:',
+    '- Answer architecture, code, security, and infrastructure questions directly.',
+    '- Audit the codebase, Supabase, GitHub, Render, and AWS setup and tell you what is wrong.',
+    '- Propose exact patches, file paths, and commands.',
+    '- Explain trade-offs and risks before you approve any change.',
+    '',
+    'What I do NOT do without your explicit owner approval:',
+    '- Write files, commit, push, deploy, or change production schema/data.',
+    '- Those actions route through the owner-gated Senior Developer Worker so you always see real proof (task_id, commit_sha, render_deploy_id, live_http_status).',
+    '',
+    'How to use me right now:',
+    '1. Ask me anything technical: "audit my auth flow", "why is the chat slow?", "review my Supabase RLS", etc.',
+    '2. If you want me to actually change code, say: "Run a senior developer task: <exact goal>" and I will execute end-to-end with proof.',
+    '',
+    'STATUS: READY. No BLOCKED state. I answer exactly what you ask.',
+  ].join('\n');
+}
+
 export function detectDeveloperModeRequest(message: string): boolean {
   const text = (message ?? '').toLowerCase();
-  // Senior-developer mode STATUS questions are handled above, not blocked.
-  if (detectSeniorDeveloperModeStatusRequest(message)) {
+  // Senior-developer mode STATUS and BRAIN questions are handled above, not blocked.
+  if (detectSeniorDeveloperModeStatusRequest(message) || detectSeniorDeveloperBrainRequest(message)) {
     return false;
   }
-  const triggers = [
-    'deploy', 'fix now', 'put live', 'deploy live', 'audit ivx', 'fix this', 'execute now',
-    'end to end', 'live deploy', 'push to production', 'verify live', 'run senior developer task',
+  // Only block explicit, immediate execution commands that require the owner-gated worker.
+  const executionTriggers = [
+    'deploy now',
+    'fix owner login',
+    'remove rork',
+    'fix supabase',
+    'run senior developer task',
+    'push to production now',
+    'deploy live now',
+    'execute now',
   ];
-  return triggers.some((t) => text.includes(t));
+  return executionTriggers.some((t) => text.includes(t));
 }
 
 export function buildDeveloperModeBlockedExplanation(blocker: string): string {
