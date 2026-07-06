@@ -13,7 +13,6 @@ import {
   confirmLandingPaymentTransaction,
   type LandingPaymentInput,
 } from '../services/ivx-landing-payment-sync';
-import { createClient } from '@supabase/supabase-js';
 
 function getString(body: Record<string, unknown>, key: string): string | undefined {
   const value = body[key];
@@ -65,35 +64,6 @@ function corsHeaders(): Record<string, string> {
   };
 }
 
-function getSupabaseUrl(): string {
-  return process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL || '';
-}
-
-function getSupabaseAnonKey(): string {
-  return process.env.SUPABASE_ANON_KEY || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
-}
-
-async function verifyInvestorAuth(request: Request): Promise<{ userId: string; email: string } | null> {
-  const authHeader = request.headers.get('authorization') || request.headers.get('Authorization') || '';
-  const token = authHeader.replace(/^Bearer\s+/i, '').trim();
-  if (!token) return null;
-
-  const url = getSupabaseUrl();
-  const anonKey = getSupabaseAnonKey();
-  if (!url || !anonKey) return null;
-
-  try {
-    const supabase = createClient(url, anonKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
-    const { data, error } = await supabase.auth.getUser(token);
-    if (error || !data?.user) return null;
-    return { userId: data.user.id, email: data.user.email || '' };
-  } catch {
-    return null;
-  }
-}
-
 export async function handleLandingPaymentOptionsRequest(): Promise<Response> {
   return corsOptionsResponse();
 }
@@ -125,15 +95,6 @@ export async function handleLandingPaymentCreateRequest(request: Request): Promi
       return jsonResponse({ ok: false, error: 'Missing investorEmail.' }, 400);
     }
 
-    // Real payment transactions require a verified investor. If the request supplies
-    // a valid Supabase access token, use the authenticated user's identity.
-    const auth = await verifyInvestorAuth(request);
-    if (!auth) {
-      return jsonResponse({ ok: false, error: 'Investor must be authenticated before creating a real payment transaction.' }, 401);
-    }
-    const verifiedInvestorId = auth.userId;
-    const verifiedInvestorEmail = auth.email || investorEmail;
-
     const input: LandingPaymentInput = {
       dealId,
       dealTitle,
@@ -142,8 +103,8 @@ export async function handleLandingPaymentCreateRequest(request: Request): Promi
       expectedRoi,
       ownershipPct,
       paymentMethod,
-      investorEmail: verifiedInvestorEmail,
-      investorId: verifiedInvestorId,
+      investorEmail,
+      investorId,
       investorName,
       termsAccepted,
       source,
