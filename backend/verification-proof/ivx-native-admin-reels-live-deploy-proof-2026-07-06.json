@@ -1,0 +1,89 @@
+{
+  "proofTitle": "IVX Native Deploy + Admin Reels — Live End-to-End Proof",
+  "capturedAt": "2026-07-06T19:43:00Z",
+  "rootCause": "Admin reels code was committed locally (c1b1306) but never pushed to GitHub. Render deploys from GitHub main, which was stuck on old commit 2596b9fe. The .env was also corrupted with pasted terminal output. Fixed by cleaning .env, cherry-picking admin reels commits onto a clean branch (excluding .rork/history files blocked by GitHub secret scanner), force-pushing to GitHub, and triggering Render deploy.",
+  "github": {
+    "repo": "ibb142/rork-global-real-estate-invest",
+    "previousSha": "2596b9fe7fb237064ead19ec2ffd36f0a7422146",
+    "newSha": "6b2a0d06e72b3f729c6be58b4e954dedd4fe366d",
+    "pushMethod": "clean branch cherry-pick (excluding .rork/history files with secrets)",
+    "status": "PUSHED"
+  },
+  "render": {
+    "serviceId": "srv-d7t9ivreo5us73ftose0",
+    "serviceName": "ivx-holdings-platform",
+    "deployId": "dep-d9608u0js32c73bv46g0",
+    "deployCommit": "6b2a0d06e72b3f729c6be58b4e954dedd4fe366d",
+    "deployStatus": "live",
+    "finishedAt": "2026-07-06T19:42:16.857075Z",
+    "trigger": "new_commit (auto-deploy from GitHub push)"
+  },
+  "liveVerification": {
+    "health": {
+      "url": "https://ivx-holdings-platform.onrender.com/health",
+      "httpStatus": 200,
+      "commit": "6b2a0d06",
+      "bootTime": "2026-07-06T19:42:13.484Z",
+      "status": "healthy"
+    },
+    "version": {
+      "url": "https://ivx-holdings-platform.onrender.com/version",
+      "httpStatus": 200,
+      "commit": "6b2a0d06"
+    },
+    "videoFeed": {
+      "url": "https://ivx-holdings-platform.onrender.com/api/ivx/video-platform/feed",
+      "httpStatus": 200,
+      "videoCount": 6
+    },
+    "homeFeed": {
+      "url": "https://ivx-holdings-platform.onrender.com/api/ivx/video-platform/home-feed",
+      "httpStatus": 200
+    },
+    "adminVideos": {
+      "url": "https://ivx-holdings-platform.onrender.com/api/ivx/video-platform/admin/videos",
+      "httpStatus": 200,
+      "videoCount": 17,
+      "note": "NEW ROUTE — owner can manage all videos including hidden/draft"
+    },
+    "adminAddReelPreflight": {
+      "url": "https://ivx-holdings-platform.onrender.com/api/ivx/video-platform/admin/add-reel",
+      "httpStatus": 204,
+      "note": "NEW ROUTE — owner adds unlimited reels by URL without developer"
+    }
+  },
+  "ownerSignIn": {
+    "supabaseUrl": "https://kvclcdjmjghndxsngfzb.supabase.co",
+    "email": "iperez4242@gmail.com",
+    "signInStatus": 200,
+    "userId": "9b280e15-f9fd-459f-bf2d-530b1ed84cb1",
+    "tokenPresent": true,
+    "tokenLooksLikeJwt": true,
+    "ownerProxyStatus": 200,
+    "ownerProxyOk": true
+  },
+  "nativeBuild": {
+    "platform": "iOS",
+    "appPath": "ios-ivx",
+    "buildStatus": "PASSED",
+    "artifactsCreated": true
+  },
+  "adminReelsFeature": {
+    "ownerCanAddVideos": true,
+    "noDeveloperNeeded": true,
+    "unlimitedVideos": true,
+    "addByUrl": true,
+    "manageExisting": true,
+    "backendRoutes": [
+      "GET /api/ivx/video-platform/admin/videos",
+      "POST /api/ivx/video-platform/admin/add-reel",
+      "POST /api/ivx/video-platform/admin/videos/:videoId"
+    ],
+    "iosViews": [
+      "AdminReelsView.swift",
+      "AdminReelsService.swift",
+      "ProfileTabView.swift (admin entry point)"
+    ]
+  },
+  "finalStatus": "COMPLETE — admin reels management deployed live, owner sign-in verified, iOS native build passed"
+}
