@@ -3,6 +3,7 @@
  * Sends only the logged-in Supabase session bearer to the backend; secrets stay server-side.
  */
 import { getIVXOwnerAIConfigAudit } from '@/lib/ivx-supabase-client';
+import { restoreOwnerResilientSession } from '@/lib/owner-session-resilience';
 import { supabase } from '@/lib/supabase';
 
 export const IVX_SAFE_PATCH_CONFIRM_TEXT = 'CONFIRM_IVX_SAFE_CODE_PATCH' as const;
@@ -149,10 +150,21 @@ function buildSeniorDeveloperUrls(suffix: string): string[] {
 }
 
 async function getRealSupabaseOwnerBearer(): Promise<string> {
-  const { data, error } = await supabase.auth.getSession();
-  const accessToken = data.session?.access_token ?? '';
+  let { data, error } = await supabase.auth.getSession();
+  let accessToken = data.session?.access_token ?? '';
+
+  // Resilience fallback: if the live Supabase session is not hydrated, restore
+  // the last owner session from the SecureStore copy before giving up.
+  if (!accessToken) {
+    const restored = await restoreOwnerResilientSession();
+    if (restored.sessionPresent) {
+      const refreshed = await supabase.auth.getSession();
+      accessToken = refreshed.data.session?.access_token ?? '';
+    }
+  }
+
   const tokenPresent = accessToken.length > 0 && accessToken.split('.').length === 3;
-  console.log('[SeniorDeveloperApprovalService] Owner bearer check', { tokenPresent, hasSession: !!data.session, error: error?.message ?? null });
+  console.log('[SeniorDeveloperApprovalService] Owner bearer check', { tokenPresent, hasSession: !!(data.session || accessToken), error: error?.message ?? null });
   if (!tokenPresent) {
     throw new Error(error?.message || 'No real Supabase owner session detected. Sign in as the IVX owner, then approve the senior-developer action.');
   }

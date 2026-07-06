@@ -12,6 +12,9 @@
  * IVX_OWNER_TOKEN for code mutation, commit, or deploy.
  */
 
+import { restoreOwnerResilientSession } from '@/lib/owner-session-resilience';
+import { getIVXOwnerEmailAllowlist } from '@/shared/ivx/access-control';
+
 /** Non-secret, owner-readable preflight facts. NEVER contains the token value. */
 export type SeniorDeveloperPreflight = {
   ownerSessionPresent: boolean;
@@ -164,14 +167,9 @@ export function evaluateOwnerProofGate(
   };
 }
 
-/** Reads the client-visible owner allowlist from the build env. */
+/** Reads the client-visible owner allowlist from the pinned baseline + env. */
 export function getClientOwnerAllowlist(): string[] {
-  const raw: string = (process.env.EXPO_PUBLIC_OWNER_EMAIL ?? '').trim();
-  if (!raw) return [];
-  return raw
-    .split(/[,;\s]+/g)
-    .map((item: string) => item.trim())
-    .filter(Boolean);
+  return getIVXOwnerEmailAllowlist();
 }
 
 /**
@@ -193,11 +191,27 @@ export async function gatherOwnerProofGate(): Promise<OwnerProofGate> {
     // Lazy import so the pure evaluator stays unit-testable without the native
     // Supabase module being resolvable in the test environment.
     const { supabase } = await import('@/lib/supabase');
-    const { data } = await supabase.auth.getSession();
-    const session = data.session;
+    let { data } = await supabase.auth.getSession();
+    let session = data.session;
+    let userEmail = session?.user?.email ?? null;
+
+    // Resilience fallback: if the live Supabase session is not hydrated (e.g.
+    // AsyncStorage not flushed, stale bundle, or storage key mismatch), try to
+    // restore the last owner session from the SecureStore copy. This is the
+    // safety net that stops the senior-developer preflight from blocking a
+    // valid owner after a successful passwordless sign-in.
+    if (!session?.access_token) {
+      const restored = await restoreOwnerResilientSession();
+      if (restored.sessionPresent) {
+        const refreshed = await supabase.auth.getSession();
+        session = refreshed.data.session;
+        userEmail = session?.user?.email ?? restored.userEmail;
+      }
+    }
+
     return evaluateOwnerProofGate({
       accessToken: session?.access_token ?? null,
-      userEmail: session?.user?.email ?? null,
+      userEmail,
       ownerAllowlist: getClientOwnerAllowlist(),
     });
   } catch {
