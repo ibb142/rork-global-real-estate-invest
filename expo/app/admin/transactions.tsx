@@ -98,9 +98,22 @@ export default function TransactionsScreen() {
         };
       });
 
+      const normalizeStatus = (raw: unknown) => {
+        const s = String(raw || '').toLowerCase();
+        if (s === 'completed' || s === 'confirmed' || s === 'success' || s === 'succeeded') return 'completed';
+        if (s === 'failed' || s === 'cancelled' || s === 'rejected') return 'failed';
+        return 'pending';
+      };
+
+      const appTx = txData.map((row: Record<string, unknown>) => ({
+        ...row,
+        source: 'app',
+        status: normalizeStatus(row.status),
+      }));
+
       const combined = [
-        ...txData.map((row: Record<string, unknown>) => ({ ...row, source: 'app' })),
-        ...landingAsTx.filter((lt) => !txData.some((t: Record<string, unknown>) => String(t.id) === lt.id)),
+        ...appTx,
+        ...landingAsTx.filter((lt) => !appTx.some((t: Record<string, unknown>) => String(t.id) === lt.id)),
       ];
 
       console.log('[Admin Transactions] Combined:', combined.length, 'total (', txData.length, 'app +', landingAsTx.length, 'landing)');

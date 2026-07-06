@@ -4,16 +4,31 @@ let _providerWarningLogged = false;
 
 export function getPaymentProviderStatus(): { configured: boolean; mode: 'sandbox' | 'production' | 'none'; warnings: string[] } {
   const warnings: string[] = [];
-  
-  warnings.push('No payment provider (Stripe/Plaid/PayPal) is configured. All transactions are simulated.');
-  warnings.push('Connect a real payment processor before going live.');
+  const stripeConfigured = !!(
+    process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY &&
+    (process.env.STRIPE_SECRET_KEY || process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY.includes('pk_test'))
+  );
+  const plaidConfigured = !!(process.env.PLAID_CLIENT_ID && process.env.PLAID_SECRET);
+  const paypalConfigured = !!(process.env.PAYPAL_CLIENT_ID && process.env.PAYPAL_CLIENT_SECRET);
+  const configured = stripeConfigured || plaidConfigured || paypalConfigured;
 
-  if (!_providerWarningLogged && __DEV__) {
-    _providerWarningLogged = true;
-    console.warn('[PaymentService] ⚠️ No payment provider configured — all transactions are simulated');
+  if (!configured) {
+    warnings.push('No real payment provider (Stripe/Plaid/PayPal) is configured.');
+    warnings.push('Connect a real payment processor before going live.');
   }
 
-  return { configured: false, mode: 'none', warnings };
+  if (!configured && !_providerWarningLogged) {
+    _providerWarningLogged = true;
+    console.warn('[PaymentService] ⚠️ No real payment provider configured');
+  }
+
+  const mode: 'sandbox' | 'production' | 'none' = configured
+    ? (process.env.STRIPE_SECRET_KEY || '').includes('sk_live') || process.env.PAYPAL_ENV === 'live' || process.env.PLAID_ENV === 'production'
+      ? 'production'
+      : 'sandbox'
+    : 'none';
+
+  return { configured, mode, warnings };
 }
 
 export type PaymentMethodType = 'fednow' | 'rtp' | 'same_day_ach' | 'bank_transfer' | 'usdc' | 'apple_pay' | 'google_pay' | 'card' | 'wire' | 'paypal';
@@ -1146,6 +1161,33 @@ class PaymentService {
     paymentMethodType: PaymentMethodType,
     details?: CardDetails | BankAccountDetails | CardToken
   ): Promise<PaymentResult> {
+    const providerStatus = this.getProviderStatus();
+
+    // PRODUCTION SAFETY: never simulate a real money transaction.
+    // If no real provider is configured, the transaction must stay pending and
+    // be confirmed by the owner/admin outside the automated flow.
+    if (this.isSimulated() && !__DEV__ && process.env.EXPO_PUBLIC_ENABLE_PAYMENT_SIMULATION !== 'true') {
+      const method = this.getPaymentMethod(paymentMethodType);
+      logger.payment.log('[BLOCKED] Simulated payment rejected in production. No real provider configured.');
+      return {
+        success: false,
+        transactionId: '',
+        status: 'failed',
+        amount,
+        fee: 0,
+        netAmount: 0,
+        currency: 'USD',
+        paymentMethod: paymentMethodType,
+        provider: method?.provider || 'stripe',
+        processingTime: '',
+        error: {
+          code: 'real_payment_provider_required',
+          message: 'No real payment provider is configured. Simulated transactions are disabled in production. Please configure Stripe/Plaid/PayPal or contact IVX support to complete this payment.',
+          provider: method?.provider,
+        },
+      };
+    }
+
     if (this.isSimulated()) {
       logger.payment.log('[SIMULATED] No real payment provider configured. Transaction is simulated only.');
     }
@@ -1160,7 +1202,7 @@ class PaymentService {
       return this.createErrorResult(amount, paymentMethodType, 'Payment method not available');
     }
 
-    logger.payment.log('Processing payment:', { amount, method: paymentMethodType, provider: method.provider, simulated: this.isSimulated() });
+    logger.payment.log('Processing payment:', { amount, method: paymentMethodType, provider: method.provider, simulated: this.isSimulated(), mode: providerStatus.stripe.testMode ? 'test' : 'live' });
 
     try {
       switch (paymentMethodType) {

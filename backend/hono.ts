@@ -209,6 +209,11 @@ import {
   handleCanonicalMembersList,
 } from './api/ivx-canonical-members';
 import {
+  handleLandingPaymentConfirmRequest,
+  handleLandingPaymentCreateRequest,
+  handleLandingPaymentOptionsRequest,
+} from './api/ivx-landing-payment-sync';
+import {
   memberInvestorOptions,
   memberAdminOptions,
   handleInvestorApplicationSubmit,
@@ -2604,6 +2609,12 @@ const landingConfigHandler = (context: { json: (body: unknown, status?: 200) => 
 };
 app.get('/api/landing-config', landingConfigHandler);
 app.get('/landing-config', landingConfigHandler);
+
+// Landing page real payment transaction sync
+app.options('/api/ivx/payments/landing-intent', () => handleLandingPaymentOptionsRequest());
+app.post('/api/ivx/payments/landing-intent', async (context) => handleLandingPaymentCreateRequest(context.req.raw));
+app.options('/api/ivx/payments/landing-confirm', () => handleLandingPaymentOptionsRequest());
+app.post('/api/ivx/payments/landing-confirm', async (context) => handleLandingPaymentConfirmRequest(context.req.raw));
 
 // Owner AI canonical paths
 app.options('/ivx/owner-ai', () => ownerAIOptions());
