@@ -30,6 +30,7 @@ function dealRecord(name: string): DealTrackingRecord {
     id: `deal-${name}`,
     dealName: name,
     counterparty: '',
+    dealType: 'jv',
     status: 'open',
     investorsContacted: 0,
     investorsResponded: 0,
@@ -43,6 +44,8 @@ function dealRecord(name: string): DealTrackingRecord {
     notes: '',
     source: 'verified_deal',
     sourceDetail: '',
+    participants: [],
+    documents: [],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };

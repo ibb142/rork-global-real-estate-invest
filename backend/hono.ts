@@ -190,6 +190,10 @@ import {
   handleGetMemberProfile,
   handleStartKYC,
   handleVerificationStatus,
+  handleMemberLogin,
+  handleMemberForgotPassword,
+  handleMemberResetPassword,
+  handleUpdateMemberProfile,
 } from './api/ivx-members';
 import {
   OPTIONS as ownerRecoverySmsOptions,
@@ -505,6 +509,10 @@ import {
   handleDealTrackingMilestoneRequest,
   handleDealTrackingStatusRequest,
   handleDealTrackingDeleteRequest,
+  handleDealTrackingJoinRequest,
+  handleDealTrackingLeaveRequest,
+  handleDealTrackingAddDocumentRequest,
+  handleDealTrackingRemoveDocumentRequest,
 } from './api/ivx-deal-tracking';
 import {
   OPTIONS as dealPipelineSeedOptions,
@@ -3028,6 +3036,14 @@ app.options('/api/ivx/deal-tracking/:dealId/status', () => dealTrackingOptions()
 app.post('/api/ivx/deal-tracking/:dealId/status', async (context) => handleDealTrackingStatusRequest(context.req.raw, context.req.param('dealId')));
 app.options('/api/ivx/deal-tracking/:dealId/delete', () => dealTrackingOptions());
 app.post('/api/ivx/deal-tracking/:dealId/delete', async (context) => handleDealTrackingDeleteRequest(context.req.raw, context.req.param('dealId')));
+app.options('/api/ivx/deal-tracking/:dealId/join', () => dealTrackingOptions());
+app.post('/api/ivx/deal-tracking/:dealId/join', async (context) => handleDealTrackingJoinRequest(context.req.raw, context.req.param('dealId')));
+app.options('/api/ivx/deal-tracking/:dealId/leave', () => dealTrackingOptions());
+app.post('/api/ivx/deal-tracking/:dealId/leave', async (context) => handleDealTrackingLeaveRequest(context.req.raw, context.req.param('dealId')));
+app.options('/api/ivx/deal-tracking/:dealId/documents', () => dealTrackingOptions());
+app.post('/api/ivx/deal-tracking/:dealId/documents', async (context) => handleDealTrackingAddDocumentRequest(context.req.raw, context.req.param('dealId')));
+app.options('/api/ivx/deal-tracking/:dealId/documents/:documentId/delete', () => dealTrackingOptions());
+app.post('/api/ivx/deal-tracking/:dealId/documents/:documentId/delete', async (context) => handleDealTrackingRemoveDocumentRequest(context.req.raw, context.req.param('dealId'), context.req.param('documentId')));
 
 app.options('/api/ivx/deal-pipeline/seed', () => dealPipelineSeedOptions());
 app.post('/api/ivx/deal-pipeline/seed', async (context) => handleDealPipelineSeedRequest(context.req.raw));
@@ -3922,6 +3938,10 @@ app.options('/api/members/verify-phone', () => membersOptions());
 app.options('/api/members/me', () => membersOptions());
 app.options('/api/members/start-kyc', () => membersOptions());
 app.options('/api/members/verification-status', () => membersOptions());
+app.options('/api/members/login', () => membersOptions());
+app.options('/api/members/forgot-password', () => membersOptions());
+app.options('/api/members/reset-password', () => membersOptions());
+app.options('/api/members/profile', () => membersOptions());
 
 app.post('/api/members/register', async (c) => handleMemberRegister(c.req.raw));
 app.post('/api/members/send-email-code', async (c) => handleSendEmailCode(c.req.raw));
@@ -3931,6 +3951,10 @@ app.post('/api/members/verify-phone', async (c) => handleVerifyPhone(c.req.raw))
 app.get('/api/members/me', async (c) => handleGetMemberProfile(c.req.raw));
 app.post('/api/members/start-kyc', async (c) => handleStartKYC(c.req.raw));
 app.get('/api/members/verification-status', async (c) => handleVerificationStatus(c.req.raw));
+app.post('/api/members/login', async (c) => handleMemberLogin(c.req.raw));
+app.post('/api/members/forgot-password', async (c) => handleMemberForgotPassword(c.req.raw));
+app.post('/api/members/reset-password', async (c) => handleMemberResetPassword(c.req.raw));
+app.post('/api/members/profile', async (c) => handleUpdateMemberProfile(c.req.raw));
 
 // ---- IVX Canonical Members registry (landing → Members module sync) ----
 app.options('/api/ivx/members/registry', () => membersOptions());
