@@ -4,14 +4,14 @@
 import https from 'node:https';
 
 const API_BASE = 'https://api.ivxholding.com';
-const OWNER_TOKEN = 'IVX_OWNER_TOKEN_PLACEHOLDER';
-const RENDER_API_KEY = 'RENDER_API_KEY_PLACEHOLDER';
+const OWNER_TOKEN = process.env.IVX_OWNER_TOKEN || '';
+const RENDER_API_KEY = process.env.RENDER_API_KEY || '';
 const RENDER_SERVICE_ID = 'srv-d7t9ivreo5us73ftose0';
 const SUPABASE_URL = 'https://kvclcdjmjghndxsngfzb.supabase.co';
-const SUPABASE_SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2Y2xjZGptamdobmR4c25nZnpiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MzE5NDAyNywiZXhwIjoyMDg4NzcwMDI3fQ.SUPABASE_SERVICE_ROLE_KEY_PLACEHOLDER';
-const GITHUB_TOKEN = 'GITHUB_TOKEN_PLACEHOLDER';
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
 const OWNER_EMAIL = 'iperez4242@gmail.com';
-const OWNER_PASSWORD = 'IVX_OWNER_PASSWORD_PLACEHOLDER';
+const OWNER_PASSWORD = process.env.IVX_OWNER_PASSWORD || '';
 
 function fetchJson(url, opts = {}, timeoutMs = 25000) {
   return new Promise((resolve) => {
