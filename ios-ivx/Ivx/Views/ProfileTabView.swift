@@ -47,7 +47,12 @@ struct ProfileTabView: View {
 
                     section(title: "ACCOUNT") {
                         VStack(spacing: 8) {
-                            profileRow(icon: "person.badge.key", title: "Owner Login", subtitle: "Access the owner dashboard", url: "https://chat.ivxholding.com")
+                            NavigationLink {
+                                OwnerLoginView()
+                            } label: {
+                                navRow(icon: "person.badge.key.fill", title: "Owner Sign In", subtitle: "Manual email + password")
+                            }
+                            .buttonStyle(.plain)
                             profileRow(icon: "safari", title: "Open Full Platform", subtitle: "ivxholding.com", url: "https://ivxholding.com")
                         }
                     }
