@@ -123,6 +123,7 @@ export default function AdminLayout() {
       <Stack.Screen name="ivx-developer-actions" />
       <Stack.Screen name="ivx-agent-jobs" />
       <Stack.Screen name="ivx-auth-debug" />
+      <Stack.Screen name="intent-engine" />
     </Stack>
   );
 }

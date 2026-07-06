@@ -766,6 +766,19 @@ import {
   restoreCenterOptions,
 } from './api/ivx-restore-center';
 import { handleZeroDataLossMigration, zeroDataLossMigrationOptions } from './api/ivx-zero-data-loss-migration';
+import {
+  OPTIONS as intentEngineOptions,
+  handleIntentEngineDashboardRequest,
+  handleIntentEnginePhase1Request,
+  handleIntentEnginePhase2Request,
+  handleIntentEnginePhase3Request,
+  handleIntentEnginePhase4Request,
+  handleIntentEnginePhase8Request,
+  handleIntentEngineStatusRequest,
+  handleIntentEngineVisitorRequest,
+  handleIntentEngineChatRequest,
+  handleIntentEnginePageRequest,
+} from './api/ivx-intent-capture';
 import { startDataVaultScheduler, bootstrapDataVault } from './services/ivx-data-vault';
 import { generateDailyReport } from './services/ivx-recovery-report';
 import { runRecoveryDrill } from './services/ivx-recovery-drill';
@@ -4487,6 +4500,21 @@ app.post('/api/ivx/video-platform/live/:sessionId/moderate', async (c) => handle
 app.get('/api/ivx/video-platform/creator/:creatorId/dashboard', async (c) => handlePlatformCreatorDashboard(c.req.param('creatorId')));
 app.get('/api/ivx/video-platform/moderation/queue', async () => handlePlatformModerationQueue());
 app.post('/api/ivx/video-platform/moderation/:videoId', async (c) => handlePlatformModerationDecision(c.req.raw, c.req.param('videoId')));
+
+// ── IVX Global Intent Capture Engine (2026-07-06) — 8-phase search acquisition ──
+// Phase 1-8: keyword discovery, intent clustering, auto landing pages, AI content,
+// multilingual, visitor intelligence, AI conversion, autonomous optimization.
+app.options('/api/ivx/intent-engine/*', () => intentEngineOptions());
+app.get('/api/ivx/intent-engine/status', async () => handleIntentEngineStatusRequest());
+app.get('/api/ivx/intent-engine/dashboard', async (c) => handleIntentEngineDashboardRequest(c.req.raw));
+app.post('/api/ivx/intent-engine/phase1', async (c) => handleIntentEnginePhase1Request(c.req.raw));
+app.post('/api/ivx/intent-engine/phase2', async (c) => handleIntentEnginePhase2Request(c.req.raw));
+app.post('/api/ivx/intent-engine/phase3', async (c) => handleIntentEnginePhase3Request(c.req.raw));
+app.post('/api/ivx/intent-engine/phase4', async (c) => handleIntentEnginePhase4Request(c.req.raw));
+app.post('/api/ivx/intent-engine/phase8', async (c) => handleIntentEnginePhase8Request(c.req.raw));
+app.post('/api/ivx/intent-engine/visitor', async (c) => handleIntentEngineVisitorRequest(c.req.raw));
+app.post('/api/ivx/intent-engine/chat', async (c) => handleIntentEngineChatRequest(c.req.raw));
+app.get('/api/ivx/intent-engine/page/:slug', async (c) => handleIntentEnginePageRequest(c.req.raw, c.req.param('slug')));
 
 // ── IVX Data Vault (2026-07-06) — independent backup & recovery ─────────────
 // Snapshots critical Supabase tables to the backend's own filesystem so data
