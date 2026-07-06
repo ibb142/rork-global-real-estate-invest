@@ -21,7 +21,7 @@
  * Supabase session — so owner-AI chat approval (allowlist + bearer check)
  * works automatically.
  */
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { ownerOnlyJson, ownerOnlyOptions } from './owner-only';
 import { getIVXOwnerEmailAllowlist } from '../../expo/shared/ivx/access-control';
 
@@ -229,7 +229,7 @@ export async function handleIVXOwnerPasswordlessLogin(request: Request): Promise
     return ownerOnlyJson(failure, 500);
   }
 
-  let adminClient: ReturnType<typeof createClient>;
+  let adminClient: SupabaseClient;
   try {
     adminClient = createAdminClient();
   } catch (error) {
