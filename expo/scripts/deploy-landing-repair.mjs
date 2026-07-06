@@ -32,9 +32,8 @@ if (!ACCESS_KEY || !SECRET_KEY) {
 
 /* ---- verified production values (extracted from the live deployed page) ---- */
 const PROD = {
-  __IVX_SUPABASE_URL__: 'https://kvclcdjmjghndxsngfzb.supabase.co',
-  __IVX_SUPABASE_ANON_KEY__:
-    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2Y2xjZGptamdobmR4c25nZnpiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMxOTQwMjcsImV4cCI6MjA4ODc3MDAyN30.OLDwa21VHQNs151AD-8k--_HigQ2d-N7yJfFn5UeNPk',
+  __IVX_SUPABASE_URL__: env.IVX_SUPABASE_URL || env.SUPABASE_URL || process.env.IVX_SUPABASE_URL || process.env.SUPABASE_URL || '',
+  __IVX_SUPABASE_ANON_KEY__: env.EXPO_PUBLIC_SUPABASE_ANON_KEY || env.SUPABASE_ANON_KEY || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '',
   __IVX_API_BASE_URL__: 'https://ivxholding.com',
   __IVX_BACKEND_URL__: 'https://api.ivxholding.com',
   __IVX_API_URL__: 'https://ivxholding.com',

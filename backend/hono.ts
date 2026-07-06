@@ -3976,16 +3976,21 @@ app.options('/api/ivx/members/summary', () => membersOptions());
 app.options('/api/ivx/members/backfill', () => membersOptions());
 app.options('/api/ivx/members', () => membersOptions());
 app.get('/api/ivx/members/registry', async (c) => handleCanonicalMembersRegistry(c.req.raw));
-app.get('/api/ivx/members/summary', async () => handleCanonicalMembersSummary());
+app.get('/api/ivx/members/summary', async (c) => handleCanonicalMembersSummary(c.req.raw));
 app.get('/api/ivx/members', async (c) => handleCanonicalMembersList(c.req.raw));
-app.post('/api/ivx/members/backfill', async () => handleCanonicalMembersBackfill());
+app.post('/api/ivx/members/backfill', async (c) => handleCanonicalMembersBackfill(c.req.raw));
 
 // IVX canonical members count — compact counts endpoint for executor verification
 // and Owner AI status checks. Returns members, waitlist, investors, buyers, total.
 app.get('/api/ivx/members/count', async () => {
-  const summary = await handleCanonicalMembersSummary();
-  const body = await summary.json();
-  const byType = (body?.byType ?? {}) as Record<string, number>;
+  // Public aggregate-only counts (no PII) — safe without owner auth.
+  const { listCanonicalMembers, countCanonicalMembers, isCanonicalMembersConfigured } = await import('./services/ivx-canonical-members');
+  if (!isCanonicalMembersConfigured()) {
+    return Response.json({ ok: true, members: 0, waitlist: 0, investors: 0, buyers: 0, total: 0, timestamp: nowIso(), deploymentMarker: DEPLOYMENT_MARKER });
+  }
+  const all = await listCanonicalMembers({ limit: 5000 });
+  const byType: Record<string, number> = {};
+  for (const m of all) byType[m.member_type] = (byType[m.member_type] ?? 0) + 1;
   const members = (byType['member'] ?? 0) + (byType['user'] ?? 0);
   const waitlist = byType['waitlist'] ?? 0;
   const investors = byType['investor'] ?? 0;
@@ -3996,7 +4001,7 @@ app.get('/api/ivx/members/count', async () => {
     waitlist,
     investors,
     buyers,
-    total: body?.total ?? 0,
+    total: await countCanonicalMembers(),
     timestamp: nowIso(),
     deploymentMarker: DEPLOYMENT_MARKER,
   });

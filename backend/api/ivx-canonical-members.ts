@@ -15,6 +15,7 @@ import {
   type ListMembersOptions,
   type CanonicalMemberRow,
 } from '../services/ivx-canonical-members';
+import { assertIVXOwnerOnly, ownerOnlyJson } from './owner-only';
 
 const DEPLOYMENT_MARKER = 'ivx-canonical-members-api-v1';
 
@@ -30,6 +31,7 @@ function jsonResponse(data: unknown, status = 200): Response {
 }
 
 export async function handleCanonicalMembersRegistry(request: Request): Promise<Response> {
+  try { await assertIVXOwnerOnly(request); } catch { return ownerOnlyJson({ ok: false, error: 'AUTH_REQUIRED' }, 401); }
   const url = new URL(request.url);
   const options: ListMembersOptions = {
     search: url.searchParams.get('search') || undefined,
@@ -47,7 +49,8 @@ export async function handleCanonicalMembersRegistry(request: Request): Promise<
   });
 }
 
-export async function handleCanonicalMembersSummary(): Promise<Response> {
+export async function handleCanonicalMembersSummary(request: Request): Promise<Response> {
+  try { await assertIVXOwnerOnly(request); } catch { return ownerOnlyJson({ ok: false, error: 'AUTH_REQUIRED' }, 401); }
   const members = await listCanonicalMembers({ limit: 2000 });
   const byType: Record<string, number> = {};
   const bySource: Record<string, number> = {};
@@ -83,6 +86,7 @@ export async function handleCanonicalMembersSummary(): Promise<Response> {
  * members). No fake, demo, or chatbot members are ever injected here.
  */
 export async function handleCanonicalMembersList(request: Request): Promise<Response> {
+  try { await assertIVXOwnerOnly(request); } catch { return ownerOnlyJson({ ok: false, error: 'AUTH_REQUIRED' }, 401); }
   const url = new URL(request.url);
   const options: ListMembersOptions = {
     search: url.searchParams.get('search') || undefined,
@@ -124,7 +128,8 @@ export async function handleCanonicalMembersList(request: Request): Promise<Resp
   });
 }
 
-export async function handleCanonicalMembersBackfill(): Promise<Response> {
+export async function handleCanonicalMembersBackfill(request: Request): Promise<Response> {
+  try { await assertIVXOwnerOnly(request); } catch { return ownerOnlyJson({ ok: false, error: 'AUTH_REQUIRED' }, 401); }
   const result = await backfillCanonicalMembers();
   return jsonResponse({ ...result, deploymentMarker: DEPLOYMENT_MARKER }, result.ok ? 200 : 207);
 }

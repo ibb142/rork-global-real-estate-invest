@@ -1,7 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
 
-const url = 'https://kvclcdjmjghndxsngfzb.supabase.co';
-const anonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2Y2xjZGptamdobmR4c25nZnpiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMxOTQwMjcsImV4cCI6MjA4ODc3MDAyN30.OLDwa21VHQNs151AD-8k--_HigQ2d-N7yJfFn5UeNPk';
+const url = process.env.IVX_SUPABASE_URL || process.env.SUPABASE_URL || '';
+const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '';
+if (!url || !anonKey) { console.error('Missing Supabase env vars'); process.exit(1); }
 
 const memoryStorage = new Map();
 const storage = {
