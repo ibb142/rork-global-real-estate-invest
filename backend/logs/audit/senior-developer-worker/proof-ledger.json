@@ -1,0 +1,68 @@
+{
+  "task_id": "ivx-senior-dev-2026-07-06-evidence-gate-fix",
+  "task_type": "BUG_FIX",
+  "executed_at": "2026-07-06T00:07:30.000Z",
+  "owner_approved": true,
+  "owner_approval_source": "owner_chat_request_2026-07-06",
+  "root_cause": "Report Evidence Gate hijacked legitimate senior-developer answers. TIME_PROMISE_REGEX matched bare numeric elapsed-time statements ('27 minutes ago') as delivery promises, and DELIVERABLE_CONTEXT_REGEX matched 'report' as a verb ('inspect and report the commit') as a deliverable noun. Together they rewrote a senior-developer status answer to the 'REPORT NOT READY' message, blocking IVX IA from answering as a senior developer in Owner Chat.",
+  "files_changed": [
+    "backend/services/ivx-evidence-gate.ts",
+    "backend/test-gate-repro.test.ts"
+  ],
+  "changes_summary": [
+    "TIME_PROMISE_REGEX: bare numeric time arm now requires the 'more' modifier ('30 more minutes'); factual elapsed-time facts ('27 minutes ago') pass through.",
+    "DELIVERABLE_CONTEXT_REGEX: now requires a determiner+noun ('the report is') or a conjugated verb stem ('delivering/finalizing'); verb-form 'report' no longer triggers the deliverable context.",
+    "Added 5 regression tests covering: verb-form report + elapsed time (not flagged), full gate passthrough, real fake-deliverable claim still blocked, real deferred-delivery promise still blocked, noun-form deliverable claim still blocked."
+  ],
+  "tests_run": [
+    "backend/test-gate-repro.test.ts (5 pass)",
+    "backend/services/ivx-evidence-gate.test.ts (66 pass)",
+    "backend/services/ivx-report-evidence-gate.test.ts (15 pass)",
+    "Full backend suite: 1034 pass / 21 pre-existing failures (unrelated test-isolation issues in ivx-owner-variables-e2e + role-agent tests, confirmed pre-existing via git stash)"
+  ],
+  "tests_result": "86 pass / 0 fail (evidence-gate scope); 0 new failures introduced",
+  "github_sha": "0bb4d026035ca6e54d53d8b10521d4cc6684a664",
+  "github_sha_short": "0bb4d026",
+  "github_branch": "main",
+  "github_repo": "ibb142/rork-global-real-estate-invest",
+  "github_push_range": "d229e4a..0bb4d02",
+  "github_push_method": "clean cherry-pick from senior-dev-fix branch to main (no force-push, no remote history destruction)",
+  "render_deploy_id": "auto-deploy-commit-0bb4d026",
+  "render_deploy_trigger": "autoDeployTrigger: commit (render.yaml)",
+  "live_health": {
+    "endpoint": "https://api.ivxholding.com/api/ivx/version",
+    "http_status": 200,
+    "live_commit": "0bb4d026035ca6e54d53d8b10521d4cc6684a664",
+    "live_commit_short": "0bb4d026",
+    "boot_time": "2026-07-06T00:07:17.889Z",
+    "service": "ivx-owner-ai-backend",
+    "environment": "production"
+  },
+  "live_version": "0bb4d026",
+  "live_chat_verification": {
+    "endpoint": "POST https://api.ivxholding.com/api/public/chat",
+    "http_status": 200,
+    "before_fix": "REPORT NOT READY — answer hijacked by false-positive time-promise + verb-form-report match",
+    "after_fix": "Real grounded senior-developer answer returned — names 3 active deals (Perez Residence, Casa Rosario, One Stop Constructors), ranking engine status, and 3 concrete pending tasks. No 'REPORT NOT READY' rewrite.",
+    "session_id": "e2e-final-proof",
+    "request_id": "public-request-7c316b16-9b4b-4310-8995-ff6d02d6e4a2"
+  },
+  "security_verification": {
+    "secret_values_returned": false,
+    "no_fake_data": true,
+    "real_fake_deliverable_claims_still_blocked": true,
+    "placeholder_links_still_blocked": true,
+    "deferred_delivery_promises_still_blocked": true
+  },
+  "platform_access": {
+    "android": "Owner Chat accessible via expo app (public /api/public/chat endpoint, 200 OK)",
+    "ios": "Owner Chat accessible via ios-ivx app (public /api/public/chat endpoint, 200 OK)",
+    "web": "Owner Chat accessible via https://ivxholding.com (public /api/public/chat endpoint, 200 OK)"
+  },
+  "contradictory_state_check": {
+    "no_verified_plus_blocked": true,
+    "no_done_without_proof": true,
+    "no_fake_sample_demo_evidence": true
+  },
+  "final_status": "VERIFIED"
+}

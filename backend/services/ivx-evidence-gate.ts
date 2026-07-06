@@ -180,8 +180,21 @@ const QUERY_NARRATIVE_REGEXES: RegExp[] = [
 ];
 
 // Open-ended time promise near deliverable language.
-const TIME_PROMISE_REGEX = /\b(?:\d+\s*(?:more\s*)?(?:minutes?|hours?|mins?)|shortly|in a moment|in a (?:few|couple)\s+(?:minutes?|hours?)|almost (?:done|finished|ready|complete)|just a (?:bit|moment|sec))\b/i;
-const DELIVERABLE_CONTEXT_REGEX = /\b(report|file|document|export|pdf|spreadsheet|deliverable|link|download|deliver|finish|complete|generat|finali[sz])/i;
+// NOTE: A bare numeric time like "27 minutes" is NOT a delivery promise — it is
+// a factual elapsed-time statement (e.g. "booted 27 minutes ago", "27 minutes
+// since last check"). The promise signal is the modifier "more" ("30 more
+// minutes") or an explicit "in a few minutes" / "shortly" / "almost done".
+// Matching bare numbers hijacked legitimate senior-developer answers that quote
+// uptime/elapsed time, rewriting them to REPORT NOT READY. The bare-number arm
+// now requires the "more" modifier so factual elapsed-time facts pass through.
+const TIME_PROMISE_REGEX = /\b(?:\d+\s*more\s*(?:minutes?|hours?|mins?)|shortly|in a moment|in a (?:few|couple)\s+(?:minutes?|hours?)|almost (?:done|finished|ready|complete)|just a (?:bit|moment|sec))\b/i;
+
+// Deliverable context: a NOUN (a report/file/export artifact), not the verb
+// "report" (as in "I'll report the commit"). The verb form is excluded by
+// requiring the noun stem to be preceded by a determiner/adjective OR to be a
+// standalone noun. This stops "report the current commit" from being treated as
+// a deliverable claim.
+const DELIVERABLE_CONTEXT_REGEX = /\b(?:a|an|the|this|that|your|our|my)\s+(?:report|file|document|export|pdf|spreadsheet|deliverable|link|download)\b|\b(?:report|file|document|export|pdf|spreadsheet|deliverable|link|download)\s+(?:is|are|was|were|has|have|will|should|can|may)\b|\bdeliver(?:ing|s|ed)?|finish(?:ing|es|ed)?|generat(?:ing|es|ed)|finali[sz](?:ing|es|ed)\b/i;
 
 // ---------------------------------------------------------------------------
 // Prohibition scanner (requirement 4 + requirement 6)
