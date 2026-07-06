@@ -742,7 +742,32 @@ import {
   handleDataGuardCheck,
   dataGuardOptions,
 } from './api/ivx-data-loss-guard';
+import {
+  handleRestoreCenterOverview,
+  handleRestoreCenterDeleted,
+  handleRestoreCenterSoftDelete,
+  handleRestoreCenterRestoreSoft,
+  handleRestoreCenterVaultEntries,
+  handleRestoreCenterRestoreVault,
+  handleRestoreCenterPitr,
+  handleRestoreCenterSnapshots,
+  handleRestoreCenterRestoreSnapshot,
+  handleRestoreCenterSnapshotNow,
+  handleRestoreCenterApprovals,
+  handleRestoreCenterApprovalCreate,
+  handleRestoreCenterApprovalConfirm,
+  handleRestoreCenterApprovalReject,
+  handleRestoreCenterGuardAudit,
+  handleRestoreCenterProtectedTables,
+  handleRestoreCenterDrill,
+  handleRestoreCenterReport,
+  handleRestoreCenterReports,
+  handleRestoreCenterExport,
+  restoreCenterOptions,
+} from './api/ivx-restore-center';
 import { startDataVaultScheduler, bootstrapDataVault } from './services/ivx-data-vault';
+import { generateDailyReport } from './services/ivx-recovery-report';
+import { runRecoveryDrill } from './services/ivx-recovery-drill';
 import { startContinuousExecutionScheduler } from './services/ivx-continuous-execution';
 import {
   OPTIONS as opMemoryOptions,
@@ -4476,6 +4501,32 @@ app.post('/api/ivx/data-vault/restore', async (c) => handleDataVaultRestore(c.re
 app.get('/api/ivx/data-vault/loss-detection', async (c) => handleDataVaultLossDetection(c.req.raw));
 app.get('/api/ivx/data-vault/manifest', async (c) => handleDataVaultManifest(c.req.raw));
 
+// ── IVX Restore Center (2026-07-06) — unified zero-data-loss admin surface ──
+// One endpoint surface for: soft-delete, data_vault table, PITR status,
+// snapshots, two-person approvals, guard audit, recovery drill, daily report,
+// and emergency backup export. All owner-only.
+app.options('/api/ivx/restore-center/*', () => restoreCenterOptions());
+app.get('/api/ivx/restore-center/overview', async (c) => handleRestoreCenterOverview(c.req.raw));
+app.get('/api/ivx/restore-center/deleted', async (c) => handleRestoreCenterDeleted(c.req.raw));
+app.post('/api/ivx/restore-center/soft-delete', async (c) => handleRestoreCenterSoftDelete(c.req.raw));
+app.post('/api/ivx/restore-center/restore-soft', async (c) => handleRestoreCenterRestoreSoft(c.req.raw));
+app.get('/api/ivx/restore-center/vault-entries', async (c) => handleRestoreCenterVaultEntries(c.req.raw));
+app.post('/api/ivx/restore-center/restore-vault', async (c) => handleRestoreCenterRestoreVault(c.req.raw));
+app.get('/api/ivx/restore-center/pitr', async (c) => handleRestoreCenterPitr(c.req.raw));
+app.get('/api/ivx/restore-center/snapshots', async (c) => handleRestoreCenterSnapshots(c.req.raw));
+app.post('/api/ivx/restore-center/restore-snapshot', async (c) => handleRestoreCenterRestoreSnapshot(c.req.raw));
+app.post('/api/ivx/restore-center/snapshot', async (c) => handleRestoreCenterSnapshotNow(c.req.raw));
+app.get('/api/ivx/restore-center/approvals', async (c) => handleRestoreCenterApprovals(c.req.raw));
+app.post('/api/ivx/restore-center/approvals/create', async (c) => handleRestoreCenterApprovalCreate(c.req.raw));
+app.post('/api/ivx/restore-center/approvals/confirm', async (c) => handleRestoreCenterApprovalConfirm(c.req.raw));
+app.post('/api/ivx/restore-center/approvals/reject', async (c) => handleRestoreCenterApprovalReject(c.req.raw));
+app.get('/api/ivx/restore-center/guard-audit', async (c) => handleRestoreCenterGuardAudit(c.req.raw));
+app.get('/api/ivx/restore-center/protected-tables', async (c) => handleRestoreCenterProtectedTables(c.req.raw));
+app.post('/api/ivx/restore-center/drill', async (c) => handleRestoreCenterDrill(c.req.raw));
+app.get('/api/ivx/restore-center/report', async (c) => handleRestoreCenterReport(c.req.raw));
+app.get('/api/ivx/restore-center/reports', async (c) => handleRestoreCenterReports(c.req.raw));
+app.post('/api/ivx/restore-center/export', async (c) => handleRestoreCenterExport(c.req.raw));
+
 // ── IVX Data-Loss Guard (2026-07-06) — destructive op interception ──────────
 // Prevents autonomous cleanup/migration scripts from deleting production data.
 // Every destructive op (DELETE/TRUNCATE/DROP) on protected tables requires
@@ -4590,6 +4641,12 @@ app.notFound(async (context) => {
 
 try { startNightOpsScheduler(); } catch (err) { console.warn('[IVXOwnerAI-Hono] night ops scheduler failed to start:', err instanceof Error ? err.message : err); }
 try { void bootstrapDataVault(); startDataVaultScheduler(); } catch (err) { console.warn('[IVXOwnerAI-Hono] data vault scheduler failed to start:', err instanceof Error ? err.message : err); }
+try {
+  // Daily recovery report — runs once per day at boot + every 24h.
+  const runDailyReport = () => { void generateDailyReport().catch(() => {}); };
+  runDailyReport();
+  setInterval(runDailyReport, 24 * 60 * 60 * 1000).unref?.();
+} catch (err) { console.warn('[IVXOwnerAI-Hono] daily report scheduler failed to start:', err instanceof Error ? err.message : err); }
 try { startContinuousExecutionScheduler(); } catch (err) { console.warn('[IVXOwnerAI-Hono] continuous execution scheduler failed to start:', err instanceof Error ? err.message : err); }
 try { startAutonomousScheduler(); } catch (err) { console.warn('[IVXOwnerAI-Hono] autonomous scheduler failed to start:', err instanceof Error ? err.message : err); }
 try { startScaleLoopScheduler(); } catch (err) { console.warn('[IVXOwnerAI-Hono] scale loop scheduler failed to start:', err instanceof Error ? err.message : err); }
