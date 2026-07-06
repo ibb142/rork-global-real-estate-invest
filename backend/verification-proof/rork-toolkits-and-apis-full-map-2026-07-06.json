@@ -1,0 +1,144 @@
+{
+  "title": "IVX Rork Toolkits & APIs — Full End-to-End Map",
+  "generatedAt": "2026-07-06T23:45Z",
+  "project": "IVX AI (j2l8t44588ix9ns7b57mu)",
+  "surfaces": ["expo (Android/React Native)", "ios-ivx (Swift/native)", "backend (Hono/Supabase on Render)", "landing page"],
+  "summary": {
+    "rorkToolkitCount": 2,
+    "rorkToolkitDetails": [
+      {
+        "name": "@rork-ai/toolkit-sdk",
+        "version": "0.2.54",
+        "location": "expo/package.json dependency + expo/metro.config.js (withRorkMetro bundler wrapper)",
+        "role": "Bundler-time Metro wrapper. NOT a runtime API. Injects Rork preview/dev helpers into the Expo bundle during sandbox builds.",
+        "runtimeImpact": "Zero — compile-time only. The app has a full independence cutover script (expo/scripts/rork-independence-cutover.mjs) that removes this in one pass for the IVX-owned GitHub/Render checkout.",
+        "removableForProduction": true
+      },
+      {
+        "name": "Rork Toolkit LLM Gateway",
+        "url": "https://toolkit.rork.com/text/llm/",
+        "location": "backend/ivx-ai-runtime.ts + backend/services/ivx-ai-provider-fallback.ts",
+        "role": "AI inference fallback provider. Used when the primary Vercel AI Gateway or OpenAI/Anthropic direct paths fail with a retryable error (timeout, rate-limit, quota, auth, network).",
+        "runtimeImpact": "Active fallback — serves owner chat, public chat, and AI jobs when other providers are down.",
+        "authKey": "EXPO_PUBLIC_RORK_TOOLKIT_SECRET_KEY (rork_sk_*) / RORK_TOOLKIT_SECRET_KEY / AI_GATEWAY_API_KEY when it starts with rork_sk_"
+      }
+    ],
+    "rorkPublicEnvVars": 5,
+    "rorkPublicEnvVarDetails": [
+      { "name": "EXPO_PUBLIC_RORK_API_BASE_URL", "value": "https://dev-j2l8t44588ix9ns7b57mu.rorktest.dev", "purpose": "Rork sandbox dev API base (preview only)" },
+      { "name": "EXPO_PUBLIC_RORK_AUTH_URL", "value": "https://api.rork.com", "purpose": "Rork auth gateway" },
+      { "name": "EXPO_PUBLIC_RORK_FUNCTIONS_URL", "value": "https://ivxholding-20-backend.rork.app", "purpose": "Rork-managed serverless functions host" },
+      { "name": "EXPO_PUBLIC_RORK_TOOLKIT_SECRET_KEY", "value": "rork_sk_krty78xsmsmmuvqbcyetnc7jv3qoq1hl", "purpose": "Rork toolkit LLM gateway key (used as AI fallback)" },
+      { "name": "EXPO_PUBLIC_TOOLKIT_URL", "value": "https://toolkit.rork.com", "purpose": "Rork toolkit base URL" }
+    ],
+    "aiProviders": {
+      "count": 4,
+      "chain": [
+        { "name": "vercel_ai_gateway", "role": "primary", "url": "https://ai-gateway.vercel.sh", "model": "openai/gpt-4o", "envGate": "AI_GATEWAY_API_KEY" },
+        { "name": "openai_direct", "role": "fallback 1", "url": "https://api.openai.com/v1/chat/completions", "model": "gpt-4o-mini", "envGate": "OPENAI_API_KEY" },
+        { "name": "anthropic_direct", "role": "fallback 2", "url": "https://api.anthropic.com/v1/messages", "model": "claude-3-5-haiku-latest", "envGate": "ANTHROPIC_API_KEY" },
+        { "name": "rork_toolkit", "role": "fallback 3", "url": "https://toolkit.rork.com/text/llm/", "model": "gpt-4o", "envGate": "RORK_TOOLKIT_SECRET_KEY / EXPO_PUBLIC_RORK_TOOLKIT_SECRET_KEY" }
+      ]
+    },
+    "backendRouteRegistrations": 814,
+    "uniqueIvxApiPaths": 552,
+    "backendHost": "https://api.ivxholding.com",
+    "landingHost": "https://ivxholding.com"
+  },
+  "apiCategoryMap": {
+    "ownerAI": {
+      "routes": [
+        "POST /api/ivx/owner-ai",
+        "POST /api/ivx/owner-ai/tools",
+        "POST /api/ivx/owner-ai/stream",
+        "GET  /api/ivx/owner-ai/proxy-status",
+        "GET  /api/ivx/owner-ai/status",
+        "GET  /api/ivx/owner-ai/diagnostics",
+        "POST /api/ivx/owner-ai/diagnostics/client-event",
+        "GET  /api/ivx/owner-ai/diagnostics/:requestId",
+        "GET  /api/ivx/owner-ai/auth-diagnostic",
+        "POST /api/ivx/owner-ai/auth-diagnostic",
+        "POST /api/ivx/owner-ai/jobs",
+        "GET  /api/ivx/owner-ai/jobs",
+        "GET  /api/ivx/owner-ai/jobs/:jobId",
+        "GET  /api/ivx/owner-ai/runtime",
+        "GET  /api/ivx/owner-ai/chat-durability-proof",
+        "POST /api/ivx/owner-ai/chat-durability-proof"
+      ],
+      "consumedBy": ["expo app/ivx/chat.tsx", "expo app/owner-login.tsx", "ios-ivx OwnerLoginViewModel + IVXOwnerChatView"]
+    },
+    "publicChat": {
+      "routes": ["GET /api/ivx/public-chat/sessions", "GET /api/ivx/public-chat/history", "POST /api/ivx/public-chat/message"],
+      "consumedBy": ["expo landing page chat widget", "ios-ivx public chat"]
+    },
+    "authAndRegistration": {
+      "routes": ["POST /api/ivx/auth/register", "POST /api/ivx/auth/verify-email", "POST /api/ivx/auth/verify-sms", "POST /api/ivx/owner-registration", "POST /api/ivx/owner-passwordless-login", "POST /api/ivx/owner-recovery/request", "POST /api/ivx/owner-recovery/verify", "GET /api/ivx/owner-recovery/status", "POST /api/ivx/owner-access-repair"],
+      "consumedBy": ["expo app/login.tsx + app/signup.tsx + app/owner-login.tsx", "ios-ivx OwnerLoginView + OwnerAuthService"]
+    },
+    "videoPlatform": {
+      "routes": ["GET /api/ivx/video-platform/feed", "GET /api/ivx/video-platform/home-feed", "GET /api/ivx/video-platform/channels", "POST /api/ivx/video-platform/events", "POST /api/ivx/video-platform/follow", "GET /api/ivx/video-platform/stories", "POST /api/ivx/video-platform/stories", "GET /api/ivx/video-platform/live", "POST /api/ivx/video-platform/live/start", "GET /api/ivx/video-platform/live/:sessionId/status", "POST /api/ivx/video-platform/live/:sessionId/ingest", "POST /api/ivx/video-platform/live/:sessionId/stop", "POST /api/ivx/video-platform/live/:sessionId/moderate", "GET /api/ivx/video-platform/creator/:creatorId/dashboard", "GET /api/ivx/video-platform/moderation/queue", "POST /api/ivx/video-platform/moderation/:videoId", "GET /api/ivx/video-platform/admin/videos", "POST /api/ivx/video-platform/admin/add-reel", "POST /api/ivx/video-platform/admin/videos/:videoId", "POST /api/ivx/video-platform/deals/:dealId/meta", "GET /api/ivx/video-platform/videos/:videoId/analytics", "POST /api/ivx/video-platform/videos/:videoId/meta", "POST /api/ivx/video-platform/videos/:videoId/report", "GET /api/ivx/videos/feed", "GET /api/ivx/videos/:videoId/download", "GET /api/ivx/video-pipeline/config", "POST /api/ivx/video-pipeline/upload", "GET /api/ivx/video-pipeline/videos", "GET /api/ivx/video-pipeline/:videoId", "POST /api/ivx/video-pipeline/:videoId/retry"],
+      "consumedBy": ["expo components/DealVideoCard.tsx + app/(tabs)/(home)/home.tsx", "ios-ivx ProjectReelsView + ProjectReelsViewModel", "landing ivx-home-feed.js"]
+    },
+    "capitalNetwork": {
+      "routes": ["GET /api/ivx/capital-network/dashboard", "GET /api/ivx/capital-network/prospects", "POST /api/ivx/capital-network/outreach", "POST /api/ivx/capital-network/scan", "GET /api/ivx/capital-pipeline", "GET /api/ivx/capital-command-center", "GET /api/ivx/capital-command-center/activity", "GET /api/ivx/capital-command-center/best-investor", "GET /api/ivx/buyer-discovery", "POST /api/ivx/buyer-discovery/scan", "GET /api/ivx/deal-matching"],
+      "consumedBy": ["expo app/ivx/capital-network*.tsx", "ios-ivx CapitalNetworkView"]
+    },
+    "treasury": {
+      "routes": ["GET /api/ivx/treasury/dashboard", "GET /api/ivx/treasury/ledger", "POST /api/ivx/treasury/ledger/amend", "GET /api/ivx/treasury/approvals", "POST /api/ivx/treasury/approvals/decide", "GET /api/ivx/treasury/distributions", "POST /api/ivx/treasury/distributions/calculate", "POST /api/ivx/treasury/distributions/execute", "GET /api/ivx/treasury/commissions", "GET /api/ivx/treasury/commissions/status", "GET /api/ivx/treasury/reports", "GET /api/ivx/treasury/ai-finance", "POST /api/ivx/treasury/influencers/pay", "GET /api/ivx/treasury/influencers/track", "GET /api/ivx/treasury/reconciliation/bank-items", "POST /api/ivx/treasury/reconciliation/run", "GET /api/ivx/treasury/audit", "GET /api/ivx/treasury/property-capital"],
+      "consumedBy": ["expo app/ivx/treasury*.tsx"]
+    },
+    "seniorDeveloper": {
+      "routes": ["POST /api/ivx/senior-developer/run", "GET /api/ivx/senior-developer/status", "GET /api/ivx/senior-developer/credential-audit", "GET /api/ivx/senior-developer/github-audit", "GET /api/ivx/senior-developer/worker/jobs", "GET /api/ivx/senior-developer/worker/ledger", "GET /api/ivx/senior-developer/worker/status", "POST /api/ivx/senior-developer/autonomous-mode/run", "GET /api/ivx/senior-developer/autonomous-mode/status", "GET /api/ivx/senior-dev/proof", "GET /api/ivx/senior-dev/proofs", "GET /api/ivx/senior-dev/e2e", "POST /api/ivx/senior-dev/e2e/run", "GET /api/ivx/senior-dev/tools", "GET /api/ivx/senior-dev/repo-search", "GET /api/ivx/senior-dev/audit-report", "GET /api/ivx/senior-dev/test-report", "GET /api/ivx/senior-dev/evidence", "GET /api/ivx/senior-dev/execution-record", "GET /api/ivx/senior-dev/execution-stream", "GET /api/ivx/senior-dev/otel"],
+      "consumedBy": ["expo app/ivx/worker-proof.tsx + src/modules/ivx-developer/*"]
+    },
+    "autonomousCore": {
+      "routes": ["GET /api/ivx/autonomous-core/lifecycle-proof", "GET /api/ivx/autonomous-core/dashboard", "GET /api/ivx/handoff/readiness", "GET /api/ivx/autonomous-core/priority-queue", "GET /api/ivx/autonomous-core/code-index", "GET /api/ivx/autonomous-core/code-index/summary", "POST /api/ivx/autonomous-core/code-index/rebuild", "GET /api/ivx/autonomous-core/code-graph", "GET /api/ivx/autonomous-core/code-graph/summary", "POST /api/ivx/autonomous-core/code-graph/rebuild", "POST /api/ivx/autonomous-core/blast-radius", "GET /api/ivx/autonomous-core/continuous", "POST /api/ivx/autonomous-core/continuous/start", "POST /api/ivx/autonomous-core/continuous/stop", "POST /api/ivx/autonomous-core/continuous/advance", "POST /api/ivx/autonomous-core/self-heal", "GET /api/ivx/autonomous-core/self-heal", "GET /api/ivx/autonomous-core/audit-items"],
+    },
+    "rorkIndependence": {
+      "routes": ["GET /api/ivx/rork-independence", "GET /api/ivx/owner-operations/rork-removal/preflight", "POST /api/ivx/independence/tools/:name", "POST /api/ivx/independence/brain", "POST /api/ivx/independence/upgrade/run", "GET /api/ivx/independence/status"],
+      "consumedBy": ["expo app/ivx/rork-independence.tsx + app/ivx/independence.tsx + src/modules/ivx-developer/rorkIndependenceService.ts"]
+    },
+    "dataVaultAndRestore": {
+      "routes": ["GET /api/ivx/data-vault/status", "POST /api/ivx/data-vault/config", "POST /api/ivx/data-vault/snapshot", "GET /api/ivx/data-vault/snapshots", "GET /api/ivx/data-vault/snapshots/:snapshotId", "POST /api/ivx/data-vault/restore", "GET /api/ivx/data-vault/loss-detection", "GET /api/ivx/data-vault/manifest", "GET /api/ivx/restore-center/overview", "GET /api/ivx/restore-center/deleted", "POST /api/ivx/restore-center/soft-delete", "POST /api/ivx/restore-center/restore-soft", "GET /api/ivx/restore-center/vault-entries", "POST /api/ivx/restore-center/restore-vault", "GET /api/ivx/restore-center/snapshots", "POST /api/ivx/restore-center/snapshot", "POST /api/ivx/restore-center/restore-snapshot", "GET /api/ivx/restore-center/approvals", "POST /api/ivx/restore-center/approvals/create", "POST /api/ivx/restore-center/approvals/confirm", "POST /api/ivx/restore-center/approvals/reject", "POST /api/ivx/zero-data-loss-migration", "POST /api/ivx/data-guard/evaluate", "GET /api/ivx/data-guard/audit", "POST /api/ivx/data-guard/check"]
+    },
+    "deployTools": {
+      "routes": ["GET /api/ivx/deploy-tools/brain", "GET /api/ivx/deploy-tools/github", "GET /api/ivx/deploy-tools/render", "POST /api/ivx/deploy-tools/render/deploy", "POST /api/ivx/deploy-tools/render/rollback", "POST /api/ivx/deploy-tools/render/auto-deploy", "GET /api/ivx/deploy-tools/supabase", "GET /api/ivx/deploy-tools/vercel", "GET /api/ivx/deploy-tools/evidence", "GET /api/ivx/deploy-tools/credentials", "GET /api/ivx/deploy-tools/dashboard", "POST /api/ivx/deploy-tools/invoke"]
+    },
+    "executor": {
+      "routes": ["GET /api/ivx/executor/capabilities", "GET /api/ivx/executor/tasks", "GET /api/ivx/executor/approvals", "GET /api/ivx/executor/sql", "POST /api/ivx/executor/plan", "POST /api/ivx/executor/diff", "POST /api/ivx/executor/approve", "POST /api/ivx/executor/run", "POST /api/ivx/executor/deploy", "GET /api/ivx/executor/status/:taskId", "GET /api/ivx/executor/proof/:taskId"]
+    },
+    "qa": {
+      "routes": ["GET /api/ivx/qa/status", "POST /api/ivx/qa/screenshot", "POST /api/ivx/qa/run", "POST /api/ivx/qa/close"]
+    },
+    "landingAndPublic": {
+      "routes": ["GET /api/landing-config", "GET /landing-config", "GET /api/landing-deals", "POST /api/ivx/payments/landing-intent", "POST /api/ivx/payments/landing-confirm", "GET /api/ivx/featured-properties", "GET /api/ivx/properties/featured", "GET /api/ivx/properties/:propertyId", "GET /api/ivx/jv-deals", "GET /api/ivx/members-dashboard", "GET /api/ivx/investors-dashboard", "GET /api/ivx/instagram-cards", "GET /api/ivx/visitor-audit", "GET /api/ivx/analytics"],
+      "consumedBy": ["expo ivxholding-landing/*.js", "ios-ivx (members/registry, jv-deals, video feed, restore-center)"]
+    }
+  },
+  "nativeSurfaceMap": {
+    "expo": {
+      "framework": "React Native (Expo SDK 54)",
+      "toolkitUsage": "expo/metro.config.js imports withRorkMetro from @rork-ai/toolkit-sdk/metro (bundler-only)",
+      "rorkEnvVarsConsumed": ["EXPO_PUBLIC_RORK_API_BASE_URL", "EXPO_PUBLIC_RORK_AUTH_URL", "EXPO_PUBLIC_RORK_FUNCTIONS_URL", "EXPO_PUBLIC_RORK_TOOLKIT_SECRET_KEY", "EXPO_PUBLIC_TOOLKIT_URL", "EXPO_PUBLIC_PROJECT_ID", "EXPO_PUBLIC_TEAM_ID", "EXPO_PUBLIC_SUPABASE_URL", "EXPO_PUBLIC_SUPABASE_ANON_KEY"],
+      "apiBase": "https://api.ivxholding.com (production) / https://dev-j2l8t44588ix9ns7b57mu.rorktest.dev (sandbox)",
+      "clientApiCallsCount": "120+ unique /api/ivx/* paths referenced in expo/lib + expo/src + expo/app",
+      "independenceStatus": "IVX app is brain-free from Rork at runtime (AI goes through IVX backend proxy, not client-direct to Rork). The toolkit SDK is bundler-only and a full cutover script exists to remove it."
+    },
+    "ios": {
+      "framework": "Swift (SwiftUI, iOS 18+)",
+      "toolkitUsage": "None at runtime. Config.swift declares the Rork env vars as empty string literals (injected at iOS build time, not used at runtime).",
+      "rorkEnvVarsConsumed": ["EXPO_PUBLIC_RORK_API_BASE_URL (empty, build-time)", "EXPO_PUBLIC_RORK_AUTH_URL (empty)", "EXPO_PUBLIC_RORK_FUNCTIONS_URL (empty)", "EXPO_PUBLIC_RORK_TOOLKIT_SECRET_KEY (empty)", "EXPO_PUBLIC_TOOLKIT_URL (empty)"],
+      "apiBase": "https://api.ivxholding.com (hardcoded in OwnerAuthService/Config for direct Supabase + backend calls)",
+      "clientApiCallsCount": "6 unique /api/ivx/* paths (members/registry, jv-deals, restore-center, variables-presence, video-platform/feed, video-platform/home-feed) + direct Supabase auth",
+      "independenceStatus": "100% Rork-free at runtime. No Rork SDK, no Rork toolkit calls, no Rork URLs in Swift code. All AI flows go through api.ivxholding.com."
+    },
+    "landing": {
+      "framework": "Static JS (vanilla, served from backend public/)",
+      "toolkitUsage": "None",
+      "apiBase": "https://api.ivxholding.com",
+      "clientApiCallsCount": "8 unique /api/ivx/video-platform/* + /api/ivx/video-pipeline/* paths",
+      "independenceStatus": "100% Rork-free"
+    }
+  },
+  "conclusion": "The IVX platform has exactly 2 Rork toolkit surfaces: (1) the @rork-ai/toolkit-sdk npm package used as a bundler-only Metro wrapper in the Expo/Android app, and (2) the Rork Toolkit LLM gateway at https://toolkit.rork.com/text/llm/ used as a 3rd-tier AI fallback in the backend. The native iOS app has zero Rork toolkit usage at runtime. The backend exposes 814 route registrations across ~552 unique IVX API paths, consumed by Expo (Android), iOS, and the landing page. The IVX app is designed for full Rork independence with a prepared cutover script and a dedicated independence audit screen."
+}
