@@ -27,34 +27,13 @@ struct ProfileTabView: View {
                             NavigationLink {
                                 VariablesView()
                             } label: {
-                                HStack(spacing: 12) {
-                                    Image(systemName: "key.horizontal.fill")
-                                        .font(.body)
-                                        .foregroundStyle(Color.ivxGold)
-                                        .frame(width: 36, height: 36)
-                                        .background(Color.ivxSurface)
-                                        .clipShape(.rect(cornerRadius: 8))
-                                    VStack(alignment: .leading, spacing: 1) {
-                                        Text("Variables / Credentials")
-                                            .font(.subheadline)
-                                            .fontWeight(.semibold)
-                                            .foregroundStyle(.white)
-                                        Text("GitHub · Render · Supabase · AWS")
-                                            .font(.caption)
-                                            .foregroundStyle(Color.ivxTextSecondary)
-                                    }
-                                    Spacer()
-                                    Image(systemName: "chevron.right")
-                                        .font(.caption)
-                                        .foregroundStyle(Color.ivxTextTertiary)
-                                }
-                                .padding(12)
-                                .background(Color.ivxCard)
-                                .clipShape(.rect(cornerRadius: 10))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 10)
-                                        .stroke(Color.ivxBorder, lineWidth: 1)
-                                )
+                                navRow(icon: "key.horizontal.fill", title: "Variables / Credentials", subtitle: "GitHub · Render · Supabase · AWS")
+                            }
+                            .buttonStyle(.plain)
+                            NavigationLink {
+                                RestoreCenterView()
+                            } label: {
+                                navRow(icon: "lock.shield.fill", title: "Restore Center", subtitle: "Zero data loss · Backup · Recovery")
                             }
                             .buttonStyle(.plain)
                         }
@@ -119,35 +98,39 @@ struct ProfileTabView: View {
 
     private func profileRow(icon: String, title: String, subtitle: String, url: String) -> some View {
         Link(destination: URL(string: url)!) {
-            HStack(spacing: 12) {
-                Image(systemName: icon)
-                    .font(.body)
-                    .foregroundStyle(Color.ivxGold)
-                    .frame(width: 36, height: 36)
-                    .background(Color.ivxSurface)
-                    .clipShape(.rect(cornerRadius: 8))
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(title)
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.white)
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(Color.ivxTextSecondary)
-                }
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.caption)
-                    .foregroundStyle(Color.ivxTextTertiary)
-            }
-            .padding(12)
-            .background(Color.ivxCard)
-            .clipShape(.rect(cornerRadius: 10))
-            .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(Color.ivxBorder, lineWidth: 1)
-            )
+            navRow(icon: icon, title: title, subtitle: subtitle)
         }
+    }
+
+    private func navRow(icon: String, title: String, subtitle: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.body)
+                .foregroundStyle(Color.ivxGold)
+                .frame(width: 36, height: 36)
+                .background(Color.ivxSurface)
+                .clipShape(.rect(cornerRadius: 8))
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.white)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(Color.ivxTextSecondary)
+            }
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.caption)
+                .foregroundStyle(Color.ivxTextTertiary)
+        }
+        .padding(12)
+        .background(Color.ivxCard)
+        .clipShape(.rect(cornerRadius: 10))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(Color.ivxBorder, lineWidth: 1)
+        )
     }
 }
 
