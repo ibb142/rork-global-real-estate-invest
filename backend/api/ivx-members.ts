@@ -11,7 +11,16 @@
  *   POST /api/members/start-kyc        - Initiate KYC process
  */
 
-import { registerMember, getMemberProfile, updateMemberKYCStatus, updateMemberLastLogin } from '../services/ivx-member-database';
+import {
+  registerMember,
+  getMemberProfile,
+  updateMemberKYCStatus,
+  updateMemberLastLogin,
+  loginMember,
+  requestMemberPasswordReset,
+  resetMemberPasswordWithToken,
+  updateMemberProfile,
+} from '../services/ivx-member-database';
 import { storeVerificationCode, verifyCode, checkVerificationStatus } from '../services/ivx-member-verification';
 import { onboardNewMember, VALID_ROLE_INTERESTS, type MemberRoleInterest } from '../services/ivx-member-investor-system';
 import { upsertCanonicalMember, markCanonicalMemberVerified } from '../services/ivx-canonical-members';
@@ -333,4 +342,63 @@ export async function handleVerificationStatus(request: Request): Promise<Respon
     bothVerified: verification.emailVerified && verification.phoneVerified,
     deploymentMarker: DEPLOYMENT_MARKER,
   });
+}
+
+// ---------------------------------------------------------------------------
+// Member login, password reset, profile update (BLOCK: IVX business workflows)
+// ---------------------------------------------------------------------------
+
+// POST /api/members/login
+export async function handleMemberLogin(request: Request): Promise<Response> {
+  const body = await parseBody(request);
+  const email = asString(body.email).toLowerCase();
+  const password = asString(body.password);
+  if (!email || !password) {
+    return jsonResponse({ success: false, message: 'Email and password are required.', deploymentMarker: DEPLOYMENT_MARKER }, 400);
+  }
+  const result = await loginMember(email, password);
+  return jsonResponse(result, result.success ? 200 : (result.requiresVerification ? 403 : 401));
+}
+
+// POST /api/members/forgot-password
+export async function handleMemberForgotPassword(request: Request): Promise<Response> {
+  const body = await parseBody(request);
+  const email = asString(body.email).toLowerCase();
+  if (!email) {
+    return jsonResponse({ success: false, message: 'Email is required.', deploymentMarker: DEPLOYMENT_MARKER }, 400);
+  }
+  const result = await requestMemberPasswordReset(email);
+  return jsonResponse(result, result.success ? 200 : 400);
+}
+
+// POST /api/members/reset-password
+export async function handleMemberResetPassword(request: Request): Promise<Response> {
+  const body = await parseBody(request);
+  const email = asString(body.email).toLowerCase();
+  const token = asString(body.token);
+  const newPassword = asString(body.newPassword);
+  if (!email || !token || !newPassword) {
+    return jsonResponse({ success: false, message: 'Email, token, and newPassword are required.', deploymentMarker: DEPLOYMENT_MARKER }, 400);
+  }
+  const result = await resetMemberPasswordWithToken(email, token, newPassword);
+  return jsonResponse(result, result.success ? 200 : 400);
+}
+
+// PUT /api/members/me  (profile update — never deletes fields the caller omits)
+export async function handleUpdateMemberProfile(request: Request): Promise<Response> {
+  const body = await parseBody(request);
+  const userId = asString(body.userId) || getAuthUserId(request) || '';
+  if (!userId) {
+    return jsonResponse({ success: false, message: 'User ID is required.', deploymentMarker: DEPLOYMENT_MARKER }, 400);
+  }
+  const result = await updateMemberProfile({
+    userId,
+    firstName: asString(body.firstName) || undefined,
+    lastName: asString(body.lastName) || undefined,
+    phone: asString(body.phone) || undefined,
+    country: asString(body.country) || undefined,
+    zipCode: typeof body.zipCode === 'string' ? asString(body.zipCode) : undefined,
+    pictureUrl: asString(body.pictureUrl) || undefined,
+  });
+  return jsonResponse(result, result.success ? 200 : 400);
 }

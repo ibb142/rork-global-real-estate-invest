@@ -21,15 +21,21 @@ import {
   deleteDeal,
   getDeal,
   incrementDealMilestone,
+  joinDeal,
+  leaveDeal,
+  addDealDocument,
+  removeDealDocument,
   listDeals,
   setDealStatus,
   summarizeDeals,
   updateDeal,
+  VALID_DEAL_TYPES,
   DEAL_MILESTONE_FIELDS,
   type CreateDealInput,
   type DealMilestoneField,
   type DealSource,
   type DealStatus,
+  type DealType,
   type UpdateDealInput,
 } from '../services/ivx-deal-tracking-store';
 
@@ -42,6 +48,10 @@ const VALID_STATUS: ReadonlySet<string> = new Set([
   'open', 'in_progress', 'closed_won', 'closed_lost',
 ]);
 const VALID_MILESTONES: ReadonlySet<string> = new Set(DEAL_MILESTONE_FIELDS);
+const VALID_DEAL_TYPE_STRINGS: ReadonlySet<string> = VALID_DEAL_TYPES;
+const VALID_DOC_KINDS: ReadonlySet<string> = new Set([
+  'contract', 'offering_memo', 'kyc_packet', 'valuation', 'closing', 'other',
+]);
 
 function asString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
@@ -82,6 +92,9 @@ function bodyToUpdateInput(body: Record<string, unknown>): UpdateDealInput {
   const patch: UpdateDealInput = {};
   if (body.dealName !== undefined) patch.dealName = asString(body.dealName);
   if (body.counterparty !== undefined) patch.counterparty = asString(body.counterparty);
+  if (body.dealType !== undefined && VALID_DEAL_TYPE_STRINGS.has(asString(body.dealType))) {
+    patch.dealType = asString(body.dealType) as DealType;
+  }
   if (body.status !== undefined && VALID_STATUS.has(asString(body.status))) patch.status = asString(body.status) as DealStatus;
   for (const field of DEAL_MILESTONE_FIELDS) {
     const value = asOptionalNumber(body[field]);
@@ -112,6 +125,7 @@ export async function handleDealTrackingCreateRequest(request: Request): Promise
     source: asString(body.source) as DealSource,
     sourceDetail: asString(body.sourceDetail),
     counterparty: asString(body.counterparty),
+    dealType: VALID_DEAL_TYPE_STRINGS.has(asString(body.dealType)) ? (asString(body.dealType) as DealType) : undefined,
     status: VALID_STATUS.has(asString(body.status)) ? (asString(body.status) as DealStatus) : undefined,
     investorsContacted: asOptionalNumber(body.investorsContacted),
     investorsResponded: asOptionalNumber(body.investorsResponded),
@@ -181,4 +195,68 @@ export async function handleDealTrackingDeleteRequest(request: Request, dealId: 
   const removed = await deleteDeal(dealId);
   if (!removed) return ownerOnlyJson({ ok: false, error: 'Deal not found.' }, 404);
   return ownerOnlyJson({ ok: true, deleted: true, id: dealId });
+}
+
+// ---------------------------------------------------------------------------
+// JV / private-lender / tokenized: join deal, leave deal, deal documents
+// ---------------------------------------------------------------------------
+
+// POST /api/ivx/deal-tracking/:id/join
+export async function handleDealTrackingJoinRequest(request: Request, dealId: string): Promise<Response> {
+  const denied = await requireOwner(request);
+  if (denied) return denied;
+  const body = await readJsonBody(request);
+  const result = await joinDeal(dealId, {
+    participantId: asString(body.participantId),
+    displayName: asString(body.displayName),
+    ownershipPercentage: asOptionalNumber(body.ownershipPercentage),
+    investedAmount: asOptionalNumber(body.investedAmount),
+    profitPercentage: asOptionalNumber(body.profitPercentage),
+    documents: Array.isArray(body.documents) ? (body.documents as string[]).map((d) => asString(d)).filter(Boolean) : undefined,
+  });
+  if (result === null) return ownerOnlyJson({ ok: false, error: 'Deal not found.' }, 404);
+  if (!result.ok) return ownerOnlyJson({ ok: false, error: result.error }, 400);
+  return ownerOnlyJson({ ok: true, deal: result.deal });
+}
+
+// POST /api/ivx/deal-tracking/:id/leave
+export async function handleDealTrackingLeaveRequest(request: Request, dealId: string): Promise<Response> {
+  const denied = await requireOwner(request);
+  if (denied) return denied;
+  const body = await readJsonBody(request);
+  const participantId = asString(body.participantId);
+  if (!participantId) return ownerOnlyJson({ ok: false, error: 'participantId is required.' }, 400);
+  const result = await leaveDeal(dealId, participantId);
+  if (result === null) return ownerOnlyJson({ ok: false, error: 'Deal not found.' }, 404);
+  if (result === false) return ownerOnlyJson({ ok: false, error: 'Participant not on this deal.' }, 404);
+  return ownerOnlyJson({ ok: true, removed: true, participantId });
+}
+
+// POST /api/ivx/deal-tracking/:id/documents
+export async function handleDealTrackingAddDocumentRequest(request: Request, dealId: string): Promise<Response> {
+  const denied = await requireOwner(request);
+  if (denied) return denied;
+  const body = await readJsonBody(request);
+  const name = asString(body.name);
+  const uri = asString(body.uri);
+  if (!name || !uri) return ownerOnlyJson({ ok: false, error: 'name and uri are required.' }, 400);
+  const kind = asString(body.kind);
+  const doc = await addDealDocument(dealId, {
+    name,
+    uri,
+    kind: VALID_DOC_KINDS.has(kind) ? (kind as never) : undefined,
+    uploadedBy: asString(body.uploadedBy) || undefined,
+  });
+  if (doc === null) return ownerOnlyJson({ ok: false, error: 'Deal not found.' }, 404);
+  return ownerOnlyJson({ ok: true, document: doc }, 201);
+}
+
+// POST /api/ivx/deal-tracking/:id/documents/:documentId/delete
+export async function handleDealTrackingRemoveDocumentRequest(request: Request, dealId: string, documentId: string): Promise<Response> {
+  const denied = await requireOwner(request);
+  if (denied) return denied;
+  const result = await removeDealDocument(dealId, documentId);
+  if (result === null) return ownerOnlyJson({ ok: false, error: 'Deal not found.' }, 404);
+  if (result === false) return ownerOnlyJson({ ok: false, error: 'Document not found on this deal.' }, 404);
+  return ownerOnlyJson({ ok: true, removed: true, documentId });
 }

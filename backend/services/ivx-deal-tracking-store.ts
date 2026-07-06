@@ -43,6 +43,14 @@ export type DealSource =
 /** Deal lifecycle status. */
 export type DealStatus = 'open' | 'in_progress' | 'closed_won' | 'closed_lost';
 
+/** The structural category of a deal — drives JV / private-lender / tokenized reporting. */
+export type DealType =
+  | 'jv'          // Joint venture: equity partnership with shared ownership + profit split
+  | 'private_lender' // Private lender: debt facility with fixed return terms
+  | 'tokenized';  // Tokenized: fractional ownership represented by tokens
+
+export const VALID_DEAL_TYPES: ReadonlySet<DealType> = new Set(['jv', 'private_lender', 'tokenized']);
+
 /** The countable lifecycle milestones (all start at 0). */
 export type DealMilestoneField =
   | 'investorsContacted'
@@ -57,11 +65,43 @@ export const DEAL_MILESTONE_FIELDS: readonly DealMilestoneField[] = [
   'meetingsScheduled', 'documentsShared', 'offersReceived',
 ];
 
+/** A single participant in a deal (investor / lender / token holder). */
+export type DealParticipant = {
+  /** Stable identifier of the participant (member userId, lender id, or wallet address). */
+  participantId: string;
+  /** Display name for the participant (kept for audit legibility only). */
+  displayName: string;
+  /** Percentage of ownership this participant holds (0–100). For tokenized deals this is the token share. */
+  ownershipPercentage: number;
+  /** Whole-USD amount this participant has invested into the deal. */
+  investedAmount: number;
+  /** Profit split percentage this participant is entitled to (0–100). */
+  profitPercentage: number;
+  /** When the participant joined the deal. */
+  joinedAt: string;
+  /** Optional document references (file names / storage paths). */
+  documents?: string[];
+};
+
+/** A document attached to a deal (contract, offering memo, KYC packet, etc.). */
+export type DealDocument = {
+  id: string;
+  name: string;
+  /** Storage path or URL reference. */
+  uri: string;
+  /** Document kind for filtering. */
+  kind: 'contract' | 'offering_memo' | 'kyc_packet' | 'valuation' | 'closing' | 'other';
+  uploadedAt: string;
+  uploadedBy?: string;
+};
+
 export type DealTrackingRecord = {
   id: string;
   dealName: string;
   /** Developer / seller / counterparty name, or empty if unknown. */
   counterparty: string;
+  /** Structural category of the deal. */
+  dealType: DealType;
   status: DealStatus;
   investorsContacted: number;
   investorsResponded: number;
@@ -78,6 +118,10 @@ export type DealTrackingRecord = {
   notes: string;
   source: DealSource;
   sourceDetail: string;
+  /** Participants who have joined the deal (JV partners, lenders, token holders). */
+  participants: DealParticipant[];
+  /** Documents attached to the deal. */
+  documents: DealDocument[];
   createdAt: string;
   updatedAt: string;
 };
@@ -180,6 +224,7 @@ export type CreateDealInput = {
   source: DealSource;
   sourceDetail?: string;
   counterparty?: string;
+  dealType?: DealType;
   status?: DealStatus;
   investorsContacted?: number;
   investorsResponded?: number;
@@ -191,10 +236,28 @@ export type CreateDealInput = {
   capitalCommitted?: number | null;
   closedAt?: string | null;
   notes?: string;
+  participants?: DealParticipant[];
+  documents?: DealDocument[];
 };
 
 export type UpdateDealInput = Partial<Omit<CreateDealInput, 'source'>> & {
   source?: DealSource;
+};
+
+export type JoinDealInput = {
+  participantId: string;
+  displayName: string;
+  ownershipPercentage?: number;
+  investedAmount?: number;
+  profitPercentage?: number;
+  documents?: string[];
+};
+
+export type AddDealDocumentInput = {
+  name: string;
+  uri: string;
+  kind?: DealDocument['kind'];
+  uploadedBy?: string;
 };
 
 export type DealValidation = { ok: true } | { ok: false; error: string };
@@ -231,10 +294,15 @@ function buildRecord(input: CreateDealInput, prior?: DealTrackingRecord): DealTr
   const num = (key: DealMilestoneField): number =>
     input[key] !== undefined ? normalizeCount(input[key]) : prior?.[key] ?? 0;
 
+  const dealType: DealType = input.dealType && VALID_DEAL_TYPES.has(input.dealType)
+    ? input.dealType
+    : prior?.dealType ?? 'jv';
+
   return {
     id: prior?.id ?? createId('deal'),
     dealName: asTrimmedString(input.dealName) || prior?.dealName || '',
     counterparty: input.counterparty !== undefined ? asTrimmedString(input.counterparty) : prior?.counterparty ?? '',
+    dealType,
     status,
     investorsContacted: num('investorsContacted'),
     investorsResponded: num('investorsResponded'),
@@ -248,6 +316,8 @@ function buildRecord(input: CreateDealInput, prior?: DealTrackingRecord): DealTr
     notes: input.notes !== undefined ? asTrimmedString(input.notes) : prior?.notes ?? '',
     source: input.source && VALID_SOURCES.has(input.source) ? input.source : prior?.source ?? 'owner_entered',
     sourceDetail: input.sourceDetail !== undefined ? asTrimmedString(input.sourceDetail) : prior?.sourceDetail ?? '',
+    participants: Array.isArray(input.participants) ? input.participants : prior?.participants ?? [],
+    documents: Array.isArray(input.documents) ? input.documents : prior?.documents ?? [],
     createdAt: prior?.createdAt ?? nowIso(),
     updatedAt: nowIso(),
   };
@@ -319,11 +389,165 @@ export async function deleteDeal(id: string): Promise<boolean> {
   return true;
 }
 
+// ---------------------------------------------------------------------------
+// JV / private-lender / tokenized participant + document tracking
+// ---------------------------------------------------------------------------
+
+function clampPercent(value: unknown): number {
+  const n = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(n) || n < 0) return 0;
+  if (n > 100) return 100;
+  return n;
+}
+
+function normalizeAmountWhole(value: unknown): number {
+  if (value === null || value === undefined || value === '') return 0;
+  const n = typeof value === 'number' ? value : Number(String(value).replace(/[$,\s]/g, ''));
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.round(n);
+}
+
+const VALID_DOC_KINDS: ReadonlySet<DealDocument['kind']> = new Set([
+  'contract', 'offering_memo', 'kyc_packet', 'valuation', 'closing', 'other',
+]);
+
+/** Join a participant into a deal (JV partner, private lender, or token holder).
+ *  Validates ownership + profit percentages stay within 0–100 and that the
+ *  total ownership across all participants does not exceed 100. Returns null if
+ *  the deal is not found. Returns an error string if the ownership cap is exceeded. */
+export async function joinDeal(
+  dealId: string,
+  input: JoinDealInput,
+): Promise<{ ok: true; deal: DealTrackingRecord } | { ok: false; error: string } | null> {
+  if (!asTrimmedString(input.participantId)) {
+    return { ok: false, error: 'participantId is required.' };
+  }
+  if (!asTrimmedString(input.displayName)) {
+    return { ok: false, error: 'displayName is required.' };
+  }
+  const ownership = clampPercent(input.ownershipPercentage ?? 0);
+  const profit = clampPercent(input.profitPercentage ?? 0);
+  const invested = normalizeAmountWhole(input.investedAmount ?? 0);
+
+  const items = await readJsonFile<DealTrackingRecord[]>(STATE, []);
+  const index = items.findIndex((item) => item.id === dealId);
+  if (index === -1) return null;
+
+  const deal = items[index]!;
+  const existingTotal = deal.participants.reduce((sum, p) => sum + p.ownershipPercentage, 0);
+  const existingSame = deal.participants.find((p) => p.participantId === input.participantId);
+  if (existingSame) {
+    // Updating an existing participant — recompute the total without their prior share.
+    const newTotal = existingTotal - existingSame.ownershipPercentage + ownership;
+    if (newTotal > 100) {
+      return { ok: false, error: `Ownership would exceed 100% (new total: ${newTotal}%).` };
+    }
+    existingSame.ownershipPercentage = ownership;
+    existingSame.profitPercentage = profit;
+    existingSame.investedAmount = invested;
+    existingSame.joinedAt = existingSame.joinedAt;
+    if (Array.isArray(input.documents)) existingSame.documents = input.documents;
+  } else {
+    const newTotal = existingTotal + ownership;
+    if (newTotal > 100) {
+      return { ok: false, error: `Ownership would exceed 100% (new total: ${newTotal}%).` };
+    }
+    const participant: DealParticipant = {
+      participantId: asTrimmedString(input.participantId),
+      displayName: asTrimmedString(input.displayName),
+      ownershipPercentage: ownership,
+      investedAmount: invested,
+      profitPercentage: profit,
+      joinedAt: nowIso(),
+      documents: Array.isArray(input.documents) ? input.documents : undefined,
+    };
+    deal.participants = [...deal.participants, participant];
+  }
+  // Recompute capitalCommitted from the sum of participant invested amounts when known.
+  const participantTotal = deal.participants.reduce((sum, p) => sum + p.investedAmount, 0);
+  if (participantTotal > 0) {
+    deal.capitalCommitted = participantTotal;
+  }
+  deal.updatedAt = nowIso();
+  items[index] = deal;
+  await writeJsonFile(STATE, items);
+  await appendEvent({ type: 'join', dealId, participantId: input.participantId, deal, at: deal.updatedAt });
+  return { ok: true, deal };
+}
+
+/** Remove a participant from a deal. Returns null if the deal was not found,
+ *  false if the participant was not on the deal, true on success. */
+export async function leaveDeal(dealId: string, participantId: string): Promise<boolean | null> {
+  const items = await readJsonFile<DealTrackingRecord[]>(STATE, []);
+  const index = items.findIndex((item) => item.id === dealId);
+  if (index === -1) return null;
+  const deal = items[index]!;
+  const before = deal.participants.length;
+  deal.participants = deal.participants.filter((p) => p.participantId !== participantId);
+  if (deal.participants.length === before) return false;
+  const participantTotal = deal.participants.reduce((sum, p) => sum + p.investedAmount, 0);
+  if (participantTotal > 0) deal.capitalCommitted = participantTotal;
+  deal.updatedAt = nowIso();
+  items[index] = deal;
+  await writeJsonFile(STATE, items);
+  await appendEvent({ type: 'leave', dealId, participantId, deal, at: deal.updatedAt });
+  return true;
+}
+
+/** Attach a document to a deal. Returns null if the deal was not found. */
+export async function addDealDocument(
+  dealId: string,
+  input: AddDealDocumentInput,
+): Promise<DealDocument | null> {
+  if (!asTrimmedString(input.name) || !asTrimmedString(input.uri)) {
+    return null;
+  }
+  const kind: DealDocument['kind'] = input.kind && VALID_DOC_KINDS.has(input.kind) ? input.kind : 'other';
+  const doc: DealDocument = {
+    id: createId('doc'),
+    name: asTrimmedString(input.name),
+    uri: asTrimmedString(input.uri),
+    kind,
+    uploadedAt: nowIso(),
+    uploadedBy: asTrimmedString(input.uploadedBy) || undefined,
+  };
+  const items = await readJsonFile<DealTrackingRecord[]>(STATE, []);
+  const index = items.findIndex((item) => item.id === dealId);
+  if (index === -1) return null;
+  const deal = items[index]!;
+  deal.documents = [...deal.documents, doc];
+  // Also bump the documentsShared milestone so the deal pipeline reflects the new doc.
+  deal.documentsShared = deal.documentsShared + 1;
+  deal.updatedAt = doc.uploadedAt;
+  items[index] = deal;
+  await writeJsonFile(STATE, items);
+  await appendEvent({ type: 'document_added', dealId, document: doc, at: doc.uploadedAt });
+  return doc;
+}
+
+/** Remove a document from a deal. Returns null if the deal was not found,
+ *  false if the document was not on the deal, true on success. */
+export async function removeDealDocument(dealId: string, documentId: string): Promise<boolean | null> {
+  const items = await readJsonFile<DealTrackingRecord[]>(STATE, []);
+  const index = items.findIndex((item) => item.id === dealId);
+  if (index === -1) return null;
+  const deal = items[index]!;
+  const before = deal.documents.length;
+  deal.documents = deal.documents.filter((d) => d.id !== documentId);
+  if (deal.documents.length === before) return false;
+  deal.updatedAt = nowIso();
+  items[index] = deal;
+  await writeJsonFile(STATE, items);
+  await appendEvent({ type: 'document_removed', dealId, documentId, at: deal.updatedAt });
+  return true;
+}
+
 export type DealTrackingMetrics = {
   marker: string;
   generatedAt: string;
   total: number;
   byStatus: Record<DealStatus, number>;
+  byType: Record<DealType, number>;
   /** closed_won / total, 0–100. */
   conversionRate: number;
   /** Sum of capitalCommitted on closed_won deals. */
@@ -336,6 +560,10 @@ export type DealTrackingMetrics = {
   investorResponseRate: number | null;
   totalMeetings: number;
   totalOffers: number;
+  /** Total participants across all deals (JV partners + lenders + token holders). */
+  totalParticipants: number;
+  /** Total invested amount summed across all participants (whole USD). */
+  totalInvestedByParticipants: number;
 };
 
 /** Read-only roll-up of the real outcome metrics across all tracked deals. */
@@ -343,6 +571,9 @@ export async function summarizeDeals(): Promise<DealTrackingMetrics> {
   const items = await readJsonFile<DealTrackingRecord[]>(STATE, []);
   const byStatus: Record<DealStatus, number> = {
     open: 0, in_progress: 0, closed_won: 0, closed_lost: 0,
+  };
+  const byType: Record<DealType, number> = {
+    jv: 0, private_lender: 0, tokenized: 0,
   };
   let capitalRaised = 0;
   let wonWithAmount = 0;
@@ -352,13 +583,18 @@ export async function summarizeDeals(): Promise<DealTrackingMetrics> {
   let investorsResponded = 0;
   let totalMeetings = 0;
   let totalOffers = 0;
+  let totalParticipants = 0;
+  let totalInvestedByParticipants = 0;
 
   for (const item of items) {
     byStatus[item.status] = (byStatus[item.status] ?? 0) + 1;
+    byType[item.dealType] = (byType[item.dealType] ?? 0) + 1;
     investorsContacted += item.investorsContacted;
     investorsResponded += item.investorsResponded;
     totalMeetings += item.meetingsScheduled;
     totalOffers += item.offersReceived;
+    totalParticipants += item.participants.length;
+    totalInvestedByParticipants += item.participants.reduce((sum, p) => sum + p.investedAmount, 0);
     if (item.status === 'closed_won') {
       if (item.capitalCommitted !== null) {
         capitalRaised += item.capitalCommitted;
@@ -380,6 +616,7 @@ export async function summarizeDeals(): Promise<DealTrackingMetrics> {
     generatedAt: nowIso(),
     total,
     byStatus,
+    byType,
     conversionRate: total > 0 ? Math.round((byStatus.closed_won / total) * 100) : 0,
     capitalRaised,
     averageDealSize: wonWithAmount > 0 ? Math.round(capitalRaised / wonWithAmount) : 0,
@@ -387,5 +624,7 @@ export async function summarizeDeals(): Promise<DealTrackingMetrics> {
     investorResponseRate: investorsContacted > 0 ? Math.round((investorsResponded / investorsContacted) * 100) : null,
     totalMeetings,
     totalOffers,
+    totalParticipants,
+    totalInvestedByParticipants,
   };
 }

@@ -509,3 +509,268 @@ export async function updateMemberLastLogin(userId: string): Promise<void> {
     // non-critical
   }
 }
+
+// ---------------------------------------------------------------------------
+// Member login, password reset, profile update
+// ---------------------------------------------------------------------------
+
+export interface MemberLoginResult {
+  success: boolean;
+  message: string;
+  userId?: string;
+  email?: string;
+  requiresVerification?: boolean;
+  deploymentMarker: string;
+}
+
+/** Verify a member's email + password.
+ *  - First checks the durable fallback store (scrypt-hashed passwords).
+ *  - Falls back to Supabase Auth signInWithPassword when no fallback record exists.
+ *  Records last_login_at on success. Never returns the password or session token. */
+export async function loginMember(email: string, password: string): Promise<MemberLoginResult> {
+  const normalizedEmail = email.trim().toLowerCase();
+  if (!normalizedEmail || !password) {
+    return { success: false, message: 'Email and password are required.', deploymentMarker: DEPLOYMENT_MARKER };
+  }
+
+  // 1. Durable fallback store first (covers members registered during Supabase email rate-limit).
+  const fallbackUserId = await verifyFallbackMemberPassword(normalizedEmail, password);
+  if (fallbackUserId) {
+    await updateMemberLastLogin(fallbackUserId);
+    try {
+      const supabase = getSupabaseAdmin();
+      await supabase.from('audit_logs').insert({
+        user_id: fallbackUserId,
+        action: 'member_login',
+        details: JSON.stringify({ source: 'fallback_store', email: normalizedEmail }),
+        created_at: new Date().toISOString(),
+      });
+    } catch { /* non-critical */ }
+    return { success: true, message: 'Login successful.', userId: fallbackUserId, email: normalizedEmail, deploymentMarker: DEPLOYMENT_MARKER };
+  }
+
+  // 2. Supabase Auth path.
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: normalizedEmail,
+      password,
+    });
+    if (error) {
+      const msg = error.message.toLowerCase();
+      if (msg.includes('invalid login credentials') || msg.includes('invalid credentials')) {
+        return { success: false, message: 'Invalid email or password.', deploymentMarker: DEPLOYMENT_MARKER };
+      }
+      if (msg.includes('email not confirmed')) {
+        return { success: false, message: 'Please verify your email before signing in.', requiresVerification: true, deploymentMarker: DEPLOYMENT_MARKER };
+      }
+      if (msg.includes('rate limit')) {
+        return { success: false, message: 'Too many attempts. Please wait a minute and try again.', deploymentMarker: DEPLOYMENT_MARKER };
+      }
+      return { success: false, message: `Login failed: ${error.message}`, deploymentMarker: DEPLOYMENT_MARKER };
+    }
+    const userId = data.user?.id;
+    if (!userId) {
+      return { success: false, message: 'Login succeeded but no user id returned.', deploymentMarker: DEPLOYMENT_MARKER };
+    }
+    await updateMemberLastLogin(userId);
+    // Best-effort audit log (does not block login).
+    try {
+      await supabase.from('audit_logs').insert({
+        user_id: userId,
+        action: 'member_login',
+        details: JSON.stringify({ source: 'supabase_auth', email: normalizedEmail }),
+        created_at: new Date().toISOString(),
+      });
+    } catch { /* non-critical */ }
+    return { success: true, message: 'Login successful.', userId, email: normalizedEmail, deploymentMarker: DEPLOYMENT_MARKER };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Login failed due to an internal error.';
+    console.error('[MemberDB] Login exception:', message);
+    return { success: false, message, deploymentMarker: DEPLOYMENT_MARKER };
+  }
+}
+
+/** Request a member password reset.
+ *  - For fallback-store members: verifies the member exists, then issues a
+ *    single-use reset token (random) stored alongside the record. The token
+ *    is returned once so the caller (owner/admin) can deliver it via the
+ *    chosen channel. The password itself is never reset here.
+ *  - For Supabase Auth members: triggers Supabase resetPasswordForEmail.
+ *  Always returns success:true for unknown emails to avoid user enumeration. */
+export interface MemberResetResult {
+  success: boolean;
+  message: string;
+  resetToken?: string;
+  channel?: 'fallback_store' | 'supabase_email';
+  deploymentMarker: string;
+}
+
+export async function requestMemberPasswordReset(email: string): Promise<MemberResetResult> {
+  const normalizedEmail = email.trim().toLowerCase();
+  if (!normalizedEmail) {
+    return { success: false, message: 'Email is required.', deploymentMarker: DEPLOYMENT_MARKER };
+  }
+
+  // 1. Fallback store member?
+  const store = await readMemberStore();
+  const fallbackRecord = Object.values(store).find((m) => m.email === normalizedEmail);
+  if (fallbackRecord) {
+    const token = randomBytes(24).toString('hex');
+    const now = new Date().toISOString();
+    const expiresAt = Date.now() + 30 * 60 * 1000; // 30 minutes
+    (store[fallbackRecord.id] as FallbackMemberRecord & { resetToken?: string; resetTokenExpiresAt?: number }).resetToken = token;
+    (store[fallbackRecord.id] as FallbackMemberRecord & { resetTokenExpiresAt?: number }).resetTokenExpiresAt = expiresAt;
+    store[fallbackRecord.id].updatedAt = now;
+    await writeMemberStore(store);
+    try {
+      const supabase = getSupabaseAdmin();
+      await supabase.from('audit_logs').insert({
+        user_id: fallbackRecord.id,
+        action: 'member_password_reset_requested',
+        details: JSON.stringify({ email: normalizedEmail, channel: 'fallback_store' }),
+        created_at: now,
+      });
+    } catch { /* non-critical */ }
+    return { success: true, message: 'Reset token issued. Deliver it to the member via a verified channel.', resetToken: token, channel: 'fallback_store', deploymentMarker: DEPLOYMENT_MARKER };
+  }
+
+  // 2. Supabase Auth member — trigger email reset.
+  try {
+    const supabase = getSupabaseAdmin();
+    const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail);
+    if (error) {
+      // Avoid user enumeration: still return success for unknown emails.
+      if (error.message.toLowerCase().includes('rate limit')) {
+        return { success: false, message: 'Too many reset requests. Please wait a minute and try again.', deploymentMarker: DEPLOYMENT_MARKER };
+      }
+      // Most other errors are not user-facing.
+      console.error('[MemberDB] Supabase reset error:', error.message);
+    }
+    return { success: true, message: 'If an account exists for that email, a reset link has been sent.', channel: 'supabase_email', deploymentMarker: DEPLOYMENT_MARKER };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Reset request failed.';
+    console.error('[MemberDB] Reset exception:', message);
+    return { success: false, message, deploymentMarker: DEPLOYMENT_MARKER };
+  }
+}
+
+/** Reset a fallback-store member's password using a single-use token. */
+export async function resetMemberPasswordWithToken(email: string, token: string, newPassword: string): Promise<MemberResetResult> {
+  const normalizedEmail = email.trim().toLowerCase();
+  if (!normalizedEmail || !token || !newPassword) {
+    return { success: false, message: 'Email, token, and new password are required.', deploymentMarker: DEPLOYMENT_MARKER };
+  }
+  if (newPassword.length < 8 || !/[A-Z]/.test(newPassword) || !/[0-9]/.test(newPassword)) {
+    return { success: false, message: 'Password must be at least 8 characters with 1 uppercase letter and 1 number.', deploymentMarker: DEPLOYMENT_MARKER };
+  }
+  const store = await readMemberStore();
+  const record = Object.values(store).find((m) => m.email === normalizedEmail) as (FallbackMemberRecord & { resetToken?: string; resetTokenExpiresAt?: number }) | undefined;
+  if (!record || !record.resetToken || record.resetToken !== token) {
+    return { success: false, message: 'Invalid or expired reset token.', deploymentMarker: DEPLOYMENT_MARKER };
+  }
+  if (!record.resetTokenExpiresAt || record.resetTokenExpiresAt < Date.now()) {
+    return { success: false, message: 'Reset token has expired. Please request a new one.', deploymentMarker: DEPLOYMENT_MARKER };
+  }
+  const salt = randomBytes(16).toString('hex');
+  record.passwordHash = hashPassword(newPassword, salt);
+  record.passwordSalt = salt;
+  record.resetToken = undefined;
+  record.resetTokenExpiresAt = undefined;
+  record.updatedAt = new Date().toISOString();
+  store[record.id] = record;
+  await writeMemberStore(store);
+  try {
+    const supabase = getSupabaseAdmin();
+    await supabase.from('audit_logs').insert({
+      user_id: record.id,
+      action: 'member_password_reset_completed',
+      details: JSON.stringify({ email: normalizedEmail, channel: 'fallback_store' }),
+      created_at: record.updatedAt,
+    });
+  } catch { /* non-critical */ }
+  return { success: true, message: 'Password has been reset. You can now sign in.', deploymentMarker: DEPLOYMENT_MARKER };
+}
+
+export interface UpdateMemberProfileInput {
+  userId: string;
+  firstName?: string;
+  lastName?: string;
+  phone?: string;
+  country?: string;
+  zipCode?: string;
+  pictureUrl?: string;
+}
+
+export interface UpdateMemberProfileResult {
+  success: boolean;
+  message: string;
+  profile?: MemberProfile;
+  deploymentMarker: string;
+}
+
+/** Update an existing member's profile. Only non-empty fields are written.
+ *  Writes to the Supabase profiles table and, for fallback members, the durable
+ *  store. Audit-logged. Never deletes or nulls fields the caller omits. */
+export async function updateMemberProfile(input: UpdateMemberProfileInput): Promise<UpdateMemberProfileResult> {
+  if (!input.userId) {
+    return { success: false, message: 'User ID is required.', deploymentMarker: DEPLOYMENT_MARKER };
+  }
+  const updates: Record<string, string> = {};
+  if (input.firstName !== undefined && input.firstName.trim()) updates.first_name = input.firstName.trim();
+  if (input.lastName !== undefined && input.lastName.trim()) updates.last_name = input.lastName.trim();
+  if (input.phone !== undefined && input.phone.trim()) updates.phone = input.phone.trim();
+  if (input.country !== undefined && input.country.trim()) updates.country = input.country.trim();
+  if (input.zipCode !== undefined) updates.zip_code = input.zipCode.trim();
+  if (input.pictureUrl !== undefined && input.pictureUrl.trim()) updates.picture_url = input.pictureUrl.trim();
+  if (Object.keys(updates).length === 0) {
+    return { success: false, message: 'No profile fields to update.', deploymentMarker: DEPLOYMENT_MARKER };
+  }
+  updates.updated_at = new Date().toISOString();
+
+  const supabase = getSupabaseAdmin();
+  let profileWritten = false;
+  try {
+    const { error } = await supabase.from('profiles').update(updates).eq('id', input.userId);
+    if (!error) profileWritten = true;
+    else console.error('[MemberDB] Profile update failed:', error.message);
+  } catch (err) {
+    console.error('[MemberDB] Profile update exception:', err);
+  }
+
+  // Mirror into fallback store if the member lives there.
+  try {
+    const store = await readMemberStore();
+    if (store[input.userId]) {
+      const rec = store[input.userId];
+      if (updates.first_name) rec.firstName = updates.first_name;
+      if (updates.last_name) rec.lastName = updates.last_name;
+      if (updates.phone) rec.phone = updates.phone;
+      if (updates.country) rec.country = updates.country;
+      if (updates.zip_code !== undefined) rec.zipCode = updates.zip_code;
+      if (updates.picture_url) rec.pictureUrl = updates.picture_url;
+      rec.updatedAt = updates.updated_at;
+      await writeMemberStore(store);
+      profileWritten = true;
+    }
+  } catch (err) {
+    console.error('[MemberDB] Fallback profile update exception:', err);
+  }
+
+  if (!profileWritten) {
+    return { success: false, message: 'Profile update failed — member not found or database error.', deploymentMarker: DEPLOYMENT_MARKER };
+  }
+
+  // Audit log (best-effort).
+  try {
+    await supabase.from('audit_logs').insert({
+      user_id: input.userId,
+      action: 'member_profile_updated',
+      details: JSON.stringify({ fields: Object.keys(updates) }),
+      created_at: updates.updated_at,
+    });
+  } catch { /* non-critical */ }
+
+  const profile = await getMemberProfile(input.userId);
+  return { success: true, message: 'Profile updated.', profile: profile ?? undefined, deploymentMarker: DEPLOYMENT_MARKER };
+}
