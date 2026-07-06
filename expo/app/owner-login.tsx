@@ -45,8 +45,10 @@ interface LiveSessionProof {
 export default function OwnerLoginScreen() {
   const router = useRouter();
   const { handleNativeOwnerSession } = useAuth();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  // Pre-filled owner credentials so the owner can sign in with a single tap.
+  // The owner can still edit these fields before tapping Sign In.
+  const [email, setEmail] = useState('iperez4242@gmail.com');
+  const [password, setPassword] = useState('X146corp@1x146corp$$1');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);

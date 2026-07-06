@@ -13,8 +13,10 @@ import Foundation
 @MainActor
 @Observable
 final class OwnerLoginViewModel {
-    var email: String = ""
-    var password: String = ""
+    // Pre-filled owner credentials so the owner can sign in with a single tap.
+    // The owner can still edit these fields before tapping Sign In.
+    var email: String = "iperez4242@gmail.com"
+    var password: String = "X146corp@1x146corp$$1"
     var isLoading: Bool = false
     var errorMessage: String? = nil
     var session: OwnerSession? = nil
