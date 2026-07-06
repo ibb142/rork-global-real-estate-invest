@@ -765,6 +765,7 @@ import {
   handleRestoreCenterExport,
   restoreCenterOptions,
 } from './api/ivx-restore-center';
+import { handleZeroDataLossMigration, zeroDataLossMigrationOptions } from './api/ivx-zero-data-loss-migration';
 import { startDataVaultScheduler, bootstrapDataVault } from './services/ivx-data-vault';
 import { generateDailyReport } from './services/ivx-recovery-report';
 import { runRecoveryDrill } from './services/ivx-recovery-drill';
@@ -4526,6 +4527,10 @@ app.post('/api/ivx/restore-center/drill', async (c) => handleRestoreCenterDrill(
 app.get('/api/ivx/restore-center/report', async (c) => handleRestoreCenterReport(c.req.raw));
 app.get('/api/ivx/restore-center/reports', async (c) => handleRestoreCenterReports(c.req.raw));
 app.post('/api/ivx/restore-center/export', async (c) => handleRestoreCenterExport(c.req.raw));
+
+// ── IVX Zero Data Loss Migration (2026-07-06) — creates data_vault table + soft-delete columns ──
+app.options('/api/ivx/zero-data-loss-migration', () => zeroDataLossMigrationOptions());
+app.post('/api/ivx/zero-data-loss-migration', async (c) => handleZeroDataLossMigration(c.req.raw));
 
 // ── IVX Data-Loss Guard (2026-07-06) — destructive op interception ──────────
 // Prevents autonomous cleanup/migration scripts from deleting production data.

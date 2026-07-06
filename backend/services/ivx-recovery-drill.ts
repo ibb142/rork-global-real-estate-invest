@@ -64,8 +64,10 @@ export async function runRecoveryDrill(): Promise<DrillReport> {
   const nowIso = () => new Date().toISOString();
 
   // ── Step 1: create a test member ─────────────────────────────────────────
+  // The members table uses member_id (UUID) as its PK, not "id".
   let testMemberId: string | null = null;
-  let testMemberPk: number | null = null;
+  let testMemberPk: string | null = null;
+  const pkCol = 'member_id';
 
   if (supa.missing.length > 0) {
     steps.push({ step: 'create_test_member', passed: false, detail: `Supabase not configured: ${supa.missing.join(', ')}`, evidence: {} });
@@ -83,23 +85,23 @@ export async function runRecoveryDrill(): Promise<DrillReport> {
         body: JSON.stringify({
           email: testEmail,
           full_name: 'IVX Recovery Drill (auto-cleanup)',
-          role: 'test',
-          status: 'drill',
+          member_type: 'test',
+          verification_status: 'drill',
           created_at: nowIso(),
         }),
       });
       if (createRes.ok) {
         const rows = (await createRes.json()) as Record<string, unknown>[];
         if (rows.length > 0) {
-          testMemberId = String(rows[0].id ?? rows[0].email ?? testEmail);
-          testMemberPk = typeof rows[0].id === 'number' ? rows[0].id : null;
-          steps.push({ step: 'create_test_member', passed: true, detail: `Created test member id=${testMemberId}`, evidence: { email: testEmail, id: testMemberId } });
+          testMemberId = String(rows[0].member_id ?? rows[0].email ?? testEmail);
+          testMemberPk = String(rows[0].member_id ?? '');
+          steps.push({ step: 'create_test_member', passed: true, detail: `Created test member member_id=${testMemberId}`, evidence: { email: testEmail, member_id: testMemberId } });
         } else {
           steps.push({ step: 'create_test_member', passed: false, detail: 'No rows returned after insert', evidence: { email: testEmail } });
         }
       } else {
         const body = await createRes.text().catch(() => '');
-        steps.push({ step: 'create_test_member', passed: false, detail: `HTTP ${createRes.status}`, evidence: { status: createRes.status, body: body.slice(0, 200) } });
+        steps.push({ step: 'create_test_member', passed: false, detail: `HTTP ${createRes.status}: ${body.slice(0, 200)}`, evidence: { status: createRes.status, body: body.slice(0, 200) } });
       }
     } catch (err) {
       steps.push({ step: 'create_test_member', passed: false, detail: err instanceof Error ? err.message : 'error', evidence: {} });
@@ -111,6 +113,7 @@ export async function runRecoveryDrill(): Promise<DrillReport> {
     const sd = await softDeleteRow({
       table: 'members',
       recordId: testMemberPk,
+      pkColumn: pkCol,
       deletedBy: 'recovery-drill',
       reason: 'Automated recovery drill — soft delete test',
     });
@@ -126,7 +129,7 @@ export async function runRecoveryDrill(): Promise<DrillReport> {
 
   // ── Step 3: restore the soft-deleted member ──────────────────────────────
   if (testMemberPk !== null) {
-    const rs = await restoreSoftDeletedRow({ table: 'members', recordId: testMemberPk });
+    const rs = await restoreSoftDeletedRow({ table: 'members', recordId: testMemberPk, pkColumn: pkCol });
     steps.push({
       step: 'restore_soft_deleted_member',
       passed: rs.ok,
@@ -143,7 +146,7 @@ export async function runRecoveryDrill(): Promise<DrillReport> {
       table: 'members',
       recordId: testMemberPk,
       action: 'DELETE',
-      oldData: { id: testMemberPk, email: `ivx-drill-${testMemberPk}@recovery.test`, drill: true },
+      oldData: { member_id: testMemberPk, email: `ivx-drill-${testMemberPk}@recovery.test`, drill: true },
       userId: 'recovery-drill',
       reason: 'Drill capture — test vault restore',
     });
@@ -224,7 +227,7 @@ export async function runRecoveryDrill(): Promise<DrillReport> {
   // ── Cleanup: remove the test member so we don't pollute the table ────────
   if (testMemberPk !== null) {
     try {
-      await fetch(`${supa.url}/rest/v1/members?id=eq.${testMemberPk}`, {
+      await fetch(`${supa.url}/rest/v1/members?member_id=eq.${encodeURIComponent(testMemberPk)}`, {
         method: 'DELETE',
         headers: { apikey: supa.key, Authorization: `Bearer ${supa.key}` },
       });
