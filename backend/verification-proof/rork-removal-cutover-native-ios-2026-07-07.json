@@ -1,0 +1,73 @@
+{
+  "proofId": "rork-removal-cutover-native-ios-2026-07-07",
+  "timestamp": "2026-07-07T01:10Z",
+  "scope": "Native iOS cutover audit (Phase 6) — extends rork-removal-cutover-2026-07-07.json",
+  "rule": "Do not crash app. Phased cutover with rollback.",
+
+  "nativeIosAudit": {
+    "rorkDependenciesScanned": "all *.swift files + project.pbxproj",
+    "matchesFound": 3,
+    "details": [
+      {
+        "file": "ios-ivx/Ivx/Config.swift",
+        "lines": "14-17, 25-28",
+        "items": "EXPO_PUBLIC_RORK_API_BASE_URL, EXPO_PUBLIC_RORK_AUTH_URL, EXPO_PUBLIC_FUNCTIONS_URL, EXPO_PUBLIC_RORK_TOOLKIT_SECRET_KEY, EXPO_PUBLIC_TOOLKIT_URL (empty string literals)",
+        "runtimeImpact": "zero — file is auto-generated at build time; grep for Config.EXPO_PUBLIC_RORK_* across all Swift = 0 reads",
+        "removableInSandbox": "no — auto-regenerates from the platform public-env list each build; editing source is futile",
+        "status": "RUNTIME-IRRELEVANT — no Swift code reads these stubs. They exist only because the platform injects the names into the iOS build config. On the independent checkout (no Rork platform), the build config generator won't emit them and Config.swift won't contain them."
+      },
+      {
+        "file": "ios-ivx/Ivx/Models/IVXVariablePresence.swift",
+        "lines": "14-15",
+        "items": "IVXVariableStatus.missingFromRork = MISSING_FROM_RORK, .presentInRorkNotInjected = PRESENT_IN_RORK_NOT_INJECTED",
+        "runtimeImpact": "Coupled to backend status strings — backend/services/ivx-runtime-variables.ts still emits these exact raw values. Renaming the Swift enum raw values alone would break Codable decoding and crash the Variables screen when the live backend returns PRESENT_IN_RORK_NOT_INJECTED.",
+        "removableInSandbox": "no — requires backend rename in the same commit to keep Codable in sync (no-crash rule)",
+        "status": "BACKEND-COUPLED — must be renamed in lockstep with backend/services/ivx-runtime-variables.ts on the independent checkout. Not a standalone native change.",
+        "downstreamReads": [
+          "ios-ivx/Ivx/Views/VariablesView.swift:358 (case .presentInRorkNotInjected → color)",
+          "ios-ivx/Ivx/ViewModels/IVXVariablesViewModel.swift:101,112 (status label + inject hint)"
+        ]
+      },
+      {
+        "file": "ios-ivx/Ivx.xcodeproj/project.pbxproj",
+        "lines": "414,447,469,491,511,531",
+        "items": "PRODUCT_BUNDLE_IDENTIFIER = app.rork.r64gj6i3shhxqnlbhiewv (+ .tests, .uitests)",
+        "runtimeImpact": "none — this is the app signing/App Store Connect identifier, not a runtime Rork API call",
+        "removableInSandbox": "no — changing the bundle ID breaks app continuity (App Store Connect record, push certs, keychain). It's a business/identity decision, not a runtime Rork dependency.",
+        "status": "IDENTITY — leave as-is or change to com.ivxholding.app on the independent checkout when you're ready to take over the App Store record."
+      }
+    ],
+    "rorkSdkInIos": "none — iOS is native Swift, no npm/SPM Rork package",
+    "rorkUrlsInSwiftRuntime": "none — all AI/auth flows call https://api.ivxholding.com directly (OwnerAuthService, all views)",
+    "rorkEnvDependencyAtRuntime": "none — Config.swift empty stubs are never read",
+    "directIvxApiCalls": "confirmed — OwnerAuthService and all views call api.ivxholding.com"
+  },
+
+  "phase6_iosCutover_final": {
+    "status": "VERIFIED RORK-FREE AT RUNTIME",
+    "rorkSdk": "none",
+    "rorkUrlsInSwiftRuntime": "none",
+    "rorkEnvDependencyAtRuntime": "none",
+    "buildCheck": "PASSED — runChecks(ios-ivx) → 'Checks passed. Build succeeded for ios-ivx.'",
+    "remainingRorkStrings": "3 (Config.swift auto-gen stubs [zero runtime impact], IVXVariablePresence enum raw values [backend-coupled], project.pbxproj bundle ID [identity])",
+    "actionTaken": "none — no change needed at runtime. The 3 matches are non-runtime: auto-generated config, Codable-coupled enum, and App Store identity.",
+    "independentCheckoutActions": [
+      "Config.swift: no action — the independent build config generator won't emit Rork-named entries",
+      "IVXVariablePresence.swift: rename enum cases + raw values in lockstep with backend/services/ivx-runtime-variables.ts (rename MISSING_FROM_RORK → MISSING_FROM_IVX, PRESENT_IN_RORK_NOT_INJECTED → PRESENT_NOT_INJECTED) and update VariablesView.swift:358 + IVXVariablesViewModel.swift:101,112",
+      "project.pbxproj: change bundle ID to com.ivxholding.app (and .tests/.uitests) when ready to own the App Store record"
+    ]
+  },
+
+  "buildProof": {
+    "appPath": "ios-ivx",
+    "runChecksResult": "Checks passed. Build succeeded for ios-ivx.",
+    "artifacts": "installable build artifacts created (use submitBuild for App Store/TestFlight delivery)"
+  },
+
+  "finalState": {
+    "NATIVE_IOS_STATUS": "VERIFIED RORK-FREE AT RUNTIME — build passes, no Rork SDK, no Rork URLs read at runtime, no Rork env dependency at runtime",
+    "NATIVE_IOS_BUILD": "PASSED",
+    "NATIVE_IOS_BLOCKERS": "none at runtime. 3 non-runtime Rork strings remain (auto-gen stubs, Codable-coupled enum, bundle ID) — all handled on the independent checkout, none crash the app today.",
+    "OVERALL_CUTOVER_STATUS": "Backend AI cutover complete in code (25 tests pass, blocked on env rotation before deploy). Native iOS verified Rork-free at runtime. Expo/Android SDK removal blocked on independent checkout by design (Rork cloud bundler requires it in-sandbox)."
+  }
+}
