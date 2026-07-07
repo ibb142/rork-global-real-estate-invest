@@ -1597,13 +1597,11 @@ export default function IVXOwnerChatRoute() {
     if (isConversationSwitch && messages.length > 0) {
       lastScrolledConversationIdRef.current = activeConversationId;
       ivxDiagnostics.recordAutoScroll('conversation-load');
-      // OPEN-ON-LATEST FIX: anchor the thread to the newest message. We set a
-      // pending flag that onLayout/onContentSizeChange also check, so even if
-      // this first scrollToEnd fails because the list hasn't measured yet, a
-      // later layout checkpoint will finish the job. Multiple timing retries
-      // cover Android's delayed measurement and dynamic bubble heights.
+      // JUMP-FIX: just arm the pending flag. The FlatList's onLayout /
+      // onContentSizeChange will fire a SINGLE scrollToEnd once the list has
+      // actually measured. Calling scrollToEnd here too caused an early jump
+      // before measurement, then a second jump on layout = the visible jitter.
       pendingInitialScrollRef.current = true;
-      scrollToBottomRobust(false);
       isAtBottomRef.current = true;
       setShowScrollToLatest(false);
       setUnreadCount(0);
@@ -4997,48 +4995,16 @@ export default function IVXOwnerChatRoute() {
   }, [controlRoomItems]);
   const shouldShowDiagnosticsToggle = developerToolsAllowed;
 
-  const scrollOwnerThreadToEnd = useCallback((animated: boolean = true) => {
-    const scrollIfAllowed = () => {
-      if (Date.now() >= suppressAutoScrollUntilRef.current) {
-        flatListRef.current?.scrollToEnd({ animated });
-      }
-    };
-
-    requestAnimationFrame(scrollIfAllowed);
-    setTimeout(scrollIfAllowed, Platform.OS === 'android' ? 220 : 80);
-    setTimeout(scrollIfAllowed, Platform.OS === 'android' ? 520 : 180);
-  }, []);
-
-  // OPEN-ON-LATEST FIX: single deterministic scroll-to-newest. The list is
-  // rendered with initialScrollIndex anchored at the last message so the chat
-  // opens on the latest conversation like WhatsApp/iMessage. This function is
-  // only used for subsequent new-message arrival and composer growth; it avoids
-  // repeated retries that caused visible jumping.
-  const scrollToBottomRobust = useCallback((animated: boolean = false) => {
-    const lastIndex = displayedMessages.length - 1;
-    if (lastIndex < 0) {
-      return;
-    }
-
+  // JUMP-FIX: single deterministic scroll. The previous version fired 3
+  // animated retries (rAF + 2 setTimeout) which competed with
+  // initialScrollIndex, onLayout, and onContentSizeChange — causing the
+  // visible jump/jitter the owner reported. One call, no retries.
+  const scrollOwnerThreadToEnd = useCallback((animated: boolean = false) => {
     if (Date.now() < suppressAutoScrollUntilRef.current) {
       return;
     }
-
-    if (!flatListRef.current) {
-      return;
-    }
-
-    try {
-      flatListRef.current.scrollToEnd({ animated });
-    } catch (error) {
-      console.log('[IVXOwnerChatRoute] scrollToEnd failed, falling back:', error instanceof Error ? error.message : 'unknown');
-      try {
-        flatListRef.current.scrollToIndex({ index: lastIndex, animated, viewPosition: 1 });
-      } catch (indexError) {
-        console.log('[IVXOwnerChatRoute] scrollToIndex fallback pending:', indexError instanceof Error ? indexError.message : 'unknown');
-      }
-    }
-  }, [displayedMessages.length]);
+    flatListRef.current?.scrollToEnd({ animated });
+  }, []);
 
   const handleMessageListScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     ivxDiagnostics.recordScroll('message-list');
@@ -5060,8 +5026,8 @@ export default function IVXOwnerChatRoute() {
     isAtBottomRef.current = true;
     setUnreadCount(0);
     setShowScrollToLatest(false);
-    requestAnimationFrame(() => flatListRef.current?.scrollToEnd({ animated: true }));
-    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), Platform.OS === 'android' ? 260 : 120);
+    // JUMP-FIX: single non-animated scroll to latest. No retries.
+    flatListRef.current?.scrollToEnd({ animated: false });
   }, []);
 
   // Floating chat navigation: when a message is sent or received, auto-scroll to the
@@ -5088,7 +5054,9 @@ export default function IVXOwnerChatRoute() {
       setShowScrollToLatest(true);
     } else {
       ivxDiagnostics.recordAutoScroll('new-message');
-      scrollOwnerThreadToEnd(true);
+      // JUMP-FIX: single non-animated scroll for new messages. Animated
+      // scrolls on every incoming message caused visible jumping.
+      scrollOwnerThreadToEnd(false);
     }
   }, [displayedMessages.length, searchActive, scrollOwnerThreadToEnd]);
 
@@ -5119,8 +5087,9 @@ export default function IVXOwnerChatRoute() {
         : nextInset;
       console.log('[IVXOwnerChatRoute] Keyboard shown inset:', normalizedInset, 'rawHeight:', nextInset, 'bottomInset:', insets.bottom);
       setKeyboardInset(normalizedInset);
-      scrollOwnerThreadToEnd(true);
-      setTimeout(() => scrollOwnerThreadToEnd(true), Platform.OS === 'android' ? 520 : 160);
+      // JUMP-FIX: single non-animated scroll when keyboard appears. The
+      // previous double animated scroll caused the list to jump twice.
+      scrollOwnerThreadToEnd(false);
     };
 
     const handleKeyboardHide = () => {
@@ -6049,31 +6018,21 @@ export default function IVXOwnerChatRoute() {
               ListFooterComponentStyle={styles.listFooterContainer}
               onContentSizeChange={(width, height) => {
                 ivxDiagnostics.recordContentHeight(`h=${Math.round(height)} count=${displayedMessages.length} atBottom=${isAtBottomRef.current}`);
-                // OPEN-ON-LATEST FIX: on first load or conversation switch, force
-                // a scroll to the newest message once the content size is known.
+                // JUMP-FIX: only act on the FIRST measurement (pending initial
+                // scroll). Re-scrolling on every content-size change (which fires
+                // when dynamic bubbles re-measure) caused the continuous jitter.
                 if (pendingInitialScrollRef.current && displayedMessages.length > 0) {
-                  scrollToBottomRobust(false);
-                  pendingInitialScrollRef.current = false;
-                  return;
-                }
-                if (Date.now() < suppressAutoScrollUntilRef.current) {
-                  return;
-                }
-                // Keep pinned to the bottom as new messages/streaming content
-                // arrives, unless the user is intentionally reading older messages.
-                if (isAtBottomRef.current) {
                   flatListRef.current?.scrollToEnd({ animated: false });
+                  pendingInitialScrollRef.current = false;
                 }
               }}
               onLayout={() => {
-                // OPEN-ON-LATEST FIX: re-anchor to the newest message once the
-                // FlatList itself has mounted and measured. This covers the race
-                // where messagesQuery data arrives before the list has laid out.
+                // JUMP-FIX: only anchor on the very first layout. The previous
+                // version re-scrolled on every layout while at bottom, competing
+                // with onContentSizeChange and causing jumps.
                 if (pendingInitialScrollRef.current && displayedMessages.length > 0) {
-                  scrollToBottomRobust(false);
-                  pendingInitialScrollRef.current = false;
-                } else if (isAtBottomRef.current) {
                   flatListRef.current?.scrollToEnd({ animated: false });
+                  pendingInitialScrollRef.current = false;
                 }
               }}
               onScrollToIndexFailed={(info) => {
