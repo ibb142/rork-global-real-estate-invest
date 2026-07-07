@@ -206,17 +206,15 @@ export const MessageBubble = memo(function MessageBubble({
     : [];
   const hasReadReceipts = isMine && !message.optimistic && otherReaders.length >= 1;
   const readByCount = otherReaders.length;
+  // Loading labels (Sending/Uploading) removed from the chat UI. Messages still
+  // send optimistically; we just don't paint the intermediate loading state.
   const statusLabel = isFailed
     ? 'Not sent'
-    : isUploading
-      ? 'Uploading'
-      : isSending
-        ? 'Sending'
-        : hasReadReceipts
-          ? readByCount > 1 ? `Seen by ${readByCount}` : 'Seen'
-          : isMine
-            ? 'Sent'
-            : 'Delivered';
+    : hasReadReceipts
+      ? readByCount > 1 ? `Seen by ${readByCount}` : 'Seen'
+      : isMine
+        ? 'Sent'
+        : 'Delivered';
 
   const bubbleStyles = isMine
     ? [styles.bubble, styles.myBubble, isFailed ? styles.failedBubble : null]

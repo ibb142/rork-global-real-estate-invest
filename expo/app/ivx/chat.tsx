@@ -1585,34 +1585,25 @@ export default function IVXOwnerChatRoute() {
       return;
     }
 
-    // Only force a jump-to-end when the conversation FIRST loads / is switched.
-    // For incremental message arrivals while the owner may be reading older
-    // messages, defer to the position-aware auto-scroll effect below (which
-    // respects isAtBottomRef + the suppress guard). Forcing scrollToEnd here on
-    // every messages.length change is what yanked the viewport mid-read.
+    // Always force a jump-to-end when the conversation FIRST loads / is switched.
+    // The thread must open on the newest message so the owner sees the latest
+    // conversation immediately, matching WhatsApp/iMessage behavior.
     const activeConversationId = conversationQuery.data?.id ?? 'ivx-owner-room';
     const isConversationSwitch = lastScrolledConversationIdRef.current !== activeConversationId;
-    if (isConversationSwitch) {
+    if (isConversationSwitch && messages.length > 0) {
       lastScrolledConversationIdRef.current = activeConversationId;
       ivxDiagnostics.recordAutoScroll('conversation-load');
-      // WhatsApp-style: scroll to the newest message immediately, then again
-      // after the FlatList has fully committed its layout (handles race with
-      // onContentSizeChange + dynamic message bubble heights).
-      requestAnimationFrame(() => {
+      // Aggressive retries: scrollToEnd often fails on the first tick because
+      // FlatList has not measured dynamic message bubbles yet. We fire on every
+      // animation frame plus several settled-layout checkpoints.
+      const scrollToLatest = () => {
         flatListRef.current?.scrollToEnd({ animated: false });
-      });
-      // Fallback: retry after layout settles (especially on Android where
-      // FlatList measurements can lag behind data arrival). Multiple retries
-      // because the FlatList may not have measured yet on the first tick.
-      setTimeout(() => {
-        flatListRef.current?.scrollToEnd({ animated: false });
-      }, 150);
-      setTimeout(() => {
-        flatListRef.current?.scrollToEnd({ animated: false });
-      }, 300);
-      setTimeout(() => {
-        flatListRef.current?.scrollToEnd({ animated: false });
-      }, 600);
+      };
+      requestAnimationFrame(scrollToLatest);
+      [80, 150, 300, 500, 800, 1200].forEach((ms) => setTimeout(scrollToLatest, ms));
+      isAtBottomRef.current = true;
+      setShowScrollToLatest(false);
+      setUnreadCount(0);
     }
 
     if (!localFirstChatMode) {
@@ -4164,13 +4155,9 @@ export default function IVXOwnerChatRoute() {
     return formatAIExecutionStage(aiExecutionStage);
   }, [aiExecutionStage]);
   const attachmentDisabled = attachmentMutation.isPending || isPickingFile || isRecordingVoice || isTranscribingVoice;
-  const composerPlaceholder = attachmentMutation.isPending
-    ? 'Uploading attachment...'
-    : isPickingFile
-      ? 'Choosing attachment...'
-      : sendMessageMutation.isPending
-        ? 'Sending message...'
-        : 'Message IVX Owner AI';
+  // Chat loading placeholders removed: the composer always shows the same
+  // prompt regardless of in-flight uploads/sends so the UI never feels stuck.
+  const composerPlaceholder = 'Message IVX Owner AI';
   const activeFallbackForCurrentMessage = shouldShowFallbackUI({
     source: normalizeRuntimeSource(runtimeDebugSnapshot.source),
     requestStage: runtimeDebugSnapshot.requestStage,
@@ -5256,12 +5243,8 @@ export default function IVXOwnerChatRoute() {
                 disabled={isRefreshingOwnerSession}
                 testID="ivx-owner-refresh-session-banner"
               >
-                {isRefreshingOwnerSession ? (
-                  <ActivityIndicator size="small" color={Colors.black} />
-                ) : (
-                  <KeyRound size={13} color={Colors.black} />
-                )}
-                <Text style={styles.refreshOwnerSessionButtonText}>{isRefreshingOwnerSession ? 'Refreshing…' : 'Refresh Owner Session'}</Text>
+                <KeyRound size={13} color={Colors.black} />
+                <Text style={styles.refreshOwnerSessionButtonText}>Refresh Owner Session</Text>
               </Pressable>
               <Text style={styles.ownerAuthFailureBannerAction}>Tap card to open Auth Diagnostics →</Text>
             </Pressable>
@@ -6061,15 +6044,15 @@ export default function IVXOwnerChatRoute() {
                 if (Date.now() < suppressAutoScrollUntilRef.current) {
                   return;
                 }
-                // Initial/short threads: settle to the end. While the owner is
-                // pinned to the bottom (e.g. a reply streaming in), keep them
-                // there as content grows — without animation so it tracks the
-                // growing content smoothly instead of jumping.
-                if (displayedMessages.length <= 2) {
-                  scrollOwnerThreadToEnd(false);
-                } else if (isAtBottomRef.current) {
-                  flatListRef.current?.scrollToEnd({ animated: false });
-                }
+                // Open on the latest conversation and stay pinned to the bottom
+                // as new messages/streaming content arrives.
+                flatListRef.current?.scrollToEnd({ animated: false });
+              }}
+              onLayout={() => {
+                // Re-anchor to the newest message once the FlatList itself has
+                // mounted and measured. This covers the race where messagesQuery
+                // data arrives before the list has laid out.
+                flatListRef.current?.scrollToEnd({ animated: false });
               }}
               onScrollToIndexFailed={(info) => {
                 suppressAutoScrollUntilRef.current = Date.now() + 1800;
@@ -6137,14 +6120,9 @@ export default function IVXOwnerChatRoute() {
                 }
               }}
             >
-              {isAIWorking ? (
-                <View style={styles.typingIndicator} testID="ivx-owner-typing-indicator" accessibilityLiveRegion="polite">
-                  <View style={styles.typingDot} />
-                  <View style={[styles.typingDot, styles.typingDotMid]} />
-                  <View style={styles.typingDot} />
-                  <Text style={styles.typingText} numberOfLines={1} testID={`ivx-owner-typing-stage-${aiExecutionStage}`}>{aiWorkingMessage}</Text>
-                </View>
-              ) : null}
+              {/* Typing / loading indicator removed per owner request: the chat
+                  UI no longer displays animated dots or "Delivering your message…"
+                  banners. The underlying send/mutation state still works. */}
               {draftAttachments.length > 0 ? (
                 <View style={styles.draftAttachmentRow} testID="ivx-owner-draft-attachment">
                   <View style={styles.draftAttachmentMeta}>
@@ -6228,7 +6206,7 @@ export default function IVXOwnerChatRoute() {
                 </View>
               ) : null}
               <View
-                style={[styles.chatLiveWorkBar, (isBusy || activeLiveWorkTask) ? styles.chatLiveWorkBarActive : null]}
+                style={[styles.chatLiveWorkBar, activeLiveWorkTask ? styles.chatLiveWorkBarActive : null]}
                 testID="ivx-chat-live-work-bar"
               >
                 <Pressable
@@ -6239,38 +6217,37 @@ export default function IVXOwnerChatRoute() {
                   testID="ivx-chat-open-live-work"
                   hitSlop={6}
                 >
-                  <View style={[styles.chatLiveWorkDot, (isBusy || activeLiveWorkTask) ? styles.chatLiveWorkDotActive : null]} />
+                  <View style={[styles.chatLiveWorkDot, activeLiveWorkTask ? styles.chatLiveWorkDotActive : null]} />
                   <View style={styles.chatLiveWorkCopy}>
                     <Text style={styles.chatLiveWorkTitle} numberOfLines={1}>
-                      {(isBusy || activeLiveWorkTask) ? (activeLiveWorkTask?.label ?? 'IVX is working…') : 'Live Work'}
+                      {'Live Work'}
                     </Text>
                     <Text style={styles.chatLiveWorkSub} numberOfLines={1}>
-                      {(isBusy || activeLiveWorkTask) ? 'Tap to watch this task stream live' : 'Watch IVX execute tasks in real time'}
+                      {'Watch IVX execute tasks in real time'}
                     </Text>
                   </View>
                   <Terminal size={16} color={Colors.primary} />
                 </Pressable>
-                {(isBusy || activeLiveWorkTask) ? (
-                  <View style={styles.chatLiveWorkActions}>
-                    <Pressable style={styles.chatLiveWorkAction} onPress={() => handleOpenLiveWork()} testID="ivx-chat-live-work-view" hitSlop={6}>
-                      <Activity size={13} color={Colors.text} />
-                      <Text style={styles.chatLiveWorkActionText}>View</Text>
-                    </Pressable>
-                    <Pressable style={styles.chatLiveWorkAction} onPress={() => setWatchdogDrawerVisible(true)} testID="ivx-chat-live-work-watchdog" hitSlop={6}>
-                      <ShieldCheck size={13} color={Colors.text} />
-                      <Text style={styles.chatLiveWorkActionText}>Watchdog</Text>
-                    </Pressable>
-                    <Pressable style={styles.chatLiveWorkAction} onPress={() => { void handleCopyTaskLog(); }} testID="ivx-chat-live-work-copy" hitSlop={6}>
-                      <Text style={styles.chatLiveWorkActionText}>Copy log</Text>
-                    </Pressable>
-                    {activeLiveWorkTask ? (
-                      <Pressable style={styles.chatLiveWorkAction} onPress={() => setActiveLiveWorkTask(null)} testID="ivx-chat-live-work-dismiss" hitSlop={6}>
-                        <X size={13} color={Colors.textTertiary} />
-                        <Text style={styles.chatLiveWorkActionText}>Dismiss</Text>
-                      </Pressable>
-                    ) : null}
-                  </View>
-                ) : null}
+                {/* Live-work actions hidden when idle to keep the composer clean. */}
+              {activeLiveWorkTask ? (
+                <View style={styles.chatLiveWorkActions}>
+                  <Pressable style={styles.chatLiveWorkAction} onPress={() => handleOpenLiveWork()} testID="ivx-chat-live-work-view" hitSlop={6}>
+                    <Activity size={13} color={Colors.text} />
+                    <Text style={styles.chatLiveWorkActionText}>View</Text>
+                  </Pressable>
+                  <Pressable style={styles.chatLiveWorkAction} onPress={() => setWatchdogDrawerVisible(true)} testID="ivx-chat-live-work-watchdog" hitSlop={6}>
+                    <ShieldCheck size={13} color={Colors.text} />
+                    <Text style={styles.chatLiveWorkActionText}>Watchdog</Text>
+                  </Pressable>
+                  <Pressable style={styles.chatLiveWorkAction} onPress={() => { void handleCopyTaskLog(); }} testID="ivx-chat-live-work-copy" hitSlop={6}>
+                    <Text style={styles.chatLiveWorkActionText}>Copy log</Text>
+                  </Pressable>
+                  <Pressable style={styles.chatLiveWorkAction} onPress={() => setActiveLiveWorkTask(null)} testID="ivx-chat-live-work-dismiss" hitSlop={6}>
+                    <X size={13} color={Colors.textTertiary} />
+                    <Text style={styles.chatLiveWorkActionText}>Dismiss</Text>
+                  </Pressable>
+                </View>
+              ) : null}
               </View>
               <View style={styles.templateRow} testID="ivx-owner-chat-template-row">
                 {OWNER_PROMPT_TEMPLATES.map((template) => (

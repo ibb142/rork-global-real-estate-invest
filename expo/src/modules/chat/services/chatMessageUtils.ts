@@ -343,17 +343,19 @@ export function resolveAIExecutionStage(input: {
 }
 
 export function formatAIExecutionStage(stage: AIExecutionStage): string {
+  // Loading / progress banners are intentionally suppressed in the chat UI.
+  // Only terminal states that need owner attention surface text here.
   switch (stage) {
     case 'idle': return '';
-    case 'uploading_attachment': return 'Uploading attachment…';
-    case 'delivering_message': return 'Delivering your message…';
-    case 'searching_repo': return 'Searching the repository…';
-    case 'reading_files': return 'Reading source files…';
-    case 'inspecting_functions': return 'Inspecting functions…';
-    case 'running_checks': return 'Running checks…';
-    case 'preparing_patch': return 'Preparing patch…';
-    case 'awaiting_provider': return 'IVX IA is thinking…';
-    case 'streaming_response': return 'Streaming response…';
+    case 'uploading_attachment': return '';
+    case 'delivering_message': return '';
+    case 'searching_repo': return '';
+    case 'reading_files': return '';
+    case 'inspecting_functions': return '';
+    case 'running_checks': return '';
+    case 'preparing_patch': return '';
+    case 'awaiting_provider': return '';
+    case 'streaming_response': return '';
     case 'blocked_waiting': return 'Blocked — waiting on owner / provider…';
     case 'done': return '';
   }
