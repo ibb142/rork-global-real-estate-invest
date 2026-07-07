@@ -1,47 +1,84 @@
 {
   "verified": true,
-  "timestamp": "2026-07-07T23:39:37Z",
-  "scope": "End-to-end owner sign-in QA + live Render deploy",
+  "timestamp": "2026-07-07T23:45:30Z",
+  "scope": "Owner sign-in end-to-end QA + fresh Render deploy",
   "deploy": {
-    "renderDeployId": "dep-d96orfuq1p3s73fn9mug",
+    "renderDeployId": "dep-d96ou7uq1p3s73fne35g",
     "renderServiceId": "srv-d7t9ivreo5us73ftose0",
     "renderServiceName": "ivx-holdings-platform",
+    "renderServiceUrl": "https://ivx-holdings-platform.onrender.com",
+    "renderApiUrl": "https://api.ivxholding.com",
     "status": "live",
-    "finishedAt": "2026-07-07T23:39:01.794113Z",
-    "trigger": "api",
+    "finishedAt": "2026-07-07T23:44:57.968591Z",
+    "trigger": "api (clearCache=do_not_clear)",
+    "repo": "https://github.com/ibb142/rork-global-real-estate-invest",
+    "branch": "main",
     "commit": "79c5b3cfc0d515bb26fe6e19dd70ad98b818d702"
+  },
+  "envFix": {
+    "file": "expo/.env",
+    "action": "Cleaned corrupted values — removed descriptive text mixed into secrets. All values now parse cleanly.",
+    "fieldsFixed": [
+      "SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "IVX_SUPABASE_URL",
+      "IVX_OWNER_TOKEN", "GITHUB_REPO_URL", "RENDER_API_KEY", "RENDER_SERVICE_ID"
+    ]
   },
   "qaResults": [
     {
       "step": 1,
       "test": "GET /health",
-      "result": "PASS",
       "httpStatus": 200,
-      "evidence": "status=healthy, commit=79c5b3cf, bootTime=2026-07-07T23:38:54.033Z"
+      "result": "PASS",
+      "evidence": "status=healthy, commit=79c5b3cf, bootTime=2026-07-07T23:44:50.186Z"
     },
     {
       "step": 2,
-      "test": "POST /api/ivx/owner-passwordless-login with real owner email",
+      "test": "OPTIONS /api/ivx/owner-passwordless-login (CORS preflight)",
+      "httpStatus": 204,
       "result": "PASS",
-      "httpStatus": 200,
-      "evidence": "success=true, Supabase JWT accessToken returned, accountType=owner"
+      "evidence": "preflight OK"
     },
     {
       "step": 3,
-      "test": "POST /api/ivx/owner-passwordless-login with no email",
+      "test": "POST /api/ivx/owner-passwordless-login with real owner email (Iperez4242@gmail.com)",
+      "httpStatus": 200,
       "result": "PASS",
-      "httpStatus": 400,
-      "evidence": "missing_or_invalid_email"
+      "evidence": "success=true, Supabase JWT accessToken returned, hasJWT=true"
     },
     {
       "step": 4,
-      "test": "POST /api/ivx/owner-passwordless-login with non-allowlist email",
+      "test": "POST /api/ivx/owner-passwordless-login with no email",
+      "httpStatus": 400,
       "result": "PASS",
+      "evidence": "rejected missing email"
+    },
+    {
+      "step": 5,
+      "test": "POST /api/ivx/owner-passwordless-login with non-allowlist email (hacker@evil.com)",
       "httpStatus": 403,
+      "result": "PASS",
       "evidence": "email_not_allowlisted"
+    },
+    {
+      "step": 6,
+      "test": "GET /api/ivx/owner-variables/status with owner token",
+      "httpStatus": 200,
+      "result": "PASS",
+      "evidence": "authenticated owner token accepted"
+    },
+    {
+      "step": 7,
+      "test": "GET /api/ivx/owner-variables/status with no auth",
+      "httpStatus": 401,
+      "result": "PASS",
+      "evidence": "unauthenticated request rejected"
     }
   ],
-  "ownerEmail": "iperez4242@gmail.com",
+  "ownerEmail": "Iperez4242@gmail.com",
   "autoSignIn": "removed (manual sign-in only)",
-  "verifier": "rork-senior-developer-agent"
+  "githubTokenStatus": "401 Bad credentials — token ghp_...QTOt is revoked/expired. Cannot push new commits to GitHub. Render auto-deploys from connected branch on commit; manual deploys triggered via Render API still work.",
+  "renderApiKeyStatus": "valid (200)",
+  "allStepsPassed": true,
+  "verifier": "rork-senior-developer-agent",
+  "verifierMethod": "Live HTTP requests against https://api.ivxholding.com + Render API polling"
 }
