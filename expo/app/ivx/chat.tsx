@@ -858,6 +858,11 @@ export default function IVXOwnerChatRoute() {
   const prevMessageCountRef = useRef<number>(0);
   const prevSearchActiveRef = useRef<boolean>(false);
   const lastScrolledConversationIdRef = useRef<string | null>(null);
+  // OPEN-ON-LATEST FIX: tracks whether the chat still needs to be anchored to
+  // the newest message after first load / conversation switch. Cleared once a
+  // scroll to the bottom actually executes. Prevents the race where scrollToEnd
+  // fires before the FlatList has measured dynamic message bubbles.
+  const pendingInitialScrollRef = useRef<boolean>(true);
   const insets = useSafeAreaInsets();
   const { user, userId } = useAuth();
   const [composerValue, setComposerValue] = useState<string>('');
@@ -1593,14 +1598,13 @@ export default function IVXOwnerChatRoute() {
     if (isConversationSwitch && messages.length > 0) {
       lastScrolledConversationIdRef.current = activeConversationId;
       ivxDiagnostics.recordAutoScroll('conversation-load');
-      // Aggressive retries: scrollToEnd often fails on the first tick because
-      // FlatList has not measured dynamic message bubbles yet. We fire on every
-      // animation frame plus several settled-layout checkpoints.
-      const scrollToLatest = () => {
-        flatListRef.current?.scrollToEnd({ animated: false });
-      };
-      requestAnimationFrame(scrollToLatest);
-      [80, 150, 300, 500, 800, 1200].forEach((ms) => setTimeout(scrollToLatest, ms));
+      // OPEN-ON-LATEST FIX: anchor the thread to the newest message. We set a
+      // pending flag that onLayout/onContentSizeChange also check, so even if
+      // this first scrollToEnd fails because the list hasn't measured yet, a
+      // later layout checkpoint will finish the job. Multiple timing retries
+      // cover Android's delayed measurement and dynamic bubble heights.
+      pendingInitialScrollRef.current = true;
+      scrollToBottomRobust(false);
       isAtBottomRef.current = true;
       setShowScrollToLatest(false);
       setUnreadCount(0);
@@ -5033,6 +5037,48 @@ export default function IVXOwnerChatRoute() {
     setTimeout(scrollIfAllowed, Platform.OS === 'android' ? 520 : 180);
   }, []);
 
+  // OPEN-ON-LATEST FIX: robust scroll-to-newest that handles both dynamic
+  // content and the case where scrollToEnd silently fails. It tries scrollToEnd
+  // first, then falls back to scrollToIndex with the last message index. This
+  // is the single function used for initial open, new-message arrival, and
+  // composer growth when the user is already at the bottom.
+  const scrollToBottomRobust = useCallback((animated: boolean = false) => {
+    const lastIndex = displayedMessages.length - 1;
+    if (lastIndex < 0) {
+      return;
+    }
+
+    const scrollIfAllowed = () => {
+      if (Date.now() < suppressAutoScrollUntilRef.current) {
+        return;
+      }
+
+      if (!flatListRef.current) {
+        return;
+      }
+
+      try {
+        flatListRef.current.scrollToEnd({ animated });
+      } catch (error) {
+        console.log('[IVXOwnerChatRoute] scrollToEnd failed, will retry:', error instanceof Error ? error.message : 'unknown');
+      }
+
+      // Fallback for React Native when scrollToEnd doesn't move because the
+      // list hasn't computed final content offsets yet. scrollToIndex forces a
+      // layout-aware jump to the last item.
+      try {
+        flatListRef.current.scrollToIndex({ index: lastIndex, animated, viewPosition: 1 });
+      } catch (indexError) {
+        console.log('[IVXOwnerChatRoute] scrollToIndex fallback pending:', indexError instanceof Error ? indexError.message : 'unknown');
+      }
+    };
+
+    requestAnimationFrame(scrollIfAllowed);
+    setTimeout(scrollIfAllowed, Platform.OS === 'android' ? 260 : 80);
+    setTimeout(scrollIfAllowed, Platform.OS === 'android' ? 620 : 220);
+    setTimeout(scrollIfAllowed, Platform.OS === 'android' ? 1200 : 500);
+  }, [displayedMessages.length]);
+
   const handleMessageListScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     ivxDiagnostics.recordScroll('message-list');
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
@@ -6041,18 +6087,32 @@ export default function IVXOwnerChatRoute() {
               ListFooterComponentStyle={styles.listFooterContainer}
               onContentSizeChange={(width, height) => {
                 ivxDiagnostics.recordContentHeight(`h=${Math.round(height)} count=${displayedMessages.length} atBottom=${isAtBottomRef.current}`);
+                // OPEN-ON-LATEST FIX: on first load or conversation switch, force
+                // a scroll to the newest message once the content size is known.
+                if (pendingInitialScrollRef.current && displayedMessages.length > 0) {
+                  scrollToBottomRobust(false);
+                  pendingInitialScrollRef.current = false;
+                  return;
+                }
                 if (Date.now() < suppressAutoScrollUntilRef.current) {
                   return;
                 }
-                // Open on the latest conversation and stay pinned to the bottom
-                // as new messages/streaming content arrives.
-                flatListRef.current?.scrollToEnd({ animated: false });
+                // Keep pinned to the bottom as new messages/streaming content
+                // arrives, unless the user is intentionally reading older messages.
+                if (isAtBottomRef.current) {
+                  flatListRef.current?.scrollToEnd({ animated: false });
+                }
               }}
               onLayout={() => {
-                // Re-anchor to the newest message once the FlatList itself has
-                // mounted and measured. This covers the race where messagesQuery
-                // data arrives before the list has laid out.
-                flatListRef.current?.scrollToEnd({ animated: false });
+                // OPEN-ON-LATEST FIX: re-anchor to the newest message once the
+                // FlatList itself has mounted and measured. This covers the race
+                // where messagesQuery data arrives before the list has laid out.
+                if (pendingInitialScrollRef.current && displayedMessages.length > 0) {
+                  scrollToBottomRobust(false);
+                  pendingInitialScrollRef.current = false;
+                } else if (isAtBottomRef.current) {
+                  flatListRef.current?.scrollToEnd({ animated: false });
+                }
               }}
               onScrollToIndexFailed={(info) => {
                 suppressAutoScrollUntilRef.current = Date.now() + 1800;
