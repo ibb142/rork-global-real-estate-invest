@@ -203,7 +203,7 @@ function getGatewayBaseUrlCandidates(): string[] {
   // Rork independence guard (2026-07-07): any candidate that resolves to a
   // Rork domain is filtered out, so a stale IVX_AI_GATEWAY_URL env var on the
   // host cannot silently re-route production through toolkit.rork.com.
-  const candidates = [configured, canonical].filter((c): c is string => Boolean(c) && !isRorkDomain(c));
+  const candidates = [configured, canonical].filter((c): c is string => c !== null && !isRorkDomain(c));
 
   return [...new Set(candidates)];
 }

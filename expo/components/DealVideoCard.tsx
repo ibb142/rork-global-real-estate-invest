@@ -112,6 +112,7 @@ export default function DealVideoCard({ video }: { video: FeedVideo }) {
   }, [deal, router]);
 
   const likeTotal = (video.like_count ?? 0) + (liked ? 1 : 0);
+  const investmentOptions = useInvestmentOptions(deal?.deal_type);
 
   return (
     <View style={styles.card} testID={`deal-video-card-${video.id}`}>
@@ -185,7 +186,7 @@ export default function DealVideoCard({ video }: { video: FeedVideo }) {
             ) : null}
           </View>
           <View style={styles.optionsRow}>
-            {useInvestmentOptions(deal.deal_type).map((option) => (
+            {investmentOptions.map((option) => (
               <OptionIcon key={option.id} option={option} />
             ))}
           </View>

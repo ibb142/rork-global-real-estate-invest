@@ -479,7 +479,7 @@ export function classifyCluster(keyword: string, category: KeywordCategory): Int
   // Category-based fallback
   if (category === 'private_lending' || category === 'development_funding') return 'FINANCE';
   if (category === 'joint_ventures') return 'PARTNER';
-  if (category === 'land_investment' || category === 'development_funding') return 'DEVELOP';
+  if (category === 'land_investment') return 'DEVELOP';
   return 'INVEST';
 }
 
