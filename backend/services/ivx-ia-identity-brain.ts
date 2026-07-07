@@ -11,12 +11,17 @@
  *
  * This is a fast, deterministic path: it never blocks, never asks for proof,
  * and never routes to the senior-developer worker. It is the IVX IA persona.
+ *
+ * QA 2026-07-07: Project and investment questions (ivx_project, ivx_investment)
+ * are intentionally NOT intercepted here — they must reach the real AI gateway
+ * with full business context (Casa Rosario ROI, price, location, timeline).
+ * Only pure identity questions (name, creator, owner, what_is_ivx) use this path.
  */
 
 export const IVX_IA_IDENTITY_NAME = 'IVX IA';
 export const IVX_IA_OWNER_NAME = 'Ivan Perez';
 export const IVX_IA_COMPANY = 'IVXHOLDINGS';
-export const IVX_IA_IDENTITY_MARKER = 'ivx-ia-identity-brain-2026-07-06';
+export const IVX_IA_IDENTITY_MARKER = 'ivx-ia-identity-brain-2026-07-07';
 
 export type IVXIdentityQuestionType =
   | 'name'
