@@ -1299,21 +1299,31 @@ export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProp
       shake();
       return;
     }
+    const identifier = sanitizeEmail(email);
+
+    // In owner mode, the main Sign In button uses the backend passwordless
+    // owner login endpoint. It self-heals the password server-side and mints
+    // a real Supabase session, so the user does not need to know or match the
+    // Supabase-stored password. The typed password is ignored in this path.
+    if (effectiveOwnerMode) {
+      console.log('[Login] Owner mode — routing main Sign In to passwordless backend for:', identifier);
+      await handleOwnerPasswordlessLogin();
+      return;
+    }
+
     const passwordForSignIn = password.trim();
     if (!passwordForSignIn) {
       setAttemptState({
         status: 'failed',
         title: 'Password required',
         detail: 'The app trims leading/trailing spaces, but it cannot sign in with an empty password.',
-        email: sanitizeEmail(email),
+        email: identifier,
         tone: 'warning',
       });
       Alert.alert('Missing Password', 'Please enter your password.');
       shake();
       return;
     }
-
-    const identifier = sanitizeEmail(email);
     const rateCheck = checkAuthRateLimit(identifier);
     if (!rateCheck.allowed) {
       const lockedMessage = getRateLimitMessage(rateCheck.lockedUntilMs);
@@ -1670,7 +1680,7 @@ export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProp
   const loginSubtitle = effectiveOwnerMode
     ? 'Enter your approved owner email and password, then tap Sign In. Manual login is the default. SMS recovery is available if you lost your password.'
     : 'Use direct email/password sign-in first. Owner recovery stays available below if this device was already verified.';
-  const signInButtonLabel = effectiveOwnerMode ? 'Sign In' : 'Sign In';
+  const signInButtonLabel = effectiveOwnerMode ? 'Owner Sign In' : 'Sign In';
   const ownerAlternativeTitle = effectiveOwnerMode
     ? 'Owner recovery hub'
     : adminAccessLocked
