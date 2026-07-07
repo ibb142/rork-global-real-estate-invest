@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -64,6 +64,8 @@ import {
   type OwnerProofGate,
   type SeniorDeveloperPreflight,
 } from '@/src/modules/ivx-developer/seniorDeveloperPreflightService';
+import { useAuth } from '@/lib/auth-context';
+import { getConfiguredOwnerAdminEmail } from '@/lib/admin-access-lock';
 import { getIVXRuntimeInfo, type IVXRuntimeInfo } from '@/lib/runtime-environment';
 import {
   BLOCK18_DEVELOPER_WORKSPACE_MARKER,
@@ -198,6 +200,10 @@ export default function IVXDeveloperWorkspaceScreen() {
   const [seniorRunLoading, setSeniorRunLoading] = useState<boolean>(false);
   const [seniorPreflight, setSeniorPreflight] = useState<SeniorDeveloperPreflight | null>(null);
   const [seniorPreflightLoading, setSeniorPreflightLoading] = useState<boolean>(false);
+  const [autoOwnerSignInLoading, setAutoOwnerSignInLoading] = useState<boolean>(false);
+  const [autoOwnerSignInResult, setAutoOwnerSignInResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const autoSignInAttemptedRef = useRef<boolean>(false);
+  const { loginOwnerPasswordless } = useAuth();
 
   // Prefill the Senior Developer task from a daily-report "Send to Senior Dev" hand-off.
   useEffect(() => {
@@ -275,12 +281,58 @@ export default function IVXDeveloperWorkspaceScreen() {
     void refreshPatches();
   }, [refreshPatches]);
 
+  const onCheckSeniorDeveloperPreflight = useCallback(async (): Promise<SeniorDeveloperPreflight> => {
+    setSeniorPreflightLoading(true);
+    try {
+      const preflight = await gatherSeniorDeveloperPreflight();
+      setSeniorPreflight(preflight);
+      await logDeveloperAction({
+        actor: 'owner',
+        action: 'senior_developer_preflight_check',
+        detail: `ready=${preflight.readyToRun} session=${preflight.ownerSessionPresent} segs=${preflight.tokenSegmentCount} jwt=${preflight.tokenLooksLikeSupabaseJwt} allow=${preflight.ownerEmailAllowlisted}`,
+      });
+      if (Platform.OS !== 'web') {
+        Haptics.notificationAsync(preflight.readyToRun ? Haptics.NotificationFeedbackType.Success : Haptics.NotificationFeedbackType.Warning).catch(() => undefined);
+      }
+      return preflight;
+    } finally {
+      setSeniorPreflightLoading(false);
+    }
+  }, []);
+
   // Detect the logged-in Supabase owner session on mount so the run gate reflects
   // owner-session / token / allowlist state immediately (before any run attempt).
+  // If no owner session is present and a configured owner email is available,
+  // automatically perform passwordless owner sign-in once.
   useEffect(() => {
-    void onCheckSeniorDeveloperPreflight();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    let cancelled = false;
+    async function bootstrapOwnerSession() {
+      const preflight = await onCheckSeniorDeveloperPreflight();
+      if (cancelled) return;
+      if (preflight.readyToRun) return;
+      const ownerEmail = getConfiguredOwnerAdminEmail();
+      if (!ownerEmail) return;
+      if (autoSignInAttemptedRef.current) return;
+      autoSignInAttemptedRef.current = true;
+      setAutoOwnerSignInLoading(true);
+      setAutoOwnerSignInResult(null);
+      try {
+        const result = await loginOwnerPasswordless(ownerEmail);
+        setAutoOwnerSignInResult({ ok: result.success, message: result.message });
+        if (result.success) {
+          // Re-run preflight to verify the session is now active and allowlisted.
+          await onCheckSeniorDeveloperPreflight();
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Automatic owner sign-in failed.';
+        setAutoOwnerSignInResult({ ok: false, message });
+      } finally {
+        if (!cancelled) setAutoOwnerSignInLoading(false);
+      }
+    }
+    void bootstrapOwnerSession();
+    return () => { cancelled = true; };
+  }, [loginOwnerPasswordless, onCheckSeniorDeveloperPreflight]);
 
   // ---------- Files tab logic ----------
   const filteredFiles = useMemo<ProjectFileEntry[]>(() => {
@@ -630,25 +682,6 @@ export default function IVXDeveloperWorkspaceScreen() {
     const path = ownerProofGate?.loginPath ?? '/login?ownerMode=1';
     router.push(path as any);
   }, [ownerProofGate?.loginPath, router]);
-
-  const onCheckSeniorDeveloperPreflight = useCallback(async (): Promise<SeniorDeveloperPreflight> => {
-    setSeniorPreflightLoading(true);
-    try {
-      const preflight = await gatherSeniorDeveloperPreflight();
-      setSeniorPreflight(preflight);
-      await logDeveloperAction({
-        actor: 'owner',
-        action: 'senior_developer_preflight_check',
-        detail: `ready=${preflight.readyToRun} session=${preflight.ownerSessionPresent} segs=${preflight.tokenSegmentCount} jwt=${preflight.tokenLooksLikeSupabaseJwt} allow=${preflight.ownerEmailAllowlisted}`,
-      });
-      if (Platform.OS !== 'web') {
-        Haptics.notificationAsync(preflight.readyToRun ? Haptics.NotificationFeedbackType.Success : Haptics.NotificationFeedbackType.Warning).catch(() => undefined);
-      }
-      return preflight;
-    } finally {
-      setSeniorPreflightLoading(false);
-    }
-  }, []);
 
   const onApproveSeniorDeveloperProductionRun = useCallback(async () => {
     const goal = seniorGoal.trim();
@@ -1276,6 +1309,12 @@ export default function IVXDeveloperWorkspaceScreen() {
                       <Text style={styles.ownerProofText}>ownerEmailAllowlisted: {seniorPreflight.ownerEmailAllowlisted ? 'true' : 'false'}</Text>
                       <Text style={styles.ownerProofText}>readyToRun: {seniorPreflight.readyToRun ? 'true' : 'false'}</Text>
                       {seniorPreflight.blockReason ? <Text style={styles.ownerProofError}>Reason: {seniorPreflight.blockReason}</Text> : null}
+                      {autoOwnerSignInLoading ? <Text style={styles.ownerProofText}>Auto sign-in in progress…</Text> : null}
+                      {autoOwnerSignInResult && !autoOwnerSignInLoading ? (
+                        <Text style={autoOwnerSignInResult.ok ? styles.ownerProofText : styles.ownerProofError}>
+                          Auto sign-in: {autoOwnerSignInResult.message}
+                        </Text>
+                      ) : null}
                     </View>
                   ) : (
                     <Text style={styles.ownerApprovalNote}>Run the preflight to confirm a valid owner session before the Senior Developer run. No token value is ever shown.</Text>
@@ -1318,12 +1357,13 @@ export default function IVXDeveloperWorkspaceScreen() {
                 ) : null}
                 {seniorRunGateReason && (!seniorPreflight || !seniorPreflight.ownerSessionPresent || !seniorPreflight.ownerEmailAllowlisted) ? (
                   <Pressable
-                    onPress={onOpenOwnerLogin}
-                    style={[styles.smallBtn, styles.dangerBtn]}
+                    onPress={autoOwnerSignInLoading ? undefined : onOpenOwnerLogin}
+                    style={[styles.smallBtn, styles.dangerBtn, autoOwnerSignInLoading ? styles.buttonDisabled : null]}
+                    disabled={autoOwnerSignInLoading}
                     testID="ivx-senior-developer-gate-login"
                   >
-                    <ShieldAlert size={12} color={Colors.background} />
-                    <Text style={styles.smallBtnTextDark}>Open owner login</Text>
+                    {autoOwnerSignInLoading ? <ActivityIndicator size="small" color={Colors.background} /> : <ShieldAlert size={12} color={Colors.background} />}
+                    <Text style={styles.smallBtnTextDark}>{autoOwnerSignInLoading ? 'Auto signing in…' : 'Open owner login'}</Text>
                   </Pressable>
                 ) : null}
                 <Pressable
