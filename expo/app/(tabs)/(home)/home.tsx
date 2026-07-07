@@ -599,9 +599,9 @@ export default function HomeScreen() {
   }, []);
 
   const handleOpenOwnerLogin = useCallback((): void => {
-    console.log('[Home] Open Owner Login pressed -> /owner-login');
+    console.log('[Home] Open Owner Login pressed -> /login?ownerMode=1');
     try {
-      router.push('/owner-login' as any);
+      router.push('/login?ownerMode=1' as any);
     } catch (pushError) {
       console.log('[Home] router.push failed:', pushError);
     }
@@ -713,7 +713,7 @@ export default function HomeScreen() {
           {isOwner && (
             <View style={{ paddingHorizontal: isXs ? 16 : 20, marginBottom: 20 }}>
               <Link
-                href={'/owner-login' as any}
+                href={{ pathname: '/login', params: { ownerMode: '1' } } as any}
                 asChild
               >
                 <TouchableOpacity

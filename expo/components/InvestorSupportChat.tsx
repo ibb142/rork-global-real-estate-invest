@@ -14,6 +14,7 @@ import {
   Alert,
   Keyboard,
   Image,
+  ActivityIndicator,
   type StyleProp,
   type ViewStyle,
   type NativeSyntheticEvent,
@@ -106,9 +107,8 @@ export default function InvestorSupportChat({
     },
   ]);
   const [inputText, setInputText] = useState<string>('');
-  // Chat loading indicators removed: the UI no longer shows connecting/typing
-  // pulsing states. The conversation renders immediately on the latest message.
-  const [connectionStatus] = useState<ConnectionStatus>('connected');
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connecting');
+  const [isAiTyping, setIsAiTyping] = useState<boolean>(false);
   const [isEscalating, setIsEscalating] = useState<boolean>(false);
   const [isKeyboardVisible, setIsKeyboardVisible] = useState<boolean>(false);
   const [_aiProvider, setAiProvider] = useState<string>('');
@@ -117,6 +117,7 @@ export default function InvestorSupportChat({
   const hydratedRef = useRef<boolean>(false);
   const messagesListRef = useRef<FlatList<ChatMessage>>(null);
   const isAtBottomRef = useRef<boolean>(true);
+  const pulseAnim = useRef(new Animated.Value(1)).current;
   const jumpButtonAnim = useRef(new Animated.Value(0)).current;
 
   const screenSize = getResponsiveSize(width);
@@ -143,7 +144,7 @@ export default function InvestorSupportChat({
     if (isAtBottomRef.current) {
       scrollToLatest(true);
     }
-  }, [isKeyboardVisible, messages, scrollToLatest]);
+  }, [isAiTyping, isKeyboardVisible, messages, scrollToLatest]);
 
   useEffect(() => {
     Animated.timing(jumpButtonAnim, {
@@ -186,8 +187,20 @@ export default function InvestorSupportChat({
     void saveChatHistory(source, messages);
   }, [messages, source]);
 
-  // Connection status intentionally stays 'connected' so the chat opens directly
-  // on the latest message without a pulsing "connecting" or "waiting" banner.
+  useEffect(() => {
+    const connectTimer = setTimeout(() => {
+      setConnectionStatus('waiting');
+    }, 1000);
+
+    const agentTimer = setTimeout(() => {
+      setConnectionStatus('connected');
+    }, 2000);
+
+    return () => {
+      clearTimeout(connectTimer);
+      clearTimeout(agentTimer);
+    };
+  }, []);
 
   useEffect(() => {
     if (Platform.OS === 'web') {
@@ -214,7 +227,26 @@ export default function InvestorSupportChat({
     };
   }, [scrollToLatest]);
 
-  // Pulse animation removed along with the connecting/waiting connection banner.
+  useEffect(() => {
+    if (connectionStatus === 'connecting' || connectionStatus === 'waiting') {
+      const pulse = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 0.4,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      pulse.start();
+      return () => pulse.stop();
+    }
+  }, [connectionStatus, pulseAnim]);
 
   const appendSupportMessage = useCallback((message: string) => {
     const supportReply: ChatMessage = {
@@ -232,8 +264,18 @@ export default function InvestorSupportChat({
   }, []);
 
   const handleSend = useCallback(async () => {
+    if (isAiTyping) {
+      return;
+    }
+
     const userText = inputText.trim();
     const readyAttachments = attachments.filter((item) => item.status === 'ready');
+    const hasUploading = attachments.some((item) => item.status === 'uploading');
+
+    if (hasUploading) {
+      Alert.alert('Please wait', 'Your attachment is still uploading. Try again in a moment.');
+      return;
+    }
 
     if (!userText && readyAttachments.length === 0) {
       return;
@@ -265,6 +307,7 @@ export default function InvestorSupportChat({
     setMessages((prev) => trimMessages([...prev, userMessage]));
     setInputText('');
     setAttachments([]);
+    setIsAiTyping(true);
 
     try {
       const { images, documents } = toPublicChatPayload(readyAttachments);
@@ -297,6 +340,7 @@ export default function InvestorSupportChat({
       };
 
       setMessages((prev) => trimMessages([...prev, aiReply]));
+      setIsAiTyping(false);
 
       try {
         awsAnalyticsBackup.enqueue({
@@ -320,9 +364,10 @@ export default function InvestorSupportChat({
       }
     } catch (error) {
       console.error('[InvestorSupportChat] AI error:', error);
+      setIsAiTyping(false);
       appendSupportMessage("I'm having trouble right now. Please try again in a moment or request human support below.");
     }
-  }, [appendSupportMessage, attachments, inputText, messages, source]);
+  }, [appendSupportMessage, attachments, inputText, isAiTyping, messages, source]);
 
   const handleQuickReply = useCallback((reply: string) => {
     setInputText(reply);
@@ -452,7 +497,7 @@ export default function InvestorSupportChat({
 
   const hasUploadingAttachment = attachments.some((item) => item.status === 'uploading');
   const hasReadyAttachment = attachments.some((item) => item.status === 'ready');
-  const canSendMessage = (inputText.trim().length > 0 || hasReadyAttachment) && !hasUploadingAttachment;
+  const canSendMessage = (inputText.trim().length > 0 || hasReadyAttachment) && !isAiTyping && !hasUploadingAttachment;
 
   const renderAttachmentPreview = useCallback(() => {
     if (attachments.length === 0) {
@@ -480,6 +525,9 @@ export default function InvestorSupportChat({
             <View style={styles.attachmentInfo}>
               <Text style={styles.attachmentName} numberOfLines={1}>{attachment.name}</Text>
               <View style={styles.attachmentStatusRow}>
+                {attachment.status === 'uploading' ? (
+                  <ActivityIndicator size="small" color={Colors.textTertiary} />
+                ) : null}
                 <Text
                   style={[
                     styles.attachmentStatus,
@@ -488,7 +536,7 @@ export default function InvestorSupportChat({
                   ]}
                   numberOfLines={1}
                 >
-                  {attachment.status === 'ready' ? 'Ready' : attachment.status === 'failed' ? 'Failed' : ''}
+                  {attachment.status === 'uploading' ? 'Uploading…' : attachment.status === 'ready' ? 'Ready' : 'Failed'}
                 </Text>
               </View>
             </View>
@@ -508,28 +556,56 @@ export default function InvestorSupportChat({
   }, [attachments, handleRemoveAttachment, testIdPrefix]);
 
   const renderConnectionStatus = useCallback(() => {
-    // Loading banner (connecting/waiting/typing) removed per owner request. We
-    // keep a minimal "AI ready" pill so the user knows the chat is active.
     return (
       <View style={[styles.connectionStatusContainer, isCard && styles.connectionStatusContainerCard]}>
         <View style={styles.connectionStatusInner}>
-          <View style={[styles.statusDot, styles.statusDotConnected]} />
-          <View style={styles.connectionTextContainer}>
-            <View style={styles.aiConnectedRow}>
-              <Text style={styles.connectionStatusText}>{t('aiReady')}</Text>
-              <View style={styles.aiBadgeSmall}>
-                <Sparkles size={10} color={Colors.primary} />
+          {connectionStatus === 'connecting' ? (
+            <>
+              <Animated.View style={[styles.statusDot, styles.statusDotConnecting, { opacity: pulseAnim }]} />
+              <View style={styles.connectionTextContainer}>
+                <Text style={styles.connectionStatusText}>{t('connectingAi')}</Text>
+                <Text style={styles.connectionSubText}>{t('pleaseWaitMoment')}</Text>
               </View>
-            </View>
-            <Text style={styles.connectionSubTextOnline}>{t('aiInstantResponses')}</Text>
-          </View>
-          <View style={styles.agentAvatarContainer}>
-            <Bot size={18} color={Colors.primary} />
-          </View>
+            </>
+          ) : null}
+
+          {connectionStatus === 'waiting' ? (
+            <>
+              <Animated.View style={[styles.statusDot, styles.statusDotWaiting, { opacity: pulseAnim }]} />
+              <View style={styles.connectionTextContainer}>
+                <Text style={styles.connectionStatusText}>{t('initializingAi')}</Text>
+                <Text style={styles.connectionSubText}>{t('almostReady')}</Text>
+              </View>
+            </>
+          ) : null}
+
+          {connectionStatus === 'connected' ? (
+            <>
+              <View style={[styles.statusDot, styles.statusDotConnected]} />
+              <View style={styles.connectionTextContainer}>
+                <View style={styles.aiConnectedRow}>
+                  <Text style={styles.connectionStatusText}>{t('aiReady')}</Text>
+                  <View style={styles.aiBadgeSmall}>
+                    <Sparkles size={10} color={Colors.primary} />
+                  </View>
+                </View>
+                <Text style={styles.connectionSubTextOnline}>{t('aiInstantResponses')}</Text>
+              </View>
+              <View style={styles.agentAvatarContainer}>
+                <Bot size={18} color={Colors.primary} />
+              </View>
+            </>
+          ) : null}
         </View>
+
+        {isAiTyping ? (
+          <View style={styles.typingIndicator}>
+            <Text style={styles.typingText}>{t('aiTyping')}</Text>
+          </View>
+        ) : null}
       </View>
     );
-  }, [isCard, t]);
+  }, [connectionStatus, isAiTyping, isCard, pulseAnim, t]);
 
   return (
     <View style={[styles.container, isCard && styles.containerCard, style]} testID={`${testIdPrefix}-container`}>
@@ -646,11 +722,12 @@ export default function InvestorSupportChat({
               <TouchableOpacity
                 style={[styles.attachButton, { width: isXs ? 44 : 50, height: isXs ? 44 : 50 }]}
                 onPress={handleAttachPress}
+                disabled={isAiTyping}
                 accessibilityRole="button"
                 accessibilityLabel="Attach a file"
                 testID={`${testIdPrefix}-attach`}
               >
-                <Paperclip size={isXs ? 18 : 20} color={Colors.textSecondary} />
+                <Paperclip size={isXs ? 18 : 20} color={isAiTyping ? Colors.textTertiary : Colors.textSecondary} />
               </TouchableOpacity>
               <TextInput
                 style={[styles.input, { fontSize: isXs ? 14 : 16, minHeight: isXs ? 44 : 50, paddingHorizontal: isXs ? 14 : 18 }]}
@@ -681,11 +758,12 @@ export default function InvestorSupportChat({
               <TouchableOpacity
                 style={[styles.attachButton, { width: isXs ? 44 : 50, height: isXs ? 44 : 50 }]}
                 onPress={handleAttachPress}
+                disabled={isAiTyping}
                 accessibilityRole="button"
                 accessibilityLabel="Attach a file"
                 testID={`${testIdPrefix}-attach`}
               >
-                <Paperclip size={isXs ? 18 : 20} color={Colors.textSecondary} />
+                <Paperclip size={isXs ? 18 : 20} color={isAiTyping ? Colors.textTertiary : Colors.textSecondary} />
               </TouchableOpacity>
               <TextInput
                 style={[styles.input, { fontSize: isXs ? 14 : 16, minHeight: isXs ? 44 : 50, paddingHorizontal: isXs ? 14 : 18 }]}

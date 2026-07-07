@@ -133,8 +133,11 @@ export function SignUpScreenContent({ forcedAccountType }: SignUpScreenContentPr
     }
 
     router.push({
-      pathname: '/owner-login',
-      params,
+      pathname: '/login',
+      params: {
+        ...params,
+        ownerMode: '1',
+      },
     } as Href);
   }, [router]);
 

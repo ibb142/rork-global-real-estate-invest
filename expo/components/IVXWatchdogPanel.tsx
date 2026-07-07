@@ -270,12 +270,30 @@ export function IVXWatchdogBanner({ onPress }: BannerProps): React.ReactElement 
   const isError = warning.severity === 'error';
   const isInProgress = warning.severity === 'info';
 
-  // IN_PROGRESS (still in-flight): intentionally suppressed. The owner chat UI
-  // must not flash a "WORKING" banner during normal sends — that creates a
-  // loading/jitter feel the owner explicitly wants removed. The watchdog still
-  // records the trace in the background and will surface terminal states only.
+  // IN_PROGRESS (still in-flight): show an honest WORKING banner with elapsed
+  // time + the last checkpoint reached. Never blank "DEGRADED" fields — a
+  // working request has not failed OR recovered, so failure fields are N/A.
   if (isInProgress) {
-    return null;
+    const elapsedSec = Math.max(0, Math.floor((Date.now() - new Date(latest.startedAt).getTime()) / 1000));
+    const lastReached = latest.lastSuccessfulCheckpoint ?? 'SEND_TAP';
+    return (
+      <Pressable
+        onPress={onPress}
+        style={[styles.banner, styles.bannerInfo]}
+        testID="ivx-watchdog-banner"
+        accessibilityRole="button"
+      >
+        <Text style={[styles.bannerTitle, styles.bannerTitleInfo]}>◐ IVX AI WORKING — {warning.label}</Text>
+        <Text style={styles.bannerSummary} selectable>
+          in progress {elapsedSec}s — last reached: {lastReached}
+        </Text>
+        <Text style={styles.bannerLine} selectable>state: WORKING (not failed, not recovered)</Text>
+        <Text style={styles.bannerLine} selectable>traceId: {latest.traceId}</Text>
+        <Text style={styles.bannerLine} selectable>lastReached: {lastReached}</Text>
+        <Text style={styles.bannerLine} selectable>elapsed: {elapsedSec}s</Text>
+        <Text style={styles.bannerHint}>Tap to open watchdog drawer.</Text>
+      </Pressable>
+    );
   }
 
   // DEGRADED_RECOVERY (yellow, recovered via fallback): show the REAL recovery

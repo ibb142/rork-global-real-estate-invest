@@ -16,6 +16,7 @@ import {
   AppState,
   type AppStateStatus,
   FlatList,
+  ActivityIndicator,
   Image,
   Keyboard,
   KeyboardAvoidingView,
@@ -54,7 +55,7 @@ import IVXAdvancedExecutionMode from '@/components/IVXAdvancedExecutionMode';
 // Legacy panel kept for fallback access (not currently mounted).
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 import _IVXLiveWorkVisibility from '@/components/IVXLiveWorkVisibility';
-
+import { resolveAIExecutionStage, formatAIExecutionStage, type AIExecutionStage } from '@/src/modules/chat/services/chatMessageUtils';
 import {
   getActiveRuntimeSource,
   getRuntimeSourceLabel,
@@ -1597,11 +1598,13 @@ export default function IVXOwnerChatRoute() {
     if (isConversationSwitch && messages.length > 0) {
       lastScrolledConversationIdRef.current = activeConversationId;
       ivxDiagnostics.recordAutoScroll('conversation-load');
-      // JUMP-FIX: just arm the pending flag. The FlatList's onLayout /
-      // onContentSizeChange will fire a SINGLE scrollToEnd once the list has
-      // actually measured. Calling scrollToEnd here too caused an early jump
-      // before measurement, then a second jump on layout = the visible jitter.
+      // OPEN-ON-LATEST FIX: anchor the thread to the newest message. We set a
+      // pending flag that onLayout/onContentSizeChange also check, so even if
+      // this first scrollToEnd fails because the list hasn't measured yet, a
+      // later layout checkpoint will finish the job. Multiple timing retries
+      // cover Android's delayed measurement and dynamic bubble heights.
       pendingInitialScrollRef.current = true;
+      scrollToBottomRobust(false);
       isAtBottomRef.current = true;
       setShowScrollToLatest(false);
       setUnreadCount(0);
@@ -4141,8 +4144,20 @@ export default function IVXOwnerChatRoute() {
     }
     return undefined;
   }, [activeLiveWorkTask, isAIWorking]);
-
-
+  const aiExecutionStage = useMemo<AIExecutionStage>(() => {
+    return resolveAIExecutionStage({
+      attachmentPending: attachmentMutation.isPending,
+      sendPending: sendMessageMutation.isPending,
+      aiReplyPending,
+      requestStage: runtimeDebugSnapshot.requestStage,
+      source: runtimeDebugSnapshot.source,
+      failureClass: runtimeDebugSnapshot.failureClass,
+      hasVisibleResponseText: runtimeDebugSnapshot.hasVisibleResponseText,
+    });
+  }, [aiReplyPending, attachmentMutation.isPending, sendMessageMutation.isPending, runtimeDebugSnapshot.requestStage, runtimeDebugSnapshot.source, runtimeDebugSnapshot.failureClass, runtimeDebugSnapshot.hasVisibleResponseText]);
+  const aiWorkingMessage = useMemo<string>(() => {
+    return formatAIExecutionStage(aiExecutionStage);
+  }, [aiExecutionStage]);
   const attachmentDisabled = attachmentMutation.isPending || isPickingFile || isRecordingVoice || isTranscribingVoice;
   // Chat loading placeholders removed: the composer always shows the same
   // prompt regardless of in-flight uploads/sends so the UI never feels stuck.
@@ -4973,11 +4988,26 @@ export default function IVXOwnerChatRoute() {
   }, [deliveryBranchStatus.branch, runtimeDebugSnapshot.source, runtimeDebugSnapshot.httpStatus]);
 
   const composerStatusMessage = useMemo(() => {
-    // Loading / progress subtext is intentionally suppressed in the composer.
-    // The hint stays static so the chat never feels like it is waiting or
-    // working; the underlying send/AI state still functions in the background.
+    if (devTestMode.testModeActive) {
+      return 'Assistant ready.';
+    }
+    if (isRecordingVoice) {
+      return 'Recording voice prompt. Tap stop when finished.';
+    }
+    if (isTranscribingVoice) {
+      return 'Transcribing voice prompt...';
+    }
+    if (aiReplyPending) {
+      return 'Message sent. Reply will appear when ready.';
+    }
+    if (currentOwnerTrust.requiresElevatedConfirmation) {
+      return 'Sensitive action detected. Please confirm before I proceed.';
+    }
+    if (ownerAIRoutingBlocked || ownerAIProofStatus.id === 'blocked_by_auth') {
+      return 'Assistant is temporarily unavailable.';
+    }
     return 'Assistant ready.';
-  }, []);
+  }, [aiReplyPending, currentOwnerTrust.requiresElevatedConfirmation, devTestMode.testModeActive, isRecordingVoice, isTranscribingVoice, ownerAIProofStatus.id, ownerAIRoutingBlocked, runtimeDebugSnapshot.hasVisibleResponseText]);
 
   const controlRoomItems = useMemo<IVXControlRoomItem[]>(() => {
     if (controlRoomQuery.data?.statusItems && controlRoomQuery.data.statusItems.length > 0) {
@@ -4995,16 +5025,59 @@ export default function IVXOwnerChatRoute() {
   }, [controlRoomItems]);
   const shouldShowDiagnosticsToggle = developerToolsAllowed;
 
-  // JUMP-FIX: single deterministic scroll. The previous version fired 3
-  // animated retries (rAF + 2 setTimeout) which competed with
-  // initialScrollIndex, onLayout, and onContentSizeChange — causing the
-  // visible jump/jitter the owner reported. One call, no retries.
-  const scrollOwnerThreadToEnd = useCallback((animated: boolean = false) => {
-    if (Date.now() < suppressAutoScrollUntilRef.current) {
+  const scrollOwnerThreadToEnd = useCallback((animated: boolean = true) => {
+    const scrollIfAllowed = () => {
+      if (Date.now() >= suppressAutoScrollUntilRef.current) {
+        flatListRef.current?.scrollToEnd({ animated });
+      }
+    };
+
+    requestAnimationFrame(scrollIfAllowed);
+    setTimeout(scrollIfAllowed, Platform.OS === 'android' ? 220 : 80);
+    setTimeout(scrollIfAllowed, Platform.OS === 'android' ? 520 : 180);
+  }, []);
+
+  // OPEN-ON-LATEST FIX: robust scroll-to-newest that handles both dynamic
+  // content and the case where scrollToEnd silently fails. It tries scrollToEnd
+  // first, then falls back to scrollToIndex with the last message index. This
+  // is the single function used for initial open, new-message arrival, and
+  // composer growth when the user is already at the bottom.
+  const scrollToBottomRobust = useCallback((animated: boolean = false) => {
+    const lastIndex = displayedMessages.length - 1;
+    if (lastIndex < 0) {
       return;
     }
-    flatListRef.current?.scrollToEnd({ animated });
-  }, []);
+
+    const scrollIfAllowed = () => {
+      if (Date.now() < suppressAutoScrollUntilRef.current) {
+        return;
+      }
+
+      if (!flatListRef.current) {
+        return;
+      }
+
+      try {
+        flatListRef.current.scrollToEnd({ animated });
+      } catch (error) {
+        console.log('[IVXOwnerChatRoute] scrollToEnd failed, will retry:', error instanceof Error ? error.message : 'unknown');
+      }
+
+      // Fallback for React Native when scrollToEnd doesn't move because the
+      // list hasn't computed final content offsets yet. scrollToIndex forces a
+      // layout-aware jump to the last item.
+      try {
+        flatListRef.current.scrollToIndex({ index: lastIndex, animated, viewPosition: 1 });
+      } catch (indexError) {
+        console.log('[IVXOwnerChatRoute] scrollToIndex fallback pending:', indexError instanceof Error ? indexError.message : 'unknown');
+      }
+    };
+
+    requestAnimationFrame(scrollIfAllowed);
+    setTimeout(scrollIfAllowed, Platform.OS === 'android' ? 260 : 80);
+    setTimeout(scrollIfAllowed, Platform.OS === 'android' ? 620 : 220);
+    setTimeout(scrollIfAllowed, Platform.OS === 'android' ? 1200 : 500);
+  }, [displayedMessages.length]);
 
   const handleMessageListScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     ivxDiagnostics.recordScroll('message-list');
@@ -5026,8 +5099,8 @@ export default function IVXOwnerChatRoute() {
     isAtBottomRef.current = true;
     setUnreadCount(0);
     setShowScrollToLatest(false);
-    // JUMP-FIX: single non-animated scroll to latest. No retries.
-    flatListRef.current?.scrollToEnd({ animated: false });
+    requestAnimationFrame(() => flatListRef.current?.scrollToEnd({ animated: true }));
+    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), Platform.OS === 'android' ? 260 : 120);
   }, []);
 
   // Floating chat navigation: when a message is sent or received, auto-scroll to the
@@ -5054,9 +5127,7 @@ export default function IVXOwnerChatRoute() {
       setShowScrollToLatest(true);
     } else {
       ivxDiagnostics.recordAutoScroll('new-message');
-      // JUMP-FIX: single non-animated scroll for new messages. Animated
-      // scrolls on every incoming message caused visible jumping.
-      scrollOwnerThreadToEnd(false);
+      scrollOwnerThreadToEnd(true);
     }
   }, [displayedMessages.length, searchActive, scrollOwnerThreadToEnd]);
 
@@ -5087,9 +5158,8 @@ export default function IVXOwnerChatRoute() {
         : nextInset;
       console.log('[IVXOwnerChatRoute] Keyboard shown inset:', normalizedInset, 'rawHeight:', nextInset, 'bottomInset:', insets.bottom);
       setKeyboardInset(normalizedInset);
-      // JUMP-FIX: single non-animated scroll when keyboard appears. The
-      // previous double animated scroll caused the list to jump twice.
-      scrollOwnerThreadToEnd(false);
+      scrollOwnerThreadToEnd(true);
+      setTimeout(() => scrollOwnerThreadToEnd(true), Platform.OS === 'android' ? 520 : 160);
     };
 
     const handleKeyboardHide = () => {
@@ -5980,7 +6050,6 @@ export default function IVXOwnerChatRoute() {
                   data={displayedMessages}
                   keyExtractor={(item) => item.id}
                   renderItem={renderMessage}
-                  initialScrollIndex={displayedMessages.length > 0 ? displayedMessages.length - 1 : undefined}
                   style={styles.messageList}
                   contentContainerStyle={listContentContainerStyle}
                   scrollEnabled
@@ -6018,21 +6087,31 @@ export default function IVXOwnerChatRoute() {
               ListFooterComponentStyle={styles.listFooterContainer}
               onContentSizeChange={(width, height) => {
                 ivxDiagnostics.recordContentHeight(`h=${Math.round(height)} count=${displayedMessages.length} atBottom=${isAtBottomRef.current}`);
-                // JUMP-FIX: only act on the FIRST measurement (pending initial
-                // scroll). Re-scrolling on every content-size change (which fires
-                // when dynamic bubbles re-measure) caused the continuous jitter.
+                // OPEN-ON-LATEST FIX: on first load or conversation switch, force
+                // a scroll to the newest message once the content size is known.
                 if (pendingInitialScrollRef.current && displayedMessages.length > 0) {
-                  flatListRef.current?.scrollToEnd({ animated: false });
+                  scrollToBottomRobust(false);
                   pendingInitialScrollRef.current = false;
+                  return;
+                }
+                if (Date.now() < suppressAutoScrollUntilRef.current) {
+                  return;
+                }
+                // Keep pinned to the bottom as new messages/streaming content
+                // arrives, unless the user is intentionally reading older messages.
+                if (isAtBottomRef.current) {
+                  flatListRef.current?.scrollToEnd({ animated: false });
                 }
               }}
               onLayout={() => {
-                // JUMP-FIX: only anchor on the very first layout. The previous
-                // version re-scrolled on every layout while at bottom, competing
-                // with onContentSizeChange and causing jumps.
+                // OPEN-ON-LATEST FIX: re-anchor to the newest message once the
+                // FlatList itself has mounted and measured. This covers the race
+                // where messagesQuery data arrives before the list has laid out.
                 if (pendingInitialScrollRef.current && displayedMessages.length > 0) {
-                  flatListRef.current?.scrollToEnd({ animated: false });
+                  scrollToBottomRobust(false);
                   pendingInitialScrollRef.current = false;
+                } else if (isAtBottomRef.current) {
+                  flatListRef.current?.scrollToEnd({ animated: false });
                 }
               }}
               onScrollToIndexFailed={(info) => {
@@ -6209,9 +6288,26 @@ export default function IVXOwnerChatRoute() {
                   </View>
                   <Terminal size={16} color={Colors.primary} />
                 </Pressable>
-                {/* Live-work action buttons removed per owner request: the chat
-                    composer must not show a working/progress panel. The idle Live
-                    Work entry remains so the owner can still open the monitor. */}
+                {/* Live-work actions hidden when idle to keep the composer clean. */}
+              {activeLiveWorkTask ? (
+                <View style={styles.chatLiveWorkActions}>
+                  <Pressable style={styles.chatLiveWorkAction} onPress={() => handleOpenLiveWork()} testID="ivx-chat-live-work-view" hitSlop={6}>
+                    <Activity size={13} color={Colors.text} />
+                    <Text style={styles.chatLiveWorkActionText}>View</Text>
+                  </Pressable>
+                  <Pressable style={styles.chatLiveWorkAction} onPress={() => setWatchdogDrawerVisible(true)} testID="ivx-chat-live-work-watchdog" hitSlop={6}>
+                    <ShieldCheck size={13} color={Colors.text} />
+                    <Text style={styles.chatLiveWorkActionText}>Watchdog</Text>
+                  </Pressable>
+                  <Pressable style={styles.chatLiveWorkAction} onPress={() => { void handleCopyTaskLog(); }} testID="ivx-chat-live-work-copy" hitSlop={6}>
+                    <Text style={styles.chatLiveWorkActionText}>Copy log</Text>
+                  </Pressable>
+                  <Pressable style={styles.chatLiveWorkAction} onPress={() => setActiveLiveWorkTask(null)} testID="ivx-chat-live-work-dismiss" hitSlop={6}>
+                    <X size={13} color={Colors.textTertiary} />
+                    <Text style={styles.chatLiveWorkActionText}>Dismiss</Text>
+                  </Pressable>
+                </View>
+              ) : null}
               </View>
               <View style={styles.templateRow} testID="ivx-owner-chat-template-row">
                 {OWNER_PROMPT_TEMPLATES.map((template) => (

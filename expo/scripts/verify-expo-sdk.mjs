@@ -60,18 +60,10 @@ if (derivedSdkVersion && derivedSdkVersion !== '54.0.0') {
   warnings.push(`Expo Go currently requires SDK 54 for this app, but project resolves to ${derivedSdkVersion}.`);
 }
 
-// Phase 4f (2026-05-28): Rork-managed preview REQUIRES @rork-ai/toolkit-sdk +
-// withRorkMetro for the cloud bundler/simulator. The previous "absence" gate
-// caused Expo Go to hang on a blank loading spinner because Rork's auto-sync
-// kept restoring the toolkit and the guard kept refusing to start. We now
-// assert PRESENCE so regressions surface immediately instead of silently
-// breaking the preview.
-if (!activeDependencies['@rork-ai/toolkit-sdk']) {
-  warnings.push('@rork-ai/toolkit-sdk is not a dependency (Rork preview/Expo Go bundling expects it).');
-}
-if (!/withRorkMetro/.test(metroConfigSource) || !/@rork-ai\/toolkit-sdk\/metro/.test(metroConfigSource)) {
-  warnings.push('metro.config.js does not wrap the default Expo config with withRorkMetro from @rork-ai/toolkit-sdk/metro.');
-}
+// Rork independence cutover (2026-07-07): @rork-ai/toolkit-sdk and
+// withRorkMetro have been removed. The IVX app now uses the plain Expo
+// default Metro config. These checks are intentionally removed — the SDK
+// absence is the desired state, not a regression.
 if (/runtimeVersion\s*:/.test(appConfigSource)) {
   warnings.push('runtimeVersion found in app config. Expo Go expects the local SDK 54 Metro bundle.');
 }

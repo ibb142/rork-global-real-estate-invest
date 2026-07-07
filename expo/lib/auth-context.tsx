@@ -2692,26 +2692,6 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     }
   }, [handleSession, requireTwoFactorIfNeeded]);
 
-  /** Hand a live Supabase session (from the manual owner-login screen) to the
-   * auth context so the rest of the app recognizes the signed-in owner. This
-   * is the bridge between the manual OwnerLoginScreen and the shared session
-   * handler — it runs the same handleSession pipeline as password login. */
-  const handleNativeOwnerSession = useCallback(async (session: Session): Promise<void> => {
-    try {
-      const challengeRequired = await requireTwoFactorIfNeeded(session, 'native owner sign-in');
-      if (challengeRequired) {
-        console.log('[Auth] Native owner session requires 2FA — deferring');
-        return;
-      }
-      const handled = await handleSession(session);
-      if (!handled.accepted) {
-        console.log('[Auth] Native owner session blocked:', handled.blockedReason ?? 'admin access lock');
-      }
-    } catch (err: unknown) {
-      console.log('[Auth] Native owner session hand-off error:', err instanceof Error ? err.message : 'unknown');
-    }
-  }, [handleSession, requireTwoFactorIfNeeded]);
-
   return useMemo(() => ({
     user,
     isAuthenticated,
@@ -2743,11 +2723,10 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     pendingTwoFactorFactorLabel: pendingTwoFactorFactor?.friendlyName ?? 'Authenticator app',
     profileData: user,
     refetchProfile,
-    handleNativeOwnerSession,
   }), [
     user, isAuthenticated, isLoading, userRole, login, register, doLogout,
     verify2FA, cancelTwoFactor, requiresTwoFactor, refreshSession,
     activateOwnerAccess, activatingOwner, auditOwnerDirectAccess, auditOwnerIdentity, ownerDirectAccess, claimOwnerDevice, loginOwnerPasswordless, ownerAccessLoading, loginLoading, verify2FALoading, registerLoading,
-    refetchProfile, isOwnerIPAccess, detectedIP, pendingTwoFactorEmail, pendingTwoFactorFactor, handleNativeOwnerSession,
+    refetchProfile, isOwnerIPAccess, detectedIP, pendingTwoFactorEmail, pendingTwoFactorFactor,
   ]);
 });

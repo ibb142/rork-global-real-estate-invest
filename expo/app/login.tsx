@@ -2026,17 +2026,6 @@ export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProp
                 <TouchableOpacity
                   style={styles.ownerNormalSignInButton}
                   activeOpacity={0.84}
-                  onPress={() => { router.push('/owner-login' as Href); }}
-                  testID="owner-login-manual-link"
-                >
-                  <Text style={styles.ownerNormalSignInButtonText}>Use manual owner sign-in (email + password)</Text>
-                </TouchableOpacity>
-              ) : null}
-
-              {effectiveOwnerMode ? (
-                <TouchableOpacity
-                  style={styles.ownerNormalSignInButton}
-                  activeOpacity={0.84}
                   onPress={() => { void loginOwnerPasswordless(normalizedEmail); }}
                   disabled={passwordlessOwnerLoading}
                   testID="owner-login-passwordless"

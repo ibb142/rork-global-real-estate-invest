@@ -145,8 +145,15 @@ function nowIso(): string {
 // account has paid balance. The server-only override IVX_AI_GATEWAY_URL is
 // honored for advanced routing; otherwise we go direct to Vercel.
 function getIVXAIGatewayRootUrl(): string {
-  return readTrimmed(process.env.IVX_AI_GATEWAY_URL)
-    || 'https://ai-gateway.vercel.sh';
+  const configured = readTrimmed(process.env.IVX_AI_GATEWAY_URL);
+  // Rork independence guard (2026-07-07): never honor a gateway URL that
+  // points at a Rork-hosted domain, even if a stale env var is still set on
+  // the host. This makes the runtime self-healing: production cannot route
+  // through toolkit.rork.com regardless of env var state.
+  if (configured && !isRorkDomain(configured)) {
+    return configured;
+  }
+  return 'https://ai-gateway.vercel.sh';
 }
 
 function getIVXAIGatewayApiKey(): string {
@@ -170,6 +177,14 @@ function getGatewayBaseUrl(): string | null {
   return buildGatewayBaseUrl(getIVXAIGatewayRootUrl());
 }
 
+function isRorkDomain(url: string): boolean {
+  const lower = url.toLowerCase();
+  return lower.includes('toolkit.rork.com')
+    || lower.includes('api.rork.com')
+    || lower.endsWith('.rork.com')
+    || lower.includes('rork-direct.workers.dev');
+}
+
 function getGatewayBaseUrlCandidates(): string[] {
   const configured = getGatewayBaseUrl();
   const canonical = buildGatewayBaseUrl('https://ai-gateway.vercel.sh');
@@ -184,9 +199,13 @@ function getGatewayBaseUrlCandidates(): string[] {
   // ivx-ai-provider-fallback.ts). If none of these keys are configured the
   // runtime throws a clear configuration error instead of silently falling
   // back to a Rork-hosted endpoint.
-  const candidates = [configured, canonical];
+  //
+  // Rork independence guard (2026-07-07): any candidate that resolves to a
+  // Rork domain is filtered out, so a stale IVX_AI_GATEWAY_URL env var on the
+  // host cannot silently re-route production through toolkit.rork.com.
+  const candidates = [configured, canonical].filter((c): c is string => Boolean(c) && !isRorkDomain(c));
 
-  return [...new Set(candidates.filter((candidate): candidate is string => Boolean(candidate)))];
+  return [...new Set(candidates)];
 }
 
 function ensureIVXAIGatewayEnvironment(): void {
