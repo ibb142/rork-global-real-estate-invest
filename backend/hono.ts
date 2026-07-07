@@ -524,6 +524,44 @@ import {
   handleDealPipelineSeedRequest,
 } from './api/ivx-deal-pipeline-seed';
 import {
+  OPTIONS as platformModulesOptions,
+  handleWaitlistListRequest,
+  handleWaitlistCreateRequest,
+  handleWaitlistStatusRequest,
+  handleWaitlistDeleteRequest,
+  handleSettingsListRequest,
+  handleSettingsUpsertRequest,
+  handleRevenueListRequest,
+  handleRevenueCreateRequest,
+  handleRevenueStatusRequest,
+  handleNotificationsListRequest,
+  handleNotificationsCreateRequest,
+  handleNotificationsStatusRequest,
+  handleBroadcastListRequest,
+  handleBroadcastCreateRequest,
+  handleBroadcastStatusRequest,
+  handleBroadcastDeleteRequest,
+  handleRolesListRequest,
+  handleRoleDefinitionUpsertRequest,
+  handleRoleAssignRequest,
+  handleRoleRevokeRequest,
+  handleUserPermissionsRequest,
+  handleTransactionsListRequest,
+  handleTransactionsCreateRequest,
+  handleTransactionsStatusRequest,
+  handleCasaRosarioListRequest,
+  handleCasaRosarioCreateRequest,
+  handleCasaRosarioUpdateRequest,
+  handleCasaRosarioStatusRequest,
+  handleCasaRosarioDeleteRequest,
+  handleAnalyticsSummaryRequest,
+  handleAnalyticsEventRequest,
+  handleReelDealSyncListRequest,
+  handleReelDealSyncCreateRequest,
+  handleReelDealSyncDeleteRequest,
+  handleOwnerDashboardRequest,
+} from './api/ivx-platform-modules';
+import {
   OPTIONS as capitalCommandCenterOptions,
   handleCapitalCommandCenterRequest,
   handleCapitalCommandActivityRequest,
@@ -4660,6 +4698,90 @@ app.onError((error, context) => {
     deploymentMarker: DEPLOYMENT_MARKER,
   }, 500);
 });
+
+// ─── IVX Platform Modules (28-module surface) ───────────────────────────────
+// Waitlist (public signup, owner-gated management)
+app.options('/api/ivx/waitlist', () => platformModulesOptions());
+app.get('/api/ivx/waitlist', async (context) => handleWaitlistListRequest(context.req.raw));
+app.post('/api/ivx/waitlist', async (context) => handleWaitlistCreateRequest(context.req.raw));
+app.options('/api/ivx/waitlist/:id/status', () => platformModulesOptions());
+app.post('/api/ivx/waitlist/:id/status', async (context) => handleWaitlistStatusRequest(context.req.raw, context.req.param('id')));
+app.options('/api/ivx/waitlist/:id/delete', () => platformModulesOptions());
+app.post('/api/ivx/waitlist/:id/delete', async (context) => handleWaitlistDeleteRequest(context.req.raw, context.req.param('id')));
+
+// Settings (owner-only)
+app.options('/api/ivx/settings', () => platformModulesOptions());
+app.get('/api/ivx/settings', async (context) => handleSettingsListRequest(context.req.raw));
+app.post('/api/ivx/settings', async (context) => handleSettingsUpsertRequest(context.req.raw));
+
+// Revenue (owner-only)
+app.options('/api/ivx/revenue', () => platformModulesOptions());
+app.get('/api/ivx/revenue', async (context) => handleRevenueListRequest(context.req.raw));
+app.post('/api/ivx/revenue', async (context) => handleRevenueCreateRequest(context.req.raw));
+app.options('/api/ivx/revenue/:id/status', () => platformModulesOptions());
+app.post('/api/ivx/revenue/:id/status', async (context) => handleRevenueStatusRequest(context.req.raw, context.req.param('id')));
+
+// Push Notifications (owner-only)
+app.options('/api/ivx/notifications', () => platformModulesOptions());
+app.get('/api/ivx/notifications', async (context) => handleNotificationsListRequest(context.req.raw));
+app.post('/api/ivx/notifications', async (context) => handleNotificationsCreateRequest(context.req.raw));
+app.options('/api/ivx/notifications/:id/status', () => platformModulesOptions());
+app.post('/api/ivx/notifications/:id/status', async (context) => handleNotificationsStatusRequest(context.req.raw, context.req.param('id')));
+
+// Broadcast (owner-only)
+app.options('/api/ivx/broadcast', () => platformModulesOptions());
+app.get('/api/ivx/broadcast', async (context) => handleBroadcastListRequest(context.req.raw));
+app.post('/api/ivx/broadcast', async (context) => handleBroadcastCreateRequest(context.req.raw));
+app.options('/api/ivx/broadcast/:id/status', () => platformModulesOptions());
+app.post('/api/ivx/broadcast/:id/status', async (context) => handleBroadcastStatusRequest(context.req.raw, context.req.param('id')));
+app.options('/api/ivx/broadcast/:id/delete', () => platformModulesOptions());
+app.post('/api/ivx/broadcast/:id/delete', async (context) => handleBroadcastDeleteRequest(context.req.raw, context.req.param('id')));
+
+// Roles & Permissions (owner-only)
+app.options('/api/ivx/roles', () => platformModulesOptions());
+app.get('/api/ivx/roles', async (context) => handleRolesListRequest(context.req.raw));
+app.options('/api/ivx/roles/definitions', () => platformModulesOptions());
+app.post('/api/ivx/roles/definitions', async (context) => handleRoleDefinitionUpsertRequest(context.req.raw));
+app.options('/api/ivx/roles/assign', () => platformModulesOptions());
+app.post('/api/ivx/roles/assign', async (context) => handleRoleAssignRequest(context.req.raw));
+app.options('/api/ivx/roles/revoke', () => platformModulesOptions());
+app.post('/api/ivx/roles/revoke', async (context) => handleRoleRevokeRequest(context.req.raw));
+app.options('/api/ivx/roles/:userId/permissions', () => platformModulesOptions());
+app.get('/api/ivx/roles/:userId/permissions', async (context) => handleUserPermissionsRequest(context.req.raw, context.req.param('userId')));
+
+// Transactions (owner-only)
+app.options('/api/ivx/transactions', () => platformModulesOptions());
+app.get('/api/ivx/transactions', async (context) => handleTransactionsListRequest(context.req.raw));
+app.post('/api/ivx/transactions', async (context) => handleTransactionsCreateRequest(context.req.raw));
+app.options('/api/ivx/transactions/:id/status', () => platformModulesOptions());
+app.post('/api/ivx/transactions/:id/status', async (context) => handleTransactionsStatusRequest(context.req.raw, context.req.param('id')));
+
+// Casa Rosario (public view, owner-managed)
+app.options('/api/ivx/casa-rosario', () => platformModulesOptions());
+app.get('/api/ivx/casa-rosario', async (context) => handleCasaRosarioListRequest(context.req.raw));
+app.post('/api/ivx/casa-rosario', async (context) => handleCasaRosarioCreateRequest(context.req.raw));
+app.options('/api/ivx/casa-rosario/:id', () => platformModulesOptions());
+app.post('/api/ivx/casa-rosario/:id', async (context) => handleCasaRosarioUpdateRequest(context.req.raw, context.req.param('id')));
+app.options('/api/ivx/casa-rosario/:id/status', () => platformModulesOptions());
+app.post('/api/ivx/casa-rosario/:id/status', async (context) => handleCasaRosarioStatusRequest(context.req.raw, context.req.param('id')));
+app.options('/api/ivx/casa-rosario/:id/delete', () => platformModulesOptions());
+app.post('/api/ivx/casa-rosario/:id/delete', async (context) => handleCasaRosarioDeleteRequest(context.req.raw, context.req.param('id')));
+
+// Landing Analytics (public event recording, owner-gated summary)
+app.options('/api/ivx/landing-analytics', () => platformModulesOptions());
+app.get('/api/ivx/landing-analytics', async (context) => handleAnalyticsSummaryRequest(context.req.raw));
+app.post('/api/ivx/landing-analytics', async (context) => handleAnalyticsEventRequest(context.req.raw));
+
+// Reels → Deal Sync (owner-only)
+app.options('/api/ivx/reel-deal-sync', () => platformModulesOptions());
+app.get('/api/ivx/reel-deal-sync', async (context) => handleReelDealSyncListRequest(context.req.raw));
+app.post('/api/ivx/reel-deal-sync', async (context) => handleReelDealSyncCreateRequest(context.req.raw));
+app.options('/api/ivx/reel-deal-sync/:id/delete', () => platformModulesOptions());
+app.post('/api/ivx/reel-deal-sync/:id/delete', async (context) => handleReelDealSyncDeleteRequest(context.req.raw, context.req.param('id')));
+
+// Owner Dashboard (aggregated roll-up, owner-only)
+app.options('/api/ivx/owner-dashboard', () => platformModulesOptions());
+app.get('/api/ivx/owner-dashboard', async (context) => handleOwnerDashboardRequest(context.req.raw));
 
 app.notFound(async (context) => {
   const webResponse = await loadWebResponse(context.req.path, context.req.method);
