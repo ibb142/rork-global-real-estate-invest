@@ -1,0 +1,21 @@
+{
+  "timestamp": "2026-07-07T23:35:02.800Z",
+  "testName": "ivx-owner-signin-e2e-qa",
+  "verified": true,
+  "manualSignInOnly": true,
+  "autoSignInRemoved": true,
+  "liveApiBase": "https://api.ivxholding.com",
+  "liveHealthSha": "79c5b3cfc0d515bb26fe6e19dd70ad98b818d702",
+  "results": {
+    "GET /health": { "status": 200, "passed": true },
+    "OPTIONS /api/ivx/owner-passwordless-login": { "status": 204, "passed": true },
+    "POST /api/ivx/owner-passwordless-login (no email)": { "status": 400, "passed": true, "expected": 400 },
+    "POST /api/ivx/owner-passwordless-login (non-allowlist)": { "status": 403, "passed": true, "expected": 403 },
+    "POST /api/ivx/owner-passwordless-login (real owner iperez4242@gmail.com)": { "status": 200, "passed": true, "accessTokenReturned": true },
+    "GET /api/ivx/owner-variables/status (no auth)": { "status": 401, "passed": true, "expected": 401 },
+    "GET /api/ivx/owner-variables/status (owner token)": { "status": 200, "passed": true },
+    "GET /api/ivx/owner-variables/status (Supabase bearer)": { "status": 200, "passed": true },
+    "GET /version": { "status": 200, "passed": true, "commit": "79c5b3cf" }
+  },
+  "conclusion": "Live owner sign-in pipeline is verified: manual passwordless login returns a real Supabase session, owner token is accepted by owner-gated routes, and unauth/non-owner attempts are rejected. Auto sign-in was removed from the Senior Developer Workspace."
+}
