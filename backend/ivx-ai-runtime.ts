@@ -176,109 +176,44 @@ function getGatewayBaseUrlCandidates(): string[] {
   // Always include the canonical Vercel gateway as a fallback candidate so a
   // misconfigured IVX_AI_GATEWAY_URL cannot strand the backend on a proxy that
   // strips auth headers (which causes free-tier 429s on a paid account).
+  //
+  // Rork toolkit cutover (2026-07-07): the Rork toolkit URL is no longer a
+  // candidate. The IVX AI runtime now relies exclusively on IVX-owned
+  // providers: the Vercel AI Gateway (AI_GATEWAY_API_KEY) as primary, and
+  // OpenAI direct / Anthropic direct as fallbacks (see
+  // ivx-ai-provider-fallback.ts). If none of these keys are configured the
+  // runtime throws a clear configuration error instead of silently falling
+  // back to a Rork-hosted endpoint.
   const candidates = [configured, canonical];
-
-  // If a Rork toolkit key is available, add the native Rork toolkit URL as a
-  // candidate. This lets the backend keep working when AI_GATEWAY_API_KEY is
-  // missing or when it is set to a rork_sk_* key (which cannot authenticate the
-  // Vercel gateway). The toolkit candidate is tried after the Vercel gateway
-  // and is handled by callRorkToolkitNative, which uses a direct fetch with the
-  // toolkit bearer.
-  const rorkToolkitKey = getRorkToolkitKey();
-  if (rorkToolkitKey) {
-    candidates.push(RORK_TOOLKIT_NATIVE_URL);
-  }
 
   return [...new Set(candidates.filter((candidate): candidate is string => Boolean(candidate)))];
 }
 
 function ensureIVXAIGatewayEnvironment(): void {
   const apiKey = getIVXAIGatewayApiKey();
-  const rorkToolkitKey = getRorkToolkitKey();
-  if (!apiKey && !rorkToolkitKey) {
-    throw new Error('IVX AI runtime is not configured.');
+  if (!apiKey) {
+    // Rork toolkit cutover (2026-07-07): the Rork toolkit key is no longer
+    // accepted as a gateway bearer. The runtime now requires an IVX-owned
+    // provider key: AI_GATEWAY_API_KEY (Vercel AI Gateway, primary) or
+    // OPENAI_API_KEY / ANTHROPIC_API_KEY (direct fallbacks, handled by
+    // attemptProviderFallback in ivx-ai-provider-fallback.ts).
+    throw new Error(
+      'IVX AI runtime is not configured. Set AI_GATEWAY_API_KEY (Vercel AI Gateway) ' +
+        'or OPENAI_API_KEY / ANTHROPIC_API_KEY (direct fallbacks) on the backend host.',
+    );
   }
 
-  // When only a Rork toolkit key is available, set it as the gateway key so the
-  // Vercel AI SDK createGateway call has a bearer. The actual toolkit candidate
-  // is routed through callRorkToolkitNative, which uses a direct fetch with the
-  // same key.
-  if (!apiKey && rorkToolkitKey && !readTrimmed(process.env.AI_GATEWAY_API_KEY)) {
-    process.env.AI_GATEWAY_API_KEY = rorkToolkitKey;
-  } else if (!readTrimmed(process.env.AI_GATEWAY_API_KEY)) {
+  if (!readTrimmed(process.env.AI_GATEWAY_API_KEY)) {
     process.env.AI_GATEWAY_API_KEY = apiKey;
   }
 }
 
-const RORK_TOOLKIT_NATIVE_URL = 'https://toolkit.rork.com/text/llm/';
-
-function isRorkToolkitBaseUrl(baseUrl: string): boolean {
-  return readTrimmed(baseUrl).includes('toolkit.rork.com');
-}
-
-function getRorkToolkitKey(): string {
-  return readTrimmed(process.env.RORK_TOOLKIT_SECRET_KEY)
-    || readTrimmed(process.env.EXPO_PUBLIC_RORK_TOOLKIT_SECRET_KEY)
-    || (readTrimmed(process.env.AI_GATEWAY_API_KEY).startsWith('rork_sk_') ? readTrimmed(process.env.AI_GATEWAY_API_KEY) : '');
-}
-
-type RorkToolkitNativeResult = {
-  text: string;
-  usage: unknown;
-};
-
-async function callRorkToolkitNative(input: {
-  model: string;
-  system: string;
-  prompt: string;
-  messages: IVXAITextMessage[];
-  maxOutputTokens?: number;
-  timeoutMs: number;
-  apiKey: string;
-}): Promise<RorkToolkitNativeResult> {
-  const apiKey = input.apiKey;
-  if (!apiKey) {
-    throw new Error('rork_toolkit native path not configured: missing rork_sk key');
-  }
-
-  const model = input.model;
-  const url = RORK_TOOLKIT_NATIVE_URL;
-  const messages: { role: 'user' | 'assistant'; content: string }[] = [];
-  if (input.messages.length > 0) {
-    for (const m of input.messages) messages.push({ role: m.role, content: m.content });
-  } else if (input.prompt) {
-    messages.push({ role: 'user', content: input.prompt });
-  }
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), input.timeoutMs);
-  const startedAt = Date.now();
-  try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages,
-        max_tokens: input.maxOutputTokens ?? 1024,
-      }),
-      signal: controller.signal,
-    });
-    if (!response.ok) {
-      throw new Error(`rork_toolkit native status=${response.status}`);
-    }
-    const json = await response.json() as { completion?: string };
-    const text = readTrimmed(json.completion ?? '');
-    if (!text) throw new Error('rork_toolkit native empty response');
-    return { text, usage: null };
-  } finally {
-    console.log('[IVXAI] Rork toolkit native call completed in', Date.now() - startedAt, 'ms');
-    clearTimeout(timer);
-  }
-}
+// Rork toolkit cutover (2026-07-07): the Rork toolkit native URL, key
+// resolver, isRorkToolkitBaseUrl, and callRorkToolkitNative function have been
+// removed. The IVX AI runtime no longer routes to toolkit.rork.com under any
+// condition. All AI traffic now flows through IVX-owned providers: the Vercel
+// AI Gateway (AI_GATEWAY_API_KEY) as primary, and OpenAI direct / Anthropic
+// direct as fallbacks (see ivx-ai-provider-fallback.ts).
 
 function readRecord(value: unknown): Record<string, unknown> {
   return typeof value === 'object' && value !== null ? value as Record<string, unknown> : {};
@@ -448,25 +383,6 @@ export async function requestIVXAIText(input: {
   for (const baseURL of baseUrlCandidates) {
     ensureIVXAIGatewayEnvironment();
     try {
-      if (isRorkToolkitBaseUrl(baseURL)) {
-        const rorkResult = await runWithHardTimeout(
-          'Rork toolkit native',
-          callRorkToolkitNative({
-            model,
-            system,
-            prompt,
-            messages,
-            maxOutputTokens: input.maxOutputTokens,
-            timeoutMs: adaptiveTimeoutMs,
-            apiKey: getRorkToolkitKey(),
-          }),
-          adaptiveTimeoutMs,
-        );
-        result = rorkResult as Awaited<ReturnType<typeof generateText>>;
-        successfulBaseUrl = baseURL;
-        break;
-      }
-
       const gatewayProvider = createGateway({
         apiKey: getIVXAIGatewayApiKey(),
         baseURL,
@@ -761,47 +677,29 @@ export async function* streamIVXAIText(input: {
   const timer = setTimeout(() => { timedOut = true; }, adaptiveTimeoutMs);
 
   try {
-    if (isRorkToolkitBaseUrl(baseURL)) {
-      const rorkResult = await runWithHardTimeout(
-        'Rork toolkit native (streaming)',
-        callRorkToolkitNative({
-          model,
-          system,
-          prompt,
-          messages,
-          maxOutputTokens: input.maxOutputTokens,
-          timeoutMs: adaptiveTimeoutMs,
-          apiKey: getRorkToolkitKey(),
-        }),
-        adaptiveTimeoutMs,
-      );
-      accumulated = rorkResult.text;
-      usage = rorkResult.usage;
-    } else {
-      const gatewayProvider = createGateway({ apiKey: getIVXAIGatewayApiKey(), baseURL });
-      const streamResult = streamText({
-        model: gatewayProvider(model),
-        system: system.length > 0 ? system : undefined,
-        maxOutputTokens: input.maxOutputTokens,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        ...(messages.length > 0 ? { messages } as any : { prompt }),
-      });
+    const gatewayProvider = createGateway({ apiKey: getIVXAIGatewayApiKey(), baseURL });
+    const streamResult = streamText({
+      model: gatewayProvider(model),
+      system: system.length > 0 ? system : undefined,
+      maxOutputTokens: input.maxOutputTokens,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ...(messages.length > 0 ? { messages } as any : { prompt }),
+    });
 
-      for await (const delta of streamResult.textStream) {
-        if (timedOut) {
-          lastError = `IVX AI stream timed out after ${adaptiveTimeoutMs}ms`;
-          break;
-        }
-        accumulated += delta;
-        yield { type: 'delta', delta };
+    for await (const delta of streamResult.textStream) {
+      if (timedOut) {
+        lastError = `IVX AI stream timed out after ${adaptiveTimeoutMs}ms`;
+        break;
       }
+      accumulated += delta;
+      yield { type: 'delta', delta };
+    }
 
-      if (!timedOut) {
-        try {
-          usage = await streamResult.usage;
-        } catch {
-          usage = null;
-        }
+    if (!timedOut) {
+      try {
+        usage = await streamResult.usage;
+      } catch {
+        usage = null;
       }
     }
   } catch (error) {

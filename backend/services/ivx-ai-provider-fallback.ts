@@ -16,7 +16,7 @@
  *     decide policy; only retryable classes trigger fallback
  */
 
-export type IVXProviderName = 'vercel_ai_gateway' | 'openai_direct' | 'anthropic_direct' | 'rork_toolkit';
+export type IVXProviderName = 'vercel_ai_gateway' | 'openai_direct' | 'anthropic_direct';
 export type IVXProviderFailureClass =
   | 'auth'
   | 'quota'
@@ -50,16 +50,6 @@ function hasEnv(name: string): boolean {
   return readTrimmed(process.env[name]).length > 0;
 }
 
-function getRorkToolkitKey(): string {
-  return readTrimmed(process.env.RORK_TOOLKIT_SECRET_KEY)
-    || readTrimmed(process.env.EXPO_PUBLIC_RORK_TOOLKIT_SECRET_KEY)
-    || (readTrimmed(process.env.AI_GATEWAY_API_KEY).startsWith('rork_sk_') ? readTrimmed(process.env.AI_GATEWAY_API_KEY) : '');
-}
-
-function hasRorkToolkitKey(): boolean {
-  return getRorkToolkitKey().length > 0;
-}
-
 /** Public, secret-free provider snapshot for the owner status route. */
 export function getIVXProviderChainSnapshot(): {
   primary: IVXProviderStatus;
@@ -85,12 +75,9 @@ export function getIVXProviderChainSnapshot(): {
       configured: hasEnv('ANTHROPIC_API_KEY'),
       envGates: ['ANTHROPIC_API_KEY'],
     },
-    {
-      name: 'rork_toolkit',
-      role: 'fallback',
-      configured: hasRorkToolkitKey(),
-      envGates: ['RORK_TOOLKIT_SECRET_KEY', 'EXPO_PUBLIC_RORK_TOOLKIT_SECRET_KEY', 'AI_GATEWAY_API_KEY (when value is a rork_sk key)'],
-    },
+    // Rork toolkit cutover (2026-07-07): the rork_toolkit fallback has been
+    // removed. The IVX provider chain is now exclusively IVX-owned:
+    // Vercel AI Gateway (primary) + OpenAI direct + Anthropic direct.
   ];
   const fallbackEnabled = fallbacks.some((p) => p.configured);
   return { primary, fallbacks, fallbackEnabled };
@@ -130,9 +117,9 @@ export function classifyProviderFailure(error: unknown): IVXProviderFailureClass
 
 /** Failure classes safe to retry against a different provider.
  * Auth failures are included because the primary (Vercel AI Gateway) and the
- * Rork toolkit use completely different keys/endpoints; a primary auth
- * failure should still let the Rork toolkit fallback attempt serve the
- * request with the configured rork_sk key.
+ * direct OpenAI/Anthropic fallbacks use completely different keys/endpoints;
+ * a primary auth failure should still let a direct fallback attempt serve
+ * the request.
  */
 export function isFailureRetryable(cls: IVXProviderFailureClass): boolean {
   return cls === 'timeout'
@@ -254,53 +241,11 @@ async function callAnthropicDirect(input: FallbackInput): Promise<IVXProviderInv
  * Logs are intentionally low-fidelity: provider name + failure class only.
  * No prompt text, no API keys, no response bodies.
  */
-async function callRorkToolkit(input: FallbackInput): Promise<IVXProviderInvocationResult> {
-  const apiKey = getRorkToolkitKey();
-  if (!apiKey) throw new Error('rork_toolkit fallback not configured');
-  const model = readTrimmed(process.env.IVX_RORK_TOOLKIT_FALLBACK_MODEL) || 'gpt-4o';
-  const url = 'https://toolkit.rork.com/text/llm/';
-  const messages: { role: 'user' | 'assistant'; content: string }[] = [];
-  if (input.messages.length > 0) {
-    for (const m of input.messages) messages.push({ role: m.role, content: m.content });
-  } else if (input.prompt) {
-    messages.push({ role: 'user', content: input.prompt });
-  }
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), input.timeoutMs);
-  const startedAt = Date.now();
-  try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages,
-        max_tokens: input.maxOutputTokens ?? 1024,
-      }),
-      signal: controller.signal,
-    });
-    if (!response.ok) {
-      throw new Error(`rork_toolkit status=${response.status}`);
-    }
-    const json = await response.json() as { completion?: string };
-    const text = readTrimmed(json.completion ?? '');
-    if (!text) throw new Error('rork_toolkit empty response');
-    return { text, provider: 'rork_toolkit', model, latencyMs: Date.now() - startedAt };
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
 export async function attemptProviderFallback(input: FallbackInput): Promise<IVXProviderInvocationResult | null> {
   const chain: { name: IVXProviderName; run: (i: FallbackInput) => Promise<IVXProviderInvocationResult> }[] = [];
   if (hasEnv('OPENAI_API_KEY')) chain.push({ name: 'openai_direct', run: callOpenAIDirect });
   if (hasEnv('ANTHROPIC_API_KEY')) chain.push({ name: 'anthropic_direct', run: callAnthropicDirect });
-  if (hasRorkToolkitKey()) {
-    chain.push({ name: 'rork_toolkit', run: callRorkToolkit });
-  }
+  // Rork toolkit cutover (2026-07-07): rork_toolkit fallback link removed.
   if (chain.length === 0) return null;
 
   for (const link of chain) {
