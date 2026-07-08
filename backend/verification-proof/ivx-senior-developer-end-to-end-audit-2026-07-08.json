@@ -1,0 +1,136 @@
+{
+  "audit": "ivx-senior-developer-end-to-end-audit",
+  "date": "2026-07-08T00:58:00Z",
+  "auditor": "rork-senior-developer-agent",
+  "method": "live production probes + source code read + task-orchestrator log inspection",
+  "productionEndpoint": "https://api.ivxholding.com",
+  "productionCommit": "79c5b3cfc0d515bb26fe6e19dd70ad98b818d702",
+  "productionBoot": "2026-07-08T00:49:06.550Z",
+  "liveRenderDeployId": "dep-d96pr34kgmds73a9cudg",
+  "renderDeployStatus": "live",
+  "renderDeployCommit": "79c5b3cf",
+  "ownerLoginVerified": {
+    "ok": true,
+    "email": "iperez4242@gmail.com",
+    "role": "owner",
+    "accountType": "owner",
+    "kycStatus": "approved",
+    "jwtIssuer": "https://kvclcdjmjghndxsngfzb.supabase.co/auth/v1",
+    "subject": "9b280e15-f9fd-459f-bf2d-530b1ed84cb1"
+  },
+  "githubTokenStatus": {
+    "liveCheck": "GET https://api.github.com/user => HTTP 401",
+    "verdict": "DEAD / REVOKED",
+    "impact": "Blocks commit, push, and the senior-developer git-deploy operator. The worker can read the repo anonymously (HTTP 200) but cannot push."
+  },
+  "renderCredentialStatus": {
+    "apiKey": "present (rnd_...)",
+    "serviceId": "present (srv-d7t9ivreo5us73ftose0)",
+    "service": "ivx-holdings-platform",
+    "branch": "main",
+    "autoDeploy": "yes (trigger: commit)",
+    "canDeploy": true,
+    "latestDeployLive": true
+  },
+  "supabaseCredentialStatus": {
+    "serviceRoleKey": "present, backend runtime can access",
+    "url": "https://kvclcdjmjghndxsngfzb.supabase.co"
+  },
+  "workerEndpointsLive": {
+    "GET /api/ivx/senior-developer/worker/status": "200 ok, executor=ivx-self-hosted-worker, durableQueue=true",
+    "GET /api/ivx/senior-developer/worker/jobs": "200, 2 jobs, both completed",
+    "GET /api/ivx/senior-developer/worker/ledger": "200, 0 entries (ledger empty on this boot — diskless restart)",
+    "GET /api/ivx/senior-developer/autonomous-mode/status": "200, pipeline 7 stages, 6 allowed states"
+  },
+  "workerJobs": [
+    {
+      "jobId": "ivx-worker-78b4d6be-9520-4530-be64-3555a5fafbcd",
+      "goal": "inspect the repo only",
+      "status": "completed",
+      "finalStatus": "COMPLETE",
+      "testsPassed": true,
+      "healthOk": true,
+      "commitCreated": false,
+      "pushed": false,
+      "deployed": false,
+      "endToEndProductionComplete": true,
+      "honestAssessment": "Read-only inspection. No commit, no push, no deploy. Health check passed. This is a genuine local-only verification."
+    },
+    {
+      "jobId": "ivx-worker-004095b5-301d-4655-8ac7-6e6d03d690b1",
+      "goal": "[TEMPLATE_MODE:NEW_FEATURE] Act as the IVX self-hosted senior developer worker...",
+      "status": "completed",
+      "finalStatus": "COMPLETE",
+      "testsPassed": true,
+      "healthOk": true,
+      "commitCreated": false,
+      "pushed": false,
+      "deployed": false,
+      "endToEndProductionComplete": true,
+      "honestAssessment": "Template-mode feature request. No files changed, no commit, no deploy. Marked COMPLETE because health check passed — but no real engineering work was shipped."
+    }
+  ],
+  "taskOrchestrator": {
+    "totalTasks": 32,
+    "completed": 24,
+    "blocked": 8,
+    "tasksWithDeployStatusSet": 0,
+    "tasksWithRealCommitSha": 0,
+    "rootCause": "The task-orchestrator store blocks.json uses hardcoded commitHash='abc1234' and codeChanges='edited a file' for EVERY block. deploymentStatus is null for all 32 tasks. The orchestrator never executed a real git commit or deploy — it only recorded synthetic 'completed' blocks. Production deploys that DID happen (dep-d96pr34kgmds73a9cudg at commit 79c5b3cf) came from MANUAL Render triggers in chat, NOT from the orchestrator.",
+    "fakeEvidenceFound": "block.commitHash='abc1234' (placeholder, not a real SHA), block.codeChanges='edited a file' (generic, not a real diff), block.deploymentStatus=null for all"
+  },
+  "capabilityMatrix": {
+    "repo_read": { "live": true, "evidence": "GitHub repo accessible anonymously HTTP 200; worker status endpoint reports githubRepoReadWrite=true" },
+    "file_read": { "live": true, "evidence": "Worker job 78b4d6be inspected repo successfully" },
+    "file_write": { "live": true, "evidence": "Runtime applies safe patches to allowlisted paths (backend/, expo/)" },
+    "patch_apply": { "live": true, "evidence": "Source: ivx-senior-developer-executor.ts stepPatchApply + runtime applyPatchProposal" },
+    "test_run": { "live": true, "evidence": "Worker jobs report testsPassed=true; import-smoke validation in node-only container" },
+    "git_status": { "live": true, "evidence": "Executor stepGitStatus runs git status --porcelain" },
+    "git_commit": { "live": false, "blocked": true, "evidence": "GitHub token returns 401 — cannot authenticate to GitHub API for commit", "blocker": "GITHUB_TOKEN dead/revoked" },
+    "git_push": { "live": false, "blocked": true, "evidence": "Same 401 blocker", "blocker": "GITHUB_TOKEN dead/revoked" },
+    "render_deploy": { "live": true, "evidence": "Render API key valid; latest deploy dep-d96pr34kgmds73a9cudg live at 79c5b3cf" },
+    "health_check": { "live": true, "evidence": "GET /health => 200, commit 79c5b3cf" },
+    "supabase_check": { "live": true, "evidence": "Service role key present, owner login mints real JWT" },
+    "production_verify": { "live": true, "evidence": "GET /api/ivx/version => 200 commit 79c5b3cf; live deploy matches" }
+  },
+  "blockers": [
+    {
+      "id": "BLOCK-1",
+      "severity": "CRITICAL",
+      "name": "GITHUB_TOKEN dead/revoked",
+      "liveProof": "GET https://api.github.com/user with token => HTTP 401",
+      "impact": "git_commit + git_push capabilities are blocked. The senior-developer worker CANNOT commit or push code to GitHub. This is why all 32 task-orchestrator tasks have deploymentStatus=null and no real commit SHA.",
+      "fix": "Generate a new GitHub Personal Access Token (classic) with repo scope, or a fine-grained token with Contents:write on ibb142/rork-global-real-estate-invest. Save it to Render environment variables as GITHUB_TOKEN and trigger a redeploy."
+    },
+    {
+      "id": "BLOCK-2",
+      "severity": "HIGH",
+      "name": "Task orchestrator uses placeholder evidence",
+      "liveProof": "blocks.json: commitHash='abc1234', codeChanges='edited a file', deploymentStatus=null for all 32 tasks",
+      "impact": "The task orchestrator reports tasks as 'completed' but never actually commits or deploys. The 'completed' status is based on synthetic block records, not real git/Render operations.",
+      "fix": "Either wire the task orchestrator to the real senior-developer worker (enqueueSeniorDeveloperJob), or remove the fake 'completed' status and mark tasks as 'local_only' until a real commit SHA exists."
+    },
+    {
+      "id": "BLOCK-3",
+      "severity": "MEDIUM",
+      "name": "Proof ledger empty after diskless restart",
+      "liveProof": "GET /worker/ledger => 0 entries (Render diskless restart wiped in-memory ledger; GitHub side-branch ledger write failed because GITHUB_TOKEN is dead)",
+      "impact": "Past worker job proofs are lost on every Render redeploy. The ledger is not durable.",
+      "fix": "Fix GITHUB_TOKEN so the GitHub side-branch ledger persistence works, OR configure the durable Supabase store."
+    },
+    {
+      "id": "BLOCK-4",
+      "severity": "LOW",
+      "name": "GITHUB_REPO_URL malformed in .env",
+      "liveProof": "expo/.env line 11: GITHUB_REPO_URL=gh repo clone ibb142/rork-global-real-estate-invest (not a valid URL)",
+      "impact": "parseGithubRepoUrl regex may fail to extract owner/repo from this value",
+      "fix": "Set GITHUB_REPO_URL=https://github.com/ibb142/rork-global-real-estate-invest"
+    }
+  ],
+  "isIvxSeniorDeveloperReal": {
+    "verdict": "PARTIALLY REAL — read/inspect/test/health/verify capabilities work live. Commit/push/deploy-end-to-end is BLOCKED by dead GitHub token.",
+    "whatWorks": "Owner login, repo read, file read, patch proposal, test/import-smoke, Render deploy trigger, health check, version verify, production verify, autonomous-mode classification, owner policy gate, approval gate, worker queue",
+    "whatDoesNotWork": "git_commit, git_push (GITHUB_TOKEN 401). Therefore no task-orchestrator task has ever shipped a real commit. All production deploys came from manual Render triggers or Rork-managed git pushes, not the autonomous senior developer.",
+    "whatIsFake": "The task-orchestrator blocks.json uses commitHash='abc1234' and codeChanges='edited a file' as placeholders. deploymentStatus=null for all 32 tasks. The orchestrator marks tasks 'completed' without a real commit or deploy."
+  }
+}
