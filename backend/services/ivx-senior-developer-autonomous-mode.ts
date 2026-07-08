@@ -435,6 +435,31 @@ export async function runSeniorDeveloperAutonomousMode(
     };
   }
 
+  // BLOCKED path: credential or tool blockers proved by live check — never run
+  // the executor or claim verification. The credential rule already proved the
+  // exact issue; returning BLOCKED prevents the fake "STATE: VERIFIED" narrative.
+  if (blockers.length > 0) {
+    router.push({ stage: 'executor', status: 'skipped', detail: `Blocked — ${blockers[0] ?? 'credential/tool gate failed'}.` });
+    router.push({ stage: 'tests', status: 'skipped', detail: 'Blocked — no execution.' });
+    router.push({ stage: 'proof_ledger', status: 'passed', detail: `Ledger entry recorded; taskId=${taskId}.` });
+    router.push({ stage: 'final_evidence', status: 'passed', detail: 'BLOCKED returned.' });
+    return {
+      TASK_ID: taskId,
+      STATE: 'BLOCKED',
+      ROOT_CAUSE: blockers[0] ?? 'Credential or tool gate failed live check.',
+      FILES_CHANGED: [],
+      TESTS: 'not run — blocked before execution',
+      GITHUB_SHA: null,
+      RENDER_DEPLOY_ID: null,
+      LIVE_VERIFY: 'not run — blocked before execution',
+      BLOCKERS: blockers,
+      NEXT_ACTION: 'Resolve the listed blocker (credential / tool / missing input), then re-run the same task.',
+      router,
+      policyVerdict,
+      autonomous: null,
+    };
+  }
+
   // Stage 4: executor — run the autonomous lifecycle.
   let autonomous: AutonomousModeReport | null = null;
   try {
@@ -568,9 +593,16 @@ function deriveFinalState(
   blockers: string[],
 ): FinalAutonomousState {
   if (report.humanApprovalRequired) return 'WAITING_OWNER';
-  if (report.finalStatus === 'VERIFIED' && testsOk) return 'VERIFIED';
-  if (report.finalStatus === 'FAILED') return 'FAILED';
-  if (blockers.length > 0) return 'BLOCKED';
+  // Pre-execution blockers (credential missing, tool unavailable, approval
+  // gate) are handled before the executor ever runs; if any reach this point
+  // it means the executor was allowed to run and the blockers are post-execution
+  // test-failure evidence, not a state override.
+  const productionFailed = report.production !== null
+    && (report.production.failures > 0 || report.production.thresholdExceeded);
+  // VERIFIED only when the autonomous lifecycle, tests, and production health
+  // all agree. Production health failures override an optimistic VERIFIED.
+  if (report.finalStatus === 'VERIFIED' && testsOk && !productionFailed) return 'VERIFIED';
+  if (report.finalStatus === 'FAILED' || !testsOk || productionFailed) return 'FAILED';
   // RUNNING is reserved for in-flight jobs; the synchronous router returns
   // READY when the work is queued but not yet verified, VERIFIED when proven.
   return 'READY';
@@ -578,9 +610,15 @@ function deriveFinalState(
 
 function deriveRootCause(report: AutonomousModeReport, blockers: string[]): string {
   if (report.humanApprovalRequired && report.approvalReason) return report.approvalReason;
-  if (blockers.length > 0) return blockers[0] ?? 'Unknown blocker.';
+  const production = report.production;
+  const productionFailed = production !== null
+    && (production.failures > 0 || production.thresholdExceeded);
+  if (productionFailed) {
+    return `Live verification failed: health=${production.failures}/${production.total} failures; thresholdExceeded=${production.thresholdExceeded}.`;
+  }
   const failedStep = report.steps.find((s) => s.status === 'failed');
   if (failedStep) return `${failedStep.name}: ${failedStep.proof}`;
+  if (blockers.length > 0) return blockers[0] ?? 'Unknown blocker.';
   if (report.finalStatus === 'VERIFIED') return 'All stages verified end-to-end.';
   return 'No root cause surfaced — investigate the autonomous report.';
 }

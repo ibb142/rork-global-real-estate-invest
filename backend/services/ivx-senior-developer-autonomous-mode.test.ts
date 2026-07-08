@@ -305,6 +305,50 @@ describe('Final response format', () => {
     expect(report.BLOCKERS.length).toBeGreaterThan(0);
   });
 
+  it('BLOCKED when credentials are missing — executor does not run, no fake VERIFIED', async () => {
+    let executed = false;
+    const report = await runSeniorDeveloperAutonomousMode('Fix it now', {
+      executor: async () => {
+        executed = true;
+        return fakeAutonomous();
+      },
+      credentialStatuses: { GITHUB_TOKEN: 'not_loaded', RENDER_API_KEY: 'missing' },
+      taskId: 'task_test_blocked_creds',
+    });
+    expect(executed).toBe(false);
+    expect(report.STATE).toBe('BLOCKED');
+    expect(report.BLOCKERS.some((b) => b.includes('GITHUB_TOKEN=not_loaded'))).toBe(true);
+    expect(report.BLOCKERS.some((b) => b.includes('RENDER_API_KEY=missing'))).toBe(true);
+    expect(report.NEXT_ACTION.toLowerCase()).toContain('resolve');
+  });
+
+  it('FAILED when production health has failures, even if autonomous lifecycle returns VERIFIED', async () => {
+    const report = await runSeniorDeveloperAutonomousMode('Fix it now', {
+      executor: fakeExecutor(
+        fakeAutonomous({
+          production: {
+            failureRate: 1,
+            total: 16,
+            failures: 16,
+            windowStartedAt: new Date().toISOString(),
+            windowEndedAt: new Date().toISOString(),
+            thresholdExceeded: true,
+            rollbackInFlight: false,
+            lastRollbackAt: null,
+            renderConfigured: true,
+            cooldownMs: 300000,
+          },
+        }),
+      ),
+      credentialStatuses: { GITHUB_TOKEN: 'present', RENDER_API_KEY: 'present' },
+      taskId: 'task_test_prod_failures',
+    });
+    expect(report.STATE).toBe('FAILED');
+    expect(report.LIVE_VERIFY).toContain('16/16 failures');
+    expect(report.ROOT_CAUSE).toContain('Live verification failed');
+    expect(report.NEXT_ACTION.toLowerCase()).toContain('fix');
+  });
+
   it('WAITING_OWNER when the action requires approval — never executes', async () => {
     let executed = false;
     const report = await runSeniorDeveloperAutonomousMode(
