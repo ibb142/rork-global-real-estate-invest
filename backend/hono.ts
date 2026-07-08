@@ -3844,13 +3844,17 @@ app.post('/api/projects/:projectId/click', (c) => handleProjectTrackClick(c));
 
 // ── Public Feature API /api/ivx/* ────────────────────────────────────────
 
-// Featured Properties
+// Featured Properties (legacy alias + canonical)
 app.options('/api/ivx/properties/featured', () => publicFeatureOptions());
 app.get('/api/ivx/properties/featured', async (c) => handleFeaturedProperties(c.req.raw));
+app.options('/api/featured-properties', () => publicFeatureOptions());
+app.get('/api/featured-properties', async (c) => handleFeaturedProperties(c.req.raw));
 
-// Property Details
+// Property Details (legacy alias + canonical)
 app.options('/api/ivx/properties/:propertyId', () => publicFeatureOptions());
 app.get('/api/ivx/properties/:propertyId', async (c) => handlePropertyDetails(c.req.raw, c.req.param('propertyId')));
+app.options('/api/property-details/:propertyId', () => publicFeatureOptions());
+app.get('/api/property-details/:propertyId', async (c) => handlePropertyDetails(c.req.raw, c.req.param('propertyId')));
 
 // Auth aliases (delegate to member handlers)
 app.options('/api/ivx/auth/register', () => membersOptions());
@@ -3859,33 +3863,53 @@ app.options('/api/ivx/auth/verify-email', () => membersOptions());
 app.post('/api/ivx/auth/verify-email', async (c) => handleVerifyEmail(c.req.raw));
 app.options('/api/ivx/auth/verify-sms', () => membersOptions());
 app.post('/api/ivx/auth/verify-sms', async (c) => handleVerifyPhone(c.req.raw));
+// Legacy alias registration for audit list
+app.options('/api/member-registration', () => membersOptions());
+app.post('/api/member-registration', async (c) => handleMemberRegister(c.req.raw));
+app.options('/api/email-verification', () => membersOptions());
+app.post('/api/email-verification', async (c) => handleVerifyEmail(c.req.raw));
+app.options('/api/sms-verification', () => membersOptions());
+app.post('/api/sms-verification', async (c) => handleVerifyPhone(c.req.raw));
 
-// Members Dashboard
+// Members Dashboard (legacy alias + canonical)
 app.options('/api/ivx/members/dashboard', () => publicFeatureOptions());
 app.get('/api/ivx/members/dashboard', async (c) => handleMembersDashboard(c.req.raw));
+app.options('/api/members-dashboard', () => publicFeatureOptions());
+app.get('/api/members-dashboard', async (c) => handleMembersDashboard(c.req.raw));
 
-// CRM Main
+// CRM Main (legacy alias + canonical)
 app.options('/api/ivx/crm', () => publicFeatureOptions());
 app.get('/api/ivx/crm', async (c) => handleCRMMain(c.req.raw));
+app.options('/api/crm', () => publicFeatureOptions());
+app.get('/api/crm', async (c) => handleCRMMain(c.req.raw));
 
-// JV Deals
+// JV Deals (legacy alias + canonical)
 app.options('/api/ivx/jv-deals', () => publicFeatureOptions());
 app.get('/api/ivx/jv-deals', async (c) => handleJVDealsList(c.req.raw));
+app.options('/api/jv-deals', () => publicFeatureOptions());
+app.get('/api/jv-deals', async (c) => handleJVDealsList(c.req.raw));
 
-// Property Admin
+// Property Admin (legacy alias + canonical)
 app.options('/api/ivx/admin/properties', () => publicFeatureOptions());
 app.get('/api/ivx/admin/properties', async (c) => handlePropertyAdminList(c.req.raw));
 app.post('/api/ivx/admin/properties', async (c) => handlePropertyAdminCreate(c.req.raw));
+app.options('/api/property-admin', () => publicFeatureOptions());
+app.get('/api/property-admin', async (c) => handlePropertyAdminList(c.req.raw));
+app.post('/api/property-admin', async (c) => handlePropertyAdminCreate(c.req.raw));
 
-// Media Upload
+// Media Upload (legacy alias + canonical)
 app.options('/api/ivx/media/upload', () => publicFeatureOptions());
 app.post('/api/ivx/media/upload', async (c) => handleMediaUpload(c.req.raw));
+app.options('/api/media-upload', () => publicFeatureOptions());
+app.post('/api/media-upload', async (c) => handleMediaUpload(c.req.raw));
 
-// Instagram Cards
+// Instagram Cards (legacy alias + canonical)
 app.options('/api/ivx/social/instagram-cards', () => publicFeatureOptions());
 app.get('/api/ivx/social/instagram-cards', async (c) => handleInstagramCards(c.req.raw));
+app.options('/api/instagram-cards', () => publicFeatureOptions());
+app.get('/api/instagram-cards', async (c) => handleInstagramCards(c.req.raw));
 
-// Engagement
+// Engagement (legacy aliases + canonical)
 app.options('/api/ivx/engagement/likes', () => publicFeatureOptions());
 app.get('/api/ivx/engagement/likes', async (c) => handleEngagementLikes(c.req.raw));
 app.options('/api/ivx/engagement/comments', () => publicFeatureOptions());
@@ -3894,10 +3918,20 @@ app.options('/api/ivx/engagement/shares', () => publicFeatureOptions());
 app.get('/api/ivx/engagement/shares', async (c) => handleEngagementShares(c.req.raw));
 app.options('/api/ivx/engagement/saves', () => publicFeatureOptions());
 app.get('/api/ivx/engagement/saves', async (c) => handleEngagementSaves(c.req.raw));
+app.options('/api/likes', () => publicFeatureOptions());
+app.get('/api/likes', async (c) => handleEngagementLikes(c.req.raw));
+app.options('/api/comments', () => publicFeatureOptions());
+app.get('/api/comments', async (c) => handleEngagementComments(c.req.raw));
+app.options('/api/shares', () => publicFeatureOptions());
+app.get('/api/shares', async (c) => handleEngagementShares(c.req.raw));
+app.options('/api/saves', () => publicFeatureOptions());
+app.get('/api/saves', async (c) => handleEngagementSaves(c.req.raw));
 
-// Analytics
+// Analytics (legacy alias + canonical)
 app.options('/api/ivx/analytics', () => publicFeatureOptions());
 app.get('/api/ivx/analytics', async (c) => handleAnalytics(c.req.raw));
+app.options('/api/analytics', () => publicFeatureOptions());
+app.get('/api/analytics', async (c) => handleAnalytics(c.req.raw));
 
 // ── IVX Deployment Tools Brain (Unified Dashboard) ──────────────────
 app.options('/api/ivx/deploy-tools/*', () => deployToolsOptions());
