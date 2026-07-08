@@ -77,8 +77,8 @@ import { OwnerAuthActions } from '@/components/OwnerAuthActions';
  * so we hardcode the SHA to guarantee the marker always shows the
  * correct version. If this marker says OWNER_LOGIN_V11_LIVE_PROXY,
  * the bundle is current. Older markers mean the bundle is stale. */
-const BUNDLE_GIT_SHA = 'repo_fix_2026_07_04_v15';
-const OWNER_LOGIN_PHONE_PROOF_BUILD = `OWNER_LOGIN_V15_GUARD · ${BUNDLE_GIT_SHA} · 2026-07-04T22:30Z`;
+const BUNDLE_GIT_SHA = 'repo_fix_2026_07_07_v16_passwordless';
+const OWNER_LOGIN_PHONE_PROOF_BUILD = `OWNER_LOGIN_V16_PASSWORDLESS · ${BUNDLE_GIT_SHA} · 2026-07-07T23:58Z`;
 
 /** True when the Supabase client failed to initialize (URL/key missing).
  * This is the root cause of the "Supabase URL is required" AuthError. */
@@ -1678,7 +1678,7 @@ export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProp
   const hasVisibleSupabaseError = Boolean(attemptState.supabaseErrorMessage || attemptState.supabaseErrorCode || attemptState.supabaseErrorStatus || attemptState.supabaseErrorName);
   const loginTitle = effectiveOwnerMode ? 'Owner Login' : 'Welcome Back';
   const loginSubtitle = effectiveOwnerMode
-    ? 'Enter your approved owner email and password, then tap Sign In. Manual login is the default. SMS recovery is available if you lost your password.'
+    ? 'Owner sign-in is now passwordless. Enter your approved owner email, tap Owner Sign In, and the backend mints the session. The password field is ignored on this screen.'
     : 'Use direct email/password sign-in first. Owner recovery stays available below if this device was already verified.';
   const signInButtonLabel = effectiveOwnerMode ? 'Owner Sign In' : 'Sign In';
   const ownerAlternativeTitle = effectiveOwnerMode
@@ -1985,7 +1985,7 @@ export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProp
                   <Lock size={18} color={Colors.textTertiary} />
                   <TextInput
                     style={styles.input}
-                    placeholder={'••••••••'}
+                    placeholder={effectiveOwnerMode ? 'Owner mode: password ignored' : '••••••••'}
                     placeholderTextColor={Colors.inputPlaceholder}
                     value={password}
                     onChangeText={setPassword}
@@ -2033,15 +2033,9 @@ export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProp
               ) : null}
 
               {effectiveOwnerMode ? (
-                <TouchableOpacity
-                  style={styles.ownerNormalSignInButton}
-                  activeOpacity={0.84}
-                  onPress={() => { void loginOwnerPasswordless(normalizedEmail); }}
-                  disabled={passwordlessOwnerLoading}
-                  testID="owner-login-passwordless"
-                >
-                  <Text style={styles.ownerNormalSignInButtonText}>Use passwordless owner sign-in</Text>
-                </TouchableOpacity>
+                <View style={styles.passwordlessNote} testID="owner-passwordless-note">
+                  <Text style={styles.passwordlessNoteText}>Owner Sign In uses the backend passwordless endpoint. No password match is required.</Text>
+                </View>
               ) : null}
 
               {effectiveOwnerMode ? (
@@ -2762,6 +2756,21 @@ const styles = StyleSheet.create({
     color: Colors.primary,
     fontSize: 12,
     fontWeight: '800' as const,
+  },
+  passwordlessNote: {
+    marginTop: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.success + '40',
+    backgroundColor: Colors.success + '10',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  passwordlessNoteText: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: '600' as const,
   },
   ownerAccessNotice: {
     marginTop: 10,
