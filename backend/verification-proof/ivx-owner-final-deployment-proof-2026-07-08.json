@@ -1,0 +1,88 @@
+{
+  "proofTitle": "IVX Owner Final Deployment Proof — End-to-End Audit",
+  "generatedAt": "2026-07-08T03:25:00Z",
+  "ownerDirective": "RORK — OWNER FINAL DEPLOYMENT ORDER",
+  "secretValuesReturned": false,
+  "credentialAudit": {
+    "GITHUB_TOKEN": {
+      "status": "PRESENT",
+      "length": 40,
+      "last4": "QTOt",
+      "testResult": "HTTP 401 Bad credentials — TOKEN IS DEAD/REVOKED",
+      "presentInShell": false,
+      "source": "expo/.env (line 10)"
+    },
+    "GITHUB_REPO_URL": {
+      "status": "MALFORMED",
+      "value": "contains 'gh repo clone ibb142/rork-global-real-estate-invest' (CLI text, not a URL)",
+      "actualRepo": "https://github.com/ibb142/rork-global-real-estate-invest",
+      "source": "expo/.env (line 11)"
+    },
+    "RENDER_API_KEY": {
+      "status": "PRESENT",
+      "length": 32,
+      "last4": "YPVs",
+      "testResult": "HTTP 200 — VALID AND WORKING",
+      "source": "expo/.env (line 12, extracted from corrupted text)"
+    },
+    "RENDER_SERVICE_ID": {
+      "status": "RECOVERED",
+      "value": "srv-d7t9ivreo5us73ftose0",
+      "source": "Render API /v1/services list",
+      "serviceName": "ivx-holdings-platform",
+      "serviceUrl": "https://ivx-holdings-platform.onrender.com"
+    },
+    "IVX_OWNER_TOKEN": {
+      "status": "PRESENT",
+      "length": 64,
+      "last4": "284b",
+      "source": "expo/.env (line 7, extracted from 'IVX_OWNER_TOKEN = <hex>')"
+    }
+  },
+  "gitPush": {
+    "localHead": "56000102d7fd42559bb8da8f09a6af5deb3b16ec",
+    "originHead": "56000102d7fd42559bb8da8f09a6af5deb3b16ec",
+    "pushStatus": "SUCCESS via Rork git router (origin/main updated)",
+    "githubHead": "79c5b3cfc0d515bb26fe6e19dd70ad98b818d702",
+    "githubSyncStatus": "PENDING — Rork git router has not synced local push to GitHub yet",
+    "githubTokenBlocker": "GitHub token ghp_****QTOt returns HTTP 401 Bad credentials — cannot push directly to GitHub API"
+  },
+  "renderDeploy": {
+    "deployId": "dep-d96s44faqgkc73cdjt7g",
+    "status": "live",
+    "commit": "79c5b3cfc0d515bb26fe6e19dd70ad98b818d702",
+    "finishedAt": "2026-07-08T03:22:32.284901Z",
+    "serviceId": "srv-d7t9ivreo5us73ftose0",
+    "serviceName": "ivx-holdings-platform",
+    "clearCache": "do_not_clear"
+  },
+  "liveVerification": {
+    "healthEndpoint": "https://api.ivxholding.com/health",
+    "healthStatus": "200 OK — healthy",
+    "healthCommit": "79c5b3cfc0d515bb26fe6e19dd70ad98b818d702",
+    "versionEndpoint": "https://api.ivxholding.com/api/ivx/version",
+    "versionStatus": "200 OK",
+    "versionCommit": "79c5b3cfc0d515bb26fe6e19dd70ad98b818d702",
+    "bootTime": "2026-07-08T03:20:34.045Z",
+    "productionCommitMatch": true,
+    "matchDetail": "GitHub HEAD == Live commit == 79c5b3cf — production is in sync with GitHub"
+  },
+  "taskOrchestrator": {
+    "tasksTotal": 44,
+    "tasksVerified": 0,
+    "tasksBlocked": 35,
+    "tasksBuiltNotDeployed": 9,
+    "fakeCompletedRemaining": 0,
+    "fakeCompletedFixed": true,
+    "fixDetail": "All 9 fake 'completed' tasks migrated to 'BUILT_NOT_DEPLOYED' — code was written but never shipped (no commit SHA, no Render deploy, no production verification).",
+    "blocker": "All tasks are BLOCKED or BUILT_NOT_DEPLOYED because the GitHub token is dead (401) — the senior developer runtime cannot push code to GitHub, so no task can reach VERIFIED status."
+  },
+  "blockers": [
+    "GITHUB_TOKEN (ghp_****QTOt) is dead — returns HTTP 401 Bad credentials. This blocks all direct GitHub API operations (push, commit verification, SHA retrieval).",
+    "Local commit 5600010 pushed to Rork git router but not yet synced to GitHub — Render auto-deploys from GitHub, so the new commit will not reach production until the router syncs or a valid GitHub token is provided.",
+    "GITHUB_REPO_URL in expo/.env is malformed (contains 'gh repo clone' CLI text instead of a URL) — needs cleanup.",
+    "RENDER_SERVICE_ID in expo/.env was corrupted with SSH debug output — recovered from Render API."
+  ],
+  "finalStatus": "PARTIAL_VERIFIED",
+  "finalStatusDetail": "Render deploy is LIVE and production /health + /version are verified. GitHub==Live commit match is TRUE. However, the local pending commit (5600010) has not reached GitHub/production because the GitHub token is dead. All 9 fake 'completed' tasks are fixed to BUILT_NOT_DEPLOYED. FINAL_STATUS cannot be VERIFIED until a valid GitHub token is provided so the pending commit reaches production."
+}
