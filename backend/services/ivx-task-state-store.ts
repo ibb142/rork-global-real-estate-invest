@@ -242,10 +242,30 @@ export async function createTask(input: CreateTaskInput): Promise<{ task: IVXTas
   return { task, blocks };
 }
 
+function normalizeLegacyBlockStatus(block: IVXTaskBlock): IVXTaskBlock {
+  const status = block.status;
+  if (status === 'COMPLETED' || status === 'completed') {
+    const hasProof = Boolean(block.commitHash && block.verification?.ok);
+    return {
+      ...block,
+      status: hasProof ? 'VERIFIED' : 'BUILT_NOT_DEPLOYED',
+      blocker: block.blocker ?? (hasProof ? null : 'MIGRATED: legacy COMPLETED status — no real commit/deploy/verification proof.'),
+    };
+  }
+  return block;
+}
+
 export async function getTask(taskId: string): Promise<IVXTaskRecord | null> {
   try {
     const raw = await readFile(taskMetaPath(taskId), 'utf8');
-    return JSON.parse(raw) as IVXTaskRecord;
+    const parsed = JSON.parse(raw) as IVXTaskRecord;
+    if (parsed.status === 'completed' && (!parsed.completedAt || parsed.deploymentStatus === null)) {
+      // Legacy fake-completed tasks are not terminal successes until verified.
+      parsed.status = 'blocked';
+      parsed.error = parsed.error ?? 'MIGRATED: legacy completed status — no deployment proof.';
+      parsed.completedAt = null;
+    }
+    return parsed;
   } catch {
     return null;
   }
@@ -255,7 +275,7 @@ export async function getTaskBlocks(taskId: string): Promise<IVXTaskBlock[]> {
   try {
     const raw = await readFile(taskBlocksPath(taskId), 'utf8');
     const parsed = JSON.parse(raw) as IVXTaskBlock[];
-    return parsed.sort((a, b) => a.index - b.index);
+    return parsed.map(normalizeLegacyBlockStatus).sort((a, b) => a.index - b.index);
   } catch {
     return [];
   }
