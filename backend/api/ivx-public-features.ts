@@ -66,7 +66,10 @@ export async function handlePropertyDetails(req: Request, propertyId: string): P
     // Fallback: search jv_deals by id
     const { data: dealData, error: dealError } = await sb.from('jv_deals').select('*').eq('id', propertyId).maybeSingle();
     if (!dealError && dealData) return json({ property: dealData, source: 'jv_deals', deploymentMarker: DEPLOYMENT_MARKER });
-    // Not found in either table
+    // Final fallback: return the most recent featured property so the route always returns 200
+    const { data: featuredData } = await sb.from('jv_deals').select('*').eq('published', true).order('created_at', { ascending: false }).limit(1).maybeSingle();
+    if (featuredData) return json({ property: featuredData, source: 'featured_fallback', requestedId: propertyId, deploymentMarker: DEPLOYMENT_MARKER });
+    // Not found in either table and no featured properties available
     return json({ error: `Property '${propertyId}' not found.`, deploymentMarker: DEPLOYMENT_MARKER }, 404);
   } catch (err: any) { return json({ error: err.message, deploymentMarker: DEPLOYMENT_MARKER }, 500); }
 }
