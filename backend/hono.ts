@@ -3855,6 +3855,7 @@ app.options('/api/ivx/properties/:propertyId', () => publicFeatureOptions());
 app.get('/api/ivx/properties/:propertyId', async (c) => handlePropertyDetails(c.req.raw, c.req.param('propertyId')));
 app.options('/api/property-details/:propertyId', () => publicFeatureOptions());
 app.get('/api/property-details/:propertyId', async (c) => handlePropertyDetails(c.req.raw, c.req.param('propertyId')));
+app.get('/api/property-details', async (c) => handleFeaturedProperties(c.req.raw));
 
 // Auth aliases (delegate to member handlers)
 app.options('/api/ivx/auth/register', () => membersOptions());
@@ -3863,19 +3864,27 @@ app.options('/api/ivx/auth/verify-email', () => membersOptions());
 app.post('/api/ivx/auth/verify-email', async (c) => handleVerifyEmail(c.req.raw));
 app.options('/api/ivx/auth/verify-sms', () => membersOptions());
 app.post('/api/ivx/auth/verify-sms', async (c) => handleVerifyPhone(c.req.raw));
-// Legacy alias registration for audit list
+// Legacy alias registration for audit list (POST + GET health-check)
 app.options('/api/member-registration', () => membersOptions());
 app.post('/api/member-registration', async (c) => handleMemberRegister(c.req.raw));
+app.get('/api/member-registration', () => publicJson({ ok: true, route: '/api/member-registration', method: 'POST', note: 'Send POST request to register a member.' }, 200));
 app.options('/api/email-verification', () => membersOptions());
 app.post('/api/email-verification', async (c) => handleVerifyEmail(c.req.raw));
+app.get('/api/email-verification', () => publicJson({ ok: true, route: '/api/email-verification', method: 'POST', note: 'Send POST request with email verification code.' }, 200));
 app.options('/api/sms-verification', () => membersOptions());
 app.post('/api/sms-verification', async (c) => handleVerifyPhone(c.req.raw));
+app.get('/api/sms-verification', () => publicJson({ ok: true, route: '/api/sms-verification', method: 'POST', note: 'Send POST request with SMS verification code.' }, 200));
 
 // Members Dashboard (legacy alias + canonical)
 app.options('/api/ivx/members/dashboard', () => publicFeatureOptions());
 app.get('/api/ivx/members/dashboard', async (c) => handleMembersDashboard(c.req.raw));
 app.options('/api/members-dashboard', () => publicFeatureOptions());
 app.get('/api/members-dashboard', async (c) => handleMembersDashboard(c.req.raw));
+// Investor Dashboard (legacy alias + canonical)
+app.options('/api/ivx/investors/dashboard', () => publicFeatureOptions());
+app.get('/api/ivx/investors/dashboard', async (c) => handleInvestorsDashboard(c.req.raw));
+app.options('/api/investor-dashboard', () => publicFeatureOptions());
+app.get('/api/investor-dashboard', async (c) => handleInvestorsDashboard(c.req.raw));
 
 // CRM Main (legacy alias + canonical)
 app.options('/api/ivx/crm', () => publicFeatureOptions());
@@ -3902,6 +3911,7 @@ app.options('/api/ivx/media/upload', () => publicFeatureOptions());
 app.post('/api/ivx/media/upload', async (c) => handleMediaUpload(c.req.raw));
 app.options('/api/media-upload', () => publicFeatureOptions());
 app.post('/api/media-upload', async (c) => handleMediaUpload(c.req.raw));
+app.get('/api/media-upload', () => publicJson({ ok: true, route: '/api/media-upload', method: 'POST', note: 'Send POST request with multipart/form-data to upload media.' }, 200));
 
 // Instagram Cards (legacy alias + canonical)
 app.options('/api/ivx/social/instagram-cards', () => publicFeatureOptions());
