@@ -6871,12 +6871,13 @@ async function handleIVXOwnerAIRequestInternal(request: Request): Promise<Respon
       // image_then_developer — run the senior developer runtime grounded by the image.
       const executionDecision = classifyOwnerExecutionCommand(prompt);
       // Auto-execute end-to-end for non-destructive commands; only guarded categories
-      // still require explicit owner confirmation.
+      // still require explicit owner confirmation. systemMode is reserved for actual
+      // system/autonomous runs; never set it here to avoid forcing fake feature generation.
       const autoExecuteEndToEnd = executionDecision.autoExecute || !executionDecision.requiresApproval;
       const proof = await runIVXSeniorDeveloperTask({
         goal: groundedGoal,
-        systemMode: autoExecuteEndToEnd,
-        approvePatch: false,
+        systemMode: false,
+        approvePatch: autoExecuteEndToEnd,
         approveGitDeploy: false,
         validationMode: 'focused',
       });
@@ -7162,12 +7163,14 @@ async function handleIVXOwnerAIRequestInternal(request: Request): Promise<Respon
       // (patch → test → commit → deploy → verify) for any non-destructive command, even
       // when it lacks an explicit "fix it/deploy now" trigger phrase. Only guarded
       // categories (delete data, prod schema, secrets, billing, security, external
-      // access) still require explicit owner confirmation.
+      // access) still require explicit owner confirmation. systemMode is reserved for
+      // actual system/autonomous runs; never set it here to avoid forcing fake feature
+      // generation.
       const autoExecuteEndToEnd = executionDecision.autoExecute || !executionDecision.requiresApproval;
       const proof = await runIVXSeniorDeveloperTask({
         goal: prompt,
-        systemMode: autoExecuteEndToEnd,
-        approvePatch: false,
+        systemMode: false,
+        approvePatch: autoExecuteEndToEnd,
         approveGitDeploy: false,
         validationMode: 'focused',
       });

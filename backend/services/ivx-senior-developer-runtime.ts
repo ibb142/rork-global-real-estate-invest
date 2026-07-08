@@ -1557,8 +1557,17 @@ export async function verifyLiveCommitMatch(input: VerifyLiveCommitMatchInput): 
 }
 
 function shouldBuildNewFeature(goal: string, productionProofRequested: boolean): boolean {
-  if (productionProofRequested) return true;
-  return /\b(feature|module|from scratch|scaffold|build|create|implement|new)\b/i.test(goal);
+  // Only build a new feature when the goal explicitly asks for one. The
+  // productionProofRequested flag used to force feature generation for every
+  // system/auto-execute run, which produced fake "changed files" for tasks like
+  // "remove chat loading audit" — the generated file had nothing to do with the
+  // user's actual goal and was reported as real work.
+  const asksForNewFeature = /\b(add|build|create|generate|implement|make|new|scaffold|write)\s+(?:a\s+|the\s+)?(?:feature|module|component|screen|api|endpoint|route|service|tool)\b/i.test(goal)
+    || /\b(from scratch)\b/i.test(goal);
+  if (!asksForNewFeature) return false;
+  // A new feature is only meaningful when the user also wants production proof
+  // (system/autonomous run) or explicitly requested deployment.
+  return productionProofRequested || /\b(deploy|ship|push|live|production|commit)\b/i.test(goal);
 }
 
 function createTaskTree(): IVXSeniorPlannerTaskNode[] {

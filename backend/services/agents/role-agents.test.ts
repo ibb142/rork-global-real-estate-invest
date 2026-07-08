@@ -7,7 +7,7 @@
  * without an approver, and the safety gate is reused from the framework.
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { rm } from 'node:fs/promises';
+import { readdir, rm, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import {
   ROLE_AGENTS,
@@ -26,7 +26,22 @@ import {
 const STATE_DIR = path.join(process.cwd(), 'logs', 'audit', 'role-agents');
 
 async function clearState(): Promise<void> {
-  await rm(STATE_DIR, { recursive: true, force: true });
+  // Remove the files inside the directory rather than the directory itself.
+  // Deleting the directory while the production write loop is running causes
+  // an atomic-rename race (ENOENT) when multiple test files run in parallel.
+  try {
+    const entries = await readdir(STATE_DIR, { withFileTypes: true });
+    await Promise.all(
+      entries.map((entry) => {
+        const fullPath = path.join(STATE_DIR, entry.name);
+        return entry.isDirectory()
+          ? rm(fullPath, { recursive: true, force: true })
+          : unlink(fullPath);
+      }),
+    );
+  } catch {
+    // Directory may not exist yet; that is equivalent to a clean state.
+  }
 }
 
 describe('role-agent registry', () => {

@@ -332,21 +332,23 @@ async function writeRoleAgentsState(state: RoleAgentsState): Promise<void> {
     await writeDurableJson(STATE_PATH, next);
     return;
   }
-  // Robust atomic write: temp file lives in os.tmpdir() so parallel test
-  // directory deletion cannot erase it before the final rename.
-  const tmp = path.join(os.tmpdir(), `ivx-role-agents-${randomUUID()}.tmp`);
-  await mkdir(DIR, { recursive: true });
-  await writeFile(tmp, JSON.stringify(next, null, 2), 'utf8');
-  try {
-    await rename(tmp, STATE_PATH);
-  } catch (error) {
-    const code = (error as { code?: string }).code;
-    if (code === 'ENOENT') {
-      await mkdir(DIR, { recursive: true });
+  // Atomic write: temp file lives in the same directory so the final rename
+  // is always on the same filesystem (no EXDEV). Parallel test directory
+  // deletion is handled by recreating the directory and retrying.
+  const tmp = path.join(DIR, `state.json.tmp-${randomUUID()}`);
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    await mkdir(DIR, { recursive: true });
+    await writeFile(tmp, JSON.stringify(next, null, 2), 'utf8');
+    try {
       await rename(tmp, STATE_PATH);
       return;
+    } catch (error) {
+      const code = (error as { code?: string }).code;
+      if (code === 'ENOENT' && attempt < 3) {
+        continue;
+      }
+      throw error;
     }
-    throw error;
   }
 }
 
