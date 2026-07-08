@@ -261,7 +261,8 @@ export async function runAutonomousMode(
   // ---- Step 12: return proof (durable execution trace + classification) ----
   const executed = selfHeal !== null;
   const allOk = executed
-    && steps.filter((s) => s.step >= 5 && s.step <= 11).every((s) => s.status === 'verified' || s.status === 'skipped');
+    && steps.filter((s) => s.step >= 5 && s.step <= 11).every((s) => s.status === 'verified' || s.status === 'skipped')
+    && !(production?.thresholdExceeded ?? false);
   const classification: EvidenceClassification = !executed
     ? EVIDENCE_CLASSIFICATION.NOT_EXECUTED
     : allOk

@@ -1556,7 +1556,7 @@ export async function verifyLiveCommitMatch(input: VerifyLiveCommitMatchInput): 
   };
 }
 
-function shouldBuildNewFeature(goal: string, productionProofRequested: boolean): boolean {
+export function shouldBuildNewFeature(goal: string, productionProofRequested: boolean): boolean {
   // Only build a new feature when the goal explicitly asks for one. The
   // productionProofRequested flag used to force feature generation for every
   // system/auto-execute run, which produced fake "changed files" for tasks like
