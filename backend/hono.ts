@@ -1384,7 +1384,7 @@ function buildRenderHeaders(apiKey: string): HeadersInit {
   };
 }
 
-const TARGET_GITHUB_REPO = 'ibb142/rork-global-real-estate-invest';
+const TARGET_GITHUB_REPO = 'ibb142/rork-ivxholding--1';
 const TARGET_GITHUB_REPO_URL = `https://github.com/${TARGET_GITHUB_REPO}`;
 const TARGET_BRANCH = 'main';
 
