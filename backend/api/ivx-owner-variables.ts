@@ -729,7 +729,15 @@ async function buildStoredSecretMap(): Promise<StoredSecretMap> {
     if (!isAllowedVariableName(name)) {
       continue;
     }
-    output[name] = decryptRowValue(row);
+    const decrypted = tryDecryptRowValue(row);
+    if (!decrypted) {
+      // Stale key / rotated: skip this row so one undecryptable value
+      // cannot abort the entire provider test. The runtime bridge will
+      // log it; the variable reports as unreadable rather than crashing.
+      console.log('[IVXOwnerVariables] buildStoredSecretMap: skipping undecryptable row', { name, maskedPreview: row.masked_preview });
+      continue;
+    }
+    output[name] = decrypted.plaintext;
   }
   return output;
 }
