@@ -116,7 +116,7 @@ function buildProof(task: IVXTaskRecord | null, blocks: IVXTaskBlock[]): LiveWor
   const commits = blocks.map((b) => b.commitHash).filter((c): c is string => Boolean(c));
   const testsPassed = blocks.filter((b) => (b.testResult ?? '').toLowerCase().startsWith('passed')).length;
   const verified = blocks.filter((b) => b.status === 'VERIFIED').length;
-  const deployed = blocks.filter((b) => b.status === 'DEPLOYED' || b.status === 'VERIFIED').length;
+  const deployed = blocks.filter((b) => b.status === 'VERIFIED').length;
   return [
     { label: 'Blocks verified', value: `${verified}/${task.totalBlocks}`, ok: verified > 0 },
     { label: 'Tests passed', value: testsPassed > 0 ? `${testsPassed} block(s) green` : 'none yet', ok: testsPassed > 0 },

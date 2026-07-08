@@ -38,21 +38,36 @@ export type IVXBlockVerification = {
   verifiedAt: string;
 };
 
-/** Per-block lifecycle states required by the owner spec. */
+/**
+ * Per-block lifecycle states required by the owner spec.
+ * A block is only VERIFIED when it has a real commit SHA, a real Render deploy,
+ * and production /health shows the new commit.
+ * BUILT_NOT_DEPLOYED replaces the old fake "COMPLETED" — code was written but
+ * never shipped, so it is NOT a terminal success state.
+ */
 export type IVXTaskBlockStatus =
   | 'PENDING'
+  | 'PLANNED'
+  | 'BUILDING'
   | 'RUNNING'
-  | 'COMPLETED'
-  | 'FAILED'
+  | 'TESTING'
+  | 'PUSHING'
+  | 'DEPLOYING'
+  | 'VERIFYING'
+  | 'BUILT_NOT_DEPLOYED'
+  | 'VERIFIED'
   | 'BLOCKED'
-  | 'DEPLOYED'
-  | 'VERIFIED';
+  | 'FAILED';
 
 export const TERMINAL_BLOCK_STATUSES: ReadonlySet<IVXTaskBlockStatus> = new Set([
-  'COMPLETED',
-  'DEPLOYED',
+  'BUILT_NOT_DEPLOYED',
   'VERIFIED',
+  'BLOCKED',
+  'FAILED',
 ]);
+
+/** True terminal SUCCESS — only VERIFIED counts as a shipped, proven block. */
+export const VERIFIED_BLOCK_STATUSES: ReadonlySet<IVXTaskBlockStatus> = new Set(['VERIFIED']);
 
 export type IVXTaskBlock = {
   id: string;
@@ -282,7 +297,7 @@ export async function updateTaskBlock(
   const failedBlockIds = blocks.filter((b) => b.status === 'FAILED').map((b) => b.id);
   const blockedBlockIds = blocks.filter((b) => b.status === 'BLOCKED').map((b) => b.id);
   const firstUnfinished = blocks.find(
-    (b) => !TERMINAL_BLOCK_STATUSES.has(b.status) && b.status !== 'FAILED' && b.status !== 'BLOCKED',
+    (b) => !TERMINAL_BLOCK_STATUSES.has(b.status),
   );
 
   const task = await updateTask(taskId, {

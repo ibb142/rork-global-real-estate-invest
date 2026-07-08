@@ -17,11 +17,13 @@ const NUMBERED_TASK = [
 describe('startTask — splits, copies original exactly, runs blocks one at a time', () => {
   test('completes every non-destructive block end-to-end', async () => {
     const executor: IVXBlockExecutor = async () => ({
-      status: 'COMPLETED',
+      status: 'VERIFIED',
       codeChanges: 'edited a file',
       filesInvolved: ['backend/x.ts'],
       testResult: 'passed (1 validation)',
-      commitHash: 'abc1234',
+      commitHash: 'real-sha-abc1234',
+      deploymentStatus: 'verified',
+      verification: { endpoint: 'https://api.ivxholding.com/health', ok: true, httpStatus: 200, changedRouteOk: true, verifiedAt: new Date().toISOString() },
     });
 
     const { task } = await startTask(NUMBERED_TASK, { autoStart: false });
@@ -35,9 +37,9 @@ describe('startTask — splits, copies original exactly, runs blocks one at a ti
     expect(finished?.completedBlockIds.length).toBe(3);
 
     const review = await buildTaskFinalReview(task.id);
-    expect(review?.completedBlocks).toBe(3);
+    expect(review?.verifiedBlocks).toBe(3);
     expect(review?.failedBlocks).toBe(0);
-    expect(review?.commitHashes).toContain('abc1234');
+    expect(review?.commitHashes).toContain('real-sha-abc1234');
     expect(review?.filesChanged).toContain('backend/x.ts');
   });
 });
@@ -51,7 +53,7 @@ describe('crash recovery — a thrown executor resumes the same block, not from 
         throw new Error('simulated crash mid-block');
       }
       calls += 1;
-      return { status: 'COMPLETED' };
+      return { status: 'VERIFIED', commitHash: 'real-sha-crash-recovery', deploymentStatus: 'verified', verification: { endpoint: '/health', ok: true, httpStatus: 200, changedRouteOk: true, verifiedAt: new Date().toISOString() } };
     };
 
     const { task } = await startTask(NUMBERED_TASK, { autoStart: false });
@@ -84,16 +86,16 @@ describe('approval gating — destructive blocks are BLOCKED, others still compl
       if (decision.requiresApproval) {
         return { status: 'BLOCKED', blocker: decision.reason };
       }
-      return { status: 'COMPLETED' };
+      return { status: 'BUILT_NOT_DEPLOYED' };
     };
 
     await driveTask(record.id, classifyOnly);
 
     const blocks = await getTaskBlocks(record.id);
     const blocked = blocks.filter((block) => block.status === 'BLOCKED');
-    const completed = blocks.filter((block) => block.status === 'COMPLETED');
+    const builtNotDeployed = blocks.filter((block) => block.status === 'BUILT_NOT_DEPLOYED');
     expect(blocked.length).toBe(1);
-    expect(completed.length).toBe(2);
+    expect(builtNotDeployed.length).toBe(2);
 
     const finished = await getTask(record.id);
     expect(finished?.status).toBe('blocked');
@@ -109,7 +111,7 @@ describe('resumeTask — continues a paused task from the durable cursor', () =>
     const executed: number[] = [];
     const trackingExecutor: IVXBlockExecutor = async (block) => {
       executed.push(block.index);
-      return { status: 'COMPLETED' };
+      return { status: 'VERIFIED', commitHash: 'real-sha-track', deploymentStatus: 'verified', verification: { endpoint: '/health', ok: true, httpStatus: 200, changedRouteOk: true, verifiedAt: new Date().toISOString() } };
     };
 
     const { task } = await startTask(NUMBERED_TASK, { autoStart: false });
@@ -117,7 +119,7 @@ describe('resumeTask — continues a paused task from the durable cursor', () =>
     // with an executor that stops the task after block 0.
     const stopAfterFirst: IVXBlockExecutor = async (block) => {
       executed.push(block.index);
-      return { status: 'COMPLETED' };
+      return { status: 'VERIFIED', commitHash: 'real-sha-resume', deploymentStatus: 'verified', verification: { endpoint: '/health', ok: true, httpStatus: 200, changedRouteOk: true, verifiedAt: new Date().toISOString() } };
     };
     // Drive fully first so all blocks complete, then assert resume is a no-op
     // that does not re-run completed work.

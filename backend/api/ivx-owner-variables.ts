@@ -191,12 +191,52 @@ function getEncryptionSecret(): string {
   return readEnv('IVX_OWNER_VARIABLES_ENCRYPTION_KEY') || readEnv('APP_SECRET') || readEnv('JWT_SECRET');
 }
 
+/** All possible encryption key sources, in priority order. */
+function getEncryptionKeyCandidates(): Buffer[] {
+  const candidates: Buffer[] = [];
+  const seen = new Set<string>();
+  for (const envName of ['IVX_OWNER_VARIABLES_ENCRYPTION_KEY', 'APP_SECRET', 'JWT_SECRET']) {
+    const secret = readEnv(envName);
+    if (!secret || seen.has(secret)) continue;
+    seen.add(secret);
+    candidates.push(createHash('sha256').update(secret, 'utf8').digest());
+  }
+  return candidates;
+}
+
 function getEncryptionKey(): Buffer {
-  const secret = getEncryptionSecret();
-  if (!secret) {
+  const candidates = getEncryptionKeyCandidates();
+  if (candidates.length === 0) {
     throw new Error('Owner Variables encryption key is missing. Set IVX_OWNER_VARIABLES_ENCRYPTION_KEY, APP_SECRET, or JWT_SECRET on the backend.');
   }
-  return createHash('sha256').update(secret, 'utf8').digest();
+  return candidates[0] ?? candidates[0]!;
+}
+
+/**
+ * Decrypt a row by trying every available encryption key candidate.
+ * This handles the case where the active key was rotated after a value
+ * was encrypted (GCM auth-tag mismatch). Returns the plaintext and the
+ * key index that succeeded (for re-encryption). Returns null if all keys fail.
+ */
+function tryDecryptRowValue(row: OwnerVariableRow): { plaintext: string; keyIndex: number } | null {
+  const candidates = getEncryptionKeyCandidates();
+  if (candidates.length === 0) return null;
+  const iv = Buffer.from(row.value_iv, 'base64');
+  const tag = Buffer.from(row.value_tag, 'base64');
+  const ciphertext = Buffer.from(row.encrypted_value, 'base64');
+  for (let i = 0; i < candidates.length; i++) {
+    try {
+      const decipher = createDecipheriv('aes-256-gcm', candidates[i]!, iv);
+      decipher.setAAD(ENCRYPTION_AAD);
+      decipher.setAuthTag(tag);
+      const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf8');
+      return { plaintext, keyIndex: i };
+    } catch {
+      // Auth tag mismatch — try next key candidate
+      continue;
+    }
+  }
+  return null;
 }
 
 function encryptValue(value: string): { encryptedValue: string; iv: string; tag: string; hash: string } {
@@ -214,13 +254,11 @@ function encryptValue(value: string): { encryptedValue: string; iv: string; tag:
 }
 
 function decryptRowValue(row: OwnerVariableRow): string {
-  const decipher = createDecipheriv('aes-256-gcm', getEncryptionKey(), Buffer.from(row.value_iv, 'base64'));
-  decipher.setAAD(ENCRYPTION_AAD);
-  decipher.setAuthTag(Buffer.from(row.value_tag, 'base64'));
-  return Buffer.concat([
-    decipher.update(Buffer.from(row.encrypted_value, 'base64')),
-    decipher.final(),
-  ]).toString('utf8');
+  const result = tryDecryptRowValue(row);
+  if (!result) {
+    throw new Error('Unsupported state or unable to authenticate data');
+  }
+  return result.plaintext;
 }
 
 function maskValue(name: OwnerVariableName, value: string): string {
@@ -704,7 +742,33 @@ export async function getIVXOwnerVariableRuntimeValue(name: OwnerVariableName): 
   if (envValue) return envValue;
   try {
     const row = await getStoredRow(name);
-    return row ? decryptRowValue(row).trim() : '';
+    if (!row) return '';
+    const decrypted = tryDecryptRowValue(row);
+    if (!decrypted) {
+      console.log('[IVXOwnerVariables] Runtime value bridge: decryption failed for all key candidates', {
+        name,
+        maskedPreview: row.masked_preview,
+      });
+      return '';
+    }
+    // Auto-reencrypt with the primary key if a fallback key was used (key rotation)
+    if (decrypted.keyIndex > 0) {
+      const plaintext = decrypted.plaintext.trim();
+      try {
+        await reencryptStoredRow(name, plaintext);
+        console.log('[IVXOwnerVariables] Runtime value bridge: re-encrypted stale-key row with primary key', {
+          name,
+          keyIndex: decrypted.keyIndex,
+        });
+      } catch (reencryptError) {
+        console.log('[IVXOwnerVariables] Runtime value bridge: re-encryption failed (returning decrypted value anyway)', {
+          name,
+          message: reencryptError instanceof Error ? sanitizeExternalErrorDetail(reencryptError.message) : 'unknown',
+        });
+      }
+      return plaintext;
+    }
+    return decrypted.plaintext.trim();
   } catch (error) {
     console.log('[IVXOwnerVariables] Runtime value bridge unavailable:', {
       name,
@@ -712,6 +776,47 @@ export async function getIVXOwnerVariableRuntimeValue(name: OwnerVariableName): 
     });
     return '';
   }
+}
+
+/**
+ * Re-encrypt a stored row's plaintext value with the current primary encryption key.
+ * Used when a fallback key candidate succeeded (key rotation recovery).
+ */
+async function reencryptStoredRow(name: OwnerVariableName, plaintext: string): Promise<void> {
+ const metadata = variableMetadataByName.get(name);
+ if (!metadata) return;
+ const encrypted = encryptValue(plaintext);
+ const timestamp = nowIso();
+ const row: OwnerVariableRow = {
+   name,
+   provider: metadata.provider,
+   encrypted_value: encrypted.encryptedValue,
+   value_iv: encrypted.iv,
+   value_tag: encrypted.tag,
+   value_hash: encrypted.hash,
+   masked_preview: maskValue(name, plaintext),
+   status: 'saved',
+   last_tested_at: null,
+   last_test_result: null,
+   saved_by_user_id: null,
+   saved_by_email: null,
+   created_at: timestamp,
+   updated_at: timestamp,
+ };
+ if (useMemoryStore()) {
+   memoryStore.set(name, row);
+   return;
+ }
+ if (useSupabaseRestStore()) {
+   await saveStoredVariableViaSupabaseRest(row);
+   return;
+ }
+ await withClient(async (client) => {
+   await client.query(
+     'update public.ivx_owner_variables set encrypted_value=$2, value_iv=$3, value_tag=$4, value_hash=$5, masked_preview=$6, updated_at=now() where name=$1',
+     [name, row.encrypted_value, row.value_iv, row.value_tag, row.value_hash, row.masked_preview],
+   );
+ });
 }
 
 /**
