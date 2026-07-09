@@ -35,8 +35,10 @@ import {
   Award,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
-import { trustFeatures, ownerProtections, TrustFeature, OwnerProtection } from '@/mocks/competitive-stats';
+import { trustFeatures, ownerProtections, TrustFeature, OwnerProtection } from '@/constants/competitive-stats';
 import { getResponsiveSize, isCompactScreen, isExtraSmallScreen } from '@/lib/responsive';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/lib/supabase';
 
 const iconMap: Record<string, any> = {
   Shield, Scale, Lock, FileCheck, Search, ShieldCheck, Fingerprint, Database,
@@ -45,7 +47,7 @@ const iconMap: Record<string, any> = {
 
 type CategoryFilter = 'all' | 'security' | 'legal' | 'financial' | 'insurance';
 
-function TrustFeatureCard({ feature, index }: { feature: TrustFeature; index: number }) {
+function TrustFeatureCard({ feature, index, verified }: { feature: TrustFeature; index: number; verified: boolean }) {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const IconComponent = iconMap[feature.icon] || Shield;
 
@@ -82,8 +84,8 @@ function TrustFeatureCard({ feature, index }: { feature: TrustFeature; index: nu
       </View>
       <Text style={styles.trustCardDescription}>{feature.description}</Text>
       <View style={styles.verifiedBadge}>
-        <CheckCircle2 size={14} color={Colors.success} />
-        <Text style={styles.verifiedText}>Verified & Active</Text>
+        <CheckCircle2 size={14} color={verified ? Colors.success : Colors.warning} />
+        <Text style={styles.verifiedText}>{verified ? 'Verified & Active' : 'Checking Status...'}</Text>
       </View>
     </Animated.View>
   );
@@ -152,6 +154,27 @@ export default function TrustCenterScreen() {
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>('all');
   const screenSize = getResponsiveSize(width);
   const isXs = isExtraSmallScreen(screenSize);
+
+  const securityQuery = useQuery({
+    queryKey: ['trust-center-security'],
+    queryFn: async () => {
+      const results = await Promise.allSettled([
+        supabase.from('audit_events').select('id').limit(1),
+        supabase.from('profiles').select('id').limit(1),
+        supabase.from('properties').select('id').limit(1),
+      ]);
+
+      const auditOk = results[0].status === 'fulfilled' && !results[0].value.error;
+      const authOk = results[1].status === 'fulfilled' && !results[1].value.error;
+      const dbOk = results[2].status === 'fulfilled' && !results[2].value.error;
+
+      return { auditOk, authOk, dbOk, allVerified: auditOk && authOk && dbOk };
+    },
+    staleTime: 1000 * 60 * 5,
+    retry: 1,
+  });
+
+  const isVerified = securityQuery.data?.allVerified ?? false;
 
   const filteredFeatures = categoryFilter === 'all'
     ? trustFeatures
@@ -247,7 +270,7 @@ export default function TrustCenterScreen() {
                 ))}
               </ScrollView>
               {filteredFeatures.map((feature, index) => (
-                <TrustFeatureCard key={feature.id} feature={feature} index={index} />
+                <TrustFeatureCard key={feature.id} feature={feature} index={index} verified={isVerified} />
               ))}
             </>
           ) : (

@@ -51,7 +51,7 @@ import {
   SEARCH_CATEGORIES,
   SEARCH_REGIONS,
   SUGGESTED_SEARCHES,
-} from '@/mocks/lender-discovery';
+} from '@/constants/lender-discovery';
 import { LenderProvider, useLenders } from '@/lib/lender-context';
 import { searchSECEdgar, SECSearchResult } from '@/lib/sec-edgar-service';
 import { formatCurrencyCompact } from '@/lib/formatters';

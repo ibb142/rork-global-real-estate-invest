@@ -44,7 +44,7 @@ import {
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { FUNCTIONALITY_REGISTRY, type Module } from '@/mocks/functionality-registry';
+import { FUNCTIONALITY_REGISTRY, type Module } from '@/constants/functionality-registry';
 
 const STORAGE_KEY = 'admin_feature_control_v1';
 

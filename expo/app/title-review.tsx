@@ -37,12 +37,14 @@ import Colors from '@/constants/colors';
 import {
   propertyDocumentSubmissions,
   REQUIRED_TITLE_DOCUMENTS,
-} from '@/mocks/title-company';
+} from '@/constants/title-company';
 import {
   TitleDocument,
   TitleDocumentStatus,
   PropertyDocumentSubmission,
 } from '@/types';
+import { supabase } from '@/lib/supabase';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 const STATUS_CONFIG: Record<TitleDocumentStatus, { color: string; label: string }> = {
   not_uploaded: { color: Colors.textTertiary, label: 'Not Uploaded' },
@@ -55,6 +57,7 @@ const STATUS_CONFIG: Record<TitleDocumentStatus, { color: string; label: string 
 export default function TitleReviewScreen() {
   const router = useRouter();
   const { submissionId } = useLocalSearchParams<{ submissionId: string }>();
+  const queryClient = useQueryClient();
 
   const initialSubmission = propertyDocumentSubmissions.find(
     (s) => s.id === (submissionId ?? 'pds-1')
@@ -69,6 +72,37 @@ export default function TitleReviewScreen() {
   const [processing, setProcessing] = useState(false);
   const [showFinalizeModal, setShowFinalizeModal] = useState(false);
   const [overallNotes, setOverallNotes] = useState('');
+
+  const submissionQuery = useQuery({
+    queryKey: ['title-submission', submissionId],
+    queryFn: async () => {
+      if (!submissionId) return null;
+      const { data, error } = await supabase
+        .from('title_document_submissions')
+        .select('*')
+        .eq('id', submissionId)
+        .single();
+      if (error) { console.log('[TitleReview] Fetch error:', error.message); return null; }
+      return data;
+    },
+    staleTime: 1000 * 60 * 2,
+    retry: 1,
+  });
+
+  const persistDocStatus = useCallback(async (docId: string, status: TitleDocumentStatus, notes: string, rejection?: string) => {
+    try {
+      await supabase.from('title_documents').update({
+        status,
+        review_notes: notes,
+        rejection_reason: rejection ?? null,
+        reviewed_at: new Date().toISOString(),
+        reviewed_by: 'Title Reviewer',
+      }).eq('id', docId);
+      queryClient.invalidateQueries({ queryKey: ['title-submission', submissionId] });
+    } catch (e) {
+      console.log('[TitleReview] Persist failed:', e);
+    }
+  }, [submissionId, queryClient]);
 
   const approvedCount = documents.filter((d) => d.status === 'approved').length;
   const rejectedCount = documents.filter((d) => d.status === 'rejected').length;
@@ -107,6 +141,7 @@ export default function TitleReviewScreen() {
             : d
         )
       );
+      void persistDocStatus(reviewingDoc.id, 'approved', reviewNotes);
       setProcessing(false);
       setShowReviewModal(false);
       setReviewingDoc(null);
@@ -116,7 +151,7 @@ export default function TitleReviewScreen() {
       }
       logger.titleReview.log(`Document approved: ${reviewingDoc.name}`);
     }, 600);
-  }, [reviewingDoc, reviewNotes]);
+  }, [reviewingDoc, reviewNotes, persistDocStatus]);
 
   const handleRejectDocument = useCallback(() => {
     if (!reviewingDoc) return;
@@ -141,6 +176,7 @@ export default function TitleReviewScreen() {
             : d
         )
       );
+      void persistDocStatus(reviewingDoc.id, 'rejected', reviewNotes, rejectionReason);
       setProcessing(false);
       setShowReviewModal(false);
       setReviewingDoc(null);
@@ -155,7 +191,7 @@ export default function TitleReviewScreen() {
 
   const handleFinalizeReview = useCallback((approved: boolean) => {
     setProcessing(true);
-    setTimeout(() => {
+    setTimeout(async () => {
       setSubmission((prev) => ({
         ...prev,
         status: approved ? 'approved' : 'needs_revision',
@@ -163,6 +199,16 @@ export default function TitleReviewScreen() {
         overallNotes,
         tokenizationApproved: approved,
       }));
+      try {
+        await supabase.from('title_document_submissions').update({
+          status: approved ? 'approved' : 'needs_revision',
+          completed_at: approved ? new Date().toISOString() : null,
+          overall_notes: overallNotes,
+          tokenization_approved: approved,
+        }).eq('id', submission?.id ?? submissionId ?? '');
+      } catch (e) {
+        console.log('[TitleReview] Finalize persist failed:', e);
+      }
       setProcessing(false);
       setShowFinalizeModal(false);
 

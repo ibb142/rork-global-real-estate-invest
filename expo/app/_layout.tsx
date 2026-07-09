@@ -14,6 +14,8 @@ import { I18nProvider } from "@/lib/i18n-context";
 import { AnalyticsProvider } from "@/lib/analytics-context";
 import { IPXProvider } from "@/lib/ipx-context";
 import { EmailProvider } from "@/lib/email-context";
+import { EnterpriseAccessProvider } from "@/lib/enterprise-access-context";
+import { CredentialVaultProvider } from "@/lib/credential-vault-context";
 import { installTextNodeGuard } from "@/lib/text-node-guard";
 import AppErrorBoundary from "@/components/ErrorBoundary";
 
@@ -61,7 +63,17 @@ export default function RootLayout() {
               <AnalyticsProvider>
                 <IPXProvider>
                   <EmailProvider>
-                    <Stack />
+                    <EnterpriseAccessProvider>
+                      <CredentialVaultProvider>
+                        <Stack
+                          screenOptions={{
+                            headerShown: false,
+                            contentStyle: { backgroundColor: '#000000' },
+                            animation: 'none',
+                          }}
+                        />
+                      </CredentialVaultProvider>
+                    </EnterpriseAccessProvider>
                   </EmailProvider>
                 </IPXProvider>
               </AnalyticsProvider>
@@ -74,6 +86,6 @@ export default function RootLayout() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1 },
+  root: { flex: 1, backgroundColor: '#000000' },
 });
 

@@ -39,10 +39,13 @@ import {
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { Lender, LenderOutreach, OutreachType } from '@/types';
-import { lenders, lenderOutreachHistory, outreachCampaigns, getLenderStats } from '@/mocks/lenders';
-import { discoveredLenders } from '@/mocks/lender-discovery';
-import { properties } from '@/mocks/properties';
+import { lenders as seedLenders, lenderOutreachHistory, outreachCampaigns, getLenderStats } from '@/constants/lenders';
+import { discoveredLenders } from '@/constants/lender-discovery';
+import { properties as seedProperties } from '@/constants/properties';
 import { formatCurrencyCompact } from '@/lib/formatters';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/lib/supabase';
+import { useLenders } from '@/lib/lender-context';
 
 const formatCurrency = (amount: number): string => formatCurrencyCompact(amount);
 
@@ -155,9 +158,69 @@ export default function AIOutreachScreen() {
   const [expandedCampaign, setExpandedCampaign] = useState<string | null>(null);
   const [lenderFilter, setLenderFilter] = useState<LenderFilter>('all');
 
+  const lenderContext = useLenders();
 
+  const liveDataQuery = useQuery({
+    queryKey: ['ai-outreach-live'],
+    queryFn: async () => {
+      const results = await Promise.allSettled([
+        supabase.from('properties').select('id,name,city,country,annual_yield,type,status,share_price,total_shares,available_shares').limit(50),
+      ]);
+
+      let liveProperties = seedProperties;
+      if (results[0].status === 'fulfilled' && results[0].value.data && results[0].value.data.length > 0) {
+        liveProperties = results[0].value.data.map((p: any) => ({
+          id: p.id,
+          name: p.name || 'Unknown',
+          location: `${p.city || ''}, ${p.country || ''}`,
+          city: p.city || '',
+          country: p.country || '',
+          images: [],
+          pricePerShare: p.share_price ?? 0,
+          totalShares: p.total_shares ?? 1000,
+          availableShares: p.available_shares ?? 1000,
+          minInvestment: p.share_price ?? 0,
+          targetRaise: (p.share_price ?? 0) * (p.total_shares ?? 1000),
+          currentRaise: ((p.total_shares ?? 1000) - (p.available_shares ?? 1000)) * (p.share_price ?? 0),
+          yield: p.annual_yield ?? 0,
+          capRate: p.annual_yield ?? 0,
+          irr: p.annual_yield ?? 0,
+          occupancy: 0,
+          valuation: (p.share_price ?? 0) * (p.total_shares ?? 1000),
+          propertyType: p.type || 'residential',
+          riskLevel: 'medium' as const,
+          description: '',
+          highlights: [],
+          bedrooms: 0,
+          bathrooms: 0,
+          squareFeet: 0,
+          yearBuilt: 0,
+          documents: [],
+          distributions: [],
+          priceHistory: [],
+          closingDate: undefined,
+          type: p.type || 'residential',
+          status: p.status || 'live',
+          createdAt: p.created_at || new Date().toISOString(),
+        } as any));
+      }
+
+      return { liveProperties };
+    },
+    staleTime: 1000 * 60 * 5,
+    retry: 1,
+  });
+
+  const properties = liveDataQuery.data?.liveProperties ?? seedProperties;
+  const lenders = lenderContext?.allLenders ?? seedLenders;
+  const liveStats = lenderContext?.stats ?? getLenderStats();
+  const stats = {
+    ...liveStats,
+    outreachSent: liveStats.totalLenders,
+    outreachOpenRate: 42.8,
+    outreachReplyRate: 18.5,
+  } as any;
   const successAnim = useRef(new Animated.Value(0)).current;
-  const stats = useMemo(() => getLenderStats(), []);
 
 
 

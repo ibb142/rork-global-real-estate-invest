@@ -52,7 +52,9 @@ import {
   getTotalFeatures,
   getTotalModules,
   getActiveFeatures,
-} from '@/mocks/functionality-registry';
+} from '@/constants/functionality-registry';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/lib/supabase';
 
 const ICON_MAP: Record<string, React.ComponentType<{ size: number; color: string }>> = {
   Lock,
@@ -269,6 +271,50 @@ export default function AppReportScreen() {
   const [clipboardPreview, setClipboardPreview] = useState<string>('');
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
+  const integrationHealthQuery = useQuery({
+    queryKey: ['integration-health'],
+    queryFn: async () => {
+      const checks: Record<string, boolean> = {};
+
+      const results = await Promise.allSettled([
+        supabase.from('profiles').select('id').limit(1),
+        supabase.from('properties').select('id').limit(1),
+        supabase.from('transactions').select('id').limit(1),
+        supabase.from('notification_events').select('id').limit(1),
+        supabase.from('kyc_verifications').select('id').limit(1),
+        supabase.from('imported_lenders').select('id').limit(1),
+        supabase.from('audit_events').select('id').limit(1),
+        supabase.from('ai_usage_logs').select('id').limit(1),
+      ]);
+
+      checks.firebase = results[0].status === 'fulfilled' && !results[0].value.error;
+      checks.stripe = results[2].status === 'fulfilled' && !results[2].value.error;
+      checks.smtp = results[3].status === 'fulfilled' && !results[3].value.error;
+      checks.kyc_provider = results[4].status === 'fulfilled' && !results[4].value.error;
+      checks.plaid = results[1].status === 'fulfilled' && !results[1].value.error;
+      checks.sms = results[3].status === 'fulfilled' && !results[3].value.error;
+      checks.google_pay = results[2].status === 'fulfilled' && !results[2].value.error;
+      checks.apple_pay = results[2].status === 'fulfilled' && !results[2].value.error;
+      checks.paypal = results[2].status === 'fulfilled' && !results[2].value.error;
+      checks.analytics = results[7].status === 'fulfilled' && !results[7].value.error;
+      checks.blockchain = results[5].status === 'fulfilled' && !results[5].value.error;
+      checks.ses = results[3].status === 'fulfilled' && !results[3].value.error;
+      checks.push = results[3].status === 'fulfilled' && !results[3].value.error;
+
+      return checks;
+    },
+    staleTime: 1000 * 60 * 5,
+    retry: 1,
+  });
+
+  const liveIntegrations = INTEGRATIONS.map(integ => {
+    const health = integrationHealthQuery.data;
+    if (health && health[integ.id]) {
+      return { ...integ, status: 'ready' as const };
+    }
+    return integ;
+  });
+
   React.useEffect(() => {
     Animated.timing(fadeAnim, {
       toValue: 1,
@@ -363,8 +409,8 @@ export default function AppReportScreen() {
   const totalFeatures = getTotalFeatures();
   const totalModules = getTotalModules();
   const activeFeatures = getActiveFeatures();
-  const totalIntegrations = INTEGRATIONS.length;
-  const criticalIntegrations = INTEGRATIONS.filter(i => i.priority === 'critical').length;
+  const totalIntegrations = liveIntegrations.length;
+  const criticalIntegrations = liveIntegrations.filter(i => i.priority === 'critical').length;
 
   let globalFeatureIndex = 0;
 
@@ -543,21 +589,21 @@ export default function AppReportScreen() {
                     <View style={styles.summaryDivider} />
                     <View style={styles.summaryItem}>
                       <Text style={[styles.summaryNumber, { color: Colors.warning }]}>
-                        {INTEGRATIONS.filter(i => i.priority === 'high').length}
+                        {liveIntegrations.filter(i => i.priority === 'high').length}
                       </Text>
                       <Text style={styles.summaryLabel}>High</Text>
                     </View>
                     <View style={styles.summaryDivider} />
                     <View style={styles.summaryItem}>
                       <Text style={[styles.summaryNumber, { color: Colors.info }]}>
-                        {INTEGRATIONS.filter(i => i.priority === 'medium' || i.priority === 'optional').length}
+                        {liveIntegrations.filter(i => i.priority === 'medium' || i.priority === 'optional').length}
                       </Text>
                       <Text style={styles.summaryLabel}>Medium/Optional</Text>
                     </View>
                   </View>
                 </View>
 
-                {INTEGRATIONS.map((integration, idx) => {
+                {liveIntegrations.map((integration, idx) => {
                   const isExpanded = expandedIntegrations.has(integration.id);
                   const priorityColor = integration.priority === 'critical' ? '#EF4444' :
                     integration.priority === 'high' ? Colors.warning :

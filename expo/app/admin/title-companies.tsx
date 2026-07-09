@@ -1,4 +1,6 @@
-import React, { useState, useCallback } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { supabase } from '@/lib/supabase';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -35,7 +37,7 @@ import {
   titleCompanies as mockCompanies,
   titleCompanyAssignments as mockAssignments,
   propertyDocumentSubmissions,
-} from '@/mocks/title-company';
+} from '@/constants/title-company';
 import {
   TitleCompany,
   TitleCompanyAssignment,
@@ -59,6 +61,7 @@ const ASSIGNMENT_COLORS: Record<string, string> = {
 
 export default function TitleCompaniesScreen() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [tab, setTab] = useState<TabType>('companies');
   const [companies, setCompanies] = useState<TitleCompany[]>(mockCompanies);
   const [assignments, setAssignments] = useState<TitleCompanyAssignment[]>(mockAssignments);
@@ -68,6 +71,62 @@ export default function TitleCompaniesScreen() {
   const [selectedProperty, setSelectedProperty] = useState<string | null>(null);
   const [selectedCompany, setSelectedCompany] = useState<string | null>(null);
   const [assigning, setAssigning] = useState(false);
+
+  const companiesQuery = useQuery({
+    queryKey: ['title-companies'],
+    queryFn: async () => {
+      const results = await Promise.allSettled([
+        supabase.from('title_companies').select('*').order('created_at', { ascending: false }).limit(100),
+        supabase.from('title_company_assignments').select('*').order('assigned_at', { ascending: false }).limit(100),
+      ]);
+
+      let liveCompanies = mockCompanies;
+      if (results[0].status === 'fulfilled' && results[0].value.data && results[0].value.data.length > 0) {
+        liveCompanies = results[0].value.data.map((row: any) => ({
+          id: row.id,
+          name: row.name || '',
+          contactName: row.contact_name || '',
+          email: row.email || '',
+          phone: row.phone || '',
+          address: row.address || '',
+          city: row.city || '',
+          state: row.state || '',
+          licenseNumber: row.license_number || '',
+          status: (row.status as TitleCompanyStatus) || 'pending_verification',
+          assignedProperties: row.assigned_properties ?? 0,
+          completedReviews: row.completed_reviews ?? 0,
+          averageReviewDays: row.average_review_days ?? 7,
+          createdAt: row.created_at || new Date().toISOString(),
+        }));
+      }
+
+      let liveAssignments = mockAssignments;
+      if (results[1].status === 'fulfilled' && results[1].value.data && results[1].value.data.length > 0) {
+        liveAssignments = results[1].value.data.map((row: any) => ({
+          id: row.id,
+          propertyId: row.property_id || '',
+          propertyName: row.property_name || '',
+          propertyAddress: row.property_address || '',
+          titleCompanyId: row.title_company_id || '',
+          titleCompanyName: row.title_company_name || '',
+          assignedAt: row.assigned_at || new Date().toISOString(),
+          assignedBy: row.assigned_by || 'Admin',
+          status: (row.status as any) || 'assigned',
+        }));
+      }
+
+      return { companies: liveCompanies, assignments: liveAssignments };
+    },
+    staleTime: 1000 * 60 * 3,
+    retry: 1,
+  });
+
+  useEffect(() => {
+    if (companiesQuery.data) {
+      setCompanies(companiesQuery.data.companies);
+      setAssignments(companiesQuery.data.assignments);
+    }
+  }, [companiesQuery.data]);
 
   const [newCompany, setNewCompany] = useState({
     name: '',

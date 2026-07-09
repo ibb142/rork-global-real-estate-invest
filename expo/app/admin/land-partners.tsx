@@ -28,9 +28,11 @@ import {
   Play,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
-import { landPartnerDeals, landPartnerStats } from '@/mocks/ipx-invest';
+import { landPartnerDeals as seedDeals, landPartnerStats as seedStats } from '@/constants/ipx-invest';
 import { LandPartnerDeal, LandPartnerStatus } from '@/types';
 import { formatCurrencyCompact } from '@/lib/formatters';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/lib/supabase';
 
 type FilterType = 'all' | 'active' | 'pending' | 'completed' | 'jv' | 'lp';
 
@@ -52,10 +54,88 @@ export default function LandPartnersScreen() {
   const [selectedDeal, setSelectedDeal] = useState<LandPartnerDeal | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
 
+  const dealsQuery = useQuery({
+    queryKey: ['land-partner-deals'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('land_partner_deals')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (error || !data || data.length === 0) {
+        return { deals: seedDeals, stats: seedStats };
+      }
+
+      const mapped: LandPartnerDeal[] = data.map((row: any) => {
+        const estimatedValue = row.estimated_value ?? row.property_value ?? 0;
+        const cashPercent = row.cash_payment_percent ?? 60;
+        const collateralPercent = row.collateral_percent ?? 40;
+        return {
+          id: row.id,
+          partnerId: row.partner_id || row.id,
+          partnerName: row.partner_name || 'Unknown',
+          partnerEmail: row.partner_email || '',
+          partnerPhone: row.partner_phone || '',
+          partnerType: row.partner_type || 'individual',
+          propertyAddress: row.property_address || '',
+          city: row.city || '',
+          state: row.state || '',
+          zipCode: row.zip_code || '',
+          country: row.country || 'US',
+          lotSize: row.lot_size ?? 0,
+          lotSizeUnit: row.lot_size_unit || 'acres',
+          zoning: row.zoning || 'residential',
+          propertyType: row.property_type || 'land',
+          estimatedValue,
+          appraisedValue: row.appraised_value,
+          cashPaymentPercent: cashPercent,
+          collateralPercent,
+          partnerProfitShare: row.partner_profit_share ?? 30,
+          developerProfitShare: row.developer_profit_share ?? 70,
+          termMonths: row.term_months ?? 30,
+          cashPaymentAmount: Math.round(estimatedValue * cashPercent / 100),
+          collateralAmount: Math.round(estimatedValue * collateralPercent / 100),
+          status: (row.status as LandPartnerStatus) || 'draft',
+          controlDisclosureAccepted: row.control_disclosure_accepted ?? false,
+          submittedAt: row.submitted_at || row.created_at || new Date().toISOString(),
+          valuationCompletedAt: row.valuation_completed_at,
+          approvedAt: row.approved_at,
+          activatedAt: row.activated_at,
+          completedAt: row.completed_at,
+          expiresAt: row.expires_at,
+          internalNotes: row.internal_notes,
+          rejectionReason: row.rejection_reason,
+        };
+      });
+
+      const stats = {
+        ...seedStats,
+        totalDeals: mapped.length,
+        activeDeals: mapped.filter(d => d.status === 'active').length,
+        pendingDeals: mapped.filter(d => d.status === 'submitted' || d.status === 'valuation' || d.status === 'review').length,
+        completedDeals: mapped.filter(d => d.status === 'completed').length,
+        totalLandValue: mapped.reduce((sum, d) => sum + d.estimatedValue, 0),
+        totalCashPaid: mapped.reduce((sum, d) => sum + d.cashPaymentAmount, 0),
+        totalCollateral: mapped.reduce((sum, d) => sum + d.collateralAmount, 0),
+        jvDeals: mapped.filter(d => d.partnerProfitShare > 0).length,
+        lpDeals: mapped.filter(d => d.partnerProfitShare === 0).length,
+      };
+
+      return { deals: mapped, stats };
+    },
+    staleTime: 1000 * 60 * 3,
+    retry: 1,
+  });
+
+  const landPartnerDeals = dealsQuery.data?.deals ?? seedDeals;
+  const landPartnerStats = dealsQuery.data?.stats ?? seedStats;
+
   const onRefresh = useCallback(() => {
     setRefreshing(true);
+    dealsQuery.refetch();
     setTimeout(() => setRefreshing(false), 1500);
-  }, []);
+  }, [dealsQuery]);
 
   const formatCurrency = (value: number) => formatCurrencyCompact(value);
 

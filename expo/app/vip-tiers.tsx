@@ -34,7 +34,7 @@ import {
   Sparkles,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
-import { VIP_TIERS, getUserVIPProgress, getTierByLevel, VIPTier, VIPTierLevel } from '@/mocks/vip-tiers';
+import { VIP_TIERS, getUserVIPProgress, getTierByLevel, VIPTier, VIPTierLevel } from '@/constants/vip-tiers';
 import { useCurrentUser } from '@/lib/data-hooks';
 import { formatNumber } from '@/lib/formatters';
 

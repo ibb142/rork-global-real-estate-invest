@@ -36,13 +36,15 @@ import {
   REQUIRED_TITLE_DOCUMENTS,
   propertyDocumentSubmissions,
   getSubmissionByPropertyId,
-} from '@/mocks/title-company';
+} from '@/constants/title-company';
 import {
   TitleDocument,
   TitleDocumentType,
   TitleDocumentStatus,
   PropertyDocumentSubmission,
 } from '@/types';
+import { supabase } from '@/lib/supabase';
+import { getAuthUserId } from '@/lib/auth-store';
 
 const STATUS_CONFIG: Record<TitleDocumentStatus, { color: string; label: string; icon: typeof CheckCircle }> = {
   not_uploaded: { color: Colors.textTertiary, label: 'Not Uploaded', icon: FilePlus },
@@ -115,19 +117,59 @@ export default function PropertyDocumentsScreen() {
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const file = result.assets[0];
+        const userId = getAuthUserId();
+        const fileExt = file.name.split('.').pop() || 'pdf';
+        const storagePath = `title-documents/${userId ?? 'anon'}/${propertyId ?? 'unknown'}/${docId}.${fileExt}`;
+
+        let uploadedUrl = file.uri;
+        try {
+          const fileResponse = await fetch(file.uri);
+          const blob = await fileResponse.blob();
+          const { error: uploadError } = await supabase.storage
+            .from('ivx-chat-uploads')
+            .upload(storagePath, blob, { contentType: file.mimeType || 'application/octet-stream', upsert: true });
+
+          if (!uploadError) {
+            const { data: urlData } = supabase.storage.from('ivx-chat-uploads').getPublicUrl(storagePath);
+            uploadedUrl = urlData.publicUrl || file.uri;
+            console.log('[PropertyDocs] Uploaded to Supabase Storage:', storagePath);
+          } else {
+            console.log('[PropertyDocs] Storage upload skipped:', uploadError.message);
+          }
+        } catch (uploadErr) {
+          console.log('[PropertyDocs] Storage upload failed, using local URI:', uploadErr);
+        }
+
         setDocuments((prev) =>
           prev.map((d) =>
             d.id === docId
               ? {
                   ...d,
                   fileName: file.name,
-                  fileUri: file.uri,
+                  fileUri: uploadedUrl,
                   status: 'uploaded' as TitleDocumentStatus,
                   uploadedAt: new Date().toISOString(),
                 }
               : d
           )
         );
+
+        try {
+          await supabase.from('title_documents').upsert({
+            id: docId,
+            property_id: propertyId ?? '1',
+            type: docType,
+            name: REQUIRED_TITLE_DOCUMENTS.find(r => r.type === docType)?.name || docType,
+            file_name: file.name,
+            file_url: uploadedUrl,
+            status: 'uploaded',
+            uploaded_at: new Date().toISOString(),
+            required: true,
+          });
+        } catch (dbErr) {
+          console.log('[PropertyDocs] DB persist failed:', dbErr);
+        }
+
         if (Platform.OS !== 'web') {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         }
@@ -139,7 +181,7 @@ export default function PropertyDocumentsScreen() {
     } finally {
       setUploading(null);
     }
-  }, []);
+  }, [propertyId]);
 
   const handleRemoveDocument = useCallback((docId: string) => {
     Alert.alert('Remove Document', 'Are you sure you want to remove this document?', [
@@ -180,8 +222,17 @@ export default function PropertyDocumentsScreen() {
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Submit',
-          onPress: () => {
+          onPress: async () => {
             setSubmitting(true);
+            try {
+              await supabase.from('title_document_submissions').upsert({
+                property_id: propertyId ?? '1',
+                status: 'under_review',
+                submitted_at: new Date().toISOString(),
+              });
+            } catch (e) {
+              console.log('[PropertyDocs] Submit persist failed:', e);
+            }
             setTimeout(() => {
               setSubmitting(false);
               if (Platform.OS !== 'web') {
@@ -196,7 +247,7 @@ export default function PropertyDocumentsScreen() {
         },
       ]
     );
-  }, [canSubmit]);
+  }, [canSubmit, propertyId]);
 
   const renderProgressBar = () => {
     const progressWidth = `${Math.round(progress * 100)}%`;

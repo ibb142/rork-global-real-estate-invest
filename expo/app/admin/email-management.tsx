@@ -44,8 +44,8 @@ import {
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
-import { EMAIL_ACCOUNTS } from '@/mocks/emails';
-import { teamMembers as mockTeamMembers } from '@/mocks/admin';
+import { EMAIL_ACCOUNTS } from '@/constants/emails';
+import { teamMembers as mockTeamMembers } from '@/constants/admin';
 import { useEmail } from '@/lib/email-context';
 
 

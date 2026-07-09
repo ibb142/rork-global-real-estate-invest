@@ -42,16 +42,20 @@ export default function ModalScreen() {
   );
 }
 
+import Colors from "@/constants/colors";
+
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    backgroundColor: "rgba(0, 0, 0, 0.75)",
     justifyContent: "center",
     alignItems: "center",
   },
   modalContent: {
-    backgroundColor: "white",
+    backgroundColor: Colors.background,
     borderRadius: 20,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
     padding: 24,
     margin: 20,
     alignItems: "center",
@@ -61,22 +65,23 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: "bold",
     marginBottom: 16,
+    color: Colors.text,
   },
   description: {
     textAlign: "center",
     marginBottom: 24,
-    color: "#666",
+    color: Colors.textSecondary,
     lineHeight: 20,
   },
   closeButton: {
-    backgroundColor: "#007AFF",
+    backgroundColor: Colors.primary,
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 10,
     minWidth: 100,
   },
   closeButtonText: {
-    color: "white",
+    color: Colors.black,
     fontWeight: "600",
     textAlign: "center",
   },

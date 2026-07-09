@@ -33,7 +33,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import Colors from '@/constants/colors';
 import { useEmail } from '@/lib/email-context';
 import { EmailAttachment } from '@/types/email';
-import { EMAIL_TEMPLATES, EMAIL_TEMPLATE_CATEGORIES, EmailTemplate } from '@/mocks/email-templates';
+import { EMAIL_TEMPLATES, EMAIL_TEMPLATE_CATEGORIES, EmailTemplate } from '@/constants/email-templates';
 
 function getFileIcon(mimeType: string) {
   if (mimeType.startsWith('image/')) return ImageIcon;

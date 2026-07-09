@@ -68,14 +68,17 @@ import {
   emailCampaigns as mockCampaigns,
   emailRecipients,
   getEngineStats,
-} from '@/mocks/email-engine';
+} from '@/constants/email-engine';
 import {
   emailLogs as initialEmailLogs,
   getEmailLogStats,
   type EmailLog,
   type EmailLogType,
   type EmailLogStatus,
-} from '@/mocks/email-logs';
+} from '@/constants/email-logs';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/lib/supabase';
+import { useEmail } from '@/lib/email-context';
 
 type TabType = 'dashboard' | 'campaigns' | 'smtp' | 'protection' | 'sent_log';
 type LogFilter = 'all' | 'automatic' | 'manual';
@@ -155,6 +158,7 @@ const STATUS_COLORS: Record<string, string> = {
 
 export default function EmailEngineScreen() {
   const router = useRouter();
+  const { sesStatus, checkSesStatus } = useEmail();
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
   const [smtpConfigs, setSmtpConfigs] = useState<SMTPConfig[]>(mockSmtpConfigs);
   const [campaigns, setCampaigns] = useState<EmailCampaign[]>(mockCampaigns);
@@ -182,6 +186,29 @@ export default function EmailEngineScreen() {
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [composeStep, setComposeStep] = useState<'recipient' | 'compose'>('recipient');
+
+  const emailEngineQuery = useQuery({
+    queryKey: ['email-engine-live'],
+    queryFn: async () => {
+      const results = await Promise.allSettled([
+        supabase.from('notification_events').select('*').eq('channel', 'email').order('created_at', { ascending: false }).limit(100),
+        supabase.from('notification_events').select('*', { count: 'exact', head: true }).eq('channel', 'email'),
+      ]);
+
+      const sentEmails = results[1].status === 'fulfilled' ? (results[1].value.count ?? 0) : 0;
+      const recentEmails = results[0].status === 'fulfilled' && results[0].value.data ? results[0].value.data : [];
+      const delivered = recentEmails.filter((e: any) => e.status === 'sent').length;
+      const failed = recentEmails.filter((e: any) => e.status === 'failed').length;
+      const deliveryRate = recentEmails.length > 0 ? Math.round((delivered / recentEmails.length) * 1000) / 10 : 0;
+
+      return { sentEmails, delivered, failed, deliveryRate };
+    },
+    staleTime: 1000 * 60 * 2,
+    refetchInterval: 30_000,
+    retry: 1,
+  });
+
+  const liveSesActive = sesStatus?.configured ?? false;
 
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const progressAnim = useRef(new Animated.Value(0)).current;

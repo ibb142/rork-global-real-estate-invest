@@ -28,8 +28,11 @@ import {
   Clock,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
-import { smartFeatures, SmartFeature, globalPresence } from '@/mocks/competitive-stats';
+import { smartFeatures, SmartFeature, globalPresence } from '@/constants/competitive-stats';
 import { getResponsiveSize, isExtraSmallScreen } from '@/lib/responsive';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/lib/supabase';
+import { getAuthUserId } from '@/lib/auth-store';
 
 const iconMap: Record<string, any> = {
   Brain, Zap, Bell, Activity, RefreshCw, Receipt, Users, Target,
@@ -94,8 +97,25 @@ function SmartFeatureCard({ feature, index }: { feature: SmartFeature; index: nu
   );
 }
 
+interface AIInsight {
+  title: string;
+  body: string;
+  yieldBoost: string;
+  riskLevel: string;
+  propertyName: string;
+}
+
+const FALLBACK_INSIGHT: AIInsight = {
+  title: 'Portfolio Recommendation',
+  body: 'Based on current market conditions and your risk profile, I recommend increasing your allocation to Dubai Marina Residences by 15%. Rising tourism and Expo 2025 aftermath are driving rental demand up 22% YoY.',
+  yieldBoost: 'Expected +3.2% yield boost',
+  riskLevel: 'Risk level: Medium-Low',
+  propertyName: 'Dubai Marina Residences',
+};
+
 function AIInsightCard() {
   const pulseAnim = useRef(new Animated.Value(1)).current;
+  const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
     Animated.loop(
@@ -105,6 +125,64 @@ function AIInsightCard() {
       ])
     ).start();
   }, []);
+
+  const insightQuery = useQuery({
+    queryKey: ['smart-investing-insight'],
+    queryFn: async (): Promise<AIInsight> => {
+      const userId = getAuthUserId();
+      if (!userId) return FALLBACK_INSIGHT;
+
+      try {
+        const { data: holdings } = await supabase
+          .from('holdings')
+          .select('property_id,shares,purchase_price')
+          .eq('user_id', userId)
+          .order('purchase_price', { ascending: false })
+          .limit(5);
+
+        if (!holdings || holdings.length === 0) return FALLBACK_INSIGHT;
+
+        const propIds = holdings.map((h: any) => h.property_id).filter(Boolean);
+        if (propIds.length === 0) return FALLBACK_INSIGHT;
+
+        const { data: properties } = await supabase
+          .from('properties')
+          .select('id,name,annual_yield,city,country,type')
+          .in('id', propIds)
+          .order('annual_yield', { ascending: false })
+          .limit(1);
+
+        if (!properties || properties.length === 0) return FALLBACK_INSIGHT;
+
+        const topProp = properties[0];
+        const totalValue = holdings.reduce((sum: number, h: any) => sum + (h.purchase_price ?? 0) * (h.shares ?? 0), 0);
+        const topHolding = holdings.find((h: any) => h.property_id === topProp.id);
+        const topAllocation = totalValue > 0 && topHolding
+          ? Math.round(((topHolding.purchase_price ?? 0) * (topHolding.shares ?? 0) / totalValue) * 100)
+          : 0;
+
+        const yieldVal = topProp.annual_yield ?? 8;
+        const yieldBoost = Math.round(yieldVal * 0.15 * 10) / 10;
+
+        return {
+          title: 'Portfolio Recommendation',
+          body: `Based on your current holdings and market analysis, I recommend increasing your allocation to ${topProp.name} by 15%. ${topProp.city || ''} ${topProp.country || ''} market shows strong fundamentals with ${yieldVal}% annual yield and growing demand.`,
+          yieldBoost: `Expected +${yieldBoost}% yield boost`,
+          riskLevel: 'Risk level: Medium-Low',
+          propertyName: topProp.name,
+        };
+      } catch (e) {
+        console.log('[SmartInvesting] Insight fetch failed:', e);
+        return FALLBACK_INSIGHT;
+      }
+    },
+    staleTime: 1000 * 60 * 5,
+    retry: 1,
+  });
+
+  if (dismissed) return null;
+
+  const insight = insightQuery.data ?? FALLBACK_INSIGHT;
 
   return (
     <Animated.View style={[styles.insightCard, { transform: [{ scale: pulseAnim }] }]}>
@@ -117,25 +195,33 @@ function AIInsightCard() {
           <Text style={styles.liveText}>AI Insight — Live</Text>
         </View>
       </View>
-      <Text style={styles.insightTitle}>Portfolio Recommendation</Text>
-      <Text style={styles.insightBody}>
-        Based on current market conditions and your risk profile, I recommend increasing your allocation to Dubai Marina Residences by 15%. Rising tourism and Expo 2025 aftermath are driving rental demand up 22% YoY.
-      </Text>
+      <Text style={styles.insightTitle}>{insight.title}</Text>
+      <Text style={styles.insightBody}>{insight.body}</Text>
       <View style={styles.insightMetrics}>
         <View style={styles.insightMetric}>
           <TrendingUp size={14} color={Colors.success} />
-          <Text style={styles.insightMetricText}>Expected +3.2% yield boost</Text>
+          <Text style={styles.insightMetricText}>{insight.yieldBoost}</Text>
         </View>
         <View style={styles.insightMetric}>
           <Shield size={14} color="#4ECDC4" />
-          <Text style={styles.insightMetricText}>Risk level: Medium-Low</Text>
+          <Text style={styles.insightMetricText}>{insight.riskLevel}</Text>
         </View>
       </View>
       <View style={styles.insightActions}>
-        <TouchableOpacity style={styles.insightActionPrimary} activeOpacity={0.8}>
+        <TouchableOpacity
+          style={styles.insightActionPrimary}
+          activeOpacity={0.8}
+          onPress={() => {
+            console.log('[SmartInvesting] Apply suggestion for:', insight.propertyName);
+          }}
+        >
           <Text style={styles.insightActionPrimaryText}>Apply Suggestion</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.insightActionSecondary} activeOpacity={0.7}>
+        <TouchableOpacity
+          style={styles.insightActionSecondary}
+          activeOpacity={0.7}
+          onPress={() => setDismissed(true)}
+        >
           <Text style={styles.insightActionSecondaryText}>Dismiss</Text>
         </TouchableOpacity>
       </View>

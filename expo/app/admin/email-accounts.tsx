@@ -34,9 +34,11 @@ import {
   AlertTriangle,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
-import { EMAIL_ACCOUNTS } from '@/mocks/emails';
-import { teamMembers as mockTeamMembers } from '@/mocks/admin';
+import { EMAIL_ACCOUNTS } from '@/constants/emails';
+import { teamMembers as mockTeamMembers } from '@/constants/admin';
 import { EmailAccount } from '@/types/email';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/lib/supabase';
 
 type AccessLevel = 'read' | 'send' | 'manage';
 
@@ -139,12 +141,45 @@ export default function EmailAccountsScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [refreshing, setRefreshing] = useState(false);
 
+  const staffQuery = useQuery({
+    queryKey: ['email-staff-members'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id,first_name,last_name,email,role')
+        .in('role', ['owner', 'ceo', 'staff', 'manager', 'analyst', 'support'])
+        .limit(50);
+
+      if (error || !data || data.length === 0) return mockTeamMembers;
+
+      return data.map((p: any) => {
+        const firstName = p.first_name || '';
+        const lastName = p.last_name || '';
+        const role = (p.role || 'staff') as any;
+        return {
+          id: p.id,
+          email: p.email || '',
+          firstName,
+          lastName,
+          roleId: role,
+          role,
+          status: 'active' as const,
+          createdAt: p.created_at || '2024-01-01',
+        };
+      });
+    },
+    staleTime: 1000 * 60 * 5,
+    retry: 1,
+  });
+
+  const teamMembers = staffQuery.data ?? mockTeamMembers;
+
   const availableStaff = useMemo(() => {
     if (!assigningAccount) return [];
     const account = accounts.find(a => a.id === assigningAccount);
     const assignedIds = account?.staffAccess.map(s => s.staffId) ?? [];
-    return mockTeamMembers.filter(m => !assignedIds.includes(m.id) && m.status !== 'invited');
-  }, [assigningAccount, accounts]);
+    return teamMembers.filter(m => !assignedIds.includes(m.id) && m.status !== 'invited');
+  }, [assigningAccount, accounts, teamMembers]);
 
   const totalUnread = useMemo(() => accounts.reduce((sum, a) => sum + a.unreadCount, 0), [accounts]);
   const totalStaffAssigned = useMemo(() => {
@@ -165,8 +200,9 @@ export default function EmailAccountsScreen() {
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
+    staffQuery.refetch();
     setTimeout(() => setRefreshing(false), 1000);
-  }, []);
+  }, [staffQuery]);
 
   const openAssignModal = useCallback((accountId: string) => {
     setAssigningAccount(accountId);

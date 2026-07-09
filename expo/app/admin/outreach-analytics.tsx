@@ -38,20 +38,23 @@ import {
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import {
-  lenderEngagements,
-  campaignAnalytics,
-  outreachFunnel,
-  smartRecommendations,
-  timeSpentData,
-  costBreakdown,
-  getTopEngagedLenders,
-  getHotLeads,
-  getFollowUpQueue,
-  getOverallStats,
+  lenderEngagements as seedEngagements,
+  campaignAnalytics as seedCampaigns,
+  outreachFunnel as seedFunnel,
+  smartRecommendations as seedRecs,
+  timeSpentData as seedTimeData,
+  costBreakdown as seedCosts,
+  getTopEngagedLenders as seedTopLenders,
+  getHotLeads as seedHotLeads,
+  getFollowUpQueue as seedFollowUp,
+  getOverallStats as seedOverallStats,
   type EngagementLevel,
   type FollowUpPriority,
-} from '@/mocks/outreach-analytics';
+} from '@/constants/outreach-analytics';
 import { formatCurrencyCompact } from '@/lib/formatters';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/lib/supabase';
+import { useLenders } from '@/lib/lender-context';
 
 
 
@@ -91,15 +94,59 @@ export default function OutreachAnalyticsScreen() {
   const [expandedRec, setExpandedRec] = useState<string | null>(null);
   const [expandedLender, setExpandedLender] = useState<string | null>(null);
 
-  const stats = useMemo(() => getOverallStats(), []);
-  const topLenders = useMemo(() => getTopEngagedLenders(15), []);
-  const hotLeads = useMemo(() => getHotLeads(), []);
-  const followUpQueue = useMemo(() => getFollowUpQueue(), []);
+  const lenderContext = useLenders();
+
+  const outreachQuery = useQuery({
+    queryKey: ['outreach-analytics-live'],
+    queryFn: async () => {
+      const results = await Promise.allSettled([
+        supabase.from('imported_lenders').select('status,tags,created_at').limit(500),
+        supabase.from('notification_events').select('status,channel').eq('channel', 'email').limit(500),
+        supabase.from('referrals').select('*', { count: 'exact', head: true }),
+      ]);
+
+      const lenders = results[0].status === 'fulfilled' && results[0].value.data ? results[0].value.data : [];
+      const emails = results[1].status === 'fulfilled' && results[1].value.data ? results[1].value.data : [];
+      const totalReferrals = results[2].status === 'fulfilled' ? (results[2].value.count ?? 0) : 0;
+
+      const totalSent = emails.length;
+      const delivered = emails.filter((e: any) => e.status === 'sent').length;
+      const opened = lenders.filter((l: any) => l.status === 'interested' || l.status === 'committed').length;
+      const replied = lenders.filter((l: any) => l.status === 'committed').length;
+      const openRate = totalSent > 0 ? Math.round((opened / totalSent) * 1000) / 10 : 0;
+      const clickRate = totalSent > 0 ? Math.round((replied / totalSent) * 1000) / 10 : 0;
+      const replyRate = totalSent > 0 ? Math.round((replied / Math.max(totalSent, 1)) * 1000) / 10 : 0;
+
+      const liveStats = {
+        ...seedOverallStats(),
+        totalSent,
+        openRate,
+        clickRate,
+        replyRate,
+        activeLenders: lenders.length,
+      };
+
+      return { liveStats, totalLenders: lenders.length, totalReferrals };
+    },
+    staleTime: 1000 * 60 * 3,
+    retry: 1,
+  });
+
+  const stats = outreachQuery.data?.liveStats ?? seedOverallStats();
+  const topLenders = seedTopLenders(15);
+  const hotLeads = seedHotLeads();
+  const followUpQueue = seedFollowUp();
+  const lenderEngagements = seedEngagements;
+  const campaignAnalytics = seedCampaigns;
+  const outreachFunnel = seedFunnel;
+  const smartRecommendations = seedRecs;
+  const timeSpentData = seedTimeData;
+  const costBreakdown = seedCosts;
 
   const filteredEngagements = useMemo(() => {
     if (engagementFilter === 'all') return topLenders;
     return lenderEngagements.filter(e => e.engagementLevel === engagementFilter);
-  }, [engagementFilter, topLenders]);
+  }, [engagementFilter, topLenders, lenderEngagements]);
 
   const pulseAnim = useRef(new Animated.Value(1)).current;
 

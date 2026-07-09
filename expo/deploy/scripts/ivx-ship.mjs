@@ -31,6 +31,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { validateRepoUrl, CANONICAL_PRODUCTION_BASE_URL, isRealSha, isRealDeployId } from '../../lib/canonical-repo.mjs';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = resolve(SCRIPT_DIR, '../../..');
@@ -143,9 +144,16 @@ async function getLocalHeadCommit() {
 async function pushToGitHub(branch) {
   const token = env('GITHUB_TOKEN');
   const repoUrl = env('GITHUB_REPO_URL');
-  if (!token || !repoUrl) {
-    throw new Error('GITHUB_TOKEN and GITHUB_REPO_URL are required to push (set them in your env).');
+  if (!token) {
+    throw new Error('GITHUB_TOKEN is required to push (set it in your env).');
   }
+
+  // Owner directive: never push to a Rork router URL, placeholder, or sandbox repo.
+  const repoValidation = validateRepoUrl(repoUrl);
+  if (repoValidation.error) {
+    throw new Error(`Invalid repo URL: ${repoValidation.error}`);
+  }
+  const canonicalRepoUrl = repoValidation.resolved;
 
   // Commit any pending working-tree changes so the deploy ships them.
   const status = await runGit(['status', '--porcelain']);
@@ -158,8 +166,8 @@ async function pushToGitHub(branch) {
     }
   }
 
-  const remote = buildAuthenticatedRemote(repoUrl, token);
-  log(`Pushing HEAD → ${repoUrl} (${branch})`);
+  const remote = buildAuthenticatedRemote(canonicalRepoUrl, token);
+  log(`Pushing HEAD → ${canonicalRepoUrl} (${branch})`);
   const push = await runGit(['push', remote, `HEAD:${branch}`]);
   if (push.code !== 0) {
     throw new Error(`git push failed: ${push.stderr || push.stdout}`);
@@ -338,10 +346,31 @@ async function main() {
     report.push(['Render deploy status', deployResult.status]);
 
     const health = await waitForLiveCommit(baseUrl, localCommit);
+    const liveCommit = health.json?.commit ?? '';
+    const liveDeployId = health.json?.deployId ?? health.json?.deploy_id ?? '';
+
+    // Owner directive: reject placeholder / blank evidence. Do not mark deployed without proof.
+    if (!isRealSha(localCommit)) {
+      throw new Error('Local commit SHA is blank or placeholder — cannot verify deploy.');
+    }
+    if (!isRealSha(liveCommit)) {
+      throw new Error('Live /health did not return a real commit SHA.');
+    }
+    if (!isRealDeployId(deployId)) {
+      throw new Error('Render deploy ID is blank or placeholder — cannot verify deploy.');
+    }
+    if (liveCommit.slice(0, 12) !== localCommit.slice(0, 12)) {
+      throw new Error(`Live commit ${liveCommit.slice(0, 12)} does not match shipped commit ${localCommit.slice(0, 12)}.`);
+    }
+
     deployed = true;
     report.push(['Live URL', baseUrl]);
     report.push(['GET /health', `${health.status} (${health.json?.status ?? 'unknown'})`]);
-    report.push(['Running commit', (health.json?.commit ?? 'unknown').slice(0, 8)]);
+    report.push(['GET /version', health.json?.version ?? 'unknown']);
+    report.push(['Running commit', liveCommit.slice(0, 8)]);
+    report.push(['GitHub commit', localCommit.slice(0, 8)]);
+    report.push(['Commit match', liveCommit.slice(0, 12) === localCommit.slice(0, 12) ? 'YES' : 'NO']);
+    report.push(['Render deploy ID', deployId]);
     report.push(['Active model', health.json?.openAIModel ?? 'unknown']);
     report.push(['Boot time', health.json?.bootTime ?? 'unknown']);
 
@@ -359,7 +388,7 @@ async function main() {
   }
 
   report.unshift(['VERIFIED', verified ? 'VERIFIED ✅' : 'NOT VERIFIED ❌']);
-  report.unshift(['DEPLOYED', deployed ? 'DEPLOYED ✅' : 'NOT DEPLOYED ❌']);
+  report.unshift(['DEPLOYED', deployed ? 'DEPLOYED ✅' : 'BUILT_NOT_DEPLOYED ❌']);
   if (blocker) {
     report.push(['Blocker', blocker]);
   }

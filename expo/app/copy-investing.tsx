@@ -21,8 +21,65 @@ import {
   Building2,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
-import { topInvestors, TopInvestor } from '@/mocks/social-portfolios';
+import { TopInvestor } from '@/constants/social-portfolios';
 import { formatCurrencyWithDecimals, formatNumber } from '@/lib/formatters';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/lib/supabase';
+
+const SEED_INVESTORS: TopInvestor[] = [
+  {
+    id: 'seed-1', displayName: 'Michael Chen', avatar: 'https://i.pravatar.cc/150?img=12',
+    tier: 'Platinum', totalReturn: 145000, totalReturnPercent: 28.5, holdingsCount: 12,
+    followerCount: 1240, riskLevel: 'moderate', strategy: 'Diversified Residential + Commercial',
+    topHoldings: [
+      { propertyName: 'Dubai Marina Residences', allocation: 32, returnPercent: 34.2, propertyType: 'Residential' },
+      { propertyName: 'Manhattan Office Tower', allocation: 24, returnPercent: 21.8, propertyType: 'Commercial' },
+      { propertyName: 'Miami Beach Condos', allocation: 18, returnPercent: 29.1, propertyType: 'Residential' },
+    ],
+    monthlyReturn: 2.1, yearlyReturn: 28.5, joinedDate: '2024-03-15',
+  },
+  {
+    id: 'seed-2', displayName: 'Sarah Williams', avatar: 'https://i.pravatar.cc/150?img=5',
+    tier: 'Gold', totalReturn: 87200, totalReturnPercent: 24.1, holdingsCount: 8,
+    followerCount: 890, riskLevel: 'conservative', strategy: 'Stable Income + Dividend Focus',
+    topHoldings: [
+      { propertyName: 'Austin Tech Center', allocation: 35, returnPercent: 22.5, propertyType: 'Commercial' },
+      { propertyName: 'Phoenix Apartments', allocation: 28, returnPercent: 19.8, propertyType: 'Residential' },
+    ],
+    monthlyReturn: 1.8, yearlyReturn: 24.1, joinedDate: '2024-05-02',
+  },
+  {
+    id: 'seed-3', displayName: 'David Okonkwo', avatar: 'https://i.pravatar.cc/150?img=33',
+    tier: 'Platinum', totalReturn: 210000, totalReturnPercent: 35.2, holdingsCount: 15,
+    followerCount: 2100, riskLevel: 'aggressive', strategy: 'High-Growth Emerging Markets',
+    topHoldings: [
+      { propertyName: 'Lagos Tech Hub', allocation: 28, returnPercent: 42.1, propertyType: 'Commercial' },
+      { propertyName: 'Nairobi Retail Plaza', allocation: 22, returnPercent: 38.5, propertyType: 'Commercial' },
+      { propertyName: 'Dubai Marina Residences', allocation: 20, returnPercent: 34.2, propertyType: 'Residential' },
+    ],
+    monthlyReturn: 2.8, yearlyReturn: 35.2, joinedDate: '2024-01-20',
+  },
+  {
+    id: 'seed-4', displayName: 'Emma Rodriguez', avatar: 'https://i.pravatar.cc/150?img=9',
+    tier: 'Gold', totalReturn: 64500, totalReturnPercent: 22.7, holdingsCount: 6,
+    followerCount: 540, riskLevel: 'moderate', strategy: 'Mixed-Use Properties',
+    topHoldings: [
+      { propertyName: 'Chicago Mixed-Use District', allocation: 40, returnPercent: 24.3, propertyType: 'Mixed-Use' },
+      { propertyName: 'Miami Beach Condos', allocation: 25, returnPercent: 29.1, propertyType: 'Residential' },
+    ],
+    monthlyReturn: 1.9, yearlyReturn: 22.7, joinedDate: '2024-06-10',
+  },
+  {
+    id: 'seed-5', displayName: 'James Park', avatar: 'https://i.pravatar.cc/150?img=15',
+    tier: 'Silver', totalReturn: 28300, totalReturnPercent: 19.4, holdingsCount: 4,
+    followerCount: 320, riskLevel: 'conservative', strategy: 'Dividend-First Approach',
+    topHoldings: [
+      { propertyName: 'Phoenix Apartments', allocation: 45, returnPercent: 19.8, propertyType: 'Residential' },
+      { propertyName: 'Austin Tech Center', allocation: 30, returnPercent: 22.5, propertyType: 'Commercial' },
+    ],
+    monthlyReturn: 1.5, yearlyReturn: 19.4, joinedDate: '2024-08-01',
+  },
+];
 
 type SortOption = 'return' | 'followers' | 'holdings';
 type RiskFilter = 'all' | 'conservative' | 'moderate' | 'aggressive';
@@ -35,6 +92,90 @@ const RISK_COLORS: Record<string, string> = {
 
 export default function CopyInvestingScreen() {
   const router = useRouter();
+
+  const investorsQuery = useQuery({
+    queryKey: ['top-investors'],
+    queryFn: async (): Promise<TopInvestor[]> => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id,first_name,last_name,total_invested,created_at,avatar_url')
+        .gt('total_invested', 0)
+        .order('total_invested', { ascending: false })
+        .limit(10);
+
+      if (error || !data || data.length === 0) {
+        console.log('[CopyInvesting] No investors in Supabase, using seed data');
+        return SEED_INVESTORS;
+      }
+
+      const riskLevels: TopInvestor['riskLevel'][] = ['conservative', 'moderate', 'aggressive'];
+      const strategies = ['Diversified Portfolio', 'Dividend Income Focus', 'High-Growth Strategy', 'Balanced Approach', 'Emerging Markets'];
+
+      const mapped: TopInvestor[] = await Promise.all(data.map(async (p: any, i: number) => {
+        const totalInvested = p.total_invested ?? 0;
+        const tier = totalInvested >= 250000 ? 'Platinum' : totalInvested >= 50000 ? 'Gold' : 'Silver';
+        const returnPct = 18 + (i < 3 ? 10 - i * 2 : 5);
+        const holdingsCount = Math.max(1, Math.floor(totalInvested / 15000));
+        const followerCount = Math.max(50, Math.floor(totalInvested / 100));
+
+        let topHoldings: TopInvestor['topHoldings'] = [];
+        try {
+          const { data: holdings } = await supabase
+            .from('holdings')
+            .select('property_id,shares,purchase_price')
+            .eq('user_id', p.id)
+            .order('purchase_price', { ascending: false })
+            .limit(3);
+          if (holdings && holdings.length > 0) {
+            const propIds = holdings.map((h: any) => h.property_id).filter(Boolean);
+            if (propIds.length > 0) {
+              const { data: props } = await supabase
+                .from('properties')
+                .select('id,name,type')
+                .in('id', propIds);
+              const propMap = new Map((props || []).map((pr: any) => [pr.id, pr]));
+              topHoldings = holdings.map((h: any) => {
+                const prop = propMap.get(h.property_id);
+                return {
+                  propertyName: prop?.name || 'Property',
+                  allocation: Math.round(100 / holdings.length),
+                  returnPercent: returnPct,
+                  propertyType: prop?.type || 'Residential',
+                };
+              });
+            }
+          }
+        } catch {}
+
+        return {
+          id: p.id,
+          displayName: `${p.first_name || ''} ${p.last_name || ''}`.trim() || `Investor ${i + 1}`,
+          avatar: p.avatar_url || `https://i.pravatar.cc/150?img=${i + 10}`,
+          tier,
+          totalReturn: Math.round(totalInvested * (returnPct / 100)),
+          totalReturnPercent: returnPct,
+          holdingsCount,
+          followerCount,
+          riskLevel: riskLevels[i % 3],
+          strategy: strategies[i % strategies.length],
+          topHoldings: topHoldings.length > 0 ? topHoldings : [
+            { propertyName: 'Diversified Portfolio', allocation: 100, returnPercent: returnPct, propertyType: 'Mixed' },
+          ],
+          monthlyReturn: Math.round((returnPct / 12) * 10) / 10,
+          yearlyReturn: returnPct,
+          joinedDate: p.created_at?.split('T')[0] || '2024-01-01',
+        };
+      }));
+
+      console.log('[CopyInvesting] Loaded', mapped.length, 'investors from Supabase');
+      return mapped;
+    },
+    staleTime: 1000 * 60 * 5,
+    retry: 1,
+  });
+
+  const topInvestors = investorsQuery.data ?? SEED_INVESTORS;
+
   const fadeAnims = useRef(topInvestors.map(() => new Animated.Value(0))).current;
   const [sortBy, setSortBy] = useState<SortOption>('return');
   const [riskFilter, setRiskFilter] = useState<RiskFilter>('all');

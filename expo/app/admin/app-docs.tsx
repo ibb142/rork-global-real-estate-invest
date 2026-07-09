@@ -62,7 +62,9 @@ import {
   generateTextReport,
   generateCSVReport,
   generateExcelHTML,
-} from '@/mocks/functionality-registry';
+} from '@/constants/functionality-registry';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/lib/supabase';
 
 const ICON_MAP: Record<string, React.ReactNode> = {
   Lock: <Lock size={20} color="#6366F1" />,
@@ -98,6 +100,39 @@ export default function AppDocsScreen() {
   const totalModules = useMemo(() => getTotalModules(), []);
   const activeFeatures = useMemo(() => getActiveFeatures(), []);
   const betaFeatures = useMemo(() => getBetaFeatures(), []);
+
+  const liveFeatureStatusQuery = useQuery({
+    queryKey: ['app-docs-live-status'],
+    queryFn: async () => {
+      const results = await Promise.allSettled([
+        supabase.from('profiles').select('id').limit(1),
+        supabase.from('properties').select('id').limit(1),
+        supabase.from('transactions').select('id').limit(1),
+        supabase.from('kyc_verifications').select('id').limit(1),
+        supabase.from('wallets').select('id').limit(1),
+        supabase.from('referrals').select('id').limit(1),
+        supabase.from('notification_events').select('id').limit(1),
+        supabase.from('ai_usage_logs').select('id').limit(1),
+      ]);
+
+      const moduleStatusMap: Record<string, boolean> = {
+        auth: results[0].status === 'fulfilled' && !results[0].value.error,
+        marketplace: results[1].status === 'fulfilled' && !results[1].value.error,
+        transactions: results[2].status === 'fulfilled' && !results[2].value.error,
+        kyc: results[3].status === 'fulfilled' && !results[3].value.error,
+        payment: results[4].status === 'fulfilled' && !results[4].value.error,
+        referral: results[5].status === 'fulfilled' && !results[5].value.error,
+        notifications: results[6].status === 'fulfilled' && !results[6].value.error,
+        chat: results[7].status === 'fulfilled' && !results[7].value.error,
+      };
+
+      return moduleStatusMap;
+    },
+    staleTime: 1000 * 60 * 5,
+    retry: 1,
+  });
+
+  const liveModuleStatus = liveFeatureStatusQuery.data ?? {};
   
 
   const filteredModules = useMemo(() => {

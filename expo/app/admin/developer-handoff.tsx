@@ -57,8 +57,10 @@ import {
   getDeliverySummary,
   getInProgressCount,
   getReadyCount,
-} from '@/mocks/developer-handoff';
-import type { IntegrationOwner, IntegrationPriority, IntegrationStatus } from '@/mocks/developer-handoff';
+} from '@/constants/developer-handoff';
+import type { IntegrationOwner, IntegrationPriority, IntegrationStatus } from '@/constants/developer-handoff';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/lib/supabase';
 
 const CATEGORY_ICONS: Record<string, React.ReactNode> = {
   Database: <Database size={18} color="#3B82F6" />,
@@ -137,6 +139,40 @@ export default function DeveloperHandoffScreen() {
   const inProgressCount = useMemo(() => getInProgressCount(), []);
   const configuredEnvCount = useMemo(() => getConfiguredEnvCount(), []);
   const deliverySummary = useMemo(() => getDeliverySummary(), []);
+
+  const devHandoffQuery = useQuery({
+    queryKey: ['dev-handoff-live'],
+    queryFn: async () => {
+      const results = await Promise.allSettled([
+        supabase.from('profiles').select('id').limit(1),
+        supabase.from('properties').select('id').limit(1),
+        supabase.from('transactions').select('id').limit(1),
+        supabase.from('notification_events').select('id').limit(1),
+        supabase.from('kyc_verifications').select('id').limit(1),
+        supabase.from('imported_lenders').select('id').limit(1),
+        supabase.from('audit_events').select('id').limit(1),
+        supabase.from('ai_usage_logs').select('id').limit(1),
+        supabase.from('deployment_history').select('id,target,status').order('started_at', { ascending: false }).limit(10),
+      ]);
+
+      const dbOk = results[0].status === 'fulfilled' && !results[0].value.error;
+      const propertiesOk = results[1].status === 'fulfilled' && !results[1].value.error;
+      const txnsOk = results[2].status === 'fulfilled' && !results[2].value.error;
+      const emailOk = results[3].status === 'fulfilled' && !results[3].value.error;
+      const kycOk = results[4].status === 'fulfilled' && !results[4].value.error;
+      const lendersOk = results[5].status === 'fulfilled' && !results[5].value.error;
+      const auditOk = results[6].status === 'fulfilled' && !results[6].value.error;
+      const aiOk = results[7].status === 'fulfilled' && !results[7].value.error;
+      const deploys = results[8].status === 'fulfilled' && results[8].value.data ? results[8].value.data : [];
+      const liveReadyCount = [dbOk, propertiesOk, txnsOk, emailOk, kycOk, lendersOk, auditOk, aiOk].filter(Boolean).length;
+
+      return { dbOk, propertiesOk, txnsOk, emailOk, kycOk, lendersOk, auditOk, aiOk, liveReadyCount, deploys };
+    },
+    staleTime: 1000 * 60 * 5,
+    retry: 1,
+  });
+
+  const liveReadyBoost = devHandoffQuery.data?.liveReadyCount ?? 0;
 
   const totalRemainingItems = useMemo(() => {
     return deliverySummary.ivx.remainingItems + deliverySummary.user.remainingItems + deliverySummary.shared.remainingItems;

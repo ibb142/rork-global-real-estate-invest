@@ -61,11 +61,11 @@ import Colors from '@/constants/colors';
 import { generateText } from '@/lib/ai-service';
 import * as Haptics from 'expo-haptics';
 import {
-  socialPlatforms,
-  aiAgents,
-  contentQueue,
+  socialPlatforms as seedPlatforms,
+  aiAgents as seedAgents,
+  contentQueue as seedContent,
   analyticsHistory,
-  commentThreads,
+  commentThreads as seedComments,
   campaignMetrics,
   weeklyPerformance,
   audienceInsights,
@@ -75,7 +75,9 @@ import {
   getAverageEngagement,
   AIAgent,
   ContentPost,
-} from '@/mocks/social-media';
+} from '@/constants/social-media';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/lib/supabase';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CHART_HEIGHT = 110;
@@ -106,7 +108,34 @@ export default function SocialCommandScreen() {
   const [isGeneratingContent, setIsGeneratingContent] = useState(false);
   const [generatedContent, setGeneratedContent] = useState('');
   const [generatingCommentId, setGeneratingCommentId] = useState<string | null>(null);
-  const [localComments, setLocalComments] = useState(commentThreads);
+  const [localComments, setLocalComments] = useState(seedComments);
+
+  const socialStatsQuery = useQuery({
+    queryKey: ['social-command-stats'],
+    queryFn: async () => {
+      const results = await Promise.allSettled([
+        supabase.from('profiles').select('*', { count: 'exact', head: true }),
+        supabase.from('referrals').select('*', { count: 'exact', head: true }),
+        supabase.from('notification_events').select('channel').limit(500),
+      ]);
+
+      const totalUsers = results[0].status === 'fulfilled' ? (results[0].value.count ?? 0) : 0;
+      const totalReferrals = results[1].status === 'fulfilled' ? (results[1].value.count ?? 0) : 0;
+      const notifs = results[2].status === 'fulfilled' && results[2].value.data ? results[2].value.data : [];
+      const emailCount = notifs.filter((n: any) => n.channel === 'email').length;
+      const smsCount = notifs.filter((n: any) => n.channel === 'sms').length;
+
+      return { totalUsers, totalReferrals, emailCount, smsCount, totalReach: totalUsers * 3 };
+    },
+    staleTime: 1000 * 60 * 3,
+    retry: 1,
+  });
+
+  const liveReach = socialStatsQuery.data?.totalReach ?? getTotalFollowers();
+  const socialPlatforms = seedPlatforms;
+  const aiAgents = seedAgents;
+  const contentQueue = seedContent;
+  const commentThreads = seedComments;
 
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const barAnims = useRef(analyticsHistory.map(() => new Animated.Value(0))).current;
@@ -246,7 +275,7 @@ export default function SocialCommandScreen() {
               <Text style={[styles.trendChipText, { color: GREEN }]}>+2.3%</Text>
             </View>
           </View>
-          <Text style={styles.heroValue}>{formatNumber(getTotalFollowers())}</Text>
+          <Text style={styles.heroValue}>{formatNumber(liveReach)}</Text>
           <Text style={styles.heroLabel}>Total Followers</Text>
         </View>
         <View style={[styles.heroCard, { backgroundColor: 'rgba(0,196,140,0.08)', borderColor: 'rgba(0,196,140,0.2)' }]}>

@@ -39,7 +39,7 @@ import {
   ArrowRight,
   Handshake,
   Globe,
-  ClipboardCheck,
+  Video,
 } from 'lucide-react-native';
 import { useRouter, Link } from 'expo-router';
 import { isAdminRole } from '@/lib/auth-helpers';
@@ -65,7 +65,7 @@ import { renderSafeViewChildren } from '@/components/SafeViewChildren';
 
 
 
-import { IVX_LOGO_SOURCE } from '@/constants/brand';
+
 
 
 
@@ -1614,28 +1614,25 @@ export default function HomeScreen() {
       <SafeAreaView edges={['top']} style={styles.safeArea}>
         <View style={[styles.header, { paddingHorizontal: isXs ? 12 : 16 }]}>
           <View style={styles.brandContainer}>
-            <Image
-              source={IVX_LOGO_SOURCE}
-              style={[styles.brandLogo, { width: isXs ? 44 : 55, height: isXs ? 44 : 55 }]}
-              resizeMode="contain"
-              accessibilityLabel="IVX HOLDINGS LLC logo"
-            />
-            <Text style={[styles.brandName, { fontSize: isXs ? 14 : isCompact ? 16 : 18 }]}>IVX HOLDINGS LLC</Text>
+            <View style={styles.brandTextWrap}>
+              <Text style={[styles.brandName, { fontSize: isXs ? 22 : isCompact ? 26 : 28 }]}>IVXHOLDINGS</Text>
+              <Text style={[styles.brandTagline, { fontSize: isXs ? 11 : 12 }]}>Institutional Real Estate Investment</Text>
+            </View>
           </View>
           <View style={styles.headerActions}>
             <TouchableOpacity
-              style={styles.auditButton}
-              onPress={() => router.push('/registration-audit' as any)}
+              style={styles.headerActionButton}
+              onPress={() => router.push('/app-demo' as any)}
               accessible={true}
               accessibilityRole="button"
-              accessibilityLabel="Registration Audit"
-              accessibilityHint="Opens registration module audit"
-              testID="home-audit-button"
+              accessibilityLabel="App Demo"
+              accessibilityHint="Opens app demo screen"
+              testID="home-video-button"
             >
-              <ClipboardCheck size={isXs ? 20 : 22} color={Colors.primary} />
+              <Video size={isXs ? 20 : 22} color={Colors.primary} />
             </TouchableOpacity>
             <TouchableOpacity
-              style={styles.notificationButton}
+              style={styles.headerActionButton}
               onPress={() => router.push('/notifications' as any)}
               accessible={true}
               accessibilityRole="button"
@@ -1858,6 +1855,7 @@ const styles = StyleSheet.create({
   },
   safeArea: {
     flex: 1,
+    backgroundColor: Colors.background,
   },
   header: {
     flexDirection: 'row',
@@ -1868,34 +1866,34 @@ const styles = StyleSheet.create({
   brandContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
   },
-  brandLogo: {
-    borderRadius: 12,
+  brandTextWrap: {
+    justifyContent: 'center' as const,
   },
   brandName: {
-    fontWeight: '800' as const,
-    color: Colors.text,
-    letterSpacing: 1,
+    fontWeight: '900' as const,
+    color: Colors.primary,
+    letterSpacing: 0.5,
+  },
+  brandTagline: {
+    color: Colors.textSecondary,
+    marginTop: 2,
+    fontWeight: '500' as const,
   },
   headerActions: {
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
-    gap: 4,
+    gap: 8,
   },
-  auditButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: Colors.primary + '15',
+  headerActionButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: '#161B22',
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
     borderWidth: 1,
-    borderColor: Colors.primary + '30',
-  },
-  notificationButton: {
-    position: 'relative' as const,
-    padding: 8,
+    borderColor: 'rgba(255,255,255,0.08)',
   },
   notificationBadge: {
     position: 'absolute',

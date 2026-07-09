@@ -26,10 +26,12 @@ import {
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import {
-  assetClassComparison,
+  assetClassComparison as seedAssetClasses,
   returnProjections,
   AssetClassPerformance,
-} from '@/mocks/competitive-stats';
+} from '@/constants/competitive-stats';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/lib/supabase';
 
 import { formatCurrencyWithDecimals } from '@/lib/formatters';
 
@@ -200,6 +202,44 @@ function ProjectionCalculator() {
 
 export default function CompareInvestmentsScreen() {
   const router = useRouter();
+
+  const liveYieldQuery = useQuery({
+    queryKey: ['platform-avg-yield'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('properties')
+        .select('annual_yield')
+        .gt('annual_yield', 0)
+        .limit(100);
+
+      if (error || !data || data.length === 0) return null;
+
+      const avgYield = data.reduce((sum: number, p: any) => sum + (p.annual_yield ?? 0), 0) / data.length;
+      const avgDividendYield = avgYield * 0.5;
+
+      return {
+        annualReturn: Math.round(avgYield * 10) / 10,
+        dividendYield: Math.round(avgDividendYield * 10) / 10,
+        propertyCount: data.length,
+      };
+    },
+    staleTime: 1000 * 60 * 10,
+    retry: 1,
+  });
+
+  const liveYield = liveYieldQuery.data;
+  const assetClassComparison: AssetClassPerformance[] = liveYield
+    ? seedAssetClasses.map(a =>
+        a.name === 'IVXHOLDINGS Real Estate'
+          ? {
+              ...a,
+              annualReturn: liveYield.annualReturn,
+              dividendYield: liveYield.dividendYield,
+            }
+          : a
+      )
+    : seedAssetClasses;
+
   const maxReturn = Math.max(...assetClassComparison.map(a => a.annualReturn));
 
   return (

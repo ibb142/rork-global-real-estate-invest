@@ -16,6 +16,26 @@ import { getIVXOwnerAIConfigAudit } from '@/lib/ivx-supabase-client';
 import { supabase } from '@/lib/supabase';
 import type { SeniorDeveloperJobDraft } from './seniorDeveloperBuildIntent';
 
+// Owner directive: never treat a blank or placeholder SHA/deploy as real evidence.
+function isRealSha(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  const clean = value.trim().toLowerCase();
+  if (!clean || clean.length < 7) return false;
+  if (!/^[0-9a-f]+$/.test(clean)) return false;
+  if (clean === '0000000' || clean.startsWith('000000')) return false;
+  if (/placeholder|example|todo|xxx|fake|none|null|undefined|blank/i.test(clean)) return false;
+  return true;
+}
+
+function isRealDeployId(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  const clean = value.trim();
+  if (!clean || clean.length < 6) return false;
+  if (/^(deploy|dep|dpl)-?[0-9a-f]{8,}$/i.test(clean)) return true;
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clean)) return true;
+  return false;
+}
+
 /** Stable status codes surfaced to the chat for non-success outcomes. */
 export type WorkerSubmitStatusCode =
   | 'OWNER_APPROVAL_REQUIRED'
@@ -162,19 +182,34 @@ async function workerFetch(suffix: string, init: RequestInit): Promise<WorkerFet
 function mapResultSummary(value: unknown, jobId: string): WorkerJobResultSummary | null {
   if (!isRecord(value)) return null;
   const finalStatusRaw = readString(value.finalStatus);
-  const finalStatus: WorkerJobFinalStatus =
+  let finalStatus: WorkerJobFinalStatus =
     finalStatusRaw === 'COMPLETE' || finalStatusRaw === 'LOCAL_ONLY' || finalStatusRaw === 'BLOCKED' || finalStatusRaw === 'FAILED'
       ? finalStatusRaw
       : 'RUNNING';
+
+  const commitSha = readString(value.commitSha);
+  const deployId = readString(value.deployId);
+  const healthStatus = readNumber(value.healthStatus);
+  const commitMatch = readBool(value.commitMatch);
+
+  // Owner directive: if the backend reports COMPLETE but evidence is missing or
+  // placeholder, downgrade to BUILT_NOT_DEPLOYED (LOCAL_ONLY) so the UI never
+  // shows a fake COMPLETE.
+  if (finalStatus === 'COMPLETE') {
+    if (!isRealSha(commitSha) || !isRealDeployId(deployId) || healthStatus !== 200 || !commitMatch) {
+      finalStatus = 'LOCAL_ONLY';
+    }
+  }
+
   return {
     jobId,
     finalStatus,
-    commitSha: readString(value.commitSha),
-    deployId: readString(value.deployId),
+    commitSha,
+    deployId,
     deployStatus: readString(value.deployStatus),
-    healthStatus: readNumber(value.healthStatus),
+    healthStatus,
     healthOk: readBool(value.healthOk),
-    commitMatch: readBool(value.commitMatch),
+    commitMatch,
     changedFiles: readStringArray(value.changedFiles),
     testsRun: readBool(value.testsRun),
     testsPassed: readBool(value.testsPassed),
@@ -371,8 +406,8 @@ export function isWorkerJobComplete(result: WorkerJobResultSummary | null): bool
   if (!result) return false;
   return (
     result.finalStatus === 'COMPLETE' &&
-    result.commitSha !== null &&
-    result.deployId !== null &&
+    isRealSha(result.commitSha) &&
+    isRealDeployId(result.deployId) &&
     result.healthStatus === 200 &&
     result.commitMatch === true
   );

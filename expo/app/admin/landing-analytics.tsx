@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import Colors from '@/constants/colors';
 import { renderSafeViewChildren } from '@/components/SafeViewChildren';
 import {
   ArrowLeft,
@@ -318,10 +319,10 @@ const PERIODS: { label: string; value: PeriodType }[] = [
 ];
 
 const TABS: { label: string; value: TabType; icon: React.ReactNode }[] = [
-  { label: 'Overview', value: 'overview', icon: <BarChart3 size={14} color="#97A0AF" /> },
-  { label: 'Funnel', value: 'funnel', icon: <Layers size={14} color="#97A0AF" /> },
-  { label: 'Geo', value: 'geo', icon: <MapPin size={14} color="#97A0AF" /> },
-  { label: 'Intel', value: 'insights', icon: <Brain size={14} color="#97A0AF" /> },
+  { label: 'Overview', value: 'overview', icon: <BarChart3 size={14} color={Colors.textTertiary} /> },
+  { label: 'Funnel', value: 'funnel', icon: <Layers size={14} color={Colors.textTertiary} /> },
+  { label: 'Geo', value: 'geo', icon: <MapPin size={14} color={Colors.textTertiary} /> },
+  { label: 'Intel', value: 'insights', icon: <Brain size={14} color={Colors.textTertiary} /> },
   { label: 'Live', value: 'live', icon: <Radio size={14} color="#E53935" /> },
   { label: 'AI Brain', value: 'brain', icon: <Sparkles size={14} color="#FFB800" /> },
 ];
@@ -425,7 +426,7 @@ function computeInvestorIntelligence(d: ComputedAnalytics): InvestorIntel {
   }).sort((a, b) => b.count - a.count);
   const assigned = known.reduce((t, r) => t + r.count, 0);
   const unknownCount = Math.max(0, unique - assigned);
-  const intent: InvestorIntel['intent'] = [...known, { role: 'unknown', label: 'Unknown', count: unknownCount, pct: unique > 0 ? Math.round((unknownCount / unique) * 100) : 0, color: '#97A0AF' }];
+  const intent: InvestorIntel['intent'] = [...known, { role: 'unknown', label: 'Unknown', count: unknownCount, pct: unique > 0 ? Math.round((unknownCount / unique) * 100) : 0, color: Colors.textTertiary }];
 
   const returning = d.sessionQuality?.newVsReturning.returning ?? 0;
   const engaged = (insights ? insights.visitorIntent.highIntent + insights.visitorIntent.mediumIntent : 0) || (d.timeSpent?.engagedSessions ?? 0);
@@ -465,7 +466,7 @@ function computeInvestorIntelligence(d: ComputedAnalytics): InvestorIntel {
     { tier: 'hot' as const, label: 'Hot', desc: 'Submitted a form / strong intent', count: hot, color: '#22C55E' },
     { tier: 'warm' as const, label: 'Warm', desc: 'Clicked a CTA / engaged', count: warm, color: '#FFB800' },
     { tier: 'cold' as const, label: 'Cold', desc: 'Browsed only', count: cold, color: '#4A90D9' },
-    { tier: 'unknown' as const, label: 'Unknown', desc: 'Not enough signal yet', count: lqUnknown, color: '#97A0AF' },
+    { tier: 'unknown' as const, label: 'Unknown', desc: 'Not enough signal yet', count: lqUnknown, color: Colors.textTertiary },
   ]).map((x) => ({ ...x, pct: unique > 0 ? Math.round((x.count / unique) * 100) : 0 }));
 
   const cvr = d.conversionRate || 0;
@@ -1110,8 +1111,8 @@ GRANT EXECUTE ON FUNCTION public.analytics_live_count TO anon, authenticated;
         </View>
         <View style={{ gap: 6, paddingHorizontal: 4 }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-            <Text style={{ color: '#97A0AF', fontSize: 11 }}>Auth: {diagnostics.authState}</Text>
-            <Text style={{ color: '#97A0AF', fontSize: 11 }}>Events: {diagnostics.landingCount + diagnostics.appCount}</Text>
+            <Text style={{ color: Colors.textTertiary, fontSize: 11 }}>Auth: {diagnostics.authState}</Text>
+            <Text style={{ color: Colors.textTertiary, fontSize: 11 }}>Events: {diagnostics.landingCount + diagnostics.appCount}</Text>
           </View>
           {diagnostics.error && (
             <View style={{ backgroundColor: '#FF6B6B12', borderRadius: 8, padding: 10, marginTop: 4 }}>
@@ -1142,11 +1143,11 @@ GRANT EXECUTE ON FUNCTION public.analytics_live_count TO anon, authenticated;
                 </Text>
               </TouchableOpacity>
               {rpcDeployResult === 'copied' && (
-                <Text style={{ color: '#97A0AF', fontSize: 9, marginTop: 4, lineHeight: 14 }}>Go to Supabase Dashboard {'>'} SQL Editor {'>'} Paste {'>'} Run. Then pull down to refresh.</Text>
+                <Text style={{ color: Colors.textTertiary, fontSize: 9, marginTop: 4, lineHeight: 14 }}>Go to Supabase Dashboard {'>'} SQL Editor {'>'} Paste {'>'} Run. Then pull down to refresh.</Text>
               )}
             </View>
           )}
-          <Text style={{ color: '#C0C7D3', fontSize: 9, marginTop: 2 }}>Updated: {new Date(diagnostics.lastFetch).toLocaleTimeString()}</Text>
+          <Text style={{ color: Colors.textTertiary, fontSize: 9, marginTop: 2 }}>Updated: {new Date(diagnostics.lastFetch).toLocaleTimeString()}</Text>
         </View>
       </View>
     );
@@ -1273,23 +1274,23 @@ GRANT EXECUTE ON FUNCTION public.analytics_live_count TO anon, authenticated;
           <View style={{ flexDirection: 'row', gap: 12, marginBottom: 14 }}>
             <View style={{ flex: 1, backgroundColor: '#4A90D912', borderRadius: 12, padding: 14, alignItems: 'center' }}>
               <Text style={{ fontSize: 11, fontWeight: '700' as const, color: '#4A90D9' }}>Avg Session</Text>
-              <Text style={{ fontSize: 22, fontWeight: '900' as const, color: '#1B2A3D', marginTop: 6 }}>{data.timeSpent?.avgSessionSeconds ?? 0}s</Text>
+              <Text style={{ fontSize: 22, fontWeight: '900' as const, color: Colors.text, marginTop: 6 }}>{data.timeSpent?.avgSessionSeconds ?? 0}s</Text>
             </View>
             <View style={{ flex: 1, backgroundColor: '#22C55E12', borderRadius: 12, padding: 14, alignItems: 'center' }}>
               <Text style={{ fontSize: 11, fontWeight: '700' as const, color: '#22C55E' }}>Engaged Sessions</Text>
-              <Text style={{ fontSize: 22, fontWeight: '900' as const, color: '#1B2A3D', marginTop: 6 }}>{data.timeSpent?.engagedSessions ?? 0}</Text>
+              <Text style={{ fontSize: 22, fontWeight: '900' as const, color: Colors.text, marginTop: 6 }}>{data.timeSpent?.engagedSessions ?? 0}</Text>
             </View>
           </View>
           <View style={{ gap: 10 }}>
-            <Text style={{ fontSize: 12, fontWeight: '800' as const, color: '#5E6C84', textTransform: 'uppercase' as const }}>Most viewed screens</Text>
+            <Text style={{ fontSize: 12, fontWeight: '800' as const, color: Colors.textSecondary, textTransform: 'uppercase' as const }}>Most viewed screens</Text>
             {(data.topScreens ?? []).slice(0, 5).map((screen, index) => (
               <View key={`${screen.screen}-${index}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#F8FAFC', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#E9EEF5' }}>
                 <View style={{ width: 28, height: 28, borderRadius: 8, backgroundColor: '#4A90D918', alignItems: 'center', justifyContent: 'center' }}>
                   <Text style={{ color: '#4A90D9', fontSize: 11, fontWeight: '800' as const }}>{index + 1}</Text>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ color: '#1B2A3D', fontSize: 13, fontWeight: '700' as const }} numberOfLines={1}>{screen.screen}</Text>
-                  <Text style={{ color: '#5E6C84', fontSize: 11, marginTop: 2 }}>{screen.views} views · {screen.avgTimeSpent}s avg · {screen.uniqueSessions} sessions</Text>
+                  <Text style={{ color: Colors.text, fontSize: 13, fontWeight: '700' as const }} numberOfLines={1}>{screen.screen}</Text>
+                  <Text style={{ color: Colors.textSecondary, fontSize: 11, marginTop: 2 }}>{screen.views} views · {screen.avgTimeSpent}s avg · {screen.uniqueSessions} sessions</Text>
                 </View>
                 <Text style={{ color: '#4A90D9', fontSize: 12, fontWeight: '800' as const }}>{screen.pct}%</Text>
               </View>
@@ -1297,15 +1298,15 @@ GRANT EXECUTE ON FUNCTION public.analytics_live_count TO anon, authenticated;
             {(data.topScreens ?? []).length === 0 && <Text style={s.noDataText}>No screen view breakdown yet.</Text>}
           </View>
           <View style={{ gap: 10, marginTop: 14 }}>
-            <Text style={{ fontSize: 12, fontWeight: '800' as const, color: '#5E6C84', textTransform: 'uppercase' as const }}>Most clicked functionality</Text>
+            <Text style={{ fontSize: 12, fontWeight: '800' as const, color: Colors.textSecondary, textTransform: 'uppercase' as const }}>Most clicked functionality</Text>
             {(data.topActions ?? []).slice(0, 5).map((action, index) => (
               <View key={`${action.action}-${index}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#F8FAFC', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#E9EEF5' }}>
                 <View style={{ width: 28, height: 28, borderRadius: 8, backgroundColor: '#22C55E18', alignItems: 'center', justifyContent: 'center' }}>
                   <Text style={{ color: '#22C55E', fontSize: 11, fontWeight: '800' as const }}>{index + 1}</Text>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ color: '#1B2A3D', fontSize: 13, fontWeight: '700' as const }} numberOfLines={1}>{action.action}</Text>
-                  <Text style={{ color: '#5E6C84', fontSize: 11, marginTop: 2 }}>{action.count} clicks · {action.uniqueSessions} sessions · {action.avgTimeSpent}s avg</Text>
+                  <Text style={{ color: Colors.text, fontSize: 13, fontWeight: '700' as const }} numberOfLines={1}>{action.action}</Text>
+                  <Text style={{ color: Colors.textSecondary, fontSize: 11, marginTop: 2 }}>{action.count} clicks · {action.uniqueSessions} sessions · {action.avgTimeSpent}s avg</Text>
                 </View>
                 <Text style={{ color: '#22C55E', fontSize: 12, fontWeight: '800' as const }}>{action.pct}%</Text>
               </View>
@@ -1390,26 +1391,26 @@ GRANT EXECUTE ON FUNCTION public.analytics_live_count TO anon, authenticated;
             <View style={{ flexDirection: 'row', gap: 12, marginBottom: 12 }}>
               <View style={{ flex: 1, backgroundColor: '#4A90D912', borderRadius: 12, padding: 14, alignItems: 'center' }}>
                 <Text style={{ fontSize: 24, fontWeight: '900' as const, color: '#4A90D9' }}>{data.sessionQuality.newVsReturning.new}</Text>
-                <Text style={{ fontSize: 11, fontWeight: '600' as const, color: '#5E6C84', marginTop: 2 }}>New Visitors</Text>
+                <Text style={{ fontSize: 11, fontWeight: '600' as const, color: Colors.textSecondary, marginTop: 2 }}>New Visitors</Text>
                 <Text style={{ fontSize: 10, fontWeight: '700' as const, color: '#4A90D9', marginTop: 2 }}>{data.sessionQuality.newVsReturning.newPct}%</Text>
               </View>
               <View style={{ flex: 1, backgroundColor: '#7B61FF12', borderRadius: 12, padding: 14, alignItems: 'center' }}>
                 <Text style={{ fontSize: 24, fontWeight: '900' as const, color: SS_PURPLE }}>{data.sessionQuality.newVsReturning.returning}</Text>
-                <Text style={{ fontSize: 11, fontWeight: '600' as const, color: '#5E6C84', marginTop: 2 }}>Returning</Text>
+                <Text style={{ fontSize: 11, fontWeight: '600' as const, color: Colors.textSecondary, marginTop: 2 }}>Returning</Text>
                 <Text style={{ fontSize: 10, fontWeight: '700' as const, color: SS_PURPLE, marginTop: 2 }}>{data.sessionQuality.newVsReturning.returningPct}%</Text>
               </View>
             </View>
             <View style={{ flexDirection: 'row', gap: 10 }}>
               <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 11, color: '#5E6C84', marginBottom: 4 }}>Avg Pages/Session</Text>
-                <Text style={{ fontSize: 15, fontWeight: '800' as const, color: '#1B2A3D' }}>{data.sessionQuality.avgPagesPerSession}</Text>
+                <Text style={{ fontSize: 11, color: Colors.textSecondary, marginBottom: 4 }}>Avg Pages/Session</Text>
+                <Text style={{ fontSize: 15, fontWeight: '800' as const, color: Colors.text }}>{data.sessionQuality.avgPagesPerSession}</Text>
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 11, color: '#5E6C84', marginBottom: 4 }}>Avg Duration</Text>
-                <Text style={{ fontSize: 15, fontWeight: '800' as const, color: '#1B2A3D' }}>{formatSeconds(data.sessionQuality.avgSessionDuration)}</Text>
+                <Text style={{ fontSize: 11, color: Colors.textSecondary, marginBottom: 4 }}>Avg Duration</Text>
+                <Text style={{ fontSize: 15, fontWeight: '800' as const, color: Colors.text }}>{formatSeconds(data.sessionQuality.avgSessionDuration)}</Text>
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 11, color: '#5E6C84', marginBottom: 4 }}>Engaged</Text>
+                <Text style={{ fontSize: 11, color: Colors.textSecondary, marginBottom: 4 }}>Engaged</Text>
                 <Text style={{ fontSize: 15, fontWeight: '800' as const, color: SS_GREEN }}>{data.sessionQuality.engagedSessionsPct}%</Text>
               </View>
             </View>
@@ -1453,12 +1454,12 @@ GRANT EXECUTE ON FUNCTION public.analytics_live_count TO anon, authenticated;
                     <Text style={{ fontSize: 11, fontWeight: '800' as const, color: locColor }}>{link.count}</Text>
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 13, fontWeight: '700' as const, color: '#1B2A3D' }} numberOfLines={1}>{link.label}</Text>
+                    <Text style={{ fontSize: 13, fontWeight: '700' as const, color: Colors.text }} numberOfLines={1}>{link.label}</Text>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3 }}>
                       <View style={{ backgroundColor: locColor + '18', borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 }}>
                         <Text style={{ fontSize: 9, fontWeight: '700' as const, color: locColor, textTransform: 'uppercase' as const }}>{link.location.replace(/_/g, ' ')}</Text>
                       </View>
-                      <Text style={{ fontSize: 10, color: '#97A0AF' }}>{timeAgo}</Text>
+                      <Text style={{ fontSize: 10, color: Colors.textTertiary }}>{timeAgo}</Text>
                     </View>
                     <View style={{ height: 3, backgroundColor: '#F0F3F8', borderRadius: 2, marginTop: 4 }}>
                       <View style={{ height: 3, borderRadius: 2, backgroundColor: locColor, width: `${Math.max(barPct, 5)}%` as any }} />
@@ -1498,14 +1499,14 @@ GRANT EXECUTE ON FUNCTION public.analytics_live_count TO anon, authenticated;
                   </View>
                   <View style={{ flex: 1 }}>
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <Text style={{ fontSize: 13, fontWeight: '700' as const, color: '#1B2A3D' }}>{sectionLabels[sec.section] || sec.section}</Text>
+                      <Text style={{ fontSize: 13, fontWeight: '700' as const, color: Colors.text }}>{sectionLabels[sec.section] || sec.section}</Text>
                       <Text style={{ fontSize: 12, fontWeight: '800' as const, color: CHART_COLORS[i % CHART_COLORS.length] }}>{sec.count}</Text>
                     </View>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
                       <View style={{ flex: 1, height: 4, backgroundColor: '#F0F3F8', borderRadius: 2 }}>
                         <View style={{ height: 4, borderRadius: 2, backgroundColor: CHART_COLORS[i % CHART_COLORS.length], width: `${Math.max(barPct, 5)}%` as any }} />
                       </View>
-                      <Text style={{ fontSize: 10, fontWeight: '700' as const, color: '#97A0AF' }}>{sec.pct}%</Text>
+                      <Text style={{ fontSize: 10, fontWeight: '700' as const, color: Colors.textTertiary }}>{sec.pct}%</Text>
                     </View>
                   </View>
                 </View>
@@ -1656,7 +1657,7 @@ GRANT EXECUTE ON FUNCTION public.analytics_live_count TO anon, authenticated;
               </Text>
             </TouchableOpacity>
             {rpcDeployResult === 'copied' && (
-              <Text style={{ color: '#97A0AF', fontSize: 10, marginTop: 8, textAlign: 'center' as const, lineHeight: 15 }}>
+              <Text style={{ color: Colors.textTertiary, fontSize: 10, marginTop: 8, textAlign: 'center' as const, lineHeight: 15 }}>
                 Supabase Dashboard {'>'} SQL Editor {'>'} Paste {'>'} Run{' '}n then pull down to refresh.
               </Text>
             )}
@@ -1679,7 +1680,7 @@ GRANT EXECUTE ON FUNCTION public.analytics_live_count TO anon, authenticated;
 
       return (
         <View style={s.emptyWrap}>
-          <MapPin size={48} color="#97A0AF" />
+          <MapPin size={48} color={Colors.textTertiary} />
           <Text style={s.emptyTitle}>No Geo Data Yet</Text>
           <Text style={s.emptySubtitle}>Location data will appear as visitors arrive from different locations.</Text>
         </View>
@@ -1774,7 +1775,7 @@ GRANT EXECUTE ON FUNCTION public.analytics_live_count TO anon, authenticated;
     if (!insights) {
       return (
         <View style={s.emptyWrap}>
-          <Brain size={48} color="#97A0AF" />
+          <Brain size={48} color={Colors.textTertiary} />
           <Text style={s.emptyTitle}>Loading Insights</Text>
           <Text style={s.emptySubtitle}>Intelligent analysis will be generated as more data is collected.</Text>
         </View>
@@ -1922,14 +1923,14 @@ GRANT EXECUTE ON FUNCTION public.analytics_live_count TO anon, authenticated;
         case 'seller': return <DollarSign size={14} color="#FF6B6B" />;
         case 'broker': return <Handshake size={14} color="#E879F9" />;
         case 'lender': return <Landmark size={14} color="#FFB800" />;
-        default: return <Users size={14} color="#97A0AF" />;
+        default: return <Users size={14} color={Colors.textTertiary} />;
       }
     };
     const tierIcon = (tier: string) =>
       tier === 'hot' ? <Flame size={14} color="#22C55E" /> :
       tier === 'warm' ? <Zap size={14} color="#FFB800" /> :
       tier === 'cold' ? <Activity size={14} color="#4A90D9" /> :
-      <Users size={14} color="#97A0AF" />;
+      <Users size={14} color={Colors.textTertiary} />;
     return (
       <>
         <View style={[s.card, { borderLeftWidth: 3, borderLeftColor: SS_PURPLE }]}>
@@ -1946,9 +1947,9 @@ GRANT EXECUTE ON FUNCTION public.analytics_live_count TO anon, authenticated;
             <View key={i} style={{ marginTop: i === 0 ? 2 : 12 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
                 {row.icon}
-                <Text style={{ fontSize: 11, fontWeight: '800' as const, color: '#5E6C84', textTransform: 'uppercase' as const }}>{row.label}</Text>
+                <Text style={{ fontSize: 11, fontWeight: '800' as const, color: Colors.textSecondary, textTransform: 'uppercase' as const }}>{row.label}</Text>
               </View>
-              <Text style={{ fontSize: 13, lineHeight: 19, color: '#1B2A3D' }}>{row.text}</Text>
+              <Text style={{ fontSize: 13, lineHeight: 19, color: Colors.text }}>{row.text}</Text>
             </View>
           ))}
         </View>
@@ -1990,8 +1991,8 @@ GRANT EXECUTE ON FUNCTION public.analytics_live_count TO anon, authenticated;
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
             {intel.signals.map((sig) => (
               <View key={sig.key} style={{ width: '47%' as any, backgroundColor: '#F8FAFC', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#E9EEF5', borderTopWidth: 2, borderTopColor: sig.color }}>
-                <Text style={{ fontSize: 22, fontWeight: '900' as const, color: '#1B2A3D' }}>{sig.value}</Text>
-                <Text style={{ fontSize: 11, fontWeight: '600' as const, color: '#5E6C84', marginTop: 2 }}>{sig.label}</Text>
+                <Text style={{ fontSize: 22, fontWeight: '900' as const, color: Colors.text }}>{sig.value}</Text>
+                <Text style={{ fontSize: 11, fontWeight: '600' as const, color: Colors.textSecondary, marginTop: 2 }}>{sig.label}</Text>
               </View>
             ))}
           </View>
@@ -2032,7 +2033,7 @@ GRANT EXECUTE ON FUNCTION public.analytics_live_count TO anon, authenticated;
                   <Text style={s.intentLabel}>{lq.label}</Text>
                   <Text style={s.intentPctText}>{lq.pct}%</Text>
                 </View>
-                <Text style={{ fontSize: 10, color: '#97A0AF', marginBottom: 4 }}>{lq.desc}</Text>
+                <Text style={{ fontSize: 10, color: Colors.textTertiary, marginBottom: 4 }}>{lq.desc}</Text>
                 <View style={s.intentBarBg}>
                   <View style={[s.intentBarFill, { width: `${Math.max(lq.pct, 2)}%` as any, backgroundColor: lq.color }]} />
                 </View>
@@ -2053,16 +2054,16 @@ GRANT EXECUTE ON FUNCTION public.analytics_live_count TO anon, authenticated;
                 <Text style={{ fontSize: 11, fontWeight: '800' as const, color: rec.color }}>{i + 1}</Text>
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 13, fontWeight: '700' as const, color: '#1B2A3D' }}>{rec.title}</Text>
-                <Text style={{ fontSize: 12, lineHeight: 17, color: '#5E6C84', marginTop: 2 }}>{rec.detail}</Text>
+                <Text style={{ fontSize: 13, fontWeight: '700' as const, color: Colors.text }}>{rec.title}</Text>
+                <Text style={{ fontSize: 12, lineHeight: 17, color: Colors.textSecondary, marginTop: 2 }}>{rec.detail}</Text>
               </View>
             </View>
           ))}
         </View>
 
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 4, marginBottom: 6 }}>
-          <ShieldCheck size={12} color="#97A0AF" />
-          <Text style={{ fontSize: 10, color: '#97A0AF', flex: 1, lineHeight: 14 }}>
+          <ShieldCheck size={12} color={Colors.textTertiary} />
+          <Text style={{ fontSize: 10, color: Colors.textTertiary, flex: 1, lineHeight: 14 }}>
             Privacy-safe: derived only from anonymous behaviour analytics, registered users, and submitted forms. No hidden emails, phone numbers, or private profiles are accessed.
           </Text>
         </View>
@@ -2092,7 +2093,7 @@ GRANT EXECUTE ON FUNCTION public.analytics_live_count TO anon, authenticated;
         <>
           {intelBlock}
           <View style={s.emptyWrap}>
-            <Sparkles size={48} color="#97A0AF" />
+            <Sparkles size={48} color={Colors.textTertiary} />
             <Text style={s.emptyTitle}>AI Brain Offline</Text>
             <Text style={s.emptySubtitle}>Run a learning cycle to activate the AI engine.</Text>
             <TouchableOpacity
@@ -2164,7 +2165,7 @@ GRANT EXECUTE ON FUNCTION public.analytics_live_count TO anon, authenticated;
               <Text style={s.cardTitle}>Learning Types</Text>
             </View>
             {Object.entries(stats.byType).map(([type, count], _i) => {
-              const typeInfo = TYPE_ICONS[type] || { icon: <Activity size={14} color="#97A0AF" />, color: '#97A0AF', label: type };
+              const typeInfo = TYPE_ICONS[type] || { icon: <Activity size={14} color={Colors.textTertiary} />, color: Colors.textTertiary, label: type };
               const maxCount = Math.max(...Object.values(stats.byType as Record<string, number>), 1);
               return (
                 <View key={type} style={s.brainTypeRow}>
@@ -2270,7 +2271,7 @@ GRANT EXECUTE ON FUNCTION public.analytics_live_count TO anon, authenticated;
               <Text style={s.cardSubtitle}>{(brain.recentLearnings ?? []).length} active</Text>
             </View>
             {(brain.recentLearnings ?? []).slice(0, 15).map((learning) => {
-              const typeInfo = TYPE_ICONS[learning.type] || { icon: <Activity size={14} color="#97A0AF" />, color: '#97A0AF', label: learning.type };
+              const typeInfo = TYPE_ICONS[learning.type] || { icon: <Activity size={14} color={Colors.textTertiary} />, color: Colors.textTertiary, label: learning.type };
               return (
                 <View key={learning.id} style={s.brainLearningRow}>
                   <View style={[s.brainLearningIcon, { backgroundColor: typeInfo.color + '15' }]}>
@@ -2580,7 +2581,7 @@ GRANT EXECUTE ON FUNCTION public.analytics_live_count TO anon, authenticated;
       <SafeAreaView edges={['top']} style={s.safe}>
         <Animated.View style={[s.header, { opacity: headerAnim, transform: [{ translateY: headerAnim.interpolate({ inputRange: [0, 1], outputRange: [-20, 0] }) }] }]}>
           <TouchableOpacity onPress={() => router.back()} style={s.backBtn} testID="back-btn">
-            <ArrowLeft size={20} color="#1B2A3D" />
+            <ArrowLeft size={20} color={Colors.text} />
           </TouchableOpacity>
           <View style={s.headerCenter}>
             <Text style={s.headerTitle}>Analytics</Text>
@@ -2590,7 +2591,7 @@ GRANT EXECUTE ON FUNCTION public.analytics_live_count TO anon, authenticated;
             </View>
           </View>
           <TouchableOpacity onPress={onRefresh} style={s.refreshBtn}>
-            <RefreshCw size={17} color="#5E6C84" />
+            <RefreshCw size={17} color={Colors.textSecondary} />
           </TouchableOpacity>
         </Animated.View>
 
@@ -2655,7 +2656,7 @@ GRANT EXECUTE ON FUNCTION public.analytics_live_count TO anon, authenticated;
             </View>
           ) : (
             <View style={s.emptyWrap}>
-              <Activity size={40} color="#97A0AF" />
+              <Activity size={40} color={Colors.textTertiary} />
               <Text style={s.emptyTitle}>No Data Yet</Text>
               <Text style={s.emptySubtitle}>Check back after visitors start arriving.</Text>
             </View>
@@ -2669,85 +2670,85 @@ GRANT EXECUTE ON FUNCTION public.analytics_live_count TO anon, authenticated;
 }
 
 const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#F7F9FC' },
-  safe: { flex: 1 },
+  root: { flex: 1, backgroundColor: Colors.background },
+  safe: { flex: 1, backgroundColor: Colors.background },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: '#E0E5EC',
-    backgroundColor: '#FFFFFF',
+    borderBottomColor: Colors.surfaceBorder,
+    backgroundColor: Colors.background,
   },
-  backBtn: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F0F3F8' },
+  backBtn: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.surface },
   headerCenter: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, marginLeft: 12 },
-  headerTitle: { fontSize: 20, fontWeight: '800' as const, color: '#1B2A3D', letterSpacing: -0.3 },
-  liveBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#E8F5E9', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 4 },
+  headerTitle: { fontSize: 20, fontWeight: '800' as const, color: Colors.text, letterSpacing: -0.3 },
+  liveBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: Colors.success + '15', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 4 },
   liveBadgeDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: SS_GREEN },
   liveBadgeText: { fontSize: 9, fontWeight: '800' as const, color: SS_GREEN, letterSpacing: 1 },
-  refreshBtn: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F0F3F8' },
+  refreshBtn: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.surface },
 
-  tabBar: { flexDirection: 'row', paddingHorizontal: 12, paddingTop: 8, paddingBottom: 2, backgroundColor: '#FFFFFF', borderBottomWidth: 1, borderBottomColor: '#EDF0F5' },
+  tabBar: { flexDirection: 'row', paddingHorizontal: 12, paddingTop: 8, paddingBottom: 2, backgroundColor: Colors.background, borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder },
   tab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 10, position: 'relative' as const },
   tabActive: {},
-  tabText: { fontSize: 12, fontWeight: '600' as const, color: '#97A0AF' },
-  tabTextActive: { color: SS_BLUE, fontWeight: '700' as const },
-  tabIndicator: { position: 'absolute', bottom: 0, left: '20%' as any, right: '20%' as any, height: 2, backgroundColor: SS_BLUE, borderRadius: 1 },
+  tabText: { fontSize: 12, fontWeight: '600' as const, color: Colors.textTertiary },
+  tabTextActive: { color: Colors.primary, fontWeight: '700' as const },
+  tabIndicator: { position: 'absolute', bottom: 0, left: '20%' as any, right: '20%' as any, height: 2, backgroundColor: Colors.primary, borderRadius: 1 },
 
   scrollContent: { paddingHorizontal: 16, paddingTop: 12 },
   periodRow: { flexDirection: 'row', gap: 6, marginBottom: 16 },
-  periodChip: { flex: 1, paddingVertical: 8, borderRadius: 10, backgroundColor: '#FFFFFF', alignItems: 'center', borderWidth: 1, borderColor: '#E0E5EC' },
-  periodChipActive: { backgroundColor: '#E3F2FD', borderWidth: 1, borderColor: SS_BLUE + '50' },
-  periodText: { fontSize: 12, fontWeight: '700' as const, color: '#97A0AF' },
-  periodTextActive: { color: SS_BLUE },
+  periodChip: { flex: 1, paddingVertical: 8, borderRadius: 10, backgroundColor: Colors.surface, alignItems: 'center', borderWidth: 1, borderColor: Colors.surfaceBorder },
+  periodChipActive: { backgroundColor: Colors.primary + '15', borderWidth: 1, borderColor: Colors.primary + '50' },
+  periodText: { fontSize: 12, fontWeight: '700' as const, color: Colors.textTertiary },
+  periodTextActive: { color: Colors.primary },
 
-  heroMetrics: { flexDirection: 'row', backgroundColor: '#FFFFFF', borderRadius: 20, borderWidth: 1, borderColor: '#E0E5EC', marginBottom: 16, overflow: 'hidden' },
+  heroMetrics: { flexDirection: 'row', backgroundColor: Colors.surfaceElevated, borderRadius: 20, borderWidth: 1, borderColor: Colors.surfaceBorder, marginBottom: 16, overflow: 'hidden' },
   heroMetricMain: { flex: 1, padding: 20, alignItems: 'center', gap: 6 },
-  heroMetricDivider: { width: 1, backgroundColor: '#E0E5EC', marginVertical: 12 },
+  heroMetricDivider: { width: 1, backgroundColor: Colors.surfaceBorder, marginVertical: 12 },
   heroMetricHeader: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  heroMetricLabel: { fontSize: 12, fontWeight: '600' as const, color: '#5E6C84' },
-  counterText: { fontSize: 32, fontWeight: '900' as const, color: '#1B2A3D', letterSpacing: -1 },
+  heroMetricLabel: { fontSize: 12, fontWeight: '600' as const, color: Colors.textSecondary },
+  counterText: { fontSize: 32, fontWeight: '900' as const, color: Colors.text, letterSpacing: -1 },
 
   trendBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
   trendText: { fontSize: 11, fontWeight: '700' as const },
 
   ringRow: { flexDirection: 'row', gap: 10, marginBottom: 16 },
-  ringCard: { flex: 1, backgroundColor: '#FFFFFF', borderRadius: 16, borderWidth: 1, borderColor: '#E0E5EC', padding: 14, alignItems: 'center', gap: 8 },
-  ringValue: { fontSize: 18, fontWeight: '900' as const, color: '#1B2A3D' },
-  ringLabel: { fontSize: 9, fontWeight: '600' as const, color: '#97A0AF', letterSpacing: 0.5 },
-  ringCardLabel: { fontSize: 11, fontWeight: '600' as const, color: '#5E6C84' },
+  ringCard: { flex: 1, backgroundColor: Colors.surfaceElevated, borderRadius: 16, borderWidth: 1, borderColor: Colors.surfaceBorder, padding: 14, alignItems: 'center', gap: 8 },
+  ringValue: { fontSize: 18, fontWeight: '900' as const, color: Colors.text },
+  ringLabel: { fontSize: 9, fontWeight: '600' as const, color: Colors.textTertiary, letterSpacing: 0.5 },
+  ringCardLabel: { fontSize: 11, fontWeight: '600' as const, color: Colors.textSecondary },
 
-  card: { backgroundColor: '#FFFFFF', borderRadius: 18, padding: 18, borderWidth: 1, borderColor: '#E0E5EC', marginBottom: 14 },
+  card: { backgroundColor: Colors.surfaceElevated, borderRadius: 18, padding: 18, borderWidth: 1, borderColor: Colors.surfaceBorder, marginBottom: 14 },
   cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 },
-  cardTitle: { flex: 1, fontSize: 15, fontWeight: '700' as const, color: '#1B2A3D' },
-  cardSubtitle: { fontSize: 11, fontWeight: '600' as const, color: '#97A0AF' },
+  cardTitle: { flex: 1, fontSize: 15, fontWeight: '700' as const, color: Colors.text },
+  cardSubtitle: { fontSize: 11, fontWeight: '600' as const, color: Colors.textTertiary },
   cardBadge: { backgroundColor: SS_BLUE + '14', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
   cardBadgeText: { fontSize: 10, fontWeight: '700' as const, color: SS_BLUE },
 
   sparkLabelRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },
-  sparkLabel: { fontSize: 10, fontWeight: '600' as const, color: '#97A0AF' },
+  sparkLabel: { fontSize: 10, fontWeight: '600' as const, color: Colors.textTertiary },
 
   heatmapGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
   heatmapCell: { width: (SCREEN_W - 80) / 12 - 4, aspectRatio: 1, borderRadius: 6, alignItems: 'center', justifyContent: 'center' },
-  heatmapHour: { fontSize: 8, fontWeight: '700' as const, color: '#97A0AF' },
+  heatmapHour: { fontSize: 8, fontWeight: '700' as const, color: Colors.textTertiary },
   heatmapCount: { fontSize: 7, fontWeight: '800' as const, color: '#FFFFFF' },
 
   ctaGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  ctaCard: { flex: 1, minWidth: '43%' as any, backgroundColor: '#F7F9FC', borderRadius: 14, padding: 14, borderWidth: 1, borderColor: '#E0E5EC', gap: 8 },
+  ctaCard: { flex: 1, minWidth: '43%' as any, backgroundColor: Colors.surface, borderRadius: 14, padding: 14, borderWidth: 1, borderColor: Colors.surfaceBorder, gap: 8 },
   ctaIconBg: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  ctaValue: { fontSize: 24, fontWeight: '900' as const, color: '#1B2A3D' },
-  ctaLabel: { fontSize: 11, fontWeight: '600' as const, color: '#5E6C84' },
+  ctaValue: { fontSize: 24, fontWeight: '900' as const, color: Colors.text },
+  ctaLabel: { fontSize: 11, fontWeight: '600' as const, color: Colors.textSecondary },
   ctaBar: { height: 4, borderRadius: 2, overflow: 'hidden' },
   ctaBarFill: { height: 4, borderRadius: 2 },
 
   splitRow: { flexDirection: 'row', gap: 10, marginBottom: 14 },
-  splitCard: { flex: 1, backgroundColor: '#FFFFFF', borderRadius: 16, padding: 14, borderWidth: 1, borderColor: '#E0E5EC' },
+  splitCard: { flex: 1, backgroundColor: Colors.surfaceElevated, borderRadius: 16, padding: 14, borderWidth: 1, borderColor: Colors.surfaceBorder },
 
   miniListRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6 },
   miniDot: { width: 8, height: 8, borderRadius: 4 },
-  miniLabel: { flex: 1, fontSize: 12, fontWeight: '600' as const, color: '#1B2A3D' },
-  miniValue: { fontSize: 13, fontWeight: '800' as const, color: '#1B2A3D' },
+  miniLabel: { flex: 1, fontSize: 12, fontWeight: '600' as const, color: Colors.text },
+  miniValue: { fontSize: 13, fontWeight: '800' as const, color: Colors.text },
   miniPct: { fontSize: 11, fontWeight: '700' as const, width: 36, textAlign: 'right' as const },
   miniRank: { width: 22, height: 22, borderRadius: 7, alignItems: 'center', justifyContent: 'center' },
   miniRankText: { fontSize: 10, fontWeight: '800' as const },
@@ -2756,132 +2757,132 @@ const s = StyleSheet.create({
   eventRank: { width: 24, height: 24, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
   eventRankText: { fontSize: 10, fontWeight: '800' as const },
   eventInfo: { flex: 1, gap: 4 },
-  eventName: { fontSize: 12, fontWeight: '600' as const, color: '#5E6C84', textTransform: 'capitalize' as const },
-  eventBarBg: { height: 4, backgroundColor: '#EDF0F5', borderRadius: 2, overflow: 'hidden' },
+  eventName: { fontSize: 12, fontWeight: '600' as const, color: Colors.textSecondary, textTransform: 'capitalize' as const },
+  eventBarBg: { height: 4, backgroundColor: Colors.backgroundSecondary, borderRadius: 2, overflow: 'hidden' },
   eventBar: { height: 4, borderRadius: 2 },
-  eventCount: { width: 40, fontSize: 13, fontWeight: '800' as const, color: '#1B2A3D', textAlign: 'right' as const },
+  eventCount: { width: 40, fontSize: 13, fontWeight: '800' as const, color: Colors.text, textAlign: 'right' as const },
 
-  funnelHero: { backgroundColor: '#FFFFFF', borderRadius: 18, padding: 24, borderWidth: 1, borderColor: '#E0E5EC', marginBottom: 16, alignItems: 'center', gap: 6 },
-  funnelHeroTitle: { fontSize: 22, fontWeight: '900' as const, color: '#1B2A3D', letterSpacing: -0.3 },
-  funnelHeroSub: { fontSize: 13, fontWeight: '600' as const, color: '#5E6C84' },
+  funnelHero: { backgroundColor: Colors.surfaceElevated, borderRadius: 18, padding: 24, borderWidth: 1, borderColor: Colors.surfaceBorder, marginBottom: 16, alignItems: 'center', gap: 6 },
+  funnelHeroTitle: { fontSize: 22, fontWeight: '900' as const, color: Colors.text, letterSpacing: -0.3 },
+  funnelHeroSub: { fontSize: 13, fontWeight: '600' as const, color: Colors.textSecondary },
 
-  funnelVisual: { backgroundColor: '#FFFFFF', borderRadius: 18, padding: 18, borderWidth: 1, borderColor: '#E0E5EC', marginBottom: 14, gap: 2 },
+  funnelVisual: { backgroundColor: Colors.surfaceElevated, borderRadius: 18, padding: 18, borderWidth: 1, borderColor: Colors.surfaceBorder, marginBottom: 14, gap: 2 },
   funnelStepWrap: { gap: 4, marginBottom: 6 },
   funnelStepRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   funnelBar: { height: 36, borderRadius: 10, justifyContent: 'center', paddingHorizontal: 12, minWidth: 50 },
   funnelBarText: { fontSize: 12, fontWeight: '800' as const, color: '#FFFFFF' },
-  funnelPct: { fontSize: 13, fontWeight: '800' as const, color: '#1B2A3D', width: 40, textAlign: 'right' as const },
+  funnelPct: { fontSize: 13, fontWeight: '800' as const, color: Colors.text, width: 40, textAlign: 'right' as const },
   funnelLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingLeft: 4 },
-  funnelLabel: { fontSize: 11, fontWeight: '600' as const, color: '#5E6C84' },
-  funnelDropoff: { flexDirection: 'row', alignItems: 'center', gap: 2, backgroundColor: '#FFEBEE', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
+  funnelLabel: { fontSize: 11, fontWeight: '600' as const, color: Colors.textSecondary },
+  funnelDropoff: { flexDirection: 'row', alignItems: 'center', gap: 2, backgroundColor: Colors.error + '15', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
   funnelDropoffText: { fontSize: 9, fontWeight: '700' as const, color: SS_RED },
-  funnelConnector: { width: 1, height: 8, backgroundColor: '#E0E5EC', marginLeft: 20 },
+  funnelConnector: { width: 1, height: 8, backgroundColor: Colors.surfaceBorder, marginLeft: 20 },
 
   dropoffRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
   dropoffIcon: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   dropoffInfo: { flex: 1, gap: 4 },
-  dropoffLabel: { fontSize: 11, fontWeight: '600' as const, color: '#5E6C84' },
-  dropoffBarBg: { height: 4, backgroundColor: '#EDF0F5', borderRadius: 2, overflow: 'hidden' },
+  dropoffLabel: { fontSize: 11, fontWeight: '600' as const, color: Colors.textSecondary },
+  dropoffBarBg: { height: 4, backgroundColor: Colors.backgroundSecondary, borderRadius: 2, overflow: 'hidden' },
   dropoffBarFill: { height: 4, borderRadius: 2 },
   dropoffStats: { alignItems: 'flex-end', width: 44 },
   dropoffValue: { fontSize: 13, fontWeight: '800' as const, color: SS_RED },
-  dropoffPctText: { fontSize: 9, fontWeight: '600' as const, color: '#97A0AF' },
+  dropoffPctText: { fontSize: 9, fontWeight: '600' as const, color: Colors.textTertiary },
 
   geoKpiRow: { flexDirection: 'row', gap: 10, marginBottom: 14 },
-  geoKpiCard: { flex: 1, backgroundColor: '#FFFFFF', borderRadius: 14, padding: 14, borderWidth: 1, borderColor: '#E0E5EC', borderTopWidth: 3, alignItems: 'center', gap: 6 },
-  geoKpiValue: { fontSize: 24, fontWeight: '900' as const, color: '#1B2A3D' },
-  geoKpiLabel: { fontSize: 10, fontWeight: '700' as const, color: '#5E6C84', textTransform: 'uppercase' as const, letterSpacing: 0.5 },
+  geoKpiCard: { flex: 1, backgroundColor: Colors.surfaceElevated, borderRadius: 14, padding: 14, borderWidth: 1, borderColor: Colors.surfaceBorder, borderTopWidth: 3, alignItems: 'center', gap: 6 },
+  geoKpiValue: { fontSize: 24, fontWeight: '900' as const, color: Colors.text },
+  geoKpiLabel: { fontSize: 10, fontWeight: '700' as const, color: Colors.textSecondary, textTransform: 'uppercase' as const, letterSpacing: 0.5 },
 
   geoRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
   geoFlag: { fontSize: 20, width: 28, textAlign: 'center' as const },
   geoInfo: { flex: 1, gap: 4 },
   geoTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  geoName: { fontSize: 13, fontWeight: '700' as const, color: '#1B2A3D' },
-  geoPct: { fontSize: 11, fontWeight: '600' as const, color: '#97A0AF' },
-  geoBarBg: { height: 5, backgroundColor: '#EDF0F5', borderRadius: 3, overflow: 'hidden' },
+  geoName: { fontSize: 13, fontWeight: '700' as const, color: Colors.text },
+  geoPct: { fontSize: 11, fontWeight: '600' as const, color: Colors.textTertiary },
+  geoBarBg: { height: 5, backgroundColor: Colors.backgroundSecondary, borderRadius: 3, overflow: 'hidden' },
   geoBarFill: { height: 5, borderRadius: 3 },
-  geoCount: { width: 36, fontSize: 14, fontWeight: '800' as const, color: '#1B2A3D', textAlign: 'right' as const },
+  geoCount: { width: 36, fontSize: 14, fontWeight: '800' as const, color: Colors.text, textAlign: 'right' as const },
 
-  cityRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#EDF0F5' },
+  cityRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: Colors.backgroundSecondary },
   cityRank: { width: 26, height: 26, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
   cityRankText: { fontSize: 11, fontWeight: '800' as const },
   cityInfo: { flex: 1, gap: 1 },
-  cityName: { fontSize: 13, fontWeight: '700' as const, color: '#1B2A3D' },
-  cityCountry: { fontSize: 10, fontWeight: '500' as const, color: '#97A0AF' },
-  cityCount: { fontSize: 14, fontWeight: '800' as const, color: '#1B2A3D' },
+  cityName: { fontSize: 13, fontWeight: '700' as const, color: Colors.text },
+  cityCountry: { fontSize: 10, fontWeight: '500' as const, color: Colors.textTertiary },
+  cityCount: { fontSize: 14, fontWeight: '800' as const, color: Colors.text },
 
-  scoreHero: { backgroundColor: '#FFFFFF', borderRadius: 20, padding: 28, borderWidth: 1, borderColor: '#E0E5EC', marginBottom: 16, alignItems: 'center', gap: 10 },
+  scoreHero: { backgroundColor: Colors.surfaceElevated, borderRadius: 20, padding: 28, borderWidth: 1, borderColor: Colors.surfaceBorder, marginBottom: 16, alignItems: 'center', gap: 10 },
   scoreBig: { fontSize: 36, fontWeight: '900' as const, lineHeight: 40 },
-  scoreUnit: { fontSize: 12, fontWeight: '600' as const, color: '#97A0AF' },
-  scoreTitle: { fontSize: 18, fontWeight: '800' as const, color: '#1B2A3D', marginTop: 4 },
-  scoreDesc: { fontSize: 12, fontWeight: '500' as const, color: '#5E6C84', textAlign: 'center' as const },
+  scoreUnit: { fontSize: 12, fontWeight: '600' as const, color: Colors.textTertiary },
+  scoreTitle: { fontSize: 18, fontWeight: '800' as const, color: Colors.text, marginTop: 4 },
+  scoreDesc: { fontSize: 12, fontWeight: '500' as const, color: Colors.textSecondary, textAlign: 'center' as const },
 
   insightKpiRow: { flexDirection: 'row', gap: 10, marginBottom: 14 },
-  insightKpi: { flex: 1, backgroundColor: '#FFFFFF', borderRadius: 14, padding: 14, borderWidth: 1, borderColor: '#E0E5EC', borderTopWidth: 3, alignItems: 'center', gap: 6 },
-  insightKpiValue: { fontSize: 18, fontWeight: '900' as const, color: '#1B2A3D' },
-  insightKpiLabel: { fontSize: 10, fontWeight: '600' as const, color: '#5E6C84' },
+  insightKpi: { flex: 1, backgroundColor: Colors.surfaceElevated, borderRadius: 14, padding: 14, borderWidth: 1, borderColor: Colors.surfaceBorder, borderTopWidth: 3, alignItems: 'center', gap: 6 },
+  insightKpiValue: { fontSize: 18, fontWeight: '900' as const, color: Colors.text },
+  insightKpiLabel: { fontSize: 10, fontWeight: '600' as const, color: Colors.textSecondary },
 
   intentRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 14 },
   intentDot: { width: 10, height: 10, borderRadius: 5 },
   intentInfo: { flex: 1, gap: 4 },
   intentTopRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  intentLabel: { fontSize: 13, fontWeight: '700' as const, color: '#1B2A3D' },
-  intentPctText: { fontSize: 12, fontWeight: '700' as const, color: '#5E6C84' },
-  intentBarBg: { height: 6, backgroundColor: '#EDF0F5', borderRadius: 3, overflow: 'hidden' },
+  intentLabel: { fontSize: 13, fontWeight: '700' as const, color: Colors.text },
+  intentPctText: { fontSize: 12, fontWeight: '700' as const, color: Colors.textSecondary },
+  intentBarBg: { height: 6, backgroundColor: Colors.backgroundSecondary, borderRadius: 3, overflow: 'hidden' },
   intentBarFill: { height: 6, borderRadius: 3 },
-  intentCount: { width: 36, fontSize: 14, fontWeight: '800' as const, color: '#1B2A3D', textAlign: 'right' as const },
+  intentCount: { width: 36, fontSize: 14, fontWeight: '800' as const, color: Colors.text, textAlign: 'right' as const },
 
   deviceGrid: { flexDirection: 'row', gap: 10 },
-  deviceCard: { flex: 1, backgroundColor: '#FFFFFF', borderRadius: 14, padding: 14, borderWidth: 1, borderColor: '#E0E5EC', borderTopWidth: 3, alignItems: 'center', gap: 6 },
-  deviceCount: { fontSize: 22, fontWeight: '900' as const, color: '#1B2A3D' },
-  deviceLabel: { fontSize: 11, fontWeight: '600' as const, color: '#5E6C84' },
+  deviceCard: { flex: 1, backgroundColor: Colors.surfaceElevated, borderRadius: 14, padding: 14, borderWidth: 1, borderColor: Colors.surfaceBorder, borderTopWidth: 3, alignItems: 'center', gap: 6 },
+  deviceCount: { fontSize: 22, fontWeight: '900' as const, color: Colors.text },
+  deviceLabel: { fontSize: 11, fontWeight: '600' as const, color: Colors.textSecondary },
   devicePct: { fontSize: 13, fontWeight: '800' as const },
 
-  liveHero: { backgroundColor: '#FFFFFF', borderRadius: 20, padding: 28, borderWidth: 1, borderColor: '#E0E5EC', marginBottom: 16, alignItems: 'center', gap: 8 },
-  liveCount: { fontSize: 56, fontWeight: '900' as const, color: '#1B2A3D', letterSpacing: -2 },
-  liveLabel: { fontSize: 14, fontWeight: '700' as const, color: '#5E6C84' },
+  liveHero: { backgroundColor: Colors.surfaceElevated, borderRadius: 20, padding: 28, borderWidth: 1, borderColor: Colors.surfaceBorder, marginBottom: 16, alignItems: 'center', gap: 8 },
+  liveCount: { fontSize: 56, fontWeight: '900' as const, color: Colors.text, letterSpacing: -2 },
+  liveLabel: { fontSize: 14, fontWeight: '700' as const, color: Colors.textSecondary },
   liveSubRow: { flexDirection: 'row', gap: 16, marginTop: 4 },
   liveSub: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  liveSubText: { fontSize: 12, fontWeight: '600' as const, color: '#97A0AF' },
+  liveSubText: { fontSize: 12, fontWeight: '600' as const, color: Colors.textTertiary },
 
   pulseWrap: { width: 24, height: 24, alignItems: 'center', justifyContent: 'center' },
   pulseRing: { position: 'absolute', width: 24, height: 24, borderRadius: 12, borderWidth: 2 },
   pulseDot: { width: 10, height: 10, borderRadius: 5 },
 
   liveStepGrid: { flexDirection: 'row', gap: 8 },
-  liveStepCard: { flex: 1, backgroundColor: '#FFFFFF', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#E0E5EC', borderTopWidth: 3, alignItems: 'center', gap: 4 },
+  liveStepCard: { flex: 1, backgroundColor: Colors.surfaceElevated, borderRadius: 12, padding: 12, borderWidth: 1, borderColor: Colors.surfaceBorder, borderTopWidth: 3, alignItems: 'center', gap: 4 },
   liveStepCount: { fontSize: 22, fontWeight: '900' as const },
-  liveStepLabel: { fontSize: 10, fontWeight: '600' as const, color: '#5E6C84' },
+  liveStepLabel: { fontSize: 10, fontWeight: '600' as const, color: Colors.textSecondary },
 
-  sessionRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#EDF0F5' },
+  sessionRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: Colors.backgroundSecondary },
   sessionInfo: { flex: 1, gap: 3 },
   sessionTopRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  sessionIP: { fontSize: 13, fontWeight: '800' as const, color: '#1B2A3D' },
+  sessionIP: { fontSize: 13, fontWeight: '800' as const, color: Colors.text },
   sessionBadge: { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 2, borderWidth: 1 },
   sessionBadgeText: { fontSize: 9, fontWeight: '800' as const, letterSpacing: 0.3 },
-  sessionDetail: { fontSize: 11, fontWeight: '600' as const, color: '#5E6C84' },
+  sessionDetail: { fontSize: 11, fontWeight: '600' as const, color: Colors.textSecondary },
   sessionMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' as const },
-  sessionMeta: { fontSize: 10, fontWeight: '500' as const, color: '#97A0AF' },
+  sessionMeta: { fontSize: 10, fontWeight: '500' as const, color: Colors.textTertiary },
 
-  noDataText: { fontSize: 12, color: '#97A0AF', textAlign: 'center' as const, paddingVertical: 16, lineHeight: 18 },
+  noDataText: { fontSize: 12, color: Colors.textTertiary, textAlign: 'center' as const, paddingVertical: 16, lineHeight: 18 },
 
   emptyWrap: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60, gap: 12 },
-  emptyTitle: { fontSize: 18, fontWeight: '800' as const, color: '#1B2A3D' },
-  emptySubtitle: { fontSize: 13, color: '#5E6C84', textAlign: 'center' as const, lineHeight: 20, paddingHorizontal: 24 },
-  errorIcon: { width: 72, height: 72, borderRadius: 36, backgroundColor: '#FFEBEE', alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
+  emptyTitle: { fontSize: 18, fontWeight: '800' as const, color: Colors.text },
+  emptySubtitle: { fontSize: 13, color: Colors.textSecondary, textAlign: 'center' as const, lineHeight: 20, paddingHorizontal: 24 },
+  errorIcon: { width: 72, height: 72, borderRadius: 36, backgroundColor: Colors.error + '15', alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
   retryBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: SS_BLUE, borderRadius: 12, paddingHorizontal: 20, paddingVertical: 10, marginTop: 8 },
   retryBtnText: { fontSize: 13, fontWeight: '700' as const, color: '#FFFFFF' },
 
-  brainHero: { backgroundColor: '#FFFFFF', borderRadius: 20, padding: 28, borderWidth: 1, borderColor: '#E0E5EC', marginBottom: 16, alignItems: 'center', gap: 10 },
+  brainHero: { backgroundColor: Colors.surfaceElevated, borderRadius: 20, padding: 28, borderWidth: 1, borderColor: Colors.surfaceBorder, marginBottom: 16, alignItems: 'center', gap: 10 },
   brainPulseOuter: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#22C55E18', alignItems: 'center', justifyContent: 'center' },
   brainPulseInner: { width: 20, height: 20, borderRadius: 10 },
-  brainStatus: { fontSize: 22, fontWeight: '900' as const, color: '#1B2A3D', letterSpacing: -0.3 },
-  brainCycles: { fontSize: 12, fontWeight: '600' as const, color: '#97A0AF' },
+  brainStatus: { fontSize: 22, fontWeight: '900' as const, color: Colors.text, letterSpacing: -0.3 },
+  brainCycles: { fontSize: 12, fontWeight: '600' as const, color: Colors.textTertiary },
 
   brainKpiRow: { flexDirection: 'row', gap: 10, marginBottom: 14 },
-  brainKpiCard: { flex: 1, backgroundColor: '#FFFFFF', borderRadius: 14, padding: 14, borderWidth: 1, borderColor: '#E0E5EC', borderTopWidth: 3, alignItems: 'center', gap: 4 },
+  brainKpiCard: { flex: 1, backgroundColor: Colors.surfaceElevated, borderRadius: 14, padding: 14, borderWidth: 1, borderColor: Colors.surfaceBorder, borderTopWidth: 3, alignItems: 'center', gap: 4 },
   brainKpiValue: { fontSize: 20, fontWeight: '900' as const },
-  brainKpiLabel: { fontSize: 10, fontWeight: '600' as const, color: '#5E6C84', textTransform: 'uppercase' as const, letterSpacing: 0.5 },
+  brainKpiLabel: { fontSize: 10, fontWeight: '600' as const, color: Colors.textSecondary, textTransform: 'uppercase' as const, letterSpacing: 0.5 },
 
   trainBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#FFB800', borderRadius: 14, paddingVertical: 14, marginBottom: 16 },
   trainBtnText: { fontSize: 14, fontWeight: '800' as const, color: '#000' },
@@ -2891,45 +2892,45 @@ const s = StyleSheet.create({
   brainTypeRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
   brainTypeIcon: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   brainTypeInfo: { flex: 1, gap: 4 },
-  brainTypeLabel: { fontSize: 12, fontWeight: '700' as const, color: '#1B2A3D', textTransform: 'capitalize' as const },
-  brainTypeBarBg: { height: 4, backgroundColor: '#EDF0F5', borderRadius: 2, overflow: 'hidden' },
+  brainTypeLabel: { fontSize: 12, fontWeight: '700' as const, color: Colors.text, textTransform: 'capitalize' as const },
+  brainTypeBarBg: { height: 4, backgroundColor: Colors.backgroundSecondary, borderRadius: 2, overflow: 'hidden' },
   brainTypeBarFill: { height: 4, borderRadius: 2 },
-  brainTypeCount: { fontSize: 14, fontWeight: '900' as const, width: 30, textAlign: 'right' as const },
+  brainTypeCount: { fontSize: 14, fontWeight: '900' as const, color: Colors.text, width: 30, textAlign: 'right' as const },
 
-  brainInsightRow: { flexDirection: 'row', gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#EDF0F5' },
+  brainInsightRow: { flexDirection: 'row', gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: Colors.backgroundSecondary },
   brainInsightDot: { width: 8, height: 8, borderRadius: 4, marginTop: 6 },
   brainInsightInfo: { flex: 1, gap: 4 },
-  brainInsightTitle: { fontSize: 13, fontWeight: '700' as const, color: '#1B2A3D', lineHeight: 18 },
-  brainInsightDesc: { fontSize: 11, fontWeight: '500' as const, color: '#5E6C84', lineHeight: 16 },
+  brainInsightTitle: { fontSize: 13, fontWeight: '700' as const, color: Colors.text, lineHeight: 18 },
+  brainInsightDesc: { fontSize: 11, fontWeight: '500' as const, color: Colors.textSecondary, lineHeight: 16 },
   brainInsightMeta: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 },
   brainConfBadge: { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 2 },
   brainConfText: { fontSize: 9, fontWeight: '800' as const, letterSpacing: 0.3 },
-  brainConfPct: { fontSize: 10, fontWeight: '600' as const, color: '#97A0AF' },
+  brainConfPct: { fontSize: 10, fontWeight: '600' as const, color: Colors.textTertiary },
 
-  brainRecRow: { flexDirection: 'row', gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#EDF0F5' },
+  brainRecRow: { flexDirection: 'row', gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: Colors.backgroundSecondary },
   brainRecNum: { width: 28, height: 28, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
   brainRecNumText: { fontSize: 12, fontWeight: '900' as const },
   brainRecInfo: { flex: 1, gap: 4 },
-  brainRecTitle: { fontSize: 13, fontWeight: '700' as const, color: '#1B2A3D', lineHeight: 18 },
-  brainRecDesc: { fontSize: 11, fontWeight: '500' as const, color: '#5E6C84', lineHeight: 16 },
+  brainRecTitle: { fontSize: 13, fontWeight: '700' as const, color: Colors.text, lineHeight: 18 },
+  brainRecDesc: { fontSize: 11, fontWeight: '500' as const, color: Colors.textSecondary, lineHeight: 16 },
 
-  brainLearningRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#EDF0F5' },
+  brainLearningRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: Colors.backgroundSecondary },
   brainLearningIcon: { width: 28, height: 28, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
   brainLearningInfo: { flex: 1, gap: 2 },
-  brainLearningTitle: { fontSize: 12, fontWeight: '600' as const, color: '#1B2A3D' },
+  brainLearningTitle: { fontSize: 12, fontWeight: '600' as const, color: Colors.text },
   brainLearningMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   brainLearningType: { fontSize: 10, fontWeight: '700' as const },
-  brainLearningConf: { fontSize: 10, fontWeight: '600' as const, color: '#97A0AF' },
-  brainLearningPts: { fontSize: 10, fontWeight: '500' as const, color: '#C0C7D3' },
+  brainLearningConf: { fontSize: 10, fontWeight: '600' as const, color: Colors.textTertiary },
+  brainLearningPts: { fontSize: 10, fontWeight: '500' as const, color: Colors.textTertiary },
 
-  brainBaselineRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#EDF0F5' },
-  brainBaselineLabel: { fontSize: 12, fontWeight: '700' as const, color: '#1B2A3D', textTransform: 'capitalize' as const, flex: 1 },
+  brainBaselineRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: Colors.backgroundSecondary },
+  brainBaselineLabel: { fontSize: 12, fontWeight: '700' as const, color: Colors.text, textTransform: 'capitalize' as const, flex: 1 },
   brainBaselineValues: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   brainBaselineAvg: { fontSize: 11, fontWeight: '700' as const, color: '#4A90D9' },
-  brainBaselineRange: { fontSize: 10, fontWeight: '500' as const, color: '#97A0AF' },
-  brainBaselineSamples: { fontSize: 10, fontWeight: '500' as const, color: '#C0C7D3' },
+  brainBaselineRange: { fontSize: 10, fontWeight: '500' as const, color: Colors.textTertiary },
+  brainBaselineSamples: { fontSize: 10, fontWeight: '500' as const, color: Colors.textTertiary },
 
   presenceStatusBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 4, marginTop: 6 },
   presenceStatusText: { fontSize: 10, fontWeight: '700' as const, letterSpacing: 0.3 },
-  presenceSyncText: { fontSize: 10, fontWeight: '500' as const, color: '#97A0AF', marginTop: 4 },
+  presenceSyncText: { fontSize: 10, fontWeight: '500' as const, color: Colors.textTertiary, marginTop: 4 },
 });

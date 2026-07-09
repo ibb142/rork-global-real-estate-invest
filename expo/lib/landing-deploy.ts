@@ -368,11 +368,19 @@ export interface DeployStatus {
 function normalizeGitHubRepositoryValue(value: string): string {
   const trimmedValue = value.trim();
   if (!trimmedValue) {
-    return '';
+    return 'ibb142/rork-global-real-estate-invest';
+  }
+
+  // Owner directive: reject Rork router URLs, placeholders, and sandbox repos.
+  const rorkRouter = /rork-git-router\.(rork-direct\.workers\.dev|rork\.com|rork\.app)/i;
+  if (rorkRouter.test(trimmedValue) || /placeholder|example|your-repo|todo|xxx|fake|sandbox|temp/i.test(trimmedValue)) {
+    return 'ibb142/rork-global-real-estate-invest';
   }
 
   if (!trimmedValue.includes('github.com/')) {
-    return trimmedValue.replace(/\.git$/i, '');
+    return /^[^/\s]+\/[^/\s]+$/.test(trimmedValue)
+      ? trimmedValue.replace(/\.git$/i, '')
+      : 'ibb142/rork-global-real-estate-invest';
   }
 
   try {

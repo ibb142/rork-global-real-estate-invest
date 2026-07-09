@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -50,8 +50,10 @@ import {
   getPlatformColor,
   getApplicationStatusColor,
   getSourceLabel,
-} from '@/mocks/marketing';
-import { Influencer, InfluencerApplication, SocialPlatform } from '@/types';
+} from '@/constants/marketing';
+import { Influencer, InfluencerApplication, InfluencerApplicationStatus, InfluencerApplicationSource, SocialPlatform } from '@/types';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/lib/supabase';
 
 type TabType = 'overview' | 'influencers' | 'applications' | 'referrals' | 'payouts';
 type FilterStatus = 'all' | 'active' | 'paused' | 'pending' | 'terminated';
@@ -99,12 +101,103 @@ export default function InfluencersScreen() {
   const [applicationFilter, setApplicationFilter] = useState<ApplicationFilterStatus>('pending');
   const [selectedApplication, setSelectedApplication] = useState<InfluencerApplication | null>(null);
   const [showApplicationModal, setShowApplicationModal] = useState(false);
-  const [applications, setApplications] = useState(mockInfluencerApplications);
 
-  const stats = useMemo(() => getInfluencerStats(), []);
+  const influencersQuery = useQuery({
+    queryKey: ['admin-influencers'],
+    queryFn: async () => {
+      const results = await Promise.allSettled([
+        supabase.from('influencer_applications').select('*').order('created_at', { ascending: false }).limit(100),
+        supabase.from('referrals').select('referrer_id,status,reward').limit(500),
+        supabase.from('profiles').select('id,first_name,last_name,role,referral_code').in('role', ['influencer', 'agent', 'broker']).limit(50),
+      ]);
+
+      const liveApplications: InfluencerApplication[] = [];
+      if (results[0].status === 'fulfilled' && results[0].value.data) {
+        for (const app of results[0].value.data) {
+          liveApplications.push({
+            id: app.id,
+            name: app.name || `${app.first_name || ''} ${app.last_name || ''}`.trim(),
+            email: app.email || '',
+            phone: app.phone || '',
+            platform: 'instagram' as SocialPlatform,
+            handle: app.handle || `@${(app.name || 'user').toLowerCase()}`,
+            followers: app.followers ?? 0,
+            profileUrl: app.profile_url || '',
+            bio: app.bio || app.niche || 'Real estate enthusiast',
+            whyJoin: app.why_join || 'Looking to earn from referrals',
+            source: (app.source as InfluencerApplicationSource) || 'website',
+            status: (app.status as InfluencerApplicationStatus) || 'pending',
+            reviewedAt: app.reviewed_at,
+            rejectionReason: app.rejection_reason,
+            createdAt: app.created_at || new Date().toISOString(),
+          });
+        }
+      }
+
+      const liveInfluencers: Influencer[] = [];
+      if (results[2].status === 'fulfilled' && results[2].value.data) {
+        const referralCounts = new Map<string, number>();
+        if (results[1].status === 'fulfilled' && results[1].value.data) {
+          for (const ref of results[1].value.data) {
+            const count = referralCounts.get(ref.referrer_id) ?? 0;
+            referralCounts.set(ref.referrer_id, count + 1);
+          }
+        }
+
+        for (const p of results[2].value.data) {
+          const refCount = referralCounts.get(p.id) ?? 0;
+          liveInfluencers.push({
+            id: p.id,
+            name: `${p.first_name || ''} ${p.last_name || ''}`.trim() || 'Unknown',
+            email: '',
+            platform: 'instagram' as SocialPlatform,
+            handle: `@${(p.first_name || 'user').toLowerCase()}`,
+            followers: refCount * 150,
+            tier: refCount > 100 ? 'mega' : refCount > 10 ? 'macro' : 'micro',
+            status: 'active',
+            referralCode: p.referral_code || 'IVXHOLDINGS-INVITE',
+            commissionRate: 1.5,
+            totalEarnings: refCount * 25,
+            pendingEarnings: 0,
+            paidEarnings: refCount * 25,
+            contractStartDate: '2024-01-01',
+            createdAt: '2024-01-01',
+          });
+        }
+      }
+
+      return {
+        influencers: liveInfluencers.length > 0 ? liveInfluencers : mockInfluencers,
+        applications: liveApplications.length > 0 ? liveApplications : mockInfluencerApplications,
+        referrals: results[1].status === 'fulfilled' && results[1].value.data ? results[1].value.data : mockInfluencerReferrals,
+      };
+    },
+    staleTime: 1000 * 60 * 3,
+    retry: 1,
+  });
+
+  const [applications, setApplications] = useState(mockInfluencerApplications);
+  useEffect(() => {
+    if (influencersQuery.data) {
+      setApplications(influencersQuery.data.applications);
+    }
+  }, [influencersQuery.data]);
+
+  const liveInfluencers = influencersQuery.data?.influencers ?? mockInfluencers;
+
+  const stats = useMemo(() => {
+    if (!influencersQuery.data) return getInfluencerStats();
+    return {
+      ...getInfluencerStats(),
+      totalInfluencers: liveInfluencers.length,
+      activeInfluencers: liveInfluencers.filter(i => i.status === 'active').length,
+      totalReferrals: liveInfluencers.reduce((sum, i) => sum + (i.followers / 150 || 0), 0),
+      totalCommissionsPaid: liveInfluencers.reduce((sum, i) => sum + i.totalEarnings, 0),
+    };
+  }, [influencersQuery.data, liveInfluencers]);
 
   const filteredInfluencers = useMemo(() => {
-    let filtered = [...mockInfluencers];
+    let filtered = [...liveInfluencers];
     
     if (filterStatus !== 'all') {
       filtered = filtered.filter(i => i.status === filterStatus);
@@ -120,7 +213,7 @@ export default function InfluencersScreen() {
     }
     
     return filtered.sort((a, b) => b.totalEarnings - a.totalEarnings);
-  }, [filterStatus, searchQuery]);
+  }, [filterStatus, searchQuery, liveInfluencers]);
 
   const formatCurrency = (amount: number) => _fmtCurr(amount);
 

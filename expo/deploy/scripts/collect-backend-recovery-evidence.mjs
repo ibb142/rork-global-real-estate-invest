@@ -16,8 +16,10 @@ const DOMAIN = readEnv("IVX_ROOT_DOMAIN") || "ivxholding.com";
 const API_DOMAIN = readEnv("IVX_API_DOMAIN") || `api.${DOMAIN}`;
 const OWNER_AI_BASE_URL = readEnv("EXPO_PUBLIC_IVX_OWNER_AI_BASE_URL") || readEnv("EXPO_PUBLIC_API_BASE_URL") || `https://${API_DOMAIN}`;
 const OWNER_AI_PATH = "/api/ivx/owner-ai";
+import { validateRepoUrl, CANONICAL_GITHUB_REPO_URL, isRealSha } from "../../lib/canonical-repo.mjs";
+
 const GITHUB_TOKEN = readEnv("GITHUB_TOKEN");
-const GITHUB_REPO_URL = readEnv("GITHUB_REPO_URL");
+const GITHUB_REPO_URL = validateRepoUrl(readEnv("GITHUB_REPO_URL")).resolved;
 const CLOUDFRONT_DISTRIBUTION_ID = readEnv("CLOUDFRONT_DISTRIBUTION_ID");
 
 function readEnv(name) {
@@ -44,20 +46,12 @@ function stripTrailingDot(value) {
 }
 
 function normalizeRepoUrl(input) {
-  if (!input) {
+  const validated = validateRepoUrl(input || GITHUB_REPO_URL || CANONICAL_GITHUB_REPO_URL);
+  if (!validated || validated.error || !validated.slug) {
     return null;
   }
-
-  const httpsMatch = input.match(/github\.com[/:]([^/]+)\/([^/]+?)(?:\.git)?$/i);
-  if (!httpsMatch) {
-    return null;
-  }
-
-  return {
-    owner: httpsMatch[1],
-    repo: httpsMatch[2],
-    slug: `${httpsMatch[1]}/${httpsMatch[2]}`,
-  };
+  const [owner, repo] = validated.slug.split('/');
+  return { owner, repo, slug: validated.slug };
 }
 
 async function requestJson(url, options = {}) {
@@ -134,11 +128,13 @@ function createAwsClients() {
 }
 
 async function collectGithubEvidence() {
-  const repo = normalizeRepoUrl(GITHUB_REPO_URL);
+  const repoUrl = validateRepoUrl(readEnv("GITHUB_REPO_URL") || CANONICAL_GITHUB_REPO_URL).resolved;
+  const repo = normalizeRepoUrl(repoUrl);
   if (!repo) {
     return {
       status: "skipped",
-      summary: "GITHUB_REPO_URL is missing or invalid",
+      summary: "GITHUB_REPO_URL is missing, malformed, or points to a non-canonical repo",
+      resolvedUrl: repoUrl,
       workflows: [],
     };
   }

@@ -16,6 +16,7 @@ import { readFileSync, readdirSync, statSync } from 'fs';
 import { join, relative } from 'path';
 import { createHash } from 'crypto';
 import { getSyncPaths } from './sync-paths.mjs';
+import { validateRepoUrl } from './lib/canonical-repo.mjs';
 
 const { syncRoot: PROJECT_ROOT, appRoot: APP_ROOT } = getSyncPaths(import.meta.url);
 
@@ -23,15 +24,9 @@ const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 const BRANCH = process.env.GITHUB_BRANCH || 'main';
 const API = 'https://api.github.com';
 
-function parseGithubRepoSlug(value) {
-  const normalized = String(value || '').trim();
-  if (!normalized) return '';
-  if (/^[^/\s]+\/[^/\s]+$/.test(normalized)) return normalized.replace(/\.git$/i, '');
-  const match = normalized.match(/github\.com[/:]([^/\s]+)\/([^/.\s]+)(?:\.git)?/i);
-  return match ? `${match[1]}/${match[2]}` : '';
-}
-
-const REPO = parseGithubRepoSlug(process.env.GITHUB_REPO) || parseGithubRepoSlug(process.env.GITHUB_REPO_URL);
+// Owner directive: reject Rork router URLs, placeholders, and sandbox repos.
+const repoValidation = validateRepoUrl(process.env.GITHUB_REPO || process.env.GITHUB_REPO_URL);
+const REPO = repoValidation.slug;
 
 const FIX = process.argv.includes('--fix');
 

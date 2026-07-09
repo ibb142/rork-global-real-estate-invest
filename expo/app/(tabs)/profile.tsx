@@ -43,6 +43,7 @@ import {
   Rocket,
   BarChart3,
   CreditCard,
+  LockKeyhole,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { getResponsiveSize, isCompactScreen, isExtraSmallScreen } from '@/lib/responsive';
@@ -589,6 +590,14 @@ export default function ProfileScreen() {
                 }}
                 isCompact={isCompact}
                 testID="admin-panel-button"
+              />
+              <MenuItem
+                icon={<LockKeyhole size={isXs ? 18 : 20} color={Colors.primary} />}
+                title="Security Box"
+                subtitle="Credential Vault · Save once, never asked again"
+                onPress={() => router.push('/ivx/security-box' as any)}
+                isCompact={isCompact}
+                testID="security-box-button"
               />
             </View>
           </View>

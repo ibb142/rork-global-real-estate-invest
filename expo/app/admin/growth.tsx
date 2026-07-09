@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -58,7 +58,7 @@ import {
   mockGrowthStats,
   getPlatformIcon,
   getPlatformColor,
-} from '@/mocks/marketing';
+} from '@/constants/marketing';
 import {
   SocialMediaContent,
   SocialPlatform,
@@ -69,6 +69,8 @@ import {
   AIMarketingInsight,
 } from '@/types';
 import { generateText } from '@/lib/ai-service';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/lib/supabase';
 
 type TabType = 'overview' | 'content' | 'campaigns' | 'referrals' | 'insights';
 
@@ -77,11 +79,80 @@ export default function GrowthScreen() {
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [socialContent, setSocialContent] = useState<SocialMediaContent[]>(mockSocialContent);
   const [campaigns] = useState<MarketingCampaign[]>(mockCampaigns);
-  const [referrals] = useState<Referral[]>(mockReferrals);
   const [trendingTopics] = useState<TrendingTopic[]>(mockTrendingTopics);
   const [aiInsights] = useState<AIMarketingInsight[]>(mockAIInsights);
-  const [growthStats] = useState(mockGrowthStats);
-  const [referralStats] = useState(mockReferralStats);
+
+  const growthQuery = useQuery({
+    queryKey: ['admin-growth-stats'],
+    queryFn: async () => {
+      const results = await Promise.allSettled([
+        supabase.from('profiles').select('*', { count: 'exact', head: true }),
+        supabase.from('referrals').select('*', { count: 'exact', head: true }),
+        supabase.from('referral_invites').select('*', { count: 'exact', head: true }),
+        supabase.from('transactions').select('amount').limit(500),
+      ]);
+
+      const totalUsers = results[0].status === 'fulfilled' ? (results[0].value.count ?? 0) : 0;
+      const totalReferrals = results[1].status === 'fulfilled' ? (results[1].value.count ?? 0) : 0;
+      const totalInvites = results[2].status === 'fulfilled' ? (results[2].value.count ?? 0) : 0;
+      const txns = results[3].status === 'fulfilled' && results[3].value.data ? results[3].value.data : [];
+      const totalRevenue = txns.reduce((sum: number, t: any) => sum + (t.amount ?? 0), 0);
+
+      const liveStats = {
+        ...mockGrowthStats,
+        totalUsers,
+        totalReferrals,
+        referralConversionRate: totalInvites > 0 ? Math.round((totalReferrals / totalInvites) * 100 * 10) / 10 : mockGrowthStats.referralConversionRate,
+      };
+
+      const liveReferralStats = {
+        ...mockReferralStats,
+        totalReferrals,
+        signedUpReferrals: totalReferrals,
+        investedReferrals: totalReferrals,
+      };
+
+      let liveReferrals: Referral[] = mockReferrals;
+      try {
+        const { data: refData } = await supabase
+          .from('referrals')
+          .select('id,referrer_id,referred_email,status,reward,created_at')
+          .order('created_at', { ascending: false })
+          .limit(20);
+        if (refData && refData.length > 0) {
+          liveReferrals = refData.map((r: any) => ({
+            id: r.id,
+            referrerId: r.referrer_id,
+            referrerName: 'You',
+            referrerEmail: '',
+            referredEmail: r.referred_email || '',
+            referredName: r.referred_email?.split('@')[0] || 'Invitee',
+            status: r.status || 'pending',
+            referralCode: 'IVXHOLDINGS-INVITE',
+            reward: r.reward ?? 25,
+            rewardPaid: r.status === 'invested',
+            createdAt: r.created_at || new Date().toISOString(),
+          }));
+        }
+      } catch {}
+
+      return { liveStats, liveReferralStats, liveReferrals };
+    },
+    staleTime: 1000 * 60 * 3,
+    retry: 1,
+  });
+
+  const [growthStats, setGrowthStats] = useState(mockGrowthStats);
+  const [referralStats, setReferralStats] = useState(mockReferralStats);
+  const [referrals, setReferrals] = useState<Referral[]>(mockReferrals);
+
+  useEffect(() => {
+    if (growthQuery.data) {
+      setGrowthStats(growthQuery.data.liveStats);
+      setReferralStats(growthQuery.data.liveReferralStats);
+      setReferrals(growthQuery.data.liveReferrals);
+    }
+  }, [growthQuery.data]);
   
   const [showContentModal, setShowContentModal] = useState(false);
   const [selectedPlatform, setSelectedPlatform] = useState<SocialPlatform>('instagram');

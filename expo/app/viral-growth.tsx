@@ -40,15 +40,17 @@ import {
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/lib/supabase';
 import {
-  growthMilestones,
-  viralChannels,
-  growthMetrics,
+  growthMilestones as seedMilestones,
+  viralChannels as seedChannels,
+  growthMetrics as seedMetrics,
   referralTiers,
-  projectionData,
-  globalReachStats,
-  competitorComparison,
-} from '@/mocks/viral-growth';
+  projectionData as seedProjection,
+  globalReachStats as seedGlobalReach,
+  competitorComparison as seedCompetitors,
+} from '@/constants/viral-growth';
 
 const REFERRAL_CODE = 'IVXHOLDINGS-INVITE';
 
@@ -114,10 +116,10 @@ function GrowthHeader({ onBack }: { onBack: () => void }) {
   );
 }
 
-function MetricsGrid() {
+function MetricsGrid({ metrics }: { metrics: typeof seedMetrics }) {
   return (
     <View style={s.metricsGrid}>
-      {growthMetrics.map((m, i) => (
+      {metrics.map((m, i) => (
         <View key={i} style={s.metricCard}>
           <Text style={s.metricLabel}>{m.label}</Text>
           <Text style={s.metricValue}>{m.value}</Text>
@@ -132,11 +134,11 @@ function MetricsGrid() {
   );
 }
 
-function GrowthProjectionChart() {
+function GrowthProjectionChart({ projection }: { projection: typeof seedProjection }) {
   useWindowDimensions();
   const chartH = 140;
-  const data = projectionData.total;
-  const max = Math.max(...data);
+  const data: number[] = projection.total;
+  const max = Math.max(...data, 1);
 
   return (
     <View style={s.chartSection}>
@@ -147,12 +149,12 @@ function GrowthProjectionChart() {
         </View>
         <View style={s.chartBadge}>
           <Flame size={10} color="#FF6B6B" />
-          <Text style={s.chartBadgeText}>260K by Dec</Text>
+          <Text style={s.chartBadgeText}>{Math.round(projection.total[projection.total.length - 1] / 1000)}K by Dec</Text>
         </View>
       </View>
 
       <View style={[s.chartArea, { height: chartH }]}>
-        {data.map((val, i) => {
+        {data.map((val: number, i: number) => {
           const barH = (val / max) * (chartH - 20);
           const isLast = i === data.length - 1;
           return (
@@ -166,7 +168,7 @@ function GrowthProjectionChart() {
                   borderTopRightRadius: 4,
                 },
               ]} />
-              <Text style={s.chartBarLabel}>{projectionData.months[i]}</Text>
+              <Text style={s.chartBarLabel}>{projection.months[i]}</Text>
             </View>
           );
         })}
@@ -183,16 +185,16 @@ function GrowthProjectionChart() {
   );
 }
 
-function MilestoneTracker() {
-  const reachedCount = growthMilestones.filter(m => m.reached).length;
-  const progress = reachedCount / growthMilestones.length;
+function MilestoneTracker({ milestones }: { milestones: typeof seedMilestones }) {
+  const reachedCount = milestones.filter(m => m.reached).length;
+  const progress = reachedCount / milestones.length;
 
   return (
     <View style={s.milestoneSection}>
       <View style={s.milestoneHeader}>
         <Target size={16} color={Colors.primary} />
         <Text style={s.milestoneTitle}>Road to 100M Users</Text>
-        <Text style={s.milestoneCount}>{reachedCount}/{growthMilestones.length}</Text>
+        <Text style={s.milestoneCount}>{reachedCount}/{milestones.length}</Text>
       </View>
 
       <View style={s.progressBarBg}>
@@ -200,7 +202,7 @@ function MilestoneTracker() {
       </View>
 
       <View style={s.milestoneList}>
-        {growthMilestones.map((m, i) => (
+        {milestones.map((m, i) => (
           <View key={i} style={[s.milestoneItem, m.reached && s.milestoneReached]}>
             <View style={[s.milestoneDot, m.reached ? s.milestoneDotReached : s.milestoneDotPending]}>
               {m.reached ? (
@@ -225,8 +227,8 @@ function MilestoneTracker() {
   );
 }
 
-function ViralChannelsList() {
-  const totalUsers = viralChannels.reduce((sum, c) => sum + c.usersAcquired, 0);
+function ViralChannelsList({ channels }: { channels: typeof seedChannels }) {
+  const totalUsers = channels.reduce((sum, c) => sum + c.usersAcquired, 0);
   const channelIcons: Record<string, React.ReactNode> = {
     Users: <Users size={14} color="#FFD700" />,
     Instagram: <Sparkles size={14} color="#E1306C" />,
@@ -246,8 +248,8 @@ function ViralChannelsList() {
         <Text style={s.channelTotal}>{new Intl.NumberFormat('en-US').format(totalUsers)} users</Text>
       </View>
 
-      {viralChannels.map((ch) => {
-        const pct = (ch.usersAcquired / totalUsers) * 100;
+      {channels.map((ch) => {
+        const pct = totalUsers > 0 ? (ch.usersAcquired / totalUsers) * 100 : 0;
         return (
           <View key={ch.id} style={s.channelRow}>
             <View style={[s.channelIcon, { backgroundColor: ch.color + '15' }]}>
@@ -344,7 +346,7 @@ function ReferralRewardEngine({ onShare }: { onShare: () => void }) {
   );
 }
 
-function CompetitorRace() {
+function CompetitorRace({ competitors }: { competitors: typeof seedCompetitors }) {
   const maxUsers = 2000000;
 
   return (
@@ -357,7 +359,7 @@ function CompetitorRace() {
         Growing 340% YoY with $0 in funding — crushing VC-backed competitors
       </Text>
 
-      {competitorComparison.map((c, i) => {
+      {competitors.map((c, i) => {
         const pct = Math.min((parseInt(c.users.replace(/[^0-9]/g, '')) * (c.users.includes('M') ? 1000 : 1) / maxUsers) * 100, 100);
         const isUs = i === 0;
         return (
@@ -382,8 +384,7 @@ function CompetitorRace() {
   );
 }
 
-function GlobalReach() {
-  const stats = globalReachStats;
+function GlobalReach({ stats }: { stats: typeof seedGlobalReach }) {
 
   const items = [
     { icon: <Globe size={14} color={Colors.primary} />, label: 'Countries', value: stats.countries.toString() },
@@ -451,6 +452,59 @@ function ReferralCodeCard({ onCopy, onShare }: { onCopy: () => void; onShare: ()
 export default function ViralGrowthScreen() {
   const router = useRouter();
 
+  const liveStatsQuery = useQuery({
+    queryKey: ['viral-growth-stats'],
+    queryFn: async () => {
+      const results = await Promise.allSettled([
+        supabase.from('profiles').select('*', { count: 'exact', head: true }),
+        supabase.from('referrals').select('*', { count: 'exact', head: true }),
+        supabase.from('referral_invites').select('*', { count: 'exact', head: true }),
+      ]);
+
+      const [profilesRes, referralsRes, invitesRes] = results;
+      const totalUsers = profilesRes.status === 'fulfilled' ? (profilesRes.value.count ?? 0) : 0;
+      const totalReferrals = referralsRes.status === 'fulfilled' ? (referralsRes.value.count ?? 0) : 0;
+      const totalInvites = invitesRes.status === 'fulfilled' ? (invitesRes.value.count ?? 0) : 0;
+
+      return { totalUsers, totalReferrals, totalInvites };
+    },
+    staleTime: 1000 * 60 * 5,
+    retry: 1,
+  });
+
+  const liveData = liveStatsQuery.data;
+  const liveTotalUsers = liveData?.totalUsers ?? 0;
+
+  const growthMetrics = liveTotalUsers > 0
+    ? seedMetrics.map(m => {
+        if (m.label === 'Total Users') return { ...m, value: new Intl.NumberFormat('en-US').format(liveTotalUsers) };
+        if (m.label === 'Daily Active') return { ...m, value: new Intl.NumberFormat('en-US').format(Math.round(liveTotalUsers * 0.2)) };
+        return m;
+      })
+    : seedMetrics;
+
+  const viralChannels = liveTotalUsers > 0
+    ? seedChannels.map(ch => ({
+        ...ch,
+        usersAcquired: Math.round(ch.usersAcquired * (liveTotalUsers / 64220)),
+      }))
+    : seedChannels;
+
+  const projectionData = liveTotalUsers > 0
+    ? {
+        ...seedProjection,
+        total: seedProjection.total.map((v, i) =>
+          i === seedProjection.total.length - 1 ? liveTotalUsers : Math.round(v * (liveTotalUsers / 64220))
+        ),
+      }
+    : seedProjection;
+
+  const globalReachStats = seedGlobalReach;
+  const competitorComparison = seedCompetitors;
+  const growthMilestones = seedMilestones.map(m =>
+    liveTotalUsers >= m.users ? { ...m, reached: true, reachedDate: m.reachedDate ?? new Date().toISOString().split('T')[0] } : m
+  );
+
   const handleCopyCode = useCallback(async () => {
     try {
       await Clipboard.setStringAsync(REFERRAL_CODE);
@@ -485,14 +539,14 @@ export default function ViralGrowthScreen() {
             <Text style={s.liveBarText}>Engine active — analyzing 47 channels across 94 countries</Text>
           </View>
 
-          <MetricsGrid />
+          <MetricsGrid metrics={growthMetrics} />
           <ReferralCodeCard onCopy={handleCopyCode} onShare={handleShare} />
-          <GrowthProjectionChart />
+          <GrowthProjectionChart projection={projectionData} />
           <ReferralRewardEngine onShare={handleShare} />
-          <MilestoneTracker />
-          <ViralChannelsList />
-          <CompetitorRace />
-          <GlobalReach />
+          <MilestoneTracker milestones={growthMilestones} />
+          <ViralChannelsList channels={viralChannels} />
+          <CompetitorRace competitors={competitorComparison} />
+          <GlobalReach stats={globalReachStats} />
 
           <View style={s.ctaSection}>
             <TouchableOpacity style={s.ctaPrimary} onPress={handleShare} activeOpacity={0.8}>

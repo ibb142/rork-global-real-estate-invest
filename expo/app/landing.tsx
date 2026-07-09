@@ -1948,7 +1948,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
   safeTop: {
-    backgroundColor: 'transparent',
+    backgroundColor: Colors.background,
   },
   topBar: {
     flexDirection: 'row',

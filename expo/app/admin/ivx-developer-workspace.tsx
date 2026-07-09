@@ -65,6 +65,7 @@ import {
   type SeniorDeveloperPreflight,
 } from '@/src/modules/ivx-developer/seniorDeveloperPreflightService';
 import { getIVXRuntimeInfo, type IVXRuntimeInfo } from '@/lib/runtime-environment';
+import { useCredentialVault } from '@/lib/credential-vault-context';
 import {
   BLOCK18_DEVELOPER_WORKSPACE_MARKER,
   PATCH_REPLY_FORMAT_INSTRUCTION,
@@ -213,6 +214,9 @@ export default function IVXDeveloperWorkspaceScreen() {
   const runtimeInfo = useMemo<IVXRuntimeInfo>(() => getIVXRuntimeInfo(), []);
   const [ownerProofGate, setOwnerProofGate] = useState<OwnerProofGate | null>(null);
   const [ownerProofGateLoading, setOwnerProofGateLoading] = useState<boolean>(false);
+
+  const credentialVault = useCredentialVault();
+  const [vaultSyncLoading, setVaultSyncLoading] = useState<boolean>(false);
 
   const seniorFilesAffected = useMemo<string[]>(() => {
     return Array.from(new Set(seniorFilesText
@@ -630,6 +634,33 @@ export default function IVXDeveloperWorkspaceScreen() {
     const path = ownerProofGate?.loginPath ?? '/login?ownerMode=1';
     router.push(path as any);
   }, [ownerProofGate?.loginPath, router]);
+
+  const onSyncCredentialsFromVault = useCallback(async () => {
+    setVaultSyncLoading(true);
+    try {
+      const result = await credentialVault.syncAll();
+      const ok = result.failed === 0;
+      Alert.alert(
+        ok ? 'Vault Synced' : 'Vault Sync Issues',
+        `Synced: ${result.synced}\nFailed: ${result.failed}${result.errors.length > 0 ? '\n' + result.errors.join('\n') : ''}`,
+      );
+      await logDeveloperAction({
+        actor: 'owner',
+        action: 'credential_vault_sync',
+        detail: `synced=${result.synced} failed=${result.failed}`,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Vault sync failed';
+      Alert.alert('Vault Sync Failed', message);
+      await logDeveloperAction({
+        actor: 'system',
+        action: 'credential_vault_sync_failed',
+        detail: message.slice(0, 240),
+      });
+    } finally {
+      setVaultSyncLoading(false);
+    }
+  }, [credentialVault]);
 
   const onCheckSeniorDeveloperPreflight = useCallback(async (): Promise<SeniorDeveloperPreflight> => {
     setSeniorPreflightLoading(true);
@@ -1253,7 +1284,26 @@ export default function IVXDeveloperWorkspaceScreen() {
                     <CheckCircle2 size={11} color={seniorRollbackOption.trim() ? Colors.green : Colors.textTertiary} />
                     <Text style={styles.ownerApprovalChecklistText}>Rollback option ready</Text>
                   </View>
+                  <View style={styles.ownerApprovalChecklistRow}>
+                    <CheckCircle2 size={11} color={credentialVault.allSynced ? Colors.green : credentialVault.allPresent ? Colors.warning : Colors.textTertiary} />
+                    <Text style={styles.ownerApprovalChecklistText}>
+                      {credentialVault.allSynced
+                        ? 'Deployment credentials synced from vault'
+                        : credentialVault.allPresent
+                          ? 'Deployment credentials saved locally (sync to backend recommended)'
+                          : 'Deployment credentials not saved in vault'}
+                    </Text>
+                  </View>
                 </View>
+                <Pressable
+                  onPress={onSyncCredentialsFromVault}
+                  style={[styles.smallBtn, vaultSyncLoading ? styles.buttonDisabled : null]}
+                  disabled={vaultSyncLoading || seniorRunLoading}
+                  testID="ivx-senior-developer-sync-vault"
+                >
+                  {vaultSyncLoading ? <ActivityIndicator size="small" color={Colors.green} /> : <Database size={12} color={Colors.green} />}
+                  <Text style={styles.smallBtnText}>{vaultSyncLoading ? 'Syncing…' : 'Sync credentials from vault'}</Text>
+                </Pressable>
                 <View style={styles.preflightCard}>
                   <View style={styles.preflightHeader}>
                     <ShieldCheck size={13} color={Colors.green} />

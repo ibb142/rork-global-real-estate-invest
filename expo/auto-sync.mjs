@@ -16,10 +16,14 @@ import { watch, readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { execFileSync } from 'child_process';
 import { getSyncPaths, toSyncRelativePath } from './sync-paths.mjs';
+import { validateRepoUrl } from './lib/canonical-repo.mjs';
 
 const { syncRoot: PROJECT_ROOT, appRoot: WORKSPACE_ROOT, appPrefix } = getSyncPaths(import.meta.url);
 
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
+
+// Owner directive: reject Rork router URLs, placeholders, and sandbox repos.
+const repoValidation = validateRepoUrl(process.env.GITHUB_REPO || process.env.GITHUB_REPO_URL);
 
 // ── IVX Deployment Authority kill switch ─────────────────────────────────
 // Ivan is owner/final authority. Rork auto-sync/auto-push is OFF by default.
