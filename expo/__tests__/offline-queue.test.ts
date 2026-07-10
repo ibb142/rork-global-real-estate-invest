@@ -15,11 +15,19 @@ mock.module('@react-native-async-storage/async-storage', () => ({
   },
 }));
 
-// Mock react-native AppState (no-op subscription).
+// Mock react-native (no-op subscription; full shape so cross-file imports resolve).
 mock.module('react-native', () => ({
   AppState: {
     addEventListener: () => ({ remove: () => {} }),
+    currentState: 'active',
   },
+  Platform: { OS: 'ios', select: (spec) => spec.ios ?? spec.default },
+  Linking: {
+    openURL: async () => {},
+    canOpenURL: async () => false,
+    addEventListener: () => ({ remove: () => {} }),
+  },
+  Alert: { alert: () => {} },
 }));
 
 // Mock chatService so we control send behavior per test.

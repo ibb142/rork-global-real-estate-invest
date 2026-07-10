@@ -9,7 +9,7 @@ import { defineConfig, devices } from '@playwright/test';
  * not require it for the type checks to pass.
  */
 export default defineConfig({
-  testDir: './__tests__/e2e',
+  testDir: './e2e',
   timeout: 30_000,
   expect: { timeout: 5_000 },
   forbidOnly: !!process.env.CI,

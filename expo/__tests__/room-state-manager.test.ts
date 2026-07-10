@@ -31,6 +31,13 @@ mock.module('react-native', () => ({
     addEventListener: (_event: string, _handler: Function) => ({ remove: () => {} }),
     currentState: 'active',
   },
+  Platform: { OS: 'ios', select: (spec: Record<string, unknown>) => spec.ios ?? spec.default },
+  Linking: {
+    openURL: async () => {},
+    canOpenURL: async () => false,
+    addEventListener: () => ({ remove: () => {} }),
+  },
+  Alert: { alert: () => {} },
 }));
 
 const roomState = await import('../src/modules/chat/services/roomStateManager');

@@ -85,13 +85,17 @@ export type ChatRealtimeHandle = {
 
 /**
  * Attaches the Socket.IO realtime chat layer to the production HTTP server.
+ * Pass the REST layer's ChatStorage instance so realtime and REST share one
+ * message store (ChatStorage is in-memory + snapshot — separate instances
+ * never see each other's writes). Falls back to its own instance when omitted.
  * Returns a handle exposing the io instance and storage for diagnostics/shutdown.
  */
-export function attachChatRealtime(httpServer: HttpServer): ChatRealtimeHandle {
+export function attachChatRealtime(httpServer: HttpServer, sharedStorage?: ChatStorage): ChatRealtimeHandle {
   const socketPath = readTrimmed(process.env.CHAT_SOCKET_PATH) || '/socket.io';
   const databasePath = readTrimmed(process.env.CHAT_DATABASE_PATH) || './data/chat-room.sqlite';
   const defaultRoomId = sanitizeRoomId(process.env.CHAT_ROOM_ID) || DEFAULT_ROOM_ID;
-  const storage = new ChatStorage(databasePath);
+  const storage = sharedStorage ?? new ChatStorage(databasePath);
+  const ownsStorage = sharedStorage === undefined;
   const roomMembers = new Map<string, Set<string>>();
 
   const io = new SocketIOServer(httpServer, {
@@ -262,7 +266,7 @@ export function attachChatRealtime(httpServer: HttpServer): ChatRealtimeHandle {
   console.log('[ChatRealtime] Socket.IO attached to production server', {
     socketPath,
     defaultRoomId,
-    databasePath,
+    sharedStorage: !ownsStorage,
     deploymentMarker: REALTIME_MARKER,
   });
 
@@ -271,7 +275,9 @@ export function attachChatRealtime(httpServer: HttpServer): ChatRealtimeHandle {
     storage,
     close: () => {
       io.close();
-      storage.close();
+      if (ownsStorage) {
+        storage.close();
+      }
     },
   };
 }

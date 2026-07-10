@@ -857,7 +857,13 @@ const SERVER_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 const WEB_DIST_ROOT = path.join(SERVER_ROOT, 'expo', 'dist');
 const CHAT_DATABASE_PATH = (process.env.CHAT_DATABASE_PATH?.trim() || path.join(SERVER_ROOT, 'data', 'chat-room.sqlite'));
 const CHAT_DEFAULT_ROOM_ID = (process.env.CHAT_ROOM_ID?.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '-').replace(/-+/g, '-').slice(0, 40) || 'main-room');
-const publicChatStorage = new ChatStorage(CHAT_DATABASE_PATH);
+/**
+ * Single long-lived chat message store shared by the REST room routes and the
+ * Socket.IO realtime layer (server.ts passes this to attachChatRealtime).
+ * ChatStorage is in-memory + JSON snapshot, so two instances would never see
+ * each other's writes — one shared instance is required.
+ */
+export const publicChatStorage = new ChatStorage(CHAT_DATABASE_PATH);
 setPublicChatHistoryStorage(publicChatStorage);
 const publicRoomMembers = new Map<string, number>();
 type RenderProofToolName = 'time-now' | 'room-status' | 'supabase-tables' | 'storage-diagnostics' | 'github-status' | 'aws-status' | 'supabase-status' | 'render-status';

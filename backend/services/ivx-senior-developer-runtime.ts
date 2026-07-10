@@ -1728,11 +1728,15 @@ export async function runIVXSeniorDeveloperTask(input: IVXSeniorDeveloperRunInpu
   const changedRouteVerification = await verifyChangedRouteLive();
   log('production_verified', productionVerification.ok && changedRouteVerification.ok ? 'info' : 'warn', 'Production health and changed-route verification attempted.', { health: productionVerification, changedRoute: changedRouteVerification });
 
+  // endToEndProductionComplete may ONLY be true when a real commit+deploy was
+  // executed and verified live. A no-change pass never counts as an end-to-end
+  // production mutation — claiming so would be a phantom proof.
   const endToEndProductionComplete = hasRealChange
     ? (gitDeployOperator.status === 'executed' && productionVerification.ok && changedRouteVerification.ok)
-    : (validationsOk && productionVerification.ok && changedRouteVerification.ok);
+    : false;
+  const noChangeVerifiedOk = !hasRealChange && validationsOk && productionVerification.ok && changedRouteVerification.ok;
   const localCodingOk = validationsOk && (patchProposal.status === 'not_needed' || changedFiles.length > 0);
-  const ok = productionProofRequested ? endToEndProductionComplete : localCodingOk;
+  const ok = productionProofRequested ? (endToEndProductionComplete || noChangeVerifiedOk) : localCodingOk;
   setTaskStatus(taskTree, 37, ok ? 'completed' : 'failed');
   if (ok) {
     completeTask(dispatch.task.id, { jobId, changedFiles, validationsOk, productionVerified: productionVerification.ok, changedRouteVerified: changedRouteVerification.ok, endToEndProductionComplete });

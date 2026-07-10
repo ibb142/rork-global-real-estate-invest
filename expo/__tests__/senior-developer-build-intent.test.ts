@@ -1,13 +1,61 @@
-import { describe, expect, it } from 'bun:test';
-import {
+import { describe, expect, it, mock } from 'bun:test';
+
+const asyncStorageMemory = new Map<string, string>();
+
+mock.module('@react-native-async-storage/async-storage', () => ({
+  default: {
+    getItem: async (key: string) => asyncStorageMemory.get(key) ?? null,
+    setItem: async (key: string, value: string) => {
+      asyncStorageMemory.set(key, value);
+    },
+    removeItem: async (key: string) => {
+      asyncStorageMemory.delete(key);
+    },
+    clear: async () => {
+      asyncStorageMemory.clear();
+    },
+  },
+}));
+
+const mockSupabase = {
+  auth: {
+    getSession: async () => ({ data: { session: null }, error: null }),
+    refreshSession: async () => ({ data: { session: null }, error: { message: 'No session' } }),
+  },
+};
+
+mock.module('@/lib/supabase', () => ({
+  supabase: mockSupabase,
+  getSupabaseClient: () => mockSupabase,
+}));
+
+mock.module('@/lib/ivx-supabase-client', () => ({
+  getIVXAccessToken: async () => null,
+  getIVXOwnerAIConfigAudit: () => ({
+    currentEnvironment: 'test',
+    configuredBaseUrl: 'https://ivx-holdings-platform.onrender.com',
+    configuredFrom: 'test',
+    devFallbackBaseUrl: null,
+    projectApiBaseUrl: null,
+    directApiBaseUrl: null,
+    webPreviewBaseUrl: null,
+    canonicalBaseUrl: 'https://ivx-holdings-platform.onrender.com',
+  }),
+}));
+
+// Dynamic imports AFTER mock.module registration — static imports are hoisted
+// and would load the real @/lib/supabase → async-storage → react-native chain,
+// which bun cannot parse (Flow-typed entry point).
+const {
   buildSeniorDeveloperApprovalCard,
   buildSeniorDeveloperJobDraft,
   buildSeniorDeveloperSubmitStatusCard,
   deriveTemplateMode,
   isSeniorDeveloperBuildRequest,
   requestsProductionDeploy,
-} from '@/src/modules/ivx-developer/seniorDeveloperBuildIntent';
-import { isWorkerJobComplete, type WorkerJobResultSummary } from '@/src/modules/ivx-developer/seniorDeveloperWorkerService';
+} = await import('@/src/modules/ivx-developer/seniorDeveloperBuildIntent');
+const { isWorkerJobComplete } = await import('@/src/modules/ivx-developer/seniorDeveloperWorkerService');
+import type { WorkerJobResultSummary } from '@/src/modules/ivx-developer/seniorDeveloperWorkerService';
 
 describe('senior developer build intent', () => {
   it('detects build/module/feature/deploy requests', () => {
@@ -97,8 +145,8 @@ describe('worker job completeness contract', () => {
   const base: WorkerJobResultSummary = {
     jobId: 'ivx-worker-1',
     finalStatus: 'COMPLETE',
-    commitSha: 'abc1234',
-    deployId: 'dep-1',
+    commitSha: 'abc1234def5678',
+    deployId: 'dep-d98iucrtqb8s73b34q70',
     deployStatus: 'live',
     healthStatus: 200,
     healthOk: true,

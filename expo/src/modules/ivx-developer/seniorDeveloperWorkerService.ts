@@ -31,7 +31,8 @@ function isRealDeployId(value: unknown): boolean {
   if (typeof value !== 'string') return false;
   const clean = value.trim();
   if (!clean || clean.length < 6) return false;
-  if (/^(deploy|dep|dpl)-?[0-9a-f]{8,}$/i.test(clean)) return true;
+  // Render deploy ids are base36 (e.g. dep-d98iucrtqb8s73b34q70), not hex.
+  if (/^(deploy|dep|dpl)-?[0-9a-z]{8,}$/i.test(clean)) return true;
   if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clean)) return true;
   return false;
 }

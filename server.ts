@@ -9,7 +9,7 @@
  */
 import { serve } from '@hono/node-server';
 import type { Server as HttpServer } from 'node:http';
-import app from './backend/hono';
+import app, { publicChatStorage } from './backend/hono';
 import { attachChatRealtime } from './backend/chat-realtime';
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
@@ -38,7 +38,9 @@ const server = serve(
 
 // Mount the Socket.IO realtime chat layer on the same HTTP server so
 // /socket.io works in production (previously only REST was served).
-const realtime = attachChatRealtime(server as unknown as HttpServer);
+// Shares the REST layer's message store so realtime messages are readable
+// over /api/public/messages and vice versa.
+const realtime = attachChatRealtime(server as unknown as HttpServer, publicChatStorage);
 
 function shutdown(signal: string): void {
   console.log('[IVX Server] Shutdown requested', { signal });

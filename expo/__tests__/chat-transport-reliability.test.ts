@@ -19,7 +19,13 @@ mock.module('react-native', () => ({
     addEventListener: () => ({ remove: () => {} }),
     currentState: 'active',
   },
-  Platform: { OS: 'ios' },
+  Platform: { OS: 'ios', select: (spec: Record<string, unknown>) => spec.ios ?? spec.default },
+  Linking: {
+    openURL: async () => {},
+    canOpenURL: async () => false,
+    addEventListener: () => ({ remove: () => {} }),
+  },
+  Alert: { alert: () => {} },
 }));
 
 mock.module('@react-native-async-storage/async-storage', () => ({
