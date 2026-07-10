@@ -8,12 +8,13 @@
  * surface actually used, without dragging in the full Node typings.
  */
 
-interface IvxBufferLike {
+interface IvxBufferLike extends Uint8Array {
   toString(encoding?: string): string;
 }
 
 interface IvxBufferConstructorLike {
-  from(input: string, encoding: string): IvxBufferLike;
+  from(input: string | IvxBufferLike | ArrayBuffer | Uint8Array, encoding?: string): IvxBufferLike;
+  concat(list: readonly IvxBufferLike[]): IvxBufferLike;
 }
 
 declare global {

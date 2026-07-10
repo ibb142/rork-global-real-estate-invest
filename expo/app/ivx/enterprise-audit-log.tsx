@@ -198,7 +198,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.inputBackground, borderRadius: 12, borderWidth: 1,
     borderColor: Colors.inputBorder,
   },
-  searchInput: { flex: 1, color: Colors.text, fontSize: 14, backgroundColor: 'transparent', borderWidth: 0, outline: 'none' },
+  searchInput: { flex: 1, color: Colors.text, fontSize: 14, backgroundColor: 'transparent', borderWidth: 0 },
   filterRow: { paddingHorizontal: 16, marginBottom: 8, maxHeight: 40 },
   filterChip: {
     paddingHorizontal: 10, paddingVertical: 6, borderRadius: 16,
