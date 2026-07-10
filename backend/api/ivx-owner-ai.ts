@@ -8071,29 +8071,27 @@ async function handleIVXOwnerAIRequestInternal(request: Request): Promise<Respon
     const fallbackRequestId = createRequestId();
     const isTimeout = /timed out/i.test(message) || /timeout/i.test(message);
     const isGatewayFailure = /IVX AI gateway request failed/i.test(message) || /IVXAIGatewayTimeoutError/i.test(message);
-    const category = isTimeout
-      ? 'The AI provider did not respond in time.'
-      : isGatewayFailure
-        ? 'The AI provider returned an error.'
-        : 'The request failed before completing.';
 
-    // Surface the REAL exception to the UI instead of the old canned string.
-    // The owner explicitly requested error masking be removed: the visible
-    // answer now names the exact error type, message, and origin frame.
-    const visibleAnswer = [
-      `\u26a0\ufe0f ${category}`,
-      ``,
-      `Error: ${errorName}: ${message}`,
-      originFrame ? `Origin: ${originFrame}` : '',
-    ].filter(Boolean).join('\n');
+    // SANITIZED error surface (2026-07-10): the UI must never receive raw
+    // provider errors, stack traces, endpoints, or origin frames again. The
+    // full unmasked diagnostics stay in the server log above
+    // ('UNMASKED request failure') and in the structured entry below — they
+    // are recoverable from Render logs, never from the chat bubble.
+    const visibleAnswer = 'IVX AI is temporarily unavailable. Retrying securely.';
 
-    console.log('[IVXOwnerAIBackend] Returning UNMASKED error bubble to client:', {
-      requestId: fallbackRequestId,
+    // Structured server-side failure record: traceId + provider + model +
+    // HTTP status + sanitized provider error class + timestamp. No secrets,
+    // no prompt content, no stack in the client payload.
+    console.error('[IVXOwnerAIBackend] provider_failure_structured:', {
+      traceId: fallbackRequestId,
+      roomId: 'ivx-owner-ai-provider-error',
+      provider: 'chatgpt',
+      model: getOwnerAIModel(),
+      httpStatus: status,
       errorName,
-      isTimeout,
-      isGatewayFailure,
-      originalStatus: status,
-      originFrame,
+      failureKind: isTimeout ? 'timeout' : isGatewayFailure ? 'gateway' : 'internal',
+      sanitizedError: message.slice(0, 200),
+      timestamp: new Date().toISOString(),
     });
 
     return ownerOnlyJson({
@@ -8118,9 +8116,7 @@ async function handleIVXOwnerAIRequestInternal(request: Request): Promise<Respon
         isGatewayFailure,
         errorName,
         status,
-        originFrame,
-        message,
-        stack: stack.slice(0, 4000),
+        retriable: true,
       },
     });
   }

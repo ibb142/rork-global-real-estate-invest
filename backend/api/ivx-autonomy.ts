@@ -312,7 +312,7 @@ export async function handleIVXAutonomyAIProvidersRequest(request: Request): Pro
       policy: {
         primaryAlwaysFirst: true,
         fallbackOnlyWhenEnvConfigured: true,
-        fallbackTriggersOnly: ['timeout', 'rate_limit', 'quota', 'server_error', 'network'],
+        fallbackTriggersOnly: ['timeout', 'rate_limit', 'quota', 'server_error', 'network', 'auth'],
         promptContentLogged: false,
         apiKeysLogged: false,
       },

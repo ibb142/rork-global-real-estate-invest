@@ -162,7 +162,7 @@ export function buildSeniorDeveloperBlockedMessage(reason?: string): string {
     'BLOCKED',
     `REASON=${
       reason ??
-      'The IVX Owner AI chat cannot read the repository, run tests, commit, or deploy. Real Senior Developer proof is produced only by the live run system, not by this chat reply. No verified proof is attached to this turn.'
+      'The IVX Owner AI chat cannot read the repository, run tests, commit, or deploy. Real Senior Developer proof is produced only by the live run system, not by this chat reply. No live-run proof is attached to this turn.'
     }`,
     'EXACT_ACTION_REQUIRED=Open the IVX app signed in as the owner → Admin → IVX Developer Workspace → Patches → Run Senior Developer. The on-screen proof (OWNER_AUTH_ACCEPTED, FILES_CHANGED, COMMIT_SHA, RENDER_DEPLOY_ID, LIVE_COMMIT, COMMIT_MATCH, FINAL_STATUS) is the only valid Senior Developer proof.',
   ].join('\n');

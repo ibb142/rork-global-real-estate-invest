@@ -153,6 +153,51 @@ function getIVXAIGatewayApiKey(): string {
   return readTrimmed(process.env.AI_GATEWAY_API_KEY);
 }
 
+// ── Runtime key hydration from Owner Variables ─────────────────────────
+// AI_GATEWAY_API_KEY is registered as an encrypted Owner Variable
+// (backend/api/ivx-owner-variables.ts). When the process env is empty — or the
+// owner rotates the key from the app without a Render env change — the runtime
+// hydrates the key from the Owner Variables store at REQUEST time, so a key
+// rotation never requires a redeploy. Result is cached with a short TTL to
+// avoid a store read per request. Lazy dynamic import avoids module cycles.
+let ownerVariableKeyCache: { value: string; fetchedAt: number } | null = null;
+const OWNER_VARIABLE_KEY_TTL_MS = 60_000;
+
+async function hydrateGatewayApiKeyFromOwnerVariables(): Promise<boolean> {
+  if (getIVXAIGatewayApiKey().length > 0) return true;
+
+  const now = Date.now();
+  if (ownerVariableKeyCache && now - ownerVariableKeyCache.fetchedAt < OWNER_VARIABLE_KEY_TTL_MS) {
+    if (ownerVariableKeyCache.value) {
+      process.env.AI_GATEWAY_API_KEY = ownerVariableKeyCache.value;
+      return true;
+    }
+    return false;
+  }
+
+  try {
+    const { getIVXOwnerVariableRuntimeValue } = await import('./api/ivx-owner-variables');
+    const stored = readTrimmed(await getIVXOwnerVariableRuntimeValue('AI_GATEWAY_API_KEY'));
+    ownerVariableKeyCache = { value: stored, fetchedAt: now };
+    if (stored) {
+      process.env.AI_GATEWAY_API_KEY = stored;
+      console.log('[IVXAI] Gateway key hydrated from Owner Variables store:', {
+        keyLength: stored.length,
+        source: 'owner_variables',
+        timestamp: nowIso(),
+      });
+      return true;
+    }
+  } catch (error) {
+    ownerVariableKeyCache = { value: '', fetchedAt: now };
+    console.error('[IVXAI] Owner Variables key hydration failed:', {
+      errorName: error instanceof Error ? error.name : 'unknown',
+      timestamp: nowIso(),
+    });
+  }
+  return false;
+}
+
 function buildGatewayBaseUrl(rootUrl: string): string | null {
   const gatewayRootUrl = readTrimmed(rootUrl).replace(/\/+$/, '');
   if (!gatewayRootUrl) {
@@ -326,6 +371,13 @@ export async function requestIVXAIText(input: {
     throw new Error('IVX AI runtime is not configured.');
   }
 
+  // A missing gateway key must NOT hard-throw before the fallback chain gets a
+  // chance: classify it as an auth failure so a configured direct provider
+  // (OPENAI_API_KEY / ANTHROPIC_API_KEY) can still answer. Before giving up on
+  // the gateway, hydrate the key from the Owner Variables store so a rotation
+  // done from the owner app takes effect without a redeploy.
+  const hasGatewayKey = await hydrateGatewayApiKeyFromOwnerVariables();
+
   console.log('[IVXAI] Routing request through IVX AI Phase 1 wrapper:', {
     module: input.module,
     requestId: input.requestId ?? null,
@@ -356,7 +408,7 @@ export async function requestIVXAIText(input: {
   let successfulBaseUrl = baseUrlCandidates[0];
   let retryCount = 0;
 
-  for (const baseURL of baseUrlCandidates) {
+  for (const baseURL of hasGatewayKey ? baseUrlCandidates : []) {
     ensureIVXAIGatewayEnvironment();
     try {
       const gatewayProvider = createGateway({
@@ -429,8 +481,22 @@ export async function requestIVXAIText(input: {
             ? JSON.stringify(failure.responseBody).slice(0, 400)
             : null,
         errorName: error instanceof Error ? error.name : null,
+        timestamp: nowIso(),
       });
     }
+  }
+
+  if (!hasGatewayKey && !result) {
+    const missingKeyError = new Error('Unauthenticated: AI_GATEWAY_API_KEY is missing in the runtime environment (status=401)');
+    missingKeyError.name = 'IVXAIGatewayRequestError';
+    lastError = missingKeyError;
+    lastFailure = { status: 401, responseBody: null };
+    console.error('[IVXAI] Gateway skipped — AI_GATEWAY_API_KEY missing:', {
+      module: input.module,
+      requestId: input.requestId ?? null,
+      model,
+      timestamp: nowIso(),
+    });
   }
 
   if (!result) {
@@ -634,6 +700,17 @@ export async function* streamIVXAIText(input: {
   const baseUrlCandidates = getGatewayBaseUrlCandidates();
   if (baseUrlCandidates.length === 0) {
     yield { type: 'error', error: 'IVX AI runtime is not configured.' };
+    return;
+  }
+
+  if (!(await hydrateGatewayApiKeyFromOwnerVariables())) {
+    console.error('[IVXAI] Stream skipped — AI_GATEWAY_API_KEY missing:', {
+      module: input.module,
+      requestId: input.requestId ?? null,
+      model,
+      timestamp: nowIso(),
+    });
+    yield { type: 'error', error: 'IVX AI is temporarily unavailable. Retrying securely.' };
     return;
   }
 

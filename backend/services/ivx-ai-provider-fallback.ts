@@ -91,7 +91,15 @@ export function classifyProviderFailure(error: unknown): IVXProviderFailureClass
   if (name === 'IVXAIGatewayTimeoutError' || message.includes('timed out') || message.includes('etimedout')) {
     return 'timeout';
   }
-  if (status === 401 || status === 403 || message.includes('unauthor') || message.includes('forbidden')) {
+  if (
+    status === 401
+    || status === 403
+    || message.includes('unauthor')
+    || message.includes('unauthenticated')
+    || message.includes('forbidden')
+    || message.includes('invalid api key')
+    || message.includes('ai_gateway_api_key')
+  ) {
     return 'auth';
   }
   if (status === 429 || message.includes('rate-limit') || message.includes('rate limit')) {
@@ -112,13 +120,22 @@ export function classifyProviderFailure(error: unknown): IVXProviderFailureClass
   return 'unknown';
 }
 
-/** Failure classes safe to retry against a different provider. */
+/**
+ * Failure classes safe to retry against a different provider.
+ *
+ * 'auth' IS retryable across providers: a revoked/invalid AI_GATEWAY_API_KEY
+ * (Vercel gateway "Unauthenticated") must not take the whole chat down when a
+ * direct-provider key (OPENAI_API_KEY / ANTHROPIC_API_KEY) is configured.
+ * Fallback providers use their OWN credentials, so a primary auth failure is
+ * independent of theirs.
+ */
 export function isFailureRetryable(cls: IVXProviderFailureClass): boolean {
   return cls === 'timeout'
     || cls === 'rate_limit'
     || cls === 'quota'
     || cls === 'server_error'
-    || cls === 'network';
+    || cls === 'network'
+    || cls === 'auth';
 }
 
 type FallbackInput = {
