@@ -116,3 +116,88 @@ export function mapReelRows(rows: unknown): HomeReel[] {
   }
   return reels.sort((a, b) => a.sortOrder - b.sortOrder);
 }
+
+export interface HomePublicationPhoto {
+  id: string;
+  url: string;
+  sortOrder: number;
+  isCover: boolean;
+}
+
+export interface HomePublicationGroup {
+  projectId: string;
+  projectTitle: string;
+  coverUrl: string;
+  photoCount: number;
+  photos: HomePublicationPhoto[];
+}
+
+/**
+ * Builds a display title lookup from raw jv_deals rows so publications and
+ * reels are always labeled with the correct project (title first, then
+ * project_name, then the raw id — never blank).
+ */
+export function buildProjectTitleMap(rows: unknown): Record<string, string> {
+  const map: Record<string, string> = {};
+  if (!Array.isArray(rows)) return map;
+  for (const raw of rows) {
+    const r = raw as Record<string, unknown> | null;
+    if (!r || typeof r.id !== 'string' || !r.id) continue;
+    const title =
+      (typeof r.title === 'string' && r.title.trim()) ||
+      (typeof r.project_name === 'string' && r.project_name.trim()) ||
+      r.id;
+    map[r.id] = title;
+  }
+  return map;
+}
+
+/**
+ * Groups published jv_deal_media image rows by project so each project's
+ * publications render next to that project. Unpublished rows, broken URLs,
+ * and unknown shapes are dropped; one bad row never hides a project's group.
+ */
+export function mapMediaRowsToPublications(
+  rows: unknown,
+  titleMap: Record<string, string> = {},
+): HomePublicationGroup[] {
+  if (!Array.isArray(rows)) return [];
+  const byProject = new Map<string, HomePublicationPhoto[]>();
+  const seenIds = new Set<string>();
+  for (const raw of rows) {
+    const r = raw as Record<string, unknown> | null;
+    if (!r) continue;
+    if (r.published !== true) continue;
+    const mediaType = typeof r.media_type === 'string' ? r.media_type.toLowerCase() : '';
+    if (mediaType !== 'image') continue;
+    const projectId = typeof r.project_id === 'string' ? r.project_id : '';
+    if (!projectId) continue;
+    const url = r.public_url ?? r.publicUrl ?? r.url;
+    if (!isValidHttpUrl(url)) continue;
+    const id = typeof r.id === 'string' && r.id ? r.id : `${projectId}:${String(url)}`;
+    if (seenIds.has(id)) continue;
+    seenIds.add(id);
+    const photo: HomePublicationPhoto = {
+      id,
+      url,
+      sortOrder: toFiniteNumber(r.sort_order ?? r.sortOrder, 0),
+      isCover: r.is_cover === true,
+    };
+    const list = byProject.get(projectId) ?? [];
+    list.push(photo);
+    byProject.set(projectId, list);
+  }
+
+  const groups: HomePublicationGroup[] = [];
+  for (const [projectId, photos] of byProject) {
+    photos.sort((a, b) => (Number(b.isCover) - Number(a.isCover)) || (a.sortOrder - b.sortOrder));
+    groups.push({
+      projectId,
+      projectTitle: titleMap[projectId] ?? projectId,
+      coverUrl: photos[0].url,
+      photoCount: photos.length,
+      photos,
+    });
+  }
+  return groups.sort((a, b) => a.projectTitle.localeCompare(b.projectTitle));
+}

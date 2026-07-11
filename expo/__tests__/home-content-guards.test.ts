@@ -6,6 +6,8 @@ import {
   isPublicReelRow,
   mapReelRow,
   mapReelRows,
+  buildProjectTitleMap,
+  mapMediaRowsToPublications,
 } from '@/lib/home-content-guards';
 import {
   formatCurrency,
@@ -133,5 +135,72 @@ describe('reels mapping (items 11 + 20): published reels always render, bad rows
     expect(mapReelRows(null)).toEqual([]);
     expect(mapReelRows({ data: [] })).toEqual([]);
     expect(mapReelRows(undefined)).toEqual([]);
+  });
+});
+
+describe('publications next to the project: jv_deal_media grouped per project', () => {
+  const liveDeals = [
+    { id: 'perez-residence-001', title: 'Perez Residence', project_name: 'ONE STOP DEVELOPMENT LLC' },
+    { id: 'casa-rosario-001', title: 'Casa Rosario', project_name: 'Casa Rosario' },
+    { id: 'JV-202603-5190', title: 'IVX Jacksonville Prime', project_name: 'IVX JACKSONVILLE PRIME' },
+  ];
+
+  const mediaRow = (projectId: string, id: string, sortOrder: number, extra: Record<string, unknown> = {}) => ({
+    id,
+    project_id: projectId,
+    media_type: 'image',
+    public_url: `https://kvclcdjmjghndxsngfzb.supabase.co/storage/v1/object/public/deal-photos/${projectId}/${id}.jpg`,
+    sort_order: sortOrder,
+    is_cover: false,
+    published: true,
+    ...extra,
+  });
+
+  test('title map prefers deal title, falls back to project_name then id', () => {
+    const map = buildProjectTitleMap(liveDeals);
+    expect(map['perez-residence-001']).toBe('Perez Residence');
+    expect(map['casa-rosario-001']).toBe('Casa Rosario');
+    expect(map['JV-202603-5190']).toBe('IVX Jacksonville Prime');
+    expect(buildProjectTitleMap([{ id: 'x-1', project_name: 'X Project' }])['x-1']).toBe('X Project');
+    expect(buildProjectTitleMap(null)).toEqual({});
+  });
+
+  test('groups all 3 live projects with their own photos (8 each, exact live shape)', () => {
+    const rows = [
+      ...Array.from({ length: 8 }, (_, i) => mediaRow('perez-residence-001', `p${i}`, i)),
+      ...Array.from({ length: 8 }, (_, i) => mediaRow('casa-rosario-001', `c${i}`, i)),
+      ...Array.from({ length: 8 }, (_, i) => mediaRow('JV-202603-5190', `j${i}`, i)),
+    ];
+    const groups = mapMediaRowsToPublications(rows, buildProjectTitleMap(liveDeals));
+    expect(groups.length).toBe(3);
+    const ids = groups.map((g) => g.projectId).sort();
+    expect(ids).toEqual(['JV-202603-5190', 'casa-rosario-001', 'perez-residence-001']);
+    for (const g of groups) {
+      expect(g.photoCount).toBe(8);
+      expect(g.projectTitle).not.toBe(g.projectId);
+      expect(g.coverUrl).toContain(g.projectId);
+      for (const photo of g.photos) expect(photo.url).toContain(g.projectId);
+    }
+  });
+
+  test('cover photo sorts first; unpublished/broken/non-image/duplicate rows dropped', () => {
+    const rows = [
+      mediaRow('perez-residence-001', 'a', 2),
+      mediaRow('perez-residence-001', 'cover', 5, { is_cover: true }),
+      mediaRow('perez-residence-001', 'hidden', 0, { published: false }),
+      mediaRow('perez-residence-001', 'doc', 1, { media_type: 'document' }),
+      mediaRow('perez-residence-001', 'broken', 1, { public_url: 'not-a-url' }),
+      mediaRow('perez-residence-001', 'a', 2),
+    ];
+    const groups = mapMediaRowsToPublications(rows);
+    expect(groups.length).toBe(1);
+    expect(groups[0].photoCount).toBe(2);
+    expect(groups[0].photos[0].id).toBe('cover');
+    expect(groups[0].coverUrl).toContain('cover');
+  });
+
+  test('non-array input yields empty list', () => {
+    expect(mapMediaRowsToPublications(null)).toEqual([]);
+    expect(mapMediaRowsToPublications({ data: [] })).toEqual([]);
   });
 });
