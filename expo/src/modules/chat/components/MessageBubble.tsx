@@ -106,6 +106,7 @@ export const MessageBubble = memo(function MessageBubble({
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const [pickerVisible, setPickerVisible] = useState<boolean>(false);
   const [qrViewerVisible, setQrViewerVisible] = useState<boolean>(false);
+  const qrTapGuardRef = useRef<boolean>(false);
 
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 150, useNativeDriver: true }).start();
@@ -114,6 +115,10 @@ export const MessageBubble = memo(function MessageBubble({
 
   const handleOpenAttachment = useCallback(async () => {
     if (isQrImageUrl(message.fileUrl)) {
+      if (qrTapGuardRef.current) {
+        return;
+      }
+      qrTapGuardRef.current = true;
       logQrDiagnostics({
         traceId: newQrTraceId(),
         route: 'chat-message',
@@ -454,7 +459,10 @@ export const MessageBubble = memo(function MessageBubble({
       </Pressable>
       <QRViewerModal
         visible={qrViewerVisible}
-        onClose={() => setQrViewerVisible(false)}
+        onClose={() => {
+          qrTapGuardRef.current = false;
+          setQrViewerVisible(false);
+        }}
         destinationUrl={extractQrDestinationUrl(message.fileUrl)}
         imageUrl={message.fileUrl ?? null}
         title="QR Code"

@@ -3595,7 +3595,10 @@ export default function IVXOwnerChatRoute() {
     destinationUrl: null,
   });
 
+  const qrViewerVisibleRef = useRef<boolean>(false);
+
   const handleCloseQrViewer = useCallback(() => {
+    qrViewerVisibleRef.current = false;
     setQrViewer((current) => ({ ...current, visible: false }));
   }, []);
 
@@ -3605,6 +3608,10 @@ export default function IVXOwnerChatRoute() {
     }
 
     if (isQrImageUrl(message.attachmentUrl)) {
+      if (qrViewerVisibleRef.current) {
+        return;
+      }
+      qrViewerVisibleRef.current = true;
       logQrDiagnostics({
         traceId: newQrTraceId(),
         route: '/ivx/chat',

@@ -13,11 +13,13 @@ import {
 import { AlertTriangle, ArrowLeft, Check, Copy, QrCode, RefreshCw, Share2, X } from 'lucide-react-native';
 import QRCodeView from '@/components/QRCodeView';
 import {
+  containsSensitivePayload,
   extractQrDestinationUrl,
   isProbablyHttpUrl,
   logQrDiagnostics,
   newQrTraceId,
   safeUrlHost,
+  validateDestinationUrl,
   validateQrImageUrl,
 } from '@/lib/qr-url';
 
@@ -59,8 +61,12 @@ export default function QRViewerModal({
   const traceId = useMemo(() => newQrTraceId(), []);
 
   const resolvedDestination = useMemo<string | null>(() => {
-    if (isProbablyHttpUrl(destinationUrl)) return (destinationUrl ?? '').trim();
-    return extractQrDestinationUrl(imageUrl);
+    const candidate = isProbablyHttpUrl(destinationUrl)
+      ? (destinationUrl ?? '').trim()
+      : extractQrDestinationUrl(imageUrl);
+    if (!candidate) return null;
+    if (containsSensitivePayload(candidate)) return null;
+    return validateDestinationUrl(candidate).ok ? candidate : null;
   }, [destinationUrl, imageUrl]);
 
   const canRenderLocally = !!resolvedDestination;
