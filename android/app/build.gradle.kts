@@ -13,8 +13,8 @@ android {
         applicationId = "com.rork.ivx26android"
         minSdk = 24
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 7
+        versionName = "1.5.1"
     }
 
     signingConfigs {
