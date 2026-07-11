@@ -60,6 +60,7 @@ import { Property } from '@/types';
 import Colors from '@/constants/colors';
 import { useTranslation } from '@/lib/i18n-context';
 import { formatCurrencyWithDecimals, formatCurrencyCompact } from '@/lib/formatters';
+import { formatPercentSafe } from '@/lib/home-content-guards';
 import { TranslationKeys } from '@/constants/translations';
 import ImageSlider from './ImageSlider';
 import { usePropertyImages } from '@/lib/use-property-images';
@@ -198,7 +199,7 @@ const PropertyCard = memo(function PropertyCard({ property, variant = 'full', is
           </View>
           <View style={styles.compactStats}>
             <Text style={[styles.compactPrice, { fontSize: isXs ? 12 : 14 }]}>{formatCurrencyWithDecimals(property.pricePerShare)}</Text>
-            <Text style={[styles.compactYield, { fontSize: isXs ? 10 : 11 }]}>{property.yield}% {t('yield')}</Text>
+            <Text style={[styles.compactYield, { fontSize: isXs ? 10 : 11 }]}>{formatPercentSafe(property.yield)} {t('yield')}</Text>
           </View>
           {property.status === 'live' && (
             <TouchableOpacity
@@ -264,12 +265,12 @@ const PropertyCard = memo(function PropertyCard({ property, variant = 'full', is
           </View>
           <View style={styles.statDivider} />
           <View style={styles.stat}>
-            <Text style={[styles.statValue, { fontSize: isXs ? 14 : 16 }]}>{property.yield}%</Text>
+            <Text style={[styles.statValue, { fontSize: isXs ? 14 : 16 }]}>{formatPercentSafe(property.yield)}</Text>
             <Text style={[styles.statLabel, { fontSize: isXs ? 10 : 11 }]}>{t('yield')}</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.stat}>
-            <Text style={[styles.statValue, { fontSize: isXs ? 14 : 16 }]}>{property.irr}%</Text>
+            <Text style={[styles.statValue, { fontSize: isXs ? 14 : 16 }]}>{formatPercentSafe(property.irr)}</Text>
             <Text style={[styles.statLabel, { fontSize: isXs ? 10 : 11 }]}>{t('irr')}</Text>
           </View>
           <View style={styles.statDivider} />
@@ -277,7 +278,7 @@ const PropertyCard = memo(function PropertyCard({ property, variant = 'full', is
             <View style={styles.occupancyRow}>
               <TrendingUp size={isXs ? 12 : 14} color={Colors.success} />
               <Text style={[styles.statValue, { fontSize: isXs ? 14 : 16, color: Colors.success }]}>
-                {property.occupancy}%
+                {formatPercentSafe(property.occupancy)}
               </Text>
             </View>
             <Text style={[styles.statLabel, { fontSize: isXs ? 10 : 11 }]}>{t('occupancy')}</Text>

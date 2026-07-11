@@ -1,4 +1,13 @@
-export const formatCurrency = (amount: number, compact = false): string => {
+/**
+ * Guards every money/number formatter against NaN, Infinity, null and
+ * undefined so the UI can never render "$NaN" (production incident: the
+ * "IVX Test" card displayed "$NaN" from a null price field).
+ */
+const safeAmount = (amount: number): number =>
+  typeof amount === 'number' && Number.isFinite(amount) ? amount : 0;
+
+export const formatCurrency = (rawAmount: number, compact = false): string => {
+  const amount = safeAmount(rawAmount);
   if (compact) {
     if (amount >= 1000000000) return `${(amount / 1000000000).toFixed(2)}B`;
     if (amount >= 1000000) return `${(amount / 1000000).toFixed(2)}M`;
@@ -20,21 +29,23 @@ export const formatCurrencyWithDecimals = (amount: number): string => {
     currency: 'USD',
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  }).format(amount);
+  }).format(safeAmount(amount));
 };
 
 export const formatNumber = (value: number): string => {
-  return new Intl.NumberFormat('en-US').format(value);
+  return new Intl.NumberFormat('en-US').format(safeAmount(value));
 };
 
-export const formatCompactNumber = (value: number): string => {
+export const formatCompactNumber = (rawValue: number): string => {
+  const value = safeAmount(rawValue);
   if (value >= 1000000000) return `${(value / 1000000000).toFixed(1)}B`;
   if (value >= 1000000) return `${(value / 1000000).toFixed(1)}M`;
   if (value >= 1000) return `${(value / 1000).toFixed(1)}K`;
   return new Intl.NumberFormat('en-US').format(value);
 };
 
-export const formatCurrencyCompact = (amount: number): string => {
+export const formatCurrencyCompact = (rawAmount: number): string => {
+  const amount = safeAmount(rawAmount);
   if (amount >= 1000000000) return `${(amount / 1000000000).toFixed(2)}B`;
   if (amount >= 1000000) return `${(amount / 1000000).toFixed(2)}M`;
   if (amount >= 1000) return `${new Intl.NumberFormat('en-US').format(Math.round(amount))}`;
@@ -42,14 +53,15 @@ export const formatCurrencyCompact = (amount: number): string => {
 };
 
 export const formatDollar = (amount: number): string => {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount);
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(safeAmount(amount));
 };
 
 export const formatDollarWhole = (amount: number): string => {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(amount);
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(safeAmount(amount));
 };
 
-export const formatDollarCompact = (amount: number): string => {
+export const formatDollarCompact = (rawAmount: number): string => {
+  const amount = safeAmount(rawAmount);
   if (amount >= 1000000000) return `${(amount / 1000000000).toFixed(2)}B`;
   if (amount >= 1000000) return `${(amount / 1000000).toFixed(2)}M`;
   if (amount >= 1000) return `${new Intl.NumberFormat('en-US').format(Math.round(amount))}`;

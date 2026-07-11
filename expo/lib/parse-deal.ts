@@ -456,10 +456,15 @@ async function fetchPublishedJVDealsShared(): Promise<{ deals: ParsedJVDeal[] }>
   const isManualRefresh = (now - _lastManualReset) < 2000;
   console.log('[SharedJVFetch] Fetching via CANONICAL DEALS API (single source of truth) | manual:', isManualRefresh);
 
-  const timeout = new Promise<{ deals: ParsedJVDeal[] }>((resolve) =>
+  // CRITICAL: the timeout must REJECT, not resolve with an empty list.
+  // A resolved-empty result is cached by React Query as a SUCCESS, which made
+  // the live home screen show "No JV deals available yet" (with no retry and
+  // no error state) whenever one slow fetch hit the deadline — even though
+  // published deals exist in Supabase and the public API.
+  const timeout = new Promise<never>((_, reject) =>
     setTimeout(() => {
-      console.log('[SharedJVFetch] Fetch timed out after', SHARED_FETCH_TIMEOUT_MS, 'ms');
-      resolve({ deals: [] });
+      console.log('[SharedJVFetch] Fetch timed out after', SHARED_FETCH_TIMEOUT_MS, 'ms — rejecting so React Query retries');
+      reject(new Error(`JV deals fetch timed out after ${SHARED_FETCH_TIMEOUT_MS}ms`));
     }, SHARED_FETCH_TIMEOUT_MS)
   );
 

@@ -55,6 +55,8 @@ import { useAnalytics } from '@/lib/analytics-context';
 import { useIPX } from '@/lib/ipx-context';
 import { useAuth } from '@/lib/auth-context';
 import PropertyCard from '@/components/PropertyCard';
+import HomeReelsSection from '@/components/HomeReelsSection';
+import { isQuarantinedTestProperty } from '@/lib/home-content-guards';
 import QuickBuyModal from '@/components/QuickBuyModal';
 import TrustDealCard from '@/components/TrustDealCard';
 import { formatCurrency, formatCurrencyCompact, formatCurrencyWithDecimals } from '@/lib/formatters';
@@ -918,9 +920,11 @@ const jvStyles = StyleSheet.create({
   },
 });
 
-function JVDealsCarousel({ jvDeals, jvDealsLoading, isXs, screenWidth, router, openQuickBuy }: {
+function JVDealsCarousel({ jvDeals, jvDealsLoading, jvDealsError, onRetryJVDeals, isXs, screenWidth, router, openQuickBuy }: {
   jvDeals: JVAgreement[];
   jvDealsLoading: boolean;
+  jvDealsError: boolean;
+  onRetryJVDeals: () => void;
   isXs: boolean;
   screenWidth: number;
   router: ReturnType<typeof useRouter>;
@@ -960,6 +964,21 @@ function JVDealsCarousel({ jvDeals, jvDealsLoading, isXs, screenWidth, router, o
             <ActivityIndicator size="large" color={Colors.primary} />
             <Text style={{ color: Colors.textSecondary, fontSize: 13, marginTop: 12 }}>Loading JV Deals...</Text>
           </View>
+        </View>
+      ) : jvDealsError && jvDeals.length === 0 ? (
+        <View style={{ paddingHorizontal: padH, paddingVertical: 32, alignItems: 'center' as const }} testID="jv-deals-error">
+          <Landmark size={32} color={Colors.textTertiary} />
+          <Text style={{ color: Colors.textSecondary, fontSize: 14, marginTop: 10 }}>Couldn&apos;t load deals</Text>
+          <Text style={{ color: Colors.textTertiary, fontSize: 12, marginTop: 4 }}>Check your connection and try again</Text>
+          <TouchableOpacity
+            onPress={onRetryJVDeals}
+            style={{ marginTop: 12, backgroundColor: Colors.primary, borderRadius: 8, paddingHorizontal: 16, paddingVertical: 9 }}
+            testID="jv-deals-retry"
+            accessibilityRole="button"
+            accessibilityLabel="Retry loading JV deals"
+          >
+            <Text style={{ color: Colors.black, fontSize: 13, fontWeight: '700' as const }}>Retry</Text>
+          </TouchableOpacity>
         </View>
       ) : jvDeals.length === 0 ? (
         <View style={{ paddingHorizontal: padH, paddingVertical: 32, alignItems: 'center' as const }}>
@@ -1521,7 +1540,14 @@ export default function HomeScreen() {
     }
     return liveFiltered;
   }, [jvDeals]);
-  const comingSoonProperties = useMemo(() => (properties ?? []).filter((p: { status?: string }) => (p?.status ?? '').toLowerCase() === 'coming_soon').slice(0, 2), [properties]);
+  const comingSoonProperties = useMemo(() => (properties ?? [])
+    .filter((p: { status?: string }) => (p?.status ?? '').toLowerCase() === 'coming_soon')
+    .filter((p: Record<string, unknown>) => {
+      const quarantined = isQuarantinedTestProperty(p as Parameters<typeof isQuarantinedTestProperty>[0]);
+      if (quarantined) console.log('[Home] Quarantined test/invalid property from Coming Soon:', (p as { name?: string })?.name);
+      return !quarantined;
+    })
+    .slice(0, 2), [properties]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -1726,12 +1752,20 @@ export default function HomeScreen() {
             <JVDealsCarousel
               jvDeals={jvDeals}
               jvDealsLoading={jvDealsLoading}
+              jvDealsError={publishedJV.isError}
+              onRetryJVDeals={() => { void publishedJV.refetch(); }}
               isXs={isXs}
               screenWidth={width}
               router={router}
               openQuickBuy={openQuickBuy}
             />
           </JVErrorBoundary>
+
+          {/* 4.5 Reels — same jv_deal_reels source as the landing page */}
+          <HomeReelsSection
+            isXs={isXs}
+            onOpenProject={(projectId) => router.push({ pathname: '/jv-invest', params: { jvId: projectId } } as any)}
+          />
 
           {/* 5. Why IVX — 4 compelling cards */}
           <View style={{ paddingHorizontal: isXs ? 16 : 20 }}>
