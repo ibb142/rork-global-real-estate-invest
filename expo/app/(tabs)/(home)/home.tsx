@@ -55,7 +55,7 @@ import { useAnalytics } from '@/lib/analytics-context';
 import { useIPX } from '@/lib/ipx-context';
 import { useAuth } from '@/lib/auth-context';
 import PropertyCard from '@/components/PropertyCard';
-import HomeReelsSection from '@/components/HomeReelsSection';
+import HomeReelsSection, { useHomeReelsQuery } from '@/components/HomeReelsSection';
 import { isQuarantinedTestProperty } from '@/lib/home-content-guards';
 import QuickBuyModal from '@/components/QuickBuyModal';
 import TrustDealCard from '@/components/TrustDealCard';
@@ -920,7 +920,7 @@ const jvStyles = StyleSheet.create({
   },
 });
 
-function JVDealsCarousel({ jvDeals, jvDealsLoading, jvDealsError, onRetryJVDeals, isXs, screenWidth, router, openQuickBuy }: {
+function JVDealsCarousel({ jvDeals, jvDealsLoading, jvDealsError, onRetryJVDeals, isXs, screenWidth, router, openQuickBuy, reelCounts, onOpenReels }: {
   jvDeals: JVAgreement[];
   jvDealsLoading: boolean;
   jvDealsError: boolean;
@@ -929,6 +929,8 @@ function JVDealsCarousel({ jvDeals, jvDealsLoading, jvDealsError, onRetryJVDeals
   screenWidth: number;
   router: ReturnType<typeof useRouter>;
   openQuickBuy: (deal: JVAgreement) => void;
+  reelCounts?: Record<string, number>;
+  onOpenReels?: (projectId: string) => void;
 }) {
   const [activeIndex, setActiveIndex] = useState<number>(0);
   const padH = isXs ? 16 : 20;
@@ -1006,6 +1008,8 @@ function JVDealsCarousel({ jvDeals, jvDealsLoading, jvDealsError, onRetryJVDeals
                   galleryWidth={cardWidth}
                   onViewDetails={() => router.push({ pathname: '/jv-invest', params: { jvId: deal.id } } as any)}
                   onInvestNow={() => openQuickBuy(deal)}
+                  reelCount={reelCounts?.[deal.id] ?? 0}
+                  onOpenReels={onOpenReels ? () => onOpenReels(deal.id) : undefined}
                 />
               </View>
             ))}
@@ -1443,6 +1447,12 @@ export default function HomeScreen() {
   useJVRealtime('home-jv-deals', true);
   usePublicationWatchdog(true);
 
+  /* Reels ↔ project card linkage: same cached query the reels section uses,
+     so yellow Reels icons on JV cards always match the published reel counts. */
+  const homeReels = useHomeReelsQuery();
+  const reelCounts = homeReels.data?.reelCounts ?? {};
+  const [reelsProjectRequest, setReelsProjectRequest] = useState<string | null>(null);
+
   useEffect(() => {
     analytics?.trackScreen?.('Home');
   }, [analytics]);
@@ -1741,6 +1751,8 @@ export default function HomeScreen() {
                     galleryWidth={Math.min(width - (isXs ? 48 : 56), 320)}
                     onViewDetails={() => router.push({ pathname: '/jv-invest', params: { jvId: deal.id } } as any)}
                     onInvestNow={() => openQuickBuy(deal)}
+                    reelCount={reelCounts[deal.id] ?? 0}
+                    onOpenReels={() => setReelsProjectRequest(deal.id)}
                   />
                 </View>
               ))}
@@ -1758,13 +1770,26 @@ export default function HomeScreen() {
               screenWidth={width}
               router={router}
               openQuickBuy={openQuickBuy}
+              reelCounts={reelCounts}
+              onOpenReels={(projectId) => setReelsProjectRequest(projectId)}
             />
           </JVErrorBoundary>
 
-          {/* 4.5 Reels — same jv_deal_reels source as the landing page */}
+          {/* 4.5 Reels — same jv_deal_reels source as the landing page; every
+              reel carries its linked investment card + Details / Invest Now. */}
           <HomeReelsSection
             isXs={isXs}
             onOpenProject={(projectId) => router.push({ pathname: '/jv-invest', params: { jvId: projectId } } as any)}
+            onInvest={(projectId) => {
+              const deal = jvDeals.find((d) => d.id === projectId);
+              if (deal) {
+                openQuickBuy(deal);
+              } else {
+                router.push({ pathname: '/jv-invest', params: { jvId: projectId } } as any);
+              }
+            }}
+            requestedProjectId={reelsProjectRequest}
+            onRequestHandled={() => setReelsProjectRequest(null)}
           />
 
           {/* 5. Why IVX — 4 compelling cards */}

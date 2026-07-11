@@ -16,6 +16,7 @@ import {
   FileText,
   Lock,
   HardHat,
+  Clapperboard,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
@@ -29,6 +30,10 @@ interface TrustDealCardProps {
   onInvestNow: (deal: ParsedJVDeal) => void;
   onViewDetails: (deal: ParsedJVDeal) => void;
   galleryWidth?: number;
+  /** Published reel count for this project — shows the yellow Reels icon when > 0. */
+  reelCount?: number;
+  /** Opens the reels experience filtered to this exact project (by immutable id). */
+  onOpenReels?: (deal: ParsedJVDeal) => void;
 }
 
 function extractLocationFromDeal(deal: ParsedJVDeal): string {
@@ -105,6 +110,8 @@ const TrustDealCard = memo(function TrustDealCard({
   onInvestNow,
   onViewDetails,
   galleryWidth = 300,
+  reelCount = 0,
+  onOpenReels,
 }: TrustDealCardProps) {
   const trust = useMemo(() => {
     if (deal.trustInfo) {
@@ -297,6 +304,18 @@ const TrustDealCard = memo(function TrustDealCard({
               <Text style={styles.verifiedBadgeText}>VERIFIED</Text>
             </View>
           )}
+          {reelCount > 0 && onOpenReels ? (
+            <TouchableOpacity
+              style={styles.reelsBadgeOverlay}
+              onPress={() => onOpenReels(deal)}
+              testID={`trust-deal-reels-${deal.id}`}
+              accessibilityRole="button"
+              accessibilityLabel={`Open Property Reels for ${deal.title || deal.projectName}`}
+            >
+              <Clapperboard size={12} color="#000000" />
+              <Text style={styles.reelsBadgeText}>{reelCount === 1 ? 'REEL' : `${reelCount} REELS`}</Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
       )}
 
@@ -463,6 +482,29 @@ const styles = StyleSheet.create({
     width: 18,
     backgroundColor: Colors.primary,
     borderRadius: 3,
+  },
+  reelsBadgeOverlay: {
+    position: 'absolute' as const,
+    bottom: 44,
+    right: 10,
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 5,
+    backgroundColor: Colors.primary,
+    borderRadius: 100,
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+    shadowColor: '#000',
+    shadowOpacity: 0.4,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 4,
+  },
+  reelsBadgeText: {
+    color: '#000000',
+    fontSize: 10,
+    fontWeight: '900' as const,
+    letterSpacing: 0.5,
   },
   photoCounter: {
     position: 'absolute' as const,

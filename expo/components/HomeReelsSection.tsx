@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -16,12 +16,17 @@ import { Video, ResizeMode } from 'expo-av';
 import { Clapperboard, Play, X, RefreshCw, WifiOff, Image as ImageIcon } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { formatCurrencyCompact } from '@/lib/formatters';
 import {
   mapReelRows,
   mapMediaRowsToPublications,
   buildProjectTitleMap,
+  mapDealRowsToSummaries,
+  countReelsByProject,
+  formatOwnershipPercent,
   type HomeReel,
   type HomePublicationGroup,
+  type DealInvestmentSummary,
 } from '@/lib/home-content-guards';
 
 export const QUERY_KEY_HOME_REELS = ['home', 'reels-publications'] as const;
@@ -30,6 +35,13 @@ interface HomeReelsData {
   reels: HomeReel[];
   publications: HomePublicationGroup[];
   titleMap: Record<string, string>;
+  dealMap: Record<string, DealInvestmentSummary>;
+  reelCounts: Record<string, number>;
+}
+
+function fmtMoney(value: number): string {
+  const compact = formatCurrencyCompact(value);
+  return compact.startsWith('$') ? compact : `$${compact}`;
 }
 
 function isMissingTableError(message: string | undefined): boolean {
@@ -44,27 +56,50 @@ function isMissingTableError(message: string | undefined): boolean {
  * UI shows an explicit error + Retry instead of silently hiding content.
  */
 async function fetchHomeReels(): Promise<HomeReelsData> {
-  if (!isSupabaseConfigured()) return { reels: [], publications: [], titleMap: {} };
+  if (!isSupabaseConfigured()) return { reels: [], publications: [], titleMap: {}, dealMap: {}, reelCounts: {} };
   const [reelsRes, mediaRes, dealsRes] = await Promise.all([
     supabase.from('jv_deal_reels').select('*').eq('published', true).order('sort_order', { ascending: true }),
     supabase.from('jv_deal_media').select('id,project_id,media_type,public_url,sort_order,is_cover,published').eq('published', true).order('sort_order', { ascending: true }),
-    supabase.from('jv_deals').select('id,title,project_name').eq('published', true),
+    supabase.from('jv_deals').select('id,title,project_name,city,state,country,total_investment,expected_roi,estimated_value,propertyValue,min_investment,partner_name,status').eq('published', true),
   ]);
 
   if (reelsRes.error && mediaRes.error && !isMissingTableError(reelsRes.error.message)) {
     throw new Error(reelsRes.error.message);
   }
 
-  const titleMap = buildProjectTitleMap(dealsRes.error ? [] : dealsRes.data);
+  const dealRows = dealsRes.error ? [] : dealsRes.data;
+  const titleMap = buildProjectTitleMap(dealRows);
+  const dealMap = mapDealRowsToSummaries(dealRows);
   const reels = reelsRes.error ? [] : mapReelRows(reelsRes.data);
   const publications = mediaRes.error ? [] : mapMediaRowsToPublications(mediaRes.data, titleMap);
-  console.log('[HomeReels] Fetched', reels.length, 'reels,', publications.length, 'publication groups');
-  return { reels, publications, titleMap };
+  const reelCounts = countReelsByProject(reels);
+  console.log('[HomeReels] Fetched', reels.length, 'reels,', publications.length, 'publication groups,', Object.keys(dealMap).length, 'deal summaries');
+  return { reels, publications, titleMap, dealMap, reelCounts };
+}
+
+/**
+ * Shared home reels query — same queryKey everywhere so the JV deal cards'
+ * yellow Reels icons and the reels section read one cached result.
+ */
+export function useHomeReelsQuery() {
+  return useQuery({
+    queryKey: [...QUERY_KEY_HOME_REELS],
+    queryFn: fetchHomeReels,
+    retry: 2,
+    retryDelay: (attempt: number) => Math.min(1000 * 2 ** attempt, 8000),
+    staleTime: 1000 * 60 * 5,
+    refetchOnWindowFocus: false,
+  });
 }
 
 interface HomeReelsSectionProps {
   isXs: boolean;
   onOpenProject?: (projectId: string) => void;
+  /** Opens the correct project investment flow (Invest Now inside a reel). */
+  onInvest?: (projectId: string) => void;
+  /** When set (from a project card's yellow Reels icon), opens that project's first reel. */
+  requestedProjectId?: string | null;
+  onRequestHandled?: () => void;
 }
 
 /**
@@ -73,7 +108,7 @@ interface HomeReelsSectionProps {
  * zero published reels; fetch failures show an error state with Retry instead
  * of silently disappearing.
  */
-export default function HomeReelsSection({ isXs, onOpenProject }: HomeReelsSectionProps) {
+export default function HomeReelsSection({ isXs, onOpenProject, onInvest, requestedProjectId, onRequestHandled }: HomeReelsSectionProps) {
   const padH = isXs ? 16 : 20;
   const [activeReel, setActiveReel] = useState<HomeReel | null>(null);
   const [playbackError, setPlaybackError] = useState<string | null>(null);
@@ -81,23 +116,31 @@ export default function HomeReelsSection({ isXs, onOpenProject }: HomeReelsSecti
   const { width: windowWidth } = useWindowDimensions();
   const galleryPageWidth = Math.max(200, Math.min(windowWidth - 40, 420) - 28);
 
-  const query = useQuery({
-    queryKey: [...QUERY_KEY_HOME_REELS],
-    queryFn: fetchHomeReels,
-    retry: 2,
-    retryDelay: (attempt: number) => Math.min(1000 * 2 ** attempt, 8000),
-    staleTime: 1000 * 60 * 5,
-    refetchOnWindowFocus: false,
-  });
+  const query = useHomeReelsQuery();
 
   const reels = query.data?.reels ?? [];
   const publications = query.data?.publications ?? [];
   const titleMap = query.data?.titleMap ?? {};
+  const dealMap = query.data?.dealMap ?? {};
+  const reelCounts = query.data?.reelCounts ?? {};
 
   const closePlayer = useCallback(() => {
     setActiveReel(null);
     setPlaybackError(null);
   }, []);
+
+  useEffect(() => {
+    if (!requestedProjectId || !query.data) return;
+    const match = query.data.reels.find((r) => r.projectId === requestedProjectId);
+    if (match) {
+      setPlaybackError(null);
+      setActiveReel(match);
+      console.log('[HomeReels] Opened project-filtered reel', match.id, 'for project', requestedProjectId);
+    } else {
+      console.log('[HomeReels] No published reel for project', requestedProjectId);
+    }
+    onRequestHandled?.();
+  }, [requestedProjectId, query.data, onRequestHandled]);
 
   const closeGallery = useCallback(() => {
     setActiveGallery(null);
@@ -183,9 +226,16 @@ export default function HomeReelsSection({ isXs, onOpenProject }: HomeReelsSecti
                   <Play size={16} color="#fff" fill="#fff" />
                 </View>
               </View>
-              {reel.caption ? (
-                <Text style={rStyles.reelCaption} numberOfLines={2}>{reel.caption}</Text>
-              ) : null}
+              <View>
+                {reel.caption ? (
+                  <Text style={rStyles.reelCaption} numberOfLines={2}>{reel.caption}</Text>
+                ) : null}
+                {dealMap[reel.projectId] ? (
+                  <Text style={rStyles.reelInvestHint} numberOfLines={1}>
+                    {`${fmtMoney(dealMap[reel.projectId].investmentAmount)} · ${dealMap[reel.projectId].roiPercent}% ROI`}
+                  </Text>
+                ) : null}
+              </View>
             </View>
           </TouchableOpacity>
         ))}
@@ -259,20 +309,41 @@ export default function HomeReelsSection({ isXs, onOpenProject }: HomeReelsSecti
             {activeReel?.caption ? (
               <Text style={rStyles.playerCaption} numberOfLines={2}>{activeReel.caption}</Text>
             ) : null}
-            <View style={rStyles.playerActions}>
-              {activeReel?.projectId && onOpenProject ? (
-                <TouchableOpacity
-                  style={rStyles.projectBtn}
-                  onPress={() => {
+            {activeReel ? (
+              dealMap[activeReel.projectId] ? (
+                <ReelInvestmentCard
+                  deal={dealMap[activeReel.projectId]}
+                  reelCount={reelCounts[activeReel.projectId] ?? 0}
+                  onDetails={onOpenProject ? () => {
                     const pid = activeReel.projectId;
                     closePlayer();
                     onOpenProject(pid);
-                  }}
-                  testID="home-reel-open-project"
-                >
-                  <Text style={rStyles.projectBtnText}>View Project</Text>
-                </TouchableOpacity>
-              ) : null}
+                  } : undefined}
+                  onInvest={onInvest ? () => {
+                    const pid = activeReel.projectId;
+                    closePlayer();
+                    onInvest(pid);
+                  } : undefined}
+                />
+              ) : activeReel.projectId ? (
+                <View style={rStyles.unavailableBox} testID="home-reel-project-unavailable">
+                  <Text style={rStyles.stateText}>Project details temporarily unavailable</Text>
+                  <TouchableOpacity
+                    style={rStyles.retryBtn}
+                    onPress={() => query.refetch()}
+                    testID="home-reel-project-retry"
+                    accessibilityRole="button"
+                    accessibilityLabel="Retry loading project details"
+                  >
+                    <RefreshCw size={14} color={Colors.black} />
+                    <Text style={rStyles.retryText}>Retry</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <Text style={rStyles.galleryHint}>IVX promotional reel</Text>
+              )
+            ) : null}
+            <View style={rStyles.playerActions}>
               <TouchableOpacity
                 style={rStyles.closeBtn}
                 onPress={closePlayer}
@@ -357,8 +428,93 @@ function SectionHeader({ isXs, padH }: { isXs: boolean; padH: number }) {
   return (
     <View style={[rStyles.header, { paddingHorizontal: padH }]}>
       <View style={rStyles.headerLeft}>
-        <Clapperboard size={isXs ? 16 : 18} color={Colors.primary} />
-        <Text style={[rStyles.headerTitle, { fontSize: isXs ? 16 : 18 }]}>Reels &amp; Publications</Text>
+        <View style={rStyles.headerIconWrap} testID="home-reels-yellow-icon">
+          <Clapperboard size={isXs ? 14 : 16} color={Colors.black} />
+        </View>
+        <Text style={[rStyles.headerTitle, { fontSize: isXs ? 16 : 18 }]}>Property Reels</Text>
+      </View>
+    </View>
+  );
+}
+
+/**
+ * Investment card rendered under every reel — the reel is never a standalone
+ * video: it always carries its project's live investment numbers and actions.
+ */
+function ReelInvestmentCard({ deal, reelCount, onDetails, onInvest }: {
+  deal: DealInvestmentSummary;
+  reelCount: number;
+  onDetails?: () => void;
+  onInvest?: () => void;
+}) {
+  const ownership = formatOwnershipPercent(deal.fractionalMinimum, deal.salePrice);
+  return (
+    <View style={rStyles.investCard} testID={`home-reel-invest-card-${deal.id}`}>
+      <Text style={rStyles.investTitle} numberOfLines={1}>{deal.title}</Text>
+      {deal.location ? (
+        <Text style={rStyles.investLocation} numberOfLines={1}>{deal.location}</Text>
+      ) : null}
+      <View style={rStyles.investMetricsRow}>
+        <View style={rStyles.investMetric}>
+          <Text style={rStyles.investMetricVal}>{fmtMoney(deal.investmentAmount)}</Text>
+          <Text style={rStyles.investMetricLbl}>INVESTMENT</Text>
+        </View>
+        <View style={rStyles.investMetric}>
+          <Text style={rStyles.investMetricVal}>{`${deal.roiPercent}%`}</Text>
+          <Text style={rStyles.investMetricLbl}>ROI</Text>
+        </View>
+        <View style={rStyles.investMetric}>
+          <Text style={rStyles.investMetricVal}>{fmtMoney(deal.salePrice)}</Text>
+          <Text style={rStyles.investMetricLbl}>SALE PRICE</Text>
+        </View>
+      </View>
+      <View style={rStyles.investFracRow}>
+        <Text style={rStyles.investFracText}>
+          Fractional from <Text style={rStyles.investFracStrong}>{`$${deal.fractionalMinimum.toFixed(2)}`}</Text>
+        </Text>
+        {ownership ? (
+          <Text style={rStyles.investFracText}>
+            <Text style={rStyles.investFracStrong}>{ownership}</Text> min ownership
+          </Text>
+        ) : null}
+      </View>
+      <Text style={rStyles.investDeveloper} numberOfLines={1}>
+        Developed by <Text style={rStyles.investFracStrong}>{deal.developer}</Text>
+      </Text>
+      <View style={rStyles.investBadgeRow}>
+        <View style={rStyles.liveBadge}>
+          <View style={rStyles.liveDot} />
+          <Text style={rStyles.liveBadgeText}>LIVE</Text>
+        </View>
+        {reelCount > 0 ? (
+          <View style={rStyles.reelCountPill}>
+            <Text style={rStyles.reelCountPillText}>{reelCount === 1 ? '1 REEL' : `${reelCount} REELS`}</Text>
+          </View>
+        ) : null}
+      </View>
+      <View style={rStyles.investActions}>
+        {onDetails ? (
+          <TouchableOpacity
+            style={rStyles.detailsBtn}
+            onPress={onDetails}
+            testID="home-reel-open-project"
+            accessibilityRole="button"
+            accessibilityLabel={`View details for ${deal.title}`}
+          >
+            <Text style={rStyles.detailsBtnText}>Details</Text>
+          </TouchableOpacity>
+        ) : null}
+        {onInvest ? (
+          <TouchableOpacity
+            style={rStyles.investBtn}
+            onPress={onInvest}
+            testID="home-reel-invest-now"
+            accessibilityRole="button"
+            accessibilityLabel={`Invest now in ${deal.title}`}
+          >
+            <Text style={rStyles.investBtnText}>Invest Now</Text>
+          </TouchableOpacity>
+        ) : null}
       </View>
     </View>
   );
@@ -382,6 +538,153 @@ const rStyles = StyleSheet.create({
   headerTitle: {
     fontWeight: '700' as const,
     color: Colors.text,
+  },
+  headerIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  investCard: {
+    borderRadius: 14,
+    backgroundColor: Colors.backgroundTertiary,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    padding: 14,
+    gap: 8,
+  },
+  investTitle: {
+    color: Colors.text,
+    fontSize: 16,
+    fontWeight: '900' as const,
+  },
+  investLocation: {
+    color: Colors.textTertiary,
+    fontSize: 12,
+  },
+  investMetricsRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  investMetric: {
+    flex: 1,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  investMetricVal: {
+    color: Colors.primary,
+    fontSize: 14,
+    fontWeight: '800' as const,
+  },
+  investMetricLbl: {
+    color: Colors.textTertiary,
+    fontSize: 9,
+    letterSpacing: 0.8,
+    marginTop: 2,
+  },
+  investFracRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  investFracText: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+  },
+  investFracStrong: {
+    color: Colors.primary,
+    fontWeight: '800' as const,
+  },
+  investDeveloper: {
+    color: Colors.textTertiary,
+    fontSize: 11,
+  },
+  investBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  liveBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(0,196,140,0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(0,196,140,0.4)',
+    borderRadius: 10,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+  },
+  liveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#22C55E',
+  },
+  liveBadgeText: {
+    color: '#22C55E',
+    fontSize: 9,
+    fontWeight: '900' as const,
+    letterSpacing: 1.2,
+  },
+  reelCountPill: {
+    backgroundColor: 'rgba(255,215,0,0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,215,0,0.35)',
+    borderRadius: 10,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+  },
+  reelCountPillText: {
+    color: Colors.primary,
+    fontSize: 9,
+    fontWeight: '800' as const,
+  },
+  investActions: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 2,
+  },
+  detailsBtn: {
+    flex: 1,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,215,0,0.5)',
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  detailsBtnText: {
+    color: Colors.primary,
+    fontSize: 13,
+    fontWeight: '800' as const,
+  },
+  investBtn: {
+    flex: 1.2,
+    borderRadius: 10,
+    backgroundColor: Colors.primary,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  investBtnText: {
+    color: Colors.black,
+    fontSize: 13,
+    fontWeight: '900' as const,
+  },
+  unavailableBox: {
+    borderRadius: 14,
+    backgroundColor: Colors.backgroundTertiary,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    padding: 16,
+    alignItems: 'center',
+    gap: 8,
   },
   stateBox: {
     height: 140,
@@ -478,6 +781,14 @@ const rStyles = StyleSheet.create({
     color: '#fff',
     fontSize: 12,
     fontWeight: '600' as const,
+    textShadowColor: 'rgba(0,0,0,0.6)',
+    textShadowRadius: 4,
+  },
+  reelInvestHint: {
+    color: Colors.primary,
+    fontSize: 11,
+    fontWeight: '800' as const,
+    marginTop: 3,
     textShadowColor: 'rgba(0,0,0,0.6)',
     textShadowRadius: 4,
   },

@@ -8,6 +8,9 @@ import {
   mapReelRows,
   buildProjectTitleMap,
   mapMediaRowsToPublications,
+  mapDealRowsToSummaries,
+  countReelsByProject,
+  formatOwnershipPercent,
 } from '@/lib/home-content-guards';
 import {
   formatCurrency,
@@ -202,5 +205,64 @@ describe('publications next to the project: jv_deal_media grouped per project', 
   test('non-array input yields empty list', () => {
     expect(mapMediaRowsToPublications(null)).toEqual([]);
     expect(mapMediaRowsToPublications({ data: [] })).toEqual([]);
+  });
+});
+
+describe('reel ↔ investment card linkage: every reel resolves its project by immutable id', () => {
+  // Exact live jv_deals row shapes (Supabase, published=true)
+  const liveDeals = [
+    { id: 'perez-residence-001', title: 'PEREZ RESIDENCE', project_name: 'ONE STOP DEVELOPMENT LLC', city: 'Southwest Ranches', state: 'FL', country: 'US', total_investment: 2500000, expected_roi: 25, estimated_value: 3125000, min_investment: null, propertyValue: 0, partner_name: 'ONE STOP DEVELOPMENT LLC', status: 'active' },
+    { id: 'JV-202603-5190', title: 'ONE STOP CONSTRUCTORS INC', project_name: 'IVX JACKSONVILLE PRIME', city: null, state: null, country: 'Puerto Rico', total_investment: 400000, expected_roi: 9.5, estimated_value: 0, min_investment: null, propertyValue: 0, partner_name: null, status: 'active' },
+    { id: 'casa-rosario-001', title: 'Casa Rosario', project_name: 'Casa Rosario', city: 'Pembroke Pines', state: 'FL', country: 'USA', total_investment: 1400000, expected_roi: 30, estimated_value: 1400000, min_investment: 50, propertyValue: 1400000, partner_name: 'ONE STOP DEVELOPMENT TWO LLC', status: 'active' },
+  ];
+
+  test('maps the exact live rows keyed by project id — no index or title matching', () => {
+    const map = mapDealRowsToSummaries(liveDeals);
+    expect(Object.keys(map).sort()).toEqual(['JV-202603-5190', 'casa-rosario-001', 'perez-residence-001']);
+
+    const casa = map['casa-rosario-001'];
+    expect(casa.title).toBe('Casa Rosario');
+    expect(casa.location).toBe('Pembroke Pines, FL');
+    expect(casa.investmentAmount).toBe(1400000);
+    expect(casa.roiPercent).toBe(30);
+    expect(casa.salePrice).toBe(1400000);
+    expect(casa.fractionalMinimum).toBe(50);
+    expect(casa.developer).toBe('ONE STOP DEVELOPMENT TWO LLC');
+
+    const perez = map['perez-residence-001'];
+    expect(perez.salePrice).toBe(3125000);
+    expect(perez.fractionalMinimum).toBe(50); // null min_investment falls back to $50, never NaN
+
+    const jax = map['JV-202603-5190'];
+    expect(jax.location).toBe('Puerto Rico'); // null city/state falls back to country
+    expect(jax.salePrice).toBe(400000); // estimated_value 0 falls back to total_investment
+    expect(jax.developer).toBe('IVX JACKSONVILLE PRIME'); // null partner_name falls back to project_name
+  });
+
+  test('summaries never contain NaN for broken financials', () => {
+    const map = mapDealRowsToSummaries([{ id: 'x', title: 'X', total_investment: 'garbage', expected_roi: undefined }]);
+    expect(Number.isFinite(map['x'].investmentAmount)).toBe(true);
+    expect(Number.isFinite(map['x'].roiPercent)).toBe(true);
+    expect(Number.isFinite(map['x'].minOwnershipPercent)).toBe(true);
+  });
+
+  test('countReelsByProject counts by immutable project id', () => {
+    const reels = mapReelRows([
+      { id: 'r1', project_id: 'casa-rosario-001', published: true, visibility: 'public', video_url: 'https://ivxholding.com/v/1.mp4', sort_order: 0 },
+      { id: 'r2', project_id: 'casa-rosario-001', published: true, visibility: 'public', video_url: 'https://ivxholding.com/v/2.mp4', sort_order: 1 },
+      { id: 'r3', project_id: 'perez-residence-001', published: true, visibility: 'public', video_url: 'https://ivxholding.com/v/3.mp4', sort_order: 2 },
+    ]);
+    const counts = countReelsByProject(reels);
+    expect(counts['casa-rosario-001']).toBe(2);
+    expect(counts['perez-residence-001']).toBe(1);
+    expect(counts['JV-202603-5190']).toBeUndefined(); // no reels → no icon, never a fake count
+  });
+
+  test('formatOwnershipPercent never renders NaN', () => {
+    expect(formatOwnershipPercent(50, 1400000)).toBe('0.0036%');
+    expect(formatOwnershipPercent(50000, 100000)).toBe('50.00%');
+    expect(formatOwnershipPercent(0, 1400000)).toBe('');
+    expect(formatOwnershipPercent(50, 0)).toBe('');
+    expect(formatOwnershipPercent(Number.NaN, Number.NaN)).toBe('');
   });
 });

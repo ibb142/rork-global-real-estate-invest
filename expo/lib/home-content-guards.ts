@@ -153,6 +153,89 @@ export function buildProjectTitleMap(rows: unknown): Record<string, string> {
 }
 
 /**
+ * Investment summary for a JV project, attached to every reel so the app
+ * never renders a video without its linked investment card (owner directive:
+ * reels are an investment surface, not a generic video gallery).
+ */
+export interface DealInvestmentSummary {
+  id: string;
+  title: string;
+  location: string;
+  investmentAmount: number;
+  roiPercent: number;
+  salePrice: number;
+  fractionalMinimum: number;
+  minOwnershipPercent: number;
+  developer: string;
+  status: string;
+}
+
+/**
+ * Maps raw published jv_deals rows to per-project investment summaries keyed
+ * by immutable project id (never by array index or title guessing).
+ */
+export function mapDealRowsToSummaries(rows: unknown): Record<string, DealInvestmentSummary> {
+  const map: Record<string, DealInvestmentSummary> = {};
+  if (!Array.isArray(rows)) return map;
+  for (const raw of rows) {
+    const r = raw as Record<string, unknown> | null;
+    if (!r || typeof r.id !== 'string' || !r.id) continue;
+    const title =
+      (typeof r.title === 'string' && r.title.trim()) ||
+      (typeof r.project_name === 'string' && r.project_name.trim()) ||
+      r.id;
+    const city = typeof r.city === 'string' ? r.city.trim() : '';
+    const state = typeof r.state === 'string' ? r.state.trim() : '';
+    const country = typeof r.country === 'string' ? r.country.trim() : '';
+    const location = city && state ? `${city}, ${state}` : city || state || country;
+    const investmentAmount = toFiniteNumber(r.total_investment, 0);
+    const salePrice =
+      toFiniteNumber(r.estimated_value, 0) ||
+      toFiniteNumber(r.propertyValue, 0) ||
+      investmentAmount;
+    const rawMin = toFiniteNumber(r.min_investment, 0);
+    const fractionalMinimum = rawMin > 0 ? rawMin : 50;
+    const minOwnershipPercent = salePrice > 0 ? (fractionalMinimum / salePrice) * 100 : 0;
+    const developer =
+      (typeof r.partner_name === 'string' && r.partner_name.trim()) ||
+      (typeof r.project_name === 'string' && r.project_name.trim()) ||
+      'IVX Holdings LLC';
+    map[r.id] = {
+      id: r.id,
+      title,
+      location,
+      investmentAmount,
+      roiPercent: toFiniteNumber(r.expected_roi, 0),
+      salePrice,
+      fractionalMinimum,
+      minOwnershipPercent,
+      developer,
+      status: typeof r.status === 'string' ? r.status : '',
+    };
+  }
+  return map;
+}
+
+/** Counts published reels per project id — drives the yellow reels icon on project cards. */
+export function countReelsByProject(reels: HomeReel[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const reel of reels) {
+    if (!reel.projectId) continue;
+    counts[reel.projectId] = (counts[reel.projectId] ?? 0) + 1;
+  }
+  return counts;
+}
+
+/** Formats a minimum-ownership percent without ever rendering NaN. */
+export function formatOwnershipPercent(minInvestment: number, salePrice: number): string {
+  const min = toFiniteNumber(minInvestment, 0);
+  const sale = toFiniteNumber(salePrice, 0);
+  if (!(min > 0) || !(sale > 0)) return '';
+  const pct = (min / sale) * 100;
+  return `${pct.toFixed(pct >= 1 ? 2 : 4)}%`;
+}
+
+/**
  * Groups published jv_deal_media image rows by project so each project's
  * publications render next to that project. Unpublished rows, broken URLs,
  * and unknown shapes are dropped; one bad row never hides a project's group.

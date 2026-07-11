@@ -2790,6 +2790,7 @@
     <li><a href="#trust">Security</a></li>
     <li><a href="#reviews">Reviews</a></li>
     <li><a href="#partners">Partner &amp; Earn</a></li>
+    <li><a href="/reels" aria-label="Open Property Reels" onclick="return window.ivxOpenReels ? window.ivxOpenReels(null) : true;" style="display:inline-flex;align-items:center;gap:6px;color:#FFD700;font-weight:800;"><span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:6px;background:#FFD700;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m22 8-6 4 6 4V8Z"/><rect width="14" height="12" x="2" y="6" rx="2" ry="2"/></svg></span>Reels</a></li>
     <li><a href="#" onclick="openPortal(); return false;" style="color:var(--green);font-weight:700;">My Portal</a></li>
     <li><a href="#" class="nav-cta-btn" onclick="openFunnel(); return false;">Get Started</a></li>
   </ul>
@@ -2879,20 +2880,65 @@
 <!-- Live deals loading indicator (hidden, used by JS) -->
 <div id="live-deals-loading" style="display:none;"></div>
 
-<!-- PROPERTY REELS — published, approved project videos only (canonical source: Supabase) -->
+<!-- PROPERTY REELS — every reel is connected to its live investment project (canonical source: Supabase jv_deal_reels → jv_deals) -->
+<style>
+  .ivx-reel-card { min-width: 300px; max-width: 320px; scroll-snap-align: start; background: var(--bg2, #101010); border: 1px solid var(--border, #222); border-radius: 16px; overflow: hidden; flex-shrink: 0; display: flex; flex-direction: column; }
+  .ivx-reel-media { position: relative; background: #000; }
+  .ivx-reel-media video { width: 100%; aspect-ratio: 9/16; max-height: 400px; object-fit: cover; display: block; background: #000; }
+  .ivx-reel-video-error { display: none; align-items: center; justify-content: center; flex-direction: column; gap: 8px; width: 100%; aspect-ratio: 9/16; max-height: 400px; color: #9A9A9A; font-size: 13px; background: #0B0B0B; }
+  .ivx-reel-project-badge { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.75); border: 1px solid rgba(255,215,0,0.55); color: #FFD700; border-radius: 10px; padding: 5px 10px; font-size: 10px; font-weight: 800; letter-spacing: 0.6px; max-width: 68%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ivx-reel-live-badge { position: absolute; top: 10px; right: 10px; display: flex; align-items: center; gap: 5px; background: rgba(0,196,140,0.2); border: 1px solid rgba(0,196,140,0.4); border-radius: 10px; padding: 5px 10px; font-size: 9px; font-weight: 900; color: #00C48C; letter-spacing: 1.5px; }
+  .ivx-reel-invest-card { padding: 16px; display: flex; flex-direction: column; gap: 10px; background: #0E0E0E; border-top: 1px solid var(--border, #222); }
+  .ivx-reel-title { font-size: 17px; font-weight: 900; color: #FFFFFF; letter-spacing: -0.2px; }
+  .ivx-reel-loc { display: flex; align-items: center; gap: 4px; font-size: 12px; color: #9A9A9A; margin-top: 3px; }
+  .ivx-reel-metrics { display: flex; gap: 8px; }
+  .ivx-reel-metric { flex: 1; background: rgba(255,255,255,0.04); border: 1px solid var(--border, #222); border-radius: 10px; padding: 8px 4px; text-align: center; }
+  .ivx-reel-metric-val { font-size: 14px; font-weight: 800; color: #FFD700; }
+  .ivx-reel-metric-lbl { font-size: 9px; color: #8A8A8A; letter-spacing: 0.8px; margin-top: 2px; text-transform: uppercase; }
+  .ivx-reel-frac-row { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 6px; font-size: 12px; color: #C9C9C9; }
+  .ivx-reel-frac-row strong { color: #FFD700; font-weight: 800; }
+  .ivx-reel-dev { font-size: 11px; color: #9A9A9A; }
+  .ivx-reel-dev strong { color: #FFD700; font-weight: 800; }
+  .ivx-reel-badge-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .ivx-reel-inline-live { display: inline-flex; align-items: center; gap: 5px; background: rgba(0,196,140,0.2); border: 1px solid rgba(0,196,140,0.4); border-radius: 10px; padding: 4px 9px; font-size: 9px; font-weight: 900; color: #00C48C; letter-spacing: 1.2px; }
+  .ivx-reel-badge-verified { display: none; align-items: center; gap: 4px; background: rgba(0,196,140,0.15); border: 1px solid rgba(0,196,140,0.3); border-radius: 10px; padding: 4px 9px; font-size: 9px; font-weight: 800; color: #00C48C; }
+  .ivx-reel-count-pill { display: inline-flex; align-items: center; gap: 4px; background: rgba(255,215,0,0.1); border: 1px solid rgba(255,215,0,0.35); border-radius: 10px; padding: 4px 9px; font-size: 9px; font-weight: 800; color: #FFD700; }
+  .ivx-reel-actions { display: flex; gap: 8px; }
+  .ivx-reel-details-btn { flex: 1; background: transparent; border: 1px solid rgba(255,215,0,0.5); color: #FFD700; border-radius: 10px; padding: 11px 0; font-size: 13px; font-weight: 800; cursor: pointer; }
+  .ivx-reel-invest-btn { flex: 1.2; background: #FFD700; border: none; color: #000; border-radius: 10px; padding: 11px 0; font-size: 13px; font-weight: 900; cursor: pointer; }
+  .ivx-reel-unavailable { padding: 18px; text-align: center; color: #C9C9C9; font-size: 13px; display: flex; flex-direction: column; gap: 10px; align-items: center; background: #0E0E0E; border-top: 1px solid var(--border, #222); }
+  .ivx-reel-retry-btn { background: #FFD700; color: #000; border: none; border-radius: 8px; padding: 8px 18px; font-size: 12px; font-weight: 800; cursor: pointer; }
+  .ivx-card-reels-btn { position: absolute; bottom: 44px; right: 10px; z-index: 5; display: flex; align-items: center; gap: 5px; background: #FFD700; color: #000; border: none; border-radius: 100px; padding: 7px 11px; font-size: 10px; font-weight: 900; letter-spacing: 0.5px; cursor: pointer; box-shadow: 0 4px 14px rgba(0,0,0,0.45); }
+  #reels-fab { position: fixed; bottom: 24px; left: 20px; z-index: 950; width: 56px; height: 56px; border-radius: 50%; background: #FFD700; border: none; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 6px 20px rgba(255,215,0,0.35); }
+  #reels-fab:hover { transform: scale(1.06); }
+  .ivx-reels-section-icon { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 10px; background: #FFD700; flex-shrink: 0; }
+  #reels-see-all { display: inline-flex; align-items: center; gap: 4px; color: #FFD700; font-size: 13px; font-weight: 800; text-decoration: none; }
+  #reels-filter-chip { display: none; align-items: center; gap: 10px; margin: 0 0 14px; padding: 9px 14px; background: rgba(255,215,0,0.08); border: 1px solid rgba(255,215,0,0.3); border-radius: 100px; font-size: 12px; color: #E8E8E8; width: fit-content; max-width: 100%; }
+  #reels-filter-chip strong { color: #FFD700; }
+  #reels-filter-chip button { background: transparent; border: none; color: #FFD700; font-size: 12px; font-weight: 800; cursor: pointer; text-decoration: underline; }
+</style>
 <section id="reels" style="padding:80px 24px 0;">
   <div class="wrap">
     <div class="live-deals-header reveal">
       <div class="live-deals-title-row">
-        <span style="font-size:22px;">&#127909;</span>
+        <span class="ivx-reels-section-icon" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m22 8-6 4 6 4V8Z"/><rect width="14" height="12" x="2" y="6" rx="2" ry="2"/></svg>
+        </span>
         <h2 class="live-deals-title">Property Reels</h2>
       </div>
-      <div class="live-deals-badge" id="reels-count-badge" style="display:none;">
-        <div class="live-deals-pulse"></div>
-        <span id="reels-live-count">0 REELS</span>
+      <div style="display:flex;align-items:center;gap:12px;">
+        <div class="live-deals-badge" id="reels-count-badge" style="display:none;">
+          <div class="live-deals-pulse"></div>
+          <span id="reels-live-count">0 REELS</span>
+        </div>
+        <a href="/reels" id="reels-see-all" aria-label="See all property reels" onclick="return window.ivxOpenReels ? window.ivxOpenReels(null) : true;">See All</a>
       </div>
     </div>
-    <p class="live-deals-sub reveal">Verified walkthroughs and project videos, published per property.</p>
+    <p class="live-deals-sub reveal">Every reel is connected to its live investment project — watch the property, review the numbers, then invest.</p>
+    <div id="reels-filter-chip">
+      <span>Showing reels for <strong id="reels-filter-name"></strong></span>
+      <button type="button" onclick="window.ivxOpenReels && window.ivxOpenReels(null);">Show all reels</button>
+    </div>
     <div id="reels-track" style="display:none;gap:16px;overflow-x:auto;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;padding:4px 2px 18px;"></div>
     <div id="reels-empty-state" style="display:none;border:1px dashed var(--border);border-radius:16px;padding:28px 20px;text-align:center;color:var(--text3);font-size:14px;">
       No published property reels yet. Verified project videos appear here the moment they are approved.
@@ -2900,125 +2946,294 @@
     <div id="reels-error-state" data-diagnostic="reels" style="display:none;border:1px solid rgba(255,107,107,0.35);border-radius:16px;padding:20px;text-align:center;color:#FF6B6B;font-size:13px;"></div>
   </div>
 </section>
+<button id="reels-fab" type="button" aria-label="Open Property Reels" onclick="window.ivxOpenReels && window.ivxOpenReels(null);">
+  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 8-6 4 6 4V8Z"/><rect width="14" height="12" x="2" y="6" rx="2" ry="2"/></svg>
+</button>
 <script>
 (function initIvxReels() {
   'use strict';
   var REELS_SB_URL = 'https://kvclcdjmjghndxsngfzb.supabase.co';
   var REELS_SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2Y2xjZGptamdobmR4c25nZnpiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMxOTQwMjcsImV4cCI6MjA4ODc3MDAyN30.OLDwa21VHQNs151AD-8k--_HigQ2d-N7yJfFn5UeNPk';
-  var VIDEO_URL_RE = /^https:\/\/[^\s"']+\.(mp4|mov|m4v|webm)(\?.*)?$/i;
+  var state = { reels: [], dealsById: {}, counts: {}, loaded: false };
 
   function reelsFetch(path) {
     return fetch(REELS_SB_URL + '/rest/v1/' + path, {
       headers: { apikey: REELS_SB_KEY, Authorization: 'Bearer ' + REELS_SB_KEY }
-    }).then(function (r) {
-      if (!r.ok) throw new Error('HTTP ' + r.status + ' for ' + path.split('?')[0]);
-      return r.json();
+    }).then(function (res) {
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return res.json();
     });
   }
 
-  function normalizeReelFingerprint(url) {
-    try { var u = new URL(url); return (u.origin + u.pathname).toLowerCase(); } catch (e) { return String(url || '').split('?')[0].toLowerCase(); }
+  function num(v) { var n = typeof v === 'string' ? Number(v) : v; return (typeof n === 'number' && isFinite(n)) ? n : 0; }
+  function esc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
+  function money(v) {
+    var n = num(v);
+    if (n >= 1e9) return '$' + (n / 1e9).toFixed(2) + 'B';
+    if (n >= 1e6) return '$' + (n / 1e6).toFixed(2) + 'M';
+    if (n >= 1e3) return '$' + Math.round(n).toLocaleString('en-US');
+    return '$' + n.toFixed(2);
+  }
+  function getFilter() { try { return new URLSearchParams(window.location.search).get('project') || ''; } catch (e) { return ''; } }
+  function dealLocation(d) {
+    var city = String(d.city || '').trim();
+    var st = String(d.state || '').trim();
+    if (city && st) return city + ', ' + st;
+    return city || st || String(d.country || '').trim();
+  }
+  function dealSalePrice(d) { return num(d.estimated_value) || num(d.propertyValue) || num(d.total_investment); }
+  function dealMinInvestment(d) { var m = num(d.min_investment); return m > 0 ? m : 50; }
+  function ownershipPct(minV, sale) {
+    if (!(minV > 0) || !(sale > 0)) return '';
+    var p = (minV / sale) * 100;
+    return p.toFixed(p >= 1 ? 2 : 4) + '%';
+  }
+  var PIN_SVG = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6A6A6A" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>';
+  var SHIELD_SVG = '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#22C55E" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>';
+  var REEL_SVG = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m22 8-6 4 6 4V8Z"/><rect width="14" height="12" x="2" y="6" rx="2" ry="2"/></svg>';
+
+  function investCardHtml(deal, reelCount) {
+    var sale = dealSalePrice(deal);
+    var minV = dealMinInvestment(deal);
+    var own = ownershipPct(minV, sale);
+    var dev = String(deal.partner_name || deal.project_name || 'IVX Holdings LLC');
+    var loc = dealLocation(deal);
+    return '<div class="ivx-reel-invest-card" data-reel-project="' + esc(deal.id) + '">'
+      + '<div><div class="ivx-reel-title">' + esc(deal.title || deal.project_name || 'Untitled') + '</div>'
+      + (loc ? '<div class="ivx-reel-loc">' + PIN_SVG + esc(loc) + '</div>' : '')
+      + '</div>'
+      + '<div class="ivx-reel-metrics">'
+      + '<div class="ivx-reel-metric"><div class="ivx-reel-metric-val">' + esc(money(deal.total_investment)) + '</div><div class="ivx-reel-metric-lbl">Investment</div></div>'
+      + '<div class="ivx-reel-metric"><div class="ivx-reel-metric-val">' + esc(String(num(deal.expected_roi))) + '%</div><div class="ivx-reel-metric-lbl">ROI</div></div>'
+      + '<div class="ivx-reel-metric"><div class="ivx-reel-metric-val">' + esc(money(sale)) + '</div><div class="ivx-reel-metric-lbl">Sale Price</div></div>'
+      + '</div>'
+      + '<div class="ivx-reel-frac-row"><span>Fractional from <strong>' + esc('$' + minV.toFixed(2)) + '</strong></span>' + (own ? '<span><strong>' + esc(own) + '</strong> min ownership</span>' : '') + '</div>'
+      + '<div class="ivx-reel-dev">Developed by <strong>' + esc(dev) + '</strong></div>'
+      + '<div class="ivx-reel-badge-row">'
+      + '<span class="ivx-reel-inline-live">LIVE</span>'
+      + '<span class="ivx-reel-badge-verified" data-verified-for="' + esc(deal.id) + '">' + SHIELD_SVG + ' VERIFIED</span>'
+      + (reelCount > 0 ? '<span class="ivx-reel-count-pill">' + reelCount + (reelCount === 1 ? ' REEL' : ' REELS') + '</span>' : '')
+      + '</div>'
+      + '<div class="ivx-reel-actions">'
+      + '<button type="button" class="ivx-reel-details-btn" onclick="ivxReelAction(\'' + esc(deal.id) + '\',\'details\')">Details</button>'
+      + '<button type="button" class="ivx-reel-invest-btn" onclick="ivxReelAction(\'' + esc(deal.id) + '\',\'invest\')">Invest Now</button>'
+      + '</div>'
+      + '</div>';
   }
 
-  function isValidReel(row, publishedProjectIds) {
-    if (!row || typeof row !== 'object') return false;
-    var videoUrl = String(row.video_url || row.storage_path || '');
-    if (!VIDEO_URL_RE.test(videoUrl)) return false;
-    var visibility = String(row.visibility || 'public').toLowerCase();
-    if (visibility !== 'public' && visibility !== 'global') return false;
-    if (row.published === false) return false;
-    if (row.is_approved === false) return false;
-    var projectId = String(row.project_id || '');
-    var isGlobal = row.is_global === true || visibility === 'global';
-    if (!isGlobal && publishedProjectIds.indexOf(projectId) === -1) return false;
-    return true;
+  function reelCardHtml(reel, deal) {
+    var poster = reel.thumbnail_url ? ' poster="' + esc(reel.thumbnail_url) + '"' : '';
+    var projectName = deal ? String(deal.title || deal.project_name || '') : '';
+    var media = '<div class="ivx-reel-media">'
+      + '<video src="' + esc(reel.video_url) + '"' + poster + ' controls playsinline preload="metadata" onerror="ivxReelVideoError(this)"></video>'
+      + '<div class="ivx-reel-video-error">Video temporarily unavailable</div>'
+      + (projectName ? '<div class="ivx-reel-project-badge">' + esc(projectName) + '</div>' : '')
+      + '<div class="ivx-reel-live-badge"><span style="width:6px;height:6px;border-radius:50%;background:#00C48C;display:inline-block;"></span>LIVE</div>'
+      + '</div>';
+    var body;
+    if (deal) {
+      body = investCardHtml(deal, state.counts[reel.project_id] || 0);
+    } else if (reel.project_id) {
+      body = '<div class="ivx-reel-unavailable"><span>Project details temporarily unavailable</span><button type="button" class="ivx-reel-retry-btn" onclick="ivxReloadReels()">Retry</button></div>';
+    } else {
+      body = '<div class="ivx-reel-unavailable"><span>IVX promotional reel</span></div>';
+    }
+    return '<div class="ivx-reel-card" data-reel-id="' + esc(reel.id) + '">' + media + body + '</div>';
   }
 
-  function renderReels(reels, projectTitles) {
+  window.ivxReelVideoError = function (el) {
+    try {
+      el.style.display = 'none';
+      var err = el.parentElement.querySelector('.ivx-reel-video-error');
+      if (err) err.style.display = 'flex';
+      console.log('[IVX Reels] Video failed to load — investment card kept visible');
+    } catch (e) { /* never break the card */ }
+  };
+
+  function syncVerifiedBadges() {
+    var badges = document.querySelectorAll('.ivx-reel-badge-verified[data-verified-for]');
+    for (var i = 0; i < badges.length; i++) {
+      var pid = badges[i].getAttribute('data-verified-for');
+      var mainVerified = document.querySelector('.live-deal-card[data-deal-id="' + pid + '"] .live-deal-verified-badge');
+      badges[i].style.display = mainVerified ? 'inline-flex' : 'none';
+    }
+  }
+
+  function renderReels() {
     var track = document.getElementById('reels-track');
     var empty = document.getElementById('reels-empty-state');
     var badge = document.getElementById('reels-count-badge');
     var countEl = document.getElementById('reels-live-count');
-    if (!track || !empty) return;
+    var chip = document.getElementById('reels-filter-chip');
+    var chipName = document.getElementById('reels-filter-name');
+    if (!track) return;
+    var filter = getFilter();
+    var reels = state.reels.filter(function (r) { return !filter || r.project_id === filter; });
+
+    if (chip) {
+      if (filter) {
+        var filterDeal = state.dealsById[filter];
+        if (chipName) chipName.textContent = filterDeal ? String(filterDeal.title || filterDeal.project_name || filter) : filter;
+        chip.style.display = 'flex';
+      } else {
+        chip.style.display = 'none';
+      }
+    }
+
     if (reels.length === 0) {
-      empty.style.display = 'block';
       track.style.display = 'none';
+      track.innerHTML = '';
+      if (empty) {
+        empty.textContent = filter
+          ? 'No published reels for this project yet. Verified project videos appear here the moment they are approved.'
+          : 'No published property reels yet. Verified project videos appear here the moment they are approved.';
+        empty.style.display = 'block';
+      }
       if (badge) badge.style.display = 'none';
-      console.log('[IVX Reels] 0 published reels — showing empty state');
+      console.log('[IVX Reels] 0 reels to render' + (filter ? ' for project ' + filter : ''));
       return;
     }
+
     var html = '';
     for (var i = 0; i < reels.length; i++) {
       try {
-        var reel = reels[i];
-        var title = String(reel.caption || reel.title || projectTitles[String(reel.project_id)] || 'Property Reel');
-        var poster = String(reel.thumbnail_url || reel.cover_url || '');
-        var safeTitle = title.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-        html += '<div style="min-width:230px;max-width:230px;scroll-snap-align:start;border:1px solid var(--border);border-radius:16px;overflow:hidden;background:var(--bg2);">'
-          + '<video src="' + reel.video_url + '"' + (poster ? ' poster="' + poster + '"' : '') + ' controls playsinline preload="metadata" style="width:100%;aspect-ratio:9/16;object-fit:cover;background:#000;display:block;" onerror="this.closest(\'div\').style.display=\'none\';console.log(\'[IVX Reels] Removed broken reel video\')"></video>'
-          + '<div style="padding:10px 12px;font-size:13px;font-weight:600;color:var(--text1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + safeTitle + '</div>'
-          + '</div>';
+        html += reelCardHtml(reels[i], state.dealsById[reels[i].project_id]);
       } catch (itemErr) {
         console.log('[IVX Reels] Skipped one invalid reel:', itemErr && itemErr.message);
       }
     }
     track.innerHTML = html;
     track.style.display = 'flex';
-    empty.style.display = 'none';
+    if (empty) empty.style.display = 'none';
     if (badge && countEl) { badge.style.display = ''; countEl.textContent = reels.length + (reels.length === 1 ? ' REEL' : ' REELS'); }
-    console.log('[IVX Reels] Rendered', reels.length, 'published reels');
+    syncVerifiedBadges();
+    console.log('[IVX Reels] Rendered', reels.length, 'reels with linked investment cards' + (filter ? ' (project ' + filter + ')' : ''));
+  }
+
+  window.ivxOpenReels = function (projectId) {
+    try {
+      var url = '/reels' + (projectId ? '?project=' + encodeURIComponent(projectId) : '');
+      window.history.pushState({ ivxReels: true }, '', url);
+    } catch (e) { /* SPA history not available — anchor scroll still works */ }
+    renderReels();
+    var section = document.getElementById('reels');
+    if (section) section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return false;
+  };
+
+  window.ivxReelAction = function (projectId, action) {
+    var card = document.querySelector('.live-deal-card[data-deal-id="' + projectId + '"]');
+    if (card) {
+      var btn = card.querySelector(action === 'invest' ? '.live-deal-invest-btn' : '.live-deal-details-btn');
+      if (btn) { btn.click(); return; }
+      card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+    var props = document.getElementById('properties');
+    if (props) props.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  window.ivxReloadReels = function () { loadReels(); };
+
+  function decorateDealCards() {
+    var pids = Object.keys(state.counts);
+    for (var i = 0; i < pids.length; i++) {
+      (function (pid) {
+        var count = state.counts[pid];
+        if (!(count > 0)) return;
+        var host = document.querySelector('.live-deal-card[data-deal-id="' + pid + '"] .live-deal-gallery')
+          || document.querySelector('.live-deal-card[data-deal-id="' + pid + '"]');
+        if (!host || host.querySelector('.ivx-card-reels-btn')) return;
+        var btn = document.createElement('button');
+        btn.className = 'ivx-card-reels-btn';
+        btn.type = 'button';
+        btn.setAttribute('aria-label', 'Open Property Reels for this project');
+        btn.setAttribute('data-reels-count', String(count));
+        btn.innerHTML = REEL_SVG + '<span>' + (count === 1 ? 'REEL' : count + ' REELS') + '</span>';
+        btn.addEventListener('click', function (ev) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          window.ivxOpenReels(pid);
+        });
+        host.appendChild(btn);
+      })(pids[i]);
+    }
+    syncVerifiedBadges();
+  }
+
+  function watchDealGrid() {
+    var grid = document.getElementById('properties-grid');
+    if (!grid || !window.MutationObserver) return;
+    new MutationObserver(function () { decorateDealCards(); }).observe(grid, { childList: true });
   }
 
   function loadReels() {
-    reelsFetch('jv_deals?select=id,title,project_name,published,status').then(function (deals) {
-      var publishedIds = [];
-      var titles = {};
-      for (var i = 0; i < deals.length; i++) {
-        var d = deals[i];
-        var active = d.published === true || ['active', 'published', 'live'].indexOf(String(d.status || '').toLowerCase()) !== -1;
-        if (active) {
-          publishedIds.push(String(d.id));
-          titles[String(d.id)] = String(d.project_name || d.title || '');
+    var errorState = document.getElementById('reels-error-state');
+    if (errorState) errorState.style.display = 'none';
+    var dealsQ = reelsFetch('jv_deals?select=id,title,project_name,city,state,country,total_investment,expected_roi,estimated_value,propertyValue,min_investment,partner_name,status,published&published=eq.true')
+      .catch(function (err) {
+        console.log('[IVX Reels] Deals fetch failed — cards will show retry state:', err && err.message);
+        return null;
+      });
+    /* Canonical reels table first (jv_deal_reels, keyed to jv_deals.id);
+       legacy project_videos only as fallback. */
+    var reelsQ = reelsFetch('jv_deal_reels?select=*&published=eq.true&order=sort_order.asc,created_at.desc')
+      .catch(function () {
+        console.log('[IVX Reels] jv_deal_reels unavailable — falling back to project_videos (approved only)');
+        return reelsFetch('project_videos?select=*&is_approved=eq.true&order=is_pinned.desc,created_at.desc');
+      });
+    Promise.all([dealsQ, reelsQ]).then(function (results) {
+      var deals = results[0];
+      var reels = results[1];
+      state.dealsById = {};
+      if (Array.isArray(deals)) {
+        for (var i = 0; i < deals.length; i++) {
+          if (deals[i] && deals[i].id) state.dealsById[deals[i].id] = deals[i];
         }
       }
-      /* Canonical reels table first (jv_deal_reels, keyed to jv_deals.id);
-         fall back to legacy project_videos (approved rows only). */
-      return reelsFetch('jv_deal_reels?select=*&published=eq.true&order=sort_order.asc,created_at.desc')
-        .catch(function () {
-          console.log('[IVX Reels] jv_deal_reels unavailable — falling back to project_videos (approved only)');
-          return reelsFetch('project_videos?select=*&is_approved=eq.true&order=is_pinned.desc,created_at.desc');
-        })
-        .then(function (rows) {
-          var seen = {};
-          var valid = [];
-          for (var ri = 0; ri < (Array.isArray(rows) ? rows.length : 0); ri++) {
-            var row = rows[ri];
-            if (!isValidReel(row, publishedIds)) continue;
-            var fp = normalizeReelFingerprint(row.video_url);
-            if (seen[fp]) continue;
-            seen[fp] = true;
-            valid.push(row);
-          }
-          renderReels(valid, titles);
-        });
+      var valid = (Array.isArray(reels) ? reels : []).filter(function (r) {
+        return r && typeof r.video_url === 'string' && /^https:\/\//.test(r.video_url)
+          && r.published !== false
+          && (r.visibility == null || String(r.visibility).toLowerCase() === 'public');
+      });
+      state.reels = valid;
+      state.counts = {};
+      for (var j = 0; j < valid.length; j++) {
+        var pid = valid[j].project_id;
+        if (pid) state.counts[pid] = (state.counts[pid] || 0) + 1;
+      }
+      state.loaded = true;
+      renderReels();
+      decorateDealCards();
     }).catch(function (err) {
       console.error('[IVX Reels] Reels load failed:', err && err.message);
-      var errorState = document.getElementById('reels-error-state');
       var empty = document.getElementById('reels-empty-state');
-      var isDev = /localhost|127\.0\.0\.1/.test(window.location.hostname);
-      if (errorState && isDev) {
-        errorState.textContent = 'Reels diagnostic: ' + (err && err.message ? err.message : 'request failed');
+      if (errorState) {
+        errorState.innerHTML = '<div style="margin-bottom:10px;">Couldn&#39;t load property reels: ' + esc(err && err.message ? err.message : 'request failed') + '</div><button type="button" class="ivx-reel-retry-btn" onclick="ivxReloadReels()">Retry</button>';
         errorState.style.display = 'block';
+        if (empty) empty.style.display = 'none';
       } else if (empty) {
         empty.style.display = 'block';
       }
     });
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', loadReels);
-  } else {
+  function boot() {
     loadReels();
+    watchDealGrid();
+    window.addEventListener('popstate', function () { if (state.loaded) renderReels(); });
+    if (/^\/reels\/?$/.test(window.location.pathname)) {
+      setTimeout(function () {
+        var s = document.getElementById('reels');
+        if (s) s.scrollIntoView({ behavior: 'smooth' });
+      }, 700);
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+  } else {
+    boot();
   }
 })();
 </script>
