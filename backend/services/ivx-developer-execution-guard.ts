@@ -100,6 +100,28 @@ export const BANNED_NARRATIVE_PHRASES: readonly string[] = [
   'phase 4',
 ];
 
+/**
+ * Placeholder proof values. A real execution report NEVER contains these —
+ * they are unfilled template slots ([AUTO-GENERATED], [CURRENT SHA], …) and are
+ * rejected unconditionally, even when raw command output is also present.
+ * Sourced from the owner-reported live incident (2026-07-10).
+ */
+export const PLACEHOLDER_PROOF_PATTERNS: readonly { pattern: RegExp; label: string }[] = [
+  { pattern: /\[auto[-\s_]?generated\]/i, label: 'AUTO-GENERATED placeholder' },
+  { pattern: /\[current[-\s_]?sha\]/i, label: 'CURRENT SHA placeholder' },
+  { pattern: /\[placeholder\]/i, label: 'literal placeholder token' },
+  { pattern: /\[pending\]/i, label: 'pending placeholder token' },
+  { pattern: /\[unknown\]/i, label: 'unknown placeholder token' },
+  { pattern: /\b(?:deployment|deploy)\s*id\s*:?\**\s*\[[^\]]*\]/i, label: 'bracketed deployment ID slot' },
+  { pattern: /\bcommit(?:\s*sha)?\s*:?\**\s*\[[^\]]*\]/i, label: 'bracketed commit SHA slot' },
+];
+
+/** Placeholder proof values present in an answer. Pure — deterministic. */
+export function findPlaceholderProofValues(answer: string): string[] {
+  const text = answer ?? '';
+  return PLACEHOLDER_PROOF_PATTERNS.filter(({ pattern }) => pattern.test(text)).map(({ label }) => label);
+}
+
 export type DeveloperExecutionGuardResult = {
   ok: boolean;
   violations: string[];
@@ -189,6 +211,12 @@ export function validateDeveloperExecutionAnswer(answer: string): DeveloperExecu
   }
 
   const rawOutput = hasRawCommandOutput(text);
+
+  // Placeholder proof values are NEVER valid — rejected even when raw command
+  // output is also present. A template slot is not evidence.
+  for (const label of findPlaceholderProofValues(text)) {
+    violations.push(`placeholder proof value: ${label}`);
+  }
 
   // Banned narrative phrases are only tolerated when real proof accompanies them.
   if (!rawOutput) {

@@ -16,6 +16,8 @@
  *   - Self-repair (retry on failure)
  */
 
+import { ensureGithubTokenHydrated } from './ivx-github-token-resolver';
+
 const GITHUB_API = 'https://api.github.com';
 const RENDER_API = 'https://api.render.com/v1';
 const PRODUCTION_URL = 'https://api.ivxholding.com';
@@ -129,14 +131,15 @@ async function testSupabaseAccess(url: string, key: string): Promise<{ ok: boole
 export async function discoverCredentials(): Promise<CredentialReport[]> {
   const reports: CredentialReport[] = [];
 
-  // GITHUB_TOKEN
-  const ghToken = (process.env.GITHUB_TOKEN ?? '').trim();
+  // GITHUB_TOKEN — placeholder-rejecting resolution (env → owner variables store)
+  const ghResolution = await ensureGithubTokenHydrated();
+  const ghToken = ghResolution.token;
   const ghReport: CredentialReport = {
     name: 'GITHUB_TOKEN',
     status: 'unverified',
     present: ghToken.length > 0,
     length: ghToken.length,
-    source: ghToken.length > 0 ? 'env' : 'unknown',
+    source: ghToken.length > 0 ? (ghResolution.source === 'owner_variables' ? 'owner_variables' : 'env') : 'unknown',
     tested: false,
     testResult: null,
     masked: maskSecret(ghToken),
@@ -144,10 +147,11 @@ export async function discoverCredentials(): Promise<CredentialReport[]> {
   if (ghToken.length > 0) {
     const test = await testGitHubToken(ghToken);
     ghReport.tested = true;
-    ghReport.testResult = test.detail;
+    ghReport.testResult = `${test.detail} (source: ${ghResolution.source})`;
     ghReport.status = test.ok ? 'valid' : 'auth_failed';
   } else {
     ghReport.status = 'missing';
+    ghReport.testResult = ghResolution.detail;
   }
   reports.push(ghReport);
 
@@ -215,7 +219,7 @@ export async function discoverCredentials(): Promise<CredentialReport[]> {
 // ─── GitHub Operations ─────────────────────────────────────────────────
 
 export async function getGitHubHeadSha(): Promise<{ sha: string | null; message: string | null; date: string | null; error: string | null }> {
-  const token = (process.env.GITHUB_TOKEN ?? '').trim();
+  const token = (await ensureGithubTokenHydrated()).token;
   if (!token) return { sha: null, message: null, date: null, error: 'GITHUB_TOKEN not available' };
 
   try {
@@ -236,7 +240,7 @@ export async function getGitHubHeadSha(): Promise<{ sha: string | null; message:
 }
 
 export async function pushToGitHub(): Promise<{ ok: boolean; commitSha: string | null; error: string | null }> {
-  const token = (process.env.GITHUB_TOKEN ?? '').trim();
+  const token = (await ensureGithubTokenHydrated()).token;
   if (!token) return { ok: false, commitSha: null, error: 'GITHUB_TOKEN not available' };
 
   // This is a "sync signal" — the real push happens via the Rork background

@@ -21,6 +21,7 @@ import { rotateDeployLogs } from '../services/ivx-deploy-log-rotation';
 import { checkGitRollbackReadiness } from '../services/ivx-git-rollback';
 import { runUptimeProbe, readRecentUptimeProbes, getDefaultUptimeTargets, type UptimeTarget } from '../services/ivx-uptime-probe';
 import { getSSEReplayStats } from '../services/ivx-sse-replay-buffer';
+import { ensureGithubTokenHydrated } from '../services/ivx-github-token-resolver';
 import { getTokenBudgetSnapshot } from '../services/ivx-token-budget';
 import { getIVXProviderChainSnapshot } from '../services/ivx-ai-provider-fallback';
 import { triggerProductionRollback, getProductionHealth } from '../services/ivx-production-guard';
@@ -575,7 +576,9 @@ function parseGithubRepoSlug(value: string): string {
 }
 
 async function readGithubCreds(): Promise<{ token: string; repoUrl: string; repoSlug: string; branch: string }> {
-  const token = (process.env.GITHUB_TOKEN ?? '').trim() || await getIVXOwnerVariableRuntimeValue('GITHUB_TOKEN');
+  // Placeholder-rejecting resolution: a literal "PLACEHOLDER" in process.env
+  // must never shadow the real encrypted Owner Variables token.
+  const token = (await ensureGithubTokenHydrated()).token || await getIVXOwnerVariableRuntimeValue('GITHUB_TOKEN');
   const repoUrl = (process.env.GITHUB_REPO_URL ?? '').trim() || (process.env.GITHUB_REPO ?? '').trim() || await getIVXOwnerVariableRuntimeValue('GITHUB_REPO_URL');
   const branch = (process.env.GITHUB_BRANCH ?? '').trim() || 'main';
   return { token, repoUrl, repoSlug: parseGithubRepoSlug(repoUrl), branch };

@@ -13,6 +13,7 @@
  */
 
 import { getIVXOwnerVariableRuntimeValue } from '../../api/ivx-owner-variables';
+import { ensureGithubTokenHydrated } from '../ivx-github-token-resolver';
 import * as GitHubTool from './github-tool';
 import * as RenderTool from './render-tool';
 import * as VercelTool from './vercel-tool';
@@ -225,12 +226,15 @@ export async function discoverAllCredentials(): Promise<CredentialSyncResult> {
         gaps.push(`${reg.name} (${reg.category}) — REQUIRED but missing from all sources`);
       }
     } else if (reg.category === 'github' && reg.name === 'GITHUB_TOKEN') {
-      const tokenValue = (process.env.GITHUB_TOKEN ?? '').trim();
-      if (tokenValue) {
-        const test = await testGitHubToken(tokenValue);
+      const resolution = await ensureGithubTokenHydrated();
+      if (resolution.token) {
+        const test = await testGitHubToken(resolution.token);
         tested = true;
         validation = test.ok ? 'valid' : 'auth_failed';
-        validationDetail = test.detail;
+        validationDetail = `${test.detail} (source: ${resolution.source})`;
+      } else {
+        validation = 'missing';
+        validationDetail = resolution.detail;
       }
     } else if (reg.category === 'render' && reg.name === 'RENDER_API_KEY') {
       const tokenValue = (process.env.RENDER_API_KEY ?? '').trim();

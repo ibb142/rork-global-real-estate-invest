@@ -29,6 +29,7 @@
 import { appendFile, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { isDurableStoreConfigured, readDurableJson, writeDurableJson, appendDurableEvent } from './ivx-durable-store';
+import { resolveBlockCompletionStatus, NO_DEPLOYMENT_EVIDENCE, type BlockCompletionEvidence } from './ivx-task-completion-gate';
 
 export const IVX_ENTERPRISE_ORCHESTRATOR_MARKER = 'ivx-enterprise-orchestrator-2026-07-01';
 
@@ -76,7 +77,7 @@ export type OrchestratedTask = {
   targetSubsystem: SubsystemId;
   targetAgent: string | null;
   priority: OrchestratorPriority;
-  status: 'pending' | 'running' | 'blocked' | 'completed' | 'failed';
+  status: 'pending' | 'running' | 'blocked' | 'completed' | 'failed' | 'not_deployed';
   dependencies: string[];
   createdAt: string;
   startedAt: string | null;
@@ -298,12 +299,32 @@ export async function enqueueTask(task: Omit<OrchestratedTask, 'id' | 'createdAt
 }
 
 /**
- * Complete a task.
+ * Complete a task — evidence-gated (owner spec 2026-07-11).
+ *
+ * A task may NEVER be marked `completed` without real deployment evidence:
+ * commit exists, push completed, deployment started + completed, health
+ * endpoint returned HTTP 200, and production is running the pushed commit.
+ * Missing or failing evidence settles the task as `not_deployed` with the
+ * exact unmet requirements recorded — never a fabricated success.
  */
-export async function completeTask(taskId: string): Promise<OrchestratedTask | null> {
+export async function completeTask(
+  taskId: string,
+  evidence?: BlockCompletionEvidence,
+): Promise<OrchestratedTask | null> {
   const state = await loadState();
   const task = state.taskQueue.find((t) => t.id === taskId);
   if (!task) return null;
+
+  const decision = resolveBlockCompletionStatus(evidence ?? NO_DEPLOYMENT_EVIDENCE);
+  if (decision.status !== 'VERIFIED') {
+    task.status = 'not_deployed';
+    task.completedAt = new Date().toISOString();
+    task.error = `NOT DEPLOYED — completion blocked: ${decision.failures.join(' ')}`;
+    await persistState();
+    await appendTaskLog(task);
+    return task;
+  }
+
   task.status = 'completed';
   task.completedAt = new Date().toISOString();
   task.error = null;
@@ -482,6 +503,7 @@ export async function getExecutiveKPIs(): Promise<{
   completedTasks: number;
   failedTasks: number;
   blockedTasks: number;
+  notDeployedTasks: number;
   pendingTasks: number;
   healthySubsystems: number;
   degradedSubsystems: number;
@@ -496,6 +518,7 @@ export async function getExecutiveKPIs(): Promise<{
     completedTasks: state.taskQueue.filter((t) => t.status === 'completed').length,
     failedTasks: state.taskQueue.filter((t) => t.status === 'failed').length,
     blockedTasks: state.taskQueue.filter((t) => t.status === 'blocked').length,
+    notDeployedTasks: state.taskQueue.filter((t) => t.status === 'not_deployed').length,
     pendingTasks: state.taskQueue.filter((t) => t.status === 'pending' || t.status === 'running').length,
     healthySubsystems: subs.filter((s) => s.health === 'healthy').length,
     degradedSubsystems: subs.filter((s) => s.health === 'degraded').length,

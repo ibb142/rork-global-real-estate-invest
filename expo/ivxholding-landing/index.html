@@ -2879,6 +2879,150 @@
 <!-- Live deals loading indicator (hidden, used by JS) -->
 <div id="live-deals-loading" style="display:none;"></div>
 
+<!-- PROPERTY REELS — published, approved project videos only (canonical source: Supabase) -->
+<section id="reels" style="padding:80px 24px 0;">
+  <div class="wrap">
+    <div class="live-deals-header reveal">
+      <div class="live-deals-title-row">
+        <span style="font-size:22px;">&#127909;</span>
+        <h2 class="live-deals-title">Property Reels</h2>
+      </div>
+      <div class="live-deals-badge" id="reels-count-badge" style="display:none;">
+        <div class="live-deals-pulse"></div>
+        <span id="reels-live-count">0 REELS</span>
+      </div>
+    </div>
+    <p class="live-deals-sub reveal">Verified walkthroughs and project videos, published per property.</p>
+    <div id="reels-track" style="display:none;gap:16px;overflow-x:auto;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;padding:4px 2px 18px;"></div>
+    <div id="reels-empty-state" style="display:none;border:1px dashed var(--border);border-radius:16px;padding:28px 20px;text-align:center;color:var(--text3);font-size:14px;">
+      No published property reels yet. Verified project videos appear here the moment they are approved.
+    </div>
+    <div id="reels-error-state" data-diagnostic="reels" style="display:none;border:1px solid rgba(255,107,107,0.35);border-radius:16px;padding:20px;text-align:center;color:#FF6B6B;font-size:13px;"></div>
+  </div>
+</section>
+<script>
+(function initIvxReels() {
+  'use strict';
+  var REELS_SB_URL = 'https://kvclcdjmjghndxsngfzb.supabase.co';
+  var REELS_SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2Y2xjZGptamdobmR4c25nZnpiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMxOTQwMjcsImV4cCI6MjA4ODc3MDAyN30.OLDwa21VHQNs151AD-8k--_HigQ2d-N7yJfFn5UeNPk';
+  var VIDEO_URL_RE = /^https:\/\/[^\s"']+\.(mp4|mov|m4v|webm)(\?.*)?$/i;
+
+  function reelsFetch(path) {
+    return fetch(REELS_SB_URL + '/rest/v1/' + path, {
+      headers: { apikey: REELS_SB_KEY, Authorization: 'Bearer ' + REELS_SB_KEY }
+    }).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status + ' for ' + path.split('?')[0]);
+      return r.json();
+    });
+  }
+
+  function normalizeReelFingerprint(url) {
+    try { var u = new URL(url); return (u.origin + u.pathname).toLowerCase(); } catch (e) { return String(url || '').split('?')[0].toLowerCase(); }
+  }
+
+  function isValidReel(row, publishedProjectIds) {
+    if (!row || typeof row !== 'object') return false;
+    var videoUrl = String(row.video_url || row.storage_path || '');
+    if (!VIDEO_URL_RE.test(videoUrl)) return false;
+    var visibility = String(row.visibility || 'public').toLowerCase();
+    if (visibility !== 'public' && visibility !== 'global') return false;
+    if (row.published === false) return false;
+    if (row.is_approved === false) return false;
+    var projectId = String(row.project_id || '');
+    var isGlobal = row.is_global === true || visibility === 'global';
+    if (!isGlobal && publishedProjectIds.indexOf(projectId) === -1) return false;
+    return true;
+  }
+
+  function renderReels(reels, projectTitles) {
+    var track = document.getElementById('reels-track');
+    var empty = document.getElementById('reels-empty-state');
+    var badge = document.getElementById('reels-count-badge');
+    var countEl = document.getElementById('reels-live-count');
+    if (!track || !empty) return;
+    if (reels.length === 0) {
+      empty.style.display = 'block';
+      track.style.display = 'none';
+      if (badge) badge.style.display = 'none';
+      console.log('[IVX Reels] 0 published reels — showing empty state');
+      return;
+    }
+    var html = '';
+    for (var i = 0; i < reels.length; i++) {
+      try {
+        var reel = reels[i];
+        var title = String(reel.caption || reel.title || projectTitles[String(reel.project_id)] || 'Property Reel');
+        var poster = String(reel.thumbnail_url || reel.cover_url || '');
+        var safeTitle = title.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        html += '<div style="min-width:230px;max-width:230px;scroll-snap-align:start;border:1px solid var(--border);border-radius:16px;overflow:hidden;background:var(--bg2);">'
+          + '<video src="' + reel.video_url + '"' + (poster ? ' poster="' + poster + '"' : '') + ' controls playsinline preload="metadata" style="width:100%;aspect-ratio:9/16;object-fit:cover;background:#000;display:block;" onerror="this.closest(\'div\').style.display=\'none\';console.log(\'[IVX Reels] Removed broken reel video\')"></video>'
+          + '<div style="padding:10px 12px;font-size:13px;font-weight:600;color:var(--text1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + safeTitle + '</div>'
+          + '</div>';
+      } catch (itemErr) {
+        console.log('[IVX Reels] Skipped one invalid reel:', itemErr && itemErr.message);
+      }
+    }
+    track.innerHTML = html;
+    track.style.display = 'flex';
+    empty.style.display = 'none';
+    if (badge && countEl) { badge.style.display = ''; countEl.textContent = reels.length + (reels.length === 1 ? ' REEL' : ' REELS'); }
+    console.log('[IVX Reels] Rendered', reels.length, 'published reels');
+  }
+
+  function loadReels() {
+    reelsFetch('jv_deals?select=id,title,project_name,published,status').then(function (deals) {
+      var publishedIds = [];
+      var titles = {};
+      for (var i = 0; i < deals.length; i++) {
+        var d = deals[i];
+        var active = d.published === true || ['active', 'published', 'live'].indexOf(String(d.status || '').toLowerCase()) !== -1;
+        if (active) {
+          publishedIds.push(String(d.id));
+          titles[String(d.id)] = String(d.project_name || d.title || '');
+        }
+      }
+      /* Canonical reels table first (jv_deal_reels, keyed to jv_deals.id);
+         fall back to legacy project_videos (approved rows only). */
+      return reelsFetch('jv_deal_reels?select=*&published=eq.true&order=sort_order.asc,created_at.desc')
+        .catch(function () {
+          console.log('[IVX Reels] jv_deal_reels unavailable — falling back to project_videos (approved only)');
+          return reelsFetch('project_videos?select=*&is_approved=eq.true&order=is_pinned.desc,created_at.desc');
+        })
+        .then(function (rows) {
+          var seen = {};
+          var valid = [];
+          for (var ri = 0; ri < (Array.isArray(rows) ? rows.length : 0); ri++) {
+            var row = rows[ri];
+            if (!isValidReel(row, publishedIds)) continue;
+            var fp = normalizeReelFingerprint(row.video_url);
+            if (seen[fp]) continue;
+            seen[fp] = true;
+            valid.push(row);
+          }
+          renderReels(valid, titles);
+        });
+    }).catch(function (err) {
+      console.error('[IVX Reels] Reels load failed:', err && err.message);
+      var errorState = document.getElementById('reels-error-state');
+      var empty = document.getElementById('reels-empty-state');
+      var isDev = /localhost|127\.0\.0\.1/.test(window.location.hostname);
+      if (errorState && isDev) {
+        errorState.textContent = 'Reels diagnostic: ' + (err && err.message ? err.message : 'request failed');
+        errorState.style.display = 'block';
+      } else if (empty) {
+        empty.style.display = 'block';
+      }
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', loadReels);
+  } else {
+    loadReels();
+  }
+})();
+</script>
+
 <!-- FEATURES -->
 <section style="background:var(--bg2); border-top:1px solid var(--border); border-bottom:1px solid var(--border);">
   <div class="wrap">
@@ -6306,11 +6450,19 @@
       return val;
     }
 
+    /* Perez Residence canonical photos — the deal's OWN photos from the
+       Supabase deal-photos/perez-residence-001/ storage folder (mirrors
+       jv_deals.photos). Must NEVER contain Casa Rosario or any other
+       project's media. */
     var PEREZ_RESIDENCE_FALLBACK_PHOTOS = [
-      'https://pub-e001eb4506b145aa938b5d3badbff6a5.r2.dev/attachments/junpisw15h6borglpbckz',
-      'https://pub-e001eb4506b145aa938b5d3badbff6a5.r2.dev/attachments/2s8bcg6npyx96xcfrr5rm',
-      'https://pub-e001eb4506b145aa938b5d3badbff6a5.r2.dev/attachments/t8rc86kynbs64jopcujtf',
-      'https://pub-e001eb4506b145aa938b5d3badbff6a5.r2.dev/attachments/bxqj57n0z60oqoxaqvnlo'
+      'https://kvclcdjmjghndxsngfzb.supabase.co/storage/v1/object/public/deal-photos/perez-residence-001/1774308382154-e08wnx-0.jpg',
+      'https://kvclcdjmjghndxsngfzb.supabase.co/storage/v1/object/public/deal-photos/perez-residence-001/1774308382162-yoirw1-1.jpg',
+      'https://kvclcdjmjghndxsngfzb.supabase.co/storage/v1/object/public/deal-photos/perez-residence-001/1774308382169-vrtugo-2.jpg',
+      'https://kvclcdjmjghndxsngfzb.supabase.co/storage/v1/object/public/deal-photos/perez-residence-001/1774308384904-3und6p-3.jpg',
+      'https://kvclcdjmjghndxsngfzb.supabase.co/storage/v1/object/public/deal-photos/perez-residence-001/1774308384911-qnd7lg-4.jpg',
+      'https://kvclcdjmjghndxsngfzb.supabase.co/storage/v1/object/public/deal-photos/perez-residence-001/1774308384919-qlsr38-5.jpg',
+      'https://kvclcdjmjghndxsngfzb.supabase.co/storage/v1/object/public/deal-photos/perez-residence-001/1774308385956-5jsooa-6.jpg',
+      'https://kvclcdjmjghndxsngfzb.supabase.co/storage/v1/object/public/deal-photos/perez-residence-001/1774308385970-yfcx95-7.jpg'
     ];
     var _perezPhotosFromDb = false;
     var _storagePhotoFetchInProgress = {};
@@ -6420,7 +6572,17 @@
     try {
       var _cachedPerez = localStorage.getItem('ivx_perez_photos');
       if (_cachedPerez) {
-        var _parsedPerez = JSON.parse(_cachedPerez);
+        var _parsedPerezRaw = JSON.parse(_cachedPerez);
+        /* Integrity guard: only accept cached photos that live in the Perez
+           Residence storage folder — a stale cache must never inject another
+           project's media into the Perez gallery. */
+        var _parsedPerez = Array.isArray(_parsedPerezRaw) ? _parsedPerezRaw.filter(function (p) {
+          return typeof p === 'string' && p.indexOf('/deal-photos/perez-residence-001/') !== -1;
+        }) : [];
+        if (_parsedPerez.length !== (Array.isArray(_parsedPerezRaw) ? _parsedPerezRaw.length : 0)) {
+          console.log('[IVX Deals] Purged cross-project photos from Perez localStorage cache');
+          try { localStorage.setItem('ivx_perez_photos', JSON.stringify(_parsedPerez)); } catch (persistErr) {}
+        }
         if (Array.isArray(_parsedPerez) && _parsedPerez.length > 0) {
           PEREZ_RESIDENCE_FALLBACK_PHOTOS = _parsedPerez;
           console.log('[IVX Deals] Pre-loaded Perez Residence photos from localStorage cache (' + _parsedPerez.length + ' photos)');
@@ -6486,12 +6648,11 @@
         city: 'Southwest Ranches',
         state: 'FL',
         totalInvestment: 2500000,
-        propertyValue: 2500000,
-        sale_price: 2500000,
+        propertyValue: 3125000,
+        sale_price: 3125000,
         expectedROI: 25,
         min_investment: 50,
         fractional_share_price: 50,
-        ownership_text: '0.0020% minimum ownership',
         distributionFrequency: 'Monthly',
         photos: PEREZ_RESIDENCE_FALLBACK_PHOTOS,
         published: true,
@@ -6501,8 +6662,7 @@
           titleVerified: true,
           insuranceCoverage: true,
           escrowProtected: true,
-          permitStatus: 'approved',
-          ownershipLabel: '0.0020% minimum ownership'
+          permitStatus: 'approved'
         }
       },
       {
@@ -6518,7 +6678,6 @@
         expectedROI: 30,
         min_investment: 50,
         fractional_share_price: 50,
-        ownership_text: '0.0036% minimum ownership',
         distributionFrequency: 'Monthly',
         photos: CASA_ROSARIO_FALLBACK_PHOTOS,
         published: true,
@@ -6528,8 +6687,7 @@
           titleVerified: true,
           insuranceCoverage: true,
           escrowProtected: true,
-          permitStatus: 'approved',
-          ownershipLabel: '0.0036% minimum ownership'
+          permitStatus: 'approved'
         }
       },
       {
@@ -6545,7 +6703,6 @@
         expectedROI: 9.5,
         min_investment: 50,
         fractional_share_price: 50,
-        ownership_text: '0.0125% minimum ownership',
         distributionFrequency: 'Monthly',
         photos: JACKSONVILLE_PRIME_FALLBACK_PHOTOS,
         published: true,
@@ -6554,8 +6711,7 @@
           llcName: 'ONE STOP CONSTRUCTORS INC',
           titleVerified: true,
           insuranceCoverage: true,
-          escrowProtected: true,
-          ownershipLabel: '0.0125% minimum ownership'
+          escrowProtected: true
         }
       }
     ];
@@ -9180,11 +9336,19 @@
       return val;
     }
 
+    /* Perez Residence canonical photos — the deal's OWN photos from the
+       Supabase deal-photos/perez-residence-001/ storage folder (mirrors
+       jv_deals.photos). Must NEVER contain Casa Rosario or any other
+       project's media. */
     var PEREZ_RESIDENCE_FALLBACK_PHOTOS = [
-      'https://pub-e001eb4506b145aa938b5d3badbff6a5.r2.dev/attachments/junpisw15h6borglpbckz',
-      'https://pub-e001eb4506b145aa938b5d3badbff6a5.r2.dev/attachments/2s8bcg6npyx96xcfrr5rm',
-      'https://pub-e001eb4506b145aa938b5d3badbff6a5.r2.dev/attachments/t8rc86kynbs64jopcujtf',
-      'https://pub-e001eb4506b145aa938b5d3badbff6a5.r2.dev/attachments/bxqj57n0z60oqoxaqvnlo'
+      'https://kvclcdjmjghndxsngfzb.supabase.co/storage/v1/object/public/deal-photos/perez-residence-001/1774308382154-e08wnx-0.jpg',
+      'https://kvclcdjmjghndxsngfzb.supabase.co/storage/v1/object/public/deal-photos/perez-residence-001/1774308382162-yoirw1-1.jpg',
+      'https://kvclcdjmjghndxsngfzb.supabase.co/storage/v1/object/public/deal-photos/perez-residence-001/1774308382169-vrtugo-2.jpg',
+      'https://kvclcdjmjghndxsngfzb.supabase.co/storage/v1/object/public/deal-photos/perez-residence-001/1774308384904-3und6p-3.jpg',
+      'https://kvclcdjmjghndxsngfzb.supabase.co/storage/v1/object/public/deal-photos/perez-residence-001/1774308384911-qnd7lg-4.jpg',
+      'https://kvclcdjmjghndxsngfzb.supabase.co/storage/v1/object/public/deal-photos/perez-residence-001/1774308384919-qlsr38-5.jpg',
+      'https://kvclcdjmjghndxsngfzb.supabase.co/storage/v1/object/public/deal-photos/perez-residence-001/1774308385956-5jsooa-6.jpg',
+      'https://kvclcdjmjghndxsngfzb.supabase.co/storage/v1/object/public/deal-photos/perez-residence-001/1774308385970-yfcx95-7.jpg'
     ];
     var _perezPhotosFromDb = false;
     var _storagePhotoFetchInProgress = {};
@@ -9294,7 +9458,17 @@
     try {
       var _cachedPerez = localStorage.getItem('ivx_perez_photos');
       if (_cachedPerez) {
-        var _parsedPerez = JSON.parse(_cachedPerez);
+        var _parsedPerezRaw = JSON.parse(_cachedPerez);
+        /* Integrity guard: only accept cached photos that live in the Perez
+           Residence storage folder — a stale cache must never inject another
+           project's media into the Perez gallery. */
+        var _parsedPerez = Array.isArray(_parsedPerezRaw) ? _parsedPerezRaw.filter(function (p) {
+          return typeof p === 'string' && p.indexOf('/deal-photos/perez-residence-001/') !== -1;
+        }) : [];
+        if (_parsedPerez.length !== (Array.isArray(_parsedPerezRaw) ? _parsedPerezRaw.length : 0)) {
+          console.log('[IVX Deals] Purged cross-project photos from Perez localStorage cache');
+          try { localStorage.setItem('ivx_perez_photos', JSON.stringify(_parsedPerez)); } catch (persistErr) {}
+        }
         if (Array.isArray(_parsedPerez) && _parsedPerez.length > 0) {
           PEREZ_RESIDENCE_FALLBACK_PHOTOS = _parsedPerez;
           console.log('[IVX Deals] Pre-loaded Perez Residence photos from localStorage cache (' + _parsedPerez.length + ' photos)');
@@ -9360,12 +9534,11 @@
         city: 'Southwest Ranches',
         state: 'FL',
         totalInvestment: 2500000,
-        propertyValue: 2500000,
-        sale_price: 2500000,
+        propertyValue: 3125000,
+        sale_price: 3125000,
         expectedROI: 25,
         min_investment: 50,
         fractional_share_price: 50,
-        ownership_text: '0.0020% minimum ownership',
         distributionFrequency: 'Monthly',
         photos: PEREZ_RESIDENCE_FALLBACK_PHOTOS,
         published: true,
@@ -9375,8 +9548,7 @@
           titleVerified: true,
           insuranceCoverage: true,
           escrowProtected: true,
-          permitStatus: 'approved',
-          ownershipLabel: '0.0020% minimum ownership'
+          permitStatus: 'approved'
         }
       },
       {
@@ -9392,7 +9564,6 @@
         expectedROI: 30,
         min_investment: 50,
         fractional_share_price: 50,
-        ownership_text: '0.0036% minimum ownership',
         distributionFrequency: 'Monthly',
         photos: CASA_ROSARIO_FALLBACK_PHOTOS,
         published: true,
@@ -9402,8 +9573,7 @@
           titleVerified: true,
           insuranceCoverage: true,
           escrowProtected: true,
-          permitStatus: 'approved',
-          ownershipLabel: '0.0036% minimum ownership'
+          permitStatus: 'approved'
         }
       },
       {
@@ -9419,7 +9589,6 @@
         expectedROI: 9.5,
         min_investment: 50,
         fractional_share_price: 50,
-        ownership_text: '0.0125% minimum ownership',
         distributionFrequency: 'Monthly',
         photos: JACKSONVILLE_PRIME_FALLBACK_PHOTOS,
         published: true,
@@ -9428,8 +9597,7 @@
           llcName: 'ONE STOP CONSTRUCTORS INC',
           titleVerified: true,
           insuranceCoverage: true,
-          escrowProtected: true,
-          ownershipLabel: '0.0125% minimum ownership'
+          escrowProtected: true
         }
       }
     ];
@@ -12053,11 +12221,19 @@
       return val;
     }
 
+    /* Perez Residence canonical photos — the deal's OWN photos from the
+       Supabase deal-photos/perez-residence-001/ storage folder (mirrors
+       jv_deals.photos). Must NEVER contain Casa Rosario or any other
+       project's media. */
     var PEREZ_RESIDENCE_FALLBACK_PHOTOS = [
-      'https://pub-e001eb4506b145aa938b5d3badbff6a5.r2.dev/attachments/junpisw15h6borglpbckz',
-      'https://pub-e001eb4506b145aa938b5d3badbff6a5.r2.dev/attachments/2s8bcg6npyx96xcfrr5rm',
-      'https://pub-e001eb4506b145aa938b5d3badbff6a5.r2.dev/attachments/t8rc86kynbs64jopcujtf',
-      'https://pub-e001eb4506b145aa938b5d3badbff6a5.r2.dev/attachments/bxqj57n0z60oqoxaqvnlo'
+      'https://kvclcdjmjghndxsngfzb.supabase.co/storage/v1/object/public/deal-photos/perez-residence-001/1774308382154-e08wnx-0.jpg',
+      'https://kvclcdjmjghndxsngfzb.supabase.co/storage/v1/object/public/deal-photos/perez-residence-001/1774308382162-yoirw1-1.jpg',
+      'https://kvclcdjmjghndxsngfzb.supabase.co/storage/v1/object/public/deal-photos/perez-residence-001/1774308382169-vrtugo-2.jpg',
+      'https://kvclcdjmjghndxsngfzb.supabase.co/storage/v1/object/public/deal-photos/perez-residence-001/1774308384904-3und6p-3.jpg',
+      'https://kvclcdjmjghndxsngfzb.supabase.co/storage/v1/object/public/deal-photos/perez-residence-001/1774308384911-qnd7lg-4.jpg',
+      'https://kvclcdjmjghndxsngfzb.supabase.co/storage/v1/object/public/deal-photos/perez-residence-001/1774308384919-qlsr38-5.jpg',
+      'https://kvclcdjmjghndxsngfzb.supabase.co/storage/v1/object/public/deal-photos/perez-residence-001/1774308385956-5jsooa-6.jpg',
+      'https://kvclcdjmjghndxsngfzb.supabase.co/storage/v1/object/public/deal-photos/perez-residence-001/1774308385970-yfcx95-7.jpg'
     ];
     var _perezPhotosFromDb = false;
     var _storagePhotoFetchInProgress = {};
@@ -12167,7 +12343,17 @@
     try {
       var _cachedPerez = localStorage.getItem('ivx_perez_photos');
       if (_cachedPerez) {
-        var _parsedPerez = JSON.parse(_cachedPerez);
+        var _parsedPerezRaw = JSON.parse(_cachedPerez);
+        /* Integrity guard: only accept cached photos that live in the Perez
+           Residence storage folder — a stale cache must never inject another
+           project's media into the Perez gallery. */
+        var _parsedPerez = Array.isArray(_parsedPerezRaw) ? _parsedPerezRaw.filter(function (p) {
+          return typeof p === 'string' && p.indexOf('/deal-photos/perez-residence-001/') !== -1;
+        }) : [];
+        if (_parsedPerez.length !== (Array.isArray(_parsedPerezRaw) ? _parsedPerezRaw.length : 0)) {
+          console.log('[IVX Deals] Purged cross-project photos from Perez localStorage cache');
+          try { localStorage.setItem('ivx_perez_photos', JSON.stringify(_parsedPerez)); } catch (persistErr) {}
+        }
         if (Array.isArray(_parsedPerez) && _parsedPerez.length > 0) {
           PEREZ_RESIDENCE_FALLBACK_PHOTOS = _parsedPerez;
           console.log('[IVX Deals] Pre-loaded Perez Residence photos from localStorage cache (' + _parsedPerez.length + ' photos)');
@@ -12233,12 +12419,11 @@
         city: 'Southwest Ranches',
         state: 'FL',
         totalInvestment: 2500000,
-        propertyValue: 2500000,
-        sale_price: 2500000,
+        propertyValue: 3125000,
+        sale_price: 3125000,
         expectedROI: 25,
         min_investment: 50,
         fractional_share_price: 50,
-        ownership_text: '0.0020% minimum ownership',
         distributionFrequency: 'Monthly',
         photos: PEREZ_RESIDENCE_FALLBACK_PHOTOS,
         published: true,
@@ -12248,8 +12433,7 @@
           titleVerified: true,
           insuranceCoverage: true,
           escrowProtected: true,
-          permitStatus: 'approved',
-          ownershipLabel: '0.0020% minimum ownership'
+          permitStatus: 'approved'
         }
       },
       {
@@ -12265,7 +12449,6 @@
         expectedROI: 30,
         min_investment: 50,
         fractional_share_price: 50,
-        ownership_text: '0.0036% minimum ownership',
         distributionFrequency: 'Monthly',
         photos: CASA_ROSARIO_FALLBACK_PHOTOS,
         published: true,
@@ -12275,8 +12458,7 @@
           titleVerified: true,
           insuranceCoverage: true,
           escrowProtected: true,
-          permitStatus: 'approved',
-          ownershipLabel: '0.0036% minimum ownership'
+          permitStatus: 'approved'
         }
       },
       {
@@ -12292,7 +12474,6 @@
         expectedROI: 9.5,
         min_investment: 50,
         fractional_share_price: 50,
-        ownership_text: '0.0125% minimum ownership',
         distributionFrequency: 'Monthly',
         photos: JACKSONVILLE_PRIME_FALLBACK_PHOTOS,
         published: true,
@@ -12301,8 +12482,7 @@
           llcName: 'ONE STOP CONSTRUCTORS INC',
           titleVerified: true,
           insuranceCoverage: true,
-          escrowProtected: true,
-          ownershipLabel: '0.0125% minimum ownership'
+          escrowProtected: true
         }
       }
     ];
@@ -14927,11 +15107,19 @@
       return val;
     }
 
+    /* Perez Residence canonical photos — the deal's OWN photos from the
+       Supabase deal-photos/perez-residence-001/ storage folder (mirrors
+       jv_deals.photos). Must NEVER contain Casa Rosario or any other
+       project's media. */
     var PEREZ_RESIDENCE_FALLBACK_PHOTOS = [
-      'https://pub-e001eb4506b145aa938b5d3badbff6a5.r2.dev/attachments/junpisw15h6borglpbckz',
-      'https://pub-e001eb4506b145aa938b5d3badbff6a5.r2.dev/attachments/2s8bcg6npyx96xcfrr5rm',
-      'https://pub-e001eb4506b145aa938b5d3badbff6a5.r2.dev/attachments/t8rc86kynbs64jopcujtf',
-      'https://pub-e001eb4506b145aa938b5d3badbff6a5.r2.dev/attachments/bxqj57n0z60oqoxaqvnlo'
+      'https://kvclcdjmjghndxsngfzb.supabase.co/storage/v1/object/public/deal-photos/perez-residence-001/1774308382154-e08wnx-0.jpg',
+      'https://kvclcdjmjghndxsngfzb.supabase.co/storage/v1/object/public/deal-photos/perez-residence-001/1774308382162-yoirw1-1.jpg',
+      'https://kvclcdjmjghndxsngfzb.supabase.co/storage/v1/object/public/deal-photos/perez-residence-001/1774308382169-vrtugo-2.jpg',
+      'https://kvclcdjmjghndxsngfzb.supabase.co/storage/v1/object/public/deal-photos/perez-residence-001/1774308384904-3und6p-3.jpg',
+      'https://kvclcdjmjghndxsngfzb.supabase.co/storage/v1/object/public/deal-photos/perez-residence-001/1774308384911-qnd7lg-4.jpg',
+      'https://kvclcdjmjghndxsngfzb.supabase.co/storage/v1/object/public/deal-photos/perez-residence-001/1774308384919-qlsr38-5.jpg',
+      'https://kvclcdjmjghndxsngfzb.supabase.co/storage/v1/object/public/deal-photos/perez-residence-001/1774308385956-5jsooa-6.jpg',
+      'https://kvclcdjmjghndxsngfzb.supabase.co/storage/v1/object/public/deal-photos/perez-residence-001/1774308385970-yfcx95-7.jpg'
     ];
     var _perezPhotosFromDb = false;
     var _storagePhotoFetchInProgress = {};
@@ -15041,7 +15229,17 @@
     try {
       var _cachedPerez = localStorage.getItem('ivx_perez_photos');
       if (_cachedPerez) {
-        var _parsedPerez = JSON.parse(_cachedPerez);
+        var _parsedPerezRaw = JSON.parse(_cachedPerez);
+        /* Integrity guard: only accept cached photos that live in the Perez
+           Residence storage folder — a stale cache must never inject another
+           project's media into the Perez gallery. */
+        var _parsedPerez = Array.isArray(_parsedPerezRaw) ? _parsedPerezRaw.filter(function (p) {
+          return typeof p === 'string' && p.indexOf('/deal-photos/perez-residence-001/') !== -1;
+        }) : [];
+        if (_parsedPerez.length !== (Array.isArray(_parsedPerezRaw) ? _parsedPerezRaw.length : 0)) {
+          console.log('[IVX Deals] Purged cross-project photos from Perez localStorage cache');
+          try { localStorage.setItem('ivx_perez_photos', JSON.stringify(_parsedPerez)); } catch (persistErr) {}
+        }
         if (Array.isArray(_parsedPerez) && _parsedPerez.length > 0) {
           PEREZ_RESIDENCE_FALLBACK_PHOTOS = _parsedPerez;
           console.log('[IVX Deals] Pre-loaded Perez Residence photos from localStorage cache (' + _parsedPerez.length + ' photos)');
@@ -15107,12 +15305,11 @@
         city: 'Southwest Ranches',
         state: 'FL',
         totalInvestment: 2500000,
-        propertyValue: 2500000,
-        sale_price: 2500000,
+        propertyValue: 3125000,
+        sale_price: 3125000,
         expectedROI: 25,
         min_investment: 50,
         fractional_share_price: 50,
-        ownership_text: '0.0020% minimum ownership',
         distributionFrequency: 'Monthly',
         photos: PEREZ_RESIDENCE_FALLBACK_PHOTOS,
         published: true,
@@ -15122,8 +15319,7 @@
           titleVerified: true,
           insuranceCoverage: true,
           escrowProtected: true,
-          permitStatus: 'approved',
-          ownershipLabel: '0.0020% minimum ownership'
+          permitStatus: 'approved'
         }
       },
       {
@@ -15139,7 +15335,6 @@
         expectedROI: 30,
         min_investment: 50,
         fractional_share_price: 50,
-        ownership_text: '0.0036% minimum ownership',
         distributionFrequency: 'Monthly',
         photos: CASA_ROSARIO_FALLBACK_PHOTOS,
         published: true,
@@ -15149,8 +15344,7 @@
           titleVerified: true,
           insuranceCoverage: true,
           escrowProtected: true,
-          permitStatus: 'approved',
-          ownershipLabel: '0.0036% minimum ownership'
+          permitStatus: 'approved'
         }
       },
       {
@@ -15166,7 +15360,6 @@
         expectedROI: 9.5,
         min_investment: 50,
         fractional_share_price: 50,
-        ownership_text: '0.0125% minimum ownership',
         distributionFrequency: 'Monthly',
         photos: JACKSONVILLE_PRIME_FALLBACK_PHOTOS,
         published: true,
@@ -15175,8 +15368,7 @@
           llcName: 'ONE STOP CONSTRUCTORS INC',
           titleVerified: true,
           insuranceCoverage: true,
-          escrowProtected: true,
-          ownershipLabel: '0.0125% minimum ownership'
+          escrowProtected: true
         }
       }
     ];

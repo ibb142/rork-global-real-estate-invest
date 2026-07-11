@@ -26,7 +26,9 @@ export type IVXTaskStatus =
   | 'completed'
   | 'failed'
   | 'blocked'
-  | 'cancelled';
+  | 'cancelled'
+  /** Work finished locally but never reached verified production — owner spec 2026-07-11. */
+  | 'not_deployed';
 
 /** Real production-verification evidence captured after a deploy, so the owner
  * sees proof (endpoint + HTTP status) — not just a "verified" label. */
@@ -46,12 +48,22 @@ export type IVXTaskBlockStatus =
   | 'FAILED'
   | 'BLOCKED'
   | 'DEPLOYED'
-  | 'VERIFIED';
+  | 'VERIFIED'
+  /** Code work done but the six-point deployment checklist did not pass. */
+  | 'NOT_DEPLOYED';
 
 export const TERMINAL_BLOCK_STATUSES: ReadonlySet<IVXTaskBlockStatus> = new Set([
   'COMPLETED',
   'DEPLOYED',
   'VERIFIED',
+]);
+
+/** Statuses that mean a block will not run again (resume must skip them). */
+export const SETTLED_BLOCK_STATUSES: ReadonlySet<IVXTaskBlockStatus> = new Set([
+  'COMPLETED',
+  'DEPLOYED',
+  'VERIFIED',
+  'NOT_DEPLOYED',
 ]);
 
 export type IVXTaskBlock = {
@@ -112,7 +124,14 @@ export type IVXTaskEvent = {
   detail: string;
 };
 
-const TASKS_ROOT = path.join(process.cwd(), 'logs', 'audit', 'task-orchestrator');
+/**
+ * Durable store root. Overridable via IVX_TASKS_ROOT so unit tests write to a
+ * temp dir instead of polluting the production audit store with mock
+ * commit hashes / fake completed tasks.
+ */
+function tasksRoot(): string {
+  return process.env.IVX_TASKS_ROOT ?? path.join(process.cwd(), 'logs', 'audit', 'task-orchestrator');
+}
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -138,7 +157,7 @@ function taskDir(taskId: string): string {
   if (!safe) {
     throw new Error('Invalid task id.');
   }
-  return path.join(TASKS_ROOT, safe);
+  return path.join(tasksRoot(), safe);
 }
 
 function taskMetaPath(taskId: string): string {
@@ -282,7 +301,7 @@ export async function updateTaskBlock(
   const failedBlockIds = blocks.filter((b) => b.status === 'FAILED').map((b) => b.id);
   const blockedBlockIds = blocks.filter((b) => b.status === 'BLOCKED').map((b) => b.id);
   const firstUnfinished = blocks.find(
-    (b) => !TERMINAL_BLOCK_STATUSES.has(b.status) && b.status !== 'FAILED' && b.status !== 'BLOCKED',
+    (b) => !SETTLED_BLOCK_STATUSES.has(b.status) && b.status !== 'FAILED' && b.status !== 'BLOCKED',
   );
 
   const task = await updateTask(taskId, {
@@ -336,7 +355,7 @@ export async function readTaskEvents(taskId: string, limit: number = 200): Promi
 export async function listTasks(limit: number = 25): Promise<IVXTaskRecord[]> {
   let entries: string[] = [];
   try {
-    entries = await readdir(TASKS_ROOT);
+    entries = await readdir(tasksRoot());
   } catch {
     return [];
   }
@@ -351,7 +370,7 @@ export async function listTasks(limit: number = 25): Promise<IVXTaskRecord[]> {
 export function findResumeBlock(blocks: IVXTaskBlock[]): IVXTaskBlock | null {
   return (
     blocks.find(
-      (b) => !TERMINAL_BLOCK_STATUSES.has(b.status) && b.status !== 'FAILED' && b.status !== 'BLOCKED',
+      (b) => !SETTLED_BLOCK_STATUSES.has(b.status) && b.status !== 'FAILED' && b.status !== 'BLOCKED',
     ) ?? null
   );
 }

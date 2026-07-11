@@ -9,11 +9,22 @@ export const CASA_ROSARIO_PHOTOS: string[] = [
   'https://pub-e001eb4506b145aa938b5d3badbff6a5.r2.dev/attachments/g9g9wbb8r1epd4hc9qifl',
 ];
 
+/**
+ * Perez Residence canonical photos — these are the deal's OWN photos from the
+ * Supabase `deal-photos/perez-residence-001/` storage folder (mirrors the
+ * production jv_deals.photos array). They must NEVER contain Casa Rosario or
+ * any other project's media. Regression-guarded by
+ * __tests__/deal-photo-integrity.test.ts.
+ */
 export const PEREZ_RESIDENCE_PHOTOS: string[] = [
-  'https://pub-e001eb4506b145aa938b5d3badbff6a5.r2.dev/attachments/junpisw15h6borglpbckz',
-  'https://pub-e001eb4506b145aa938b5d3badbff6a5.r2.dev/attachments/2s8bcg6npyx96xcfrr5rm',
-  'https://pub-e001eb4506b145aa938b5d3badbff6a5.r2.dev/attachments/t8rc86kynbs64jopcujtf',
-  'https://pub-e001eb4506b145aa938b5d3badbff6a5.r2.dev/attachments/bxqj57n0z60oqoxaqvnlo',
+  'https://kvclcdjmjghndxsngfzb.supabase.co/storage/v1/object/public/deal-photos/perez-residence-001/1774308382154-e08wnx-0.jpg',
+  'https://kvclcdjmjghndxsngfzb.supabase.co/storage/v1/object/public/deal-photos/perez-residence-001/1774308382162-yoirw1-1.jpg',
+  'https://kvclcdjmjghndxsngfzb.supabase.co/storage/v1/object/public/deal-photos/perez-residence-001/1774308382169-vrtugo-2.jpg',
+  'https://kvclcdjmjghndxsngfzb.supabase.co/storage/v1/object/public/deal-photos/perez-residence-001/1774308384904-3und6p-3.jpg',
+  'https://kvclcdjmjghndxsngfzb.supabase.co/storage/v1/object/public/deal-photos/perez-residence-001/1774308384911-qnd7lg-4.jpg',
+  'https://kvclcdjmjghndxsngfzb.supabase.co/storage/v1/object/public/deal-photos/perez-residence-001/1774308384919-qlsr38-5.jpg',
+  'https://kvclcdjmjghndxsngfzb.supabase.co/storage/v1/object/public/deal-photos/perez-residence-001/1774308385956-5jsooa-6.jpg',
+  'https://kvclcdjmjghndxsngfzb.supabase.co/storage/v1/object/public/deal-photos/perez-residence-001/1774308385970-yfcx95-7.jpg',
 ];
 
 function escapeSvgText(value: string): string {

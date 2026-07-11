@@ -21,6 +21,7 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { classifyOwnerExecutionCommand } from './ivx-owner-execution-mode';
+import { resolveBlockCompletionStatus, type BlockCompletionEvidence } from './ivx-task-completion-gate';
 import { splitTaskIntoBlocks } from './ivx-task-block-splitter';
 import {
   appendTaskEvent,
@@ -91,7 +92,40 @@ export const defaultBlockExecutor: IVXBlockExecutor = async (block) => {
     const commitSha = proof.gitDeployOperator.github.commitSha;
     const committed = proof.gitDeployOperator.status === 'executed' && Boolean(commitSha);
     const deployed = proof.gitDeployOperator.status === 'executed' && proof.gitDeployOperator.render.deployAttempted;
-    const verified = proof.productionVerification.ok;
+
+    // Owner spec 2026-07-11: production must be RUNNING the pushed commit before a
+    // block may claim completion. Read the live commit from /version only after a
+    // real commit + deploy happened — never fabricated, null when unavailable.
+    let runningCommitSha: string | null = null;
+    let deployCompleted = false;
+    if (committed && deployed && commitSha) {
+      try {
+        const { verifyLiveCommitMatch } = await import('./ivx-senior-developer-runtime');
+        const liveMatch = await verifyLiveCommitMatch({
+          requestedCommit: commitSha,
+          deploymentId: proof.gitDeployOperator.render.deployId,
+        });
+        runningCommitSha = liveMatch.liveCommit;
+        deployCompleted = liveMatch.deployReachedTerminalState
+          ? liveMatch.match
+          : liveMatch.match;
+      } catch {
+        runningCommitSha = null;
+      }
+    }
+
+    // Six-point completion checklist — commit, push, deploy started, deploy
+    // completed, health 200, production running the latest commit. Any unmet
+    // requirement forces NOT_DEPLOYED; a block is never COMPLETED without it.
+    const evidence: BlockCompletionEvidence = {
+      commitSha,
+      pushCompleted: committed,
+      deployStarted: deployed,
+      deployCompleted,
+      healthHttpStatus: proof.productionVerification.httpStatus,
+      runningCommitSha,
+    };
+    const completion = resolveBlockCompletionStatus(evidence);
 
     // Capture the real post-deploy verification evidence (endpoint + HTTP status +
     // changed-route check) so the monitor can prove the live app responded — not
@@ -106,14 +140,7 @@ export const defaultBlockExecutor: IVXBlockExecutor = async (block) => {
         }
       : null;
 
-    let status: IVXTaskBlockStatus = 'COMPLETED';
-    if (verified) {
-      status = 'VERIFIED';
-    } else if (deployed) {
-      status = 'DEPLOYED';
-    } else if (!proof.ok) {
-      status = 'FAILED';
-    }
+    const status: IVXTaskBlockStatus = !proof.ok ? 'FAILED' : completion.status;
 
     // Surface the real reason a block did not complete (failing validation
     // detail, then the git/deploy operator reason) so the owner sees the exact
@@ -129,7 +156,7 @@ export const defaultBlockExecutor: IVXBlockExecutor = async (block) => {
 
     const failingValidation = proof.validations.find((entry) => !entry.ok) ?? null;
     const realBlocker = proof.ok
-      ? null
+      ? (completion.status === 'NOT_DEPLOYED' ? `NOT DEPLOYED — ${completion.failures.join(' ')}` : null)
       : (failingValidation?.error
         ?? failingValidation?.stderrTail
         ?? proof.gitDeployOperator.reason
@@ -143,7 +170,7 @@ export const defaultBlockExecutor: IVXBlockExecutor = async (block) => {
       validationCommand: validation?.command ?? null,
       testResult: proof.validations.length > 0 ? `${validationPassed ? 'passed' : 'failed'} (${proof.validations.length} validation${proof.validations.length === 1 ? '' : 's'})` : null,
       commitHash: committed ? commitSha ?? null : null,
-      deploymentStatus: deployed ? 'triggered' : 'not-deployed',
+      deploymentStatus: completion.status === 'VERIFIED' ? 'deployed_verified' : 'NOT_DEPLOYED',
       verification,
       blocker: realBlocker,
     };
@@ -175,7 +202,7 @@ async function readGeneratedFeatureSource(sourceFile: string | null): Promise<st
 }
 
 function isTerminalTaskStatus(status: IVXTaskRecord['status']): boolean {
-  return status === 'completed' || status === 'cancelled';
+  return status === 'completed' || status === 'cancelled' || status === 'not_deployed';
 }
 
 /**
@@ -248,7 +275,7 @@ export async function driveTask(taskId: string, executor: IVXBlockExecutor = def
         continue;
       }
 
-      const completedAt = ['COMPLETED', 'DEPLOYED', 'VERIFIED'].includes(result.status) ? new Date().toISOString() : null;
+      const completedAt = ['COMPLETED', 'DEPLOYED', 'VERIFIED', 'NOT_DEPLOYED'].includes(result.status) ? new Date().toISOString() : null;
       await updateTaskBlock(taskId, block.id, {
         status: result.status,
         codeChanges: result.codeChanges ?? block.codeChanges,
@@ -287,13 +314,32 @@ export async function driveTask(taskId: string, executor: IVXBlockExecutor = def
   }
 }
 
-/** Settle the overall task status from the authoritative block roll-ups. */
+/**
+ * Settle the overall task status from the authoritative block roll-ups.
+ *
+ * Owner spec 2026-07-11: a task may NEVER settle as `completed` unless EVERY
+ * block passed the six-point deployment checklist (status VERIFIED). Blocks
+ * that only finished code work (COMPLETED/DEPLOYED/NOT_DEPLOYED) settle the
+ * task as `not_deployed` — real production evidence is the only path to
+ * `completed`.
+ */
 async function finalizeTaskStatus(taskId: string): Promise<IVXTaskRecord | null> {
   const blocks = await getTaskBlocks(taskId);
   const anyFailed = blocks.some((block) => block.status === 'FAILED');
   const anyBlocked = blocks.some((block) => block.status === 'BLOCKED');
-  const status: IVXTaskRecord['status'] = anyFailed ? 'failed' : anyBlocked ? 'blocked' : 'completed';
-  const settled = await updateTask(taskId, { status, completedAt: new Date().toISOString() });
+  const allVerified = blocks.length > 0 && blocks.every((block) => block.status === 'VERIFIED');
+  const status: IVXTaskRecord['status'] = anyFailed
+    ? 'failed'
+    : anyBlocked
+      ? 'blocked'
+      : allVerified
+        ? 'completed'
+        : 'not_deployed';
+  const settled = await updateTask(taskId, {
+    status,
+    completedAt: new Date().toISOString(),
+    deploymentStatus: status === 'completed' ? 'deployed_verified' : status === 'not_deployed' ? 'NOT_DEPLOYED' : undefined,
+  });
   await appendTaskEvent(taskId, { type: `TASK_${status.toUpperCase()}`, blockId: null, detail: `${blocks.length} blocks` });
   return settled;
 }
@@ -387,6 +433,8 @@ export type IVXTaskFinalReview = {
   blockedBlocks: number;
   verifiedBlocks: number;
   deployedBlocks: number;
+  /** Blocks whose code work finished but never passed the deployment checklist. */
+  notDeployedBlocks: number;
   filesChanged: string[];
   commitHashes: string[];
   deploymentStatus: string | null;
@@ -405,7 +453,7 @@ export async function buildTaskFinalReview(taskId: string): Promise<IVXTaskFinal
   const filesChanged = [...new Set(blocks.flatMap((block) => block.filesInvolved))].filter(Boolean);
   const commitHashes = [...new Set(blocks.map((block) => block.commitHash).filter((hash): hash is string => Boolean(hash)))];
   const remainingIssues = blocks
-    .filter((block) => block.status === 'FAILED' || block.status === 'BLOCKED')
+    .filter((block) => block.status === 'FAILED' || block.status === 'BLOCKED' || block.status === 'NOT_DEPLOYED')
     .map((block) => `Block ${block.index + 1} (${block.title}) — ${block.status}: ${block.blocker ?? block.error ?? 'see logs'}`);
   const testsPassed = blocks.filter((block) => (block.testResult ?? '').toLowerCase().startsWith('passed')).length;
 
@@ -419,6 +467,7 @@ export async function buildTaskFinalReview(taskId: string): Promise<IVXTaskFinal
     blockedBlocks: blocks.filter((block) => block.status === 'BLOCKED').length,
     verifiedBlocks: blocks.filter((block) => block.status === 'VERIFIED').length,
     deployedBlocks: blocks.filter((block) => block.status === 'DEPLOYED' || block.status === 'VERIFIED').length,
+    notDeployedBlocks: blocks.filter((block) => block.status === 'NOT_DEPLOYED').length,
     filesChanged,
     commitHashes,
     deploymentStatus: task.deploymentStatus,

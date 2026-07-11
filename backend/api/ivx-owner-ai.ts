@@ -3,6 +3,7 @@ import path from 'node:path';
 import { IVX_OWNER_AI_PROFILE, IVX_OWNER_AI_ROOM_ID, IVX_OWNER_AI_ROOM_SLUG } from '../../expo/constants/ivx-owner-ai';
 import { getIVXAIConfigurationSnapshot, getIVXAIEndpoint, requestIVXAIText, resolveIVXAIModel } from '../ivx-ai-runtime';
 import { executeIVXAIBrainTool, type IVXAIBrainToolName, type IVXAIBrainToolResult } from '../services/ivx-ai-brain-tool-executor';
+import { applyDeploymentClaimGate } from '../services/ivx-deployment-claim-gate';
 import {
   buildIVXAgentRuntimeV2Envelope,
   buildIVXAgentRuntimeV2StatusSnapshot,
@@ -555,6 +556,18 @@ function assertVisibleOwnerAIAnswer(value: string): string {
   if (!trimmed || containsBlockedVisibleOwnerAIText(trimmed)) {
     console.log('[IVXOwnerAIBackend] Unsafe assistant text rejected before response/persistence.');
     throw new Error('Owner AI response was rejected by the visible-answer safety contract. No canned fallback was substituted.');
+  }
+
+  // DEPLOYMENT CLAIM GATE — every visible Owner AI answer passes through here,
+  // so no chat path can return a fabricated deployment confirmation. Placeholder
+  // proof values ([AUTO-GENERATED], [CURRENT SHA], bracketed ID/SHA slots) are
+  // blocked unconditionally; deployment-success narratives are blocked unless
+  // the answer carries real execution evidence (raw command output or a real
+  // commit/health proof line). The replacement is the honest NOT_DEPLOYED state.
+  const deploymentGate = applyDeploymentClaimGate({ answer: trimmed });
+  if (deploymentGate.gated) {
+    console.log('[IVXOwnerAIBackend] Deployment claim gate rejected a fake deployment narrative:', deploymentGate.violations);
+    return deploymentGate.answer;
   }
 
   // Final sanitizer: strip internal tool names, debug headers, and raw JSON markers from the visible chat answer.

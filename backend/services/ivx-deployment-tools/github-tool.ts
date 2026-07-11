@@ -10,6 +10,8 @@
  *   - Verify token permissions and scopes
  */
 
+import { ensureGithubTokenHydrated } from '../ivx-github-token-resolver';
+
 const GITHUB_API = 'https://api.github.com';
 const DEFAULT_REPO = 'ibb142/rork-global-real-estate-invest';
 const DEFAULT_BRANCH = 'main';
@@ -106,6 +108,7 @@ async function ghFetch<T = unknown>(
   path: string,
   opts: { method?: string; body?: unknown } = {},
 ): Promise<{ ok: boolean; status: number; data: T | null; error: string | null }> {
+  await ensureGithubTokenHydrated();
   const token = getToken();
   if (!token) return { ok: false, status: 0, data: null, error: 'GITHUB_TOKEN not configured' };
 
@@ -322,6 +325,7 @@ export async function getSecrets(): Promise<GitHubToolResult> {
 // ─── Permissions / Token Scopes ────────────────────────────────────────
 
 export async function verifyPermissions(): Promise<GitHubToolResult> {
+  await ensureGithubTokenHydrated();
   const token = getToken();
   if (!token) {
     return {

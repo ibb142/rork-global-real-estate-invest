@@ -1,4 +1,12 @@
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { describe, expect, test } from 'bun:test';
+
+// Isolate the durable store: tests must NEVER write mock commit hashes or fake
+// completed tasks into the production audit store (owner spec 2026-07-11).
+process.env.IVX_TASKS_ROOT = mkdtempSync(path.join(tmpdir(), 'ivx-task-orchestrator-test-'));
+
 import {
   buildTaskFinalReview,
   driveTask,
@@ -15,7 +23,7 @@ const NUMBERED_TASK = [
 ].join('\n');
 
 describe('startTask — splits, copies original exactly, runs blocks one at a time', () => {
-  test('completes every non-destructive block end-to-end', async () => {
+  test('blocks finishing WITHOUT deployment evidence settle the task as not_deployed — never completed', async () => {
     const executor: IVXBlockExecutor = async () => ({
       status: 'COMPLETED',
       codeChanges: 'edited a file',
@@ -31,7 +39,8 @@ describe('startTask — splits, copies original exactly, runs blocks one at a ti
     await driveTask(task.id, executor);
 
     const finished = await getTask(task.id);
-    expect(finished?.status).toBe('completed');
+    expect(finished?.status).toBe('not_deployed');
+    expect(finished?.deploymentStatus).toBe('NOT_DEPLOYED');
     expect(finished?.completedBlockIds.length).toBe(3);
 
     const review = await buildTaskFinalReview(task.id);
@@ -39,6 +48,50 @@ describe('startTask — splits, copies original exactly, runs blocks one at a ti
     expect(review?.failedBlocks).toBe(0);
     expect(review?.commitHashes).toContain('abc1234');
     expect(review?.filesChanged).toContain('backend/x.ts');
+  });
+
+  test('a task settles as completed ONLY when every block is VERIFIED with production evidence', async () => {
+    const executor: IVXBlockExecutor = async () => ({
+      status: 'VERIFIED',
+      commitHash: 'd35db8b99cf4370e98e13564a8b8563ff43e458a',
+      deploymentStatus: 'deployed_verified',
+      verification: {
+        endpoint: 'https://ivx-holdings-platform.onrender.com/health',
+        ok: true,
+        httpStatus: 200,
+        changedRouteOk: true,
+        verifiedAt: new Date().toISOString(),
+      },
+    });
+
+    const { task } = await startTask(NUMBERED_TASK, { autoStart: false });
+    await driveTask(task.id, executor);
+
+    const finished = await getTask(task.id);
+    expect(finished?.status).toBe('completed');
+    expect(finished?.deploymentStatus).toBe('deployed_verified');
+
+    const review = await buildTaskFinalReview(task.id);
+    expect(review?.verifiedBlocks).toBe(3);
+    expect(review?.notDeployedBlocks).toBe(0);
+  });
+
+  test('NOT_DEPLOYED blocks are settled (not re-run) and reported in remainingIssues', async () => {
+    const executor: IVXBlockExecutor = async () => ({
+      status: 'NOT_DEPLOYED',
+      blocker: 'NOT DEPLOYED — Push not completed.',
+    });
+
+    const { task } = await startTask(NUMBERED_TASK, { autoStart: false });
+    await driveTask(task.id, executor);
+
+    const finished = await getTask(task.id);
+    expect(finished?.status).toBe('not_deployed');
+
+    const review = await buildTaskFinalReview(task.id);
+    expect(review?.notDeployedBlocks).toBe(3);
+    expect(review?.remainingIssues.length).toBe(3);
+    expect(review?.remainingIssues[0]).toContain('NOT_DEPLOYED');
   });
 });
 
@@ -58,7 +111,7 @@ describe('crash recovery — a thrown executor resumes the same block, not from 
     await driveTask(task.id, flakyExecutor);
 
     const finished = await getTask(task.id);
-    expect(finished?.status).toBe('completed');
+    expect(finished?.status).toBe('not_deployed');
     expect(finished?.recoveryCount).toBeGreaterThanOrEqual(1);
     expect(finished?.lastCrash?.detail).toContain('simulated crash');
 
@@ -132,6 +185,6 @@ describe('resumeTask — continues a paused task from the durable cursor', () =>
     expect(executed.length).toBe(0);
 
     const finished = await getTask(task.id);
-    expect(finished?.status).toBe('completed');
+    expect(finished?.status).toBe('not_deployed');
   });
 });

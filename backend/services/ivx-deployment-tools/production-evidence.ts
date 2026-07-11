@@ -11,6 +11,8 @@
  *   - GitHub SHA vs Render SHA vs Production SHA comparison
  */
 
+import { ensureGithubTokenHydrated } from '../ivx-github-token-resolver';
+
 // ─── Types ───────────────────────────────────────────────────────────
 
 export interface EndpointTest {
@@ -140,7 +142,7 @@ export async function compareCommits(): Promise<{
 }> {
   const GITHUB_API = 'https://api.github.com';
   const repo = 'ibb142/rork-global-real-estate-invest';
-  const token = (process.env.GITHUB_TOKEN ?? '').trim();
+  const token = (await ensureGithubTokenHydrated()).token;
 
   const commits: CommitComparison[] = [];
 

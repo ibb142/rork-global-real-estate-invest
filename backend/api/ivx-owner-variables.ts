@@ -1,6 +1,7 @@
 import { randomBytes, createCipheriv, createDecipheriv, createHash } from 'node:crypto';
 import { Buffer } from 'node:buffer';
 import { assertIVXOwnerOnly, ownerOnlyJson, ownerOnlyOptions, type IVXOwnerRequestContext } from './owner-only';
+import { isForbiddenEvidenceValue } from '../services/ivx-deployment-state-machine';
 
 const DEPLOYMENT_MARKER = 'ivx-owner-variables-2026-05-08t2305z-rest-storage';
 const RENDER_API_BASE_URL = 'https://api.render.com/v1';
@@ -682,12 +683,31 @@ async function buildStoredSecretMap(): Promise<StoredSecretMap> {
  */
 export async function getIVXOwnerVariableRuntimeValue(name: OwnerVariableName): Promise<string> {
   const envValue = readEnv(name);
-  if (envValue) return envValue;
+  // A placeholder env value (e.g. the literal "PLACEHOLDER") must NEVER win
+  // over the real encrypted stored value — fall through to the store instead.
+  if (envValue && !isForbiddenEvidenceValue(envValue)) return envValue;
   try {
     const row = await getStoredRow(name);
     return row ? decryptRowValue(row).trim() : '';
   } catch (error) {
     console.log('[IVXOwnerVariables] Runtime value bridge unavailable:', {
+      name,
+      message: error instanceof Error ? sanitizeExternalErrorDetail(error.message) : 'unknown',
+    });
+    return '';
+  }
+}
+
+/**
+ * Reads one encrypted Owner Variable from the STORE ONLY (ignores process.env).
+ * Used by credential resolvers that must bypass placeholder env values.
+ */
+export async function getIVXOwnerVariableStoredValue(name: OwnerVariableName): Promise<string> {
+  try {
+    const row = await getStoredRow(name);
+    return row ? decryptRowValue(row).trim() : '';
+  } catch (error) {
+    console.log('[IVXOwnerVariables] Stored value bridge unavailable:', {
       name,
       message: error instanceof Error ? sanitizeExternalErrorDetail(error.message) : 'unknown',
     });

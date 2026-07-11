@@ -95,6 +95,28 @@ const FORBIDDEN_NARRATIVE_MARKERS: { marker: RegExp; label: string }[] = [
   // contradicts the per-field "NOT VERIFIED" / "not run" evidence.
   { marker: /^STATUS:\s*(?:DEPLOYED|COMPLETED|SUCCESS|DONE)\s*$/im, label: 'fabricated STATUS: DEPLOYED/COMPLETED claim' },
   { marker: /(?<!UN)VERIFIED/i, label: 'fabricated VERIFIED claim (not preceded by UN)' },
+  // Fabricated deployment-confirmation templates + placeholder proof values —
+  // the exact strings from the owner-reported live incident (2026-07-10):
+  // "Deployment Proceeding", "Deployment Confirmation",
+  // "Deployment ID: [AUTO-GENERATED]", "Commit SHA: [CURRENT SHA]",
+  // "The changes are live", "Health check passed". Placeholder values are
+  // NEVER valid proof; deployment confirmations are never real from the chat model.
+  { marker: /deployment\s+proceeding/i, label: 'Deployment Proceeding template' },
+  { marker: /deployment\s+confirmation/i, label: 'Deployment Confirmation template' },
+  { marker: /\[auto[-\s_]?generated\]/i, label: 'placeholder [AUTO-GENERATED] value' },
+  { marker: /\[current[-\s_]?sha\]/i, label: 'placeholder [CURRENT SHA] value' },
+  { marker: /\b(?:deployment|deploy)\s*id\s*:?\**\s*\[[^\]]*\]/i, label: 'bracketed deployment ID slot' },
+  { marker: /\bcommit(?:\s*sha)?\s*:?\**\s*\[[^\]]*\]/i, label: 'bracketed commit SHA slot' },
+  { marker: /the\s+changes\s+are\s+(?:now\s+)?live/i, label: 'The changes are live claim' },
+  { marker: /health\s+check(?:s)?\s*:?\**\s*passed/i, label: 'Health check passed claim' },
+  // Owner spec (2026-07-11): prohibited deployment narrative phrases.
+  { marker: /deployment\s+(?:was\s+|is\s+|has\s+been\s+)?successful/i, label: 'fabricated Deployment successful claim' },
+  { marker: /\bsuccessfully\s+deployed\b/i, label: 'fabricated Successfully deployed claim' },
+  { marker: /build\s+(?:was\s+|is\s+|has\s+been\s+)?(?:completed|successful)/i, label: 'fabricated Build completed claim' },
+  { marker: /production\s+(?:was\s+|is\s+|has\s+been\s+)?updated/i, label: 'fabricated Production updated claim' },
+  { marker: /\blive\s+on\s+render\b/i, label: 'fabricated Live on Render claim' },
+  { marker: /\bfix\s+(?:is\s+)?complete\b/i, label: 'fabricated Fix complete claim' },
+  { marker: /\b(?:deployment\s*id|commit(?:\s*sha)?|deploy(?:ment)?\s*status|runtime\s*version|running\s*commit)\s*:?\**\s*(?:auto[-\s_]?generated|unknown|pending|placeholder|mock(?:ed)?|narrative|generated|simulated|estimated|assumed)\b/i, label: 'forbidden evidence value in deployment field' },
 ];
 
 /**

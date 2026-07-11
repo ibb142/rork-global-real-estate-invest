@@ -45,6 +45,7 @@
  */
 
 import { auditVault, inspectVaultVariable, getVaultValue, buildVaultStatus, VAULT_REGISTRY } from './ivx-secure-vault';
+import { ensureGithubTokenHydrated } from './ivx-github-token-resolver';
 
 const DEPLOYMENT_BRAIN_VERSION = 'ivx-deployment-brain-v4-2026-07-03T12:00:00Z';
 
@@ -143,7 +144,7 @@ function extractSha(data: unknown): string | null {
  * which reports the commit SHA of the connected GitHub repo's latest deploy.
  */
 async function resolveGitHubSha(renderInfo?: RenderInfo): Promise<GitHubShaResult> {
-  const token = process.env.GITHUB_TOKEN?.trim();
+  const token = (await ensureGithubTokenHydrated()).token || undefined;
 
   if (token) {
     try {
@@ -942,9 +943,10 @@ const COMMAND_MAP: Record<string, () => Promise<string>> = {
   '/platform-status': async () => {
     const platforms: Array<{ name: string; configured: boolean; detail: string }> = [];
 
-    // GitHub
-    const ghToken = process.env.GITHUB_TOKEN ?? process.env.IVX_GITHUB_TOKEN ?? '';
-    platforms.push({ name: 'GitHub', configured: ghToken.trim().length > 0, detail: ghToken.trim() ? 'Token present' : 'Token missing' });
+    // GitHub — placeholder-rejecting resolution (env → owner variables store)
+    const ghResolution = await ensureGithubTokenHydrated();
+    const ghToken = ghResolution.token || (process.env.IVX_GITHUB_TOKEN ?? '').trim();
+    platforms.push({ name: 'GitHub', configured: ghToken.length > 0, detail: ghToken ? `Token present (source: ${ghResolution.source})` : ghResolution.detail });
 
     // Render
     const renderKey = process.env.RENDER_API_KEY ?? process.env.IVX_RENDER_API_KEY ?? '';
