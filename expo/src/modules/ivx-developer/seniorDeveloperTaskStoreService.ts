@@ -14,6 +14,8 @@ import { getIVXOwnerAIConfigAudit } from '@/lib/ivx-supabase-client';
 export type CanonicalTaskStatus =
   | 'IN_PROGRESS'
   | 'BLOCKED'
+  | 'BLOCKED_OWNER_APPROVAL'
+  | 'CANCELLED_OBSOLETE'
   | 'NOT_DEPLOYED'
   | 'DEPLOYED'
   | 'PRODUCTION_VERIFIED'
@@ -66,6 +68,7 @@ export type CanonicalTask = {
   production_url: string | null;
   qa_status: string | null;
   evidence: CanonicalTaskEvidence | null;
+  disposition: Record<string, unknown> | null;
   error: string | null;
   assigned_agent: string;
   source: string;
@@ -81,6 +84,8 @@ export type CanonicalTaskCounts = {
   TOTAL_TASKS: number;
   IN_PROGRESS: number;
   BLOCKED: number;
+  BLOCKED_OWNER_APPROVAL?: number;
+  CANCELLED_OBSOLETE?: number;
   NOT_DEPLOYED: number;
   DEPLOYED: number;
   PRODUCTION_VERIFIED: number;

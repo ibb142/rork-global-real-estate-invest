@@ -11,6 +11,7 @@ import { serve } from '@hono/node-server';
 import type { Server as HttpServer } from 'node:http';
 import app, { publicChatStorage } from './backend/hono';
 import { attachChatRealtime } from './backend/chat-realtime';
+import { scheduleCanonicalMediaMigrationAtBoot } from './backend/services/ivx-canonical-media-migration';
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -41,6 +42,11 @@ const server = serve(
 // Shares the REST layer's message store so realtime messages are readable
 // over /api/public/messages and vice versa.
 const realtime = attachChatRealtime(server as unknown as HttpServer, publicChatStorage);
+
+// Apply the canonical jv_deal_media/jv_deal_reels migration once at boot
+// (idempotent; uses the backend's service-role runtime, the only credential
+// permitted to run privileged DDL). Status: GET /api/ivx/media-migration/status.
+scheduleCanonicalMediaMigrationAtBoot();
 
 function shutdown(signal: string): void {
   console.log('[IVX Server] Shutdown requested', { signal });

@@ -51,6 +51,8 @@ const STATUS_TABS: { key: string; label: string }[] = [
   { key: 'ALL', label: 'All Tasks' },
   { key: 'IN_PROGRESS', label: 'In Progress' },
   { key: 'BLOCKED', label: 'Blocked' },
+  { key: 'BLOCKED_OWNER_APPROVAL', label: 'Owner Approval' },
+  { key: 'CANCELLED_OBSOLETE', label: 'Cancelled Obsolete' },
   { key: 'NOT_DEPLOYED', label: 'Not Deployed' },
   { key: 'PRODUCTION_VERIFIED', label: 'Production Verified' },
   { key: 'FAILED', label: 'Failed' },
@@ -82,10 +84,12 @@ function statusColor(status: CanonicalTaskStatus): string {
     case 'IN_PROGRESS':
       return Colors.gold;
     case 'WAITING_APPROVAL':
+    case 'BLOCKED_OWNER_APPROVAL':
       return Colors.orange;
     case 'BLOCKED':
       return Colors.warning;
     case 'FAILED':
+    case 'CANCELLED_OBSOLETE':
       return Colors.error;
     case 'NOT_DEPLOYED':
     default:
@@ -103,8 +107,10 @@ function StatusIcon({ status }: { status: CanonicalTaskStatus }) {
     case 'IN_PROGRESS':
       return <Activity color={color} size={16} />;
     case 'BLOCKED':
+    case 'BLOCKED_OWNER_APPROVAL':
       return <AlertTriangle color={color} size={16} />;
     case 'FAILED':
+    case 'CANCELLED_OBSOLETE':
       return <XCircle color={color} size={16} />;
     default:
       return <CircleDashed color={color} size={16} />;

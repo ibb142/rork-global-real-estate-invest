@@ -59,12 +59,60 @@ export async function handleProjectMediaGet(c: Context): Promise<Response> {
 
   try {
     const sb = await getSupabaseAdmin();
+
+    // Canonical source of truth: jv_deal_media / jv_deal_reels keyed to
+    // jv_deals(id). Media can never cross-contaminate projects here (real FKs
+    // + unique URL constraint enforced in the database).
+    const [canonicalMediaRes, canonicalReelRes] = await Promise.all([
+      sb.from('jv_deal_media').select('*').eq('project_id', projectId).eq('published', true).order('sort_order'),
+      sb.from('jv_deal_reels').select('*').eq('project_id', projectId).eq('published', true).order('sort_order'),
+    ]);
+
+    const canonicalMedia = (canonicalMediaRes.error ? [] : canonicalMediaRes.data || []) as any[];
+    const canonicalReels = (canonicalReelRes.error ? [] : canonicalReelRes.data || []) as any[];
+
+    if (canonicalMedia.length > 0 || canonicalReels.length > 0) {
+      return json({
+        source: 'canonical:jv_deal_media+jv_deal_reels',
+        images: canonicalMedia
+          .filter((m: any) => m.media_type === 'image')
+          .map((m: any) => ({
+            id: m.id,
+            project_id: m.project_id,
+            media_type: m.media_type,
+            url: m.public_url,
+            thumbnail_url: m.public_url,
+            is_cover: m.is_cover === true,
+            position: m.sort_order,
+            created_at: m.created_at,
+          })),
+        videos: canonicalReels.map((r: any) => ({
+          id: r.id,
+          project_id: r.project_id,
+          video_url: r.video_url,
+          thumbnail_url: r.thumbnail_url,
+          title: r.caption,
+          position: r.sort_order,
+          visibility: r.visibility,
+          created_at: r.created_at,
+        })),
+      });
+    }
+
+    // Legacy fallback (flagged, never overrides canonical rows). Disable
+    // entirely with IVX_DISABLE_LEGACY_MEDIA_FALLBACK=true once all projects
+    // are fully migrated.
+    if ((process.env.IVX_DISABLE_LEGACY_MEDIA_FALLBACK || '').trim().toLowerCase() === 'true') {
+      return json({ source: 'canonical:jv_deal_media+jv_deal_reels', images: [], videos: [] });
+    }
+
     const [mediaRes, videoRes] = await Promise.all([
       sb.from('project_media').select('*').eq('project_id', projectId).eq('is_approved', true).order('position'),
       sb.from('project_videos').select('*').eq('project_id', projectId).eq('is_approved', true).order('is_pinned', { ascending: false }),
     ]);
 
     return json({
+      source: 'legacy_fallback:project_media+project_videos',
       images: (mediaRes.data || []).filter((m: any) => m.media_type === 'image'),
       videos: videoRes.data || [],
     });

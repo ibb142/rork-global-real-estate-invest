@@ -24,6 +24,8 @@ import path from 'node:path';
 export type CanonicalTaskStatus =
   | 'IN_PROGRESS'
   | 'BLOCKED'
+  | 'BLOCKED_OWNER_APPROVAL'
+  | 'CANCELLED_OBSOLETE'
   | 'NOT_DEPLOYED'
   | 'DEPLOYED'
   | 'PRODUCTION_VERIFIED'
@@ -67,6 +69,7 @@ export type CanonicalTaskRecord = {
   production_url: string | null;
   qa_status: string | null;
   evidence: CanonicalTaskEvidence | null;
+  disposition: Record<string, unknown> | null;
   error: string | null;
   assigned_agent: string;
   source: string;
@@ -89,6 +92,8 @@ export type CanonicalTaskCounts = {
   TOTAL_TASKS: number;
   IN_PROGRESS: number;
   BLOCKED: number;
+  BLOCKED_OWNER_APPROVAL: number;
+  CANCELLED_OBSOLETE: number;
   NOT_DEPLOYED: number;
   DEPLOYED: number;
   PRODUCTION_VERIFIED: number;
@@ -248,6 +253,10 @@ function mapStatus(rawStatus: string, gate: CanonicalTaskRecord['verified_gate']
       return 'WAITING_APPROVAL';
     case 'blocked':
       return 'BLOCKED';
+    case 'blocked_owner_approval':
+      return 'BLOCKED_OWNER_APPROVAL';
+    case 'cancelled_obsolete':
+      return 'CANCELLED_OBSOLETE';
     case 'failed':
     case 'cancelled':
       return 'FAILED';
@@ -359,6 +368,9 @@ export async function buildCanonicalTaskStore(): Promise<CanonicalTaskStore> {
       production_url: evidence?.production_url ?? null,
       qa_status: gate.passed ? 'PASS' : evidence?.qa_result ? 'PARTIAL' : null,
       evidence,
+      disposition: task.disposition && typeof task.disposition === 'object' && !Array.isArray(task.disposition)
+        ? task.disposition as Record<string, unknown>
+        : null,
       error: str(task.error),
       assigned_agent: 'IVX IA Senior Developer',
       source: 'logs/audit/task-orchestrator (durable ledger)',
@@ -376,12 +388,14 @@ export async function buildCanonicalTaskStore(): Promise<CanonicalTaskStore> {
   // separate real ledger tasks and must all stay visible. Keep the strongest
   // record (verified beats deployed beats the rest; ties by most recent update).
   const statusRank: Record<CanonicalTaskStatus, number> = {
-    PRODUCTION_VERIFIED: 6,
-    DEPLOYED: 5,
-    IN_PROGRESS: 4,
-    WAITING_APPROVAL: 3,
-    BLOCKED: 2,
-    FAILED: 1,
+    PRODUCTION_VERIFIED: 8,
+    DEPLOYED: 7,
+    IN_PROGRESS: 6,
+    WAITING_APPROVAL: 5,
+    BLOCKED_OWNER_APPROVAL: 4,
+    BLOCKED: 3,
+    FAILED: 2,
+    CANCELLED_OBSOLETE: 1,
     NOT_DEPLOYED: 0,
   };
   const byCommand = new Map<string, CanonicalTaskRecord>();
@@ -411,6 +425,8 @@ export async function buildCanonicalTaskStore(): Promise<CanonicalTaskStore> {
     TOTAL_TASKS: records.length,
     IN_PROGRESS: records.filter((r) => r.status === 'IN_PROGRESS').length,
     BLOCKED: records.filter((r) => r.status === 'BLOCKED').length,
+    BLOCKED_OWNER_APPROVAL: records.filter((r) => r.status === 'BLOCKED_OWNER_APPROVAL').length,
+    CANCELLED_OBSOLETE: records.filter((r) => r.status === 'CANCELLED_OBSOLETE').length,
     NOT_DEPLOYED: records.filter((r) => r.status === 'NOT_DEPLOYED').length,
     DEPLOYED: records.filter((r) => r.status === 'DEPLOYED').length,
     PRODUCTION_VERIFIED: records.filter((r) => r.status === 'PRODUCTION_VERIFIED').length,

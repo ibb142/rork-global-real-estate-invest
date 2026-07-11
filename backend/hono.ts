@@ -3111,6 +3111,17 @@ app.get('/api/ivx/senior-developer/tasks/:taskId', async (context) => {
   const { handleCanonicalTaskDetailRequest } = await import('./api/ivx-canonical-tasks');
   return handleCanonicalTaskDetailRequest(context.req.raw, context.req.param('taskId'));
 });
+// Canonical media/reels migration — status is public read-only evidence; apply
+// re-runs the fixed idempotent embedded migration through the backend's own
+// service-role runtime (never request-supplied SQL).
+app.get('/api/ivx/media-migration/status', async () => {
+  const { handleMediaMigrationStatusRequest } = await import('./api/ivx-media-migration');
+  return handleMediaMigrationStatusRequest();
+});
+app.post('/api/ivx/media-migration/apply', async (context) => {
+  const { handleMediaMigrationApplyRequest } = await import('./api/ivx-media-migration');
+  return handleMediaMigrationApplyRequest(context.req.raw);
+});
 // Live, publicly-readable production visibility for features the Senior Developer builds from scratch.
 // Every committed + deployed feature appears here, proving the new production feature is visible.
 app.options('/api/ivx/senior-developer/features', () => seniorDeveloperOptions());
