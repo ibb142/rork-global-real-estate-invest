@@ -3143,6 +3143,16 @@ app.delete('/api/reels/admin/:reelId', async (context) => {
   const { handleReelsAdminDelete } = await import('./api/ivx-reels');
   return handleReelsAdminDelete(context.req.raw, context.req.param('reelId'));
 });
+app.options('/api/deals/admin/list', async () => (await import('./api/ivx-deals-admin')).dealsAdminOptions());
+app.get('/api/deals/admin/list', async (context) => {
+  const { handleDealsAdminList } = await import('./api/ivx-deals-admin');
+  return handleDealsAdminList(context.req.raw);
+});
+app.options('/api/deals/admin/:dealId', async () => (await import('./api/ivx-deals-admin')).dealsAdminOptions());
+app.patch('/api/deals/admin/:dealId', async (context) => {
+  const { handleDealsAdminUpdate } = await import('./api/ivx-deals-admin');
+  return handleDealsAdminUpdate(context.req.raw, context.req.param('dealId'));
+});
 app.options('/api/reels/:reelId/like', async () => (await import('./api/ivx-reels')).reelsOptions());
 app.post('/api/reels/:reelId/like', async (context) => {
   const { handleReelEngagementToggle } = await import('./api/ivx-reels');
