@@ -46,6 +46,10 @@ COPY expo/sync-paths.mjs ./expo/sync-paths.mjs
 # sitemap.xml / capture.html to S3 with the correct content-types on boot,
 # using the AWS credentials that exist on the Render service.
 COPY expo/ivxholding-landing ./expo/ivxholding-landing
+# Ship the durable IVX task-orchestrator ledger so the canonical task store
+# (GET /api/ivx/senior-developer/tasks) serves every real task with its
+# production-verification evidence. Without this the live dashboard shows 0.
+COPY logs ./logs
 EXPOSE 3000
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
