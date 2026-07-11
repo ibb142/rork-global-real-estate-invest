@@ -1752,7 +1752,7 @@ export default function HomeScreen() {
                     onViewDetails={() => router.push({ pathname: '/jv-invest', params: { jvId: deal.id } } as any)}
                     onInvestNow={() => openQuickBuy(deal)}
                     reelCount={reelCounts[deal.id] ?? 0}
-                    onOpenReels={() => setReelsProjectRequest(deal.id)}
+                    onOpenReels={() => router.push({ pathname: '/reels', params: { project: deal.id } } as any)}
                   />
                 </View>
               ))}
@@ -1771,7 +1771,7 @@ export default function HomeScreen() {
               router={router}
               openQuickBuy={openQuickBuy}
               reelCounts={reelCounts}
-              onOpenReels={(projectId) => setReelsProjectRequest(projectId)}
+              onOpenReels={(projectId) => router.push({ pathname: '/reels', params: { project: projectId } } as any)}
             />
           </JVErrorBoundary>
 
@@ -1790,6 +1790,7 @@ export default function HomeScreen() {
             }}
             requestedProjectId={reelsProjectRequest}
             onRequestHandled={() => setReelsProjectRequest(null)}
+            onSeeAll={() => router.push('/reels' as any)}
           />
 
           {/* 5. Why IVX — 4 compelling cards */}

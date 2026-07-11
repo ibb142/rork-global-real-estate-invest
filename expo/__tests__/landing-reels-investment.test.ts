@@ -83,3 +83,54 @@ describe('landing reels: project filter + card decoration', () => {
     expect(html).toContain('total_investment,expected_roi,estimated_value,propertyValue,min_investment,partner_name');
   });
 });
+
+describe('landing reels: full module (categories + canonical API + social)', () => {
+  test('canonical /api/reels source is fetched first with Supabase only as fallback', () => {
+    expect(html).toContain("reelsApiFetch('/api/reels?viewer='");
+    expect(html).toContain('falling back to direct Supabase');
+    expect(html).toContain("'https://api.ivxholding.com'");
+  });
+
+  test('category chips render every required category', () => {
+    expect(html).toContain('id="reels-category-chips"');
+    expect(html).toContain('data-reel-category=');
+    for (const label of ['Investments', 'Buyers', 'Sellers', 'JV Deals', 'Tokenized', 'Construction', 'Walkthroughs', 'Opportunities']) {
+      expect(html).toContain(`label: '${label}'`);
+    }
+  });
+
+  test('category filter reads ?category= from the URL and filters without reload', () => {
+    expect(html).toContain("get('category')");
+    expect(html).toContain('function matchesCategory(r, cat)');
+    expect(html).toContain('matchesCategory(r, category)');
+  });
+
+  test('every reel card carries real social actions (like/comment/share/save)', () => {
+    expect(html).toContain('data-social="like"');
+    expect(html).toContain('data-social="comments"');
+    expect(html).toContain('data-social="share"');
+    expect(html).toContain('data-social="save"');
+    expect(html).toContain("'/api/reels/' + encodeURIComponent(id) + '/' + kind");
+    expect(html).toContain("'/api/reels/' + encodeURIComponent(id) + '/comments'");
+  });
+
+  test('global category reels get category-correct CTA cards, never video-only', () => {
+    expect(html).toContain('function globalCtaHtml(r)');
+    expect(html).toContain('Submit Your Property');
+    expect(html).toContain('Contact IVX');
+    expect(html).toContain('View Projects');
+    // old behavior rendered a dead-end placeholder for global reels
+    expect(html).not.toContain('<span>IVX promotional reel</span>');
+  });
+
+  test('no artificial one-reel limit: feed renders the whole filtered list', () => {
+    expect(html).toContain('for (var i = 0; i < reels.length; i++)');
+    expect(html).not.toContain('reels.slice(0, 1)');
+    expect(html).toContain('&limit=200');
+  });
+
+  test('device key persists locally so like/save counts are never double-counted', () => {
+    expect(html).toContain("localStorage.getItem('ivx.reels.deviceKey')");
+    expect(html).toContain('deviceKey: reelsDeviceKey()');
+  });
+});

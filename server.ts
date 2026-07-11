@@ -12,6 +12,7 @@ import type { Server as HttpServer } from 'node:http';
 import app, { publicChatStorage } from './backend/hono';
 import { attachChatRealtime } from './backend/chat-realtime';
 import { scheduleCanonicalMediaMigrationAtBoot } from './backend/services/ivx-canonical-media-migration';
+import { scheduleReelsModuleMigrationAtBoot } from './backend/services/ivx-reels-module-migration';
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -47,6 +48,10 @@ const realtime = attachChatRealtime(server as unknown as HttpServer, publicChatS
 // (idempotent; uses the backend's service-role runtime, the only credential
 // permitted to run privileged DDL). Status: GET /api/ivx/media-migration/status.
 scheduleCanonicalMediaMigrationAtBoot();
+
+// Reels module v2 (categories + business links + social tables + verified
+// production seeds). Idempotent. Status: GET /api/ivx/reels-migration/status.
+scheduleReelsModuleMigrationAtBoot();
 
 function shutdown(signal: string): void {
   console.log('[IVX Server] Shutdown requested', { signal });

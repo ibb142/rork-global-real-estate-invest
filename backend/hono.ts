@@ -3111,6 +3111,67 @@ app.get('/api/ivx/senior-developer/tasks/:taskId', async (context) => {
   const { handleCanonicalTaskDetailRequest } = await import('./api/ivx-canonical-tasks');
   return handleCanonicalTaskDetailRequest(context.req.raw, context.req.param('taskId'));
 });
+// ─── IVX REELS MODULE (one canonical source for app + landing) ─────────────
+// Public discovery feed with category filters, linked business records, and
+// real persisted social counts. Owner-only management endpoints included.
+app.options('/api/reels', async () => (await import('./api/ivx-reels')).reelsOptions());
+app.get('/api/reels', async (context) => {
+  const { handleReelsListRequest } = await import('./api/ivx-reels');
+  return handleReelsListRequest(context.req.raw);
+});
+app.options('/api/reels/meta', async () => (await import('./api/ivx-reels')).reelsOptions());
+app.get('/api/reels/meta', async () => {
+  const { handleReelsMetaRequest } = await import('./api/ivx-reels');
+  return handleReelsMetaRequest();
+});
+app.options('/api/reels/admin/list', async () => (await import('./api/ivx-reels')).reelsOptions());
+app.get('/api/reels/admin/list', async (context) => {
+  const { handleReelsAdminList } = await import('./api/ivx-reels');
+  return handleReelsAdminList(context.req.raw);
+});
+app.options('/api/reels/admin/create', async () => (await import('./api/ivx-reels')).reelsOptions());
+app.post('/api/reels/admin/create', async (context) => {
+  const { handleReelsAdminCreate } = await import('./api/ivx-reels');
+  return handleReelsAdminCreate(context.req.raw);
+});
+app.options('/api/reels/admin/:reelId', async () => (await import('./api/ivx-reels')).reelsOptions());
+app.patch('/api/reels/admin/:reelId', async (context) => {
+  const { handleReelsAdminUpdate } = await import('./api/ivx-reels');
+  return handleReelsAdminUpdate(context.req.raw, context.req.param('reelId'));
+});
+app.delete('/api/reels/admin/:reelId', async (context) => {
+  const { handleReelsAdminDelete } = await import('./api/ivx-reels');
+  return handleReelsAdminDelete(context.req.raw, context.req.param('reelId'));
+});
+app.options('/api/reels/:reelId/like', async () => (await import('./api/ivx-reels')).reelsOptions());
+app.post('/api/reels/:reelId/like', async (context) => {
+  const { handleReelEngagementToggle } = await import('./api/ivx-reels');
+  return handleReelEngagementToggle(context.req.raw, context.req.param('reelId'), 'like');
+});
+app.options('/api/reels/:reelId/save', async () => (await import('./api/ivx-reels')).reelsOptions());
+app.post('/api/reels/:reelId/save', async (context) => {
+  const { handleReelEngagementToggle } = await import('./api/ivx-reels');
+  return handleReelEngagementToggle(context.req.raw, context.req.param('reelId'), 'save');
+});
+app.options('/api/reels/:reelId/comments', async () => (await import('./api/ivx-reels')).reelsOptions());
+app.get('/api/reels/:reelId/comments', async (context) => {
+  const { handleReelCommentsGet } = await import('./api/ivx-reels');
+  return handleReelCommentsGet(context.req.param('reelId'));
+});
+app.post('/api/reels/:reelId/comments', async (context) => {
+  const { handleReelCommentPost } = await import('./api/ivx-reels');
+  return handleReelCommentPost(context.req.raw, context.req.param('reelId'));
+});
+// Reels module migration — fixed idempotent embedded SQL only.
+app.get('/api/ivx/reels-migration/status', async () => {
+  const { handleReelsMigrationStatusRequest } = await import('./api/ivx-reels');
+  return handleReelsMigrationStatusRequest();
+});
+app.post('/api/ivx/reels-migration/apply', async (context) => {
+  const { handleReelsMigrationApplyRequest } = await import('./api/ivx-reels');
+  return handleReelsMigrationApplyRequest(context.req.raw);
+});
+
 // Canonical media/reels migration — status is public read-only evidence; apply
 // re-runs the fixed idempotent embedded migration through the backend's own
 // service-role runtime (never request-supplied SQL).

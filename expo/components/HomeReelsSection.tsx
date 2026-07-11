@@ -100,6 +100,8 @@ interface HomeReelsSectionProps {
   /** When set (from a project card's yellow Reels icon), opens that project's first reel. */
   requestedProjectId?: string | null;
   onRequestHandled?: () => void;
+  /** Opens the full Reels module (all categories). */
+  onSeeAll?: () => void;
 }
 
 /**
@@ -108,7 +110,7 @@ interface HomeReelsSectionProps {
  * zero published reels; fetch failures show an error state with Retry instead
  * of silently disappearing.
  */
-export default function HomeReelsSection({ isXs, onOpenProject, onInvest, requestedProjectId, onRequestHandled }: HomeReelsSectionProps) {
+export default function HomeReelsSection({ isXs, onOpenProject, onInvest, requestedProjectId, onRequestHandled, onSeeAll }: HomeReelsSectionProps) {
   const padH = isXs ? 16 : 20;
   const [activeReel, setActiveReel] = useState<HomeReel | null>(null);
   const [playbackError, setPlaybackError] = useState<string | null>(null);
@@ -149,7 +151,7 @@ export default function HomeReelsSection({ isXs, onOpenProject, onInvest, reques
   if (query.isPending) {
     return (
       <View style={rStyles.section} testID="home-reels-loading">
-        <SectionHeader isXs={isXs} padH={padH} />
+        <SectionHeader isXs={isXs} padH={padH} onSeeAll={onSeeAll} />
         <View style={[rStyles.stateBox, { marginHorizontal: padH }]}>
           <ActivityIndicator size="small" color={Colors.primary} />
           <Text style={rStyles.stateText}>Loading reels…</Text>
@@ -161,7 +163,7 @@ export default function HomeReelsSection({ isXs, onOpenProject, onInvest, reques
   if (query.isError) {
     return (
       <View style={rStyles.section} testID="home-reels-error">
-        <SectionHeader isXs={isXs} padH={padH} />
+        <SectionHeader isXs={isXs} padH={padH} onSeeAll={onSeeAll} />
         <View style={[rStyles.stateBox, { marginHorizontal: padH }]}>
           <WifiOff size={22} color={Colors.textTertiary} />
           <Text style={rStyles.stateText}>Couldn&apos;t load reels</Text>
@@ -189,7 +191,7 @@ export default function HomeReelsSection({ isXs, onOpenProject, onInvest, reques
 
   return (
     <View style={rStyles.section} testID="home-reels-section">
-      <SectionHeader isXs={isXs} padH={padH} />
+      <SectionHeader isXs={isXs} padH={padH} onSeeAll={onSeeAll} />
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -424,15 +426,32 @@ export default function HomeReelsSection({ isXs, onOpenProject, onInvest, reques
   );
 }
 
-function SectionHeader({ isXs, padH }: { isXs: boolean; padH: number }) {
+function SectionHeader({ isXs, padH, onSeeAll }: { isXs: boolean; padH: number; onSeeAll?: () => void }) {
   return (
     <View style={[rStyles.header, { paddingHorizontal: padH }]}>
-      <View style={rStyles.headerLeft}>
+      <TouchableOpacity
+        style={rStyles.headerLeft}
+        onPress={onSeeAll}
+        disabled={!onSeeAll}
+        testID="home-reels-open-module"
+        accessibilityRole="button"
+        accessibilityLabel="Open the full Reels module"
+      >
         <View style={rStyles.headerIconWrap} testID="home-reels-yellow-icon">
           <Clapperboard size={isXs ? 14 : 16} color={Colors.black} />
         </View>
         <Text style={[rStyles.headerTitle, { fontSize: isXs ? 16 : 18 }]}>Property Reels</Text>
-      </View>
+      </TouchableOpacity>
+      {onSeeAll ? (
+        <TouchableOpacity
+          onPress={onSeeAll}
+          testID="home-reels-see-all"
+          accessibilityRole="button"
+          accessibilityLabel="See all reels"
+        >
+          <Text style={rStyles.seeAllText}>See All</Text>
+        </TouchableOpacity>
+      ) : null}
     </View>
   );
 }
@@ -546,6 +565,11 @@ const rStyles = StyleSheet.create({
     backgroundColor: Colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  seeAllText: {
+    color: Colors.primary,
+    fontSize: 13,
+    fontWeight: '800' as const,
   },
   investCard: {
     borderRadius: 14,

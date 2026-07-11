@@ -8085,12 +8085,16 @@ async function handleIVXOwnerAIRequestInternal(request: Request): Promise<Respon
     const isTimeout = /timed out/i.test(message) || /timeout/i.test(message);
     const isGatewayFailure = /IVX AI gateway request failed/i.test(message) || /IVXAIGatewayTimeoutError/i.test(message);
 
+    const failureKind = isTimeout ? 'timeout' : isGatewayFailure ? 'gateway' : 'internal';
+
     // SANITIZED error surface (2026-07-10): the UI must never receive raw
     // provider errors, stack traces, endpoints, or origin frames again. The
     // full unmasked diagnostics stay in the server log above
     // ('UNMASKED request failure') and in the structured entry below — they
-    // are recoverable from Render logs, never from the chat bubble.
-    const visibleAnswer = 'IVX AI is temporarily unavailable. Retrying securely.';
+    // are recoverable from Render logs and from the persistent
+    // ai_usage_logs failure row, never from the chat bubble. The trace id IS
+    // shown so the owner can quote it and the exact failure can be looked up.
+    const visibleAnswer = `IVX AI is temporarily unavailable. Retrying securely. (Trace: ${fallbackRequestId})`;
 
     // Structured server-side failure record: traceId + provider + model +
     // HTTP status + sanitized provider error class + timestamp. No secrets,
@@ -8102,10 +8106,39 @@ async function handleIVXOwnerAIRequestInternal(request: Request): Promise<Respon
       model: getOwnerAIModel(),
       httpStatus: status,
       errorName,
-      failureKind: isTimeout ? 'timeout' : isGatewayFailure ? 'gateway' : 'internal',
+      failureKind,
       sanitizedError: message.slice(0, 200),
       timestamp: new Date().toISOString(),
     });
+
+    // PERSISTENT failure record (2026-07-11): before this, catch-all failures
+    // were returned as HTTP 200 so the outer usage-log wrapper recorded them
+    // as "success" and the ONLY trace of the real exception was the ephemeral
+    // Render console. Every masked failure now writes a status='error' row to
+    // public.ai_usage_logs keyed by the trace id shown in the chat bubble, so
+    // the root cause is recoverable from Supabase without Render log access.
+    // Fire-and-forget: logging must never delay or break the error response.
+    void logIVXOwnerAIUsageRow({
+      requestId: fallbackRequestId,
+      userId: null,
+      provider: 'chatgpt',
+      model: getOwnerAIModel(),
+      status: 'error',
+      latencyMs: 0,
+      error: `masked_${failureKind}`,
+      surface: 'ivx_ia',
+      metadata: {
+        endpoint: '/api/ivx/owner-ai',
+        maskedCatchAll: true,
+        traceId: fallbackRequestId,
+        httpStatus: status,
+        errorName,
+        failureKind,
+        sanitizedError: message.slice(0, 300),
+        originFrame: originFrame.slice(0, 300),
+        deploymentMarker: DEPLOYMENT_MARKER,
+      },
+    }).catch(() => {});
 
     return ownerOnlyJson({
       requestId: fallbackRequestId,
