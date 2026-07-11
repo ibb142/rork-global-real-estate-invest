@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Linking } from 'react-native';
+import { isQrImageUrl } from '@/lib/qr-url';
 import { supabase } from '@/lib/supabase';
 import { IVX_CHAT_UPLOAD_BUCKET } from '@/shared/ivx';
 import type {
@@ -2711,6 +2712,12 @@ export async function openAttachment(url?: string | null): Promise<void> {
   const targetUrl = safeTrim(url);
   if (!targetUrl) {
     throw new Error('No attachment URL is available for this message.');
+  }
+
+  if (isQrImageUrl(targetUrl)) {
+    // Hard guard: QR image URLs must be rendered inside the app, never opened as a
+    // browser page. Callers intercept these before reaching here; this is defense in depth.
+    throw new Error('QR code images are displayed inside the app and cannot be opened in the browser.');
   }
 
   const globalOpener = (globalThis as { open?: (url: string, target?: string, features?: string) => unknown }).open;

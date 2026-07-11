@@ -4,6 +4,8 @@ import { AlertCircle, Check, CheckCheck, Copy, Download, Eye, FileText, MessageC
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
+import QRViewerModal from '@/components/QRViewerModal';
+import { extractQrDestinationUrl, isQrImageUrl, logQrDiagnostics, newQrTraceId, safeUrlHost } from '@/lib/qr-url';
 import { openAttachment, shouldRenderInlineImage, shouldRenderTapToOpenAttachment } from '../services/ivxChat';
 import { containsBlockedUserFacingChatText, redactUserFacingChatSecrets, sanitizeUserFacingChatText } from '../services/visibleTextSanitizer';
 import { ReactionPicker, REACTION_EMOJIS } from './ReactionPicker';
@@ -103,6 +105,7 @@ export const MessageBubble = memo(function MessageBubble({
 }: MessageBubbleProps) {
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const [pickerVisible, setPickerVisible] = useState<boolean>(false);
+  const [qrViewerVisible, setQrViewerVisible] = useState<boolean>(false);
 
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 150, useNativeDriver: true }).start();
@@ -110,6 +113,20 @@ export const MessageBubble = memo(function MessageBubble({
   }, [message.sendStatus, fadeAnim]);
 
   const handleOpenAttachment = useCallback(async () => {
+    if (isQrImageUrl(message.fileUrl)) {
+      logQrDiagnostics({
+        traceId: newQrTraceId(),
+        route: 'chat-message',
+        component: 'MessageBubble',
+        action: 'attachment-tap-qr-intercept',
+        imageRequestStatus: `host=${safeUrlHost(message.fileUrl)}`,
+        destinationValid: !!extractQrDestinationUrl(message.fileUrl),
+        navigationTarget: 'in-app-modal',
+      });
+      setQrViewerVisible(true);
+      return;
+    }
+
     console.log('[MessageBubble] Opening attachment:', message.fileUrl ?? null);
 
     try {
@@ -435,6 +452,15 @@ export const MessageBubble = memo(function MessageBubble({
           </View>
         ) : null}
       </Pressable>
+      <QRViewerModal
+        visible={qrViewerVisible}
+        onClose={() => setQrViewerVisible(false)}
+        destinationUrl={extractQrDestinationUrl(message.fileUrl)}
+        imageUrl={message.fileUrl ?? null}
+        title="QR Code"
+        explanation="This QR code was shared in the chat. Scan it with another device, or share/copy the link it points to."
+        route="chat-message"
+      />
       <ReactionPicker
         visible={pickerVisible}
         emojis={REACTION_EMOJIS}

@@ -9,6 +9,7 @@ import {
   Image,
   Alert,
   Modal,
+  Share,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -38,6 +39,7 @@ import {
   ArrowLeft,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
+import QRCodeView from '@/components/QRCodeView';
 import { formatCurrency as _fmtCurr } from '@/lib/formatters';
 import {
   mockInfluencers,
@@ -914,11 +916,15 @@ export default function InfluencersScreen() {
                 <Text style={styles.qrTitle}>{selectedInfluencer.name}</Text>
                 <Text style={styles.qrCode}>{selectedInfluencer.referralCode}</Text>
                 <View style={styles.qrImageContainer}>
-                  <Image
-                    source={{ uri: selectedInfluencer.qrCodeUrl }}
-                    style={styles.qrImage}
-                    resizeMode="contain"
-                  />
+                  <View style={styles.qrLocalWrap}>
+                    <QRCodeView
+                      value={`https://ipxholding.com/join?ref=${selectedInfluencer.referralCode}`}
+                      size={180}
+                      color="#000"
+                      backgroundColor="#fff"
+                      quietZone={3}
+                    />
+                  </View>
                 </View>
                 <Text style={styles.qrLink}>ipxholding.com/join?ref={selectedInfluencer.referralCode}</Text>
                 <View style={styles.qrActions}>
@@ -929,9 +935,18 @@ export default function InfluencersScreen() {
                     <Copy size={16} color="#fff" />
                     <Text style={styles.qrActionText}>Copy Link</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={[styles.qrActionButton, styles.qrDownloadButton]}>
+                  <TouchableOpacity
+                    style={[styles.qrActionButton, styles.qrDownloadButton]}
+                    onPress={() => {
+                      void Share.share({
+                        title: 'IVX Referral QR',
+                        message: `https://ipxholding.com/join?ref=${selectedInfluencer.referralCode}`,
+                        url: `https://ipxholding.com/join?ref=${selectedInfluencer.referralCode}`,
+                      }).catch(() => undefined);
+                    }}
+                  >
                     <Download size={16} color={Colors.primary} />
-                    <Text style={[styles.qrActionText, { color: Colors.primary }]}>Download QR</Text>
+                    <Text style={[styles.qrActionText, { color: Colors.primary }]}>Share QR</Text>
                   </TouchableOpacity>
                 </View>
               </>
@@ -1300,8 +1315,8 @@ const styles = StyleSheet.create({
   qrCloseButton: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 12, alignItems: 'center' },
   qrTitle: { color: Colors.text, fontSize: 16, fontWeight: '700' as const },
   qrCode: { gap: 4 },
-  qrImageContainer: { gap: 8 },
-  qrImage: { width: '100%', height: 180, borderRadius: 12 },
+  qrImageContainer: { gap: 8, alignItems: 'center' as const },
+  qrLocalWrap: { padding: 10, borderRadius: 12, backgroundColor: '#fff' },
   qrLink: { gap: 4 },
   qrActions: { flexDirection: 'row', gap: 8, marginTop: 8 },
   qrActionButton: { backgroundColor: Colors.primary, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },

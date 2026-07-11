@@ -22,6 +22,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { safeSetString } from '@/lib/safe-clipboard';
+import QRCodeView from '@/components/QRCodeView';
 import {
   Brain,
   Users,
@@ -1875,10 +1876,12 @@ Output just the script with timing notes.`;
 
           <View style={styles.contentLinkQrRow}>
             <View style={styles.contentLinkQrBox}>
-              <Image 
-                source={{ uri: contentLink.qrCodeUrl }} 
-                style={styles.contentLinkQr}
-                resizeMode="contain"
+              <QRCodeView
+                value={contentLink.fullUrl}
+                size={80}
+                color="#000"
+                backgroundColor="#fff"
+                quietZone={2}
               />
             </View>
             <View style={styles.contentLinkDetails}>
@@ -2529,10 +2532,12 @@ Output just the script with timing notes.`;
                 <Text style={styles.linkDetailCode}>{selectedLink.shortCode}</Text>
                 
                 <View style={styles.qrCodeContainer}>
-                  <Image 
-                    source={{ uri: selectedLink.qrCodeUrl }} 
-                    style={styles.qrCode}
-                    resizeMode="contain"
+                  <QRCodeView
+                    value={selectedLink.fullUrl}
+                    size={180}
+                    color="#000"
+                    backgroundColor="#fff"
+                    quietZone={3}
                   />
                 </View>
 

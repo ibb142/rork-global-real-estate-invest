@@ -37,6 +37,8 @@ import { MessageBubble } from '@/src/modules/chat/components/MessageBubble';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Activity, ChevronDown, ClipboardList, Cpu, Crosshair, Crown, Gauge, GitBranch, KeyRound, LayoutDashboard, LineChart, Lock, Mail, Megaphone, MessageCircle, Mic, Paperclip, Pin, PlayCircle, Radar, Radio, Rocket, Search, Send, ShieldCheck, Sparkles, Square, Terminal, Unplug, Upload, UserPlus, Users, X } from 'lucide-react-native';
 import ErrorBoundary from '@/components/ErrorBoundary';
+import QRViewerModal from '@/components/QRViewerModal';
+import { extractQrDestinationUrl, isQrImageUrl, logQrDiagnostics, newQrTraceId, safeUrlHost } from '@/lib/qr-url';
 import { SafeIcon } from '@/lib/safe-icon';
 import Colors from '@/constants/colors';
 import { IVX_OWNER_AI_PROFILE, IVX_OWNER_AI_ROOM_ID } from '@/constants/ivx-owner-ai';
@@ -3587,8 +3589,36 @@ export default function IVXOwnerChatRoute() {
     setPendingOwnerMessages((current) => current.filter((message) => message.clientId !== messageId));
   }, [clearUploadProgressTimer]);
 
+  const [qrViewer, setQrViewer] = useState<{ visible: boolean; imageUrl: string | null; destinationUrl: string | null }>({
+    visible: false,
+    imageUrl: null,
+    destinationUrl: null,
+  });
+
+  const handleCloseQrViewer = useCallback(() => {
+    setQrViewer((current) => ({ ...current, visible: false }));
+  }, []);
+
   const handleOpenAttachment = useCallback(async (message: IVXMessage) => {
     if (!message.attachmentUrl) {
+      return;
+    }
+
+    if (isQrImageUrl(message.attachmentUrl)) {
+      logQrDiagnostics({
+        traceId: newQrTraceId(),
+        route: '/ivx/chat',
+        component: 'IVXOwnerChatRoute',
+        action: 'attachment-tap-qr-intercept',
+        imageRequestStatus: `host=${safeUrlHost(message.attachmentUrl)}`,
+        destinationValid: !!extractQrDestinationUrl(message.attachmentUrl),
+        navigationTarget: 'in-app-modal',
+      });
+      setQrViewer({
+        visible: true,
+        imageUrl: message.attachmentUrl,
+        destinationUrl: extractQrDestinationUrl(message.attachmentUrl),
+      });
       return;
     }
 
@@ -6384,6 +6414,15 @@ export default function IVXOwnerChatRoute() {
       >
         <Terminal size={16} color={Colors.text} />
       </Pressable>
+      <QRViewerModal
+        visible={qrViewer.visible}
+        onClose={handleCloseQrViewer}
+        destinationUrl={qrViewer.destinationUrl}
+        imageUrl={qrViewer.imageUrl}
+        title="QR Code"
+        explanation="This QR code was shared in the chat. Scan it with another device, or share/copy the link it points to."
+        route="/ivx/chat"
+      />
     </ErrorBoundary>
   );
 }
