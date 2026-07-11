@@ -80,10 +80,12 @@ type DashboardData = {
 
 const API_BASE = 'https://api.ivxholding.com';
 const AUTH_HEADER = () => {
-  // In production, this uses the Rork auth token
+  // Owner-controlled auth: prefer the IVX app key; the legacy variable name is
+  // read only as a fallback until the env rename completes on all deployments.
+  const appKey = process.env.EXPO_PUBLIC_IVX_APP_KEY ?? process.env.EXPO_PUBLIC_RORK_APP_KEY ?? '';
   return {
     'Content-Type': 'application/json',
-    'Authorization': `Bearer ${process.env.EXPO_PUBLIC_RORK_APP_KEY ?? ''}`,
+    'Authorization': `Bearer ${appKey}`,
   };
 };
 

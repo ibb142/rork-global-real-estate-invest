@@ -805,7 +805,8 @@ async function testAIGateway(client: SupabaseClient): Promise<ProviderTestResult
 
   try {
     // Minimal health check — just hit the base URL with auth header.
-    const res = await fetch(gatewayUrl || 'https://api.rork.app', {
+    // Owner directive: never fall back to a vendor endpoint — owner gateway only.
+    const res = await fetch(gatewayUrl || 'https://api.ivxholding.com', {
       headers: { Authorization: `Bearer ${apiKey}` },
       method: 'HEAD',
     });
