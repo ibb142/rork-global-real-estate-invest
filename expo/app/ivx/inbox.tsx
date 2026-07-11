@@ -186,6 +186,10 @@ export default function IVXOwnerInboxRoute() {
     router.push('/ivx/proof-ledger');
   }, [router]);
 
+  const handleOpenSeniorDeveloper = useCallback(() => {
+    router.push('/ivx/senior-developer');
+  }, [router]);
+
   const handleOpenGithubSync = useCallback(() => {
     router.push('/ivx/github-sync');
   }, [router]);
@@ -327,6 +331,17 @@ export default function IVXOwnerInboxRoute() {
           >
             <ShieldCheck size={18} color={Colors.primary} />
             <Text style={styles.launcherButtonText}>Run Owner AI Durability Proof</Text>
+            <ChevronRight size={16} color={Colors.textTertiary} />
+          </Pressable>
+          <Pressable
+            style={styles.launcherButtonFull}
+            onPress={handleOpenSeniorDeveloper}
+            accessibilityRole="button"
+            accessibilityLabel="Open IVX IA Senior Developer task dashboard"
+            testID="ivx-owner-inbox-open-senior-developer"
+          >
+            <ClipboardCheck size={18} color={Colors.primary} />
+            <Text style={styles.launcherButtonText}>IVX IA Senior Developer — Tasks</Text>
             <ChevronRight size={16} color={Colors.textTertiary} />
           </Pressable>
           <Pressable

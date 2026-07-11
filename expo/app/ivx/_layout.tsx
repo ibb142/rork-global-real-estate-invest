@@ -28,6 +28,7 @@ const IVX_PROJECT_DASHBOARD_OPTIONS = { title: 'AI Project Dashboard' } as const
 const IVX_PROOF_TEST_OPTIONS = { title: 'Proof Test' } as const;
 const IVX_DURABILITY_PROOF_OPTIONS = { title: 'Owner AI Durability Proof' } as const;
 const IVX_PROOF_LEDGER_OPTIONS = { title: 'Senior Developer Proof Ledger' } as const;
+const IVX_SENIOR_DEVELOPER_OPTIONS = { title: 'IVX IA Senior Developer' } as const;
 const IVX_INCIDENTS_OPTIONS = { title: 'Incidents' } as const;
 const IVX_DEPLOY_OPTIONS = { title: 'Approve & Deploy' } as const;
 const IVX_CONTACT_OPTIONS = { title: 'Contact Profile' } as const;
@@ -56,6 +57,7 @@ export default function IVXOwnerLayout() {
       <Stack.Screen name="proof-test" options={IVX_PROOF_TEST_OPTIONS} />
       <Stack.Screen name="durability-proof" options={IVX_DURABILITY_PROOF_OPTIONS} />
       <Stack.Screen name="proof-ledger" options={IVX_PROOF_LEDGER_OPTIONS} />
+      <Stack.Screen name="senior-developer" options={IVX_SENIOR_DEVELOPER_OPTIONS} />
       <Stack.Screen name="incidents" options={IVX_INCIDENTS_OPTIONS} />
       <Stack.Screen name="deploy" options={IVX_DEPLOY_OPTIONS} />
       <Stack.Screen name="contact/[id]" options={IVX_CONTACT_OPTIONS} />

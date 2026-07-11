@@ -2168,6 +2168,8 @@ app.get('/', async (context) => {
       { method: 'GET', path: '/api/ivx/senior-developer/status', description: 'Senior developer runtime status' },
       { method: 'GET', path: '/api/ivx/senior-developer/credential-audit', description: 'GitHub/Render credential audit' },
       { method: 'POST', path: '/api/ivx/senior-developer/run', description: 'Run senior developer task' },
+      { method: 'GET', path: '/api/ivx/senior-developer/tasks', description: 'Canonical task store — every IVX IA Senior Developer task with evidence-gated status + counts' },
+      { method: 'GET', path: '/api/ivx/senior-developer/tasks/:taskId', description: 'Canonical task detail — blocks, events, deployment evidence' },
       { method: 'GET', path: '/api/ivx/senior-developer/features', description: 'List features the senior developer built from scratch (live production visibility)' },
       { method: 'GET', path: '/api/ivx/senior-developer/features/:slug', description: 'Get one generated feature by slug' },
     ],
@@ -3089,6 +3091,26 @@ app.options('/api/ivx/senior-developer/worker/ledger', () => seniorDeveloperWork
 app.get('/api/ivx/senior-developer/worker/ledger', async (context) => handleSeniorDeveloperWorkerLedgerRequest(context.req.raw));
 app.options('/api/ivx/worker-last-proof', () => seniorDeveloperWorkerOptions());
 app.get('/api/ivx/worker-last-proof', async (context) => handleSeniorDeveloperWorkerLastProofRequest(context.req.raw));
+// IVX Canonical Task Store — the single production source of truth for every
+// IVX IA Senior Developer task shown in the live app dashboard. Read-only,
+// evidence-gated (a task only displays PRODUCTION_VERIFIED with real commit SHA,
+// real deployment identity, health 200, running-commit match, and QA evidence).
+app.options('/api/ivx/senior-developer/tasks', async () => {
+  const { OPTIONS } = await import('./api/ivx-canonical-tasks');
+  return OPTIONS();
+});
+app.get('/api/ivx/senior-developer/tasks', async (context) => {
+  const { handleCanonicalTasksListRequest } = await import('./api/ivx-canonical-tasks');
+  return handleCanonicalTasksListRequest(context.req.raw);
+});
+app.options('/api/ivx/senior-developer/tasks/:taskId', async () => {
+  const { OPTIONS } = await import('./api/ivx-canonical-tasks');
+  return OPTIONS();
+});
+app.get('/api/ivx/senior-developer/tasks/:taskId', async (context) => {
+  const { handleCanonicalTaskDetailRequest } = await import('./api/ivx-canonical-tasks');
+  return handleCanonicalTaskDetailRequest(context.req.raw, context.req.param('taskId'));
+});
 // Live, publicly-readable production visibility for features the Senior Developer builds from scratch.
 // Every committed + deployed feature appears here, proving the new production feature is visible.
 app.options('/api/ivx/senior-developer/features', () => seniorDeveloperOptions());
