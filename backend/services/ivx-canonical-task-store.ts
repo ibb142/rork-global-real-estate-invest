@@ -25,6 +25,7 @@ export type CanonicalTaskStatus =
   | 'IN_PROGRESS'
   | 'BLOCKED'
   | 'BLOCKED_OWNER_APPROVAL'
+  | 'REJECTED_UNSAFE'
   | 'CANCELLED_OBSOLETE'
   | 'NOT_DEPLOYED'
   | 'DEPLOYED'
@@ -93,6 +94,7 @@ export type CanonicalTaskCounts = {
   IN_PROGRESS: number;
   BLOCKED: number;
   BLOCKED_OWNER_APPROVAL: number;
+  REJECTED_UNSAFE: number;
   CANCELLED_OBSOLETE: number;
   NOT_DEPLOYED: number;
   DEPLOYED: number;
@@ -255,6 +257,8 @@ function mapStatus(rawStatus: string, gate: CanonicalTaskRecord['verified_gate']
       return 'BLOCKED';
     case 'blocked_owner_approval':
       return 'BLOCKED_OWNER_APPROVAL';
+    case 'rejected_unsafe':
+      return 'REJECTED_UNSAFE';
     case 'cancelled_obsolete':
       return 'CANCELLED_OBSOLETE';
     case 'failed':
@@ -393,6 +397,7 @@ export async function buildCanonicalTaskStore(): Promise<CanonicalTaskStore> {
     IN_PROGRESS: 6,
     WAITING_APPROVAL: 5,
     BLOCKED_OWNER_APPROVAL: 4,
+    REJECTED_UNSAFE: 4,
     BLOCKED: 3,
     FAILED: 2,
     CANCELLED_OBSOLETE: 1,
@@ -426,6 +431,7 @@ export async function buildCanonicalTaskStore(): Promise<CanonicalTaskStore> {
     IN_PROGRESS: records.filter((r) => r.status === 'IN_PROGRESS').length,
     BLOCKED: records.filter((r) => r.status === 'BLOCKED').length,
     BLOCKED_OWNER_APPROVAL: records.filter((r) => r.status === 'BLOCKED_OWNER_APPROVAL').length,
+    REJECTED_UNSAFE: records.filter((r) => r.status === 'REJECTED_UNSAFE').length,
     CANCELLED_OBSOLETE: records.filter((r) => r.status === 'CANCELLED_OBSOLETE').length,
     NOT_DEPLOYED: records.filter((r) => r.status === 'NOT_DEPLOYED').length,
     DEPLOYED: records.filter((r) => r.status === 'DEPLOYED').length,
