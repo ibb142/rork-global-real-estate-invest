@@ -6,10 +6,11 @@ const config: ExpoConfig = {
   owner: 'ivx-holdings',
   version: '1.2.1',
   extra: {
-    buildMarker: 'IVX_BUNDLE_2026_07_12_STORE_V1',
-    buildTimestamp: '2026-07-12T00:00:00Z',
-    watchdogPatchVersion: 'store-v1',
-    frontendDeployMarker: 'ivx-frontend-2026-07-12-store-v1',
+    buildMarker: 'IVX_BUNDLE_2026_07_12_STORE_V2',
+    buildTimestamp: new Date().toISOString(),
+    sourceCommitSha: '382250dc5365',
+    watchdogPatchVersion: 'store-v2',
+    frontendDeployMarker: 'ivx-frontend-2026-07-12-store-v2',
     eas: {
       projectId: process.env.EXPO_PUBLIC_EAS_PROJECT_ID || '00000000-0000-0000-0000-000000000000',
     },
