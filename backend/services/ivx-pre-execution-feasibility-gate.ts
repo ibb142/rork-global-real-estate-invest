@@ -135,7 +135,7 @@ export type TaskIntent =
  */
 export function classifyTaskIntent(prompt: string): TaskIntent {
   const text = prompt.toLowerCase();
-  if (/deploy\s+now|full\s+deploy|push\s+and\s+deploy/.test(text)) return 'full_deploy_cycle';
+  if (/deploy\s+now|full\s+deploy|push\s+and\s+deploy|deploy\s+to\s+(?:production|live|prod)|\bdeploy\b.*\b(?:production|live|prod)\b/.test(text)) return 'full_deploy_cycle';
   if (/push\s+(this\s+)?commit|push\s+to\s+(github|main)/.test(text)) return 'push_github';
   if (/trigger\s+render|render\s+deploy/.test(text)) return 'trigger_render_deploy';
   if (/run\s+supabase\s+migration|migrate\s+database|apply\s+migration/.test(text)) return 'migrate_database';
@@ -143,7 +143,7 @@ export function classifyTaskIntent(prompt: string): TaskIntent {
   if (/verify\s+(live|production)|health\s+check|is\s+this\s+verified/.test(text)) return 'verify_live_endpoint';
   if (/fix\s+owner\s+login|owner\s+session|owner\s+auth/.test(text)) return 'verify_owner_session';
   if (/commit\s+(this|the|now)|git\s+commit/.test(text)) return 'commit';
-  if (/patch|modify|edit|fix\s+(the\s+)?(?:bug|code|file)|update\s+(the\s+)?code|write\s+(?:a\s+)?file/.test(text)) return 'patch_code';
+  if (/\b(?:patch|modify|edit)\b|\bfix\b.*\b(?:bug|code|file|error|issue|crash|chat|broken|fail)\b|\b(?:bug|error|issue|crash|broken|fail)\b.*\bfix\b|update\s+(?:the\s+)?code|write\s+(?:a\s+)?file|\bimplement\b.*\b(?:feature|module|screen|component|function)\b|\bbuild\b.*\b(?:app|module|feature|screen|component)\b/.test(text)) return 'patch_code';
   if (/inspect|audit|review|read|explain|show\s+me|status/.test(text)) return 'read_only_inspection';
   return 'conversational';
 }
@@ -655,10 +655,17 @@ export async function runPreExecutionFeasibilityGate(
     // the SECOND identical blocker triggers the spin guard.
     void capability;
   }
-  const repeatedEntries = snapshotBlockerMemory().filter((e) => e.occurrenceCount >= BLOCKER_REPEAT_THRESHOLD);
+  // CRITICAL FIX: OWNER_SESSION_MISSING from public/unauthenticated chat is the
+  // expected state, NOT a spin-loop. Recording it poisoned blocker memory and
+  // blocked ALL subsequent requests (including normal AI questions) after two
+  // developer requests hit the gate from public chat. The spin-loop guard now
+  // only fires for OWNER_SESSION_MISSING when ownerSessionPresent is true (a
+  // genuine spin-loop), and never records OWNER_SESSION_MISSING from public chat.
+  const repeatedEntries = snapshotBlockerMemory().filter(
+    (e) => e.occurrenceCount >= BLOCKER_REPEAT_THRESHOLD
+      && (e.blockerCode !== 'OWNER_SESSION_MISSING' || input.ownerSessionPresent),
+  );
   if (repeatedEntries.length > 0) {
-    // Find a repeated blocker that would plausibly affect this task. We are
-    // conservative: ANY repeated blocker blocks re-execution until cleared.
     const entry = repeatedEntries[0];
     return {
       state: 'BLOCKED',
@@ -686,8 +693,13 @@ export async function runPreExecutionFeasibilityGate(
       const blockerCode = result.blockerCode ?? 'TOOL_NOT_AVAILABLE';
       const exactBlocker = result.exactBlocker ?? 'Capability check failed without a specific blocker.';
       const nextOwnerAction = ownerActionFor(blockerCode);
-      // Record in blocker memory (spin-loop prevention).
-      recordBlocker(blockerCode, result.httpStatus, nextOwnerAction);
+      // Record in blocker memory (spin-loop prevention) — but ONLY for
+      // owner-authenticated requests. OWNER_SESSION_MISSING from public chat
+      // is the expected state, not a spin-loop; recording it poisoned the
+      // blocker memory and blocked all subsequent requests.
+      if (input.ownerSessionPresent || blockerCode !== 'OWNER_SESSION_MISSING') {
+        recordBlocker(blockerCode, result.httpStatus, nextOwnerAction);
+      }
       return {
         state: 'BLOCKED',
         taskId: input.taskId,

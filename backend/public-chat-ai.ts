@@ -380,6 +380,9 @@ export async function generatePublicChatAnswer(input: {
       ownerSessionPresent: false,
       proof: developerProof,
     });
+    const blockedAnswer = blockedPipeline.answer && blockedPipeline.answer.trim().length > 0
+      ? blockedPipeline.answer
+      : `STATE: BLOCKED — OWNER_SESSION_MISSING. This request requires a verified owner session. Open Owner Login / Senior Developer Workspace to execute this action. (Branch: ${branchLabel(routeDecision.branch as IVXChatBranch)}, Intent: ${routeDecision.intent})`;
     console.log('[PublicChatAI] Branch blocked (owner session required, public chat):', {
       sessionId: input.sessionId,
       branch: routeDecision.branch,
@@ -388,7 +391,7 @@ export async function generatePublicChatAnswer(input: {
       ...describeIVXGatePipelineRun(blockedPipeline),
     });
     return {
-      answer: blockedPipeline.answer,
+      answer: blockedAnswer,
       model: 'ivx-chat-intent-router',
       source: 'fallback',
       endpoint: null,
