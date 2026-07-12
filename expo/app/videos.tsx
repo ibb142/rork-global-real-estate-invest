@@ -100,7 +100,7 @@ function useInvestmentOptions(dealType: string | null | undefined) {
   const t = (dealType ?? '').toLowerCase();
   const tokenized = { id: 'tokenized', label: 'Tokenized', icon: <Hexagon size={18} color={GOLD} />, tint: GOLD };
   const jvDeals = { id: 'jvDeals', label: 'JV Deal', icon: <Users size={18} color='#448AFF' />, tint: '#448AFF' };
-  const buyers = { id: 'buyers', label: 'Buyer', icon: <Home size={18} color='#22C55E' />, tint: '#22C55E' };
+  const buyers = { id: 'buyers', label: 'Buyer', icon: <Home size={18} color='#00C48C' />, tint: '#00C48C' };
   switch (t) {
     case 'jv':
     case 'equity_split':

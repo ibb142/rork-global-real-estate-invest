@@ -63,7 +63,7 @@ function useInvestmentOptions(dealType: string | null | undefined): InvestmentOp
   const t = (dealType ?? '').toLowerCase();
   const tokenized: InvestmentOption = { id: 'tokenized', label: 'Tokenized', icon: <Hexagon size={16} color={Colors.primary} />, tint: Colors.primary };
   const jvDeals: InvestmentOption = { id: 'jvDeals', label: 'JV Deal', icon: <Users size={16} color='#448AFF' />, tint: '#448AFF' };
-  const buyers: InvestmentOption = { id: 'buyers', label: 'Buyer', icon: <Home size={16} color='#22C55E' />, tint: '#22C55E' };
+  const buyers: InvestmentOption = { id: 'buyers', label: 'Buyer', icon: <Home size={16} color='#00C48C' />, tint: '#00C48C' };
   switch (t) {
     case 'jv':
     case 'equity_split':
@@ -249,7 +249,7 @@ export default function DealVideoCard({ video }: { video: FeedVideo }) {
       {deal ? (
         <View style={styles.dealSection}>
           <View style={styles.chipsRow}>
-            {deal.expected_roi ? <Chip label="ROI" value={`${deal.expected_roi}%`} tint="#22C55E" /> : null}
+            {deal.expected_roi ? <Chip label="ROI" value={`${deal.expected_roi}%`} tint="#00C48C" /> : null}
             {deal.price && deal.price > 0 ? <Chip label="Value" value={compactCurrency(deal.price)} tint={Colors.primary} /> : null}
             {deal.min_investment && deal.min_investment > 0 ? (
               <Chip label="Min" value={compactCurrency(deal.min_investment)} tint="#fff" />
