@@ -470,11 +470,14 @@ export function registerTimezoneRoutes(app: import('hono').Hono): void {
   app.post('/api/timezone/audit-batch', async (context: Context) => {
     try {
       const body = await context.req.json();
-      const entries: Array<{ utc_timestamp: string; timezone: string; device?: string }> = body.entries || [];
+      const entries: Array<Record<string, unknown>> = body.entries || [];
 
-      const results = entries.map((e) =>
-        formatAuditTimestamp(e.utc_timestamp, e.timezone || 'UTC', e.device || null),
-      );
+      const results = entries.map((e) => {
+        const utc = (e.utc_timestamp ?? e.utcTimestamp ?? e.utc) as string;
+        const tz = (e.timezone ?? e.timeZone ?? 'UTC') as string;
+        const dev = (e.device ?? null) as string | null;
+        return formatAuditTimestamp(utc, tz, dev);
+      });
 
       return context.json({ ok: true, entries: results, count: results.length });
     } catch (error) {
