@@ -98,13 +98,13 @@ const STATS = [
 const FEATURES = [
   {
     icon: Coins,
-    gradient: ['#00E676', '#00C853'] as const,
+    gradient: ['#00C48C', '#00A376'] as const,
     title: 'Start from $50',
     desc: 'Own fractional shares in premium real estate projects worldwide',
   },
   {
     icon: Shield,
-    gradient: ['#448AFF', '#2979FF'] as const,
+    gradient: ['#4A90D9', '#357ABD'] as const,
     title: 'Escrow Protected',
     desc: 'Funds held in escrow until deal milestones are verified and met',
   },
