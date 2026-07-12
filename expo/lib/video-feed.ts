@@ -54,6 +54,8 @@ export interface FeedVideo {
   is_featured?: boolean;
   /** Present when the video is attached to a live JV deal (e.g. Casa Rosario). */
   deal?: FeedVideoDeal | null;
+  /** Creator id used for follow/unfollow actions on the landing page. */
+  creator_id?: string | null;
 }
 
 /**

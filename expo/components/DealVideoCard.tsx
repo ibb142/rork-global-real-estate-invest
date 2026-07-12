@@ -1,14 +1,13 @@
 /**
  * Instagram-style property video card — Android/Expo mirror of the iOS
- * `DealVideoCard.swift`: header row with IVX avatar, autoplaying muted looping
- * video, action rail (like / comment / share / save), likes line, caption,
- * and deal chips with a gold "View Deal" CTA.
+ * `DealVideoCard.swift` and the landing-page home feed card.
  *
- * Consumes the same production feed as iOS + landing:
- *   GET https://api.ivxholding.com/api/ivx/video-platform/feed
+ * Header row with IVX avatar, autoplaying muted looping video, action rail
+ * (like / comment / share / save), real engagement counts, caption, deal chips
+ * with a gold "View Deal" / "Invest Now" CTA.
  */
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Share } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Share, Alert } from 'react-native';
 import { Video, ResizeMode } from 'expo-av';
 import { useRouter } from 'expo-router';
 import {
@@ -25,6 +24,8 @@ import {
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
+import { toggleProjectLike, trackProjectShare } from '@/lib/project-engagement';
+import { toggleVideoSave, reportVideo, getViewerId, buildVideoShareUrl } from '@/lib/video-platform';
 import type { FeedVideo } from '@/lib/video-feed';
 
 const MEDIA_HEIGHT = 230;
@@ -41,6 +42,12 @@ function compactCurrency(value: number): string {
   return `$${Math.round(value)}`;
 }
 
+function formatCount(n: number): string {
+  if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
+  return String(n);
+}
+
 function Chip({ label, value, tint }: { label: string; value: string; tint: string }) {
   return (
     <View style={styles.chip}>
@@ -50,13 +57,13 @@ function Chip({ label, value, tint }: { label: string; value: string; tint: stri
   );
 }
 
-type InvestmentOption = { id: string; label: string; subtitle: string; icon: React.ReactNode; tint: string };
+type InvestmentOption = { id: string; label: string; icon: React.ReactNode; tint: string };
 
 function useInvestmentOptions(dealType: string | null | undefined): InvestmentOption[] {
   const t = (dealType ?? '').toLowerCase();
-  const tokenized: InvestmentOption = { id: 'tokenized', label: 'Tokenized', subtitle: 'Fractional ownership', icon: <Hexagon size={16} color={Colors.primary} />, tint: Colors.primary };
-  const jvDeals: InvestmentOption = { id: 'jvDeals', label: 'JV Deal', subtitle: 'JV partnership', icon: <Users size={16} color='#448AFF' />, tint: '#448AFF' };
-  const buyers: InvestmentOption = { id: 'buyers', label: 'Buyer', subtitle: 'Direct purchase', icon: <Home size={16} color='#22C55E' />, tint: '#22C55E' };
+  const tokenized: InvestmentOption = { id: 'tokenized', label: 'Tokenized', icon: <Hexagon size={16} color={Colors.primary} />, tint: Colors.primary };
+  const jvDeals: InvestmentOption = { id: 'jvDeals', label: 'JV Deal', icon: <Users size={16} color='#448AFF' />, tint: '#448AFF' };
+  const buyers: InvestmentOption = { id: 'buyers', label: 'Buyer', icon: <Home size={16} color='#22C55E' />, tint: '#22C55E' };
   switch (t) {
     case 'jv':
     case 'equity_split':
@@ -88,22 +95,72 @@ export default function DealVideoCard({ video }: { video: FeedVideo }) {
   const router = useRouter();
   const [isMuted, setIsMuted] = useState<boolean>(true);
   const [liked, setLiked] = useState<boolean>(false);
+  const [likeCount, setLikeCount] = useState<number>(video.like_count ?? 0);
+  const [saved, setSaved] = useState<boolean>(false);
+  const [saveCount, setSaveCount] = useState<number>(video.save_count ?? 0);
+  const [viewerId, setViewerId] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    void getViewerId().then(setViewerId);
+  }, []);
 
   const deal = video.deal ?? null;
   const playbackUri = video.hls_url ?? video.video_url;
   const posterUri = video.poster_url ?? video.thumbnail_url ?? video.preview_blur_url ?? undefined;
+  const investmentOptions = useInvestmentOptions(deal?.deal_type);
 
   const toggleMute = useCallback(() => setIsMuted(prev => !prev), []);
 
-  const handleLike = useCallback(() => {
+  const handleLike = useCallback(async () => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setLiked(prev => !prev);
-  }, []);
+    const nextLiked = !liked;
+    setLiked(nextLiked);
+    setLikeCount(prev => prev + (nextLiked ? 1 : -1));
+    try {
+      const result = await toggleProjectLike(video.id, null);
+      setLiked(result.liked);
+      setLikeCount(result.likeCount);
+    } catch {
+      setLiked(liked);
+      setLikeCount(video.like_count ?? 0);
+    }
+  }, [liked, video.id, video.like_count]);
 
-  const handleShare = useCallback(() => {
-    const url = deal?.url ?? 'https://ivxholding.com';
-    void Share.share({ message: `${video.title ?? 'IVX Property'} — ${url}` }).catch(() => {});
-  }, [deal, video.title]);
+  const handleSave = useCallback(async () => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const nextSaved = !saved;
+    setSaved(nextSaved);
+    setSaveCount(prev => prev + (nextSaved ? 1 : -1));
+    try {
+      const result = await toggleVideoSave(video.id, viewerId);
+      setSaved(result.saved);
+      setSaveCount(result.saveCount);
+    } catch {
+      setSaved(saved);
+      setSaveCount(video.save_count ?? 0);
+    }
+  }, [saved, video.id, video.save_count, viewerId]);
+
+  const handleComment = useCallback(() => {
+    router.push({ pathname: '/videos', params: { type: 'reel', focus: video.id } } as any);
+  }, [router, video.id]);
+
+  const handleShare = useCallback(async () => {
+    const url = buildVideoShareUrl(video.id);
+    const message = `${video.title ?? 'IVX Property'} — ${url}`;
+    try {
+      await Share.share({ message });
+      void trackProjectShare(video.id, 'social', null);
+    } catch {}
+  }, [video.id, video.title]);
+
+  const handleReport = useCallback(() => {
+    Alert.prompt('Report this video', 'Reason:', async (reason) => {
+      if (!reason) return;
+      const result = await reportVideo(video.id, reason, viewerId);
+      Alert.alert(result.ok ? 'Report submitted' : 'Report failed');
+    });
+  }, [video.id, viewerId]);
 
   const handleViewDeal = useCallback(() => {
     if (deal?.id) {
@@ -111,12 +168,15 @@ export default function DealVideoCard({ video }: { video: FeedVideo }) {
     }
   }, [deal, router]);
 
-  const likeTotal = (video.like_count ?? 0) + (liked ? 1 : 0);
-  const investmentOptions = useInvestmentOptions(deal?.deal_type);
+  const handleInvestNow = useCallback(() => {
+    if (deal?.id) {
+      router.push({ pathname: '/jv-invest', params: { jvId: deal.id } } as any);
+    }
+  }, [deal, router]);
 
   return (
     <View style={styles.card} testID={`deal-video-card-${video.id}`}>
-      {/* Header — avatar, account name, property */}
+      {/* Header */}
       <View style={styles.header}>
         <View style={styles.avatar}>
           <Text style={styles.avatarText}>IVX</Text>
@@ -127,10 +187,12 @@ export default function DealVideoCard({ video }: { video: FeedVideo }) {
             {deal?.title ?? video.title ?? 'IVX Holdings'}
           </Text>
         </View>
-        <MoreHorizontal size={18} color={Colors.textSecondary} />
+        <TouchableOpacity onPress={handleReport} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <MoreHorizontal size={18} color={Colors.textSecondary} />
+        </TouchableOpacity>
       </View>
 
-      {/* Media — autoplay muted loop, tap toggles sound */}
+      {/* Media */}
       <TouchableOpacity activeOpacity={1} onPress={toggleMute} style={styles.media}>
         <Video
           source={{ uri: playbackUri }}
@@ -147,7 +209,7 @@ export default function DealVideoCard({ video }: { video: FeedVideo }) {
         </TouchableOpacity>
       </TouchableOpacity>
 
-      {/* Action rail — like / comment / share / save */}
+      {/* Action rail */}
       <View style={styles.actionRail}>
         <TouchableOpacity onPress={handleLike} testID={`deal-video-like-${video.id}`}>
           <Heart
@@ -156,17 +218,25 @@ export default function DealVideoCard({ video }: { video: FeedVideo }) {
             fill={liked ? '#FF3B5C' : 'transparent'}
           />
         </TouchableOpacity>
-        <MessageCircle size={24} color="#fff" />
+        <TouchableOpacity onPress={handleComment} testID={`deal-video-comment-${video.id}`}>
+          <MessageCircle size={24} color="#fff" />
+        </TouchableOpacity>
         <TouchableOpacity onPress={handleShare} testID={`deal-video-share-${video.id}`}>
           <Send size={24} color="#fff" />
         </TouchableOpacity>
         <View style={styles.railSpacer} />
-        <Bookmark size={24} color="#fff" />
+        <TouchableOpacity onPress={handleSave} testID={`deal-video-save-${video.id}`}>
+          <Bookmark
+            size={24}
+            color={saved ? Colors.primary : '#fff'}
+            fill={saved ? Colors.primary : 'transparent'}
+          />
+        </TouchableOpacity>
       </View>
 
       {/* Likes line */}
       <Text style={styles.likesLine}>
-        {likeTotal} like{likeTotal === 1 ? '' : 's'}
+        {formatCount(likeCount)} like{likeCount === 1 ? '' : 's'}
       </Text>
 
       {/* Caption */}
@@ -175,7 +245,7 @@ export default function DealVideoCard({ video }: { video: FeedVideo }) {
         {video.title ?? 'Property tour'}
       </Text>
 
-      {/* Deal chips + CTA */}
+      {/* Deal chips + CTAs */}
       {deal ? (
         <View style={styles.dealSection}>
           <View style={styles.chipsRow}>
@@ -190,14 +260,24 @@ export default function DealVideoCard({ video }: { video: FeedVideo }) {
               <OptionIcon key={option.id} option={option} />
             ))}
           </View>
-          <TouchableOpacity
-            style={styles.viewDealBtn}
-            onPress={handleViewDeal}
-            activeOpacity={0.85}
-            testID={`deal-video-cta-${video.id}`}
-          >
-            <Text style={styles.viewDealText}>View Deal</Text>
-          </TouchableOpacity>
+          <View style={styles.ctaRow}>
+            <TouchableOpacity
+              style={styles.viewDealBtn}
+              onPress={handleViewDeal}
+              activeOpacity={0.85}
+              testID={`deal-video-view-${video.id}`}
+            >
+              <Text style={styles.viewDealText}>View Deal</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.investNowBtn}
+              onPress={handleInvestNow}
+              activeOpacity={0.85}
+              testID={`deal-video-invest-${video.id}`}
+            >
+              <Text style={styles.investNowText}>Invest Now</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       ) : (
         <View style={{ height: 12 }} />
@@ -301,6 +381,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: Colors.backgroundSecondary,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+  },
+  chipLabel: {
+    color: Colors.textTertiary,
+    fontSize: 10,
+  },
+  chipValue: {
+    fontSize: 12,
+    fontWeight: '700' as const,
+  },
   optionsRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -324,34 +423,37 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: '600' as const,
   },
-  chip: {
+  ctaRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 9,
-    paddingVertical: 5,
-    borderRadius: 999,
-    backgroundColor: Colors.backgroundSecondary,
-    borderWidth: 1,
-    borderColor: Colors.surfaceBorder,
-  },
-  chipLabel: {
-    color: Colors.textTertiary,
-    fontSize: 10,
-  },
-  chipValue: {
-    fontSize: 12,
-    fontWeight: '700' as const,
+    gap: 8,
+    marginTop: 2,
   },
   viewDealBtn: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+    borderRadius: 10,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: Colors.primary,
+  },
+  viewDealText: {
+    color: Colors.primary,
+    fontSize: 14,
+    fontWeight: '700' as const,
+  },
+  investNowBtn: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: Colors.primary,
     borderRadius: 10,
     paddingVertical: 10,
-    alignItems: 'center',
   },
-  viewDealText: {
+  investNowText: {
     color: '#000',
     fontSize: 14,
-    fontWeight: '700' as const,
+    fontWeight: '800' as const,
   },
 });
