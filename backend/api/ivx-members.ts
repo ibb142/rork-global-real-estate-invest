@@ -83,6 +83,17 @@ function validateDateOfBirth(dateOfBirth: string): { valid: boolean; reason?: st
   return { valid: true };
 }
 
+const VALID_GENDERS = new Set(['male', 'female', 'prefer_not_to_say']);
+
+// Validate gender: required, must be one of the allowed values
+function validateGender(gender: string): { valid: boolean; reason?: string } {
+  if (!gender) return { valid: false, reason: 'Gender is required.' };
+  if (!VALID_GENDERS.has(gender)) {
+    return { valid: false, reason: 'Please select a valid gender option.' };
+  }
+  return { valid: true };
+}
+
 // Validate password strength
 function validatePassword(password: string): { valid: boolean; reason?: string } {
   if (password.length < 8) return { valid: false, reason: 'Password must be at least 8 characters.' };
@@ -113,6 +124,7 @@ export async function handleMemberRegister(request: Request): Promise<Response> 
   const acceptTerms = !!body.acceptTerms;
   const pictureUrl = asString(body.pictureUrl);
   const dateOfBirth = asString(body.dateOfBirth);
+  const gender = asString(body.gender).toLowerCase();
 
   // Validation
   if (!firstName || !lastName) {
@@ -135,6 +147,10 @@ export async function handleMemberRegister(request: Request): Promise<Response> 
   if (!dobCheck.valid) {
     return jsonResponse({ success: false, message: dobCheck.reason || 'Please enter a valid date of birth.', deploymentMarker: DEPLOYMENT_MARKER }, 400);
   }
+  const genderCheck = validateGender(gender);
+  if (!genderCheck.valid) {
+    return jsonResponse({ success: false, message: genderCheck.reason || 'Gender is required.', deploymentMarker: DEPLOYMENT_MARKER }, 400);
+  }
 
   const result = await registerMember({
     email,
@@ -142,6 +158,7 @@ export async function handleMemberRegister(request: Request): Promise<Response> 
     firstName,
     lastName,
     dateOfBirth,
+    gender,
     phone,
     country,
     zipCode,

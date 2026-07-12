@@ -110,6 +110,12 @@ const ROLE_OPTIONS: RoleOption[] = [
   { id: 'tokenized', label: 'Tokenized Investor', icon: <Coins size={18} color={Colors.gold} />, memberRole: 'tokenized' },
 ];
 
+const GENDER_OPTIONS: { id: string; label: string }[] = [
+  { id: 'male', label: 'Male' },
+  { id: 'female', label: 'Female' },
+  { id: 'prefer_not_to_say', label: 'Prefer not to say' },
+];
+
 const PASSWORD_STRENGTH_LEVELS = [
   { label: 'Too weak', color: '#FF4D4D', width: '20%' },
   { label: 'Weak', color: '#FF8C42', width: '40%' },
@@ -253,6 +259,7 @@ export function IVXAuthCard({
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [birthday, setBirthday] = useState('');
+  const [gender, setGender] = useState<string>('');
   const [signupEmail, setSignupEmail] = useState('');
   const [signupPhone, setSignupPhone] = useState('');
   const [signupPassword, setSignupPassword] = useState('');
@@ -270,6 +277,7 @@ export function IVXAuthCard({
   const [firstNameError, setFirstNameError] = useState<string | null>(null);
   const [lastNameError, setLastNameError] = useState<string | null>(null);
   const [birthdayError, setBirthdayError] = useState<string | null>(null);
+  const [genderError, setGenderError] = useState<string | null>(null);
   const [signupEmailError, setSignupEmailError] = useState<string | null>(null);
   const [phoneError, setPhoneError] = useState<string | null>(null);
   const [signupPasswordError, setSignupPasswordError] = useState<string | null>(null);
@@ -351,6 +359,7 @@ export function IVXAuthCard({
     setFirstNameError(null);
     setLastNameError(null);
     setBirthdayError(null);
+    setGenderError(null);
     setSignupEmailError(null);
     setPhoneError(null);
     setSignupPasswordError(null);
@@ -548,6 +557,7 @@ export function IVXAuthCard({
     setFirstNameError(null);
     setLastNameError(null);
     setBirthdayError(null);
+    setGenderError(null);
     setSignupEmailError(null);
     setPhoneError(null);
     setSignupPasswordError(null);
@@ -569,6 +579,10 @@ export function IVXAuthCard({
     const birthdayResult = parseBirthday(birthday);
     if (birthdayResult.error || !birthdayResult.iso) {
       setBirthdayError(birthdayResult.error || 'Date of birth is required.');
+      hasError = true;
+    }
+    if (!gender) {
+      setGenderError('Please select your gender.');
       hasError = true;
     }
     if (!normalizedEmail) {
@@ -617,6 +631,7 @@ export function IVXAuthCard({
         firstName: firstName.trim(),
         lastName: lastName.trim(),
         dateOfBirth: birthdayResult.iso ?? '',
+        gender,
         phone: signupPhone,
         country: 'United States',
         zipCode: '',
@@ -668,7 +683,7 @@ export function IVXAuthCard({
     } catch (err: any) {
       setSignupError(err?.message || 'Registration failed. Please try again.');
     }
-  }, [firstName, lastName, birthday, signupEmail, signupPhone, signupPassword, confirmPassword, selectedRole, acceptTerms, uploadedPictureUrl, register]);
+  }, [firstName, lastName, birthday, gender, signupEmail, signupPhone, signupPassword, confirmPassword, selectedRole, acceptTerms, uploadedPictureUrl, register]);
 
   // --- Verification Code Input ---
   const handleCodeInput = useCallback((type: 'email' | 'phone', index: number, value: string) => {
@@ -1192,6 +1207,42 @@ export function IVXAuthCard({
                       />
                     </View>
                     <FieldError message={birthdayError} />
+                  </View>
+
+                  {/* Gender (required) */}
+                  <View style={styles.fieldGroup}>
+                    <Text style={styles.fieldLabel}>Gender</Text>
+                    <View style={styles.genderRow}>
+                      {GENDER_OPTIONS.map((option) => (
+                        <TouchableOpacity
+                          key={option.id}
+                          style={[
+                            styles.genderChip,
+                            gender === option.id && styles.genderChipActive,
+                            genderError && !gender ? styles.genderChipError : null,
+                          ]}
+                          onPress={() => {
+                            setGender(option.id);
+                            setGenderError(null);
+                            if (Platform.OS !== 'web') {
+                              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                            }
+                          }}
+                          activeOpacity={0.8}
+                          testID={`${testIdPrefix}-signup-gender-${option.id}`}
+                        >
+                          <Text
+                            style={[
+                              styles.genderChipText,
+                              gender === option.id && styles.genderChipTextActive,
+                            ]}
+                          >
+                            {option.label}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                    <FieldError message={genderError} />
                   </View>
 
                   {/* Email */}
@@ -1739,6 +1790,41 @@ const styles = StyleSheet.create({
   },
   roleChipTextActive: {
     color: Colors.gold,
+  },
+
+  // Gender chips
+  genderRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  } as any,
+  genderChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    borderWidth: 1,
+    borderColor: Colors.inputBorder,
+    minHeight: 44,
+  },
+  genderChipActive: {
+    backgroundColor: 'rgba(255, 215, 0, 0.1)',
+    borderColor: Colors.gold,
+  },
+  genderChipError: {
+    borderColor: Colors.red,
+  },
+  genderChipText: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    fontWeight: '500' as const,
+  },
+  genderChipTextActive: {
+    color: Colors.gold,
+    fontWeight: '600' as const,
   },
 
   // Checkbox / Terms

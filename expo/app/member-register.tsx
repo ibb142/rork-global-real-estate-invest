@@ -69,6 +69,7 @@ export default function MemberRegisterScreen() {
     firstName: '',
     lastName: '',
     dateOfBirth: '',
+    gender: '',
     phone: '',
     country: 'United States',
     countryCode: 'US',
@@ -215,6 +216,10 @@ export default function MemberRegisterScreen() {
       Alert.alert('Date of Birth Required', dobResult.error || 'Please enter your date of birth.');
       return;
     }
+    if (!formData.gender) {
+      Alert.alert('Gender Required', 'Please select your gender.');
+      return;
+    }
     if (!validateEmail(normalizedEmail)) {
       Alert.alert('Invalid Email', 'Please enter a valid email address.');
       return;
@@ -253,6 +258,7 @@ export default function MemberRegisterScreen() {
         firstName: formData.firstName,
         lastName: formData.lastName,
         dateOfBirth: dobResult.iso,
+        gender: formData.gender,
         phone: formData.phone,
         country: formData.country,
         zipCode: formData.zipCode,
@@ -384,6 +390,32 @@ export default function MemberRegisterScreen() {
           keyboardType="number-pad"
           maxLength={10}
         />
+      </View>
+
+      {/* Gender */}
+      <Text style={styles.label}>Gender *</Text>
+      <View style={styles.genderRow}>
+        {[
+          { id: 'male', label: 'Male' },
+          { id: 'female', label: 'Female' },
+          { id: 'prefer_not_to_say', label: 'Prefer not to say' },
+        ].map((option) => (
+          <TouchableOpacity
+            key={option.id}
+            style={[styles.genderChip, formData.gender === option.id && styles.genderChipActive]}
+            onPress={() => updateForm('gender', option.id)}
+            activeOpacity={0.8}
+          >
+            <Text
+              style={[
+                styles.genderChipText,
+                formData.gender === option.id && styles.genderChipTextActive,
+              ]}
+            >
+              {option.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
       </View>
 
       {/* Email */}
@@ -1224,6 +1256,36 @@ const styles = StyleSheet.create({
   },
   inputIcon: {
     marginRight: 10,
+  },
+  genderRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  genderChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: Colors.inputBackground,
+    borderWidth: 1,
+    borderColor: Colors.inputBorder,
+    minHeight: 44,
+  },
+  genderChipActive: {
+    backgroundColor: 'rgba(255, 215, 0, 0.1)',
+    borderColor: Colors.gold,
+  },
+  genderChipText: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    fontWeight: '500' as const,
+  },
+  genderChipTextActive: {
+    color: Colors.gold,
+    fontWeight: '600' as const,
   },
   input: {
     flex: 1,

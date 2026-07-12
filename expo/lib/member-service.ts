@@ -26,6 +26,8 @@ export interface RegisterPayload {
   lastName: string;
   /** Date of birth in ISO format (YYYY-MM-DD). Required. */
   dateOfBirth: string;
+  /** Gender: 'male' | 'female' | 'prefer_not_to_say'. Required. */
+  gender: string;
   phone: string;
   country: string;
   zipCode: string;
