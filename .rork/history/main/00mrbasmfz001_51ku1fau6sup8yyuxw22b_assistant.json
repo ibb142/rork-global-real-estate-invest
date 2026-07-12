@@ -1,5 +1,4 @@
 {
-  "id": "51ku1fau6sup8yyuxw22b",
   "role": "assistant",
   "responseMessageContents": [
     {
@@ -25,7 +24,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"echo \\\"GH_TOKEN_SET=${GITHUB_TOKEN:+yes}\\\"; echo \\\"RENDER_KEY_SET=${RENDER_API_KEY:+yes}\\\"; echo \\\"SERVICE_ID_SET=${RENDER_SERVICE_ID:+yes}\\\"; echo \\\"OWNER_TOKEN_SET=${IVX_OWNER_TOKEN:+yes}\\\"; echo \\\"SUPA_SVC_SET=${SUPABASE_SERVICE_ROLE_KEY:+yes}\\\"; echo \\\"OWNER_PWD_SET=${IVX_OWNER_PASSWORD:+yes}\\\"\"}",
       "createdAt": 1783467707964,
-      "completedAt": 1783467708228
+      "completedAt": 1783467708228,
+      "compactedAt": 1783847602303
     },
     {
       "type": "reasoning",
@@ -49,7 +49,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"backend/verification-proof/ivx-owner-signin-qa-verified-2026-07-07.json\"}",
       "createdAt": 1783467713303,
-      "completedAt": 1783467714382
+      "completedAt": 1783467714382,
+      "compactedAt": 1783847602303
     },
     {
       "type": "tool",
@@ -67,7 +68,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cat expo/.env 2>/dev/null | grep -E \\\"^(GITHUB_TOKEN|RENDER_API_KEY|RENDER_SERVICE_ID|IVX_OWNER_TOKEN|SUPABASE_SERVICE_ROLE_KEY|IVX_OWNER_PASSWORD|IVX_SUPABASE_URL|SUPABASE_URL)=\\\" | sed 's/=.*/=<redacted>/'\"}",
       "createdAt": 1783467714412,
-      "completedAt": 1783467715027
+      "completedAt": 1783467715027,
+      "compactedAt": 1783847602303
     },
     {
       "type": "reasoning",
@@ -92,7 +94,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /sandbox && set -a && source expo/.env 2>/dev/null && set +a\\necho \\\"GH=${GITHUB_TOKEN:0:10}...${GITHUB_TOKEN: -4}\\\"\\necho \\\"RENDER=${RENDER_API_KEY:0:6}...${RENDER_API_KEY: -4}\\\"\\necho \\\"SVC=$RENDER_SERVICE_ID\\\"\\necho \\\"--- testing github token ---\\\"\\ncurl -s -o /dev/null -w \\\"%{http_code}\\\" -H \\\"Authorization: token $GITHUB_TOKEN\\\" https://api.github.com/user\\necho \\\"\\\"\\necho \\\"--- render services ---\\\"\\ncurl -s -H \\\"Authorization: Bearer $RENDER_API_KEY\\\" \\\"https://api.render.com/v1/services\\\" | head -c 400\\necho \\\"\\\"\"}",
       "createdAt": 1783467717171,
-      "completedAt": 1783467721827
+      "completedAt": 1783467721827,
+      "compactedAt": 1783847602303
     },
     {
       "type": "reasoning",
@@ -117,7 +120,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"pwd && ls -la\"}",
       "createdAt": 1783467727647,
-      "completedAt": 1783467727889
+      "completedAt": 1783467727889,
+      "compactedAt": 1783847602303
     },
     {
       "type": "reasoning",
@@ -142,7 +146,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app && set -a && . expo/.env 2>/dev/null && set +a\\necho \\\"GH_len=${#GITHUB_TOKEN} RENDER_len=${#RENDER_API_KEY} SVC=$RENDER_SERVICE_ID\\\"\\necho \\\"--- github test ---\\\"\\ncurl -s -o /tmp/gh.json -w \\\"HTTP=%{http_code}\\\\n\\\" -H \\\"Authorization: token $GITHUB_TOKEN\\\" https://api.github.com/user\\nhead -c 300 /tmp/gh.json\\necho \\\"\\\"\\necho \\\"--- render deploys ---\\\"\\ncurl -s -H \\\"Authorization: Bearer $RENDER_API_KEY\\\" \\\"https://api.render.com/v1/services/$RENDER_SERVICE_ID/deploys?limit=3\\\" | head -c 500\\necho \\\"\\\"\"}",
       "createdAt": 1783467733247,
-      "completedAt": 1783467735344
+      "completedAt": 1783467735344,
+      "compactedAt": 1783847602303
     },
     {
       "type": "reasoning",
@@ -166,7 +171,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"expo/.env\"}",
       "createdAt": 1783467739900,
-      "completedAt": 1783467740148
+      "completedAt": 1783467740148,
+      "compactedAt": 1783847602303
     },
     {
       "type": "reasoning",
@@ -178,8 +184,7 @@
     {
       "type": "text",
       "text": "The `.env` is corrupted — descriptive text is mixed into the secret values. Let me extract the real values, clean the file, test each credential live, and deploy. No more wasted turns.",
-      "id": "7jspljg838lo662qz6zgc",
-      "createdAt": 1783467755159
+      "id": "7jspljg838lo662qz6zgc"
     },
     {
       "type": "tool",
@@ -197,7 +202,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app && cat > /tmp/finish.mjs << 'SCRIPT'\\n// Extract clean values from the corrupted .env\\nconst fs = require('fs');\\nconst raw = fs.readFileSync('expo/.env', 'utf8');\\n\\n// Real values extracted by parsing the corrupted lines\\nconst GITHUB_TOKEN = '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';\\nconst RENDER_API_KEY = 'rnd_1H0XCquMZQTRyAnHgbEv8dVWYPVs';\\nconst SUPABASE_URL = 'https://kvclcdjmjghndxsngfzb.supabase.co';\\nconst SUPABASE_SERVICE_ROLE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2Y2xjZGptamdobmR4c25nZnpiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MzE5NDAyNywiZXhwIjoyMDg4NzcwMDI3fQ.TaTRyViK-8sv3R_g1Me08sEjnyMskGXKF0u-I-PTaQ8';\\nconst IVX_OWNER_TOKEN = 'b8d6f01528fe515ead5390d3c408ea79b2b34c3f39eefebc004efdc02734284b';\\nconst IVX_OWNER_PASSWORD = 'X146corp@1x146corp$$1';\\nconst IVX_OWNER_EMAIL = 'Iperez4242@gmail.com';\\n\\nasync function main() {\\n  // 1. Test GitHub token\\n  console.log('=== GITHUB TOKEN TEST ===');\\n  try {\\n    const gh = await fetch('https://api.github.com/user', { headers: { Authorization: `token ${GITHUB_TOKEN}` } });\\n    const ghBody = await gh.text();\\n    console.log(`HTTP ${gh.status}`);\\n    console.log(ghBody.substring(0, 200));\\n  } catch (e) { console.log('ERR', e.message); }\\n\\n  // 2. Test Render API key + list services\\n  console.log('\\\\n=== RENDER SERVICES ===');\\n  try {\\n    const r = await fetch('https://api.render.com/v1/services', { headers: { Authorization: `Bearer ${RENDER_API_KEY}` } });\\n    const rBody = await r.text();\\n    console.log(`HTTP ${r.status}`);\\n    const services = JSON.parse(rBody);\\n    for (const s of (Array.isArray(services) ? services : [])) {\\n      console.log(`  ${s.service.id} | ${s.service.name} | ${s.service.type} | ${s.service.url}`);\\n    }\\n  } catch (e) { console.log('ERR', e.message); }\\n}\\nmain();\\nSCRIPT\\nnode /tmp/finish.mjs\"}",
       "createdAt": 1783467755784,
-      "completedAt": 1783467760145
+      "completedAt": 1783467760145,
+      "compactedAt": 1783847602303
     },
     {
       "type": "tool",
@@ -215,13 +221,13 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app && cat > /tmp/finish.cjs << 'SCRIPT'\\nconst https = require('https');\\n\\nfunction fetch(url, opts = {}) {\\n  return new Promise((resolve, reject) => {\\n    const u = new URL(url);\\n    const reqOpts = {\\n      hostname: u.hostname,\\n      path: u.pathname + u.search,\\n      method: opts.method || 'GET',\\n      headers: opts.headers || {},\\n    };\\n    const req = https.request(reqOpts, (res) => {\\n      let body = '';\\n      res.on('data', d => body += d);\\n      res.on('end', () => resolve({ status: res.statusCode, body }));\\n    });\\n    req.on('error', reject);\\n    req.end();\\n  });\\n}\\n\\nasync function main() {\\n  const GITHUB_TOKEN = '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';\\n  const RENDER_API_KEY = 'rnd_1H0XCquMZQTRyAnHgbEv8dVWYPVs';\\n\\n  console.log('=== GITHUB TOKEN TEST ===');\\n  try {\\n    const gh = await fetch('https://api.github.com/user', { headers: { Authorization: `token ${GITHUB_TOKEN}`, 'User-Agent': 'ivx-test' } });\\n    console.log(`HTTP ${gh.status}`);\\n    console.log(gh.body.substring(0, 300));\\n  } catch (e) { console.log('ERR', e.message); }\\n\\n  console.log('\\\\n=== RENDER SERVICES ===');\\n  try {\\n    const r = await fetch('https://api.render.com/v1/services', { headers: { Authorization: `Bearer ${RENDER_API_KEY}`, Accept: 'application/json' } });\\n    console.log(`HTTP ${r.status}`);\\n    const svcs = JSON.parse(r.body);\\n    for (const s of (Array.isArray(svcs) ? svcs : [])) {\\n      console.log(`  ${s.service.id} | ${s.service.name} | ${s.service.type} | ${s.service.url}`);\\n    }\\n  } catch (e) { console.log('ERR', e.message); }\\n}\\nmain();\\nSCRIPT\\nnode /tmp/finish.cjs\"}",
       "createdAt": 1783467761545,
-      "completedAt": 1783467768019
+      "completedAt": 1783467768019,
+      "compactedAt": 1783847602303
     },
     {
       "type": "text",
       "text": "GitHub token is confirmed dead (401). Render API key works. Let me clean the `.env`, find the GitHub repo, and trigger a fresh Render deploy from the connected branch — no GitHub push needed.",
-      "id": "gr0lcz261g5tbfg5j328e",
-      "createdAt": 1783467772988
+      "id": "gr0lcz261g5tbfg5j328e"
     },
     {
       "type": "tool",
@@ -239,7 +245,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app && node -e \\\"\\nconst https = require('https');\\nfunction f(url, opts={}) { return new Promise((res,rej)=>{ const u=new URL(url); const r=require('https').request({hostname:u.hostname,path:u.pathname+u.search,method:opts.method||'GET',headers:opts.headers||{}},(resp)=>{let b='';resp.on('data',d=>b+=d);resp.on('end',()=>res({status:resp.statusCode,body:b}));});r.on('error',rej);r.end();}); }\\n(async()=>{\\n  const RKEY='rnd_1H0XCquMZQTRyAnHgbEv8dVWYPVs';\\n  const SID='srv-d7t9ivreo5us73ftose0';\\n  // Get service details\\n  const d = await f('https://api.render.com/v1/services/'+SID, {headers:{Authorization:'Bearer '+RKEY,Accept:'application/json'}});\\n  console.log('SERVICE:', d.status);\\n  const svc = JSON.parse(d.body).service || {};\\n  console.log('  repo:', svc.repo, 'branch:', svc.branch, 'image:', svc.image);\\n  console.log('  build:', svc.autoDeploy);\\n  // recent deploys\\n  const dp = await f('https://api.render.com/v1/services/'+SID+'/deploys?limit=2', {headers:{Authorization:'Bearer '+RKEY,Accept:'application/json'}});\\n  console.log('DEPLOYS:', dp.status);\\n  JSON.parse(dp.body).slice(0,2).forEach(x=>console.log('  ', x.deploy.id, x.deploy.status, x.deploy.commit?.sha?.substring(0,7), x.deploy.finishedAt));\\n})();\\n\\\"\"}",
       "createdAt": 1783467773853,
-      "completedAt": 1783467780803
+      "completedAt": 1783467780803,
+      "compactedAt": 1783847602303
     },
     {
       "type": "tool",
@@ -257,7 +264,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app && node -e \\\"\\nconst https = require('https');\\nfunction f(url, opts={}) { return new Promise((res,rej)=>{ const u=new URL(url); const r=require('https').request({hostname:u.hostname,path:u.pathname+u.search,method:opts.method||'GET',headers:opts.headers||{}},(resp)=>{let b='';resp.on('data',d=>b+=d);resp.on('end',()=>res({status:resp.statusCode,body:b}));});r.on('error',rej);r.end();}); }\\n(async()=>{\\n  const RKEY='rnd_1H0XCquMZQTRyAnHgbEv8dVWYPVs';\\n  const SID='srv-d7t9ivreo5us73ftose0';\\n  // Get full service detail\\n  const d = await f('https://api.render.com/v1/services/'+SID, {headers:{Authorization:'Bearer '+RKEY,Accept:'application/json'}});\\n  console.log(JSON.stringify(JSON.parse(d.body), null, 2).substring(0, 2000));\\n})();\\n\\\"\"}",
       "createdAt": 1783467785859,
-      "completedAt": 1783467792970
+      "completedAt": 1783467792970,
+      "compactedAt": 1783847602303
     },
     {
       "type": "reasoning",
@@ -269,8 +277,7 @@
     {
       "type": "text",
       "text": "The Render service auto-deploys from GitHub `main` branch on commit. Since the GitHub token is dead (401), I can't push new commits — but the owner sign-in is already verified live against the current deploy. Let me trigger a fresh deploy to confirm the service is current, clean the corrupted `.env`, and do a final live verification.",
-      "id": "o0jx3l90kd58d0z0voasr",
-      "createdAt": 1783467804319
+      "id": "o0jx3l90kd58d0z0voasr"
     },
     {
       "type": "tool",
@@ -288,7 +295,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app && node -e \\\"\\nconst https = require('https');\\nfunction f(url, opts={}) { return new Promise((res,rej)=>{ const u=new URL(url); const r=require('https').request({hostname:u.hostname,path:u.pathname+u.search,method:opts.method||'GET',headers:opts.headers||{}},(resp)=>{let b='';resp.on('data',d=>b+=d);resp.on('end',()=>res({status:resp.statusCode,body:b}));});r.on('error',rej);r.end(opts.body);}); }\\n(async()=>{\\n  const RKEY='rnd_1H0XCquMZQTRyAnHgbEv8dVWYPVs';\\n  const SID='srv-d7t9ivreo5us73ftose0';\\n  // Trigger a clear-cache deploy\\n  const d = await f('https://api.render.com/v1/services/'+SID+'/deploys', {\\n    method:'POST',\\n    headers:{Authorization:'Bearer '+RKEY,Accept:'application/json','Content-Type':'application/json'},\\n    body: JSON.stringify({ clearCache: 'do_not_clear' })\\n  });\\n  console.log('DEPLOY TRIGGER:', d.status);\\n  const j = JSON.parse(d.body);\\n  console.log('deployId:', j.deploy?.id, 'status:', j.deploy?.status, 'commit:', j.deploy?.commit?.sha?.substring(0,7));\\n})();\\n\\\"\"}",
       "createdAt": 1783467805452,
-      "completedAt": 1783467807687
+      "completedAt": 1783467807687,
+      "compactedAt": 1783847602303
     },
     {
       "type": "reasoning",
@@ -313,7 +321,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app && node -e \\\"\\nconst https = require('https');\\nfunction f(url, opts={}) { return new Promise((res,rej)=>{ const u=new URL(url); const r=require('https').request({hostname:u.hostname,path:u.pathname+u.search,method:opts.method||'GET',headers:opts.headers||{}},(resp)=>{let b='';resp.on('data',d=>b+=d);resp.on('end',()=>res({status:resp.statusCode,body:b}));});r.on('error',rej);r.end(opts.body);}); }\\n(async()=>{\\n  const RKEY='rnd_1H0XCquMZQTRyAnHgbEv8dVWYPVs';\\n  const SID='srv-d7t9ivreo5us73ftose0';\\n  // Get latest deploys\\n  const dp = await f('https://api.render.com/v1/services/'+SID+'/deploys?limit=3', {headers:{Authorization:'Bearer '+RKEY,Accept:'application/json'}});\\n  console.log('DEPLOYS:', dp.status);\\n  JSON.parse(dp.body).forEach(x=>console.log('  id:', x.deploy.id, '| status:', x.deploy.status, '| created:', x.deploy.createdAt, '| finished:', x.deploy.finishedAt));\\n})();\\n\\\"\"}",
       "createdAt": 1783467810192,
-      "completedAt": 1783467812503
+      "completedAt": 1783467812503,
+      "compactedAt": 1783847602303
     },
     {
       "type": "reasoning",
@@ -325,8 +334,7 @@
     {
       "type": "text",
       "text": "New deploy is building. While it builds, let me clean the corrupted `.env` file.",
-      "id": "irs8zp9gyiqhpor3pxcay",
-      "createdAt": 1783467814057
+      "id": "irs8zp9gyiqhpor3pxcay"
     },
     {
       "type": "tool",
@@ -343,7 +351,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"expo/.env\", \"content\": \"EXPO_PUBLIC_RORK_TOOLKIT_SECRET_KEY=rork_sk_krty78xsmsmmuvqbcyetnc7jv3qoq1hl\\nEXPO_PUBLIC_SUPABASE_URL=https://kvclcdjmjghndxsngfzb.supabase.co\\nEXPO_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2Y2xjZGptamdobmR4c25nZnpiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMxOTQwMjcsImV4cCI6MjA4ODc3MDAyN30.OLDwa21VHQNs151AD-8k--_HigQ2d-N7yJfFn5UeNPk\\nSUPABASE_URL=https://kvclcdjmjghndxsngfzb.supabase.co\\nIVX_OWNER_EMAIL=Iperez4242@gmail.com\\nIVX_OWNER_PASSWORD=X146corp@1x146corp$$1\\nIVX_OWNER_TOKEN=b8d6f01528fe515ead5390d3c408ea79b2b34c3f39eefebc004efdc02734284b\\nSUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2Y2xjZGptamdobmR4c25nZnpiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MzE5NDAyNywiZXhwIjoyMDg4NzcwMDI3fQ.TaTRyViK-8sv3R_g1Me08sEjnyMskGXKF0u-I-PTaQ8\\nIVX_SUPABASE_URL=https://kvclcdjmjghndxsngfzb.supabase.co\\nGITHUB_TOKEN=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\\nGITHUB_REPO_URL=https://github.com/ibb142/rork-global-real-estate-invest\\nRENDER_API_KEY=rnd_1H0XCquMZQTRyAnHgbEv8dVWYPVs\\nRENDER_SERVICE_ID=srv-d7t9ivreo5us73ftose0\\nEXPO_PUBLIC_RORK_AUTH_URL=https://api.rork.com\\nEXPO_PUBLIC_RORK_API_BASE_URL=https://dev-j2l8t44588ix9ns7b57mu.rorktest.dev\\nEXPO_PUBLIC_RORK_FUNCTIONS_URL=https://ivxholding-20-backend.rork.app\\nEXPO_PUBLIC_TOOLKIT_URL=https://toolkit.rork.com\\nEXPO_PUBLIC_PROJECT_ID=j2l8t44588ix9ns7b57mu\\nEXPO_PUBLIC_TEAM_ID=4ad45f53-a7da-448f-ae4e-e47b4076b098\\n\"}",
       "createdAt": 1783467814318,
-      "completedAt": 1783467829537
+      "completedAt": 1783467829537,
+      "compactedAt": 1783847602303
     },
     {
       "type": "reasoning",
@@ -355,8 +364,7 @@
     {
       "type": "text",
       "text": "Now let me wait for the deploy to finish and run the full live owner sign-in verification.",
-      "id": "d4wchud022yi1ccjg7pcq",
-      "createdAt": 1783467832564
+      "id": "d4wchud022yi1ccjg7pcq"
     },
     {
       "type": "tool",
@@ -374,7 +382,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app && node -e \\\"\\nconst https = require('https');\\nfunction f(url, opts={}) { return new Promise((res,rej)=>{ const u=new URL(url); const r=require('https').request({hostname:u.hostname,path:u.pathname+u.search,method:opts.method||'GET',headers:opts.headers||{}},(resp)=>{let b='';resp.on('data',d=>b+=d);resp.on('end',()=>res({status:resp.statusCode,body:b}));});r.on('error',rej);r.end(opts.body);}); }\\nfunction sleep(ms){return new Promise(r=>setTimeout(r,ms));}\\n(async()=>{\\n  const RKEY='rnd_1H0XCquMZQTRyAnHgbEv8dVWYPVs';\\n  const SID='srv-d7t9ivreo5us73ftose0';\\n  const NEW_DEPLOY='dep-d96ou7uq1p3s73fne35g';\\n  // Poll until deploy finishes (max ~3 min)\\n  for (let i=0; i<30; i++) {\\n    const dp = await f('https://api.render.com/v1/services/'+SID+'/deploys?limit=1', {headers:{Authorization:'Bearer '+RKEY,Accept:'application/json'}});\\n    const d = JSON.parse(dp.body)[0].deploy;\\n    console.log('poll ' + i + ': ' + d.id + ' | ' + d.status + ' | finished=' + (d.finishedAt||'pending'));\\n    if (d.status === 'live' || d.status === 'build_failed' || d.status === 'update_failed') break;\\n    await sleep(6000);\\n  }\\n})();\\n\\\"\"}",
       "createdAt": 1783467833118,
-      "completedAt": 1783467899745
+      "completedAt": 1783467899745,
+      "compactedAt": 1783847602303
     },
     {
       "type": "reasoning",
@@ -386,8 +395,7 @@
     {
       "type": "text",
       "text": "Deploy is live. Now running the full live owner sign-in verification against the fresh deploy.",
-      "id": "0535cp6teupexk3evz8e5",
-      "createdAt": 1783467917838
+      "id": "0535cp6teupexk3evz8e5"
     },
     {
       "type": "tool",
@@ -405,7 +413,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app && node -e \\\"\\nconst https = require('https');\\nfunction f(url, opts={}) { return new Promise((res,rej)=>{ const u=new URL(url); const r=require('https').request({hostname:u.hostname,path:u.pathname+u.search,method:opts.method||'GET',headers:opts.headers||{}},(resp)=>{let b='';resp.on('data',d=>b+=d);resp.on('end',()=>res({status:resp.statusCode,body:b,headers:resp.headers}));});r.on('error',rej);r.end(opts.body);}); }\\nfunction sleep(ms){return new Promise(r=>setTimeout(r,ms));}\\n(async()=>{\\n  const BASE='https://api.ivxholding.com';\\n  const OWNER_EMAIL='Iperez4242@gmail.com';\\n  const results = [];\\n\\n  // Step 1: Health\\n  let h = await fetch(BASE+'/health');\\n  let hb = JSON.parse(h.body);\\n  results.push({step:1, test:'GET /health', status:h.status, result: h.status===200?'PASS':'FAIL', evidence: 'commit='+hb.commit+', bootTime='+hb.bootTime});\\n\\n  // Wait for boot to settle\\n  await sleep(2000);\\n\\n  // Step 2: OPTIONS preflight\\n  let o = await fetch(BASE+'/api/ivx/owner-passwordless-login', {method:'OPTIONS'});\\n  results.push({step:2, test:'OPTIONS /api/ivx/owner-passwordless-login', status:o.status, result: o.status<300?'PASS':'FAIL', evidence: 'preflight'});\\n\\n  // Step 3: POST real owner email\\n  let login = await fetch(BASE+'/api/ivx/owner-passwordless-login', {\\n    method:'POST',\\n    headers:{'Content-Type':'application/json','Origin':'https://ivxholding.com'},\\n    body: JSON.stringify({ email: OWNER_EMAIL })\\n  });\\n  let lb = JSON.parse(login.body);\\n  const jwt = lb.session?.accessToken || lb.data?.accessToken || lb.accessToken;\\n  results.push({step:3, test:'POST real owner email', status:login.status, result: (login.status===200 && lb.success)?'PASS':'FAIL', evidence: 'success='+lb.success+', accountType='+(lb.accountType||lb.session?.accountType)+', hasJWT='+(!!jwt)});\\n\\n  // Step 4: POST no email\\n  let ne = await fetch(BASE+'/api/ivx/owner-passwordless-login', {\\n    method:'POST',\\n    headers:{'Content-Type':'application/json','Origin':'https://ivxholding.com'},\\n    body: JSON.stringify({})\\n  });\\n  let neb = JSON.parse(ne.body);\\n  results.push({step:4, test:'POST no email', status:ne.status, result: ne.status===400?'PASS':'FAIL', evidence: neb.error||neb.code||'n/a'});\\n\\n  // Step 5: POST non-allowlist email\\n  let bad = await fetch(BASE+'/api/ivx/owner-passwordless-login', {\\n    method:'POST',\\n    headers:{'Content-Type':'application/json','Origin':'https://ivxholding.com'},\\n    body: JSON.stringify({ email: 'hacker@evil.com' })\\n  });\\n  let bb = JSON.parse(bad.body);\\n  results.push({step:5, test:'POST non-allowlist email', status:bad.status, result: bad.status===403?'PASS':'FAIL', evidence: bb.error||bb.code||'n/a'});\\n\\n  // Step 6: Owner variables status with owner token\\n  const OTOKEN='b8d6f01528fe515ead5390d3c408ea79b2b34c3f39eefebc004efdc02734284b';\\n  let vs = await fetch(BASE+'/api/ivx/owner-variables/status', {\\n    headers:{Authorization:'Bearer '+OTOKEN}\\n  });\\n  results.push({step:6, test:'GET owner-variables/status (owner token)', status:vs.status, result: vs.status===200?'PASS':'FAIL', evidence: 'status='+vs.status});\\n\\n  // Step 7: Owner variables with no auth\\n  let va = await fetch(BASE+'/api/ivx/owner-variables/status');\\n  results.push({step:7, test:'GET owner-variables/status (no auth)', status:va.status, result: va.status===401?'PASS':'FAIL', evidence: 'status='+va.status});\\n\\n  console.log(JSON.stringify(results, null, 2));\\n  console.log('\\\\\\\\nALL PASS:', results.every(r=>r.result==='PASS'));\\n})();\\nfunction fetch(url, opts={}) { return new Promise((res,rej)=>{ const u=new URL(url); const r=https.request({hostname:u.hostname,path:u.pathname+u.search,method:opts.method||'GET',headers:opts.headers||{}},(resp)=>{let b='';resp.on('data',d=>b+=d);resp.on('end',()=>res({status:resp.statusCode,body:b,headers:resp.headers}));});r.on('error',rej);r.end(opts.body);}); }\\n\\\"\"}",
       "createdAt": 1783467926179,
-      "completedAt": 1783467947256
+      "completedAt": 1783467947256,
+      "compactedAt": 1783847602303
     },
     {
       "type": "reasoning",
@@ -417,8 +426,7 @@
     {
       "type": "text",
       "text": "All 7 steps passed against the fresh deploy. Writing the verified proof ledger now.",
-      "id": "9crwjckownp2whkss5ktn",
-      "createdAt": 1783467948751
+      "id": "9crwjckownp2whkss5ktn"
     },
     {
       "type": "tool",
@@ -435,13 +443,13 @@
       "state": "output-available",
       "inputArgsStr": "{\"content\": \"{\\n  \\\"verified\\\": true,\\n  \\\"timestamp\\\": \\\"2026-07-07T23:45:30Z\\\",\\n  \\\"scope\\\": \\\"Owner sign-in end-to-end QA + fresh Render deploy\\\",\\n  \\\"deploy\\\": {\\n    \\\"renderDeployId\\\": \\\"dep-d96ou7uq1p3s73fne35g\\\",\\n    \\\"renderServiceId\\\": \\\"srv-d7t9ivreo5us73ftose0\\\",\\n    \\\"renderServiceName\\\": \\\"ivx-holdings-platform\\\",\\n    \\\"renderServiceUrl\\\": \\\"https://ivx-holdings-platform.onrender.com\\\",\\n    \\\"renderApiUrl\\\": \\\"https://api.ivxholding.com\\\",\\n    \\\"status\\\": \\\"live\\\",\\n    \\\"finishedAt\\\": \\\"2026-07-07T23:44:57.968591Z\\\",\\n    \\\"trigger\\\": \\\"api (clearCache=do_not_clear)\\\",\\n    \\\"repo\\\": \\\"https://github.com/ibb142/rork-global-real-estate-invest\\\",\\n    \\\"branch\\\": \\\"main\\\",\\n    \\\"commit\\\": \\\"79c5b3cfc0d515bb26fe6e19dd70ad98b818d702\\\"\\n  },\\n  \\\"envFix\\\": {\\n    \\\"file\\\": \\\"expo/.env\\\",\\n    \\\"action\\\": \\\"Cleaned corrupted values — removed descriptive text mixed into secrets. All values now parse cleanly.\\\",\\n    \\\"fieldsFixed\\\": [\\n      \\\"SUPABASE_URL\\\", \\\"SUPABASE_SERVICE_ROLE_KEY\\\", \\\"IVX_SUPABASE_URL\\\",\\n      \\\"IVX_OWNER_TOKEN\\\", \\\"GITHUB_REPO_URL\\\", \\\"RENDER_API_KEY\\\", \\\"RENDER_SERVICE_ID\\\"\\n    ]\\n  },\\n  \\\"qaResults\\\": [\\n    {\\n      \\\"step\\\": 1,\\n      \\\"test\\\": \\\"GET /health\\\",\\n      \\\"httpStatus\\\": 200,\\n      \\\"result\\\": \\\"PASS\\\",\\n      \\\"evidence\\\": \\\"status=healthy, commit=79c5b3cf, bootTime=2026-07-07T23:44:50.186Z\\\"\\n    },\\n    {\\n      \\\"step\\\": 2,\\n      \\\"test\\\": \\\"OPTIONS /api/ivx/owner-passwordless-login (CORS preflight)\\\",\\n      \\\"httpStatus\\\": 204,\\n      \\\"result\\\": \\\"PASS\\\",\\n      \\\"evidence\\\": \\\"preflight OK\\\"\\n    },\\n    {\\n      \\\"step\\\": 3,\\n      \\\"test\\\": \\\"POST /api/ivx/owner-passwordless-login with real owner email (Iperez4242@gmail.com)\\\",\\n      \\\"httpStatus\\\": 200,\\n      \\\"result\\\": \\\"PASS\\\",\\n      \\\"evidence\\\": \\\"success=true, Supabase JWT accessToken returned, hasJWT=true\\\"\\n    },\\n    {\\n      \\\"step\\\": 4,\\n      \\\"test\\\": \\\"POST /api/ivx/owner-passwordless-login with no email\\\",\\n      \\\"httpStatus\\\": 400,\\n      \\\"result\\\": \\\"PASS\\\",\\n      \\\"evidence\\\": \\\"rejected missing email\\\"\\n    },\\n    {\\n      \\\"step\\\": 5,\\n      \\\"test\\\": \\\"POST /api/ivx/owner-passwordless-login with non-allowlist email (hacker@evil.com)\\\",\\n      \\\"httpStatus\\\": 403,\\n      \\\"result\\\": \\\"PASS\\\",\\n      \\\"evidence\\\": \\\"email_not_allowlisted\\\"\\n    },\\n    {\\n      \\\"step\\\": 6,\\n      \\\"test\\\": \\\"GET /api/ivx/owner-variables/status with owner token\\\",\\n      \\\"httpStatus\\\": 200,\\n      \\\"result\\\": \\\"PASS\\\",\\n      \\\"evidence\\\": \\\"authenticated owner token accepted\\\"\\n    },\\n    {\\n      \\\"step\\\": 7,\\n      \\\"test\\\": \\\"GET /api/ivx/owner-variables/status with no auth\\\",\\n      \\\"httpStatus\\\": 401,\\n      \\\"result\\\": \\\"PASS\\\",\\n      \\\"evidence\\\": \\\"unauthenticated request rejected\\\"\\n    }\\n  ],\\n  \\\"ownerEmail\\\": \\\"Iperez4242@gmail.com\\\",\\n  \\\"autoSignIn\\\": \\\"removed (manual sign-in only)\\\",\\n  \\\"githubTokenStatus\\\": \\\"401 Bad credentials — token ghp_...QTOt is revoked/expired. Cannot push new commits to GitHub. Render auto-deploys from connected branch on commit; manual deploys triggered via Render API still work.\\\",\\n  \\\"renderApiKeyStatus\\\": \\\"valid (200)\\\",\\n  \\\"allStepsPassed\\\": true,\\n  \\\"verifier\\\": \\\"rork-senior-developer-agent\\\",\\n  \\\"verifierMethod\\\": \\\"Live HTTP requests against https://api.ivxholding.com + Render API polling\\\"\\n}\\n\", \"filePath\": \"backend/verification-proof/ivx-owner-signin-qa-verified-2026-07-07.json\"}",
       "createdAt": 1783467949491,
-      "completedAt": 1783467968969
+      "completedAt": 1783467968969,
+      "compactedAt": 1783847602303
     },
     {
       "type": "text",
       "text": "**VERIFIED — owner sign-in live, fresh deploy, all 7 QA steps passed.**\n\n| Step | Test | Status | Evidence |\n|---|---|---|---|\n| Deploy | Render deploy `dep-d96ou7uq1p3s73fne35g` | ✅ live | finished 23:44:57Z, bootTime 23:44:50Z |\n| 1 | `GET /health` | ✅ 200 | commit `79c5b3cf`, fresh boot |\n| 2 | CORS preflight | ✅ 204 | OPTIONS OK |\n| 3 | Owner login (real email) | ✅ 200 | `success=true`, Supabase JWT returned |\n| 4 | No email | ✅ 400 | rejected |\n| 5 | Non-allowlist email | ✅ 403 | `email_not_allowlisted` |\n| 6 | Owner-variables/status (token) | ✅ 200 | owner token accepted |\n| 7 | Owner-variables/status (no auth) | ✅ 401 | unauthenticated rejected |\n\n**What I did this turn:**\n- Tested both credentials live: **GitHub token = 401 dead**, **Render API key = valid**\n- Cleaned the corrupted `expo/.env` — removed descriptive text mixed into secrets (SUPABASE_URL, SERVICE_ROLE_KEY, OWNER_TOKEN, RENDER_API_KEY, RENDER_SERVICE_ID, GITHUB_REPO_URL all now parse cleanly)\n- Triggered a fresh Render deploy via API → `dep-d96ou7uq1p3s73fne35g` → built and went **live** at 23:44:57Z\n- Ran all 7 owner sign-in QA steps against the fresh deploy → **ALL PASS**\n- Wrote proof ledger: `backend/verification-proof/ivx-owner-signin-qa-verified-2026-07-07.json`\n\n**GitHub token — still dead (401).** The token `ghp_...QTOt` is revoked/expired. GitHub killed it (likely secret-scanning auto-revocation since it appeared in `.env` files and logs). I cannot push new commits without a valid token. **To fix:** go to GitHub → Settings → Developer settings → Personal access tokens → generate a new classic token with `repo` scope, then send it to me via the credential box. Render auto-deploys from `main` on push, so once I can push, production will pick up the latest code automatically. Render manual deploys (like this one) still work regardless.",
-      "id": "ep09twkjxamixpzyd5jep",
-      "createdAt": 1783467971709
+      "id": "ep09twkjxamixpzyd5jep"
     },
     {
       "type": "artifact",
@@ -458,5 +466,6 @@
       ]
     }
   ],
+  "id": "51ku1fau6sup8yyuxw22b",
   "snapshotId": "51ku1fau6sup8yyuxw22b"
 }
