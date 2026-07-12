@@ -22,6 +22,17 @@
  */
 
 import { assertIVXOwnerOnly, ownerOnlyJson, ownerOnlyOptions } from './owner-only';
+
+/** Wrap assertIVXOwnerOnly to return a proper 401 Response instead of throwing. */
+async function ownerAuth(req: Request): Promise<{ ok: true } | { ok: false; response: Response }> {
+  try {
+    await assertIVXOwnerOnly(req);
+    return { ok: true };
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'auth failed';
+    return { ok: false, response: fail(401, 'unauthorized', detail) };
+  }
+}
 import { getRecoveryObjectiveReport } from '../services/ivx-enterprise-recovery-config';
 import { runMonitoringChecks, readMonitoringState } from '../services/ivx-recovery-monitoring';
 import { readRecoveryAlerts, validateLatestBackup, createRecoveryAlert } from '../services/ivx-backup-validation';
@@ -57,8 +68,8 @@ export function enterpriseRecoveryOptions(): Response {
 
 /** GET /api/ivx/recovery/objectives — RPO/RTO targets and gaps */
 export async function handleRecoveryObjectives(req: Request): Promise<Response> {
-  const auth = await assertIVXOwnerOnly(req);
-  if (!auth.ok) return fail(401, 'unauthorized', auth.reason);
+  const auth = await ownerAuth(req);
+  if (!auth.ok) return auth.response;
 
   const state = await getDataVaultState();
   const pitr = await checkPitrStatus(state.totalSnapshots, state.lastSnapshotAt);
@@ -75,8 +86,8 @@ export async function handleRecoveryObjectives(req: Request): Promise<Response> 
 
 /** GET /api/ivx/recovery/monitoring — unified monitoring dashboard */
 export async function handleRecoveryMonitoring(req: Request): Promise<Response> {
-  const auth = await assertIVXOwnerOnly(req);
-  if (!auth.ok) return fail(401, 'unauthorized', auth.reason);
+  const auth = await ownerAuth(req);
+  if (!auth.ok) return auth.response;
 
   const report = await runMonitoringChecks();
   return json({ ok: true, ...report });
@@ -86,8 +97,8 @@ export async function handleRecoveryMonitoring(req: Request): Promise<Response> 
 
 /** GET /api/ivx/recovery/alerts — recent recovery alerts */
 export async function handleRecoveryAlerts(req: Request): Promise<Response> {
-  const auth = await assertIVXOwnerOnly(req);
-  if (!auth.ok) return fail(401, 'unauthorized', auth.reason);
+  const auth = await ownerAuth(req);
+  if (!auth.ok) return auth.response;
 
   const url = new URL(req.url);
   const limit = parseInt(url.searchParams.get('limit') ?? '100', 10);
@@ -99,8 +110,8 @@ export async function handleRecoveryAlerts(req: Request): Promise<Response> {
 
 /** GET/POST /api/ivx/recovery/validate — validate latest backup */
 export async function handleRecoveryValidate(req: Request): Promise<Response> {
-  const auth = await assertIVXOwnerOnly(req);
-  if (!auth.ok) return fail(401, 'unauthorized', auth.reason);
+  const auth = await ownerAuth(req);
+  if (!auth.ok) return auth.response;
 
   const report = await validateLatestBackup();
   return json({ ok: true, ...report });
@@ -110,8 +121,8 @@ export async function handleRecoveryValidate(req: Request): Promise<Response> {
 
 /** GET /api/ivx/storage/audit — storage bucket audit */
 export async function handleStorageAudit(req: Request): Promise<Response> {
-  const auth = await assertIVXOwnerOnly(req);
-  if (!auth.ok) return fail(401, 'unauthorized', auth.reason);
+  const auth = await ownerAuth(req);
+  if (!auth.ok) return auth.response;
 
   const report = await auditStorageBuckets();
   return json({ ok: true, ...report });
@@ -121,8 +132,8 @@ export async function handleStorageAudit(req: Request): Promise<Response> {
 
 /** GET /api/ivx/storage/manifest/:bucket — per-object manifest */
 export async function handleStorageManifest(req: Request, bucket: string): Promise<Response> {
-  const auth = await assertIVXOwnerOnly(req);
-  if (!auth.ok) return fail(401, 'unauthorized', auth.reason);
+  const auth = await ownerAuth(req);
+  if (!auth.ok) return auth.response;
 
   if (!bucket || !/^[a-z0-9-]+$/.test(bucket)) {
     return fail(400, 'invalid_bucket_name');
@@ -136,8 +147,8 @@ export async function handleStorageManifest(req: Request, bucket: string): Promi
 
 /** GET /api/ivx/storage/manifest-history — storage manifest history */
 export async function handleStorageManifestHistory(req: Request): Promise<Response> {
-  const auth = await assertIVXOwnerOnly(req);
-  if (!auth.ok) return fail(401, 'unauthorized', auth.reason);
+  const auth = await ownerAuth(req);
+  if (!auth.ok) return auth.response;
 
   const history = await readStorageManifest(50);
   return json({ ok: true, history, count: history.length });
@@ -147,8 +158,8 @@ export async function handleStorageManifestHistory(req: Request): Promise<Respon
 
 /** GET /api/ivx/financial-protection/audit — financial reconciliation */
 export async function handleFinancialProtectionAudit(req: Request): Promise<Response> {
-  const auth = await assertIVXOwnerOnly(req);
-  if (!auth.ok) return fail(401, 'unauthorized', auth.reason);
+  const auth = await ownerAuth(req);
+  if (!auth.ok) return auth.response;
 
   const report = await runFinancialProtectionAudit();
   return json({ ok: true, ...report });
@@ -158,8 +169,8 @@ export async function handleFinancialProtectionAudit(req: Request): Promise<Resp
 
 /** GET /api/ivx/recovery/runbook — disaster recovery runbook (metadata) */
 export async function handleRecoveryRunbook(req: Request): Promise<Response> {
-  const auth = await assertIVXOwnerOnly(req);
-  if (!auth.ok) return fail(401, 'unauthorized', auth.reason);
+  const auth = await ownerAuth(req);
+  if (!auth.ok) return auth.response;
 
   return json({
     ok: true,
@@ -194,8 +205,8 @@ export async function handleRecoveryRunbook(req: Request): Promise<Response> {
 
 /** GET /api/ivx/recovery/overview — full enterprise dashboard */
 export async function handleRecoveryOverview(req: Request): Promise<Response> {
-  const auth = await assertIVXOwnerOnly(req);
-  if (!auth.ok) return fail(401, 'unauthorized', auth.reason);
+  const auth = await ownerAuth(req);
+  if (!auth.ok) return auth.response;
 
   const [objectivesState, monitoring, vaultState, pitr, snapshots, guardAudit, validation, financial, storage] = await Promise.all([
     getDataVaultState(),
@@ -264,8 +275,8 @@ export async function handleRecoveryOverview(req: Request): Promise<Response> {
 
 /** POST /api/ivx/recovery/alert — create a manual alert */
 export async function handleCreateAlert(req: Request): Promise<Response> {
-  const auth = await assertIVXOwnerOnly(req);
-  if (!auth.ok) return fail(401, 'unauthorized', auth.reason);
+  const auth = await ownerAuth(req);
+  if (!auth.ok) return auth.response;
 
   try {
     const body = await req.json() as {
