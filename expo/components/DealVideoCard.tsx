@@ -62,8 +62,8 @@ type InvestmentOption = { id: string; label: string; icon: React.ReactNode; tint
 function useInvestmentOptions(dealType: string | null | undefined): InvestmentOption[] {
   const t = (dealType ?? '').toLowerCase();
   const tokenized: InvestmentOption = { id: 'tokenized', label: 'Tokenized', icon: <Hexagon size={16} color={Colors.primary} />, tint: Colors.primary };
-  const jvDeals: InvestmentOption = { id: 'jvDeals', label: 'JV Deal', icon: <Users size={16} color='#448AFF' />, tint: '#448AFF' };
-  const buyers: InvestmentOption = { id: 'buyers', label: 'Buyer', icon: <Home size={16} color='#00C48C' />, tint: '#00C48C' };
+  const jvDeals: InvestmentOption = { id: 'jvDeals', label: 'JV Deal', icon: <Users size={16} color={Colors.blue} />, tint: Colors.blue };
+  const buyers: InvestmentOption = { id: 'buyers', label: 'Buyer', icon: <Home size={16} color={Colors.green} />, tint: Colors.green };
   switch (t) {
     case 'jv':
     case 'equity_split':
@@ -214,8 +214,8 @@ export default function DealVideoCard({ video }: { video: FeedVideo }) {
         <TouchableOpacity onPress={handleLike} testID={`deal-video-like-${video.id}`}>
           <Heart
             size={24}
-            color={liked ? '#FF3B5C' : '#fff'}
-            fill={liked ? '#FF3B5C' : 'transparent'}
+            color={liked ? Colors.error : '#fff'}
+            fill={liked ? Colors.error : 'transparent'}
           />
         </TouchableOpacity>
         <TouchableOpacity onPress={handleComment} testID={`deal-video-comment-${video.id}`}>
@@ -249,10 +249,10 @@ export default function DealVideoCard({ video }: { video: FeedVideo }) {
       {deal ? (
         <View style={styles.dealSection}>
           <View style={styles.chipsRow}>
-            {deal.expected_roi ? <Chip label="ROI" value={`${deal.expected_roi}%`} tint="#00C48C" /> : null}
+            {deal.expected_roi ? <Chip label="ROI" value={`${deal.expected_roi}%`} tint={Colors.green} /> : null}
             {deal.price && deal.price > 0 ? <Chip label="Value" value={compactCurrency(deal.price)} tint={Colors.primary} /> : null}
             {deal.min_investment && deal.min_investment > 0 ? (
-              <Chip label="Min" value={compactCurrency(deal.min_investment)} tint="#fff" />
+              <Chip label="Min" value={compactCurrency(deal.min_investment)} tint={Colors.text} />
             ) : null}
           </View>
           <View style={styles.optionsRow}>

@@ -43,6 +43,7 @@ import {
 import * as Haptics from 'expo-haptics';
 import { useQuery } from '@tanstack/react-query';
 
+import Colors from '@/constants/colors';
 import { fetchVideoFeed, fetchProjectReels, type FeedVideo } from '@/lib/video-feed';
 import {
   toggleProjectLike,
@@ -64,8 +65,8 @@ import ProjectCommentsSheet from '@/components/ProjectCommentsSheet';
 import ProjectShareSheet from '@/components/ProjectShareSheet';
 import { supabase } from '@/lib/supabase';
 
-const GOLD = '#E6C200';
-const LIKE_RED = '#FF3B5C';
+const GOLD = Colors.primary;
+const LIKE_RED = Colors.error;
 
 interface EngagementState {
   likeCount: number;
@@ -98,8 +99,8 @@ function compactCurrency(value: number): string {
 function useInvestmentOptions(dealType: string | null | undefined) {
   const t = (dealType ?? '').toLowerCase();
   const tokenized = { id: 'tokenized', label: 'Tokenized', icon: <Hexagon size={16} color={GOLD} />, tint: GOLD };
-  const jvDeals = { id: 'jvDeals', label: 'JV Deal', icon: <Users size={16} color='#4A90D9' />, tint: '#4A90D9' };
-  const buyers = { id: 'buyers', label: 'Buyer', icon: <Home size={16} color='#00C48C' />, tint: '#00C48C' };
+  const jvDeals = { id: 'jvDeals', label: 'JV Deal', icon: <Users size={16} color={Colors.blue} />, tint: Colors.blue };
+  const buyers = { id: 'buyers', label: 'Buyer', icon: <Home size={16} color={Colors.green} />, tint: Colors.green };
   switch (t) {
     case 'jv':
     case 'equity_split':
@@ -977,7 +978,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   metricLabel: {
-    color: '#999',
+    color: Colors.textTertiary,
     fontSize: 10.5,
     fontWeight: '500',
     marginTop: 5,

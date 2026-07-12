@@ -84,9 +84,9 @@ function computeAIScore(property: Property): { score: number; label: string; col
   score = Math.min(99, Math.max(40, Math.round(score)));
 
   if (score >= 85) return { score, label: 'Strong Buy', color: '#00C48C' };
-  if (score >= 70) return { score, label: 'Buy', color: '#4ECDC4' };
-  if (score >= 55) return { score, label: 'Hold', color: '#FFB800' };
-  return { score, label: 'Watch', color: '#FF6B6B' };
+  if (score >= 70) return { score, label: 'Buy', color: Colors.blue };
+  if (score >= 55) return { score, label: 'Hold', color: Colors.primary };
+  return { score, label: 'Watch', color: Colors.error };
 }
 
 const PROPERTY_TYPE_MAP: Record<string, TranslationKeys> = {

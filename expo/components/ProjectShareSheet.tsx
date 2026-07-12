@@ -109,7 +109,7 @@ const ProjectShareSheet = memo(function ProjectShareSheet({
       id: 'copy_link',
       label: 'Copy Link',
       icon: copied ? Check : Link,
-      color: '#448AFF',
+      color: Colors.blue,
       action: () => trackAndExecute('copy_link', handleCopyLink),
     },
     {
@@ -129,7 +129,7 @@ const ProjectShareSheet = memo(function ProjectShareSheet({
       id: 'sms',
       label: 'SMS',
       icon: Smartphone,
-      color: '#00E676',
+      color: Colors.green,
       action: () => trackAndExecute('sms', () => {
         const text = encodeURIComponent(`Check out ${projectTitle} on IVX: ${projectUrl}`);
         Platform.OS === 'web'

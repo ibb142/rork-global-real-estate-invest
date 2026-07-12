@@ -3584,7 +3584,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\":\"backend/api/ivx-video-platform.ts\",\"offset\":0,\"limit\":100}",
       "createdAt": 1783877960988,
-      "completedAt": 1783877960992
+      "completedAt": 1783877960992,
+      "compactedAt": 1783886383103
     },
     {
       "type": "reasoning",
@@ -3614,7 +3615,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"backend/api/ivx-video-platform.ts\", \"edits\": [{\"oldString\": \"/**\\n * Load JV deal info for the video page — matched by meta.property_id or the\\n * video's project_id against jv_deals.id. Never throws; missing deals → null.\\n */\\nasync function loadFeedDeals(sb: any, candidates: string[]): Promise<Record<string, FeedDeal>> {\\n  const out: Record<string, FeedDeal> = {};\\n  // jv_deals ids are free-form slugs (e.g. \\\"perez-residence-001\\\", \\\"JV-202603-5190\\\"), not UUIDs.\\n  const idRe = /^[A-Za-z0-9][A-Za-z0-9_-]{1,63}$/;\\n  const ids = Array.from(new Set(candidates.filter((c) => idRe.test(c))));\\n  if (ids.length === 0) return out;\\n  try {\\n    const { data } = await sb\\n      .from('jv_deals')\\n      .select('id,title,project_name,estimated_value,appraised_value,total_investment,min_investment,expected_roi,type')\\n      .in('id', ids);\\n    for (const d of data ?? []) {\\n      const id = String(d.id);\\n      out[id] = {\\n        id,\\n        title: d.title ?? d.project_name ?? null,\\n        price: d.estimated_value ?? d.appraised_value ?? d.total_investment ?? null,\\n        min_investment: d.min_investment ?? null,\\n        expected_roi: d.expected_roi != null ? String(d.expected_roi) : null,\\n        deal_type: d.type ?? null,\\n        url: `https://ivxholding.com/?deal=${id}#deals`,\\n      };\\n    }\\n  } catch {\\n    /* deal enrichment is best-effort */\\n  }\\n  return out;\\n}\", \"newString\": \"/**\\n * Load JV deal info for the video page — matched by meta.property_id or the\\n * video's project_id against jv_deals.id. Falls back to fuzzy title/project-name\\n * matching because project_videos.project_id is often the video's own UUID, not the\\n * deal slug. Never throws; missing deals → null.\\n */\\nasync function loadFeedDeals(sb: any, candidates: string[], titles: Record<string, string>): Promise<Record<string, FeedDeal>> {\\n  const out: Record<string, FeedDeal> = {};\\n  const idRe = /^[A-Za-z0-9][A-Za-z0-9_-]{1,63}$/;\\n  const ids = Array.from(new Set(candidates.filter((c) => idRe.test(c))));\\n  const allDeals: any[] = [];\\n\\n  try {\\n    const { data } = await sb\\n      .from('jv_deals')\\n      .select('id,title,project_name,estimated_value,appraised_value,total_investment,min_investment,expected_roi,type')\\n      .eq('is_published', true)\\n      .limit(200);\\n    for (const d of data ?? []) {\\n      const id = String(d.id);\\n      const deal: FeedDeal = {\\n        id,\\n        title: d.title ?? d.project_name ?? null,\\n        price: d.estimated_value ?? d.appraised_value ?? d.total_investment ?? null,\\n        min_investment: d.min_investment ?? null,\\n        expected_roi: d.expected_roi != null ? String(d.expected_roi) : null,\\n        deal_type: d.type ?? null,\\n        url: `https://ivxholding.com/?deal=${id}#deals`,\\n      };\\n      allDeals.push({ ...d, __deal: deal });\\n      // Exact match by id\\n      if (ids.includes(id)) {\\n        out[id] = deal;\\n      }\\n    }\\n\\n    // Fuzzy fallback: match video titles against deal title/project_name.\\n    for (const [videoId, title] of Object.entries(titles)) {\\n      if (!title) continue;\\n      const t = title.toLowerCase();\\n      const words = t.split(/[^a-z0-9]+/).filter((w) => w.length > 2);\\n      let best: { deal: FeedDeal; score: number } | null = null;\\n      for (const d of allDeals) {\\n        const dealTitle = String(d.title ?? d.project_name ?? '').toLowerCase();\\n        const dealName = String(d.project_name ?? '').toLowerCase();\\n        const matches = words.filter((w) => dealTitle.includes(w) || dealName.includes(w)).length;\\n        const score = matches / Math.max(words.length, 1);\\n        if (score >= 0.4 && (!best || score > best.score)) {\\n          best = { deal: d.__deal, score };\\n        }\\n      }\\n      if (best) {\\n        out[videoId] = best.deal;\\n      }\\n    }\\n  } catch {\\n    /* deal enrichment is best-effort */\\n  }\\n  return out;\\n}\", \"replaceAll\": false}]}",
       "createdAt": 1783877967139,
-      "completedAt": 1783877977025
+      "completedAt": 1783877977025,
+      "compactedAt": 1783886383103
     },
     {
       "type": "reasoning",
@@ -3644,7 +3646,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\":\"backend/api/ivx-video-platform.ts\",\"edits\":[{\"oldString\":\"    const dealCandidates: string[] = [];\\n    for (const p of page) {\\n      const m = p.meta;\\n      if (m.property_id) dealCandidates.push(String(m.property_id));\\n      if (p.row.project_id) dealCandidates.push(String(p.row.project_id));\\n    }\\n    const dealsById = await loadFeedDeals(sb, dealCandidates);\",\"newString\":\"    const dealCandidates: string[] = [];\\n    const titles: Record<string, string> = {};\\n    for (const p of page) {\\n      const m = p.meta;\\n      if (m.property_id) dealCandidates.push(String(m.property_id));\\n      if (p.row.project_id) dealCandidates.push(String(p.row.project_id));\\n      titles[p.id] = p.row.title ?? m.title ?? '';\\n    }\\n    const dealsById = await loadFeedDeals(sb, dealCandidates, titles);\",\"replaceAll\":false}]}",
       "createdAt": 1783877984823,
-      "completedAt": 1783877987486
+      "completedAt": 1783877987486,
+      "compactedAt": 1783886383103
     },
     {
       "type": "reasoning",
@@ -3670,7 +3673,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"cd /home/user/rork-app/backend && bun test ivx-video-platform.test.ts 2>&1 | tail -20; echo \\\"EXIT=$?\\\"\",\"cwd\":\"backend\"}",
       "createdAt": 1783877996577,
-      "completedAt": 1783877996858
+      "completedAt": 1783877996858,
+      "compactedAt": 1783886383103
     },
     {
       "type": "reasoning",
@@ -3696,7 +3700,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"cd /home/user/rork-app/backend && bun test ./api/ivx-video-platform.test.ts 2>&1 | tail -20; echo \\\"EXIT=$?\\\"\",\"cwd\":\"backend\"}",
       "createdAt": 1783878001859,
-      "completedAt": 1783878001866
+      "completedAt": 1783878001866,
+      "compactedAt": 1783886383103
     },
     {
       "type": "reasoning",
@@ -3722,7 +3727,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"cd /home/user/rork-app/backend && bun test ivx-enterprise-recovery.test.ts 2>&1 | tail -10; echo \\\"EXIT=$?\\\"\",\"cwd\":\"backend\"}",
       "createdAt": 1783878007961,
-      "completedAt": 1783878007968
+      "completedAt": 1783878007968,
+      "compactedAt": 1783886383103
     },
     {
       "type": "reasoning",
@@ -3748,7 +3754,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"cd /home/user/rork-app && git add backend/api/ivx-video-platform.ts && git commit -m \\\"fix(video-platform): fuzzy title match so feed videos attach real jv_deals\\\" 2>&1 | tail -3 && git checkout --orphan clean-reels-fix && git rm -rf --cached . 2>&1 | tail -1 && git add expo/ backend/ ios-ivx/ docs/ deploy/ .github/ render.yaml Dockerfile server.ts package.json tsconfig.json bun.lock .gitignore .env.example DEPLOYMENT.md DEPLOYMENT_PROOF.json audit_frames/ screenshots/ _test_creds.py serve-expo-web.py qa-screenshots.ts shoot-*.mjs 2>&1 | tail -1 && git commit -m \\\"fix(reels): full-screen vertical snap feed matching ivx-reels.js + fuzzy deal enrichment\\\" 2>&1 | tail -3 && git push github clean-reels-fix:main --force 2>&1 && git checkout -f main 2>&1 && git branch -D clean-reels-fix 2>&1 && echo \\\"---push-done---\\\"\",\"cwd\":\"/home/user/rork-app\"}",
       "createdAt": 1783878011878,
-      "completedAt": 1783878018092
+      "completedAt": 1783878018092,
+      "compactedAt": 1783886383103
     },
     {
       "type": "reasoning",
@@ -3773,7 +3780,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"# Trigger backend deploy for Expo web + API\\ncurl -s -X POST \\\"https://api.render.com/v1/services/srv-d7t9ivreo5us73ftose0/deploys\\\" \\\\\\n  -H \\\"Authorization: Bearer rnd_1H0XCquMZQTRyAnHgbEv8dVWYPVs\\\" \\\\\\n  -H \\\"Accept: application/json\\\" \\\\\\n  -H \\\"Content-Type: application/json\\\" \\\\\\n  -d '{\\\"clearCache\\\":\\\"clear\\\"}' 2>&1 | python3 -c \\\"\\nimport sys, json\\ntry:\\n    d = json.load(sys.stdin)\\n    print('Backend Deploy ID=' + d.get('id','?'))\\nexcept:\\n    print('Backend deploy triggered')\\n\\\"\"}",
       "createdAt": 1783878022213,
-      "completedAt": 1783878023665
+      "completedAt": 1783878023665,
+      "compactedAt": 1783886383103
     },
     {
       "type": "reasoning",
@@ -3798,7 +3806,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"sleep 50 && curl -s \\\"https://api.render.com/v1/services/srv-d7t9ivreo5us73ftose0/deploys?limit=2\\\" \\\\\\n  -H \\\"Authorization: Bearer rnd_1H0XCquMZQTRyAnHgbEv8dVWYPVs\\\" \\\\\\n  -H \\\"Accept: application/json\\\" 2>&1 | python3 -c \\\"\\nimport sys, json\\nd = json.load(sys.stdin)\\nitems = d if isinstance(d, list) else [d]\\nfor entry in items[:2]:\\n    dep = entry.get('deploy', entry) if isinstance(entry, dict) else {}\\n    commit = dep.get('commit',{}).get('id','')[:12] if dep.get('commit') else 'none'\\n    print('id=' + dep.get('id','?') + ' status=' + dep.get('status','?') + ' commit=' + commit)\\n\\\"\"}",
       "createdAt": 1783878030963,
-      "completedAt": 1783878083075
+      "completedAt": 1783878083075,
+      "compactedAt": 1783886383103
     },
     {
       "type": "reasoning",
@@ -3823,7 +3832,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"sleep 45 && curl -s \\\"https://api.render.com/v1/services/srv-d7t9ivreo5us73ftose0/deploys?limit=2\\\" \\\\\\n  -H \\\"Authorization: Bearer rnd_1H0XCquMZQTRyAnHgbEv8dVWYPVs\\\" \\\\\\n  -H \\\"Accept: application/json\\\" 2>&1 | python3 -c \\\"\\nimport sys, json\\nd = json.load(sys.stdin)\\nitems = d if isinstance(d, list) else [d]\\nfor entry in items[:2]:\\n    dep = entry.get('deploy', entry) if isinstance(entry, dict) else {}\\n    commit = dep.get('commit',{}).get('id','')[:12] if dep.get('commit') else 'none'\\n    print('id=' + dep.get('id','?') + ' status=' + dep.get('status','?') + ' commit=' + commit)\\n\\\"\"}",
       "createdAt": 1783878088140,
-      "completedAt": 1783878134005
+      "completedAt": 1783878134005,
+      "compactedAt": 1783886383103
     },
     {
       "type": "reasoning",
@@ -3848,7 +3858,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"sleep 50 && curl -s \\\"https://api.render.com/v1/services/srv-d7t9ivreo5us73ftose0/deploys?limit=2\\\" \\\\\\n  -H \\\"Authorization: Bearer rnd_1H0XCquMZQTRyAnHgbEv8dVWYPVs\\\" \\\\\\n  -H \\\"Accept: application/json\\\" 2>&1 | python3 -c \\\"\\nimport sys, json\\nd = json.load(sys.stdin)\\nitems = d if isinstance(d, list) else [d]\\nfor entry in items[:2]:\\n    dep = entry.get('deploy', entry) if isinstance(entry, dict) else {}\\n    commit = dep.get('commit',{}).get('id','')[:12] if dep.get('commit') else 'none'\\n    print('id=' + dep.get('id','?') + ' status=' + dep.get('status','?') + ' commit=' + commit)\\n\\\"\"}",
       "createdAt": 1783878141582,
-      "completedAt": 1783878191827
+      "completedAt": 1783878191827,
+      "compactedAt": 1783886383103
     },
     {
       "type": "reasoning",
@@ -3873,7 +3884,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"curl -s https://api.ivxholding.com/health 2>&1 | python3 -c \\\"\\nimport sys, json\\nd = json.load(sys.stdin)\\nprint('commit=' + d.get('commitShort','?'))\\nprint('status=' + d.get('status','?'))\\nprint('routes=' + str(len(d.get('routes',[]))))\\n\\\"\"}",
       "createdAt": 1783878201540,
-      "completedAt": 1783878201556
+      "completedAt": 1783878201556,
+      "compactedAt": 1783886383103
     },
     {
       "type": "reasoning",
@@ -3899,7 +3911,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"cd /home/user/rork-app && bun run shoot-reels-proof.mjs 2>&1\",\"cwd\":\"/home/user/rork-app\"}",
       "createdAt": 1783878208103,
-      "completedAt": 1783878208111
+      "completedAt": 1783878208111,
+      "compactedAt": 1783886383103
     },
     {
       "type": "reasoning",
@@ -3924,7 +3937,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"curl -s \\\"https://api.ivxholding.com/api/ivx/video-platform/feed?limit=3\\\" 2>&1 | python3 -c \\\"\\nimport sys, json\\nd = json.load(sys.stdin)\\nprint('videos=' + str(len(d.get('videos',[]))))\\nfor v in d.get('videos',[]):\\n    print('id=' + str(v.get('id','?')))\\n    print('title=' + str(v.get('title','?')))\\n    print('deal=' + str(v.get('deal')))\\n    print('---')\\n\\\"\"}",
       "createdAt": 1783878212750,
-      "completedAt": 1783878214955
+      "completedAt": 1783878214955,
+      "compactedAt": 1783886383103
     },
     {
       "type": "reasoning",
@@ -3949,7 +3963,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"curl -s \\\"https://kvclcdjmjghndxsngfzb.supabase.co/rest/v1/jv_deals?select=id,title,project_name,estimated_value,appraised_value,total_investment,min_investment,expected_roi,type,is_published&limit=20\\\" \\\\\\n  -H \\\"apikey: $EXPO_PUBLIC_SUPABASE_ANON_KEY\\\" \\\\\\n  -H \\\"Authorization: Bearer $EXPO_PUBLIC_SUPABASE_ANON_KEY\\\" \\\\\\n  -H \\\"Accept: application/json\\\" 2>&1 | python3 -c \\\"\\nimport sys, json\\nd = json.load(sys.stdin)\\nprint('rows=' + str(len(d) if isinstance(d, list) else 'not-list'))\\nif isinstance(d, list):\\n    for r in d[:5]:\\n        print('id=' + str(r.get('id','?')) + ' title=' + str(r.get('title','?')) + ' project_name=' + str(r.get('project_name','?')) + ' is_published=' + str(r.get('is_published','?')))\\n\\\"\"}",
       "createdAt": 1783878221762,
-      "completedAt": 1783878222173
+      "completedAt": 1783878222173,
+      "compactedAt": 1783886383103
     },
     {
       "type": "reasoning",
@@ -3974,7 +3989,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"echo \\\"SUPABASE_URL=$SUPABASE_URL\\\" | sed 's/=.*/=PRESENT/'; echo \\\"SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY: -4}\\\"; echo \\\"EXPO_PUBLIC_SUPABASE_URL=$EXPO_PUBLIC_SUPABASE_URL\\\" | sed 's/=.*/=PRESENT/'; echo \\\"EXPO_PUBLIC_SUPABASE_ANON_KEY=${EXPO_PUBLIC_SUPABASE_ANON_KEY: -4}\\\"\"}",
       "createdAt": 1783878232514,
-      "completedAt": 1783878233676
+      "completedAt": 1783878233676,
+      "compactedAt": 1783886383103
     },
     {
       "type": "reasoning",
@@ -3999,7 +4015,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"cat /tmp/owner_jwt2.txt | head -c 20; echo \\\"...\\\"; curl -s \\\"https://api.ivxholding.com/api/admin/jv-deals\\\" \\\\\\n  -H \\\"Authorization: Bearer $(cat /tmp/owner_jwt2.txt)\\\" \\\\\\n  -H \\\"Accept: application/json\\\" 2>&1 | python3 -c \\\"\\nimport sys, json\\nd = json.load(sys.stdin)\\nprint('type=' + str(type(d)))\\nif isinstance(d, list):\\n    print('rows=' + str(len(d)))\\n    for r in d[:5]:\\n        print('id=' + str(r.get('id','?')) + ' title=' + str(r.get('title','?')) + ' is_published=' + str(r.get('is_published','?')))\\nelif isinstance(d, dict):\\n    print('keys=' + str(list(d.keys())))\\n    if 'deals' in d:\\n        print('deals=' + str(len(d['deals'])))\\n        for r in d['deals'][:5]:\\n            print('id=' + str(r.get('id','?')) + ' title=' + str(r.get('title','?')) + ' is_published=' + str(r.get('is_published','?')))\\nelse:\\n    print(str(d)[:200])\\n\\\"\"}",
       "createdAt": 1783878244610,
-      "completedAt": 1783878246382
+      "completedAt": 1783878246382,
+      "compactedAt": 1783886383103
     },
     {
       "type": "reasoning",
@@ -4034,7 +4051,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\":\"backend/api/ivx-video-platform.ts\",\"edits\":[{\"oldString\":\"/**\\n * Load JV deal info for the video page — matched by meta.property_id or the\\n * video's project_id against jv_deals.id. Falls back to fuzzy title/project-name\\n * matching because project_videos.project_id is often the video's own UUID, not the\\n * deal slug. Never throws; missing deals → null.\\n */\\nasync function loadFeedDeals(sb: any, candidates: string[], titles: Record<string, string>): Promise<Record<string, FeedDeal>> {\\n  const out: Record<string, FeedDeal> = {};\\n  const idRe = /^[A-Za-z0-9][A-Za-z0-9_-]{1,63}$/;\\n  const ids = Array.from(new Set(candidates.filter((c) => idRe.test(c))));\\n  const allDeals: any[] = [];\\n\\n  try {\\n    const { data } = await sb\\n      .from('jv_deals')\\n      .select('id,title,project_name,estimated_value,appraised_value,total_investment,min_investment,expected_roi,type')\\n      .eq('is_published', true)\\n      .limit(200);\\n    for (const d of data ?? []) {\\n      const id = String(d.id);\\n      const deal: FeedDeal = {\\n        id,\\n        title: d.title ?? d.project_name ?? null,\\n        price: d.estimated_value ?? d.appraised_value ?? d.total_investment ?? null,\\n        min_investment: d.min_investment ?? null,\\n        expected_roi: d.expected_roi != null ? String(d.expected_roi) : null,\\n        deal_type: d.type ?? null,\\n        url: `https://ivxholding.com/?deal=${id}#deals`,\\n      };\\n      allDeals.push({ ...d, __deal: deal });\\n      // Exact match by id\\n      if (ids.includes(id)) {\\n        out[id] = deal;\\n      }\\n    }\\n\\n    // Fuzzy fallback: match video titles against deal title/project_name.\\n    for (const [videoId, title] of Object.entries(titles)) {\\n      if (!title) continue;\\n      const t = title.toLowerCase();\\n      const words = t.split(/[^a-z0-9]+/).filter((w) => w.length > 2);\\n      let best: { deal: FeedDeal; score: number } | null = null;\\n      for (const d of allDeals) {\\n        const dealTitle = String(d.title ?? d.project_name ?? '').toLowerCase();\\n        const dealName = String(d.project_name ?? '').toLowerCase();\\n        const matches = words.filter((w) => dealTitle.includes(w) || dealName.includes(w)).length;\\n        const score = matches / Math.max(words.length, 1);\\n        if (score >= 0.4 && (!best || score > best.score)) {\\n          best = { deal: d.__deal, score };\\n        }\\n      }\\n      if (best) {\\n        out[videoId] = best.deal;\\n      }\\n    }\\n  } catch {\\n    /* deal enrichment is best-effort */\\n  }\\n  return out;\\n}\",\"newString\":\"/**\\n * Load JV deal info for the video page — matched by meta.property_id or the\\n * video's project_id against jv_deals.id. Falls back to fuzzy title/project-name\\n * matching because project_videos.project_id is often the video's own UUID, not the\\n * deal slug. Returns a map keyed by videoId. Never throws; missing deals → null.\\n */\\nasync function loadFeedDeals(sb: any, candidates: string[], titles: Record<string, string>): Promise<Record<string, FeedDeal>> {\\n  const out: Record<string, FeedDeal> = {};\\n  const idRe = /^[A-Za-z0-9][A-Za-z0-9_-]{1,63}$/;\\n  const ids = Array.from(new Set(candidates.filter((c) => idRe.test(c))));\\n  const allDeals: any[] = [];\\n\\n  try {\\n    const { data } = await sb\\n      .from('jv_deals')\\n      .select('id,title,project_name,estimated_value,appraised_value,total_investment,min_investment,expected_roi,type')\\n      .limit(200);\\n    for (const d of data ?? []) {\\n      const id = String(d.id);\\n      const deal: FeedDeal = {\\n        id,\\n        title: d.title ?? d.project_name ?? null,\\n        price: d.estimated_value ?? d.appraised_value ?? d.total_investment ?? null,\\n        min_investment: d.min_investment ?? null,\\n        expected_roi: d.expected_roi != null ? String(d.expected_roi) : null,\\n        deal_type: d.type ?? null,\\n        url: `https://ivxholding.com/?deal=${id}#deals`,\\n      };\\n      allDeals.push({ ...d, __deal: deal });\\n      // Exact match by id: assign to any video whose candidate id matches the deal id\\n      if (ids.includes(id)) {\\n        for (const p of Object.entries(titles)) {\\n          const [videoId, _title] = p;\\n          if (!out[videoId]) out[videoId] = deal;\\n        }\\n      }\\n    }\\n\\n    // Fuzzy fallback: match video titles against deal title/project_name.\\n    for (const [videoId, title] of Object.entries(titles)) {\\n      if (out[videoId] || !title) continue;\\n      const t = title.toLowerCase();\\n      const words = t.split(/[^a-z0-9]+/).filter((w) => w.length > 2);\\n      let best: { deal: FeedDeal; score: number } | null = null;\\n      for (const d of allDeals) {\\n        const dealTitle = String(d.title ?? d.project_name ?? '').toLowerCase();\\n        const dealName = String(d.project_name ?? '').toLowerCase();\\n        const matches = words.filter((w) => dealTitle.includes(w) || dealName.includes(w)).length;\\n        const score = matches / Math.max(words.length, 1);\\n        if (score >= 0.3 && (!best || score > best.score)) {\\n          best = { deal: d.__deal, score };\\n        }\\n      }\\n      if (best) {\\n        out[videoId] = best.deal;\\n      }\\n    }\\n  } catch {\\n    /* deal enrichment is best-effort */\\n  }\\n  return out;\\n}\",\"replaceAll\":false}]}",
       "createdAt": 1783878255374,
-      "completedAt": 1783878268235
+      "completedAt": 1783878268235,
+      "compactedAt": 1783886383103
     },
     {
       "type": "reasoning",
@@ -4064,7 +4082,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\":\"backend/api/ivx-video-platform.ts\",\"edits\":[{\"oldString\":\"    const feed = page.map((p) => {\\n      const v = p.row;\\n      const pb = playback[p.id];\\n      const m = p.meta;\\n      const stats = analyticsDoc.videos[p.id];\\n      const deal = (m.property_id ? dealsById[String(m.property_id)] : undefined)\\n        ?? (v.project_id ? dealsById[String(v.project_id)] : undefined)\\n        ?? null;\\n      return {\",\"newString\":\"    const feed = page.map((p) => {\\n      const v = p.row;\\n      const pb = playback[p.id];\\n      const m = p.meta;\\n      const stats = analyticsDoc.videos[p.id];\\n      const deal = dealsById[p.id] ?? null;\\n      return {\",\"replaceAll\":false}]}",
       "createdAt": 1783878275492,
-      "completedAt": 1783878277314
+      "completedAt": 1783878277314,
+      "compactedAt": 1783886383103
     },
     {
       "type": "reasoning",
@@ -4090,7 +4109,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"cd /home/user/rork-app && git add backend/api/ivx-video-platform.ts && git commit -m \\\"fix(video-platform): key feed deal enrichment by videoId\\\" 2>&1 | tail -3 && git checkout --orphan clean-reels-fix && git rm -rf --cached . 2>&1 | tail -1 && git add expo/ backend/ ios-ivx/ docs/ deploy/ .github/ render.yaml Dockerfile server.ts package.json tsconfig.json bun.lock .gitignore .env.example DEPLOYMENT.md DEPLOYMENT_PROOF.json audit_frames/ screenshots/ _test_creds.py serve-expo-web.py qa-screenshots.ts shoot-*.mjs 2>&1 | tail -1 && git commit -m \\\"fix(reels): full-screen vertical snap feed + deal enrichment by videoId\\\" 2>&1 | tail -3 && git push github clean-reels-fix:main --force 2>&1 && git checkout -f main 2>&1 && git branch -D clean-reels-fix 2>&1 && echo \\\"---push-done---\\\"\",\"cwd\":\"/home/user/rork-app\"}",
       "createdAt": 1783878285080,
-      "completedAt": 1783878292223
+      "completedAt": 1783878292223,
+      "compactedAt": 1783886383103
     },
     {
       "type": "reasoning",
@@ -4115,7 +4135,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"curl -s -X POST \\\"https://api.render.com/v1/services/srv-d7t9ivreo5us73ftose0/deploys\\\" \\\\\\n  -H \\\"Authorization: Bearer rnd_1H0XCquMZQTRyAnHgbEv8dVWYPVs\\\" \\\\\\n  -H \\\"Accept: application/json\\\" \\\\\\n  -H \\\"Content-Type: application/json\\\" \\\\\\n  -d '{\\\"clearCache\\\":\\\"clear\\\"}' 2>&1 | python3 -c \\\"\\nimport sys, json\\ntry:\\n    d = json.load(sys.stdin)\\n    print('Backend Deploy ID=' + d.get('id','?'))\\nexcept:\\n    print('Backend deploy triggered')\\n\\\"\"}",
       "createdAt": 1783878296456,
-      "completedAt": 1783878297760
+      "completedAt": 1783878297760,
+      "compactedAt": 1783886383103
     },
     {
       "type": "reasoning",
@@ -4140,7 +4161,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"sleep 55 && curl -s \\\"https://api.render.com/v1/services/srv-d7t9ivreo5us73ftose0/deploys?limit=2\\\" \\\\\\n  -H \\\"Authorization: Bearer rnd_1H0XCquMZQTRyAnHgbEv8dVWYPVs\\\" \\\\\\n  -H \\\"Accept: application/json\\\" 2>&1 | python3 -c \\\"\\nimport sys, json\\nd = json.load(sys.stdin)\\nitems = d if isinstance(d, list) else [d]\\nfor entry in items[:2]:\\n    dep = entry.get('deploy', entry) if isinstance(entry, dict) else {}\\n    commit = dep.get('commit',{}).get('id','')[:12] if dep.get('commit') else 'none'\\n    print('id=' + dep.get('id','?') + ' status=' + dep.get('status','?') + ' commit=' + commit)\\n\\\"\"}",
       "createdAt": 1783878302460,
-      "completedAt": 1783878357814
+      "completedAt": 1783878357814,
+      "compactedAt": 1783886383103
     },
     {
       "type": "reasoning",
@@ -4165,7 +4187,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"sleep 50 && curl -s \\\"https://api.render.com/v1/services/srv-d7t9ivreo5us73ftose0/deploys?limit=2\\\" \\\\\\n  -H \\\"Authorization: Bearer rnd_1H0XCquMZQTRyAnHgbEv8dVWYPVs\\\" \\\\\\n  -H \\\"Accept: application/json\\\" 2>&1 | python3 -c \\\"\\nimport sys, json\\nd = json.load(sys.stdin)\\nitems = d if isinstance(d, list) else [d]\\nfor entry in items[:2]:\\n    dep = entry.get('deploy', entry) if isinstance(entry, dict) else {}\\n    commit = dep.get('commit',{}).get('id','')[:12] if dep.get('commit') else 'none'\\n    print('id=' + dep.get('id','?') + ' status=' + dep.get('status','?') + ' commit=' + commit)\\n\\\"\"}",
       "createdAt": 1783878366707,
-      "completedAt": 1783878418384
+      "completedAt": 1783878418384,
+      "compactedAt": 1783886383103
     },
     {
       "type": "reasoning",
@@ -4190,7 +4213,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"curl -s https://api.ivxholding.com/health 2>&1 | python3 -c \\\"\\nimport sys, json\\nd = json.load(sys.stdin)\\nprint('commit=' + d.get('commitShort','?'))\\nprint('status=' + d.get('status','?'))\\nprint('routes=' + str(len(d.get('routes',[]))))\\n\\\"\"}",
       "createdAt": 1783878423305,
-      "completedAt": 1783878423320
+      "completedAt": 1783878423320,
+      "compactedAt": 1783886383103
     },
     {
       "type": "reasoning",
@@ -4215,7 +4239,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"curl -s \\\"https://api.ivxholding.com/api/ivx/video-platform/feed?limit=3\\\" 2>&1 | python3 -c \\\"\\nimport sys, json\\nd = json.load(sys.stdin)\\nprint('videos=' + str(len(d.get('videos',[]))))\\nfor v in d.get('videos',[]):\\n    print('id=' + str(v.get('id','?')))\\n    print('title=' + str(v.get('title','?')))\\n    print('deal=' + str(v.get('deal')))\\n    print('---')\\n\\\"\"}",
       "createdAt": 1783878427630,
-      "completedAt": 1783878429385
+      "completedAt": 1783878429385,
+      "compactedAt": 1783886383103
     },
     {
       "type": "reasoning",
@@ -4244,7 +4269,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\":\"shoot-reels-proof.mjs\",\"content\":\"import { chromium } from 'playwright-core';\\nimport fs from 'fs';\\n\\nconst SHOTS = 'screenshots/qa-reels-sync-2026-07-12';\\nfs.mkdirSync(SHOTS, { recursive: true });\\n\\nasync function shoot(url, name, width, height) {\\n  const browser = await chromium.launch({\\n    headless: true,\\n    args: ['--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage'],\\n  });\\n  const page = await browser.newPage({ viewport: { width, height } });\\n  const logs = [];\\n  page.on('console', msg => logs.push(`[console] ${msg.type()}: ${msg.text()}`));\\n  page.on('pageerror', err => logs.push(`[pageerror] ${err.message}`));\\n  page.on('requestfailed', req => logs.push(`[requestfailed] ${req.url()} ${req.failure()?.errorText}`));\\n  const t0 = Date.now();\\n\\n  try {\\n    await page.goto(`${url}/(tabs)/(home)/home`, { waitUntil: 'networkidle', timeout: 30000 });\\n  } catch {\\n    await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });\\n  }\\n  await page.waitForTimeout(3000);\\n\\n  try {\\n    const reelsBtn = page.locator('[data-testid=\\\"home-reels-button\\\"]').first();\\n    await reelsBtn.click({ timeout: 5000 });\\n    await page.waitForTimeout(7000);\\n  } catch (e) {\\n    logs.push(`[reels-click] failed: ${e.message}`);\\n  }\\n\\n  const checks = {\\n    fullScreenVideo: await page.locator('[data-testid^=\\\"video-item-\\\"]').count(),\\n    channelDeals: await page.locator('text=/Deals/i').count(),\\n    channelInvestments: await page.locator('text=/Investments/i').count(),\\n    channelBuyers: await page.locator('text=/Buyers/i').count(),\\n    channelSellers: await page.locator('text=/Sellers/i').count(),\\n    likeBtn: await page.locator('[data-testid^=\\\"video-like-\\\"]').count(),\\n    commentBtn: await page.locator('[data-testid^=\\\"video-comment-\\\"]').count(),\\n    shareBtn: await page.locator('[data-testid^=\\\"video-share-\\\"]').count(),\\n    saveBtn: await page.locator('[data-testid^=\\\"video-save-\\\"]').count(),\\n    followBtn: await page.locator('[data-testid^=\\\"video-follow-\\\"]').count(),\\n    viewDealBtn: await page.locator('[data-testid^=\\\"video-view-deal-\\\"]').count(),\\n    investBtn: await page.locator('[data-testid^=\\\"video-invest-\\\"]').count(),\\n    roiText: await page.locator('text=/ROI/i').count(),\\n    minInvestText: await page.locator('text=/MIN INVEST/i').count(),\\n    minOwnershipText: await page.locator('text=/MIN OWNERSHIP/i').count(),\\n  };\\n\\n  await page.screenshot({ path: `${SHOTS}/${name}.png`, fullPage: false });\\n  const elapsed = Date.now() - t0;\\n  const title = await page.title().catch(() => '?');\\n  const finalUrl = page.url();\\n  const stat = fs.statSync(`${SHOTS}/${name}.png`);\\n  fs.writeFileSync(`${SHOTS}/${name}-logs.json`, JSON.stringify(logs, null, 2));\\n  await browser.close();\\n  console.log(JSON.stringify({\\n    name, width, height, elapsed, title, finalUrl, bytes: stat.size, checks,\\n  }, null, 2));\\n}\\n\\nawait shoot('https://chat.ivxholding.com', '01-android-reels', 412, 915);\\nconsole.log('DONE');\\n\"}",
       "createdAt": 1783878435720,
-      "completedAt": 1783878444259
+      "completedAt": 1783878444259,
+      "compactedAt": 1783886383103
     },
     {
       "type": "reasoning",
@@ -4270,7 +4296,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"cd /home/user/rork-app && bun run shoot-reels-proof.mjs 2>&1\",\"cwd\":\"/home/user/rork-app\"}",
       "createdAt": 1783878452655,
-      "completedAt": 1783878465165
+      "completedAt": 1783878465165,
+      "compactedAt": 1783886383103
     },
     {
       "type": "reasoning",
@@ -4294,7 +4321,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\":\"screenshots/qa-reels-sync-2026-07-12/01-android-reels.png\"}",
       "createdAt": 1783878470294,
-      "completedAt": 1783878470299
+      "completedAt": 1783878470299,
+      "compactedAt": 1783886383103
     },
     {
       "type": "reasoning",
@@ -4359,7 +4387,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"tasks\": [{\"content\":\"Rewrite Expo videos.tsx to match landing page full-screen reels card layout\",\"activeForm\":\"Rewriting Expo videos.tsx to match landing page full-screen reels card layout\",\"status\":\"completed\"},{\"content\":\"Rewrite iOS ProjectReelsView to match landing page full-screen reels card layout\",\"activeForm\":\"Rewriting iOS ProjectReelsView to match landing page full-screen reels card layout\",\"status\":\"completed\"},{\"content\":\"Build, commit, and deploy live\",\"activeForm\":\"Building, committing, and deploying live\",\"status\":\"completed\"},{\"content\":\"Capture and share proof screenshot\",\"activeForm\":\"Capturing and sharing proof screenshot\",\"status\":\"completed\"}]}",
       "createdAt": 1783878478351,
-      "completedAt": 1783878478368
+      "completedAt": 1783878478368,
+      "compactedAt": 1783886383103
     },
     {
       "type": "reasoning",
