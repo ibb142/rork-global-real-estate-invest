@@ -1,7 +1,7 @@
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import React, { useEffect } from "react";
-import { StyleSheet } from "react-native";
+import React, { useEffect, useState } from "react";
+import { StyleSheet, View, Text, ScrollView } from "react-native";
 import Colors from "@/constants/colors";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -53,7 +53,23 @@ const ROOT_STACK_SCREEN_OPTIONS = {
 
 const HEADERLESS_GROUP_OPTIONS = { headerShown: false } as const;
 
+function StartupDiagnostic({ error }: { error: Error }) {
+  return (
+    <View style={styles.diagnosticContainer}>
+      <Text style={styles.diagnosticTitle}>IVX Startup Diagnostic</Text>
+      <Text style={styles.diagnosticMessage}>{error.message}</Text>
+      <ScrollView style={styles.diagnosticScroll}>
+        <Text style={styles.diagnosticStack}>
+          {error.stack || "No stack trace available"}
+        </Text>
+      </ScrollView>
+    </View>
+  );
+}
+
 export default function RootLayout() {
+  const [startupError, setStartupError] = useState<Error | null>(null);
+
   useEffect(() => {
     try {
       installIVXIncidentCapture();
@@ -69,38 +85,76 @@ export default function RootLayout() {
     }
   }, []);
 
-  return (
-    <GestureHandlerRootView style={styles.root}>
-      <AppErrorBoundary fallbackTitle="IVX failed to start">
-        <QueryClientProvider client={queryClient}>
-          <I18nProvider>
-            <AuthProvider>
-              <AnalyticsProvider>
-                <IPXProvider>
-                  <EmailProvider>
-                    <StatusBar style="light" />
-                    <Stack screenOptions={ROOT_STACK_SCREEN_OPTIONS}>
-                      <Stack.Screen name="(tabs)" options={HEADERLESS_GROUP_OPTIONS} />
-                      <Stack.Screen name="admin" options={HEADERLESS_GROUP_OPTIONS} />
-                      <Stack.Screen name="ivx" options={HEADERLESS_GROUP_OPTIONS} />
-                      <Stack.Screen name="property" options={HEADERLESS_GROUP_OPTIONS} />
-                      <Stack.Screen name="landing" options={HEADERLESS_GROUP_OPTIONS} />
-                      <Stack.Screen name="login" options={HEADERLESS_GROUP_OPTIONS} />
-                      <Stack.Screen name="signup" options={HEADERLESS_GROUP_OPTIONS} />
-                      <Stack.Screen name="modal" options={{ presentation: "modal" }} />
-                    </Stack>
-                  </EmailProvider>
-                </IPXProvider>
-              </AnalyticsProvider>
-            </AuthProvider>
-          </I18nProvider>
-        </QueryClientProvider>
-      </AppErrorBoundary>
-    </GestureHandlerRootView>
-  );
+  if (startupError) {
+    return <StartupDiagnostic error={startupError} />;
+  }
+
+  try {
+    return (
+      <GestureHandlerRootView style={styles.root}>
+        <AppErrorBoundary fallbackTitle="IVX failed to start">
+          <QueryClientProvider client={queryClient}>
+            <I18nProvider>
+              <AuthProvider>
+                <AnalyticsProvider>
+                  <IPXProvider>
+                    <EmailProvider>
+                      <StatusBar style="light" />
+                      <Stack screenOptions={ROOT_STACK_SCREEN_OPTIONS}>
+                        <Stack.Screen name="(tabs)" options={HEADERLESS_GROUP_OPTIONS} />
+                        <Stack.Screen name="admin" options={HEADERLESS_GROUP_OPTIONS} />
+                        <Stack.Screen name="ivx" options={HEADERLESS_GROUP_OPTIONS} />
+                        <Stack.Screen name="property" options={HEADERLESS_GROUP_OPTIONS} />
+                        <Stack.Screen name="landing" options={HEADERLESS_GROUP_OPTIONS} />
+                        <Stack.Screen name="login" options={HEADERLESS_GROUP_OPTIONS} />
+                        <Stack.Screen name="signup" options={HEADERLESS_GROUP_OPTIONS} />
+                        <Stack.Screen name="modal" options={{ presentation: "modal" }} />
+                      </Stack>
+                    </EmailProvider>
+                  </IPXProvider>
+                </AnalyticsProvider>
+              </AuthProvider>
+            </I18nProvider>
+          </QueryClientProvider>
+        </AppErrorBoundary>
+      </GestureHandlerRootView>
+    );
+  } catch (err) {
+    console.error("[IVX] RootLayout render crash:", err);
+    const error = err instanceof Error ? err : new Error(String(err));
+    return <StartupDiagnostic error={error} />;
+  }
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: Colors.background },
+  diagnosticContainer: {
+    flex: 1,
+    backgroundColor: Colors.background,
+    padding: 24,
+    paddingTop: 60,
+  },
+  diagnosticTitle: {
+    color: Colors.text,
+    fontSize: 20,
+    fontWeight: "700" as const,
+    marginBottom: 12,
+  },
+  diagnosticMessage: {
+    color: Colors.primary,
+    fontSize: 14,
+    marginBottom: 16,
+  },
+  diagnosticScroll: {
+    flex: 1,
+    backgroundColor: Colors.backgroundSecondary,
+    borderRadius: 12,
+    padding: 12,
+  },
+  diagnosticStack: {
+    color: Colors.textTertiary,
+    fontSize: 11,
+    fontFamily: "monospace",
+  },
 });
 
