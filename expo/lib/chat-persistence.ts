@@ -11,6 +11,7 @@ import type { ChatMessage } from '@/types';
 
 const KEY_PREFIX = '@ivx_chat_history_v1:';
 const MAX_PERSISTED_MESSAGES = 80;
+const HISTORY_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours — stale conversations expire
 
 function storageKey(source: string): string {
   return `${KEY_PREFIX}${source}`;
@@ -36,7 +37,9 @@ function normalizeForPersistence(messages: ChatMessage[]): ChatMessage[] {
   });
 }
 
-/** Load a previously saved conversation for a chat source, or null if none. */
+/** Load a previously saved conversation for a chat source, or null if none.
+ *  Conversations older than 24h are automatically discarded so the user
+ *  always sees their most recent chat, not a stale thread from months ago. */
 export async function loadChatHistory(source: string): Promise<ChatMessage[] | null> {
   try {
     const raw = await AsyncStorage.getItem(storageKey(source));
@@ -49,7 +52,34 @@ export async function loadChatHistory(source: string): Promise<ChatMessage[] | n
       return null;
     }
 
-    return parsed.filter((message) => typeof message?.id === 'string' && typeof message?.message === 'string');
+    const now = Date.now();
+    const recent = parsed.filter((message) => {
+      if (typeof message?.id !== 'string' || typeof message?.message !== 'string') {
+        return false;
+      }
+      const ts = new Date(message.timestamp).getTime();
+      if (Number.isNaN(ts)) return true; // keep messages with unparseable timestamps
+      return now - ts < HISTORY_MAX_AGE_MS;
+    });
+
+    if (recent.length === 0) {
+      // All messages expired — clear stale storage so next load is clean
+      await AsyncStorage.removeItem(storageKey(source));
+      return null;
+    }
+
+    // Sort by timestamp ascending (oldest first, newest last) so the
+    // FlatList renders chronologically and scrollToEnd lands on the latest.
+    recent.sort((a, b) => {
+      const ta = new Date(a.timestamp).getTime();
+      const tb = new Date(b.timestamp).getTime();
+      if (Number.isNaN(ta) && Number.isNaN(tb)) return 0;
+      if (Number.isNaN(ta)) return 1;
+      if (Number.isNaN(tb)) return -1;
+      return ta - tb;
+    });
+
+    return recent;
   } catch (error) {
     console.log('[ChatPersistence] Load failed:', (error as Error)?.message);
     return null;

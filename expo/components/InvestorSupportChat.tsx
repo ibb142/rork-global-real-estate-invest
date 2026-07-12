@@ -107,7 +107,7 @@ export default function InvestorSupportChat({
     },
   ]);
   const [inputText, setInputText] = useState<string>('');
-  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connecting');
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connected');
   const [isAiTyping, setIsAiTyping] = useState<boolean>(false);
   const [isEscalating, setIsEscalating] = useState<boolean>(false);
   const [isKeyboardVisible, setIsKeyboardVisible] = useState<boolean>(false);
@@ -133,9 +133,32 @@ export default function InvestorSupportChat({
   }, [extraBottomInset, insets.bottom, isCard, isKeyboardVisible]);
 
   const scrollToLatest = useCallback((animated: boolean = true) => {
-    requestAnimationFrame(() => {
-      messagesListRef.current?.scrollToEnd({ animated });
-    });
+    // On web, requestAnimationFrame fires before the FlatList has measured
+    // dynamic message bubbles, so scrollToEnd lands at the wrong position.
+    // Using a small delay ensures the DOM has rendered before scrolling.
+    const doScroll = () => {
+      const list = messagesListRef.current;
+      if (!list) return;
+      if (Platform.OS === 'web') {
+        // On web, scrollToEnd is unreliable — use scrollToIndex with last item
+        try {
+          list.scrollToEnd({ animated });
+        } catch {
+          // Fallback: try scrollToEnd on next frame
+          requestAnimationFrame(() => {
+            try { list.scrollToEnd({ animated: false }); } catch { /* noop */ }
+          });
+        }
+      } else {
+        list.scrollToEnd({ animated });
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      setTimeout(doScroll, 50);
+    } else {
+      requestAnimationFrame(doScroll);
+    }
     isAtBottomRef.current = true;
     setShowJumpToLatest(false);
   }, []);
@@ -187,19 +210,11 @@ export default function InvestorSupportChat({
     void saveChatHistory(source, messages);
   }, [messages, source]);
 
+  // Instant connected state — no artificial delays. The previous
+  // 2-second connecting→waiting→connected sequence caused unnecessary
+  // loading spinners that blocked the chat UI on every open.
   useEffect(() => {
-    const connectTimer = setTimeout(() => {
-      setConnectionStatus('waiting');
-    }, 1000);
-
-    const agentTimer = setTimeout(() => {
-      setConnectionStatus('connected');
-    }, 2000);
-
-    return () => {
-      clearTimeout(connectTimer);
-      clearTimeout(agentTimer);
-    };
+    setConnectionStatus('connected');
   }, []);
 
   useEffect(() => {
@@ -609,6 +624,140 @@ export default function InvestorSupportChat({
 
   return (
     <View style={[styles.container, isCard && styles.containerCard, style]} testID={`${testIdPrefix}-container`}>
+      {/*
+        On web, KeyboardAvoidingView with behavior="height" causes layout
+        shifts that make the TextInput lose focus mid-typing, which is why
+        text disappears while typing. We skip it entirely on web where the
+        browser handles keyboard/viewport natively.
+      */}
+      {Platform.OS === 'web' ? (
+        <View style={styles.keyboardContainer}>
+          {renderConnectionStatus()}
+
+          {isCard ? (
+            <View
+              style={[styles.messagesContainer, styles.messagesContainerCard, { paddingHorizontal: 0 }]}
+              testID={`${testIdPrefix}-messages`}
+            >
+              {welcomeHeader}
+              {messages.map((item) => (
+                <View key={item.id}>
+                  {renderMessage({ item })}
+                </View>
+              ))}
+            </View>
+          ) : (
+            <View style={styles.listWrapper}>
+              <FlatList
+                ref={messagesListRef}
+                data={messages}
+                renderItem={renderMessage}
+                keyExtractor={keyExtractor}
+                style={[styles.messagesContainer, isCard && styles.messagesContainerCard]}
+                contentContainerStyle={[styles.messagesContent, contentStyle]}
+                ListHeaderComponent={welcomeHeader}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                initialNumToRender={12}
+                maxToRenderPerBatch={12}
+                windowSize={7}
+                onScroll={handleListScroll}
+                scrollEventThrottle={16}
+                onContentSizeChange={() => {
+                  if (isAtBottomRef.current) {
+                    scrollToLatest(false);
+                  }
+                }}
+                testID={`${testIdPrefix}-messages`}
+              />
+              <Animated.View
+                pointerEvents={showJumpToLatest ? 'auto' : 'none'}
+                style={[
+                  styles.jumpToLatestWrapper,
+                  {
+                    opacity: jumpButtonAnim,
+                    transform: [
+                      { scale: jumpButtonAnim.interpolate({ inputRange: [0, 1], outputRange: [0.6, 1] }) },
+                      { translateY: jumpButtonAnim.interpolate({ inputRange: [0, 1], outputRange: [12, 0] }) },
+                    ],
+                  },
+                ]}
+              >
+                <TouchableOpacity
+                  style={styles.jumpToLatestButton}
+                  onPress={() => {
+                    void Haptics.selectionAsync();
+                    scrollToLatest(true);
+                  }}
+                  activeOpacity={0.85}
+                  accessibilityRole="button"
+                  accessibilityLabel="Jump to latest message"
+                  testID={`${testIdPrefix}-jump-to-latest`}
+                >
+                  <ChevronDown size={22} color={Colors.black} />
+                </TouchableOpacity>
+              </Animated.View>
+            </View>
+          )}
+
+          <View style={styles.quickRepliesContainer}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={[styles.quickRepliesContent, { paddingHorizontal: isXs ? 12 : 16 }]}
+              keyboardShouldPersistTaps="handled"
+              testID={`${testIdPrefix}-quick-replies`}
+            >
+              {quickReplies.map((reply, index) => (
+                <TouchableOpacity
+                  key={`${reply}-${index}`}
+                  style={[styles.quickReplyButton, { paddingHorizontal: isXs ? 10 : 14, paddingVertical: isXs ? 6 : 8 }]}
+                  onPress={() => handleQuickReply(reply)}
+                  testID={`${testIdPrefix}-quick-reply-${index}`}
+                >
+                  <Text style={[styles.quickReplyText, { fontSize: isXs ? 11 : 13 }]}>{reply}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+
+          <View style={[styles.inputContainer, { paddingHorizontal: isXs ? 12 : 16, paddingBottom: composerBottomPadding }]}>
+            {renderAttachmentPreview()}
+            <View style={styles.inputWrapper}>
+              <TouchableOpacity
+                style={[styles.attachButton, { width: isXs ? 44 : 50, height: isXs ? 44 : 50 }]}
+                onPress={handleAttachPress}
+                disabled={isAiTyping}
+                accessibilityRole="button"
+                accessibilityLabel="Attach a file"
+                testID={`${testIdPrefix}-attach`}
+              >
+                <Paperclip size={isXs ? 18 : 20} color={isAiTyping ? Colors.textTertiary : Colors.textSecondary} />
+              </TouchableOpacity>
+              <TextInput
+                style={[styles.input, { fontSize: isXs ? 14 : 16, minHeight: isXs ? 44 : 50, paddingHorizontal: isXs ? 14 : 18 }]}
+                value={inputText}
+                onChangeText={setInputText}
+                placeholder={t('typeMessage')}
+                placeholderTextColor={Colors.inputPlaceholder}
+                multiline
+                maxLength={500}
+                testID={`${testIdPrefix}-input`}
+              />
+              <TouchableOpacity
+                style={[styles.sendButton, { width: isXs ? 44 : 50, height: isXs ? 44 : 50 }, !canSendMessage && styles.sendButtonDisabled]}
+                onPress={() => {
+                  void handleSend();
+                }}
+                disabled={!canSendMessage}
+                testID={`${testIdPrefix}-send`}
+              >
+                <Send size={isXs ? 18 : 20} color={canSendMessage ? Colors.black : Colors.textTertiary} />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      ) : (
       <KeyboardAvoidingView
         style={styles.keyboardContainer}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -644,7 +793,7 @@ export default function InvestorSupportChat({
               initialNumToRender={12}
               maxToRenderPerBatch={12}
               windowSize={7}
-              removeClippedSubviews={Platform.OS !== 'web'}
+              removeClippedSubviews
               onScroll={handleListScroll}
               scrollEventThrottle={16}
               onContentSizeChange={() => {
@@ -789,6 +938,7 @@ export default function InvestorSupportChat({
           </SafeAreaView>
         )}
       </KeyboardAvoidingView>
+      )}
     </View>
   );
 }
