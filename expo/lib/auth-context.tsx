@@ -593,10 +593,7 @@ function getOwnerRegistrationApiBaseUrls(): string[] {
   pushUniqueApiBaseUrl(urls, process.env.EXPO_PUBLIC_IVX_OWNER_AI_BASE_URL);
   pushUniqueApiBaseUrl(urls, process.env.EXPO_PUBLIC_IVX_API_BASE_URL);
   pushUniqueApiBaseUrl(urls, process.env.EXPO_PUBLIC_API_BASE_URL);
-  const projectId = (process.env.EXPO_PUBLIC_PROJECT_ID ?? '').trim();
-  if (projectId) {
-    pushUniqueApiBaseUrl(urls, `https://dev-${projectId}.ivxtest.dev`);
-  }
+  // Rork dev fallback URL removed — IVX uses canonical production URL only
   pushUniqueApiBaseUrl(urls, IVX_CANONICAL_API_BASE_URL);
   return urls;
 }

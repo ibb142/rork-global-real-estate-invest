@@ -8,12 +8,12 @@
  * providers without ever exposing or logging a secret.
  *
  * Fields:
- *  - name: env var name as it appears in Render / Rork / Supabase / etc.
+ *  - name: env var name as it appears in Render / Supabase / etc.
  *  - category: high-level grouping for the UI
  *  - sourceLocation: where the canonical value lives (where the owner edits it)
  *  - provider: provider category the credential belongs to
  *  - secret: true if the value must NEVER be displayed (only masked)
- *  - isPublic: true for EXPO_PUBLIC_* / RORK_PUBLIC_* / VITE_* (inlined to client)
+ *  - isPublic: true for EXPO_PUBLIC_* / VITE_* (inlined to client)
  *  - required: true if production needs this credential right now
  *  - devOnly: true if this is only used in dev / preview builds
  *  - rollbackOnly: true if kept around for rollback to the previous deploy
@@ -387,12 +387,10 @@ export const IVX_TRACKED_VARIABLE_METADATA: IVXTrackedVariableMetadata[] = [
     description: 'Toggle to bypass legacy Rork relays once IVX gateway is live.',
   }),
 
-  // --- Rork Runtime ---
-  // Phase 4d (2026-05-12): the 5 EXPO_PUBLIC_RORK_* entries
-  // (API_BASE_URL, AUTH_URL, FUNCTIONS_URL, APP_KEY, TOOLKIT_SECRET_KEY)
-  // are no longer tracked by the app. The client AI runtime does not read
-  // them. Owner must delete them from the Render/Expo dashboard manually;
-  // no app code reference remains.
+  // --- Rork Runtime (REMOVED 2026-07-12) ---
+  // All EXPO_PUBLIC_RORK_* env vars have been permanently removed from the
+  // app. The client AI runtime routes through api.ivxholding.com only.
+  // No app code reads any Rork env var at runtime.
 ];
 
 export const IVX_TRACKED_VARIABLE_NAMES: string[] = IVX_TRACKED_VARIABLE_METADATA.map((entry) => entry.name);
@@ -408,7 +406,7 @@ export function getTrackedVariableMetadata(name: string): IVXTrackedVariableMeta
  * they must be verified by the backend status endpoint.
  */
 export function detectPublicVariablePresence(name: string): boolean {
-  if (!name.startsWith('EXPO_PUBLIC_') && !name.startsWith('RORK_PUBLIC_') && !name.startsWith('VITE_')) {
+  if (!name.startsWith('EXPO_PUBLIC_') && !name.startsWith('VITE_')) {
     return false;
   }
   try {

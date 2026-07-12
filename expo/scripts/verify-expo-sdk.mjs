@@ -60,10 +60,9 @@ if (derivedSdkVersion && derivedSdkVersion !== '54.0.0') {
   warnings.push(`Expo Go currently requires SDK 54 for this app, but project resolves to ${derivedSdkVersion}.`);
 }
 
-// Rork independence cutover (2026-07-07): @rork-ai/toolkit-sdk and
-// withRorkMetro have been removed. The IVX app now uses the plain Expo
-// default Metro config. These checks are intentionally removed — the SDK
-// absence is the desired state, not a regression.
+// Rork SDK removal (2026-07-12): @rork-ai/toolkit-sdk and withRorkMetro
+// have been permanently removed. The IVX app uses the plain Expo default
+// Metro config. The SDK absence is the desired state, not a regression.
 if (/runtimeVersion\s*:/.test(appConfigSource)) {
   warnings.push('runtimeVersion found in app config. Expo Go expects the local SDK 54 Metro bundle.');
 }

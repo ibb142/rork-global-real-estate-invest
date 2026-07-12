@@ -104,12 +104,8 @@ function buildOwnerAIUrls(baseUrl: string): [string, string] {
 }
 
 function getDefaultProjectApiBaseUrl(): string {
-  const projectId = readTrimmedEnv('EXPO_PUBLIC_PROJECT_ID');
-  if (!projectId) {
-    return '';
-  }
-
-  return `https://dev-${projectId}.ivxtest.dev`;
+  // Rork dev fallback URL removed — IVX uses canonical production URL only
+  return '';
 }
 
 function getConfiguredProjectApiBaseUrl(): string {
@@ -161,8 +157,7 @@ function isDevLikeBaseUrl(baseUrl: string): boolean {
     return false;
   }
 
-  return normalized.includes('ivxtest.dev')
-    || normalized.includes('localhost')
+  return normalized.includes('localhost')
     || normalized.includes('127.0.0.1')
     || normalized.includes('192.168.')
     || normalized.includes('10.')
@@ -227,7 +222,7 @@ export function getIVXOwnerAIConfigAudit(): IVXOwnerAIConfigAudit {
   } else {
     // Owner AI must always reach the production backend (api.ivxholding.com)
     // because the AI provider gateway, key, and rate-limit account only live
-    // there. Dev hosts (ivxtest.dev / web preview origin / LAN IPs) cannot
+    // there. Dev hosts (web preview origin / LAN IPs) cannot
     // serve POST /api/ivx/owner-ai, so we never fall back to them.
     routingPolicy = 'development_canonical';
     activeBaseUrl = IVX_CANONICAL_API_BASE_URL;

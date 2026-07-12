@@ -13,8 +13,7 @@ const AWS_REGION = process.env.AWS_REGION || 'us-east-1';
 const S3_BUCKET = process.env.S3_BUCKET_NAME || '';
 const AWS_BACKUP_DEBUG = process.env.EXPO_PUBLIC_ANALYTICS_DEBUG === 'true';
 const IVX_APP_KEY = (process.env.EXPO_PUBLIC_IVX_APP_KEY || '').trim();
-const PROJECT_ID = (process.env.EXPO_PUBLIC_PROJECT_ID || '').trim();
-const TEAM_ID = (process.env.EXPO_PUBLIC_TEAM_ID || '').trim();
+const PROJECT_ID = (process.env.EXPO_PUBLIC_PROJECT_ID || 'ivx-holdings').trim();
 
 function backupLog(...args: unknown[]): void {
   if (__DEV__ && AWS_BACKUP_DEBUG) {
@@ -251,9 +250,7 @@ class AWSAnalyticsBackup {
       if (PROJECT_ID) {
         headers['x-ivx-project-id'] = PROJECT_ID;
       }
-      if (TEAM_ID) {
-        headers['x-ivx-team-id'] = TEAM_ID;
-      }
+      // Team ID header removed — IVX uses project-scoped auth only
 
       const resp = await fetch(this.apiEndpoint, {
         method: 'POST',

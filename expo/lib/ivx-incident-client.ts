@@ -177,7 +177,7 @@ async function postIncident(payload: IngestPayload): Promise<void> {
       body: JSON.stringify({
         ...payload,
         traceId: payload.traceId ?? installedTraceId,
-        buildId: payload.buildId ?? (process.env.EXPO_PUBLIC_PROJECT_ID ?? null),
+        buildId: payload.buildId ?? 'ivx-holdings',
       }),
       signal: controller.signal,
     });

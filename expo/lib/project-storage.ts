@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getAuthUserId } from './auth-store';
 
-const PROJECT_ID = process.env.EXPO_PUBLIC_PROJECT_ID || 'default';
+const PROJECT_ID = 'ivx-holdings';
 const ISOLATION_VERSION = 'v1';
 const INTEGRITY_KEY = `@ivx_storage_integrity_${PROJECT_ID}_${ISOLATION_VERSION}`;
 
@@ -223,9 +223,7 @@ export async function runStorageIntegrityCheck(): Promise<{
 }> {
   const issues: string[] = [];
 
-  if (!PROJECT_ID || PROJECT_ID === 'default') {
-    issues.push('EXPO_PUBLIC_PROJECT_ID is not set — storage isolation may not work correctly');
-  }
+  // PROJECT_ID is hardcoded to 'ivx-holdings' — always set, always valid
 
   const audit = await auditStorageKeys();
 

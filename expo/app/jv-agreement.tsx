@@ -303,7 +303,7 @@ export default function JVAgreementScreen() {
       const json = JSON.stringify(deals);
       await Promise.all([
         AsyncStorage.setItem('ivx_jv_agreements_cache', json),
-        AsyncStorage.setItem(`@ivx_p_${process.env.EXPO_PUBLIC_PROJECT_ID || 'default'}::jv_deals_v2`, json),
+        AsyncStorage.setItem(`@ivx_p_ivx-holdings::jv_deals_v2`, json),
       ]);
       console.log('[JV] Persisted', deals.length, 'deals to BOTH cache keys (backup + primary)');
     } catch (err) {

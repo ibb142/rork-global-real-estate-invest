@@ -58,7 +58,7 @@ const CONFIGURED_ENV_NAMES = new Set<string>([
   'EXPO_PUBLIC_IVX_API_BASE_URL',
   'EXPO_PUBLIC_IVX_AI_GATEWAY_URL',
   'EXPO_PUBLIC_PROJECT_ID',
-  'EXPO_PUBLIC_TEAM_ID',
+  'EXPO_PUBLIC_API_BASE_URL',
 ]);
 
 function isEnvConfigured(name: string): boolean {
@@ -144,8 +144,8 @@ export const DEVELOPER_HANDOFF_CATEGORIES: IntegrationCategory[] = [
         category: 'platform-security',
         envVariables: [
           env('EXPO_PUBLIC_IVX_API_BASE_URL', 'Base URL for IVX Holdings API requests', 'https://api.ivxholding.com'),
-          env('EXPO_PUBLIC_PROJECT_ID', 'Current project identifier', 'jh1qrutuhy6vu1bkysoln'),
-          env('EXPO_PUBLIC_TEAM_ID', 'Current team identifier', 'team_123'),
+          env('EXPO_PUBLIC_PROJECT_ID', 'Current project identifier', 'ivx-holdings'),
+          env('EXPO_PUBLIC_API_BASE_URL', 'IVX API base URL', 'https://api.ivxholding.com'),
         ],
         endpoints: ['/app-guide', '/system-health', '/analytics-report'],
         docsUrl: 'https://ivxholding.com',
@@ -216,8 +216,8 @@ export const DEVELOPER_HANDOFF_CATEGORIES: IntegrationCategory[] = [
         category: 'growth-intelligence',
         envVariables: [
           env('EXPO_PUBLIC_IVX_AI_GATEWAY_URL', 'AI gateway base URL used by the app', 'https://ai.ivxholding.com'),
-          env('EXPO_PUBLIC_PROJECT_ID', 'Project identifier for gateway-scoped requests', 'jh1qrutuhy6vu1bkysoln'),
-          env('EXPO_PUBLIC_TEAM_ID', 'Team identifier for gateway-scoped requests', 'team_123'),
+          env('EXPO_PUBLIC_PROJECT_ID', 'Project identifier', 'ivx-holdings'),
+          env('EXPO_PUBLIC_API_BASE_URL', 'IVX API base URL', 'https://api.ivxholding.com'),
         ],
         endpoints: ['/ai-gallery', '/ai-automation-report', '/global-intelligence'],
         docsUrl: 'https://ivxholding.com',

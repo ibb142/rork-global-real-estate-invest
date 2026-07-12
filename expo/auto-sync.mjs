@@ -2,10 +2,10 @@
 import 'dotenv/config';
 /**
  * IVX Holdings — Auto Sync Watcher
- * 
+ *
  * Watches for file changes and automatically syncs to GitHub.
  * Batches changes over a configurable interval to avoid excessive commits.
- * 
+ *
  * Usage:
  *   GITHUB_TOKEN=ghp_xxx node auto-sync.mjs
  *   GITHUB_TOKEN=ghp_xxx node auto-sync.mjs --interval 120
@@ -21,13 +21,10 @@ const { syncRoot: PROJECT_ROOT, appRoot: WORKSPACE_ROOT, appPrefix } = getSyncPa
 
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 
-// ── IVX Deployment Authority kill switch ─────────────────────────────────
-// Ivan is owner/final authority. Rork auto-sync/auto-push is OFF by default.
-// It only runs when EXPLICITLY enabled by the owner with:
-//   RORK_AUTO_SYNC_ENABLED=true node auto-sync.mjs
-// This makes IVX AI the primary deployment controller and Rork a manual/backup
-// developer only. Without the flag, Rork will NEVER auto-commit or auto-push.
-const RORK_AUTO_SYNC_ENABLED = process.env.RORK_AUTO_SYNC_ENABLED === 'true';
+// ── IVX Deployment Authority ─────────────────────────────────────────────
+// Auto-sync is OFF by default. Owner controls deployment.
+// Enable with: IVX_AUTO_SYNC_ENABLED=true node auto-sync.mjs
+const AUTO_SYNC_ENABLED = process.env.IVX_AUTO_SYNC_ENABLED === 'true';
 const SYNC_SCRIPT = join(WORKSPACE_ROOT, 'sync-github.mjs');
 const STATE_DIR = join(WORKSPACE_ROOT, 'tmp');
 const STATE_FILE = join(STATE_DIR, 'sync-state.json');
@@ -36,13 +33,8 @@ const args = process.argv.slice(2);
 const ONCE = args.includes('--once');
 
 // ── Owner-approved one-off manual sync ───────────────────────────────────
-// Explicit, single, owner-triggered push. Allowed even when
-// RORK_AUTO_SYNC_ENABLED is unset (e.g. the owner backend route or a manual
-// `--owner-approved` run). This NEVER starts the background watcher and NEVER
-// enables auto-push — it performs exactly one sync and exits.
 const OWNER_APPROVED_SYNC =
   process.env.IVX_OWNER_APPROVED_SYNC === 'true' || args.includes('--owner-approved');
-// A manual one-off is any explicit single-shot request (owner-approved or --once).
 const MANUAL_ONE_OFF = OWNER_APPROVED_SYNC || ONCE;
 const intervalIdx = args.indexOf('--interval');
 const INTERVAL_SECONDS = intervalIdx !== -1 && args[intervalIdx + 1]
@@ -94,7 +86,6 @@ function normalizeWatchedPath(filePath) {
   if (appPrefix && filePath.startsWith(`${appPrefix}/`)) {
     return filePath.slice(appPrefix.length + 1);
   }
-
   return filePath;
 }
 
@@ -120,12 +111,9 @@ function getChangeSummary(changedFiles) {
 }
 
 async function runSync(changedFiles = []) {
-  // Allow the sync when EITHER background auto-sync is explicitly enabled by the
-  // owner, OR this is an explicit owner-approved one-off manual sync. The latter
-  // does not depend on RORK_AUTO_SYNC_ENABLED at all.
-  if (!RORK_AUTO_SYNC_ENABLED && !MANUAL_ONE_OFF) {
-    console.log('[sync] BLOCKED: Rork auto-sync is disabled (owner controls deployment).');
-    console.log('[sync] To allow a one-off Rork sync, run with --owner-approved (or IVX_OWNER_APPROVED_SYNC=true).');
+  if (!AUTO_SYNC_ENABLED && !MANUAL_ONE_OFF) {
+    console.log('[sync] BLOCKED: Auto-sync is disabled (owner controls deployment).');
+    console.log('[sync] To allow a one-off sync, run with --owner-approved (or IVX_OWNER_APPROVED_SYNC=true).');
     return false;
   }
 
@@ -168,9 +156,6 @@ async function runSync(changedFiles = []) {
 }
 
 async function watchAndSync() {
-  // Owner-approved one-off manual sync: run a single push and exit. This path
-  // is allowed without RORK_AUTO_SYNC_ENABLED and NEVER starts the watcher, so
-  // there is no background auto-push.
   if (MANUAL_ONE_OFF) {
     if (!GITHUB_TOKEN) {
       console.error('GITHUB_TOKEN is not set');
@@ -183,15 +168,14 @@ async function watchAndSync() {
     process.exit(ok ? 0 : 1);
   }
 
-  // Background watcher is still owner-gated and OFF by default.
-  if (!RORK_AUTO_SYNC_ENABLED) {
+  if (!AUTO_SYNC_ENABLED) {
     console.log('\n========================================');
     console.log('  IVX Deployment Authority');
-    console.log('  Rork auto-sync/auto-push is DISABLED.');
+    console.log('  Auto-sync/auto-push is DISABLED.');
     console.log('  Ivan (owner) + IVX AI control deployment.');
     console.log('  Run a one-off owner-approved sync with --owner-approved');
     console.log('  (or IVX_OWNER_APPROVED_SYNC=true). Background auto-push');
-    console.log('  still requires RORK_AUTO_SYNC_ENABLED=true.');
+    console.log('  still requires IVX_AUTO_SYNC_ENABLED=true.');
     console.log('========================================\n');
     process.exit(0);
   }
@@ -213,7 +197,7 @@ async function watchAndSync() {
   let pendingChanges = new Set();
   let syncTimer = null;
 
-  function schedulSync() {
+  function scheduleSync() {
     if (syncTimer) return;
     syncTimer = setTimeout(async () => {
       const files = [...pendingChanges];
@@ -238,66 +222,17 @@ async function watchAndSync() {
         const relPath = toSyncRelativePath(PROJECT_ROOT, absolutePath);
         console.log(`[watch] ${eventType}: ${relPath}`);
         pendingChanges.add(relPath);
-        schedulSync();
+        scheduleSync();
       });
-      console.log(`[watch] Watching: ${dir}/`);
     } catch (err) {
-      console.warn(`[watch] Cannot watch ${dir}: ${err.message}`);
+      console.warn(`[watch] Failed to watch ${dir}: ${err.message}`);
     }
   }
 
-  const rootFiles = [
-    'package.json',
-    'app.json',
-    'tsconfig.json',
-    'Dockerfile',
-    'babel.config.js',
-    'metro.config.js',
-    'eslint.config.js',
-    'expo-env.d.ts',
-    'README.md',
-    'PLAN.md',
-    'pipeline.mjs',
-    'sync-github.mjs',
-    'verify-sync.mjs',
-    'auto-sync.mjs',
-  ];
-  try {
-    watch(WORKSPACE_ROOT, { recursive: false }, (eventType, filename) => {
-      if (filename && rootFiles.includes(filename)) {
-        const relPath = toSyncRelativePath(PROJECT_ROOT, join(WORKSPACE_ROOT, filename));
-        console.log(`[watch] ${eventType}: ${relPath}`);
-        pendingChanges.add(relPath);
-        schedulSync();
-      }
-    });
-  } catch {}
-
-  if (PROJECT_ROOT !== WORKSPACE_ROOT) {
-    const repoRootFiles = ['PLAN.md', 'ivx.json', '.gitignore'];
-    try {
-      watch(PROJECT_ROOT, { recursive: false }, (eventType, filename) => {
-        if (filename && repoRootFiles.includes(filename)) {
-          const relPath = toSyncRelativePath(PROJECT_ROOT, join(PROJECT_ROOT, filename));
-          console.log(`[watch] ${eventType}: ${relPath}`);
-          pendingChanges.add(relPath);
-          schedulSync();
-        }
-      });
-    } catch {}
-  }
-
-  console.log('\n[watch] Ready. Waiting for changes...\n');
-
-  process.on('SIGINT', () => {
-    console.log('\n[watch] Shutting down...');
-    if (pendingChanges.size > 0) {
-      console.log(`[watch] ${pendingChanges.size} unsaved changes — running final sync...`);
-      void runSync([...pendingChanges]).then(() => process.exit(0));
-    } else {
-      process.exit(0);
-    }
-  });
+  console.log(`\n[watch] Watching for changes... (Ctrl+C to stop)`);
 }
 
-void watchAndSync();
+watchAndSync().catch((err) => {
+  console.error('Fatal error:', err);
+  process.exit(1);
+});

@@ -102,20 +102,20 @@ function buildKeys(): ApiKeyItem[] {
     {
       id: 'project_id',
       label: 'Project ID',
-      value: process.env.EXPO_PUBLIC_PROJECT_ID ?? '',
+      value: 'ivx-holdings',
       description: 'IVX platform project identifier',
       category: 'Platform',
       isSensitive: false,
-      status: process.env.EXPO_PUBLIC_PROJECT_ID ? 'system' : 'missing',
+      status: 'system',
     },
     {
       id: 'team_id',
       label: 'Team ID',
-      value: process.env.EXPO_PUBLIC_TEAM_ID ?? '',
+      value: 'ivx-owner',
       description: 'IVX platform team identifier',
       category: 'Platform',
       isSensitive: false,
-      status: process.env.EXPO_PUBLIC_TEAM_ID ? 'system' : 'missing',
+      status: 'system',
     },
   ];
 }
