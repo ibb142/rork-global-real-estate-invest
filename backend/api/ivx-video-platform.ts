@@ -163,22 +163,25 @@ type FeedDeal = {
 
 /**
  * Load JV deal info for the video page — matched by meta.property_id or the
- * video's project_id against jv_deals.id. Never throws; missing deals → null.
+ * video's project_id against jv_deals.id. Falls back to fuzzy title/project-name
+ * matching because project_videos.project_id is often the video's own UUID, not the
+ * deal slug. Never throws; missing deals → null.
  */
-async function loadFeedDeals(sb: any, candidates: string[]): Promise<Record<string, FeedDeal>> {
+async function loadFeedDeals(sb: any, candidates: string[], titles: Record<string, string>): Promise<Record<string, FeedDeal>> {
   const out: Record<string, FeedDeal> = {};
-  // jv_deals ids are free-form slugs (e.g. "perez-residence-001", "JV-202603-5190"), not UUIDs.
   const idRe = /^[A-Za-z0-9][A-Za-z0-9_-]{1,63}$/;
   const ids = Array.from(new Set(candidates.filter((c) => idRe.test(c))));
-  if (ids.length === 0) return out;
+  const allDeals: any[] = [];
+
   try {
     const { data } = await sb
       .from('jv_deals')
       .select('id,title,project_name,estimated_value,appraised_value,total_investment,min_investment,expected_roi,type')
-      .in('id', ids);
+      .eq('is_published', true)
+      .limit(200);
     for (const d of data ?? []) {
       const id = String(d.id);
-      out[id] = {
+      const deal: FeedDeal = {
         id,
         title: d.title ?? d.project_name ?? null,
         price: d.estimated_value ?? d.appraised_value ?? d.total_investment ?? null,
@@ -187,6 +190,31 @@ async function loadFeedDeals(sb: any, candidates: string[]): Promise<Record<stri
         deal_type: d.type ?? null,
         url: `https://ivxholding.com/?deal=${id}#deals`,
       };
+      allDeals.push({ ...d, __deal: deal });
+      // Exact match by id
+      if (ids.includes(id)) {
+        out[id] = deal;
+      }
+    }
+
+    // Fuzzy fallback: match video titles against deal title/project_name.
+    for (const [videoId, title] of Object.entries(titles)) {
+      if (!title) continue;
+      const t = title.toLowerCase();
+      const words = t.split(/[^a-z0-9]+/).filter((w) => w.length > 2);
+      let best: { deal: FeedDeal; score: number } | null = null;
+      for (const d of allDeals) {
+        const dealTitle = String(d.title ?? d.project_name ?? '').toLowerCase();
+        const dealName = String(d.project_name ?? '').toLowerCase();
+        const matches = words.filter((w) => dealTitle.includes(w) || dealName.includes(w)).length;
+        const score = matches / Math.max(words.length, 1);
+        if (score >= 0.4 && (!best || score > best.score)) {
+          best = { deal: d.__deal, score };
+        }
+      }
+      if (best) {
+        out[videoId] = best.deal;
+      }
     }
   } catch {
     /* deal enrichment is best-effort */
@@ -288,12 +316,14 @@ export async function handlePlatformFeed(req: Request): Promise<Response> {
     const page = composed.slice(offset, offset + limit);
     const pageIds = page.map((p) => p.id);
     const dealCandidates: string[] = [];
+    const titles: Record<string, string> = {};
     for (const p of page) {
       const m = p.meta;
       if (m.property_id) dealCandidates.push(String(m.property_id));
       if (p.row.project_id) dealCandidates.push(String(p.row.project_id));
+      titles[p.id] = p.row.title ?? m.title ?? '';
     }
-    const dealsById = await loadFeedDeals(sb, dealCandidates);
+    const dealsById = await loadFeedDeals(sb, dealCandidates, titles);
     const viewerFollowing = new Set(followState.following);
     void profile;
     let likedSet = new Set<string>();
