@@ -475,7 +475,11 @@ export async function deleteBroadcast(id: string): Promise<boolean> {
 
 // ─── 6. Roles & Permissions ──────────────────────────────────────────────────
 
-export type RoleName = 'owner' | 'admin' | 'analyst' | 'investor' | 'viewer';
+export type RoleName =
+  | 'owner' | 'ivx_staff' | 'admin' | 'member' | 'investor'
+  | 'buyer' | 'jv_partner' | 'influencer' | 'realtor' | 'broker'
+  | 'agent' | 'tokenized_investor' | 'lender' | 'auditor'
+  | 'analyst' | 'viewer';
 
 export type Permission =
   | 'deals:read' | 'deals:write'
@@ -484,12 +488,34 @@ export type Permission =
   | 'revenue:read' | 'revenue:write'
   | 'broadcast:send'
   | 'settings:write'
-  | 'users:manage';
+  | 'users:manage'
+  | 'members:read' | 'members:write'
+  | 'investors:read' | 'investors:write'
+  | 'properties:read' | 'properties:write'
+  | 'transactions:read' | 'transactions:write'
+  | 'variables:read' | 'variables:write'
+  | 'developer:read' | 'developer:write'
+  | 'ai:chat'
+  | 'media:upload'
+  | 'admin:access'
+  | 'access_control:manage';
+
+export type ScreenPermission =
+  | 'admin_hq' | 'access_control' | 'members' | 'investors' | 'buyers'
+  | 'jv_deals' | 'influencers' | 'realtors' | 'brokers'
+  | 'tokenized_investors' | 'ivx_staff' | 'crm' | 'properties'
+  | 'transactions' | 'variables' | 'developer_workspace'
+  | 'ivx_owner_ai' | 'deploy_approval' | 'github_control'
+  | 'render_control' | 'revenue' | 'audit_log' | 'security_box'
+  | 'profile' | 'owner_login' | 'owner_console';
+
+export type AccessScope = 'all' | 'own' | 'assigned' | 'regional' | 'none';
 
 export type RoleDefinition = {
   name: RoleName;
   displayName: string;
   permissions: Permission[];
+  screens: ScreenPermission[];
   isSystem: boolean;
 };
 
@@ -501,18 +527,74 @@ export type RoleAssignment = {
   assignedBy: string;
   createdAt: string;
   updatedAt: string;
+  status: 'active' | 'suspended';
+  startDate: string | null;
+  expirationDate: string | null;
+  dataScope: AccessScope;
+  screens: ScreenPermission[];
+  requireMfa: boolean;
+  forceLogout: boolean;
+};
+
+export type AccessTemplate = {
+  id: string;
+  name: string;
+  description: string;
+  role: RoleName;
+  screens: ScreenPermission[];
+  dataScope: AccessScope;
+  permissions: Permission[];
+  createdAt: string;
+};
+
+export type AccessGroup = {
+  id: string;
+  name: string;
+  description: string;
+  memberIds: string[];
+  templateId: string | null;
+  createdAt: string;
+  updatedAt: string;
 };
 
 const ROLES_DIR = auditDir('roles');
 const ROLES_STATE = path.join(ROLES_DIR, 'definitions.json');
 const ASSIGNMENTS_STATE = path.join(ROLES_DIR, 'assignments.json');
 
+const ALL_SCREENS: ScreenPermission[] = [
+  'admin_hq','access_control','members','investors','buyers','jv_deals',
+  'influencers','realtors','brokers','tokenized_investors','ivx_staff',
+  'crm','properties','transactions','variables','developer_workspace',
+  'ivx_owner_ai','deploy_approval','github_control','render_control',
+  'revenue','audit_log','security_box','profile','owner_login','owner_console',
+];
+
+const ALL_PERMISSIONS: Permission[] = [
+  'deals:read','deals:write','crm:read','crm:write','capital:read','capital:write',
+  'revenue:read','revenue:write','broadcast:send','settings:write','users:manage',
+  'members:read','members:write','investors:read','investors:write',
+  'properties:read','properties:write','transactions:read','transactions:write',
+  'variables:read','variables:write','developer:read','developer:write',
+  'ai:chat','media:upload','admin:access','access_control:manage',
+];
+
 export const DEFAULT_ROLE_DEFINITIONS: RoleDefinition[] = [
-  { name: 'owner', displayName: 'Owner', permissions: ['deals:read','deals:write','crm:read','crm:write','capital:read','capital:write','revenue:read','revenue:write','broadcast:send','settings:write','users:manage'], isSystem: true },
-  { name: 'admin', displayName: 'Administrator', permissions: ['deals:read','deals:write','crm:read','crm:write','capital:read','capital:write','revenue:read','revenue:write','broadcast:send','settings:write'], isSystem: true },
-  { name: 'analyst', displayName: 'Analyst', permissions: ['deals:read','crm:read','capital:read','revenue:read'], isSystem: true },
-  { name: 'investor', displayName: 'Investor', permissions: ['deals:read'], isSystem: true },
-  { name: 'viewer', displayName: 'Viewer', permissions: ['deals:read'], isSystem: true },
+  { name: 'owner', displayName: 'Owner', permissions: ALL_PERMISSIONS, screens: ALL_SCREENS, isSystem: true },
+  { name: 'ivx_staff', displayName: 'IVX Staff', permissions: ['deals:read','crm:read','members:read','investors:read','properties:read','transactions:read','ai:chat','media:upload','admin:access'], screens: ['admin_hq','members','investors','crm','properties','transactions','ivx_owner_ai','profile'], isSystem: true },
+  { name: 'admin', displayName: 'Administrator', permissions: ['deals:read','deals:write','crm:read','crm:write','members:read','members:write','investors:read','investors:write','properties:read','properties:write','transactions:read','transactions:write','broadcast:send','settings:write','admin:access'], screens: ['admin_hq','members','investors','crm','properties','transactions','revenue','audit_log','profile'], isSystem: true },
+  { name: 'member', displayName: 'Member', permissions: ['deals:read','ai:chat','media:upload'], screens: ['profile','ivx_owner_ai'], isSystem: true },
+  { name: 'investor', displayName: 'Investor', permissions: ['deals:read','transactions:read','ai:chat','media:upload'], screens: ['profile','transactions','ivx_owner_ai'], isSystem: true },
+  { name: 'buyer', displayName: 'Buyer', permissions: ['deals:read','properties:read','ai:chat','media:upload'], screens: ['profile','properties','ivx_owner_ai'], isSystem: true },
+  { name: 'jv_partner', displayName: 'JV Partner', permissions: ['deals:read','deals:write','transactions:read','ai:chat','media:upload'], screens: ['profile','jv_deals','transactions','ivx_owner_ai'], isSystem: true },
+  { name: 'influencer', displayName: 'Influencer', permissions: ['deals:read','ai:chat','media:upload'], screens: ['profile','ivx_owner_ai'], isSystem: true },
+  { name: 'realtor', displayName: 'Realtor', permissions: ['deals:read','properties:read','crm:read','ai:chat','media:upload'], screens: ['profile','properties','crm','ivx_owner_ai'], isSystem: true },
+  { name: 'broker', displayName: 'Broker', permissions: ['deals:read','deals:write','properties:read','properties:write','crm:read','crm:write','ai:chat','media:upload'], screens: ['profile','properties','crm','jv_deals','ivx_owner_ai'], isSystem: true },
+  { name: 'agent', displayName: 'Agent', permissions: ['deals:read','deals:write','crm:read','crm:write','properties:read','ai:chat','media:upload'], screens: ['profile','properties','crm','ivx_owner_ai'], isSystem: true },
+  { name: 'tokenized_investor', displayName: 'Tokenized Investor', permissions: ['deals:read','transactions:read','capital:read','ai:chat','media:upload'], screens: ['profile','transactions','tokenized_investors','ivx_owner_ai'], isSystem: true },
+  { name: 'lender', displayName: 'Lender', permissions: ['deals:read','capital:read','capital:write','ai:chat','media:upload'], screens: ['profile','ivx_owner_ai'], isSystem: true },
+  { name: 'auditor', displayName: 'Auditor', permissions: ['deals:read','crm:read','revenue:read','transactions:read','members:read','investors:read'], screens: ['admin_hq','members','investors','crm','transactions','revenue','audit_log','profile'], isSystem: true },
+  { name: 'analyst', displayName: 'Analyst', permissions: ['deals:read','crm:read','capital:read','revenue:read','members:read','investors:read','properties:read','transactions:read'], screens: ['admin_hq','members','investors','crm','properties','transactions','revenue','profile'], isSystem: true },
+  { name: 'viewer', displayName: 'Viewer', permissions: ['deals:read'], screens: ['profile'], isSystem: true },
 ];
 
 export async function listRoleDefinitions(): Promise<RoleDefinition[]> {
@@ -529,11 +611,13 @@ export async function upsertRoleDefinition(def: Omit<RoleDefinition, 'isSystem'>
     name: def.name,
     displayName: asTrimmedString(def.displayName),
     permissions: asStringArray(def.permissions) as Permission[],
+    screens: asStringArray(def.screens) as ScreenPermission[],
     isSystem: def.isSystem ?? false,
   };
   if (existing) {
     existing.displayName = record.displayName;
     existing.permissions = record.permissions;
+    existing.screens = record.screens;
   } else {
     defs.push(record);
   }
@@ -546,14 +630,32 @@ export async function listRoleAssignments(): Promise<RoleAssignment[]> {
   return readStoreJson<RoleAssignment[]>(ASSIGNMENTS_STATE, []);
 }
 
-export async function assignRole(userId: string, userEmail: string, role: RoleName, assignedBy: string): Promise<RoleAssignment> {
+export async function assignRole(userId: string, userEmail: string, role: RoleName, assignedBy: string, options?: {
+  screens?: ScreenPermission[];
+  dataScope?: AccessScope;
+  startDate?: string | null;
+  expirationDate?: string | null;
+  requireMfa?: boolean;
+}): Promise<RoleAssignment> {
   const assignments = await listRoleAssignments();
   const existing = assignments.find((a) => a.userId === userId);
   const now = nowIso();
+  const screens = options?.screens ?? [];
+  const dataScope = options?.dataScope ?? 'assigned';
+  const startDate = options?.startDate ?? null;
+  const expirationDate = options?.expirationDate ?? null;
+  const requireMfa = options?.requireMfa ?? false;
   if (existing) {
     existing.role = role;
     existing.userEmail = asTrimmedString(userEmail).toLowerCase();
     existing.updatedAt = now;
+    existing.status = 'active';
+    existing.screens = screens;
+    existing.dataScope = dataScope;
+    existing.startDate = startDate;
+    existing.expirationDate = expirationDate;
+    existing.requireMfa = requireMfa;
+    existing.forceLogout = false;
     await writeStoreJson(ASSIGNMENTS_STATE, assignments, ROLES_DIR);
     return existing;
   }
@@ -565,6 +667,13 @@ export async function assignRole(userId: string, userEmail: string, role: RoleNa
     assignedBy: asTrimmedString(assignedBy),
     createdAt: now,
     updatedAt: now,
+    status: 'active',
+    startDate,
+    expirationDate,
+    dataScope,
+    screens,
+    requireMfa,
+    forceLogout: false,
   };
   assignments.push(record);
   await writeStoreJson(ASSIGNMENTS_STATE, assignments, ROLES_DIR);
@@ -586,9 +695,156 @@ export async function getUserPermissions(userId: string): Promise<Permission[]> 
   const assignments = await listRoleAssignments();
   const assignment = assignments.find((a) => a.userId === userId);
   if (!assignment) return [];
+  if (assignment.status === 'suspended') return [];
+  if (assignment.forceLogout) return [];
+  if (assignment.expirationDate && new Date(assignment.expirationDate).getTime() < Date.now()) return [];
   const defs = await listRoleDefinitions();
   const def = defs.find((d) => d.name === assignment.role);
   return def ? def.permissions : [];
+}
+
+export async function getUserScreens(userId: string): Promise<ScreenPermission[]> {
+  const assignments = await listRoleAssignments();
+  const assignment = assignments.find((a) => a.userId === userId);
+  if (!assignment) return [];
+  if (assignment.status === 'suspended') return [];
+  if (assignment.forceLogout) return [];
+  if (assignment.expirationDate && new Date(assignment.expirationDate).getTime() < Date.now()) return [];
+  if (assignment.screens.length > 0) return assignment.screens;
+  const defs = await listRoleDefinitions();
+  const def = defs.find((d) => d.name === assignment.role);
+  return def ? def.screens : [];
+}
+
+export async function setAssignmentStatus(userId: string, status: 'active' | 'suspended'): Promise<RoleAssignment | null> {
+  const assignments = await listRoleAssignments();
+  const existing = assignments.find((a) => a.userId === userId);
+  if (!existing) return null;
+  existing.status = status;
+  existing.updatedAt = nowIso();
+  await writeStoreJson(ASSIGNMENTS_STATE, assignments, ROLES_DIR);
+  await appendStoreEvent(path.join(ROLES_DIR, 'assignments.jsonl'), { type: 'status_change', userId, status }, ROLES_DIR);
+  return existing;
+}
+
+export async function forceLogoutUser(userId: string): Promise<RoleAssignment | null> {
+  const assignments = await listRoleAssignments();
+  const existing = assignments.find((a) => a.userId === userId);
+  if (!existing) return null;
+  existing.forceLogout = true;
+  existing.updatedAt = nowIso();
+  await writeStoreJson(ASSIGNMENTS_STATE, assignments, ROLES_DIR);
+  await appendStoreEvent(path.join(ROLES_DIR, 'assignments.jsonl'), { type: 'force_logout', userId }, ROLES_DIR);
+  return existing;
+}
+
+export async function clearForceLogout(userId: string): Promise<RoleAssignment | null> {
+  const assignments = await listRoleAssignments();
+  const existing = assignments.find((a) => a.userId === userId);
+  if (!existing) return null;
+  existing.forceLogout = false;
+  existing.updatedAt = nowIso();
+  await writeStoreJson(ASSIGNMENTS_STATE, assignments, ROLES_DIR);
+  return existing;
+}
+
+export async function updateUserScreens(userId: string, screens: ScreenPermission[]): Promise<RoleAssignment | null> {
+  const assignments = await listRoleAssignments();
+  const existing = assignments.find((a) => a.userId === userId);
+  if (!existing) return null;
+  existing.screens = screens;
+  existing.updatedAt = nowIso();
+  await writeStoreJson(ASSIGNMENTS_STATE, assignments, ROLES_DIR);
+  await appendStoreEvent(path.join(ROLES_DIR, 'assignments.jsonl'), { type: 'screens_updated', userId, screens }, ROLES_DIR);
+  return existing;
+}
+
+export async function setMfaRequirement(userId: string, requireMfa: boolean): Promise<RoleAssignment | null> {
+  const assignments = await listRoleAssignments();
+  const existing = assignments.find((a) => a.userId === userId);
+  if (!existing) return null;
+  existing.requireMfa = requireMfa;
+  existing.updatedAt = nowIso();
+  await writeStoreJson(ASSIGNMENTS_STATE, assignments, ROLES_DIR);
+  return existing;
+}
+
+// ─── 6b. Access Templates & Groups ──────────────────────────────────────────
+
+const TEMPLATES_DIR = auditDir('access-templates');
+const TEMPLATES_STATE = path.join(TEMPLATES_DIR, 'records.json');
+const GROUPS_DIR = auditDir('access-groups');
+const GROUPS_STATE = path.join(GROUPS_DIR, 'records.json');
+
+export async function listAccessTemplates(): Promise<AccessTemplate[]> {
+  return readStoreJson<AccessTemplate[]>(TEMPLATES_STATE, []);
+}
+
+export async function createAccessTemplate(input: {
+  name: string;
+  description: string;
+  role: RoleName;
+  screens: ScreenPermission[];
+  dataScope: AccessScope;
+  permissions: Permission[];
+}): Promise<AccessTemplate> {
+  const templates = await listAccessTemplates();
+  const record: AccessTemplate = {
+    id: createId('tpl'),
+    name: asTrimmedString(input.name),
+    description: asTrimmedString(input.description),
+    role: input.role,
+    screens: input.screens,
+    dataScope: input.dataScope,
+    permissions: input.permissions,
+    createdAt: nowIso(),
+  };
+  templates.push(record);
+  await writeStoreJson(TEMPLATES_STATE, templates, TEMPLATES_DIR);
+  return record;
+}
+
+export async function deleteAccessTemplate(id: string): Promise<boolean> {
+  const templates = await listAccessTemplates();
+  const idx = templates.findIndex((t) => t.id === id);
+  if (idx < 0) return false;
+  templates.splice(idx, 1);
+  await writeStoreJson(TEMPLATES_STATE, templates, TEMPLATES_DIR);
+  return true;
+}
+
+export async function listAccessGroups(): Promise<AccessGroup[]> {
+  return readStoreJson<AccessGroup[]>(GROUPS_STATE, []);
+}
+
+export async function createAccessGroup(input: {
+  name: string;
+  description: string;
+  memberIds: string[];
+  templateId: string | null;
+}): Promise<AccessGroup> {
+  const groups = await listAccessGroups();
+  const record: AccessGroup = {
+    id: createId('grp'),
+    name: asTrimmedString(input.name),
+    description: asTrimmedString(input.description),
+    memberIds: Array.isArray(input.memberIds) ? input.memberIds : [],
+    templateId: input.templateId ?? null,
+    createdAt: nowIso(),
+    updatedAt: nowIso(),
+  };
+  groups.push(record);
+  await writeStoreJson(GROUPS_STATE, groups, GROUPS_DIR);
+  return record;
+}
+
+export async function deleteAccessGroup(id: string): Promise<boolean> {
+  const groups = await listAccessGroups();
+  const idx = groups.findIndex((g) => g.id === id);
+  if (idx < 0) return false;
+  groups.splice(idx, 1);
+  await writeStoreJson(GROUPS_STATE, groups, GROUPS_DIR);
+  return true;
 }
 
 // ─── 7. Transactions ─────────────────────────────────────────────────────────

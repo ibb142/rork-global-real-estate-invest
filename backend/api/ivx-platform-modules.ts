@@ -75,6 +75,10 @@ import {
   type BroadcastRecord,
   type RoleName,
   type Permission,
+  type ScreenPermission,
+  type AccessScope,
+  type AccessTemplate,
+  type AccessGroup,
   type TransactionType,
   type TransactionStatus,
   type CasaRosarioListingStatus,
@@ -102,6 +106,18 @@ import {
   assignRole,
   revokeRole,
   getUserPermissions,
+  getUserScreens,
+  setAssignmentStatus,
+  forceLogoutUser,
+  clearForceLogout,
+  updateUserScreens,
+  setMfaRequirement,
+  listAccessTemplates,
+  createAccessTemplate,
+  deleteAccessTemplate,
+  listAccessGroups,
+  createAccessGroup,
+  deleteAccessGroup,
   listTransactions,
   createTransaction,
   setTransactionStatus,
@@ -144,7 +160,10 @@ const VALID_BROADCAST_STATUS: ReadonlySet<BroadcastRecord['status']> = new Set([
   'draft', 'scheduled', 'sent', 'cancelled',
 ]);
 const VALID_ROLES: ReadonlySet<RoleName> = new Set([
-  'owner', 'admin', 'analyst', 'investor', 'viewer',
+  'owner', 'ivx_staff', 'admin', 'member', 'investor',
+  'buyer', 'jv_partner', 'influencer', 'realtor', 'broker',
+  'agent', 'tokenized_investor', 'lender', 'auditor',
+  'analyst', 'viewer',
 ]);
 const VALID_TXN_TYPES: ReadonlySet<TransactionType> = new Set([
   'deposit', 'withdrawal', 'distribution', 'fee', 'refund',
@@ -425,7 +444,9 @@ export async function handleRolesListRequest(request: Request): Promise<Response
   if (authError) return authError;
   const definitions = await listRoleDefinitions();
   const assignments = await listRoleAssignments();
-  return ownerOnlyJson({ ok: true, definitions, assignments, count: assignments.length });
+  const templates = await listAccessTemplates();
+  const groups = await listAccessGroups();
+  return ownerOnlyJson({ ok: true, definitions, assignments, templates, groups, count: assignments.length });
 }
 
 export async function handleRoleDefinitionUpsertRequest(request: Request): Promise<Response> {
@@ -436,10 +457,12 @@ export async function handleRoleDefinitionUpsertRequest(request: Request): Promi
   if (!VALID_ROLES.has(name)) {
     return ownerOnlyJson({ ok: false, error: 'A valid role name is required.' }, 400);
   }
+  const screens = Array.isArray(body.screens) ? (body.screens as unknown as ScreenPermission[]) : [];
   const record = await upsertRoleDefinition({
     name,
     displayName: asString(body.displayName),
     permissions: Array.isArray(body.permissions) ? (body.permissions as unknown as Permission[]) : [],
+    screens,
     isSystem: Boolean(body.isSystem),
   });
   return ownerOnlyJson({ ok: true, definition: record });
@@ -458,8 +481,170 @@ export async function handleRoleAssignRequest(request: Request): Promise<Respons
     return ownerOnlyJson({ ok: false, error: 'A valid role is required.' }, 400);
   }
   const owner = await assertIVXOwnerOnly(request);
-  const record = await assignRole(userId, asString(body.userEmail), role, owner.userId ?? 'owner');
+  const screens = Array.isArray(body.screens) ? (body.screens as unknown as ScreenPermission[]) : [];
+  const dataScope = (asString(body.dataScope) || 'assigned') as AccessScope;
+  const startDate = asString(body.startDate) || null;
+  const expirationDate = asString(body.expirationDate) || null;
+  const requireMfa = Boolean(body.requireMfa);
+  const record = await assignRole(userId, asString(body.userEmail), role, owner.userId ?? 'owner', {
+    screens,
+    dataScope,
+    startDate,
+    expirationDate,
+    requireMfa,
+  });
   return ownerOnlyJson({ ok: true, assignment: record });
+}
+
+export async function handleUserScreensRequest(request: Request, userId: string): Promise<Response> {
+  const authError = await requireOwner(request);
+  if (authError) return authError;
+  const screens = await getUserScreens(userId);
+  return ownerOnlyJson({ ok: true, userId, screens });
+}
+
+export async function handleAssignmentStatusRequest(request: Request): Promise<Response> {
+  const authError = await requireOwner(request);
+  if (authError) return authError;
+  const body = await readJsonBody(request);
+  const userId = asString(body.userId);
+  const status = asString(body.status) as 'active' | 'suspended';
+  if (!userId) {
+    return ownerOnlyJson({ ok: false, error: 'userId is required.' }, 400);
+  }
+  if (status !== 'active' && status !== 'suspended') {
+    return ownerOnlyJson({ ok: false, error: 'status must be active or suspended.' }, 400);
+  }
+  const record = await setAssignmentStatus(userId, status);
+  return ownerOnlyJson({ ok: true, assignment: record });
+}
+
+export async function handleForceLogoutRequest(request: Request): Promise<Response> {
+  const authError = await requireOwner(request);
+  if (authError) return authError;
+  const body = await readJsonBody(request);
+  const userId = asString(body.userId);
+  if (!userId) {
+    return ownerOnlyJson({ ok: false, error: 'userId is required.' }, 400);
+  }
+  const record = await forceLogoutUser(userId);
+  return ownerOnlyJson({ ok: true, assignment: record });
+}
+
+export async function handleClearForceLogoutRequest(request: Request): Promise<Response> {
+  const authError = await requireOwner(request);
+  if (authError) return authError;
+  const body = await readJsonBody(request);
+  const userId = asString(body.userId);
+  if (!userId) {
+    return ownerOnlyJson({ ok: false, error: 'userId is required.' }, 400);
+  }
+  const record = await clearForceLogout(userId);
+  return ownerOnlyJson({ ok: true, assignment: record });
+}
+
+export async function handleUpdateScreensRequest(request: Request): Promise<Response> {
+  const authError = await requireOwner(request);
+  if (authError) return authError;
+  const body = await readJsonBody(request);
+  const userId = asString(body.userId);
+  if (!userId) {
+    return ownerOnlyJson({ ok: false, error: 'userId is required.' }, 400);
+  }
+  const screens = Array.isArray(body.screens) ? (body.screens as unknown as ScreenPermission[]) : [];
+  const record = await updateUserScreens(userId, screens);
+  return ownerOnlyJson({ ok: true, assignment: record });
+}
+
+export async function handleSetMfaRequest(request: Request): Promise<Response> {
+  const authError = await requireOwner(request);
+  if (authError) return authError;
+  const body = await readJsonBody(request);
+  const userId = asString(body.userId);
+  if (!userId) {
+    return ownerOnlyJson({ ok: false, error: 'userId is required.' }, 400);
+  }
+  const requireMfa = Boolean(body.requireMfa);
+  const record = await setMfaRequirement(userId, requireMfa);
+  return ownerOnlyJson({ ok: true, assignment: record });
+}
+
+export async function handleAccessTemplateListRequest(request: Request): Promise<Response> {
+  const authError = await requireOwner(request);
+  if (authError) return authError;
+  const templates = await listAccessTemplates();
+  return ownerOnlyJson({ ok: true, templates, count: templates.length });
+}
+
+export async function handleAccessTemplateCreateRequest(request: Request): Promise<Response> {
+  const authError = await requireOwner(request);
+  if (authError) return authError;
+  const body = await readJsonBody(request);
+  const name = asString(body.name);
+  if (!name) {
+    return ownerOnlyJson({ ok: false, error: 'Template name is required.' }, 400);
+  }
+  const role = asString(body.role) as RoleName;
+  if (!VALID_ROLES.has(role)) {
+    return ownerOnlyJson({ ok: false, error: 'A valid role is required.' }, 400);
+  }
+  const record = await createAccessTemplate({
+    name,
+    description: asString(body.description),
+    role,
+    screens: Array.isArray(body.screens) ? (body.screens as unknown as ScreenPermission[]) : [],
+    dataScope: (asString(body.dataScope) || 'assigned') as AccessScope,
+    permissions: Array.isArray(body.permissions) ? (body.permissions as unknown as Permission[]) : [],
+  });
+  return ownerOnlyJson({ ok: true, template: record }, 201);
+}
+
+export async function handleAccessTemplateDeleteRequest(request: Request): Promise<Response> {
+  const authError = await requireOwner(request);
+  if (authError) return authError;
+  const body = await readJsonBody(request);
+  const id = asString(body.id);
+  if (!id) {
+    return ownerOnlyJson({ ok: false, error: 'Template id is required.' }, 400);
+  }
+  const deleted = await deleteAccessTemplate(id);
+  return ownerOnlyJson({ ok: true, deleted });
+}
+
+export async function handleAccessGroupListRequest(request: Request): Promise<Response> {
+  const authError = await requireOwner(request);
+  if (authError) return authError;
+  const groups = await listAccessGroups();
+  return ownerOnlyJson({ ok: true, groups, count: groups.length });
+}
+
+export async function handleAccessGroupCreateRequest(request: Request): Promise<Response> {
+  const authError = await requireOwner(request);
+  if (authError) return authError;
+  const body = await readJsonBody(request);
+  const name = asString(body.name);
+  if (!name) {
+    return ownerOnlyJson({ ok: false, error: 'Group name is required.' }, 400);
+  }
+  const record = await createAccessGroup({
+    name,
+    description: asString(body.description),
+    memberIds: Array.isArray(body.memberIds) ? (body.memberIds as string[]) : [],
+    templateId: asString(body.templateId) || null,
+  });
+  return ownerOnlyJson({ ok: true, group: record }, 201);
+}
+
+export async function handleAccessGroupDeleteRequest(request: Request): Promise<Response> {
+  const authError = await requireOwner(request);
+  if (authError) return authError;
+  const body = await readJsonBody(request);
+  const id = asString(body.id);
+  if (!id) {
+    return ownerOnlyJson({ ok: false, error: 'Group id is required.' }, 400);
+  }
+  const deleted = await deleteAccessGroup(id);
+  return ownerOnlyJson({ ok: true, deleted });
 }
 
 export async function handleRoleRevokeRequest(request: Request): Promise<Response> {

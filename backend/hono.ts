@@ -546,6 +546,18 @@ import {
   handleRoleAssignRequest,
   handleRoleRevokeRequest,
   handleUserPermissionsRequest,
+  handleUserScreensRequest,
+  handleAssignmentStatusRequest,
+  handleForceLogoutRequest,
+  handleClearForceLogoutRequest,
+  handleUpdateScreensRequest,
+  handleSetMfaRequest,
+  handleAccessTemplateListRequest,
+  handleAccessTemplateCreateRequest,
+  handleAccessTemplateDeleteRequest,
+  handleAccessGroupListRequest,
+  handleAccessGroupCreateRequest,
+  handleAccessGroupDeleteRequest,
   handleTransactionsListRequest,
   handleTransactionsCreateRequest,
   handleTransactionsStatusRequest,
@@ -4748,6 +4760,34 @@ app.options('/api/ivx/roles/revoke', () => platformModulesOptions());
 app.post('/api/ivx/roles/revoke', async (context) => handleRoleRevokeRequest(context.req.raw));
 app.options('/api/ivx/roles/:userId/permissions', () => platformModulesOptions());
 app.get('/api/ivx/roles/:userId/permissions', async (context) => handleUserPermissionsRequest(context.req.raw, context.req.param('userId')));
+app.options('/api/ivx/roles/:userId/screens', () => platformModulesOptions());
+app.get('/api/ivx/roles/:userId/screens', async (context) => handleUserScreensRequest(context.req.raw, context.req.param('userId')));
+
+// Access Control — status, force logout, screen management, MFA
+app.options('/api/ivx/access/status', () => platformModulesOptions());
+app.post('/api/ivx/access/status', async (context) => handleAssignmentStatusRequest(context.req.raw));
+app.options('/api/ivx/access/force-logout', () => platformModulesOptions());
+app.post('/api/ivx/access/force-logout', async (context) => handleForceLogoutRequest(context.req.raw));
+app.options('/api/ivx/access/clear-force-logout', () => platformModulesOptions());
+app.post('/api/ivx/access/clear-force-logout', async (context) => handleClearForceLogoutRequest(context.req.raw));
+app.options('/api/ivx/access/screens', () => platformModulesOptions());
+app.post('/api/ivx/access/screens', async (context) => handleUpdateScreensRequest(context.req.raw));
+app.options('/api/ivx/access/mfa', () => platformModulesOptions());
+app.post('/api/ivx/access/mfa', async (context) => handleSetMfaRequest(context.req.raw));
+
+// Access Templates
+app.options('/api/ivx/access/templates', () => platformModulesOptions());
+app.get('/api/ivx/access/templates', async (context) => handleAccessTemplateListRequest(context.req.raw));
+app.post('/api/ivx/access/templates', async (context) => handleAccessTemplateCreateRequest(context.req.raw));
+app.options('/api/ivx/access/templates/delete', () => platformModulesOptions());
+app.post('/api/ivx/access/templates/delete', async (context) => handleAccessTemplateDeleteRequest(context.req.raw));
+
+// Access Groups
+app.options('/api/ivx/access/groups', () => platformModulesOptions());
+app.get('/api/ivx/access/groups', async (context) => handleAccessGroupListRequest(context.req.raw));
+app.post('/api/ivx/access/groups', async (context) => handleAccessGroupCreateRequest(context.req.raw));
+app.options('/api/ivx/access/groups/delete', () => platformModulesOptions());
+app.post('/api/ivx/access/groups/delete', async (context) => handleAccessGroupDeleteRequest(context.req.raw));
 
 // Transactions (owner-only)
 app.options('/api/ivx/transactions', () => platformModulesOptions());
