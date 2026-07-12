@@ -1,37 +1,26 @@
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import React, { useEffect, Component, type ReactNode } from "react";
-import { StyleSheet, View, Text, ActivityIndicator } from "react-native";
-import Colors from "@/constants/colors";
+import { StyleSheet, View, Text } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-// Static imports — reliable in React Native / Metro.
-// Per-provider error boundaries below isolate which provider crashes.
+// Diagnostic error boundary — shows the FULL crash on screen
+import { DiagnosticErrorBoundary } from "@/components/DiagnosticErrorBoundary";
+
+// Static imports — all providers with per-provider error boundaries
 import { I18nProvider } from "@/lib/i18n-context";
 import { AuthProvider } from "@/lib/auth-context";
 import { AnalyticsProvider } from "@/lib/analytics-context";
 import { IPXProvider } from "@/lib/ipx-context";
 import { EmailProvider } from "@/lib/email-context";
 
-// Re-export expo-router's ErrorBoundary so route-level throws surface
-// a real error screen instead of a blank white screen.
-export { ErrorBoundary } from "expo-router";
-
 const queryClient = new QueryClient();
 
-const ROOT_STACK_SCREEN_OPTIONS = {
-  headerStyle: { backgroundColor: Colors.background },
-  headerTintColor: Colors.primary,
-  headerTitleStyle: { color: Colors.text, fontWeight: "700" as const },
-  headerShadowVisible: false,
-  contentStyle: { backgroundColor: Colors.background },
-} as const;
-
-const HEADERLESS_GROUP_OPTIONS = { headerShown: false } as const;
+// Re-export expo-router's ErrorBoundary for route-level catches
+export { ErrorBoundary } from "expo-router";
 
 // --- Per-provider error boundary: isolates which provider crashed
-// so one bad provider doesn't blue-screen the entire app.
 interface ProviderBoundaryProps {
   name: string;
   children: ReactNode;
@@ -67,7 +56,6 @@ class ProviderBoundary extends Component<ProviderBoundaryProps, ProviderBoundary
 }
 
 export default function RootLayout() {
-  // Side-effect installs happen in useEffect, AFTER the component mounts.
   useEffect(() => {
     try {
       const { installTextNodeGuard } = require("@/lib/text-node-guard");
@@ -93,49 +81,56 @@ export default function RootLayout() {
   }, []);
 
   return (
-    <GestureHandlerRootView style={styles.root}>
-      <QueryClientProvider client={queryClient}>
-        <ProviderBoundary name="I18n">
-          <I18nProvider>
-            <ProviderBoundary name="Auth">
-              <AuthProvider>
-                <ProviderBoundary name="Analytics">
-                  <AnalyticsProvider>
-                    <ProviderBoundary name="IPX">
-                      <IPXProvider>
-                        <ProviderBoundary name="Email">
-                          <EmailProvider>
-                            <StatusBar style="light" />
-                            <Stack screenOptions={ROOT_STACK_SCREEN_OPTIONS}>
-                              <Stack.Screen name="(tabs)" options={HEADERLESS_GROUP_OPTIONS} />
-                              <Stack.Screen name="admin" options={HEADERLESS_GROUP_OPTIONS} />
-                              <Stack.Screen name="ivx" options={HEADERLESS_GROUP_OPTIONS} />
-                              <Stack.Screen name="property" options={HEADERLESS_GROUP_OPTIONS} />
-                              <Stack.Screen name="landing" options={HEADERLESS_GROUP_OPTIONS} />
-                              <Stack.Screen name="login" options={HEADERLESS_GROUP_OPTIONS} />
-                              <Stack.Screen name="signup" options={HEADERLESS_GROUP_OPTIONS} />
-                              <Stack.Screen name="modal" options={{ presentation: "modal" }} />
-                            </Stack>
-                          </EmailProvider>
-                        </ProviderBoundary>
-                      </IPXProvider>
-                    </ProviderBoundary>
-                  </AnalyticsProvider>
-                </ProviderBoundary>
-              </AuthProvider>
-            </ProviderBoundary>
-          </I18nProvider>
-        </ProviderBoundary>
-      </QueryClientProvider>
-    </GestureHandlerRootView>
+    <DiagnosticErrorBoundary>
+      <GestureHandlerRootView style={styles.root}>
+        <QueryClientProvider client={queryClient}>
+          <ProviderBoundary name="I18n">
+            <I18nProvider>
+              <ProviderBoundary name="Auth">
+                <AuthProvider>
+                  <ProviderBoundary name="Analytics">
+                    <AnalyticsProvider>
+                      <ProviderBoundary name="IPX">
+                        <IPXProvider>
+                          <ProviderBoundary name="Email">
+                            <EmailProvider>
+                              <StatusBar style="light" />
+                              <Stack
+                                screenOptions={{
+                                  headerShown: false,
+                                  contentStyle: { backgroundColor: "#0A0A0F" },
+                                }}
+                              >
+                                <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                                <Stack.Screen name="admin" options={{ headerShown: false }} />
+                                <Stack.Screen name="ivx" options={{ headerShown: false }} />
+                                <Stack.Screen name="property" options={{ headerShown: false }} />
+                                <Stack.Screen name="landing" options={{ headerShown: false }} />
+                                <Stack.Screen name="login" options={{ headerShown: false }} />
+                                <Stack.Screen name="signup" options={{ headerShown: false }} />
+                                <Stack.Screen name="modal" options={{ presentation: "modal" }} />
+                              </Stack>
+                            </EmailProvider>
+                          </ProviderBoundary>
+                        </IPXProvider>
+                      </ProviderBoundary>
+                    </AnalyticsProvider>
+                  </ProviderBoundary>
+                </AuthProvider>
+              </ProviderBoundary>
+            </I18nProvider>
+          </ProviderBoundary>
+        </QueryClientProvider>
+      </GestureHandlerRootView>
+    </DiagnosticErrorBoundary>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: Colors.background },
+  root: { flex: 1, backgroundColor: "#0A0A0F" },
   providerError: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: "#0A0A0F",
     justifyContent: "center",
     alignItems: "center",
     padding: 24,
@@ -147,9 +142,9 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   providerErrorMsg: {
-    color: Colors.textTertiary,
+    color: "#888",
     fontSize: 12,
-    fontFamily: "monospace",
-    textAlign: "center",
+    fontFamily: "monospace" as const,
+    textAlign: "center" as const,
   },
 });
