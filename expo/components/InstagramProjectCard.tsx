@@ -59,7 +59,7 @@ import {
 const GOLD = '#FFD700';
 const GOLD_DIM = '#C9A800';
 const SURFACE_ELEVATED = '#181818';
-const ACCENT_GREEN = '#00E676';
+const ACCENT_GREEN = '#00C48C';
 
 interface InstagramProjectCardProps {
   deal: ParsedJVDeal;

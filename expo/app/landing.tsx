@@ -86,8 +86,8 @@ const SOCIAL_LINKS = [
 const GOLD = '#FFD700';
 const GOLD_DIM = '#C9A800';
 const SURFACE_ELEVATED = '#181818';
-const ACCENT_GREEN = '#00E676';
-const ACCENT_BLUE = '#448AFF';
+const ACCENT_GREEN = '#00C48C';
+const ACCENT_BLUE = '#4A90D9';
 
 const STATS = [
   { value: '3', label: 'Upcoming Deals', icon: Building2 },
@@ -2400,13 +2400,13 @@ const styles = StyleSheet.create({
     fontWeight: '700' as const,
   },
   previewBadge: {
-    backgroundColor: '#F59E0B20',
+    backgroundColor: '#FFD70020',
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 6,
   },
   previewBadgeText: {
-    color: '#F59E0B',
+    color: '#FFD700',
     fontSize: 10,
     fontWeight: '700' as const,
     letterSpacing: 0.5,

@@ -26,6 +26,7 @@ import {
 import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Video, ResizeMode } from 'expo-av';
+import { LinearGradient } from 'expo-linear-gradient';
 import {
   X,
   Heart,
@@ -35,7 +36,6 @@ import {
   VolumeX,
   Play,
   Bookmark,
-  MoreHorizontal,
   Hexagon,
   Users,
   Home,
@@ -96,6 +96,21 @@ function compactCurrency(value: number): string {
   return `$${Math.round(value)}`;
 }
 
+function parseVideoTitle(video: FeedVideo): { title: string; location: string | null; tourLabel: string } {
+  const raw = video.title ?? video.deal?.title ?? 'IVX Holdings';
+  const locationMatch = raw.match(/(.+?)\s*[—–]\s*([^,]+,\s*[A-Z]{2})/);
+  if (locationMatch) {
+    return { title: locationMatch[1].trim(), location: locationMatch[2].trim(), tourLabel: 'Property Tour' };
+  }
+  const tourMatch = raw.match(/(.+?)\s*[—–]\s*(.+)/);
+  if (tourMatch) {
+    const tour = tourMatch[2].trim();
+    const isLocation = /,\s*[A-Z]{2}/.test(tour);
+    return { title: tourMatch[1].trim(), location: isLocation ? tour : null, tourLabel: isLocation ? 'Property Tour' : tour };
+  }
+  return { title: raw, location: null, tourLabel: 'Property Tour' };
+}
+
 function useInvestmentOptions(dealType: string | null | undefined) {
   const t = (dealType ?? '').toLowerCase();
   const tokenized = { id: 'tokenized', label: 'Tokenized', icon: <Hexagon size={16} color={GOLD} />, tint: GOLD };
@@ -120,7 +135,7 @@ function useInvestmentOptions(dealType: string | null | undefined) {
 type ReelChannel = 'all' | 'investment' | 'buyer' | 'seller';
 
 const CHANNELS: { id: ReelChannel; label: string }[] = [
-  { id: 'all', label: 'Deals' },
+  { id: 'all', label: 'All' },
   { id: 'investment', label: 'Investments' },
   { id: 'buyer', label: 'Buyers' },
   { id: 'seller', label: 'Sellers' },
@@ -188,10 +203,9 @@ const FeedItem = React.memo(function FeedItem({
     }
   };
 
-  const badges: string[] = [];
-  if (video.is_featured) badges.push('FEATURED');
-  if (video.video_type === 'reel') badges.push('PROJECT REEL');
-  if (deal) badges.push('INVESTMENT');
+  const parsed = parseVideoTitle(video);
+  const propertyTitle = deal?.title ?? parsed.title;
+  const isActiveStatus = (video.status ?? 'published') === 'published';
 
   return (
     <View style={[styles.item, { height }]}>
@@ -199,6 +213,7 @@ const FeedItem = React.memo(function FeedItem({
         style={StyleSheet.absoluteFill}
         activeOpacity={1}
         onPress={handleTap}
+        onLongPress={() => onReport(video)}
         testID={`video-item-${video.id}`}
       >
         <Video
@@ -267,15 +282,6 @@ const FeedItem = React.memo(function FeedItem({
 
         <TouchableOpacity
           style={styles.railBtn}
-          onPress={() => onShare(video)}
-          testID={`video-share-${video.id}`}
-        >
-          <Share2 size={30} color="#fff" />
-          <Text style={styles.railCount}>{formatCount(engagement.shareCount)}</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.railBtn}
           onPress={() => onSave(video)}
           testID={`video-save-${video.id}`}
         >
@@ -289,20 +295,11 @@ const FeedItem = React.memo(function FeedItem({
 
         <TouchableOpacity
           style={styles.railBtn}
-          onPress={() => onFollow(video)}
-          testID={`video-follow-${video.id}`}
+          onPress={() => onShare(video)}
+          testID={`video-share-${video.id}`}
         >
-          <Text style={[styles.followBtn, engagement.following && styles.followBtnActive]}>
-            {engagement.following ? 'Following' : 'Follow'}
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.railBtn}
-          onPress={() => onReport(video)}
-          testID={`video-report-${video.id}`}
-        >
-          <MoreHorizontal size={30} color="#fff" />
+          <Share2 size={30} color="#fff" />
+          <Text style={styles.railCount}>{formatCount(engagement.shareCount)}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.railBtn} onPress={onToggleMute} testID={`video-mute-${video.id}`}>
@@ -310,31 +307,28 @@ const FeedItem = React.memo(function FeedItem({
         </TouchableOpacity>
       </View>
 
-      {/* Bottom info */}
-      <View pointerEvents="none" style={[styles.info, { bottom: insets.bottom + 32 }]}>
+      {/* Bottom info + CTAs */}
+      <View pointerEvents="box-none" style={[styles.info, { bottom: insets.bottom + 32 }]}>
+        <LinearGradient
+          colors={['transparent', 'rgba(0,0,0,0.55)', 'rgba(0,0,0,0.82)']}
+          locations={[0, 0.35, 1]}
+          style={styles.bottomGradient}
+        />
         <View style={styles.badgeRow}>
-          {badges.map((b) => (
-            <Text
-              key={b}
-              style={[
-                styles.badge,
-                b === 'FEATURED' && styles.badgeGold,
-                b === 'PROJECT REEL' && styles.badgeReel,
-                b === 'INVESTMENT' && styles.badgeInvestment,
-              ]}
-            >
-              {b}
-            </Text>
-          ))}
+          {deal ? <Text style={styles.badgeInvestment}>INVESTMENT</Text> : null}
+          {isActiveStatus ? <Text style={styles.badgeActive}>ACTIVE</Text> : null}
         </View>
-        <Text style={styles.infoTitle} numberOfLines={2}>
-          {video.title || 'IVX Holdings'}
+        <Text style={styles.infoTitle} numberOfLines={1}>
+          {`${parsed.title} — ${parsed.tourLabel}`}
         </Text>
-        {deal?.title && (
-          <Text style={styles.infoSubtitle} numberOfLines={1}>
-            {deal.title}
+        <Text style={styles.infoPropertyTitle} numberOfLines={1}>
+          {propertyTitle}
+        </Text>
+        {parsed.location ? (
+          <Text style={styles.infoLocation} numberOfLines={1}>
+            {parsed.location}
           </Text>
-        )}
+        ) : null}
         <View style={styles.metricRow}>
           {deal?.expected_roi ? (
             <View style={styles.metric}>
@@ -356,7 +350,7 @@ const FeedItem = React.memo(function FeedItem({
           ) : null}
         </View>
 
-        <View style={styles.optionsRow} pointerEvents="box-none">
+        <View style={styles.optionsRow}>
           {investmentOptions.map((option) => (
             <View key={option.id} style={styles.optionIcon}>
               <View style={[styles.optionIconCircle, { borderColor: `${option.tint}66` }]}>
@@ -366,30 +360,29 @@ const FeedItem = React.memo(function FeedItem({
             </View>
           ))}
         </View>
-      </View>
 
-      {/* CTA buttons */}
-      <View style={[styles.ctaRow, { bottom: insets.bottom + 32 }]}>
-        {deal?.url ? (
-          <TouchableOpacity
-            style={styles.viewDealBtn}
-            onPress={() => onViewDeal(video)}
-            activeOpacity={0.85}
-            testID={`video-view-deal-${video.id}`}
-          >
-            <Text style={styles.viewDealText}>View Deal</Text>
-          </TouchableOpacity>
-        ) : null}
-        {deal?.id ? (
-          <TouchableOpacity
-            style={styles.investNowBtn}
-            onPress={() => onInvestNow(video)}
-            activeOpacity={0.85}
-            testID={`video-invest-${video.id}`}
-          >
-            <Text style={styles.investNowText}>Invest Now</Text>
-          </TouchableOpacity>
-        ) : null}
+        <View style={styles.ctaRowInner}>
+          {deal?.url || deal?.id ? (
+            <TouchableOpacity
+              style={styles.viewDealBtn}
+              onPress={() => onViewDeal(video)}
+              activeOpacity={0.85}
+              testID={`video-view-deal-${video.id}`}
+            >
+              <Text style={styles.viewDealText}>View Deal</Text>
+            </TouchableOpacity>
+          ) : null}
+          {deal?.id ? (
+            <TouchableOpacity
+              style={styles.investNowBtn}
+              onPress={() => onInvestNow(video)}
+              activeOpacity={0.85}
+              testID={`video-invest-${video.id}`}
+            >
+              <Text style={styles.investNowText}>Invest Now</Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
       </View>
     </View>
   );
@@ -695,9 +688,7 @@ export default function VideosScreen() {
       {/* Top bar */}
       <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
         <View style={styles.topRow}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.closeBtn} testID="reels-close">
-            <X size={22} color="#fff" />
-          </TouchableOpacity>
+          <Text style={styles.headerTitle}>IVX Reels</Text>
           <View style={styles.tabs}>
             {CHANNELS.map((ch) => (
               <TouchableOpacity
@@ -712,6 +703,9 @@ export default function VideosScreen() {
               </TouchableOpacity>
             ))}
           </View>
+          <TouchableOpacity onPress={() => router.back()} style={styles.closeBtn} testID="reels-close">
+            <X size={22} color="#fff" />
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -790,7 +784,17 @@ const styles = StyleSheet.create({
   topRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     gap: 8,
+  },
+  headerTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '900' as const,
+    letterSpacing: -0.3,
+    textShadowColor: 'rgba(0,0,0,0.7)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
   },
   closeBtn: {
     width: 38,
@@ -804,6 +808,7 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     gap: 6,
+    justifyContent: 'center',
   },
   tab: {
     flexShrink: 0,
@@ -872,13 +877,21 @@ const styles = StyleSheet.create({
     marginTop: -48,
     zIndex: 26,
   },
+  bottomGradient: {
+    position: 'absolute',
+    left: -14,
+    right: -70,
+    bottom: -32,
+    height: 280,
+    zIndex: -1,
+  },
   rail: {
     position: 'absolute',
     right: 8,
     zIndex: 20,
     flexDirection: 'column',
     alignItems: 'center',
-    gap: 16,
+    gap: 18,
   },
   railBtn: {
     alignItems: 'center',
@@ -893,20 +906,6 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
   },
-  followBtn: {
-    backgroundColor: GOLD,
-    color: '#000',
-    borderRadius: 999,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    fontSize: 11,
-    fontWeight: '700',
-    overflow: 'hidden',
-  },
-  followBtnActive: {
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    color: '#fff',
-  },
   info: {
     position: 'absolute',
     left: 14,
@@ -916,45 +915,57 @@ const styles = StyleSheet.create({
   badgeRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 5,
-    marginBottom: 6,
-  },
-  badge: {
-    backgroundColor: 'rgba(218,165,32,0.9)',
-    borderRadius: 5,
-    paddingVertical: 2,
-    paddingHorizontal: 7,
-    color: '#000',
-    fontSize: 10,
-    fontWeight: '700',
-    textTransform: 'uppercase' as const,
-    letterSpacing: 0.4,
-  },
-  badgeGold: {
-    backgroundColor: GOLD,
-  },
-  badgeReel: {
-    backgroundColor: 'rgba(255,255,255,0.22)',
-    color: '#fff',
+    gap: 6,
+    marginBottom: 8,
   },
   badgeInvestment: {
-    backgroundColor: 'rgba(0,196,140,0.85)',
+    backgroundColor: GOLD,
+    borderRadius: 5,
+    paddingVertical: 3,
+    paddingHorizontal: 8,
     color: '#000',
+    fontSize: 10,
+    fontWeight: '800' as const,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.4,
+    overflow: 'hidden',
+  },
+  badgeActive: {
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderWidth: 1,
+    borderColor: GOLD,
+    borderRadius: 5,
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    color: GOLD,
+    fontSize: 10,
+    fontWeight: '800' as const,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.4,
+    overflow: 'hidden',
   },
   infoTitle: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
-    lineHeight: 21,
+    lineHeight: 20,
     textShadowColor: 'rgba(0,0,0,0.7)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 4,
   },
-  infoSubtitle: {
+  infoPropertyTitle: {
     color: '#fff',
-    fontSize: 12.5,
-    opacity: 0.9,
-    marginTop: 3,
+    fontSize: 20,
+    fontWeight: '800' as const,
+    marginTop: 2,
+    textShadowColor: 'rgba(0,0,0,0.7)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
+  infoLocation: {
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: 13,
+    marginTop: 2,
     textShadowColor: 'rgba(0,0,0,0.7)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 4,
@@ -966,19 +977,15 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
   },
   metric: {
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    borderRadius: 10,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    minWidth: 80,
+    alignItems: 'center',
   },
   metricValue: {
     color: GOLD,
     fontSize: 18,
-    fontWeight: '800',
+    fontWeight: '800' as const,
   },
   metricLabel: {
-    color: Colors.textTertiary,
+    color: 'rgba(255,255,255,0.7)',
     fontSize: 10.5,
     fontWeight: '500',
     marginTop: 5,
@@ -1010,13 +1017,10 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
   },
-  ctaRow: {
-    position: 'absolute',
-    left: 14,
-    right: 14,
-    zIndex: 22,
+  ctaRowInner: {
     flexDirection: 'row',
     gap: 10,
+    marginTop: 14,
   },
   viewDealBtn: {
     flex: 1,

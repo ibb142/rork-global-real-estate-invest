@@ -56,6 +56,8 @@ export interface FeedVideo {
   deal?: FeedVideoDeal | null;
   /** Creator id used for follow/unfollow actions on the landing page. */
   creator_id?: string | null;
+  /** Video publication status (e.g. published, draft, archived). */
+  status?: string | null;
 }
 
 /**
