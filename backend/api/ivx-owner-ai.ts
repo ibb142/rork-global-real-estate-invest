@@ -5446,6 +5446,9 @@ export async function handleIVXOwnerAIToolRequest(request: Request): Promise<Res
       return ownerOnlyJson({ error: 'Method not allowed.' }, 405);
     }
 
+    // Auth check FIRST — never reveal validation errors to unauthenticated callers.
+    await assertIVXOwnerOnly(request);
+
     const body = await request.json().catch(() => ({})) as Record<string, unknown>;
     const commandText = readTrimmedString(body.command) || readTrimmedString(body.message);
     const prompt = readTrimmedString(body.message) || commandText;
@@ -5778,6 +5781,8 @@ async function handleIVXOwnerAIRequestInternal(request: Request): Promise<Respon
       method: request.method,
       headers: request.headers,
     });
+    // Auth check FIRST — never reveal validation errors to unauthenticated callers.
+    await assertIVXOwnerOnly(authRequest);
     // Block 22R fix: read the body once, defensively. Empty/invalid bodies
     // (e.g. unauthenticated probes, double-consumed streams from upstream
     // middleware) previously surfaced as `Invalid state: ReadableStream is

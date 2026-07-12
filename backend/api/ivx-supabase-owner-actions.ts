@@ -279,6 +279,7 @@ export async function handleIVXSupabaseOwnerActionRequest(request: Request): Pro
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Owner Supabase action failed.';
     console.log('[IVXSupabaseOwnerActions] Owner action failed:', { message });
-    return ownerOnlyJson({ error: message, ownerOnly: true, writeEnabled: true, timestamp: nowIso() }, message.includes('owner') || message.includes('Authorization') ? 401 : 400);
+    const isAuthError = message.includes('owner') || message.includes('Authorization') || message.includes('auth guard') || message.includes('bearer') || message.includes('session') || message.includes('token');
+    return ownerOnlyJson({ error: message, ownerOnly: true, writeEnabled: true, timestamp: nowIso() }, isAuthError ? 401 : 400);
   }
 }
