@@ -448,7 +448,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: Colors.primary,
-    borderRadius: 10,
+    borderRadius: 12,
     paddingVertical: 10,
   },
   investNowText: {
