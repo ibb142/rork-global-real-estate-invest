@@ -1196,18 +1196,18 @@ export default function LandingScreen() {
                       style={styles.memberRegisterButton}
                       onPress={() => {
                         try { landingTracker.trackCtaClick('member_register'); } catch {}
-                        router.push('/member-register' as any);
+                        router.push('/auth?mode=signup' as any);
                       }}
                       activeOpacity={0.7}
                       testID="landing-member-register"
                     >
-                      <Text style={styles.memberRegisterButtonText}>Create Free Account</Text>
+                      <Text style={styles.memberRegisterButtonText}>Get Started</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={styles.loginLink}
                       onPress={() => {
                         try { landingTracker.trackCtaClick('sign_in'); } catch {}
-                        router.push('/login' as any);
+                        router.push('/auth' as any);
                       }}
                       activeOpacity={0.7}
                       testID="landing-login"
@@ -1330,7 +1330,7 @@ export default function LandingScreen() {
                 style={styles.openOwnerLoginBtn}
                 onPress={() => {
                   try { landingTracker.trackCtaClick('open_owner_login'); } catch {}
-                  router.push({ pathname: '/login', params: { ownerMode: '1' } } as any);
+                  router.push({ pathname: '/auth', params: { mode: 'owner' } } as any);
                 }}
                 activeOpacity={0.85}
                 testID="open-owner-login"
