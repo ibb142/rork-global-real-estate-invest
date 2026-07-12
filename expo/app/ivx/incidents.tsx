@@ -170,18 +170,18 @@ function formatTime(value: string): string {
 
 function severityColor(severity: IncidentSeverity): string {
   switch (severity) {
-    case 'critical': return '#ef4444';
+    case 'critical': return '#FF4D4D';
     case 'error': return '#f97316';
     case 'warning': return '#f59e0b';
-    default: return '#3b82f6';
+    default: return '#4A90D9';
   }
 }
 
 function statusColor(status: IncidentStatus): string {
   if (status === 'resolved') return '#10b981';
   if (status === 'rolled_back') return '#a855f7';
-  if (status === 'staging_passed' || status === 'fix_proposed') return '#3b82f6';
-  if (status === 'staging_failed') return '#ef4444';
+  if (status === 'staging_passed' || status === 'fix_proposed') return '#4A90D9';
+  if (status === 'staging_failed') return '#FF4D4D';
   if (status.startsWith('awaiting')) return '#f59e0b';
   if (status === 'diagnosing' || status === 'staging_deploying') return '#06b6d4';
   return '#94a3b8';
@@ -241,8 +241,8 @@ const IncidentRow = React.memo<IncidentRowProps>(({ incident, isOpen, onToggle, 
                 <Brain size={14} color={Colors.primary} />
                 <Text style={styles.diagnosisTitle}>Repair Brain Diagnosis</Text>
                 {incident.diagnosis.riskLevel ? (
-                  <View style={[styles.riskPill, { borderColor: incident.diagnosis.riskLevel === 'high' ? '#ef4444' : incident.diagnosis.riskLevel === 'medium' ? '#f59e0b' : '#10b981' }]}>
-                    <Text style={[styles.riskPillText, { color: incident.diagnosis.riskLevel === 'high' ? '#ef4444' : incident.diagnosis.riskLevel === 'medium' ? '#f59e0b' : '#10b981' }]}>
+                  <View style={[styles.riskPill, { borderColor: incident.diagnosis.riskLevel === 'high' ? '#FF4D4D' : incident.diagnosis.riskLevel === 'medium' ? '#f59e0b' : '#10b981' }]}>
+                    <Text style={[styles.riskPillText, { color: incident.diagnosis.riskLevel === 'high' ? '#FF4D4D' : incident.diagnosis.riskLevel === 'medium' ? '#f59e0b' : '#10b981' }]}>
                       {`${incident.diagnosis.riskLevel} risk`}
                     </Text>
                   </View>
@@ -366,7 +366,7 @@ function HealthBanner({ health, onRollback, rolling }: { health: ProductionHealt
   const critical = health.status === 'critical';
   const degraded = health.status === 'degraded';
   const Icon = critical ? CircleX : degraded ? CircleAlert : ShieldCheck;
-  const color = critical ? '#ef4444' : degraded ? '#f59e0b' : '#10b981';
+  const color = critical ? '#FF4D4D' : degraded ? '#f59e0b' : '#10b981';
   const statusLabel = typeof health.status === 'string' && health.status.length > 0 ? health.status : 'unknown';
   const rateLabel = `${(Number.isFinite(health.failureRate) ? health.failureRate * 100 : 0).toFixed(1)}%`;
   const sampleLabel = String(health.sampleSize ?? 0);
@@ -551,7 +551,7 @@ const styles = StyleSheet.create({
   summaryChipValue: { color: Colors.text, fontSize: 14, fontWeight: '700' as const },
   summaryChipLabel: { color: Colors.subtitle ?? '#94a3b8', fontSize: 12 },
 
-  errorBox: { marginTop: 12, padding: 12, borderRadius: 10, backgroundColor: '#2a1414', borderWidth: 1, borderColor: '#ef4444' },
+  errorBox: { marginTop: 12, padding: 12, borderRadius: 10, backgroundColor: '#2a1414', borderWidth: 1, borderColor: '#FF4D4D' },
   errorText: { color: '#fecaca', fontSize: 12 },
 
   card: { backgroundColor: Colors.card, borderRadius: 14, borderWidth: 1, borderColor: Colors.border, marginBottom: 10, overflow: 'hidden' },

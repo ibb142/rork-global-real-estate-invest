@@ -58,7 +58,7 @@ import {
 const GOLD = '#FFD700';
 const SURFACE_ELEVATED = '#181818';
 const ACCENT_GREEN = '#00E676';
-const ACCENT_RED = '#EF4444';
+const ACCENT_RED = '#FF4D4D';
 
 interface AdminMediaUploadProps {
   projectId: string;
@@ -364,7 +364,7 @@ const AdminMediaUpload = memo(function AdminMediaUpload({
               <Text style={styles.analyticsLabel}>Video Views</Text>
             </View>
             <View style={styles.analyticsCard}>
-              <Heart size={18} color="#EF4444" />
+              <Heart size={18} color="#FF4D4D" />
               <Text style={styles.analyticsValue}>{totalAggregate.likes}</Text>
               <Text style={styles.analyticsLabel}>Likes</Text>
             </View>

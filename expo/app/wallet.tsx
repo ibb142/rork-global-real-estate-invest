@@ -126,7 +126,7 @@ export default function WalletScreen() {
     switch (provider) {
       case 'fednow': return { label: 'FedNow', color: '#00B4D8' };
       case 'rtp_network': return { label: 'RTP', color: '#00B4D8' };
-      case 'circle': return { label: 'Circle', color: '#3B82F6' };
+      case 'circle': return { label: 'Circle', color: '#4A90D9' };
       case 'stripe': return { label: 'Stripe', color: '#635BFF' };
       case 'plaid': return { label: 'Plaid', color: '#00D09C' };
       case 'paypal': return { label: 'PayPal', color: '#003087' };

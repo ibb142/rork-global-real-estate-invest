@@ -227,7 +227,7 @@ export const EMAIL_ACCOUNTS: EmailAccountConfig[] = [
   { id: 'ceo', email: 'ceo@ivxholding.com', displayName: 'CEO Office', role: 'Chief Executive Officer', avatar: 'C', color: '#FF6B35', unreadCount: 0 },
   { id: 'noreply', email: 'noreply@ivxholding.com', displayName: 'No Reply', role: 'System Notifications', avatar: 'N', color: '#6A6A6A', unreadCount: 0 },
   { id: 'support', email: 'support@ivxholding.com', displayName: 'Support', role: 'Customer Support', avatar: 'S', color: '#4A90D9', unreadCount: 0 },
-  { id: 'kyc', email: 'kyc@ivxholding.com', displayName: 'KYC Team', role: 'KYC Verification', avatar: 'K', color: '#22C55E', unreadCount: 0 },
+  { id: 'kyc', email: 'kyc@ivxholding.com', displayName: 'KYC Team', role: 'KYC Verification', avatar: 'K', color: '#00C48C', unreadCount: 0 },
   { id: 'investors', email: 'investors@ivxholding.com', displayName: 'Investor Relations', role: 'Investor Communications', avatar: 'I', color: '#9B59B6', unreadCount: 0 },
   { id: 'legal', email: 'legal@ivxholding.com', displayName: 'Legal', role: 'Legal Department', avatar: 'L', color: '#E74C3C', unreadCount: 0 },
   { id: 'finance', email: 'finance@ivxholding.com', displayName: 'Finance', role: 'Finance Department', avatar: 'F', color: '#2ECC71', unreadCount: 0 },
@@ -238,7 +238,7 @@ export const EMAIL_LABELS = [
   { id: 'urgent', name: 'Urgent', color: '#FF4D4D' },
   { id: 'important', name: 'Important', color: '#FFB800' },
   { id: 'follow-up', name: 'Follow Up', color: '#4A90D9' },
-  { id: 'internal', name: 'Internal', color: '#22C55E' },
+  { id: 'internal', name: 'Internal', color: '#00C48C' },
   { id: 'external', name: 'External', color: '#9B59B6' },
 ];
 
@@ -329,17 +329,17 @@ export const generateReferralCode = (name: string): string => {
 };
 
 export const getTierColor = (tier: Influencer['tier']): string => {
-  const colors = { micro: '#6B7280', mid: '#3B82F6', macro: '#8B5CF6', mega: '#F59E0B' };
+  const colors = { micro: '#6B7280', mid: '#4A90D9', macro: '#8B5CF6', mega: '#F59E0B' };
   return colors[tier];
 };
 
 export const getStatusColor = (status: Influencer['status']): string => {
-  const colors = { active: '#22C55E', paused: '#F59E0B', pending: '#6B7280', terminated: '#EF4444' };
+  const colors = { active: '#00C48C', paused: '#F59E0B', pending: '#6B7280', terminated: '#FF4D4D' };
   return colors[status];
 };
 
 export const getApplicationStatusColor = (status: InfluencerApplication['status']): string => {
-  const colors = { pending: '#F59E0B', approved: '#22C55E', rejected: '#EF4444' };
+  const colors = { pending: '#F59E0B', approved: '#00C48C', rejected: '#FF4D4D' };
   return colors[status];
 };
 
@@ -389,7 +389,7 @@ export const ASSET_CLASS_COMPARISON: AssetClassPerformance[] = [
   { name: 'US Bonds', annualReturn: 4.2, volatility: 5.1, minInvestment: 1000, liquidity: 'Varies', dividendYield: 4.2, inflationHedge: false, tangible: false, tradingHours: 'Mon-Fri', color: '#9A9A9A' },
   { name: 'Savings Account', annualReturn: 4.5, volatility: 0, minInvestment: 0, liquidity: 'Instant', dividendYield: 4.5, inflationHedge: false, tangible: false, tradingHours: 'Anytime', color: '#6A6A6A' },
   { name: 'Bitcoin', annualReturn: 28.5, volatility: 62.4, minInvestment: 1, liquidity: 'Instant (24/7)', dividendYield: 0, inflationHedge: false, tangible: false, tradingHours: '24/7/365', color: '#F7931A' },
-  { name: 'Traditional RE', annualReturn: 8.6, volatility: 12.3, minInvestment: 50000, liquidity: '3-6 months', dividendYield: 4.8, inflationHedge: true, tangible: true, tradingHours: 'N/A', color: '#22C55E' },
+  { name: 'Traditional RE', annualReturn: 8.6, volatility: 12.3, minInvestment: 50000, liquidity: '3-6 months', dividendYield: 4.8, inflationHedge: true, tangible: true, tradingHours: 'N/A', color: '#00C48C' },
 ];
 
 export const PLATFORM_STATS: PlatformStat[] = [

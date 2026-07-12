@@ -29,9 +29,9 @@ function formatLatency(ms: number | null): string {
 }
 
 function statusColor(entry: OwnerAIDiagnosticsEntry): string {
-  if (entry.error || entry.frontendError) return Colors.danger ?? '#ef4444';
+  if (entry.error || entry.frontendError) return Colors.danger ?? '#FF4D4D';
   if (entry.frontendRenderedAt && entry.providerLatencyMs != null) return '#10b981';
-  if (entry.providerLatencyMs != null) return '#3b82f6';
+  if (entry.providerLatencyMs != null) return '#4A90D9';
   return Colors.subtitle ?? '#94a3b8';
 }
 
@@ -88,7 +88,7 @@ const EntryRow = React.memo<EntryRowProps>(({ entry }) => {
 
       {(entry.error || entry.frontendError) ? (
         <View style={styles.row}>
-          <AlertCircle size={ICON_SIZE} color={Colors.danger ?? '#ef4444'} />
+          <AlertCircle size={ICON_SIZE} color={Colors.danger ?? '#FF4D4D'} />
           <Text style={styles.rowLabel}>Error</Text>
           <Text style={[styles.rowValue, styles.errorValue]} numberOfLines={3}>
             {entry.error ?? entry.frontendError}
@@ -150,11 +150,11 @@ export default function OwnerAILogScreen() {
           </Text>
         </View>
         {query.isLoading && entries.length === 0 ? (
-          <View style={styles.center}><ActivityIndicator color={Colors.tint ?? '#3b82f6'} /></View>
+          <View style={styles.center}><ActivityIndicator color={Colors.tint ?? '#4A90D9'} /></View>
         ) : null}
         {errorMessage ? (
           <View style={styles.errorBanner}>
-            <AlertCircle size={14} color={Colors.danger ?? '#ef4444'} />
+            <AlertCircle size={14} color={Colors.danger ?? '#FF4D4D'} />
             <Text style={styles.errorBannerText} numberOfLines={3}>{errorMessage}</Text>
           </View>
         ) : null}
@@ -163,7 +163,7 @@ export default function OwnerAILogScreen() {
           keyExtractor={KEY_EXTRACTOR}
           renderItem={renderItem}
           contentContainerStyle={styles.listContent}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={Colors.tint ?? '#3b82f6'} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={Colors.tint ?? '#4A90D9'} />}
           ListEmptyComponent={
             query.isLoading ? null : (
               <View style={styles.center}>
@@ -198,11 +198,11 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'flex-start', gap: 6 },
   rowLabel: { color: Colors.subtitle, fontSize: 11, width: 110 },
   rowValue: { color: Colors.text, fontSize: 11, flex: 1, lineHeight: 16 },
-  errorValue: { color: Colors.danger ?? '#ef4444' },
+  errorValue: { color: Colors.danger ?? '#FF4D4D' },
   stagesBlock: { marginTop: 4, paddingTop: 6, borderTopWidth: 1, borderTopColor: 'rgba(148, 163, 184, 0.08)', gap: 2 },
   stageLine: { color: Colors.subtitle, fontSize: 10 },
   center: { alignItems: 'center', justifyContent: 'center', padding: 24 },
   emptyText: { color: Colors.subtitle, fontSize: 13, textAlign: 'center' },
   errorBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 16, marginBottom: 6, padding: 10, borderRadius: 10, backgroundColor: 'rgba(239, 68, 68, 0.12)' },
-  errorBannerText: { color: Colors.danger ?? '#ef4444', fontSize: 12, flex: 1 },
+  errorBannerText: { color: Colors.danger ?? '#FF4D4D', fontSize: 12, flex: 1 },
 });

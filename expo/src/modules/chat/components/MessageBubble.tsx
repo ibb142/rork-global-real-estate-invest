@@ -319,7 +319,7 @@ export const MessageBubble = memo(function MessageBubble({
 
           {isFailed ? (
             <View style={styles.failedIndicator}>
-              <AlertCircle size={12} color="#ef4444" />
+              <AlertCircle size={12} color="#FF4D4D" />
               <Text style={styles.failedText}>{statusLabel}</Text>
             </View>
           ) : (
@@ -421,7 +421,7 @@ export const MessageBubble = memo(function MessageBubble({
               onPress={handleRetry}
               testID={`chat-message-retry-${message.id}`}
             >
-              <RefreshCw size={13} color="#ef4444" />
+              <RefreshCw size={13} color="#FF4D4D" />
               <Text style={styles.retryActionText}>Retry</Text>
             </Pressable>
             <Pressable
@@ -583,7 +583,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   failedText: {
-    color: '#ef4444',
+    color: '#FF4D4D',
     fontSize: 10,
     fontWeight: '800' as const,
   },
@@ -620,7 +620,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(239,68,68,0.10)',
   },
   retryActionText: {
-    color: '#ef4444',
+    color: '#FF4D4D',
     fontSize: 11,
     fontWeight: '900' as const,
   },

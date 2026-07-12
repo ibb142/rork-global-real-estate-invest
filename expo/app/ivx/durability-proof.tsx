@@ -145,7 +145,7 @@ export default function IVXDurabilityProofRoute() {
               ) : (
                 <View style={styles.verdictRow}>
                   {result.idsMatch && result.searchFound ? (
-                    <CheckCircle2 color={Colors.success ?? '#22C55E'} size={18} />
+                    <CheckCircle2 color={Colors.success ?? '#00C48C'} size={18} />
                   ) : (
                     <XCircle color={Colors.error} size={18} />
                   )}
@@ -248,7 +248,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   fieldValueYes: {
-    color: Colors.success ?? '#22C55E',
+    color: Colors.success ?? '#00C48C',
     fontWeight: '800' as const,
   },
   fieldValueNo: {

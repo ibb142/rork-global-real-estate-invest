@@ -66,7 +66,7 @@ import {
 
 const ICON_MAP: Record<string, React.ReactNode> = {
   Lock: <Lock size={20} color="#6366F1" />,
-  Shield: <Shield size={20} color="#22C55E" />,
+  Shield: <Shield size={20} color="#00C48C" />,
   Users: <Users size={20} color="#6366F1" />,
   Building2: <Building2 size={20} color="#F59E0B" />,
   TrendingUp: <TrendingUp size={20} color="#EC4899" />,
@@ -74,16 +74,16 @@ const ICON_MAP: Record<string, React.ReactNode> = {
   Wallet: <Wallet size={20} color="#14B8A6" />,
   Gift: <Gift size={20} color="#F97316" />,
   Crown: <Crown size={20} color="#EAB308" />,
-  Bell: <Bell size={20} color="#EF4444" />,
+  Bell: <Bell size={20} color="#FF4D4D" />,
   Brain: <Brain size={20} color="#A855F7" />,
-  MessageSquare: <MessageSquare size={20} color="#3B82F6" />,
+  MessageSquare: <MessageSquare size={20} color="#4A90D9" />,
   Handshake: <Handshake size={20} color="#84CC16" />,
-  Settings: <Settings size={20} color="#666666" />,
+  Settings: <Settings size={20} color="#555555" />,
   ShieldCheck: <ShieldCheck size={20} color="#DC2626" />,
   Palette: <Palette size={20} color="#D946EF" />,
   LineChart: <LineChart size={20} color="#0EA5E9" />,
   FileCheck: <FileCheck size={20} color="#78716C" />,
-  Plug: <Plug size={20} color="#22C55E" />,
+  Plug: <Plug size={20} color="#00C48C" />,
 };
 
 export default function AppDocsScreen() {
@@ -291,9 +291,9 @@ export default function AppDocsScreen() {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'active': return '#22C55E';
+      case 'active': return '#00C48C';
       case 'beta': return '#F59E0B';
-      case 'coming_soon': return '#666666';
+      case 'coming_soon': return '#555555';
       default: return Colors.textSecondary;
     }
   };
@@ -336,7 +336,7 @@ export default function AppDocsScreen() {
             <Text style={styles.statLabel}>Total</Text>
           </View>
           <View style={[styles.statCard, styles.statActive]}>
-            <Text style={[styles.statNumber, { color: '#22C55E' }]}>{activeFeatures}</Text>
+            <Text style={[styles.statNumber, { color: '#00C48C' }]}>{activeFeatures}</Text>
             <Text style={styles.statLabel}>Active</Text>
           </View>
           <View style={styles.statCard}>

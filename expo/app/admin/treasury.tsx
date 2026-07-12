@@ -41,9 +41,9 @@ const BG = '#000000';
 const CARD = '#141414';
 const BORDER = '#2A2A2A';
 const TEXT = '#FFFFFF';
-const SUB = '#999999';
-const GREEN = '#22C55E';
-const RED = '#EF4444';
+const SUB = '#909090';
+const GREEN = '#00C48C';
+const RED = '#FF4D4D';
 
 interface TreasuryDashboard {
   generatedAt: string;

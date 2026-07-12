@@ -61,13 +61,13 @@ const TABS: { label: string; value: TabType; icon: React.ReactNode }[] = [
 ];
 
 const CLUSTER_COLORS: Record<string, string> = {
-  BUY_NOW: '#22C55E',
-  LEARN: '#3B82F6',
+  BUY_NOW: '#00C48C',
+  LEARN: '#4A90D9',
   COMPARE: '#F59E0B',
   INVEST: '#FFD700',
   FINANCE: '#A855F7',
   PARTNER: '#EC4899',
-  SELL: '#EF4444',
+  SELL: '#FF4D4D',
   DEVELOP: '#06B6D4',
 };
 

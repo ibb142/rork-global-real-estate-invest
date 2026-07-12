@@ -61,29 +61,29 @@ import {
 import type { IntegrationOwner, IntegrationPriority, IntegrationStatus } from '@/mocks/developer-handoff';
 
 const CATEGORY_ICONS: Record<string, React.ReactNode> = {
-  Database: <Database size={18} color="#3B82F6" />,
+  Database: <Database size={18} color="#4A90D9" />,
   Lock: <Lock size={18} color="#6366F1" />,
-  CreditCard: <CreditCard size={18} color="#22C55E" />,
+  CreditCard: <CreditCard size={18} color="#00C48C" />,
   ShieldCheck: <ShieldCheck size={18} color="#F59E0B" />,
   Bell: <Bell size={18} color="#EC4899" />,
   Brain: <Brain size={18} color="#A855F7" />,
   Building2: <Building2 size={18} color="#F97316" />,
   BarChart3: <BarChart3 size={18} color="#0EA5E9" />,
   FileCheck: <FileCheck size={18} color="#78716C" />,
-  Plug: <Plug size={18} color="#22C55E" />,
+  Plug: <Plug size={18} color="#00C48C" />,
 };
 
 const PRIORITY_CONFIG: Record<IntegrationPriority, { color: string; label: string }> = {
   critical: { color: '#DC2626', label: 'Critical' },
   high: { color: '#F59E0B', label: 'High' },
-  medium: { color: '#3B82F6', label: 'Medium' },
+  medium: { color: '#4A90D9', label: 'Medium' },
   low: { color: '#6B7280', label: 'Low' },
 };
 
 const STATUS_CONFIG: Record<IntegrationStatus, { color: string; label: string }> = {
-  ready: { color: '#22C55E', label: 'Ready' },
+  ready: { color: '#00C48C', label: 'Ready' },
   mock_only: { color: '#F59E0B', label: 'Mock Only' },
-  in_progress: { color: '#3B82F6', label: 'In Progress' },
+  in_progress: { color: '#4A90D9', label: 'In Progress' },
   not_started: { color: '#6B7280', label: 'Not Started' },
 };
 
@@ -103,7 +103,7 @@ function getEffectivePriority(item: { priority: IntegrationPriority; status: Int
 
 function getPriorityDisplay(item: { priority: IntegrationPriority; status: IntegrationStatus }): { color: string; label: string } {
   if (item.status === 'ready') {
-    return { color: '#22C55E', label: 'Resolved' };
+    return { color: '#00C48C', label: 'Resolved' };
   }
 
   if (item.status === 'mock_only') {
@@ -403,7 +403,7 @@ export default function DeveloperHandoffScreen() {
             <Text style={styles.statLabel}>Ready now</Text>
           </View>
           <View style={styles.statCard}>
-            <Text style={[styles.statValue, { color: '#3B82F6' }]}>{inProgressCount}</Text>
+            <Text style={[styles.statValue, { color: '#4A90D9' }]}>{inProgressCount}</Text>
             <Text style={styles.statLabel}>In progress</Text>
           </View>
           <View style={styles.statCard}>
@@ -509,7 +509,7 @@ export default function DeveloperHandoffScreen() {
             <TouchableOpacity
               activeOpacity={0.85}
               onPress={handleDownloadText}
-              style={[styles.actionButton, { backgroundColor: '#3B82F6' }]}
+              style={[styles.actionButton, { backgroundColor: '#4A90D9' }]}
               testID="developer-module-download-btn"
             >
               <Download size={16} color="#FFFFFF" />
@@ -670,8 +670,8 @@ export default function DeveloperHandoffScreen() {
                                                 <Text style={[styles.tagText, { color: '#DC2626' }]}>Required</Text>
                                               </View>
                                             ) : null}
-                                            <View style={[styles.tag, { backgroundColor: variable.configured ? '#22C55E22' : '#6B728022' }]}>
-                                              <Text style={[styles.tagText, { color: variable.configured ? '#22C55E' : '#9CA3AF' }]}>
+                                            <View style={[styles.tag, { backgroundColor: variable.configured ? '#00C48C22' : '#6B728022' }]}>
+                                              <Text style={[styles.tagText, { color: variable.configured ? '#00C48C' : '#9CA3AF' }]}>
                                                 {variable.configured ? 'Configured' : 'Missing'}
                                               </Text>
                                             </View>
@@ -748,8 +748,8 @@ export default function DeveloperHandoffScreen() {
                   <View style={styles.envCardHeader}>
                     <Text style={styles.envName}>{variable.name}</Text>
                     <View style={styles.envCardBadges}>
-                      <View style={[styles.tag, { backgroundColor: variable.configured ? '#22C55E22' : '#6B728022' }]}>
-                        <Text style={[styles.tagText, { color: variable.configured ? '#22C55E' : '#9CA3AF' }]}>
+                      <View style={[styles.tag, { backgroundColor: variable.configured ? '#00C48C22' : '#6B728022' }]}>
+                        <Text style={[styles.tagText, { color: variable.configured ? '#00C48C' : '#9CA3AF' }]}>
                           {variable.configured ? 'Configured' : 'Missing'}
                         </Text>
                       </View>

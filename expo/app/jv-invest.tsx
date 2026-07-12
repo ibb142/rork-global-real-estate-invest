@@ -244,7 +244,7 @@ const POOL_CONFIG: Record<InvestmentPool, { label: string; desc: string; icon: t
     label: 'JV Investment',
     desc: 'Direct equity stake in the project with profit sharing',
     icon: Landmark,
-    color: '#22C55E',
+    color: '#00C48C',
   },
 
 };

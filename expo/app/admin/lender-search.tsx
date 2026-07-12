@@ -60,8 +60,8 @@ const formatCurrency = (amount: number): string => formatCurrencyCompact(amount)
 
 const SOURCE_LABELS: Record<string, { label: string; color: string }> = {
   google: { label: 'Google', color: '#4285F4' },
-  sec_filing: { label: 'SEC Filing', color: '#22C55E' },
-  sec_edgar: { label: 'SEC EDGAR', color: '#22C55E' },
+  sec_filing: { label: 'SEC Filing', color: '#00C48C' },
+  sec_edgar: { label: 'SEC EDGAR', color: '#00C48C' },
 };
 
 const CATEGORY_LABELS: Record<LenderCategory, string> = {
@@ -235,8 +235,8 @@ const SECResultCard = React.memo(({
       >
         <View style={styles.cardTopRow}>
           <View style={[styles.sourceBadge, { backgroundColor: 'rgba(0,196,140,0.1)' }]}>
-            <Database size={10} color="#22C55E" />
-            <Text style={[styles.sourceText, { color: '#22C55E' }]}>SEC EDGAR</Text>
+            <Database size={10} color="#00C48C" />
+            <Text style={[styles.sourceText, { color: '#00C48C' }]}>SEC EDGAR</Text>
           </View>
           <View style={styles.confidenceBadge}>
             <FileText size={10} color={Colors.success} />
@@ -285,13 +285,13 @@ const SECResultCard = React.memo(({
         <View style={styles.tagsRow}>
           {result.tags.slice(0, 3).map((tag) => (
             <View key={tag} style={[styles.tag, { backgroundColor: 'rgba(0,196,140,0.1)' }]}>
-              <Text style={[styles.tagText, { color: '#22C55E' }]}>{tag}</Text>
+              <Text style={[styles.tagText, { color: '#00C48C' }]}>{tag}</Text>
             </View>
           ))}
         </View>
 
         <TouchableOpacity
-          style={[styles.importBtn, imported && styles.importBtnDone, !imported && { backgroundColor: '#22C55E' }]}
+          style={[styles.importBtn, imported && styles.importBtnDone, !imported && { backgroundColor: '#00C48C' }]}
           onPress={() => !imported && onImport(result)}
           disabled={imported}
         >
@@ -563,8 +563,8 @@ function LenderSearchScreenContent() {
           <View style={styles.googleBadge}>
             {searchMode === 'sec_edgar' ? (
               <>
-                <Database size={10} color="#22C55E" />
-                <Text style={[styles.googleBadgeText, { color: '#22C55E' }]}>SEC EDGAR - Real Data</Text>
+                <Database size={10} color="#00C48C" />
+                <Text style={[styles.googleBadgeText, { color: '#00C48C' }]}>SEC EDGAR - Real Data</Text>
               </>
             ) : (
               <>
@@ -623,7 +623,7 @@ function LenderSearchScreenContent() {
             style={[
               styles.searchBtn,
               isSearching && styles.searchBtnDisabled,
-              searchMode === 'sec_edgar' && { backgroundColor: '#22C55E' },
+              searchMode === 'sec_edgar' && { backgroundColor: '#00C48C' },
             ]}
             onPress={handleSearch}
             disabled={isSearching}
@@ -665,7 +665,7 @@ function LenderSearchScreenContent() {
 
         {searchMode === 'sec_edgar' && !hasSearched && !isSearching && (
           <View style={styles.secInfoCard}>
-            <Database size={20} color="#22C55E" />
+            <Database size={20} color="#00C48C" />
             <View style={styles.secInfoContent}>
               <Text style={styles.secInfoTitle}>SEC EDGAR - Real Lender Data</Text>
               <Text style={styles.secInfoText}>
@@ -724,7 +724,7 @@ function LenderSearchScreenContent() {
           <View style={styles.searchingState}>
             <Animated.View style={{ opacity: pulseAnim }}>
               <View style={[styles.searchingIcon, searchMode === 'sec_edgar' && { backgroundColor: 'rgba(0,196,140,0.12)' }]}>
-                {searchMode === 'sec_edgar' ? <Database size={32} color="#22C55E" /> : <Globe size={32} color="#4285F4" />}
+                {searchMode === 'sec_edgar' ? <Database size={32} color="#00C48C" /> : <Globe size={32} color="#4285F4" />}
               </View>
             </Animated.View>
             <Text style={styles.searchingTitle}>

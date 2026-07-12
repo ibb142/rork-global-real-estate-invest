@@ -330,13 +330,13 @@ const IMPACT_STYLES: Record<string, { bg: string; text: string; label: string }>
   critical: { bg: '#FF4D4D18', text: '#FF4D4D', label: 'CRITICAL' },
   high: { bg: '#FFB80018', text: '#FFB800', label: 'HIGH' },
   medium: { bg: '#4A90D918', text: '#4A90D9', label: 'MEDIUM' },
-  low: { bg: '#22C55E18', text: '#22C55E', label: 'LOW' },
+  low: { bg: '#00C48C18', text: '#00C48C', label: 'LOW' },
 };
 
 const TYPE_ICONS: Record<string, { icon: React.ReactNode; color: string; label: string }> = {
   pattern: { icon: <Activity size={14} color="#7B68EE" />, color: '#7B68EE', label: 'Pattern' },
   anomaly: { icon: <AlertTriangle size={14} color="#FF4D4D" />, color: '#FF4D4D', label: 'Anomaly' },
-  prediction: { icon: <TrendingUp size={14} color="#22C55E" />, color: '#22C55E', label: 'Prediction' },
+  prediction: { icon: <TrendingUp size={14} color="#00C48C" />, color: '#00C48C', label: 'Prediction' },
   recommendation: { icon: <Lightbulb size={14} color="#FFB800" />, color: '#FFB800', label: 'Recommendation' },
   trend: { icon: <TrendingDown size={14} color="#4A90D9" />, color: '#4A90D9', label: 'Trend' },
 };
@@ -409,7 +409,7 @@ function computeInvestorIntelligence(d: ComputedAnalytics): InvestorIntel {
     { role: 'broker', re: /broker|agent|referr|influencer|commission/, color: '#E879F9', label: 'Likely Broker' },
     { role: 'lender', re: /financ|loan|lend|mortgage|credit|capital/, color: '#FFB800', label: 'Likely Lender' },
     { role: 'seller', re: /sell|listing|inquire|\bjv\b|partner/, color: '#FF6B6B', label: 'Likely Seller' },
-    { role: 'investor', re: /invest|portfolio|portal|roi|return|dividend|deal|wealth|fund/, color: '#22C55E', label: 'Likely Investor' },
+    { role: 'investor', re: /invest|portfolio|portal|roi|return|dividend|deal|wealth|fund/, color: '#00C48C', label: 'Likely Investor' },
     { role: 'buyer', re: /buy|purchase|price|own|share|property|home|unit|acquis/, color: '#4A90D9', label: 'Likely Buyer' },
   ];
   const weights: Record<IntentRole, number> = { investor: 0, buyer: 0, seller: 0, broker: 0, lender: 0, unknown: 0 };
@@ -434,7 +434,7 @@ function computeInvestorIntelligence(d: ComputedAnalytics): InvestorIntel {
   const targetMarketVisitors = (d.geoZones?.byCountry ?? []).filter((c) => TARGET_MARKETS.includes(c.country)).reduce((t, c) => t + c.count, 0);
   const signals: InvestorIntel['signals'] = [
     { key: 'repeat', label: 'Repeat Visitors', value: returning, color: '#7B61FF' },
-    { key: 'engaged', label: 'High-Engagement', value: engaged, color: '#22C55E' },
+    { key: 'engaged', label: 'High-Engagement', value: engaged, color: '#00C48C' },
     { key: 'deal', label: 'Deal Viewers', value: dealViewers, color: '#4A90D9' },
     { key: 'doc', label: 'Document Viewers', value: docViewers, color: '#F57C00' },
     { key: 'returned', label: 'Returned Visitors', value: returning, color: '#0097A7' },
@@ -462,7 +462,7 @@ function computeInvestorIntelligence(d: ComputedAnalytics): InvestorIntel {
   const knownLeads = hot + warm + cold;
   const lqUnknown = Math.max(0, unique - knownLeads);
   const leadQuality: InvestorIntel['leadQuality'] = ([
-    { tier: 'hot' as const, label: 'Hot', desc: 'Submitted a form / strong intent', count: hot, color: '#22C55E' },
+    { tier: 'hot' as const, label: 'Hot', desc: 'Submitted a form / strong intent', count: hot, color: '#00C48C' },
     { tier: 'warm' as const, label: 'Warm', desc: 'Clicked a CTA / engaged', count: warm, color: '#FFB800' },
     { tier: 'cold' as const, label: 'Cold', desc: 'Browsed only', count: cold, color: '#4A90D9' },
     { tier: 'unknown' as const, label: 'Unknown', desc: 'Not enough signal yet', count: lqUnknown, color: '#97A0AF' },
@@ -600,13 +600,13 @@ function TrendBadge({ value, inverted = false }: { value: number; inverted?: boo
   const isPositive = inverted ? value < 0 : value > 0;
   const absVal = Math.abs(value);
   return (
-    <View style={[s.trendBadge, { backgroundColor: isPositive ? '#22C55E15' : '#FF6B6B15' }]}>
+    <View style={[s.trendBadge, { backgroundColor: isPositive ? '#00C48C15' : '#FF6B6B15' }]}>
       {isPositive ? (
-        <ArrowUpRight size={10} color="#22C55E" />
+        <ArrowUpRight size={10} color="#00C48C" />
       ) : (
         <ArrowDownRight size={10} color="#FF6B6B" />
       )}
-      <Text style={[s.trendText, { color: isPositive ? '#22C55E' : '#FF6B6B' }]}>
+      <Text style={[s.trendText, { color: isPositive ? '#00C48C' : '#FF6B6B' }]}>
         {absVal}%
       </Text>
     </View>
@@ -629,9 +629,9 @@ function PulseIndicator({ active }: { active: boolean }) {
   return (
     <View style={s.pulseWrap}>
       {active && (
-        <Animated.View style={[s.pulseRing, { transform: [{ scale: pulse }], borderColor: '#22C55E40' }]} />
+        <Animated.View style={[s.pulseRing, { transform: [{ scale: pulse }], borderColor: '#00C48C40' }]} />
       )}
-      <View style={[s.pulseDot, { backgroundColor: active ? '#22C55E' : '#555' }]} />
+      <View style={[s.pulseDot, { backgroundColor: active ? '#00C48C' : '#555' }]} />
     </View>
   );
 }
@@ -862,7 +862,7 @@ export default function LandingAnalyticsScreen() {
       { label: 'Scroll 25%', count: data.funnel.scroll25, color: '#7B68EE', pct: data.funnel.pageViews > 0 ? Math.round((data.funnel.scroll25 / data.funnel.pageViews) * 100) : 0 },
       { label: 'Scroll 50%', count: data.funnel.scroll50, color: '#9B59B6', pct: data.funnel.pageViews > 0 ? Math.round((data.funnel.scroll50 / data.funnel.pageViews) * 100) : 0 },
       { label: 'Scroll 75%', count: data.funnel.scroll75, color: SS_ORANGE, pct: data.funnel.pageViews > 0 ? Math.round((data.funnel.scroll75 / data.funnel.pageViews) * 100) : 0 },
-      { label: 'Form Focus', count: data.funnel.formFocuses, color: '#22C55E', pct: data.funnel.pageViews > 0 ? Math.round((data.funnel.formFocuses / data.funnel.pageViews) * 100) : 0 },
+      { label: 'Form Focus', count: data.funnel.formFocuses, color: '#00C48C', pct: data.funnel.pageViews > 0 ? Math.round((data.funnel.formFocuses / data.funnel.pageViews) * 100) : 0 },
       { label: 'Submitted', count: data.funnel.formSubmits, color: '#27AE60', pct: data.funnel.pageViews > 0 ? Math.round((data.funnel.formSubmits / data.funnel.pageViews) * 100) : 0 },
     ];
   }, [data]);
@@ -1128,7 +1128,7 @@ GRANT EXECUTE ON FUNCTION public.analytics_live_count TO anon, authenticated;
                 onPress={deployRpcFunctions}
                 disabled={rpcDeploying}
                 style={{
-                  backgroundColor: rpcDeployResult === 'success' ? '#22C55E' : '#FFB800',
+                  backgroundColor: rpcDeployResult === 'success' ? '#00C48C' : '#FFB800',
                   borderRadius: 8,
                   paddingVertical: 10,
                   paddingHorizontal: 16,
@@ -1187,7 +1187,7 @@ GRANT EXECUTE ON FUNCTION public.analytics_live_count TO anon, authenticated;
 
         <View style={s.ringRow}>
           <View style={s.ringCard}>
-            <AnimatedRing percent={convPct} size={90} strokeWidth={8} color="#22C55E">
+            <AnimatedRing percent={convPct} size={90} strokeWidth={8} color="#00C48C">
               <Text style={s.ringValue}>{convPct}%</Text>
               <Text style={s.ringLabel}>CVR</Text>
             </AnimatedRing>
@@ -1226,7 +1226,7 @@ GRANT EXECUTE ON FUNCTION public.analytics_live_count TO anon, authenticated;
         {dailyData.length > 0 && (
           <View style={s.card}>
             <View style={s.cardHeader}>
-              <TrendingUp size={16} color="#22C55E" />
+              <TrendingUp size={16} color="#00C48C" />
               <Text style={s.cardTitle}>Daily Traffic</Text>
               <View style={s.cardBadge}>
                 <Text style={s.cardBadgeText}>{data.dailyViews.length}d</Text>
@@ -1275,8 +1275,8 @@ GRANT EXECUTE ON FUNCTION public.analytics_live_count TO anon, authenticated;
               <Text style={{ fontSize: 11, fontWeight: '700' as const, color: '#4A90D9' }}>Avg Session</Text>
               <Text style={{ fontSize: 22, fontWeight: '900' as const, color: '#1B2A3D', marginTop: 6 }}>{data.timeSpent?.avgSessionSeconds ?? 0}s</Text>
             </View>
-            <View style={{ flex: 1, backgroundColor: '#22C55E12', borderRadius: 12, padding: 14, alignItems: 'center' }}>
-              <Text style={{ fontSize: 11, fontWeight: '700' as const, color: '#22C55E' }}>Engaged Sessions</Text>
+            <View style={{ flex: 1, backgroundColor: '#00C48C12', borderRadius: 12, padding: 14, alignItems: 'center' }}>
+              <Text style={{ fontSize: 11, fontWeight: '700' as const, color: '#00C48C' }}>Engaged Sessions</Text>
               <Text style={{ fontSize: 22, fontWeight: '900' as const, color: '#1B2A3D', marginTop: 6 }}>{data.timeSpent?.engagedSessions ?? 0}</Text>
             </View>
           </View>
@@ -1300,14 +1300,14 @@ GRANT EXECUTE ON FUNCTION public.analytics_live_count TO anon, authenticated;
             <Text style={{ fontSize: 12, fontWeight: '800' as const, color: '#5E6C84', textTransform: 'uppercase' as const }}>Most clicked functionality</Text>
             {(data.topActions ?? []).slice(0, 5).map((action, index) => (
               <View key={`${action.action}-${index}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#F8FAFC', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#E9EEF5' }}>
-                <View style={{ width: 28, height: 28, borderRadius: 8, backgroundColor: '#22C55E18', alignItems: 'center', justifyContent: 'center' }}>
-                  <Text style={{ color: '#22C55E', fontSize: 11, fontWeight: '800' as const }}>{index + 1}</Text>
+                <View style={{ width: 28, height: 28, borderRadius: 8, backgroundColor: '#00C48C18', alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ color: '#00C48C', fontSize: 11, fontWeight: '800' as const }}>{index + 1}</Text>
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={{ color: '#1B2A3D', fontSize: 13, fontWeight: '700' as const }} numberOfLines={1}>{action.action}</Text>
                   <Text style={{ color: '#5E6C84', fontSize: 11, marginTop: 2 }}>{action.count} clicks · {action.uniqueSessions} sessions · {action.avgTimeSpent}s avg</Text>
                 </View>
-                <Text style={{ color: '#22C55E', fontSize: 12, fontWeight: '800' as const }}>{action.pct}%</Text>
+                <Text style={{ color: '#00C48C', fontSize: 12, fontWeight: '800' as const }}>{action.pct}%</Text>
               </View>
             ))}
             {(data.topActions ?? []).length === 0 && <Text style={s.noDataText}>No click breakdown yet.</Text>}
@@ -1435,7 +1435,7 @@ GRANT EXECUTE ON FUNCTION public.analytics_live_count TO anon, authenticated;
                 features_section: SS_ORANGE,
                 investment_types: SS_TEAL,
                 how_it_works: SS_PURPLE,
-                trust_section: '#22C55E',
+                trust_section: '#00C48C',
                 waitlist_form: SS_PINK,
                 unknown: '#97A0AF',
               };
@@ -1643,7 +1643,7 @@ GRANT EXECUTE ON FUNCTION public.analytics_live_count TO anon, authenticated;
               onPress={deployRpcFunctions}
               disabled={rpcDeploying}
               style={{
-                backgroundColor: rpcDeployResult === 'success' ? '#22C55E' : '#FF6B6B',
+                backgroundColor: rpcDeployResult === 'success' ? '#00C48C' : '#FF6B6B',
                 borderRadius: 10,
                 paddingVertical: 12,
                 paddingHorizontal: 20,
@@ -1691,7 +1691,7 @@ GRANT EXECUTE ON FUNCTION public.analytics_live_count TO anon, authenticated;
         <View style={s.geoKpiRow}>
           {[
             { icon: <Globe size={18} color="#4A90D9" />, value: geo.byCountry.length, label: 'Countries', color: '#4A90D9' },
-            { icon: <MapPin size={18} color="#22C55E" />, value: geo.byCity.length, label: 'Cities', color: '#22C55E' },
+            { icon: <MapPin size={18} color="#00C48C" />, value: geo.byCity.length, label: 'Cities', color: '#00C48C' },
             { icon: <Crosshair size={18} color="#7B68EE" />, value: geo.totalWithGeo, label: 'Tracked', color: '#7B68EE' },
           ].map((kpi, i) => (
             <View key={i} style={[s.geoKpiCard, { borderTopColor: kpi.color }]}>
@@ -1731,7 +1731,7 @@ GRANT EXECUTE ON FUNCTION public.analytics_live_count TO anon, authenticated;
 
         <View style={s.card}>
           <View style={s.cardHeader}>
-            <MapPin size={16} color="#22C55E" />
+            <MapPin size={16} color="#00C48C" />
             <Text style={s.cardTitle}>Top Cities</Text>
           </View>
           {geo.byCity.slice(0, 10).map((c: { city: string; count: number; country: string }, i: number) => (
@@ -1781,7 +1781,7 @@ GRANT EXECUTE ON FUNCTION public.analytics_live_count TO anon, authenticated;
       );
     }
 
-    const engColor = insights.engagementScore >= 60 ? '#22C55E' : insights.engagementScore >= 30 ? '#FFD700' : '#FF6B6B';
+    const engColor = insights.engagementScore >= 60 ? '#00C48C' : insights.engagementScore >= 30 ? '#FFD700' : '#FF6B6B';
 
     return (
       <>
@@ -1814,7 +1814,7 @@ GRANT EXECUTE ON FUNCTION public.analytics_live_count TO anon, authenticated;
             <Text style={s.cardTitle}>Visitor Intent</Text>
           </View>
           {[
-            { label: 'High Intent', desc: 'Submitted form', count: insights.visitorIntent.highIntent, pct: insights.visitorIntent.highIntentPct, color: '#22C55E' },
+            { label: 'High Intent', desc: 'Submitted form', count: insights.visitorIntent.highIntent, pct: insights.visitorIntent.highIntentPct, color: '#00C48C' },
             { label: 'Medium', desc: 'Clicked CTA', count: insights.visitorIntent.mediumIntent, pct: insights.visitorIntent.mediumIntentPct, color: '#FFD700' },
             { label: 'Low', desc: 'Browsed only', count: insights.visitorIntent.lowIntent, pct: insights.visitorIntent.lowIntentPct, color: '#FF6B6B' },
           ].map((intent, i) => (
@@ -1858,7 +1858,7 @@ GRANT EXECUTE ON FUNCTION public.analytics_live_count TO anon, authenticated;
         {insights.topInterests.length > 0 && (
           <View style={s.card}>
             <View style={s.cardHeader}>
-              <Target size={16} color="#22C55E" />
+              <Target size={16} color="#00C48C" />
               <Text style={s.cardTitle}>Investment Interest</Text>
             </View>
             {insights.topInterests.map((interest: { interest: string; count: number; pct: number }, i: number) => (
@@ -1917,7 +1917,7 @@ GRANT EXECUTE ON FUNCTION public.analytics_live_count TO anon, authenticated;
     const intel = investorIntel;
     const roleIcon = (role: IntentRole) => {
       switch (role) {
-        case 'investor': return <TrendingUp size={14} color="#22C55E" />;
+        case 'investor': return <TrendingUp size={14} color="#00C48C" />;
         case 'buyer': return <Home size={14} color="#4A90D9" />;
         case 'seller': return <DollarSign size={14} color="#FF6B6B" />;
         case 'broker': return <Handshake size={14} color="#E879F9" />;
@@ -1926,7 +1926,7 @@ GRANT EXECUTE ON FUNCTION public.analytics_live_count TO anon, authenticated;
       }
     };
     const tierIcon = (tier: string) =>
-      tier === 'hot' ? <Flame size={14} color="#22C55E" /> :
+      tier === 'hot' ? <Flame size={14} color="#00C48C" /> :
       tier === 'warm' ? <Zap size={14} color="#FFB800" /> :
       tier === 'cold' ? <Activity size={14} color="#4A90D9" /> :
       <Users size={14} color="#97A0AF" />;
@@ -1939,7 +1939,7 @@ GRANT EXECUTE ON FUNCTION public.analytics_live_count TO anon, authenticated;
           </View>
           {[
             { icon: <Eye size={13} color="#4A90D9" />, label: 'What the traffic means', text: intel.summary.traffic },
-            { icon: <Activity size={13} color="#22C55E" />, label: 'What visitors are doing', text: intel.summary.behavior },
+            { icon: <Activity size={13} color="#00C48C" />, label: 'What visitors are doing', text: intel.summary.behavior },
             { icon: <Target size={13} color={SS_ORANGE} />, label: 'The opportunity', text: intel.summary.opportunity },
             { icon: <Lightbulb size={13} color="#FFB800" />, label: 'Recommended next action', text: intel.summary.action },
           ].map((row, i) => (
@@ -1955,7 +1955,7 @@ GRANT EXECUTE ON FUNCTION public.analytics_live_count TO anon, authenticated;
 
         <View style={s.card}>
           <View style={s.cardHeader}>
-            <UserCheck size={16} color="#22C55E" />
+            <UserCheck size={16} color="#00C48C" />
             <Text style={s.cardTitle}>Visitor Intent</Text>
             <View style={s.cardBadge}><Text style={s.cardBadgeText}>estimated</Text></View>
           </View>
@@ -1999,7 +1999,7 @@ GRANT EXECUTE ON FUNCTION public.analytics_live_count TO anon, authenticated;
 
         <View style={s.card}>
           <View style={s.cardHeader}>
-            <Target size={16} color="#22C55E" />
+            <Target size={16} color="#00C48C" />
             <Text style={s.cardTitle}>Investment Interest</Text>
           </View>
           {intel.interests.map((it, i) => (
@@ -2115,7 +2115,7 @@ GRANT EXECUTE ON FUNCTION public.analytics_live_count TO anon, authenticated;
         {intelBlock}
         <View style={s.brainHero}>
           <View style={s.brainPulseOuter}>
-            <View style={[s.brainPulseInner, { backgroundColor: brain.status === 'active' ? '#22C55E' : '#FFB800' }]} />
+            <View style={[s.brainPulseInner, { backgroundColor: brain.status === 'active' ? '#00C48C' : '#FFB800' }]} />
           </View>
           <Text style={s.brainStatus}>
             {brain.status === 'active' ? 'AI Brain Active' : 'Learning Mode'}
@@ -2127,7 +2127,7 @@ GRANT EXECUTE ON FUNCTION public.analytics_live_count TO anon, authenticated;
 
         <View style={s.brainKpiRow}>
           {[
-            { value: stats.activeLearnings, label: 'Active', color: '#22C55E' },
+            { value: stats.activeLearnings, label: 'Active', color: '#00C48C' },
             { value: mem.totalDataPointsProcessed, label: 'Data Points', color: '#4A90D9' },
             { value: stats.avgConfidence, label: 'Confidence', color: '#FFB800', suffix: '%' },
           ].map((kpi, i) => (
@@ -2216,12 +2216,12 @@ GRANT EXECUTE ON FUNCTION public.analytics_live_count TO anon, authenticated;
         {(brain.activePredictions ?? []).length > 0 && (
           <View style={s.card}>
             <View style={s.cardHeader}>
-              <TrendingUp size={16} color="#22C55E" />
+              <TrendingUp size={16} color="#00C48C" />
               <Text style={s.cardTitle}>Predictions</Text>
             </View>
             {(brain.activePredictions ?? []).map((pred) => (
               <View key={pred.id} style={s.brainInsightRow}>
-                <View style={[s.brainInsightDot, { backgroundColor: '#22C55E' }]} />
+                <View style={[s.brainInsightDot, { backgroundColor: '#00C48C' }]} />
                 <View style={s.brainInsightInfo}>
                   <Text style={s.brainInsightTitle} numberOfLines={2}>{pred.title}</Text>
                   <Text style={s.brainInsightDesc} numberOfLines={3}>{pred.description}</Text>
@@ -2396,7 +2396,7 @@ GRANT EXECUTE ON FUNCTION public.analytics_live_count TO anon, authenticated;
       switch (step) {
         case 0: return '#4A90D9';
         case 1: return '#FFD700';
-        case 2: return '#22C55E';
+        case 2: return '#00C48C';
         case 3: return '#27AE60';
         default: return '#5E6C84';
       }
@@ -2504,7 +2504,7 @@ GRANT EXECUTE ON FUNCTION public.analytics_live_count TO anon, authenticated;
         {countryData.length > 0 && (
           <View style={s.card}>
             <View style={s.cardHeader}>
-              <Globe size={16} color="#22C55E" />
+              <Globe size={16} color="#00C48C" />
               <Text style={s.cardTitle}>Live by Country</Text>
             </View>
             {countryData.slice(0, 8).map((c: { country: string; count: number }, i: number) => (
@@ -2873,7 +2873,7 @@ const s = StyleSheet.create({
   retryBtnText: { fontSize: 13, fontWeight: '700' as const, color: '#FFFFFF' },
 
   brainHero: { backgroundColor: '#FFFFFF', borderRadius: 20, padding: 28, borderWidth: 1, borderColor: '#E0E5EC', marginBottom: 16, alignItems: 'center', gap: 10 },
-  brainPulseOuter: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#22C55E18', alignItems: 'center', justifyContent: 'center' },
+  brainPulseOuter: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#00C48C18', alignItems: 'center', justifyContent: 'center' },
   brainPulseInner: { width: 20, height: 20, borderRadius: 10 },
   brainStatus: { fontSize: 22, fontWeight: '900' as const, color: '#1B2A3D', letterSpacing: -0.3 },
   brainCycles: { fontSize: 12, fontWeight: '600' as const, color: '#97A0AF' },

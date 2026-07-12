@@ -123,7 +123,7 @@ export default function IVXProofTestRoute() {
         {state.payload ? (
           <View style={styles.card}>
             <View style={styles.rowGap}>
-              {isSuccess ? <CheckCircle2 color="#22C55E" size={18} /> : <AlertTriangle color="#FFB000" size={18} />}
+              {isSuccess ? <CheckCircle2 color="#00C48C" size={18} /> : <AlertTriangle color="#FFB000" size={18} />}
               <Text style={styles.cardLabel}>Returned JSON</Text>
             </View>
             <Text style={styles.code}>{JSON.stringify(state.payload, null, 2)}</Text>

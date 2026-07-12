@@ -12,10 +12,10 @@ import { useNetwork } from '@/lib/network-context';
 import type { BackendStatus } from '@/lib/api-resilience';
 
 const STATUS_COLORS: Record<BackendStatus, string> = {
-  online: '#22C55E',
+  online: '#00C48C',
   degraded: '#F59E0B',
-  offline: '#EF4444',
-  unknown: '#999999',
+  offline: '#FF4D4D',
+  unknown: '#909090',
 };
 
 const STATUS_LABELS: Record<BackendStatus, string> = {
@@ -77,7 +77,7 @@ export default function ConnectionStatusBanner() {
   if (!visible) return null;
 
   const bannerBg = isOffline ? '#1C1917' : supabaseStatus === 'offline' ? '#1E1B2E' : '#2D2305';
-  const accentColor = isOffline ? '#EF4444' : supabaseStatus === 'offline' ? '#A78BFA' : '#FBBF24';
+  const accentColor = isOffline ? '#FF4D4D' : supabaseStatus === 'offline' ? '#A78BFA' : '#FBBF24';
 
   const spin = refreshSpin.interpolate({
     inputRange: [0, 1],
@@ -119,13 +119,13 @@ export default function ConnectionStatusBanner() {
         <View style={styles.rightSection}>
           <TouchableOpacity onPress={handleRefresh} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
             <Animated.View style={{ transform: [{ rotate: spin }] }}>
-              <RefreshCw size={16} color="#999999" />
+              <RefreshCw size={16} color="#909090" />
             </Animated.View>
           </TouchableOpacity>
           {expanded ? (
-            <ChevronUp size={16} color="#999999" />
+            <ChevronUp size={16} color="#909090" />
           ) : (
-            <ChevronDown size={16} color="#999999" />
+            <ChevronDown size={16} color="#909090" />
           )}
         </View>
       </TouchableOpacity>
@@ -133,7 +133,7 @@ export default function ConnectionStatusBanner() {
       {expanded && (
         <View style={styles.detailsContainer}>
           <View style={styles.detailRow}>
-            <Database size={14} color="#999999" />
+            <Database size={14} color="#909090" />
             <Text style={styles.detailLabel}>Supabase DB</Text>
             <View style={[styles.statusPill, { backgroundColor: STATUS_COLORS[supabaseStatus] + '22' }]}>
               <View style={[styles.statusDot, { backgroundColor: STATUS_COLORS[supabaseStatus] }]} />
@@ -144,8 +144,8 @@ export default function ConnectionStatusBanner() {
           </View>
 
           {isFullyOperational && (
-            <View style={[styles.fallbackNotice, { backgroundColor: '#22C55E15' }]}>
-              <Text style={[styles.fallbackText, { color: '#22C55E' }]}>
+            <View style={[styles.fallbackNotice, { backgroundColor: '#00C48C15' }]}>
+              <Text style={[styles.fallbackText, { color: '#00C48C' }]}>
                 All systems operational.
               </Text>
             </View>
@@ -216,7 +216,7 @@ const styles = StyleSheet.create({
   },
   detailLabel: {
     fontSize: 12,
-    color: '#999999',
+    color: '#909090',
     flex: 1,
   },
   statusPill: {

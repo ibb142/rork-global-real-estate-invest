@@ -266,7 +266,7 @@ export default function VIPTiersScreen() {
 
               <View style={styles.heroStatsRow}>
                 <View style={styles.heroStatBox}>
-                  <TrendingDown size={14} color="#22C55E" />
+                  <TrendingDown size={14} color="#00C48C" />
                   <Text style={styles.heroStatValue}>
                     {currentTier.tradingFeeDiscount > 0 ? `-${currentTier.tradingFeeDiscount}%` : '0%'}
                   </Text>
@@ -382,7 +382,7 @@ export default function VIPTiersScreen() {
 
               <View style={styles.tierMetricsGrid}>
                 <View style={[styles.metricCard, { borderColor: activeTier.color + '18' }]}>
-                  <TrendingDown size={16} color="#22C55E" />
+                  <TrendingDown size={16} color="#00C48C" />
                   <Text style={styles.metricValue}>
                     {activeTier.tradingFeeDiscount > 0 ? `${activeTier.tradingFeeDiscount}%` : '0%'}
                   </Text>

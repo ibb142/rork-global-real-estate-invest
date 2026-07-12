@@ -173,9 +173,9 @@ function EntryCard({ entry }: { entry: WaitlistEntry }) {
     }
   };
 
-  const statusColor = entry.status === 'verified' ? '#22C55E'
-    : entry.status === 'contacted' ? '#3B82F6'
-    : entry.status === 'removed' ? '#EF4444'
+  const statusColor = entry.status === 'verified' ? '#00C48C'
+    : entry.status === 'contacted' ? '#4A90D9'
+    : entry.status === 'removed' ? '#FF4D4D'
     : Colors.warning;
 
   const renderDetailRow = ({ label, value, color, multiline }: DetailRowConfig) => (
@@ -225,8 +225,8 @@ function EntryCard({ entry }: { entry: WaitlistEntry }) {
   ];
 
   const verificationRows: DetailRowConfig[] = [
-    { label: 'Phone Verified', value: formatBooleanValue(entry.phone_verified), color: entry.phone_verified ? '#22C55E' : Colors.error },
-    { label: 'Agreement Accepted', value: formatBooleanValue(entry.agreement_accepted), color: entry.agreement_accepted ? '#22C55E' : Colors.error },
+    { label: 'Phone Verified', value: formatBooleanValue(entry.phone_verified), color: entry.phone_verified ? '#00C48C' : Colors.error },
+    { label: 'Agreement Accepted', value: formatBooleanValue(entry.agreement_accepted), color: entry.agreement_accepted ? '#00C48C' : Colors.error },
     { label: 'Agreement Version', value: formatDisplayValue(entry.agreement_version) },
     { label: 'Typed Signature', value: formatDisplayValue(entry.signature_name) },
     { label: 'Submitted', value: formatDate(entry.submitted_at) },
@@ -241,9 +241,9 @@ function EntryCard({ entry }: { entry: WaitlistEntry }) {
     { label: 'Issuing Country', value: formatDisplayValue(entry.document_issuing_country) },
     { label: 'Tax Residency', value: formatDisplayValue(entry.tax_residency_country) },
     { label: 'Tax ID Ref', value: formatDisplayValue(entry.tax_id_reference), multiline: true },
-    { label: 'Tax Reporting Ack', value: formatBooleanValue(entry.legal_ack_tax_reporting), color: entry.legal_ack_tax_reporting ? '#22C55E' : Colors.error },
-    { label: 'Identity Review Ack', value: formatBooleanValue(entry.legal_ack_identity_review), color: entry.legal_ack_identity_review ? '#22C55E' : Colors.error },
-    { label: 'Entity Authority Ack', value: formatBooleanValue(entry.legal_ack_entity_authority), color: entry.legal_ack_entity_authority ? '#22C55E' : Colors.error },
+    { label: 'Tax Reporting Ack', value: formatBooleanValue(entry.legal_ack_tax_reporting), color: entry.legal_ack_tax_reporting ? '#00C48C' : Colors.error },
+    { label: 'Identity Review Ack', value: formatBooleanValue(entry.legal_ack_identity_review), color: entry.legal_ack_identity_review ? '#00C48C' : Colors.error },
+    { label: 'Entity Authority Ack', value: formatBooleanValue(entry.legal_ack_entity_authority), color: entry.legal_ack_entity_authority ? '#00C48C' : Colors.error },
   ];
 
   const corporateRows: DetailRowConfig[] = entry.investor_type === 'corporate'
@@ -282,7 +282,7 @@ function EntryCard({ entry }: { entry: WaitlistEntry }) {
   const returnExpectation = formatDisplayValue(entry.return_expectation);
 
   if (investorType !== '—') {
-    badges.push({ label: investorType, accent: '#3B82F6' });
+    badges.push({ label: investorType, accent: '#4A90D9' });
   }
   if (membershipIntent !== '—') {
     badges.push({ label: membershipIntent, accent: Colors.primary });
@@ -291,7 +291,7 @@ function EntryCard({ entry }: { entry: WaitlistEntry }) {
     badges.push({ label: investmentRange, accent: '#8B5CF6' });
   }
   if (returnExpectation !== '—') {
-    badges.push({ label: returnExpectation, accent: '#22C55E' });
+    badges.push({ label: returnExpectation, accent: '#00C48C' });
   }
   if (entry.agreement_accepted) {
     badges.push({ label: `Agreement ${formatDisplayValue(entry.agreement_version)}`, accent: '#F59E0B' });
@@ -321,7 +321,7 @@ function EntryCard({ entry }: { entry: WaitlistEntry }) {
             <Text style={[cardStyles.statusText, { color: statusColor }]}>{entry.status}</Text>
           </View>
           {entry.phone_verified ? (
-            <ShieldCheck size={14} color="#22C55E" />
+            <ShieldCheck size={14} color="#00C48C" />
           ) : (
             <ShieldX size={14} color={Colors.textTertiary} />
           )}
@@ -546,8 +546,8 @@ export default function WaitlistAdminScreen() {
       >
         <View style={styles.statsGrid}>
           <StatCard icon={Users} iconColor={Colors.primary} label="Total" value={stats.total} />
-          <StatCard icon={Calendar} iconColor="#22C55E" label="Today" value={stats.today} />
-          <StatCard icon={UserCheck} iconColor="#3B82F6" label="Verified" value={stats.verified} />
+          <StatCard icon={Calendar} iconColor="#00C48C" label="Today" value={stats.today} />
+          <StatCard icon={UserCheck} iconColor="#4A90D9" label="Verified" value={stats.verified} />
           <StatCard icon={UserX} iconColor={Colors.error} label="Unverified" value={stats.unverified} />
         </View>
 
@@ -606,7 +606,7 @@ export default function WaitlistAdminScreen() {
               onPress={handleExportCSV}
               activeOpacity={0.7}
             >
-              <Download size={14} color="#22C55E" />
+              <Download size={14} color="#00C48C" />
               <Text style={styles.exportBtnText}>Export CSV</Text>
             </TouchableOpacity>
           </View>
@@ -990,17 +990,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#22C55E12',
+    backgroundColor: '#00C48C12',
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderWidth: 1,
-    borderColor: '#22C55E30',
+    borderColor: '#00C48C30',
   },
   exportBtnText: {
     fontSize: 13,
     fontWeight: '600' as const,
-    color: '#22C55E',
+    color: '#00C48C',
   },
   filterRow: {
     flexDirection: 'row',

@@ -859,7 +859,7 @@ function classifyAcquisitionChannel(referrer: string): string {
 
 const CHANNEL_COLORS: Record<string, string> = {
   'Direct': '#4A90D9',
-  'Organic Search': '#22C55E',
+  'Organic Search': '#00C48C',
   'Social': '#E91E63',
   'Email': '#F57C00',
   'Paid': '#7B61FF',

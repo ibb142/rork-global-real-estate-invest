@@ -61,7 +61,7 @@ const INITIAL_STATE: LoadState = {
 };
 
 const STATUS_META: Record<FeatureAreaStatus, { label: string; color: string }> = {
-  live: { label: 'Live', color: '#22C55E' },
+  live: { label: 'Live', color: '#00C48C' },
   in_progress: { label: 'In progress', color: '#FFB000' },
   planned: { label: 'Planned', color: '#7DD3FC' },
 };
@@ -148,7 +148,7 @@ export default function IVXProjectDashboardRoute() {
               <MetricTile label="Completion" value={`${metrics.completionPercent}%`} accent={Colors.tint} />
               <MetricTile label="Feature areas" value={String(metrics.totalFeatureAreas)} accent="#7DD3FC" />
               <MetricTile label="Open items" value={String(metrics.openItems)} accent="#FFB000" />
-              <MetricTile label="Completed" value={String(metrics.completedItems)} accent="#22C55E" />
+              <MetricTile label="Completed" value={String(metrics.completedItems)} accent="#00C48C" />
             </View>
 
             <View style={styles.progressTrack}>
@@ -156,7 +156,7 @@ export default function IVXProjectDashboardRoute() {
             </View>
 
             <View style={styles.statusRow}>
-              <StatusPill icon={<CheckCircle2 color="#22C55E" size={14} />} label={`${metrics.liveFeatureAreas} live`} />
+              <StatusPill icon={<CheckCircle2 color="#00C48C" size={14} />} label={`${metrics.liveFeatureAreas} live`} />
               <StatusPill icon={<Clock3 color="#FFB000" size={14} />} label={`${metrics.inProgressFeatureAreas} in progress`} />
               <StatusPill icon={<Activity color="#7DD3FC" size={14} />} label={`${metrics.plannedFeatureAreas} planned`} />
             </View>

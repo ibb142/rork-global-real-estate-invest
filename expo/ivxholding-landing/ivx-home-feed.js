@@ -100,7 +100,7 @@
     + '.ivx-hf-body{padding:16px;color:#fff;font-family:-apple-system,Segoe UI,sans-serif}'
     + '.ivx-hf-name{font-weight:800;font-size:17px;margin-bottom:2px}'
     + '.ivx-hf-loc{color:#9a9a9a;font-size:12.5px;margin-bottom:4px}'
-    + '.ivx-hf-phase{display:inline-block;color:#22C55E;background:rgba(34,197,94,.12);border-radius:5px;'
+    + '.ivx-hf-phase{display:inline-block;color:#00C48C;background:rgba(34,197,94,.12);border-radius:5px;'
     + 'padding:3px 8px;font:700 10.5px/1.2 -apple-system,sans-serif;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px}'
     + '.ivx-hf-stats{display:flex;gap:0;background:#1E1E1E;border-radius:10px;padding:10px 4px;margin-bottom:10px}'
     + '.ivx-hf-stat{flex:1;text-align:center}'
@@ -129,7 +129,7 @@
     var poster = v.poster_url || v.thumbnail_url || v.preview_blur_url || '';
     var statBits = '';
     if (deal.investment_amount) statBits += '<div class="ivx-hf-stat"><div class="v">' + money(deal.investment_amount) + '</div><div class="l">Investment</div></div>';
-    if (deal.expected_roi) statBits += '<div class="ivx-hf-stat"><div class="v" style="color:#22C55E">' + esc(deal.expected_roi) + '%</div><div class="l">ROI</div></div>';
+    if (deal.expected_roi) statBits += '<div class="ivx-hf-stat"><div class="v" style="color:#00C48C">' + esc(deal.expected_roi) + '%</div><div class="l">ROI</div></div>';
     if (deal.min_investment) statBits += '<div class="ivx-hf-stat"><div class="v">' + money(deal.min_investment) + '</div><div class="l">Minimum</div></div>';
     var progressRow = '';
     if (deal.progress_percent != null) {

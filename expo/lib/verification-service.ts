@@ -322,16 +322,16 @@ async function fallbackFullVerification(_params: {
 
 export function getRiskColor(riskLevel: 'low' | 'medium' | 'high'): string {
   switch (riskLevel) {
-    case 'low': return '#22C55E';
+    case 'low': return '#00C48C';
     case 'medium': return '#F59E0B';
-    case 'high': return '#EF4444';
+    case 'high': return '#FF4D4D';
   }
 }
 
 export function getStatusColor(status: 'passed' | 'failed' | 'pending' | 'warning'): string {
   switch (status) {
-    case 'passed': return '#22C55E';
-    case 'failed': return '#EF4444';
+    case 'passed': return '#00C48C';
+    case 'failed': return '#FF4D4D';
     case 'pending': return '#6B7280';
     case 'warning': return '#F59E0B';
   }

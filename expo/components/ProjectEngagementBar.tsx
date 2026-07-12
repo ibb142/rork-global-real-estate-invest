@@ -11,7 +11,7 @@ import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
 
 const GOLD = '#FFD700';
-const HEART_RED = '#EF4444';
+const HEART_RED = '#FF4D4D';
 const ICON_ACTIVE_SCALE = 1.25;
 
 interface EngagementBarProps {

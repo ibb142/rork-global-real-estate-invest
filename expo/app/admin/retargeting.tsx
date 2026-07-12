@@ -47,7 +47,7 @@ const PLATFORM_COLORS: Record<string, string> = {
   tiktok: '#00F2EA',
   linkedin: '#0A66C2',
   twitter: '#1DA1F2',
-  email: '#22C55E',
+  email: '#00C48C',
   browser: '#FFD700',
   website: '#FF6B9D',
 };

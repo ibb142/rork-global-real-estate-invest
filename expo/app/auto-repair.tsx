@@ -58,7 +58,7 @@ interface ToneConfig {
 
 const TONE_CONFIG: Record<Tone, ToneConfig> = {
   healthy: {
-    color: '#22C55E',
+    color: '#00C48C',
     background: 'rgba(34,197,94,0.12)',
     border: 'rgba(34,197,94,0.22)',
     label: 'Healthy',

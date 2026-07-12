@@ -170,7 +170,7 @@ export default function IVXAIProxyStatusScreen() {
             {runtime ? (
               <View style={styles.card}>
                 <View style={styles.rowGap}>
-                  <ShieldCheck color={runtime.configured ? '#22C55E' : '#FF6B6B'} size={18} />
+                  <ShieldCheck color={runtime.configured ? '#00C48C' : '#FF6B6B'} size={18} />
                   <Text style={styles.cardLabel}>Runtime</Text>
                 </View>
                 <Row label="Configured" value={runtime.configured ? 'yes' : 'no'} />

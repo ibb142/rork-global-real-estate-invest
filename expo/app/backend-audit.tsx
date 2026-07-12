@@ -61,8 +61,8 @@ interface AuditCategory {
 }
 
 const STATUS_COLORS: Record<AuditStatus, string> = {
-  pass: '#22C55E',
-  fail: '#EF4444',
+  pass: '#00C48C',
+  fail: '#FF4D4D',
   warn: '#F59E0B',
   info: '#6366F1',
   checking: '#9CA3AF',
@@ -70,9 +70,9 @@ const STATUS_COLORS: Record<AuditStatus, string> = {
 
 const SEVERITY_COLORS: Record<string, string> = {
   critical: '#DC2626',
-  high: '#EF4444',
+  high: '#FF4D4D',
   medium: '#F59E0B',
-  low: '#3B82F6',
+  low: '#4A90D9',
   info: '#6366F1',
 };
 
@@ -1138,14 +1138,14 @@ export default function BackendAuditScreen() {
           <>
             <View style={styles.summaryCard}>
               <View style={styles.summaryRow}>
-                <View style={[styles.summaryBox, { backgroundColor: '#22C55E15' }]}>
-                  <CheckCircle size={22} color="#22C55E" />
+                <View style={[styles.summaryBox, { backgroundColor: '#00C48C15' }]}>
+                  <CheckCircle size={22} color="#00C48C" />
                   <Text style={styles.summaryCount}>{totalPass}</Text>
                   <Text style={styles.summaryLabel}>Passed</Text>
                 </View>
-                <View style={[styles.summaryBox, { backgroundColor: '#EF444415' }]}>
-                  <XCircle size={22} color="#EF4444" />
-                  <Text style={[styles.summaryCount, { color: '#EF4444' }]}>{totalFail}</Text>
+                <View style={[styles.summaryBox, { backgroundColor: '#FF4D4D15' }]}>
+                  <XCircle size={22} color="#FF4D4D" />
+                  <Text style={[styles.summaryCount, { color: '#FF4D4D' }]}>{totalFail}</Text>
                   <Text style={styles.summaryLabel}>Red</Text>
                 </View>
                 <View style={[styles.summaryBox, { backgroundColor: '#F59E0B15' }]}>
@@ -1155,9 +1155,9 @@ export default function BackendAuditScreen() {
                 </View>
               </View>
               <View style={styles.progressBarContainer}>
-                <View style={[styles.progressSegment, { flex: totalPass, backgroundColor: '#22C55E' }]} />
+                <View style={[styles.progressSegment, { flex: totalPass, backgroundColor: '#00C48C' }]} />
                 <View style={[styles.progressSegment, { flex: totalWarn, backgroundColor: '#F59E0B' }]} />
-                <View style={[styles.progressSegment, { flex: totalFail, backgroundColor: '#EF4444' }]} />
+                <View style={[styles.progressSegment, { flex: totalFail, backgroundColor: '#FF4D4D' }]} />
               </View>
               <Text style={styles.summaryTotal}>
                 {totalItems} checks completed {lastRunAt ? `at ${lastRunAt.toLocaleTimeString()}` : ''}
@@ -1167,7 +1167,7 @@ export default function BackendAuditScreen() {
             {totalFail > 0 && (
               <View style={styles.criticalSection}>
                 <View style={styles.criticalHeader}>
-                  <XCircle size={18} color="#EF4444" />
+                  <XCircle size={18} color="#FF4D4D" />
                   <Text style={styles.criticalTitle}>Red crashes & blockers ({totalFail})</Text>
                 </View>
                 {categories.flatMap(c => c.items.filter(i => i.status === 'fail')).map((item, idx) => (
@@ -1208,7 +1208,7 @@ export default function BackendAuditScreen() {
 
             <View style={styles.passSection}>
               <View style={styles.passHeader}>
-                <CheckCircle size={18} color="#22C55E" />
+                <CheckCircle size={18} color="#00C48C" />
                 <Text style={styles.passTitle}>Working Correctly ({totalPass})</Text>
               </View>
               {categories.flatMap(c => c.items.filter(i => i.status === 'pass')).map((item, idx) => (
@@ -1245,8 +1245,8 @@ export default function BackendAuditScreen() {
                     <View style={styles.categoryRight}>
                       <View style={styles.categoryBadges}>
                         {catPass > 0 && (
-                          <View style={[styles.catBadge, { backgroundColor: '#22C55E20' }]}>
-                            <Text style={[styles.catBadgeText, { color: '#22C55E' }]}>{catPass}</Text>
+                          <View style={[styles.catBadge, { backgroundColor: '#00C48C20' }]}>
+                            <Text style={[styles.catBadgeText, { color: '#00C48C' }]}>{catPass}</Text>
                           </View>
                         )}
                         {catWarn > 0 && (
@@ -1255,8 +1255,8 @@ export default function BackendAuditScreen() {
                           </View>
                         )}
                         {catFail > 0 && (
-                          <View style={[styles.catBadge, { backgroundColor: '#EF444420' }]}>
-                            <Text style={[styles.catBadgeText, { color: '#EF4444' }]}>{catFail}</Text>
+                          <View style={[styles.catBadge, { backgroundColor: '#FF4D4D20' }]}>
+                            <Text style={[styles.catBadgeText, { color: '#FF4D4D' }]}>{catFail}</Text>
                           </View>
                         )}
                       </View>
@@ -1380,7 +1380,7 @@ const styles = StyleSheet.create({
   summaryCount: {
     fontSize: 28,
     fontWeight: '800' as const,
-    color: '#22C55E',
+    color: '#00C48C',
   },
   summaryLabel: {
     fontSize: 12,
@@ -1410,7 +1410,7 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#EF444440',
+    borderColor: '#FF4D4D40',
   },
   criticalHeader: {
     flexDirection: 'row',
@@ -1421,19 +1421,19 @@ const styles = StyleSheet.create({
   criticalTitle: {
     fontSize: 16,
     fontWeight: '700' as const,
-    color: '#EF4444',
+    color: '#FF4D4D',
   },
   criticalItem: {
     flexDirection: 'row',
     paddingVertical: 10,
     borderTopWidth: 1,
-    borderTopColor: '#EF444420',
+    borderTopColor: '#FF4D4D20',
     alignItems: 'flex-start',
   },
   criticalIndex: {
     fontSize: 13,
     fontWeight: '700' as const,
-    color: '#EF4444',
+    color: '#FF4D4D',
     width: 24,
     marginTop: 2,
   },
@@ -1448,7 +1448,7 @@ const styles = StyleSheet.create({
   },
   criticalMessage: {
     fontSize: 12,
-    color: '#EF4444',
+    color: '#FF4D4D',
     marginTop: 2,
   },
   criticalDetails: {
@@ -1509,7 +1509,7 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 20,
     borderWidth: 1,
-    borderColor: '#22C55E40',
+    borderColor: '#00C48C40',
   },
   passHeader: {
     flexDirection: 'row',
@@ -1520,19 +1520,19 @@ const styles = StyleSheet.create({
   passTitle: {
     fontSize: 16,
     fontWeight: '700' as const,
-    color: '#22C55E',
+    color: '#00C48C',
   },
   passItem: {
     flexDirection: 'row',
     paddingVertical: 6,
     borderTopWidth: 1,
-    borderTopColor: '#22C55E20',
+    borderTopColor: '#00C48C20',
     alignItems: 'flex-start',
   },
   passIndex: {
     fontSize: 13,
     fontWeight: '700' as const,
-    color: '#22C55E',
+    color: '#00C48C',
     width: 24,
     marginTop: 2,
   },
@@ -1546,7 +1546,7 @@ const styles = StyleSheet.create({
   },
   passMessage: {
     fontSize: 12,
-    color: '#22C55E',
+    color: '#00C48C',
     marginTop: 2,
   },
   sectionDividerText: {

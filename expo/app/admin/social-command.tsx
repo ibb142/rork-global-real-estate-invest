@@ -86,9 +86,9 @@ type TabType = 'overview' | 'agents' | 'content' | 'analytics' | 'comments';
 const GOLD = '#FFD700';
 const GOLD_DIM = 'rgba(255,215,0,0.12)';
 const GOLD_DIM2 = 'rgba(255,215,0,0.06)';
-const GREEN = '#22C55E';
+const GREEN = '#00C48C';
 const RED = '#FF4D4D';
-const BLUE = '#3B82F6';
+const BLUE = '#4A90D9';
 const SURFACE = '#141414';
 const SURFACE2 = '#1C1C1C';
 const BORDER = '#2A2A2A';
@@ -699,7 +699,7 @@ export default function SocialCommandScreen() {
             </TouchableOpacity>
           </View>
           {[
-            { icon: <FileText size={22} color="#EF4444" />, bg: 'rgba(239,68,68,0.12)', title: 'PDF Report', desc: 'Full analytics with charts' },
+            { icon: <FileText size={22} color="#FF4D4D" />, bg: 'rgba(239,68,68,0.12)', title: 'PDF Report', desc: 'Full analytics with charts' },
             { icon: <BarChart3 size={22} color={GREEN} />, bg: 'rgba(0,196,140,0.12)', title: 'Excel Spreadsheet', desc: 'Raw data for deep analysis' },
             { icon: <MessageCircle size={22} color="#25D366" />, bg: 'rgba(37,211,102,0.12)', title: 'Share via WhatsApp', desc: 'Quick summary share' },
             { icon: <Mail size={22} color={BLUE} />, bg: 'rgba(59,130,246,0.12)', title: 'Send via Email', desc: 'Detailed report to inbox' },

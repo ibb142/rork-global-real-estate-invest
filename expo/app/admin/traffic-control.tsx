@@ -44,7 +44,7 @@ const PERIODS: { label: string; value: PeriodType }[] = [
   { label: 'All', value: 'all' },
 ];
 
-const SOURCE_COLORS = ['#4285F4', '#22C55E', '#F57C00', '#E91E63', '#7B61FF', '#0097A7', '#F9A825', '#9B59B6'];
+const SOURCE_COLORS = ['#4285F4', '#00C48C', '#F57C00', '#E91E63', '#7B61FF', '#0097A7', '#F9A825', '#9B59B6'];
 
 const formatNumber = (n: number) => {
   if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
@@ -362,14 +362,14 @@ export default function TrafficControlCenter() {
 
     const deviceIcons: Record<string, React.ReactNode> = {
       'Desktop': <Monitor size={20} color="#4A90D9" />,
-      'Mobile': <Smartphone size={20} color="#22C55E" />,
+      'Mobile': <Smartphone size={20} color="#00C48C" />,
       'Tablet': <Tablet size={20} color="#F57C00" />,
       'Unknown': <Globe size={20} color={Colors.textTertiary} />,
     };
 
     const deviceColors: Record<string, string> = {
       'Desktop': '#4A90D9',
-      'Mobile': '#22C55E',
+      'Mobile': '#00C48C',
       'Tablet': '#F57C00',
       'Unknown': '#666',
     };

@@ -169,7 +169,7 @@ const INFRA_LAYER: SystemModule[] = [
 ];
 
 const ALL_LAYERS: LayerGroup[] = [
-  { id: 'presentation', name: 'Presentation Layer', icon: Smartphone, color: '#22C55E', modules: PRESENTATION_LAYER },
+  { id: 'presentation', name: 'Presentation Layer', icon: Smartphone, color: '#00C48C', modules: PRESENTATION_LAYER },
   { id: 'admin', name: 'Admin Layer', icon: Shield, color: '#FFD700', modules: ADMIN_LAYER },
   { id: 'context', name: 'Context Providers', icon: Layers, color: '#9B59B6', modules: CONTEXT_LAYER },
   { id: 'data', name: 'Data Layer', icon: Database, color: '#4A90D9', modules: DATA_LAYER },
@@ -194,7 +194,7 @@ const DATA_FLOWS: DataFlowDefinition[] = [
   {
     id: 'user-invest',
     name: 'User Invests in Deal',
-    color: '#22C55E',
+    color: '#00C48C',
     steps: [
       { id: 'user-invest-1', text: 'JV Investment Page → Select Pool Tier', severity: 'healthy' },
       { id: 'user-invest-2', text: 'payment-service.ts → Validate + Process', severity: 'critical', reason: 'Turn red immediately if payment validation or processing fails.' },
@@ -276,7 +276,7 @@ function getSeverityPalette(severity: SeverityLevel) {
       };
     default:
       return {
-        color: '#22C55E',
+        color: '#00C48C',
         backgroundColor: 'rgba(34,197,94,0.14)',
         borderColor: 'rgba(34,197,94,0.3)',
         label: 'Healthy',
@@ -299,7 +299,7 @@ function getModuleSeverity(module: SystemModule): SeverityLevel {
 
 function StatusBadge({ status }: { status: ModuleStatus }) {
   const config = {
-    live: { color: '#22C55E', label: 'LIVE', Icon: CheckCircle },
+    live: { color: '#00C48C', label: 'LIVE', Icon: CheckCircle },
     degraded: { color: '#FFB800', label: 'DEGRADED', Icon: AlertCircle },
     offline: { color: '#FF4D4D', label: 'OFFLINE', Icon: XCircle },
     stub: { color: '#6A6A6A', label: 'STUB', Icon: Clock },
@@ -623,7 +623,7 @@ function LiveHealthPanel() {
     };
   }, [checkHealth, pulseAnim]);
 
-  const statusColor = (s: string) => s === 'connected' ? '#22C55E' : s === 'degraded' ? '#FFB800' : s === 'error' ? '#FF4D4D' : '#94A3B8';
+  const statusColor = (s: string) => s === 'connected' ? '#00C48C' : s === 'degraded' ? '#FFB800' : s === 'error' ? '#FF4D4D' : '#94A3B8';
   const StatusIcon = (s: string) => s === 'connected' ? Wifi : s === 'degraded' ? Clock : s === 'error' ? WifiOff : Clock;
 
   const DbIcon = StatusIcon(supabaseStatus);
@@ -633,7 +633,7 @@ function LiveHealthPanel() {
     <View style={styles.healthPanel}>
       <View style={styles.healthHeader}>
         <Animated.View style={{ opacity: pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [0.5, 1] }) }}>
-          <Activity size={16} color="#22C55E" />
+          <Activity size={16} color="#00C48C" />
         </Animated.View>
         <Text style={styles.healthTitle}>Live System Health</Text>
         <TouchableOpacity onPress={() => void checkHealth(true)} style={styles.refreshBtn}>
@@ -652,15 +652,15 @@ function LiveHealthPanel() {
           <Text style={styles.healthLabel}>Realtime WS</Text>
           <View style={[styles.healthDot, { backgroundColor: statusColor(realtimeStatus) }]} />
         </View>
-        <View style={[styles.healthItem, { borderColor: '#22C55E40' }]}>
-          <Smartphone size={18} color="#22C55E" />
+        <View style={[styles.healthItem, { borderColor: '#00C48C40' }]}>
+          <Smartphone size={18} color="#00C48C" />
           <Text style={styles.healthLabel}>App Runtime</Text>
-          <View style={[styles.healthDot, { backgroundColor: '#22C55E' }]} />
+          <View style={[styles.healthDot, { backgroundColor: '#00C48C' }]} />
         </View>
-        <View style={[styles.healthItem, { borderColor: '#22C55E40' }]}>
-          <Zap size={18} color="#22C55E" />
+        <View style={[styles.healthItem, { borderColor: '#00C48C40' }]}>
+          <Zap size={18} color="#00C48C" />
           <Text style={styles.healthLabel}>React Query</Text>
-          <View style={[styles.healthDot, { backgroundColor: '#22C55E' }]} />
+          <View style={[styles.healthDot, { backgroundColor: '#00C48C' }]} />
         </View>
       </View>
 
@@ -681,7 +681,7 @@ function StatsOverview() {
         <Text style={styles.statLabel}>Total Modules</Text>
       </View>
       <View style={styles.statCard}>
-        <Text style={[styles.statNumber, { color: '#22C55E' }]}>{liveModules}</Text>
+        <Text style={[styles.statNumber, { color: '#00C48C' }]}>{liveModules}</Text>
         <Text style={styles.statLabel}>Live</Text>
       </View>
       <View style={styles.statCard}>
@@ -1095,7 +1095,7 @@ export default function SystemMapScreen() {
         </TouchableOpacity>
         <View style={styles.headerCenter}>
           <View style={styles.headerTitleRow}>
-            <PulsingDot color="#22C55E" />
+            <PulsingDot color="#00C48C" />
             <Text style={styles.headerTitle}>System Blueprint</Text>
           </View>
           <Text style={styles.headerSubtitle}>Live Architecture Map</Text>

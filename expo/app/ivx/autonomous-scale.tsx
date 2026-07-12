@@ -102,7 +102,7 @@ function formatTime(value: string | null): string {
 
 function resultColor(result: ScaleResult): string {
   if (result === 'VERIFIED') return Colors.success;
-  if (result === 'FAILED') return Colors.error ?? '#ef4444';
+  if (result === 'FAILED') return Colors.error ?? '#FF4D4D';
   if (result === 'BLOCKED_FOR_APPROVAL') return Colors.warning ?? '#f59e0b';
   return Colors.muted ?? '#94a3b8';
 }
@@ -140,7 +140,7 @@ function AutonomousScaleScreen() {
     data?.productionStatus === 'healthy'
       ? Colors.success
       : data?.productionStatus === 'degraded'
-        ? (Colors.error ?? '#ef4444')
+        ? (Colors.error ?? '#FF4D4D')
         : (Colors.muted ?? '#94a3b8');
 
   return (
@@ -172,7 +172,7 @@ function AutonomousScaleScreen() {
           <View style={styles.center}><ActivityIndicator color={Colors.text} /></View>
         ) : isError ? (
           <View style={styles.errorCard}>
-            <CircleX size={18} color={Colors.error ?? '#ef4444'} />
+            <CircleX size={18} color={Colors.error ?? '#FF4D4D'} />
             <Text style={styles.errorText}>{error instanceof Error ? error.message : 'Failed to load dashboard.'}</Text>
           </View>
         ) : !data ? (
@@ -187,7 +187,7 @@ function AutonomousScaleScreen() {
               <StatCard icon={<CheckCircle2 size={16} color={resultColor(data.lastResult)} />} label="Last result" value={data.lastResult} tone={resultColor(data.lastResult)} />
               <StatCard icon={<TrendingUp size={16} color={Colors.success} />} label="Improvements" value={String(data.improvementsCompleted)} tone={Colors.success} />
               <StatCard icon={<Activity size={16} color={Colors.text} />} label="Total runs" value={String(data.runCount)} />
-              <StatCard icon={<CircleX size={16} color={Colors.error ?? '#ef4444'} />} label="Failures" value={String(data.failureCount)} tone={data.failureCount > 0 ? (Colors.error ?? '#ef4444') : Colors.text} />
+              <StatCard icon={<CircleX size={16} color={Colors.error ?? '#FF4D4D'} />} label="Failures" value={String(data.failureCount)} tone={data.failureCount > 0 ? (Colors.error ?? '#FF4D4D') : Colors.text} />
             </View>
 
             <View style={styles.card}>
@@ -344,7 +344,7 @@ const styles = StyleSheet.create({
   runResult: { fontSize: 11, fontWeight: '800' as const },
   failRow: { paddingVertical: 6, gap: 2 },
   failTime: { color: Colors.muted ?? '#94a3b8', fontSize: 11 },
-  failEvidence: { color: Colors.error ?? '#ef4444', fontSize: 12 },
+  failEvidence: { color: Colors.error ?? '#FF4D4D', fontSize: 12 },
   errorCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -353,9 +353,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 14,
     borderWidth: 1,
-    borderColor: Colors.error ?? '#ef4444',
+    borderColor: Colors.error ?? '#FF4D4D',
   },
-  errorText: { color: Colors.error ?? '#ef4444', fontSize: 13, flex: 1 },
+  errorText: { color: Colors.error ?? '#FF4D4D', fontSize: 13, flex: 1 },
   runButton: {
     flexDirection: 'row',
     alignItems: 'center',

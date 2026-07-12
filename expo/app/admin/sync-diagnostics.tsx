@@ -428,7 +428,7 @@ export default function SyncDiagnosticsScreen() {
 
   const getStatusIcon = (level: StatusLevel) => {
     switch (level) {
-      case 'green': return <CheckCircle2 size={16} color="#22C55E" />;
+      case 'green': return <CheckCircle2 size={16} color="#00C48C" />;
       case 'yellow': return <AlertTriangle size={16} color="#FFD700" />;
       case 'red': return <XCircle size={16} color="#FF4D4D" />;
     }
@@ -461,7 +461,7 @@ export default function SyncDiagnosticsScreen() {
           {item.detail ? <Text style={styles.diagDetail}>{item.detail}</Text> : null}
         </View>
       </View>
-      <Text style={[styles.diagValue, { color: item.status === 'red' ? '#FF4D4D' : item.status === 'green' ? '#22C55E' : Colors.text }]}>{item.value}</Text>
+      <Text style={[styles.diagValue, { color: item.status === 'red' ? '#FF4D4D' : item.status === 'green' ? '#00C48C' : Colors.text }]}>{item.value}</Text>
     </View>
   );
 
@@ -494,7 +494,7 @@ export default function SyncDiagnosticsScreen() {
         <View style={[styles.overallCard, { backgroundColor: getStatusBg(overallStatus), borderColor: getStatusBorder(overallStatus) }]}>
           <View style={styles.overallRow}>
             {overallStatus === 'green' ? (
-              <Shield size={28} color="#22C55E" />
+              <Shield size={28} color="#00C48C" />
             ) : overallStatus === 'yellow' ? (
               <AlertTriangle size={28} color="#FFD700" />
             ) : (
@@ -537,7 +537,7 @@ export default function SyncDiagnosticsScreen() {
                   </View>
                   <Text style={[
                     styles.auditItemValue,
-                    { color: item.status === 'green' ? '#22C55E' : item.status === 'red' ? '#FF7D7D' : '#FFD36A' },
+                    { color: item.status === 'green' ? '#00C48C' : item.status === 'red' ? '#FF7D7D' : '#FFD36A' },
                   ]}>
                     {item.value}
                   </Text>
@@ -567,7 +567,7 @@ export default function SyncDiagnosticsScreen() {
 
         {forceSyncMutation.isSuccess ? (
           <View style={styles.syncResult}>
-            <CheckCircle2 size={14} color="#22C55E" />
+            <CheckCircle2 size={14} color="#00C48C" />
             <Text style={styles.syncResultText}>
               Sync completed: {forceSyncMutation.data?.syncedDeals} deals synced
               {forceSyncMutation.data?.errors.length ? ` (${forceSyncMutation.data.errors.length} errors)` : ''}
@@ -622,7 +622,7 @@ export default function SyncDiagnosticsScreen() {
                   <Text style={styles.imageAuditStatLabel}>Deals</Text>
                 </View>
                 <View style={styles.imageAuditStat}>
-                  <Text style={[styles.imageAuditStatValue, { color: '#22C55E' }]}>{imageAuditSummary.healthy}</Text>
+                  <Text style={[styles.imageAuditStatValue, { color: '#00C48C' }]}>{imageAuditSummary.healthy}</Text>
                   <Text style={styles.imageAuditStatLabel}>Healthy</Text>
                 </View>
                 <View style={styles.imageAuditStat}>
@@ -685,7 +685,7 @@ export default function SyncDiagnosticsScreen() {
                     </View>
                   ) : (
                     <View style={styles.imageIssueRow}>
-                      <CheckCircle2 size={12} color="#22C55E" />
+                      <CheckCircle2 size={12} color="#00C48C" />
                       <Text style={styles.imageIssueText}>Primary deal images are ready for investor traffic.</Text>
                     </View>
                   )}
@@ -703,14 +703,14 @@ export default function SyncDiagnosticsScreen() {
         <View style={styles.perfCard}>
           <View style={styles.perfRow}>
             <Text style={styles.perfLabel}>Cache Hit Rate</Text>
-            <Text style={[styles.perfValue, { color: cacheStats.cacheHitRate > 50 ? '#22C55E' : '#FFD700' }]}>
+            <Text style={[styles.perfValue, { color: cacheStats.cacheHitRate > 50 ? '#00C48C' : '#FFD700' }]}>
               {cacheStats.cacheHitRate}%
             </Text>
           </View>
           <View style={styles.perfRow}>
             <Text style={styles.perfLabel}>Last Fetch Latency</Text>
             <Text style={[styles.perfValue, {
-              color: (cacheStats.lastFetchLatencyMs ?? 0) < 500 ? '#22C55E' :
+              color: (cacheStats.lastFetchLatencyMs ?? 0) < 500 ? '#00C48C' :
                      (cacheStats.lastFetchLatencyMs ?? 0) < 2000 ? '#FFD700' : '#FF4D4D'
             }]}>
               {cacheStats.lastFetchLatencyMs != null ? `${cacheStats.lastFetchLatencyMs}ms` : 'N/A'}
@@ -738,7 +738,7 @@ export default function SyncDiagnosticsScreen() {
           </View>
           <View style={styles.perfRow}>
             <Text style={styles.perfLabel}>Memory Warnings</Text>
-            <Text style={[styles.perfValue, { color: perfSummary.memoryWarnings > 0 ? '#FF4D4D' : '#22C55E' }]}>
+            <Text style={[styles.perfValue, { color: perfSummary.memoryWarnings > 0 ? '#FF4D4D' : '#00C48C' }]}>
               {perfSummary.memoryWarnings}
             </Text>
           </View>
@@ -769,7 +769,7 @@ export default function SyncDiagnosticsScreen() {
           <Text style={styles.claimCardTitle}>Approved Disclaimers</Text>
           {CANONICAL_CLAIMS.disclaimers.map((d, i) => (
             <View key={`disc-${i}`} style={styles.claimRow}>
-              <CheckCircle2 size={14} color="#22C55E" />
+              <CheckCircle2 size={14} color="#00C48C" />
               <Text style={styles.claimApprovedText}>{d}</Text>
             </View>
           ))}
@@ -780,12 +780,12 @@ export default function SyncDiagnosticsScreen() {
           {claimChecks.map((check, i) => (
             <View key={`check-${i}`} style={styles.claimRow}>
               {check.valid ? (
-                <CheckCircle2 size={14} color="#22C55E" />
+                <CheckCircle2 size={14} color="#00C48C" />
               ) : (
                 <XCircle size={14} color="#FF4D4D" />
               )}
               <View style={styles.claimTextWrap}>
-                <Text style={[styles.claimCheckText, { color: check.valid ? '#22C55E' : '#FF4D4D' }]}>
+                <Text style={[styles.claimCheckText, { color: check.valid ? '#00C48C' : '#FF4D4D' }]}>
                   {check.claim}
                 </Text>
                 {check.reason ? <Text style={styles.claimReasonText}>{check.reason}</Text> : null}
@@ -802,55 +802,55 @@ export default function SyncDiagnosticsScreen() {
         <View style={styles.pipelineCard}>
           <View style={styles.perfRow}>
             <Text style={styles.perfLabel}>Pipeline</Text>
-            <Text style={[styles.perfValue, { color: deployStatus.publicDeployConfigured ? '#22C55E' : '#FFD700' }]}>
+            <Text style={[styles.perfValue, { color: deployStatus.publicDeployConfigured ? '#00C48C' : '#FFD700' }]}>
               {deployStatus.pipelineLabel}
             </Text>
           </View>
           <View style={styles.perfRow}>
             <Text style={styles.perfLabel}>GitHub Actions</Text>
-            <Text style={[styles.perfValue, { color: deployStatus.githubActionsConfigured ? '#22C55E' : '#FFD700' }]}>
+            <Text style={[styles.perfValue, { color: deployStatus.githubActionsConfigured ? '#00C48C' : '#FFD700' }]}>
               {deployStatus.githubActionsConfigured ? 'Ready' : 'Missing'}
             </Text>
           </View>
           <View style={styles.perfRow}>
             <Text style={styles.perfLabel}>GitHub Repository</Text>
-            <Text style={[styles.perfValue, { color: deployStatus.githubRepositoryConfigured ? '#22C55E' : '#FF7D7D' }]}>
+            <Text style={[styles.perfValue, { color: deployStatus.githubRepositoryConfigured ? '#00C48C' : '#FF7D7D' }]}>
               {deployStatus.githubRepository || 'Not set'}
             </Text>
           </View>
           <View style={styles.perfRow}>
             <Text style={styles.perfLabel}>AWS S3</Text>
-            <Text style={[styles.perfValue, { color: deployStatus.awsConfigured ? '#22C55E' : '#FFD700' }]}>
+            <Text style={[styles.perfValue, { color: deployStatus.awsConfigured ? '#00C48C' : '#FFD700' }]}>
               {deployStatus.awsConfigured ? 'Configured' : 'Needs review'}
             </Text>
           </View>
           <View style={styles.perfRow}>
             <Text style={styles.perfLabel}>S3 Bucket</Text>
-            <Text style={[styles.perfValue, { color: deployStatus.s3Bucket ? '#22C55E' : '#FF7D7D' }]}>
+            <Text style={[styles.perfValue, { color: deployStatus.s3Bucket ? '#00C48C' : '#FF7D7D' }]}>
               {deployStatus.s3Bucket || 'Not set'}
             </Text>
           </View>
           <View style={styles.perfRow}>
             <Text style={styles.perfLabel}>AWS Region</Text>
-            <Text style={[styles.perfValue, { color: deployStatus.awsRegion ? '#22C55E' : '#FF7D7D' }]}>
+            <Text style={[styles.perfValue, { color: deployStatus.awsRegion ? '#00C48C' : '#FF7D7D' }]}>
               {deployStatus.awsRegion || 'Not set'}
             </Text>
           </View>
           <View style={styles.perfRow}>
             <Text style={styles.perfLabel}>CloudFront</Text>
-            <Text style={[styles.perfValue, { color: deployStatus.cloudFrontConfigured ? '#22C55E' : '#FFD700' }]}>
+            <Text style={[styles.perfValue, { color: deployStatus.cloudFrontConfigured ? '#00C48C' : '#FFD700' }]}>
               {deployStatus.cloudFrontConfigured ? deployStatus.cloudFrontDistributionId : 'Optional / pending'}
             </Text>
           </View>
           <View style={styles.perfRow}>
             <Text style={styles.perfLabel}>Auto-deploy</Text>
-            <Text style={[styles.perfValue, { color: autoDeployQuery.data?.config.enabled ? '#22C55E' : '#FFD700' }]}>
+            <Text style={[styles.perfValue, { color: autoDeployQuery.data?.config.enabled ? '#00C48C' : '#FFD700' }]}>
               {autoDeployQuery.data?.config.enabled ? 'Enabled' : 'Disabled'}
             </Text>
           </View>
           <View style={styles.perfRow}>
             <Text style={styles.perfLabel}>Publish trigger</Text>
-            <Text style={[styles.perfValue, { color: autoDeployQuery.data?.config.deployOnDealPublish ? '#22C55E' : '#FFD700' }]}>
+            <Text style={[styles.perfValue, { color: autoDeployQuery.data?.config.deployOnDealPublish ? '#00C48C' : '#FFD700' }]}>
               {autoDeployQuery.data?.config.deployOnDealPublish ? 'On' : 'Off'}
             </Text>
           </View>
@@ -1094,7 +1094,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(0,196,140,0.2)',
   },
   syncResultText: {
-    color: '#22C55E',
+    color: '#00C48C',
     fontSize: 13,
     fontWeight: '600' as const,
     flex: 1,
@@ -1328,7 +1328,7 @@ const styles = StyleSheet.create({
     textDecorationLine: 'line-through',
   },
   claimApprovedText: {
-    color: '#22C55E',
+    color: '#00C48C',
     fontSize: 12,
     flex: 1,
   },

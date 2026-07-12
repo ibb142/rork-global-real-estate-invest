@@ -149,7 +149,7 @@ interface EditFormState {
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
   draft: { label: 'Draft', color: '#9A9A9A', bg: '#9A9A9A18' },
   pending_review: { label: 'Pending', color: '#FFB800', bg: '#FFB80018' },
-  active: { label: 'Active', color: '#22C55E', bg: '#22C55E18' },
+  active: { label: 'Active', color: '#00C48C', bg: '#00C48C18' },
   completed: { label: 'Completed', color: '#4A90D9', bg: '#4A90D918' },
   expired: { label: 'Expired', color: '#FF4D4D', bg: '#FF4D4D18' },
   archived: { label: 'Archived', color: '#A855F7', bg: '#A855F718' },
@@ -1212,7 +1212,7 @@ export default function AdminJVDealsScreen() {
                           disabled={isFirst}
                           testID={`jv-move-top-${deal.id}`}
                         >
-                          <ArrowUpToLine size={14} color={isFirst ? Colors.textTertiary : '#22C55E'} />
+                          <ArrowUpToLine size={14} color={isFirst ? Colors.textTertiary : '#00C48C'} />
                         </TouchableOpacity>
                         <TouchableOpacity
                           style={[styles.reorderMoveBtn, isFirst && styles.reorderMoveBtnDisabled]}
@@ -1253,7 +1253,7 @@ export default function AdminJVDealsScreen() {
                       </View>
                       {deal.published ? (
                         <View style={[styles.pubBadge, styles.pubBadgeLive]}>
-                          <Eye size={10} color="#22C55E" />
+                          <Eye size={10} color="#00C48C" />
                           <Text style={[styles.pubBadgeText, styles.pubBadgeTextLive]}>Live</Text>
                         </View>
                       ) : (
@@ -1278,7 +1278,7 @@ export default function AdminJVDealsScreen() {
                       <Text style={styles.dealMetricValue}>{formatCurrency(deal.totalInvestment)}</Text>
                     </View>
                     <View style={styles.dealMetric}>
-                      <TrendingUp size={12} color="#22C55E" />
+                      <TrendingUp size={12} color="#00C48C" />
                       <Text style={styles.dealMetricValue}>{deal.expectedROI}% ROI</Text>
                     </View>
                     <View style={styles.dealMetric}>
@@ -1300,7 +1300,7 @@ export default function AdminJVDealsScreen() {
                         testID={`jv-quick-up-${deal.id}`}
                         accessibilityLabel={`Move ${deal.projectName} up`}
                       >
-                        <ChevronUp size={18} color={isFirst ? Colors.textTertiary : '#22C55E'} />
+                        <ChevronUp size={18} color={isFirst ? Colors.textTertiary : '#00C48C'} />
                       </TouchableOpacity>
                       {positionInputDealId === deal.id ? (
                         <View style={styles.positionInputWrap}>
@@ -1356,7 +1356,7 @@ export default function AdminJVDealsScreen() {
                           testID={`admin-jv-restore-${deal.id}`}
                           accessibilityLabel={`Restore ${deal.projectName}`}
                         >
-                          <ArchiveRestore size={14} color="#22C55E" />
+                          <ArchiveRestore size={14} color="#00C48C" />
                           <Text style={[styles.actionBtnText, styles.actionBtnTextGreen]}>Restore</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
@@ -1389,7 +1389,7 @@ export default function AdminJVDealsScreen() {
                           testID={`admin-jv-toggle-${deal.id}`}
                           accessibilityLabel={deal.published ? `Unpublish ${deal.projectName}` : `Publish ${deal.projectName}`}
                         >
-                          {deal.published ? <EyeOff size={14} color="#FF6B6B" /> : <Eye size={14} color="#22C55E" />}
+                          {deal.published ? <EyeOff size={14} color="#FF6B6B" /> : <Eye size={14} color="#00C48C" />}
                           <Text style={[styles.actionBtnText, deal.published ? styles.actionBtnTextDanger : styles.actionBtnTextGreen]}>
                             {deal.published ? 'Unpublish' : 'Publish'}
                           </Text>
@@ -1777,7 +1777,7 @@ export default function AdminJVDealsScreen() {
               />
 
               <View style={styles.trustSectionHeader}>
-                <Shield size={16} color="#22C55E" />
+                <Shield size={16} color="#00C48C" />
                 <Text style={styles.trustSectionTitle}>Investor Trust Info</Text>
               </View>
 
@@ -1966,7 +1966,7 @@ export default function AdminJVDealsScreen() {
                           ) : state === 'failed' ? (
                             <AlertTriangle size={16} color="#FF4D4D" />
                           ) : state === 'done' ? (
-                            <Check size={16} color="#22C55E" />
+                            <Check size={16} color="#00C48C" />
                           ) : (
                             <View style={styles.photoPendingDot} />
                           )}
@@ -2085,7 +2085,7 @@ const styles = StyleSheet.create({
     fontWeight: '800' as const,
   },
   statValueGreen: {
-    color: '#22C55E',
+    color: '#00C48C',
   },
   statValuePrimary: {
     color: Colors.primary,
@@ -2263,7 +2263,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   pubBadgeLive: {
-    backgroundColor: '#22C55E18',
+    backgroundColor: '#00C48C18',
   },
   pubBadgeHidden: {
     backgroundColor: '#9A9A9A18',
@@ -2273,7 +2273,7 @@ const styles = StyleSheet.create({
     fontWeight: '700' as const,
   },
   pubBadgeTextLive: {
-    color: '#22C55E',
+    color: '#00C48C',
   },
   pubBadgeTextHidden: {
     color: '#9A9A9A',
@@ -2329,7 +2329,7 @@ const styles = StyleSheet.create({
     color: Colors.primary,
   },
   actionBtnTextGreen: {
-    color: '#22C55E',
+    color: '#00C48C',
   },
   actionBtnTextRed: {
     color: '#FF4D4D',
@@ -2347,8 +2347,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   publishBtn: {
-    borderColor: '#22C55E40',
-    backgroundColor: '#22C55E10',
+    borderColor: '#00C48C40',
+    backgroundColor: '#00C48C10',
     flex: 1,
     justifyContent: 'center',
   },
@@ -2369,8 +2369,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
   },
   restoreBtn: {
-    borderColor: '#22C55E40',
-    backgroundColor: '#22C55E10',
+    borderColor: '#00C48C40',
+    backgroundColor: '#00C48C10',
     flex: 1,
     justifyContent: 'center' as const,
   },
@@ -2914,7 +2914,7 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: 6,
-    backgroundColor: '#22C55E',
+    backgroundColor: '#00C48C',
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
   },
@@ -2937,7 +2937,7 @@ const styles = StyleSheet.create({
     borderTopColor: Colors.surfaceBorder,
   },
   trustSectionTitle: {
-    color: '#22C55E',
+    color: '#00C48C',
     fontSize: 15,
     fontWeight: '700' as const,
   },
@@ -2956,8 +2956,8 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface,
   },
   trustToggleActive: {
-    borderColor: '#22C55E',
-    backgroundColor: '#22C55E18',
+    borderColor: '#00C48C',
+    backgroundColor: '#00C48C18',
   },
   trustToggleText: {
     color: Colors.textTertiary,
@@ -2965,6 +2965,6 @@ const styles = StyleSheet.create({
     fontWeight: '600' as const,
   },
   trustToggleTextActive: {
-    color: '#22C55E',
+    color: '#00C48C',
   },
 });

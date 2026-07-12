@@ -35,7 +35,7 @@ export const FUNCTIONALITY_REGISTRY: Module[] = [
     ],
   },
   {
-    id: 'kyc', title: 'KYC Verification', icon: 'Shield', color: '#22C55E',
+    id: 'kyc', title: 'KYC Verification', icon: 'Shield', color: '#00C48C',
     description: 'Know Your Customer verification and compliance',
     features: [
       { id: 'kyc-1', name: 'Personal information collection', status: 'active', addedDate: '2024-01-01' },
@@ -127,7 +127,7 @@ export const FUNCTIONALITY_REGISTRY: Module[] = [
     ],
   },
   {
-    id: 'notifications', title: 'Notifications & Alerts', icon: 'Bell', color: '#EF4444',
+    id: 'notifications', title: 'Notifications & Alerts', icon: 'Bell', color: '#FF4D4D',
     description: 'Push notifications and in-app alerts',
     features: [
       { id: 'notif-1', name: 'Push notification delivery', status: 'active', addedDate: '2024-01-01' },
@@ -145,7 +145,7 @@ export const FUNCTIONALITY_REGISTRY: Module[] = [
     ],
   },
   {
-    id: 'admin', title: 'Admin Panel', icon: 'Settings', color: '#666666',
+    id: 'admin', title: 'Admin Panel', icon: 'Settings', color: '#555555',
     description: 'Administrative controls and management',
     features: [
       { id: 'admin-1', name: 'Admin dashboard overview', status: 'active', addedDate: '2024-01-01' },

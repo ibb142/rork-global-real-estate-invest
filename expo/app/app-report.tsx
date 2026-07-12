@@ -537,7 +537,7 @@ export default function AppReportScreen() {
                   </Text>
                   <View style={styles.summaryGrid}>
                     <View style={styles.summaryItem}>
-                      <Text style={[styles.summaryNumber, { color: '#EF4444' }]}>{criticalIntegrations}</Text>
+                      <Text style={[styles.summaryNumber, { color: '#FF4D4D' }]}>{criticalIntegrations}</Text>
                       <Text style={styles.summaryLabel}>Critical</Text>
                     </View>
                     <View style={styles.summaryDivider} />
@@ -559,7 +559,7 @@ export default function AppReportScreen() {
 
                 {INTEGRATIONS.map((integration, idx) => {
                   const isExpanded = expandedIntegrations.has(integration.id);
-                  const priorityColor = integration.priority === 'critical' ? '#EF4444' :
+                  const priorityColor = integration.priority === 'critical' ? '#FF4D4D' :
                     integration.priority === 'high' ? Colors.warning :
                     integration.priority === 'medium' ? Colors.info : Colors.textTertiary;
                   const statusColor = integration.status === 'ready' ? Colors.success :

@@ -67,7 +67,7 @@ const formatTime = (seconds: number): string => {
 };
 
 const ENGAGEMENT_COLORS: Record<EngagementLevel, string> = {
-  hot: '#EF4444',
+  hot: '#FF4D4D',
   warm: '#F59E0B',
   cold: '#60A5FA',
   unresponsive: '#6B7280',
@@ -76,9 +76,9 @@ const ENGAGEMENT_COLORS: Record<EngagementLevel, string> = {
 
 
 const PRIORITY_COLORS: Record<FollowUpPriority, string> = {
-  urgent: '#EF4444',
+  urgent: '#FF4D4D',
   high: '#F59E0B',
-  medium: '#3B82F6',
+  medium: '#4A90D9',
   low: '#6B7280',
 };
 
@@ -271,7 +271,7 @@ export default function OutreachAnalyticsScreen() {
         <View style={styles.urgentBanner}>
           <View style={styles.urgentBannerLeft}>
             <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
-              <AlertTriangle size={20} color="#EF4444" />
+              <AlertTriangle size={20} color="#FF4D4D" />
             </Animated.View>
             <View>
               <Text style={styles.urgentBannerTitle}>
@@ -386,7 +386,7 @@ export default function OutreachAnalyticsScreen() {
             ]}
             onPress={() => setEngagementFilter(filter)}
           >
-            {filter === 'hot' && <Flame size={12} color={engagementFilter === filter ? Colors.background : '#EF4444'} />}
+            {filter === 'hot' && <Flame size={12} color={engagementFilter === filter ? Colors.background : '#FF4D4D'} />}
             {filter === 'warm' && <Zap size={12} color={engagementFilter === filter ? Colors.background : '#F59E0B'} />}
             {filter === 'cold' && <Snowflake size={12} color={engagementFilter === filter ? Colors.background : '#60A5FA'} />}
             {filter === 'unresponsive' && <Clock size={12} color={engagementFilter === filter ? Colors.background : '#6B7280'} />}

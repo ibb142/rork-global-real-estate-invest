@@ -840,7 +840,7 @@ export default function AdminDashboardScreen() {
               </View>
               <View style={styles.leadsHeroBreakdown}>
                 <View style={styles.leadsHeroBreakdownItem}>
-                  <View style={[styles.leadsHeroDot, { backgroundColor: '#22C55E' }]} />
+                  <View style={[styles.leadsHeroDot, { backgroundColor: '#00C48C' }]} />
                   <Text style={styles.leadsHeroBreakdownText}>{leadsStats?.totalUsers ?? 0} Registered</Text>
                 </View>
                 <View style={styles.leadsHeroBreakdownItem}>
@@ -857,7 +857,7 @@ export default function AdminDashboardScreen() {
               </View>
               <View style={styles.leadsKpiDivider} />
               <View style={styles.leadsKpiItem}>
-                <Phone size={12} color="#22C55E" />
+                <Phone size={12} color="#00C48C" />
                 <Text style={styles.leadsKpiValue}>{leadsStats?.withPhone ?? 0}</Text>
                 <Text style={styles.leadsKpiLabel}>Phones</Text>
               </View>
@@ -874,8 +874,8 @@ export default function AdminDashboardScreen() {
             <View style={styles.recentLeadsList}>
               {recentLeads.slice(0, 5).map((lead: any) => (
                 <View key={lead.id} style={styles.recentLeadRow}>
-                  <View style={[styles.recentLeadAvatar, { backgroundColor: lead.type === 'user' ? '#22C55E18' : '#F57C0018' }]}>
-                    <Text style={[styles.recentLeadInitials, { color: lead.type === 'user' ? '#22C55E' : '#F57C00' }]}>
+                  <View style={[styles.recentLeadAvatar, { backgroundColor: lead.type === 'user' ? '#00C48C18' : '#F57C0018' }]}>
+                    <Text style={[styles.recentLeadInitials, { color: lead.type === 'user' ? '#00C48C' : '#F57C00' }]}>
                       {lead.firstName?.charAt(0) ?? ''}{lead.lastName?.charAt(0) ?? ''}
                     </Text>
                   </View>
@@ -883,8 +883,8 @@ export default function AdminDashboardScreen() {
                     <Text style={styles.recentLeadName} numberOfLines={1}>{lead.firstName} {lead.lastName}</Text>
                     <Text style={styles.recentLeadEmail} numberOfLines={1}>{lead.email}</Text>
                   </View>
-                  <View style={[styles.recentLeadTypeBadge, { backgroundColor: lead.type === 'user' ? '#22C55E18' : '#F57C0018' }]}>
-                    <Text style={[styles.recentLeadTypeText, { color: lead.type === 'user' ? '#22C55E' : '#F57C00' }]}>
+                  <View style={[styles.recentLeadTypeBadge, { backgroundColor: lead.type === 'user' ? '#00C48C18' : '#F57C0018' }]}>
+                    <Text style={[styles.recentLeadTypeText, { color: lead.type === 'user' ? '#00C48C' : '#F57C00' }]}>
                       {lead.type === 'user' ? 'Registered' : 'Waitlist'}
                     </Text>
                   </View>

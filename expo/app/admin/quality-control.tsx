@@ -63,9 +63,9 @@ interface ToneStyle {
 }
 
 const TONES: Record<HealthTone, ToneStyle> = {
-  healthy: { color: '#22C55E', bg: 'rgba(34,197,94,0.10)', border: 'rgba(34,197,94,0.20)' },
+  healthy: { color: '#00C48C', bg: 'rgba(34,197,94,0.10)', border: 'rgba(34,197,94,0.20)' },
   degraded: { color: '#F59E0B', bg: 'rgba(245,158,11,0.10)', border: 'rgba(245,158,11,0.22)' },
-  critical: { color: '#EF4444', bg: 'rgba(239,68,68,0.10)', border: 'rgba(239,68,68,0.22)' },
+  critical: { color: '#FF4D4D', bg: 'rgba(239,68,68,0.10)', border: 'rgba(239,68,68,0.22)' },
 };
 
 function probeStatusToTone(status: string): HealthTone {

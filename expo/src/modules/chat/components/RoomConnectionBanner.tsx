@@ -43,7 +43,7 @@ function getBannerConfig(phase: RoomSyncPhase, showSuccess: boolean): BannerConf
       return {
         visible: true,
         label: 'Room connection failed',
-        accent: '#ef4444',
+        accent: '#FF4D4D',
         background: 'rgba(239,68,68,0.08)',
         icon: 'wifi-off',
       };

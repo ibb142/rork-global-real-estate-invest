@@ -8068,7 +8068,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.textTertiary,
   },
   chatLiveWorkDotActive: {
-    backgroundColor: '#22C55E',
+    backgroundColor: '#00C48C',
   },
   chatLiveWorkCopy: {
     flex: 1,

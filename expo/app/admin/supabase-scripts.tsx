@@ -1399,10 +1399,10 @@ export default function SupabaseStatusPage() {
               </View>
             </View>
 
-            <View style={[styles.deployCard, { borderColor: '#22C55E30', marginTop: 12 }]}>
+            <View style={[styles.deployCard, { borderColor: '#00C48C30', marginTop: 12 }]}>
               <View style={styles.deployCardHeader}>
-                <View style={[styles.deployCardIcon, { backgroundColor: '#22C55E20' }]}>
-                  <Shield size={18} color="#22C55E" />
+                <View style={[styles.deployCardIcon, { backgroundColor: '#00C48C20' }]}>
+                  <Shield size={18} color="#00C48C" />
                 </View>
                 <View style={styles.deployCardInfo}>
                   <Text style={styles.deployCardTitle}>IVX Owner Admin Module</Text>
@@ -1419,21 +1419,21 @@ export default function SupabaseStatusPage() {
 
               <View style={styles.ownerSecurityList}>
                 <View style={styles.ownerSecurityRow}>
-                  <Shield size={14} color="#22C55E" />
+                  <Shield size={14} color="#00C48C" />
                   <Text style={styles.ownerSecurityText}>
                     <Text style={styles.ownerSecurityStrong}>RLS owner-only</Text>
                     {' '}on ivx_conversations, ivx_messages, ivx_inbox_state, ivx_ai_requests, and ivx_knowledge_documents
                   </Text>
                 </View>
                 <View style={styles.ownerSecurityRow}>
-                  <HardDrive size={14} color="#22C55E" />
+                  <HardDrive size={14} color="#00C48C" />
                   <Text style={styles.ownerSecurityText}>
                     <Text style={styles.ownerSecurityStrong}>Private storage</Text>
                     {' '}through the ivx-owner-files bucket only
                   </Text>
                 </View>
                 <View style={styles.ownerSecurityRow}>
-                  <Server size={14} color="#22C55E" />
+                  <Server size={14} color="#00C48C" />
                   <Text style={styles.ownerSecurityText}>
                     <Text style={styles.ownerSecurityStrong}>API enforced</Text>
                     {' '}by owner session checks against profiles.role before routes continue
@@ -1462,7 +1462,7 @@ export default function SupabaseStatusPage() {
 
               <View style={styles.deployActions}>
                 <TouchableOpacity
-                  style={[styles.deployButton, { backgroundColor: '#22C55E' }, ownerModuleDeploying && styles.deployButtonDisabled]}
+                  style={[styles.deployButton, { backgroundColor: '#00C48C' }, ownerModuleDeploying && styles.deployButtonDisabled]}
                   onPress={handleDeployOwnerModule}
                   disabled={ownerModuleDeploying}
                   activeOpacity={0.85}
@@ -1645,8 +1645,8 @@ export default function SupabaseStatusPage() {
 
             <View style={styles.deployCard}>
               <View style={styles.deployCardHeader}>
-                <View style={[styles.deployCardIcon, { backgroundColor: '#22C55E20' }]}>
-                  <Shield size={18} color="#22C55E" />
+                <View style={[styles.deployCardIcon, { backgroundColor: '#00C48C20' }]}>
+                  <Shield size={18} color="#00C48C" />
                 </View>
                 <View style={styles.deployCardInfo}>
                   <Text style={styles.deployCardTitle}>KYC Tables</Text>

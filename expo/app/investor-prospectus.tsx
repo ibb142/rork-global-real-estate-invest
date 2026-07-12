@@ -233,11 +233,11 @@ export default function InvestorProspectusScreen() {
               '#00A86B'
             )}
             {renderIncomeStream(
-              <TrendingUp size={20} color="#3B82F6" />,
+              <TrendingUp size={20} color="#4A90D9" />,
               'Capital Appreciation',
               `${ANNUAL_APPRECIATION}%/yr`,
               'Property values increase over time. Sell shares at higher prices to realize gains.',
-              '#3B82F6'
+              '#4A90D9'
             )}
             {renderIncomeStream(
               <BarChart3 size={20} color="#8B5CF6" />,
@@ -290,7 +290,7 @@ export default function InvestorProspectusScreen() {
                   <View style={styles.projectionHeader}>
                     <View style={styles.projectionPeriodRow}>
                       <View style={[styles.projectionNumber, { backgroundColor: index < 5 ? '#1e3a5f' : '#0d3320' }]}>
-                        <Text style={[styles.projectionNumberText, { color: index < 5 ? '#3B82F6' : '#00A86B' }]}>
+                        <Text style={[styles.projectionNumberText, { color: index < 5 ? '#4A90D9' : '#00A86B' }]}>
                           {index + 1}
                         </Text>
                       </View>
@@ -309,7 +309,7 @@ export default function InvestorProspectusScreen() {
                       <Text style={styles.projectionDetailValue}>{formatCurrency(projection.dividendReturn)}</Text>
                     </View>
                     <View style={styles.projectionDetail}>
-                      <View style={[styles.projectionDot, { backgroundColor: '#3B82F6' }]} />
+                      <View style={[styles.projectionDot, { backgroundColor: '#4A90D9' }]} />
                       <Text style={styles.projectionDetailLabel}>Appreciation</Text>
                       <Text style={styles.projectionDetailValue}>{formatCurrency(projection.capitalAppreciation)}</Text>
                     </View>
@@ -331,7 +331,7 @@ export default function InvestorProspectusScreen() {
           >
             <View style={styles.collapsibleHeader}>
               <View style={styles.collapsibleTitleRow}>
-                <PieChart size={20} color="#3B82F6" />
+                <PieChart size={20} color="#4A90D9" />
                 <Text style={styles.collapsibleTitleText}>Investment Comparison</Text>
               </View>
               {expandedSection === 'comparison'
@@ -468,7 +468,7 @@ export default function InvestorProspectusScreen() {
                 <Text style={styles.shareMethodText}>Email</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.shareMethodButton, { backgroundColor: '#3B82F6' }]}
+                style={[styles.shareMethodButton, { backgroundColor: '#4A90D9' }]}
                 onPress={() => handleShare('sms')}
               >
                 <MessageCircle size={22} color="#fff" />

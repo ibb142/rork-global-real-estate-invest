@@ -102,7 +102,7 @@ const FEATURE_OPTIONS: BriefFeature[] = [
     title: IVX_OWNER_AI_FEATURE_LABELS.shared_room,
     description: 'A shared owner room with stable slug routing, history, and realtime delivery.',
     icon: MessageSquareMore,
-    accent: '#3B82F6',
+    accent: '#4A90D9',
   },
   {
     id: 'file_upload',
@@ -123,7 +123,7 @@ const FEATURE_OPTIONS: BriefFeature[] = [
     title: IVX_OWNER_AI_FEATURE_LABELS.owner_commands,
     description: 'Operator-style commands for quick owner actions, routing, and operational control.',
     icon: Boxes,
-    accent: '#EF4444',
+    accent: '#FF4D4D',
   },
 ];
 

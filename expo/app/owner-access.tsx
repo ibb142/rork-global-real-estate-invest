@@ -122,7 +122,7 @@ const ACCESS_ROUTES: AccessRouteCard[] = [
     description: 'Restore owner access instantly on the previously verified network/device.',
     detail: 'Works with carrier subnet matching — your mobile IP can change within the same network range.',
     cta: 'Restore trusted access',
-    accent: '#22C55E',
+    accent: '#00C48C',
     mode: 'restore',
   },
   {
@@ -131,7 +131,7 @@ const ACCESS_ROUTES: AccessRouteCard[] = [
     description: 'Open Admin > Owner Controls to verify, rotate, or refresh your trusted device.',
     detail: 'Use this to keep owner recovery under your control and re-verify your current network.',
     cta: 'Open owner controls',
-    accent: '#3B82F6',
+    accent: '#4A90D9',
     mode: 'controls',
   },
 ];
@@ -476,7 +476,7 @@ export default function OwnerAccessScreen() {
     ? Colors.success
     : auth.isAuthenticated
       ? Colors.warning
-      : '#EF4444';
+      : '#FF4D4D';
 
   const trustedStatusText = trustedReady
     ? 'Ready now'
@@ -490,10 +490,10 @@ export default function OwnerAccessScreen() {
   const trustedStatusColor = trustedReady
     ? Colors.success
     : audit?.emailMismatch
-      ? '#EF4444'
+      ? '#FF4D4D'
       : subnetMatch
         ? '#F59E0B'
-        : '#EF4444';
+        : '#FF4D4D';
   const ownerRepairReadinessQuery = useQuery<OwnerRepairReadiness>({
     queryKey: ['owner-repair-readiness'],
     queryFn: fetchOwnerRepairReadiness,
@@ -602,7 +602,7 @@ export default function OwnerAccessScreen() {
         id: 'admin-hq',
         title: 'Open Admin HQ',
         subtitle: 'Owner-grade admin access and project controls',
-        accent: '#22C55E',
+        accent: '#00C48C',
         icon: ShieldCheck,
         onPress: () => router.push('/admin' as any),
         testID: 'owner-access-open-admin-hq',
@@ -629,7 +629,7 @@ export default function OwnerAccessScreen() {
         id: 'owner-controls',
         title: 'Open Owner Controls',
         subtitle: 'Verify or rotate trusted device access',
-        accent: '#3B82F6',
+        accent: '#4A90D9',
         icon: Crown,
         onPress: () => router.push('/admin/owner-controls' as any),
         testID: 'owner-access-open-owner-controls',
@@ -641,7 +641,7 @@ export default function OwnerAccessScreen() {
     ? Colors.success
     : identityAudit?.status === 'normal_user_account'
       ? '#F59E0B'
-      : '#EF4444';
+      : '#FF4D4D';
   const overallHealthy = hasLiveOwnerControl || auth.isOwnerIPAccess || trustedReady;
   const lockUpdateItems = useMemo<DirectAnswerItem[]>(() => {
     return [
@@ -727,13 +727,13 @@ export default function OwnerAccessScreen() {
         id: 'signin-state',
         label: 'Sign-in state',
         value: signinValue,
-        tone: hasLiveOwnerControl ? Colors.success : auth.isAuthenticated ? '#F59E0B' : '#EF4444',
+        tone: hasLiveOwnerControl ? Colors.success : auth.isAuthenticated ? '#F59E0B' : '#FF4D4D',
       },
       {
         id: 'trusted-state',
         label: 'Trusted restore',
         value: trustedValue,
-        tone: trustedReady ? Colors.success : audit?.ownerDeviceVerified ? '#F59E0B' : '#EF4444',
+        tone: trustedReady ? Colors.success : audit?.ownerDeviceVerified ? '#F59E0B' : '#FF4D4D',
       },
       {
         id: 'next-action',
@@ -767,25 +767,25 @@ export default function OwnerAccessScreen() {
         id: 'identity-authenticated-email',
         label: 'Authenticated session email',
         value: identityAudit.authenticatedEmail || 'No active session',
-        tone: identityAudit.matchesAuthenticatedEmail ? Colors.success : identityAudit.authenticatedEmail ? '#F59E0B' : '#EF4444',
+        tone: identityAudit.matchesAuthenticatedEmail ? Colors.success : identityAudit.authenticatedEmail ? '#F59E0B' : '#FF4D4D',
       },
       {
         id: 'identity-authenticated-authority',
         label: 'Authenticated authority',
         value: authenticatedAuthorityValue,
-        tone: identityAudit.authenticatedAuthorityIsAdmin ? Colors.success : identityAudit.authenticatedEmail ? '#F59E0B' : '#EF4444',
+        tone: identityAudit.authenticatedAuthorityIsAdmin ? Colors.success : identityAudit.authenticatedEmail ? '#F59E0B' : '#FF4D4D',
       },
       {
         id: 'identity-trusted-email',
         label: 'Trusted-device owner email',
         value: identityAudit.trustedDeviceVerifiedEmail || 'Missing',
-        tone: identityAudit.matchesTrustedDeviceEmail ? Colors.success : identityAudit.trustedDeviceVerifiedEmail ? '#F59E0B' : '#EF4444',
+        tone: identityAudit.matchesTrustedDeviceEmail ? Colors.success : identityAudit.trustedDeviceVerifiedEmail ? '#F59E0B' : '#FF4D4D',
       },
       {
         id: 'identity-trusted-authority',
         label: 'Trusted-device authority',
         value: trustedAuthorityValue,
-        tone: identityAudit.trustedDeviceAuthorityIsAdmin ? Colors.success : identityAudit.trustedDeviceVerified ? '#F59E0B' : '#EF4444',
+        tone: identityAudit.trustedDeviceAuthorityIsAdmin ? Colors.success : identityAudit.trustedDeviceVerified ? '#F59E0B' : '#FF4D4D',
       },
       {
         id: 'identity-verdict',
@@ -828,31 +828,31 @@ export default function OwnerAccessScreen() {
         id: 'email-check',
         label: 'Email authority check',
         value: audit.emailCheckPassed ? 'Pass' : 'Mismatch',
-        tone: audit.emailCheckPassed ? Colors.success : '#EF4444',
+        tone: audit.emailCheckPassed ? Colors.success : '#FF4D4D',
       },
       {
         id: 'trusted-mode',
         label: 'Trusted mode',
         value: audit.ipEnabled ? 'Enabled' : 'Disabled',
-        tone: audit.ipEnabled ? Colors.success : '#EF4444',
+        tone: audit.ipEnabled ? Colors.success : '#FF4D4D',
       },
       {
         id: 'device-verified',
         label: 'Device verified',
         value: audit.ownerDeviceVerified ? 'Yes' : 'No',
-        tone: audit.ownerDeviceVerified ? Colors.success : '#EF4444',
+        tone: audit.ownerDeviceVerified ? Colors.success : '#FF4D4D',
       },
       {
         id: 'verified-user-id',
         label: 'Verified owner id',
         value: audit.verifiedUserId || 'Missing',
-        tone: audit.hasValidTrustedIdentity ? Colors.success : '#EF4444',
+        tone: audit.hasValidTrustedIdentity ? Colors.success : '#FF4D4D',
       },
       {
         id: 'verified-role',
         label: 'Verified role',
         value: audit.verifiedRole || 'Missing',
-        tone: audit.verifiedRole ? Colors.primary : '#EF4444',
+        tone: audit.verifiedRole ? Colors.primary : '#FF4D4D',
       },
       {
         id: 'verified-at',
@@ -864,7 +864,7 @@ export default function OwnerAccessScreen() {
         id: 'exact-match',
         label: 'Exact network match',
         value: audit.exactIPMatch ? 'Pass' : 'No',
-        tone: audit.exactIPMatch ? Colors.success : '#EF4444',
+        tone: audit.exactIPMatch ? Colors.success : '#FF4D4D',
       },
       {
         id: 'subnet-match',
@@ -971,7 +971,7 @@ export default function OwnerAccessScreen() {
       <View style={styles.root}>
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} testID="owner-access-screen">
           <View style={[styles.heroCard, styles.heroCardActive]}>
-            <View style={[styles.heroIconWrap, { backgroundColor: '#22C55E' }]}>
+            <View style={[styles.heroIconWrap, { backgroundColor: '#00C48C' }]}>
               <ShieldCheck size={22} color="#000" />
             </View>
             <Text style={styles.eyebrow}>OPEN ACCESS ACTIVE</Text>
@@ -1044,7 +1044,7 @@ export default function OwnerAccessScreen() {
     <View style={styles.root}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} testID="owner-access-screen">
         <View style={[styles.heroCard, overallHealthy && styles.heroCardActive]}>
-          <View style={[styles.heroIconWrap, overallHealthy && { backgroundColor: '#22C55E' }]}>
+          <View style={[styles.heroIconWrap, overallHealthy && { backgroundColor: '#00C48C' }]}>
             {overallHealthy ? <CheckCircle2 size={22} color="#000" /> : <ScanLine size={22} color={Colors.black} />}
           </View>
           <Text style={styles.eyebrow}>{overallHealthy ? 'OWNER ACTIVE' : 'OWNER ACCESS'}</Text>
@@ -1516,7 +1516,7 @@ export default function OwnerAccessScreen() {
             </View>
           ) : null}
           <View style={styles.statusMessageRow}>
-            {trustedReady || hasLiveOwnerControl ? <CheckCircle2 size={16} color={Colors.success} /> : <XCircle size={16} color="#EF4444" />}
+            {trustedReady || hasLiveOwnerControl ? <CheckCircle2 size={16} color={Colors.success} /> : <XCircle size={16} color="#FF4D4D" />}
             <Text style={styles.statusMessage}>{audit?.message ?? 'Checking your owner access status…'}</Text>
           </View>
         </View>
@@ -1615,7 +1615,7 @@ export default function OwnerAccessScreen() {
           const disabled = loading;
           const isRestoreReady = item.mode === 'restore' && trustedReady;
           const isSessionActive = item.mode === 'signin' && auth.isAuthenticated;
-          const routeBorderColor = isRestoreReady ? '#22C55E30' : isSessionActive ? '#FFD70030' : '#232323';
+          const routeBorderColor = isRestoreReady ? '#00C48C30' : isSessionActive ? '#FFD70030' : '#232323';
           return (
             <TouchableOpacity
               key={item.id}
@@ -1695,7 +1695,7 @@ const styles = StyleSheet.create({
     borderColor: '#262626',
   },
   heroCardActive: {
-    borderColor: '#22C55E30',
+    borderColor: '#00C48C30',
     backgroundColor: '#081208',
   },
   heroIconWrap: {
@@ -1936,13 +1936,13 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   repairIssueIndexWrapCritical: {
-    backgroundColor: '#EF4444',
+    backgroundColor: '#FF4D4D',
   },
   repairIssueIndexWrapWarning: {
     backgroundColor: '#F59E0B',
   },
   repairIssueIndexWrapSuccess: {
-    backgroundColor: '#22C55E',
+    backgroundColor: '#00C48C',
   },
   repairIssueIndex: {
     color: '#08110B',
@@ -2130,7 +2130,7 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: '#EF4444',
+    backgroundColor: '#FF4D4D',
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 2,
@@ -2286,7 +2286,7 @@ const styles = StyleSheet.create({
     fontWeight: '600' as const,
   },
   claimCard: {
-    backgroundColor: '#22C55E',
+    backgroundColor: '#00C48C',
     borderRadius: 22,
     padding: 18,
     flexDirection: 'row',
@@ -2584,7 +2584,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    backgroundColor: '#22C55E18',
+    backgroundColor: '#00C48C18',
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 8,
@@ -2593,12 +2593,12 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: '#22C55E',
+    backgroundColor: '#00C48C',
   },
   readyText: {
     fontSize: 10,
     fontWeight: '800' as const,
-    color: '#22C55E',
+    color: '#00C48C',
     letterSpacing: 0.5,
   },
   routeBody: {
@@ -2715,7 +2715,7 @@ const styles = StyleSheet.create({
     borderColor: '#1F3A5F',
   },
   smsRecoveryVerifyBtn: {
-    backgroundColor: '#22C55E',
+    backgroundColor: '#00C48C',
     borderRadius: 14,
     paddingVertical: 14,
     alignItems: 'center',

@@ -398,7 +398,7 @@ export default function QuickBuyModal({ visible, onClose, deal, onNavigateToFull
                     <View style={ms.dealMetaRow}>
                       <Text style={ms.dealInvestment}>{formatCurrencyCompact(deal.totalInvestment)}</Text>
                       <View style={ms.dealRoiBadge}>
-                        <TrendingUp size={10} color="#22C55E" />
+                        <TrendingUp size={10} color="#00C48C" />
                         <Text style={ms.dealRoi}>{deal.expectedROI}% ROI</Text>
                       </View>
                     </View>
@@ -413,7 +413,7 @@ export default function QuickBuyModal({ visible, onClose, deal, onNavigateToFull
                         onPress={() => handleSwitchType('jv')}
                         activeOpacity={0.7}
                       >
-                        <Landmark size={16} color={investType === 'jv' ? '#22C55E' : Colors.textTertiary} />
+                        <Landmark size={16} color={investType === 'jv' ? '#00C48C' : Colors.textTertiary} />
                         <Text style={[ms.typeBtnText, investType === 'jv' && ms.typeBtnTextActive]}>JV Direct</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
@@ -491,7 +491,7 @@ export default function QuickBuyModal({ visible, onClose, deal, onNavigateToFull
                       <View style={ms.previewDivider} />
                       <View style={ms.previewItem}>
                         <Text style={ms.previewLabel}>Est. Return</Text>
-                        <Text style={[ms.previewValue, { color: '#22C55E' }]}>{formatCurrencyCompact(estimatedReturn)}</Text>
+                        <Text style={[ms.previewValue, { color: '#00C48C' }]}>{formatCurrencyCompact(estimatedReturn)}</Text>
                       </View>
                     </View>
 
@@ -655,7 +655,7 @@ export default function QuickBuyModal({ visible, onClose, deal, onNavigateToFull
 
                     <View style={ms.authTrustRow}>
                       <View style={ms.authTrustItem}>
-                        <Shield size={12} color="#22C55E" />
+                        <Shield size={12} color="#00C48C" />
                         <Text style={ms.authTrustText}>Bank-grade encryption</Text>
                       </View>
                       <View style={ms.authTrustItem}>
@@ -774,11 +774,11 @@ export default function QuickBuyModal({ visible, onClose, deal, onNavigateToFull
                       </View>
                       <View style={ms.confirmRow}>
                         <Text style={ms.confirmLabel}>Expected ROI</Text>
-                        <Text style={[ms.confirmValue, { color: '#22C55E' }]}>{deal.expectedROI}%</Text>
+                        <Text style={[ms.confirmValue, { color: '#00C48C' }]}>{deal.expectedROI}%</Text>
                       </View>
                       <View style={ms.confirmRow}>
                         <Text style={ms.confirmLabel}>Estimated Profit</Text>
-                        <Text style={[ms.confirmValue, { color: '#22C55E' }]}>{formatCurrencyWithDecimals(estimatedReturn)}</Text>
+                        <Text style={[ms.confirmValue, { color: '#00C48C' }]}>{formatCurrencyWithDecimals(estimatedReturn)}</Text>
                       </View>
                       <View style={ms.confirmRow}>
                         <Text style={ms.confirmLabel}>Estimated Total Payout</Text>
@@ -813,7 +813,7 @@ export default function QuickBuyModal({ visible, onClose, deal, onNavigateToFull
                       activeOpacity={0.7}
                     >
                       <View style={[ms.tosCheckbox, tosAccepted && ms.tosCheckboxActive]}>
-                        {tosAccepted && <CheckCircle size={16} color="#22C55E" />}
+                        {tosAccepted && <CheckCircle size={16} color="#00C48C" />}
                       </View>
                       <Text style={ms.tosText}>I acknowledge the investment risks and agree to the terms of this offering.</Text>
                     </TouchableOpacity>
@@ -850,7 +850,7 @@ export default function QuickBuyModal({ visible, onClose, deal, onNavigateToFull
                 {step === 'success' && (
                   <Animated.View style={[ms.successWrap, { transform: [{ scale: successScale }] }]}>
                     <View style={ms.successCircle}>
-                      <CheckCircle size={48} color="#22C55E" />
+                      <CheckCircle size={48} color="#00C48C" />
                     </View>
                     <Text style={ms.successTitle}>Interest Recorded</Text>
                     <Text style={ms.successSubtext}>
@@ -860,7 +860,7 @@ export default function QuickBuyModal({ visible, onClose, deal, onNavigateToFull
                     <View style={ms.successNextSteps}>
                       <Text style={ms.successNextTitle}>WHAT HAPPENS NEXT</Text>
                       <View style={ms.successNextItem}>
-                        <CheckCircle size={14} color="#22C55E" />
+                        <CheckCircle size={14} color="#00C48C" />
                         <Text style={ms.successNextText}>Our team will review your interest</Text>
                       </View>
                       <View style={ms.successNextItem}>
@@ -1007,7 +1007,7 @@ const ms = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
-    backgroundColor: '#22C55E15',
+    backgroundColor: '#00C48C15',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 6,
@@ -1015,7 +1015,7 @@ const ms = StyleSheet.create({
   dealRoi: {
     fontSize: 11,
     fontWeight: '700' as const,
-    color: '#22C55E',
+    color: '#00C48C',
   },
   typeRow: {
     flexDirection: 'row',
@@ -1035,8 +1035,8 @@ const ms = StyleSheet.create({
     borderColor: Colors.surfaceBorder,
   },
   typeBtnActive: {
-    borderColor: '#22C55E',
-    backgroundColor: '#22C55E' + '0A',
+    borderColor: '#00C48C',
+    backgroundColor: '#00C48C' + '0A',
   },
   typeBtnActiveFractional: {
     borderColor: '#FFD700',
@@ -1150,7 +1150,7 @@ const ms = StyleSheet.create({
     color: Colors.text,
   },
   previewMarketValueUp: {
-    color: '#22C55E',
+    color: '#00C48C',
   },
   previewRow: {
     flexDirection: 'row',
@@ -1421,8 +1421,8 @@ const ms = StyleSheet.create({
     marginTop: 1,
   },
   tosCheckboxActive: {
-    borderColor: '#22C55E',
-    backgroundColor: '#22C55E15',
+    borderColor: '#00C48C',
+    backgroundColor: '#00C48C15',
   },
   tosText: {
     flex: 1,
@@ -1479,7 +1479,7 @@ const ms = StyleSheet.create({
     width: 88,
     height: 88,
     borderRadius: 44,
-    backgroundColor: '#22C55E15',
+    backgroundColor: '#00C48C15',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,

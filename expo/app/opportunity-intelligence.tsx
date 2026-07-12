@@ -127,7 +127,7 @@ const CATEGORY_ICONS: Record<string, React.ReactNode> = {
 };
 
 const CONFIDENCE_COLORS: Record<string, string> = {
-  'A+': '#22C55E',
+  'A+': '#00C48C',
   'A': '#16A34A',
   'B': '#EAB308',
   'C': '#F97316',
@@ -282,7 +282,7 @@ export default function OpportunityIntelligenceScreen() {
       >
         {state.error && (
           <View style={styles.errorBanner}>
-            <AlertTriangle size={16} color="#EF4444" />
+            <AlertTriangle size={16} color="#FF4D4D" />
             <Text style={styles.errorText}>{state.error}</Text>
           </View>
         )}
@@ -299,13 +299,13 @@ export default function OpportunityIntelligenceScreen() {
 
           {state.targets.map((t) => {
             const statusColor =
-              t.status === 'exceeded' ? '#22C55E' :
-              t.status === 'on_track' ? '#3B82F6' :
+              t.status === 'exceeded' ? '#00C48C' :
+              t.status === 'on_track' ? '#4A90D9' :
               t.status === 'behind' ? '#EAB308' : '#6B7280';
 
             const statusIcon =
-              t.status === 'exceeded' ? <CheckCircle size={14} color="#22C55E" /> :
-              t.status === 'on_track' ? <TrendingUp size={14} color="#3B82F6" /> :
+              t.status === 'exceeded' ? <CheckCircle size={14} color="#00C48C" /> :
+              t.status === 'on_track' ? <TrendingUp size={14} color="#4A90D9" /> :
               t.status === 'behind' ? <AlertTriangle size={14} color="#EAB308" /> :
               <Zap size={14} color="#6B7280" />;
 
@@ -500,13 +500,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: '#EF444420',
+    backgroundColor: '#FF4D4D20',
     padding: 12,
     borderRadius: 8,
     marginBottom: 16,
   },
   errorText: {
-    color: '#EF4444',
+    color: '#FF4D4D',
     fontSize: 13,
     flex: 1,
   },

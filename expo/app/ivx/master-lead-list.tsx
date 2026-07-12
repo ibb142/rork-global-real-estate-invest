@@ -221,7 +221,7 @@ function MasterLeadListScreen() {
           <View style={styles.center}><ActivityIndicator color={Colors.text} /></View>
         ) : isError ? (
           <View style={styles.errorCard}>
-            <CircleX size={18} color={Colors.error ?? '#ef4444'} />
+            <CircleX size={18} color={Colors.error ?? '#FF4D4D'} />
             <Text style={styles.errorText}>{error instanceof Error ? error.message : 'Failed to load.'}</Text>
           </View>
         ) : leads.length === 0 ? (
@@ -390,7 +390,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 14,
     borderWidth: 1,
-    borderColor: Colors.error ?? '#ef4444',
+    borderColor: Colors.error ?? '#FF4D4D',
   },
-  errorText: { color: Colors.error ?? '#ef4444', fontSize: 13, flex: 1 },
+  errorText: { color: Colors.error ?? '#FF4D4D', fontSize: 13, flex: 1 },
 });

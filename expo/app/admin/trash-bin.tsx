@@ -271,7 +271,7 @@ export default function TrashBinScreen() {
                     disabled={restoreMutation.isPending}
                     testID={`trash-restore-${deal.id}`}
                   >
-                    <ArchiveRestore size={15} color="#22C55E" />
+                    <ArchiveRestore size={15} color="#00C48C" />
                     <Text style={styles.restoreBtnText}>Restore Deal</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
@@ -552,12 +552,12 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingVertical: 10,
     borderRadius: 10,
-    backgroundColor: '#22C55E15',
+    backgroundColor: '#00C48C15',
     borderWidth: 1,
-    borderColor: '#22C55E30',
+    borderColor: '#00C48C30',
   },
   restoreBtnText: {
-    color: '#22C55E',
+    color: '#00C48C',
     fontSize: 13,
     fontWeight: '700' as const,
   },

@@ -241,27 +241,27 @@ const DEFAULT_CONTENT: ContentBlock[] = [
   { id: 'footer-email', section: 'footer', key: 'contact_email', label: 'Contact Email', value: 'info@ivxholding.com', type: 'text' },
   { id: 'footer-phone', section: 'footer', key: 'contact_phone', label: 'Contact Phone', value: '+1 (888) IVX-HOLD', type: 'text' },
   { id: 'brand-primary', section: 'branding', key: 'primary_color', label: 'Primary Color', value: '#FFD700', type: 'color' },
-  { id: 'brand-accent', section: 'branding', key: 'accent_color', label: 'Accent Color', value: '#22C55E', type: 'color' },
+  { id: 'brand-accent', section: 'branding', key: 'accent_color', label: 'Accent Color', value: '#00C48C', type: 'color' },
 ];
 
 const SECTION_CATEGORY_MAP: Record<string, { label: string; color: string }> = {
   hero: { label: 'HERO', color: '#FFD700' },
   content: { label: 'CONTENT', color: '#4A90D9' },
   social: { label: 'SOCIAL', color: '#7B68EE' },
-  conversion: { label: 'CONVERSION', color: '#22C55E' },
+  conversion: { label: 'CONVERSION', color: '#00C48C' },
   footer: { label: 'FOOTER', color: '#9A9A9A' },
 };
 
 const MODULE_CATEGORY_MAP: Record<string, { label: string; color: string }> = {
   core: { label: 'CORE', color: '#FFD700' },
-  invest: { label: 'INVEST', color: '#22C55E' },
+  invest: { label: 'INVEST', color: '#00C48C' },
   social: { label: 'SOCIAL', color: '#7B68EE' },
   tools: { label: 'TOOLS', color: '#4A90D9' },
   admin: { label: 'ADMIN', color: '#FF6B6B' },
 };
 
 const VISIBILITY_MAP: Record<string, { label: string; color: string; icon: React.ComponentType<any> }> = {
-  public: { label: 'Public', color: '#22C55E', icon: Globe },
+  public: { label: 'Public', color: '#00C48C', icon: Globe },
   members: { label: 'Members', color: '#4A90D9', icon: Users },
   admin: { label: 'Admin', color: '#FF6B6B', icon: Shield },
 };
@@ -702,7 +702,7 @@ export default function LandingControlScreen() {
     <View style={styles.masterCard}>
       <View style={styles.masterRow}>
         <View style={styles.masterLeft}>
-          <PulseDot active={landingEnabled && !maintenanceMode} color="#22C55E" />
+          <PulseDot active={landingEnabled && !maintenanceMode} color="#00C48C" />
           <View>
             <Text style={styles.masterTitle}>Landing Page</Text>
             <Text style={styles.masterSub}>
@@ -723,8 +723,8 @@ export default function LandingControlScreen() {
               setHasUnsavedChanges(true);
             }
           }}
-          trackColor={{ false: '#333', true: '#22C55E60' }}
-          thumbColor={landingEnabled ? '#22C55E' : '#666'}
+          trackColor={{ false: '#333', true: '#00C48C60' }}
+          thumbColor={landingEnabled ? '#00C48C' : '#666'}
         />
       </View>
 
@@ -761,7 +761,7 @@ export default function LandingControlScreen() {
         </View>
         <View style={styles.masterStatDivider} />
         <View style={styles.masterStat}>
-          <Text style={[styles.masterStatValue, { color: '#22C55E' }]}>{publicModules}</Text>
+          <Text style={[styles.masterStatValue, { color: '#00C48C' }]}>{publicModules}</Text>
           <Text style={styles.masterStatLabel}>Public</Text>
         </View>
       </View>
@@ -772,8 +772,8 @@ export default function LandingControlScreen() {
     <>
       <View style={styles.bulkRow}>
         <TouchableOpacity style={styles.bulkBtn} onPress={() => toggleAllSections(true)}>
-          <Eye size={14} color="#22C55E" />
-          <Text style={[styles.bulkBtnText, { color: '#22C55E' }]}>Enable All</Text>
+          <Eye size={14} color="#00C48C" />
+          <Text style={[styles.bulkBtnText, { color: '#00C48C' }]}>Enable All</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.bulkBtn} onPress={() => toggleAllSections(false)}>
           <EyeOff size={14} color="#FF6B6B" />
@@ -841,8 +841,8 @@ export default function LandingControlScreen() {
     <>
       <View style={styles.bulkRow}>
         <TouchableOpacity style={styles.bulkBtn} onPress={() => toggleAllModules(true)}>
-          <Unlock size={14} color="#22C55E" />
-          <Text style={[styles.bulkBtnText, { color: '#22C55E' }]}>Enable All</Text>
+          <Unlock size={14} color="#00C48C" />
+          <Text style={[styles.bulkBtnText, { color: '#00C48C' }]}>Enable All</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.bulkBtn} onPress={() => toggleAllModules(false)}>
           <Lock size={14} color="#FF6B6B" />
@@ -964,7 +964,7 @@ export default function LandingControlScreen() {
         <View style={styles.autoDeployCard}>
           <View style={styles.autoDeployHeader}>
             <View style={styles.autoDeployHeaderLeft}>
-              <PulseDot active={autoDeployConfig.enabled} color="#22C55E" />
+              <PulseDot active={autoDeployConfig.enabled} color="#00C48C" />
               <View>
                 <Text style={styles.autoDeployTitle}>Auto-Deploy</Text>
                 <Text style={styles.autoDeploySubtitle}>
@@ -975,8 +975,8 @@ export default function LandingControlScreen() {
             <Switch
               value={autoDeployConfig.enabled}
               onValueChange={(val) => void toggleAutoDeployOption('enabled', val)}
-              trackColor={{ false: '#333', true: '#22C55E60' }}
-              thumbColor={autoDeployConfig.enabled ? '#22C55E' : '#666'}
+              trackColor={{ false: '#333', true: '#00C48C60' }}
+              thumbColor={autoDeployConfig.enabled ? '#00C48C' : '#666'}
             />
           </View>
 
@@ -1023,12 +1023,12 @@ export default function LandingControlScreen() {
 
           {lastAutoDeploy && (
             <View style={styles.autoDeployLastRun}>
-              <View style={[styles.autoDeployLastDot, { backgroundColor: lastAutoDeploy.status === 'success' ? '#22C55E' : '#FF6B6B' }]} />
+              <View style={[styles.autoDeployLastDot, { backgroundColor: lastAutoDeploy.status === 'success' ? '#00C48C' : '#FF6B6B' }]} />
               <Text style={styles.autoDeployLastText}>
                 Last: {lastAutoDeploy.trigger} · {formatDate(lastAutoDeploy.timestamp)} · {(lastAutoDeploy.durationMs / 1000).toFixed(1)}s
               </Text>
-              <View style={[styles.autoDeployLastBadge, { backgroundColor: (lastAutoDeploy.status === 'success' ? '#22C55E' : '#FF6B6B') + '18' }]}>
-                <Text style={[styles.autoDeployLastBadgeText, { color: lastAutoDeploy.status === 'success' ? '#22C55E' : '#FF6B6B' }]}>
+              <View style={[styles.autoDeployLastBadge, { backgroundColor: (lastAutoDeploy.status === 'success' ? '#00C48C' : '#FF6B6B') + '18' }]}>
+                <Text style={[styles.autoDeployLastBadgeText, { color: lastAutoDeploy.status === 'success' ? '#00C48C' : '#FF6B6B' }]}>
                   {lastAutoDeploy.status.toUpperCase()}
                 </Text>
               </View>
@@ -1081,7 +1081,7 @@ export default function LandingControlScreen() {
           </Text>
           {autoDeployConfig.enabled && (
             <View style={styles.autoDeployBadgeInline}>
-              <Zap size={10} color="#22C55E" />
+              <Zap size={10} color="#00C48C" />
             </View>
           )}
         </TouchableOpacity>
@@ -1090,16 +1090,16 @@ export default function LandingControlScreen() {
           <Text style={styles.deploySummaryTitle}>Current Configuration</Text>
           <View style={styles.deploySummaryRow}>
             <Text style={styles.deploySummaryLabel}>Landing Status</Text>
-            <View style={[styles.deploySummaryBadge, { backgroundColor: landingEnabled ? '#22C55E18' : '#FF6B6B18' }]}>
-              <Text style={[styles.deploySummaryBadgeText, { color: landingEnabled ? '#22C55E' : '#FF6B6B' }]}>
+            <View style={[styles.deploySummaryBadge, { backgroundColor: landingEnabled ? '#00C48C18' : '#FF6B6B18' }]}>
+              <Text style={[styles.deploySummaryBadgeText, { color: landingEnabled ? '#00C48C' : '#FF6B6B' }]}>
                 {landingEnabled ? 'LIVE' : 'OFFLINE'}
               </Text>
             </View>
           </View>
           <View style={styles.deploySummaryRow}>
             <Text style={styles.deploySummaryLabel}>Auto-Deploy</Text>
-            <View style={[styles.deploySummaryBadge, { backgroundColor: autoDeployConfig.enabled ? '#22C55E18' : '#33333380' }]}>
-              <Text style={[styles.deploySummaryBadgeText, { color: autoDeployConfig.enabled ? '#22C55E' : '#666' }]}>
+            <View style={[styles.deploySummaryBadge, { backgroundColor: autoDeployConfig.enabled ? '#00C48C18' : '#33333380' }]}>
+              <Text style={[styles.deploySummaryBadgeText, { color: autoDeployConfig.enabled ? '#00C48C' : '#666' }]}>
                 {autoDeployConfig.enabled ? 'ON' : 'OFF'}
               </Text>
             </View>
@@ -1151,13 +1151,13 @@ export default function LandingControlScreen() {
             </View>
             {autoDeployLogs.slice(0, 10).map(log => (
               <View key={log.id} style={styles.deployLogRow}>
-                <View style={[styles.deployLogDot, { backgroundColor: log.status === 'success' ? '#22C55E' : log.status === 'failed' ? '#FF6B6B' : '#FFB800' }]} />
+                <View style={[styles.deployLogDot, { backgroundColor: log.status === 'success' ? '#00C48C' : log.status === 'failed' ? '#FF6B6B' : '#FFB800' }]} />
                 <View style={styles.deployLogInfo}>
                   <Text style={styles.deployLogAction}>{log.trigger} · {log.syncedDeals} deals</Text>
                   <Text style={styles.deployLogMeta}>{formatDate(log.timestamp)} · {(log.durationMs / 1000).toFixed(1)}s{log.errors.length > 0 ? ` · ${log.errors.length} errors` : ''}</Text>
                 </View>
-                <View style={[styles.deployLogStatus, { backgroundColor: (log.status === 'success' ? '#22C55E' : '#FF6B6B') + '15' }]}>
-                  <Text style={[styles.deployLogStatusText, { color: log.status === 'success' ? '#22C55E' : '#FF6B6B' }]}>
+                <View style={[styles.deployLogStatus, { backgroundColor: (log.status === 'success' ? '#00C48C' : '#FF6B6B') + '15' }]}>
+                  <Text style={[styles.deployLogStatusText, { color: log.status === 'success' ? '#00C48C' : '#FF6B6B' }]}>
                     {log.status.toUpperCase()}
                   </Text>
                 </View>
@@ -1170,13 +1170,13 @@ export default function LandingControlScreen() {
           <Text style={styles.deployLogTitle}>Manual Deploy History</Text>
           {deployLogs.map(log => (
             <View key={log.id} style={styles.deployLogRow}>
-              <View style={[styles.deployLogDot, { backgroundColor: log.status === 'success' ? '#22C55E' : log.status === 'failed' ? '#FF6B6B' : '#FFB800' }]} />
+              <View style={[styles.deployLogDot, { backgroundColor: log.status === 'success' ? '#00C48C' : log.status === 'failed' ? '#FF6B6B' : '#FFB800' }]} />
               <View style={styles.deployLogInfo}>
                 <Text style={styles.deployLogAction}>{log.action}</Text>
                 <Text style={styles.deployLogMeta}>{formatDate(log.timestamp)} · {log.changes} changes · {log.user}</Text>
               </View>
-              <View style={[styles.deployLogStatus, { backgroundColor: (log.status === 'success' ? '#22C55E' : '#FF6B6B') + '15' }]}>
-                <Text style={[styles.deployLogStatusText, { color: log.status === 'success' ? '#22C55E' : '#FF6B6B' }]}>
+              <View style={[styles.deployLogStatus, { backgroundColor: (log.status === 'success' ? '#00C48C' : '#FF6B6B') + '15' }]}>
+                <Text style={[styles.deployLogStatusText, { color: log.status === 'success' ? '#00C48C' : '#FF6B6B' }]}>
                   {log.status.toUpperCase()}
                 </Text>
               </View>
@@ -1440,7 +1440,7 @@ const styles = StyleSheet.create({
     marginTop: 10,
     marginBottom: 12,
     borderWidth: 1.5,
-    borderColor: '#22C55E30',
+    borderColor: '#00C48C30',
   },
   masterRow: {
     flexDirection: 'row',
@@ -1460,7 +1460,7 @@ const styles = StyleSheet.create({
   masterSub: {
     fontSize: 11,
     fontWeight: '700' as const,
-    color: '#22C55E',
+    color: '#00C48C',
     letterSpacing: 0.5,
   },
   masterDivider: {
@@ -1610,7 +1610,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#22C55E15',
+    backgroundColor: '#00C48C15',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 6,
@@ -1619,12 +1619,12 @@ const styles = StyleSheet.create({
     width: 5,
     height: 5,
     borderRadius: 3,
-    backgroundColor: '#22C55E',
+    backgroundColor: '#00C48C',
   },
   liveBadgeText: {
     fontSize: 8,
     fontWeight: '800' as const,
-    color: '#22C55E',
+    color: '#00C48C',
     letterSpacing: 0.5,
   },
   moduleMetaRow: {
@@ -1709,7 +1709,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
-    backgroundColor: '#22C55E',
+    backgroundColor: '#00C48C',
     borderRadius: 14,
     paddingVertical: 16,
     marginBottom: 10,
@@ -1731,7 +1731,7 @@ const styles = StyleSheet.create({
   deployChangeBadgeText: {
     fontSize: 9,
     fontWeight: '800' as const,
-    color: '#22C55E',
+    color: '#00C48C',
     letterSpacing: 0.5,
   },
   saveBtn: {
@@ -1846,7 +1846,7 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 14,
     borderWidth: 1.5,
-    borderColor: '#22C55E25',
+    borderColor: '#00C48C25',
   },
   autoDeployHeader: {
     flexDirection: 'row',
@@ -1937,7 +1937,7 @@ const styles = StyleSheet.create({
     width: 20,
     height: 20,
     borderRadius: 10,
-    backgroundColor: '#22C55E18',
+    backgroundColor: '#00C48C18',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -2005,7 +2005,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#22C55E',
+    backgroundColor: '#00C48C',
     paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: 8,

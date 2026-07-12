@@ -64,7 +64,7 @@ const PHASES: Phase[] = [
     title: 'Backend & Infrastructure',
     subtitle: 'Database, APIs, Server setup',
     icon: Database,
-    color: '#EF4444',
+    color: '#FF4D4D',
     totalDays: 18,
     tasks: [
       { id: 'b1', task: 'Database Schema & Setup', description: 'PostgreSQL schema design: users, properties, transactions, KYC, wallets, tokens, dividends. Migrations & seed data.', days: 2, hours: 16, priority: 'critical', type: 'backend' },
@@ -120,7 +120,7 @@ const PHASES: Phase[] = [
     title: 'Security & Compliance',
     subtitle: 'SEC, GDPR, Encryption, Audit',
     icon: Shield,
-    color: '#22C55E',
+    color: '#00C48C',
     totalDays: 8,
     tasks: [
       { id: 's1', task: 'SEC Regulation A+/CF Compliance', description: 'Open-access investment structure, offering documents, SEC filing integration. No accreditation requirements.', days: 3, hours: 24, priority: 'critical', type: 'backend' },
@@ -156,12 +156,12 @@ const TYPE_COLORS: Record<string, string> = {
   backend: '#6366F1',
   frontend: '#F59E0B',
   integration: '#EC4899',
-  testing: '#22C55E',
+  testing: '#00C48C',
   design: '#8B5CF6',
 };
 
 const PRIORITY_COLORS: Record<string, string> = {
-  critical: '#EF4444',
+  critical: '#FF4D4D',
   high: '#F97316',
   medium: '#EAB308',
   optional: '#6B7280',
@@ -355,7 +355,7 @@ export default function DeveloperBreakdownScreen() {
             </View>
             <View style={styles.heroDivider} />
             <View style={styles.heroStat}>
-              <Text style={[styles.heroNum, { color: '#EF4444' }]}>{criticalCount}</Text>
+              <Text style={[styles.heroNum, { color: '#FF4D4D' }]}>{criticalCount}</Text>
               <Text style={styles.heroLabel}>Critical</Text>
             </View>
           </View>

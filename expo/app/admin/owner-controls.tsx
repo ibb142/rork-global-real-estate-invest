@@ -152,8 +152,8 @@ function OwnerIPAccessCard() {
   return (
     <View style={ipCardStyles.container}>
       <View style={ipCardStyles.header}>
-        <View style={[ipCardStyles.iconWrap, { backgroundColor: isOwnerIPAccess ? '#22C55E20' : '#3B82F620' }]}>
-          {isOwnerIPAccess ? <Wifi size={20} color="#22C55E" /> : <WifiOff size={18} color="#3B82F6" />}
+        <View style={[ipCardStyles.iconWrap, { backgroundColor: isOwnerIPAccess ? '#00C48C20' : '#4A90D920' }]}>
+          {isOwnerIPAccess ? <Wifi size={20} color="#00C48C" /> : <WifiOff size={18} color="#4A90D9" />}
         </View>
         <View style={{ flex: 1 }}>
           <Text style={ipCardStyles.title}>Trusted Owner Device</Text>
@@ -211,7 +211,7 @@ const ipCardStyles = StyleSheet.create({
     borderRadius: 14,
     padding: 14,
     borderWidth: 1,
-    borderColor: '#3B82F630',
+    borderColor: '#4A90D930',
     marginBottom: 10,
   },
   header: {
@@ -240,7 +240,7 @@ const ipCardStyles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#22C55E18',
+    backgroundColor: '#00C48C18',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
@@ -249,12 +249,12 @@ const ipCardStyles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: '#22C55E',
+    backgroundColor: '#00C48C',
   },
   liveText: {
     fontSize: 9,
     fontWeight: '700' as const,
-    color: '#22C55E',
+    color: '#00C48C',
     letterSpacing: 0.5,
   },
   actions: {
@@ -918,12 +918,12 @@ export default function OwnerControlsScreen() {
             <Text style={styles.sectionTitle}>JV Deals ({jvDealControls.length})</Text>
             <View style={{ flexDirection: 'row', gap: 8 }}>
               <TouchableOpacity
-                style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#22C55E15', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, gap: 4 }}
+                style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#00C48C15', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, gap: 4 }}
                 onPress={() => router.push('/admin/publication-log' as any)}
                 testID="owner-publication-log"
               >
-                <Eye size={14} color="#22C55E" />
-                <Text style={{ color: '#22C55E', fontSize: 12, fontWeight: '700' as const }}>Pub Log</Text>
+                <Eye size={14} color="#00C48C" />
+                <Text style={{ color: '#00C48C', fontSize: 12, fontWeight: '700' as const }}>Pub Log</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#4A90D915', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, gap: 4 }}
@@ -1397,14 +1397,14 @@ export default function OwnerControlsScreen() {
     { id: 'waitlist-admin', name: 'Waitlist Admin', desc: 'Manage waitlist', route: '/admin/waitlist-admin', category: 'Landing & Public', color: '#4A90D9', icon: Users },
     { id: 'banners', name: 'Banners', desc: 'Hero images & promos', route: '/admin/banners', category: 'Landing & Public', color: '#4A90D9', icon: LayoutGrid },
 
-    { id: 'properties', name: 'Properties', desc: 'Real estate portfolio', route: '/admin/properties', category: 'Deals & Assets', color: '#22C55E', icon: Building2 },
-    { id: 'jv-deals', name: 'JV Deals', desc: 'Joint venture management', route: '/admin/jv-deals', category: 'Deals & Assets', color: '#22C55E', icon: Building2 },
-    { id: 'land-partners', name: 'Land Partners', desc: 'Lots & parcels', route: '/admin/land-partners', category: 'Deals & Assets', color: '#22C55E', icon: Building2 },
-    { id: 'title-companies', name: 'Title Companies', desc: 'Escrow & closing', route: '/admin/title-companies', category: 'Deals & Assets', color: '#22C55E', icon: Building2 },
-    { id: 'lender-directory', name: 'Lender Directory', desc: 'Banks & financing', route: '/admin/lender-directory', category: 'Deals & Assets', color: '#22C55E', icon: Building2 },
-    { id: 'lender-search', name: 'Lender Search', desc: 'Find financing', route: '/admin/lender-search', category: 'Deals & Assets', color: '#22C55E', icon: Search },
-    { id: 'lender-sync', name: 'Lender Sync', desc: 'Update lender data', route: '/admin/lender-sync', category: 'Deals & Assets', color: '#22C55E', icon: RefreshCw },
-    { id: 'publication-log', name: 'Publication Log', desc: 'Deal publish history', route: '/admin/publication-log', category: 'Deals & Assets', color: '#22C55E', icon: FileText },
+    { id: 'properties', name: 'Properties', desc: 'Real estate portfolio', route: '/admin/properties', category: 'Deals & Assets', color: '#00C48C', icon: Building2 },
+    { id: 'jv-deals', name: 'JV Deals', desc: 'Joint venture management', route: '/admin/jv-deals', category: 'Deals & Assets', color: '#00C48C', icon: Building2 },
+    { id: 'land-partners', name: 'Land Partners', desc: 'Lots & parcels', route: '/admin/land-partners', category: 'Deals & Assets', color: '#00C48C', icon: Building2 },
+    { id: 'title-companies', name: 'Title Companies', desc: 'Escrow & closing', route: '/admin/title-companies', category: 'Deals & Assets', color: '#00C48C', icon: Building2 },
+    { id: 'lender-directory', name: 'Lender Directory', desc: 'Banks & financing', route: '/admin/lender-directory', category: 'Deals & Assets', color: '#00C48C', icon: Building2 },
+    { id: 'lender-search', name: 'Lender Search', desc: 'Find financing', route: '/admin/lender-search', category: 'Deals & Assets', color: '#00C48C', icon: Search },
+    { id: 'lender-sync', name: 'Lender Sync', desc: 'Update lender data', route: '/admin/lender-sync', category: 'Deals & Assets', color: '#00C48C', icon: RefreshCw },
+    { id: 'publication-log', name: 'Publication Log', desc: 'Deal publish history', route: '/admin/publication-log', category: 'Deals & Assets', color: '#00C48C', icon: FileText },
 
     { id: 'members', name: 'Members', desc: 'Users & investors', route: '/admin/members', category: 'Users & Investors', color: '#4ECDC4', icon: Users },
     { id: 'applications', name: 'Applications', desc: 'Broker / agent applications', route: '/admin/applications', category: 'Users & Investors', color: '#4ECDC4', icon: FileText },
@@ -1446,8 +1446,8 @@ export default function OwnerControlsScreen() {
     { id: 'engagement', name: 'Engagement', desc: 'Active user metrics', route: '/admin/engagement', category: 'Analytics', color: '#A78BFA', icon: Activity },
     { id: 'visitor-intelligence', name: 'Visitor Intelligence', desc: 'Behavior & heatmap', route: '/admin/visitor-intelligence', category: 'Analytics', color: '#A78BFA', icon: Eye },
 
-    { id: 'ivx-developer-workspace', name: 'Code Developer Workspace', desc: 'IVX IA senior-developer console', route: '/admin/ivx-developer-workspace', category: 'AI / IVX IA', color: '#22C55E', icon: Code },
-    { id: 'ivx-developer-actions', name: 'Approved Developer Actions', desc: 'Owner-approved patch/commit/SQL/deploy with audit', route: '/admin/ivx-developer-actions', category: 'AI / IVX IA', color: '#22C55E', icon: Code },
+    { id: 'ivx-developer-workspace', name: 'Code Developer Workspace', desc: 'IVX IA senior-developer console', route: '/admin/ivx-developer-workspace', category: 'AI / IVX IA', color: '#00C48C', icon: Code },
+    { id: 'ivx-developer-actions', name: 'Approved Developer Actions', desc: 'Owner-approved patch/commit/SQL/deploy with audit', route: '/admin/ivx-developer-actions', category: 'AI / IVX IA', color: '#00C48C', icon: Code },
     { id: 'ivx-agent-jobs', name: 'IVX Agent Jobs', desc: 'Block 22 backend worker queue', route: '/admin/ivx-agent-jobs', category: 'AI / IVX IA', color: '#FFD700', icon: Bot },
     { id: 'ai-outreach', name: 'AI Outreach', desc: 'Automated drip campaigns', route: '/admin/ai-outreach', category: 'AI / IVX IA', color: '#A78BFA', icon: Bot },
     { id: 'ai-video', name: 'AI Video', desc: 'Generate AI video', route: '/admin/ai-video', category: 'AI / IVX IA', color: '#A78BFA', icon: Bot },

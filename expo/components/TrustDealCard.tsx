@@ -293,7 +293,7 @@ const TrustDealCard = memo(function TrustDealCard({
           </View>
           {verifiedCount >= 3 && (
             <View style={styles.verifiedBadgeOverlay}>
-              <Shield size={10} color="#22C55E" />
+              <Shield size={10} color="#00C48C" />
               <Text style={styles.verifiedBadgeText}>VERIFIED</Text>
             </View>
           )}
@@ -364,7 +364,7 @@ const TrustDealCard = memo(function TrustDealCard({
         <View style={styles.trustIndicators}>
           {trust.titleVerified && (
             <View style={styles.trustBadge}>
-              <CheckCircle2 size={10} color="#22C55E" />
+              <CheckCircle2 size={10} color="#00C48C" />
               <Text style={styles.trustBadgeText}>Title Verified</Text>
             </View>
           )}
@@ -382,7 +382,7 @@ const TrustDealCard = memo(function TrustDealCard({
           )}
           {trust.permitStatus === 'approved' && (
             <View style={styles.trustBadge}>
-              <FileText size={10} color="#22C55E" />
+              <FileText size={10} color="#00C48C" />
               <Text style={styles.trustBadgeText}>Permitted</Text>
             </View>
           )}
@@ -497,10 +497,10 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: '#22C55E',
+    backgroundColor: '#00C48C',
   },
   liveBadgeText: {
-    color: '#22C55E',
+    color: '#00C48C',
     fontSize: 9,
     fontWeight: '900' as const,
     letterSpacing: 1.5,
@@ -520,7 +520,7 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
   },
   verifiedBadgeText: {
-    color: '#22C55E',
+    color: '#00C48C',
     fontSize: 9,
     fontWeight: '800' as const,
     letterSpacing: 0.5,
@@ -567,7 +567,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   salePriceChipSubtext: {
-    color: '#22C55E',
+    color: '#00C48C',
     fontSize: 11,
     fontWeight: '700' as const,
     marginTop: 4,

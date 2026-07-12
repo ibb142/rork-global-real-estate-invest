@@ -193,7 +193,7 @@ interface AdminAuditRow {
 const CATEGORY_COLORS: Record<string, string> = {
   'Core': '#FFD700',
   'Users': '#4ECDC4',
-  'Finance': '#22C55E',
+  'Finance': '#00C48C',
   'Deals & Assets': '#4A90D9',
   'Analytics': '#FF6B9D',
   'Marketing': '#FF9F43',

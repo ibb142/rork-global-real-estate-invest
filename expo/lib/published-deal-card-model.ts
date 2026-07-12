@@ -340,16 +340,16 @@ export function generateLandingDealHtml(card: PublishedDealCardModel): string {
 
   const verifiedCount = card.trustIndicators.length;
   const verifiedBadge = verifiedCount >= 3
-    ? `<div class="live-deal-verified-badge"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#22C55E" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg> VERIFIED</div>`
+    ? `<div class="live-deal-verified-badge"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#00C48C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg> VERIFIED</div>`
     : '';
 
   const trustBadgesHtml = card.trustIndicators.map(ind => {
     const config: Record<string, { label: string; icon: string }> = {
-      title_verified: { label: 'Title Verified', icon: '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#22C55E" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>' },
+      title_verified: { label: 'Title Verified', icon: '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#00C48C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>' },
       insured: { label: 'Insured', icon: '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#4A90D9" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>' },
       escrow: { label: 'Escrow', icon: '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#FFD700" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>' },
-      permitted: { label: 'Permitted', icon: '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#22C55E" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>' },
-      audited: { label: 'Audited', icon: '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#22C55E" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>' },
+      permitted: { label: 'Permitted', icon: '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#00C48C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>' },
+      audited: { label: 'Audited', icon: '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#00C48C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>' },
     };
     const c = config[ind];
     if (!c) return '';
@@ -564,10 +564,10 @@ function showInvestSuccess(payload) {
   if (content) {
     content.innerHTML = '<div style="text-align:center;padding:40px 20px">' +
       '<div style="font-size:48px;margin-bottom:16px">\u2705</div>' +
-      '<h3 style="color:#22C55E;margin-bottom:8px">Investment Submitted</h3>' +
+      '<h3 style="color:#00C48C;margin-bottom:8px">Investment Submitted</h3>' +
       '<p style="color:#999;margin-bottom:16px">Your investment of ${d}' + payload.investment_amount.toLocaleString() + ' in ' + (payload.deal_name || 'this deal') + ' has been submitted for review.</p>' +
       '<p style="color:#666;font-size:13px">We will contact you at ' + payload.email + ' to finalize your investment.</p>' +
-      '<button onclick="closeInvestModal()" style="margin-top:24px;padding:12px 32px;background:#22C55E;color:#000;border:none;border-radius:12px;font-weight:700;cursor:pointer">Done</button>' +
+      '<button onclick="closeInvestModal()" style="margin-top:24px;padding:12px 32px;background:#00C48C;color:#000;border:none;border-radius:12px;font-weight:700;cursor:pointer">Done</button>' +
       '</div>';
   }
 }

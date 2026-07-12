@@ -323,7 +323,7 @@ export default function SupabaseExportScreen() {
             <ArrowLeft size={22} color="#fff" />
           </TouchableOpacity>
           <View style={styles.headerCenter}>
-            <Database size={20} color="#22C55E" />
+            <Database size={20} color="#00C48C" />
             <Text style={styles.headerTitle}>Supabase SQL Export</Text>
           </View>
           <View style={{ width: 40 }} />
@@ -384,9 +384,9 @@ export default function SupabaseExportScreen() {
                     {isExpanded ? 'Hide SQL' : 'Preview SQL'}
                   </Text>
                   {isExpanded ? (
-                    <ChevronUp size={16} color="#999999" />
+                    <ChevronUp size={16} color="#909090" />
                   ) : (
-                    <ChevronDown size={16} color="#999999" />
+                    <ChevronDown size={16} color="#909090" />
                   )}
                 </TouchableOpacity>
 
@@ -456,12 +456,12 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 14,
     borderLeftWidth: 3,
-    borderLeftColor: '#22C55E',
+    borderLeftColor: '#00C48C',
   },
   instructionTitle: {
     fontSize: 14,
     fontWeight: '700' as const,
-    color: '#22C55E',
+    color: '#00C48C',
     marginBottom: 6,
   },
   instructionText: {
@@ -494,7 +494,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 10,
-    backgroundColor: '#22C55E',
+    backgroundColor: '#00C48C',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -513,7 +513,7 @@ const styles = StyleSheet.create({
   },
   cardSubtitle: {
     fontSize: 12,
-    color: '#999999',
+    color: '#909090',
     marginTop: 2,
   },
   copyBtn: {
@@ -521,7 +521,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
-    backgroundColor: '#22C55E',
+    backgroundColor: '#00C48C',
     marginHorizontal: 14,
     marginBottom: 10,
     paddingVertical: 14,
@@ -547,7 +547,7 @@ const styles = StyleSheet.create({
   },
   previewToggleText: {
     fontSize: 13,
-    color: '#999999',
+    color: '#909090',
     fontWeight: '500' as const,
   },
   codeWrap: {
@@ -561,7 +561,7 @@ const styles = StyleSheet.create({
   },
   codeText: {
     fontSize: 11,
-    color: '#22C55E',
+    color: '#00C48C',
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
     lineHeight: 16,
   },
@@ -572,7 +572,7 @@ const styles = StyleSheet.create({
   },
   footerText: {
     fontSize: 13,
-    color: '#666666',
+    color: '#555555',
     textAlign: 'center',
     lineHeight: 20,
   },

@@ -418,7 +418,7 @@ ${divider}
     th { background: #1a1a1a; color: white; padding: 12px; text-align: left; font-size: 12px; text-transform: uppercase; }
     td { padding: 12px; border-bottom: 1px solid #eee; font-size: 13px; }
     tr:hover { background: #f8f8f8; }
-    .positive { color: #22c55e; }
+    .positive { color: #00C48C; }
     .footer { background: #1a1a1a; color: #888; padding: 30px 40px; text-align: center; font-size: 12px; }
     .footer .company { color: #FFD700; font-weight: 600; font-size: 14px; margin-bottom: 8px; }
     @media print { body { background: white; } .container { box-shadow: none; } }
@@ -494,13 +494,13 @@ ${divider}
     <div class="section">
       <div class="section-title">Profit Sources</div>
       <div class="source-row">
-        <div class="source-dot" style="background: #3b82f6;"></div>
+        <div class="source-dot" style="background: #4A90D9;"></div>
         <div class="source-name">Rental Income</div>
         <div class="source-value">${formatCurrency(summaryStats.totalRental)}</div>
         <div class="source-percent">60%</div>
       </div>
       <div class="source-row">
-        <div class="source-dot" style="background: #22c55e;"></div>
+        <div class="source-dot" style="background: #00C48C;"></div>
         <div class="source-name">Property Appreciation</div>
         <div class="source-value">${formatCurrency(summaryStats.totalAppreciation)}</div>
         <div class="source-percent">30%</div>

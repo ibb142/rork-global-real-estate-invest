@@ -158,7 +158,7 @@ export const DEVELOPER_HANDOFF_CATEGORIES: IntegrationCategory[] = [
     id: 'storage-delivery',
     title: 'Storage & Delivery',
     icon: 'Database',
-    color: '#3B82F6',
+    color: '#4A90D9',
     items: [
       {
         id: 'storage-s3-pipeline',
@@ -435,7 +435,7 @@ export function generateHandoffHtmlReport(): string {
       case 'high':
         return '#F59E0B';
       case 'medium':
-        return '#3B82F6';
+        return '#4A90D9';
       default:
         return '#6B7280';
     }
@@ -444,9 +444,9 @@ export function generateHandoffHtmlReport(): string {
   const statusColor = (status: IntegrationStatus): string => {
     switch (status) {
       case 'ready':
-        return '#22C55E';
+        return '#00C48C';
       case 'in_progress':
-        return '#3B82F6';
+        return '#4A90D9';
       case 'mock_only':
         return '#F59E0B';
       default:

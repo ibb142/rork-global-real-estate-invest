@@ -72,9 +72,9 @@ function iconFor(type: string): React.ReactNode {
   switch (type) {
     case 'discover': return <Search size={15} color={Colors.info ?? '#38bdf8'} />;
     case 'approve': return <CheckCircle2 size={15} color={Colors.success ?? '#10b981'} />;
-    case 'reject': return <CircleX size={15} color={Colors.error ?? '#ef4444'} />;
+    case 'reject': return <CircleX size={15} color={Colors.error ?? '#FF4D4D'} />;
     case 'quarantine': return <ShieldX size={15} color={Colors.warning ?? '#f59e0b'} />;
-    case 'delete': return <Trash2 size={15} color={Colors.error ?? '#ef4444'} />;
+    case 'delete': return <Trash2 size={15} color={Colors.error ?? '#FF4D4D'} />;
     default: return <Bot size={15} color={Colors.muted ?? '#94a3b8'} />;
   }
 }
@@ -108,7 +108,7 @@ function LeadAuditLogScreen() {
           <View style={styles.center}><ActivityIndicator color={Colors.text} /></View>
         ) : isError ? (
           <View style={styles.errorCard}>
-            <CircleX size={18} color={Colors.error ?? '#ef4444'} />
+            <CircleX size={18} color={Colors.error ?? '#FF4D4D'} />
             <Text style={styles.errorText}>{error instanceof Error ? error.message : 'Failed to load.'}</Text>
           </View>
         ) : entries.length === 0 ? (
@@ -193,7 +193,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 14,
     borderWidth: 1,
-    borderColor: Colors.error ?? '#ef4444',
+    borderColor: Colors.error ?? '#FF4D4D',
   },
-  errorText: { color: Colors.error ?? '#ef4444', fontSize: 13, flex: 1 },
+  errorText: { color: Colors.error ?? '#FF4D4D', fontSize: 13, flex: 1 },
 });

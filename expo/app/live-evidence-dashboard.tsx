@@ -82,23 +82,23 @@ const CARD_GAP = 10;
 const AUTO_REFRESH_MS = 60_000; // 60 seconds
 
 const STATUS_CONFIG: Record<EvidenceStatus, { icon: typeof CheckCircle; color: string; label: string }> = {
-  ok: { icon: CheckCircle, color: '#22C55E', label: 'OK' },
-  fail: { icon: XCircle, color: '#EF4444', label: 'FAIL' },
+  ok: { icon: CheckCircle, color: '#00C48C', label: 'OK' },
+  fail: { icon: XCircle, color: '#FF4D4D', label: 'FAIL' },
   checking: { icon: Activity, color: '#F59E0B', label: 'CHECKING' },
   skipped: { icon: AlertTriangle, color: '#6366F1', label: 'SKIPPED' },
 };
 
 const FINAL_STATUS_CONFIG: Record<EvidenceFinalStatus, { color: string; bg: string }> = {
-  COMPLETE: { color: '#22C55E', bg: 'rgba(34,197,94,0.12)' },
-  BLOCKED: { color: '#EF4444', bg: 'rgba(239,68,68,0.12)' },
+  COMPLETE: { color: '#00C48C', bg: 'rgba(34,197,94,0.12)' },
+  BLOCKED: { color: '#FF4D4D', bg: 'rgba(239,68,68,0.12)' },
   'LOCAL ONLY': { color: '#F59E0B', bg: 'rgba(245,158,11,0.12)' },
   UNVERIFIED: { color: '#6366F1', bg: 'rgba(99,102,241,0.12)' },
 };
 
 const FRESHNESS_CONFIG: Record<DataFreshness, { icon: typeof SignalHigh; color: string; label: string; bg: string }> = {
-  LIVE: { icon: SignalHigh, color: '#22C55E', label: 'LIVE', bg: 'rgba(34,197,94,0.12)' },
+  LIVE: { icon: SignalHigh, color: '#00C48C', label: 'LIVE', bg: 'rgba(34,197,94,0.12)' },
   STALE: { icon: SignalLow, color: '#F59E0B', label: 'STALE', bg: 'rgba(245,158,11,0.12)' },
-  FAILED: { icon: SignalZero, color: '#EF4444', label: 'FAILED', bg: 'rgba(239,68,68,0.12)' },
+  FAILED: { icon: SignalZero, color: '#FF4D4D', label: 'FAILED', bg: 'rgba(239,68,68,0.12)' },
 };
 
 const TOOL_ICONS: Record<string, typeof Activity> = {
@@ -113,9 +113,9 @@ const TOOL_ICONS: Record<string, typeof Activity> = {
 const TOOL_COLORS: Record<string, string> = {
   GitHub: '#F0F6FC',
   Render: '#8B5CF6',
-  Health: '#22C55E',
-  Chat: '#3B82F6',
-  Supabase: '#22C55E',
+  Health: '#00C48C',
+  Chat: '#4A90D9',
+  Supabase: '#00C48C',
   Frontend: '#06B6D4',
 };
 
@@ -313,14 +313,14 @@ function MatchBadge({ matches }: { matches: boolean }) {
       ]}
     >
       {matches ? (
-        <CheckCircle size={10} color="#22C55E" strokeWidth={3} />
+        <CheckCircle size={10} color="#00C48C" strokeWidth={3} />
       ) : (
-        <XCircle size={10} color="#EF4444" strokeWidth={3} />
+        <XCircle size={10} color="#FF4D4D" strokeWidth={3} />
       )}
       <Text
         style={[
           matchBadgeStyles.text,
-          { color: matches ? '#22C55E' : '#EF4444' },
+          { color: matches ? '#00C48C' : '#FF4D4D' },
         ]}
       >
         {matches ? 'MATCH' : 'MISMATCH'}
@@ -348,8 +348,8 @@ const matchBadgeStyles = StyleSheet.create({
 
 function StreamLogItem({ event }: { event: StreamEvent }) {
   const iconColor =
-    event.phase === 'error' ? '#EF4444' :
-    event.phase === 'completed' ? '#22C55E' :
+    event.phase === 'error' ? '#FF4D4D' :
+    event.phase === 'completed' ? '#00C48C' :
     '#F59E0B';
 
   const ToolIcon = TOOL_ICONS[event.tool] || Activity;
@@ -428,16 +428,16 @@ function HistoryEntryRow({ entry }: { entry: EvidenceHistoryEntry }) {
         ) : null}
         <View style={historyRowStyles.results}>
           <View style={[historyRowStyles.miniBadge, { backgroundColor: entry.healthResult === 'ok' ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)' }]}>
-            <Activity size={8} color={entry.healthResult === 'ok' ? '#22C55E' : '#EF4444'} strokeWidth={3} />
-            <Text style={[historyRowStyles.miniText, { color: entry.healthResult === 'ok' ? '#22C55E' : '#EF4444' }]}>Health</Text>
+            <Activity size={8} color={entry.healthResult === 'ok' ? '#00C48C' : '#FF4D4D'} strokeWidth={3} />
+            <Text style={[historyRowStyles.miniText, { color: entry.healthResult === 'ok' ? '#00C48C' : '#FF4D4D' }]}>Health</Text>
           </View>
           <View style={[historyRowStyles.miniBadge, { backgroundColor: entry.chatResult === 'ok' ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)' }]}>
-            <MessageCircle size={8} color={entry.chatResult === 'ok' ? '#22C55E' : '#EF4444'} strokeWidth={3} />
-            <Text style={[historyRowStyles.miniText, { color: entry.chatResult === 'ok' ? '#22C55E' : '#EF4444' }]}>Chat</Text>
+            <MessageCircle size={8} color={entry.chatResult === 'ok' ? '#00C48C' : '#FF4D4D'} strokeWidth={3} />
+            <Text style={[historyRowStyles.miniText, { color: entry.chatResult === 'ok' ? '#00C48C' : '#FF4D4D' }]}>Chat</Text>
           </View>
           <View style={[historyRowStyles.miniBadge, { backgroundColor: entry.supabaseResult === 'ok' ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)' }]}>
-            <Database size={8} color={entry.supabaseResult === 'ok' ? '#22C55E' : '#EF4444'} strokeWidth={3} />
-            <Text style={[historyRowStyles.miniText, { color: entry.supabaseResult === 'ok' ? '#22C55E' : '#EF4444' }]}>DB</Text>
+            <Database size={8} color={entry.supabaseResult === 'ok' ? '#00C48C' : '#FF4D4D'} strokeWidth={3} />
+            <Text style={[historyRowStyles.miniText, { color: entry.supabaseResult === 'ok' ? '#00C48C' : '#FF4D4D' }]}>DB</Text>
           </View>
         </View>
       </View>
@@ -506,8 +506,8 @@ const historyRowStyles = StyleSheet.create({
 });
 
 function DeployHistoryRow({ entry }: { entry: RenderDeployHistoryEntry }) {
-  const statusColor = entry.status === 'live' || entry.status === 'successful' ? '#22C55E'
-    : entry.status === 'failed' ? '#EF4444'
+  const statusColor = entry.status === 'live' || entry.status === 'successful' ? '#00C48C'
+    : entry.status === 'failed' ? '#FF4D4D'
     : '#F59E0B';
   return (
     <View style={deployRowStyles.row}>
@@ -572,11 +572,11 @@ function ActionButton({
       disabled={disabled}
       activeOpacity={0.7}
     >
-      <Icon size={14} color={isPrimary ? '#000' : isExport ? '#22C55E' : Colors.gold} strokeWidth={2.2} />
+      <Icon size={14} color={isPrimary ? '#000' : isExport ? '#00C48C' : Colors.gold} strokeWidth={2.2} />
       <Text
         style={[
           actionButtonStyles.label,
-          { color: isPrimary ? '#000' : isExport ? '#22C55E' : Colors.gold },
+          { color: isPrimary ? '#000' : isExport ? '#00C48C' : Colors.gold },
         ]}
       >
         {label}
@@ -606,7 +606,7 @@ const actionButtonStyles = StyleSheet.create({
   export: {
     backgroundColor: 'transparent',
     borderWidth: 1,
-    borderColor: '#22C55E50',
+    borderColor: '#00C48C50',
   },
   disabled: { opacity: 0.4 },
   label: { fontSize: 11, fontWeight: '700' as const, letterSpacing: 0.3 },
@@ -888,7 +888,7 @@ export default function LiveEvidenceDashboard() {
         <ToolCard tool="Health" icon={Activity} color={TOOL_COLORS.Health} status={health.status}>
           {health.status !== 'skipped' && (
             <>
-              <EvidenceRow label="HTTP Status" value={String(health.httpStatus)} color={health.httpStatus === 200 ? '#22C55E' : '#EF4444'} />
+              <EvidenceRow label="HTTP Status" value={String(health.httpStatus)} color={health.httpStatus === 200 ? '#00C48C' : '#FF4D4D'} />
               <EvidenceRow label="Response Time" value={`${health.responseTimeMs}ms`} />
               <EvidenceRow label="Uptime" value={health.uptime} />
               <EvidenceRow label="Live Commit SHA" value={health.liveCommitSha.slice(0, 8)} mono />
@@ -974,7 +974,7 @@ export default function LiveEvidenceDashboard() {
         {/* Errors and Blockers */}
         {report.errors.length > 0 && (
           <View style={monitorStyles.alertBox}>
-            <XCircle size={14} color="#EF4444" strokeWidth={2.2} />
+            <XCircle size={14} color="#FF4D4D" strokeWidth={2.2} />
             <View style={{ flex: 1 }}>
               <Text style={monitorStyles.alertTitle}>
                 ERRORS ({report.errors.length})
@@ -1167,8 +1167,8 @@ export default function LiveEvidenceDashboard() {
           onPress={() => setAutoRefresh(!autoRefresh)}
           activeOpacity={0.7}
         >
-          <Timer size={14} color={autoRefresh ? '#22C55E' : Colors.textTertiary} strokeWidth={2.2} />
-          <Text style={[actionButtonStyles.label, { color: autoRefresh ? '#22C55E' : Colors.textTertiary }]}>
+          <Timer size={14} color={autoRefresh ? '#00C48C' : Colors.textTertiary} strokeWidth={2.2} />
+          <Text style={[actionButtonStyles.label, { color: autoRefresh ? '#00C48C' : Colors.textTertiary }]}>
             Auto-Refresh: {autoRefresh ? 'ON' : 'OFF'}
           </Text>
         </TouchableOpacity>
@@ -1345,7 +1345,7 @@ const monitorStyles = StyleSheet.create({
     paddingLeft: 26,
   },
   lastCheck: { fontSize: 11, color: Colors.textTertiary },
-  autoRefreshLabel: { fontSize: 10, color: '#22C55E', fontWeight: '600' as const },
+  autoRefreshLabel: { fontSize: 10, color: '#00C48C', fontWeight: '600' as const },
   matchLabel: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1354,7 +1354,7 @@ const monitorStyles = StyleSheet.create({
   },
   errorText: {
     fontSize: 11,
-    color: '#EF4444',
+    color: '#FF4D4D',
     marginTop: 4,
     fontFamily: Platform.select({ ios: 'Menlo', default: 'monospace' }),
   },
@@ -1398,12 +1398,12 @@ const monitorStyles = StyleSheet.create({
     gap: 10,
     backgroundColor: 'rgba(239,68,68,0.06)',
     borderWidth: 0.5,
-    borderColor: '#EF444440',
+    borderColor: '#FF4D4D40',
     borderRadius: 10,
     padding: 12,
     marginBottom: 8,
   },
-  alertTitle: { fontSize: 11, fontWeight: '700' as const, color: '#EF4444', marginBottom: 4 },
+  alertTitle: { fontSize: 11, fontWeight: '700' as const, color: '#FF4D4D', marginBottom: 4 },
   alertText: {
     fontSize: 10,
     color: Colors.textSecondary,

@@ -201,7 +201,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(239,68,68,0.2)',
   },
-  errorText: { color: '#EF4444', fontSize: 13 },
+  errorText: { color: '#FF4D4D', fontSize: 13 },
   // Empty
   emptyText: { color: 'rgba(255,255,255,0.3)', fontSize: 13, textAlign: 'center', padding: 20 },
 });
@@ -209,9 +209,9 @@ const styles = StyleSheet.create({
 // ── Health Badge ───────────────────────────────────────────────────────────
 
 const HEALTH_CONFIG: Record<string, { color: string; bg: string; label: string }> = {
-  healthy: { color: '#22C55E', bg: 'rgba(34,197,94,0.12)', label: 'Healthy' },
+  healthy: { color: '#00C48C', bg: 'rgba(34,197,94,0.12)', label: 'Healthy' },
   degraded: { color: '#F59E0B', bg: 'rgba(245,158,11,0.12)', label: 'Degraded' },
-  unreachable: { color: '#EF4444', bg: 'rgba(239,68,68,0.12)', label: 'Unreachable' },
+  unreachable: { color: '#FF4D4D', bg: 'rgba(239,68,68,0.12)', label: 'Unreachable' },
   stopped: { color: '#6366F1', bg: 'rgba(99,102,241,0.12)', label: 'Stopped' },
   loading: { color: '#9CA3AF', bg: 'rgba(156,163,175,0.12)', label: 'Loading...' },
 };
@@ -453,9 +453,9 @@ export default function LiveOperationsCenter() {
                   }]}>
                     <Text style={[styles.agentBadge, {
                       color:
-                        agent.riskLevel === 'high' ? '#EF4444' :
+                        agent.riskLevel === 'high' ? '#FF4D4D' :
                         agent.riskLevel === 'medium' ? '#F59E0B' :
-                        '#22C55E',
+                        '#00C48C',
                     }]}>
                       {agent.riskLevel.toUpperCase()}
                     </Text>
@@ -512,7 +512,7 @@ export default function LiveOperationsCenter() {
                 <Text style={styles.agentName} numberOfLines={1}>{o.title}</Text>
                 <View style={styles.agentMeta}>
                   <View style={[styles.agentBadge, { backgroundColor: 'rgba(34,197,94,0.12)' }]}>
-                    <Text style={[styles.agentBadge, { color: '#22C55E' }]}>
+                    <Text style={[styles.agentBadge, { color: '#00C48C' }]}>
                       Score: {o.score.totalScore}
                     </Text>
                   </View>

@@ -191,7 +191,7 @@ function humanDuration(ms: number): string {
 
 function resultColor(result: ScaleResult): string {
   if (result === 'VERIFIED') return Colors.success;
-  if (result === 'FAILED') return Colors.error ?? '#ef4444';
+  if (result === 'FAILED') return Colors.error ?? '#FF4D4D';
   if (result === 'BLOCKED_FOR_APPROVAL') return Colors.warning ?? '#f59e0b';
   return Colors.muted ?? '#94a3b8';
 }
@@ -283,7 +283,7 @@ function AutonomousActivityScreen() {
           <View style={styles.center}><ActivityIndicator color={Colors.text} /></View>
         ) : isError ? (
           <View style={styles.errorCard}>
-            <CircleX size={18} color={Colors.error ?? '#ef4444'} />
+            <CircleX size={18} color={Colors.error ?? '#FF4D4D'} />
             <Text style={styles.errorText}>{error instanceof Error ? error.message : 'Failed to load activity.'}</Text>
           </View>
         ) : (
@@ -291,7 +291,7 @@ function AutonomousActivityScreen() {
             <View style={styles.statGrid}>
               <StatCard icon={<Activity size={16} color={Colors.text} />} label="Runs (24h)" value={String(last24h.length)} />
               <StatCard icon={<TrendingUp size={16} color={Colors.success} />} label="Improvements" value={String(state?.job.improvementsCompleted ?? 0)} tone={Colors.success} />
-              <StatCard icon={<CircleX size={16} color={Colors.error ?? '#ef4444'} />} label="Failures" value={String(state?.job.failureCount ?? 0)} tone={(state?.job.failureCount ?? 0) > 0 ? (Colors.error ?? '#ef4444') : Colors.text} />
+              <StatCard icon={<CircleX size={16} color={Colors.error ?? '#FF4D4D'} />} label="Failures" value={String(state?.job.failureCount ?? 0)} tone={(state?.job.failureCount ?? 0) > 0 ? (Colors.error ?? '#FF4D4D') : Colors.text} />
               <StatCard icon={<Users size={16} color={Colors.info ?? '#38bdf8'} />} label="Investors" value={String(leadsByType.investor)} tone={Colors.info ?? '#38bdf8'} />
               <StatCard icon={<Briefcase size={16} color={Colors.info ?? '#38bdf8'} />} label="Buyers" value={String(leadsByType.buyer)} tone={Colors.info ?? '#38bdf8'} />
               <StatCard icon={<Handshake size={16} color={Colors.info ?? '#38bdf8'} />} label="JV deals" value={String(data?.growth?.jvDeals ?? 0)} tone={Colors.info ?? '#38bdf8'} />
@@ -330,7 +330,7 @@ function AutonomousActivityScreen() {
                           {c.status === 'VERIFIED' ? (
                             <CheckCircle2 size={12} color={Colors.success} />
                           ) : (
-                            <CircleX size={12} color={Colors.error ?? '#ef4444'} />
+                            <CircleX size={12} color={Colors.error ?? '#FF4D4D'} />
                           )}
                           <Text style={styles.claimText} numberOfLines={1}>{c.claim}: {c.evidence}</Text>
                         </View>
@@ -363,7 +363,7 @@ function AutonomousActivityScreen() {
                     </View>
                     <View style={styles.leadRight}>
                       <Text style={styles.leadScore}>{l.score}</Text>
-                      <Text style={[styles.leadStatus, { color: l.status === 'approved' ? Colors.success : l.status === 'rejected' ? (Colors.error ?? '#ef4444') : (Colors.warning ?? '#f59e0b') }]}>
+                      <Text style={[styles.leadStatus, { color: l.status === 'approved' ? Colors.success : l.status === 'rejected' ? (Colors.error ?? '#FF4D4D') : (Colors.warning ?? '#f59e0b') }]}>
                         {l.status === 'pending_approval' ? 'PENDING' : l.status.toUpperCase()}
                       </Text>
                     </View>
@@ -477,7 +477,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 14,
     borderWidth: 1,
-    borderColor: Colors.error ?? '#ef4444',
+    borderColor: Colors.error ?? '#FF4D4D',
   },
-  errorText: { color: Colors.error ?? '#ef4444', fontSize: 13, flex: 1 },
+  errorText: { color: Colors.error ?? '#FF4D4D', fontSize: 13, flex: 1 },
 });
