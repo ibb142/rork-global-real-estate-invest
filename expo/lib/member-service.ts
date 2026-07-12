@@ -24,6 +24,8 @@ export interface RegisterPayload {
   password: string;
   firstName: string;
   lastName: string;
+  /** Date of birth in ISO format (YYYY-MM-DD). Required. */
+  dateOfBirth: string;
   phone: string;
   country: string;
   zipCode: string;

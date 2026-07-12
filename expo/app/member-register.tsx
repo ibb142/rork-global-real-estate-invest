@@ -32,6 +32,7 @@ import {
   X,
   Search,
   Shield,
+  Calendar,
   MapPin,
   TrendingUp,
   Camera,
@@ -39,7 +40,7 @@ import {
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { COUNTRIES, Country } from '@/constants/countries';
-import { validateEmail, validatePassword, validatePhone } from '@/lib/auth-helpers';
+import { validateEmail, validatePassword, validatePhone, formatBirthdayInput, parseBirthday } from '@/lib/auth-helpers';
 import { supabase } from '@/lib/supabase';
 import * as MemberService from '@/lib/member-service';
 
@@ -67,6 +68,7 @@ export default function MemberRegisterScreen() {
     confirmPassword: '',
     firstName: '',
     lastName: '',
+    dateOfBirth: '',
     phone: '',
     country: 'United States',
     countryCode: 'US',
@@ -208,6 +210,11 @@ export default function MemberRegisterScreen() {
       Alert.alert('Missing Information', 'Please enter your first and last name.');
       return;
     }
+    const dobResult = parseBirthday(formData.dateOfBirth);
+    if (dobResult.error || !dobResult.iso) {
+      Alert.alert('Date of Birth Required', dobResult.error || 'Please enter your date of birth.');
+      return;
+    }
     if (!validateEmail(normalizedEmail)) {
       Alert.alert('Invalid Email', 'Please enter a valid email address.');
       return;
@@ -245,6 +252,7 @@ export default function MemberRegisterScreen() {
         password: formData.password,
         firstName: formData.firstName,
         lastName: formData.lastName,
+        dateOfBirth: dobResult.iso,
         phone: formData.phone,
         country: formData.country,
         zipCode: formData.zipCode,
@@ -361,6 +369,21 @@ export default function MemberRegisterScreen() {
             />
           </View>
         </View>
+      </View>
+
+      {/* Date of Birth */}
+      <Text style={styles.label}>Date of Birth *</Text>
+      <View style={styles.inputContainer}>
+        <Calendar size={18} color={Colors.muted} style={styles.inputIcon} />
+        <TextInput
+          style={styles.input}
+          placeholder="MM/DD/YYYY"
+          placeholderTextColor={Colors.muted}
+          value={formData.dateOfBirth}
+          onChangeText={(v) => updateForm('dateOfBirth', formatBirthdayInput(v))}
+          keyboardType="number-pad"
+          maxLength={10}
+        />
       </View>
 
       {/* Email */}

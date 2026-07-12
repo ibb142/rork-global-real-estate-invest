@@ -62,6 +62,27 @@ function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
+// Validate date of birth: required, ISO YYYY-MM-DD, real calendar date, age 18-120
+function validateDateOfBirth(dateOfBirth: string): { valid: boolean; reason?: string } {
+  if (!dateOfBirth) return { valid: false, reason: 'Date of birth is required.' };
+  const match = dateOfBirth.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return { valid: false, reason: 'Date of birth must be in YYYY-MM-DD format.' };
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (month < 1 || month > 12) return { valid: false, reason: 'Please enter a valid date of birth.' };
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  if (day < 1 || day > daysInMonth) return { valid: false, reason: 'Please enter a valid date of birth.' };
+  const now = new Date();
+  let age = now.getUTCFullYear() - year;
+  const hadBirthdayThisYear =
+    now.getUTCMonth() + 1 > month || (now.getUTCMonth() + 1 === month && now.getUTCDate() >= day);
+  if (!hadBirthdayThisYear) age -= 1;
+  if (age < 18) return { valid: false, reason: 'You must be at least 18 years old to create an account.' };
+  if (age > 120) return { valid: false, reason: 'Please enter a valid date of birth.' };
+  return { valid: true };
+}
+
 // Validate password strength
 function validatePassword(password: string): { valid: boolean; reason?: string } {
   if (password.length < 8) return { valid: false, reason: 'Password must be at least 8 characters.' };
@@ -91,6 +112,7 @@ export async function handleMemberRegister(request: Request): Promise<Response> 
     : [];
   const acceptTerms = !!body.acceptTerms;
   const pictureUrl = asString(body.pictureUrl);
+  const dateOfBirth = asString(body.dateOfBirth);
 
   // Validation
   if (!firstName || !lastName) {
@@ -109,12 +131,17 @@ export async function handleMemberRegister(request: Request): Promise<Response> 
   if (!acceptTerms) {
     return jsonResponse({ success: false, message: 'You must accept the Terms of Service.', deploymentMarker: DEPLOYMENT_MARKER }, 400);
   }
+  const dobCheck = validateDateOfBirth(dateOfBirth);
+  if (!dobCheck.valid) {
+    return jsonResponse({ success: false, message: dobCheck.reason || 'Please enter a valid date of birth.', deploymentMarker: DEPLOYMENT_MARKER }, 400);
+  }
 
   const result = await registerMember({
     email,
     password,
     firstName,
     lastName,
+    dateOfBirth,
     phone,
     country,
     zipCode,

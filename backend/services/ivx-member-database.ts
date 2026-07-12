@@ -40,6 +40,8 @@ export interface MemberRegistrationInput {
   password: string;
   firstName: string;
   lastName: string;
+  /** Date of birth in ISO format (YYYY-MM-DD). */
+  dateOfBirth?: string;
   phone: string;
   country: string;
   zipCode?: string;
@@ -63,6 +65,7 @@ export async function registerMember(input: MemberRegistrationInput): Promise<Me
   const userMetadata = {
     first_name: input.firstName,
     last_name: input.lastName,
+    date_of_birth: input.dateOfBirth ?? '',
     phone: input.phone,
     country: input.country,
     zip_code: input.zipCode ?? '',

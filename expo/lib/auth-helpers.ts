@@ -76,3 +76,45 @@ export function sanitizeEmail(email: string): string {
 export function sanitizePasswordForSignIn(password: string): string {
   return password.trim();
 }
+
+/** Auto-format birthday digits into MM/DD/YYYY as the user types. */
+export function formatBirthdayInput(text: string): string {
+  const digits = text.replace(/\D/g, '').slice(0, 8);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+}
+
+/** Validate MM/DD/YYYY birthday: real date, age 18-120. Returns ISO date (YYYY-MM-DD) or error. */
+export function parseBirthday(value: string): { iso: string | null; error: string | null } {
+  if (!value.trim()) {
+    return { iso: null, error: 'Date of birth is required.' };
+  }
+  const match = value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!match) {
+    return { iso: null, error: 'Enter your date of birth as MM/DD/YYYY.' };
+  }
+  const month = Number(match[1]);
+  const day = Number(match[2]);
+  const year = Number(match[3]);
+  if (month < 1 || month > 12) {
+    return { iso: null, error: 'Please enter a valid month (01-12).' };
+  }
+  const daysInMonth = new Date(year, month, 0).getDate();
+  if (day < 1 || day > daysInMonth) {
+    return { iso: null, error: 'Please enter a valid day for that month.' };
+  }
+  const now = new Date();
+  if (year < now.getFullYear() - 120 || year > now.getFullYear()) {
+    return { iso: null, error: 'Please enter a valid year.' };
+  }
+  let age = now.getFullYear() - year;
+  const hadBirthdayThisYear =
+    now.getMonth() + 1 > month || (now.getMonth() + 1 === month && now.getDate() >= day);
+  if (!hadBirthdayThisYear) age -= 1;
+  if (age < 18) {
+    return { iso: null, error: 'You must be at least 18 years old to create an account.' };
+  }
+  const iso = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  return { iso, error: null };
+}

@@ -53,6 +53,7 @@ import {
   EyeOff,
   Check,
   CheckCircle,
+  Calendar,
   Shield,
   ShieldCheck,
   ArrowRight,
@@ -79,6 +80,8 @@ import {
   validatePassword,
   validatePhone,
   sanitizeEmail,
+  formatBirthdayInput,
+  parseBirthday,
 } from '@/lib/auth-helpers';
 import * as MemberService from '@/lib/member-service';
 import { supabase } from '@/lib/supabase';
@@ -249,6 +252,7 @@ export function IVXAuthCard({
   // --- Signup State ---
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
+  const [birthday, setBirthday] = useState('');
   const [signupEmail, setSignupEmail] = useState('');
   const [signupPhone, setSignupPhone] = useState('');
   const [signupPassword, setSignupPassword] = useState('');
@@ -265,6 +269,7 @@ export function IVXAuthCard({
   // --- Inline Validation ---
   const [firstNameError, setFirstNameError] = useState<string | null>(null);
   const [lastNameError, setLastNameError] = useState<string | null>(null);
+  const [birthdayError, setBirthdayError] = useState<string | null>(null);
   const [signupEmailError, setSignupEmailError] = useState<string | null>(null);
   const [phoneError, setPhoneError] = useState<string | null>(null);
   const [signupPasswordError, setSignupPasswordError] = useState<string | null>(null);
@@ -345,6 +350,7 @@ export function IVXAuthCard({
     setSignupError(null);
     setFirstNameError(null);
     setLastNameError(null);
+    setBirthdayError(null);
     setSignupEmailError(null);
     setPhoneError(null);
     setSignupPasswordError(null);
@@ -541,6 +547,7 @@ export function IVXAuthCard({
     setSignupError(null);
     setFirstNameError(null);
     setLastNameError(null);
+    setBirthdayError(null);
     setSignupEmailError(null);
     setPhoneError(null);
     setSignupPasswordError(null);
@@ -557,6 +564,11 @@ export function IVXAuthCard({
     }
     if (!lastName.trim()) {
       setLastNameError('Last name is required.');
+      hasError = true;
+    }
+    const birthdayResult = parseBirthday(birthday);
+    if (birthdayResult.error || !birthdayResult.iso) {
+      setBirthdayError(birthdayResult.error || 'Date of birth is required.');
       hasError = true;
     }
     if (!normalizedEmail) {
@@ -604,6 +616,7 @@ export function IVXAuthCard({
         password: signupPassword,
         firstName: firstName.trim(),
         lastName: lastName.trim(),
+        dateOfBirth: birthdayResult.iso ?? '',
         phone: signupPhone,
         country: 'United States',
         zipCode: '',
@@ -655,7 +668,7 @@ export function IVXAuthCard({
     } catch (err: any) {
       setSignupError(err?.message || 'Registration failed. Please try again.');
     }
-  }, [firstName, lastName, signupEmail, signupPhone, signupPassword, confirmPassword, selectedRole, acceptTerms, uploadedPictureUrl, register]);
+  }, [firstName, lastName, birthday, signupEmail, signupPhone, signupPassword, confirmPassword, selectedRole, acceptTerms, uploadedPictureUrl, register]);
 
   // --- Verification Code Input ---
   const handleCodeInput = useCallback((type: 'email' | 'phone', index: number, value: string) => {
@@ -1114,6 +1127,7 @@ export function IVXAuthCard({
                             <>
                               <Camera size={24} color={Colors.textTertiary} />
                               <Text style={styles.pictureText}>Add Photo</Text>
+                              <Text style={styles.pictureOptionalText}>Optional</Text>
                             </>
                           )}
                         </View>
@@ -1158,6 +1172,26 @@ export function IVXAuthCard({
                       </View>
                       <FieldError message={lastNameError} />
                     </View>
+                  </View>
+
+                  {/* Date of Birth (required) */}
+                  <View style={styles.fieldGroup}>
+                    <Text style={styles.fieldLabel}>Date of Birth</Text>
+                    <View style={[styles.inputWrap, birthdayError && styles.inputWrapError]}>
+                      <Calendar size={18} color={Colors.textTertiary} />
+                      <TextInput
+                        style={styles.input}
+                        placeholder="MM/DD/YYYY"
+                        placeholderTextColor={Colors.inputPlaceholder}
+                        value={birthday}
+                        onChangeText={(text) => { setBirthday(formatBirthdayInput(text)); setBirthdayError(null); }}
+                        keyboardType="number-pad"
+                        maxLength={10}
+                        returnKeyType="next"
+                        testID={`${testIdPrefix}-signup-birthday`}
+                      />
+                    </View>
+                    <FieldError message={birthdayError} />
                   </View>
 
                   {/* Email */}
@@ -1568,6 +1602,11 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: Colors.textTertiary,
     marginTop: 2,
+  },
+  pictureOptionalText: {
+    fontSize: 8,
+    color: Colors.textTertiary,
+    opacity: 0.7,
   },
 
   // Fields
