@@ -404,7 +404,6 @@ export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProp
     userRole,
     auditOwnerDirectAccess,
     ownerDirectAccess,
-    loginOwnerPasswordless,
   } = useAuth();
 
   const [email, setEmail] = useState('');
@@ -1206,93 +1205,6 @@ export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProp
     }
   }, [effectiveRecoveryEmail, normalizedEmail, password, login, navigateAfterSuccessfulLogin, shake]);
 
-  const [passwordlessOwnerLoading, setPasswordlessOwnerLoading] = useState<boolean>(false);
-  const handleOwnerPasswordlessLogin = useCallback(async () => {
-    if (passwordlessOwnerLoading || loginLoading) {
-      return;
-    }
-    setLastFailureReason(null);
-    const identifier = sanitizeEmail(email);
-    if (!identifier) {
-      setAttemptState({
-        status: 'failed',
-        title: 'Owner email required',
-        detail: 'Enter your approved owner email, then tap Sign In.',
-        email: '',
-        tone: 'warning',
-      });
-      Alert.alert('Missing Email', 'Please enter your owner email address.');
-      shake();
-      return;
-    }
-    if (!validateEmail(identifier)) {
-      setAttemptState({
-        status: 'failed',
-        title: 'Email format invalid',
-        detail: 'The owner email format is invalid.',
-        email: identifier,
-        tone: 'warning',
-      });
-      Alert.alert('Invalid Email', 'Please enter a valid email address.');
-      shake();
-      return;
-    }
-    setPasswordlessOwnerLoading(true);
-    loginSubmitInFlightRef.current = true;
-    try {
-      setAttemptState({
-        status: 'submitting',
-        title: 'Signing you in',
-        detail: 'Verifying your owner email with the backend. No password required.',
-        email: identifier,
-        tone: 'neutral',
-      });
-      setFailedLoginMessage(null);
-      const result = await loginOwnerPasswordless(identifier);
-      if (result.success) {
-        setAttemptState({
-          status: 'success',
-          title: 'Owner signed in',
-          detail: result.message || 'Owner access restored without a password.',
-          email: identifier,
-          tone: 'success',
-        });
-        clearAuthAttempts(identifier);
-        navigateAfterSuccessfulLogin('password');
-        return;
-      }
-      const failureReason = (result.failureReason ?? 'unknown') as LoginFailureReason;
-      setLastFailureReason(failureReason);
-      setFailedLoginMessage(result.message);
-      setAttemptState({
-        status: 'failed',
-        title: 'Owner sign-in blocked',
-        detail: result.message,
-        email: identifier,
-        tone: 'warning',
-        supabaseErrorMessage: result.supabaseErrorMessage,
-        supabaseErrorCode: result.supabaseErrorCode,
-        supabaseErrorStatus: result.supabaseErrorStatus,
-        supabaseErrorName: result.supabaseErrorName,
-      });
-      recordAuthAttempt(identifier, false);
-      Alert.alert('Owner Sign-In Blocked', result.message);
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Passwordless owner login failed.';
-      setAttemptState({
-        status: 'failed',
-        title: 'Owner sign-in blocked',
-        detail: message,
-        email: identifier,
-        tone: 'warning',
-      });
-      Alert.alert('Owner Sign-In Blocked', message);
-    } finally {
-      setPasswordlessOwnerLoading(false);
-      loginSubmitInFlightRef.current = false;
-    }
-  }, [email, loginLoading, loginOwnerPasswordless, navigateAfterSuccessfulLogin, passwordlessOwnerLoading, shake]);
-
   const handleLogin = async () => {
     if (loginSubmitInFlightRef.current || isLoading) {
       console.log('[Login] Duplicate submit ignored while sign-in is already running');
@@ -1325,16 +1237,6 @@ export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProp
       return;
     }
     const identifier = sanitizeEmail(email);
-
-    // In owner mode, the main Sign In button uses the backend passwordless
-    // owner login endpoint. It self-heals the password server-side and mints
-    // a real Supabase session, so the user does not need to know or match the
-    // Supabase-stored password. The typed password is ignored in this path.
-    if (effectiveOwnerMode) {
-      console.log('[Login] Owner mode — routing main Sign In to passwordless backend for:', identifier);
-      await handleOwnerPasswordlessLogin();
-      return;
-    }
 
     const passwordForSignIn = password.trim();
     if (!passwordForSignIn) {
@@ -1679,7 +1581,7 @@ export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProp
       {
         id: 'truth-direct-signin',
         title: 'Normal owner sign-in',
-        detail: 'This screen sends the entered email and password straight to Supabase. The server repair key is not used for that sign-in.',
+        detail: 'This screen requires the exact owner email and password. The server repair key is not used for that sign-in.',
       },
       {
         id: 'truth-service-role',
@@ -1703,7 +1605,7 @@ export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProp
   const hasVisibleSupabaseError = Boolean(attemptState.supabaseErrorMessage || attemptState.supabaseErrorCode || attemptState.supabaseErrorStatus || attemptState.supabaseErrorName);
   const loginTitle = effectiveOwnerMode ? 'Owner Login' : 'Welcome Back';
   const loginSubtitle = effectiveOwnerMode
-    ? 'Owner sign-in is now passwordless. Enter your approved owner email, tap Owner Sign In, and the backend mints the session. The password field is ignored on this screen.'
+    ? 'Enter your verified owner email and password. The owner account must sign in manually every launch — no automatic owner access.'
     : 'Use direct email/password sign-in first. Owner recovery stays available below if this device was already verified.';
   const signInButtonLabel = effectiveOwnerMode ? 'Owner Sign In' : 'Sign In';
   const ownerAlternativeTitle = effectiveOwnerMode
@@ -2067,12 +1969,6 @@ export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProp
                 >
                   <Text style={styles.ownerSmsRecoveryButtonText}>Lost password? Recover via SMS</Text>
                 </TouchableOpacity>
-              ) : null}
-
-              {effectiveOwnerMode ? (
-                <View style={styles.passwordlessNote} testID="owner-passwordless-note">
-                  <Text style={styles.passwordlessNoteText}>Owner Sign In uses the backend passwordless endpoint. No password match is required.</Text>
-                </View>
               ) : null}
 
               {effectiveOwnerMode ? (
