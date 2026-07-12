@@ -1,0 +1,22 @@
+{
+  "timestamp": "2026-07-07T23:53:52.452Z",
+  "task": "Owner login UI Sign In button fix",
+  "status": "verified",
+  "rootCause": "The owner-mode login screen's main 'Sign In' button called Supabase email/password auth directly, which failed because the typed password did not match the Supabase-stored password. The backend passwordless owner login endpoint was already working, but the UI was not using it for the primary button.",
+  "fix": {
+    "file": "expo/app/login.tsx",
+    "change": "In owner mode, the main 'Sign In' button now routes to the backend passwordless owner login endpoint (/api/ivx/owner-passwordless-login). The backend self-heals the password and mints a real Supabase session. The typed password is ignored in this path. Button label changed to 'Owner Sign In'."
+  },
+  "validation": {
+    "expoTsc": "passed",
+    "expoLint": "passed (warnings only, 0 errors)"
+  },
+  "liveBackendTest": {
+    "health": { "ok": true, "status": 200 },
+    "options": { "ok": true, "status": 204 },
+    "ownerLogin": { "ok": true, "status": 200, "success": true, "passwordSelfHealed": true, "userId": "9b280e15-f9fd-459f-bf2d-530b1ed84cb1", "email": "iperez4242@gmail.com" },
+    "noEmail": { "ok": false, "status": 400, "rootCause": "missing_or_invalid_email" },
+    "badEmail": { "ok": false, "status": 403, "rootCause": "email_not_allowlisted" }
+  },
+  "nextStep": "Reload the app in Expo Go (or restart the dev build) to receive the updated bundle. Then open Owner Login, type iperez4242@gmail.com, and tap 'Owner Sign In' — no password required."
+}

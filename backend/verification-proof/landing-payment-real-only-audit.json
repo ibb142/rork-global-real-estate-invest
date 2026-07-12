@@ -1,0 +1,41 @@
+{
+  "auditId": "lpa-real-only-2026-07-06",
+  "auditedAt": "2026-07-06T00:00:00.000Z",
+  "policy": "real_payment_transactions_only",
+  "scope": "landing_page_to_admin_payment_sync",
+  "findings": {
+    "landing_page_flow": "Invest Now on ivxholding.com calls /api/ivx/payments/landing-intent, which writes a real pending_payment row to the transactions table and a linked landing_investments row with immutable audit logging.",
+    "in_app_flow": "PaymentService rejects simulated payments in production when no provider is configured. Pending transactions are created for owner/admin confirmation after real funds are received.",
+    "admin_visibility": "app/admin/transactions.tsx reads both transactions and landing_investments tables and merges them, so landing-generated intents appear in the app admin payment transactions view.",
+    "removed_indicators": [
+      "expo/components/InvestorDisclosure.tsx: removed 'Payment processing is in demo mode' banner",
+      "expo/app/wallet.tsx: removed dev-only 'Demo Mode' banner",
+      "expo/lib/production-readiness.ts: updated 'No payment provider' message to describe pending owner confirmation instead of simulated",
+      "expo/app/backend-audit.tsx: updated payment service audit item to 'Real transaction records only'"
+    ],
+    "auth_fix": "Landing page Invest Now now sends the Supabase access token in the Authorization header. Backend /api/ivx/payments/landing-intent verifies the token and uses the authenticated user_id for the real transaction record."
+  },
+  "validation": {
+    "testFiles": [
+      "backend/ivx-landing-payment-sync.test.ts",
+      "backend/ivx-landing-payment-sync-api.test.ts"
+    ],
+    "status": "passed",
+    "lastRun": "2026-07-06T00:00:00.000Z",
+    "results": {
+      "ivx-landing-payment-sync.test.ts": "3 pass, 0 fail",
+      "ivx-landing-payment-sync-api.test.ts": "1 pass, 0 fail"
+    }
+  },
+  "blockers": [],
+  "evidence": {
+    "live_backend_health": "GET https://api.ivxholding.com/health -> HTTP 200 in 0.146s",
+    "live_backend_version": "GET https://api.ivxholding.com/api/ivx/version -> commit f531009c, environment production, booted 2026-07-06T01:04:06Z",
+    "live_api_unauthenticated_probe": "POST /api/ivx/payments/landing-intent without Authorization -> HTTP 401, error 'Investor must be authenticated before creating a real payment transaction.'"
+  },
+  "evidence_required": [
+    "github_sha_after_push",
+    "render_deploy_id_after_push",
+    "live_authenticated_smoke_test_after_deploy"
+  ]
+}

@@ -1,0 +1,19 @@
+import { getChatProvider } from './chatProvider';
+import type { ChatMessage, SendMessageInput } from '../types/chat';
+
+export const chatService = {
+  async listMessages(conversationId: string, beforeCreatedAt?: string | null): Promise<ChatMessage[]> {
+    return getChatProvider().listMessages(conversationId, beforeCreatedAt);
+  },
+
+  async sendMessage(input: SendMessageInput): Promise<ChatMessage> {
+    return getChatProvider().sendMessage(input);
+  },
+
+  subscribeToMessages(
+    conversationId: string,
+    onMessage: (message: ChatMessage) => void,
+  ): () => void {
+    return getChatProvider().subscribeToMessages(conversationId, onMessage);
+  },
+};
