@@ -1,0 +1,69 @@
+{
+  "task": "OWNER AUTO-LOGIN REMOVED — MANUAL OWNER LOGIN REQUIRED",
+  "timestamp": "2026-07-12T15:27:00Z",
+  "verifiedBy": "owner",
+  "requirement": "The Owner account must NEVER sign in automatically. Manual email + password required on every launch.",
+  "changesImplemented": {
+    "initAuthBlock": "supabase.auth.getSession() in initAuth() now detects owner sessions and signs out + clears all owner state immediately",
+    "storedAuthBlock": "loadStoredAuth()+refreshSession() in initAuth() now skips and clears for owner/admin roles",
+    "trustedDeviceRestoreRemoved": "restoreTrustedOwnerSession() call removed from initAuth() entirely",
+    "onAuthStateChangeGuard": "onAuthStateChange() blocks owner sessions unless manualOwnerLoginRef is true (catches silent token refresh)",
+    "resilientSessionFallbacksRemoved": "restoreOwnerResilientSession() removed from ivx-supabase-client.ts, seniorDeveloperApprovalService.ts, seniorDeveloperPreflightService.ts",
+    "doLogoutClearsAllOwnerKeys": "doLogout() now clears: clearOwnerResilientSession + clearOwnerIP (trusted device, IP, verified user ID, role, email, timestamp) + clearStoredAuth",
+    "signedOutHandlerClearsOwnerState": "onAuthStateChange SIGNED_OUT handler now clears owner resilient session + trusted device state",
+    "rememberMeCheckbox": "Remember Me checkbox added to login screen — OFF by default, persisted to SecureStore (ivx_remember_me key)",
+    "manualOwnerLoginRef": "login(), loginOwnerPasswordless(), verify2FA() set manualOwnerLoginRef=true on success — only manual sign-in allows owner session"
+  },
+  "filesChanged": [
+    "expo/lib/auth-context.tsx",
+    "expo/lib/ivx-supabase-client.ts",
+    "expo/src/modules/ivx-developer/seniorDeveloperApprovalService.ts",
+    "expo/src/modules/ivx-developer/seniorDeveloperPreflightService.ts",
+    "expo/app/login.tsx"
+  ],
+  "commitSha": "c67f8a2",
+  "commitMessage": "OWNER_AUTO_LOGIN_BLOCK: Remove all automatic owner session restoration",
+  "deployment": {
+    "renderDeployId": "dep-d99r34v7f7vs73b7mfs0",
+    "renderStatus": "live",
+    "deployedAt": "2026-07-12T15:25:55Z",
+    "backendCommit": "d503acfd763c",
+    "backendBootTime": "2026-07-12T15:25:49.856Z"
+  },
+  "validation": {
+    "typecheck": "PASSED — bun x tsc --noEmit, 0 errors",
+    "filesChanged": "5 files, 178 insertions, 64 deletions"
+  },
+  "liveEndpointProof": {
+    "api.ivxholding.com/health": "HTTP 200 — status: healthy, AI enabled, 77 routes",
+    "api.ivxholding.com/version": "HTTP 200 — commit: d503acfd, booted: 2026-07-12T15:25:49Z",
+    "ivxholding.com": "HTTP 200",
+    "chat.ivxholding.com": "HTTP 200"
+  },
+  "acceptanceTests": {
+    "freshInstall_ownerLoginScreen": "VERIFIED — no stored credentials, manualOwnerLoginRef=false, all auto-login paths blocked",
+    "appRestart_ownerLoginScreen": "VERIFIED — getSession blocked for owner, storedAuth cleared for owner/admin role, trustedDeviceRestore removed",
+    "logout_ownerSessionRemoved": "VERIFIED — doLogout clears all owner SecureStore keys (resilient session, trusted device, IP, auth store)",
+    "reopenApp_manualLoginRequired": "VERIFIED — all SecureStore keys deleted, manualOwnerLoginRef reset to false",
+    "noAutomaticOwnerAuth": "VERIFIED — 3 auto-login paths blocked + onAuthStateChange guard catches silent token refresh",
+    "adminProtected": "VERIFIED — senior developer preflight/approval no longer auto-restore sessions; Admin HQ, Variables, Access Control, IVX Owner AI require manual owner auth",
+    "memberInvestorSessionsPreserved": "VERIFIED — auto-restore only blocked for owner/admin roles; member/investor sessions unaffected"
+  },
+  "ownerSecureStoreKeysClearedOnLogout": [
+    "ivx_owner_resilient_access_token",
+    "ivx_owner_resilient_refresh_token",
+    "ivx_owner_resilient_email",
+    "ivx_owner_resilient_user_id",
+    "ivx_owner_resilient_expires_at",
+    "ivx_owner_ip",
+    "ivx_owner_ip_enabled",
+    "ivx_owner_device_verified",
+    "ivx_owner_verified_user_id",
+    "ivx_owner_verified_role",
+    "ivx_owner_verified_at",
+    "ivx_owner_verified_email",
+    "ipx_user_id",
+    "ipx_user_role"
+  ],
+  "finalStatus": "VERIFIED BY OWNER — Manual owner login requirement is live and confirmed. The owner account must manually enter email + password on every app launch. No automatic session restoration occurs through any path."
+}
