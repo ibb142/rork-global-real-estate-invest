@@ -1,11 +1,13 @@
 import { Tabs } from 'expo-router';
-
-// IVX Crash Shield: route-level error boundary for the entire (tabs) segment
-// (Home / Invest / Market / Portfolio / Chat / Profile / CRM). A crash in any
-// tab screen surfaces a route error screen instead of bubbling to the root
-// boundary and white-screening the whole app.
-export { ErrorBoundary } from 'expo-router';
 import { BarChart3, Briefcase, Home, LayoutDashboard, MessageCircle, TrendingUp, User } from 'lucide-react-native';
+import { DiagnosticErrorBoundary } from '@/components/DiagnosticErrorBoundary';
+
+// IVX Crash Shield: route-level diagnostic error boundary for the entire (tabs)
+// segment. A crash in any tab screen surfaces the full error message and stack
+// trace on screen instead of Expo's generic blue screen.
+export function ErrorBoundary(props: { children: React.ReactNode }) {
+  return <DiagnosticErrorBoundary>{props.children}</DiagnosticErrorBoundary>;
+}
 import React, { useMemo } from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
