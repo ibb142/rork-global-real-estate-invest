@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import { supabase, ensureSupabaseClient, getSupabaseConfigAudit, SUPABASE_NOT_CONFIGURED_MESSAGE, forceProductionSupabaseClient } from './supabase';
 import { persistAuth, loadStoredAuth, clearStoredAuth, setAuthCredentials } from './auth-store';
-import { clearOwnerResilientSession, storeOwnerResilientSession } from './owner-session-resilience';
+import { clearOwnerResilientSession } from './owner-session-resilience';
 import { canonicalizeRole, isAdminRole, normalizeRole, sanitizeEmail } from './auth-helpers';
 import { signInWithEmailPassword } from './auth-password-sign-in';
 import { extractChallengeId, extractFirstVerifiedMfaFactor, getMfaChallengeRequirement, type ParsedMfaFactor } from './auth-mfa';
@@ -885,6 +885,11 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   const [detectedIP, setDetectedIP] = useState<string | null>(null);
   const sessionMonitorCleanup = useRef<(() => void) | null>(null);
   const ownerIPActiveRef = useRef(false);
+  // Tracks whether the owner has manually signed in during this app session.
+  // Only set true inside login() / loginOwnerPasswordless() after the owner
+  // enters credentials. The onAuthStateChange handler checks this ref to block
+  // any automatic owner session restoration that bypasses manual login.
+  const manualOwnerLoginRef = useRef(false);
   const sessionWarmupKeyRef = useRef<string | null>(null);
   const ownerRepairKeyRef = useRef<string | null>(null);
   const activeSessionUserIdRef = useRef<string | null>(null);
@@ -1088,10 +1093,14 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     lastHandledSessionResultRef.current = null;
     inFlightSessionKeyRef.current = null;
     inFlightSessionPromiseRef.current = null;
+    manualOwnerLoginRef.current = false;
     await clearStoredAuth();
     await clearOwnerResilientSession().catch((error: unknown) => {
       console.log('[Auth] Resilient owner session clear note:', error instanceof Error ? error.message : 'unknown');
     });
+    // OWNER LOGOUT: Clear ALL owner SecureStore keys including trusted-device
+    // state so the next app launch requires manual email + password.
+    await clearOwnerIP();
     setUser((previousUser) => previousUser === null ? previousUser : null);
     setIsAuthenticated((current) => current ? false : current);
     setUserRole((currentRole) => currentRole === 'investor' ? currentRole : 'investor');
@@ -1480,6 +1489,19 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         );
 
         if (session) {
+          // OWNER AUTO-LOGIN BLOCK: The owner account must NEVER sign in
+          // automatically. If Supabase restored an owner session from
+          // AsyncStorage, sign out immediately and clear all owner state.
+          // The owner must manually enter email + password on every launch.
+          if (isOwnerAdminEmail(session.user?.email)) {
+            console.log('[Auth] OWNER_AUTO_LOGIN_BLOCK: owner session detected in getSession() — signing out, clearing all owner state');
+            try { await supabase.auth.signOut(); } catch {}
+            await clearOwnerResilientSession().catch(() => {});
+            await clearOwnerIP();
+            await clearStoredAuth();
+            if (!cancelled) { setIsLoading(false); }
+            return;
+          }
           if (!cancelled) {
             const challengeRequired = await requireTwoFactorIfNeeded(session, 'startup restore');
             if (!challengeRequired) {
@@ -1494,39 +1516,62 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
 
         const stored = await loadStoredAuth();
         if (stored.userId) {
-          setAuthCredentials(null, stored.userId, stored.userRole);
-          const refreshedSession = await withTimeout(
-            async () => {
-              const refreshResult = await supabase.auth.refreshSession();
-              return refreshResult.data.session;
-            },
-            AUTH_REFRESH_TIMEOUT_MS,
-            'refreshSession',
-            null,
-          );
+          // OWNER AUTO-LOGIN BLOCK: If the stored role is owner/admin, skip
+          // session refresh entirely — the owner must sign in manually every
+          // time. Clear all stored owner state so no cached credentials remain.
+          const storedRole = normalizeRole(stored.userRole);
+          if (isAdminRole(storedRole)) {
+            console.log('[Auth] OWNER_AUTO_LOGIN_BLOCK: stored owner/admin role detected — clearing, no auto-refresh');
+            await clearStoredAuth();
+            await clearOwnerResilientSession().catch(() => {});
+            await clearOwnerIP();
+          } else {
+            setAuthCredentials(null, stored.userId, stored.userRole);
+            const refreshedSession = await withTimeout(
+              async () => {
+                const refreshResult = await supabase.auth.refreshSession();
+                return refreshResult.data.session;
+              },
+              AUTH_REFRESH_TIMEOUT_MS,
+              'refreshSession',
+              null,
+            );
 
-          if (refreshedSession) {
-            if (!cancelled) {
-              const challengeRequired = await requireTwoFactorIfNeeded(refreshedSession, 'session refresh');
-              if (!challengeRequired) {
-                const handledSession = await handleSession(refreshedSession);
-                if (handledSession.accepted) {
-                  console.log('[Auth] Session restored via refresh for:', stored.userId);
-                } else {
-                  console.log('[Auth] Session refresh blocked:', handledSession.blockedReason ?? 'admin access lock');
+            if (refreshedSession) {
+              // Safety net: if refreshSession somehow produced an owner session,
+              // block it and sign out.
+              if (isOwnerAdminEmail(refreshedSession.user?.email)) {
+                console.log('[Auth] OWNER_AUTO_LOGIN_BLOCK: owner session detected after refresh — signing out');
+                try { await supabase.auth.signOut(); } catch {}
+                await clearOwnerResilientSession().catch(() => {});
+                await clearOwnerIP();
+                await clearStoredAuth();
+                if (!cancelled) { setIsLoading(false); }
+                return;
+              }
+              if (!cancelled) {
+                const challengeRequired = await requireTwoFactorIfNeeded(refreshedSession, 'session refresh');
+                if (!challengeRequired) {
+                  const handledSession = await handleSession(refreshedSession);
+                  if (handledSession.accepted) {
+                    console.log('[Auth] Session restored via refresh for:', stored.userId);
+                  } else {
+                    console.log('[Auth] Session refresh blocked:', handledSession.blockedReason ?? 'admin access lock');
+                  }
                 }
               }
+              return;
             }
-            return;
+
+            console.log('[Auth] Stored userId found but session refresh failed or timed out — clearing');
+            await clearStoredAuth();
           }
-
-          console.log('[Auth] Stored userId found but session refresh failed or timed out — clearing');
-          await clearStoredAuth();
         }
 
-        if (!cancelled) {
-          await restoreTrustedOwnerSession();
-        }
+        // OWNER AUTO-LOGIN BLOCK: restoreTrustedOwnerSession() removed —
+        // the owner must never be auto-restored from trusted-device state.
+        // Admin HQ, Variables, Access Control, and IVX Owner AI remain
+        // protected until manual owner authentication succeeds.
       } catch (e) {
         console.log('[Auth] Init error:', (e as Error)?.message);
         console.log('[Auth] Trusted owner auto-restore skipped because startup verification did not complete safely');
@@ -1555,6 +1600,22 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         }
         console.log('[Auth] State changed:', _event);
         if (session) {
+          // OWNER AUTO-LOGIN BLOCK: If an owner session appears via
+          // onAuthStateChange but the owner has not manually signed in during
+          // this app session, sign out immediately and clear all owner state.
+          // This catches token refresh events that try to silently restore
+          // an owner session without the owner entering credentials.
+          if (isOwnerAdminEmail(session.user?.email) && !manualOwnerLoginRef.current) {
+            console.log('[Auth] OWNER_AUTO_LOGIN_BLOCK: owner session in onAuthStateChange without manual login — signing out');
+            try { await supabase.auth.signOut(); } catch {}
+            await clearOwnerResilientSession().catch(() => {});
+            await clearOwnerIP();
+            await clearStoredAuth();
+            setUser(null);
+            setIsAuthenticated(false);
+            setUserRole('investor');
+            return;
+          }
           const challengeRequired = await requireTwoFactorIfNeeded(session, `auth event ${String(_event)}`);
           if (!challengeRequired) {
             const handledSession = await handleSession(session);
@@ -1570,11 +1631,14 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
           lastHandledSessionResultRef.current = null;
           inFlightSessionKeyRef.current = null;
           inFlightSessionPromiseRef.current = null;
+          manualOwnerLoginRef.current = false;
           setUser((previousUser) => previousUser === null ? previousUser : null);
           setIsAuthenticated((current) => current ? false : current);
           setUserRole((currentRole) => currentRole === 'investor' ? currentRole : 'investor');
           clearTwoFactorState();
           await clearStoredAuth();
+          await clearOwnerResilientSession().catch(() => {});
+          await clearOwnerIP();
           if (sessionMonitorCleanup.current) {
             sessionMonitorCleanup.current();
             sessionMonitorCleanup.current = null;
@@ -1594,7 +1658,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         sessionMonitorCleanup.current = null;
       }
     };
-  }, [clearTwoFactorState, handleSession, requireTwoFactorIfNeeded, restoreTrustedOwnerSession]);
+  }, [clearTwoFactorState, handleSession, requireTwoFactorIfNeeded]);
 
   const loginOwnerPasswordless = useCallback(async (ownerEmail: string): Promise<LoginResult> => {
     const normalizedOwnerEmail = sanitizeEmail(ownerEmail);
@@ -1649,6 +1713,8 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
           if (!handled.accepted) {
             return { success: false, message: handled.blockedReason ?? 'Owner session was not accepted.', failureReason: 'admin_access_locked' };
           }
+          // Mark manual owner login so onAuthStateChange allows this session.
+          manualOwnerLoginRef.current = true;
           sessionInstalled = true;
           break;
         } catch (endpointError) {
@@ -1749,6 +1815,10 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       const { session: dataSession } = signInResult;
       const resolvedSession = dataSession ?? (await supabase.auth.getSession()).data.session;
       if (resolvedSession) {
+        // Mark manual login so onAuthStateChange allows this owner session.
+        if (isOwnerAdminEmail(resolvedSession.user?.email)) {
+          manualOwnerLoginRef.current = true;
+        }
         console.log('[Auth] Direct password sign-in produced a real session for:', credentials.email, 'user:', resolvedSession.user.id);
         const challengeRequired = await requireTwoFactorIfNeeded(resolvedSession, 'password sign-in');
         if (challengeRequired) {
@@ -1845,6 +1915,10 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       const verifiedSession = sessionResult.data.session;
       if (!verifiedSession) {
         throw new Error('Two-factor verification finished but no authenticated session was returned.');
+      }
+      // Mark manual owner login so onAuthStateChange allows this session.
+      if (isOwnerAdminEmail(verifiedSession.user?.email)) {
+        manualOwnerLoginRef.current = true;
       }
 
       const handledSession = await handleSession(verifiedSession);

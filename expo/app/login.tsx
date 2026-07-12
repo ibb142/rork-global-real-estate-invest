@@ -17,7 +17,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, Href } from 'expo-router';
-import { Mail, Lock, Eye, EyeOff, ArrowLeft, Shield, ChevronRight, MailCheck } from 'lucide-react-native';
+import { Mail, Lock, Eye, EyeOff, ArrowLeft, Shield, ChevronRight, MailCheck, Check } from 'lucide-react-native';
+import * as SecureStore from 'expo-secure-store';
 import Colors from '@/constants/colors';
 import { useAuth } from '@/lib/auth-context';
 import { checkAuthRateLimit, recordAuthAttempt, getRateLimitMessage, clearAuthAttempts } from '@/lib/auth-rate-limiter';
@@ -416,6 +417,8 @@ export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProp
   const [liveOwnerAuditLoading, setLiveOwnerAuditLoading] = useState<boolean>(false);
   const [passwordResetLoading, setPasswordResetLoading] = useState<boolean>(false);
   const [serverPasswordRepairLoading, setServerPasswordRepairLoading] = useState<boolean>(false);
+  // "Remember Me" is OFF by default — the owner must manually sign in every launch.
+  const [rememberMe, setRememberMe] = useState<boolean>(false);
   const [repairDebug, setRepairDebug] = useState<{
     endpoint: string;
     status: number | null;
@@ -497,6 +500,28 @@ export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProp
       setEmail(nextEmail);
     }
   }, [params.email]);
+
+  // Load "Remember Me" preference — OFF by default per owner requirement.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const stored = await SecureStore.getItemAsync('ivx_remember_me');
+        if (!cancelled && stored === 'true') {
+          setRememberMe(true);
+        }
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const toggleRememberMe = useCallback(async () => {
+    const next = !rememberMe;
+    setRememberMe(next);
+    try {
+      await SecureStore.setItemAsync('ivx_remember_me', next ? 'true' : 'false');
+    } catch {}
+  }, [rememberMe]);
 
   useEffect(() => {
     const justRegistered = params.justRegistered === '1' || (Array.isArray(params.justRegistered) && params.justRegistered.includes('1'));
@@ -2005,6 +2030,18 @@ export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProp
               </View>
 
               <TouchableOpacity
+                style={styles.rememberMeRow}
+                onPress={toggleRememberMe}
+                activeOpacity={0.7}
+                testID="login-remember-me"
+              >
+                <View style={[styles.checkbox, rememberMe && styles.checkboxChecked]}>
+                  {rememberMe ? <Check size={14} color={Colors.black} strokeWidth={3} /> : null}
+                </View>
+                <Text style={styles.rememberMeText}>Remember Me</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
                 style={[styles.signInBtn, isLoading && styles.signInBtnDisabled]}
                 onPress={handleLogin}
                 disabled={isLoading}
@@ -2688,6 +2725,31 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '800' as const,
     letterSpacing: 0.3,
+  },
+  rememberMeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 16,
+    paddingVertical: 4,
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: Colors.surfaceBorder,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxChecked: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  rememberMeText: {
+    color: Colors.textSecondary,
+    fontSize: 14,
+    fontWeight: '500' as const,
   },
   inputWrap: {
     flexDirection: 'row',

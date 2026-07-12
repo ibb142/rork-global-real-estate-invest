@@ -12,7 +12,6 @@
  * IVX_OWNER_TOKEN for code mutation, commit, or deploy.
  */
 
-import { restoreOwnerResilientSession } from '@/lib/owner-session-resilience';
 import { getIVXOwnerEmailAllowlist } from '@/shared/ivx/access-control';
 
 /** Non-secret, owner-readable preflight facts. NEVER contains the token value. */
@@ -195,19 +194,10 @@ export async function gatherOwnerProofGate(): Promise<OwnerProofGate> {
     let session = data.session;
     let userEmail = session?.user?.email ?? null;
 
-    // Resilience fallback: if the live Supabase session is not hydrated (e.g.
-    // AsyncStorage not flushed, stale bundle, or storage key mismatch), try to
-    // restore the last owner session from the SecureStore copy. This is the
-    // safety net that stops the senior-developer preflight from blocking a
-    // valid owner after a successful passwordless sign-in.
-    if (!session?.access_token) {
-      const restored = await restoreOwnerResilientSession();
-      if (restored.sessionPresent) {
-        const refreshed = await supabase.auth.getSession();
-        session = refreshed.data.session;
-        userEmail = session?.user?.email ?? restored.userEmail;
-      }
-    }
+    // OWNER AUTO-LOGIN BLOCK: restoreOwnerResilientSession() removed.
+    // The owner must manually sign in every time — no automatic session
+    // restore from SecureStore. If the live session is missing, the
+    // preflight will report no owner session and prompt manual sign-in.
 
     return evaluateOwnerProofGate({
       accessToken: session?.access_token ?? null,
