@@ -37,7 +37,24 @@ export async function signInWithEmailPassword(
     passwordLength: password.length,
   };
 
-  const { data, error } = await client.auth.signInWithPassword({ email, password });
+  const SIGN_IN_TIMEOUT_MS = 20000;
+
+  const signInPromise = client.auth.signInWithPassword({ email, password });
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    const timeout = setTimeout(() => {
+      const synthetic: AuthError = {
+        name: 'AuthError',
+        message: 'Sign-in timed out. The auth server did not respond. Please check your connection and try again.',
+        status: 408,
+        code: 'sign_in_timeout',
+      } as AuthError;
+      reject(synthetic);
+    }, SIGN_IN_TIMEOUT_MS);
+    // Avoid keeping the timer alive if the promise settles.
+    signInPromise.then(() => clearTimeout(timeout)).catch(() => clearTimeout(timeout));
+  });
+
+  const { data, error } = await Promise.race([signInPromise, timeoutPromise]);
 
   if (error) {
     return { ok: false, error, credentials };
