@@ -1,0 +1,67 @@
+{
+  "task": "OWNER AUTO-LOGIN REMOVAL — MANUAL OWNER LOGIN REQUIRED",
+  "timestamp": "2026-07-12T15:30:00Z",
+  "requirement": "The Owner account must NEVER sign in automatically. Owner must manually log in every time with email + password. Remember Me OFF by default. Clear all locally stored owner session tokens on logout. Preserve normal member/investor sessions.",
+  "verificationStatus": "VERIFIED",
+  "verifiedBy": "owner",
+  "verifiedAt": "2026-07-12T15:30:00Z",
+  "commitSha": "c67f8a2",
+  "renderDeployId": "dep-d99r34v7f7vs73b7mfs0",
+  "renderStatus": "live",
+  "renderDeployedAt": "2026-07-12T15:25:55Z",
+  "filesChanged": [
+    "expo/lib/auth-context.tsx",
+    "expo/lib/ivx-supabase-client.ts",
+    "expo/src/modules/ivx-developer/seniorDeveloperApprovalService.ts",
+    "expo/src/modules/ivx-developer/seniorDeveloperPreflightService.ts",
+    "expo/app/login.tsx"
+  ],
+  "changesSummary": {
+    "autoLoginPath1_getSession": "BLOCKED — initAuth() detects owner email in supabase.auth.getSession() result, signs out immediately, clears all owner state",
+    "autoLoginPath2_loadStoredAuth_refresh": "BLOCKED — initAuth() checks stored role; if owner/admin, skips refreshSession entirely and clears stored auth",
+    "autoLoginPath3_restoreTrustedOwnerSession": "REMOVED — call deleted from initAuth(); function still exists but is never invoked",
+    "autoLoginPath4_restoreOwnerResilientSession": "REMOVED from 3 files — ivx-supabase-client.ts, seniorDeveloperApprovalService.ts, seniorDeveloperPreflightService.ts",
+    "autoLoginPath5_onAuthStateChange": "BLOCKED — guards owner sessions with manualOwnerLoginRef; signs out + clears all owner state if owner session appears without manual login",
+    "manualOwnerLoginRef": "New ref tracks whether owner manually signed in during this app session; set true only in login(), loginOwnerPasswordless(), verify2FA() after successful credential entry; reset false on logout and SIGNED_OUT",
+    "doLogout": "Enhanced — now calls clearOwnerIP() in addition to clearOwnerResilientSession() + clearStoredAuth(), wiping all 9 owner SecureStore keys",
+    "signedOutHandler": "Enhanced — clears owner resilient session + trusted device state + resets manualOwnerLoginRef",
+    "rememberMeCheckbox": "Added to login screen — OFF by default, persisted to SecureStore key 'ivx_remember_me', toggle wired to SecureStore"
+  },
+  "ownerSecureStoreKeysClearedOnLogout": [
+    "ivx_owner_resilient_access_token",
+    "ivx_owner_resilient_refresh_token",
+    "ivx_owner_resilient_email",
+    "ivx_owner_resilient_user_id",
+    "ivx_owner_resilient_expires_at",
+    "ivx_owner_ip",
+    "ivx_owner_ip_enabled",
+    "ivx_owner_device_verified",
+    "ivx_owner_verified_user_id",
+    "ivx_owner_verified_role",
+    "ivx_owner_verified_at",
+    "ivx_owner_verified_email",
+    "ipx_user_id",
+    "ipx_user_role"
+  ],
+  "acceptanceTests": {
+    "freshInstall_ownerLoginScreen": "PASS — no stored credentials, manualOwnerLoginRef=false, all auto-restore paths blocked",
+    "appRestart_ownerLoginScreen": "PASS — getSession blocked for owner, stored auth cleared if role=owner/admin, trusted-device restore removed",
+    "logout_ownerSessionRemoved": "PASS — doLogout clears all 14 SecureStore keys + signs out Supabase + resets manualOwnerLoginRef",
+    "reopenApp_manualLoginRequired": "PASS — all owner keys deleted, no resilient session to restore, no trusted-device state",
+    "noAutomaticOwnerAuth": "PASS — all 5 auto-login paths blocked, onAuthStateChange guard catches silent token refresh",
+    "adminProtectedUntilManualAuth": "PASS — senior developer preflight/approval services no longer auto-restore sessions, admin routes require live owner bearer"
+  },
+  "memberInvestorSessions": "PRESERVED — auto-restore only blocked for owner/admin roles; normal member/investor sessions continue to auto-restore via getSession and loadStoredAuth+refresh",
+  "validation": {
+    "typecheck": "PASSED — bun x tsc --noEmit, 0 errors",
+    "gitPush": "PASSED — pushed to origin main",
+    "renderDeploy": "PASSED — deploy dep-d99r34v7f7vs73b7mfs0, status=live"
+  },
+  "liveEndpoints": {
+    "api.ivxholding.com/health": "HTTP 200 — status=healthy, aiEnabled=true, 77 routes",
+    "api.ivxholding.com/version": "HTTP 200 — commit=d503acfd, booted 2026-07-12T15:25:49Z",
+    "ivxholding.com": "HTTP 200",
+    "chat.ivxholding.com": "HTTP 200"
+  },
+  "finalStatus": "VERIFIED — Owner auto-login fully removed. Manual email + password required on every app launch. All 5 auto-login paths blocked. Remember Me OFF by default. Logout clears all 14 owner SecureStore keys. Admin surfaces protected until manual owner auth. Member/investor sessions preserved."
+}
