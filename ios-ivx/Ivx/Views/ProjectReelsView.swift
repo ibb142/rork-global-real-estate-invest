@@ -2,8 +2,8 @@
 //  ProjectReelsView.swift
 //  Ivx
 //
-//  Full-screen IVX Reels matching ivxholding.com (ivx-reels.js).
-//  Same feed, same filters, same engagement rail, same deal CTAs.
+//  Full-screen IVX Reels matching ivxholding.com (ivx-reels.js) end-to-end.
+//  Vertical snap feed, right action rail, bottom deal meta, gradient overlays.
 //
 
 import SwiftUI
@@ -22,10 +22,11 @@ struct ProjectReelsView: View {
             Color.black.ignoresSafeArea()
             content
             VStack(spacing: 0) {
-                header
+                topBar
                 filterStrip
                 Spacer()
             }
+            .ignoresSafeArea(edges: .top)
         }
         .background(Color.black.ignoresSafeArea())
         .task { await model.load() }
@@ -51,20 +52,37 @@ struct ProjectReelsView: View {
         } else if filteredVideos.isEmpty {
             emptyView
         } else {
-            TabView(selection: $activeIndex) {
-                ForEach(Array(filteredVideos.enumerated()), id: \.element.id) { idx, video in
-                    ReelSlide(
-                        video: video,
-                        isActive: idx == activeIndex,
-                        isMuted: isMuted,
-                        onViewDeal: { openDeal(video) },
-                        onInvestNow: { openDeal(video) }
-                    )
-                    .tag(idx)
+            GeometryReader { geo in
+                ScrollView(.vertical, showsIndicators: false) {
+                    LazyVStack(spacing: 0) {
+                        ForEach(Array(filteredVideos.enumerated()), id: \.element.id) { idx, video in
+                            ReelSlide(
+                                video: video,
+                                isActive: idx == activeIndex,
+                                isMuted: isMuted,
+                                height: geo.size.height,
+                                onToggleMute: { isMuted.toggle() },
+                                onViewDeal: { openDeal(video) },
+                                onInvestNow: { openDeal(video) },
+                                onNextActive: { activeIndex = idx }
+                            )
+                            .frame(width: geo.size.width, height: geo.size.height)
+                        }
+                    }
+                    .scrollTargetLayout()
+                }
+                .scrollTargetBehavior(.paging)
+                .scrollPosition(id: Binding(
+                    get: { activeIndex },
+                    set: { activeIndex = $0 ?? 0 }
+                ))
+                .ignoresSafeArea()
+                .onScrollTargetVisibilityChange(threshold: 0.6) { visible in
+                    if let first = visible.first {
+                        activeIndex = first
+                    }
                 }
             }
-            .tabViewStyle(.page(indexDisplayMode: .never))
-            .ignoresSafeArea()
         }
     }
 
@@ -98,34 +116,48 @@ struct ProjectReelsView: View {
         }
     }
 
-    private var header: some View {
+    private var topBar: some View {
         HStack {
-            Text("IVX Reels")
-                .font(.system(size: 22, weight: .heavy))
-                .foregroundStyle(.white)
-                .shadow(color: .black.opacity(0.7), radius: 3, x: 0, y: 1)
-
-            Spacer()
-
             Button {
                 dismiss()
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 18, weight: .bold))
                     .foregroundStyle(.white)
-                    .frame(width: 40, height: 40)
-                    .background(.black.opacity(0.5))
+                    .frame(width: 38, height: 38)
+                    .background(.white.opacity(0.14))
                     .clipShape(Circle())
             }
             .accessibilityLabel("Close")
+
+            Spacer()
+
+            Text("IVX Reels")
+                .font(.system(size: 18, weight: .heavy))
+                .foregroundStyle(.white)
+                .shadow(color: .black.opacity(0.7), radius: 3, x: 0, y: 1)
+
+            Spacer()
+
+            // Balance spacer
+            Color.clear
+                .frame(width: 38, height: 38)
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 10)
         .padding(.top, 8)
+        .background(
+            LinearGradient(
+                gradient: Gradient(colors: [.black.opacity(0.65), .clear]),
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea(edges: .top)
+        )
     }
 
     private var filterStrip: some View {
         let chips: [(ReelChannel, String, Int)] = [
-            (.all, "All", counts.all),
+            (.all, "Deals", counts.all),
             (.investment, "Investments", counts.investment),
             (.buyer, "Buyers", counts.buyer),
             (.seller, "Sellers", counts.seller),
@@ -135,8 +167,9 @@ struct ProjectReelsView: View {
                 ForEach(chips, id: \.0) { ch, label, count in
                     Button {
                         channel = ch
+                        activeIndex = 0
                     } label: {
-                        Text("\(label) \(count)")
+                        Text("\(label) \(count > 0 ? "\(count)" : "")")
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(channel == ch ? .black : .white)
                             .padding(.horizontal, 14)
@@ -193,24 +226,49 @@ private struct ReelSlide: View {
     let video: FeedVideo
     let isActive: Bool
     let isMuted: Bool
+    let height: CGFloat
+    let onToggleMute: () -> Void
     let onViewDeal: () -> Void
     let onInvestNow: () -> Void
+    let onNextActive: () -> Void
+
     @State private var engagement: ReelEngagement = .default()
     @State private var showReport = false
     @State private var showComments = false
     @State private var toast: String?
     @State private var viewerId: String = "guest-anon"
+    @State private var showHeartBurst = false
+    @State private var progress: Double = 0
 
     var body: some View {
         ZStack {
             Color.black
             mediaLayer
+            gradientOverlay
             VStack {
                 Spacer()
                 overlayContent
             }
             .padding(.bottom, 28)
+
+            if showHeartBurst {
+                Image(systemName: "heart.fill")
+                    .font(.system(size: 96))
+                    .foregroundStyle(.ivxRed)
+                    .shadow(color: .black.opacity(0.5), radius: 6, x: 0, y: 2)
+                    .position(x: UIScreen.main.bounds.width / 2, y: height / 2)
+                    .transition(.scale.combined(with: .opacity))
+            }
         }
+        .contentShape(Rectangle())
+        .simultaneousGesture(
+            TapGesture(count: 2)
+                .onEnded { _ in doubleTapLike() }
+        )
+        .simultaneousGesture(
+            TapGesture()
+                .onEnded { _ in /* single tap handled by parent? no-op here */ }
+        )
         .task {
             viewerId = await VideoPlatformViewer.id()
             engagement = ReelEngagement(
@@ -223,12 +281,30 @@ private struct ReelSlide: View {
                 following: false
             )
         }
+        .onChange(of: isActive) { oldValue, newValue in
+            if newValue {
+                onNextActive()
+                Task { await VideoEngagementService.trackEvent(type: "view", videoId: video.id, viewerId: viewerId) }
+            }
+        }
+        .alert("Report this video", isPresented: $showReport) {
+            TextField("Reason", text: .constant(""))
+            Button("Cancel", role: .cancel) {}
+            Button("Submit", role: .destructive) {
+                Task { await submitReport() }
+            }
+        } message: {
+            Text("Why are you reporting this video?")
+        }
+        .overlay(alignment: .bottom) {
+            progressBar
+        }
     }
 
     @ViewBuilder
     private var mediaLayer: some View {
         if isActive, let url = video.bestPlaybackURL {
-            LoopingVideoView(url: url, isMuted: isMuted)
+            LoopingVideoView(url: url, isMuted: isMuted, onProgress: { progress = $0 })
                 .ignoresSafeArea()
         } else if let poster = video.posterURL {
             AsyncImage(url: poster) { phase in
@@ -245,6 +321,42 @@ private struct ReelSlide: View {
         }
     }
 
+    private var gradientOverlay: some View {
+        VStack(spacing: 0) {
+            LinearGradient(
+                gradient: Gradient(colors: [.black.opacity(0.65), .clear]),
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: 140)
+
+            Spacer()
+
+            LinearGradient(
+                gradient: Gradient(colors: [.clear, .black.opacity(0.7)]),
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: 220)
+        }
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
+    }
+
+    private var progressBar: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Rectangle()
+                    .fill(.white.opacity(0.2))
+                    .frame(height: 3)
+                Rectangle()
+                    .fill(Color.ivxGold)
+                    .frame(width: geo.size.width * progress, height: 3)
+            }
+        }
+        .frame(height: 3)
+    }
+
     private var overlayContent: some View {
         HStack(alignment: .bottom, spacing: 12) {
             VStack(alignment: .leading, spacing: 8) {
@@ -253,9 +365,6 @@ private struct ReelSlide: View {
                 metricsRow
                 investmentOptions
                 ctaRow
-                Text("ivxholding.com")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.5))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -276,7 +385,7 @@ private struct ReelSlide: View {
             }
             if video.deal != nil {
                 Text("INVESTMENT")
-                    .reelBadge(background: Color.ivxGold, foreground: .black)
+                    .reelBadge(background: Color(red: 0, green: 0.77, blue: 0.55).opacity(0.85), foreground: .black)
             }
         }
     }
@@ -295,35 +404,43 @@ private struct ReelSlide: View {
                     .lineLimit(1)
                     .shadow(color: .black.opacity(0.7), radius: 4, x: 0, y: 1)
             }
+            Text("\(formatCount(video.viewCount ?? 0)) views · ivxholding.com")
+                .font(.system(size: 12.5))
+                .foregroundStyle(.white.opacity(0.7))
+                .shadow(color: .black.opacity(0.7), radius: 3, x: 0, y: 1)
         }
     }
 
     private var metricsRow: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: 10) {
             if let roi = video.deal?.expectedRoi, !roi.isEmpty {
-                metric(label: "ROI", value: "\(roi)%", tint: .ivxGreen)
+                metricBox(label: "ROI", value: "\(roi)%")
             }
             if let min = video.deal?.minInvestment, min > 0 {
-                metric(label: "MIN INVEST", value: compactCurrency(min), tint: .ivxGold)
+                metricBox(label: "MIN INVEST", value: compactCurrency(min))
             }
             if let price = video.deal?.price, price > 0, let min = video.deal?.minInvestment, min > 0 {
                 let ownership = (min / price) * 100
-                metric(label: "MIN OWNERSHIP", value: String(format: "%.4f%%", ownership), tint: .ivxGold)
+                metricBox(label: "MIN OWNERSHIP", value: String(format: "%.4f%%", ownership))
             }
         }
     }
 
-    private func metric(label: String, value: String, tint: Color) -> some View {
-        VStack(alignment: .center, spacing: 2) {
+    private func metricBox(label: String, value: String) -> some View {
+        VStack(alignment: .center, spacing: 3) {
             Text(value)
                 .font(.system(size: 18, weight: .heavy))
-                .foregroundStyle(tint)
+                .foregroundStyle(Color.ivxGold)
                 .shadow(color: .black.opacity(0.7), radius: 3, x: 0, y: 1)
             Text(label)
                 .font(.system(size: 9, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.9))
                 .shadow(color: .black.opacity(0.7), radius: 3, x: 0, y: 1)
         }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 12)
+        .background(.black.opacity(0.45))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 
     private var investmentOptions: some View {
@@ -355,7 +472,7 @@ private struct ReelSlide: View {
                         .foregroundStyle(Color.ivxGold)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
-                        .overlay(Capsule().stroke(Color.ivxGold, lineWidth: 1))
+                        .overlay(Capsule().stroke(Color.ivxGold, lineWidth: 1.5))
                 }
                 Button(action: onInvestNow) {
                     Text("Invest Now")
@@ -399,9 +516,7 @@ private struct ReelSlide: View {
             railButton(icon: "ellipsis", label: "", color: .white) {
                 showReport = true
             }
-            Button {
-                // Mute toggled by parent; this button is a no-op visual
-            } label: {
+            Button(action: onToggleMute) {
                 Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
                     .font(.system(size: 18))
                     .foregroundStyle(.white)
@@ -409,7 +524,6 @@ private struct ReelSlide: View {
                     .background(.black.opacity(0.5))
                     .clipShape(Circle())
             }
-            .disabled(true)
         }
     }
 
@@ -425,6 +539,20 @@ private struct ReelSlide: View {
                         .foregroundStyle(.white)
                 }
             }
+        }
+    }
+
+    private func doubleTapLike() {
+        withAnimation(.easeOut(duration: 0.8)) {
+            showHeartBurst = true
+        }
+        Task {
+            await VideoEngagementService.trackEvent(type: "double_tap_like", videoId: video.id, viewerId: viewerId)
+            if !engagement.liked {
+                await toggleLike()
+            }
+            try? await Task.sleep(for: .milliseconds(800))
+            await MainActor.run { showHeartBurst = false }
         }
     }
 
@@ -445,6 +573,7 @@ private struct ReelSlide: View {
                 engagement.saved = result.saved ?? !engagement.saved
                 engagement.saveCount = result.saveCount ?? engagement.saveCount + (engagement.saved ? 1 : -1)
             }
+            showToast(engagement.saved ? "Saved" : "Removed from saved")
         } catch {}
     }
 
@@ -454,6 +583,7 @@ private struct ReelSlide: View {
             await MainActor.run {
                 engagement.following = result.following ?? !engagement.following
             }
+            showToast(engagement.following ? "Following creator" : "Unfollowed")
         } catch {}
     }
 
@@ -471,6 +601,23 @@ private struct ReelSlide: View {
         }
     }
 
+    private func submitReport() async {
+        do {
+            try await VideoEngagementService.report(videoId: video.id, reason: "Inappropriate content", viewerId: viewerId)
+            showToast("Report submitted to moderation")
+        } catch {
+            showToast("Report failed")
+        }
+    }
+
+    private func showToast(_ message: String) {
+        toast = message
+        Task {
+            try? await Task.sleep(for: .milliseconds(2200))
+            await MainActor.run { toast = nil }
+        }
+    }
+
     private func formatCount(_ n: Int) -> String {
         if n >= 1_000_000 { return String(format: "%.1fM", Double(n) / 1_000_000) }
         if n >= 1_000 { return String(format: "%.1fK", Double(n) / 1_000) }
@@ -478,12 +625,8 @@ private struct ReelSlide: View {
     }
 
     private func compactCurrency(_ value: Double) -> String {
-        if value >= 1_000_000 {
-            return String(format: "$%.1fM", value / 1_000_000)
-        }
-        if value >= 1_000 {
-            return String(format: "$%.1fK", value / 1_000)
-        }
+        if value >= 1_000_000 { return String(format: "$%.1fM", value / 1_000_000) }
+        if value >= 1_000 { return String(format: "$%.1fK", value / 1_000) }
         return String(format: "$%.0f", value)
     }
 }
@@ -515,8 +658,17 @@ private extension View {
     }
 }
 
-private extension InvestmentOption {
-    static func for(_ dealType: String?) -> [InvestmentOption] {
+private struct InvestmentOption: Identifiable {
+    let id: String
+    let label: String
+    let icon: String
+    let tint: ColorToken
+
+    static let tokenized = InvestmentOption(id: "tokenized", label: "Tokenized", icon: "hexagon.fill", tint: .gold)
+    static let jvDeals = InvestmentOption(id: "jvDeals", label: "JV Deal", icon: "person.2.fill", tint: .blue)
+    static let buyers = InvestmentOption(id: "buyers", label: "Buyer", icon: "house.fill", tint: .green)
+
+    static func `for`(_ dealType: String?) -> [InvestmentOption] {
         switch (dealType ?? "").lowercased() {
         case "jv", "equity_split", "hybrid":
             return [.tokenized, .jvDeals, .buyers]
@@ -526,6 +678,18 @@ private extension InvestmentOption {
             return [.tokenized, .buyers, .jvDeals]
         default:
             return [.tokenized, .jvDeals, .buyers]
+        }
+    }
+}
+
+private enum ColorToken {
+    case gold, blue, green
+
+    var color: Color {
+        switch self {
+        case .gold: return Color.ivxGold
+        case .blue: return Color(red: 0.27, green: 0.56, blue: 0.85)
+        case .green: return Color(red: 0, green: 0.77, blue: 0.55)
         }
     }
 }

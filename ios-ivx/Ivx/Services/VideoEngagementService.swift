@@ -180,4 +180,19 @@ struct VideoEngagementService {
         )
         return try JSONDecoder().decode(CommentPostResponse.self, from: data)
     }
+
+    static func trackEvent(type: String, videoId: String, viewerId: String) async throws {
+        _ = try await postJson(
+            "/api/ivx/video-platform/events",
+            body: [
+                "events": [
+                    [
+                        "type": type,
+                        "video_id": videoId,
+                        "viewer_id": viewerId
+                    ]
+                ]
+            ]
+        )
+    }
 }

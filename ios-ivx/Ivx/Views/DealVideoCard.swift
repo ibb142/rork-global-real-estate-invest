@@ -27,9 +27,10 @@ final class PlayerContainerView: UIView {
 struct LoopingVideoView: UIViewRepresentable {
     let url: URL
     let isMuted: Bool
+    var onProgress: ((Double) -> Void)? = nil
 
     func makeCoordinator() -> Coordinator {
-        Coordinator()
+        Coordinator(onProgress: onProgress)
     }
 
     func makeUIView(context: Context) -> PlayerContainerView {
@@ -52,6 +53,12 @@ struct LoopingVideoView: UIViewRepresentable {
     final class Coordinator {
         var player: AVQueuePlayer?
         private var looper: AVPlayerLooper?
+        private var observer: Any?
+        private var onProgress: ((Double) -> Void)?
+
+        init(onProgress: ((Double) -> Void)?) {
+            self.onProgress = onProgress
+        }
 
         func configure(url: URL, layer: AVPlayerLayer) {
             let item = AVPlayerItem(url: url)
@@ -61,9 +68,20 @@ struct LoopingVideoView: UIViewRepresentable {
             layer.player = queuePlayer
             queuePlayer.play()
             player = queuePlayer
+
+            if onProgress != nil {
+                let interval = CMTime(seconds: 0.1, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
+                observer = queuePlayer.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
+                    guard let self, let player = self.player, let duration = player.currentItem?.duration, duration.isNumeric, duration.seconds > 0 else { return }
+                    self.onProgress?(time.seconds / duration.seconds)
+                }
+            }
         }
 
         func teardown() {
+            if let observer {
+                player?.removeTimeObserver(observer)
+            }
             player?.pause()
             looper = nil
             player = nil

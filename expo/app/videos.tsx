@@ -1,11 +1,14 @@
 /**
- * IVX Reels — full-screen vertical video feed matching ivxholding.com.
+ * IVX Reels — full-screen vertical video feed matching ivxholding.com exactly.
  *
  * Same backend the landing page uses:
  *   feed      → GET /api/ivx/video-platform/feed
- *   download  → GET /api/ivx/videos/:id/download
- *   engagement → /api/projects/:id/like, /api/projects/:id/save, /share
- *   platform  → /api/ivx/video-platform/follow, /report, /events
+ *   like      → POST /api/projects/:id/like
+ *   save      → POST /api/projects/:id/save
+ *   share     → POST /api/projects/:id/share
+ *   follow    → POST /api/ivx/video-platform/follow
+ *   report    → POST /api/ivx/video-platform/videos/:id/report
+ *   comments  → GET/POST /api/projects/:id/comments
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -28,14 +31,11 @@ import {
   Heart,
   MessageCircle,
   Share2,
-  Download,
   Volume2,
   VolumeX,
   Play,
-  RefreshCw,
   Bookmark,
   MoreHorizontal,
-  Plus,
   Hexagon,
   Users,
   Home,
@@ -43,7 +43,7 @@ import {
 import * as Haptics from 'expo-haptics';
 import { useQuery } from '@tanstack/react-query';
 
-import { fetchVideoFeed, fetchProjectReels, downloadFeedVideo, type FeedVideo } from '@/lib/video-feed';
+import { fetchVideoFeed, fetchProjectReels, type FeedVideo } from '@/lib/video-feed';
 import {
   toggleProjectLike,
   trackProjectShare,
@@ -53,8 +53,6 @@ import {
   type ProjectComment,
 } from '@/lib/project-engagement';
 import {
-  CHANNELS,
-  type VideoChannel,
   toggleVideoSave,
   toggleVideoFollow,
   reportVideo,
@@ -67,6 +65,7 @@ import ProjectShareSheet from '@/components/ProjectShareSheet';
 import { supabase } from '@/lib/supabase';
 
 const GOLD = '#E6C200';
+const LIKE_RED = '#FF3B5C';
 
 interface EngagementState {
   likeCount: number;
@@ -98,9 +97,9 @@ function compactCurrency(value: number): string {
 
 function useInvestmentOptions(dealType: string | null | undefined) {
   const t = (dealType ?? '').toLowerCase();
-  const tokenized = { id: 'tokenized', label: 'Tokenized', icon: <Hexagon size={18} color={GOLD} />, tint: GOLD };
-  const jvDeals = { id: 'jvDeals', label: 'JV Deal', icon: <Users size={18} color='#4A90D9' />, tint: '#4A90D9' };
-  const buyers = { id: 'buyers', label: 'Buyer', icon: <Home size={18} color='#00C48C' />, tint: '#00C48C' };
+  const tokenized = { id: 'tokenized', label: 'Tokenized', icon: <Hexagon size={16} color={GOLD} />, tint: GOLD };
+  const jvDeals = { id: 'jvDeals', label: 'JV Deal', icon: <Users size={16} color='#4A90D9' />, tint: '#4A90D9' };
+  const buyers = { id: 'buyers', label: 'Buyer', icon: <Home size={16} color='#00C48C' />, tint: '#00C48C' };
   switch (t) {
     case 'jv':
     case 'equity_split':
@@ -117,19 +116,26 @@ function useInvestmentOptions(dealType: string | null | undefined) {
   }
 }
 
+type ReelChannel = 'all' | 'investment' | 'buyer' | 'seller';
+
+const CHANNELS: { id: ReelChannel; label: string }[] = [
+  { id: 'all', label: 'Deals' },
+  { id: 'investment', label: 'Investments' },
+  { id: 'buyer', label: 'Buyers' },
+  { id: 'seller', label: 'Sellers' },
+];
+
 interface FeedItemProps {
   video: FeedVideo;
   isActive: boolean;
   height: number;
   muted: boolean;
   engagement: EngagementState;
-  downloading: boolean;
   onToggleMute: () => void;
   onLike: (video: FeedVideo) => void;
   onDoubleTapLike: (video: FeedVideo) => void;
   onComment: (video: FeedVideo) => void;
   onShare: (video: FeedVideo) => void;
-  onDownload: (video: FeedVideo) => void;
   onSave: (video: FeedVideo) => void;
   onFollow: (video: FeedVideo) => void;
   onReport: (video: FeedVideo) => void;
@@ -143,13 +149,11 @@ const FeedItem = React.memo(function FeedItem({
   height,
   muted,
   engagement,
-  downloading,
   onToggleMute,
   onLike,
   onDoubleTapLike,
   onComment,
   onShare,
-  onDownload,
   onSave,
   onFollow,
   onReport,
@@ -183,10 +187,15 @@ const FeedItem = React.memo(function FeedItem({
     }
   };
 
+  const badges: string[] = [];
+  if (video.is_featured) badges.push('FEATURED');
+  if (video.video_type === 'reel') badges.push('PROJECT REEL');
+  if (deal) badges.push('INVESTMENT');
+
   return (
     <View style={[styles.item, { height }]}>
       <TouchableOpacity
-        style={styles.videoTouch}
+        style={StyleSheet.absoluteFill}
         activeOpacity={1}
         onPress={handleTap}
         testID={`video-item-${video.id}`}
@@ -227,12 +236,11 @@ const FeedItem = React.memo(function FeedItem({
 
       {showHeart && (
         <View pointerEvents="none" style={styles.burstHeart}>
-          <Heart size={96} color="#FF3B5C" fill="#FF3B5C" />
+          <Heart size={96} color={LIKE_RED} fill={LIKE_RED} />
         </View>
       )}
 
-      {/* Top filter strip placeholder — rendered at screen level */}
-      {/* Right action rail — Instagram style */}
+      {/* Right action rail */}
       <View style={[styles.rail, { bottom: insets.bottom + 96 }]}>
         <TouchableOpacity
           style={styles.railBtn}
@@ -241,8 +249,8 @@ const FeedItem = React.memo(function FeedItem({
         >
           <Heart
             size={30}
-            color={engagement.liked ? '#FF3B5C' : '#fff'}
-            fill={engagement.liked ? '#FF3B5C' : 'transparent'}
+            color={engagement.liked ? LIKE_RED : '#fff'}
+            fill={engagement.liked ? LIKE_RED : 'transparent'}
           />
           <Text style={styles.railCount}>{formatCount(engagement.likeCount)}</Text>
         </TouchableOpacity>
@@ -304,9 +312,19 @@ const FeedItem = React.memo(function FeedItem({
       {/* Bottom info */}
       <View pointerEvents="none" style={[styles.info, { bottom: insets.bottom + 32 }]}>
         <View style={styles.badgeRow}>
-          {video.is_pinned && <Text style={styles.badge}>FEATURED</Text>}
-          {video.video_type === 'reel' && <Text style={[styles.badge, styles.badgeReel]}>PROJECT REEL</Text>}
-          {deal && <Text style={[styles.badge, styles.badgeInvestment]}>INVESTMENT</Text>}
+          {badges.map((b) => (
+            <Text
+              key={b}
+              style={[
+                styles.badge,
+                b === 'FEATURED' && styles.badgeGold,
+                b === 'PROJECT REEL' && styles.badgeReel,
+                b === 'INVESTMENT' && styles.badgeInvestment,
+              ]}
+            >
+              {b}
+            </Text>
+          ))}
         </View>
         <Text style={styles.infoTitle} numberOfLines={2}>
           {video.title || 'IVX Holdings'}
@@ -337,7 +355,6 @@ const FeedItem = React.memo(function FeedItem({
           ) : null}
         </View>
 
-        {/* Investment options */}
         <View style={styles.optionsRow} pointerEvents="box-none">
           {investmentOptions.map((option) => (
             <View key={option.id} style={styles.optionIcon}>
@@ -350,7 +367,7 @@ const FeedItem = React.memo(function FeedItem({
         </View>
       </View>
 
-      {/* CTA buttons (must be tappable, not pointer-events-none) */}
+      {/* CTA buttons */}
       <View style={[styles.ctaRow, { bottom: insets.bottom + 32 }]}>
         {deal?.url ? (
           <TouchableOpacity
@@ -385,15 +402,13 @@ export default function VideosScreen() {
   const isReelsMode = params.type === 'reel';
 
   const [activeIndex, setActiveIndex] = useState<number>(0);
-  const [muted, setMuted] = useState<boolean>(false);
+  const [muted, setMuted] = useState<boolean>(true);
   const [userId, setUserId] = useState<string | null>(null);
   const [viewerId, setViewerId] = useState<string | null>(null);
   const [engagements, setEngagements] = useState<Record<string, EngagementState>>({});
-  const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
-  const [channel, setChannel] = useState<'all' | 'investment' | 'buyer' | 'seller'>(isReelsMode ? 'investment' : 'all');
+  const [channel, setChannel] = useState<ReelChannel>(isReelsMode ? 'investment' : 'all');
 
-  // Sheets
   const [commentsVideo, setCommentsVideo] = useState<FeedVideo | null>(null);
   const [comments, setComments] = useState<ProjectComment[]>([]);
   const [commentsTotal, setCommentsTotal] = useState<number>(0);
@@ -406,15 +421,47 @@ export default function VideosScreen() {
     staleTime: 60_000,
   });
 
-  const videos: FeedVideo[] = useMemo(() => feedQuery.data ?? [], [feedQuery.data]);
+  const allVideos: FeedVideo[] = useMemo(() => feedQuery.data ?? [], [feedQuery.data]);
+
+  const filteredVideos = useMemo(() => {
+    if (channel === 'all') return allVideos;
+    if (channel === 'investment') return allVideos.filter(v => v.deal && v.video_type !== 'reel');
+    if (channel === 'buyer') {
+      return allVideos.filter(
+        v =>
+          (v.deal?.deal_type ?? '').toLowerCase().includes('buy') ||
+          v.title?.toLowerCase().includes('buy') ||
+          v.title?.toLowerCase().includes('buyer')
+      );
+    }
+    if (channel === 'seller') {
+      return allVideos.filter(
+        v =>
+          (v.deal?.deal_type ?? '').toLowerCase().includes('sell') ||
+          v.title?.toLowerCase().includes('sell') ||
+          v.title?.toLowerCase().includes('seller')
+      );
+    }
+    return allVideos;
+  }, [allVideos, channel]);
 
   const counts = useMemo(() => {
-    const all = videos.length;
-    const investment = videos.filter(v => v.deal && v.video_type !== 'reel').length;
-    const buyer = videos.filter(v => (v.deal?.deal_type ?? '').toLowerCase().includes('buy') || v.title?.toLowerCase().includes('buy')).length;
-    const seller = videos.filter(v => (v.deal?.deal_type ?? '').toLowerCase().includes('sell') || v.title?.toLowerCase().includes('sell')).length;
+    const all = allVideos.length;
+    const investment = allVideos.filter(v => v.deal && v.video_type !== 'reel').length;
+    const buyer = allVideos.filter(
+      v =>
+        (v.deal?.deal_type ?? '').toLowerCase().includes('buy') ||
+        v.title?.toLowerCase().includes('buy') ||
+        v.title?.toLowerCase().includes('buyer')
+    ).length;
+    const seller = allVideos.filter(
+      v =>
+        (v.deal?.deal_type ?? '').toLowerCase().includes('sell') ||
+        v.title?.toLowerCase().includes('sell') ||
+        v.title?.toLowerCase().includes('seller')
+    ).length;
     return { all, investment, buyer, seller };
-  }, [videos]);
+  }, [allVideos]);
 
   useEffect(() => {
     let cancelled = false;
@@ -427,17 +474,16 @@ export default function VideosScreen() {
     return () => { cancelled = true; };
   }, []);
 
-  // Seed engagement counts from feed + track active video view
   useEffect(() => {
-    if (videos.length === 0) return;
+    if (allVideos.length === 0) return;
     setEngagements(prev => {
       const next = { ...prev };
-      for (const v of videos) {
+      for (const v of allVideos) {
         if (!next[v.id]) {
           next[v.id] = {
-            likeCount: v.like_count,
-            commentCount: v.comment_count,
-            shareCount: v.share_count,
+            likeCount: v.like_count ?? 0,
+            commentCount: v.comment_count ?? 0,
+            shareCount: v.share_count ?? 0,
             saveCount: v.save_count ?? 0,
             liked: false,
             saved: false,
@@ -447,13 +493,13 @@ export default function VideosScreen() {
       }
       return next;
     });
-  }, [videos]);
+  }, [allVideos]);
 
   useEffect(() => {
-    const activeVideo = videos[activeIndex];
+    const activeVideo = filteredVideos[activeIndex];
     if (!activeVideo) return;
     void trackVideoEvent('view', activeVideo.id);
-  }, [activeIndex, videos]);
+  }, [activeIndex, filteredVideos]);
 
   const showToast = useCallback((message: string) => {
     setToast(message);
@@ -470,7 +516,7 @@ export default function VideosScreen() {
   const handleLike = useCallback(async (video: FeedVideo) => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setEngagements(prev => {
-      const cur = prev[video.id] ?? { likeCount: video.like_count, commentCount: video.comment_count, shareCount: video.share_count, saveCount: video.save_count ?? 0, liked: false, saved: false, following: false };
+      const cur = prev[video.id] ?? { likeCount: video.like_count ?? 0, commentCount: video.comment_count ?? 0, shareCount: video.share_count ?? 0, saveCount: video.save_count ?? 0, liked: false, saved: false, following: false };
       return {
         ...prev,
         [video.id]: { ...cur, liked: !cur.liked, likeCount: cur.likeCount + (cur.liked ? -1 : 1) },
@@ -545,25 +591,10 @@ export default function VideosScreen() {
     } catch {}
   }, [userId]);
 
-  const handleDownload = useCallback(async (video: FeedVideo) => {
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setDownloadingId(video.id);
-    try {
-      const result = await downloadFeedVideo(video.id, video.title);
-      if (result.success) {
-        showToast(Platform.OS === 'web' ? 'Download started' : 'Video ready — choose where to save');
-      } else {
-        showToast(result.error || 'Download failed');
-      }
-    } finally {
-      setDownloadingId(null);
-    }
-  }, [showToast]);
-
   const handleSave = useCallback(async (video: FeedVideo) => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setEngagements(prev => {
-      const cur = prev[video.id] ?? { likeCount: video.like_count, commentCount: video.comment_count, shareCount: video.share_count, saveCount: video.save_count ?? 0, liked: false, saved: false, following: false };
+      const cur = prev[video.id] ?? { likeCount: video.like_count ?? 0, commentCount: video.comment_count ?? 0, shareCount: video.share_count ?? 0, saveCount: video.save_count ?? 0, liked: false, saved: false, following: false };
       return { ...prev, [video.id]: { ...cur, saved: !cur.saved, saveCount: cur.saveCount + (cur.saved ? -1 : 1) } };
     });
     try {
@@ -578,172 +609,163 @@ export default function VideosScreen() {
 
   const handleFollow = useCallback(async (video: FeedVideo) => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const creatorId = video.creator_id ?? 'ivx-owner';
+    setEngagements(prev => {
+      const cur = prev[video.id] ?? { likeCount: video.like_count ?? 0, commentCount: video.comment_count ?? 0, shareCount: video.share_count ?? 0, saveCount: video.save_count ?? 0, liked: false, saved: false, following: false };
+      return { ...prev, [video.id]: { ...cur, following: !cur.following } };
+    });
     try {
-      const result = await toggleVideoFollow(video.creator_id ?? 'ivx-owner', viewerId);
-      setEngagements(prev => {
-        const cur = prev[video.id] ?? { likeCount: video.like_count, commentCount: video.comment_count, shareCount: video.share_count, saveCount: video.save_count ?? 0, liked: false, saved: false, following: false };
-        return { ...prev, [video.id]: { ...cur, following: result.following } };
-      });
+      const result = await toggleVideoFollow(creatorId, viewerId);
+      setEngagements(prev => ({
+        ...prev,
+        [video.id]: { ...(prev[video.id] as EngagementState), following: result.following },
+      }));
       showToast(result.following ? 'Following creator' : 'Unfollowed');
     } catch {}
   }, [viewerId, showToast]);
 
   const handleReport = useCallback((video: FeedVideo) => {
+    if (Platform.OS === 'web') {
+      const reason = window.prompt('Report this video — reason:');
+      if (!reason) return;
+      void reportVideo(video.id, reason, viewerId).then(() => showToast('Report submitted to moderation')).catch(() => showToast('Report failed'));
+      return;
+    }
     Alert.prompt('Report this video', 'Reason:', async (reason) => {
       if (!reason) return;
-      const result = await reportVideo(video.id, reason, viewerId);
-      showToast(result.ok ? 'Report submitted to moderation' : 'Report failed');
+      try {
+        await reportVideo(video.id, reason, viewerId);
+        showToast('Report submitted to moderation');
+      } catch {
+        showToast('Report failed');
+      }
     });
   }, [viewerId, showToast]);
 
   const handleViewDeal = useCallback((video: FeedVideo) => {
-    const dealId = video.deal?.id;
-    if (dealId) {
-      router.push({ pathname: '/jv-invest', params: { jvId: dealId } } as any);
+    if (video.deal?.url) {
+      router.push(video.deal.url as any);
+    } else if (video.deal?.id) {
+      router.push({ pathname: '/jv-invest', params: { jvId: video.deal.id } } as any);
     }
   }, [router]);
 
   const handleInvestNow = useCallback((video: FeedVideo) => {
-    const dealId = video.deal?.id;
-    if (dealId) {
-      router.push({ pathname: '/jv-invest', params: { jvId: dealId } } as any);
+    if (video.deal?.id) {
+      router.push({ pathname: '/jv-invest', params: { jvId: video.deal.id } } as any);
     }
   }, [router]);
 
-  const filteredVideos = useMemo(() => {
-    if (channel === 'all') return videos;
-    if (channel === 'investment') return videos.filter(v => v.deal && v.video_type !== 'reel');
-    if (channel === 'buyer') return videos.filter(v => (v.deal?.deal_type ?? '').toLowerCase().includes('buy') || v.title?.toLowerCase().includes('buy'));
-    if (channel === 'seller') return videos.filter(v => (v.deal?.deal_type ?? '').toLowerCase().includes('sell') || v.title?.toLowerCase().includes('sell'));
-    return videos;
-  }, [videos, channel]);
+  const renderItem = useCallback(
+    ({ item, index }: { item: FeedVideo; index: number }) => (
+      <FeedItem
+        video={item}
+        isActive={index === activeIndex}
+        height={windowHeight}
+        muted={muted}
+        engagement={engagements[item.id] ?? {
+          likeCount: item.like_count ?? 0,
+          commentCount: item.comment_count ?? 0,
+          shareCount: item.share_count ?? 0,
+          saveCount: item.save_count ?? 0,
+          liked: false,
+          saved: false,
+          following: false,
+        }}
+        onToggleMute={() => setMuted(m => !m)}
+        onLike={handleLike}
+        onDoubleTapLike={handleDoubleTapLike}
+        onComment={handleComment}
+        onShare={handleShare}
+        onSave={handleSave}
+        onFollow={handleFollow}
+        onReport={handleReport}
+        onViewDeal={handleViewDeal}
+        onInvestNow={handleInvestNow}
+      />
+    ),
+    [activeIndex, windowHeight, muted, engagements, handleLike, handleDoubleTapLike, handleComment, handleShare, handleSave, handleFollow, handleReport, handleViewDeal, handleInvestNow]
+  );
 
-  const renderItem = useCallback(({ item, index }: { item: FeedVideo; index: number }) => (
-    <FeedItem
-      video={item}
-      isActive={index === activeIndex}
-      height={windowHeight}
-      muted={muted}
-      engagement={engagements[item.id] ?? { likeCount: item.like_count, commentCount: item.comment_count, shareCount: item.share_count, saveCount: item.save_count ?? 0, liked: false, saved: false, following: false }}
-      downloading={downloadingId === item.id}
-      onToggleMute={() => setMuted(prev => !prev)}
-      onLike={handleLike}
-      onDoubleTapLike={handleDoubleTapLike}
-      onComment={handleComment}
-      onShare={handleShare}
-      onDownload={handleDownload}
-      onSave={handleSave}
-      onFollow={handleFollow}
-      onReport={handleReport}
-      onViewDeal={handleViewDeal}
-      onInvestNow={handleInvestNow}
-    />
-  ), [activeIndex, windowHeight, muted, engagements, downloadingId, handleLike, handleDoubleTapLike, handleComment, handleShare, handleDownload, handleSave, handleFollow, handleReport, handleViewDeal, handleInvestNow]);
+  const itemHeight = windowHeight;
 
   return (
     <View style={styles.container}>
       <Stack.Screen options={{ headerShown: false }} />
 
-      {feedQuery.isLoading ? (
-        <View style={styles.centerFill}>
-          <ActivityIndicator size="large" color={GOLD} />
-          <Text style={styles.centerText}>Loading videos…</Text>
-        </View>
-      ) : feedQuery.isError ? (
-        <View style={styles.centerFill}>
-          <Text style={styles.centerText}>Could not load the {isReelsMode ? 'project reels' : 'video feed'}.</Text>
-          <TouchableOpacity style={styles.retryBtn} onPress={() => feedQuery.refetch()} testID="videos-retry">
-            <RefreshCw size={16} color="#000" />
-            <Text style={styles.retryBtnText}>Retry</Text>
+      {/* Top bar */}
+      <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
+        <View style={styles.topRow}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.closeBtn} testID="reels-close">
+            <X size={22} color="#fff" />
           </TouchableOpacity>
+          <View style={styles.tabs}>
+            {CHANNELS.map((ch) => (
+              <TouchableOpacity
+                key={ch.id}
+                style={[styles.tab, channel === ch.id && styles.tabActive]}
+                onPress={() => setChannel(ch.id)}
+                testID={`reels-channel-${ch.id}`}
+              >
+                <Text style={[styles.tabText, channel === ch.id && styles.tabTextActive]}>
+                  {ch.label} {counts[ch.id] > 0 ? counts[ch.id] : ''}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
-      ) : videos.length === 0 ? (
-        <View style={styles.centerFill}>
-          <Text style={styles.centerTitle}>No reels yet</Text>
-          <Text style={styles.centerText}>New construction & progress reels will appear here.</Text>
+      </View>
+
+      {feedQuery.isLoading ? (
+        <View style={styles.loading}>
+          <ActivityIndicator size="large" color={GOLD} />
         </View>
       ) : (
         <FlatList
           data={filteredVideos}
-          keyExtractor={(v: FeedVideo) => v.id}
+          keyExtractor={(v) => v.id}
           renderItem={renderItem}
           pagingEnabled
-          showsVerticalScrollIndicator={false}
-          snapToInterval={windowHeight}
-          snapToAlignment="start"
           decelerationRate="fast"
-          getItemLayout={(_, index) => ({ length: windowHeight, offset: windowHeight * index, index })}
+          snapToInterval={itemHeight}
+          snapToAlignment="start"
+          showsVerticalScrollIndicator={false}
           onViewableItemsChanged={onViewableItemsChanged}
           viewabilityConfig={viewabilityConfig}
-          windowSize={5}
-          maxToRenderPerBatch={3}
           initialNumToRender={2}
-          removeClippedSubviews={Platform.OS !== 'web'}
+          maxToRenderPerBatch={3}
+          windowSize={3}
+          removeClippedSubviews
+          getItemLayout={(_data, index) => ({ length: itemHeight, offset: itemHeight * index, index })}
+          contentContainerStyle={{ paddingTop: 0 }}
         />
       )}
 
-      {/* Header: IVX Reels title + close X (matches landing page) */}
-      <View style={[styles.headerRow, { top: insets.top + 8 }]}>
-        <Text style={styles.headerTitle}>{isReelsMode ? 'Project Reels' : 'IVX Reels'}</Text>
-        <TouchableOpacity
-          style={styles.closeBtn}
-          onPress={() => (router.canGoBack() ? router.back() : router.replace('/landing' as never))}
-          testID="videos-close"
-        >
-          <X size={22} color="#fff" />
-        </TouchableOpacity>
-      </View>
-
-      {/* Channel filter chips (matches landing page: All / Investments / Buyers / Sellers) */}
-      {!isReelsMode && (
-        <View style={[styles.filterStrip, { top: insets.top + 56 }]}>
-          {[
-            { id: 'all', label: 'All', count: counts.all },
-            { id: 'investment', label: 'Investments', count: counts.investment },
-            { id: 'buyer', label: 'Buyers', count: counts.buyer },
-            { id: 'seller', label: 'Sellers', count: counts.seller },
-          ].map((ch) => {
-            const active = channel === ch.id;
-            return (
-              <TouchableOpacity
-                key={ch.id}
-                style={[styles.filterChip, active && styles.filterChipActive]}
-                onPress={() => setChannel(ch.id as typeof channel)}
-              >
-                <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>
-                  {ch.label} {ch.count}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      )}
-
       {toast && (
-        <View pointerEvents="none" style={[styles.toast, { bottom: insets.bottom + 24 }]}>
+        <View style={styles.toast} pointerEvents="none">
           <Text style={styles.toastText}>{toast}</Text>
         </View>
       )}
 
       {commentsVideo && (
         <ProjectCommentsSheet
+          visible={commentsVideo !== null}
           projectId={commentsVideo.id}
-          visible={!!commentsVideo}
-          onClose={() => setCommentsVideo(null)}
           comments={comments}
+          totalComments={commentsTotal}
           isLoading={commentsLoading}
+          onClose={() => setCommentsVideo(null)}
           onAddComment={handleAddComment}
           onDeleteComment={handleDeleteComment}
-          totalComments={commentsTotal}
         />
       )}
 
       {shareVideo && (
         <ProjectShareSheet
+          visible={shareVideo !== null}
           projectId={shareVideo.id}
-          projectTitle={shareVideo.title || 'IVX Holdings video'}
+          projectTitle={shareVideo.title ?? 'IVX Property'}
           projectUrl={buildVideoShareUrl(shareVideo.id)}
-          visible={!!shareVideo}
           onClose={() => setShareVideo(null)}
           onShareTrack={handleShareTrack}
         />
@@ -757,30 +779,60 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#000',
   },
+  topBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 30,
+    paddingHorizontal: 10,
+    paddingBottom: 10,
+  },
+  topRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  closeBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(255,255,255,0.14)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tabs: {
+    flex: 1,
+    flexDirection: 'row',
+    gap: 6,
+  },
+  tab: {
+    flexShrink: 0,
+    backgroundColor: 'rgba(255,255,255,0.14)',
+    borderRadius: 999,
+    paddingVertical: 7,
+    paddingHorizontal: 14,
+  },
+  tabActive: {
+    backgroundColor: '#fff',
+  },
+  tabText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  tabTextActive: {
+    color: '#000',
+  },
+  loading: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   item: {
     width: '100%',
     backgroundColor: '#000',
-  },
-  videoTouch: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  centerPlay: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  centerPlayCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: GOLD,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    elevation: 8,
+    overflow: 'hidden',
   },
   progressBar: {
     position: 'absolute',
@@ -795,31 +847,49 @@ const styles = StyleSheet.create({
     height: '100%',
     backgroundColor: GOLD,
   },
+  centerPlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 25,
+  },
+  centerPlayCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: 'rgba(255,255,255,0.85)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   burstHeart: {
     position: 'absolute',
     top: '50%',
     left: '50%',
     marginLeft: -48,
     marginTop: -48,
-    zIndex: 25,
+    zIndex: 26,
   },
   rail: {
     position: 'absolute',
-    right: 10,
+    right: 8,
+    zIndex: 20,
+    flexDirection: 'column',
     alignItems: 'center',
     gap: 16,
   },
   railBtn: {
     alignItems: 'center',
     justifyContent: 'center',
-    minWidth: 44,
-    minHeight: 44,
   },
   railCount: {
     color: '#fff',
-    fontSize: 12,
-    fontWeight: '700' as const,
-    marginTop: 3,
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 4,
     textShadowColor: 'rgba(0,0,0,0.6)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
@@ -828,11 +898,11 @@ const styles = StyleSheet.create({
     backgroundColor: GOLD,
     color: '#000',
     borderRadius: 999,
-    paddingHorizontal: 12,
     paddingVertical: 6,
+    paddingHorizontal: 12,
     fontSize: 11,
-    fontWeight: '700' as const,
-    overflow: 'hidden' as const,
+    fontWeight: '700',
+    overflow: 'hidden',
   },
   followBtnActive: {
     backgroundColor: 'rgba(255,255,255,0.2)',
@@ -840,236 +910,156 @@ const styles = StyleSheet.create({
   },
   info: {
     position: 'absolute',
-    left: 16,
-    right: 90,
+    left: 14,
+    right: 84,
+    zIndex: 20,
   },
   badgeRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 6,
-    marginBottom: 8,
+    gap: 5,
+    marginBottom: 6,
   },
   badge: {
     backgroundColor: 'rgba(218,165,32,0.9)',
-    color: '#000',
     borderRadius: 5,
-    paddingHorizontal: 7,
     paddingVertical: 2,
+    paddingHorizontal: 7,
+    color: '#000',
     fontSize: 10,
-    fontWeight: '700' as const,
+    fontWeight: '700',
     textTransform: 'uppercase' as const,
     letterSpacing: 0.4,
+  },
+  badgeGold: {
+    backgroundColor: GOLD,
   },
   badgeReel: {
     backgroundColor: 'rgba(255,255,255,0.22)',
     color: '#fff',
   },
   badgeInvestment: {
-    backgroundColor: GOLD,
+    backgroundColor: 'rgba(0,196,140,0.85)',
     color: '#000',
   },
   infoTitle: {
     color: '#fff',
-    fontSize: 18,
-    fontWeight: '800' as const,
+    fontSize: 16,
+    fontWeight: '700',
+    lineHeight: 21,
     textShadowColor: 'rgba(0,0,0,0.7)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 4,
   },
   infoSubtitle: {
     color: '#fff',
-    fontSize: 14,
+    fontSize: 12.5,
     opacity: 0.9,
-    marginTop: 2,
+    marginTop: 3,
     textShadowColor: 'rgba(0,0,0,0.7)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 4,
   },
   metricRow: {
     flexDirection: 'row',
-    gap: 16,
-    marginTop: 10,
+    gap: 10,
+    marginTop: 8,
+    flexWrap: 'wrap',
   },
   metric: {
-    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    minWidth: 80,
   },
   metricValue: {
     color: GOLD,
     fontSize: 18,
-    fontWeight: '800' as const,
-    textShadowColor: 'rgba(0,0,0,0.7)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
+    fontWeight: '800',
   },
   metricLabel: {
-    color: '#fff',
-    fontSize: 9,
-    fontWeight: '600' as const,
-    opacity: 0.9,
+    color: '#999',
+    fontSize: 10.5,
+    fontWeight: '500',
+    marginTop: 5,
     textTransform: 'uppercase' as const,
-    letterSpacing: 0.4,
-    textShadowColor: 'rgba(0,0,0,0.7)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
   },
   optionsRow: {
     flexDirection: 'row',
-    gap: 16,
-    marginTop: 12,
+    gap: 14,
+    marginTop: 10,
   },
   optionIcon: {
     alignItems: 'center',
-    gap: 4,
   },
   optionIconCircle: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: 'rgba(0,0,0,0.55)',
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
+    backgroundColor: 'rgba(0,0,0,0.35)',
   },
   optionIconLabel: {
     color: '#fff',
     fontSize: 10,
-    fontWeight: '600' as const,
+    fontWeight: '600',
+    marginTop: 4,
     textShadowColor: 'rgba(0,0,0,0.7)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
   },
   ctaRow: {
     position: 'absolute',
-    left: 16,
-    right: 90,
+    left: 14,
+    right: 14,
+    zIndex: 22,
     flexDirection: 'row',
     gap: 10,
   },
   viewDealBtn: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'transparent',
+    borderWidth: 1.5,
+    borderColor: GOLD,
     borderRadius: 999,
     paddingVertical: 12,
-    borderWidth: 1,
-    borderColor: GOLD,
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.45)',
   },
   viewDealText: {
     color: GOLD,
-    fontSize: 14,
-    fontWeight: '700' as const,
+    fontSize: 15,
+    fontWeight: '700',
   },
   investNowBtn: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
     backgroundColor: GOLD,
     borderRadius: 999,
     paddingVertical: 12,
+    alignItems: 'center',
   },
   investNowText: {
     color: '#000',
-    fontSize: 14,
-    fontWeight: '800' as const,
-  },
-  centerFill: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#000',
-  },
-  centerText: {
-    color: '#aaa',
     fontSize: 15,
-    marginTop: 12,
-    textAlign: 'center' as const,
-    paddingHorizontal: 32,
-  },
-  centerTitle: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '700' as const,
-  },
-  retryBtn: {
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-    gap: 8,
-    backgroundColor: GOLD,
-    borderRadius: 999,
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    marginTop: 16,
-  },
-  retryBtnText: {
-    color: '#000',
-    fontWeight: '700' as const,
-  },
-  headerRow: {
-    position: 'absolute',
-    left: 16,
-    right: 12,
-    zIndex: 30,
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-    justifyContent: 'space-between' as const,
-  },
-  headerTitle: {
-    color: '#fff',
-    fontSize: 22,
-    fontWeight: '800' as const,
-    textShadowColor: 'rgba(0,0,0,0.7)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
-  },
-  closeBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  filterStrip: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    zIndex: 26,
-    flexDirection: 'row',
-    gap: 8,
-    paddingHorizontal: 12,
-  },
-  filterChip: {
-    backgroundColor: 'rgba(255,255,255,0.14)',
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-  },
-  filterChipActive: {
-    backgroundColor: GOLD,
-  },
-  filterChipText: {
-    color: '#fff',
-    fontSize: 13,
-    fontWeight: '600' as const,
-  },
-  filterChipTextActive: {
-    color: '#000',
+    fontWeight: '700',
   },
   toast: {
     position: 'absolute',
-    left: '50%',
     bottom: 100,
-    transform: [{ translateX: -50 }],
-    backgroundColor: 'rgba(20,20,20,0.92)',
-    borderRadius: 999,
-    paddingHorizontal: 18,
-    paddingVertical: 10,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
     zIndex: 60,
   },
   toastText: {
+    backgroundColor: 'rgba(20,20,20,0.92)',
     color: '#fff',
+    borderRadius: 999,
+    paddingVertical: 10,
+    paddingHorizontal: 18,
     fontSize: 13,
-    fontWeight: '600' as const,
+    fontWeight: '600',
   },
 });
