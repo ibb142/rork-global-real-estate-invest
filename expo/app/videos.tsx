@@ -399,15 +399,13 @@ export default function VideosScreen() {
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
   const params = useLocalSearchParams<{ type?: string }>();
-  const isReelsMode = params.type === 'reel';
-
   const [activeIndex, setActiveIndex] = useState<number>(0);
   const [muted, setMuted] = useState<boolean>(true);
   const [userId, setUserId] = useState<string | null>(null);
   const [viewerId, setViewerId] = useState<string | null>(null);
   const [engagements, setEngagements] = useState<Record<string, EngagementState>>({});
   const [toast, setToast] = useState<string | null>(null);
-  const [channel, setChannel] = useState<ReelChannel>(isReelsMode ? 'investment' : 'all');
+  const [channel, setChannel] = useState<ReelChannel>('all');
 
   const [commentsVideo, setCommentsVideo] = useState<FeedVideo | null>(null);
   const [comments, setComments] = useState<ProjectComment[]>([]);
@@ -416,8 +414,8 @@ export default function VideosScreen() {
   const [shareVideo, setShareVideo] = useState<FeedVideo | null>(null);
 
   const feedQuery = useQuery({
-    queryKey: isReelsMode ? ['ivx-project-reels'] : ['ivx-video-feed', channel],
-    queryFn: () => (isReelsMode ? fetchProjectReels(24) : fetchVideoFeed(24)),
+    queryKey: ['ivx-video-feed'],
+    queryFn: () => fetchVideoFeed(24),
     staleTime: 60_000,
   });
 
