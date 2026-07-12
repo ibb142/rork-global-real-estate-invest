@@ -45,11 +45,12 @@
  * =============================================================================
  */
 
-import React, { memo, useMemo } from 'react';
+import React, { memo, useMemo, useState, useEffect } from 'react';
 import { View, Text, StyleSheet, Image } from 'react-native';
 import { Check, CheckCheck, Database, FileText, Zap } from 'lucide-react-native';
 import { ChatMessage } from '@/types';
 import Colors from '@/constants/colors';
+import { formatChatTimestamp, loadTimezoneProfile } from '@/lib/time-service';
 
 interface ChatBubbleProps {
   message: ChatMessage;
@@ -57,11 +58,24 @@ interface ChatBubbleProps {
 
 const ChatBubble = memo(function ChatBubble({ message }: ChatBubbleProps) {
   const isUser = !message.isSupport;
-  
+
+  const [timezone, setTimezone] = useState<string>('UTC');
+  const [hourPref, setHourPref] = useState<'12h' | '24h'>('12h');
+
+  useEffect(() => {
+    let mounted = true;
+    loadTimezoneProfile().then((profile) => {
+      if (mounted && profile) {
+        setTimezone(profile.timezone);
+        setHourPref(profile.hour_preference);
+      }
+    }).catch(() => {});
+    return () => { mounted = false; };
+  }, []);
+
   const formattedTime = useMemo(() => {
-    const date = new Date(message.timestamp);
-    return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-  }, [message.timestamp]);
+    return formatChatTimestamp(message.timestamp, timezone, hourPref);
+  }, [message.timestamp, timezone, hourPref]);
 
   const isLiveIntelligence = useMemo(() => {
     return message.meta?.route === '/public/chat';

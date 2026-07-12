@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -30,6 +30,7 @@ import {
 import Colors from '@/constants/colors';
 import { useQuery } from '@tanstack/react-query';
 import { getAuditTrail, getAuditStats } from '@/lib/audit-trail';
+import { formatAuditTimestamp, loadTimezoneProfile, getOffsetString, type IanaTimezone } from '@/lib/time-service';
 
 const ACTION_CONFIG: Record<string, { label: string; color: string; icon: string }> = {
   CREATE: { label: 'Created', color: '#00C48C', icon: 'plus' },
@@ -111,6 +112,20 @@ export default function AuditLogScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [entityFilter, setEntityFilter] = useState<string>('all');
   const [expandedEntry, setExpandedEntry] = useState<string | null>(null);
+  const [userTimezone, setUserTimezone] = useState<IanaTimezone>('UTC');
+  const [userHourPref, setUserHourPref] = useState<'12h' | '24h'>('12h');
+  const [device, setDevice] = useState('');
+
+  useEffect(() => {
+    let mounted = true;
+    loadTimezoneProfile().then((profile) => {
+      if (mounted && profile) {
+        setUserTimezone(profile.timezone);
+        setUserHourPref(profile.hour_preference);
+      }
+    }).catch(() => {});
+    return () => { mounted = false; };
+  }, []);
 
   const auditQuery = useQuery({
     queryKey: ['audit-trail'],
@@ -150,10 +165,28 @@ export default function AuditLogScreen() {
 
   const formatDate = (dateStr: string) => {
     try {
-      const d = new Date(dateStr);
-      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+      const entry = formatAuditTimestamp(dateStr, userTimezone, device);
+      return entry.local_time;
     } catch {
       return dateStr;
+    }
+  };
+
+  const formatUtcOnly = (dateStr: string) => {
+    try {
+      const d = new Date(dateStr);
+      return d.toISOString().replace('T', ' ').substring(0, 19) + ' UTC';
+    } catch {
+      return dateStr;
+    }
+  };
+
+  const getEntryOffset = (dateStr: string) => {
+    try {
+      const entry = formatAuditTimestamp(dateStr, userTimezone);
+      return entry.offset;
+    } catch {
+      return '+00:00';
     }
   };
 
@@ -306,8 +339,24 @@ export default function AuditLogScreen() {
                         <Text style={styles.detailValue}>{entry.source}</Text>
                       </View>
                       <View style={styles.detailRow}>
-                        <Text style={styles.detailLabel}>Full Timestamp</Text>
-                        <Text style={styles.detailValue}>{entry.timestamp}</Text>
+                        <Text style={styles.detailLabel}>UTC Timestamp</Text>
+                        <Text style={styles.detailValue}>{formatUtcOnly(entry.timestamp)}</Text>
+                      </View>
+                      <View style={styles.detailRow}>
+                        <Text style={styles.detailLabel}>Local Time</Text>
+                        <Text style={styles.detailValue}>{formatDate(entry.timestamp)}</Text>
+                      </View>
+                      <View style={styles.detailRow}>
+                        <Text style={styles.detailLabel}>Time Zone</Text>
+                        <Text style={styles.detailValue}>{userTimezone}</Text>
+                      </View>
+                      <View style={styles.detailRow}>
+                        <Text style={styles.detailLabel}>Offset</Text>
+                        <Text style={styles.detailValue}>{getEntryOffset(entry.timestamp)}</Text>
+                      </View>
+                      <View style={styles.detailRow}>
+                        <Text style={styles.detailLabel}>Device</Text>
+                        <Text style={styles.detailValue}>{device || 'unknown'}</Text>
                       </View>
                       {entry.details && (
                         <View style={styles.detailRow}>

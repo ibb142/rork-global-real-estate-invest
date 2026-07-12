@@ -118,6 +118,7 @@ const ADMIN_MODULES = [
   { id: 'image-backup', name: 'Image Backup', icon: Shield, route: '/admin/image-backup', category: 'Core', keywords: 'image backup protection photos recovery health scan storage' },
   { id: 'trash-bin', name: 'Trash Bin', icon: Trash2, route: '/admin/trash-bin', category: 'Core', keywords: 'trash bin deleted items recycle restore' },
   { id: 'staff-activity', name: 'Staff Activity', icon: Activity, route: '/admin/staff-activity', category: 'Core', keywords: 'staff activity log team actions history' },
+  { id: 'timezone-settings', name: 'Time Zone Settings', icon: Clock, route: '/admin/timezone-settings', category: 'Core', keywords: 'timezone time zone UTC offset DST settings display mode world clock' },
   { id: 'backend-audit', name: 'Backend Audit', icon: Server, route: '/backend-audit', category: 'Core', keywords: 'backend server audit health api status' },
   { id: 'system-health', name: 'System Health', icon: Activity, route: '/system-health', category: 'Core', keywords: 'system health uptime performance monitor' },
 

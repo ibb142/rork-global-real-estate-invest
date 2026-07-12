@@ -57,6 +57,8 @@ export const formatDollarCompact = (amount: number): string => {
 };
 
 export const formatDate = (dateString: string): string => {
+  const { formatTimestamp, loadTimezoneProfile } = require('./time-service');
+  // Synchronous fallback for immediate rendering, async for timezone-aware
   const date = new Date(dateString);
   return date.toLocaleDateString('en-US', {
     month: 'short',
@@ -74,6 +76,33 @@ export const formatDateTime = (dateString: string): string => {
     minute: '2-digit',
   });
 };
+
+/**
+ * Format a UTC timestamp using the user's saved timezone profile.
+ * Async version that loads the timezone from AsyncStorage.
+ */
+export async function formatDateTimeTz(dateString: string): Promise<string> {
+  const { formatTimestamp, loadTimezoneProfile } = await import('./time-service');
+  const profile = await loadTimezoneProfile();
+  if (profile) {
+    const result = formatTimestamp(dateString, profile.timezone, profile.locale, profile.hour_preference);
+    return result.formatted_full;
+  }
+  return formatDateTime(dateString);
+}
+
+/**
+ * Format a UTC timestamp using a specific timezone.
+ */
+export function formatDateTimeInTz(dateString: string, timezone: string, hourPreference: '12h' | '24h' = '12h'): string {
+  const { formatTimestamp } = require('./time-service');
+  try {
+    const result = formatTimestamp(dateString, timezone, 'en-US', hourPreference);
+    return result.formatted_full;
+  } catch {
+    return formatDateTime(dateString);
+  }
+}
 
 export const formatRelativeTime = (dateString: string): string => {
   const date = new Date(dateString);

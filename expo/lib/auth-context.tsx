@@ -19,6 +19,7 @@ import {
 } from './member-registry';
 import type { Session, SupabaseClient } from '@supabase/supabase-js';
 import { fetchPublicIpAddress } from './public-geo';
+import { autoDetectAndSaveTimezone, saveTimezoneProfile, loadTimezoneProfile, type TimezoneProfile } from './time-service';
 import {
   getAdminAccessLockMessage,
   getConfiguredOwnerAdminEmail,
@@ -1836,6 +1837,13 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
             failureReason: 'admin_access_locked',
           };
         }
+        // Auto-detect and save timezone on login
+        try {
+          const tzProfile = await autoDetectAndSaveTimezone();
+          console.log('[Auth] Timezone auto-detected on login:', tzProfile.timezone, 'offset:', tzProfile.utc_offset);
+        } catch (tzError) {
+          console.log('[Auth] Timezone auto-detect failed (non-blocking):', (tzError as Error)?.message);
+        }
         return { success: true, message: 'Login successful' };
       }
 
@@ -2181,6 +2189,14 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         }
 
         void syncMemberRegistryFromSupabase();
+
+        // Auto-detect and save timezone on registration
+        try {
+          const tzProfile = await autoDetectAndSaveTimezone();
+          console.log('[Auth] Timezone auto-detected on registration:', tzProfile.timezone, 'offset:', tzProfile.utc_offset);
+        } catch (tzError) {
+          console.log('[Auth] Timezone auto-detect failed (non-blocking):', (tzError as Error)?.message);
+        }
 
         console.log('[Auth] Registration successful for:', authData.user.id);
         return {

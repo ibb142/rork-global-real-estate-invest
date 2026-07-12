@@ -584,6 +584,7 @@ import { executeIVXAIBrainTool } from './services/ivx-ai-brain-tool-executor';
 import { OPTIONS as supabaseOwnerActionOptions, handleIVXSupabaseOwnerActionRequest } from './api/ivx-supabase-owner-actions';
 import { OPTIONS as ownerRegistrationOptions, handleIVXOwnerAccessRepairRequest, handleIVXOwnerAccessRepairStatusRequest, handleIVXOwnerRegistrationRepairRequest, handleIVXOwnerRegistrationRequest, handleIVXOwnerRegistrationStatusRequest, handleIVXOwnerSignupAuditRequest } from './api/ivx-owner-registration';
 import { handleIVXOwnerPasswordlessLogin, ivxOwnerPasswordlessLoginOptions } from './api/ivx-owner-passwordless-login';
+import { registerTimezoneRoutes } from './api/ivx-timezone';
 import { handleIVXDevelopmentActionRequest, handleIVXDevelopmentControlRequest, ivxDevelopmentControlOptions } from './api/ivx-development-control';
 import { OPTIONS as aiBrainToolsOptions, handleIVXAIBrainToolExecuteRequest, handleIVXAIBrainToolsListRequest } from './api/ivx-ai-brain-tools';
 import { OPTIONS as controlRoomStatusOptions, handleIVXControlRoomStatusRequest } from './api/ivx-control-room-status';
@@ -4887,5 +4888,15 @@ try { startScaleLoopScheduler(); } catch (err) { console.warn('[IVXOwnerAI-Hono]
 try { startRoleAgentScheduler(); } catch (err) { console.warn('[IVXOwnerAI-Hono] role-agent run loop failed to start:', err instanceof Error ? err.message : err); }
 try { startLandingSeoAutodeploy(); } catch (err) { console.warn('[IVXOwnerAI-Hono] landing SEO autodeploy failed to start:', err instanceof Error ? err.message : err); }
 try { startAutonomousMonitor(); } catch (err) { console.warn('[IVXOwnerAI-Hono] autonomous deploy monitor failed to start:', err instanceof Error ? err.message : err); }
+
+// ============================================================================
+// IVX Enterprise Time Zone System — register all timezone routes
+// ============================================================================
+try {
+  registerTimezoneRoutes(app);
+  console.log('[IVXTimezone] Timezone routes registered successfully');
+} catch (err) {
+  console.warn('[IVXTimezone] Failed to register timezone routes:', err instanceof Error ? err.message : err);
+}
 
 export default app;
