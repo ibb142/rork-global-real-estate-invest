@@ -170,19 +170,43 @@ async function fetchAllRows(
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 15_000);
       try {
-        const res = await fetch(
-          `${baseUrl}/rest/v1/${table}?select=*&order=id.asc&limit=${pageSize}&offset=${offset}`,
-          {
-            method: 'GET',
-            signal: controller.signal,
-            headers: {
-              ...headers,
-              Range: `${offset}-${offset + pageSize - 1}`,
-              Prefer: 'count=exact',
-            },
+        // Some IVX tables use `member_id`, `investor_id`, etc. instead of `id`.
+        // Try with order=id.asc first; if that returns 400, retry without ordering.
+        let url = `${baseUrl}/rest/v1/${table}?select=*&order=id.asc&limit=${pageSize}&offset=${offset}`;
+        let res = await fetch(url, {
+          method: 'GET',
+          signal: controller.signal,
+          headers: {
+            ...headers,
+            Range: `${offset}-${offset + pageSize - 1}`,
+            Prefer: 'count=exact',
           },
-        );
-        clearTimeout(timeout);
+        });
+
+        // Retry without order clause if 400 (column "id" does not exist)
+        if (res.status === 400) {
+          clearTimeout(timeout);
+          const retryController = new AbortController();
+          const retryTimeout = setTimeout(() => retryController.abort(), 15_000);
+          try {
+            url = `${baseUrl}/rest/v1/${table}?select=*&limit=${pageSize}&offset=${offset}`;
+            res = await fetch(url, {
+              method: 'GET',
+              signal: retryController.signal,
+              headers: {
+                ...headers,
+                Range: `${offset}-${offset + pageSize - 1}`,
+                Prefer: 'count=exact',
+              },
+            });
+            clearTimeout(retryTimeout);
+          } catch (retryErr) {
+            clearTimeout(retryTimeout);
+            throw retryErr;
+          }
+        } else {
+          clearTimeout(timeout);
+        }
 
         if (res.status === 404) {
           return { rows: [], status: 404, error: 'TABLE_NOT_FOUND' };
