@@ -698,7 +698,7 @@ export default function VideosScreen() {
                 testID={`reels-channel-${ch.id}`}
               >
                 <Text style={[styles.tabText, channel === ch.id && styles.tabTextActive]}>
-                  {ch.label} {counts[ch.id] > 0 ? counts[ch.id] : ''}
+                  {ch.label}{counts[ch.id] > 0 ? ` ${counts[ch.id]}` : ''}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -788,8 +788,8 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   headerTitle: {
-    color: '#fff',
-    fontSize: 18,
+    color: GOLD,
+    fontSize: 20,
     fontWeight: '900' as const,
     letterSpacing: -0.3,
     textShadowColor: 'rgba(0,0,0,0.7)',
@@ -818,7 +818,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
   },
   tabActive: {
-    backgroundColor: '#fff',
+    backgroundColor: GOLD,
   },
   tabText: {
     color: '#fff',
