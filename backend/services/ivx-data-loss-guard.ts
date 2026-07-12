@@ -38,37 +38,57 @@ const AUDIT_TRAIL_FILE = path.resolve(process.cwd(), 'logs', 'audit', 'data-vaul
  * senior-developer / cleanup scripts can NEVER bulk-delete from these.
  */
 export const PROTECTED_TABLES: ReadonlySet<string> = new Set([
+  // Identity & auth
   'members',
+  'profiles',
+  'kyc_verifications',
+  'kyc_documents',
+  // CRM
   'waitlist',
   'waitlist_entries',
   'investors',
   'buyers',
   'crm_investors',
   'crm_buyers',
-  'landing_analytics',
-  'analytics_events',
-  'visitor_sessions',
-  'landing_submissions',
-  'landing_investments',
+  'referrals',
+  'referral_invites',
+  // Deals & properties
   'jv_deals',
+  'private_lenders',
+  'tokenized_investments',
+  'ipx_holdings',
+  'ipx_purchases',
+  // Financial
   'wallets',
   'wallet_transactions',
   'treasury',
   'ledger',
   'withdrawals',
   'wire_transfers',
-  'private_lenders',
-  'tokenized_investments',
-  'profiles',
-  'kyc_verifications',
-  'kyc_documents',
   'earn_accounts',
   'earn_deposits',
   'earn_payouts',
-  'referrals',
-  'referral_invites',
-  'ipx_holdings',
-  'ipx_purchases',
+  'transactions',
+  'deposits',
+  'revenue',
+  'fees',
+  // Analytics & landing
+  'landing_analytics',
+  'analytics_events',
+  'visitor_sessions',
+  'landing_submissions',
+  'landing_investments',
+  // Documents & media metadata
+  'documents',
+  'properties',
+  // Communications
+  'conversations',
+  'messages',
+  'chat_attachments',
+  // Audit & compliance
+  'audit_logs',
+  'variables_metadata',
+  'registrations',
 ]);
 
 /**
@@ -99,6 +119,14 @@ export type DestructiveOpRequest = {
   ownerReason: string | null;
   /** Whether this is an emergency (e.g. GDPR data deletion request). */
   emergency: boolean;
+  /** ISO timestamp of the owner's most recent reauthentication. */
+  ownerReauthAt?: string | null;
+  /** Whether two-person approval has been confirmed (required for financial/bulk ops). */
+  twoPersonApproved?: boolean;
+  /** Whether the caller has run an impact preview first. */
+  impactPreviewShown?: boolean;
+  /** Whether soft-delete has been attempted first. */
+  softDeleteAttempted?: boolean;
 };
 
 export type DestructiveOpDecision = {
@@ -186,6 +214,34 @@ export async function evaluateDestructiveOp(request: DestructiveOpRequest): Prom
 
   if (!blocker && request.ownerApproved && !request.ownerReason) {
     blocker = 'BLOCKED: Owner-approved destructive operation requires a written reason explaining why the data is being deleted.';
+  }
+
+  // Rule 2b: Require recent reauthentication (within 15 minutes).
+  if (!blocker && request.ownerApproved) {
+    const reauthAgeMs = request.ownerReauthAt ? Date.now() - Date.parse(request.ownerReauthAt) : Infinity;
+    const maxReauthMs = 15 * 60 * 1000; // 15 minutes
+    if (reauthAgeMs > maxReauthMs) {
+      blocker = `BLOCKED: Destructive operation requires owner reauthentication within the last 15 minutes. Last reauth: ${request.ownerReauthAt ?? 'never'}. Re-authenticate and retry.`;
+    }
+  }
+
+  // Rule 2c: Require impact preview before destructive op.
+  if (!blocker && request.ownerApproved && !request.impactPreviewShown) {
+    blocker = 'BLOCKED: Destructive operation requires an impact preview to be shown first. Run GET /api/ivx/data-guard/check to preview the impact.';
+  }
+
+  // Rule 2d: Require soft-delete first (no immediate hard delete).
+  if (!blocker && request.ownerApproved && !request.softDeleteAttempted && !request.emergency) {
+    blocker = 'BLOCKED: Destructive operation requires soft-delete to be attempted first. Use POST /api/ivx/restore-center/soft-delete before hard deletion. Emergency flag bypasses this for GDPR/legal deletions.';
+  }
+
+  // Rule 2e: Two-person approval for financial/bulk destructive ops.
+  const FINANCIAL_TABLES = new Set(['wallets', 'wallet_transactions', 'treasury', 'ledger', 'withdrawals', 'wire_transfers', 'earn_accounts', 'earn_deposits', 'earn_payouts', 'transactions', 'deposits', 'revenue', 'fees']);
+  if (!blocker && request.ownerApproved) {
+    const financialHit = tables.find((t) => FINANCIAL_TABLES.has(t.toLowerCase()));
+    if (financialHit && !request.twoPersonApproved) {
+      blocker = `BLOCKED: Destructive operation on financial table "${financialHit}" requires two-person approval. Create an approval request via POST /api/ivx/restore-center/approvals/create and have a second approver confirm.`;
+    }
   }
 
   // Rule 3: Non-emergency destructive ops on protected tables require a snapshot first.

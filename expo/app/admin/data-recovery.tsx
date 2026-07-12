@@ -1,483 +1,492 @@
-import React, { useState, useMemo, useCallback } from 'react';
+/**
+ * IVX Data Recovery Center — owner-facing screen for enterprise data
+ * protection, backup monitoring, and disaster recovery.
+ *
+ * Located at: Admin HQ → Data Recovery
+ * Route: /admin/data-recovery
+ */
+
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
-  StyleSheet,
   ScrollView,
   TouchableOpacity,
   RefreshControl,
+  StyleSheet,
   ActivityIndicator,
   Alert,
-  TextInput,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { router } from 'expo-router';
 import {
-  ArrowLeft,
-  Database,
-  ArchiveRestore,
-  Shield,
-  Clock,
-  Trash2,
-  Download,
-  Search,
-  HardDrive,
-  CheckCircle,
-  XCircle,
+  Shield, Database, HardDrive, DollarSign, AlertTriangle,
+  CheckCircle, XCircle, Clock, RefreshCw, FileText, Zap,
+  ChevronLeft, Activity, Archive, Lock,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  getDeletedItems,
-  getBackups,
-  getRecoveryStats,
-  restoreDeletedItem,
-  createFullBackup,
-  restoreFromBackup,
-  type DataSnapshot,
-  type BackupRecord,
-  type RecoverableEntity,
-} from '@/lib/data-recovery';
+  fetchRecoveryOverview,
+  triggerSnapshot,
+  runRecoveryDrill,
+  generateReport,
+  type RecoveryOverview,
+} from '@/lib/enterprise-recovery-client';
 
-type TabType = 'deleted' | 'backups';
-
-const ENTITY_LABELS: Record<string, string> = {
-  jv_deals: 'JV Deal',
-  transactions: 'Transaction',
-  holdings: 'Holding',
-  properties: 'Property',
-  wallets: 'Wallet',
-  profiles: 'Profile',
-  notifications: 'Notification',
-};
+const GOLD = Colors.gold;
+const GREEN = '#00C48C';
+const RED = '#FF4D4D';
+const BLUE = '#4A90D9';
+const ORANGE = '#F59E0B';
 
 export default function DataRecoveryScreen() {
-  const router = useRouter();
-  const queryClient = useQueryClient();
+  const [overview, setOverview] = useState<RecoveryOverview | null>(null);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState<TabType>('deleted');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [backupNote, setBackupNote] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
 
-  const statsQuery = useQuery({
-    queryKey: ['data-recovery-stats'],
-    queryFn: async () => {
-      console.log('[DataRecovery] Fetching stats...');
-      const stats = await getRecoveryStats();
-      console.log('[DataRecovery] Stats:', stats);
-      return stats;
-    },
-    staleTime: 1000 * 10,
-  });
-
-  const deletedQuery = useQuery({
-    queryKey: ['deleted-items'],
-    queryFn: async () => {
-      console.log('[DataRecovery] Fetching deleted items...');
-      const items = await getDeletedItems({ limit: 200 });
-      console.log('[DataRecovery] Found', items.length, 'deleted items');
-      return items;
-    },
-    staleTime: 1000 * 10,
-  });
-
-  const backupsQuery = useQuery({
-    queryKey: ['data-backups'],
-    queryFn: async () => {
-      console.log('[DataRecovery] Fetching backups...');
-      const backups = await getBackups();
-      console.log('[DataRecovery] Found', backups.length, 'backups');
-      return backups;
-    },
-    staleTime: 1000 * 10,
-  });
-
-  const restoreMutation = useMutation({
-    mutationFn: async (snapshotId: string) => {
-      console.log('[DataRecovery] Restoring item:', snapshotId);
-      const result = await restoreDeletedItem(snapshotId);
-      if (!result.success) throw new Error(result.error || 'Restore failed');
-      return result;
-    },
-    onSuccess: () => {
-      invalidateAll();
-      Alert.alert('Restored', 'Item has been successfully restored to the database.');
-    },
-    onError: (err: Error) => {
-      Alert.alert('Restore Failed', err.message);
-    },
-  });
-
-  const backupMutation = useMutation({
-    mutationFn: async (params: { entityType: RecoverableEntity | 'all'; note?: string }) => {
-      console.log('[DataRecovery] Creating backup:', params.entityType);
-      const result = await createFullBackup(params.entityType, params.note);
-      if (!result.success) throw new Error(result.error || 'Backup failed');
-      return result;
-    },
-    onSuccess: (result) => {
-      invalidateAll();
-      setBackupNote('');
-      Alert.alert('Backup Created', `Backed up ${result.backup?.entityCount || 0} records successfully.`);
-    },
-    onError: (err: Error) => {
-      Alert.alert('Backup Failed', err.message);
-    },
-  });
-
-  const restoreBackupMutation = useMutation({
-    mutationFn: async (backupId: string) => {
-      console.log('[DataRecovery] Restoring from backup:', backupId);
-      const result = await restoreFromBackup(backupId);
-      if (!result.success && result.errors.length > 0) {
-        throw new Error(`Restored ${result.restoredCount} items. Errors: ${result.errors.join(', ')}`);
-      }
-      return result;
-    },
-    onSuccess: (result) => {
-      invalidateAll();
-      Alert.alert('Backup Restored', `Successfully restored ${result.restoredCount} records.`);
-    },
-    onError: (err: Error) => {
-      Alert.alert('Restore Result', err.message);
-    },
-  });
-
-  const invalidateAll = useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: ['data-recovery-stats'] });
-    void queryClient.invalidateQueries({ queryKey: ['deleted-items'] });
-    void queryClient.invalidateQueries({ queryKey: ['data-backups'] });
-    void queryClient.invalidateQueries({ queryKey: ['jvAgreements.list'] });
-    void queryClient.invalidateQueries({ queryKey: ['jv-deals'] });
-    void queryClient.invalidateQueries({ queryKey: ['published-jv-deals'] });
-    void queryClient.invalidateQueries({ queryKey: ['admin-transactions'] });
-  }, [queryClient]);
-
-  const onRefresh = useCallback(() => {
-    setRefreshing(true);
-    void Promise.all([
-      statsQuery.refetch(),
-      deletedQuery.refetch(),
-      backupsQuery.refetch(),
-    ]).finally(() => setRefreshing(false));
-  }, [statsQuery, deletedQuery, backupsQuery]);
-
-  const filteredDeleted = useMemo(() => {
-    let items = deletedQuery.data ?? [];
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      items = items.filter(i =>
-        (i.entityTitle || '').toLowerCase().includes(q) ||
-        (i.entityId || '').toLowerCase().includes(q) ||
-        (i.entityType || '').toLowerCase().includes(q)
-      );
-    }
-    return items;
-  }, [deletedQuery.data, searchQuery]);
-
-  const handleRestore = useCallback((item: DataSnapshot) => {
-    Alert.alert(
-      'Restore Item',
-      `Restore "${item.entityTitle}" (${ENTITY_LABELS[item.entityType] || item.entityType}) back to the database?\n\nThis will re-insert the data as it was before deletion.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Restore',
-          onPress: () => restoreMutation.mutate(item.id),
-        },
-      ]
-    );
-  }, [restoreMutation]);
-
-  const handleCreateBackup = useCallback((entityType: RecoverableEntity | 'all') => {
-    Alert.alert(
-      'Create Backup',
-      `Create a full backup of ${entityType === 'all' ? 'ALL data' : entityType}?\n\nThis will save a snapshot of current data that can be restored later.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Create Backup',
-          onPress: () => backupMutation.mutate({ entityType, note: backupNote || undefined }),
-        },
-      ]
-    );
-  }, [backupMutation, backupNote]);
-
-  const handleRestoreBackup = useCallback((backup: BackupRecord) => {
-    Alert.alert(
-      'Restore Backup',
-      `Restore backup from ${formatDate(backup.createdAt)}?\n\nThis will re-insert ${backup.entityCount} records. Existing records with the same ID will be updated.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Restore All',
-          style: 'destructive',
-          onPress: () => restoreBackupMutation.mutate(backup.id),
-        },
-      ]
-    );
-  }, [restoreBackupMutation]);
-
-  const stats = statsQuery.data;
-
-  const formatDate = (dateStr: string) => {
+  const loadData = useCallback(async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true); else setLoading(true);
+    setError(null);
     try {
-      const d = new Date(dateStr);
-      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-    } catch {
-      return dateStr;
+      const data = await fetchRecoveryOverview();
+      setOverview(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load recovery data');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
     }
+  }, []);
+
+  useEffect(() => { void loadData(); }, [loadData]);
+
+  const handleAction = useCallback(async (
+    action: 'snapshot' | 'drill' | 'report',
+  ) => {
+    setActionLoading(action);
+    try {
+      if (action === 'snapshot') {
+        await triggerSnapshot();
+        Alert.alert('Snapshot Created', 'A new vault snapshot has been created successfully.');
+      } else if (action === 'drill') {
+        const result = await runRecoveryDrill();
+        Alert.alert(
+          'Recovery Drill Complete',
+          `${result.summary.passed}/${result.summary.total} steps passed. ${result.summary.failed} failed.`,
+        );
+      } else if (action === 'report') {
+        const result = await generateReport();
+        Alert.alert('Report Generated', `Recovery risk: ${result.report.recoveryRisk}`);
+      }
+      void loadData(true);
+    } catch (err) {
+      Alert.alert('Action Failed', err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setActionLoading(null);
+    }
+  }, [loadData]);
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={GOLD} />
+        <Text style={styles.loadingText}>Loading Recovery Center…</Text>
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={styles.errorContainer}>
+        <AlertTriangle size={48} color={RED} />
+        <Text style={styles.errorTitle}>Failed to Load</Text>
+        <Text style={styles.errorDetail}>{error}</Text>
+        <TouchableOpacity style={styles.retryButton} onPress={() => void loadData()}>
+          <RefreshCw size={20} color="#000" />
+          <Text style={styles.retryButtonText}>Retry</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  const monitoring = overview?.monitoring;
+  const objectives = overview?.objectives;
+  const validation = overview?.validation;
+  const financial = overview?.financial;
+  const storage = overview?.storage;
+  const pitr = overview?.pitr;
+  const guard = overview?.guard;
+  const vault = overview?.vault;
+
+  const statusColor = (status: string) =>
+    status === 'healthy' ? GREEN : status === 'warning' ? ORANGE : RED;
+
+  const StatusIcon = ({ status, size = 16 }: { status: string; size?: number }) => {
+    if (status === 'healthy') return <CheckCircle size={size} color={GREEN} />;
+    if (status === 'warning') return <AlertTriangle size={size} color={ORANGE} />;
+    return <XCircle size={size} color={RED} />;
   };
 
   return (
-    <View style={styles.container}>
-      <SafeAreaView edges={['top']} style={styles.safeArea}>
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} testID="recovery-back">
-            <ArrowLeft size={22} color={Colors.text} />
-          </TouchableOpacity>
-          <View style={styles.headerCenter}>
-            <Database size={18} color="#22C55E" />
-            <Text style={styles.headerTitle}>Data Recovery</Text>
-          </View>
-          <View style={styles.headerRight}>
-            <Shield size={18} color={Colors.primary} />
+    <SafeAreaView style={styles.container} edges={['top']}>
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <ChevronLeft size={24} color={GOLD} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Data Recovery</Text>
+        <TouchableOpacity onPress={() => void loadData(true)} disabled={refreshing}>
+          <RefreshCw size={20} color={GOLD} style={{ opacity: refreshing ? 0.5 : 1 }} />
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => void loadData(true)}
+            tintColor={GOLD}
+            colors={[GOLD]}
+          />
+        }
+      >
+        {/* Overall Status Banner */}
+        <View style={[styles.banner, { backgroundColor: `${statusColor(overview?.overallStatus ?? 'warning')}15` }]}>
+          <StatusIcon status={overview?.overallStatus ?? 'warning'} size={28} />
+          <View style={styles.bannerText}>
+            <Text style={[styles.bannerTitle, { color: statusColor(overview?.overallStatus ?? 'warning') }]}>
+              {overview?.overallStatus === 'healthy' ? 'All Systems Healthy' : overview?.overallStatus === 'critical' ? 'Critical Issues Detected' : 'Warnings Detected'}
+            </Text>
+            <Text style={styles.bannerSubtitle}>
+              {overview?.activeAlerts ?? 0} active alert{(overview?.activeAlerts ?? 0) !== 1 ? 's' : ''} · {monitoring?.checks.length ?? 0} monitors
+            </Text>
           </View>
         </View>
 
-        {stats && (
-          <View style={styles.statsRow}>
-            <View style={styles.statCard}>
-              <Text style={[styles.statValue, { color: '#FF4D4D' }]}>{stats.deletedItemsCount}</Text>
-              <Text style={styles.statLabel}>Deleted</Text>
-            </View>
-            <View style={styles.statCard}>
-              <Text style={[styles.statValue, { color: '#22C55E' }]}>{stats.restorableCount}</Text>
-              <Text style={styles.statLabel}>Restorable</Text>
-            </View>
-            <View style={styles.statCard}>
-              <Text style={[styles.statValue, { color: '#4A90D9' }]}>{stats.backupsCount}</Text>
-              <Text style={styles.statLabel}>Backups</Text>
-            </View>
-          </View>
+        {/* Quick Actions */}
+        <View style={styles.actionsRow}>
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => handleAction('snapshot')}
+            disabled={actionLoading !== null}
+          >
+            {actionLoading === 'snapshot' ? (
+              <ActivityIndicator size="small" color={GOLD} />
+            ) : (
+              <Archive size={22} color={GOLD} />
+            )}
+            <Text style={styles.actionLabel}>Snapshot</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => handleAction('drill')}
+            disabled={actionLoading !== null}
+          >
+            {actionLoading === 'drill' ? (
+              <ActivityIndicator size="small" color={GOLD} />
+            ) : (
+              <Zap size={22} color={GOLD} />
+            )}
+            <Text style={styles.actionLabel}>Drill</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => handleAction('report')}
+            disabled={actionLoading !== null}
+          >
+            {actionLoading === 'report' ? (
+              <ActivityIndicator size="small" color={GOLD} />
+            ) : (
+              <FileText size={22} color={GOLD} />
+            )}
+            <Text style={styles.actionLabel}>Report</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Recovery Objectives */}
+        {objectives && (
+          <Section title="Recovery Objectives" icon={<Shield size={18} color={GOLD} />}>
+            <MetricRow label="RPO Target" value={objectives.objectives.rpoTargetMinutes + ' min'} />
+            <MetricRow label="RTO Target" value={objectives.objectives.rtoTargetMinutes + ' min'} />
+            <MetricRow label="Critical RPO" value={objectives.objectives.criticalRpoMinutes + ' min'} />
+            <MetricRow label="Storage RPO" value={objectives.objectives.storageRpoHours + 'h'} />
+            <MetricRow label="Daily Retention" value={objectives.objectives.dailyRetentionDays + ' days'} />
+            <MetricRow label="Monthly Archive" value={objectives.objectives.monthlyRetentionMonths + ' months'} />
+            <MetricRow label="Snapshot Freq" value={objectives.objectives.snapshotFrequencyHours + 'h'} />
+            <MetricRow label="Restore Drill" value={objectives.objectives.restoreDrillFrequencyDays + ' days'} />
+            {objectives.gaps.length > 0 && (
+              <View style={styles.gapsContainer}>
+                {objectives.gaps.map((gap, i) => (
+                  <View key={i} style={styles.gapItem}>
+                    <AlertTriangle size={14} color={ORANGE} />
+                    <Text style={styles.gapText}>{gap}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+          </Section>
         )}
 
-        <View style={styles.tabRow}>
-          <TouchableOpacity
-            style={[styles.tab, activeTab === 'deleted' && styles.tabActive]}
-            onPress={() => setActiveTab('deleted')}
-          >
-            <Trash2 size={14} color={activeTab === 'deleted' ? Colors.primary : Colors.textSecondary} />
-            <Text style={[styles.tabText, activeTab === 'deleted' && styles.tabTextActive]}>
-              Deleted Items ({filteredDeleted.length})
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.tab, activeTab === 'backups' && styles.tabActive]}
-            onPress={() => setActiveTab('backups')}
-          >
-            <HardDrive size={14} color={activeTab === 'backups' ? Colors.primary : Colors.textSecondary} />
-            <Text style={[styles.tabText, activeTab === 'backups' && styles.tabTextActive]}>
-              Backups ({backupsQuery.data?.length || 0})
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        <ScrollView
-          style={styles.scrollView}
-          showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />
-          }
-        >
-          {activeTab === 'deleted' && (
-            <>
-              <View style={styles.searchWrap}>
-                <Search size={16} color={Colors.textTertiary} />
-                <TextInput
-                  style={styles.searchInput}
-                  placeholder="Search deleted items..."
-                  placeholderTextColor={Colors.textTertiary}
-                  value={searchQuery}
-                  onChangeText={setSearchQuery}
-                  testID="recovery-search"
-                />
-              </View>
-
-              {deletedQuery.isLoading ? (
-                <View style={styles.centerWrap}>
-                  <ActivityIndicator size="large" color={Colors.primary} />
-                  <Text style={styles.centerText}>Loading deleted items...</Text>
+        {/* Monitoring Checks */}
+        {monitoring && (
+          <Section title="Monitoring" icon={<Activity size={18} color={GOLD} />}>
+            {monitoring.checks.map((check, i) => (
+              <View key={i} style={styles.checkRow}>
+                <StatusIcon status={check.status} />
+                <View style={styles.checkContent}>
+                  <Text style={styles.checkService}>{check.service} · {check.entity}</Text>
+                  <Text style={styles.checkDetail}>{check.detail}</Text>
                 </View>
-              ) : filteredDeleted.length === 0 ? (
-                <View style={styles.centerWrap}>
-                  <CheckCircle size={48} color="#22C55E" />
-                  <Text style={styles.emptyTitle}>No Deleted Items</Text>
-                  <Text style={styles.emptySubtitle}>
-                    {searchQuery ? 'No items match your search' : 'All data is safe. Deleted items will appear here for recovery.'}
+              </View>
+            ))}
+            <View style={styles.complianceRow}>
+              <View style={styles.complianceItem}>
+                <Text style={styles.complianceLabel}>RPO</Text>
+                <StatusIcon status={monitoring.rpoCompliant ? 'healthy' : 'warning'} />
+              </View>
+              <View style={styles.complianceItem}>
+                <Text style={styles.complianceLabel}>RTO</Text>
+                <StatusIcon status={monitoring.rtoCompliant ? 'healthy' : 'critical'} />
+              </View>
+            </View>
+          </Section>
+        )}
+
+        {/* PITR Status */}
+        {pitr && (
+          <Section title="PITR Status" icon={<Clock size={18} color={GOLD} />}>
+            <MetricRow
+              label="Supabase Reachable"
+              value={pitr.supabaseReachable ? 'YES' : 'NO'}
+              valueColor={pitr.supabaseReachable ? GREEN : RED}
+            />
+            <MetricRow
+              label="PITR Confirmed"
+              value={pitr.pitrDashboardConfirmed === true ? 'ENABLED' : pitr.pitrDashboardConfirmed === false ? 'NOT ENABLED' : 'UNCONFIRMED'}
+              valueColor={pitr.pitrDashboardConfirmed === true ? GREEN : RED}
+            />
+            {pitr.pitrAlert && (
+              <View style={styles.alertBox}>
+                <AlertTriangle size={14} color={ORANGE} />
+                <Text style={styles.alertText}>{pitr.pitrAlert}</Text>
+              </View>
+            )}
+            {pitr.pitrDashboardConfirmed !== true && (
+              <TouchableOpacity
+                style={styles.linkButton}
+                onPress={() => Linking.openURL('https://supabase.com/dashboard/project/kvclcdjmjghndxsngfzb/database/backups')}
+              >
+                <Text style={styles.linkText}>Open Supabase Backups Dashboard →</Text>
+              </TouchableOpacity>
+            )}
+            <Text style={styles.noteText}>{pitr.restoreWindowNote}</Text>
+          </Section>
+        )}
+
+        {/* Backup Validation */}
+        {validation && (
+          <Section title="Backup Validation" icon={<CheckCircle size={18} color={GOLD} />}>
+            <MetricRow
+              label="Overall"
+              value={validation.overallPassed ? 'PASSED' : 'FAILED'}
+              valueColor={validation.overallPassed ? GREEN : RED}
+            />
+            <MetricRow label="Checks Passed" value={`${validation.passed}/${validation.passed + validation.failed}`} />
+            <MetricRow label="Snapshot ID" value={validation.snapshotId ?? 'NONE'} />
+            {validation.checks.map((check, i) => (
+              <View key={i} style={styles.checkRow}>
+                <StatusIcon status={check.passed ? 'healthy' : check.severity === 'critical' ? 'critical' : 'warning'} />
+                <View style={styles.checkContent}>
+                  <Text style={styles.checkService}>{check.check}</Text>
+                  <Text style={styles.checkDetail}>{check.detail}</Text>
+                </View>
+              </View>
+            ))}
+          </Section>
+        )}
+
+        {/* Vault Snapshots */}
+        {vault && (
+          <Section title="Data Vault" icon={<Database size={18} color={GOLD} />}>
+            <MetricRow label="Total Snapshots" value={String(vault.totalSnapshots)} />
+            <MetricRow label="Last Snapshot" value={vault.state.lastSnapshotAt ?? 'NONE'} />
+            <MetricRow label="Next Scheduled" value={vault.state.nextScheduledRun ?? '—'} />
+            <MetricRow label="Tables Monitored" value={String(vault.state.config.tables.length)} />
+            {vault.recentSnapshots.length > 0 && (
+              <View style={styles.snapshotsList}>
+                {vault.recentSnapshots.slice(0, 5).map((snap, i) => (
+                  <View key={i} style={styles.snapshotItem}>
+                    <Archive size={14} color={BLUE} />
+                    <Text style={styles.snapshotId}>{snap.snapshotId.slice(0, 30)}…</Text>
+                    <Text style={styles.snapshotRows}>{snap.totalRows} rows</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+          </Section>
+        )}
+
+        {/* Data-Loss Guard */}
+        {guard && (
+          <Section title="Data-Loss Guard" icon={<Lock size={18} color={GOLD} />}>
+            <MetricRow label="Protected Tables" value={String(guard.protectedTablesCount)} />
+            <MetricRow label="Blocked Operations" value={String(guard.blockedCount)} />
+            {guard.recentAudit.slice(0, 5).map((audit, i) => (
+              <View key={i} style={styles.checkRow}>
+                <StatusIcon status={audit.allowed ? 'warning' : 'healthy'} />
+                <View style={styles.checkContent}>
+                  <Text style={styles.checkService} numberOfLines={1}>{audit.operation.slice(0, 60)}</Text>
+                  <Text style={styles.checkDetail}>{audit.blocker ?? 'ALLOWED'}</Text>
+                </View>
+              </View>
+            ))}
+          </Section>
+        )}
+
+        {/* Financial Protection */}
+        {financial && (
+          <Section title="Financial Protection" icon={<DollarSign size={18} color={GOLD} />}>
+            <MetricRow label="Total Wallets" value={String(financial.totalWallets)} />
+            <MetricRow label="Ledger Entries" value={String(financial.totalLedgerEntries)} />
+            <MetricRow
+              label="Reconciliation"
+              value={financial.reconciliationPassed ? 'PASSED' : 'FAILED'}
+              valueColor={financial.reconciliationPassed ? GREEN : RED}
+            />
+            <MetricRow label="Orphan Transactions" value={String(financial.orphanTransactions)} valueColor={financial.orphanTransactions > 0 ? RED : GREEN} />
+            <MetricRow label="Duplicate Keys" value={String(financial.duplicateIdempotencyKeys)} valueColor={financial.duplicateIdempotencyKeys > 0 ? RED : GREEN} />
+            {financial.mismatches.length > 0 && (
+              <View style={styles.gapsContainer}>
+                {financial.mismatches.map((m, i) => (
+                  <View key={i} style={styles.gapItem}>
+                    <AlertTriangle size={14} color={m.severity === 'critical' ? RED : ORANGE} />
+                    <Text style={styles.gapText}>{m.detail}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+            <Text style={styles.noteText}>{financial.recommendation}</Text>
+          </Section>
+        )}
+
+        {/* Storage Backup */}
+        {storage && (
+          <Section title="Storage Backup" icon={<HardDrive size={18} color={GOLD} />}>
+            <MetricRow label="Buckets Protected" value={`${storage.bucketsProtected}/${storage.buckets.length}`} />
+            <MetricRow label="Total Objects" value={String(storage.totalObjects)} />
+            <MetricRow label="Total Size" value={`${(storage.totalBytes / (1024 * 1024)).toFixed(2)} MB`} />
+            {storage.buckets.map((b, i) => (
+              <View key={i} style={styles.checkRow}>
+                <StatusIcon status={b.exists && b.error === null ? 'healthy' : 'warning'} />
+                <View style={styles.checkContent}>
+                  <Text style={styles.checkService}>{b.bucket}</Text>
+                  <Text style={styles.checkDetail}>
+                    {b.exists ? `${b.objectCount} objects · ${(b.totalBytes / 1024).toFixed(1)}KB` : b.error ?? 'not found'}
                   </Text>
                 </View>
-              ) : (
-                filteredDeleted.map(item => (
-                  <View key={item.id} style={[styles.itemCard, item.restored && styles.itemCardRestored]} testID={`deleted-${item.id}`}>
-                    <View style={styles.itemHeader}>
-                      <View style={styles.itemTitleWrap}>
-                        <Text style={styles.itemTitle} numberOfLines={1}>{item.entityTitle}</Text>
-                        <View style={styles.itemBadges}>
-                          <View style={styles.entityBadge}>
-                            <Text style={styles.entityBadgeText}>{ENTITY_LABELS[item.entityType] || item.entityType}</Text>
-                          </View>
-                          {item.restored ? (
-                            <View style={[styles.statusBadge, { backgroundColor: '#22C55E18' }]}>
-                              <CheckCircle size={10} color="#22C55E" />
-                              <Text style={[styles.statusBadgeText, { color: '#22C55E' }]}>Restored</Text>
-                            </View>
-                          ) : (
-                            <View style={[styles.statusBadge, { backgroundColor: '#FF4D4D18' }]}>
-                              <XCircle size={10} color="#FF4D4D" />
-                              <Text style={[styles.statusBadgeText, { color: '#FF4D4D' }]}>Deleted</Text>
-                            </View>
-                          )}
-                        </View>
-                      </View>
-                    </View>
-
-                    <View style={styles.itemMeta}>
-                      <View style={styles.metaRow}>
-                        <Clock size={10} color={Colors.textTertiary} />
-                        <Text style={styles.metaText}>Deleted: {formatDate(item.deletedAt)}</Text>
-                      </View>
-                      <View style={styles.metaRow}>
-                        <Shield size={10} color={Colors.textTertiary} />
-                        <Text style={styles.metaText}>By: {item.deletedByRole} ({item.deletedBy.substring(0, 8)}...)</Text>
-                      </View>
-                      {item.restoredAt && (
-                        <View style={styles.metaRow}>
-                          <ArchiveRestore size={10} color="#22C55E" />
-                          <Text style={[styles.metaText, { color: '#22C55E' }]}>Restored: {formatDate(item.restoredAt)}</Text>
-                        </View>
-                      )}
-                    </View>
-
-                    {!item.restored && (
-                      <TouchableOpacity
-                        style={styles.restoreBtn}
-                        onPress={() => handleRestore(item)}
-                        disabled={restoreMutation.isPending}
-                        testID={`restore-${item.id}`}
-                      >
-                        {restoreMutation.isPending ? (
-                          <ActivityIndicator size="small" color="#22C55E" />
-                        ) : (
-                          <>
-                            <ArchiveRestore size={15} color="#22C55E" />
-                            <Text style={styles.restoreBtnText}>Restore to Database</Text>
-                          </>
-                        )}
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                ))
-              )}
-            </>
-          )}
-
-          {activeTab === 'backups' && (
-            <>
-              <View style={styles.backupActions}>
-                <TextInput
-                  style={styles.backupNoteInput}
-                  placeholder="Backup note (optional)..."
-                  placeholderTextColor={Colors.textTertiary}
-                  value={backupNote}
-                  onChangeText={setBackupNote}
-                />
-                <View style={styles.backupBtnsRow}>
-                  <TouchableOpacity
-                    style={styles.backupBtn}
-                    onPress={() => handleCreateBackup('all')}
-                    disabled={backupMutation.isPending}
-                  >
-                    {backupMutation.isPending ? (
-                      <ActivityIndicator size="small" color="#fff" />
-                    ) : (
-                      <>
-                        <Download size={15} color="#fff" />
-                        <Text style={styles.backupBtnText}>Backup ALL Data</Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.backupBtn, { backgroundColor: '#4A90D9' }]}
-                    onPress={() => handleCreateBackup('jv_deals')}
-                    disabled={backupMutation.isPending}
-                  >
-                    <Download size={15} color="#fff" />
-                    <Text style={styles.backupBtnText}>JV Deals Only</Text>
-                  </TouchableOpacity>
-                </View>
               </View>
+            ))}
+          </Section>
+        )}
 
-              {backupsQuery.isLoading ? (
-                <View style={styles.centerWrap}>
-                  <ActivityIndicator size="large" color={Colors.primary} />
-                  <Text style={styles.centerText}>Loading backups...</Text>
-                </View>
-              ) : (backupsQuery.data ?? []).length === 0 ? (
-                <View style={styles.centerWrap}>
-                  <HardDrive size={48} color={Colors.textTertiary} />
-                  <Text style={styles.emptyTitle}>No Backups Yet</Text>
-                  <Text style={styles.emptySubtitle}>Create your first backup to protect your data.</Text>
-                </View>
-              ) : (
-                (backupsQuery.data ?? []).map(backup => (
-                  <View key={backup.id} style={styles.backupCard} testID={`backup-${backup.id}`}>
-                    <View style={styles.backupHeader}>
-                      <View style={styles.backupIconWrap}>
-                        <HardDrive size={18} color="#4A90D9" />
-                      </View>
-                      <View style={styles.backupInfo}>
-                        <Text style={styles.backupTitle}>
-                          {backup.entityType === 'all' ? 'Full Backup' : `${ENTITY_LABELS[backup.entityType] || backup.entityType} Backup`}
-                        </Text>
-                        <Text style={styles.backupMeta}>{backup.entityCount} records | {formatDate(backup.createdAt)}</Text>
-                        {backup.note && <Text style={styles.backupNote}>{backup.note}</Text>}
-                      </View>
-                    </View>
-                    <TouchableOpacity
-                      style={styles.restoreBackupBtn}
-                      onPress={() => handleRestoreBackup(backup)}
-                      disabled={restoreBackupMutation.isPending}
-                    >
-                      {restoreBackupMutation.isPending ? (
-                        <ActivityIndicator size="small" color="#FFD700" />
-                      ) : (
-                        <>
-                          <ArchiveRestore size={15} color="#FFD700" />
-                          <Text style={styles.restoreBackupBtnText}>Restore This Backup</Text>
-                        </>
-                      )}
-                    </TouchableOpacity>
-                  </View>
-                ))
-              )}
-            </>
-          )}
+        {/* DR Runbook Link */}
+        <TouchableOpacity
+          style={styles.runbookButton}
+          onPress={() => Linking.openURL('https://github.com/ibb142/rork-global-real-estate-invest/blob/main/docs/DISASTER-RECOVERY-RUNBOOK.md')}
+        >
+          <FileText size={20} color={GOLD} />
+          <Text style={styles.runbookText}>Open Disaster Recovery Runbook</Text>
+          <ChevronLeft size={18} color={GOLD} style={{ transform: [{ rotate: '180deg' }] }} />
+        </TouchableOpacity>
 
-          <View style={{ height: 100 }} />
-        </ScrollView>
-      </SafeAreaView>
+        <View style={{ height: 40 }} />
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+// ---------------------------------------------------------------------------
+
+function Section({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <View style={styles.section}>
+      <View style={styles.sectionHeader}>
+        {icon}
+        <Text style={styles.sectionTitle}>{title}</Text>
+      </View>
+      <View style={styles.sectionBody}>{children}</View>
     </View>
   );
 }
 
+function MetricRow({ label, value, valueColor }: { label: string; value: string; valueColor?: string }) {
+  return (
+    <View style={styles.metricRow}>
+      <Text style={styles.metricLabel}>{label}</Text>
+      <Text style={[styles.metricValue, valueColor ? { color: valueColor } : null]} numberOfLines={1}>
+        {value}
+      </Text>
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: '#000000',
   },
-  safeArea: {
+  loadingContainer: {
     flex: 1,
+    backgroundColor: '#000',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 16,
+  },
+  loadingText: {
+    color: '#909090',
+    fontSize: 14,
+  },
+  errorContainer: {
+    flex: 1,
+    backgroundColor: '#000',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 32,
+    gap: 12,
+  },
+  errorTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  errorDetail: {
+    color: '#909090',
+    fontSize: 13,
+    textAlign: 'center',
+  },
+  retryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: GOLD,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+    marginTop: 12,
+  },
+  retryButtonText: {
+    color: '#000',
+    fontWeight: '700',
+    fontSize: 15,
   },
   header: {
     flexDirection: 'row',
@@ -486,310 +495,209 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.surfaceBorder,
+    borderBottomColor: '#2A2A2A',
   },
-  backBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: Colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerCenter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  backButton: {
+    padding: 4,
   },
   headerTitle: {
-    color: Colors.text,
-    fontSize: 17,
-    fontWeight: '700' as const,
-  },
-  headerRight: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: Colors.primary + '15',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  statsRow: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    paddingTop: 14,
-    gap: 8,
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: Colors.surface,
-    borderRadius: 12,
-    padding: 12,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: Colors.surfaceBorder,
-  },
-  statValue: {
-    color: Colors.text,
+    color: '#fff',
     fontSize: 18,
-    fontWeight: '800' as const,
-  },
-  statLabel: {
-    color: Colors.textTertiary,
-    fontSize: 9,
-    fontWeight: '600' as const,
-    marginTop: 2,
-    textTransform: 'uppercase' as const,
-    letterSpacing: 0.5,
-  },
-  tabRow: {
-    flexDirection: 'row',
-    marginHorizontal: 16,
-    marginTop: 14,
-    backgroundColor: Colors.surface,
-    borderRadius: 12,
-    padding: 4,
-    borderWidth: 1,
-    borderColor: Colors.surfaceBorder,
-  },
-  tab: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 10,
-    borderRadius: 10,
-  },
-  tabActive: {
-    backgroundColor: Colors.primary + '18',
-  },
-  tabText: {
-    color: Colors.textSecondary,
-    fontSize: 12,
-    fontWeight: '600' as const,
-  },
-  tabTextActive: {
-    color: Colors.primary,
+    fontWeight: '700',
   },
   scrollView: {
     flex: 1,
   },
-  searchWrap: {
+  scrollContent: {
+    padding: 16,
+    gap: 16,
+  },
+  banner: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.surface,
+    gap: 12,
+    padding: 16,
     borderRadius: 12,
-    marginHorizontal: 16,
-    marginTop: 14,
-    paddingHorizontal: 12,
-    gap: 8,
-    borderWidth: 1,
-    borderColor: Colors.surfaceBorder,
   },
-  searchInput: {
+  bannerText: {
     flex: 1,
-    color: Colors.text,
-    fontSize: 14,
-    paddingVertical: 12,
   },
-  centerWrap: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 60,
+  bannerTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  bannerSubtitle: {
+    color: '#909090',
+    fontSize: 13,
+    marginTop: 2,
+  },
+  actionsRow: {
+    flexDirection: 'row',
     gap: 12,
   },
-  centerText: {
-    color: Colors.textSecondary,
-    fontSize: 14,
-  },
-  emptyTitle: {
-    color: Colors.text,
-    fontSize: 18,
-    fontWeight: '700' as const,
-    marginTop: 8,
-  },
-  emptySubtitle: {
-    color: Colors.textSecondary,
-    fontSize: 13,
-    textAlign: 'center',
-    paddingHorizontal: 40,
-  },
-  itemCard: {
-    backgroundColor: Colors.surface,
-    borderRadius: 14,
-    marginHorizontal: 16,
-    marginTop: 10,
-    padding: 14,
+  actionButton: {
+    flex: 1,
+    backgroundColor: '#141414',
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+    gap: 8,
     borderWidth: 1,
-    borderColor: '#FF4D4D25',
-    borderLeftWidth: 3,
-    borderLeftColor: '#FF4D4D50',
+    borderColor: '#2A2A2A',
   },
-  itemCardRestored: {
-    borderColor: '#22C55E25',
-    borderLeftColor: '#22C55E50',
-    opacity: 0.7,
+  actionLabel: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
   },
-  itemHeader: {
-    marginBottom: 8,
+  section: {
+    backgroundColor: '#141414',
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#2A2A2A',
   },
-  itemTitleWrap: {
-    gap: 6,
-  },
-  itemTitle: {
-    color: Colors.text,
-    fontSize: 15,
-    fontWeight: '700' as const,
-  },
-  itemBadges: {
+  sectionHeader: {
     flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#2A2A2A',
+  },
+  sectionTitle: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  sectionBody: {
+    padding: 14,
+    gap: 10,
+  },
+  metricRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  metricLabel: {
+    color: '#909090',
+    fontSize: 13,
+  },
+  metricValue: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '600',
+    maxWidth: '60%',
+  },
+  checkRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  checkContent: {
+    flex: 1,
+  },
+  checkService: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  checkDetail: {
+    color: '#909090',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  complianceRow: {
+    flexDirection: 'row',
+    gap: 24,
+    marginTop: 8,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#2A2A2A',
+  },
+  complianceItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  complianceLabel: {
+    color: '#909090',
+    fontSize: 13,
+  },
+  gapsContainer: {
     gap: 6,
     marginTop: 4,
   },
-  entityBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-    backgroundColor: Colors.backgroundSecondary,
-  },
-  entityBadgeText: {
-    color: Colors.textSecondary,
-    fontSize: 10,
-    fontWeight: '600' as const,
-  },
-  statusBadge: {
+  gapItem: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
+    alignItems: 'flex-start',
+    gap: 6,
   },
-  statusBadgeText: {
-    fontSize: 10,
-    fontWeight: '700' as const,
+  gapText: {
+    color: ORANGE,
+    fontSize: 12,
+    flex: 1,
   },
-  itemMeta: {
-    gap: 4,
-    marginBottom: 10,
+  alertBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+    backgroundColor: `${ORANGE}15`,
+    padding: 10,
+    borderRadius: 8,
   },
-  metaRow: {
+  alertText: {
+    color: ORANGE,
+    fontSize: 12,
+    flex: 1,
+  },
+  linkButton: {
+    paddingVertical: 8,
+  },
+  linkText: {
+    color: BLUE,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  noteText: {
+    color: '#555',
+    fontSize: 11,
+    fontStyle: 'italic',
+  },
+  snapshotsList: {
+    gap: 6,
+    marginTop: 4,
+  },
+  snapshotItem: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
   },
-  metaText: {
-    color: Colors.textTertiary,
-    fontSize: 11,
-  },
-  restoreBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 11,
-    borderRadius: 10,
-    backgroundColor: '#22C55E15',
-    borderWidth: 1,
-    borderColor: '#22C55E30',
-  },
-  restoreBtnText: {
-    color: '#22C55E',
-    fontSize: 13,
-    fontWeight: '700' as const,
-  },
-  backupActions: {
-    marginHorizontal: 16,
-    marginTop: 14,
-    gap: 10,
-  },
-  backupNoteInput: {
-    backgroundColor: Colors.surface,
-    borderRadius: 12,
-    padding: 14,
-    color: Colors.text,
-    fontSize: 14,
-    borderWidth: 1,
-    borderColor: Colors.surfaceBorder,
-  },
-  backupBtnsRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  backupBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 13,
-    borderRadius: 12,
-    backgroundColor: '#22C55E',
-  },
-  backupBtnText: {
+  snapshotId: {
     color: '#fff',
-    fontSize: 13,
-    fontWeight: '700' as const,
-  },
-  backupCard: {
-    backgroundColor: Colors.surface,
-    borderRadius: 14,
-    marginHorizontal: 16,
-    marginTop: 10,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#4A90D925',
-    borderLeftWidth: 3,
-    borderLeftColor: '#4A90D950',
-  },
-  backupHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  backupIconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: '#4A90D915',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  backupInfo: {
+    fontSize: 11,
     flex: 1,
   },
-  backupTitle: {
-    color: Colors.text,
-    fontSize: 14,
-    fontWeight: '700' as const,
-  },
-  backupMeta: {
-    color: Colors.textTertiary,
+  snapshotRows: {
+    color: GREEN,
     fontSize: 11,
-    marginTop: 2,
+    fontWeight: '600',
   },
-  backupNote: {
-    color: Colors.textSecondary,
-    fontSize: 11,
-    fontStyle: 'italic' as const,
-    marginTop: 3,
-  },
-  restoreBackupBtn: {
+  runbookButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    paddingVertical: 11,
-    borderRadius: 10,
-    backgroundColor: '#FFD70015',
+    backgroundColor: '#141414',
+    borderRadius: 12,
+    padding: 16,
     borderWidth: 1,
-    borderColor: '#FFD70030',
+    borderColor: '#2A2A2A',
   },
-  restoreBackupBtnText: {
-    color: '#FFD700',
-    fontSize: 13,
-    fontWeight: '700' as const,
+  runbookText: {
+    color: GOLD,
+    fontSize: 14,
+    fontWeight: '600',
+    flex: 1,
   },
 });

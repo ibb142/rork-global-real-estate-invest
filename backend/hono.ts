@@ -817,6 +817,20 @@ import {
 } from './api/ivx-restore-center';
 import { handleZeroDataLossMigration, zeroDataLossMigrationOptions } from './api/ivx-zero-data-loss-migration';
 import {
+  enterpriseRecoveryOptions,
+  handleRecoveryObjectives,
+  handleRecoveryMonitoring,
+  handleRecoveryAlerts,
+  handleRecoveryValidate,
+  handleStorageAudit,
+  handleStorageManifest,
+  handleStorageManifestHistory,
+  handleFinancialProtectionAudit,
+  handleRecoveryRunbook,
+  handleRecoveryOverview,
+  handleCreateAlert,
+} from './api/ivx-enterprise-recovery';
+import {
   OPTIONS as intentEngineOptions,
   handleIntentEngineDashboardRequest,
   handleIntentEnginePhase1Request,
@@ -4627,6 +4641,23 @@ app.post('/api/ivx/data-guard/evaluate', async (c) => handleDataGuardEvaluate(c.
 app.get('/api/ivx/data-guard/audit', async (c) => handleDataGuardAudit(c.req.raw));
 app.get('/api/ivx/data-guard/protected-tables', async (c) => handleDataGuardProtectedTables(c.req.raw));
 app.post('/api/ivx/data-guard/check', async (c) => handleDataGuardCheck(c.req.raw));
+
+// ── IVX Enterprise Recovery (2026-07-12) — monitoring, validation, storage, financial ──
+app.options('/api/ivx/recovery/*', () => enterpriseRecoveryOptions());
+app.get('/api/ivx/recovery/objectives', async (c) => handleRecoveryObjectives(c.req.raw));
+app.get('/api/ivx/recovery/monitoring', async (c) => handleRecoveryMonitoring(c.req.raw));
+app.get('/api/ivx/recovery/alerts', async (c) => handleRecoveryAlerts(c.req.raw));
+app.get('/api/ivx/recovery/validate', async (c) => handleRecoveryValidate(c.req.raw));
+app.post('/api/ivx/recovery/validate', async (c) => handleRecoveryValidate(c.req.raw));
+app.post('/api/ivx/recovery/alert', async (c) => handleCreateAlert(c.req.raw));
+app.get('/api/ivx/recovery/runbook', async (c) => handleRecoveryRunbook(c.req.raw));
+app.get('/api/ivx/recovery/overview', async (c) => handleRecoveryOverview(c.req.raw));
+app.options('/api/ivx/storage/*', () => enterpriseRecoveryOptions());
+app.get('/api/ivx/storage/audit', async (c) => handleStorageAudit(c.req.raw));
+app.get('/api/ivx/storage/manifest-history', async (c) => handleStorageManifestHistory(c.req.raw));
+app.get('/api/ivx/storage/manifest/:bucket', async (c) => handleStorageManifest(c.req.raw, c.req.param('bucket') ?? ''));
+app.options('/api/ivx/financial-protection/*', () => enterpriseRecoveryOptions());
+app.get('/api/ivx/financial-protection/audit', async (c) => handleFinancialProtectionAudit(c.req.raw));
 
 // ── IVX Deployment Tools Brain (Unified Dashboard) ──────────────────
 app.options('/api/ivx/deploy-tools/*', () => deployToolsOptions());
