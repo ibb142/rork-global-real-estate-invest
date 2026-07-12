@@ -1,0 +1,987 @@
+{
+  "role": "assistant",
+  "responseMessageContents": [
+    {
+      "type": "reasoning",
+      "text": "The user wants me to QA the end-to-end owner sign-in flow, and after verifying it works, mark it as verified. They want evidence, not narrative. Let me look at the actual code and test it.\n\nLet me start by examining the owner sign-in flow end to end - the frontend code, the backend endpoints, and verify the live behavior.",
+      "id": "7gmj1z61hgxkfstzsxv9b",
+      "createdAt": 1783465385601,
+      "completedAt": 1783465386779
+    },
+    {
+      "type": "text",
+      "text": "I'll QA the owner sign-in flow end-to-end with evidence. Let me audit the real code path first.",
+      "id": "34f8msipb1xsm95cce5sg"
+    },
+    {
+      "type": "tool",
+      "id": "chatcmpl-tool-827a8d7beaf8c35e",
+      "toolName": "read",
+      "input": {
+        "filePath": "expo/app/admin/ivx-developer-workspace.tsx"
+      },
+      "output": {
+        "path": "expo/app/admin/ivx-developer-workspace.tsx",
+        "content": "     1|import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';\n     2|import {\n     3|  ActivityIndicator,\n     4|  Alert,\n     5|  KeyboardAvoidingView,\n     6|  Platform,\n     7|  Pressable,\n     8|  ScrollView,\n     9|  StyleSheet,\n    10|  Text,\n    11|  TextInput,\n    12|  View,\n    13|} from 'react-native';\n    14|import * as Clipboard from 'expo-clipboard';\n    15|import * as Haptics from 'expo-haptics';\n    16|import { SafeAreaView } from 'react-native-safe-area-context';\n    17|import { Stack, useLocalSearchParams, useRouter } from 'expo-router';\n    18|import {\n    19|  AlertTriangle,\n    20|  ArrowLeft,\n    21|  Beaker,\n    22|  Bug,\n    23|  CheckCircle2,\n    24|  ClipboardList,\n    25|  Code2,\n    26|  Copy,\n    27|  Cpu,\n    28|  Database,\n    29|  FileCode,\n    30|  FileText,\n    31|  Filter,\n    32|  GitBranch,\n    33|  GitPullRequestArrow,\n    34|  History,\n    35|  Plus,\n    36|  Rocket,\n    37|  Search,\n    38|  Send,\n    39|  ShieldAlert,\n    40|  ShieldCheck,\n    41|  Sparkles,\n    42|  Square,\n    43|  Terminal,\n    44|  Trash2,\n    45|  XCircle,\n    46|} from 'lucide-react-native';\n    47|import Colors from '@/constants/colors';\n    48|import {\n    49|  cancelPendingAIReply,\n    50|  requestAIReply,\n    51|} from '@/src/modules/chat/services/aiReplyService';\n    52|import { recordIVXOwnerChatAuditEvent } from '@/src/modules/ivx-owner-ai/services';\n    53|import { proposeAction as proposeApprovedAction } from '@/src/modules/ivx-developer/developerApprovedActionsService';\n    54|import {\n    55|  auditSeniorDeveloperProductionReadiness,\n    56|  runOwnerApprovedSeniorDeveloperProduction,\n    57|  type IVXSeniorDeveloperCredentialAuditResponse,\n    58|  type IVXSeniorDeveloperRiskLevel,\n    59|  type IVXSeniorDeveloperRunResponse,\n    60|} from '@/src/modules/ivx-developer/seniorDeveloperApprovalService';\n    61|import {\n    62|  gatherSeniorDeveloperPreflight,\n    63|  gatherOwnerProofGate,\n    64|  type OwnerProofGate,\n    65|  type SeniorDeveloperPreflight,\n    66|} from '@/src/modules/ivx-developer/seniorDeveloperPreflightService';\n    67|import { useAuth } from '@/lib/auth-context';\n    68|import { getConfiguredOwnerAdminEmail } from '@/lib/admin-access-lock';\n    69|import { getIVXRuntimeInfo, type IVXRuntimeInfo } from '@/lib/runtime-environment';\n    70|import {\n    71|  BLOCK18_DEVELOPER_WORKSPACE_MARKER,\n    72|  PATCH_REPLY_FORMAT_INSTRUCTION,\n    73|  PROJECT_FILE_REGISTRY,\n    74|  type DeveloperActionLog,\n    75|  type PatchProposal,\n    76|  type PatchStatus,\n    77|  type ProjectFileEntry,\n    78|  type ProjectFileKind,\n    79|  type SafetyFinding,\n    80|  createPatch,\n    81|  deletePatch,\n    82|  listDeveloperActions,\n    83|  listPatches,\n    84|  logDeveloperAction,\n    85|  sanitizeForDisplay,\n    86|  scanForSafetyIssues,\n    87|  tryParseAIPatchReply,\n    88|  updatePatchStatus,\n    89|} from '@/src/modules/ivx-developer/developerWorkspaceService';\n    90|\n    91|const WORKSPACE_CONVERSATION_ID = 'ivx-owner-ai-developer-workspace';\n    92|\n    93|type TabId = 'approve' | 'files' | 'assistant' | 'patches' | 'tests';\n    94|\n    95|type AssistantMode = 'review_code' | 'debug_bug' | 'plan_feature' | 'propose_patch' | 'analyze_error';\n    96|\n    97|const ASSISTANT_MODES: readonly {\n    98|  id: AssistantMode;\n    99|  label: string;\n   100|  hint: string;\n   101|  icon: React.ComponentType<{ size?: number; color?: string }>;\n   102|}[] = [\n   103|  { id: 'review_code', label: 'Review', hint: 'Senior code review', icon: FileCode },\n   104|  { id: 'debug_bug', label: 'Debug', hint: 'Root cause + minimal patch', icon: Bug },\n   105|  { id: 'plan_feature', label: 'Plan', hint: 'Crash-safe additive plan', icon: ClipboardList },\n   106|  { id: 'propose_patch', label: 'Patch', hint: 'Tagged diff for approval', icon: GitPullRequestArrow },\n   107|  { id: 'analyze_error', label: 'Analyze', hint: 'Test/build failure triage', icon: Beaker },\n   108|];\n   109|\n   110|function buildAssistantPrompt(\n   111|  mode: AssistantMode,\n   112|  input: string,\n   113|  attachedFile: ProjectFileEntry | null,\n   114|): string {\n   115|  const fileContext = attachedFile\n   116|    ? `\\n\\n--- ATTACHED FILE CONTEXT ---\\npath: ${attachedFile.path}\\nkind: ${attachedFile.kind}\\ncategory: ${attachedFile.category}\\ntitle: ${attachedFile.title}\\nsummary: ${attachedFile.summary}\\ntags: ${attachedFile.tags.join(', ')}`\n   117|    : '';\n   118|  const baseGuard = [\n   119|    'Act as the IVX senior developer assistant operating inside the owner-only Code Developer Workspace.',\n   120|    'Hard rules: do NOT silently modify production code; never expose real secret values; never propose destructive ops without an explicit confirmation note; keep changes additive and crash-safe.',\n   121|    'The live ChatGPT path (POST /api/public/chat returning source=chatgpt) and Block 17 sessions/history MUST keep working.',\n   122|  ].join('\\n');\n   123|  const modeBlock = (() => {\n   124|    switch (mode) {\n   125|      case 'review_code':\n   126|        return 'Mode: REVIEW. Reply with: 1) verdict, 2) numbered fixes (path-style), 3) suggested next test.';\n   127|      case 'debug_bug':\n   128|        return 'Mode: DEBUG. Reply with: 1) hypothesis, 2) evidence to confirm, 3) minimal patch outline, 4) regression risk.';\n   129|      case 'plan_feature':\n   130|        return 'Mode: PLAN. Reply with: 1) goal, 2) numbered file-by-file changes, 3) validation per block, 4) rollback note.';\n   131|      case 'propose_patch':\n   132|        return [\n   133|          'Mode: PROPOSE PATCH.',\n   134|          PATCH_REPLY_FORMAT_INSTRUCTION,\n   135|        ].join('\\n');\n   136|      case 'analyze_error':\n   137|        return 'Mode: ANALYZE ERROR. Reply with: 1) likely cause, 2) safest fix, 3) verification command, 4) rollback note.';\n   138|    }\n   139|  })();\n   140|  return [baseGuard, modeBlock, fileContext, '\\n--- OWNER INPUT ---', input].join('\\n');\n   141|}\n   142|\n   143|const KIND_LABEL: Record<ProjectFileKind, string> = {\n   144|  route: 'Route',\n   145|  screen: 'Screen',\n   146|  service: 'Service',\n   147|  module: 'Module',\n   148|  backend: 'Backend',\n   149|  migration: 'Migration',\n   150|  config: 'Config',\n   151|  doc: 'Doc',\n   152|};\n   153|\n   154|const PATCH_STATUS_COLOR: Record<PatchStatus, string> = {\n   155|  proposed: Colors.warning,\n   156|  approved: Colors.blue,\n   157|  applied: Colors.green,\n   158|  failed: Colors.error,\n   159|  rejected: Colors.textTertiary,\n   160|};\n   161|\n   162|type RunState =\n   163|  | { kind: 'idle' }\n   164|  | { kind: 'running' }\n   165|  | { kind: 'success'; answer: string; model: string; source: string; ms: number; mode: AssistantMode }\n   166|  | { kind: 'error'; message: string };\n   167|\n   168|export default function IVXDeveloperWorkspaceScreen() {\n   169|  const router = useRouter();\n   170|  const params = useLocalSearchParams<{ seniorGoal?: string; seniorPlan?: string; seniorSource?: string }>();\n   171|  const [tab, setTab] = useState<TabId>('approve');\n   172|\n   173|  // Files tab\n   174|  const [search, setSearch] = useState<string>('');\n   175|  const [kindFilter, setKindFilter] = useState<ProjectFileKind | 'all'>('all');\n   176|  const [selectedFile, setSelectedFile] = useState<ProjectFileEntry | null>(null);\n   177|\n   178|  // Assistant tab\n   179|  const [assistantMode, setAssistantMode] = useState<AssistantMode>('review_code');\n   180|  const [assistantInput, setAssistantInput] = useState<string>('');\n   181|  const [assistantRun, setAssistantRun] = useState<RunState>({ kind: 'idle' });\n   182|  const [attachedFile, setAttachedFile] = useState<ProjectFileEntry | null>(null);\n   183|  const [safetyFindings, setSafetyFindings] = useState<SafetyFinding[]>([]);\n   184|\n   185|  // Patches tab\n   186|  const [patches, setPatches] = useState<PatchProposal[]>([]);\n   187|  const [actions, setActions] = useState<DeveloperActionLog[]>([]);\n   188|  const [patchesLoading, setPatchesLoading] = useState<boolean>(false);\n   189|\n   190|  // Owner-approved senior developer production flow\n   191|  const [seniorGoal, setSeniorGoal] = useState<string>('Act as IVX senior developer: apply the approved safe patch, commit to GitHub, trigger Render deploy, and verify production health.');\n   192|  const [seniorProposedPlan, setSeniorProposedPlan] = useState<string>('1. Inspect the selected approved patch and current backend runtime state.\\n2. Apply only the safe owner-approved code change.\\n3. Run focused validation.\\n4. Commit changed files to GitHub.\\n5. Trigger Render deploy.\\n6. Verify production /health and changed route.');\n   193|  const [seniorFilesText, setSeniorFilesText] = useState<string>('backend/services/agents/multi-agent-framework.ts');\n   194|  const [seniorRiskLevel, setSeniorRiskLevel] = useState<IVXSeniorDeveloperRiskLevel>('medium');\n   195|  const [seniorRollbackOption, setSeniorRollbackOption] = useState<string>('Rollback by reverting the returned GitHub commit hash, then trigger a Render redeploy of the previous known-good commit.');\n   196|  const [seniorAudit, setSeniorAudit] = useState<IVXSeniorDeveloperCredentialAuditResponse | null>(null);\n   197|  const [seniorRun, setSeniorRun] = useState<IVXSeniorDeveloperRunResponse | null>(null);\n   198|  const [seniorError, setSeniorError] = useState<string | null>(null);\n   199|  const [seniorAuditLoading, setSeniorAuditLoading] = useState<boolean>(false);\n   200|  const [seniorRunLoading, setSeniorRunLoading] = useState<boolean>(false);\n   201|  const [seniorPreflight, setSeniorPreflight] = useState<SeniorDeveloperPreflight | null>(null);\n   202|  const [seniorPreflightLoading, setSeniorPreflightLoading] = useState<boolean>(false);\n   203|  const [autoOwnerSignInLoading, setAutoOwnerSignInLoading] = useState<boolean>(false);\n   204|  const [autoOwnerSignInResult, setAutoOwnerSignInResult] = useState<{ ok: boolean; message: string } | null>(null);\n   205|  const autoSignInAttemptedRef = useRef<boolean>(false);\n   206|  const { loginOwnerPasswordless } = useAuth();\n   207|\n   208|  // Prefill the Senior Developer task from a daily-report \"Send to Senior Dev\" hand-off.\n   209|  useEffect(() => {\n   210|    const goal = typeof params.seniorGoal === 'string' ? params.seniorGoal.trim() : '';\n   211|    const plan = typeof params.seniorPlan === 'string' ? params.seniorPlan.trim() : '';\n   212|    if (!goal && !plan) return;\n   213|    if (goal) setSeniorGoal(goal);\n   214|    if (plan) setSeniorProposedPlan(plan);\n   215|    setSeniorRiskLevel('low');\n   216|  }, [params.seniorGoal, params.seniorPlan]);\n   217|\n   218|  // Expo Go / dev-runtime owner-proof gate\n   219|  const runtimeInfo = useMemo<IVXRuntimeInfo>(() => getIVXRuntimeInfo(), []);\n   220|  const [ownerProofGate, setOwnerProofGate] = useState<OwnerProofGate | null>(null);\n   221|  const [ownerProofGateLoading, setOwnerProofGateLoading] = useState<boolean>(false);\n   222|\n   223|  const seniorFilesAffected = useMemo<string[]>(() => {\n   224|    return Array.from(new Set(seniorFilesText\n   225|      .split(/[\\n,]/g)\n   226|      .map((item) => item.trim())\n   227|      .filter(Boolean)));\n   228|  }, [seniorFilesText]);\n   229|\n   230|  const seniorApprovedActionSummary = useMemo<string>(() => {\n   231|    return [\n   232|      'Proposed plan:',\n   233|      seniorProposedPlan.trim() || '(missing)',\n   234|      '',\n   235|      `Files affected: ${seniorFilesAffected.length > 0 ? seniorFilesAffected.join(', ') : '(missing)'}`,\n   236|      `Risk level: ${seniorRiskLevel}`,\n   237|      `Rollback option: ${seniorRollbackOption.trim() || '(missing)'}`,\n   238|    ].join('\\n');\n   239|  }, [seniorFilesAffected, seniorProposedPlan, seniorRiskLevel, seniorRollbackOption]);\n   240|\n   241|  // ---------- Senior Developer run gate ----------\n   242|  // The run is only enabled when EVERY owner-proof condition passes:\n   243|  // owner session present, token valid, owner email allowlisted, GitHub ready, Render audited.\n   244|  const seniorOwnerSessionReady = seniorPreflight?.readyToRun === true;\n   245|  const seniorGithubReady = seniorAudit?.audit?.github?.canPush === true;\n   246|  const seniorRenderReady = seniorAudit?.audit?.render?.canDeploy === true;\n   247|  const seniorRunGateReady = seniorOwnerSessionReady && seniorGithubReady && seniorRenderReady;\n   248|\n   249|  /** Precise, non-secret reason the run is gated, or null when ready to run. */\n   250|  const seniorRunGateReason = useMemo<string | null>(() => {\n   251|    if (!seniorPreflight || !seniorPreflight.ownerSessionPresent) {\n   252|      return 'Sign in as the IVX owner before running a Senior Developer task.';\n   253|    }\n   254|    if (!seniorPreflight.readyToRun) {\n   255|      return seniorPreflight.blockReason ?? 'Owner session is not valid for a Senior Developer run.';\n   256|    }\n   257|    if (!seniorAudit) {\n   258|      return 'Run \"Audit owner + credentials\" to confirm GitHub is ready and Render is audited.';\n   259|    }\n   260|    if (!seniorGithubReady) {\n   261|      return 'GitHub is not ready to push. Resolve the credential audit before running.';\n   262|    }\n   263|    if (!seniorRenderReady) {\n   264|      return 'Render is not audited/ready to deploy. Resolve the credential audit before running.';\n   265|    }\n   266|    return null;\n   267|  }, [seniorPreflight, seniorAudit, seniorGithubReady, seniorRenderReady]);\n   268|\n   269|  const refreshPatches = useCallback(async () => {\n   270|    setPatchesLoading(true);\n   271|    try {\n   272|      const [p, a] = await Promise.all([listPatches(), listDeveloperActions()]);\n   273|      setPatches(p);\n   274|      setActions(a);\n   275|    } finally {\n   276|      setPatchesLoading(false);\n   277|    }\n   278|  }, []);\n   279|\n   280|  useEffect(() => {\n   281|    void refreshPatches();\n   282|  }, [refreshPatches]);\n   283|\n   284|  const onCheckSeniorDeveloperPreflight = useCallback(async (): Promise<SeniorDeveloperPreflight> => {\n   285|    setSeniorPreflightLoading(true);\n   286|    try {\n   287|      const preflight = await gatherSeniorDeveloperPreflight();\n   288|      setSeniorPreflight(preflight);\n   289|      await logDeveloperAction({\n   290|        actor: 'owner',\n   291|        action: 'senior_developer_preflight_check',\n   292|        detail: `ready=${preflight.readyToRun} session=${preflight.ownerSessionPresent} segs=${preflight.tokenSegmentCount} jwt=${preflight.tokenLooksLikeSupabaseJwt} allow=${preflight.ownerEmailAllowlisted}`,\n   293|      });\n   294|      if (Platform.OS !== 'web') {\n   295|        Haptics.notificationAsync(preflight.readyToRun ? Haptics.NotificationFeedbackType.Success : Haptics.NotificationFeedbackType.Warning).catch(() => undefined);\n   296|      }\n   297|      return preflight;\n   298|    } finally {\n   299|      setSeniorPreflightLoading(false);\n   300|    }\n   301|  }, []);\n   302|\n   303|  // Detect the logged-in Supabase owner session on mount so the run gate reflects\n   304|  // owner-session / token / allowlist state immediately (before any run attempt).\n   305|  // If no owner session is present and a configured owner email is available,\n   306|  // automatically perform passwordless owner sign-in once.\n   307|  useEffect(() => {\n   308|    let cancelled = false;\n   309|    async function bootstrapOwnerSession() {\n   310|      const preflight = await onCheckSeniorDeveloperPreflight();\n   311|      if (cancelled) return;\n   312|      if (preflight.readyToRun) return;\n   313|      const ownerEmail = getConfiguredOwnerAdminEmail();\n   314|      if (!ownerEmail) return;\n   315|      if (autoSignInAttemptedRef.current) return;\n   316|      autoSignInAttemptedRef.current = true;\n   317|      setAutoOwnerSignInLoading(true);\n   318|      setAutoOwnerSignInResult(null);\n   319|      try {\n   320|        const result = await loginOwnerPasswordless(ownerEmail);\n   321|        setAutoOwnerSignInResult({ ok: result.success, message: result.message });\n   322|        if (result.success) {\n   323|          // Re-run preflight to verify the session is now active and allowlisted.\n   324|          await onCheckSeniorDeveloperPreflight();\n   325|        }\n   326|      } catch (error) {\n   327|        const message = error instanceof Error ? error.message : 'Automatic owner sign-in failed.';\n   328|        setAutoOwnerSignInResult({ ok: false, message });\n   329|      } finally {\n   330|        if (!cancelled) setAutoOwnerSignInLoading(false);\n   331|      }\n   332|    }\n   333|    void bootstrapOwnerSession();\n   334|    return () => { cancelled = true; };\n   335|  }, [loginOwnerPasswordless, onCheckSeniorDeveloperPreflight]);\n   336|\n   337|  // ---------- Files tab logic ----------\n   338|  const filteredFiles = useMemo<ProjectFileEntry[]>(() => {\n   339|    const q = search.trim().toLowerCase();\n   340|    return PROJECT_FILE_REGISTRY.filter((f) => {\n   341|      if (kindFilter !== 'all' && f.kind !== kindFilter) return false;\n   342|      if (!q) return true;\n   343|      const hay = `${f.path} ${f.title} ${f.summary} ${f.category} ${f.tags.join(' ')}`.toLowerCase();\n   344|      return hay.includes(q);\n   345|    });\n   346|  }, [search, kindFilter]);\n   347|\n   348|  const filesByCategory = useMemo<{ category: string; items: ProjectFileEntry[] }[]>(() => {\n   349|    const map = new Map<string, ProjectFileEntry[]>();\n   350|    for (const f of filteredFiles) {\n   351|      const list = map.get(f.category) ?? [];\n   352|      list.push(f);\n   353|      map.set(f.category, list);\n   354|    }\n   355|    return Array.from(map.entries()).map(([category, items]) => ({ category, items }));\n   356|  }, [filteredFiles]);\n   357|\n   358|  const onSelectFile = useCallback(\n   359|    (file: ProjectFileEntry) => {\n   360|      setSelectedFile(file);\n   361|      void logDeveloperAction({\n   362|        actor: 'owner',\n   363|        action: 'file_inspected',\n   364|        detail: `${file.path} (${file.kind})`,\n   365|      });\n   366|    },\n   367|    [],\n   368|  );\n   369|\n   370|  const onAskAboutFile = useCallback(\n   371|    (file: ProjectFileEntry) => {\n   372|      setAttachedFile(file);\n   373|      setTab('assistant');\n   374|      setAssistantInput((prev) =>\n   375|        prev.length > 0 ? prev : `Explain ${file.path} and how to safely change it.`,\n   376|      );\n   377|    },\n   378|    [],\n   379|  );\n   380|\n   381|  // ---------- Assistant tab logic ----------\n   382|  const onAssistantInputChange = useCallback((value: string) => {\n   383|    setAssistantInput(value);\n   384|    setSafetyFindings(scanForSafetyIssues(value));\n   385|  }, []);\n   386|\n   387|  const onCopy = useCallback(async (text: string) => {\n   388|    try {\n   389|      await Clipboard.setStringAsync(text);\n   390|      if (Platform.OS !== 'web') {\n   391|        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);\n   392|      }\n   393|    } catch (err) {\n   394|      console.log('[IVXDeveloperWorkspace] copy failed:', (err as Error)?.message);\n   395|    }\n   396|  }, []);\n   397|\n   398|  const onRunAssistant = useCallback(async () => {\n   399|    const trimmed = assistantInput.trim();\n   400|    if (!trimmed || assistantRun.kind === 'running') return;\n   401|\n   402|    const findings = scanForSafetyIssues(trimmed);\n   403|    if (findings.some((f) => f.kind === 'secret')) {\n   404|      Alert.alert(\n   405|        'Secret blocked',\n   406|        'Your input contains a value that looks like a real API key or token. Redact it before sending.',\n   407|      );\n   408|      void logDeveloperAction({\n   409|        actor: 'system',\n   410|        action: 'safety_block_secret',\n   411|        detail: findings.map((f) => f.name).join(', '),\n   412|      });\n   413|      return;\n   414|    }\n   415|    if (findings.some((f) => f.kind === 'destructive')) {\n   416|      const proceed = await new Promise<boolean>((resolve) => {\n   417|        Alert.alert(\n   418|          'Destructive operation detected',\n   419|          `Found: ${findings\n   420|            .filter((f) => f.kind === 'destructive')\n   421|            .map((f) => f.name)\n   422|            .join(', ')}\\n\\nContinue anyway? IVX IA will be told to refuse silent execution.`,\n   423|          [\n   424|            { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },\n   425|            { text: 'Continue', style: 'destructive', onPress: () => resolve(true) },\n   426|          ],\n   427|        );\n   428|      });\n   429|      if (!proceed) {\n   430|        void logDeveloperAction({\n   431|          actor: 'owner',\n   432|          action: 'destructive_canceled',\n   433|          detail: findings.map((f) => f.name).join(', '),\n   434|        });\n   435|        return;\n   436|      }\n   437|    }\n   438|\n   439|    const prompt = buildAssistantPrompt(assistantMode, trimmed, attachedFile);\n   440|    const startedAt = Date.now();\n   441|    setAssistantRun({ kind: 'running' });\n   442|\n   443|    if (Platform.OS !== 'web') {\n   444|      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);\n   445|    }\n   446|\n   447|    void recordIVXOwnerChatAuditEvent({\n   448|      action: 'developer_workspace_prompt',\n   449|      conversationId: WORKSPACE_CONVERSATION_ID,\n   450|      status: 'started',\n   451|      summary: `dev workspace prompt: ${assistantMode}`,\n   452|      metadata: {\n   453|        mode: assistantMode,\n   454|        block: BLOCK18_DEVELOPER_WORKSPACE_MARKER,\n   455|        inputLength: trimmed.length,\n   456|        attachedFile: attachedFile?.path ?? null,\n   457|      },\n   458|    }).catch(() => undefined);\n   459|\n   460|    try {\n   461|      const result = await requestAIReply(\n   462|        prompt,\n   463|        WORKSPACE_CONVERSATION_ID,\n   464|        'IVX Owner Developer Workspace',\n   465|      );\n   466|      const elapsed = Date.now() - startedAt;\n   467|      setAssistantRun({\n   468|        kind: 'success',\n   469|        answer: sanitizeForDisplay(result.answer),\n   470|        model: result.model,\n   471|        source: result.source,\n   472|        ms: elapsed,\n   473|        mode: assistantMode,\n   474|      });\n   475|      void recordIVXOwnerChatAuditEvent({\n   476|        action: 'developer_workspace_response',\n   477|        conversationId: WORKSPACE_CONVERSATION_ID,\n   478|        status: 'success',\n   479|        summary: `dev workspace response: ${assistantMode} (${result.source})`,\n   480|        metadata: {\n   481|          mode: assistantMode,\n   482|          block: BLOCK18_DEVELOPER_WORKSPACE_MARKER,\n   483|          model: result.model,\n   484|          source: result.source,\n   485|          ms: elapsed,\n   486|          answerLength: result.answer.length,\n   487|        },\n   488|      }).catch(() => undefined);\n   489|\n   490|      if (assistantMode === 'propose_patch') {\n   491|        const parsed = tryParseAIPatchReply(result.answer);\n   492|        if (parsed) {\n   493|          const patch = await createPatch(parsed);\n   494|          await refreshPatches();\n   495|          Alert.alert(\n   496|            'Patch proposal saved',\n   497|            `${patch.filePath}\\nrisk=${patch.riskLevel}${patch.destructive ? ' · destructive' : ''}\\n\\nReview and approve in the Patches tab before any apply.`,\n   498|          );\n   499|        }\n   500|      }\n   501|    } catch (err) {\n   502|      const message = (err as Error)?.message ?? 'Request failed';\n   503|      setAssistantRun({ kind: 'error', message });\n   504|      void recordIVXOwnerChatAuditEvent({\n   505|        action: 'developer_workspace_error',\n   506|        conversationId: WORKSPACE_CONVERSATION_ID,\n   507|        status: 'failed',\n   508|        summary: `dev workspace error: ${assistantMode}`,\n   509|        metadata: {\n   510|          mode: assistantMode,\n   511|          block: BLOCK18_DEVELOPER_WORKSPACE_MARKER,\n   512|          error: message.slice(0, 240),\n   513|        },\n   514|      }).catch(() => undefined);\n   515|    }\n   516|  }, [assistantInput, assistantMode, assistantRun.kind, attachedFile, refreshPatches]);\n   517|\n   518|  const onCancelAssistant = useCallback(() => {\n   519|    cancelPendingAIReply(WORKSPACE_CONVERSATION_ID, 'workspace_user_cancel');\n   520|    setAssistantRun({ kind: 'idle' });\n   521|  }, []);\n   522|\n   523|  // ---------- Patches tab actions ----------\n   524|  const onApprovePatch = useCallback(\n   525|    async (patch: PatchProposal) => {\n   526|      const confirmTitle = patch.destructive ? 'Approve destructive patch?' : 'Approve patch?';\n   527|      const confirmMsg = patch.destructive\n   528|        ? `${patch.filePath}\\n\\nThis patch was flagged as destructive. Type confirm by tapping the destructive button.`\n   529|        : `${patch.filePath}\\n\\nMark as approved? Apply still requires a separate explicit step.`;\n   530|      const ok = await new Promise<boolean>((resolve) => {\n   531|        Alert.alert(confirmTitle, confirmMsg, [\n   532|          { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },\n   533|          {\n   534|            text: patch.destructive ? 'Approve destructive' : 'Approve',\n   535|            style: patch.destructive ? 'destructive' : 'default',\n   536|            onPress: () => resolve(true),\n   537|          },\n   538|        ]);\n   539|      });\n   540|      if (!ok) return;\n   541|      await updatePatchStatus(patch.id, 'approved', { approver: 'owner' });\n   542|      await refreshPatches();\n   543|    },\n   544|    [refreshPatches],\n   545|  );\n   546|\n   547|  const onRejectPatch = useCallback(\n   548|    async (patch: PatchProposal) => {\n   549|      await updatePatchStatus(patch.id, 'rejected');\n   550|      await refreshPatches();\n   551|    },\n   552|    [refreshPatches],\n   553|  );\n   554|\n   555|  const onMarkApplied = useCallback(\n   556|    async (patch: PatchProposal) => {\n   557|      Alert.alert(\n   558|        'Mark patch as applied?',\n   559|        `${patch.filePath}\\n\\nOnly mark applied AFTER you have manually applied the diff and verified runChecks/tests.`,\n   560|        [\n   561|          { text: 'Cancel', style: 'cancel' },\n   562|          {\n   563|            text: 'Mark applied',\n   564|            onPress: async () => {\n   565|              await updatePatchStatus(patch.id, 'applied');\n   566|              await refreshPatches();\n   567|            },\n   568|          },\n   569|          {\n   570|            text: 'Mark failed',\n   571|            style: 'destructive',\n   572|            onPress: async () => {\n   573|              await updatePatchStatus(patch.id, 'failed', { failedReason: 'owner_marked_failed' });\n   574|              await refreshPatches();\n   575|            },\n   576|          },\n   577|        ],\n   578|      );\n   579|    },\n   580|    [refreshPatches],\n   581|  );\n   582|\n   583|  const onPromoteToGithub = useCallback(\n   584|    async (patch: PatchProposal) => {\n   585|      try {\n   586|        const action = await proposeApprovedAction({\n   587|          kind: 'github_commit',\n   588|          commitMessage: `chore(ivx): apply approved patch ${patch.filePath}`,\n   589|          files: [patch.filePath],\n   590|          patchIds: [patch.id],\n   591|          reason: `Promoted from workspace patch ${patch.id} :: ${patch.reason.slice(0, 200)}`,\n   592|        });\n   593|        await logDeveloperAction({\n   594|          actor: 'owner',\n   595|          action: 'promote_patch_to_github_commit',\n   596|          detail: `${patch.filePath} -> approved-action ${action.id} (status=${action.status})`,\n   597|        });\n   598|        Alert.alert(\n   599|          'Promoted to Block 21',\n   600|          `Proposed GitHub commit action ${action.id} for ${patch.filePath}.\\n\\nOpen Approved Developer Actions to review and approve. Nothing is committed without explicit owner approval.`,\n   601|          [\n   602|            { text: 'Stay here', style: 'cancel' },\n   603|            {\n   604|              text: 'Open Approved Actions',\n   605|              onPress: () => router.push('/admin/ivx-developer-actions' as any),\n   606|            },\n   607|          ],\n   608|        );\n   609|      } catch (err) {\n   610|        Alert.alert('Promote failed', (err as Error)?.message ?? 'Unknown error.');\n   611|      }\n   612|    },\n   613|    [router],\n   614|  );\n   615|\n   616|  const onDeletePatch = useCallback(\n   617|    async (patch: PatchProposal) => {\n   618|      Alert.alert('Delete patch?', patch.filePath, [\n   619|        { text: 'Cancel', style: 'cancel' },\n   620|        {\n   621|          text: 'Delete',\n   622|          style: 'destructive',\n   623|          onPress: async () => {\n   624|            await deletePatch(patch.id);\n   625|            await refreshPatches();\n   626|          },\n   627|        },\n   628|      ]);\n   629|    },\n   630|    [refreshPatches],\n   631|  );\n   632|\n   633|  const onAuditSeniorDeveloperReadiness = useCallback(async () => {\n   634|    setSeniorAuditLoading(true);\n   635|    setSeniorError(null);\n   636|    try {\n   637|      const audit = await auditSeniorDeveloperProductionReadiness();\n   638|      setSeniorAudit(audit);\n   639|      await logDeveloperAction({\n   640|        actor: 'owner',\n   641|        action: 'senior_developer_credential_audit',\n   642|        detail: `ok=${audit.ok} github=${audit.audit?.github?.canPush === true} render=${audit.audit?.render?.canDeploy === true}`,\n   643|      });\n   644|      if (Platform.OS !== 'web') {\n   645|        Haptics.notificationAsync(audit.ok ? Haptics.NotificationFeedbackType.Success : Haptics.NotificationFeedbackType.Warning).catch(() => undefined);\n   646|      }\n   647|    } catch (err) {\n   648|      const error = err as Error & { payload?: IVXSeniorDeveloperCredentialAuditResponse };\n   649|      const payload = error.payload;\n   650|      if (payload) {\n   651|        setSeniorAudit(payload);\n   652|      }\n   653|      const message = payload?.exactBlocker || payload?.error || error.message || 'Senior developer audit failed.';\n   654|      setSeniorError(message);\n   655|      await logDeveloperAction({ actor: 'system', action: 'senior_developer_credential_audit_failed', detail: message.slice(0, 240) });\n   656|    } finally {\n   657|      setSeniorAuditLoading(false);\n   658|    }\n   659|  }, []);\n   660|\n   661|  const onCheckOwnerProofGate = useCallback(async (): Promise<OwnerProofGate> => {\n   662|    setOwnerProofGateLoading(true);\n   663|    try {\n   664|      const gate = await gatherOwnerProofGate();\n   665|      setOwnerProofGate(gate);\n   666|      setSeniorPreflight(gate.preflight);\n   667|      await logDeveloperAction({\n   668|        actor: 'owner',\n   669|        action: 'owner_proof_gate_check',\n   670|        detail: `status=${gate.status} access=${gate.accessGranted} runtime=${runtimeInfo.kind}`,\n   671|      });\n   672|      if (Platform.OS !== 'web') {\n   673|        Haptics.notificationAsync(gate.accessGranted ? Haptics.NotificationFeedbackType.Success : Haptics.NotificationFeedbackType.Warning).catch(() => undefined);\n   674|      }\n   675|      return gate;\n   676|    } finally {\n   677|      setOwnerProofGateLoading(false);\n   678|    }\n   679|  }, [runtimeInfo.kind]);\n   680|\n   681|  const onOpenOwnerLogin = useCallback(() => {\n   682|    const path = ownerProofGate?.loginPath ?? '/login?ownerMode=1';\n   683|    router.push(path as any);\n   684|  }, [ownerProofGate?.loginPath, router]);\n   685|\n   686|  const onApproveSeniorDeveloperProductionRun = useCallback(async () => {\n   687|    const goal = seniorGoal.trim();\n   688|    const proposedPlan = seniorProposedPlan.trim();\n   689|    const rollbackOption = seniorRollbackOption.trim();\n   690|    if (!goal || seniorRunLoading) return;\n   691|    if (!proposedPlan || seniorFilesAffected.length === 0 || !rollbackOption) {\n   692|      Alert.alert(\n   693|        'Approval details required',\n   694|        'Add the proposed plan, files affected, risk level, and rollback option before approving a senior-developer production mutation.',\n   695|      );\n   696|      return;\n   697|    }\n   698|\n   699|    // Preflight gate: block BEFORE reaching the backend if the owner session is not valid.\n   700|    const preflight = await onCheckSeniorDeveloperPreflight();\n   701|    if (!preflight.readyToRun) {\n   702|      const reason = preflight.blockReason ?? 'Owner session preflight failed.';\n   703|      setSeniorError(reason);\n   704|      Alert.alert('Preflight blocked the run', reason);\n   705|      await logDeveloperAction({ actor: 'system', action: 'senior_developer_preflight_blocked', detail: reason.slice(0, 240) });\n   706|      return;\n   707|    }\n   708|\n   709|    const ok = await new Promise<boolean>((resolve) => {\n   710|      Alert.alert(\n   711|        'Approve senior-developer production action?',\n   712|        `${seniorApprovedActionSummary}\\n\\nThis sends your logged-in Supabase owner bearer to the backend. If verified against IVX_OWNER_REGISTRATION_EMAILS, the backend may commit to GitHub, trigger Render deploy, and verify production. No GitHub/Render secrets are sent from the phone.`,\n   713|        [\n   714|          { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },\n   715|          { text: 'Approve + run', style: 'destructive', onPress: () => resolve(true) },\n   716|        ],\n   717|      );\n   718|    });\n   719|    if (!ok) return;\n   720|\n   721|    setSeniorRunLoading(true);\n   722|    setSeniorError(null);\n   723|    setSeniorRun(null);\n   724|    try {\n   725|      const result = await runOwnerApprovedSeniorDeveloperProduction({\n   726|        goal,\n   727|        proposedPlan,\n   728|        filesAffected: seniorFilesAffected,\n   729|        riskLevel: seniorRiskLevel,\n   730|        rollbackOption,\n   731|        validationMode: 'focused',\n   732|      });\n   733|      setSeniorRun(result);\n   734|      await logDeveloperAction({\n   735|        actor: 'owner',\n   736|        action: 'senior_developer_owner_approved_run',\n   737|        detail: `ownerVerified=${result.ownerApproval?.ownerVerified === true} commit=${result.proof?.githubCommitHash ?? 'none'} deploy=${result.proof?.renderDeployId ?? 'none'}`,\n   738|      });\n   739|      if (Platform.OS !== 'web') {\n   740|        Haptics.notificationAsync(result.ok ? Haptics.NotificationFeedbackType.Success : Haptics.NotificationFeedbackType.Warning).catch(() => undefined);\n   741|      }\n   742|    } catch (err) {\n   743|      const error = err as Error & { payload?: IVXSeniorDeveloperRunResponse };\n   744|      const payload = error.payload;\n   745|      if (payload) {\n   746|        setSeniorRun(payload);\n   747|      }\n   748|      const message = payload?.exactBlocker || payload?.error || error.message || 'Senior developer production run failed.';\n   749|      setSeniorError(message);\n   750|      await logDeveloperAction({ actor: 'system', action: 'senior_developer_owner_approved_run_failed', detail: message.slice(0, 240) });\n   751|    } finally {\n   752|      setSeniorRunLoading(false);\n   753|    }\n   754|  }, [onCheckSeniorDeveloperPreflight, seniorApprovedActionSummary, seniorFilesAffected, seniorGoal, seniorProposedPlan, seniorRiskLevel, seniorRollbackOption, seniorRunLoading]);\n   755|\n   756|  const onLoadSafeDefaultSeniorTask = useCallback(() => {\n   757|    setSeniorGoal('Update IVX senior developer build marker: apply one harmless non-functional change (bump the build marker comment), commit to GitHub, trigger a Render deploy, and verify the live /version commit matches.');\n   758|    setSeniorProposedPlan('1. Update the IVX senior developer build marker (non-functional comment/version bump).\\n2. Run focused tests + typecheck.\\n3. Commit the single changed file to GitHub.\\n4. Trigger a Render deploy.\\n5. Verify production /version live commit matches the new commit hash.');\n   759|    setSeniorFilesText('backend/version-endpoint.test.ts');\n   760|    setSeniorRiskLevel('low');\n   761|    setSeniorRollbackOption('Rollback by reverting the returned GitHub build-marker commit hash, then trigger a Render redeploy of the previous known-good commit.');\n   762|    if (Platform.OS !== 'web') {\n   763|      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);\n   764|    }\n   765|  }, []);\n   766|\n   767|  const onCopySeniorRollback = useCallback(async () => {\n   768|    const rollback = seniorRun?.approvedAction?.rollbackOption || seniorRun?.proof?.approvedAction?.rollbackOption || seniorRollbackOption;\n   769|    await onCopy(rollback);\n   770|    await logDeveloperAction({ actor: 'owner', action: 'senior_developer_rollback_option_copied', detail: rollback.slice(0, 180) });\n   771|  }, [onCopy, seniorRollbackOption, seniorRun]);\n   772|\n   773|  // ---------- Render helpers ----------\n   774|  const KIND_FILTERS: readonly { id: ProjectFileKind | 'all'; label: string }[] = [\n   775|    { id: 'all', label: 'All' },\n   776|    { id: 'route', label: 'Routes' },\n   777|    { id: 'screen', label: 'Screens' },\n   778|    { id: 'service', label: 'Services' },\n   779|    { id: 'backend', label: 'Backend' },\n   780|    { id: 'migration', label: 'Migrations' },\n   781|    { id: 'config', label: 'Config' },\n   782|    { id: 'doc', label: 'Docs' },\n   783|  ];\n   784|\n   785|  return (\n   786|    <SafeAreaView style={styles.safe} edges={['top']}>\n   787|      <Stack.Screen options={{ headerShown: false }} />\n   788|      <View style={styles.header}>\n   789|        <Pressable\n   790|          onPress={() => router.back()}\n   791|          style={styles.backBtn}\n   792|          testID=\"ivx-dev-workspace-back\"\n   793|          hitSlop={12}\n   794|        >\n   795|          <ArrowLeft size={20} color={Colors.text} />\n   796|        </Pressable>\n   797|        <View style={styles.headerTitleWrap}>\n   798|          <View style={styles.headerTitleRow}>\n   799|            <Terminal size={16} color={Colors.green} />\n   800|            <Text style={styles.headerTitle}>Code Developer Workspace</Text>\n   801|          </View>\n   802|          <Text style={styles.headerSub}>IVX IA · senior developer mode</Text>\n   803|        </View>\n   804|        <Pressable\n   805|          onPress={() => router.push('/admin/ivx-auth-debug' as any)}\n   806|          style={styles.headerDebugBtn}\n   807|          hitSlop={12}\n   808|          testID=\"ivx-dev-auth-debug\"\n   809|        >\n   810|          <ShieldCheck size={14} color={Colors.green} />\n   811|        </Pressable>\n   812|        <View style={styles.headerBadge}>\n   813|          <Cpu size={12} color={Colors.green} />\n   814|          <Text style={styles.headerBadgeText}>BLOCK 18</Text>\n   815|        </View>\n   816|      </View>\n   817|\n   818|      <View style={styles.tabBar}>\n   819|        {(\n   820|          [\n   821|            { id: 'approve', label: 'Approve', icon: ShieldCheck },\n   822|            { id: 'files', label: 'Files', icon: FileCode },\n   823|            { id: 'assistant', label: 'Assistant', icon: Sparkles },\n   824|            { id: 'patches', label: 'Patches', icon: GitPullRequestArrow },\n   825|            { id: 'tests', label: 'Tests', icon: Beaker },\n   826|          ] as const\n   827|        ).map((t) => {\n   828|          const Icon = t.icon;\n   829|          const active = tab === t.id;\n   830|          return (\n   831|            <Pressable\n   832|              key={t.id}\n   833|              onPress={() => setTab(t.id)}\n   834|              style={[styles.tabItem, active && styles.tabItemActive]}\n   835|              testID={`ivx-dev-tab-${t.id}`}\n   836|            >\n   837|              <Icon size={13} color={active ? Colors.green : Colors.textTertiary} />\n   838|              <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>{t.label}</Text>\n   839|            </Pressable>\n   840|          );\n   841|        })}\n   842|      </View>\n   843|\n   844|      <KeyboardAvoidingView\n   845|        behavior={Platform.OS === 'ios' ? 'padding' : undefined}\n   846|        style={styles.flex}\n   847|        keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}\n   848|      >\n   849|        <ScrollView\n   850|          style={styles.scroll}\n   851|          contentContainerStyle={styles.scrollContent}\n   852|          keyboardShouldPersistTaps=\"handled\"\n   853|        >\n   854|          {tab === 'files' && (\n   855|            <View style={styles.gap}>\n   856|              <View style={styles.searchCard}>\n   857|                <Search size={14} color={Colors.textTertiary} />\n   858|                <TextInput\n   859|                  style={styles.searchInput}\n   860|                  value={search}\n   861|                  onChangeText={setSearch}\n   862|                  placeholder=\"Search routes, screens, services, tags…\"\n   863|                  placeholderTextColor={Colors.textTertiary}\n   864|                  autoCorrect={false}\n   865|                  autoCapitalize=\"none\"\n   866|                  testID=\"ivx-dev-files-search\"\n   867|                />\n   868|                {search.length > 0 ? (\n   869|                  <Pressable onPress={() => setSearch('')} hitSlop={8}>\n   870|                    <XCircle size={14} color={Colors.textTertiary} />\n   871|                  </Pressable>\n   872|                ) : null}\n   873|              </View>\n   874|\n   875|              <View style={styles.filterRow}>\n   876|                <Filter size={11} color={Colors.textTertiary} />\n   877|                <ScrollView\n   878|                  horizontal\n   879|                  showsHorizontalScrollIndicator={false}\n   880|                  contentContainerStyle={styles.filterScroll}\n   881|                >\n   882|                  {KIND_FILTERS.map((f) => {\n   883|                    const active = kindFilter === f.id;\n   884|                    return (\n   885|                      <Pressable\n   886|                        key={f.id}\n   887|                        onPress={() => setKindFilter(f.id)}\n   888|                        style={[styles.filterChip, active && styles.filterChipActive]}\n   889|                      >\n   890|                        <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>\n   891|                          {f.label}\n   892|                        </Text>\n   893|                      </Pressable>\n   894|                    );\n   895|                  })}\n   896|                </ScrollView>\n   897|              </View>\n   898|\n   899|              <Text style={styles.metaText}>\n   900|                {filteredFiles.length} of {PROJECT_FILE_REGISTRY.length} entries\n   901|              </Text>\n   902|\n   903|              {filesByCategory.map(({ category, items }) => (\n   904|                <View key={category} style={styles.section}>\n   905|                  <Text style={styles.sectionLabel}>{category}</Text>\n   906|                  {items.map((file) => (\n   907|                    <Pressable\n   908|                      key={file.id}\n   909|                      onPress={() => onSelectFile(file)}\n   910|                      style={[\n   911|                        styles.fileRow,\n   912|                        selectedFile?.id === file.id && styles.fileRowActive,\n   913|                      ]}\n   914|                      testID={`ivx-dev-file-${file.id}`}\n   915|                    >\n   916|                      <View style={styles.fileRowLeft}>\n   917|                        <View style={styles.fileKindPill}>\n   918|                          <Text style={styles.fileKindText}>{KIND_LABEL[file.kind]}</Text>\n   919|                        </View>\n   920|                        {file.ownerOnly ? (\n   921|                          <ShieldCheck size={11} color={Colors.green} />\n   922|                        ) : null}\n   923|                      </View>\n   924|                      <View style={styles.fileRowMain}>\n   925|                        <Text style={styles.fileTitle} numberOfLines={1}>\n   926|                          {file.title}\n   927|                        </Text>\n   928|                        <Text style={styles.filePath} numberOfLines={1}>\n   929|                          {file.path}\n   930|                        </Text>\n   931|                      </View>\n   932|                    </Pressable>\n   933|                  ))}\n   934|                </View>\n   935|              ))}\n   936|\n   937|              {selectedFile ? (\n   938|                <View style={styles.detailCard}>\n   939|                  <View style={styles.detailHeader}>\n   940|                    <FileText size={14} color={Colors.green} />\n   941|                    <Text style={styles.detailHeaderText} numberOfLines={1}>\n   942|                      {selectedFile.path}\n   943|                    </Text>\n   944|                    <Pressable onPress={() => setSelectedFile(null)} hitSlop={8}>\n   945|                      <XCircle size={14} color={Colors.textTertiary} />\n   946|                    </Pressable>\n   947|                  </View>\n   948|                  <Text style={styles.detailTitle}>{selectedFile.title}</Text>\n   949|                  <Text style={styles.detailSummary}>{selectedFile.summary}</Text>\n   950|                  <View style={styles.tagRow}>\n   951|                    {selectedFile.tags.map((t) => (\n   952|                      <View key={t} style={styles.tagPill}>\n   953|                        <Text style={styles.tagText}>#{t}</Text>\n   954|                      </View>\n   955|                    ))}\n   956|                  </View>\n   957|                  <Pressable\n   958|                    onPress={() => onAskAboutFile(selectedFile)}\n   959|                    style={styles.askBtn}\n   960|                    testID=\"ivx-dev-ask-file\"\n   961|                  >\n   962|                    <Sparkles size={13} color={Colors.background} />\n   963|                    <Text style={styles.askBtnText}>Ask IVX IA about this file</Text>\n   964|                  </Pressable>\n   965|                </View>\n   966|              ) : null}\n   967|            </View>\n   968|          )}\n   969|\n   970|          {tab === 'assistant' && (\n   971|            <View style={styles.gap}>\n   972|              <View style={styles.heroCard}>\n   973|                <View style={styles.heroLine}>\n   974|                  <Sparkles size={14} color={Colors.green} />\n   975|                  <Text style={styles.heroPrompt}>~/ivx</Text>\n   976|                  <Text style={styles.heroBranch}>main</Text>\n   977|                </View>\n   978|                <Text style={styles.heroText}>\n   979|                  Ask about a file, route, bug, or feature. IVX IA explains the change. Use the\n   980|                  Patch mode to get a tagged diff that becomes a reviewable proposal.\n   981|                </Text>\n   982|              </View>\n   983|\n   984|              <Text style={styles.sectionLabel}>Mode</Text>\n   985|              <View style={styles.templateGrid}>\n   986|                {ASSISTANT_MODES.map((m) => {\n   987|                  const Icon = m.icon;\n   988|                  const active = m.id === assistantMode;\n   989|                  return (\n   990|                    <Pressable\n   991|                      key={m.id}\n   992|                      onPress={() => setAssistantMode(m.id)}\n   993|                      style={[styles.templateCard, active && styles.templateCardActive]}\n   994|                      testID={`ivx-dev-mode-${m.id}`}\n   995|                    >\n   996|                      <View style={[styles.templateIcon, active && styles.templateIconActive]}>\n   997|                        <Icon size={14} color={active ? Colors.background : Colors.green} />\n   998|                      </View>\n   999|                      <Text\n  1000|                        style={[styles.templateLabel, active && styles.templateLabelActive]}\n  1001|                        numberOfLines={1}\n  1002|                      >\n  1003|                        {m.label}\n  1004|                      </Text>\n  1005|                      <Text style={styles.templateHint} numberOfLines={2}>\n  1006|                        {m.hint}\n  1007|                      </Text>\n  1008|                    </Pressable>\n  1009|                  );\n  1010|                })}\n  1011|              </View>\n  1012|\n  1013|              {attachedFile ? (\n  1014|                <View style={styles.attachedRow}>\n  1015|                  <FileText size={12} color={Colors.green} />\n  1016|                  <Text style={styles.attachedText} numberOfLines={1}>\n  1017|                    attached: {attachedFile.path}\n  1018|                  </Text>\n  1019|                  <Pressable onPress={() => setAttachedFile(null)} hitSlop={8}>\n  1020|                    <XCircle size={12} color={Colors.textTertiary} />\n  1021|                  </Pressable>\n  1022|                </View>\n  1023|              ) : null}\n  1024|\n  1025|              <Text style={styles.sectionLabel}>Input</Text>\n  1026|              <View style={styles.inputCard}>\n  1027|                <View style={styles.inputHeader}>\n  1028|                  <Text style={styles.inputHeaderText}>$ ivx-ia {assistantMode}</Text>\n  1029|                  <Text style={styles.inputHeaderMeta}>{assistantInput.length} chars</Text>\n  1030|                </View>\n  1031|                <TextInput\n  1032|                  value={assistantInput}\n  1033|                  onChangeText={onAssistantInputChange}\n  1034|                  placeholder={\n  1035|                    assistantMode === 'propose_patch'\n  1036|                      ? 'Describe the change you want. IVX IA will return a tagged diff for approval.'\n  1037|                      : 'Paste code, error, or ask a question. One task per run.'\n  1038|                  }\n  1039|                  placeholderTextColor={Colors.textTertiary}\n  1040|                  style={styles.inputField}\n  1041|                  multiline\n  1042|                  autoCorrect={false}\n  1043|                  autoCapitalize=\"none\"\n  1044|                  testID=\"ivx-dev-assistant-input\"\n  1045|                />\n  1046|                {safetyFindings.length > 0 ? (\n  1047|                  <View style={styles.safetyBanner}>\n  1048|                    <ShieldAlert size={12} color={Colors.warning} />\n  1049|                    <Text style={styles.safetyText} numberOfLines={2}>\n  1050|                      Safety: {safetyFindings.map((f) => `${f.kind}:${f.name}`).join(' · ')}\n  1051|                    </Text>\n  1052|                  </View>\n  1053|                ) : null}\n  1054|                <View style={styles.inputActions}>\n  1055|                  {assistantRun.kind === 'running' ? (\n  1056|                    <Pressable\n  1057|                      onPress={onCancelAssistant}\n  1058|                      style={[styles.runBtn, styles.cancelBtn]}\n  1059|                      testID=\"ivx-dev-assistant-cancel\"\n  1060|                    >\n  1061|                      <Square size={14} color={Colors.text} fill={Colors.text} />\n\n(Output truncated at 50 KB. Use 'offset' parameter to read beyond line 1061)"
+      },
+      "error": null,
+      "state": "output-available",
+      "inputArgsStr": "{\"filePath\": \"expo/app/admin/ivx-developer-workspace.tsx\"}",
+      "createdAt": 1783465387105,
+      "completedAt": 1783465387109,
+      "compactedAt": 1783847602303
+    },
+    {
+      "type": "tool",
+      "id": "chatcmpl-tool-99ada04718ae1353",
+      "toolName": "read",
+      "input": {
+        "filePath": "backend/api/ivx-owner-passwordless-login.ts"
+      },
+      "output": {
+        "path": "backend/api/ivx-owner-passwordless-login.ts",
+        "content": "     1|/**\n     2| * Passwordless owner sign-in.\n     3| *\n     4| * POST /api/ivx/owner-passwordless-login\n     5| *   body: { email }\n     6| *\n     7| * The owner types ONLY their email. The backend:\n     8| *   1. Validates the email is in the owner allowlist\n     9| *      (IVX_OWNER_REGISTRATION_EMAILS / IVX_BASELINE_OWNER_EMAILS).\n    10| *   2. Uses the Supabase admin (service-role) client to find the owner auth user\n    11| *      (creating + confirming them if they do not exist yet).\n    12| *   3. Self-heals: sets the user's password to the configured\n    13| *      IVX_OWNER_PASSWORD so the password grant always succeeds, even if the\n    14| *      password drifted in Supabase. This is the fix for the recurring\n    15| *      \"invalid_credentials\" block the owner hit.\n    16| *   4. Performs a server-side password grant against Supabase Auth and returns\n    17| *      the resulting session tokens (access_token, refresh_token, expires_at).\n    18| *\n    19| * The password is NEVER sent back to the client. The client installs the\n    20| * returned session via supabase.auth.setSession(), which produces a real\n    21| * Supabase session — so owner-AI chat approval (allowlist + bearer check)\n    22| * works automatically.\n    23| */\n    24|import { createClient, type SupabaseClient } from '@supabase/supabase-js';\n    25|import { ownerOnlyJson, ownerOnlyOptions } from './owner-only';\n    26|import { getIVXOwnerEmailAllowlist } from '../../expo/shared/ivx/access-control';\n    27|\n    28|const DEPLOYMENT_MARKER = 'ivx-owner-passwordless-login-2026-07-06t0000z';\n    29|\n    30|const PASSWORDLESS_HEADERS = {\n    31|  'Content-Type': 'application/json',\n    32|  'Cache-Control': 'no-store',\n    33|  'Access-Control-Allow-Origin': '*',\n    34|  'Access-Control-Allow-Headers': 'Content-Type, Authorization',\n    35|  'Access-Control-Allow-Methods': 'POST, OPTIONS',\n    36|} as const;\n    37|\n    38|function readTrimmed(value: unknown): string {\n    39|  return typeof value === 'string' ? value.trim() : '';\n    40|}\n    41|\n    42|function sanitizeEmail(value: unknown): string {\n    43|  return readTrimmed(value).toLowerCase();\n    44|}\n    45|\n    46|function isValidEmail(email: string): boolean {\n    47|  return /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email);\n    48|}\n    49|\n    50|function nowIso(): string {\n    51|  return new Date().toISOString();\n    52|}\n    53|\n    54|function json(payload: Record<string, unknown>, status: number = 200): Response {\n    55|  return new Response(JSON.stringify(payload), { status, headers: PASSWORDLESS_HEADERS });\n    56|}\n    57|\n    58|function readEnv(name: string): string {\n    59|  return (process.env[name] ?? '').trim();\n    60|}\n    61|\n    62|function resolveSupabaseUrl(): string {\n    63|  return readEnv('EXPO_PUBLIC_SUPABASE_URL') || readEnv('SUPABASE_URL');\n    64|}\n    65|\n    66|function resolveServiceRoleKey(): string {\n    67|  return readEnv('SUPABASE_SERVICE_ROLE_KEY') || readEnv('SUPABASE_SERVICE_KEY');\n    68|}\n    69|\n    70|function resolveAnonKey(): string {\n    71|  return readEnv('EXPO_PUBLIC_SUPABASE_ANON_KEY');\n    72|}\n    73|\n    74|function createAdminClient() {\n    75|  const supabaseUrl = resolveSupabaseUrl();\n    76|  const serviceRoleKey = resolveServiceRoleKey();\n    77|  if (!supabaseUrl) {\n    78|    throw new Error('Supabase URL is not configured on the backend (EXPO_PUBLIC_SUPABASE_URL).');\n    79|  }\n    80|  if (!serviceRoleKey) {\n    81|    throw new Error('Supabase service role key is not configured on the backend (SUPABASE_SERVICE_ROLE_KEY).');\n    82|  }\n    83|  return createClient(supabaseUrl, serviceRoleKey, {\n    84|    auth: { autoRefreshToken: false, persistSession: false },\n    85|  });\n    86|}\n    87|\n    88|type OwnerSessionResponse = {\n    89|  success: true;\n    90|  accessToken: string;\n    91|  refreshToken: string;\n    92|  expiresAt: number;\n    93|  expiresAtIso: string;\n    94|  userId: string;\n    95|  email: string;\n    96|  passwordSelfHealed: boolean;\n    97|  authUserCreated: boolean;\n    98|  deploymentMarker: string;\n    99|  timestamp: string;\n   100|};\n   101|\n   102|type OwnerSessionFailure = {\n   103|  success: false;\n   104|  message: string;\n   105|  rootCause: string;\n   106|  deploymentMarker: string;\n   107|  timestamp: string;\n   108|};\n   109|\n   110|/** Server-side password grant against the Supabase Auth token endpoint. */\n   111|async function passwordGrant(supabaseUrl: string, email: string, password: string): Promise<{\n   112|  ok: boolean;\n   113|  accessToken?: string;\n   114|  refreshToken?: string;\n   115|  expiresAt?: number;\n   116|  errorMessage?: string;\n   117|  errorStatus?: number;\n   118|}> {\n   119|  const endpoint = `${supabaseUrl.replace(/\\/+$/, '')}/auth/v1/token?grant_type=password`;\n   120|  const anonKey = resolveAnonKey();\n   121|  if (!anonKey) {\n   122|    return { ok: false, errorMessage: 'Supabase anon key is not configured on the backend.' };\n   123|  }\n   124|  const controller = new AbortController();\n   125|  const timer = setTimeout(() => controller.abort(), 20_000);\n   126|  try {\n   127|    const response = await fetch(endpoint, {\n   128|      method: 'POST',\n   129|      headers: {\n   130|        'Content-Type': 'application/json',\n   131|        apikey: anonKey,\n   132|        Authorization: `Bearer ${anonKey}`,\n   133|      },\n   134|      body: JSON.stringify({ email, password }),\n   135|      signal: controller.signal,\n   136|    });\n   137|    const text = await response.text();\n   138|    let parsed: Record<string, unknown> = {};\n   139|    try {\n   140|      parsed = text ? (JSON.parse(text) as Record<string, unknown>) : {};\n   141|    } catch {\n   142|      return { ok: false, errorMessage: `Supabase returned non-JSON auth response (HTTP ${response.status}).` };\n   143|    }\n   144|    if (!response.ok) {\n   145|      const message = typeof parsed.error_description === 'string'\n   146|        ? parsed.error_description\n   147|        : typeof parsed.msg === 'string'\n   148|          ? parsed.msg\n   149|          : typeof parsed.error === 'string'\n   150|            ? parsed.error\n   151|            : `Supabase rejected the password grant (HTTP ${response.status}).`;\n   152|      return { ok: false, errorMessage: message, errorStatus: response.status };\n   153|    }\n   154|    const accessToken = typeof parsed.access_token === 'string' ? parsed.access_token : '';\n   155|    const refreshToken = typeof parsed.refresh_token === 'string' ? parsed.refresh_token : '';\n   156|    const expiresAt = typeof parsed.expires_at === 'number' ? parsed.expires_at : 0;\n   157|    if (!accessToken || !refreshToken) {\n   158|      return { ok: false, errorMessage: 'Supabase did not return access_token/refresh_token.' };\n   159|    }\n   160|    return { ok: true, accessToken, refreshToken, expiresAt };\n   161|  } catch (error) {\n   162|    return { ok: false, errorMessage: error instanceof Error ? error.message : 'Network failure during password grant.' };\n   163|  } finally {\n   164|    clearTimeout(timer);\n   165|  }\n   166|}\n   167|\n   168|export function ivxOwnerPasswordlessLoginOptions(): Response {\n   169|  return ownerOnlyOptions();\n   170|}\n   171|\n   172|export async function handleIVXOwnerPasswordlessLogin(request: Request): Promise<Response> {\n   173|  if (request.method !== 'POST') {\n   174|    return ownerOnlyJson({ success: false, message: 'Method not allowed.', deploymentMarker: DEPLOYMENT_MARKER }, 405);\n   175|  }\n   176|\n   177|  let body: Record<string, unknown> = {};\n   178|  try {\n   179|    body = (await request.json().catch(() => ({}))) as Record<string, unknown>;\n   180|  } catch {\n   181|    body = {};\n   182|  }\n   183|  const email = sanitizeEmail(body.email);\n   184|\n   185|  if (!isValidEmail(email)) {\n   186|    const failure: OwnerSessionFailure = {\n   187|      success: false,\n   188|      message: 'A valid owner email is required.',\n   189|      rootCause: 'missing_or_invalid_email',\n   190|      deploymentMarker: DEPLOYMENT_MARKER,\n   191|      timestamp: nowIso(),\n   192|    };\n   193|    return ownerOnlyJson(failure, 400);\n   194|  }\n   195|\n   196|  const allowlist = getIVXOwnerEmailAllowlist();\n   197|  if (!allowlist.includes(email)) {\n   198|    const failure: OwnerSessionFailure = {\n   199|      success: false,\n   200|      message: 'This email is not on the owner allowlist. Owner login is restricted to the configured owner.',\n   201|      rootCause: 'email_not_allowlisted',\n   202|      deploymentMarker: DEPLOYMENT_MARKER,\n   203|      timestamp: nowIso(),\n   204|    };\n   205|    return ownerOnlyJson(failure, 403);\n   206|  }\n   207|\n   208|  const ownerPassword = readEnv('IVX_OWNER_PASSWORD');\n   209|  if (!ownerPassword) {\n   210|    const failure: OwnerSessionFailure = {\n   211|      success: false,\n   212|      message: 'IVX_OWNER_PASSWORD is not configured on the backend. Set it in the Render environment to enable passwordless owner login.',\n   213|      rootCause: 'owner_password_not_configured',\n   214|      deploymentMarker: DEPLOYMENT_MARKER,\n   215|      timestamp: nowIso(),\n   216|    };\n   217|    return ownerOnlyJson(failure, 500);\n   218|  }\n   219|\n   220|  const supabaseUrl = resolveSupabaseUrl();\n   221|  if (!supabaseUrl) {\n   222|    const failure: OwnerSessionFailure = {\n   223|      success: false,\n   224|      message: 'Supabase URL is not configured on the backend.',\n   225|      rootCause: 'supabase_url_not_configured',\n   226|      deploymentMarker: DEPLOYMENT_MARKER,\n   227|      timestamp: nowIso(),\n   228|    };\n   229|    return ownerOnlyJson(failure, 500);\n   230|  }\n   231|\n   232|  let adminClient: SupabaseClient;\n   233|  try {\n   234|    adminClient = createAdminClient();\n   235|  } catch (error) {\n   236|    const failure: OwnerSessionFailure = {\n   237|      success: false,\n   238|      message: error instanceof Error ? error.message : 'Failed to initialize Supabase admin client.',\n   239|      rootCause: 'admin_client_init_failed',\n   240|      deploymentMarker: DEPLOYMENT_MARKER,\n   241|      timestamp: nowIso(),\n   242|    };\n   243|    return ownerOnlyJson(failure, 500);\n   244|  }\n   245|\n   246|  // Locate the owner auth user (list + match by email).\n   247|  let authUserId: string | null = null;\n   248|  let authUserCreated = false;\n   249|  try {\n   250|    const { data: listData, error: listError } = await adminClient.auth.admin.listUsers({ page: 1, perPage: 1000 });\n   251|    if (listError) {\n   252|      const failure: OwnerSessionFailure = {\n   253|        success: false,\n   254|        message: `Supabase admin listUsers failed: ${listError.message}`,\n   255|        rootCause: 'admin_list_users_failed',\n   256|        deploymentMarker: DEPLOYMENT_MARKER,\n   257|        timestamp: nowIso(),\n   258|      };\n   259|      return ownerOnlyJson(failure, 502);\n   260|    }\n   261|    const users = Array.isArray(listData?.users) ? listData.users : [];\n   262|    const match = users.find((u) => sanitizeEmail(u.email) === email);\n   263|    authUserId = match?.id ?? null;\n   264|  } catch (error) {\n   265|    const failure: OwnerSessionFailure = {\n   266|      success: false,\n   267|      message: error instanceof Error ? error.message : 'Failed to list Supabase auth users.',\n   268|      rootCause: 'admin_list_users_threw',\n   269|      deploymentMarker: DEPLOYMENT_MARKER,\n   270|      timestamp: nowIso(),\n   271|    };\n   272|    return ownerOnlyJson(failure, 502);\n   273|  }\n   274|\n   275|  let passwordSelfHealed = false;\n   276|\n   277|  if (!authUserId) {\n   278|    // Create the owner auth user with the configured password + confirmed email.\n   279|    try {\n   280|      const { data, error } = await adminClient.auth.admin.createUser({\n   281|        email,\n   282|        password: ownerPassword,\n   283|        email_confirm: true,\n   284|        user_metadata: {\n   285|          accountType: 'owner',\n   286|          requestedRole: 'owner',\n   287|          role: 'owner',\n   288|          status: 'active',\n   289|          kycStatus: 'approved',\n   290|        },\n   291|        app_metadata: {\n   292|          accountType: 'owner',\n   293|          requestedRole: 'owner',\n   294|          role: 'owner',\n   295|        },\n   296|      });\n   297|      if (error || !data.user) {\n   298|        const failure: OwnerSessionFailure = {\n   299|          success: false,\n   300|          message: error?.message ?? 'Supabase did not return a created owner user.',\n   301|          rootCause: 'admin_create_user_failed',\n   302|          deploymentMarker: DEPLOYMENT_MARKER,\n   303|          timestamp: nowIso(),\n   304|        };\n   305|        return ownerOnlyJson(failure, 502);\n   306|      }\n   307|      authUserId = data.user.id;\n   308|      authUserCreated = true;\n   309|      passwordSelfHealed = true;\n   310|    } catch (error) {\n   311|      const failure: OwnerSessionFailure = {\n   312|        success: false,\n   313|        message: error instanceof Error ? error.message : 'Failed to create owner auth user.',\n   314|        rootCause: 'admin_create_user_threw',\n   315|        deploymentMarker: DEPLOYMENT_MARKER,\n   316|        timestamp: nowIso(),\n   317|      };\n   318|      return ownerOnlyJson(failure, 502);\n   319|    }\n   320|  } else {\n   321|    // Self-heal: reset the password to the configured value so the password\n   322|    // grant always succeeds, regardless of any drift in Supabase.\n   323|    try {\n   324|      const { error: updateError } = await adminClient.auth.admin.updateUserById(authUserId, {\n   325|        password: ownerPassword,\n   326|        email_confirm: true,\n   327|        ban_duration: 'none',\n   328|      });\n   329|      if (updateError) {\n   330|        const failure: OwnerSessionFailure = {\n   331|          success: false,\n   332|          message: `Self-healing password reset failed: ${updateError.message}`,\n   333|          rootCause: 'admin_update_password_failed',\n   334|          deploymentMarker: DEPLOYMENT_MARKER,\n   335|          timestamp: nowIso(),\n   336|        };\n   337|        return ownerOnlyJson(failure, 502);\n   338|      }\n   339|      passwordSelfHealed = true;\n   340|    } catch (error) {\n   341|      const failure: OwnerSessionFailure = {\n   342|        success: false,\n   343|        message: error instanceof Error ? error.message : 'Failed to reset owner password.',\n   344|        rootCause: 'admin_update_password_threw',\n   345|        deploymentMarker: DEPLOYMENT_MARKER,\n   346|        timestamp: nowIso(),\n   347|      };\n   348|      return ownerOnlyJson(failure, 502);\n   349|    }\n   350|  }\n   351|\n   352|  // Perform the server-side password grant to mint a real session.\n   353|  const grant = await passwordGrant(supabaseUrl, email, ownerPassword);\n   354|  if (!grant.ok || !grant.accessToken || !grant.refreshToken) {\n   355|    const failure: OwnerSessionFailure = {\n   356|      success: false,\n   357|      message: grant.errorMessage ?? 'Password grant failed.',\n   358|      rootCause: 'password_grant_failed',\n   359|      deploymentMarker: DEPLOYMENT_MARKER,\n   360|      timestamp: nowIso(),\n   361|    };\n   362|    return ownerOnlyJson(failure, 502);\n   363|  }\n   364|\n   365|  const expiresAt = grant.expiresAt ?? 0;\n   366|  const successPayload: OwnerSessionResponse = {\n   367|    success: true,\n   368|    accessToken: grant.accessToken,\n   369|    refreshToken: grant.refreshToken,\n   370|    expiresAt,\n   371|    expiresAtIso: expiresAt ? new Date(expiresAt * 1000).toISOString() : nowIso(),\n   372|    userId: authUserId,\n   373|    email,\n   374|    passwordSelfHealed,\n   375|    authUserCreated,\n   376|    deploymentMarker: DEPLOYMENT_MARKER,\n   377|    timestamp: nowIso(),\n   378|  };\n   379|  return ownerOnlyJson(successPayload as unknown as Record<string, unknown>);\n   380|}\n\n(End of file - total 380 lines)"
+      },
+      "error": null,
+      "state": "output-available",
+      "inputArgsStr": "{\"filePath\": \"backend/api/ivx-owner-passwordless-login.ts\"}",
+      "createdAt": 1783465387109,
+      "completedAt": 1783465387112,
+      "compactedAt": 1783847602303
+    },
+    {
+      "type": "tool",
+      "id": "chatcmpl-tool-bae0ac681b1e6e31",
+      "toolName": "grep",
+      "input": {
+        "pattern": "loginOwnerPasswordless|ownerEmail|EXPO_PUBLIC_OWNER_EMAIL",
+        "path": "expo",
+        "include": "*.{ts,tsx}"
+      },
+      "output": {
+        "pattern": "loginOwnerPasswordless|ownerEmail|EXPO_PUBLIC_OWNER_EMAIL",
+        "results": [
+          {
+            "filePath": "expo/app/admin/ivx-developer-workspace.tsx",
+            "lineNumber": 206,
+            "line": "  const { loginOwnerPasswordless } = useAuth();"
+          },
+          {
+            "filePath": "expo/app/admin/ivx-developer-workspace.tsx",
+            "lineNumber": 292,
+            "line": "        detail: `ready=${preflight.readyToRun} session=${preflight.ownerSessionPresent} segs=${preflight.tokenSegmentCount} jwt=${preflight.tokenLooksLikeSupabaseJwt} allow=${preflight.ownerEmailAllowlisted}`,"
+          },
+          {
+            "filePath": "expo/app/admin/ivx-developer-workspace.tsx",
+            "lineNumber": 313,
+            "line": "      const ownerEmail = getConfiguredOwnerAdminEmail();"
+          },
+          {
+            "filePath": "expo/app/admin/ivx-developer-workspace.tsx",
+            "lineNumber": 314,
+            "line": "      if (!ownerEmail) return;"
+          },
+          {
+            "filePath": "expo/app/admin/ivx-developer-workspace.tsx",
+            "lineNumber": 320,
+            "line": "        const result = await loginOwnerPasswordless(ownerEmail);"
+          },
+          {
+            "filePath": "expo/app/admin/ivx-developer-workspace.tsx",
+            "lineNumber": 335,
+            "line": "  }, [loginOwnerPasswordless, onCheckSeniorDeveloperPreflight]);"
+          },
+          {
+            "filePath": "expo/app/admin/ivx-developer-workspace.tsx",
+            "lineNumber": 1159,
+            "line": "                    <Text style={styles.ownerProofText}>ownerEmailAllowlisted: {ownerProofGate.preflight.ownerEmailAllowlisted ? 'true' : 'false'}</Text>"
+          },
+          {
+            "filePath": "expo/app/admin/ivx-developer-workspace.tsx",
+            "lineNumber": 1309,
+            "line": "                      <Text style={styles.ownerProofText}>ownerEmailAllowlisted: {seniorPreflight.ownerEmailAllowlisted ? 'true' : 'false'}</Text>"
+          },
+          {
+            "filePath": "expo/app/admin/ivx-developer-workspace.tsx",
+            "lineNumber": 1358,
+            "line": "                {seniorRunGateReason && (!seniorPreflight || !seniorPreflight.ownerSessionPresent || !seniorPreflight.ownerEmailAllowlisted) ? ("
+          },
+          {
+            "filePath": "expo/types/index.ts",
+            "lineNumber": 502,
+            "line": "  ownerEmail: string;"
+          },
+          {
+            "filePath": "expo/types/index.ts",
+            "lineNumber": 1366,
+            "line": "  ownerEmail: string;"
+          },
+          {
+            "filePath": "expo/types/index.ts",
+            "lineNumber": 1691,
+            "line": "  ownerEmail: string;"
+          },
+          {
+            "filePath": "expo/src/modules/ivx-owner-ai/services/ivxAIRequestService.ts",
+            "lineNumber": 321,
+            "line": "  ownerEmailAllowlisted: boolean | null;"
+          },
+          {
+            "filePath": "expo/src/modules/ivx-owner-ai/services/ivxAIRequestService.ts",
+            "lineNumber": 372,
+            "line": "    ownerEmailAllowlisted: null,"
+          },
+          {
+            "filePath": "expo/src/modules/ivx-owner-ai/services/ivxAIRequestService.ts",
+            "lineNumber": 421,
+            "line": "      ownerEmailAllowlisted: typeof checks.ownerEmailAllowlisted === 'boolean' ? checks.ownerEmailAllowlisted : null,"
+          },
+          {
+            "filePath": "expo/src/modules/ivx-owner-ai/services/ivxVariablesMetadata.ts",
+            "lineNumber": 158,
+            "line": "    name: 'EXPO_PUBLIC_OWNER_EMAIL',"
+          },
+          {
+            "filePath": "expo/src/modules/ivx-owner-ai/services/ownerSessionPreflight.ts",
+            "lineNumber": 383,
+            "line": "    const ownerEmail = sessionEmail ?? decodedEmail;"
+          },
+          {
+            "filePath": "expo/src/modules/ivx-owner-ai/services/ownerSessionPreflight.ts",
+            "lineNumber": 386,
+            "line": "      passed: Boolean(ownerEmail),"
+          },
+          {
+            "filePath": "expo/src/modules/ivx-owner-ai/services/ownerSessionPreflight.ts",
+            "lineNumber": 387,
+            "line": "      detail: ownerEmail ? 'Owner email detected.' : 'No owner email on the session.',"
+          },
+          {
+            "filePath": "expo/src/modules/ivx-owner-ai/services/ownerSessionPreflight.ts",
+            "lineNumber": 389,
+            "line": "    void ownerEmail;"
+          },
+          {
+            "filePath": "expo/src/modules/ivx-owner-ai/services/ownerSessionPreflight.ts",
+            "lineNumber": 394,
+            "line": "    const allowlisted = ownerEmail ? isIVXOwnerAllowlistedEmail(ownerEmail) : null;"
+          },
+          {
+            "filePath": "expo/src/modules/ivx-owner-ai/services/ownerSessionPreflight.ts",
+            "lineNumber": 406,
+            "line": "    return { ok: true, accessToken, email: ownerEmail, checks };"
+          },
+          {
+            "filePath": "expo/src/modules/ivx-developer/authDiagnosticsService.ts",
+            "lineNumber": 85,
+            "line": "  ownerEmailAllowlisted: boolean | null;"
+          },
+          {
+            "filePath": "expo/src/modules/ivx-developer/authDiagnosticsService.ts",
+            "lineNumber": 166,
+            "line": "    ownerEmailAllowlisted: null,"
+          },
+          {
+            "filePath": "expo/src/modules/ivx-developer/authDiagnosticsService.ts",
+            "lineNumber": 200,
+            "line": "      ownerEmailAllowlisted: typeof checks.ownerEmailAllowlisted === 'boolean' ? checks.ownerEmailAllowlisted : null,"
+          },
+          {
+            "filePath": "expo/src/modules/ivx-developer/authDiagnosticsService.ts",
+            "lineNumber": 220,
+            "line": "  if (middleware.supabaseUserFound === true && middleware.ownerEmailAllowlisted === false) {"
+          },
+          {
+            "filePath": "expo/src/modules/ivx-developer/authDiagnosticsService.ts",
+            "lineNumber": 337,
+            "line": "      value: middleware.ownerEmailAllowlisted === null"
+          },
+          {
+            "filePath": "expo/src/modules/ivx-developer/authDiagnosticsService.ts",
+            "lineNumber": 339,
+            "line": "        : middleware.ownerEmailAllowlisted"
+          },
+          {
+            "filePath": "expo/src/modules/ivx-developer/authDiagnosticsService.ts",
+            "lineNumber": 342,
+            "line": "      state: middleware.ownerEmailAllowlisted === null ? 'unknown' : middleware.ownerEmailAllowlisted ? 'ok' : 'fail',"
+          },
+          {
+            "filePath": "expo/src/modules/ivx-developer/gmailProviderService.ts",
+            "lineNumber": 23,
+            "line": "  ownerEmail: string | null;"
+          },
+          {
+            "filePath": "expo/src/modules/ivx-developer/seniorDeveloperApprovalService.ts",
+            "lineNumber": 16,
+            "line": "  ownerEmailMatched: boolean;"
+          },
+          {
+            "filePath": "expo/src/modules/ivx-developer/seniorDeveloperApprovalService.ts",
+            "lineNumber": 17,
+            "line": "  ownerEmailMasked: string | null;"
+          },
+          {
+            "filePath": "expo/src/modules/ivx-developer/seniorDeveloperPreflightService.ts",
+            "lineNumber": 25,
+            "line": "  ownerEmailAllowlisted: boolean;"
+          },
+          {
+            "filePath": "expo/src/modules/ivx-developer/seniorDeveloperPreflightService.ts",
+            "lineNumber": 36,
+            "line": "  /** Configured owner allowlist emails (client-visible, e.g. EXPO_PUBLIC_OWNER_EMAIL). */"
+          },
+          {
+            "filePath": "expo/src/modules/ivx-developer/seniorDeveloperPreflightService.ts",
+            "lineNumber": 63,
+            "line": "  const ownerEmailAllowlisted ="
+          },
+          {
+            "filePath": "expo/src/modules/ivx-developer/seniorDeveloperPreflightService.ts",
+            "lineNumber": 73,
+            "line": "  } else if (!ownerEmailAllowlisted) {"
+          },
+          {
+            "filePath": "expo/src/modules/ivx-developer/seniorDeveloperPreflightService.ts",
+            "lineNumber": 83,
+            "line": "    ownerEmailAllowlisted,"
+          },
+          {
+            "filePath": "expo/src/modules/ivx-developer/seniorDeveloperPreflightService.ts",
+            "lineNumber": 151,
+            "line": "  if (!preflight.ownerEmailAllowlisted) {"
+          },
+          {
+            "filePath": "expo/shared/ivx/access-control.ts",
+            "lineNumber": 140,
+            "line": " * `EXPO_PUBLIC_OWNER_EMAIL`, shipped in the client bundle) — never secrets."
+          },
+          {
+            "filePath": "expo/shared/ivx/access-control.ts",
+            "lineNumber": 150,
+            "line": " * `IVX_OWNER_REGISTRATION_EMAILS` (comma list), `EXPO_PUBLIC_OWNER_EMAIL`,"
+          },
+          {
+            "filePath": "expo/shared/ivx/access-control.ts",
+            "lineNumber": 157,
+            "line": "    process.env.EXPO_PUBLIC_OWNER_EMAIL,"
+          },
+          {
+            "filePath": "expo/mocks/alerts.ts",
+            "lineNumber": 11,
+            "line": "  ownerEmail: 'owner@ipxholding.com',"
+          },
+          {
+            "filePath": "expo/lib/owner-access-check.ts",
+            "lineNumber": 43,
+            "line": "  /** An owner email is configured in this build (EXPO_PUBLIC_OWNER_EMAIL). */"
+          },
+          {
+            "filePath": "expo/lib/owner-access-check.ts",
+            "lineNumber": 44,
+            "line": "  ownerEmailConfigured: boolean;"
+          },
+          {
+            "filePath": "expo/lib/owner-access-check.ts",
+            "lineNumber": 46,
+            "line": "  ownerEmailMatch: boolean;"
+          },
+          {
+            "filePath": "expo/lib/owner-access-check.ts",
+            "lineNumber": 98,
+            "line": "  const ownerEmailConfigured = !!getConfiguredOwnerAdminEmail();"
+          },
+          {
+            "filePath": "expo/lib/owner-access-check.ts",
+            "lineNumber": 99,
+            "line": "  const ownerEmailMatch = isOwnerAdminEmail(user?.email);"
+          },
+          {
+            "filePath": "expo/lib/owner-access-check.ts",
+            "lineNumber": 102,
+            "line": "  const ownerAccessGranted = openAccess || ownerEmailMatch || ownerRoleFromProfile;"
+          },
+          {
+            "filePath": "expo/lib/owner-access-check.ts",
+            "lineNumber": 114,
+            "line": "    } else if (!ownerEmailConfigured) {"
+          },
+          {
+            "filePath": "expo/lib/owner-access-check.ts",
+            "lineNumber": 115,
+            "line": "      failureReason = 'No owner email is configured for this build (EXPO_PUBLIC_OWNER_EMAIL is empty).';"
+          },
+          {
+            "filePath": "expo/lib/owner-access-check.ts",
+            "lineNumber": 116,
+            "line": "    } else if (!ownerEmailMatch) {"
+          },
+          {
+            "filePath": "expo/lib/owner-access-check.ts",
+            "lineNumber": 127,
+            "line": "    ownerEmailConfigured,"
+          },
+          {
+            "filePath": "expo/lib/owner-access-check.ts",
+            "lineNumber": 128,
+            "line": "    ownerEmailMatch,"
+          },
+          {
+            "filePath": "expo/lib/owner-recovery-sms.ts",
+            "lineNumber": 26,
+            "line": "  ownerEmailAllowlistConfigured: boolean;"
+          },
+          {
+            "filePath": "expo/lib/owner-recovery-sms.ts",
+            "lineNumber": 107,
+            "line": "    ownerEmailAllowlistConfigured: Boolean(raw.ownerEmailAllowlistConfigured),"
+          },
+          {
+            "filePath": "expo/lib/ivx-supabase-client.ts",
+            "lineNumber": 588,
+            "line": "      const ownerEmail = getConfiguredOwnerAdminEmail() ?? 'owner@ivx.dev';"
+          },
+          {
+            "filePath": "expo/lib/ivx-supabase-client.ts",
+            "lineNumber": 590,
+            "line": "        email: ownerEmail,"
+          },
+          {
+            "filePath": "expo/lib/ivx-supabase-client.ts",
+            "lineNumber": 595,
+            "line": "        email: ownerEmail,"
+          },
+          {
+            "filePath": "expo/lib/admin-access-lock.ts",
+            "lineNumber": 8,
+            "line": "  process.env.EXPO_PUBLIC_OWNER_EMAIL"
+          },
+          {
+            "filePath": "expo/lib/admin-access-lock.ts",
+            "lineNumber": 76,
+            "line": "  return 'The app now reads EXPO_PUBLIC_OWNER_EMAIL or NEXT_PUBLIC_OWNER_EMAIL and applies the temporary admin lock in the shared auth flow, trusted-device recovery, and admin route guard.';"
+          },
+          {
+            "filePath": "expo/lib/ai-ops-alerts.ts",
+            "lineNumber": 23,
+            "line": "  ownerEmail: string;"
+          },
+          {
+            "filePath": "expo/lib/ai-ops-alerts.ts",
+            "lineNumber": 263,
+            "line": "  const target = settings.ownerEmail;"
+          },
+          {
+            "filePath": "expo/lib/ai-ops-alerts.ts",
+            "lineNumber": 356,
+            "line": "  const target = settings.ownerEmail;"
+          },
+          {
+            "filePath": "expo/lib/ai-ops-alerts.ts",
+            "lineNumber": 393,
+            "line": "      target: settings.ownerEmail,"
+          },
+          {
+            "filePath": "expo/lib/ai-ops-alerts.ts",
+            "lineNumber": 425,
+            "line": "    ownerEmail: sanitizeEmail(stored?.ownerEmail ?? user?.email ?? DEFAULT_OWNER_EMAIL) || DEFAULT_OWNER_EMAIL,"
+          },
+          {
+            "filePath": "expo/lib/ai-ops-alerts.ts",
+            "lineNumber": 447,
+            "line": "    ownerEmail: sanitizeEmail(input.ownerEmail ?? current.ownerEmail) || current.ownerEmail || DEFAULT_OWNER_EMAIL,"
+          },
+          {
+            "filePath": "expo/lib/auth-context.tsx",
+            "lineNumber": 556,
+            "line": "  ownerEmailLookup?: OwnerEmailLookupStatus;"
+          },
+          {
+            "filePath": "expo/lib/auth-context.tsx",
+            "lineNumber": 564,
+            "line": "  ownerEmailLookup?: OwnerEmailLookupStatus;"
+          },
+          {
+            "filePath": "expo/lib/auth-context.tsx",
+            "lineNumber": 634,
+            "line": "      if (response.ok && parsed.ownerEmailLookup) {"
+          },
+          {
+            "filePath": "expo/lib/auth-context.tsx",
+            "lineNumber": 635,
+            "line": "        console.log('[Auth] Owner registration status lookup:', normalizedEmail, 'action:', parsed.ownerEmailLookup.action ?? 'unknown', 'authUserExists:', parsed.ownerEmailLookup.authUserExists ?? null, 'marker:', parsed.deploymentMarker ?? 'missing');"
+          },
+          {
+            "filePath": "expo/lib/auth-context.tsx",
+            "lineNumber": 636,
+            "line": "        return parsed.ownerEmailLookup;"
+          },
+          {
+            "filePath": "expo/lib/auth-context.tsx",
+            "lineNumber": 640,
+            "line": "        return parsed.ownerEmailLookup ?? null;"
+          },
+          {
+            "filePath": "expo/lib/auth-context.tsx",
+            "lineNumber": 747,
+            "line": "      if (parsed.alreadyExists || isOwnerRegistrationLookupSignIn(parsed.ownerEmailLookup)) {"
+          },
+          {
+            "filePath": "expo/lib/auth-context.tsx",
+            "lineNumber": 748,
+            "line": "        console.log('[Auth] Owner registration backend repair found existing account:', parsed.email ?? input.email, 'profileExists:', parsed.ownerEmailLookup?.profileExists ?? null, 'walletExists:', parsed.ownerEmailLookup?.walletExists ?? null);"
+          },
+          {
+            "filePath": "expo/lib/auth-context.tsx",
+            "lineNumber": 758,
+            "line": "          proof: parsed.ownerEmailLookup ? { ownerEmailLookup: parsed.ownerEmailLookup, secretValuesReturned: false } : undefined,"
+          },
+          {
+            "filePath": "expo/lib/auth-context.tsx",
+            "lineNumber": 1261,
+            "line": "    // EXPO_PUBLIC_OWNER_EMAIL, force the role to 'owner'. This guarantees the"
+          },
+          {
+            "filePath": "expo/lib/auth-context.tsx",
+            "lineNumber": 1602,
+            "line": "  const loginOwnerPasswordless = useCallback(async (ownerEmail: string): Promise<LoginResult> => {"
+          },
+          {
+            "filePath": "expo/lib/auth-context.tsx",
+            "lineNumber": 1603,
+            "line": "    const normalizedOwnerEmail = sanitizeEmail(ownerEmail);"
+          },
+          {
+            "filePath": "expo/lib/auth-context.tsx",
+            "lineNumber": 1914,
+            "line": "        const ownerEmailLookup = await checkOwnerRegistrationStatusThroughBackend(normalizedEmail);"
+          },
+          {
+            "filePath": "expo/lib/auth-context.tsx",
+            "lineNumber": 1915,
+            "line": "        if (isOwnerRegistrationLookupSignIn(ownerEmailLookup)) {"
+          },
+          {
+            "filePath": "expo/lib/auth-context.tsx",
+            "lineNumber": 1916,
+            "line": "          console.log('[Auth] Owner signup preflight blocked duplicate before POST:', normalizedEmail, 'profileExists:', ownerEmailLookup?.profileExists ?? null, 'walletExists:', ownerEmailLookup?.walletExists ?? null);"
+          },
+          {
+            "filePath": "expo/lib/auth-context.tsx",
+            "lineNumber": 1919,
+            "line": "            message: ownerEmailLookup?.message || 'This owner account already exists. Please use Owner Login instead of signup.',"
+          },
+          {
+            "filePath": "expo/lib/auth-context.tsx",
+            "lineNumber": 1925,
+            "line": "            proof: { ownerEmailLookup, secretValuesReturned: false },"
+          },
+          {
+            "filePath": "expo/lib/auth-context.tsx",
+            "lineNumber": 1929,
+            "line": "        if (ownerEmailLookup?.action === 'not_allowed') {"
+          },
+          {
+            "filePath": "expo/lib/auth-context.tsx",
+            "lineNumber": 1932,
+            "line": "            message: ownerEmailLookup.message || 'Owner signup is limited to the configured owner email.',"
+          },
+          {
+            "filePath": "expo/lib/auth-context.tsx",
+            "lineNumber": 1937,
+            "line": "            proof: { ownerEmailLookup, secretValuesReturned: false },"
+          },
+          {
+            "filePath": "expo/lib/auth-context.tsx",
+            "lineNumber": 2617,
+            "line": "  const claimOwnerDevice = useCallback(async (ownerEmail?: string): Promise<LoginResult> => {"
+          },
+          {
+            "filePath": "expo/lib/auth-context.tsx",
+            "lineNumber": 2620,
+            "line": "      console.log('[Auth] Owner device verification requested from owner-access hub. Email:', ownerEmail || 'none', 'authenticated:', !!user?.id, 'role:', userRole);"
+          },
+          {
+            "filePath": "expo/lib/auth-context.tsx",
+            "lineNumber": 2624,
+            "line": "          message: ownerEmail"
+          },
+          {
+            "filePath": "expo/lib/auth-context.tsx",
+            "lineNumber": 2625,
+            "line": "            ? `Sign in with ${ownerEmail} first, then verify this device in Owner Controls.`"
+          },
+          {
+            "filePath": "expo/lib/auth-context.tsx",
+            "lineNumber": 2630,
+            "line": "      const result = await activateOwnerAccess(ownerEmail);"
+          },
+          {
+            "filePath": "expo/lib/auth-context.tsx",
+            "lineNumber": 2715,
+            "line": "    loginOwnerPasswordless,"
+          },
+          {
+            "filePath": "expo/lib/auth-context.tsx",
+            "lineNumber": 2729,
+            "line": "    activateOwnerAccess, activatingOwner, auditOwnerDirectAccess, auditOwnerIdentity, ownerDirectAccess, claimOwnerDevice, loginOwnerPasswordless, ownerAccessLoading, loginLoading, verify2FALoading, registerLoading,"
+          },
+          {
+            "filePath": "expo/app/system-blueprint.tsx",
+            "lineNumber": 581,
+            "line": "        <Text style={styles.ownerContactText}>{settings.ownerEmail}</Text>"
+          },
+          {
+            "filePath": "expo/app/system-blueprint.tsx",
+            "lineNumber": 711,
+            "line": "      target: settings.ownerEmail,"
+          },
+          {
+            "filePath": "expo/app/login.tsx",
+            "lineNumber": 406,
+            "line": "    loginOwnerPasswordless,"
+          },
+          {
+            "filePath": "expo/app/login.tsx",
+            "lineNumber": 1226,
+            "line": "      const result = await loginOwnerPasswordless(identifier);"
+          },
+          {
+            "filePath": "expo/app/login.tsx",
+            "lineNumber": 1269,
+            "line": "  }, [email, loginLoading, loginOwnerPasswordless, navigateAfterSuccessfulLogin, passwordlessOwnerLoading, shake]);"
+          },
+          {
+            "filePath": "expo/app/login.tsx",
+            "lineNumber": 2029,
+            "line": "                  onPress={() => { void loginOwnerPasswordless(normalizedEmail); }}"
+          },
+          {
+            "filePath": "expo/app/owner-access.tsx",
+            "lineNumber": 301,
+            "line": "      const ownerEmail = effectiveOwnerEmail || auth.user?.email || '';"
+          }
+        ],
+        "truncated": true,
+        "totalMatches": 161
+      },
+      "error": null,
+      "state": "output-available",
+      "inputArgsStr": "{\"pattern\": \"loginOwnerPasswordless|ownerEmail|EXPO_PUBLIC_OWNER_EMAIL\", \"path\": \"expo\", \"include\": \"*.{ts,tsx}\"}",
+      "createdAt": 1783465387277,
+      "completedAt": 1783465388045,
+      "compactedAt": 1783847602303
+    },
+    {
+      "type": "reasoning",
+      "text": "Let me QA the owner sign-in flow end-to-end. The user wants me to verify it works and mark as verified. Let me look at the key pieces:\n\n1. The frontend `loginOwnerPasswordless` in auth-context.tsx\n2. The backend endpoint `/api/ivx/owner-passwordless-login`\n3. The route registration in hono.ts\n4. Test it live against production\n\nLet me check the auth-context loginOwnerPasswordless implementation and verify the route is registered, then test live.",
+      "id": "cgvuga25qsjo7abk3e4cb",
+      "createdAt": 1783465391428,
+      "completedAt": 1783465393364
+    },
+    {
+      "type": "text",
+      "text": "Let me trace the full sign-in path and test it live against production.",
+      "id": "vrqzm5dcuqkowj0aljtq6"
+    },
+    {
+      "type": "tool",
+      "id": "chatcmpl-tool-80e0084e95f48dc2",
+      "toolName": "read",
+      "input": {
+        "filePath": "expo/lib/auth-context.tsx",
+        "offset": 1590,
+        "limit": 90
+      },
+      "output": {
+        "path": "expo/lib/auth-context.tsx",
+        "content": "  1591|\n  1592|    return () => {\n  1593|      cancelled = true;\n  1594|      try { subscription?.unsubscribe(); } catch {}\n  1595|      if (sessionMonitorCleanup.current) {\n  1596|        sessionMonitorCleanup.current();\n  1597|        sessionMonitorCleanup.current = null;\n  1598|      }\n  1599|    };\n  1600|  }, [clearTwoFactorState, handleSession, requireTwoFactorIfNeeded, restoreTrustedOwnerSession]);\n  1601|\n  1602|  const loginOwnerPasswordless = useCallback(async (ownerEmail: string): Promise<LoginResult> => {\n  1603|    const normalizedOwnerEmail = sanitizeEmail(ownerEmail);\n  1604|    if (!normalizedOwnerEmail) {\n  1605|      return { success: false, message: 'Enter your owner email to sign in.' };\n  1606|    }\n  1607|    setLoginLoading(true);\n  1608|    try {\n  1609|      const apiBaseUrls = getOwnerRegistrationApiBaseUrls();\n  1610|      let lastError: string | null = null;\n  1611|      let sessionInstalled = false;\n  1612|      for (const baseUrl of apiBaseUrls) {\n  1613|        const endpoint = `${baseUrl}/api/ivx/owner-passwordless-login`;\n  1614|        try {\n  1615|          const response = await fetchWithOwnerRegistrationTimeout(endpoint, {\n  1616|            method: 'POST',\n  1617|            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },\n  1618|            body: JSON.stringify({ email: normalizedOwnerEmail }),\n  1619|          });\n  1620|          const text = await response.text();\n  1621|          let parsed: Record<string, unknown> = {};\n  1622|          try { parsed = text ? (JSON.parse(text) as Record<string, unknown>) : {}; } catch {}\n  1623|          if (parsed.success !== true) {\n  1624|            lastError = typeof parsed.message === 'string' ? parsed.message : `Owner login failed (HTTP ${response.status}).`;\n  1625|            continue;\n  1626|          }\n  1627|          const accessToken = typeof parsed.accessToken === 'string' ? parsed.accessToken : '';\n  1628|          const refreshToken = typeof parsed.refreshToken === 'string' ? parsed.refreshToken : '';\n  1629|          if (!accessToken || !refreshToken) {\n  1630|            lastError = 'Backend did not return session tokens.';\n  1631|            continue;\n  1632|          }\n  1633|          const freshClient = ensureSupabaseClient();\n  1634|          const { data: sessionData, error: sessionError } = await freshClient.auth.setSession({\n  1635|            access_token: accessToken,\n  1636|            refresh_token: refreshToken,\n  1637|          });\n  1638|          if (sessionError) {\n  1639|            lastError = sessionError.message;\n  1640|            continue;\n  1641|          }\n  1642|          const session = sessionData.session;\n  1643|          if (!session) {\n  1644|            lastError = 'No session returned from setSession.';\n  1645|            continue;\n  1646|          }\n  1647|          const challengeRequired = await requireTwoFactorIfNeeded(session, 'passwordless owner login');\n  1648|          if (challengeRequired) {\n  1649|            return { success: false, requiresTwoFactor: true, message: 'Enter the 6-digit code from your authenticator app to finish signing in.' };\n  1650|          }\n  1651|          const handled = await handleSession(session);\n  1652|          if (!handled.accepted) {\n  1653|            return { success: false, message: handled.blockedReason ?? 'Owner session was not accepted.', failureReason: 'admin_access_locked' };\n  1654|          }\n  1655|          sessionInstalled = true;\n  1656|          break;\n  1657|        } catch (endpointError) {\n  1658|          lastError = endpointError instanceof Error ? endpointError.message : 'Owner login endpoint failed.';\n  1659|          continue;\n  1660|        }\n  1661|      }\n  1662|      if (!sessionInstalled) {\n  1663|        return { success: false, message: lastError ?? 'Owner login failed on all configured backends.', failureReason: 'unknown' };\n  1664|      }\n  1665|      return { success: true, message: 'Owner signed in without a password.' };\n  1666|    } catch (error: unknown) {\n  1667|      const message = extractAuthErrorMessage(error) || 'Passwordless owner login failed.';\n  1668|      return { success: false, message, failureReason: 'unknown' };\n  1669|    } finally {\n  1670|      setLoginLoading(false);\n  1671|    }\n  1672|  }, [handleSession, requireTwoFactorIfNeeded]);\n  1673|\n  1674|  const login = useCallback(async (email: string, password: string): Promise<LoginResult> => {\n  1675|    setLoginLoading(true);\n  1676|    try {\n  1677|      // Runtime safety: if the Expo Go bundle loaded the stale module-level\n  1678|      // noop client, force re-initialization before any auth call. This catches\n  1679|      // the \"Supabase URL is required\" AuthError that comes from a stale bundle\n  1680|      // even though the current code has production fallbacks.\n\n(File has more lines. Use 'offset' parameter to read beyond line 1680)"
+      },
+      "error": null,
+      "state": "output-available",
+      "inputArgsStr": "{\"filePath\": \"expo/lib/auth-context.tsx\", \"offset\": 1590, \"limit\": 90}",
+      "createdAt": 1783465393611,
+      "completedAt": 1783465393614,
+      "compactedAt": 1783847602303
+    },
+    {
+      "type": "tool",
+      "id": "chatcmpl-tool-a79db6f9949a30e6",
+      "toolName": "grep",
+      "input": {
+        "pattern": "owner-passwordless-login|ivxOwnerPasswordlessLogin",
+        "path": "backend/hono.ts"
+      },
+      "output": {
+        "pattern": "owner-passwordless-login|ivxOwnerPasswordlessLogin",
+        "results": [
+          {
+            "filePath": "backend/hono.ts",
+            "lineNumber": 574,
+            "line": "import { handleIVXOwnerPasswordlessLogin, ivxOwnerPasswordlessLoginOptions } from './api/ivx-owner-passwordless-login';"
+          },
+          {
+            "filePath": "backend/hono.ts",
+            "lineNumber": 3859,
+            "line": "app.options('/api/ivx/owner-passwordless-login', () => ivxOwnerPasswordlessLoginOptions());"
+          },
+          {
+            "filePath": "backend/hono.ts",
+            "lineNumber": 3871,
+            "line": "app.post('/api/ivx/owner-passwordless-login', async (context) => handleIVXOwnerPasswordlessLogin(context.req.raw));"
+          }
+        ],
+        "truncated": false,
+        "totalMatches": 3
+      },
+      "error": null,
+      "state": "output-available",
+      "inputArgsStr": "{\"path\": \"backend/hono.ts\", \"pattern\": \"owner-passwordless-login|ivxOwnerPasswordlessLogin\"}",
+      "createdAt": 1783465393726,
+      "completedAt": 1783465394119,
+      "compactedAt": 1783847602303
+    },
+    {
+      "type": "tool",
+      "id": "chatcmpl-tool-9309dd2d2f4d34b4",
+      "toolName": "bash",
+      "input": {
+        "command": "curl -s -o /dev/null -w \"%{http_code}\" https://api.ivxholding.com/health && echo \"\" && curl -s https://api.ivxholding.com/health"
+      },
+      "output": {
+        "stdout": "200\n{\"ok\":true,\"status\":\"healthy\",\"service\":\"ivx-owner-ai-backend\",\"deploymentMarker\":\"ivx-owner-ai-hono-autodeploy-live (see commit+bootTime for freshness)\",\"sourceProof\":\"owner-password-owner-vars-route-registered-2026-05-09t1115z\",\"commit\":\"79c5b3cfc0d515bb26fe6e19dd70ad98b818d702\",\"commitShort\":\"79c5b3cf\",\"bootTime\":\"2026-07-07T22:51:16.940Z\",\"autonomousCoreRoutesRegistered\":true,\"frontendUrl\":\"https://chat.ivxholding.com\",\"apiUrl\":\"https://api.ivxholding.com\",\"socketPath\":\"/socket.io\",\"defaultRoomId\":\"main-room\",\"messageCount\":0,\"aiEnabled\":true,\"openAIModel\":\"openai/gpt-4o\",\"aiProvider\":\"chatgpt\",\"aiEndpoint\":\"https://ai-gateway.vercel.sh/v3/ai/openai/gpt-4o\",\"timestamp\":\"2026-07-07T23:03:15.715Z\",\"routes\":[\"GET /\",\"GET /health\",\"GET /version\",\"GET /readiness\",\"POST /public/chat\",\"GET /api/public/messages\",\"GET /api/public/rooms\",\"POST /api/public/send-message\",\"POST /chat\",\"GET /messages\",\"POST /messages\",\"POST /upload\",\"GET /rooms\",\"POST /rooms\",\"POST /inbox/sync\",\"GET /diagnostics\",\"POST /fallback/reply\",\"POST /api/ivx/owner-ai\",\"GET /api/ivx/owner-ai/proxy-status\",\"POST /api/ivx/owner-ai/tools\",\"POST /tool\",\"POST /api/tool\",\"GET /api/ivx/audit-report\",\"GET /api/ivx/development-control\",\"POST /api/ivx/development-action\",\"GET /tool/render-status\",\"GET /tool/supabase-status\",\"GET /api/tool/render-status\",\"GET /api/tool/supabase-status\",\"GET /api/ivx/control-room/status\",\"GET /api/ivx/developer-deploy/status\",\"POST /api/ivx/developer-deploy/action\",\"GET /api/ivx/env-debug/render\",\"GET /api/ivx/variables-tool/status\",\"POST /api/ivx/variables-tool/save\",\"GET /api/ivx/owner-variables/status\",\"POST /api/ivx/owner-variables/save\",\"POST /api/ivx/owner-variables/test\",\"POST /api/ivx/owner-variables/delete\",\"POST /api/ivx/owner-variables/self-sync\",\"POST /api/ivx/owner-variables/sync-from-project-store\",\"GET /api/ivx/owner-variables/deployment-status\",\"GET /api/ivx/independence/status\",\"GET /api/ivx/agent-jobs/status\",\"GET /api/ivx/agent-jobs\",\"POST /api/ivx/agent-jobs\",\"POST /api/ivx/agent-jobs/:jobId/retry\",\"POST /api/ivx/agent-jobs/:jobId/cancel\",\"POST /api/ivx/agent-jobs/:jobId/approve\",\"POST /api/ivx/agent-worker/run-once\",\"GET /api/ivx/agent-jobs/live-activity\",\"POST /api/ivx/agent-jobs/test-token\",\"POST /api/ivx/agent-jobs/test-run\",\"GET /api/ivx/ai-brain/tools\",\"POST /api/ivx/ai-brain/tools\",\"POST /api/ivx/ai-brain/tools/execute\",\"GET /api/ivx/supabase/tables\",\"GET /api/ivx/supabase/schema\",\"GET /api/ivx/supabase/columns\",\"GET /api/ivx/supabase/rls\",\"POST /api/ivx/supabase/owner-action\",\"GET /api/ivx/supabase/owner-action-health\",\"GET /api/ivx/owner-registration/status\",\"GET /api/ivx/owner-signup-audit\",\"POST /api/ivx/owner-registration\",\"POST /api/ivx/owner-registration/repair\",\"POST /api/ivx/owner-access-repair\",\"GET /api/ivx/owner-access-repair/status\",\"POST /api/assistant\",\"POST /api/plan-creator\",\"POST /api/upload/image\",\"POST /api/upload/pdf\",\"POST /api/upload/video\",\"POST /api/google-drive/import\",\"POST /api/files/:fileId/analyze\",\"POST /api/files/:fileId/summary\",\"GET /api/multimodal/status\"]}",
+        "stderr": "",
+        "exitCode": 0
+      },
+      "error": null,
+      "state": "output-available",
+      "inputArgsStr": "{\"command\": \"curl -s -o /dev/null -w \\\"%{http_code}\\\" https://api.ivxholding.com/health && echo \\\"\\\" && curl -s https://api.ivxholding.com/health\"}",
+      "createdAt": 1783465394124,
+      "completedAt": 1783465395714,
+      "compactedAt": 1783847602303
+    },
+    {
+      "type": "reasoning",
+      "text": "The user wants me to QA the owner sign-in flow end-to-end and mark as verified. Let me run the actual live test against production. The route is registered. Let me hit it with the owner email and verify it returns a session.\n\nI need the owner email. It's in `IVX_OWNER_EMAIL` private env. Let me check what I can access. Actually I can test the endpoint live with curl using the configured owner email. But I don't have the email in my shell necessarily. Let me check what's configured.\n\nLet me test the endpoint directly. I'll need the owner email. Let me check the access-control to find the baseline email.",
+      "id": "skvyh1fi43rolpdaczaal",
+      "createdAt": 1783465396822,
+      "completedAt": 1783465410638
+    },
+    {
+      "type": "text",
+      "text": "Route is registered and live. Let me run the actual end-to-end QA against production now.",
+      "id": "u2eo9aawgepu7kenzzqws"
+    },
+    {
+      "type": "tool",
+      "id": "chatcmpl-tool-adf2812d298c2626",
+      "toolName": "bash",
+      "input": {
+        "command": "echo \"=== /health ===\" && curl -s https://api.ivxholding.com/health | head -c 300 && echo \"\" && echo \"=== OPTIONS preflight ===\" && curl -s -o /dev/null -w \"%{http_code}\" -X OPTIONS https://api.ivxholding.com/api/ivx/owner-passwordless-login && echo \"\" && echo \"=== POST no email (expect 400) ===\" && curl -s -X POST https://api.ivxholding.com/api/ivx/owner-passwordless-login -H \"Content-Type: application/json\" -d '{}' | head -c 400 && echo \"\" && echo \"=== POST non-allowlisted email (expect 403) ===\" && curl -s -X POST https://api.ivxholding.com/api/ivx/owner-passwordless-login -H \"Content-Type: application/json\" -d '{\"email\":\"random@notallowed.com\"}' | head -c 400"
+      },
+      "output": {
+        "stdout": "=== /health ===\n{\"ok\":true,\"status\":\"healthy\",\"service\":\"ivx-owner-ai-backend\",\"deploymentMarker\":\"ivx-owner-ai-hono-autodeploy-live (see commit+bootTime for freshness)\",\"sourceProof\":\"owner-password-owner-vars-route-registered-2026-05-09t1115z\",\"commit\":\"79c5b3cfc0d515bb26fe6e19dd70ad98b818d702\",\"commitShort\":\"79c\n=== OPTIONS preflight ===\n204\n=== POST no email (expect 400) ===\n{\"success\":false,\"message\":\"A valid owner email is required.\",\"rootCause\":\"missing_or_invalid_email\",\"deploymentMarker\":\"ivx-owner-passwordless-login-2026-07-06t0000z\",\"timestamp\":\"2026-07-07T23:03:34.629Z\"}\n=== POST non-allowlisted email (expect 403) ===\n{\"success\":false,\"message\":\"This email is not on the owner allowlist. Owner login is restricted to the configured owner.\",\"rootCause\":\"email_not_allowlisted\",\"deploymentMarker\":\"ivx-owner-passwordless-login-2026-07-06t0000z\",\"timestamp\":\"2026-07-07T23:03:34.696Z\"}",
+        "stderr": "",
+        "exitCode": 0
+      },
+      "error": null,
+      "state": "output-available",
+      "inputArgsStr": "{\"command\": \"echo \\\"=== /health ===\\\" && curl -s https://api.ivxholding.com/health | head -c 300 && echo \\\"\\\" && echo \\\"=== OPTIONS preflight ===\\\" && curl -s -o /dev/null -w \\\"%{http_code}\\\" -X OPTIONS https://api.ivxholding.com/api/ivx/owner-passwordless-login && echo \\\"\\\" && echo \\\"=== POST no email (expect 400) ===\\\" && curl -s -X POST https://api.ivxholding.com/api/ivx/owner-passwordless-login -H \\\"Content-Type: application/json\\\" -d '{}' | head -c 400 && echo \\\"\\\" && echo \\\"=== POST non-allowlisted email (expect 403) ===\\\" && curl -s -X POST https://api.ivxholding.com/api/ivx/owner-passwordless-login -H \\\"Content-Type: application/json\\\" -d '{\\\"email\\\":\\\"random@notallowed.com\\\"}' | head -c 400\"}",
+      "createdAt": 1783465411315,
+      "completedAt": 1783465414695,
+      "compactedAt": 1783847602303
+    },
+    {
+      "type": "tool",
+      "id": "chatcmpl-tool-8215ef024810ad5d",
+      "toolName": "grep",
+      "input": {
+        "pattern": "BASELINE|REGISTRATION|allowlist|owner@",
+        "path": "expo/shared/ivx/access-control.ts"
+      },
+      "output": {
+        "pattern": "BASELINE|REGISTRATION|allowlist|owner@",
+        "results": [
+          {
+            "filePath": "expo/shared/ivx/access-control.ts",
+            "lineNumber": 135,
+            "line": " * Baseline owner email(s) pinned at the code level so the owner allowlist can NEVER"
+          },
+          {
+            "filePath": "expo/shared/ivx/access-control.ts",
+            "lineNumber": 136,
+            "line": " * be silently emptied by a drifting/missing Render env var (`IVX_OWNER_REGISTRATION_EMAILS`)."
+          },
+          {
+            "filePath": "expo/shared/ivx/access-control.ts",
+            "lineNumber": 138,
+            "line": " * whose email was not promoted to `owner` because the env-sourced allowlist was empty"
+          },
+          {
+            "filePath": "expo/shared/ivx/access-control.ts",
+            "lineNumber": 142,
+            "line": "export const IVX_BASELINE_OWNER_EMAILS = ['iperez4242@gmail.com'] as const;"
+          },
+          {
+            "filePath": "expo/shared/ivx/access-control.ts",
+            "lineNumber": 145,
+            "line": " * The configured owner-email allowlist. An authenticated Supabase user whose email"
+          },
+          {
+            "filePath": "expo/shared/ivx/access-control.ts",
+            "lineNumber": 149,
+            "line": " * the pinned baseline (`IVX_BASELINE_OWNER_EMAILS`),"
+          },
+          {
+            "filePath": "expo/shared/ivx/access-control.ts",
+            "lineNumber": 150,
+            "line": " * `IVX_OWNER_REGISTRATION_EMAILS` (comma list), `EXPO_PUBLIC_OWNER_EMAIL`,"
+          },
+          {
+            "filePath": "expo/shared/ivx/access-control.ts",
+            "lineNumber": 155,
+            "line": "    ...IVX_BASELINE_OWNER_EMAILS,"
+          },
+          {
+            "filePath": "expo/shared/ivx/access-control.ts",
+            "lineNumber": 156,
+            "line": "    process.env.IVX_OWNER_REGISTRATION_EMAILS,"
+          },
+          {
+            "filePath": "expo/shared/ivx/access-control.ts",
+            "lineNumber": 171,
+            "line": "/** True when the supplied email is in the configured owner-email allowlist. */"
+          },
+          {
+            "filePath": "expo/shared/ivx/access-control.ts",
+            "lineNumber": 544,
+            "line": "      email: 'owner@ivx.holdings',"
+          },
+          {
+            "filePath": "expo/shared/ivx/access-control.ts",
+            "lineNumber": 552,
+            "line": "      email: 'owner@ivx.holdings',"
+          },
+          {
+            "filePath": "expo/shared/ivx/access-control.ts",
+            "lineNumber": 567,
+            "line": "      email: 'owner@ivx.dev',"
+          },
+          {
+            "filePath": "expo/shared/ivx/access-control.ts",
+            "lineNumber": 575,
+            "line": "      email: 'owner@ivx.dev',"
+          },
+          {
+            "filePath": "expo/shared/ivx/access-control.ts",
+            "lineNumber": 604,
+            "line": "  // Promote an authenticated user whose email is in the owner allowlist to `owner`,"
+          },
+          {
+            "filePath": "expo/shared/ivx/access-control.ts",
+            "lineNumber": 616,
+            "line": "      detail: 'Authenticated user promoted to owner via owner-email allowlist match.',"
+          }
+        ],
+        "truncated": false,
+        "totalMatches": 16
+      },
+      "error": null,
+      "state": "output-available",
+      "inputArgsStr": "{\"path\": \"expo/shared/ivx/access-control.ts\", \"pattern\": \"BASELINE|REGISTRATION|allowlist|owner@\"}",
+      "createdAt": 1783465414292,
+      "completedAt": 1783465415043,
+      "compactedAt": 1783847602303
+    },
+    {
+      "type": "reasoning",
+      "text": "Baseline owner email is `iperez4242@gmail.com`. Let me test the actual owner login with this email against the live backend.",
+      "id": "83iwurj1dfj7rbjriuxmg",
+      "createdAt": 1783465416571,
+      "completedAt": 1783465417099
+    },
+    {
+      "type": "text",
+      "text": "Baseline owner email is `iperez4242@gmail.com`. Let me test the actual owner login end-to-end against the live backend.",
+      "id": "12hyprxskuqpkfoc2574t"
+    },
+    {
+      "type": "tool",
+      "id": "chatcmpl-tool-8aedd8fda548591f",
+      "toolName": "bash",
+      "input": {
+        "command": "echo \"=== POST real owner email (expect success + session tokens) ===\" && curl -s -X POST https://api.ivxholding.com/api/ivx/owner-passwordless-login -H \"Content-Type: application/json\" -d '{\"email\":\"iperez4242@gmail.com\"}' | head -c 1200"
+      },
+      "output": {
+        "stdout": "=== POST real owner email (expect success + session tokens) ===\n{\"success\":false,\"message\":\"IVX_OWNER_PASSWORD is not configured on the backend. Set it in the Render environment to enable passwordless owner login.\",\"rootCause\":\"owner_password_not_configured\",\"deploymentMarker\":\"ivx-owner-passwordless-login-2026-07-06t0000z\",\"timestamp\":\"2026-07-07T23:03:37.934Z\"}",
+        "stderr": "",
+        "exitCode": 0
+      },
+      "error": null,
+      "state": "output-available",
+      "inputArgsStr": "{\"command\": \"echo \\\"=== POST real owner email (expect success + session tokens) ===\\\" && curl -s -X POST https://api.ivxholding.com/api/ivx/owner-passwordless-login -H \\\"Content-Type: application/json\\\" -d '{\\\"email\\\":\\\"iperez4242@gmail.com\\\"}' | head -c 1200\"}",
+      "createdAt": 1783465417424,
+      "completedAt": 1783465417927,
+      "compactedAt": 1783847602303
+    },
+    {
+      "type": "reasoning",
+      "text": "The blocker is clear: `IVX_OWNER_PASSWORD` is not configured on the backend (Render env). The backend reads it via `process.env.IVX_OWNER_PASSWORD` in `ivx-owner-passwordless-login.ts`. This is a private env var that the user has set via the Rork credential widget, but it's not deployed to Render's environment.\n\nI cannot set Render env vars directly. Let me check what I can do. The user has provided IVX_OWNER_PASSWORD as a private env var. But it's not on the Render backend.\n\nLet me check the owner-variables sync flow — there may be a way to push env vars to Render via the backend's owner-variables endpoints. Let me also check if IVX_OWNER_PASSWORD is in expo/.env and whether there's a sync mechanism.\n\nActually, let me think about this differently. The backend has an owner-variables save/self-sync endpoint. Let me check if I can use that to set IVX_OWNER_PASSWORD on Render. But that requires the IVX_OWNER_TOKEN (bearer auth).\n\nLet me check the owner-variables route and whether it can set IVX_OWNER_PASSWORD on Render.",
+      "id": "9qoknyumd3ib2mkdqcncu",
+      "createdAt": 1783465419443,
+      "completedAt": 1783465424565
+    },
+    {
+      "type": "text",
+      "text": "Root cause found: **`IVX_OWNER_PASSWORD` is not set on the Render backend.** The route works — it rejects missing/invalid/non-allowlisted emails correctly — but cannot complete the password grant without that env var. Let me check whether the backend's owner-variables sync can push it to Render.",
+      "id": "0kyekctwosaeymzbxqshx"
+    },
+    {
+      "type": "tool",
+      "id": "chatcmpl-tool-b249c0084580f7fc",
+      "toolName": "grep",
+      "input": {
+        "pattern": "owner-variables|IVX_OWNER_PASSWORD",
+        "path": "backend/api",
+        "include": "*.ts"
+      },
+      "output": {
+        "pattern": "owner-variables|IVX_OWNER_PASSWORD",
+        "results": [
+          {
+            "filePath": "backend/api/ivx-render-deploy-latest.ts",
+            "lineNumber": 9,
+            "line": "import { getIVXOwnerVariableRuntimeValue, inspectIVXOwnerVariableRuntimeReadiness } from './ivx-owner-variables';"
+          },
+          {
+            "filePath": "backend/api/ivx-render-diagnostic.ts",
+            "lineNumber": 8,
+            "line": "import { getIVXOwnerVariableRuntimeValue, inspectIVXOwnerVariableRuntimeReadiness } from './ivx-owner-variables';"
+          },
+          {
+            "filePath": "backend/api/ivx-owner-passwordless-login.ts",
+            "lineNumber": 13,
+            "line": " *      IVX_OWNER_PASSWORD so the password grant always succeeds, even if the"
+          },
+          {
+            "filePath": "backend/api/ivx-owner-passwordless-login.ts",
+            "lineNumber": 208,
+            "line": "  const ownerPassword = readEnv('IVX_OWNER_PASSWORD');"
+          },
+          {
+            "filePath": "backend/api/ivx-owner-passwordless-login.ts",
+            "lineNumber": 212,
+            "line": "      message: 'IVX_OWNER_PASSWORD is not configured on the backend. Set it in the Render environment to enable passwordless owner login.',"
+          },
+          {
+            "filePath": "backend/api/ivx-owner-variables.ts",
+            "lineNumber": 5,
+            "line": "const DEPLOYMENT_MARKER = 'ivx-owner-variables-2026-05-08t2305z-rest-storage';"
+          },
+          {
+            "filePath": "backend/api/ivx-owner-variables.ts",
+            "lineNumber": 938,
+            "line": "        status: 'GET /api/ivx/owner-variables/status',"
+          },
+          {
+            "filePath": "backend/api/ivx-owner-variables.ts",
+            "lineNumber": 939,
+            "line": "        save: 'POST /api/ivx/owner-variables/save',"
+          },
+          {
+            "filePath": "backend/api/ivx-owner-variables.ts",
+            "lineNumber": 940,
+            "line": "        test: 'POST /api/ivx/owner-variables/test',"
+          },
+          {
+            "filePath": "backend/api/ivx-owner-variables.ts",
+            "lineNumber": 941,
+            "line": "        delete: 'POST /api/ivx/owner-variables/delete',"
+          },
+          {
+            "filePath": "backend/api/ivx-admin-sync.ts",
+            "lineNumber": 28,
+            "line": "import { getIVXOwnerVariableRuntimeValue } from './ivx-owner-variables';"
+          },
+          {
+            "filePath": "backend/api/ivx-autonomy.ts",
+            "lineNumber": 27,
+            "line": "import { getIVXOwnerVariableRuntimeValue } from './ivx-owner-variables';"
+          },
+          {
+            "filePath": "backend/api/ivx-developer-deploy-control.ts",
+            "lineNumber": 2,
+            "line": "import { getIVXOwnerVariableRuntimeValue, hasIVXOwnerVariableRuntimeValue } from './ivx-owner-variables';"
+          }
+        ],
+        "truncated": false,
+        "totalMatches": 13
+      },
+      "error": null,
+      "state": "output-available",
+      "inputArgsStr": "{\"path\": \"backend/api\", \"pattern\": \"owner-variables|IVX_OWNER_PASSWORD\", \"include\": \"*.ts\"}",
+      "createdAt": 1783465426173,
+      "completedAt": 1783465426177,
+      "compactedAt": 1783847602303
+    },
+    {
+      "type": "tool",
+      "id": "chatcmpl-tool-908fde0b56b52cfa",
+      "toolName": "bash",
+      "input": {
+        "command": "echo \"=== owner-variables status (no auth, expect 401) ===\" && curl -s -o /dev/null -w \"%{http_code}\" https://api.ivxholding.com/api/ivx/owner-variables/status && echo \"\" && echo \"=== owner-variables status (with owner token) ===\" && curl -s https://api.ivxholding.com/api/ivx/owner-variables/status -H \"Authorization: Bearer $IVX_OWNER_TOKEN\" | head -c 1500"
+      },
+      "output": {
+        "stdout": "=== owner-variables status (no auth, expect 401) ===\n401\n=== owner-variables status (with owner token) ===\n{\"ok\":false,\"ownerOnly\":true,\"routeRegistered\":true,\"secretValuesReturned\":false,\"error\":\"IVX auth guard failed: missing bearer token.\",\"deploymentMarker\":\"ivx-owner-variables-2026-05-08t2305z-rest-storage\",\"timestamp\":\"2026-07-07T23:03:46.080Z\"}",
+        "stderr": "",
+        "exitCode": 0
+      },
+      "error": null,
+      "state": "output-available",
+      "inputArgsStr": "{\"command\": \"echo \\\"=== owner-variables status (no auth, expect 401) ===\\\" && curl -s -o /dev/null -w \\\"%{http_code}\\\" https://api.ivxholding.com/api/ivx/owner-variables/status && echo \\\"\\\" && echo \\\"=== owner-variables status (with owner token) ===\\\" && curl -s https://api.ivxholding.com/api/ivx/owner-variables/status -H \\\"Authorization: Bearer $IVX_OWNER_TOKEN\\\" | head -c 1500\"}",
+      "createdAt": 1783465426178,
+      "completedAt": 1783465426193,
+      "compactedAt": 1783847602303
+    },
+    {
+      "type": "reasoning",
+      "text": "The owner token in my env is empty. The owner-variables status endpoint requires the bearer token but `$IVX_OWNER_TOKEN` is empty in my shell. Let me check what the actual auth guard expects and verify with the private env var. The system context says private envs are available... let me check.\n\nActually, the env vars are \"registered\" but per previous turns they're not injected into my bash shell. Let me verify by trying to read the value directly.",
+      "id": "ou0shd50v2n1qpd7sql3g",
+      "createdAt": 1783465427495,
+      "completedAt": 1783465429097
+    },
+    {
+      "type": "tool",
+      "id": "chatcmpl-tool-a3114d1e0664357b",
+      "toolName": "bash",
+      "input": {
+        "command": "echo \"IVX_OWNER_TOKEN length: ${#IVX_OWNER_TOKEN}\" && echo \"IVX_OWNER_PASSWORD length: ${#IVX_OWNER_PASSWORD}\" && echo \"RENDER_API_KEY length: ${#RENDER_API_KEY}\""
+      },
+      "output": {
+        "stdout": "IVX_OWNER_TOKEN length: 0\nIVX_OWNER_PASSWORD length: 0\nRENDER_API_KEY length: 0\n",
+        "stderr": "",
+        "exitCode": 0
+      },
+      "error": null,
+      "state": "output-available",
+      "inputArgsStr": "{\"command\": \"echo \\\"IVX_OWNER_TOKEN length: ${#IVX_OWNER_TOKEN}\\\" && echo \\\"IVX_OWNER_PASSWORD length: ${#IVX_OWNER_PASSWORD}\\\" && echo \\\"RENDER_API_KEY length: ${#RENDER_API_KEY}\\\"\"}",
+      "createdAt": 1783465429097,
+      "completedAt": 1783465429391,
+      "compactedAt": 1783847602303
+    },
+    {
+      "type": "reasoning",
+      "text": "The credentials in my sandbox are empty. The user asked me to QA end-to-end owner sign-in. Let me be precise about what I've verified and what the blocker is.\n\nThe route is live and working correctly for:\n- OPTIONS preflight → 204\n- Missing email → 400 with correct error\n- Non-allowlisted email → 403 with correct error\n- Real owner email → fails at the password grant step because `IVX_OWNER_PASSWORD` is not set on the Render backend\n\nThe blocker is environmental: `IVX_OWNER_PASSWORD` is not configured in Render. This is the one thing preventing the full sign-in from completing. I cannot inject it myself — it's a private env var that the owner must set in the Render dashboard, OR I can push it via the owner-variables sync endpoint IF I had a valid owner bearer token, which I don't (the env var is empty in my sandbox).\n\nLet me give the precise QA report with evidence and the exact fix. I should not call requestEnvs again since the user has already been asked and the vars are not being injected. Actually — I should be clear about what I verified and what the single blocker is. Let me write the proof ledger and give the final report.\n\nActually, I should write the verification proof file and give a concise report. No narrative, just evidence.",
+      "id": "lfybpkt4vubstrzh0munx",
+      "createdAt": 1783465431487,
+      "completedAt": 1783465438488
+    },
+    {
+      "type": "text",
+      "text": "QA complete. Here's the evidence-based report.\n\n**E2E OWNER SIGN-IN QA — 2026-07-07**\n\n| Step | Test | Result |\n|---|---|---|\n| 1 | `GET /health` | ✅ 200, commit `79c5b3cf` |\n| 2 | `OPTIONS /api/ivx/owner-passwordless-login` | ✅ 204 |\n| 3 | `POST` with no email | ✅ 400 `missing_or_invalid_email` |\n| 4 | `POST` with non-allowlisted email | ✅ 403 `email_not_allowlisted` |\n| 5 | `POST` with real owner `iperez4242@gmail.com` | ❌ 500 `owner_password_not_configured` |\n| 6 | `GET /api/ivx/owner-variables/status` (no auth) | ✅ 401 (correct gate) |\n| 7 | `GET /api/ivx/owner-variables/status` (owner token) | ❌ 401 `missing bearer token` |\n\n**Code path verified correct:**\n- Route registered in `backend/hono.ts:3871` ✅\n- Allowlist pinned to `iperez4242@gmail.com` in `expo/shared/ivx/access-control.ts:142` ✅\n- Client auto-sign-in wired in `expo/app/admin/ivx-developer-workspace.tsx:307-335` ✅\n- `loginOwnerPasswordless` in `expo/lib/auth-context.tsx:1602-1672` ✅\n- Backend self-heal + password grant logic in `backend/api/ivx-owner-passwordless-login.ts` ✅\n\n**THE ONE BLOCKER:**\n\n`IVX_OWNER_PASSWORD` is **not set in the Render environment**. The route, allowlist, client flow, and self-heal logic are all correct — the only thing preventing a successful sign-in is that single env var on Render. Without it, the backend cannot perform the Supabase password grant (line 208-218 of the passwordless login handler).\n\n**EXACT FIX (one action, you own it):**\n\nIn the **Render dashboard** → `ivx-owner-ai-backend` service → Environment → add:\n```\nIVX_OWNER_PASSWORD = <your owner password>\n```\nThen redeploy (or it'll be picked up on next boot). After that, `POST /api/ivx/owner-passwordless-login` with `{\"email\":\"iperez4242@gmail.com\"}` will return `success: true` + session tokens, the client's `loginOwnerPasswordless` installs them via `supabase.auth.setSession`, and the Senior Developer preflight gate flips to `readyToRun: true`.\n\n**Why I can't do it for you:** `IVX_OWNER_PASSWORD`, `IVX_OWNER_TOKEN`, and `RENDER_API_KEY` are all empty in my sandbox (verified: 0-length), so I cannot push the variable via the owner-variables sync endpoint or the Render API. This is a Render dashboard action only you can take.\n\nOnce you set that one env var, reply and I'll re-run the full QA and mark it verified.",
+      "id": "lotefxrtqmyas4dac4ml6"
+    }
+  ],
+  "id": "ea19f1xhgw9fkmpuovrvn",
+  "snapshotId": "ea19f1xhgw9fkmpuovrvn"
+}
