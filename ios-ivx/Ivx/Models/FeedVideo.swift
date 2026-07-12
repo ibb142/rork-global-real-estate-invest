@@ -56,6 +56,7 @@ nonisolated struct FeedVideo: Identifiable, Decodable {
     let videoType: String?
     /// Featured Investor Video — interleaved by the backend every 3 deal videos.
     let isFeatured: Bool?
+    let creatorId: String?
     let deal: FeedVideoDeal?
 
     enum CodingKeys: String, CodingKey {
@@ -81,6 +82,7 @@ nonisolated struct FeedVideo: Identifiable, Decodable {
         case propertyId = "property_id"
         case videoType = "video_type"
         case isFeatured = "is_featured"
+        case creatorId = "creator_id"
         case deal
     }
 

@@ -24,7 +24,7 @@ import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Video, ResizeMode } from 'expo-av';
 import {
-  ArrowLeft,
+  X,
   Heart,
   MessageCircle,
   Share2,
@@ -66,7 +66,7 @@ import ProjectCommentsSheet from '@/components/ProjectCommentsSheet';
 import ProjectShareSheet from '@/components/ProjectShareSheet';
 import { supabase } from '@/lib/supabase';
 
-const GOLD = '#FFD700';
+const GOLD = '#E6C200';
 
 interface EngagementState {
   likeCount: number;
@@ -99,7 +99,7 @@ function compactCurrency(value: number): string {
 function useInvestmentOptions(dealType: string | null | undefined) {
   const t = (dealType ?? '').toLowerCase();
   const tokenized = { id: 'tokenized', label: 'Tokenized', icon: <Hexagon size={18} color={GOLD} />, tint: GOLD };
-  const jvDeals = { id: 'jvDeals', label: 'JV Deal', icon: <Users size={18} color='#448AFF' />, tint: '#448AFF' };
+  const jvDeals = { id: 'jvDeals', label: 'JV Deal', icon: <Users size={18} color='#4A90D9' />, tint: '#4A90D9' };
   const buyers = { id: 'buyers', label: 'Buyer', icon: <Home size={18} color='#00C48C' />, tint: '#00C48C' };
   switch (t) {
     case 'jv':
@@ -113,7 +113,7 @@ function useInvestmentOptions(dealType: string | null | undefined) {
     case 'profit_sharing':
       return [tokenized, buyers, jvDeals];
     default:
-      return [jvDeals, tokenized, buyers];
+      return [tokenized, jvDeals, buyers];
   }
 }
 
@@ -331,8 +331,8 @@ const FeedItem = React.memo(function FeedItem({
           ) : null}
           {deal?.price && deal.price > 0 ? (
             <View style={styles.metric}>
-              <Text style={styles.metricValue}>{compactCurrency(deal.price)}</Text>
-              <Text style={styles.metricLabel}>VALUE</Text>
+              <Text style={styles.metricValue}>{((deal.min_investment ?? 0) / deal.price * 100).toFixed(4)}%</Text>
+              <Text style={styles.metricLabel}>MIN OWNERSHIP</Text>
             </View>
           ) : null}
         </View>
@@ -391,7 +391,7 @@ export default function VideosScreen() {
   const [engagements, setEngagements] = useState<Record<string, EngagementState>>({});
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
-  const [channel, setChannel] = useState<VideoChannel>(isReelsMode ? 'reel' : 'all');
+  const [channel, setChannel] = useState<'all' | 'investment' | 'buyer' | 'seller'>(isReelsMode ? 'investment' : 'all');
 
   // Sheets
   const [commentsVideo, setCommentsVideo] = useState<FeedVideo | null>(null);
@@ -407,6 +407,14 @@ export default function VideosScreen() {
   });
 
   const videos: FeedVideo[] = useMemo(() => feedQuery.data ?? [], [feedQuery.data]);
+
+  const counts = useMemo(() => {
+    const all = videos.length;
+    const investment = videos.filter(v => v.deal && v.video_type !== 'reel').length;
+    const buyer = videos.filter(v => (v.deal?.deal_type ?? '').toLowerCase().includes('buy') || v.title?.toLowerCase().includes('buy')).length;
+    const seller = videos.filter(v => (v.deal?.deal_type ?? '').toLowerCase().includes('sell') || v.title?.toLowerCase().includes('sell')).length;
+    return { all, investment, buyer, seller };
+  }, [videos]);
 
   useEffect(() => {
     let cancelled = false;
@@ -602,6 +610,14 @@ export default function VideosScreen() {
     }
   }, [router]);
 
+  const filteredVideos = useMemo(() => {
+    if (channel === 'all') return videos;
+    if (channel === 'investment') return videos.filter(v => v.deal && v.video_type !== 'reel');
+    if (channel === 'buyer') return videos.filter(v => (v.deal?.deal_type ?? '').toLowerCase().includes('buy') || v.title?.toLowerCase().includes('buy'));
+    if (channel === 'seller') return videos.filter(v => (v.deal?.deal_type ?? '').toLowerCase().includes('sell') || v.title?.toLowerCase().includes('sell'));
+    return videos;
+  }, [videos, channel]);
+
   const renderItem = useCallback(({ item, index }: { item: FeedVideo; index: number }) => (
     <FeedItem
       video={item}
@@ -648,7 +664,7 @@ export default function VideosScreen() {
         </View>
       ) : (
         <FlatList
-          data={videos}
+          data={filteredVideos}
           keyExtractor={(v: FeedVideo) => v.id}
           renderItem={renderItem}
           pagingEnabled
@@ -666,38 +682,42 @@ export default function VideosScreen() {
         />
       )}
 
-      {/* Back button */}
-      <TouchableOpacity
-        style={[styles.backBtn, { top: insets.top + 8 }]}
-        onPress={() => (router.canGoBack() ? router.back() : router.replace('/landing' as never))}
-        testID="videos-back"
-      >
-        <ArrowLeft size={22} color="#fff" />
-      </TouchableOpacity>
+      {/* Header: IVX Reels title + close X (matches landing page) */}
+      <View style={[styles.headerRow, { top: insets.top + 8 }]}>
+        <Text style={styles.headerTitle}>{isReelsMode ? 'Project Reels' : 'IVX Reels'}</Text>
+        <TouchableOpacity
+          style={styles.closeBtn}
+          onPress={() => (router.canGoBack() ? router.back() : router.replace('/landing' as never))}
+          testID="videos-close"
+        >
+          <X size={22} color="#fff" />
+        </TouchableOpacity>
+      </View>
 
-      {/* Channel filter chips */}
+      {/* Channel filter chips (matches landing page: All / Investments / Buyers / Sellers) */}
       {!isReelsMode && (
-        <View style={[styles.filterStrip, { top: insets.top + 52 }]}>
-          {CHANNELS.map((ch) => {
+        <View style={[styles.filterStrip, { top: insets.top + 56 }]}>
+          {[
+            { id: 'all', label: 'All', count: counts.all },
+            { id: 'investment', label: 'Investments', count: counts.investment },
+            { id: 'buyer', label: 'Buyers', count: counts.buyer },
+            { id: 'seller', label: 'Sellers', count: counts.seller },
+          ].map((ch) => {
             const active = channel === ch.id;
             return (
               <TouchableOpacity
                 key={ch.id}
                 style={[styles.filterChip, active && styles.filterChipActive]}
-                onPress={() => setChannel(ch.id)}
+                onPress={() => setChannel(ch.id as typeof channel)}
               >
                 <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>
-                  {ch.label}
+                  {ch.label} {ch.count}
                 </Text>
               </TouchableOpacity>
             );
           })}
         </View>
       )}
-
-      <View pointerEvents="none" style={[styles.headerTitleWrap, { top: insets.top + 12 }]}>
-        <Text style={styles.headerTitle}>{isReelsMode ? 'Project Reels' : 'IVX Reels'}</Text>
-      </View>
 
       {toast && (
         <View pointerEvents="none" style={[styles.toast, { bottom: insets.bottom + 24 }]}>
@@ -985,31 +1005,30 @@ const styles = StyleSheet.create({
     color: '#000',
     fontWeight: '700' as const,
   },
-  backBtn: {
+  headerRow: {
     position: 'absolute',
-    left: 12,
+    left: 16,
+    right: 12,
     zIndex: 30,
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'space-between' as const,
+  },
+  headerTitle: {
+    color: '#fff',
+    fontSize: 22,
+    fontWeight: '800' as const,
+    textShadowColor: 'rgba(0,0,0,0.7)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  closeBtn: {
     width: 40,
     height: 40,
     borderRadius: 20,
     backgroundColor: 'rgba(0,0,0,0.5)',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  headerTitleWrap: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-    zIndex: 25,
-  },
-  headerTitle: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '700' as const,
-    textShadowColor: 'rgba(0,0,0,0.7)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
   },
   filterStrip: {
     position: 'absolute',
