@@ -151,6 +151,9 @@ export async function handleMemberRegister(request: Request): Promise<Response> 
   if (!genderCheck.valid) {
     return jsonResponse({ success: false, message: genderCheck.reason || 'Gender is required.', deploymentMarker: DEPLOYMENT_MARKER }, 400);
   }
+  if (roles.length === 0) {
+    return jsonResponse({ success: false, message: 'Please select at least one role to continue.', deploymentMarker: DEPLOYMENT_MARKER }, 400);
+  }
 
   const result = await registerMember({
     email,

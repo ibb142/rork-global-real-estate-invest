@@ -60,10 +60,12 @@ export async function handleFeaturedProperties(req: Request): Promise<Response> 
 export async function handlePropertyDetails(req: Request, propertyId: string): Promise<Response> {
   try {
     const sb = await getSB();
-    // Use maybeSingle() instead of single() — single() throws a coercion error
-    // ("Cannot coerce the result to a single JSON object") when no row matches,
-    // which surfaces as a 404 with a misleading error body. maybeSingle() returns
-    // { data: null, error: null } for no-match, letting us return a clean 404.
+    // The landing page featured properties come from jv_deals (not properties table).
+    // Try jv_deals first by string ID, then fall back to properties by numeric/string ID.
+    const { data: dealData, error: dealError } = await sb.from('jv_deals').select('*').eq('id', propertyId).maybeSingle();
+    if (dealData) return json({ property: dealData, deploymentMarker: DEPLOYMENT_MARKER, source: 'jv_deals' });
+
+    // Fallback: try properties table
     const numericId = Number(propertyId);
     const isNumeric = !isNaN(numericId) && String(numericId) === propertyId;
     const query = sb.from('properties').select('*');
@@ -72,7 +74,7 @@ export async function handlePropertyDetails(req: Request, propertyId: string): P
       : await query.eq('id', propertyId).maybeSingle();
     if (error) return json({ error: error.message, deploymentMarker: DEPLOYMENT_MARKER }, 404);
     if (!data) return json({ error: 'Property not found', propertyId, deploymentMarker: DEPLOYMENT_MARKER }, 404);
-    return json({ property: data, deploymentMarker: DEPLOYMENT_MARKER });
+    return json({ property: data, deploymentMarker: DEPLOYMENT_MARKER, source: 'properties' });
   } catch (err: any) { return json({ error: err.message, deploymentMarker: DEPLOYMENT_MARKER }, 500); }
 }
 

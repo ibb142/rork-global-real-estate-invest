@@ -3895,7 +3895,7 @@ app.get('/api/ivx/owner-signup-audit', async (context) => handleIVXOwnerSignupAu
 app.post('/api/ivx/owner-registration', async (context) => handleIVXOwnerRegistrationRequest(context.req.raw));
 app.post('/api/ivx/owner-registration/repair', async (context) => handleIVXOwnerRegistrationRepairRequest(context.req.raw));
 app.post('/api/ivx/owner-access-repair', async (context) => handleIVXOwnerAccessRepairRequest(context.req.raw));
-app.post('/api/ivx/owner-passwordless-login', async (context) => handleIVXOwnerPasswordlessLogin(context.req.raw));
+app.post('/api/ivx/owner-passwordless-login', async (context) => withRateLimit(context.req.raw, 'owner-login', 3, 0.2, () => handleIVXOwnerPasswordlessLogin(context.req.raw)) as Promise<Response>);
 app.get('/api/ivx/owner-recovery/status', async (context) => handleOwnerRecoveryStatusRequest(context.req.raw));
 app.post('/api/ivx/owner-recovery/request', async (context) => handleOwnerRecoveryRequestRequest(context.req.raw));
 app.post('/api/ivx/owner-recovery/verify', async (context) => handleOwnerRecoveryVerifyRequest(context.req.raw));
@@ -4084,7 +4084,7 @@ app.options('/api/members/forgot-password', () => membersOptions());
 app.options('/api/members/reset-password', () => membersOptions());
 app.options('/api/members/profile', () => membersOptions());
 
-app.post('/api/members/register', async (c) => handleMemberRegister(c.req.raw));
+app.post('/api/members/register', async (c) => withRateLimit(c.req.raw, 'member-register', 5, 0.3, () => handleMemberRegister(c.req.raw)) as Promise<Response>);
 app.post('/api/members/send-email-code', async (c) => handleSendEmailCode(c.req.raw));
 app.post('/api/members/verify-email', async (c) => handleVerifyEmail(c.req.raw));
 app.post('/api/members/send-phone-code', async (c) => handleSendPhoneCode(c.req.raw));
@@ -4092,8 +4092,8 @@ app.post('/api/members/verify-phone', async (c) => handleVerifyPhone(c.req.raw))
 app.get('/api/members/me', async (c) => handleGetMemberProfile(c.req.raw));
 app.post('/api/members/start-kyc', async (c) => handleStartKYC(c.req.raw));
 app.get('/api/members/verification-status', async (c) => handleVerificationStatus(c.req.raw));
-app.post('/api/members/login', async (c) => handleMemberLogin(c.req.raw));
-app.post('/api/members/forgot-password', async (c) => handleMemberForgotPassword(c.req.raw));
+app.post('/api/members/login', async (c) => withRateLimit(c.req.raw, 'member-login', 5, 0.5, () => handleMemberLogin(c.req.raw)) as Promise<Response>);
+app.post('/api/members/forgot-password', async (c) => withRateLimit(c.req.raw, 'member-forgot', 3, 0.1, () => handleMemberForgotPassword(c.req.raw)) as Promise<Response>);
 app.post('/api/members/reset-password', async (c) => handleMemberResetPassword(c.req.raw));
 app.post('/api/members/profile', async (c) => handleUpdateMemberProfile(c.req.raw));
 
