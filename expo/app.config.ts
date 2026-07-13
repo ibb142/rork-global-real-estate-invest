@@ -9,9 +9,9 @@ const config: ExpoConfig = {
     policy: 'appVersion',
   },
   extra: {
-    buildMarker: 'IVX_BUNDLE_2026_07_13_OTA_REPAIR',
-    buildTimestamp: new Date().toISOString(),
-    sourceCommitSha: '4573329',
+    buildMarker: 'IVX_BUNDLE_2026_07_13_ICON_UPDATE',
+    buildTimestamp: '2026-07-13T12:30:02.587742+00:00',
+    sourceCommitSha: '039a064',
     watchdogPatchVersion: 'ota-repair-v1',
     frontendDeployMarker: 'ivx-frontend-2026-07-13-ota-repair',
     eas: {
@@ -46,7 +46,7 @@ const config: ExpoConfig = {
       backgroundColor: '#000000',
     },
     package: 'com.ivxholdings.app',
-    versionCode: 2,
+    versionCode: 3,
     softwareKeyboardLayoutMode: 'resize',
   },
   web: {
