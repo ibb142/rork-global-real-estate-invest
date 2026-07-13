@@ -5769,7 +5769,7 @@ async function handleIVXOwnerAIRequestSSE(
       'Cache-Control': 'no-cache, no-transform',
       Connection: 'keep-alive',
       'X-Accel-Buffering': 'no',
-      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Origin': 'https://ivxholding.com',
     },
   });
 }

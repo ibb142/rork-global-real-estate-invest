@@ -52,7 +52,7 @@ import { generateDailyReport, listDailyReports } from '../services/ivx-recovery-
 const H = {
   'Content-Type': 'application/json',
   'Cache-Control': 'no-store',
-  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Origin': 'https://ivxholding.com',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
   'Access-Control-Allow-Methods': 'GET, HEAD, POST, OPTIONS',
 } as const;

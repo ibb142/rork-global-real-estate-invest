@@ -89,7 +89,7 @@ function jsonResponse(data: unknown, status = 200): Response {
     status,
     headers: {
       'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Origin': 'https://ivxholding.com',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     },
   });
@@ -99,7 +99,7 @@ export function treasuryOptions(): Response {
   return new Response(null, {
     status: 204,
     headers: {
-      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Origin': 'https://ivxholding.com',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization',
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     },
@@ -208,7 +208,7 @@ export async function handleTreasuryStatement(request: Request): Promise<Respons
         headers: {
           'Content-Type': format === 'excel' ? 'application/vnd.ms-excel' : 'text/csv',
           'Content-Disposition': `attachment; filename="ivx-statement-${statement.statementId}.${format === 'excel' ? 'xls' : 'csv'}"`,
-          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Origin': 'https://ivxholding.com',
         },
       });
     }
@@ -219,7 +219,7 @@ export async function handleTreasuryStatement(request: Request): Promise<Respons
         headers: {
           'Content-Type': 'application/pdf',
           'Content-Disposition': `attachment; filename="ivx-statement-${statement.statementId}.pdf"`,
-          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Origin': 'https://ivxholding.com',
         },
       });
     }

@@ -32,7 +32,7 @@ function jsonResponse(data: unknown, status = 200): Response {
     status,
     headers: {
       'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Origin': 'https://ivxholding.com',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     },
   });

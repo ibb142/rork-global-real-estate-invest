@@ -30,7 +30,7 @@ const DEPLOYMENT_MARKER = 'ivx-owner-passwordless-login-2026-07-06t0000z';
 const PASSWORDLESS_HEADERS = {
   'Content-Type': 'application/json',
   'Cache-Control': 'no-store',
-  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Origin': 'https://ivxholding.com',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 } as const;

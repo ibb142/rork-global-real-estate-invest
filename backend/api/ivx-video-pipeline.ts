@@ -22,7 +22,7 @@ import {
 } from '../services/ivx-video-pipeline';
 
 const CORS_HEADERS: Record<string, string> = {
-  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Origin': 'https://ivxholding.com',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, apikey, Range',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
 };

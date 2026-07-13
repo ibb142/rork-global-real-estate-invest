@@ -20,7 +20,7 @@ async function getSB() {
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type, Authorization, apikey', 'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS' },
+    headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'Access-Control-Allow-Origin': 'https://ivxholding.com', 'Access-Control-Allow-Headers': 'Content-Type, Authorization, apikey', 'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS' },
   });
 }
 
@@ -31,7 +31,7 @@ async function readBody(req: Request): Promise<Record<string, unknown>> {
 function safeStr(v: unknown, fallback = ''): string { return typeof v === 'string' ? v.trim() : fallback; }
 
 export const publicFeatureOptions = (): Response => {
-  return new Response(null, { status: 204, headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type, Authorization, apikey', 'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS' } });
+  return new Response(null, { status: 204, headers: { 'Access-Control-Allow-Origin': 'https://ivxholding.com', 'Access-Control-Allow-Headers': 'Content-Type, Authorization, apikey', 'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS' } });
 };
 
 // ── Featured Properties ────────────────────────────────────────────────────

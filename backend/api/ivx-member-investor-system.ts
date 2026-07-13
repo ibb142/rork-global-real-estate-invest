@@ -33,7 +33,7 @@ function jsonResponse(data: unknown, status = 200): Response {
     status,
     headers: {
       'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Origin': 'https://ivxholding.com',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     },
   });
@@ -43,7 +43,7 @@ export function memberInvestorOptions(): Response {
   return new Response(null, {
     status: 204,
     headers: {
-      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Origin': 'https://ivxholding.com',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization',
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     },

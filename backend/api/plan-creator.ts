@@ -58,7 +58,7 @@ type PlanRunPersistence = {
 const JSON_HEADERS = {
   'Content-Type': 'application/json',
   'Cache-Control': 'no-store',
-  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Origin': 'https://ivxholding.com',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 } as const;

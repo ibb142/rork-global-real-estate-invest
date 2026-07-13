@@ -83,7 +83,7 @@ const DEFAULT_OWNER_PASSWORD_RESET_REDIRECT_URL = 'https://ivxholding.com/reset-
 const OWNER_REGISTRATION_HEADERS = {
   'Content-Type': 'application/json',
   'Cache-Control': 'no-store',
-  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Origin': 'https://ivxholding.com',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
 } as const;

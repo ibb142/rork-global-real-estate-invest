@@ -2140,7 +2140,7 @@
       object-fit: cover; display: block; scroll-snap-align: start; flex: 0 0 100%;
     }
     .live-deal-gallery-slider video {
-      min-width: 100%; width: 100%; height: 200px;
+      min-width: 100%; width: 100%; height: 100%;
       object-fit: cover; display: block; scroll-snap-align: start;
       background: #000;
     }
@@ -2809,8 +2809,8 @@
 <body>
 
 <!-- NAV -->
-<nav>
-  <a href="#" class="nav-logo">
+<nav role="navigation" aria-label="Main navigation">
+  <a href="#" class="nav-logo" aria-label="IVX Holdings home">
     <div class="nav-logo-icon">
       <img src="https://pub-e001eb4506b145aa938b5d3badbff6a5.r2.dev/attachments/qlyqkn1t8hrvaotw99r9u" alt="IVX Holdings Logo" width="40" height="40" style="display:block;width:40px;height:40px;object-fit:contain;" />
     </div>
@@ -2825,10 +2825,13 @@
     <li><a href="#" onclick="openPortal(); return false;" style="color:var(--green);font-weight:700;">My Portal</a></li>
     <li><a href="#" class="nav-cta-btn" onclick="openFunnel(); return false;">Get Started</a></li>
   </ul>
-  <div class="nav-hamburger" id="hamburger">
+  <div class="nav-hamburger" id="hamburger" role="button" aria-label="Toggle navigation menu" aria-expanded="false" tabindex="0">
     <span></span><span></span><span></span>
   </div>
 </nav>
+
+<!-- Skip to content link for keyboard users -->
+<a href="#properties" class="sr-only-focusable" style="position:absolute;top:-100px;left:0;background:#FFD700;color:#000;padding:10px 20px;z-index:10001;font-weight:700;border-radius:0 0 8px 0;" onfocus="this.style.top='0'" onblur="this.style.top='-100px'">Skip to content</a>
 
 <!-- LIVE ACTIVITY TICKER -->
 <div class="live-ticker-bar" id="live-ticker">
@@ -8974,5 +8977,79 @@
 </script>
 <script src="/ivx-reels.js?v=20260704j" defer></script>
 <script src="/ivx-home-feed.js?v=20260704c" defer></script>
+
+<!-- ═══ SCROLL RESTORATION ═══ -->
+<script>
+(function() {
+  var scrollKey = 'ivx_scroll_' + location.pathname;
+  // Save scroll position before navigating away
+  window.addEventListener('pagehide', function() {
+    try { sessionStorage.setItem(scrollKey, String(window.scrollY)); } catch(e) {}
+  });
+  // Restore scroll position on back/forward navigation
+  window.addEventListener('pageshow', function(event) {
+    if (event.persisted) {
+      var saved = sessionStorage.getItem(scrollKey);
+      if (saved) { window.scrollTo(0, parseInt(saved, 10) || 0); }
+    }
+  });
+  // Restore on load for back button
+  window.addEventListener('load', function() {
+    if (performance && performance.getEntriesByType && performance.getEntriesByType('navigation')[0] && performance.getEntriesByType('navigation')[0].type === 'back_forward') {
+      var saved = sessionStorage.getItem(scrollKey);
+      if (saved) { window.scrollTo(0, parseInt(saved, 10) || 0); }
+    }
+  });
+})();
+</script>
+
+<!-- ═══ KEYBOARD NAVIGATION + FOCUS MANAGEMENT ═══ -->
+<script>
+(function() {
+  // Trap focus inside modals when open
+  function trapFocus(modal) {
+    var focusable = modal.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+    if (!focusable.length) return;
+    var first = focusable[0];
+    var last = focusable[focusable.length - 1];
+    modal.addEventListener('keydown', function(e) {
+      if (e.key !== 'Tab') return;
+      if (e.shiftKey) {
+        if (document.activeElement === first) { e.preventDefault(); last.focus(); }
+      } else {
+        if (document.activeElement === last) { e.preventDefault(); first.focus(); }
+      }
+    });
+  }
+  // Apply to all overlays when they become visible
+  var overlays = document.querySelectorAll('.mreg-overlay, .funnel-overlay, [class*="overlay"]');
+  var observer = new MutationObserver(function(mutations) {
+    mutations.forEach(function(mut) {
+      if (mut.attributeName === 'class' || mut.attributeName === 'style') {
+        var el = mut.target;
+        if (el.offsetWidth > 0 && el.offsetHeight > 0) {
+          trapFocus(el);
+          var firstFocus = el.querySelector('button, input, [href]');
+          if (firstFocus) firstFocus.focus();
+        }
+      }
+    });
+  });
+  overlays.forEach(function(el) {
+    observer.observe(el, { attributes: true });
+  });
+  // Skip to content link — press Escape to scroll to main content
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+      var openOverlay = document.querySelector('.mreg-overlay.mreg-open, .funnel-overlay[style*="flex"]');
+      if (openOverlay) {
+        var closeBtn = openOverlay.querySelector('[onclick*="close"], .mreg-close');
+        if (closeBtn) closeBtn.click();
+      }
+    }
+  });
+})();
+</script>
+
 </body>
 </html>

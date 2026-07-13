@@ -33,7 +33,7 @@ import {
 import { assertIVXRegisteredOwnerBearer, ownerOnlyJson, ownerOnlyOptions, IVXOwnerApprovalError } from './owner-only';
 
 const CORS = {
-  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Origin': 'https://ivxholding.com',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
   'Access-Control-Allow-Methods': 'GET, HEAD, POST, OPTIONS',
   'Content-Type': 'application/json',

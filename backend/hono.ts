@@ -1128,7 +1128,7 @@ function route53UnavailableResponse(): Response {
     headers: {
       'Content-Type': 'application/json',
       'Cache-Control': 'no-store',
-      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Origin': 'https://ivxholding.com',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization',
       'Access-Control-Allow-Methods': 'POST, OPTIONS',
     },
@@ -1317,9 +1317,7 @@ function publicJson(payload: Record<string, unknown>, status: number = 200): Res
     headers: {
       'Content-Type': 'application/json',
       'Cache-Control': 'no-store',
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, apikey',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS, HEAD',
+      'Vary': 'Origin',
     },
   });
 }
@@ -2444,8 +2442,22 @@ async function loadWebResponse(requestPath: string, method: string): Promise<Res
   return null;
 }
 
+const IVX_ALLOWED_ORIGINS = [
+  'https://ivxholding.com',
+  'https://www.ivxholding.com',
+  'https://chat.ivxholding.com',
+  'http://localhost:8081',
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'http://127.0.0.1:8081',
+  'http://127.0.0.1:3000',
+];
+
 app.use('*', cors({
-  origin: '*',
+  origin: (origin: string) => {
+    if (!origin || IVX_ALLOWED_ORIGINS.includes(origin)) return origin;
+    return null;
+  },
   allowMethods: ['GET', 'POST', 'OPTIONS', 'HEAD'],
   allowHeaders: ['Content-Type', 'Authorization', 'apikey'],
   exposeHeaders: ['Content-Type', 'Cache-Control'],
@@ -3541,7 +3553,7 @@ app.post('/api/ivx/night-ops/roadmap/advance', async (c) => handleIVXNightOpsRoa
 app.options('/api/ivx/env-debug/render', () => publicJson({ ok: true }, 204));
 app.get('/api/ivx/env-debug/render', async (context) => context.json(await buildRenderEnvDebugPayload(), 200, {
   'Cache-Control': 'no-store',
-  'Access-Control-Allow-Origin': '*',
+  'Vary': 'Origin',
 }));
 // Public-safe masked variable presence report (no secrets, no auth).
 // Mirrors the safety model of /api/ivx/env-debug/render: returns only
@@ -3572,7 +3584,7 @@ app.get('/api/ivx/variables-presence', async (context) => {
       secretValuesReturned: false as const,
     }, 200, {
       'Cache-Control': 'no-store',
-      'Access-Control-Allow-Origin': '*',
+      'Vary': 'Origin',
     });
   } catch (error) {
     return context.json({ ok: false, error: error instanceof Error ? error.message : 'variables-presence failed', secretValuesReturned: false }, 500);
@@ -4050,7 +4062,7 @@ app.post('/api/aws/route53/audit', async (c) => handleRoute53Request(c.req.raw, 
 app.post('/api/aws/route53/upsert', async (c) => handleRoute53Request(c.req.raw, 'upsert'));
 
 // ---- IVX Autonomous Repair Brain: incidents + production guard ----
-app.options('/api/ivx/incidents', () => new Response(null, { status: 204, headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type, Authorization', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS' } }));
+app.options('/api/ivx/incidents', () => new Response(null, { status: 204, headers: { 'Access-Control-Allow-Origin': 'https://ivxholding.com', 'Access-Control-Allow-Headers': 'Content-Type, Authorization', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Vary': 'Origin' } }));
 app.post('/api/ivx/incidents', async (c) => handleIVXIncidentIngest(c.req.raw));
 app.get('/api/ivx/incidents', async (c) => handleIVXIncidentsList(c.req.raw));
 app.get('/api/ivx/incidents/:id', async (c) => handleIVXIncidentGet(c.req.raw, c.req.param('id')));
@@ -4064,7 +4076,7 @@ app.get('/api/ivx/production-guard/health', async (c) => handleIVXProductionGuar
 app.post('/api/ivx/production-guard/rollback', async (c) => handleIVXProductionGuardRollback(c.req.raw));
 
 // ---- IVX Repair Job Orchestrator (async pipeline) ----
-app.options('/api/ivx/repair-jobs', () => new Response(null, { status: 204, headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type, Authorization', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS' } }));
+app.options('/api/ivx/repair-jobs', () => new Response(null, { status: 204, headers: { 'Access-Control-Allow-Origin': 'https://ivxholding.com', 'Access-Control-Allow-Headers': 'Content-Type, Authorization', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Vary': 'Origin' } }));
 app.post('/api/ivx/repair-jobs', async (c) => handleIVXRepairJobStart(c.req.raw));
 app.get('/api/ivx/repair-jobs', async (c) => handleIVXRepairJobList(c.req.raw));
 app.get('/api/ivx/repair-jobs/:id', async (c) => handleIVXRepairJobGet(c.req.raw, c.req.param('id')));

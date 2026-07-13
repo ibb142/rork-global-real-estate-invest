@@ -14,7 +14,7 @@ function json(data: unknown, status = 200): Response {
     headers: {
       'Content-Type': 'application/json',
       'Cache-Control': 'no-store',
-      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Origin': 'https://ivxholding.com',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization, apikey',
       'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
     },
@@ -63,7 +63,7 @@ export const projectEngagementOptions = (c: Context): Response => {
   return new Response(null, {
     status: 204,
     headers: {
-      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Origin': 'https://ivxholding.com',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization, apikey',
       'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
     },

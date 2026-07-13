@@ -60,9 +60,10 @@ const requestAttempts = new Map<string, { count: number; resetAt: number }>();
 const RECOVERY_HEADERS = {
   'Content-Type': 'application/json',
   'Cache-Control': 'no-store',
-  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Origin': 'https://ivxholding.com',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Vary': 'Origin',
 } as const;
 
 function nowIso(): string {
@@ -218,6 +219,12 @@ export function OPTIONS(): Response {
 export async function handleOwnerRecoveryStatusRequest(request: Request): Promise<Response> {
   if (request.method !== 'GET') {
     return json({ ok: false, message: 'Method not allowed.', backendVersion: RECOVERY_BACKEND_VERSION }, 405);
+  }
+  // Require owner bearer token — this endpoint exposes recovery readiness state.
+  const token = readBearerToken(request);
+  const ownerToken = readTrimmed(process.env.IVX_OWNER_TOKEN);
+  if (!token || !ownerToken || token !== ownerToken) {
+    return json({ ok: false, message: 'Authentication required.', backendVersion: RECOVERY_BACKEND_VERSION }, 401);
   }
   const snsConfigured = isSnsSmsConfigured();
   const recoveryPhoneConfigured = Boolean(resolveOwnerRecoveryPhone());
