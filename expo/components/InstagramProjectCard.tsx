@@ -49,6 +49,7 @@ import {
 import ProjectEngagementBar from './ProjectEngagementBar';
 import ProjectCommentsSheet from './ProjectCommentsSheet';
 import ProjectShareSheet from './ProjectShareSheet';
+import SafeVideo from './SafeVideo';
 import {
   fetchProjectComments,
   addProjectComment,
@@ -94,12 +95,12 @@ const InstagramProjectCard = memo(function InstagramProjectCard({
   // Video state
   const [videos, setVideos] = useState<ProjectVideo[]>([]);
   const [activeVideoIndex, setActiveVideoIndex] = useState(0);
+  const [shouldPlayVideo, setShouldPlayVideo] = useState(false);
   const [isVideoPlaying, setIsVideoPlaying] = useState(false);
   const [isVideoMuted, setIsVideoMuted] = useState(true);
   const [videoProgress, setVideoProgress] = useState(0);
   const [isVideoFullscreen, setIsVideoFullscreen] = useState(false);
   const [watchedSeconds, setWatchedSeconds] = useState(0);
-  const videoRef = useRef<Video>(null);
 
   // Engagement state
   const [engagement, setEngagement] = useState<ProjectEngagement>({
@@ -231,8 +232,7 @@ const InstagramProjectCard = memo(function InstagramProjectCard({
     onInvestNow(deal);
   }, [deal, onInvestNow]);
 
-  const handleVideoPlaybackStatus = useCallback((status: AVPlaybackStatus) => {
-    if (!status.isLoaded) return;
+  const handleVideoPlaybackStatus = useCallback((status: { isPlaying: boolean; durationMillis: number; positionMillis: number }) => {
     setIsVideoPlaying(status.isPlaying);
     if (status.durationMillis && status.positionMillis) {
       setVideoProgress(status.positionMillis / status.durationMillis);
@@ -248,23 +248,15 @@ const InstagramProjectCard = memo(function InstagramProjectCard({
     }
   }, [deal.id]);
 
-  const togglePlayPause = useCallback(async () => {
-    if (!videoRef.current) return;
-    const status = await videoRef.current.getStatusAsync();
-    if (!status.isLoaded) return;
-    if (status.isPlaying) {
-      await videoRef.current.pauseAsync();
-    } else {
-      await videoRef.current.playAsync();
-    }
+  const togglePlayPause = useCallback(() => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setShouldPlayVideo(prev => !prev);
   }, []);
 
-  const toggleMute = useCallback(async () => {
-    if (!videoRef.current) return;
-    const next = !isVideoMuted;
-    await videoRef.current.setIsMutedAsync(next);
-    setIsVideoMuted(next);
-  }, [isVideoMuted]);
+  const toggleMute = useCallback(() => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setIsVideoMuted(prev => !prev);
+  }, []);
 
   const hasVideo = videos.length > 0 && showVideo;
   const activeVideo = hasVideo ? videos[activeVideoIndex] : null;
@@ -280,16 +272,16 @@ const InstagramProjectCard = memo(function InstagramProjectCard({
             onPress={togglePlayPause}
             style={styles.videoTouchArea}
           >
-            <Video
-              ref={videoRef}
-              source={{ uri: activeVideo.video_url }}
+            <SafeVideo
+              uri={activeVideo.video_url}
+              posterUri={activeVideo.thumbnail_url ?? null}
               style={[styles.video, { height: compact ? 200 : 260 }]}
               resizeMode={ResizeMode.COVER}
+              shouldPlay={shouldPlayVideo}
               isMuted={isVideoMuted}
-              shouldPlay={false}
               isLooping
               onPlaybackStatusUpdate={handleVideoPlaybackStatus}
-              progressUpdateIntervalMillis={500}
+              testID={`instagram-card-video-${deal.id}`}
             />
           </TouchableOpacity>
 

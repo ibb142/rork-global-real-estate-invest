@@ -9,11 +9,12 @@
  *
  * This component disables poster on Android, falls back from HLS to MP4, and
  * surfaces load errors so the app survives bad videos instead of crashing.
+ * Poster is rendered as a separate Image layer (not expo-av posterSource).
  */
 import React, { useEffect, useRef, useState } from 'react';
-import { View, ActivityIndicator, Platform, StyleSheet } from 'react-native';
+import { View, Text, ActivityIndicator, Platform, StyleSheet, TouchableOpacity } from 'react-native';
 import { Video, ResizeMode, type VideoReadyForDisplayEvent } from 'expo-av';
-
+import { RefreshCw } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 
 interface SafeVideoProps {
@@ -25,10 +26,12 @@ interface SafeVideoProps {
   isLooping?: boolean;
   resizeMode?: ResizeMode;
   onProgress?: (progress: number) => void;
+  onPlaybackStatusUpdate?: (status: { isPlaying: boolean; durationMillis: number; positionMillis: number }) => void;
   testID?: string;
 }
 
 const GOLD = Colors.primary;
+const MAX_RETRIES = 2;
 
 function pickPlaybackUri(input: string | null | undefined): string | null {
   if (!input) return null;
@@ -48,12 +51,14 @@ export default function SafeVideo({
   isLooping = true,
   resizeMode = ResizeMode.COVER,
   onProgress,
+  onPlaybackStatusUpdate,
   testID,
 }: SafeVideoProps) {
   const videoRef = useRef<Video>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [ready, setReady] = useState<boolean>(false);
+  const [retryCount, setRetryCount] = useState<number>(0);
   const playbackUri = pickPlaybackUri(uri);
 
   // Reset state when the source changes.
@@ -61,28 +66,48 @@ export default function SafeVideo({
     setError(null);
     setLoading(true);
     setReady(false);
+    setRetryCount(0);
   }, [playbackUri]);
 
   // Unload the player when unmounting to free native resources.
+  // Capture the ref at effect creation time so the cleanup function
+  // uses the correct player instance even if the ref has changed.
   useEffect(() => {
+    const player = videoRef.current;
     return () => {
       try {
-        void videoRef.current?.unloadAsync();
+        void player?.unloadAsync();
       } catch {
-        // ignore
+        // ignore — player may already be gone
       }
     };
   }, []);
 
+  const handleRetry = () => {
+    if (retryCount >= MAX_RETRIES) return;
+    setRetryCount((c) => c + 1);
+    setError(null);
+    setLoading(true);
+    setReady(false);
+  };
+
   if (!playbackUri) {
     return (
       <View style={[styles.container, style]} testID={testID ? `${testID}-no-source` : undefined}>
-        <ActivityIndicator size="large" color={GOLD} />
+        {posterUri ? (
+          <View style={[styles.container, style]}>
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: '#111' }]} />
+            <ActivityIndicator size="large" color={GOLD} style={StyleSheet.absoluteFill} />
+          </View>
+        ) : (
+          <ActivityIndicator size="large" color={GOLD} />
+        )}
       </View>
     );
   }
 
   // Poster on Android is a known crash vector in expo-av; disable it there.
+  // The poster is rendered by the parent component (ReelVideoPlayer) as an Image.
   const showPoster = Platform.OS !== 'android' && !!posterUri;
   const posterSource = showPoster ? { uri: posterUri as string } : undefined;
   const usePoster = showPoster;
@@ -115,7 +140,6 @@ export default function SafeVideo({
           setLoading(false);
           setReady(false);
           setError(typeof err === 'string' ? err : 'Video failed to load');
-          // Report sanitized error to console only; do not throw.
           if (__DEV__) {
             console.warn('[SafeVideo] load error:', err);
           }
@@ -123,6 +147,11 @@ export default function SafeVideo({
         onPlaybackStatusUpdate={(status) => {
           if (status.isLoaded && status.durationMillis && status.durationMillis > 0) {
             onProgress?.(status.positionMillis / status.durationMillis);
+            onPlaybackStatusUpdate?.({
+              isPlaying: status.isPlaying ?? false,
+              durationMillis: status.durationMillis,
+              positionMillis: status.positionMillis ?? 0,
+            });
           }
         }}
       />
@@ -132,8 +161,15 @@ export default function SafeVideo({
         </View>
       )}
       {error && (
-        <View style={styles.overlay} pointerEvents="none">
-          <ActivityIndicator size="small" color="rgba(255,255,255,0.6)" />
+        <View style={styles.overlay} pointerEvents="auto">
+          {retryCount < MAX_RETRIES ? (
+            <TouchableOpacity style={styles.retryBtn} onPress={handleRetry} activeOpacity={0.8}>
+              <RefreshCw size={16} color="#000" />
+              <Text style={styles.retryText}>Retry</Text>
+            </TouchableOpacity>
+          ) : (
+            <ActivityIndicator size="small" color="rgba(255,255,255,0.6)" />
+          )}
         </View>
       )}
     </View>
@@ -152,5 +188,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(0,0,0,0.25)',
+  },
+  retryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: GOLD,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 999,
+  },
+  retryText: {
+    color: '#000',
+    fontSize: 14,
+    fontWeight: '700' as const,
   },
 });

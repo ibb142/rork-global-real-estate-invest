@@ -9,6 +9,13 @@
  *   follow    → POST /api/ivx/video-platform/follow
  *   report    → POST /api/ivx/video-platform/videos/:id/report
  *   comments  → GET/POST /api/projects/:id/comments
+ *
+ * Player lifecycle (Instagram-style):
+ *   • Only ONE reel plays at a time (the active/index item)
+ *   • Max 3 players mounted (active ± 1) — all others unmounted
+ *   • Pauses on app background, screen unfocus, network disconnect
+ *   • 80% viewability threshold to prevent overlap during fast scroll
+ *   • Per-item error boundary so one bad video never crashes the feed
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -21,11 +28,9 @@ import {
   useWindowDimensions,
   Platform,
   Alert,
-  type ViewToken,
 } from 'react-native';
 import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ResizeMode } from 'expo-av';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
   X,
@@ -44,40 +49,28 @@ import * as Haptics from 'expo-haptics';
 import { useQuery } from '@tanstack/react-query';
 
 import Colors from '@/constants/colors';
-import { fetchVideoFeed, fetchProjectReels, type FeedVideo } from '@/lib/video-feed';
+import { fetchVideoFeed, type FeedVideo } from '@/lib/video-feed';
 import {
-  toggleProjectLike,
-  trackProjectShare,
-  fetchProjectComments,
-  addProjectComment,
-  deleteProjectComment,
-  type ProjectComment,
-} from '@/lib/project-engagement';
-import {
-  toggleVideoSave,
   toggleVideoFollow,
   reportVideo,
-  trackVideoEvent,
   getViewerId,
   buildVideoShareUrl,
 } from '@/lib/video-platform';
 import ProjectCommentsSheet from '@/components/ProjectCommentsSheet';
 import ProjectShareSheet from '@/components/ProjectShareSheet';
-import SafeVideo from '@/components/SafeVideo';
+import ReelVideoPlayer from '@/components/ReelVideoPlayer';
+import { useReelPlayback } from '@/hooks/useReelPlayback';
+import { useReelEngagement, type EngagementState } from '@/hooks/useReelEngagement';
+import {
+  fetchProjectComments,
+  addProjectComment,
+  deleteProjectComment,
+  type ProjectComment,
+} from '@/lib/project-engagement';
 import { supabase } from '@/lib/supabase';
 
 const GOLD = Colors.primary;
 const LIKE_RED = Colors.error;
-
-interface EngagementState {
-  likeCount: number;
-  commentCount: number;
-  shareCount: number;
-  saveCount: number;
-  liked: boolean;
-  saved: boolean;
-  following: boolean;
-}
 
 function formatCount(n: number): string {
   if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
@@ -145,6 +138,7 @@ const CHANNELS: { id: ReelChannel; label: string }[] = [
 interface FeedItemProps {
   video: FeedVideo;
   isActive: boolean;
+  shouldMount: boolean;
   height: number;
   muted: boolean;
   engagement: EngagementState;
@@ -163,6 +157,7 @@ interface FeedItemProps {
 const FeedItem = React.memo(function FeedItem({
   video,
   isActive,
+  shouldMount,
   height,
   muted,
   engagement,
@@ -217,16 +212,28 @@ const FeedItem = React.memo(function FeedItem({
         onLongPress={() => onReport(video)}
         testID={`video-item-${video.id}`}
       >
-        <SafeVideo
-          uri={video.hls_url ?? video.video_url}
-          posterUri={video.poster_url ?? video.thumbnail_url ?? video.preview_blur_url}
-          style={StyleSheet.absoluteFill}
-          resizeMode={ResizeMode.COVER}
-          shouldPlay={shouldPlay}
-          isMuted={muted}
-          onProgress={(progress) => setProgress(progress)}
-          testID={`video-player-${video.id}`}
-        />
+        {shouldMount ? (
+          <ReelVideoPlayer
+            videoId={video.id}
+            uri={video.video_url}
+            hlsUri={video.hls_url}
+            posterUri={video.poster_url ?? video.thumbnail_url}
+            previewBlurUri={video.preview_blur_url}
+            shouldPlay={shouldPlay}
+            isMuted={muted}
+            onProgress={(p) => setProgress(p)}
+            testID={`video-player-${video.id}`}
+          />
+        ) : (
+          // Unmounted: show poster only to preserve scroll position
+          <View style={StyleSheet.absoluteFill}>
+            {video.poster_url || video.thumbnail_url || video.preview_blur_url ? (
+              <View style={[StyleSheet.absoluteFill, { backgroundColor: '#111' }]} />
+            ) : (
+              <View style={[StyleSheet.absoluteFill, { backgroundColor: '#000' }]} />
+            )}
+          </View>
+        )}
       </TouchableOpacity>
 
       {/* Progress bar */}
@@ -234,7 +241,7 @@ const FeedItem = React.memo(function FeedItem({
         <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
       </View>
 
-      {!shouldPlay && (
+      {!shouldPlay && shouldMount && (
         <View pointerEvents="none" style={styles.centerPlay}>
           <View style={styles.centerPlayCircle}>
             <Play size={30} color="#000" fill="#000" />
@@ -385,12 +392,10 @@ export default function VideosScreen() {
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
   const params = useLocalSearchParams<{ type?: string }>();
-  const [activeIndex, setActiveIndex] = useState<number>(0);
+  void params;
   const [muted, setMuted] = useState<boolean>(true);
   const [userId, setUserId] = useState<string | null>(null);
   const [viewerId, setViewerId] = useState<string | null>(null);
-  const [engagements, setEngagements] = useState<Record<string, EngagementState>>({});
-  const [toast, setToast] = useState<string | null>(null);
   const [channel, setChannel] = useState<ReelChannel>('all');
 
   const [commentsVideo, setCommentsVideo] = useState<FeedVideo | null>(null);
@@ -398,6 +403,7 @@ export default function VideosScreen() {
   const [commentsTotal, setCommentsTotal] = useState<number>(0);
   const [commentsLoading, setCommentsLoading] = useState<boolean>(false);
   const [shareVideo, setShareVideo] = useState<FeedVideo | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
 
   const feedQuery = useQuery({
     queryKey: ['ivx-video-feed'],
@@ -447,6 +453,10 @@ export default function VideosScreen() {
     return { all, investment, buyer, seller };
   }, [allVideos]);
 
+  // Playback lifecycle hooks
+  const playback = useReelPlayback();
+  const engagement = useReelEngagement();
+
   useEffect(() => {
     let cancelled = false;
     void getViewerId().then((id) => {
@@ -458,71 +468,31 @@ export default function VideosScreen() {
     return () => { cancelled = true; };
   }, []);
 
+  // Initialize engagement state when videos load
   useEffect(() => {
     if (allVideos.length === 0) return;
-    setEngagements(prev => {
-      const next = { ...prev };
-      for (const v of allVideos) {
-        if (!next[v.id]) {
-          next[v.id] = {
-            likeCount: v.like_count ?? 0,
-            commentCount: v.comment_count ?? 0,
-            shareCount: v.share_count ?? 0,
-            saveCount: v.save_count ?? 0,
-            liked: false,
-            saved: false,
-            following: false,
-          };
-        }
-      }
-      return next;
-    });
-  }, [allVideos]);
+    engagement.initEngagements(allVideos);
+  }, [allVideos, engagement]);
 
+  // Track view events when active reel changes
   useEffect(() => {
-    const activeVideo = filteredVideos[activeIndex];
+    const activeVideo = filteredVideos[playback.activeIndex];
     if (!activeVideo) return;
-    void trackVideoEvent('view', activeVideo.id);
-  }, [activeIndex, filteredVideos]);
+    engagement.handleView(activeVideo);
+  }, [playback.activeIndex, filteredVideos, engagement]);
 
   const showToast = useCallback((message: string) => {
     setToast(message);
     setTimeout(() => setToast(null), 2500);
   }, []);
 
-  const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
-    const first = viewableItems.find(v => v.isViewable);
-    if (first && typeof first.index === 'number') setActiveIndex(first.index);
-  }).current;
-
-  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 60 }).current;
-
-  const handleLike = useCallback(async (video: FeedVideo) => {
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setEngagements(prev => {
-      const cur = prev[video.id] ?? { likeCount: video.like_count ?? 0, commentCount: video.comment_count ?? 0, shareCount: video.share_count ?? 0, saveCount: video.save_count ?? 0, liked: false, saved: false, following: false };
-      return {
-        ...prev,
-        [video.id]: { ...cur, liked: !cur.liked, likeCount: cur.likeCount + (cur.liked ? -1 : 1) },
-      };
-    });
-    try {
-      const result = await toggleProjectLike(video.id, userId);
-      setEngagements(prev => ({
-        ...prev,
-        [video.id]: { ...(prev[video.id] as EngagementState), liked: result.liked, likeCount: result.likeCount },
-      }));
-    } catch {}
-  }, [userId]);
+  const handleLike = useCallback((video: FeedVideo) => {
+    engagement.handleLike(video, userId);
+  }, [engagement, userId]);
 
   const handleDoubleTapLike = useCallback((video: FeedVideo) => {
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    void trackVideoEvent('double_tap_like', video.id);
-    const cur = engagements[video.id];
-    if (!cur || !cur.liked) {
-      void handleLike(video);
-    }
-  }, [engagements, handleLike]);
+    engagement.handleDoubleTapLike(video, userId);
+  }, [engagement, userId]);
 
   const handleComment = useCallback(async (video: FeedVideo) => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -543,10 +513,6 @@ export default function VideosScreen() {
       const { comments: cmts, total } = await fetchProjectComments(projectId, 20, 0);
       setComments(cmts);
       setCommentsTotal(total);
-      setEngagements(prev => {
-        const cur = prev[projectId];
-        return cur ? { ...prev, [projectId]: { ...cur, commentCount: total } } : prev;
-      });
     } catch {}
   }, [userId]);
 
@@ -566,44 +532,22 @@ export default function VideosScreen() {
   }, []);
 
   const handleShareTrack = useCallback(async (projectId: string, shareType: string) => {
-    try {
-      const result = await trackProjectShare(projectId, shareType as never, userId);
-      setEngagements(prev => {
-        const cur = prev[projectId];
-        return cur ? { ...prev, [projectId]: { ...cur, shareCount: result.shareCount } } : prev;
-      });
-    } catch {}
-  }, [userId]);
+    engagement.handleShare(
+      { id: projectId } as FeedVideo,
+      userId,
+      shareType,
+    );
+  }, [engagement, userId]);
 
-  const handleSave = useCallback(async (video: FeedVideo) => {
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setEngagements(prev => {
-      const cur = prev[video.id] ?? { likeCount: video.like_count ?? 0, commentCount: video.comment_count ?? 0, shareCount: video.share_count ?? 0, saveCount: video.save_count ?? 0, liked: false, saved: false, following: false };
-      return { ...prev, [video.id]: { ...cur, saved: !cur.saved, saveCount: cur.saveCount + (cur.saved ? -1 : 1) } };
-    });
-    try {
-      const result = await toggleVideoSave(video.id, viewerId);
-      setEngagements(prev => ({
-        ...prev,
-        [video.id]: { ...(prev[video.id] as EngagementState), saved: result.saved, saveCount: result.saveCount },
-      }));
-      showToast(result.saved ? 'Saved' : 'Removed from saved');
-    } catch {}
-  }, [viewerId, showToast]);
+  const handleSave = useCallback((video: FeedVideo) => {
+    engagement.handleSave(video, viewerId);
+  }, [engagement, viewerId]);
 
   const handleFollow = useCallback(async (video: FeedVideo) => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const creatorId = video.creator_id ?? 'ivx-owner';
-    setEngagements(prev => {
-      const cur = prev[video.id] ?? { likeCount: video.like_count ?? 0, commentCount: video.comment_count ?? 0, shareCount: video.share_count ?? 0, saveCount: video.save_count ?? 0, liked: false, saved: false, following: false };
-      return { ...prev, [video.id]: { ...cur, following: !cur.following } };
-    });
     try {
       const result = await toggleVideoFollow(creatorId, viewerId);
-      setEngagements(prev => ({
-        ...prev,
-        [video.id]: { ...(prev[video.id] as EngagementState), following: result.following },
-      }));
       showToast(result.following ? 'Following creator' : 'Unfollowed');
     } catch {}
   }, [viewerId, showToast]);
@@ -644,10 +588,11 @@ export default function VideosScreen() {
     ({ item, index }: { item: FeedVideo; index: number }) => (
       <FeedItem
         video={item}
-        isActive={index === activeIndex}
+        isActive={playback.shouldPlay(index)}
+        shouldMount={playback.shouldMount(index, filteredVideos.length)}
         height={windowHeight}
         muted={muted}
-        engagement={engagements[item.id] ?? {
+        engagement={engagement.engagements[item.id] ?? {
           likeCount: item.like_count ?? 0,
           commentCount: item.comment_count ?? 0,
           shareCount: item.share_count ?? 0,
@@ -668,7 +613,7 @@ export default function VideosScreen() {
         onInvestNow={handleInvestNow}
       />
     ),
-    [activeIndex, windowHeight, muted, engagements, handleLike, handleDoubleTapLike, handleComment, handleShare, handleSave, handleFollow, handleReport, handleViewDeal, handleInvestNow]
+    [playback, filteredVideos.length, windowHeight, muted, engagement.engagements, handleLike, handleDoubleTapLike, handleComment, handleShare, handleSave, handleFollow, handleReport, handleViewDeal, handleInvestNow]
   );
 
   const itemHeight = windowHeight;
@@ -705,6 +650,10 @@ export default function VideosScreen() {
         <View style={styles.loading}>
           <ActivityIndicator size="large" color={GOLD} />
         </View>
+      ) : filteredVideos.length === 0 ? (
+        <View style={styles.loading}>
+          <Text style={styles.emptyText}>No videos available</Text>
+        </View>
       ) : (
         <FlatList
           data={filteredVideos}
@@ -715,8 +664,8 @@ export default function VideosScreen() {
           snapToInterval={itemHeight}
           snapToAlignment="start"
           showsVerticalScrollIndicator={false}
-          onViewableItemsChanged={onViewableItemsChanged}
-          viewabilityConfig={viewabilityConfig}
+          onViewableItemsChanged={playback.handleViewableItemsChanged}
+          viewabilityConfig={playback.viewabilityConfig}
           initialNumToRender={2}
           maxToRenderPerBatch={3}
           windowSize={3}
@@ -824,6 +773,10 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  emptyText: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 15,
   },
   item: {
     width: '100%',

@@ -8,8 +8,9 @@
  */
 import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Share, Alert } from 'react-native';
-import { Video, ResizeMode } from 'expo-av';
+import { ResizeMode } from 'expo-av';
 import { useRouter } from 'expo-router';
+import SafeVideo from './SafeVideo';
 import {
   Heart,
   MessageCircle,
@@ -105,7 +106,10 @@ export default function DealVideoCard({ video }: { video: FeedVideo }) {
   }, []);
 
   const deal = video.deal ?? null;
-  const playbackUri = video.hls_url ?? video.video_url;
+  // On Android, prefer progressive MP4 over HLS to avoid expo-av crashes.
+  const playbackUri = video.video_url && !video.hls_url?.toLowerCase().endsWith('.m3u8')
+    ? video.video_url
+    : video.hls_url ?? video.video_url;
   const posterUri = video.poster_url ?? video.thumbnail_url ?? video.preview_blur_url ?? undefined;
   const investmentOptions = useInvestmentOptions(deal?.deal_type);
 
@@ -192,17 +196,17 @@ export default function DealVideoCard({ video }: { video: FeedVideo }) {
         </TouchableOpacity>
       </View>
 
-      {/* Media */}
+      {/* Media — uses SafeVideo for Android crash protection */}
       <TouchableOpacity activeOpacity={1} onPress={toggleMute} style={styles.media}>
-        <Video
-          source={{ uri: playbackUri }}
+        <SafeVideo
+          uri={playbackUri}
+          posterUri={posterUri}
           style={StyleSheet.absoluteFill}
           resizeMode={ResizeMode.COVER}
-          shouldPlay
-          isLooping
+          shouldPlay={true}
           isMuted={isMuted}
-          posterSource={posterUri ? { uri: posterUri } : undefined}
-          usePoster={!!posterUri}
+          isLooping
+          testID={`deal-video-player-${video.id}`}
         />
         <TouchableOpacity style={styles.muteBtn} onPress={toggleMute} testID={`deal-video-mute-${video.id}`}>
           {isMuted ? <VolumeX size={14} color="#fff" /> : <Volume2 size={14} color="#fff" />}
