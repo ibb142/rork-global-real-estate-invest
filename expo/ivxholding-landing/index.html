@@ -1,6 +1,18 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <script>
+(function() {
+  try {
+    var host = window.location.host;
+    if (host && host.toLowerCase().indexOf('www.') === 0) {
+      var canonical = 'https://ivxholding.com' + window.location.pathname + window.location.search + window.location.hash;
+      window.location.replace(canonical);
+    }
+  } catch(e) {}
+})();
+</script>
+
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>IVX Holdings — Review Live Real Estate Opportunities</title>
@@ -6166,256 +6178,6 @@
     return null;
   }
 
-  function openInvestModal(dealId) {
-    var deal = getLiveDealData(dealId) || FALLBACK_DEAL_DATA[dealId] || { title: dealId, projectName: '', address: '', totalInvestment: 0, expectedROI: 0, distributionFrequency: 'Monthly' };
-    _investState.dealId = dealId;
-    _investState.dealTitle = deal.title;
-    _investState.dealProjectName = deal.projectName;
-    _investState.dealAddress = deal.address;
-    _investState.dealTotal = deal.totalInvestment;
-    _investState.dealROI = deal.expectedROI;
-    _investState.dealFrequency = deal.distributionFrequency;
-    _investState.pool = 'jv_direct';
-    _investState.amount = 0;
-    _investState.paymentMethod = 'bank';
-    _investState.termsAgreed = false;
-    _investState.step = 1;
-
-    // Populate deal info
-    var el = function(id) { return document.getElementById(id); };
-    if (el('invest-deal-title')) el('invest-deal-title').textContent = deal.title;
-    if (el('invest-deal-desc')) el('invest-deal-desc').textContent = deal.projectName + ' — Choose your investment type below.';
-    if (el('invest-deal-name-display')) el('invest-deal-name-display').textContent = deal.title;
-    if (el('invest-deal-loc-display')) el('invest-deal-loc-display').textContent = deal.address || 'Location TBD';
-    if (el('invest-total-display')) el('invest-total-display').textContent = formatInvestCurrency(deal.totalInvestment);
-    if (el('invest-roi-display')) el('invest-roi-display').textContent = deal.expectedROI + '%';
-    if (el('invest-freq-display')) el('invest-freq-display').textContent = deal.distributionFrequency;
-    if (el('invest-summary-roi-pct')) el('invest-summary-roi-pct').textContent = String(deal.expectedROI);
-
-    // Reset pool selection
-    selectInvestPool('jv_direct');
-
-    // Reset amount
-    if (el('invest-amount-input')) el('invest-amount-input').value = '';
-    updateInvestSummary();
-
-    // Reset terms
-    _investState.termsAgreed = false;
-    var termsRow = el('invest-terms-row');
-    if (termsRow) termsRow.classList.remove('checked');
-    var confirmBtn = el('invest-confirm-btn');
-    if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = 'Agree to terms to confirm'; }
-
-    // Check if already authenticated
-    checkInvestAuth();
-
-    showInvestStep(1);
-    document.getElementById('invest-overlay').classList.add('open');
-    document.body.style.overflow = 'hidden';
-  }
-
-  function closeInvestModal() {
-    document.getElementById('invest-overlay').classList.remove('open');
-    document.body.style.overflow = '';
-  }
-
-  function showInvestStep(step) {
-    _investState.step = step;
-    for (var i = 1; i <= 5; i++) {
-      var stepEl = document.getElementById('invest-step-' + i);
-      if (stepEl) stepEl.style.display = (i === step) ? 'block' : 'none';
-    }
-    var pct = step <= 4 ? ((step / 4) * 100) : 100;
-    var progEl = document.getElementById('invest-progress');
-    if (progEl) progEl.style.width = pct + '%';
-  }
-
-
-  function formatInvestCurrency(num) {
-    if (!num || isNaN(num)) return '$0';
-    num = Number(num);
-    if (num >= 1e6) return '$' + (num / 1e6).toFixed(1) + 'M';
-    if (num >= 1e3) return '$' + (num / 1e3).toFixed(0) + 'K';
-    return '$' + num.toLocaleString();
-  }
-
-  function selectInvestPool(pool) {
-    _investState.pool = pool;
-    var jvEl = document.getElementById('invest-pool-jv');
-    var tokenEl = document.getElementById('invest-pool-token');
-    if (jvEl) jvEl.className = 'invest-pool-option' + (pool === 'jv_direct' ? ' selected' : '');
-    if (tokenEl) tokenEl.className = 'invest-pool-option' + (pool === 'token_shares' ? ' selected' : '');
-    var minEl = document.getElementById('invest-min-display');
-    var labelEl = document.getElementById('invest-pool-label-display');
-    if (pool === 'token_shares') {
-      if (minEl) minEl.textContent = 'Deal minimum';
-      if (labelEl) labelEl.textContent = 'Fractional Shares';
-    } else {
-      if (minEl) minEl.textContent = '$1,000';
-      if (labelEl) labelEl.textContent = 'JV Direct Investment';
-    }
-  }
-
-  function setInvestAmount(amount) {
-    _investState.amount = amount;
-    var input = document.getElementById('invest-amount-input');
-    if (input) input.value = amount.toLocaleString();
-    document.querySelectorAll('.invest-quick-btn').forEach(function(btn) {
-      var txt = btn.textContent.replace(/[^0-9K]/g, '');
-      var val = parseInt(txt, 10);
-      if (btn.textContent.indexOf('K') !== -1) val *= 1000;
-      btn.className = 'invest-quick-btn' + (val === amount ? ' active' : '');
-    });
-    updateInvestSummary();
-  }
-
-  function updateInvestSummary() {
-    var input = document.getElementById('invest-amount-input');
-    var raw = input ? input.value.replace(/[^0-9.]/g, '') : '0';
-    var amount = parseFloat(raw) || 0;
-    _investState.amount = amount;
-    var total = _investState.dealTotal || 1400000;
-    var roi = _investState.dealROI || 30;
-    var equity = total > 0 ? ((amount / total) * 100) : 0;
-    var estReturn = amount * (roi / 100);
-    var amtEl = document.getElementById('invest-summary-amount');
-    var eqEl = document.getElementById('invest-summary-equity');
-    var retEl = document.getElementById('invest-summary-return');
-    if (amtEl) amtEl.textContent = '$' + amount.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
-    if (eqEl) eqEl.textContent = equity.toFixed(4) + '%';
-    if (retEl) retEl.textContent = '$' + estReturn.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
-    var ctaBtn = document.getElementById('invest-amount-cta');
-    var minAmount = _investState.pool === 'token_shares' ? 50 : 1000;
-    if (ctaBtn) {
-      if (amount >= minAmount) { ctaBtn.disabled = false; ctaBtn.textContent = 'Continue \u2192'; }
-      else { ctaBtn.disabled = true; ctaBtn.textContent = amount > 0 ? 'Minimum $' + minAmount.toLocaleString() : 'Enter amount to continue'; }
-    }
-  }
-
-  var _iaInput = document.getElementById('invest-amount-input');
-  if (_iaInput) {
-    _iaInput.addEventListener('input', function() {
-      var raw = this.value.replace(/[^0-9]/g, '');
-      if (raw) this.value = parseInt(raw, 10).toLocaleString();
-      updateInvestSummary();
-    });
-  }
-
-  function goInvestStep(step) {
-    showInvestStep(step);
-    if (step === 4) {
-      var el = function(id) { return document.getElementById(id); };
-      if (el('review-deal')) el('review-deal').textContent = _investState.dealTitle;
-      if (el('review-type')) el('review-type').textContent = _investState.pool === 'token_shares' ? 'Fractional Shares' : 'JV Direct Investment';
-      if (el('review-amount')) el('review-amount').textContent = '$' + _investState.amount.toLocaleString();
-      var eq = _investState.dealTotal > 0 ? ((_investState.amount / _investState.dealTotal) * 100).toFixed(4) + '%' : '0%';
-      if (el('review-equity')) el('review-equity').textContent = eq;
-      if (el('review-roi')) el('review-roi').textContent = '+' + _investState.dealROI + '% ($' + (_investState.amount * _investState.dealROI / 100).toLocaleString() + ')';
-      var payLabels = { bank: 'Bank Transfer (ACH)', wire: 'Wire Transfer', wallet: 'Wallet Balance' };
-      if (el('review-payment')) el('review-payment').textContent = payLabels[_investState.paymentMethod] || 'Bank Transfer';
-    }
-  }
-
-  function switchInvestAuthTab(tab) {
-    _investState.authMode = tab;
-    var su = document.getElementById('invest-tab-signup');
-    var li = document.getElementById('invest-tab-login');
-    var nr = document.getElementById('invest-name-row');
-    var ab = document.getElementById('invest-auth-btn');
-    if (tab === 'signup') {
-      if (su) su.className = 'invest-auth-tab active';
-      if (li) li.className = 'invest-auth-tab';
-      if (nr) nr.style.display = 'grid';
-      if (ab) ab.innerHTML = 'Create Account &amp; Continue &#8594;';
-    } else {
-      if (su) su.className = 'invest-auth-tab';
-      if (li) li.className = 'invest-auth-tab active';
-      if (nr) nr.style.display = 'none';
-      if (ab) ab.innerHTML = 'Log In &amp; Continue &#8594;';
-    }
-  }
-
-  function checkInvestAuth() {
-    var authBox = document.getElementById('invest-auth-box');
-    var authView = document.getElementById('invest-authenticated-view');
-    if (_investState.userToken && _investState.userEmail) {
-      if (authBox) authBox.style.display = 'none';
-      if (authView) authView.style.display = 'block';
-      var em = document.getElementById('invest-user-email');
-      if (em) em.textContent = _investState.userEmail;
-    } else {
-      if (authBox) authBox.style.display = 'block';
-      if (authView) authView.style.display = 'none';
-    }
-  }
-
-  async function handleInvestAuth(e) {
-    e.preventDefault();
-    var errEl = document.getElementById('invest-auth-error');
-    var btn = document.getElementById('invest-auth-btn');
-    if (errEl) errEl.style.display = 'none';
-    var email = document.getElementById('invest-email').value.trim();
-    var password = document.getElementById('invest-password').value;
-    if (!email || email.indexOf('@') === -1) { if (errEl) { errEl.textContent = 'Enter a valid email'; errEl.style.display = 'block'; } return; }
-    if (!password || password.length < 6) { if (errEl) { errEl.textContent = 'Password must be at least 6 characters'; errEl.style.display = 'block'; } return; }
-    if (btn) { btn.textContent = 'Processing...'; btn.disabled = true; }
-
-    var _authSb = null;
-    try {
-      if (!isPlaceholder(SUPABASE_URL) && !isPlaceholder(SUPABASE_ANON_KEY) && window.supabase) {
-        _authSb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-      }
-    } catch(sbErr) { console.warn('[IVX Invest] Supabase client init failed:', sbErr.message); }
-
-    if (_authSb) {
-      try {
-        var authResult;
-        if (_investState.authMode === 'signup') {
-          var fn = document.getElementById('invest-first').value.trim();
-          var ln = document.getElementById('invest-last').value.trim();
-          authResult = await _authSb.auth.signUp({
-            email: email.toLowerCase(),
-            password: password,
-            options: { data: { first_name: fn || 'Investor', last_name: ln || '' } }
-          });
-          if (authResult.error) {
-            if (authResult.error.message && authResult.error.message.indexOf('already registered') !== -1) {
-              console.log('[IVX Invest] Email already registered, trying login...');
-              authResult = await _authSb.auth.signInWithPassword({ email: email.toLowerCase(), password: password });
-            }
-          }
-        } else {
-          authResult = await _authSb.auth.signInWithPassword({ email: email.toLowerCase(), password: password });
-        }
-        if (authResult.error) {
-          throw new Error(authResult.error.message || 'Authentication failed');
-        }
-        var session = authResult.data && authResult.data.session;
-        var user = authResult.data && authResult.data.user;
-        _investState.userEmail = (user && user.email) || email;
-        _investState.userToken = (session && session.access_token) || '';
-        _investState.userId = (user && user.id) || '';
-        _investState._authSb = _authSb;
-        checkInvestAuth();
-        fireAdEvent('complete_registration', { content_name: 'Invest Auth: ' + _investState.authMode });
-        console.log('[IVX Invest] Real Supabase auth successful for:', _investState.userEmail);
-        createInvestorProfile(_investState.userId, _investState.userEmail, _investState.userToken, _investState.authMode === 'signup' ? (document.getElementById('invest-first').value.trim() || '') : '', _investState.authMode === 'signup' ? (document.getElementById('invest-last').value.trim() || '') : '');
-      } catch(authErr) {
-        console.error('[IVX Invest] Supabase auth failed:', authErr.message);
-        if (errEl) { errEl.textContent = authErr.message || 'Authentication failed. Please try again.'; errEl.style.display = 'block'; }
-        if (btn) { btn.textContent = _investState.authMode === 'signup' ? 'Create Account & Continue \u2192' : 'Log In & Continue \u2192'; btn.disabled = false; }
-        return;
-      }
-    } else {
-      if (errEl) { errEl.textContent = 'Service temporarily unavailable. Please try again in a moment.'; errEl.style.display = 'block'; }
-      if (btn) { btn.textContent = _investState.authMode === 'signup' ? 'Create Account & Continue \u2192' : 'Log In & Continue \u2192'; btn.disabled = false; }
-      console.error('[IVX Invest] Cannot authenticate — Supabase not available');
-      return;
-    }
-    if (btn) { btn.textContent = 'Continue \u2192'; btn.disabled = false; }
-  }
-
-  // ══════════════════════════════════════════════════════════════════════════════
   // AUTO PROFILE CREATION — Creates profile in Supabase so investor appears in admin Members
   // ══════════════════════════════════════════════════════════════════════════════
   async function createInvestorProfile(userId, email, token, firstName, lastName) {
@@ -6477,160 +6239,6 @@
   }
 
   // ══════════════════════════════════════════════════════════════════════════════
-  // INVESTOR PORTAL — Login, view profile, investments, wallet
-  // ══════════════════════════════════════════════════════════════════════════════
-  var _portalState = { userId: '', email: '', token: '', firstName: '', lastName: '', sb: null };
-
-  function openPortal() {
-    document.getElementById('portal-overlay').classList.add('open');
-    document.body.style.overflow = 'hidden';
-    var saved = null;
-    try { saved = JSON.parse(localStorage.getItem('ivx_portal_session') || 'null'); } catch(e) {}
-    if (saved && saved.token && saved.email && (Date.now() - saved.ts) < 3600000) {
-      _portalState.userId = saved.userId;
-      _portalState.email = saved.email;
-      _portalState.token = saved.token;
-      _portalState.firstName = saved.firstName || '';
-      _portalState.lastName = saved.lastName || '';
-      showPortalDashboard();
-    } else {
-      document.getElementById('portal-login-view').style.display = 'block';
-      document.getElementById('portal-dashboard').classList.remove('active');
-    }
-  }
-
-  function closePortal() {
-    document.getElementById('portal-overlay').classList.remove('open');
-    document.body.style.overflow = '';
-  }
-
-  async function handlePortalLogin(e) {
-    e.preventDefault();
-    var errEl = document.getElementById('portal-login-error');
-    var btn = document.getElementById('portal-login-btn');
-    errEl.style.display = 'none';
-    var email = document.getElementById('portal-email').value.trim();
-    var password = document.getElementById('portal-password').value;
-    if (!email || email.indexOf('@') === -1) { errEl.textContent = 'Enter a valid email'; errEl.style.display = 'block'; return; }
-    if (!password || password.length < 6) { errEl.textContent = 'Password must be at least 6 characters'; errEl.style.display = 'block'; return; }
-    btn.textContent = 'Signing in...'; btn.disabled = true;
-    try {
-      if (isPlaceholder(SUPABASE_URL) || isPlaceholder(SUPABASE_ANON_KEY) || !window.supabase) {
-        throw new Error('Service temporarily unavailable');
-      }
-      var portalSb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-      var authResult = await portalSb.auth.signInWithPassword({ email: email.toLowerCase(), password: password });
-      if (authResult.error) throw new Error(authResult.error.message || 'Login failed');
-      var session = authResult.data && authResult.data.session;
-      var user = authResult.data && authResult.data.user;
-      _portalState.userId = (user && user.id) || '';
-      _portalState.email = (user && user.email) || email;
-      _portalState.token = (session && session.access_token) || '';
-      _portalState.firstName = (user && user.user_metadata && user.user_metadata.first_name) || email.split('@')[0];
-      _portalState.lastName = (user && user.user_metadata && user.user_metadata.last_name) || '';
-      _portalState.sb = portalSb;
-      try { localStorage.setItem('ivx_portal_session', JSON.stringify({ userId: _portalState.userId, email: _portalState.email, token: _portalState.token, firstName: _portalState.firstName, lastName: _portalState.lastName, ts: Date.now() })); } catch(e) {}
-      createInvestorProfile(_portalState.userId, _portalState.email, _portalState.token, _portalState.firstName, _portalState.lastName);
-      showPortalDashboard();
-    } catch(err) {
-      console.error('[IVX Portal] Login error:', err.message);
-      errEl.textContent = err.message || 'Login failed. Please try again.';
-      errEl.style.display = 'block';
-    }
-    btn.textContent = 'Sign In \u2192'; btn.disabled = false;
-  }
-
-  async function showPortalDashboard() {
-    document.getElementById('portal-login-view').style.display = 'none';
-    var dashboard = document.getElementById('portal-dashboard');
-    dashboard.classList.add('active');
-    var initials = ((_portalState.firstName || '?')[0] + (_portalState.lastName || '?')[0]).toUpperCase();
-    document.getElementById('portal-avatar').textContent = initials;
-    document.getElementById('portal-user-name').textContent = (_portalState.firstName || '') + ' ' + (_portalState.lastName || '');
-    document.getElementById('portal-user-email').textContent = _portalState.email;
-    document.getElementById('portal-member-id').textContent = _portalState.userId.substring(0, 8) + '...';
-    await loadPortalProfile();
-    await loadPortalInvestments();
-  }
-
-  async function loadPortalProfile() {
-    if (!_portalState.token || isPlaceholder(SUPABASE_URL)) return;
-    try {
-      var restUrl = SUPABASE_URL.replace(/\/+$/, '') + '/rest/v1/profiles?id=eq.' + _portalState.userId + '&select=*';
-      var resp = await fetch(restUrl, {
-        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + _portalState.token }
-      });
-      if (!resp.ok) { console.warn('[IVX Portal] Profile fetch failed:', resp.status); return; }
-      var profiles = await resp.json();
-      if (profiles && profiles.length > 0) {
-        var p = profiles[0];
-        var kycEl = document.getElementById('portal-kyc-status');
-        var kycStatus = p.kyc_status || p.kycStatus || 'pending';
-        kycEl.textContent = kycStatus === 'approved' ? 'VERIFIED' : kycStatus === 'in_review' ? 'IN REVIEW' : 'PENDING KYC';
-        kycEl.className = 'portal-user-status ' + (kycStatus === 'approved' ? 'active' : 'pending');
-        var totalInvested = parseFloat(p.total_invested || p.totalInvested || 0);
-        document.getElementById('portal-total-invested').textContent = '$' + totalInvested.toLocaleString();
-        var walletBal = parseFloat(p.wallet_balance || p.walletBalance || 0);
-        document.getElementById('portal-wallet').textContent = '$' + walletBal.toLocaleString();
-        var holdings = parseInt(p.holdings || 0, 10);
-        document.getElementById('portal-holdings').textContent = String(holdings);
-        var joinedDate = p.created_at || p.createdAt || '';
-        if (joinedDate) {
-          try { document.getElementById('portal-joined').textContent = new Date(joinedDate).toLocaleDateString(); } catch(e) {}
-        }
-        if (_portalState.firstName || p.first_name) {
-          _portalState.firstName = _portalState.firstName || p.first_name || '';
-          _portalState.lastName = _portalState.lastName || p.last_name || '';
-          document.getElementById('portal-user-name').textContent = (_portalState.firstName + ' ' + _portalState.lastName).trim();
-          var initials2 = ((_portalState.firstName || '?')[0] + (_portalState.lastName || '?')[0]).toUpperCase();
-          document.getElementById('portal-avatar').textContent = initials2;
-        }
-      }
-    } catch(err) {
-      console.warn('[IVX Portal] Profile load error:', err.message);
-    }
-  }
-
-  async function loadPortalInvestments() {
-    if (!_portalState.token || isPlaceholder(SUPABASE_URL)) return;
-    try {
-      var restUrl = SUPABASE_URL.replace(/\/+$/, '') + '/rest/v1/landing_investments?investor_id=eq.' + _portalState.userId + '&select=*&order=created_at.desc';
-      var resp = await fetch(restUrl, {
-        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + _portalState.token }
-      });
-      if (!resp.ok) { console.warn('[IVX Portal] Investments fetch failed:', resp.status); return; }
-      var investments = await resp.json();
-      var listEl = document.getElementById('portal-investments-list');
-      if (!listEl) return;
-      if (!investments || investments.length === 0) {
-        listEl.innerHTML = '<div class="portal-empty"><div class="portal-empty-icon">&#128188;</div><div>No investments yet</div><div style="font-size:11px;margin-top:6px;">Browse deals and make your first investment</div></div>';
-        return;
-      }
-      var invHtml = '';
-      investments.forEach(function(inv) {
-        var statusClass = inv.status === 'confirmed' ? 'confirmed' : inv.status === 'cancelled' ? 'cancelled' : 'pending_payment';
-        var statusLabel = inv.status === 'confirmed' ? 'CONFIRMED' : inv.status === 'cancelled' ? 'CANCELLED' : 'PENDING';
-        invHtml += '<div class="portal-invest-card">' +
-          '<div class="portal-invest-top"><div class="portal-invest-deal">' + (inv.deal_title || 'Deal') + '</div><div class="portal-invest-status ' + statusClass + '">' + statusLabel + '</div></div>' +
-          '<div class="portal-invest-row"><span class="portal-invest-label">Amount</span><span class="portal-invest-value" style="color:var(--gold);">$' + (inv.amount || 0).toLocaleString() + '</span></div>' +
-          '<div class="portal-invest-row"><span class="portal-invest-label">Type</span><span class="portal-invest-value">' + (inv.investment_type || 'JV Direct') + '</span></div>' +
-          '<div class="portal-invest-row"><span class="portal-invest-label">Date</span><span class="portal-invest-value">' + (inv.created_at ? new Date(inv.created_at).toLocaleDateString() : '\u2014') + '</span></div>' +
-          '</div>';
-      });
-      listEl.innerHTML = invHtml;
-    } catch(err) {
-      console.warn('[IVX Portal] Investments load error:', err.message);
-    }
-  }
-
-  function portalLogout() {
-    _portalState = { userId: '', email: '', token: '', firstName: '', lastName: '', sb: null };
-    try { localStorage.removeItem('ivx_portal_session'); } catch(e) {}
-    document.getElementById('portal-login-view').style.display = 'block';
-    document.getElementById('portal-dashboard').classList.remove('active');
-    document.getElementById('portal-login-form').reset();
-  }
-
   function selectPaymentMethod(method) {
     _investState.paymentMethod = method;
     ['bank','wire','wallet'].forEach(function(m) {
@@ -9048,6 +8656,50 @@
       }
     }
   });
+})();
+</script>
+
+
+<!-- IVX lazy-load bridge for portal and invest modules -->
+<script>
+(function() {
+  'use strict';
+  function loadScript(src) {
+    return new Promise(function(resolve, reject) {
+      var s = document.createElement('script');
+      s.src = src;
+      s.async = true;
+      s.onload = function() { resolve(); };
+      s.onerror = function() { reject(new Error('Failed to load ' + src)); };
+      document.head.appendChild(s);
+    });
+  }
+  window._ivxLazyLoad = function(module) {
+    if (module === 'portal') {
+      if (window.IVXPortal) return Promise.resolve(window.IVXPortal);
+      return loadScript('/ivx-portal.js').then(function() { return window.IVXPortal; });
+    }
+    if (module === 'invest') {
+      if (window.IVXInvest) return Promise.resolve(window.IVXInvest);
+      return loadScript('/ivx-invest.js').then(function() { return window.IVXInvest; });
+    }
+    return Promise.reject(new Error('Unknown module: ' + module));
+  };
+  window.openPortal = function() { window._ivxLazyLoad('portal').then(function(m) { m.open(); }).catch(function(e) { console.error('[IVX] portal load failed', e); }); };
+  window.closePortal = function() { window._ivxLazyLoad('portal').then(function(m) { m.close(); }).catch(function(e) { console.error('[IVX] portal load failed', e); }); };
+  window.handlePortalLogin = function(e) { window._ivxLazyLoad('portal').then(function(m) { m.handleLogin(e); }).catch(function(e) { console.error('[IVX] portal load failed', e); }); };
+  window.portalLogout = function() { window._ivxLazyLoad('portal').then(function(m) { m.logout(); }).catch(function(e) { console.error('[IVX] portal load failed', e); }); };
+  window.openInvestModal = function(dealId) { window._ivxLazyLoad('invest').then(function(m) { m.open(dealId); }).catch(function(e) { console.error('[IVX] invest load failed', e); }); };
+  window.closeInvestModal = function() { window._ivxLazyLoad('invest').then(function(m) { m.close(); }).catch(function(e) { console.error('[IVX] invest load failed', e); }); };
+  window.selectInvestPool = function(pool) { window._ivxLazyLoad('invest').then(function(m) { m.selectPool(pool); }).catch(function(e) { console.error('[IVX] invest load failed', e); }); };
+  window.setInvestAmount = function(amount) { window._ivxLazyLoad('invest').then(function(m) { m.setAmount(amount); }).catch(function(e) { console.error('[IVX] invest load failed', e); }); };
+  window.updateInvestSummary = function() { window._ivxLazyLoad('invest').then(function(m) { m.updateSummary(); }).catch(function(e) { console.error('[IVX] invest load failed', e); }); };
+  window.goInvestStep = function(step) { window._ivxLazyLoad('invest').then(function(m) { m.goStep(step); }).catch(function(e) { console.error('[IVX] invest load failed', e); }); };
+  window.switchInvestAuthTab = function(tab) { window._ivxLazyLoad('invest').then(function(m) { m.switchAuthTab(tab); }).catch(function(e) { console.error('[IVX] invest load failed', e); }); };
+  window.handleInvestAuth = function(e) { window._ivxLazyLoad('invest').then(function(m) { m.handleAuth(e); }).catch(function(e) { console.error('[IVX] invest load failed', e); }); };
+  window.selectPaymentMethod = function(method) { window._ivxLazyLoad('invest').then(function(m) { m.selectPayment(method); }).catch(function(e) { console.error('[IVX] invest load failed', e); }); };
+  window.toggleInvestTerms = function() { window._ivxLazyLoad('invest').then(function(m) { m.toggleTerms(); }).catch(function(e) { console.error('[IVX] invest load failed', e); }); };
+  window.submitInvestment = function() { window._ivxLazyLoad('invest').then(function(m) { m.submit(); }).catch(function(e) { console.error('[IVX] invest load failed', e); }); };
 })();
 </script>
 

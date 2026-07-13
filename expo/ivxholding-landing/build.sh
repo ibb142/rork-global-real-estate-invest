@@ -120,7 +120,8 @@ EOF
     echo "[IVX Build] NOTE: Supabase credentials not in env — landing page will auto-discover from: ${BACKEND_URL}/api/landing-config"
   fi
 
-  echo "[IVX Build] Done. Files ready for deploy."
+  cp -f ivx-portal.js ivx-invest.js "${DEPLOY_DIR:-.}/" 2>/dev/null || true
+echo "[IVX Build] Done. Files ready for deploy."
 else
   echo "[IVX Build] ERROR: index.html not found!"
   exit 1
