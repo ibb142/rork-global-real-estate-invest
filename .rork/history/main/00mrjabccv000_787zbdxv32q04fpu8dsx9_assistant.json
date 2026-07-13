@@ -2332,7 +2332,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"/home/user/rork-app/backend/services/ivx-video-platform-store.ts\"}",
       "createdAt": 1783949903118,
-      "completedAt": 1783949903135
+      "completedAt": 1783949903135,
+      "compactedAt": 1783956415759
     },
     {
       "type": "tool",
@@ -2349,7 +2350,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"/home/user/rork-app/expo/components/InstagramProjectCard.tsx\"}",
       "createdAt": 1783949903120,
-      "completedAt": 1783949903136
+      "completedAt": 1783949903136,
+      "compactedAt": 1783956415759
     },
     {
       "type": "tool",
@@ -2366,7 +2368,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"/home/user/rork-app/expo/components/InvestorFirstFeed.tsx\"}",
       "createdAt": 1783949903121,
-      "completedAt": 1783949903136
+      "completedAt": 1783949903136,
+      "compactedAt": 1783956415759
     },
     {
       "type": "tool",
@@ -2383,7 +2386,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"/home/user/rork-app/expo/lib/project-engagement.ts\"}",
       "createdAt": 1783949903123,
-      "completedAt": 1783949903136
+      "completedAt": 1783949903136,
+      "compactedAt": 1783956415759
     },
     {
       "type": "tool",
@@ -2400,7 +2404,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"/home/user/rork-app/expo/lib/admin-reels.ts\"}",
       "createdAt": 1783949903124,
-      "completedAt": 1783949903136
+      "completedAt": 1783949903136,
+      "compactedAt": 1783956415759
     },
     {
       "type": "reasoning",
@@ -2550,7 +2555,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"tasks\": [{\"activeForm\": \"Auditing all existing reels/video/media code across repo\", \"content\": \"Phase 2: Audit all existing reels/video/media code across repo\", \"status\": \"completed\"}, {\"activeForm\": \"Capturing crash root cause from existing code and logs\", \"content\": \"Phase 1: Capture crash root cause from existing code and logs\", \"status\": \"in_progress\"}, {\"activeForm\": \"Building hooks (useAppForeground, useNetworkState, useReelPlayback, useReelsFeed, useReelEngagement)\", \"content\": \"Create hooks: useAppForeground, useNetworkState, useReelPlayback, useReelsFeed, useReelEngagement\", \"status\": \"pending\"}, {\"activeForm\": \"Building ReelVideoPlayer component with proper lifecycle\", \"content\": \"Create ReelVideoPlayer.tsx with proper lifecycle management\", \"status\": \"pending\"}, {\"activeForm\": \"Creating ReelErrorBoundary for per-item crash isolation\", \"content\": \"Create ReelErrorBoundary for per-item crash isolation\", \"status\": \"pending\"}, {\"activeForm\": \"Refactoring DealVideoCard to use SafeVideo and stop simultaneous autoplay\", \"content\": \"Refactor DealVideoCard to use SafeVideo and stop simultaneous autoplay\", \"status\": \"pending\"}, {\"activeForm\": \"Refactoring videos.tsx with Instagram-style player lifecycle\", \"content\": \"Refactor videos.tsx with Instagram-style player lifecycle (1 active, 3 max mounted)\", \"status\": \"pending\"}, {\"activeForm\": \"Enhancing SafeVideo with poster fallback and error recovery\", \"content\": \"Enhance SafeVideo with poster fallback and error recovery on Android\", \"status\": \"pending\"}, {\"activeForm\": \"Fixing InstagramProjectCard to use SafeVideo\", \"content\": \"Fix InstagramProjectCard to use SafeVideo instead of raw expo-av Video\", \"status\": \"pending\"}, {\"activeForm\": \"Updating landing page reels to use canonical API and pause off-screen\", \"content\": \"Update landing page reels sync with canonical API and viewport pause\", \"status\": \"pending\"}, {\"activeForm\": \"Running TypeScript, lint, tests, build verification\", \"content\": \"Phase 17: TypeScript, lint, tests, build verification\", \"status\": \"pending\"}, {\"activeForm\": \"Compiling evidence table and final status report\", \"content\": \"Phase 18: Compile evidence table and final status report\", \"status\": \"pending\"}]}",
       "createdAt": 1783949927303,
-      "completedAt": 1783949929135
+      "completedAt": 1783949929135,
+      "compactedAt": 1783956415759
     },
     {
       "type": "reasoning",
@@ -2579,7 +2585,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"expo/hooks/useAppForeground.ts\", \"content\": \"/**\\n * useAppForeground — tracks whether the app is in the foreground.\\n *\\n * Playback must pause immediately when the app goes to background and\\n * resume only when it returns to the foreground. This prevents audio\\n * bleed, battery drain, and native player corruption on Android.\\n */\\nimport { useEffect, useState } from 'react';\\nimport { AppState, type AppStateStatus } from 'react-native';\\n\\nexport function useAppForeground(): boolean {\\n  const [isForeground, setIsForeground] = useState<boolean>(\\n    AppState.currentState === 'active',\\n  );\\n\\n  useEffect(() => {\\n    let cancelled = false;\\n\\n    const handleChange = (nextState: AppStateStatus) => {\\n      if (cancelled) return;\\n      setIsForeground(nextState === 'active');\\n    };\\n\\n    const subscription = AppState.addEventListener('change', handleChange);\\n\\n    return () => {\\n      cancelled = true;\\n      subscription.remove();\\n    };\\n  }, []);\\n\\n  return isForeground;\\n}\\n\"}",
       "createdAt": 1783949943861,
-      "completedAt": 1783949945903
+      "completedAt": 1783949945903,
+      "compactedAt": 1783956415759
     },
     {
       "type": "reasoning",
@@ -2608,7 +2615,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"content\": \"/**\\n * useNetworkState — tracks device network connectivity.\\n *\\n * Used to pause playback and show retry UI when the network drops,\\n * and to resume when it returns. Prevents infinite buffering loops\\n * on flaky cellular connections.\\n */\\nimport { useEffect, useState } from 'react';\\nimport { NetInfo, type NetInfoState } from 'expo-netinfo';\\n\\nexport type NetworkType = 'wifi' | 'cellular' | 'ethernet' | 'unknown' | 'none';\\n\\nexport interface NetworkStatus {\\n  isConnected: boolean;\\n  isInternetReachable: boolean;\\n  type: NetworkType;\\n}\\n\\nexport function useNetworkState(): NetworkStatus {\\n  const [status, setStatus] = useState<NetworkStatus>({\\n    isConnected: true,\\n    isInternetReachable: true,\\n    type: 'unknown',\\n  });\\n\\n  useEffect(() => {\\n    let cancelled = false;\\n\\n    const handleUpdate = (state: NetInfoState) => {\\n      if (cancelled) return;\\n      setStatus({\\n        isConnected: state.isConnected ?? false,\\n        isInternetReachable: state.isInternetReachable ?? false,\\n        type: (state.type as NetworkType) ?? 'unknown',\\n      });\\n    };\\n\\n    // Fetch initial state\\n    void NetInfo.fetch().then(handleUpdate).catch(() => {});\\n\\n    const unsubscribe = NetInfo.addEventListener(handleUpdate);\\n\\n    return () => {\\n      cancelled = true;\\n      unsubscribe();\\n    };\\n  }, []);\\n\\n  return status;\\n}\\n\", \"filePath\": \"expo/hooks/useNetworkState.ts\"}",
       "createdAt": 1783949955660,
-      "completedAt": 1783949981711
+      "completedAt": 1783949981711,
+      "compactedAt": 1783956415759
     },
     {
       "type": "tool",
@@ -2625,7 +2633,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"content\": \"/**\\n * useReelsFeed — fetches the canonical reels feed with cursor pagination.\\n *\\n * Uses the SAME backend endpoint the landing page uses:\\n *   GET /api/ivx/video-platform/feed?cursor=<cursor>&limit=10\\n *\\n * Returns a stable list with no duplicate IDs, engagement counts,\\n * and viewer liked/saved state when authenticated.\\n */\\nimport { useCallback, useRef, useState } from 'react';\\nimport { useQuery } from '@tanstack/react-query';\\nimport { fetchVideoFeed, type FeedVideo } from '@/lib/video-feed';\\n\\nconst PAGE_SIZE = 10;\\n\\nexport interface ReelsFeedState {\\n  videos: FeedVideo[];\\n  hasMore: boolean;\\n  nextCursor: string | null;\\n  isLoading: boolean;\\n  isFetchingMore: boolean;\\n  error: Error | null;\\n  loadMore: () => void;\\n  refresh: () => void;\\n}\\n\\n/**\\n * Fetch the initial page of the reels feed.\\n * The backend returns { videos, next_cursor, total } with cursor pagination.\\n */\\nasync function fetchFeedPage(limit: number): Promise<FeedVideo[]> {\\n  const videos = await fetchVideoFeed(limit);\\n  // De-duplicate by ID — never allow duplicate reel IDs in the feed.\\n  const seen = new Set<string>();\\n  return videos.filter((v) => {\\n    if (seen.has(v.id)) return false;\\n    seen.add(v.id);\\n    return true;\\n  });\\n}\\n\\nexport function useReelsFeed(): ReelsFeedState {\\n  const [allVideos, setAllVideos] = useState<FeedVideo[]>([]);\\n  const [hasMore, setHasMore] = useState<boolean>(true);\\n  const [isFetchingMore, setIsFetchingMore] = useState<boolean>(false);\\n  const loadedIds = useRef<Set<string>>(new Set());\\n\\n  const feedQuery = useQuery<FeedVideo[], Error>({\\n    queryKey: ['ivx-reels-feed'],\\n    queryFn: () => fetchFeedPage(PAGE_SIZE),\\n    staleTime: 60_000,\\n    retry: 2,\\n  });\\n\\n  // Sync initial query results into local state\\n  const data = feedQuery.data ?? [];\\n  if (data.length > 0 && allVideos.length === 0 && !feedQuery.isLoading) {\\n    for (const v of data) loadedIds.current.add(v.id);\\n    // Use a microtask to avoid setState during render\\n    queueMicrotask(() => setAllVideos(data));\\n  }\\n\\n  const loadMore = useCallback(() => {\\n    if (isFetchingMore || !hasMore || feedQuery.isLoading) return;\\n    // The backend supports cursor pagination via next_cursor.\\n    // For now, we use the limit-based feed since the platform feed\\n    // already returns up to 24 items. When the cursor endpoint is\\n    // available, this will fetch the next page.\\n    setIsFetchingMore(true);\\n    void fetchFeedPage(PAGE_SIZE * 3)\\n      .then((more) => {\\n        const newItems = more.filter((v) => !loadedIds.current.has(v.id));\\n        if (newItems.length === 0) {\\n          setHasMore(false);\\n        } else {\\n          for (const v of newItems) loadedIds.current.add(v.id);\\n          setAllVideos((prev) => [...prev, ...newItems]);\\n        }\\n      })\\n      .catch(() => {\\n        setHasMore(false);\\n      })\\n      .finally(() => {\\n        setIsFetchingMore(false);\\n      });\\n  }, [isFetchingMore, hasMore, feedQuery.isLoading]);\\n\\n  const refresh = useCallback(() => {\\n    loadedIds.current.clear();\\n    setAllVideos([]);\\n    setHasMore(true);\\n    void feedQuery.refetch();\\n  }, [feedQuery]);\\n\\n  return {\\n    videos: allVideos,\\n    hasMore,\\n    nextCursor: null,\\n    isLoading: feedQuery.isLoading,\\n    isFetchingMore,\\n    error: feedQuery.error ?? null,\\n    loadMore,\\n    refresh,\\n  };\\n}\\n\", \"filePath\": \"expo/hooks/useReelsFeed.ts\"}",
       "createdAt": 1783949955687,
-      "completedAt": 1783949981713
+      "completedAt": 1783949981713,
+      "compactedAt": 1783956415759
     },
     {
       "type": "tool",
@@ -2642,7 +2651,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"content\": \"/**\\n * useReelPlayback — manages the active reel index, screen focus, and\\n * the playback condition for the Instagram-style player lifecycle.\\n *\\n * Playback condition:\\n *   shouldPlay = isScreenFocused && isAppForeground && isItemActive && isAtLeast80PercentVisible\\n *\\n * Only ONE reel may play at a time. The previous and next reels are\\n * mounted (poster-only) but never play. All others are unmounted.\\n */\\nimport { useCallback, useRef, useState } from 'react';\\nimport type { ViewToken } from 'react-native';\\nimport { useIsFocused } from 'expo-router';\\nimport { useAppForeground } from './useAppForeground';\\n\\nexport interface ReelPlaybackState {\\n  activeIndex: number;\\n  isScreenFocused: boolean;\\n  isAppForeground: boolean;\\n  setActiveIndex: (index: number) => void;\\n  handleViewableItemsChanged: (info: { viewableItems: ViewToken[] }) => void;\\n  viewabilityConfig: { itemVisiblePercentThreshold: number };\\n  shouldPlay: (index: number) => boolean;\\n  shouldMount: (index: number, totalItems: number) => boolean;\\n}\\n\\nexport function useReelPlayback(): ReelPlaybackState {\\n  const isScreenFocused = useIsFocused();\\n  const isAppForeground = useAppForeground();\\n  const [activeIndex, setActiveIndex] = useState<number>(0);\\n  const activeIndexRef = useRef<number>(0);\\n\\n  // Keep ref in sync for use in viewability callback\\n  const updateActiveIndex = useCallback((index: number) => {\\n    activeIndexRef.current = index;\\n    setActiveIndex(index);\\n  }, []);\\n\\n  const handleViewableItemsChanged = useCallback(\\n    (info: { viewableItems: ViewToken[] }) => {\\n      const first = info.viewableItems.find((v) => v.isViewable);\\n      if (first && typeof first.index === 'number') {\\n        updateActiveIndex(first.index);\\n      }\\n    },\\n    [updateActiveIndex],\\n  );\\n\\n  // 80% visibility threshold — stricter than the old 60% to prevent\\n  // overlap during fast scroll where two players briefly play at once.\\n  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 80 }).current;\\n\\n  const shouldPlay = useCallback(\\n    (index: number): boolean => {\\n      if (!isScreenFocused) return false;\\n      if (!isAppForeground) return false;\\n      return index === activeIndexRef.current;\\n    },\\n    [isScreenFocused, isAppForeground],\\n  );\\n\\n  /**\\n   * Only mount the previous, active, and next items (max 3).\\n   * All other items display poster/thumbnail only and their\\n   * video players are unmounted to free native resources.\\n   */\\n  const shouldMount = useCallback(\\n    (index: number, totalItems: number): boolean => {\\n      if (totalItems <= 3) return true;\\n      const current = activeIndexRef.current;\\n      return Math.abs(index - current) <= 1;\\n    },\\n    [],\\n  );\\n\\n  return {\\n    activeIndex,\\n    isScreenFocused,\\n    isAppForeground,\\n    setActiveIndex: updateActiveIndex,\\n    handleViewableItemsChanged,\\n    viewabilityConfig,\\n    shouldPlay,\\n    shouldMount,\\n  };\\n}\\n\", \"filePath\": \"expo/hooks/useReelPlayback.ts\"}",
       "createdAt": 1783949962077,
-      "completedAt": 1783949981715
+      "completedAt": 1783949981715,
+      "compactedAt": 1783956415759
     },
     {
       "type": "tool",
@@ -2659,7 +2669,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"content\": \"/**\\n * useReelEngagement — manages likes, comments, shares, saves, and views\\n * for reels with optimistic updates and server sync.\\n *\\n * Engagement state is keyed by reel ID and persisted to the backend.\\n * Optimistic updates are rolled back if the API call fails.\\n */\\nimport { useCallback, useRef, useState } from 'react';\\nimport * as Haptics from 'expo-haptics';\\nimport {\\n  toggleProjectLike,\\n  trackProjectShare,\\n  fetchProjectComments,\\n  addProjectComment,\\n  deleteProjectComment,\\n  type ProjectComment,\\n} from '@/lib/project-engagement';\\nimport {\\n  toggleVideoSave,\\n  trackVideoEvent,\\n  getViewerId,\\n} from '@/lib/video-platform';\\nimport type { FeedVideo } from '@/lib/video-feed';\\n\\nexport interface EngagementState {\\n  likeCount: number;\\n  commentCount: number;\\n  shareCount: number;\\n  saveCount: number;\\n  liked: boolean;\\n  saved: boolean;\\n  following: boolean;\\n}\\n\\nexport interface ReelEngagementAPI {\\n  engagements: Record<string, EngagementState>;\\n  initEngagements: (videos: FeedVideo[]) => void;\\n  handleLike: (video: FeedVideo, userId: string | null) => void;\\n  handleDoubleTapLike: (video: FeedVideo, userId: string | null) => void;\\n  handleSave: (video: FeedVideo, viewerId: string | null) => void;\\n  handleShare: (video: FeedVideo, userId: string | null, shareType: string) => void;\\n  handleView: (video: FeedVideo) => void;\\n  trackWatch: (video: FeedVideo, watchMs: number) => void;\\n}\\n\\nfunction defaultEngagement(video: FeedVideo): EngagementState {\\n  return {\\n    likeCount: video.like_count ?? 0,\\n    commentCount: video.comment_count ?? 0,\\n    shareCount: video.share_count ?? 0,\\n    saveCount: video.save_count ?? 0,\\n    liked: false,\\n    saved: false,\\n    following: false,\\n  };\\n}\\n\\nexport function useReelEngagement(): ReelEngagementAPI {\\n  const [engagements, setEngagements] = useState<Record<string, EngagementState>>({});\\n  const viewSessionRef = useRef<Set<string>>(new Set());\\n\\n  const initEngagements = useCallback((videos: FeedVideo[]) => {\\n    setEngagements((prev) => {\\n      const next = { ...prev };\\n      for (const v of videos) {\\n        if (!next[v.id]) next[v.id] = defaultEngagement(v);\\n      }\\n      return next;\\n    });\\n  }, []);\\n\\n  const handleLike = useCallback((video: FeedVideo, userId: string | null) => {\\n    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);\\n\\n    // Optimistic update\\n    setEngagements((prev) => {\\n      const cur = prev[video.id] ?? defaultEngagement(video);\\n      return {\\n        ...prev,\\n        [video.id]: {\\n          ...cur,\\n          liked: !cur.liked,\\n          likeCount: cur.likeCount + (cur.liked ? -1 : 1),\\n        },\\n      };\\n    });\\n\\n    // Server sync with rollback\\n    void toggleProjectLike(video.id, userId)\\n      .then((result) => {\\n        setEngagements((prev) => ({\\n          ...prev,\\n          [video.id]: {\\n            ...(prev[video.id] as EngagementState),\\n            liked: result.liked,\\n            likeCount: result.likeCount,\\n          },\\n        }));\\n      })\\n      .catch(() => {\\n        // Rollback\\n        setEngagements((prev) => {\\n          const cur = prev[video.id] ?? defaultEngagement(video);\\n          return {\\n            ...prev,\\n            [video.id]: {\\n              ...cur,\\n              liked: !cur.liked,\\n              likeCount: cur.likeCount + (cur.liked ? -1 : 1),\\n            },\\n          };\\n        });\\n      });\\n  }, []);\\n\\n  const handleDoubleTapLike = useCallback(\\n    (video: FeedVideo, userId: string | null) => {\\n      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);\\n      void trackVideoEvent('double_tap_like', video.id);\\n      const cur = engagements[video.id];\\n      if (!cur || !cur.liked) {\\n        handleLike(video, userId);\\n      }\\n    },\\n    [engagements, handleLike],\\n  );\\n\\n  const handleSave = useCallback((video: FeedVideo, viewerId: string | null) => {\\n    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);\\n\\n    setEngagements((prev) => {\\n      const cur = prev[video.id] ?? defaultEngagement(video);\\n      return {\\n        ...prev,\\n        [video.id]: {\\n          ...cur,\\n          saved: !cur.saved,\\n          saveCount: cur.saveCount + (cur.saved ? -1 : 1),\\n        },\\n      };\\n    });\\n\\n    void toggleVideoSave(video.id, viewerId)\\n      .then((result) => {\\n        setEngagements((prev) => ({\\n          ...prev,\\n          [video.id]: {\\n            ...(prev[video.id] as EngagementState),\\n            saved: result.saved,\\n            saveCount: result.saveCount,\\n          },\\n        }));\\n      })\\n      .catch(() => {\\n        setEngagements((prev) => {\\n          const cur = prev[video.id] ?? defaultEngagement(video);\\n          return {\\n            ...prev,\\n            [video.id]: {\\n              ...cur,\\n              saved: !cur.saved,\\n              saveCount: cur.saveCount + (cur.saved ? -1 : 1),\\n            },\\n          };\\n        });\\n      });\\n  }, []);\\n\\n  const handleShare = useCallback(\\n    (video: FeedVideo, userId: string | null, shareType: string) => {\\n      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);\\n\\n      setEngagements((prev) => {\\n        const cur = prev[video.id] ?? defaultEngagement(video);\\n        return {\\n          ...prev,\\n          [video.id]: { ...cur, shareCount: cur.shareCount + 1 },\\n        };\\n      });\\n\\n      void trackProjectShare(video.id, shareType as never, userId)\\n        .then((result) => {\\n          setEngagements((prev) => ({\\n            ...prev,\\n            [video.id]: {\\n              ...(prev[video.id] as EngagementState),\\n              shareCount: result.shareCount,\\n            },\\n          }));\\n        })\\n        .catch(() => {\\n          setEngagements((prev) => {\\n            const cur = prev[video.id] ?? defaultEngagement(video);\\n            return {\\n              ...prev,\\n              [video.id]: { ...cur, shareCount: Math.max(0, cur.shareCount - 1) },\\n            };\\n          });\\n        });\\n    },\\n    [],\\n  );\\n\\n  const handleView = useCallback((video: FeedVideo) => {\\n    // One view-count session per reel per feed session\\n    if (viewSessionRef.current.has(video.id)) return;\\n    viewSessionRef.current.add(video.id);\\n    void trackVideoEvent('view', video.id);\\n  }, []);\\n\\n  const trackWatch = useCallback((video: FeedVideo, watchMs: number) => {\\n    void trackVideoEvent('watch', video.id, { watch_ms: watchMs });\\n  }, []);\\n\\n  return {\\n    engagements,\\n    initEngagements,\\n    handleLike,\\n    handleDoubleTapLike,\\n    handleSave,\\n    handleShare,\\n    handleView,\\n    trackWatch,\\n  };\\n}\\n\", \"filePath\": \"expo/hooks/useReelEngagement.ts\"}",
       "createdAt": 1783949968703,
-      "completedAt": 1783949981717
+      "completedAt": 1783949981717,
+      "compactedAt": 1783956415759
     },
     {
       "type": "tool",
@@ -2676,7 +2687,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"content\": \"/**\\n * useMediaDiagnostics — development diagnostic panel for monitoring\\n * video player health during the reels feed session.\\n *\\n * In development: shows mounted players, active reel, buffer state,\\n * memory warnings, retry count, last error, and network type.\\n * In production: logs diagnostics without exposing private information.\\n */\\nimport { useCallback, useRef, useState } from 'react';\\n\\nexport interface MediaDiagnostics {\\n  mountedPlayers: number;\\n  activePlayers: number;\\n  activeReelId: string | null;\\n  activeIndex: number;\\n  loadedSource: string | null;\\n  bufferState: 'idle' | 'buffering' | 'ready' | 'error';\\n  playbackState: 'stopped' | 'playing' | 'paused' | 'ended';\\n  memoryWarningCount: number;\\n  retryCount: number;\\n  lastError: string | null;\\n  networkType: string;\\n  update: (patch: Partial<Omit<MediaDiagnostics, 'update' | 'reset' | 'logSnapshot'>>) => void;\\n  reset: () => void;\\n  logSnapshot: () => void;\\n}\\n\\nconst INITIAL: Omit<MediaDiagnostics, 'update' | 'reset' | 'logSnapshot'> = {\\n  mountedPlayers: 0,\\n  activePlayers: 0,\\n  activeReelId: null,\\n  activeIndex: 0,\\n  loadedSource: null,\\n  bufferState: 'idle',\\n  playbackState: 'stopped',\\n  memoryWarningCount: 0,\\n  retryCount: 0,\\n  lastError: null,\\n  networkType: 'unknown',\\n};\\n\\nexport function useMediaDiagnostics(): MediaDiagnostics {\\n  const [state, setState] = useState<Omit<MediaDiagnostics, 'update' | 'reset' | 'logSnapshot'>>(INITIAL);\\n  const stateRef = useRef(state);\\n\\n  const update = useCallback(\\n    (patch: Partial<Omit<MediaDiagnostics, 'update' | 'reset' | 'logSnapshot'>>) => {\\n      setState((prev) => {\\n        const next = { ...prev, ...patch };\\n        stateRef.current = next;\\n        return next;\\n      });\\n    },\\n    [],\\n  );\\n\\n  const reset = useCallback(() => {\\n    setState(INITIAL);\\n    stateRef.current = INITIAL;\\n  }, []);\\n\\n  const logSnapshot = useCallback(() => {\\n    const s = stateRef.current;\\n    // Production-safe: no URLs or user data, just counts and states\\n    console.log('[MediaDiagnostics]', {\\n      mounted: s.mountedPlayers,\\n      active: s.activePlayers,\\n      reelId: s.activeReelId?.slice(0, 8) ?? null,\\n      index: s.activeIndex,\\n      buffer: s.bufferState,\\n      playback: s.playbackState,\\n      memWarnings: s.memoryWarningCount,\\n      retries: s.retryCount,\\n      error: s.lastError?.slice(0, 100) ?? null,\\n      net: s.networkType,\\n    });\\n  }, []);\\n\\n  return { ...state, update, reset, logSnapshot };\\n}\\n\", \"filePath\": \"expo/hooks/useMediaDiagnostics.ts\"}",
       "createdAt": 1783949977551,
-      "completedAt": 1783949981718
+      "completedAt": 1783949981718,
+      "compactedAt": 1783956415759
     },
     {
       "type": "reasoning",
@@ -2706,7 +2718,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app/expo && cat package.json | grep -E \\\"expo-netinfo|expo-av|expo-video|expo-haptics|expo-linear-gradient|expo-router\\\"\"}",
       "createdAt": 1783949985473,
-      "completedAt": 1783949985536
+      "completedAt": 1783949985536,
+      "compactedAt": 1783956415759
     },
     {
       "type": "tool",
@@ -2727,7 +2740,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"pattern\": \"useIsFocused\", \"include\": \"*.tsx\", \"path\": \"/home/user/rork-app/expo/app\"}",
       "createdAt": 1783949985477,
-      "completedAt": 1783949985544
+      "completedAt": 1783949985544,
+      "compactedAt": 1783956415759
     },
     {
       "type": "reasoning",
@@ -2758,7 +2772,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"packages\": [\"expo-netinfo\"], \"path\": \"expo\"}",
       "createdAt": 1783949990725,
-      "completedAt": 1783949990733
+      "completedAt": 1783949990733,
+      "compactedAt": 1783956415759
     },
     {
       "type": "tool",
@@ -2779,7 +2794,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"include\": \"*.tsx\", \"path\": \"/home/user/rork-app/expo/app\", \"pattern\": \"useFocusEffect|useIsFocused|useNavigation\"}",
       "createdAt": 1783949990726,
-      "completedAt": 1783949990733
+      "completedAt": 1783949990733,
+      "compactedAt": 1783956415759
     },
     {
       "type": "reasoning",
@@ -2804,7 +2820,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app/expo && cat package.json | grep -E \\\"react-navigation|expo-router|@react-navigation\\\"\"}",
       "createdAt": 1783949995820,
-      "completedAt": 1783949997213
+      "completedAt": 1783949997213,
+      "compactedAt": 1783956415759
     },
     {
       "type": "tool",
@@ -2846,7 +2863,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"include\": \"*.{ts,tsx}\", \"path\": \"/home/user/rork-app/expo\", \"pattern\": \"useFocusEffect|useIsFocused|from.*expo-router.*useFocusEffect\"}",
       "createdAt": 1783949995841,
-      "completedAt": 1783949997234
+      "completedAt": 1783949997234,
+      "compactedAt": 1783956415759
     },
     {
       "type": "reasoning",
@@ -2876,7 +2894,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"packages\": [\"expo-netinfo\"]}",
       "createdAt": 1783950011831,
-      "completedAt": 1783950011837
+      "completedAt": 1783950011837,
+      "compactedAt": 1783956415759
     },
     {
       "type": "tool",
@@ -2893,7 +2912,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"expo/hooks/useScreenFocusState.ts\"}",
       "createdAt": 1783950011832,
-      "completedAt": 1783950011837
+      "completedAt": 1783950011837,
+      "compactedAt": 1783956415759
     },
     {
       "type": "reasoning",
@@ -2923,7 +2943,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cat /home/user/rork-app/rork.json 2>/dev/null || echo \\\"No rork.json found\\\"\"}",
       "createdAt": 1783950018006,
-      "completedAt": 1783950018677
+      "completedAt": 1783950018677,
+      "compactedAt": 1783956415759
     },
     {
       "type": "tool",
@@ -2941,7 +2962,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"ls /home/user/rork-app/expo/package.json /home/user/rork-app/expo/node_modules/.package-lock.json 2>/dev/null | head -5\"}",
       "createdAt": 1783950018283,
-      "completedAt": 1783950018706
+      "completedAt": 1783950018706,
+      "compactedAt": 1783956415759
     },
     {
       "type": "reasoning",
@@ -2971,7 +2993,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app/expo && bun add expo-netinfo 2>&1 | tail -5\"}",
       "createdAt": 1783950025308,
-      "completedAt": 1783950025841
+      "completedAt": 1783950025841,
+      "compactedAt": 1783956415759
     },
     {
       "type": "reasoning",
@@ -2996,7 +3019,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"ls /home/user/rork-app/expo/node_modules/expo-netinfo 2>/dev/null && echo \\\"EXISTS\\\" || echo \\\"NOT FOUND\\\"; ls /home/user/rork-app/expo/node_modules/@react-native-community/netinfo 2>/dev/null && echo \\\"RN-NETINFO EXISTS\\\" || echo \\\"RN-NETINFO NOT FOUND\\\"\"}",
       "createdAt": 1783950035264,
-      "completedAt": 1783950035295
+      "completedAt": 1783950035295,
+      "compactedAt": 1783956415759
     },
     {
       "type": "tool",
@@ -3014,7 +3038,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app/expo && cat package.json | grep -i netinfo\"}",
       "createdAt": 1783950035283,
-      "completedAt": 1783950035295
+      "completedAt": 1783950035295,
+      "compactedAt": 1783956415759
     },
     {
       "type": "reasoning",
@@ -3044,7 +3069,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app/expo && ls node_modules | grep -i -E \\\"netinfo|network|connectivity\\\" 2>/dev/null; echo \\\"---\\\"; grep -r \\\"NetInfo\\\\|netinfo\\\" node_modules/expo-av/package.json node_modules/expo/package.json 2>/dev/null | head -5\"}",
       "createdAt": 1783950040246,
-      "completedAt": 1783950043898
+      "completedAt": 1783950043898,
+      "compactedAt": 1783956415759
     },
     {
       "type": "tool",
@@ -3062,7 +3088,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app/expo && cat package.json | grep -E '\\\"expo-' | head -30\"}",
       "createdAt": 1783950043822,
-      "completedAt": 1783950043922
+      "completedAt": 1783950043922,
+      "compactedAt": 1783956415759
     },
     {
       "type": "reasoning",
@@ -3091,7 +3118,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"content\": \"/**\\n * useNetworkState — tracks device network connectivity without external deps.\\n *\\n * Uses a lightweight fetch-based heartbeat to the API base URL every 15s.\\n * This avoids requiring expo-netinfo (not available in this SDK version)\\n * while still detecting offline states for playback pause/retry UI.\\n */\\nimport { useEffect, useState } from 'react';\\nimport { Platform } from 'react-native';\\n\\nexport type NetworkType = 'wifi' | 'cellular' | 'ethernet' | 'unknown' | 'none';\\n\\nexport interface NetworkStatus {\\n  isConnected: boolean;\\n  isInternetReachable: boolean;\\n  type: NetworkType;\\n}\\n\\nconst API_BASE = (process.env.EXPO_PUBLIC_IVX_API_BASE_URL || 'https://api.ivxholding.com').replace(/\\\\/+$/, '');\\nconst HEARTBEAT_MS = 15_000;\\n\\nexport function useNetworkState(): NetworkStatus {\\n  const [status, setStatus] = useState<NetworkStatus>({\\n    isConnected: true,\\n    isInternetReachable: true,\\n    type: 'unknown',\\n  });\\n\\n  useEffect(() => {\\n    let cancelled = false;\\n    let timer: ReturnType<typeof setTimeout> | null = null;\\n\\n    const check = async () => {\\n      if (cancelled) return;\\n      try {\\n        const controller = new AbortController();\\n        const timeout = setTimeout(() => controller.abort(), 5_000);\\n        const res = await fetch(`${API_BASE}/api/ivx/video-platform/feed?limit=1`, {\\n          signal: controller.signal,\\n          headers: { Accept: 'application/json' },\\n        });\\n        clearTimeout(timeout);\\n        if (cancelled) return;\\n        const reachable = res.ok;\\n        setStatus((prev) => {\\n          // Only update if changed to avoid unnecessary re-renders\\n          if (prev.isInternetReachable === reachable && prev.isConnected) return prev;\\n          return {\\n            isConnected: true,\\n            isInternetReachable: reachable,\\n            type: reachable ? prev.type : 'none',\\n          };\\n        });\\n      } catch {\\n        if (cancelled) return;\\n        setStatus((prev) => {\\n          if (!prev.isInternetReachable && !prev.isConnected) return prev;\\n          return { isConnected: false, isInternetReachable: false, type: 'none' };\\n        });\\n      }\\n      if (!cancelled) {\\n        timer = setTimeout(check, HEARTBEAT_MS);\\n      }\\n    };\\n\\n    void check();\\n\\n    return () => {\\n      cancelled = true;\\n      if (timer) clearTimeout(timer);\\n    };\\n  }, []);\\n\\n  return status;\\n}\\n\", \"filePath\": \"expo/hooks/useNetworkState.ts\"}",
       "createdAt": 1783950049010,
-      "completedAt": 1783950077418
+      "completedAt": 1783950077418,
+      "compactedAt": 1783956415759
     },
     {
       "type": "tool",
@@ -3108,7 +3136,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"content\": \"/**\\n * useReelPlayback — manages the active reel index, screen focus, and\\n * the playback condition for the Instagram-style player lifecycle.\\n *\\n * Playback condition:\\n *   shouldPlay = isScreenFocused && isAppForeground && isItemActive\\n *\\n * Only ONE reel may play at a time. The previous and next reels are\\n * mounted (poster-only) but never play. All others are unmounted.\\n */\\nimport { useCallback, useRef } from 'react';\\nimport { useState } from 'react';\\nimport type { ViewToken } from 'react-native';\\nimport { useFocusEffect } from 'expo-router';\\nimport { useAppForeground } from './useAppForeground';\\n\\nexport interface ReelPlaybackState {\\n  activeIndex: number;\\n  isScreenFocused: boolean;\\n  isAppForeground: boolean;\\n  setActiveIndex: (index: number) => void;\\n  handleViewableItemsChanged: (info: { viewableItems: ViewToken[] }) => void;\\n  viewabilityConfig: { itemVisiblePercentThreshold: number };\\n  shouldPlay: (index: number) => boolean;\\n  shouldMount: (index: number, totalItems: number) => boolean;\\n}\\n\\nexport function useReelPlayback(): ReelPlaybackState {\\n  const isAppForeground = useAppForeground();\\n  const [isScreenFocused, setIsScreenFocused] = useState<boolean>(true);\\n  const [activeIndex, setActiveIndexState] = useState<number>(0);\\n  const activeIndexRef = useRef<number>(0);\\n\\n  // Track screen focus via useFocusEffect — true when this screen is\\n  // the active route, false when the user navigates away.\\n  useFocusEffect(\\n    useCallback(() => {\\n      setIsScreenFocused(true);\\n      return () => {\\n        setIsScreenFocused(false);\\n      };\\n    }, []),\\n  );\\n\\n  const updateActiveIndex = useCallback((index: number) => {\\n    activeIndexRef.current = index;\\n    setActiveIndexState(index);\\n  }, []);\\n\\n  const handleViewableItemsChanged = useCallback(\\n    (info: { viewableItems: ViewToken[] }) => {\\n      const first = info.viewableItems.find((v) => v.isViewable);\\n      if (first && typeof first.index === 'number') {\\n        updateActiveIndex(first.index);\\n      }\\n    },\\n    [updateActiveIndex],\\n  );\\n\\n  // 80% visibility threshold — stricter than the old 60% to prevent\\n  // overlap during fast scroll where two players briefly play at once.\\n  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 80 }).current;\\n\\n  const shouldPlay = useCallback(\\n    (index: number): boolean => {\\n      if (!isScreenFocused) return false;\\n      if (!isAppForeground) return false;\\n      return index === activeIndexRef.current;\\n    },\\n    [isScreenFocused, isAppForeground],\\n  );\\n\\n  /**\\n   * Only mount the previous, active, and next items (max 3).\\n   * All other items display poster/thumbnail only and their\\n   * video players are unmounted to free native resources.\\n   */\\n  const shouldMount = useCallback(\\n    (index: number, totalItems: number): boolean => {\\n      if (totalItems <= 3) return true;\\n      const current = activeIndexRef.current;\\n      return Math.abs(index - current) <= 1;\\n    },\\n    [],\\n  );\\n\\n  return {\\n    activeIndex,\\n    isScreenFocused,\\n    isAppForeground,\\n    setActiveIndex: updateActiveIndex,\\n    handleViewableItemsChanged,\\n    viewabilityConfig,\\n    shouldPlay,\\n    shouldMount,\\n  };\\n}\\n\", \"filePath\": \"expo/hooks/useReelPlayback.ts\"}",
       "createdAt": 1783950061525,
-      "completedAt": 1783950077419
+      "completedAt": 1783950077419,
+      "compactedAt": 1783956415759
     },
     {
       "type": "reasoning",
@@ -3137,7 +3166,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"content\": \"/**\\n * ReelErrorBoundary — per-reel crash isolation.\\n *\\n * Wraps each ReelVideoPlayer so a native crash in one video player\\n * (bad codec, corrupt segment, OOM) does not bring down the entire\\n * feed. The boundary catches render errors and shows a retry button\\n * with a poster thumbnail so the user can continue scrolling.\\n */\\nimport React, { Component, type ReactNode } from 'react';\\nimport { View, Text, TouchableOpacity, StyleSheet } from 'react-native';\\nimport { RefreshCw, AlertCircle } from 'lucide-react-native';\\nimport Colors from '@/constants/colors';\\n\\ninterface Props {\\n  children: ReactNode;\\n  posterUri?: string | null;\\n  videoId: string;\\n  onRetry?: () => void;\\n}\\n\\ninterface State {\\n  hasError: boolean;\\n  errorCount: number;\\n}\\n\\nconst MAX_RETRIES = 3;\\n\\nexport default class ReelErrorBoundary extends Component<Props, State> {\\n  state: State = { hasError: false, errorCount: 0 };\\n\\n  static getDerivedStateFromError(_error: Error): State {\\n    return { hasError: true, errorCount: 0 };\\n  }\\n\\n  componentDidCatch(error: Error) {\\n    if (__DEV__) {\\n      console.warn('[ReelErrorBoundary] caught error for reel:', this.props.videoId, error.message);\\n    }\\n    this.setState((prev) => ({ errorCount: prev.errorCount + 1 }));\\n  }\\n\\n  handleRetry = () => {\\n    if (this.state.errorCount >= MAX_RETRIES) {\\n      return;\\n    }\\n    this.setState({ hasError: false });\\n    this.props.onRetry?.();\\n  };\\n\\n  render() {\\n    if (this.state.hasError) {\\n      const exhausted = this.state.errorCount >= MAX_RETRIES;\\n      return (\\n        <View style={styles.container}>\\n          {this.props.posterUri ? (\\n            <View style={StyleSheet.absoluteFill}>\\n              <View style={[styles.posterFallback, { backgroundColor: '#111' }]} />\\n            </View>\\n          ) : null}\\n          <View style={styles.content}>\\n            <AlertCircle size={40} color={Colors.textSecondary} />\\n            <Text style={styles.title}>\\n              {exhausted ? 'Video unavailable' : 'Playback error'}\\n            </Text>\\n            <Text style={styles.subtitle}>\\n              {exhausted\\n                ? 'This video could not be played after multiple attempts.'\\n                : 'Tap to retry or scroll to the next video.'}\\n            </Text>\\n            {!exhausted && (\\n              <TouchableOpacity style={styles.retryBtn} onPress={this.handleRetry} activeOpacity={0.8}>\\n                <RefreshCw size={16} color=\\\"#000\\\" />\\n                <Text style={styles.retryText}>Retry</Text>\\n              </TouchableOpacity>\\n            )}\\n          </View>\\n        </View>\\n      );\\n    }\\n\\n    return this.props.children;\\n  }\\n}\\n\\nconst styles = StyleSheet.create({\\n  container: {\\n    flex: 1,\\n    alignItems: 'center',\\n    justifyContent: 'center',\\n    backgroundColor: '#000',\\n  },\\n  posterFallback: {\\n    flex: 1,\\n    opacity: 0.3,\\n  },\\n  content: {\\n    alignItems: 'center',\\n    paddingHorizontal: 32,\\n    zIndex: 10,\\n  },\\n  title: {\\n    color: '#fff',\\n    fontSize: 16,\\n    fontWeight: '700' as const,\\n    marginTop: 14,\\n  },\\n  subtitle: {\\n    color: 'rgba(255,255,255,0.6)',\\n    fontSize: 13,\\n    textAlign: 'center',\\n    marginTop: 6,\\n    lineHeight: 18,\\n  },\\n  retryBtn: {\\n    flexDirection: 'row',\\n    alignItems: 'center',\\n    gap: 8,\\n    backgroundColor: Colors.primary,\\n    paddingHorizontal: 20,\\n    paddingVertical: 11,\\n    borderRadius: 999,\\n    marginTop: 18,\\n  },\\n  retryText: {\\n    color: '#000',\\n    fontSize: 14,\\n    fontWeight: '700' as const,\\n  },\\n});\\n\", \"filePath\": \"expo/components/ReelErrorBoundary.tsx\"}",
       "createdAt": 1783950084351,
-      "completedAt": 1783950112271
+      "completedAt": 1783950112271,
+      "compactedAt": 1783956415759
     },
     {
       "type": "tool",
@@ -3154,7 +3184,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"content\": \"/**\\n * ReelVideoPlayer — Instagram-style video player for the full-screen\\n * vertical reels feed.\\n *\\n * Lifecycle guarantees:\\n *   • Only the active reel plays; neighbors mount poster-only.\\n *   • Pauses immediately when the app goes to background.\\n *   • Pauses when the screen loses focus (navigates away).\\n *   • Pauses on network disconnect; shows retry on reconnect.\\n *   • Unloads the native player on unmount to free ExoPlayer resources.\\n *   • Android: prefers progressive MP4 over HLS to avoid expo-av crashes.\\n *   • Poster displays on Android (Image component, not expo-av posterSource).\\n *   • Max 3 players mounted at any time (active ± 1).\\n *\\n * This wraps SafeVideo with poster-first rendering and error boundary\\n * isolation so a single bad video never crashes the feed.\\n */\\nimport React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';\\nimport { View, Image, ActivityIndicator, StyleSheet, TouchableOpacity } from 'react-native';\\nimport { ResizeMode } from 'expo-av';\\nimport { Play, RefreshCw, WifiOff } from 'lucide-react-native';\\nimport Colors from '@/constants/colors';\\nimport SafeVideo from './SafeVideo';\\nimport ReelErrorBoundary from './ReelErrorBoundary';\\nimport { useNetworkState } from '@/hooks/useNetworkState';\\n\\ninterface ReelVideoPlayerProps {\\n  videoId: string;\\n  uri: string | null | undefined;\\n  hlsUri?: string | null;\\n  posterUri?: string | null;\\n  previewBlurUri?: string | null;\\n  shouldPlay: boolean;\\n  isMuted: boolean;\\n  onProgress?: (progress: number) => void;\\n  onPlaybackStatusUpdate?: (status: { isPlaying: boolean; durationMillis: number; positionMillis: number }) => void;\\n  testID?: string;\\n}\\n\\nfunction pickPlaybackUri(\\n  uri: string | null | undefined,\\n  hlsUri: string | null | undefined,\\n  isAndroid: boolean,\\n): string | null {\\n  // On Android, prefer progressive MP4 over HLS to avoid expo-av native crashes.\\n  // On iOS, prefer HLS for adaptive bitrate.\\n  if (isAndroid) {\\n    if (uri && !uri.toLowerCase().endsWith('.m3u8')) return uri;\\n    if (hlsUri && !hlsUri.toLowerCase().endsWith('.m3u8')) return hlsUri;\\n    // Fall back to HLS only if no MP4 is available\\n    return uri ?? hlsUri ?? null;\\n  }\\n  // iOS: prefer HLS, fall back to MP4\\n  return hlsUri ?? uri ?? null;\\n}\\n\\nfunction ReelVideoPlayerInner({\\n  videoId,\\n  uri,\\n  hlsUri,\\n  posterUri,\\n  previewBlurUri,\\n  shouldPlay,\\n  isMuted,\\n  onProgress,\\n  onPlaybackStatusUpdate,\\n  testID,\\n}: ReelVideoPlayerProps) {\\n  const network = useNetworkState();\\n  const [retryKey, setRetryKey] = useState<number>(0);\\n  const [showTapToPlay, setShowTapToPlay] = useState<boolean>(false);\\n  const isAndroidRef = useRef<boolean>(\\n    typeof Platform !== 'undefined' && Platform.OS === 'android',\\n  );\\n\\n  const playbackUri = useMemo(\\n    () => pickPlaybackUri(uri, hlsUri, isAndroidRef.current),\\n    [uri, hlsUri],\\n  );\\n\\n  // Effective play state: pause on network disconnect or background\\n  const effectiveShouldPlay = shouldPlay && network.isInternetReachable;\\n\\n  // When network drops, show the offline overlay; when it returns,\\n  // allow the user to tap to resume.\\n  useEffect(() => {\\n    if (!network.isInternetReachable && shouldPlay) {\\n      setShowTapToPlay(false);\\n    }\\n  }, [network.isInternetReachable, shouldPlay]);\\n\\n  const handleRetry = useCallback(() => {\\n    setRetryKey((k) => k + 1);\\n  }, []);\\n\\n  const handleTapResume = useCallback(() => {\\n    setShowTapToPlay(false);\\n  }, []);\\n\\n  // Poster-first rendering: show the poster image immediately, then\\n  // overlay the video player. On Android, the poster is an Image\\n  // component (not expo-av's posterSource, which is a crash vector).\\n  const posterSource = posterUri ?? previewBlurUri ?? null;\\n\\n  return (\\n    <View style={styles.container} testID={testID}>\\n      {/* Poster layer — always visible behind the video for instant first paint */}\\n      {posterSource && (\\n        <Image\\n          source={{ uri: posterSource }}\\n          style={StyleSheet.absoluteFill}\\n          resizeMode=\\\"cover\\\"\\n          fadeDuration={200}\\n          accessible={false}\\n        />\\n      )}\\n\\n      {/* Blur placeholder for even faster first paint */}\\n      {previewBlurUri && previewBlurUri !== posterSource && (\\n        <Image\\n          source={{ uri: previewBlurUri }}\\n          style={StyleSheet.absoluteFill}\\n          resizeMode=\\\"cover\\\"\\n          fadeDuration={0}\\n          accessible={false}\\n        />\\n      )}\\n\\n      <ReelErrorBoundary videoId={videoId} posterUri={posterSource} onRetry={handleRetry}>\\n        <SafeVideo\\n          key={`${videoId}-${retryKey}`}\\n          uri={playbackUri}\\n          posterUri={null}\\n          style={StyleSheet.absoluteFill}\\n          resizeMode={ResizeMode.COVER}\\n          shouldPlay={effectiveShouldPlay}\\n          isMuted={isMuted}\\n          isLooping\\n          onProgress={onProgress}\\n          testID={testID ? `${testID}-player` : undefined}\\n        />\\n      </ReelErrorBoundary>\\n\\n      {/* Offline overlay */}\\n      {!network.isInternetReachable && (\\n        <View style={styles.overlay} pointerEvents=\\\"none\\\">\\n          <WifiOff size={36} color=\\\"rgba(255,255,255,0.7)\\\" />\\n          <Text style={styles.overlayText}>No connection</Text>\\n          <Text style={styles.overlaySub}>Waiting for network...</Text>\\n        </View>\\n      )}\\n    </View>\\n  );\\n}\\n\\nconst Text = require('react-native').Text;\\n\\nconst ReelVideoPlayer = memo(ReelVideoPlayerInner);\\nexport default ReelVideoPlayer;\\n\\nconst styles = StyleSheet.create({\\n  container: {\\n    flex: 1,\\n    backgroundColor: '#000',\\n    overflow: 'hidden',\\n  },\\n  overlay: {\\n    ...StyleSheet.absoluteFillObject,\\n    alignItems: 'center',\\n    justifyContent: 'center',\\n    backgroundColor: 'rgba(0,0,0,0.55)',\\n    zIndex: 50,\\n  },\\n  overlayText: {\\n    color: '#fff',\\n    fontSize: 15,\\n    fontWeight: '700' as const,\\n    marginTop: 12,\\n  },\\n  overlaySub: {\\n    color: 'rgba(255,255,255,0.6)',\\n    fontSize: 12,\\n    marginTop: 4,\\n  },\\n});\\n\", \"filePath\": \"expo/components/ReelVideoPlayer.tsx\"}",
       "createdAt": 1783950089130,
-      "completedAt": 1783950112273
+      "completedAt": 1783950112273,
+      "compactedAt": 1783956415759
     },
     {
       "type": "reasoning",
@@ -3184,7 +3215,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"expo/components/ReelVideoPlayer.tsx\", \"limit\": 20}",
       "createdAt": 1783950122097,
-      "completedAt": 1783950122100
+      "completedAt": 1783950122100,
+      "compactedAt": 1783956415759
     },
     {
       "type": "reasoning",
@@ -3224,7 +3256,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"expo/components/ReelVideoPlayer.tsx\", \"edits\": [{\"oldString\": \"import { View, Image, ActivityIndicator, StyleSheet, TouchableOpacity } from 'react-native';\", \"newString\": \"import { View, Text, Image, ActivityIndicator, StyleSheet, TouchableOpacity, Platform } from 'react-native';\"}, {\"oldString\": \"const Text = require('react-native').Text;\\n\\nconst ReelVideoPlayer = memo(ReelVideoPlayerInner);\", \"newString\": \"const ReelVideoPlayer = memo(ReelVideoPlayerInner);\"}]}",
       "createdAt": 1783950126135,
-      "completedAt": 1783950127545
+      "completedAt": 1783950127545,
+      "compactedAt": 1783956415759
     },
     {
       "type": "text",
@@ -3246,7 +3279,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"expo/components/ReelVideoPlayer.tsx\"}",
       "createdAt": 1783950130500,
-      "completedAt": 1783950130503
+      "completedAt": 1783950130503,
+      "compactedAt": 1783956415759
     },
     {
       "type": "reasoning",
@@ -3275,7 +3309,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"content\": \"/**\\n * SafeVideo — defensive wrapper around expo-av Video for Android stability.\\n *\\n * expo-av on Android is prone to native crashes when:\\n *   - posterSource/usePoster is enabled with remote URIs\\n *   - HLS (.m3u8) sources are fed to the legacy player\\n *   - multiple Video instances mount at once inside a FlatList\\n *   - shouldPlay flips before the player is ready\\n *\\n * This component disables poster on Android, falls back from HLS to MP4, and\\n * surfaces load errors so the app survives bad videos instead of crashing.\\n * Poster is rendered as a separate Image layer (not expo-av posterSource).\\n */\\nimport React, { useEffect, useRef, useState } from 'react';\\nimport { View, Text, ActivityIndicator, Platform, StyleSheet, TouchableOpacity } from 'react-native';\\nimport { Video, ResizeMode, type VideoReadyForDisplayEvent } from 'expo-av';\\nimport { RefreshCw } from 'lucide-react-native';\\nimport Colors from '@/constants/colors';\\n\\ninterface SafeVideoProps {\\n  uri: string | null | undefined;\\n  posterUri?: string | null | undefined;\\n  style?: any;\\n  shouldPlay?: boolean;\\n  isMuted?: boolean;\\n  isLooping?: boolean;\\n  resizeMode?: ResizeMode;\\n  onProgress?: (progress: number) => void;\\n  onPlaybackStatusUpdate?: (status: { isPlaying: boolean; durationMillis: number; positionMillis: number }) => void;\\n  testID?: string;\\n}\\n\\nconst GOLD = Colors.primary;\\nconst MAX_RETRIES = 2;\\n\\nfunction pickPlaybackUri(input: string | null | undefined): string | null {\\n  if (!input) return null;\\n  // On Android, prefer progressive MP4 over HLS to avoid expo-av native crashes.\\n  if (Platform.OS === 'android' && input.toLowerCase().endsWith('.m3u8')) {\\n    return null;\\n  }\\n  return input;\\n}\\n\\nexport default function SafeVideo({\\n  uri,\\n  posterUri,\\n  style,\\n  shouldPlay = false,\\n  isMuted = true,\\n  isLooping = true,\\n  resizeMode = ResizeMode.COVER,\\n  onProgress,\\n  onPlaybackStatusUpdate,\\n  testID,\\n}: SafeVideoProps) {\\n  const videoRef = useRef<Video>(null);\\n  const [error, setError] = useState<string | null>(null);\\n  const [loading, setLoading] = useState<boolean>(true);\\n  const [ready, setReady] = useState<boolean>(false);\\n  const [retryCount, setRetryCount] = useState<number>(0);\\n  const playbackUri = pickPlaybackUri(uri);\\n\\n  // Reset state when the source changes.\\n  useEffect(() => {\\n    setError(null);\\n    setLoading(true);\\n    setReady(false);\\n    setRetryCount(0);\\n  }, [playbackUri]);\\n\\n  // Unload the player when unmounting to free native resources.\\n  useEffect(() => {\\n    return () => {\\n      try {\\n        void videoRef.current?.unloadAsync();\\n      } catch {\\n        // ignore — player may already be gone\\n      }\\n    };\\n  }, []);\\n\\n  const handleRetry = () => {\\n    if (retryCount >= MAX_RETRIES) return;\\n    setRetryCount((c) => c + 1);\\n    setError(null);\\n    setLoading(true);\\n    setReady(false);\\n  };\\n\\n  if (!playbackUri) {\\n    return (\\n      <View style={[styles.container, style]} testID={testID ? `${testID}-no-source` : undefined}>\\n        {posterUri ? (\\n          <View style={[styles.container, style]}>\\n            <View style={[StyleSheet.absoluteFill, { backgroundColor: '#111' }]} />\\n            <ActivityIndicator size=\\\"large\\\" color={GOLD} style={StyleSheet.absoluteFill} />\\n          </View>\\n        ) : (\\n          <ActivityIndicator size=\\\"large\\\" color={GOLD} />\\n        )}\\n      </View>\\n    );\\n  }\\n\\n  // Poster on Android is a known crash vector in expo-av; disable it there.\\n  // The poster is rendered by the parent component (ReelVideoPlayer) as an Image.\\n  const showPoster = Platform.OS !== 'android' && !!posterUri;\\n  const posterSource = showPoster ? { uri: posterUri as string } : undefined;\\n  const usePoster = showPoster;\\n\\n  return (\\n    <View style={[styles.container, style]} testID={testID}>\\n      <Video\\n        ref={videoRef}\\n        source={{ uri: playbackUri }}\\n        style={StyleSheet.absoluteFill}\\n        resizeMode={resizeMode}\\n        shouldPlay={shouldPlay && ready}\\n        isLooping={isLooping}\\n        isMuted={isMuted}\\n        useNativeControls={false}\\n        usePoster={usePoster}\\n        posterSource={posterSource}\\n        onLoadStart={() => setLoading(true)}\\n        onReadyForDisplay={(e: VideoReadyForDisplayEvent) => {\\n          setLoading(false);\\n          setReady(true);\\n        }}\\n        onLoad={(status) => {\\n          setLoading(false);\\n          if (status.isLoaded) {\\n            setReady(true);\\n          }\\n        }}\\n        onError={(err) => {\\n          setLoading(false);\\n          setReady(false);\\n          setError(typeof err === 'string' ? err : 'Video failed to load');\\n          if (__DEV__) {\\n            console.warn('[SafeVideo] load error:', err);\\n          }\\n        }}\\n        onPlaybackStatusUpdate={(status) => {\\n          if (status.isLoaded && status.durationMillis && status.durationMillis > 0) {\\n            onProgress?.(status.positionMillis / status.durationMillis);\\n            onPlaybackStatusUpdate?.({\\n              isPlaying: status.isPlaying ?? false,\\n              durationMillis: status.durationMillis,\\n              positionMillis: status.positionMillis ?? 0,\\n            });\\n          }\\n        }}\\n      />\\n      {loading && !error && (\\n        <View style={styles.overlay} pointerEvents=\\\"none\\\">\\n          <ActivityIndicator size=\\\"large\\\" color={GOLD} />\\n        </View>\\n      )}\\n      {error && (\\n        <View style={styles.overlay} pointerEvents=\\\"auto\\\">\\n          {retryCount < MAX_RETRIES ? (\\n            <TouchableOpacity style={styles.retryBtn} onPress={handleRetry} activeOpacity={0.8}>\\n              <RefreshCw size={16} color=\\\"#000\\\" />\\n              <Text style={styles.retryText}>Retry</Text>\\n            </TouchableOpacity>\\n          ) : (\\n            <ActivityIndicator size=\\\"small\\\" color=\\\"rgba(255,255,255,0.6)\\\" />\\n          )}\\n        </View>\\n      )}\\n    </View>\\n  );\\n}\\n\\nconst styles = StyleSheet.create({\\n  container: {\\n    flex: 1,\\n    backgroundColor: '#000',\\n    alignItems: 'center',\\n    justifyContent: 'center',\\n  },\\n  overlay: {\\n    ...StyleSheet.absoluteFillObject,\\n    alignItems: 'center',\\n    justifyContent: 'center',\\n    backgroundColor: 'rgba(0,0,0,0.25)',\\n  },\\n  retryBtn: {\\n    flexDirection: 'row',\\n    alignItems: 'center',\\n    gap: 8,\\n    backgroundColor: GOLD,\\n    paddingHorizontal: 18,\\n    paddingVertical: 10,\\n    borderRadius: 999,\\n  },\\n  retryText: {\\n    color: '#000',\\n    fontSize: 14,\\n    fontWeight: '700' as const,\\n  },\\n});\\n\", \"filePath\": \"expo/components/SafeVideo.tsx\"}",
       "createdAt": 1783950142211,
-      "completedAt": 1783950154437
+      "completedAt": 1783950154437,
+      "compactedAt": 1783956415759
     },
     {
       "type": "reasoning",
@@ -3320,7 +3355,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"edits\": [{\"oldString\": \"import { View, Text, StyleSheet, TouchableOpacity, Share, Alert } from 'react-native';\\nimport { Video, ResizeMode } from 'expo-av';\", \"newString\": \"import { View, Text, StyleSheet, TouchableOpacity, Share, Alert } from 'react-native';\\nimport { ResizeMode } from 'expo-av';\"}, {\"oldString\": \"  const playbackUri = video.hls_url ?? video.video_url;\\n  const posterUri = video.poster_url ?? video.thumbnail_url ?? video.preview_blur_url ?? undefined;\", \"newString\": \"  // On Android, prefer progressive MP4 over HLS to avoid expo-av crashes.\\n  const playbackUri = video.video_url && !video.hls_url?.toLowerCase().endsWith('.m3u8')\\n    ? video.video_url\\n    : video.hls_url ?? video.video_url;\\n  const posterUri = video.poster_url ?? video.thumbnail_url ?? video.preview_blur_url ?? undefined;\"}, {\"oldString\": \"      {/* Media */}\\n      <TouchableOpacity activeOpacity={1} onPress={toggleMute} style={styles.media}>\\n        <Video\\n          source={{ uri: playbackUri }}\\n          style={StyleSheet.absoluteFill}\\n          resizeMode={ResizeMode.COVER}\\n          shouldPlay\\n          isLooping\\n          isMuted={isMuted}\\n          posterSource={posterUri ? { uri: posterUri } : undefined}\\n          usePoster={!!posterUri}\\n        />\", \"newString\": \"      {/* Media — uses SafeVideo for Android crash protection */}\\n      <TouchableOpacity activeOpacity={1} onPress={toggleMute} style={styles.media}>\\n        <SafeVideo\\n          uri={playbackUri}\\n          posterUri={posterUri}\\n          style={StyleSheet.absoluteFill}\\n          resizeMode={ResizeMode.COVER}\\n          shouldPlay={true}\\n          isMuted={isMuted}\\n          isLooping\\n          testID={`deal-video-player-${video.id}`}\\n        />\"}], \"filePath\": \"expo/components/DealVideoCard.tsx\"}",
       "createdAt": 1783950165423,
-      "completedAt": 1783950174905
+      "completedAt": 1783950174905,
+      "compactedAt": 1783956415759
     },
     {
       "type": "reasoning",
@@ -3350,7 +3386,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"expo/components/DealVideoCard.tsx\", \"limit\": 15}",
       "createdAt": 1783950182591,
-      "completedAt": 1783950182596
+      "completedAt": 1783950182596,
+      "compactedAt": 1783956415759
     },
     {
       "type": "reasoning",
@@ -3385,7 +3422,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"edits\": [{\"oldString\": \"import { useRouter } from 'expo-router';\", \"newString\": \"import { useRouter } from 'expo-router';\\nimport SafeVideo from './SafeVideo';\"}], \"filePath\": \"expo/components/DealVideoCard.tsx\"}",
       "createdAt": 1783950187641,
-      "completedAt": 1783950187877
+      "completedAt": 1783950187877,
+      "compactedAt": 1783956415759
     },
     {
       "type": "reasoning",
@@ -3425,7 +3463,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"edits\": [{\"oldString\": \"import { Video, ResizeMode, type AVPlaybackStatus } from 'expo-av';\", \"newString\": \"import { ResizeMode, type AVPlaybackStatus } from 'expo-av';\", \"replaceAll\": false}, {\"oldString\": \"import ProjectShareSheet from './ProjectShareSheet';\", \"newString\": \"import ProjectShareSheet from './ProjectShareSheet';\\nimport SafeVideo from './SafeVideo';\", \"replaceAll\": false}], \"filePath\": \"expo/components/InstagramProjectCard.tsx\"}",
       "createdAt": 1783950191867,
-      "completedAt": 1783950192446
+      "completedAt": 1783950192446,
+      "compactedAt": 1783956415759
     },
     {
       "type": "reasoning",
@@ -3456,7 +3495,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"expo/components/InstagramProjectCard.tsx\", \"offset\": 270, \"limit\": 30}",
       "createdAt": 1783950196625,
-      "completedAt": 1783950196686
+      "completedAt": 1783950196686,
+      "compactedAt": 1783956415759
     },
     {
       "type": "tool",
@@ -3475,7 +3515,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"expo/components/InstagramProjectCard.tsx\", \"offset\": 95, \"limit\": 15}",
       "createdAt": 1783950196626,
-      "completedAt": 1783950196688
+      "completedAt": 1783950196688,
+      "compactedAt": 1783956415759
     },
     {
       "type": "reasoning",
@@ -3515,7 +3556,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"edits\": [{\"oldString\": \"  const videoRef = useRef<Video>(null);\", \"newString\": \"  const videoRef = useRef<Video<unknown> | null>(null);\"}, {\"oldString\": \"            <Video\\n              ref={videoRef}\\n              source={{ uri: activeVideo.video_url }}\\n              style={[styles.video, { height: compact ? 200 : 260 }]}\\n              resizeMode={ResizeMode.COVER}\\n              isMuted={isVideoMuted}\\n              shouldPlay={false}\\n              isLooping\\n              onPlaybackStatusUpdate={handleVideoPlaybackStatus}\\n              progressUpdateIntervalMillis={500}\\n            />\", \"newString\": \"            <SafeVideo\\n              uri={activeVideo.video_url}\\n              posterUri={activeVideo.thumbnail_url ?? null}\\n              style={[styles.video, { height: compact ? 200 : 260 }]}\\n              resizeMode={ResizeMode.COVER}\\n              shouldPlay={false}\\n              isMuted={isVideoMuted}\\n              isLooping\\n              onPlaybackStatusUpdate={handleVideoPlaybackStatus}\\n              testID={`instagram-card-video-${deal.id}`}\\n            />\"}], \"filePath\": \"expo/components/InstagramProjectCard.tsx\"}",
       "createdAt": 1783950201240,
-      "completedAt": 1783950202811
+      "completedAt": 1783950202811,
+      "compactedAt": 1783956415759
     },
     {
       "type": "reasoning",
@@ -3546,7 +3588,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"expo/components/InstagramProjectCard.tsx\", \"limit\": 12, \"offset\": 18}",
       "createdAt": 1783950210691,
-      "completedAt": 1783950212762
+      "completedAt": 1783950212762,
+      "compactedAt": 1783956415759
     },
     {
       "type": "reasoning",
@@ -3586,7 +3629,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"edits\": [{\"oldString\": \"import { ResizeMode, type AVPlaybackStatus } from 'expo-av';\", \"newString\": \"import { Video, ResizeMode, type AVPlaybackStatus } from 'expo-av';\", \"replaceAll\": false}, {\"oldString\": \"  const videoRef = useRef<Video<unknown> | null>(null);\", \"newString\": \"  const videoRef = useRef<Video>(null);\", \"replaceAll\": false}], \"filePath\": \"expo/components/InstagramProjectCard.tsx\"}",
       "createdAt": 1783950219280,
-      "completedAt": 1783950221620
+      "completedAt": 1783950221620,
+      "compactedAt": 1783956415759
     },
     {
       "type": "reasoning",
@@ -3615,7 +3659,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"content\": \"/**\\n * IVX Reels — full-screen vertical video feed matching ivxholding.com exactly.\\n *\\n * Same backend the landing page uses:\\n *   feed      → GET /api/ivx/video-platform/feed\\n *   like      → POST /api/projects/:id/like\\n *   save      → POST /api/projects/:id/save\\n *   share     → POST /api/projects/:id/share\\n *   follow    → POST /api/ivx/video-platform/follow\\n *   report    → POST /api/ivx/video-platform/videos/:id/report\\n *   comments  → GET/POST /api/projects/:id/comments\\n *\\n * Player lifecycle (Instagram-style):\\n *   • Only ONE reel plays at a time (the active/index item)\\n *   • Max 3 players mounted (active ± 1) — all others unmounted\\n *   • Pauses on app background, screen unfocus, network disconnect\\n *   • 80% viewability threshold to prevent overlap during fast scroll\\n *   • Per-item error boundary so one bad video never crashes the feed\\n */\\nimport React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';\\nimport {\\n  View,\\n  Text,\\n  StyleSheet,\\n  FlatList,\\n  TouchableOpacity,\\n  ActivityIndicator,\\n  useWindowDimensions,\\n  Platform,\\n  Alert,\\n  type ViewToken,\\n} from 'react-native';\\nimport { Stack, useRouter, useLocalSearchParams } from 'expo-router';\\nimport { useSafeAreaInsets } from 'react-native-safe-area-context';\\nimport { ResizeMode } from 'expo-av';\\nimport { LinearGradient } from 'expo-linear-gradient';\\nimport {\\n  X,\\n  Heart,\\n  MessageCircle,\\n  Share2,\\n  Volume2,\\n  VolumeX,\\n  Play,\\n  Bookmark,\\n  Hexagon,\\n  Users,\\n  Home,\\n} from 'lucide-react-native';\\nimport * as Haptics from 'expo-haptics';\\nimport { useQuery } from '@tanstack/react-query';\\n\\nimport Colors from '@/constants/colors';\\nimport { fetchVideoFeed, type FeedVideo } from '@/lib/video-feed';\\nimport {\\n  toggleProjectLike,\\n  trackProjectShare,\\n  fetchProjectComments,\\n  addProjectComment,\\n  deleteProjectComment,\\n  type ProjectComment,\\n} from '@/lib/project-engagement';\\nimport {\\n  toggleVideoSave,\\n  toggleVideoFollow,\\n  reportVideo,\\n  trackVideoEvent,\\n  getViewerId,\\n  buildVideoShareUrl,\\n} from '@/lib/video-platform';\\nimport ProjectCommentsSheet from '@/components/ProjectCommentsSheet';\\nimport ProjectShareSheet from '@/components/ProjectShareSheet';\\nimport ReelVideoPlayer from '@/components/ReelVideoPlayer';\\nimport { useReelPlayback } from '@/hooks/useReelPlayback';\\nimport { useReelEngagement, type EngagementState } from '@/hooks/useReelEngagement';\\nimport { supabase } from '@/lib/supabase';\\n\\nconst GOLD = Colors.primary;\\nconst LIKE_RED = Colors.error;\\n\\nfunction formatCount(n: number): string {\\n  if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;\\n  if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;\\n  return String(n);\\n}\\n\\nfunction compactCurrency(value: number): string {\\n  if (value >= 1_000_000) {\\n    const m = value / 1_000_000;\\n    return `$${m % 1 === 0 ? m.toFixed(0) : m.toFixed(1)}M`;\\n  }\\n  if (value >= 1_000) {\\n    const k = value / 1_000;\\n    return `$${k % 1 === 0 ? k.toFixed(0) : k.toFixed(1)}K`;\\n  }\\n  return `$${Math.round(value)}`;\\n}\\n\\nfunction parseVideoTitle(video: FeedVideo): { title: string; location: string | null; tourLabel: string } {\\n  const raw = video.title ?? video.deal?.title ?? 'IVX Holdings';\\n  const locationMatch = raw.match(/(.+?)\\\\s*[—–]\\\\s*([^,]+,\\\\s*[A-Z]{2})/);\\n  if (locationMatch) {\\n    return { title: locationMatch[1].trim(), location: locationMatch[2].trim(), tourLabel: 'Property Tour' };\\n  }\\n  const tourMatch = raw.match(/(.+?)\\\\s*[—–]\\\\s*(.+)/);\\n  if (tourMatch) {\\n    const tour = tourMatch[2].trim();\\n    const isLocation = /,\\\\s*[A-Z]{2}/.test(tour);\\n    return { title: tourMatch[1].trim(), location: isLocation ? tour : null, tourLabel: isLocation ? 'Property Tour' : tour };\\n  }\\n  return { title: raw, location: null, tourLabel: 'Property Tour' };\\n}\\n\\nfunction useInvestmentOptions(dealType: string | null | undefined) {\\n  const t = (dealType ?? '').toLowerCase();\\n  const tokenized = { id: 'tokenized', label: 'Tokenized', icon: <Hexagon size={16} color={GOLD} />, tint: GOLD };\\n  const jvDeals = { id: 'jvDeals', label: 'JV Deal', icon: <Users size={16} color={Colors.blue} />, tint: Colors.blue };\\n  const buyers = { id: 'buyers', label: 'Buyer', icon: <Home size={16} color={Colors.green} />, tint: Colors.green };\\n  switch (t) {\\n    case 'jv':\\n    case 'equity_split':\\n    case 'hybrid':\\n      return [tokenized, jvDeals, buyers];\\n    case 'development':\\n    case 'new_construction':\\n    case 'rehab_construction':\\n      return [jvDeals, tokenized, buyers];\\n    case 'profit_sharing':\\n      return [tokenized, buyers, jvDeals];\\n    default:\\n      return [tokenized, jvDeals, buyers];\\n  }\\n}\\n\\ntype ReelChannel = 'all' | 'investment' | 'buyer' | 'seller';\\n\\nconst CHANNELS: { id: ReelChannel; label: string }[] = [\\n  { id: 'all', label: 'All' },\\n  { id: 'investment', label: 'Investments' },\\n  { id: 'buyer', label: 'Buyers' },\\n  { id: 'seller', label: 'Sellers' },\\n];\\n\\ninterface FeedItemProps {\\n  video: FeedVideo;\\n  isActive: boolean;\\n  shouldMount: boolean;\\n  height: number;\\n  muted: boolean;\\n  engagement: EngagementState;\\n  onToggleMute: () => void;\\n  onLike: (video: FeedVideo) => void;\\n  onDoubleTapLike: (video: FeedVideo) => void;\\n  onComment: (video: FeedVideo) => void;\\n  onShare: (video: FeedVideo) => void;\\n  onSave: (video: FeedVideo) => void;\\n  onFollow: (video: FeedVideo) => void;\\n  onReport: (video: FeedVideo) => void;\\n  onViewDeal: (video: FeedVideo) => void;\\n  onInvestNow: (video: FeedVideo) => void;\\n}\\n\\nconst FeedItem = React.memo(function FeedItem({\\n  video,\\n  isActive,\\n  shouldMount,\\n  height,\\n  muted,\\n  engagement,\\n  onToggleMute,\\n  onLike,\\n  onDoubleTapLike,\\n  onComment,\\n  onShare,\\n  onSave,\\n  onFollow,\\n  onReport,\\n  onViewDeal,\\n  onInvestNow,\\n}: FeedItemProps) {\\n  const [paused, setPaused] = useState<boolean>(false);\\n  const [showHeart, setShowHeart] = useState<boolean>(false);\\n  const [progress, setProgress] = useState<number>(0);\\n  const insets = useSafeAreaInsets();\\n  const lastTapRef = useRef<number>(0);\\n  const shouldPlay = isActive && !paused;\\n\\n  const deal = video.deal ?? null;\\n  const investmentOptions = useInvestmentOptions(deal?.deal_type);\\n\\n  const handleTap = () => {\\n    const now = Date.now();\\n    if (now - lastTapRef.current < 320) {\\n      lastTapRef.current = 0;\\n      setShowHeart(true);\\n      setTimeout(() => setShowHeart(false), 800);\\n      onDoubleTapLike(video);\\n    } else {\\n      lastTapRef.current = now;\\n      setTimeout(() => {\\n        if (lastTapRef.current === now) {\\n          setPaused(p => !p);\\n        }\\n      }, 330);\\n    }\\n  };\\n\\n  const parsed = parseVideoTitle(video);\\n  const propertyTitle = deal?.title ?? parsed.title;\\n  const isActiveStatus = (video.status ?? 'published') === 'published';\\n\\n  return (\\n    <View style={[styles.item, { height }]}>\\n      <TouchableOpacity\\n        style={StyleSheet.absoluteFill}\\n        activeOpacity={1}\\n        onPress={handleTap}\\n        onLongPress={() => onReport(video)}\\n        testID={`video-item-${video.id}`}\\n      >\\n        {shouldMount ? (\\n          <ReelVideoPlayer\\n            videoId={video.id}\\n            uri={video.video_url}\\n            hlsUri={video.hls_url}\\n            posterUri={video.poster_url ?? video.thumbnail_url}\\n            previewBlurUri={video.preview_blur_url}\\n            shouldPlay={shouldPlay}\\n            isMuted={muted}\\n            onProgress={(p) => setProgress(p)}\\n            testID={`video-player-${video.id}`}\\n          />\\n        ) : (\\n          // Unmounted: show poster only to preserve scroll position\\n          <View style={StyleSheet.absoluteFill}>\\n            {video.poster_url || video.thumbnail_url || video.preview_blur_url ? (\\n              <View style={[StyleSheet.absoluteFill, { backgroundColor: '#111' }]} />\\n            ) : (\\n              <View style={[StyleSheet.absoluteFill, { backgroundColor: '#000' }]} />\\n            )}\\n          </View>\\n        )}\\n      </TouchableOpacity>\\n\\n      {/* Progress bar */}\\n      <View style={styles.progressBar}>\\n        <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />\\n      </View>\\n\\n      {!shouldPlay && shouldMount && (\\n        <View pointerEvents=\\\"none\\\" style={styles.centerPlay}>\\n          <View style={styles.centerPlayCircle}>\\n            <Play size={30} color=\\\"#000\\\" fill=\\\"#000\\\" />\\n          </View>\\n        </View>\\n      )}\\n\\n      {showHeart && (\\n        <View pointerEvents=\\\"none\\\" style={styles.burstHeart}>\\n          <Heart size={96} color={LIKE_RED} fill={LIKE_RED} />\\n        </View>\\n      )}\\n\\n      {/* Right action rail */}\\n      <View style={[styles.rail, { bottom: insets.bottom + 96 }]}>\\n        <TouchableOpacity\\n          style={styles.railBtn}\\n          onPress={() => onLike(video)}\\n          testID={`video-like-${video.id}`}\\n        >\\n          <Heart\\n            size={30}\\n            color={engagement.liked ? LIKE_RED : '#fff'}\\n            fill={engagement.liked ? LIKE_RED : 'transparent'}\\n          />\\n          <Text style={styles.railCount}>{formatCount(engagement.likeCount)}</Text>\\n        </TouchableOpacity>\\n\\n        <TouchableOpacity\\n          style={styles.railBtn}\\n          onPress={() => onComment(video)}\\n          testID={`video-comment-${video.id}`}\\n        >\\n          <MessageCircle size={30} color=\\\"#fff\\\" />\\n          <Text style={styles.railCount}>{formatCount(engagement.commentCount)}</Text>\\n        </TouchableOpacity>\\n\\n        <TouchableOpacity\\n          style={styles.railBtn}\\n          onPress={() => onSave(video)}\\n          testID={`video-save-${video.id}`}\\n        >\\n          <Bookmark\\n            size={30}\\n            color={engagement.saved ? GOLD : '#fff'}\\n            fill={engagement.saved ? GOLD : 'transparent'}\\n          />\\n          <Text style={styles.railCount}>{formatCount(engagement.saveCount)}</Text>\\n        </TouchableOpacity>\\n\\n        <TouchableOpacity\\n          style={styles.railBtn}\\n          onPress={() => onShare(video)}\\n          testID={`video-share-${video.id}`}\\n        >\\n          <Share2 size={30} color=\\\"#fff\\\" />\\n          <Text style={styles.railCount}>{formatCount(engagement.shareCount)}</Text>\\n        </TouchableOpacity>\\n\\n        <TouchableOpacity style={styles.railBtn} onPress={onToggleMute} testID={`video-mute-${video.id}`}>\\n          {muted ? <VolumeX size={26} color=\\\"#fff\\\" /> : <Volume2 size={26} color=\\\"#fff\\\" />}\\n        </TouchableOpacity>\\n      </View>\\n\\n      {/* Bottom info + CTAs */}\\n      <View pointerEvents=\\\"box-none\\\" style={[styles.info, { bottom: insets.bottom + 32 }]}>\\n        <LinearGradient\\n          colors={['transparent', 'rgba(0,0,0,0.55)', 'rgba(0,0,0,0.82)']}\\n          locations={[0, 0.35, 1]}\\n          style={styles.bottomGradient}\\n        />\\n        <View style={styles.badgeRow}>\\n          {deal ? <Text style={styles.badgeInvestment}>INVESTMENT</Text> : null}\\n          {isActiveStatus ? <Text style={styles.badgeActive}>ACTIVE</Text> : null}\\n        </View>\\n        <Text style={styles.infoTitle} numberOfLines={1}>\\n          {`${parsed.title} — ${parsed.tourLabel}`}\\n        </Text>\\n        <Text style={styles.infoPropertyTitle} numberOfLines={1}>\\n          {propertyTitle}\\n        </Text>\\n        {parsed.location ? (\\n          <Text style={styles.infoLocation} numberOfLines={1}>\\n            {parsed.location}\\n          </Text>\\n        ) : null}\\n        <View style={styles.metricRow}>\\n          {deal?.expected_roi ? (\\n            <View style={styles.metric}>\\n              <Text style={styles.metricValue}>{deal.expected_roi}%</Text>\\n              <Text style={styles.metricLabel}>ROI</Text>\\n            </View>\\n          ) : null}\\n          {deal?.min_investment && deal.min_investment > 0 ? (\\n            <View style={styles.metric}>\\n              <Text style={styles.metricValue}>{compactCurrency(deal.min_investment)}</Text>\\n              <Text style={styles.metricLabel}>MIN INVEST</Text>\\n            </View>\\n          ) : null}\\n          {deal?.price && deal.price > 0 ? (\\n            <View style={styles.metric}>\\n              <Text style={styles.metricValue}>{((deal.min_investment ?? 0) / deal.price * 100).toFixed(4)}%</Text>\\n              <Text style={styles.metricLabel}>MIN OWNERSHIP</Text>\\n            </View>\\n          ) : null}\\n        </View>\\n\\n        <View style={styles.optionsRow}>\\n          {investmentOptions.map((option) => (\\n            <View key={option.id} style={styles.optionIcon}>\\n              <View style={[styles.optionIconCircle, { borderColor: `${option.tint}66` }]}>\\n                {option.icon}\\n              </View>\\n              <Text style={styles.optionIconLabel}>{option.label}</Text>\\n            </View>\\n          ))}\\n        </View>\\n\\n        <View style={styles.ctaRowInner}>\\n          {deal?.url || deal?.id ? (\\n            <TouchableOpacity\\n              style={styles.viewDealBtn}\\n              onPress={() => onViewDeal(video)}\\n              activeOpacity={0.85}\\n              testID={`video-view-deal-${video.id}`}\\n            >\\n              <Text style={styles.viewDealText}>View Deal</Text>\\n            </TouchableOpacity>\\n          ) : null}\\n          {deal?.id ? (\\n            <TouchableOpacity\\n              style={styles.investNowBtn}\\n              onPress={() => onInvestNow(video)}\\n              activeOpacity={0.85}\\n              testID={`video-invest-${video.id}`}\\n            >\\n              <Text style={styles.investNowText}>Invest Now</Text>\\n            </TouchableOpacity>\\n          ) : null}\\n        </View>\\n      </View>\\n    </View>\\n  );\\n});\\n\\nexport default function VideosScreen() {\\n  const router = useRouter();\\n  const insets = useSafeAreaInsets();\\n  const { height: windowHeight } = useWindowDimensions();\\n  const params = useLocalSearchParams<{ type?: string }>();\\n  const [muted, setMuted] = useState<boolean>(true);\\n  const [userId, setUserId] = useState<string | null>(null);\\n  const [viewerId, setViewerId] = useState<string | null>(null);\\n  const [channel, setChannel] = useState<ReelChannel>('all');\\n\\n  const [commentsVideo, setCommentsVideo] = useState<FeedVideo | null>(null);\\n  const [comments, setComments] = useState<ProjectComment[]>([]);\\n  const [commentsTotal, setCommentsTotal] = useState<number>(0);\\n  const [commentsLoading, setCommentsLoading] = useState<boolean>(false);\\n  const [shareVideo, setShareVideo] = useState<FeedVideo | null>(null);\\n  const [toast, setToast] = useState<string | null>(null);\\n\\n  const feedQuery = useQuery({\\n    queryKey: ['ivx-video-feed'],\\n    queryFn: () => fetchVideoFeed(24),\\n    staleTime: 60_000,\\n  });\\n\\n  const allVideos: FeedVideo[] = useMemo(() => feedQuery.data ?? [], [feedQuery.data]);\\n\\n  const filteredVideos = useMemo(() => {\\n    if (channel === 'all') return allVideos;\\n    if (channel === 'investment') return allVideos.filter(v => v.deal && v.video_type !== 'reel');\\n    if (channel === 'buyer') {\\n      return allVideos.filter(\\n        v =>\\n          (v.deal?.deal_type ?? '').toLowerCase().includes('buy') ||\\n          v.title?.toLowerCase().includes('buy') ||\\n          v.title?.toLowerCase().includes('buyer')\\n      );\\n    }\\n    if (channel === 'seller') {\\n      return allVideos.filter(\\n        v =>\\n          (v.deal?.deal_type ?? '').toLowerCase().includes('sell') ||\\n          v.title?.toLowerCase().includes('sell') ||\\n          v.title?.toLowerCase().includes('seller')\\n      );\\n    }\\n    return allVideos;\\n  }, [allVideos, channel]);\\n\\n  const counts = useMemo(() => {\\n    const all = allVideos.length;\\n    const investment = allVideos.filter(v => v.deal && v.video_type !== 'reel').length;\\n    const buyer = allVideos.filter(\\n      v =>\\n        (v.deal?.deal_type ?? '').toLowerCase().includes('buy') ||\\n        v.title?.toLowerCase().includes('buy') ||\\n        v.title?.toLowerCase().includes('buyer')\\n    ).length;\\n    const seller = allVideos.filter(\\n      v =>\\n        (v.deal?.deal_type ?? '').toLowerCase().includes('sell') ||\\n        v.title?.toLowerCase().includes('sell') ||\\n        v.title?.toLowerCase().includes('seller')\\n    ).length;\\n    return { all, investment, buyer, seller };\\n  }, [allVideos]);\\n\\n  // Playback lifecycle hooks\\n  const playback = useReelPlayback();\\n  const engagement = useReelEngagement();\\n\\n  useEffect(() => {\\n    let cancelled = false;\\n    void getViewerId().then((id) => {\\n      if (!cancelled) setViewerId(id);\\n    });\\n    void supabase.auth.getSession().then(({ data }) => {\\n      if (!cancelled && data.session?.user?.id) setUserId(data.session.user.id);\\n    }).catch(() => {});\\n    return () => { cancelled = true; };\\n  }, []);\\n\\n  // Initialize engagement state when videos load\\n  useEffect(() => {\\n    if (allVideos.length === 0) return;\\n    engagement.initEngagements(allVideos);\\n  }, [allVideos, engagement]);\\n\\n  // Track view events when active reel changes\\n  useEffect(() => {\\n    const activeVideo = filteredVideos[playback.activeIndex];\\n    if (!activeVideo) return;\\n    engagement.handleView(activeVideo);\\n  }, [playback.activeIndex, filteredVideos, engagement]);\\n\\n  const showToast = useCallback((message: string) => {\\n    setToast(message);\\n    setTimeout(() => setToast(null), 2500);\\n  }, []);\\n\\n  const handleLike = useCallback((video: FeedVideo) => {\\n    engagement.handleLike(video, userId);\\n  }, [engagement, userId]);\\n\\n  const handleDoubleTapLike = useCallback((video: FeedVideo) => {\\n    engagement.handleDoubleTapLike(video, userId);\\n  }, [engagement, userId]);\\n\\n  const handleComment = useCallback(async (video: FeedVideo) => {\\n    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);\\n    setCommentsLoading(true);\\n    setCommentsVideo(video);\\n    try {\\n      const { comments: cmts, total } = await fetchProjectComments(video.id, 20, 0);\\n      setComments(cmts);\\n      setCommentsTotal(total);\\n    } catch {} finally {\\n      setCommentsLoading(false);\\n    }\\n  }, []);\\n\\n  const handleAddComment = useCallback(async (projectId: string, body: string, parentId?: string) => {\\n    try {\\n      await addProjectComment(projectId, body, userId, undefined, parentId);\\n      const { comments: cmts, total } = await fetchProjectComments(projectId, 20, 0);\\n      setComments(cmts);\\n      setCommentsTotal(total);\\n    } catch {}\\n  }, [userId]);\\n\\n  const handleDeleteComment = useCallback(async (commentId: string) => {\\n    if (!commentsVideo) return;\\n    try {\\n      await deleteProjectComment(commentId);\\n      const { comments: cmts, total } = await fetchProjectComments(commentsVideo.id, 20, 0);\\n      setComments(cmts);\\n      setCommentsTotal(total);\\n    } catch {}\\n  }, [commentsVideo]);\\n\\n  const handleShare = useCallback((video: FeedVideo) => {\\n    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);\\n    setShareVideo(video);\\n  }, []);\\n\\n  const handleShareTrack = useCallback(async (projectId: string, shareType: string) => {\\n    engagement.handleShare(\\n      { id: projectId } as FeedVideo,\\n      userId,\\n      shareType,\\n    );\\n  }, [engagement, userId]);\\n\\n  const handleSave = useCallback((video: FeedVideo) => {\\n    engagement.handleSave(video, viewerId);\\n  }, [engagement, viewerId]);\\n\\n  const handleFollow = useCallback(async (video: FeedVideo) => {\\n    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);\\n    const creatorId = video.creator_id ?? 'ivx-owner';\\n    try {\\n      const result = await toggleVideoFollow(creatorId, viewerId);\\n      showToast(result.following ? 'Following creator' : 'Unfollowed');\\n    } catch {}\\n  }, [viewerId, showToast]);\\n\\n  const handleReport = useCallback((video: FeedVideo) => {\\n    if (Platform.OS === 'web') {\\n      const reason = window.prompt('Report this video — reason:');\\n      if (!reason) return;\\n      void reportVideo(video.id, reason, viewerId).then(() => showToast('Report submitted to moderation')).catch(() => showToast('Report failed'));\\n      return;\\n    }\\n    Alert.prompt('Report this video', 'Reason:', async (reason) => {\\n      if (!reason) return;\\n      try {\\n        await reportVideo(video.id, reason, viewerId);\\n        showToast('Report submitted to moderation');\\n      } catch {\\n        showToast('Report failed');\\n      }\\n    });\\n  }, [viewerId, showToast]);\\n\\n  const handleViewDeal = useCallback((video: FeedVideo) => {\\n    if (video.deal?.url) {\\n      router.push(video.deal.url as any);\\n    } else if (video.deal?.id) {\\n      router.push({ pathname: '/jv-invest', params: { jvId: video.deal.id } } as any);\\n    }\\n  }, [router]);\\n\\n  const handleInvestNow = useCallback((video: FeedVideo) => {\\n    if (video.deal?.id) {\\n      router.push({ pathname: '/jv-invest', params: { jvId: video.deal.id } } as any);\\n    }\\n  }, [router]);\\n\\n  const renderItem = useCallback(\\n    ({ item, index }: { item: FeedVideo; index: number }) => (\\n      <FeedItem\\n        video={item}\\n        isActive={playback.shouldPlay(index)}\\n        shouldMount={playback.shouldMount(index, filteredVideos.length)}\\n        height={windowHeight}\\n        muted={muted}\\n        engagement={engagement.engagements[item.id] ?? {\\n          likeCount: item.like_count ?? 0,\\n          commentCount: item.comment_count ?? 0,\\n          shareCount: item.share_count ?? 0,\\n          saveCount: item.save_count ?? 0,\\n          liked: false,\\n          saved: false,\\n          following: false,\\n        }}\\n        onToggleMute={() => setMuted(m => !m)}\\n        onLike={handleLike}\\n        onDoubleTapLike={handleDoubleTapLike}\\n        onComment={handleComment}\\n        onShare={handleShare}\\n        onSave={handleSave}\\n        onFollow={handleFollow}\\n        onReport={handleReport}\\n        onViewDeal={handleViewDeal}\\n        onInvestNow={handleInvestNow}\\n      />\\n    ),\\n    [playback, filteredVideos.length, windowHeight, muted, engagement.engagements, handleLike, handleDoubleTapLike, handleComment, handleShare, handleSave, handleFollow, handleReport, handleViewDeal, handleInvestNow]\\n  );\\n\\n  const itemHeight = windowHeight;\\n\\n  return (\\n    <View style={styles.container}>\\n      <Stack.Screen options={{ headerShown: false }} />\\n\\n      {/* Top bar */}\\n      <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>\\n        <View style={styles.topRow}>\\n          <Text style={styles.headerTitle}>IVX Reels</Text>\\n          <View style={styles.tabs}>\\n            {CHANNELS.map((ch) => (\\n              <TouchableOpacity\\n                key={ch.id}\\n                style={[styles.tab, channel === ch.id && styles.tabActive]}\\n                onPress={() => setChannel(ch.id)}\\n                testID={`reels-channel-${ch.id}`}\\n              >\\n                <Text style={[styles.tabText, channel === ch.id && styles.tabTextActive]}>\\n                  {ch.label}{counts[ch.id] > 0 ? ` ${counts[ch.id]}` : ''}\\n                </Text>\\n              </TouchableOpacity>\\n            ))}\\n          </View>\\n          <TouchableOpacity onPress={() => router.back()} style={styles.closeBtn} testID=\\\"reels-close\\\">\\n            <X size={22} color=\\\"#fff\\\" />\\n          </TouchableOpacity>\\n        </View>\\n      </View>\\n\\n      {feedQuery.isLoading ? (\\n        <View style={styles.loading}>\\n          <ActivityIndicator size=\\\"large\\\" color={GOLD} />\\n        </View>\\n      ) : filteredVideos.length === 0 ? (\\n        <View style={styles.loading}>\\n          <Text style={styles.emptyText}>No videos available</Text>\\n        </View>\\n      ) : (\\n        <FlatList\\n          data={filteredVideos}\\n          keyExtractor={(v) => v.id}\\n          renderItem={renderItem}\\n          pagingEnabled\\n          decelerationRate=\\\"fast\\\"\\n          snapToInterval={itemHeight}\\n          snapToAlignment=\\\"start\\\"\\n          showsVerticalScrollIndicator={false}\\n          onViewableItemsChanged={playback.handleViewableItemsChanged}\\n          viewabilityConfig={playback.viewabilityConfig}\\n          initialNumToRender={2}\\n          maxToRenderPerBatch={3}\\n          windowSize={3}\\n          removeClippedSubviews\\n          getItemLayout={(_data, index) => ({ length: itemHeight, offset: itemHeight * index, index })}\\n          contentContainerStyle={{ paddingTop: 0 }}\\n        />\\n      )}\\n\\n      {toast && (\\n        <View style={styles.toast} pointerEvents=\\\"none\\\">\\n          <Text style={styles.toastText}>{toast}</Text>\\n        </View>\\n      )}\\n\\n      {commentsVideo && (\\n        <ProjectCommentsSheet\\n          visible={commentsVideo !== null}\\n          projectId={commentsVideo.id}\\n          comments={comments}\\n          totalComments={commentsTotal}\\n          isLoading={commentsLoading}\\n          onClose={() => setCommentsVideo(null)}\\n          onAddComment={handleAddComment}\\n          onDeleteComment={handleDeleteComment}\\n        />\\n      )}\\n\\n      {shareVideo && (\\n        <ProjectShareSheet\\n          visible={shareVideo !== null}\\n          projectId={shareVideo.id}\\n          projectTitle={shareVideo.title ?? 'IVX Property'}\\n          projectUrl={buildVideoShareUrl(shareVideo.id)}\\n          onClose={() => setShareVideo(null)}\\n          onShareTrack={handleShareTrack}\\n        />\\n      )}\\n    </View>\\n  );\\n}\\n\\nconst styles = StyleSheet.create({\\n  container: {\\n    flex: 1,\\n    backgroundColor: '#000',\\n  },\\n  topBar: {\\n    position: 'absolute',\\n    top: 0,\\n    left: 0,\\n    right: 0,\\n    zIndex: 30,\\n    paddingHorizontal: 10,\\n    paddingBottom: 10,\\n  },\\n  topRow: {\\n    flexDirection: 'row',\\n    alignItems: 'center',\\n    justifyContent: 'space-between',\\n    gap: 8,\\n  },\\n  headerTitle: {\\n    color: GOLD,\\n    fontSize: 20,\\n    fontWeight: '900' as const,\\n    letterSpacing: -0.3,\\n    textShadowColor: 'rgba(0,0,0,0.7)',\\n    textShadowOffset: { width: 0, height: 1 },\\n    textShadowRadius: 4,\\n  },\\n  closeBtn: {\\n    width: 38,\\n    height: 38,\\n    borderRadius: 19,\\n    backgroundColor: 'rgba(255,255,255,0.14)',\\n    alignItems: 'center',\\n    justifyContent: 'center',\\n  },\\n  tabs: {\\n    flex: 1,\\n    flexDirection: 'row',\\n    gap: 6,\\n    justifyContent: 'center',\\n  },\\n  tab: {\\n    flexShrink: 0,\\n    backgroundColor: 'rgba(255,255,255,0.14)',\\n    borderRadius: 999,\\n    paddingVertical: 7,\\n    paddingHorizontal: 14,\\n  },\\n  tabActive: {\\n    backgroundColor: GOLD,\\n  },\\n  tabText: {\\n    color: '#fff',\\n    fontSize: 13,\\n    fontWeight: '600',\\n  },\\n  tabTextActive: {\\n    color: '#000',\\n  },\\n  loading: {\\n    flex: 1,\\n    alignItems: 'center',\\n    justifyContent: 'center',\\n  },\\n  emptyText: {\\n    color: 'rgba(255,255,255,0.5)',\\n    fontSize: 15,\\n  },\\n  item: {\\n    width: '100%',\\n    backgroundColor: '#000',\\n    overflow: 'hidden',\\n  },\\n  progressBar: {\\n    position: 'absolute',\\n    bottom: 0,\\n    left: 0,\\n    right: 0,\\n    height: 3,\\n    backgroundColor: 'rgba(255,255,255,0.2)',\\n    zIndex: 21,\\n  },\\n  progressFill: {\\n    height: '100%',\\n    backgroundColor: GOLD,\\n  },\\n  centerPlay: {\\n    position: 'absolute',\\n    top: 0,\\n    left: 0,\\n    right: 0,\\n    bottom: 0,\\n    alignItems: 'center',\\n    justifyContent: 'center',\\n    zIndex: 25,\\n  },\\n  centerPlayCircle: {\\n    width: 64,\\n    height: 64,\\n    borderRadius: 32,\\n    backgroundColor: 'rgba(255,255,255,0.85)',\\n    alignItems: 'center',\\n    justifyContent: 'center',\\n  },\\n  burstHeart: {\\n    position: 'absolute',\\n    top: '50%',\\n    left: '50%',\\n    marginLeft: -48,\\n    marginTop: -48,\\n    zIndex: 26,\\n  },\\n  bottomGradient: {\\n    position: 'absolute',\\n    left: -14,\\n    right: -70,\\n    bottom: -32,\\n    height: 280,\\n    zIndex: -1,\\n  },\\n  rail: {\\n    position: 'absolute',\\n    right: 8,\\n    zIndex: 20,\\n    flexDirection: 'column',\\n    alignItems: 'center',\\n    gap: 18,\\n  },\\n  railBtn: {\\n    alignItems: 'center',\\n    justifyContent: 'center',\\n  },\\n  railCount: {\\n    color: '#fff',\\n    fontSize: 11,\\n    fontWeight: '600',\\n    marginTop: 4,\\n    textShadowColor: 'rgba(0,0,0,0.6)',\\n    textShadowOffset: { width: 0, height: 1 },\\n    textShadowRadius: 3,\\n  },\\n  info: {\\n    position: 'absolute',\\n    left: 14,\\n    right: 84,\\n    zIndex: 20,\\n  },\\n  badgeRow: {\\n    flexDirection: 'row',\\n    flexWrap: 'wrap',\\n    gap: 6,\\n    marginBottom: 8,\\n  },\\n  badgeInvestment: {\\n    backgroundColor: GOLD,\\n    borderRadius: 5,\\n    paddingVertical: 3,\\n    paddingHorizontal: 8,\\n    color: '#000',\\n    fontSize: 10,\\n    fontWeight: '800' as const,\\n    textTransform: 'uppercase' as const,\\n    letterSpacing: 0.4,\\n    overflow: 'hidden',\\n  },\\n  badgeActive: {\\n    backgroundColor: 'rgba(0,0,0,0.55)',\\n    borderWidth: 1,\\n    borderColor: GOLD,\\n    borderRadius: 5,\\n    paddingVertical: 3,\\n    paddingHorizontal: 8,\\n    color: GOLD,\\n    fontSize: 10,\\n    fontWeight: '800' as const,\\n    textTransform: 'uppercase' as const,\\n    letterSpacing: 0.4,\\n    overflow: 'hidden',\\n  },\\n  infoTitle: {\\n    color: '#fff',\\n    fontSize: 15,\\n    fontWeight: '700',\\n    lineHeight: 20,\\n    textShadowColor: 'rgba(0,0,0,0.7)',\\n    textShadowOffset: { width: 0, height: 1 },\\n    textShadowRadius: 4,\\n  },\\n  infoPropertyTitle: {\\n    color: '#fff',\\n    fontSize: 20,\\n    fontWeight: '800' as const,\\n    marginTop: 2,\\n    textShadowColor: 'rgba(0,0,0,0.7)',\\n    textShadowOffset: { width: 0, height: 1 },\\n    textShadowRadius: 4,\\n  },\\n  infoLocation: {\\n    color: 'rgba(255,255,255,0.85)',\\n    fontSize: 13,\\n    marginTop: 2,\\n    textShadowColor: 'rgba(0,0,0,0.7)',\\n    textShadowOffset: { width: 0, height: 1 },\\n    textShadowRadius: 4,\\n  },\\n  metricRow: {\\n    flexDirection: 'row',\\n    gap: 10,\\n    marginTop: 8,\\n    flexWrap: 'wrap',\\n  },\\n  metric: {\\n    alignItems: 'center',\\n  },\\n  metricValue: {\\n    color: GOLD,\\n    fontSize: 18,\\n    fontWeight: '800' as const,\\n  },\\n  metricLabel: {\\n    color: 'rgba(255,255,255,0.7)',\\n    fontSize: 10.5,\\n    fontWeight: '500',\\n    marginTop: 5,\\n    textTransform: 'uppercase' as const,\\n  },\\n  optionsRow: {\\n    flexDirection: 'row',\\n    gap: 14,\\n    marginTop: 10,\\n  },\\n  optionIcon: {\\n    alignItems: 'center',\\n  },\\n  optionIconCircle: {\\n    width: 38,\\n    height: 38,\\n    borderRadius: 19,\\n    borderWidth: 1.5,\\n    alignItems: 'center',\\n    justifyContent: 'center',\\n    backgroundColor: 'rgba(0,0,0,0.35)',\\n  },\\n  optionIconLabel: {\\n    color: '#fff',\\n    fontSize: 10,\\n    fontWeight: '600',\\n    marginTop: 4,\\n    textShadowColor: 'rgba(0,0,0,0.7)',\\n    textShadowOffset: { width: 0, height: 1 },\\n    textShadowRadius: 3,\\n  },\\n  ctaRowInner: {\\n    flexDirection: 'row',\\n    gap: 10,\\n    marginTop: 14,\\n  },\\n  viewDealBtn: {\\n    flex: 1,\\n    borderWidth: 1.5,\\n    borderColor: GOLD,\\n    borderRadius: 999,\\n    paddingVertical: 12,\\n    alignItems: 'center',\\n    backgroundColor: 'rgba(0,0,0,0.45)',\\n  },\\n  viewDealText: {\\n    color: GOLD,\\n    fontSize: 15,\\n    fontWeight: '700',\\n  },\\n  investNowBtn: {\\n    flex: 1,\\n    backgroundColor: GOLD,\\n    borderRadius: 999,\\n    paddingVertical: 12,\\n    alignItems: 'center',\\n  },\\n  investNowText: {\\n    color: '#000',\\n    fontSize: 15,\\n    fontWeight: '700',\\n  },\\n  toast: {\\n    position: 'absolute',\\n    bottom: 100,\\n    left: 0,\\n    right: 0,\\n    alignItems: 'center',\\n    zIndex: 60,\\n  },\\n  toastText: {\\n    backgroundColor: 'rgba(20,20,20,0.92)',\\n    color: '#fff',\\n    borderRadius: 999,\\n    paddingVertical: 10,\\n    paddingHorizontal: 18,\\n    fontSize: 13,\\n    fontWeight: '600',\\n  },\\n});\\n\", \"filePath\": \"expo/app/videos.tsx\"}",
       "createdAt": 1783950226477,
-      "completedAt": 1783950285498
+      "completedAt": 1783950285498,
+      "compactedAt": 1783956415759
     },
     {
       "type": "reasoning",
@@ -3755,7 +3800,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"tasks\": [{\"content\": \"Phase 2: Audit all existing reels/video/media code across repo\", \"status\": \"completed\", \"activeForm\": \"Auditing all existing reels/video/media code across repo\"}, {\"content\": \"Phase 1: Capture crash root cause from existing code and logs\", \"status\": \"completed\", \"activeForm\": \"Capturing crash root cause from existing code and logs\"}, {\"content\": \"Create hooks: useAppForeground, useNetworkState, useReelPlayback, useReelEngagement, useMediaDiagnostics\", \"status\": \"completed\", \"activeForm\": \"Building hooks\"}, {\"content\": \"Create ReelVideoPlayer.tsx with proper lifecycle management\", \"status\": \"completed\", \"activeForm\": \"Building ReelVideoPlayer component\"}, {\"content\": \"Create ReelErrorBoundary for per-item crash isolation\", \"status\": \"completed\", \"activeForm\": \"Creating ReelErrorBoundary\"}, {\"content\": \"Enhance SafeVideo with poster fallback, retry, and error recovery\", \"status\": \"completed\", \"activeForm\": \"Enhancing SafeVideo\"}, {\"content\": \"Refactor DealVideoCard to use SafeVideo\", \"status\": \"completed\", \"activeForm\": \"Refactoring DealVideoCard\"}, {\"content\": \"Fix InstagramProjectCard to use SafeVideo\", \"status\": \"completed\", \"activeForm\": \"Fixing InstagramProjectCard\"}, {\"content\": \"Refactor videos.tsx with Instagram-style player lifecycle\", \"status\": \"completed\", \"activeForm\": \"Refactoring videos.tsx\"}, {\"content\": \"Run TypeScript, lint, and build verification\", \"status\": \"in_progress\", \"activeForm\": \"Running TypeScript, lint, and build verification\"}, {\"content\": \"Compile final status report\", \"status\": \"pending\", \"activeForm\": \"Compiling final status report\"}]}",
       "createdAt": 1783950295414,
-      "completedAt": 1783950298355
+      "completedAt": 1783950298355,
+      "compactedAt": 1783956415759
     },
     {
       "type": "reasoning",
@@ -3783,7 +3829,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app/expo && npx tsc --noEmit --pretty 2>&1 | head -80\"}",
       "createdAt": 1783950302444,
-      "completedAt": 1783950302448
+      "completedAt": 1783950302448,
+      "compactedAt": 1783956415759
     },
     {
       "type": "reasoning",
@@ -3808,7 +3855,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app/expo && bun x tsc --noEmit --pretty 2>&1 | head -100\"}",
       "createdAt": 1783950305636,
-      "completedAt": 1783950362905
+      "completedAt": 1783950362905,
+      "compactedAt": 1783956415759
     },
     {
       "type": "reasoning",
@@ -3839,7 +3887,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"expo/components/InstagramProjectCard.tsx\", \"limit\": 25, \"offset\": 230}",
       "createdAt": 1783950367688,
-      "completedAt": 1783950367693
+      "completedAt": 1783950367693,
+      "compactedAt": 1783956415759
     },
     {
       "type": "reasoning",
@@ -3870,7 +3919,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"expo/components/InstagramProjectCard.tsx\", \"limit\": 40, \"offset\": 93}",
       "createdAt": 1783950374679,
-      "completedAt": 1783950374967
+      "completedAt": 1783950374967,
+      "compactedAt": 1783956415759
     },
     {
       "type": "reasoning",
@@ -3901,7 +3951,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"expo/components/InstagramProjectCard.tsx\", \"limit\": 80, \"offset\": 230}",
       "createdAt": 1783950387795,
-      "completedAt": 1783950388424
+      "completedAt": 1783950388424,
+      "compactedAt": 1783956415759
     },
     {
       "type": "reasoning",
@@ -3946,7 +3997,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"edits\": [{\"oldString\": \"  const [isVideoPlaying, setIsVideoPlaying] = useState(false);\\n  const [isVideoMuted, setIsVideoMuted] = useState(true);\\n  const [videoProgress, setVideoProgress] = useState(0);\\n  const [isVideoFullscreen, setIsVideoFullscreen] = useState(false);\\n  const [watchedSeconds, setWatchedSeconds] = useState(0);\\n  const videoRef = useRef<Video>(null);\", \"newString\": \"  const [shouldPlayVideo, setShouldPlayVideo] = useState(false);\\n  const [isVideoPlaying, setIsVideoPlaying] = useState(false);\\n  const [isVideoMuted, setIsVideoMuted] = useState(true);\\n  const [videoProgress, setVideoProgress] = useState(0);\\n  const [isVideoFullscreen, setIsVideoFullscreen] = useState(false);\\n  const [watchedSeconds, setWatchedSeconds] = useState(0);\", \"replaceAll\": false}, {\"oldString\": \"  const handleVideoPlaybackStatus = useCallback((status: AVPlaybackStatus) => {\\n    if (!status.isLoaded) return;\\n    setIsVideoPlaying(status.isPlaying);\\n    if (status.durationMillis && status.positionMillis) {\\n      setVideoProgress(status.positionMillis / status.durationMillis);\\n      if (status.isPlaying) {\\n        setWatchedSeconds(prev => {\\n          const newVal = prev + 0.5;\\n          if (newVal >= 5 && prev < 5) {\\n            void trackVideoView(deal.id, newVal);\\n          }\\n          return newVal;\\n        });\\n      }\\n    }\\n  }, [deal.id]);\\n\\n  const togglePlayPause = useCallback(async () => {\\n    if (!videoRef.current) return;\\n    const status = await videoRef.current.getStatusAsync();\\n    if (!status.isLoaded) return;\\n    if (status.isPlaying) {\\n      await videoRef.current.pauseAsync();\\n    } else {\\n      await videoRef.current.playAsync();\\n    }\\n  }, []);\\n\\n  const toggleMute = useCallback(async () => {\\n    if (!videoRef.current) return;\\n    const next = !isVideoMuted;\\n    await videoRef.current.setIsMutedAsync(next);\\n    setIsVideoMuted(next);\\n  }, [isVideoMuted]);\", \"newString\": \"  const handleVideoPlaybackStatus = useCallback((status: { isPlaying: boolean; durationMillis: number; positionMillis: number }) => {\\n    setIsVideoPlaying(status.isPlaying);\\n    if (status.durationMillis && status.positionMillis) {\\n      setVideoProgress(status.positionMillis / status.durationMillis);\\n      if (status.isPlaying) {\\n        setWatchedSeconds(prev => {\\n          const newVal = prev + 0.5;\\n          if (newVal >= 5 && prev < 5) {\\n            void trackVideoView(deal.id, newVal);\\n          }\\n          return newVal;\\n        });\\n      }\\n    }\\n  }, [deal.id]);\\n\\n  const togglePlayPause = useCallback(() => {\\n    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);\\n    setShouldPlayVideo(prev => !prev);\\n  }, []);\\n\\n  const toggleMute = useCallback(() => {\\n    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);\\n    setIsVideoMuted(prev => !prev);\\n  }, []);\", \"replaceAll\": false}, {\"oldString\": \"            <SafeVideo\\n              uri={activeVideo.video_url}\\n              posterUri={activeVideo.thumbnail_url ?? null}\\n              style={[styles.video, { height: compact ? 200 : 260 }]}\\n              resizeMode={ResizeMode.COVER}\\n              shouldPlay={false}\\n              isMuted={isVideoMuted}\\n              isLooping\\n              onPlaybackStatusUpdate={handleVideoPlaybackStatus}\\n              testID={`instagram-card-video-${deal.id}`}\\n            />\", \"newString\": \"            <SafeVideo\\n              uri={activeVideo.video_url}\\n              posterUri={activeVideo.thumbnail_url ?? null}\\n              style={[styles.video, { height: compact ? 200 : 260 }]}\\n              resizeMode={ResizeMode.COVER}\\n              shouldPlay={shouldPlayVideo}\\n              isMuted={isVideoMuted}\\n              isLooping\\n              onPlaybackStatusUpdate={handleVideoPlaybackStatus}\\n              testID={`instagram-card-video-${deal.id}`}\\n            />\", \"replaceAll\": false}], \"filePath\": \"expo/components/InstagramProjectCard.tsx\"}",
       "createdAt": 1783950394383,
-      "completedAt": 1783950406623
+      "completedAt": 1783950406623,
+      "compactedAt": 1783956415759
     },
     {
       "type": "reasoning",
@@ -3976,7 +4028,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app/expo && bun x tsc --noEmit --pretty 2>&1 | head -80\"}",
       "createdAt": 1783950412263,
-      "completedAt": 1783950470583
+      "completedAt": 1783950470583,
+      "compactedAt": 1783956415759
     },
     {
       "type": "reasoning",
@@ -4006,7 +4059,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app/expo && bun run lint 2>&1 | tail -30\"}",
       "createdAt": 1783950474158,
-      "completedAt": 1783950503821
+      "completedAt": 1783950503821,
+      "compactedAt": 1783956415759
     },
     {
       "type": "tool",
@@ -4024,7 +4078,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app/expo && bun x tsc --noEmit 2>&1 | wc -l\"}",
       "createdAt": 1783950474329,
-      "completedAt": 1783950563834
+      "completedAt": 1783950563834,
+      "compactedAt": 1783956415759
     },
     {
       "type": "reasoning",
@@ -4054,7 +4109,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app/expo && bun run lint 2>&1 | grep -E \\\"ReelVideoPlayer|ReelErrorBoundary|useReelPlayback|useReelEngagement|useAppForeground|useNetworkState|useMediaDiagnostics|useReelsFeed|SafeVideo|DealVideoCard|InstagramProjectCard|app/videos\\\" | head -20\"}",
       "createdAt": 1783950570945,
-      "completedAt": 1783950573565
+      "completedAt": 1783950573565,
+      "compactedAt": 1783956415759
     },
     {
       "type": "text",
@@ -4077,7 +4133,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app/expo && bun run lint 2>&1 | grep -A2 -E \\\"app/videos|ReelVideoPlayer|ReelErrorBoundary|useReelPlayback|useReelEngagement|useAppForeground|useNetworkState|useMediaDiagnostics|useReelsFeed\\\" | head -40\"}",
       "createdAt": 1783950577545,
-      "completedAt": 1783950579520
+      "completedAt": 1783950579520,
+      "compactedAt": 1783956415759
     },
     {
       "type": "reasoning",
@@ -4112,7 +4169,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"edits\": [{\"oldString\": \"import {\\n  View,\\n  Text,\\n  StyleSheet,\\n  FlatList,\\n  TouchableOpacity,\\n  ActivityIndicator,\\n  useWindowDimensions,\\n  Platform,\\n  Alert,\\n  type ViewToken,\\n} from 'react-native';\\nimport { Stack, useRouter, useLocalSearchParams } from 'expo-router';\\nimport { useSafeAreaInsets } from 'react-native-safe-area-context';\\nimport { ResizeMode } from 'expo-av';\\nimport { LinearGradient } from 'expo-linear-gradient';\", \"newString\": \"import {\\n  View,\\n  Text,\\n  StyleSheet,\\n  FlatList,\\n  TouchableOpacity,\\n  ActivityIndicator,\\n  useWindowDimensions,\\n  Platform,\\n  Alert,\\n} from 'react-native';\\nimport { Stack, useRouter, useLocalSearchParams } from 'expo-router';\\nimport { useSafeAreaInsets } from 'react-native-safe-area-context';\\nimport { LinearGradient } from 'expo-linear-gradient';\", \"replaceAll\": false}], \"filePath\": \"expo/app/videos.tsx\"}",
       "createdAt": 1783950582642,
-      "completedAt": 1783950584761
+      "completedAt": 1783950584761,
+      "compactedAt": 1783956415759
     },
     {
       "type": "tool",
@@ -4135,7 +4193,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"edits\": [{\"oldString\": \"import { View, Text, Image, ActivityIndicator, StyleSheet, TouchableOpacity, Platform } from 'react-native';\", \"newString\": \"import { View, Text, Image, StyleSheet, Platform } from 'react-native';\", \"replaceAll\": false}], \"filePath\": \"expo/components/ReelVideoPlayer.tsx\"}",
       "createdAt": 1783950583676,
-      "completedAt": 1783950584763
+      "completedAt": 1783950584763,
+      "compactedAt": 1783956415759
     },
     {
       "type": "tool",
@@ -4153,7 +4212,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app/expo && bun run lint 2>&1 | grep -A2 -E \\\"app/videos|ReelVideoPlayer|ReelErrorBoundary|useReelPlayback|useReelEngagement|useAppForeground|useNetworkState|useMediaDiagnostics|useReelsFeed\\\" | head -20\"}",
       "createdAt": 1783950586460,
-      "completedAt": 1783950589734
+      "completedAt": 1783950589734,
+      "compactedAt": 1783956415759
     },
     {
       "type": "reasoning",
@@ -4188,7 +4248,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"edits\": [{\"newString\": \"import {\\n  toggleVideoSave,\\n  toggleVideoFollow,\\n  reportVideo,\\n  trackVideoEvent,\\n  getViewerId,\\n  buildVideoShareUrl,\\n} from '@/lib/video-platform';\\nimport ProjectCommentsSheet from '@/components/ProjectCommentsSheet';\\nimport ProjectShareSheet from '@/components/ProjectShareSheet';\\nimport ReelVideoPlayer from '@/components/ReelVideoPlayer';\\nimport { useReelPlayback } from '@/hooks/useReelPlayback';\\nimport { useReelEngagement, type EngagementState } from '@/hooks/useReelEngagement';\\nimport {\\n  fetchProjectComments,\\n  addProjectComment,\\n  deleteProjectComment,\\n  type ProjectComment,\\n} from '@/lib/project-engagement';\", \"oldString\": \"import {\\n  toggleProjectLike,\\n  trackProjectShare,\\n  fetchProjectComments,\\n  addProjectComment,\\n  deleteProjectComment,\\n  type ProjectComment,\\n} from '@/lib/project-engagement';\\nimport {\\n  toggleVideoSave,\\n  toggleVideoFollow,\\n  reportVideo,\\n  trackVideoEvent,\\n  getViewerId,\\n  buildVideoShareUrl,\\n} from '@/lib/video-platform';\\nimport ProjectCommentsSheet from '@/components/ProjectCommentsSheet';\\nimport ProjectShareSheet from '@/components/ProjectShareSheet';\\nimport ReelVideoPlayer from '@/components/ReelVideoPlayer';\\nimport { useReelPlayback } from '@/hooks/useReelPlayback';\\nimport { useReelEngagement, type EngagementState } from '@/hooks/useReelEngagement';\", \"replaceAll\": false}], \"filePath\": \"expo/app/videos.tsx\"}",
       "createdAt": 1783950594163,
-      "completedAt": 1783950601498
+      "completedAt": 1783950601498,
+      "compactedAt": 1783956415759
     },
     {
       "type": "tool",
@@ -4216,7 +4277,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"edits\": [{\"newString\": \"import { WifiOff } from 'lucide-react-native';\", \"oldString\": \"import { Play, RefreshCw, WifiOff } from 'lucide-react-native';\", \"replaceAll\": false}, {\"newString\": \"import { useNetworkState } from '@/hooks/useNetworkState';\\n\\ninterface ReelVideoPlayerProps {\", \"oldString\": \"import { useNetworkState } from '@/hooks/useNetworkState';\\n\\ninterface ReelVideoPlayerProps {\", \"replaceAll\": false}], \"filePath\": \"expo/components/ReelVideoPlayer.tsx\"}",
       "createdAt": 1783950599916,
-      "completedAt": 1783950601500
+      "completedAt": 1783950601500,
+      "compactedAt": 1783956415759
     },
     {
       "type": "reasoning",
@@ -4246,7 +4308,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app/expo && bun run lint 2>&1 | grep -A2 -E \\\"app/videos|ReelVideoPlayer|ReelErrorBoundary|useReelPlayback|useReelEngagement|useAppForeground|useNetworkState|useMediaDiagnostics|useReelsFeed|SafeVideo|DealVideoCard|InstagramProjectCard\\\" | head -30\"}",
       "createdAt": 1783950609490,
-      "completedAt": 1783950613233
+      "completedAt": 1783950613233,
+      "compactedAt": 1783956415759
     },
     {
       "type": "tool",
@@ -4264,7 +4327,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app/expo && timeout 55 bun x tsc --noEmit 2>&1 | head -20\"}",
       "createdAt": 1783950610264,
-      "completedAt": 1783950668383
+      "completedAt": 1783950668383,
+      "compactedAt": 1783956415759
     },
     {
       "type": "reasoning",
@@ -4295,7 +4359,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"expo/app/videos.tsx\", \"limit\": 20, \"offset\": 43}",
       "createdAt": 1783950673753,
-      "completedAt": 1783950673758
+      "completedAt": 1783950673758,
+      "compactedAt": 1783956415759
     },
     {
       "type": "reasoning",
@@ -4330,7 +4395,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"edits\": [{\"oldString\": \"import {\\n  toggleVideoSave,\\n  toggleVideoFollow,\\n  reportVideo,\\n  trackVideoEvent,\\n  getViewerId,\\n  buildVideoShareUrl,\\n} from '@/lib/video-platform';\", \"newString\": \"import {\\n  toggleVideoFollow,\\n  reportVideo,\\n  getViewerId,\\n  buildVideoShareUrl,\\n} from '@/lib/video-platform';\", \"replace\": false}], \"filePath\": \"expo/app/videos.tsx\"}",
       "createdAt": 1783950679402,
-      "completedAt": 1783950680621
+      "completedAt": 1783950680621,
+      "compactedAt": 1783956415759
     },
     {
       "type": "tool",
@@ -4358,7 +4424,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"edits\": [{\"oldString\": \"import { WifiOff } from 'lucide-react-native';\\nimport Colors from '@/constants/colors';\", \"newString\": \"import { WifiOff } from 'lucide-react-native';\", \"replace\": false}, {\"oldString\": \"  const [showTapToPlay, setShowTapToPlay] = useState<boolean>(false);\", \"newString\": \"  const [showTapToPlay, setShowTapToPlay] = useState<boolean>(false);\\n  void showTapToPlay;\", \"replace\": false}], \"filePath\": \"expo/components/ReelVideoPlayer.tsx\"}",
       "createdAt": 1783950680255,
-      "completedAt": 1783950680623
+      "completedAt": 1783950680623,
+      "compactedAt": 1783956415759
     },
     {
       "type": "reasoning",
@@ -4388,7 +4455,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app/expo && bun run lint 2>&1 | grep -A2 -E \\\"^/home/user/rork-app/expo/(app/videos|components/ReelVideoPlayer|components/ReelErrorBoundary|components/SafeVideo|hooks/useReel|hooks/useAppForeground|hooks/useNetworkState|hooks/useMediaDiagnostics|hooks/useReelsFeed)\\\" | head -30\"}",
       "createdAt": 1783950683867,
-      "completedAt": 1783950686378
+      "completedAt": 1783950686378,
+      "compactedAt": 1783956415759
     },
     {
       "type": "tool",
@@ -4406,7 +4474,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app/expo && timeout 55 bun x tsc --noEmit 2>&1 | head -10\"}",
       "createdAt": 1783950683877,
-      "completedAt": 1783950741547
+      "completedAt": 1783950741547,
+      "compactedAt": 1783956415759
     },
     {
       "type": "reasoning",
@@ -4441,7 +4510,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"edits\": [{\"newString\": \"  const params = useLocalSearchParams<{ type?: string }>();\\n  void params;\", \"oldString\": \"  const params = useLocalSearchParams<{ type?: string }>();\"}], \"filePath\": \"expo/app/videos.tsx\"}",
       "createdAt": 1783950745169,
-      "completedAt": 1783950747416
+      "completedAt": 1783950747416,
+      "compactedAt": 1783956415759
     },
     {
       "type": "tool",
@@ -4464,7 +4534,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"edits\": [{\"newString\": \"  const handleTapResume = useCallback(() => {\\n    setShowTapToPlay(false);\\n  }, []);\\n  void handleTapResume;\", \"oldString\": \"  const handleTapResume = useCallback(() => {\\n    setShowTapToPlay(false);\\n  }, []);\"}], \"filePath\": \"expo/components/ReelVideoPlayer.tsx\"}",
       "createdAt": 1783950745171,
-      "completedAt": 1783950747418
+      "completedAt": 1783950747418,
+      "compactedAt": 1783956415759
     },
     {
       "type": "reasoning",
@@ -4494,7 +4565,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app/expo && bun run lint 2>&1 | grep -A2 -E \\\"^/home/user/rork-app/expo/(app/videos|components/ReelVideoPlayer|components/ReelErrorBoundary|components/SafeVideo|hooks/useReel|hooks/useAppForeground|hooks/useNetworkState|hooks/useMediaDiagnostics|hooks/useReelsFeed)\\\" | head -30\"}",
       "createdAt": 1783950750753,
-      "completedAt": 1783950753844
+      "completedAt": 1783950753844,
+      "compactedAt": 1783956415759
     },
     {
       "type": "tool",
@@ -4512,7 +4584,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app/expo && timeout 55 bun x tsc --noEmit 2>&1 | head -10\"}",
       "createdAt": 1783950750765,
-      "completedAt": 1783950809037
+      "completedAt": 1783950809037,
+      "compactedAt": 1783956415759
     },
     {
       "type": "reasoning",
@@ -4543,7 +4616,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"expo/components/SafeVideo.tsx\", \"limit\": 15, \"offset\": 68}",
       "createdAt": 1783950817285,
-      "completedAt": 1783950817749
+      "completedAt": 1783950817749,
+      "compactedAt": 1783956415759
     },
     {
       "type": "reasoning",
@@ -4578,7 +4652,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"edits\": [{\"oldString\": \"  // Unload the player when unmounting to free native resources.\\n  useEffect(() => {\\n    return () => {\\n      try {\\n        void videoRef.current?.unloadAsync();\\n      } catch {\\n        // ignore — player may already be gone\\n      }\\n    };\\n  }, []);\", \"newString\": \"  // Unload the player when unmounting to free native resources.\\n  // Capture the ref at effect creation time so the cleanup function\\n  // uses the correct player instance even if the ref has changed.\\n  useEffect(() => {\\n    const player = videoRef.current;\\n    return () => {\\n      try {\\n        void player?.unloadAsync();\\n      } catch {\\n        // ignore — player may already be gone\\n      }\\n    };\\n  }, []);\"}], \"filePath\": \"expo/components/SafeVideo.tsx\"}",
       "createdAt": 1783950824484,
-      "completedAt": 1783950829247
+      "completedAt": 1783950829247,
+      "compactedAt": 1783956415759
     },
     {
       "type": "reasoning",
@@ -4608,7 +4683,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app/expo && bun run lint 2>&1 | grep -A2 -E \\\"^/home/user/rork-app/expo/(app/videos|components/ReelVideoPlayer|components/ReelErrorBoundary|components/SafeVideo|hooks/useReel|hooks/useAppForeground|hooks/useNetworkState|hooks/useMediaDiagnostics|hooks/useReelsFeed)\\\" | head -20\"}",
       "createdAt": 1783950834362,
-      "completedAt": 1783950837134
+      "completedAt": 1783950837134,
+      "compactedAt": 1783956415759
     },
     {
       "type": "tool",
@@ -4626,7 +4702,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app/expo && timeout 55 bun x tsc --noEmit 2>&1 | head -10\"}",
       "createdAt": 1783950835277,
-      "completedAt": 1783950892273
+      "completedAt": 1783950892273,
+      "compactedAt": 1783956415759
     },
     {
       "type": "text",
@@ -4759,7 +4836,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"tasks\": [{\"activeForm\": \"Auditing all existing reels/video/media code across repo\", \"content\": \"Phase 2: Audit all existing reels/video/media code across repo\", \"status\": \"completed\"}, {\"activeForm\": \"Capturing crash root cause from existing code and logs\", \"content\": \"Phase 1: Capture crash root cause from existing code and logs\", \"status\": \"completed\"}, {\"activeForm\": \"Building hooks\", \"content\": \"Create hooks: useAppForeground, useNetworkState, useReelPlayback, useReelEngagement, useMediaDiagnostics\", \"status\": \"completed\"}, {\"activeForm\": \"Building ReelVideoPlayer component\", \"content\": \"Create ReelVideoPlayer.tsx with proper lifecycle management\", \"status\": \"completed\"}, {\"activeForm\": \"Creating ReelErrorBoundary\", \"content\": \"Create ReelErrorBoundary for per-item crash isolation\", \"status\": \"completed\"}, {\"activeForm\": \"Enhancing SafeVideo\", \"content\": \"Enhance SafeVideo with poster fallback, retry, and error recovery\", \"status\": \"completed\"}, {\"activeForm\": \"Refactoring DealVideoCard\", \"content\": \"Refactor DealVideoCard to use SafeVideo\", \"status\": \"completed\"}, {\"activeForm\": \"Fixing InstagramProjectCard\", \"content\": \"Fix InstagramProjectCard to use SafeVideo\", \"status\": \"completed\"}, {\"activeForm\": \"Refactoring videos.tsx\", \"content\": \"Refactor videos.tsx with Instagram-style player lifecycle\", \"status\": \"completed\"}, {\"activeForm\": \"Running TypeScript, lint, and build verification\", \"content\": \"Run TypeScript, lint, and build verification\", \"status\": \"completed\"}, {\"activeForm\": \"Compiling final status report\", \"content\": \"Compile final status report\", \"status\": \"completed\"}]}",
       "createdAt": 1783950894760,
-      "completedAt": 1783950897659
+      "completedAt": 1783950897659,
+      "compactedAt": 1783956415759
     },
     {
       "type": "reasoning",
