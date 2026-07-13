@@ -12,6 +12,7 @@ import { useMutation } from '@tanstack/react-query';
 import { FileText, ImageIcon, Mic, Send, Square, Video } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { transcribeAudioRecording } from '@/src/modules/ivx-owner-ai/services/ivxMultimodalService';
+import { useWebKeyboard, scrollInputIntoView } from '@/hooks/useWebKeyboard';
 import { guessUploadFileType, uploadService } from '../services/uploadService';
 import type { CapabilityState, ChatFileType, UploadableFile } from '../types/chat';
 
@@ -79,6 +80,7 @@ export function Composer({
   const [text, setText] = useState<string>('');
   const textRef = useRef<string>('');
   const inputRef = useRef<TextInput | null>(null);
+  const { keyboardHeight: webKeyboardHeight } = useWebKeyboard();
   const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recorderState = useAudioRecorderState(audioRecorder);
 
@@ -241,7 +243,7 @@ export function Composer({
   }, [isRecording, startVoiceRecording, stopVoiceRecording]);
 
   return (
-    <View style={[styles.container, { paddingBottom: containerPaddingBottom }]} testID="chat-composer">
+    <View style={[styles.container, { paddingBottom: Platform.OS === 'web' ? Math.max(containerPaddingBottom, webKeyboardHeight) : containerPaddingBottom }]} testID="chat-composer">
       <View style={styles.inputShell}>
         <TextInput
           ref={inputRef}
@@ -254,7 +256,13 @@ export function Composer({
               onTyping?.();
             }
           }}
-          onFocus={onFocus}
+          onFocus={() => {
+            onFocus?.();
+            if (Platform.OS === 'web') {
+              const el = (inputRef.current as unknown as { _inputRef?: { current?: HTMLElement } } | null)?._inputRef?.current ?? null;
+              scrollInputIntoView(el);
+            }
+          }}
           placeholder="Write a message"
           placeholderTextColor="#B8C0CC"
           style={styles.input}
@@ -372,6 +380,15 @@ const styles = StyleSheet.create({
     paddingBottom: 6,
     fontSize: 14,
     lineHeight: 18,
+    ...(Platform.OS === 'web'
+      ? ({
+          // @ts-ignore: web-only CSS properties for Samsung keyboard fix
+          touchAction: 'manipulation',
+          userSelect: 'text',
+          WebkitUserSelect: 'text',
+          outlineStyle: 'none',
+        } as any)
+      : {}),
   },
   sendButton: {
     width: 32,

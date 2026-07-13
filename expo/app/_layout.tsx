@@ -1,12 +1,13 @@
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import React, { useEffect, Component, type ReactNode } from "react";
-import { StyleSheet, View, Text } from "react-native";
+import { StyleSheet, View, Text, Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 // Diagnostic error boundary — shows the FULL crash on screen
 import { DiagnosticErrorBoundary } from "@/components/DiagnosticErrorBoundary";
+import { injectWebKeyboardCSS } from "@/hooks/useWebKeyboard";
 
 // Static imports — all providers with per-provider error boundaries
 import { I18nProvider } from "@/lib/i18n-context";
@@ -57,6 +58,10 @@ class ProviderBoundary extends Component<ProviderBoundaryProps, ProviderBoundary
 
 export default function RootLayout() {
   useEffect(() => {
+    // Inject Samsung keyboard CSS on web — ensures inputs are focusable
+    // and editable on Samsung Internet / Android Chrome.
+    injectWebKeyboardCSS();
+
     // Defer all startup instrumentation to after first paint.
     // These modules (incident capture, owner AI watchdog) are owner-only
     // and should not block the initial bundle download or app boot.
@@ -91,7 +96,10 @@ export default function RootLayout() {
 
   return (
     <DiagnosticErrorBoundary>
-      <GestureHandlerRootView style={styles.root}>
+      <GestureHandlerRootView
+        style={styles.root}
+        {...(Platform.OS === 'web' ? { touchAction: 'auto' as const } : {})}
+      >
         <QueryClientProvider client={queryClient}>
           <ProviderBoundary name="I18n">
             <I18nProvider>

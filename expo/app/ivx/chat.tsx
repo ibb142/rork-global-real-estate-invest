@@ -38,6 +38,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Activity, ChevronDown, ClipboardList, Cpu, Crosshair, Crown, Gauge, GitBranch, KeyRound, LayoutDashboard, LineChart, Lock, Mail, Megaphone, MessageCircle, Mic, Paperclip, Pin, PlayCircle, Radar, Radio, Rocket, Search, Send, ShieldCheck, Sparkles, Square, Terminal, Unplug, Upload, UserPlus, Users, X } from 'lucide-react-native';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import { SafeIcon } from '@/lib/safe-icon';
+import { useWebKeyboard, scrollInputIntoView } from '@/hooks/useWebKeyboard';
 import Colors from '@/constants/colors';
 import { IVX_OWNER_AI_PROFILE, IVX_OWNER_AI_ROOM_ID } from '@/constants/ivx-owner-ai';
 import { useAuth } from '@/lib/auth-context';
@@ -4819,6 +4820,7 @@ export default function IVXOwnerChatRoute() {
     android: 'height',
     default: undefined,
   });
+  const { keyboardHeight: webKeyboardHeight } = useWebKeyboard();
   const keyboardVerticalOffset = useMemo<number>(() => {
     if (Platform.OS !== 'ios') {
       return 0;
@@ -6373,6 +6375,10 @@ export default function IVXOwnerChatRoute() {
                   onFocus={() => {
                     scrollOwnerThreadToEnd(true);
                     setTimeout(() => scrollOwnerThreadToEnd(true), Platform.OS === 'android' ? 420 : 220);
+                    if (Platform.OS === 'web') {
+                      const el = (composerInputRef.current as unknown as { _inputRef?: { current?: HTMLElement } } | null)?._inputRef?.current ?? null;
+                      scrollInputIntoView(el);
+                    }
                   }}
                   onSubmitEditing={(event) => {
                     const submittedText = normalizeComposerText(event?.nativeEvent?.text, composerValueRef.current);
@@ -8327,6 +8333,15 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#46505E',
     minWidth: 0,
+    ...(Platform.OS === 'web'
+      ? ({
+          // @ts-ignore: web-only CSS properties for Samsung keyboard fix
+          touchAction: 'manipulation',
+          userSelect: 'text',
+          WebkitUserSelect: 'text',
+          outlineStyle: 'none',
+        } as any)
+      : {}),
   },
   composerSecondaryRow: {
     flexDirection: 'row',

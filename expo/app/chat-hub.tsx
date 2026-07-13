@@ -35,6 +35,7 @@ import {
   type PublicHealthResponse,
 } from '@/lib/public-chat';
 import { usePublicChatSession } from '@/lib/public-chat-session-context';
+import { useWebKeyboard, scrollInputIntoView } from '@/hooks/useWebKeyboard';
 import type { ChatMessage } from '@/types';
 
 type ConnectionTone = 'live' | 'warn' | 'error';
@@ -156,8 +157,10 @@ export default function ChatHubScreen() {
   const { width } = useWindowDimensions();
   const isCompact = width < 430;
   const listRef = useRef<FlatList<ChatMessage> | null>(null);
+  const composerInputRef = useRef<TextInput | null>(null);
   const pulse = useRef(new Animated.Value(0.96)).current;
   const { sessionId, clientId, isHydrated, setActiveSession, startNewSession } = usePublicChatSession();
+  const { keyboardHeight: webKeyboardHeight } = useWebKeyboard();
   const [composerValue, setComposerValue] = useState<string>('');
   const [messages, setMessages] = useState<ChatMessage[]>(() => [createWelcomeMessage()]);
   const [latestResponse, setLatestResponse] = useState<PublicChatApiResponse | null>(null);
@@ -390,7 +393,7 @@ export default function ChatHubScreen() {
         />
         <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
           <KeyboardAvoidingView
-            style={styles.keyboardView}
+            style={[styles.keyboardView, Platform.OS === 'web' && { paddingBottom: webKeyboardHeight }]}
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           >
             <View style={styles.headerShell}>
@@ -499,6 +502,7 @@ export default function ChatHubScreen() {
                 <View style={styles.composerInputWrap}>
                   <Text style={styles.fieldLabel}>Message</Text>
                   <TextInput
+                    ref={composerInputRef}
                     value={composerValue}
                     onChangeText={setComposerValue}
                     placeholder="Ask IVX AI a question"
@@ -508,6 +512,12 @@ export default function ChatHubScreen() {
                     editable={!sendMutation.isPending && isHydrated}
                     style={styles.composerInput}
                     testID="public-chat-message-input"
+                    onFocus={() => {
+                      if (Platform.OS === 'web') {
+                        const el = (composerInputRef.current as unknown as { _inputRef?: { current?: HTMLElement } } | null)?._inputRef?.current ?? null;
+                        scrollInputIntoView(el);
+                      }
+                    }}
                   />
                 </View>
                 <Pressable
@@ -833,6 +843,15 @@ const styles = StyleSheet.create({
     lineHeight: 21,
     paddingTop: 0,
     paddingBottom: 0,
+    ...(Platform.OS === 'web'
+      ? ({
+          // @ts-ignore: web-only CSS properties for Samsung keyboard fix
+          touchAction: 'manipulation',
+          userSelect: 'text',
+          WebkitUserSelect: 'text',
+          outlineStyle: 'none',
+        } as any)
+      : {}),
   },
   sendButton: {
     width: 48,

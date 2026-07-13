@@ -40,6 +40,7 @@ import {
   uploadChatAttachment,
 } from '@/lib/chat-attachments';
 import { loadChatHistory, saveChatHistory } from '@/lib/chat-persistence';
+import { useWebKeyboard, scrollInputIntoView } from '@/hooks/useWebKeyboard';
 
 type ConnectionStatus = 'connecting' | 'connected' | 'waiting';
 
@@ -111,6 +112,8 @@ export default function InvestorSupportChat({
   const [isAiTyping, setIsAiTyping] = useState<boolean>(false);
   const [isEscalating, setIsEscalating] = useState<boolean>(false);
   const [isKeyboardVisible, setIsKeyboardVisible] = useState<boolean>(false);
+  const inputRef = useRef<TextInput | null>(null);
+  const { keyboardHeight: webKeyboardHeight } = useWebKeyboard();
   const [_aiProvider, setAiProvider] = useState<string>('');
   const [showJumpToLatest, setShowJumpToLatest] = useState<boolean>(false);
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
@@ -628,10 +631,12 @@ export default function InvestorSupportChat({
         On web, KeyboardAvoidingView with behavior="height" causes layout
         shifts that make the TextInput lose focus mid-typing, which is why
         text disappears while typing. We skip it entirely on web where the
-        browser handles keyboard/viewport natively.
+        browser handles keyboard/viewport natively via the VisualViewport API.
+        The useWebKeyboard hook tracks keyboard height for proper composer
+        positioning on Samsung Internet / Android Chrome.
       */}
       {Platform.OS === 'web' ? (
-        <View style={styles.keyboardContainer}>
+        <View style={[styles.keyboardContainer, { paddingBottom: webKeyboardHeight }]}>
           {renderConnectionStatus()}
 
           {isCard ? (
@@ -735,6 +740,7 @@ export default function InvestorSupportChat({
                 <Paperclip size={isXs ? 18 : 20} color={isAiTyping ? Colors.textTertiary : Colors.textSecondary} />
               </TouchableOpacity>
               <TextInput
+                ref={inputRef}
                 style={[styles.input, { fontSize: isXs ? 14 : 16, minHeight: isXs ? 44 : 50, paddingHorizontal: isXs ? 14 : 18 }]}
                 value={inputText}
                 onChangeText={setInputText}
@@ -743,6 +749,12 @@ export default function InvestorSupportChat({
                 multiline
                 maxLength={500}
                 testID={`${testIdPrefix}-input`}
+                onFocus={() => {
+                  if (Platform.OS === 'web') {
+                    const el = (inputRef.current as unknown as { _inputRef?: { current?: HTMLElement } } | null)?._inputRef?.current ?? null;
+                    scrollInputIntoView(el);
+                  }
+                }}
               />
               <TouchableOpacity
                 style={[styles.sendButton, { width: isXs ? 44 : 50, height: isXs ? 44 : 50 }, !canSendMessage && styles.sendButtonDisabled]}
@@ -1238,6 +1250,15 @@ const styles = StyleSheet.create({
     borderColor: Colors.surfaceBorder,
     paddingVertical: 10,
     maxHeight: 120,
+    ...(Platform.OS === 'web'
+      ? ({
+          // @ts-ignore: web-only CSS properties for Samsung keyboard fix
+          touchAction: 'manipulation',
+          userSelect: 'text',
+          WebkitUserSelect: 'text',
+          outlineStyle: 'none',
+        } as any)
+      : {}),
   },
   sendButton: {
     borderRadius: 25,
