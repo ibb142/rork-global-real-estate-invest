@@ -8,6 +8,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 // Diagnostic error boundary — shows the FULL crash on screen
 import { DiagnosticErrorBoundary } from "@/components/DiagnosticErrorBoundary";
 import { injectWebKeyboardCSS } from "@/hooks/useWebKeyboard";
+import { checkForUpdates } from "@/lib/app-update-checker";
 
 // Static imports — all providers with per-provider error boundaries
 import { I18nProvider } from "@/lib/i18n-context";
@@ -61,6 +62,13 @@ export default function RootLayout() {
     // Inject Samsung keyboard CSS on web — ensures inputs are focusable
     // and editable on Samsung Internet / Android Chrome.
     injectWebKeyboardCSS();
+
+    // Non-fatal OTA update check — runs in background, NEVER crashes the app.
+    // If the update server is unreachable, the app continues with the
+    // embedded or cached bundle. See lib/ota-error-handler.ts for details.
+    checkForUpdates().catch((err) => {
+      console.warn("[IVX] OTA update check failed (non-fatal):", err);
+    });
 
     // Defer all startup instrumentation to after first paint.
     // These modules (incident capture, owner AI watchdog) are owner-only

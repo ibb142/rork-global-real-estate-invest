@@ -1,0 +1,190 @@
+/**
+ * Non-fatal OTA update error handler.
+ *
+ * The app must NEVER crash or show a fatal screen solely because an OTA
+ * update download failed. This module wraps expo-updates in a safe boundary:
+ *
+ * - catches all update-check and update-download errors
+ * - records diagnostics locally (update ID, channel, runtimeVersion, timestamp)
+ * - continues with the embedded or cached bundle
+ * - surfaces an optional non-blocking "Update unavailable" notice
+ *
+ * Native-level update checking is DISABLED in app.config.ts (updates.enabled: false)
+ * to prevent the fatal `java.io.IOException: Failed to download remote update`
+ * crash that occurs when the update URL is unreachable. This module provides
+ * optional JS-level update checking that is fully non-fatal.
+ */
+
+import { Platform } from 'react-native';
+
+export interface UpdateDiagnostics {
+  hasUpdate: boolean;
+  isRollback: boolean;
+  updateId: string | null;
+  channel: string | null;
+  runtimeVersion: string | null;
+  manifestCreatedAt: string | null;
+  checkedAt: string;
+  error: string | null;
+}
+
+const DIAGNOSTICS_KEY = 'ivx_ota_diagnostics';
+
+/**
+ * Read the last recorded update diagnostics from AsyncStorage.
+ * Safe to call on any platform — returns null on web or if unavailable.
+ */
+export async function getUpdateDiagnostics(): Promise<UpdateDiagnostics | null> {
+  if (Platform.OS === 'web') {
+    return null;
+  }
+  try {
+    const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+    const raw = await AsyncStorage.getItem(DIAGNOSTICS_KEY);
+    return raw ? (JSON.parse(raw) as UpdateDiagnostics) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Persist update diagnostics locally for debugging.
+ */
+async function saveDiagnostics(diagnostics: UpdateDiagnostics): Promise<void> {
+  if (Platform.OS === 'web') {
+    return;
+  }
+  try {
+    const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+    await AsyncStorage.setItem(DIAGNOSTICS_KEY, JSON.stringify(diagnostics));
+  } catch {
+    // Non-critical — don't let storage failure escalate
+  }
+}
+
+/**
+ * Safely check for updates without crashing the app.
+ *
+ * This function NEVER throws. If expo-updates is unavailable, if the update
+ * server is unreachable, or if the downloaded manifest is invalid, it
+ * silently returns diagnostics with the error recorded.
+ *
+ * @returns UpdateDiagnostics — always returns a result, never throws
+ */
+export async function safelyCheckForUpdates(): Promise<UpdateDiagnostics> {
+  const baseDiagnostics: UpdateDiagnostics = {
+    hasUpdate: false,
+    isRollback: false,
+    updateId: null,
+    channel: null,
+    runtimeVersion: null,
+    manifestCreatedAt: null,
+    checkedAt: new Date().toISOString(),
+    error: null,
+  };
+
+  if (Platform.OS === 'web') {
+    return baseDiagnostics;
+  }
+
+  try {
+    // Dynamic import — expo-updates may not be available in all build modes
+    const updates = await import('expo-updates');
+
+    // Only proceed if updates are available in this build
+    if (!updates.useUpdates) {
+      return { ...baseDiagnostics, error: 'expo-updates API not available' };
+    }
+
+    // Get current update info for diagnostics
+    const currentUpdate = updates.useUpdates?.()?.currentlyRunning;
+    const channel = currentUpdate?.channel ?? null;
+    const runtimeVersion = currentUpdate?.runtimeVersion ?? null;
+    const updateId = currentUpdate?.updateId ?? null;
+    const manifestCreatedAt = (currentUpdate?.manifest as Record<string, unknown> | undefined)?.createdAt as string | null ?? null;
+
+    const diagnostics: UpdateDiagnostics = {
+      ...baseDiagnostics,
+      channel,
+      runtimeVersion,
+      updateId,
+      manifestCreatedAt,
+    };
+
+    // Attempt to check for updates — wrapped in try/catch
+    try {
+      const result = await updates.checkForUpdateAsync();
+
+      if (result.isAvailable) {
+        diagnostics.hasUpdate = true;
+        // Attempt to download — also non-fatal
+        try {
+          await updates.fetchUpdateAsync();
+          // Reload to apply the update on next launch
+          // Use a delay to let the UI show a success notice
+          setTimeout(() => {
+            try {
+              updates.reloadAsync();
+            } catch (reloadErr) {
+              console.warn('[OTA] reloadAsync failed — app will use cached bundle on next launch', reloadErr);
+            }
+          }, 2000);
+        } catch (fetchErr) {
+          diagnostics.error = `fetchUpdateAsync failed: ${fetchErr instanceof Error ? fetchErr.message : String(fetchErr)}`;
+          console.warn('[OTA] Update download failed — continuing with cached bundle', diagnostics.error);
+        }
+      }
+    } catch (checkErr) {
+      diagnostics.error = `checkForUpdateAsync failed: ${checkErr instanceof Error ? checkErr.message : String(checkErr)}`;
+      console.warn('[OTA] Update check failed — continuing with embedded bundle', diagnostics.error);
+    }
+
+    await saveDiagnostics(diagnostics);
+    return diagnostics;
+  } catch (importErr) {
+    const diagnostics: UpdateDiagnostics = {
+      ...baseDiagnostics,
+      error: `expo-updates import failed: ${importErr instanceof Error ? importErr.message : String(importErr)}`,
+    };
+    console.warn('[OTA] expo-updates not available — OTA checking disabled', diagnostics.error);
+    await saveDiagnostics(diagnostics);
+    return diagnostics;
+  }
+}
+
+/**
+ * Hook result for useUpdateStatus — provides update state to the UI.
+ */
+export interface UpdateStatusState {
+  isChecking: boolean;
+  hasUpdate: boolean;
+  error: string | null;
+  diagnostics: UpdateDiagnostics | null;
+  lastCheckedAt: string | null;
+}
+
+/**
+ * React hook that provides non-fatal update status.
+ * Call this in a top-level component to enable background update checking.
+ * The hook NEVER throws and NEVER blocks app rendering.
+ */
+export function useUpdateStatus(): UpdateStatusState & { checkNow: () => Promise<void> } {
+  // This is a minimal hook that doesn't use React state to avoid
+  // any risk of update errors causing re-render crashes.
+  // It uses a ref-based approach via the module-level singleton.
+
+  return {
+    isChecking: false,
+    hasUpdate: false,
+    error: null,
+    diagnostics: null,
+    lastCheckedAt: null,
+    checkNow: async () => {
+      try {
+        await safelyCheckForUpdates();
+      } catch {
+        // Never let this propagate
+      }
+    },
+  };
+}

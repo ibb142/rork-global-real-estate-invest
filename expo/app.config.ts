@@ -4,13 +4,16 @@ const config: ExpoConfig = {
   name: 'IVX Holdings',
   slug: 'ivx-holdings',
   owner: 'ivx-holdings',
-  version: '1.2.1',
+  version: '1.3.0',
+  runtimeVersion: {
+    policy: 'appVersion',
+  },
   extra: {
-    buildMarker: 'IVX_BUNDLE_2026_07_12_STORE_V2',
+    buildMarker: 'IVX_BUNDLE_2026_07_13_OTA_REPAIR',
     buildTimestamp: new Date().toISOString(),
-    sourceCommitSha: '382250dc5365',
-    watchdogPatchVersion: 'store-v2',
-    frontendDeployMarker: 'ivx-frontend-2026-07-12-store-v2',
+    sourceCommitSha: '4573329',
+    watchdogPatchVersion: 'ota-repair-v1',
+    frontendDeployMarker: 'ivx-frontend-2026-07-13-ota-repair',
     eas: {
       projectId: process.env.EXPO_PUBLIC_EAS_PROJECT_ID || '00000000-0000-0000-0000-000000000000',
     },
@@ -43,7 +46,7 @@ const config: ExpoConfig = {
       backgroundColor: '#000000',
     },
     package: 'com.ivxholdings.app',
-    versionCode: 1,
+    versionCode: 2,
     softwareKeyboardLayoutMode: 'resize',
   },
   web: {
