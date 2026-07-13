@@ -25,7 +25,7 @@ import {
 } from 'react-native';
 import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Video, ResizeMode } from 'expo-av';
+import { ResizeMode } from 'expo-av';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
   X,
@@ -63,6 +63,7 @@ import {
 } from '@/lib/video-platform';
 import ProjectCommentsSheet from '@/components/ProjectCommentsSheet';
 import ProjectShareSheet from '@/components/ProjectShareSheet';
+import SafeVideo from '@/components/SafeVideo';
 import { supabase } from '@/lib/supabase';
 
 const GOLD = Colors.primary;
@@ -216,24 +217,15 @@ const FeedItem = React.memo(function FeedItem({
         onLongPress={() => onReport(video)}
         testID={`video-item-${video.id}`}
       >
-        <Video
-          source={{ uri: video.hls_url ?? video.video_url }}
+        <SafeVideo
+          uri={video.hls_url ?? video.video_url}
+          posterUri={video.poster_url ?? video.thumbnail_url ?? video.preview_blur_url}
           style={StyleSheet.absoluteFill}
           resizeMode={ResizeMode.COVER}
           shouldPlay={shouldPlay}
-          isLooping
           isMuted={muted}
-          onPlaybackStatusUpdate={(status) => {
-            if (status.isLoaded && status.durationMillis) {
-              setProgress(status.positionMillis / status.durationMillis);
-            }
-          }}
-          posterSource={
-            video.poster_url ?? video.thumbnail_url ?? video.preview_blur_url
-              ? { uri: (video.poster_url ?? video.thumbnail_url ?? video.preview_blur_url) as string }
-              : undefined
-          }
-          usePoster={!!(video.poster_url ?? video.thumbnail_url ?? video.preview_blur_url)}
+          onProgress={(progress) => setProgress(progress)}
+          testID={`video-player-${video.id}`}
         />
       </TouchableOpacity>
 

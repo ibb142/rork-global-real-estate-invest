@@ -88,7 +88,11 @@ export async function safelyCheckForUpdates(): Promise<UpdateDiagnostics> {
   }
 
   try {
-    // Dynamic import — expo-updates may not be available in all build modes
+    // Dynamic import — expo-updates may not be available in all build modes.
+    // TypeScript cannot resolve the module because it is intentionally removed
+    // from dependencies; suppress the type error so the runtime import remains
+    // safe and non-fatal.
+    // @ts-ignore — module is optional at runtime
     const updates = await import('expo-updates');
 
     // Only proceed if updates are available in this build
