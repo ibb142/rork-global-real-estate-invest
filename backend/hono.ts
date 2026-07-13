@@ -606,6 +606,15 @@ import {
 import { handleIVXOwnerAuditOptions, handleIVXOwnerAuditRecentConversationsRequest } from './api/ivx-owner-audit';
 import { OPTIONS as variablesToolOptions, handleIVXVariablesToolSaveRequest, handleIVXVariablesToolStatusRequest } from './api/ivx-variables-tool';
 import { OPTIONS as ownerVariablesOptions, getIVXOwnerVariableRuntimeValue, hasIVXOwnerVariableRuntimeValue, handleIVXOwnerVariablesDeleteRequest, handleIVXOwnerVariablesDeploymentStatusRequest, handleIVXOwnerVariablesSaveRequest, handleIVXOwnerVariablesSelfSyncRequest, handleIVXOwnerVariablesStatusRequest, handleIVXOwnerVariablesSyncFromProjectStoreRequest, handleIVXOwnerVariablesTestRequest } from './api/ivx-owner-variables';
+import {
+  ownerActionOptions,
+  handleCreateOwnerActionRequest,
+  handleListOwnerActionRequests,
+  handleGetOwnerActionRequest,
+  handleVerifyOwnerAction,
+  handleNotifyOwnerAction,
+  handleUpdateOwnerActionStatus,
+} from './api/ivx-owner-action-requests';
 import { OPTIONS as independenceStatusOptions, handleIVXIndependenceStatusRequest } from './api/ivx-independence-status';
 import { handleProofTestRequest, proofTestOptions } from './api/proof-test';
 import {
@@ -5025,5 +5034,21 @@ try {
 } catch (err) {
   console.warn('[IVXTimezone] Failed to register timezone routes:', err instanceof Error ? err.message : err);
 }
+
+// ============================================================================
+// IVX Owner Action Request System — autonomous owner notification + task tracking
+// ============================================================================
+app.options('/api/ivx/owner-action/create', () => ownerActionOptions());
+app.post('/api/ivx/owner-action/create', async (context) => handleCreateOwnerActionRequest(context.req.raw));
+app.options('/api/ivx/owner-action/list', () => ownerActionOptions());
+app.get('/api/ivx/owner-action/list', async () => handleListOwnerActionRequests());
+app.options('/api/ivx/owner-action/:traceId', () => ownerActionOptions());
+app.get('/api/ivx/owner-action/:traceId', async (context) => handleGetOwnerActionRequest(context.req.raw, context.req.param('traceId')));
+app.options('/api/ivx/owner-action/:traceId/verify', () => ownerActionOptions());
+app.post('/api/ivx/owner-action/:traceId/verify', async (context) => handleVerifyOwnerAction(context.req.raw, context.req.param('traceId')));
+app.options('/api/ivx/owner-action/:traceId/notify', () => ownerActionOptions());
+app.post('/api/ivx/owner-action/:traceId/notify', async (context) => handleNotifyOwnerAction(context.req.raw, context.req.param('traceId')));
+app.options('/api/ivx/owner-action/:traceId/status', () => ownerActionOptions());
+app.post('/api/ivx/owner-action/:traceId/status', async (context) => handleUpdateOwnerActionStatus(context.req.raw, context.req.param('traceId')));
 
 export default app;

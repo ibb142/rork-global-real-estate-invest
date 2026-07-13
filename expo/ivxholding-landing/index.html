@@ -5388,12 +5388,8 @@
         if (resp.ok || resp.status === 201) {
           console.log('[IVX Analytics] Flushed', batch.length, 'events to landing_analytics');
         } else {
-          resp.text().then(function(body) {
-            console.warn('[IVX Analytics] Insert failed (' + resp.status + '):', body);
-            if (resp.status === 401 || resp.status === 403) {
-              console.error('[IVX Analytics] RLS BLOCKED insert — run the updated supabase-master.sql to fix policies');
-            }
-          }).catch(function() {});
+          /* analytics insert failed — RLS policy or table not configured; fail silently to avoid console noise */
+          resp.text().catch(function() {});
           _analyticsQueue.unshift.apply(_analyticsQueue, batch);
         }
         if (_analyticsQueue.length > 0) {
