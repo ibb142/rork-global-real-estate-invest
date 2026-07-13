@@ -615,6 +615,7 @@ import {
   handleNotifyOwnerAction,
   handleUpdateOwnerActionStatus,
 } from './api/ivx-owner-action-requests';
+import { OPTIONS as autonomousOpsDashboardOptions, handleAutonomousOpsDashboardRequest } from './api/ivx-autonomous-ops-dashboard';
 import { OPTIONS as independenceStatusOptions, handleIVXIndependenceStatusRequest } from './api/ivx-independence-status';
 import { handleProofTestRequest, proofTestOptions } from './api/proof-test';
 import {
@@ -5050,5 +5051,11 @@ app.options('/api/ivx/owner-action/:traceId/notify', () => ownerActionOptions())
 app.post('/api/ivx/owner-action/:traceId/notify', async (context) => handleNotifyOwnerAction(context.req.raw, context.req.param('traceId')));
 app.options('/api/ivx/owner-action/:traceId/status', () => ownerActionOptions());
 app.post('/api/ivx/owner-action/:traceId/status', async (context) => handleUpdateOwnerActionStatus(context.req.raw, context.req.param('traceId')));
+
+// ============================================================================
+// IVX Autonomous Operations Dashboard — unified owner dashboard
+// ============================================================================
+app.options('/api/ivx/autonomous-ops/dashboard', () => autonomousOpsDashboardOptions());
+app.get('/api/ivx/autonomous-ops/dashboard', async (context) => handleAutonomousOpsDashboardRequest(context.req.raw));
 
 export default app;
