@@ -5,7 +5,10 @@ const config = getDefaultConfig(__dirname);
 // Watchman refuses to start in cloud sandbox environments due to process
 // priority (nice_value=19 vs required 0). Force Metro to use polling
 // fallback instead of Watchman for file watching.
+// Note: useWatchman is not a typed metro config option but is respected at
+// runtime. The expo-doctor warning is cosmetic and can be safely ignored.
 config.watcher = config.watcher || {};
+// @ts-expect-error — useWatchman is a valid runtime option not in the type defs
 config.watcher.useWatchman = false;
 
 // ---------------------------------------------------------------------------

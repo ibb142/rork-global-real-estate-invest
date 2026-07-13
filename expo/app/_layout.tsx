@@ -57,27 +57,36 @@ class ProviderBoundary extends Component<ProviderBoundaryProps, ProviderBoundary
 
 export default function RootLayout() {
   useEffect(() => {
-    try {
-      const { installTextNodeGuard } = require("@/lib/text-node-guard");
-      installTextNodeGuard();
-    } catch (err) {
-      console.warn("[IVX] installTextNodeGuard failed", err);
-    }
-    try {
-      const { installIVXIncidentCapture } = require("@/lib/ivx-incident-client");
-      installIVXIncidentCapture();
-    } catch (err) {
-      console.warn("[IVX] installIVXIncidentCapture failed", err);
-    }
-    try {
-      const { installIVXWatchdogIncidentBridge } = require("@/lib/ivx-incident-client");
-      const { ivxAIWatchdog } = require("@/src/modules/ivx-owner-ai/services/ivxAIWatchdog");
-      installIVXWatchdogIncidentBridge((listener: unknown) =>
-        ivxAIWatchdog.subscribe(listener),
-      );
-    } catch (err) {
-      console.warn("[IVX] installIVXWatchdogIncidentBridge failed", err);
-    }
+    // Defer all startup instrumentation to after first paint.
+    // These modules (incident capture, owner AI watchdog) are owner-only
+    // and should not block the initial bundle download or app boot.
+    const deferredTimer = setTimeout(() => {
+      try {
+        const { installTextNodeGuard } = require("@/lib/text-node-guard");
+        installTextNodeGuard();
+      } catch (err) {
+        console.warn("[IVX] installTextNodeGuard failed", err);
+      }
+      try {
+        const { installIVXIncidentCapture } = require("@/lib/ivx-incident-client");
+        installIVXIncidentCapture();
+      } catch (err) {
+        console.warn("[IVX] installIVXIncidentCapture failed", err);
+      }
+      // Owner AI watchdog bridge — only needed when owner chat is active.
+      // Load lazily so it doesn't block startup for non-owner users.
+      try {
+        const { installIVXWatchdogIncidentBridge } = require("@/lib/ivx-incident-client");
+        const { ivxAIWatchdog } = require("@/src/modules/ivx-owner-ai/services/ivxAIWatchdog");
+        installIVXWatchdogIncidentBridge((listener: unknown) =>
+          ivxAIWatchdog.subscribe(listener),
+        );
+      } catch (err) {
+        console.warn("[IVX] installIVXWatchdogIncidentBridge failed", err);
+      }
+    }, 3000);
+
+    return () => clearTimeout(deferredTimer);
   }, []);
 
   return (
