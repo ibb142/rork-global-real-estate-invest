@@ -1326,6 +1326,41 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
+/** Append extra query params to a Request URL, preserving existing params. */
+function addQueryParams(req: Request, extra: string): string {
+  const url = new URL(req.url);
+  const pairs = new URLSearchParams(extra);
+  for (const [k, v] of pairs) {
+    if (!url.searchParams.has(k)) url.searchParams.set(k, v);
+  }
+  return url.toString();
+}
+
+/** Fetch a single reel by ID from the video platform store. */
+let _reelSB: any = null;
+async function handleReelById(id: string): Promise<Response> {
+  try {
+    if (!_reelSB) {
+      const { createClient } = await import('@supabase/supabase-js');
+      const url = (process.env.EXPO_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '').trim();
+      const key = (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '').trim();
+      _reelSB = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
+    }
+    const { data, error } = await _reelSB
+      .from('project_videos')
+      .select('*')
+      .eq('id', id)
+      .eq('is_approved', true)
+      .single();
+    if (error || !data) {
+      return Response.json({ ok: false, error: 'Reel not found', id, deploymentMarker: DEPLOYMENT_MARKER }, 404);
+    }
+    return Response.json({ ok: true, video: data, deploymentMarker: DEPLOYMENT_MARKER });
+  } catch (err) {
+    return Response.json({ ok: false, error: err instanceof Error ? err.message : 'Unknown error', id, deploymentMarker: DEPLOYMENT_MARKER }, 500);
+  }
+}
+
 function getPublicRoomSnapshot(roomId: string): { roomId: string; onlineCount: number; messageCount: number } {
   return {
     roomId,
@@ -4866,6 +4901,86 @@ app.post('/api/ivx/reel-deal-sync/:id/delete', async (context) => handleReelDeal
 // Owner Dashboard (aggregated roll-up, owner-only)
 app.options('/api/ivx/owner-dashboard', () => platformModulesOptions());
 app.get('/api/ivx/owner-dashboard', async (context) => handleOwnerDashboardRequest(context.req.raw));
+
+// ── IVX Canonical Reels API — simplified public endpoints for app + landing ──
+// These wrap the video platform feed so external consumers (app, landing, admin)
+// can use /api/reels without knowing the internal video-platform path structure.
+app.get('/api/reels', async (c) => handlePlatformFeed(new Request(addQueryParams(c.req.raw, 'type=reel'))));
+app.get('/api/reels/:id', async (c) => handleReelById(c.req.param('id')));
+
+// Canonical authoritative member count — public aggregate (no PII).
+app.get('/api/members/authoritative-count', async () => {
+  const { listCanonicalMembers, countCanonicalMembers, isCanonicalMembersConfigured } = await import('./services/ivx-canonical-members');
+  if (!isCanonicalMembersConfigured()) {
+    return Response.json({ ok: true, members: 0, waitlist: 0, investors: 0, buyers: 0, total: 0, source: 'canonical-members', timestamp: nowIso(), deploymentMarker: DEPLOYMENT_MARKER });
+  }
+  const all = await listCanonicalMembers({ limit: 5000 });
+  const byType: Record<string, number> = {};
+  for (const m of all) byType[m.member_type] = (byType[m.member_type] ?? 0) + 1;
+  const members = (byType['member'] ?? 0) + (byType['user'] ?? 0);
+  const waitlist = byType['waitlist'] ?? 0;
+  const investors = byType['investor'] ?? 0;
+  const buyers = byType['buyer'] ?? 0;
+  return Response.json({
+    ok: true, members, waitlist, investors, buyers,
+    total: await countCanonicalMembers(),
+    source: 'canonical-members',
+    timestamp: nowIso(),
+    deploymentMarker: DEPLOYMENT_MARKER,
+  });
+});
+
+// Canonical authoritative metrics — aggregates members + video + engagement.
+app.get('/api/metrics/authoritative-count', async () => {
+  const { listCanonicalMembers, countCanonicalMembers, isCanonicalMembersConfigured } = await import('./services/ivx-canonical-members');
+  let memberCounts = { members: 0, waitlist: 0, investors: 0, buyers: 0, total: 0 };
+  if (isCanonicalMembersConfigured()) {
+    const all = await listCanonicalMembers({ limit: 5000 });
+    const byType: Record<string, number> = {};
+    for (const m of all) byType[m.member_type] = (byType[m.member_type] ?? 0) + 1;
+    memberCounts = {
+      members: (byType['member'] ?? 0) + (byType['user'] ?? 0),
+      waitlist: byType['waitlist'] ?? 0,
+      investors: byType['investor'] ?? 0,
+      buyers: byType['buyer'] ?? 0,
+      total: await countCanonicalMembers(),
+    };
+  }
+  // Video counts from the video platform feed
+  let videoCount = 0;
+  try {
+    const feedResp = await handlePlatformFeed(new Request('https://api.ivxholding.com/api/ivx/video-platform/feed?limit=1'));
+    const feedData = await feedResp.json() as any;
+    videoCount = feedData.total ?? 0;
+  } catch { /* graceful fallback */ }
+  return Response.json({
+    ok: true,
+    ...memberCounts,
+    videos: videoCount,
+    source: 'canonical-aggregate',
+    timestamp: nowIso(),
+    deploymentMarker: DEPLOYMENT_MARKER,
+  });
+});
+
+// tRPC-compatible waitlist stats — returns stats in the shape expected by tRPC clients.
+app.get('/api/trpc/waitlist.getStats', async () => {
+  const { listCanonicalMembers, isCanonicalMembersConfigured } = await import('./services/ivx-canonical-members');
+  let waitlist = 0;
+  let total = 0;
+  if (isCanonicalMembersConfigured()) {
+    const all = await listCanonicalMembers({ limit: 5000 });
+    total = all.length;
+    waitlist = all.filter((m: any) => m.member_type === 'waitlist').length;
+  }
+  return Response.json({
+    ok: true,
+    waitlist,
+    total,
+    timestamp: nowIso(),
+    deploymentMarker: DEPLOYMENT_MARKER,
+  });
+});
 
 app.notFound(async (context) => {
   const webResponse = await loadWebResponse(context.req.path, context.req.method);

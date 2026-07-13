@@ -92,7 +92,12 @@
     }
   }
   setInterval(function () { flushEvents(false); }, 5000);
-  document.addEventListener('visibilitychange', function () { if (document.hidden) flushEvents(true); });
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) {
+      flushEvents(true);
+      deactivateCurrent();
+    }
+  });
   window.addEventListener('pagehide', function () { flushEvents(true); });
 
   /* ---------- HLS ---------- */
@@ -745,10 +750,10 @@
       io = new IntersectionObserver(function (entries) {
         entries.forEach(function (entry) {
           var slide = entry.target;
-          if (entry.isIntersecting && entry.intersectionRatio >= 0.6) activateSlide(slide);
-          else if (slide === state.activeSlide && entry.intersectionRatio < 0.4) deactivateCurrent();
+          if (entry.isIntersecting && entry.intersectionRatio >= 0.8) activateSlide(slide);
+          else if (slide === state.activeSlide && entry.intersectionRatio < 0.5) deactivateCurrent();
         });
-      }, { root: feedEl, threshold: [0, 0.4, 0.6, 1] });
+      }, { root: feedEl, threshold: [0, 0.5, 0.8, 1] });
     }
     feedEl.querySelectorAll('.ivxr-slide').forEach(function (s) {
       if (!s.__observed) { s.__observed = true; io.observe(s); }
