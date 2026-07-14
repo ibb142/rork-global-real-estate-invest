@@ -80,18 +80,33 @@ const MIGRATION_SQL = `-- IVX FINAL QA FIX MIGRATION 2026-07-14
 -- FIX 1: RLS INFINITE RECURSION on conversation tables
 -- Root cause: policies on conversation_participants reference profiles table,
 -- and profiles RLS policies reference conversation tables, creating circular dependency.
--- Fix: DISABLE RLS (drops ALL policies), then re-enable with safe authenticated policies.
-ALTER TABLE public.conversation_participants DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.conversations DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.messages DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.profiles DISABLE ROW LEVEL SECURITY;
-
--- Re-enable RLS with safe, non-recursive policies
-ALTER TABLE public.conversation_participants ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.conversations ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
-
+-- Fix: Use DO block to dynamically drop ALL policies on recursive tables, then create safe ones.
+DO $RLS_FIX$
+DECLARE
+  r RECORD;
+BEGIN
+  -- Drop ALL policies on conversation_participants
+  FOR r IN (SELECT policyname FROM pg_policies WHERE schemaname = 'public' AND tablename = 'conversation_participants')
+  LOOP
+    EXECUTE format('DROP POLICY IF EXISTS %I ON public.conversation_participants', r.policyname);
+  END LOOP;
+  -- Drop ALL policies on conversations
+  FOR r IN (SELECT policyname FROM pg_policies WHERE schemaname = 'public' AND tablename = 'conversations')
+  LOOP
+    EXECUTE format('DROP POLICY IF EXISTS %I ON public.conversations', r.policyname);
+  END LOOP;
+  -- Drop ALL policies on messages
+  FOR r IN (SELECT policyname FROM pg_policies WHERE schemaname = 'public' AND tablename = 'messages')
+  LOOP
+    EXECUTE format('DROP POLICY IF EXISTS %I ON public.messages', r.policyname);
+  END LOOP;
+  -- Drop ALL policies on profiles (root cause of recursion)
+  FOR r IN (SELECT policyname FROM pg_policies WHERE schemaname = 'public' AND tablename = 'profiles')
+  LOOP
+    EXECUTE format('DROP POLICY IF EXISTS %I ON public.profiles', r.policyname);
+  END LOOP;
+END
+$RLS_FIX$;
 -- Create safe policies (no cross-table references, no function calls that query other tables)
 CREATE POLICY IF NOT EXISTS "conversation_participants_safe" ON public.conversation_participants
   FOR ALL TO authenticated USING (true) WITH CHECK (true);
@@ -101,6 +116,7 @@ CREATE POLICY IF NOT EXISTS "messages_safe" ON public.messages
   FOR ALL TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY IF NOT EXISTS "profiles_self" ON public.profiles
   FOR ALL TO authenticated USING (auth.uid() = id) WITH CHECK (auth.uid() = id);
+select pg_notify('pgrst','reload schema')
 
 -- FIX 2: CREATE MISSING TABLES
 CREATE TABLE IF NOT EXISTS public.landing_submissions (
