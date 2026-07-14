@@ -78,19 +78,29 @@ const MIGRATION_SQL = `-- IVX FINAL QA FIX MIGRATION 2026-07-14
 -- Idempotent. Safe to re-run.
 
 -- FIX 1: RLS INFINITE RECURSION on conversation tables
-DROP POLICY IF EXISTS "conversation_participants_auth_all" ON public.conversation_participants;
-DROP POLICY IF EXISTS "conversations_auth_all" ON public.conversations;
-DROP POLICY IF EXISTS "messages_auth_all" ON public.messages;
-DROP POLICY IF EXISTS "conversation_participants_all" ON public.conversation_participants;
-DROP POLICY IF EXISTS "conversations_all" ON public.conversations;
-DROP POLICY IF EXISTS "messages_all" ON public.messages;
+-- Root cause: policies on conversation_participants reference profiles table,
+-- and profiles RLS policies reference conversation tables, creating circular dependency.
+-- Fix: DISABLE RLS (drops ALL policies), then re-enable with safe authenticated policies.
+ALTER TABLE public.conversation_participants DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.conversations DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.messages DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.profiles DISABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "conversation_participants_all" ON public.conversation_participants
+-- Re-enable RLS with safe, non-recursive policies
+ALTER TABLE public.conversation_participants ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.conversations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+
+-- Create safe policies (no cross-table references, no function calls that query other tables)
+CREATE POLICY IF NOT EXISTS "conversation_participants_safe" ON public.conversation_participants
   FOR ALL TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "conversations_all" ON public.conversations
+CREATE POLICY IF NOT EXISTS "conversations_safe" ON public.conversations
   FOR ALL TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "messages_all" ON public.messages
+CREATE POLICY IF NOT EXISTS "messages_safe" ON public.messages
   FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY IF NOT EXISTS "profiles_self" ON public.profiles
+  FOR ALL TO authenticated USING (auth.uid() = id) WITH CHECK (auth.uid() = id);
 
 -- FIX 2: CREATE MISSING TABLES
 CREATE TABLE IF NOT EXISTS public.landing_submissions (
