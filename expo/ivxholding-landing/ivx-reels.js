@@ -80,6 +80,23 @@
     ev.viewer_id = VIEWER;
     eventQueue.push(ev);
     if (eventQueue.length >= 10) flushEvents(false);
+    /* Bridge to ad platform + first-party analytics */
+    try {
+      var evType = ev.type || '';
+      var vidId = ev.video_id || '';
+      if (typeof ivxTrack === 'function') {
+        var trackMap = {
+          'view': 'reel_view',
+          'complete': 'reel_complete',
+          'share': 'reel_share'
+        };
+        if (trackMap[evType]) ivxTrack(trackMap[evType], { video_id: vidId, watch_ms: ev.watch_ms || null });
+      }
+      if (typeof fireAdEvent === 'function') {
+        if (evType === 'view') fireAdEvent('view_content', { content_name: 'reel', property_id: vidId, category: 'reel' });
+        if (evType === 'complete') fireAdEvent('view_content', { content_name: 'reel_complete', property_id: vidId, category: 'reel_engagement' });
+      }
+    } catch(e) {}
   }
   function flushEvents(useBeacon) {
     if (eventQueue.length === 0) return;
@@ -553,10 +570,11 @@
     var folBtn = rail.querySelector('.ivxr-follow');
     var rptBtn = rail.querySelector('.rpt');
 
-    likeBtn.addEventListener('click', function (e) { e.stopPropagation(); toggleLike(v, likeBtn, heart, false); });
-    cmtBtn.addEventListener('click', function (e) { e.stopPropagation(); openComments(v, cmtBtn); });
+    likeBtn.addEventListener('click', function (e) { e.stopPropagation(); toggleLike(v, likeBtn, heart, false); try { if (typeof ivxTrack === 'function') ivxTrack('reel_like', { video_id: v.id }); } catch(x) {} });
+    cmtBtn.addEventListener('click', function (e) { e.stopPropagation(); openComments(v, cmtBtn); try { if (typeof ivxTrack === 'function') ivxTrack('reel_comment', { video_id: v.id }); } catch(x) {} });
     savBtn.addEventListener('click', function (e) {
       e.stopPropagation();
+      try { if (typeof ivxTrack === 'function') ivxTrack('reel_save', { video_id: v.id }); } catch(x) {}
       fetch(API + '/api/projects/' + v.id + '/save', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ guest_id: VIEWER })
@@ -569,6 +587,7 @@
     });
     shrBtn.addEventListener('click', function (e) {
       e.stopPropagation();
+      try { if (typeof ivxTrack === 'function') ivxTrack('reel_share', { video_id: v.id }); } catch(x) {}
       var url = 'https://ivxholding.com/?video=' + encodeURIComponent(v.id);
       var done = function (type) {
         fetch(API + '/api/projects/' + v.id + '/share', {

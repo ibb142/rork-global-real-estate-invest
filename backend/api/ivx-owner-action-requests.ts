@@ -345,7 +345,7 @@ export async function updateActionStatus(
 function jsonResponse(payload: Record<string, unknown>, status: number = 200): Response {
   return Response.json(payload, {
     status,
-    headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+    headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': 'https://ivxholding.com', 'Vary': 'Origin' },
   });
 }
 
@@ -353,7 +353,7 @@ export function ownerActionOptions(): Response {
   return new Response(null, {
     status: 204,
     headers: {
-      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Origin': 'https://ivxholding.com',
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     },

@@ -323,7 +323,7 @@ export async function handlePlatformFeed(req: Request): Promise<Response> {
       const m = p.meta;
       if (m.property_id) dealCandidates.push(String(m.property_id));
       if (p.row.project_id) dealCandidates.push(String(p.row.project_id));
-      titles[p.id] = p.row.title ?? m.title ?? '';
+      titles[p.id] = p.row.title ?? ((m as Record<string, unknown>).title as string | undefined) ?? '';
     }
     const dealsById = await loadFeedDeals(sb, dealCandidates, titles);
     const viewerFollowing = new Set(followState.following);

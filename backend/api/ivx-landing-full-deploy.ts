@@ -172,7 +172,8 @@ export async function handleLandingFullDeploy(request: Request): Promise<Respons
     }), { status: 400, headers: { 'Content-Type': 'application/json' } });
   }
 
-  const region = readEnv('AWS_REGION') || 'us-east-1';
+  const awsRegion = readEnv('AWS_REGION') || 'us-east-1';
+  const region = awsRegion;
   const bucket = readEnv('S3_BUCKET_NAME') || BUCKET_DEFAULT;
   // Try process.env first, then fall back to Owner Variables table (encrypted, decrypted at runtime)
   // The DB may store under AWS_ACCESS_KEY_ID or IVX_AWS_READONLY_ACCESS_KEY_ID — try both
@@ -305,9 +306,6 @@ export async function handleLandingFullDeploy(request: Request): Promise<Respons
   if (!cloudFrontDistributionId) {
     cloudFrontDistributionId = await getRawOwnerVariableValue('CLOUDFRONT_DISTRIBUTION_ID');
   }
-  // Also check for AWS_REGION from Owner Variables if not in env
-  const awsRegion = readEnv('AWS_REGION') || await getRawOwnerVariableValue('AWS_REGION') || 'us-east-1';
-
   if (allUploadsOk && cloudFrontDistributionId) {
     const invalidation = await createCloudFrontInvalidation({
       paths: invalidationPaths,

@@ -5507,12 +5507,15 @@
   var _waitlistOrigHandler = window.handleWaitlist;
   window.handleWaitlist = function(e) {
     ivxTrack('waitlist_attempt', { source: 'landing_form' });
+    ivxTrack('registration_start', { source: 'landing_form' });
+    try { if (typeof fireAdEvent === 'function') fireAdEvent('initiate_checkout', { category: 'registration' }); } catch(x) {}
     if (typeof _waitlistOrigHandler === 'function') return _waitlistOrigHandler(e);
   };
 
   var _funnelOrigOpen = window.openFunnel;
   window.openFunnel = function() {
     ivxTrack('funnel_open', { step: 1 });
+    ivxTrack('registration_start', { source: 'funnel', step: 1 });
     if (typeof _funnelOrigOpen === 'function') return _funnelOrigOpen();
   };
 

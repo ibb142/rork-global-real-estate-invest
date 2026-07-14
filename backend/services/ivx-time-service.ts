@@ -383,8 +383,7 @@ export function isValidTimezone(tz: string): boolean {
  */
 export function getSupportedTimezones(): IanaTimezone[] {
   try {
-    // @ts-expect-error — supportedValuesOf may not be in older TS lib defs
-    const supported = Intl.supportedValuesOf?.('timeZone');
+    const supported = (Intl as unknown as { supportedValuesOf?: (key: string) => string[] }).supportedValuesOf?.('timeZone');
     if (Array.isArray(supported) && supported.length > 0) {
       return supported as IanaTimezone[];
     }

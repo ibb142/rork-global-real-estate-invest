@@ -5068,7 +5068,7 @@ app.get('/api/ivx/autonomous-ops/dashboard', async (context) => handleAutonomous
 // ============================================================================
 // IVX Landing Full Deploy — push all landing static files to S3 + invalidate CloudFront
 // ============================================================================
-app.options('/api/ivx/landing-deploy', () => new Response(null, { status: 204, headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' } }));
+app.options('/api/ivx/landing-deploy', () => new Response(null, { status: 204, headers: { 'Access-Control-Allow-Origin': 'https://ivxholding.com', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type', 'Vary': 'Origin' } }));
 app.get('/api/ivx/landing-deploy', async () => handleLandingFullDeployStatus());
 app.post('/api/ivx/landing-deploy', async (context) => handleLandingFullDeploy(context.req.raw));
 

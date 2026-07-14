@@ -24,7 +24,10 @@ import {
   Clock,
   Cpu,
   Database,
+  Download,
   FileCode2,
+  FileJson,
+  FileText,
   Filter,
   GitBranch,
   Globe,
@@ -58,6 +61,12 @@ import {
   type UnifiedAgent,
   type ActivityItem,
 } from '@/src/modules/ivx-owner-ai/services/ivxAutonomousOpsService';
+import {
+  exportDashboard,
+  EXPORT_REPORT_LABELS,
+  type ExportFormat,
+  type ExportReportType,
+} from '@/src/modules/ivx-owner-ai/services/ivxDashboardExport';
 
 const POLL_INTERVAL_MS = 15000;
 
@@ -130,7 +139,7 @@ function formatDuration(ms: number | null): string {
   return `${Math.round(s / 60)}m ${s % 60}s`;
 }
 
-type ViewMode = 'overview' | 'agents' | 'activity' | 'categories' | 'feed' | 'summary' | 'ownerActions';
+type ViewMode = 'overview' | 'agents' | 'activity' | 'categories' | 'feed' | 'summary' | 'ownerActions' | 'export';
 
 function AgentCard({ agent, onPress }: { agent: UnifiedAgent; onPress: () => void }) {
   const statusColor = STATUS_COLORS[agent.status] ?? Colors.textTertiary;
@@ -255,6 +264,10 @@ function AutonomousOpsContent() {
   const [viewMode, setViewMode] = useState<ViewMode>('overview');
   const [agentFilter, setAgentFilter] = useState<string | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
+  const [exportFormat, setExportFormat] = useState<ExportFormat>('csv');
+  const [exportReport, setExportReport] = useState<ExportReportType>('daily_activities');
+  const [exporting, setExporting] = useState(false);
+  const [exportResult, setExportResult] = useState<string | null>(null);
 
   const dashboardQuery = useQuery<AutonomousOpsDashboard>({
     queryKey: ['ivx-autonomous-ops-dashboard', range, agentFilter, categoryFilter],
@@ -286,6 +299,7 @@ function AutonomousOpsContent() {
     { key: 'feed', label: 'Live Feed', icon: <Zap size={13} color={Colors.primary} /> },
     { key: 'summary', label: 'Daily Summary', icon: <TrendingUp size={13} color={Colors.primary} /> },
     { key: 'ownerActions', label: `Owner Actions (${ownerActions.length})`, icon: <ShieldAlert size={13} color={Colors.primary} /> },
+    { key: 'export', label: 'Export', icon: <Download size={13} color={Colors.primary} /> },
   ];
 
   return (
@@ -736,6 +750,103 @@ function AutonomousOpsContent() {
         </View>
       ) : null}
 
+      {/* ── Export View ── */}
+      {data && viewMode === 'export' ? (
+        <View style={styles.card} testID="ivx-autonomous-ops-export">
+          <View style={styles.cardHeaderRow}>
+            <Download size={15} color={Colors.primary} />
+            <Text style={styles.cardTitle}>Export Dashboard Data</Text>
+          </View>
+
+          <Text style={styles.exportSectionLabel}>Report Type</Text>
+          <View style={styles.exportOptionsGrid}>
+            {(Object.keys(EXPORT_REPORT_LABELS) as ExportReportType[]).map((key) => (
+              <Pressable
+                key={key}
+                style={[styles.exportOption, exportReport === key && styles.exportOptionActive]}
+                onPress={() => setExportReport(key)}
+                testID={`export-report-${key}`}
+              >
+                <Text style={[styles.exportOptionText, exportReport === key && styles.exportOptionTextActive]}>
+                  {EXPORT_REPORT_LABELS[key]}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+
+          <Text style={styles.exportSectionLabel}>Format</Text>
+          <View style={styles.exportFormatRow}>
+            <Pressable
+              style={[styles.exportFormatBtn, exportFormat === 'csv' && styles.exportFormatBtnActive]}
+              onPress={() => setExportFormat('csv')}
+              testID="export-format-csv"
+            >
+              <FileText size={15} color={exportFormat === 'csv' ? Colors.primary : Colors.textSecondary} />
+              <Text style={[styles.exportFormatText, exportFormat === 'csv' && styles.exportFormatTextActive]}>CSV</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.exportFormatBtn, exportFormat === 'json' && styles.exportFormatBtnActive]}
+              onPress={() => setExportFormat('json')}
+              testID="export-format-json"
+            >
+              <FileJson size={15} color={exportFormat === 'json' ? Colors.primary : Colors.textSecondary} />
+              <Text style={[styles.exportFormatText, exportFormat === 'json' && styles.exportFormatTextActive]}>JSON</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.exportFormatBtn, exportFormat === 'pdf' && styles.exportFormatBtnActive]}
+              onPress={() => setExportFormat('pdf')}
+              testID="export-format-pdf"
+            >
+              <FileText size={15} color={exportFormat === 'pdf' ? Colors.primary : Colors.textSecondary} />
+              <Text style={[styles.exportFormatText, exportFormat === 'pdf' && styles.exportFormatTextActive]}>PDF</Text>
+            </Pressable>
+          </View>
+
+          <Pressable
+            style={[styles.exportButton, exporting && styles.exportButtonDisabled]}
+            onPress={async () => {
+              if (exporting || !data) return;
+              setExporting(true);
+              setExportResult(null);
+              const result = await exportDashboard(data, exportFormat, exportReport);
+              setExporting(false);
+              setExportResult(result.ok ? `Exported: ${EXPORT_REPORT_LABELS[exportReport]} (${exportFormat.toUpperCase()})` : `Export failed: ${result.error}`);
+            }}
+            disabled={exporting}
+            testID="export-execute-btn"
+          >
+            {exporting ? (
+              <ActivityIndicator size="small" color={Colors.primary} />
+            ) : (
+              <Download size={16} color={Colors.primary} />
+            )}
+            <Text style={styles.exportButtonText}>
+              {exporting ? 'Generating…' : `Export ${EXPORT_REPORT_LABELS[exportReport]} as ${exportFormat.toUpperCase()}`}
+            </Text>
+          </Pressable>
+
+          {exportResult ? (
+            <View style={styles.exportResultRow} testID="export-result">
+              {exportResult.startsWith('Exported') ? (
+                <CheckCircle2 size={13} color={Colors.success} />
+              ) : (
+                <AlertTriangle size={13} color={Colors.error} />
+              )}
+              <Text style={[styles.exportResultText, { color: exportResult.startsWith('Exported') ? Colors.success : Colors.error }]}>
+                {exportResult}
+              </Text>
+            </View>
+          ) : null}
+
+          <View style={styles.exportInfoBox}>
+            <ShieldCheck size={13} color={Colors.textTertiary} />
+            <Text style={styles.exportInfoText}>
+              Owner-only · No secrets · Investor PII redacted · Timestamps in UTC · Trace IDs included · Generated from real records
+            </Text>
+          </View>
+        </View>
+      ) : null}
+
       {/* ── Owner Actions View ── */}
       {data && viewMode === 'ownerActions' ? (
         <View style={styles.card}>
@@ -896,4 +1007,22 @@ const styles = StyleSheet.create({
   emptyInline: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8 },
   emptyText: { fontSize: 13, color: Colors.textSecondary, lineHeight: 19, flex: 1 },
   disclaimer: { fontSize: 11, color: Colors.textSecondary, lineHeight: 16, fontStyle: 'italic' as const, paddingHorizontal: 4 },
+  exportSectionLabel: { fontSize: 12, fontWeight: '700' as const, color: Colors.textSecondary, textTransform: 'uppercase' as const, letterSpacing: 0.5, marginTop: 6 },
+  exportOptionsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  exportOption: { backgroundColor: Colors.background, borderRadius: 8, paddingVertical: 8, paddingHorizontal: 12, borderWidth: 1, borderColor: Colors.border },
+  exportOptionActive: { borderColor: Colors.primary, backgroundColor: Colors.primary + '15' },
+  exportOptionText: { fontSize: 11, fontWeight: '600' as const, color: Colors.textSecondary },
+  exportOptionTextActive: { color: Colors.primary },
+  exportFormatRow: { flexDirection: 'row', gap: 8 },
+  exportFormatBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: Colors.background, borderRadius: 10, paddingVertical: 12, borderWidth: 1, borderColor: Colors.border },
+  exportFormatBtnActive: { borderColor: Colors.primary, backgroundColor: Colors.primary + '15' },
+  exportFormatText: { fontSize: 13, fontWeight: '700' as const, color: Colors.textSecondary },
+  exportFormatTextActive: { color: Colors.primary },
+  exportButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: Colors.primary + '15', borderRadius: 12, paddingVertical: 14, borderWidth: 1, borderColor: Colors.primary, marginTop: 4 },
+  exportButtonDisabled: { opacity: 0.5 },
+  exportButtonText: { fontSize: 14, fontWeight: '700' as const, color: Colors.primary },
+  exportResultRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 4 },
+  exportResultText: { flex: 1, fontSize: 12, lineHeight: 17 },
+  exportInfoBox: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, backgroundColor: Colors.background, borderRadius: 8, padding: 10, marginTop: 4 },
+  exportInfoText: { flex: 1, fontSize: 10, color: Colors.textTertiary, lineHeight: 15 },
 });

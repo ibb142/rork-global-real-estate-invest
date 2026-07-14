@@ -243,7 +243,7 @@ export async function createTask(input: CreateTaskInput): Promise<{ task: IVXTas
 }
 
 function normalizeLegacyBlockStatus(block: IVXTaskBlock): IVXTaskBlock {
-  const status = block.status;
+  const status = block.status as string;
   if (status === 'COMPLETED' || status === 'completed') {
     const hasProof = Boolean(block.commitHash && block.verification?.ok);
     return {
