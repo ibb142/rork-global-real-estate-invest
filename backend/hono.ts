@@ -1363,11 +1363,11 @@ async function handleReelById(id: string): Promise<Response> {
       .eq('id', id)
       .single();
     if (error || !data) {
-      return Response.json({ ok: false, error: 'Reel not found', id, deploymentMarker: DEPLOYMENT_MARKER }, 404);
+      return Response.json({ ok: false, error: 'Reel not found', id, deploymentMarker: DEPLOYMENT_MARKER }, { status: 404 });
     }
     return Response.json({ ok: true, video: data, deploymentMarker: DEPLOYMENT_MARKER });
   } catch (err) {
-    return Response.json({ ok: false, error: err instanceof Error ? err.message : 'Unknown error', id, deploymentMarker: DEPLOYMENT_MARKER }, 500);
+    return Response.json({ ok: false, error: err instanceof Error ? err.message : 'Unknown error', id, deploymentMarker: DEPLOYMENT_MARKER }, { status: 500 });
   }
 }
 
