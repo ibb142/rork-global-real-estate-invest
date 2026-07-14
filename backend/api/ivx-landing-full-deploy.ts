@@ -175,19 +175,20 @@ export async function handleLandingFullDeploy(request: Request): Promise<Respons
   const region = readEnv('AWS_REGION') || 'us-east-1';
   const bucket = readEnv('S3_BUCKET_NAME') || BUCKET_DEFAULT;
   // Try process.env first, then fall back to Owner Variables table (encrypted, decrypted at runtime)
+  // Owner Variables table stores them as IVX_AWS_READONLY_ACCESS_KEY_ID / IVX_AWS_READONLY_SECRET_ACCESS_KEY
   let accessKey = readEnv('AWS_ACCESS_KEY_ID');
   let secretKey = readEnv('AWS_SECRET_ACCESS_KEY');
 
   if (!accessKey) {
-    accessKey = await getIVXOwnerVariableRuntimeValue('AWS_ACCESS_KEY_ID');
+    accessKey = await getIVXOwnerVariableRuntimeValue('IVX_AWS_READONLY_ACCESS_KEY_ID');
   }
   if (!secretKey) {
-    secretKey = await getIVXOwnerVariableRuntimeValue('AWS_SECRET_ACCESS_KEY');
+    secretKey = await getIVXOwnerVariableRuntimeValue('IVX_AWS_READONLY_SECRET_ACCESS_KEY');
   }
 
   const missingEnv: string[] = [];
-  if (!accessKey) missingEnv.push('AWS_ACCESS_KEY_ID');
-  if (!secretKey) missingEnv.push('AWS_SECRET_ACCESS_KEY');
+  if (!accessKey) missingEnv.push('AWS_ACCESS_KEY_ID / IVX_AWS_READONLY_ACCESS_KEY_ID');
+  if (!secretKey) missingEnv.push('AWS_SECRET_ACCESS_KEY / IVX_AWS_READONLY_SECRET_ACCESS_KEY');
 
   if (missingEnv.length > 0) {
     return new Response(JSON.stringify({
@@ -201,7 +202,7 @@ export async function handleLandingFullDeploy(request: Request): Promise<Respons
   }
 
   const s3 = new S3Client({
-    region,
+    region: awsRegion,
     credentials: { accessKeyId: accessKey, secretAccessKey: secretKey },
   });
 
@@ -298,6 +299,8 @@ export async function handleLandingFullDeploy(request: Request): Promise<Respons
   if (!cloudFrontDistributionId) {
     cloudFrontDistributionId = await getIVXOwnerVariableRuntimeValue('CLOUDFRONT_DISTRIBUTION_ID');
   }
+  // Also check for AWS_REGION from Owner Variables if not in env
+  const awsRegion = readEnv('AWS_REGION') || await getIVXOwnerVariableRuntimeValue('AWS_REGION') || 'us-east-1';
 
   if (allUploadsOk && cloudFrontDistributionId) {
     const invalidation = await createCloudFrontInvalidation({
