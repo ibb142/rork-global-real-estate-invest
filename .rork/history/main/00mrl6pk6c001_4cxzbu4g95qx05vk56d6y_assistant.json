@@ -213,7 +213,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"curl -s https://api.ivxholding.com/api/ivx/owner-ai/proxy-status -o /tmp/proxy-status.json -w '%{http_code}' && echo \\\" = proxy-status\\\" && cat /tmp/proxy-status.json 2>/dev/null | head -c 500\", \"cwd\": \"/home/user/rork-app\"}",
       "createdAt": 1784065452394,
-      "completedAt": 1784065452403
+      "completedAt": 1784065452403,
+      "compactedAt": 1784072082914
     },
     {
       "type": "text",
@@ -276,7 +277,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"tasks\": [{\"content\": \"Investigate AI chat timeout in chat.tsx\", \"activeForm\": \"Investigating AI chat timeout in chat.tsx\", \"status\": \"completed\"}, {\"content\": \"Fix assistant mutation not invoked after trigger decision\", \"activeForm\": \"Fixing assistant mutation not invoked after trigger decision\", \"status\": \"in_progress\"}, {\"content\": \"Verify AI endpoint health and backend response\", \"activeForm\": \"Verifying AI endpoint health and backend response\", \"status\": \"completed\"}, {\"content\": \"Re-test chat AI flow and rebuild APK\", \"activeForm\": \"Re-testing chat AI flow and rebuilding APK\", \"status\": \"pending\"}]}",
       "createdAt": 1784065455997,
-      "completedAt": 1784065456459
+      "completedAt": 1784065456459,
+      "compactedAt": 1784072082914
     },
     {
       "type": "text",
@@ -309,7 +311,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"expo/app/ivx/chat.tsx\", \"edits\": [{\"oldString\": \"      if (mode === 'ai_only') {\\n        console.log('[IVX_TRACE] 2.2_AI_TRIGGER_AI_ONLY', { clientId });\\n        watchdogTrace?.pass('AI_TRIGGER_DECISION', 'branch=ai_only');\\n        await assistantReplyMutation.mutateAsync({ text: effectiveText, nonBlocking: false, watchdogTraceId });\\n        return;\\n      }\\n\\n      if (mode === 'send_and_ai') {\\n        console.log('[IVX_TRACE] 2.2_AI_TRIGGER_SEND_AND_AI', { clientId, aiReachable: aiReachableRef.current, trust: trustContext.namedStates });\\n        console.log('[IVXOwnerChatRoute] Auto-triggering AI reply after send, aiReachable:', aiReachableRef.current, 'trust:', trustContext.namedStates);\\n        watchdogTrace?.pass('AI_TRIGGER_DECISION', 'branch=send_and_ai');\\n        // Retry-once wrapper: if the first AI mutation attempt fails, retry once\\n        // before surfacing the error. The watchdog still records each attempt.\\n        const triggerAIWithRetry = async () => {\\n          try {\\n            await assistantReplyMutation.mutateAsync({ text: effectiveText, nonBlocking: true, watchdogTraceId });\\n          } catch (firstErr) {\\n            console.log('[IVX_TRACE] 2.X_AI_TRIGGER_RETRY_1', { clientId, err: firstErr instanceof Error ? firstErr.message : String(firstErr) });\\n            try {\\n              await assistantReplyMutation.mutateAsync({ text: effectiveText, nonBlocking: true, watchdogTraceId });\\n            } catch (secondErr) {\\n              console.log('[IVX_TRACE] 2.X_AI_TRIGGER_BOTH_FAILED', { clientId, err: secondErr instanceof Error ? secondErr.message : String(secondErr) });\\n              watchdogTrace?.fail('AI_MUTATION_STARTED', `assistantReplyMutation rejected twice: ${secondErr instanceof Error ? secondErr.message : String(secondErr)}`);\\n            }\\n          }\\n        };\\n        void triggerAIWithRetry();\\n      } else if (mode === 'send_only') {\", \"newString\": \"      if (mode === 'ai_only') {\\n        console.log('[IVX_TRACE] 2.2_AI_TRIGGER_AI_ONLY', { clientId });\\n        watchdogTrace?.pass('AI_TRIGGER_DECISION', 'branch=ai_only');\\n        // Synchronously mark the assistant mutation as started so the watchdog\\n        // never reports a phantom stall at AI_TRIGGER_DECISION if the async\\n        // call is delayed or queued behind an earlier mutation.\\n        watchdogTrace?.pass('AI_MUTATION_STARTED', 'ai_only branch invoking assistantReplyMutation', { clientId });\\n        await assistantReplyMutation.mutateAsync({ text: effectiveText, nonBlocking: false, watchdogTraceId });\\n        return;\\n      }\\n\\n      if (mode === 'send_and_ai') {\\n        console.log('[IVX_TRACE] 2.2_AI_TRIGGER_SEND_AND_AI', { clientId, aiReachable: aiReachableRef.current, trust: trustContext.namedStates });\\n        console.log('[IVXOwnerChatRoute] Auto-triggering AI reply after send, aiReachable:', aiReachableRef.current, 'trust:', trustContext.namedStates);\\n        watchdogTrace?.pass('AI_TRIGGER_DECISION', 'branch=send_and_ai');\\n        // Synchronously mark the assistant mutation as started so the watchdog\\n        // never reports a phantom stall at AI_TRIGGER_DECISION if the async\\n        // call is delayed or queued behind an earlier mutation.\\n        watchdogTrace?.pass('AI_MUTATION_STARTED', 'send_and_ai branch invoking assistantReplyMutation', { clientId });\\n        // Retry-once wrapper: if the first AI mutation attempt fails, retry once\\n        // before surfacing the error. The watchdog still records each attempt.\\n        // We now await the wrapper so the send mutation lifecycle stays coherent\\n        // with the AI call and the watchdog trace remains active until the full\\n        // round trip finishes or fails.\\n        const triggerAIWithRetry = async () => {\\n          try {\\n            await assistantReplyMutation.mutateAsync({ text: effectiveText, nonBlocking: true, watchdogTraceId });\\n          } catch (firstErr) {\\n            console.log('[IVX_TRACE] 2.X_AI_TRIGGER_RETRY_1', { clientId, err: firstErr instanceof Error ? firstErr.message : String(firstErr) });\\n            try {\\n              await assistantReplyMutation.mutateAsync({ text: effectiveText, nonBlocking: true, watchdogTraceId });\\n            } catch (secondErr) {\\n              console.log('[IVX_TRACE] 2.X_AI_TRIGGER_BOTH_FAILED', { clientId, err: secondErr instanceof Error ? secondErr.message : String(secondErr) });\\n              watchdogTrace?.fail('AI_MUTATION_STARTED', `assistantReplyMutation rejected twice: ${secondErr instanceof Error ? secondErr.message : String(secondErr)}`);\\n            }\\n          }\\n        };\\n        await triggerAIWithRetry();\\n      } else if (mode === 'send_only') {\"}, {\"oldString\": \"      trace?.pass('AI_MUTATION_STARTED', 'assistantReplyMutation.mutationFn entered', { mutationRunId, nonBlocking });\\n      console.log('[IVX_TRACE] 3_MUTATION_START', { mutationRunId, nonBlocking, textLength: text.length });\", \"newString\": \"      // Defensive: ensure AI_MUTATION_STARTED is always marked as soon as the\\n      // mutation function begins, even if the trace passed in was not found.\\n      trace?.pass('AI_MUTATION_STARTED', 'assistantReplyMutation.mutationFn entered', { mutationRunId, nonBlocking });\\n      console.log('[IVX_TRACE] 3_MUTATION_START', { mutationRunId, nonBlocking, textLength: text.length });\"}]}",
       "createdAt": 1784065460028,
-      "completedAt": 1784065466595
+      "completedAt": 1784065466595,
+      "compactedAt": 1784072082914
     },
     {
       "type": "text",
@@ -333,7 +336,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"expo/app/ivx/chat.tsx\", \"offset\": 1986, \"limit\": 50}",
       "createdAt": 1784065473619,
-      "completedAt": 1784065473743
+      "completedAt": 1784065473743,
+      "compactedAt": 1784072082914
     },
     {
       "type": "tool",
@@ -352,7 +356,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"expo/app/ivx/chat.tsx\", \"offset\": 3076, \"limit\": 50}",
       "createdAt": 1784065473621,
-      "completedAt": 1784065473746
+      "completedAt": 1784065473746,
+      "compactedAt": 1784072082914
     },
     {
       "type": "text",
@@ -376,7 +381,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app/expo && ls -d android 2>/dev/null && echo '---existing android dir---' || echo '---no android dir, need prebuild---'\", \"cwd\": \"/home/user/rork-app\"}",
       "createdAt": 1784065482086,
-      "completedAt": 1784065482092
+      "completedAt": 1784065482092,
+      "compactedAt": 1784072082914
     },
     {
       "type": "reasoning",
@@ -407,7 +413,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app/expo/android && ./gradlew assembleRelease --build-cache --stacktrace 2>&1 | tail -n 80\", \"cwd\": \"/home/user/rork-app\"}",
       "createdAt": 1784065486819,
-      "completedAt": 1784065546134
+      "completedAt": 1784065546134,
+      "compactedAt": 1784072082914
     },
     {
       "type": "reasoning",
@@ -438,7 +445,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"cd /home/user/rork-app/expo/android && mkdir -p /tmp/ivx-build && nohup ./gradlew assembleRelease --build-cache --stacktrace > /tmp/ivx-build/gradle.log 2>&1 & echo \\\"PID: $!\\\"\",\"cwd\":\"/home/user/rork-app\"}",
       "createdAt": 1784065579826,
-      "completedAt": 1784065579835
+      "completedAt": 1784065579835,
+      "compactedAt": 1784072082914
     },
     {
       "type": "reasoning",
@@ -469,7 +477,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"tail -n 40 /tmp/ivx-build/gradle.log; echo '---'; ps -p 17720 > /dev/null 2>&1 && echo 'BUILD STILL RUNNING' || echo 'BUILD PROCESS ENDED'\", \"cwd\": \"/home/user/rork-app\"}",
       "createdAt": 1784065584063,
-      "completedAt": 1784065584071
+      "completedAt": 1784065584071,
+      "compactedAt": 1784072082914
     },
     {
       "type": "reasoning",
@@ -500,7 +509,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"kill 17720 2>/dev/null; sleep 2; ps -p 17720 > /dev/null 2>&1 && echo 'still running' || echo 'killed'\",\"cwd\":\"/home/user/rork-app\"}",
       "createdAt": 1784065591035,
-      "completedAt": 1784065592399
+      "completedAt": 1784065592399,
+      "compactedAt": 1784072082914
     },
     {
       "type": "reasoning",
@@ -531,7 +541,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"cd /home/user/rork-app/expo/android && mkdir -p /tmp/ivx-build && PATH=\\\"/tmp/fake-bin:$PATH\\\" nohup ./gradlew assembleRelease --build-cache --stacktrace > /tmp/ivx-build/gradle.log 2>&1 & echo \\\"PID: $!\\\"\",\"cwd\":\"/home/user/rork-app\"}",
       "createdAt": 1784065598336,
-      "completedAt": 1784065598344
+      "completedAt": 1784065598344,
+      "compactedAt": 1784072082914
     },
     {
       "type": "reasoning",
@@ -562,7 +573,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"tail -n 50 /tmp/ivx-build/gradle.log; echo '---'; ps -p 18056 > /dev/null 2>&1 && echo 'BUILD STILL RUNNING' || echo 'BUILD PROCESS ENDED'\",\"cwd\":\"/home/user/rork-app\"}",
       "createdAt": 1784065601713,
-      "completedAt": 1784065601720
+      "completedAt": 1784065601720,
+      "compactedAt": 1784072082914
     },
     {
       "type": "reasoning",
@@ -593,7 +605,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"tail -n 50 /tmp/ivx-build/gradle.log; echo '---'; ps -p 18056 > /dev/null 2>&1 && echo 'BUILD STILL RUNNING' || echo 'BUILD PROCESS ENDED'\",\"cwd\":\"/home/user/rork-app\"}",
       "createdAt": 1784065608185,
-      "completedAt": 1784065608194
+      "completedAt": 1784065608194,
+      "compactedAt": 1784072082914
     },
     {
       "type": "reasoning",
@@ -624,7 +637,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"tail -n 50 /tmp/ivx-build/gradle.log; echo '---'; ps -p 18056 > /dev/null 2>&1 && echo 'BUILD STILL RUNNING' || echo 'BUILD PROCESS ENDED'\",\"cwd\":\"/home/user/rork-app\"}",
       "createdAt": 1784065613070,
-      "completedAt": 1784065613497
+      "completedAt": 1784065613497,
+      "compactedAt": 1784072082914
     },
     {
       "type": "reasoning",
@@ -655,7 +669,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"tail -n 60 /tmp/ivx-build/gradle.log; echo '---'; ps -p 18056 > /dev/null 2>&1 && echo 'BUILD STILL RUNNING' || echo 'BUILD PROCESS ENDED'\",\"cwd\":\"/home/user/rork-app\"}",
       "createdAt": 1784065618300,
-      "completedAt": 1784065618434
+      "completedAt": 1784065618434,
+      "compactedAt": 1784072082914
     },
     {
       "type": "reasoning",
@@ -686,7 +701,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"tail -n 60 /tmp/ivx-build/gradle.log; echo '---'; ps -p 18056 > /dev/null 2>&1 && echo 'BUILD STILL RUNNING' || echo 'BUILD PROCESS ENDED'\",\"cwd\":\"/home/user/rork-app\"}",
       "createdAt": 1784065625357,
-      "completedAt": 1784065625364
+      "completedAt": 1784065625364,
+      "compactedAt": 1784072082914
     },
     {
       "type": "reasoning",
@@ -717,7 +733,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"sleep 20; tail -n 80 /tmp/ivx-build/gradle.log; echo '---'; ps -p 18056 > /dev/null 2>&1 && echo 'BUILD STILL RUNNING' || echo 'BUILD PROCESS ENDED'\",\"cwd\":\"/home/user/rork-app\"}",
       "createdAt": 1784065629695,
-      "completedAt": 1784065650241
+      "completedAt": 1784065650241,
+      "compactedAt": 1784072082914
     },
     {
       "type": "reasoning",
@@ -748,7 +765,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"sleep 15; tail -n 40 /tmp/ivx-build/gradle.log; echo '---'; ps -p 18056 > /dev/null 2>&1 && echo 'BUILD STILL RUNNING' || echo 'BUILD PROCESS ENDED'; echo '---'; grep -iE \\\"BUILD SUCCESSFUL|BUILD FAILED\\\" /tmp/ivx-build/gradle.log | tail -5\",\"cwd\":\"/home/user/rork-app\"}",
       "createdAt": 1784065653598,
-      "completedAt": 1784065669231
+      "completedAt": 1784065669231,
+      "compactedAt": 1784072082914
     },
     {
       "type": "reasoning",
@@ -779,7 +797,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"expo/app.config.ts\", \"offset\": 1, \"limit\": 100}",
       "createdAt": 1784065681049,
-      "completedAt": 1784065681055
+      "completedAt": 1784065681055,
+      "compactedAt": 1784072082914
     },
     {
       "type": "reasoning",
@@ -814,7 +833,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"expo/app.config.ts\", \"edits\": [{\"oldString\": \"    buildMarker: 'IVX_BUNDLE_2026_07_14_OWNER_LOGIN_SELF_HEAL',\\n    buildTimestamp: '2026-07-14T11:25:00.000000+00:00',\\n    sourceCommitSha: '3c30387',\\n    watchdogPatchVersion: 'ota-repair-v1',\", \"newString\": \"    buildMarker: 'IVX_BUNDLE_2026_07_14_AI_MUTATION_WATCHDOG_FIX',\\n    buildTimestamp: '2026-07-14T21:55:00.000000+00:00',\\n    sourceCommitSha: '95dc1f0',\\n    watchdogPatchVersion: 'ai-mutation-watchdog-fix-v1',\", \"replaceAll\": false}, {\"oldString\": \"    versionCode: 8,\", \"newString\": \"    versionCode: 9,\", \"replaceAll\": false}]}",
       "createdAt": 1784065685906,
-      "completedAt": 1784065685926
+      "completedAt": 1784065685926,
+      "compactedAt": 1784072082914
     },
     {
       "type": "reasoning",
@@ -845,7 +865,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"cd /home/user/rork-app/expo/android && PATH=\\\"/tmp/fake-bin:$PATH\\\" nohup ./gradlew assembleRelease --build-cache --stacktrace > /tmp/ivx-build/gradle2.log 2>&1 & echo \\\"PID: $!\\\"\",\"cwd\":\"/home/user/rork-app\"}",
       "createdAt": 1784065691262,
-      "completedAt": 1784065691279
+      "completedAt": 1784065691279,
+      "compactedAt": 1784072082914
     },
     {
       "type": "reasoning",
@@ -876,7 +897,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"tail -n 50 /tmp/ivx-build/gradle2.log; echo '---'; ps -p 18511 > /dev/null 2>&1 && echo 'BUILD STILL RUNNING' || echo 'BUILD PROCESS ENDED'\",\"cwd\":\"/home/user/rork-app\"}",
       "createdAt": 1784065698414,
-      "completedAt": 1784065698424
+      "completedAt": 1784065698424,
+      "compactedAt": 1784072082914
     },
     {
       "type": "reasoning",
@@ -907,7 +929,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"sleep 25; tail -n 80 /tmp/ivx-build/gradle2.log; echo '---'; ps -p 18511 > /dev/null 2>&1 && echo 'BUILD STILL RUNNING' || echo 'BUILD PROCESS ENDED'; echo '---'; grep -iE \\\"BUILD SUCCESSFUL|BUILD FAILED\\\" /tmp/ivx-build/gradle2.log | tail -5\",\"cwd\":\"/home/user/rork-app\"}",
       "createdAt": 1784065702227,
-      "completedAt": 1784065727107
+      "completedAt": 1784065727107,
+      "compactedAt": 1784072082914
     },
     {
       "type": "reasoning",
@@ -938,7 +961,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"sleep 15; tail -n 60 /tmp/ivx-build/gradle2.log; echo '---'; ps -p 18511 > /dev/null 2>&1 && echo 'BUILD STILL RUNNING' || echo 'BUILD PROCESS ENDED'; echo '---'; grep -iE \\\"BUILD SUCCESSFUL|BUILD FAILED\\\" /tmp/ivx-build/gradle2.log | tail -5\",\"cwd\":\"/home/user/rork-app\"}",
       "createdAt": 1784065733737,
-      "completedAt": 1784065746825
+      "completedAt": 1784065746825,
+      "compactedAt": 1784072082914
     },
     {
       "type": "reasoning",
@@ -969,7 +993,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"cp /home/user/rork-app/expo/android/app/build/outputs/apk/release/app-release.apk /home/user/rork-app/ivx-holdings-v1.4.3-build9.apk && ls -la /home/user/rork-app/ivx-holdings-v1.4.3-build9.apk && echo '---' && sha256sum /home/user/rork-app/ivx-holdings-v1.4.3-build9.apk && echo '---' && unzip -p /home/user/rork-app/ivx-holdings-v1.4.3-build9.apk AndroidManifest.xml | grep -oE 'versionCode=\\\"[^\\\"]+\\\"|versionName=\\\"[^\\\"]+\\\"' | head -5\",\"cwd\":\"/home/user/rork-app\"}",
       "createdAt": 1784065750997,
-      "completedAt": 1784065751017
+      "completedAt": 1784065751017,
+      "compactedAt": 1784072082914
     },
     {
       "type": "reasoning",
@@ -994,7 +1019,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"cd /home/user/rork-app && bun x @expo/config 2>/dev/null || true\\n# Use aapt2 if available\\naapt2 dump badging ivx-holdings-v1.4.3-build9.apk 2>/dev/null | grep -E 'versionCode|versionName' | head -2 || true\\necho '---'\\n# Verify the file exists and is valid\\nls -la ivx-holdings-v1.4.3-build9.apk\\nsha256sum ivx-holdings-v1.4.3-build9.apk\"}",
       "createdAt": 1784065758983,
-      "completedAt": 1784065759148
+      "completedAt": 1784065759148,
+      "compactedAt": 1784072082914
     },
     {
       "type": "reasoning",
@@ -1064,7 +1090,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"tasks\": [{\"content\":\"Investigate AI chat timeout in chat.tsx\",\"activeForm\":\"Investigating AI chat timeout in chat.tsx\",\"status\":\"completed\"},{\"content\":\"Fix assistant mutation not invoked after trigger decision\",\"activeForm\":\"Fixing assistant mutation not invoked after trigger decision\",\"status\":\"completed\"},{\"content\":\"Verify AI endpoint health and backend response\",\"activeForm\":\"Verifying AI endpoint health and backend response\",\"status\":\"completed\"},{\"content\":\"Re-test chat AI flow and rebuild APK\",\"activeForm\":\"Re-testing chat AI flow and rebuilding APK\",\"status\":\"completed\"}]}",
       "createdAt": 1784065780424,
-      "completedAt": 1784065780436
+      "completedAt": 1784065780436,
+      "compactedAt": 1784072082914
     },
     {
       "type": "reasoning",

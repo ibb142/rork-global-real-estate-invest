@@ -23,6 +23,21 @@ import {
   handleIVXOwnerAIRequestRetry,
   handleIVXOwnerAIRequestCancel,
 } from './api/ivx-owner-ai-request-control';
+import {
+  handleVercelExitOptions,
+  handleVercelExitDashboard,
+  handleVercelExitAgents,
+  handleVercelExitInventory,
+  handleVercelExitArchitecture,
+  handleVercelExitPhases,
+  handleVercelExitEvidence,
+  handleVercelExitIncidents,
+  handleVercelExitCosts,
+  handleVercelExitControlsState,
+  handleVercelExitControls,
+  handleVercelExitCertification,
+  handleVercelExitScan,
+} from './api/ivx-vercel-exit';
 import { OPTIONS as ownerAIJobsOptions, handleIVXAIJobStartRequest, handleIVXAIJobStatusRequest, handleIVXAIJobsListRequest, handleIVXAIRuntimeObservabilityRequest } from './api/ivx-owner-ai-jobs';
 import { OPTIONS as auditReportOptions, handleIVXAuditReportRequest } from './api/ivx-audit-report';
 import {
@@ -5209,5 +5224,74 @@ app.get('/api/ivx/enterprise/capacity', async (context) => {
 // Public enterprise health (no auth required)
 app.get('/api/ivx/enterprise/health', () => handleEnterpriseHealthRequest());
 app.options('/api/ivx/enterprise/health', () => new Response(null, { status: 204, headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' } }));
+
+// ============================================================================
+// IVX Vercel Exit Command Center — owner-only migration dashboard
+// ============================================================================
+const vercelExitError = (error: unknown) => {
+  const msg = error instanceof Error ? error.message : 'Unknown error';
+  const isAuth = /missing bearer|auth guard|invalid or expired|unauthorized|no bearer|missing token/i.test(msg);
+  return { msg, isAuth };
+};
+
+app.options('/api/ivx/vercel-exit/dashboard', () => handleVercelExitOptions());
+app.get('/api/ivx/vercel-exit/dashboard', async (context) => {
+  try { return await handleVercelExitDashboard(context.req.raw); }
+  catch (error) { const { msg, isAuth } = vercelExitError(error); return context.json({ ok: false, error: msg.slice(0, 320), marker: 'ivx-vercel-exit-2026-07-14', timestamp: new Date().toISOString() }, isAuth ? 401 : 500); }
+});
+app.options('/api/ivx/vercel-exit/agents', () => handleVercelExitOptions());
+app.get('/api/ivx/vercel-exit/agents', async (context) => {
+  try { return await handleVercelExitAgents(context.req.raw); }
+  catch (error) { const { msg, isAuth } = vercelExitError(error); return context.json({ ok: false, error: msg.slice(0, 320), marker: 'ivx-vercel-exit-2026-07-14', timestamp: new Date().toISOString() }, isAuth ? 401 : 500); }
+});
+app.options('/api/ivx/vercel-exit/inventory', () => handleVercelExitOptions());
+app.get('/api/ivx/vercel-exit/inventory', async (context) => {
+  try { return await handleVercelExitInventory(context.req.raw); }
+  catch (error) { const { msg, isAuth } = vercelExitError(error); return context.json({ ok: false, error: msg.slice(0, 320), marker: 'ivx-vercel-exit-2026-07-14', timestamp: new Date().toISOString() }, isAuth ? 401 : 500); }
+});
+app.options('/api/ivx/vercel-exit/architecture', () => handleVercelExitOptions());
+app.get('/api/ivx/vercel-exit/architecture', async (context) => {
+  try { return await handleVercelExitArchitecture(context.req.raw); }
+  catch (error) { const { msg, isAuth } = vercelExitError(error); return context.json({ ok: false, error: msg.slice(0, 320), marker: 'ivx-vercel-exit-2026-07-14', timestamp: new Date().toISOString() }, isAuth ? 401 : 500); }
+});
+app.options('/api/ivx/vercel-exit/phases', () => handleVercelExitOptions());
+app.get('/api/ivx/vercel-exit/phases', async (context) => {
+  try { return await handleVercelExitPhases(context.req.raw); }
+  catch (error) { const { msg, isAuth } = vercelExitError(error); return context.json({ ok: false, error: msg.slice(0, 320), marker: 'ivx-vercel-exit-2026-07-14', timestamp: new Date().toISOString() }, isAuth ? 401 : 500); }
+});
+app.options('/api/ivx/vercel-exit/evidence', () => handleVercelExitOptions());
+app.get('/api/ivx/vercel-exit/evidence', async (context) => {
+  try { return await handleVercelExitEvidence(context.req.raw); }
+  catch (error) { const { msg, isAuth } = vercelExitError(error); return context.json({ ok: false, error: msg.slice(0, 320), marker: 'ivx-vercel-exit-2026-07-14', timestamp: new Date().toISOString() }, isAuth ? 401 : 500); }
+});
+app.options('/api/ivx/vercel-exit/incidents', () => handleVercelExitOptions());
+app.get('/api/ivx/vercel-exit/incidents', async (context) => {
+  try { return await handleVercelExitIncidents(context.req.raw); }
+  catch (error) { const { msg, isAuth } = vercelExitError(error); return context.json({ ok: false, error: msg.slice(0, 320), marker: 'ivx-vercel-exit-2026-07-14', timestamp: new Date().toISOString() }, isAuth ? 401 : 500); }
+});
+app.options('/api/ivx/vercel-exit/costs', () => handleVercelExitOptions());
+app.get('/api/ivx/vercel-exit/costs', async (context) => {
+  try { return await handleVercelExitCosts(context.req.raw); }
+  catch (error) { const { msg, isAuth } = vercelExitError(error); return context.json({ ok: false, error: msg.slice(0, 320), marker: 'ivx-vercel-exit-2026-07-14', timestamp: new Date().toISOString() }, isAuth ? 401 : 500); }
+});
+app.options('/api/ivx/vercel-exit/controls', () => handleVercelExitOptions());
+app.get('/api/ivx/vercel-exit/controls', async (context) => {
+  try { return await handleVercelExitControlsState(context.req.raw); }
+  catch (error) { const { msg, isAuth } = vercelExitError(error); return context.json({ ok: false, error: msg.slice(0, 320), marker: 'ivx-vercel-exit-2026-07-14', timestamp: new Date().toISOString() }, isAuth ? 401 : 500); }
+});
+app.post('/api/ivx/vercel-exit/controls', async (context) => {
+  try { return await handleVercelExitControls(context.req.raw); }
+  catch (error) { const { msg, isAuth } = vercelExitError(error); return context.json({ ok: false, error: msg.slice(0, 320), marker: 'ivx-vercel-exit-2026-07-14', timestamp: new Date().toISOString() }, isAuth ? 401 : 500); }
+});
+app.options('/api/ivx/vercel-exit/certification', () => handleVercelExitOptions());
+app.get('/api/ivx/vercel-exit/certification', async (context) => {
+  try { return await handleVercelExitCertification(context.req.raw); }
+  catch (error) { const { msg, isAuth } = vercelExitError(error); return context.json({ ok: false, error: msg.slice(0, 320), marker: 'ivx-vercel-exit-2026-07-14', timestamp: new Date().toISOString() }, isAuth ? 401 : 500); }
+});
+app.options('/api/ivx/vercel-exit/scan', () => handleVercelExitOptions());
+app.get('/api/ivx/vercel-exit/scan', async (context) => {
+  try { return await handleVercelExitScan(context.req.raw); }
+  catch (error) { const { msg, isAuth } = vercelExitError(error); return context.json({ ok: false, error: msg.slice(0, 320), marker: 'ivx-vercel-exit-2026-07-14', timestamp: new Date().toISOString() }, isAuth ? 401 : 500); }
+});
 
 export default app;

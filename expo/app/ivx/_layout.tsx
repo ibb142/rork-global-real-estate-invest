@@ -40,6 +40,7 @@ const IVX_GITHUB_SYNC_OPTIONS = { title: 'Sync to GitHub' } as const;
 const IVX_CAMPAIGN_OPTIONS = { title: 'Campaign Report' } as const;
 const IVX_AUTONOMOUS_OPS_OPTIONS = { title: 'Autonomous Operations' } as const;
 const IVX_AGENT_COMMAND_CENTER_OPTIONS = { title: 'AI Engineering Command Center' } as const;
+const IVX_VERCEL_EXIT_OPTIONS = { title: 'Vercel Exit Command Center' } as const;
 
 export default function IVXOwnerLayout() {
   return (
@@ -70,6 +71,7 @@ export default function IVXOwnerLayout() {
       <Stack.Screen name="campaign" options={IVX_CAMPAIGN_OPTIONS} />
       <Stack.Screen name="autonomous-ops" options={IVX_AUTONOMOUS_OPS_OPTIONS} />
       <Stack.Screen name="agent-command-center" options={IVX_AGENT_COMMAND_CENTER_OPTIONS} />
+      <Stack.Screen name="vercel-exit" options={IVX_VERCEL_EXIT_OPTIONS} />
     </Stack>
   );
 }

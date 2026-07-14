@@ -22,7 +22,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"cd /home/user/rork-app\\nnohup setsid python3 -m http.server 8765 > /tmp/ivx-apk-server.log 2>&1 &\\nsleep 2\\necho \\\"Server PID:\\\"\\nps aux | grep \\\"http.server 8765\\\" | grep -v grep\\necho \\\"Server log:\\\"\\ncat /tmp/ivx-apk-server.log\\necho \\\"=== Test local curl ===\\\"\\ncurl -I http://localhost:8765/ivx-holdings-v1.4.0.apk 2>&1 | head -5\"}",
       "createdAt": 1784008989147,
-      "completedAt": 1784008989698
+      "completedAt": 1784008989698,
+      "compactedAt": 1784072082914
     },
     {
       "type": "text",
@@ -45,7 +46,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"# Get the public-facing IP address of this sandbox\\nIP=$(curl -s https://ifconfig.me 2>/dev/null || echo \\\"\\\")\\necho \\\"EXTERNAL_IP=$IP\\\"\\n# Also check the interface\\necho \\\"INTERFACE_IPS:\\\"\\nhostname -I 2>/dev/null || echo \\\"hostname -I failed\\\"\\necho \\\"---\\\"\\ncurl -s http://localhost:8765/ivx-holdings-v1.4.0.apk | sha256sum\\necho \\\"--- Server status ---\\\"\\nps aux | grep \\\"http.server 8765\\\" | grep -v grep\"}",
       "createdAt": 1784008992460,
-      "completedAt": 1784008992602
+      "completedAt": 1784008992602,
+      "compactedAt": 1784072082914
     },
     {
       "type": "reasoning",
@@ -75,7 +77,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"# Check if port 8765 is reachable from the public internet\\ncurl -s --connect-timeout 5 http://8.231.165.3:8765/ivx-holdings-v1.4.0.apk -o /dev/null -w \\\"HTTP %{http_code} | size=%{size_download} | time=%{time_total}s\\\\n\\\" 2>&1 || echo \\\"Port not reachable from outside\\\"\\n# Also try port 80/443 via reverse proxy if available\\n# Check if there is a public tunnel endpoint for this project\\nif command -v rork-agent >/dev/null 2>&1; then\\n  rork-agent logs --help 2>/dev/null | head -3 || true\\nfi\"}",
       "createdAt": 1784008996692,
-      "completedAt": 1784009026576
+      "completedAt": 1784009026576,
+      "compactedAt": 1784072082914
     },
     {
       "type": "reasoning",
@@ -169,7 +172,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"cd /home/user/rork-app\\n# Try catbox.moe (anonymous upload, direct link, no ads)\\necho \\\"Trying catbox.moe...\\\"\\nCATBOX_URL=$(curl -s -F \\\"reqtype=fileupload\\\" -F \\\"fileToUpload=@ivx-holdings-v1.4.0.apk\\\" https://catbox.moe/user/api.php --max-time 180 2>&1)\\necho \\\"CATBOX_URL=$CATBOX_URL\\\"\\n# Try 0x0.st (simple, no ads)\\necho \\\"Trying 0x0.st...\\\"\\nOXO_URL=$(curl -s -F \\\"file=@ivx-holdings-v1.4.0.apk\\\" https://0x0.st --max-time 180 2>&1)\\necho \\\"OXO_URL=$OXO_URL\\\"\", \"cwd\": \"/home/user/rork-app\"}",
       "createdAt": 1784009107867,
-      "completedAt": 1784009107889
+      "completedAt": 1784009107889,
+      "compactedAt": 1784072082914
     },
     {
       "type": "reasoning",
@@ -200,7 +204,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"cd /home/user/rork-app\\n# Try gofile.io\\necho \\\"Trying gofile.io...\\\"\\nGOFILE_SERVER=$(curl -s https://api.gofile.io/servers --max-time 30 2>&1)\\necho \\\"GOFILE_SERVERS=$GOFILE_SERVER\\\"\\nGOFILE_SERVER_NAME=$(echo \\\"$GOFILE_SERVER\\\" | grep -o '\\\"name\\\":\\\"[^\\\"]*\\\"' | head -1 | cut -d'\\\"' -f4)\\necho \\\"GOFILE_SERVER_NAME=$GOFILE_SERVER_NAME\\\"\\nif [ -n \\\"$GOFILE_SERVER_NAME\\\" ]; then\\n  GOFILE_URL=$(curl -s -F \\\"file=@ivx-holdings-v1.4.0.apk\\\" \\\"https://$GOFILE_SERVER_NAME.gofile.io/uploadFile\\\" --max-time 180 2>&1)\\n  echo \\\"GOFILE_URL=$GOFILE_URL\\\"\\nfi\\n# Try bashupload.com\\necho \\\"Trying bashupload.com...\\\"\\nBASHUPLOAD=$(curl -s --upload-file ivx-holdings-v1.4.0.apk https://bashupload.com/ivx-holdings-v1.4.0.apk --max-time 180 2>&1)\\necho \\\"BASHUPLOAD=$BASHUPLOAD\\\"\", \"cwd\": \"/home/user/rork-app\"}",
       "createdAt": 1784009117976,
-      "completedAt": 1784009121559
+      "completedAt": 1784009121559,
+      "compactedAt": 1784072082914
     },
     {
       "type": "reasoning",
