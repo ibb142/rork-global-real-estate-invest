@@ -14,6 +14,7 @@ import { PutObjectCommand, S3Client, PutBucketWebsiteCommand, PutBucketPolicyCom
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { createCloudFrontInvalidation } from '../services/ivx-cloudfront-invalidation';
+import { getIVXOwnerVariableRuntimeValue } from './ivx-owner-variables';
 
 const BUCKET_DEFAULT = 'ivxholding.com';
 const WWW_BUCKET_DEFAULT = 'www.ivxholding.com';
@@ -173,8 +174,16 @@ export async function handleLandingFullDeploy(request: Request): Promise<Respons
 
   const region = readEnv('AWS_REGION') || 'us-east-1';
   const bucket = readEnv('S3_BUCKET_NAME') || BUCKET_DEFAULT;
-  const accessKey = readEnv('AWS_ACCESS_KEY_ID');
-  const secretKey = readEnv('AWS_SECRET_ACCESS_KEY');
+  // Try process.env first, then fall back to Owner Variables table (encrypted, decrypted at runtime)
+  let accessKey = readEnv('AWS_ACCESS_KEY_ID');
+  let secretKey = readEnv('AWS_SECRET_ACCESS_KEY');
+
+  if (!accessKey) {
+    accessKey = await getIVXOwnerVariableRuntimeValue('AWS_ACCESS_KEY_ID');
+  }
+  if (!secretKey) {
+    secretKey = await getIVXOwnerVariableRuntimeValue('AWS_SECRET_ACCESS_KEY');
+  }
 
   const missingEnv: string[] = [];
   if (!accessKey) missingEnv.push('AWS_ACCESS_KEY_ID');
@@ -183,7 +192,7 @@ export async function handleLandingFullDeploy(request: Request): Promise<Respons
   if (missingEnv.length > 0) {
     return new Response(JSON.stringify({
       ok: false,
-      error: `Missing AWS credentials: ${missingEnv.join(', ')}`,
+      error: `Missing AWS credentials: ${missingEnv.join(', ')}. Checked process.env and Owner Variables table.`,
       bucket,
       missingEnv,
       timestamp,
@@ -285,10 +294,16 @@ export async function handleLandingFullDeploy(request: Request): Promise<Respons
 
   // Invalidate CloudFront
   let cloudFront: FullDeployResult['cloudFront'] = { attempted: false, ok: false };
-  if (allUploadsOk && readEnv('CLOUDFRONT_DISTRIBUTION_ID')) {
+  let cloudFrontDistributionId = readEnv('CLOUDFRONT_DISTRIBUTION_ID');
+  if (!cloudFrontDistributionId) {
+    cloudFrontDistributionId = await getIVXOwnerVariableRuntimeValue('CLOUDFRONT_DISTRIBUTION_ID');
+  }
+
+  if (allUploadsOk && cloudFrontDistributionId) {
     const invalidation = await createCloudFrontInvalidation({
       paths: invalidationPaths,
       callerReference: `landing-full-deploy-${Date.now()}`,
+      distributionId: cloudFrontDistributionId,
     });
     cloudFront = {
       attempted: true,
@@ -300,7 +315,7 @@ export async function handleLandingFullDeploy(request: Request): Promise<Respons
       `[LandingFullDeploy] CloudFront invalidation: ${invalidation.status}` +
         (invalidation.invalidationId ? ` (${invalidation.invalidationId})` : ''),
     );
-  } else if (allUploadsOk && !readEnv('CLOUDFRONT_DISTRIBUTION_ID')) {
+  } else if (allUploadsOk && !cloudFrontDistributionId) {
     cloudFront = {
       attempted: false,
       ok: false,
