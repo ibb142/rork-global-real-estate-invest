@@ -1,5 +1,4 @@
 {
-  "id": "yq9efayo2zs9o3s6ieztd",
   "role": "assistant",
   "responseMessageContents": [
     {
@@ -12,8 +11,7 @@
     {
       "type": "text",
       "text": "The report was already written in my previous turn. Let me verify it's intact and re-confirm all production details are still accurate.",
-      "id": "p3zd9lau1h27oxmbl2pwx",
-      "createdAt": 1784054802755
+      "id": "p3zd9lau1h27oxmbl2pwx"
     },
     {
       "type": "tool",
@@ -31,7 +29,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"# Re-verify APK\\nls -la /home/user/rork-app/ivx-holdings-v1.4.3-build8.apk 2>/dev/null && echo \\\"APK_EXISTS\\\" || echo \\\"APK_MISSING\\\"\\nsha256sum /home/user/rork-app/ivx-holdings-v1.4.3-build8.apk 2>/dev/null\\necho \\\"=== GRADLE VERSION ===\\\"\\ngrep -E \\\"applicationId|versionCode|versionName\\\" /home/user/rork-app/expo/android/app/build.gradle 2>/dev/null | grep -v \\\"//\\\"\\necho \\\"=== RENDER HEALTH ===\\\"\\ncurl -s \\\"https://api.ivxholding.com/health\\\" 2>/dev/null | python3 -c \\\"import sys,json;d=json.load(sys.stdin);print(f'health={d[\\\\\\\"status\\\\\\\"]} commit={d[\\\\\\\"commit\\\\\\\"][:12]} routes={len(d[\\\\\\\"routes\\\\\\\"])}')\\\" 2>/dev/null\\necho \\\"=== RENDER VERSION ===\\\"\\ncurl -s \\\"https://api.ivxholding.com/version\\\" 2>/dev/null | python3 -c \\\"import sys,json;d=json.load(sys.stdin);print(f'version={d[\\\\\\\"commit\\\\\\\"][:12]} service={d[\\\\\\\"service\\\\\\\"]} marker={d[\\\\\\\"deploymentMarker\\\\\\\"][:50]}')\\\" 2>/dev/null\\necho \\\"=== REPORT EXISTS ===\\\"\\nls -la /home/user/rork-app/docs/IVX-RC1-FINAL-RELEASE-REPORT.md 2>/dev/null && echo \\\"REPORT_OK\\\" || echo \\\"REPORT_MISSING\\\"\"}",
       "createdAt": 1784054803181,
-      "completedAt": 1784054804917
+      "completedAt": 1784054804917,
+      "compactedAt": 1784058927476
     },
     {
       "type": "tool",
@@ -49,7 +48,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"/home/user/rork-app/docs/IVX-RC1-FINAL-RELEASE-REPORT.md\", \"limit\": 20}",
       "createdAt": 1784054804337,
-      "completedAt": 1784054804918
+      "completedAt": 1784054804918,
+      "compactedAt": 1784058927476
     },
     {
       "type": "reasoning",
@@ -61,8 +61,7 @@
     {
       "type": "text",
       "text": "The report already exists and all details are re-verified. Let me confirm the Android/iOS sections say PENDING (not BLOCKED).",
-      "id": "55g6odk5z1m5fimpx8b99",
-      "createdAt": 1784054808053
+      "id": "55g6odk5z1m5fimpx8b99"
     },
     {
       "type": "tool",
@@ -80,7 +79,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"grep -n \\\"BLOCKED\\\" /home/user/rork-app/docs/IVX-RC1-FINAL-RELEASE-REPORT.md 2>/dev/null\\necho \\\"=== ANDROID QA SECTION ===\\\"\\ngrep -A2 \\\"Android QA\\\" /home/user/rork-app/docs/IVX-RC1-FINAL-RELEASE-REPORT.md 2>/dev/null | head -5\\necho \\\"=== iOS QA SECTION ===\\\"\\ngrep -A2 \\\"iOS QA\\\" /home/user/rork-app/docs/IVX-RC1-FINAL-RELEASE-REPORT.md 2>/dev/null | head -5\\necho \\\"=== STATUS LINE ===\\\"\\ngrep \\\"READY FOR OWNER\\\" /home/user/rork-app/docs/IVX-RC1-FINAL-RELEASE-REPORT.md 2>/dev/null\"}",
       "createdAt": 1784054808416,
-      "completedAt": 1784054809500
+      "completedAt": 1784054809500,
+      "compactedAt": 1784058927476
     },
     {
       "type": "reasoning",
@@ -92,10 +92,10 @@
     {
       "type": "text",
       "text": "The report is already complete and verified. The word \"BLOCKED\" appears only in the explicit note saying it is NOT used — zero items are classified as BLOCKED. Both Android QA and iOS QA are marked **PENDING**. Here's the final confirmation:\n\n---\n\n## RC-1 FINAL RELEASE — VERIFIED SUMMARY\n\n### Production Artifact\n\n| Field | Value |\n|-------|-------|\n| **APK Filename** | `ivx-holdings-v1.4.3-build8.apk` |\n| **APK Version** | 1.4.3 |\n| **Build ID** | 8 (versionCode) |\n| **Package Name** | `com.ivxholdings.app` |\n| **SHA-256 Checksum** | `0301ecc519069bb515f5c00f7506d18dd4396ecd582bb19b2b2cd81d6a22e6bc` |\n| **APK Download URL** | `https://rork.app/pa/j2l8t44588ix9ns7b57mu/ivx-holdings-v1.4.3-build8.apk` |\n| **Commit SHA** | `d4cbfc2eca182e8a2ef8fe07f6f48a875638a2ff` |\n| **Deployment ID** | `ivx-owner-ai-backend` / marker `ivx-owner-ai-hono-autodeploy-live` |\n\n### SHA Sync — ALL MATCH\n\nGitHub HEAD = Render Live = `/version` = `d4cbfc2eca18` — **PASS**\n\n### Release Status Rules (as defined in report)\n\n- **PASS** = Verified inside the development environment\n- **PENDING** = Requires verification on a real Android or iOS device\n- **FAIL** = Production defect requiring a code fix\n- **BLOCKED** = NOT USED for tasks requiring a physical device\n\n### QA Summary\n\n| Category | Status |\n|----------|--------|\n| Backend / Database / Migration (56 tables, 179 statements) | PASS |\n| Authentication & Security (10/10 routes, 0 HTTP 500s) | PASS |\n| Chat & Realtime (10/10 WebSocket tests) | PASS |\n| Production Deployment (healthy, 77 routes) | PASS |\n| SHA Sync (GitHub = Render = /version) | PASS |\n| CORS Security (evil.com blocked) | PASS |\n| Android APK Build (Gradle, 424 tasks, 79 MB) | PASS |\n| iOS Static Analysis (38 files, 0 deprecated APIs) | PASS |\n| Load & Capacity (auth 328 RPS, chat 500c, AI 10c) | PASS |\n| **Android QA** | **PENDING — Waiting for owner validation on a real Android device** |\n| **iOS QA** | **PENDING — Waiting for Xcode build and owner validation on a real iPhone** |\n\n### Overall Status: **READY FOR OWNER VALIDATION**\n\nThe application code, backend, deployment, database, authentication, chat, security, realtime, and production infrastructure are complete and verified. The only remaining step before Production Ready is successful testing on real devices.\n\n**Report location:** `docs/IVX-RC1-FINAL-RELEASE-REPORT.md`\n\n**Owner next steps:**\n1. Install `ivx-holdings-v1.4.3-build8.apk` on a real Android device — test 14 QA items\n2. Open `ios-ivx/Ivx.xcodeproj` in Xcode — set Apple Team ID — build — test on iPhone\n3. After device validation passes — mark as PRODUCTION READY",
-      "id": "5dh6job45srxuoytt75y2",
-      "createdAt": 1784054814344
+      "id": "5dh6job45srxuoytt75y2"
     }
   ],
+  "id": "yq9efayo2zs9o3s6ieztd",
   "snapshotId": "yq9efayo2zs9o3s6ieztd",
   "finishStats": {
     "contextTokens": 50248,
