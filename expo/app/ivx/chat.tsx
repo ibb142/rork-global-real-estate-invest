@@ -44,6 +44,7 @@ import { IVX_OWNER_AI_PROFILE, IVX_OWNER_AI_ROOM_ID } from '@/constants/ivx-owne
 import { useAuth } from '@/lib/auth-context';
 import { resolveDevTestModeContext } from '@/lib/dev-test-mode';
 import { getIVXAccessToken, getIVXOwnerAIConfigAudit, type IVXOwnerAIConfigAudit } from '@/lib/ivx-supabase-client';
+import { runOwnerSessionPreflight, OWNER_SESSION_REQUIRED_LABEL } from '@/src/modules/ivx-owner-ai/services/ownerSessionPreflight';
 import { isOpenAccessModeEnabled } from '@/lib/open-access';
 import { safeSetString } from '@/lib/safe-clipboard';
 import type { IVXMessage, IVXOwnerAIRouterDebug, IVXOwnerAIToolOutput, IVXUploadInput } from '@/shared/ivx';
@@ -881,6 +882,7 @@ export default function IVXOwnerChatRoute() {
   const [keyboardInset, setKeyboardInset] = useState<number>(0);
   const [rootLayoutHeight, setRootLayoutHeight] = useState<number>(0);
   const [showDiagnostics, setShowDiagnostics] = useState<boolean>(false);
+  const [ownerSessionPreflight, setOwnerSessionPreflight] = useState<{ state: 'checking' | 'needs_signin' | 'ready'; reason?: string; detail?: string }>({ state: 'checking' });
   const [showScrollToLatest, setShowScrollToLatest] = useState<boolean>(false);
   const [unreadCount, setUnreadCount] = useState<number>(0);
   const isOpenAccessBuild = isOpenAccessModeEnabled();
@@ -906,6 +908,31 @@ export default function IVXOwnerChatRoute() {
   // The task most recently kicked off from chat, surfaced as an inline Live Work
   // button so the owner can jump straight to the real-time execution monitor.
   const [activeLiveWorkTask, setActiveLiveWorkTask] = useState<ChatLiveWorkTask | null>(null);
+
+  // Proactive owner-session gate: detect missing session before the user types
+  // so the chat shows a clear sign-in prompt instead of failing after send.
+  useEffect(() => {
+    let cancelled = false;
+    async function checkOwnerSession() {
+      setOwnerSessionPreflight({ state: 'checking' });
+      try {
+        const result = await runOwnerSessionPreflight({ forceRefresh: false });
+        if (cancelled) return;
+        if (result.ok) {
+          setOwnerSessionPreflight({ state: 'ready' });
+        } else {
+          setOwnerSessionPreflight({ state: 'needs_signin', reason: result.reason, detail: result.detail });
+        }
+      } catch (error) {
+        if (cancelled) return;
+        setOwnerSessionPreflight({ state: 'needs_signin', reason: 'no_supabase_session', detail: error instanceof Error ? error.message : 'Owner session unavailable.' });
+      }
+    }
+    checkOwnerSession();
+    return () => {
+      cancelled = true;
+    };
+  }, [ownerId, user?.email]);
   // Overlay lifecycle hardening: close the live-work overlay automatically
   // when the app backgrounds, when the screen unmounts, or when navigation
   // pulls the route off. Prevents ghost overlays + stale poller activity.
@@ -6357,8 +6384,8 @@ export default function IVXOwnerChatRoute() {
                   style={[styles.composerInput, { height: composerInputHeight }]}
                   value={composerValue}
                   onChangeText={handleComposerChange}
-                  editable={!attachmentMutation.isPending && !isPickingFile && !isRecordingVoice && !isTranscribingVoice}
-                  placeholder={composerPlaceholder}
+                  editable={ownerSessionPreflight.state === 'ready' && !attachmentMutation.isPending && !isPickingFile && !isRecordingVoice && !isTranscribingVoice}
+                  placeholder={ownerSessionPreflight.state === 'needs_signin' ? 'Sign in as IVX Owner to continue' : composerPlaceholder}
                   placeholderTextColor="#B8C0CC"
                   multiline
                   textAlignVertical="top"
@@ -6401,13 +6428,17 @@ export default function IVXOwnerChatRoute() {
                 </Pressable>
               </View>
               <View style={styles.composerSecondaryRow}>
-                <Text numberOfLines={1} style={styles.composerHintText}>{composerStatusMessage}</Text>
+                <Text numberOfLines={1} style={styles.composerHintText}>
+                  {ownerSessionPreflight.state === 'needs_signin'
+                    ? 'Owner session required to send or use AI tools'
+                    : composerStatusMessage}
+                </Text>
                 <Pressable
-                  style={[styles.aiButton, (sendingDisabled || isBusy) ? styles.actionButtonDisabled : null]}
+                  style={[styles.aiButton, (sendingDisabled || isBusy || ownerSessionPreflight.state !== 'ready') ? styles.actionButtonDisabled : null]}
                   onPress={() => {
                     handleAskAI();
                   }}
-                  disabled={sendingDisabled || isBusy}
+                  disabled={sendingDisabled || isBusy || ownerSessionPreflight.state !== 'ready'}
                   hitSlop={8}
                   accessibilityRole="button"
                   accessibilityLabel="Ask IVX Owner AI"
@@ -6417,6 +6448,24 @@ export default function IVXOwnerChatRoute() {
                   <Text style={styles.aiButtonText}>AI</Text>
                 </Pressable>
               </View>
+              {ownerSessionPreflight.state === 'needs_signin' ? (
+                <View style={styles.ownerSessionGate} testID="ivx-owner-chat-session-gate">
+                  <Crown size={18} color={Colors.primary} />
+                  <Text style={styles.ownerSessionGateText}>
+                    Owner session required. Sign in as the IVX owner to send messages and use owner-only tools.
+                  </Text>
+                  <Pressable
+                    style={styles.ownerSessionGateButton}
+                    onPress={() => router.push('/ivx/auth-diagnostics' as never)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Sign in as IVX owner"
+                    testID="ivx-owner-chat-signin-button"
+                    hitSlop={8}
+                  >
+                    <Text style={styles.ownerSessionGateButtonText}>Sign in as IVX Owner</Text>
+                  </Pressable>
+                </View>
+              ) : null}
             </View>
           </View>
         ) : null}
@@ -8404,6 +8453,37 @@ const styles = StyleSheet.create({
     color: Colors.text,
     fontSize: 9,
     fontWeight: '700' as const,
+  },
+  ownerSessionGate: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 10,
+    backgroundColor: 'rgba(255, 215, 0, 0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 215, 0, 0.32)',
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    marginTop: 8,
+  },
+  ownerSessionGateText: {
+    flex: 1,
+    color: Colors.text,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '600' as const,
+  },
+  ownerSessionGateButton: {
+    backgroundColor: Colors.primary,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    flexShrink: 0,
+  },
+  ownerSessionGateButtonText: {
+    color: Colors.black,
+    fontSize: 12,
+    fontWeight: '800' as const,
   },
   listFooterSpacer: {
     height: 2,
