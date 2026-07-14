@@ -593,6 +593,10 @@ export const ivxAIWatchdog = {
     const active = store.getTraceForTransient(transientId);
     return active ? toHandle(active) : null;
   },
+  getTrace(traceId: string): WatchdogTraceHandle | null {
+    const active = store.getActive(traceId);
+    return active ? toHandle(active) : null;
+  },
   getReports(): WatchdogReport[] {
     return store.getReports();
   },

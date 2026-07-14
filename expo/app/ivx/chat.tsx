@@ -52,6 +52,7 @@ import type { IVXMessage, IVXOwnerAIRouterDebug, IVXOwnerAIToolOutput, IVXUpload
 import { assertCleanOwnerAIResponseText, isIVXServiceUnavailableDiagnostics } from '@/src/modules/ivx-owner-ai/services/ivxAIRequestService';
 import { ivxAIWatchdog, type WatchdogTraceHandle } from '@/src/modules/ivx-owner-ai/services/ivxAIWatchdog';
 import { IVXWatchdogBanner, IVXWatchdogDrawer } from '@/components/IVXWatchdogPanel';
+import { IVXOwnerAIDiagnostics } from '@/components/IVXOwnerAIDiagnostics';
 import { ivxDiagnostics } from '@/src/modules/ivx-developer/diagnosticsStore';
 import { refreshOwnerSession } from '@/src/modules/ivx-developer/authDiagnosticsService';
 import IVXAdvancedExecutionMode from '@/components/IVXAdvancedExecutionMode';
@@ -5308,6 +5309,7 @@ export default function IVXOwnerChatRoute() {
               )}
             </View>
           ) : null}
+          <IVXOwnerAIDiagnostics apiEnvironment={process.env.EXPO_PUBLIC_RORK_API_BASE_URL} />
           {topStatusNote ? (
             <View
               style={ownerAIRoutingBlocked ? styles.blockedBanner : activeFallbackForCurrentMessage ? styles.degradedBanner : styles.devBanner}
