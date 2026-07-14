@@ -1,0 +1,99 @@
+{
+  "title": "AI Gateway Authentication Fix — End-to-End Verification",
+  "timestamp": "2026-07-14T13:37:20.069Z",
+  "status": "RESOLVED",
+  "summary": "AI_GATEWAY_API_KEY rotated from expired key (vck_****yBUI) to new valid key (vck_****pUTD). Vercel AI Gateway now returns real AI responses. Owner AI chat confirmed working end-to-end.",
+  "rootCause": {
+    "issue": "Production AI_GATEWAY_API_KEY was expired/revoked at Vercel side",
+    "evidence": "POST /api/ivx/owner-ai returned providerError=Unauthenticated with HTTP 502",
+    "oldKeyMasked": "vck_****yBUI",
+    "oldKeyLength": 60,
+    "oldKeySource": "process.env.AI_GATEWAY_API_KEY",
+    "gatewayUrl": "https://ai-gateway.vercel.sh",
+    "errorOrigin": "normalizeGatewayFailure at backend/ivx-ai-runtime.ts:282:22",
+    "sdkVersion": "ai@6.0.218",
+    "sdkDefaultBasePath": "/v3/ai"
+  },
+  "fix": {
+    "action": "Rotated AI_GATEWAY_API_KEY via Render env var upsert + redeploy",
+    "newKeyMasked": "vck_****pUTD",
+    "newKeyLength": 60,
+    "newKeyValidatedDirectly": true,
+    "directTestEndpoint": "https://ai-gateway.vercel.sh/v1/chat/completions",
+    "directTestStatus": 200,
+    "directTestResponse": "Hi there! How can I assist you today?"
+  },
+  "steps": [
+    {
+      "step": 1,
+      "action": "Test new key directly against Vercel AI Gateway",
+      "result": "PASS",
+      "detail": "POST /v1/chat/completions with Bearer vck_****pUTD returned HTTP 200 with AI response"
+    },
+    {
+      "step": 2,
+      "action": "Save new key to encrypted Owner Variables store",
+      "result": "PASS",
+      "detail": "POST /api/ivx/owner-variables/save returned 200, maskedPreview=vck_****pUTD"
+    },
+    {
+      "step": 3,
+      "action": "Upsert AI_GATEWAY_API_KEY on Render service env",
+      "result": "PASS",
+      "detail": "POST /api/ivx/developer-deploy/action with render_upsert_env_var, serviceId=srv-d7t9ivreo5us73ftose0, valueStored=true"
+    },
+    {
+      "step": 4,
+      "action": "Upsert OPENAI_API_KEY (alias) on Render service env",
+      "result": "PASS",
+      "detail": "POST /api/ivx/developer-deploy/action with render_upsert_env_var, valueStored=true"
+    },
+    {
+      "step": 5,
+      "action": "Trigger Render deploy",
+      "result": "PASS",
+      "detail": "POST /api/ivx/developer-deploy/action with render_trigger_deploy, status=accepted, deployId=dep-d9b3k5oddkuc73drj9a0"
+    },
+    {
+      "step": 6,
+      "action": "Wait for deploy to go live",
+      "result": "PASS",
+      "detail": "Deploy status=live, bootTime=2026-07-14T13:34:15.656Z, commit=89b656ba"
+    },
+    {
+      "step": 7,
+      "action": "Verify new key in runtime",
+      "result": "PASS",
+      "detail": "owner-variables/status: maskedPreview=vck_****pUTD, presentInRuntime=true, runtimeSource=process_env"
+    },
+    {
+      "step": 8,
+      "action": "End-to-end owner AI chat test",
+      "result": "PASS",
+      "detail": "POST /api/ivx/owner-ai with message='Say hello in one word' returned answer='Hello!', status=ok, model=openai/gpt-4o, source=remote_api, fallbackUsed=false"
+    }
+  ],
+  "postFixVerification": {
+    "requestId": "524e5c07-eff9-4e8d-8cf2-bd95cc13d41f",
+    "conversationId": "8f5a9c42-1cb5-4f81-b2d8-6f3a0a8b9d41",
+    "answer": "Hello!",
+    "model": "openai/gpt-4o",
+    "status": "ok",
+    "source": "remote_api",
+    "provider": "chatgpt",
+    "endpoint": "https://ai-gateway.vercel.sh/v3/ai/openai/gpt-4o",
+    "fallbackUsed": false,
+    "assistantPersisted": true,
+    "generatedAt": "2026-07-14T13:37:20.069Z"
+  },
+  "productionRuntime": {
+    "bootTime": "2026-07-14T13:34:15.656Z",
+    "commit": "89b656bab19cbf9e8ac3e785dcd658f85298dbaf",
+    "deployId": "dep-d9b3k5oddkuc73drj9a0",
+    "deployStatus": "live",
+    "serviceId": "srv-d7t9ivreo5us73ftose0",
+    "aiGatewayKeyMasked": "vck_****pUTD",
+    "aiGatewayKeyPresent": true,
+    "aiGatewayKeySource": "process_env"
+  }
+}
