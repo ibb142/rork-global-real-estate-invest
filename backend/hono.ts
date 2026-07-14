@@ -747,6 +747,14 @@ import {
   handleExecutionRecordRequest as handleSeniorDevExecutionRecord,
 } from './api/ivx-senior-dev-build';
 import { checkRateLimit } from './middleware/ivx-rate-limit';
+import {
+  enterpriseOptions,
+  handleEnterpriseObservabilityRequest,
+  handleEnterpriseSecurityRequest,
+  handleEnterpriseDashboardRequest,
+  handleEnterpriseCapacityRequest,
+  handleEnterpriseHealthRequest,
+} from './api/ivx-enterprise';
 
 /** Apply rate limit; if blocked, return the 429 directly. */
 async function withRateLimit<T extends Response>(
@@ -5140,5 +5148,49 @@ app.get('/api/ivx/qa-migration/verify', async (context) => {
     return context.json({ ok: false, error: msg.slice(0, 320), marker: 'ivx-qa-migration-runner-2026-07-14', timestamp: new Date().toISOString() }, isAuth ? 401 : 500);
   }
 });
+
+// ============================================================================
+// IVX ENTERPRISE — Observability, Security, Dashboard, Capacity, Health
+// Phase 1–5: Enterprise readiness endpoints (owner-gated except health)
+// ============================================================================
+app.options('/api/ivx/enterprise/observability', () => enterpriseOptions());
+app.get('/api/ivx/enterprise/observability', async (context) => {
+  try { return await handleEnterpriseObservabilityRequest(context.req.raw); }
+  catch (error) {
+    const msg = error instanceof Error ? error.message : 'Unknown error';
+    const isAuth = /missing bearer|auth guard|invalid or expired|unauthorized|no bearer|missing token/i.test(msg);
+    return context.json({ ok: false, error: msg.slice(0, 320), marker: 'ivx-enterprise-api-2026-07-14', timestamp: new Date().toISOString() }, isAuth ? 401 : 500);
+  }
+});
+app.options('/api/ivx/enterprise/security', () => enterpriseOptions());
+app.get('/api/ivx/enterprise/security', async (context) => {
+  try { return await handleEnterpriseSecurityRequest(context.req.raw); }
+  catch (error) {
+    const msg = error instanceof Error ? error.message : 'Unknown error';
+    const isAuth = /missing bearer|auth guard|invalid or expired|unauthorized|no bearer|missing token/i.test(msg);
+    return context.json({ ok: false, error: msg.slice(0, 320), marker: 'ivx-enterprise-api-2026-07-14', timestamp: new Date().toISOString() }, isAuth ? 401 : 500);
+  }
+});
+app.options('/api/ivx/enterprise/dashboard', () => enterpriseOptions());
+app.get('/api/ivx/enterprise/dashboard', async (context) => {
+  try { return await handleEnterpriseDashboardRequest(context.req.raw); }
+  catch (error) {
+    const msg = error instanceof Error ? error.message : 'Unknown error';
+    const isAuth = /missing bearer|auth guard|invalid or expired|unauthorized|no bearer|missing token/i.test(msg);
+    return context.json({ ok: false, error: msg.slice(0, 320), marker: 'ivx-enterprise-api-2026-07-14', timestamp: new Date().toISOString() }, isAuth ? 401 : 500);
+  }
+});
+app.options('/api/ivx/enterprise/capacity', () => enterpriseOptions());
+app.get('/api/ivx/enterprise/capacity', async (context) => {
+  try { return await handleEnterpriseCapacityRequest(context.req.raw); }
+  catch (error) {
+    const msg = error instanceof Error ? error.message : 'Unknown error';
+    const isAuth = /missing bearer|auth guard|invalid or expired|unauthorized|no bearer|missing token/i.test(msg);
+    return context.json({ ok: false, error: msg.slice(0, 320), marker: 'ivx-enterprise-api-2026-07-14', timestamp: new Date().toISOString() }, isAuth ? 401 : 500);
+  }
+});
+// Public enterprise health (no auth required)
+app.get('/api/ivx/enterprise/health', () => handleEnterpriseHealthRequest());
+app.options('/api/ivx/enterprise/health', () => new Response(null, { status: 204, headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' } }));
 
 export default app;

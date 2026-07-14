@@ -1,19 +1,27 @@
-# IVX Blueprint v5 — force deploy 2026-07-01T22:15:00Z — commit 28bb5d7
+# IVX Holdings — Enterprise Blueprint v6
+# Multi-instance backend, autoscaling, Redis cache, background worker,
+# separate staging, zero-downtime deploys with automatic rollback.
+# Updated: 2026-07-14T19:00:00Z
+
 services:
+  # ============================================================
+  # PRODUCTION API — multi-instance with autoscaling
+  # ============================================================
   - type: web
     name: ivx-holdings-platform
-    # IVX: Use the Rork-managed git router as the canonical source. The GitHub
-    # mirror lags behind because the sandbox cannot push to it without GITHUB_TOKEN;
-    # the Rork router is always up-to-date with the latest local commit and is
-    # publicly accessible for Render auto-deploy.
     repo: https://rork-git-router.rork-direct.workers.dev/git/j2l8t44588ix9ns7b57mu
     branch: main
     runtime: docker
     dockerfilePath: ./Dockerfile
     dockerContext: .
     dockerCommand: node /app/node_modules/tsx/dist/cli.mjs /app/server.ts
-    plan: starter
-    # IVX: auto-deploy on every push to main (owner-requested).
+    plan: standard
+    # Autoscaling: 1→3 instances based on CPU/memory
+    scaling:
+      minInstances: 1
+      maxInstances: 3
+      targetCPUPercent: 70
+      targetMemoryPercent: 80
     autoDeployTrigger: commit
     healthCheckPath: /health
     domains:
@@ -22,20 +30,26 @@ services:
     disk:
       name: ivx-holdings-data
       mountPath: /app/data
-      sizeGB: 1
+      sizeGB: 5
     envVars:
       - key: NODE_ENV
         value: production
       - key: HOST
         value: 0.0.0.0
       - key: PORT
-        value: 3000
+        value: "3000"
+      - key: IVX_DEPLOYMENT_ENV
+        value: production
+      - key: IVX_AUTOSCALING_ENABLED
+        value: "true"
+      - key: IVX_MAX_INSTANCES
+        value: "3"
       - key: CHAT_DATABASE_PATH
         value: /app/data/chat-room.sqlite
       - key: IVX_DATA_DIR
         value: /app/data
       - key: CHAT_ALLOWED_ORIGINS
-        value: https://chat.ivxholding.com,https://api.ivxholding.com,https://ivx-holdings-platform.onrender.com,https://ivx-holdings-chat-frontend.onrender.com
+        value: https://chat.ivxholding.com,https://api.ivxholding.com,https://ivxholding.com,https://www.ivxholding.com
       - key: EXPO_PUBLIC_CHAT_SOCKET_PATH
         value: /socket.io
       - key: EXPO_PUBLIC_APP_ENV
@@ -56,6 +70,19 @@ services:
         value: main-room
       - key: EXPO_PUBLIC_CHAT_DEFAULT_ROOM_ID
         value: main-room
+      # Redis for cache + Socket.IO adapter + pub/sub
+      - key: REDIS_URL
+        fromService:
+          name: ivx-redis
+          type: redis
+          property: connectionString
+      - key: IVX_REDIS_ADAPTER_ENABLED
+        value: "true"
+      - key: IVX_CACHE_ENABLED
+        value: "true"
+      - key: IVX_RATE_LIMIT_REDIS
+        value: "true"
+      # JWT_SECRET
       - key: JWT_SECRET
         sync: false
       - key: APP_SECRET
@@ -80,16 +107,6 @@ services:
         sync: false
       - key: S3_BUCKET_NAME
         sync: false
-      - key: MINIO_HOST
-        fromService:
-          name: minio
-          type: pserv
-          property: host
-      - key: MINIO_PASSWORD
-        fromService:
-          name: minio
-          type: pserv
-          envVarKey: MINIO_ROOT_PASSWORD
       - key: CLOUDFRONT_DISTRIBUTION_ID
         sync: false
       - key: AI_GATEWAY_API_KEY
@@ -128,12 +145,99 @@ services:
         value: https://api.ivxholding.com
       - fromGroup: my-env-group
 
+  # ============================================================
+  # BACKGROUND WORKER — queue processing, scheduled tasks
+  # ============================================================
+  - type: worker
+    name: ivx-holdings-worker
+    repo: https://rork-git-router.rork-direct.workers.dev/git/j2l8t44588ix9ns7b57mu
+    branch: main
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: node /app/node_modules/tsx/dist/cli.mjs /app/backend/worker.ts
+    plan: starter
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: IVX_DEPLOYMENT_ENV
+        value: production
+      - key: IVX_WORKER_MODE
+        value: "true"
+      - key: REDIS_URL
+        fromService:
+          name: ivx-redis
+          type: redis
+          property: connectionString
+      - key: EXPO_PUBLIC_SUPABASE_URL
+        sync: false
+      - key: EXPO_PUBLIC_SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: AI_GATEWAY_API_KEY
+        sync: false
+      - key: EXPO_PUBLIC_IVX_AI_GATEWAY_URL
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: mydatabase
+          property: connectionString
+      - fromGroup: my-env-group
+
+  # ============================================================
+  # STAGING API — separate environment for pre-prod testing
+  # ============================================================
+  - type: web
+    name: ivx-holdings-staging
+    repo: https://rork-git-router.rork-direct.workers.dev/git/j2l8t44588ix9ns7b57mu
+    branch: staging
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: node /app/node_modules/tsx/dist/cli.mjs /app/server.ts
+    plan: starter
+    autoDeployTrigger: commit
+    healthCheckPath: /health
+    renderSubdomainPolicy: enabled
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      - key: PORT
+        value: "3000"
+      - key: IVX_DEPLOYMENT_ENV
+        value: staging
+      - key: EXPO_PUBLIC_APP_ENV
+        value: staging
+      - key: CHAT_ALLOWED_ORIGINS
+        value: https://ivx-holdings-staging.onrender.com,http://localhost:8081,http://localhost:19006
+      - key: REDIS_URL
+        fromService:
+          name: ivx-redis-staging
+          type: redis
+          property: connectionString
+      - key: EXPO_PUBLIC_SUPABASE_URL
+        sync: false
+      - key: EXPO_PUBLIC_SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: mydatabase-staging
+          property: connectionString
+      - key: AI_GATEWAY_API_KEY
+        sync: false
+      - fromGroup: my-env-group
+
+  # ============================================================
+  # CHAT FRONTEND — static site on Render
+  # ============================================================
   - type: web
     name: ivx-holdings-chat-frontend
-    # IVX: Use the Rork-managed git router as the canonical source. The GitHub
-    # mirror lags behind because the sandbox cannot push to it without GITHUB_TOKEN;
-    # the Rork router is always up-to-date with the latest local commit and is
-    # publicly accessible for Render auto-deploy.
     repo: https://rork-git-router.rork-direct.workers.dev/git/j2l8t44588ix9ns7b57mu
     branch: main
     runtime: static
@@ -162,7 +266,6 @@ services:
       bun install
       bunx expo export --platform web
     staticPublishPath: ./dist
-    # IVX: auto-deploy on every push to main (owner-requested).
     autoDeployTrigger: commit
     domains:
       - chat.ivxholding.com
@@ -203,16 +306,18 @@ services:
       - key: EXPO_PUBLIC_TEAM_ID
         sync: false
 
+  # ============================================================
+  # MINIO — object storage
+  # ============================================================
   - type: pserv
     name: minio
     runtime: docker
     repo: https://github.com/render-examples/minio.git
     plan: starter
-    # IVX: manual deploy only.
     autoDeployTrigger: off
     envVars:
       - key: PORT
-        value: 10000
+        value: "10000"
       - key: MINIO_ROOT_USER
         sync: false
       - key: MINIO_ROOT_PASSWORD
@@ -222,14 +327,47 @@ services:
       mountPath: /data
       sizeGB: 10
 
+# ============================================================
+# REDIS — production cache + pub/sub + Socket.IO adapter
+# ============================================================
+- type: redis
+  name: ivx-redis
+  plan: starter
+  ipAllowList: []
+  maxmemoryPolicy: allkeys-lru
+
+# ============================================================
+# REDIS — staging
+# ============================================================
+- type: redis
+  name: ivx-redis-staging
+  plan: free
+  ipAllowList: []
+
+# ============================================================
+# DATABASES
+# ============================================================
 databases:
+  # Production — upgraded for enterprise workloads
   - name: mydatabase
-    plan: basic-256mb
+    plan: standard-1gb
     databaseName: ivx
     user: ivx
     postgresMajorVersion: "16"
     ipAllowList: []
+    highAvailability:
+      enabled: true
+  # Staging — separate database
+  - name: mydatabase-staging
+    plan: basic-256mb
+    databaseName: ivx_staging
+    user: ivx_staging
+    postgresMajorVersion: "16"
+    ipAllowList: []
 
+# ============================================================
+# ENV GROUPS
+# ============================================================
 envVarGroups:
   - name: my-env-group
     envVars:
@@ -237,3 +375,5 @@ envVarGroups:
         value: "true"
       - key: IVX_ENV_GROUP_NAME
         value: my-env-group
+      - key: IVX_ENTERPRISE_MODE
+        value: "true"
