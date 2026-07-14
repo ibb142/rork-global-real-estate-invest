@@ -1692,17 +1692,23 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
             lastError = 'Backend did not return session tokens.';
             continue;
           }
+          // Mark manual owner login BEFORE setSession so the synchronous
+          // onAuthStateChange event does not trigger the owner auto-login block
+          // and wipe the session immediately.
+          manualOwnerLoginRef.current = true;
           const freshClient = ensureSupabaseClient();
           const { data: sessionData, error: sessionError } = await freshClient.auth.setSession({
             access_token: accessToken,
             refresh_token: refreshToken,
           });
           if (sessionError) {
+            manualOwnerLoginRef.current = false;
             lastError = sessionError.message;
             continue;
           }
           const session = sessionData.session;
           if (!session) {
+            manualOwnerLoginRef.current = false;
             lastError = 'No session returned from setSession.';
             continue;
           }
@@ -1712,10 +1718,9 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
           }
           const handled = await handleSession(session);
           if (!handled.accepted) {
+            manualOwnerLoginRef.current = false;
             return { success: false, message: handled.blockedReason ?? 'Owner session was not accepted.', failureReason: 'admin_access_locked' };
           }
-          // Mark manual owner login so onAuthStateChange allows this session.
-          manualOwnerLoginRef.current = true;
           sessionInstalled = true;
           break;
         } catch (endpointError) {
