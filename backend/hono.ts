@@ -624,6 +624,7 @@ import {
   handleAgentAuditLedgerUpdate,
 } from './api/ivx-agent-audit';
 import { handleLandingFullDeploy, handleLandingFullDeployStatus } from './api/ivx-landing-full-deploy';
+import { qaMigrationOptions, handleQaMigrationRun, handleQaMigrationVerify } from './api/ivx-qa-migration-runner';
 import { OPTIONS as independenceStatusOptions, handleIVXIndependenceStatusRequest } from './api/ivx-independence-status';
 import { handleProofTestRequest, proofTestOptions } from './api/proof-test';
 import {
@@ -5115,6 +5116,28 @@ app.patch('/api/ivx/agent-audit/ledger/update', async (context) => {
     const msg = error instanceof Error ? error.message : 'Unknown error';
     const isAuth = /missing bearer|auth guard|invalid or expired|unauthorized|no bearer|missing token/i.test(msg);
     return context.json({ ok: false, error: msg.slice(0, 320), marker: 'ivx-agent-audit-2026-07-14', timestamp: new Date().toISOString() }, isAuth ? 401 : 500);
+  }
+});
+
+// ============================================================================
+// IVX QA Migration Runner — RLS fix, 56 missing tables, RLS enablement
+// ============================================================================
+app.options('/api/ivx/qa-migration/run', () => qaMigrationOptions());
+app.post('/api/ivx/qa-migration/run', async (context) => {
+  try { return await handleQaMigrationRun(context.req.raw); }
+  catch (error) {
+    const msg = error instanceof Error ? error.message : 'Unknown error';
+    const isAuth = /missing bearer|auth guard|invalid or expired|unauthorized|no bearer|missing token/i.test(msg);
+    return context.json({ ok: false, error: msg.slice(0, 320), marker: 'ivx-qa-migration-runner-2026-07-14', timestamp: new Date().toISOString() }, isAuth ? 401 : 500);
+  }
+});
+app.options('/api/ivx/qa-migration/verify', () => qaMigrationOptions());
+app.get('/api/ivx/qa-migration/verify', async (context) => {
+  try { return await handleQaMigrationVerify(context.req.raw); }
+  catch (error) {
+    const msg = error instanceof Error ? error.message : 'Unknown error';
+    const isAuth = /missing bearer|auth guard|invalid or expired|unauthorized|no bearer|missing token/i.test(msg);
+    return context.json({ ok: false, error: msg.slice(0, 320), marker: 'ivx-qa-migration-runner-2026-07-14', timestamp: new Date().toISOString() }, isAuth ? 401 : 500);
   }
 });
 

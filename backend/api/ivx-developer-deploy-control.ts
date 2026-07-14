@@ -672,12 +672,38 @@ async function runRenderUpsertEnvVar(input: Record<string, unknown>): Promise<Re
   };
 }
 
+function getSupabaseProjectRef(): string {
+  const url = readTrimmed(process.env.EXPO_PUBLIC_SUPABASE_URL) || readTrimmed(process.env.SUPABASE_URL);
+  if (!url) return '';
+  const match = url.match(/https:\/\/([a-z0-9]+)\.supabase\.co/i);
+  return match ? match[1] ?? '' : '';
+}
+
 function getSupabaseDatabaseUrl(): string {
-  const url = readEnv('SUPABASE_DB_URL') || readEnv('DATABASE_URL') || readEnv('POSTGRES_URL');
-  if (!url) {
-    throw new Error('SUPABASE_DB_URL, DATABASE_URL, or POSTGRES_URL is required for owner-approved SQL/migration actions.');
+  // 1. Direct connection string env vars (preferred).
+  const direct = readEnv('SUPABASE_DB_URL') || readEnv('DATABASE_URL') || readEnv('POSTGRES_URL')
+    || readEnv('SUPABASE_INSPECTION_DATABASE_URL') || readEnv('SUPABASE_READONLY_DATABASE_URL');
+  if (direct) return direct;
+
+  // 2. Build from SUPABASE_DB_PASSWORD + project ref (handles Render services
+  //    where SUPABASE_DB_URL is declared in render.yaml with sync:false but
+  //    not materialized — same pattern as ivx-blocker-fix-migration.ts).
+  const password = readTrimmed(process.env.SUPABASE_DB_PASSWORD);
+  if (!password) {
+    throw new Error('SUPABASE_DB_URL, DATABASE_URL, POSTGRES_URL, or SUPABASE_DB_PASSWORD is required for owner-approved SQL/migration actions.');
   }
-  return url;
+  const projectRef = getSupabaseProjectRef();
+  if (!projectRef) {
+    throw new Error('Could not determine Supabase project ref from EXPO_PUBLIC_SUPABASE_URL to build the DB connection string.');
+  }
+  const dbHost = readTrimmed(process.env.SUPABASE_DB_HOST) || `db.${projectRef}.supabase.co`;
+  const dbPort = readTrimmed(process.env.SUPABASE_DB_PORT) || '5432';
+  const dbName = readTrimmed(process.env.SUPABASE_DB_NAME) || 'postgres';
+  const dbUser = readTrimmed(process.env.SUPABASE_DB_USER) || 'postgres';
+  const encodedUser = encodeURIComponent(dbUser);
+  const encodedPassword = encodeURIComponent(password);
+  const encodedDbName = encodeURIComponent(dbName);
+  return `postgres://${encodedUser}:${encodedPassword}@${dbHost}:${dbPort}/${encodedDbName}?sslmode=require&application_name=ivx_developer_deploy`;
 }
 
 function assertSqlAllowed(sql: string): void {
