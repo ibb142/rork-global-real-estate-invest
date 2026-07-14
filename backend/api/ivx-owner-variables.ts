@@ -828,6 +828,30 @@ async function reencryptStoredRow(name: OwnerVariableName, plaintext: string): P
 }
 
 /**
+ * Raw variable lookup — accepts ANY variable name stored in the ivx_owner_variables table,
+ * not just the typed OwnerVariableName values. Used by the landing deploy endpoint to find
+ * AWS credentials that may be stored under non-standard names (e.g. 'AWS_ACCESS_KEY_ID'
+ * instead of 'IVX_AWS_READONLY_ACCESS_KEY_ID').
+ */
+export async function getRawOwnerVariableValue(name: string): Promise<string> {
+  const envValue = readEnv(name);
+  if (envValue) return envValue;
+  try {
+    const row = await getStoredRow(name as OwnerVariableName);
+    if (!row) return '';
+    const decrypted = tryDecryptRowValue(row);
+    if (!decrypted) {
+      console.log('[IVXOwnerVariables] Raw lookup: decryption failed', { name, maskedPreview: row.masked_preview });
+      return '';
+    }
+    return decrypted.plaintext.trim();
+  } catch (error) {
+    console.log('[IVXOwnerVariables] Raw lookup error:', { name, message: error instanceof Error ? error.message : 'unknown' });
+    return '';
+  }
+}
+
+/**
  * Checks encrypted Owner Variable presence for diagnostics without returning secret values.
  */
 export async function hasIVXOwnerVariableRuntimeValue(name: OwnerVariableName): Promise<boolean> {

@@ -14,7 +14,7 @@ import { PutObjectCommand, S3Client, PutBucketWebsiteCommand, PutBucketPolicyCom
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { createCloudFrontInvalidation } from '../services/ivx-cloudfront-invalidation';
-import { getIVXOwnerVariableRuntimeValue } from './ivx-owner-variables';
+import { getIVXOwnerVariableRuntimeValue, getRawOwnerVariableValue } from './ivx-owner-variables';
 
 const BUCKET_DEFAULT = 'ivxholding.com';
 const WWW_BUCKET_DEFAULT = 'www.ivxholding.com';
@@ -175,20 +175,26 @@ export async function handleLandingFullDeploy(request: Request): Promise<Respons
   const region = readEnv('AWS_REGION') || 'us-east-1';
   const bucket = readEnv('S3_BUCKET_NAME') || BUCKET_DEFAULT;
   // Try process.env first, then fall back to Owner Variables table (encrypted, decrypted at runtime)
-  // Owner Variables table stores them as IVX_AWS_READONLY_ACCESS_KEY_ID / IVX_AWS_READONLY_SECRET_ACCESS_KEY
+  // The DB may store under AWS_ACCESS_KEY_ID or IVX_AWS_READONLY_ACCESS_KEY_ID — try both
   let accessKey = readEnv('AWS_ACCESS_KEY_ID');
   let secretKey = readEnv('AWS_SECRET_ACCESS_KEY');
 
   if (!accessKey) {
+    accessKey = await getRawOwnerVariableValue('AWS_ACCESS_KEY_ID');
+  }
+  if (!accessKey) {
     accessKey = await getIVXOwnerVariableRuntimeValue('IVX_AWS_READONLY_ACCESS_KEY_ID');
+  }
+  if (!secretKey) {
+    secretKey = await getRawOwnerVariableValue('AWS_SECRET_ACCESS_KEY');
   }
   if (!secretKey) {
     secretKey = await getIVXOwnerVariableRuntimeValue('IVX_AWS_READONLY_SECRET_ACCESS_KEY');
   }
 
   const missingEnv: string[] = [];
-  if (!accessKey) missingEnv.push('AWS_ACCESS_KEY_ID / IVX_AWS_READONLY_ACCESS_KEY_ID');
-  if (!secretKey) missingEnv.push('AWS_SECRET_ACCESS_KEY / IVX_AWS_READONLY_SECRET_ACCESS_KEY');
+  if (!accessKey) missingEnv.push('AWS_ACCESS_KEY_ID');
+  if (!secretKey) missingEnv.push('AWS_SECRET_ACCESS_KEY');
 
   if (missingEnv.length > 0) {
     return new Response(JSON.stringify({
@@ -297,10 +303,10 @@ export async function handleLandingFullDeploy(request: Request): Promise<Respons
   let cloudFront: FullDeployResult['cloudFront'] = { attempted: false, ok: false };
   let cloudFrontDistributionId = readEnv('CLOUDFRONT_DISTRIBUTION_ID');
   if (!cloudFrontDistributionId) {
-    cloudFrontDistributionId = await getIVXOwnerVariableRuntimeValue('CLOUDFRONT_DISTRIBUTION_ID');
+    cloudFrontDistributionId = await getRawOwnerVariableValue('CLOUDFRONT_DISTRIBUTION_ID');
   }
   // Also check for AWS_REGION from Owner Variables if not in env
-  const awsRegion = readEnv('AWS_REGION') || await getIVXOwnerVariableRuntimeValue('AWS_REGION') || 'us-east-1';
+  const awsRegion = readEnv('AWS_REGION') || await getRawOwnerVariableValue('AWS_REGION') || 'us-east-1';
 
   if (allUploadsOk && cloudFrontDistributionId) {
     const invalidation = await createCloudFrontInvalidation({
