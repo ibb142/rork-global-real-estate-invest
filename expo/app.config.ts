@@ -9,10 +9,10 @@ const config: ExpoConfig = {
     policy: 'appVersion',
   },
   extra: {
-    buildMarker: 'IVX_BUNDLE_2026_07_14_BUILD_11_DIAGNOSTICS',
-    buildTimestamp: '2026-07-14T22:30:00.000000+00:00',
-    sourceCommitSha: '95dc1f0',
-    watchdogPatchVersion: 'ai-mutation-watchdog-fix-v3',
+    buildMarker: 'IVX_BUNDLE_2026_07_14_BUILD_11_FINAL_SYNC',
+    buildTimestamp: '2026-07-14T23:10:00.000000+00:00',
+    sourceCommitSha: '6934d5f',
+    watchdogPatchVersion: 'ai-mutation-watchdog-fix-v4-staged-timeout',
     frontendDeployMarker: 'ivx-frontend-2026-07-14-owner-login-self-heal',
     eas: {
       projectId: process.env.EXPO_PUBLIC_EAS_PROJECT_ID || '00000000-0000-0000-0000-000000000000',

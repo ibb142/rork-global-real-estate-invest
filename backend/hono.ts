@@ -16,6 +16,13 @@ import {
 import { handleIVXOwnerAIDiagnosticsClientEventRequest, handleIVXOwnerAIDiagnosticsGetRequest, handleIVXOwnerAIDiagnosticsListRequest, ivxOwnerAIDiagnosticsOptions } from './api/ivx-owner-ai-diagnostics';
 import { handleIVXOwnerAIAuthDiagnosticGet, handleIVXOwnerAIAuthDiagnosticPost, ivxOwnerAIAuthDiagnosticOptions } from './api/ivx-owner-ai-auth-diagnostic';
 import { OPTIONS as ownerAIStreamOptions, handleIVXOwnerAIStreamRequest } from './api/ivx-owner-ai-stream';
+import {
+  handleIVXOwnerAIRequestControlOptions,
+  handleIVXOwnerAIRequestCreate,
+  handleIVXOwnerAIRequestStatus,
+  handleIVXOwnerAIRequestRetry,
+  handleIVXOwnerAIRequestCancel,
+} from './api/ivx-owner-ai-request-control';
 import { OPTIONS as ownerAIJobsOptions, handleIVXAIJobStartRequest, handleIVXAIJobStatusRequest, handleIVXAIJobsListRequest, handleIVXAIRuntimeObservabilityRequest } from './api/ivx-owner-ai-jobs';
 import { OPTIONS as auditReportOptions, handleIVXAuditReportRequest } from './api/ivx-audit-report';
 import {
@@ -2888,6 +2895,16 @@ app.options('/ivx/owner-audit/recent-conversations', () => handleIVXOwnerAuditOp
 app.get('/ivx/owner-audit/recent-conversations', async (context) => handleIVXOwnerAuditRecentConversationsRequest(context.req.raw));
 app.post('/tool', async (context) => handleIVXOwnerAIToolRequest(context.req.raw));
 app.post('/api/tool', async (context) => handleIVXOwnerAIToolRequest(context.req.raw));
+
+// Owner AI request control — idempotency, status, retry, cancel
+app.options('/api/ivx/owner-ai/request', () => handleIVXOwnerAIRequestControlOptions());
+app.post('/api/ivx/owner-ai/request', async (context) => handleIVXOwnerAIRequestCreate(context.req.raw));
+app.options('/api/ivx/owner-ai/request/:traceId/status', () => handleIVXOwnerAIRequestControlOptions());
+app.get('/api/ivx/owner-ai/request/:traceId/status', async (context) => handleIVXOwnerAIRequestStatus(context.req.raw, context.req.param('traceId')));
+app.options('/api/ivx/owner-ai/request/:traceId/retry', () => handleIVXOwnerAIRequestControlOptions());
+app.post('/api/ivx/owner-ai/request/:traceId/retry', async (context) => handleIVXOwnerAIRequestRetry(context.req.raw, context.req.param('traceId')));
+app.options('/api/ivx/owner-ai/request/:traceId/cancel', () => handleIVXOwnerAIRequestControlOptions());
+app.post('/api/ivx/owner-ai/request/:traceId/cancel', async (context) => handleIVXOwnerAIRequestCancel(context.req.raw, context.req.param('traceId')));
 
 app.options('/api/ivx/audit-report', () => auditReportOptions());
 app.get('/api/ivx/audit-report', async (context) => handleIVXAuditReportRequest(context.req.raw));

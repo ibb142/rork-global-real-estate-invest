@@ -53,6 +53,10 @@ import { assertCleanOwnerAIResponseText, isIVXServiceUnavailableDiagnostics } fr
 import { ivxAIWatchdog, type WatchdogTraceHandle } from '@/src/modules/ivx-owner-ai/services/ivxAIWatchdog';
 import { IVXWatchdogBanner, IVXWatchdogDrawer } from '@/components/IVXWatchdogPanel';
 import { IVXOwnerAIDiagnostics } from '@/components/IVXOwnerAIDiagnostics';
+import { IVXStagedTimeoutBanner, type TimeoutEvidence } from '@/components/IVXStagedTimeoutBanner';
+import { createAIOrchestrator, type AIOrchestrator } from '@/src/modules/ivx-owner-ai/services/ivxOwnerAIOrchestrator';
+import Constants from 'expo-constants';
+import { getIVXBuildInfo } from '@/constants/build-info';
 import { ivxDiagnostics } from '@/src/modules/ivx-developer/diagnosticsStore';
 import { refreshOwnerSession } from '@/src/modules/ivx-developer/authDiagnosticsService';
 import IVXAdvancedExecutionMode from '@/components/IVXAdvancedExecutionMode';
@@ -910,6 +914,15 @@ export default function IVXOwnerChatRoute() {
   // mutation inputs so each send has its own checkpoint report.
   const activeWatchdogTracesRef = useRef<Map<string, WatchdogTraceHandle>>(new Map());
   const [watchdogDrawerVisible, setWatchdogDrawerVisible] = useState<boolean>(false);
+  // Staged timeout banner state — replaces the single 180s watchdog timeout
+  // with progressive UX: 15s "Still working", 45s retry, 90s backend status
+  // check, 180s fail with exact evidence. No infinite spinner.
+  const [stagedTimeoutTraceId, setStagedTimeoutTraceId] = useState<string | null>(null);
+  const [stagedTimeoutMessageId, setStagedTimeoutMessageId] = useState<string>('');
+  const [stagedTimeoutRequestStarted, setStagedTimeoutRequestStarted] = useState<boolean>(false);
+  const [stagedTimeoutLastCheckpoint, setStagedTimeoutLastCheckpoint] = useState<string | null>(null);
+  const orchestratorRef = useRef<AIOrchestrator | null>(null);
+  const stagedTimeoutStartRef = useRef<number>(Date.now());
   const [liveWorkVisible, setLiveWorkVisible] = useState<boolean>(false);
   // The task most recently kicked off from chat, surfaced as an inline Live Work
   // button so the owner can jump straight to the real-time execution monitor.
@@ -2034,6 +2047,8 @@ export default function IVXOwnerChatRoute() {
         const reliableConversationId = canonicalConversationIdRef.current;
         setConversationIdProof((current) => ({ ...current, clientBeforeSend: reliableConversationId }));
         trace?.pass('BACKEND_POST_STARTED', `POST owner-ai (conversation=${reliableConversationId})`);
+        setStagedTimeoutRequestStarted(true);
+        setStagedTimeoutLastCheckpoint('BACKEND_POST_STARTED');
         const { value: aiResult, trace: reliabilityTrace } = await executeReliably(
           reliableConversationId,
           async (executorSignal: AbortSignal) => ivxAIRequestService.requestOwnerAI(
@@ -2178,6 +2193,7 @@ export default function IVXOwnerChatRoute() {
             requestId: aiResult.requestId,
             assistantPersisted: aiResult.assistantPersisted,
           });
+          setStagedTimeoutLastCheckpoint('BACKEND_POST_FINISHED');
         }
         setLastReliabilityTrace(reliabilityTrace);
         void recordIVXOwnerChatAuditEvent({
@@ -2662,9 +2678,13 @@ export default function IVXOwnerChatRoute() {
           }
         }
       }
+      // Clear staged timeout banner — the AI reply lifecycle is complete
+      // (success, visible error, or invariant fallback). No infinite spinner.
+      setStagedTimeoutTraceId(null);
     },
     onError: (error) => {
       console.log('[IVXOwnerChatRoute] Assistant reply mutation error suppressed from chat UI:', error.message);
+      setStagedTimeoutTraceId(null);
     },
     onSettled: () => {
       setAiReplyPending(false);
@@ -2995,6 +3015,7 @@ export default function IVXOwnerChatRoute() {
             trustStates: trustContext.namedStates,
           },
         });
+        const wdCmd = watchdogTraceId ? activeWatchdogTracesRef.current.get(watchdogTraceId) ?? null : null;
         try {
           await sendQueue.mutateAsync({ text: persistedOwnerText, mode, clientId, replyTo, senderLabel: ownerLabel, capturedText });
           setLastSendAt(new Date().toISOString());
@@ -3005,7 +3026,6 @@ export default function IVXOwnerChatRoute() {
             }), 'system');
             return;
           }
-          const wdCmd = watchdogTraceId ? activeWatchdogTracesRef.current.get(watchdogTraceId) ?? null : null;
           if (trustContext.requiresElevatedConfirmation && !confirmedSensitiveAction) {
             wdCmd?.pass('AI_TRIGGER_DECISION', 'branch=owner_command_elevated_confirmation');
             await persistSupportMessage(buildSensitiveActionConfirmationMessage({
@@ -3886,6 +3906,14 @@ export default function IVXOwnerChatRoute() {
       conversationId: conversationQuery.data?.id ?? null,
     });
     activeWatchdogTracesRef.current.set(watchdogTrace.traceId, watchdogTrace);
+    // Activate staged timeout banner for AI-bearing modes
+    if (mode !== 'send_only') {
+      stagedTimeoutStartRef.current = Date.now();
+      setStagedTimeoutTraceId(watchdogTrace.traceId);
+      setStagedTimeoutMessageId(clientId);
+      setStagedTimeoutRequestStarted(false);
+      setStagedTimeoutLastCheckpoint('SEND_TAP');
+    }
     watchdogTrace.pass('SEND_TAP', `mode=${mode} length=${text.length}`, { clientId, isCommand });
     watchdogTrace.pass('USER_ROW_INSERTED', `pending clientId=${clientId}`, { clientId });
     console.log('[IVX_TRACE] 1_SEND_TAP', { mode, isCommand, clientId, textLength: text.length, localFirstChatMode, traceId: watchdogTrace.traceId });
@@ -5356,6 +5384,67 @@ export default function IVXOwnerChatRoute() {
               /api/ivx/owner-ai fails, times out, or returns an auth/tooling/
               backend error. Tap opens the full watchdog drawer. */}
           <IVXWatchdogBanner onPress={() => setWatchdogDrawerVisible(true)} />
+
+          {/* Staged timeout banner: 15s "Still working", 45s retry, 90s backend
+              status check, 180s fail with exact evidence. No infinite spinner. */}
+          {stagedTimeoutTraceId ? (
+            <IVXStagedTimeoutBanner
+              traceId={stagedTimeoutTraceId}
+              messageId={stagedTimeoutMessageId}
+              conversationId={conversationQuery.data?.id ?? null}
+              requestStarted={stagedTimeoutRequestStarted}
+              lastSuccessfulCheckpoint={stagedTimeoutLastCheckpoint}
+              onRetry={() => {
+                console.log('[IVXStagedTimeout] Retry triggered for trace:', stagedTimeoutTraceId);
+                // Re-invoke the last message via handleAskAI or handleSend
+                const lastPending = pendingOwnerMessages[pendingOwnerMessages.length - 1];
+                if (lastPending) {
+                  sendMessageMutation.mutate({
+                    text: lastPending.text,
+                    mode: lastPending.mode === 'ai_only' ? 'ai_only' : 'send_and_ai',
+                    clientId: createTransientMessageId('ivx-owner-staged-retry'),
+                    capturedText: lastPending.text,
+                    replyTo: lastPending.replyTo ?? null,
+                  });
+                }
+              }}
+              onCancel={() => {
+                console.log('[IVXStagedTimeout] Cancel triggered for trace:', stagedTimeoutTraceId);
+                setStagedTimeoutTraceId(null);
+                setAiReplyPending(false);
+              }}
+              onQueryBackendStatus={async (traceId: string): Promise<TimeoutEvidence | null> => {
+                try {
+                  const baseUrl = process.env.EXPO_PUBLIC_RORK_API_BASE_URL ?? 'https://api.ivxholding.com';
+                  const token = await getIVXAccessToken();
+                  const res = await fetch(`${baseUrl}/api/ivx/owner-ai/request/${traceId}/status`, {
+                    headers: { Authorization: `Bearer ${token}` },
+                  });
+                  if (!res.ok) return null;
+                  const data = await res.json() as Record<string, unknown>;
+                  return {
+                    traceId,
+                    requestId: (data.requestId as string) ?? null,
+                    conversationId: (data.conversationId as string) ?? null,
+                    messageId: stagedTimeoutMessageId,
+                    lastSuccessfulCheckpoint: stagedTimeoutLastCheckpoint,
+                    failedCheckpoint: (data.structuredError as { checkpoint?: string } | null)?.checkpoint ?? null,
+                    requestStarted: stagedTimeoutRequestStarted,
+                    httpStatus: (data.terminalResult as { httpStatus?: number } | null)?.httpStatus ?? null,
+                    retryCount: (data.retryCount as number) ?? 0,
+                    networkStatus: 'online',
+                    appVersion: getIVXBuildInfo().appVersion,
+                    buildNumber: String(Constants.expoConfig?.android?.versionCode ?? 'unknown'),
+                    commitSha: getIVXBuildInfo().commitShort,
+                    elapsedMs: Date.now() - (stagedTimeoutStartRef.current ?? Date.now()),
+                  };
+                } catch (err) {
+                  console.log('[IVXStagedTimeout] Backend status query failed:', err instanceof Error ? err.message : 'unknown');
+                  return null;
+                }
+              }}
+            />
+          ) : null}
 
           {showDiagnostics && developerToolsAllowed ? (
             <ScrollView

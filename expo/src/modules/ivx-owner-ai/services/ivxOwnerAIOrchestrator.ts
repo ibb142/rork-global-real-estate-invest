@@ -6,7 +6,7 @@
  * synchronous checkpoint recording, and guaranteed cleanup.
  */
 
-import { ivxAIWatchdog, type WatchdogTraceHandle } from './ivxAIWatchdog';
+import { ivxAIWatchdog } from './ivxAIWatchdog';
 
 export type AIOrchestratorState =
   | 'IDLE'
@@ -32,6 +32,7 @@ export interface AIOrchestratorContext {
   ownerId: string | null;
   mode: 'ai_only' | 'send_and_ai' | 'send_only' | 'knowledge' | 'attachment';
   source: string;
+  state: AIOrchestratorState;
   startTimeMs: number;
   httpRequestStarted: boolean;
   httpResponseReceived: boolean;
@@ -41,6 +42,7 @@ export interface AIOrchestratorContext {
 
 export interface AIOrchestratorPayload {
   text: string;
+  messageId: string;
   traceId: string;
   nonBlocking: boolean;
   conversationId: string | null;
@@ -68,9 +70,9 @@ export function createAIOrchestrator(callbacks: AIOrchestratorCallbacks) {
   function transition(
     ctx: AIOrchestratorContext,
     next: AIOrchestratorState,
-    data?: Record<string, unknown>,
+    _data?: Record<string, unknown>,
   ): void {
-    const prev = ctx.terminal ? ctx.terminalState ?? 'IDLE' : (activeRequests.get(ctx.traceId)?.state as AIOrchestratorState | undefined) ?? 'IDLE';
+    const prev = ctx.terminal ? ctx.state : (activeRequests.get(ctx.traceId)?.state ?? 'IDLE') as AIOrchestratorState;
     ctx.state = next;
     callbacks.onTransition(next, prev, ctx);
   }
@@ -105,6 +107,7 @@ export function createAIOrchestrator(callbacks: AIOrchestratorCallbacks) {
       ownerId: payload.ownerId,
       mode: payload.mode,
       source: payload.source,
+      state: 'IDLE',
       startTimeMs: Date.now(),
       httpRequestStarted: false,
       httpResponseReceived: false,

@@ -52,37 +52,37 @@ export function IVXOwnerAIDiagnostics({ apiEnvironment }: IVXOwnerAIDiagnosticsP
   return (
     <View style={styles.container}>
       <View style={styles.row}>
-        <SafeIcon icon={Smartphone} size={14} color={Colors.gold} />
+        <SafeIcon icon={Smartphone} name="Smartphone" size={14} color={Colors.gold} />
         <Text style={styles.label}>Version</Text>
         <Text style={styles.value}>{buildInfo.appVersion}</Text>
       </View>
       <View style={styles.row}>
-        <SafeIcon icon={Hash} size={14} color={Colors.gold} />
+        <SafeIcon icon={Hash} name="Hash" size={14} color={Colors.gold} />
         <Text style={styles.label}>versionCode</Text>
         <Text style={styles.value}>{versionCode}</Text>
       </View>
       <View style={styles.row}>
-        <SafeIcon icon={GitBranch} size={14} color={Colors.gold} />
+        <SafeIcon icon={GitBranch} name="GitBranch" size={14} color={Colors.gold} />
         <Text style={styles.label}>Git SHA</Text>
         <Text style={styles.value}>{buildInfo.commitShort}</Text>
       </View>
       <View style={styles.row}>
-        <SafeIcon icon={Cpu} size={14} color={Colors.gold} />
+        <SafeIcon icon={Cpu} name="Cpu" size={14} color={Colors.gold} />
         <Text style={styles.label}>Build time</Text>
         <Text style={styles.value}>{formatDate(buildInfo.buildTimestamp)}</Text>
       </View>
       <View style={styles.row}>
-        <SafeIcon icon={Server} size={14} color={Colors.gold} />
+        <SafeIcon icon={Server} name="Server" size={14} color={Colors.gold} />
         <Text style={styles.label}>API env</Text>
         <Text style={styles.value} numberOfLines={1} ellipsizeMode="tail">{apiEnv}</Text>
       </View>
       <View style={styles.row}>
-        <SafeIcon icon={Package} size={14} color={Colors.gold} />
+        <SafeIcon icon={Package} name="Package" size={14} color={Colors.gold} />
         <Text style={styles.label}>Bundle</Text>
         <Text style={styles.value} numberOfLines={1} ellipsizeMode="tail">{packageName}</Text>
       </View>
       <View style={styles.row}>
-        <SafeIcon icon={Cpu} size={14} color={Colors.gold} />
+        <SafeIcon icon={Cpu} name="Cpu" size={14} color={Colors.gold} />
         <Text style={styles.label}>Watchdog</Text>
         <Text style={styles.value}>{buildInfo.watchdogPatchVersion}</Text>
       </View>
