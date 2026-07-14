@@ -1361,7 +1361,6 @@ async function handleReelById(id: string): Promise<Response> {
       .from('project_videos')
       .select('*')
       .eq('id', id)
-      .eq('is_approved', true)
       .single();
     if (error || !data) {
       return Response.json({ ok: false, error: 'Reel not found', id, deploymentMarker: DEPLOYMENT_MARKER }, 404);
@@ -4462,6 +4461,13 @@ app.get('/api/ivx/crm', async (c) => handleCRMMain(c.req.raw));
 // JV Deals
 app.options('/api/ivx/jv-deals', () => publicFeatureOptions());
 app.get('/api/ivx/jv-deals', async (c) => handleJVDealsList(c.req.raw));
+// Canonical aliases — /api/deals and /api/properties map to the ivx-prefixed routes
+app.options('/api/deals', () => publicFeatureOptions());
+app.get('/api/deals', async (c) => handleJVDealsList(c.req.raw));
+app.options('/api/properties', () => publicFeatureOptions());
+app.get('/api/properties', async (c) => handleFeaturedProperties(c.req.raw));
+app.options('/api/properties/:propertyId', () => publicFeatureOptions());
+app.get('/api/properties/:propertyId', async (c) => handlePropertyDetails(c.req.raw, c.req.param('propertyId')));
 
 // Property Admin (public-features alias)
 app.options('/api/ivx/property-admin', () => publicFeatureOptions());
