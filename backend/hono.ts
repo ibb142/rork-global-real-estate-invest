@@ -616,6 +616,13 @@ import {
   handleUpdateOwnerActionStatus,
 } from './api/ivx-owner-action-requests';
 import { OPTIONS as autonomousOpsDashboardOptions, handleAutonomousOpsDashboardRequest } from './api/ivx-autonomous-ops-dashboard';
+import {
+  OPTIONS as agentAuditOptions,
+  handleAgentAuditOverview,
+  handleAgentAuditLedger,
+  handleAgentAuditLedgerCreate,
+  handleAgentAuditLedgerUpdate,
+} from './api/ivx-agent-audit';
 import { handleLandingFullDeploy, handleLandingFullDeployStatus } from './api/ivx-landing-full-deploy';
 import { OPTIONS as independenceStatusOptions, handleIVXIndependenceStatusRequest } from './api/ivx-independence-status';
 import { handleProofTestRequest, proofTestOptions } from './api/proof-test';
@@ -5071,5 +5078,16 @@ app.get('/api/ivx/autonomous-ops/dashboard', async (context) => handleAutonomous
 app.options('/api/ivx/landing-deploy', () => new Response(null, { status: 204, headers: { 'Access-Control-Allow-Origin': 'https://ivxholding.com', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type', 'Vary': 'Origin' } }));
 app.get('/api/ivx/landing-deploy', async () => handleLandingFullDeployStatus());
 app.post('/api/ivx/landing-deploy', async (context) => handleLandingFullDeploy(context.req.raw));
+
+// ============================================================================
+// IVX AI Engineering Command Center — 12-agent audit, scores, task ledger
+// ============================================================================
+app.options('/api/ivx/agent-audit/overview', () => agentAuditOptions());
+app.get('/api/ivx/agent-audit/overview', async (context) => handleAgentAuditOverview(context.req.raw));
+app.options('/api/ivx/agent-audit/ledger', () => agentAuditOptions());
+app.get('/api/ivx/agent-audit/ledger', async (context) => handleAgentAuditLedger(context.req.raw));
+app.post('/api/ivx/agent-audit/ledger', async (context) => handleAgentAuditLedgerCreate(context.req.raw));
+app.options('/api/ivx/agent-audit/ledger/update', () => agentAuditOptions());
+app.patch('/api/ivx/agent-audit/ledger/update', async (context) => handleAgentAuditLedgerUpdate(context.req.raw));
 
 export default app;
