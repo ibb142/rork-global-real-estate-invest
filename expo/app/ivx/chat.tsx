@@ -42,6 +42,7 @@ import { useWebKeyboard, scrollInputIntoView } from '@/hooks/useWebKeyboard';
 import Colors from '@/constants/colors';
 import { IVX_OWNER_AI_PROFILE, IVX_OWNER_AI_ROOM_ID } from '@/constants/ivx-owner-ai';
 import { useAuth } from '@/lib/auth-context';
+import { IVX_BASELINE_OWNER_EMAILS } from '@/shared/ivx/access-control';
 import { resolveDevTestModeContext } from '@/lib/dev-test-mode';
 import { getIVXAccessToken, getIVXOwnerAIConfigAudit, type IVXOwnerAIConfigAudit } from '@/lib/ivx-supabase-client';
 import { runOwnerSessionPreflight, OWNER_SESSION_REQUIRED_LABEL } from '@/src/modules/ivx-owner-ai/services/ownerSessionPreflight';
@@ -866,7 +867,7 @@ export default function IVXOwnerChatRoute() {
   // fires before the FlatList has measured dynamic message bubbles.
   const pendingInitialScrollRef = useRef<boolean>(true);
   const insets = useSafeAreaInsets();
-  const { user, userId } = useAuth();
+  const { user, userId, loginOwnerPasswordless } = useAuth();
   const [composerValue, setComposerValue] = useState<string>('');
   const [messageSearchQuery, setMessageSearchQuery] = useState<string>('');
   const [searchOpen, setSearchOpen] = useState<boolean>(false);
@@ -883,6 +884,7 @@ export default function IVXOwnerChatRoute() {
   const [rootLayoutHeight, setRootLayoutHeight] = useState<number>(0);
   const [showDiagnostics, setShowDiagnostics] = useState<boolean>(false);
   const [ownerSessionPreflight, setOwnerSessionPreflight] = useState<{ state: 'checking' | 'needs_signin' | 'ready'; reason?: string; detail?: string }>({ state: 'checking' });
+  const [passwordlessLoading, setPasswordlessLoading] = useState<boolean>(false);
   const [showScrollToLatest, setShowScrollToLatest] = useState<boolean>(false);
   const [unreadCount, setUnreadCount] = useState<number>(0);
   const isOpenAccessBuild = isOpenAccessModeEnabled();
@@ -908,6 +910,35 @@ export default function IVXOwnerChatRoute() {
   // The task most recently kicked off from chat, surfaced as an inline Live Work
   // button so the owner can jump straight to the real-time execution monitor.
   const [activeLiveWorkTask, setActiveLiveWorkTask] = useState<ChatLiveWorkTask | null>(null);
+
+  // One-tap passwordless owner sign-in using the pinned baseline owner email.
+  // The backend self-heals the Supabase password and returns a real session.
+  const handlePasswordlessOwnerSignIn = useCallback(async () => {
+    const ownerEmail = IVX_BASELINE_OWNER_EMAILS[0];
+    if (!ownerEmail) return;
+    setPasswordlessLoading(true);
+    try {
+      const result = await loginOwnerPasswordless(ownerEmail);
+      if (result.success) {
+        await runOwnerSessionPreflight({ forceRefresh: true });
+        setOwnerSessionPreflight({ state: 'ready' });
+      } else {
+        setOwnerSessionPreflight({
+          state: 'needs_signin',
+          reason: 'passwordless_failed',
+          detail: result.message ?? 'Owner passwordless sign-in failed.',
+        });
+      }
+    } catch (error) {
+      setOwnerSessionPreflight({
+        state: 'needs_signin',
+        reason: 'passwordless_error',
+        detail: error instanceof Error ? error.message : 'Owner passwordless sign-in failed.',
+      });
+    } finally {
+      setPasswordlessLoading(false);
+    }
+  }, [loginOwnerPasswordless]);
 
   // Proactive owner-session gate: detect missing session before the user types
   // so the chat shows a clear sign-in prompt instead of failing after send.
@@ -6455,14 +6486,19 @@ export default function IVXOwnerChatRoute() {
                     Owner session required. Sign in as the IVX owner to send messages and use owner-only tools.
                   </Text>
                   <Pressable
-                    style={styles.ownerSessionGateButton}
-                    onPress={() => router.push('/ivx/auth-diagnostics' as never)}
+                    style={[styles.ownerSessionGateButton, passwordlessLoading ? styles.actionButtonDisabled : null]}
+                    onPress={() => { void handlePasswordlessOwnerSignIn(); }}
+                    disabled={passwordlessLoading}
                     accessibilityRole="button"
-                    accessibilityLabel="Sign in as IVX owner"
+                    accessibilityLabel="Sign in as IVX owner with one tap"
                     testID="ivx-owner-chat-signin-button"
                     hitSlop={8}
                   >
-                    <Text style={styles.ownerSessionGateButtonText}>Sign in as IVX Owner</Text>
+                    {passwordlessLoading ? (
+                      <ActivityIndicator size="small" color={Colors.black} />
+                    ) : (
+                      <Text style={styles.ownerSessionGateButtonText}>Sign in as IVX Owner</Text>
+                    )}
                   </Pressable>
                 </View>
               ) : null}
