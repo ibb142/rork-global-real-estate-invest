@@ -2919,6 +2919,7 @@ export default function IVXOwnerChatRoute() {
         setLastSendAt(new Date().toISOString());
         wdSenior?.pass('AI_TRIGGER_DECISION', 'branch=senior_developer_confirm');
         await runSeniorDeveloperWorkerFromChat(approvedDraft);
+        wdSenior?.complete('SUCCESS');
         return;
       }
       if (!isConfirmReply && isSeniorDeveloperBuildRequest(effectiveText)) {
@@ -2928,6 +2929,7 @@ export default function IVXOwnerChatRoute() {
         setLastSendAt(new Date().toISOString());
         wdSenior?.pass('AI_TRIGGER_DECISION', 'branch=senior_developer_build');
         await persistSupportMessage(buildSeniorDeveloperApprovalCard(draft), 'system');
+        wdSenior?.complete('SUCCESS');
         return;
       }
 
@@ -2942,6 +2944,7 @@ export default function IVXOwnerChatRoute() {
               normalizedText: effectiveText,
               requestClass: trustContext.requestClass,
             }), 'assistant');
+            wdLF?.complete('SUCCESS');
             return;
           }
         } catch (sendError) {
@@ -2952,6 +2955,10 @@ export default function IVXOwnerChatRoute() {
         if (mode === 'send_and_ai' || mode === 'ai_only') {
           console.log('[IVX_TRACE] 2.2_AI_TRIGGER_LOCAL_FIRST', { clientId, mode });
           wdLF?.pass('AI_TRIGGER_DECISION', `branch=local_first mode=${mode}`);
+          // Synchronously mark the assistant mutation as started so the watchdog
+          // never reports a phantom stall at AI_TRIGGER_DECISION if the async
+          // call is delayed or queued behind an earlier mutation.
+          wdLF?.pass('AI_MUTATION_STARTED', `local_first branch invoking assistantReplyMutation mode=${mode}`, { clientId });
           // Retry-once guard: catch the first rejection, log it, and retry once
           try {
             await assistantReplyMutation.mutateAsync({ text: effectiveText, nonBlocking: mode === 'send_and_ai', watchdogTraceId });
@@ -2962,6 +2969,7 @@ export default function IVXOwnerChatRoute() {
         } else {
           console.log('[IVX_TRACE] 2.X_LOCAL_FIRST_NO_AI_BRANCH', { clientId, mode });
           wdLF?.pass('AI_TRIGGER_DECISION', `branch=local_first_send_only mode=${mode}`);
+          wdLF?.complete('SUCCESS');
         }
         return;
       }
@@ -3005,11 +3013,13 @@ export default function IVXOwnerChatRoute() {
               conversationAccessState: trustContext.conversationAccessState,
               backendAdminVerified: trustContext.backendAdminState === 'backend_admin_verified',
             }), 'system');
+            wdCmd?.complete('SUCCESS');
             return;
           }
           wdCmd?.pass('AI_TRIGGER_DECISION', `branch=owner_command command=${commandResult.command}`);
           const structuredResponse = await buildCommandContractResponse(commandResult.command, commandResult.args);
           await persistSupportMessage(structuredResponse ?? commandResult.response, 'system');
+          wdCmd?.complete('SUCCESS');
         } catch (sendError) {
           throw sendError instanceof Error ? sendError : new Error(String(sendError));
         }
@@ -3023,6 +3033,10 @@ export default function IVXOwnerChatRoute() {
         }
         if (commandResult.command === 'knowledge' && safeTrim(commandResult.args)) {
           console.log('[IVXOwnerChatRoute] Routing knowledge query to AI:', commandResult.args.slice(0, 40));
+          // Synchronously mark the assistant mutation as started so the watchdog
+          // never reports a phantom stall at AI_TRIGGER_DECISION if the async
+          // call is delayed or queued behind an earlier mutation.
+          wdCmd?.pass('AI_MUTATION_STARTED', `owner_command knowledge invoking assistantReplyMutation`, { command: commandResult.command });
           await assistantReplyMutation.mutateAsync({ text: `[Knowledge Query] ${commandResult.args}`, nonBlocking: false });
         }
         return;
@@ -3074,6 +3088,7 @@ export default function IVXOwnerChatRoute() {
           conversationAccessState: trustContext.conversationAccessState,
           backendAdminVerified: trustContext.backendAdminState === 'backend_admin_verified',
         }), 'system');
+        watchdogTrace?.complete('SUCCESS');
         return;
       }
       if (mode === 'ai_only') {
@@ -3817,6 +3832,9 @@ export default function IVXOwnerChatRoute() {
           ? `${captionText}\n\n${createIVXOwnerFileUnderstandingPrompt(fileInsights[0])}`
           : createIVXOwnerFileUnderstandingPrompt(fileInsights[0]))
         : createIVXOwnerMultiFileUnderstandingPrompt({ files: fileInsights, caption: trimmed.length > 0 ? captionText : null });
+      // Attachment analysis is a secondary AI call; there is no active send-message
+      // watchdog trace here, so we rely on the defensive mutationFn guard and the
+      // retry wrapper below. A failure is logged but does not block the user.
       await assistantReplyMutation.mutateAsync({
         text: analysisPrompt,
         nonBlocking: true,

@@ -1,12 +1,12 @@
 # IVX HOLDINGS — FINAL RELEASE PACKAGE (RC-1)
 
-**Release Date:** 2026-07-14T22:00:00Z UTC
+**Release Date:** 2026-07-14T22:05:00Z UTC
 **Feature Freeze:** ACTIVE — no new features, only critical bug fixes
 **Commit (Git HEAD):** 95dc1f0a838b5a9f607a01849ab5c7a0ee21d9a5
 **Commit (Render Live):** d4cbfc2eca182e8a2ef8fe07f6f48a875638a2ff
 **Deployment ID:** ivx-owner-ai-hono-autodeploy-live
 **Boot Time:** 2026-07-14T17:14:57.530Z
-**Critical Bug Fix:** AI chat watchdog timeout (AI_MUTATION_STARTED) — patched in expo/app/ivx/chat.tsx
+**Critical Bug Fix:** AI chat watchdog timeout (AI_MUTATION_STARTED) — fully patched in expo/app/ivx/chat.tsx, build 10
 
 ---
 
@@ -37,30 +37,30 @@ Only critical bug fixes with verified defects may modify frozen modules.
 
 | Property | Value |
 |----------|-------|
-| File | `ivx-holdings-v1.4.3-build9.apk` |
+| File | `ivx-holdings-v1.4.3-build10.apk` |
 | Version | 1.4.3 |
-| Build Number | 9 (versionCode) |
+| Build Number | 10 (versionCode) |
 | Package ID | `com.ivxholdings.app` |
-| Size | 82,813,218 bytes (79 MB) |
-| SHA-256 | `8fb4fcf2b3ac3498be006cbdc67ba2612fc6885864c3b412987706249f521571` |
+| Size | 82,813,318 bytes (79 MB) |
+| SHA-256 | `e0547d9af2401982e5a663b82798d29cc6ba69eeac50b34cd0c4a4c5fa3555b3` |
 | Commit SHA | 95dc1f0a83 |
-| Build Date | 2026-07-14T21:49:00Z |
+| Build Date | 2026-07-14T22:02:00Z |
 | Build System | Gradle assembleRelease (BUILD SUCCESSFUL, 424 tasks) |
-| Location | `/home/user/rork-app/ivx-holdings-v1.4.3-build9.apk` |
+| Location | `/home/user/rork-app/ivx-holdings-v1.4.3-build10.apk` |
 
 ### Android AAB (Google Play)
 
 | Property | Value |
 |----------|-------|
-| File | `ivx-holdings-v1.4.3-build9.aab` |
+| File | `ivx-holdings-v1.4.3-build10.aab` |
 | Version | 1.4.3 |
-| Build Number | 9 (versionCode) |
+| Build Number | 10 (versionCode) |
 | Package ID | `com.ivxholdings.app` |
-| Size | 41,669,183 bytes (40 MB) |
-| SHA-256 | `90814f2e3f128415ef8e843bf966b7e70ad53fc3b9434a5012da2bf2df4989b5` |
-| Build Date | 2026-07-14T21:55:00Z |
+| Size | 41,669,492 bytes (40 MB) |
+| SHA-256 | `6f93707a8e444f017285803cb2432483cab8b8cd4129fa5d467b25480c4191a1` |
+| Build Date | 2026-07-14T22:02:00Z |
 | Build System | Gradle bundleRelease (BUILD SUCCESSFUL, 394 tasks) |
-| Location | `/home/user/rork-app/ivx-holdings-v1.4.3-build9.aab` |
+| Location | `/home/user/rork-app/ivx-holdings-v1.4.3-build10.aab` |
 
 ### iOS Release Archive
 
@@ -94,7 +94,7 @@ Only critical bug fixes with verified defects may modify frozen modules.
 | 6 | Media upload (image) | PENDING OWNER VALIDATION |
 | 7 | Video upload | PENDING OWNER VALIDATION |
 | 8 | Notifications | PENDING OWNER VALIDATION |
-| 9 | AI (send prompt, receive response) | PENDING OWNER VALIDATION — **AI chat watchdog timeout fix applied in build 9** |
+| 9 | AI (send prompt, receive response) | PENDING OWNER VALIDATION — **AI chat watchdog timeout fully patched in build 10** |
 | 10 | Logout then Login (session persistence) | PENDING OWNER VALIDATION |
 | 11 | Restart app (cold start) | PENDING OWNER VALIDATION |
 | 12 | Offline recovery (offline → online reconnect) | PENDING OWNER VALIDATION |

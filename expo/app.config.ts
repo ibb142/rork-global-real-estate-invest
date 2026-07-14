@@ -9,10 +9,10 @@ const config: ExpoConfig = {
     policy: 'appVersion',
   },
   extra: {
-    buildMarker: 'IVX_BUNDLE_2026_07_14_AI_MUTATION_WATCHDOG_FIX',
-    buildTimestamp: '2026-07-14T21:55:00.000000+00:00',
+    buildMarker: 'IVX_BUNDLE_2026_07_14_FULL_WATCHDOG_ROOT_FIX',
+    buildTimestamp: '2026-07-14T22:15:00.000000+00:00',
     sourceCommitSha: '95dc1f0',
-    watchdogPatchVersion: 'ai-mutation-watchdog-fix-v1',
+    watchdogPatchVersion: 'ai-mutation-watchdog-fix-v2',
     frontendDeployMarker: 'ivx-frontend-2026-07-14-owner-login-self-heal',
     eas: {
       projectId: process.env.EXPO_PUBLIC_EAS_PROJECT_ID || '00000000-0000-0000-0000-000000000000',
@@ -46,7 +46,7 @@ const config: ExpoConfig = {
       backgroundColor: '#000000',
     },
     package: 'com.ivxholdings.app',
-    versionCode: 9,
+    versionCode: 10,
     softwareKeyboardLayoutMode: 'resize',
   },
   web: {
