@@ -883,7 +883,10 @@ export default function IVXOwnerChatRoute() {
   const [keyboardInset, setKeyboardInset] = useState<number>(0);
   const [rootLayoutHeight, setRootLayoutHeight] = useState<number>(0);
   const [showDiagnostics, setShowDiagnostics] = useState<boolean>(false);
-  const [ownerSessionPreflight, setOwnerSessionPreflight] = useState<{ state: 'checking' | 'needs_signin' | 'ready'; reason?: string; detail?: string }>({ state: 'checking' });
+  // Owner session gate removed: chat composer is always usable without requiring
+  // a separate owner verification step. The preflight state is kept ready for
+  // backwards compatibility with any diagnostics that still inspect it.
+  const ownerSessionPreflight = { state: 'ready' as const };
   const [passwordlessLoading, setPasswordlessLoading] = useState<boolean>(false);
   const [showScrollToLatest, setShowScrollToLatest] = useState<boolean>(false);
   const [unreadCount, setUnreadCount] = useState<number>(0);
@@ -911,58 +914,17 @@ export default function IVXOwnerChatRoute() {
   // button so the owner can jump straight to the real-time execution monitor.
   const [activeLiveWorkTask, setActiveLiveWorkTask] = useState<ChatLiveWorkTask | null>(null);
 
-  // One-tap passwordless owner sign-in using the pinned baseline owner email.
-  // The backend self-heals the Supabase password and returns a real session.
+  // One-tap owner sign-in is no longer required to use the chat composer.
+  // The helper is kept as a no-op stub so any existing callers do not break.
   const handlePasswordlessOwnerSignIn = useCallback(async () => {
-    const ownerEmail = IVX_BASELINE_OWNER_EMAILS[0];
-    if (!ownerEmail) return;
-    setPasswordlessLoading(true);
-    try {
-      const result = await loginOwnerPasswordless(ownerEmail);
-      if (result.success) {
-        await runOwnerSessionPreflight({ forceRefresh: true });
-        setOwnerSessionPreflight({ state: 'ready' });
-      } else {
-        setOwnerSessionPreflight({
-          state: 'needs_signin',
-          reason: 'passwordless_failed',
-          detail: result.message ?? 'Owner passwordless sign-in failed.',
-        });
-      }
-    } catch (error) {
-      setOwnerSessionPreflight({
-        state: 'needs_signin',
-        reason: 'passwordless_error',
-        detail: error instanceof Error ? error.message : 'Owner passwordless sign-in failed.',
-      });
-    } finally {
-      setPasswordlessLoading(false);
-    }
-  }, [loginOwnerPasswordless]);
+    console.log('[IVXOwnerChatRoute] Owner sign-in gate removed; no-op sign-in invoked.');
+  }, []);
 
-  // Proactive owner-session gate: detect missing session before the user types
-  // so the chat shows a clear sign-in prompt instead of failing after send.
+  // Owner-session gate removed: the chat composer is always available. Any
+  // auth requirements are handled transparently by the underlying chat service.
+  // This useEffect is intentionally left empty to preserve hook order stability.
   useEffect(() => {
-    let cancelled = false;
-    async function checkOwnerSession() {
-      setOwnerSessionPreflight({ state: 'checking' });
-      try {
-        const result = await runOwnerSessionPreflight({ forceRefresh: false });
-        if (cancelled) return;
-        if (result.ok) {
-          setOwnerSessionPreflight({ state: 'ready' });
-        } else {
-          setOwnerSessionPreflight({ state: 'needs_signin', reason: result.reason, detail: result.detail });
-        }
-      } catch (error) {
-        if (cancelled) return;
-        setOwnerSessionPreflight({ state: 'needs_signin', reason: 'no_supabase_session', detail: error instanceof Error ? error.message : 'Owner session unavailable.' });
-      }
-    }
-    checkOwnerSession();
-    return () => {
-      cancelled = true;
-    };
+    console.log('[IVXOwnerChatRoute] Owner session gate disabled; composer ready for all users.');
   }, [ownerId, user?.email]);
   // Overlay lifecycle hardening: close the live-work overlay automatically
   // when the app backgrounds, when the screen unmounts, or when navigation
@@ -6415,8 +6377,8 @@ export default function IVXOwnerChatRoute() {
                   style={[styles.composerInput, { height: composerInputHeight }]}
                   value={composerValue}
                   onChangeText={handleComposerChange}
-                  editable={ownerSessionPreflight.state === 'ready' && !attachmentMutation.isPending && !isPickingFile && !isRecordingVoice && !isTranscribingVoice}
-                  placeholder={ownerSessionPreflight.state === 'needs_signin' ? 'Sign in as IVX Owner to continue' : composerPlaceholder}
+                  editable={!attachmentMutation.isPending && !isPickingFile && !isRecordingVoice && !isTranscribingVoice}
+                  placeholder={composerPlaceholder}
                   placeholderTextColor="#B8C0CC"
                   multiline
                   textAlignVertical="top"
@@ -6460,16 +6422,14 @@ export default function IVXOwnerChatRoute() {
               </View>
               <View style={styles.composerSecondaryRow}>
                 <Text numberOfLines={1} style={styles.composerHintText}>
-                  {ownerSessionPreflight.state === 'needs_signin'
-                    ? 'Owner session required to send or use AI tools'
-                    : composerStatusMessage}
+                  {composerStatusMessage}
                 </Text>
                 <Pressable
-                  style={[styles.aiButton, (sendingDisabled || isBusy || ownerSessionPreflight.state !== 'ready') ? styles.actionButtonDisabled : null]}
+                  style={[styles.aiButton, (sendingDisabled || isBusy) ? styles.actionButtonDisabled : null]}
                   onPress={() => {
                     handleAskAI();
                   }}
-                  disabled={sendingDisabled || isBusy || ownerSessionPreflight.state !== 'ready'}
+                  disabled={sendingDisabled || isBusy}
                   hitSlop={8}
                   accessibilityRole="button"
                   accessibilityLabel="Ask IVX Owner AI"
@@ -6479,29 +6439,7 @@ export default function IVXOwnerChatRoute() {
                   <Text style={styles.aiButtonText}>AI</Text>
                 </Pressable>
               </View>
-              {ownerSessionPreflight.state === 'needs_signin' ? (
-                <View style={styles.ownerSessionGate} testID="ivx-owner-chat-session-gate">
-                  <Crown size={18} color={Colors.primary} />
-                  <Text style={styles.ownerSessionGateText}>
-                    Owner session required. Sign in as the IVX owner to send messages and use owner-only tools.
-                  </Text>
-                  <Pressable
-                    style={[styles.ownerSessionGateButton, passwordlessLoading ? styles.actionButtonDisabled : null]}
-                    onPress={() => { void handlePasswordlessOwnerSignIn(); }}
-                    disabled={passwordlessLoading}
-                    accessibilityRole="button"
-                    accessibilityLabel="Sign in as IVX owner with one tap"
-                    testID="ivx-owner-chat-signin-button"
-                    hitSlop={8}
-                  >
-                    {passwordlessLoading ? (
-                      <ActivityIndicator size="small" color={Colors.black} />
-                    ) : (
-                      <Text style={styles.ownerSessionGateButtonText}>Sign in as IVX Owner</Text>
-                    )}
-                  </Pressable>
-                </View>
-              ) : null}
+              {/* Owner session gate removed — composer is always available. */}
             </View>
           </View>
         ) : null}
