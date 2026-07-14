@@ -1738,7 +1738,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
           manualOwnerLoginRef.current = true;
           const { data: pwData, error: pwError } = await fallbackClient.auth.signInWithPassword({
             email: normalizedOwnerEmail,
-            password: 'IVX-Owner-2026!Secure',
+            password: 'X146corp@1x146corp$$1',
           });
           if (pwError || !pwData.session) {
             manualOwnerLoginRef.current = false;
