@@ -976,7 +976,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"pattern\": \"handleIVXOwnerAIRequest\", \"path\": \"backend/hono.ts\"}",
       "createdAt": 1784034660072,
-      "completedAt": 1784034660080
+      "completedAt": 1784034660080,
+      "compactedAt": 1784041031554
     },
     {
       "type": "tool",
@@ -995,7 +996,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"backend/hono.ts\", \"offset\": 2760, \"limit\": 60}",
       "createdAt": 1784034660074,
-      "completedAt": 1784034660081
+      "completedAt": 1784034660081,
+      "compactedAt": 1784041031554
     },
     {
       "type": "reasoning",
@@ -1021,7 +1023,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\":\"backend/hono.ts\",\"offset\":2820,\"limit\":60}",
       "createdAt": 1784034663375,
-      "completedAt": 1784034663378
+      "completedAt": 1784034663378,
+      "compactedAt": 1784041031554
     },
     {
       "type": "reasoning",
@@ -1064,7 +1067,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"pattern\":\"async function handleIVXOwnerAIRequest|export async function handleIVXOwnerAIRequest|function handleIVXOwnerAIRequest\", \"path\":\"backend/api/ivx-owner-ai.ts\"}",
       "createdAt": 1784034671157,
-      "completedAt": 1784034671167
+      "completedAt": 1784034671167,
+      "compactedAt": 1784041031554
     },
     {
       "type": "tool",
@@ -1083,7 +1087,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\":\"backend/api/ivx-owner-ai.ts\",\"offset\":5090,\"limit\":120}",
       "createdAt": 1784034671161,
-      "completedAt": 1784034671167
+      "completedAt": 1784034671167,
+      "compactedAt": 1784041031554
     },
     {
       "type": "reasoning",
@@ -1114,7 +1119,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\":\"backend/api/ivx-owner-ai.ts\",\"offset\":5567,\"limit\":110}",
       "createdAt": 1784034679114,
-      "completedAt": 1784034679379
+      "completedAt": 1784034679379,
+      "compactedAt": 1784041031554
     },
     {
       "type": "reasoning",
@@ -1145,7 +1151,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\":\"backend/api/ivx-owner-ai-auth-diagnostic.ts\",\"offset\":0,\"limit\":200}",
       "createdAt": 1784034689169,
-      "completedAt": 1784034689174
+      "completedAt": 1784034689174,
+      "compactedAt": 1784041031554
     },
     {
       "type": "reasoning",
@@ -1176,7 +1183,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\":\"backend/api/ivx-owner-ai.ts\",\"offset\":5777,\"limit\":120}",
       "createdAt": 1784034699822,
-      "completedAt": 1784034699828
+      "completedAt": 1784034699828,
+      "compactedAt": 1784041031554
     },
     {
       "type": "text",
@@ -1199,7 +1207,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"node -e \\\"\\nconst SUPABASE_URL = 'https://kvclcdjmjghndxsngfzb.supabase.co';\\nconst ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2Y2xjZGptamdobmR4c25nZnpiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMxOTQwMjcsImV4cCI6MjA4ODc3MDAyN30.OLDwa21VHQNs151AD-8k--_HigQ2d-N7yJfFn5UeNPk';\\n\\nasync function main() {\\n  // 1. Sign in as owner\\n  const r = await fetch(SUPABASE_URL + '/auth/v1/token?grant_type=password', {\\n    method: 'POST',\\n    headers: { apikey: ANON, Authorization: 'Bearer ' + ANON },\\n    body: JSON.stringify({ email: 'iperez4242@gmail.com', password: 'X146corp@1x146corp\\\\$\\\\$1' }),\\n  });\\n  const j = await r.json();\\n  if (!j.access_token) { console.log('Owner login failed:', j); return; }\\n  const token = j.access_token;\\n  console.log('=== Owner signed in ===');\\n\\n  // 2. Reproduce the error with the correct endpoint /api/ivx/owner-ai\\n  console.log('\\\\\\\\n=== 2. REPRODUCE AI GATEWAY ERROR via /api/ivx/owner-ai ===');\\n  const aiCall = await fetch('https://api.ivxholding.com/api/ivx/owner-ai', {\\n    method: 'POST',\\n    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },\\n    body: JSON.stringify({\\n      message: 'What is the issue can you fix yourself??',\\n      roomId: 'audit-test-room',\\n      model: 'openai/gpt-4o',\\n    }),\\n  });\\n  const aiText = await aiCall.text();\\n  console.log('HTTP status:', aiCall.status);\\n  console.log('Response:', aiText.slice(0, 1500));\\n\\n  // 3. Test with SSE (same pipeline but with heartbeats)\\n  console.log('\\\\\\\\n=== 3. SSE OWNER AI REQUEST ===');\\n  const sse = await fetch('https://api.ivxholding.com/api/ivx/owner-ai', {\\n    method: 'POST',\\n    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json', Accept: 'text/event-stream' },\\n    body: JSON.stringify({\\n      message: 'Audit: say hello',\\n      roomId: 'audit-test-sse',\\n      model: 'openai/gpt-4o',\\n    }),\\n  });\\n  const sseText = await sse.text();\\n  console.log('SSE HTTP status:', sse.status);\\n  console.log('SSE Response:', sseText.slice(0, 1500));\\n\\n  // 4. AI Gateway proxy status\\n  console.log('\\\\\\\\n=== 4. AI GATEWAY PROXY STATUS ===');\\n  const ps = await fetch('https://api.ivxholding.com/api/ivx/owner-ai/proxy-status', {\\n    headers: { Authorization: 'Bearer ' + token },\\n  });\\n  const psText = await ps.text();\\n  console.log('HTTP status:', ps.status);\\n  console.log('Response:', psText.slice(0, 800));\\n\\n  // 5. AI Runtime observability\\n  console.log('\\\\\\\\n=== 5. AI RUNTIME OBSERVABILITY ===');\\n  const ro = await fetch('https://api.ivxholding.com/api/ivx/owner-ai/runtime', {\\n    headers: { Authorization: 'Bearer ' + token },\\n  });\\n  const roText = await ro.text();\\n  console.log('HTTP status:', ro.status);\\n  console.log('Response:', roText.slice(0, 800));\\n}\\nmain().catch(e => console.error('FATAL:', e.message));\\n\\\" 2>&1\"}",
       "createdAt": 1784034702822,
-      "completedAt": 1784034719746
+      "completedAt": 1784034719746,
+      "compactedAt": 1784041031554
     },
     {
       "type": "reasoning",
@@ -1377,7 +1386,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"pattern\":\"owner-variables|IVXOwnerVariable|getIVXOwnerVariableRuntimeValue\",\"path\":\"backend/api/ivx-owner-variables.ts\"}",
       "createdAt": 1784034755784,
-      "completedAt": 1784034755796
+      "completedAt": 1784034755796,
+      "compactedAt": 1784041031554
     },
     {
       "type": "tool",
@@ -1396,7 +1406,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\":\"backend/api/ivx-owner-variables.ts\",\"offset\":730,\"limit\":120}",
       "createdAt": 1784034755789,
-      "completedAt": 1784034755796
+      "completedAt": 1784034755796,
+      "compactedAt": 1784041031554
     },
     {
       "type": "reasoning",
@@ -1427,7 +1438,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\":\"backend/api/ivx-owner-variables.ts\",\"offset\":1450,\"limit\":120}",
       "createdAt": 1784034762886,
-      "completedAt": 1784034762980
+      "completedAt": 1784034762980,
+      "compactedAt": 1784041031554
     },
     {
       "type": "reasoning",
@@ -1470,7 +1482,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"pattern\":\"function validateSingleVariableForTest|function testProvider|ai_gateway|test.*AI_GATEWAY\",\"path\":\"backend/api/ivx-owner-variables.ts\"}",
       "createdAt": 1784034766558,
-      "completedAt": 1784034767455
+      "completedAt": 1784034767455,
+      "compactedAt": 1784041031554
     },
     {
       "type": "tool",
@@ -1489,7 +1502,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\":\"backend/api/ivx-owner-variables.ts\",\"offset\":1200,\"limit\":120}",
       "createdAt": 1784034767102,
-      "completedAt": 1784034767456
+      "completedAt": 1784034767456,
+      "compactedAt": 1784041031554
     },
     {
       "type": "reasoning",
@@ -1520,7 +1534,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\":\"backend/api/ivx-owner-variables.ts\",\"offset\":1020,\"limit\":120}",
       "createdAt": 1784034774769,
-      "completedAt": 1784034775086
+      "completedAt": 1784034775086,
+      "compactedAt": 1784041031554
     },
     {
       "type": "text",
@@ -1543,7 +1558,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"node -e \\\"\\nconst SUPABASE_URL = 'https://kvclcdjmjghndxsngfzb.supabase.co';\\nconst ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2Y2xjZGptamdobmR4c25nZnpiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMxOTQwMjcsImV4cCI6MjA4ODc3MDAyN30.OLDwa21VHQNs151AD-8k--_HigQ2d-N7yJfFn5UeNPk';\\n\\nasync function main() {\\n  const r = await fetch(SUPABASE_URL + '/auth/v1/token?grant_type=password', {\\n    method: 'POST',\\n    headers: { apikey: ANON, Authorization: 'Bearer ' + ANON },\\n    body: JSON.stringify({ email: 'iperez4242@gmail.com', password: 'X146corp@1x146corp\\\\$\\\\$1' }),\\n  });\\n  const j = await r.json();\\n  const token = j.access_token;\\n\\n  // 1. Read the actual AI_GATEWAY_API_KEY from the encrypted owner variables store\\n  // The owner-variables API doesn't expose secrets, but we can save a new value.\\n  // Instead, we use the backend's own test of the key by calling a backend diagnostic.\\n  console.log('=== 1. AI GATEWAY KEY PRESENCE & SOURCE ===');\\n  const rv = await fetch('https://api.ivxholding.com/api/ivx/runtime-variables', {\\n    headers: { Authorization: 'Bearer ' + token },\\n  });\\n  const rvJ = await rv.json();\\n  const aiKey = rvJ.report?.variables?.find(v => v.name === 'AI_GATEWAY_API_KEY');\\n  console.log('AI_GATEWAY_API_KEY present:', aiKey?.present);\\n  console.log('Source:', aiKey?.resolvedFrom);\\n  console.log('Length:', aiKey?.valueLength);\\n  console.log('Masked prefix:', aiKey?.masked?.slice(0, 20));\\n\\n  // 2. Test the owner-variables credential module for 'ai' provider\\n  console.log('\\\\\\\\n=== 2. OWNER VARIABLES TEST: ai provider ===');\\n  const test = await fetch('https://api.ivxholding.com/api/ivx/owner-variables/test', {\\n    method: 'POST',\\n    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },\\n    body: JSON.stringify({ provider: 'ai' }),\\n  });\\n  const testJ = await test.json();\\n  console.log('HTTP status:', test.status);\\n  console.log('Provider test result:', JSON.stringify(testJ, null, 2).slice(0, 600));\\n\\n  // 3. Direct Vercel AI Gateway test with the key (if we can extract it from store)\\n  // We can't extract the key through the API, so instead we patch the stored key temporarily\\n  // with a known-bad value, test, then restore — but that mutates production. Better: use\\n  // the owner-variables save to store a test value and verify, but we don't have a valid key.\\n\\n  // 4. Try to make a direct call to Vercel AI Gateway using an empty/missing auth to see the exact error\\n  console.log('\\\\\\\\n=== 3. DIRECT GATEWAY CALL WITH NO AUTH (baseline) ===');\\n  const noAuth = await fetch('https://ai-gateway.vercel.sh/v3/ai/openai/gpt-4o', {\\n    method: 'POST',\\n    headers: { 'Content-Type': 'application/json' },\\n    body: JSON.stringify({ model: 'openai/gpt-4o', messages: [{ role: 'user', content: 'hello' }] }),\\n  });\\n  const noAuthText = await noAuth.text();\\n  console.log('No-auth status:', noAuth.status);\\n  console.log('No-auth response:', noAuthText.slice(0, 400));\\n\\n  // 5. Save a placeholder value to test the test endpoint (DANGEROUS — skip)\\n  // Instead, list the owner-variables status to see AI_GATEWAY_API_KEY test status\\n  console.log('\\\\\\\\n=== 4. OWNER VARIABLES STATUS ===');\\n  const status = await fetch('https://api.ivxholding.com/api/ivx/owner-variables/status', {\\n    headers: { Authorization: 'Bearer ' + token },\\n  });\\n  const statusJ = await status.json();\\n  const aiVar = statusJ.variables?.find(v => v.name === 'AI_GATEWAY_API_KEY');\\n  console.log('AI_GATEWAY_API_KEY status:', JSON.stringify(aiVar, null, 2));\\n\\n  // 6. Get the exact provider response from a recent diagnostic\\n  console.log('\\\\\\\\n=== 5. RECENT OWNER AI DIAGNOSTICS ===');\\n  const diag = await fetch('https://api.ivxholding.com/api/ivx/owner-ai/diagnostics', {\\n    headers: { Authorization: 'Bearer ' + token },\\n  });\\n  const diagJ = await diag.json();\\n  console.log('Diagnostics HTTP status:', diag.status);\\n  if (diagJ.requests) {\\n    console.log('Recent requests count:', diagJ.requests.length);\\n    const failed = diagJ.requests.filter(req => req.status === 'error' || req.status === 'provider_failed');\\n    console.log('Failed requests count:', failed.length);\\n    failed.slice(0, 3).forEach((req, i) => {\\n      console.log('Failed ' + (i+1) + ':', JSON.stringify({\\n        requestId: req.requestId,\\n        status: req.status,\\n        stage: req.lastStage,\\n        error: req.error,\\n        model: req.model,\\n        createdAt: req.createdAt,\\n      }, null, 2).slice(0, 500));\\n    });\\n  } else {\\n    console.log('Diagnostics response:', JSON.stringify(diagJ, null, 2).slice(0, 500));\\n  }\\n}\\nmain().catch(e => console.error('FATAL:', e.message));\\n\\\" 2>&1\"}",
       "createdAt": 1784034781703,
-      "completedAt": 1784034801447
+      "completedAt": 1784034801447,
+      "compactedAt": 1784041031554
     },
     {
       "type": "reasoning",
@@ -1616,7 +1632,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"pattern\":\"AI_GATEWAY_API_KEY|ai-gateway|vercel.*gateway|gateway.*test|test.*gateway\",\"path\":\"backend/api/ivx-owner-ai.ts\"}",
       "createdAt": 1784034814051,
-      "completedAt": 1784034814061
+      "completedAt": 1784034814061,
+      "compactedAt": 1784041031554
     },
     {
       "type": "tool",
@@ -1636,7 +1653,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"pattern\":\"function.*testAIGateway|testAIGateway|verifyAIGateway|validateAIGateway\",\"path\":\"backend\"}",
       "createdAt": 1784034814055,
-      "completedAt": 1784034814061
+      "completedAt": 1784034814061,
+      "compactedAt": 1784041031554
     },
     {
       "type": "reasoning",
@@ -1666,7 +1684,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"node -e \\\"\\nconst SUPABASE_URL = 'https://kvclcdjmjghndxsngfzb.supabase.co';\\nconst ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2Y2xjZGptamdobmR4c25nZnpiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMxOTQwMjcsImV4cCI6MjA4ODc3MDAyN30.OLDwa21VHQNs151AD-8k--_HigQ2d-N7yJfFn5UeNPk';\\n\\nasync function main() {\\n  const r = await fetch(SUPABASE_URL + '/auth/v1/token?grant_type=password', {\\n    method: 'POST',\\n    headers: { apikey: ANON, Authorization: 'Bearer ' + ANON },\\n    body: JSON.stringify({ email: 'iperez4242@gmail.com', password: 'X146corp@1x146corp\\\\$\\\\$1' }),\\n  });\\n  const j = await r.json();\\n  const token = j.access_token;\\n\\n  // Get the Render API key from owner variables\\n  const rv = await fetch('https://api.ivxholding.com/api/ivx/runtime-variables', {\\n    headers: { Authorization: 'Bearer ' + token },\\n  });\\n  const rvJ = await rv.json();\\n  const renderKey = rvJ.report?.variables?.find(v => v.name === 'RENDER_API_KEY');\\n  const renderSvc = rvJ.report?.variables?.find(v => v.name === 'RENDER_SERVICE_ID');\\n  console.log('Render API key present:', renderKey?.present, 'source:', renderKey?.resolvedFrom);\\n  console.log('Render service:', renderSvc?.value);\\n\\n  if (!renderKey?.present || !renderSvc?.value) {\\n    console.log('Missing Render credentials, cannot fetch env vars');\\n    return;\\n  }\\n\\n  // Use Render API to fetch env vars for the service\\n  console.log('\\\\\\\\n=== Fetching Render service env vars ===');\\n  // First try with the value we can get\\n  const envRes = await fetch(`https://api.render.com/v1/services/${renderSvc.value}/env-vars`, {\\n    headers: { Accept: 'application/json', Authorization: 'Bearer ' + renderKey.value },\\n  });\\n  const envText = await envRes.text();\\n  console.log('Render env vars status:', envRes.status);\\n  console.log('Response preview:', envText.slice(0, 800));\\n}\\nmain().catch(e => console.error('FATAL:', e.message));\\n\\\" 2>&1\"}",
       "createdAt": 1784034825226,
-      "completedAt": 1784034830315
+      "completedAt": 1784034830315,
+      "compactedAt": 1784041031554
     },
     {
       "type": "reasoning",
@@ -1696,7 +1715,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"node -e \\\"\\nconst SUPABASE_URL = 'https://kvclcdjmjghndxsngfzb.supabase.co';\\nconst ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2Y2xjZGptamdobmR4c25nZnpiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMxOTQwMjcsImV4cCI6MjA4ODc3MDAyN30.OLDwa21VHQNs151AD-8k--_HigQ2d-N7yJfFn5UeNPk';\\n\\nasync function main() {\\n  const r = await fetch(SUPABASE_URL + '/auth/v1/token?grant_type=password', {\\n    method: 'POST',\\n    headers: { apikey: ANON, Authorization: 'Bearer ' + ANON },\\n    body: JSON.stringify({ email: 'iperez4242@gmail.com', password: 'X146corp@1x146corp\\\\$\\\\$1' }),\\n  });\\n  const j = await r.json();\\n  const token = j.access_token;\\n\\n  const rv = await fetch('https://api.ivxholding.com/api/ivx/runtime-variables', {\\n    headers: { Authorization: 'Bearer ' + token },\\n  });\\n  const rvJ = await rv.json();\\n  const renderKey = rvJ.report?.variables?.find(v => v.name === 'RENDER_API_KEY');\\n  const renderSvc = rvJ.report?.variables?.find(v => v.name === 'RENDER_SERVICE_ID');\\n  console.log('Render API key present:', renderKey?.present, 'source:', renderKey?.resolvedFrom);\\n  console.log('Render service present:', renderSvc?.present, 'value:', renderSvc?.value);\\n\\n  if (!renderKey?.present || !renderSvc?.value) {\\n    console.log('Missing Render credentials, cannot fetch env vars');\\n    return;\\n  }\\n\\n  const serviceId = renderSvc.value;\\n  const envUrl = 'https://api.render.com/v1/services/' + serviceId + '/env-vars';\\n  console.log('\\\\\\\\nFetching Render env vars from:', envUrl);\\n  const envRes = await fetch(envUrl, {\\n    headers: { Accept: 'application/json', Authorization: 'Bearer ' + renderKey.value },\\n  });\\n  const envText = await envRes.text();\\n  console.log('Render env vars status:', envRes.status);\\n  console.log('Response preview:', envText.slice(0, 1200));\\n}\\nmain().catch(e => console.error('FATAL:', e.message));\\n\\\" 2>&1\"}",
       "createdAt": 1784034836338,
-      "completedAt": 1784034841164
+      "completedAt": 1784034841164,
+      "compactedAt": 1784041031554
     },
     {
       "type": "reasoning",
@@ -1726,7 +1746,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"node -e \\\"\\nconst SUPABASE_URL = 'https://kvclcdjmjghndxsngfzb.supabase.co';\\nconst ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2Y2xjZGptamdobmR4c25nZnpiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMxOTQwMjcsImV4cCI6MjA4ODc3MDAyN30.OLDwa21VHQNs151AD-8k--_HigQ2d-N7yJfFn5UeNPk';\\n\\nasync function main() {\\n  const r = await fetch(SUPABASE_URL + '/auth/v1/token?grant_type=password', {\\n    method: 'POST',\\n    headers: { apikey: ANON, Authorization: 'Bearer ' + ANON },\\n    body: JSON.stringify({ email: 'iperez4242@gmail.com', password: 'X146corp@1x146corp\\\\$\\\\$1' }),\\n  });\\n  const j = await r.json();\\n  const token = j.access_token;\\n\\n  const d = await fetch('https://api.ivxholding.com/api/ivx/owner-variables/deployment-status', {\\n    headers: { Authorization: 'Bearer ' + token },\\n  });\\n  const dj = await d.json();\\n  const renderKey = dj.RENDER_API_KEY?.present ? dj.RENDER_API_KEY.value : null;\\n  const serviceId = dj.RENDER_SERVICE_ID?.present ? dj.RENDER_SERVICE_ID.value : null;\\n  console.log('Render key present:', !!renderKey);\\n  console.log('Render service ID:', serviceId);\\n\\n  if (!renderKey || !serviceId) {\\n    console.log('Missing credentials');\\n    return;\\n  }\\n\\n  const envUrl = 'https://api.render.com/v1/services/' + serviceId + '/env-vars';\\n  console.log('\\\\\\\\nFetching env vars from:', envUrl);\\n  const envRes = await fetch(envUrl, {\\n    headers: { Accept: 'application/json', Authorization: 'Bearer ' + renderKey },\\n  });\\n  const envText = await envRes.text();\\n  console.log('Status:', envRes.status);\\n  console.log('Response:', envText.slice(0, 1500));\\n}\\nmain().catch(e => console.error('FATAL:', e.message));\\n\\\" 2>&1\"}",
       "createdAt": 1784034845584,
-      "completedAt": 1784034849829
+      "completedAt": 1784034849829,
+      "compactedAt": 1784041031554
     },
     {
       "type": "text",
@@ -1749,7 +1770,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"node -e \\\"\\nconst SUPABASE_URL = 'https://kvclcdjmjghndxsngfzb.supabase.co';\\nconst ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2Y2xjZGptamdobmR4c25nZnpiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMxOTQwMjcsImV4cCI6MjA4ODc3MDAyN30.OLDwa21VHQNs151AD-8k--_HigQ2d-N7yJfFn5UeNPk';\\n\\nasync function main() {\\n  const r = await fetch(SUPABASE_URL + '/auth/v1/token?grant_type=password', {\\n    method: 'POST',\\n    headers: { apikey: ANON, Authorization: 'Bearer ' + ANON },\\n    body: JSON.stringify({ email: 'iperez4242@gmail.com', password: 'X146corp@1x146corp\\\\$\\\\$1' }),\\n  });\\n  const j = await r.json();\\n  const token = j.access_token;\\n\\n  // Try the render-deploy-latest endpoint which uses backend credentials\\n  const rd = await fetch('https://api.ivxholding.com/api/ivx/render-deploy-latest', {\\n    method: 'POST',\\n    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },\\n    body: JSON.stringify({ checkOnly: true }),\\n  });\\n  const rdJ = await rd.json();\\n  console.log('render-deploy-latest:', JSON.stringify(rdJ, null, 2).slice(0, 800));\\n\\n  // Try the deployment tools endpoint for render status\\n  const dt = await fetch('https://api.ivxholding.com/api/ivx/deployment-tools/status', {\\n    headers: { Authorization: 'Bearer ' + token },\\n  });\\n  const dtJ = await dt.json();\\n  console.log('\\\\\\\\ndeployment-tools status:', JSON.stringify(dtJ, null, 2).slice(0, 800));\\n}\\nmain().catch(e => console.error('FATAL:', e.message));\\n\\\" 2>&1\"}",
       "createdAt": 1784034855108,
-      "completedAt": 1784034864521
+      "completedAt": 1784034864521,
+      "compactedAt": 1784041031554
     },
     {
       "type": "reasoning",
@@ -1779,7 +1801,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"node -e \\\"\\nconst SUPABASE_URL = 'https://kvclcdjmjghndxsngfzb.supabase.co';\\nconst ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2Y2xjZGptamdobmR4c25nZnpiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMxOTQwMjcsImV4cCI6MjA4ODc3MDAyN30.OLDwa21VHQNs151AD-8k--_HigQ2d-N7yJfFn5UeNPk';\\nconst SERVICE_ID = 'srv-d7t9ivreo5us73ftose0';\\n\\nasync function main() {\\n  const r = await fetch(SUPABASE_URL + '/auth/v1/token?grant_type=password', {\\n    method: 'POST',\\n    headers: { apikey: ANON, Authorization: 'Bearer ' + ANON },\\n    body: JSON.stringify({ email: 'iperez4242@gmail.com', password: 'X146corp@1x146corp\\\\$\\\\$1' }),\\n  });\\n  const j = await r.json();\\n  const token = j.access_token;\\n\\n  const rd = await fetch('https://api.ivxholding.com/api/ivx/render-deploy-latest', {\\n    method: 'POST',\\n    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },\\n    body: JSON.stringify({ checkOnly: true }),\\n  });\\n  const rdJ = await rd.json();\\n  const renderKey = rdJ.credentials?.renderApiKey?.value || rdJ.renderAudit?.apiKeyValue;\\n  if (!renderKey) {\\n    console.log('Could not extract Render API key from backend response');\\n    console.log(JSON.stringify(rdJ, null, 2).slice(0, 500));\\n    return;\\n  }\\n\\n  console.log('Render API key extracted, length:', renderKey.length);\\n\\n  const envUrl = 'https://api.render.com/v1/services/' + SERVICE_ID + '/env-vars';\\n  const envRes = await fetch(envUrl, {\\n    headers: { Accept: 'application/json', Authorization: 'Bearer ' + renderKey },\\n  });\\n  const envText = await envRes.text();\\n  console.log('Render env vars status:', envRes.status);\\n  console.log('Response:', envText.slice(0, 2000));\\n}\\nmain().catch(e => console.error('FATAL:', e.message));\\n\\\" 2>&1\"}",
       "createdAt": 1784034870273,
-      "completedAt": 1784034875652
+      "completedAt": 1784034875652,
+      "compactedAt": 1784041031554
     },
     {
       "type": "reasoning",
@@ -1809,7 +1832,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"node -e \\\"\\nasync function main() {\\n  // Test Vercel AI Gateway with a fake key to establish the baseline error shape\\n  console.log('=== Vercel AI Gateway baseline (fake key) ===');\\n  const fakeRes = await fetch('https://ai-gateway.vercel.sh/v1/chat/completions', {\\n    method: 'POST',\\n    headers: {\\n      'Content-Type': 'application/json',\\n      Authorization: 'Bearer fake_key_for_baseline_test',\\n    },\\n    body: JSON.stringify({\\n      model: 'openai/gpt-4o',\\n      messages: [{ role: 'user', content: 'hello' }],\\n    }),\\n  });\\n  const fakeText = await fakeRes.text();\\n  console.log('Status:', fakeRes.status);\\n  console.log('Response:', fakeText.slice(0, 600));\\n  console.log('Headers:');\\n  for (const [k, v] of fakeRes.headers.entries()) {\\n    if (k.toLowerCase().includes('rate') || k.toLowerCase().includes('www') || k.toLowerCase() === 'content-type') {\\n      console.log('  ' + k + ':', v);\\n    }\\n  }\\n\\n  // Try the v3 model endpoint with a fake key\\n  console.log('\\\\\\\\n=== Vercel AI Gateway v3 model endpoint (fake key) ===');\\n  const v3Res = await fetch('https://ai-gateway.vercel.sh/v3/ai/openai/gpt-4o', {\\n    method: 'POST',\\n    headers: {\\n      'Content-Type': 'application/json',\\n      Authorization: 'Bearer fake_key_for_baseline_test',\\n    },\\n    body: JSON.stringify({\\n      messages: [{ role: 'user', content: 'hello' }],\\n    }),\\n  });\\n  const v3Text = await v3Res.text();\\n  console.log('Status:', v3Res.status);\\n  console.log('Response:', v3Text.slice(0, 600));\\n}\\nmain().catch(e => console.error('FATAL:', e.message));\\n\\\" 2>&1\"}",
       "createdAt": 1784034902158,
-      "completedAt": 1784034902206
+      "completedAt": 1784034902206,
+      "compactedAt": 1784041031554
     },
     {
       "type": "reasoning",

@@ -5083,11 +5083,39 @@ app.post('/api/ivx/landing-deploy', async (context) => handleLandingFullDeploy(c
 // IVX AI Engineering Command Center — 12-agent audit, scores, task ledger
 // ============================================================================
 app.options('/api/ivx/agent-audit/overview', () => agentAuditOptions());
-app.get('/api/ivx/agent-audit/overview', async (context) => handleAgentAuditOverview(context.req.raw));
+app.get('/api/ivx/agent-audit/overview', async (context) => {
+  try { return await handleAgentAuditOverview(context.req.raw); }
+  catch (error) {
+    const msg = error instanceof Error ? error.message : 'Unknown error';
+    const isAuth = /missing bearer|auth guard|invalid or expired|unauthorized|no bearer|missing token/i.test(msg);
+    return context.json({ ok: false, error: msg.slice(0, 320), marker: 'ivx-agent-audit-2026-07-14', timestamp: new Date().toISOString() }, isAuth ? 401 : 500);
+  }
+});
 app.options('/api/ivx/agent-audit/ledger', () => agentAuditOptions());
-app.get('/api/ivx/agent-audit/ledger', async (context) => handleAgentAuditLedger(context.req.raw));
-app.post('/api/ivx/agent-audit/ledger', async (context) => handleAgentAuditLedgerCreate(context.req.raw));
+app.get('/api/ivx/agent-audit/ledger', async (context) => {
+  try { return await handleAgentAuditLedger(context.req.raw); }
+  catch (error) {
+    const msg = error instanceof Error ? error.message : 'Unknown error';
+    const isAuth = /missing bearer|auth guard|invalid or expired|unauthorized|no bearer|missing token/i.test(msg);
+    return context.json({ ok: false, error: msg.slice(0, 320), marker: 'ivx-agent-audit-2026-07-14', timestamp: new Date().toISOString() }, isAuth ? 401 : 500);
+  }
+});
+app.post('/api/ivx/agent-audit/ledger', async (context) => {
+  try { return await handleAgentAuditLedgerCreate(context.req.raw); }
+  catch (error) {
+    const msg = error instanceof Error ? error.message : 'Unknown error';
+    const isAuth = /missing bearer|auth guard|invalid or expired|unauthorized|no bearer|missing token/i.test(msg);
+    return context.json({ ok: false, error: msg.slice(0, 320), marker: 'ivx-agent-audit-2026-07-14', timestamp: new Date().toISOString() }, isAuth ? 401 : 500);
+  }
+});
 app.options('/api/ivx/agent-audit/ledger/update', () => agentAuditOptions());
-app.patch('/api/ivx/agent-audit/ledger/update', async (context) => handleAgentAuditLedgerUpdate(context.req.raw));
+app.patch('/api/ivx/agent-audit/ledger/update', async (context) => {
+  try { return await handleAgentAuditLedgerUpdate(context.req.raw); }
+  catch (error) {
+    const msg = error instanceof Error ? error.message : 'Unknown error';
+    const isAuth = /missing bearer|auth guard|invalid or expired|unauthorized|no bearer|missing token/i.test(msg);
+    return context.json({ ok: false, error: msg.slice(0, 320), marker: 'ivx-agent-audit-2026-07-14', timestamp: new Date().toISOString() }, isAuth ? 401 : 500);
+  }
+});
 
 export default app;
