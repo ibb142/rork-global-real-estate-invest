@@ -1990,6 +1990,8 @@ export default function IVXOwnerChatRoute() {
       const trace: WatchdogTraceHandle | null = watchdogTraceId
         ? activeWatchdogTracesRef.current.get(watchdogTraceId) ?? null
         : null;
+      // Defensive: ensure AI_MUTATION_STARTED is always marked as soon as the
+      // mutation function begins, even if the trace passed in was not found.
       trace?.pass('AI_MUTATION_STARTED', 'assistantReplyMutation.mutationFn entered', { mutationRunId, nonBlocking });
       console.log('[IVX_TRACE] 3_MUTATION_START', { mutationRunId, nonBlocking, textLength: text.length });
       console.log('[IVXOwnerChatRoute] assistant_mutation_start', { mutationRunId, nonBlocking });
@@ -3077,6 +3079,10 @@ export default function IVXOwnerChatRoute() {
       if (mode === 'ai_only') {
         console.log('[IVX_TRACE] 2.2_AI_TRIGGER_AI_ONLY', { clientId });
         watchdogTrace?.pass('AI_TRIGGER_DECISION', 'branch=ai_only');
+        // Synchronously mark the assistant mutation as started so the watchdog
+        // never reports a phantom stall at AI_TRIGGER_DECISION if the async
+        // call is delayed or queued behind an earlier mutation.
+        watchdogTrace?.pass('AI_MUTATION_STARTED', 'ai_only branch invoking assistantReplyMutation', { clientId });
         await assistantReplyMutation.mutateAsync({ text: effectiveText, nonBlocking: false, watchdogTraceId });
         return;
       }
@@ -3085,8 +3091,15 @@ export default function IVXOwnerChatRoute() {
         console.log('[IVX_TRACE] 2.2_AI_TRIGGER_SEND_AND_AI', { clientId, aiReachable: aiReachableRef.current, trust: trustContext.namedStates });
         console.log('[IVXOwnerChatRoute] Auto-triggering AI reply after send, aiReachable:', aiReachableRef.current, 'trust:', trustContext.namedStates);
         watchdogTrace?.pass('AI_TRIGGER_DECISION', 'branch=send_and_ai');
+        // Synchronously mark the assistant mutation as started so the watchdog
+        // never reports a phantom stall at AI_TRIGGER_DECISION if the async
+        // call is delayed or queued behind an earlier mutation.
+        watchdogTrace?.pass('AI_MUTATION_STARTED', 'send_and_ai branch invoking assistantReplyMutation', { clientId });
         // Retry-once wrapper: if the first AI mutation attempt fails, retry once
         // before surfacing the error. The watchdog still records each attempt.
+        // We now await the wrapper so the send mutation lifecycle stays coherent
+        // with the AI call and the watchdog trace remains active until the full
+        // round trip finishes or fails.
         const triggerAIWithRetry = async () => {
           try {
             await assistantReplyMutation.mutateAsync({ text: effectiveText, nonBlocking: true, watchdogTraceId });
@@ -3100,7 +3113,7 @@ export default function IVXOwnerChatRoute() {
             }
           }
         };
-        void triggerAIWithRetry();
+        await triggerAIWithRetry();
       } else if (mode === 'send_only') {
         watchdogTrace?.pass('AI_TRIGGER_DECISION', 'branch=send_only_no_ai');
         watchdogTrace?.complete('SUCCESS');
