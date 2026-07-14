@@ -1,34 +1,25 @@
 {
-  "generatedBy": "qa-evidence/verify-agent-audit-deploy.mjs + manual deploy audit",
-  "verificationTimestamp": "2026-07-14T12:15:00.000Z",
-  "localCommit": "18df757f3dbac34fd437df547feccba0f5a3a0c0",
-  "originCommit": "18df757f3dbac34fd437df547feccba0f5a3a0c0",
-  "githubMainCommit": "5533c6d04073b834ada1eaf1ced94ca1704a9992",
-  "rorkRouterHead": "18df757f3dbac34fd437df547feccba0f5a3a0c0",
+  "generatedBy": "qa-evidence/verify-agent-audit-deploy.mjs",
+  "verificationTimestamp": "2026-07-14T12:20:08.904Z",
+  "localCommit": "483da9e4081d7a6412cc6de8de5d14e019546d9c",
+  "originCommit": "9652cf10c03cea437405d8ad1ba1e15f726d9c95",
   "productionCommit": "5533c6d04073b834ada1eaf1ced94ca1704a9992",
-  "rootCause": "Render service was configured to watch GitHub mirror (ibb142/rork-global-real-estate-invest). That mirror is 2 commits behind the Rork-managed router because the sandbox cannot push to GitHub without GITHUB_TOKEN. Therefore Render auto-deploy never picked up the new /api/ivx/agent-audit/* routes.",
-  "fixApplied": "Updated render.yaml for both web services to point to the Rork-managed git router (https://rork-git-router.rork-direct.workers.dev/git/j2l8t44588ix9ns7b57mu) which is publicly accessible and always reflects the latest local commit.",
   "localAuditEngine": {
     "ok": true,
-    "detail": "runAgentAudit() returned 12 agents with scores and role assignments",
+    "detail": "runAgentAudit() returned 12 agents",
     "agentCount": 12
   },
   "localEndpoint": {
-    "ok": true,
-    "detail": "Local server /health returned 200; OPTIONS /api/ivx/agent-audit/overview returned 204 with correct CORS headers; GET /api/ivx/agent-audit/overview returned 401 'missing bearer token' proving route is registered and owner-only gate is active"
+    "ok": false,
+    "detail": "Local server not reachable: fetch failed"
   },
   "productionEndpoint": {
     "ok": false,
-    "detail": "Production /api/ivx/agent-audit/overview returns HTTP 404 Not Found because production is still on old commit 5533c6d0",
-    "status": 404
+    "detail": "",
+    "status": null,
+    "bodyPreview": null
   },
   "deployVerified": false,
-  "failingNode": "render-service-config",
-  "blocker": "The currently running Render service is still watching the GitHub mirror (5533c6d0). To complete the deploy now, either (1) update the running Render service source URL to the Rork router via Render dashboard/API, or (2) push the GitHub mirror to 18df757. Both require RENDER_API_KEY or GITHUB_TOKEN which are not available in this sandbox.",
-  "nextCommand": "With RENDER_API_KEY exported, run: node deploy/deployment-watchdog.mjs --deploy --wait 600",
-  "alternativeCommand": "With GITHUB_TOKEN exported, run: node expo/sync-github.mjs --message 'deploy: agent audit and command center'",
-  "corsCheck": {
-    "production": "PASS — OPTIONS /api/ivx/agent-audit/overview on production returns 404 (route not present) but CORS headers are not applicable; local OPTIONS returns correct CORS headers for https://ivxholding.com",
-    "allowedOrigins": ["https://ivxholding.com", "https://www.ivxholding.com", "https://chat.ivxholding.com"]
-  }
+  "failingNode": "render",
+  "blocker": "Production commit 5533c6d0 does not match local 483da9e4. Render auto-deploy has not completed."
 }

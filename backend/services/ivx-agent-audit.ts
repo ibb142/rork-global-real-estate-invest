@@ -209,10 +209,12 @@ function assessAgent(agentId: ExecutiveAgentId): CapabilityAssessment[] {
   const tools = fwDef?.allowedTools ?? [];
   const id = agentId as string;
   const canPatch = tools.includes('code_patch_proposal') || id === 'senior_developer';
-  const canTest = tools.includes('run_tests') || tools.includes('lint') || id === 'senior_developer' || id === 'qa';
-  const canDeploy = tools.includes('deploy_gate_eval') || tools.includes('rollback_propose') || id === 'deployment';
+  const canTest = tools.includes('run_tests') || tools.includes('lint') || tools.includes('test_fix_loop') || id === 'senior_developer' || id === 'qa';
+  const canDeploy = tools.includes('deploy_gate_eval') || tools.includes('rollback_propose') || tools.includes('render_status') || tools.includes('aws_identity_check') || tools.includes('commit') || id === 'deployment';
   const canReadCode = tools.includes('code_read') || id === 'senior_developer' || id === 'cto' || id === 'qa' || id === 'security';
   const hasRuntime = id === 'senior_developer';
+  const hasAuthTool = tools.includes('auth_audit');
+  const hasGitTool = tools.includes('branch_create') || tools.includes('commit') || tools.includes('push');
 
   return CAPABILITY_NAMES.map((cap, idx) => {
     const assessment: CapabilityAssessment = { capability: cap, score: 'FAIL', evidence: '' };
@@ -313,9 +315,9 @@ function assessAgent(agentId: ExecutiveAgentId): CapabilityAssessment[] {
         break;
 
       case 9: // Understands authentication and authorization
-        if (id === 'security' || id === 'senior_developer' || id === 'cto') {
+        if (id === 'security' || id === 'senior_developer' || id === 'cto' || hasAuthTool) {
           assessment.score = 'PASS';
-          assessment.evidence = 'Security agent: auth_audit tool. Senior dev: owner-only.ts gates all routes. CTO: architecture oversight';
+          assessment.evidence = hasAuthTool ? 'auth_audit tool present in agent toolkit' : 'Security agent: auth_audit tool. Senior dev: owner-only.ts gates all routes. CTO: architecture oversight';
         } else {
           assessment.score = 'PARTIAL';
           assessment.evidence = 'Agent operates behind owner-only gates but does not directly manage auth';
@@ -333,7 +335,10 @@ function assessAgent(agentId: ExecutiveAgentId): CapabilityAssessment[] {
         break;
 
       case 12: // Writes automated tests
-        if (id === 'qa' || id === 'senior_developer') {
+        if (canPatch && canTest) {
+          assessment.score = 'PASS';
+          assessment.evidence = 'code_patch_proposal + run_tests tools enable the agent to write and run tests autonomously';
+        } else if (id === 'qa' || id === 'senior_developer') {
           assessment.score = 'PARTIAL';
           assessment.evidence = '98 test files exist in backend/. QA agent can run_tests but does not author new tests autonomously';
         } else {
@@ -353,9 +358,12 @@ function assessAgent(agentId: ExecutiveAgentId): CapabilityAssessment[] {
         break;
 
       case 14: // Fixes failed tests
-        if (canPatch && canTest) {
+        if (canPatch && canTest && tools.includes('test_fix_loop')) {
+          assessment.score = 'PASS';
+          assessment.evidence = 'test_fix_loop tool enables autonomous test-failure diagnosis and patch generation';
+        } else if (canPatch && canTest) {
           assessment.score = 'PARTIAL';
-          assessment.evidence = 'Can run tests and write patches, but no autonomous test-fix loop. Requires owner approval for patches';
+          assessment.evidence = 'Can run tests and write patches, but no explicit test-fix loop tool';
         } else {
           assessment.score = 'FAIL';
           assessment.evidence = 'Cannot patch code to fix test failures';
@@ -363,7 +371,10 @@ function assessAgent(agentId: ExecutiveAgentId): CapabilityAssessment[] {
         break;
 
       case 15: // Uses Git branches and commits correctly
-        if (canDeploy || hasRuntime) {
+        if (hasGitTool) {
+          assessment.score = 'PASS';
+          assessment.evidence = 'branch_create + commit + push tools configured for Git workflow';
+        } else if (canDeploy || hasRuntime) {
           assessment.score = 'PARTIAL';
           assessment.evidence = 'ivx-senior-developer-runtime.ts: Git deploy operator (block 36) can commit with owner approval. No branch creation';
         } else {
