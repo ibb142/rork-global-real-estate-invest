@@ -24,12 +24,20 @@ export function OPTIONS(): Response {
 
 function errorResponse(error: unknown): Response {
   const msg = error instanceof Error ? error.message : 'IVX agent audit route failed.';
+  const lower = msg.toLowerCase();
+  const status = lower.includes('missing bearer') || lower.includes('missing token') || lower.includes('no bearer')
+    ? 401
+    : lower.includes('invalid or expired') || lower.includes('auth guard failed') || lower.includes('unauthorized')
+      ? 401
+      : lower.includes('forbidden') || lower.includes('privileged') || lower.includes('role guard')
+        ? 403
+        : 500;
   return ownerOnlyJson({
     ok: false,
     error: msg.slice(0, 320),
     marker: IVX_AGENT_AUDIT_MARKER,
     timestamp: new Date().toISOString(),
-  }, 500);
+  }, status);
 }
 
 /** GET — full audit overview (12 agents, scores, roles, ledger, ownership rules). */
