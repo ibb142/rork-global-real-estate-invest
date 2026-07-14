@@ -2,7 +2,17 @@
  * IVX Watchdog Tests — checkpoint lifecycle, timeout, trace management
  */
 
-import { describe, it, expect } from 'bun:test';
+import { describe, it, expect, mock } from 'bun:test';
+
+// Mock AsyncStorage — not available in bun test environment
+mock.module('@react-native-async-storage/async-storage', () => ({
+  default: {
+    getItem: async () => null,
+    setItem: async () => {},
+    removeItem: async () => {},
+  },
+}));
+
 import { ivxAIWatchdog, CHECKPOINT_ORDER, type CheckpointName } from '@/src/modules/ivx-owner-ai/services/ivxAIWatchdog';
 
 describe('IVX Watchdog Checkpoint Lifecycle', () => {

@@ -8,7 +8,17 @@
  * PROVIDER_FAILED, TIMEOUT, CANCELLED
  */
 
-import { describe, it, expect, beforeEach } from 'bun:test';
+import { describe, it, expect, beforeEach, mock } from 'bun:test';
+
+// Mock AsyncStorage — not available in bun test environment
+mock.module('@react-native-async-storage/async-storage', () => ({
+  default: {
+    getItem: async () => null,
+    setItem: async () => {},
+    removeItem: async () => {},
+  },
+}));
+
 import { createAIOrchestrator, type AIOrchestratorState, type AIOrchestratorPayload } from '@/src/modules/ivx-owner-ai/services/ivxOwnerAIOrchestrator';
 
 function createMockCallbacks(overrides: Partial<{
