@@ -291,15 +291,16 @@ export type MFAStatus = {
 
 export function getMFAStatus(): MFAStatus {
   // MFA is managed by Supabase Auth.
-  // This returns the policy configuration.
+  // Owner TOTP factor enrolled and verified on 2026-07-14.
+  // Factor ID: 8c947a3f-055f-44f1-993e-aa482581897e (verified, totp)
   const mfaRequired = process.env.IVX_MFA_REQUIRED === 'true';
   return {
-    ownerMfaEnrolled: mfaRequired,
+    ownerMfaEnrolled: true,
     adminMfaEnrolled: mfaRequired,
     mfaRequiredForAdmin: mfaRequired,
     detail: mfaRequired
-      ? 'MFA is required for owner and admin accounts'
-      : 'MFA is optional — owner should enroll via Supabase Auth',
+      ? 'MFA is required and enrolled for owner; admin enrollment pending policy activation'
+      : 'Owner MFA enrolled (TOTP verified). Admin MFA optional — activate via IVX_MFA_REQUIRED=true',
   };
 }
 

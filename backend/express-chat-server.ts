@@ -53,6 +53,33 @@ const CHAT_API_URL = readTrimmed(process.env.CHAT_API_URL) || 'https://api.ivxho
 const CHAT_DATABASE_PATH = readTrimmed(process.env.CHAT_DATABASE_PATH) || './data/chat-room.sqlite';
 const roomMembers = new Map<string, Set<string>>();
 
+// ── Enterprise: Message dedup ring buffer (prevents duplicate messages at scale) ──
+const DEDUP_TTL_MS = 30_000; // 30 seconds
+const DEDUP_MAX = 10_000;
+const dedupCache = new Map<string, number>(); // key -> timestamp
+
+function checkDedup(roomId: string, username: string, text: string): boolean {
+  const key = `${roomId}:${username}:${text.slice(0, 200)}`;
+  const now = Date.now();
+  // Expire old entries
+  if (dedupCache.size > DEDUP_MAX) {
+    for (const [k, ts] of dedupCache) {
+      if (now - ts > DEDUP_TTL_MS) dedupCache.delete(k);
+    }
+  }
+  if (dedupCache.has(key)) return false; // duplicate
+  dedupCache.set(key, now);
+  return true; // original
+}
+
+// ── Enterprise: Message ordering sequence per room ──
+const roomSequence = new Map<string, number>();
+function nextSequence(roomId: string): number {
+  const seq = (roomSequence.get(roomId) ?? 0) + 1;
+  roomSequence.set(roomId, seq);
+  return seq;
+}
+
 function readTrimmed(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
@@ -123,12 +150,26 @@ const allowedOrigins = createCorsOrigins();
 const storage = new ChatStorage(CHAT_DATABASE_PATH);
 const app = express();
 const httpServer = createServer(app);
+
+// ── Enterprise Socket.IO tuning for 1000+ concurrent connections ──
+const MAX_CONNECTIONS = parseInt(process.env.IVX_CHAT_MAX_CONNECTIONS ?? '5000', 10);
+let totalConnections = 0;
+
 const io = new Server(httpServer, {
   path: SOCKET_PATH,
   cors: {
     origin: allowedOrigins,
     methods: ['GET', 'POST'],
   },
+  // Enterprise: tuned for high-concurrency
+  maxHttpBufferSize: 1e6, // 1MB max payload
+  pingInterval: 10_000,   // 10s health check
+  pingTimeout: 30_000,    // 30s timeout
+  // Reduce overhead at scale
+  serveClient: false,     // Don't serve socket.io client JS
+  // Allow more concurrent connections
+  transports: ['websocket', 'polling'],
+  allowEIO3: true,
 });
 
 app.set('trust proxy', true);
@@ -322,17 +363,28 @@ function createStoredMessage(payload: SendMessagePayload): ChatRoomMessage {
     throw new Error('Message text is required.');
   }
 
+  // Enterprise: dedup check — reject if same message seen in last 30s
+  if (!checkDedup(roomId, username, text)) {
+    throw new Error('Duplicate message detected.');
+  }
+
   return storage.createMessage({ roomId, username, text, source });
 }
 
 function broadcastMessage(message: ChatRoomMessage): void {
-  io.to(message.roomId).emit('chat:message', message);
-  console.log('[ChatAPI] Message broadcast', {
-    messageId: message.id,
-    roomId: message.roomId,
-    username: message.username,
-    source: message.source,
-  });
+  // Enterprise: attach sequence number for ordering verification
+  const seq = nextSequence(message.roomId);
+  const enrichedMessage = { ...message, seq };
+  io.to(message.roomId).emit('chat:message', enrichedMessage);
+  // Enterprise: reduce log verbosity — log every 50th message
+  if (seq % 50 === 0 || seq <= 5) {
+    console.log('[ChatAPI] Message broadcast milestone', {
+      messageId: message.id,
+      roomId: message.roomId,
+      seq,
+      source: message.source,
+    });
+  }
 }
 
 async function createAssistantReply(userMessage: ChatRoomMessage): Promise<{
@@ -541,11 +593,23 @@ app.options('/api/public/send-message', (_request: Request, response: Response) 
 });
 
 io.on('connection', (socket) => {
+  // Enterprise: connection limit guard
+  totalConnections++;
+  if (totalConnections > MAX_CONNECTIONS) {
+    totalConnections--;
+    socket.emit('chat:error', { error: 'Server at maximum capacity. Please retry shortly.' });
+    socket.disconnect(true);
+    return;
+  }
+
   const typedSocket = socket as unknown as SocketLike;
-  console.log('[ChatAPI] Socket connected', {
-    socketId: typedSocket.id,
-    address: typedSocket.handshake.address,
-  });
+  // Enterprise: reduce log verbosity at scale (log every 100th connection)
+  if (totalConnections % 100 === 0 || totalConnections <= 10) {
+    console.log('[ChatAPI] Connection milestone', {
+      totalConnections,
+      socketId: typedSocket.id,
+    });
+  }
 
   typedSocket.emit('chat:welcome', {
     ok: true,
@@ -559,6 +623,29 @@ io.on('connection', (socket) => {
     } catch (error) {
       typedSocket.emit('chat:error', {
         error: error instanceof Error ? error.message : 'Unable to join room.',
+      });
+    }
+  });
+
+  // Enterprise: Reconnect with session recovery — client sends lastSeq,
+  // server replays missed messages
+  typedSocket.on('room:rejoin', (payload: JoinRoomPayload & { lastSeq?: number }) => {
+    try {
+      const state = joinSocketToRoom(typedSocket, payload);
+      const lastSeq = typeof payload.lastSeq === 'number' ? payload.lastSeq : 0;
+      if (lastSeq > 0) {
+        // Replay messages after the last seen sequence
+        const roomId = typedSocket.data.roomId ?? DEFAULT_ROOM_ID;
+        const recent = storage.listMessages(roomId, 80);
+        const missed = recent.filter((m) => {
+          const msgSeq = parseInt(m.id.split('-').pop() ?? '0', 36) || 0;
+          return msgSeq > lastSeq;
+        });
+        typedSocket.emit('chat:replay', { messages: missed, count: missed.length });
+      }
+    } catch (error) {
+      typedSocket.emit('chat:error', {
+        error: error instanceof Error ? error.message : 'Unable to rejoin room.',
       });
     }
   });
@@ -588,10 +675,7 @@ io.on('connection', (socket) => {
   });
 
   typedSocket.on('disconnect', (reason: string) => {
-    console.log('[ChatAPI] Socket disconnected', {
-      socketId: typedSocket.id,
-      reason,
-    });
+    totalConnections = Math.max(0, totalConnections - 1);
     removeSocketFromRoom(typedSocket);
   });
 });
