@@ -269,7 +269,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app\\necho \\\"=== FULL GITHUB COMMIT HISTORY (last 5) ===\\\"\\ngit log --oneline FETCH_HEAD -5 2>&1\\necho \\\"\\\"\\necho \\\"=== FULL LOCAL COMMIT HISTORY (last 5) ===\\\"\\ngit log --oneline HEAD -5 2>&1\\necho \\\"\\\"\\necho \\\"=== MERGE BASE ===\\\"\\ngit merge-base HEAD FETCH_HEAD 2>&1\\necho \\\"\\\"\\necho \\\"=== IS THIS A FORCE-PUSH SITUATION? ===\\\"\\necho \\\"Local has commits GitHub doesn't:\\\"\\ngit rev-list --count FETCH_HEAD..HEAD 2>&1\\necho \\\"GitHub has commits local doesn't:\\\"\\ngit rev-list --count HEAD..FETCH_HEAD 2>&1\"}",
       "createdAt": 1783986494910,
-      "completedAt": 1783986498253
+      "completedAt": 1783986498253,
+      "compactedAt": 1783993221292
     },
     {
       "type": "reasoning",
@@ -299,7 +300,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app\\necho \\\"=== MERGE BASE BETWEEN LOCAL AND GITHUB ===\\\"\\ngit merge-base HEAD FETCH_HEAD 2>&1\\necho \\\"\\\"\\necho \\\"=== GITHUB TOTAL COMMIT COUNT ===\\\"\\ngit rev-list --count FETCH_HEAD 2>&1\\necho \\\"\\\"\\necho \\\"=== LOCAL TOTAL COMMIT COUNT ===\\\"\\ngit rev-list --count HEAD 2>&1\\necho \\\"\\\"\\necho \\\"=== GITHUB FIRST (ROOT) COMMIT ===\\\"\\ngit rev-list --max-parents=0 FETCH_HEAD 2>&1\\necho \\\"\\\"\\necho \\\"=== LOCAL FIRST (ROOT) COMMIT ===\\\"\\ngit rev-list --max-parents=0 HEAD 2>&1 | head -3\"}",
       "createdAt": 1783986509580,
-      "completedAt": 1783986509596
+      "completedAt": 1783986509596,
+      "compactedAt": 1783993221292
     },
     {
       "type": "reasoning",
@@ -329,7 +331,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app\\necho \\\"=== CRITICAL FINDING: GitHub has ONLY 1 commit (orphan) ===\\\"\\necho \\\"GitHub total commits: $(git rev-list --count FETCH_HEAD)\\\"\\necho \\\"Local total commits:  $(git rev-list --count HEAD)\\\"\\necho \\\"\\\"\\necho \\\"GitHub root commit: $(git rev-list --max-parents=0 FETCH_HEAD)\\\"\\necho \\\"Local root commit:  $(git rev-list --max-parents=0 HEAD | head -1)\\\"\\necho \\\"\\\"\\necho \\\"=== MERGE BASE (shared ancestor) ===\\\"\\ngit merge-base HEAD FETCH_HEAD 2>&1 || echo \\\"NO MERGE BASE — completely unrelated histories\\\"\\necho \\\"\\\"\\necho \\\"=== GITHUB'S ONLY COMMIT ===\\\"\\ngit log --format='%H%n%an <%ae>%n%ad%n%s' FETCH_HEAD -1 2>&1\\necho \\\"\\\"\\necho \\\"=== WAS GITHUB FORCE-PUSHED WITH AN ORPHAN COMMIT? ===\\\"\\necho \\\"GitHub commit 8ce4706 has NO parent — it is a root/orphan commit\\\"\\ngit cat-file -p FETCH_HEAD 2>&1 | head -5\"}",
       "createdAt": 1783986521001,
-      "completedAt": 1783986521023
+      "completedAt": 1783986521023,
+      "compactedAt": 1783993221292
     },
     {
       "type": "reasoning",
@@ -359,7 +362,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app\\necho \\\"=== ATTEMPTING FORCE PUSH TO GITHUB ===\\\"\\necho \\\"COMMAND: git push --force https://github.com/ibb142/rork-global-real-estate-invest.git main\\\"\\necho \\\"\\\"\\ngit push --force https://github.com/ibb142/rork-global-real-estate-invest.git main 2>&1\\necho \\\"\\\"\\necho \\\"EXIT CODE: $?\\\"\"}",
       "createdAt": 1783986526370,
-      "completedAt": 1783986529406
+      "completedAt": 1783986529406,
+      "compactedAt": 1783993221292
     },
     {
       "type": "reasoning",
@@ -389,7 +393,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app\\necho \\\"=== 1. LOCAL RORK GIT SHA ===\\\"\\necho \\\"$(git rev-parse HEAD)\\\"\\necho \\\"\\\"\\necho \\\"=== 2. GITHUB HEAD SHA (API) ===\\\"\\ncurl -s \\\"https://api.github.com/repos/ibb142/rork-global-real-estate-invest/commits?per_page=1\\\" 2>/dev/null | python3 -c \\\"\\nimport json,sys\\nd=json.load(sys.stdin)\\nprint(d[0]['sha'])\\nprint(d[0]['commit']['message'][:80])\\n\\\"\\necho \\\"\\\"\\necho \\\"=== 2b. GITHUB HEAD SHA (git fetch) ===\\\"\\ngit fetch https://github.com/ibb142/rork-global-real-estate-invest.git main 2>&1\\ngit rev-parse FETCH_HEAD 2>&1\\necho \\\"\\\"\\necho \\\"=== 3. PRODUCTION BACKEND SHA ===\\\"\\ncurl -s https://api.ivxholding.com/health 2>/dev/null | python3 -c \\\"\\nimport json,sys\\nd=json.load(sys.stdin)\\nprint('commit:', d.get('commit','?'))\\nprint('commitShort:', d.get('commitShort','?'))\\nprint('bootTime:', d.get('bootTime','?'))\\nprint('routes:', len(d.get('routes',[])))\\n\\\"\"}",
       "createdAt": 1783986532808,
-      "completedAt": 1783986533863
+      "completedAt": 1783986533863,
+      "compactedAt": 1783993221292
     },
     {
       "type": "reasoning",
@@ -419,7 +424,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app\\necho \\\"=== TRIGGERING RENDER AUTO-DEPLOY ===\\\"\\necho \\\"POST /api/ivx/render-auto-deploy/fix\\\"\\ncurl -s -X POST \\\"https://api.ivxholding.com/api/ivx/render-auto-deploy/fix\\\" \\\\\\n  -H \\\"Content-Type: application/json\\\" \\\\\\n  -d '{\\\"confirm\\\":\\\"FIX_IVX_RENDER_AUTO_DEPLOY\\\"}' \\\\\\n  --max-time 30 2>/dev/null | python3 -c \\\"\\nimport json,sys\\nd=json.load(sys.stdin)\\nprint(json.dumps(d, indent=2)[:800])\\n\\\"\"}",
       "createdAt": 1783986537114,
-      "completedAt": 1783986538059
+      "completedAt": 1783986538059,
+      "compactedAt": 1783993221292
     },
     {
       "type": "tool",
@@ -437,7 +443,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app\\necho \\\"=== CHECKING RENDER API FOR DEPLOY STATUS ===\\\"\\n# The render-auto-deploy endpoint triggers a deploy. Let's also check the health endpoint\\n# to see if bootTime changes (indicating a new deploy)\\necho \\\"Current boot time:\\\"\\ncurl -s https://api.ivxholding.com/health 2>/dev/null | python3 -c \\\"\\nimport json,sys\\nd=json.load(sys.stdin)\\nprint('  commit:', d.get('commitShort','?'))\\nprint('  bootTime:', d.get('bootTime','?'))\\nprint('  routes:', len(d.get('routes',[])))\\n\\\"\"}",
       "createdAt": 1783986537126,
-      "completedAt": 1783986538187
+      "completedAt": 1783986538187,
+      "compactedAt": 1783993221292
     },
     {
       "type": "reasoning",
@@ -467,7 +474,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"echo \\\"=== WAITING 60s FOR RENDER BUILD ===\\\"\\nsleep 60\\necho \\\"\\\"\\necho \\\"=== BACKEND STATUS AFTER 60s ===\\\"\\ncurl -s https://api.ivxholding.com/health 2>/dev/null | python3 -c \\\"\\nimport json,sys\\nd=json.load(sys.stdin)\\nprint('commit:', d.get('commit','?'))\\nprint('commitShort:', d.get('commitShort','?'))\\nprint('bootTime:', d.get('bootTime','?'))\\nprint('routes:', len(d.get('routes',[])))\\n\\\"\"}",
       "createdAt": 1783986540816,
-      "completedAt": 1783986600638
+      "completedAt": 1783986600638,
+      "compactedAt": 1783993221292
     },
     {
       "type": "tool",
@@ -485,7 +493,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"echo \\\"=== BACKEND STATUS (after wait) ===\\\"\\ncurl -s https://api.ivxholding.com/health --max-time 15 2>/dev/null | python3 -c \\\"\\nimport json,sys\\nd=json.load(sys.stdin)\\nprint('commit:', d.get('commit','?'))\\nprint('commitShort:', d.get('commitShort','?'))\\nprint('bootTime:', d.get('bootTime','?'))\\nprint('routes:', len(d.get('routes',[])))\\n\\\" 2>/dev/null || echo \\\"Backend not responding yet — still building\\\"\"}",
       "createdAt": 1783986602754,
-      "completedAt": 1783986603547
+      "completedAt": 1783986603547,
+      "compactedAt": 1783993221292
     },
     {
       "type": "text",
@@ -508,7 +517,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"echo \\\"=== POLLING BACKEND — 30s intervals ===\\\"\\nfor i in 1 2 3 4 5; do\\n  sleep 15\\n  STATUS=$(curl -s https://api.ivxholding.com/health --max-time 10 2>/dev/null)\\n  COMMIT=$(echo \\\"$STATUS\\\" | python3 -c \\\"import json,sys; d=json.load(sys.stdin); print(d.get('commitShort','?'))\\\" 2>/dev/null)\\n  BOOT=$(echo \\\"$STATUS\\\" | python3 -c \\\"import json,sys; d=json.load(sys.stdin); print(d.get('bootTime','?'))\\\" 2>/dev/null)\\n  ROUTES=$(echo \\\"$STATUS\\\" | python3 -c \\\"import json,sys; d=json.load(sys.stdin); print(len(d.get('routes',[])))\\\" 2>/dev/null)\\n  echo \\\"Poll $i: commit=$COMMIT boot=$BOOT routes=$ROUTES\\\"\\n  if [ \\\"$COMMIT\\\" != \\\"8ce47064\\\" ] && [ -n \\\"$COMMIT\\\" ] && [ \\\"$COMMIT\\\" != \\\"?\\\" ]; then\\n    echo \\\">>> NEW DEPLOY DETECTED <<<\\\"\\n    break\\n  fi\\ndone\"}",
       "createdAt": 1783986605685,
-      "completedAt": 1783986667266
+      "completedAt": 1783986667266,
+      "compactedAt": 1783993221292
     },
     {
       "type": "tool",
@@ -526,7 +536,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"# Continue polling - the deploy is still building\\necho \\\"=== POLL 4 ===\\\"\\ncurl -s https://api.ivxholding.com/health --max-time 10 2>/dev/null | python3 -c \\\"\\nimport json,sys\\nd=json.load(sys.stdin)\\nprint('commit:', d.get('commitShort','?'))\\nprint('bootTime:', d.get('bootTime','?'))\\nprint('routes:', len(d.get('routes',[])))\\n\\\" 2>/dev/null || echo \\\"No response\\\"\"}",
       "createdAt": 1783986669469,
-      "completedAt": 1783986670413
+      "completedAt": 1783986670413,
+      "compactedAt": 1783993221292
     },
     {
       "type": "reasoning",
@@ -556,7 +567,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"echo \\\"=== BACKEND NOW DEPLOYED WITH NEW COMMIT ===\\\"\\ncurl -s https://api.ivxholding.com/health --max-time 10 2>/dev/null | python3 -c \\\"\\nimport json,sys\\nd=json.load(sys.stdin)\\nprint('commit:', d.get('commit','?'))\\nprint('commitShort:', d.get('commitShort','?'))\\nprint('bootTime:', d.get('bootTime','?'))\\nprint('routes:', len(d.get('routes',[])))\\nprint('marker:', d.get('deploymentMarker','?'))\\n\\\"\"}",
       "createdAt": 1783986675585,
-      "completedAt": 1783986677418
+      "completedAt": 1783986677418,
+      "compactedAt": 1783993221292
     },
     {
       "type": "tool",
@@ -574,7 +586,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"echo \\\"=== TESTING NEW ENDPOINTS (were 404 before) ===\\\"\\necho \\\"\\\"\\necho \\\"--- /api/reels ---\\\"\\ncurl -s -o /dev/null -w \\\"%{http_code}\\\" \\\"https://api.ivxholding.com/api/reels\\\" --max-time 10 2>/dev/null\\necho \\\"\\\"\\necho \\\"--- /api/members/authoritative-count ---\\\"\\ncurl -s -o /dev/null -w \\\"%{http_code}\\\" \\\"https://api.ivxholding.com/api/members/authoritative-count\\\" --max-time 10 2>/dev/null\\necho \\\"\\\"\\necho \\\"--- /api/metrics/authoritative-count ---\\\"\\ncurl -s -o /dev/null -w \\\"%{http_code}\\\" \\\"https://api.ivxholding.com/api/metrics/authoritative-count\\\" --max-time 10 2>/dev/null\\necho \\\"\\\"\\necho \\\"--- /api/trpc/waitlist.getStats ---\\\"\\ncurl -s -o /dev/null -w \\\"%{http_code}\\\" \\\"https://api.ivxholding.com/api/trpc/waitlist.getStats\\\" --max-time 10 2>/dev/null\\necho \\\"\\\"\\necho \\\"--- /api/ivx/owner-action/list ---\\\"\\ncurl -s -o /dev/null -w \\\"%{http_code}\\\" \\\"https://api.ivxholding.com/api/ivx/owner-action/list\\\" --max-time 10 2>/dev/null\\necho \\\"\\\"\\necho \\\"--- /api/ivx/autonomous-ops/dashboard ---\\\"\\ncurl -s -o /dev/null -w \\\"%{http_code}\\\" \\\"https://api.ivxholding.com/api/ivx/autonomous-ops/dashboard\\\" --max-time 10 2>/dev/null\\necho \\\"\\\"\"}",
       "createdAt": 1783986676200,
-      "completedAt": 1783986681914
+      "completedAt": 1783986681914,
+      "compactedAt": 1783993221292
     },
     {
       "type": "reasoning",
@@ -604,7 +617,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"echo \\\"=== FRONTEND (LANDING) DEPLOY STATUS ===\\\"\\ncurl -s \\\"https://api.ivxholding.com/api/landing-config\\\" --max-time 10 2>/dev/null | python3 -c \\\"\\nimport json,sys\\nd=json.load(sys.stdin)\\nprint('commit:', d.get('commit','?'))\\nprint('timestamp:', d.get('timestamp','?'))\\nprint('deploymentMarker:', d.get('deploymentMarker','?'))\\n\\\"\"}",
       "createdAt": 1783986688405,
-      "completedAt": 1783986689924
+      "completedAt": 1783986689924,
+      "compactedAt": 1783993221292
     },
     {
       "type": "tool",
@@ -622,7 +636,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"echo \\\"=== LANDING PAGE ITSELF — CHECK FOR CORS FIX ===\\\"\\n# The ipapi.co fix should be in the deployed HTML now\\ncurl -s \\\"https://ivxholding.com\\\" --max-time 10 2>/dev/null | grep -c \\\"ipapi.co\\\" | head -1\\necho \\\"ipapi.co references (should be 0 or have fail-silent)\\\"\\necho \\\"\\\"\\n# Check if the reels JS has the 0.8 threshold\\ncurl -s \\\"https://ivxholding.com/ivx-reels.js\\\" --max-time 10 2>/dev/null | grep -o \\\"intersectionRatio >= 0\\\\.[0-9]\\\" | head -3\\necho \\\"reels viewability threshold\\\"\"}",
       "createdAt": 1783986688414,
-      "completedAt": 1783986690463
+      "completedAt": 1783986690463,
+      "compactedAt": 1783993221292
     },
     {
       "type": "tool",
@@ -640,7 +655,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"echo \\\"=== FULL ENDPOINT RESPONSE BODIES ===\\\"\\necho \\\"\\\"\\necho \\\"--- /api/reels response ---\\\"\\ncurl -s \\\"https://api.ivxholding.com/api/reels\\\" --max-time 10 2>/dev/null | python3 -c \\\"\\nimport json,sys\\nd=json.load(sys.stdin)\\nprint(json.dumps({k:v for k,v in d.items() if k != 'videos'}, indent=2)[:300])\\nprint('videos count:', len(d.get('videos',[])))\\n\\\" 2>/dev/null\\necho \\\"\\\"\\necho \\\"--- /api/members/authoritative-count response ---\\\"\\ncurl -s \\\"https://api.ivxholding.com/api/members/authoritative-count\\\" --max-time 10 2>/dev/null | python3 -c \\\"import json,sys; print(json.dumps(json.load(sys.stdin), indent=2)[:300])\\\" 2>/dev/null\\necho \\\"\\\"\\necho \\\"--- /api/metrics/authoritative-count response ---\\\"\\ncurl -s \\\"https://api.ivxholding.com/api/metrics/authoritative-count\\\" --max-time 10 2>/dev/null | python3 -c \\\"import json,sys; print(json.dumps(json.load(sys.stdin), indent=2)[:300])\\\" 2>/dev/null\\necho \\\"\\\"\\necho \\\"--- /api/trpc/waitlist.getStats response ---\\\"\\ncurl -s \\\"https://api.ivxholding.com/api/trpc/waitlist.getStats\\\" --max-time 10 2>/dev/null | python3 -c \\\"import json,sys; print(json.dumps(json.load(sys.stdin), indent=2)[:300])\\\" 2>/dev/null\\necho \\\"\\\"\\necho \\\"--- /api/ivx/owner-action/list response ---\\\"\\ncurl -s \\\"https://api.ivxholding.com/api/ivx/owner-action/list\\\" --max-time 10 2>/dev/null | python3 -c \\\"import json,sys; print(json.dumps(json.load(sys.stdin), indent=2)[:300])\\\" 2>/dev/null\\necho \\\"\\\"\\necho \\\"--- /api/ivx/autonomous-ops/dashboard response ---\\\"\\ncurl -s \\\"https://api.ivxholding.com/api/ivx/autonomous-ops/dashboard\\\" --max-time 10 2>/dev/null | python3 -c \\\"import json,sys; print(json.dumps(json.load(sys.stdin), indent=2)[:300])\\\" 2>/dev/null\"}",
       "createdAt": 1783986688428,
-      "completedAt": 1783986691462
+      "completedAt": 1783986691462,
+      "compactedAt": 1783993221292
     },
     {
       "type": "reasoning",
