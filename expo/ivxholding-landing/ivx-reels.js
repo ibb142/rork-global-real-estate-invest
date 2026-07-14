@@ -274,7 +274,7 @@
 
   /* ---------- state ---------- */
   var state = {
-    channel: '__reels',
+    channel: '',
     cursor: null,
     loading: false,
     done: false,
@@ -290,7 +290,7 @@
   var tabsEl = el('tabs');
   CHANNELS.forEach(function (ch) {
     var b = document.createElement('button');
-    b.className = 'ivxr-tab' + (ch.id === '__reels' ? ' on' : '');
+    b.className = 'ivxr-tab' + (ch.id === '' ? ' on' : '');
     b.textContent = ch.label;
     b.addEventListener('click', function () {
       if (state.channel === ch.id) return;

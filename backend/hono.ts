@@ -4922,7 +4922,7 @@ app.get('/api/ivx/owner-dashboard', async (context) => handleOwnerDashboardReque
 // ── IVX Canonical Reels API — simplified public endpoints for app + landing ──
 // These wrap the video platform feed so external consumers (app, landing, admin)
 // can use /api/reels without knowing the internal video-platform path structure.
-app.get('/api/reels', async (c) => handlePlatformFeed(new Request(addQueryParams(c.req.raw, 'type=reel'))));
+app.get('/api/reels', async (c) => handlePlatformFeed(c.req.raw));
 app.get('/api/reels/:id', async (c) => handleReelById(c.req.param('id')));
 
 // Canonical authoritative member count — public aggregate (no PII).
