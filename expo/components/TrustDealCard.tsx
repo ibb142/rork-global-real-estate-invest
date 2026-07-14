@@ -531,10 +531,12 @@ const styles = StyleSheet.create({
   headerRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 12,
+    gap: 8,
+    flexWrap: 'wrap',
   },
   headerCopy: {
     flex: 1,
+    minWidth: 0,
   },
   dealTitle: {
     color: Colors.text,
@@ -544,7 +546,8 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   salePriceChip: {
-    minWidth: 118,
+    flexShrink: 1,
+    maxWidth: 130,
     alignItems: 'flex-end',
     backgroundColor: 'rgba(255, 215, 0, 0.08)',
     borderWidth: 1,

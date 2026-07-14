@@ -1338,14 +1338,17 @@ const styles = StyleSheet.create({
   },
   indexBannerStats: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'space-between',
     alignItems: 'center',
     borderTopWidth: 1,
     borderTopColor: Colors.surfaceBorder,
     paddingTop: 14,
+    gap: 8,
   },
   indexBannerStat: {
     flex: 1,
+    minWidth: 70,
     alignItems: 'center',
   },
   indexBannerStatDivider: {

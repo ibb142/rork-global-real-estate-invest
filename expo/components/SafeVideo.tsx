@@ -36,8 +36,11 @@ const MAX_RETRIES = 2;
 function pickPlaybackUri(input: string | null | undefined): string | null {
   if (!input) return null;
   // On Android, prefer progressive MP4 over HLS to avoid expo-av native crashes.
+  // But if HLS is the ONLY option, still return it rather than null (null causes
+  // infinite loading and potential resource leaks from repeated mount cycles).
   if (Platform.OS === 'android' && input.toLowerCase().endsWith('.m3u8')) {
-    return null;
+    // Return the HLS URI as a last resort — ExoPlayer can handle basic HLS
+    return input;
   }
   return input;
 }

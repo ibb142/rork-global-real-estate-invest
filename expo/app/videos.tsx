@@ -824,8 +824,8 @@ const styles = StyleSheet.create({
   },
   bottomGradient: {
     position: 'absolute',
-    left: -14,
-    right: -70,
+    left: 0,
+    right: 0,
     bottom: -32,
     height: 280,
     zIndex: -1,

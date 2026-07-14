@@ -6,8 +6,8 @@
  * (like / comment / share / save), real engagement counts, caption, deal chips
  * with a gold "View Deal" / "Invest Now" CTA.
  */
-import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Share, Alert } from 'react-native';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Share, Alert, AppState, Image, Platform, useWindowDimensions } from 'react-native';
 import { ResizeMode } from 'expo-av';
 import { useRouter } from 'expo-router';
 import SafeVideo from './SafeVideo';
@@ -22,6 +22,7 @@ import {
   Hexagon,
   Users,
   Home,
+  Play,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
@@ -94,22 +95,62 @@ function OptionIcon({ option }: { option: InvestmentOption }) {
 
 export default function DealVideoCard({ video }: { video: FeedVideo }) {
   const router = useRouter();
+  const { height: screenHeight } = useWindowDimensions();
   const [isMuted, setIsMuted] = useState<boolean>(true);
   const [liked, setLiked] = useState<boolean>(false);
   const [likeCount, setLikeCount] = useState<number>(video.like_count ?? 0);
   const [saved, setSaved] = useState<boolean>(false);
   const [saveCount, setSaveCount] = useState<number>(video.save_count ?? 0);
   const [viewerId, setViewerId] = useState<string | null>(null);
+  const [isInViewport, setIsInViewport] = useState<boolean>(false);
+  const [appState, setAppState] = useState<string>('active');
+  const viewRef = useRef<View>(null);
 
   React.useEffect(() => {
     void getViewerId().then(setViewerId);
   }, []);
 
+  // Pause video when app goes to background — prevents ExoPlayer resource leak.
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState: string) => {
+      setAppState(nextState);
+    });
+    return () => subscription.remove();
+  }, []);
+
+  // Viewability detection — only play when the card is at least 60% visible.
+  // This prevents multiple simultaneous players from crashing Android.
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (!viewRef.current || appState !== 'active') {
+        setIsInViewport(false);
+        return;
+      }
+      viewRef.current.measure((_x, _y, w, h, pageX, pageY) => {
+        if (!h || h <= 0) return;
+        const visibleTop = Math.max(pageY, 0);
+        const visibleBottom = Math.min(pageY + h, screenHeight);
+        const visibleHeight = Math.max(0, visibleBottom - visibleTop);
+        const visibilityRatio = visibleHeight / h;
+        setIsInViewport(visibilityRatio >= 0.6);
+      });
+    }, 500);
+    return () => clearInterval(interval);
+  }, [appState, screenHeight]);
+
+  const shouldPlay = isInViewport && appState === 'active';
+
   const deal = video.deal ?? null;
   // On Android, prefer progressive MP4 over HLS to avoid expo-av crashes.
-  const playbackUri = video.video_url && !video.hls_url?.toLowerCase().endsWith('.m3u8')
-    ? video.video_url
-    : video.hls_url ?? video.video_url;
+  const isAndroid = typeof Platform !== 'undefined' && Platform.OS === 'android';
+  const playbackUri = (() => {
+    if (isAndroid) {
+      if (video.video_url && !video.video_url.toLowerCase().endsWith('.m3u8')) return video.video_url;
+      if (video.hls_url && !video.hls_url.toLowerCase().endsWith('.m3u8')) return video.hls_url;
+      return video.video_url ?? video.hls_url ?? null;
+    }
+    return video.hls_url ?? video.video_url ?? null;
+  })();
   const posterUri = video.poster_url ?? video.thumbnail_url ?? video.preview_blur_url ?? undefined;
   const investmentOptions = useInvestmentOptions(deal?.deal_type);
 
@@ -179,7 +220,7 @@ export default function DealVideoCard({ video }: { video: FeedVideo }) {
   }, [deal, router]);
 
   return (
-    <View style={styles.card} testID={`deal-video-card-${video.id}`}>
+    <View ref={viewRef} style={styles.card} testID={`deal-video-card-${video.id}`}>
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.avatar}>
@@ -198,16 +239,33 @@ export default function DealVideoCard({ video }: { video: FeedVideo }) {
 
       {/* Media — uses SafeVideo for Android crash protection */}
       <TouchableOpacity activeOpacity={1} onPress={toggleMute} style={styles.media}>
-        <SafeVideo
-          uri={playbackUri}
-          posterUri={posterUri}
-          style={StyleSheet.absoluteFill}
-          resizeMode={ResizeMode.COVER}
-          shouldPlay={true}
-          isMuted={isMuted}
-          isLooping
-          testID={`deal-video-player-${video.id}`}
-        />
+        {shouldPlay ? (
+          <SafeVideo
+            uri={playbackUri}
+            posterUri={posterUri}
+            style={StyleSheet.absoluteFill}
+            resizeMode={ResizeMode.COVER}
+            shouldPlay={shouldPlay}
+            isMuted={isMuted}
+            isLooping
+            testID={`deal-video-player-${video.id}`}
+          />
+        ) : (
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: '#111' }]}>
+            {posterUri ? (
+              <React.Fragment>
+                <Image source={{ uri: posterUri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+                <View style={styles.playOverlay}>
+                  <View style={styles.playCircle}>
+                    <Play size={20} color="#000" fill="#000" />
+                  </View>
+                </View>
+              </React.Fragment>
+            ) : (
+              <View style={[StyleSheet.absoluteFill, { backgroundColor: '#1a1a1a' }]} />
+            )}
+          </View>
+        )}
         <TouchableOpacity style={styles.muteBtn} onPress={toggleMute} testID={`deal-video-mute-${video.id}`}>
           {isMuted ? <VolumeX size={14} color="#fff" /> : <Volume2 size={14} color="#fff" />}
         </TouchableOpacity>
@@ -459,5 +517,19 @@ const styles = StyleSheet.create({
     color: '#000',
     fontSize: 14,
     fontWeight: '800' as const,
+  },
+  playOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    backgroundColor: 'rgba(0,0,0,0.25)',
+  },
+  playCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255,255,255,0.85)',
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
   },
 });

@@ -621,7 +621,7 @@ export default function HomeScreen() {
 
   return (
     <View style={styles.container}>
-      <SafeAreaView edges={['top']} style={styles.safeArea}>
+      <SafeAreaView edges={['top', 'left', 'right']} style={styles.safeArea}>
         <View style={[styles.header, { paddingHorizontal: isXs ? 16 : 16 }]}>
           <View style={styles.brandContainer}>
             <Text style={styles.brandTitle}>IVXHOLDINGS</Text>

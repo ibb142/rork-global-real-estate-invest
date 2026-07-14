@@ -11,7 +11,7 @@
  * + Invest Now). Video blocks are Instagram-style DealVideoCards attached to
  * a real project — never random videos.
  */
-import React, { useMemo } from 'react';
+import React, { Component, useMemo, type ReactNode } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
@@ -84,6 +84,23 @@ function RemoteDealCard({ deal, onView, onInvest }: { deal: HomeFeedDeal; onView
   );
 }
 
+/** Per-video error boundary so one bad DealVideoCard never crashes the home feed */
+class VideoCardBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
+  state = { hasError: false };
+  static getDerivedStateFromError() { return { hasError: true }; }
+  componentDidCatch(err: Error) { console.warn('[InvestorFirstFeed] Video card crashed:', err.message); }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <View style={{ padding: 20, alignItems: 'center' }}>
+          <Text style={{ color: Colors.textSecondary, fontSize: 13 }}>Video temporarily unavailable</Text>
+        </View>
+      );
+    }
+    return this.props.children as React.ReactElement;
+  }
+}
+
 export default function InvestorFirstFeed({ jvDeals, jvDealsLoading, isXs, cardWidth, openQuickBuy }: {
   jvDeals: JVAgreement[];
   jvDealsLoading: boolean;
@@ -93,6 +110,8 @@ export default function InvestorFirstFeed({ jvDeals, jvDealsLoading, isXs, cardW
 }) {
   const router = useRouter();
   const padH = isXs ? 16 : 20;
+  // Ensure galleryWidth never exceeds available width after padding
+  const safeCardWidth = Math.max(cardWidth - padH * 2 - 4, 280);
 
   const homeFeedQuery = useQuery({
     queryKey: ['ivx-home-feed'],
@@ -170,7 +189,11 @@ export default function InvestorFirstFeed({ jvDeals, jvDealsLoading, isXs, cardW
         <View style={{ paddingHorizontal: padH, gap: 14 }}>
           {blocks.map((block) => {
             if (block.type === 'video') {
-              return <DealVideoCard key={`video-${block.video.id}`} video={block.video} />;
+              return (
+                <VideoCardBoundary key={`video-${block.video.id}`}>
+                  <DealVideoCard video={block.video} />
+                </VideoCardBoundary>
+              );
             }
             const local = localById.get(block.deal.id);
             if (local) {
@@ -178,7 +201,7 @@ export default function InvestorFirstFeed({ jvDeals, jvDealsLoading, isXs, cardW
                 <TrustDealCard
                   key={`deal-${block.deal.id}`}
                   deal={local as unknown as ParsedJVDeal}
-                  galleryWidth={cardWidth - padH * 2}
+                  galleryWidth={safeCardWidth}
                   onViewDetails={() => goToDeal(block.deal.id)}
                   onInvestNow={() => openQuickBuy(local)}
                 />
