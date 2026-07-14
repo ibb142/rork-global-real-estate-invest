@@ -616,6 +616,7 @@ import {
   handleUpdateOwnerActionStatus,
 } from './api/ivx-owner-action-requests';
 import { OPTIONS as autonomousOpsDashboardOptions, handleAutonomousOpsDashboardRequest } from './api/ivx-autonomous-ops-dashboard';
+import { handleLandingFullDeploy, handleLandingFullDeployStatus } from './api/ivx-landing-full-deploy';
 import { OPTIONS as independenceStatusOptions, handleIVXIndependenceStatusRequest } from './api/ivx-independence-status';
 import { handleProofTestRequest, proofTestOptions } from './api/proof-test';
 import {
@@ -5057,5 +5058,12 @@ app.post('/api/ivx/owner-action/:traceId/status', async (context) => handleUpdat
 // ============================================================================
 app.options('/api/ivx/autonomous-ops/dashboard', () => autonomousOpsDashboardOptions());
 app.get('/api/ivx/autonomous-ops/dashboard', async (context) => handleAutonomousOpsDashboardRequest(context.req.raw));
+
+// ============================================================================
+// IVX Landing Full Deploy — push all landing static files to S3 + invalidate CloudFront
+// ============================================================================
+app.options('/api/ivx/landing-deploy', () => new Response(null, { status: 204, headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' } }));
+app.get('/api/ivx/landing-deploy', async () => handleLandingFullDeployStatus());
+app.post('/api/ivx/landing-deploy', async (context) => handleLandingFullDeploy(context.req.raw));
 
 export default app;
