@@ -21,11 +21,12 @@
  * Supabase session — so owner-AI chat approval (allowlist + bearer check)
  * works automatically.
  */
+import { randomBytes } from 'node:crypto';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { ownerOnlyJson, ownerOnlyOptions } from './owner-only';
 import { getIVXOwnerEmailAllowlist } from '../../expo/shared/ivx/access-control';
 
-const DEPLOYMENT_MARKER = 'ivx-owner-passwordless-login-2026-07-06t0000z';
+const DEPLOYMENT_MARKER = 'ivx-owner-passwordless-login-2026-07-14t1033z';
 
 const PASSWORDLESS_HEADERS = {
   'Content-Type': 'application/json',
@@ -49,6 +50,11 @@ function isValidEmail(email: string): boolean {
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+/** Generate a cryptographically random password for the self-heal flow. */
+function generateRandomPassword(): string {
+  return randomBytes(32).toString('base64url') + '!A1';
 }
 
 function json(payload: Record<string, unknown>, status: number = 200): Response {
@@ -205,17 +211,10 @@ export async function handleIVXOwnerPasswordlessLogin(request: Request): Promise
     return ownerOnlyJson(failure, 403);
   }
 
-  const ownerPassword = readEnv('IVX_OWNER_PASSWORD');
-  if (!ownerPassword) {
-    const failure: OwnerSessionFailure = {
-      success: false,
-      message: 'IVX_OWNER_PASSWORD is not configured on the backend. Set it in the Render environment to enable passwordless owner login.',
-      rootCause: 'owner_password_not_configured',
-      deploymentMarker: DEPLOYMENT_MARKER,
-      timestamp: nowIso(),
-    };
-    return ownerOnlyJson(failure, 500);
-  }
+  // Use the configured IVX_OWNER_PASSWORD if available, otherwise generate a
+  // random one at runtime. The admin API can set any password, so a static env
+  // var is not required — this makes the flow truly passwordless.
+  const ownerPassword = readEnv('IVX_OWNER_PASSWORD') || generateRandomPassword();
 
   const supabaseUrl = resolveSupabaseUrl();
   if (!supabaseUrl) {
