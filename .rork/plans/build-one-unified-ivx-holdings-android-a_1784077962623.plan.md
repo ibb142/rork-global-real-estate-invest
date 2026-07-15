@@ -51,6 +51,14 @@ We will build a single Android release APK from the complete IVX Holdings applic
 - [x] Back navigation and logout return to the public app.
 - [x] Restart preserves session and no route redirects every user to the Vercel dashboard.
 
+## Post-delivery fix
+
+- [x] Launcher icon was blank because the Android project only had placeholder adaptive-icon XMLs and no actual mipmap PNGs.
+- [x] Generated proper `ic_launcher.png` / `ic_launcher_round.png` in mdpi/hdpi/xhdpi/xxhdpi/xxxhdpi from the existing IVX logo.
+- [x] Generated proper adaptive-icon foreground PNGs in all densities and removed the placeholder white-square vector.
+- [x] Rebuilt APK and verified with `aapt2` that launcher icons are present in every density.
+- [x] Re-uploaded APK and updated DEPLOYMENT_PROOF.json.
+
 ## Final acceptance
 
 - [x] The APK opens the full IVX Holdings real estate app.
@@ -60,3 +68,4 @@ We will build a single Android release APK from the complete IVX Holdings applic
 - [x] All routes are verified.
 - [x] GitHub, Render, /version, and APK SHA match.
 - [x] A direct APK download link is provided.
+- [x] Launcher icon displays the IVX logo instead of a blank/default icon.
