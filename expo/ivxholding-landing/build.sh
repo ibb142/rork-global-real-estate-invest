@@ -1,0 +1,128 @@
+#!/bin/bash
+echo "[IVX Build] Injecting environment variables into index.html..."
+
+if [ -f "index.html" ]; then
+  cp index.html index.html.bak
+
+  PRODUCTION_BACKEND_URL="https://api.ivxholding.com"
+
+  SUPABASE_URL="${EXPO_PUBLIC_SUPABASE_URL:-}"
+  SUPABASE_KEY="${EXPO_PUBLIC_SUPABASE_ANON_KEY:-}"
+  API_URL="${EXPO_PUBLIC_API_BASE_URL:-https://ivxholding.com}"
+  APP_URL="${EXPO_PUBLIC_APP_URL:-${EXPO_PUBLIC_IVX_API_BASE_URL:-}}"
+  BACKEND_URL="${EXPO_PUBLIC_IVX_API_BASE_URL:-https://api.ivxholding.com}"
+
+  # Reject local/dev Supabase credentials or legacy local dev strings
+  is_local_dev() {
+    case "$1" in
+      *127.0.0.1*|*localhost*|*::1*|*supabase local development*|*super-secret-jwt*|*54321*|*54322*|*54323*)
+        return 0 ;;
+      *)
+        return 1 ;;
+    esac
+  }
+
+  if [ -n "$SUPABASE_URL" ] && is_local_dev "$SUPABASE_URL"; then
+    echo "[IVX Build] WARNING: Supabase URL contains local/dev values — clearing it"
+    SUPABASE_URL=""
+  fi
+  if [ -n "$SUPABASE_KEY" ] && is_local_dev "$SUPABASE_KEY"; then
+    echo "[IVX Build] WARNING: Supabase key contains local/dev values — clearing it"
+    SUPABASE_KEY=""
+  fi
+
+  # Prefer production API over legacy Render URLs
+  if [ -n "$BACKEND_URL" ] && [[ "$BACKEND_URL" == *"onrender.com"* ]]; then
+    echo "[IVX Build] WARNING: Legacy Render backend URL detected — switching to ${PRODUCTION_BACKEND_URL}"
+    BACKEND_URL="${PRODUCTION_BACKEND_URL}"
+  fi
+  if [ -n "$API_URL" ] && [[ "$API_URL" == *"onrender.com"* ]]; then
+    API_URL="${PRODUCTION_BACKEND_URL}"
+  fi
+
+  echo "[IVX Build] Backend URL: ${BACKEND_URL}"
+  echo "[IVX Build] Supabase URL set: $([ -n "$SUPABASE_URL" ] && echo 'YES' || echo 'NO')"
+  echo "[IVX Build] Supabase Key set: $([ -n "$SUPABASE_KEY" ] && echo 'YES' || echo 'NO')"
+
+  if [ -n "$SUPABASE_URL" ]; then
+    sed -i "s|__IVX_SUPABASE_URL__|${SUPABASE_URL}|g" index.html
+    echo "[IVX Build] Supabase URL injected"
+  else
+    echo "[IVX Build] EXPO_PUBLIC_SUPABASE_URL not set — will discover from backend at runtime"
+  fi
+
+  if [ -n "$SUPABASE_KEY" ]; then
+    sed -i "s|__IVX_SUPABASE_ANON_KEY__|${SUPABASE_KEY}|g" index.html
+    echo "[IVX Build] Supabase Anon Key injected"
+  else
+    echo "[IVX Build] EXPO_PUBLIC_SUPABASE_ANON_KEY not set — will discover from backend at runtime"
+  fi
+
+  sed -i "s|__IVX_API_BASE_URL__|${API_URL}|g" index.html
+  sed -i "s|__IVX_BACKEND_URL__|${BACKEND_URL}|g" index.html
+  echo "[IVX Build] API + Backend URLs injected"
+
+  if [ -n "$APP_URL" ]; then
+    sed -i "s|__IVX_APP_URL__|${APP_URL}|g" index.html
+  else
+    sed -i "s|__IVX_APP_URL__||g" index.html
+  fi
+
+  # Inject Google Ads key
+  GADS_KEY="${EXPO_PUBLIC_GOOGLE_ADS_API_KEY:-}"
+  if [ -n "$GADS_KEY" ]; then
+    sed -i "s|__IVX_GOOGLE_ADS_KEY__|${GADS_KEY}|g" index.html
+    echo "[IVX Build] Google Ads key injected"
+  else
+    sed -i "s|__IVX_GOOGLE_ADS_KEY__||g" index.html
+    echo "[IVX Build] EXPO_PUBLIC_GOOGLE_ADS_API_KEY not set — Google Ads tracking disabled"
+  fi
+
+  # Inject ad pixel IDs
+  META_PID="${META_PIXEL_ID:-}"
+  TIKTOK_PID="${TIKTOK_PIXEL_ID:-}"
+  LINKEDIN_PID="${LINKEDIN_PARTNER_ID:-}"
+  sed -i "s|__IVX_META_PIXEL_ID__|${META_PID}|g" index.html
+  sed -i "s|__IVX_TIKTOK_PIXEL_ID__|${TIKTOK_PID}|g" index.html
+  sed -i "s|__IVX_LINKEDIN_PARTNER_ID__|${LINKEDIN_PID}|g" index.html
+  echo "[IVX Build] Ad pixel IDs injected (Meta: $([ -n "$META_PID" ] && echo 'YES' || echo 'NO'), TikTok: $([ -n "$TIKTOK_PID" ] && echo 'YES' || echo 'NO'), LinkedIn: $([ -n "$LINKEDIN_PID" ] && echo 'YES' || echo 'NO'))"
+
+  sed -i "s|var _HARDCODED_BACKEND_URL = '[^']*';|var _HARDCODED_BACKEND_URL = '${BACKEND_URL}';|g" index.html
+
+  # Also inject backend URL into fallback JS vars and meta tags
+  sed -i "s|var _IVX_BACKEND_URL = '[^']*';|var _IVX_BACKEND_URL = '${BACKEND_URL}';|g" index.html
+  sed -i "s|var _IVX_API_URL = '[^']*';|var _IVX_API_URL = '${API_URL}';|g" index.html
+
+  # Inject backend URL into meta tags for JS to read
+  sed -i "s|<meta name=\"ivx-backend-url\" content=\"[^\"]*\"|<meta name=\"ivx-backend-url\" content=\"${BACKEND_URL}\"|g" index.html
+  sed -i "s|<meta name=\"ivx-api-url\" content=\"[^\"]*\"|<meta name=\"ivx-api-url\" content=\"${API_URL}\"|g" index.html
+
+  echo "[IVX Build] All JS vars + meta tags injected"
+
+  # ALWAYS generate ivx-config.json — with or without Supabase creds
+  # The backend URL is always set, so credential discovery always works
+  cat > ivx-config.json <<EOF
+{
+  "supabaseUrl": "${SUPABASE_URL}",
+  "supabaseAnonKey": "${SUPABASE_KEY}",
+  "apiBaseUrl": "${API_URL}",
+  "appUrl": "${APP_URL}",
+  "backendUrl": "${BACKEND_URL}",
+  "configEndpoint": "${BACKEND_URL}/api/landing-config",
+  "dealsEndpoint": "${BACKEND_URL}/api/landing-deals",
+  "builtAt": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+}
+EOF
+  echo "[IVX Build] ivx-config.json generated"
+  echo "[IVX Build] ivx-config.json generated"
+
+  if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_KEY" ]; then
+    echo "[IVX Build] NOTE: Supabase credentials not in env — landing page will auto-discover from: ${BACKEND_URL}/api/landing-config"
+  fi
+
+  cp -f ivx-portal.js ivx-invest.js "${DEPLOY_DIR:-.}/" 2>/dev/null || true
+echo "[IVX Build] Done. Files ready for deploy."
+else
+  echo "[IVX Build] ERROR: index.html not found!"
+  exit 1
+fi
