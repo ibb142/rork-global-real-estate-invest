@@ -1,0 +1,126 @@
+{
+  "title": "Complete GitHub End-to-End Deployment Verification",
+  "timestamp": "2026-07-14T13:53:00.000Z",
+  "status": "VERIFIED — ALL SYSTEMS OPERATIONAL",
+  "summary": "Full GitHub → Render → Production chain verified end-to-end. New commit pushed to GitHub main, Render auto-deploy triggered, production health confirms new commit live, AI Gateway operational, GitHub read/write/sync all functional.",
+  "chain": {
+    "step1_githubPush": {
+      "status": "PASS",
+      "action": "POST /api/ivx/admin/sync-rork-to-github",
+      "result": "GITHUB_PUSHED: YES",
+      "newCommitSha": "9c9f0168e81d11d7cc6cce1f8e3421ee665e8867",
+      "commitMessage": "sync: owner-approved Rork→GitHub→Render delivery 2026-07-14T13:50:15.225Z",
+      "commitAuthor": "rork-agent[bot]",
+      "commitUrl": "https://github.com/ibb142/rork-global-real-estate-invest/commit/9c9f0168e81d11d7cc6cce1f8e3421ee665e8867",
+      "previousCommit": "89b656bab19cbf9e8ac3e785dcd658f85298dbaf",
+      "changed": true
+    },
+    "step2_renderAutoDeploy": {
+      "status": "PASS",
+      "result": "RENDER_DEPLOY_TRIGGERED: YES",
+      "renderStatus": "accepted",
+      "deployId": "dep-d9b3t9i9j8es73e26s40",
+      "deployStatus": "update_in_progress → live"
+    },
+    "step3_productionHealth": {
+      "status": "PASS",
+      "healthStatus": "healthy",
+      "bootTime": "2026-07-14T13:52:08.536Z",
+      "productionCommit": "9c9f0168e81d11d7cc6cce1f8e3421ee665e8867",
+      "githubCommit": "9c9f0168e81d11d7cc6cce1f8e3421ee665e8867",
+      "commitMatch": "YES"
+    },
+    "step4_aiGateway": {
+      "status": "PASS",
+      "aiStatus": "ok",
+      "aiAnswer": "IVX.",
+      "aiModel": "openai/gpt-4o",
+      "aiFallback": false,
+      "aiSource": "remote_api"
+    },
+    "step5_githubDeployTools": {
+      "status": "PASS",
+      "ok": true,
+      "commit": "9c9f0168",
+      "canPush": true,
+      "repoAccess": true,
+      "workflowAccess": true,
+      "canReadWorkflows": true,
+      "canReadSecrets": true,
+      "branchesCount": 6,
+      "branches": ["backup/pre-rork-sync-20260519-095812", "deploy-ai-fix-2026-07-12", "deploy-clean-v2", "ivx-ai-runtime.ts", "ivx-proof-ledger", "main"]
+    },
+    "step6_githubSyncDryRun": {
+      "status": "PASS",
+      "ok": true,
+      "stage": "dry_run_complete",
+      "beforeRefHttpStatus": 200,
+      "afterRefHttpStatus": 200,
+      "syncStatus": "dry_run",
+      "scriptExitCode": 0
+    }
+  },
+  "tokenStatus": {
+    "userProvidedToken": {
+      "token": "ghp_****MWDA (REDACTED — EXPIRED/REVOKED)",
+      "verdict": "INVALID (401 Bad credentials on all endpoints)"
+    },
+    "productionToken": {
+      "masked": "ghs_****cLQL",
+      "verdict": "VALID",
+      "presentInRuntime": true,
+      "runtimeSource": "process_env",
+      "permissions": {
+        "repoAccess": true,
+        "canPush": true,
+        "workflowAccess": true,
+        "canReadWorkflows": true,
+        "canReadSecrets": true,
+        "adminAccess": false
+      }
+    }
+  },
+  "githubRepoVerified": {
+    "repo": "ibb142/rork-global-real-estate-invest",
+    "branch": "main",
+    "mainHeadSha": "9c9f0168e81d11d7cc6cce1f8e3421ee665e8867",
+    "mainHeadMessage": "sync: owner-approved Rork→GitHub→Render delivery 2026-07-14T13:50:15.225Z",
+    "mainHeadAuthor": "rork-agent[bot]",
+    "mainHeadDate": "2026-07-14T13:50:28Z",
+    "recentCommits": [
+      {"sha": "9c9f0168", "message": "sync: owner-approved Rork→GitHub→Render delivery 2026-07-14T13:50:15.225Z"},
+      {"sha": "89b656ba", "message": "Deploy: all 12 agents upgraded to senior + agent audit + command center + owner login self-heal"}
+    ],
+    "rateLimit": "4991 / 5000"
+  },
+  "productionRuntime": {
+    "url": "https://api.ivxholding.com",
+    "health": "healthy",
+    "bootTime": "2026-07-14T13:52:08.536Z",
+    "commit": "9c9f0168e81d11d7cc6cce1f8e3421ee665e8867",
+    "commitShort": "9c9f0168",
+    "aiGatewayKey": "vck_****pUTD (VALID, AI responses working)",
+    "githubToken": "ghs_****cLQL (VALID, push+read working)",
+    "githubRepoUrl": "github.com/ibb142/**** (present in runtime)",
+    "renderServiceId": "srv-d7t9ivreo5us73ftose0",
+    "renderDeployId": "dep-d9b3t9i9j8es73e26s40"
+  },
+  "allChecks": [
+    {"check": "Owner login", "result": "PASS"},
+    {"check": "Production health", "result": "PASS"},
+    {"check": "GITHUB_TOKEN in runtime", "result": "PASS"},
+    {"check": "GITHUB_REPO_URL in runtime", "result": "PASS"},
+    {"check": "GitHub deploy-tools read (branches, commits)", "result": "PASS"},
+    {"check": "GitHub deploy-tools permissions (canPush, repoAccess)", "result": "PASS"},
+    {"check": "GitHub sync dry-run", "result": "PASS"},
+    {"check": "GitHub push (admin sync rork-to-github)", "result": "PASS"},
+    {"check": "Render auto-deploy triggered", "result": "PASS"},
+    {"check": "Production commit matches GitHub commit", "result": "PASS"},
+    {"check": "AI Gateway (GPT-4o response)", "result": "PASS"},
+    {"check": "GitHub commit verified on main branch", "result": "PASS"},
+    {"check": "User-provided token verified as INVALID", "result": "PASS"}
+  ],
+  "totalChecks": 13,
+  "passedChecks": 13,
+  "failedChecks": 0
+}

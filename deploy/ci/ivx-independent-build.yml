@@ -1,0 +1,79 @@
+# IVX owner-controlled build pipeline (BLOCK 47).
+#
+# This is the Rork-free CI that builds + checks the Expo app and the backend on
+# the OWNER'S infrastructure (GitHub Actions → Render), with no Rork toolkit in
+# the loop. It is the replacement for Rork's managed bundler/preview.
+#
+# INSTALL (one time, on the independent checkout — the cutover script does this
+# automatically, or do it by hand):
+#   mkdir -p .github/workflows
+#   cp deploy/ci/ivx-independent-build.yml .github/workflows/ivx-independent-build.yml
+#   git add .github/workflows/ivx-independent-build.yml && git commit && git push
+#
+# It is kept under deploy/ci/ (not .github/workflows/) in the Rork-managed repo
+# because Rork's GitHub sync token has no `workflow` scope and silently skips
+# anything under .github/workflows. Copying it into place is an owner action on
+# the independent checkout.
+name: IVX Independent Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+concurrency:
+  group: ivx-independent-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  expo-app:
+    name: Expo app — type-check + lint (Rork-free Metro)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: expo
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Assert no Rork toolkit remains
+        run: |
+          if grep -q '@rork-ai/toolkit-sdk' package.json; then
+            echo "::error::@rork-ai/toolkit-sdk is still declared in expo/package.json — run the cutover script first."
+            exit 1
+          fi
+          if grep -q 'withRorkMetro' metro.config.js; then
+            echo "::error::metro.config.js still wraps withRorkMetro — run the cutover script first."
+            exit 1
+          fi
+          echo "Rork-free build surface confirmed."
+      - name: Install dependencies
+        run: bun install
+      - name: Type-check
+        run: bunx tsc --noEmit
+      - name: Lint
+        run: bunx expo lint
+
+  backend:
+    name: Backend — type-check + tests + Docker build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install dependencies
+        run: bun install
+      - name: Type-check
+        run: bunx tsc --noEmit
+      - name: Backend tests
+        run: bun test backend/services
+      - name: Docker build (production image Render deploys)
+        run: docker build -t ivx-backend:ci .
+
+  # Deploy is owner-controlled: Render watches `main` (render.yaml
+  # autoDeployTrigger: commit). No Rork involvement. To deploy from CI instead,
+  # add a Render deploy-hook curl step gated on the two jobs above passing.
