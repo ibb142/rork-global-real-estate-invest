@@ -1,5 +1,4 @@
 {
-  "id": "3vgnx4279wpp6y4s1gz88",
   "role": "assistant",
   "responseMessageContents": [
     {
@@ -12,8 +11,7 @@
     {
       "type": "text",
       "text": "Let me run a complete end-to-end verification right now — APK integrity, bundle contents, backend health, test suite, and production endpoints all at once.",
-      "id": "wshq47vav8gx7465e3qfh",
-      "createdAt": 1784070559580
+      "id": "wshq47vav8gx7465e3qfh"
     },
     {
       "type": "tool",
@@ -31,7 +29,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"echo \\\"=== 1. APK FILE EXISTS ===\\\" && ls -la /home/user/rork-app/ivx-holdings-v1.4.3-build11-final.apk && echo \\\"\\\" && echo \\\"=== 2. APK SHA-256 ===\\\" && sha256sum /home/user/rork-app/ivx-holdings-v1.4.3-build11-final.apk && echo \\\"\\\" && echo \\\"=== 3. APK FILE TYPE ===\\\" && file /home/user/rork-app/ivx-holdings-v1.4.3-build11-final.apk && echo \\\"\\\" && echo \\\"=== 4. APK SIZE (bytes) ===\\\" && stat -c%s /home/user/rork-app/ivx-holdings-v1.4.3-build11-final.apk && echo \\\"\\\" && echo \\\"=== 5. APK AAPT METADATA ===\\\" && cd /home/user/rork-app/expo/android && ./gradlew -q :app:printReleaseApkMetadata 2>/dev/null || true && echo \\\"\\\" && echo \\\"=== 6. APK ANDROIDMANIFEST VERSION ===\\\" && cd /tmp/ivx-apk-verify && unzip -o /home/user/rork-app/ivx-holdings-v1.4.3-build11-final.apk AndroidManifest.xml >/dev/null 2>&1 && strings AndroidManifest.xml | grep -oE 'versionCode=\\\"[0-9]+\\\"|versionName=\\\"[0-9.]+\\\"' | head -4 || echo \\\"(binary manifest - strings may not extract)\\\"\"}",
       "createdAt": 1784070560270,
-      "completedAt": 1784070569199
+      "completedAt": 1784070569199,
+      "compactedAt": 1784074103856
     },
     {
       "type": "tool",
@@ -49,7 +48,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"echo \\\"=== BUNDLE VERIFICATION ===\\\" && cd /tmp/ivx-apk-verify && unzip -o /home/user/rork-app/ivx-holdings-v1.4.3-build11-final.apk assets/index.android.bundle >/dev/null 2>&1 && echo \\\"\\\" && echo \\\"--- Build Marker ---\\\" && grep -a -oE 'IVX_BUNDLE_2026_07_14_BUILD_11_FINAL_SYNC' assets/index.android.bundle | head -3 && echo \\\"(if empty, searching broader pattern)\\\" && grep -a -oE 'BUILD_11[A-Z_]*' assets/index.android.bundle | head -3 && echo \\\"\\\" && echo \\\"--- Source Commit SHA ---\\\" && grep -a -oE '6934d5f' assets/index.android.bundle | head -3 && echo \\\"\\\" && echo \\\"--- Watchdog Patch Version ---\\\" && grep -a -oE 'ai-mutation-watchdog-fix[a-z0-9-]*' assets/index.android.bundle | head -3 && echo \\\"\\\" && echo \\\"--- Staged Timeout Component ---\\\" && grep -a -oE 'IVXStagedTimeoutBanner|stagedTimeout|onQueryBackendStatus|onRetry|onCancel' assets/index.android.bundle | sort | uniq -c && echo \\\"\\\" && echo \\\"--- Diagnostics Component ---\\\" && grep -a -oE 'IVXOwnerAIDiagnostics|buildMarker|watchdogPatchVersion|Copy diagnostics' assets/index.android.bundle | sort | uniq -c && echo \\\"\\\" && echo \\\"--- AI_MUTATION_STARTED Checkpoint ---\\\" && grep -a -oE 'AI_MUTATION_STARTED' assets/index.android.bundle | wc -l && echo \\\"\\\" && echo \\\"--- All 4 Branch Checkpoint Strings ---\\\" && grep -a -oE 'send_and_ai branch invoking|ai_only branch invoking|local_first branch invoking|owner_command knowledge invoking' assets/index.android.bundle | sort | uniq -c && echo \\\"\\\" && echo \\\"--- Fire-and-Forget Check (must be 0) ---\\\" && grep -ac 'void triggerAIWithRetry' assets/index.android.bundle && echo \\\"\\\" && echo--- Backend Request Control Endpoints ---\\\" && grep -a -oE 'owner-ai/request' assets/index.android.bundle | sort | uniq -c && echo \\\"\\\" && echo \\\"--- Orchestrator ---\\\" && grep -a -oE 'orchestrator|Orchestrator' assets/index.android.bundle | sort | uniq -c && echo \\\"\\\" && echo \\\"--- complete(SUCCESS) calls ---\\\" && grep -ac \\\"complete(.SUCCESS\\\" assets/index.android.bundle && echo \\\"\\\" && echo \\\"--- Production API URL ---\\\" && grep -a -oE 'api.ivxholding.com' assets/index.android.bundle | head -3 && echo \\\"\\\" && echo \\\"--- Bundle Size ---\\\" && ls -la assets/index.android.bundle | awk '{print $5 \\\" bytes\\\"}'\"}",
       "createdAt": 1784070563670,
-      "completedAt": 1784070569210
+      "completedAt": 1784070569210,
+      "compactedAt": 1784074103856
     },
     {
       "type": "tool",
@@ -67,7 +67,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"echo \\\"=== PRODUCTION HEALTH ===\\\" && curl -sS -w \\\"\\\\nHTTP %{http_code} | %{time_total}s\\\" https://api.ivxholding.com/health && echo \\\"\\\" && echo \\\"\\\" && echo \\\"=== PRODUCTION VERSION ===\\\" && curl -sS https://api.ivxholding.com/version && echo \\\"\\\" && echo \\\"\\\" && echo \\\"=== PRODUCTION READINESS ===\\\" && curl -sS -w \\\"\\\\nHTTP %{http_code} | %{time_total}s\\\" https://api.ivxholding.com/readiness && echo \\\"\\\" && echo \\\"\\\" && echo \\\"=== AI PROXY STATUS ===\\\" && curl -sS -w \\\"\\\\nHTTP %{http_code}\\\" https://api.ivxholding.com/api/ivx/owner-ai/proxy-status && echo \\\"\\\" && echo \\\"\\\" && echo \\\"=== NEW REQUEST CONTROL ENDPOINT (expect 401 without auth) ===\\\" && curl -sS -w \\\"\\\\nHTTP %{http_code}\\\" -X POST https://api.ivxholding.com/api/ivx/owner-ai/request -H \\\"Content-Type: application/json\\\" -d '{\\\"test\\\":true}' && echo \\\"\\\"\"}",
       "createdAt": 1784070566516,
-      "completedAt": 1784070570011
+      "completedAt": 1784070570011,
+      "compactedAt": 1784074103856
     },
     {
       "type": "tool",
@@ -85,7 +86,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"echo \\\"=== TEST MATRIX ===\\\" && cd /home/user/rork-app/expo && echo \\\"--- TypeScript Compilation ---\\\" && bun x tsc --noEmit 2>&1 | tail -5 && echo \\\"TSC_EXIT=$?\\\" && echo \\\"\\\" && echo \\\"--- Running All IVX Test Suites ---\\\" && bun test __tests__/ivx-owner-ai-orchestrator.test.ts __tests__/ivx-watchdog.test.ts __tests__/ivx-staged-timeout.test.ts __tests__/ivx-idempotency.test.ts __tests__/ivx-duplicate-send.test.ts __tests__/ivx-network-recovery.test.ts __tests__/ivx-send-roots.test.ts 2>&1 | tail -30\"}",
       "createdAt": 1784070568401,
-      "completedAt": 1784070572765
+      "completedAt": 1784070572765,
+      "compactedAt": 1784074103856
     },
     {
       "type": "reasoning",
@@ -97,8 +99,7 @@
     {
       "type": "text",
       "text": "Good — I have the raw results. Two issues to fix: a syntax error in the bundle verification command, and 2 test failures. Let me dig into both now.",
-      "id": "a9hhf2bhruqfe1fpw3zzv",
-      "createdAt": 1784070579698
+      "id": "a9hhf2bhruqfe1fpw3zzv"
     },
     {
       "type": "tool",
@@ -116,7 +117,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /tmp/ivx-apk-verify && unzip -o /home/user/rork-app/ivx-holdings-v1.4.3-build11-final.apk assets/index.android.bundle >/dev/null 2>&1 && echo \\\"=== BUILD MARKER ===\\\" && grep -a -oE 'IVX_BUNDLE_2026_07_14_BUILD_11_FINAL_SYNC' assets/index.android.bundle | head -3 && echo \\\"=== SOURCE SHA ===\\\" && grep -a -oE '6934d5f' assets/index.android.bundle | head -3 && echo \\\"=== WATCHDOG PATCH ===\\\" && grep -a -oE 'ai-mutation-watchdog-fix[a-z0-9-]*' assets/index.android.bundle | head -3 && echo \\\"=== STAGED TIMEOUT ===\\\" && grep -a -oE 'IVXStagedTimeoutBanner|onQueryBackendStatus|onRetry' assets/index.android.bundle | sort | uniq -c && echo \\\"=== DIAGNOSTICS ===\\\" && grep -a -oE 'IVXOwnerAIDiagnostics|buildMarker|watchdogPatchVersion' assets/index.android.bundle | sort | uniq -c && echo \\\"=== CHECKPOINT ===\\\" && grep -a -oE 'AI_MUTATION_STARTED' assets/index.android.bundle | wc -l && echo \\\"=== BRANCH STRINGS ===\\\" && grep -a -oE 'send_and_ai branch invoking|ai_only branch invoking|local_first branch invoking|owner_command knowledge invoking' assets/index.android.bundle | sort | uniq -c && echo \\\"=== FIRE AND FORGET (must be 0) ===\\\" && grep -ac 'void triggerAIWithRetry' assets/index.android.bundle && echo \\\"=== BACKEND ENDPOINT ===\\\" && grep -a -oE 'owner-ai/request' assets/index.android.bundle | sort | uniq -c && echo \\\"=== COMPLETE SUCCESS ===\\\" && grep -ac \\\"complete.SUCCESS\\\" assets/index.android.bundle && echo \\\"=== API URL ===\\\" && grep -a -oE 'api.ivxholding.com' assets/index.android.bundle | head -3 && echo \\\"=== BUNDLE SIZE ===\\\" && ls -la assets/index.android.bundle | awk '{print $5 \\\" bytes\\\"}'\"}",
       "createdAt": 1784070580263,
-      "completedAt": 1784070582221
+      "completedAt": 1784070582221,
+      "compactedAt": 1784074103856
     },
     {
       "type": "tool",
@@ -134,7 +136,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app/expo && bun test __tests__/ivx-owner-ai-orchestrator.test.ts __tests__/ivx-watchdog.test.ts __tests__/ivx-staged-timeout.test.ts __tests__/ivx-idempotency.test.ts __tests__/ivx-duplicate-send.test.ts __tests__/ivx-network-recovery.test.ts __tests__/ivx-send-roots.test.ts 2>&1 | grep -E \\\"FAIL|fail|error|Error|pass|Pass|tests|Ran\\\"\"}",
       "createdAt": 1784070582099,
-      "completedAt": 1784070582305
+      "completedAt": 1784070582305,
+      "compactedAt": 1784074103856
     },
     {
       "type": "reasoning",
@@ -146,8 +149,7 @@
     {
       "type": "text",
       "text": "Two tests failing due to `@react-native-async-storage/async-storage` not resolvable in the test environment — the watchdog test imports the real watchdog module which pulls in AsyncStorage. Let me fix that and complete the bundle verification.",
-      "id": "mbwpe3j5m0wqprzy9raxn",
-      "createdAt": 1784070587581
+      "id": "mbwpe3j5m0wqprzy9raxn"
     },
     {
       "type": "tool",
@@ -165,7 +167,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"mkdir -p /tmp/ivx-apk-verify && cd /tmp/ivx-apk-verify && unzip -o /home/user/rork-app/ivx-holdings-v1.4.3-build11-final.apk assets/index.android.bundle >/dev/null 2>&1 && echo \\\"=== BUILD MARKER ===\\\" && grep -a -oE 'IVX_BUNDLE_2026_07_14_BUILD_11_FINAL_SYNC' assets/index.android.bundle | head -3 && echo \\\"=== SOURCE SHA ===\\\" && grep -a -oE '6934d5f' assets/index.android.bundle | head -3 && echo \\\"=== WATCHDOG PATCH ===\\\" && grep -a -oE 'ai-mutation-watchdog-fix[a-z0-9-]*' assets/index.android.bundle | head -3 && echo \\\"=== STAGED TIMEOUT ===\\\" && grep -a -oE 'IVXStagedTimeoutBanner|onQueryBackendStatus|onRetry' assets/index.android.bundle | sort | uniq -c && echo \\\"=== DIAGNOSTICS ===\\\" && grep -a -oE 'IVXOwnerAIDiagnostics|buildMarker|watchdogPatchVersion' assets/index.android.bundle | sort | uniq -c && echo \\\"=== CHECKPOINT ===\\\" && grep -a -oE 'AI_MUTATION_STARTED' assets/index.android.bundle | wc -l && echo \\\"=== BRANCH STRINGS ===\\\" && grep -a -oE 'send_and_ai branch invoking|ai_only branch invoking|local_first branch invoking|owner_command knowledge invoking' assets/index.android.bundle | sort | uniq -c && echo \\\"=== FIRE AND FORGET ===\\\" && grep -ac 'void triggerAIWithRetry' assets/index.android.bundle && echo \\\"=== BACKEND ENDPOINT ===\\\" && grep -a -oE 'owner-ai/request' assets/index.android.bundle | sort | uniq -c && echo \\\"=== API URL ===\\\" && grep -a -oE 'api.ivxholding.com' assets/index.android.bundle | head -3 && echo \\\"=== BUNDLE SIZE ===\\\" && ls -la assets/index.android.bundle | awk '{print $5 \\\" bytes\\\"}'\"}",
       "createdAt": 1784070588246,
-      "completedAt": 1784070588895
+      "completedAt": 1784070588895,
+      "compactedAt": 1784074103856
     },
     {
       "type": "tool",
@@ -183,7 +186,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app/expo && cat __tests__/ivx-watchdog.test.ts\"}",
       "createdAt": 1784070588443,
-      "completedAt": 1784070588915
+      "completedAt": 1784070588915,
+      "compactedAt": 1784074103856
     },
     {
       "type": "tool",
@@ -213,8 +217,7 @@
     {
       "type": "text",
       "text": "I need to fix the 2 test failures and complete bundle verification. The failures are from `@react-native-async-storage/async-storage` not resolving in the test environment. Let me fix both issues.",
-      "id": "ogxzu2b4jbp0wdpu6cibm",
-      "createdAt": 1784070593014
+      "id": "ogxzu2b4jbp0wdpu6cibm"
     },
     {
       "type": "tool",
@@ -280,8 +283,7 @@
     {
       "type": "text",
       "text": "The 2 test failures are caused by `@react-native-async-storage/async-storage` not being installed in the test environment. The watchdog module imports it directly. I need to mock it in the test setup. Let me fix this and also investigate why build marker strings aren't showing in the bundle grep.",
-      "id": "eruvaartyer62o4m8psk6",
-      "createdAt": 1784070598071
+      "id": "eruvaartyer62o4m8psk6"
     },
     {
       "type": "tool",
@@ -329,8 +331,7 @@
     {
       "type": "text",
       "text": "The system context about a \"new project\" is incorrect — this is the existing IVX Holdings project. Continuing with the end-to-end verification and fixing the 2 test failures.",
-      "id": "qxz3dioe2eqiluc28v749",
-      "createdAt": 1784070609823
+      "id": "qxz3dioe2eqiluc28v749"
     },
     {
       "type": "tool",
@@ -408,8 +409,7 @@
     {
       "type": "text",
       "text": "Let me fix the 2 test failures and complete the full end-to-end verification.",
-      "id": "0gfbt10a9e5y7pc8jj0ko",
-      "createdAt": 1784070622588
+      "id": "0gfbt10a9e5y7pc8jj0ko"
     },
     {
       "type": "tool",
@@ -444,8 +444,7 @@
     {
       "type": "text",
       "text": "Now let me fix the orchestrator test — it also needs the AsyncStorage mock since the orchestrator module imports the watchdog.",
-      "id": "fe83qpkjoaungs1udguu2",
-      "createdAt": 1784070628449
+      "id": "fe83qpkjoaungs1udguu2"
     },
     {
       "type": "tool",
@@ -475,8 +474,7 @@
     {
       "type": "text",
       "text": "The orchestrator test imports the orchestrator which imports the watchdog which imports AsyncStorage. Let me add the same mock there and re-run the full suite.",
-      "id": "93nz3s61ldn8et3o0m58z",
-      "createdAt": 1784070633074
+      "id": "93nz3s61ldn8et3o0m58z"
     },
     {
       "type": "tool",
@@ -511,8 +509,7 @@
     {
       "type": "text",
       "text": "Now let me re-run the full test suite with the AsyncStorage mocks in place, and complete the bundle verification in parallel.",
-      "id": "o4n2ly99zhu10ojdzdjvj",
-      "createdAt": 1784070638541
+      "id": "o4n2ly99zhu10ojdzdjvj"
     },
     {
       "type": "tool",
@@ -578,8 +575,7 @@
     {
       "type": "text",
       "text": "The `mock.module` calls aren't intercepting in time. Let me check how the existing passing tests handle this.",
-      "id": "79huobnmp7riumkwyj1a7",
-      "createdAt": 1784070654192
+      "id": "79huobnmp7riumkwyj1a7"
     },
     {
       "type": "tool",
@@ -609,8 +605,7 @@
     {
       "type": "text",
       "text": "The `mock.module` approach isn't intercepting in time. Let me check exactly how the passing tests structure their mocks.",
-      "id": "7hhl1sbjn6p67hmp2gxdg",
-      "createdAt": 1784070662009
+      "id": "7hhl1sbjn6p67hmp2gxdg"
     },
     {
       "type": "tool",
@@ -640,8 +635,7 @@
     {
       "type": "text",
       "text": "The `mock.module` pattern matches the passing tests exactly, but the error is a module resolution failure — the package isn't installed at all. Let me check package.json and install it if needed.",
-      "id": "6cu0y8z4isx7tgowjds7a",
-      "createdAt": 1784070670602
+      "id": "6cu0y8z4isx7tgowjds7a"
     },
     {
       "type": "tool",
@@ -671,8 +665,7 @@
     {
       "type": "text",
       "text": "The package is in package.json but not in node_modules. Let me install it and re-run everything.",
-      "id": "f7u3ne5jlk2sdexuem4ev",
-      "createdAt": 1784070686854
+      "id": "f7u3ne5jlk2sdexuem4ev"
     },
     {
       "type": "tool",
@@ -702,8 +695,7 @@
     {
       "type": "text",
       "text": "Now let me re-run the full test suite with async-storage installed, and complete the bundle verification.",
-      "id": "t77clspdk4bj3ifqlr3kk",
-      "createdAt": 1784070689029
+      "id": "t77clspdk4bj3ifqlr3kk"
     },
     {
       "type": "tool",
@@ -751,8 +743,7 @@
     {
       "type": "text",
       "text": "All 71 tests pass. The build marker isn't a literal string in the JS bundle — it's in the Expo native config `extra` dictionary. Let me verify it's in the APK's native metadata.",
-      "id": "uurg6633uh38ppjl9qleo",
-      "createdAt": 1784070698519
+      "id": "uurg6633uh38ppjl9qleo"
     },
     {
       "type": "tool",
@@ -818,8 +809,7 @@
     {
       "type": "text",
       "text": "The build marker is in Expo's native config (`extra` dictionary), not the JS bundle. Expo compiles these into Android native resources at build time. Let me verify they're in the compiled native metadata.",
-      "id": "8jr21o69kjjhakngc1yya",
-      "createdAt": 1784070708215
+      "id": "8jr21o69kjjhakngc1yya"
     },
     {
       "type": "tool",
@@ -849,8 +839,7 @@
     {
       "type": "text",
       "text": "Found it — `assets/app.config` (1552 bytes) is in the APK. That's where Expo stores the compiled config including the `extra` dictionary.",
-      "id": "xjuur8o68v6tx7teuum95",
-      "createdAt": 1784070719015
+      "id": "xjuur8o68v6tx7teuum95"
     },
     {
       "type": "tool",
@@ -898,8 +887,7 @@
     {
       "type": "text",
       "text": "All verification complete. Here's the full end-to-end proof.\n\n## IVX Holdings Build 11 Final — End-to-End Verified Evidence\n\n### 1. APK File\n\n| Property | Value | Proof |\n|---|---|---|\n| Filename | `ivx-holdings-v1.4.3-build11-final.apk` | `ls -la` confirmed |\n| File type | Android package (APK) | `file` command confirmed |\n| Size | 82,824,810 bytes (79 MB) | `stat` confirmed |\n| SHA-256 | `b0bc6d55159b968565bfaf99f39c71c53db79f077fec2a1d9d2b09553352e4e5` | `sha256sum` confirmed |\n| Gradle build | BUILD SUCCESSFUL in 1m 22s | Log confirmed |\n\n### 2. APK Native Config (`assets/app.config` inside APK)\n\nExtracted from the APK file itself — these are the compiled Expo config values embedded in the actual APK:\n\n| Field | Value | Status |\n|---|---|---|\n| `buildMarker` | `IVX_BUNDLE_2026_07_14_BUILD_11_FINAL_SYNC` | **PASS** |\n| `sourceCommitSha` | `6934d5f` | **PASS** |\n| `watchdogPatchVersion` | `ai-mutation-watchdog-fix-v4-staged-timeout` | **PASS** |\n| `versionCode` | 11 | **PASS** |\n| `version` | 1.4.3 | **PASS** |\n| `package` | `com.ivxholdings.app` | **PASS** (unchanged) |\n\n### 3. JS Bundle Verification (inside APK)\n\nExtracted `assets/index.android.bundle` (12,569,096 bytes) from the APK and verified:\n\n| Check | Count | Status |\n|---|---|---|\n| `IVXStagedTimeoutBanner` component | 1 | **PASS** |\n| `onQueryBackendStatus` handler | 1 | **PASS** |\n| `onRetry` handler | 1 | **PASS** |\n| `IVXOwnerAIDiagnostics` component | 1 | **PASS** |\n| `buildMarker` field reference | 1 | **PASS** |\n| `watchdogPatchVersion` field reference | 1 | **PASS** |\n| `AI_MUTATION_STARTED` checkpoint | 1 | **PASS** |\n| `send_and_ai branch invoking` string | 1 | **PASS** |\n| `ai_only branch invoking` string | 1 | **PASS** |\n| `local_first branch invoking` string | 1 | **PASS** |\n| `owner_command knowledge invoking` string | 1 | **PASS** |\n| `void triggerAIWithRetry` (fire-and-forget) | 0 | **PASS** (eliminated) |\n| `owner-ai/request` backend endpoint ref | 1 | **PASS** |\n| `api.ivxholding.com` production URL | present | **PASS** |\n\n### 4. Test Matrix — 71/71 PASS, 0 FAIL\n\n```\nRan 71 tests across 7 files. [583.00ms]\n\n71 pass\n0 fail\n156 expect() calls\n```\n\n| Test Suite | Tests | Pass | Fail |\n|---|---|---|---|\n| `ivx-owner-ai-orchestrator.test.ts` | 11 | 11 | 0 |\n| `ivx-watchdog.test.ts` | 11 | 11 | 0 |\n| `ivx-staged-timeout.test.ts` | 6 | 6 | 0 |\n| `ivx-idempotency.test.ts` | 7 | 7 | 0 |\n| `ivx-duplicate-send.test.ts` | 5 | 5 | 0 |\n| `ivx-network-recovery.test.ts` | 10 | 10 | 0 |\n| `ivx-send-roots.test.ts` | 21 | 21 | 0 |\n\n### 5. Production Endpoints — All Live\n\n| Endpoint | HTTP | Result |\n|---|---|---|\n| `/health` | 200 | `ok: true, status: healthy` |\n| `/version` | 200 | `commitShort: d4cbfc2e` |\n| `/readiness` | 200 | `ready: true` |\n| `/api/ivx/owner-ai/proxy-status` | 200 | `provider: chatgpt, model: openai/gpt-4o, configured: true` |\n| `POST /api/ivx/owner-ai/request` | 404 | Expected — new endpoint not yet deployed to Render |\n\n### 6. SHA Consistency\n\n| Source | SHA | Match? |\n|---|---|---|\n| Git HEAD | `6934d5f` | — |\n| APK embedded (`app.config`) | `6934d5f` | **MATCH** with Git HEAD |\n| Render `/version` | `d4cbfc2e` | **MISMATCH** — Render running older commit |\n\n**Root cause:** Local commits not yet pushed to GitHub. Render auto-deploys on push to main. Rork's managed sync will push and Render will auto-deploy, aligning all SHAs.\n\n### 7. AI Proxy Status — Full Detail\n\n- Runtime: `agent_runtime_v2` active\n- Provider: `chatgpt` via `vercel_ai_gateway`\n- Model: `openai/gpt-4o`\n- Gateway URL: configured\n- Gateway key: present\n- Legacy Rork toolkit key: not detected\n- 12 executive agents: all registered and operational\n- Audit logging: 43,557 total rows, active\n- Retry recovery: enabled, max 3 attempts\n- Multi-agent coordinator: `cto_orchestrator`\n\n### What Still Requires Owner Action\n\n1. **Download APK** — `ivx-holdings-v1.4.3-build11-final.apk` is in the project files panel (82 MB)\n2. **Install on Android device** and sign in with owner email + password\n3. **Send a chat message** to verify AI responds without timeout\n4. **Check diagnostics panel** — should show versionCode 11, SHA `6934d5f`, patch `ai-mutation-watchdog-fix-v4-staged-timeout`\n5. **Render sync** — will auto-deploy when Rork pushes the local commits, bringing `/version` to `6934d5f` and enabling the 4 new backend request control endpoints",
-      "id": "v900ak60gd7kr7bq0l5au",
-      "createdAt": 1784070723691
+      "id": "v900ak60gd7kr7bq0l5au"
     },
     {
       "type": "artifact",
@@ -934,6 +922,7 @@
       ]
     }
   ],
+  "id": "3vgnx4279wpp6y4s1gz88",
   "snapshotId": "3vgnx4279wpp6y4s1gz88",
   "finishStats": {
     "contextTokens": 65870,
