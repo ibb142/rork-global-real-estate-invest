@@ -222,7 +222,7 @@ async function runCacheMigration(): Promise<void> {
     );
 
     if (staleKeys.length > 0) {
-      await AsyncStorage.removeMany(staleKeys);
+      await Promise.all(staleKeys.map((k) => AsyncStorage.removeItem(k)));
       console.log('[Email] Cleared', staleKeys.length, 'stale email cache keys:', staleKeys);
     }
 
