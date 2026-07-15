@@ -9,9 +9,9 @@ const config: ExpoConfig = {
     policy: 'appVersion',
   },
   extra: {
-    buildMarker: 'IVX_BUNDLE_2026_07_14_BUILD_11_FINAL_SYNC',
-    buildTimestamp: '2026-07-14T23:10:00.000000+00:00',
-    sourceCommitSha: '6934d5f',
+    buildMarker: 'IVX_BUNDLE_2026_07_15_BUILD_12_UNIFIED',
+    buildTimestamp: '2026-07-15T01:30:00.000000+00:00',
+    sourceCommitSha: '69c0860f',
     watchdogPatchVersion: 'ai-mutation-watchdog-fix-v4-staged-timeout',
     frontendDeployMarker: 'ivx-frontend-2026-07-14-owner-login-self-heal',
     eas: {
@@ -46,7 +46,7 @@ const config: ExpoConfig = {
       backgroundColor: '#000000',
     },
     package: 'com.ivxholdings.app',
-    versionCode: 11,
+    versionCode: 12,
     softwareKeyboardLayoutMode: 'resize',
   },
   web: {

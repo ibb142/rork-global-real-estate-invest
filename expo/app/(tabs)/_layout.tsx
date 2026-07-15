@@ -43,7 +43,7 @@ export default function TabsLayout() {
   return (
     <View style={styles.root}>
     <Tabs
-      initialRouteName="chat"
+      initialRouteName="(home)"
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: tabColors.active,
