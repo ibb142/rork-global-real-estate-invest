@@ -42,6 +42,7 @@ import { useWebKeyboard, scrollInputIntoView } from '@/hooks/useWebKeyboard';
 import Colors from '@/constants/colors';
 import { IVX_OWNER_AI_PROFILE, IVX_OWNER_AI_ROOM_ID } from '@/constants/ivx-owner-ai';
 import { useAuth } from '@/lib/auth-context';
+import { isAdminRole } from '@/lib/auth-helpers';
 import { IVX_BASELINE_OWNER_EMAILS } from '@/shared/ivx/access-control';
 import { resolveDevTestModeContext } from '@/lib/dev-test-mode';
 import { getIVXAccessToken, getIVXOwnerAIConfigAudit, type IVXOwnerAIConfigAudit } from '@/lib/ivx-supabase-client';
@@ -57,6 +58,7 @@ import { IVXStagedTimeoutBanner, type TimeoutEvidence } from '@/components/IVXSt
 import { createAIOrchestrator, type AIOrchestrator } from '@/src/modules/ivx-owner-ai/services/ivxOwnerAIOrchestrator';
 import Constants from 'expo-constants';
 import { getIVXBuildInfo } from '@/constants/build-info';
+import { getIVXRuntimeInfo } from '@/lib/runtime-environment';
 import { ivxDiagnostics } from '@/src/modules/ivx-developer/diagnosticsStore';
 import { refreshOwnerSession } from '@/src/modules/ivx-developer/authDiagnosticsService';
 import IVXAdvancedExecutionMode from '@/components/IVXAdvancedExecutionMode';
@@ -872,7 +874,7 @@ export default function IVXOwnerChatRoute() {
   // fires before the FlatList has measured dynamic message bubbles.
   const pendingInitialScrollRef = useRef<boolean>(true);
   const insets = useSafeAreaInsets();
-  const { user, userId, loginOwnerPasswordless } = useAuth();
+  const { user, userId, isLoading, isAuthenticated, userRole, loginOwnerPasswordless } = useAuth();
   const [composerValue, setComposerValue] = useState<string>('');
   const [messageSearchQuery, setMessageSearchQuery] = useState<string>('');
   const [searchOpen, setSearchOpen] = useState<boolean>(false);
@@ -888,6 +890,15 @@ export default function IVXOwnerChatRoute() {
   const [keyboardInset, setKeyboardInset] = useState<number>(0);
   const [rootLayoutHeight, setRootLayoutHeight] = useState<number>(0);
   const [showDiagnostics, setShowDiagnostics] = useState<boolean>(false);
+  // Build-information diagnostics banner: hidden by default in production,
+  // visible by default in development / Expo Go, and persistently closable.
+  // The owner can reopen it from Owner Control → Diagnostics → Build Information.
+  const [diagnosticsBannerVisible, setDiagnosticsBannerVisible] = useState<boolean>(() => {
+    if (typeof __DEV__ !== 'undefined' && __DEV__) return true;
+    const runtime = getIVXRuntimeInfo();
+    return runtime.isExpoGo || runtime.isDevRuntime;
+  });
+  const [diagnosticsBannerLoaded, setDiagnosticsBannerLoaded] = useState<boolean>(false);
   // Owner session gate removed: chat composer is always usable without requiring
   // a separate owner verification step. The preflight state is kept ready for
   // backwards compatibility with any diagnostics that still inspect it.
@@ -940,6 +951,41 @@ export default function IVXOwnerChatRoute() {
   useEffect(() => {
     console.log('[IVXOwnerChatRoute] Owner session gate disabled; composer ready for all users.');
   }, [ownerId, user?.email]);
+
+  // Load persisted diagnostics-banner closed state. Production builds start
+  // hidden; dev/Expo Go start visible but honor the owner's explicit Close.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const stored = await AsyncStorage.getItem('ivx_owner_diagnostics_banner_visible');
+        if (!cancelled) {
+          if (stored !== null) {
+            setDiagnosticsBannerVisible(stored === 'true');
+          }
+          setDiagnosticsBannerLoaded(true);
+        }
+      } catch (error) {
+        console.log('[IVXOwnerChatRoute] Diagnostics banner visibility load failed:', error instanceof Error ? error.message : 'unknown');
+        if (!cancelled) {
+          setDiagnosticsBannerLoaded(true);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleOpenDiagnosticsBanner = useCallback(() => {
+    setDiagnosticsBannerVisible(true);
+    void AsyncStorage.setItem('ivx_owner_diagnostics_banner_visible', 'true');
+  }, []);
+
+  const handleCloseDiagnosticsBanner = useCallback(() => {
+    setDiagnosticsBannerVisible(false);
+    void AsyncStorage.setItem('ivx_owner_diagnostics_banner_visible', 'false');
+  }, []);
   // Overlay lifecycle hardening: close the live-work overlay automatically
   // when the app backgrounds, when the screen unmounts, or when navigation
   // pulls the route off. Prevents ghost overlays + stale poller activity.
@@ -1198,6 +1244,14 @@ export default function IVXOwnerChatRoute() {
       Alert.alert('Voice transcription unavailable', error.message || 'We could not transcribe that recording. Please try again.');
     },
   });
+  type OwnerAIAuthState = 'AUTH_INITIALIZING' | 'SIGNED_OUT' | 'SESSION_REFRESHING' | 'SIGNED_IN_MEMBER' | 'SIGNED_IN_OWNER' | 'AUTH_ERROR';
+  const ownerAIAuthState = useMemo<OwnerAIAuthState>(() => {
+    if (isLoading) return 'AUTH_INITIALIZING';
+    if (!isAuthenticated || !user) return 'SIGNED_OUT';
+    if (isAdminRole(userRole)) return 'SIGNED_IN_OWNER';
+    return 'SIGNED_IN_MEMBER';
+  }, [isLoading, isAuthenticated, user, userRole]);
+  const ownerAIAuthReady = ownerAIAuthState === 'SIGNED_IN_OWNER';
   const ownerRoomAuthenticated = useMemo<boolean>(() => {
     if (devTestMode.testModeActive) {
       return true;
@@ -1206,11 +1260,11 @@ export default function IVXOwnerChatRoute() {
     const normalizedConversationSlug = safeTrim(conversationQuery.data?.slug);
     return localFirstChatMode
       || isOpenAccessBuild
-      || !!user
+      || ownerAIAuthReady
       || !!userId
       || normalizedConversationId === IVX_OWNER_AI_PROFILE.sharedRoom.id
       || normalizedConversationSlug === IVX_OWNER_AI_PROFILE.sharedRoom.slug;
-  }, [conversationQuery.data?.id, conversationQuery.data?.slug, devTestMode.testModeActive, isOpenAccessBuild, localFirstChatMode, user, userId]);
+  }, [conversationQuery.data?.id, conversationQuery.data?.slug, devTestMode.testModeActive, isOpenAccessBuild, localFirstChatMode, ownerAIAuthReady, userId]);
   const controlRoomQuery = useQuery<IVXControlRoomStatus, Error>({
     queryKey: IVX_CONTROL_ROOM_STATUS_QUERY_KEY,
     queryFn: getIVXControlRoomStatus,
@@ -4200,7 +4254,8 @@ export default function IVXOwnerChatRoute() {
   const isRecordingVoice = recorderState.isRecording;
   const isTranscribingVoice = transcribeVoiceMutation.isPending;
   const isBusy = sendMessageMutation.isPending || attachmentMutation.isPending || isPickingFile || isRecordingVoice || isTranscribingVoice;
-  const sendingDisabled = (!composerHasText && draftAttachments.length === 0) || isBusy;
+  const isAuthBlocked = !ownerAIAuthReady;
+  const sendingDisabled = (!composerHasText && draftAttachments.length === 0) || isBusy || isAuthBlocked;
   const isAIWorking = aiReplyPending || sendMessageMutation.isPending || attachmentMutation.isPending;
   // Auto-expire the inline Live Work task banner once the underlying work
   // actually finishes. Without this, an "Auditing & verifying" banner set on a
@@ -5073,6 +5128,21 @@ export default function IVXOwnerChatRoute() {
     if (devTestMode.testModeActive) {
       return 'Assistant ready.';
     }
+    if (ownerAIAuthState === 'AUTH_INITIALIZING') {
+      return 'Initializing IVX owner session…';
+    }
+    if (ownerAIAuthState === 'SIGNED_OUT') {
+      return 'Sign in as the IVX owner to use Owner AI.';
+    }
+    if (ownerAIAuthState === 'SESSION_REFRESHING') {
+      return 'Refreshing owner session…';
+    }
+    if (ownerAIAuthState === 'SIGNED_IN_MEMBER') {
+      return 'This account is not the IVX owner.';
+    }
+    if (ownerAIAuthState === 'AUTH_ERROR') {
+      return 'Authentication error. Tap to sign in again.';
+    }
     if (isRecordingVoice) {
       return 'Recording voice prompt. Tap stop when finished.';
     }
@@ -5089,7 +5159,7 @@ export default function IVXOwnerChatRoute() {
       return 'Assistant is temporarily unavailable.';
     }
     return 'Assistant ready.';
-  }, [aiReplyPending, currentOwnerTrust.requiresElevatedConfirmation, devTestMode.testModeActive, isRecordingVoice, isTranscribingVoice, ownerAIProofStatus.id, ownerAIRoutingBlocked, runtimeDebugSnapshot.hasVisibleResponseText]);
+  }, [aiReplyPending, currentOwnerTrust.requiresElevatedConfirmation, devTestMode.testModeActive, isRecordingVoice, isTranscribingVoice, ownerAIAuthState, ownerAIProofStatus.id, ownerAIRoutingBlocked, runtimeDebugSnapshot.hasVisibleResponseText]);
 
   const controlRoomItems = useMemo<IVXControlRoomItem[]>(() => {
     if (controlRoomQuery.data?.statusItems && controlRoomQuery.data.statusItems.length > 0) {
@@ -5337,7 +5407,9 @@ export default function IVXOwnerChatRoute() {
               )}
             </View>
           ) : null}
-          <IVXOwnerAIDiagnostics apiEnvironment={process.env.EXPO_PUBLIC_RORK_API_BASE_URL} />
+          {diagnosticsBannerLoaded && diagnosticsBannerVisible ? (
+            <IVXOwnerAIDiagnostics visible onClose={handleCloseDiagnosticsBanner} />
+          ) : null}
           {topStatusNote ? (
             <View
               style={ownerAIRoutingBlocked ? styles.blockedBanner : activeFallbackForCurrentMessage ? styles.degradedBanner : styles.devBanner}
@@ -5519,6 +5591,14 @@ export default function IVXOwnerChatRoute() {
                     >
                       <Crown size={13} color={Colors.black} />
                       <Text style={styles.graphActionButtonText}>Command</Text>
+                    </Pressable>
+                    <Pressable
+                      style={styles.graphActionButton}
+                      onPress={handleOpenDiagnosticsBanner}
+                      testID="ivx-owner-open-diagnostics-banner"
+                    >
+                      <Cpu size={13} color={Colors.black} />
+                      <Text style={styles.graphActionButtonText}>Diagnostics</Text>
                     </Pressable>
                     <Pressable
                       style={styles.graphActionButton}
@@ -6453,6 +6533,20 @@ export default function IVXOwnerChatRoute() {
                 </View>
               ) : null}
               </View>
+              {ownerAIAuthState !== 'SIGNED_IN_OWNER' && ownerAIAuthState !== 'AUTH_INITIALIZING' ? (
+                <Pressable
+                  style={styles.ownerSignInBanner}
+                  onPress={() => router.push('/owner-login' as never)}
+                  testID="ivx-owner-sign-in-prompt"
+                >
+                  <Lock size={14} color={Colors.error} />
+                  <Text style={styles.ownerSignInBannerText}>
+                    {ownerAIAuthState === 'SIGNED_IN_MEMBER'
+                      ? 'This account is not the IVX owner. Sign in with the owner account.'
+                      : 'Sign in as the IVX owner to use Owner AI.'}
+                  </Text>
+                </Pressable>
+              ) : null}
               <View style={styles.templateRow} testID="ivx-owner-chat-template-row">
                 {OWNER_PROMPT_TEMPLATES.map((template) => (
                   <Pressable
@@ -6723,6 +6817,26 @@ const styles = StyleSheet.create({
     color: Colors.error,
     fontSize: 11,
     fontWeight: '700' as const,
+  },
+  ownerSignInBanner: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 8,
+    marginHorizontal: 16,
+    marginBottom: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(239,68,68,0.32)',
+    backgroundColor: 'rgba(239,68,68,0.12)',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  ownerSignInBannerText: {
+    color: Colors.text,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '600' as const,
+    flex: 1,
   },
   topSearchRail: {
     paddingHorizontal: 8,

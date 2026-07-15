@@ -13,7 +13,7 @@ import {
 } from '@/shared/ivx';
 
 const IVX_OWNER_AI_LEGACY_API_PATH = IVX_OWNER_AI_API_PATH.replace(/^\/api/, '');
-const IVX_CANONICAL_API_BASE_URL = 'https://api.ivxholding.com';
+export const IVX_CANONICAL_API_BASE_URL = 'https://api.ivxholding.com';
 
 type IVXOwnerAIRuntimeEnvironment = 'development' | 'production';
 type IVXOwnerAIRoutingPolicy = 'production_explicit' | 'production_canonical' | 'production_blocked' | 'development_explicit' | 'development_canonical' | 'development_fallback' | 'development_unconfigured';

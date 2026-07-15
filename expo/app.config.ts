@@ -9,11 +9,11 @@ const config: ExpoConfig = {
     policy: 'appVersion',
   },
   extra: {
-    buildMarker: 'IVX_BUNDLE_2026_07_15_BUILD_13_UNIFIED',
-    buildTimestamp: '2026-07-15T02:30:00.000000+00:00',
-    sourceCommitSha: '8ab04e2a14c11a3b28ad05919e0812ebf3dee6fd',
-    watchdogPatchVersion: 'ai-mutation-watchdog-fix-v4-staged-timeout',
-    frontendDeployMarker: 'ivx-frontend-2026-07-14-owner-login-self-heal',
+    buildMarker: 'IVX_BUNDLE_2026_07_15_BUILD_14_OWNER_SESSION_STABILIZED',
+    buildTimestamp: '2026-07-15T02:55:00.000000+00:00',
+    sourceCommitSha: '11872578c4c8bd04ae22d90b8593035475117938',
+    watchdogPatchVersion: 'ai-mutation-watchdog-fix-v5-owner-auth-race',
+    frontendDeployMarker: 'ivx-frontend-2026-07-15-owner-session-stabilized',
     eas: {
       projectId: process.env.EXPO_PUBLIC_EAS_PROJECT_ID || '00000000-0000-0000-0000-000000000000',
     },
@@ -46,7 +46,7 @@ const config: ExpoConfig = {
       backgroundColor: '#000000',
     },
     package: 'com.ivxholdings.app',
-    versionCode: 13,
+    versionCode: 14,
     softwareKeyboardLayoutMode: 'resize',
   },
   web: {

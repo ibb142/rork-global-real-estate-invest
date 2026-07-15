@@ -1490,19 +1490,9 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         );
 
         if (session) {
-          // OWNER AUTO-LOGIN BLOCK: The owner account must NEVER sign in
-          // automatically. If Supabase restored an owner session from
-          // AsyncStorage, sign out immediately and clear all owner state.
-          // The owner must manually enter email + password on every launch.
-          if (isOwnerAdminEmail(session.user?.email)) {
-            console.log('[Auth] OWNER_AUTO_LOGIN_BLOCK: owner session detected in getSession() — signing out, clearing all owner state');
-            try { await supabase.auth.signOut(); } catch {}
-            await clearOwnerResilientSession().catch(() => {});
-            await clearOwnerIP();
-            await clearStoredAuth();
-            if (!cancelled) { setIsLoading(false); }
-            return;
-          }
+          // Persisted session restore: validate and handle the session regardless
+          // of whether it belongs to an owner or a member. Server-side role
+          // resolution inside handleSession will verify owner authorization.
           if (!cancelled) {
             const challengeRequired = await requireTwoFactorIfNeeded(session, 'startup restore');
             if (!challengeRequired) {
@@ -1517,62 +1507,39 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
 
         const stored = await loadStoredAuth();
         if (stored.userId) {
-          // OWNER AUTO-LOGIN BLOCK: If the stored role is owner/admin, skip
-          // session refresh entirely — the owner must sign in manually every
-          // time. Clear all stored owner state so no cached credentials remain.
-          const storedRole = normalizeRole(stored.userRole);
-          if (isAdminRole(storedRole)) {
-            console.log('[Auth] OWNER_AUTO_LOGIN_BLOCK: stored owner/admin role detected — clearing, no auto-refresh');
-            await clearStoredAuth();
-            await clearOwnerResilientSession().catch(() => {});
-            await clearOwnerIP();
-          } else {
-            setAuthCredentials(null, stored.userId, stored.userRole);
-            const refreshedSession = await withTimeout(
-              async () => {
-                const refreshResult = await supabase.auth.refreshSession();
-                return refreshResult.data.session;
-              },
-              AUTH_REFRESH_TIMEOUT_MS,
-              'refreshSession',
-              null,
-            );
+          setAuthCredentials(null, stored.userId, stored.userRole);
+          const refreshedSession = await withTimeout(
+            async () => {
+              const refreshResult = await supabase.auth.refreshSession();
+              return refreshResult.data.session;
+            },
+            AUTH_REFRESH_TIMEOUT_MS,
+            'refreshSession',
+            null,
+          );
 
-            if (refreshedSession) {
-              // Safety net: if refreshSession somehow produced an owner session,
-              // block it and sign out.
-              if (isOwnerAdminEmail(refreshedSession.user?.email)) {
-                console.log('[Auth] OWNER_AUTO_LOGIN_BLOCK: owner session detected after refresh — signing out');
-                try { await supabase.auth.signOut(); } catch {}
-                await clearOwnerResilientSession().catch(() => {});
-                await clearOwnerIP();
-                await clearStoredAuth();
-                if (!cancelled) { setIsLoading(false); }
-                return;
-              }
-              if (!cancelled) {
-                const challengeRequired = await requireTwoFactorIfNeeded(refreshedSession, 'session refresh');
-                if (!challengeRequired) {
-                  const handledSession = await handleSession(refreshedSession);
-                  if (handledSession.accepted) {
-                    console.log('[Auth] Session restored via refresh for:', stored.userId);
-                  } else {
-                    console.log('[Auth] Session refresh blocked:', handledSession.blockedReason ?? 'admin access lock');
-                  }
+          if (refreshedSession) {
+            if (!cancelled) {
+              const challengeRequired = await requireTwoFactorIfNeeded(refreshedSession, 'session refresh');
+              if (!challengeRequired) {
+                const handledSession = await handleSession(refreshedSession);
+                if (handledSession.accepted) {
+                  console.log('[Auth] Session restored via refresh for:', stored.userId);
+                } else {
+                  console.log('[Auth] Session refresh blocked:', handledSession.blockedReason ?? 'admin access lock');
                 }
               }
-              return;
             }
-
-            console.log('[Auth] Stored userId found but session refresh failed or timed out — clearing');
-            await clearStoredAuth();
+            return;
           }
+
+          console.log('[Auth] Stored userId found but session refresh failed or timed out — clearing');
+          await clearStoredAuth();
         }
 
-        // OWNER AUTO-LOGIN BLOCK: restoreTrustedOwnerSession() removed —
-        // the owner must never be auto-restored from trusted-device state.
-        // Admin HQ, Variables, Access Control, and IVX Owner AI remain
-        // protected until manual owner authentication succeeds.
+        // Trusted-device auto-restore is intentionally disabled. The owner must
+        // authenticate through Supabase on the current device; once authenticated,
+        // Supabase's own session persistence handles restart and background resume.
       } catch (e) {
         console.log('[Auth] Init error:', (e as Error)?.message);
         console.log('[Auth] Trusted owner auto-restore skipped because startup verification did not complete safely');
@@ -1601,22 +1568,9 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         }
         console.log('[Auth] State changed:', _event);
         if (session) {
-          // OWNER AUTO-LOGIN BLOCK: If an owner session appears via
-          // onAuthStateChange but the owner has not manually signed in during
-          // this app session, sign out immediately and clear all owner state.
-          // This catches token refresh events that try to silently restore
-          // an owner session without the owner entering credentials.
-          if (isOwnerAdminEmail(session.user?.email) && !manualOwnerLoginRef.current) {
-            console.log('[Auth] OWNER_AUTO_LOGIN_BLOCK: owner session in onAuthStateChange without manual login — signing out');
-            try { await supabase.auth.signOut(); } catch {}
-            await clearOwnerResilientSession().catch(() => {});
-            await clearOwnerIP();
-            await clearStoredAuth();
-            setUser(null);
-            setIsAuthenticated(false);
-            setUserRole('investor');
-            return;
-          }
+          // Honor auth state changes from Supabase (including automatic token
+          // refresh). Server-side role resolution in handleSession verifies
+          // whether the restored user is the IVX owner.
           const challengeRequired = await requireTwoFactorIfNeeded(session, `auth event ${String(_event)}`);
           if (!challengeRequired) {
             const handledSession = await handleSession(session);
