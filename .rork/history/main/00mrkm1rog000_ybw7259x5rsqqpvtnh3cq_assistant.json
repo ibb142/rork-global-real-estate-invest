@@ -589,7 +589,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"cd /home/user/rork-app && curl -s -X GET \\\"https://api.ivxholding.com/version\\\" -H \\\"Accept: application/json\\\" | head -c 500\",\"cwd\":\"/home/user/rork-app\"}",
       "createdAt": 1784030720617,
-      "completedAt": 1784030720625
+      "completedAt": 1784030720625,
+      "compactedAt": 1784080892424
     },
     {
       "type": "reasoning",
@@ -763,7 +764,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"cd /home/user/rork-app && node --import tsx qa-evidence/verify-agent-audit-deploy.mjs 2>&1\",\"cwd\":\"/home/user/rork-app\"}",
       "createdAt": 1784030798614,
-      "completedAt": 1784030798620
+      "completedAt": 1784030798620,
+      "compactedAt": 1784080892424
     },
     {
       "type": "reasoning",
@@ -789,7 +791,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"cd /home/user/rork-app && timeout 60 node --import tsx server.ts > /tmp/ivx-server-local.log 2>&1 & SERVER_PID=$!; sleep 10; echo \\\"=== /health ===\\\"; curl -s -X GET \\\"http://localhost:3000/health\\\" -H \\\"Accept: application/json\\\" | head -c 300; echo; echo \\\"=== /version ===\\\"; curl -s -X GET \\\"http://localhost:3000/version\\\" -H \\\"Accept: application/json\\\" | head -c 300; echo; echo \\\"=== audit overview OPTIONS ===\\\"; curl -s -X OPTIONS \\\"http://localhost:3000/api/ivx/agent-audit/overview\\\" -H \\\"Origin: https://ivxholding.com\\\" -I | head -15; echo \\\"=== audit overview GET (no auth) ===\\\"; curl -s -X GET \\\"http://localhost:3000/api/ivx/agent-audit/overview\\\" -H \\\"Origin: https://ivxholding.com\\\" -H \\\"Accept: application/json\\\" | head -c 400; echo; kill $SERVER_PID 2>/dev/null; wait $SERVER_PID 2>/dev/null; echo \\\"=== server log tail ===\\\"; tail -20 /tmp/ivx-server-local.log\",\"cwd\":\"/home/user/rork-app\"}",
       "createdAt": 1784030806254,
-      "completedAt": 1784030816547
+      "completedAt": 1784030816547,
+      "compactedAt": 1784080892424
     },
     {
       "type": "reasoning",
@@ -992,7 +995,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\":\"render.yaml\",\"offset\":1,\"limit\":10}",
       "createdAt": 1784030981728,
-      "completedAt": 1784030981732
+      "completedAt": 1784030981732,
+      "compactedAt": 1784080892424
     },
     {
       "type": "reasoning",
@@ -1206,7 +1210,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"/home/user/rork-app/qa-evidence/AGENT_AUDIT_DEPLOY_PROOF.json\", \"content\": \"{\\n  \\\"generatedBy\\\": \\\"qa-evidence/verify-agent-audit-deploy.mjs + manual deploy audit\\\",\\n  \\\"verificationTimestamp\\\": \\\"2026-07-14T12:15:00.000Z\\\",\\n  \\\"localCommit\\\": \\\"18df757f3dbac34fd437df547feccba0f5a3a0c0\\\",\\n  \\\"originCommit\\\": \\\"18df757f3dbac34fd437df547feccba0f5a3a0c0\\\",\\n  \\\"githubMainCommit\\\": \\\"5533c6d04073b834ada1eaf1ced94ca1704a9992\\\",\\n  \\\"rorkRouterHead\\\": \\\"18df757f3dbac34fd437df547feccba0f5a3a0c0\\\",\\n  \\\"productionCommit\\\": \\\"5533c6d04073b834ada1eaf1ced94ca1704a9992\\\",\\n  \\\"rootCause\\\": \\\"Render service was configured to watch GitHub mirror (ibb142/rork-global-real-estate-invest). That mirror is 2 commits behind the Rork-managed router because the sandbox cannot push to GitHub without GITHUB_TOKEN. Therefore Render auto-deploy never picked up the new /api/ivx/agent-audit/* routes.\\\",\\n  \\\"fixApplied\\\": \\\"Updated render.yaml for both web services to point to the Rork-managed git router (https://rork-git-router.rork-direct.workers.dev/git/j2l8t44588ix9ns7b57mu) which is publicly accessible and always reflects the latest local commit.\\\",\\n  \\\"localAuditEngine\\\": {\\n    \\\"ok\\\": true,\\n    \\\"detail\\\": \\\"runAgentAudit() returned 12 agents with scores and role assignments\\\",\\n    \\\"agentCount\\\": 12\\n  },\\n  \\\"localEndpoint\\\": {\\n    \\\"ok\\\": true,\\n    \\\"detail\\\": \\\"Local server /health returned 200; OPTIONS /api/ivx/agent-audit/overview returned 204 with correct CORS headers; GET /api/ivx/agent-audit/overview returned 401 'missing bearer token' proving route is registered and owner-only gate is active\\\"\\n  },\\n  \\\"productionEndpoint\\\": {\\n    \\\"ok\\\": false,\\n    \\\"detail\\\": \\\"Production /api/ivx/agent-audit/overview returns HTTP 404 Not Found because production is still on old commit 5533c6d0\\\",\\n    \\\"status\\\": 404\\n  },\\n  \\\"deployVerified\\\": false,\\n  \\\"failingNode\\\": \\\"render-service-config\\\",\\n  \\\"blocker\\\": \\\"The currently running Render service is still watching the GitHub mirror (5533c6d0). To complete the deploy now, either (1) update the running Render service source URL to the Rork router via Render dashboard/API, or (2) push the GitHub mirror to 18df757. Both require RENDER_API_KEY or GITHUB_TOKEN which are not available in this sandbox.\\\",\\n  \\\"nextCommand\\\": \\\"With RENDER_API_KEY exported, run: node deploy/deployment-watchdog.mjs --deploy --wait 600\\\",\\n  \\\"alternativeCommand\\\": \\\"With GITHUB_TOKEN exported, run: node expo/sync-github.mjs --message 'deploy: agent audit and command center'\\\",\\n  \\\"corsCheck\\\": {\\n    \\\"production\\\": \\\"PASS — OPTIONS /api/ivx/agent-audit/overview on production returns 404 (route not present) but CORS headers are not applicable; local OPTIONS returns correct CORS headers for https://ivxholding.com\\\",\\n    \\\"allowedOrigins\\\": [\\\"https://ivxholding.com\\\", \\\"https://www.ivxholding.com\\\", \\\"https://chat.ivxholding.com\\\"]\\n  }\\n}\\n\"}",
       "createdAt": 1784031056354,
-      "completedAt": 1784031064087
+      "completedAt": 1784031064087,
+      "compactedAt": 1784080892424
     },
     {
       "type": "reasoning",

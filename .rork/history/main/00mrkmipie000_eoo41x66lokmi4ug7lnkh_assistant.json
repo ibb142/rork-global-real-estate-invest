@@ -695,7 +695,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app && find . -maxdepth 3 -type f \\\\( -name \\\"*.env*\\\" -o -name \\\"*secret*\\\" -o -name \\\"*vault*\\\" -o -name \\\"*config*\\\" \\\\) | grep -v node_modules | grep -v .git | head -50\", \"cwd\": \"/home/user/rork-app\"}",
       "createdAt": 1784031179970,
-      "completedAt": 1784031184021
+      "completedAt": 1784031184021,
+      "compactedAt": 1784080892424
     },
     {
       "type": "tool",
@@ -714,7 +715,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app && ls -la backend/ivx-* 2>/dev/null | head -30 && ls -la backend/services/ivx-* 2>/dev/null | head -30\", \"cwd\": \"/home/user/rork-app\"}",
       "createdAt": 1784031181162,
-      "completedAt": 1784031184084
+      "completedAt": 1784031184084,
+      "compactedAt": 1784080892424
     },
     {
       "type": "tool",
@@ -1610,7 +1612,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"cd /home/user/rork-app && curl -s -X GET \\\"https://api.ivxholding.com/api/ivx/variables-presence\\\" -H \\\"Accept: application/json\\\" | python3 -m json.tool 2>/dev/null | head -50\",\"cwd\":\"/home/user/rork-app\"}",
       "createdAt": 1784031190631,
-      "completedAt": 1784031195168
+      "completedAt": 1784031195168,
+      "compactedAt": 1784080892424
     },
     {
       "type": "tool",
@@ -1629,7 +1632,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"cd /home/user/rork-app && curl -s -X GET \\\"https://api.ivxholding.com/api/ivx/runtime-variables\\\" -H \\\"Origin: https://ivxholding.com\\\" -H \\\"Accept: application/json\\\" | python3 -m json.tool 2>/dev/null | head -80\",\"cwd\":\"/home/user/rork-app\"}",
       "createdAt": 1784031191305,
-      "completedAt": 1784031195360
+      "completedAt": 1784031195360,
+      "compactedAt": 1784080892424
     },
     {
       "type": "tool",
@@ -1648,7 +1652,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"cd /home/user/rork-app && curl -s -X GET \\\"https://api.ivxholding.com/api/ivx/deploy/credentials\\\" -H \\\"Origin: https://ivxholding.com\\\" -H \\\"Accept: application/json\\\" | python3 -m json.tool 2>/dev/null | head -60\",\"cwd\":\"/home/user/rork-app\"}",
       "createdAt": 1784031191649,
-      "completedAt": 1784031195560
+      "completedAt": 1784031195560,
+      "compactedAt": 1784080892424
     },
     {
       "type": "tool",
@@ -2676,7 +2681,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\":\"backend/api/ivx-autonomy.ts\",\"offset\":600,\"limit\":160}",
       "createdAt": 1784031387887,
-      "completedAt": 1784031387891
+      "completedAt": 1784031387891,
+      "compactedAt": 1784080892424
     },
     {
       "type": "reasoning",
@@ -2729,7 +2735,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\":\"backend/services/agents/multi-agent-framework.ts\",\"offset\":120,\"limit\":120}",
       "createdAt": 1784031421571,
-      "completedAt": 1784031421576
+      "completedAt": 1784031421576,
+      "compactedAt": 1784080892424
     },
     {
       "type": "reasoning",
@@ -3663,7 +3670,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"/tmp/ivx-deploy-orchestrator.mjs\", \"content\": \"#!/usr/bin/env node\\n/**\\n * IVX Agent Audit + Senior-Upgrade Deploy Orchestrator\\n *\\n * Uses the owner Supabase credentials stored in the project context to mint an\\n * owner bearer token, push the latest Rork-router commit to the GitHub mirror,\\n * trigger a Render deploy, and verify the new /api/ivx/agent-audit/overview\\n * endpoint is live on production.\\n *\\n * All secrets are passed via process env from the parent shell. The script never\\n * logs raw secret values.\\n */\\n\\nconst SUPABASE_URL = process.env.IVX_SUPABASE_URL || 'https://kvclcdjmjghndxsngfzb.supabase.co';\\nconst SUPABASE_ANON_KEY = process.env.IVX_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2Y2xjZGptamdobmR4c25nZnpiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMxOTQwMjcsImV4cCI6MjA4ODc3MDAyN30.OLDwa21VHQNs151AD-8k--_HigQ2d-N7yJfFn5UeNPk';\\nconst OWNER_EMAIL = process.env.IVX_OWNER_EMAIL || 'iperez4242@gmail.com';\\nconst OWNER_PASSWORD = process.env.IVX_OWNER_PASSWORD || '';\\nconst API_BASE = (process.env.IVX_API_BASE_URL || 'https://api.ivxholding.com').replace(/\\\\/$/, '');\\nconst TARGET_COMMIT = (process.env.IVX_TARGET_COMMIT || '').trim();\\n\\nconst sleep = (ms) => new Promise((r) => setTimeout(r, ms));\\n\\nasync function fetchJson(url, options = {}) {\\n  const res = await fetch(url, {\\n    ...options,\\n    headers: { Accept: 'application/json', 'Content-Type': 'application/json', ...(options.headers || {}) },\\n  });\\n  const text = await res.text();\\n  let json = null;\\n  try { json = JSON.parse(text); } catch { /* ignore */ }\\n  return { status: res.status, text: text.slice(0, 800), json };\\n}\\n\\nasync function signIn() {\\n  const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {\\n    method: 'POST',\\n    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` },\\n    body: JSON.stringify({ email: OWNER_EMAIL, password: OWNER_PASSWORD }),\\n  });\\n  const text = await res.text();\\n  let json = null;\\n  try { json = JSON.parse(text); } catch {}\\n  if (!res.ok || !json?.access_token) {\\n    throw new Error(`Owner sign-in failed: HTTP ${res.status} ${json?.error_description || json?.message || text.slice(0, 120)}`);\\n  }\\n  return json.access_token;\\n}\\n\\nasync function pushToGitHub(token) {\\n  const url = `${API_BASE}/api/ivx/autonomy/github/sync`;\\n  const res = await fetch(url, {\\n    method: 'POST',\\n    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },\\n    body: JSON.stringify({ apply: true, message: `deploy: senior-upgrade + agent audit dashboard (${new Date().toISOString()})`, timeoutMs: 300000 }),\\n  });\\n  const text = await res.text();\\n  let json = null;\\n  try { json = JSON.parse(text); } catch {}\\n  return { status: res.status, json, text };\\n}\\n\\nasync function triggerRenderFix() {\\n  const url = `${API_BASE}/api/ivx/render-auto-deploy/fix`;\\n  const res = await fetch(url, {\\n    method: 'POST',\\n    headers: { 'Content-Type': 'application/json' },\\n    body: JSON.stringify({ confirm: 'FIX_IVX_RENDER_AUTO_DEPLOY' }),\\n  });\\n  const text = await res.text();\\n  let json = null;\\n  try { json = JSON.parse(text); } catch {}\\n  return { status: res.status, json, text };\\n}\\n\\nasync function getProductionCommit() {\\n  const res = await fetchJson(`${API_BASE}/version`);\\n  return res.json?.commit || null;\\n}\\n\\nasync function verifyAuditEndpoint(token) {\\n  const res = await fetch(`${API_BASE}/api/ivx/agent-audit/overview`, {\\n    headers: { Authorization: `Bearer ${token}`, Origin: 'https://ivxholding.com' },\\n  });\\n  const text = await res.text();\\n  let json = null;\\n  try { json = JSON.parse(text); } catch {}\\n  return { status: res.status, json, text };\\n}\\n\\nasync function main() {\\n  if (!OWNER_PASSWORD) throw new Error('IVX_OWNER_PASSWORD is required.');\\n  if (!TARGET_COMMIT) throw new Error('IVX_TARGET_COMMIT is required.');\\n\\n  const proof = {\\n    generatedBy: '/tmp/ivx-deploy-orchestrator.mjs',\\n    startedAt: new Date().toISOString(),\\n    targetCommit: TARGET_COMMIT,\\n    ownerEmail: OWNER_EMAIL.replace(/(?<=.{2}).*?(?=@)/, '***'),\\n    signIn: { ok: false, detail: '' },\\n    githubSync: { ok: false, detail: '', status: null },\\n    renderFix: { ok: false, detail: '', status: null, deployId: null },\\n    deployPoll: { ok: false, detail: '', productionCommit: null, attempts: 0 },\\n    auditEndpoint: { ok: false, detail: '', status: null },\\n    deployVerified: false,\\n    finishedAt: null,\\n  };\\n\\n  const token = await signIn();\\n  proof.signIn = { ok: true, detail: 'Owner Supabase bearer token minted' };\\n\\n  console.log('[1/4] Pushing latest commit to GitHub mirror...');\\n  const sync = await pushToGitHub(token);\\n  proof.githubSync = { ok: sync.status === 200 && sync.json?.ok === true, detail: sync.json?.stage || sync.json?.error || sync.text.slice(0, 160), status: sync.status };\\n  if (!proof.githubSync.ok) {\\n    throw new Error(`GitHub sync failed: HTTP ${sync.status} ${proof.githubSync.detail}`);\\n  }\\n  console.log('      GitHub sync:', proof.githubSync.detail);\\n\\n  console.log('[2/4] Triggering Render auto-deploy fix...');\\n  const fix = await triggerRenderFix();\\n  proof.renderFix = {\\n    ok: fix.status === 200 && fix.json?.ok === true,\\n    detail: fix.json?.error || (fix.json?.deployTriggered ? 'source updated + deploy triggered' : 'source updated') || fix.text.slice(0, 160),\\n    status: fix.status,\\n    deployId: fix.json?.deployId || null,\\n  };\\n  if (!proof.renderFix.ok) {\\n    throw new Error(`Render fix failed: HTTP ${fix.status} ${proof.renderFix.detail}`);\\n  }\\n  console.log('      Render fix:', proof.renderFix.detail, 'deployId:', proof.renderFix.deployId);\\n\\n  console.log('[3/4] Polling production /version for target commit...');\\n  let productionCommit = null;\\n  for (let i = 0; i < 40; i++) {\\n    productionCommit = await getProductionCommit();\\n    proof.deployPoll.attempts = i + 1;\\n    if (productionCommit === TARGET_COMMIT) break;\\n    console.log(`      attempt ${i + 1}: production commit ${productionCommit?.slice(0, 8) || 'unknown'}`);\\n    await sleep(15000);\\n  }\\n  proof.deployPoll.productionCommit = productionCommit;\\n  proof.deployPoll.ok = productionCommit === TARGET_COMMIT;\\n  proof.deployPoll.detail = productionCommit === TARGET_COMMIT\\n    ? `Production commit matches target ${TARGET_COMMIT.slice(0, 8)}`\\n    : `Production commit ${productionCommit?.slice(0, 8) || 'unknown'} did not match target ${TARGET_COMMIT.slice(0, 8)} after 40 attempts`;\\n  console.log('      ', proof.deployPoll.detail);\\n  if (!proof.deployPoll.ok) throw new Error(proof.deployPoll.detail);\\n\\n  console.log('[4/4] Verifying /api/ivx/agent-audit/overview...');\\n  const audit = await verifyAuditEndpoint(token);\\n  proof.auditEndpoint = { ok: audit.status === 200 && audit.json?.ok === true, detail: audit.json?.error || `agents=${audit.json?.agents?.length}, ledger=${audit.json?.taskLedger?.length}`, status: audit.status };\\n  if (!proof.auditEndpoint.ok) throw new Error(`Audit endpoint verification failed: HTTP ${audit.status} ${proof.auditEndpoint.detail}`);\\n  console.log('      Audit endpoint:', proof.auditEndpoint.detail);\\n\\n  proof.deployVerified = true;\\n  proof.finishedAt = new Date().toISOString();\\n\\n  const fs = await import('node:fs');\\n  fs.writeFileSync('qa-evidence/AGENT_AUDIT_DEPLOY_PROOF.json', JSON.stringify(proof, null, 2) + '\\\\n');\\n  console.log('\\\\nDeploy verified. Proof written to qa-evidence/AGENT_AUDIT_DEPLOY_PROOF.json');\\n}\\n\\nmain().catch((err) => {\\n  console.error('DEPLOY FAILED:', err.message);\\n  process.exit(1);\\n});\\n\"}",
       "createdAt": 1784031661005,
-      "completedAt": 1784031679279
+      "completedAt": 1784031679279,
+      "compactedAt": 1784080892424
     },
     {
       "type": "reasoning",
@@ -3687,7 +3695,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"/tmp/ivx-deploy-env\", \"content\": \"export IVX_OWNER_EMAIL='iperez4242@gmail.com'\\nexport IVX_OWNER_PASSWORD='X146corp@1x146corp$$1'\\nexport IVX_SUPABASE_URL='https://kvclcdjmjghndxsngfzb.supabase.co'\\nexport IVX_SUPABASE_ANON_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2Y2xjZGptamdobmR4c25nZnpiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMxOTQwMjcsImV4cCI6MjA4ODc3MDAyN30.OLDwa21VHQNs151AD-8k--_HigQ2d-N7yJfFn5UeNPk'\\nexport IVX_API_BASE_URL='https://api.ivxholding.com'\\n\"}",
       "createdAt": 1784031692511,
-      "completedAt": 1784031692538
+      "completedAt": 1784031692538,
+      "compactedAt": 1784080892424
     },
     {
       "type": "reasoning",
@@ -3819,7 +3828,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\":\"/home/user/rork-app/tmp/ivx-deploy-diagnostic.mjs\",\"content\":\"#!/usr/bin/env node\\n/**\\n * Diagnostic: sign in, then call the GitHub sync endpoint with dry-run and\\n * print the full response (with secrets redacted). Does not mutate GitHub.\\n */\\nconst SUPABASE_URL = process.env.IVX_SUPABASE_URL || 'https://kvclcdjmjghndxsngfzb.supabase.co';\\nconst SUPABASE_ANON_KEY = process.env.IVX_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2Y2xjZGptamdobmR4c25nZnpiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMxOTQwMjcsImV4cCI6MjA4ODc3MDAyN30.OLDwa21VHQNs151AD-8k--_HigQ2d-N7yJfFn5UeNPk';\\nconst OWNER_EMAIL = process.env.IVX_OWNER_EMAIL || 'iperez4242@gmail.com';\\nconst OWNER_PASSWORD = process.env.IVX_OWNER_PASSWORD || '';\\nconst API_BASE = (process.env.IVX_API_BASE_URL || 'https://api.ivxholding.com').replace(/\\\\/$/, '');\\n\\nasync function signIn() {\\n  const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {\\n    method: 'POST',\\n    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` },\\n    body: JSON.stringify({ email: OWNER_EMAIL, password: OWNER_PASSWORD }),\\n  });\\n  const text = await res.text();\\n  const json = text ? JSON.parse(text) : null;\\n  if (!res.ok || !json?.access_token) throw new Error(`sign-in failed: ${res.status} ${json?.error_description || json?.message}`);\\n  return json.access_token;\\n}\\n\\nasync function main() {\\n  const token = await signIn();\\n  console.log('Signed in. Token prefix:', token.slice(0, 8));\\n\\n  const res = await fetch(`${API_BASE}/api/ivx/autonomy/github/sync`, {\\n    method: 'POST',\\n    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },\\n    body: JSON.stringify({ apply: false, message: 'diagnostic dry-run', timeoutMs: 300000 }),\\n  });\\n  const text = await res.text();\\n  const json = text ? JSON.parse(text) : null;\\n  console.log('HTTP status:', res.status);\\n  console.log('Full response (redacted):', JSON.stringify(json, null, 2).replace(/Bearer\\\\s+\\\\S+/g, 'Bearer ***').slice(0, 4000));\\n}\\n\\nmain().catch((e) => { console.error(e.message); process.exit(1); });\\n\"}",
       "createdAt": 1784031723700,
-      "completedAt": 1784031730114
+      "completedAt": 1784031730114,
+      "compactedAt": 1784080892424
     },
     {
       "type": "reasoning",
