@@ -658,6 +658,31 @@ export default function VideosScreen() {
     }
   }, [router]);
 
+  // Keep a ref to the latest engagements so getEngagement can read
+  // current state without being a dependency of renderItem (which
+  // would cause all FeedItems to re-render on every like/save).
+  const engagementsRef = useRef(engagement.engagements);
+  engagementsRef.current = engagement.engagements;
+
+  // Stable getter: reads from ref so the callback identity never changes.
+  // FeedItem receives the engagement value at render time; when a like
+  // updates the ref, only the affected FeedItem re-renders (via its own
+  // engagement prop diff), not the entire FlatList.
+  const getEngagement = useCallback(
+    (videoId: string, fallback: FeedVideo): EngagementState => {
+      return engagementsRef.current[videoId] ?? {
+        likeCount: fallback.like_count ?? 0,
+        commentCount: fallback.comment_count ?? 0,
+        shareCount: fallback.share_count ?? 0,
+        saveCount: fallback.save_count ?? 0,
+        liked: false,
+        saved: false,
+        following: false,
+      };
+    },
+    [],
+  );
+
   const renderItem = useCallback(
     ({ item, index }: { item: FeedVideo; index: number }) => (
       <FeedItem
@@ -666,15 +691,7 @@ export default function VideosScreen() {
         shouldMount={playback.shouldMount(index, filteredVideos.length)}
         height={windowHeight}
         muted={muted}
-        engagement={engagement.engagements[item.id] ?? {
-          likeCount: item.like_count ?? 0,
-          commentCount: item.comment_count ?? 0,
-          shareCount: item.share_count ?? 0,
-          saveCount: item.save_count ?? 0,
-          liked: false,
-          saved: false,
-          following: false,
-        }}
+        engagement={getEngagement(item.id, item)}
         onToggleMute={() => setMuted(m => !m)}
         onLike={handleLike}
         onDoubleTapLike={handleDoubleTapLike}
@@ -687,7 +704,7 @@ export default function VideosScreen() {
         onInvestNow={handleInvestNow}
       />
     ),
-    [playback, filteredVideos.length, windowHeight, muted, engagement.engagements, handleLike, handleDoubleTapLike, handleComment, handleShare, handleSave, handleFollow, handleReport, handleViewDeal, handleInvestNow]
+    [playback, filteredVideos.length, windowHeight, muted, getEngagement, handleLike, handleDoubleTapLike, handleComment, handleShare, handleSave, handleFollow, handleReport, handleViewDeal, handleInvestNow]
   );
 
   const itemHeight = windowHeight;
