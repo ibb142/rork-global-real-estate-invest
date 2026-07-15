@@ -97,6 +97,9 @@ All owner-login persistence / auto-restore / sign-in changes are **paused** unti
 - [x] Update `DEPLOYMENT_PROOF.json` with the new build details.
 - [x] Bump the Android `versionCode` to `20` and rebuild after removing the blocking root-layout timeout and making auth init non-blocking (startup reliability fix).
 - [x] Bump the Android `versionCode` to `21` and rebuild after creating missing `app/index.tsx`, fixing `metro.config.js`, removing hardcoded passwords, and adding full startup trace checkpoints.
+- [x] Push the full codebase to GitHub with the refreshed token (build 30), deploy to Render, and align the APK, GitHub, and Render SHAs.
+- [x] Bump the Android `versionCode` to `31` and rebuild after adding the TypeScript `node` types directive to `app.config.ts`, ensuring `runChecks` passes with zero errors.
+- [x] Final contradiction audit: verify GitHub API, GitHub remote HEAD, Render deployed SHA, /health SHA, APK embedded SHA, and local HEAD are identical.
 
 ## Final acceptance
 
@@ -107,9 +110,10 @@ All owner-login persistence / auto-restore / sign-in changes are **paused** unti
 - [x] Git SHA is not `local` and API environment is not `unknown` in production (build info reads from app.config.ts extra).
 - [x] Owner AI send button is disabled until authentication is ready (explicit auth states + `isAuthBlocked`).
 - [x] Final APK uses `com.ivxholdings.app` and is directly downloadable (build 18 link delivered and verified with HTTP 200 + application/octet-stream + checksum match).
-- [~] Real Android testing passes on the user’s device for build 21: no black screen, Owner Login renders on cold launch, startup trace reaches APP_INTERACTIVE, no hardcoded password auto-login, no forbidden endpoints in bundle.
+- [~] Real Android testing passes on the user’s device for build 31: no black screen, Owner Login renders on cold launch, startup trace reaches APP_INTERACTIVE, no hardcoded password auto-login, no forbidden endpoints in bundle.
 
 ## Blockers
 
 - `EXPO_TOKEN` / `EXPO_PUBLIC_EAS_PROJECT_ID` are not available in this sandbox, so EAS cloud builds are unavailable. APK will be built locally from the prebuilt Android project.
-- GitHub token is expired, so commits cannot be pushed to the repo connected to Render. The backend `/version` SHA may remain `0b37191f` until the token is refreshed externally.
+- [x] GitHub token was refreshed externally and commits were pushed successfully to `ibb142/rork-global-real-estate-invest@main`. The backend `/version` SHA is now aligned with the new GitHub HEAD.
+- [x] Final contradiction audit resolved: GitHub API returns 200, all six SHAs match at `65922b9ad691ea4fa53f04d5881abdeb170e099d`, and `runChecks` passes.

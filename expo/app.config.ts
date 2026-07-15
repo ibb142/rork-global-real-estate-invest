@@ -1,3 +1,4 @@
+/// <reference types="node" />
 import type { ExpoConfig } from 'expo/config';
 import { execSync } from 'child_process';
 
@@ -21,8 +22,8 @@ const config: ExpoConfig = {
     policy: 'appVersion',
   },
   extra: {
-    buildMarker: 'IVX_BUNDLE_2026_07_15_BUILD_29_FINAL_CLOSURE',
-    buildTimestamp: '2026-07-15T20:40:00.000000+00:00',
+    buildMarker: 'IVX_BUNDLE_2026_07_15_BUILD_31_FINAL_CLOSURE',
+    buildTimestamp: '2026-07-15T21:45:00.000000+00:00',
     sourceCommitSha: _sourceCommitSha,
     watchdogPatchVersion: 'ai-mutation-watchdog-fix-v12-enterprise-verify',
     frontendDeployMarker: 'ivx-frontend-2026-07-15-enterprise-verification',
@@ -58,7 +59,7 @@ const config: ExpoConfig = {
       backgroundColor: '#000000',
     },
     package: 'com.ivxholdings.app',
-    versionCode: 29,
+    versionCode: 31,
     softwareKeyboardLayoutMode: 'resize',
   },
   web: {
