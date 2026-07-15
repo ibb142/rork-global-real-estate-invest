@@ -5448,7 +5448,7 @@ export default function IVXOwnerChatRoute() {
               }}
               onQueryBackendStatus={async (traceId: string): Promise<TimeoutEvidence | null> => {
                 try {
-                  const baseUrl = process.env.EXPO_PUBLIC_RORK_API_BASE_URL ?? 'https://api.ivxholding.com';
+                  const baseUrl = 'https://api.ivxholding.com';
                   const token = await getIVXAccessToken();
                   const res = await fetch(`${baseUrl}/api/ivx/owner-ai/request/${traceId}/status`, {
                     headers: { Authorization: `Bearer ${token}` },
