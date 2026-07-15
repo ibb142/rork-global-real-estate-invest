@@ -201,10 +201,6 @@ export async function handleSupabaseStatus(): Promise<Response> {
   }
 }
 
-
-  }
-}
-
 // ─── PRODUCTION EVIDENCE ────────────────────────────────────────────────
 
 export async function handleEvidence(): Promise<Response> {

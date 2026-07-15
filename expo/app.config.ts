@@ -1,4 +1,16 @@
 import type { ExpoConfig } from 'expo/config';
+import { execSync } from 'child_process';
+
+// Dynamically read the current git HEAD SHA at build time.
+// This breaks the circular dependency where hardcoding the SHA
+// creates a new commit with a different SHA.
+let _sourceCommitSha = 'unknown';
+try {
+  _sourceCommitSha = execSync('git rev-parse HEAD', { encoding: 'utf-8' }).trim();
+} catch {
+  // Fallback for environments without git
+  _sourceCommitSha = process.env.EXPO_PUBLIC_SOURCE_COMMIT_SHA || 'unknown';
+}
 
 const config: ExpoConfig = {
   name: 'IVX Holdings',
@@ -9,9 +21,9 @@ const config: ExpoConfig = {
     policy: 'appVersion',
   },
   extra: {
-    buildMarker: 'IVX_BUNDLE_2026_07_15_BUILD_27_FINAL_CLOSURE',
-    buildTimestamp: '2026-07-15T19:15:00.000000+00:00',
-    sourceCommitSha: '0691e6082063d54cb4b38e1a08392a10094c45d4',
+    buildMarker: 'IVX_BUNDLE_2026_07_15_BUILD_28_FINAL_CLOSURE',
+    buildTimestamp: '2026-07-15T20:05:00.000000+00:00',
+    sourceCommitSha: _sourceCommitSha,
     watchdogPatchVersion: 'ai-mutation-watchdog-fix-v12-enterprise-verify',
     frontendDeployMarker: 'ivx-frontend-2026-07-15-enterprise-verification',
     eas: {
@@ -46,7 +58,7 @@ const config: ExpoConfig = {
       backgroundColor: '#000000',
     },
     package: 'com.ivxholdings.app',
-    versionCode: 27,
+    versionCode: 28,
     softwareKeyboardLayoutMode: 'resize',
   },
   web: {
